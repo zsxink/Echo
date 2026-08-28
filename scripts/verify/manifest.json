@@ -184,12 +184,19 @@
     {
       "id": "3.1",
       "title": "Immutable 0001 SQLite migration and schema snapshot",
-      "commands": [{ "desc": "migration schema snapshot", "cmd": "node scripts/verify/checks/task-3.mjs 3.1 initial_migration_has_required_tables_indexes_and_no_sync_tables" }]
+      "commands": [
+        { "desc": "migration schema snapshot", "cmd": "node scripts/verify/checks/task-3.mjs 3.1 initial_migration_has_required_tables_indexes_and_no_sync_tables" },
+        { "desc": "multiple lyrics candidates per song", "cmd": "node scripts/verify/checks/task-3.mjs 3.1 song_lyrics_keep_multiple_candidates_for_fallback" }
+      ]
     },
     {
       "id": "3.2",
       "title": "SQLite constraints and query indexes",
-      "commands": [{ "desc": "schema constraints", "cmd": "node scripts/verify/checks/task-3.mjs 3.2 schema_constraints_cover_active_root_paths_playlist_and_target_claim" }]
+      "commands": [
+        { "desc": "schema constraints", "cmd": "node scripts/verify/checks/task-3.mjs 3.2 schema_constraints_cover_active_root_paths_playlist_and_target_claim" },
+        { "desc": "cross-root membership and position clashes rejected", "cmd": "node scripts/verify/checks/task-3.mjs 3.2 playlist_members_reject_cross_root_and_position_conflicts" },
+        { "desc": "active target claim blocks other operations until released", "cmd": "node scripts/verify/checks/task-3.mjs 3.2 target_claims_block_other_operations_until_released" }
+      ]
     },
     {
       "id": "3.3",
@@ -204,7 +211,12 @@
     {
       "id": "3.5",
       "title": "SQLite repositories and Unit of Work",
-      "commands": [{ "desc": "transaction commit and rollback", "cmd": "node scripts/verify/checks/task-3.mjs 3.5 unit_of_work_rolls_back_and_real_repositories_round_trip" }]
+      "commands": [
+        { "desc": "transaction commit and rollback", "cmd": "node scripts/verify/checks/task-3.mjs 3.5 unit_of_work_rolls_back_and_real_repositories_round_trip" },
+        { "desc": "stale scan write-back preserves user state", "cmd": "node scripts/verify/checks/task-3.mjs 3.5 stale_scan_upsert_preserves_favorite_play_count_and_availability" },
+        { "desc": "pending delete hidden, finalize removes members atomically", "cmd": "node scripts/verify/checks/task-3.mjs 3.5 pending_delete_hides_from_catalog_and_finalize_removes_members_atomically" },
+        { "desc": "multi-playlist membership commits and rolls back atomically", "cmd": "node scripts/verify/checks/task-3.mjs 3.5 multi_playlist_membership_commits_in_one_transaction" }
+      ]
     },
     {
       "id": "3.6",

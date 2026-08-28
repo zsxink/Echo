@@ -198,13 +198,16 @@ impl RootSwitchBarrier {
     }
 
     /// Whether an asynchronous result belongs to the currently bound root.
-    /// Calls made under the old epoch become stale immediately after commit.
+    ///
+    /// Before the activation commit (`Prepare`/`QuiesceOldRoot`/
+    /// `CommitActivation`) — and again after a `Failed` unwind — the *old*
+    /// runtime keeps serving, so results stamped with the current (old) epoch
+    /// are accepted. Once the commit advances the epoch, only results stamped
+    /// with the new epoch are accepted; old-epoch results become stale
+    /// immediately.
     #[must_use]
     pub fn accepts_epoch(&self, epoch: RootEpoch) -> bool {
-        matches!(
-            self.state,
-            RootSwitchState::RebindRuntime | RootSwitchState::Completed
-        ) && epoch == self.active_epoch
+        epoch == self.active_epoch
     }
 }
 
@@ -292,11 +295,23 @@ mod tests {
         assert!(barrier
             .transition(RootSwitchState::CommitActivation)
             .is_err());
-        for next in [
+        // Before the commit the old runtime keeps serving: its own epoch is
+        // accepted in every pre-commit phase, a future epoch is not.
+        for phase in [
+            RootSwitchState::Prepare,
             RootSwitchState::QuiesceOldRoot,
             RootSwitchState::CommitActivation,
         ] {
-            barrier.transition(next).unwrap();
+            assert_eq!(barrier.state(), phase);
+            assert!(barrier.accepts_epoch(RootEpoch::from_u64(4)));
+            assert!(!barrier.accepts_epoch(RootEpoch::from_u64(5)));
+            barrier
+                .transition(match phase {
+                    RootSwitchState::Prepare => RootSwitchState::QuiesceOldRoot,
+                    RootSwitchState::QuiesceOldRoot => RootSwitchState::CommitActivation,
+                    _ => break,
+                })
+                .unwrap();
         }
         assert!(barrier.commit_activation(RootEpoch::from_u64(4)).is_err());
         barrier.commit_activation(RootEpoch::from_u64(5)).unwrap();
@@ -305,6 +320,7 @@ mod tests {
         barrier.transition(RootSwitchState::Completed).unwrap();
         assert!(barrier.state().is_terminal());
         assert!(barrier.transition(RootSwitchState::Prepare).is_err());
+        assert!(barrier.accepts_epoch(RootEpoch::from_u64(5)));
 
         let failed = RootSwitchState::CommitActivation
             .transition(RootSwitchState::Failed)
@@ -313,5 +329,23 @@ mod tests {
             failed.transition(RootSwitchState::Prepare).unwrap(),
             RootSwitchState::Prepare
         );
+    }
+
+    #[test]
+    fn failed_switch_unfreezes_the_old_runtime_epoch() {
+        // A switch that fails after quiesce re-enters service on the old root:
+        // results stamped with the still-current old epoch must be accepted
+        // again through `Failed` and back to `Prepare`.
+        let mut barrier = RootSwitchBarrier::new(
+            Some(LibraryRootId::new()),
+            LibraryRootId::new(),
+            RootEpoch::from_u64(7),
+        );
+        barrier.transition(RootSwitchState::QuiesceOldRoot).unwrap();
+        barrier.transition(RootSwitchState::Failed).unwrap();
+        barrier.transition(RootSwitchState::Prepare).unwrap();
+        assert!(barrier.state() == RootSwitchState::Prepare);
+        assert!(barrier.accepts_epoch(RootEpoch::from_u64(7)));
+        assert!(!barrier.accepts_epoch(RootEpoch::from_u64(8)));
     }
 }

@@ -21,6 +21,7 @@
 
 use crate::domain::entities::Song;
 use crate::domain::ids::{Revision, SongId};
+use crate::domain::text::normalized_key;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 // ---------------------------------------------------------------------------
@@ -63,38 +64,17 @@ impl SortDirection {
 
 /// A total, deterministic sort: primary field + direction + stable tie-breaks.
 ///
-/// The tie-break ladder depends on the field (design:
-/// `(library_root_uuid, title_sort, artist_sort, uuid)`-style), but always
-/// ends with the `SongId` so the order is fully determined even when every
-/// displayed value is identical.
+/// The tie-break ladder mirrors the `SQLite` `ORDER BY` ladders exactly (design:
+/// `(library_root_uuid, title_sort, artist_sort, uuid)`-style) and always ends
+/// with the `SongId` so the order is fully determined even when every displayed
+/// value is identical. Sort keys use the same normalized comparison keys the
+/// repository indexes (`normalized_key`), never the mutable `revision` — a
+/// favorite/statistics mutation must not reorder the catalog, and the in-memory
+/// ordering must agree with paged keyset results row for row.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SongSort {
     pub field: SongSortField,
     pub direction: SortDirection,
-}
-
-/// The scalar value a song exposes for a sort field (display fallback applied).
-fn field_value(song: &Song, field: SongSortField) -> String {
-    match field {
-        SongSortField::AddedAt => song.added_at().to_string().pad_start(20),
-        SongSortField::Title => song.title().unwrap_or("").to_owned(),
-        SongSortField::Artist => song.artist().unwrap_or("").to_owned(),
-        SongSortField::PlayCount => song.play_count().as_u64().to_string(),
-    }
-}
-
-/// Simple zero-pad to a width.
-trait PadStart {
-    fn pad_start(self, width: usize) -> String;
-}
-impl PadStart for String {
-    fn pad_start(self, width: usize) -> String {
-        if self.len() >= width {
-            self
-        } else {
-            format!("{}{}", "0".repeat(width - self.len()), self)
-        }
-    }
 }
 
 impl SongSort {
@@ -119,35 +99,40 @@ impl SongSort {
         }
     }
 
-    /// The primary value comparison in ascending direction.
+    /// The primary value comparison in ascending direction. Text fields use
+    /// the normalized comparison key (`title_sort`/`artist_sort` in SQL);
+    /// numeric fields compare numerically.
     fn primary(self, lhs: &Song, rhs: &Song) -> std::cmp::Ordering {
         match self.field {
             SongSortField::PlayCount => lhs.play_count().as_u64().cmp(&rhs.play_count().as_u64()),
-            _ => field_value(lhs, self.field).cmp(&field_value(rhs, self.field)),
+            SongSortField::AddedAt => lhs.added_at().cmp(&rhs.added_at()),
+            SongSortField::Title => normalized_key(lhs.title().unwrap_or(""))
+                .cmp(&normalized_key(rhs.title().unwrap_or(""))),
+            SongSortField::Artist => normalized_key(lhs.artist().unwrap_or(""))
+                .cmp(&normalized_key(rhs.artist().unwrap_or(""))),
         }
     }
 
     /// The stable secondary keys that finalize ties beyond the primary value
     /// (in ascending direction; `compare` reverses this wholesale for Desc).
+    /// This is the exact remainder of the SQL `ORDER BY` ladder for the field,
+    /// ending in the `SongId`.
     fn tie_break(self, lhs: &Song, rhs: &Song) -> std::cmp::Ordering {
+        let title = |song: &Song| normalized_key(song.title().unwrap_or(""));
+        let artist = |song: &Song| normalized_key(song.artist().unwrap_or(""));
         match self.field {
-            SongSortField::Artist => {
-                let l = (lhs.title().unwrap_or(""), lhs.revision().as_u64());
-                let r = (rhs.title().unwrap_or(""), rhs.revision().as_u64());
-                l.cmp(&r).then_with(|| lhs.id().cmp(&rhs.id()))
-            }
-            SongSortField::Title => {
-                let l = (lhs.artist().unwrap_or(""), lhs.revision().as_u64());
-                let r = (rhs.artist().unwrap_or(""), rhs.revision().as_u64());
-                l.cmp(&r).then_with(|| lhs.id().cmp(&rhs.id()))
-            }
-            SongSortField::PlayCount => {
-                let l = (lhs.title().unwrap_or(""), lhs.artist().unwrap_or(""));
-                let r = (rhs.title().unwrap_or(""), rhs.artist().unwrap_or(""));
-                l.cmp(&r).then_with(|| lhs.id().cmp(&rhs.id()))
-            }
-            SongSortField::AddedAt => lhs.id().cmp(&rhs.id()),
+            // SQL: … ORDER BY title_sort, artist_sort, uuid
+            SongSortField::Title => artist(lhs).cmp(&artist(rhs)),
+            // SQL: … ORDER BY artist_sort, title_sort, uuid
+            SongSortField::Artist => title(lhs).cmp(&title(rhs)),
+            // SQL: … ORDER BY play_count, title_sort, artist_sort, uuid
+            SongSortField::PlayCount => title(lhs)
+                .cmp(&title(rhs))
+                .then_with(|| artist(lhs).cmp(&artist(rhs))),
+            // SQL: … ORDER BY added_at, uuid
+            SongSortField::AddedAt => std::cmp::Ordering::Equal,
         }
+        .then_with(|| lhs.id().cmp(&rhs.id()))
     }
 }
 

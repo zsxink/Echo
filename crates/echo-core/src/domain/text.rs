@@ -101,6 +101,33 @@ pub fn playlist_name_key(name: &str) -> String {
     normalized_key(name)
 }
 
+/// The filesystem-semantic comparison key for a relative media path.
+///
+/// Two paths that the operating system could resolve to the *same file* must
+/// produce the same key, so the identity of a song cannot be duplicated by a
+/// spelling difference:
+///
+/// - **Canonical equivalence (NFD)** — `café` in its NFC and NFD spellings is
+///   one file on macOS (APFS/HFS+ normalize canonically for lookup), so the
+///   key is normalized to NFD (also after folding, because folding can
+///   introduce new decomposable sequences).
+/// - **Full case folding** — the default filesystems of macOS and Windows are
+///   case-insensitive, so `A.MP3` and `a.mp3` are the same file and must not
+///   become two song identities.
+/// - **No compatibility folding (no NFKC)** — full-width `Ａ` and ASCII `A`
+///   are *different files* on every platform; merging them would corrupt
+///   identity, so only canonical normalization is applied.
+///
+/// Linux filesystems are byte-exact, so the key is deliberately conservative
+/// there: it can only merge spellings that are safe to treat as one identity,
+/// never split one file into two.
+#[must_use]
+pub fn path_identity_key(value: &str) -> String {
+    let decomposed: String = value.nfd().collect();
+    let folded: String = decomposed.case_fold().collect();
+    folded.nfd().collect()
+}
+
 // ---------------------------------------------------------------------------
 // Safe filename components (import target naming)
 // ---------------------------------------------------------------------------
@@ -381,6 +408,33 @@ mod tests {
         let c = playlist_name_key("ABC");
         let d = playlist_name_key("abc");
         assert_eq!(c, d);
+    }
+
+    #[test]
+    fn path_identity_key_merges_spelling_variants_of_one_file() {
+        // Case-insensitive (macOS/Windows filesystems).
+        assert_eq!(
+            path_identity_key("歌手/Song.MP3"),
+            path_identity_key("歌手/song.mp3")
+        );
+        // Canonical-equivalence insensitive (macOS lookup behavior): NFC vs NFD.
+        let nfc = "Caf\u{e9}未被删除/晴天.mp3";
+        let nfd = "Cafe\u{301}未被删除/晴天.mp3";
+        assert_eq!(path_identity_key(nfc), path_identity_key(nfd));
+    }
+
+    #[test]
+    fn path_identity_key_never_merges_distinct_files() {
+        // Compatibility forms are DIFFERENT files on every platform.
+        assert_ne!(path_identity_key("Ａ.mp3"), path_identity_key("A.mp3"));
+        // Distinct names stay distinct.
+        assert_ne!(path_identity_key("晴天.mp3"), path_identity_key("夜曲.mp3"));
+    }
+
+    #[test]
+    fn path_identity_key_is_idempotent() {
+        let once = path_identity_key("歌手/Caf\u{e9}fé.MP3");
+        assert_eq!(path_identity_key(&once), once);
     }
 
     #[test]

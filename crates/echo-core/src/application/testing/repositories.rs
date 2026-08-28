@@ -267,12 +267,20 @@ impl PlaylistRepository for MemoryPlaylistRepository {
 #[derive(Clone, Debug, Default)]
 pub struct MemoryOperationJournal {
     items: Shared<BTreeMap<(OperationId, String), OperationItem>>,
+    /// Operations whose target claims were released (lifecycle mirror).
+    released_claims: Shared<Vec<OperationId>>,
 }
 
 impl MemoryOperationJournal {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Operations whose target claims were released (assertion helper).
+    #[must_use]
+    pub fn released_claims(&self) -> Vec<OperationId> {
+        self.released_claims.lock().unwrap().clone()
     }
 }
 
@@ -305,6 +313,10 @@ impl OperationJournalRepository for MemoryOperationJournal {
             .filter(|((op, _), _)| *op == operation)
             .map(|(_, i)| i.clone())
             .collect())
+    }
+    fn release_claims(&self, operation: OperationId) -> Result<(), Error> {
+        self.released_claims.lock().unwrap().push(operation);
+        Ok(())
     }
 }
 

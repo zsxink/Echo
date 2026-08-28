@@ -30,13 +30,35 @@ if (JSON.stringify(names) !== JSON.stringify(expected)) {
   fail(`unexpected workspace members: ${names.join(", ")}`);
 }
 
+// The boundary is about real dependency declarations, not prose: scan only
+// package names inside [dependencies]/[dev-dependencies]/[build-dependencies]
+// (incl. per-target tables). Comments and free text elsewhere must not fail
+// the check (e.g. a `testkit` feature note mentioning "mpv").
 const coreManifest = readFileSync(
   resolve(ROOT, "crates", "echo-core", "Cargo.toml"),
   "utf8",
 );
-const banned = /(?:\btauri\b|\bmpv\b|libmpv)/i;
-if (banned.test(coreManifest)) {
-  fail("echo-core Cargo.toml references tauri/mpv/libmpv");
+const dependencyNames = [];
+let inDependencySection = false;
+for (const rawLine of coreManifest.split(/\r?\n/)) {
+  const line = rawLine.trim();
+  if (line === "" || line.startsWith("#")) continue;
+  const section = line.match(/^\[(.+)\]$/);
+  if (section) {
+    inDependencySection = /^(dependencies|dev-dependencies|build-dependencies|target\.[^.]+\.dependencies)$/.test(
+      section[1],
+    );
+    continue;
+  }
+  if (!inDependencySection) continue;
+  const name = line.match(/^([A-Za-z0-9_-]+)\s*=/);
+  if (name) dependencyNames.push(name[1]);
+}
+const banned = dependencyNames.filter((name) =>
+  /(?:^|lib)(?:tauri|mpv)/i.test(name),
+);
+if (banned.length > 0) {
+  fail(`echo-core declares tauri/mpv dependencies: ${banned.join(", ")}`);
 }
 
 process.stdout.write("ok 1.1: workspace members and echo-core dependency boundary\n");

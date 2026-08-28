@@ -49,7 +49,12 @@ pub(crate) fn upsert_song(connection: &Connection, song: &Song) -> Result<(), Er
     let title = song.title().map(ToOwned::to_owned);
     let artist = song.artist().map(ToOwned::to_owned);
     let album = song.album().map(ToOwned::to_owned);
-    connection.execute("INSERT INTO songs (uuid, library_root_uuid, relative_path, normalized_relative_path, title, artist, album, title_sort, artist_sort, album_sort, duration_ms, is_favorite, play_count, added_at, availability, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?17) ON CONFLICT(uuid) DO UPDATE SET library_root_uuid = excluded.library_root_uuid, relative_path = excluded.relative_path, normalized_relative_path = excluded.normalized_relative_path, title = excluded.title, artist = excluded.artist, album = excluded.album, title_sort = excluded.title_sort, artist_sort = excluded.artist_sort, album_sort = excluded.album_sort, duration_ms = excluded.duration_ms, is_favorite = excluded.is_favorite, play_count = excluded.play_count, availability = excluded.availability, revision = excluded.revision, updated_at = excluded.updated_at", params![song.id().to_string(), song.root().to_string(), song.path().display(), song.path().normalized(), title, artist, album, normalized_key(song.title().unwrap_or("")), normalized_key(song.artist().unwrap_or("")), normalized_key(song.album().unwrap_or("")), song.duration().map(|duration| i64::try_from(duration.as_millis()).unwrap_or(i64::MAX)), i64::from(song.favorite()), i64::try_from(song.play_count().as_u64()).unwrap_or(i64::MAX), i64::try_from(song.added_at()).unwrap_or(i64::MAX), availability_to_db(song.availability()), i64::try_from(song.revision().as_u64()).unwrap_or(i64::MAX), now]).map_err(map_constraint)?;
+    // The upsert carries *parsed metadata*, never user state: a scan (or any
+    // caller) may hold a stale snapshot, so `is_favorite`, `play_count` and
+    // `availability` are intentionally absent from DO UPDATE. Those columns can
+    // only change through their dedicated mutations, and a concurrent scan
+    // writing back must never roll a favorite or play count backward.
+    connection.execute("INSERT INTO songs (uuid, library_root_uuid, relative_path, normalized_relative_path, title, artist, album, title_sort, artist_sort, album_sort, duration_ms, is_favorite, play_count, added_at, availability, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?17) ON CONFLICT(uuid) DO UPDATE SET library_root_uuid = excluded.library_root_uuid, relative_path = excluded.relative_path, normalized_relative_path = excluded.normalized_relative_path, title = excluded.title, artist = excluded.artist, album = excluded.album, title_sort = excluded.title_sort, artist_sort = excluded.artist_sort, album_sort = excluded.album_sort, duration_ms = excluded.duration_ms, revision = excluded.revision, updated_at = excluded.updated_at", params![song.id().to_string(), song.root().to_string(), song.path().display(), song.path().identity_key(), title, artist, album, normalized_key(song.title().unwrap_or("")), normalized_key(song.artist().unwrap_or("")), normalized_key(song.album().unwrap_or("")), song.duration().map(|duration| i64::try_from(duration.as_millis()).unwrap_or(i64::MAX)), i64::from(song.favorite()), i64::try_from(song.play_count().as_u64()).unwrap_or(i64::MAX), i64::try_from(song.added_at()).unwrap_or(i64::MAX), availability_to_db(song.availability()), i64::try_from(song.revision().as_u64()).unwrap_or(i64::MAX), now]).map_err(map_constraint)?;
     maintain_search(connection, song)?;
     touch_root(connection, song.root())
 }
@@ -135,12 +140,27 @@ pub(crate) fn add_member(
     song: SongId,
     position: u64,
 ) -> Result<(), Error> {
+    // Appending (u64::MAX) takes the next free position. Re-adding a song that
+    // is already a member is idempotent (same position, no duplicate row). A
+    // *position* clash with a different member is a real conflict and must
+    // surface as an error — never silently swallowed (no INSERT OR IGNORE).
     let position = if position == u64::MAX {
         connection.query_row("SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_songs WHERE playlist_uuid = ?1", params![playlist.to_string()], |row| row.get::<_, u64>(0)).map_err(storage)?
     } else {
         position
     };
-    connection.execute("INSERT OR IGNORE INTO playlist_songs (playlist_uuid, song_uuid, position, added_at) VALUES (?1, ?2, ?3, ?4)", params![playlist.to_string(), song.to_string(), i64::try_from(position).unwrap_or(i64::MAX), now_ms()]).map_err(storage)?;
+    let existing: Option<i64> = connection
+        .query_row(
+            "SELECT position FROM playlist_songs WHERE playlist_uuid = ?1 AND song_uuid = ?2",
+            params![playlist.to_string(), song.to_string()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(storage)?;
+    if existing.is_some() {
+        return Ok(());
+    }
+    connection.execute("INSERT INTO playlist_songs (playlist_uuid, song_uuid, position, added_at) VALUES (?1, ?2, ?3, ?4)", params![playlist.to_string(), song.to_string(), i64::try_from(position).unwrap_or(i64::MAX), now_ms()]).map_err(map_constraint)?;
     Ok(())
 }
 
@@ -167,6 +187,23 @@ pub(crate) fn upsert_operation_item(
         .ok_or_else(|| Error::InvariantViolation {
             why: "operation item requires a persisted journal envelope".to_owned(),
         })?;
-    connection.execute("INSERT INTO operation_items (operation_uuid, item_key, library_root_uuid, kind, state, song_uuid, target_relative_path, normalized_target_path, expected_hash, claim_active) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1) ON CONFLICT(operation_uuid, item_key) DO UPDATE SET state = excluded.state, song_uuid = excluded.song_uuid, target_relative_path = excluded.target_relative_path, normalized_target_path = excluded.normalized_target_path, expected_hash = excluded.expected_hash", params![operation.to_string(), item.claim_key, root, if item.kind == OperationResourceKind::Audio { "audio" } else { "lyrics" }, operation_state_to_db(item.state), item.song.map(|id| id.to_string()), item.target_path.display(), item.target_path.normalized(), item.expected_hash]).map_err(map_constraint)?;
+    connection.execute("INSERT INTO operation_items (operation_uuid, item_key, library_root_uuid, kind, state, song_uuid, target_relative_path, normalized_target_path, expected_hash, claim_active) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1) ON CONFLICT(operation_uuid, item_key) DO UPDATE SET state = excluded.state, song_uuid = excluded.song_uuid, target_relative_path = excluded.target_relative_path, normalized_target_path = excluded.normalized_target_path, expected_hash = excluded.expected_hash", params![operation.to_string(), item.claim_key, root, if item.kind == OperationResourceKind::Audio { "audio" } else { "lyrics" }, operation_state_to_db(item.state), item.song.map(|id| id.to_string()), item.target_path.display(), item.target_path.identity_key(), item.expected_hash]).map_err(map_constraint)?;
+    Ok(())
+}
+
+/// Release every active target claim of an operation. Called when the
+/// operation reaches a terminal state (completed, rolled back, delete
+/// finalized or explicitly abandoned): until then the conditional unique index
+/// keeps the target path reserved for the same reserved `SongId`.
+pub(crate) fn release_operation_claims(
+    connection: &Connection,
+    operation: OperationId,
+) -> Result<(), Error> {
+    connection
+        .execute(
+            "UPDATE operation_items SET claim_active = 0 WHERE operation_uuid = ?1 AND claim_active = 1",
+            params![operation.to_string()],
+        )
+        .map_err(storage)?;
     Ok(())
 }

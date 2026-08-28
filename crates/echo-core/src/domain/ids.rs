@@ -360,19 +360,28 @@ impl fmt::Display for PlayCount {
 ///
 /// - Never absolute (no leading `/`, `\`, drive or `\\?\` UNC prefix).
 /// - Never escapes the root: `..` components are rejected.
-/// - No empty components (duplicate separators and trailing separators are
-///   rejected) and no NUL bytes.
-/// - Normalised to `/` separators for identity, while `display()` preserves
-///   the original Unicode text.
+/// - No empty or redundant (`.`) components: duplicate separators, trailing
+///   separators and `.` would let one file carry two logical identities, so
+///   they are rejected and callers must pass the canonical spelling.
+/// - No NUL bytes.
+/// - Normalised to `/` separators for display while `identity_key()` folds
+///   case and Unicode canonical forms, so two spellings that the filesystem
+///   could resolve to the same file compare equal (see
+///   [`crate::domain::text::path_identity_key`]).
 ///
 /// `RelativeMediaPath` is the identity of a song file within its root. Playlists
 /// and queues deliberately keep [`SongId`], not paths; paths are for Repository
 /// lookups, logs and the UI's relative-path display.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug)]
 pub struct RelativeMediaPath {
-    /// Normalised form: `/`-separated, no `..`, no empty components, always
-    /// relative. This is what indexes and comparisons use.
+    /// Normalised form: `/`-separated, no `..`/`.`, no empty components, always
+    /// relative, original case and Unicode preserved. This is what the UI and
+    /// the `relative_path` column use.
     normalized: String,
+    /// Filesystem-semantic comparison key (canonical NFD + case fold). This is
+    /// the *identity*: equality, ordering, hashing and the
+    /// `normalized_relative_path` uniqueness column are all keyed on it.
+    identity: String,
 }
 
 impl RelativeMediaPath {
@@ -388,12 +397,14 @@ impl RelativeMediaPath {
     /// # Errors
     ///
     /// Returns [`Error::Validation`] when the value is not a safe relative
-    /// path (absolute, escaping `..`, empty, NUL, duplicate/trailing separator
-    /// or over-long component).
+    /// path (absolute, escaping `..`, empty, NUL, duplicate/trailing separator,
+    /// redundant `.` component or over-long component).
     pub fn new(value: &str) -> Result<Self, Error> {
         Self::validate(value)?;
+        let normalized = normalize_to_slash(value);
         Ok(Self {
-            normalized: normalize_to_slash(value),
+            identity: crate::domain::text::path_identity_key(&normalized),
+            normalized,
         })
     }
 
@@ -428,6 +439,14 @@ impl RelativeMediaPath {
             if component == ".." {
                 return Err(validation_path("path escapes the root (..)"));
             }
+            // A redundant `.` component is rejected, not silently resolved:
+            // `a/b.mp3` and `a/./b.mp3` point at the same file, so accepting
+            // both would give one file two logical identities.
+            if component == "." {
+                return Err(validation_path(
+                    "path contains a redundant '.' component; pass the canonical spelling",
+                ));
+            }
             components += 1;
             if components > Self::MAX_COMPONENTS {
                 return Err(validation_path("too many path components"));
@@ -439,13 +458,21 @@ impl RelativeMediaPath {
         Ok(())
     }
 
-    /// The normalised, `/`-separated form — identity for comparisons.
+    /// The normalised, `/`-separated form — display and storage text (original
+    /// case and Unicode preserved).
     #[must_use]
     pub fn normalized(&self) -> &str {
         &self.normalized
     }
 
-    /// The original caller-supplied form (Unicode-preserving).
+    /// The filesystem-semantic comparison key. Two paths that the OS could
+    /// resolve to the same file share one key, and therefore one identity.
+    #[must_use]
+    pub fn identity_key(&self) -> &str {
+        &self.identity
+    }
+
+    /// The display form (Unicode-preserving).
     #[must_use]
     pub fn display(&self) -> &str {
         &self.normalized
@@ -477,6 +504,31 @@ impl RelativeMediaPath {
         self.file_name()?
             .rsplit_once('.')
             .map(|(_, ext)| ext.to_ascii_lowercase())
+    }
+}
+
+// Equality, ordering and hashing are defined on the identity key only: the
+// display text is presentation, never identity (two spellings of one file must
+// collapse to a single song, exactly like the SQLite uniqueness constraint).
+impl PartialEq for RelativeMediaPath {
+    fn eq(&self, other: &Self) -> bool {
+        self.identity == other.identity
+    }
+}
+impl Eq for RelativeMediaPath {}
+impl PartialOrd for RelativeMediaPath {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for RelativeMediaPath {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.identity.cmp(&other.identity)
+    }
+}
+impl std::hash::Hash for RelativeMediaPath {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.identity.hash(state);
     }
 }
 
@@ -641,12 +693,39 @@ mod tests {
             "a/",
             "a\\b\\",
             "\0",
+            // Redundant `.` components must not create a second identity for
+            // the same file: `a/./b.mp3` and `./b.mp3` are `a/b.mp3`/`b.mp3`.
+            "a/./b.mp3",
+            "./b.mp3",
+            "a/.",
+            ".",
         ] {
             assert!(
                 RelativeMediaPath::new(bad).is_err(),
                 "should reject: {bad:?}"
             );
         }
+    }
+
+    #[test]
+    fn relative_path_identity_is_filesystem_semantic() {
+        // Case-insensitive identity (macOS/Windows filesystem semantics).
+        let upper = RelativeMediaPath::new("歌手/Song.MP3").unwrap();
+        let lower = RelativeMediaPath::new("歌手/song.mp3").unwrap();
+        assert_eq!(upper, lower);
+        assert_eq!(upper.identity_key(), lower.identity_key());
+        // Canonical-equivalence insensitive identity (macOS lookup semantics).
+        let nfc = RelativeMediaPath::new("Caf\u{e9}/晴天.mp3").unwrap();
+        let nfd = RelativeMediaPath::new("Cafe\u{301}/晴天.mp3").unwrap();
+        assert_eq!(nfc, nfd);
+        // Compatibility forms are distinct files and stay distinct.
+        let fullwidth = RelativeMediaPath::new("Ａ.mp3").unwrap();
+        let ascii = RelativeMediaPath::new("A.mp3").unwrap();
+        assert_ne!(fullwidth, ascii);
+        // Display keeps the original spelling while identity collapses.
+        assert_eq!(upper.normalized(), "歌手/Song.MP3");
+        assert_ne!(upper.normalized(), lower.normalized());
+        assert_eq!(upper.cmp(&lower), std::cmp::Ordering::Equal);
     }
 
     #[test]

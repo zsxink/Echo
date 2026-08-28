@@ -63,7 +63,10 @@ pub enum ValidationSubject {
 pub enum Error {
     /// The caller supplied a value that fails validation (unambiguous, the
     /// bad field is named). Never wraps a run-time environment problem.
-    #[error("validation failed on {subject:?} ({field}): {reason}")]
+    #[error(
+        "validation failed on {subject:?} ({field}): {}",
+        redact_display(reason)
+    )]
     Validation {
         /// The input category that failed.
         subject: ValidationSubject,
@@ -76,7 +79,7 @@ pub enum Error {
     },
 
     /// An operation is not allowed for the current user/permissions.
-    #[error("permission denied: {operation} ({kind})")]
+    #[error("permission denied: {} ({kind})", redact_display(operation))]
     Permission {
         /// What was being attempted.
         operation: String,
@@ -90,7 +93,7 @@ pub enum Error {
     /// A required resource (library root, file, filesystem) is not
     /// available right now. Distinguished from `Io` (definitive I/O failure)
     /// by the retry/back-off semantics: `Unavailable` is transient.
-    #[error("resource unavailable: {resource}")]
+    #[error("resource unavailable: {}", redact_display(resource))]
     Unavailable {
         /// What is unavailable (redacted for logs).
         resource: String,
@@ -106,7 +109,7 @@ pub enum Error {
     /// The requested change conflicts with current state (duplicate identity,
     /// concurrent edit, journal claim already taken…). Safe to retry with new
     /// input; never overwrite silently.
-    #[error("conflict: {what}")]
+    #[error("conflict: {}", redact_display(what))]
     Conflict {
         /// What conflicted (e.g. `playlist name already taken`).
         what: String,
@@ -116,7 +119,11 @@ pub enum Error {
 
     /// The media format is outside the supported matrix (not a corruption —
     /// the file may be perfectly fine, just not a supported type).
-    #[error("unsupported media: {operation}")]
+    #[error(
+        "unsupported media: {} ({})",
+        redact_display(operation),
+        redact_display(reason)
+    )]
     UnsupportedMedia {
         /// What was being attempted.
         operation: String,
@@ -125,7 +132,11 @@ pub enum Error {
     },
 
     /// A supported container/stream is damaged or unreadable past recovery.
-    #[error("corrupt media: {operation}")]
+    #[error(
+        "corrupt media: {} ({})",
+        redact_display(operation),
+        redact_display(reason)
+    )]
     CorruptMedia {
         /// What was being attempted.
         operation: String,
@@ -148,7 +159,7 @@ pub enum Error {
     },
 
     /// Database/storage-layer failure (migration, corruption, disk).
-    #[error("storage error: {what}")]
+    #[error("storage error: {}", redact_display(what))]
     Storage {
         /// Short classifier (e.g. `migration`, `integrity`).
         what: String,
@@ -165,7 +176,7 @@ pub enum Error {
 
     /// A documented domain invariant was violated. Only used for genuine
     /// internal corruption / programmer error, never for user-input failures.
-    #[error("invariant violation: {why}")]
+    #[error("invariant violation: {}", redact_display(why))]
     InvariantViolation {
         /// Which invariant (e.g. `at most one active root`).
         why: String,
@@ -259,7 +270,11 @@ impl Error {
             }
             Self::Cancelled => out.extend_from_slice(b"error.code=cancelled"),
             Self::InvariantViolation { why } => {
-                out.extend_from_slice(&log_one("invariant_violation", "why", why));
+                out.extend_from_slice(&log_one(
+                    "invariant_violation",
+                    "why",
+                    &scrub_operation(why),
+                ));
             }
         }
         String::from_utf8(out).unwrap_or_else(|_| "<log encoding error>".to_owned())
@@ -382,6 +397,15 @@ fn log_two(code: &'static str, k1: &'static str, v1: &str, k2: &'static str, v2:
     let mut out = log_one(code, k1, v1);
     write!(out, " {k2}={}", json_field(v2)).expect("write to Vec");
     out
+}
+
+/// Redact user-facing `Display` text for the free-text error fields: bare
+/// absolute-path spans become the `file-name (hash)` form, so no public error
+/// message (UI, IPC payload, panic text) ever carries a filesystem location.
+/// Unlike the log scrubbers this keeps readable text — only path spans are
+/// replaced.
+fn redact_display(text: &str) -> String {
+    redact_path_spans(text)
 }
 
 /// Display form of a [`PermKind`].
@@ -548,4 +572,68 @@ fn json_field(s: &str) -> String {
     }
     out.push('"');
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ABS_PATH: &str = "/Users/alice/Music/a.mp3";
+
+    #[test]
+    fn conflict_display_never_leaks_absolute_paths() {
+        let err = Error::conflict(format!("target exists: {ABS_PATH}"));
+        let text = err.to_string();
+        assert!(!text.contains(ABS_PATH), "path leaked in Display: {text}");
+        assert!(!text.contains("/Users/alice"), "location leaked: {text}");
+        assert!(text.contains("a.mp3"), "file name stays visible: {text}");
+        assert_eq!(err.code(), "conflict");
+    }
+
+    #[test]
+    fn validation_and_unavailable_display_stay_path_free() {
+        let validation = Error::validation(
+            Subject::Path,
+            "RelativeMediaPath",
+            format!("rejects {ABS_PATH}"),
+        );
+        assert!(!validation.to_string().contains(ABS_PATH));
+
+        let unavailable =
+            Error::unavailable(format!("root {ABS_PATH}"), format!("unmounted: {ABS_PATH}"));
+        let text = unavailable.to_string();
+        assert!(!text.contains(ABS_PATH), "path leaked in Display: {text}");
+    }
+
+    #[test]
+    fn invariant_violation_is_scrubbed_in_display_and_log() {
+        let err = Error::InvariantViolation {
+            why: format!("two active roots for {ABS_PATH}"),
+        };
+        let display = err.to_string();
+        assert!(!display.contains(ABS_PATH), "path leaked: {display}");
+        let log = err.to_log(DiagnosticMode::Off);
+        assert!(
+            !log.contains(ABS_PATH),
+            "path leaked in invariant log: {log}"
+        );
+        assert!(log.contains("error.code=invariant_violation"), "{log}");
+    }
+
+    #[test]
+    fn io_display_keeps_redacted_location_only() {
+        let err = Error::io(
+            "rename",
+            std::io::Error::other("cross-device link"),
+            ABS_PATH,
+        );
+        let display = err.to_string();
+        assert!(!display.contains(ABS_PATH), "{display}");
+        assert!(display.contains("a.mp3 ("), "{display}");
+        // The raw path stays reachable for the caller to act on.
+        assert_eq!(
+            err.diagnostic_origin().map(std::path::Path::new),
+            Some(std::path::Path::new(ABS_PATH))
+        );
+    }
 }

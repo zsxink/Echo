@@ -98,6 +98,11 @@ pub trait OperationJournalRepository: Send + Sync {
     ) -> Result<Option<OperationItem>, Error>;
     fn upsert_item(&self, operation: OperationId, item: OperationItem) -> Result<(), Error>;
     fn items(&self, operation: OperationId) -> Result<Vec<OperationItem>, Error>;
+    /// Release every active target claim of the operation. Must be called when
+    /// the operation reaches a terminal state (completed, rolled back, delete
+    /// finalized); until then the conditional unique index keeps the target
+    /// path reserved. After release the same path may be claimed again.
+    fn release_claims(&self, operation: OperationId) -> Result<(), Error>;
 }
 
 /// A single journal item record (the domain shape, not the SQL row).

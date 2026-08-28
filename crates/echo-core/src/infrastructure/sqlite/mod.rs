@@ -24,7 +24,7 @@
 )]
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex};
 
 use rusqlite::params;
 use rusqlite::{Connection, OptionalExtension, Transaction};
@@ -60,10 +60,56 @@ use connection::{
 use conversion::{availability_from_db, operation_item_from_row, root_from_row, song_from_row};
 use query::{active_root_id, query_active, SONG_SELECT};
 use statements::{
-    add_member, create_playlist, increment_play_count, operation_item, set_song_availability,
-    set_song_favorite, upsert_operation_item, upsert_root, upsert_song,
+    add_member, create_playlist, increment_play_count, operation_item, release_operation_claims,
+    set_song_availability, set_song_favorite, upsert_operation_item, upsert_root, upsert_song,
 };
 use support::{map_constraint, now_ms, parse_id, storage, to_sql_error};
+
+/// Bounded pool of read-only WAL connections. `acquire` blocks while every
+/// pooled connection is checked out, so concurrent readers can never grow the
+/// pool beyond [`reader_count()`] (2–4 connections per the design); opening a
+/// fresh connection on demand would defeat the bound.
+struct ReaderPool {
+    idle: Mutex<Vec<Connection>>,
+    available: Condvar,
+}
+
+impl ReaderPool {
+    const fn new(connections: Vec<Connection>) -> Self {
+        Self {
+            idle: Mutex::new(connections),
+            available: Condvar::new(),
+        }
+    }
+
+    fn acquire(&self) -> Result<Connection, Error> {
+        let mut idle = self.idle.lock().map_err(|_| Error::InvariantViolation {
+            why: "SQLite reader pool poisoned".to_owned(),
+        })?;
+        loop {
+            if let Some(connection) = idle.pop() {
+                return Ok(connection);
+            }
+            idle = self
+                .available
+                .wait(idle)
+                .map_err(|_| Error::InvariantViolation {
+                    why: "SQLite reader pool poisoned".to_owned(),
+                })?;
+        }
+    }
+
+    fn release(&self, connection: Connection) -> Result<(), Error> {
+        self.idle
+            .lock()
+            .map_err(|_| Error::InvariantViolation {
+                why: "SQLite reader pool poisoned".to_owned(),
+            })?
+            .push(connection);
+        self.available.notify_one();
+        Ok(())
+    }
+}
 
 /// Real SQLite implementation of the library repositories and unit of work.
 ///
@@ -73,7 +119,7 @@ use support::{map_constraint, now_ms, parse_id, storage, to_sql_error};
 pub struct SqliteDatabase {
     path: PathBuf,
     writer: SqliteWriteActor,
-    readers: Mutex<Vec<Connection>>,
+    readers: ReaderPool,
 }
 
 impl SqliteDatabase {
@@ -97,7 +143,7 @@ impl SqliteDatabase {
         Ok(Self {
             path,
             writer: SqliteWriteActor::spawn(writer),
-            readers: Mutex::new(readers),
+            readers: ReaderPool::new(readers),
         })
     }
 
@@ -233,24 +279,12 @@ impl SqliteDatabase {
         &self,
         read: impl FnOnce(&Connection) -> Result<T, Error>,
     ) -> Result<T, Error> {
-        let connection = {
-            let mut readers = self.readers.lock().map_err(|_| Error::InvariantViolation {
-                why: "SQLite reader pool poisoned".to_owned(),
-            })?;
-            if let Some(connection) = readers.pop() {
-                connection
-            } else {
-                open_reader(&self.path)?
-            }
-        };
+        let connection = self.readers.acquire()?;
         let result = read(&connection);
-        let mut readers = self.readers.lock().map_err(|_| Error::InvariantViolation {
-            why: "SQLite reader pool poisoned".to_owned(),
-        })?;
-        if readers.len() < reader_count() {
-            readers.push(connection);
+        match self.readers.release(connection) {
+            Ok(()) => result,
+            Err(release_error) => result.and(Err(release_error)),
         }
-        result
     }
 }
 
@@ -326,7 +360,9 @@ impl SongRepository for SqliteDatabase {
         root: LibraryRootId,
         path: &RelativeMediaPath,
     ) -> Result<Option<Song>, Error> {
-        let path = path.normalized().to_owned();
+        // Lookup goes through the filesystem-semantic identity key so a
+        // case/NFC-spelling variant resolves to the same song row.
+        let path = path.identity_key().to_owned();
         self.with_reader(move |connection| {
             connection
                 .query_row(
@@ -352,18 +388,31 @@ impl SongRepository for SqliteDatabase {
     }
 
     fn set_availability(&self, id: SongId, availability: SongAvailability) -> Result<(), Error> {
-        self.writer
-            .run(move |connection| set_song_availability(connection, id, availability))
+        self.writer.run(move |connection| {
+            // The song mutation and the root revision bump are one transaction:
+            // readers either see both (new data + new catalog revision, stale
+            // cursors invalidated) or neither. A half commit can never leave
+            // changed data under a still-valid cursor.
+            let transaction = connection.transaction().map_err(storage)?;
+            set_song_availability(&transaction, id, availability)?;
+            transaction.commit().map_err(storage)
+        })
     }
 
     fn set_favorite(&self, id: SongId, favorite: bool) -> Result<(), Error> {
-        self.writer
-            .run(move |connection| set_song_favorite(connection, id, favorite))
+        self.writer.run(move |connection| {
+            let transaction = connection.transaction().map_err(storage)?;
+            set_song_favorite(&transaction, id, favorite)?;
+            transaction.commit().map_err(storage)
+        })
     }
 
     fn increment_play_count(&self, id: SongId) -> Result<(), Error> {
-        self.writer
-            .run(move |connection| increment_play_count(connection, id))
+        self.writer.run(move |connection| {
+            let transaction = connection.transaction().map_err(storage)?;
+            increment_play_count(&transaction, id)?;
+            transaction.commit().map_err(storage)
+        })
     }
 }
 
@@ -438,8 +487,13 @@ impl PlaylistRepository for SqliteDatabase {
     }
 
     fn add_member(&self, playlist: PlaylistId, song: SongId, position: u64) -> Result<(), Error> {
-        self.writer
-            .run(move |connection| add_member(connection, playlist, song, position))
+        self.writer.run(move |connection| {
+            // Membership lookup + insert are one transaction so a concurrent
+            // mutation cannot slip a duplicate or position clash between them.
+            let transaction = connection.transaction().map_err(storage)?;
+            add_member(&transaction, playlist, song, position)?;
+            transaction.commit().map_err(storage)
+        })
     }
 
     fn remove_member(&self, playlist: PlaylistId, song: SongId) -> Result<(), Error> {
@@ -466,8 +520,11 @@ impl OperationJournalRepository for SqliteDatabase {
     }
 
     fn upsert_item(&self, operation: OperationId, item: OperationItem) -> Result<(), Error> {
-        self.writer
-            .run(move |connection| upsert_operation_item(connection, operation, item))
+        self.writer.run(move |connection| {
+            let transaction = connection.transaction().map_err(storage)?;
+            upsert_operation_item(&transaction, operation, item)?;
+            transaction.commit().map_err(storage)
+        })
     }
 
     fn items(&self, operation: OperationId) -> Result<Vec<OperationItem>, Error> {
@@ -476,6 +533,11 @@ impl OperationJournalRepository for SqliteDatabase {
             let items = statement.query_map(params![operation.to_string()], operation_item_from_row).map_err(storage)?.collect::<Result<Vec<_>, _>>().map_err(storage)?;
             Ok(items)
         })
+    }
+
+    fn release_claims(&self, operation: OperationId) -> Result<(), Error> {
+        self.writer
+            .run(move |connection| release_operation_claims(connection, operation))
     }
 }
 

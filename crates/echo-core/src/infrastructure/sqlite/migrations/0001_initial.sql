@@ -62,15 +62,20 @@ CREATE INDEX songs_by_artist ON songs(library_root_uuid, artist_sort, title_sort
 CREATE INDEX songs_by_plays ON songs(library_root_uuid, play_count, title_sort, uuid);
 CREATE INDEX songs_favorites ON songs(library_root_uuid, is_favorite, title_sort, artist_sort, uuid);
 
+-- One row per (song, source): a song keeps every lyrics candidate it has
+-- (override / embedded / sidecar) so selection can fall back from a corrupt
+-- higher-priority source to a valid lower-priority one without re-reading the
+-- file. Selection order is the domain's `Override > Embedded > Sidecar`.
 CREATE TABLE song_lyrics (
-    song_uuid TEXT PRIMARY KEY NOT NULL REFERENCES songs(uuid) ON DELETE CASCADE,
+    song_uuid TEXT NOT NULL REFERENCES songs(uuid) ON DELETE CASCADE,
     source TEXT NOT NULL CHECK (source IN ('override', 'embedded', 'sidecar')),
     text_kind TEXT NOT NULL CHECK (text_kind IN ('timed', 'plain', 'empty')),
     raw_text TEXT,
     timed_lines_json TEXT,
     source_mtime_ns INTEGER,
     parse_error TEXT,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (song_uuid, source)
 );
 
 CREATE TABLE song_overrides (
@@ -111,6 +116,27 @@ CREATE TABLE playlist_songs (
     PRIMARY KEY (playlist_uuid, song_uuid)
 );
 CREATE UNIQUE INDEX playlist_songs_position ON playlist_songs(playlist_uuid, position);
+
+-- A playlist may only reference songs that live in the same library root:
+-- cross-root membership would leak songs from a deactivated root into another
+-- root's playlist and break active-root isolation.
+CREATE TRIGGER playlist_songs_same_root_on_insert
+BEFORE INSERT ON playlist_songs
+WHEN (SELECT library_root_uuid FROM playlists WHERE uuid = NEW.playlist_uuid)
+     IS NOT (SELECT library_root_uuid FROM songs WHERE uuid = NEW.song_uuid)
+BEGIN
+    SELECT RAISE(ABORT, 'playlist and song must belong to the same library root');
+END;
+CREATE TRIGGER playlist_songs_same_root_on_song_reparent
+BEFORE UPDATE OF library_root_uuid ON songs
+WHEN EXISTS (
+    SELECT 1 FROM playlist_songs ps
+    JOIN playlists p ON p.uuid = ps.playlist_uuid
+    WHERE ps.song_uuid = NEW.uuid AND p.library_root_uuid <> NEW.library_root_uuid
+)
+BEGIN
+    SELECT RAISE(ABORT, 'song with cross-root playlist memberships cannot change library root');
+END;
 
 CREATE TABLE operation_journal (
     operation_uuid TEXT PRIMARY KEY NOT NULL,
