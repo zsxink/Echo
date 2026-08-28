@@ -50,6 +50,7 @@ env/
 .workbuddy/
 .impeccable/
 .od-skills/
+.codegraph/
 
 # Logs & temp
 *.log
