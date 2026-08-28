@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "platform": "macos",
+  "kind": "universal-audio-default",
+  "publisher": "media-kit/libmpv-darwin-build",
+  "release": "v0.7.2",
+  "asset": "libmpv-libs_v0.7.2_macos-universal-audio-default.tar.gz",
+  "sourceUrl": "https://github.com/media-kit/libmpv-darwin-build/releases/download/v0.7.2/libmpv-libs_v0.7.2_macos-universal-audio-default.tar.gz",
+  "assetSha256": "2083852560cd1c4fabb1ca86b534bd3aaddebd4db965cb7110903f0604d31862",
+  "architectures": ["arm64", "x86_64"],
+  "libmpvAbi": "2.0.0",
+  "mpvBuild": "0.36.0",
+  "licenses": [
+    {
+      "component": "libmpv",
+      "license": "LGPL-2.1-or-later",
+      "source": "https://github.com/mpv-player/mpv"
+    },
+    {
+      "component": "FFmpeg",
+      "license": "LGPL-2.1-or-later",
+      "source": "https://ffmpeg.org/legal.html"
+    },
+    {
+      "component": "Mbed TLS",
+      "license": "Apache-2.0",
+      "source": "https://github.com/Mbed-TLS/mbedtls"
+    }
+  ],
+  "files": {
+    "libavcodec.dylib": "c2c3a8b48e67d54ad4b010e12513ebb24331d5175448d85ed6a5fa047e8b61f6",
+    "libavfilter.dylib": "b7ffb906b61b703a857c3d6096c6e9a0e51b578e0ca5d05bf44bbd3bbd88c886",
+    "libavformat.dylib": "f5ae783071fd94a40bb2fa60b5494ec1e0b4b5f0817ea621fec76adb65c0bc94",
+    "libavutil.dylib": "10614bc0c0ae63d5ae02625f6995c3c4814c31f2696d958d3de7a4df4d4c5da5",
+    "libmbedcrypto.dylib": "d0bab68007028bd93fa9c13858d1727f8565e961b0fdc6b1a4303a3793655241",
+    "libmbedtls.dylib": "0824ec41db4b4289d25b7cbbbe49fa612bbd9befb79c5afa81e3c829d6f661e5",
+    "libmbedx509.dylib": "55409892e4800a87244dab571ba17b09f276a068a94033c7f9e48a4971dd95b4",
+    "libmpv.dylib": "8958019fcdaae1512a23f596842413f437abc7647abc41dc9d697c3a80132357",
+    "libswresample.dylib": "f08d31f09e4e2ed3ec7909ae97e7af3388170f88876031068df9a84fc024b49c",
+    "libswscale.dylib": "8b93899d5897614e0816249b54f789f1108ce16dcaf40bf3c731e028e045953d"
+  }
+}

@@ -1,0 +1,125 @@
+# cargo-deny configuration for the Echo workspace.
+#
+# This is the single config file used by both `cargo deny check` and
+# `cargo deny check advisories`. Run from the repo root.
+#
+# License policy: Echo itself is licensed `MIT OR Apache-2.0` (root
+# Cargo.toml). The allow list below accepts every license that appears in the
+# current transitive crate graph plus the common permissive licenses we expect
+# future crates to carry. Because every crate in the lockfile declares an
+# SPDX `license` expression (verified via `cargo metadata`), and the
+# `accept`-style of cargo-deny 0.20.x denies everything not explicitly
+# allowed, the effective policy is "permissive vacuously-safe" — any crate
+# whose license is not in the allow list fails the check and must be
+# explicitly justified, which is exactly the belt-and-suspenders we want for
+# desktop repackaging.
+#
+# NOTE ON `unlicensed`: cargo-deny 0.20.x removed the `unlicensed = "warn"`
+# and `allow-osi-fsf-free` knobs from `[licenses]` — a crate whose license
+# cannot be confidently determined is unconditionally an error. That stricter
+# default is what we want: every crate in the lockfile must carry a real SPDX
+# `license` expression that resolves to one of the allowed identifiers below.
+# The private/workspace members are exempted via `[licenses.private] ignore =
+# true` because their `license.workspace = true` indirection is resolved from
+# the workspace manifest at the repository level.
+#
+# libmpv (LGPL-2.1+ / ISC) is bundled LATER as the platform player dependency
+# and is NOT a cargo dependency, so it is intentionally not covered here. Its
+# source, checksum, ABI and license are fixed separately by task 1.10.
+
+[graph]
+# Analyze the full graph but constrain evaluation to the desktop targets we
+# actually ship on (macOS universal, Windows x64, Linux x64). Target-only
+# dependencies used exclusively on other platforms are pruned.
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-pc-windows-msvc",
+  "x86_64-unknown-linux-gnu",
+]
+
+[sources]
+# Only crates.io (the default registry) and workspace path members are
+# acceptable. Git dependencies or unknown registries are a licensing/supply-
+# chain red flag and are denied outright.
+unknown-registry = "deny"
+unknown-git = "deny"
+
+[bans]
+# single-version-per-crate lint: multiple versions of the same crate currently
+# only occur for `syn` (2.x and 3.x, two different major lines used by two
+# different proc-macro dependencies). Warn, do not deny, so a legitimate major
+# split does not break the check but is surfaced for review.
+multiple-versions = "warn"
+# cargo-deny's built-in duplicate-source detection (the deprecated
+# `duplicate-sources` key was removed in 0.17+); the sources check above covers
+# unknown registries/git.
+skip = []
+skip-tree = []
+
+[advisories]
+# cargo-deny's own RustSec advisory checks (`cargo deny check advisories`),
+# mirrored by `cargo audit`. Yanked crate versions are a hard error.
+yanked = "deny"
+# Tauri's current Linux backend still pulls GTK3 and `unic` crates that RustSec
+# marks unmaintained. They are not CVEs, have no safe upstream replacement yet,
+# and are not linked into the macOS Gate artifact. Keep this narrow, explicit
+# list in sync with the equivalent `cargo audit --ignore` arguments in 1.7;
+# all vulnerability advisories continue to block the build.
+ignore = [
+  "RUSTSEC-2024-0370",
+  "RUSTSEC-2024-0411",
+  "RUSTSEC-2024-0412",
+  "RUSTSEC-2024-0413",
+  "RUSTSEC-2024-0414",
+  "RUSTSEC-2024-0415",
+  "RUSTSEC-2024-0416",
+  "RUSTSEC-2024-0417",
+  "RUSTSEC-2024-0418",
+  "RUSTSEC-2024-0419",
+  "RUSTSEC-2024-0420",
+  "RUSTSEC-2025-0075",
+  "RUSTSEC-2025-0080",
+  "RUSTSEC-2025-0081",
+  "RUSTSEC-2025-0098",
+  "RUSTSEC-2025-0100",
+]
+# Advisory DB fetching needs network on the first run; scripts/verify/checks/
+# task-1.7.mjs reports "offline" gracefully if the fetch cannot complete, and
+# gates only on the offline-safe local checks.
+
+[licenses]
+# SPDX license expressions accepted for every crate in the graph. The set
+# reflects Echo's `MIT OR Apache-2.0` stance plus the other permissive
+# licenses common in the crates-io ecosystem (ISC, BSD-*, Zlib, Unicode-*,
+# Unlicense, CC0, 0BSD, MPL-2.0, ...) so adding a well-behaved dependency
+# does not require a config churn. Current lockfile-only special-cases that
+# parse as expressions and are covered by the disjunction of their parts:
+# `(MIT OR Apache-2.0) AND Unicode-3.0` (unicode-ident), `Unlicense OR MIT`
+# (memchr), `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT`
+# (linux-raw-sys, rustix) and the MIT-only tokio-rs family (tracing*, slab).
+allow = [
+  "MIT",
+  "MIT-0",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+  "ISC",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "Zlib",
+  "Unicode-3.0",
+  "Unlicense",
+  "CC0-1.0",
+  "0BSD",
+  "MPL-2.0",
+]
+# How closely license text must match the canonical SPDX text before it counts.
+confidence-threshold = 0.8
+# Workspace/private path members (echo-app, echo-core, echo-desktop) carry
+# `license.workspace = true`; cargo-deny resolves their license via the
+# workspace manifest, so mark them private and ignore their individual
+# license-file scanning. They are covered by the same repository policy as
+# their published workspace manifest.
+[licenses.private]
+ignore = true

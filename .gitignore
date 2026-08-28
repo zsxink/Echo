@@ -57,3 +57,8 @@ env/
 *.tmp
 *.temp
 .DS_Store
+
+# Rust / Cargo
+/target/
+**/target/
+Cargo.lock.orig

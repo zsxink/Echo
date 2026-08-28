@@ -1,0 +1,6 @@
+# Pin the Rust toolchain so builds are reproducible across machines and CI.
+# Use stable; update deliberately, in lockstep with Cargo.toml `rust-version`.
+[toolchain]
+channel = "1.96.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

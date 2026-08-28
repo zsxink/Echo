@@ -1,0 +1,26 @@
+/* Echo design tokens. Full theme system (coral / deep cobalt / turquoise) is
+   built in task 10.1 from the brand spec; this placeholder establishes the
+   token surface so the renderer loads with an explicit background. */
+:root {
+  --echo-color-bg: #fdf6f0;
+  --echo-color-fg: #2a2420;
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--echo-color-bg);
+  color: var(--echo-color-fg);
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+}

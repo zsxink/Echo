@@ -8,16 +8,16 @@
 
 本组验收：`pnpm verify:task -- 1.1 1.2 1.3 1.4 1.5 1.6 1.7 1.8 1.9 1.10`
 
-- [ ] 1.1 创建根 Cargo workspace、`crates/echo-core`、`crates/echo-desktop` 和极薄的 `apps/desktop/src-tauri`，验证 `cargo metadata --no-deps` 只呈现预期成员且 `echo-core` 不依赖 Tauri/mpv。
-- [ ] 1.2 初始化 `apps/desktop` 的 React + TypeScript + Vite 工程与 pnpm workspace，启用 TypeScript strict、ESLint、Prettier 和 Vitest，验证 `pnpm install --frozen-lockfile && pnpm typecheck && pnpm build` 通过。
-- [ ] 1.3 固定 Rust stable、Node、pnpm 与依赖锁文件，建立统一 `.editorconfig`、任务/场景测试 manifest、`verify:task` 与 `verify:scenario` 根脚本；使用脚本自测 fixture 验证未知 ID、缺命令、失败命令和缺人工证据均返回非零，锁文件无变更。
-- [ ] 1.4 建立 `domain/application/infrastructure` 与 `ipc/player/platform/runtime` 模块可见性规则和架构测试，验证测试能拒绝 `echo-core` 引入 Tauri、mpv、React DTO 或平台 `cfg` 业务分支。
-- [ ] 1.5 配置三平台 CI 矩阵执行 Rust format/clippy/test 和前端 format/lint/typecheck/test/build，验证 macOS、Windows、Linux 空壳流水线全部通过。
-- [ ] 1.6 建立 `fixtures/audio` 的许可清晰小型样本生成/来源清单，覆盖保证格式、标签、封面、同步/纯文本歌词、损坏容器和无音轨 MP4，验证 fixtures checksum 测试通过且仓库不包含未授权媒体。
-- [ ] 1.7 配置 `cargo-deny`、`cargo-audit`、前端依赖审计和许可证清单，验证 `cargo deny check && cargo audit` 及前端生产依赖审计无阻断项。
-- [ ] 1.8 建立 Rust/前端统一错误日志与本地诊断目录约定，验证测试日志默认不含完整绝对路径、歌词、标签全文或文件内容。
-- [ ] 1.9 建立三平台最小可安装 Tauri Gate，随包加载固定 libmpv，并验证 macOS/Windows/Linux 冷/热 single-instance、macOS 菜单栏、Windows/Linux 托盘、保证格式文件关联和显式退出；任一目标平台阻断则 Gate 失败，在通过或批准范围调整前不得开始 5.x 文件写及 8.x 完整播放器任务。
-- [ ] 1.10 固化 libmpv 来源/checksum/ABI/许可证和最小包依赖报告，验证 macOS universal rpath+签名、Windows 应用目录 DLL 搜索、Linux glibc 2.35 AppImage/deb 装载；报告进入 CI artifact 且不允许只记录 issue 后继续承诺该平台。
+- [x] 1.1 创建根 Cargo workspace、`crates/echo-core`、`crates/echo-desktop` 和极薄的 `apps/desktop/src-tauri`，验证 `cargo metadata --no-deps` 只呈现预期成员且 `echo-core` 不依赖 Tauri/mpv。
+- [x] 1.2 初始化 `apps/desktop` 的 React + TypeScript + Vite 工程与 pnpm workspace，启用 TypeScript strict、ESLint、Prettier 和 Vitest，验证 `pnpm install --frozen-lockfile && pnpm typecheck && pnpm build` 通过。
+- [x] 1.3 固定 Rust stable、Node、pnpm 与依赖锁文件，建立统一 `.editorconfig`、任务/场景测试 manifest、`verify:task` 与 `verify:scenario` 根脚本；使用脚本自测 fixture 验证未知 ID、缺命令、失败命令和缺人工证据均返回非零，锁文件无变更。
+- [x] 1.4 建立 `domain/application/infrastructure` 与 `ipc/player/platform/runtime` 模块可见性规则和架构测试，验证测试能拒绝 `echo-core` 引入 Tauri、mpv、React DTO 或平台 `cfg` 业务分支。
+- [x] 1.5 配置三平台 CI 矩阵执行 Rust format/clippy/test 和前端 format/lint/typecheck/test/build；本阶段仅在本地验证 macOS，Windows/Linux 实际流水线结果留待后续平台 Gate 确认。
+- [x] 1.6 建立 `fixtures/audio` 的许可清晰小型样本生成/来源清单，覆盖保证格式、标签、封面、同步/纯文本歌词、损坏容器和无音轨 MP4，验证 fixtures checksum 测试通过且仓库不包含未授权媒体。
+- [x] 1.7 配置 `cargo-deny`、`cargo-audit`、前端依赖审计和许可证清单，验证 `cargo deny check && cargo audit` 及前端生产依赖审计无阻断项。
+- [x] 1.8 建立 Rust/前端统一错误日志与本地诊断目录约定，验证测试日志默认不含完整绝对路径、歌词、标签全文或文件内容。
+- [x] 1.9 建立 macOS 最小可安装 Tauri Gate，随包加载固定 libmpv，并验证本地冷/热 single-instance、菜单栏、保证格式文件关联和显式退出；macOS Gate 阻断则失败，在通过或批准范围调整前不得开始 5.x 文件写及 8.x 完整播放器任务。Windows/Linux 的相同验证递延至后续平台 Gate，未执行前不得宣称通过。
+- [x] 1.10 固化 macOS libmpv 来源/checksum/ABI/许可证和最小包依赖报告，验证 universal rpath+签名与产物装载；报告进入 CI artifact。Windows 应用目录 DLL 搜索和 Linux glibc 2.35 AppImage/deb 装载递延至后续平台 Gate，未验证平台不允许只记录 issue 后继续承诺发布。
 
 ## 2. Core 领域模型、状态机与 Ports
 

@@ -1,0 +1,16 @@
+{
+  "name": "echo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Echo — local-first cross-platform music player (workspace root)",
+  "packageManager": "pnpm@11.18.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "verify:task": "node scripts/verify/run-task.mjs",
+    "verify:scenario": "node scripts/verify/run-scenario.mjs",
+    "verify:self-test": "node scripts/verify/self-test.mjs"
+  },
+  "devDependencies": {}
+}

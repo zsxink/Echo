@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Root Cargo workspace, crates and thin src-tauri",
+      "commands": [
+        {
+          "desc": "assert workspace members and echo-core dependency boundary",
+          "cmd": "node scripts/verify/checks/task-1.1.mjs"
+        }
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "React + TypeScript + Vite frontend workspace",
+      "commands": [
+        {
+          "desc": "typecheck, lint, format check, test and build",
+          "cmd": "node scripts/verify/checks/task-1.2.mjs"
+        }
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Toolchain pinning, editorconfig, task/scenario manifests and verify runners",
+      "commands": [
+        {
+          "desc": "toolchain pinning, editorconfig, verify runners, self-test, frozen-lockfile",
+          "cmd": "node scripts/verify/checks/task-1.3.mjs"
+        }
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Module visibility rules and architecture tests",
+      "commands": [
+        {
+          "desc": "echo-core arch tests (layering, forbidden deps, platform cfg)",
+          "cmd": "node scripts/verify/checks/task-1.4.mjs"
+        }
+      ]
+    },
+    {
+      "id": "1.5",
+      "title": "Three-platform CI matrix (Rust + frontend quality pipelines)",
+      "commands": [
+        {
+          "desc": "ci.yml structure plus local full-quality pipeline",
+          "cmd": "node scripts/verify/checks/task-1.5.mjs"
+        }
+      ]
+    },
+    {
+      "id": "1.6",
+      "title": "License-clear audio fixtures with checksum verification",
+      "commands": [
+        {
+          "desc": "deterministic regen, checksum verify, coverage + manifest guard",
+          "cmd": "node scripts/verify/checks/task-1.6.mjs"
+        }
+      ]
+    },
+    {
+      "id": "1.7",
+      "title": "Rust and frontend dependency audit plus license inventory",
+      "commands": [
+        {
+          "desc": "cargo-deny, cargo-audit, production dependency audit and license inventory",
+          "cmd": "node scripts/verify/checks/task-1.7.mjs"
+        }
+      ]
+    },
+    {
+      "id": "1.8",
+      "title": "Unified error logging + local diagnostics directory convention with privacy tests",
+      "commands": [
+        {
+          "desc": "LOGGING.md policy, Rust + frontend privacy tests, clippy + fmt",
+          "cmd": "node scripts/verify/checks/task-1.8.mjs"
+        }
+      ]
+    },
+    {
+      "id": "1.9",
+      "title": "macOS minimal installable Tauri Gate",
+      "commands": [
+        {
+          "desc": "bundle, universal libmpv, file associations, tray and cold/hot single-instance Gate",
+          "cmd": "node scripts/verify/checks/task-1.9.mjs"
+        }
+      ]
+    },
+    {
+      "id": "1.10",
+      "title": "macOS libmpv provenance, ABI, signature and dependency report",
+      "commands": [
+        {
+          "desc": "pinned source/checksums/license inventory and bundled dylib report",
+          "cmd": "node scripts/verify/checks/task-1.10.mjs"
+        }
+      ]
+    }
+  ],
+  "scenarios": []
+}

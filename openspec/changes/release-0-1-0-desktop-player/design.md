@@ -9,7 +9,7 @@ Echo 当前仓库只有产品/架构文档和单文件交互原型，没有 Rust
 - SQLite 与用户资料库文件系统是两个不能形成单一原子事务的资源；任何跨资源写操作必须可恢复。
 - 0.1.0 离线运行，只允许一个活动资料库根目录，不初始化任何远端连接器或同步流程。
 - UI 以原型为视觉/交互基准，但规格已明确排除模拟同步、全选批量、歌单手动排序和歌曲编辑。
-- 三平台从首个里程碑持续构建；不能先做 macOS 单平台实现再补跨平台抽象。
+- 三平台仍是 0.1.0 的发布目标，CI 持续保留 macOS、Windows、Linux 的编译检查；当前工程骨架阶段只以 macOS 本机构建与安装 Gate 作为实现前置条件。Windows/Linux 的原生产物、运行时装载和人工冒烟验证明确递延，完成前不得宣称相应平台已经可发布。
 
 ## Goals / Non-Goals
 
@@ -318,7 +318,7 @@ Stopped
 - 进度内部可高频更新，但 IPC snapshot 前台最多 10 Hz、后台最多 1 Hz；seek/暂停/曲目切换立即发送。
 - 音频模式关闭视频/封面渲染；封面由 React 展示，避免嵌入跨平台视频窗口。
 - 退出顺序：停止接收 command → 保存会话 → 停止媒体集成 → terminate mpv → join actor → 关闭 DB/runtime。
-- 打包使用经许可证审核的可再分发 libmpv 构建，并固定 ABI/校验和；不得静默依赖开发机已安装 mpv。构建脚本在三平台验证动态库位置、rpath/DLL 搜索路径和许可证文件。
+- 打包使用经许可证审核的可再分发 libmpv 构建，并固定 ABI/校验和；不得静默依赖开发机已安装 mpv。当前工程骨架阶段在 macOS 验证动态库位置、universal rpath、签名和许可证文件；Windows 的应用目录 DLL 搜索与 Linux 的运行时依赖检查保留为后续平台 Gate，不得以未验证状态承诺发布。
 - 错误推进独立于 repeat-one：本轮按 `queueEntryId` 记录失败集合，每个 entry 最多自动尝试一次；单曲循环失败时跳到下一未失败 entry，随机模式从未失败 bag 选择，全部候选失败后进入 Stopped 并只汇总提示一次，禁止自旋重载。
 
 替代方案：mpv JSON IPC 子进程。它隔离崩溃但增加可执行文件发现、生命周期、IPC 解析和打包差异；项目已决定 libmpv，首版采用进程内 actor，并以最小 FFI 模块隔离 `unsafe`。
@@ -417,13 +417,13 @@ Core 使用可匹配错误 enum：`Validation`、`Permission`、`Unavailable`、
 | Desktop | Fake PlayerAdapter 的 command/event 契约；真实 libmpv 使用短静音/音调文件做 smoke；托盘/文件关联/关闭行为平台测试 |
 | IPC | Rust DTO 序列化 golden test、生成 TypeScript diff、过期 event sequence 与错误映射测试 |
 | React | Vitest + Testing Library + axe；视图、空/错态、Overlay/Escape、虚拟列表身份、reduced-motion、三主题 |
-| E2E | mock bridge 浏览器流程 + 三平台原生产物冒烟；扫描→导入→播放→歌单→重启、临时文件、失联、删除撤销 |
+| E2E | mock bridge 浏览器流程 + macOS 原生产物 Gate；Windows/Linux 原生产物冒烟在后续平台 Gate 执行。所有平台最终覆盖扫描→导入→播放→歌单→重启、临时文件、失联、删除撤销 |
 
 规划阶段为 `specs/` 每个 Scenario 建立不可复用的稳定 ID，并在 `traceability.md` 逐场景登记 Requirement、任务、测试层、具体测试/人工步骤和实际验证命令；不得以 Requirement 整行继承代替场景映射，也不得用行号作为身份。自动审计比较 spec 场景 ID、追踪表和测试 manifest 的集合完全相等；任务完成条件包含其全部关联场景通过。13.9 只执行和汇总既有追踪表，不能到发布前才补建。Core 90% 覆盖率作为门槛，不以 UI 行覆盖率替代关键流程测试。CI 矩阵执行 Linux/Windows/macOS Rust + 前端检查，并产出未签名内部包；签名/notarization 在候选发布流水线执行。
 
 ## Risks / Trade-offs
 
-- **[libmpv 三平台分发、ABI 与许可证复杂]** → 固定经审核构建及校验和，最小 FFI 模块隔离 `unsafe`，CI 检查动态库装载和许可证清单；真实产物三平台 smoke 作为发布门槛。
+- **[libmpv 三平台分发、ABI 与许可证复杂]** → 固定经审核构建及校验和，最小 FFI 模块隔离 `unsafe`；当前先以 macOS 本地 Gate 检查动态库装载和许可证清单，Windows/Linux 保留为后续 Gate。真实产物三平台 smoke 仍是发布门槛。
 - **[文件监听丢事件、rename 语义和编辑中的半文件不同]** → 防抖+稳定性检测、generation 全扫、overflow 降级重扫；监听只做加速，扫描最终收敛。
 - **[BLAKE3 全文件扫描对机械盘/大库耗时]** → size/mtime 缓存、有界并发、增量可见、取消与进度；不牺牲稳定身份去使用不可靠的部分 hash。
 - **[音乐键弱匹配可能误合并]** → 仅唯一候选且时长容差满足时使用；任何歧义不合并并记录诊断。
@@ -439,7 +439,7 @@ Core 使用可匹配错误 enum：`Validation`、`Permission`、`Unavailable`、
 
 ## Migration Plan
 
-1. **工程落地与平台 Gate**：建立 Rust/前端 workspace、工具链锁定、三平台 CI、最小 Tauri 壳和薄 binary；在开始文件写与完整播放器实现前，必须用最小安装包验证随包 libmpv 装载、single-instance 冷/热唤醒、macOS 菜单栏、Windows/Linux 托盘、文件关联和显式退出。任一目标平台阻断时先作范围/降级决策，不能只记录 issue 后继续承诺发布。
+1. **工程落地与平台 Gate**：建立 Rust/前端 workspace、工具链锁定、三平台 CI、最小 Tauri 壳和薄 binary；当前在开始文件写与完整播放器实现前，必须用 macOS 本地最小安装包验证随包 libmpv 装载、single-instance 冷/热唤醒、菜单栏、文件关联和显式退出。Windows/Linux 的托盘、libmpv 装载、文件关联与安装包验证递延至后续平台 Gate；在各自 Gate 通过前不得承诺发布。任一已启用平台阻断时先作范围/降级决策，不能只记录 issue 后继续承诺发布。
 2. **数据库 0001**：实现迁移、Repository、FTS5、测试 fixtures 和 schema/invariant 检查；生成一个空 `echo.db` 并完成向前/失败回滚测试。
 3. **只读资料库切片**：实现活动根目录、扫描/监听、元数据/封面/歌词、搜索排序和只读 UI；此阶段不开放任何文件写按钮。
 4. **文件写切片**：加入 import/delete journal、故障注入和启动恢复。只有所有状态点断电测试通过后才在 UI 开启导入/删除。

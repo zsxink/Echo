@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Echo",
+  "version": "0.1.0",
+  "identifier": "org.echo-player.echo",
+  "build": {
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Echo",
+        "width": 1180,
+        "height": 760,
+        "minWidth": 760,
+        "minHeight": 560,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self'; img-src 'self' asset: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; media-src 'self' asset:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "icon": ["icons/icon.png"],
+    "fileAssociations": [
+      { "ext": ["mp3"], "mimeType": "audio/mpeg", "name": "MP3 音频", "role": "Viewer" },
+      { "ext": ["flac"], "mimeType": "audio/flac", "name": "FLAC 音频", "role": "Viewer" },
+      { "ext": ["m4a"], "mimeType": "audio/mp4", "name": "M4A 音频", "role": "Viewer" },
+      { "ext": ["ogg", "opus"], "mimeType": "audio/ogg", "name": "Ogg 音频", "role": "Viewer" },
+      { "ext": ["wav"], "mimeType": "audio/wav", "name": "WAV 音频", "role": "Viewer" }
+    ],
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "files": {
+        "Frameworks/libavcodec.dylib": "vendor/libmpv/macos/libavcodec.dylib",
+        "Frameworks/libavfilter.dylib": "vendor/libmpv/macos/libavfilter.dylib",
+        "Frameworks/libavformat.dylib": "vendor/libmpv/macos/libavformat.dylib",
+        "Frameworks/libavutil.dylib": "vendor/libmpv/macos/libavutil.dylib",
+        "Frameworks/libmbedcrypto.dylib": "vendor/libmpv/macos/libmbedcrypto.dylib",
+        "Frameworks/libmbedtls.dylib": "vendor/libmpv/macos/libmbedtls.dylib",
+        "Frameworks/libmbedx509.dylib": "vendor/libmpv/macos/libmbedx509.dylib",
+        "Frameworks/libmpv.dylib": "vendor/libmpv/macos/libmpv.dylib",
+        "Frameworks/libswresample.dylib": "vendor/libmpv/macos/libswresample.dylib",
+        "Frameworks/libswscale.dylib": "vendor/libmpv/macos/libswscale.dylib",
+        "Resources/third-party/libmpv/NOTICE.md": "vendor/libmpv/macos/NOTICE.md"
+      }
+    }
+  }
+}
