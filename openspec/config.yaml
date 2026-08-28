@@ -1,32 +1,47 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Echo 是本地优先的跨平台音乐播放器，不提供账号体系或流媒体曲库。
+  本地音乐库是产品中心；远端仅用于用户自有设备间同步。
+  Core 必须保持跨平台、与 UI 和播放器无关，播放能力由各端负责。
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  项目级事实来源：
+  - docs/PRODUCT.md：产品定位与原则
+  - docs/DESIGN.md：架构与技术设计
+  - docs/ROADMAP.md：阶段范围、非目标与验收标准
+  - docs/interface-terminology.md、docs/prototype/：界面术语与交互基准
+  - openspec/CODE_STANDARDS.md：代码规范与交付门槛
 
-# Per-operation guidance (optional)
-# Add advisory guidance for how apply and archive work should be conducted.
-# This is separate from artifact rules above.
-# Example:
-#   operations:
-#     apply:
-#       guidance:
-#         - Keep test summaries concise
-#     archive:
-#       guidance:
-#         - Summarize the archive outcome before finishing
+  创建或更新 change 前应读取相关事实来源。功能、技术细节、边界条件、
+  兼容性和验收标准应落在 OpenSpec 产物中，不复制到根级 Agent 指引。
+
+rules:
+  proposal:
+    - 说明变更目标、全局影响、范围和非目标
+    - 指出涉及的产品、架构、路线图或界面基准
+    - 涉及代码时识别受影响的模块边界和代码规范
+    - 只规划，不在 propose 阶段实现
+  specs:
+    - 使用可验证的需求与场景表达行为和验收标准
+    - 明确边界条件、异常路径及必要的兼容性要求
+  design:
+    - 记录关键技术决策、取舍、数据流和跨模块影响
+    - 遵守 docs/DESIGN.md；Core 不依赖 UI 或播放器
+    - 涉及代码时遵守 openspec/CODE_STANDARDS.md，并说明接口、迁移或兼容影响
+    - 明确变更所属分层、依赖方向、抽象边界，以及所用设计模式解决的问题
+    - 新增跨层依赖、具体实现依赖或绕过既有抽象时必须说明理由
+  tasks:
+    - 按依赖顺序拆分，并为每组实现任务包含对应验证
+    - 写明实际执行的 format、lint、类型检查、测试或构建命令
+    - 实现步骤应保持分层，不把领域逻辑、基础设施和界面修改混成不可验证的大任务
+
+operations:
+  apply:
+    guidance:
+      - 仅实现已批准 change 中的任务，不自行扩大范围
+      - 开始编码前读取 openspec/CODE_STANDARDS.md
+      - 实现与审查时检查分层、依赖倒置、抽象边界和设计模式是否符合 design
+      - 保持规格、项目文档与实现一致，并执行与风险相称的验证
+  archive:
+    guidance:
+      - 归档前确认任务、验收标准和必要的规格同步均已完成
