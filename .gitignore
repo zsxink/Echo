@@ -1,0 +1,57 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+.venv/
+env/
+.env
+.env.*
+!.env.example
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Editors / IDE
+.idea/
+.vscode/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+.tern-project
+.project
+.classpath
+.settings/
+
+# AI tools
+.workbuddy/
+.impeccable/
+
+# Logs & temp
+*.log
+*.tmp
+*.temp
+.DS_Store

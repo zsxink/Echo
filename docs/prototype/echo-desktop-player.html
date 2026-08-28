@@ -97,13 +97,13 @@ button, input { font: inherit; }
 button { color: inherit; }
 button:focus-visible, input:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .app { height: 100dvh; min-height: 560px; display: grid; grid-template-columns: 232px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) 88px; background: var(--bg); }
-.sidebar { grid-row: 1; min-height: 0; overflow: hidden; padding: var(--space-6) var(--space-4); border-right: 1px solid var(--border-soft); display: flex; flex-direction: column; gap: var(--space-8); background: var(--bg); }
-.brand { display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-2); font: 700 var(--text-xl)/1 var(--font-display); letter-spacing: var(--tracking-display); }
+.sidebar { grid-row: 1; min-height: 0; overflow: hidden; padding: var(--space-4); border-right: 1px solid var(--border-soft); display: flex; flex-direction: column; gap: var(--space-2); background: var(--bg); }
+.brand { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-1) var(--space-2); font: 700 var(--text-xl)/1 var(--font-display); letter-spacing: var(--tracking-display); }
 .brand-mark { width: 28px; height: 28px; display: grid; place-items: center; flex: none; background: var(--bg); color: var(--accent); border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .brand-mark svg { width: 20px; height: 20px; display: block; }
-.nav-group { display: grid; gap: var(--space-1); }
-.nav-label { padding: 0 var(--space-3) var(--space-2); color: var(--muted); font: 600 var(--text-xs)/1 var(--font-mono); letter-spacing: .08em; }
-.nav-section-head { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-2) var(--space-2); }
+.nav-group { display: grid; gap: 2px; }
+.nav-label { padding: var(--space-1) var(--space-3) var(--space-1); color: var(--muted); font: 600 var(--text-xs)/1 var(--font-mono); letter-spacing: .08em; }
+.nav-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-1); padding: var(--space-1) var(--space-2) var(--space-1); }
 .nav-section-head .nav-label { padding: 0 var(--space-1); }
 .playlist-create { width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); display: grid; place-items: center; cursor: pointer; position: relative; }
 .playlist-create svg { width: 16px; height: 16px; }
@@ -115,7 +115,7 @@ button:focus-visible, input:focus-visible { outline: none; box-shadow: var(--foc
 .nav-item.active { color: var(--accent-strong); background: var(--surface-warm); font-weight: 650; }
 .nav-item.active svg { color: var(--accent-strong); }
 .playlist-navigation { min-height: 0; flex: 1 1 auto; grid-template-rows: auto minmax(0, 1fr); }
-.playlist-list { min-height: 0; display: grid; align-content: start; gap: var(--space-1); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: transparent transparent; }
+.playlist-list { min-height: 0; display: grid; align-content: start; gap: 2px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: transparent transparent; }
 .playlist-list:hover, .playlist-list:focus-within { scrollbar-color: color-mix(in oklab, var(--muted), transparent 42%) transparent; }
 .playlist-list::-webkit-scrollbar { width: 8px; }
 .playlist-list::-webkit-scrollbar-track { background: transparent; }
@@ -314,12 +314,11 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 .menu-action:hover { background: var(--surface); color: var(--fg); }
 .menu-action svg { width: 16px; height: 16px; flex: none; }
 .menu-action.danger:hover { background: var(--surface-warm); color: var(--danger); }
-.playlist-submenu { margin-top: var(--space-1); padding: var(--space-2) 0 0; border-top: 1px solid var(--border-soft); }
-.playlist-submenu[hidden] { display: none; }
-.playlist-menu-title { margin: 0; padding: 0 var(--space-3) var(--space-2); color: var(--muted); font: 600 var(--text-xs)/1 var(--font-mono); }
-.playlist-option.added { color: var(--accent-strong); background: var(--surface-warm); }
-.playlist-overview { padding: 0 var(--space-1); border: 0; background: transparent; color: var(--muted); font: 600 var(--text-xs)/1 var(--font-mono); letter-spacing: .08em; text-align: left; cursor: pointer; }
-.playlist-overview:hover, .playlist-overview.active { color: var(--fg); }
+.playlist-overview { min-height: 40px; flex: 1 1 auto; display: flex; align-items: center; justify-content: space-between; gap: var(--space-1); padding: 0 var(--space-3); border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font: 600 var(--text-xs)/1 var(--font-mono); letter-spacing: .08em; text-align: left; cursor: pointer; transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
+.playlist-overview svg { width: 14px; height: 14px; color: currentColor; opacity: 0; transform: translateX(-3px); transition: opacity var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard); }
+.playlist-overview:hover { background: var(--surface); color: var(--fg); }
+.playlist-overview:hover svg, .playlist-overview:focus-visible svg, .playlist-overview.active svg { opacity: 1; transform: translateX(0); }
+.playlist-overview.active { color: var(--accent-strong); background: var(--surface-warm); font-weight: 650; }
 .playlist-directory { min-height: 0; flex: 1 1 auto; overflow-y: auto; padding-top: var(--space-2); }
 .playlist-directory[hidden] { display: none; }
 .playlist-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
@@ -363,6 +362,41 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 .playlist-cover-preview:hover .playlist-cover-hint-overlay, .playlist-cover-preview:focus-visible .playlist-cover-hint-overlay { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .playlist-cover-hint-overlay { transition: none; } }
 .playlist-name-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: calc(var(--space-5) * .4); }
+.playlist-picker-dialog { position: fixed; z-index: 32; inset: 0; display: grid; place-items: center; padding: var(--space-5); }
+.playlist-picker-dialog[hidden] { display: none; }
+.playlist-picker-dialog::before { content: ""; position: absolute; inset: 0; background: color-mix(in oklab, var(--fg), transparent 64%); }
+.playlist-picker-panel { position: relative; width: min(100%, 372px); max-height: min(520px, calc(100dvh - var(--space-12))); display: flex; flex-direction: column; box-sizing: border-box; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); box-shadow: var(--elev-raised); }
+.playlist-picker-head { flex: none; margin-bottom: var(--space-1); }
+.playlist-picker-head h2 { margin: 0; font: 700 var(--text-lg)/var(--leading-tight) var(--font-display); }
+.playlist-picker-sub { flex: none; margin: 0 0 var(--space-1); color: var(--fg-2); font-size: var(--text-sm); }
+.playlist-picker-list { display: grid; gap: 1px; min-height: 0; max-height: 221px; overflow-y: auto; scrollbar-width: none; padding: 0; }
+.playlist-picker-list::-webkit-scrollbar { display: none; }
+.playlist-picker-option { display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: 36px; padding: 0 var(--space-2); box-sizing: border-box; border: 1px solid transparent; border-radius: var(--radius-md); background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard); }
+.playlist-picker-option:hover { background: var(--surface); }
+.playlist-picker-option:focus-visible { outline: none; border-color: var(--accent-strong); box-shadow: var(--focus-ring); }
+.playlist-picker-option .cover { width: 32px; height: 32px; border-radius: var(--radius-sm); }
+.playlist-picker-option .playlist-picker-copy { min-width: 0; display: grid; gap: 0; }
+.playlist-picker-option .playlist-picker-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); font-weight: 600; }
+.playlist-picker-option .playlist-picker-copy span { font-size: var(--text-xs); color: var(--fg-2); }
+.playlist-picker-check { flex: none; margin-left: auto; display: grid; width: 20px; height: 20px; place-items: center; border: 1px solid var(--border); border-radius: 50%; color: transparent; transition: color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
+.playlist-picker-option.added .playlist-picker-check { border-color: var(--accent); background: var(--accent); color: var(--accent-on); }
+.playlist-picker-option.added .playlist-picker-copy strong { color: var(--accent); }
+.playlist-picker-option:not(.added) { font-weight: 400; }
+.playlist-picker-empty { padding: var(--space-6) var(--space-3); text-align: center; color: var(--fg-2); }
+.playlist-picker-empty p { margin: 0; }
+.playlist-picker-new { flex: none; align-self: flex-start; display: flex; align-items: center; gap: var(--space-2); min-height: 32px; margin-top: 0; padding: 0 var(--space-2); border: 0; background: transparent; color: var(--accent); font: 650 var(--text-sm)/1 var(--font-body); cursor: pointer; border-radius: var(--radius-sm); }
+.playlist-picker-new:hover { background: var(--surface); }
+.playlist-picker-new:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.playlist-picker-new svg { width: 18px; height: 18px; }
+.playlist-picker-footer { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-top: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--border-soft); }
+.playlist-picker-footer-actions { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+.playlist-picker-cancel { min-height: 40px; padding: 0 var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: transparent; color: var(--fg); font: 650 var(--text-sm)/1 var(--font-body); cursor: pointer; transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard); }
+.playlist-picker-cancel:hover { background: var(--surface); border-color: var(--fg-2); }
+.playlist-picker-cancel:focus-visible { outline: none; border-color: var(--accent-strong); box-shadow: var(--focus-ring); }
+.playlist-picker-confirm { min-height: 40px; padding: 0 var(--space-5); border: 1px solid var(--accent); border-radius: var(--radius-md); background: var(--accent); color: var(--accent-on); font: 650 var(--text-sm)/1 var(--font-body); cursor: pointer; transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard); }
+.playlist-picker-confirm:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.playlist-picker-confirm:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+@media (prefers-reduced-motion: reduce) { .playlist-picker-option, .playlist-picker-check, .playlist-picker-new, .playlist-picker-cancel, .playlist-picker-confirm { transition: none; } }
 .empty-results { display: none; padding: var(--space-12); text-align: center; background: var(--bg); }
 .empty-results.show { display: block; }
 .empty-results h2 { font: 700 var(--text-xl)/var(--leading-tight) var(--font-display); margin-bottom: var(--space-2); }
@@ -686,7 +720,7 @@ body.player-mode-open .queue-popover .queue-name span { margin-top: var(--space-
       <button class="lyrics" id="lyrics-card" type="button" data-od-id="lyrics-preview" aria-label="展开歌词专注阅读" aria-pressed="false"><span class="lyrics-track" id="lyrics-track" data-od-id="lyrics-scroll-region"></span></button>
     </section>
     <section class="queue-popover" id="queue-popover" hidden data-od-id="play-queue"><div class="queue"><div class="queue-title"><div class="queue-heading"><h3>播放列表</h3><span id="queue-count">12 首</span></div><div class="queue-tools"><button class="queue-tool" id="clear-queue" data-od-id="clear-queue">清空</button></div></div><div class="queue-list" id="queue-list"><div class="queue-item"><span class="queue-cover"></span><div class="queue-name"><b>惊蛰</b><span>裘德</span></div><span class="queue-time">03:48</span></div><div class="queue-item"><span class="queue-cover queue-cover-b"></span><div class="queue-name"><b>不止一面</b><span>周深</span></div><span class="queue-time">04:02</span></div><div class="queue-item"><span class="queue-cover queue-cover-c"></span><div class="queue-name"><b>午夜飞行</b><span>新裤子</span></div><span class="queue-time">04:31</span></div><div class="queue-item"><span class="queue-cover queue-cover-b"></span><div class="queue-name"><b>测试歌曲 06</b><span>测试艺人 01</span></div><span class="queue-time">03:12</span></div><div class="queue-item"><span class="queue-cover queue-cover-c"></span><div class="queue-name"><b>测试歌曲 07</b><span>测试艺人 02</span></div><span class="queue-time">04:19</span></div><div class="queue-item"><span class="queue-cover"></span><div class="queue-name"><b>测试歌曲 08</b><span>测试艺人 03</span></div><span class="queue-time">05:26</span></div><div class="queue-item"><span class="queue-cover queue-cover-b"></span><div class="queue-name"><b>测试歌曲 09</b><span>测试艺人 04</span></div><span class="queue-time">03:33</span></div><div class="queue-item"><span class="queue-cover queue-cover-c"></span><div class="queue-name"><b>测试歌曲 10</b><span>测试艺人 05</span></div><span class="queue-time">04:40</span></div><div class="queue-item"><span class="queue-cover"></span><div class="queue-name"><b>测试歌曲 11</b><span>测试艺人 06</span></div><span class="queue-time">05:47</span></div><div class="queue-item"><span class="queue-cover queue-cover-b"></span><div class="queue-name"><b>测试歌曲 12</b><span>测试艺人 07</span></div><span class="queue-time">03:14</span></div><div class="queue-item"><span class="queue-cover queue-cover-c"></span><div class="queue-name"><b>测试歌曲 13</b><span>测试艺人 08</span></div><span class="queue-time">04:21</span></div><div class="queue-item"><span class="queue-cover"></span><div class="queue-name"><b>测试歌曲 14</b><span>测试艺人 09</span></div><span class="queue-time">05:28</span></div></div><div class="queue-empty" id="queue-empty"><strong>播放列表已空</strong><br>从曲库选择歌曲后，可随时加入列表。</div></div></section>
-    <section class="song-menu" id="song-menu" hidden role="menu" aria-label="歌曲操作菜单" data-od-id="song-action-menu"><div class="menu-song"><div class="cover" id="menu-cover"></div><div><b id="menu-title">心房</b><span id="menu-artist">陈婧霏</span></div></div><button class="menu-action" id="menu-next" type="button" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h11M4 12h11M4 18h8"/><path d="m17 16 3 2-3 2v-4Z"/></svg>下一首播放</button><button class="menu-action" id="menu-add-playlist" type="button" role="menuitem" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>添加到歌单</button><div class="playlist-submenu" id="playlist-submenu" hidden data-od-id="song-playlist-menu"><p class="playlist-menu-title">选择歌单</p><button class="menu-action playlist-option" type="button" role="menuitem" data-playlist="通勤"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5l16 7-16 7Z"/></svg>通勤</button><button class="menu-action playlist-option" type="button" role="menuitem" data-playlist="深夜工作"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 9 9c0-1.3-.3-2.5-.8-3.6A7 7 0 0 1 12 3Z"/></svg>深夜工作</button><button class="menu-action playlist-option" type="button" role="menuitem" data-playlist="收藏的专辑"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2"/></svg>收藏的专辑</button><button class="menu-action" id="menu-create-playlist" type="button" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>新建歌单</button></div><button class="menu-action" id="menu-detail" type="button" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 10v6M12 7h.01"/></svg>显示歌曲详情</button><button class="menu-action" id="menu-folder" type="button" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h7l2 2h9v10H3z"/></svg>打开本地目录</button><button class="menu-action danger" id="menu-delete" type="button" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 7h14M10 11v5M14 11v5M8 7l1-3h6l1 3M7 7l1 13h8l1-13"/></svg>删除</button></section>
+    <section class="song-menu" id="song-menu" hidden role="menu" aria-label="歌曲操作菜单" data-od-id="song-action-menu"><div class="menu-song"><div class="cover" id="menu-cover"></div><div><b id="menu-title">心房</b><span id="menu-artist">陈婧霏</span></div></div><button class="menu-action" id="menu-next" type="button" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h11M4 12h11M4 18h8"/><path d="m17 16 3 2-3 2v-4Z"/></svg>下一首播放</button><button class="menu-action" id="menu-add-playlist" type="button" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>添加到歌单</button><button class="menu-action" id="menu-detail" type="button" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 10v6M12 7h.01"/></svg>显示歌曲详情</button><button class="menu-action" id="menu-folder" type="button" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h7l2 2h9v10H3z"/></svg>打开本地目录</button><button class="menu-action danger" id="menu-delete" type="button" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 7h14M10 11v5M14 11v5M8 7l1-3h6l1 3M7 7l1 13h8l1-13"/></svg>删除</button></section>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite" data-od-id="app-notification"><span class="toast-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M16.3 6.25v12.1c-1.62-.94-3.7-1.28-5.65-.76-3.9 1.02-6.02 4.58-4.76 7.42 1.2 2.75 5.27 3.3 8.82 1.2 2.65-1.57 4.35-4.08 4.79-6.36V9.1c3.45-.3 5.95-1.7 7.2-4.05V1.45C24.6 4.14 21.05 5.75 16.3 6.25Z" fill="currentColor"/></svg></span><span class="toast-message" id="toast-message"></span></div>
   <script>
@@ -718,7 +752,7 @@ body.player-mode-open .queue-popover .queue-name span { margin-top: var(--space-
     toastAction.addEventListener('click', () => { const action = toastActionHandler; toast.className = 'toast'; toastActionHandler = null; action?.(); });
 
     document.body.insertAdjacentHTML('beforeend', '<section class="confirmation-dialog" id="confirmation-dialog" hidden role="alertdialog" aria-modal="true" aria-labelledby="confirmation-title" aria-describedby="confirmation-description" data-od-id="confirmation-dialog"><div class="confirmation-panel"><h2 id="confirmation-title">确认操作</h2><p id="confirmation-description"></p><div class="confirmation-actions"><button class="btn" id="confirmation-cancel" type="button">取消</button><button class="btn btn-danger" id="confirmation-confirm" type="button">确认</button></div></div></section><input id="import-files" type="file" accept="audio/*" multiple hidden><input id="storage-directory-input" type="file" webkitdirectory directory hidden>');
-    document.body.insertAdjacentHTML('beforeend', '<section class="playlist-name-dialog" id="playlist-name-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="playlist-name-title" data-od-id="playlist-name-dialog"><form class="playlist-name-panel" id="playlist-name-form" novalidate><h2 id="playlist-name-title">新建歌单</h2><div class="playlist-name-field"><input id="playlist-name-input" type="text" maxlength="40" autocomplete="off" placeholder="输入歌单名称" aria-label="歌单名称" aria-describedby="playlist-name-error"><p class="playlist-name-error" id="playlist-name-error" role="alert" hidden></p></div><div class="playlist-name-actions"><button class="btn" id="playlist-name-cancel" type="button">取消</button><button class="btn btn-primary" id="playlist-name-submit" type="submit">创建歌单</button></div></form></section><section class="playlist-context-menu" id="playlist-context-menu" hidden role="menu" aria-label="歌单操作" data-od-id="playlist-context-menu"><button class="menu-action" id="playlist-rename-action" type="button" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 16.5V20h3.5L18.7 8.8l-3.5-3.5L4 16.5ZM13.8 6.7l3.5 3.5"/></svg>编辑歌单</button></section>');
+    document.body.insertAdjacentHTML('beforeend', '<section class="playlist-name-dialog" id="playlist-name-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="playlist-name-title" data-od-id="playlist-name-dialog"><form class="playlist-name-panel" id="playlist-name-form" novalidate><h2 id="playlist-name-title">新建歌单</h2><div class="playlist-name-field"><input id="playlist-name-input" type="text" maxlength="40" autocomplete="off" placeholder="输入歌单名称" aria-label="歌单名称" aria-describedby="playlist-name-error"><p class="playlist-name-error" id="playlist-name-error" role="alert" hidden></p></div><div class="playlist-name-actions"><button class="btn" id="playlist-name-cancel" type="button">取消</button><button class="btn btn-primary" id="playlist-name-submit" type="submit">创建歌单</button></div></form></section><section class="playlist-context-menu" id="playlist-context-menu" hidden role="menu" aria-label="歌单操作" data-od-id="playlist-context-menu"><button class="menu-action" id="playlist-rename-action" type="button" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 16.5V20h3.5L18.7 8.8l-3.5-3.5L4 16.5ZM13.8 6.7l3.5 3.5"/></svg>编辑歌单</button></section><section class="playlist-picker-dialog" id="playlist-picker-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="playlist-picker-title" data-od-id="playlist-picker-dialog"><div class="playlist-picker-panel"><div class="playlist-picker-head"><h2 id="playlist-picker-title">添加到歌单</h2></div><p class="playlist-picker-sub" id="playlist-picker-sub"></p><div class="playlist-picker-list" id="playlist-picker-list" role="listbox" aria-label="选择歌单"></div><div class="playlist-picker-footer"><button class="playlist-picker-new" id="playlist-picker-new" type="button" data-od-id="playlist-picker-new"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>新建歌单</button><div class="playlist-picker-footer-actions"><button class="playlist-picker-cancel" id="playlist-picker-cancel" type="button" data-od-id="playlist-picker-cancel">取消</button><button class="playlist-picker-confirm" id="playlist-picker-confirm" type="button" data-od-id="playlist-picker-confirm">确认</button></div></div></div></section>');
     const appShell = document.getElementById('app-shell');
     const confirmationDialog = document.getElementById('confirmation-dialog');
     const confirmationTitle = document.getElementById('confirmation-title');
@@ -926,17 +960,18 @@ body.player-mode-open .queue-popover .queue-name span { margin-top: var(--space-
     window.addEventListener('resize', () => { if (!window.matchMedia('(max-width: 760px)').matches) setMobileSidebar(false); });
     document.querySelectorAll('#track-body .row-actions').forEach(actions => actions.insertAdjacentHTML('beforeend', '<button class="row-action song-more" type="button" aria-label="更多歌曲操作"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg></button>'));
     const songMenu = document.getElementById('song-menu');
-    const playlistSubmenu = document.getElementById('playlist-submenu');
     const menuAddPlaylist = document.getElementById('menu-add-playlist');
+    const playlistPickerDialog = document.getElementById('playlist-picker-dialog');
+    const playlistPickerList = document.getElementById('playlist-picker-list');
+    const playlistPickerSub = document.getElementById('playlist-picker-sub');
     let menuRow = null;
     let menuTrigger = null;
-    menuAddPlaylist.setAttribute('aria-haspopup', 'menu');
-    menuAddPlaylist.setAttribute('aria-controls', 'playlist-submenu');
+    let pickerRow = null;
+    let pickerTrigger = null;
+    let pickerSelection = null;
     function closeSongMenu({ restoreFocus = false } = {}) {
       const trigger = menuTrigger;
       songMenu.hidden = true;
-      playlistSubmenu.hidden = true;
-      menuAddPlaylist.setAttribute('aria-expanded', 'false');
       trigger?.setAttribute('aria-expanded', 'false');
       menuRow = null;
       menuTrigger = null;
@@ -957,14 +992,52 @@ body.player-mode-open .queue-popover .queue-name span { margin-top: var(--space-
       button.setAttribute('aria-expanded', 'true');
       document.getElementById('menu-next').focus();
     }
-    function togglePlaylistSubmenu() {
+    function openPlaylistPicker() {
       if (!menuRow) return;
-      const open = playlistSubmenu.hidden;
-      playlistSubmenu.hidden = !open;
-      menuAddPlaylist.setAttribute('aria-expanded', String(open));
-      const addedPlaylists = new Set((menuRow.dataset.playlists || '').split('|').filter(Boolean));
-      document.querySelectorAll('.playlist-option').forEach(option => option.classList.toggle('added', addedPlaylists.has(option.dataset.playlist)));
-      if (open) { const menuRect = songMenu.getBoundingClientRect(); songMenu.style.top = `${Math.max(12, Math.min(window.innerHeight - menuRect.height - 12, menuRect.top))}px`; playlistSubmenu.querySelector('.playlist-option').focus(); }
+      const row = menuRow;
+      pickerRow = row;
+      pickerTrigger = menuTrigger;
+      pickerSelection = new Set((row.dataset.playlists || '').split('|').filter(Boolean));
+      const playlists = [...document.querySelectorAll('.playlist-item')];
+      playlistPickerSub.textContent = `将「${row.dataset.title}」添加到：`;
+      playlistPickerList.innerHTML = '';
+      if (playlists.length === 0) {
+        playlistPickerList.insertAdjacentHTML('afterbegin', '<div class="playlist-picker-empty"><p>还没有歌单，先创建一个吧。</p></div>');
+      } else {
+        playlists.forEach(item => {
+          const name = item.dataset.playlist;
+          const isAdded = pickerSelection.has(name);
+          const coverImage = getPlaylistCoverImage(name);
+          const coverClass = item.dataset.cover === 'b' ? ' cover-b' : item.dataset.cover === 'c' ? ' cover-c' : item.dataset.cover === 'd' ? ' cover-d' : item.dataset.cover === 'e' ? ' cover-e' : '';
+          const option = document.createElement('button');
+          option.type = 'button';
+          option.className = `playlist-picker-option${isAdded ? ' added' : ''}`;
+          option.setAttribute('data-od-id', `playlist-picker-option-${item.dataset.playlist.replace(/\s+/g, '-')}`);
+          option.setAttribute('role', 'option');
+          option.setAttribute('aria-selected', String(isAdded));
+          option.dataset.playlist = name;
+          option.innerHTML = `<span class="cover${coverClass}${coverImage ? ' has-image' : ''}" aria-hidden="true"></span><span class="playlist-picker-copy"><strong>${escapeHtml(name)}</strong><span>${playlistTrackCount(name)} 首歌曲</span></span><span class="playlist-picker-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 12 4.2 4.2L19 6.8"/></svg></span>`;
+          if (coverImage) { const img = document.createElement('img'); img.alt = ''; img.src = coverImage; option.querySelector('.cover').append(img); }
+          option.addEventListener('click', () => {
+            const added = pickerSelection.has(name);
+            if (added) { pickerSelection.delete(name); } else { pickerSelection.add(name); }
+            option.classList.toggle('added', !added);
+            option.setAttribute('aria-selected', String(!added));
+          });
+          playlistPickerList.append(option);
+        });
+      }
+      closeSongMenu();
+      playlistPickerDialog.hidden = false;
+      const first = playlistPickerList.querySelector('.playlist-picker-option');
+      (first || document.getElementById('playlist-picker-new')).focus();
+    }
+    function closePlaylistPicker() {
+      if (playlistPickerDialog.hidden) return;
+      playlistPickerDialog.hidden = true;
+      pickerTrigger?.focus();
+      pickerRow = null;
+      pickerTrigger = null;
     }
     function playlistCoverClass(cover) { return ['b', 'c', 'd', 'e'].includes(cover) ? ` cover-${cover}` : ''; }
     function updatePlaylistCover(name, { cover = 'a', image = null } = {}) {
@@ -974,15 +1047,6 @@ body.player-mode-open .queue-popover .queue-name span { margin-top: var(--space-
       playlist.dataset.cover = image ? '' : (['a', 'b', 'c', 'd', 'e'].includes(cover) ? cover : 'a');
       setPlaylistCoverPreview(playlist.querySelector('.playlist-cover'), playlist.dataset.cover, image, 'playlist-cover');
       if (!playlistDirectory.hidden) renderPlaylistDirectory();
-    }
-    function addPlaylistOption(name) {
-      const option = document.createElement('button');
-      option.className = 'menu-action playlist-option';
-      option.type = 'button';
-      option.setAttribute('role', 'menuitem');
-      option.dataset.playlist = name;
-      option.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 19V5l16 7-16 7Z"/></svg>${escapeHtml(name)}`;
-      document.getElementById('menu-create-playlist').before(option);
     }
     function addSongToPlaylist(name, row) {
       const names = new Set((row.dataset.playlists || '').split('|').filter(Boolean));
@@ -1090,14 +1154,49 @@ body.player-mode-open .queue-popover .queue-name span { margin-top: var(--space-
       button.title = '下一首播放';
       button.addEventListener('click', event => { event.stopPropagation(); addNextToQueue(button.closest('.track-row')); });
     });
-    menuAddPlaylist.addEventListener('click', () => togglePlaylistSubmenu());
-    playlistSubmenu.addEventListener('click', event => {
-      const option = event.target.closest('.playlist-option');
-      if (!option) return;
-      if (!menuRow) return;
-      const existed = addSongToPlaylist(option.dataset.playlist, menuRow);
-      closeSongMenu();
-      notify(existed ? '歌曲已在歌单中' : '已加入歌单');
+    menuAddPlaylist.addEventListener('click', event => { event.stopPropagation(); if (menuRow) openPlaylistPicker(); });
+    document.getElementById('playlist-picker-confirm').addEventListener('click', () => {
+      if (pickerRow && pickerSelection) {
+        pickerRow.dataset.playlists = [...pickerSelection].join('|');
+      }
+      closePlaylistPicker();
+      notify('已更新歌单');
+    });
+    document.getElementById('playlist-picker-cancel').addEventListener('click', () => {
+      closePlaylistPicker();
+    });
+    document.getElementById('playlist-picker-new').addEventListener('click', () => {
+      const sourceRow = pickerRow;
+      const origin = pickerTrigger;
+      closePlaylistPicker();
+      requestCreatePlaylist({ sourceRow, origin, addSourceSong: true });
+    });
+    playlistPickerDialog.addEventListener('keydown', event => {
+      if (event.key === 'Tab') {
+        const options = [...playlistPickerList.querySelectorAll('.playlist-picker-option')];
+        const firstOption = options[0];
+        const newButton = document.getElementById('playlist-picker-new');
+        const confirmButton = document.getElementById('playlist-picker-confirm');
+        if (event.shiftKey) {
+          if ((options.length ? document.activeElement === firstOption : document.activeElement === newButton)) {
+            event.preventDefault();
+            confirmButton.focus();
+          }
+        } else {
+          if (document.activeElement === confirmButton) {
+            event.preventDefault();
+            (firstOption || newButton).focus();
+          }
+        }
+      } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        const options = [...playlistPickerList.querySelectorAll('.playlist-picker-option')];
+        if (options.length === 0) return;
+        const index = options.indexOf(document.activeElement);
+        if (index === -1) return;
+        event.preventDefault();
+        const direction = event.key === 'ArrowDown' ? 1 : -1;
+        options[(index + direction + options.length) % options.length]?.focus();
+      }
     });
     songMenu.addEventListener('keydown', event => {
       const items = [...songMenu.querySelectorAll('[role="menuitem"]')].filter(item => !item.closest('[hidden]'));
@@ -1167,17 +1266,6 @@ body.player-mode-open .queue-popover .queue-name span { margin-top: var(--space-
     const playlistSortPopover = document.getElementById('playlist-sort-popover');
     playlistSortWrap.remove();
     const selectAllButton = document.getElementById('select-all');
-    const playlistAddButton = document.createElement('button');
-    playlistAddButton.className = 'tool-button tool-icon';
-    playlistAddButton.id = 'playlist-directory-add';
-    playlistAddButton.type = 'button';
-    playlistAddButton.hidden = true;
-    playlistAddButton.setAttribute('aria-label', '新建歌单');
-    playlistAddButton.title = '新建歌单';
-    playlistAddButton.setAttribute('data-od-id', 'playlist-directory-add');
-    playlistAddButton.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
-    selectAllButton.before(playlistAddButton);
-    playlistAddButton.addEventListener('click', event => requestCreatePlaylist({ origin: event.currentTarget }));
     const playlistCreatedOrder = new Map([...document.querySelectorAll('.playlist-item')].map((item, index) => [item, index]));
     let playlistCreationSequence = playlistCreatedOrder.size;
     let playlistSortKey = 'created';
@@ -1187,8 +1275,10 @@ body.player-mode-open .queue-popover .queue-name span { margin-top: var(--space-
     playlistOverviewButton.className = 'playlist-overview';
     playlistOverviewButton.id = 'playlist-overview';
     playlistOverviewButton.type = 'button';
-    playlistOverviewButton.textContent = '歌单';
+    playlistOverviewButton.setAttribute('aria-label', '打开全部歌单');
+    playlistOverviewButton.setAttribute('title', '打开全部歌单');
     playlistOverviewButton.setAttribute('data-od-id', 'playlist-overview');
+    playlistOverviewButton.innerHTML = '<span>歌单</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
     playlistNavLabel.replaceWith(playlistOverviewButton);
     const sortButton = document.getElementById('sort-button');
     const sortPopover = document.getElementById('sort-popover');
@@ -1376,7 +1466,6 @@ body.player-mode-open .queue-popover .queue-name span { margin-top: var(--space-
       playlistDirectory.hidden = !isPlaylistDirectory;
       playlistSortWrap.hidden = !isPlaylistDirectory;
       selectAllButton.hidden = isPlaylistDirectory;
-      playlistAddButton.hidden = !isPlaylistDirectory;
       sortWrap.hidden = isRecentAdded || isPlaylistDirectory;
       if (isPlaylistDirectory) {
         sortPopover.hidden = true;
@@ -1436,7 +1525,6 @@ body.player-mode-open .queue-popover .queue-name span { margin-top: var(--space-
       playlistCreatedOrder.set(item, playlistCreationSequence);
       bindPlaylistItem(item);
       document.getElementById('playlist-list').prepend(item);
-      addPlaylistOption(name);
       if (!playlistDirectory.hidden) renderPlaylistDirectory();
       return item;
     }
@@ -1460,11 +1548,6 @@ body.player-mode-open .queue-popover .queue-name span { margin-top: var(--space-
       item.dataset.playlist = name;
       item.dataset.view = name;
       item.querySelector('.playlist-name').textContent = name;
-      document.querySelectorAll('.playlist-option').forEach(option => {
-        if (option.dataset.playlist !== previousName) return;
-        option.dataset.playlist = name;
-        option.lastChild.textContent = name;
-      });
       document.querySelectorAll('.track-row').forEach(row => {
         const names = (row.dataset.playlists || '').split('|').filter(Boolean).map(playlist => playlist === previousName ? name : playlist);
         row.dataset.playlists = names.join('|');
@@ -1518,13 +1601,6 @@ body.player-mode-open .queue-popover .queue-name span { margin-top: var(--space-
     });
     document.querySelectorAll('.playlist-item').forEach(item => { bindPlaylistItem(item); renderPlaylistItemCover(item); });
     document.getElementById('playlist-create').addEventListener('click', event => requestCreatePlaylist({ origin: event.currentTarget }));
-    document.getElementById('menu-create-playlist').addEventListener('click', () => {
-      if (!menuRow) return;
-      const sourceRow = menuRow;
-      const origin = menuTrigger;
-      closeSongMenu();
-      requestCreatePlaylist({ sourceRow, origin, addSourceSong: true });
-    });
     const syncButton = document.getElementById('sync-button');
     const syncActionLabel = document.getElementById('sync-action-label');
     const syncLabel = document.getElementById('sync-label');
@@ -1723,7 +1799,7 @@ body.player-mode-open .queue-popover .queue-name span { margin-top: var(--space-
       else if (!playlistSortPopover.hidden) { event.preventDefault(); event.stopImmediatePropagation(); playlistSortPopover.hidden = true; playlistSortButton.setAttribute('aria-expanded', 'false'); playlistSortButton.focus(); }
     }, true);
     document.addEventListener('click', event => { if (!sortPopover.hidden && !sortPopover.contains(event.target) && !sortButton.contains(event.target)) { sortPopover.hidden = true; sortButton.setAttribute('aria-expanded', 'false'); } if (!songMenu.hidden && !songMenu.contains(event.target) && !event.target.closest('.song-more')) closeSongMenu(); if (!queuePopover.hidden && !queuePopover.contains(event.target) && !queueTrigger.contains(event.target)) closeQueue(); if (!nowPlayingPopover.hidden && !nowPlayingPopover.contains(event.target) && !nowPlayingTrigger.contains(event.target) && !playerbar.contains(event.target) && !queuePopover.contains(event.target) && !songMenu.contains(event.target)) closeNowPlaying(); });
-    document.addEventListener('keydown', event => { if (event.key === 'Escape') { if (!confirmationDialog.hidden) { event.preventDefault(); closeConfirmation(); } else if (document.body.classList.contains('sidebar-mobile-open')) { setMobileSidebar(false); sidebarToggle.focus(); } else if (!settingsDialog.hidden) { closeSettings(); } else if (!playlistSubmenu.hidden) { playlistSubmenu.hidden = true; menuAddPlaylist.setAttribute('aria-expanded', 'false'); menuAddPlaylist.focus(); } else if (!songMenu.hidden) { closeSongMenu({ restoreFocus: true }); } else if (!sortPopover.hidden) { sortPopover.hidden = true; sortButton.setAttribute('aria-expanded', 'false'); sortButton.focus(); } else if (!queuePopover.hidden) { closeQueue(); queueTrigger.focus(); } else if (document.body.classList.contains('lyrics-focus-open')) { setLyricsFocus(false); lyricsCard.focus(); } else if (!nowPlayingPopover.hidden) { closeNowPlaying(); nowPlayingTrigger.focus(); } } });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') { if (!playlistPickerDialog.hidden) { event.preventDefault(); } else if (!confirmationDialog.hidden) { event.preventDefault(); closeConfirmation(); } else if (document.body.classList.contains('sidebar-mobile-open')) { setMobileSidebar(false); sidebarToggle.focus(); } else if (!settingsDialog.hidden) { closeSettings(); } else if (!songMenu.hidden) { closeSongMenu({ restoreFocus: true }); } else if (!sortPopover.hidden) { sortPopover.hidden = true; sortButton.setAttribute('aria-expanded', 'false'); sortButton.focus(); } else if (!queuePopover.hidden) { closeQueue(); queueTrigger.focus(); } else if (document.body.classList.contains('lyrics-focus-open')) { setLyricsFocus(false); lyricsCard.focus(); } else if (!nowPlayingPopover.hidden) { closeNowPlaying(); nowPlayingTrigger.focus(); } } });
     document.querySelectorAll('.control:not(.control-play):not(#queue-trigger):not(#volume-toggle):not(#player-favorite):not(#playback-mode):not([data-od-id="previous-track"]):not([data-od-id="next-track"])').forEach(button => { button.classList.remove('active'); button.setAttribute('aria-pressed', 'false'); });
     const playbackMode = document.getElementById('playback-mode');
     const playbackModes = [
