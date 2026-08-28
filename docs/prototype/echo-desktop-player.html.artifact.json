@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "docs/prototype/echo-desktop-player.html",
+  "entry": "docs/prototype/echo-desktop-player.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-08-21T18:30:03.936Z",
+  "updatedAt": "2026-08-21T18:30:03.936Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}
