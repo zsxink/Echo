@@ -49,6 +49,7 @@ env/
 # AI tools
 .workbuddy/
 .impeccable/
+.od-skills/
 
 # Logs & temp
 *.log
