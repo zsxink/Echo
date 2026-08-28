@@ -81,6 +81,9 @@ pub struct Song {
     /// Monotone revision, bumped on every persisted field change (used for
     /// optimistic concurrency and event ordering).
     revision: Revision,
+    /// Stable insertion ordering key. Unlike `revision`, this never changes
+    /// when metadata, favorites, or playback statistics are updated.
+    added_at: u64,
     title: Option<String>,
     artist: Option<String>,
     album: Option<String>,
@@ -99,6 +102,18 @@ impl Song {
         path: RelativeMediaPath,
         revision: Revision,
     ) -> Self {
+        Self::with_added_at(id, root, path, revision, revision.as_u64())
+    }
+
+    /// Create a new song with an explicit insertion ordering key.
+    #[must_use]
+    pub fn with_added_at(
+        id: SongId,
+        root: LibraryRootId,
+        path: RelativeMediaPath,
+        revision: Revision,
+        added_at: u64,
+    ) -> Self {
         Self {
             id,
             root,
@@ -107,6 +122,7 @@ impl Song {
             favorite: false,
             play_count: PlayCount::default(),
             revision,
+            added_at,
             title: None,
             artist: None,
             album: None,
@@ -144,6 +160,10 @@ impl Song {
     #[must_use]
     pub const fn revision(&self) -> Revision {
         self.revision
+    }
+    #[must_use]
+    pub const fn added_at(&self) -> u64 {
+        self.added_at
     }
     #[must_use]
     pub fn title(&self) -> Option<&str> {
@@ -434,28 +454,57 @@ pub struct LyricsCandidate {
     source: LyricsSource,
     /// Timestamped lines, sorted by time. Empty for plain-text lyrics.
     lines: Vec<LyricsLine>,
-    /// True when the source had text but no usable timestamps.
-    plain_text: bool,
+    /// Original source text, retained for diagnostics and plain-text display.
+    raw_text: String,
+    /// Plain text content when no usable timestamps were found.
+    plain_text: Option<String>,
+    /// A non-fatal parse diagnostic. A malformed candidate must not prevent
+    /// the audio record from being imported.
+    parse_error: Option<String>,
     /// Whether the text is deliberately empty (a user cleared it). When set,
     /// lower-priority sources must NOT be considered.
     empty_override: bool,
 }
 
 /// One timestamped lyrics line.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LyricsLine {
     /// Time in milliseconds.
     pub timestamp_ms: i64,
-    pub text: &'static str,
+    pub text: String,
+    /// Position in the source before timestamp sorting.
+    pub original_index: usize,
 }
 
 impl LyricsCandidate {
     #[must_use]
-    pub const fn new(source: LyricsSource, lines: Vec<LyricsLine>, plain_text: bool) -> Self {
+    pub fn new(source: LyricsSource, lines: Vec<LyricsLine>, plain_text: bool) -> Self {
+        let plain_text = plain_text.then(|| {
+            lines
+                .iter()
+                .map(|line| line.text.as_str())
+                .collect::<Vec<_>>()
+                .join("\n")
+        });
+        Self::with_raw_text(source, String::new(), lines, plain_text, None)
+    }
+
+    /// Construct a candidate while retaining the parser input and any
+    /// recoverable parse diagnostic.
+    #[must_use]
+    pub const fn with_raw_text(
+        source: LyricsSource,
+        raw_text: String,
+        lines: Vec<LyricsLine>,
+        plain_text: Option<String>,
+        parse_error: Option<String>,
+    ) -> Self {
         Self {
             source,
             lines,
+            raw_text,
             plain_text,
+            parse_error,
             empty_override: false,
         }
     }
@@ -470,7 +519,19 @@ impl LyricsCandidate {
     }
     #[must_use]
     pub const fn is_plain_text(&self) -> bool {
-        self.plain_text
+        self.plain_text.is_some()
+    }
+    #[must_use]
+    pub fn raw_text(&self) -> &str {
+        &self.raw_text
+    }
+    #[must_use]
+    pub fn plain_text(&self) -> Option<&str> {
+        self.plain_text.as_deref()
+    }
+    #[must_use]
+    pub fn parse_error(&self) -> Option<&str> {
+        self.parse_error.as_deref()
     }
     #[must_use]
     pub const fn is_empty_override(&self) -> bool {
@@ -604,12 +665,14 @@ mod tests {
             LyricsSource::Embedded,
             vec![LyricsLine {
                 timestamp_ms: 1000,
-                text: "故事的小黄花",
+                text: "故事的小黄花".into(),
+                original_index: 0,
             }],
             false,
         );
         assert!(!timed.is_plain_text());
         assert_eq!(timed.source(), LyricsSource::Embedded);
+        assert_eq!(timed.lines()[0].text, "故事的小黄花");
 
         let plain = LyricsCandidate::new(LyricsSource::Sidecar, vec![], true);
         assert!(plain.is_plain_text());
@@ -617,6 +680,20 @@ mod tests {
         let mut cleared = LyricsCandidate::new(LyricsSource::Override, vec![], false);
         cleared.mark_empty_override();
         assert!(cleared.is_empty_override());
+    }
+
+    #[test]
+    fn lyrics_candidate_retains_raw_plain_text_and_parse_error() {
+        let candidate = LyricsCandidate::with_raw_text(
+            LyricsSource::Sidecar,
+            "first\nsecond".into(),
+            vec![],
+            Some("first\nsecond".into()),
+            Some("invalid timestamp".into()),
+        );
+        assert_eq!(candidate.raw_text(), "first\nsecond");
+        assert_eq!(candidate.plain_text(), Some("first\nsecond"));
+        assert_eq!(candidate.parse_error(), Some("invalid timestamp"));
     }
 
     #[test]
@@ -641,5 +718,18 @@ mod tests {
         let v0 = s.version();
         s.set_favorite(true);
         assert_ne!(s.version(), v0);
+    }
+
+    #[test]
+    fn song_added_at_is_stable_when_revision_changes() {
+        let mut song = Song::with_added_at(
+            SongId::new(),
+            LibraryRootId::new(),
+            RelativeMediaPath::new("album/song.flac").expect("valid path"),
+            Revision::INITIAL,
+            42,
+        );
+        song.set_favorite(true);
+        assert_eq!(song.added_at(), 42);
     }
 }

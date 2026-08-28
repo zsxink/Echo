@@ -163,7 +163,7 @@ pub enum Error {
     #[error("invariant violation: {why}")]
     InvariantViolation {
         /// Which invariant (e.g. `at most one active root`).
-        why: &'static str,
+        why: String,
     },
 }
 

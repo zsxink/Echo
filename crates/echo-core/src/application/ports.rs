@@ -26,7 +26,6 @@
 //! Every trait is `Send + Sync` so use cases can run behind the desktop
 //! actor/thread boundary.
 
-use std::path::Path;
 use std::time::Duration;
 
 use crate::domain::entities::{
@@ -133,12 +132,8 @@ pub trait UnitOfWork: Send + Sync {
     /// Run `f` inside one `SQLite` transaction, committing on success and
     /// rolling back on error. The transaction never crosses an `.await`:
     /// `f` is a plain synchronous closure.
-    fn with_tx<T, E>(
-        &self,
-        f: impl FnOnce(&dyn TxAccess) -> Result<T, E>,
-    ) -> Result<T, crate::error::Error>
-    where
-        E: Into<crate::error::Error>;
+    fn with_tx<T>(&self, f: impl FnOnce(&mut dyn TxAccess) -> Result<T, Error>)
+        -> Result<T, Error>;
 }
 
 /// The narrow, repository-like surface visible *inside* a transaction.
@@ -147,9 +142,36 @@ pub trait UnitOfWork: Send + Sync {
 /// need cross-repository atomic writes pass `&dyn TxAccess` to repos.)
 pub trait TxAccess: Send + Sync {
     /// Insert/update a song within the open transaction.
-    fn insert_song(&self, song: &Song) -> Result<(), Error>;
+    fn upsert_song(&mut self, song: &Song) -> Result<(), Error>;
+    /// Update a song's availability in the same transaction as journal state.
+    fn set_song_availability(
+        &mut self,
+        id: SongId,
+        availability: SongAvailability,
+    ) -> Result<(), Error>;
+    /// Update a favorite without splitting its mutation snapshot.
+    fn set_song_favorite(&mut self, id: SongId, favorite: bool) -> Result<(), Error>;
+    /// Record an idempotence-protected playback update.
+    fn increment_song_play_count(&mut self, id: SongId) -> Result<(), Error>;
+    /// Insert/update a root record.
+    fn upsert_root(&mut self, root: &LibraryRoot) -> Result<(), Error>;
+    /// Create a playlist in the same transaction as initial membership writes.
+    fn create_playlist(
+        &mut self,
+        id: PlaylistId,
+        root: LibraryRootId,
+        name: &str,
+    ) -> Result<(), Error>;
     /// Insert a playlist membership within the open transaction.
-    fn insert_member(&self, member: &PlaylistMember) -> Result<(), Error>;
+    fn insert_member(&mut self, member: &PlaylistMember) -> Result<(), Error>;
+    /// Remove a playlist membership during a delete finalization.
+    fn remove_member(&mut self, playlist: PlaylistId, song: SongId) -> Result<(), Error>;
+    /// Persist operation-item intent/result alongside affected records.
+    fn upsert_operation_item(
+        &mut self,
+        operation: OperationId,
+        item: OperationItem,
+    ) -> Result<(), Error>;
 }
 
 // ---------------------------------------------------------------------------
@@ -161,6 +183,51 @@ pub trait TxAccess: Send + Sync {
 pub struct FileMeta {
     pub size: u64,
     pub modified_ns: i64,
+}
+
+/// Opaque handle to a file already placed in Echo's marker-verified staging
+/// directory. It intentionally contains no filesystem path: an adapter must
+/// resolve it below the operation's owned staging directory and reject unknown
+/// or forged handles before publishing.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct StagedResource {
+    operation: OperationId,
+    resource_key: String,
+}
+
+impl StagedResource {
+    /// Construct an application-level handle for one operation resource.
+    ///
+    /// `resource_key` is a logical item key, never a filesystem path. Adapters
+    /// map it to their private, marker-verified staging location.
+    pub fn new(operation: OperationId, resource_key: impl Into<String>) -> Result<Self, Error> {
+        let resource_key = resource_key.into();
+        if resource_key.is_empty()
+            || resource_key.contains(['/', '\\', '\0'])
+            || resource_key == "."
+            || resource_key == ".."
+        {
+            return Err(Error::validation(
+                crate::error::Subject::Path,
+                "StagedResource",
+                "resource key must be a non-path logical identifier",
+            ));
+        }
+        Ok(Self {
+            operation,
+            resource_key,
+        })
+    }
+
+    #[must_use]
+    pub const fn operation(&self) -> OperationId {
+        self.operation
+    }
+
+    #[must_use]
+    pub fn resource_key(&self) -> &str {
+        &self.resource_key
+    }
 }
 
 /// The library file system — always root-constrained operations. The adapter
@@ -179,11 +246,12 @@ pub trait LibraryFileSystem: Send + Sync {
         path: &RelativeMediaPath,
         limit: u64,
     ) -> Result<Vec<u8>, Error>;
-    /// Atomically publish a staged file into its final root-relative path.
+    /// Atomically publish an adapter-owned staging resource into its final
+    /// root-relative path. Callers cannot pass an arbitrary external path.
     fn publish(
         &self,
         root: LibraryRootId,
-        staged: &Path,
+        staged: &StagedResource,
         target: &RelativeMediaPath,
     ) -> Result<(), Error>;
     /// Whether the root currently permits writes (permissions + marker).

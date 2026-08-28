@@ -27,6 +27,7 @@
 //!   common full/half forms via NFKC. (A full caseless fold is a large table;
 //!   Echo's need is *stable comparisons*, not linguistic exactness.)
 
+use unicode_casefold::UnicodeCaseFold;
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -58,15 +59,13 @@ pub fn normalize_text(value: &str) -> String {
 /// Fold case *and* run [`normalize_text`] so comparisons are
 /// case-insensitive AND compatibility-insensitive.
 ///
-/// Implements the `case fold` via a simple, deterministic transformation:
-/// applies ASCII lower-casing and a small set of Unicode-aware width/case
-/// folds that NFKC already does not handle (e.g. full-width letters fall to
-/// ASCII equivalents through NFKC). This is not a linguistically complete
-/// caseless fold — Echo needs stable, comparable form, not exact semantics.
+/// Uses Unicode's full, non-Turkic default case fold after NFKC. This makes
+/// canonical equivalents such as `Straße`/`STRASSE` and final/normal Greek
+/// sigma compare identically without depending on the user's locale.
 #[must_use]
 pub fn normalized_key(value: &str) -> String {
-    let lowered: String = value.chars().flat_map(char::to_lowercase).collect();
-    normalize_text(&lowered)
+    let normalized: String = value.nfkc().collect();
+    normalize_text(&normalized.case_fold().collect::<String>())
 }
 
 /// Count user-perceived characters (grapheme clusters) — the number a human
@@ -346,6 +345,9 @@ mod tests {
         assert_eq!(normalized_key("晴天"), normalized_key(" 晴天 "));
         assert_eq!(normalized_key("ＡＢＣ"), normalized_key("abc"));
         assert_eq!(normalized_key("Echo"), normalized_key("echo"));
+        assert_eq!(normalized_key("Straße"), normalized_key("STRASSE"));
+        assert_eq!(normalized_key("ΟΣ"), normalized_key("οσ"));
+        assert_eq!(normalized_key("ΟΣ"), normalized_key("ος"));
     }
 
     #[test]

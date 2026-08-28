@@ -21,6 +21,7 @@
 
 use crate::domain::entities::Song;
 use crate::domain::ids::{Revision, SongId};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 // ---------------------------------------------------------------------------
 // Sorting
@@ -75,7 +76,7 @@ pub struct SongSort {
 /// The scalar value a song exposes for a sort field (display fallback applied).
 fn field_value(song: &Song, field: SongSortField) -> String {
     match field {
-        SongSortField::AddedAt => song.revision().as_u64().to_string().pad_start(20),
+        SongSortField::AddedAt => song.added_at().to_string().pad_start(20),
         SongSortField::Title => song.title().unwrap_or("").to_owned(),
         SongSortField::Artist => song.artist().unwrap_or("").to_owned(),
         SongSortField::PlayCount => song.play_count().as_u64().to_string(),
@@ -166,9 +167,7 @@ impl SongSort {
 /// page can continue immediately and deterministically. The `Revision` guard
 /// lets the query layer reject a cursor produced before a write epoch (rather
 /// than silently skipping/duplicating rows).
-#[derive(
-    Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub struct OpaqueCursor {
     /// The revision the cursor was minted under.
     revision: Revision,
@@ -178,9 +177,10 @@ pub struct OpaqueCursor {
 }
 
 impl OpaqueCursor {
-    /// Encode a cursor for consumers (the query layer encodes the keyset row).
+    /// Mint a cursor from a repository keyset. This stays crate-visible so the
+    /// UI can carry a cursor but cannot construct its internal fields.
     #[must_use]
-    pub fn encode(revision: Revision, keyset: impl Into<String>) -> Self {
+    pub(crate) fn encode(revision: Revision, keyset: impl Into<String>) -> Self {
         Self {
             revision,
             keyset: keyset.into(),
@@ -193,9 +193,10 @@ impl OpaqueCursor {
         self.revision
     }
 
-    /// The opaque keyset payload (opaque by contract).
+    /// The opaque keyset payload. Only repository adapters may interpret it.
+    #[allow(dead_code)] // used by the SQLite adapter added in task 3.8
     #[must_use]
-    pub fn keyset_hex(&self) -> &str {
+    pub(crate) fn keyset(&self) -> &str {
         &self.keyset
     }
 
@@ -206,6 +207,49 @@ impl OpaqueCursor {
             revision: Revision::INITIAL,
             keyset: String::new(),
         }
+    }
+}
+
+impl Serialize for OpaqueCursor {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for OpaqueCursor {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let token = String::deserialize(deserializer)?;
+        Self::parse(&token).map_err(de::Error::custom)
+    }
+}
+
+impl OpaqueCursor {
+    fn parse(token: &str) -> Result<Self, String> {
+        let Some((version, rest)) = token.split_once(':') else {
+            return Err("malformed cursor".into());
+        };
+        if version != "v1" {
+            return Err("unsupported cursor version".into());
+        }
+        let Some((revision, keyset)) = rest.split_once(':') else {
+            return Err("malformed cursor".into());
+        };
+        let revision = revision
+            .parse::<u64>()
+            .map_err(|_| "malformed cursor revision")?;
+        if !keyset
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
+            return Err("malformed cursor payload".into());
+        }
+        Ok(Self::encode(Revision::from_u64(revision), keyset))
     }
 }
 
@@ -220,7 +264,7 @@ impl std::fmt::Display for OpaqueCursor {
 /// Whether a supplied cursor may be used given the current write epoch.
 #[must_use]
 pub fn cursor_compatible(cursor: &OpaqueCursor, current_revision: Revision) -> bool {
-    cursor.revision() >= current_revision
+    cursor.revision() == current_revision
 }
 
 /// One page of a paged query.
@@ -360,6 +404,27 @@ mod tests {
     }
 
     #[test]
+    fn added_sort_uses_immutable_added_at_not_mutation_revision() {
+        let mut old = Song::with_added_at(
+            SongId::from_uuid(uuid::Uuid::from_u128(1)),
+            LibraryRootId::new(),
+            RelativeMediaPath::new("old.mp3").unwrap(),
+            Revision::from_u64(99),
+            1,
+        );
+        old.set_favorite(true);
+        let new = Song::with_added_at(
+            SongId::from_uuid(uuid::Uuid::from_u128(2)),
+            LibraryRootId::new(),
+            RelativeMediaPath::new("new.mp3").unwrap(),
+            Revision::INITIAL,
+            2,
+        );
+        let sort = SongSort::default();
+        assert_eq!(sort.compare(&new, &old), std::cmp::Ordering::Less);
+    }
+
+    #[test]
     fn play_count_sort_is_numeral_not_lexical() {
         let low = mk(1, "a", "x", 9);
         let high = mk(2, "a", "x", 100);
@@ -382,13 +447,21 @@ mod tests {
         let c1 = OpaqueCursor::encode(Revision::from_u64(7), "deadbeef");
         assert_eq!(c1.to_string(), "v1:7:deadbeef");
         assert!(
-            cursor_compatible(&c1, Revision::from_u64(5)),
-            "old cursor ok on new epoch"
+            cursor_compatible(&c1, Revision::from_u64(7)),
+            "cursor matches its issuing epoch"
         );
         assert!(
             !cursor_compatible(&c1, Revision::from_u64(9)),
-            "minted under older epoch is rejected"
+            "cursor from a different epoch is rejected"
         );
+        assert!(
+            !cursor_compatible(&c1, Revision::from_u64(5)),
+            "a future cursor is rejected too"
+        );
+        let json = serde_json::to_string(&c1).unwrap();
+        assert_eq!(json, "\"v1:7:deadbeef\"");
+        assert!(serde_json::from_str::<OpaqueCursor>("\"v2:7:deadbeef\"").is_err());
+        assert!(serde_json::from_str::<OpaqueCursor>("\"v1:7:../../path\"").is_err());
         let start = OpaqueCursor::start();
         assert_eq!(start.revision(), Revision::INITIAL);
     }

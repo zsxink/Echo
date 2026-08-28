@@ -22,6 +22,7 @@
 //! variant-based getter. Transitions are commutative-free: each current→next
 //! edge is either allowed (documented) or rejected with a specific reason.
 
+use crate::domain::ids::LibraryRootId;
 use crate::error::Error;
 
 // ---------------------------------------------------------------------------
@@ -71,7 +72,7 @@ impl std::error::Error for TransitionError {}
 impl From<TransitionError> for Error {
     fn from(value: TransitionError) -> Self {
         Self::InvariantViolation {
-            why: Box::leak(value.to_string().into_boxed_str()),
+            why: value.to_string(),
         }
     }
 }
@@ -89,7 +90,6 @@ pub enum ScanState {
     Parsing,
     Reconciling,
     Completed,
-    Running,
     Cancelled,
     Failed,
 }
@@ -116,10 +116,6 @@ impl ScanState {
                 | (
                     Self::Queued | Self::Enumerating | Self::Parsing | Self::Reconciling,
                     Self::Failed
-                )
-                | (
-                    Self::Running,
-                    Self::Completed | Self::Cancelled | Self::Failed
                 )
         )
     }
@@ -166,6 +162,197 @@ pub enum LibraryRootState {
     ActiveReadOnly,
     Unavailable,
     Relinking,
+}
+
+/// The runtime barrier for switching the active library root.
+///
+/// This is deliberately separate from [`LibraryRootState`]: a root record can
+/// remain active while a *switch operation* validates a candidate. The runtime
+/// uses the phase plus an epoch to reject work produced by the old root after a
+/// successful activation commit.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RootSwitchState {
+    /// The candidate has been validated and fully scanned; the old root is
+    /// still serving runtime work.
+    #[default]
+    Prepare,
+    /// Freeze the old watcher and wait for all write blockers to settle.
+    QuiesceOldRoot,
+    /// Atomically flip the active root and advance the root epoch.
+    CommitActivation,
+    /// Bind watcher, query invalidation and playback to the new epoch.
+    RebindRuntime,
+    /// The new root is fully active.
+    Completed,
+    /// The switch failed before completion; the old runtime stays/re-enters
+    /// service and the candidate may be retried from `Prepare`.
+    Failed,
+}
+
+impl RootSwitchState {
+    #[must_use]
+    pub const fn can_transition_to(self, next: Self) -> bool {
+        matches!(
+            (self, next),
+            (Self::Prepare, Self::QuiesceOldRoot | Self::Failed)
+                | (Self::QuiesceOldRoot, Self::CommitActivation | Self::Failed)
+                | (Self::CommitActivation, Self::RebindRuntime | Self::Failed)
+                | (Self::RebindRuntime, Self::Completed | Self::Failed)
+                | (Self::Failed, Self::Prepare)
+        )
+    }
+
+    /// Advance this root-switch barrier by one legal phase.
+    ///
+    /// # Errors
+    ///
+    /// Returns a matchable [`TransitionError`] for a skipped, repeated or
+    /// terminal transition.
+    pub fn transition(self, next: Self) -> Result<Self, TransitionError> {
+        if self == next {
+            return Err(TransitionError::AlreadyIn(format!("{self:?}")));
+        }
+        if self.can_transition_to(next) {
+            Ok(next)
+        } else if self.is_terminal() {
+            Err(TransitionError::Terminal {
+                state: format!("{self:?}"),
+                hint: "the root switch is complete; start a new switch",
+            })
+        } else {
+            Err(TransitionError::Illegal {
+                from: format!("{self:?}"),
+                to: format!("{next:?}"),
+                hint: "root switching must quiesce, commit, then rebind in order",
+            })
+        }
+    }
+
+    #[must_use]
+    pub const fn is_terminal(self) -> bool {
+        matches!(self, Self::Completed)
+    }
+}
+
+/// Monotonic generation of the active-root runtime binding. Watcher, scan and
+/// command results must carry the epoch they started under; a result with an
+/// older epoch is discarded after a root switch commits.
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+pub struct RootEpoch(u64);
+
+impl RootEpoch {
+    #[must_use]
+    pub const fn from_u64(value: u64) -> Self {
+        Self(value)
+    }
+
+    #[must_use]
+    pub const fn as_u64(self) -> u64 {
+        self.0
+    }
+}
+
+/// Runtime context for one root switch. It preserves the old and candidate IDs
+/// until the `SQLite` activation commit succeeds, and then makes the committed
+/// epoch the sole authority for accepting asynchronous results.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RootSwitchBarrier {
+    old_root: Option<LibraryRootId>,
+    candidate_root: LibraryRootId,
+    state: RootSwitchState,
+    active_epoch: RootEpoch,
+}
+
+impl RootSwitchBarrier {
+    #[must_use]
+    pub const fn new(
+        old_root: Option<LibraryRootId>,
+        candidate_root: LibraryRootId,
+        active_epoch: RootEpoch,
+    ) -> Self {
+        Self {
+            old_root,
+            candidate_root,
+            state: RootSwitchState::Prepare,
+            active_epoch,
+        }
+    }
+
+    #[must_use]
+    pub const fn state(&self) -> RootSwitchState {
+        self.state
+    }
+
+    #[must_use]
+    pub const fn old_root(&self) -> Option<LibraryRootId> {
+        self.old_root
+    }
+
+    #[must_use]
+    pub const fn candidate_root(&self) -> LibraryRootId {
+        self.candidate_root
+    }
+
+    #[must_use]
+    pub const fn active_epoch(&self) -> RootEpoch {
+        self.active_epoch
+    }
+
+    /// Advance a non-commit phase. The `SQLite` commit must use
+    /// [`Self::commit_activation`] so an epoch cannot be advanced by accident.
+    ///
+    /// # Errors
+    ///
+    /// Returns a matchable transition error for an illegal or skipped phase.
+    pub fn transition(&mut self, next: RootSwitchState) -> Result<(), TransitionError> {
+        if self.state == RootSwitchState::CommitActivation && next == RootSwitchState::RebindRuntime
+        {
+            return Err(TransitionError::Illegal {
+                from: format!("{:?}", self.state),
+                to: format!("{next:?}"),
+                hint: "commit activation must atomically advance root_epoch",
+            });
+        }
+        self.state = self.state.transition(next)?;
+        Ok(())
+    }
+
+    /// Record the successful `SQLite` activation transaction and advance the
+    /// runtime epoch before watcher/player rebind begins.
+    ///
+    /// # Errors
+    ///
+    /// Fails unless the barrier is at `CommitActivation` and the supplied epoch
+    /// strictly advances the epoch owned by the old runtime.
+    pub fn commit_activation(&mut self, committed_epoch: RootEpoch) -> Result<(), TransitionError> {
+        if self.state != RootSwitchState::CommitActivation {
+            return Err(TransitionError::Illegal {
+                from: format!("{:?}", self.state),
+                to: "RebindRuntime".into(),
+                hint: "activation can commit only after old runtime quiesces",
+            });
+        }
+        if committed_epoch <= self.active_epoch {
+            return Err(TransitionError::Illegal {
+                from: format!("epoch {}", self.active_epoch.as_u64()),
+                to: format!("epoch {}", committed_epoch.as_u64()),
+                hint: "root_epoch must increase on activation commit",
+            });
+        }
+        self.active_epoch = committed_epoch;
+        self.state = RootSwitchState::RebindRuntime;
+        Ok(())
+    }
+
+    /// Whether an asynchronous result belongs to the currently bound root.
+    /// Calls made under the old epoch become stale immediately after commit.
+    #[must_use]
+    pub fn accepts_epoch(&self, epoch: RootEpoch) -> bool {
+        matches!(
+            self.state,
+            RootSwitchState::RebindRuntime | RootSwitchState::Completed
+        ) && epoch == self.active_epoch
+    }
 }
 
 impl LibraryRootState {
@@ -292,6 +479,10 @@ impl OperationState {
                 )
                 | (PublishApplied, DatabaseCommitted | FailedRecoverable, false)
                 | (DatabaseCommitted, Completed, false)
+                // Recovery always re-runs the operation from its persisted
+                // intent. A retry may select the appropriate initial branch
+                // only after validating the journal item and filesystem facts.
+                | (FailedRecoverable, CopyPending | StagePending, false)
                 | (
                     StagePending,
                     StageApplied | FailedRecoverable | RolledBack,
@@ -343,7 +534,7 @@ impl OperationState {
     pub const fn is_terminal(self) -> bool {
         matches!(
             self,
-            Self::Completed | Self::RolledBack | Self::DatabaseFinalized
+            Self::Completed | Self::RolledBack | Self::Restored | Self::DatabaseFinalized
         )
     }
 
@@ -568,6 +759,37 @@ mod tests {
     }
 
     #[test]
+    fn root_switch_barrier_requires_quiesce_commit_and_rebind() {
+        let old_root = LibraryRootId::new();
+        let candidate = LibraryRootId::new();
+        let mut barrier = RootSwitchBarrier::new(Some(old_root), candidate, RootEpoch::from_u64(4));
+        assert!(barrier
+            .transition(RootSwitchState::CommitActivation)
+            .is_err());
+        for next in [
+            RootSwitchState::QuiesceOldRoot,
+            RootSwitchState::CommitActivation,
+        ] {
+            barrier.transition(next).unwrap();
+        }
+        assert!(barrier.commit_activation(RootEpoch::from_u64(4)).is_err());
+        barrier.commit_activation(RootEpoch::from_u64(5)).unwrap();
+        assert!(!barrier.accepts_epoch(RootEpoch::from_u64(4)));
+        assert!(barrier.accepts_epoch(RootEpoch::from_u64(5)));
+        barrier.transition(RootSwitchState::Completed).unwrap();
+        assert!(barrier.state().is_terminal());
+        assert!(barrier.transition(RootSwitchState::Prepare).is_err());
+
+        let failed = RootSwitchState::CommitActivation
+            .transition(RootSwitchState::Failed)
+            .unwrap();
+        assert_eq!(
+            failed.transition(RootSwitchState::Prepare).unwrap(),
+            RootSwitchState::Prepare
+        );
+    }
+
+    #[test]
     fn import_operation_forward_and_publish_committed() {
         let mut o = OperationState::Planned;
         for next in [
@@ -632,6 +854,21 @@ mod tests {
                 hint: "operation steps are ordered and forward-only",
             }
         );
+    }
+
+    #[test]
+    fn recoverable_failure_can_restart_and_restored_is_terminal() {
+        let retry = OperationState::CopyPending
+            .transition(OperationState::FailedRecoverable)
+            .unwrap();
+        assert_eq!(
+            retry.transition(OperationState::CopyPending).unwrap(),
+            OperationState::CopyPending
+        );
+        assert!(OperationState::Restored.is_terminal());
+        assert!(OperationState::Restored
+            .transition(OperationState::StagePending)
+            .is_err());
     }
 
     #[test]

@@ -29,6 +29,7 @@
     clippy::needless_pass_by_value,
     clippy::manual_let_else,
     clippy::unchecked_time_subtraction,
+    clippy::wildcard_imports,
     clippy::bool_assert_comparison,
     clippy::type_complexity,
     clippy::missing_const_for_fn,
@@ -42,14 +43,15 @@
 //!
 //! - [`FakeClock`], [`FakeIdGenerator`] — deterministic time & identity.
 //! - [`MemorySongRepository`] / [`MemoryPlaylistRepository`] /
-//!   [`MemoryOperationJournal`] / [`MemoryLibraryRepository`] — in-memory.
+//!   [`MemoryOperationJournal`] / [`MemoryLibraryRepository`] /
+//!   [`MemoryUnitOfWork`] — in-memory.
 //! - [`FakeLibraryFileSystem`] — an in-temp-dir, root-constrained FS with
 //!   scriptable permission/IO faults.
 //! - [`FakeTrash`] — a `SystemTrashPort` that can be told to fail.
 //! - [`ScriptedFileEvents`] — a `FileEventSource` that replays a scripted
 //!   sequence (out-of-order / duplicates included).
 //! - [`FakeMediaProbe`], [`FakeMetadataReader`], [`FakeHasher`],
-//!   [`FakeCoverCache`], [`FakeLyricsParser`] — small deterministic fakes.
+//!   [`MemoryCoverCache`], [`FakeLyricsParser`] — small deterministic fakes.
 //!
 //! The fakes never touch the user's home or an OS trash; temp dirs come from
 //! the `tempfile` crate.
@@ -62,6 +64,7 @@ use std::time::{Duration, SystemTime};
 use crate::application::ports::*;
 use crate::domain::entities::{LibraryRoot, PlaylistMember, Song, SongAvailability};
 use crate::domain::ids::*;
+#[cfg(test)]
 use crate::domain::media::AudioFormat;
 use crate::error::Error;
 
@@ -410,6 +413,148 @@ impl OperationJournalRepository for MemoryOperationJournal {
 }
 
 // ---------------------------------------------------------------------------
+// Atomic in-memory Unit of Work
+// ---------------------------------------------------------------------------
+
+/// Transactional in-memory state. Each `with_tx` closure receives an isolated
+/// copy and commits it only when the closure and commit both succeed.
+#[derive(Clone, Debug, Default)]
+struct MemoryTxState {
+    songs: BTreeMap<SongId, Song>,
+    roots: BTreeMap<LibraryRootId, LibraryRoot>,
+    playlists: BTreeMap<PlaylistId, (LibraryRootId, String)>,
+    members: BTreeMap<(PlaylistId, SongId), PlaylistMember>,
+    operations: BTreeMap<(OperationId, String), OperationItem>,
+}
+
+/// A Unit-of-Work fake with real commit/rollback semantics and a scriptable
+/// commit failure. Use-case tests can assert multi-aggregate mutations are
+/// atomic without opening SQLite or a user directory.
+#[derive(Clone, Debug, Default)]
+pub struct MemoryUnitOfWork {
+    state: Shared<MemoryTxState>,
+    fail_commit: Shared<bool>,
+}
+
+impl MemoryUnitOfWork {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Cause the next transaction commit attempt to fail without changing the
+    /// stored snapshot.
+    pub fn set_fail_commit(&self, fail: bool) {
+        *self.fail_commit.lock().unwrap() = fail;
+    }
+
+    /// Assertion helper exposing the committed songs only.
+    #[must_use]
+    pub fn songs(&self) -> Vec<Song> {
+        self.state.lock().unwrap().songs.values().cloned().collect()
+    }
+}
+
+struct MemoryTx<'a> {
+    state: &'a mut MemoryTxState,
+}
+
+impl TxAccess for MemoryTx<'_> {
+    fn upsert_song(&mut self, song: &Song) -> Result<(), Error> {
+        self.state.songs.insert(song.id(), song.clone());
+        Ok(())
+    }
+
+    fn set_song_availability(
+        &mut self,
+        id: SongId,
+        availability: SongAvailability,
+    ) -> Result<(), Error> {
+        if let Some(song) = self.state.songs.get_mut(&id) {
+            match availability {
+                SongAvailability::Available => song.restore_available(),
+                SongAvailability::Missing => song.mark_missing(),
+                SongAvailability::PendingDelete => song.begin_pending_delete(),
+            }
+        }
+        Ok(())
+    }
+
+    fn set_song_favorite(&mut self, id: SongId, favorite: bool) -> Result<(), Error> {
+        if let Some(song) = self.state.songs.get_mut(&id) {
+            song.set_favorite(favorite);
+        }
+        Ok(())
+    }
+
+    fn increment_song_play_count(&mut self, id: SongId) -> Result<(), Error> {
+        if let Some(song) = self.state.songs.get_mut(&id) {
+            song.record_play();
+        }
+        Ok(())
+    }
+
+    fn upsert_root(&mut self, root: &LibraryRoot) -> Result<(), Error> {
+        self.state.roots.insert(root.id(), root.clone());
+        Ok(())
+    }
+
+    fn create_playlist(
+        &mut self,
+        id: PlaylistId,
+        root: LibraryRootId,
+        name: &str,
+    ) -> Result<(), Error> {
+        self.state.playlists.insert(id, (root, name.to_owned()));
+        Ok(())
+    }
+
+    fn insert_member(&mut self, member: &PlaylistMember) -> Result<(), Error> {
+        self.state
+            .members
+            .entry((member.playlist(), member.song()))
+            .or_insert_with(|| member.clone());
+        Ok(())
+    }
+
+    fn remove_member(&mut self, playlist: PlaylistId, song: SongId) -> Result<(), Error> {
+        self.state.members.remove(&(playlist, song));
+        Ok(())
+    }
+
+    fn upsert_operation_item(
+        &mut self,
+        operation: OperationId,
+        item: OperationItem,
+    ) -> Result<(), Error> {
+        self.state
+            .operations
+            .insert((operation, item.target_path.normalized().to_owned()), item);
+        Ok(())
+    }
+}
+
+impl UnitOfWork for MemoryUnitOfWork {
+    fn with_tx<T>(
+        &self,
+        f: impl FnOnce(&mut dyn TxAccess) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let mut candidate = self.state.lock().unwrap().clone();
+        let result = f(&mut MemoryTx {
+            state: &mut candidate,
+        })?;
+        if *self.fail_commit.lock().unwrap() {
+            return Err(Error::unavailable(
+                "test transaction",
+                "simulated commit failure",
+            ));
+        }
+        *self.state.lock().unwrap() = candidate;
+        Ok(result)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // File-system fake
 // ---------------------------------------------------------------------------
 
@@ -424,6 +569,8 @@ pub struct FakeLibraryFileSystem {
     /// not `Clone`, so we store a cheap equivalent)
     fault: Shared<Option<(String, String)>>,
     write_capable: Shared<bool>,
+    /// Adapter-private staged files keyed by typed operation resource handle.
+    staged: Shared<BTreeMap<(LibraryRootId, OperationId, String), PathBuf>>,
 }
 
 impl FakeLibraryFileSystem {
@@ -435,6 +582,7 @@ impl FakeLibraryFileSystem {
             roots: Arc::new(Mutex::new(BTreeMap::from([(root, path)]))),
             fault: Arc::new(Mutex::new(None)),
             write_capable: Arc::new(Mutex::new(true)),
+            staged: Arc::new(Mutex::new(BTreeMap::new())),
         };
         this
     }
@@ -443,6 +591,36 @@ impl FakeLibraryFileSystem {
     /// The stored fault is rebuilt into an owned [`Error`] on read.
     pub fn inject_fault(&self, err: Error) {
         *self.fault.lock().unwrap() = Some((err.code().to_owned(), err.to_string()));
+    }
+
+    /// Stage bytes inside the fake's owned root. This is test setup only; the
+    /// public Port exposes only [`StagedResource`], never an arbitrary path.
+    pub fn stage_bytes(
+        &self,
+        root: LibraryRootId,
+        staged: &StagedResource,
+        bytes: &[u8],
+    ) -> Result<(), Error> {
+        let base = self
+            .roots
+            .lock()
+            .unwrap()
+            .get(&root)
+            .cloned()
+            .ok_or_else(|| Error::unavailable("test root", "unknown root"))?;
+        let path = base
+            .join(".echo-test-staging")
+            .join(staged.operation().to_string())
+            .join(staged.resource_key());
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| Error::io("stage mkdir", e, parent))?;
+        }
+        std::fs::write(&path, bytes).map_err(|e| Error::io("stage write", e, &path))?;
+        self.staged.lock().unwrap().insert(
+            (root, staged.operation(), staged.resource_key().to_owned()),
+            path,
+        );
+        Ok(())
     }
     pub fn clear_fault(&self) {
         *self.fault.lock().unwrap() = None;
@@ -527,18 +705,28 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
     fn publish(
         &self,
         root: LibraryRootId,
-        staged: &Path,
+        staged: &StagedResource,
         target: &RelativeMediaPath,
     ) -> Result<(), Error> {
         if let Some(err) = self.fault_error() {
             return Err(err);
         }
+        let key = (root, staged.operation(), staged.resource_key().to_owned());
+        let staged_path = self
+            .staged
+            .lock()
+            .unwrap()
+            .get(&key)
+            .cloned()
+            .ok_or_else(|| Error::permission("publish", crate::error::PermKind::NotOwner))?;
         let dest = self.abs(root, target);
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| Error::io("create_dir_all", e, parent.to_path_buf()))?;
         }
-        std::fs::rename(staged, &dest).map_err(|e| Error::io("rename", e, dest.clone()))
+        std::fs::rename(&staged_path, &dest).map_err(|e| Error::io("rename", e, dest.clone()))?;
+        self.staged.lock().unwrap().remove(&key);
+        Ok(())
     }
     fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
         let _ = root;
@@ -763,16 +951,20 @@ impl FakeLyricsParser {
 
 impl LyricsParser for FakeLyricsParser {
     fn parse(&self, raw: &str) -> crate::domain::entities::LyricsCandidate {
-        crate::domain::entities::LyricsCandidate::new(
+        let is_plain = *self.plain.lock().unwrap();
+        crate::domain::entities::LyricsCandidate::with_raw_text(
             crate::domain::entities::LyricsSource::Embedded,
+            raw.to_owned(),
             raw.lines()
                 .enumerate()
                 .map(|(i, l)| crate::domain::entities::LyricsLine {
                     timestamp_ms: (i as i64 + 1) * 1000,
-                    text: Box::leak(l.to_owned().into_boxed_str()),
+                    text: l.to_owned(),
+                    original_index: i,
                 })
                 .collect(),
-            *self.plain.lock().unwrap(),
+            is_plain.then(|| raw.to_owned()),
+            None,
         )
     }
 }
@@ -878,9 +1070,9 @@ mod tests {
     fn fake_fs_simulates_permission_revocation_and_publish_works() {
         let r = root();
         let fs = FakeLibraryFileSystem::with_root(r);
-        // Write a staged file, then publish it.
-        let staged = fs.roots.lock().unwrap().get(&r).unwrap().join("staged.bin");
-        std::fs::write(&staged, b"audio").unwrap();
+        // Only a typed, adapter-owned staging handle can be published.
+        let staged = StagedResource::new(OperationId::new(), "audio").unwrap();
+        fs.stage_bytes(r, &staged, b"audio").unwrap();
         fs.publish(
             r,
             &staged,
@@ -908,6 +1100,35 @@ mod tests {
             .is_err());
         fs.clear_fault();
         assert!(fs.enumerate(r).is_ok());
+
+        let forged = StagedResource::new(OperationId::new(), "forged").unwrap();
+        let err = fs
+            .publish(r, &forged, &RelativeMediaPath::new("x.mp3").unwrap())
+            .unwrap_err();
+        assert_eq!(err.code(), "permission");
+    }
+
+    #[test]
+    fn memory_unit_of_work_commits_all_changes_or_none() {
+        let uow = MemoryUnitOfWork::new();
+        let song = Song::new(
+            SongId::new(),
+            root(),
+            RelativeMediaPath::new("one.flac").unwrap(),
+            Revision::INITIAL,
+        );
+        uow.with_tx(|tx| tx.upsert_song(&song)).unwrap();
+        assert_eq!(uow.songs().len(), 1);
+
+        uow.set_fail_commit(true);
+        let second = Song::new(
+            SongId::new(),
+            root(),
+            RelativeMediaPath::new("two.flac").unwrap(),
+            Revision::INITIAL,
+        );
+        assert!(uow.with_tx(|tx| tx.upsert_song(&second)).is_err());
+        assert_eq!(uow.songs().len(), 1, "failed commit rolls back every write");
     }
 
     #[test]
