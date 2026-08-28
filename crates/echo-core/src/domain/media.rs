@@ -62,7 +62,16 @@ pub struct AudioParameters {
 
 /// The parsed, non-authoritative metadata bag from a tag read.
 ///
-/// Values are the raw tag strings (before display fallback / normalization).
+/// Values are cleaned display strings (NFKC, control characters stripped —
+/// see [`crate::domain::text`]). Duration and format are *stream* facts: a tag
+/// reader must leave them absent and let the [`MediaProbe`](crate::application::ports::MediaProbe)
+/// outcome fill them, because tags are never authoritative for streams.
+///
+/// Embedded lyrics and covers ride along so a scan's parse worker can persist
+/// them into their separate stores (design §7) without a second file read.
+/// Input limits (tag 4 KiB / lyrics 2 MiB / cover 20 MiB) are enforced by the
+/// reader: an over-limit asset is dropped and reported as a [`ParseWarning`],
+/// never as a song failure.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ParsedMetadata {
     pub title: Option<String>,
@@ -75,6 +84,14 @@ pub struct ParsedMetadata {
     /// The format family (from the probe, not the extension).
     pub format: AudioFormat,
     pub parameters: AudioParameters,
+    /// Raw embedded lyrics text (before LRC parsing), when present and within
+    /// the input limit.
+    pub embedded_lyrics: Option<String>,
+    /// Embedded cover art bytes, when present and within the input limit.
+    pub cover: Option<EmbeddedCover>,
+    /// Non-fatal parse diagnostics: over-limit assets, undecodable fields.
+    /// A warning never blocks the song record.
+    pub warnings: Vec<ParseWarning>,
 }
 
 impl ParsedMetadata {
@@ -89,6 +106,48 @@ impl ParsedMetadata {
             duration_seconds: self.duration.map(|d| d.as_secs()),
         })
     }
+}
+
+/// Embedded cover art as read from the audio file (task 4.3).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EmbeddedCover {
+    pub bytes: Vec<u8>,
+    /// MIME type as declared by the tag (e.g. `image/jpeg`).
+    pub mime: String,
+}
+
+/// Why a tag reader skipped or degraded one asset (task 4.4).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ParseWarningKind {
+    /// A single tag field exceeded the 4 KiB input limit.
+    TagLimit,
+    /// Embedded lyrics exceeded the 2 MiB input limit.
+    LyricsLimit,
+    /// Embedded cover exceeded the 20 MiB input limit.
+    CoverLimit,
+    /// A field could not be decoded and was dropped.
+    TagDecode,
+}
+
+impl ParseWarningKind {
+    /// Stable machine code recorded in `scan_issues`.
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::TagLimit => "tag_limit",
+            Self::LyricsLimit => "lyrics_limit",
+            Self::CoverLimit => "cover_limit",
+            Self::TagDecode => "tag_decode",
+        }
+    }
+}
+
+/// One non-fatal, path-free parse diagnostic attached to a [`ParsedMetadata`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ParseWarning {
+    pub kind: ParseWarningKind,
+    /// Which input hit the limit (e.g. `tag:title`, `cover`) — never content.
+    pub field: String,
 }
 
 /// The `(artist, album, title, duration)` music key for weak re-linking.
@@ -149,5 +208,29 @@ mod tests {
         assert!(md.title.is_none());
         assert_eq!(md.format, AudioFormat::default());
         assert!(md.duration.is_none());
+        assert!(md.embedded_lyrics.is_none());
+        assert!(md.cover.is_none());
+        assert!(md.warnings.is_empty());
+    }
+
+    #[test]
+    fn parse_warning_kinds_have_stable_codes() {
+        assert_eq!(ParseWarningKind::TagLimit.code(), "tag_limit");
+        assert_eq!(ParseWarningKind::LyricsLimit.code(), "lyrics_limit");
+        assert_eq!(ParseWarningKind::CoverLimit.code(), "cover_limit");
+        assert_eq!(ParseWarningKind::TagDecode.code(), "tag_decode");
+    }
+
+    #[test]
+    fn embedded_cover_carries_bytes_and_mime() {
+        let cover = EmbeddedCover {
+            bytes: vec![1, 2, 3],
+            mime: "image/jpeg".into(),
+        };
+        let md = ParsedMetadata {
+            cover: Some(cover.clone()),
+            ..Default::default()
+        };
+        assert_eq!(md.cover, Some(cover));
     }
 }

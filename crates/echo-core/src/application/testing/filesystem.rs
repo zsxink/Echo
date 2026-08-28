@@ -107,6 +107,27 @@ impl FakeLibraryFileSystem {
     pub fn clear_fault(&self) {
         *self.fault.lock().unwrap() = None;
     }
+
+    /// The absolute temp-dir path of a registered root (test setup only).
+    #[must_use]
+    pub fn root_path(&self, root: LibraryRootId) -> Option<PathBuf> {
+        self.roots.lock().unwrap().get(&root).cloned()
+    }
+
+    /// Register an *additional* root at its own fresh temp dir (multi-root
+    /// scenarios such as root switching).
+    pub fn add_root(&self, root: LibraryRootId) -> PathBuf {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.keep();
+        self.roots.lock().unwrap().insert(root, path.clone());
+        path
+    }
+
+    /// Register an additional root at an explicit path (root-switch tests
+    /// point the candidate at its own temp directory).
+    pub fn add_root_at(&self, root: LibraryRootId, path: PathBuf) {
+        self.roots.lock().unwrap().insert(root, path);
+    }
     /// Programmatically toggle write capability.
     pub fn set_write_capable(&self, capable: bool) {
         *self.write_capable.lock().unwrap() = capable;

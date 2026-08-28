@@ -257,6 +257,53 @@ impl LyricsParser for FakeLyricsParser {
     }
 }
 
+/// Content-addressed file hasher over the [`LibraryFileSystem`] port: the
+/// hash is the real BLAKE3 of the file's bytes, so identical content in two
+/// paths hashes identically (needed by the duplicate/re-link tests).
+#[derive(Clone)]
+pub struct FakeFileHasher {
+    fs: Arc<dyn LibraryFileSystem>,
+}
+
+impl FakeFileHasher {
+    #[must_use]
+    pub fn new(fs: Arc<dyn LibraryFileSystem>) -> Self {
+        Self { fs }
+    }
+}
+
+impl ContentHasher for FakeFileHasher {
+    fn hash(&self, root: LibraryRootId, path: &RelativeMediaPath) -> Result<String, Error> {
+        let bytes = self.fs.read_head(root, path, u64::MAX)?;
+        Ok(self.hash_of_bytes(&bytes))
+    }
+    fn hash_of_bytes(&self, bytes: &[u8]) -> String {
+        blake3::hash(bytes).to_hex().to_string()
+    }
+}
+
+/// Probe double that stalls each probe (keeps scans in flight for
+/// concurrency/buffering assertions).
+#[derive(Clone)]
+pub struct SlowProbe {
+    inner: Arc<dyn MediaProbe>,
+    delay: std::time::Duration,
+}
+
+impl SlowProbe {
+    #[must_use]
+    pub fn new(inner: Arc<dyn MediaProbe>, delay: std::time::Duration) -> Self {
+        Self { inner, delay }
+    }
+}
+
+impl MediaProbe for SlowProbe {
+    fn probe(&self, root: LibraryRootId, path: &RelativeMediaPath) -> Result<ProbeOutcome, Error> {
+        std::thread::sleep(self.delay);
+        self.inner.probe(root, path)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

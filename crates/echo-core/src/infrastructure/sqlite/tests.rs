@@ -145,10 +145,10 @@ fn schema_constraints_cover_active_root_paths_playlist_and_target_claim() {
 fn unit_of_work_rolls_back_and_real_repositories_round_trip() {
     let (_directory, database, root) = database();
     let rolled_back = song(root, "a.flac", "A", "甲");
-    let result: Result<(), Error> = database.with_tx(move |tx| {
+    let result: Result<(), Error> = database.with_tx(Box::new(move |tx: &mut dyn TxAccess| {
         tx.upsert_song(&rolled_back)?;
         Err(Error::Cancelled)
-    });
+    }));
     assert!(result.is_err());
     assert!(database
         .by_path(root, &RelativeMediaPath::new("a.flac").expect("path"))
@@ -158,7 +158,7 @@ fn unit_of_work_rolls_back_and_real_repositories_round_trip() {
     database
         .with_tx({
             let committed = committed.clone();
-            move |tx| tx.upsert_song(&committed)
+            Box::new(move |tx: &mut dyn TxAccess| tx.upsert_song(&committed))
         })
         .expect("commit");
     assert_eq!(
@@ -484,7 +484,9 @@ fn pending_delete_hides_from_catalog_and_finalize_removes_members_atomically() {
 
     // Delete finalization removes the membership rows inside one transaction.
     database
-        .with_tx(move |tx| tx.remove_member(playlist, song.id()))
+        .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
+            tx.remove_member(playlist, song.id())
+        }))
         .expect("finalize");
     assert!(database.members(playlist).expect("members").is_empty());
     assert!(database.delete(playlist).is_ok());
@@ -624,7 +626,7 @@ fn multi_playlist_membership_commits_in_one_transaction() {
     // Adding the same song to several playlists is one atomic snapshot: the
     // transaction either commits every membership or none of them.
     database
-        .with_tx(move |tx| {
+        .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
             tx.insert_member(&PlaylistMember::new(
                 playlist_one,
                 song_id,
@@ -637,7 +639,7 @@ fn multi_playlist_membership_commits_in_one_transaction() {
                 0,
                 SongAvailability::Available,
             ))
-        })
+        }))
         .expect("multi-playlist add");
     assert_eq!(database.members(playlist_one).expect("one").len(), 1);
     assert_eq!(database.members(playlist_two).expect("two").len(), 1);
@@ -649,7 +651,7 @@ fn multi_playlist_membership_commits_in_one_transaction() {
     let song_c = song(root, "c.flac", "C", "丙");
     SongRepository::upsert(&database, &song_c).expect("c");
     let song_c_id = song_c.id();
-    let result: Result<(), Error> = database.with_tx(move |tx| {
+    let result: Result<(), Error> = database.with_tx(Box::new(move |tx: &mut dyn TxAccess| {
         tx.insert_member(&PlaylistMember::new(
             playlist_one,
             song_c_id,
@@ -662,7 +664,7 @@ fn multi_playlist_membership_commits_in_one_transaction() {
             0,
             SongAvailability::Available,
         ))
-    });
+    }));
     assert!(result.is_err(), "position clash must fail the transaction");
     assert_eq!(
         database.members(playlist_one).expect("one").len(),
@@ -670,4 +672,414 @@ fn multi_playlist_membership_commits_in_one_transaction() {
         "first membership of the failed transaction is rolled back"
     );
     assert_eq!(database.members(playlist_two).expect("two").len(), 1);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: scan pipeline against the real SQLite adapter (tasks 4.6/4.7/4.10)
+// ---------------------------------------------------------------------------
+
+use crate::application::ports::{
+    CoverRepository, LibraryFileSystem as LibraryFileSystemPort, LyricsRepository,
+    OperationJournalRepository, RuntimeStateStore, ScanRunRepository,
+};
+use crate::application::root_switch::{
+    ActivateLibrary, Blockers, PrepareLibraryCandidate, ROOT_EPOCH_KEY,
+};
+use crate::application::scan::{ScanConfig, ScanDeps, ScanSupervisor, StartScan};
+use crate::application::testing::clock::{FakeIdGenerator, ManualClock, SteppingClock};
+use crate::application::testing::filesystem::FakeLibraryFileSystem;
+use crate::application::testing::small_fakes::{
+    FakeFileHasher, FakeLyricsParser, FakeMediaProbe, FakeMetadataReader,
+};
+use crate::domain::state::scan::ScanState as ScanRunState;
+use crate::infrastructure::metadata::DiskCoverCache;
+
+/// A real SQLite database wired to fake file-system/metadata adapters — the
+/// composition the desktop runtime will build, minus the OS pieces. One
+/// `Arc<SqliteDatabase>` serves every repository port view, exactly like the
+/// production composition root.
+struct ScanStack {
+    _directory: tempfile::TempDir,
+    library_dir: std::path::PathBuf,
+    database: Arc<SqliteDatabase>,
+    fs: Arc<FakeLibraryFileSystem>,
+    fs_port: Arc<dyn LibraryFileSystemPort>,
+    probe: FakeMediaProbe,
+    metadata: FakeMetadataReader,
+    root: LibraryRootId,
+}
+
+impl ScanStack {
+    fn new() -> Self {
+        let directory = tempfile::tempdir().expect("temporary database directory");
+        let database = Arc::new(
+            SqliteDatabase::open(directory.path().join("echo.db")).expect("open database"),
+        );
+        let root = LibraryRootId::new();
+        let library_dir = directory.path().join("library");
+        std::fs::create_dir_all(&library_dir).expect("library dir");
+        LibraryRepository::upsert(
+            database.as_ref(),
+            &LibraryRoot::new(root, library_dir.clone(), true, true),
+        )
+        .expect("insert active root");
+        let fs = FakeLibraryFileSystem::with_root(root);
+        fs.add_root_at(root, library_dir.clone());
+        let fs_port: Arc<dyn LibraryFileSystemPort> = Arc::new(fs.clone());
+        Self {
+            _directory: directory,
+            library_dir,
+            database,
+            fs: Arc::new(fs),
+            fs_port,
+            probe: FakeMediaProbe::new(),
+            metadata: FakeMetadataReader::new(),
+            root,
+        }
+    }
+
+    fn deps(&self) -> ScanDeps {
+        // One `Arc<SqliteDatabase>` coerced into every port view.
+        let db: Arc<SqliteDatabase> = Arc::clone(&self.database);
+        let db_root: Arc<dyn LibraryRepository> = db.clone();
+        let db_songs: Arc<dyn SongRepository> = db.clone();
+        let db_lyrics: Arc<dyn LyricsRepository> = db.clone();
+        let db_covers: Arc<dyn CoverRepository> = db.clone();
+        let db_runs: Arc<dyn ScanRunRepository> = db.clone();
+        let db_journal: Arc<dyn OperationJournalRepository> = db.clone();
+        let db_uow: Arc<dyn UnitOfWork> = db;
+        ScanDeps {
+            roots: db_root,
+            songs: db_songs,
+            lyrics: db_lyrics,
+            covers: db_covers,
+            runs: db_runs,
+            journal: db_journal,
+            uow: db_uow,
+            fs: Arc::clone(&self.fs_port),
+            probe: Arc::new(self.probe.clone()),
+            metadata: Arc::new(self.metadata.clone()),
+            hasher: Arc::new(FakeFileHasher::new(Arc::clone(&self.fs_port))),
+            lyrics_parser: Arc::new(FakeLyricsParser::new()),
+            cover_cache: Arc::new(
+                DiskCoverCache::new(tempfile::TempDir::new().expect("cache dir").keep())
+                    .expect("cover cache"),
+            ),
+            ids: Arc::new(FakeIdGenerator::new()),
+            clock: Arc::new(ManualClock::new()),
+            config: ScanConfig {
+                batch_size: 2,
+                worker_threads: 1,
+                ..ScanConfig::default()
+            },
+        }
+    }
+
+    fn write(&self, path: &str, bytes: &[u8]) {
+        let absolute = self.library_dir.join(path);
+        if let Some(parent) = absolute.parent() {
+            std::fs::create_dir_all(parent).expect("parent dir");
+        }
+        std::fs::write(absolute, bytes).expect("write file");
+    }
+}
+
+#[test]
+fn scan_pipeline_persists_songs_lyrics_covers_and_progress() {
+    let stack = ScanStack::new();
+    stack.write("a.mp3", b"audio-a");
+    stack.write("华语/b.flac", b"audio-b");
+    stack.write("华语/b.lrc", b"[00:01.00]sidecar");
+    for (path, title) in [("a.mp3", "A"), ("华语/b.flac", "B")] {
+        stack.probe.set(
+            path,
+            crate::application::ports::ProbeOutcome::Audio {
+                format: crate::domain::media::AudioFormat::Flac,
+                duration: Some(Duration::from_secs(1)),
+            },
+        );
+        stack.metadata.set(
+            path,
+            crate::domain::media::ParsedMetadata {
+                title: Some(title.to_owned()),
+                artist: Some("歌手".to_owned()),
+                album: Some("专辑".to_owned()),
+                duration: Some(Duration::from_secs(1)),
+                format: crate::domain::media::AudioFormat::Flac,
+                embedded_lyrics: Some("[00:02.00]embedded".to_owned()),
+                cover: Some(crate::domain::media::EmbeddedCover {
+                    bytes: b"cover-".repeat(64),
+                    mime: "image/png".to_owned(),
+                }),
+                ..crate::domain::media::ParsedMetadata::default()
+            },
+        );
+    }
+    let stack_deps = stack.deps();
+    let summary = StartScan::new(&stack_deps, &ScanSupervisor::new())
+        .run(stack.root)
+        .expect("scan ok");
+    assert_eq!(summary.progress.created, 2);
+    assert_eq!(summary.progress.state, ScanRunState::Completed);
+
+    // Songs persisted with scan facts and visible to the catalog query.
+    let page = stack
+        .database
+        .query_active_songs("", SongSort::default(), None, 100)
+        .expect("query");
+    assert_eq!(page.items.len(), 2);
+    let song = page
+        .items
+        .iter()
+        .find(|song| song.path().display() == "a.mp3")
+        .expect("song");
+    assert_eq!(song.title(), Some("A"));
+    assert!(song.blake3_hash().is_some(), "scan facts persisted");
+    assert_eq!(song.file_size(), Some(7));
+
+    // Lyrics candidates per source, persisted transactionally with the song.
+    let candidates = stack.database.candidates(song.id()).expect("candidates");
+    assert!(candidates
+        .iter()
+        .any(|candidate| candidate.source() == crate::domain::entities::LyricsSource::Embedded));
+    // The sidecar pairs with the *other* file (华语/b.flac + 华语/b.lrc).
+    let song_b = page
+        .items
+        .iter()
+        .find(|song| song.path().display() == "华语/b.flac")
+        .expect("song b");
+    let candidates_b = stack.database.candidates(song_b.id()).expect("candidates");
+    let sources_b: Vec<_> = candidates_b
+        .iter()
+        .map(crate::domain::entities::LyricsCandidate::source)
+        .collect();
+    assert!(sources_b.contains(&crate::domain::entities::LyricsSource::Embedded));
+    assert!(sources_b.contains(&crate::domain::entities::LyricsSource::Sidecar));
+
+    // Cover reference + asset key consistency.
+    let cover = stack
+        .database
+        .cover_of(song.id())
+        .expect("cover")
+        .expect("attached");
+    assert!(cover.asset_key.starts_with("cv1-"));
+    assert!(!stack
+        .database
+        .referenced_asset_keys(stack.root)
+        .expect("keys")
+        .is_empty());
+
+    // Scan runs + issues persisted.
+    let (state, progress, finished) = stack
+        .database
+        .scan_run_snapshot(stack.root, 1)
+        .expect("run row")
+        .expect("row");
+    assert_eq!(state, ScanRunState::Completed);
+    assert!(finished);
+    assert_eq!(progress.discovered, 2);
+    assert_eq!(
+        stack.database.latest_generation(stack.root).expect("gen"),
+        Some(1)
+    );
+
+    // Search works on the freshly scanned library (Unicode-safe path too).
+    let page = stack
+        .database
+        .search_active_songs("歌手", SongSort::default(), None, 100)
+        .expect("search");
+    assert_eq!(page.items.len(), 2);
+}
+
+/// Probe double that stalls each probe so a scan stays in flight.
+struct SlowProbe {
+    inner: FakeMediaProbe,
+    delay: Duration,
+}
+
+impl crate::application::ports::MediaProbe for SlowProbe {
+    fn probe(
+        &self,
+        root: LibraryRootId,
+        path: &RelativeMediaPath,
+    ) -> Result<crate::application::ports::ProbeOutcome, Error> {
+        std::thread::sleep(self.delay);
+        self.inner.probe(root, path)
+    }
+}
+
+#[test]
+fn scan_pipeline_keeps_ui_queries_available_during_scan() {
+    let stack = ScanStack::new();
+    for index in 0..20 {
+        let path = format!("file{index}.mp3");
+        stack.write(&path, format!("audio-{index}").as_bytes());
+        stack.probe.set(
+            &path,
+            crate::application::ports::ProbeOutcome::Audio {
+                format: crate::domain::media::AudioFormat::Flac,
+                duration: Some(Duration::from_secs(1)),
+            },
+        );
+        stack.metadata.set(
+            &path,
+            crate::domain::media::ParsedMetadata {
+                title: Some(format!("T{index}")),
+                artist: Some("歌手".to_owned()),
+                album: Some("专辑".to_owned()),
+                duration: Some(Duration::from_secs(1)),
+                format: crate::domain::media::AudioFormat::Flac,
+                ..crate::domain::media::ParsedMetadata::default()
+            },
+        );
+    }
+    // Slow the workers so the scan runs long enough to query against.
+    let mut deps = stack.deps();
+    deps.config.batch_size = 4;
+    deps.config.worker_threads = 2;
+    deps.probe = Arc::new(SlowProbe {
+        inner: stack.probe.clone(),
+        delay: Duration::from_millis(10),
+    });
+
+    let scan_deps = Arc::new(deps);
+    let worker_deps = Arc::clone(&scan_deps);
+    let supervisor = ScanSupervisor::new();
+    let worker_supervisor = supervisor;
+    let root = stack.root;
+    let scanner =
+        std::thread::spawn(move || StartScan::new(&worker_deps, &worker_supervisor).run(root));
+
+    // While the scan is in flight, catalog queries keep succeeding (readers
+    // are never blocked by the writer's small batches).
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let mut queries = 0;
+    while !scanner.is_finished() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "scan did not finish in time"
+        );
+        let page = stack
+            .database
+            .query_active_songs("", SongSort::default(), None, 100)
+            .expect("query during scan");
+        assert!(page.items.len() <= 20);
+        queries += 1;
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let summary = scanner.join().unwrap().expect("scan ok");
+    assert_eq!(summary.progress.created, 20);
+    assert!(queries > 0, "queries ran while the scan was in flight");
+    let final_page = stack
+        .database
+        .query_active_songs("", SongSort::default(), None, 100)
+        .expect("query after scan");
+    assert_eq!(final_page.items.len(), 20);
+}
+
+#[test]
+fn scan_runs_progress_issues_round_trip_through_sqlite() {
+    let stack = ScanStack::new();
+    stack.write("good.mp3", b"good");
+    stack.probe.set(
+        "good.mp3",
+        crate::application::ports::ProbeOutcome::Audio {
+            format: crate::domain::media::AudioFormat::Flac,
+            duration: Some(Duration::from_secs(1)),
+        },
+    );
+    stack.metadata.set(
+        "good.mp3",
+        crate::domain::media::ParsedMetadata {
+            title: Some("Good".to_owned()),
+            duration: Some(Duration::from_secs(1)),
+            format: crate::domain::media::AudioFormat::Flac,
+            ..crate::domain::media::ParsedMetadata::default()
+        },
+    );
+    // One bad file forms a persistent issue row.
+    stack.write("bad.mp3", b"bad");
+    stack.probe.set(
+        "bad.mp3",
+        crate::application::ports::ProbeOutcome::Unsupported,
+    );
+
+    // A stepping clock makes the throttle deterministic (60 ms steps vs a
+    // 100 ms interval: batch snapshots are suppressed, terminal persists).
+    let mut deps = stack.deps();
+    deps.clock = Arc::new(SteppingClock::new(60));
+    let summary = StartScan::new(&deps, &ScanSupervisor::new())
+        .run(stack.root)
+        .expect("scan ok");
+    assert_eq!(summary.progress.failed, 1);
+
+    let (state, progress, finished) = stack
+        .database
+        .scan_run_snapshot(stack.root, 1)
+        .expect("run row")
+        .expect("row");
+    assert_eq!(state, ScanRunState::Completed);
+    assert_eq!(progress.discovered, 2);
+    assert_eq!(progress.failed, 1);
+    assert!(finished, "terminal state never lost");
+    let issues = stack.database.scan_issues(stack.root, 1).expect("issues");
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].code(), "unsupported_media");
+    // The bad file did not block the good one.
+    assert_eq!(
+        stack
+            .database
+            .query_active_songs("", SongSort::default(), None, 100)
+            .expect("query")
+            .items
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn activation_commits_active_root_and_epoch_atomically() {
+    let stack = ScanStack::new();
+    let second_dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(&second_dir).unwrap();
+    let root_two =
+        crate::application::root_switch::derive_root_id(&second_dir.path().canonicalize().unwrap());
+    stack
+        .fs
+        .add_root_at(root_two, second_dir.path().to_path_buf());
+
+    let deps = stack.deps();
+    let supervisor = ScanSupervisor::new();
+    // Prepare + activate the empty second root.
+    let prepared = PrepareLibraryCandidate::new(&deps, stack.database.as_ref(), &supervisor)
+        .prepare(second_dir.path())
+        .expect("prepare");
+    let outcome = ActivateLibrary::new(
+        &deps,
+        stack.database.as_ref(),
+        &supervisor,
+        stack.database.as_ref(),
+        &Blockers::new(),
+    )
+    .activate(prepared.root_id)
+    .expect("activate");
+    assert_eq!(outcome.epoch.as_u64(), 1);
+    // One transaction flipped active + epoch: both are visible now.
+    let active = stack.database.active_root().expect("active").expect("root");
+    assert_eq!(active.id(), root_two);
+    assert_eq!(
+        stack
+            .database
+            .load(ROOT_EPOCH_KEY)
+            .expect("epoch")
+            .as_deref(),
+        Some("1")
+    );
+    // And the previous root record is kept but inactive.
+    assert!(
+        !LibraryRepository::by_id(stack.database.as_ref(), stack.root)
+            .expect("by id")
+            .unwrap()
+            .is_active()
+    );
 }

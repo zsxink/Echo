@@ -20,6 +20,7 @@ use super::support::{now_ms, storage};
 
 mod migrations {
     pub const INITIAL: &str = include_str!("migrations/0001_initial.sql");
+    pub const LIBRARY_ASSETS: &str = include_str!("migrations/0002_library_assets.sql");
 }
 
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -63,7 +64,10 @@ fn configure_connection(connection: &Connection, writer: bool) -> Result<(), Err
 
 pub(crate) fn apply_migrations(connection: &mut Connection) -> Result<(), Error> {
     connection.execute_batch("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, checksum TEXT NOT NULL, applied_at INTEGER NOT NULL);").map_err(storage)?;
-    apply_migration_set(connection, &[(1, migrations::INITIAL)])
+    apply_migration_set(
+        connection,
+        &[(1, migrations::INITIAL), (2, migrations::LIBRARY_ASSETS)],
+    )
 }
 
 pub(crate) fn apply_migration_set(

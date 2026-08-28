@@ -185,58 +185,399 @@
       "id": "3.1",
       "title": "Immutable 0001 SQLite migration and schema snapshot",
       "commands": [
-        { "desc": "migration schema snapshot", "cmd": "node scripts/verify/checks/task-3.mjs 3.1 initial_migration_has_required_tables_indexes_and_no_sync_tables" },
-        { "desc": "multiple lyrics candidates per song", "cmd": "node scripts/verify/checks/task-3.mjs 3.1 song_lyrics_keep_multiple_candidates_for_fallback" }
+        {
+          "desc": "migration schema snapshot",
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.1 initial_migration_has_required_tables_indexes_and_no_sync_tables"
+        },
+        {
+          "desc": "multiple lyrics candidates per song",
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.1 song_lyrics_keep_multiple_candidates_for_fallback"
+        }
       ]
     },
     {
       "id": "3.2",
       "title": "SQLite constraints and query indexes",
       "commands": [
-        { "desc": "schema constraints", "cmd": "node scripts/verify/checks/task-3.mjs 3.2 schema_constraints_cover_active_root_paths_playlist_and_target_claim" },
-        { "desc": "cross-root membership and position clashes rejected", "cmd": "node scripts/verify/checks/task-3.mjs 3.2 playlist_members_reject_cross_root_and_position_conflicts" },
-        { "desc": "active target claim blocks other operations until released", "cmd": "node scripts/verify/checks/task-3.mjs 3.2 target_claims_block_other_operations_until_released" }
+        {
+          "desc": "schema constraints",
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.2 schema_constraints_cover_active_root_paths_playlist_and_target_claim"
+        },
+        {
+          "desc": "cross-root membership and position clashes rejected",
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.2 playlist_members_reject_cross_root_and_position_conflicts"
+        },
+        {
+          "desc": "active target claim blocks other operations until released",
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.2 target_claims_block_other_operations_until_released"
+        }
       ]
     },
     {
       "id": "3.3",
       "title": "Migration runner, integrity check and backup",
-      "commands": [{ "desc": "checksum and backup", "cmd": "node scripts/verify/checks/task-3.mjs 3.3 migration_checksum_and_backup_are_reopenable" }]
+      "commands": [
+        {
+          "desc": "checksum and backup",
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.3 migration_checksum_and_backup_are_reopenable"
+        }
+      ]
     },
     {
       "id": "3.4",
       "title": "Single-writer SQLite actor and read pool",
-      "commands": [{ "desc": "concurrent readers and idempotent writer", "cmd": "node scripts/verify/checks/task-3.mjs 3.4 playback_sessions_are_idempotent_and_writer_allows_concurrent_reads" }]
+      "commands": [
+        {
+          "desc": "concurrent readers and idempotent writer",
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.4 playback_sessions_are_idempotent_and_writer_allows_concurrent_reads"
+        }
+      ]
     },
     {
       "id": "3.5",
       "title": "SQLite repositories and Unit of Work",
       "commands": [
-        { "desc": "transaction commit and rollback", "cmd": "node scripts/verify/checks/task-3.mjs 3.5 unit_of_work_rolls_back_and_real_repositories_round_trip" },
-        { "desc": "stale scan write-back preserves user state", "cmd": "node scripts/verify/checks/task-3.mjs 3.5 stale_scan_upsert_preserves_favorite_play_count_and_availability" },
-        { "desc": "pending delete hidden, finalize removes members atomically", "cmd": "node scripts/verify/checks/task-3.mjs 3.5 pending_delete_hides_from_catalog_and_finalize_removes_members_atomically" },
-        { "desc": "multi-playlist membership commits and rolls back atomically", "cmd": "node scripts/verify/checks/task-3.mjs 3.5 multi_playlist_membership_commits_in_one_transaction" }
+        {
+          "desc": "transaction commit and rollback",
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.5 unit_of_work_rolls_back_and_real_repositories_round_trip"
+        },
+        {
+          "desc": "stale scan write-back preserves user state",
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.5 stale_scan_upsert_preserves_favorite_play_count_and_availability"
+        },
+        {
+          "desc": "pending delete hidden, finalize removes members atomically",
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.5 pending_delete_hides_from_catalog_and_finalize_removes_members_atomically"
+        },
+        {
+          "desc": "multi-playlist membership commits and rolls back atomically",
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.5 multi_playlist_membership_commits_in_one_transaction"
+        }
       ]
     },
     {
       "id": "3.6",
       "title": "FTS5 trigram song search",
-      "commands": [{ "desc": "Unicode FTS", "cmd": "node scripts/verify/checks/task-3.mjs 3.6 fts_and_short_like_search_are_unicode_safe_and_complete" }]
+      "commands": [
+        {
+          "desc": "Unicode FTS",
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.6 fts_and_short_like_search_are_unicode_safe_and_complete"
+        }
+      ]
     },
     {
       "id": "3.7",
       "title": "Short-query normalized LIKE fallback",
-      "commands": [{ "desc": "escaped LIKE", "cmd": "node scripts/verify/checks/task-3.mjs 3.7 fts_and_short_like_search_are_unicode_safe_and_complete" }]
+      "commands": [
+        {
+          "desc": "escaped LIKE",
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.7 fts_and_short_like_search_are_unicode_safe_and_complete"
+        }
+      ]
     },
     {
       "id": "3.8",
       "title": "Keyset pagination and recent songs",
-      "commands": [{ "desc": "deterministic cursor pages", "cmd": "node scripts/verify/checks/task-3.mjs 3.8 keyset_pages_are_deterministic_and_reject_stale_cursors" }]
+      "commands": [
+        {
+          "desc": "deterministic cursor pages",
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.8 keyset_pages_are_deterministic_and_reject_stale_cursors"
+        }
+      ]
     },
     {
       "id": "3.9",
       "title": "Idempotent recorded playback sessions",
-      "commands": [{ "desc": "one count per load session", "cmd": "node scripts/verify/checks/task-3.mjs 3.9 playback_sessions_are_idempotent_and_writer_allows_concurrent_reads" }]
+      "commands": [
+        {
+          "desc": "one count per load session",
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.9 playback_sessions_are_idempotent_and_writer_allows_concurrent_reads"
+        }
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Active-root candidate criteria and Prepare/Quiesce/Commit/Rebind barrier",
+      "commands": [
+        {
+          "desc": "empty dir activates, re-selection reuses the root id",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.1 application::root_switch::tests::empty_directory_activates_and_reuses_root_id"
+        },
+        {
+          "desc": "root-level failure keeps the old active root",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.1 application::root_switch::tests::root_level_error_keeps_old_active_root"
+        },
+        {
+          "desc": "read-only root activates ActiveReadOnly with writes disabled",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.1 application::root_switch::tests::read_only_root_activates_readonly_and_disables_writes"
+        },
+        {
+          "desc": "import/delete-undo blockers refuse the switch",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.1 application::root_switch::tests::switch_refused_while_import_blockers_active"
+        },
+        {
+          "desc": "switch cancels in-flight scans and advances the persisted epoch",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.1 application::root_switch::tests::switch_cancels_active_scan_and_advances_epoch"
+        }
+      ]
+    },
+    {
+      "id": "4.2",
+      "title": "Root-constrained fs adapter and marker-verified staging directory",
+      "commands": [
+        {
+          "desc": "staging exclusive-create + marker ownership",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.2 infrastructure::filesystem::staging::tests::staging_dir_is_created_with_matching_marker"
+        },
+        {
+          "desc": "forged/corrupt marker and user dirs never taken over or ignored",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.2 infrastructure::filesystem::staging::tests::forged_or_corrupt_marker_is_never_ours"
+        },
+        {
+          "desc": "symlinked staging directory never followed",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.2 infrastructure::filesystem::staging::tests::symlinked_staging_directory_is_never_followed"
+        },
+        {
+          "desc": "walker skips only marker-owned staging dirs (incl. Unicode paths)",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.2 infrastructure::filesystem::walker::tests::walker_enumerates_files_and_skips_only_owned_staging_dirs"
+        },
+        {
+          "desc": "escaping file symlinks rejected (canonical containment)",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.2 infrastructure::filesystem::walker::tests::walker_rejects_escaping_file_symlinks"
+        },
+        {
+          "desc": "directory symlinks not followed",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.2 infrastructure::filesystem::walker::tests::walker_does_not_follow_directory_symlinks"
+        },
+        {
+          "desc": "publish flow + conflict + forged handle + write capability",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.2 infrastructure::filesystem::adapter::tests::staged_handle_publishes_into_the_root_and_rejects_replacement"
+        },
+        {
+          "desc": "forged staged handles rejected",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.2 infrastructure::filesystem::adapter::tests::forged_staged_handles_are_rejected"
+        }
+      ]
+    },
+    {
+      "id": "4.3",
+      "title": "Independent MediaProbe + lofty tags/covers/lyrics parsing",
+      "commands": [
+        {
+          "desc": "phase-one matrix probes by content with duration",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.3 infrastructure::metadata::probe::tests::probe_supports_the_phase_one_matrix"
+        },
+        {
+          "desc": "disguised extension / no-audio MP4 / corrupt file diagnostics",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.3 infrastructure::metadata::probe::tests::disguised_no_audio_and_corrupt_files_form_diagnostics"
+        },
+        {
+          "desc": "tags + stream parameters parse from fixtures",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.3 infrastructure::metadata::tags::tests::tags_and_parameters_parse_from_fixtures"
+        }
+      ]
+    },
+    {
+      "id": "4.4",
+      "title": "Input limits: tag 4 KiB / lyrics 2 MiB / cover 20 MiB",
+      "commands": [
+        {
+          "desc": "over-limit assets skipped, song fields still imported",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.4 infrastructure::metadata::tags::tests::input_limits_skip_assets_but_keep_song_fields"
+        },
+        {
+          "desc": "display/lyrics text cleanup rules",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.4 infrastructure::metadata::tags::tests::clean_display_text_strips_controls_and_normalizes"
+        }
+      ]
+    },
+    {
+      "id": "4.5",
+      "title": "LRC parser and lyrics candidate selection",
+      "commands": [
+        {
+          "desc": "multi-timestamp, sorting, original_index, ms/hour forms",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.5 infrastructure::metadata::lrc::tests::lrc_parser_sorts_out_of_order_and_multi_timestamps"
+        },
+        {
+          "desc": "global offset and out-of-range drops",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.5 infrastructure::metadata::lrc::tests::lrc_offset_is_global_and_out_of_range_lines_are_dropped"
+        },
+        {
+          "desc": "plain-text semantics",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.5 infrastructure::metadata::lrc::tests::lrc_without_timestamps_is_plain_text"
+        },
+        {
+          "desc": "empty/unreadable lyrics are notes, not blockers",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.5 infrastructure::metadata::lrc::tests::lrc_empty_or_unreadable_is_a_note_not_a_blocker"
+        },
+        {
+          "desc": "candidate priority Override > Embedded > Sidecar",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.5 domain::entities::tests::lyrics_selection_prefers_valid_highest_priority"
+        },
+        {
+          "desc": "corrupt high priority falls back",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.5 domain::entities::tests::lyrics_selection_falls_back_when_higher_priority_is_corrupt"
+        },
+        {
+          "desc": "empty override blocks fallback",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.5 domain::entities::tests::lyrics_selection_empty_override_blocks_fallback"
+        }
+      ]
+    },
+    {
+      "id": "4.6",
+      "title": "Content-hash cover cache, opaque asset keys, thumbnails, GC",
+      "commands": [
+        {
+          "desc": "content-keyed storage and round trip",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.6 infrastructure::metadata::cover::tests::cover_cache_keys_by_content_and_round_trips"
+        },
+        {
+          "desc": "bad keys / arbitrary paths rejected",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.6 infrastructure::metadata::cover::tests::cover_cache_rejects_bad_keys_and_arbitrary_paths"
+        },
+        {
+          "desc": "size-capped list/detail thumbnails",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.6 infrastructure::metadata::cover::tests::cover_cache_thumbnails_are_size_capped"
+        },
+        {
+          "desc": "GC never deletes referenced assets",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.6 infrastructure::metadata::cover::tests::cover_cache_gc_keeps_referenced_assets"
+        },
+        {
+          "desc": "cache key + DB reference consistent in one transaction (SQLite)",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.6 infrastructure::sqlite::tests::scan_pipeline_persists_songs_lyrics_covers_and_progress"
+        }
+      ]
+    },
+    {
+      "id": "4.7",
+      "title": "Generation scan pipeline, cancel token, bounded workers, batched reconcile",
+      "commands": [
+        {
+          "desc": "creates/updates/progress with small-batch reconcile",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.7 application::scan::tests::scan_pipeline_creates_updates_and_reports_progress"
+        },
+        {
+          "desc": "bad files never block other songs",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.7 application::scan::tests::scan_pipeline_batches_and_survives_bad_files"
+        },
+        {
+          "desc": "cancel mid-scan never marks missing",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.7 application::scan::tests::cancel_mid_scan_never_marks_missing"
+        },
+        {
+          "desc": "enumerate failure marks run failed without missing pass",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.7 application::scan::tests::enumerate_failure_marks_run_failed_without_missing"
+        },
+        {
+          "desc": "worker concurrency bounded by config",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.7 application::scan::tests::bounded_workers_never_exceed_the_configured_bound"
+        },
+        {
+          "desc": "UI queries stay available during a real SQLite scan",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.7 infrastructure::sqlite::tests::scan_pipeline_keeps_ui_queries_available_during_scan"
+        }
+      ]
+    },
+    {
+      "id": "4.8",
+      "title": "Fast-skip, BLAKE3 hashing and identity re-linking rules",
+      "commands": [
+        {
+          "desc": "path/hash/music-key decision rules (pure planner)",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.8 application::relink::tests::relink_plans_cover_path_hash_and_music_key_rules"
+        },
+        {
+          "desc": "fast-skip unchanged files; move keeps UUID and favorite",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.8 application::scan::tests::fast_skip_unchanged_files_and_relink_on_move"
+        },
+        {
+          "desc": "duplicate hashes: deterministic primary + promotion keeps UUID",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.8 application::scan::tests::duplicate_hash_paths_get_deterministic_primary"
+        },
+        {
+          "desc": "unique music-key weak re-link stays conservative",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.8 application::scan::tests::unique_music_key_relink_is_conservative"
+        },
+        {
+          "desc": "BLAKE3 streams files, content-keyed",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.8 infrastructure::filesystem::hasher::tests::hasher_streams_files_and_is_content_keyed"
+        }
+      ]
+    },
+    {
+      "id": "4.9",
+      "title": "Watcher debounce/stability, claim arbitration, event buffering, rescan degradation",
+      "commands": [
+        {
+          "desc": "coalescer debounces write bursts",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.9 infrastructure::filesystem::watcher::tests::coalescer_debounces_a_write_burst_into_one_event"
+        },
+        {
+          "desc": "double-sampling stability gate",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.9 infrastructure::filesystem::watcher::tests::coalescer_double_samples_before_emitting"
+        },
+        {
+          "desc": "remove/rename normalization + overflow degradation",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.9 infrastructure::filesystem::watcher::tests::coalescer_normalizes_removal_and_rename_and_overflow"
+        },
+        {
+          "desc": "end-to-end subscription emits a stable event",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.9 infrastructure::filesystem::watcher::tests::subscription_end_to_end_emits_a_stable_event"
+        },
+        {
+          "desc": "out-of-order/duplicate/lost events converge",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.9 application::watch::tests::watch_events_converge_under_out_of_order_and_duplicate_delivery"
+        },
+        {
+          "desc": "rename keeps the UUID",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.9 application::watch::tests::rename_keeps_the_uuid"
+        },
+        {
+          "desc": "active claim defers events",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.9 application::watch::tests::claimed_paths_defer_until_the_operation_publishes"
+        },
+        {
+          "desc": "published files reuse the journal-reserved SongId",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.9 application::watch::tests::published_files_reuse_the_journal_reserved_song_id"
+        },
+        {
+          "desc": "full scan buffers events, release replays idempotently",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.9 application::watch::tests::full_scan_buffers_events_and_release_replays_them"
+        },
+        {
+          "desc": "overflow/unclassifiable degrade to rescan requests",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.9 application::watch::tests::overflow_and_unclassifiable_degrade_to_rescan_requests"
+        }
+      ]
+    },
+    {
+      "id": "4.10",
+      "title": "Scan progress/summary/issue persistence, cancel and manual rescan",
+      "commands": [
+        {
+          "desc": "scan runs/issues round trip through SQLite, terminal state kept",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.10 infrastructure::sqlite::tests::scan_runs_progress_issues_round_trip_through_sqlite"
+        },
+        {
+          "desc": "progress throttle + terminal persistence",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.10 application::scan::tests::progress_persisted_throttled_and_terminal_state_kept"
+        },
+        {
+          "desc": "manual rescan repeatable and converging",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.10 application::scan::tests::manual_rescan_is_repeatable_and_converges"
+        },
+        {
+          "desc": "embedded/sidecar candidates persisted and refreshed per scan",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.10 application::scan::tests::embedded_and_sidecar_lyrics_are_persisted_per_source"
+        },
+        {
+          "desc": "revision/added_at survive rescans (identity stability)",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.10 application::scan::tests::revision_and_added_at_survive_rescans"
+        }
+      ]
     }
   ],
   "scenarios": []

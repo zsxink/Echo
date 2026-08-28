@@ -2,6 +2,44 @@
 
 use super::TransitionError;
 
+/// A progress snapshot of one scan generation (design §6).
+///
+/// Scans report progress as coarse snapshots — at most once every 100 ms —
+/// never as per-file event floods. The fields mirror the `scan_runs` summary
+/// columns so the same snapshot drives the UI and the persisted run record.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ScanProgress {
+    /// The scan phase the snapshot was taken in.
+    pub state: ScanState,
+    /// Files discovered by the enumeration pass.
+    pub discovered: u64,
+    /// Files fully processed (parsed + reconciled, or skipped/failed).
+    pub processed: u64,
+    /// Songs created by this scan so far.
+    pub created: u64,
+    /// Existing songs updated by this scan so far.
+    pub updated: u64,
+    /// Songs marked missing by this scan (final missing pass only).
+    pub missing: u64,
+    /// Files safely skipped: unchanged (fast-skip) or outside the format
+    /// matrix.
+    pub skipped: u64,
+    /// Files that produced a per-file diagnostic (corrupt, no audio track…).
+    pub failed: u64,
+}
+
+impl ScanProgress {
+    /// Advance `state`, resetting nothing else (counters survive phase moves).
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`TransitionError`] when the move is not a legal scan edge.
+    pub fn transition(&mut self, next: ScanState) -> Result<(), TransitionError> {
+        self.state = self.state.transition(next)?;
+        Ok(())
+    }
+}
+
 /// States of a library scan run.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum ScanState {

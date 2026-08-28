@@ -19,7 +19,7 @@ repository = "https://github.com/echo-player/echo"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # Unicode name normalization (NFKC) and user-perceived character length
@@ -29,6 +29,24 @@ unicode-segmentation = "1"
 unicode-casefold = "0.2"
 blake3 = "1"
 rusqlite = { version = "0.32", features = ["backup", "bundled"] }
+
+# Phase 4 media pipeline: probing, tags/covers/lyrics parsing, file watching
+# and thumbnail scaling. All pure-Rust, cross-platform crates with no `unsafe`
+# in their public APIs. Symphonia (MPL-2.0) probes containers/audio tracks;
+# lofty reads tags and embedded art/lyrics; notify watches library roots;
+# image scales cover art into the two size-capped thumbnails.
+lofty = "0.22"
+symphonia = { version = "0.5", default-features = false, features = [
+    "flac",
+    "isomp4",
+    "mpa",
+    "ogg",
+    "pcm",
+    "vorbis",
+    "wav",
+] }
+notify = "8"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 # Property tests for domain name rules and state-machine transitions (dev-only).
 proptest = "1"

@@ -50,16 +50,16 @@
 
 本组验收：`pnpm verify:task -- 4.1 4.2 4.3 4.4 4.5 4.6 4.7 4.8 4.9 4.10`
 
-- [ ] 4.1 实现活动根候选成功判据和 `Prepare→QuiesceOldRoot→CommitActivation→RebindRuntime` 屏障，验证空目录可激活、根级错误保留旧 active、重选旧路径复用 root ID、只读根禁用写能力，并覆盖播放中/扫描中/导入中/删除撤销中切根。[desktop-app-shell][local-library][desktop-playback]
-- [ ] 4.2 实现受根目录约束的文件系统 Adapter，以及随机受控暂存目录的 exclusive-create/所有权 marker 校验；扫描只排除 marker 匹配的专属目录，验证已有同名用户目录、伪造/损坏 marker、symlink/reparse point、`..`、大小写和 Unicode 路径均不会被忽略、接管、清理或用于逃逸根目录。
-- [ ] 4.3 用独立 MediaProbe 探测音轨、格式和时长，用 lofty 解析标签/封面/歌词，验证 `.mp3/.flac/.m4a/有音轨.mp4/.ogg/.opus/.wav` 成功且伪装扩展名、无音轨 MP4 和损坏文件形成单文件诊断。[local-library]
-- [ ] 4.4 实现标签 4 KiB、歌词候选 2 MiB、封面 20 MiB 输入上限与兜底，验证超限资产被安全跳过且歌曲其余字段仍可入库。
-- [ ] 4.5 实现 LRC parser 与候选选择，验证覆盖层 > 有效内嵌 > 有效侧车、损坏高优先级回退、无时间戳纯文本、乱序/越界时间戳和空歌词语义。[local-library][immersive-lyrics]
-- [ ] 4.6 实现按内容 hash 的封面缓存和列表/详情缩略图、自定义只读 asset key，验证大图不进入歌曲列表查询、错误 key/任意路径被拒绝、缓存 GC 不删除仍被引用资产。
-- [ ] 4.7 实现 generation 扫描流水线、取消令牌、有界解析 worker 和小批量 reconcile，验证扫描期间 UI 查询可用，取消/枚举失败不会把未见歌曲误标 missing。[local-library]
-- [ ] 4.8 实现 size/mtime 快速跳过、全文件 BLAKE3、原路径/同 hash/唯一音乐键重关联，验证改名移动保留 UUID、重复主路径确定性提升、歧义弱匹配不自动合并。[local-library]
-- [ ] 4.9 实现 watcher 防抖、文件稳定性双采样、活动 target claim 等待/预留 SongId 复用、全扫期间事件缓存和 overflow 重扫，注入新增/修改/删除/rename 的乱序、重复、丢失及 publish 后 DB commit 前抢先事件，验证最终状态收敛且 UUID 等于 journal 预留值。[local-library][safe-file-ingestion]
-- [ ] 4.10 实现扫描 progress/summary/issue 持久化和取消/手动重扫用例，验证进度节流不高于设计频率、终态不丢失且坏文件不阻断其他歌曲。[local-library]
+- [x] 4.1 实现活动根候选成功判据和 `Prepare→QuiesceOldRoot→CommitActivation→RebindRuntime` 屏障，验证空目录可激活、根级错误保留旧 active、重选旧路径复用 root ID、只读根禁用写能力，并覆盖播放中/扫描中/导入中/删除撤销中切根。[desktop-app-shell][local-library][desktop-playback]
+- [x] 4.2 实现受根目录约束的文件系统 Adapter，以及随机受控暂存目录的 exclusive-create/所有权 marker 校验；扫描只排除 marker 匹配的专属目录，验证已有同名用户目录、伪造/损坏 marker、symlink/reparse point、`..`、大小写和 Unicode 路径均不会被忽略、接管、清理或用于逃逸根目录。
+- [x] 4.3 用独立 MediaProbe 探测音轨、格式和时长，用 lofty 解析标签/封面/歌词，验证 `.mp3/.flac/.m4a/有音轨.mp4/.ogg/.opus/.wav` 成功且伪装扩展名、无音轨 MP4 和损坏文件形成单文件诊断。[local-library]
+- [x] 4.4 实现标签 4 KiB、歌词候选 2 MiB、封面 20 MiB 输入上限与兜底，验证超限资产被安全跳过且歌曲其余字段仍可入库。
+- [x] 4.5 实现 LRC parser 与候选选择，验证覆盖层 > 有效内嵌 > 有效侧车、损坏高优先级回退、无时间戳纯文本、乱序/越界时间戳和空歌词语义。[local-library][immersive-lyrics]
+- [x] 4.6 实现按内容 hash 的封面缓存和列表/详情缩略图、自定义只读 asset key，验证大图不进入歌曲列表查询、错误 key/任意路径被拒绝、缓存 GC 不删除仍被引用资产。
+- [x] 4.7 实现 generation 扫描流水线、取消令牌、有界解析 worker 和小批量 reconcile，验证扫描期间 UI 查询可用，取消/枚举失败不会把未见歌曲误标 missing。[local-library]
+- [x] 4.8 实现 size/mtime 快速跳过、全文件 BLAKE3、原路径/同 hash/唯一音乐键重关联，验证改名移动保留 UUID、重复主路径确定性提升、歧义弱匹配不自动合并。[local-library]
+- [x] 4.9 实现 watcher 防抖、文件稳定性双采样、活动 target claim 等待/预留 SongId 复用、全扫期间事件缓存和 overflow 重扫，注入新增/修改/删除/rename 的乱序、重复、丢失及 publish 后 DB commit 前抢先事件，验证最终状态收敛且 UUID 等于 journal 预留值。[local-library][safe-file-ingestion]
+- [x] 4.10 实现扫描 progress/summary/issue 持久化和取消/手动重扫用例，验证进度节流不高于设计频率、终态不丢失且坏文件不阻断其他歌曲。[local-library]
 
 ## 5. 安全导入、删除与崩溃恢复
 

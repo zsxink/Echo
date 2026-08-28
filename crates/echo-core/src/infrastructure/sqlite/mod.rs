@@ -30,14 +30,19 @@ use rusqlite::params;
 use rusqlite::{Connection, OptionalExtension, Transaction};
 
 use crate::application::ports::{
-    LibraryRepository, OperationItem, OperationJournalRepository, PlaylistRepository,
-    SongRepository, TxAccess, UnitOfWork,
+    CoverAssetRef, CoverRepository, LibraryRepository, LyricsRepository, OperationItem,
+    OperationJournalRepository, PlaylistRepository, RuntimeStateStore, ScanRunRepository,
+    SongRepository, TxAccess, TxWork, UnitOfWork,
 };
 use crate::domain::catalog::{OpaqueCursor, Paged, SongSort};
-use crate::domain::entities::{LibraryRoot, PlaylistMember, Song, SongAvailability};
+use crate::domain::entities::{
+    LibraryRoot, LyricsCandidate, LyricsSource, MediaDiagnostic, PlaylistMember, Song,
+    SongAvailability,
+};
 use crate::domain::ids::{
     LibraryRootId, OperationId, PlaybackSessionId, PlaylistId, RelativeMediaPath, SongId,
 };
+use crate::domain::state::scan::{ScanProgress, ScanState};
 use crate::domain::text::{normalized_key, playlist_name_key};
 use crate::error::{Error, Subject};
 
@@ -57,11 +62,17 @@ use connection::{
     apply_migrations, backup_connection, backup_path, file_is_non_empty, open_reader, open_writer,
     quick_check_connection, reader_count,
 };
-use conversion::{availability_from_db, operation_item_from_row, root_from_row, song_from_row};
+use conversion::{
+    availability_from_db, operation_item_from_row, root_from_row, scan_state_from_db, song_from_row,
+};
 use query::{active_root_id, query_active, SONG_SELECT};
 use statements::{
-    add_member, create_playlist, increment_play_count, operation_item, release_operation_claims,
-    set_song_availability, set_song_favorite, upsert_operation_item, upsert_root, upsert_song,
+    add_member, all_songs_in_root, attach_cover, begin_scan_run, clear_lyrics_candidate,
+    cover_of_song, create_playlist, finish_scan_run, increment_play_count, latest_scan_generation,
+    load_runtime_state, lyrics_candidates, operation_item, record_scan_issue,
+    referenced_asset_keys, release_operation_claims, set_lyrics_candidate, set_song_availability,
+    set_song_favorite, store_runtime_state, update_scan_progress, upsert_operation_item,
+    upsert_root, upsert_song,
 };
 use support::{map_constraint, now_ms, parse_id, storage, to_sql_error};
 
@@ -259,6 +270,82 @@ impl SqliteDatabase {
         })
     }
 
+    /// Diagnostic snapshot of one scan run row (`scan_runs`), for tests and
+    /// runtime status surfaces.
+    pub fn scan_run_snapshot(
+        &self,
+        root: LibraryRootId,
+        generation: u64,
+    ) -> Result<Option<(ScanState, ScanProgress, bool)>, Error> {
+        self.with_reader(move |connection| {
+            connection
+                .query_row(
+                    "SELECT state, discovered_count, processed_count, created_count, updated_count, missing_count, skipped_count, failed_count, finished_at FROM scan_runs WHERE library_root_uuid = ?1 AND generation = ?2",
+                    params![root.to_string(), i64::try_from(generation).unwrap_or(i64::MAX)],
+                    |row| {
+                        let state = scan_state_from_db(&row.get::<_, String>(0)?);
+                        let progress = ScanProgress {
+                            state,
+                            discovered: u64::try_from(row.get::<_, i64>(1)?).unwrap_or_default(),
+                            processed: u64::try_from(row.get::<_, i64>(2)?).unwrap_or_default(),
+                            created: u64::try_from(row.get::<_, i64>(3)?).unwrap_or_default(),
+                            updated: u64::try_from(row.get::<_, i64>(4)?).unwrap_or_default(),
+                            missing: u64::try_from(row.get::<_, i64>(5)?).unwrap_or_default(),
+                            skipped: u64::try_from(row.get::<_, i64>(6)?).unwrap_or_default(),
+                            failed: u64::try_from(row.get::<_, i64>(7)?).unwrap_or_default(),
+                        };
+                        Ok((state, progress, row.get::<_, Option<i64>>(8)?.is_some()))
+                    },
+                )
+                .optional()
+                .map_err(storage)
+        })
+    }
+
+    /// Map a stored issue code back to its stable `&'static str`.
+    fn issue_code(code: &str) -> &'static str {
+        match code {
+            "unsupported_media" => "unsupported_media",
+            "no_audio_track" => "no_audio_track",
+            "corrupt_media" => "corrupt_media",
+            "duplicate_content" => "duplicate_content",
+            "tag_limit" => "tag_limit",
+            _ => "scan_file_error",
+        }
+    }
+
+    /// Diagnostic list of one run's issues (`scan_issues`).
+    pub fn scan_issues(
+        &self,
+        root: LibraryRootId,
+        generation: u64,
+    ) -> Result<Vec<MediaDiagnostic>, Error> {
+        self.with_reader(move |connection| {
+            let run_key = format!("{root}:{generation}");
+            let mut statement = connection
+                .prepare(
+                    "SELECT relative_path, code, detail FROM scan_issues WHERE scan_run_uuid = ?1 ORDER BY id",
+                )
+                .map_err(storage)?;
+            let issues = statement
+                .query_map(params![run_key], |row| {
+                    let path = row.get::<_, String>(0)?;
+                    let code = row.get::<_, String>(1)?;
+                    let detail = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+                    Ok(MediaDiagnostic::new(
+                        RelativeMediaPath::new(&path).map_err(to_sql_error)?,
+                        Self::issue_code(&code),
+                        detail,
+                        false,
+                    ))
+                })
+                .map_err(storage)?
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(storage)?;
+            Ok(issues)
+        })
+    }
+
     /// The active root's newest 100 available songs, using stable UUID ties.
     pub fn recent_songs(&self) -> Result<Vec<Song>, Error> {
         self.with_reader(|connection| {
@@ -376,6 +463,10 @@ impl SongRepository for SqliteDatabase {
                 .optional()
                 .map_err(storage)
         })
+    }
+
+    fn all_in_root(&self, root: LibraryRootId) -> Result<Vec<Song>, Error> {
+        self.with_reader(move |connection| all_songs_in_root(connection, root))
     }
 
     fn upsert(&self, song: &Song) -> Result<(), Error> {
@@ -542,20 +633,16 @@ impl OperationJournalRepository for SqliteDatabase {
 }
 
 impl UnitOfWork for SqliteDatabase {
-    fn with_tx<T: Send + 'static>(
-        &self,
-        f: impl FnOnce(&mut dyn TxAccess) -> Result<T, Error> + Send + 'static,
-    ) -> Result<T, Error> {
+    fn with_tx(&self, f: TxWork) -> Result<(), Error> {
         self.writer.run(move |connection| {
             let transaction = connection.transaction().map_err(storage)?;
-            let result = {
+            {
                 let mut access = SqliteTx {
                     transaction: &transaction,
                 };
-                f(&mut access)
-            }?;
-            transaction.commit().map_err(storage)?;
-            Ok(result)
+                f(&mut access)?;
+            }
+            transaction.commit().map_err(storage)
         })
     }
 }
@@ -615,5 +702,84 @@ impl TxAccess for SqliteTx<'_> {
         item: OperationItem,
     ) -> Result<(), Error> {
         upsert_operation_item(self.transaction, operation, item)
+    }
+    fn set_lyrics_candidate(
+        &mut self,
+        song: SongId,
+        candidate: &LyricsCandidate,
+    ) -> Result<(), Error> {
+        set_lyrics_candidate(self.transaction, song, candidate)
+    }
+    fn clear_lyrics_candidate(&mut self, song: SongId, source: LyricsSource) -> Result<(), Error> {
+        clear_lyrics_candidate(self.transaction, song, source)
+    }
+    fn attach_cover(&mut self, song: SongId, cover: &CoverAssetRef) -> Result<(), Error> {
+        attach_cover(self.transaction, song, cover)
+    }
+    fn set_runtime_state(&mut self, key: &str, value: &str) -> Result<(), Error> {
+        store_runtime_state(self.transaction, key, value)
+    }
+}
+
+impl LyricsRepository for SqliteDatabase {
+    fn candidates(&self, song: SongId) -> Result<Vec<LyricsCandidate>, Error> {
+        self.with_reader(move |connection| lyrics_candidates(connection, song))
+    }
+}
+
+impl CoverRepository for SqliteDatabase {
+    fn cover_of(&self, song: SongId) -> Result<Option<CoverAssetRef>, Error> {
+        self.with_reader(move |connection| cover_of_song(connection, song))
+    }
+    fn referenced_asset_keys(&self, root: LibraryRootId) -> Result<Vec<String>, Error> {
+        self.with_reader(move |connection| referenced_asset_keys(connection, root))
+    }
+}
+
+impl ScanRunRepository for SqliteDatabase {
+    fn begin_run(&self, root: LibraryRootId, generation: u64) -> Result<(), Error> {
+        self.writer
+            .run(move |connection| begin_scan_run(connection, root, generation))
+    }
+    fn update_progress(
+        &self,
+        root: LibraryRootId,
+        generation: u64,
+        progress: &ScanProgress,
+    ) -> Result<(), Error> {
+        let progress = *progress;
+        self.writer
+            .run(move |connection| update_scan_progress(connection, root, generation, &progress))
+    }
+    fn record_issue(
+        &self,
+        root: LibraryRootId,
+        generation: u64,
+        issue: &MediaDiagnostic,
+    ) -> Result<(), Error> {
+        let issue = issue.clone();
+        self.writer
+            .run(move |connection| record_scan_issue(connection, root, generation, &issue))
+    }
+    fn finish_run(
+        &self,
+        root: LibraryRootId,
+        generation: u64,
+        state: ScanState,
+        progress: &ScanProgress,
+    ) -> Result<(), Error> {
+        let progress = *progress;
+        self.writer
+            .run(move |connection| finish_scan_run(connection, root, generation, state, &progress))
+    }
+    fn latest_generation(&self, root: LibraryRootId) -> Result<Option<u64>, Error> {
+        self.with_reader(move |connection| latest_scan_generation(connection, root))
+    }
+}
+
+impl RuntimeStateStore for SqliteDatabase {
+    fn load(&self, key: &str) -> Result<Option<String>, Error> {
+        let key = key.to_owned();
+        self.with_reader(move |connection| load_runtime_state(connection, &key))
     }
 }

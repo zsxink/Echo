@@ -32,7 +32,9 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use crate::application::ports::*;
-use crate::domain::entities::{LibraryRoot, PlaylistMember, Song, SongAvailability};
+use crate::domain::entities::{
+    LibraryRoot, LyricsCandidate, LyricsSource, PlaylistMember, Song, SongAvailability,
+};
 use crate::domain::ids::*;
 use crate::error::Error;
 
@@ -48,6 +50,9 @@ struct MemoryTxState {
     playlists: BTreeMap<PlaylistId, (LibraryRootId, String)>,
     members: BTreeMap<(PlaylistId, SongId), PlaylistMember>,
     operations: BTreeMap<(OperationId, String), OperationItem>,
+    lyrics: BTreeMap<(SongId, LyricsSource), LyricsCandidate>,
+    covers: BTreeMap<SongId, CoverAssetRef>,
+    runtime_state: BTreeMap<String, String>,
 }
 
 /// A Unit-of-Work fake with real commit/rollback semantics and a scriptable
@@ -155,15 +160,67 @@ impl TxAccess for MemoryTx<'_> {
             .insert((operation, item.target_path.normalized().to_owned()), item);
         Ok(())
     }
+
+    fn set_lyrics_candidate(
+        &mut self,
+        song: SongId,
+        candidate: &LyricsCandidate,
+    ) -> Result<(), Error> {
+        self.state
+            .lyrics
+            .insert((song, candidate.source()), candidate.clone());
+        Ok(())
+    }
+
+    fn clear_lyrics_candidate(&mut self, song: SongId, source: LyricsSource) -> Result<(), Error> {
+        self.state.lyrics.remove(&(song, source));
+        Ok(())
+    }
+
+    fn attach_cover(&mut self, song: SongId, cover: &CoverAssetRef) -> Result<(), Error> {
+        self.state.covers.insert(song, cover.clone());
+        Ok(())
+    }
+
+    fn set_runtime_state(&mut self, key: &str, value: &str) -> Result<(), Error> {
+        self.state
+            .runtime_state
+            .insert(key.to_owned(), value.to_owned());
+        Ok(())
+    }
+}
+
+impl MemoryUnitOfWork {
+    /// Assertion helper: committed lyrics candidates of one song.
+    #[must_use]
+    pub fn lyrics_of(&self, song: SongId) -> Vec<LyricsCandidate> {
+        self.state
+            .lock()
+            .unwrap()
+            .lyrics
+            .iter()
+            .filter(|((s, _), _)| *s == song)
+            .map(|(_, c)| c.clone())
+            .collect()
+    }
+
+    /// Assertion helper: committed cover reference of one song.
+    #[must_use]
+    pub fn cover_of(&self, song: SongId) -> Option<CoverAssetRef> {
+        self.state.lock().unwrap().covers.get(&song).cloned()
+    }
+
+    /// Assertion helper: committed runtime key/value state.
+    #[must_use]
+    pub fn runtime_state(&self, key: &str) -> Option<String> {
+        self.state.lock().unwrap().runtime_state.get(key).cloned()
+    }
 }
 
 impl UnitOfWork for MemoryUnitOfWork {
-    fn with_tx<T: Send + 'static>(
-        &self,
-        f: impl FnOnce(&mut dyn TxAccess) -> Result<T, Error> + Send + 'static,
-    ) -> Result<T, Error> {
+    fn with_tx(&self, f: TxWork) -> Result<(), Error> {
         let mut candidate = self.state.lock().unwrap().clone();
-        let result = f(&mut MemoryTx {
+        f(&mut MemoryTx {
             state: &mut candidate,
         })?;
         if *self.fail_commit.lock().unwrap() {
@@ -173,7 +230,7 @@ impl UnitOfWork for MemoryUnitOfWork {
             ));
         }
         *self.state.lock().unwrap() = candidate;
-        Ok(result)
+        Ok(())
     }
 }
 
@@ -194,7 +251,8 @@ mod tests {
             RelativeMediaPath::new("one.flac").unwrap(),
             Revision::INITIAL,
         );
-        uow.with_tx(move |tx| tx.upsert_song(&song)).unwrap();
+        uow.with_tx(Box::new(move |tx: &mut dyn TxAccess| tx.upsert_song(&song)))
+            .unwrap();
         assert_eq!(uow.songs().len(), 1);
 
         uow.set_fail_commit(true);
@@ -204,7 +262,11 @@ mod tests {
             RelativeMediaPath::new("two.flac").unwrap(),
             Revision::INITIAL,
         );
-        assert!(uow.with_tx(move |tx| tx.upsert_song(&second)).is_err());
+        assert!(uow
+            .with_tx(Box::new(
+                move |tx: &mut dyn TxAccess| tx.upsert_song(&second)
+            ))
+            .is_err());
         assert_eq!(uow.songs().len(), 1, "failed commit rolls back every write");
     }
 }

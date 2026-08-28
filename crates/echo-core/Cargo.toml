@@ -24,6 +24,12 @@ unicode-segmentation = { workspace = true }
 unicode-casefold = { workspace = true }
 blake3 = { workspace = true }
 rusqlite = { workspace = true }
+# Media pipeline adapters (phase 4): probing, tags/covers/lyrics, watching,
+# thumbnails. See the workspace dependency notes for the license rationale.
+lofty = { workspace = true }
+symphonia = { workspace = true }
+notify = { workspace = true }
+image = { workspace = true }
 # Backs the test doubles' temp-dir file system. Optional: linked only when the
 # `testkit` feature is enabled or under `cargo test` (via the dev-dependency),
 # never in a production build of the crate.

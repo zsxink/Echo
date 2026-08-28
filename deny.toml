@@ -83,6 +83,10 @@ ignore = [
   "RUSTSEC-2025-0081",
   "RUSTSEC-2025-0098",
   "RUSTSEC-2025-0100",
+  # `paste` (via lofty_attr, phase 4 metadata adapter) is unmaintained but is
+  # a compile-time proc-macro helper with no runtime surface and no safe
+  # replacement upstream yet. Unmaintained, not a vulnerability.
+  "RUSTSEC-2024-0436",
 ]
 # Advisory DB fetching needs network on the first run; scripts/verify/checks/
 # task-1.7.mjs reports "offline" gracefully if the fetch cannot complete, and

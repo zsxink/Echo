@@ -31,6 +31,7 @@
     clippy::map_unwrap_or
 )]
 
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use crate::application::ports::*;
@@ -98,6 +99,78 @@ impl IdGenerator for FakeIdGenerator {
     }
     fn new_library_root_id(&self) -> LibraryRootId {
         LibraryRootId::new()
+    }
+}
+
+/// A shared, manually advanced clock: tests hold clones and nudge time
+/// through `&self` while a use case runs.
+#[derive(Clone, Debug, Default)]
+pub struct ManualClock {
+    mono_ms: Arc<std::sync::atomic::AtomicU64>,
+}
+
+impl ManualClock {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Advance the monotonic clock by `ms` milliseconds.
+    pub fn advance_ms(&self, ms: u64) {
+        self.mono_ms
+            .fetch_add(ms, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+impl Clock for ManualClock {
+    fn now_monotonic(&self) -> Duration {
+        Duration::from_millis(self.mono_ms.load(std::sync::atomic::Ordering::Relaxed))
+    }
+    fn now_wall(&self) -> SystemTime {
+        SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000)
+    }
+}
+
+/// A clock that advances itself by a fixed step on every read — makes
+/// throttle intervals deterministic without sleeping.
+#[derive(Clone, Debug)]
+pub struct SteppingClock {
+    step_ms: u64,
+    current_ms: Arc<std::sync::atomic::AtomicU64>,
+}
+
+impl SteppingClock {
+    #[must_use]
+    pub fn new(step_ms: u64) -> Self {
+        Self {
+            step_ms,
+            current_ms: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        }
+    }
+}
+
+impl Clock for SteppingClock {
+    fn now_monotonic(&self) -> Duration {
+        Duration::from_millis(
+            self.current_ms
+                .fetch_add(self.step_ms, std::sync::atomic::Ordering::Relaxed),
+        )
+    }
+    fn now_wall(&self) -> SystemTime {
+        SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000)
+    }
+}
+
+#[cfg(test)]
+mod stepping_tests {
+    use super::*;
+
+    #[test]
+    fn stepping_clock_advances_on_read() {
+        let clock = SteppingClock::new(60);
+        let t0 = clock.now_monotonic();
+        let t1 = clock.now_monotonic();
+        assert_eq!(t1 - t0, Duration::from_millis(60));
     }
 }
 

@@ -33,6 +33,7 @@ use std::time::Duration;
 use crate::domain::ids::{
     LibraryRootId, PlayCount, PlaylistId, RelativeMediaPath, Revision, SongId,
 };
+use crate::domain::media::AudioFormat;
 
 // ---------------------------------------------------------------------------
 // Song
@@ -92,6 +93,17 @@ pub struct Song {
     duration: Option<Duration>,
     /// Hash of the parsed metadata for diagnostics provenance.
     version: u64,
+    // Scan bookkeeping (phase 4). These are persisted per-song facts the scan
+    // pipeline reads back for the size/mtime fast-skip and hash re-linking;
+    // they are presentation-neutral and never change user-owned state.
+    /// Full-file BLAKE3 hash (hex), `None` until first hashed.
+    blake3_hash: Option<String>,
+    /// File size in bytes at the last scan that processed the file.
+    file_size: Option<u64>,
+    /// File mtime in nanoseconds since the epoch at the last scan.
+    file_mtime_ns: Option<i64>,
+    /// Format family from the media probe.
+    format: Option<AudioFormat>,
 }
 
 impl Song {
@@ -129,6 +141,10 @@ impl Song {
             album: None,
             duration: None,
             version: 0,
+            blake3_hash: None,
+            file_size: None,
+            file_mtime_ns: None,
+            format: None,
         }
     }
 
@@ -181,6 +197,44 @@ impl Song {
     #[must_use]
     pub const fn duration(&self) -> Option<Duration> {
         self.duration
+    }
+    /// Full-file BLAKE3 hash (hex) from the last scan that processed the file.
+    #[must_use]
+    pub fn blake3_hash(&self) -> Option<&str> {
+        self.blake3_hash.as_deref()
+    }
+    /// File size in bytes at the last processing scan.
+    #[must_use]
+    pub const fn file_size(&self) -> Option<u64> {
+        self.file_size
+    }
+    /// File mtime (ns since the epoch) at the last processing scan.
+    #[must_use]
+    pub const fn file_mtime_ns(&self) -> Option<i64> {
+        self.file_mtime_ns
+    }
+    /// Format family from the media probe.
+    #[must_use]
+    pub const fn format(&self) -> Option<AudioFormat> {
+        self.format
+    }
+
+    /// Record the scan facts of one processed file (hash, size, mtime, format).
+    ///
+    /// This is the only way scan bookkeeping changes; it never touches
+    /// favorite, play count or availability.
+    pub fn apply_scan_facts(
+        &mut self,
+        blake3_hash: String,
+        file_size: u64,
+        file_mtime_ns: i64,
+        format: AudioFormat,
+    ) {
+        self.blake3_hash = Some(blake3_hash);
+        self.file_size = Some(file_size);
+        self.file_mtime_ns = Some(file_mtime_ns);
+        self.format = Some(format);
+        self.bump();
     }
 
     /// Change the relative path, keeping the identity and associations.
@@ -282,6 +336,10 @@ impl Song {
         album: Option<String>,
         duration: Option<Duration>,
         version: u64,
+        blake3_hash: Option<String>,
+        file_size: Option<u64>,
+        file_mtime_ns: Option<i64>,
+        format: Option<AudioFormat>,
     ) -> Self {
         Self {
             id,
@@ -297,6 +355,10 @@ impl Song {
             album,
             duration,
             version,
+            blake3_hash,
+            file_size,
+            file_mtime_ns,
+            format,
         }
     }
 
@@ -583,6 +645,42 @@ impl LyricsCandidate {
     pub fn mark_empty_override(&mut self) {
         self.empty_override = true;
     }
+
+    /// Whether this candidate is *effective*: it parsed without a fatal error
+    /// and carries readable content (timed lines, plain text, or a deliberate
+    /// empty override).
+    #[must_use]
+    pub fn is_effective(&self) -> bool {
+        if self.parse_error.is_some() {
+            return false;
+        }
+        if self.empty_override {
+            return true;
+        }
+        !self.lines.is_empty() || self.plain_text.as_deref().is_some_and(|t| !t.is_empty())
+    }
+}
+
+/// Select the lyrics candidate Echo displays for a song (task 4.5).
+///
+/// Priority is `Override > Embedded > Sidecar` among *effective* candidates:
+/// a corrupt (parse-errored) higher-priority source falls back to the next
+/// valid one, while a deliberate empty override (`empty_override`) is a user
+/// clearing that must NOT fall through to a lower-priority source. `None`
+/// means "no lyrics state" with the per-source diagnostics kept alongside.
+#[must_use]
+pub fn select_effective_lyrics(candidates: &[LyricsCandidate]) -> Option<&LyricsCandidate> {
+    let mut ordered: Vec<&LyricsCandidate> = candidates.iter().collect();
+    ordered.sort_by_key(|candidate| std::cmp::Reverse(candidate.source()));
+    for candidate in ordered {
+        if candidate.is_empty_override() {
+            return Some(candidate);
+        }
+        if candidate.is_effective() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -775,5 +873,76 @@ mod tests {
         );
         song.set_favorite(true);
         assert_eq!(song.added_at(), 42);
+    }
+
+    #[test]
+    fn song_scan_facts_apply_without_touching_user_state() {
+        let mut s = song();
+        s.set_favorite(true);
+        s.record_play();
+        s.apply_scan_facts(
+            "abc123".into(),
+            4096,
+            1_700_000_000_000_000_000,
+            crate::domain::media::AudioFormat::Flac,
+        );
+        assert_eq!(s.blake3_hash(), Some("abc123"));
+        assert_eq!(s.file_size(), Some(4096));
+        assert_eq!(s.file_mtime_ns(), Some(1_700_000_000_000_000_000));
+        assert_eq!(s.format(), Some(crate::domain::media::AudioFormat::Flac));
+        assert!(s.favorite(), "scan facts never touch favorite");
+        assert_eq!(s.play_count().as_u64(), 1);
+        assert_eq!(s.availability(), SongAvailability::Available);
+    }
+
+    fn timed(source: LyricsSource, error: Option<&str>) -> LyricsCandidate {
+        LyricsCandidate::with_raw_text(
+            source,
+            String::new(),
+            vec![LyricsLine {
+                timestamp_ms: 500,
+                text: "line".into(),
+                original_index: 0,
+            }],
+            None,
+            error.map(str::to_owned),
+        )
+    }
+
+    #[test]
+    fn lyrics_selection_prefers_valid_highest_priority() {
+        let sidecar = timed(LyricsSource::Sidecar, None);
+        let embedded = timed(LyricsSource::Embedded, None);
+        let candidates = [sidecar, embedded];
+        let picked = select_effective_lyrics(&candidates).unwrap();
+        assert_eq!(picked.source(), LyricsSource::Embedded);
+    }
+
+    #[test]
+    fn lyrics_selection_falls_back_when_higher_priority_is_corrupt() {
+        let broken_embedded = timed(LyricsSource::Embedded, Some("bad timestamp"));
+        let valid_sidecar = timed(LyricsSource::Sidecar, None);
+        let candidates = [broken_embedded, valid_sidecar.clone()];
+        let picked = select_effective_lyrics(&candidates).unwrap();
+        assert_eq!(picked.source(), LyricsSource::Sidecar);
+        assert_eq!(picked, &valid_sidecar);
+    }
+
+    #[test]
+    fn lyrics_selection_empty_override_blocks_fallback() {
+        let mut cleared = LyricsCandidate::new(LyricsSource::Override, vec![], false);
+        cleared.mark_empty_override();
+        let valid_sidecar = timed(LyricsSource::Sidecar, None);
+        let candidates = [cleared, valid_sidecar];
+        let picked = select_effective_lyrics(&candidates).unwrap();
+        assert!(picked.is_empty_override(), "clearing must not fall through");
+    }
+
+    #[test]
+    fn lyrics_selection_all_corrupt_means_no_lyrics() {
+        let broken = timed(LyricsSource::Embedded, Some("corrupt"));
+        let candidates = [broken];
+        assert!(select_effective_lyrics(&candidates).is_none());
+        assert!(select_effective_lyrics(&[]).is_none());
     }
 }

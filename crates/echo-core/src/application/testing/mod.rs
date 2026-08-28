@@ -56,17 +56,23 @@
 
 pub mod clock;
 pub mod filesystem;
+pub mod memory_database;
 pub mod repositories;
+pub mod scan_fixture;
 pub mod small_fakes;
 pub mod unit_of_work;
 
-pub use clock::{FakeClock, FakeIdGenerator};
+pub use clock::{FakeClock, FakeIdGenerator, ManualClock, SteppingClock};
 pub use filesystem::FakeLibraryFileSystem;
+pub use memory_database::MemoryDatabase;
 pub use repositories::{
-    MemoryLibraryRepository, MemoryOperationJournal, MemoryPlaylistRepository, MemorySongRepository,
+    MemoryCoverRepository, MemoryLibraryRepository, MemoryLyricsRepository, MemoryOperationJournal,
+    MemoryPlaylistRepository, MemoryRuntimeState, MemoryScanRunRepository, MemorySongRepository,
+    ScanRunRow,
 };
+pub use scan_fixture::ScanFixture;
 pub use small_fakes::{
-    FakeHasher, FakeLyricsParser, FakeMediaProbe, FakeMetadataReader, FakeTrash, MemoryCoverCache,
-    ScriptedFileEvents,
+    FakeFileHasher, FakeHasher, FakeLyricsParser, FakeMediaProbe, FakeMetadataReader, FakeTrash,
+    MemoryCoverCache, ScriptedFileEvents, SlowProbe,
 };
 pub use unit_of_work::MemoryUnitOfWork;

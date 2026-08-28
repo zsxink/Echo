@@ -32,8 +32,12 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use crate::application::ports::*;
-use crate::domain::entities::{LibraryRoot, PlaylistMember, Song, SongAvailability};
+use crate::domain::entities::{
+    LibraryRoot, LyricsCandidate, LyricsSource, MediaDiagnostic, PlaylistMember, Song,
+    SongAvailability,
+};
 use crate::domain::ids::*;
+use crate::domain::state::scan::{ScanProgress, ScanState};
 use crate::error::Error;
 
 /// Shared interior-mutability cell backing every in-memory fake.
@@ -78,6 +82,16 @@ impl SongRepository for MemorySongRepository {
             .values()
             .find(|s| s.root() == root && s.path() == path)
             .cloned())
+    }
+    fn all_in_root(&self, root: LibraryRootId) -> Result<Vec<Song>, Error> {
+        Ok(self
+            .songs
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|s| s.root() == root)
+            .cloned()
+            .collect())
     }
     fn upsert(&self, song: &Song) -> Result<(), Error> {
         self.songs.lock().unwrap().insert(song.id(), song.clone());
@@ -317,6 +331,202 @@ impl OperationJournalRepository for MemoryOperationJournal {
     fn release_claims(&self, operation: OperationId) -> Result<(), Error> {
         self.released_claims.lock().unwrap().push(operation);
         Ok(())
+    }
+}
+
+/// In-memory lyrics-candidate store (task 4.5 reads).
+#[derive(Clone, Debug, Default)]
+pub struct MemoryLyricsRepository {
+    candidates: Shared<BTreeMap<(SongId, LyricsSource), LyricsCandidate>>,
+}
+
+impl MemoryLyricsRepository {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl LyricsRepository for MemoryLyricsRepository {
+    fn candidates(&self, song: SongId) -> Result<Vec<LyricsCandidate>, Error> {
+        Ok(self
+            .candidates
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|((s, _), _)| *s == song)
+            .map(|(_, c)| c.clone())
+            .collect())
+    }
+}
+
+/// In-memory cover-reference store (task 4.6 reads + GC keep-set).
+#[derive(Clone, Debug, Default)]
+pub struct MemoryCoverRepository {
+    covers: Shared<BTreeMap<(LibraryRootId, SongId), CoverAssetRef>>,
+}
+
+impl MemoryCoverRepository {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+    /// Test setup: attach a cover reference directly.
+    pub fn seed(&self, root: LibraryRootId, song: SongId, cover: CoverAssetRef) {
+        self.covers.lock().unwrap().insert((root, song), cover);
+    }
+}
+
+impl CoverRepository for MemoryCoverRepository {
+    fn cover_of(&self, song: SongId) -> Result<Option<CoverAssetRef>, Error> {
+        Ok(self
+            .covers
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|((_, s), _)| *s == song)
+            .map(|(_, cover)| cover.clone()))
+    }
+    fn referenced_asset_keys(&self, root: LibraryRootId) -> Result<Vec<String>, Error> {
+        Ok(self
+            .covers
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|((r, _), _)| *r == root)
+            .map(|(_, cover)| cover.asset_key.clone())
+            .collect())
+    }
+}
+
+/// In-memory scan-run progress/issue store (task 4.10).
+#[derive(Clone, Debug, Default)]
+pub struct MemoryScanRunRepository {
+    runs: Shared<BTreeMap<(LibraryRootId, u64), ScanRunRow>>,
+    issues: Shared<Vec<(LibraryRootId, u64, MediaDiagnostic)>>,
+}
+
+/// The in-memory mirror of a `scan_runs` row.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ScanRunRow {
+    pub state: ScanState,
+    pub progress: ScanProgress,
+    pub finished: bool,
+    pub updates: u64,
+}
+
+impl MemoryScanRunRepository {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+    /// Snapshot of one run row (assertion helper).
+    #[must_use]
+    pub fn run(&self, root: LibraryRootId, generation: u64) -> Option<ScanRunRow> {
+        self.runs.lock().unwrap().get(&(root, generation)).cloned()
+    }
+    /// All issues recorded for one run (assertion helper).
+    #[must_use]
+    pub fn issues_of(&self, root: LibraryRootId, generation: u64) -> Vec<MediaDiagnostic> {
+        self.issues
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(r, g, _)| *r == root && *g == generation)
+            .map(|(_, _, issue)| issue.clone())
+            .collect()
+    }
+}
+
+impl ScanRunRepository for MemoryScanRunRepository {
+    fn begin_run(&self, root: LibraryRootId, generation: u64) -> Result<(), Error> {
+        let mut runs = self.runs.lock().unwrap();
+        if runs.contains_key(&(root, generation)) {
+            return Err(Error::conflict("scan run already exists"));
+        }
+        runs.insert(
+            (root, generation),
+            ScanRunRow {
+                state: ScanState::Queued,
+                progress: ScanProgress::default(),
+                finished: false,
+                updates: 0,
+            },
+        );
+        Ok(())
+    }
+    fn update_progress(
+        &self,
+        root: LibraryRootId,
+        generation: u64,
+        progress: &ScanProgress,
+    ) -> Result<(), Error> {
+        let mut runs = self.runs.lock().unwrap();
+        let row = runs
+            .get_mut(&(root, generation))
+            .ok_or_else(|| Error::unavailable("scan run", "unknown generation"))?;
+        row.progress = *progress;
+        row.state = progress.state;
+        row.updates += 1;
+        Ok(())
+    }
+    fn record_issue(
+        &self,
+        root: LibraryRootId,
+        generation: u64,
+        issue: &MediaDiagnostic,
+    ) -> Result<(), Error> {
+        self.issues
+            .lock()
+            .unwrap()
+            .push((root, generation, issue.clone()));
+        Ok(())
+    }
+    fn finish_run(
+        &self,
+        root: LibraryRootId,
+        generation: u64,
+        state: ScanState,
+        progress: &ScanProgress,
+    ) -> Result<(), Error> {
+        let mut runs = self.runs.lock().unwrap();
+        let row = runs
+            .get_mut(&(root, generation))
+            .ok_or_else(|| Error::unavailable("scan run", "unknown generation"))?;
+        row.state = state;
+        row.progress = *progress;
+        row.finished = true;
+        row.updates += 1;
+        Ok(())
+    }
+    fn latest_generation(&self, root: LibraryRootId) -> Result<Option<u64>, Error> {
+        Ok(self
+            .runs
+            .lock()
+            .unwrap()
+            .keys()
+            .filter(|(r, _)| *r == root)
+            .map(|(_, g)| *g)
+            .max())
+    }
+}
+
+/// In-memory runtime key/value store (`root_epoch` persistence read side).
+#[derive(Clone, Debug, Default)]
+pub struct MemoryRuntimeState {
+    values: Shared<BTreeMap<String, String>>,
+}
+
+impl MemoryRuntimeState {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl RuntimeStateStore for MemoryRuntimeState {
+    fn load(&self, key: &str) -> Result<Option<String>, Error> {
+        Ok(self.values.lock().unwrap().get(key).cloned())
     }
 }
 
