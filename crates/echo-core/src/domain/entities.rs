@@ -78,8 +78,9 @@ pub struct Song {
     /// Fields that survive external changes and re-scans.
     favorite: bool,
     play_count: PlayCount,
-    /// Monotone revision, bumped on every persisted field change (used for
-    /// optimistic concurrency and event ordering).
+    /// Monotone revision for optimistic concurrency and event ordering.
+    /// Assigned by the persistence layer — the entity never mutates it after
+    /// construction (`Song::bump` only advances the in-memory change tag).
     revision: Revision,
     /// Stable insertion ordering key. Unlike `revision`, this never changes
     /// when metadata, favorites, or playback statistics are updated.
@@ -258,6 +259,45 @@ impl Song {
     pub fn record_play(&mut self) {
         self.play_count = PlayCount::from_u64(self.play_count.as_u64() + 1);
         self.bump();
+    }
+
+    /// Rehydrate a song from the trusted local storage adapter.
+    ///
+    /// This is crate-visible on purpose: SQL rows must be converted back into
+    /// the domain entity without exposing persistence fields to UI/application
+    /// callers or simulating mutations (which would incorrectly bump version).
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub(crate) const fn from_storage(
+        id: SongId,
+        root: LibraryRootId,
+        path: RelativeMediaPath,
+        availability: SongAvailability,
+        favorite: bool,
+        play_count: PlayCount,
+        revision: Revision,
+        added_at: u64,
+        title: Option<String>,
+        artist: Option<String>,
+        album: Option<String>,
+        duration: Option<Duration>,
+        version: u64,
+    ) -> Self {
+        Self {
+            id,
+            root,
+            path,
+            availability,
+            favorite,
+            play_count,
+            revision,
+            added_at,
+            title,
+            artist,
+            album,
+            duration,
+            version,
+        }
     }
 
     /// Internal: advance the revision on any meaningful change.
@@ -583,6 +623,10 @@ impl MediaDiagnostic {
     #[must_use]
     pub const fn code(&self) -> &'static str {
         self.code
+    }
+    #[must_use]
+    pub fn reason(&self) -> &str {
+        &self.reason
     }
     #[must_use]
     pub const fn song_created(&self) -> bool {

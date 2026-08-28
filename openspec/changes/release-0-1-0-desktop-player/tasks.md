@@ -36,15 +36,15 @@
 
 本组验收：`pnpm verify:task -- 3.1 3.2 3.3 3.4 3.5 3.6 3.7 3.8 3.9`
 
-- [ ] 3.1 创建不可改写的 `0001` 迁移，包含 `schema_migrations`、带随机暂存目录/marker 字段的 `library_roots`、`songs`、`song_lyrics`、`song_overrides`、`cover_assets`、`playlists`、`playlist_songs`、带条件唯一 target claim 的 `operation_journal/items`、`scan_runs/issues`、`recorded_play_sessions`，明确不创建同步表；验证全新建库 schema snapshot 测试通过。
-- [ ] 3.2 为 active 根、规范相对路径、BLAKE3、四种排序、收藏、歌单名称和追加位置建立唯一/查询索引及外键级联，验证重复路径/hash/歌单成员被约束且 pending/missing 行符合设计。
-- [ ] 3.3 实现迁移 runner、checksum、`foreign_keys=ON`、WAL、`synchronous=FULL`、busy timeout、quick-check 和 SQLite backup API，验证迁移失败事务回滚且原数据库/备份可重新打开。
-- [ ] 3.4 实现单写者数据库 actor 与 2–4 个只读连接，验证并发扫描批写、分页搜索和收藏 mutation 不出现 busy/死锁，且没有事务跨 `.await`。
-- [ ] 3.5 实现 Library/Song/Playlist/Operation Repository 与 UnitOfWork，验证导入提交、pending delete、删除 finalize、歌单多目标添加和收藏切换均为单事务权威快照。
-- [ ] 3.6 建立 FTS5 trigram `song_search` 并在 Repository 事务内显式维护，验证中文、日文、拉丁大小写、组合字符和完整查询词包含匹配。[local-library][library-experience]
-- [ ] 3.7 为少于 3 个 Unicode 字符的查询实现受活动根限制的标准化 LIKE 回退，验证 1–2 字查询语义与 trigram 长查询一致且参数不能注入 MATCH/LIKE。
-- [ ] 3.8 实现 keyset cursor 分页与最近 100 首查询，验证所有排序升/降序在同值、并发插入和重扫后保持确定性。[library-experience]
-- [ ] 3.9 实现 `recorded_play_sessions` 幂等写入和 play_count 更新，验证同一加载会话重复上报只计一次、不同会话可各计一次。[desktop-playback]
+- [x] 3.1 创建不可改写的 `0001` 迁移，包含 `schema_migrations`、带随机暂存目录/marker 字段的 `library_roots`、`songs`、`song_lyrics`、`song_overrides`、`cover_assets`、`playlists`、`playlist_songs`、带条件唯一 target claim 的 `operation_journal/items`、`scan_runs/issues`、`recorded_play_sessions`，明确不创建同步表；验证全新建库 schema snapshot 测试通过。
+- [x] 3.2 为 active 根、规范相对路径、BLAKE3、四种排序、收藏、歌单名称和追加位置建立唯一/查询索引及外键级联，验证重复路径/hash/歌单成员被约束且 pending/missing 行符合设计。
+- [x] 3.3 实现迁移 runner、checksum、`foreign_keys=ON`、WAL、`synchronous=FULL`、busy timeout、quick-check 和 SQLite backup API，验证迁移失败事务回滚且原数据库/备份可重新打开。
+- [x] 3.4 实现单写者数据库 actor 与 2–4 个只读连接，验证并发扫描批写、分页搜索和收藏 mutation 不出现 busy/死锁，且没有事务跨 `.await`。
+- [x] 3.5 实现 Library/Song/Playlist/Operation Repository 与 UnitOfWork，验证导入提交、pending delete、删除 finalize、歌单多目标添加和收藏切换均为单事务权威快照。
+- [x] 3.6 建立 FTS5 trigram `song_search` 并在 Repository 事务内显式维护，验证中文、日文、拉丁大小写、组合字符和完整查询词包含匹配。[local-library][library-experience]
+- [x] 3.7 为少于 3 个 Unicode 字符的查询实现受活动根限制的标准化 LIKE 回退，验证 1–2 字查询语义与 trigram 长查询一致且参数不能注入 MATCH/LIKE。
+- [x] 3.8 实现 keyset cursor 分页与最近 100 首查询，验证所有排序升/降序在同值、并发插入和重扫后保持确定性。[library-experience]
+- [x] 3.9 实现 `recorded_play_sessions` 幂等写入和 play_count 更新，验证同一加载会话重复上报只计一次、不同会话可各计一次。[desktop-playback]
 
 ## 4. 媒体解析、资料库扫描与监听
 

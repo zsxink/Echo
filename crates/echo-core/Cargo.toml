@@ -10,7 +10,7 @@ repository.workspace = true
 [features]
 # Exposes the application-layer test doubles so echo-desktop's integration tests
 # can drive use cases without real SQLite / filesystem / mpv.
-testkit = []
+testkit = ["dep:tempfile"]
 
 [dependencies]
 serde = { workspace = true }
@@ -22,9 +22,17 @@ uuid = { workspace = true }
 unicode-normalization = { workspace = true }
 unicode-segmentation = { workspace = true }
 unicode-casefold = { workspace = true }
-tempfile = "3"
+blake3 = { workspace = true }
+rusqlite = { workspace = true }
+# Backs the test doubles' temp-dir file system. Optional: linked only when the
+# `testkit` feature is enabled or under `cargo test` (via the dev-dependency),
+# never in a production build of the crate.
+tempfile = { version = "3", optional = true }
 
 [dev-dependencies]
+# `cargo test` compiles the `cfg(test)` doubles without enabling `testkit`;
+# this dev-dependency keeps `tempfile` resolvable there.
+tempfile = { version = "3" }
 proptest = { workspace = true }
 
 [lints]

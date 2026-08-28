@@ -180,6 +180,51 @@
           "cmd": "node scripts/verify/checks/task-2.8.mjs"
         }
       ]
+    },
+    {
+      "id": "3.1",
+      "title": "Immutable 0001 SQLite migration and schema snapshot",
+      "commands": [{ "desc": "migration schema snapshot", "cmd": "node scripts/verify/checks/task-3.mjs 3.1 initial_migration_has_required_tables_indexes_and_no_sync_tables" }]
+    },
+    {
+      "id": "3.2",
+      "title": "SQLite constraints and query indexes",
+      "commands": [{ "desc": "schema constraints", "cmd": "node scripts/verify/checks/task-3.mjs 3.2 schema_constraints_cover_active_root_paths_playlist_and_target_claim" }]
+    },
+    {
+      "id": "3.3",
+      "title": "Migration runner, integrity check and backup",
+      "commands": [{ "desc": "checksum and backup", "cmd": "node scripts/verify/checks/task-3.mjs 3.3 migration_checksum_and_backup_are_reopenable" }]
+    },
+    {
+      "id": "3.4",
+      "title": "Single-writer SQLite actor and read pool",
+      "commands": [{ "desc": "concurrent readers and idempotent writer", "cmd": "node scripts/verify/checks/task-3.mjs 3.4 playback_sessions_are_idempotent_and_writer_allows_concurrent_reads" }]
+    },
+    {
+      "id": "3.5",
+      "title": "SQLite repositories and Unit of Work",
+      "commands": [{ "desc": "transaction commit and rollback", "cmd": "node scripts/verify/checks/task-3.mjs 3.5 unit_of_work_rolls_back_and_real_repositories_round_trip" }]
+    },
+    {
+      "id": "3.6",
+      "title": "FTS5 trigram song search",
+      "commands": [{ "desc": "Unicode FTS", "cmd": "node scripts/verify/checks/task-3.mjs 3.6 fts_and_short_like_search_are_unicode_safe_and_complete" }]
+    },
+    {
+      "id": "3.7",
+      "title": "Short-query normalized LIKE fallback",
+      "commands": [{ "desc": "escaped LIKE", "cmd": "node scripts/verify/checks/task-3.mjs 3.7 fts_and_short_like_search_are_unicode_safe_and_complete" }]
+    },
+    {
+      "id": "3.8",
+      "title": "Keyset pagination and recent songs",
+      "commands": [{ "desc": "deterministic cursor pages", "cmd": "node scripts/verify/checks/task-3.mjs 3.8 keyset_pages_are_deterministic_and_reject_stale_cursors" }]
+    },
+    {
+      "id": "3.9",
+      "title": "Idempotent recorded playback sessions",
+      "commands": [{ "desc": "one count per load session", "cmd": "node scripts/verify/checks/task-3.mjs 3.9 playback_sessions_are_idempotent_and_writer_allows_concurrent_reads" }]
     }
   ],
   "scenarios": []

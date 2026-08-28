@@ -96,6 +96,11 @@ pub enum Error {
         resource: String,
         /// Human-readable explanation for the UI (message key).
         hint: String,
+        /// Upstream error observed through the failing call (e.g. the
+        /// `stat`/`read_dir` that detected the unmounted root), kept for
+        /// diagnostics; never reaches a log raw.
+        #[source]
+        source: Option<BoxedSource>,
     },
 
     /// The requested change conflicts with current state (duplicate identity,
@@ -203,7 +208,7 @@ impl Error {
                     aspect(*kind),
                 ));
             }
-            Self::Unavailable { resource, hint } => {
+            Self::Unavailable { resource, hint, .. } => {
                 out.extend_from_slice(&log_two(
                     "unavailable",
                     "resource",
@@ -323,6 +328,25 @@ impl Error {
         Self::Unavailable {
             resource: resource.into(),
             hint: hint.into(),
+            source: None,
+        }
+    }
+
+    /// Convenience builder for an `Unavailable` failure observed through a
+    /// failing upstream call; the upstream error is kept as `source` per the
+    /// "infrastructure errors keep their source" rule.
+    pub fn unavailable_with_source<E>(
+        resource: impl Into<String>,
+        hint: impl Into<String>,
+        source: E,
+    ) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Self::Unavailable {
+            resource: resource.into(),
+            hint: hint.into(),
+            source: Some(Box::new(source)),
         }
     }
 

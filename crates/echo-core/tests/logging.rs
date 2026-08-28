@@ -159,3 +159,18 @@ fn redact_sensitive_produces_opaque_hash_for_lyrics_and_content() {
         redact_sensitive("business lyrics line")
     );
 }
+
+#[test]
+fn unavailable_keeps_source_and_never_logs_it_raw() {
+    let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "root stat failed");
+    let err = Error::unavailable_with_source("library root", "根目录暂时不可用", io_err);
+    // The infrastructure source is preserved for programmatic handling.
+    let source = std::error::Error::source(&err).expect("Unavailable keeps the upstream source");
+    assert!(source.to_string().contains("root stat failed"));
+
+    // …but the default log line neither leaks the message nor a path.
+    let line = err.to_log(DiagnosticMode::Off);
+    assert!(line.contains("error.code=unavailable"), "{line}");
+    assert!(!line.contains("root stat failed"), "source leaked: {line}");
+    assert!(!line.contains(ABS_PATH), "{line}");
+}

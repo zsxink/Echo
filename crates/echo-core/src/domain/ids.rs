@@ -565,10 +565,28 @@ mod tests {
 
     #[test]
     fn ids_cannot_be_mixed_at_compile_time() {
-        // Assigning a SongId where a PlaylistId is expected is a compile-time
-        // error; this tests the newtype boundary by demanding exactly one type.
-        fn expects_song(_: SongId) {}
-        expects_song(SongId::new());
+        use std::any::TypeId;
+
+        // Passing one identity where another is expected is a compile-time
+        // error (distinct newtypes). `TypeId` pins that the newtypes never
+        // collapse into one type (e.g. via a careless type alias), so the
+        // guarantee is asserted, not just implied by construction.
+        fn expects_song<T: 'static>(_: &T) {}
+        expects_song(&SongId::new());
+
+        let ids = [
+            TypeId::of::<SongId>(),
+            TypeId::of::<PlaylistId>(),
+            TypeId::of::<LibraryRootId>(),
+            TypeId::of::<OperationId>(),
+            TypeId::of::<PlaybackSessionId>(),
+            TypeId::of::<QueueEntryId>(),
+        ];
+        for (i, a) in ids.iter().enumerate() {
+            for b in ids.iter().skip(i + 1) {
+                assert_ne!(a, b, "two identity newtypes collapsed into one type");
+            }
+        }
     }
 
     #[test]

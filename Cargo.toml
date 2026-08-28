@@ -27,6 +27,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 unicode-normalization = "0.1"
 unicode-segmentation = "1"
 unicode-casefold = "0.2"
+blake3 = "1"
+rusqlite = { version = "0.32", features = ["backup", "bundled"] }
 
 # Property tests for domain name rules and state-machine transitions (dev-only).
 proptest = "1"

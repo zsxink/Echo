@@ -132,15 +132,21 @@ pub trait UnitOfWork: Send + Sync {
     /// Run `f` inside one `SQLite` transaction, committing on success and
     /// rolling back on error. The transaction never crosses an `.await`:
     /// `f` is a plain synchronous closure.
-    fn with_tx<T>(&self, f: impl FnOnce(&mut dyn TxAccess) -> Result<T, Error>)
-        -> Result<T, Error>;
+    fn with_tx<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&mut dyn TxAccess) -> Result<T, Error> + Send + 'static,
+    ) -> Result<T, Error>;
 }
 
 /// The narrow, repository-like surface visible *inside* a transaction.
 /// Concrete implementations map these onto the same connection as the outer
 /// repositories, so atomicity is real. (Marker-ish by design: use cases that
 /// need cross-repository atomic writes pass `&dyn TxAccess` to repos.)
-pub trait TxAccess: Send + Sync {
+// A transaction is deliberately thread-confined. `UnitOfWork::with_tx` takes
+// a synchronous closure, so this context never crosses an async/thread
+// boundary; requiring `Send + Sync` here would make a real SQLite transaction
+// impossible while providing no safety benefit.
+pub trait TxAccess {
     /// Insert/update a song within the open transaction.
     fn upsert_song(&mut self, song: &Song) -> Result<(), Error>;
     /// Update a song's availability in the same transaction as journal state.
