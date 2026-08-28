@@ -20,8 +20,8 @@
 //! - [`filesystem`] — [`FakeLibraryFileSystem`]: an in-temp-dir, root-constrained
 //!   FS with scriptable permission/IO faults.
 //! - [`small_fakes`] — [`FakeTrash`], [`ScriptedFileEvents`], [`FakeMediaProbe`],
-//!   [`FakeMetadataReader`], [`FakeHasher`], [`MemoryCoverCache`],
-//!   [`FakeLyricsParser`]: small deterministic fakes.
+//!   [`FakeMetadataReader`], [`FakeHasher`], [`FakeImportSources`],
+//!   [`MemoryCoverCache`], [`FakeLyricsParser`]: small deterministic fakes.
 //!
 //! The fakes never touch the user's home or an OS trash; temp dirs come from
 //! the `tempfile` crate.
@@ -72,7 +72,7 @@ pub use repositories::{
 };
 pub use scan_fixture::ScanFixture;
 pub use small_fakes::{
-    FakeFileHasher, FakeHasher, FakeLyricsParser, FakeMediaProbe, FakeMetadataReader, FakeTrash,
-    MemoryCoverCache, ScriptedFileEvents, SlowProbe,
+    FakeFileHasher, FakeHasher, FakeImportSources, FakeLyricsParser, FakeMediaProbe,
+    FakeMetadataReader, FakeTrash, MemoryCoverCache, ScriptedFileEvents, SlowProbe,
 };
 pub use unit_of_work::MemoryUnitOfWork;

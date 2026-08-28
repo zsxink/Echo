@@ -30,6 +30,23 @@
     5. `infrastructure/filesystem/watcher.rs:392` debug 日志直接输出 notify 原始错误，可能内嵌路径（绕过 redact_path 约定）；
     6. 三份编排过程文件（ORCHESTRATOR_PROMPT/PHASE4_AGENT_PROMPT/ORCHESTRATION_LOG）为未跟踪产物，归档前需用户决定提交或清理。
 - Deferred：播放中切根集成验证 → 8.x；上述 P2 1/3/4/5 为代码改进项，不阻断。
-- Commit：baseline（本条所在提交）`Complete phase 4 tasks: media parsing, scanning and watching`
+- Commit：baseline（本条所在提交）`Complete phase 4 tasks: media parsing, scanning and watching` → **0014445**
+
+---
+
+## Task 1 — 5.1–5.10 安全导入、删除与崩溃恢复
+
+### 5.1 逐输入 PlanImport 与预留 OperationId/SongId
+
+- 状态：✅ PASS（复核第 1 轮通过）
+- 实现 subagent：新增 `application/import.rs`（PlanImport 用例、ImportOutcome/ImportBatchReport、最小编号命名、6 测试）、`ImportSourceReader` port 与 `LibraryFileSystem::stage`、`FakeImportSources` 替身、`scripts/verify/checks/task-5.mjs`、manifest 6 条命令。
+- 复核①：**PASS**（独立运行 verify:task 5.1 / fmt / clippy -D warnings / cargo test 全部通过，194 测试含架构测试；manifest 非空壳；tasks.md 除勾选外无改动）。
+- P2 遗留（指向后续任务范围，不阻断）：
+  1. publish 成功后执行失败会覆写 journal 为 RolledBack 并释放 claim → 孤儿最终文件风险，5.5 恢复矩阵须改为保留 claim 或清理已发布文件；
+  2. 5.1 journal 边 `Planned→DatabaseCommitted→Completed` 与 operation 状态机转移不兼容（内存替身不校验），5.5 落地逐资源状态链时必须替换；
+  3. `ImportSourceReader::read` 全量入内存（非流式），5.3 流式复制时解决；
+  4. 失败项目标名仍占用 taken_targets（保守不覆盖，仅效率问题）。
+- Deferred：无（全部本地可验证项已验证）
+- Commit：`Implement task 5.1: per-input PlanImport with reserved IDs` → 见 git log
 
 ---

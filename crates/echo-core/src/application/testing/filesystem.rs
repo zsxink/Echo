@@ -231,6 +231,15 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
         self.staged.lock().unwrap().remove(&key);
         Ok(())
     }
+    fn stage(
+        &self,
+        root: LibraryRootId,
+        staged: &StagedResource,
+        content: &[u8],
+    ) -> Result<(), Error> {
+        self.stage_bytes(root, staged, content)
+    }
+
     fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
         let _ = root;
         Ok(*self.write_capable.lock().unwrap())

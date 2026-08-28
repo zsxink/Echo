@@ -22,7 +22,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::application::ports::{CoverAssetRef, FileEvent, FileEventKind, OperationItem, TxAccess};
-use crate::application::relink::{ParsedFile, RelinkPlanner, Resolution};
+use crate::application::relink::{song_from_parsed, RelinkPlanner, Resolution};
 use crate::application::scan::{
     parse_single_file, rewrap, FileOutcome, ParsedOutcome, ScanDeps, ScanSupervisor,
 };
@@ -225,7 +225,7 @@ impl WatchCoordinator {
                     }
                     Resolution::Create => {
                         let id = self.deps.ids.new_song_id();
-                        let entity = Some(build_entity(id, root, &parsed.file));
+                        let entity = Some(song_from_parsed(id, root, &parsed.file));
                         planner.register_created(entity.clone().expect("just built"));
                         self.apply_outcome(root, entity, &parsed)?;
                         Ok(EventOutcome::Applied {
@@ -348,7 +348,7 @@ impl WatchCoordinator {
     ) -> Result<(), Error> {
         match parse_single_file(&self.deps, root, path) {
             FileOutcome::Parsed(parsed) => {
-                let entity = Some(build_entity(song_id, root, &parsed.file));
+                let entity = Some(song_from_parsed(song_id, root, &parsed.file));
                 self.apply_outcome(root, entity, &parsed)
             }
             FileOutcome::FastSkip { .. } | FileOutcome::Diagnostic(_) => Ok(()),
@@ -398,25 +398,6 @@ impl WatchCoordinator {
                 Ok(())
             }))
     }
-}
-
-/// Build a song entity with parsed facts under a fixed identity (used for
-/// journal-reserved records and fresh creations).
-fn build_entity(id: SongId, root: LibraryRootId, file: &ParsedFile) -> Song {
-    let mut entity = Song::new(id, root, file.path.clone(), Revision::INITIAL);
-    entity.apply_metadata(
-        file.meta.title.clone(),
-        file.meta.artist.clone(),
-        file.meta.album.clone(),
-        file.meta.duration,
-    );
-    entity.apply_scan_facts(
-        file.hash.clone(),
-        file.size,
-        file.mtime_ns,
-        file.meta.format,
-    );
-    entity
 }
 
 #[cfg(test)]

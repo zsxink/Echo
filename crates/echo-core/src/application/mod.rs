@@ -3,7 +3,7 @@
 //! Depends on [`crate::domain`]; never contains view logic or concrete
 //! infrastructure implementations.
 //!
-//! Use cases (phase 4):
+//! Use cases (phase 4/5):
 //!
 //! - [`scan`] — the generation-driven scan pipeline (`StartScan`/`CancelScan`),
 //!   including the size/mtime fast-skip, BLAKE3 hashing, batched reconcile
@@ -12,7 +12,10 @@
 //! - [`root_switch`] — the active-root candidate barrier
 //!   (`PrepareLibraryCandidate`/`ActivateLibrary`).
 //! - [`watch`] — file-event reconciliation (`ReconcileFsChanges`).
+//! - [`import`] — per-input multi-select import planning (`PlanImport`,
+//!   reserved OperationId/SongId, isolated per-input results).
 
+pub mod import;
 pub mod ports;
 pub mod relink;
 pub mod root_switch;

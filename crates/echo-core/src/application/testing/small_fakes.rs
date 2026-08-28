@@ -257,6 +257,90 @@ impl LyricsParser for FakeLyricsParser {
     }
 }
 
+/// Scripted external import sources (the [`ImportSourceReader`] double):
+/// handles map to display names + bytes, and a source can be scripted to fail
+/// its describe/read the way a revoked permission or vanished file would.
+#[derive(Clone, Debug, Default)]
+pub struct FakeImportSources {
+    sources: Shared<BTreeMap<String, FakeSource>>,
+    reads: Shared<Vec<String>>,
+}
+
+#[derive(Clone, Debug)]
+struct FakeSource {
+    display_name: String,
+    bytes: Vec<u8>,
+    failure: Option<String>,
+}
+
+impl FakeImportSources {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register one selectable source.
+    pub fn add(&self, key: &str, display_name: &str, bytes: &[u8]) {
+        self.sources.lock().unwrap().insert(
+            key.to_owned(),
+            FakeSource {
+                display_name: display_name.to_owned(),
+                bytes: bytes.to_vec(),
+                failure: None,
+            },
+        );
+    }
+
+    /// Make a source fail its describe/read (permission, vanished file…).
+    pub fn fail(&self, key: &str, message: &str) {
+        if let Some(source) = self.sources.lock().unwrap().get_mut(key) {
+            source.failure = Some(message.to_owned());
+        }
+    }
+
+    /// Handles actually read so far (assertion helper: the "refuse the whole
+    /// batch" path must never read a source).
+    #[must_use]
+    pub fn read_keys(&self) -> Vec<String> {
+        self.reads.lock().unwrap().clone()
+    }
+}
+
+impl ImportSourceReader for FakeImportSources {
+    fn describe(&self, source: &ImportSource) -> Result<ImportSourceInfo, Error> {
+        let map = self.sources.lock().unwrap();
+        let source = map
+            .get(source.key())
+            .ok_or_else(|| Error::unavailable("import source", "unknown handle"))?;
+        source.failure.as_ref().map_or_else(
+            || {
+                Ok(ImportSourceInfo {
+                    display_name: source.display_name.clone(),
+                    size: u64::try_from(source.bytes.len()).unwrap_or(u64::MAX),
+                })
+            },
+            |message| Err(source_failure(message)),
+        )
+    }
+
+    fn read(&self, source: &ImportSource) -> Result<Vec<u8>, Error> {
+        self.reads.lock().unwrap().push(source.key().to_owned());
+        let map = self.sources.lock().unwrap();
+        let source = map
+            .get(source.key())
+            .ok_or_else(|| Error::unavailable("import source", "unknown handle"))?;
+        source.failure.as_ref().map_or_else(
+            || Ok(source.bytes.clone()),
+            |message| Err(source_failure(message)),
+        )
+    }
+}
+
+/// The scripted per-source failure (a permission-shaped error, path-free).
+fn source_failure(message: &str) -> Error {
+    Error::permission(message.to_owned(), crate::error::PermKind::Denied)
+}
+
 /// Content-addressed file hasher over the [`LibraryFileSystem`] port: the
 /// hash is the real BLAKE3 of the file's bytes, so identical content in two
 /// paths hashes identically (needed by the duplicate/re-link tests).

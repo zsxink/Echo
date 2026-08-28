@@ -64,8 +64,9 @@ impl RootConstrainedFileSystem {
     }
 
     /// Write bytes into a fresh file under the root's staging directory and
-    /// register the handle. Test/setup entry for the ingestion phases; the
-    /// port itself only exposes [`StagedResource`], never a path.
+    /// register the handle. Shared helper behind the port's [`Self::stage`]
+    /// (import ingestion, task 5.1) and the test setup entry; the port itself
+    /// only exposes [`StagedResource`], never a path.
     ///
     /// # Errors
     ///
@@ -176,6 +177,15 @@ impl LibraryFileSystem for RootConstrainedFileSystem {
             .map_err(|source| Error::io("publish", source, dest.clone()))?;
         self.staged.lock().unwrap().remove(&key);
         Ok(())
+    }
+
+    fn stage(
+        &self,
+        root: LibraryRootId,
+        staged: &StagedResource,
+        content: &[u8],
+    ) -> Result<(), Error> {
+        self.stage_bytes(root, staged, content)
     }
 
     fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {

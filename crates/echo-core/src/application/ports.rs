@@ -242,6 +242,61 @@ pub struct FileMeta {
     pub modified_ns: i64,
 }
 
+/// Opaque handle to one user-selected external import source (design §8: the
+/// "受桌面可信边界保护的外部源定位"). The desktop layer resolves the handle to
+/// the real file it offered the user to pick; the handle itself is a logical,
+/// non-path key so Core results and errors never carry an absolute location.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ImportSource {
+    key: String,
+}
+
+impl ImportSource {
+    /// Construct a source handle from the desktop-side logical key.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::error::Error::Validation`] when the key is empty or carries
+    /// path syntax — sources are identified logically, never by location.
+    pub fn new(key: impl Into<String>) -> Result<Self, Error> {
+        let key = key.into();
+        if key.is_empty() || key.contains(['/', '\\', '\0']) || key == "." || key == ".." {
+            return Err(Error::validation(
+                crate::error::Subject::Other,
+                "ImportSource",
+                "source key must be a non-path logical identifier",
+            ));
+        }
+        Ok(Self { key })
+    }
+
+    #[must_use]
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+}
+
+/// What the reader knows about a source without reading its content.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ImportSourceInfo {
+    /// The file's display name (e.g. `晴天.flac`) — a name, never a path.
+    pub display_name: String,
+    /// Content size in bytes as observed by the reader.
+    pub size: u64,
+}
+
+/// Reads user-selected external import sources. Implemented by the layer that
+/// owns the file-selection result (the desktop trusted boundary) and by test
+/// doubles; Core only ever sees handles and bytes, never locations.
+pub trait ImportSourceReader: Send + Sync {
+    /// Describe a source (display name + size) without reading its content.
+    fn describe(&self, source: &ImportSource) -> Result<ImportSourceInfo, Error>;
+    /// The source content. Implementations must read the whole file or fail —
+    /// a short read is a failure, never truncated success (the import pipeline
+    /// verifies `size` against the description before publishing).
+    fn read(&self, source: &ImportSource) -> Result<Vec<u8>, Error>;
+}
+
 /// Opaque handle to a file already placed in Echo's marker-verified staging
 /// directory. It intentionally contains no filesystem path: an adapter must
 /// resolve it below the operation's owned staging directory and reject unknown
@@ -310,6 +365,16 @@ pub trait LibraryFileSystem: Send + Sync {
         root: LibraryRootId,
         staged: &StagedResource,
         target: &RelativeMediaPath,
+    ) -> Result<(), Error>;
+    /// Place content into the operation's adapter-owned staging area so it
+    /// can be published to its target afterwards (the ingestion entry the
+    /// import use case drives; task 5.1). The adapter decides the physical
+    /// location — use cases only hold the [`StagedResource`] handle.
+    fn stage(
+        &self,
+        root: LibraryRootId,
+        staged: &StagedResource,
+        content: &[u8],
     ) -> Result<(), Error>;
     /// Whether the root currently permits writes (permissions + marker).
     fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error>;

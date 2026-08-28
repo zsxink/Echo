@@ -65,7 +65,7 @@
 
 本组验收：`pnpm verify:task -- 5.1 5.2 5.3 5.4 5.5 5.6 5.7 5.8 5.9 5.10`
 
-- [ ] 5.1 实现逐输入 `PlanImport` 和预留 OperationId/SongId，验证混合批次每个输入都有成功/重复/不支持/失败结果且单项失败不回滚其他项。[safe-file-ingestion]
+- [x] 5.1 实现逐输入 `PlanImport` 和预留 OperationId/SongId，验证混合批次每个输入都有成功/重复/不支持/失败结果且单项失败不回滚其他项。[safe-file-ingestion]
 - [ ] 5.2 实现默认 `歌手/歌手 - 歌曲名.扩展名`、未知艺人/未命名歌曲、平台字符清理、短 hash 截断和最小 `(n)` 冲突编号，验证三平台 golden cases 且绝不覆盖既有文件。[safe-file-ingestion]
 - [ ] 5.3 实现专属受控暂存目录、逐资源源定位/暂存/目标/hash、条件唯一 target claim、流式复制+BLAKE3、exclusive 目标保留、fsync 和每文件原子 publish，验证数据库仅在完整音频发布后可见、源文件内容/名称/位置不变、同名用户目录绝不被写入。
 - [ ] 5.4 实现同名 `.lrc` 可选子资源与独立结果，验证嵌入歌词优先、LRC 成功配对最终基础名、LRC 失败形成“音频成功/歌词失败”且不留半侧车。

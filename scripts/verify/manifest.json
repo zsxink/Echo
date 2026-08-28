@@ -578,6 +578,36 @@
           "cmd": "node scripts/verify/checks/task-4.mjs 4.10 application::scan::tests::revision_and_added_at_survive_rescans"
         }
       ]
+    },
+    {
+      "id": "5.1",
+      "title": "Per-input PlanImport with reserved OperationId/SongId and isolated mixed-batch results",
+      "commands": [
+        {
+          "desc": "mixed batch: per-input imported/duplicate/unsupported/failed results",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::tests::mixed_batch_reports_each_input_independently"
+        },
+        {
+          "desc": "OperationId + reserved SongId persisted in the journal before side effects",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::tests::import_reserves_operation_and_song_ids_before_side_effects"
+        },
+        {
+          "desc": "single input failure does not roll back committed inputs",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::tests::single_input_failure_does_not_rollback_committed_inputs"
+        },
+        {
+          "desc": "same content twice in one batch yields one record",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::tests::duplicate_content_within_a_batch_creates_one_record"
+        },
+        {
+          "desc": "unavailable root refuses the whole batch before any copy",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::tests::unavailable_root_rejects_the_whole_batch_before_copying"
+        },
+        {
+          "desc": "same target name, different content: minimal (n) numbering, no overwrite",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::tests::same_name_different_content_gets_minimal_conflict_number"
+        }
+      ]
     }
   ],
   "scenarios": []

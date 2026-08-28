@@ -19,7 +19,7 @@
 use std::collections::HashSet;
 
 use crate::domain::entities::{Song, SongAvailability};
-use crate::domain::ids::{RelativeMediaPath, SongId};
+use crate::domain::ids::{LibraryRootId, RelativeMediaPath, Revision, SongId};
 use crate::domain::media::ParsedMetadata;
 use crate::domain::text::normalized_key;
 
@@ -256,6 +256,28 @@ impl MusicKey {
             && self.title == other.title
             && self.duration_ms.abs_diff(other.duration_ms) <= MUSIC_KEY_DURATION_TOLERANCE_MS
     }
+}
+
+/// Build a song entity with parsed facts under a **fixed** identity. The
+/// watch reconciliation (journal-reserved records) and the import commit
+/// (reserved `SongId`) share this: the parsed file describes facts, the
+/// caller owns identity.
+#[must_use]
+pub(crate) fn song_from_parsed(id: SongId, root: LibraryRootId, file: &ParsedFile) -> Song {
+    let mut entity = Song::new(id, root, file.path.clone(), Revision::INITIAL);
+    entity.apply_metadata(
+        file.meta.title.clone(),
+        file.meta.artist.clone(),
+        file.meta.album.clone(),
+        file.meta.duration,
+    );
+    entity.apply_scan_facts(
+        file.hash.clone(),
+        file.size,
+        file.mtime_ns,
+        file.meta.format,
+    );
+    entity
 }
 
 #[cfg(test)]
