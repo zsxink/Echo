@@ -75,13 +75,27 @@ impl MetadataReader for LoftyMetadataReader {
         let abs = self.abs(root, path)?;
         read_from_file(&abs, &self.limits)
     }
+
+    fn read_bytes(&self, content: &[u8]) -> Result<ParsedMetadata, Error> {
+        read_from_reader(std::io::Cursor::new(content), &self.limits)
+    }
 }
 
 /// Parse one file's tags (adapter-internal, also drives the unit tests).
 pub(crate) fn read_from_file(abs: &Path, limits: &InputLimits) -> Result<ParsedMetadata, Error> {
     let file =
         std::fs::File::open(abs).map_err(|source| Error::io("open for tags", source, abs))?;
-    let tagged = Probe::new(BufReader::new(file))
+    read_from_reader(BufReader::new(file), limits)
+}
+
+/// Parse tags from any seekable reader (library file or in-memory import
+/// source). Lofty errors never embed the path, so the mapped error stays
+/// path-free by construction.
+fn read_from_reader<R: std::io::Read + std::io::Seek>(
+    reader: R,
+    limits: &InputLimits,
+) -> Result<ParsedMetadata, Error> {
+    let tagged = Probe::new(reader)
         .guess_file_type()
         .map_err(|source| corrupt("tag probe", &source.to_string()))?
         .read()
@@ -294,6 +308,25 @@ mod tests {
             flac.cover.is_some(),
             "the FLAC fixture embeds the generated cover"
         );
+    }
+
+    /// Task 5.2: import sources are named from their bytes, before anything
+    /// is written to the library — the reader must accept content directly
+    /// and agree with the file-based read.
+    #[test]
+    fn tags_parse_from_in_memory_import_source_bytes() {
+        let bytes = std::fs::read(fixtures_dir().join("tone-short.flac")).unwrap();
+        let reader = || LoftyMetadataReader::new(RootRegistry::new());
+        let from_bytes = reader().read_bytes(&bytes).unwrap();
+        assert_eq!(from_bytes.title.as_deref(), Some("Flac Tone"));
+        assert_eq!(from_bytes.artist.as_deref(), Some("Echo Fixtures"));
+        // The content-based read agrees with the path-based read of the same
+        // audio (the import naming and the committed record must not drift).
+        let from_file = read("tone-short.flac");
+        assert_eq!(from_bytes.title, from_file.title);
+        assert_eq!(from_bytes.artist, from_file.artist);
+        // Garbage content fails instead of producing a guessable name.
+        assert!(reader().read_bytes(b"definitely not audio").is_err());
     }
 
     /// Copy a fixture into a temp dir and write over-limit fields with lofty

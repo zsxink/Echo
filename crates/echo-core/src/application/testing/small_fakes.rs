@@ -138,10 +138,12 @@ impl MediaProbe for FakeMediaProbe {
     }
 }
 
-/// Deterministic metadata reader keyed by path.
+/// Deterministic metadata reader keyed by path (published files) and by raw
+/// content (import sources, whose tags are parsed before any library write).
 #[derive(Clone, Debug, Default)]
 pub struct FakeMetadataReader {
     map: Arc<Mutex<BTreeMap<String, crate::domain::media::ParsedMetadata>>>,
+    bytes_map: Arc<Mutex<BTreeMap<Vec<u8>, crate::domain::media::ParsedMetadata>>>,
 }
 
 impl FakeMetadataReader {
@@ -151,6 +153,15 @@ impl FakeMetadataReader {
     }
     pub fn set(&self, path: &str, meta: crate::domain::media::ParsedMetadata) {
         self.map.lock().unwrap().insert(path.to_owned(), meta);
+    }
+    /// Register the tags an import source's *content* carries (task 5.2: the
+    /// naming step parses tags from the source bytes before the target is
+    /// planned or anything is staged).
+    pub fn set_bytes(&self, content: &[u8], meta: crate::domain::media::ParsedMetadata) {
+        self.bytes_map
+            .lock()
+            .unwrap()
+            .insert(content.to_vec(), meta);
     }
 }
 
@@ -165,6 +176,15 @@ impl MetadataReader for FakeMetadataReader {
             .lock()
             .unwrap()
             .get(path.normalized())
+            .cloned()
+            .unwrap_or_default())
+    }
+    fn read_bytes(&self, content: &[u8]) -> Result<crate::domain::media::ParsedMetadata, Error> {
+        Ok(self
+            .bytes_map
+            .lock()
+            .unwrap()
+            .get(content)
             .cloned()
             .unwrap_or_default())
     }

@@ -608,6 +608,76 @@
           "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::tests::same_name_different_content_gets_minimal_conflict_number"
         }
       ]
+    },
+    {
+      "id": "5.2",
+      "title": "Default tag-driven targets, unknown-artist/unnamed-song fallbacks, platform cleanup, short-hash truncation and minimal (n) numbering",
+      "commands": [
+        {
+          "desc": "default target is 歌手/歌手 - 歌曲名.原扩展名",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::tests::default_target_is_artist_folder_with_artist_minus_title"
+        },
+        {
+          "desc": "missing/blank tags take the visible deterministic 未知艺人/未命名歌曲 fallbacks",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::tests::missing_or_blank_tags_fall_back_to_deterministic_names"
+        },
+        {
+          "desc": "tag text is cleaned into platform-safe target components",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::tests::tag_text_is_cleaned_for_platform_safe_targets"
+        },
+        {
+          "desc": "oversized components keep the extension plus the stable short hash",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::tests::oversized_components_are_truncated_with_short_hash_and_keep_extension"
+        },
+        {
+          "desc": "numbering skips occupied suffixes and lands on the minimal (n)",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::tests::minimal_numbering_skips_occupied_suffixes"
+        },
+        {
+          "desc": "same tags inside one batch are numbered against each other",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::tests::numbering_applies_within_one_batch"
+        },
+        {
+          "desc": "files that exist only on disk are numbered around, never replaced",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::tests::import_renumbers_around_files_that_exist_only_on_disk"
+        },
+        {
+          "desc": "publish is create-new: a target created after planning fails, never overwrites",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::tests::publish_never_overwrites_a_target_created_after_planning"
+        },
+        {
+          "desc": "Windows golden cases: forbidden characters",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 domain::text::platform_golden_cases::windows_forbidden_characters_are_neutralized"
+        },
+        {
+          "desc": "Windows golden cases: reserved names and trailing dots/spaces",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 domain::text::platform_golden_cases::windows_reserved_names_and_trailing_junk_are_neutralized"
+        },
+        {
+          "desc": "Windows/macOS golden cases: case rules live at the identity level",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 domain::text::platform_golden_cases::windows_and_macos_case_rules_are_identity_level"
+        },
+        {
+          "desc": "macOS golden cases: separators and NFC/NFD canonical identity",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 domain::text::platform_golden_cases::macos_separators_and_unicode_normalization"
+        },
+        {
+          "desc": "Linux golden cases: separators, case sensitivity and the union rule set",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 domain::text::platform_golden_cases::linux_separators_case_and_union_rules"
+        },
+        {
+          "desc": "golden cases: truncation keeps the extension and the stable short hash",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 domain::text::platform_golden_cases::truncation_keeps_extension_and_short_hash"
+        },
+        {
+          "desc": "golden cases: visible deterministic fallback labels",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 domain::text::platform_golden_cases::fallback_labels_are_visible_and_deterministic"
+        },
+        {
+          "desc": "lofty adapter reads import tags from in-memory source bytes",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 infrastructure::metadata::tags::tests::tags_parse_from_in_memory_import_source_bytes"
+        }
+      ]
     }
   ],
   "scenarios": []

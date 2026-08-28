@@ -47,6 +47,18 @@
   3. `ImportSourceReader::read` 全量入内存（非流式），5.3 流式复制时解决；
   4. 失败项目标名仍占用 taken_targets（保守不覆盖，仅效率问题）。
 - Deferred：无（全部本地可验证项已验证）
-- Commit：`Implement task 5.1: per-input PlanImport with reserved IDs` → 见 git log
+- Commit：`Implement task 5.1: per-input PlanImport with reserved IDs` → **448335d**
+
+### 5.2 默认命名、平台字符清理、短 hash 与最小冲突编号
+
+- 状态：✅ PASS（复核第 1 轮通过）
+- 实现 subagent：`plan_named_target`（歌手/歌手 - 歌曲名.扩展名 + 逐个探测 `(n)`）、domain/text 三平台 golden 模块与 UNKNOWN_ARTIST/UNNAMED_SONG 兜底、`MetadataReader::read_bytes`（导入前从源字节读标签）、fake publish create-new 冲突检查、manifest 16 条命令；并修正 2.3 遗留的「空白标签落错兜底」缺陷。
+- 复核①：**PASS**（verify:task 5.2/5.1、fmt、clippy -D warnings、cargo test 全部独立复跑通过；三平台 golden 为纯函数断言无伪造递延；计划后竞态测试证明绝不覆盖；tasks.md 未被动）。
+- P2 遗留（不阻断）：
+  1. `domain/text.rs build_target_path` 与 application `plan_named_target` 双实现存在漂移风险（测试交叉断言一致，建议复用）；
+  2. `batch_state` 每批全根 enumerate，O(曲库规模)/批，12.5 性能任务时评估；
+  3. `path_identity_key` 大小写折叠使 Linux 大小写可并存文件被编号而非共存（保守方向，golden 已记录）。
+- Deferred：无（三平台命名规则均为纯函数 golden，已本机全部通过）
+- Commit：`Implement task 5.2: import naming rules with platform golden cases` → 见 git log
 
 ---

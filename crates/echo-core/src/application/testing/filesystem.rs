@@ -223,6 +223,12 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
             .cloned()
             .ok_or_else(|| Error::permission("publish", crate::error::PermKind::NotOwner))?;
         let dest = self.abs(root, target);
+        if dest.exists() {
+            // Publish is create-new (design §8): never replace existing
+            // content. The fake mirrors the real adapter so use-case tests can
+            // assert "绝不覆盖既有文件" through the port.
+            return Err(Error::conflict("target file already exists"));
+        }
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| Error::io("create_dir_all", e, parent.to_path_buf()))?;

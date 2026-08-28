@@ -168,9 +168,19 @@ fn is_windows_reserved(component: &str) -> bool {
 /// Steps: NFKC → remove/replace forbidden & control chars → trim trailing
 /// dots/spaces (otherwise Windows drops them silently) → magazine-separate
 /// leading dots (hidden files are not what a music file should become) →
-/// Windows reserved names get a trailing `_`.
+/// Windows reserved names get a trailing `_`. A value that cleans to nothing
+/// becomes the visible fallback `未命名`.
 #[must_use]
 pub fn safe_component(value: &str) -> String {
+    clean_component_opt(value).unwrap_or_else(|| "未命名".to_owned())
+}
+
+/// [`safe_component`] without the empty-name fallback: `None` when the value
+/// cleans to nothing (only dots, spaces or control characters), so callers
+/// can apply their own *visible and deterministic* fallback label instead of
+/// inheriting an unrelated one.
+#[must_use]
+fn clean_component_opt(value: &str) -> Option<String> {
     let nfkc: String = value.nfkc().collect();
     let mut out = String::with_capacity(nfkc.len());
     for c in nfkc.chars() {
@@ -191,12 +201,12 @@ pub fn safe_component(value: &str) -> String {
         out.pop();
     }
     if out.is_empty() {
-        return "未命名".to_owned();
+        return None;
     }
     if is_windows_reserved(&out) {
         out.push('_');
     }
-    out
+    Some(out)
 }
 
 /// Truncate a base name to at most `max_bytes` UTF-8 bytes, preserving the
@@ -259,7 +269,8 @@ fn short_hash(value: &str) -> String {
 /// applying [`safe_component`] and [`truncate_component_with_extension`].
 ///
 /// Handles the unknown-artist / unnamed-song fallbacks with visible,
-/// deterministic Chinese labels ("未知艺人" / "未命名歌曲").
+/// deterministic Chinese labels ("未知艺人" / "未命名歌曲"). Both the artist
+/// directory and the file component are bounded to `max_component_bytes`.
 #[must_use]
 pub fn build_target_path(
     artist: Option<&str>,
@@ -267,16 +278,47 @@ pub fn build_target_path(
     extension: &str,
     max_component_bytes: usize,
 ) -> String {
-    let artist = artist.map(safe_component).filter(|a| !a.is_empty());
-    let title = title.map(safe_component).filter(|t| !t.is_empty());
-    let artist = artist.unwrap_or_else(|| "未知艺人".to_owned());
-    let title = title.unwrap_or_else(|| "未命名歌曲".to_owned());
-    let file = format!("{artist} - {title}");
     let cap = max_component_bytes.max(64);
     format!(
         "{}/{}",
-        artist,
-        truncate_component_with_extension(&file, extension, cap)
+        target_artist_component(artist, cap),
+        truncate_component_with_extension(&target_file_stem(artist, title), extension, cap)
+    )
+}
+
+/// The visible, deterministic folder name for a file whose tags carry no
+/// artist (spec: 缺少歌手时使用可见且确定性的兜底名称).
+pub const UNKNOWN_ARTIST: &str = "未知艺人";
+/// The visible, deterministic file-stem fallback for a missing song title.
+pub const UNNAMED_SONG: &str = "未命名歌曲";
+
+/// One import-target part (artist folder or title): a whitespace-only or
+/// entirely unnameable value counts as *missing* and takes `fallback`.
+fn target_part(value: Option<&str>, fallback: &str) -> String {
+    value
+        .map(str::trim)
+        .filter(|trimmed| !trimmed.is_empty())
+        .and_then(clean_component_opt)
+        .unwrap_or_else(|| fallback.to_owned())
+}
+
+/// The safe artist *directory* component of an import target, bounded to
+/// `max_bytes` (over-long names keep a short hash so distinct artists stay
+/// distinguishable).
+#[must_use]
+pub fn target_artist_component(artist: Option<&str>, max_bytes: usize) -> String {
+    truncate_component_with_extension(&target_part(artist, UNKNOWN_ARTIST), "", max_bytes.max(64))
+}
+
+/// The `artist - title` file stem of an import target with the missing-tag
+/// fallbacks — cleaned but neither truncated nor numbered: the caller numbers
+/// against conflicts and truncates together with the extension.
+#[must_use]
+pub fn target_file_stem(artist: Option<&str>, title: Option<&str>) -> String {
+    format!(
+        "{} - {}",
+        target_part(artist, UNKNOWN_ARTIST),
+        target_part(title, UNNAMED_SONG)
     )
 }
 
@@ -491,5 +533,191 @@ mod tests {
         assert!(!out.is_empty());
         assert!(out.contains('/'), "{out}");
         assert!(out.to_ascii_lowercase().ends_with(".flac"), "{out}");
+    }
+}
+
+#[cfg(test)]
+mod platform_golden_cases {
+    //! Task 5.2 three-platform golden cases. The naming rules are pure
+    //! functions, so every assertion below runs identically on macOS, Windows
+    //! and Linux hosts — the per-platform groups document which platform
+    //! hazard each rule neutralizes. No real foreign OS is required (or used):
+    //! platform fidelity comes from the rule set, not from the test host.
+
+    use super::*;
+
+    // -----------------------------------------------------------------------
+    // Windows golden cases
+    // -----------------------------------------------------------------------
+
+    /// Windows forbids `< > : " / \ | ? *` in every path component.
+    #[test]
+    fn windows_forbidden_characters_are_neutralized() {
+        for c in ['<', '>', ':', '"', '/', '\\', '|', '?', '*'] {
+            assert_eq!(safe_component(&format!("a{c}b")), "a_b", "char {c:?}");
+        }
+        // The composed target keeps the same guarantee on both components
+        // (the one `/` per target is the separator the builder itself emits).
+        let path = build_target_path(Some("AC/DC:Live"), Some("谁<strong>"), "flac", 255);
+        for c in ['<', '>', ':', '"', '\\', '|', '?', '*'] {
+            assert!(!path.contains(c), "{c:?} survived in {path}");
+        }
+        assert_eq!(path.matches('/').count(), 1, "{path}");
+    }
+
+    /// Windows reserves device names in any case, with or without extension;
+    /// trailing dots and spaces are silently dropped by Windows and therefore
+    /// removed deterministically up front.
+    #[test]
+    fn windows_reserved_names_and_trailing_junk_are_neutralized() {
+        for name in [
+            "CON", "con", "Con", "PRN", "prn", "AUX", "aux", "NUL", "nul", "COM1", "com4", "COM9",
+            "LPT1", "lpt7", "LPT9",
+        ] {
+            assert_eq!(
+                safe_component(name),
+                format!("{name}_"),
+                "{name} is reserved"
+            );
+        }
+        // The reserved stem keeps its extension when composed into a target.
+        let path = build_target_path(Some("NUL"), Some("nul.txt"), "flac", 255);
+        assert!(path.starts_with("NUL_/"), "{path}");
+        assert!(path.contains(" - nul.txt_"), "{path}");
+        // Trailing dots/spaces never survive into a component.
+        assert_eq!(safe_component("晴天."), "晴天");
+        assert_eq!(safe_component("晴天 "), "晴天");
+        assert_eq!(safe_component("晴天. . "), "晴天");
+    }
+
+    /// macOS and Windows default filesystems are case-insensitive: two
+    /// spellings that differ only in case are one file, so the identity key
+    /// folds case (the *displayed* name keeps the user's case).
+    #[test]
+    fn windows_and_macos_case_rules_are_identity_level() {
+        assert_eq!(
+            path_identity_key("歌手/SONG.MP3"),
+            path_identity_key("歌手/song.mp3")
+        );
+        assert_eq!(
+            safe_component("ABC"),
+            "ABC",
+            "display keeps the user's case"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // macOS golden cases
+    // -----------------------------------------------------------------------
+
+    /// macOS forbids `/` and NUL (`:` was the classic HFS separator); lookups
+    /// normalize canonically, so NFC and NFD spellings are the same file and
+    /// must map to one identity — never two songs.
+    #[test]
+    fn macos_separators_and_unicode_normalization() {
+        assert_eq!(safe_component("a/b"), "a_b");
+        assert_eq!(safe_component("a:b"), "a_b");
+        assert_eq!(
+            safe_component("a\u{0}b"),
+            "a_b",
+            "NUL never survives (it maps to the replacement like every forbidden char)"
+        );
+        let nfc = "Caf\u{e9}";
+        let nfd = "Cafe\u{301}";
+        assert_eq!(
+            path_identity_key(&format!("华语/{nfc}.flac")),
+            path_identity_key(&format!("华语/{nfd}.flac")),
+            "NFC and NFD spellings are one file on APFS/HFS+"
+        );
+        // Compatibility forms are NOT canonical equivalents: they stay distinct.
+        assert_ne!(
+            path_identity_key("华语/ｶ.flac"),
+            path_identity_key("华语/カ.flac")
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Linux golden cases
+    // -----------------------------------------------------------------------
+
+    /// Linux forbids `/` and NUL only; names are byte-exact and case-sensitive.
+    /// Echo applies the union of all three platforms' restrictions (Windows is
+    /// the strictest), so Linux-only-legal characters are cleaned too, and
+    /// case-distinct components stay distinct while the conservative identity
+    /// key can only merge spellings, never split one file into two.
+    #[test]
+    fn linux_separators_case_and_union_rules() {
+        assert_eq!(safe_component("a/b"), "a_b");
+        assert_eq!(safe_component("a\u{0}b"), "a_b", "NUL never survives");
+        // Legal on Linux but still cleaned: one rule set, valid everywhere.
+        assert_eq!(safe_component("a\\b"), "a_b");
+        assert_eq!(safe_component("a:b"), "a_b");
+        // Case-sensitive byte-exact names stay distinct as components.
+        assert_ne!(safe_component("Song"), safe_component("song"));
+        assert_ne!(safe_component("晴天"), safe_component("夜曲"));
+        // …while the identity key folds case so a spelling can never become a
+        // second identity on any platform.
+        assert_eq!(
+            path_identity_key("Song.flac"),
+            path_identity_key("song.flac")
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Truncation, short hash and fallback-label golden cases
+    // -----------------------------------------------------------------------
+
+    /// Over-long components are bounded with the extension preserved and a
+    /// stable short-hash suffix that keeps distinct inputs distinct (design §8:
+    /// 保留扩展名并附短 hash 后缀保证可区分).
+    #[test]
+    fn truncation_keeps_extension_and_short_hash() {
+        let long = "一首非常长的歌曲名称确实超出了组件的字节限制".repeat(8);
+        let out = truncate_component_with_extension(&long, "flac", 200);
+        assert!(out.len() <= 200, "{} bytes", out.len());
+        assert!(
+            std::path::Path::new(&out)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("flac")),
+            "{out}"
+        );
+        assert!(out.contains('~'), "short-hash suffix present: {out}");
+        // Deterministic: same input, same output.
+        assert_eq!(out, truncate_component_with_extension(&long, "flac", 200));
+        // Distinct inputs never collapse into the same truncated name.
+        let other = truncate_component_with_extension(&format!("{long}！"), "flac", 200);
+        assert_ne!(out, other);
+    }
+
+    /// Missing or blank tags take the visible, deterministic fallbacks
+    /// (spec: 未知艺人 / 未命名歌曲).
+    #[test]
+    fn fallback_labels_are_visible_and_deterministic() {
+        assert_eq!(
+            build_target_path(Some("周杰伦"), Some("晴天"), "flac", 255),
+            "周杰伦/周杰伦 - 晴天.flac"
+        );
+        assert_eq!(
+            build_target_path(None, Some("晴天"), "flac", 255),
+            "未知艺人/未知艺人 - 晴天.flac"
+        );
+        assert_eq!(
+            build_target_path(Some("周杰伦"), None, "flac", 255),
+            "周杰伦/周杰伦 - 未命名歌曲.flac"
+        );
+        assert_eq!(
+            build_target_path(None, None, "flac", 255),
+            "未知艺人/未知艺人 - 未命名歌曲.flac"
+        );
+        // Blank (whitespace-only) tags count as missing, for both labels.
+        assert_eq!(
+            build_target_path(Some("   "), Some("\u{3000}"), "flac", 255),
+            "未知艺人/未知艺人 - 未命名歌曲.flac"
+        );
+        // A tag that cleans to nothing (control characters only) is missing too.
+        assert_eq!(
+            build_target_path(Some("\u{1}\u{2}"), Some("晴天"), "flac", 255),
+            "未知艺人/未知艺人 - 晴天.flac"
+        );
     }
 }

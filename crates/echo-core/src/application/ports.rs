@@ -408,6 +408,16 @@ pub enum ProbeOutcome {
 /// cover/lyrics handles through [`CoverCache`]/[`LyricsParser`].
 pub trait MetadataReader: Send + Sync {
     fn read(&self, root: LibraryRootId, path: &RelativeMediaPath) -> Result<ParsedMetadata, Error>;
+    /// Read the tags of in-memory content. Import sources are planned from
+    /// their bytes (task 5.2: the `歌手/歌手 - 歌曲名.扩展名` target must be
+    /// known before anything is written into the library), so the reader must
+    /// accept content directly, not only files under a library root.
+    ///
+    /// # Errors
+    ///
+    /// Unreadable or unrecognized content (corrupt container) — the caller
+    /// reports a failed input instead of guessing a name.
+    fn read_bytes(&self, content: &[u8]) -> Result<ParsedMetadata, Error>;
 }
 
 /// Full-file content hashing (BLAKE3). Returns the hex digest.
