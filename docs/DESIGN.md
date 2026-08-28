@@ -110,7 +110,7 @@ crates/
 - **扫描与监听**：启动扫描建立或校验资料库记录，运行时监听根目录的新增、删除、移动和修改；并提供手动重新扫描以处理丢失的系统事件。根目录不可用时保留记录并标记不可用，暂停相关扫描、导入与播放。
 - **导入按钮**：用户选择新音频后，Echo 解析标签并将文件复制到资料库根目录下的 `歌手/歌手 - 歌曲名.扩展名`。同目录、同基础文件名的 `.lrc` 一并复制并重命名为相同的目标基础文件名。若目标已存在相同 BLAKE3 的文件，跳过复制；若仅文件名冲突则追加 ` (2)`、` (3)` 等编号，绝不覆盖。
 - **可恢复导入**：先复制至资料库内的暂存路径，完成标签解析、BLAKE3 校验后原子移动到目标路径，再提交 SQLite 记录。文件系统移动和 SQLite 事务不能构成单一原子事务，故通过操作日志记录每一步；启动时回收暂存文件、补写缺失记录或回滚未完成操作。
-- **文件定位与重关联**：歌曲记录保存资料库逻辑 ID 与相对路径；例如 `宇多田ヒカル/宇多田ヒカル - First Love.flac`。相对路径未变化时直接关联原 UUID；原路径消失而新路径的 BLAKE3 与该记录相同时，更新 `relative_path` 并保留 UUID。扫描遇到已存在的相同 BLAKE3 内容时不创建第二条歌曲记录。歌单及播放队列只引用 UUID，不保存文件路径。
+- **文件定位与重关联**：歌曲记录保存资料库逻辑 ID 与相对路径；例如 `周杰伦/周杰伦 - 晴天.flac`。相对路径未变化时直接关联原 UUID；原路径消失而新路径的 BLAKE3 与该记录相同时，更新 `relative_path` 并保留 UUID。扫描遇到已存在的相同 BLAKE3 内容时不创建第二条歌曲记录。歌单及播放队列只引用 UUID，不保存文件路径。
 - **系统直接打开**：注册支持格式的文件关联。系统传入资料库外音频路径时，创建仅存于内存的 `TemporaryPlaybackItem`，解析该文件的内嵌信息及同名 `.lrc` 后播放，不写入 SQLite、歌单、播放统计或同步队列；资料库内文件则解析为已有歌曲 UUID。
 - **扫描解析**：优先读取音频文件内嵌的标签、封面与歌词；无内嵌歌词时，读取同目录、同基础文件名的 `.lrc` 侧车文件。用户编辑形成的覆盖层在展示时优先于这两类来源。
 - **元数据修改**："仅保存到 Echo"只写进覆盖层（override），**不动文件本体**；外部程序修改文件时，下一次扫描重新解析内嵌数据和 hash，但不覆盖用户尚存的覆盖层。
@@ -162,10 +162,10 @@ crates/
   "uuid": "550e8400-e29b-41d4-a716-446655440000",
   "version": 42,
   "payload": {
-    "relative_path": "收藏/宇多田ヒカル - First Love.flac",
+    "relative_path": "收藏/周杰伦 - 晴天.flac",
     "blake3_hash": "7a3fa9...c91",
-    "title": "First Love",
-    "artist": "宇多田ヒカル"
+    "title": "晴天",
+    "artist": "周杰伦"
   }
 }
 ```
@@ -182,9 +182,9 @@ crates/
 
 ```text
 /Users/xian/Music/我的音乐/
-  宇多田ヒカル/
-    宇多田ヒカル - First Love.flac
-    宇多田ヒカル - First Love.lrc
+  周杰伦/
+    周杰伦 - 晴天.flac
+    周杰伦 - 晴天.lrc
 ```
 
 对应的歌曲记录与歌单引用在 SQLite 中保存。逻辑字段关系如下：
@@ -196,10 +196,10 @@ INSERT INTO songs (
 ) VALUES (
   '550e8400-e29b-41d4-a716-446655440000',
   'primary-library',
-  '宇多田ヒカル/宇多田ヒカル - First Love.flac',
+  '周杰伦/周杰伦 - 晴天.flac',
   '7a3fa9...c91',
-  'First Love',
-  '宇多田ヒカル',
+  '晴天',
+  '周杰伦',
   'sidecar_lrc'
 );
 
@@ -212,34 +212,34 @@ INSERT INTO playlist_songs (playlist_uuid, song_uuid, position) VALUES
 
 ```text
 /Users/xian/Music/我的音乐/
-  + 宇多田ヒカル/宇多田ヒカル - First Love.flac
-  = /Users/xian/Music/我的音乐/宇多田ヒカル/宇多田ヒカル - First Love.flac
+  + 周杰伦/周杰伦 - 晴天.flac
+  = /Users/xian/Music/我的音乐/周杰伦/周杰伦 - 晴天.flac
 ```
 
 从资料库外导入时，Echo 复制而不移动源文件。例如：
 
 ```text
-源文件：/Users/xian/Downloads/First Love.flac
-目标：  /Users/xian/Music/我的音乐/宇多田ヒカル/宇多田ヒカル - First Love.flac
+源文件：/Users/xian/Downloads/晴天.flac
+目标：  /Users/xian/Music/我的音乐/周杰伦/周杰伦 - 晴天.flac
 ```
 
-若源文件同目录存在 `First Love.lrc`，目标为：
+若源文件同目录存在 `晴天.lrc`，目标为：
 
 ```text
-/Users/xian/Music/我的音乐/宇多田ヒカル/宇多田ヒカル - First Love.lrc
+/Users/xian/Music/我的音乐/周杰伦/周杰伦 - 晴天.lrc
 ```
 
 若目标文件名已存在但内容不同，Echo 不覆盖原文件，而是导入为：
 
 ```text
-/Users/xian/Music/我的音乐/宇多田ヒカル/宇多田ヒカル - First Love (2).flac
+/Users/xian/Music/我的音乐/周杰伦/周杰伦 - 晴天 (2).flac
 ```
 
 若 BLAKE3 与资料库内已有歌曲相同，则视为重复导入：不复制文件、不新建 UUID，并提示用户已存在。若用户在 Finder 中将已收录歌曲改名或移动，下一次监听或重新扫描会按 hash 重关联并只更新路径：
 
 ```text
-变更前：宇多田ヒカル/宇多田ヒカル - First Love.flac
-变更后：收藏/宇多田ヒカル - First Love.flac
+变更前：周杰伦/周杰伦 - 晴天.flac
+变更后：收藏/周杰伦 - 晴天.flac
 UUID：  550e8400-e29b-41d4-a716-446655440000（不变）
 ```
 
@@ -254,8 +254,8 @@ UUID：  550e8400-e29b-41d4-a716-446655440000（不变）
 后续移动歌曲时，音频与同名 `.lrc` 一起移动，歌曲 UUID 不变。例如：
 
 ```text
-移动前：宇多田ヒカル/宇多田ヒカル - First Love.flac
-移动后：收藏/宇多田ヒカル - First Love.flac
+移动前：周杰伦/周杰伦 - 晴天.flac
+移动后：收藏/周杰伦 - 晴天.flac
 ```
 
 Echo 只更新该 UUID 的 `relative_path`；所有歌单、收藏和播放队列仍引用同一个 UUID。编辑写回内嵌封面、歌词或元数据后，Echo 重新解析文件并更新其哈希。

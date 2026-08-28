@@ -22,6 +22,13 @@ thiserror = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+# Unicode name normalization (NFKC) and user-perceived character length
+# (grapheme clusters) — both are pure-Rust, cross-platform, no `unsafe`.
+unicode-normalization = "0.1"
+unicode-segmentation = "1"
+
+# Property tests for domain name rules and state-machine transitions (dev-only).
+proptest = "1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

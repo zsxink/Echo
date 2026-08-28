@@ -23,14 +23,14 @@
 
 本组验收：`pnpm verify:task -- 2.1 2.2 2.3 2.4 2.5 2.6 2.7 2.8`
 
-- [ ] 2.1 实现 `SongId`、`PlaylistId`、`LibraryRootId`、`OperationId`、`PlaybackSessionId` 和 `RelativeMediaPath` 新类型，验证序列化、解析失败和不同 ID 不可混用的单元测试通过。
-- [ ] 2.2 实现歌曲、根目录、歌单成员、歌词候选、媒体诊断和值对象，验证可用/missing/pending-delete、读写能力和歌词来源优先级的不变量测试通过。[local-library][playlist-management]
-- [ ] 2.3 实现 Unicode NFKC/case-fold、grapheme cluster 长度、展示兜底和平台安全名称规则，使用属性测试验证中文、日文、emoji、组合字符、Windows 保留名、控制字符与长组件。[safe-file-ingestion][playlist-management]
-- [ ] 2.4 实现扫描、活动根切换、导入/删除逐资源 `Pending/Applied`、根切换屏障和播放器领域状态枚举及合法转换，验证所有非法倒退/跳跃转换返回可匹配错误且状态机属性测试通过。
-- [ ] 2.5 定义 Core 错误分类 `Validation/Permission/Unavailable/Conflict/UnsupportedMedia/CorruptMedia/Io/Storage/Cancelled/InvariantViolation`，验证基础设施错误保留 source 且公共错误不泄露路径。
-- [ ] 2.6 定义 Repository、UnitOfWork、LibraryFileSystem、MetadataReader、MediaProbe、ContentHasher、CoverCache、LyricsParser、FileEventSource、Clock、IdGenerator、SystemTrashPort 小接口，验证接口不暴露 SQLite/Tauri/mpv 具体类型。
-- [ ] 2.7 为所有 Port 提供内存/临时目录测试替身与可控时钟/ID，验证用例测试可模拟权限撤销、崩溃点、回收站失败和 watcher 乱序而不访问真实用户目录。
-- [ ] 2.8 实现稳定排序描述、服务端 cursor 和播放上下文描述类型，验证四种排序的 tie-break、cursor 翻页无重复/遗漏以及 50,000 UUID 不经 IPC 传入 UI。[library-experience][desktop-playback]
+- [x] 2.1 实现 `SongId`、`PlaylistId`、`LibraryRootId`、`OperationId`、`PlaybackSessionId` 和 `RelativeMediaPath` 新类型，验证序列化、解析失败和不同 ID 不可混用的单元测试通过。
+- [x] 2.2 实现歌曲、根目录、歌单成员、歌词候选、媒体诊断和值对象，验证可用/missing/pending-delete、读写能力和歌词来源优先级的不变量测试通过。[local-library][playlist-management]
+- [x] 2.3 实现 Unicode NFKC/case-fold、grapheme cluster 长度、展示兜底和平台安全名称规则，使用属性测试验证中文、日文、emoji、组合字符、Windows 保留名、控制字符与长组件。[safe-file-ingestion][playlist-management]
+- [x] 2.4 实现扫描、活动根切换、导入/删除逐资源 `Pending/Applied`、根切换屏障和播放器领域状态枚举及合法转换，验证所有非法倒退/跳跃转换返回可匹配错误且状态机属性测试通过。
+- [x] 2.5 定义 Core 错误分类 `Validation/Permission/Unavailable/Conflict/UnsupportedMedia/CorruptMedia/Io/Storage/Cancelled/InvariantViolation`，验证基础设施错误保留 source 且公共错误不泄露路径。
+- [x] 2.6 定义 Repository、UnitOfWork、LibraryFileSystem、MetadataReader、MediaProbe、ContentHasher、CoverCache、LyricsParser、FileEventSource、Clock、IdGenerator、SystemTrashPort 小接口，验证接口不暴露 SQLite/Tauri/mpv 具体类型。
+- [x] 2.7 为所有 Port 提供内存/临时目录测试替身与可控时钟/ID，验证用例测试可模拟权限撤销、崩溃点、回收站失败和 watcher 乱序而不访问真实用户目录。
+- [x] 2.8 实现稳定排序描述、服务端 cursor 和播放上下文描述类型，验证四种排序的 tie-break、cursor 翻页无重复/遗漏以及 50,000 UUID 不经 IPC 传入 UI。[library-experience][desktop-playback]
 
 ## 3. SQLite 迁移、Repository 与搜索
 

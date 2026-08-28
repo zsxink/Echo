@@ -100,6 +100,86 @@
           "cmd": "node scripts/verify/checks/task-1.10.mjs"
         }
       ]
+    },
+    {
+      "id": "2.1",
+      "title": "Domain ID newtypes",
+      "commands": [
+        {
+          "desc": "ids tests + clippy + fmt",
+          "cmd": "node scripts/verify/checks/task-2.1.mjs"
+        }
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Domain entities and value objects",
+      "commands": [
+        {
+          "desc": "entities/media tests + clippy + fmt",
+          "cmd": "node scripts/verify/checks/task-2.2.mjs"
+        }
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Unicode normalization and platform-safe name rules",
+      "commands": [
+        {
+          "desc": "text unit + property tests + clippy + fmt",
+          "cmd": "node scripts/verify/checks/task-2.3.mjs"
+        }
+      ]
+    },
+    {
+      "id": "2.4",
+      "title": "State machines (scan/root/operation/playback)",
+      "commands": [
+        {
+          "desc": "state unit + property tests + clippy + fmt",
+          "cmd": "node scripts/verify/checks/task-2.4.mjs"
+        }
+      ]
+    },
+    {
+      "id": "2.5",
+      "title": "Core error classification",
+      "commands": [
+        {
+          "desc": "error classification + path-privacy tests + clippy + fmt",
+          "cmd": "node scripts/verify/checks/task-2.5.mjs"
+        }
+      ]
+    },
+    {
+      "id": "2.6",
+      "title": "Ports (no SQLite/Tauri/mpv types)",
+      "commands": [
+        {
+          "desc": "ports boundary compile + clippy + fmt",
+          "cmd": "node scripts/verify/checks/task-2.6.mjs"
+        }
+      ]
+    },
+    {
+      "id": "2.7",
+      "title": "Test doubles for all ports",
+      "commands": [
+        {
+          "desc": "fakes (fault/trash/watcher/temp-dir) + clippy + fmt",
+          "cmd": "node scripts/verify/checks/task-2.7.mjs"
+        }
+      ]
+    },
+    {
+      "id": "2.8",
+      "title": "Stable sort, server-side cursor, playback context types",
+      "commands": [
+        {
+          "desc": "catalog tests (tie-break/cursor/50k IPC) + clippy + fmt",
+          "cmd": "node scripts/verify/checks/task-2.8.mjs"
+        }
+      ]
     }
   ],
   "scenarios": []

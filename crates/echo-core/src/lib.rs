@@ -23,9 +23,15 @@ pub mod application;
 pub mod domain;
 pub mod infrastructure;
 
-/// Error types shared across the core. Error modeling is defined by task 2.5;
-/// the empty module below is expanded there.
+/// Error types shared across the core (task 2.5 classification).
 pub mod error;
+
+// Re-export the domain identities and error surfaces so callers — and the
+// desktop layer — can name them without deep module paths.
+pub use domain::ids::{
+    LibraryRootId, OperationId, PlaybackSessionId, PlaylistId, QueueEntryId, RelativeMediaPath,
+    Revision, SongId,
+};
 
 /// Logging privacy guard, diagnostic-mode flag and test-logger integration
 /// (task 1.8). The desktop runtime owns global subscriber init in production.

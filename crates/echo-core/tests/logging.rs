@@ -68,10 +68,10 @@ fn default_log_keeps_safe_fields() {
 #[test]
 fn captured_test_logger_output_redacts_and_keeps_safe_fields() {
     let guard = init_test_logger();
-    let err = Error::UnsupportedMedia {
+    let err = Error::Io {
         operation: format!("media_probe title={TAG} lyric={LYRIC} content={CONTENT}"),
+        source: std::io::Error::new(std::io::ErrorKind::InvalidData, "no audio track"),
         path: PathBuf::from(ABS_PATH),
-        reason: "no audio track".to_owned(),
     };
     let line = format!("event=log level=WARN {}", err.to_log(DiagnosticMode::Off));
     tracing::warn!(target: "echo_core::logging", "{}", line);
@@ -98,7 +98,7 @@ fn captured_test_logger_output_redacts_and_keeps_safe_fields() {
         "content leaked through tracing: {joined}"
     );
     assert!(
-        joined.contains("error.code=unsupported_media"),
+        joined.contains("error.code=io"),
         "error code missing through tracing: {joined}"
     );
     assert!(
