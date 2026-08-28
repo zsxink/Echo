@@ -7,11 +7,13 @@
   --bg: oklch(1 0 89.88);
   --surface: oklch(0.9642 0 89.88);
   --fg: oklch(0.2134 0 89.88);
-  --muted: oklch(0.5700 0.0160 19.38);
+  --muted: oklch(0.5100 0.0160 19.38);
   --border: oklch(0.8940 0.0090 19.38);
   --accent: oklch(0.6528 0.2219 19.38);
 }
 ```
+
+> 实现注记：`--muted` 以实际实现（较取样略加深至 0.51 L）为准，以保证正文/弱化文字在白底 ≥4.5:1；松石绿主题 `--accent = oklch(0.54 0.1330 159.56)`，深钴蓝 `--accent = oklch(0.3787 0.1953 263.35)`。
 
 - 显示字体：`"Ant Sans", "Alibaba PuHuiTi", Inter, Arial, sans-serif`
 - 正文字体：`"Ant Sans", "Alibaba PuHuiTi", Inter, Arial, sans-serif`
