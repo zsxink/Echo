@@ -419,6 +419,32 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
         Ok(())
     }
 
+    fn discard_published(
+        &self,
+        root: LibraryRootId,
+        target: &RelativeMediaPath,
+    ) -> Result<(), Error> {
+        if let Some(err) = self.fault_error() {
+            return Err(err);
+        }
+        let abs = self.abs(root, target);
+        // Refuse symlink/reparse targets; a real regular file is removed
+        // (idempotent on absence), mirroring the real adapter.
+        let Ok(meta) = std::fs::symlink_metadata(&abs) else {
+            return Ok(());
+        };
+        if meta.file_type().is_symlink() {
+            return Err(Error::permission(
+                "discard published",
+                crate::error::PermKind::NotOwner,
+            ));
+        }
+        if meta.is_file() {
+            std::fs::remove_file(&abs).map_err(|e| Error::io("discard published", e, abs))?;
+        }
+        Ok(())
+    }
+
     fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
         let _ = root;
         Ok(*self.write_capable.lock().unwrap())

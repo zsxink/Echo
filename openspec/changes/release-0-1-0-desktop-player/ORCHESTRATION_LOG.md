@@ -90,6 +90,15 @@
 - 复核①（独立验收，全新会话）：**PASS**。独立重跑 `pnpm verify:task -- 5.5`（6 条命令逐条真实非空壳并逐一通过）、fmt、clippy -D warnings、`cargo test -p echo-core --all-features` 全部通过；故障注入覆盖 state-write Before、publish/rename Before+After、DB commit Before+After、copy Before、mid-read truncation、watcher 抢占，全部恢复两次并断言唯一终态/同一预留 UUID/无孤儿最终文件/无重复/无幽灵记录；架构红线全过，specs/tasks/design 未动，无越界实现 5.6/5.7/5.8/5.10；deferred（5.10 runtime 启动接线）如实标注未宣称已通过。
 - P2 遗留（不阻断，登记）：1) state-write After 相未逐点独立注入（由下一点 Before 传递覆盖）；2) Copy After（无 journal envelope 的暂存残留）未直接测试；3) fsync 失败未直接注入（经 copy/publish 路径覆盖）；4) 真实 sqlite `incomplete_operation_items` 与 adapter `publish_from_staging_path`/`discard_staging_path` 集成路径未在 5.5 内用集成测试演练（现行 manifest 测试走替身）。前 3 项归 13.3 故障注入报告范围；第 4 项建议后续补集成测试。
 - Deferred：5.10 runtime ready 前的 `RecoverPendingOperations` 启动接线 → 5.10。已如实标注。
-- Commit：`Implement task 5.5: import journal per-resource recovery matrix with fault injection` → 见 git log
+- Commit：`Implement task 5.5: import journal per-resource recovery matrix with fault injection` → **27206c2**
+
+### 5.6 双重 BLAKE3 去重与幂等重试
+
+- 状态：✅ PASS（复核第 1 轮通过）
+- 实现：`application/import.rs` 在 publish 后、`PublishApplied` 提交前新增二次全文件 BLAKE3 去重检查 `pre_commit_duplicate()`（重新查询曲库同 hash 歌曲，排除自身预留 ID——防并发 watcher 已用预留身份应用）；命中则返回 `ImportOutcome::Duplicate`，恢复 arm 只删除"仍携带自身内容 hash"的已发布重复文件（禁删外来文件）、回滚两条 journal item、释放 claim。`LibraryFileSystem` 新增 `discard_published` port（根约束、拒 symlink、幂等），adapter/fake/recover 实现对应。计划时点去重（5.3/5.5 已有）保留。manifest 登记 id=5.6（2 条命令，指向真实竞态/幂等测试）。计划时点去重此前已存在于 `stage_and_plan`；本任务补齐提交前第二道检查，满足 design §8「计划时和提交前各检查一次」。
+- 复核①（独立验收，全新会话）：**PASS**。独立重跑 `pnpm verify:task -- 5.6`（2 条命令真实非空壳并通过）、fmt、clippy -D warnings、`cargo test` 223+6+7 全绿；竞态测试真实模拟「两检查点之间并发导入提交相同内容 → 恰好一个逻辑歌曲」，幂等重试证明重试不新增歌曲/不重复复制；架构红线全过、specs/tasks/design 未动、无越界（`discard_published` 的 symlink 拒绝与 4.2 边界一致）。
+- P2 遗留（不阻断，登记）：1) 预提交去重把 DB 查询失败视为"无重复"（有意为之：此处失败会孤儿化已发布且校验通过的完整文件；文件仍以预留 UUID 提交，正确性保留）；2) `execute` 的 `#[allow(clippy::too_many_lines)]`（风格）。
+- Deferred：无。实现者自评提及的「rollback 与 release_claims 之间崩溃可留 claim 未释放」为 5.5 前既有范围外问题，登记待 13.3 检查。
+- Commit：`Implement task 5.6: dual BLAKE3 dedup and idempotent retry for concurrent import` → 见 git log
 
 ---

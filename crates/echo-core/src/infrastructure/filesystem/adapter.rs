@@ -434,6 +434,27 @@ impl LibraryFileSystem for RootConstrainedFileSystem {
         Ok(())
     }
 
+    fn discard_published(
+        &self,
+        root: LibraryRootId,
+        target: &RelativeMediaPath,
+    ) -> Result<(), Error> {
+        let abs = self.abs(root, target)?;
+        // Never follow or remove a symlink/reparse point (task 4.2 boundary):
+        // only a real regular file published into the library is removed.
+        let Ok(meta) = std::fs::symlink_metadata(&abs) else {
+            return Ok(()); // absent: idempotent
+        };
+        if meta.file_type().is_symlink() {
+            return Err(Error::permission("discard published", PermKind::NotOwner));
+        }
+        if meta.is_file() {
+            std::fs::remove_file(&abs)
+                .map_err(|source| Error::io("discard published", source, abs))?;
+        }
+        Ok(())
+    }
+
     fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
         self.staging.write_capable(root)
     }

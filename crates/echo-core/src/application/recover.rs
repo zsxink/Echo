@@ -546,6 +546,13 @@ mod tests {
         ) -> Result<(), Error> {
             self.inner.discard_staging_path(root, staging_path)
         }
+        fn discard_published(
+            &self,
+            root: LibraryRootId,
+            target: &RelativeMediaPath,
+        ) -> Result<(), Error> {
+            self.inner.discard_published(root, target)
+        }
         fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
             self.inner.write_capable(root)
         }

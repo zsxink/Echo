@@ -480,6 +480,21 @@ pub trait LibraryFileSystem: Send + Sync {
         root: LibraryRootId,
         staging_path: &RelativeMediaPath,
     ) -> Result<(), Error>;
+    /// Best-effort removal of an adapter-published *final* file at `target` (a
+    /// root-relative library path, never a staging path). Used by the import
+    /// pre-commit dedup (task 5.6): when the content hash already belongs to
+    /// another song record, the import removes the redundant duplicate file it
+    /// just published so identical content never leaves a second library file
+    /// (绝不复制/绝无重复文件) while returning the existing record. The caller
+    /// has first verified the file's hash equals the duplicate content's hash,
+    /// so no unique data is removed. The adapter must refuse symlink/reparse
+    /// targets (never follow) and must succeed idempotently whether or not the
+    /// file exists; only a real regular file is removed.
+    fn discard_published(
+        &self,
+        root: LibraryRootId,
+        target: &RelativeMediaPath,
+    ) -> Result<(), Error>;
     /// Whether a root-relative path currently exists (recovery's three-location
     /// check). `Ok(false)` is "not present", distinct from an I/O error in
     /// checking the filesystem itself.

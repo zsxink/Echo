@@ -772,6 +772,20 @@
      "cmd": "node scripts/verify/checks/task-5.mjs 5.5 application::recover::tests::nothing_recoverable_rolls_back_and_releases_cleanly"
     }
    ]
+  },
+  {
+   "id": "5.6",
+   "title": "Plan-time and pre-commit dual BLAKE3 dedup plus idempotent retry: a concurrent import/watcher committing identical content between the checks yields exactly one logical song (no second UUID, no duplicate file), and retrying the same content is recognized as a duplicate",
+   "commands": [
+    {
+     "desc": "pre-commit dedup returns the existing UUID when a concurrent import commits identical content mid-flight; one logical song, our published duplicate is removed, claim released",
+     "cmd": "node scripts/verify/checks/task-5.mjs 5.6 application::import::tests::precommit_dedup_catches_a_concurrent_duplicate_without_a_second_song"
+    },
+    {
+     "desc": "idempotent retry: re-importing identical content is recognized by BLAKE3 as a duplicate (no new song, no re-copy, existing record returned)",
+     "cmd": "node scripts/verify/checks/task-5.mjs 5.6 application::import::tests::retry_of_identical_content_is_an_idempotent_duplicate"
+    }
+   ]
   }
  ],
  "scenarios": []

@@ -192,6 +192,13 @@ enum ExecuteError {
     /// A published final file (or a DB commit in flight) means the operation
     /// must be completed by recovery, never rolled back.
     PostPublish(Error),
+    /// The *pre-commit* BLAKE3 dedup re-check (task 5.6) found that the content
+    /// we just published already belongs to another song record — a concurrent
+    /// import or watcher committed the same content between the plan-time check
+    /// and our own commit. Identical content must produce exactly one logical
+    /// song: we contribute nothing (no second UUID, no second file) and return
+    /// the existing record.
+    Duplicate { existing: SongId },
 }
 
 /// One input's reserved plan: the identity, staged resource and target every
@@ -401,6 +408,36 @@ impl<'a> PlanImport<'a> {
                 // the reserved UUID. No discard, no release, no second copy.
                 failed_of(&error)
             }
+            ExecuteError::Duplicate { existing } => {
+                // The pre-commit dedup found the content we just published is
+                // already the library's under another UUID (task 5.6: 并发导入/
+                // 监听竞态下相同内容只出现一个逻辑歌曲). Contribute nothing: remove
+                // our own redundant published duplicate (guard: only if the file
+                // at target still carries OUR content — never delete a foreign
+                // file), roll both journal items back, release the claim, and
+                // point the user at the existing record. No second UUID, no
+                // duplicate file is left behind (绝不复制/绝无重复文件).
+                if let Ok(published_hash) = self.deps.hasher.hash(planned.root, &planned.target) {
+                    if published_hash == planned.hash {
+                        let _ = self
+                            .deps
+                            .fs
+                            .discard_published(planned.root, &planned.target);
+                    }
+                }
+                let _ = self.deps.journal.upsert_item(
+                    planned.operation,
+                    journal_item(OperationState::RolledBack, planned),
+                );
+                if let Some(lrc) = &planned.lrc {
+                    let _ = self.deps.journal.upsert_item(
+                        planned.operation,
+                        journal_lrc_item(OperationState::RolledBack, planned, lrc),
+                    );
+                }
+                let _ = self.deps.journal.release_claims(planned.operation);
+                ImportOutcome::Duplicate { existing }
+            }
         }
     }
 
@@ -608,6 +645,28 @@ impl<'a> PlanImport<'a> {
         Ok(())
     }
 
+    /// The pre-commit half of the dual BLAKE3 dedup (task 5.6): after the final
+    /// file is published and its full-file hash re-verified, check whether the
+    /// library already owns a song with that exact content hash. A concurrent
+    /// import or watcher may have committed the same content between the
+    /// plan-time check and this commit — identical content must map to exactly
+    /// one logical song, so a hit returns that existing UUID (excluding our own
+    /// reserved one, which a racing watcher may already have applied under the
+    /// reserved identity).
+    fn pre_commit_duplicate(
+        &self,
+        root: LibraryRootId,
+        published_hash: &str,
+        reserved: SongId,
+    ) -> Result<Option<SongId>, Error> {
+        for song in self.deps.songs.all_in_root(root)? {
+            if song.blake3_hash() == Some(published_hash) && song.id() != reserved {
+                return Ok(Some(song.id()));
+            }
+        }
+        Ok(None)
+    }
+
     /// Publish → verify → parse → commit one planned input, driving the audio
     /// journal item through the full per-resource `Copy/Validate/Publish
     /// Pending→Applied` chain (task 5.5). Returns the sidecar result: a
@@ -620,6 +679,7 @@ impl<'a> PlanImport<'a> {
     /// recovery completes it under the same reserved identity (a published
     /// final file is never rolled back into an orphan, and the target claim is
     /// never released early).
+    #[allow(clippy::too_many_lines)] // one cohesive publish→verify→dedup→commit chain
     fn execute(&self, planned: &PlannedInput) -> Result<LyricsImportResult, ExecuteError> {
         // Per-resource journal chain (design §8: 意图先持久化，副作用后校验再
         // 落 Applied). The staged copy was created and fsynced in pre-flight;
@@ -672,6 +732,27 @@ impl<'a> PlanImport<'a> {
                 operation: IMPORT_OPERATION.to_owned(),
                 reason: "published hash differs from the staged content".to_owned(),
             }));
+        }
+        // Pre-commit BLAKE3 dedup re-check (task 5.6, design §8: 去重在计划时和
+        // 提交前各检查一次): the plan-time check saw no holder, but between then
+        // and this commit a concurrent import/watcher may have committed the
+        // same content (possibly at another path). Re-query the library by the
+        // full-file hash just verified at the final location: identical content
+        // returns the existing record and never a second logical song. A query
+        // failure is logged and treated as "no duplicate" — the file is whole
+        // and valid, and failing the import here would orphan it.
+        if let Some(existing) = self
+            .pre_commit_duplicate(planned.root, &published_hash, planned.reserved)
+            .unwrap_or_else(|error| {
+                tracing::warn!(
+                    operation = %planned.operation,
+                    %error,
+                    "pre-commit dedup re-check could not read the library; continuing"
+                );
+                None
+            })
+        {
+            return Err(ExecuteError::Duplicate { existing });
         }
         self.write_state(planned, OperationState::PublishApplied)
             .map_err(ExecuteError::PostPublish)?;
@@ -1098,6 +1179,13 @@ mod tests {
         ) -> Result<(), Error> {
             self.inner.discard_staging_path(root, staging_path)
         }
+        fn discard_published(
+            &self,
+            root: LibraryRootId,
+            target: &RelativeMediaPath,
+        ) -> Result<(), Error> {
+            self.inner.discard_published(root, target)
+        }
         fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
             self.inner.write_capable(root)
         }
@@ -1382,6 +1470,13 @@ mod tests {
             staging_path: &RelativeMediaPath,
         ) -> Result<(), Error> {
             self.inner.discard_staging_path(root, staging_path)
+        }
+        fn discard_published(
+            &self,
+            root: LibraryRootId,
+            target: &RelativeMediaPath,
+        ) -> Result<(), Error> {
+            self.inner.discard_published(root, target)
         }
         fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
             self.inner.write_capable(root)
@@ -2061,6 +2156,13 @@ mod tests {
             staging_path: &RelativeMediaPath,
         ) -> Result<(), Error> {
             self.inner.discard_staging_path(root, staging_path)
+        }
+        fn discard_published(
+            &self,
+            root: LibraryRootId,
+            target: &RelativeMediaPath,
+        ) -> Result<(), Error> {
+            self.inner.discard_published(root, target)
         }
         fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
             self.inner.write_capable(root)
@@ -2993,5 +3095,285 @@ mod tests {
             database.envelope_of(operation).map(|(root, _)| root),
             Some(root)
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 5.6: dual BLAKE3 dedup and idempotent retry. A plan-time check sees
+    // the snapshot; a pre-commit re-check (on the full-file hash of the just
+    // published file) closes the concurrent-import/watcher race so identical
+    // content never yields a second logical song; and retrying the same content
+    // is recognized as a duplicate, not re-copied.
+    // -----------------------------------------------------------------------
+
+    /// A fs wrapper that, at the exact moment our import publishes its final
+    /// audio, injects a concurrent song with the SAME content hash at a
+    /// *different* path — the race task 5.6 guards against: a concurrent
+    /// import/watcher committing the same content between the plan-time dedup
+    /// and our pre-commit re-check must never produce a second logical song.
+    struct ConcurrentDedupInjector {
+        inner: FakeLibraryFileSystem,
+        database: MemoryDatabase,
+        root: LibraryRootId,
+        concurrent: SongId,
+        hash: String,
+        content: Vec<u8>,
+        injected: std::sync::Mutex<bool>,
+    }
+
+    impl LibraryFileSystem for ConcurrentDedupInjector {
+        fn enumerate(&self, root: LibraryRootId) -> Result<Vec<RelativeMediaPath>, Error> {
+            self.inner.enumerate(root)
+        }
+        fn file_meta(
+            &self,
+            root: LibraryRootId,
+            path: &RelativeMediaPath,
+        ) -> Result<FileMeta, Error> {
+            self.inner.file_meta(root, path)
+        }
+        fn read_head(
+            &self,
+            root: LibraryRootId,
+            path: &RelativeMediaPath,
+            limit: u64,
+        ) -> Result<Vec<u8>, Error> {
+            self.inner.read_head(root, path, limit)
+        }
+        fn publish(
+            &self,
+            root: LibraryRootId,
+            staged: &StagedResource,
+            target: &RelativeMediaPath,
+        ) -> Result<(), Error> {
+            // The final audio lands first, then the concurrent import surfaces
+            // with the SAME content at its own path + record. The once-flag is
+            // settled before the blocking file side effects so the guard is not
+            // held across them.
+            self.inner.publish(root, staged, target)?;
+            {
+                let mut injected = self.injected.lock().unwrap();
+                if *injected {
+                    return Ok(());
+                }
+                *injected = true;
+            }
+            let concurrent_path =
+                RelativeMediaPath::new("其他/并发 - 同内容.flac").expect("valid path");
+            let abs = self
+                .inner
+                .root_path(self.root)
+                .expect("root")
+                .join(concurrent_path.normalized());
+            if let Some(parent) = abs.parent() {
+                std::fs::create_dir_all(parent).expect("concurrent mkdir");
+            }
+            std::fs::write(&abs, &self.content).expect("concurrent publish file");
+            let mut song = Song::new(
+                self.concurrent,
+                self.root,
+                concurrent_path,
+                Revision::INITIAL,
+            );
+            song.apply_scan_facts(
+                self.hash.clone(),
+                self.content.len() as u64,
+                1,
+                AudioFormat::Flac,
+            );
+            crate::application::ports::SongRepository::upsert(&self.database, &song)
+                .expect("inject concurrent song");
+            Ok(())
+        }
+        fn stage(
+            &self,
+            root: LibraryRootId,
+            staged: &StagedResource,
+            content: &[u8],
+        ) -> Result<(), Error> {
+            self.inner.stage(root, staged, content)
+        }
+        fn stage_stream(
+            &self,
+            root: LibraryRootId,
+            staged: &StagedResource,
+            content: &mut dyn Read,
+        ) -> Result<StagedCopy, Error> {
+            self.inner.stage_stream(root, staged, content)
+        }
+        fn read_staged(
+            &self,
+            root: LibraryRootId,
+            staged: &StagedResource,
+        ) -> Result<Vec<u8>, Error> {
+            self.inner.read_staged(root, staged)
+        }
+        fn discard_staged(
+            &self,
+            root: LibraryRootId,
+            staged: &StagedResource,
+        ) -> Result<(), Error> {
+            self.inner.discard_staged(root, staged)
+        }
+        fn path_exists(
+            &self,
+            root: LibraryRootId,
+            path: &RelativeMediaPath,
+        ) -> Result<bool, Error> {
+            self.inner.path_exists(root, path)
+        }
+        fn publish_from_staging_path(
+            &self,
+            root: LibraryRootId,
+            staging_path: &RelativeMediaPath,
+            target: &RelativeMediaPath,
+        ) -> Result<(), Error> {
+            self.inner
+                .publish_from_staging_path(root, staging_path, target)
+        }
+        fn discard_staging_path(
+            &self,
+            root: LibraryRootId,
+            staging_path: &RelativeMediaPath,
+        ) -> Result<(), Error> {
+            self.inner.discard_staging_path(root, staging_path)
+        }
+        fn discard_published(
+            &self,
+            root: LibraryRootId,
+            target: &RelativeMediaPath,
+        ) -> Result<(), Error> {
+            self.inner.discard_published(root, target)
+        }
+        fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
+            self.inner.write_capable(root)
+        }
+    }
+
+    #[test]
+    fn precommit_dedup_catches_a_concurrent_duplicate_without_a_second_song() {
+        let g = gated();
+        // The content our import is about to publish.
+        let content = b"concurrent-bytes";
+        let hash = g.deps.hasher.hash_of_bytes(content);
+        let concurrent = crate::domain::ids::SongId::new();
+        let injector = Arc::new(ConcurrentDedupInjector {
+            inner: g.fixture.fs.clone(),
+            database: g.fixture.database.clone(),
+            root: g.fixture.root,
+            concurrent,
+            hash: hash.clone(),
+            content: content.to_vec(),
+            injected: std::sync::Mutex::new(false),
+        });
+        let deps = {
+            let fs: Arc<dyn LibraryFileSystem> = injector;
+            ScanDeps {
+                fs,
+                ..ScanDeps::clone(&g.deps)
+            }
+        };
+        g.sources.add("hit", "晴天.flac", content);
+        tagged(&g, content, Some("歌手"), Some("晴天"));
+        g.fixture
+            .set_audio("歌手/歌手 - 晴天.flac", "晴天", 269_000);
+
+        let report = PlanImport::new(&deps, &g.sources)
+            .run(g.fixture.root, &[source("hit")])
+            .expect("batch-level success");
+
+        // The import recognized the content was claimed by the concurrent song
+        // at pre-commit and contributed nothing: the existing UUID is returned.
+        assert_eq!(
+            report.results[0],
+            ImportOutcome::Duplicate {
+                existing: concurrent
+            },
+            "the concurrent duplicate returns the existing record, never a second song"
+        );
+        // Exactly ONE logical song for this content.
+        let songs = g.fixture.all_songs();
+        assert_eq!(
+            songs.len(),
+            1,
+            "identical content has exactly one logical song"
+        );
+        assert_eq!(
+            songs[0].id(),
+            concurrent,
+            "the surviving record is the concurrent one"
+        );
+        // Our own published duplicate file was removed (绝不复制/绝无重复文件):
+        // only the concurrent song's file remains on disk. And the mixed-batch
+        // report for the single input held no committed reservation.
+        let root_dir = g.fixture.fs.root_path(g.fixture.root).expect("root");
+        assert!(
+            !root_dir.join("歌手/歌手 - 晴天.flac").exists(),
+            "the duplicate we just published is removed"
+        );
+        assert!(
+            root_dir.join("其他/并发 - 同内容.flac").exists(),
+            "the concurrent song's file is the one that stays"
+        );
+        // The concurrent record carries the exact content hash (so the dedup
+        // was genuinely driven by BLAKE3, not by an unrelated match).
+        assert_eq!(
+            songs[0].blake3_hash(),
+            Some(hash.as_str()),
+            "the surviving record is keyed by the identical BLAKE3"
+        );
+        // The rolled-back operation released its target claim for a clean retry
+        // (one release: the duplicate's own claim, not a committed song's).
+        assert_eq!(
+            g.fixture.database.released_claims().len(),
+            1,
+            "the duplicate's rolled-back claim is released"
+        );
+        assert_eq!(g.fixture.fs.staged_count(), 0, "no staged residue remains");
+    }
+
+    #[test]
+    fn retry_of_identical_content_is_an_idempotent_duplicate() {
+        let g = gated();
+        let content = b"retry-bytes";
+        g.sources.add("a", "once.flac", content);
+        tagged(&g, content, Some("歌手"), Some("晴天"));
+        g.fixture.set_audio("歌手/歌手 - 晴天.flac", "晴天", 1_000);
+
+        // First run imports the content under a fresh reserved UUID.
+        let first = PlanImport::new(&g.deps, &g.sources)
+            .run(g.fixture.root, &[source("a")])
+            .expect("batch-level success");
+        let ImportOutcome::Imported {
+            song: first_song, ..
+        } = first.results[0]
+        else {
+            panic!("the first import must succeed");
+        };
+        assert_eq!(g.fixture.all_songs().len(), 1);
+
+        // A retry of the SAME content (a user retrying, or a second window) is
+        // recognized by BLAKE3 on the fresh batch snapshot: no re-copy, no new
+        // song — the existing record is returned.
+        let second = PlanImport::new(&g.deps, &g.sources)
+            .run(g.fixture.root, &[source("a")])
+            .expect("batch-level success");
+        assert_eq!(
+            second.results[0],
+            ImportOutcome::Duplicate {
+                existing: first_song
+            },
+            "the retry returns the completed result as a duplicate"
+        );
+        // Still exactly one logical song and one file — nothing duplicated.
+        assert_eq!(g.fixture.all_songs().len(), 1);
+        let root_dir = g.fixture.fs.root_path(g.fixture.root).expect("root");
+        assert_eq!(
+            std::fs::read(root_dir.join("歌手/歌手 - 晴天.flac")).expect("published"),
+            content,
+            "the single file is byte-identical"
+        );
+        // The first import's claim was released once; the duplicate never held
+        // a claim (it was recognized before planning).
+        assert_eq!(g.fixture.database.released_claims().len(), 1);
     }
 }
