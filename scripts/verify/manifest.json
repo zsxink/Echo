@@ -678,6 +678,32 @@
           "cmd": "node scripts/verify/checks/task-5.mjs 5.2 infrastructure::metadata::tags::tests::tags_parse_from_in_memory_import_source_bytes"
         }
       ]
+    },
+    {
+      "id": "5.3",
+      "title": "Dedicated controlled staging, per-resource source/stage/target/hash, streaming copy+BLAKE3, exclusive target reservation, fsync and per-file atomic publish, DB visible only after full publish, source invariance and same-named user directory isolation",
+      "commands": [
+        {
+          "desc": "streaming copy is byte-exact and BLAKE3 is computed during the copy",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.3 application::import::tests::import_streams_the_copy_and_computes_blake3_during_it"
+        },
+        {
+          "desc": "journal item records source locator, staging slot, target and expected hash per resource",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.3 application::import::tests::journal_item_records_source_staging_target_and_expected_hash"
+        },
+        {
+          "desc": "database record is visible only after the full audio is published",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.3 application::import::tests::database_record_is_visible_only_after_the_full_audio_is_published"
+        },
+        {
+          "desc": "exclusive target reservation never replaces a raced target and staged copies of duplicate/failed inputs are discarded",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.3 application::import::tests::duplicate_and_failed_inputs_discard_their_staged_copies"
+        },
+        {
+          "desc": "source content/name/location stay unchanged and a same-named user directory is never written (dedicated controlled staging)",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.3 application::import::tests::source_files_stay_unchanged_and_foreign_staging_names_are_isolated"
+        }
+      ]
     }
   ],
   "scenarios": []

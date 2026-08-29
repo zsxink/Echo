@@ -7,7 +7,7 @@ use super::*;
 use crate::application::ports::{
     LibraryRepository, OperationResourceKind, PlaylistRepository, SongRepository, UnitOfWork,
 };
-use crate::domain::catalog::{SongSortField, SortDirection};
+use crate::domain::catalog::{SongSort, SongSortField, SortDirection};
 use crate::domain::ids::Revision;
 use crate::domain::state::OperationState;
 
@@ -116,6 +116,8 @@ fn schema_constraints_cover_active_root_paths_playlist_and_target_claim() {
                 kind: OperationResourceKind::Audio,
                 state: OperationState::Planned,
                 song: Some(first.id()),
+                source: None,
+                staging_path: None,
                 target_path: RelativeMediaPath::new("新/歌.flac").expect("path"),
                 expected_hash: "a".repeat(64),
                 claim_key: "audio".to_owned(),
@@ -133,6 +135,8 @@ fn schema_constraints_cover_active_root_paths_playlist_and_target_claim() {
                 kind: OperationResourceKind::Audio,
                 state: OperationState::Planned,
                 song: None,
+                source: None,
+                staging_path: None,
                 target_path: RelativeMediaPath::new("新/歌.flac").expect("path"),
                 expected_hash: "b".repeat(64),
                 claim_key: "audio".to_owned()
@@ -416,6 +420,8 @@ fn claim_item(song: Option<SongId>, target: &str, key: &str) -> OperationItem {
         kind: OperationResourceKind::Audio,
         state: OperationState::Planned,
         song,
+        source: None,
+        staging_path: None,
         target_path: RelativeMediaPath::new(target).expect("path"),
         expected_hash: "a".repeat(64),
         claim_key: key.to_owned(),
@@ -672,6 +678,139 @@ fn multi_playlist_membership_commits_in_one_transaction() {
         "first membership of the failed transaction is rolled back"
     );
     assert_eq!(database.members(playlist_two).expect("two").len(), 1);
+}
+
+/// Task 5.3: the conditional unique target claim protects the import pipeline
+/// against a live second claim on the same planned target — the claim blocks
+/// until the blocking operation reaches a terminal state and releases it.
+/// Register the import fixtures on the scan stack: the source content's tags
+/// (content-keyed lookup) and the published path's probe/tags (path-keyed).
+fn seed_import_source(
+    stack: &ScanStack,
+    published: &str,
+    content: &[u8],
+    artist: &str,
+    title: &str,
+) {
+    let tags = |artist: &str, title: &str| crate::domain::media::ParsedMetadata {
+        artist: Some(artist.to_owned()),
+        title: Some(title.to_owned()),
+        ..crate::domain::media::ParsedMetadata::default()
+    };
+    stack.metadata.set_bytes(content, tags(artist, title));
+    stack.probe.set(
+        published,
+        crate::application::ports::ProbeOutcome::Audio {
+            format: crate::domain::media::AudioFormat::Flac,
+            duration: Some(Duration::from_secs(1)),
+        },
+    );
+    stack.metadata.set(published, tags(artist, title));
+}
+
+#[test]
+fn import_target_claims_are_conditionally_unique_until_release() {
+    let stack = ScanStack::new();
+
+    // An in-flight operation holds the active claim on the planned target.
+    let blocker = OperationId::new();
+    OperationJournalRepository::ensure_operation(
+        stack.database.as_ref(),
+        blocker,
+        stack.root,
+        "import",
+        None,
+    )
+    .expect("envelope");
+    let claimed = RelativeMediaPath::new("歌手/歌手 - 晴天.flac").expect("path");
+    stack
+        .database
+        .upsert_item(
+            blocker,
+            claim_item(None, claimed.display(), claimed.identity_key()),
+        )
+        .expect("active claim");
+
+    // The import plans the same target (its batch snapshot predates the
+    // claim): the conditional unique index refuses the second claim, so the
+    // input fails without publishing anything.
+    let content = b"claim-conflict-bytes";
+    seed_import_source(&stack, claimed.display(), content, "歌手", "晴天");
+    let deps = stack.deps();
+    let sources = crate::application::testing::FakeImportSources::new();
+    sources.add("hit", "晴天.flac", content);
+    let source = crate::application::ports::ImportSource::new("hit").expect("key");
+    let report = crate::application::import::PlanImport::new(&deps, &sources)
+        .run(stack.root, std::slice::from_ref(&source))
+        .expect("batch-level success");
+    let crate::application::import::ImportOutcome::Failed { code, .. } = &report.results[0] else {
+        panic!(
+            "the live claim must block a second claim: {:?}",
+            report.results[0]
+        );
+    };
+    assert_eq!(
+        *code, "conflict",
+        "SQLite uniqueness surfaces as a conflict"
+    );
+    assert!(
+        stack
+            .database
+            .query_active_songs("", SongSort::default(), None, 100)
+            .expect("query")
+            .items
+            .is_empty(),
+        "no song record while the claim is held by the blocker"
+    );
+    assert!(
+        !stack.library_dir.join(claimed.display()).exists(),
+        "nothing was published while the claim was held"
+    );
+
+    // After the blocker rolls back (claims released), the same import
+    // succeeds under the same planned target with its own reserved identity.
+    OperationJournalRepository::release_claims(stack.database.as_ref(), blocker).expect("release");
+    let report = crate::application::import::PlanImport::new(&deps, &sources)
+        .run(stack.root, &[source])
+        .expect("batch-level success");
+    let crate::application::import::ImportOutcome::Imported {
+        song,
+        target,
+        operation,
+    } = &report.results[0]
+    else {
+        panic!(
+            "the import succeeds after the claim is released: {:?}",
+            report.results[0]
+        );
+    };
+    assert_eq!(target.display(), "歌手/歌手 - 晴天.flac");
+    assert!(
+        stack.library_dir.join(target.display()).is_file(),
+        "the full audio is published"
+    );
+    assert!(
+        crate::application::ports::SongRepository::by_id(stack.database.as_ref(), *song)
+            .expect("query")
+            .is_some(),
+        "the record is committed under the reserved identity"
+    );
+    // The import's own claim was released at the terminal state.
+    let items = stack.database.items(*operation).expect("items");
+    assert_eq!(items.len(), 1);
+    assert_eq!(
+        items[0].state,
+        crate::domain::state::OperationState::Completed
+    );
+    assert_eq!(
+        items[0].source.as_deref(),
+        Some("hit"),
+        "the per-item source locator is persisted"
+    );
+    assert!(
+        items[0].staging_path.is_some(),
+        "the per-item staging location is persisted"
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -26,6 +26,7 @@
 //! Every trait is `Send + Sync` so use cases can run behind the desktop
 //! actor/thread boundary.
 
+use std::io::Read;
 use std::time::Duration;
 
 use crate::domain::entities::{
@@ -100,6 +101,17 @@ pub trait PlaylistRepository: Send + Sync {
 /// states are the domain [`crate::domain::state::OperationState`] states; the
 /// repository persists per-item rows keyed by `(operation, item)`.
 pub trait OperationJournalRepository: Send + Sync {
+    /// Idempotently create the operation's durable envelope — the journal's
+    /// total-state row every per-resource item attaches to (design §8: 每个
+    /// operation 由总状态和逐资源 `operation_items` 组成). Repeating the call
+    /// for a known operation is a no-op so recovery can re-run freely.
+    fn ensure_operation(
+        &self,
+        operation: OperationId,
+        root: LibraryRootId,
+        kind: &str,
+        reserved_song: Option<SongId>,
+    ) -> Result<(), Error>;
     /// The state of a concrete journal item.
     fn item_state(
         &self,
@@ -122,6 +134,12 @@ pub struct OperationItem {
     pub state: crate::domain::state::OperationState,
     /// Reserved `SongId` (import) / the subject `SongId` (delete/restore).
     pub song: Option<SongId>,
+    /// The logical external source locator (design §8: 受桌面可信边界保护的
+    /// 外部源定位) — an [`ImportSource`] key, never a filesystem path.
+    pub source: Option<String>,
+    /// Root-relative location of the staged resource while the operation runs
+    /// (design §8: item 固定保存暂存/目标相对路径); recovery resolves it.
+    pub staging_path: Option<RelativeMediaPath>,
     /// Relative path in the root the final file targets.
     pub target_path: RelativeMediaPath,
     /// Expected full-file hash (BLAKE3) as hex.
@@ -287,14 +305,30 @@ pub struct ImportSourceInfo {
 
 /// Reads user-selected external import sources. Implemented by the layer that
 /// owns the file-selection result (the desktop trusted boundary) and by test
-/// doubles; Core only ever sees handles and bytes, never locations.
+/// doubles; Core only ever sees handles and content streams, never locations.
 pub trait ImportSourceReader: Send + Sync {
     /// Describe a source (display name + size) without reading its content.
     fn describe(&self, source: &ImportSource) -> Result<ImportSourceInfo, Error>;
-    /// The source content. Implementations must read the whole file or fail —
-    /// a short read is a failure, never truncated success (the import pipeline
-    /// verifies `size` against the description before publishing).
-    fn read(&self, source: &ImportSource) -> Result<Vec<u8>, Error>;
+    /// A reader over the source's full content (design §8: 逐资源源定位).
+    /// The import streams this reader straight into the controlled staging
+    /// directory, so implementations must serve the content from its
+    /// beginning to its end; a vanished or truncated source surfaces as a
+    /// short stream and is rejected by the size verification.
+    fn open<'a>(&'a self, source: &ImportSource) -> Result<Box<dyn Read + 'a>, Error>;
+}
+
+/// The verbatim result of streaming one resource into the controlled staging
+/// directory: bytes written, the BLAKE3 accumulated during the copy, and the
+/// staged file's root-relative location (journal bookkeeping only — never a
+/// user-facing path).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StagedCopy {
+    /// Bytes actually copied into the staging file.
+    pub size: u64,
+    /// BLAKE3 hex digest of the staged content.
+    pub blake3: String,
+    /// The staged file's location relative to the library root.
+    pub staged_path: RelativeMediaPath,
 }
 
 /// Opaque handle to a file already placed in Echo's marker-verified staging
@@ -359,7 +393,11 @@ pub trait LibraryFileSystem: Send + Sync {
         limit: u64,
     ) -> Result<Vec<u8>, Error>;
     /// Atomically publish an adapter-owned staging resource into its final
-    /// root-relative path. Callers cannot pass an arbitrary external path.
+    /// root-relative path. The publication reserves the target exclusively
+    /// (create-new: any existing entry — including a symlink — is a conflict,
+    /// never a replacement), then renames the staged file onto the reserved
+    /// name (design §8: 新建 exclusive 目标 + fsync + rename 且绝不替换).
+    /// Callers cannot pass an arbitrary external path.
     fn publish(
         &self,
         root: LibraryRootId,
@@ -376,6 +414,26 @@ pub trait LibraryFileSystem: Send + Sync {
         staged: &StagedResource,
         content: &[u8],
     ) -> Result<(), Error>;
+    /// Stream-copy `content` into the operation's marker-verified staging
+    /// directory (task 5.3: 流式复制+BLAKE3). Implementations pump the reader
+    /// in bounded chunks into an exclusively created file inside the owned
+    /// staging slot, accumulate BLAKE3 while copying, fsync the staged file
+    /// and only then report it as staged. The returned [`StagedCopy`] is the
+    /// evidence the journal records (per-resource source/staging/hash).
+    fn stage_stream(
+        &self,
+        root: LibraryRootId,
+        staged: &StagedResource,
+        content: &mut dyn Read,
+    ) -> Result<StagedCopy, Error>;
+    /// Read a staged resource back through its handle (the import parses the
+    /// staged copy's tags before a target name exists). Unknown or forged
+    /// handles are rejected.
+    fn read_staged(&self, root: LibraryRootId, staged: &StagedResource) -> Result<Vec<u8>, Error>;
+    /// Best-effort removal of a staged resource (failure-path cleanup; the
+    /// operation's journal keeps the diagnostic). Idempotent: discarding an
+    /// unknown handle or an already removed file succeeds.
+    fn discard_staged(&self, root: LibraryRootId, staged: &StagedResource) -> Result<(), Error>;
     /// Whether the root currently permits writes (permissions + marker).
     fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error>;
 }

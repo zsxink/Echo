@@ -173,7 +173,25 @@ pub(crate) fn operation_item(
     operation: OperationId,
     item: &str,
 ) -> Result<Option<OperationItem>, Error> {
-    connection.query_row("SELECT kind, state, song_uuid, target_relative_path, expected_hash, normalized_target_path FROM operation_items WHERE operation_uuid = ?1 AND item_key = ?2", params![operation.to_string(), item], super::conversion::operation_item_from_row).optional().map_err(storage)
+    connection.query_row("SELECT i.kind, i.state, COALESCE(i.song_uuid, j.reserved_song_uuid), i.target_relative_path, i.expected_hash, i.normalized_target_path, i.source_locator, i.staging_relative_path FROM operation_items i JOIN operation_journal j ON j.operation_uuid = i.operation_uuid WHERE i.operation_uuid = ?1 AND i.item_key = ?2", params![operation.to_string(), item], super::conversion::operation_item_from_row).optional().map_err(storage)
+}
+/// Idempotently create the operation envelope (the journal's total-state row
+/// every per-resource item attaches to; design §8). Repeats are no-ops so
+/// recovery can re-run freely.
+pub(crate) fn ensure_operation_journal(
+    connection: &Connection,
+    operation: OperationId,
+    root: LibraryRootId,
+    kind: &str,
+    reserved_song: Option<SongId>,
+) -> Result<(), Error> {
+    connection
+        .execute(
+            "INSERT INTO operation_journal (operation_uuid, library_root_uuid, kind, state, reserved_song_uuid, created_at, updated_at) VALUES (?1, ?2, ?3, 'planned', ?4, ?5, ?5) ON CONFLICT(operation_uuid) DO NOTHING",
+            params![operation.to_string(), root.to_string(), kind, reserved_song.map(|id| id.to_string()), now_ms()],
+        )
+        .map_err(map_constraint)?;
+    Ok(())
 }
 pub(crate) fn upsert_operation_item(
     connection: &Connection,
@@ -191,7 +209,26 @@ pub(crate) fn upsert_operation_item(
         .ok_or_else(|| Error::InvariantViolation {
             why: "operation item requires a persisted journal envelope".to_owned(),
         })?;
-    connection.execute("INSERT INTO operation_items (operation_uuid, item_key, library_root_uuid, kind, state, song_uuid, target_relative_path, normalized_target_path, expected_hash, claim_active) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1) ON CONFLICT(operation_uuid, item_key) DO UPDATE SET state = excluded.state, song_uuid = excluded.song_uuid, target_relative_path = excluded.target_relative_path, normalized_target_path = excluded.normalized_target_path, expected_hash = excluded.expected_hash", params![operation.to_string(), item.claim_key, root, if item.kind == OperationResourceKind::Audio { "audio" } else { "lyrics" }, operation_state_to_db(item.state), item.song.map(|id| id.to_string()), item.target_path.display(), item.target_path.identity_key(), item.expected_hash]).map_err(map_constraint)?;
+    // The item's `song_uuid` column carries a foreign key into `songs`. An
+    // import's *reserved* SongId has no songs row until DatabaseCommitted, so
+    // the reservation lives in the envelope's `reserved_song_uuid` (no FK)
+    // and the item column is only populated once it can be satisfied; reads
+    // COALESCE the two, so the port always reports the reserved identity.
+    let song_uuid: Option<String> = match item.song {
+        Some(id) => {
+            let id = id.to_string();
+            let stored: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM songs WHERE uuid = ?1",
+                    params![id],
+                    |row| row.get(0),
+                )
+                .map_err(storage)?;
+            (stored > 0).then_some(id)
+        }
+        None => None,
+    };
+    connection.execute("INSERT INTO operation_items (operation_uuid, item_key, library_root_uuid, kind, state, song_uuid, source_locator, staging_relative_path, target_relative_path, normalized_target_path, expected_hash, claim_active) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1) ON CONFLICT(operation_uuid, item_key) DO UPDATE SET state = excluded.state, song_uuid = excluded.song_uuid, source_locator = excluded.source_locator, staging_relative_path = excluded.staging_relative_path, target_relative_path = excluded.target_relative_path, normalized_target_path = excluded.normalized_target_path, expected_hash = excluded.expected_hash", params![operation.to_string(), item.claim_key, root, if item.kind == OperationResourceKind::Audio { "audio" } else { "lyrics" }, operation_state_to_db(item.state), song_uuid, item.source, item.staging_path.map(|path| path.display().to_owned()), item.target_path.display(), item.target_path.identity_key(), item.expected_hash]).map_err(map_constraint)?;
     Ok(())
 }
 

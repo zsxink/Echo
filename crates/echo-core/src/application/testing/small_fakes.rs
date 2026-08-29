@@ -29,6 +29,7 @@
 )]
 
 use std::collections::{BTreeMap, VecDeque};
+use std::io::Read;
 use std::sync::{Arc, Mutex};
 #[cfg(test)]
 use std::time::Duration;
@@ -343,16 +344,16 @@ impl ImportSourceReader for FakeImportSources {
         )
     }
 
-    fn read(&self, source: &ImportSource) -> Result<Vec<u8>, Error> {
+    fn open<'a>(&'a self, source: &ImportSource) -> Result<Box<dyn Read + 'a>, Error> {
         self.reads.lock().unwrap().push(source.key().to_owned());
         let map = self.sources.lock().unwrap();
         let source = map
             .get(source.key())
             .ok_or_else(|| Error::unavailable("import source", "unknown handle"))?;
-        source.failure.as_ref().map_or_else(
-            || Ok(source.bytes.clone()),
-            |message| Err(source_failure(message)),
-        )
+        if let Some(message) = &source.failure {
+            return Err(source_failure(message));
+        }
+        Ok(Box::new(std::io::Cursor::new(source.bytes.clone())))
     }
 }
 

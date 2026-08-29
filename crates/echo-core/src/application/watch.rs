@@ -571,6 +571,8 @@ mod tests {
             kind: OperationResourceKind::Audio,
             state: OperationState::CopyPending,
             song: Some(reserved),
+            source: None,
+            staging_path: None,
             target_path: RelativeMediaPath::new("importing.mp3").unwrap(),
             expected_hash: "a".repeat(64),
             claim_key: RelativeMediaPath::new("importing.mp3")
@@ -616,6 +618,8 @@ mod tests {
             kind: OperationResourceKind::Audio,
             state: OperationState::PublishApplied,
             song: Some(reserved),
+            source: None,
+            staging_path: None,
             target_path: RelativeMediaPath::new("published.mp3").unwrap(),
             expected_hash: "a".repeat(64),
             claim_key: RelativeMediaPath::new("published.mp3")

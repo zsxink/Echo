@@ -299,6 +299,15 @@ impl MemoryOperationJournal {
 }
 
 impl OperationJournalRepository for MemoryOperationJournal {
+    fn ensure_operation(
+        &self,
+        _operation: OperationId,
+        _root: LibraryRootId,
+        _kind: &str,
+        _reserved_song: Option<SongId>,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
     fn item_state(
         &self,
         operation: OperationId,

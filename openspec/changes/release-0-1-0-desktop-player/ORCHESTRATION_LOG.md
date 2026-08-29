@@ -61,4 +61,17 @@
 - Deferred：无（三平台命名规则均为纯函数 golden，已本机全部通过）
 - Commit：`Implement task 5.2: import naming rules with platform golden cases` → 见 git log
 
+### 5.3 专属受控暂存、流式复制+BLAKE3、exclusive 目标保留与原子 publish
+
+- 状态：✅ PASS（复核第 2 轮通过）
+- 实现：5.3 的实现草稿由并发会话留在工作树（未提交、未登记），编排接管后作为 round-0 实现候选纳入复核循环。实现内容：`application/import.rs` 的 stage-and-plan / staged copy / BLAKE3-during-stream / 原子 publish 流程、`ImportSourceReader`/`LibraryFileSystem` port 的 stage/read_staged/discard_staged/publish、SQLite 条件唯一 target claim、exclusive create-new 占位 + fsync + rename 每文件原子发布；测试覆盖专属受控暂存、逐资源 source/staging/target/hash、DB 仅完整音频发布后可见、源文件不变、同名用户目录绝不被写入。
+- 复核①（独立验收）：**FAIL**。
+  - P0-1 `scripts/verify/manifest.json`：5.x 段只到 5.2，无 5.3 条目，`pnpm verify:task -- 5.3` 报 `unknown task id: 5.3`（退出码 1）。→ 需为 5.3 登记实际检查命令（任务 1.3 红线：未登记不得宣称完成）。
+  - P2（不阻断）1) publish 空占位窗口可被 watcher 短暂观察；2) 目录 fsync advisory 平台降级未登记说明；3) 测试替身不注入读取中途截断（归属 5.5 故障注入范围）。
+- 修复①（§5.3 修复 agent）：在 `scripts/verify/manifest.json`「5」组 5.2 后新增 id=5.3，登记 5 条命令（`task-5.mjs 5.3 <test-name>`，对应 5 个核心测试）；三条 P2 按「不得顺手重构无关代码」未改动。修复后 `pnpm verify:task -- 5.3` ok、fmt/clippy 干净、`cargo test` 220 通过 0 失败、未破坏 5.1 登记。改动仅 manifest.json（+26 行）。
+- 复核②（独立验收，全新会话）：**PASS**。独立重跑 `pnpm verify:task -- 5.3`（manifest 5 条命令逐条真实指向非空壳测试并逐一通过）、fmt、clippy -D warnings、`cargo test` 220 通过；9 个验收点全部有真实实现与直接测试证据；架构红线（echo-core 纯净、infra 只实现 ports、错误脱敏、tempdir-only 测试、无 specs/design/schema 漂移）全部通过；无范围外改动。
+- P2 遗留（不阻断，登记）：1) publish 占位窗口（visibility nuance，建议在 port 文档注释说明）；2) 目录 fsync advisory（文件级 fsync 为硬性；建议恢复期二次核对已 rename 文件）；3) 测试替身不注入中途读取截断（5.5/5.6 故障注入时补充）。
+- Deferred：无（全部本地可验证项已验证通过）。
+- Commit：`Implement task 5.3: dedicated controlled staging, streaming copy with BLAKE3, exclusive target reservation, fsync and atomic per-file publish` → 见 git log
+
 ---

@@ -68,11 +68,11 @@ use conversion::{
 use query::{active_root_id, query_active, SONG_SELECT};
 use statements::{
     add_member, all_songs_in_root, attach_cover, begin_scan_run, clear_lyrics_candidate,
-    cover_of_song, create_playlist, finish_scan_run, increment_play_count, latest_scan_generation,
-    load_runtime_state, lyrics_candidates, operation_item, record_scan_issue,
-    referenced_asset_keys, release_operation_claims, set_lyrics_candidate, set_song_availability,
-    set_song_favorite, store_runtime_state, update_scan_progress, upsert_operation_item,
-    upsert_root, upsert_song,
+    cover_of_song, create_playlist, ensure_operation_journal, finish_scan_run,
+    increment_play_count, latest_scan_generation, load_runtime_state, lyrics_candidates,
+    operation_item, record_scan_issue, referenced_asset_keys, release_operation_claims,
+    set_lyrics_candidate, set_song_availability, set_song_favorite, store_runtime_state,
+    update_scan_progress, upsert_operation_item, upsert_root, upsert_song,
 };
 use support::{map_constraint, now_ms, parse_id, storage, to_sql_error};
 
@@ -601,6 +601,19 @@ impl PlaylistRepository for SqliteDatabase {
 }
 
 impl OperationJournalRepository for SqliteDatabase {
+    fn ensure_operation(
+        &self,
+        operation: OperationId,
+        root: LibraryRootId,
+        kind: &str,
+        reserved_song: Option<SongId>,
+    ) -> Result<(), Error> {
+        let kind = kind.to_owned();
+        self.writer.run(move |connection| {
+            ensure_operation_journal(connection, operation, root, &kind, reserved_song)
+        })
+    }
+
     fn item_state(
         &self,
         operation: OperationId,
@@ -620,7 +633,7 @@ impl OperationJournalRepository for SqliteDatabase {
 
     fn items(&self, operation: OperationId) -> Result<Vec<OperationItem>, Error> {
         self.with_reader(move |connection| {
-            let mut statement = connection.prepare("SELECT kind, state, song_uuid, target_relative_path, expected_hash, normalized_target_path FROM operation_items WHERE operation_uuid = ?1 ORDER BY item_key").map_err(storage)?;
+            let mut statement = connection.prepare("SELECT i.kind, i.state, COALESCE(i.song_uuid, j.reserved_song_uuid), i.target_relative_path, i.expected_hash, i.normalized_target_path, i.source_locator, i.staging_relative_path FROM operation_items i JOIN operation_journal j ON j.operation_uuid = i.operation_uuid WHERE i.operation_uuid = ?1 ORDER BY i.item_key").map_err(storage)?;
             let items = statement.query_map(params![operation.to_string()], operation_item_from_row).map_err(storage)?.collect::<Result<Vec<_>, _>>().map_err(storage)?;
             Ok(items)
         })

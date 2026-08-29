@@ -202,6 +202,12 @@ pub(crate) fn operation_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Resu
         target_path: RelativeMediaPath::new(&row.get::<_, String>(3)?).map_err(to_sql_error)?,
         expected_hash: row.get(4)?,
         claim_key: row.get(5)?,
+        source: row.get(6)?,
+        staging_path: row
+            .get::<_, Option<String>>(7)?
+            .map(|value| RelativeMediaPath::new(&value))
+            .transpose()
+            .map_err(to_sql_error)?,
     })
 }
 

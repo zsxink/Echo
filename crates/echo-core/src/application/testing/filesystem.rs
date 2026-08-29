@@ -29,6 +29,7 @@
 )]
 
 use std::collections::BTreeMap;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -83,27 +84,17 @@ impl FakeLibraryFileSystem {
         staged: &StagedResource,
         bytes: &[u8],
     ) -> Result<(), Error> {
-        let base = self
-            .roots
-            .lock()
-            .unwrap()
-            .get(&root)
-            .cloned()
-            .ok_or_else(|| Error::unavailable("test root", "unknown root"))?;
-        let path = base
-            .join(".echo-test-staging")
-            .join(staged.operation().to_string())
-            .join(staged.resource_key());
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| Error::io("stage mkdir", e, parent))?;
-        }
-        std::fs::write(&path, bytes).map_err(|e| Error::io("stage write", e, &path))?;
-        self.staged.lock().unwrap().insert(
-            (root, staged.operation(), staged.resource_key().to_owned()),
-            path,
-        );
-        Ok(())
+        self.stage_stream(root, staged, &mut std::io::Cursor::new(bytes))
+            .map(|_| ())
     }
+
+    /// How many staged resources are currently registered (assertion helper:
+    /// the import's failure paths must discard their staged copies).
+    #[must_use]
+    pub fn staged_count(&self) -> usize {
+        self.staged.lock().unwrap().len()
+    }
+
     pub fn clear_fault(&self) {
         *self.fault.lock().unwrap() = None;
     }
@@ -246,6 +237,91 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
         self.stage_bytes(root, staged, content)
     }
 
+    /// Mirrors the real adapter: chunked pump + BLAKE3 accumulated during the
+    /// copy, staged under `<root>/.echo-test-staging/import/<operation>/`.
+    fn stage_stream(
+        &self,
+        root: LibraryRootId,
+        staged: &StagedResource,
+        content: &mut dyn std::io::Read,
+    ) -> Result<StagedCopy, Error> {
+        if let Some(err) = self.fault_error() {
+            return Err(err);
+        }
+        let base = self
+            .roots
+            .lock()
+            .unwrap()
+            .get(&root)
+            .cloned()
+            .ok_or_else(|| Error::unavailable("test root", "unknown root"))?;
+        let slot = base
+            .join(".echo-test-staging")
+            .join("import")
+            .join(staged.operation().to_string());
+        std::fs::create_dir_all(&slot).map_err(|e| Error::io("stage mkdir", e, slot.clone()))?;
+        let path = slot.join(staged.resource_key());
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|e| Error::io("stage open", e, path.clone()))?;
+        let mut hasher = blake3::Hasher::new();
+        let mut size: u64 = 0;
+        let mut buffer = vec![0u8; 64 * 1024];
+        loop {
+            let read = content
+                .read(&mut buffer)
+                .map_err(|e| Error::io("copy import source", e, path.clone()))?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+            file.write_all(&buffer[..read])
+                .map_err(|e| Error::io("stage write", e, path.clone()))?;
+            size = size.saturating_add(u64::try_from(read).unwrap_or(u64::MAX));
+        }
+        let staged_rel = RelativeMediaPath::new(&format!(
+            ".echo-test-staging/import/{}/{}",
+            staged.operation(),
+            staged.resource_key()
+        ))?;
+        self.staged.lock().unwrap().insert(
+            (root, staged.operation(), staged.resource_key().to_owned()),
+            path.clone(),
+        );
+        Ok(StagedCopy {
+            size,
+            blake3: hasher.finalize().to_hex().to_string(),
+            staged_path: staged_rel,
+        })
+    }
+
+    fn read_staged(&self, root: LibraryRootId, staged: &StagedResource) -> Result<Vec<u8>, Error> {
+        if let Some(err) = self.fault_error() {
+            return Err(err);
+        }
+        let path = self
+            .staged
+            .lock()
+            .unwrap()
+            .get(&(root, staged.operation(), staged.resource_key().to_owned()))
+            .cloned()
+            .ok_or_else(|| Error::permission("read staged", crate::error::PermKind::NotOwner))?;
+        std::fs::read(&path).map_err(|e| Error::io("read staged copy", e, path))
+    }
+
+    fn discard_staged(&self, root: LibraryRootId, staged: &StagedResource) -> Result<(), Error> {
+        let key = (root, staged.operation(), staged.resource_key().to_owned());
+        // Bound the clone first so the guard is gone before the removal lock.
+        let path = self.staged.lock().unwrap().get(&key).cloned();
+        if let Some(path) = path {
+            let _ = std::fs::remove_file(&path);
+            self.staged.lock().unwrap().remove(&key);
+        }
+        Ok(())
+    }
+
     fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
         let _ = root;
         Ok(*self.write_capable.lock().unwrap())
@@ -257,6 +333,13 @@ fn walk_dir(base: &Path, dir: &Path, out: &mut Vec<RelativeMediaPath>) {
         for e in entries.flatten() {
             let p = e.path();
             if p.is_dir() {
+                // The fake's private staging area is invisible to scans, like
+                // the real walker's marker-verified skip.
+                if p.file_name()
+                    .is_some_and(|name| name == ".echo-test-staging")
+                {
+                    continue;
+                }
                 walk_dir(base, &p, out);
             } else if let Ok(rel) = p.strip_prefix(base) {
                 if let Ok(rp) = RelativeMediaPath::new(&rel.to_string_lossy()) {

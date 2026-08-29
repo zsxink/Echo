@@ -26,6 +26,7 @@ struct Store {
     playlists: BTreeMap<PlaylistId, (LibraryRootId, String)>,
     members: BTreeMap<(PlaylistId, SongId), PlaylistMember>,
     operations: BTreeMap<(OperationId, String), OperationItem>,
+    envelopes: BTreeMap<OperationId, (LibraryRootId, String, Option<SongId>)>,
     released_claims: Vec<OperationId>,
     lyrics: BTreeMap<(SongId, LyricsSource), LyricsCandidate>,
     covers: BTreeMap<SongId, CoverAssetRef>,
@@ -120,6 +121,16 @@ impl MemoryDatabase {
     #[must_use]
     pub fn released_claims(&self) -> Vec<OperationId> {
         self.lock().released_claims.clone()
+    }
+
+    /// The journal envelope of one operation (assertion helper: the import
+    /// must ensure the envelope before its first item write).
+    #[must_use]
+    pub fn envelope_of(&self, operation: OperationId) -> Option<(LibraryRootId, String)> {
+        self.lock()
+            .envelopes
+            .get(&operation)
+            .map(|(root, kind, _)| (*root, kind.clone()))
     }
 }
 
@@ -317,6 +328,19 @@ impl PlaylistRepository for MemoryDatabase {
 }
 
 impl OperationJournalRepository for MemoryDatabase {
+    fn ensure_operation(
+        &self,
+        operation: OperationId,
+        root: LibraryRootId,
+        kind: &str,
+        reserved_song: Option<SongId>,
+    ) -> Result<(), Error> {
+        self.lock()
+            .envelopes
+            .entry(operation)
+            .or_insert_with(|| (root, kind.to_owned(), reserved_song));
+        Ok(())
+    }
     fn item_state(
         &self,
         operation: OperationId,
