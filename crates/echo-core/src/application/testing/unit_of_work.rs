@@ -50,6 +50,7 @@ struct MemoryTxState {
     playlists: BTreeMap<PlaylistId, (LibraryRootId, String)>,
     members: BTreeMap<(PlaylistId, SongId), PlaylistMember>,
     operations: BTreeMap<(OperationId, String), OperationItem>,
+    undo_deadlines: BTreeMap<OperationId, i64>,
     lyrics: BTreeMap<(SongId, LyricsSource), LyricsCandidate>,
     covers: BTreeMap<SongId, CoverAssetRef>,
     runtime_state: BTreeMap<String, String>,
@@ -158,6 +159,11 @@ impl TxAccess for MemoryTx<'_> {
         self.state
             .operations
             .insert((operation, item.target_path.normalized().to_owned()), item);
+        Ok(())
+    }
+
+    fn set_undo_deadline(&mut self, operation: OperationId, deadline_ms: i64) -> Result<(), Error> {
+        self.state.undo_deadlines.insert(operation, deadline_ms);
         Ok(())
     }
 

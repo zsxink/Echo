@@ -131,6 +131,13 @@ pub trait OperationJournalRepository: Send + Sync {
         &self,
         root: LibraryRootId,
     ) -> Result<Vec<(OperationId, String, OperationItem)>, Error>;
+    /// Persist the operation-level `undo_deadline` (epoch millis) on the
+    /// envelope row. A delete operation records it in the same transaction
+    /// that hides the song (design §9: `HiddenInDatabase (undo_deadline =
+    /// now + 10s)`), so the undo window survives a crash/restart.
+    fn set_undo_deadline(&self, operation: OperationId, deadline_ms: i64) -> Result<(), Error>;
+    /// The persisted `undo_deadline` (epoch millis) of `operation`, if any.
+    fn undo_deadline(&self, operation: OperationId) -> Result<Option<i64>, Error>;
     /// Release every active target claim of the operation. Must be called when
     /// the operation reaches a terminal state (completed, rolled back, delete
     /// finalized); until then the conditional unique index keeps the target
@@ -237,6 +244,10 @@ pub trait TxAccess {
         operation: OperationId,
         item: OperationItem,
     ) -> Result<(), Error>;
+    /// Persist the operation's `undo_deadline` (epoch millis) in the same
+    /// transaction as the song's pending-delete hide (design §9: the deadline
+    /// and the hide are one atomic step, so a crash cannot split them).
+    fn set_undo_deadline(&mut self, operation: OperationId, deadline_ms: i64) -> Result<(), Error>;
     /// Write one parsed lyrics candidate row (`(song, source)`) inside the
     /// open transaction, keyed by the candidate's source. A rescan upserts
     /// embedded/sidecar rows with fresh text; override rows are only ever
@@ -511,6 +522,52 @@ pub trait LibraryFileSystem: Send + Sync {
         &self,
         root: LibraryRootId,
         staging_path: &RelativeMediaPath,
+        target: &RelativeMediaPath,
+    ) -> Result<(), Error>;
+    /// Resolve the root-relative trash slot for one delete-operation resource
+    /// WITHOUT moving anything (design §9: 专属受控 `trash/<operation-id>`).
+    /// The use case persists this location in the `StagePending` journal item
+    /// *before* the rename, so a crash between the state write and the move
+    /// still leaves a durable, resolvable staged location for recovery.
+    /// `resource_key` is a logical per-resource item name (e.g. `audio` /
+    /// `lyrics`), never a filesystem path. The adapter owns the slot layout;
+    /// the returned path must be stable and match what [`Self::stage_to_trash`]
+    /// later fills.
+    fn trash_path(
+        &self,
+        root: LibraryRootId,
+        operation: OperationId,
+        resource_key: &str,
+    ) -> Result<RelativeMediaPath, Error>;
+    /// Move a *library-published* file at `source` into Echo's controlled
+    /// `trash/<operation-id>` slot (design §9: 同盘 rename 移入专属受控目录的
+    /// `trash/<operation-id>`), i.e. the delete stage. Like [`Self::publish`],
+    /// the adapter owns the physical slot: `resource_key` is a logical
+    /// per-resource item name (e.g. `audio` / `lyrics`), never a filesystem
+    /// path, and the resolved trash file is created exclusively (an existing
+    /// entry is a conflict, never replaced). `source` must be a real library
+    /// file (a symlink/reparse target is refused). The move is a same-volume
+    /// rename so the staged copy is atomically visible whole. Returns the
+    /// root-relative trash path the journal records and that recovery/undo
+    /// later resolve; an implementation must keep it stable for the
+    /// operation's lifetime and equal to [`Self::trash_path`].
+    fn stage_to_trash(
+        &self,
+        root: LibraryRootId,
+        operation: OperationId,
+        source: &RelativeMediaPath,
+        resource_key: &str,
+    ) -> Result<RelativeMediaPath, Error>;
+    /// Move a file back out of the trash slot to a library `target` (design §9
+    /// undo: 把文件移回原路径). The same exclusive create-new contract as a
+    /// publish: a non-empty existing target is a conflict, never replaced — the
+    /// use case retries against a safe numbered path. `trash` must resolve
+    /// inside the owned `trash/` subdirectory; a symlink/reparse `target` is
+    /// refused.
+    fn restore_from_trash(
+        &self,
+        root: LibraryRootId,
+        trash: &RelativeMediaPath,
         target: &RelativeMediaPath,
     ) -> Result<(), Error>;
     /// Whether the root currently permits writes (permissions + marker).

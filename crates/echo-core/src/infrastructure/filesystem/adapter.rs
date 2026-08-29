@@ -20,8 +20,12 @@ use super::walker;
 /// never buffers whole in RAM).
 const COPY_CHUNK_BYTES: usize = 64 * 1024;
 /// Design §8: imports stage under `import/<operation-id>` inside the
-/// controlled staging directory (deletions later use `trash/<operation-id>`).
+/// controlled staging directory.
 const IMPORT_STAGING_SUBDIR: &str = "import";
+/// Design §9: deletions stage into `trash/<operation-id>` inside the same
+/// controlled staging directory (同盘 rename, recovery-safe and skipped by the
+/// scanner because the whole staging directory is marker-verified).
+const TRASH_STAGING_SUBDIR: &str = "trash";
 /// Suffix of the exclusive in-progress staging file; only a completed copy is
 /// renamed onto the final staged name, so a partial file can never pass for a
 /// staged resource.
@@ -455,6 +459,148 @@ impl LibraryFileSystem for RootConstrainedFileSystem {
         Ok(())
     }
 
+    fn trash_path(
+        &self,
+        root: LibraryRootId,
+        operation: OperationId,
+        resource_key: &str,
+    ) -> Result<RelativeMediaPath, Error> {
+        let staging_dir = self.staging.ensure_dir(root)?;
+        let root_abs = self.registry.path_of(root)?;
+        let trash_rel = RelativeMediaPath::new(&format!(
+            "{}/{TRASH_STAGING_SUBDIR}/{}/{}",
+            staging_dir
+                .strip_prefix(&root_abs)
+                .map_err(|source| {
+                    Error::io(
+                        "resolve trash slot",
+                        std::io::Error::other(source),
+                        staging_dir.clone(),
+                    )
+                })?
+                .to_string_lossy()
+                .replace('\\', "/"),
+            operation.as_uuid().simple(),
+            resource_key
+        ))?;
+        let _ = self.verify_trash_path(root, &trash_rel)?;
+        Ok(trash_rel)
+    }
+
+    fn stage_to_trash(
+        &self,
+        root: LibraryRootId,
+        operation: OperationId,
+        source: &RelativeMediaPath,
+        resource_key: &str,
+    ) -> Result<RelativeMediaPath, Error> {
+        let source_abs = self.abs(root, source)?;
+        if self.owned_staging_ancestor(&source_abs, root) {
+            return Err(Error::permission("stage to trash", PermKind::NotOwner));
+        }
+        // The source must be a real regular library file (never a symlink,
+        // never a directory); the move is a same-volume rename.
+        match std::fs::symlink_metadata(&source_abs) {
+            Ok(meta) if meta.is_file() && !meta.file_type().is_symlink() => {}
+            Ok(meta) if meta.file_type().is_symlink() => {
+                return Err(Error::permission("stage to trash", PermKind::NotOwner));
+            }
+            _ => {
+                return Err(Error::io(
+                    "stat source",
+                    std::io::Error::other("missing"),
+                    source_abs,
+                ))
+            }
+        }
+        let trash_rel = self.trash_path(root, operation, resource_key)?;
+        let trash_abs = self.verify_trash_path(root, &trash_rel)?;
+        if let Some(parent) = trash_abs.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|source| Error::io("create trash slot", source, parent.to_path_buf()))?;
+        }
+        // Exclusive-create the trash slot: never overwrite an existing entry.
+        let reserved = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&trash_abs);
+        match reserved {
+            Ok(handle) => {
+                if let Err(source) = handle.sync_all() {
+                    return Err(Error::io("fsync reserved trash target", source, trash_abs));
+                }
+            }
+            Err(source) if source.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Err(Error::conflict("trash target already exists"));
+            }
+            Err(source) => return Err(Error::io("reserve trash target", source, trash_abs)),
+        }
+        if let Err(source) = std::fs::rename(&source_abs, &trash_abs) {
+            let still_empty = std::fs::metadata(&trash_abs).is_ok_and(|meta| meta.len() == 0);
+            if still_empty {
+                let _ = std::fs::remove_file(&trash_abs);
+            }
+            return Err(Error::io("stage to trash", source, trash_abs));
+        }
+        fsync_dir(
+            &trash_abs
+                .parent()
+                .map_or_else(|| trash_abs.clone(), std::path::Path::to_path_buf),
+        );
+        Ok(trash_rel)
+    }
+
+    fn restore_from_trash(
+        &self,
+        root: LibraryRootId,
+        trash: &RelativeMediaPath,
+        target: &RelativeMediaPath,
+    ) -> Result<(), Error> {
+        let trash_abs = self.verify_trash_path(root, trash)?;
+        let dest = self.abs(root, target)?;
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).map_err(|source| {
+                Error::io("create target directory", source, parent.to_path_buf())
+            })?;
+        }
+        // Same exclusive create-new + fsync + rename contract: the restore
+        // never replaces foreign content; a zero-byte placeholder left by a
+        // crashed earlier attempt is cleared first.
+        if let Ok(meta) = std::fs::metadata(&dest) {
+            if meta.len() == 0 {
+                let _ = std::fs::remove_file(&dest);
+            }
+        }
+        let reserved = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&dest);
+        match reserved {
+            Ok(handle) => {
+                if let Err(source) = handle.sync_all() {
+                    return Err(Error::io("fsync reserved target", source, dest));
+                }
+            }
+            Err(source) if source.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Err(Error::conflict("restore target file already exists"));
+            }
+            Err(source) => return Err(Error::io("reserve target", source, dest)),
+        }
+        if let Err(source) = std::fs::rename(&trash_abs, &dest) {
+            let still_empty = std::fs::metadata(&dest).is_ok_and(|meta| meta.len() == 0);
+            if still_empty {
+                let _ = std::fs::remove_file(&dest);
+            }
+            return Err(Error::io("restore from trash", source, dest));
+        }
+        fsync_dir(
+            &dest
+                .parent()
+                .map_or_else(|| dest.clone(), std::path::Path::to_path_buf),
+        );
+        Ok(())
+    }
+
     fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
         self.staging.write_capable(root)
     }
@@ -473,6 +619,47 @@ impl RootConstrainedFileSystem {
             return false;
         };
         self.staging.check(ancestor, root) == super::staging::StagingCheck::Owned
+    }
+
+    /// Verify a `trash/*` root-relative path resolves inside the owned staging
+    /// directory directly under a `trash` subdirectory (design §9: 专属受控
+    /// `trash/<operation-id>`). Only Echo's own marker-verified trash slot is
+    /// ever read or written — a crafted/foreign path is refused.
+    fn verify_trash_path(
+        &self,
+        root: LibraryRootId,
+        trash: &RelativeMediaPath,
+    ) -> Result<PathBuf, Error> {
+        let abs = self.abs(root, trash)?;
+        let Some(ancestor) = abs.ancestors().find(|p| {
+            p.file_name().is_some_and(|name| {
+                name.to_string_lossy()
+                    .starts_with(super::staging::STAGING_DIR_PREFIX)
+            })
+        }) else {
+            return Err(Error::permission("trash path", PermKind::NotOwner));
+        };
+        if self.staging.check(ancestor, root) != super::staging::StagingCheck::Owned {
+            return Err(Error::permission("trash path", PermKind::NotOwner));
+        }
+        // The component immediately below the staging dir must be `trash`.
+        let under = abs
+            .strip_prefix(ancestor)
+            .map_err(|_| Error::permission("trash path", PermKind::NotOwner))?;
+        let first = under
+            .components()
+            .next()
+            .and_then(|c| match c {
+                std::path::Component::Normal(segment) => {
+                    Some(segment.to_string_lossy().into_owned())
+                }
+                _ => None,
+            })
+            .ok_or_else(|| Error::permission("trash path", PermKind::NotOwner))?;
+        if first != TRASH_STAGING_SUBDIR || under.components().count() < 2 {
+            return Err(Error::permission("trash path", PermKind::NotOwner));
+        }
+        Ok(abs)
     }
 }
 

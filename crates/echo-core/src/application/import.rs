@@ -1186,6 +1186,32 @@ mod tests {
         ) -> Result<(), Error> {
             self.inner.discard_published(root, target)
         }
+        fn trash_path(
+            &self,
+            root: LibraryRootId,
+            operation: OperationId,
+            resource_key: &str,
+        ) -> Result<RelativeMediaPath, Error> {
+            self.inner.trash_path(root, operation, resource_key)
+        }
+        fn stage_to_trash(
+            &self,
+            root: LibraryRootId,
+            operation: OperationId,
+            source: &RelativeMediaPath,
+            resource_key: &str,
+        ) -> Result<RelativeMediaPath, Error> {
+            self.inner
+                .stage_to_trash(root, operation, source, resource_key)
+        }
+        fn restore_from_trash(
+            &self,
+            root: LibraryRootId,
+            trash: &RelativeMediaPath,
+            target: &RelativeMediaPath,
+        ) -> Result<(), Error> {
+            self.inner.restore_from_trash(root, trash, target)
+        }
         fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
             self.inner.write_capable(root)
         }
@@ -1477,6 +1503,32 @@ mod tests {
             target: &RelativeMediaPath,
         ) -> Result<(), Error> {
             self.inner.discard_published(root, target)
+        }
+        fn trash_path(
+            &self,
+            root: LibraryRootId,
+            operation: OperationId,
+            resource_key: &str,
+        ) -> Result<RelativeMediaPath, Error> {
+            self.inner.trash_path(root, operation, resource_key)
+        }
+        fn stage_to_trash(
+            &self,
+            root: LibraryRootId,
+            operation: OperationId,
+            source: &RelativeMediaPath,
+            resource_key: &str,
+        ) -> Result<RelativeMediaPath, Error> {
+            self.inner
+                .stage_to_trash(root, operation, source, resource_key)
+        }
+        fn restore_from_trash(
+            &self,
+            root: LibraryRootId,
+            trash: &RelativeMediaPath,
+            target: &RelativeMediaPath,
+        ) -> Result<(), Error> {
+            self.inner.restore_from_trash(root, trash, target)
         }
         fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
             self.inner.write_capable(root)
@@ -2163,6 +2215,32 @@ mod tests {
             target: &RelativeMediaPath,
         ) -> Result<(), Error> {
             self.inner.discard_published(root, target)
+        }
+        fn trash_path(
+            &self,
+            root: LibraryRootId,
+            operation: OperationId,
+            resource_key: &str,
+        ) -> Result<RelativeMediaPath, Error> {
+            self.inner.trash_path(root, operation, resource_key)
+        }
+        fn stage_to_trash(
+            &self,
+            root: LibraryRootId,
+            operation: OperationId,
+            source: &RelativeMediaPath,
+            resource_key: &str,
+        ) -> Result<RelativeMediaPath, Error> {
+            self.inner
+                .stage_to_trash(root, operation, source, resource_key)
+        }
+        fn restore_from_trash(
+            &self,
+            root: LibraryRootId,
+            trash: &RelativeMediaPath,
+            target: &RelativeMediaPath,
+        ) -> Result<(), Error> {
+            self.inner.restore_from_trash(root, trash, target)
         }
         fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
             self.inner.write_capable(root)
@@ -3243,6 +3321,32 @@ mod tests {
             target: &RelativeMediaPath,
         ) -> Result<(), Error> {
             self.inner.discard_published(root, target)
+        }
+        fn trash_path(
+            &self,
+            root: LibraryRootId,
+            operation: OperationId,
+            resource_key: &str,
+        ) -> Result<RelativeMediaPath, Error> {
+            self.inner.trash_path(root, operation, resource_key)
+        }
+        fn stage_to_trash(
+            &self,
+            root: LibraryRootId,
+            operation: OperationId,
+            source: &RelativeMediaPath,
+            resource_key: &str,
+        ) -> Result<RelativeMediaPath, Error> {
+            self.inner
+                .stage_to_trash(root, operation, source, resource_key)
+        }
+        fn restore_from_trash(
+            &self,
+            root: LibraryRootId,
+            trash: &RelativeMediaPath,
+            target: &RelativeMediaPath,
+        ) -> Result<(), Error> {
+            self.inner.restore_from_trash(root, trash, target)
         }
         fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
             self.inner.write_capable(root)

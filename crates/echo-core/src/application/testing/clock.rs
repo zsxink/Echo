@@ -103,13 +103,18 @@ impl IdGenerator for FakeIdGenerator {
 }
 
 /// A shared, manually advanced clock: tests hold clones and nudge time
-/// through `&self` while a use case runs.
+/// through `&self` while a use case runs. The wall clock advances with the
+/// monotonic clock from a fixed anchor, so undo-deadline windows behave like
+/// real time without touching the OS clock.
 #[derive(Clone, Debug, Default)]
 pub struct ManualClock {
     mono_ms: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl ManualClock {
+    /// Wall-clock anchor (epoch seconds) this fake starts from.
+    const WALL_ANCHOR_SECS: u64 = 1_700_000_000;
+
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -120,6 +125,14 @@ impl ManualClock {
         self.mono_ms
             .fetch_add(ms, std::sync::atomic::Ordering::Relaxed);
     }
+
+    /// The epoch-millis wall time this fake currently reports.
+    #[must_use]
+    pub fn wall_ms(&self) -> u64 {
+        Self::WALL_ANCHOR_SECS
+            .saturating_mul(1_000)
+            .saturating_add(self.mono_ms.load(std::sync::atomic::Ordering::Relaxed))
+    }
 }
 
 impl Clock for ManualClock {
@@ -127,7 +140,7 @@ impl Clock for ManualClock {
         Duration::from_millis(self.mono_ms.load(std::sync::atomic::Ordering::Relaxed))
     }
     fn now_wall(&self) -> SystemTime {
-        SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000)
+        SystemTime::UNIX_EPOCH + Duration::from_millis(self.wall_ms())
     }
 }
 

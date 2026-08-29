@@ -17,6 +17,7 @@
 //! - [`recover`] — import crash recovery (`RecoverOperations`, the
 //!   three-location existence/hash matrix; tasks 5.5 / 5.10).
 
+pub mod delete;
 pub mod import;
 pub mod ports;
 pub mod recover;

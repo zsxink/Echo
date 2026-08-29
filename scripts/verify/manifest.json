@@ -786,7 +786,70 @@
      "cmd": "node scripts/verify/checks/task-5.mjs 5.6 application::import::tests::retry_of_identical_content_is_an_idempotent_duplicate"
     }
    ]
-  }
+  },
+   {
+    "id": "5.7",
+    "title": "Echo's own delete: per-resource Stage/Restore Pending-to-Applied, dedicated controlled trash/<operation-id>, pending-delete and 10s undo; crash on either the state write or the rename side recovers uniquely from the original/staged/hash; undo keeps UUID, favorite, stats and playlist position; safe numbered restore when the original is occupied",
+    "commands": [
+     {
+      "desc": "audio + same-basename .lrc are staged individually into trash/<op> and the song is hidden (pending-delete) with the 10s undo deadline",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::delete::tests::delete_stages_audio_and_lrc_into_trash_and_hides_the_song"
+     },
+     {
+      "desc": "undo within the window restores files and the song keeping UUID, favorite, play stats and playlist position",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::delete::tests::restore_undo_preserves_uuid_favorite_stats_and_playlist_position"
+     },
+     {
+      "desc": "restore to a safe numbered path when the original is occupied (foreign content untouched)",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::delete::tests::restore_to_safe_numbered_path_when_original_is_occupied"
+     },
+     {
+      "desc": "undo refused once the 10s window expires; the audio stays staged",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::delete::tests::restore_is_refused_after_the_undo_window_expires"
+     },
+     {
+      "desc": "read-only root provides no delete entry (refused before any change)",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::delete::tests::read_only_root_refuses_the_delete_entry"
+     },
+     {
+      "desc": "a song with no sidecar stages only the audio resource",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::delete::tests::delete_without_a_sidecar_stages_only_the_audio"
+     },
+     {
+      "desc": "crash after the stage rename but before StateApplied: recovery normalizes to applied and completes the hide (unique hidden state)",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::crash_after_delete_stage_rename_recovers_to_unique_hidden"
+     },
+     {
+      "desc": "crash at the stage rename itself: recovery re-stages from the persisted source then hides",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::crash_at_the_delete_stage_rename_re_stages_then_hides"
+     },
+     {
+      "desc": "crash at the hide DB commit with audio+lyrics staged: recovery completes the one-transaction hide for both resources",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::crash_at_the_delete_hide_commit_then_recovery_hides_audio_and_lrc"
+     },
+     {
+      "desc": "crash mid-undo after the rename: recovery normalizes RestorePending-to-Restored and brings the song back to Available keeping UUID/favorite/stats/playlist position",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::crash_during_restore_after_rename_recovers_song_available"
+     },
+     {
+      "desc": "crash before the restore rename: recovery retries the restore into the original path and restores the song",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::crash_at_the_restore_rename_recovers_song_available"
+     },
+     {
+      "desc": "contradictory original/staged evidence holds (FailedRecoverable), never deletes either file, keeps the claim",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::contradictory_stage_evidence_holds_and_deletes_nothing"
+     },
+     {
+      "desc": "an expired hidden operation is handed to task 5.8's trash flow (items to TrashPending; undo refused), while the unexpired one resumes its remaining countdown",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::expired_hidden_delete_is_handed_to_trash_and_untouched_by_restore"
+     },
+     {
+      "desc": "a foreign occupant at the restore target with no safe numbered path holds that one item (FailedRecoverable), never aborts the whole root recovery, and unrelated operations still recover",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::foreign_occupancy_at_recover_restore_pending_holds_the_item_not_the_whole_run"
+     }
+    ]
+   }
+
  ],
  "scenarios": []
 }

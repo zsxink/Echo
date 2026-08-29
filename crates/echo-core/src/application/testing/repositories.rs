@@ -283,6 +283,8 @@ pub struct MemoryOperationJournal {
     items: Shared<BTreeMap<(OperationId, String), OperationItem>>,
     /// Operations whose target claims were released (lifecycle mirror).
     released_claims: Shared<Vec<OperationId>>,
+    /// Persisted undo deadlines (operation → epoch millis).
+    undo_deadlines: Shared<BTreeMap<OperationId, i64>>,
 }
 
 impl MemoryOperationJournal {
@@ -358,6 +360,18 @@ impl OperationJournalRepository for MemoryOperationJournal {
             .filter(|(_, item)| !item.state.is_terminal())
             .map(|((op, _), item)| (*op, "import".to_owned(), item.clone()))
             .collect())
+    }
+
+    fn set_undo_deadline(&self, operation: OperationId, deadline_ms: i64) -> Result<(), Error> {
+        self.undo_deadlines
+            .lock()
+            .unwrap()
+            .insert(operation, deadline_ms);
+        Ok(())
+    }
+
+    fn undo_deadline(&self, operation: OperationId) -> Result<Option<i64>, Error> {
+        Ok(self.undo_deadlines.lock().unwrap().get(&operation).copied())
     }
 }
 

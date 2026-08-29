@@ -27,6 +27,7 @@ struct Store {
     members: BTreeMap<(PlaylistId, SongId), PlaylistMember>,
     operations: BTreeMap<(OperationId, String), OperationItem>,
     envelopes: BTreeMap<OperationId, (LibraryRootId, String, Option<SongId>)>,
+    undo_deadlines: BTreeMap<OperationId, i64>,
     released_claims: Vec<OperationId>,
     lyrics: BTreeMap<(SongId, LyricsSource), LyricsCandidate>,
     covers: BTreeMap<SongId, CoverAssetRef>,
@@ -372,6 +373,15 @@ impl OperationJournalRepository for MemoryDatabase {
         Ok(())
     }
 
+    fn set_undo_deadline(&self, operation: OperationId, deadline_ms: i64) -> Result<(), Error> {
+        self.lock().undo_deadlines.insert(operation, deadline_ms);
+        Ok(())
+    }
+
+    fn undo_deadline(&self, operation: OperationId) -> Result<Option<i64>, Error> {
+        Ok(self.lock().undo_deadlines.get(&operation).copied())
+    }
+
     fn incomplete_items(
         &self,
         root: LibraryRootId,
@@ -578,6 +588,10 @@ impl TxAccess for MemoryTx<'_> {
         self.store
             .operations
             .insert((operation, item.target_path.normalized().to_owned()), item);
+        Ok(())
+    }
+    fn set_undo_deadline(&mut self, operation: OperationId, deadline_ms: i64) -> Result<(), Error> {
+        self.store.undo_deadlines.insert(operation, deadline_ms);
         Ok(())
     }
     fn set_lyrics_candidate(

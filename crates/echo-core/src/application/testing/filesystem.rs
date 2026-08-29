@@ -445,10 +445,136 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
         Ok(())
     }
 
+    fn trash_path(
+        &self,
+        root: LibraryRootId,
+        operation: OperationId,
+        resource_key: &str,
+    ) -> Result<RelativeMediaPath, Error> {
+        let trash_rel = RelativeMediaPath::new(&format!(
+            ".echo-test-staging/trash/{operation}/{resource_key}"
+        ))?;
+        let base = self
+            .roots
+            .lock()
+            .unwrap()
+            .get(&root)
+            .cloned()
+            .ok_or_else(|| Error::unavailable("test root", "unknown root"))?;
+        let staging_root = base.join(".echo-test-staging").join("trash");
+        if !is_under(&base.join(trash_rel.normalized()), &staging_root) {
+            return Err(Error::permission(
+                "trash path",
+                crate::error::PermKind::NotOwner,
+            ));
+        }
+        Ok(trash_rel)
+    }
+
+    fn stage_to_trash(
+        &self,
+        root: LibraryRootId,
+        operation: OperationId,
+        source: &RelativeMediaPath,
+        resource_key: &str,
+    ) -> Result<RelativeMediaPath, Error> {
+        if let Some(err) = self.fault_error() {
+            return Err(err);
+        }
+        let base = self
+            .roots
+            .lock()
+            .unwrap()
+            .get(&root)
+            .cloned()
+            .ok_or_else(|| Error::unavailable("test root", "unknown root"))?;
+        let trash_rel = self.trash_path(root, operation, resource_key)?;
+        let staging_root = base.join(".echo-test-staging").join("trash");
+        if !is_under(&base.join(trash_rel.normalized()), &staging_root) {
+            return Err(Error::permission(
+                "stage to trash",
+                crate::error::PermKind::NotOwner,
+            ));
+        }
+        let source_abs = base.join(source.normalized());
+        let meta = std::fs::symlink_metadata(&source_abs)
+            .map_err(|e| Error::io("stat source", e, source_abs.clone()))?;
+        if meta.file_type().is_symlink() {
+            return Err(Error::permission(
+                "stage to trash",
+                crate::error::PermKind::NotOwner,
+            ));
+        }
+        if !meta.is_file() {
+            return Err(Error::io(
+                "stage to trash",
+                std::io::Error::other("source is not a file"),
+                source_abs,
+            ));
+        }
+        let trash_abs = base.join(trash_rel.normalized());
+        if let Some(parent) = trash_abs.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| Error::io("create trash slot", e, parent.to_path_buf()))?;
+        }
+        if trash_abs.exists() {
+            return Err(Error::conflict("trash target already exists"));
+        }
+        std::fs::rename(&source_abs, &trash_abs).map_err(|e| Error::io("rename", e, trash_abs))?;
+        Ok(trash_rel)
+    }
+
+    fn restore_from_trash(
+        &self,
+        root: LibraryRootId,
+        trash: &RelativeMediaPath,
+        target: &RelativeMediaPath,
+    ) -> Result<(), Error> {
+        if let Some(err) = self.fault_error() {
+            return Err(err);
+        }
+        let base = self
+            .roots
+            .lock()
+            .unwrap()
+            .get(&root)
+            .cloned()
+            .ok_or_else(|| Error::unavailable("test root", "unknown root"))?;
+        let staging_root = base.join(".echo-test-staging").join("trash");
+        if !is_under(&base.join(trash.normalized()), &staging_root) {
+            return Err(Error::permission(
+                "restore from trash",
+                crate::error::PermKind::NotOwner,
+            ));
+        }
+        let dest = base.join(target.normalized());
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| Error::io("create_dir_all", e, parent.to_path_buf()))?;
+        }
+        if let Ok(meta) = std::fs::metadata(&dest) {
+            if meta.len() == 0 {
+                let _ = std::fs::remove_file(&dest);
+            }
+        }
+        if dest.exists() {
+            return Err(Error::conflict("restore target file already exists"));
+        }
+        let trash_abs = base.join(trash.normalized());
+        std::fs::rename(&trash_abs, &dest).map_err(|e| Error::io("rename", e, dest.clone()))
+    }
+
     fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
         let _ = root;
         Ok(*self.write_capable.lock().unwrap())
     }
+}
+
+/// Component-wise check that `path` resolves inside `root` (never a string
+/// prefix, so a crafted name cannot evade the boundary).
+fn is_under(path: &Path, root: &Path) -> bool {
+    path.strip_prefix(root)
+        .is_ok_and(|rest| !rest.as_os_str().is_empty() && !rest.starts_with(".."))
 }
 
 fn walk_dir(base: &Path, dir: &Path, out: &mut Vec<RelativeMediaPath>) {

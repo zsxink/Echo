@@ -99,6 +99,17 @@
 - 复核①（独立验收，全新会话）：**PASS**。独立重跑 `pnpm verify:task -- 5.6`（2 条命令真实非空壳并通过）、fmt、clippy -D warnings、`cargo test` 223+6+7 全绿；竞态测试真实模拟「两检查点之间并发导入提交相同内容 → 恰好一个逻辑歌曲」，幂等重试证明重试不新增歌曲/不重复复制；架构红线全过、specs/tasks/design 未动、无越界（`discard_published` 的 symlink 拒绝与 4.2 边界一致）。
 - P2 遗留（不阻断，登记）：1) 预提交去重把 DB 查询失败视为"无重复"（有意为之：此处失败会孤儿化已发布且校验通过的完整文件；文件仍以预留 UUID 提交，正确性保留）；2) `execute` 的 `#[allow(clippy::too_many_lines)]`（风格）。
 - Deferred：无。实现者自评提及的「rollback 与 release_claims 之间崩溃可留 claim 未释放」为 5.5 前既有范围外问题，登记待 13.3 检查。
-- Commit：`Implement task 5.6: dual BLAKE3 dedup and idempotent retry for concurrent import` → 见 git log
+- Commit：`Implement task 5.6: dual BLAKE3 dedup and idempotent retry for concurrent import` → **38febb0**
+
+### 5.7 Echo 主动删除、专属 trash 暂存与 10 秒 undo
+
+- 状态：✅ PASS（复核第 2 轮通过）
+- 实现（round-0 中途草稿收编 + 续做补全）：首个实现会话因 API 限流中断留下未完成的 `application/delete.rs` 草稿（`DeleteSongs` 删除 + `RestoreDeletedOperation` 恢复，含 6 测试），续做会话继承补全。`delete.rs`：逐资源 `StagePending→StageApplied` rename 进受控 `trash/<op-id>`（注入 `trash_path`）、pending-delete 单事务隐藏（隐藏时写 `undo_deadline=now+10s`）、10 秒 undo（`safe_restore_target` 编号恢复、保留 UUID/收藏/统计/歌单 position）、只读根拒删除、无 sidecar 只暂存 audio。`recover.rs`：delete 恢复矩阵（StagePending 规范 applied、RestorePending 规范 restored、两处证据矛盾 held 不删文件、mid-restore 崩溃补全到歌曲回 Available+release claims、过期隐画面交 TrashPending）。`ports.rs`/adapter/sqlite/testing 对应端口与持久化。manifest 登记 id=5.7（**14** 条命令：6 delete + 7 recover 崩溃矩阵 + 1 外来占用恢复 held）。
+- 复核①（独立验收，全新会话）：**FAIL**。P1 `recover.rs:448-459 recover_restore_pending`：mid-undo 崩溃把 item 留 RestorePending 且原 target 被外来内容重新占用、暂存完好时，直接 `restore_from_trash` 到原路径命中 exclusive conflict，经 `?` 传播成硬错误**中止整个根目录恢复 run()**——与代码自身注释「foreign occupant is a conflict the caller holds」及 design 逐 item held 语义矛盾，也未复用 undo 的编号恢复 `safe_restore_target`；分支无测试。P2 `delete.rs:449-450`：占用→编号决策未与 recover 共享。数据安全保留，但为崩溃恢复矩阵真实健壮性缺陷。
+- 修复①（§5.3 修复 agent）：P1 将 `restore_from_trash` 的 `Conflict` 映射为逐 item `FailedRecoverable` held（upsert+`Ok(false)`），不再经 `?` 中止；复用 delete.rs 非私有共享 helper `safe_restore_target`（live undo 与恢复共用同一编号决策，编号 1..=100 耗尽即 held）；held 项 claim 不释放、外来占用者与暂存均保留。P2 收敛共享 helper。新增第 14 条 manifest 测试 `foreign_occupancy_at_recover_restore_pending_holds_the_item_not_the_whole_run`（A 外来占用/编号耗尽 → held 不中止，B 普通操作仍独立恢复）。
+- 复核②（独立验收，全新会话）：**PASS**。确认 P1 修复正确（held 经 `recover_delete_items`/`recover_delete_operation` 不释放 claim，`run()` 继续处理无关操作）、P2 收敛到位、新测试真实非空壳断言到位；四项命令全部真实通过（`pnpm verify:task -- 5.7` 14 条 exit 0、fmt、clippy -D warnings、`cargo test -p echo-core` 237+6+7 全绿）；无越界实现 5.8/5.9/5.10（仅允许的 Hidden→TrashPending 过期面交）、无误改 specs/tasks/design、无平台项被宣称通过、路径无泄露、测试不进真实用户目录。
+- P2 遗留（不阻断）：held 仅在 100 个编号候选耗尽时触发（常见外来占用现在编号恢复前进）；编号恢复后歌曲记录路径保持原路径，relink 在后续扫描完成（既有设计行为，未改）。
+- Deferred：Trash 前滚与 SystemTrashPort 调用 → 5.8；外部 missing 区分 → 5.9；启动协调 → 5.10。均已如实标注，未宣称已实现。
+- Commit：`Implement task 5.7: Echo-internal per-resource delete stage/restore with 10s undo and crash-safe recovery` → 见 git log
 
 ---

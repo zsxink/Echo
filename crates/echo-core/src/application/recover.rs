@@ -34,13 +34,39 @@ use crate::application::ports::{OperationItem, OperationResourceKind, TxAccess};
 use crate::application::relink::song_from_parsed;
 use crate::application::scan::{parse_single_file, rewrap, FileOutcome, ScanDeps};
 use crate::domain::entities::LyricsSource;
-use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath};
+use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath, SongId};
 use crate::domain::state::OperationState;
 use crate::error::Error;
 
-/// The journal `kind` of an import operation (recovery only handles imports in
-/// 0.1.0; delete/restore recovery is tasks 5.7–5.8).
+/// The journal `kind` of an import operation (design §8).
 const IMPORT_OPERATION: &str = "import";
+/// The journal `kind` of a delete operation (design §9, task 5.7).
+const DELETE_OPERATION: &str = "delete";
+
+/// Wall-clock epoch millis from a [`crate::application::ports::Clock`].
+fn wall_now_ms(clock: &dyn crate::application::ports::Clock) -> Result<i64, Error> {
+    let millis = clock
+        .now_wall()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|source| {
+            Error::io(
+                "clock",
+                std::io::Error::other(source),
+                std::path::PathBuf::new(),
+            )
+        })?
+        .as_millis();
+    Ok(i64::try_from(millis).unwrap_or(i64::MAX))
+}
+
+/// The logical per-resource trash-slot name, mirroring the delete use case's
+/// item key (design §9: `trash/<operation-id>/<resource>`).
+const fn delete_item_key(kind: OperationResourceKind) -> &'static str {
+    match kind {
+        OperationResourceKind::Audio => "audio",
+        OperationResourceKind::Lyrics => "lyrics",
+    }
+}
 
 /// Per-item recovery result.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -52,6 +78,15 @@ enum ItemResult {
     Conflict,
 }
 
+/// The delete/restore recovery outcome of one operation.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct DeleteOutcome {
+    /// Whether any item ended in `FailedRecoverable` (conflict held).
+    held: bool,
+    /// Whether the expired operation was handed to task 5.8.
+    handed_off: bool,
+}
+
 /// One operation's recovery summary.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecoveryOperation {
@@ -59,6 +94,10 @@ pub struct RecoveryOperation {
     pub items: usize,
     /// Whether any item ended in `FailedRecoverable` (conflict held).
     pub held: bool,
+    /// Whether the operation is a delete whose undo window expired and was
+    /// handed to task 5.8 (its items were advanced to `TrashPending`; the
+    /// system-trash forward-roll is deliberately not implemented here).
+    pub handed_off: bool,
 }
 
 /// The aggregate recovery report for one root.
@@ -92,26 +131,40 @@ impl<'a> RecoverOperations<'a> {
     /// raised here.
     pub fn run(&self, root: LibraryRootId) -> Result<RecoveryReport, Error> {
         let items = self.deps.journal.incomplete_items(root)?;
-        // Group per-operation, keeping only import operations (the recovery
-        // matrix of 0.1.0).
-        let mut ops: Vec<(OperationId, Vec<OperationItem>)> = Vec::new();
+        // Group per-operation, keeping only the kinds this task implements:
+        // imports (design §8) and Echo's own deletes/restores (design §9).
+        let mut ops: Vec<(OperationId, String, Vec<OperationItem>)> = Vec::new();
         for (operation, kind, item) in items {
-            if kind != IMPORT_OPERATION {
+            if kind != IMPORT_OPERATION && kind != DELETE_OPERATION {
                 continue;
             }
-            match ops.iter_mut().find(|(op, _)| *op == operation) {
-                Some((_, list)) => list.push(item),
-                None => ops.push((operation, vec![item])),
+            match ops
+                .iter_mut()
+                .find(|(op, k, _)| *op == operation && *k == kind)
+            {
+                Some((_, _, list)) => list.push(item),
+                None => ops.push((operation, kind, vec![item])),
             }
         }
         let mut touched = Vec::new();
-        for (operation, items) in ops {
-            let held = self.recover_operation(root, operation, &items)?;
-            touched.push(RecoveryOperation {
-                operation,
-                items: items.len(),
-                held,
-            });
+        for (operation, kind, items) in ops {
+            if kind == DELETE_OPERATION {
+                let outcome = self.recover_delete_operation(root, operation, &items)?;
+                touched.push(RecoveryOperation {
+                    operation,
+                    items: items.len(),
+                    held: outcome.held,
+                    handed_off: outcome.handed_off,
+                });
+            } else {
+                let held = self.recover_operation(root, operation, &items)?;
+                touched.push(RecoveryOperation {
+                    operation,
+                    items: items.len(),
+                    held,
+                    handed_off: false,
+                });
+            }
         }
         Ok(RecoveryReport { touched })
     }
@@ -136,6 +189,385 @@ impl<'a> RecoverOperations<'a> {
             self.deps.journal.release_claims(operation)?;
         }
         Ok(held)
+    }
+
+    /// Recover one Echo-delete operation (design §9 恢复矩阵, task 5.7).
+    ///
+    /// The matrix decides from the persisted item intent plus the on-disk facts
+    /// at the original path and the `trash/<operation>` staged path:
+    ///
+    /// - `StagePending`: 原缺失而暂存匹配 → 规范化 applied; 原仍在且匹配（rename 未
+    ///   发生）→ 完成暂存; 原/暂存两处证据矛盾 → 不删除任一文件（held）;
+    /// - all items `StageApplied` → the hide (pending-delete + HIDDEN +
+    ///   deadline) is completed if it did not commit;
+    /// - `HiddenInDatabase`: 未过期 → 恢复剩余倒计时（保持等待）; 已过期 → 向 5.8
+    ///   面交（推进到 `TrashPending`，本任务不实现 trash 前滚）;
+    /// - `RestorePending`: 原路径匹配 → 规范化 restored; 否则重试恢复;
+    /// - `RestoreApplied` → normalizes to `Restored`; `Trash*` 状态属 5.8，不触碰。
+    fn recover_delete_operation(
+        &self,
+        root: LibraryRootId,
+        operation: OperationId,
+        items: &[OperationItem],
+    ) -> Result<DeleteOutcome, Error> {
+        // Trash states (TrashPending/TrashApplied/TrashOutcomeUnknown) belong
+        // to task 5.8's forward-roll; recovery must leave them untouched.
+        if items.iter().any(|item| {
+            matches!(
+                item.state,
+                OperationState::TrashPending
+                    | OperationState::TrashApplied
+                    | OperationState::TrashOutcomeUnknown
+            )
+        }) {
+            return Ok(DeleteOutcome {
+                held: true,
+                handed_off: true,
+            });
+        }
+        let subject_song = items.iter().find_map(|item| item.song);
+
+        // A delete whose every file already came back (`Restored`) must also
+        // bring the song record off `PendingDelete` before we call it done —
+        // crash-safe undo keeps the UUID, favorite, stats and playlist
+        // position (design §9). `RolledBack` is terminal too but carries no
+        // restore work, so it just releases below.
+        if items
+            .iter()
+            .all(|item| item.state == OperationState::Restored)
+        {
+            return self.complete_restored_delete(root, operation, subject_song);
+        }
+        // A fully terminal operation (RolledBack) finished its work: release
+        // the claims now, exactly once (only non-terminal items are revisited,
+        // so this runs once).
+        if items.iter().all(|item| item.state.is_terminal()) {
+            self.deps.journal.release_claims(operation)?;
+            return Ok(DeleteOutcome::default());
+        }
+        // If the hide already committed (the song is PendingDelete), an
+        // expired operation is handed to 5.8 and an unexpired one waits.
+        let dump = |subject: Option<SongId>| -> Result<Option<crate::domain::entities::SongAvailability>, Error> {
+            subject
+                .map(|id| self.deps.songs.by_id(id))
+                .transpose()?
+                .flatten()
+                .map(|song| Ok(song.availability()))
+                .transpose()
+        };
+        let hidden =
+            dump(subject_song)? == Some(crate::domain::entities::SongAvailability::PendingDelete);
+
+        let mut held = self.recover_delete_items(root, operation, items)?;
+
+        // After the per-item pass, decide the operation-level step.
+        let items_after = self.deps.journal.items(operation)?;
+        let all_applied = items_after
+            .iter()
+            .all(|item| item.state == OperationState::StageApplied);
+        let all_hidden = items_after
+            .iter()
+            .all(|item| item.state == OperationState::HiddenInDatabase);
+        // The per-item pass may have just driven a mid-restore crash's files
+        // home (RestorePending → Restored): finish the undo by restoring the
+        // song record too (identical to the all-Restored entry point above).
+        let all_restored = items_after
+            .iter()
+            .all(|item| item.state == OperationState::Restored);
+
+        if all_applied && !hidden {
+            // Staging completed but the hide transaction never committed:
+            // complete it now (fresh undo window, the user's delete intent was
+            // already confirmed and staged).
+            if let Some(subject) = subject_song {
+                self.hide_operation(root, operation, subject, &items_after)?;
+            } else {
+                held = true;
+            }
+            return Ok(DeleteOutcome {
+                held,
+                handed_off: false,
+            });
+        }
+        if all_hidden {
+            match self.deps.journal.undo_deadline(operation)? {
+                Some(deadline) if wall_now_ms(&*self.deps.clock)? <= deadline => {
+                    // Within the undo window: resume the remaining countdown.
+                    return Ok(DeleteOutcome {
+                        held,
+                        handed_off: false,
+                    });
+                }
+                Some(_) => {
+                    // Expired: hand the operation to task 5.8. The minimal
+                    // journal advancement is a legal Hidden→TrashPending
+                    // transition per item; no SystemTrashPort call, no
+                    // finalize — that is 5.8's work.
+                    for item in &items_after {
+                        self.upsert(root, operation, item, OperationState::TrashPending)?;
+                    }
+                    return Ok(DeleteOutcome {
+                        held,
+                        handed_off: true,
+                    });
+                }
+                None => {
+                    // Hidden items without a deadline is an invariant break.
+                    held = true;
+                }
+            }
+        }
+        if all_restored {
+            return self.complete_restored_delete(root, operation, subject_song);
+        }
+        if held {
+            return Ok(DeleteOutcome {
+                held: true,
+                handed_off: false,
+            });
+        }
+        // Not all items terminal yet and no block: drive remaining mid-flight
+        // restore work on the next recovery pass (the operation stays open).
+        Ok(DeleteOutcome {
+            held: false,
+            handed_off: false,
+        })
+    }
+
+    /// Drive one delete operation's per-item matrix. Returns whether any item
+    /// was left held (`FailedRecoverable`): contradictory or unsupported
+    /// evidence that must not be overwritten or deleted.
+    fn recover_delete_items(
+        &self,
+        root: LibraryRootId,
+        operation: OperationId,
+        items: &[OperationItem],
+    ) -> Result<bool, Error> {
+        let mut held = false;
+        for item in items {
+            match item.state {
+                OperationState::StagePending => {
+                    if !self.recover_stage_pending(root, operation, item)? {
+                        held = true;
+                    }
+                }
+                OperationState::StageApplied
+                | OperationState::HiddenInDatabase
+                | OperationState::Restored => {}
+                OperationState::RestorePending => {
+                    if !self.recover_restore_pending(root, operation, item)? {
+                        held = true;
+                    }
+                }
+                OperationState::RestoreApplied => {
+                    self.upsert(root, operation, item, OperationState::Restored)?;
+                }
+                // Trash-flow states (Trash*) are 5.8's scope; any other unknown
+                // mid-flight state conservatively holds the operation.
+                _ => held = true,
+            }
+        }
+        Ok(held)
+    }
+
+    /// One `StagePending` delete item: safe normalization from the original
+    /// path and the trash path. Returns `true` when the item made progress.
+    fn recover_stage_pending(
+        &self,
+        root: LibraryRootId,
+        operation: OperationId,
+        item: &OperationItem,
+    ) -> Result<bool, Error> {
+        let target = self.path_hash_state(root, &item.target_path, &item.expected_hash)?;
+        let staging: Option<bool> = item
+            .staging_path
+            .as_ref()
+            .map(|path| self.path_hash_state(root, path, &item.expected_hash))
+            .transpose()?
+            .flatten();
+        match (target, staging) {
+            // 原缺失而暂存匹配 → 规范化 applied (the rename already happened).
+            (None, Some(true)) => {
+                self.upsert(root, operation, item, OperationState::StageApplied)?;
+                Ok(true)
+            }
+            // 原仍在且匹配，暂存缺失 → rename 未发生，完成暂存。
+            (Some(true), None) => {
+                let Some(trash_path) = item.staging_path.clone() else {
+                    return Err(Error::InvariantViolation {
+                        why: "stage-pending delete item without a staged path".to_owned(),
+                    });
+                };
+                self.deps.fs.stage_to_trash(
+                    root,
+                    operation,
+                    &item.target_path,
+                    delete_item_key(item.kind),
+                )?;
+                if self.deps.hasher.hash(root, &trash_path)? != item.expected_hash {
+                    return Err(Error::CorruptMedia {
+                        operation: DELETE_OPERATION.to_owned(),
+                        reason: "re-staged delete copy hash differs from the journal".to_owned(),
+                    });
+                }
+                self.upsert(root, operation, item, OperationState::StageApplied)?;
+                Ok(true)
+            }
+            // 两处证据矛盾 (or anything else) → 不删除任一文件。
+            _ => {
+                self.upsert(root, operation, item, OperationState::FailedRecoverable)?;
+                Ok(false)
+            }
+        }
+    }
+
+    /// One `RestorePending` delete item: 原路径匹配即规范化 restored, otherwise
+    /// retry the restore (or hold on conflict). Returns `true` on progress.
+    fn recover_restore_pending(
+        &self,
+        root: LibraryRootId,
+        operation: OperationId,
+        item: &OperationItem,
+    ) -> Result<bool, Error> {
+        let target = self.path_hash_state(root, &item.target_path, &item.expected_hash)?;
+        if target == Some(true) {
+            // 原路径匹配 → the restore already landed.
+            self.upsert(root, operation, item, OperationState::RestoreApplied)?;
+            self.upsert(root, operation, item, OperationState::Restored)?;
+            return Ok(true);
+        }
+        let Some(trash_path) = item.staging_path.clone() else {
+            return Err(Error::InvariantViolation {
+                why: "restore-pending delete item without a staged path".to_owned(),
+            });
+        };
+        let staging = self.path_hash_state(root, &trash_path, &item.expected_hash)?;
+        if staging == Some(true) {
+            // A valid staged copy is intact: restore it via the SAME
+            // "original free → original, occupied → safe numbered path"
+            // decision as a live undo (`safe_restore_target`, shared helper),
+            // so crash recovery restores exactly like undo (设计: 原路径被占用
+            // 时安全编号恢复). A foreign occupant is never replaced.
+            //
+            // One item's conflict must never abort the whole root recovery: if
+            // no safe restore path exists (the original and every numbered
+            // candidate are foreign-occupied) the item is HELD
+            // (`FailedRecoverable`) and reported in the result, not raised as an
+            // infrastructure failure.
+            let restore_target =
+                match crate::application::delete::safe_restore_target(self.deps, root, item) {
+                    Ok(path) => path,
+                    Err(error) if error.code() == "conflict" => {
+                        self.upsert(root, operation, item, OperationState::FailedRecoverable)?;
+                        return Ok(false);
+                    }
+                    Err(error) => return Err(error),
+                };
+            self.deps
+                .fs
+                .restore_from_trash(root, &trash_path, &restore_target)?;
+            if self.deps.hasher.hash(root, &restore_target)? != item.expected_hash {
+                return Err(Error::CorruptMedia {
+                    operation: DELETE_OPERATION.to_owned(),
+                    reason: "recovered restore hash differs from the journal".to_owned(),
+                });
+            }
+            // Record the path actually restored (the original, or the safe
+            // numbered path chosen when the original was occupied), exactly
+            // like the live undo's per-item journal.
+            let applied = OperationItem {
+                state: OperationState::RestoreApplied,
+                target_path: restore_target,
+                ..item.clone()
+            };
+            let restored = OperationItem {
+                state: OperationState::Restored,
+                ..applied.clone()
+            };
+            self.deps.journal.upsert_item(operation, applied)?;
+            self.deps.journal.upsert_item(operation, restored)?;
+            Ok(true)
+        } else {
+            // No usable staged copy and no matching original: hold the item.
+            self.upsert(root, operation, item, OperationState::FailedRecoverable)?;
+            Ok(false)
+        }
+    }
+
+    /// Complete the hide: one transaction marks the song `PendingDelete`, each
+    /// item `HiddenInDatabase` and the undo deadline (now + 10s).
+    fn hide_operation(
+        &self,
+        root: LibraryRootId,
+        operation: OperationId,
+        subject: SongId,
+        items: &[OperationItem],
+    ) -> Result<(), Error> {
+        let _ = root;
+        let deadline = wall_now_ms(&*self.deps.clock)? + crate::application::delete::UNDO_WINDOW_MS;
+        let hidden: Vec<OperationItem> = items
+            .iter()
+            .map(|item| OperationItem {
+                state: OperationState::HiddenInDatabase,
+                ..item.clone()
+            })
+            .collect();
+        self.deps
+            .uow
+            .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
+                tx.set_song_availability(
+                    subject,
+                    crate::domain::entities::SongAvailability::PendingDelete,
+                )?;
+                for item in &hidden {
+                    tx.upsert_operation_item(operation, item.clone())?;
+                }
+                tx.set_undo_deadline(operation, deadline)?;
+                Ok(())
+            }))
+    }
+
+    /// Finish a delete whose every item is `Restored`: bring the song record
+    /// back to `Available` if it is still hidden (crash-safe undo), then
+    /// release the operation's claims at the unique terminal state.
+    fn complete_restored_delete(
+        &self,
+        _root: LibraryRootId,
+        operation: OperationId,
+        subject_song: Option<SongId>,
+    ) -> Result<DeleteOutcome, Error> {
+        let Some(subject) = subject_song else {
+            // A delete operation without a subject song is an invariant break.
+            return Ok(DeleteOutcome {
+                held: true,
+                handed_off: false,
+            });
+        };
+        match self.deps.songs.by_id(subject)? {
+            Some(song)
+                if song.availability() != crate::domain::entities::SongAvailability::Available =>
+            {
+                self.deps
+                    .uow
+                    .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
+                        tx.set_song_availability(
+                            subject,
+                            crate::domain::entities::SongAvailability::Available,
+                        )?;
+                        Ok(())
+                    }))?;
+            }
+            Some(_) => {}
+            None => {
+                // The song record vanished — an invariant break; don't release.
+                return Ok(DeleteOutcome {
+                    held: true,
+                    handed_off: false,
+                });
+            }
+        }
+        self.deps.journal.release_claims(operation)?;
+        Ok(DeleteOutcome::default())
     }
 
     /// Bring one item to a durable terminal state from its persisted intent
@@ -387,9 +819,13 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::*;
+    use crate::application::delete::{DeleteSongs, RestoreDeletedOperation};
     use crate::application::import::{ImportOutcome, PlanImport};
-    use crate::application::ports::{FileMeta, ImportSource, OperationJournalRepository};
+    use crate::application::ports::{
+        FileMeta, ImportSource, OperationJournalRepository, PlaylistRepository, SongRepository,
+    };
     use crate::application::testing::{FakeImportSources, ScanFixture};
+    use crate::domain::entities::SongAvailability;
     use crate::domain::ids::SongId;
     use crate::domain::media::ParsedMetadata;
 
@@ -417,6 +853,8 @@ mod tests {
         Commit,
         /// A journal `upsert_item` of the named state (task-documented chain).
         State(&'static str),
+        /// The delete/restore trash rename (`stage_to_trash`/`restore_from_trash`).
+        TrashMove,
     }
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -553,6 +991,38 @@ mod tests {
         ) -> Result<(), Error> {
             self.inner.discard_published(root, target)
         }
+        fn trash_path(
+            &self,
+            root: LibraryRootId,
+            operation: OperationId,
+            resource_key: &str,
+        ) -> Result<RelativeMediaPath, Error> {
+            self.inner.trash_path(root, operation, resource_key)
+        }
+        fn stage_to_trash(
+            &self,
+            root: LibraryRootId,
+            operation: OperationId,
+            source: &RelativeMediaPath,
+            resource_key: &str,
+        ) -> Result<RelativeMediaPath, Error> {
+            let key = resource_key.to_owned();
+            self.ctrl.crash(&Site::TrashMove, Phase::Before);
+            let result = self.inner.stage_to_trash(root, operation, source, &key);
+            self.ctrl.crash(&Site::TrashMove, Phase::After);
+            result
+        }
+        fn restore_from_trash(
+            &self,
+            root: LibraryRootId,
+            trash: &RelativeMediaPath,
+            target: &RelativeMediaPath,
+        ) -> Result<(), Error> {
+            self.ctrl.crash(&Site::TrashMove, Phase::Before);
+            let result = self.inner.restore_from_trash(root, trash, target);
+            self.ctrl.crash(&Site::TrashMove, Phase::After);
+            result
+        }
         fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
             self.inner.write_capable(root)
         }
@@ -639,6 +1109,12 @@ mod tests {
         }
         fn release_claims(&self, operation: OperationId) -> Result<(), Error> {
             self.inner.release_claims(operation)
+        }
+        fn set_undo_deadline(&self, operation: OperationId, deadline_ms: i64) -> Result<(), Error> {
+            self.inner.set_undo_deadline(operation, deadline_ms)
+        }
+        fn undo_deadline(&self, operation: OperationId) -> Result<Option<i64>, Error> {
+            self.inner.undo_deadline(operation)
         }
     }
 
@@ -733,6 +1209,23 @@ mod tests {
             "exactly one import operation after the crash: {items:?}"
         );
         items[0].0
+    }
+
+    /// The single distinct delete operation across all incomplete items (a
+    /// delete may span several resources that share one operation id).
+    fn delete_operation(fixture: &ScanFixture) -> OperationId {
+        let items = OperationJournalRepository::incomplete_items(&fixture.database, fixture.root)
+            .expect("incomplete items");
+        assert!(
+            !items.is_empty(),
+            "a delete operation exists after the crash"
+        );
+        let operation = items[0].0;
+        assert!(
+            items.iter().all(|(op, _, _)| *op == operation),
+            "exactly one delete operation after the crash: {items:?}"
+        );
+        operation
     }
 
     /// The reserved `SongId` the import planned (from a journal item).
@@ -1077,5 +1570,658 @@ mod tests {
             .run(fixture.root)
             .unwrap();
         assert_eq!(fixture.database.released_claims(), vec![operation]);
+    }
+
+    // -----------------------------------------------------------------------
+    // Recovery-matrix tests for Echo's own delete (task 5.7, design §9).
+    // Crash during stage / hide / restore, then recover TWICE to the unique
+    // hidden-or-restored terminal state; a mid-restore crash must still bring
+    // the song back to Available keeping UUID/favorite/stats/playlist position.
+    // -----------------------------------------------------------------------
+
+    /// Read a file from the owned `trash/<operation>/<key>` slot.
+    fn read_trash(fixture: &ScanFixture, operation: OperationId, key: &str) -> Option<Vec<u8>> {
+        let base = fixture.fs.root_path(fixture.root).expect("root");
+        std::fs::read(
+            base.join(".echo-test-staging/trash")
+                .join(operation.to_string())
+                .join(key),
+        )
+        .ok()
+    }
+
+    /// The same-basename `.lrc` sidecar path beside an audio path.
+    fn lrc_sibling(audio: &RelativeMediaPath) -> RelativeMediaPath {
+        let normalized = audio.normalized();
+        let without_extension = match normalized.rsplit_once('.') {
+            Some((stem, _)) => stem,
+            None => normalized,
+        };
+        RelativeMediaPath::new(&format!("{without_extension}.lrc"))
+            .expect("derived .lrc sibling stays valid")
+    }
+
+    /// Seed one library song (favorite + play stats, optional `.lrc` sidecar)
+    /// so undo-recovery can assert the preserved relationships (design §9).
+    fn seed_delete_song(
+        fixture: &ScanFixture,
+        path: &str,
+        audio: &[u8],
+        lrc: Option<&[u8]>,
+    ) -> SongId {
+        fixture.write_file(path, audio);
+        fixture.set_audio(path, "晴天", 269_000);
+        let audio_path = fixture.path(path);
+        let mut song = crate::domain::entities::Song::new(
+            SongId::new(),
+            fixture.root,
+            audio_path.clone(),
+            crate::domain::ids::Revision::INITIAL,
+        );
+        song.apply_scan_facts(
+            fixture.deps.hasher.hash_of_bytes(audio),
+            audio.len() as u64,
+            1,
+            crate::domain::media::AudioFormat::Flac,
+        );
+        song.set_favorite(true);
+        song.record_play();
+        song.record_play();
+        SongRepository::upsert(&fixture.database, &song).unwrap();
+        if let Some(lrc_bytes) = lrc {
+            let lrc_path = lrc_sibling(&audio_path);
+            fixture.write_file(lrc_path.display(), lrc_bytes);
+            let subject = song.id();
+            let candidate = crate::domain::entities::LyricsCandidate::new(
+                crate::domain::entities::LyricsSource::Sidecar,
+                vec![],
+                true,
+            );
+            fixture
+                .deps
+                .uow
+                .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
+                    tx.set_lyrics_candidate(subject, &candidate)
+                }))
+                .unwrap();
+        }
+        song.id()
+    }
+
+    #[test]
+    fn crash_after_delete_stage_rename_recovers_to_unique_hidden() {
+        // Crash after the stage rename happened but BEFORE the `StageApplied`
+        // journal write: the per-resource matrix must normalize `StagePending →
+        // StageApplied` (原缺失而暂存匹配) and then finish the hide.
+        let fixture = ScanFixture::new();
+        let ctrl = Arc::new(Controller::default());
+        let song = seed_delete_song(&fixture, "歌手/周杰伦 - 晴天.flac", b"audio-bytes", None);
+        let deps = crash_deps(&fixture, &ctrl);
+        ctrl.arm(Point {
+            site: Site::State("stage_applied"),
+            phase: Phase::Before,
+        });
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            DeleteSongs::new(&deps).delete(fixture.root, song).unwrap()
+        }));
+        assert!(
+            outcome.is_err(),
+            "injection at stage_applied must crash the delete"
+        );
+        assert!(ctrl.fired());
+
+        let operation = single_operation(&fixture);
+        // The rename landed before the crash: original gone, trash has the
+        // exact bytes.
+        assert_eq!(read_file(&fixture, "歌手/周杰伦 - 晴天.flac"), None);
+        assert_eq!(
+            read_trash(&fixture, operation, "audio"),
+            Some(b"audio-bytes".to_vec())
+        );
+
+        RecoverOperations::new(&fixture.deps)
+            .run(fixture.root)
+            .unwrap();
+
+        let after = SongRepository::by_id(&fixture.database, song)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            after.availability(),
+            SongAvailability::PendingDelete,
+            "recovery completes the hide"
+        );
+        let items = fixture.database.items(operation).unwrap();
+        assert!(
+            items
+                .iter()
+                .all(|item| item.state == OperationState::HiddenInDatabase),
+            "unique hidden state: {items:?}"
+        );
+        assert_eq!(
+            read_file(&fixture, "歌手/周杰伦 - 晴天.flac"),
+            None,
+            "audio stays staged"
+        );
+        assert_eq!(
+            read_trash(&fixture, operation, "audio"),
+            Some(b"audio-bytes".to_vec())
+        );
+        assert!(
+            fixture.database.undo_deadline(operation).unwrap().is_some(),
+            "a fresh undo deadline is durable"
+        );
+        // Second recovery is an idempotent no-op on the hidden state.
+        RecoverOperations::new(&fixture.deps)
+            .run(fixture.root)
+            .unwrap();
+        assert_eq!(
+            SongRepository::by_id(&fixture.database, song)
+                .unwrap()
+                .unwrap()
+                .availability(),
+            SongAvailability::PendingDelete
+        );
+    }
+
+    #[test]
+    fn crash_at_the_delete_stage_rename_re_stages_then_hides() {
+        // Crash at the rename itself (before it runs): original intact, trash
+        // empty. Recovery re-stages from the persisted source, then hides.
+        let fixture = ScanFixture::new();
+        let ctrl = Arc::new(Controller::default());
+        let song = seed_delete_song(&fixture, "歌手/周杰伦 - 晴天.flac", b"audio-bytes", None);
+        let deps = crash_deps(&fixture, &ctrl);
+        ctrl.arm(Point {
+            site: Site::TrashMove,
+            phase: Phase::Before,
+        });
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            DeleteSongs::new(&deps).delete(fixture.root, song).unwrap()
+        }));
+        assert!(
+            outcome.is_err(),
+            "injection at the stage rename must crash the delete"
+        );
+        assert!(ctrl.fired());
+
+        let operation = single_operation(&fixture);
+        assert_eq!(
+            read_file(&fixture, "歌手/周杰伦 - 晴天.flac"),
+            Some(b"audio-bytes".to_vec()),
+            "the rename never ran"
+        );
+        assert!(
+            read_trash(&fixture, operation, "audio").is_none(),
+            "trash empty"
+        );
+
+        RecoverOperations::new(&fixture.deps)
+            .run(fixture.root)
+            .unwrap();
+
+        assert_eq!(
+            SongRepository::by_id(&fixture.database, song)
+                .unwrap()
+                .unwrap()
+                .availability(),
+            SongAvailability::PendingDelete
+        );
+        assert_eq!(read_file(&fixture, "歌手/周杰伦 - 晴天.flac"), None);
+        assert_eq!(
+            read_trash(&fixture, operation, "audio"),
+            Some(b"audio-bytes".to_vec())
+        );
+        let items = fixture.database.items(operation).unwrap();
+        assert!(items
+            .iter()
+            .all(|item| item.state == OperationState::HiddenInDatabase));
+    }
+
+    #[test]
+    fn crash_at_the_delete_hide_commit_then_recovery_hides_audio_and_lrc() {
+        // Both resources fully staged (`StageApplied`), crash at the hide DB
+        // commit: recovery completes the one-transaction hide for both items.
+        let fixture = ScanFixture::new();
+        let ctrl = Arc::new(Controller::default());
+        let song = seed_delete_song(
+            &fixture,
+            "歌手/周杰伦 - 晴天.flac",
+            b"audio-bytes",
+            Some(b"lrc-bytes"),
+        );
+        let deps = crash_deps(&fixture, &ctrl);
+        ctrl.arm(Point {
+            site: Site::Commit,
+            phase: Phase::Before,
+        });
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            DeleteSongs::new(&deps).delete(fixture.root, song).unwrap()
+        }));
+        assert!(
+            outcome.is_err(),
+            "injection at the hide commit must crash the delete"
+        );
+        assert!(ctrl.fired());
+
+        let operation = delete_operation(&fixture);
+        let items = fixture.database.items(operation).unwrap();
+        assert_eq!(items.len(), 2, "audio + lyrics both staged");
+        assert!(items
+            .iter()
+            .all(|item| item.state == OperationState::StageApplied));
+        assert_eq!(
+            SongRepository::by_id(&fixture.database, song)
+                .unwrap()
+                .unwrap()
+                .availability(),
+            SongAvailability::Available,
+            "the hide never committed"
+        );
+
+        RecoverOperations::new(&fixture.deps)
+            .run(fixture.root)
+            .unwrap();
+
+        assert_eq!(
+            SongRepository::by_id(&fixture.database, song)
+                .unwrap()
+                .unwrap()
+                .availability(),
+            SongAvailability::PendingDelete
+        );
+        let items = fixture.database.items(operation).unwrap();
+        assert!(items
+            .iter()
+            .all(|item| item.state == OperationState::HiddenInDatabase));
+        assert_eq!(
+            read_trash(&fixture, operation, "audio"),
+            Some(b"audio-bytes".to_vec())
+        );
+        assert_eq!(
+            read_trash(&fixture, operation, "lyrics"),
+            Some(b"lrc-bytes".to_vec())
+        );
+    }
+
+    #[test]
+    fn crash_during_restore_after_rename_recovers_song_available() {
+        // Mid-undo crash AFTER the file came home but BEFORE `RestoreApplied`:
+        // the matrix normalizes `RestorePending → Restored` from the matching
+        // original, and the song is brought back to Available (keeping UUID,
+        // favorite, stats — and the playlist position is untouched by delete).
+        let fixture = ScanFixture::new();
+        let song = seed_delete_song(&fixture, "歌手/周杰伦 - 晴天.flac", b"audio-bytes", None);
+        let playlist = crate::domain::ids::PlaylistId::new();
+        fixture
+            .database
+            .create(playlist, fixture.root, "最爱")
+            .unwrap();
+        fixture.database.add_member(playlist, song, 7).unwrap();
+        let outcome = DeleteSongs::new(&fixture.deps)
+            .delete(fixture.root, song)
+            .unwrap();
+        let operation = outcome.operation;
+
+        let ctrl = Arc::new(Controller::default());
+        let deps = crash_deps(&fixture, &ctrl);
+        ctrl.arm(Point {
+            site: Site::State("restore_applied"),
+            phase: Phase::Before,
+        });
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            RestoreDeletedOperation::new(&deps)
+                .restore(fixture.root, operation)
+                .unwrap()
+        }));
+        assert!(
+            res.is_err(),
+            "injection at restore_applied must crash the undo"
+        );
+        assert!(ctrl.fired());
+
+        // The rename already landed: file home, item still `RestorePending`.
+        assert_eq!(
+            read_file(&fixture, "歌手/周杰伦 - 晴天.flac"),
+            Some(b"audio-bytes".to_vec())
+        );
+        let items = fixture.database.items(operation).unwrap();
+        assert_eq!(items[0].state, OperationState::RestorePending);
+        assert_eq!(
+            SongRepository::by_id(&fixture.database, song)
+                .unwrap()
+                .unwrap()
+                .availability(),
+            SongAvailability::PendingDelete,
+            "the song is still hidden mid-undo"
+        );
+
+        RecoverOperations::new(&fixture.deps)
+            .run(fixture.root)
+            .unwrap();
+
+        let after = SongRepository::by_id(&fixture.database, song)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            after.availability(),
+            SongAvailability::Available,
+            "undo completes"
+        );
+        assert_eq!(after.id(), song, "UUID preserved");
+        assert!(after.favorite(), "favorite preserved");
+        assert_eq!(after.play_count().as_u64(), 2, "stats preserved");
+        assert_eq!(
+            fixture
+                .database
+                .members(playlist)
+                .unwrap()
+                .first()
+                .map(crate::domain::entities::PlaylistMember::position),
+            Some(7),
+            "playlist position preserved"
+        );
+        let items = fixture.database.items(operation).unwrap();
+        assert!(items
+            .iter()
+            .all(|item| item.state == OperationState::Restored));
+        assert_eq!(fixture.database.released_claims(), vec![operation]);
+        // Second recovery is an idempotent no-op (claims not re-released).
+        RecoverOperations::new(&fixture.deps)
+            .run(fixture.root)
+            .unwrap();
+        assert_eq!(fixture.database.released_claims(), vec![operation]);
+    }
+
+    #[test]
+    fn crash_at_the_restore_rename_recovers_song_available() {
+        // Mid-undo crash BEFORE the file comes home: the staged copy still sits
+        // in the trash slot. Recovery retries the restore into the original
+        // path, verifies the hash, and brings the song back to Available.
+        let fixture = ScanFixture::new();
+        let song = seed_delete_song(&fixture, "歌手/周杰伦 - 晴天.flac", b"audio-bytes", None);
+        let outcome = DeleteSongs::new(&fixture.deps)
+            .delete(fixture.root, song)
+            .unwrap();
+        let operation = outcome.operation;
+
+        let ctrl = Arc::new(Controller::default());
+        let deps = crash_deps(&fixture, &ctrl);
+        ctrl.arm(Point {
+            site: Site::TrashMove,
+            phase: Phase::Before,
+        });
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            RestoreDeletedOperation::new(&deps)
+                .restore(fixture.root, operation)
+                .unwrap()
+        }));
+        assert!(
+            res.is_err(),
+            "injection at the restore rename must crash the undo"
+        );
+        assert!(ctrl.fired());
+
+        assert_eq!(read_file(&fixture, "歌手/周杰伦 - 晴天.flac"), None);
+        assert_eq!(
+            read_trash(&fixture, operation, "audio"),
+            Some(b"audio-bytes".to_vec())
+        );
+
+        RecoverOperations::new(&fixture.deps)
+            .run(fixture.root)
+            .unwrap();
+
+        assert_eq!(
+            SongRepository::by_id(&fixture.database, song)
+                .unwrap()
+                .unwrap()
+                .availability(),
+            SongAvailability::Available
+        );
+        assert_eq!(
+            read_file(&fixture, "歌手/周杰伦 - 晴天.flac"),
+            Some(b"audio-bytes".to_vec())
+        );
+        let items = fixture.database.items(operation).unwrap();
+        assert!(items
+            .iter()
+            .all(|item| item.state == OperationState::Restored));
+        assert_eq!(fixture.database.released_claims(), vec![operation]);
+    }
+
+    #[test]
+    fn foreign_occupancy_at_recover_restore_pending_holds_the_item_not_the_whole_run() {
+        // A mid-undo crash leaves an item `RestorePending` with its staged copy
+        // intact, and the original target later becomes re-occupied by foreign
+        // content with NO safe numbered path available (every ` (n)` candidate
+        // foreign too): recovery must HOLD that one item (`FailedRecoverable`),
+        // never abort the whole root recovery, and still recover every unrelated
+        // operation in the same pass (design §9: 两处证据矛盾时逐 item held,
+        // 不删除任一文件; 一项冲突不得阻塞根目录内所有无关操作的恢复). The foreign
+        // content is never replaced and the held claim stays reserved.
+        let fixture = ScanFixture::new();
+        let song_a = seed_delete_song(&fixture, "歌手/周杰伦 - 晴天.flac", b"audio-a", None);
+        let song_b = seed_delete_song(
+            &fixture,
+            "歌手/林俊杰 - 不为谁而作的歌.flac",
+            b"audio-b",
+            None,
+        );
+        let op_a = DeleteSongs::new(&fixture.deps)
+            .delete(fixture.root, song_a)
+            .unwrap()
+            .operation;
+        let op_b = DeleteSongs::new(&fixture.deps)
+            .delete(fixture.root, song_b)
+            .unwrap()
+            .operation;
+
+        let ctrl = Arc::new(Controller::default());
+        let deps = crash_deps(&fixture, &ctrl);
+
+        // Crash A's undo before the restore rename: staged copy intact, item
+        // `RestorePending`, original absent.
+        ctrl.arm(Point {
+            site: Site::TrashMove,
+            phase: Phase::Before,
+        });
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                RestoreDeletedOperation::new(&deps)
+                    .restore(fixture.root, op_a)
+                    .unwrap()
+            }))
+            .is_err(),
+            "injection at A's restore rename must crash the undo"
+        );
+        assert!(ctrl.fired());
+
+        // Crash B's undo after the restore rename lands: original matches, item
+        // `RestorePending` — it only needs normalization to `Restored`.
+        ctrl.arm(Point {
+            site: Site::State("restore_applied"),
+            phase: Phase::Before,
+        });
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                RestoreDeletedOperation::new(&deps)
+                    .restore(fixture.root, op_b)
+                    .unwrap()
+            }))
+            .is_err(),
+            "injection at B's restore_applied must crash the undo"
+        );
+        assert!(ctrl.fired());
+
+        // Re-occupy A's original with foreign content AND exhaust every safe
+        // numbered candidate so `safe_restore_target` conflicts for A.
+        fixture.write_file("歌手/周杰伦 - 晴天.flac", b"foreign-audio");
+        for suffix in 1..=100_u32 {
+            fixture.write_file(
+                &format!("歌手/周杰伦 - 晴天 ({suffix}).flac"),
+                b"foreign-numbered",
+            );
+        }
+
+        // Recovery must NOT abort even though A is an unsupported conflict; B
+        // (an unrelated operation) still completes in the same root pass.
+        RecoverOperations::new(&fixture.deps)
+            .run(fixture.root)
+            .unwrap();
+
+        // A is held per-item: staged copy and foreign occupant untouched, claim
+        // never released.
+        let a_items = fixture.database.items(op_a).unwrap();
+        assert!(
+            a_items
+                .iter()
+                .all(|item| item.state == OperationState::FailedRecoverable),
+            "A is held, not aborted: {a_items:?}"
+        );
+        assert_eq!(
+            read_file(&fixture, "歌手/周杰伦 - 晴天.flac"),
+            Some(b"foreign-audio".to_vec()),
+            "the foreign occupant at A's original is never replaced"
+        );
+        assert_eq!(
+            read_trash(&fixture, op_a, "audio"),
+            Some(b"audio-a".to_vec()),
+            "A's staged copy is preserved for the held item"
+        );
+        assert!(
+            !fixture.database.released_claims().contains(&op_a),
+            "a held conflict never releases its claim"
+        );
+
+        // B (unrelated operation) still recovers to Restored and releases.
+        let b_after = SongRepository::by_id(&fixture.database, song_b)
+            .unwrap()
+            .unwrap();
+        assert_eq!(b_after.availability(), SongAvailability::Available);
+        let b_items = fixture.database.items(op_b).unwrap();
+        assert!(
+            b_items
+                .iter()
+                .all(|item| item.state == OperationState::Restored),
+            "B recovers to Restored: {b_items:?}"
+        );
+        assert_eq!(
+            read_file(&fixture, "歌手/林俊杰 - 不为谁而作的歌.flac"),
+            Some(b"audio-b".to_vec())
+        );
+        assert!(
+            fixture.database.released_claims().contains(&op_b),
+            "the unrelated restored operation releases its claim"
+        );
+    }
+
+    #[test]
+    fn contradictory_stage_evidence_holds_and_deletes_nothing() {
+        // Both the original and the trash slot now hold content that
+        // contradicts the journal's expected hash: the matrix must HOLD
+        // (`FailedRecoverable`), never delete either file, leave the song
+        // available and keep the claim (design §9: 两处证据矛盾时不删除任一文件).
+        let fixture = ScanFixture::new();
+        let song = seed_delete_song(&fixture, "歌手/周杰伦 - 晴天.flac", b"audio-bytes", None);
+        let ctrl = Arc::new(Controller::default());
+        let deps = crash_deps(&fixture, &ctrl);
+        ctrl.arm(Point {
+            site: Site::State("stage_applied"),
+            phase: Phase::Before,
+        });
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            DeleteSongs::new(&deps).delete(fixture.root, song).unwrap()
+        }));
+        assert!(outcome.is_err());
+        assert!(ctrl.fired());
+        let operation = single_operation(&fixture);
+
+        fixture.write_file("歌手/周杰伦 - 晴天.flac", b"foreign-original");
+        let base = fixture.fs.root_path(fixture.root).expect("root");
+        std::fs::write(
+            base.join(".echo-test-staging/trash")
+                .join(operation.to_string())
+                .join("audio"),
+            b"foreign-trash",
+        )
+        .expect("write contradictory trash");
+
+        RecoverOperations::new(&fixture.deps)
+            .run(fixture.root)
+            .unwrap();
+
+        assert_eq!(
+            read_file(&fixture, "歌手/周杰伦 - 晴天.flac"),
+            Some(b"foreign-original".to_vec()),
+            "the original file is never deleted"
+        );
+        assert!(
+            read_trash(&fixture, operation, "audio").is_some(),
+            "the trash file is never deleted"
+        );
+        let items = fixture.database.items(operation).unwrap();
+        assert!(
+            items
+                .iter()
+                .all(|item| item.state == OperationState::FailedRecoverable),
+            "contradictory evidence is held: {items:?}"
+        );
+        assert_eq!(
+            SongRepository::by_id(&fixture.database, song)
+                .unwrap()
+                .unwrap()
+                .availability(),
+            SongAvailability::Available,
+            "the song is not hidden"
+        );
+        assert!(
+            fixture.database.released_claims().is_empty(),
+            "a held conflict never releases the claim"
+        );
+    }
+
+    #[test]
+    fn expired_hidden_delete_is_handed_to_trash_and_untouched_by_restore() {
+        // An operation whose undo window expired is handed to task 5.8's trash
+        // flow (`HiddenInDatabase → TrashPending`); recovery must NOT restore
+        // the song or the file, and `RestoreDeletedOperation` refuses it.
+        let fixture = ScanFixture::new();
+        let song = seed_delete_song(&fixture, "歌手/周杰伦 - 晴天.flac", b"audio-bytes", None);
+        let outcome = DeleteSongs::new(&fixture.deps)
+            .delete(fixture.root, song)
+            .unwrap();
+        let operation = outcome.operation;
+        fixture.clock.advance_ms(20_000);
+
+        let report = RecoverOperations::new(&fixture.deps)
+            .run(fixture.root)
+            .unwrap();
+        let recovered = report
+            .touched
+            .iter()
+            .find(|op| op.operation == operation)
+            .expect("the expired delete is touched");
+        assert!(recovered.handed_off, "handed to 5.8's trash flow");
+        let items = fixture.database.items(operation).unwrap();
+        assert!(
+            items
+                .iter()
+                .all(|item| item.state == OperationState::TrashPending),
+            "items advanced to TrashPending: {items:?}"
+        );
+        assert_eq!(
+            SongRepository::by_id(&fixture.database, song)
+                .unwrap()
+                .unwrap()
+                .availability(),
+            SongAvailability::PendingDelete,
+            "the song stays hidden (trash finalize is 5.8's work)"
+        );
+        // The undo is now refused.
+        let err = RestoreDeletedOperation::new(&fixture.deps)
+            .restore(fixture.root, operation)
+            .unwrap_err();
+        assert_eq!(err.code(), "conflict", "expired undo refused");
     }
 }

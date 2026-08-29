@@ -644,6 +644,32 @@ impl OperationJournalRepository for SqliteDatabase {
             .run(move |connection| release_operation_claims(connection, operation))
     }
 
+    fn set_undo_deadline(&self, operation: OperationId, deadline_ms: i64) -> Result<(), Error> {
+        self.writer.run(move |connection| {
+            connection
+                .execute(
+                    "UPDATE operation_journal SET undo_deadline = ?2, updated_at = ?3 WHERE operation_uuid = ?1",
+                    params![operation.to_string(), deadline_ms, now_ms()],
+                )
+                .map_err(storage)?;
+            Ok(())
+        })
+    }
+
+    fn undo_deadline(&self, operation: OperationId) -> Result<Option<i64>, Error> {
+        self.with_reader(move |connection| {
+            let row: Option<Option<i64>> = connection
+                .query_row(
+                    "SELECT undo_deadline FROM operation_journal WHERE operation_uuid = ?1",
+                    params![operation.to_string()],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(storage)?;
+            Ok(row.flatten())
+        })
+    }
+
     fn incomplete_items(
         &self,
         root: LibraryRootId,
@@ -722,6 +748,15 @@ impl TxAccess for SqliteTx<'_> {
         item: OperationItem,
     ) -> Result<(), Error> {
         upsert_operation_item(self.transaction, operation, item)
+    }
+    fn set_undo_deadline(&mut self, operation: OperationId, deadline_ms: i64) -> Result<(), Error> {
+        self.transaction
+            .execute(
+                "UPDATE operation_journal SET undo_deadline = ?2, updated_at = ?3 WHERE operation_uuid = ?1",
+                params![operation.to_string(), deadline_ms, now_ms()],
+            )
+            .map_err(storage)?;
+        Ok(())
     }
     fn set_lyrics_candidate(
         &mut self,
