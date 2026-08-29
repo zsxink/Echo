@@ -14,9 +14,12 @@
 //! - [`watch`] — file-event reconciliation (`ReconcileFsChanges`).
 //! - [`import`] — per-input multi-select import planning (`PlanImport`,
 //!   reserved OperationId/SongId, isolated per-input results).
+//! - [`recover`] — import crash recovery (`RecoverOperations`, the
+//!   three-location existence/hash matrix; tasks 5.5 / 5.10).
 
 pub mod import;
 pub mod ports;
+pub mod recover;
 pub mod relink;
 pub mod root_switch;
 pub mod scan;

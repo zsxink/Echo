@@ -322,6 +322,103 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
         Ok(())
     }
 
+    fn path_exists(&self, root: LibraryRootId, path: &RelativeMediaPath) -> Result<bool, Error> {
+        if let Some(err) = self.fault_error() {
+            return Err(err);
+        }
+        Ok(self.abs(root, path).exists())
+    }
+
+    fn publish_from_staging_path(
+        &self,
+        root: LibraryRootId,
+        staging_path: &RelativeMediaPath,
+        target: &RelativeMediaPath,
+    ) -> Result<(), Error> {
+        if let Some(err) = self.fault_error() {
+            return Err(err);
+        }
+        // Only Echo's own staging area may be republished after a crash: the
+        // persisted staging path must live under `<root>/.echo-test-staging/`.
+        let base = self
+            .roots
+            .lock()
+            .unwrap()
+            .get(&root)
+            .cloned()
+            .ok_or_else(|| Error::unavailable("test root", "unknown root"))?;
+        // The journal's staging path is root-relative; resolve it and verify
+        // it sits directly under the root's `.echo-test-staging` directory
+        // (never a foreign location). Component-wise check, not a string
+        // prefix, so a crafted name cannot evade the boundary.
+        let staging_abs = base.join(staging_path.normalized());
+        let staging_root = base.join(".echo-test-staging");
+        let inside = staging_abs
+            .strip_prefix(&staging_root)
+            .is_ok_and(|rest| !rest.as_os_str().is_empty() && !rest.starts_with(".."));
+        if !inside {
+            return Err(Error::permission(
+                "publish from staging path",
+                crate::error::PermKind::NotOwner,
+            ));
+        }
+        let dest = self.abs(root, target);
+        // A crash between exclusive reserve and rename leaves our own empty
+        // placeholder; only a zero-byte target is cleared (never foreign
+        // content).
+        if let Ok(meta) = std::fs::metadata(&dest) {
+            if meta.len() == 0 {
+                let _ = std::fs::remove_file(&dest);
+            }
+        }
+        if dest.exists() {
+            return Err(Error::conflict("target file already exists"));
+        }
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| Error::io("create_dir_all", e, parent.to_path_buf()))?;
+        }
+        std::fs::rename(&staging_abs, &dest).map_err(|e| Error::io("rename", e, dest.clone()))?;
+        // If the handle was (still) registered, drop it so later discards are
+        // clean no-ops.
+        self.staged
+            .lock()
+            .unwrap()
+            .retain(|_key, path| path.clone() != staging_abs);
+        Ok(())
+    }
+
+    fn discard_staging_path(
+        &self,
+        root: LibraryRootId,
+        staging_path: &RelativeMediaPath,
+    ) -> Result<(), Error> {
+        let base = self
+            .roots
+            .lock()
+            .unwrap()
+            .get(&root)
+            .cloned()
+            .ok_or_else(|| Error::unavailable("test root", "unknown root"))?;
+        let staging_abs = base.join(staging_path.normalized());
+        let staging_root = base.join(".echo-test-staging");
+        let inside = staging_abs
+            .strip_prefix(&staging_root)
+            .is_ok_and(|rest| !rest.as_os_str().is_empty() && !rest.starts_with(".."));
+        if !inside {
+            return Err(Error::permission(
+                "discard staging path",
+                crate::error::PermKind::NotOwner,
+            ));
+        }
+        let _ = std::fs::remove_file(&staging_abs);
+        self.staged
+            .lock()
+            .unwrap()
+            .retain(|_key, path| path.clone() != staging_abs);
+        Ok(())
+    }
+
     fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
         let _ = root;
         Ok(*self.write_capable.lock().unwrap())

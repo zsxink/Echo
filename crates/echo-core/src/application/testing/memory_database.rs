@@ -371,6 +371,28 @@ impl OperationJournalRepository for MemoryDatabase {
         self.lock().released_claims.push(operation);
         Ok(())
     }
+
+    fn incomplete_items(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<Vec<(OperationId, String, OperationItem)>, Error> {
+        let store = self.lock();
+        let mut out = Vec::new();
+        for ((operation, _item_key), item) in &store.operations {
+            // Only items whose envelope belongs to `root`.
+            let Some((op_root, kind, _)) = store.envelopes.get(operation) else {
+                continue;
+            };
+            if *op_root != root {
+                continue;
+            }
+            if item.state.is_terminal() {
+                continue;
+            }
+            out.push((*operation, kind.clone(), item.clone()));
+        }
+        Ok(out)
+    }
 }
 
 impl LyricsRepository for MemoryDatabase {

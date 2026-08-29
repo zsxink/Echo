@@ -350,8 +350,108 @@ impl LibraryFileSystem for RootConstrainedFileSystem {
         Ok(())
     }
 
+    fn path_exists(&self, root: LibraryRootId, path: &RelativeMediaPath) -> Result<bool, Error> {
+        let abs = self.abs(root, path)?;
+        Ok(abs.symlink_metadata().is_ok())
+    }
+
+    fn publish_from_staging_path(
+        &self,
+        root: LibraryRootId,
+        staging_path: &RelativeMediaPath,
+        target: &RelativeMediaPath,
+    ) -> Result<(), Error> {
+        let staging_abs = self.abs(root, staging_path)?;
+        // The journal's persisted staging path must resolve inside Echo's own
+        // marker-verified staging directory; a directory that lost its marker
+        // (or was never ours) is refused, so a crafted or foreign path can
+        // never be published.
+        if !self.owned_staging_ancestor(&staging_abs, root) {
+            return Err(Error::permission(
+                "publish from staging path",
+                PermKind::NotOwner,
+            ));
+        }
+        let dest = self.abs(root, target)?;
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).map_err(|source| {
+                Error::io("create target directory", source, parent.to_path_buf())
+            })?;
+        }
+        // A crash between the exclusive reserve and the rename leaves our own
+        // zero-byte placeholder at the target (the same stub `publish` clears
+        // on a rename failure). A non-empty file is never touched.
+        if let Ok(meta) = std::fs::metadata(&dest) {
+            if meta.len() == 0 {
+                let _ = std::fs::remove_file(&dest);
+            }
+        }
+        // Same exclusive create-new + fsync + rename contract as `publish`
+        // (design §8: 新建 exclusive 目标 + fsync + rename，绝不替换).
+        let reserved = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&dest);
+        match reserved {
+            Ok(handle) => {
+                if let Err(source) = handle.sync_all() {
+                    return Err(Error::io("fsync reserved target", source, dest));
+                }
+            }
+            Err(source) if source.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Err(Error::conflict("target file already exists"));
+            }
+            Err(source) => return Err(Error::io("reserve target", source, dest)),
+        }
+        if let Err(source) = std::fs::rename(&staging_abs, &dest) {
+            let still_empty = std::fs::metadata(&dest).is_ok_and(|meta| meta.len() == 0);
+            if still_empty {
+                let _ = std::fs::remove_file(&dest);
+            }
+            return Err(Error::io("publish", source, dest));
+        }
+        fsync_dir(
+            &dest
+                .parent()
+                .map_or_else(|| dest.clone(), std::path::Path::to_path_buf),
+        );
+        Ok(())
+    }
+
+    fn discard_staging_path(
+        &self,
+        root: LibraryRootId,
+        staging_path: &RelativeMediaPath,
+    ) -> Result<(), Error> {
+        let staging_abs = self.abs(root, staging_path)?;
+        if !self.owned_staging_ancestor(&staging_abs, root) {
+            return Err(Error::permission(
+                "discard staging path",
+                PermKind::NotOwner,
+            ));
+        }
+        let _ = std::fs::remove_file(&staging_abs);
+        Ok(())
+    }
+
     fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
         self.staging.write_capable(root)
+    }
+}
+
+impl RootConstrainedFileSystem {
+    /// Whether `path` resolves inside a marker-verified Echo staging directory
+    /// of `root` (walking up from the file to its `.echo-staging-*` ancestor).
+    fn owned_staging_ancestor(&self, path: &Path, root: LibraryRootId) -> bool {
+        let Some(ancestor) = path.ancestors().find(|p| {
+            p.file_name().is_some_and(|name| {
+                name.to_string_lossy()
+                    .starts_with(super::staging::STAGING_DIR_PREFIX)
+            })
+        }) else {
+            return false;
+        };
+        self.staging.check(ancestor, root) == super::staging::StagingCheck::Owned
     }
 }
 

@@ -120,6 +120,17 @@ pub trait OperationJournalRepository: Send + Sync {
     ) -> Result<Option<OperationItem>, Error>;
     fn upsert_item(&self, operation: OperationId, item: OperationItem) -> Result<(), Error>;
     fn items(&self, operation: OperationId) -> Result<Vec<OperationItem>, Error>;
+    /// Every journal item of `root` that has not yet reached a terminal state
+    /// — the recovery-input set (task 5.5 / 5.10). Returns `(operation, kind,
+    /// item)` so recovery can group resources under one operation and decide
+    /// how to finish each item from its persisted intent. Only the states the
+    /// application has durably written (`Completed`, `RolledBack`,
+    /// `DatabaseFinalized`) are excluded; everything else still has work to
+    /// do (or a conflict to surface).
+    fn incomplete_items(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<Vec<(OperationId, String, OperationItem)>, Error>;
     /// Release every active target claim of the operation. Must be called when
     /// the operation reaches a terminal state (completed, rolled back, delete
     /// finalized); until then the conditional unique index keeps the target
@@ -459,6 +470,34 @@ pub trait LibraryFileSystem: Send + Sync {
     /// operation's journal keeps the diagnostic). Idempotent: discarding an
     /// unknown handle or an already removed file succeeds.
     fn discard_staged(&self, root: LibraryRootId, staged: &StagedResource) -> Result<(), Error>;
+    /// Safely remove one *persisted* staged file by its root-relative path
+    /// (task 5.5/5.10 recovery rollback: 无完整暂存且未发布则清理安全残留并回滚).
+    /// Like [`Self::publish_from_staging_path`], the adapter must verify the
+    /// path resolves inside Echo's own marker-verified staging area — a foreign
+    /// path is refused, never deleted. Idempotent: an absent file succeeds.
+    fn discard_staging_path(
+        &self,
+        root: LibraryRootId,
+        staging_path: &RelativeMediaPath,
+    ) -> Result<(), Error>;
+    /// Whether a root-relative path currently exists (recovery's three-location
+    /// check). `Ok(false)` is "not present", distinct from an I/O error in
+    /// checking the filesystem itself.
+    fn path_exists(&self, root: LibraryRootId, path: &RelativeMediaPath) -> Result<bool, Error>;
+    /// Publish a file already staged at the persisted, root-relative
+    /// `staging_path` into `target` with the same exclusive create-new +
+    /// fsync + rename contract as [`Self::publish`] (task 5.5 recovery: 只有
+    /// 暂存正确则重试 exclusive publish). Unlike [`Self::publish`] this does
+    /// NOT resolve an in-memory staged handle — it reads the *journal's*
+    /// persisted staging location, which is what survives a crash — so the
+    /// adapter must verify `staging_path` still resolves inside Echo's own
+    /// marker-verified staging area before publishing (never a foreign path).
+    fn publish_from_staging_path(
+        &self,
+        root: LibraryRootId,
+        staging_path: &RelativeMediaPath,
+        target: &RelativeMediaPath,
+    ) -> Result<(), Error>;
     /// Whether the root currently permits writes (permissions + marker).
     fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error>;
 }

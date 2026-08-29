@@ -81,6 +81,15 @@
 - 复核①（独立验收，全新会话）：**PASS**。独立重跑 `pnpm verify:task -- 5.4`（8 条登记命令逐条通过）、5.1–5.3 无回归、self-test、fmt、clippy -D warnings、`cargo test` 215 通过；四个验收点（嵌入歌词优先 / LRC 成功配对最终基础名含编号、真实临时目录复制源不变 / LRC 失败"音频成功歌词失败"不留半侧车三路径 / 独立结果结构）均有真实非空壳测试证据；架构红线全过；无范围外改动。
 - P2 遗留（不阻断，登记）：1) 测试替身 reader 需要显式 `add_sidecar` 注册而不自动按基名发现 `.lrc`（与 port 契约一致，桌面 reader 延迟到 IPC 任务）；2) 真实 fs 栈仅 single manifest 命令覆盖，失败路径（不可读/冲突/大小不匹配）经替身演练（可接受）。
 - Deferred：崩溃恢复矩阵 → 5.5；真实桌面 sidecar reader → 桌面 IPC 任务（7.3 等）。均已如实标注，未宣称已通过。
-- Commit：`Implement task 5.4: same-basename optional .lrc sub-resource with independent per-input result` → 见 git log
+- Commit：`Implement task 5.4: same-basename optional .lrc sub-resource with independent per-input result` → **17b62d9**
+
+### 5.5 导入 journal 逐资源恢复矩阵与故障注入
+
+- 状态：✅ PASS（复核第 1 轮通过）
+- 实现：工作树中的 round-0 实现候选（沿用 5.3 收编先例，编排接管为 round-0）。`application/recover.rs`（1074 行，`RecoverOperations` 用例）：逐资源 Copy/Validate/Publish `Pending→Applied` 恢复、target claim 生命周期、三位置存在性/hash 恢复矩阵；`application/ports.rs` 新增 recovery 专用 port（`OperationJournalRepository::incomplete_items`、`LibraryFileSystem::discard_staging_path`/`path_exists`/`publish_from_staging_path`，后两者要求校验路径须解析进 Echo 专属 marker staging 区，拒绝外来路径）；`infrastructure/filesystem/adapter.rs` 与 `sqlite/` 对应实现；`memory_database.rs`/`repositories.rs`/`small_fakes.rs`/`filesystem.rs` 替身扩展。manifest 登记 id=5.5（6 条命令，task-5.mjs 5.5 <test> 逐条指向真实故障注入测试）。
+- 复核①（独立验收，全新会话）：**PASS**。独立重跑 `pnpm verify:task -- 5.5`（6 条命令逐条真实非空壳并逐一通过）、fmt、clippy -D warnings、`cargo test -p echo-core --all-features` 全部通过；故障注入覆盖 state-write Before、publish/rename Before+After、DB commit Before+After、copy Before、mid-read truncation、watcher 抢占，全部恢复两次并断言唯一终态/同一预留 UUID/无孤儿最终文件/无重复/无幽灵记录；架构红线全过，specs/tasks/design 未动，无越界实现 5.6/5.7/5.8/5.10；deferred（5.10 runtime 启动接线）如实标注未宣称已通过。
+- P2 遗留（不阻断，登记）：1) state-write After 相未逐点独立注入（由下一点 Before 传递覆盖）；2) Copy After（无 journal envelope 的暂存残留）未直接测试；3) fsync 失败未直接注入（经 copy/publish 路径覆盖）；4) 真实 sqlite `incomplete_operation_items` 与 adapter `publish_from_staging_path`/`discard_staging_path` 集成路径未在 5.5 内用集成测试演练（现行 manifest 测试走替身）。前 3 项归 13.3 故障注入报告范围；第 4 项建议后续补集成测试。
+- Deferred：5.10 runtime ready 前的 `RecoverPendingOperations` 启动接线 → 5.10。已如实标注。
+- Commit：`Implement task 5.5: import journal per-resource recovery matrix with fault injection` → 见 git log
 
 ---

@@ -341,6 +341,24 @@ impl OperationJournalRepository for MemoryOperationJournal {
         self.released_claims.lock().unwrap().push(operation);
         Ok(())
     }
+
+    fn incomplete_items(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<Vec<(OperationId, String, OperationItem)>, Error> {
+        // This minimal per-port fake stores items without a root or envelope
+        // kind; recovery tests that need root/kind filtering use `MemoryDatabase`
+        // (which shares one store like the real SQLite file).
+        let _ = root;
+        Ok(self
+            .items
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, item)| !item.state.is_terminal())
+            .map(|((op, _), item)| (*op, "import".to_owned(), item.clone()))
+            .collect())
+    }
 }
 
 /// In-memory lyrics-candidate store (task 4.5 reads).

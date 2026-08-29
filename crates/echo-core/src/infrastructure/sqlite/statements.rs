@@ -23,7 +23,7 @@ use crate::domain::state::scan::ScanProgress;
 use crate::error::Error;
 
 use super::conversion::{availability_to_db, operation_state_to_db};
-use super::support::{map_constraint, now_ms, storage, to_sql_error};
+use super::support::{map_constraint, now_ms, parse_id, storage, to_sql_error};
 use crate::domain::text::{normalized_key, playlist_name_key};
 
 #[allow(clippy::too_many_lines)]
@@ -247,6 +247,39 @@ pub(crate) fn release_operation_claims(
         )
         .map_err(storage)?;
     Ok(())
+}
+
+/// Every journal item of `root` that has not reached a terminal state — the
+/// recovery-input set (tasks 5.5 / 5.10). Terminal states (`Completed`,
+/// `RolledBack`, `DatabaseFinalized`, `Restored`) are excluded; everything
+/// else still has durable work to do (or a conflict to surface).
+pub(crate) fn incomplete_operation_items(
+    connection: &Connection,
+    root: LibraryRootId,
+) -> Result<Vec<(OperationId, String, OperationItem)>, Error> {
+    // The item columns (0–7) match `operation_item_from_row`; the operation
+    // uuid and envelope kind are read off the trailing columns.
+    let mut statement = connection
+        .prepare(
+            "SELECT i.kind, i.state, COALESCE(i.song_uuid, j.reserved_song_uuid), i.target_relative_path, i.expected_hash, i.normalized_target_path, i.source_locator, i.staging_relative_path, i.operation_uuid, j.kind FROM operation_items i JOIN operation_journal j ON j.operation_uuid = i.operation_uuid WHERE i.library_root_uuid = ?1 AND i.state NOT IN ('completed', 'rolled_back', 'database_finalized', 'restored') ORDER BY i.operation_uuid, i.item_key",
+        )
+        .map_err(storage)?;
+    let rows = statement
+        .query_map(params![root.to_string()], |row| {
+            let item = super::conversion::operation_item_from_row(row)?;
+            let operation = row.get::<_, String>(8)?;
+            let kind = row.get::<_, String>(9)?;
+            Ok((operation, kind, item))
+        })
+        .map_err(storage)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(storage)?;
+    rows.into_iter()
+        .map(|(operation, kind, item)| {
+            let operation = parse_id(&operation, "OperationId")?;
+            Ok((operation, kind, item))
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------

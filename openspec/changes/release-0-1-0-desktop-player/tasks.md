@@ -69,7 +69,7 @@
 - [x] 5.2 实现默认 `歌手/歌手 - 歌曲名.扩展名`、未知艺人/未命名歌曲、平台字符清理、短 hash 截断和最小 `(n)` 冲突编号，验证三平台 golden cases 且绝不覆盖既有文件。[safe-file-ingestion]
 - [x] 5.3 实现专属受控暂存目录、逐资源源定位/暂存/目标/hash、条件唯一 target claim、流式复制+BLAKE3、exclusive 目标保留、fsync 和每文件原子 publish，验证数据库仅在完整音频发布后可见、源文件内容/名称/位置不变、同名用户目录绝不被写入。
 - [x] 5.4 实现同名 `.lrc` 可选子资源与独立结果，验证嵌入歌词优先、LRC 成功配对最终基础名、LRC 失败形成“音频成功/歌词失败”且不留半侧车。
-- [ ] 5.5 实现导入 journal 的逐资源 `Copy/Validate/Publish Pending→Applied`、target claim 生命周期与三位置存在性/hash 恢复矩阵，在每次状态写、copy/fsync/rename/DB commit 及 watcher 抢先点前后故障注入并恢复两次，验证唯一终态、同一预留 UUID、无孤儿最终文件、重复文件和幽灵记录。
+- [x] 5.5 实现导入 journal 的逐资源 `Copy/Validate/Publish Pending→Applied`、target claim 生命周期与三位置存在性/hash 恢复矩阵，在每次状态写、copy/fsync/rename/DB commit 及 watcher 抢先点前后故障注入并恢复两次，验证唯一终态、同一预留 UUID、无孤儿最终文件、重复文件和幽灵记录。
 - [ ] 5.6 实现开始前/提交前双重 BLAKE3 去重和幂等重试，验证并发导入与 watcher 竞争时相同内容只出现一个逻辑歌曲。[safe-file-ingestion]
 - [ ] 5.7 实现 Echo 主动删除逐资源 `Stage/Restore Pending→Applied`、专属受控 `trash/<operation-id>`、pending-delete 和 10 秒 undo，验证状态写/rename 任一侧崩溃均可由原/暂存/hash 唯一恢复，撤销保留 UUID、收藏、统计、歌单 position；原路径被占用时安全编号恢复。[library-experience][playlist-management]
 - [ ] 5.8 实现 `TrashPending→TrashApplied→DatabaseFinalized` 与 `TrashOutcomeUnknown`、SystemTrashPort 和不可逆点前滚；验证只有已持久化 `TrashApplied` 才自动 finalize，暂存被外部清理、卷断开或调用成功后状态写入前崩溃均保留数据库关系并关闭该根写能力，绝不凭路径缺失推断成功。

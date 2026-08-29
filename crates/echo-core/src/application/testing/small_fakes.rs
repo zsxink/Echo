@@ -295,6 +295,10 @@ pub struct FakeImportSources {
 struct FakeSource {
     display_name: String,
     bytes: Vec<u8>,
+    /// When `Some`, the source describes this size but serves only `bytes` —
+    /// the mid-read-truncation fault recovery must reject (task 5.5). It is
+    /// always >= the served bytes for a genuine truncation.
+    described_size: Option<u64>,
     failure: Option<String>,
 }
 
@@ -319,6 +323,22 @@ impl FakeImportSources {
             FakeSource {
                 display_name: display_name.to_owned(),
                 bytes: bytes.to_vec(),
+                described_size: None,
+                failure: None,
+            },
+        );
+    }
+
+    /// Register a source that *describes* `described_size` bytes but opens
+    /// serving only `bytes` — a mid-read truncation (vanished/truncated file)
+    /// that the import must reject instead of publishing a partial copy.
+    pub fn add_truncated(&self, key: &str, display_name: &str, described_size: u64, bytes: &[u8]) {
+        self.sources.lock().unwrap().insert(
+            key.to_owned(),
+            FakeSource {
+                display_name: display_name.to_owned(),
+                bytes: bytes.to_vec(),
+                described_size: Some(described_size),
                 failure: None,
             },
         );
@@ -373,9 +393,12 @@ impl ImportSourceReader for FakeImportSources {
             .ok_or_else(|| Error::unavailable("import source", "unknown handle"))?;
         source.failure.as_ref().map_or_else(
             || {
+                let size = source
+                    .described_size
+                    .unwrap_or_else(|| u64::try_from(source.bytes.len()).unwrap_or(u64::MAX));
                 Ok(ImportSourceInfo {
                     display_name: source.display_name.clone(),
-                    size: u64::try_from(source.bytes.len()).unwrap_or(u64::MAX),
+                    size,
                 })
             },
             |message| Err(source_failure(message)),

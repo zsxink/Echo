@@ -176,6 +176,24 @@ struct LyricsFailure {
     message: String,
 }
 
+/// How an execution failure must be handled (task 5.5 regime, design §8).
+///
+/// The boundary that changes the answer is the **publish**: once a final file
+/// has been durably placed at its target, the operation can no longer be
+/// rolled back — a rollback would orphan the published file and free the
+/// target claim for someone else. So a failure before the publish is
+/// [`ExecuteError::PrePublish`] (safe to roll back and release the claim),
+/// while a failure at/after the publish is [`ExecuteError::PostPublish`] (the
+/// item is left recoverable and the claim is held until recovery completes it
+/// under the same reserved identity).
+enum ExecuteError {
+    /// No final file has been published yet — safe to roll back.
+    PrePublish(Error),
+    /// A published final file (or a DB commit in flight) means the operation
+    /// must be completed by recovery, never rolled back.
+    PostPublish(Error),
+}
+
 /// One input's reserved plan: the identity, staged resource and target every
 /// later step (and any recovery, in task 5.5) must agree on.
 struct PlannedInput {
@@ -336,27 +354,51 @@ impl<'a> PlanImport<'a> {
                     lyrics: Box::new(lyrics),
                 }
             }
-            Err(error) => {
-                // Per-input rollback: the terminal journal state releases this
-                // input's claims; committed inputs and the remaining batch are
+            Err(error) => self.recover_execution_failure(root, &planned, error),
+        }
+    }
+
+    /// Handle an [`ExecuteError`]: a failure before any publish is safe to roll
+    /// back (terminal `RolledBack` + release the claim + discard staged copies),
+    /// while a failure at/after the publish must NOT roll back — a published
+    /// final file (or an in-flight DB commit) is left recoverable and its
+    /// target claim is held so recovery completes the same operation under the
+    /// same reserved identity, never orphaning the file or creating a second
+    /// UUID (task 5.5).
+    fn recover_execution_failure(
+        &self,
+        root: LibraryRootId,
+        planned: &PlannedInput,
+        error: ExecuteError,
+    ) -> ImportOutcome {
+        match error {
+            ExecuteError::PrePublish(error) => {
+                // Nothing published: the terminal state releases this input's
+                // claims; committed inputs and the remaining batch are
                 // untouched. Both staged copies are cleaned up best-effort.
                 let _ = self.deps.fs.discard_staged(root, &planned.staged);
                 let _ = planned
                     .lrc
                     .as_ref()
                     .map(|lrc| self.deps.fs.discard_staged(root, &lrc.staged));
-                let rolled_back = journal_item(OperationState::RolledBack, &planned);
-                let _ = self
-                    .deps
-                    .journal
-                    .upsert_item(planned.operation, rolled_back);
+                let _ = self.deps.journal.upsert_item(
+                    planned.operation,
+                    journal_item(OperationState::RolledBack, planned),
+                );
                 if let Some(lrc) = &planned.lrc {
                     let _ = self.deps.journal.upsert_item(
                         planned.operation,
-                        journal_lrc_item(OperationState::RolledBack, &planned, lrc),
+                        journal_lrc_item(OperationState::RolledBack, planned, lrc),
                     );
                 }
                 let _ = self.deps.journal.release_claims(planned.operation);
+                failed_of(&error)
+            }
+            ExecuteError::PostPublish(error) => {
+                // The audio (and possibly a sidecar) is already durably
+                // published. Leave the item at its persisted state and hold the
+                // claim: recovery — not a rollback — completes the record under
+                // the reserved UUID. No discard, no release, no second copy.
                 failed_of(&error)
             }
         }
@@ -537,33 +579,103 @@ impl<'a> PlanImport<'a> {
         )
     }
 
-    /// Publish → verify → parse → commit one planned input. Returns the
-    /// sidecar result: a same-basename `.lrc` is published *after* the audio
-    /// is whole (best-effort — a sidecar failure becomes "audio succeeded /
-    /// lyrics failed" and never rolls back the verified audio, design §8).
-    fn execute(&self, planned: &PlannedInput) -> Result<LyricsImportResult, Error> {
-        // Publish reserves the target exclusively (create-new) and swaps the
-        // verified staged copy in with one same-filesystem rename: an occupied
-        // target is a conflict, never a replacement (绝不覆盖既有文件).
+    /// Persist one audio-item journal state with the known target.
+    fn write_state(&self, planned: &PlannedInput, state: OperationState) -> Result<(), Error> {
         self.deps
-            .fs
-            .publish(planned.root, &planned.staged, &planned.target)?;
-        // `*Applied` only counts once the final location is verified: size and
-        // hash must match the staged copy (design §8).
-        let meta = self.deps.fs.file_meta(planned.root, &planned.target)?;
+            .journal
+            .upsert_item(planned.operation, journal_item(state, planned))
+    }
+
+    /// Verify the staged audio copy against the planned size/hash at the
+    /// persisted staging location (the `ValidatePending → Validated` evidence;
+    /// a truncated or corrupt staged copy is rejected here, never published).
+    fn verify_staged(&self, planned: &PlannedInput) -> Result<(), Error> {
+        let staging_path = &planned.staged_path;
+        let meta = self.deps.fs.file_meta(planned.root, staging_path)?;
         if meta.size != planned.size {
             return Err(Error::CorruptMedia {
                 operation: IMPORT_OPERATION.to_owned(),
-                reason: "published size differs from the staged content".to_owned(),
+                reason: "staged size differs from the copied content".to_owned(),
             });
         }
-        let published_hash = self.deps.hasher.hash(planned.root, &planned.target)?;
-        if published_hash != planned.hash {
+        let staged_hash = self.deps.hasher.hash(planned.root, staging_path)?;
+        if staged_hash != planned.hash {
             return Err(Error::CorruptMedia {
                 operation: IMPORT_OPERATION.to_owned(),
-                reason: "published hash differs from the staged content".to_owned(),
+                reason: "staged hash differs from the copied content".to_owned(),
             });
         }
+        Ok(())
+    }
+
+    /// Publish → verify → parse → commit one planned input, driving the audio
+    /// journal item through the full per-resource `Copy/Validate/Publish
+    /// Pending→Applied` chain (task 5.5). Returns the sidecar result: a
+    /// same-basename `.lrc` is published *after* the audio is whole
+    /// (best-effort — a sidecar failure becomes "audio succeeded / lyrics
+    /// failed" and never rolls back the verified audio, design §8).
+    ///
+    /// Failures are classified by [`ExecuteError`]: before the publish they are
+    /// safely rollable; at/after the publish the item is left recoverable so
+    /// recovery completes it under the same reserved identity (a published
+    /// final file is never rolled back into an orphan, and the target claim is
+    /// never released early).
+    fn execute(&self, planned: &PlannedInput) -> Result<LyricsImportResult, ExecuteError> {
+        // Per-resource journal chain (design §8: 意图先持久化，副作用后校验再
+        // 落 Applied). The staged copy was created and fsynced in pre-flight;
+        // these intents/results make the chain durable and drive recovery.
+        self.write_state(planned, OperationState::CopyPending)
+            .map_err(ExecuteError::PrePublish)?;
+        self.write_state(planned, OperationState::CopyApplied)
+            .map_err(ExecuteError::PrePublish)?;
+        self.write_state(planned, OperationState::ValidatePending)
+            .map_err(ExecuteError::PrePublish)?;
+        self.verify_staged(planned)
+            .map_err(ExecuteError::PrePublish)?;
+        self.write_state(planned, OperationState::Validated)
+            .map_err(ExecuteError::PrePublish)?;
+        self.write_state(planned, OperationState::PublishPending)
+            .map_err(ExecuteError::PrePublish)?;
+
+        // Publish reserves the target exclusively (create-new) + same-filesystem
+        // rename: an occupied target is a conflict, never a replacement
+        // (绝不覆盖既有文件). A publish *error* means the rename never happened —
+        // the adapter leaves no half file and no published target — so a failure
+        // here is still PrePublish (safe to roll back and release the claim).
+        // Only AFTER the rename succeeds does the failure boundary flip to
+        // PostPublish (a published final file must be recovered, never rolled
+        // back orphaned).
+        self.deps
+            .fs
+            .publish(planned.root, &planned.staged, &planned.target)
+            .map_err(ExecuteError::PrePublish)?;
+        // Only once the FINAL location is verified (size + hash) does the item
+        // count as published (design §8).
+        let meta = self
+            .deps
+            .fs
+            .file_meta(planned.root, &planned.target)
+            .map_err(ExecuteError::PostPublish)?;
+        if meta.size != planned.size {
+            return Err(ExecuteError::PostPublish(Error::CorruptMedia {
+                operation: IMPORT_OPERATION.to_owned(),
+                reason: "published size differs from the staged content".to_owned(),
+            }));
+        }
+        let published_hash = self
+            .deps
+            .hasher
+            .hash(planned.root, &planned.target)
+            .map_err(ExecuteError::PostPublish)?;
+        if published_hash != planned.hash {
+            return Err(ExecuteError::PostPublish(Error::CorruptMedia {
+                operation: IMPORT_OPERATION.to_owned(),
+                reason: "published hash differs from the staged content".to_owned(),
+            }));
+        }
+        self.write_state(planned, OperationState::PublishApplied)
+            .map_err(ExecuteError::PostPublish)?;
+
         // Same-name `.lrc` sub-resource: publish it beside the (now whole)
         // audio. A failure here is NOT an audio failure — the LRC item rolls
         // back individually and the result carries the lyrics-failed status.
@@ -603,29 +715,46 @@ impl<'a> PlanImport<'a> {
         // sidecar, cover) and commit the record under the RESERVED identity.
         match parse_single_file(self.deps, planned.root, &planned.target) {
             FileOutcome::Parsed(parsed) => {
-                self.commit(planned, &parsed, lrc_published)?;
+                self.commit(planned, &parsed, lrc_published)
+                    .map_err(ExecuteError::PostPublish)?;
                 Ok(lrc_result)
             }
-            FileOutcome::Diagnostic(diagnostic) => Err(Error::CorruptMedia {
-                operation: IMPORT_OPERATION.to_owned(),
-                reason: diagnostic.reason().to_owned(),
-            }),
-            FileOutcome::FastSkip { .. } => Err(Error::InvariantViolation {
-                why: "import target is already owned by another record".to_owned(),
-            }),
+            FileOutcome::Diagnostic(diagnostic) => {
+                Err(ExecuteError::PostPublish(Error::CorruptMedia {
+                    operation: IMPORT_OPERATION.to_owned(),
+                    reason: diagnostic.reason().to_owned(),
+                }))
+            }
+            FileOutcome::FastSkip { .. } => {
+                Err(ExecuteError::PostPublish(Error::InvariantViolation {
+                    why: "import target is already owned by another record".to_owned(),
+                }))
+            }
         }
     }
 
-    /// Publish one sidecar resource with the same atomic create-new + rename
-    /// contract as the audio, then verify its final size/hash and record the
-    /// per-resource `Completed` journal row. A failure is a [`LyricsFailure`]
-    /// (never an audio failure); the exclusive publish guarantees no half
-    /// sidecar can appear at the target.
+    /// Publish one sidecar resource with the same per-resource
+    /// `Copy/Validate/Publish Pending→Applied` journal chain as the audio
+    /// (task 5.5), then verify its final size/hash and record the per-resource
+    /// `Completed` row. A failure is a [`LyricsFailure`] (never an audio
+    /// failure); the exclusive publish guarantees no half sidecar can appear
+    /// at the target.
     fn publish_lrc(&self, planned: &PlannedInput, lrc: &PlannedLrc) -> Result<(), LyricsFailure> {
         let fail = |error: Error| LyricsFailure {
             code: error.code(),
             message: error.to_string(),
         };
+        let write = |state: OperationState| -> Result<(), LyricsFailure> {
+            self.deps
+                .journal
+                .upsert_item(planned.operation, journal_lrc_item(state, planned, lrc))
+                .map_err(fail)
+        };
+        write(OperationState::CopyPending)?;
+        write(OperationState::CopyApplied)?;
+        write(OperationState::ValidatePending)?;
+        write(OperationState::Validated)?;
+        write(OperationState::PublishPending)?;
         self.deps
             .fs
             .publish(planned.root, &lrc.staged, &lrc.target)
@@ -652,13 +781,8 @@ impl<'a> PlanImport<'a> {
                 message: "published sidecar hash differs from the staged content".to_owned(),
             });
         }
-        self.deps
-            .journal
-            .upsert_item(
-                planned.operation,
-                journal_lrc_item(OperationState::Completed, planned, lrc),
-            )
-            .map_err(fail)?;
+        write(OperationState::PublishApplied)?;
+        write(OperationState::Completed)?;
         Ok(())
     }
 
@@ -875,10 +999,15 @@ mod tests {
 
     impl ReservationGate {
         fn verify_reserved(&self, operation: OperationId) {
+            // The reserved identity + target claim must be durable before the
+            // first external side effect. The import now advances each item
+            // through the Copy/Validate/Publish chain, so before the publish
+            // the item holds the reserved SongId in ANY pre-publish state
+            // (task 5.5) — never just `Planned`.
             let reserved = OperationJournalRepository::items(&self.journal, operation)
                 .unwrap_or_default()
                 .into_iter()
-                .any(|item| item.state == OperationState::Planned && item.song.is_some());
+                .any(|item| item.song.is_some() && !item.state.is_terminal());
             if !reserved {
                 self.violations
                     .lock()
@@ -945,6 +1074,29 @@ mod tests {
             staged: &StagedResource,
         ) -> Result<(), Error> {
             self.inner.discard_staged(root, staged)
+        }
+        fn path_exists(
+            &self,
+            root: LibraryRootId,
+            path: &RelativeMediaPath,
+        ) -> Result<bool, Error> {
+            self.inner.path_exists(root, path)
+        }
+        fn publish_from_staging_path(
+            &self,
+            root: LibraryRootId,
+            staging_path: &RelativeMediaPath,
+            target: &RelativeMediaPath,
+        ) -> Result<(), Error> {
+            self.inner
+                .publish_from_staging_path(root, staging_path, target)
+        }
+        fn discard_staging_path(
+            &self,
+            root: LibraryRootId,
+            staging_path: &RelativeMediaPath,
+        ) -> Result<(), Error> {
+            self.inner.discard_staging_path(root, staging_path)
         }
         fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
             self.inner.write_capable(root)
@@ -1207,6 +1359,29 @@ mod tests {
             staged: &StagedResource,
         ) -> Result<(), Error> {
             self.inner.discard_staged(root, staged)
+        }
+        fn path_exists(
+            &self,
+            root: LibraryRootId,
+            path: &RelativeMediaPath,
+        ) -> Result<bool, Error> {
+            self.inner.path_exists(root, path)
+        }
+        fn publish_from_staging_path(
+            &self,
+            root: LibraryRootId,
+            staging_path: &RelativeMediaPath,
+            target: &RelativeMediaPath,
+        ) -> Result<(), Error> {
+            self.inner
+                .publish_from_staging_path(root, staging_path, target)
+        }
+        fn discard_staging_path(
+            &self,
+            root: LibraryRootId,
+            staging_path: &RelativeMediaPath,
+        ) -> Result<(), Error> {
+            self.inner.discard_staging_path(root, staging_path)
         }
         fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
             self.inner.write_capable(root)
@@ -1863,6 +2038,29 @@ mod tests {
             staged: &StagedResource,
         ) -> Result<(), Error> {
             self.inner.discard_staged(root, staged)
+        }
+        fn path_exists(
+            &self,
+            root: LibraryRootId,
+            path: &RelativeMediaPath,
+        ) -> Result<bool, Error> {
+            self.inner.path_exists(root, path)
+        }
+        fn publish_from_staging_path(
+            &self,
+            root: LibraryRootId,
+            staging_path: &RelativeMediaPath,
+            target: &RelativeMediaPath,
+        ) -> Result<(), Error> {
+            self.inner
+                .publish_from_staging_path(root, staging_path, target)
+        }
+        fn discard_staging_path(
+            &self,
+            root: LibraryRootId,
+            staging_path: &RelativeMediaPath,
+        ) -> Result<(), Error> {
+            self.inner.discard_staging_path(root, staging_path)
         }
         fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
             self.inner.write_capable(root)
