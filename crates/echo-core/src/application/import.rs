@@ -1,4 +1,4 @@
-//! Per-input multi-select import planning (`PlanImport`, tasks 5.1–5.3,
+//! Per-input multi-select import planning (`PlanImport`, tasks 5.1–5.4,
 //! design §8).
 //!
 //! A user-selected batch is processed **one input at a time**: each input is
@@ -26,6 +26,15 @@
 //! A root that cannot accept writes refuses the whole batch *before* any copy
 //! — every input then reports `LibraryUnavailable` (spec: 导入时根目录断开).
 //!
+//! A same-basename `.lrc` beside the source is an optional sub-resource of the
+//! same operation (task 5.4): it is copied under the audio target's final base
+//! name (extending to the `(n)` numbering), verified and published after the
+//! audio is whole, and reported in the per-input result independently. A
+//! sidecar failure — unreadable, size-mismatched or conflicting with an
+//! incumbent `.lrc` — is "audio succeeded / lyrics failed": the audio record
+//! commits under the reserved identity, the sidecar result carries the reason,
+//! and no half or empty `.lrc` is ever left behind.
+//!
 //! Scope note: the full per-step journal chain
 //! (`CopyPending → … → PublishApplied`, fault injection and the crash
 //! recovery matrix) is task 5.5; this module persists the two points it owns —
@@ -52,6 +61,8 @@ use crate::error::{Error, Subject};
 
 /// The one staging resource every import audio operation owns.
 const IMPORT_AUDIO_RESOURCE: &str = "audio";
+/// The optional same-basename `.lrc` sub-resource of an import (task 5.4).
+const IMPORT_LRC_RESOURCE: &str = "lyrics";
 /// The `operation` classifier used by import verification errors.
 const IMPORT_OPERATION: &str = "import";
 /// Conservative single-component byte cap for planned targets (the OS allows
@@ -61,6 +72,33 @@ const IMPORT_OPERATION: &str = "import";
 const TARGET_COMPONENT_BYTES: usize = 200;
 /// Upper bound for the minimal ` (n)` conflict numbering search.
 const MAX_NUMBERING: u64 = 4_096;
+
+/// The sidecar-lyrics result of one imported audio input (task 5.4).
+///
+/// The audio is the main resource: every variant here describes what happened
+/// to the *optional* same-basename `.lrc` — never whether the audio imported.
+/// A failure is reported separately and never faked as full success (spec:
+/// 歌词复制失败 MUST 单独报告并不得伪装为完整成功).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LyricsImportResult {
+    /// The source had no same-basename `.lrc`; no sidecar was created.
+    None,
+    /// The same-basename `.lrc` was copied, verified and published beside the
+    /// audio under the audio's final base name.
+    Imported {
+        /// The root-relative published sidecar path.
+        target: RelativeMediaPath,
+    },
+    /// A same-basename `.lrc` existed but could not be imported; the audio
+    /// import still succeeded (spec: 音频成功/歌词失败). No sidecar file was
+    /// left behind. The message is user-safe.
+    Failed {
+        /// The stable machine code of the underlying error.
+        code: &'static str,
+        /// The redacted, user-presentable explanation.
+        message: String,
+    },
+}
 
 /// The result of one batch input, index-aligned with the batch.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -73,6 +111,9 @@ pub enum ImportOutcome {
         song: SongId,
         /// The final root-relative path of the published audio.
         target: RelativeMediaPath,
+        /// What happened to the optional same-basename `.lrc` (boxed to keep
+        /// the batch result cheap — the sidecar result is `Copy`-free).
+        lyrics: Box<LyricsImportResult>,
     },
     /// The content hash already belongs to a library record — no copy, no
     /// second UUID; the caller points the user at the existing song.
@@ -114,6 +155,27 @@ struct BatchState {
     taken_targets: HashSet<String>,
 }
 
+/// The planned optional same-basename `.lrc` sub-resource of one input.
+struct PlannedLrc {
+    /// The sidecar's target: the audio target's directory + stem + `.lrc`,
+    /// so a successful sidecar always pairs with the audio's final base name.
+    target: RelativeMediaPath,
+    /// The staged handle (resource key `lyrics`) in the operation's slot.
+    staged: StagedResource,
+    /// The logical source locator of the sidecar (never a path).
+    source: Option<String>,
+    staged_path: RelativeMediaPath,
+    hash: String,
+    size: u64,
+}
+
+/// A sidecar that existed but could not be copied/staged — "audio succeeds,
+/// lyrics failed" (the staged audio proceeds; only the LRC result is Failed).
+struct LyricsFailure {
+    code: &'static str,
+    message: String,
+}
+
 /// One input's reserved plan: the identity, staged resource and target every
 /// later step (and any recovery, in task 5.5) must agree on.
 struct PlannedInput {
@@ -129,6 +191,12 @@ struct PlannedInput {
     staged_path: RelativeMediaPath,
     hash: String,
     size: u64,
+    /// The planned sidecar sub-resource, when the source has a same-basename
+    /// `.lrc` that could be read and staged.
+    lrc: Option<PlannedLrc>,
+    /// A sidecar that existed but failed before staging (unreadable source,
+    /// size mismatch, no safe target). The audio still imports.
+    lrc_failure: Option<LyricsFailure>,
 }
 
 impl<'a> PlanImport<'a> {
@@ -211,7 +279,10 @@ impl<'a> PlanImport<'a> {
         // Persist the intent (reserved SongId + per-resource source/staging/
         // target/hash + the conditional unique target claim) before the first
         // external side effect; the claim keeps the target path reserved until
-        // the operation reaches a terminal state.
+        // the operation reaches a terminal state. The audio is the main
+        // resource; a same-basename `.lrc` is the same journal's optional
+        // sub-resource with its own item row, target claim and hash (design
+        // §8: item 固定保存 kind(audio|lrc)、源定位、暂存/目标、预期 BLAKE3).
         if let Err(error) = self.deps.journal.ensure_operation(
             planned.operation,
             root,
@@ -219,6 +290,10 @@ impl<'a> PlanImport<'a> {
             Some(planned.reserved),
         ) {
             let _ = self.deps.fs.discard_staged(root, &planned.staged);
+            let _ = planned
+                .lrc
+                .as_ref()
+                .map(|lrc| self.deps.fs.discard_staged(root, &lrc.staged));
             return failed_of(&error);
         }
         if let Err(error) = self.deps.journal.upsert_item(
@@ -226,31 +301,61 @@ impl<'a> PlanImport<'a> {
             journal_item(OperationState::Planned, &planned),
         ) {
             let _ = self.deps.fs.discard_staged(root, &planned.staged);
+            let _ = planned
+                .lrc
+                .as_ref()
+                .map(|lrc| self.deps.fs.discard_staged(root, &lrc.staged));
             return failed_of(&error);
+        }
+        if let Some(lrc) = &planned.lrc {
+            if let Err(error) = self.deps.journal.upsert_item(
+                planned.operation,
+                journal_lrc_item(OperationState::Planned, &planned, lrc),
+            ) {
+                let _ = self.deps.fs.discard_staged(root, &planned.staged);
+                let _ = self.deps.fs.discard_staged(root, &lrc.staged);
+                return failed_of(&error);
+            }
         }
         state
             .taken_targets
             .insert(planned.target.identity_key().to_owned());
+        if let Some(lrc) = &planned.lrc {
+            state
+                .taken_targets
+                .insert(lrc.target.identity_key().to_owned());
+        }
 
         match self.execute(&planned) {
-            Ok(()) => {
+            Ok(lyrics) => {
                 state.holders.insert(planned.hash.clone(), planned.reserved);
                 ImportOutcome::Imported {
                     operation: planned.operation,
                     song: planned.reserved,
                     target: planned.target.clone(),
+                    lyrics: Box::new(lyrics),
                 }
             }
             Err(error) => {
                 // Per-input rollback: the terminal journal state releases this
-                // input's claim; committed inputs and the remaining batch are
-                // untouched. The staged copy is cleaned up best-effort.
+                // input's claims; committed inputs and the remaining batch are
+                // untouched. Both staged copies are cleaned up best-effort.
                 let _ = self.deps.fs.discard_staged(root, &planned.staged);
+                let _ = planned
+                    .lrc
+                    .as_ref()
+                    .map(|lrc| self.deps.fs.discard_staged(root, &lrc.staged));
                 let rolled_back = journal_item(OperationState::RolledBack, &planned);
                 let _ = self
                     .deps
                     .journal
                     .upsert_item(planned.operation, rolled_back);
+                if let Some(lrc) = &planned.lrc {
+                    let _ = self.deps.journal.upsert_item(
+                        planned.operation,
+                        journal_lrc_item(OperationState::RolledBack, &planned, lrc),
+                    );
+                }
                 let _ = self.deps.journal.release_claims(planned.operation);
                 failed_of(&error)
             }
@@ -337,6 +442,12 @@ impl<'a> PlanImport<'a> {
                 "no safe unique target name for the parsed tags",
             ))
         })?;
+        // The optional same-basename `.lrc` sub-resource (task 5.4): plan it
+        // around the FINAL audio target, so the sidecar pairs with the exact
+        // base name the audio lands on (including the `(n)` numbering). A
+        // sidecar problem never fails the audio — it becomes the input's
+        // "audio succeeded / lyrics failed" result.
+        let (lrc, lrc_failure) = self.plan_lrc(root, source, operation, &target);
         Ok(PlannedInput {
             root,
             target,
@@ -347,11 +458,90 @@ impl<'a> PlanImport<'a> {
             staged_path: copy.staged_path,
             hash: copy.blake3.clone(),
             size: copy.size,
+            lrc,
+            lrc_failure,
         })
     }
 
-    /// Publish → verify → parse → commit one planned input.
-    fn execute(&self, planned: &PlannedInput) -> Result<(), Error> {
+    /// Discover and stage the same-basename `.lrc` beside `source` after the
+    /// audio target is final (spec: 使用与目标音频相同的基础文件名). Returns
+    /// the planned sub-resource when usable, or a captured failure when the
+    /// sidecar exists but cannot be imported — never a hard error, since the
+    /// audio must proceed regardless.
+    fn plan_lrc(
+        &self,
+        root: LibraryRootId,
+        source: &ImportSource,
+        operation: OperationId,
+        audio_target: &RelativeMediaPath,
+    ) -> (Option<PlannedLrc>, Option<LyricsFailure>) {
+        let fail = |error: &Error| LyricsFailure {
+            code: error.code(),
+            message: error.to_string(),
+        };
+        let info = match self.sources.sidecar(source) {
+            Ok(Some(info)) => info,
+            Ok(None) => return (None, None),
+            Err(error) => return (None, Some(fail(&error))),
+        };
+        let staged = match StagedResource::new(operation, IMPORT_LRC_RESOURCE) {
+            Ok(staged) => staged,
+            Err(error) => return (None, Some(fail(&error))),
+        };
+        let copy = match self.sources.open_sidecar(source).and_then(|reader| {
+            reader.map_or_else(
+                || Err(Error::unavailable("import sidecar", "sidecar vanished")),
+                |mut reader| self.deps.fs.stage_stream(root, &staged, reader.as_mut()),
+            )
+        }) {
+            Ok(copy) => copy,
+            Err(error) => {
+                let _ = self.deps.fs.discard_staged(root, &staged);
+                return (None, Some(fail(&error)));
+            }
+        };
+        // A sidecar that does not match its description never enters the
+        // library (same rule as the audio source).
+        if copy.size != info.size {
+            let _ = self.deps.fs.discard_staged(root, &staged);
+            return (
+                None,
+                Some(LyricsFailure {
+                    code: "corrupt_media",
+                    message: "sidecar content does not match the described size".to_owned(),
+                }),
+            );
+        }
+        // The sidecar target shares the audio target's directory and final
+        // stem: 使用与目标音频相同的基础文件名.
+        let Some(target) = lrc_target_of(audio_target) else {
+            let _ = self.deps.fs.discard_staged(root, &staged);
+            return (
+                None,
+                Some(LyricsFailure {
+                    code: "validation",
+                    message: "no safe relative target for the sidecar".to_owned(),
+                }),
+            );
+        };
+        (
+            Some(PlannedLrc {
+                target,
+                staged,
+                source: Some(format!("{}#lrc", source.key())),
+                staged_path: copy.staged_path,
+                hash: copy.blake3.clone(),
+                size: copy.size,
+            }),
+            None,
+        )
+    }
+
+    /// Publish → verify → parse → commit one planned input. Returns the
+    /// sidecar result: a same-basename `.lrc` is published *after* the audio
+    /// is whole (best-effort — a sidecar failure becomes "audio succeeded /
+    /// lyrics failed" and never rolls back the verified audio, design §8).
+    fn execute(&self, planned: &PlannedInput) -> Result<LyricsImportResult, Error> {
         // Publish reserves the target exclusively (create-new) and swaps the
         // verified staged copy in with one same-filesystem rename: an occupied
         // target is a conflict, never a replacement (绝不覆盖既有文件).
@@ -374,10 +564,48 @@ impl<'a> PlanImport<'a> {
                 reason: "published hash differs from the staged content".to_owned(),
             });
         }
+        // Same-name `.lrc` sub-resource: publish it beside the (now whole)
+        // audio. A failure here is NOT an audio failure — the LRC item rolls
+        // back individually and the result carries the lyrics-failed status.
+        let lrc_result = planned.lrc.as_ref().map_or_else(
+            || {
+                planned
+                    .lrc_failure
+                    .as_ref()
+                    .map_or(LyricsImportResult::None, |failure| {
+                        LyricsImportResult::Failed {
+                            code: failure.code,
+                            message: failure.message.clone(),
+                        }
+                    })
+            },
+            |lrc| match self.publish_lrc(planned, lrc) {
+                Ok(()) => LyricsImportResult::Imported {
+                    target: lrc.target.clone(),
+                },
+                Err(failure) => {
+                    let _ = self.deps.fs.discard_staged(planned.root, &lrc.staged);
+                    let _ = self.deps.journal.upsert_item(
+                        planned.operation,
+                        journal_lrc_item(OperationState::RolledBack, planned, lrc),
+                    );
+                    LyricsImportResult::Failed {
+                        code: failure.code,
+                        message: failure.message,
+                    }
+                }
+            },
+        );
+        // Only our own published sidecar may back the song's sidecar source; a
+        // failed import must not pick up whatever happens to sit at the target.
+        let lrc_published = matches!(&lrc_result, LyricsImportResult::Imported { .. });
         // Parse the published file with the shared scan pipeline (probe, tags,
         // sidecar, cover) and commit the record under the RESERVED identity.
         match parse_single_file(self.deps, planned.root, &planned.target) {
-            FileOutcome::Parsed(parsed) => self.commit(planned, &parsed),
+            FileOutcome::Parsed(parsed) => {
+                self.commit(planned, &parsed, lrc_published)?;
+                Ok(lrc_result)
+            }
             FileOutcome::Diagnostic(diagnostic) => Err(Error::CorruptMedia {
                 operation: IMPORT_OPERATION.to_owned(),
                 reason: diagnostic.reason().to_owned(),
@@ -388,17 +616,71 @@ impl<'a> PlanImport<'a> {
         }
     }
 
+    /// Publish one sidecar resource with the same atomic create-new + rename
+    /// contract as the audio, then verify its final size/hash and record the
+    /// per-resource `Completed` journal row. A failure is a [`LyricsFailure`]
+    /// (never an audio failure); the exclusive publish guarantees no half
+    /// sidecar can appear at the target.
+    fn publish_lrc(&self, planned: &PlannedInput, lrc: &PlannedLrc) -> Result<(), LyricsFailure> {
+        let fail = |error: Error| LyricsFailure {
+            code: error.code(),
+            message: error.to_string(),
+        };
+        self.deps
+            .fs
+            .publish(planned.root, &lrc.staged, &lrc.target)
+            .map_err(fail)?;
+        let meta = self
+            .deps
+            .fs
+            .file_meta(planned.root, &lrc.target)
+            .map_err(fail)?;
+        if meta.size != lrc.size {
+            return Err(LyricsFailure {
+                code: "corrupt_media",
+                message: "published sidecar size differs from the staged content".to_owned(),
+            });
+        }
+        let published_hash = self
+            .deps
+            .hasher
+            .hash(planned.root, &lrc.target)
+            .map_err(fail)?;
+        if published_hash != lrc.hash {
+            return Err(LyricsFailure {
+                code: "corrupt_media",
+                message: "published sidecar hash differs from the staged content".to_owned(),
+            });
+        }
+        self.deps
+            .journal
+            .upsert_item(
+                planned.operation,
+                journal_lrc_item(OperationState::Completed, planned, lrc),
+            )
+            .map_err(fail)?;
+        Ok(())
+    }
+
     /// Commit the song record and the journal's `DatabaseCommitted` state in
     /// one transaction, then finalize the operation and release the claim.
-    fn commit(&self, planned: &PlannedInput, parsed: &ParsedOutcome) -> Result<(), Error> {
+    /// `lrc_published` tells the commit whether the song's sidecar candidate
+    /// may be wired from the published `.lrc` (a failed sidecar import leaves
+    /// the song's sidecar source cleared — no fake lyrics).
+    fn commit(
+        &self,
+        planned: &PlannedInput,
+        parsed: &ParsedOutcome,
+        lrc_published: bool,
+    ) -> Result<(), Error> {
         let entity = song_from_parsed(planned.reserved, planned.root, &parsed.file);
         let embedded = parsed
             .embedded_lyrics
             .clone()
             .map(|candidate| rewrap(&candidate, LyricsSource::Embedded));
-        let sidecar = parsed
-            .sidecar_lyrics
-            .clone()
+        let sidecar = (lrc_published)
+            .then(|| parsed.sidecar_lyrics.clone())
+            .flatten()
             .map(|candidate| rewrap(&candidate, LyricsSource::Sidecar));
         let cover = parsed.cover.clone();
         // Built before the transaction body: the closure owns the item.
@@ -503,6 +785,38 @@ fn journal_item(state: OperationState, planned: &PlannedInput) -> OperationItem 
     }
 }
 
+/// One journal item row for the same-basename `.lrc` sub-resource (task 5.4).
+/// The claim reserves the sidecar's *paired* target until the operation ends,
+/// so the audio's final base name stays consistent with its sidecar.
+fn journal_lrc_item(
+    state: OperationState,
+    planned: &PlannedInput,
+    lrc: &PlannedLrc,
+) -> OperationItem {
+    OperationItem {
+        kind: OperationResourceKind::Lyrics,
+        state,
+        song: Some(planned.reserved),
+        source: lrc.source.clone(),
+        staging_path: Some(lrc.staged_path.clone()),
+        target_path: lrc.target.clone(),
+        expected_hash: lrc.hash.clone(),
+        claim_key: lrc.target.identity_key().to_owned(),
+    }
+}
+
+/// The sidecar target that pairs with a final audio target: same directory,
+/// same final stem, `.lrc` extension (spec: 使用与目标音频相同的基础文件名).
+fn lrc_target_of(audio: &RelativeMediaPath) -> Option<RelativeMediaPath> {
+    let file_name = audio.file_name()?;
+    let stem = file_name.rsplit_once('.')?.0;
+    let name = format!("{stem}.lrc");
+    audio.parent().map_or_else(
+        || RelativeMediaPath::new(&name).ok(),
+        |dir| RelativeMediaPath::new(&format!("{}/{name}", dir.normalized())).ok(),
+    )
+}
+
 /// A per-input failure result from any Core error (already path-redacted by
 /// the error's own `Display`).
 fn failed_of(error: &Error) -> ImportOutcome {
@@ -520,7 +834,8 @@ mod tests {
 
     use super::*;
     use crate::application::ports::{
-        FileMeta, LibraryFileSystem, OperationJournalRepository, SongRepository as _, StagedCopy,
+        FileMeta, LibraryFileSystem, OperationJournalRepository, SidecarInfo, SongRepository as _,
+        StagedCopy,
     };
     use crate::application::scan::ScanConfig;
     use crate::application::testing::clock::{FakeIdGenerator, ManualClock};
@@ -529,7 +844,7 @@ mod tests {
     };
     use crate::application::testing::ScanFixture;
     use crate::application::testing::{FakeImportSources, FakeLibraryFileSystem, MemoryDatabase};
-    use crate::domain::entities::Song;
+    use crate::domain::entities::{select_effective_lyrics, Song};
     use crate::domain::ids::Revision;
     use crate::domain::media::{AudioFormat, ParsedMetadata};
 
@@ -718,6 +1033,7 @@ mod tests {
     /// without ever touching the user's home.
     struct TempFileSources {
         files: Mutex<BTreeMap<String, (String, std::path::PathBuf)>>,
+        sidecars: Mutex<BTreeMap<String, (String, std::path::PathBuf)>>,
         opened: Mutex<Vec<String>>,
     }
 
@@ -725,11 +1041,18 @@ mod tests {
         fn new() -> Self {
             Self {
                 files: Mutex::new(BTreeMap::new()),
+                sidecars: Mutex::new(BTreeMap::new()),
                 opened: Mutex::new(Vec::new()),
             }
         }
         fn add(&self, key: &str, display_name: &str, path: &std::path::Path) {
             self.files.lock().unwrap().insert(
+                key.to_owned(),
+                (display_name.to_owned(), path.to_path_buf()),
+            );
+        }
+        fn add_sidecar(&self, key: &str, display_name: &str, path: &std::path::Path) {
+            self.sidecars.lock().unwrap().insert(
                 key.to_owned(),
                 (display_name.to_owned(), path.to_path_buf()),
             );
@@ -766,6 +1089,39 @@ mod tests {
             let file = std::fs::File::open(&path)
                 .map_err(|e| Error::io("open import source", e, path.clone()))?;
             Ok(Box::new(file))
+        }
+
+        fn sidecar(&self, source: &ImportSource) -> Result<Option<SidecarInfo>, Error> {
+            let (name, path) = {
+                let map = self.sidecars.lock().unwrap();
+                match map.get(source.key()) {
+                    Some(entry) => entry.clone(),
+                    None => return Ok(None),
+                }
+            };
+            let size = std::fs::metadata(&path)
+                .map_err(|e| Error::io("stat import sidecar", e, path.clone()))?
+                .len();
+            Ok(Some(SidecarInfo {
+                display_name: name,
+                size,
+            }))
+        }
+
+        fn open_sidecar<'a>(
+            &'a self,
+            source: &ImportSource,
+        ) -> Result<Option<Box<dyn Read + 'a>>, Error> {
+            let path = {
+                let map = self.sidecars.lock().unwrap();
+                match map.get(source.key()) {
+                    Some((_, path)) => path.clone(),
+                    None => return Ok(None),
+                }
+            };
+            let file = std::fs::File::open(&path)
+                .map_err(|e| Error::io("open import sidecar", e, path.clone()))?;
+            Ok(Some(Box::new(file)))
         }
     }
 
@@ -888,6 +1244,7 @@ mod tests {
             operation: _,
             song: imported,
             target,
+            ..
         } = &report.results[0]
         else {
             panic!(
@@ -953,6 +1310,7 @@ mod tests {
             operation,
             song,
             target,
+            ..
         } = report.results.into_iter().next().expect("one result")
         else {
             panic!("the supported input must import");
@@ -1616,6 +1974,7 @@ mod tests {
             operation,
             song,
             target,
+            ..
         } = report.results.into_iter().next().expect("one result")
         else {
             panic!("the input must import");
@@ -1931,6 +2290,510 @@ mod tests {
         assert!(
             owned_dirs[0].join(".echo-ownership-marker").is_file(),
             "the owned staging directory carries its marker"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 5.4: same-named `.lrc` optional sub-resource with an independent
+    // result — embedded lyrics win once the audio is committed, a successful
+    // sidecar pairs with the audio's FINAL base name (including `(n)`), and a
+    // sidecar failure is "audio succeeded / lyrics failed" with no half
+    // sidecar left behind.
+    // -----------------------------------------------------------------------
+
+    /// Register embedded lyrics on the published audio path so the commit's
+    /// scan parse produces an Embedded candidate.
+    fn with_embedded_lyrics(g: &Gated, path: &str, raw: &str) {
+        g.fixture.metadata.set(
+            path,
+            ParsedMetadata {
+                artist: Some("歌手".to_owned()),
+                title: Some("晴天".to_owned()),
+                embedded_lyrics: Some(raw.to_owned()),
+                ..ParsedMetadata::default()
+            },
+        );
+    }
+
+    /// The published sidecar bytes of the imported song (assertion helper).
+    fn read_library_file(g: &Gated, rel: &str) -> Vec<u8> {
+        let base = g.fixture.fs.root_path(g.fixture.root).expect("root");
+        std::fs::read(base.join(rel)).expect("published file")
+    }
+
+    #[test]
+    fn lrc_sidecar_is_copied_under_the_audio_target_and_result_reports_it() {
+        let g = gated();
+        g.sources.add("hit", "晴天.flac", b"audio-bytes");
+        g.sources
+            .add_sidecar("hit", "晴天.lrc", b"[00:01.00]sidecar line");
+        tagged(&g, b"audio-bytes", Some("歌手"), Some("晴天"));
+        g.fixture
+            .set_audio("歌手/歌手 - 晴天.flac", "晴天", 269_000);
+
+        let report = PlanImport::new(&g.deps, &g.sources)
+            .run(g.fixture.root, &[source("hit")])
+            .expect("batch-level success");
+        let ImportOutcome::Imported {
+            song,
+            target,
+            lyrics,
+            ..
+        } = report.results.first().cloned().expect("one result")
+        else {
+            panic!("the audio input must import: {:?}", report.results[0]);
+        };
+
+        // The sidecar pairs with the audio's final base name.
+        assert_eq!(target.display(), "歌手/歌手 - 晴天.flac");
+        assert_eq!(
+            &*lyrics,
+            &LyricsImportResult::Imported {
+                target: RelativeMediaPath::new("歌手/歌手 - 晴天.lrc").unwrap()
+            },
+            "the result reports the published sidecar"
+        );
+        assert_eq!(
+            read_library_file(&g, "歌手/歌手 - 晴天.lrc"),
+            b"[00:01.00]sidecar line",
+            "the sidecar bytes landed at the paired target"
+        );
+
+        // The committed song carries a Sidecar candidate (the scan parse
+        // picks the published `.lrc` up through the shared pipeline).
+        let candidates =
+            crate::application::ports::LyricsRepository::candidates(&g.fixture.database, song)
+                .unwrap();
+        assert!(
+            candidates
+                .iter()
+                .any(|c| c.source() == LyricsSource::Sidecar),
+            "the sidecar candidate is persisted: {candidates:?}"
+        );
+        // No half sidecar, no empty one: only the one LC-published file.
+        assert!(
+            g.fixture.fs.staged_count() == 0,
+            "both staged copies were published/discarded"
+        );
+    }
+
+    #[test]
+    fn embedded_lyrics_still_win_over_the_imported_sidecar() {
+        let g = gated();
+        g.sources.add("hit", "晴天.flac", b"audio-bytes");
+        g.sources
+            .add_sidecar("hit", "晴天.lrc", b"[00:01.00]sidecar line");
+        tagged(&g, b"audio-bytes", Some("歌手"), Some("晴天"));
+        g.fixture
+            .set_audio("歌手/歌手 - 晴天.flac", "晴天", 269_000);
+        // The published audio carries embedded lyrics (USLT/lyrics tag).
+        with_embedded_lyrics(&g, "歌手/歌手 - 晴天.flac", "[00:01.00]embedded line");
+
+        let report = PlanImport::new(&g.deps, &g.sources)
+            .run(g.fixture.root, &[source("hit")])
+            .expect("batch-level success");
+        let ImportOutcome::Imported { song, .. } = report.results.into_iter().next().expect("one")
+        else {
+            panic!("the input must import");
+        };
+
+        // Both sources are stored; the effective one is ELSE EMBEDDED
+        // (spec: 扫描后的歌曲仅在没有内嵌歌词时使用该侧车歌词).
+        let candidates =
+            crate::application::ports::LyricsRepository::candidates(&g.fixture.database, song)
+                .unwrap();
+        let selected = select_effective_lyrics(&candidates).expect("effective lyrics");
+        assert_eq!(
+            selected.source(),
+            LyricsSource::Embedded,
+            "embedded lyrics win over the sidecar"
+        );
+        assert!(
+            candidates
+                .iter()
+                .any(|c| c.source() == LyricsSource::Sidecar),
+            "the sidecar is still stored as the fallback source"
+        );
+    }
+
+    #[test]
+    fn lrc_target_pairs_with_a_numbered_audio_target() {
+        let g = gated();
+        // The base name is occupied by an existing record+file; the audio
+        // lands on `(2)`, and the sidecar must follow the SAME final stem.
+        g.fixture.write_file("歌手/歌手 - 晴天.flac", b"incumbent");
+        seed_song(&g, "歌手/歌手 - 晴天.flac", b"incumbent");
+        g.sources.add("new", "晴天.flac", b"audio-bytes");
+        g.sources
+            .add_sidecar("new", "晴天.lrc", b"[00:01.00]sidecar line");
+        tagged(&g, b"audio-bytes", Some("歌手"), Some("晴天"));
+        g.fixture
+            .set_audio("歌手/歌手 - 晴天 (2).flac", "晴天", 1_000);
+
+        let report = PlanImport::new(&g.deps, &g.sources)
+            .run(g.fixture.root, &[source("new")])
+            .expect("batch-level success");
+        let ImportOutcome::Imported {
+            song,
+            target,
+            lyrics,
+            ..
+        } = report.results.first().cloned().expect("one result")
+        else {
+            panic!("the numbered input must import: {:?}", report.results[0]);
+        };
+
+        assert_eq!(target.display(), "歌手/歌手 - 晴天 (2).flac");
+        assert_eq!(
+            &*lyrics,
+            &LyricsImportResult::Imported {
+                target: RelativeMediaPath::new("歌手/歌手 - 晴天 (2).lrc").unwrap()
+            },
+            "the sidecar pairs with the FINAL numbered base name"
+        );
+        assert_eq!(
+            read_library_file(&g, "歌手/歌手 - 晴天 (2).lrc"),
+            b"[00:01.00]sidecar line"
+        );
+        // The incumbent pair survives untouched.
+        assert_eq!(read_library_file(&g, "歌手/歌手 - 晴天.flac"), b"incumbent");
+        let candidates =
+            crate::application::ports::LyricsRepository::candidates(&g.fixture.database, song)
+                .unwrap();
+        assert!(
+            candidates
+                .iter()
+                .any(|c| c.source() == LyricsSource::Sidecar),
+            "the numbered sidecar is the song's fallback"
+        );
+    }
+
+    #[test]
+    fn no_sidecar_means_no_lrc_file_and_none_result() {
+        let g = gated();
+        g.sources.add("bare", "晴天.flac", b"audio-bytes");
+        tagged(&g, b"audio-bytes", Some("歌手"), Some("晴天"));
+        g.fixture.set_audio("歌手/歌手 - 晴天.flac", "晴天", 1_000);
+
+        let report = PlanImport::new(&g.deps, &g.sources)
+            .run(g.fixture.root, &[source("bare")])
+            .expect("batch-level success");
+        let ImportOutcome::Imported { lyrics, .. } =
+            report.results.into_iter().next().expect("one result")
+        else {
+            panic!("the bare input must import");
+        };
+        assert_eq!(
+            &*lyrics,
+            &LyricsImportResult::None,
+            "no same-basename `.lrc` produces no sidecar result"
+        );
+        assert!(
+            !g.fixture
+                .fs
+                .root_path(g.fixture.root)
+                .unwrap()
+                .join("歌手/歌手 - 晴天.lrc")
+                .exists(),
+            "没有同名 `.lrc` 时不得创建空歌词文件"
+        );
+        assert_eq!(g.sources.sidecar_read_keys(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn unreadable_sidecar_gives_audio_success_and_lyrics_failure_without_a_half_sidecar() {
+        let g = gated();
+        g.sources.add("hit", "晴天.flac", b"audio-bytes");
+        g.sources
+            .add_sidecar("hit", "晴天.lrc", b"[00:01.00]sidecar line");
+        g.sources.fail_sidecar("hit", "侧车文件不可读");
+        tagged(&g, b"audio-bytes", Some("歌手"), Some("晴天"));
+        g.fixture
+            .set_audio("歌手/歌手 - 晴天.flac", "晴天", 269_000);
+
+        let report = PlanImport::new(&g.deps, &g.sources)
+            .run(g.fixture.root, &[source("hit")])
+            .expect("batch-level success");
+        let ImportOutcome::Imported {
+            song,
+            target,
+            lyrics,
+            ..
+        } = report.results.first().cloned().expect("one result")
+        else {
+            panic!("the audio must still import: {:?}", report.results[0]);
+        };
+        let LyricsImportResult::Failed { code, message } = &*lyrics else {
+            panic!("lyrics must be reported as failed: {lyrics:?}");
+        };
+        assert_eq!(*code, "unavailable");
+        assert!(!message.is_empty(), "the reason is user-presentable");
+
+        // 音频成功: the record exists under the reserved UUID.
+        let record = g.deps.songs.by_id(song).expect("query").expect("record");
+        assert_eq!(record.path(), &target);
+        assert!(
+            read_library_file(&g, "歌手/歌手 - 晴天.flac") == b"audio-bytes",
+            "audio published"
+        );
+        // 不留半侧车: no `.lrc` at the paired target and nothing staged.
+        assert!(
+            !g.fixture
+                .fs
+                .root_path(g.fixture.root)
+                .unwrap()
+                .join("歌手/歌手 - 晴天.lrc")
+                .exists(),
+            "no half or empty sidecar is left behind"
+        );
+        assert_eq!(g.fixture.fs.staged_count(), 0, "no staged residue");
+        // The song must NOT present arbitrary content as its sidecar.
+        let candidates =
+            crate::application::ports::LyricsRepository::candidates(&g.fixture.database, song)
+                .unwrap();
+        assert!(
+            !candidates
+                .iter()
+                .any(|c| c.source() == LyricsSource::Sidecar),
+            "a failed sidecar import must not wire a sidecar candidate"
+        );
+        // The failed sidecar never opened a stream (describe failed first).
+        assert!(g.sources.sidecar_read_keys().is_empty());
+    }
+
+    #[test]
+    fn sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent() {
+        let g = gated();
+        // A foreign `.lrc` already sits at the exact paired target.
+        g.fixture.write_file("歌手/歌手 - 晴天.lrc", b"foreign-lrc");
+        g.sources.add("hit", "晴天.flac", b"audio-bytes");
+        g.sources
+            .add_sidecar("hit", "晴天.lrc", b"[00:01.00]my sidecar");
+        tagged(&g, b"audio-bytes", Some("歌手"), Some("晴天"));
+        g.fixture
+            .set_audio("歌手/歌手 - 晴天.flac", "晴天", 269_000);
+
+        let report = PlanImport::new(&g.deps, &g.sources)
+            .run(g.fixture.root, &[source("hit")])
+            .expect("batch-level success");
+        let ImportOutcome::Imported { song, lyrics, .. } =
+            report.results.first().cloned().expect("one result")
+        else {
+            panic!("the audio must still import: {:?}", report.results[0]);
+        };
+        let LyricsImportResult::Failed { code, .. } = &*lyrics else {
+            panic!("the sidecar publish must be a lyrics failure: {lyrics:?}");
+        };
+        assert_eq!(*code, "conflict", "the exclusive publish refuses the pair");
+
+        // 音频成功 / 歌词失败，且不留半侧车：the incumbent keeps its bytes.
+        assert_eq!(
+            read_library_file(&g, "歌手/歌手 - 晴天.lrc"),
+            b"foreign-lrc",
+            "the occupying file is never replaced"
+        );
+        assert_eq!(
+            read_library_file(&g, "歌手/歌手 - 晴天.flac"),
+            b"audio-bytes",
+            "the audio import still succeeded"
+        );
+        assert_eq!(g.fixture.fs.staged_count(), 0, "no staged residue");
+
+        // The journal shows two independent per-resource rows: the audio
+        // completed and the lyrics rolled back — never one fake success.
+        let report_op = report
+            .results
+            .iter()
+            .find_map(|o| match o {
+                ImportOutcome::Imported { operation, .. } => Some(*operation),
+                _ => None,
+            })
+            .expect("operation");
+        let items = g.deps.journal.items(report_op).expect("journal items");
+        assert_eq!(items.len(), 2, "audio + lyrics each carry a row");
+        let audio = items
+            .iter()
+            .find(|i| i.kind == OperationResourceKind::Audio)
+            .expect("audio row");
+        let lyrics_row = items
+            .iter()
+            .find(|i| i.kind == OperationResourceKind::Lyrics)
+            .expect("lyrics row");
+        assert_eq!(audio.state, OperationState::Completed);
+        assert_eq!(
+            lyrics_row.state,
+            OperationState::RolledBack,
+            "the sidecar row is individually rolled back"
+        );
+        assert_eq!(lyrics_row.claim_key, lyrics_row.target_path.identity_key());
+        assert_eq!(
+            lyrics_row.target_path,
+            RelativeMediaPath::new("歌手/歌手 - 晴天.lrc").unwrap()
+        );
+        assert_eq!(
+            lyrics_row.source.as_deref(),
+            Some("hit#lrc"),
+            "the sidecar carries its own logical source locator"
+        );
+        // The song's sidecar source is cleared (no half attribution).
+        let candidates =
+            crate::application::ports::LyricsRepository::candidates(&g.fixture.database, song)
+                .unwrap();
+        assert!(
+            !candidates
+                .iter()
+                .any(|c| c.source() == LyricsSource::Sidecar),
+            "the failed sidecar must not leak into the song's candidates"
+        );
+    }
+
+    /// A reader double whose sidecar description lies about the content size —
+    /// a vanished/raced `.lrc` mid-selection (verify the audio still imports).
+    struct SizeLyingReader {
+        inner: FakeImportSources,
+    }
+
+    impl ImportSourceReader for SizeLyingReader {
+        fn describe(
+            &self,
+            source: &ImportSource,
+        ) -> Result<crate::application::ports::ImportSourceInfo, Error> {
+            self.inner.describe(source)
+        }
+        fn open<'a>(&'a self, source: &ImportSource) -> Result<Box<dyn std::io::Read + 'a>, Error> {
+            self.inner.open(source)
+        }
+        fn sidecar(&self, _source: &ImportSource) -> Result<Option<SidecarInfo>, Error> {
+            Ok(Some(SidecarInfo {
+                display_name: "晴天.lrc".to_owned(),
+                size: 6,
+            }))
+        }
+        fn open_sidecar<'a>(
+            &'a self,
+            source: &ImportSource,
+        ) -> Result<Option<Box<dyn std::io::Read + 'a>>, Error> {
+            self.inner.open_sidecar(source)
+        }
+    }
+
+    #[test]
+    fn sidecar_staging_size_mismatch_is_lyrics_failure_with_audio_committed() {
+        let g = gated();
+        let lying = SizeLyingReader {
+            inner: g.sources.clone(),
+        };
+        g.sources.add("hit", "晴天.flac", b"audio-bytes");
+        g.sources
+            .add_sidecar("hit", "晴天.lrc", b"[00:01.00]sidecar line"); // 25 bytes
+        tagged(&g, b"audio-bytes", Some("歌手"), Some("晴天"));
+        g.fixture.set_audio("歌手/歌手 - 晴天.flac", "晴天", 1_000);
+
+        let report = PlanImport::new(&g.deps, &lying)
+            .run(g.fixture.root, &[source("hit")])
+            .expect("batch-level success");
+        let ImportOutcome::Imported { lyrics, .. } =
+            report.results.into_iter().next().expect("one")
+        else {
+            panic!("the audio must still import");
+        };
+        let LyricsImportResult::Failed { code, .. } = &*lyrics else {
+            panic!("the mismatched sidecar must be a lyrics failure: {lyrics:?}");
+        };
+        assert_eq!(*code, "corrupt_media");
+        assert!(
+            !g.fixture
+                .fs
+                .root_path(g.fixture.root)
+                .unwrap()
+                .join("歌手/歌手 - 晴天.lrc")
+                .exists(),
+            "a mismatched sidecar never publishes"
+        );
+        assert_eq!(g.fixture.fs.staged_count(), 0);
+    }
+
+    /// The REAL root-constrained adapter is already exercised by 5.3; task
+    /// 5.4 adds the same end-to-end source-invariance guarantee for a sidecar:
+    /// the source `.lrc` is copied, never moved or modified.
+    #[test]
+    fn real_fs_import_copies_the_source_lrc_without_moving_or_modifying_it() {
+        let external = tempfile::tempdir().expect("external temp dir");
+        let library = tempfile::tempdir().expect("library temp dir");
+        let source_path = external.path().join("晴天.flac");
+        std::fs::write(&source_path, b"original-source-bytes").expect("source");
+        let lrc_path = external.path().join("晴天.lrc");
+        std::fs::write(&lrc_path, b"[00:01.00]sidecar line").expect("lrc");
+        let lrc_modified_before = std::fs::metadata(&lrc_path)
+            .expect("stat lrc")
+            .modified()
+            .expect("mtime");
+
+        let (root, fs) = real_adapter_over(library.path());
+        let (probe, metadata) = seeded_reader_fixtures();
+        let database = MemoryDatabase::new();
+        let deps = real_fs_deps(&fs, probe, metadata, &database);
+        let sources = TempFileSources::new();
+        sources.add("hit", "晴天.flac", &source_path);
+        sources.add_sidecar("hit", "晴天.lrc", &lrc_path);
+
+        let report = PlanImport::new(&deps, &sources)
+            .run(root, &[source("hit")])
+            .expect("batch-level success");
+        let ImportOutcome::Imported { target, lyrics, .. } = &report.results[0] else {
+            panic!("the import must succeed: {:?}", report.results[0]);
+        };
+        assert_eq!(target.display(), "歌手/歌手 - 晴天.flac");
+        assert_eq!(
+            &**lyrics,
+            &LyricsImportResult::Imported {
+                target: RelativeMediaPath::new("歌手/歌手 - 晴天.lrc").unwrap()
+            }
+        );
+
+        // The source `.lrc` keeps its content, name and location unchanged.
+        assert_eq!(
+            std::fs::read(&lrc_path).expect("source lrc bytes"),
+            b"[00:01.00]sidecar line"
+        );
+        assert_eq!(
+            std::fs::metadata(&lrc_path)
+                .expect("stat lrc")
+                .modified()
+                .expect("mtime"),
+            lrc_modified_before,
+            "the source sidecar was never written"
+        );
+        // The published pair sits beside each other in the library.
+        assert_eq!(
+            std::fs::read(library.path().join("歌手/歌手 - 晴天.lrc")).expect("published"),
+            b"[00:01.00]sidecar line"
+        );
+        assert_eq!(database.songs().len(), 1);
+        let operation = operation_of(&report).expect("operation");
+        let items = database.items(operation).expect("journal items");
+        assert_eq!(
+            items.len(),
+            2,
+            "audio + lyrics journal rows on the real stack"
+        );
+        let lyrics_row = items
+            .iter()
+            .find(|item| item.kind == OperationResourceKind::Lyrics)
+            .expect("lyrics row");
+        assert_eq!(lyrics_row.state, OperationState::Completed);
+        assert_eq!(
+            lyrics_row.target_path,
+            RelativeMediaPath::new("歌手/歌手 - 晴天.lrc").unwrap()
+        );
+        assert_eq!(
+            lyrics_row.expected_hash,
+            deps.hasher.hash_of_bytes(b"[00:01.00]sidecar line"),
+            "the journal records the sidecar's content hash"
+        );
+        assert_eq!(
+            database.envelope_of(operation).map(|(root, _)| root),
+            Some(root)
         );
     }
 }

@@ -777,6 +777,7 @@ fn import_target_claims_are_conditionally_unique_until_release() {
         song,
         target,
         operation,
+        ..
     } = &report.results[0]
     else {
         panic!(

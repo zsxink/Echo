@@ -704,6 +704,44 @@
           "cmd": "node scripts/verify/checks/task-5.mjs 5.3 application::import::tests::source_files_stay_unchanged_and_foreign_staging_names_are_isolated"
         }
       ]
+    },
+    {
+      "id": "5.4",
+      "title": "Same-named .lrc optional sub-resource with an independent result: embedded lyrics win, a successful sidecar pairs with the audio's final base name, and a sidecar failure is audio-success/lyrics-failure with no half sidecar",
+      "commands": [
+        {
+          "desc": "embedded lyrics win over an imported same-basename .lrc",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::tests::embedded_lyrics_still_win_over_the_imported_sidecar"
+        },
+        {
+          "desc": "sidecar is copied beside the audio's exact target and independently reported",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::tests::lrc_sidecar_is_copied_under_the_audio_target_and_result_reports_it"
+        },
+        {
+          "desc": "sidecar pairs with the FINAL numbered audio base name (n)",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::tests::lrc_target_pairs_with_a_numbered_audio_target"
+        },
+        {
+          "desc": "no same-basename .lrc creates no empty lyrics file and reports None",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::tests::no_sidecar_means_no_lrc_file_and_none_result"
+        },
+        {
+          "desc": "unreadable sidecar: audio succeeds, lyrics failed, no half sidecar, no sidecar candidate",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::tests::unreadable_sidecar_gives_audio_success_and_lyrics_failure_without_a_half_sidecar"
+        },
+        {
+          "desc": "sidecar publish conflict: audio succeeds, lyrics failed, incumbent kept, lyrics row rolled back",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::tests::sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent"
+        },
+        {
+          "desc": "sidecar size mismatch: lyrics failed, audio committed, nothing published",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::tests::sidecar_staging_size_mismatch_is_lyrics_failure_with_audio_committed"
+        },
+        {
+          "desc": "real adapter: source .lrc is copied, never moved or modified, journal records both resources",
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::tests::real_fs_import_copies_the_source_lrc_without_moving_or_modifying_it"
+        }
+      ]
     }
   ],
   "scenarios": []

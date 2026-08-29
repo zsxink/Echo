@@ -280,15 +280,27 @@ impl LyricsParser for FakeLyricsParser {
 
 /// Scripted external import sources (the [`ImportSourceReader`] double):
 /// handles map to display names + bytes, and a source can be scripted to fail
-/// its describe/read the way a revoked permission or vanished file would.
+/// its describe/read the way a revoked permission or vanished file would. A
+/// same-basename `.lrc` sidecar can be registered per source (task 5.4) and
+/// scripted to fail the way an unreadable sidecar would.
 #[derive(Clone, Debug, Default)]
 pub struct FakeImportSources {
     sources: Shared<BTreeMap<String, FakeSource>>,
+    sidecars: Shared<BTreeMap<String, FakeSidecar>>,
     reads: Shared<Vec<String>>,
+    sidecar_reads: Shared<Vec<String>>,
 }
 
 #[derive(Clone, Debug)]
 struct FakeSource {
+    display_name: String,
+    bytes: Vec<u8>,
+    failure: Option<String>,
+}
+
+/// A scripted same-basename `.lrc` sidecar beside a source.
+#[derive(Clone, Debug)]
+struct FakeSidecar {
     display_name: String,
     bytes: Vec<u8>,
     failure: Option<String>,
@@ -312,10 +324,29 @@ impl FakeImportSources {
         );
     }
 
+    /// Register the same-basename `.lrc` beside one source (task 5.4).
+    pub fn add_sidecar(&self, key: &str, display_name: &str, bytes: &[u8]) {
+        self.sidecars.lock().unwrap().insert(
+            key.to_owned(),
+            FakeSidecar {
+                display_name: display_name.to_owned(),
+                bytes: bytes.to_vec(),
+                failure: None,
+            },
+        );
+    }
+
     /// Make a source fail its describe/read (permission, vanished file…).
     pub fn fail(&self, key: &str, message: &str) {
         if let Some(source) = self.sources.lock().unwrap().get_mut(key) {
             source.failure = Some(message.to_owned());
+        }
+    }
+
+    /// Make a source's sidecar fail its describe/read (unreadable sidecar).
+    pub fn fail_sidecar(&self, key: &str, message: &str) {
+        if let Some(sidecar) = self.sidecars.lock().unwrap().get_mut(key) {
+            sidecar.failure = Some(message.to_owned());
         }
     }
 
@@ -324,6 +355,13 @@ impl FakeImportSources {
     #[must_use]
     pub fn read_keys(&self) -> Vec<String> {
         self.reads.lock().unwrap().clone()
+    }
+
+    /// Sidecar handles actually opened so far (assertion helper: the import
+    /// must not open a sidecar for sources that have none).
+    #[must_use]
+    pub fn sidecar_read_keys(&self) -> Vec<String> {
+        self.sidecar_reads.lock().unwrap().clone()
     }
 }
 
@@ -354,6 +392,38 @@ impl ImportSourceReader for FakeImportSources {
             return Err(source_failure(message));
         }
         Ok(Box::new(std::io::Cursor::new(source.bytes.clone())))
+    }
+
+    fn sidecar(&self, source: &ImportSource) -> Result<Option<SidecarInfo>, Error> {
+        let map = self.sidecars.lock().unwrap();
+        let Some(sidecar) = map.get(source.key()) else {
+            return Ok(None);
+        };
+        if let Some(message) = &sidecar.failure {
+            return Err(Error::unavailable("import sidecar", message));
+        }
+        Ok(Some(SidecarInfo {
+            display_name: sidecar.display_name.clone(),
+            size: u64::try_from(sidecar.bytes.len()).unwrap_or(u64::MAX),
+        }))
+    }
+
+    fn open_sidecar<'a>(
+        &'a self,
+        source: &ImportSource,
+    ) -> Result<Option<Box<dyn Read + 'a>>, Error> {
+        self.sidecar_reads
+            .lock()
+            .unwrap()
+            .push(source.key().to_owned());
+        let map = self.sidecars.lock().unwrap();
+        let Some(sidecar) = map.get(source.key()) else {
+            return Ok(None);
+        };
+        if let Some(message) = &sidecar.failure {
+            return Err(source_failure(message));
+        }
+        Ok(Some(Box::new(std::io::Cursor::new(sidecar.bytes.clone()))))
     }
 }
 

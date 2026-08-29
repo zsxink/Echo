@@ -74,4 +74,13 @@
 - Deferred：无（全部本地可验证项已验证通过）。
 - Commit：`Implement task 5.3: dedicated controlled staging, streaming copy with BLAKE3, exclusive target reservation, fsync and atomic per-file publish` → 见 git log
 
+### 5.4 同名 `.lrc` 可选子资源与独立结果
+
+- 状态：✅ PASS（复核第 1 轮通过）
+- 实现：`ImportSourceReader` 新增 `sidecar()`/`open_sidecar()` 端口方法与 `SidecarInfo` 值类型（核心只接触逻辑句柄与字节流，真实路径留在桌面可信边界）；`import.rs` 新增 `LyricsImportResult`（Imported/None/Failed）独立结果、`plan_lrc`/`publish_lrc`/`lrc_target_of`/`journal_lrc_item`，音频验证后 best-effort 发布侧车，`commit` 仅在自有侧车发布成功时才接 sidecar candidate（失败即清除，不嫁接任意 `.lrc`）。新增 8 个 5.4 测试；manifest 按任务 1.3 登记 id=5.4（8 条命令）。
+- 复核①（独立验收，全新会话）：**PASS**。独立重跑 `pnpm verify:task -- 5.4`（8 条登记命令逐条通过）、5.1–5.3 无回归、self-test、fmt、clippy -D warnings、`cargo test` 215 通过；四个验收点（嵌入歌词优先 / LRC 成功配对最终基础名含编号、真实临时目录复制源不变 / LRC 失败"音频成功歌词失败"不留半侧车三路径 / 独立结果结构）均有真实非空壳测试证据；架构红线全过；无范围外改动。
+- P2 遗留（不阻断，登记）：1) 测试替身 reader 需要显式 `add_sidecar` 注册而不自动按基名发现 `.lrc`（与 port 契约一致，桌面 reader 延迟到 IPC 任务）；2) 真实 fs 栈仅 single manifest 命令覆盖，失败路径（不可读/冲突/大小不匹配）经替身演练（可接受）。
+- Deferred：崩溃恢复矩阵 → 5.5；真实桌面 sidecar reader → 桌面 IPC 任务（7.3 等）。均已如实标注，未宣称已通过。
+- Commit：`Implement task 5.4: same-basename optional .lrc sub-resource with independent per-input result` → 见 git log
+
 ---

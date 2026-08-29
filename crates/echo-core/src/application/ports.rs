@@ -303,6 +303,18 @@ pub struct ImportSourceInfo {
     pub size: u64,
 }
 
+/// A same-basename `.lrc` sidecar beside an import source (task 5.4). The
+/// reader resolves the sibling by the real path it owns (extension matching
+/// is the filesystem's job — case-insensitive on macOS/Windows); Core only
+/// ever sees the name and size.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SidecarInfo {
+    /// The sidecar's display name (e.g. `晴天.lrc`) — a name, never a path.
+    pub display_name: String,
+    /// Content size in bytes as observed by the reader.
+    pub size: u64,
+}
+
 /// Reads user-selected external import sources. Implemented by the layer that
 /// owns the file-selection result (the desktop trusted boundary) and by test
 /// doubles; Core only ever sees handles and content streams, never locations.
@@ -315,6 +327,19 @@ pub trait ImportSourceReader: Send + Sync {
     /// beginning to its end; a vanished or truncated source surfaces as a
     /// short stream and is rejected by the size verification.
     fn open<'a>(&'a self, source: &ImportSource) -> Result<Box<dyn Read + 'a>, Error>;
+    /// Describe the same-basename `.lrc` beside `source` (spec: 扩展名大小写
+    /// 不敏感), if one exists. `Ok(None)` = no sidecar candidate. Errors are
+    /// the reader's own unavailability (unreadable library, vanished
+    /// directory…).
+    fn sidecar(&self, source: &ImportSource) -> Result<Option<SidecarInfo>, Error>;
+    /// Open the sidecar's content (design §8: 每个资源有独立源定位). `Ok(None)`
+    /// = no sidecar; `Err` = one exists but cannot be read (permission, is a
+    /// directory, vanished mid-selection…) and is reported as a lyrics-failed
+    /// result, never a fake full success.
+    fn open_sidecar<'a>(
+        &'a self,
+        source: &ImportSource,
+    ) -> Result<Option<Box<dyn Read + 'a>>, Error>;
 }
 
 /// The verbatim result of streaming one resource into the controlled staging
