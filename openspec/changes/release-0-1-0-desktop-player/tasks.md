@@ -87,7 +87,7 @@
 - [x] 6.5 实现歌单创建/重命名/删除和 grapheme/NFKC/case-fold 判重，验证 1–40 用户感知字符、成员保持和删除歌单不影响歌曲文件。[playlist-management]
 - [x] 6.6 实现按 `position` 的成员添加、原子添加到多个歌单、幂等重复添加、移除和再次追加，验证顺序不依赖时间戳且不出现重复成员。[playlist-management]
 - [x] 6.7 实现歌单 missing/blocked 成员展示查询和 Echo 永久删除后的级联，验证外部失效可恢复、主动删除 finalize 后成员消失。[playlist-management]
-- [ ] 6.8 为本组所有用例建立 Repository 集成测试并分别执行 `cargo test -p echo-core --all-features catalog` 与 `cargo test -p echo-core --all-features playlists`，验证正常、空、错误、只读和不可用状态。
+- [x] 6.8 为本组所有用例建立 Repository 集成测试并分别执行 `cargo test -p echo-core --all-features catalog` 与 `cargo test -p echo-core --all-features playlists`，验证正常、空、错误、只读和不可用状态。
 
 ## 7. 桌面 Runtime、Tauri IPC 与本机偏好
 

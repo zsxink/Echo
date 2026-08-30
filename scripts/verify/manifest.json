@@ -1113,6 +1113,41 @@
       "cmd": "node scripts/verify/checks/task-6.mjs 6.7 infrastructure::sqlite::tests::echo_delete_finalize_cascades_memberships_atomically"
      }
     ]
+   },
+
+   {
+    "id": "6.8",
+    "title": "为本组所有用例建立 Repository 集成测试并分别执行 cargo test -p echo-core --all-features catalog 与 playlists，验证正常、空、错误、只读和不可用状态",
+    "commands": [
+     {
+      "desc": "空资料库：全部/喜欢/最近/歌单返回空页而非错误",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.8 infrastructure::sqlite::tests::catalog_repository_gate_empty_library_returns_empty_pages"
+     },
+     {
+      "desc": "无 active 根时 catalog 查询返回不可用而非空结果",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.8 infrastructure::sqlite::tests::catalog_repository_gate_no_active_root_is_unavailable"
+     },
+     {
+      "desc": "只读（write-safety-locked）根仍可读，仅禁用写",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.8 infrastructure::sqlite::tests::catalog_repository_gate_read_only_root_still_serves_reads"
+     },
+     {
+      "desc": "非法 page limit 被拒绝、未知歌单返回空",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.8 infrastructure::sqlite::tests::catalog_repository_gate_invalid_limit_rejected_playlist_unknown_empty"
+     },
+     {
+      "desc": "歌单仓库 gate：正常 CRUD、空成员、错误、只读根下行为",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.8 infrastructure::sqlite::tests::playlists_repository_gate_covers_normal_empty_error_and_root_states"
+     },
+     {
+      "desc": "本组验收过滤：cargo test catalog 全部通过",
+      "cmd": "cargo test -p echo-core --all-features catalog"
+     },
+     {
+      "desc": "本组验收过滤：cargo test playlists 全部通过",
+      "cmd": "cargo test -p echo-core --all-features playlists"
+     }
+    ]
    }
 
  ],

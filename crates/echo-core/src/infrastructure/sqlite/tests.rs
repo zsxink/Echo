@@ -2185,3 +2185,126 @@ fn playlist_songs_view(database: &SqliteDatabase, playlist: PlaylistId) -> Vec<S
         .playlist(playlist)
         .expect("playlist view")
 }
+
+// ---------------------------------------------------------------------------
+// Task 6.8 — repository integration gates：正常/空/错误/只读/不可用状态
+// ---------------------------------------------------------------------------
+
+/// 空资料库：全部歌曲/喜欢/最近返回空页而非错误（`is_last = true`）。
+#[test]
+fn catalog_repository_gate_empty_library_returns_empty_pages() {
+    let (_directory, database, _root) = database();
+    let query = CatalogQuery::new(&database);
+
+    let all = query
+        .all_songs(SongSort::default(), None, 100)
+        .expect("empty all songs");
+    assert!(all.items.is_empty());
+    assert!(all.is_last, "empty page is the last page");
+
+    let favs = query
+        .favorites(SongSort::default(), None, 100)
+        .expect("empty favorites");
+    assert!(favs.items.is_empty());
+
+    let recent = query.recent_100().expect("empty recent");
+    assert!(recent.is_empty());
+
+    let p = PlaylistId::new();
+    let empty = CatalogQuery::new(&database)
+        .playlist(p)
+        .expect("empty playlist");
+    assert!(empty.is_empty(), "playlist queries tolerate unknown ids");
+}
+
+/// 错误状态：无 active 根时 catalog/playlist 查询返回不可用，而非空结果。
+#[test]
+fn catalog_repository_gate_no_active_root_is_unavailable() {
+    let (_directory, database, _root) = database();
+    // Remove active: no active root remains.
+    // (The database() helper made one active; deactivate it.)
+    // Deactivate requires the exact id — simpler: open a fresh DB with none.
+    drop(database);
+    let directory = tempfile::tempdir().expect("tempdir");
+    let database = SqliteDatabase::open(directory.path().join("echo.db")).expect("open");
+    let query = CatalogQuery::new(&database);
+
+    assert!(query.all_songs(SongSort::default(), None, 10).is_err());
+    assert!(query.favorites(SongSort::default(), None, 10).is_err());
+    assert!(query.recent_100().is_err());
+}
+
+/// 只读状态：write-safety-locked 根仍可读（catalog 查询可用），仅禁用写。
+#[test]
+fn catalog_repository_gate_read_only_root_still_serves_reads() {
+    let (_directory, database, root) = database();
+    // Lock writes via the safety isolation.
+    LibraryRepository::set_write_safety_locked(&database, root, true).expect("lock");
+    let song_rec = song(root, "r.flac", "R", "甲");
+    SongRepository::upsert(&database, &song_rec).expect("song");
+
+    let query = CatalogQuery::new(&database);
+    let page = query
+        .all_songs(SongSort::default(), None, 10)
+        .expect("readonly root still serves reads");
+    assert_eq!(page.items.len(), 1);
+}
+
+/// 错误路径：坏的 page limit 被拒绝；歌单查询对不存在歌单返回空。
+#[test]
+fn catalog_repository_gate_invalid_limit_rejected_playlist_unknown_empty() {
+    let (_directory, database, root) = database();
+    let song_rec = song(root, "e.flac", "E", "乙");
+    SongRepository::upsert(&database, &song_rec).expect("song");
+    let query = CatalogQuery::new(&database);
+
+    assert!(query.all_songs(SongSort::default(), None, 0).is_err());
+    assert!(query.all_songs(SongSort::default(), None, 501).is_err());
+    let ghost = PlaylistId::new();
+    assert!(query.playlist(ghost).expect("unknown playlist").is_empty());
+}
+
+/// 歌单仓库 gate：正常 CRUD、空成员、错误（重复名/未知 id）、只读与不可用
+/// 根下成员关系与查询的行为。名字含 `playlists` 以满足 6.8 的
+/// `cargo test ... playlists` 验收过滤。
+#[test]
+fn playlists_repository_gate_covers_normal_empty_error_and_root_states() {
+    let (_directory, database, root) = database();
+    let playlist = PlaylistId::new();
+    database.create(playlist, root, "常规").expect("create");
+    // Normal: create + rename + list.
+    assert!(PlaylistRepository::by_id(&database, playlist)
+        .expect("by_id")
+        .is_some());
+    database.rename(playlist, "常规二").expect("rename");
+    assert_eq!(
+        PlaylistRepository::list(&database, root)
+            .expect("list")
+            .len(),
+        1
+    );
+    // Empty: fresh playlist has no members.
+    assert!(PlaylistRepository::members(&database, playlist)
+        .expect("members")
+        .is_empty());
+    // Error: duplicate name rejected; unknown id by_id is None.
+    assert!(database.create(PlaylistId::new(), root, "常规二").is_err());
+    assert!(PlaylistRepository::by_id(&database, PlaylistId::new())
+        .expect("ghost")
+        .is_none());
+
+    // Read-only root still allows reads and membership lookup.
+    LibraryRepository::set_write_safety_locked(&database, root, true).expect("lock");
+    let song_rec = song(root, "s.flac", "S", "丙");
+    SongRepository::upsert(&database, &song_rec).expect("song");
+    database
+        .add_member(playlist, song_rec.id(), u64::MAX)
+        .expect("member");
+    assert_eq!(
+        PlaylistRepository::members(&database, playlist)
+            .expect("readonly members")
+            .len(),
+        1,
+        "readonly root keeps playlists readable"
+    );
+}

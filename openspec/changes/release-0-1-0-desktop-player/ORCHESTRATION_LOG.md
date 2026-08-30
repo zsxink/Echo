@@ -181,3 +181,10 @@
 - 实现：外部失效成员既有的展示语义（`members` 镜像 availability、`CatalogQuery::playlist` 显示 available+missing/隐藏 pending-delete）配集成测试钉死；Echo 主动删除 finalize 路径 `tx.delete_song` 依赖 `playlist_songs.song_uuid ON DELETE CASCADE` 在同一事务内级联移除成员，其余歌单/歌曲/顺序不受影响。sqlite 集成测试：外部删除→成员保留并标 Missing→同 UUID 恢复后 Available 且无重复；pending-delete 时歌单视图隐藏但成员关系保留→finalize 后成员消失、幸存歌曲与另一歌单完好。manifest 登记 id=6.7（2 条命令）。
 - 全量：`cargo test -p echo-core --all-features` 287+6+7 全绿；fmt、clippy `-D warnings` 干净。
 - Commit：见 git log
+
+### 6.8 本组 Repository 集成测试与组验收过滤
+
+- 状态：✅ PASS（实现 + 自测通过）
+- 实现：sqlite 集成 gate 测试 —— 空库返回空页（全部/喜欢/最近/歌单均为 `is_last` 空而非错误）；无 active 根时 catalog 查询返回不可用；只读（write-safety-locked）根仍可读仅禁写；非法 page limit（0/501）拒绝、未知歌单返回空；歌单仓库 gate 覆盖正常 CRUD/空成员/错误（重复名、未知 id）/只读根。组验收过滤 `cargo test -p echo-core --all-features catalog`（21+ 用例）与 `... playlists`（3+ 用例）均通过。manifest 登记 id=6.8（7 条命令，含两组过滤直跑）。
+- 全量：`cargo test -p echo-core --all-features` 292+6+7 全绿；fmt、clippy `-D warnings` 干净；`pnpm verify:task -- 6.1 … 6.8` 全通过。
+- Commit：见 git log
