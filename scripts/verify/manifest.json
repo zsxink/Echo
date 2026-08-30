@@ -1098,6 +1098,21 @@
       "cmd": "node scripts/verify/checks/task-6.mjs 6.6 application::playlist::tests::remove_and_reappend_do_not_reuse_timestamps"
      }
     ]
+   },
+
+   {
+    "id": "6.7",
+    "title": "实现歌单 missing/blocked 成员展示查询和 Echo 永久删除后的级联，验证外部失效可恢复、主动删除 finalize 后成员消失",
+    "commands": [
+     {
+      "desc": "外部失效成员保留展示并可按同 UUID 恢复且不重复",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.7 infrastructure::sqlite::tests::playlist_missing_members_stay_visible_and_recover_without_duplicates"
+     },
+     {
+      "desc": "Echo 主动删除 finalize 级联移除成员、其他歌单与顺序保留",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.7 infrastructure::sqlite::tests::echo_delete_finalize_cascades_memberships_atomically"
+     }
+    ]
    }
 
  ],

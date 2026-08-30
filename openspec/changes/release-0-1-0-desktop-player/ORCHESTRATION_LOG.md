@@ -174,3 +174,10 @@
 - 实现：`application/playlist.rs` `AddToPlaylists`（单事务把一首歌原子追加到一个或多个歌单，任一目标失败整体回滚；已属目标幂等不建重复行且保留原 position）、`RemoveFromPlaylist`（只动该歌单成员关系，非成员移除为 no-op）、`PlaylistMembers`（按 position 稳定排序展示）。追加取 `max+1`（非 u64::MAX 显式位置则直接用），顺序不依赖时间戳。补强 `MemoryDatabase` 测试替身：`add_member` 的 `u64::MAX` 追加改为 `max+1`（与 sqlite 一致），修掉既有潜在排序错位。manifest 登记 id=6.6（2 条命令）。
 - 全量：`cargo test -p echo-core --all-features` 285+6+7 全绿；fmt、clippy `-D warnings` 干净。
 - Commit：见 git log
+
+### 6.7 歌单 missing/blocked 成员展示与 Echo 删除级联
+
+- 状态：✅ PASS（实现 + 自测通过）
+- 实现：外部失效成员既有的展示语义（`members` 镜像 availability、`CatalogQuery::playlist` 显示 available+missing/隐藏 pending-delete）配集成测试钉死；Echo 主动删除 finalize 路径 `tx.delete_song` 依赖 `playlist_songs.song_uuid ON DELETE CASCADE` 在同一事务内级联移除成员，其余歌单/歌曲/顺序不受影响。sqlite 集成测试：外部删除→成员保留并标 Missing→同 UUID 恢复后 Available 且无重复；pending-delete 时歌单视图隐藏但成员关系保留→finalize 后成员消失、幸存歌曲与另一歌单完好。manifest 登记 id=6.7（2 条命令）。
+- 全量：`cargo test -p echo-core --all-features` 287+6+7 全绿；fmt、clippy `-D warnings` 干净。
+- Commit：见 git log

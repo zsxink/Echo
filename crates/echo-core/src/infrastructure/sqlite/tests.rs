@@ -2058,3 +2058,130 @@ fn catalog_search_pages_deterministically_across_large_library() {
     };
     assert_eq!(hits, repeat, "重复分页顺序必须确定性");
 }
+
+// ---------------------------------------------------------------------------
+// Task 6.7 — playlist missing/blocked member display + Echo-delete cascade
+// ---------------------------------------------------------------------------
+
+/// 外部失效成员保留展示：missing 成员（外部删除）仍显示在歌单中并标记
+/// 失效；同 UUID 恢复后重新可用且不产生重复成员。
+#[test]
+fn playlist_missing_members_stay_visible_and_recover_without_duplicates() {
+    let (_directory, database, root) = database();
+    let keep = song(root, "keep.flac", "Kept", "甲");
+    let external = song(root, "gone.flac", "Gone", "乙");
+    SongRepository::upsert(&database, &keep).expect("keep");
+    SongRepository::upsert(&database, &external).expect("external");
+
+    let playlist = PlaylistId::new();
+    database.create(playlist, root, "歌单").expect("playlist");
+    database
+        .add_member(playlist, keep.id(), u64::MAX)
+        .expect("keep member");
+    database
+        .add_member(playlist, external.id(), u64::MAX)
+        .expect("external member");
+
+    // External program deletion -> song Missing, membership retained + mirrored.
+    SongRepository::set_availability(&database, external.id(), SongAvailability::Missing)
+        .expect("mark missing");
+    let members = database.members(playlist).expect("members");
+    assert_eq!(members.len(), 2, "失效成员不得被移除");
+    let external_row = members
+        .iter()
+        .find(|m| m.song() == external.id())
+        .expect("member present");
+    assert_eq!(
+        external_row.song_availability(),
+        SongAvailability::Missing,
+        "member is marked unavailable"
+    );
+
+    // The playlist view still includes it (available + missing shown).
+    let view = playlist_songs_view(&database, playlist);
+    assert_eq!(view.len(), 2);
+    assert!(view.iter().any(|s| s.id() == external.id()));
+
+    // Same UUID restores: availability back to Available, one row only.
+    SongRepository::set_availability(&database, external.id(), SongAvailability::Available)
+        .expect("restore");
+    let after = database.members(playlist).expect("members");
+    assert_eq!(after.len(), 2, "no duplicate member on recovery");
+    let restored = after
+        .iter()
+        .find(|m| m.song() == external.id())
+        .expect("present");
+    assert_eq!(
+        restored.song_availability(),
+        SongAvailability::Available,
+        "失效标记取消"
+    );
+}
+
+/// Echo 主动删除 finalize 级联移除成员：`delete_song`（finalize 路径）在同一
+/// 事务内把歌曲和它所有歌单成员删除，其他歌单/歌曲不受影响且顺序保留。
+#[test]
+fn echo_delete_finalize_cascades_memberships_atomically() {
+    let (_directory, database, root) = database();
+    let doomed = song(root, "doomed.flac", "Doomed", "甲");
+    let survivor = song(root, "survivor.flac", "Survivor", "乙");
+    SongRepository::upsert(&database, &doomed).expect("doomed");
+    SongRepository::upsert(&database, &survivor).expect("survivor");
+
+    let first = PlaylistId::new();
+    let second = PlaylistId::new();
+    database.create(first, root, "一").expect("first");
+    database.create(second, root, "二").expect("second");
+    database
+        .add_member(first, doomed.id(), u64::MAX)
+        .expect("doomed in 一");
+    database
+        .add_member(first, survivor.id(), u64::MAX)
+        .expect("survivor in 一");
+    database
+        .add_member(second, doomed.id(), u64::MAX)
+        .expect("doomed in 二");
+
+    // Echo delete hides first (pending-delete) — memberships stay.
+    SongRepository::set_availability(&database, doomed.id(), SongAvailability::PendingDelete)
+        .expect("pending delete");
+    assert_eq!(database.members(first).expect("一").len(), 2);
+    assert_eq!(database.members(second).expect("二").len(), 1);
+    let hidden_view = playlist_songs_view(&database, first);
+    assert!(
+        !hidden_view.iter().any(|s| s.id() == doomed.id()),
+        "pending-delete member hidden from the playlist view"
+    );
+
+    // The finalize step (as finalize_persisted_trash runs) deletes the song
+    // row; the FK cascades remove its membership rows in the same transaction.
+    let doomed_id = doomed.id();
+    database
+        .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
+            tx.delete_song(doomed_id)
+        }))
+        .expect("finalize delete");
+    assert!(SongRepository::by_id(&database, doomed.id())
+        .expect("query")
+        .is_none());
+    let first_after = database.members(first).expect("一 after");
+    assert_eq!(
+        first_after.len(),
+        1,
+        "cascade removed the doomed membership, survivor stays"
+    );
+    assert_eq!(first_after[0].song(), survivor.id());
+    assert_eq!(database.members(second).expect("二 after").len(), 0);
+    // The survivor song itself is untouched.
+    assert!(SongRepository::by_id(&database, survivor.id())
+        .expect("query")
+        .is_some());
+}
+
+/// Direct read of the playlist view (same contract as `playlist_songs_query`).
+fn playlist_songs_view(database: &SqliteDatabase, playlist: PlaylistId) -> Vec<Song> {
+    use crate::application::catalog::CatalogQuery;
+    CatalogQuery::new(database)
+        .playlist(playlist)
+        .expect("playlist view")
+}
