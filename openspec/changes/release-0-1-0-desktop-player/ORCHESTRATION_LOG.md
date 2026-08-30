@@ -195,3 +195,10 @@
 - 实现：`echo-desktop/src/runtime/mod.rs` `StartupSupervisor`——把单实例→偏好→DB→journal 恢复→Core→Player→watcher→IPC ready 的编排建模为 `StartupPhase` 状态机 + `GateKind`（Writable/NeedsSystemTrash/ReadOnly，由 `BootRecoveryState` 映射）。`run_recovery` 调用 `BootRecovery` 并在 NeedsSystemTrash 时补跑 `FinalizeExpiredDeletes`；读始终安全、未知/只读门禁写（`writes_allowed`）。就绪前 OS 文件打开进入有界 FIFO（容量 64，满了丢最旧、绝不阻塞 OS 处理器），就绪后按到达顺序排空且不把取消对话框当成功。用 echo-core `testkit` 替身（`ScanFixture` + `FakeTrash`）纯 Rust 测试，不依赖 Tauri。新增 `scripts/verify/checks/task-7.mjs` 与 manifest id=7.1（3 条命令）。
 - 全量：`cargo test -p echo-desktop` 3 通过；fmt、clippy `-D warnings` 干净。
 - Commit：见 git log
+
+### 7.2 IPC serde camelCase DTO/IpcError 与只读 TS 生成器
+
+- 状态：✅ PASS（实现 + 自测通过）
+- 实现：`echo-desktop/src/ipc/` —— `error.rs` `IpcErrorDto`（code/messageKey/retryable/operationId/field，由 `CoreError` 映射，可重试派生：unavailable/io/storage 可重试；绝不输出调试串或绝对路径）、`dto.rs` camelCase 只读模型（BootstrapSnapshot/SongView/PagedSongs/PlaylistView/Theme/CloseBehavior；SongView 只含相对路径）、`generate.rs` 确定性 TS 生成器 + `echo-generate-ipc` bin 写入 `apps/desktop/src/ipc/ipc-types.generated.ts`（readonly、camelCase）。漂移检测：库内测试对比提交文件与生成器输出 + CI `git diff --exit-code` 断言无未提交差异。`pnpm generate:ipc` 脚本 + `tsc --noEmit` 通过。manifest 登记 id=7.2（6 条命令）。
+- 全量：`cargo test -p echo-desktop` 10 通过；fmt、clippy `-D warnings` 干净；`tsc --noEmit` 干净。
+- Commit：见 git log

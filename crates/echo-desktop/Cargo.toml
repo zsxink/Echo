@@ -18,5 +18,9 @@ tracing = { workspace = true }
 echo-core = { path = "../echo-core", features = ["testkit"] }
 tempfile = "3"
 
+[[bin]]
+name = "echo-generate-ipc"
+path = "src/bin/generate_ipc.rs"
+
 [lints]
 workspace = true

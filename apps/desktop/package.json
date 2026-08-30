@@ -13,6 +13,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "generate:ipc": "cargo run -p echo-desktop --bin echo-generate-ipc",
     "test": "vitest run",
     "test:watch": "vitest"
   },

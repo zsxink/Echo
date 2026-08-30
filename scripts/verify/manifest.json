@@ -1167,6 +1167,37 @@
       "cmd": "node scripts/verify/checks/task-7.mjs 7.1 runtime::tests::gate_kind_maps_recovery_states"
      }
     ]
+   },
+
+   {
+    "id": "7.2",
+    "title": "在 echo-desktop/ipc 定义 serde camelCase DTO/IpcError 并生成只读 TypeScript 类型，验证生成器测试与 git diff --exit-code 能检测 Rust/TS 契约漂移",
+    "commands": [
+     {
+      "desc": "IpcErrorDto 映射稳定 code/retryable/message key，序列化 camelCase 且不含绝对路径",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.2 ipc::error::tests::serialization_is_camel_case_and_path_free"
+     },
+     {
+      "desc": "不可用错误可重试、校验错误不可重试且带字段，code 稳定",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.2 ipc::error::tests::unavailable_is_retryable_validation_is_not_and_codes_stay_stable"
+     },
+     {
+      "desc": "SongView/IPC DTO camelCase、只含相对路径",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.2 ipc::dto::tests::song_view_is_camel_case_relative_path_only"
+     },
+     {
+      "desc": "生成的 TypeScript 只读、camelCase、确定性与提交文件同步（漂移检测）",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.2 ipc::generate::tests::committed_generated_file_is_in_sync_with_the_generator"
+     },
+     {
+      "desc": "生成的 TS 不泄露实现细节",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.2 ipc::generate::tests::generated_types_dont_materialize_private_impl_details"
+     },
+     {
+      "desc": "重新生成 IPC 类型且 git diff 干净（Rust/TS 契约无漂移）",
+      "cmd": "cargo run -p echo-desktop --bin echo-generate-ipc && git diff --exit-code -- apps/desktop/src/ipc/ipc-types.generated.ts"
+     }
+    ]
    }
 
  ],
