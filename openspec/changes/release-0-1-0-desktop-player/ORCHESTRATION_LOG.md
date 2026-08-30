@@ -188,3 +188,10 @@
 - 实现：sqlite 集成 gate 测试 —— 空库返回空页（全部/喜欢/最近/歌单均为 `is_last` 空而非错误）；无 active 根时 catalog 查询返回不可用；只读（write-safety-locked）根仍可读仅禁写；非法 page limit（0/501）拒绝、未知歌单返回空；歌单仓库 gate 覆盖正常 CRUD/空成员/错误（重复名、未知 id）/只读根。组验收过滤 `cargo test -p echo-core --all-features catalog`（21+ 用例）与 `... playlists`（3+ 用例）均通过。manifest 登记 id=6.8（7 条命令，含两组过滤直跑）。
 - 全量：`cargo test -p echo-core --all-features` 292+6+7 全绿；fmt、clippy `-D warnings` 干净；`pnpm verify:task -- 6.1 … 6.8` 全通过。
 - Commit：见 git log
+
+### 7.1 启动 supervisor 顺序与就绪门
+
+- 状态：✅ PASS（实现 + 自测通过）
+- 实现：`echo-desktop/src/runtime/mod.rs` `StartupSupervisor`——把单实例→偏好→DB→journal 恢复→Core→Player→watcher→IPC ready 的编排建模为 `StartupPhase` 状态机 + `GateKind`（Writable/NeedsSystemTrash/ReadOnly，由 `BootRecoveryState` 映射）。`run_recovery` 调用 `BootRecovery` 并在 NeedsSystemTrash 时补跑 `FinalizeExpiredDeletes`；读始终安全、未知/只读门禁写（`writes_allowed`）。就绪前 OS 文件打开进入有界 FIFO（容量 64，满了丢最旧、绝不阻塞 OS 处理器），就绪后按到达顺序排空且不把取消对话框当成功。用 echo-core `testkit` 替身（`ScanFixture` + `FakeTrash`）纯 Rust 测试，不依赖 Tauri。新增 `scripts/verify/checks/task-7.mjs` 与 manifest id=7.1（3 条命令）。
+- 全量：`cargo test -p echo-desktop` 3 通过；fmt、clippy `-D warnings` 干净。
+- Commit：见 git log

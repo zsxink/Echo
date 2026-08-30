@@ -14,5 +14,9 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
+[dev-dependencies]
+echo-core = { path = "../echo-core", features = ["testkit"] }
+tempfile = "3"
+
 [lints]
 workspace = true

@@ -1148,6 +1148,25 @@
       "cmd": "cargo test -p echo-core --all-features playlists"
      }
     ]
+   },
+
+   {
+    "id": "7.1",
+    "title": "实现启动 supervisor 顺序“单实例 → 偏好 → DB 迁移/备份 → journal 恢复 → Core 查询 → PlayerActor → watcher/平台集成 → IPC ready”，验证初始化期间文件打开不丢失且未知 journal 禁止写操作",
+    "commands": [
+     {
+      "desc": "启动 supervisor 顺序解决 gate、就绪前文件打开保留、就绪后按序排空",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.1 runtime::tests::supervisor_sequence_resolves_gate_and_drains_pending_opens"
+     },
+     {
+      "desc": "就绪前文件打开 FIFO 有界且保留最新、按到达顺序排空",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.1 runtime::tests::pending_open_fifo_is_bounded_and_keeps_newest"
+     },
+     {
+      "desc": "GateKind 由 BootRecoveryState 映射：未知/只读门禁止写、读始终安全",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.1 runtime::tests::gate_kind_maps_recovery_states"
+     }
+    ]
    }
 
  ],

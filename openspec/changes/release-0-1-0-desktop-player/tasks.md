@@ -93,7 +93,7 @@
 
 本组验收：`pnpm verify:task -- 7.1 7.2 7.3 7.4 7.5 7.6 7.7 7.8`
 
-- [ ] 7.1 实现启动 supervisor 顺序“单实例 → 偏好 → DB 迁移/备份 → journal 恢复 → Core 查询 → PlayerActor → watcher/平台集成 → IPC ready”，验证初始化期间文件打开不丢失且未知 journal 禁止写操作。
+- [x] 7.1 实现启动 supervisor 顺序“单实例 → 偏好 → DB 迁移/备份 → journal 恢复 → Core 查询 → PlayerActor → watcher/平台集成 → IPC ready”，验证初始化期间文件打开不丢失且未知 journal 禁止写操作。
 - [ ] 7.2 在 `echo-desktop/ipc` 定义 serde camelCase DTO/IpcError 并生成只读 TypeScript 类型，验证生成器测试与 `git diff --exit-code` 能检测 Rust/TS 契约漂移。
 - [ ] 7.3 实现 bootstrap、资料库、查询、收藏、歌单、导入/删除和播放的粗粒度 commands，验证 UI 无通用 SQL/fs/shell command 且所有 mutation 返回提交后 revision/snapshot。
 - [ ] 7.4 实现带 sequence/revision 的 library/operation/player/file-open events 与 snapshot 重拉，验证重复、乱序、断序和窗口重建不会让旧事件覆盖新状态。
