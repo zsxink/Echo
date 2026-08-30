@@ -16,7 +16,11 @@
 //!   reserved OperationId/SongId, isolated per-input results).
 //! - [`recover`] — import crash recovery (`RecoverOperations`, the
 //!   three-location existence/hash matrix; tasks 5.5 / 5.10).
+//! - [`boot`] — the one pre-ready startup step (`BootRecovery`): recover the
+//!   active root under a per-root scan exclusion and surface the readiness
+//!   gate the runtime consults before starting the watcher/player (task 5.10).
 
+pub mod boot;
 pub mod delete;
 pub mod import;
 pub mod ports;

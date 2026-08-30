@@ -937,8 +937,34 @@
       "cmd": "node scripts/verify/checks/task-5.mjs 5.9 application::watch::tests::watch_events_converge_under_out_of_order_and_duplicate_delivery"
      }
     ]
+   },
+
+   {
+    "id": "5.10",
+    "title": "Recover the active root before runtime-ready and coordinate watcher/player startup: BootRecovery runs RecoverOperations under a per-root scan exclusion and returns a readiness gate, so no path is concurrently scanned during recovery and imports/deletes/playback wait on the gate",
+    "commands": [
+     {
+      "desc": "no active root is an immediate clean ready with no scan exclusion held",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.10 application::boot::tests::no_active_root_is_an_immediate_clean_ready"
+     },
+     {
+      "desc": "a clean active root is recovered idle before ready and the scan exclusion is released afterward",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.10 application::boot::tests::clean_active_root_recovers_idle_and_releases_the_scan_exclusion"
+     },
+     {
+      "desc": "holding the root's scan exclusion during recovery rejects a concurrent scan of the same path",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.10 application::boot::tests::held_scan_exclusion_rejects_a_concurrent_scan_of_the_same_path"
+     },
+     {
+      "desc": "an expired Echo delete is rolled forward and handed off for the SystemTrashPort, not marked done",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.10 application::boot::tests::boot_recovers_an_expired_delete_and_hands_it_to_system_trash"
+     },
+     {
+      "desc": "a write-safety-locked root surfaces read-only after boot and destructive operations stay disabled",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.10 application::boot::tests::write_safety_locked_root_is_read_only_and_writes_stay_disabled"
+     }
+    ]
    }
 
  ],
- "scenarios": []
-}
+ "scenarios": []}

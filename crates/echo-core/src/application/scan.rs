@@ -131,7 +131,11 @@ impl ScanSupervisor {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    fn register(&self, root: LibraryRootId, token: ScanCancelToken) -> Result<(), Error> {
+    pub(crate) fn register(
+        &self,
+        root: LibraryRootId,
+        token: ScanCancelToken,
+    ) -> Result<(), Error> {
         {
             let active = self.lock();
             if active.contains_key(&root) {
@@ -142,7 +146,7 @@ impl ScanSupervisor {
         Ok(())
     }
 
-    fn unregister(&self, root: LibraryRootId) {
+    pub(crate) fn unregister(&self, root: LibraryRootId) {
         self.lock().remove(&root);
     }
 
