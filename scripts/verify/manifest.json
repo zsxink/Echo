@@ -1064,6 +1064,25 @@
       "cmd": "node scripts/verify/checks/task-6.mjs 6.4 application::detail::tests::detail_serialization_golden_match"
      }
     ]
+   },
+
+   {
+    "id": "6.5",
+    "title": "实现歌单创建/重命名/删除和 grapheme/NFKC/case-fold 判重，验证 1–40 用户感知字符、成员保持和删除歌单不影响歌曲文件",
+    "commands": [
+     {
+      "desc": "创建歌单校验名称并做 NFKC/case-fold 判重",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.5 application::playlist::tests::create_validates_and_dedups_names"
+     },
+     {
+      "desc": "重命名保持成员与追加顺序并拒绝占名冲突",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.5 application::playlist::tests::rename_keeps_members_and_rejects_collisions"
+     },
+     {
+      "desc": "删除歌单只删成员关系，不动歌曲文件/记录/其他歌单成员",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.5 application::playlist::tests::delete_owns_playlist_and_members_but_not_songs_or_other_playlists"
+     }
+    ]
    }
 
  ],

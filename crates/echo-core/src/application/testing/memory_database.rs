@@ -17,6 +17,7 @@ use crate::domain::entities::{
 };
 use crate::domain::ids::*;
 use crate::domain::state::scan::{ScanProgress, ScanState};
+use crate::domain::text::playlist_name_key;
 use crate::error::Error;
 
 /// The shared transactional store.
@@ -292,11 +293,12 @@ impl PlaylistRepository for MemoryDatabase {
         root: LibraryRootId,
         normalized_name: &str,
     ) -> Result<Option<PlaylistId>, Error> {
+        let key = playlist_name_key(normalized_name);
         Ok(self
             .lock()
             .playlists
             .iter()
-            .find(|(_, (r, n))| *r == root && n == normalized_name)
+            .find(|(_, (r, n))| *r == root && playlist_name_key(n) == key)
             .map(|(id, _)| *id))
     }
     fn list(&self, root: LibraryRootId) -> Result<Vec<PlaylistId>, Error> {
@@ -309,11 +311,32 @@ impl PlaylistRepository for MemoryDatabase {
             .collect())
     }
     fn create(&self, id: PlaylistId, root: LibraryRootId, name: &str) -> Result<(), Error> {
-        self.lock().playlists.insert(id, (root, name.to_owned()));
+        let mut store = self.lock();
+        let key = playlist_name_key(name);
+        if store
+            .playlists
+            .iter()
+            .any(|(_, (r, n))| *r == root && playlist_name_key(n) == key)
+        {
+            return Err(Error::conflict("playlist name already exists"));
+        }
+        store.playlists.insert(id, (root, name.to_owned()));
         Ok(())
     }
     fn rename(&self, id: PlaylistId, to_normalized_name: &str) -> Result<(), Error> {
-        if let Some((_, name)) = self.lock().playlists.get_mut(&id) {
+        let mut store = self.lock();
+        let Some((root, _)) = store.playlists.get(&id).cloned() else {
+            return Ok(());
+        };
+        let key = playlist_name_key(to_normalized_name);
+        if store
+            .playlists
+            .iter()
+            .any(|(other, (r, n))| *other != id && *r == root && playlist_name_key(n) == key)
+        {
+            return Err(Error::conflict("playlist name already exists"));
+        }
+        if let Some((_, name)) = store.playlists.get_mut(&id) {
             to_normalized_name.clone_into(name);
         }
         Ok(())
@@ -325,13 +348,20 @@ impl PlaylistRepository for MemoryDatabase {
         Ok(())
     }
     fn members(&self, id: PlaylistId) -> Result<Vec<PlaylistMember>, Error> {
-        Ok(self
+        let mut rows: Vec<_> = self
             .lock()
             .members
-            .iter()
-            .filter(|((playlist, _), _)| *playlist == id)
-            .map(|(_, member)| member.clone())
-            .collect())
+            .values()
+            .filter(|member| member.playlist() == id)
+            .cloned()
+            .collect();
+        // Mirror the SQL order: position, then stable UUID tie-break.
+        rows.sort_by(|a, b| {
+            a.position()
+                .cmp(&b.position())
+                .then(a.song().cmp(&b.song()))
+        });
+        Ok(rows)
     }
     fn add_member(&self, playlist: PlaylistId, song: SongId, position: u64) -> Result<(), Error> {
         let mut store = self.lock();

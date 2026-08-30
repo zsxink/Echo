@@ -29,6 +29,7 @@ pub mod delete;
 pub mod detail;
 pub mod favorite;
 pub mod import;
+pub mod playlist;
 pub mod ports;
 pub mod recover;
 pub mod relink;

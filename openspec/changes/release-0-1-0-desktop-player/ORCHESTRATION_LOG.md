@@ -160,3 +160,10 @@
 - 实现：`application/detail.rs` —— 只读 `SongDetail` 聚合有效元数据（标题/艺人/专辑/时长）、格式（规范扩展名）、音频流参数（bitrate/采样率/声道/位深）、库内相对路径、播放统计、封面与歌词来源可用性；路径仅 `RelativeMediaPath`，绝不含绝对路径；歌词可用性取最强有效候选来源，封面为资源存在性。音频参数此前未持久化——新增迁移 `0004_song_audio_parameters.sql` 给 `songs` 加 4 列，实体新增 `audio_parameters` + `apply_scan_facts_with_params`（默认参数保持旧签名零改调用点），扫描解析管线唯一生产调用点传入 `parsed.file.meta.parameters`，upsert/row 映射读写该列。序列化 golden test 断言稳定 JSON 输出与无绝对路径。
 - 全量：`cargo test -p echo-core --all-features` 280+6+7 全绿；fmt、clippy `-D warnings` 干净。
 - Commit：见 git log
+
+### 6.5 歌单创建/重命名/删除与名称判重
+
+- 状态：✅ PASS（实现 + 自测通过）
+- 实现：`application/playlist.rs` —— `CreatePlaylist`/`RenamePlaylist`/`DeletePlaylist`/`ListPlaylists`。名称规则在用例层：trim 首尾空白、reject 空/超 40 用户感知字符（grapheme cluster）、同一根内按 NFKC+case-fold 判重（仓库唯一 `normalized_name_key` 承担冲突）；重命名只动 `playlists` 行、成员与追加顺序不变；删除只删歌单及成员关系、绝不动歌曲文件/记录/其他歌单成员。补强 `MemoryDatabase` 测试替身：`create`/`rename` 按 `playlist_name_key` 判重、`members` 按 position 稳定排序，使内存与 sqlite 语义一致。manifest 登记 id=6.5（3 条命令）。
+- 全量：`cargo test -p echo-core --all-features` 283+6+7 全绿；fmt、clippy `-D warnings` 干净。
+- Commit：见 git log
