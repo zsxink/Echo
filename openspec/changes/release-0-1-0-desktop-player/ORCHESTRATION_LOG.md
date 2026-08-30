@@ -138,3 +138,10 @@
 - 实现：`CatalogQueryRepository` port + sqlite/memory 双适配器 + `CatalogQuery` 用例（`application/catalog.rs`）。四视图语义：active 根限定、available 可见、pending-delete 全隐藏、确定性排序（全部歌曲 keyset 分页 + 四种排序；最近 100 按 added_at desc + UUID 稳定 tie-break；歌单按 position 且 missing 成员可见）。spec 场景测试：视图集合、稳定顺序、active 根隔离、pending-delete 隐藏、过期 cursor 拒绝、取消收藏即移除、内存适配器与端口契约一致。manifest 登记 id=6.1（6 条命令，task-6.mjs）。
 - 全量：`cargo test -p echo-core --all-features` 268+6+7 全绿；fmt、clippy `-D warnings` 干净。
 - Commit：见 git log
+
+### 6.2 标题/艺人/专辑完整查询词包含搜索与视图叠加
+
+- 状态：✅ PASS（实现 + 自测通过）
+- 实现：`CatalogQueryRepository` 新增 `search(query, in_favorites, sort, cursor, limit)` —— 完整查询词做 NFKC+case-fold 后的包含匹配（FTS5 trigram 对 ≥3 标量；短查询转义 LIKE），可与全部歌曲或喜欢的音乐视图叠加；新增 `query_active_songs_respecting_favorites` 贯穿 favorites 标志；memory 适配器镜像同一契约。`CatalogQuery::search` 暴露给用例层。spec 场景测试：多字段完整词包含、大小写/NFKC 不敏感、清空恢复完整视图与顺序、无结果空页、favorites 叠加与清空、写入致 revision 变化后过期 cursor 拒绝、55 首规模分页确定性/不截断/无重复。manifest 登记 id=6.2（6 条命令）。
+- 全量：`cargo test -p echo-core --all-features` 274+6+7 全绿；fmt、clippy `-D warnings` 干净。
+- Commit：见 git log

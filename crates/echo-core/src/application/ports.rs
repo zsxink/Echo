@@ -112,6 +112,20 @@ pub trait CatalogQueryRepository: Send + Sync {
     /// One playlist's song rows ordered by member position (available +
     /// missing shown, pending-delete hidden, active root only).
     fn playlist_songs(&self, playlist: PlaylistId) -> Result<Vec<Song>, Error>;
+    /// Search overlay over the active root (task 6.2). `query` is matched
+    /// case-insensitively as a full-query contains across title, artist and
+    /// album of the *normalized* keys (FTS for ≥3 scalars, escaped LIKE for
+    /// short queries). `in_favorites` restricts results to favorited songs so
+    /// search can combine with either the all-songs or the favorites view. The
+    /// result is keyset-paginated identically to [`Self::all_songs`].
+    fn search(
+        &self,
+        query: &str,
+        in_favorites: bool,
+        sort: SongSort,
+        cursor: Option<&OpaqueCursor>,
+        limit: usize,
+    ) -> Result<Paged<Song>, Error>;
 }
 
 /// Query/store playlists and their members.

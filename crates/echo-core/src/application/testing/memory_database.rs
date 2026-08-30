@@ -365,7 +365,7 @@ impl CatalogQueryRepository for MemoryDatabase {
         cursor: Option<&OpaqueCursor>,
         limit: usize,
     ) -> Result<Paged<Song>, Error> {
-        self.mem_catalog(false, sort, cursor, limit)
+        self.mem_catalog(false, None, sort, cursor, limit)
     }
 
     fn favorites(
@@ -374,7 +374,7 @@ impl CatalogQueryRepository for MemoryDatabase {
         cursor: Option<&OpaqueCursor>,
         limit: usize,
     ) -> Result<Paged<Song>, Error> {
-        self.mem_catalog(true, sort, cursor, limit)
+        self.mem_catalog(true, None, sort, cursor, limit)
     }
 
     fn recent_100(&self) -> Result<Vec<Song>, Error> {
@@ -416,12 +416,24 @@ impl CatalogQueryRepository for MemoryDatabase {
         }
         Ok(songs)
     }
+
+    fn search(
+        &self,
+        query: &str,
+        in_favorites: bool,
+        sort: SongSort,
+        cursor: Option<&OpaqueCursor>,
+        limit: usize,
+    ) -> Result<Paged<Song>, Error> {
+        self.mem_catalog(in_favorites, Some(query), sort, cursor, limit)
+    }
 }
 
 impl MemoryDatabase {
     fn mem_catalog(
         &self,
         favorites: bool,
+        query: Option<&str>,
         sort: SongSort,
         _cursor: Option<&OpaqueCursor>,
         limit: usize,
@@ -434,6 +446,9 @@ impl MemoryDatabase {
             ));
         }
         let root = self.active_root()?.map(|record| record.id());
+        let normalized_query = query
+            .filter(|value| !value.is_empty())
+            .map(crate::domain::text::normalized_key);
         let mut songs: Vec<Song> = self
             .lock()
             .songs
@@ -442,6 +457,16 @@ impl MemoryDatabase {
                 root.is_some_and(|r| song.root() == r)
                     && song.availability() == SongAvailability::Available
                     && (!favorites || song.favorite())
+                    && normalized_query.as_deref().map_or(true, |needle| {
+                        let haystacks = [
+                            song.title().unwrap_or(""),
+                            song.artist().unwrap_or(""),
+                            song.album().unwrap_or(""),
+                        ];
+                        haystacks.iter().any(|value| {
+                            crate::domain::text::normalized_key(value).contains(needle)
+                        })
+                    })
             })
             .cloned()
             .collect();

@@ -56,6 +56,25 @@ impl<'a> CatalogQuery<'a> {
         self.repo.favorites(sort, cursor, limit)
     }
 
+    /// 资料库搜索: case-insensitive full-query contains overlay over title,
+    /// artist and album of the active root. `in_favorites` narrows to the
+    /// favorites view; an empty `query` restores the full underlying view.
+    ///
+    /// # Errors
+    ///
+    /// `Unavailable` when there is no active root; a stale cursor is
+    /// `Conflict` (restart pagination); storage errors propagate.
+    pub fn search(
+        &self,
+        query: &str,
+        in_favorites: bool,
+        sort: SongSort,
+        cursor: Option<&OpaqueCursor>,
+        limit: usize,
+    ) -> Result<Paged<Song>, Error> {
+        self.repo.search(query, in_favorites, sort, cursor, limit)
+    }
+
     /// 最近添加: the active root's most recently added available songs, at
     /// most 100.
     ///

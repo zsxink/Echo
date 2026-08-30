@@ -995,6 +995,37 @@
       "cmd": "node scripts/verify/checks/task-6.mjs 6.1 application::catalog::tests::catalog_views_over_memory_repo_agree_with_the_port_contract"
      }
     ]
+   },
+
+   {
+    "id": "6.2",
+    "title": "实现标题/艺人/专辑完整查询词包含搜索和当前视图叠加，验证清空恢复、无结果、过期请求取消和 50k 数据正确性",
+    "commands": [
+     {
+      "desc": "搜索对标题/艺人/专辑做完整查询词不区分大小写包含匹配",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.2 infrastructure::sqlite::tests::catalog_search_matches_full_query_word_ignoring_case_across_fields"
+     },
+     {
+      "desc": "清空搜索词恢复当前视图完整集合及排序",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.2 infrastructure::sqlite::tests::catalog_search_empty_query_restores_full_view"
+     },
+     {
+      "desc": "搜索无结果显示空页而非错误",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.2 infrastructure::sqlite::tests::catalog_search_no_results_returns_empty_page_not_error"
+     },
+     {
+      "desc": "搜索可与喜欢的音乐视图叠加并清空恢复",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.2 infrastructure::sqlite::tests::catalog_search_overlays_on_favorites_view"
+     },
+     {
+      "desc": "写入使 revision 变化后过期搜索请求被取消而非返回错乱结果",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.2 infrastructure::sqlite::tests::catalog_search_stale_request_cancelled_after_write_invalidation"
+     },
+     {
+      "desc": "50k 规模搜索分页稳定、不截断、无重复行",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.2 infrastructure::sqlite::tests::catalog_search_pages_deterministically_across_large_library"
+     }
+    ]
    }
 
  ],

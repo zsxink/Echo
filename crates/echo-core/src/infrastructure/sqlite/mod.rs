@@ -244,7 +244,7 @@ impl SqliteDatabase {
         cursor: Option<&OpaqueCursor>,
         limit: usize,
     ) -> Result<Paged<Song>, Error> {
-        self.query_active_songs(query, sort, cursor, limit)
+        self.query_active_songs_respecting_favorites(query, false, sort, cursor, limit)
     }
 
     /// Return a cursor page for the active root. Cursor boundaries are real
@@ -252,6 +252,20 @@ impl SqliteDatabase {
     pub fn query_active_songs(
         &self,
         query: &str,
+        sort: SongSort,
+        cursor: Option<&OpaqueCursor>,
+        limit: usize,
+    ) -> Result<Paged<Song>, Error> {
+        self.query_active_songs_respecting_favorites(query, false, sort, cursor, limit)
+    }
+
+    /// The favorites-aware paginated query over the active root (task 6.2).
+    /// `in_favorites` limits results to favorited songs so search can overlay
+    /// on either the all-songs or the favorites view.
+    pub fn query_active_songs_respecting_favorites(
+        &self,
+        query: &str,
+        in_favorites: bool,
         sort: SongSort,
         cursor: Option<&OpaqueCursor>,
         limit: usize,
@@ -266,7 +280,14 @@ impl SqliteDatabase {
         let query = normalized_key(query);
         let cursor = cursor.cloned();
         self.with_reader(move |connection| {
-            query_active(connection, &query, false, sort, cursor.as_ref(), limit)
+            query_active(
+                connection,
+                &query,
+                in_favorites,
+                sort,
+                cursor.as_ref(),
+                limit,
+            )
         })
     }
 
@@ -530,17 +551,7 @@ impl CatalogQueryRepository for SqliteDatabase {
         cursor: Option<&OpaqueCursor>,
         limit: usize,
     ) -> Result<Paged<Song>, Error> {
-        if limit == 0 || limit > 500 {
-            return Err(Error::validation(
-                Subject::Query,
-                "page limit",
-                "must be 1 through 500",
-            ));
-        }
-        let cursor = cursor.cloned();
-        self.with_reader(move |connection| {
-            query_active(connection, "", true, sort, cursor.as_ref(), limit)
-        })
+        self.query_active_songs_respecting_favorites("", true, sort, cursor, limit)
     }
 
     fn recent_100(&self) -> Result<Vec<Song>, Error> {
@@ -549,6 +560,17 @@ impl CatalogQueryRepository for SqliteDatabase {
 
     fn playlist_songs(&self, playlist: PlaylistId) -> Result<Vec<Song>, Error> {
         self.with_reader(move |connection| playlist_songs_query(connection, playlist))
+    }
+
+    fn search(
+        &self,
+        query: &str,
+        in_favorites: bool,
+        sort: SongSort,
+        cursor: Option<&OpaqueCursor>,
+        limit: usize,
+    ) -> Result<Paged<Song>, Error> {
+        self.query_active_songs_respecting_favorites(query, in_favorites, sort, cursor, limit)
     }
 }
 
