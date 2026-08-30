@@ -153,3 +153,10 @@
 - 实现：`application/favorite.rs` `SetFavorite` 用例——经 `SongRepository::set_favorite` 单事务切换收藏，随后以同一 `SongId` 重读提交后的权威歌曲快照返回 `FavoriteResult { song, favorite }`，使曲库行、喜欢视图、详情和当前播放栏共享一个状态源；库外歌曲或 Echo 删除窗口（pending-delete）内歌曲返回 `Unavailable`。manifest 登记 id=6.3（2 条命令）。
 - 全量：`cargo test -p echo-core --all-features` 276+6+7 全绿；fmt、clippy `-D warnings` 干净。
 - Commit：见 git log
+
+### 6.4 只读歌曲详情 DTO 与序列化 golden test
+
+- 状态：✅ PASS（实现 + 自测通过）
+- 实现：`application/detail.rs` —— 只读 `SongDetail` 聚合有效元数据（标题/艺人/专辑/时长）、格式（规范扩展名）、音频流参数（bitrate/采样率/声道/位深）、库内相对路径、播放统计、封面与歌词来源可用性；路径仅 `RelativeMediaPath`，绝不含绝对路径；歌词可用性取最强有效候选来源，封面为资源存在性。音频参数此前未持久化——新增迁移 `0004_song_audio_parameters.sql` 给 `songs` 加 4 列，实体新增 `audio_parameters` + `apply_scan_facts_with_params`（默认参数保持旧签名零改调用点），扫描解析管线唯一生产调用点传入 `parsed.file.meta.parameters`，upsert/row 映射读写该列。序列化 golden test 断言稳定 JSON 输出与无绝对路径。
+- 全量：`cargo test -p echo-core --all-features` 280+6+7 全绿；fmt、clippy `-D warnings` 干净。
+- Commit：见 git log

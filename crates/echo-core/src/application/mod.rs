@@ -21,10 +21,12 @@
 //!   gate the runtime consults before starting the watcher/player (task 5.10).
 //! - [`favorite`] — the favorite toggle with an authoritative committed
 //!   snapshot (`SetFavorite`, task 6.3).
+//! - [`detail`] — the read-only song detail DTO (`GetSongDetail`, task 6.4).
 
 pub mod boot;
 pub mod catalog;
 pub mod delete;
+pub mod detail;
 pub mod favorite;
 pub mod import;
 pub mod ports;

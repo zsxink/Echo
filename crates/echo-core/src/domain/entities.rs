@@ -33,7 +33,7 @@ use std::time::Duration;
 use crate::domain::ids::{
     LibraryRootId, PlayCount, PlaylistId, RelativeMediaPath, Revision, SongId,
 };
-use crate::domain::media::AudioFormat;
+use crate::domain::media::{AudioFormat, AudioParameters};
 
 // ---------------------------------------------------------------------------
 // Song
@@ -104,6 +104,10 @@ pub struct Song {
     file_mtime_ns: Option<i64>,
     /// Format family from the media probe.
     format: Option<AudioFormat>,
+    /// Audio stream parameters (bitrate / sample rate / channels / bits per
+    /// sample) from the metadata reader at scan time (task 6.4). Default-empty
+    /// for imported seeds and rows written before migration 0004.
+    audio_parameters: AudioParameters,
 }
 
 impl Song {
@@ -145,6 +149,7 @@ impl Song {
             file_size: None,
             file_mtime_ns: None,
             format: None,
+            audio_parameters: AudioParameters::default(),
         }
     }
 
@@ -218,6 +223,11 @@ impl Song {
     pub const fn format(&self) -> Option<AudioFormat> {
         self.format
     }
+    /// Audio stream parameters read at scan time (task 6.4).
+    #[must_use]
+    pub const fn audio_parameters(&self) -> AudioParameters {
+        self.audio_parameters
+    }
 
     /// Record the scan facts of one processed file (hash, size, mtime, format).
     ///
@@ -230,10 +240,32 @@ impl Song {
         file_mtime_ns: i64,
         format: AudioFormat,
     ) {
+        self.apply_scan_facts_with_params(
+            blake3_hash,
+            file_size,
+            file_mtime_ns,
+            format,
+            AudioParameters::default(),
+        );
+    }
+
+    /// Same as [`Self::apply_scan_facts`], additionally persisting the audio
+    /// stream parameters read by the metadata probe at scan time (task 6.4).
+    /// The params live on the committed row so the read-only detail DTO never
+    /// re-probes the file.
+    pub fn apply_scan_facts_with_params(
+        &mut self,
+        blake3_hash: String,
+        file_size: u64,
+        file_mtime_ns: i64,
+        format: AudioFormat,
+        audio_parameters: AudioParameters,
+    ) {
         self.blake3_hash = Some(blake3_hash);
         self.file_size = Some(file_size);
         self.file_mtime_ns = Some(file_mtime_ns);
         self.format = Some(format);
+        self.audio_parameters = audio_parameters;
         self.bump();
     }
 
@@ -340,6 +372,7 @@ impl Song {
         file_size: Option<u64>,
         file_mtime_ns: Option<i64>,
         format: Option<AudioFormat>,
+        audio_parameters: AudioParameters,
     ) -> Self {
         Self {
             id,
@@ -359,6 +392,7 @@ impl Song {
             file_size,
             file_mtime_ns,
             format,
+            audio_parameters,
         }
     }
 

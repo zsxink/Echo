@@ -19,7 +19,7 @@ use crate::domain::entities::{
     LibraryRoot, LyricsCandidate, LyricsLine, RootAvailability, Song, SongAvailability,
 };
 use crate::domain::ids::{PlayCount, RelativeMediaPath, Revision};
-use crate::domain::media::AudioFormat;
+use crate::domain::media::{AudioFormat, AudioParameters};
 use crate::domain::state::OperationState;
 use crate::error::Error;
 
@@ -58,6 +58,12 @@ pub(crate) fn song_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Song> {
         .map(|value| audio_format_from_db(&value))
         .transpose()
         .map_err(to_sql_error)?;
+    let audio_parameters = AudioParameters {
+        bitrate_bps: row.get::<_, Option<u64>>(17)?,
+        sample_rate_hz: row.get::<_, Option<u32>>(18)?,
+        channels: row.get::<_, Option<u16>>(19)?,
+        bits_per_sample: row.get::<_, Option<u16>>(20)?,
+    };
     Ok(Song::from_storage(
         id,
         root,
@@ -76,6 +82,7 @@ pub(crate) fn song_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Song> {
         row.get(14)?,
         row.get(15)?,
         format,
+        audio_parameters,
     ))
 }
 

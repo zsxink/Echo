@@ -22,6 +22,8 @@ mod migrations {
     pub const INITIAL: &str = include_str!("migrations/0001_initial.sql");
     pub const LIBRARY_ASSETS: &str = include_str!("migrations/0002_library_assets.sql");
     pub const ROOT_WRITE_SAFETY: &str = include_str!("migrations/0003_root_write_safety.sql");
+    pub const SONG_AUDIO_PARAMETERS: &str =
+        include_str!("migrations/0004_song_audio_parameters.sql");
 }
 
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -71,6 +73,7 @@ pub(crate) fn apply_migrations(connection: &mut Connection) -> Result<(), Error>
             (1, migrations::INITIAL),
             (2, migrations::LIBRARY_ASSETS),
             (3, migrations::ROOT_WRITE_SAFETY),
+            (4, migrations::SONG_AUDIO_PARAMETERS),
         ],
     )
 }

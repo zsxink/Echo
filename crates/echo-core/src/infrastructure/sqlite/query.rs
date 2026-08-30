@@ -21,7 +21,7 @@ use super::support::{parse_id, storage};
 
 /// Column list shared by every read that produces a `Song`. The trailing four
 /// columns are the scan bookkeeping facts (phase 4): hash, size, mtime, format.
-pub(crate) const SONG_SELECT: &str = "SELECT s.uuid, s.library_root_uuid, s.relative_path, s.availability, s.is_favorite, s.play_count, s.revision, s.added_at, s.title, s.artist, s.album, s.duration_ms, s.updated_at, s.blake3_hash, s.file_size, s.file_mtime_ns, s.format FROM songs s";
+pub(crate) const SONG_SELECT: &str = "SELECT s.uuid, s.library_root_uuid, s.relative_path, s.availability, s.is_favorite, s.play_count, s.revision, s.added_at, s.title, s.artist, s.album, s.duration_ms, s.updated_at, s.blake3_hash, s.file_size, s.file_mtime_ns, s.format, s.bitrate_bps, s.sample_rate_hz, s.channels, s.bits_per_sample FROM songs s";
 
 pub(crate) fn active_root_id(connection: &Connection) -> Result<Option<LibraryRootId>, Error> {
     connection

@@ -1041,6 +1041,29 @@
       "cmd": "node scripts/verify/checks/task-6.mjs 6.3 application::favorite::tests::favourite_of_missing_or_pending_delete_song_is_unavailable"
      }
     ]
+   },
+
+   {
+    "id": "6.4",
+    "title": "实现只读歌曲详情 DTO，包含有效元数据、格式/音频参数、相对路径、统计、封面/歌词来源，不返回绝对路径；验证序列化 golden test",
+    "commands": [
+     {
+      "desc": "详情只读、不含绝对路径、反映元数据/格式/音频参数/统计",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.4 application::detail::tests::detail_is_read_only_and_carries_no_absolute_path"
+     },
+     {
+      "desc": "详情反映封面与歌词来源可用性",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.4 application::detail::tests::detail_reflects_cover_and_lyrics_availability"
+     },
+     {
+      "desc": "库外歌曲不可用、missing 状态如实展示",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.4 application::detail::tests::detail_of_unknown_song_is_unavailable_and_missing_is_visible"
+     },
+     {
+      "desc": "序列化 golden test：DTO 输出稳定且路径字段只含相对路径",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.4 application::detail::tests::detail_serialization_golden_match"
+     }
+    ]
    }
 
  ],

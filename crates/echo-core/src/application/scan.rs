@@ -350,11 +350,12 @@ impl<'a> StartScan<'a> {
                                 parsed.file.meta.album.clone(),
                                 parsed.file.meta.duration,
                             );
-                            entity.apply_scan_facts(
+                            entity.apply_scan_facts_with_params(
                                 parsed.file.hash.clone(),
                                 parsed.file.size,
                                 parsed.file.mtime_ns,
                                 parsed.file.meta.format,
+                                parsed.file.meta.parameters,
                             );
                             planner
                                 .lock()
