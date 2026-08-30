@@ -19,10 +19,13 @@
 //! - [`boot`] — the one pre-ready startup step (`BootRecovery`): recover the
 //!   active root under a per-root scan exclusion and surface the readiness
 //!   gate the runtime consults before starting the watcher/player (task 5.10).
+//! - [`favorite`] — the favorite toggle with an authoritative committed
+//!   snapshot (`SetFavorite`, task 6.3).
 
 pub mod boot;
 pub mod catalog;
 pub mod delete;
+pub mod favorite;
 pub mod import;
 pub mod ports;
 pub mod recover;

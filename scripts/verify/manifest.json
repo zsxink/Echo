@@ -1026,6 +1026,21 @@
       "cmd": "node scripts/verify/checks/task-6.mjs 6.2 infrastructure::sqlite::tests::catalog_search_pages_deterministically_across_large_library"
      }
     ]
+   },
+
+   {
+    "id": "6.3",
+    "title": "实现收藏 mutation 与权威结果，验证曲库行、喜欢视图、详情和当前播放栏通过同一 SongId 状态一致",
+    "commands": [
+     {
+      "desc": "收藏 mutation 返回提交后的权威歌曲快照，并且喜欢视图随同一 SongId 即时反映",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.3 application::favorite::tests::toggle_favorite_returns_the_committed_authoritative_song"
+     },
+     {
+      "desc": "库外歌曲或 Echo 删除窗口内的歌曲不可收藏",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.3 application::favorite::tests::favourite_of_missing_or_pending_delete_song_is_unavailable"
+     }
+    ]
    }
 
  ],
