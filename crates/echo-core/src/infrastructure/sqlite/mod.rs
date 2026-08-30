@@ -30,9 +30,9 @@ use rusqlite::params;
 use rusqlite::{Connection, OptionalExtension, Transaction};
 
 use crate::application::ports::{
-    CoverAssetRef, CoverRepository, LibraryRepository, LyricsRepository, OperationItem,
-    OperationJournalRepository, PlaylistRepository, RuntimeStateStore, ScanRunRepository,
-    SongRepository, TxAccess, TxWork, UnitOfWork,
+    CatalogQueryRepository, CoverAssetRef, CoverRepository, LibraryRepository, LyricsRepository,
+    OperationItem, OperationJournalRepository, PlaylistRepository, RuntimeStateStore,
+    ScanRunRepository, SongRepository, TxAccess, TxWork, UnitOfWork,
 };
 use crate::domain::catalog::{OpaqueCursor, Paged, SongSort};
 use crate::domain::entities::{
@@ -65,7 +65,7 @@ use connection::{
 use conversion::{
     availability_from_db, operation_item_from_row, root_from_row, scan_state_from_db, song_from_row,
 };
-use query::{active_root_id, query_active, SONG_SELECT};
+use query::{active_root_id, playlist_songs_query, query_active, SONG_SELECT};
 use statements::{
     add_member, all_songs_in_root, attach_cover, begin_scan_run, clear_lyrics_candidate,
     cover_of_song, create_playlist, delete_song, ensure_operation_journal, finish_scan_run,
@@ -266,7 +266,7 @@ impl SqliteDatabase {
         let query = normalized_key(query);
         let cursor = cursor.cloned();
         self.with_reader(move |connection| {
-            query_active(connection, &query, sort, cursor.as_ref(), limit)
+            query_active(connection, &query, false, sort, cursor.as_ref(), limit)
         })
     }
 
@@ -511,6 +511,44 @@ impl SongRepository for SqliteDatabase {
             increment_play_count(&transaction, id)?;
             transaction.commit().map_err(storage)
         })
+    }
+}
+
+impl CatalogQueryRepository for SqliteDatabase {
+    fn all_songs(
+        &self,
+        sort: SongSort,
+        cursor: Option<&OpaqueCursor>,
+        limit: usize,
+    ) -> Result<Paged<Song>, Error> {
+        self.query_active_songs("", sort, cursor, limit)
+    }
+
+    fn favorites(
+        &self,
+        sort: SongSort,
+        cursor: Option<&OpaqueCursor>,
+        limit: usize,
+    ) -> Result<Paged<Song>, Error> {
+        if limit == 0 || limit > 500 {
+            return Err(Error::validation(
+                Subject::Query,
+                "page limit",
+                "must be 1 through 500",
+            ));
+        }
+        let cursor = cursor.cloned();
+        self.with_reader(move |connection| {
+            query_active(connection, "", true, sort, cursor.as_ref(), limit)
+        })
+    }
+
+    fn recent_100(&self) -> Result<Vec<Song>, Error> {
+        self.recent_songs()
+    }
+
+    fn playlist_songs(&self, playlist: PlaylistId) -> Result<Vec<Song>, Error> {
+        self.with_reader(move |connection| playlist_songs_query(connection, playlist))
     }
 }
 

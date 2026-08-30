@@ -21,6 +21,7 @@
 //!   gate the runtime consults before starting the watcher/player (task 5.10).
 
 pub mod boot;
+pub mod catalog;
 pub mod delete;
 pub mod import;
 pub mod ports;

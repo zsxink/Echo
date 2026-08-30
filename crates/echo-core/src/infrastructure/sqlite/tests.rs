@@ -4,6 +4,7 @@ use std::time::Duration;
 use rusqlite::params;
 
 use super::*;
+use crate::application::catalog::CatalogQuery;
 use crate::application::ports::{
     LibraryRepository, OperationResourceKind, PlaylistRepository, SongRepository, UnitOfWork,
 };
@@ -1367,5 +1368,357 @@ fn activation_commits_active_root_and_epoch_atomically() {
             .expect("by id")
             .unwrap()
             .is_active()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Task 6.1 — catalog view scenarios (全部歌曲 / 最近添加 / 喜欢的音乐 / 歌单)
+// ---------------------------------------------------------------------------
+
+/// Seed the active root with songs covering every view-relevant state.
+/// Returns `(available, missing, pending_delete, favorite)` so tests can assert
+/// membership of each view without re-deriving ids from the database.
+fn seed_view_fixture(
+    database: &SqliteDatabase,
+    root: LibraryRootId,
+) -> (Vec<Song>, Vec<Song>, Vec<Song>, Vec<Song>) {
+    let mut available = Vec::new();
+    let mut missing = Vec::new();
+    let mut pending_delete = Vec::new();
+    let mut favorite = Vec::new();
+
+    // Deterministic insertion order key (`added_at`) — the recent-view ladder.
+    for (stamp, index) in (1000u64..).zip(0..6) {
+        let mut record = Song::with_added_at(
+            SongId::new(),
+            root,
+            RelativeMediaPath::new(&format!("songs/tune-{index}.flac")).expect("path"),
+            Revision::INITIAL,
+            stamp,
+        );
+        record.apply_metadata(
+            Some(format!("title {index}")),
+            Some(format!("artist {index}")),
+            Some("album".to_owned()),
+            Some(Duration::from_secs(180)),
+        );
+        if index == 2 {
+            record.mark_missing();
+            missing.push(record.clone());
+        } else if index == 4 {
+            record.set_favorite(true);
+            available.push(record.clone());
+            favorite.push(record.clone());
+        } else if index == 5 {
+            record.begin_pending_delete();
+            pending_delete.push(record.clone());
+        } else {
+            available.push(record.clone());
+        }
+        SongRepository::upsert(database, &record).expect("seed song");
+    }
+
+    // A second, inactive root must never leak into any view.
+    let other_root = LibraryRootId::new();
+    let mut foreign = Song::new(
+        SongId::new(),
+        other_root,
+        RelativeMediaPath::new("songs/foreign.flac").expect("path"),
+        Revision::INITIAL,
+    );
+    foreign.apply_metadata(
+        Some("foreign".to_owned()),
+        Some("outsider".to_owned()),
+        Some("album".to_owned()),
+        Some(Duration::from_secs(180)),
+    );
+    // The inactive root's record must exist for the foreign song to be valid.
+    let dir = tempfile::tempdir().expect("tempdir");
+    LibraryRepository::upsert(
+        database,
+        &LibraryRoot::new(other_root, dir.path().join("other"), false, true),
+    )
+    .expect("insert inactive root");
+    SongRepository::upsert(database, &foreign).expect("seed foreign song");
+
+    (available, missing, pending_delete, favorite)
+}
+
+/// 全部歌曲: only the active root's available songs, pending-delete hidden,
+/// other roots never visible.
+#[test]
+fn catalog_all_songs_view_covers_active_root_available_songs_only() {
+    let (_directory, database, root) = database();
+    let (expected, missing, pending_delete, favorite) = seed_view_fixture(&database, root);
+    let query = CatalogQuery::new(&database);
+
+    let page = query
+        .all_songs(
+            SongSort {
+                field: SongSortField::AddedAt,
+                direction: SortDirection::Asc,
+            },
+            None,
+            100,
+        )
+        .expect("all songs");
+    assert!(page.is_last);
+    assert_eq!(page.next_cursor, None);
+
+    let mut ids: Vec<_> = page.items.iter().map(Song::id).collect();
+    let mut expected_ids: Vec<_> = expected.iter().map(Song::id).collect();
+    ids.sort();
+    expected_ids.sort();
+    assert_eq!(ids, expected_ids, "available songs of the active root only");
+    for record in &page.items {
+        assert_ne!(record.id(), pending_delete[0].id(), "pending-delete hidden");
+        assert_ne!(
+            record.id(),
+            missing[0].id(),
+            "missing hidden from all-songs"
+        );
+        assert_eq!(record.availability(), SongAvailability::Available);
+    }
+    // Favorite songs still appear in 全部歌曲 (favorite is orthogonal).
+    assert!(page.items.iter().any(|s| s.id() == favorite[0].id()));
+}
+
+/// 喜欢的音乐: favorites of the active root, keyset-stable, pending-delete
+/// hidden, other roots never visible.
+#[test]
+fn catalog_favorites_view_is_favorited_available_active_root_songs_only() {
+    let (_directory, database, root) = database();
+    let (_available, _missing, _pending, favorite) = seed_view_fixture(&database, root);
+    let query = CatalogQuery::new(&database);
+
+    let page = query
+        .favorites(
+            SongSort {
+                field: SongSortField::AddedAt,
+                direction: SortDirection::Asc,
+            },
+            None,
+            100,
+        )
+        .expect("favorites");
+    assert!(page.is_last);
+    let mut ids: Vec<_> = page.items.iter().map(Song::id).collect();
+    let mut favored_ids: Vec<_> = favorite.iter().map(Song::id).collect();
+    ids.sort();
+    favored_ids.sort();
+    assert_eq!(
+        ids, favored_ids,
+        "exactly the favorited, available songs of the active root"
+    );
+    assert!(page.items.iter().all(Song::favorite));
+
+    // Un-favoriting removes the song from the view immediately.
+    SongRepository::set_favorite(&database, favorite[0].id(), false).expect("unfavorite");
+    let after = query
+        .favorites(
+            SongSort {
+                field: SongSortField::AddedAt,
+                direction: SortDirection::Asc,
+            },
+            None,
+            100,
+        )
+        .expect("favorites after unfavorite");
+    assert!(after.items.is_empty(), "取消收藏后歌曲立即从该视图移除");
+}
+
+/// 最近添加: the newest 100 available songs by added_at desc, stable UUID
+/// tie-break, pending-delete + missing hidden, other roots never visible.
+#[test]
+fn catalog_recent_100_is_newest_available_with_stable_tie_break() {
+    let (_directory, database, root) = database();
+    let (_available, missing, pending_delete, _favorite) = seed_view_fixture(&database, root);
+    let query = CatalogQuery::new(&database);
+
+    let recent = query.recent_100().expect("recent 100");
+    // All six seeded songs have distinct added_at; the two non-available ones
+    // (missing + pending-delete) are dropped, leaving four.
+    assert_eq!(recent.len(), 4);
+    let ids: Vec<_> = recent.iter().map(Song::id).collect();
+    let missing_id = missing[0].id();
+    let pending_id = pending_delete[0].id();
+    assert!(!ids.contains(&missing_id), "missing hidden");
+    assert!(!ids.contains(&pending_id), "pending-delete hidden");
+    // Newest first on the added_at ladder.
+    let stamps: Vec<_> = recent.iter().map(Song::added_at).collect();
+    let mut sorted = stamps.clone();
+    sorted.sort_by(|a, b| b.cmp(a));
+    assert_eq!(stamps, sorted, "最新添加排在前面");
+
+    // Stable tie-break: two records sharing an added_at keep deterministic order.
+    let mut tied_a = Song::with_added_at(
+        SongId::new(),
+        root,
+        RelativeMediaPath::new("songs/tied-a.flac").expect("path"),
+        Revision::INITIAL,
+        999,
+    );
+    let mut tied_b = Song::with_added_at(
+        SongId::new(),
+        root,
+        RelativeMediaPath::new("songs/tied-b.flac").expect("path"),
+        Revision::INITIAL,
+        999,
+    );
+    tied_a.apply_metadata(
+        Some("tied a".into()),
+        Some("a".into()),
+        Some("album".into()),
+        Some(Duration::from_secs(1)),
+    );
+    tied_b.apply_metadata(
+        Some("tied b".into()),
+        Some("b".into()),
+        Some("album".into()),
+        Some(Duration::from_secs(2)),
+    );
+    SongRepository::upsert(&database, &tied_a).expect("tied a");
+    SongRepository::upsert(&database, &tied_b).expect("tied b");
+    let recent_again = query.recent_100().expect("recent again");
+    assert_eq!(recent_again.len(), 6, "the two tied songs join the four");
+    assert!(
+        recent_again.iter().any(|s| s.id() == tied_a.id()),
+        "tied a present"
+    );
+    assert!(
+        recent_again.iter().any(|s| s.id() == tied_b.id()),
+        "tied b present"
+    );
+    // It's deterministic: re-running reproduces the same relative order.
+    let recent_thrice = query.recent_100().expect("recent thrice");
+    let order_one: Vec<_> = recent_again.iter().map(Song::id).collect();
+    let order_two: Vec<_> = recent_thrice.iter().map(Song::id).collect();
+    assert_eq!(order_one, order_two, "重复刷新不得随机改变顺序");
+}
+
+/// 歌单: members by position over the active root; available + missing shown,
+/// pending-delete hidden.
+#[test]
+fn catalog_playlist_view_shows_available_and_missing_hides_pending_delete() {
+    let (_directory, database, root) = database();
+    let (available_songs, missing_songs, pending_songs, _favorite) =
+        seed_view_fixture(&database, root);
+    let query = CatalogQuery::new(&database);
+
+    let playlist = PlaylistId::new();
+    database.create(playlist, root, "歌单").expect("playlist");
+    database
+        .add_member(playlist, available_songs[0].id(), 0)
+        .expect("member available");
+    database
+        .add_member(playlist, missing_songs[0].id(), 1)
+        .expect("member missing");
+    database
+        .add_member(playlist, pending_songs[0].id(), 2)
+        .expect("member pending");
+
+    let songs = query.playlist(playlist).expect("playlist songs");
+    let ids: Vec<_> = songs.iter().map(Song::id).collect();
+    assert_eq!(ids.len(), 2, "pending-delete member hidden");
+    assert_eq!(ids[0], available_songs[0].id(), "position 0 first");
+    assert_eq!(ids[1], missing_songs[0].id(), "position 1 second");
+    assert!(!ids.contains(&pending_songs[0].id()));
+
+    // A missing member was already visible (missing rows display so a blocked
+    // row can be shown); restoring it to available keeps it in place, and the
+    // pending-delete member stays hidden throughout.
+    SongRepository::set_availability(
+        &database,
+        missing_songs[0].id(),
+        SongAvailability::Available,
+    )
+    .expect("restore missing");
+    let after = query.playlist(playlist).expect("playlist after restore");
+    assert_eq!(after.len(), 2, "still two visible members");
+    assert_eq!(
+        after[0].id(),
+        available_songs[0].id(),
+        "position order kept"
+    );
+    assert_eq!(
+        after[1].id(),
+        missing_songs[0].id(),
+        "restored member in place"
+    );
+}
+
+/// 全部歌曲 keyset pagination is stable and hidden songs never appear, and a
+/// stale cursor (revision guarded) is rejected.
+#[test]
+fn catalog_all_songs_keyset_pages_stably_and_rejects_stale_cursor() {
+    let (_directory, database, root) = database();
+    let (expected, _missing, _pending, _favorite) = seed_view_fixture(&database, root);
+    let query = CatalogQuery::new(&database);
+
+    for field in SongSortField::ALL {
+        for direction in [SortDirection::Asc, SortDirection::Desc] {
+            let sort = SongSort { field, direction };
+            let mut collected: Vec<SongId> = Vec::new();
+            let mut cursor: Option<OpaqueCursor> = None;
+            loop {
+                let page = query.all_songs(sort, cursor.as_ref(), 2).expect("page");
+                for record in &page.items {
+                    assert_eq!(record.availability(), SongAvailability::Available);
+                }
+                let page_ids: Vec<_> = page.items.iter().map(Song::id).collect();
+                collected.extend(page_ids);
+                if page.is_last {
+                    break;
+                }
+                cursor = page.next_cursor;
+                assert!(cursor.is_some(), "non-last page must carry a cursor");
+            }
+            let mut expected_ids: Vec<_> = expected.iter().map(Song::id).collect();
+            expected_ids.sort();
+            collected.sort();
+            assert_eq!(
+                collected, expected_ids,
+                "{field:?} {direction:?} covers active available only"
+            );
+        }
+    }
+
+    // A write after the cursor was minted invalidates it (revision guard).
+    let first = query
+        .all_songs(
+            SongSort {
+                field: SongSortField::Title,
+                direction: SortDirection::Asc,
+            },
+            None,
+            1,
+        )
+        .expect("first page");
+    let cursor = first.next_cursor.expect("cursor");
+    let mut extra = Song::new(
+        SongId::new(),
+        root,
+        RelativeMediaPath::new("songs/extra.flac").expect("path"),
+        Revision::INITIAL,
+    );
+    extra.apply_metadata(
+        Some("extra".into()),
+        Some("artist".into()),
+        Some("album".into()),
+        Some(Duration::from_secs(1)),
+    );
+    SongRepository::upsert(&database, &extra).expect("insert extra");
+    assert!(
+        query
+            .all_songs(
+                SongSort {
+                    field: SongSortField::Title,
+                    direction: SortDirection::Asc,
+                },
+                Some(&cursor),
+                1,
+            )
+            .is_err(),
+        "stale cursor rejected"
     );
 }

@@ -13,7 +13,7 @@ use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 
 use crate::domain::catalog::{OpaqueCursor, Paged, SongSort, SongSortField, SortDirection};
 use crate::domain::entities::Song;
-use crate::domain::ids::{LibraryRootId, Revision, SongId};
+use crate::domain::ids::{LibraryRootId, PlaylistId, Revision, SongId};
 use crate::error::{Error, Subject};
 
 use super::conversion::song_from_row;
@@ -39,6 +39,7 @@ pub(crate) fn active_root_id(connection: &Connection) -> Result<Option<LibraryRo
 pub(crate) fn query_active(
     connection: &Connection,
     query: &str,
+    favorites: bool,
     sort: SongSort,
     cursor: Option<&OpaqueCursor>,
     limit: usize,
@@ -64,6 +65,9 @@ pub(crate) fn query_active(
         "s.availability = 'available'".to_owned(),
     ];
     let mut values = vec![Value::Text(root.to_string())];
+    if favorites {
+        clauses.push("s.is_favorite = 1".to_owned());
+    }
     if !query.is_empty() {
         if query.chars().count() < 3 {
             clauses.push("(s.title_sort LIKE ? ESCAPE '\\' OR s.artist_sort LIKE ? ESCAPE '\\' OR s.album_sort LIKE ? ESCAPE '\\')".to_owned());
@@ -227,4 +231,35 @@ fn escape_like(value: &str) -> String {
 }
 fn escape_match(value: &str) -> String {
     format!("\"{}\"", value.replace('"', "\"\""))
+}
+
+/// One playlist's song rows over the **active root**, ordered by member
+/// position (stable) with a UUID tie-break. Available and externally-missing
+/// members are shown (so a blocked row can display), pending-delete members
+/// are hidden (task 6.1 "歌单" view; the missing/blocked display refinement
+/// is task 6.7).
+pub(crate) fn playlist_songs_query(
+    connection: &Connection,
+    playlist: PlaylistId,
+) -> Result<Vec<Song>, Error> {
+    let root = active_root_id(connection)?
+        .ok_or_else(|| Error::unavailable("library", "no active root"))?;
+    let mut statement = connection
+        .prepare(&format!(
+            "{} JOIN playlist_songs ps ON ps.song_uuid = s.uuid \
+             WHERE ps.playlist_uuid = ?1 AND s.library_root_uuid = ?2 \
+             AND s.availability <> 'pending_delete' \
+             ORDER BY ps.position, s.uuid",
+            SONG_SELECT
+        ))
+        .map_err(storage)?;
+    let songs = statement
+        .query_map(
+            params![playlist.to_string(), root.to_string()],
+            song_from_row,
+        )
+        .map_err(storage)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(storage)?;
+    Ok(songs)
 }

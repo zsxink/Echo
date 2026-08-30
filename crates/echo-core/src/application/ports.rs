@@ -29,6 +29,7 @@
 use std::io::Read;
 use std::time::Duration;
 
+use crate::domain::catalog::{OpaqueCursor, Paged, SongSort};
 use crate::domain::entities::{
     LibraryRoot, LyricsCandidate, LyricsSource, MediaDiagnostic, PlaylistMember, Song,
     SongAvailability,
@@ -82,6 +83,35 @@ pub trait SongRepository: Send + Sync {
     fn set_availability(&self, id: SongId, availability: SongAvailability) -> Result<(), Error>;
     fn set_favorite(&self, id: SongId, favorite: bool) -> Result<(), Error>;
     fn increment_play_count(&self, id: SongId) -> Result<(), Error>;
+}
+
+/// Keyset-paginated catalog queries over the **active root** (task 6.1,
+/// design §6). Every view hides pending-delete songs and only ever returns
+/// songs of the active root, so the UI can render all/favorite/playlist views
+/// from one stable, pageable contract.
+pub trait CatalogQueryRepository: Send + Sync {
+    /// The `AllSongs` view over the active root: available songs only,
+    /// keyset-paginated, pending-delete hidden.
+    fn all_songs(
+        &self,
+        sort: SongSort,
+        cursor: Option<&OpaqueCursor>,
+        limit: usize,
+    ) -> Result<Paged<Song>, Error>;
+    /// The `Favorites` view over the active root: only favorited, available
+    /// songs, keyset-paginated, pending-delete hidden.
+    fn favorites(
+        &self,
+        sort: SongSort,
+        cursor: Option<&OpaqueCursor>,
+        limit: usize,
+    ) -> Result<Paged<Song>, Error>;
+    /// The active root's newest 100 available songs (`added_at` desc, stable
+    /// UUID tie-break).
+    fn recent_100(&self) -> Result<Vec<Song>, Error>;
+    /// One playlist's song rows ordered by member position (available +
+    /// missing shown, pending-delete hidden, active root only).
+    fn playlist_songs(&self, playlist: PlaylistId) -> Result<Vec<Song>, Error>;
 }
 
 /// Query/store playlists and their members.

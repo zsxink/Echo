@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use crate::application::ports::*;
+use crate::domain::catalog::{OpaqueCursor, Paged, SongSort};
 use crate::domain::entities::{
     LibraryRoot, LyricsCandidate, LyricsSource, MediaDiagnostic, PlaylistMember, Song,
     SongAvailability,
@@ -354,6 +355,100 @@ impl PlaylistRepository for MemoryDatabase {
     fn remove_member(&self, playlist: PlaylistId, song: SongId) -> Result<(), Error> {
         self.lock().members.remove(&(playlist, song));
         Ok(())
+    }
+}
+
+impl CatalogQueryRepository for MemoryDatabase {
+    fn all_songs(
+        &self,
+        sort: SongSort,
+        cursor: Option<&OpaqueCursor>,
+        limit: usize,
+    ) -> Result<Paged<Song>, Error> {
+        self.mem_catalog(false, sort, cursor, limit)
+    }
+
+    fn favorites(
+        &self,
+        sort: SongSort,
+        cursor: Option<&OpaqueCursor>,
+        limit: usize,
+    ) -> Result<Paged<Song>, Error> {
+        self.mem_catalog(true, sort, cursor, limit)
+    }
+
+    fn recent_100(&self) -> Result<Vec<Song>, Error> {
+        let root = self.active_root()?.map(|record| record.id());
+        let mut songs: Vec<Song> = self
+            .lock()
+            .songs
+            .values()
+            .filter(|song| {
+                root.is_some_and(|r| song.root() == r)
+                    && song.availability() == SongAvailability::Available
+            })
+            .cloned()
+            .collect();
+        songs.sort_by(|a, b| b.added_at().cmp(&a.added_at()).then(b.id().cmp(&a.id())));
+        songs.truncate(100);
+        Ok(songs)
+    }
+
+    fn playlist_songs(&self, playlist: PlaylistId) -> Result<Vec<Song>, Error> {
+        let root = self.active_root()?.map(|record| record.id());
+        let store = self.lock();
+        let mut rows: Vec<(u64, SongId)> = store
+            .members
+            .iter()
+            .filter(|((playlist_id, _), _)| *playlist_id == playlist)
+            .map(|((_, song), member)| (member.position(), *song))
+            .collect();
+        rows.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        let mut songs = Vec::with_capacity(rows.len());
+        for (_, song_id) in rows {
+            if let Some(song) = store.songs.get(&song_id) {
+                let in_active_root = root.is_some_and(|r| song.root() == r);
+                let hidden = song.availability() == SongAvailability::PendingDelete;
+                if in_active_root && !hidden {
+                    songs.push(song.clone());
+                }
+            }
+        }
+        Ok(songs)
+    }
+}
+
+impl MemoryDatabase {
+    fn mem_catalog(
+        &self,
+        favorites: bool,
+        sort: SongSort,
+        _cursor: Option<&OpaqueCursor>,
+        limit: usize,
+    ) -> Result<Paged<Song>, Error> {
+        if limit == 0 || limit > 500 {
+            return Err(Error::validation(
+                crate::error::Subject::Query,
+                "page limit",
+                "must be 1 through 500",
+            ));
+        }
+        let root = self.active_root()?.map(|record| record.id());
+        let mut songs: Vec<Song> = self
+            .lock()
+            .songs
+            .values()
+            .filter(|song| {
+                root.is_some_and(|r| song.root() == r)
+                    && song.availability() == SongAvailability::Available
+                    && (!favorites || song.favorite())
+            })
+            .cloned()
+            .collect();
+        songs.sort_by(|a, b| sort.compare(a, b));
+        let is_last = songs.len() <= limit;
+        songs.truncate(limit);
+        Ok(Paged::new(songs, None, is_last))
     }
 }
 

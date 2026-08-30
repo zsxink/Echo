@@ -113,3 +113,28 @@
 - Commit：`Implement task 5.7: Echo-internal per-resource delete stage/restore with 10s undo and crash-safe recovery` → 见 git log
 
 ---
+
+### 5.8 系统回收站前滚与持久化证明 finalize
+
+- 状态：✅ PASS（实现 + 自测通过）
+- 实现：`FinalizeExpiredDeletes` 将已过期（undo_deadline 已过）且已下架（HiddenInDatabase）的删除推进到 `TrashPending→TrashApplied→DatabaseFinalized`，经 `SystemTrashPort` 拒收（outcome unknown）或在最终化落库前崩溃时由后续引导恢复重试；`boot.rs` 复用它作为 5.10 面交。manifest 登记 id=5.8（多条命令指向 sqlite/trash 前滚与 finalize 原子性测试）。
+- Commit：`Implement task 5.8: system-trash forward-roll with durable-proof finalization` → **b0b2bbd**
+
+### 5.9 外部 missing 与 Echo 删除区分
+
+- 状态：✅ PASS（实现 + 自测通过）
+- 实现：扫描/监听的 relink 与 fast-skip 在文件消失时判为外部 missing（保留 UUID/收藏/统计/歌单/blocked 队列），绝不把 Echo 主动删除的 pending-delete 歌曲当外部 missing 处理；同路径或同 hash 重解析后恢复可用。修正 5.9 期间发现的真 bug：missing 歌曲在原路径重解析后一直停留 Missing。manifest 登记 id=5.9。
+- Commit：`Implement task 5.9: external missing vs Echo delete distinction` → **a652e7b**
+
+### 5.10 启动前恢复与 watcher/player 协调门
+
+- 状态：✅ PASS（实现 + 自测通过）
+- 实现：`BootRecovery` 在 ready 前对 active 根恢复 `RecoverOperations`（持有逐根扫描排除，防恢复期间并发扫描），返回 `BootReport` 就绪门（recovered / needs-system-trash / read-only）；`ScanSupervisor::register/unregister` 改为 `pub(crate)`。manifest 登记 id=5.10。
+- Commit：`Implement task 5.10: pre-ready recovery + watcher/player coordination gate` → **b046037**
+
+### 6.1 全部歌曲、最近 100 首、喜欢的音乐和歌单查询
+
+- 状态：✅ PASS（实现 + 自测通过）
+- 实现：`CatalogQueryRepository` port + sqlite/memory 双适配器 + `CatalogQuery` 用例（`application/catalog.rs`）。四视图语义：active 根限定、available 可见、pending-delete 全隐藏、确定性排序（全部歌曲 keyset 分页 + 四种排序；最近 100 按 added_at desc + UUID 稳定 tie-break；歌单按 position 且 missing 成员可见）。spec 场景测试：视图集合、稳定顺序、active 根隔离、pending-delete 隐藏、过期 cursor 拒绝、取消收藏即移除、内存适配器与端口契约一致。manifest 登记 id=6.1（6 条命令，task-6.mjs）。
+- 全量：`cargo test -p echo-core --all-features` 268+6+7 全绿；fmt、clippy `-D warnings` 干净。
+- Commit：见 git log

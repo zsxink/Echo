@@ -80,7 +80,7 @@
 
 本组验收：`pnpm verify:task -- 6.1 6.2 6.3 6.4 6.5 6.6 6.7 6.8`
 
-- [ ] 6.1 实现全部歌曲、最近 100 首、喜欢的音乐和歌单查询，用 spec 场景验证视图集合、稳定顺序、active 根隔离和 pending-delete 隐藏。[library-experience]
+- [x] 6.1 实现全部歌曲、最近 100 首、喜欢的音乐和歌单查询，用 spec 场景验证视图集合、稳定顺序、active 根隔离和 pending-delete 隐藏。[library-experience]
 - [ ] 6.2 实现标题/艺人/专辑完整查询词包含搜索和当前视图叠加，验证清空恢复、无结果、过期请求取消和 50k 数据正确性。[library-experience]
 - [ ] 6.3 实现收藏 mutation 与权威结果，验证曲库行、喜欢视图、详情和当前播放栏通过同一 SongId 状态一致。[library-experience]
 - [ ] 6.4 实现只读歌曲详情 DTO，包含有效元数据、格式/音频参数、相对路径、统计、封面/歌词来源，不返回绝对路径；验证序列化 golden test。[library-experience]

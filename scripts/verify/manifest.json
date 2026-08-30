@@ -964,6 +964,37 @@
       "cmd": "node scripts/verify/checks/task-5.mjs 5.10 application::boot::tests::write_safety_locked_root_is_read_only_and_writes_stay_disabled"
      }
     ]
+   },
+
+   {
+    "id": "6.1",
+    "title": "实现全部歌曲、最近 100 首、喜欢的音乐和歌单查询，用 spec 场景验证视图集合、稳定顺序、active 根隔离和 pending-delete 隐藏",
+    "commands": [
+     {
+      "desc": "全部歌曲视图只覆盖 active 根的可用歌曲（missing 与 pending-delete 隐藏，其他根不泄漏）",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.1 infrastructure::sqlite::tests::catalog_all_songs_view_covers_active_root_available_songs_only"
+     },
+     {
+      "desc": "喜欢的音乐只包含收藏的可用歌曲；取消收藏立即从该视图移除",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.1 infrastructure::sqlite::tests::catalog_favorites_view_is_favorited_available_active_root_songs_only"
+     },
+     {
+      "desc": "最近添加返回最新的可用歌曲且用稳定次级键处理相同时间",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.1 infrastructure::sqlite::tests::catalog_recent_100_is_newest_available_with_stable_tie_break"
+     },
+     {
+      "desc": "歌单视图按 position 展示可用与 missing 成员、隐藏 pending-delete",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.1 infrastructure::sqlite::tests::catalog_playlist_view_shows_available_and_missing_hides_pending_delete"
+     },
+     {
+      "desc": "全部歌曲 keyset 分页稳定且过期 cursor 被拒绝",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.1 infrastructure::sqlite::tests::catalog_all_songs_keyset_pages_stably_and_rejects_stale_cursor"
+     },
+     {
+      "desc": "内存适配器与端口契约一致：四个视图集合、稳定顺序、active 根隔离、pending-delete 隐藏",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.1 application::catalog::tests::catalog_views_over_memory_repo_agree_with_the_port_contract"
+     }
+    ]
    }
 
  ],
