@@ -167,3 +167,10 @@
 - 实现：`application/playlist.rs` —— `CreatePlaylist`/`RenamePlaylist`/`DeletePlaylist`/`ListPlaylists`。名称规则在用例层：trim 首尾空白、reject 空/超 40 用户感知字符（grapheme cluster）、同一根内按 NFKC+case-fold 判重（仓库唯一 `normalized_name_key` 承担冲突）；重命名只动 `playlists` 行、成员与追加顺序不变；删除只删歌单及成员关系、绝不动歌曲文件/记录/其他歌单成员。补强 `MemoryDatabase` 测试替身：`create`/`rename` 按 `playlist_name_key` 判重、`members` 按 position 稳定排序，使内存与 sqlite 语义一致。manifest 登记 id=6.5（3 条命令）。
 - 全量：`cargo test -p echo-core --all-features` 283+6+7 全绿；fmt、clippy `-D warnings` 干净。
 - Commit：见 git log
+
+### 6.6 按 position 的成员添加、原子多歌单、幂等与移除重加
+
+- 状态：✅ PASS（实现 + 自测通过）
+- 实现：`application/playlist.rs` `AddToPlaylists`（单事务把一首歌原子追加到一个或多个歌单，任一目标失败整体回滚；已属目标幂等不建重复行且保留原 position）、`RemoveFromPlaylist`（只动该歌单成员关系，非成员移除为 no-op）、`PlaylistMembers`（按 position 稳定排序展示）。追加取 `max+1`（非 u64::MAX 显式位置则直接用），顺序不依赖时间戳。补强 `MemoryDatabase` 测试替身：`add_member` 的 `u64::MAX` 追加改为 `max+1`（与 sqlite 一致），修掉既有潜在排序错位。manifest 登记 id=6.6（2 条命令）。
+- 全量：`cargo test -p echo-core --all-features` 285+6+7 全绿；fmt、clippy `-D warnings` 干净。
+- Commit：见 git log

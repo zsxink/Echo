@@ -368,13 +368,21 @@ impl PlaylistRepository for MemoryDatabase {
         if store.members.contains_key(&(playlist, song)) {
             return Ok(());
         }
+        // Mirror SQLite: appending takes the next free position (max + 1), so
+        // ordering is strictly positional and a fresh playlist starts at 0.
         let next = store
             .members
             .iter()
             .filter(|((p, _), _)| *p == playlist)
             .map(|(_, member)| member.position())
             .max()
-            .unwrap_or(0);
+            .map_or(0, |current| {
+                if current == u64::MAX {
+                    u64::MAX
+                } else {
+                    current + 1
+                }
+            });
         let position = if position == u64::MAX { next } else { position };
         store.members.insert(
             (playlist, song),

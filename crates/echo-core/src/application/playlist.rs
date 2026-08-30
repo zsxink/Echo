@@ -13,8 +13,9 @@
 //! playlist and its membership rows; songs, their records and memberships in
 //! other playlists are never touched.
 
-use crate::application::ports::PlaylistRepository;
-use crate::domain::ids::{LibraryRootId, PlaylistId};
+use crate::application::ports::{PlaylistRepository, SongRepository, TxAccess, UnitOfWork};
+use crate::domain::entities::{PlaylistMember, SongAvailability};
+use crate::domain::ids::{LibraryRootId, PlaylistId, SongId};
 use crate::domain::text::validate_playlist_name;
 use crate::error::{Error, Subject};
 
@@ -115,6 +116,143 @@ impl<'a> ListPlaylists<'a> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Memberships (task 6.6)
+// ---------------------------------------------------------------------------
+
+/// Add one song to one or more playlists atomically.
+///
+/// All memberships commit in a single transaction, so a failure on any target
+/// rolls the whole batch back. Adding a song that already belongs to a target
+/// is idempotent: no duplicate row, the existing position is preserved. Append
+/// (`position = u64::MAX`) takes the next free position, never the wall-clock
+/// timestamp, so ordering is deterministic.
+pub struct AddToPlaylists<'a> {
+    songs: &'a dyn SongRepository,
+    playlists: &'a dyn PlaylistRepository,
+    unit: &'a dyn UnitOfWork,
+}
+
+impl<'a> AddToPlaylists<'a> {
+    #[must_use]
+    pub const fn new(
+        songs: &'a dyn SongRepository,
+        playlists: &'a dyn PlaylistRepository,
+        unit: &'a dyn UnitOfWork,
+    ) -> Self {
+        Self {
+            songs,
+            playlists,
+            unit,
+        }
+    }
+
+    /// # Errors
+    ///
+    /// `Unavailable` when the song is unknown or not a visible (audio) row;
+    /// returns [`Error::Unavailable`] for any missing target playlist;
+    /// storage errors propagate. On error none of the memberships are applied.
+    pub fn execute(
+        &self,
+        song: SongId,
+        targets: &[PlaylistId],
+        position: u64,
+    ) -> Result<(), Error> {
+        // Validate the song is a visible, available record once.
+        let record = self
+            .songs
+            .by_id(song)?
+            .ok_or_else(|| Error::unavailable("song", "not in the library"))?;
+        if !record.availability().is_playable() {
+            return Err(Error::unavailable("song", "not playable"));
+        }
+        // Validate every target exists before writing anything.
+        for id in targets {
+            if self.playlists.by_id(*id)?.is_none() {
+                return Err(Error::unavailable("playlist", "not found"));
+            }
+        }
+        if targets.is_empty() {
+            return Ok(());
+        }
+        // Resolve each target's append slot before opening the transaction so
+        // the batch is deterministic. `u64::MAX` means "append at the end".
+        let slots: Vec<u64> = targets
+            .iter()
+            .map(|id| {
+                let next = self
+                    .playlists
+                    .members(*id)?
+                    .into_iter()
+                    .map(|member| member.position())
+                    .max()
+                    .map_or(0, |current| {
+                        if current == u64::MAX {
+                            u64::MAX
+                        } else {
+                            current + 1
+                        }
+                    });
+                Ok(if position == u64::MAX { next } else { position })
+            })
+            .collect::<Result<_, Error>>()?;
+        let targets_owned: Vec<PlaylistId> = targets.to_vec();
+        self.unit.with_tx(Box::new(move |tx: &mut dyn TxAccess| {
+            for (id, slot) in targets_owned.iter().zip(slots) {
+                tx.insert_member(&PlaylistMember::new(
+                    *id,
+                    song,
+                    slot,
+                    SongAvailability::Available,
+                ))?;
+            }
+            Ok(())
+        }))
+    }
+}
+
+/// Remove one song from one playlist. Only that membership is affected.
+pub struct RemoveFromPlaylist<'a> {
+    playlists: &'a dyn PlaylistRepository,
+}
+
+impl<'a> RemoveFromPlaylist<'a> {
+    #[must_use]
+    pub const fn new(playlists: &'a dyn PlaylistRepository) -> Self {
+        Self { playlists }
+    }
+
+    /// # Errors
+    ///
+    /// Storage errors propagate. Removing a non-member is a no-op success.
+    pub fn execute(&self, playlist: PlaylistId, song: SongId) -> Result<(), Error> {
+        self.playlists.remove_member(playlist, song)
+    }
+}
+
+/// Members of a playlist ordered by append position (task 6.6 "打开歌单"):
+/// the display keeps the membership's deterministic position order, never the
+/// insertion timestamp.
+pub struct PlaylistMembers<'a> {
+    playlists: &'a dyn PlaylistRepository,
+}
+
+impl<'a> PlaylistMembers<'a> {
+    #[must_use]
+    pub const fn new(playlists: &'a dyn PlaylistRepository) -> Self {
+        Self { playlists }
+    }
+
+    /// # Errors
+    ///
+    /// Storage errors propagate.
+    pub fn execute(&self, playlist: PlaylistId) -> Result<Vec<PlaylistMember>, Error> {
+        let mut members = self.playlists.members(playlist)?;
+        members.sort_by_key(PlaylistMember::position);
+        Ok(members)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,6 +332,94 @@ mod tests {
         );
         // Renaming to one's own name is a no-op success.
         rename.execute(id, "road trip 2").expect("self-rename ok");
+    }
+
+    #[test]
+    fn add_to_multiple_playlists_is_atomic_and_idempotent() {
+        let db = MemoryDatabase::new();
+        let root = root(&db);
+        let song = crate::domain::ids::SongId::new();
+        let record = crate::domain::entities::Song::new(
+            song,
+            root,
+            crate::domain::ids::RelativeMediaPath::new("song.flac").expect("path"),
+            crate::domain::ids::Revision::INITIAL,
+        );
+        crate::application::ports::SongRepository::upsert(&db, &record).expect("song");
+        let a = CreatePlaylist::new(&db).execute(root, "A").expect("a");
+        let b = CreatePlaylist::new(&db).execute(root, "B").expect("b");
+
+        let add = AddToPlaylists::new(&db, &db, &db);
+        // One atomic batch into two playlists (append).
+        add.execute(song, &[a, b], u64::MAX).expect("add both");
+        assert_eq!(
+            PlaylistRepository::members(&db, a).expect("A").len(),
+            1,
+            "atomic batch committed every target"
+        );
+        assert_eq!(PlaylistRepository::members(&db, b).expect("B").len(), 1);
+
+        // Idempotent re-add: no duplicate, position unchanged.
+        add.execute(song, &[a], u64::MAX).expect("re-add");
+        let members = PlaylistRepository::members(&db, a).expect("A members");
+        assert_eq!(members.len(), 1, "no duplicate member");
+        assert_eq!(members[0].position(), 0, "existing position preserved");
+
+        // A missing target rolls the whole batch back.
+        let ghost = PlaylistId::new();
+        assert!(add.execute(song, &[a, ghost], u64::MAX).is_err());
+        assert_eq!(
+            PlaylistRepository::members(&db, a).expect("A").len(),
+            1,
+            "rollback keeps A untouched"
+        );
+
+        // The song added at an explicit position lands there.
+        let c = CreatePlaylist::new(&db).execute(root, "C").expect("c");
+        add.execute(song, &[c], 7).expect("explicit position");
+        assert_eq!(
+            PlaylistRepository::members(&db, c).expect("C")[0].position(),
+            7
+        );
+    }
+
+    #[test]
+    fn remove_and_reappend_do_not_reuse_timestamps() {
+        let db = MemoryDatabase::new();
+        let root = root(&db);
+        let song = crate::domain::ids::SongId::new();
+        let record = crate::domain::entities::Song::new(
+            song,
+            root,
+            crate::domain::ids::RelativeMediaPath::new("song.flac").expect("path"),
+            crate::domain::ids::Revision::INITIAL,
+        );
+        crate::application::ports::SongRepository::upsert(&db, &record).expect("song");
+        let a = CreatePlaylist::new(&db).execute(root, "A").expect("a");
+
+        let add = AddToPlaylists::new(&db, &db, &db);
+        add.execute(song, &[a], u64::MAX).expect("add");
+        assert_eq!(
+            PlaylistRepository::members(&db, a).expect("A")[0].position(),
+            0
+        );
+
+        // Remove, then re-append.
+        RemoveFromPlaylist::new(&db)
+            .execute(a, song)
+            .expect("remove");
+        assert!(PlaylistRepository::members(&db, a).expect("A").is_empty());
+        add.execute(song, &[a], u64::MAX).expect("re-append");
+        // Deterministic: it goes to position 0 again (fresh append), never
+        // depending on a timestamp.
+        assert_eq!(
+            PlaylistRepository::members(&db, a).expect("A")[0].position(),
+            0
+        );
+        // Removing a non-member is a no-op.
+        RemoveFromPlaylist::new(&db)
+            .execute(a, song)
+            .expect("remove again is a no-op");
     }
 
     #[test]

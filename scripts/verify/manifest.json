@@ -1083,6 +1083,21 @@
       "cmd": "node scripts/verify/checks/task-6.mjs 6.5 application::playlist::tests::delete_owns_playlist_and_members_but_not_songs_or_other_playlists"
      }
     ]
+   },
+
+   {
+    "id": "6.6",
+    "title": "实现按 position 的成员添加、原子添加到多个歌单、幂等重复添加、移除和再次追加，验证顺序不依赖时间戳且不出现重复成员",
+    "commands": [
+     {
+      "desc": "同一歌曲原子批量加入多个歌单、幂等重加不动既有位置、失败整体回滚",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.6 application::playlist::tests::add_to_multiple_playlists_is_atomic_and_idempotent"
+     },
+     {
+      "desc": "移除后再次追加位置确定且不依赖时间戳",
+      "cmd": "node scripts/verify/checks/task-6.mjs 6.6 application::playlist::tests::remove_and_reappend_do_not_reuse_timestamps"
+     }
+    ]
    }
 
  ],
