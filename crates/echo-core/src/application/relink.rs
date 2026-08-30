@@ -78,6 +78,12 @@ impl RelinkPlanner {
     pub fn resolve(&mut self, file: &ParsedFile) -> Resolution {
         // 1. Path identity first: the same path refreshes its record.
         if let Some(song) = self.songs.iter_mut().find(|song| song.path() == &file.path) {
+            // A re-parsed file physically present at its record's path proves
+            // the file came back, so an externally-missing record is restored
+            // here too (task 5.9 mirror image of the fast-skip `restore`).
+            if song.availability() == SongAvailability::Missing {
+                song.restore_available();
+            }
             let id = song.id();
             Self::fold_facts(song, file);
             self.claimed.insert(id);
@@ -412,5 +418,34 @@ mod tests {
             },
         };
         assert_eq!(planner.resolve(&untagged), Resolution::Create);
+    }
+
+    #[test]
+    fn keep_refreshes_a_missing_record_to_available_at_the_same_path() {
+        // A file deleted externally (record Missing), then restored at the
+        // SAME path with changed content: the re-parse path (`Keep`) must
+        // restore availability, exactly like the fast-skip `restore` branch.
+        let song_a = SongId::new();
+        let mut planner = RelinkPlanner::new(vec![missing_song(song_a, "same.flac", "A", 100)]);
+        let resolution = planner.resolve(&file("same.flac", "hash-changed", "A", 100));
+        assert_eq!(resolution, Resolution::Keep { song: song_a });
+        let kept = planner.song(song_a).unwrap();
+        assert_eq!(
+            kept.availability(),
+            SongAvailability::Available,
+            "re-parsed same-path file restores the missing record"
+        );
+        // A pending-delete record must NOT be resurrected by file presence.
+        let song_b = SongId::new();
+        let mut pending = song(song_b, "pending.flac", "B", 100);
+        pending.begin_pending_delete();
+        let mut planner = RelinkPlanner::new(vec![pending]);
+        let resolution = planner.resolve(&file("pending.flac", "hash-changed", "B", 100));
+        assert_eq!(resolution, Resolution::Keep { song: song_b });
+        assert_eq!(
+            planner.song(song_b).unwrap().availability(),
+            SongAvailability::PendingDelete,
+            "Echo's own delete owns the record; file presence must not resurrect it"
+        );
     }
 }

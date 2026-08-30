@@ -906,6 +906,37 @@
       "cmd": "node scripts/verify/checks/task-5.mjs 5.8 infrastructure::filesystem::adapter::tests::path_exists_propagates_real_root_access_errors_but_not_not_found"
     }
     ]
+   },
+
+   {
+    "id": "5.9",
+    "title": "Distinguish external missing from Echo's own delete: external removal collapses to Missing and keeps the UUID, favorite, play stats, playlist membership and blocked-queue reference, and recovery via the original file or a same-hash path restores it to Available with every relationship intact, never touching the trash journal",
+    "commands": [
+     {
+      "desc": "external deletion is the Missing model (not PendingDelete) and preserves UUID, favorite, play stats and playlist membership with no trash-journal operation",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.9 application::scan::tests::external_deletion_is_missing_not_pending_delete_and_keeps_relationships"
+     },
+     {
+      "desc": "recovery at the original path restores Availability, reuses the same UUID and keeps every relationship",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.9 application::scan::tests::external_missing_recovers_on_original_path_restoring_everything"
+     },
+     {
+      "desc": "a same-hash file at a new path re-links the missing identity under the same UUID and keeps relationships",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.9 application::scan::tests::external_missing_relinks_on_same_hash_path_keeping_relationships"
+     },
+     {
+      "desc": "an Echo PendingDelete song is never converted to Missing by the scanner, never re-imported from the owned trash staging, and keeps its one journal operation",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.9 application::scan::tests::echo_pending_delete_is_never_treated_as_external_missing"
+     },
+     {
+      "desc": "the parse-path restore mirrors the fast-skip restore: a re-parsed same-path file resurrects a Missing record but never a PendingDelete one",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.9 application::relink::tests::keep_refreshes_a_missing_record_to_available_at_the_same_path"
+     },
+     {
+      "desc": "through the watcher, an externally removed file converges to Missing and a re-create reuses the same record",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.9 application::watch::tests::watch_events_converge_under_out_of_order_and_duplicate_delivery"
+     }
+    ]
    }
 
  ],

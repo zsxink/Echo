@@ -859,9 +859,224 @@ mod tests {
         }
     }
 
+    use crate::application::delete::DeleteSongs;
+    use crate::application::ports::{PlaylistRepository, SongRepository};
     use crate::application::testing::{scan_fixture::song_by_path, ScanFixture};
-    use crate::domain::entities::SongAvailability;
-    use crate::domain::ids::Revision;
+    use crate::domain::entities::{Song, SongAvailability};
+    use crate::domain::ids::{PlaylistId, Revision, SongId};
+
+    /// Seed one playable song with favorite, one play and a playlist
+    /// membership, returning its [`SongId`] and the playlist id — the
+    /// relationship set that task 5.9 proves survives external deletion and
+    /// recovery.
+    fn seed_loved_song(fixture: &ScanFixture, path: &str) -> (SongId, PlaylistId) {
+        fixture.write_file(path, b"audio-bytes");
+        fixture.set_audio(path, "晴天", 269_000);
+        let mut song = Song::new(
+            SongId::new(),
+            fixture.root,
+            fixture.path(path),
+            Revision::INITIAL,
+        );
+        song.apply_scan_facts(
+            fixture.deps.hasher.hash_of_bytes(b"audio-bytes"),
+            11,
+            1,
+            crate::domain::media::AudioFormat::Flac,
+        );
+        song.set_favorite(true);
+        song.record_play();
+        SongRepository::upsert(&fixture.database, &song).expect("seed song");
+
+        let playlist = PlaylistId::new();
+        fixture
+            .database
+            .create(playlist, fixture.root, "favorites")
+            .expect("create playlist");
+        fixture
+            .database
+            .add_member(playlist, song.id(), 0)
+            .expect("add member");
+        (song.id(), playlist)
+    }
+
+    #[test]
+    fn external_deletion_is_missing_not_pending_delete_and_keeps_relationships() {
+        let fixture = ScanFixture::new();
+        fixture.write_file("keep.mp3", b"audio-keep");
+        fixture.set_audio("keep.mp3", "Keep", 1_000);
+        let (target, playlist) = seed_loved_song(&fixture, "歌手/晴天.flac");
+        let target_path = fixture.path("歌手/晴天.flac");
+
+        start_scan(&fixture).run(fixture.root).expect("first scan");
+        assert_eq!(fixture.all_songs().len(), 2);
+
+        // The user deletes the file in their file manager, then a rescan
+        // observes it — the external path (not Echo's delete flow).
+        fixture.remove_file("歌手/晴天.flac");
+        let summary = start_scan(&fixture)
+            .run(fixture.root)
+            .expect("missing scan");
+        assert_eq!(summary.progress.missing, 1);
+
+        let record = song_by_path(&fixture, &target_path)
+            .expect("lookup")
+            .expect("record kept");
+        assert_eq!(record.id(), target);
+        assert_eq!(
+            record.availability(),
+            SongAvailability::Missing,
+            "external deletion is the Missing model, not Echo's PendingDelete"
+        );
+        assert!(
+            fixture.database.operations_for_song(target).is_empty(),
+            "external missing must never enter Echo's trash/delete journal"
+        );
+        assert!(record.favorite(), "favorite survives external missing");
+        assert_eq!(
+            record.play_count().as_u64(),
+            1,
+            "play stats survive external missing"
+        );
+        assert!(
+            !record.availability().is_playable(),
+            "a missing file is not playable but its identity remains"
+        );
+
+        // The playlist membership row is retained through external missing
+        // (its live availability is surfaced by the SQLite JOIN at query time).
+        let member = fixture
+            .database
+            .members(playlist)
+            .expect("members")
+            .into_iter()
+            .find(|m| m.song() == target)
+            .expect("membership preserved through external missing");
+        assert_eq!(member.song(), target);
+    }
+
+    #[test]
+    fn external_missing_recovers_on_original_path_restoring_everything() {
+        let fixture = ScanFixture::new();
+        let (target, playlist) = seed_loved_song(&fixture, "歌手/晴天.flac");
+        let target_path = fixture.path("歌手/晴天.flac");
+        start_scan(&fixture).run(fixture.root).expect("first scan");
+        fixture.remove_file("歌手/晴天.flac");
+        start_scan(&fixture)
+            .run(fixture.root)
+            .expect("missing scan");
+
+        // The file comes back at its original path (same content).
+        fixture.write_file("歌手/晴天.flac", b"audio-bytes");
+        fixture.set_audio("歌手/晴天.flac", "晴天", 269_000);
+        let summary = start_scan(&fixture)
+            .run(fixture.root)
+            .expect("recover scan");
+        assert_eq!(summary.progress.missing, 0);
+
+        let restored = song_by_path(&fixture, &target_path)
+            .expect("lookup")
+            .expect("restored");
+        assert_eq!(
+            restored.id(),
+            target,
+            "original-path recovery reuses the UUID"
+        );
+        assert_eq!(restored.availability(), SongAvailability::Available);
+        assert!(restored.favorite(), "favorite restored");
+        assert_eq!(restored.play_count().as_u64(), 1, "play stats restored");
+        assert!(restored.availability().is_playable());
+        let member = fixture
+            .database
+            .members(playlist)
+            .expect("members")
+            .into_iter()
+            .find(|m| m.song() == target)
+            .expect("membership kept");
+        assert_eq!(member.song(), target);
+    }
+
+    #[test]
+    fn external_missing_relinks_on_same_hash_path_keeping_relationships() {
+        let fixture = ScanFixture::new();
+        let (target, playlist) = seed_loved_song(&fixture, "歌手/晴天.flac");
+        start_scan(&fixture).run(fixture.root).expect("first scan");
+        fixture.remove_file("歌手/晴天.flac");
+        start_scan(&fixture)
+            .run(fixture.root)
+            .expect("missing scan");
+
+        // A *same-hash* file appears at a different path: the identity must
+        // move to it, keeping UUID and every relationship (design §6.7).
+        fixture.write_file("moved/晴天.flac", b"audio-bytes");
+        fixture.set_audio("moved/晴天.flac", "晴天", 269_000);
+        let summary = start_scan(&fixture).run(fixture.root).expect("relink scan");
+        assert_eq!(summary.progress.updated, 1, "relink counts as an update");
+
+        let relinked = song_by_path(&fixture, &fixture.path("moved/晴天.flac"))
+            .expect("lookup")
+            .expect("relinked");
+        assert_eq!(relinked.id(), target, "same-hash recovery reuses the UUID");
+        assert_eq!(relinked.availability(), SongAvailability::Available);
+        assert!(relinked.favorite());
+        assert_eq!(relinked.play_count().as_u64(), 1);
+        let member = fixture
+            .database
+            .members(playlist)
+            .expect("members")
+            .into_iter()
+            .find(|m| m.song() == target)
+            .expect("membership kept across the same-hash move");
+        assert_eq!(member.song(), target);
+        // The old path must not linger as a duplicate record either.
+        assert_eq!(
+            fixture.all_songs().len(),
+            1,
+            "one logical song per hash after relink"
+        );
+    }
+
+    #[test]
+    fn echo_pending_delete_is_never_treated_as_external_missing() {
+        let fixture = ScanFixture::new();
+        let (target, _playlist) = seed_loved_song(&fixture, "歌手/晴天.flac");
+        start_scan(&fixture).run(fixture.root).expect("first scan");
+
+        // Echo's own delete stages the file into the controlled trash slot and
+        // hides the song as PendingDelete (task 5.7).
+        DeleteSongs::new(&fixture.deps)
+            .delete(fixture.root, target)
+            .expect("Echo delete");
+
+        // A rescan must NOT mark the hidden song externally missing, and must
+        // not re-import its staged file from the owned trash directory.
+        let summary = start_scan(&fixture)
+            .run(fixture.root)
+            .expect("rescan during delete");
+        assert_eq!(
+            summary.progress.missing, 0,
+            "a PendingDelete song is skipped by the external-missing pass"
+        );
+        let record = song_by_path(&fixture, &fixture.path("歌手/晴天.flac"))
+            .expect("lookup")
+            .expect("record kept");
+        assert_eq!(record.id(), target);
+        assert_eq!(
+            record.availability(),
+            SongAvailability::PendingDelete,
+            "Echo delete keeps its own hidden model; the scanner must not convert it to Missing"
+        );
+        assert_eq!(
+            fixture.all_songs().len(),
+            1,
+            "the scanner never re-imports the staged trash file as a new song"
+        );
+        assert_eq!(
+            fixture.database.operations_for_song(target).len(),
+            1,
+            "an Echo delete is recorded in the trash journal (unlike external missing)"
+        );
+    }
 
     fn start_scan(fixture: &ScanFixture) -> StartScan<'_> {
         StartScan::new(&fixture.deps, &fixture.supervisor)

@@ -140,6 +140,19 @@ impl MemoryDatabase {
             .get(&operation)
             .map(|(root, kind, _)| (*root, kind.clone()))
     }
+
+    /// The journal operations reserved for one song (assertion helper for the
+    /// external-missing vs Echo-delete distinction: external missing must
+    /// create none, an Echo delete creates exactly one delete operation).
+    #[must_use]
+    pub fn operations_for_song(&self, song: SongId) -> Vec<OperationId> {
+        self.lock()
+            .envelopes
+            .iter()
+            .filter(|(_, (_, _, reserved))| *reserved == Some(song))
+            .map(|(operation, _)| *operation)
+            .collect()
+    }
 }
 
 impl LibraryRepository for MemoryDatabase {
