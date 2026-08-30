@@ -42,7 +42,7 @@ pub(crate) fn upsert_root(connection: &Connection, root: &LibraryRoot) -> Result
             )
             .map_err(storage)?;
     }
-    connection.execute("INSERT INTO library_roots (uuid, absolute_path, normalized_path_key, is_active, write_capable, availability, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7) ON CONFLICT(uuid) DO UPDATE SET absolute_path = excluded.absolute_path, normalized_path_key = excluded.normalized_path_key, is_active = excluded.is_active, write_capable = excluded.write_capable, availability = excluded.availability, updated_at = excluded.updated_at", params![root.id().to_string(), path, key, i64::from(root.is_active()), i64::from(root.write_capable()), if root.availability() == RootAvailability::Available { "available" } else { "unavailable" }, now]).map_err(map_constraint)?;
+    connection.execute("INSERT INTO library_roots (uuid, absolute_path, normalized_path_key, is_active, write_capable, write_safety_locked, availability, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8) ON CONFLICT(uuid) DO UPDATE SET absolute_path = excluded.absolute_path, normalized_path_key = excluded.normalized_path_key, is_active = excluded.is_active, write_capable = excluded.write_capable, write_safety_locked = library_roots.write_safety_locked OR excluded.write_safety_locked, availability = excluded.availability, updated_at = excluded.updated_at", params![root.id().to_string(), path, key, i64::from(root.is_active()), i64::from(root.observed_write_capable()), i64::from(root.write_safety_locked()), if root.availability() == RootAvailability::Available { "available" } else { "unavailable" }, now]).map_err(map_constraint)?;
     Ok(())
 }
 
@@ -96,6 +96,22 @@ pub(crate) fn set_song_availability(
         )
         .map_err(storage)?;
     touch_root_for_song(connection, id)
+}
+
+pub(crate) fn delete_song(connection: &Connection, id: SongId) -> Result<(), Error> {
+    // FTS external-content tables are not necessarily cleaned by a foreign
+    // key cascade. Remove the searchable row in the same finalization
+    // transaction before deleting the canonical song record.
+    connection
+        .execute(
+            "DELETE FROM song_search WHERE song_uuid = ?1",
+            params![id.to_string()],
+        )
+        .map_err(storage)?;
+    connection
+        .execute("DELETE FROM songs WHERE uuid = ?1", params![id.to_string()])
+        .map_err(storage)?;
+    Ok(())
 }
 pub(crate) fn set_song_favorite(
     connection: &Connection,
@@ -228,7 +244,7 @@ pub(crate) fn upsert_operation_item(
         }
         None => None,
     };
-    connection.execute("INSERT INTO operation_items (operation_uuid, item_key, library_root_uuid, kind, state, song_uuid, source_locator, staging_relative_path, target_relative_path, normalized_target_path, expected_hash, claim_active) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1) ON CONFLICT(operation_uuid, item_key) DO UPDATE SET state = excluded.state, song_uuid = excluded.song_uuid, source_locator = excluded.source_locator, staging_relative_path = excluded.staging_relative_path, target_relative_path = excluded.target_relative_path, normalized_target_path = excluded.normalized_target_path, expected_hash = excluded.expected_hash", params![operation.to_string(), item.claim_key, root, if item.kind == OperationResourceKind::Audio { "audio" } else { "lyrics" }, operation_state_to_db(item.state), song_uuid, item.source, item.staging_path.map(|path| path.display().to_owned()), item.target_path.display(), item.target_path.identity_key(), item.expected_hash]).map_err(map_constraint)?;
+    connection.execute("INSERT INTO operation_items (operation_uuid, item_key, library_root_uuid, kind, state, song_uuid, source_locator, staging_relative_path, target_relative_path, normalized_target_path, expected_hash, claim_active) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1) ON CONFLICT(operation_uuid, item_key) DO UPDATE SET state = excluded.state, song_uuid = excluded.song_uuid, source_locator = excluded.source_locator, staging_relative_path = excluded.staging_relative_path, target_relative_path = excluded.target_relative_path, normalized_target_path = excluded.normalized_target_path, expected_hash = excluded.expected_hash", params![operation.to_string(), item.item_key, root, if item.kind == OperationResourceKind::Audio { "audio" } else { "lyrics" }, operation_state_to_db(item.state), song_uuid, item.source, item.staging_path.map(|path| path.display().to_owned()), item.target_path.display(), item.claim_key, item.expected_hash]).map_err(map_constraint)?;
     Ok(())
 }
 
@@ -261,14 +277,14 @@ pub(crate) fn incomplete_operation_items(
     // uuid and envelope kind are read off the trailing columns.
     let mut statement = connection
         .prepare(
-            "SELECT i.kind, i.state, COALESCE(i.song_uuid, j.reserved_song_uuid), i.target_relative_path, i.expected_hash, i.normalized_target_path, i.source_locator, i.staging_relative_path, i.operation_uuid, j.kind FROM operation_items i JOIN operation_journal j ON j.operation_uuid = i.operation_uuid WHERE i.library_root_uuid = ?1 AND i.state NOT IN ('completed', 'rolled_back', 'database_finalized', 'restored') ORDER BY i.operation_uuid, i.item_key",
+            "SELECT i.kind, i.state, COALESCE(i.song_uuid, j.reserved_song_uuid), i.target_relative_path, i.expected_hash, i.item_key, i.normalized_target_path, i.source_locator, i.staging_relative_path, i.operation_uuid, j.kind FROM operation_items i JOIN operation_journal j ON j.operation_uuid = i.operation_uuid WHERE i.library_root_uuid = ?1 AND i.state NOT IN ('completed', 'rolled_back', 'database_finalized', 'restored') ORDER BY i.operation_uuid, i.item_key",
         )
         .map_err(storage)?;
     let rows = statement
         .query_map(params![root.to_string()], |row| {
             let item = super::conversion::operation_item_from_row(row)?;
-            let operation = row.get::<_, String>(8)?;
-            let kind = row.get::<_, String>(9)?;
+            let operation = row.get::<_, String>(9)?;
+            let kind = row.get::<_, String>(10)?;
             Ok((operation, kind, item))
         })
         .map_err(storage)?

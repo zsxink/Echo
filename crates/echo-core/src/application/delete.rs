@@ -95,7 +95,13 @@ impl<'a> DeleteSongs<'a> {
         }
         // The delete is refused when the root does not permit writes (设计:
         // 只读根目录不提供删除入口).
-        if !self.deps.fs.write_capable(root)? {
+        if self
+            .deps
+            .roots
+            .by_id(root)?
+            .is_some_and(|record| !record.write_capable())
+            || !self.deps.fs.write_capable(root)?
+        {
             return Err(Error::unavailable("library", "root is read-only"));
         }
 
@@ -185,6 +191,7 @@ impl<'a> DeleteSongs<'a> {
             staging_path: Some(trash_path.clone()),
             target_path: source.clone(),
             expected_hash: expected_hash.to_owned(),
+            item_key: key.to_owned(),
             claim_key: source.identity_key().to_owned(),
         };
         self.deps.journal.upsert_item(operation, item.clone())?;
@@ -236,6 +243,15 @@ impl<'a> RestoreDeletedOperation<'a> {
         root: crate::domain::ids::LibraryRootId,
         operation: OperationId,
     ) -> Result<SongId, Error> {
+        if self
+            .deps
+            .roots
+            .by_id(root)?
+            .is_some_and(|record| !record.write_capable())
+            || !self.deps.fs.write_capable(root)?
+        {
+            return Err(Error::unavailable("library", "root is read-only"));
+        }
         let items = self.deps.journal.items(operation)?;
         if items.is_empty() {
             return Err(Error::InvariantViolation {
@@ -307,6 +323,7 @@ impl<'a> RestoreDeletedOperation<'a> {
         let pending = OperationItem {
             state: OperationState::RestorePending,
             target_path: target.clone(),
+            claim_key: target.identity_key().to_owned(),
             ..item.clone()
         };
         self.deps.journal.upsert_item(operation, pending.clone())?;

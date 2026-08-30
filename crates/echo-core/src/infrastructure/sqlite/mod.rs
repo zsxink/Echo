@@ -68,7 +68,7 @@ use conversion::{
 use query::{active_root_id, query_active, SONG_SELECT};
 use statements::{
     add_member, all_songs_in_root, attach_cover, begin_scan_run, clear_lyrics_candidate,
-    cover_of_song, create_playlist, ensure_operation_journal, finish_scan_run,
+    cover_of_song, create_playlist, delete_song, ensure_operation_journal, finish_scan_run,
     incomplete_operation_items, increment_play_count, latest_scan_generation, load_runtime_state,
     lyrics_candidates, operation_item, record_scan_issue, referenced_asset_keys,
     release_operation_claims, set_lyrics_candidate, set_song_availability, set_song_favorite,
@@ -379,7 +379,7 @@ impl LibraryRepository for SqliteDatabase {
     fn active_root(&self) -> Result<Option<LibraryRoot>, Error> {
         self.with_reader(|connection| {
             connection
-                .query_row("SELECT uuid, absolute_path, is_active, write_capable, availability FROM library_roots WHERE is_active = 1", [], root_from_row)
+                .query_row("SELECT uuid, absolute_path, is_active, write_capable, availability, write_safety_locked FROM library_roots WHERE is_active = 1", [], root_from_row)
                 .optional()
                 .map_err(storage)
         })
@@ -388,7 +388,7 @@ impl LibraryRepository for SqliteDatabase {
     fn by_id(&self, id: LibraryRootId) -> Result<Option<LibraryRoot>, Error> {
         self.with_reader(move |connection| {
             connection
-                .query_row("SELECT uuid, absolute_path, is_active, write_capable, availability FROM library_roots WHERE uuid = ?1", params![id.to_string()], root_from_row)
+                .query_row("SELECT uuid, absolute_path, is_active, write_capable, availability, write_safety_locked FROM library_roots WHERE uuid = ?1", params![id.to_string()], root_from_row)
                 .optional()
                 .map_err(storage)
         })
@@ -423,6 +423,13 @@ impl LibraryRepository for SqliteDatabase {
     ) -> Result<(), Error> {
         self.writer.run(move |connection| {
             connection.execute("UPDATE library_roots SET write_capable = ?2, availability = ?3, updated_at = ?4 WHERE uuid = ?1", params![id.to_string(), i64::from(write_capable), if available { "available" } else { "unavailable" }, now_ms()]).map_err(storage)?;
+            Ok(())
+        })
+    }
+
+    fn set_write_safety_locked(&self, id: LibraryRootId, locked: bool) -> Result<(), Error> {
+        self.writer.run(move |connection| {
+            connection.execute("UPDATE library_roots SET write_safety_locked = ?2, updated_at = ?3 WHERE uuid = ?1", params![id.to_string(), i64::from(locked), now_ms()]).map_err(storage)?;
             Ok(())
         })
     }
@@ -633,7 +640,7 @@ impl OperationJournalRepository for SqliteDatabase {
 
     fn items(&self, operation: OperationId) -> Result<Vec<OperationItem>, Error> {
         self.with_reader(move |connection| {
-            let mut statement = connection.prepare("SELECT i.kind, i.state, COALESCE(i.song_uuid, j.reserved_song_uuid), i.target_relative_path, i.expected_hash, i.normalized_target_path, i.source_locator, i.staging_relative_path FROM operation_items i JOIN operation_journal j ON j.operation_uuid = i.operation_uuid WHERE i.operation_uuid = ?1 ORDER BY i.item_key").map_err(storage)?;
+            let mut statement = connection.prepare("SELECT i.kind, i.state, COALESCE(i.song_uuid, j.reserved_song_uuid), i.target_relative_path, i.expected_hash, i.item_key, i.normalized_target_path, i.source_locator, i.staging_relative_path FROM operation_items i JOIN operation_journal j ON j.operation_uuid = i.operation_uuid WHERE i.operation_uuid = ?1 ORDER BY i.item_key").map_err(storage)?;
             let items = statement.query_map(params![operation.to_string()], operation_item_from_row).map_err(storage)?.collect::<Result<Vec<_>, _>>().map_err(storage)?;
             Ok(items)
         })
@@ -701,6 +708,9 @@ impl TxAccess for SqliteTx<'_> {
     fn upsert_song(&mut self, song: &Song) -> Result<(), Error> {
         upsert_song(self.transaction, song)
     }
+    fn delete_song(&mut self, id: SongId) -> Result<(), Error> {
+        delete_song(self.transaction, id)
+    }
     fn set_song_availability(
         &mut self,
         id: SongId,
@@ -716,6 +726,15 @@ impl TxAccess for SqliteTx<'_> {
     }
     fn upsert_root(&mut self, root: &LibraryRoot) -> Result<(), Error> {
         upsert_root(self.transaction, root)
+    }
+    fn isolate_root_writes(&mut self, id: LibraryRootId, available: bool) -> Result<(), Error> {
+        self.transaction
+            .execute(
+                "UPDATE library_roots SET write_safety_locked = 1, availability = ?2, updated_at = ?3 WHERE uuid = ?1",
+                params![id.to_string(), if available { "available" } else { "unavailable" }, now_ms()],
+            )
+            .map_err(storage)?;
+        Ok(())
     }
     fn create_playlist(
         &mut self,
@@ -748,6 +767,9 @@ impl TxAccess for SqliteTx<'_> {
         item: OperationItem,
     ) -> Result<(), Error> {
         upsert_operation_item(self.transaction, operation, item)
+    }
+    fn release_operation_claims(&mut self, operation: OperationId) -> Result<(), Error> {
+        release_operation_claims(self.transaction, operation)
     }
     fn set_undo_deadline(&mut self, operation: OperationId, deadline_ms: i64) -> Result<(), Error> {
         self.transaction

@@ -356,7 +356,11 @@ impl LibraryFileSystem for RootConstrainedFileSystem {
 
     fn path_exists(&self, root: LibraryRootId, path: &RelativeMediaPath) -> Result<bool, Error> {
         let abs = self.abs(root, path)?;
-        Ok(abs.symlink_metadata().is_ok())
+        match abs.symlink_metadata() {
+            Ok(_) => Ok(true),
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(source) => Err(Error::io("inspect library path", source, abs)),
+        }
     }
 
     fn publish_from_staging_path(
@@ -762,6 +766,31 @@ mod tests {
         let ghost = LibraryRootId::new();
         let error = fs.enumerate(ghost).unwrap_err();
         assert_eq!(error.code(), "unavailable");
+    }
+
+    #[test]
+    fn path_exists_propagates_real_root_access_errors_but_not_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let registry = RootRegistry::new();
+        let missing_root = LibraryRootId::new();
+        registry.register(missing_root, dir.path());
+        let root = LibraryRootId::new();
+        let not_a_directory = dir.path().join("not-a-directory");
+        std::fs::write(&not_a_directory, b"file").unwrap();
+        registry.register(root, &not_a_directory);
+        let fs = RootConstrainedFileSystem::new(registry);
+
+        assert!(!fs
+            .path_exists(
+                missing_root,
+                &RelativeMediaPath::new("missing.flac").unwrap(),
+            )
+            .expect("a missing target remains a normal false result"));
+
+        let error = fs
+            .path_exists(root, &RelativeMediaPath::new("child.flac").unwrap())
+            .expect_err("a root access failure must not be mistaken for absence");
+        assert_eq!(error.code(), "io");
     }
 
     // -----------------------------------------------------------------------

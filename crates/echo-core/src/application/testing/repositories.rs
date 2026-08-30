@@ -153,12 +153,14 @@ impl LibraryRepository for MemoryLibraryRepository {
     }
     fn deactivate(&self, id: LibraryRootId) -> Result<(), Error> {
         if let Some(r) = self.roots.lock().unwrap().get_mut(&id) {
-            *r = LibraryRoot::new(
+            let mut replacement = LibraryRoot::new(
                 r.id(),
                 r.absolute_path().to_path_buf(),
                 false,
-                r.write_capable(),
+                r.observed_write_capable(),
             );
+            replacement.set_write_safety_locked(r.write_safety_locked());
+            *r = replacement;
         }
         Ok(())
     }
@@ -175,6 +177,12 @@ impl LibraryRepository for MemoryLibraryRepository {
             } else {
                 crate::domain::entities::RootAvailability::Unavailable
             });
+        }
+        Ok(())
+    }
+    fn set_write_safety_locked(&self, id: LibraryRootId, locked: bool) -> Result<(), Error> {
+        if let Some(r) = self.roots.lock().unwrap().get_mut(&id) {
+            r.set_write_safety_locked(locked);
         }
         Ok(())
     }

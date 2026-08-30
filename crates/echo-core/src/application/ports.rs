@@ -63,6 +63,10 @@ pub trait LibraryRepository: Send + Sync {
         write_capable: bool,
         available: bool,
     ) -> Result<(), Error>;
+    /// Persist a safety isolation for destructive operations. It is separate
+    /// from filesystem capability so a later permission probe cannot clear an
+    /// indeterminate trash outcome.
+    fn set_write_safety_locked(&self, id: LibraryRootId, locked: bool) -> Result<(), Error>;
 }
 
 /// Query/store songs.
@@ -162,7 +166,11 @@ pub struct OperationItem {
     pub target_path: RelativeMediaPath,
     /// Expected full-file hash (BLAKE3) as hex.
     pub expected_hash: String,
-    /// The `target claim` uniqueness key (`(root, normalized_target_path)`).
+    /// Stable operation-local resource identity (for example `audio` or
+    /// `lyrics`). State changes must always upsert this same journal row.
+    pub item_key: String,
+    /// The *current* normalized target claim (`(root, normalized_target_path)`).
+    /// This can change when recovery selects a numbered restore target.
     pub claim_key: String,
 }
 
@@ -215,6 +223,10 @@ pub type TxWork = Box<dyn FnOnce(&mut dyn TxAccess) -> Result<(), Error> + Send 
 pub trait TxAccess {
     /// Insert/update a song within the open transaction.
     fn upsert_song(&mut self, song: &Song) -> Result<(), Error>;
+    /// Permanently remove a song after the platform has durably accepted its
+    /// staged files. Foreign-key cascades remove its lyrics, overrides, play
+    /// sessions and playlist memberships in this same authority snapshot.
+    fn delete_song(&mut self, id: SongId) -> Result<(), Error>;
     /// Update a song's availability in the same transaction as journal state.
     fn set_song_availability(
         &mut self,
@@ -227,6 +239,10 @@ pub trait TxAccess {
     fn increment_song_play_count(&mut self, id: SongId) -> Result<(), Error>;
     /// Insert/update a root record.
     fn upsert_root(&mut self, root: &LibraryRoot) -> Result<(), Error>;
+    /// Atomically isolate destructive writes after an indeterminate system
+    /// trash result. `available` records whether the root was still readable
+    /// while evaluating the staged evidence.
+    fn isolate_root_writes(&mut self, id: LibraryRootId, available: bool) -> Result<(), Error>;
     /// Create a playlist in the same transaction as initial membership writes.
     fn create_playlist(
         &mut self,
@@ -244,6 +260,10 @@ pub trait TxAccess {
         operation: OperationId,
         item: OperationItem,
     ) -> Result<(), Error>;
+    /// Release active target claims as part of an operation's terminal
+    /// transaction. This prevents a crash after finalization from leaving a
+    /// path permanently reserved.
+    fn release_operation_claims(&mut self, operation: OperationId) -> Result<(), Error>;
     /// Persist the operation's `undo_deadline` (epoch millis) in the same
     /// transaction as the song's pending-delete hide (design §9: the deadline
     /// and the hide are one atomic step, so a crash cannot split them).

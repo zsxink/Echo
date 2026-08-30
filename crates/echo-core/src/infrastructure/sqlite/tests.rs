@@ -120,6 +120,7 @@ fn schema_constraints_cover_active_root_paths_playlist_and_target_claim() {
                 staging_path: None,
                 target_path: RelativeMediaPath::new("新/歌.flac").expect("path"),
                 expected_hash: "a".repeat(64),
+                item_key: "audio".to_owned(),
                 claim_key: "audio".to_owned(),
             },
         )
@@ -139,6 +140,7 @@ fn schema_constraints_cover_active_root_paths_playlist_and_target_claim() {
                 staging_path: None,
                 target_path: RelativeMediaPath::new("新/歌.flac").expect("path"),
                 expected_hash: "b".repeat(64),
+                item_key: "audio".to_owned(),
                 claim_key: "audio".to_owned()
             }
         )
@@ -424,6 +426,7 @@ fn claim_item(song: Option<SongId>, target: &str, key: &str) -> OperationItem {
         staging_path: None,
         target_path: RelativeMediaPath::new(target).expect("path"),
         expected_hash: "a".repeat(64),
+        item_key: key.to_owned(),
         claim_key: key.to_owned(),
     }
 }
@@ -819,8 +822,8 @@ fn import_target_claims_are_conditionally_unique_until_release() {
 // ---------------------------------------------------------------------------
 
 use crate::application::ports::{
-    CoverRepository, LibraryFileSystem as LibraryFileSystemPort, LyricsRepository,
-    OperationJournalRepository, RuntimeStateStore, ScanRunRepository,
+    CoverRepository, LibraryFileSystem as LibraryFileSystemPort, LyricsRepository, OperationItem,
+    OperationJournalRepository, RuntimeStateStore, ScanRunRepository, TxWork,
 };
 use crate::application::root_switch::{
     ActivateLibrary, Blockers, PrepareLibraryCandidate, ROOT_EPOCH_KEY,
@@ -829,10 +832,28 @@ use crate::application::scan::{ScanConfig, ScanDeps, ScanSupervisor, StartScan};
 use crate::application::testing::clock::{FakeIdGenerator, ManualClock, SteppingClock};
 use crate::application::testing::filesystem::FakeLibraryFileSystem;
 use crate::application::testing::small_fakes::{
-    FakeFileHasher, FakeLyricsParser, FakeMediaProbe, FakeMetadataReader,
+    FakeFileHasher, FakeLyricsParser, FakeMediaProbe, FakeMetadataReader, FakeTrash,
 };
+use crate::application::trash::{finalize_persisted_trash, FinalizeExpiredDeletes};
 use crate::domain::state::scan::ScanState as ScanRunState;
 use crate::infrastructure::metadata::DiskCoverCache;
+
+#[derive(Clone)]
+struct RollbackAfterWrites {
+    database: Arc<SqliteDatabase>,
+}
+
+impl UnitOfWork for RollbackAfterWrites {
+    fn with_tx(&self, work: TxWork) -> Result<(), crate::error::Error> {
+        self.database.with_tx(Box::new(move |tx| {
+            work(tx)?;
+            Err(crate::error::Error::unavailable(
+                "database",
+                "simulated transaction failure",
+            ))
+        }))
+    }
+}
 
 /// A real SQLite database wired to fake file-system/metadata adapters — the
 /// composition the desktop runtime will build, minus the OS pieces. One
@@ -922,6 +943,131 @@ impl ScanStack {
         }
         std::fs::write(absolute, bytes).expect("write file");
     }
+}
+
+fn seed_trash_operation(
+    stack: &ScanStack,
+    state: OperationState,
+) -> (ScanDeps, Song, PlaylistId, OperationId) {
+    let deps = stack.deps();
+    let song = song(stack.root, "song.flac", "Song", "Artist");
+    SongRepository::upsert(stack.database.as_ref(), &song).expect("seed song");
+    SongRepository::set_availability(
+        stack.database.as_ref(),
+        song.id(),
+        SongAvailability::PendingDelete,
+    )
+    .expect("hide pending song");
+    let playlist = PlaylistId::new();
+    stack
+        .database
+        .create(playlist, stack.root, "delete test")
+        .expect("playlist");
+    stack
+        .database
+        .add_member(playlist, song.id(), 0)
+        .expect("member");
+
+    let operation = OperationId::new();
+    let staging = RelativeMediaPath::new(&format!("trash/{operation}/audio")).expect("stage path");
+    stack.write(staging.display(), b"staged-song");
+    let expected_hash = deps.hasher.hash(stack.root, &staging).expect("stage hash");
+    OperationJournalRepository::ensure_operation(
+        stack.database.as_ref(),
+        operation,
+        stack.root,
+        crate::application::delete::DELETE_OPERATION,
+        Some(song.id()),
+    )
+    .expect("operation envelope");
+    OperationJournalRepository::upsert_item(
+        stack.database.as_ref(),
+        operation,
+        OperationItem {
+            kind: OperationResourceKind::Audio,
+            state,
+            song: Some(song.id()),
+            source: None,
+            staging_path: Some(staging),
+            target_path: song.path().clone(),
+            expected_hash,
+            item_key: "audio".to_owned(),
+            claim_key: "audio".to_owned(),
+        },
+    )
+    .expect("journal item");
+    (deps, song, playlist, operation)
+}
+
+fn claim_active(database: &SqliteDatabase, operation: OperationId) -> i64 {
+    database
+        .with_reader(|connection| {
+            connection
+                .query_row(
+                    "SELECT claim_active FROM operation_items WHERE operation_uuid = ?1 AND item_key = 'audio'",
+                    params![operation.to_string()],
+                    |row| row.get(0),
+                )
+                .map_err(super::support::storage)
+        })
+        .expect("claim query")
+}
+
+#[test]
+fn sqlite_trash_forward_finalizes_song_relationships_journal_and_claim() {
+    let stack = ScanStack::new();
+    let (deps, song, playlist, operation) =
+        seed_trash_operation(&stack, OperationState::TrashPending);
+    let trash = FakeTrash::new();
+
+    let report = FinalizeExpiredDeletes::new(&deps, &trash)
+        .run(stack.root)
+        .expect("forward delete");
+
+    assert_eq!(report.finalized, vec![operation]);
+    assert_eq!(trash.calls(), vec![operation]);
+    assert!(SongRepository::by_id(stack.database.as_ref(), song.id())
+        .expect("song query")
+        .is_none());
+    assert!(stack
+        .database
+        .members(playlist)
+        .expect("members")
+        .is_empty());
+    assert!(
+        OperationJournalRepository::items(stack.database.as_ref(), operation)
+            .expect("journal items")
+            .iter()
+            .all(|item| item.state == OperationState::DatabaseFinalized)
+    );
+    assert_eq!(claim_active(stack.database.as_ref(), operation), 0);
+}
+
+#[test]
+fn sqlite_trash_finalization_rollback_keeps_song_journal_and_claim_together() {
+    let stack = ScanStack::new();
+    let (mut deps, song, playlist, operation) =
+        seed_trash_operation(&stack, OperationState::TrashApplied);
+    deps.uow = Arc::new(RollbackAfterWrites {
+        database: Arc::clone(&stack.database),
+    });
+
+    let items = OperationJournalRepository::items(stack.database.as_ref(), operation)
+        .expect("journal items");
+    assert!(finalize_persisted_trash(&deps, operation, &items).is_err());
+
+    let stored = SongRepository::by_id(stack.database.as_ref(), song.id())
+        .expect("song query")
+        .expect("rollback keeps song");
+    assert_eq!(stored.availability(), SongAvailability::PendingDelete);
+    assert_eq!(stack.database.members(playlist).expect("members").len(), 1);
+    assert!(
+        OperationJournalRepository::items(stack.database.as_ref(), operation)
+            .expect("journal items")
+            .iter()
+            .all(|item| item.state == OperationState::TrashApplied)
+    );
+    assert_eq!(claim_active(stack.database.as_ref(), operation), 1);
 }
 
 #[test]

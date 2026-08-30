@@ -94,6 +94,14 @@ impl TxAccess for MemoryTx<'_> {
         Ok(())
     }
 
+    fn delete_song(&mut self, id: SongId) -> Result<(), Error> {
+        self.state.songs.remove(&id);
+        self.state.members.retain(|(_, song), _| *song != id);
+        self.state.lyrics.retain(|(song, _), _| *song != id);
+        self.state.covers.remove(&id);
+        Ok(())
+    }
+
     fn set_song_availability(
         &mut self,
         id: SongId,
@@ -125,6 +133,17 @@ impl TxAccess for MemoryTx<'_> {
 
     fn upsert_root(&mut self, root: &LibraryRoot) -> Result<(), Error> {
         self.state.roots.insert(root.id(), root.clone());
+        Ok(())
+    }
+    fn isolate_root_writes(&mut self, id: LibraryRootId, available: bool) -> Result<(), Error> {
+        if let Some(root) = self.state.roots.get_mut(&id) {
+            root.set_write_safety_locked(true);
+            root.set_availability(if available {
+                crate::domain::entities::RootAvailability::Available
+            } else {
+                crate::domain::entities::RootAvailability::Unavailable
+            });
+        }
         Ok(())
     }
 
@@ -159,6 +178,10 @@ impl TxAccess for MemoryTx<'_> {
         self.state
             .operations
             .insert((operation, item.target_path.normalized().to_owned()), item);
+        Ok(())
+    }
+
+    fn release_operation_claims(&mut self, _operation: OperationId) -> Result<(), Error> {
         Ok(())
     }
 

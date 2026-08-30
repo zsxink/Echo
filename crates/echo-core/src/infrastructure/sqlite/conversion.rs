@@ -40,6 +40,7 @@ pub(crate) fn root_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Library
     } else {
         RootAvailability::Unavailable
     });
+    root.set_write_safety_locked(row.get::<_, i64>(5)? != 0);
     Ok(root)
 }
 
@@ -201,10 +202,11 @@ pub(crate) fn operation_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Resu
             .map_err(to_sql_error)?,
         target_path: RelativeMediaPath::new(&row.get::<_, String>(3)?).map_err(to_sql_error)?,
         expected_hash: row.get(4)?,
-        claim_key: row.get(5)?,
-        source: row.get(6)?,
+        item_key: row.get(5)?,
+        claim_key: row.get(6)?,
+        source: row.get(7)?,
         staging_path: row
-            .get::<_, Option<String>>(7)?
+            .get::<_, Option<String>>(8)?
             .map(|value| RelativeMediaPath::new(&value))
             .transpose()
             .map_err(to_sql_error)?,

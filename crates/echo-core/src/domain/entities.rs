@@ -389,7 +389,12 @@ pub struct LibraryRoot {
     /// `RelativeMediaPath` only.
     absolute_path: std::path::PathBuf,
     is_active: bool,
+    /// Capability observed from the filesystem / ownership marker. The
+    /// effective capability also includes the safety isolation below.
     write_capable: bool,
+    /// A durable safety isolation applied after an indeterminate destructive
+    /// filesystem outcome. Re-probing permissions must never clear it.
+    write_safety_locked: bool,
     availability: RootAvailability,
 }
 
@@ -415,6 +420,7 @@ impl LibraryRoot {
             absolute_path,
             is_active,
             write_capable,
+            write_safety_locked: false,
             availability: RootAvailability::Available,
         }
     }
@@ -429,7 +435,18 @@ impl LibraryRoot {
     }
     #[must_use]
     pub const fn write_capable(&self) -> bool {
+        self.write_capable && !self.write_safety_locked
+    }
+    /// The underlying filesystem capability, excluding a durable safety lock.
+    #[must_use]
+    pub const fn observed_write_capable(&self) -> bool {
         self.write_capable
+    }
+    /// Whether destructive operations have been durably isolated pending
+    /// explicit operator recovery.
+    #[must_use]
+    pub const fn write_safety_locked(&self) -> bool {
+        self.write_safety_locked
     }
     #[must_use]
     pub const fn availability(&self) -> RootAvailability {
@@ -445,6 +462,12 @@ impl LibraryRoot {
     /// Set write capability (derived from permissions + ownership marker).
     pub fn set_write_capable(&mut self, capable: bool) {
         self.write_capable = capable;
+    }
+
+    /// Persist or clear the safety isolation independently from filesystem
+    /// permission probing. Clearing this requires an explicit recovery path.
+    pub fn set_write_safety_locked(&mut self, locked: bool) {
+        self.write_safety_locked = locked;
     }
 
     /// Mark the root available/unavailable, keeping records intact.

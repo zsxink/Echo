@@ -72,7 +72,7 @@
 - [x] 5.5 实现导入 journal 的逐资源 `Copy/Validate/Publish Pending→Applied`、target claim 生命周期与三位置存在性/hash 恢复矩阵，在每次状态写、copy/fsync/rename/DB commit 及 watcher 抢先点前后故障注入并恢复两次，验证唯一终态、同一预留 UUID、无孤儿最终文件、重复文件和幽灵记录。
 - [x] 5.6 实现开始前/提交前双重 BLAKE3 去重和幂等重试，验证并发导入与 watcher 竞争时相同内容只出现一个逻辑歌曲。[safe-file-ingestion]
 - [x] 5.7 实现 Echo 主动删除逐资源 `Stage/Restore Pending→Applied`、专属受控 `trash/<operation-id>`、pending-delete 和 10 秒 undo，验证状态写/rename 任一侧崩溃均可由原/暂存/hash 唯一恢复，撤销保留 UUID、收藏、统计、歌单 position；原路径被占用时安全编号恢复。[library-experience][playlist-management]
-- [ ] 5.8 实现 `TrashPending→TrashApplied→DatabaseFinalized` 与 `TrashOutcomeUnknown`、SystemTrashPort 和不可逆点前滚；验证只有已持久化 `TrashApplied` 才自动 finalize，暂存被外部清理、卷断开或调用成功后状态写入前崩溃均保留数据库关系并关闭该根写能力，绝不凭路径缺失推断成功。
+- [x] 5.8 实现 `TrashPending→TrashApplied→DatabaseFinalized` 与 `TrashOutcomeUnknown`、SystemTrashPort 和不可逆点前滚；验证只有已持久化 `TrashApplied` 才自动 finalize，暂存被外部清理、卷断开或调用成功后状态写入前崩溃均保留数据库关系并关闭该根写能力，绝不凭路径缺失推断成功。
 - [ ] 5.9 区分外部 missing 与 Echo 删除，验证外部缺失保留 UUID/收藏/统计/歌单/blocked 队列，文件或同 hash 路径恢复后重新可用。[local-library][desktop-playback]
 - [ ] 5.10 在 runtime ready 前执行 `RecoverPendingOperations` 并协调 watcher/player 启动，验证恢复期间同一路径不能并发扫描、导入、删除或播放。[safe-file-ingestion]
 

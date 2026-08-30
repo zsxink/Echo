@@ -575,6 +575,7 @@ mod tests {
             staging_path: None,
             target_path: RelativeMediaPath::new("importing.mp3").unwrap(),
             expected_hash: "a".repeat(64),
+            item_key: "audio".to_owned(),
             claim_key: RelativeMediaPath::new("importing.mp3")
                 .unwrap()
                 .identity_key()
@@ -622,6 +623,7 @@ mod tests {
             staging_path: None,
             target_path: RelativeMediaPath::new("published.mp3").unwrap(),
             expected_hash: "a".repeat(64),
+            item_key: "audio".to_owned(),
             claim_key: RelativeMediaPath::new("published.mp3")
                 .unwrap()
                 .identity_key()

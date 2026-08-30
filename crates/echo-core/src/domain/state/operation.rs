@@ -93,7 +93,15 @@ impl OperationState {
                     TrashApplied | TrashOutcomeUnknown | FailedRecoverable,
                     false
                 )
-                | (TrashApplied, DatabaseFinalized | FailedRecoverable, false)
+                // `TrashApplied` is persisted per resource while the system
+                // trash call affects the whole operation. A crash after only
+                // some writes leaves no operation-wide proof, so recovery may
+                // conservatively quarantine every item as outcome-unknown.
+                | (
+                    TrashApplied,
+                    DatabaseFinalized | TrashOutcomeUnknown | FailedRecoverable,
+                    false
+                )
                 | (TrashOutcomeUnknown, TrashPending | FailedRecoverable, false)
         )
     }

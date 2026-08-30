@@ -848,6 +848,64 @@
       "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::foreign_occupancy_at_recover_restore_pending_holds_the_item_not_the_whole_run"
      }
     ]
+   },
+   {
+    "id": "5.8",
+    "title": "System trash forward-roll: persist TrashPending before the irreversible platform call, use durable TrashApplied as the sole automatic database-finalization proof, and quarantine ambiguous outcomes without inferring success from missing staging paths",
+    "commands": [
+     {
+      "desc": "only fully persisted TrashApplied items auto-finalize database records and playlist relationships; TrashPending alone remains intact",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.8 application::trash::tests::persisted_trash_applied_is_the_only_automatic_database_finalization_proof"
+     },
+     {
+      "desc": "an explicit successful SystemTrashPort call durably advances TrashPending through TrashApplied before database finalization",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.8 application::trash::tests::explicit_system_trash_success_persists_applied_then_finalizes"
+     },
+     {
+      "desc": "external staging cleanup is outcome-unknown: relationships remain and the persisted root write capability closes",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.8 application::trash::tests::external_staging_cleanup_becomes_unknown_and_preserves_relationships"
+     },
+     {
+      "desc": "a disconnected volume while verifying TrashPending becomes outcome-unknown and disables writes without deleting relationships",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.8 application::trash::tests::disconnected_volume_becomes_unknown_and_disables_root_writes"
+     },
+     {
+      "desc": "a successful platform trash call followed by a pre-TrashApplied crash recovers as outcome-unknown, never a guessed success",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.8 application::trash::tests::success_before_trash_applied_commit_recovers_as_unknown"
+     },
+    {
+      "desc": "an explicit SystemTrashPort failure preserves verified staging and the pending relationship snapshot for retry",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.8 application::trash::tests::system_trash_failure_keeps_the_verified_staging_for_retry"
+    },
+    {
+      "desc": "a durable unknown-trash safety lock survives root re-selection and activation, continuing to reject both imports and deletes",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.8 application::root_switch::tests::trash_outcome_unknown_survives_reprepare_and_activation_and_rejects_writes"
+    },
+    {
+      "desc": "real SQLite forward-roll atomically writes DatabaseFinalized, cascades song relationships, and releases the target claim",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.8 infrastructure::sqlite::tests::sqlite_trash_forward_finalizes_song_relationships_journal_and_claim"
+    },
+    {
+      "desc": "a real SQLite finalization transaction failure rolls back the song, relationship, journal state, and active claim together",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.8 infrastructure::sqlite::tests::sqlite_trash_finalization_rollback_keeps_song_journal_and_claim_together"
+    },
+    {
+      "desc": "pre-trash delete recovery states are skipped without invoking SystemTrashPort or quarantining the root",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.8 application::trash::tests::pre_trash_delete_states_are_skipped_without_calling_or_locking_the_root"
+    },
+    {
+      "desc": "multi-resource expired-delete handoff writes every TrashPending state atomically and rolls back all of them on failure",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.8 application::recover::tests::expired_multi_resource_handoff_is_atomic_when_persisting_trash_pending"
+    },
+    {
+      "desc": "the unknown journal result and durable root safety isolation roll back together when the latter write fails",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.8 application::trash::tests::unknown_state_and_root_isolation_rollback_together_when_lock_write_fails"
+    },
+    {
+      "desc": "real filesystem root access errors propagate from path_exists instead of being mistaken for a missing staged file",
+      "cmd": "node scripts/verify/checks/task-5.mjs 5.8 infrastructure::filesystem::adapter::tests::path_exists_propagates_real_root_access_errors_but_not_not_found"
+    }
+    ]
    }
 
  ],

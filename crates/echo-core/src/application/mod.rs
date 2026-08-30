@@ -24,6 +24,7 @@ pub mod recover;
 pub mod relink;
 pub mod root_switch;
 pub mod scan;
+pub mod trash;
 pub mod watch;
 
 /// Test doubles for the ports ([`ports`]). Compiled only under `cargo test`

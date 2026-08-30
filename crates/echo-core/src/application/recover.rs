@@ -33,6 +33,10 @@
 use crate::application::ports::{OperationItem, OperationResourceKind, TxAccess};
 use crate::application::relink::song_from_parsed;
 use crate::application::scan::{parse_single_file, rewrap, FileOutcome, ScanDeps};
+use crate::application::trash::{
+    finalize_persisted_trash, mark_outcome_unknown, persist_state, staging_evidence,
+    StagingEvidence,
+};
 use crate::domain::entities::LyricsSource;
 use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath, SongId};
 use crate::domain::state::OperationState;
@@ -94,9 +98,7 @@ pub struct RecoveryOperation {
     pub items: usize,
     /// Whether any item ended in `FailedRecoverable` (conflict held).
     pub held: bool,
-    /// Whether the operation is a delete whose undo window expired and was
-    /// handed to task 5.8 (its items were advanced to `TrashPending`; the
-    /// system-trash forward-roll is deliberately not implemented here).
+    /// Whether the operation needs the runtime's `SystemTrashPort` retry.
     pub handed_off: bool,
 }
 
@@ -148,6 +150,30 @@ impl<'a> RecoverOperations<'a> {
         }
         let mut touched = Vec::new();
         for (operation, kind, items) in ops {
+            if self
+                .deps
+                .roots
+                .by_id(root)?
+                .is_some_and(|record| record.write_safety_locked())
+            {
+                // Safety isolation forbids every recovery filesystem write.
+                // A durable TrashApplied receipt is the one exception because
+                // it needs only the database forward-roll.
+                if kind == DELETE_OPERATION
+                    && items
+                        .iter()
+                        .all(|item| item.state == OperationState::TrashApplied)
+                {
+                    finalize_persisted_trash(self.deps, operation, &items)?;
+                    touched.push(RecoveryOperation {
+                        operation,
+                        items: items.len(),
+                        held: false,
+                        handed_off: false,
+                    });
+                }
+                continue;
+            }
             if kind == DELETE_OPERATION {
                 let outcome = self.recover_delete_operation(root, operation, &items)?;
                 touched.push(RecoveryOperation {
@@ -200,30 +226,20 @@ impl<'a> RecoverOperations<'a> {
     ///   发生）→ 完成暂存; 原/暂存两处证据矛盾 → 不删除任一文件（held）;
     /// - all items `StageApplied` → the hide (pending-delete + HIDDEN +
     ///   deadline) is completed if it did not commit;
-    /// - `HiddenInDatabase`: 未过期 → 恢复剩余倒计时（保持等待）; 已过期 → 向 5.8
-    ///   面交（推进到 `TrashPending`，本任务不实现 trash 前滚）;
+    /// - `HiddenInDatabase`: 未过期 → 恢复剩余倒计时（保持等待）; 已过期 →
+    ///   持久化 `TrashPending`，交给运行时的 `SystemTrashPort` 前滚;
     /// - `RestorePending`: 原路径匹配 → 规范化 restored; 否则重试恢复;
-    /// - `RestoreApplied` → normalizes to `Restored`; `Trash*` 状态属 5.8，不触碰。
+    /// - `RestoreApplied` → normalizes to `Restored`; `TrashApplied` only
+    ///   finalizes from durable evidence, while a missing/unreadable pending
+    ///   staging area becomes `TrashOutcomeUnknown` (never inferred success).
     fn recover_delete_operation(
         &self,
         root: LibraryRootId,
         operation: OperationId,
         items: &[OperationItem],
     ) -> Result<DeleteOutcome, Error> {
-        // Trash states (TrashPending/TrashApplied/TrashOutcomeUnknown) belong
-        // to task 5.8's forward-roll; recovery must leave them untouched.
-        if items.iter().any(|item| {
-            matches!(
-                item.state,
-                OperationState::TrashPending
-                    | OperationState::TrashApplied
-                    | OperationState::TrashOutcomeUnknown
-            )
-        }) {
-            return Ok(DeleteOutcome {
-                held: true,
-                handed_off: true,
-            });
+        if let Some(outcome) = self.recover_trash_state(root, operation, items)? {
+            return Ok(outcome);
         }
         let subject_song = items.iter().find_map(|item| item.song);
 
@@ -303,9 +319,12 @@ impl<'a> RecoverOperations<'a> {
                     // journal advancement is a legal Hidden→TrashPending
                     // transition per item; no SystemTrashPort call, no
                     // finalize — that is 5.8's work.
-                    for item in &items_after {
-                        self.upsert(root, operation, item, OperationState::TrashPending)?;
-                    }
+                    persist_state(
+                        self.deps,
+                        operation,
+                        &items_after,
+                        OperationState::TrashPending,
+                    )?;
                     return Ok(DeleteOutcome {
                         held,
                         handed_off: true,
@@ -332,6 +351,54 @@ impl<'a> RecoverOperations<'a> {
             held: false,
             handed_off: false,
         })
+    }
+
+    /// Recover a delete once it reached the system-trash boundary. Missing or
+    /// unreadable staging evidence is ambiguity, never success by inference.
+    fn recover_trash_state(
+        &self,
+        root: LibraryRootId,
+        operation: OperationId,
+        items: &[OperationItem],
+    ) -> Result<Option<DeleteOutcome>, Error> {
+        if items
+            .iter()
+            .all(|item| item.state == OperationState::TrashApplied)
+        {
+            finalize_persisted_trash(self.deps, operation, items)?;
+            return Ok(Some(DeleteOutcome::default()));
+        }
+        let has_trash_state = items.iter().any(|item| {
+            matches!(
+                item.state,
+                OperationState::TrashPending
+                    | OperationState::TrashApplied
+                    | OperationState::TrashOutcomeUnknown
+            )
+        });
+        if !has_trash_state {
+            return Ok(None);
+        }
+        // A mixed TrashPending/TrashApplied set is unknown: the platform acts
+        // on one directory, but no operation-wide durable receipt exists.
+        let evidence = staging_evidence(self.deps, root, items);
+        let pending_is_intact = items
+            .iter()
+            .all(|item| item.state == OperationState::TrashPending)
+            && evidence == StagingEvidence::Intact;
+        if !pending_is_intact {
+            let _ = mark_outcome_unknown(
+                self.deps,
+                root,
+                operation,
+                items,
+                evidence == StagingEvidence::RootUnavailable,
+            )?;
+        }
+        Ok(Some(DeleteOutcome {
+            held: true,
+            handed_off: true,
+        }))
     }
 
     /// Drive one delete operation's per-item matrix. Returns whether any item
@@ -477,7 +544,8 @@ impl<'a> RecoverOperations<'a> {
             // like the live undo's per-item journal.
             let applied = OperationItem {
                 state: OperationState::RestoreApplied,
-                target_path: restore_target,
+                target_path: restore_target.clone(),
+                claim_key: restore_target.identity_key().to_owned(),
                 ..item.clone()
             };
             let restored = OperationItem {
@@ -709,6 +777,7 @@ impl<'a> RecoverOperations<'a> {
                     staging_path: None,
                     target_path: item.target_path.clone(),
                     expected_hash: item.expected_hash.clone(),
+                    item_key: item.item_key.clone(),
                     claim_key: item.claim_key.clone(),
                 };
                 self.deps
@@ -2223,5 +2292,44 @@ mod tests {
             .restore(fixture.root, operation)
             .unwrap_err();
         assert_eq!(err.code(), "conflict", "expired undo refused");
+    }
+
+    #[test]
+    fn expired_multi_resource_handoff_is_atomic_when_persisting_trash_pending() {
+        let fixture = ScanFixture::new();
+        let song = seed_delete_song(
+            &fixture,
+            "artist/song.flac",
+            b"audio-bytes",
+            Some(b"lyrics-bytes"),
+        );
+        let operation = DeleteSongs::new(&fixture.deps)
+            .delete(fixture.root, song)
+            .expect("delete")
+            .operation;
+        fixture.clock.advance_ms(20_000);
+        fixture.database.set_fail_commit(true);
+
+        assert!(RecoverOperations::new(&fixture.deps)
+            .run(fixture.root)
+            .is_err());
+        assert!(fixture
+            .database
+            .items(operation)
+            .unwrap()
+            .iter()
+            .all(|item| item.state == OperationState::HiddenInDatabase));
+
+        fixture.database.set_fail_commit(false);
+        let report = RecoverOperations::new(&fixture.deps)
+            .run(fixture.root)
+            .expect("retry handoff");
+        assert!(report.touched.iter().any(|entry| entry.handed_off));
+        assert!(fixture
+            .database
+            .items(operation)
+            .unwrap()
+            .iter()
+            .all(|item| item.state == OperationState::TrashPending));
     }
 }

@@ -244,7 +244,13 @@ impl<'a> PlanImport<'a> {
     ) -> Result<ImportBatchReport, Error> {
         // Refuse the whole batch before any copy when the root cannot take
         // writes (spec: 资料库根目录不可用时在开始复制前拒绝整批导入).
-        if !self.deps.fs.write_capable(root)? {
+        if self
+            .deps
+            .roots
+            .by_id(root)?
+            .is_some_and(|record| !record.write_capable())
+            || !self.deps.fs.write_capable(root)?
+        {
             return Ok(ImportBatchReport {
                 results: vec![ImportOutcome::LibraryUnavailable; sources.len()],
             });
@@ -986,6 +992,7 @@ fn journal_item(state: OperationState, planned: &PlannedInput) -> OperationItem 
         staging_path: Some(planned.staged_path.clone()),
         target_path: planned.target.clone(),
         expected_hash: planned.hash.clone(),
+        item_key: IMPORT_AUDIO_RESOURCE.to_owned(),
         claim_key: planned.target.identity_key().to_owned(),
     }
 }
@@ -1006,6 +1013,7 @@ fn journal_lrc_item(
         staging_path: Some(lrc.staged_path.clone()),
         target_path: lrc.target.clone(),
         expected_hash: lrc.hash.clone(),
+        item_key: IMPORT_LRC_RESOURCE.to_owned(),
         claim_key: lrc.target.identity_key().to_owned(),
     }
 }

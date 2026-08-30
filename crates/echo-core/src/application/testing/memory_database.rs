@@ -34,6 +34,7 @@ struct Store {
     runs: BTreeMap<(LibraryRootId, u64), ScanRunRow>,
     issues: Vec<(LibraryRootId, u64, MediaDiagnostic)>,
     runtime_state: BTreeMap<String, String>,
+    fail_root_isolation: bool,
 }
 
 /// The in-memory mirror of a `scan_runs` row.
@@ -70,6 +71,12 @@ impl MemoryDatabase {
     pub fn set_fail_commit(&self, fail: bool) {
         self.fail_commit
             .store(fail, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Fail the root-isolation write inside a transaction (assertion hook for
+    /// the trash unknown-outcome atomicity boundary).
+    pub fn set_fail_root_isolation(&self, fail: bool) {
+        self.lock().fail_root_isolation = fail;
     }
 
     /// All songs (assertion helper).
@@ -169,8 +176,10 @@ impl LibraryRepository for MemoryDatabase {
                 root.id(),
                 root.absolute_path().to_path_buf(),
                 false,
-                root.write_capable(),
+                root.observed_write_capable(),
             );
+            let mut replacement = replacement;
+            replacement.set_write_safety_locked(root.write_safety_locked());
             *root = replacement;
         }
         Ok(())
@@ -189,12 +198,19 @@ impl LibraryRepository for MemoryDatabase {
                 write_capable,
             );
             let mut replacement = replacement;
+            replacement.set_write_safety_locked(root.write_safety_locked());
             replacement.set_availability(if available {
                 crate::domain::entities::RootAvailability::Available
             } else {
                 crate::domain::entities::RootAvailability::Unavailable
             });
             *root = replacement;
+        }
+        Ok(())
+    }
+    fn set_write_safety_locked(&self, id: LibraryRootId, locked: bool) -> Result<(), Error> {
+        if let Some(root) = self.lock().roots.get_mut(&id) {
+            root.set_write_safety_locked(locked);
         }
         Ok(())
     }
@@ -356,7 +372,7 @@ impl OperationJournalRepository for MemoryDatabase {
     fn upsert_item(&self, operation: OperationId, item: OperationItem) -> Result<(), Error> {
         self.lock()
             .operations
-            .insert((operation, item.target_path.normalized().to_owned()), item);
+            .insert((operation, item.item_key.clone()), item);
         Ok(())
     }
     fn items(&self, operation: OperationId) -> Result<Vec<OperationItem>, Error> {
@@ -511,6 +527,13 @@ impl TxAccess for MemoryTx<'_> {
         self.store.songs.insert(song.id(), song.clone());
         Ok(())
     }
+    fn delete_song(&mut self, id: SongId) -> Result<(), Error> {
+        self.store.songs.remove(&id);
+        self.store.members.retain(|(_, song), _| *song != id);
+        self.store.lyrics.retain(|(song, _), _| *song != id);
+        self.store.covers.remove(&id);
+        Ok(())
+    }
     fn set_song_availability(
         &mut self,
         id: SongId,
@@ -560,6 +583,23 @@ impl TxAccess for MemoryTx<'_> {
         self.store.roots.insert(root.id(), root.clone());
         Ok(())
     }
+    fn isolate_root_writes(&mut self, id: LibraryRootId, available: bool) -> Result<(), Error> {
+        if self.store.fail_root_isolation {
+            return Err(Error::unavailable(
+                "test root isolation",
+                "simulated root isolation write failure",
+            ));
+        }
+        if let Some(root) = self.store.roots.get_mut(&id) {
+            root.set_write_safety_locked(true);
+            root.set_availability(if available {
+                crate::domain::entities::RootAvailability::Available
+            } else {
+                crate::domain::entities::RootAvailability::Unavailable
+            });
+        }
+        Ok(())
+    }
     fn create_playlist(
         &mut self,
         id: PlaylistId,
@@ -587,7 +627,11 @@ impl TxAccess for MemoryTx<'_> {
     ) -> Result<(), Error> {
         self.store
             .operations
-            .insert((operation, item.target_path.normalized().to_owned()), item);
+            .insert((operation, item.item_key.clone()), item);
+        Ok(())
+    }
+    fn release_operation_claims(&mut self, operation: OperationId) -> Result<(), Error> {
+        self.store.released_claims.push(operation);
         Ok(())
     }
     fn set_undo_deadline(&mut self, operation: OperationId, deadline_ms: i64) -> Result<(), Error> {

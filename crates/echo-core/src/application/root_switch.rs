@@ -102,11 +102,17 @@ impl<'a> PrepareLibraryCandidate<'a> {
             .canonicalize()
             .map_err(|source| Error::io("resolve candidate root", source, absolute_path))?;
         let root_id = derive_root_id(&canonical);
-        let reused = self.roots.by_id(root_id)?.is_some();
+        let existing = self.roots.by_id(root_id)?;
+        let reused = existing.is_some();
         // `write_capable` reflects permission + ownership marker (task 4.2).
-        let write_capable = self.deps.fs.write_capable(root_id)?;
-        self.roots
-            .upsert(&LibraryRoot::new(root_id, canonical, false, write_capable))?;
+        let observed_write_capable = self.deps.fs.write_capable(root_id)?;
+        let write_safety_locked = existing
+            .as_ref()
+            .is_some_and(LibraryRoot::write_safety_locked);
+        let write_capable = observed_write_capable && !write_safety_locked;
+        let mut prepared = LibraryRoot::new(root_id, canonical, false, observed_write_capable);
+        prepared.set_write_safety_locked(write_safety_locked);
+        self.roots.upsert(&prepared)?;
 
         // Candidate scan: complete enumeration + reconcile required.
         match StartScan::new(self.deps, self.supervisor).run(root_id) {
@@ -261,12 +267,13 @@ impl<'a> ActivateLibrary<'a> {
             .map_err(|error| to_invariant(&error))?;
         let new_epoch = RootEpoch::from_u64(current_epoch + 1);
         let write_capable = candidate_root.write_capable();
-        let activated = LibraryRoot::new(
+        let mut activated = LibraryRoot::new(
             candidate,
             candidate_root.absolute_path().to_path_buf(),
             true,
-            write_capable,
+            candidate_root.observed_write_capable(),
         );
+        activated.set_write_safety_locked(candidate_root.write_safety_locked());
         let epoch_value = new_epoch.as_u64().to_string();
         let outcome_write_capable = write_capable;
         self.deps
@@ -304,7 +311,12 @@ fn to_invariant(error: &crate::domain::state::TransitionError) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::testing::ScanFixture;
+    use crate::application::delete::DeleteSongs;
+    use crate::application::import::{ImportOutcome, PlanImport};
+    use crate::application::ports::ImportSource;
+    use crate::application::testing::{FakeImportSources, ScanFixture};
+    use crate::domain::entities::Song;
+    use crate::domain::ids::{RelativeMediaPath, Revision, SongId};
     use crate::domain::state::scan::ScanState;
 
     fn fixture() -> ScanFixture {
@@ -435,6 +447,79 @@ mod tests {
             !fixture.deps.fs.write_capable(root.id()).unwrap(),
             "import/delete stay disabled for read-only roots"
         );
+    }
+
+    #[test]
+    fn trash_outcome_unknown_survives_reprepare_and_activation_and_rejects_writes() {
+        let fixture = fixture();
+        let dir = tempfile::tempdir().unwrap();
+        bind_candidate(&fixture, dir.path());
+        let prepared =
+            PrepareLibraryCandidate::new(&fixture.deps, &fixture.database, &fixture.supervisor)
+                .prepare(dir.path())
+                .expect("prepare");
+        ActivateLibrary::new(
+            &fixture.deps,
+            &fixture.database,
+            &fixture.supervisor,
+            &fixture.database,
+            &Blockers::new(),
+        )
+        .activate(prepared.root_id)
+        .expect("activation");
+
+        // This is the durable safety consequence of TrashOutcomeUnknown. A
+        // later filesystem permission probe must not make it writable again.
+        fixture
+            .database
+            .set_write_safety_locked(prepared.root_id, true)
+            .expect("persist safety lock");
+        let reparsed =
+            PrepareLibraryCandidate::new(&fixture.deps, &fixture.database, &fixture.supervisor)
+                .prepare(dir.path())
+                .expect("re-prepare keeps safety isolation");
+        assert!(reparsed.reused);
+        assert!(!reparsed.write_capable);
+        let activated = ActivateLibrary::new(
+            &fixture.deps,
+            &fixture.database,
+            &fixture.supervisor,
+            &fixture.database,
+            &Blockers::new(),
+        )
+        .activate(reparsed.root_id)
+        .expect("re-activation remains possible for reads");
+        assert_eq!(activated.root_state, LibraryRootState::ActiveReadOnly);
+        assert!(crate::application::ports::LibraryRepository::by_id(
+            &fixture.database,
+            prepared.root_id,
+        )
+        .unwrap()
+        .unwrap()
+        .write_safety_locked());
+
+        let sources = FakeImportSources::new();
+        sources.add("new", "new.flac", b"bytes");
+        let imported = PlanImport::new(&fixture.deps, &sources)
+            .run(
+                prepared.root_id,
+                &[ImportSource::new("new").expect("logical source")],
+            )
+            .expect("write rejection is a normal report");
+        assert_eq!(imported.results, vec![ImportOutcome::LibraryUnavailable]);
+
+        let song = Song::new(
+            SongId::new(),
+            prepared.root_id,
+            RelativeMediaPath::new("still-here.flac").unwrap(),
+            Revision::INITIAL,
+        );
+        crate::application::ports::SongRepository::upsert(&fixture.database, &song)
+            .expect("seed song");
+        let error = DeleteSongs::new(&fixture.deps)
+            .delete(prepared.root_id, song.id())
+            .expect_err("delete remains disabled after re-selection");
+        assert_eq!(error.code(), "unavailable");
     }
 
     #[test]
