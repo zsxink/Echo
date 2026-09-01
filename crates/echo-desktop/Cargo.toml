@@ -13,6 +13,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+# Dynamic loading of the vendored libmpv (macOS dylib in the app bundle). The
+# echo-desktop shell owns this platform bridge; echo-core never sees it.
+libloading = { workspace = true }
 
 [dev-dependencies]
 echo-core = { path = "../echo-core", features = ["testkit"] }
@@ -22,5 +26,9 @@ tempfile = "3"
 name = "echo-generate-ipc"
 path = "src/bin/generate_ipc.rs"
 
-[lints]
-workspace = true
+# echo-desktop is the ONE workspace crate that may contain `unsafe`: it owns
+# the libmpv FFI adapter (player/ffi). This explicitly relaxes the
+# workspace-wide `unsafe_code = "forbid"` (echo-core keeps it forbidden), and
+# every other module of echo-desktop forbids `unsafe` again (module headers).
+[lints.rust]
+unsafe_code = "allow"

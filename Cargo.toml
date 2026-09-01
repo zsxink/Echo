@@ -48,6 +48,10 @@ symphonia = { version = "0.5", default-features = false, features = [
 notify = "8"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
+# Dynamic loading of the vendored platform libmpv from the desktop shell. Only
+# echo-desktop uses it; libmpv/FFI never reach echo-core.
+libloading = "0.7"
+
 # Property tests for domain name rules and state-machine transitions (dev-only).
 proptest = "1"
 
