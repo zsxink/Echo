@@ -1,0 +1,140 @@
+/* Application shell layout (task 10.4).
+   Sidebar + workspace + persistent player bar, using the brand tokens from
+   tokens.css. The shell stays plain white with hairline dividers; the accent
+   is used sparingly (active nav, primary actions, selection). */
+
+.ui-layout {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  grid-template-columns: 220px 1fr;
+  grid-template-areas:
+    "sidebar workspace"
+    "playerbar playerbar";
+  height: 100vh;
+  overflow: hidden;
+}
+
+.ui-sidebar {
+  grid-area: sidebar;
+  border-right: 1px solid var(--border-soft);
+  background: var(--surface);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ui-workspace {
+  grid-area: workspace;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.ui-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-1);
+  font-family: var(--font-display);
+  color: var(--accent);
+}
+
+.brand-note {
+  font-size: var(--text-xl);
+  line-height: 1;
+}
+
+.brand-name {
+  font-weight: 700;
+  letter-spacing: var(--tracking-display);
+}
+
+.ui-nav {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--space-1);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ui-nav-group {
+  margin-top: var(--space-3);
+}
+
+.ui-nav-group-title {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  padding: var(--space-1) var(--space-1) var(--space-1);
+  font-family: var(--font-mono);
+}
+
+.ui-nav-empty {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-1);
+  margin: 0;
+}
+
+.ui-nav-item {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--fg);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.ui-nav-item:hover {
+  background: var(--surface-warm);
+}
+
+.ui-nav-item.is-active {
+  background: var(--surface-warm);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.ui-nav-count {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.ui-nav-spacer {
+  flex: 1;
+}
+
+/* --- narrow screen (task 12.3): collapse the sidebar behind a toggle --- */
+@media (max-width: 760px) {
+  .ui-layout {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "workspace"
+      "playerbar";
+  }
+  .ui-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: 240px;
+    z-index: 30;
+    transform: translateX(-100%);
+    transition: transform var(--motion-base) var(--ease-standard);
+  }
+  .ui-sidebar.is-open {
+    transform: translateX(0);
+  }
+}

@@ -1,10 +1,110 @@
-/* Echo design tokens. Full theme system (coral / deep cobalt / turquoise) is
-   built in task 10.1 from the brand spec; this placeholder establishes the
-   token surface so the renderer loads with an explicit background. */
+/* Echo design tokens & three-theme system (task 10.1).
+   Source of truth: docs/prototype/brand-spec.md (§2 palette, §3 type, §4 space,
+   §5 motion, §6 icons). Theme names align with the IPC/interface terminology:
+   `coral` (默认珊瑚玫红), `cobalt` (深钴蓝), `turquoise` (松石绿) — never
+   light/dark. Color values use OKLCh as the brand spec mandates.
+
+   A theme only changes the accent (music symbols, primary actions, selection /
+   focus); every application background stays pure white. The favorite heart is
+   an independent red semantic (`--danger`) that no theme overrides.
+   */
+
 :root {
-  --echo-color-bg: #fdf6f0;
-  --echo-color-fg: #2a2420;
-  color-scheme: light;
+  /* --- Core workspace palette (unchanged across themes) --- */
+  --bg: oklch(1 0 89.88);
+  --surface: oklch(0.9642 0 89.88);
+  --surface-warm: oklch(0.946 0.016 19.38);
+  --fg: oklch(0.2134 0 89.88);
+  --fg-2: oklch(0.418 0.025 19.38);
+  --muted: oklch(0.51 0.016 19.38);
+  --border: oklch(0.894 0.009 19.38);
+  --border-soft: oklch(0.93 0.005 19.38);
+
+  /* Token identity; the theme blocks below override these. */
+  --accent: oklch(0.6528 0.2219 19.38);
+  --accent-strong: oklch(0.53 0.2219 19.38);
+  --accent-strong-hover: color-mix(in oklab, var(--accent-strong), black 8%);
+  --accent-hover: color-mix(in oklab, var(--accent), black 8%);
+  --accent-active: color-mix(in oklab, var(--accent), black 14%);
+  --accent-on: oklch(1 0 89.88);
+
+  /* Secondary semantic marker (meta / breadcrumb) — deep cobalt, stable. */
+  --meta: oklch(0.3787 0.1953 263.35);
+
+  /* Status colors (Ant-aligned). --danger drives the favorite heart + destructive ops. */
+  --success: #22a06b;
+  --warn: #faad14;
+  --danger: #cf1322;
+
+  /* --- Typography (brand §3) --- */
+  --font-display: "Ant Sans", "Alibaba PuHuiTi", Inter, Arial, sans-serif;
+  --font-body: "Ant Sans", "Alibaba PuHuiTi", Inter, Arial, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
+
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 32px;
+  --text-3xl: 48px;
+  --text-4xl: 64px;
+
+  --leading-body: 1.52;
+  --leading-tight: 1.08;
+  --tracking-display: -0.018em;
+
+  /* --- Spacing (brand §4): 4/8/12/16/20/24/32/48 --- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  /* --- Radius --- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 9999px;
+
+  /* --- Elevation --- */
+  --elev-flat: none;
+  --elev-ring: 0 0 0 1px var(--border);
+  --elev-raised: 0 18px 42px rgba(31, 31, 31, 0.1);
+
+  /* --- Focus ring: accent-strong at 76% alpha --- */
+  --focus-ring: 0 0 0 4px color-mix(in oklab, var(--accent-strong), transparent 24%);
+
+  /* --- Motion (brand §5) --- */
+  --motion-fast: 140ms;
+  --motion-base: 220ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* --- Theme: deep cobalt (calm, focused) --- */
+:root[data-echo-theme="cobalt"] {
+  --accent: var(--meta);
+  --accent-strong: oklch(0.31 0.185 263.35);
+  --accent-strong-hover: color-mix(in oklab, var(--accent-strong), black 8%);
+  --surface-warm: oklch(0.946 0.014 263.35);
+}
+
+/* --- Theme: coral (default) — the :root tokens above already are coral; this
+      keeps the intent explicit and mirrors the brand block. --- */
+:root[data-echo-theme="coral"] {
+  --accent: oklch(0.6528 0.2219 19.38);
+  --surface-warm: oklch(0.946 0.016 19.38);
+}
+
+/* --- Theme: turquoise (balanced, soothing) --- */
+:root[data-echo-theme="turquoise"] {
+  --accent: oklch(0.54 0.133 159.56);
+  --accent-strong: oklch(0.44 0.133 159.56);
+  --accent-strong-hover: color-mix(in oklab, var(--accent-strong), black 8%);
+  --surface-warm: oklch(0.946 0.018 159.56);
 }
 
 html,
@@ -15,12 +115,38 @@ body,
 }
 
 body {
-  background: var(--echo-color-bg);
-  color: var(--echo-color-fg);
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+
+/* Constrained motion model: a user who prefers reduced motion gets near-static
+   transitions and single-shot, fast animations (brand §5). */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* A keyboard-visible, accessible focus ring on every interactive control. */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* The record spin + tonearm animation used by the immersive player (brand §7).
+   It is disabled by the reduced-motion block above but the keyframes stay
+   available to `.record-spin` / `.tonearm`. */
+@keyframes echo-record-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }

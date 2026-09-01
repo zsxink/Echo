@@ -1,0 +1,331 @@
+/* Persistent player bar (task 11.1) + shared overlay/menu/detail/import CSS.
+   Built on the brand tokens; the bar sits in the layout footer grid area. */
+
+.playerbar {
+  grid-area: playerbar;
+  height: 64px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-4);
+  position: relative;
+  z-index: 10;
+}
+
+.playerbar[data-empty="true"] {
+  color: var(--muted);
+}
+
+.playerbar-cover {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-warm);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  font-size: var(--text-lg);
+  flex: 0 0 auto;
+}
+
+.playerbar-now {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 0 1 220px;
+}
+
+.playerbar-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.playerbar-duration {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.playerbar-transport {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+  min-width: 0;
+}
+
+.playerbar-tracks {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.playerbar-play {
+  font-size: var(--text-lg);
+}
+
+.playerbar-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.playerbar-time {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--fg-2);
+  min-width: 38px;
+  text-align: center;
+}
+
+.playerbar-side {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+/* --- range inputs (progress + volume) --- */
+.range {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--range-progress, 0%),
+    var(--border) var(--range-progress, 0%)
+  );
+  cursor: pointer;
+  flex: 1;
+  min-width: 120px;
+}
+
+.range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-strong);
+  border: 0;
+}
+
+.range-volume {
+  min-width: 90px;
+  max-width: 110px;
+}
+
+/* --- sr-only and buttons used across the app --- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- overlays / menus / dialogs (task 10.8 / 10.9 / 10.10) --- */
+.overlay-shell {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+}
+
+.menu {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elev-raised);
+  padding: var(--space-2);
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+}
+
+.menu-item {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--fg);
+}
+
+.menu-item:hover {
+  background: var(--surface-warm);
+}
+
+.menu-item:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.menu-item-muted {
+  color: var(--muted);
+}
+
+.menu-item.danger-text,
+.danger-text {
+  color: var(--danger);
+}
+
+.menu-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  margin-top: var(--space-2);
+}
+
+.menu-error {
+  color: var(--danger);
+  font-size: var(--text-sm);
+  margin: var(--space-2) 0 0;
+}
+
+.delete-confirm {
+  padding: var(--space-2);
+}
+
+.detail-card,
+.import-dialog {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-raised);
+  padding: var(--space-6);
+  min-width: 340px;
+  max-width: 480px;
+}
+
+.detail-title {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-2) var(--space-4);
+  margin: 0 0 var(--space-4);
+}
+
+.detail-grid dt {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.detail-grid dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.import-summary {
+  color: var(--fg-2);
+}
+
+.import-results {
+  list-style: none;
+  margin: var(--space-2) 0 var(--space-4);
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.import-ok {
+  color: var(--success);
+}
+
+.import-dup {
+  color: var(--fg-2);
+}
+
+.import-fail {
+  color: var(--danger);
+}
+
+/* --- settings (task 10.1) --- */
+.settings {
+  padding: var(--space-6);
+  overflow-y: auto;
+}
+
+.settings-section {
+  margin-top: var(--space-5);
+}
+
+.settings-heading {
+  font-family: var(--font-display);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+
+.theme-row {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.theme-option {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.theme-option.is-active {
+  border-color: var(--accent-strong);
+  box-shadow: var(--focus-ring);
+}
+
+.theme-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.settings-notice {
+  color: var(--success);
+}
+
+.close-behavior {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* --- playlist (task 10.9) --- */
+.playlist-create {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+}
+
+.playlist-members-count {
+  color: var(--fg-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+}
