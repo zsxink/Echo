@@ -7,6 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use echo_core::application::scan::ScanSummary;
 use echo_core::domain::catalog::{OpaqueCursor, Paged};
 use echo_core::domain::entities::{Song, SongAvailability};
 use echo_core::domain::ids::{PlaylistId, SongId};
@@ -79,6 +80,115 @@ impl From<Paged<Song>> for PagedSongs {
     }
 }
 
+/// The outcome of choosing a library root (task 7.5 `choose_library_root`).
+/// Reaches the UI as a path-free snapshot; the absolute directory was consumed
+/// entirely desktop-side.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryRootStatusDto {
+    /// Whether a library root is now configured.
+    pub configured: bool,
+    /// True when the chosen root activated read-only (writes disabled).
+    pub read_only: bool,
+    /// The active root id (never an absolute path).
+    pub active_root: String,
+}
+
+/// The library's read-only availability + write capability (task 7.3
+/// `library_status`). It surfaces whether reads/writes are safe and whether a
+/// scan is in flight, without ever carrying an absolute path.
+///
+/// The four booleans are independent availability flags — collapsing them
+/// would obscure which capability is missing, so the natural shape wins.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(clippy::struct_excessive_bools)]
+pub struct LibraryStatus {
+    /// Whether a library root is configured.
+    pub configured: bool,
+    /// The active root is read-only (writes like import/delete are disabled).
+    pub read_only: bool,
+    /// The active root is currently unreachable/missing.
+    pub unavailable: bool,
+    /// A scan is in flight for the active root.
+    pub scanning: bool,
+    /// The active root id, if configured.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_root: Option<String>,
+}
+
+/// The terminal summary of one scan run (task 7.3 `start_scan`).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanSnapshot {
+    pub generation: u64,
+    pub cancelled: bool,
+    pub state: String,
+    pub discovered: u64,
+    pub processed: u64,
+    pub created: u64,
+    pub updated: u64,
+    pub missing: u64,
+    pub skipped: u64,
+    pub failed: u64,
+}
+
+impl From<&ScanSummary> for ScanSnapshot {
+    fn from(summary: &ScanSummary) -> Self {
+        let progress = summary.progress;
+        Self {
+            generation: summary.generation,
+            cancelled: summary.cancelled,
+            state: format!("{:?}", progress.state),
+            discovered: progress.discovered,
+            processed: progress.processed,
+            created: progress.created,
+            updated: progress.updated,
+            missing: progress.missing,
+            skipped: progress.skipped,
+            failed: progress.failed,
+        }
+    }
+}
+
+/// A song's read-only detail view (task 7.3 `get_song_detail`).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SongDetailView {
+    pub song_id: String,
+    /// Library-relative path only.
+    pub relative_path: String,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub duration_s: Option<u64>,
+    pub format: Option<String>,
+    pub play_count: u64,
+    pub favorite: bool,
+    pub has_cover: bool,
+    pub lyrics: String,
+    pub availability: String,
+}
+
+impl From<&echo_core::application::detail::SongDetail> for SongDetailView {
+    fn from(detail: &echo_core::application::detail::SongDetail) -> Self {
+        Self {
+            song_id: detail.song_id.clone(),
+            relative_path: detail.relative_path.clone(),
+            title: detail.title.clone(),
+            artist: detail.artist.clone(),
+            album: detail.album.clone(),
+            duration_s: detail.duration_s,
+            format: detail.format.clone(),
+            play_count: detail.play_count,
+            favorite: detail.favorite,
+            has_cover: detail.has_cover,
+            lyrics: format!("{:?}", detail.lyrics),
+            availability: detail.availability.clone(),
+        }
+    }
+}
+
 /// A playlist as the UI sees it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -98,12 +208,98 @@ impl From<(PlaylistId, String, usize)> for PlaylistView {
     }
 }
 
-/// Theme preference (coral is the design's default).
+/// One input's import result as the UI sees it (task 7.5). Carries only
+/// relative paths; error variants carry user-safe codes + messages (Core
+/// redacts absolute locations before they reach this layer).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum ImportResultDto {
+    /// Copied, verified, published and committed under the reserved identity.
+    Imported {
+        operation_id: String,
+        song_id: String,
+        /// Library-relative published path (never absolute).
+        relative_path: String,
+    },
+    /// The content already belongs to a library record; no copy was made.
+    Duplicate { existing_song_id: String },
+    /// Not an importable audio type.
+    Unsupported,
+    /// The root could not accept writes; the whole batch was refused.
+    LibraryUnavailable,
+    /// This input failed; `code` is a stable machine code.
+    Failed { code: String, message: String },
+}
+
+impl From<echo_core::application::import::ImportOutcome> for ImportResultDto {
+    fn from(outcome: echo_core::application::import::ImportOutcome) -> Self {
+        use echo_core::application::import::ImportOutcome as O;
+        match outcome {
+            O::Imported {
+                operation,
+                song,
+                target,
+                ..
+            } => Self::Imported {
+                operation_id: operation.to_string(),
+                song_id: song.to_string(),
+                relative_path: target.to_string(),
+            },
+            O::Duplicate { existing } => Self::Duplicate {
+                existing_song_id: existing.to_string(),
+            },
+            O::Unsupported => Self::Unsupported,
+            O::LibraryUnavailable => Self::LibraryUnavailable,
+            O::Failed { code, message } => Self::Failed {
+                code: code.to_owned(),
+                message,
+            },
+        }
+    }
+}
+
+/// The per-input results of one import dialog batch (task 7.5), index-aligned
+/// with the chosen inputs. When the user cancelled the dialog the command
+/// returns no batch at all — never an empty success.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportBatchDto {
+    pub results: Vec<ImportResultDto>,
+}
+
+impl From<echo_core::application::import::ImportBatchReport> for ImportBatchDto {
+    fn from(report: echo_core::application::import::ImportBatchReport) -> Self {
+        Self {
+            results: report
+                .results
+                .into_iter()
+                .map(ImportResultDto::from)
+                .collect(),
+        }
+    }
+}
+
+/// The outcome of a reveal-in-folder request (task 7.5). Only the library-
+/// relative path reaches the UI; the reveal side effect happened desktop-side.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RevealResultDto {
+    pub song_id: String,
+    /// Library-relative path of the revealed song (never absolute).
+    pub relative_path: String,
+    /// Whether the OS could reveal the file (a soft failure — the UI may show
+    /// the relative path instead).
+    pub revealed: bool,
+}
+
+/// Theme preference. The three themes are accent-color themes only — they
+/// never change the pure-white music workspace surface (coral/cobalt/turquoise
+/// per `docs/interface-terminology.md`; coral is the design default).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ThemeDto {
     Coral,
-    Light,
-    Dark,
+    Cobalt,
+    Turquoise,
 }
 
 /// Close behavior preference (what the window does on close).

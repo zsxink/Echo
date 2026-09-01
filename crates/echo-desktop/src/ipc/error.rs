@@ -52,19 +52,20 @@ impl IpcErrorDto {
 impl From<&CoreError> for IpcErrorDto {
     fn from(error: &CoreError) -> Self {
         let code = error.code();
-        let (message_key, retryable) = match code {
-            "validation" => ("error.validation", false),
-            "permission" => ("error.permission", false),
-            "unavailable" => ("error.unavailable", true),
-            "conflict" => ("error.conflict", false),
-            "unsupported_media" => ("error.unsupportedMedia", false),
-            "corrupt_media" => ("error.corruptMedia", false),
-            "io" => ("error.io", true),
-            "storage" => ("error.storage", true),
-            "cancelled" => ("error.cancelled", false),
-            "invariant_violation" => ("error.internal", false),
-            _ => ("error.unknown", false),
+        let message_key = match code {
+            "validation" => "error.validation",
+            "permission" => "error.permission",
+            "unavailable" => "error.unavailable",
+            "conflict" => "error.conflict",
+            "unsupported_media" => "error.unsupportedMedia",
+            "corrupt_media" => "error.corruptMedia",
+            "io" => "error.io",
+            "storage" => "error.storage",
+            "cancelled" => "error.cancelled",
+            "invariant_violation" => "error.internal",
+            _ => "error.unknown",
         };
+        let retryable = ErrorPolicy::retryable(code);
         let field = match error {
             CoreError::Validation { field, .. } => Some(field.clone()),
             _ => None,
@@ -76,6 +77,31 @@ impl From<&CoreError> for IpcErrorDto {
 impl From<CoreError> for IpcErrorDto {
     fn from(error: CoreError) -> Self {
         Self::from(&error)
+    }
+}
+
+/// Which core error classes indicate a *user-safe retry* (design §17, task 7.8).
+///
+/// The single source of truth for `IpcErrorDto.retryable`. Keeping it as one
+/// explicit table means a newly introduced core error code cannot silently
+/// change the frontend's retry behaviour — the mapping is pinned by the test
+/// below.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ErrorPolicy;
+
+impl ErrorPolicy {
+    /// Whether an automatic retry of the same command is safe/expected for an
+    /// error code.
+    ///
+    /// - `unavailable`, `io`, `storage` → **true**: transient resource states
+    ///   and recoverable I/O/storage failures are worth re-attempting.
+    /// - `validation`, `permission`, `conflict`, `unsupported_media`,
+    ///   `corrupt_media`, `cancelled`, `invariant_violation` → **false**: the
+    ///   input or state must change first, or the operation was deliberately
+    ///   aborted, so a blind retry cannot help.
+    #[must_use]
+    pub fn retryable(code: &str) -> bool {
+        matches!(code, "unavailable" | "io" | "storage")
     }
 }
 
@@ -109,6 +135,23 @@ mod tests {
 
         let conflict = CoreError::conflict("duplicate");
         assert_eq!(IpcErrorDto::from(conflict).code, "conflict");
+    }
+
+    #[test]
+    fn error_policy_marks_only_transient_classes_retryable() {
+        // The retryable decision is the single policy table; a newly added
+        // core code must be added here explicitly or it is not retryable.
+        assert!(ErrorPolicy::retryable("unavailable"));
+        assert!(ErrorPolicy::retryable("io"));
+        assert!(ErrorPolicy::retryable("storage"));
+        assert!(!ErrorPolicy::retryable("validation"));
+        assert!(!ErrorPolicy::retryable("permission"));
+        assert!(!ErrorPolicy::retryable("conflict"));
+        assert!(!ErrorPolicy::retryable("unsupported_media"));
+        assert!(!ErrorPolicy::retryable("corrupt_media"));
+        assert!(!ErrorPolicy::retryable("cancelled"));
+        assert!(!ErrorPolicy::retryable("invariant_violation"));
+        assert!(!ErrorPolicy::retryable("not_a_real_code"));
     }
 
     #[test]

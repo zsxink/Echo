@@ -590,6 +590,19 @@ impl PlaylistRepository for SqliteDatabase {
         })
     }
 
+    fn name(&self, id: PlaylistId) -> Result<Option<String>, Error> {
+        self.with_reader(move |connection| {
+            connection
+                .query_row(
+                    "SELECT display_name FROM playlists WHERE uuid = ?1",
+                    params![id.to_string()],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(storage)
+        })
+    }
+
     fn by_name(
         &self,
         root: LibraryRootId,

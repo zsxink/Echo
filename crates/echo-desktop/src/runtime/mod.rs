@@ -1,5 +1,9 @@
 //! Application runtime orchestration and resource lifecycle (task 7.1).
 //!
+//! `unsafe` is confined to the `player` subtree (see crate README); this module
+//! forbids it.
+#![forbid(unsafe_code)]
+//!
 //! Owns the startup supervisor sequence and the readiness gate every command
 //! consults before acting:
 //!
@@ -28,6 +32,9 @@ use std::sync::Mutex;
 use echo_core::application::boot::{BootRecovery, BootRecoveryState};
 use echo_core::application::ports::SystemTrashPort;
 use echo_core::application::scan::{ScanDeps, ScanSupervisor};
+
+/// Coarse-grained command surface over the composed core (task 7.3).
+pub mod services;
 
 /// The phases of the supervisor sequence, in order.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

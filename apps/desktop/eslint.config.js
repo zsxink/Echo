@@ -24,6 +24,12 @@ export default tseslint.config(
       // Boundary input must be validated before reaching app state; keep `any`
       // out of the codebase (CODE_STANDARDS §6).
       "@typescript-eslint/no-explicit-any": "error",
+      // Underscore-prefixed params are intentionally unused (e.g. a mock's
+      // optional `args`); don't flag them as unused.
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
     },
   },
 );

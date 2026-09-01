@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Echo main window — minimal-viable permissions. No shell, fs, sql, opener, dialog, process or network permission: the WebView communicates only via explicit Tauri commands/events, cover:// for cover art, and core window introspection getters.",
+  "windows": ["main"],
+  "permissions": ["core:default", "core:window:default"]
+}

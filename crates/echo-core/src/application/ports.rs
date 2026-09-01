@@ -131,6 +131,9 @@ pub trait CatalogQueryRepository: Send + Sync {
 /// Query/store playlists and their members.
 pub trait PlaylistRepository: Send + Sync {
     fn by_id(&self, id: PlaylistId) -> Result<Option<PlaylistId>, Error>;
+    /// The display name of one playlist (used by the desktop to render the
+    /// playlist list; task 7.3).
+    fn name(&self, id: PlaylistId) -> Result<Option<String>, Error>;
     fn by_name(
         &self,
         root: LibraryRootId,

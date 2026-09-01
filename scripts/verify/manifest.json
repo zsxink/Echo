@@ -1198,7 +1198,280 @@
       "cmd": "cargo run -p echo-desktop --bin echo-generate-ipc && git diff --exit-code -- apps/desktop/src/ipc/ipc-types.generated.ts"
      }
     ]
-   }
+   },
 
+   {
+    "id": "7.3",
+    "title": "实现 bootstrap、资料库、查询、收藏、歌单、导入/删除和播放的粗粒度 commands，验证 UI 无通用 SQL/fs/shell command 且所有 mutation 返回提交后 revision/snapshot",
+    "commands": [
+     {
+      "desc": "收藏切换返回提交后权威歌曲视图",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.3 runtime::services::tests::set_favorite_returns_the_committed_authoritative_song"
+     },
+     {
+      "desc": "歌单变更返回后续读取一致的快照",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.3 runtime::services::tests::playlist_mutations_return_snapshots_seen_by_subsequent_reads"
+     },
+     {
+      "desc": "删除与撤销往返恢复歌曲",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.3 runtime::services::tests::delete_and_undo_roundtrip_restores_the_song"
+     },
+     {
+      "desc": "资料库状态反映配置与扫描进行中",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.3 runtime::services::tests::library_status_reflects_configuration_and_scan_in_flight"
+     },
+     {
+      "desc": "破坏性命令遵循写就绪门",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.3 runtime::services::tests::destructive_commands_obey_the_write_gate"
+     }
+    ]
+   },
+   {
+    "id": "7.4",
+    "title": "实现带 sequence/revision 的 library/operation/player/file-open events 与 snapshot 重拉，验证重复、乱序、断序和窗口重建不会让旧事件覆盖新状态",
+    "commands": [
+     {
+      "desc": "事件 broker 发放严格递增序列",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.4 ipc::events::tests::broker_issues_strictly_increasing_sequences"
+     },
+     {
+      "desc": "重复事件被丢弃",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.4 ipc::events::tests::duplicate_events_are_dropped"
+     },
+     {
+      "desc": "乱序的更旧事件被丢弃",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.4 ipc::events::tests::out_of_order_older_events_are_dropped"
+     },
+     {
+      "desc": "断号不被误判为过期",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.4 ipc::events::tests::gaps_are_not_treated_as_stale"
+     },
+     {
+      "desc": "窗口重建采用 snapshot 并丢弃陈旧 backlog",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.4 ipc::events::tests::window_rebuild_adopts_snapshot_and_stale_backlog_is_dropped"
+     },
+     {
+      "desc": "revision 单调且 serde 往返稳定",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.4 ipc::events::tests::revisions_are_monotonic_and_serde_round_trips"
+     }
+    ]
+   },
+   {
+    "id": "7.5",
+    "title": "实现 Rust 侧目录/导入文件选择和 reveal-by-SongId，验证 WebView 不接收完整绝对路径且取消对话框不产生成功态",
+    "commands": [
+     {
+      "desc": "取消目录选择器是 Ok(None) 而非成功态",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.5 runtime::services::tests::cancelled_library_root_dialog_is_a_noop_never_a_success"
+     },
+     {
+      "desc": "确认目录后 prepare+activate，返回路径无关的根状态",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.5 runtime::services::tests::choose_library_root_prepares_and_activates_a_directory"
+     },
+     {
+      "desc": "根目录选择失败时不激活、保留旧配置",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.5 runtime::services::tests::choose_library_root_is_refused_when_fs_is_unavailable"
+     },
+     {
+      "desc": "取消导入文件选择不产生成功态",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.5 runtime::services::tests::cancelled_import_dialog_is_a_noop_never_a_success"
+     },
+     {
+      "desc": "导入文件选择受就绪门约束",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.5 runtime::services::tests::import_dialog_is_refused_before_the_write_gate_resolves"
+     },
+     {
+      "desc": "reveal-by-SongId：只返回相对路径，软失败不伪造成功",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.5 runtime::services::tests::reveal_song_reveals_by_id_and_returns_only_the_relative_path"
+     },
+     {
+      "desc": "对话框端口：取消对话框不产生成功态",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.5 platform::dialogs::tests::a_cancelled_picker_is_ok_none_not_success"
+     },
+     {
+      "desc": "reveal 端口只记录相对 marker 不泄漏绝对路径",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.5 platform::dialogs::tests::reveal_records_a_relative_marker_not_the_absolute_path"
+     },
+     {
+      "desc": "生成的 TypeScript 与生成器同步（漂移检测）",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.5 ipc::generate::tests::committed_generated_file_is_in_sync_with_the_generator"
+     }
+    ]
+   },
+   {
+    "id": "7.6",
+    "title": "实现主题、关窗行为、窗口状态和播放会话本机存储的 temp+fsync+atomic replace，验证损坏/非法偏好回退到珊瑚主题及平台默认关窗值",
+    "commands": [
+     {
+      "desc": "原子替换：已存值读回无损且无损坏标记，窗口/播放会话与主题/关窗并存",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.6 platform::local_state::tests::known_values_round_trip_with_no_corruption"
+     },
+     {
+      "desc": "损坏文件整体回退珊瑚主题 + 平台默认关窗，且标记为损坏",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.6 platform::local_state::tests::perfectly_corrupt_file_falls_back_to_defaults_and_marks_corruption"
+     },
+     {
+      "desc": "macOS 下损坏偏好回退珊瑚主题与平台默认(后台运行)",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.6 platform::local_state::tests::corrupt_file_on_macos_falls_back_to_coral_and_background_default"
+     },
+     {
+      "desc": "非法主题/关窗值逐字段回退，有效兄弟字段(窗口)保留",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.6 platform::local_state::tests::unknown_theme_and_close_values_fall_back_per_field_preserving_siblings"
+     },
+     {
+      "desc": "类型化变更(主题/关窗/窗口/会话)为 read-modify-write，None 清除",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.6 platform::local_state::tests::typed_mutators_are_read_modify_write_and_clear_with_none"
+     },
+     {
+      "desc": "写失败保留旧文件，不留半成品",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.6 platform::local_state::tests::failed_write_preserves_previous_file"
+     },
+     {
+      "desc": "主题 DTO 与生成器签名为 coral/cobalt/turquoise 并同步(漂移检测)",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.6 ipc::generate::tests::committed_generated_file_is_in_sync_with_the_generator"
+     }
+    ]
+   },
+
+   {
+    "id": "7.7",
+    "title": "配置 Tauri CSP、自定义 cover protocol 和最小 capability，运行权限测试验证无网络 connect、无任意文件读取、无任意 opener/shell/SQL 权限",
+    "commands": [
+     {
+      "desc": "CSP 不含任何远端/网络源(*、http、ws、blob)",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.7 platform::security::tests::csp_never_opens_a_remote_or_network_source"
+     },
+     {
+      "desc": "CSP 的 cover: 仅限 img/media，script/connect 只允许 'self'",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.7 platform::security::tests::csp_allows_only_the_cover_scheme_for_images_and_media"
+     },
+     {
+      "desc": "cover:// 合法 key 从 host 与 path 形状解析",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.7 platform::security::tests::cover_uri_parses_valid_keys_from_both_host_and_path"
+     },
+     {
+      "desc": "cover:// 拒绝路径遍历/绝对路径/多段/错误 scheme",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.7 platform::security::tests::cover_uri_rejects_path_traversal_and_absolute_paths"
+     },
+     {
+      "desc": "asset key 拒绝可构成路径的字节(./.. 与分隔符)",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.7 platform::security::tests::cover_key_rejects_bytes_that_can_form_a_path"
+     },
+     {
+      "desc": "最小 capability 不含 shell/fs/sql/opener/process/http 家族",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.7 platform::security::tests::minimal_capability_has_no_privileged_family"
+     },
+     {
+      "desc": "特权权限家族均被拒绝",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.7 platform::security::tests::privileged_permission_families_are_rejected"
+     },
+     {
+      "desc": "tauri.conf.json 的 CSP 与 security::CSP 漂移互锁",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.7 platform::security::tests::tauri_conf_csp_matches_the_pinned_policy"
+     },
+     {
+      "desc": "提交的 capabilities/main.json 只授最小权限集(漂移检测)",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.7 platform::security::tests::committed_capability_grants_only_the_minimal_set"
+     }
+    ]
+   },
+   {
+    "id": "7.8",
+    "title": "结构化 tracing、panic hook 和安全错误映射，production 日志隐私测试",
+    "commands": [
+     {
+      "desc": "production log privacy: tracing 写入无绝对路径/歌词/标签/文件内容，panic hook 仅写本地 crash.log",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.8 privacy::"
+     },
+     {
+      "desc": "IPC ErrorPolicy 仅 transient 类标记 retryable + DTO camelCase 无绝对路径",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.8 ipc::error::tests::error_policy_marks_only_transient_classes_retryable"
+     },
+     {
+      "desc": "tracing 落盘结构化事件与 tracing subscriber 安装器幂等",
+      "cmd": "node scripts/verify/checks/task-7.mjs 7.8 diagnostics::tests::install_hook_and_logger_are_side_effect_free"
+     }
+    ]
+   },
+   {
+    "id": "8.1",
+    "title": "桌面 PlayerPort / PlayerCommand / PlayerSnapshot / PlayMode / PlayerError 与 FakePlayer",
+    "commands": [
+     {
+      "desc": "PlayerPort 契约测试在无 libmpv 下通过（player::fake 覆盖命令/快照），fmt/clippy 干净",
+      "cmd": "node scripts/verify/checks/task-8.1.mjs"
+     }
+    ]
+   },
+   {
+    "id": "8.2",
+    "title": "最小 unsafe libmpv Adapter 与专用 OS 线程 actor",
+    "commands": [
+     {
+      "desc": "actor/ffi 测试（唯一句柄、有界 channel、有序销毁、generation）在无 libmpv 下通过；unsafe 隔离到 player 子树；fmt/clippy 干净",
+      "cmd": "node scripts/verify/checks/task-8.2.mjs"
+     }
+    ]
+   },
+   {
+    "id": "8.3",
+    "title": "audio-only mpv 配置并禁用用户脚本、ytdl、非必要网络协议和用户配置",
+    "commands": [
+     {
+      "desc": "加固选项集（config/load-scripts/ytdl/video/vo/audio-display/osc/protocol-whitelist=file）与仅本地路径可加载测试通过",
+      "cmd": "node scripts/verify/checks/task-8.3.mjs"
+     }
+    ]
+   },
+   {
+    "id": "8.4",
+    "title": "归一化 load/file-loaded/end/property/error 事件及前台 10 Hz/后台 1 Hz snapshot 节流",
+    "commands": [
+     {
+      "desc": "节流区间测试（100ms fg / 1000ms bg）、立即 discrete 事件、归一化 BackendEvent 词汇；fmt/clippy 干净",
+      "cmd": "node scripts/verify/checks/task-8.4.mjs"
+     }
+    ]
+   },
+  {
+   "id": "8.5",
+   "title": "PlaybackCoordinator 视图上下文、current/history、加入队列、下一首、清空待播、错误跳过",
+   "commands": [
+    {
+     "desc": "coordinator 6 测试 + queue 9 测试：重复 SongId 独立 queueEntryId、next/clear/error skip；fmt/clippy 干净",
+     "cmd": "node scripts/verify/checks/task-8.5.mjs"
+    }
+   ]
+  },
+  {
+   "id": "8.6",
+   "title": "queueEntryId 持久化 current/history/shuffle bag、三模式、>5 秒上一首回到开头",
+   "commands": [
+    {
+     "desc": "coordinator 模式/shuffle/previous 测试 + queue bag/advance 测试：不折叠、一轮不重复、切模式不丢当前项；fmt/clippy 干净",
+     "cmd": "node scripts/verify/checks/task-8.6.mjs"
+    }
+   ]
+  },
+  {
+   "id": "8.7",
+   "title": "按 queueEntryId 的本轮错误集合，错误推进绕过 repeat-one、随机只选未失败项、不重试不自旋",
+   "commands": [
+    {
+     "desc": "coordinator error-skip 测试：绕过 repeat-one、每项至多一次、全部损坏停止；fmt/clippy 干净",
+     "cmd": "node scripts/verify/checks/task-8.7.mjs"
+    }
+   ]
+  },
+  {
+   "id": "8.8",
+   "title": "seek/volume/mute 最近非零值与命令失败权威回滚，FakePlayer 与 actor 路径保持 UI snapshot 一致",
+   "commands": [
+    {
+     "desc": "coordinator seek/set_volume/toggle_mute 表面、actor 回滚与最近非零值、FakePlayer 镜像；fmt/clippy 干净",
+     "cmd": "node scripts/verify/checks/task-8.8.mjs"
+    }
+   ]
+  }
  ],
  "scenarios": []}

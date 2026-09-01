@@ -905,6 +905,8 @@ impl ScanStack {
         let db: Arc<SqliteDatabase> = Arc::clone(&self.database);
         let db_root: Arc<dyn LibraryRepository> = db.clone();
         let db_songs: Arc<dyn SongRepository> = db.clone();
+        let db_catalog: Arc<dyn CatalogQueryRepository> = db.clone();
+        let db_playlists: Arc<dyn PlaylistRepository> = db.clone();
         let db_lyrics: Arc<dyn LyricsRepository> = db.clone();
         let db_covers: Arc<dyn CoverRepository> = db.clone();
         let db_runs: Arc<dyn ScanRunRepository> = db.clone();
@@ -913,6 +915,8 @@ impl ScanStack {
         ScanDeps {
             roots: db_root,
             songs: db_songs,
+            catalog: db_catalog,
+            playlists: db_playlists,
             lyrics: db_lyrics,
             covers: db_covers,
             runs: db_runs,

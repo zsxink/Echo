@@ -56,7 +56,32 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly memberCount: number;\n");
     out.push_str("}\n\n");
 
-    out.push_str("export type Theme = 'coral' | 'light' | 'dark';\n");
+    out.push_str("export interface LibraryRootStatusDto {\n");
+    out.push_str("  readonly configured: boolean;\n");
+    out.push_str("  readonly readOnly: boolean;\n");
+    out.push_str("  readonly activeRoot: string;\n");
+    out.push_str("}\n\n");
+
+    out.push_str("export type ImportResultDto =\n");
+    out.push_str("  | { readonly kind: 'imported'; readonly operationId: string; readonly songId: string; readonly relativePath: string }\n");
+    out.push_str("  | { readonly kind: 'duplicate'; readonly existingSongId: string }\n");
+    out.push_str("  | { readonly kind: 'unsupported' }\n");
+    out.push_str("  | { readonly kind: 'libraryUnavailable' }\n");
+    out.push_str(
+        "  | { readonly kind: 'failed'; readonly code: string; readonly message: string };\n\n",
+    );
+
+    out.push_str("export interface ImportBatchDto {\n");
+    out.push_str("  readonly results: readonly ImportResultDto[];\n");
+    out.push_str("}\n\n");
+
+    out.push_str("export interface RevealResultDto {\n");
+    out.push_str("  readonly songId: string;\n");
+    out.push_str("  readonly relativePath: string;\n");
+    out.push_str("  readonly revealed: boolean;\n");
+    out.push_str("}\n\n");
+
+    out.push_str("export type Theme = 'coral' | 'cobalt' | 'turquoise';\n");
     out.push_str("export type CloseBehavior = 'exit' | 'background';\n");
     out
 }

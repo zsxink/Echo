@@ -20,10 +20,10 @@ use std::time::Duration;
 
 use crate::application::ports::TxAccess;
 use crate::application::ports::{
-    Clock, ContentHasher, CoverAssetRef, CoverCache, CoverRepository, FileMeta, IdGenerator,
-    LibraryFileSystem, LibraryRepository, LyricsParser, LyricsRepository, MediaProbe,
-    MetadataReader, OperationJournalRepository, ProbeOutcome, ScanRunRepository, SongRepository,
-    UnitOfWork,
+    CatalogQueryRepository, Clock, ContentHasher, CoverAssetRef, CoverCache, CoverRepository,
+    FileMeta, IdGenerator, LibraryFileSystem, LibraryRepository, LyricsParser, LyricsRepository,
+    MediaProbe, MetadataReader, OperationJournalRepository, PlaylistRepository, ProbeOutcome,
+    ScanRunRepository, SongRepository, UnitOfWork,
 };
 use crate::application::relink::{ParsedFile, RelinkPlanner, Resolution};
 use crate::domain::entities::{
@@ -73,6 +73,11 @@ impl Default for ScanConfig {
 pub struct ScanDeps {
     pub roots: Arc<dyn LibraryRepository>,
     pub songs: Arc<dyn SongRepository>,
+    /// The paginated catalog read-model (`AllSongs`/`Favorites`/search/recents)
+    /// — the same backing store as `songs`, exposed under its read trait so the
+    /// desktop command surface can run catalog queries (task 7.3).
+    pub catalog: Arc<dyn CatalogQueryRepository>,
+    pub playlists: Arc<dyn PlaylistRepository>,
     pub lyrics: Arc<dyn LyricsRepository>,
     pub covers: Arc<dyn CoverRepository>,
     pub runs: Arc<dyn ScanRunRepository>,

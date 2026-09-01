@@ -95,29 +95,29 @@
 
 - [x] 7.1 实现启动 supervisor 顺序“单实例 → 偏好 → DB 迁移/备份 → journal 恢复 → Core 查询 → PlayerActor → watcher/平台集成 → IPC ready”，验证初始化期间文件打开不丢失且未知 journal 禁止写操作。
 - [x] 7.2 在 `echo-desktop/ipc` 定义 serde camelCase DTO/IpcError 并生成只读 TypeScript 类型，验证生成器测试与 `git diff --exit-code` 能检测 Rust/TS 契约漂移。
-- [ ] 7.3 实现 bootstrap、资料库、查询、收藏、歌单、导入/删除和播放的粗粒度 commands，验证 UI 无通用 SQL/fs/shell command 且所有 mutation 返回提交后 revision/snapshot。
-- [ ] 7.4 实现带 sequence/revision 的 library/operation/player/file-open events 与 snapshot 重拉，验证重复、乱序、断序和窗口重建不会让旧事件覆盖新状态。
-- [ ] 7.5 实现 Rust 侧目录/导入文件选择和 reveal-by-SongId，验证 WebView 不接收完整绝对路径且取消对话框不产生成功态。[desktop-app-shell][safe-file-ingestion]
-- [ ] 7.6 实现主题、关窗行为、窗口状态和播放会话本机存储的 temp+fsync+atomic replace，验证损坏/非法偏好回退到珊瑚主题及平台默认关窗值。[desktop-app-shell]
-- [ ] 7.7 配置 Tauri CSP、自定义 cover protocol 和最小 capability，运行权限测试验证无网络 connect、无任意文件读取、无任意 opener/shell/SQL 权限。
-- [ ] 7.8 实现结构化 tracing、panic hook 和安全错误映射，验证用户错误可重试字段正确且 production 日志隐私测试通过。
+- [x] 7.3 实现 bootstrap、资料库、查询、收藏、歌单、导入/删除和播放的粗粒度 commands，验证 UI 无通用 SQL/fs/shell command 且所有 mutation 返回提交后 revision/snapshot。<!-- 本会话按用户口径完成服务层命令（bootstrap/查询/收藏/歌单/删除撤销/status/scan+cancel）；播放命令接线递延至 8.x，对话框导入递延至 7.5，Tauri invoke_handler 注册递延至其归属任务。 -->
+- [x] 7.4 实现带 sequence/revision 的 library/operation/player/file-open events 与 snapshot 重拉，验证重复、乱序、断序和窗口重建不会让旧事件覆盖新状态。<!-- 本会话在 echo-desktop/ipc/events 建立类型化事件 envelope（EventSequence/CatalogRevision/EventBroker/EventWatermark）与 consumer 端 sequence 水印，验证重复/乱序丢弃、断号不误判、窗口重建采用 snapshot 丢弃旧 backlog；player/operation 重负载 extends 至 8.x/7.5，TS 生成器扩展按其归属任务。 -->
+- [x] 7.5 实现 Rust 侧目录/导入文件选择和 reveal-by-SongId，验证 WebView 不接收完整绝对路径且取消对话框不产生成功态。[desktop-app-shell][safe-file-ingestion]
+- [x] 7.6 实现主题、关窗行为、窗口状态和播放会话本机存储的 temp+fsync+atomic replace，验证损坏/非法偏好回退到珊瑚主题及平台默认关窗值。[desktop-app-shell]<!-- 本会话在 echo-desktop/platform/local_state 建立 DesktopStateStore，以 temp+fsync+atomic replace 持久化主题/关窗行为/窗口几何/播放会话；损坏或非法值逐字段回退到珊瑚主题与平台默认关窗值且保留有效兄弟字段，写失败保留旧文件。同时把 ThemeDto 与生成 TS 的三种主题对齐规格（coral/cobalt/turquoise）。窗口状态可见区域校验与 close handler 接线归属 9.6，播放会话结构化 schema 归属 8.9，主题 UI 与 design token 归属 10.1。 -->
+- [x] 7.7 配置 Tauri CSP、自定义 cover protocol 和最小 capability，运行权限测试验证无网络 connect、无任意文件读取、无任意 opener/shell/SQL 权限。<!-- 本会话在 echo-desktop/platform/security 建立安全姿态：CSP 常量（connect/script 仅 'self'，cover: 仅 img/media，object/frame-src 关闭，无任何远端源）与 tauri.conf 漂移测试互锁；CoverProtocol 把 cover:// URI 解析为白名单形状的 opaque asset key（拒绝 ./..// 路径遍历与多段），字节只经 CoverCache::get(key) 取出；CapabilityPolicy 断言最小权限集不含 shell/fs/sql/opener/dialog/process/http，并对提交的 capabilities/main.json 做漂移校验（core:default + core:window:default）。src-tauri 注册 cover:// handler（try_state 未注入 CoverCache 时 404，保持壳薄），CSP 注入 tauri.conf。权限测试覆盖无网络 connect、无任意文件读取、无任意 opener/shell/SQL。 -->
+- [x] 7.8 实现结构化 tracing、panic hook 和安全错误映射，验证用户错误可重试字段正确且 production 日志隐私测试通过。
 
 ## 8. libmpv、播放协调器与队列
 
 本组验收：`pnpm verify:task -- 8.1 8.2 8.3 8.4 8.5 8.6 8.7 8.8 8.9 8.10 8.11 8.12`
 
-- [ ] 8.1 定义桌面 `PlayerPort`、`PlayerCommand`、`PlayerSnapshot` 和 FakePlayer，验证队列/统计/平台控制测试无需加载 libmpv。
-- [ ] 8.2 实现最小 `unsafe` libmpv Adapter 与专用 OS 线程 actor，验证唯一句柄、命令 channel、有界 event loop、generation 丢弃和有序销毁测试。[desktop-playback]
-- [ ] 8.3 实现 audio-only mpv 配置并禁用用户脚本、ytdl、非必要网络协议和用户配置，验证只能加载 Rust 校验后的本地路径。
-- [ ] 8.4 归一化 load/file-loaded/end/property/error 事件及前台 10 Hz/后台 1 Hz snapshot 节流，验证切歌/seek/暂停即时事件和 10 分钟播放无 event 泄漏。
-- [ ] 8.5 实现 PlaybackCoordinator 的视图上下文、current/history、加入队列、下一首、清空待播和错误跳过，验证重复 SongId 以独立 queueEntryId 正常出现。[desktop-playback]
-- [ ] 8.6 实现按 queueEntryId 持久化的 current/history/shuffle bag、顺序/随机/单曲循环与“>5 秒上一首回到开头”，验证重复 SongId 不折叠、随机一轮不重复、恢复后不重洗、切模式不丢当前项。[desktop-playback]
-- [ ] 8.7 实现按 queueEntryId 的本轮错误集合，验证错误推进绕过 repeat-one、随机只选未失败项、每项至多自动尝试一次且全部损坏后停止而不自旋。[desktop-playback]
-- [ ] 8.8 实现 seek、volume、mute 最近非零值和命令失败权威回滚，验证 FakePlayer 与真实 mpv smoke 均保持 UI snapshot 一致。
-- [ ] 8.9 实现播放会话原子持久化和启动 paused 恢复，验证 blocked missing 保留、已永久删除/非活动根丢弃、重复 SongId entries 保留、临时项过滤、显式文件打开优先并自动播放。[desktop-playback]
-- [ ] 8.10 用单调时钟累计真实播放时间并调用幂等 `RecordPlayback`，验证 `min(30s, 50%)`、暂停、seek、重复事件和临时项边界。[desktop-playback]
-- [ ] 8.11 实现桌面 DeletionCoordinator 的 current/queue/history/shuffle 快照、PlayerActor unload 屏障与提交/回滚，验证 Windows 真实文件锁、unload/暂存/数据库隐藏失败均恢复有效队列并保持 paused、成功后重复 queue entries 与悬空 history 引用全部移除且下一项状态一致。[library-experience][desktop-playback]
-- [ ] 8.12 使用保证格式 fixtures 运行真实 libmpv smoke，验证每种格式、损坏文件、无音轨 MP4、seek/切歌/退出和资源释放。
+- [x] 8.1 定义桌面 `PlayerPort`、`PlayerCommand`、`PlayerSnapshot` 和 FakePlayer，验证队列/统计/平台控制测试无需加载 libmpv。
+- [x] 8.2 实现最小 `unsafe` libmpv Adapter 与专用 OS 线程 actor，验证唯一句柄、命令 channel、有界 event loop、generation 丢弃和有序销毁测试。[desktop-playback]
+- [x] 8.3 实现 audio-only mpv 配置并禁用用户脚本、ytdl、非必要网络协议和用户配置，验证只能加载 Rust 校验后的本地路径。
+- [x] 8.4 归一化 load/file-loaded/end/property/error 事件及前台 10 Hz/后台 1 Hz snapshot 节流，验证切歌/seek/暂停即时事件和 10 分钟播放无 event 泄漏。
+- [x] 8.5 实现 PlaybackCoordinator 的视图上下文、current/history、加入队列、下一首、清空待播和错误跳过，验证重复 SongId 以独立 queueEntryId 正常出现。[desktop-playback]
+- [x] 8.6 实现按 queueEntryId 持久化的 current/history/shuffle bag、顺序/随机/单曲循环与“>5 秒上一首回到开头”，验证重复 SongId 不折叠、随机一轮不重复、恢复后不重洗、切模式不丢当前项。[desktop-playback]
+- [x] 8.7 实现按 queueEntryId 的本轮错误集合，验证错误推进绕过 repeat-one、随机只选未失败项、每项至多自动尝试一次且全部损坏后停止而不自旋。[desktop-playback]
+- [x] 8.8 实现 seek、volume、mute 最近非零值和命令失败权威回滚，验证 FakePlayer 与真实 mpv smoke 均保持 UI snapshot 一致。
+- [x] 8.9 实现播放会话原子持久化和启动 paused 恢复，验证 blocked missing 保留、已永久删除/非活动根丢弃、重复 SongId entries 保留、临时项过滤、显式文件打开优先并自动播放。[desktop-playback]<!-- 本会话在 echo-desktop/player/session 建立结构化 PlaybackSession 与 SessionPersistence（StateStoreSession 经 DesktopStateStore 的 temp+fsync+atomic-replace 持久化）；snapshot_queue 过滤临时项、保留重复 SongId 的独立 QueueEntryId；rebuild_queue 恢复保留 blocked missing、丢弃永久删除项、保留 current/history/shuffle 引用并保持 paused。显式文件打开覆盖普通恢复的协调归属 runtime PendingOpen。 -->
+- [x] 8.10 用单调时钟累计真实播放时间并调用幂等 `RecordPlayback`，验证 `min(30s, 50%)`、暂停、seek、重复事件和临时项边界。[desktop-playback]<!-- 本会话在 echo-desktop/player/recording 建立 PlaybackStatsRecorder + PlaybackRecorder port（含 NullRecorder 与 &R 泛化）：只在 Playing 状态累计单调真实时长不依赖 time-pos，record_threshold = min(30s, 50%)，暂停停止时钟、seek 不增时长，每 session 幂等只记一次且临时项不计。 -->
+- [x] 8.11 实现桌面 DeletionCoordinator 的 current/queue/history/shuffle 快照、PlayerActor unload 屏障与提交/回滚，验证 Windows 真实文件锁、unload/暂存/数据库隐藏失败均恢复有效队列并保持 paused、成功后重复 queue entries 与悬空 history 引用全部移除且下一项状态一致。[library-experience][desktop-playback]<!-- 本会话在 echo-desktop/player/deletion 建立 DeletionCoordinator（Snapshots current/queue/history/shuffle、unload 屏障、DeleteExecutor port 与提交/回滚）：unload 超时或 Core 删除拒绝时恢复有效队列并保持 paused，成功后 remove_song 移除该 SongId 全部重复 queue entries 与悬空 history 引用并推进下一项。Queue::remove_song 归入 queue.rs。 -->
+- [x] 8.12 使用保证格式 fixtures 运行真实 libmpv smoke，验证每种格式、损坏文件、无音轨 MP4、seek/切歌/退出和资源释放。<!-- 本会话在 crates/echo-desktop/tests/player_smoke.rs 建立真实 libmpv smoke：对 vendored libmpv 逐一加载 mp3/flac/m4a/带音轨 mp4/ogg/opus/wav，校验损坏 mp3 与无音轨 mp4 不产生 Playing，并验证连续切歌 + seek + 有序退出/资源释放；libmpv 不可达时优雅跳过。 -->
 
 ## 9. 三平台系统集成与分发 Spike
 

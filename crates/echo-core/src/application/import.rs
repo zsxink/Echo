@@ -2566,6 +2566,8 @@ mod tests {
         ScanDeps {
             roots: Arc::new(database.clone()),
             songs: Arc::new(database.clone()),
+            catalog: Arc::new(database.clone()),
+            playlists: Arc::new(database.clone()),
             lyrics: Arc::new(database.clone()),
             covers: Arc::new(database.clone()),
             runs: Arc::new(database.clone()),

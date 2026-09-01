@@ -45,5 +45,28 @@ export interface PlaylistView {
   readonly memberCount: number;
 }
 
-export type Theme = 'coral' | 'light' | 'dark';
+export interface LibraryRootStatusDto {
+  readonly configured: boolean;
+  readonly readOnly: boolean;
+  readonly activeRoot: string;
+}
+
+export type ImportResultDto =
+  | { readonly kind: 'imported'; readonly operationId: string; readonly songId: string; readonly relativePath: string }
+  | { readonly kind: 'duplicate'; readonly existingSongId: string }
+  | { readonly kind: 'unsupported' }
+  | { readonly kind: 'libraryUnavailable' }
+  | { readonly kind: 'failed'; readonly code: string; readonly message: string };
+
+export interface ImportBatchDto {
+  readonly results: readonly ImportResultDto[];
+}
+
+export interface RevealResultDto {
+  readonly songId: string;
+  readonly relativePath: string;
+  readonly revealed: boolean;
+}
+
+export type Theme = 'coral' | 'cobalt' | 'turquoise';
 export type CloseBehavior = 'exit' | 'background';

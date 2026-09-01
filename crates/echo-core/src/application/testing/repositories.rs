@@ -207,6 +207,14 @@ impl PlaylistRepository for MemoryPlaylistRepository {
     fn by_id(&self, id: PlaylistId) -> Result<Option<PlaylistId>, Error> {
         Ok(self.names.lock().unwrap().contains_key(&id).then_some(id))
     }
+    fn name(&self, id: PlaylistId) -> Result<Option<String>, Error> {
+        Ok(self
+            .names
+            .lock()
+            .unwrap()
+            .get(&id)
+            .map(|(_, name)| name.clone()))
+    }
     fn by_name(
         &self,
         root: LibraryRootId,
