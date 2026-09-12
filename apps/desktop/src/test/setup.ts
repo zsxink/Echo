@@ -37,6 +37,22 @@ const tauriEvent = {
 vi.mock("@tauri-apps/api/core", () => tauriCore);
 vi.mock("@tauri-apps/api/event", () => tauriEvent);
 
+// jsdom does not implement canvas; components that measure text/widths (e.g.
+// range inputs) call `getContext` during render. Stub it so those re-renders
+// do not throw — measurement returns a harmless 2d context shape.
+const getContext: typeof HTMLCanvasElement.prototype.getContext = ((_id: string) => {
+  const ctx = { measureText: (t: string) => ({ width: (t?.length ?? 0) * 7 }) };
+  return {
+    ...ctx,
+    fillRect: () => {},
+    clearRect: () => {},
+    setTransform: () => {},
+    drawImage: () => {},
+    createLinearGradient: () => ({ addColorStop: () => {} }),
+  } as unknown as CanvasRenderingContext2D;
+}) as typeof HTMLCanvasElement.prototype.getContext;
+HTMLCanvasElement.prototype.getContext = getContext;
+
 afterEach(() => {
   // @ts-expect-error - test hook above
   globalThis.__echoTest?.reset();

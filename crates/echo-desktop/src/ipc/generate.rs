@@ -81,6 +81,19 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly revealed: boolean;\n");
     out.push_str("}\n\n");
 
+    out.push_str("export interface LyricsLineView {\n");
+    out.push_str("  readonly seconds: number;\n");
+    out.push_str("  readonly text: string;\n");
+    out.push_str("}\n\n");
+
+    out.push_str("export interface SongLyricsDto {\n");
+    out.push_str("  readonly source: 'override' | 'embedded' | 'sidecar' | null;\n");
+    out.push_str("  readonly timed: boolean;\n");
+    out.push_str("  readonly lines: readonly LyricsLineView[];\n");
+    out.push_str("  readonly plainText: string;\n");
+    out.push_str("  readonly parseError?: string | null;\n");
+    out.push_str("}\n\n");
+
     out.push_str("export type Theme = 'coral' | 'cobalt' | 'turquoise';\n");
     out.push_str("export type CloseBehavior = 'exit' | 'background';\n");
     out

@@ -929,6 +929,8 @@ version = "0.1.0"
 dependencies = [
  "echo-core",
  "echo-desktop",
+ "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-single-instance",

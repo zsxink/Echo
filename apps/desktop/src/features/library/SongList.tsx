@@ -21,6 +21,13 @@ export interface SongListProps {
   readonly loading: boolean;
   readonly isLast: boolean;
   readonly readOnly: boolean;
+  /** The currently playing SongId, if any — drives the row playing indicator. */
+  readonly currentSongId: string | null;
+  /** A recoverable load error (task 10.7); existing content is preserved. */
+  readonly error?: string | null;
+  readonly onRetry?: () => void;
+  /** An optional "导入歌曲" entry shown on an empty (unsearched) library. */
+  readonly onImport?: () => void;
   readonly onLoadMore: () => void;
   readonly onClearSearch: () => void;
   readonly onPlay: (song: SongView) => void;
@@ -29,7 +36,7 @@ export interface SongListProps {
 }
 
 export function SongList(props: SongListProps) {
-  const { songs, search, loading, isLast, readOnly } = props;
+  const { songs, search, loading, isLast, readOnly, currentSongId, error, onRetry } = props;
   const [scrollTop, setScrollTop] = useState(0);
   const viewportRef = useRef<HTMLDivElement>(null);
 
@@ -43,12 +50,30 @@ export function SongList(props: SongListProps) {
     );
   }
   if (songs.length === 0) {
+    // Empty due to an error (task 10.7): show the cause + a retry, never a
+    // fabricated "empty library".
+    if (error) {
+      return (
+        <div className="list-state list-error" data-testid="list-error" role="alert">
+          <p>{error}</p>
+          {onRetry ? (
+            <button type="button" className="btn" onClick={onRetry}>
+              重试
+            </button>
+          ) : null}
+        </div>
+      );
+    }
     return (
       <div className="list-state" data-testid="list-empty">
         <p>{searching ? "没有找到匹配歌曲" : "曲库为空"}</p>
         {searching ? (
           <button type="button" className="btn-link" onClick={props.onClearSearch}>
             清除搜索
+          </button>
+        ) : !props.readOnly && props.onImport ? (
+          <button type="button" className="btn btn-primary" onClick={props.onImport}>
+            导入歌曲
           </button>
         ) : null}
       </div>
@@ -73,6 +98,7 @@ export function SongList(props: SongListProps) {
         key={song.id}
         song={song}
         readOnly={readOnly}
+        nowPlaying={currentSongId !== null && song.id === currentSongId}
         onPlay={() => props.onPlay(song)}
         onFavorite={(fav) => props.onFavorite(song, fav)}
         onOpenMenu={() => props.onOpenMenu(song)}
@@ -83,7 +109,19 @@ export function SongList(props: SongListProps) {
 
   return (
     <div className="song-list" data-testid="song-list">
-      <div className="song-header" role="row" aria-hidden="true">
+      {error && songs.length > 0 ? (
+        // Recoverable load error with existing content: a non-destructive
+        // banner keeps prior results usable and offers retry (task 10.7).
+        <div className="list-banner list-error" role="alert" data-testid="list-banner-error">
+          <span>{error}</span>
+          {onRetry ? (
+            <button type="button" className="btn-link" onClick={onRetry}>
+              重试
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="song-header" aria-hidden="true">
         <span className="song-cell song-cell-title">标题</span>
         <span className="song-cell song-cell-artist">艺人</span>
         <span className="song-cell song-cell-album">专辑</span>
@@ -93,7 +131,7 @@ export function SongList(props: SongListProps) {
       <div
         ref={viewportRef}
         className="song-viewport"
-        role="listbox"
+        role="list"
         aria-label="歌曲列表"
         onScroll={(event) => {
           setScrollTop(event.currentTarget.scrollTop);

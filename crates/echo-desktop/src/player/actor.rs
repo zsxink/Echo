@@ -25,14 +25,23 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, RwLock};
 use std::thread::JoinHandle;
 
-use echo_core::domain::ids::QueueEntryId;
+use echo_core::domain::ids::{QueueEntryId, SongId};
 use echo_core::domain::state::PlaybackState;
+use echo_core::error::Error;
 
 use super::ffi;
 use super::port::{PlayMode, PlayerCommand, PlayerError, PlayerPort, PlayerSnapshot};
 
 /// Capacity of the bounded command channel.
 pub const COMMAND_CAPACITY: usize = 64;
+
+/// Resolves a library [`SongId`] to an absolute file path. The resolver is
+/// built over the repository + root registry in the composition root and
+/// injected into the actor so that `LoadLibrarySong` can resolve and load
+/// files on the actor thread (never leaking absolute paths to DTOs).
+///
+/// Returns `Err` when the song or its root is unknown / unbound.
+pub type SongResolver = Arc<dyn Fn(SongId) -> Result<std::path::PathBuf, Error> + Send + Sync>;
 
 /// The audio-only / least-privilege mpv option set applied at handle creation
 /// (task 8.3). These options are set with `mpv_set_option_string` before
@@ -333,6 +342,12 @@ pub struct PlayerActor {
 impl PlayerActor {
     /// Spawn the actor bound to a real libmpv backend loaded from `libmpv_path`.
     ///
+    /// `resolver` maps a library [`SongId`] to an absolute file path on the
+    /// actor thread; it is `None` in test paths that only exercise
+    /// `LoadTemporary` / command routing. The production composition root
+    /// always supplies a resolver so that `LoadLibrarySong` can resolve and
+    /// load files without leaking absolute paths to DTOs.
+    ///
     /// # Errors
     ///
     /// [`FfiSpawnError::Spawn`] if the dedicated thread cannot be created. If
@@ -341,6 +356,7 @@ impl PlayerActor {
     pub fn spawn_mpv(
         libmpv_path: &Path,
         snapshot: Arc<RwLock<PlayerSnapshot>>,
+        resolver: Option<SongResolver>,
     ) -> Result<Self, FfiSpawnError> {
         let path = libmpv_path.to_owned();
         Self::spawn_with(
@@ -349,6 +365,7 @@ impl PlayerActor {
                 unsafe { MpvBackend::open(&path) }
             },
             snapshot,
+            resolver,
         )
     }
 
@@ -357,6 +374,7 @@ impl PlayerActor {
     fn spawn_with<F, B>(
         backend_factory: F,
         snapshot: Arc<RwLock<PlayerSnapshot>>,
+        resolver: Option<SongResolver>,
     ) -> Result<Self, FfiSpawnError>
     where
         F: FnOnce() -> Result<B, ffi::HandleError> + Send + 'static,
@@ -379,6 +397,7 @@ impl PlayerActor {
                     }
                 };
                 let mut loop_state = ActorLoop::new(backend, snapshot_join.clone());
+                loop_state.resolver = resolver;
                 loop_state.run(rx);
                 // Loop exits only on Shutdown / backend shutdown; ordered
                 // teardown happens here, on the actor thread, before joining.
@@ -479,6 +498,10 @@ struct ActorLoop<B: Backend> {
     foreground: bool,
     /// When the last *property* snapshot was published, for throttling.
     last_property_publish: std::time::Instant,
+    /// Resolves a library SongId → absolute file path on the actor thread.
+    /// `None` in tests that only exercise `LoadTemporary` / command routing;
+    /// the production composition root always supplies a resolver.
+    resolver: Option<SongResolver>,
 }
 
 impl<B: Backend> ActorLoop<B> {
@@ -499,6 +522,7 @@ impl<B: Backend> ActorLoop<B> {
             // Backdate so the first property event always publishes (avoids a
             // dropped first `time-pos` right after startup / a load).
             last_property_publish: std::time::Instant::now() - std::time::Duration::from_secs(1),
+            resolver: None,
         }
     }
 
@@ -608,15 +632,21 @@ impl<B: Backend> ActorLoop<B> {
         match cmd {
             PlayerCommand::Shutdown => return false,
             PlayerCommand::LoadLibrarySong {
-                song_id: _song,
+                song_id,
                 session_id: _session,
             } => {
-                // The coordinator resolves SongId → path and issues a concrete
-                // load (wired with 8.3). This branch just bumps the generation
-                // so any late event from a prior track is dropped.
+                // Resolve the SongId → absolute path on the actor thread and
+                // load it. A missing resolver or an unknown/unbound song goes
+                // to `Failed` (never a broken `Playing`); the coordinator's
+                // error-skip then advances past it.
                 self.generation += 1;
-                self.state = PlaybackState::Loading;
-                self.publish(self.generation);
+                match self.resolver.as_ref().and_then(|r| (r)(song_id).ok()) {
+                    Some(path) => self.load_path(&path),
+                    None => {
+                        self.state = PlaybackState::Failed;
+                        self.publish(self.generation);
+                    }
+                }
             }
             PlayerCommand::LoadTemporary {
                 display_name: _,
@@ -802,6 +832,7 @@ mod tests {
                 Ok(b)
             },
             snapshot.clone(),
+            None,
         )
         .expect("spawn");
         (actor, snapshot, props)
@@ -931,6 +962,7 @@ mod tests {
                 Ok(b)
             },
             snapshot.clone(),
+            None,
         )
         .expect("spawn");
         (actor, snapshot, props)
@@ -1155,6 +1187,7 @@ mod tests {
         let mut actor = PlayerActor::spawn_with(
             move || -> Result<TestBackend, ffi::HandleError> { Err(ffi::HandleError::Create) },
             snapshot,
+            None,
         )
         .expect("spawn");
         let _ = actor.send(PlayerCommand::Play);
@@ -1246,5 +1279,101 @@ mod tests {
         assert!(!is_local_media_path(std::path::Path::new(
             "mms://host/a.flac"
         )));
+    }
+
+    #[test]
+    fn load_library_song_resolves_and_loads_path() {
+        // With a resolver supplied, `LoadLibrarySong` resolves SongId → path on
+        // the actor thread and queues a real load; a following FileLoaded drives
+        // Loading → Playing (task 10.6 / 8.3 playback path).
+        use echo_core::domain::ids::SongId;
+
+        // Use a temp file path so we can assert the exact resolved path reached
+        // the backend without leaking anything to DTOs.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let resolved = dir.path().join("track.flac");
+        let expected = resolved.clone();
+        let song_id = SongId::new();
+        let resolver: SongResolver = Arc::new(move |id| {
+            assert_eq!(id, song_id, "resolver given a different song");
+            Ok(expected.clone())
+        });
+
+        let snapshot = snapshot_stub();
+        // A FileLoaded event proves the load reached the backend and succeeded.
+        let mut actor = PlayerActor::spawn_with(
+            move || -> Result<TestBackend, ffi::HandleError> {
+                Ok(TestBackend::new(vec![BackendEvent::FileLoaded]))
+            },
+            snapshot.clone(),
+            Some(resolver),
+        )
+        .expect("spawn");
+        actor
+            .send(PlayerCommand::LoadLibrarySong {
+                song_id,
+                session_id: echo_core::domain::ids::PlaybackSessionId::new(),
+            })
+            .expect("send");
+
+        let s = wait_for(&snapshot, |s| s.state == PlaybackState::Playing);
+        assert_eq!(s.state, PlaybackState::Playing, "load should reach Playing");
+        actor.shutdown();
+    }
+
+    #[test]
+    fn load_library_song_without_resolver_goes_failed() {
+        // No resolver (or a resolution error) must surface `Failed`, never a
+        // broken `Playing`; the coordinator's error-skip advances past it.
+        use echo_core::domain::ids::SongId;
+
+        let snapshot = snapshot_stub();
+        let mut actor = PlayerActor::spawn_with(
+            move || -> Result<TestBackend, ffi::HandleError> { Ok(TestBackend::new(vec![])) },
+            snapshot.clone(),
+            None, // no resolver
+        )
+        .expect("spawn");
+        actor
+            .send(PlayerCommand::LoadLibrarySong {
+                song_id: SongId::new(),
+                session_id: echo_core::domain::ids::PlaybackSessionId::new(),
+            })
+            .expect("send");
+
+        let s = wait_for(&snapshot, |s| s.state == PlaybackState::Failed);
+        assert_eq!(
+            s.state,
+            PlaybackState::Failed,
+            "unresolvable song -> Failed"
+        );
+        actor.shutdown();
+    }
+
+    #[test]
+    fn load_library_song_resolver_error_goes_failed() {
+        // A resolver that returns Err must also surface Failed (not Loading),
+        // so an unknown song does not spin.
+        use echo_core::domain::ids::SongId;
+
+        let snapshot = snapshot_stub();
+        let resolver: SongResolver =
+            Arc::new(|_| Err(echo_core::error::Error::unavailable("song", "unknown")));
+        let mut actor = PlayerActor::spawn_with(
+            move || -> Result<TestBackend, ffi::HandleError> { Ok(TestBackend::new(vec![])) },
+            snapshot.clone(),
+            Some(resolver),
+        )
+        .expect("spawn");
+        actor
+            .send(PlayerCommand::LoadLibrarySong {
+                song_id: SongId::new(),
+                session_id: echo_core::domain::ids::PlaybackSessionId::new(),
+            })
+            .expect("send");
+
+        let s = wait_for(&snapshot, |s| s.state == PlaybackState::Failed);
+        assert_eq!(s.state, PlaybackState::Failed, "resolve error -> Failed");
+        actor.shutdown();
     }
 }

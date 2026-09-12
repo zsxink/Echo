@@ -179,6 +179,23 @@ pub trait PlayerPort: Send + Sync {
     fn subscribe_snapshots(&self) -> std::sync::mpsc::Receiver<PlayerSnapshot>;
 }
 
+/// A shared, owned player port — lets the composition root pass `Arc<dyn
+/// PlayerPort>` where a concrete owned player is expected (e.g. the
+/// coordinator's generic `P: PlayerPort`).
+impl PlayerPort for std::sync::Arc<dyn PlayerPort> {
+    fn send(&self, cmd: PlayerCommand) -> Result<(), PlayerError> {
+        (**self).send(cmd)
+    }
+
+    fn snapshot(&self) -> PlayerSnapshot {
+        (**self).snapshot()
+    }
+
+    fn subscribe_snapshots(&self) -> std::sync::mpsc::Receiver<PlayerSnapshot> {
+        (**self).subscribe_snapshots()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // PlayerError
 // ---------------------------------------------------------------------------

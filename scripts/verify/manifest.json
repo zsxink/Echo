@@ -1472,6 +1472,242 @@
      "cmd": "node scripts/verify/checks/task-8.8.mjs"
     }
    ]
+  },
+  {
+   "id": "9.1",
+   "title": "single-instance 与初始化请求 FIFO 生产化，冷/热/重复启动和初始化期间文件打开只由主实例处理",
+   "commands": [
+    {
+     "desc": "echo-app 编译/clippy 干净，runtime FIFO 测试通过，shell 两条 OS open 路径都经 StartupSupervisor FIFO；跨平台原生验证递延至平台 Gate",
+     "cmd": "node scripts/verify/checks/task-9.1.mjs"
+    }
+   ]
+  },
+  {
+   "id": "9.2",
+   "title": "保证格式文件关联与 open-file/argv 统一，活动根/非活动旧根/库外文件的临时项语义由播放层解析",
+   "commands": [
+    {
+     "desc": "tauri.conf 文件关联等于保证格式集合的 drift 测试通过，macOS Opened 与单实例 argv 都经 deliver_file_open 入 FIFO；SongId/临时项解析归属播放层",
+     "cmd": "node scripts/verify/checks/task-9.2.mjs"
+    }
+   ]
+  },
+  {
+   "id": "9.3",
+   "title": "生产化 macOS 菜单栏/Windows-Linux 托盘：摘要、播放/暂停、上一首、下一首、显示窗口、退出；后台状态与主窗口 snapshot 一致",
+   "commands": [
+    {
+     "desc": "status_menu 决策逻辑单测通过（摘要/标签/命令映射/sink），echo-app clippy 干净，main.rs 构建六项托盘菜单并经 sink 派发；协调器接线归属 composition root",
+     "cmd": "node scripts/verify/checks/task-9.3.mjs"
+    }
+   ]
+  },
+  {
+   "id": "9.4",
+   "title": "macOS Now Playing / Windows SMTC / Linux MPRIS 媒体控制 Adapter；媒体键只触发一次协调器 command，能力不可用时降级到窗口控制",
+   "commands": [
+    {
+     "desc": "media_control seam 单测通过（键名解码、一命令映射、降级 noop sink），echo-app clippy 干净；OS 专属 adapter 与协调器接线归属 composition root/平台 Gate",
+     "cmd": "node scripts/verify/checks/task-9.4.mjs"
+    }
+   ]
+  },
+  {
+   "id": "9.5",
+   "title": "系统回收站与 reveal Adapter：回收站不可逆点、Windows 文件锁重试、Linux 无法定位时打开父目录、入口只接收 SongId/OperationId",
+   "commands": [
+    {
+     "desc": "trash 重试/不可逆策略与 reveal 父目录回退策略单测通过，reveal 入口只收 SongId 且只返回相对路径，echo-app clippy 干净；真实 OS 后端接线归属 composition root",
+     "cmd": "node scripts/verify/checks/task-9.5.mjs"
+    }
+   ]
+  },
+  {
+   "id": "9.6",
+   "title": "窗口 close/hide/explicit quit 与 window-state 可见区域校验：macOS 默认后台、Windows/Linux 默认退出、用户覆盖、断显示器后回可见区域",
+   "commands": [
+    {
+     "desc": "local_state 关闭行为默认值与 WindowState::clamp_to_visible 可见区域策略单测通过，echo-app clippy 干净；close-handler 接线归属 shell/composition root",
+     "cmd": "node scripts/verify/checks/task-9.6.mjs"
+    }
+   ]
+  },
+  {
+   "id": "9.7",
+   "title": "libmpv manifest 接入正式构建：macOS universal rpath+签名、Windows DLL 搜索、Linux glibc 2.35 依赖检查、Gate 基线无回退",
+   "commands": [
+    {
+     "desc": "manifest 结构/校验和、tauri.conf wiring、build.rs rpath、CI Gate 步骤；macOS 构建产物 rpath/签名/ABI/universal 验证；Windows/Linux 要求记录",
+     "cmd": "node scripts/verify/checks/task-9.7.mjs"
+    }
+   ]
+  },
+
+  {
+   "id": "10.6",
+   "title": "窗口化列表歌曲行、播放标识、收藏、下一首、加入播放队列和更多菜单；50,000 条只渲染视口、菜单绑定 SongId",
+   "commands": [
+    {
+     "desc": "SongMenu 组件测试通过（下一首播放→onPlayNext、加入播放队列→onEnqueue、未接线时禁用）；echo-app clippy 干净；actor SongId→path 解析并加载测试通过",
+     "cmd": "node scripts/verify/checks/task-10.6.mjs"
+    }
+   ]
+  },
+
+  {
+   "id": "10.7",
+   "title": "曲库状态：加载、空曲库（含导入入口）、搜索空、部分扫描失败保留可用内容并提供重试、资料库不可用、文件 missing",
+   "commands": [
+    {
+     "desc": "SongList 状态测试（loading/empty/search-empty/failure-retry/错误不伪造空库）通过，typecheck 干净；unavailable/read-only/missing 命中 LibraryStatusView 与 SongRow",
+     "cmd": "node scripts/verify/checks/task-10.7.mjs"
+    }
+   ]
+  },
+
+  {
+   "id": "10.8",
+   "title": "只读歌曲详情 + reveal + 删除确认/10 秒 undo/前滚错误状态；只展示相对路径且取消/失败不伪造删除成功",
+   "commands": [
+    {
+     "desc": "SongMenu 组件测试通过：详情仅相对路径、确认/失败/取消不伪造成功、仅成功删除出现 undo；delete_song/undo_delete/reveal_song service-layer 已实现，Tauri 注册归属 composition root",
+     "cmd": "node scripts/verify/checks/task-10.8.mjs"
+    }
+   ]
+  },
+
+  {
+   "id": "10.9",
+   "title": "歌单创建/重命名/删除、选择器、多歌单成员、移除和 blocked 成员 UI；40 grapheme 校验、重复幂等、追加顺序、删除歌单不删文件",
+   "commands": [
+    {
+     "desc": "PlaylistsView + AddToPlaylistDialog 组件测试通过：40 grapheme 拒绝、rename/delete 经确认、多选 target 单命令提交；重复幂等/追加顺序/删除不删文件由 echo-core 6.6/6.7 保证",
+     "cmd": "node scripts/verify/checks/task-10.9.mjs"
+    }
+   ]
+  },
+
+  {
+   "id": "10.10",
+   "title": "多选导入批次进度、逐文件结果、重复/编号/歌词部分成功和失败重试；混合批次无需重做成功项",
+   "commands": [
+    {
+     "desc": "ImportBatchDialog 组件测试通过：逐文件结果渲染（imported/duplicate/unsupported/failed/libraryUnavailable）、汇总计数、取消为真 no-op、重试不重做已导入项；核心 5.x 输出驱动",
+     "cmd": "node scripts/verify/checks/task-10.10.mjs"
+    }
+   ]
+  },
+
+  {
+   "id": "11.1",
+   "title": "常驻播放栏：封面/信息/收藏、传输控制、进度、音量、模式、队列和空态；所有状态以 PlayerSnapshot 为权威",
+   "commands": [
+    {
+     "desc": "playerStore 由 player://snapshot 事件驱动（startPlayerEvents 订阅→publish，不伪造）测试通过；runtime::player::map_snapshot 映射（含 currentSongId/currentTitle）测试通过；echo-app clippy 干净",
+     "cmd": "node scripts/verify/checks/task-11.1.mjs"
+    }
+   ]
+  },
+  {
+   "id": "11.2",
+   "title": "播放队列面板：blocked/错误项、下一首/追加/清空待播和浏览曲库空态；清空不停止当前歌曲且不改变歌单/资料库",
+   "commands": [
+    {
+     "desc": "UI snapshot 携带完整队列（UiQueueEntry 含 entryId/songId/title/isCurrent/failed），map_snapshot 映射测试通过；QueuePanel 渲染当前+待播/失败项、清空待播仅发 clearPending、空态浏览曲库；echo-app typecheck + QueuePanel 测试 + echo-desktop runtime::player 测试 + clippy 通过",
+     "cmd": "node scripts/verify/checks/task-11.2.mjs"
+    }
+   ]
+  },
+  {
+   "id": "11.3",
+   "title": "沉浸式播放器：黑胶封面、歌曲元信息、展开/收起和曲目切换不退出的沉浸式播放器；宽屏/窄屏和无封面占位",
+   "commands": [
+    {
+     "desc": "ImmersivePlayer 组件：黑胶视觉（无封面占位）、从 song_detail 权威取元信息（不伪造）、展开/收起仅切 UI 态不停止播放、切歌保持沉浸不闪回；playerStore 增 immersiveOpen；echo-app typecheck + ImmersivePlayer 测试 + clippy 通过",
+     "cmd": "node scripts/verify/checks/task-11.3.mjs"
+    }
+   ]
+  },
+  {
+   "id": "11.4",
+   "title": "同步歌词当前行、seek 后定位、点击行 seek、乱序/越界处理和 UI 进度插值；真实 mpv 快照与歌词行一致",
+   "commands": [
+    {
+     "desc": "GetSongLyrics 用例（source 沿用领域 select_effective_lyrics，乱序/越界由 4.5 LRC parser 预排序/过滤）测试通过；get_lyrics command + IPC DTO 漂移锁通过；ImmersivePlayer 按权威 snapshot position 高亮当前行（二分查找 + 插值）、点击行发 seek（tests 验证 12s→{position:12}）；typecheck + clippy 通过",
+     "cmd": "node scripts/verify/checks/task-11.4.mjs"
+    }
+   ]
+  },
+  {
+   "id": "11.5",
+   "title": "纯文本歌词、无歌词和来源错误/回退状态；验证切歌立即清除上一首残留且不伪造纯文本当前行",
+   "commands": [
+    {
+     "desc": "ImmersivePlayer：纯文本歌词以静态列表展示（无当前行指示、不自动 seek）；无歌词显示“暂无歌词”空态；来源标签（内嵌歌词/LRC 侧车文件/覆盖层）展示；切歌经 key remount 立即清残留；损坏高优先级回退由 Core select_effective_lyrics（4.5）保证。verify:task 11.5 通过",
+     "cmd": "node scripts/verify/checks/task-11.5.mjs"
+    }
+   ]
+  },
+  {
+   "id": "11.6",
+   "title": "歌词专注模式、手动滚动暂停 5 秒、“回到当前行”和队列覆盖；验证播放控制不中断且 Escape 只关闭最上层",
+   "commands": [
+    {
+     "desc": "LyricsFocus 专注覆盖层（隐藏黑胶/元信息、歌词为主阅读区、保留进度+最小播放控制）；Escape 仅关专注不关沉浸播放器；专注内播放/下一首不退出；“回到当前行”恢复自动跟随（手动滚动暂停 5s 计时 + 按钮）。playerStore 增 focusOpen；verify:task 11.6 通过（ImmersivePlayer 专注测试 + typecheck + clippy）",
+     "cmd": "node scripts/verify/checks/task-11.6.mjs"
+    }
+   ]
+  },
+  {
+   "id": "11.7",
+   "title": "临时播放项标识和“导入到资料库”入口；收藏/加入歌单/统计被禁用，显式导入后才产生正常 SongId",
+   "commands": [
+    {
+     "desc": "PlayerBar/QueuePanel/ImmersivePlayer 渲染临时播放项 badge（currentCanImport/queue canImport，由 map_snapshot 派生）；PlayerBar “导入到资料库”按钮调用桌面 import_current_temporary_file（Rust 侧 SingleFileImport 以绝对路径直连 PlanImport，路径不经过 WebView，返回 ImportResultDto：imported/duplicate/unsupported/failed）。收藏/加入歌单/统计对临时项禁用：temp 项无 song_id、不入库/歌单/统计（8.10 recorder 跳过），导入后经 Core PlanImport 产生正常 SongId。verify:task 11.7 通过（PlayerBar 测试 + platform::import 测试 + runtime::player 映射测试 + typecheck + clippy）",
+     "cmd": "node scripts/verify/checks/task-11.7.mjs"
+    }
+   ]
+  },
+  {
+   "id": "11.8",
+   "title": "应用快捷键、range 键盘步进和媒体状态辅助文本；输入框/对话框内 Space 不误触播放，进度 5 秒、音量 5% 步进正确",
+   "commands": [
+    {
+     "desc": "useGlobalPlayerHotkeys：全局 Space 播放/暂停（焦点在 input/textarea/select 或队列对话框时禁用）、M 静音、,/前/后一、方向键 seek/音量；浮层（队列/沉浸/专注）打开时方向键让位给浮层。seek range step=5s、volume step=0.05（5%）；PlayerBar/ImmersivePlayer 进度 aria-valuetext 展示时间、音量带“音量 x%”；sr-only aria-live 播报播放状态+歌曲+模式（buildStatusText）。verify:task 11.8 通过（hotkeys 测试 + PlayerBar range/status 测试 + typecheck + clippy）",
+     "cmd": "node scripts/verify/checks/task-11.8.mjs"
+    }
+   ]
+  },
+  {
+   "id": "12.1",
+   "title": "单一 Overlay Manager、焦点陷阱/恢复、roving menu 和既定 Escape 栈；覆盖对话框→设置/歌单→菜单/队列→歌词专注→沉浸→侧栏",
+   "commands": [
+    {
+     "desc": "单个浮层栈按优先级一次只关闭最上层（阻断确认→选择器→菜单/队列→歌词专注→沉浸→窄屏侧边栏）；打开移焦入内容、关闭回触发控件；Tab 困在浮层内；role=menu 走 roving 焦点。verify:task 12.1 通过（overlays.test.tsx + typecheck + echo-app clippy）",
+     "cmd": "node scripts/verify/checks/task-12.1.mjs"
+    }
+   ]
+  },
+  {
+   "id": "12.2",
+   "title": "Tab/Shift+Tab/Enter/Space/方向键/Home/End 全键盘路径和 screen reader 名称/状态；Testing Library + axe 无阻断可访问性问题",
+   "commands": [
+    {
+     "desc": "Testing Library 键盘路径测试（导航/搜索/设置可达、Enter 激活、歌曲菜单 roving 焦点可达）+ axe 全壳扫描无 critical/serious 阻断（修正歌曲行 role=option→listitem 以消除 option 含可聚焦后代的违反）；typecheck + lint + echo-app clippy。verify:task 12.2 通过",
+     "cmd": "node scripts/verify/checks/task-12.2.mjs"
+    }
+   ]
+  },
+  {
+   "id": "12.3",
+   "title": "760px 窄屏侧边栏/遮罩、次要列收敛和沉浸布局；resize 不丢视图、搜索、焦点或播放状态",
+   "commands": [
+    {
+     "desc": "窄屏侧边栏菜单按钮开合 + 遮罩、关闭回焦点到触发控件；次要列（艺人/专辑/时长）760px 收敛、触发按钮避让工具栏、搜索换行保留；resize/开合不丢当前视图、搜索文本或播放快照。verify:task 12.3 通过（narrow.test.tsx + typecheck + echo-app clippy）",
+     "cmd": "node scripts/verify/checks/task-12.3.mjs"
+    }
+   ]
   }
  ],
  "scenarios": []}

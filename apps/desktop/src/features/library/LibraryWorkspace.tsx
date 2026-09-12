@@ -12,11 +12,13 @@
 import { useCallback, useMemo, useState } from "react";
 
 import { bridge } from "../../bridge";
+import { usePlayerSnapshot } from "../../player/playerStore";
 import type { ImportBatchDto, SongView } from "../../ipc/ipc-types.generated";
 import { LibraryViewKind, SongSortField } from "./types";
 import { SongList } from "./SongList";
 import { useSongs } from "./useSongs";
 import { SongMenu } from "./SongMenu";
+import { AddToPlaylistDialog } from "../playlists/AddToPlaylistDialog";
 import { ImportBatchDialog } from "../import/ImportBatchDialog";
 import "./library.css";
 
@@ -33,6 +35,8 @@ export function LibraryWorkspace({ view, root, readOnly }: LibraryWorkspaceProps
   const [menuFor, setMenuFor] = useState<SongView | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [lastImport, setLastImport] = useState<ImportBatchDto | null>(null);
+  const [addToPlaylistFor, setAddToPlaylistFor] = useState<string | null>(null);
+  const snapshot = usePlayerSnapshot();
 
   const query = useMemo(
     () => ({
@@ -45,7 +49,7 @@ export function LibraryWorkspace({ view, root, readOnly }: LibraryWorkspaceProps
     }),
     [view, search, sortField, sortDir, root, readOnly],
   );
-  const { page, loading, loadMore, reset } = useSongs(query);
+  const { page, loading, error, loadMore, reset, retry } = useSongs(query);
 
   const toggleSortDir = useCallback(() => {
     setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -75,6 +79,16 @@ export function LibraryWorkspace({ view, root, readOnly }: LibraryWorkspaceProps
     },
     [page.songs],
   );
+
+  const onPlayNext = useCallback((song: SongView) => {
+    // Insert the song right after the current one ("下一首播放", task 10.6).
+    void bridge.call("queue_command", { command: "playNext", songId: song.id });
+  }, []);
+
+  const onEnqueue = useCallback((song: SongView) => {
+    // Append the song to the end of the queue ("加入播放队列", task 10.6).
+    void bridge.call("queue_command", { command: "enqueue", songId: song.id });
+  }, []);
 
   const onClearSearch = useCallback(() => setSearch(""), []);
 
@@ -143,6 +157,10 @@ export function LibraryWorkspace({ view, root, readOnly }: LibraryWorkspaceProps
         loading={loading}
         isLast={page.isLast}
         readOnly={readOnly}
+        currentSongId={snapshot.currentSongId}
+        error={error}
+        onRetry={retry}
+        onImport={() => setImportOpen(true)}
         onLoadMore={loadMore}
         onClearSearch={onClearSearch}
         onPlay={onPlay}
@@ -160,11 +178,31 @@ export function LibraryWorkspace({ view, root, readOnly }: LibraryWorkspaceProps
             onPlay(menuFor);
             setMenuFor(null);
           }}
+          onPlayNext={() => {
+            onPlayNext(menuFor);
+            setMenuFor(null);
+          }}
+          onEnqueue={() => {
+            onEnqueue(menuFor);
+            setMenuFor(null);
+          }}
           onFavorite={(fav) => {
             onFavorite(menuFor, fav);
             setMenuFor(null);
           }}
+          onAddToPlaylist={() => {
+            setAddToPlaylistFor(menuFor.id);
+            setMenuFor(null);
+          }}
           onRefresh={reset}
+        />
+      ) : null}
+
+      {addToPlaylistFor ? (
+        <AddToPlaylistDialog
+          songId={addToPlaylistFor}
+          onClose={() => setAddToPlaylistFor(null)}
+          onDone={reset}
         />
       ) : null}
 

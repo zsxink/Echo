@@ -55,11 +55,13 @@ export interface BridgeCommandMap {
   // coordinator owns the queue + snapshot authority.
   play_context: (args: { songs: string[]; selectedIndex: number }) => unknown;
   play_temporary_file: (args: { path: string; displayName: string }) => unknown;
+  import_current_temporary_file: () => unknown;
   player_control: (args: { action: string }) => unknown;
   queue_command: (args: { command: string; songId?: string }) => unknown;
   set_volume: (args: { volume: number }) => unknown;
   toggle_mute: () => unknown;
   seek: (args: { position: number }) => unknown;
+  get_lyrics: (args: { songId: string }) => unknown;
 }
 
 /** An unwrapper that treats the error envelope as a thrown value. */

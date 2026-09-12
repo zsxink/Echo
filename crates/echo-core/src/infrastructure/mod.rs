@@ -7,3 +7,7 @@
 pub mod filesystem;
 pub mod metadata;
 pub mod sqlite;
+
+/// Production [`crate::application::ports::Clock`] and
+/// [`crate::application::ports::IdGenerator`] adapters for the composition root.
+pub mod core;

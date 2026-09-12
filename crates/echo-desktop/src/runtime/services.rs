@@ -17,7 +17,7 @@
 
 use echo_core::application::catalog::CatalogQuery;
 use echo_core::application::delete::{DeleteSongs, RestoreDeletedOperation};
-use echo_core::application::detail::GetSongDetail;
+use echo_core::application::detail::{GetSongDetail, GetSongLyrics};
 use echo_core::application::favorite::SetFavorite;
 use echo_core::application::import::PlanImport;
 use echo_core::application::playlist::{
@@ -34,10 +34,11 @@ use echo_core::domain::ids::{LibraryRootId, OperationId, PlaylistId, SongId};
 use echo_core::error::Error;
 
 use crate::ipc::dto::{
-    BootstrapSnapshot, ImportBatchDto, LibraryRootStatusDto, LibraryStatus, PagedSongs,
-    PlaylistView, RevealResultDto, ScanSnapshot, SongDetailView, SongView,
+    BootstrapSnapshot, ImportBatchDto, ImportResultDto, LibraryRootStatusDto, LibraryStatus,
+    PagedSongs, PlaylistView, RevealResultDto, ScanSnapshot, SongDetailView, SongView,
 };
 use crate::platform::dialogs::{RevealOutcome, SystemDialogs};
+use crate::platform::import::SingleFileImport;
 use crate::runtime::StartupSupervisor;
 use echo_core::infrastructure::filesystem::RootRegistry;
 
@@ -289,6 +290,20 @@ impl AppServices {
         Ok(SongDetailView::from(&detail))
     }
 
+    /// Effective lyrics of a song (task 11.4–11.6): source, timed/plain lines,
+    /// plain text and parse diagnostic. Line/path-free; the UI receives only
+    /// the strongest non-corrupt candidate.
+    ///
+    /// # Errors
+    ///
+    /// `Unavailable` when the song is not in the library; storage errors propagate.
+    pub fn get_lyrics(
+        &self,
+        song: SongId,
+    ) -> Result<echo_core::application::detail::SongLyrics, Error> {
+        GetSongLyrics::new(self.deps.lyrics.as_ref()).execute(song)
+    }
+
     /// Toggle favorite; returns the authoritative committed song view.
     ///
     /// # Errors
@@ -530,6 +545,46 @@ impl AppServices {
         let report = PlanImport::new(self.deps.as_ref(), picked.reader.as_ref())
             .run(root, &picked.sources)?;
         Ok(Some(ImportBatchDto::from(report)))
+    }
+
+    /// Import a single file (by absolute, desktop-owned path) into the active
+    /// library root (task 11.7: "import current temporary playback item").
+    ///
+    /// The path stays entirely desktop-side — it is never forwarded to the
+    /// WebView. The caller (the Tauri command layer) extracts it from the
+    /// coordinator's current queue entry and passes it here.
+    ///
+    /// Returns `Ok(result)` with the single-file import result (imported /
+    /// duplicate / unsupported / failed) or `Err` when the root is unavailable
+    /// or the path is unreadable.
+    ///
+    /// # Errors
+    ///
+    /// `Unavailable` when writes are disabled, no root is active, or the path
+    /// is unreadable; infrastructure errors propagate; per-input problems
+    /// become `ImportResultDto::Failed`.
+    pub fn import_single_path(
+        &self,
+        absolute_path: &std::path::Path,
+        display_name: &str,
+    ) -> Result<ImportResultDto, Error> {
+        self.guard_writes()?;
+        let root_id = self
+            .deps
+            .roots
+            .active_root()?
+            .map(|r| r.id())
+            .ok_or_else(|| Error::unavailable("library", "no active library root"))?;
+        let reader = SingleFileImport::new(absolute_path, display_name)?;
+        let source = reader.source().clone();
+        let report = PlanImport::new(self.deps.as_ref(), &reader).run(root_id, &[source])?;
+        // A single-source batch always has exactly one result.
+        let outcome = report
+            .results
+            .into_iter()
+            .next()
+            .expect("import batch has at least one result");
+        Ok(ImportResultDto::from(outcome))
     }
 
     /// Reveal a song's file in the OS file manager by `SongId`. The absolute

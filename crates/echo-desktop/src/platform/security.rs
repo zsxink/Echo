@@ -405,6 +405,52 @@ mod tests {
         );
     }
 
+    /// Task 9.2 drift guard: the shell's file-association registration must
+    /// cover exactly the format families the media stack guarantees
+    /// (mp3/flac/m4a/ogg/opus/wav) — never a superset (an unvetted format Echo
+    /// claims to open) nor a subset (a guaranteed format the user can no longer
+    /// open by double-clicking). This is the shell half of "配置保证格式文件
+    /// 关联"; the open-path resolution (SongId vs temporary item) is playback
+    /// layer (11.7) and is not shell logic.
+    #[test]
+    fn tauri_conf_file_associations_cover_the_guaranteed_formats() {
+        use echo_core::domain::media::AudioFormat;
+        let guaranteed: std::collections::BTreeSet<String> = [
+            AudioFormat::Mpeg,
+            AudioFormat::Flac,
+            AudioFormat::Mp4,
+            AudioFormat::Ogg,
+            AudioFormat::Opus,
+            AudioFormat::Wav,
+        ]
+        .into_iter()
+        .map(AudioFormat::extension)
+        .map(str::to_owned)
+        .collect();
+
+        let text = std::fs::read_to_string(src_tauri_conf())
+            .expect("tauri.conf.json is committed and readable");
+        let conf: serde_json::Value =
+            serde_json::from_str(&text).expect("tauri.conf.json is valid JSON");
+        let mut registered = std::collections::BTreeSet::new();
+        for assoc in conf["bundle"]["fileAssociations"]
+            .as_array()
+            .expect("bundle.fileAssociations is an array")
+        {
+            for ext in assoc["ext"]
+                .as_array()
+                .expect("fileAssociation.ext is an array")
+            {
+                registered.insert(ext.as_str().expect("ext is a string").to_ascii_lowercase());
+            }
+        }
+
+        assert_eq!(
+            registered, guaranteed,
+            "bundle.fileAssociations drifted from the guaranteed AudioFormat set"
+        );
+    }
+
     #[test]
     fn committed_capability_grants_only_the_minimal_set() {
         let text = std::fs::read_to_string(main_capability())

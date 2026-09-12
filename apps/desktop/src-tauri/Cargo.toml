@@ -16,6 +16,8 @@ path = "src/main.rs"
 [dependencies]
 echo-desktop = { path = "../../../crates/echo-desktop" }
 echo-core = { path = "../../../crates/echo-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
 tauri = { version = "2.11.5", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2.4.3"
 

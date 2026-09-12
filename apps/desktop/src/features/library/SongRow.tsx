@@ -13,6 +13,8 @@ import type { SongView } from "../../ipc/ipc-types.generated";
 export interface SongRowProps {
   readonly song: SongView;
   readonly readOnly: boolean;
+  /** The SongId of the currently playing song, if any (task 10.6 播放标识). */
+  readonly nowPlaying: boolean;
   readonly onPlay: () => void;
   readonly onFavorite: (favorite: boolean) => void;
   readonly onOpenMenu: () => void;
@@ -27,16 +29,28 @@ export function formatDuration(seconds?: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export function SongRow({ song, readOnly, onPlay, onFavorite, onOpenMenu, style }: SongRowProps) {
+export function SongRow({
+  song,
+  readOnly,
+  nowPlaying,
+  onPlay,
+  onFavorite,
+  onOpenMenu,
+  style,
+}: SongRowProps) {
   const missing = song.availability === "missing" || song.availability === "pending-delete";
   const paused = song.availability === "pending-delete";
 
   return (
     <div
-      className={`song-row${missing ? " is-missing" : ""}${paused ? " is-pending-delete" : ""}`}
-      role="option"
+      className={`song-row${missing ? " is-missing" : ""}${paused ? " is-pending-delete" : ""}${
+        nowPlaying ? " is-playing" : ""
+      }`}
+      role="listitem"
       aria-label={`${song.title ?? "未命名歌曲"} — ${song.artist ?? "未知艺人"}`}
+      aria-current={nowPlaying ? "true" : undefined}
       data-song-id={song.id}
+      data-testid={`song-row-${song.id}`}
       style={style}
     >
       <button
@@ -47,6 +61,11 @@ export function SongRow({ song, readOnly, onPlay, onFavorite, onOpenMenu, style 
         aria-disabled={missing}
       >
         <span className="song-title-text">{song.title ?? "未命名歌曲"}</span>
+        {nowPlaying ? (
+          <span className="now-playing-indicator" aria-hidden="true">
+            {"▶"}
+          </span>
+        ) : null}
         {missing ? <span className="availability-tag">不可用</span> : null}
       </button>
       <span className="song-cell song-cell-artist">{song.artist ?? "未知艺人"}</span>

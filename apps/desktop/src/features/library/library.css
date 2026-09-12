@@ -100,6 +100,18 @@
   color: var(--muted);
 }
 
+.song-row.is-playing {
+  background: var(--surface-warm);
+  color: var(--accent-strong);
+}
+
+.now-playing-indicator {
+  margin-left: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--accent-strong);
+  vertical-align: middle;
+}
+
 .song-cell {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -167,6 +179,22 @@
   align-items: center;
 }
 
+.list-error {
+  color: var(--danger);
+}
+
+.list-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--surface-warm);
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+}
+
 .btn {
   border: 1px solid var(--border);
   background: var(--bg);
@@ -221,4 +249,32 @@
 
 .workspace-ok {
   color: var(--success);
+}
+
+/* --- narrow screen (task 12.3): collapse secondary columns, make room for the
+   sidebar toggle (position: fixed at top-left) so it never covers the toolbar
+   title. Search keeps wrapping; view/search state is untouched by resize. --- */
+@media (max-width: 760px) {
+  .workspace-toolbar {
+    padding-left: calc(var(--space-4) + 44px); /* leave space for the toggle */
+    gap: var(--space-2);
+  }
+  .workspace-title {
+    font-size: var(--text-lg);
+  }
+  .search-input {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+  /* Secondary columns (artist / album / duration) collapse; title + actions
+     remain so every row still exposes play, favorite and menu. */
+  .song-header,
+  .song-row {
+    grid-template-columns: 1fr auto;
+  }
+  .song-cell-artist,
+  .song-cell-album,
+  .song-cell-duration {
+    display: none;
+  }
 }

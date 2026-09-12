@@ -68,5 +68,18 @@ export interface RevealResultDto {
   readonly revealed: boolean;
 }
 
+export interface LyricsLineView {
+  readonly seconds: number;
+  readonly text: string;
+}
+
+export interface SongLyricsDto {
+  readonly source: 'override' | 'embedded' | 'sidecar' | null;
+  readonly timed: boolean;
+  readonly lines: readonly LyricsLineView[];
+  readonly plainText: string;
+  readonly parseError?: string | null;
+}
+
 export type Theme = 'coral' | 'cobalt' | 'turquoise';
 export type CloseBehavior = 'exit' | 'background';

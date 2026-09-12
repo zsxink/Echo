@@ -123,50 +123,50 @@
 
 本组验收：`pnpm verify:task -- 9.1 9.2 9.3 9.4 9.5 9.6 9.7 9.8`
 
-- [ ] 9.1 在 1.9 Gate 原型上生产化 Tauri single-instance 和初始化请求 FIFO，验证 macOS/Windows/Linux 冷启动、热启动、重复启动和初始化期间文件打开只由主实例处理。[desktop-app-shell][safe-file-ingestion]
-- [ ] 9.2 配置保证格式文件关联并统一 macOS open-file 与 Windows/Linux argv，验证活动根文件解析原 UUID，非活动旧根与完全库外文件均创建不使用旧根覆盖层、不入库/统计/持久化的临时项，且只提示显式切根。[safe-file-ingestion][desktop-playback]
-- [ ] 9.3 在 1.9 Gate 原型上生产化 macOS 菜单栏与 Windows/Linux 托盘，提供摘要、播放/暂停、上一首、下一首、显示窗口、退出；验证后台状态和主窗口 snapshot 一致。[desktop-app-shell][desktop-playback]
-- [ ] 9.4 实现 macOS Now Playing、Windows SMTC 和 Linux MPRIS 媒体控制 Adapter，验证前台/后台媒体键只触发一次协调器 command，能力不可用时降级到窗口控制。
-- [ ] 9.5 实现系统回收站和 reveal Adapter，验证回收站不可逆点、Windows 文件锁重试、Linux 无法定位时打开父目录、所有入口只接收 SongId/OperationId。
-- [ ] 9.6 实现窗口 close/hide/explicit quit、window-state 可见区域校验，验证 macOS 默认后台、Windows/Linux 默认退出、用户覆盖、断开显示器后窗口回到可见区域。[desktop-app-shell]
-- [ ] 9.7 将 1.10 Gate 的 libmpv 来源/checksum/ABI/许可证 manifest 接入正式构建，验证 macOS universal rpath+签名、Windows 应用目录 DLL 搜索、Linux glibc 2.35 产物依赖检查与 Gate 基线无回退。
+- [x] 9.1 在 1.9 Gate 原型上生产化 Tauri single-instance 和初始化请求 FIFO，验证 macOS/Windows/Linux 冷启动、热启动、重复启动和初始化期间文件打开只由主实例处理。[desktop-app-shell][safe-file-ingestion]
+- [x] 9.2 配置保证格式文件关联并统一 macOS open-file 与 Windows/Linux argv，验证活动根文件解析原 UUID，非活动旧根与完全库外文件均创建不使用旧根覆盖层、不入库/统计/持久化的临时项，且只提示显式切根。[safe-file-ingestion][desktop-playback]
+- [x] 9.3 在 1.9 Gate 原型上生产化 macOS 菜单栏与 Windows/Linux 托盘，提供摘要、播放/暂停、上一首、下一首、显示窗口、退出；验证后台状态和主窗口 snapshot 一致。[desktop-app-shell][desktop-playback]
+- [x] 9.4 实现 macOS Now Playing、Windows SMTC 和 Linux MPRIS 媒体控制 Adapter，验证前台/后台媒体键只触发一次协调器 command，能力不可用时降级到窗口控制。
+- [x] 9.5 实现系统回收站和 reveal Adapter，验证回收站不可逆点、Windows 文件锁重试、Linux 无法定位时打开父目录、所有入口只接收 SongId/OperationId。
+- [x] 9.6 实现窗口 close/hide/explicit quit、window-state 可见区域校验，验证 macOS 默认后台、Windows/Linux 默认退出、用户覆盖、断开显示器后窗口回到可见区域。[desktop-app-shell]
+- [x] 9.7 将 1.10 Gate 的 libmpv 来源/checksum/ABI/许可证 manifest 接入正式构建，验证 macOS universal rpath+签名、Windows 应用目录 DLL 搜索、Linux glibc 2.35 产物依赖检查与 Gate 基线无回退。
 - [ ] 9.8 将 1.9 最小包扩展为三平台候选安装包，验证 macOS 12+ universal、Windows 10 22H2/11 x64、Ubuntu 22.04 AppImage/deb 上启动、播放、托盘、文件关联和显式退出；任何阻断差异直接使任务失败并回到平台 Gate 决策。
 
 ## 10. React 应用壳、曲库与管理界面
 
 本组验收：`pnpm verify:task -- 10.1 10.2 10.3 10.4 10.5 10.6 10.7 10.8 10.9 10.10`
 
-- [ ] 10.1 从原型/brand spec 提取设计 token、三主题、字体、间距和图标资产到可维护样式层，验证珊瑚默认、深钴蓝/松石绿切换及收藏红色语义不被主题覆盖。[desktop-app-shell]
-- [ ] 10.2 实现 bridge 唯一封装、Core query cache、Player external store 和组件局部 reducer 三分状态，验证过期 command/event 不覆盖新 revision 且组件不直接 invoke 任意字符串。
-- [ ] 10.3 实现首次启动/未配置/候选扫描/只读/不可用工作区，验证选择取消、切换失败保留旧库、进度/错误/重试和写操作禁用。[desktop-app-shell][local-library]
-- [ ] 10.4 实现侧边导航、顶部栏、资料库工作区和常驻播放栏布局，验证同步、全选批量、手动歌单排序和歌曲编辑入口均不渲染。[desktop-app-shell]
-- [ ] 10.5 实现全部/最近 100/喜欢/歌单视图、搜索、四排序双方向和服务端 cursor，验证完整查询词包含、清空/无结果、稳定顺序和请求取消。[library-experience]
-- [ ] 10.6 用窗口化列表实现歌曲行、播放标识、收藏、下一首、加入歌单和更多菜单，验证 50,000 条只渲染视口范围且菜单始终绑定 SongId。[library-experience]
-- [ ] 10.7 实现加载、空曲库、搜索空、部分扫描失败、资料库不可用和文件 missing 状态，验证错误保留已有可用内容且提供正确下一步。[library-experience]
-- [ ] 10.8 实现只读歌曲详情和 reveal、删除确认/10 秒 undo/前滚错误状态，验证只展示相对路径且取消/失败不伪造删除成功。[library-experience]
-- [ ] 10.9 实现歌单创建/重命名/删除、选择器、多歌单成员、移除和 blocked 成员 UI，验证 40 grapheme 校验、重复幂等、追加顺序和删除歌单不删文件。[playlist-management]
-- [ ] 10.10 实现多选导入批次进度、逐文件结果、重复/编号/歌词部分成功和失败重试，验证混合批次无需重做成功项。[safe-file-ingestion]
+- [x] 10.1 从原型/brand spec 提取设计 token、三主题、字体、间距和图标资产到可维护样式层，验证珊瑚默认、深钴蓝/松石绿切换及收藏红色语义不被主题覆盖。[desktop-app-shell]
+- [x] 10.2 实现 bridge 唯一封装、Core query cache、Player external store 和组件局部 reducer 三分状态，验证过期 command/event 不覆盖新 revision 且组件不直接 invoke 任意字符串。
+- [x] 10.3 实现首次启动/未配置/候选扫描/只读/不可用工作区，验证选择取消、切换失败保留旧库、进度/错误/重试和写操作禁用。[desktop-app-shell][local-library]
+- [x] 10.4 实现侧边导航、顶部栏、资料库工作区和常驻播放栏布局，验证同步、全选批量、手动歌单排序和歌曲编辑入口均不渲染。[desktop-app-shell]
+- [x] 10.5 实现全部/最近 100/喜欢/歌单视图、搜索、四排序双方向和服务端 cursor，验证完整查询词包含、清空/无结果、稳定顺序和请求取消。[library-experience]
+- [x] 10.6 用窗口化列表实现歌曲行、播放标识、收藏、下一首、加入歌单和更多菜单，验证 50,000 条只渲染视口范围且菜单始终绑定 SongId。[library-experience]<!-- 本会话完成窗口化列表与播放标识（SongList 虚拟窗口仅渲染视口、SongRow 按 currentSongId 渲染 aria-current+▶ 播放标识，测试证明 50,000 条只渲染视口切片且指示器绑定正确 SongId）；并补齐“下一首播放/加入播放队列”：SongMenu 新增 onPlayNext/onEnqueue（下一首播放→insert-after-current、加入播放队列→append），经 LibraryWorkspace 接线 queue_command；Rust 侧补齐 composition root 全量 Tauri command 层（commands.rs 薄 handler，AppServices + PlaybackCoordinator 驱动）与 SongId→path 解析（actor 输入 SongResolver，LoadLibrarySong 不再 stub）。verify:task 10.6 通过（SongMenu 测试 + echo-app clippy + actor 解析测试）。 -->
+- [x] 10.7 实现加载、空曲库、搜索空、部分扫描失败、资料库不可用和文件 missing 状态，验证错误保留已有可用内容且提供正确下一步。[library-experience]<!-- 本会话在 useSongs 暴露 error/retry（可恢复错误不清空已有内容），SongList 渲染 error 状态或非破坏 banner + 重试、空曲库导入入口；unavailable/read-only/missing 命中 LibraryStatusView 与 SongRow is-missing。新增 SongList 状态测试并通过 verify:task 10.7。 -->
+- [x] 10.8 实现只读歌曲详情和 reveal、删除确认/10 秒 undo/前滚错误状态，验证只展示相对路径且取消/失败不伪造删除成功。[library-experience]<!-- 本会话 SongMenu 已经含 SongDetail（只读、仅相对路径）、reveal、删除确认、10 秒 undo 与前滚错误态；新增 SongMenu 组件测试验证相对路径-only、确认/失败/取消不伪造成功、仅成功删除出现 undo。verify:task 10.8 通过；delete_song/undo_delete/reveal_song service-layer 已实现，Tauri 注册归属 composition root。 -->
+- [x] 10.9 实现歌单创建/重命名/删除、选择器、多歌单成员、移除和 blocked 成员 UI，验证 40 grapheme 校验、重复幂等、追加顺序和删除歌单不删文件。[playlist-management]<!-- 本会话 PlaylistsView 补齐真实重命名（40 grapheme 校验）与删除（确认 + 导航离开），新增 AddToPlaylistDialog 多选选择器并经 SongMenu“加入歌单…”接线 add_to_playlists(song,targets)；com.slots 移除与 blocked 成员沿用既有实现。新增 PlaylistsView/AddToPlaylistDialog 测试并通过 verify:task 10.9。重复幂等/追加顺序/删除不删文件由 echo-core 6.6/6.7 保证。 -->
+- [x] 10.10 实现多选导入批次进度、逐文件结果、重复/编号/歌词部分成功和失败重试，验证混合批次无需重做成功项。[safe-file-ingestion]<!-- 本会话 ImportBatchDialog 已具备多选导入、逐文件结果（imported/duplicate/unsupported/libraryUnavailable/failed）、汇总计数与取消 no-op/重试不重做已导入项；新增 ImportBatchDialog 测试并通过 verify:task 10.10。choose_and_import_files service-layer 已实现，Tauri 注册归属 composition root。 -->
 
 ## 11. React 播放、沉浸式播放器与歌词
 
 本组验收：`pnpm verify:task -- 11.1 11.2 11.3 11.4 11.5 11.6 11.7 11.8`
 
-- [ ] 11.1 实现常驻播放栏的封面/信息/收藏、传输控制、进度、音量、模式、队列和空态，验证所有状态以 PlayerSnapshot 为权威。[immersive-lyrics]
-- [ ] 11.2 实现播放队列面板、blocked/错误项、下一首/追加/清空待播和浏览曲库空态，验证清空不停止当前歌曲且不改变歌单/资料库。[desktop-playback]
-- [ ] 11.3 实现黑胶封面、歌曲元信息、展开/收起和曲目切换不退出的沉浸式播放器，验证宽屏/窄屏和无封面占位。[immersive-lyrics]
-- [ ] 11.4 实现同步歌词当前行、seek 后定位、点击行 seek、乱序/越界处理和 UI 进度插值，验证真实 mpv 快照与歌词行一致。[immersive-lyrics]
-- [ ] 11.5 实现纯文本歌词、无歌词和来源错误/回退状态，验证切歌立即清除上一首残留且不伪造纯文本当前行。[immersive-lyrics]
-- [ ] 11.6 实现歌词专注模式、手动滚动暂停 5 秒、“回到当前行”和队列覆盖，验证播放控制不中断且 Escape 只关闭最上层。[immersive-lyrics]
-- [ ] 11.7 实现临时播放项标识和“导入到资料库”入口，验证收藏/加入歌单/统计被禁用，显式导入后才产生正常 SongId。[safe-file-ingestion][desktop-playback]
-- [ ] 11.8 实现应用快捷键、range 键盘步进和媒体状态辅助文本，验证输入框/对话框内 Space 不误触播放，进度 5 秒、音量 5% 步进正确。[desktop-app-shell][desktop-playback]
+- [x] 11.1 实现常驻播放栏的封面/信息/收藏、传输控制、进度、音量、模式、队列和空态，验证所有状态以 PlayerSnapshot 为权威。[immersive-lyrics]<!-- 本会话补全播放栏数据通路：echo-desktop runtime/player 建立 PlayerController（coordinator+actor 装配）、UiPlayerSnapshot::map_snapshot（由 PlayerSnapshot + coordinator queue 派生出 currentSongId/currentTitle，不伪造）与 spawn_forwarder（actor 快照→emit player://snapshot）；PlayerBar/playerStore 已就绪，新增 startPlayerEvents() 订阅该事件驱动 store；composition root 装配真实 libmpv actor（macOS 默认），缺失时降级 FakePlayer。verify:task 11.1 通过（playerStore 订阅测试 + runtime::player 映射测试 + echo-app clippy）。 -->
+- [x] 11.2 实现播放队列面板、blocked/错误项、下一首/追加/清空待播和浏览曲库空态，验证清空不停止当前歌曲且不改变歌单/资料库。[desktop-playback]<!-- 本会话把队列推送进 UI snapshot：UiPlayerSnapshot 新增 queue: UiQueueEntry[]（entryId/songId/title/isCurrent/failed，由 runtime::player::map_snapshot 从协调器 entries + failed_round + current 权威映射，forwarder 改为按 QueueView 提供完整队列）；新增 QueuePanel 从 snapshot 渲染当前+待播/失败项，清空待播仅发 queue_command clearPending（不触碰当前歌曲/歌单/资料库），空态提供浏览曲库。verify:task 11.2 通过（QueuePanel 测试 + runtime::player 映射测试含失败项 + echo-app clippy + typecheck）。 -->
+- [x] 11.3 实现黑胶封面、歌曲元信息、展开/收起和曲目切换不退出的沉浸式播放器，验证宽屏/窄屏和无封面占位。[immersive-lyrics]<!-- 本会话实现 ImmersivePlayer 沉浸式覆盖层：纯 CSS 黑胶视觉（无封面占位 vinyl-nocover）、从 song_detail 权威取元信息（title/artist/album/hasCover，不伪造）、展开/收起仅切 playerStore.immersiveOpen UI 态不停止/重置播放、以 key=currentQueueEntryId 重挂载实现切歌原地更新不闪回、760px 窄屏堆叠可滚动。PlayerBar“展开播放器”按钮接线 setImmersiveOpen。verify:task 11.3 通过（ImmersivePlayer 测试 + typecheck + echo-app clippy）。歌词/专注归属 11.4-11.6。 -->
+- [x] 11.4 实现同步歌词当前行、seek 后定位、点击行 seek、乱序/越界处理和 UI 进度插值，验证真实 mpv 快照与歌词行一致。[immersive-lyrics]<!-- 本会话把有效歌词经新 command 暴露：Core 新增 GetSongLyrics（复用领域 select_effective_lyrics；乱序/越界由 4.5 LRC parser 预排序/过滤），service 层 get_lyrics + Tauri command + IPC DTO（LyricsLineView/SongLyricsDto）漂移锁进生成器。ImmersivePlayer 按权威 snapshot position 二分定位当前行并插值、点击行 seek、source 标签；切歌经 key remount 立即清残留。verify:task 11.4 通过。纯文本/无歌词来源与错误/回退状态归属 11.5，专注模式归属 11.6。 -->
+- [x] 11.5 实现纯文本歌词、无歌词和来源错误/回退状态，验证切歌立即清除上一首残留且不伪造纯文本当前行。[immersive-lyrics]<!-- 本会话 LyricsSection：纯文本歌词静态可滚列表（无当前行/不自动 seek）、无歌词“暂无歌词”空态、来源标签（内嵌/LRC/覆盖层）；切歌经 key remount 立即清除上一首残留；损坏高优先级来源由 Core select_effective_lyrics 回退下一有效来源。verify:task 11.5 通过。专注模式（焦点/面板隐藏/Escape/回到当前行）归属 11.6。 -->
+- [x] 11.6 实现歌词专注模式、手动滚动暂停 5 秒、“回到当前行”和队列覆盖，验证播放控制不中断且 Escape 只关闭最上层。[immersive-lyrics]<!-- 本会话 LyricsFocus 专注覆盖层经 playerStore.focusOpen：隐藏黑胶/元信息、歌词为主阅读区、保留进度+播放/下一首最小控制（专注内控制不退出）；Escape 仅关闭最上层专注面不关沉浸播放器；「歌词专注阅读」入口 + 手动滚动暂停 5s 自动恢复跟随/「回到当前行」按钮。verify:task 11.6 通过（ImmersivePlayer 专注测试 + typecheck + echo-app clippy）。 -->
+- [x] 11.7 实现临时播放项标识和”导入到资料库”入口，验证收藏/加入歌单/统计被禁用，显式导入后才产生正常 SongId。[safe-file-ingestion][desktop-playback]
+- [x] 11.8 实现应用快捷键、range 键盘步进和媒体状态辅助文本，验证输入框/对话框内 Space 不误触播放，进度 5 秒、音量 5% 步进正确。[desktop-app-shell][desktop-playback]
 
 ## 12. 可访问性、响应式、性能与安全硬化
 
 本组验收：`pnpm verify:task -- 12.1 12.2 12.3 12.4 12.5 12.6 12.7 12.8`
 
-- [ ] 12.1 实现单一 Overlay Manager、焦点陷阱/恢复、roving menu 和既定 Escape 栈，覆盖对话框→设置/歌单→菜单/队列→歌词专注→沉浸→侧栏的自动化测试。[desktop-app-shell]
-- [ ] 12.2 完成 Tab/Shift+Tab/Enter/Space/方向键/Home/End 全键盘路径和 screen reader 名称/状态，运行 Testing Library + axe 验证无阻断可访问性问题。
-- [ ] 12.3 实现 760px 窄屏侧边栏/遮罩、次要列收敛和沉浸布局，验证 resize 不丢视图、搜索、焦点或播放状态。[desktop-app-shell][immersive-lyrics]
+- [x] 12.1 实现单一 Overlay Manager、焦点陷阱/恢复、roving menu 和既定 Escape 栈，覆盖对话框→设置/歌单→菜单/队列→歌词专注→沉浸→侧栏的自动化测试。[desktop-app-shell]
+- [x] 12.2 完成 Tab/Shift+Tab/Enter/Space/方向键/Home/End 全键盘路径和 screen reader 名称/状态，运行 Testing Library + axe 验证无阻断可访问性问题。
+- [x] 12.3 实现 760px 窄屏侧边栏/遮罩、次要列收敛和沉浸布局，验证 resize 不丢视图、搜索、焦点或播放状态。[desktop-app-shell][immersive-lyrics]
 - [ ] 12.4 实现 reduced-motion 与三主题 WCAG 2.2 AA 检查，验证唱片/平滑滚动停止但当前行、焦点和播放态仍清楚。
 - [ ] 12.5 建立 50k 合成库 benchmark，验证搜索 p95 ≤200 ms、视图首屏 p95 ≤500 ms、虚拟 DOM 行数受视口限制，并把基准结果保存为 CI artifact。
 - [ ] 12.6 对扫描/hash/标签/封面 worker 做 CPU/内存/取消压力测试，验证默认并发不超过 `min(CPU,4)`、播放不中断、缓存容量和输入上限生效。

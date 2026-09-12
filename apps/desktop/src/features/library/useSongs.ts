@@ -67,14 +67,21 @@ async function fetchPage(query: SongQuery, cursor?: string | null): Promise<Page
 export function useSongs(query: SongQuery): {
   readonly page: SongPage;
   readonly loading: boolean;
+  /** A recoverable load error (task 10.7): existing content is kept and a
+   *  retry is offered rather than wiping or faking a result. */
+  readonly error: string | null;
   readonly loadMore: () => void;
   readonly reset: () => void;
+  readonly retry: () => void;
 } {
   const [page, setPage] = useState<SongPage>({ songs: [], isLast: false });
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const requests = useRef(new Map<string, number>());
   const key = pageKey(query);
   const cursorRef = useRef<string | undefined>(undefined);
+  // The latest effect run's loader, exposed as a stable `retry()` to the UI.
+  const retryRef = useRef<() => void>(() => {});
 
   // Load the first page whenever the query key changes (debounced search).
   useEffect(() => {
@@ -84,14 +91,19 @@ export function useSongs(query: SongQuery): {
       const reqId = Date.now() + Math.random();
       requests.current.set(key, reqId);
       setLoading(true);
+      setError(null);
       try {
         const result = await fetchPage(query);
         if (requests.current.get(key) === reqId) {
           cursorRef.current = result.nextCursor;
           setPage({ songs: result.items, nextCursor: result.nextCursor, isLast: result.isLast });
         }
-      } catch {
-        // A failed/stale fetch must not wipe existing content (task 10.7).
+      } catch (err) {
+        // A failed/stale fetch must not wipe existing content (task 10.7);
+        // surface a retryable message instead.
+        if (requests.current.get(key) === reqId) {
+          setError(messageOf(err));
+        }
       } finally {
         if (requests.current.get(key) === reqId) setLoading(false);
       }
@@ -101,6 +113,8 @@ export function useSongs(query: SongQuery): {
     } else {
       void run();
     }
+    // Expose the current loader as the stable `retry()` used by the UI.
+    retryRef.current = run;
     return () => {
       if (timer) clearTimeout(timer);
       requests.current.delete(key);
@@ -133,8 +147,24 @@ export function useSongs(query: SongQuery): {
   const reset = useCallback(() => {
     cursorRef.current = undefined;
     setPage({ songs: [], isLast: false });
+    setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  return { page, loading, loadMore, reset };
+  const retry = useCallback(() => retryRef.current(), []);
+
+  return { page, loading, error, loadMore, reset, retry };
+}
+
+/** Turn a bridge failure into a short, user-safe message (no paths, ids). */
+function messageOf(err: unknown): string {
+  if (err instanceof Error) {
+    if ("code" in err) {
+      const code = (err as unknown as { code?: string }).code;
+      if (code === "unavailable") return "资料库暂不可用，请重试";
+      if (code === "conflict") return "查询已过期，请重试";
+    }
+    return "加载歌曲失败，请重试";
+  }
+  return "加载歌曲失败，请重试";
 }

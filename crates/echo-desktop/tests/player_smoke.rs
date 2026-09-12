@@ -84,7 +84,7 @@ fn wait_for(actor: &PlayerActor, cond: impl Fn(&PlayerSnapshot) -> bool) -> Play
 /// when libmpv actually ran and the load reached a playable state.
 fn run_format_smoke(libmpv: &Path, fixture: &Path) -> bool {
     let snapshot = Arc::new(RwLock::new(PlayerSnapshot::default()));
-    let mut actor = match PlayerActor::spawn_mpv(libmpv, snapshot) {
+    let mut actor = match PlayerActor::spawn_mpv(libmpv, snapshot, None) {
         Ok(a) => a,
         Err(e) => {
             eprintln!(
@@ -190,7 +190,7 @@ fn consecutive_loads_then_clean_exit() {
         return;
     };
     let snapshot = Arc::new(RwLock::new(PlayerSnapshot::default()));
-    let mut actor = match PlayerActor::spawn_mpv(&libmpv, snapshot) {
+    let mut actor = match PlayerActor::spawn_mpv(&libmpv, snapshot, None) {
         Ok(a) => a,
         Err(e) => {
             eprintln!("libmpv spawn failed: {e}; skipping");

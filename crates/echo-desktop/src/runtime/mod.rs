@@ -36,6 +36,12 @@ use echo_core::application::scan::{ScanDeps, ScanSupervisor};
 /// Coarse-grained command surface over the composed core (task 7.3).
 pub mod services;
 
+/// Production composition-root assembly (`ScanDeps` over real infrastructure).
+pub mod app;
+
+/// Playback assembly: coordinator + actor + UI snapshot mapping (task 10.6/11.1).
+pub mod player;
+
 /// The phases of the supervisor sequence, in order.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StartupPhase {

@@ -8,9 +8,10 @@
  * already-imported ones (a fresh dialog re-plans and dedups by BLAKE3).
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { bridge } from "../../bridge";
+import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
 import type { ImportBatchDto, ImportResultDto } from "../../ipc/ipc-types.generated";
 
 export interface ImportBatchDialogProps {
@@ -60,6 +61,11 @@ function ResultLine({ result }: { result: ImportResultDto }) {
 export function ImportBatchDialog({ onClose, onDone }: ImportBatchDialogProps) {
   const [batch, setBatch] = useState<ImportBatchDto | null>(null);
   const [busy, setBusy] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // A `BlockingDialog`-tier modal: Escape closes it last on the single stack,
+  // focus is trapped and restored on close.
+  useOverlay({ tier: OverlayTier.BlockingDialog, onClose, containerRef: dialogRef });
+  useFocusTrap(dialogRef);
 
   async function chooseAndImport() {
     setBusy(true);
@@ -85,7 +91,9 @@ export function ImportBatchDialog({ onClose, onDone }: ImportBatchDialogProps) {
       <div
         className="import-dialog"
         role="dialog"
+        aria-modal="true"
         aria-label="导入"
+        ref={dialogRef}
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="detail-title">导入歌曲</h3>

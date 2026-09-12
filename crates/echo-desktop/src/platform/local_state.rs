@@ -131,6 +131,66 @@ impl WindowState {
     pub const fn is_usable(self) -> bool {
         self.width > 0 && self.height > 0
     }
+
+    /// Re-anchor this window into a visible work area after a display
+    /// disconnect (task 9.6: "断开显示器后窗口回到可见区域").
+    ///
+    /// The shell supplies the target display's [`WorkArea`] (resolved from the
+    /// monitor APIs); this method shifts only `x`/`y` — never size or the
+    /// maximized flag. When the saved window no longer overlaps the work area
+    /// at all, it is re-positioned so it is fully on screen (centred when it
+    /// fits, else snapped to the work-area origin). A degenerate work area
+    /// (zero width/height) leaves the position untouched so the shell can fall
+    /// back to its defaults instead of guessing.
+    #[must_use]
+    pub fn clamp_to_visible(self, work: WorkArea) -> Self {
+        let (ww, wh) = (u64::from(work.width), u64::from(work.height));
+        if !self.is_usable() || ww == 0 || wh == 0 {
+            return self;
+        }
+        let (w, h) = (u64::from(self.width), u64::from(self.height));
+        let (wx0, wy0) = (i128::from(work.x), i128::from(work.y));
+        let (wx1, wy1) = (wx0 + ww as i128, wy0 + wh as i128);
+        let (x, y) = (i128::from(self.x), i128::from(self.y));
+        let (x1, y1) = (x + w as i128, y + h as i128);
+
+        // Does the saved window still overlap the visible area at all?
+        let overlaps = x < wx1 && x1 > wx0 && y < wy1 && y1 > wy0;
+        let (nx, ny) = if !overlaps {
+            // Not visible (the display it was on was disconnected): re-anchor it
+            // into the work area — centred when it fits, else with its top-left
+            // at the work-area origin — and clamp so it never spills past the
+            // right/bottom edge (leaving at least the top-left reachable).
+            let fit_w = w.min(ww) as i128;
+            let fit_h = h.min(wh) as i128;
+            let cx = wx0 + (ww as i128 - w as i128) / 2;
+            let cy = wy0 + (wh as i128 - h as i128) / 2;
+            let nx = cx.clamp(wx0, wx1 - fit_w);
+            let ny = cy.clamp(wy0, wy1 - fit_h);
+            (nx, ny)
+        } else {
+            (x, y)
+        };
+
+        Self {
+            x: nx.clamp(i128::from(i32::MIN), i128::from(i32::MAX)) as i32,
+            y: ny.clamp(i128::from(i32::MIN), i128::from(i32::MAX)) as i32,
+            width: self.width,
+            height: self.height,
+            maximized: self.maximized,
+        }
+    }
+}
+
+/// A display work area (the visible region, excluding OS taskbars/menus), in
+/// the same screen coordinates as [`WindowState`]. The shell resolves this from
+/// the current display before applying a restored position (task 9.6).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WorkArea {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// An opaque playback-session payload. Task 8.9 owns the structured schema and
@@ -782,6 +842,134 @@ mod tests {
         let store = DesktopStateStore::new(p, PlatformCloseDefault::Other);
         let s = store.load().expect("defaults");
         assert_eq!(s.close_behavior, CloseBehavior::Exit);
+    }
+
+    #[test]
+    fn window_left_on_a_disconnected_display_is_recentered_on_screen() {
+        let window = WindowState {
+            x: -1000,
+            y: 2000,
+            width: 800,
+            height: 600,
+            maximized: false,
+        };
+        let work = WorkArea {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
+        // Off every visible area => centred into the primary work area.
+        let clamped = window.clamp_to_visible(work);
+        assert_eq!(clamped.x, 560); // (1920 - 800) / 2
+        assert_eq!(clamped.y, 240); // (1080 - 600) / 2
+        assert_eq!(clamped.width, 800);
+        assert_eq!(clamped.height, 600);
+        assert!(!clamped.maximized, "size/maximize untouched by re-anchor");
+    }
+
+    #[test]
+    fn a_still_visible_window_is_left_untouched() {
+        let window = WindowState {
+            x: 100,
+            y: 100,
+            width: 800,
+            height: 600,
+            maximized: false,
+        };
+        let work = WorkArea {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
+        assert_eq!(window.clamp_to_visible(work), window);
+    }
+
+    #[test]
+    fn a_window_off_screen_and_bigger_than_the_screen_snaps_to_the_work_origin() {
+        let window = WindowState {
+            x: 5000,
+            y: 5000,
+            width: 3000,
+            height: 2500,
+            maximized: false,
+        };
+        let work = WorkArea {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
+        let clamped = window.clamp_to_visible(work);
+        // Fully off-screen and larger than the work area: the top-left lands at
+        // the work origin (never spilled past the right/bottom edge).
+        assert_eq!((clamped.x, clamped.y), (0, 0));
+        assert_eq!((clamped.width, clamped.height), (3000, 2500));
+    }
+
+    #[test]
+    fn a_partially_visible_window_is_left_untouched() {
+        // Even a window that spills past an edge is reachable while any part
+        // overlaps — only a fully off-screen window is re-anchored.
+        let window = WindowState {
+            x: 1500,
+            y: 800,
+            width: 1200,
+            height: 800,
+            maximized: false,
+        };
+        let work = WorkArea {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
+        assert_eq!(window.clamp_to_visible(work), window);
+    }
+
+    #[test]
+    fn a_degenerate_work_area_leaves_the_position_unchanged() {
+        let window = WindowState {
+            x: -1000,
+            y: 2000,
+            width: 800,
+            height: 600,
+            maximized: false,
+        };
+        // No usable work area (shell couldn't resolve a display): don't guess.
+        assert_eq!(
+            window.clamp_to_visible(WorkArea {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            }),
+            window
+        );
+        // An unusable window (zero size) is likewise left alone.
+        assert_eq!(
+            WindowState {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+                maximized: true,
+            }
+            .clamp_to_visible(WorkArea {
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1080,
+            }),
+            WindowState {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+                maximized: true,
+            }
+        );
     }
 
     #[test]

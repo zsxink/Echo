@@ -119,6 +119,14 @@
 }
 
 /* --- narrow screen (task 12.3): collapse the sidebar behind a toggle --- */
+.sidebar-toggle {
+  display: none;
+}
+
+.sidebar-mask {
+  display: none;
+}
+
 @media (max-width: 760px) {
   .ui-layout {
     grid-template-columns: 1fr;
@@ -136,5 +144,38 @@
   }
   .ui-sidebar.is-open {
     transform: translateX(0);
+  }
+
+  /* Menu button that opens/closes the sidebar on narrow windows. */
+  .sidebar-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    top: var(--space-2);
+    left: var(--space-2);
+    z-index: 25;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--fg);
+    font-size: var(--text-lg);
+    cursor: pointer;
+  }
+  .sidebar-toggle:hover {
+    background: var(--surface-warm);
+  }
+
+  /* Mask behind the open sidebar; clicking closes it and returns focus. */
+  .sidebar-mask {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 29;
+    background: rgba(0, 0, 0, 0.3);
+    border: 0;
+    cursor: pointer;
   }
 }

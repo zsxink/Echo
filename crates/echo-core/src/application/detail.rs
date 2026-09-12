@@ -11,7 +11,7 @@
 //! their effective source, never file contents.
 
 use crate::application::ports::{CoverRepository, LyricsRepository, SongRepository};
-use crate::domain::entities::{LyricsSource, Song};
+use crate::domain::entities::{select_effective_lyrics, LyricsSource, Song};
 use crate::domain::ids::RelativeMediaPath;
 use crate::domain::media::AudioParameters;
 use crate::error::Error;
@@ -153,6 +153,98 @@ impl<'a> GetSongDetail<'a> {
     }
 }
 
+/// A timestamped lyrics line in a serde-friendly shape (domain types do not
+/// derive serde; the DTO is the IPC boundary).
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LyricsLineView {
+    /// Seconds — the resolved time the UI seeks to on click.
+    pub seconds: f64,
+    pub text: String,
+}
+
+/// The effective lyrics of a song as the immersive player renders it
+/// (task 6.4 / 11.4–11.6).
+///
+/// It is line/path-free and carries only the strongest non-corrupt candidate:
+/// its source, whether it is timed or plain text, the sorted timed lines (for
+/// synced display and click-to-seek), the plain text (for plain display), and
+/// the source's parse diagnostic when the chosen candidate was the only one and
+/// it failed (so the UI can show a source-failure state rather than a leaked
+/// path or raw file).
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SongLyrics {
+    /// The effective source label ("override" / "embedded" / "sidecar"), or
+    /// `None` when no usable lyrics exist. Derived from the domain `LyricsSource`
+    /// so the domain enum stays free of serde.
+    pub source: Option<String>,
+    /// `true` when the candidate is timed (lines sorted by time), `false` for
+    /// plain-text lyrics.
+    pub timed: bool,
+    /// Sorted timed lines (empty for plain-text or none).
+    pub lines: Vec<LyricsLineView>,
+    /// Plain-text lyrics when untimed (empty otherwise).
+    pub plain_text: String,
+    /// A non-fatal parse diagnostic from the effective candidate, if any.
+    pub parse_error: Option<String>,
+}
+
+/// Build the effective lyrics of one song (task 11.4–11.6).
+///
+/// Selection reuses the domain's `select_effective_lyrics` — priority
+/// Override, then Embedded, then Sidecar among effective candidates, with an
+/// empty override blocking fallback — so the UI source, current line and
+/// click-to-seek never contradict Core.
+pub struct GetSongLyrics<'a> {
+    lyrics: &'a dyn LyricsRepository,
+}
+
+impl<'a> GetSongLyrics<'a> {
+    #[must_use]
+    pub const fn new(lyrics: &'a dyn LyricsRepository) -> Self {
+        Self { lyrics }
+    }
+
+    /// Build the effective lyrics view for `song`.
+    ///
+    /// # Errors
+    ///
+    /// Storage errors propagate; the absence of any usable lyrics is *not* an
+    /// error — it yields a `SongLyrics` with `source: None`.
+    pub fn execute(&self, song: crate::domain::ids::SongId) -> Result<SongLyrics, Error> {
+        let candidates = self.lyrics.candidates(song)?;
+        Ok(select_effective_lyrics(&candidates).map_or_else(
+            || SongLyrics {
+                source: None,
+                timed: false,
+                lines: Vec::new(),
+                plain_text: String::new(),
+                parse_error: None,
+            },
+            |c| {
+                let timed = !c.lines().is_empty();
+                SongLyrics {
+                    source: Some(lyrics_source_label(c.source()).to_owned()),
+                    timed,
+                    lines: c
+                        .lines()
+                        .iter()
+                        .map(|l| LyricsLineView {
+                            // LRC timestamps are small integer milliseconds; the
+                            // i64→f64 conversion is exact well beyond any real
+                            // lyric duration (f64 has a 52-bit mantissa).
+                            #[allow(clippy::cast_precision_loss)]
+                            seconds: l.timestamp_ms as f64 / 1000.0,
+                            text: l.text.clone(),
+                        })
+                        .collect(),
+                    plain_text: c.plain_text().unwrap_or_default().to_owned(),
+                    parse_error: c.parse_error().map(ToOwned::to_owned),
+                }
+            },
+        ))
+    }
+}
+
 /// A stable, path-free, human-readable availability label.
 fn availability_label(song: &Song) -> String {
     match song.availability() {
@@ -170,6 +262,16 @@ pub fn detail_path_is_relative(detail: &SongDetail) -> bool {
     RelativeMediaPath::new(&detail.relative_path).is_ok()
 }
 
+/// Map a domain [`LyricsSource`] to a stable IPC label string. The domain enum
+/// does not derive serde; the label is the public contract across the boundary.
+const fn lyrics_source_label(source: LyricsSource) -> &'static str {
+    match source {
+        LyricsSource::Override => "override",
+        LyricsSource::Embedded => "embedded",
+        LyricsSource::Sidecar => "sidecar",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,7 +279,9 @@ mod tests {
 
     use crate::application::ports::{LibraryRepository, SongRepository, TxAccess, UnitOfWork};
     use crate::application::testing::memory_database::MemoryDatabase;
-    use crate::domain::entities::{LibraryRoot, SongAvailability};
+    use crate::domain::entities::{
+        LibraryRoot, LyricsCandidate, LyricsLine, SongAvailability,
+    };
     use crate::domain::ids::{LibraryRootId, Revision, SongId};
 
     fn seed(db: &MemoryDatabase, root: LibraryRootId) -> Song {
@@ -373,5 +477,64 @@ mod tests {
             detail.availability, "missing",
             "missing is visible and honest"
         );
+    }
+
+    #[test]
+    fn get_lyrics_returns_neutral_view_when_no_candidate_exists() {
+        let db = MemoryDatabase::new();
+        let root = LibraryRootId::new();
+        LibraryRepository::upsert(&db, &LibraryRoot::new(root, ".".into(), true, true))
+            .expect("active root");
+        let song = seed(&db, root);
+
+        let view = GetSongLyrics::new(&db).execute(song.id()).expect("lyrics");
+        assert_eq!(view.source, None);
+        assert!(!view.timed);
+        assert!(view.lines.is_empty());
+        assert!(view.plain_text.is_empty());
+    }
+
+    #[test]
+    fn get_lyrics_returns_timed_lines_and_source_label() {
+        let db = MemoryDatabase::new();
+        let root = LibraryRootId::new();
+        LibraryRepository::upsert(&db, &LibraryRoot::new(root, ".".into(), true, true))
+            .expect("active root");
+        let song = seed(&db, root);
+
+        // The candidate's lines come pre-sorted by the LRC parser (task 4.5
+        // "按可解析时间排序"); the view passes them through with resolved seconds.
+        let candidate = LyricsCandidate::with_raw_text(
+            LyricsSource::Sidecar,
+            String::new(),
+            vec![
+                LyricsLine {
+                    timestamp_ms: 0,
+                    text: "A".into(),
+                    original_index: 0,
+                },
+                LyricsLine {
+                    timestamp_ms: 5000,
+                    text: "B".into(),
+                    original_index: 1,
+                },
+            ],
+            None,
+            None,
+        );
+        db.with_tx({
+            let id = song.id();
+            Box::new(move |tx: &mut dyn TxAccess| tx.set_lyrics_candidate(id, &candidate))
+        })
+        .expect("store candidate");
+
+        let view = GetSongLyrics::new(&db).execute(song.id()).expect("lyrics");
+        assert_eq!(view.source.as_deref(), Some("sidecar"));
+        assert!(view.timed);
+        assert_eq!(view.lines.len(), 2);
+        assert_eq!(view.lines[0].text, "A");
+        assert!((view.lines[0].seconds - 0.0).abs() < f64::EPSILON);
+        assert_eq!(view.lines[1].text, "B");
+        assert!((view.lines[1].seconds - 5.0).abs() < f64::EPSILON);
     }
 }
