@@ -19,6 +19,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use echo_core::application::ports::LibraryRepository;
 use echo_core::application::scan::ScanDeps;
 use echo_core::error::Error;
 use echo_core::infrastructure::core::{UuidV4Generator, WallClock};
@@ -41,6 +42,10 @@ pub struct RoutedRuntime {
     pub registry: RootRegistry,
     /// Fully assembled, production `ScanDeps` for `AppServices`.
     pub deps: Arc<ScanDeps>,
+    /// The database opened over `db_path`; also serves as the runtime-state
+    /// store (`RuntimeStateStore` implementation) that `AppServices::with_runtime`
+    /// persists the root epoch through.
+    pub database: Arc<SqliteDatabase>,
 }
 
 /// Assemble the production `ScanDeps`.
@@ -56,6 +61,13 @@ pub struct RoutedRuntime {
 pub fn assemble(db_path: &Path, cover_cache_dir: &Path) -> Result<RoutedRuntime, Error> {
     let database = Arc::new(SqliteDatabase::open(db_path)?);
     let registry = RootRegistry::new();
+
+    // The registry is process-local, while the active root lives in SQLite.
+    // Rebind it before recovery and IPC open so scans, probes and playback can
+    // resolve an existing library immediately after an application restart.
+    if let Some(root) = database.active_root()? {
+        registry.register(root.id(), root.absolute_path());
+    }
 
     // The disk cover cache needs its own directory and a real capacity.
     let cover_cache = Arc::new(DiskCoverCache::new(cover_cache_dir)?);
@@ -82,12 +94,17 @@ pub fn assemble(db_path: &Path, cover_cache_dir: &Path) -> Result<RoutedRuntime,
         config: Default::default(),
     });
 
-    Ok(RoutedRuntime { registry, deps })
+    Ok(RoutedRuntime {
+        registry,
+        deps,
+        database,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use echo_core::domain::entities::LibraryRoot;
 
     fn dirs() -> (tempfile::TempDir, std::path::PathBuf) {
         let dir = tempfile::tempdir().unwrap();
@@ -118,5 +135,32 @@ mod tests {
         // adapter was bound to (no cross-root escape): path_of(root) = dir.
         let resolved = routed.registry.path_of(root_id).unwrap();
         assert_eq!(resolved, dir.path());
+    }
+
+    #[test]
+    fn assemble_rebinds_an_empty_persisted_active_root_after_restart() {
+        let (data, cache) = dirs();
+        let db_path = data.path().join("echo.sqlite");
+        let library = data.path().join("empty-library");
+        std::fs::create_dir(&library).expect("empty library directory");
+
+        let first = assemble(&db_path, &cache).expect("first assembly");
+        let root_id = first.deps.ids.new_library_root_id();
+        LibraryRepository::upsert(
+            first.database.as_ref(),
+            &LibraryRoot::new(root_id, library.clone(), true, true),
+        )
+        .expect("persist active root");
+        drop(first);
+
+        let restarted = assemble(&db_path, &cache).expect("restart assembly");
+        assert_eq!(
+            restarted
+                .registry
+                .path_of(root_id)
+                .expect("active root rebound"),
+            library,
+            "an existing empty library keeps its root identity and path binding"
+        );
     }
 }

@@ -19,7 +19,13 @@ echo-core = { path = "../../../crates/echo-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tauri = { version = "2.11.5", features = ["tray-icon"] }
+tauri-plugin-dialog = "2.4.0"
+tauri-plugin-opener = "2.5.0"
 tauri-plugin-single-instance = "2.4.3"
+
+[dev-dependencies]
+# TempDir for `dialogs` multi-file import unit tests; resolves only for tests.
+tempfile = { version = "3" }
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }

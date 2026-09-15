@@ -284,9 +284,25 @@ impl Queue {
         QueueAdvance::Played(id)
     }
 
+    /// Wrap around to the first entry (列表循环回卷): the sequential tail
+    /// loops back to the head and playback continues. A non-empty queue
+    /// therefore never exhausts in sequential mode; a single-entry queue
+    /// loops on itself (the caller reloads it, like repeat-one).
+    fn wrap_to_first(&mut self) -> Option<QueueEntryId> {
+        let first = self.entries.first()?.id;
+        self.current_index = Some(0);
+        self.history.insert(0, first);
+        self.history.truncate(self.history_cap);
+        Some(first)
+    }
+
     /// Advance to the next entry per the play mode (task 8.6).
     ///
-    /// - `Sequential`: take the next pending entry in append order.
+    /// - `Sequential` (列表循环): take the next pending entry in append order;
+    ///   when the tail is reached, **wrap around to the first entry** and keep
+    ///   playing — the queue is a loop, not a playlist that stops (设计: 默认
+    ///   列表循环). The caller's failed-round guard (coordinator) stops the
+    ///   loop when every entry failed.
     /// - `Shuffle`: pop the next id from the shuffle bag. When the bag is
     ///   empty the caller refreshes it via [`Self::refresh_shuffle_bag`]
     ///   before the next call; otherwise this returns `Exhausted`.
@@ -298,7 +314,7 @@ impl Queue {
         match mode {
             PlayMode::Sequential => match self.advance_next() {
                 QueueAdvance::Played(id) => Some(id),
-                QueueAdvance::Exhausted => None,
+                QueueAdvance::Exhausted => self.wrap_to_first(),
             },
             PlayMode::Shuffle => {
                 let id = self.shuffle_bag.first().copied()?;
@@ -741,7 +757,32 @@ mod tests {
         q.set_current(a);
         q.set_shuffle(true, vec![b]); // bag would reorder, but sequential ignores it
         assert_eq!(q.advance_in_mode(PlayMode::Sequential), Some(b));
-        assert_eq!(q.advance_in_mode(PlayMode::Sequential), None);
+        // 列表循环: past the tail the queue wraps to the first entry.
+        assert_eq!(q.advance_in_mode(PlayMode::Sequential), Some(a));
+    }
+
+    #[test]
+    fn sequential_wraps_around_to_the_first_entry() {
+        // 列表循环 (设计: 默认循环): after the last entry, playback returns to
+        // the first one instead of stopping.
+        let s1 = song();
+        let s2 = song();
+        let s3 = song();
+        let mut q = Queue::new();
+        let a = q.push(lib(s1));
+        let b = q.push(lib(s2));
+        let c = q.push(lib(s3));
+        q.set_current(a);
+        assert_eq!(q.advance_in_mode(PlayMode::Sequential), Some(b));
+        assert_eq!(q.advance_in_mode(PlayMode::Sequential), Some(c));
+        // Tail reached: wrap to the head, and the tail is pending again.
+        assert_eq!(q.advance_in_mode(PlayMode::Sequential), Some(a));
+        assert_eq!(q.pending_ids(), vec![b, c]);
+        // A single-entry queue loops on itself.
+        let mut solo = Queue::new();
+        let only = solo.push(lib(s1));
+        solo.set_current(only);
+        assert_eq!(solo.advance_in_mode(PlayMode::Sequential), Some(only));
     }
 
     #[test]

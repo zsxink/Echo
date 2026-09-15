@@ -1,10 +1,18 @@
 /**
  * Playlist content view (task 10.9).
  *
- * Shows a playlist's members in append order with the member count and
- * per-song actions, plus create / rename / delete for the playlist and add /
- * remove members. Invalid names (>40 graphemes, blank, duplicate) are rejected
- * with a per-field message; deleting a playlist never deletes song files.
+ * A playlist is *the same workspace view* the prototype shows for 全部歌曲 —
+ * `header.topbar` + `main.content` + `.library-view` (`.library-head` with the
+ * playlist title, its member count and the view tools, then the shared
+ * `.table-wrap` song table). It used to sit inside its own `.workspace` grid,
+ * which is why it read as a different application.
+ *
+ * Playlist-level actions live in `.library-tools` as prototype `.tool-button`s
+ * (编辑歌单 / 删除歌单): the prototype reaches 编辑歌单 through a context menu on
+ * the sidebar item, and has no 删除歌单 at all — both are real release
+ * capabilities (task 10.9), so they are surfaced with the prototype's own tool
+ * button rather than inventing new chrome. Deleting a playlist never deletes a
+ * song file.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -13,246 +21,233 @@ import { bridge } from "../../bridge";
 import { usePlayerSnapshot } from "../../player/playerStore";
 import type { SongView } from "../../ipc/ipc-types.generated";
 import { SongList } from "../library/SongList";
-import { SongMenu } from "../library/SongMenu";
+import { bumpLibraryCount, invalidateLibraryCounts } from "../library/coverPalette";
+import { publishSongUpdate } from "../library/songUpdates";
+import { ConfirmationDialog, SongMenu, type MenuAnchor } from "../library/SongMenu";
+import { PlaylistNameDialog } from "./PlaylistNameDialog";
+import { Icon } from "../../app/Icon";
+import { Topbar } from "../../app/shell";
+import { notify } from "../../app/toast";
+
+export interface PlaylistsViewProps {
+  readonly playlistId: string;
+  /** The playlist's display name, resolved by the shell. */
+  readonly title: string;
+  readonly root: string;
+  readonly readOnly: boolean;
+  /** The playlist no longer exists — the shell returns to 全部歌曲. */
+  readonly onDeleted?: () => void;
+  /** A playlist mutation landed; the shell re-reads the sidebar list. */
+  readonly onLibraryChanged?: () => void;
+}
 
 export function PlaylistsView({
   playlistId,
+  title,
+  root,
+  readOnly,
   onDeleted,
-}: {
-  playlistId: string;
-  onDeleted?: () => void;
-}) {
+  onLibraryChanged,
+}: PlaylistsViewProps) {
   const [members, setMembers] = useState<readonly SongView[]>([]);
-  const [newName, setNewName] = useState("");
-  const [renameValue, setRenameValue] = useState("");
-  const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [menuFor, setMenuFor] = useState<SongView | null>(null);
+  const [name, setName] = useState(title);
+  const [menuFor, setMenuFor] = useState<{ song: SongView; anchor: MenuAnchor } | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const snapshot = usePlayerSnapshot();
 
+  // The shell owns the list; keep the optimistic name in step with it.
+  useEffect(() => setName(title), [title]);
+
   const loadMembers = useCallback(() => {
     void bridge
       .call("playlist_members", { playlistId })
-      .then((value: unknown) => setMembers(value as SongView[]))
+      // A malformed payload degrades to an empty list instead of tearing down
+      // the whole view (the IPC contract says this is always an array).
+      .then((value: unknown) => setMembers(Array.isArray(value) ? (value as SongView[]) : []))
       .catch(() => setMembers([]));
   }, [playlistId]);
 
   useEffect(loadMembers, [loadMembers]);
 
-  // Resolve this playlist's current name (from the list) for the rename field.
-  useEffect(() => {
-    let cancelled = false;
-    void bridge
-      .call("playlists")
-      .then((value: unknown) => {
-        if (cancelled) return;
-        const found = (value as { id: string; name: string }[]).find((p) => p.id === playlistId);
-        if (found) setName(found.name);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [playlistId]);
-
-  async function createPlaylist() {
-    const trimmed = newName.trim();
-    if (!trimmed) {
-      setError("名称不能为空");
-      return;
-    }
-    const graphemes = countGraphemes(trimmed);
-    if (graphemes > 40) {
-      setError(`名称不能超过 40 个字符（当前 ${graphemes} 个）`);
-      return;
-    }
-    try {
-      await bridge.call("create_playlist", { root: activeRoot(), name: trimmed });
-      setNewName("");
-      setError(null);
-    } catch (err) {
-      setError(codeOf(err) === "conflict" ? "已存在同名歌单" : "创建歌单失败");
-    }
-  }
-
-  async function renamePlaylist() {
-    const trimmed = renameValue.trim();
-    if (!trimmed) {
-      setError("名称不能为空");
-      return;
-    }
-    const graphemes = countGraphemes(trimmed);
-    if (graphemes > 40) {
-      setError(`名称不能超过 40 个字符（当前 ${graphemes} 个）`);
-      return;
-    }
-    try {
-      await bridge.call("rename_playlist", { id: playlistId, name: trimmed });
-      setName(trimmed);
-      setRenameValue("");
-      setRenaming(false);
-      setError(null);
-    } catch (err) {
-      setError(codeOf(err) === "conflict" ? "已存在同名歌单" : "重命名失败");
-    }
-  }
-
-  function beginRename() {
-    setRenameValue(name);
-    setRenaming(true);
-    setError(null);
-  }
-
   async function deletePlaylist() {
     setConfirmDelete(false);
     try {
       await bridge.call("delete_playlist", { id: playlistId });
-      setError(null);
+      invalidateLibraryCounts();
+      onLibraryChanged?.();
       onDeleted?.();
     } catch {
-      setError("删除歌单失败");
+      notify({ message: "删除歌单失败", error: true });
     }
   }
+
+  const onPlay = useCallback(
+    (song: SongView) => {
+      const selectedIndex = members.findIndex((s) => s.id === song.id);
+      void bridge.call("play_context", {
+        songs: members.map((s) => s.id),
+        selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
+        source: `playlist:${playlistId}`,
+      });
+    },
+    [members, playlistId],
+  );
+
+  const onFavorite = useCallback(
+    (song: SongView, favorite: boolean) => {
+      // Optimistic: the sidebar count moves with the click, not after it.
+      bumpLibraryCount("favorites", favorite ? 1 : -1);
+      void bridge
+        .call("set_favorite", { songId: song.id, favorite })
+        .then((committed) => {
+          // Broadcast the committed view (player bar / other surfaces adopt
+          // the new heart), then refresh the member list.
+          publishSongUpdate(committed as SongView);
+          loadMembers();
+        })
+        .catch(() => {
+          bumpLibraryCount("favorites", favorite ? -1 : 1);
+          notify({ message: "收藏失败，请重试", error: true });
+        });
+    },
+    [loadMembers],
+  );
+
+  const onEnqueue = useCallback((song: SongView) => {
+    void bridge.call("queue_command", { command: "enqueue", songId: song.id });
+    notify(`已将 ${song.title ?? "歌曲"} 加入播放队列`);
+  }, []);
 
   async function removeMember(song: SongView) {
     await bridge.call("remove_playlist_song", { playlist: playlistId, song: song.id });
     loadMembers();
+    onLibraryChanged?.();
+    setMenuFor(null);
   }
 
+  const unavailableCount = members.filter((s) => s.availability !== "available").length;
+
   return (
-    <div className="workspace" data-testid="playlist-view">
-      <div className="workspace-toolbar">
-        <h2 className="workspace-title">歌单：{name || "…"}</h2>
-        <div className="toolbar-actions">
-          {renaming ? (
-            <>
-              <input
-                aria-label="歌单新名称"
-                className="search-input"
-                placeholder="歌单新名称"
-                value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-              />
+    <>
+      <Topbar title={name} />
+
+      <main className="content">
+        <div className="library-view" data-testid="playlist-view">
+          <div className="library-head">
+            <div className="list-context">
+              <h1 id="view-title" data-testid="view-title">
+                {name}
+              </h1>
+              <span className="library-total">{members.length} 首</span>
+            </div>
+            <div className="library-tools">
               <button
                 type="button"
-                className="btn btn-primary"
-                onClick={() => void renamePlaylist()}
+                className="tool-button"
+                disabled={readOnly}
+                onClick={() => setRenaming(true)}
               >
-                保存
+                <Icon name="edit" />
+                编辑歌单
               </button>
-              <button type="button" className="btn" onClick={() => setRenaming(false)}>
-                取消
+              <button
+                type="button"
+                className="tool-button"
+                disabled={readOnly}
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Icon name="trash" />
+                删除歌单
               </button>
-            </>
-          ) : (
-            <>
-              <button type="button" className="btn" onClick={beginRename}>
-                重命名
-              </button>
-              {confirmDelete ? (
-                <>
-                  <span className="danger-text">删除歌单？</span>
-                  <button
-                    type="button"
-                    className="btn btn-danger"
-                    onClick={() => void deletePlaylist()}
-                  >
-                    确认删除
-                  </button>
-                  <button type="button" className="btn" onClick={() => setConfirmDelete(false)}>
-                    取消
-                  </button>
-                </>
-              ) : (
-                <button type="button" className="btn" onClick={() => setConfirmDelete(true)}>
-                  删除歌单
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      </div>
+            </div>
+          </div>
 
-      <div className="playlist-create">
-        <input
-          aria-label="新歌单名称"
-          className="search-input"
-          placeholder="新歌单名称"
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-        />
-        <button type="button" className="btn btn-primary" onClick={() => void createPlaylist()}>
-          创建歌单
-        </button>
-        {error ? (
-          <p className="workspace-error" role="alert">
-            {error}
+          <p className="playlist-summary">
+            共 {members.length} 首{unavailableCount > 0 ? `（${unavailableCount} 首不可用）` : ""}
           </p>
-        ) : null}
-      </div>
 
-      <p className="playlist-members-count">
-        共 {members.length} 首（{members.filter((s) => s.availability !== "available").length}{" "}
-        首不可用）
-      </p>
-
-      <SongList
-        songs={members}
-        search=""
-        loading={false}
-        isLast
-        readOnly={false}
-        currentSongId={snapshot.currentSongId}
-        onLoadMore={() => {}}
-        onClearSearch={() => {}}
-        onPlay={() => {}}
-        onFavorite={() => {}}
-        onOpenMenu={setMenuFor}
-      />
+          <SongList
+            songs={members}
+            search=""
+            loading={false}
+            isLast
+            readOnly={readOnly}
+            currentSongId={snapshot.currentSongId}
+            playing={snapshot.state === "playing"}
+            onLoadMore={() => {}}
+            onClearSearch={() => {}}
+            onPlay={onPlay}
+            onFavorite={onFavorite}
+            onEnqueue={onEnqueue}
+            onOpenMenu={(song, anchor) => setMenuFor({ song, anchor })}
+          />
+        </div>
+      </main>
 
       {menuFor ? (
         <SongMenu
-          song={menuFor}
-          root={activeRoot()}
-          readOnly={false}
+          song={menuFor.song}
+          root={root}
+          readOnly={readOnly}
+          anchor={menuFor.anchor}
           onClose={() => setMenuFor(null)}
-          onPlay={() => setMenuFor(null)}
-          onFavorite={() => setMenuFor(null)}
+          onPlay={() => {
+            onPlay(menuFor.song);
+            setMenuFor(null);
+          }}
+          onPlayNext={() => {
+            void bridge.call("queue_command", {
+              command: "playNext",
+              songId: menuFor.song.id,
+            });
+            setMenuFor(null);
+          }}
+          onEnqueue={() => {
+            onEnqueue(menuFor.song);
+            setMenuFor(null);
+          }}
+          onFavorite={(favorite) => {
+            onFavorite(menuFor.song, favorite);
+            setMenuFor(null);
+          }}
           onRefresh={loadMembers}
           extraActions={
-            <button type="button" className="btn" onClick={() => void removeMember(menuFor)}>
+            <button
+              type="button"
+              className="menu-action danger"
+              onClick={() => void removeMember(menuFor.song)}
+            >
+              <Icon name="trash" />
               从歌单移除
             </button>
           }
         />
       ) : null}
-    </div>
+
+      {renaming ? (
+        <PlaylistNameDialog
+          mode="edit"
+          playlistId={playlistId}
+          initialName={name}
+          existingNames={[]}
+          onClose={() => setRenaming(false)}
+          onDone={(next) => {
+            setName(next);
+            onLibraryChanged?.();
+          }}
+        />
+      ) : null}
+
+      {confirmDelete ? (
+        <ConfirmationDialog
+          title={`删除歌单「${name}」？`}
+          description="只会删除歌单本身，资料库中的歌曲文件不会被删除。"
+          confirmLabel="确认删除歌单"
+          onConfirm={() => void deletePlaylist()}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      ) : null}
+    </>
   );
-}
-
-/** Count user-perceived characters (grapheme clusters) without a dependency. */
-export function countGraphemes(value: string): number {
-  // Intl.Segmenter gives grapheme clusters on all modern engines; fall back to
-  // Array.from (code points) where unavailable.
-  if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
-    const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-    return Array.from(segmenter.segment(value)).length;
-  }
-  return Array.from(value).length;
-}
-
-function activeRoot(): string {
-  // The desktop resolves the active root; a placeholder empty string is valid
-  // for the command contract (the backend uses its own active root).
-  return "";
-}
-
-function codeOf(err: unknown): string {
-  if (err instanceof Error && "code" in err) {
-    const code = (err as unknown as { code?: string }).code;
-    return code ?? "";
-  }
-  return "";
 }

@@ -11,7 +11,7 @@
 //! keyset cursors and rely on identical results across repeat requests.
 
 use crate::application::ports::CatalogQueryRepository;
-use crate::domain::catalog::{OpaqueCursor, Paged, SongSort};
+use crate::domain::catalog::{CatalogCounts, OpaqueCursor, Paged, SongSort};
 use crate::domain::entities::Song;
 use crate::domain::ids::PlaylistId;
 use crate::error::Error;
@@ -85,6 +85,20 @@ impl<'a> CatalogQuery<'a> {
         self.repo.recent_100()
     }
 
+    /// 资料库导航计数: one total per library view (task: 侧边栏在打开视图前
+    /// 就显示其歌曲数).
+    ///
+    /// The counts are a *view-membership* question, so Core stays the sole
+    /// authority here — the desktop layer must never derive a total from rows
+    /// it has already paged through.
+    ///
+    /// # Errors
+    ///
+    /// `Unavailable` when there is no active root; storage errors propagate.
+    pub fn counts(&self) -> Result<CatalogCounts, Error> {
+        self.repo.counts()
+    }
+
     /// 歌单: one playlist's song rows ordered by member position (available
     /// and externally-missing members shown, pending-delete hidden).
     ///
@@ -103,9 +117,10 @@ mod tests {
     use super::*;
     use crate::application::ports::{LibraryRepository, PlaylistRepository, SongRepository};
     use crate::application::testing::memory_database::MemoryDatabase;
-    use crate::domain::catalog::{SongSortField, SortDirection};
+    use crate::domain::catalog::{SongSortField, SortDirection, RECENT_VIEW_LIMIT};
     use crate::domain::entities::{LibraryRoot, SongAvailability};
     use crate::domain::ids::{LibraryRootId, PlaylistId, RelativeMediaPath, Revision, SongId};
+    use crate::error::Error;
 
     fn seed_memory(db: &MemoryDatabase, root: LibraryRootId) {
         let mut song = Song::with_added_at(
@@ -154,6 +169,102 @@ mod tests {
             Some(Duration::from_secs(3)),
         );
         SongRepository::upsert(db, &pending).expect("seed pending");
+    }
+
+    /// The sidebar prints a count for a view the user has never opened, so
+    /// `counts()` must be answerable without paging any view first. It is a
+    /// *membership* total, not a "rows loaded so far" figure.
+    #[test]
+    fn catalog_counts_are_available_before_any_view_is_paged() {
+        let db = MemoryDatabase::new();
+        let root = LibraryRootId::new();
+        LibraryRepository::upsert(&db, &LibraryRoot::new(root, ".".into(), true, true))
+            .expect("active root");
+        seed_memory(&db, root);
+        let query = CatalogQuery::new(&db);
+
+        let counts = query.counts().expect("counts");
+        assert_eq!(counts.all, 2, "pending-delete is invisible to 全部歌曲");
+        assert_eq!(counts.favorites, 1, "only the favorited song counts");
+        assert_eq!(counts.recent, 2, "under the ceiling, recent == all");
+
+        // The counts must agree with what the views actually render.
+        let all = query
+            .all_songs(SongSort::default(), None, 100)
+            .expect("all");
+        let favs = query
+            .favorites(SongSort::default(), None, 100)
+            .expect("favorites");
+        assert_eq!(counts.all, all.items.len(), "count matches 全部歌曲 rows");
+        assert_eq!(
+            counts.favorites,
+            favs.items.len(),
+            "count matches 喜欢的音乐 rows"
+        );
+
+        // An inactive root's songs never inflate any count.
+        let other = LibraryRootId::new();
+        LibraryRepository::upsert(&db, &LibraryRoot::new(other, "other".into(), false, true))
+            .expect("inactive root");
+        SongRepository::upsert(
+            &db,
+            &Song::new(
+                SongId::new(),
+                other,
+                RelativeMediaPath::new("foreign.flac").expect("path"),
+                Revision::INITIAL,
+            ),
+        )
+        .expect("foreign");
+        let after = query.counts().expect("counts again");
+        assert_eq!(after.all, 2, "inactive-root songs are never counted");
+        assert_eq!(after.favorites, 1);
+    }
+
+    /// 最近添加 renders at most `RECENT_VIEW_LIMIT` rows; printing the whole
+    /// library next to it would be a different kind of wrong.
+    #[test]
+    fn catalog_counts_cap_recent_at_the_view_ceiling() {
+        let db = MemoryDatabase::new();
+        let root = LibraryRootId::new();
+        LibraryRepository::upsert(&db, &LibraryRoot::new(root, ".".into(), true, true))
+            .expect("active root");
+        let total = RECENT_VIEW_LIMIT + 20;
+        for index in 0..total {
+            let mut song = Song::with_added_at(
+                SongId::new(),
+                root,
+                RelativeMediaPath::new(&format!("song-{index}.flac")).expect("path"),
+                Revision::INITIAL,
+                index as u64,
+            );
+            song.set_favorite(index % 4 == 0);
+            SongRepository::upsert(&db, &song).expect("seed");
+        }
+        let counts = CatalogQuery::new(&db).counts().expect("counts");
+
+        assert_eq!(counts.all, total);
+        assert_eq!(counts.recent, RECENT_VIEW_LIMIT, "recent is capped");
+        assert_eq!(
+            counts.favorites,
+            (0..total).filter(|i| i % 4 == 0).count(),
+            "every fourth song is a favorite"
+        );
+    }
+
+    /// No active root is not "an empty library" — a count of zero would be a
+    /// fact the app does not have, and the UI would print "0" next to a view it
+    /// cannot open.
+    #[test]
+    fn catalog_counts_are_unavailable_without_an_active_root() {
+        let db = MemoryDatabase::new();
+        let err = CatalogQuery::new(&db)
+            .counts()
+            .expect_err("no root to count");
+        assert!(
+            matches!(err, Error::Unavailable { .. }),
+            "expected Unavailable, got {err:?}"
+        );
     }
 
     #[test]

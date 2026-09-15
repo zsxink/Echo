@@ -54,9 +54,30 @@ describe("QueuePanel (task 11.2)", () => {
         currentQueueEntryId: "e1",
         queueLen: 3,
         queue: [
-          { entryId: "e1", songId: "s1", title: null, isCurrent: true, failed: false, canImport: false },
-          { entryId: "e2", songId: "s2", title: null, isCurrent: false, failed: false, canImport: false },
-          { entryId: "e3", songId: null, title: "outside.m4a", isCurrent: false, failed: false, canImport: true },
+          {
+            entryId: "e1",
+            songId: "s1",
+            title: null,
+            isCurrent: true,
+            failed: false,
+            canImport: false,
+          },
+          {
+            entryId: "e2",
+            songId: "s2",
+            title: null,
+            isCurrent: false,
+            failed: false,
+            canImport: false,
+          },
+          {
+            entryId: "e3",
+            songId: null,
+            title: "outside.m4a",
+            isCurrent: false,
+            failed: false,
+            canImport: true,
+          },
         ],
       }),
     );
@@ -73,8 +94,22 @@ describe("QueuePanel (task 11.2)", () => {
     playerStore.publish(
       makeSnapshot({
         queue: [
-          { entryId: "e1", songId: "s1", title: null, isCurrent: true, failed: false, canImport: false },
-          { entryId: "e2", songId: "s2", title: null, isCurrent: false, failed: true, canImport: false },
+          {
+            entryId: "e1",
+            songId: "s1",
+            title: null,
+            isCurrent: true,
+            failed: false,
+            canImport: false,
+          },
+          {
+            entryId: "e2",
+            songId: "s2",
+            title: null,
+            isCurrent: false,
+            failed: true,
+            canImport: false,
+          },
         ],
       }),
     );
@@ -90,8 +125,22 @@ describe("QueuePanel (task 11.2)", () => {
     playerStore.publish(
       makeSnapshot({
         queue: [
-          { entryId: "e1", songId: "s1", title: null, isCurrent: true, failed: false, canImport: false },
-          { entryId: "e2", songId: "s2", title: null, isCurrent: false, failed: false, canImport: false },
+          {
+            entryId: "e1",
+            songId: "s1",
+            title: null,
+            isCurrent: true,
+            failed: false,
+            canImport: false,
+          },
+          {
+            entryId: "e2",
+            songId: "s2",
+            title: null,
+            isCurrent: false,
+            failed: false,
+            canImport: false,
+          },
         ],
       }),
     );

@@ -25,7 +25,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 
-use echo_core::domain::ids::{PlaybackSessionId, QueueEntryId};
+use echo_core::domain::ids::PlaybackSessionId;
 use echo_core::domain::state::PlaybackState;
 
 use super::port::{PlayMode, PlayerCommand, PlayerError, PlayerPort, PlayerSnapshot};
@@ -124,6 +124,20 @@ impl FakePlayer {
         self.publish_snapshot(&snap);
     }
 
+    /// Set the track duration (simulate the metadata load completing).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned.
+    pub fn set_duration(&self, seconds: f64) {
+        let snap = {
+            let mut guard = self.inner.lock().expect("fake poisoned");
+            guard.snapshot.duration = Some(seconds);
+            guard.snapshot.clone()
+        };
+        self.publish_snapshot(&snap);
+    }
+
     /// Set the playback mode.
     ///
     /// # Panics
@@ -195,7 +209,18 @@ impl PlayerPort for FakePlayer {
                     guard.last_loaded_song = Some(song_id);
                     guard.last_session = Some(session_id);
                     guard.snapshot.state = PlaybackState::Playing;
-                    guard.snapshot.current_item = Some(QueueEntryId::new());
+                    guard.snapshot.queue_len = 1;
+                    guard.snapshot.position = Some(0.0);
+                    guard.snapshot.duration = None;
+                }
+                PlayerCommand::LoadLibrarySongPaused {
+                    song_id,
+                    session_id,
+                } => {
+                    guard.last_loaded_song = Some(song_id);
+                    guard.last_session = Some(session_id);
+                    // Loaded but held at position 0, no sound (paused).
+                    guard.snapshot.state = PlaybackState::Paused;
                     guard.snapshot.queue_len = 1;
                     guard.snapshot.position = Some(0.0);
                     guard.snapshot.duration = None;
@@ -203,7 +228,6 @@ impl PlayerPort for FakePlayer {
                 PlayerCommand::LoadTemporary { session_id, .. } => {
                     guard.last_session = Some(session_id);
                     guard.snapshot.state = PlaybackState::Playing;
-                    guard.snapshot.current_item = Some(QueueEntryId::new());
                     guard.snapshot.queue_len = 1;
                     guard.snapshot.position = Some(0.0);
                     guard.snapshot.duration = None;
@@ -287,18 +311,37 @@ impl PlayerPort for FakePlayer {
                     }
                     guard.snapshot.muted = target;
                 }
+                PlayerCommand::SetMute(mute) => {
+                    if guard.fail_next_property {
+                        guard.fail_next_property = false;
+                        return Ok(());
+                    }
+                    // Mirrors the actor: absolute and idempotent, unlike the
+                    // relative `ToggleMute`. This is the session-restore path,
+                    // where replaying the same command must be a no-op.
+                    if guard.snapshot.muted != mute {
+                        if mute {
+                            // muting: remember the current audible volume.
+                            if guard.snapshot.volume > 0.0 {
+                                guard.last_nonzero_volume = guard.snapshot.volume;
+                            }
+                        } else if guard.last_nonzero_volume > 0.0 {
+                            // unmuting: restore the remembered non-zero volume.
+                            guard.snapshot.volume = guard.last_nonzero_volume;
+                        }
+                        guard.snapshot.muted = mute;
+                    }
+                }
                 PlayerCommand::SetForeground(_) => {
                     // The fake has no throttle; foreground is a no-op.
                 }
                 PlayerCommand::Stop => {
                     guard.snapshot.state = PlaybackState::Stopped;
                     guard.snapshot.position = None;
-                    guard.snapshot.current_item = None;
                 }
                 PlayerCommand::Shutdown => {
                     guard.snapshot.state = PlaybackState::Stopped;
                     guard.snapshot.position = None;
-                    guard.snapshot.current_item = None;
                     drop(guard);
                     self.shutdown.store(true, Ordering::Release);
                     return Ok(());
@@ -364,7 +407,6 @@ mod tests {
         assert_eq!(snap.state, PlaybackState::Stopped);
         assert!((snap.volume - 1.0).abs() < f64::EPSILON);
         assert!(!snap.muted);
-        assert!(snap.current_item.is_none());
         assert_eq!(snap.queue_len, 0);
         assert_eq!(snap.mode, PlayMode::Sequential);
     }
@@ -383,7 +425,6 @@ mod tests {
 
         let snap = fake.snapshot();
         assert_eq!(snap.state, PlaybackState::Playing);
-        assert!(snap.current_item.is_some());
         assert_eq!(fake.last_loaded_song(), Some(s));
         assert_eq!(fake.last_session(), Some(session));
     }
@@ -550,18 +591,17 @@ mod tests {
     }
 
     #[test]
-    fn stop_clears_current_item() {
+    fn stop_clears_transport_state() {
         let fake = FakePlayer::new();
         fake.send(PlayerCommand::LoadLibrarySong {
             song_id: song(),
             session_id: PlaybackSessionId::new(),
         })
         .unwrap();
-        assert!(fake.snapshot().current_item.is_some());
+        assert_eq!(fake.snapshot().state, PlaybackState::Playing);
 
         fake.send(PlayerCommand::Stop).unwrap();
         assert_eq!(fake.snapshot().state, PlaybackState::Stopped);
-        assert!(fake.snapshot().current_item.is_none());
         assert!(fake.snapshot().position.is_none());
     }
 
@@ -646,7 +686,6 @@ mod tests {
         let snap = fake.snapshot();
         assert_eq!(snap.state, PlaybackState::Playing);
         assert_eq!(snap.queue_len, 3);
-        assert!(snap.current_item.is_some());
 
         // Pause
         fake.send(PlayerCommand::Pause).unwrap();

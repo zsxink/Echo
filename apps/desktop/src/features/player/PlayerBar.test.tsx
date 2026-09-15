@@ -9,7 +9,7 @@
  *  - Library songs (with a currentSongId) do NOT show the import button or badge.
  */
 
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PlayerBar } from "./PlayerBar";
@@ -155,21 +155,141 @@ describe("PlayerBar (task 11.7) — import to library button", () => {
   });
 });
 
-describe("PlayerBar — empty state", () => {
-  it("shows 未在播放 when nothing is current", () => {
+describe("PlayerBar — empty queue", () => {
+  it("never prints 未在播放 — the four regions still draw", () => {
     render(<PlayerBar />);
-    expect(screen.getByText("未在播放")).toBeInTheDocument();
+    expect(screen.queryByText("未在播放")).not.toBeInTheDocument();
+    expect(screen.getByTestId("playerbar")).toHaveAttribute("data-empty", "true");
+    // 当前播放区: the empty song slot, not a sentence.
+    expect(screen.getByTestId("now-playing-trigger")).toBeInTheDocument();
+    // 传输控制区 / 音频与队列区 are still there.
+    expect(screen.getByRole("button", { name: "上一首" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "下一首" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "列表循环" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "显示播放队列" })).toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: "音量" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "导入到资料库" })).not.toBeInTheDocument();
+  });
+
+  it("disables the transport but keeps volume + queue live", () => {
+    render(<PlayerBar />);
+    expect(screen.getByRole("button", { name: "上一首" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "播放" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "下一首" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "喜欢当前歌曲" })).toBeDisabled();
+    expect(screen.getByRole("slider", { name: "播放进度" })).toBeDisabled();
+    // Neither of these depends on the current track.
+    expect(screen.getByRole("slider", { name: "音量" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "显示播放队列" })).toBeEnabled();
+  });
+
+  it("has no data-empty flag while a track is current", () => {
+    // The default snapshot is mid-playback, so the transport reads 暂停.
+    renderWithSnapshot();
+    expect(screen.getByTestId("playerbar")).not.toHaveAttribute("data-empty");
+    expect(screen.getByRole("button", { name: "暂停" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "上一首" })).toBeEnabled();
+  });
+});
+
+describe("PlayerBar — 内置封面 (design §115 内置优先)", () => {
+  /** renderWithSnapshot with a real library song id. */
+  function renderLibrarySong() {
+    return renderWithSnapshot({
+      currentSongId: "song-abc",
+      currentCanImport: false,
+      currentTitle: null,
+      queue: [
+        {
+          entryId: "entry-2",
+          songId: "song-abc",
+          title: null,
+          isCurrent: true,
+          failed: false,
+          canImport: false,
+        },
+      ],
+    });
+  }
+
+  it("renders the embedded artwork when the backend resolves a key", async () => {
+    // @ts-expect-error - the test hook installed by setup.ts
+    globalThis.__echoTest.setInvoke("song_cover_keys", { "song-abc": "cv1-abc" });
+    // @ts-expect-error - the test hook installed by setup.ts
+    globalThis.__echoTest.setInvoke("song_detail", {
+      songId: "song-abc",
+      relativePath: "a.mp3",
+      title: "心房",
+      artist: "陈婧霏",
+      album: null,
+      durationS: 120,
+      format: "mp3",
+      playCount: 0,
+      favorite: false,
+      hasCover: true,
+      availability: "available",
+    });
+    const { container } = renderLibrarySong();
+    const img = await waitFor(() => {
+      const found = container.querySelector<HTMLImageElement>(".mini-cover img");
+      if (!found) throw new Error("artwork not rendered yet");
+      return found;
+    });
+    expect(img.getAttribute("src")).toBe("cover://cv1-abc");
+    expect(container.querySelector(".mini-cover")).toHaveClass("has-image");
+    // The 当前播放区 shows the real title/artist once `song_detail` answers.
+    expect(screen.getByText("心房")).toBeInTheDocument();
+    expect(screen.getByText("陈婧霏")).toBeInTheDocument();
+  });
+
+  it("keeps the vinyl placeholder for a song with no embedded artwork", async () => {
+    // @ts-expect-error - the test hook installed by setup.ts
+    globalThis.__echoTest.setInvoke("song_cover_keys", {});
+    const { container } = renderLibrarySong();
+    await waitFor(() =>
+      expect(capturedInvoke).toHaveBeenCalledWith("song_cover_keys", { songIds: ["song-abc"] }),
+    );
+    expect(container.querySelector(".mini-cover img")).toBeNull();
+    expect(container.querySelector(".mini-cover")).not.toHaveClass("has-image");
   });
 });
 
 describe("PlayerBar (task 11.8) — range keyboard stepping", () => {
-  it("seek range steps by 5 seconds", () => {
-    renderWithSnapshot();
+  beforeEach(() => {
+    // @ts-expect-error - the test hook installed by setup.ts
+    globalThis.__echoTest.setInvoke("seek", null);
+  });
+
+  it("keeps fractional playback positions instead of snapping the thumb to 5 seconds", () => {
+    renderWithSnapshot({ state: "paused", position: 32.125 });
     const seek = screen.getByRole("slider", { name: "播放进度" });
-    expect(seek).toHaveAttribute("step", "5");
+    expect(seek).toHaveAttribute("step", "any");
+    expect(seek).toHaveValue("32.125");
     expect(seek).toHaveAttribute("min", "0");
     expect(seek).toHaveAttribute("max", "120");
+  });
+
+  it.each([
+    ["ArrowRight", 30, 35],
+    ["ArrowUp", 30, 35],
+    ["ArrowLeft", 30, 25],
+    ["ArrowDown", 30, 25],
+    ["ArrowLeft", 2, 0],
+    ["ArrowRight", 118, 120],
+    ["Home", 30, 0],
+    ["End", 30, 120],
+  ])("seeks with %s from %s to %s seconds", (key, position, expected) => {
+    renderWithSnapshot({ state: "paused", position });
+    fireEvent.keyDown(screen.getByRole("slider", { name: "播放进度" }), { key });
+    expect(capturedInvoke).toHaveBeenCalledWith("seek", { position: expected });
+  });
+
+  it("allows dragging to a fractional second", () => {
+    renderWithSnapshot({ state: "paused" });
+    fireEvent.change(screen.getByRole("slider", { name: "播放进度" }), {
+      target: { value: "32.125" },
+    });
+    expect(capturedInvoke).toHaveBeenCalledWith("seek", { position: 32.125 });
   });
 
   it("volume range steps by 5%", () => {

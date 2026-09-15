@@ -34,8 +34,9 @@ use echo_core::domain::ids::{LibraryRootId, OperationId, PlaylistId, SongId};
 use echo_core::error::Error;
 
 use crate::ipc::dto::{
-    BootstrapSnapshot, ImportBatchDto, ImportResultDto, LibraryRootStatusDto, LibraryStatus,
-    PagedSongs, PlaylistView, RevealResultDto, ScanSnapshot, SongDetailView, SongView,
+    BootstrapSnapshot, ImportBatchDto, ImportResultDto, LibraryCountsDto, LibraryRootStatusDto,
+    LibraryStatus, PagedSongs, PlaylistView, RevealResultDto, ScanSnapshot, SongDetailView,
+    SongView,
 };
 use crate::platform::dialogs::{RevealOutcome, SystemDialogs};
 use crate::platform::import::SingleFileImport;
@@ -227,6 +228,20 @@ impl AppServices {
         Ok(PagedSongs::from(page))
     }
 
+    /// 资料库导航计数: one authoritative total per library view.
+    ///
+    /// The sidebar prints these next to views the user may never have opened,
+    /// so they are answered by Core directly — never assembled from rows the
+    /// desktop layer happens to have paged through.
+    ///
+    /// # Errors
+    ///
+    /// `Unavailable` when there is no active root; storage errors propagate.
+    pub fn library_counts(&self) -> Result<LibraryCountsDto, Error> {
+        let counts = CatalogQuery::new(self.deps.catalog.as_ref()).counts()?;
+        Ok(LibraryCountsDto::from(counts))
+    }
+
     /// 最近添加.
     ///
     /// # Errors
@@ -302,6 +317,35 @@ impl AppServices {
         song: SongId,
     ) -> Result<echo_core::application::detail::SongLyrics, Error> {
         GetSongLyrics::new(self.deps.lyrics.as_ref()).execute(song)
+    }
+
+    /// The opaque cover-asset keys of the given songs (design §16).
+    ///
+    /// Design §115 resolves artwork **内置优先**: the scan persists the artwork
+    /// embedded in the audio file (and the `.lrc`-sidecar equivalent for
+    /// lyrics), and that asset is what this returns. A song without embedded
+    /// artwork is simply **absent** from the map — never a fabricated key — and
+    /// the list keeps the prototype's palette placeholder for it.
+    ///
+    /// The values are the [`echo_core`] cover cache's opaque `cv1-…` identifiers,
+    /// so the caller composes `cover://<key>` and never sees a filesystem path.
+    /// Unknown ids are skipped rather than failing the batch: a stale row on
+    /// screen must not break artwork for the rows that are still valid.
+    ///
+    /// # Errors
+    ///
+    /// Storage errors propagate; a read never consults the write gate.
+    pub fn cover_keys(
+        &self,
+        song_ids: &[SongId],
+    ) -> Result<std::collections::BTreeMap<String, String>, Error> {
+        let mut keys = std::collections::BTreeMap::new();
+        for song in song_ids {
+            if let Some(cover) = self.deps.covers.cover_of(*song)? {
+                keys.insert(song.to_string(), cover.asset_key);
+            }
+        }
+        Ok(keys)
     }
 
     /// Toggle favorite; returns the authoritative committed song view.
@@ -691,6 +735,71 @@ mod tests {
             .iter()
             .map(echo_core::domain::entities::Song::id)
             .collect()
+    }
+
+    /// `cover_keys` answers with the embedded artwork of the songs that have
+    /// one, keyed by an opaque cache key — and stays silent about the rest
+    /// (design §115: a file with no embedded cover keeps the palette
+    /// placeholder, it does not get a fabricated asset).
+    #[test]
+    fn cover_keys_returns_only_songs_with_embedded_artwork() {
+        let fixture = ScanFixture::new();
+        fixture.write_file("with-art.flac", b"audio-with-art");
+        fixture.set_audio_with_cover("with-art.flac", "有封面", 1_000, &b"cover-".repeat(64));
+        fixture.write_file("no-art.flac", b"audio-no-art");
+        fixture.set_audio("no-art.flac", "无封面", 1_000);
+        StartScan::new(&fixture.deps, &fixture.supervisor)
+            .run(fixture.root)
+            .expect("scan seeds the library");
+        let app = services(&fixture);
+
+        let songs = fixture.all_songs();
+        let with_art = songs
+            .iter()
+            .find(|song| song.title() == Some("有封面"))
+            .expect("song with artwork");
+        let without_art = songs
+            .iter()
+            .find(|song| song.title() == Some("无封面"))
+            .expect("song without artwork");
+
+        let keys = app
+            .cover_keys(&[with_art.id(), without_art.id()])
+            .expect("cover keys");
+
+        assert_eq!(keys.len(), 1, "only the song that carries artwork is keyed");
+        let key = keys
+            .get(&with_art.id().to_string())
+            .expect("the song with embedded artwork has a key");
+        // Whatever the cache emits must be resolvable by the `cover://`
+        // boundary the WebView will hand it to — and that boundary rejects
+        // anything that could be read as a path.
+        assert!(
+            crate::platform::security::CoverProtocol::is_valid_key(key),
+            "cover key must pass the cover:// whitelist: {key}"
+        );
+        assert!(!keys.contains_key(&without_art.id().to_string()));
+    }
+
+    /// A stale or unknown id costs nothing: the batch still answers for the
+    /// rows that are still valid, so one dead row cannot blank the window.
+    #[test]
+    fn cover_keys_skips_unknown_ids_instead_of_failing_the_batch() {
+        let fixture = ScanFixture::new();
+        fixture.write_file("with-art.flac", b"audio-with-art");
+        fixture.set_audio_with_cover("with-art.flac", "有封面", 1_000, &b"cover-".repeat(64));
+        StartScan::new(&fixture.deps, &fixture.supervisor)
+            .run(fixture.root)
+            .expect("scan seeds the library");
+        let app = services(&fixture);
+
+        let known = fixture.all_songs()[0].id();
+        let keys = app
+            .cover_keys(&[known, SongId::new()])
+            .expect("an unknown id is skipped, not fatal");
+
+        assert_eq!(keys.len(), 1);
+        assert!(keys.contains_key(&known.to_string()));
     }
 
     #[test]

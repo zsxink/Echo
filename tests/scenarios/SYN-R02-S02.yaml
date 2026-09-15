@@ -1,0 +1,14 @@
+# Echo 0.1.0 scenario executable manifest (sync-foundation, generated for the 0005 shape-ready capability)
+# ----------------------------------------------------------------------
+scenario_id: SYN-R02-S02
+requirement: 本地变更预写 outbox
+scenario: 预写不产生可操作同步
+layer: automated
+command: "node scripts/verify/checks/task-3.14.mjs"
+
+# The sqlite suite asserts the transaction-atomic facts directly: outbox
+# rows with full relative-path-only snapshots, monotone object revisions,
+# tombstones on Echo delete, and the offline boundary (nothing pushes).
+fixtures: []
+expected_result: command exits 0 (behavior proven by the targeted suite)
+automated_filter: the command above

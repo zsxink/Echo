@@ -3,9 +3,14 @@
  *
  * Triggers the Rust file dialog (choose_and_import_files → per-input results)
  * and renders a per-file report: imported / duplicate / unsupported /
- * library-unavailable / failed, with reasons. A mixed batch never asks the
- * user to redo the successes; a failed item is retryable without touching the
+ * library-unavailable / failed, with reasons. A mixed batch never asks the user
+ * to redo the successes; a failed item is retryable without touching the
  * already-imported ones (a fresh dialog re-plans and dedups by BLAKE3).
+ *
+ * Surface: the prototype never draws a batch report (its import only toasts),
+ * so this is built entirely from prototype primitives — the
+ * `.confirmation-dialog` / `.confirmation-panel` modal anatomy plus the
+ * `.dialog-results` list. No bespoke dialog chrome.
  */
 
 import { useRef, useState } from "react";
@@ -22,35 +27,35 @@ export interface ImportBatchDialogProps {
 function ResultLine({ result }: { result: ImportResultDto }) {
   if (result.kind === "imported") {
     return (
-      <li className="import-ok" data-testid="import-line">
+      <li className="is-ok" data-testid="import-line">
         已导入：{result.relativePath}
       </li>
     );
   }
   if (result.kind === "duplicate") {
     return (
-      <li className="import-dup" data-testid="import-line">
+      <li className="is-dup" data-testid="import-line">
         内容重复（已有歌曲 {result.existingSongId}），未重复导入。
       </li>
     );
   }
   if (result.kind === "unsupported") {
     return (
-      <li className="import-fail" data-testid="import-line">
+      <li className="is-fail" data-testid="import-line">
         不支持的文件类型。
       </li>
     );
   }
   if (result.kind === "libraryUnavailable") {
     return (
-      <li className="import-fail" data-testid="import-line">
+      <li className="is-fail" data-testid="import-line">
         资料库不可用，未开始导入。
       </li>
     );
   }
   if (result.kind === "failed") {
     return (
-      <li className="import-fail" data-testid="import-line">
+      <li className="is-fail" data-testid="import-line">
         失败：{result.message}
       </li>
     );
@@ -61,7 +66,7 @@ function ResultLine({ result }: { result: ImportResultDto }) {
 export function ImportBatchDialog({ onClose, onDone }: ImportBatchDialogProps) {
   const [batch, setBatch] = useState<ImportBatchDto | null>(null);
   const [busy, setBusy] = useState(false);
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
   // A `BlockingDialog`-tier modal: Escape closes it last on the single stack,
   // focus is trapped and restored on close.
   useOverlay({ tier: OverlayTier.BlockingDialog, onClose, containerRef: dialogRef });
@@ -87,33 +92,36 @@ export function ImportBatchDialog({ onClose, onDone }: ImportBatchDialogProps) {
     batch?.results.filter((r) => r.kind === kind).length ?? 0;
 
   return (
-    <div className="overlay-shell">
-      <div
-        className="import-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="导入"
-        ref={dialogRef}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="detail-title">导入歌曲</h3>
+    <section
+      className="confirmation-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="import-title"
+      data-testid="import-dialog"
+      ref={dialogRef}
+    >
+      <div className="confirmation-panel">
+        <h2 id="import-title">导入歌曲</h2>
         {!batch ? (
           <p>选择要导入到资料库的音频文件（可多选）。</p>
         ) : (
           <>
-            <p className="import-summary">
+            <p className="dialog-summary">
               成功 {count("imported")}，重复 {count("duplicate")}，不支持 {count("unsupported")}
               ，失败 {count("failed")}
               {count("libraryUnavailable") > 0 ? "，资料库不可用" : ""}
             </p>
-            <ul className="import-results">
+            <ul className="dialog-results">
               {batch.results.map((r, i) => (
                 <ResultLine key={i} result={r} />
               ))}
             </ul>
           </>
         )}
-        <div className="menu-actions">
+        <div className="confirmation-actions">
+          <button type="button" className="btn" onClick={onClose} data-testid="import-close">
+            关闭
+          </button>
           <button
             type="button"
             className="btn btn-primary"
@@ -122,11 +130,8 @@ export function ImportBatchDialog({ onClose, onDone }: ImportBatchDialogProps) {
           >
             {busy ? "导入中…" : batch ? "再次导入" : "选择文件并导入"}
           </button>
-          <button type="button" className="btn" onClick={onClose}>
-            关闭
-          </button>
         </div>
       </div>
-    </div>
+    </section>
   );
 }

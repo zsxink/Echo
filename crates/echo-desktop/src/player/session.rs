@@ -64,6 +64,11 @@ pub struct PlaybackSession {
     pub shuffle_active: bool,
     /// Playback settings.
     pub mode: PlayMode,
+    /// The view the queue was built from ("allSongs" / "favorites" / "recent"
+    /// / "search" / "playlist:<id>") — 记住当前播放的是哪个歌单的哪首歌. `None`
+    /// for sessions started before sources existed (or a temporary play).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     pub volume: f64,
     pub muted: bool,
     /// Last position of the *current* song (best-effort; restored paused).
@@ -83,6 +88,7 @@ impl PlaybackSession {
             shuffle_bag: Vec::new(),
             shuffle_active: false,
             mode: PlayMode::Sequential,
+            source: None,
             volume: 1.0,
             muted: false,
             position: None,
@@ -145,6 +151,7 @@ pub fn snapshot_queue(
     volume: f64,
     muted: bool,
     current_position: Option<f64>,
+    source: Option<&str>,
 ) -> PlaybackSession {
     let entries: Vec<PersistedEntry> = queue
         .entries()
@@ -170,6 +177,7 @@ pub fn snapshot_queue(
             .collect(),
         shuffle_active: queue.is_shuffle(),
         mode,
+        source: source.map(std::string::ToString::to_string),
         volume,
         muted,
         position: current_position,
@@ -290,14 +298,16 @@ pub trait SessionPersistence: Send + Sync {
 
 /// A [`SessionPersistence`] backed by the atomic `DesktopStateStore`
 /// (temp + fsync + atomic replace). Converts to/from the opaque JSON slot.
+/// The store is shared (`Arc`) so the command layer, the saver thread and the
+/// restore path all observe the same instance.
 pub struct StateStoreSession {
-    store: crate::platform::local_state::DesktopStateStore,
+    store: std::sync::Arc<crate::platform::local_state::DesktopStateStore>,
 }
 
 impl StateStoreSession {
     /// Wrap the local-state store as a session persistence boundary.
     #[must_use]
-    pub fn new(store: crate::platform::local_state::DesktopStateStore) -> Self {
+    pub fn new(store: std::sync::Arc<crate::platform::local_state::DesktopStateStore>) -> Self {
         Self { store }
     }
 }
@@ -365,12 +375,20 @@ mod tests {
         q.set_current(a);
         q.set_current(b); // current = second s1 entry
 
-        let session = snapshot_queue(&q, PlayMode::Shuffle, 0.6, true, Some(12.5));
+        let session = snapshot_queue(
+            &q,
+            PlayMode::Shuffle,
+            0.6,
+            true,
+            Some(12.5),
+            Some("playlist:p1"),
+        );
         // Two library entries (the temporary is filtered), both the s1 entries
         // retained with distinct ids.
         assert_eq!(session.entries.len(), 3);
         assert!(session.current.is_some());
         assert_eq!(session.mode, PlayMode::Shuffle);
+        assert_eq!(session.source.as_deref(), Some("playlist:p1"));
         assert_eq!(session.volume, 0.6);
         assert!(session.muted);
         assert_eq!(session.position, Some(12.5));
@@ -392,7 +410,7 @@ mod tests {
         let _id3 = q.push(lib_entry(s3));
         let _id4 = q.push(lib_entry(s4));
         q.set_current(id1);
-        let session = snapshot_queue(&q, PlayMode::Sequential, 1.0, false, None);
+        let session = snapshot_queue(&q, PlayMode::Sequential, 1.0, false, None, None);
 
         let (queue, summary) = rebuild_queue(
             &session,
@@ -435,7 +453,7 @@ mod tests {
             path.clone(),
             crate::platform::local_state::PlatformCloseDefault::Other,
         );
-        let persist = StateStoreSession::new(store);
+        let persist = StateStoreSession::new(std::sync::Arc::new(store));
 
         let session = PlaybackSession {
             version: SESSION_VERSION,
@@ -448,6 +466,7 @@ mod tests {
             shuffle_bag: vec![],
             shuffle_active: false,
             mode: PlayMode::Sequential,
+            source: None,
             volume: 0.9,
             muted: false,
             position: None,
@@ -485,7 +504,7 @@ mod tests {
         store
             .set_playback_session(Some(raw))
             .expect("store opaque payload");
-        let persist = StateStoreSession::new(store);
+        let persist = StateStoreSession::new(std::sync::Arc::new(store));
         assert!(
             persist.load().expect("load unknown").is_none(),
             "unknown version is a safe empty restore"

@@ -279,9 +279,7 @@ mod tests {
 
     use crate::application::ports::{LibraryRepository, SongRepository, TxAccess, UnitOfWork};
     use crate::application::testing::memory_database::MemoryDatabase;
-    use crate::domain::entities::{
-        LibraryRoot, LyricsCandidate, LyricsLine, SongAvailability,
-    };
+    use crate::domain::entities::{LibraryRoot, LyricsCandidate, LyricsLine, SongAvailability};
     use crate::domain::ids::{LibraryRootId, Revision, SongId};
 
     fn seed(db: &MemoryDatabase, root: LibraryRootId) -> Song {

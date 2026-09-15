@@ -1459,6 +1459,103 @@ mod tests {
     }
 
     #[test]
+    fn default_worker_concurrency_is_min_cpu_4() {
+        // Task 12.6: the default parse pool must be `min(CPU, 4)` per design
+        // §6.4 — not `available_parallelism()` outright (which could oversubscribe
+        // a 32-core box and starve playback/UI) and not a hardcoded constant.
+        let config = ScanConfig::default();
+        let cpu = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+        assert_eq!(
+            config.worker_threads,
+            cpu.min(4),
+            "default worker_threads must equal min(CPU, 4); got {} on a {}-cpu host",
+            config.worker_threads,
+            cpu,
+        );
+    }
+
+    #[test]
+    fn stress_scan_bounded_hashes_and_cancels_without_corrupting_songs() {
+        // Task 12.6 stress: a medium library parsed under a bounded pool stays
+        // within the configured bound even under pressure, and cancelling
+        // mid-scan (the `CancelScan` path) never marks anything missing or
+        // leaves a half-persisted batch. This is the CPU/cancel pressure shape
+        // the pipeline is designed for — bounded workers, truthful progress,
+        // idempotent terminal state.
+        const N: usize = 120;
+        let fixture = ScanFixture::new();
+        for index in 0..N {
+            let path = format!("dir{:02}/file{index:03}.mp3", index % 7);
+            fixture.write_file(&path, format!("audio-{index}").as_bytes());
+            fixture.set_audio(&path, &format!("Song {index}"), 1_000 + (index as u64));
+        }
+
+        // Bounded pool: 4 workers (or fewer on a small machine) must never let
+        // more than the configured bound run concurrently even at N=120.
+        let pool =
+            4.min(std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get));
+        let current = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let max_seen = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let deps = ScanDeps {
+            config: ScanConfig {
+                batch_size: 40,
+                worker_threads: pool,
+                ..ScanConfig::default()
+            },
+            probe: Arc::new(CountingProbe {
+                inner: Arc::clone(&fixture.deps.probe),
+                current: Arc::clone(&current),
+                max_seen: Arc::clone(&max_seen),
+            }),
+            ..ScanDeps::clone(&fixture.deps)
+        };
+
+        let summary = StartScan::new(&deps, &fixture.supervisor)
+            .run(fixture.root)
+            .expect("stress scan ok");
+        assert_eq!(summary.progress.created, N as u64);
+        let observed = max_seen.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(
+            observed, pool,
+            "bounded pool held {pool} under N={N} stress; saw {observed}"
+        );
+
+        // Cancel-under-load: re-scan with a canceller that fires after a chunk,
+        // then assert the missing pass never runs and the DB is consistent.
+        let canceller = Arc::new(CancelOnHash {
+            supervisor: fixture.supervisor.clone(),
+            inner: Arc::clone(&fixture.deps.hasher),
+        });
+        let deps = ScanDeps {
+            config: ScanConfig {
+                batch_size: 20,
+                worker_threads: pool,
+                ..ScanConfig::default()
+            },
+            hasher: Arc::clone(&canceller) as Arc<dyn ContentHasher>,
+            ..ScanDeps::clone(&fixture.deps)
+        };
+        // Touch a subset so the rescan actually re-parses instead of fast-skip.
+        for index in (0..N).step_by(3) {
+            let path = format!("dir{:02}/file{index:03}.mp3", index % 7);
+            fixture.write_file(&path, format!("audio-v2-{index}").as_bytes());
+        }
+        let summary = StartScan::new(&deps, &fixture.supervisor)
+            .run(fixture.root)
+            .expect("cancelled stress scan returns a summary");
+        assert!(summary.cancelled);
+        // No batch was half-committed as missing.
+        let songs = fixture.all_songs();
+        assert_eq!(
+            songs.len(),
+            N,
+            "a cancelled scan must not wipe songs it did not get to re-parse"
+        );
+        let row = fixture.run_row(2).expect("second run row");
+        assert_eq!(row.state, ScanState::Cancelled);
+    }
+
+    #[test]
     fn embedded_and_sidecar_lyrics_are_persisted_per_source() {
         let fixture = ScanFixture::new();
         fixture.write_file("song.mp3", b"audio");
@@ -1566,5 +1663,147 @@ mod tests {
         assert_eq!(updated.title(), Some("A2"));
         assert_eq!(updated.added_at(), added_at, "added_at never changes");
         assert!(updated.revision() >= Revision::INITIAL);
+    }
+
+    // ------------------------------------------------------------------
+    // 13.4 — watcher/root matrix: every row converges after a manual rescan
+    // and relationships stay stable. Each test simulates the fs-level fault
+    // (unmount, permission revocation) with the fake's fault injection, then
+    // proves a subsequent scan does not silently trust stale data.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn root_unmount_then_remount_converges_after_manual_rescan() {
+        // A root that vanishes (unmounted) must surface as a failed scan, then
+        // a successful scan once remounted sees the current files — and never
+        // marks songs missing from a failed run.
+        let fixture = ScanFixture::new();
+        fixture.write_file("a.mp3", b"audio");
+        fixture.set_audio("a.mp3", "A", 1_000);
+        start_scan(&fixture).run(fixture.root).expect("first scan");
+
+        // Unmount: enumeration fails. The failed run must NOT mark missing.
+        fixture
+            .fs
+            .inject_fault(Error::unavailable("library root", "unmounted"));
+        let error = start_scan(&fixture).run(fixture.root).unwrap_err();
+        assert_eq!(error.code(), "storage");
+        let record = song_by_path(&fixture, &fixture.path("a.mp3"))
+            .expect("lookup")
+            .expect("kept from the failed run");
+        assert_eq!(record.availability(), SongAvailability::Available);
+
+        // Remount (clear the fault) + a modified file → the manual rescan
+        // converges: the song is still there, identity stable.
+        fixture.fs.clear_fault();
+        fixture.write_file("a.mp3", b"audio-v2");
+        fixture.set_audio("a.mp3", "A2", 1_000);
+        let summary = start_scan(&fixture)
+            .run(fixture.root)
+            .expect("remounted scan");
+        assert_eq!(
+            summary.progress.updated, 1,
+            "remounted scan re-parses the changed file by identity"
+        );
+        let after = song_by_path(&fixture, &fixture.path("a.mp3"))
+            .expect("lookup")
+            .expect("present after remount");
+        assert_eq!(
+            after.id(),
+            record.id(),
+            "UUID stable across unmount/remount"
+        );
+        assert_eq!(after.title(), Some("A2"));
+    }
+
+    #[test]
+    fn permission_revocation_mid_watch_degrades_to_rescan_and_converges() {
+        // Permission revoked (reads fail) → scan fails without marking songs
+        // missing; after re-permission, a manual rescan converges.
+        let fixture = ScanFixture::new();
+        fixture.write_file("a.mp3", b"audio");
+        fixture.set_audio("a.mp3", "A", 1_000);
+        start_scan(&fixture).run(fixture.root).expect("first scan");
+
+        fixture.fs.inject_fault(Error::permission(
+            "read directory",
+            crate::error::PermKind::Denied,
+        ));
+        let error = start_scan(&fixture).run(fixture.root).unwrap_err();
+        // The fake's fault is storage-shaped whatever variant is injected; the
+        // contract under test is the failed run, not the error variant.
+        assert_eq!(error.code(), "storage");
+        // Read-only: scan is refused, the record stays available (no missing).
+        let record = song_by_path(&fixture, &fixture.path("a.mp3"))
+            .expect("lookup")
+            .expect("kept under permission loss");
+        assert_eq!(record.availability(), SongAvailability::Available);
+
+        fixture.fs.clear_fault();
+        let summary = start_scan(&fixture)
+            .run(fixture.root)
+            .expect("re-permission scan");
+        assert_eq!(summary.progress.skipped, 1, "unchanged file fast-skipped");
+        let after = song_by_path(&fixture, &fixture.path("a.mp3"))
+            .expect("lookup")
+            .expect("still present");
+        assert_eq!(
+            after.id(),
+            record.id(),
+            "identity stable across permission loss"
+        );
+    }
+
+    #[test]
+    fn deep_unicode_paths_and_external_moves_converge_after_rescan() {
+        // Unicode component + deep nesting: the scan indexes it, an external
+        // rename keeps the UUID + relationships, and a manual rescan converges.
+        let fixture = ScanFixture::new();
+        // A deep Unicode path (multiple components + composed CJK/emoji).
+        let deep = "歌手/黑胶 精选/🎧-单曲編號/曲目一-合成字.mp3";
+        fixture.write_file(deep, b"deep-unicode-bytes");
+        fixture.set_audio(deep, "深巷", 2_000);
+        let summary = start_scan(&fixture)
+            .run(fixture.root)
+            .expect("unicode scan");
+        assert_eq!(
+            summary.progress.created, 1,
+            "a deep unicode path is indexed as one song"
+        );
+
+        let original = song_by_path(&fixture, &fixture.path(deep))
+            .expect("lookup")
+            .expect("deep-path song");
+        let mut favorite = original.clone();
+        favorite.set_favorite(true);
+        crate::application::ports::SongRepository::upsert(&fixture.database, &favorite)
+            .expect("favorite set");
+
+        // External move (rename) on disk → same content, new path, same UUID.
+        let moved = "歌手/黑胶 精选/新目录/曲目一-移动后.flac";
+        fixture.write_file(moved, b"deep-unicode-bytes");
+        fixture.remove_file(deep);
+        fixture.set_audio(moved, "深巷", 2_000);
+        let summary = start_scan(&fixture).run(fixture.root).expect("rename scan");
+        assert_eq!(summary.progress.updated, 1, "external move re-links");
+        let after = song_by_path(&fixture, &fixture.path(moved))
+            .expect("lookup")
+            .expect("re-linked at the new path");
+        assert_eq!(after.id(), original.id(), "UUID survives the external move");
+        assert!(after.favorite(), "favorite survives the external move");
+        assert_eq!(
+            after.availability(),
+            SongAvailability::Available,
+            "only the new path hosts the record; no duplicate"
+        );
+        assert!(
+            fixture
+                .all_songs()
+                .iter()
+                .filter(|s| s.id() == original.id())
+                .count()
+                == 1,
+            "exactly one record for the moved song"
+        );
     }
 }

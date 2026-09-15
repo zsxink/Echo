@@ -1,15 +1,35 @@
 /**
  * Application shell (task 10.3 / 10.4).
  *
- * Composes the frame — sidebar navigation, workspace, persistent player bar —
- * and routes the workspace between the library views (全部歌曲 / 最近添加 /
- * 喜欢的音乐 / 歌单) and the settings surface. It never claims a working
- * library it may not have: it reads a library-status snapshot and renders the
- * workspace / read-only / unavailable / first-launch states accordingly.
+ * Reproduces the prototype's frame (`docs/prototype/echo-desktop-player.html`)
+ * element for element:
  *
- * Layout: `ui-layout` → `ui-sidebar` → `ui-workspace` → `ui-playerbar`. The
- * persistent player bar stays visible (task 11.1); the immersive player covers
- * the workspace (task 11.3) through the overlay manager.
+ *   div.app
+ *     aside.sidebar  品牌区 / 资料库导航 / 歌单导航 / 应用工具区
+ *     button.sidebar-scrim
+ *     section.workspace        ← the routed view renders `header.topbar` +
+ *                                `main.content` into this column
+ *     设置 (`.settings-dialog`) is rendered here as a floating layer of the
+ *     workspace, exactly where the prototype puts it. It is `position: fixed;
+ *     inset: 0`, so it covers the whole window from that position.
+ *     footer.playerbar
+ *     section.now-playing-popover  (ImmersivePlayer)
+ *     section.queue-popover        (QueuePanel)
+ *     div.toast
+ *
+ * It never claims a working library it may not have: it reads a library-status
+ * snapshot and renders the workspace / read-only / unavailable / first-launch
+ * states accordingly.
+ *
+ * 应用工具区 holds 设置 only — the prototype's sidebar has no theme
+ * dropdown (`.theme-control` exists in its stylesheet but no markup uses it);
+ * theme switching lives in 设置, which is where the prototype puts it.
+ *
+ * There is deliberately **no** sync control in this shell. The prototype has no
+ * `.sync-button` markup either (grep it), so reproducing one never was shell
+ * fidelity — it was invention, and it violated task 10.4 / 13.8 and the
+ * phase-one scope in `docs/ROADMAP.md` ("不包含：资料库同步与可操作的同步入口").
+ * Sync arrives in phase two.
  */
 
 import { useCallback, useRef, useState } from "react";
@@ -19,7 +39,14 @@ import { useLibraryPlaylists } from "../features/playlists/useLibraryPlaylists";
 import { LibraryStatusView } from "../features/workspace/LibraryStatusView";
 import { useLibraryStatus } from "../features/workspace/useLibraryStatus";
 import type { LibraryViewKind } from "../features/library/types";
+import {
+  coverClass,
+  useLibraryCounts,
+  useLibraryCountSync,
+  type LibraryCountView,
+} from "../features/library/coverPalette";
 import { LibraryWorkspace } from "../features/library/LibraryWorkspace";
+import { PlaylistCreateDialog } from "../features/playlists/PlaylistNameDialog";
 import { PlaylistsView } from "../features/playlists/PlaylistsView";
 import { SettingsView } from "../features/settings/SettingsView";
 import { PlayerBar } from "../features/player/PlayerBar";
@@ -28,40 +55,41 @@ import { QueuePanel } from "../features/player/QueuePanel";
 import { useTheme } from "../features/settings/useTheme";
 import { useGlobalPlayerHotkeys } from "../player/useGlobalPlayerHotkeys";
 import { OverlayTier, useFocusTrap, useOverlay } from "./overlays";
-import "./app.css";
-
-type WorkspaceRoute = "library" | "settings";
+import { Icon } from "./Icon";
+import { ShellNavProvider, type ShellNav } from "./shell";
+import { ToastView } from "./ToastView";
 
 export function App() {
   const { theme } = useTheme();
   const status = useLibraryStatus();
-  const [route, setRoute] = useState<WorkspaceRoute>("library");
   const [libraryView, setLibraryView] = useState<LibraryViewKind>("all");
   const [activePlaylistId, setActivePlaylistId] = useState<string | null>(null);
-  // Narrow-screen sidebar toggle (task 12.3): the sidebar collapses behind a
-  // menu button; when open a mask overlays the workspace.
+  const [playlistNameOpen, setPlaylistNameOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Narrow-screen sidebar toggle (task 12.3): the sidebar collapses behind the
+  // topbar button; while open a scrim covers the workspace.
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
+  const { playlists, reload: reloadPlaylists } = useLibraryPlaylists(status.configured);
+
+  // 资料库导航计数 (tasks.md 4.2): fetched up front and re-fetched whenever
+  // anything could have changed a total, so "喜欢的音乐" shows its size before
+  // the user ever opens it.
+  useLibraryCountSync(status.configured && !status.unavailable);
 
   // Global playback shortcuts (Space toggle, arrows step/volume, M mute,
   // ,/. prev/next) — task 11.8. Ignored while focus is in an input/overlay.
   useGlobalPlayerHotkeys();
 
   const selectView = useCallback((view: LibraryViewKind, playlistId?: string | null) => {
-    setRoute("library");
     setLibraryView(view);
     setActivePlaylistId(playlistId ?? null);
     // Selecting a view closes the narrow-screen sidebar (task 12.3).
     setSidebarOpen(false);
   }, []);
 
-  const openSettings = useCallback(() => {
-    setRoute("settings");
-    setSidebarOpen(false);
-  }, []);
-
   // The open narrow-screen sidebar is the `Sidebar`-tier layer: it closes last
-  // on the single Escape stack, and focus returns to the menu button.
+  // on the single Escape stack, and focus returns to the topbar button.
   useOverlay({
     tier: OverlayTier.Sidebar,
     onClose: () => setSidebarOpen(false),
@@ -70,157 +98,212 @@ export function App() {
   });
   useFocusTrap(sidebarRef, sidebarOpen);
 
+  const nav: ShellNav = {
+    sidebarOpen,
+    onToggleSidebar: () => setSidebarOpen((open) => !open),
+  };
+
+  const activePlaylist = playlists.find((playlist) => playlist.id === activePlaylistId) ?? null;
+  const viewTitle =
+    libraryView === "playlist"
+      ? (activePlaylist?.name ?? "歌单")
+      : libraryView === "recent"
+        ? "最近添加"
+        : libraryView === "favorites"
+          ? "喜欢的音乐"
+          : "全部歌曲";
+
+  const navItem = (
+    view: LibraryViewKind,
+    label: string,
+    icon: string,
+    countView?: LibraryCountView,
+  ) => (
+    <button
+      type="button"
+      className={`nav-item${libraryView === view && activePlaylistId === null ? " active" : ""}`}
+      aria-current={libraryView === view && activePlaylistId === null ? "page" : undefined}
+      onClick={() => selectView(view)}
+    >
+      <Icon name={icon} />
+      {label}
+      {countView ? <LibraryNavCount view={countView} /> : null}
+    </button>
+  );
+
   return (
-    <div className="ui-layout" data-testid="echo-shell" data-echo-theme={theme}>
-      {status.configured ? (
-        <>
-          <button
-            type="button"
-            className="sidebar-toggle"
-            aria-label="打开侧边栏"
-            aria-expanded={sidebarOpen}
-            aria-controls="app-sidebar"
-            onClick={() => setSidebarOpen((o) => !o)}
-            data-testid="sidebar-toggle"
-          >
-            ☰
-          </button>
-          {sidebarOpen ? (
+    <ShellNavProvider value={nav}>
+      <div
+        className={`app${status.configured ? "" : " app-initial"}`}
+        id="app-shell"
+        data-testid="echo-shell"
+        data-echo-theme={theme}
+      >
+        {/* macOS overlay titlebar drag handle — see `.titlebar-drag` in
+            app-extras.css. `tauri.conf.json` sets `titleBarStyle: "Overlay"` +
+            `hiddenTitle: true`, so no native titlebar drags the window and the
+            top `--titlebar-inset` strip (28px in the WebView, 0px in a plain
+            browser preview) must declare itself draggable instead. */}
+        <div className="titlebar-drag" data-tauri-drag-region aria-hidden="true" />
+
+        {status.configured ? (
+          <>
+            <aside
+              id="app-sidebar"
+              className="sidebar"
+              data-testid="sidebar"
+              aria-label="资料库导航"
+              ref={sidebarRef}
+            >
+              <div className="brand" aria-label="Echo，本地音乐播放器">
+                <span className="brand-mark" aria-hidden="true">
+                  <Icon name="note" />
+                </span>
+                <span>Echo</span>
+              </div>
+
+              <nav className="nav-group" aria-label="主导航">
+                <span className="nav-label">资料库</span>
+                {navItem("all", "全部歌曲", "library", "all")}
+                {navItem("recent", "最近添加", "recent", "recent")}
+                {navItem("favorites", "喜欢的音乐", "heart", "favorites")}
+              </nav>
+
+              <nav className="nav-group playlist-navigation" aria-label="歌单">
+                <div className="nav-section-head">
+                  <span className="nav-label">歌单</span>
+                  <button
+                    type="button"
+                    className="playlist-create"
+                    aria-label="添加歌单"
+                    title="添加歌单"
+                    disabled={status.readOnly}
+                    onClick={() => setPlaylistNameOpen(true)}
+                    data-testid="create-playlist"
+                  >
+                    <Icon name="plus" />
+                  </button>
+                </div>
+                <div className="playlist-list" role="list">
+                  {playlists.map((playlist) => (
+                    <button
+                      key={playlist.id}
+                      type="button"
+                      role="listitem"
+                      className={`nav-item playlist-item${
+                        libraryView === "playlist" && activePlaylistId === playlist.id
+                          ? " active"
+                          : ""
+                      }`}
+                      aria-current={
+                        libraryView === "playlist" && activePlaylistId === playlist.id
+                          ? "page"
+                          : undefined
+                      }
+                      onClick={() => selectView("playlist", playlist.id)}
+                    >
+                      <span
+                        className={`cover playlist-cover ${coverClass(playlist.id)}`}
+                        aria-hidden="true"
+                      />
+                      <span className="playlist-name">{playlist.name}</span>
+                      {/* `memberCount` is authoritative from the backend — no
+                          need to open the playlist to know its size. */}
+                      <span className="nav-count" data-testid={`playlist-count-${playlist.id}`}>
+                        {playlist.memberCount}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </nav>
+
+              <div className="side-foot">
+                <button
+                  type="button"
+                  className="link-button settings-button"
+                  onClick={() => setSettingsOpen(true)}
+                  data-testid="settings-button"
+                >
+                  设置
+                </button>
+              </div>
+            </aside>
+
             <button
               type="button"
-              className="sidebar-mask"
+              className="sidebar-scrim"
               aria-label="关闭侧边栏"
+              hidden={!sidebarOpen}
               onClick={() => setSidebarOpen(false)}
               data-testid="sidebar-mask"
-              tabIndex={-1}
             />
-          ) : null}
-          <nav
-            id="app-sidebar"
-            className={`ui-sidebar${sidebarOpen ? " is-open" : ""}`}
-            data-testid="sidebar"
-            aria-label="资料库导航"
-            ref={sidebarRef}
-          >
-            <div className="ui-sidebar-brand">
-              <span className="brand-note" aria-hidden="true">
-                ♪
-              </span>
-              <span className="brand-name">Echo</span>
-            </div>
-            <ul className="ui-nav">
-              <li>
-                <button
-                  type="button"
-                  className={`ui-nav-item${route === "library" && libraryView === "all" ? " is-active" : ""}`}
-                  onClick={() => selectView("all")}
-                  aria-current={route === "library" && libraryView === "all" ? "page" : undefined}
-                >
-                  全部歌曲
-                </button>
-              </li>
-              <li>
-                <button
-                  type="button"
-                  className={`ui-nav-item${route === "library" && libraryView === "recent" ? " is-active" : ""}`}
-                  onClick={() => selectView("recent")}
-                  aria-current={
-                    route === "library" && libraryView === "recent" ? "page" : undefined
-                  }
-                >
-                  最近添加
-                </button>
-              </li>
-              <li>
-                <button
-                  type="button"
-                  className={`ui-nav-item${route === "library" && libraryView === "favorites" ? " is-active" : ""}`}
-                  onClick={() => selectView("favorites")}
-                  aria-current={
-                    route === "library" && libraryView === "favorites" ? "page" : undefined
-                  }
-                >
-                  喜欢的音乐
-                </button>
-              </li>
-            </ul>
-            <PlaylistsNav onSelect={selectView} activePlaylistId={activePlaylistId} />
-            <div className="ui-nav-spacer" />
-            <button
-              type="button"
-              className="ui-nav-item"
-              onClick={openSettings}
-              aria-current={route === "settings" ? "page" : undefined}
-            >
-              设置
-            </button>
-          </nav>
 
-          <main className="ui-workspace" data-testid="workspace">
-            {route === "settings" ? (
-              <SettingsView />
-            ) : (
-              <>
-                {!status.configured || status.unavailable ? (
-                  <LibraryStatusView status={status} />
-                ) : libraryView === "playlist" && activePlaylistId ? (
-                  <PlaylistsView
-                    playlistId={activePlaylistId}
-                    onDeleted={() => selectView("all")}
-                  />
-                ) : (
-                  <LibraryWorkspace
-                    view={libraryView}
-                    readOnly={status.readOnly}
-                    root={status.activeRoot ?? ""}
-                  />
-                )}
-              </>
-            )}
-          </main>
-        </>
-      ) : (
-        <ChooseRootView />
-      )}
+            <section className="workspace" data-testid="workspace">
+              {status.unavailable ? (
+                <LibraryStatusView status={status} />
+              ) : libraryView === "playlist" && activePlaylistId ? (
+                <PlaylistsView
+                  playlistId={activePlaylistId}
+                  title={viewTitle}
+                  root={status.activeRoot ?? ""}
+                  readOnly={status.readOnly}
+                  onDeleted={() => {
+                    selectView("all");
+                    reloadPlaylists();
+                  }}
+                  onLibraryChanged={reloadPlaylists}
+                />
+              ) : (
+                <LibraryWorkspace
+                  view={libraryView}
+                  title={viewTitle}
+                  root={status.activeRoot ?? ""}
+                  readOnly={status.readOnly}
+                  onLibraryChanged={reloadPlaylists}
+                />
+              )}
 
-      <ImmersivePlayer />
+              {settingsOpen ? <SettingsView onClose={() => setSettingsOpen(false)} /> : null}
+            </section>
+          </>
+        ) : (
+          <ChooseRootView onActivated={status.refresh} />
+        )}
 
-      <QueuePanel />
+        <ImmersivePlayer />
 
-      <PlayerBar />
-    </div>
+        <QueuePanel />
+
+        <PlayerBar />
+
+        <ToastView />
+
+        {playlistNameOpen ? (
+          <PlaylistCreateDialog
+            existingNames={playlists.map((playlist) => playlist.name)}
+            onClose={() => setPlaylistNameOpen(false)}
+            onCreated={() => {
+              setPlaylistNameOpen(false);
+              reloadPlaylists();
+            }}
+          />
+        ) : null}
+      </div>
+    </ShellNavProvider>
   );
 }
 
-/** Sidebar playlist navigation (list + counts). */
-function PlaylistsNav(props: {
-  onSelect: (view: LibraryViewKind, playlistId?: string | null) => void;
-  activePlaylistId: string | null;
-}) {
-  // Playlists are loaded via the workspace store; a lightweight inline loader
-  // keeps the sidebar's data local.
-  const playlists = useLibraryPlaylists();
-  return (
-    <div className="ui-nav-group">
-      <div className="ui-nav-group-title">歌单</div>
-      {playlists.length === 0 ? (
-        <p className="ui-nav-empty">暂无歌单</p>
-      ) : (
-        <ul>
-          {playlists.map((playlist) => (
-            <li key={playlist.id}>
-              <button
-                type="button"
-                className={`ui-nav-item${props.activePlaylistId === playlist.id ? " is-active" : ""}`}
-                onClick={() => props.onSelect("playlist", playlist.id)}
-              >
-                <span className="ui-nav-playlist-name">{playlist.name}</span>
-                <span className="ui-nav-count">{playlist.memberCount}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+/**
+ * 资料库导航计数. The prototype prints sample counts; Echo prints only a number
+ * the backend has actually counted, and never blanks a known number while a
+ * re-count is in flight (`docs/interface-terminology.md`: 原型模拟业务状态不作为实现).
+ */
+function LibraryNavCount({ view }: { view: LibraryCountView }) {
+  const counts = useLibraryCounts();
+  const count = counts[view];
+  return count === null ? null : (
+    <span className="nav-count" data-testid={`nav-count-${view}`}>
+      {count}
+    </span>
   );
 }

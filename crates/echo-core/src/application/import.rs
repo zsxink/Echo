@@ -1223,6 +1223,9 @@ mod tests {
         fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
             self.inner.write_capable(root)
         }
+        fn establish_write_capability(&self, root: LibraryRootId) -> Result<(), Error> {
+            self.inner.establish_write_capability(root)
+        }
     }
 
     /// The gated test composition: the use case sees the gate as its file
@@ -1540,6 +1543,9 @@ mod tests {
         }
         fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
             self.inner.write_capable(root)
+        }
+        fn establish_write_capability(&self, root: LibraryRootId) -> Result<(), Error> {
+            self.inner.establish_write_capability(root)
         }
     }
 
@@ -2252,6 +2258,9 @@ mod tests {
         }
         fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
             self.inner.write_capable(root)
+        }
+        fn establish_write_capability(&self, root: LibraryRootId) -> Result<(), Error> {
+            self.inner.establish_write_capability(root)
         }
     }
 
@@ -3360,6 +3369,9 @@ mod tests {
         }
         fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
             self.inner.write_capable(root)
+        }
+        fn establish_write_capability(&self, root: LibraryRootId) -> Result<(), Error> {
+            self.inner.establish_write_capability(root)
         }
     }
 

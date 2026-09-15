@@ -632,4 +632,228 @@ mod tests {
         assert_eq!(event.root, root);
         assert_eq!(event.path.display(), "tone.mp3");
     }
+
+    // -----------------------------------------------------------------------
+    // Absorb rules the happy-path tests do not reach: staging filtering, the
+    // rename variants, unknown event kinds and one-sided rename degradation.
+    // -----------------------------------------------------------------------
+
+    /// A staging-relative helper mirroring `is_staging`: events under a
+    /// `.echo-staging-*` directory are Echo's own and never surface.
+    fn staging_dir(base: &std::path::Path) -> std::path::PathBuf {
+        base.join(".echo-staging-test")
+    }
+
+    #[test]
+    fn absorb_ignores_events_inside_the_controlled_staging_directory() {
+        let (dir, _root, mut coalescer) = setup();
+        let base = dir.path().to_path_buf();
+        let staging = staging_dir(&base);
+        std::fs::create_dir_all(&staging).unwrap();
+        std::fs::write(staging.join("staged.mp3"), b"x").unwrap();
+
+        // A create, modify, remove inside staging never becomes an event.
+        coalescer.absorb(&created(&staging, "staged.mp3"));
+        coalescer.absorb(&modified(&staging, "staged.mp3"));
+        coalescer.absorb(&removed(&staging, "staged.mp3"));
+        std::thread::sleep(timings().debounce + Duration::from_millis(10));
+        let mut emitted = Vec::new();
+        coalescer.flush_ready(&mut |event| emitted.push(event));
+        assert!(
+            emitted.is_empty(),
+            "staging writes are Echo's own and never resurface: {emitted:?}"
+        );
+    }
+
+    #[test]
+    fn absorb_treats_publish_out_of_staging_as_a_creation() {
+        let (dir, _root, mut coalescer) = setup();
+        let base = dir.path().to_path_buf();
+        let staging = staging_dir(&base);
+        std::fs::create_dir_all(&staging).unwrap();
+        let staged_file = staging.join("staged.flac");
+        let published = base.join("published.flac");
+        std::fs::write(&staged_file, b"whole").unwrap();
+        std::fs::rename(&staged_file, &published).unwrap();
+        let rename = notify::Event::new(notify::EventKind::Modify(
+            notify::event::ModifyKind::Name(notify::event::RenameMode::Both),
+        ))
+        .add_path(staged_file)
+        .add_path(published);
+        coalescer.absorb(&rename);
+        std::thread::sleep(timings().debounce + Duration::from_millis(10));
+        // Created events double-sample for stability: flush 1 takes the sample,
+        // flush 2 (one window later, file unchanged) confirms.
+        let mut emitted = Vec::new();
+        coalescer.flush_ready(&mut |event| emitted.push(event));
+        assert!(emitted.is_empty(), "first stability sample only");
+        std::thread::sleep(timings().sample_delay + Duration::from_millis(5));
+        coalescer.flush_ready(&mut |event| emitted.push(event));
+        // A publish out of staging is a Created at the destination — the piece
+        // reconciliation watches, not a rename (the source was never a library
+        // path).
+        assert_eq!(emitted.len(), 1, "publish out of staging becomes Created");
+        assert_eq!(emitted[0].kind, FileEventKind::Created);
+        assert_eq!(emitted[0].path.display(), "published.flac");
+    }
+
+    #[test]
+    fn absorb_ignores_moves_into_staging_and_one_sided_staging_renames() {
+        let (dir, _root, mut coalescer) = setup();
+        let base = dir.path().to_path_buf();
+        let staging = staging_dir(&base);
+        std::fs::create_dir_all(&staging).unwrap();
+        let library_file = base.join("library.flac");
+        std::fs::write(&library_file, b"x").unwrap();
+
+        // A move *into* staging (the delete stage) is Echo's own work.
+        std::fs::rename(&library_file, staging.join("delete.flac")).unwrap();
+        let into_staging = notify::Event::new(notify::EventKind::Modify(
+            notify::event::ModifyKind::Name(notify::event::RenameMode::Both),
+        ))
+        .add_path(library_file)
+        .add_path(staging.join("delete.flac"));
+        coalescer.absorb(&into_staging);
+        std::thread::sleep(timings().debounce + Duration::from_millis(10));
+        let mut emitted = Vec::new();
+        coalescer.flush_ready(&mut |event| emitted.push(event));
+        assert!(emitted.is_empty(), "move into staging is filtered");
+
+        // A one-sided rename *inside* staging is also filtered (no rescan
+        // degradation for Echo's own interim files).
+        let one_sided = notify::Event::new(notify::EventKind::Modify(
+            notify::event::ModifyKind::Name(notify::event::RenameMode::From),
+        ))
+        .add_path(staging.join("delete.flac"));
+        coalescer.absorb(&one_sided);
+        std::thread::sleep(timings().debounce + Duration::from_millis(10));
+        let mut emitted = Vec::new();
+        coalescer.flush_ready(&mut |event| emitted.push(event));
+        assert!(emitted.is_empty(), "one-sided staging rename is filtered");
+    }
+
+    #[test]
+    fn absorb_degrades_unknown_and_other_events_to_rescan() {
+        let (dir, _root, mut coalescer) = setup();
+        let base = dir.path().to_path_buf();
+
+        // `EventKind::Other` (e.g. a watcher-internal diagnostic) asks for a
+        // rescan rather than pretending the stream is complete.
+        let other = notify::Event::new(notify::EventKind::Other);
+        coalescer.absorb(&other);
+        std::thread::sleep(timings().debounce + Duration::from_millis(10));
+        let mut emitted = Vec::new();
+        coalescer.flush_ready(&mut |event| emitted.push(event));
+        assert_eq!(
+            emitted.first().map(|e| e.kind.clone()),
+            Some(FileEventKind::RescanNeeded)
+        );
+        assert_eq!(
+            emitted.first().map(|e| e.path.display().to_owned()),
+            Some(RESCAN_SENTINEL.to_owned())
+        );
+
+        // Access + Any events are dropped outright.
+        coalescer.absorb(&notify::Event::new(notify::EventKind::Access(
+            notify::event::AccessKind::Close(notify::event::AccessMode::Write),
+        )));
+        coalescer.absorb(&notify::Event::new(notify::EventKind::Any));
+        std::thread::sleep(timings().debounce + Duration::from_millis(10));
+        let mut again = Vec::new();
+        coalescer.flush_ready(&mut |event| again.push(event));
+        assert!(again.is_empty(), "access/any kinds never emit");
+
+        // A one-sided rename touching ordinary library files degrades to a
+        // rescan (the counterpart path is unknown).
+        let one_sided = notify::Event::new(notify::EventKind::Modify(
+            notify::event::ModifyKind::Name(notify::event::RenameMode::From),
+        ))
+        .add_path(base.join("mystery.flac"));
+        coalescer.absorb(&one_sided);
+        std::thread::sleep(timings().debounce + Duration::from_millis(10));
+        let mut emitted = Vec::new();
+        coalescer.flush_ready(&mut |event| emitted.push(event));
+        assert_eq!(
+            emitted.first().map(|e| e.kind.clone()),
+            Some(FileEventKind::RescanNeeded)
+        );
+    }
+
+    #[test]
+    fn rename_pair_orders_from_declaration_and_existence() {
+        let (dir, _root, coalescer) = setup();
+        let base = dir.path().to_path_buf();
+
+        // Both paths exist: declaration order wins (source first per notify).
+        std::fs::write(base.join("lhs.flac"), b"a").unwrap();
+        std::fs::write(base.join("rhs.flac"), b"b").unwrap();
+        let (from, to) = coalescer
+            .rename_pair(&base.join("lhs.flac"), &base.join("rhs.flac"))
+            .expect("both exist");
+        assert_eq!(from.display(), "lhs.flac");
+        assert_eq!(to.display(), "rhs.flac");
+
+        // Only the destination exists: it is `to`, whatever the declaration
+        // order said (macOS/backend disagreement robustness).
+        std::fs::remove_file(base.join("lhs.flac")).unwrap();
+        std::fs::write(base.join("rhs.flac"), b"b").unwrap();
+        let (from, to) = coalescer
+            .rename_pair(&base.join("rhs.flac"), &base.join("lhs.flac"))
+            .expect("destination exists");
+        assert_eq!(from.display(), "lhs.flac");
+        assert_eq!(to.display(), "rhs.flac");
+
+        // A path outside the root has no relative form: no pair.
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("x.flac"), b"x").unwrap();
+        assert!(
+            coalescer
+                .rename_pair(&base.join("rhs.flac"), &outside.path().join("x.flac"))
+                .is_none(),
+            "an unrelateable path cannot pair"
+        );
+    }
+
+    #[test]
+    fn a_modified_file_that_vanishes_between_samples_is_not_emitted() {
+        let (dir, _root, mut coalescer) = setup();
+        let base = dir.path().to_path_buf();
+        let file = base.join("fading.mp3");
+        std::fs::write(&file, b"first").unwrap();
+        coalescer.absorb(&modified(&base, "fading.mp3"));
+        std::thread::sleep(timings().debounce + Duration::from_millis(10));
+        // First sample taken; the file disappears before the confirmation.
+        let mut emitted = Vec::new();
+        coalescer.flush_ready(&mut |event| emitted.push(event));
+        assert!(emitted.is_empty(), "first sample only");
+        std::fs::remove_file(&file).unwrap();
+        std::thread::sleep(timings().sample_delay + Duration::from_millis(10));
+        coalescer.flush_ready(&mut |event| emitted.push(event));
+        assert!(
+            emitted.is_empty(),
+            "a file that vanished mid-sample never emits: {emitted:?}"
+        );
+    }
+
+    /// A relative path that fails to construct (`RelativeMediaPath` rejects a
+    /// redundant `.` component) is skipped silently by `flush_ready`, same as a
+    /// vanished file — the coalescer never panics on an unparsable key.
+    #[test]
+    fn flush_ready_skips_unparsable_pending_keys() {
+        let (dir, _root, mut coalescer) = setup();
+        let base = dir.path().to_path_buf();
+        let odd = base.join("a/./odd.mp3");
+        std::fs::create_dir_all(base.join("a")).unwrap();
+        std::fs::write(&odd, b"x").unwrap();
+        let raw = notify::Event::new(notify::EventKind::Create(notify::event::CreateKind::File))
+            .add_path(odd);
+        coalescer.absorb(&raw);
+        std::thread::sleep(timings().debounce + Duration::from_millis(10));
+        let mut emitted = Vec::new();
+        coalescer.flush_ready(&mut |event| emitted.push(event));
+        assert!(
+            emitted.is_empty(),
+            "a redundant '.' path never constructs a RelativeMediaPath: {emitted:?}"
+        );
+    }
 }

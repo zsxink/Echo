@@ -15,9 +15,11 @@
     "format:check": "prettier --check .",
     "generate:ipc": "cargo run -p echo-desktop --bin echo-generate-ipc",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "node e2e/run-e2e.mjs"
   },
   "dependencies": {
+    "@material/material-color-utilities": "^0.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

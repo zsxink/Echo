@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 use echo_core::application::scan::ScanSummary;
-use echo_core::domain::catalog::{OpaqueCursor, Paged};
+use echo_core::domain::catalog::{CatalogCounts, OpaqueCursor, Paged};
 use echo_core::domain::entities::{Song, SongAvailability};
 use echo_core::domain::ids::{PlaylistId, SongId};
 
@@ -185,6 +185,31 @@ impl From<&echo_core::application::detail::SongDetail> for SongDetailView {
             has_cover: detail.has_cover,
             lyrics: format!("{:?}", detail.lyrics),
             availability: detail.availability.clone(),
+        }
+    }
+}
+
+/// Per-view song totals for the navigation sidebar.
+///
+/// The UI needs these before a view is ever opened, so they are a standalone
+/// read rather than something derived from a paged query — see
+/// `CatalogQueryRepository::counts`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryCountsDto {
+    pub all: u64,
+    pub favorites: u64,
+    /// Capped at the 最近添加 view's own ceiling (100): the count must not
+    /// promise more songs than the view renders.
+    pub recent: u64,
+}
+
+impl From<CatalogCounts> for LibraryCountsDto {
+    fn from(counts: CatalogCounts) -> Self {
+        Self {
+            all: counts.all as u64,
+            favorites: counts.favorites as u64,
+            recent: counts.recent as u64,
         }
     }
 }

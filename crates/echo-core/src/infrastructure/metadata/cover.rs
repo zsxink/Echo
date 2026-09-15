@@ -311,4 +311,107 @@ mod tests {
             "unreferenced removed"
         );
     }
+
+    /// An over-capacity cache retains every *referenced* asset: GC deletes
+    /// only out of the unreferenced set and never wins over references.
+    #[test]
+    fn cover_cache_gc_over_capacity_retains_referenced_assets() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = DiskCoverCache::new(dir.path()).unwrap().with_capacity(64);
+        let keep = cache.put(b"referenced-cover", "image/png").unwrap();
+        let extra = cache.put(b"second-cover-bytes", "image/png").unwrap();
+        // Both referenced, so GC must keep both even beyond the tiny cap.
+        cache
+            .gc(&[keep.clone(), extra.clone()])
+            .expect("gc never deletes referenced assets");
+        assert!(cache.get(&keep).unwrap().is_some(), "kept reference");
+        assert!(
+            cache.get(&extra).unwrap().is_some(),
+            "kept second reference"
+        );
+        // Dropping one reference makes that asset the GC target.
+        cache.gc(std::slice::from_ref(&keep)).unwrap();
+        assert!(cache.get(&extra).unwrap().is_none(), "now unreferenced");
+        assert!(cache.get(&keep).unwrap().is_some(), "still referenced");
+    }
+
+    /// A structurally valid key of a *missing* entry resolves to `None` for
+    /// the original and the thumbnail; a thumb read against a corrupt
+    /// `original.bin` is a corrupt-media error, never a panic.
+    #[test]
+    fn cover_cache_thumbnail_missing_and_corrupt_originals() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = DiskCoverCache::new(dir.path()).unwrap();
+        let unknown = format!("{KEY_PREFIX}{}", "b".repeat(64));
+        assert_eq!(cache.original(&unknown).unwrap(), None);
+        // A thumbnail of an unknown asset cannot be generated on demand.
+        let error = cache.thumbnail(&unknown, false).expect_err("missing asset");
+        assert_eq!(error.code(), "unavailable", "unknown asset key surfaces");
+
+        // A real entry with a non-decodable original: the on-demand thumbnail
+        // generation surfaces corrupt media.
+        let bytes = b"this is not an image at all, just plain bytes";
+        let key = cache.put(bytes, "image/png").unwrap();
+        let error = cache.thumbnail(&key, false).expect_err("undecodable");
+        assert_eq!(error.code(), "corrupt_media");
+        // The original still round-trips untouched.
+        assert_eq!(
+            cache.original(&key).unwrap().as_deref(),
+            Some(bytes.as_slice())
+        );
+    }
+
+    /// `stored_bytes` tolerates a vanished cache directory (a competing GC
+    /// already deleted it) and sum-accounts the real entries.
+    #[test]
+    fn cover_cache_stored_bytes_survives_vanished_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = DiskCoverCache::new(dir.path()).unwrap();
+        assert_eq!(cache.stored_bytes(), 0);
+        cache.put(b"first-cover", "image/png").unwrap();
+        cache.put(b"second-cover-longer", "image/png").unwrap();
+        assert!(
+            cache.stored_bytes() >= 24,
+            "both entries counted: {}",
+            cache.stored_bytes()
+        );
+        // A competing cleanup removed the directory underneath us.
+        std::fs::remove_dir_all(dir.path()).unwrap();
+        assert_eq!(cache.stored_bytes(), 0, "vanished dir reads as zero");
+    }
+
+    #[test]
+    fn scale_to_preserves_small_images_and_scales_large_ones() {
+        // An under-limit image passes through unsized (the bytes decode to the
+        // same dimensions).
+        let small = small_png();
+        let result = scale_to(&small, 512).unwrap();
+        let image = image::load_from_memory(&result).unwrap();
+        assert_eq!(image.width(), 4);
+        assert_eq!(image.height(), 4);
+
+        // A 600x400 image is downscaled so the longest edge is at most 128.
+        let buffer = image::RgbaImage::from_pixel(600, 400, image::Rgba([0, 255, 0, 255]));
+        let mut big = std::io::Cursor::new(Vec::new());
+        buffer.write_to(&mut big, ImageFormat::Png).unwrap();
+        let scaled = scale_to(big.get_ref(), LIST_THUMB_PX).unwrap();
+        let image = image::load_from_memory(&scaled).unwrap();
+        assert!(image.width() <= LIST_THUMB_PX);
+        assert!(image.height() <= LIST_THUMB_PX);
+    }
+
+    /// Malformed keys never reach the filesystem: every public entry rejects
+    /// a bad hash/format before touching the directory.
+    #[test]
+    fn cover_cache_rejects_malformed_keys_before_filesystem_access() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = DiskCoverCache::new(dir.path()).unwrap();
+        for bad in ["cv1-xyz", "cv1-", "cv1-1234", "other-prefix", "cv1-"] {
+            let error = cache.original(bad).expect_err("bad key");
+            assert_eq!(error.code(), "validation", "key {bad:?}");
+        }
+        // gc silently ignores malformed keep keys (they can never match an
+        // entry dir, which is the exact 64-hex hash).
+        cache.gc(&["bad-key".to_owned()]).unwrap();
+    }
 }

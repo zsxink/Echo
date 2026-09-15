@@ -60,7 +60,56 @@ pub(crate) fn upsert_song(connection: &Connection, song: &Song) -> Result<(), Er
     // backward.
     connection.execute("INSERT INTO songs (uuid, library_root_uuid, relative_path, normalized_relative_path, title, artist, album, title_sort, artist_sort, album_sort, duration_ms, is_favorite, play_count, added_at, availability, revision, blake3_hash, file_size, file_mtime_ns, format, bitrate_bps, sample_rate_hz, channels, bits_per_sample, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?25) ON CONFLICT(uuid) DO UPDATE SET library_root_uuid = excluded.library_root_uuid, relative_path = excluded.relative_path, normalized_relative_path = excluded.normalized_relative_path, title = excluded.title, artist = excluded.artist, album = excluded.album, title_sort = excluded.title_sort, artist_sort = excluded.artist_sort, album_sort = excluded.album_sort, duration_ms = excluded.duration_ms, revision = excluded.revision, blake3_hash = excluded.blake3_hash, file_size = excluded.file_size, file_mtime_ns = excluded.file_mtime_ns, format = excluded.format, bitrate_bps = excluded.bitrate_bps, sample_rate_hz = excluded.sample_rate_hz, channels = excluded.channels, bits_per_sample = excluded.bits_per_sample, updated_at = excluded.updated_at", params![song.id().to_string(), song.root().to_string(), song.path().display(), song.path().identity_key(), title, artist, album, normalized_key(song.title().unwrap_or("")), normalized_key(song.artist().unwrap_or("")), normalized_key(song.album().unwrap_or("")), song.duration().map(|duration| i64::try_from(duration.as_millis()).unwrap_or(i64::MAX)), i64::from(song.favorite()), i64::try_from(song.play_count().as_u64()).unwrap_or(i64::MAX), i64::try_from(song.added_at()).unwrap_or(i64::MAX), availability_to_db(song.availability()), i64::try_from(song.revision().as_u64()).unwrap_or(i64::MAX), song.blake3_hash(), song.file_size().map(|size| i64::try_from(size).unwrap_or(i64::MAX)), song.file_mtime_ns(), song.format().map(super::conversion::audio_format_to_db), song.audio_parameters().bitrate_bps.and_then(|v| i64::try_from(v).ok()), song.audio_parameters().sample_rate_hz.map(i64::from), song.audio_parameters().channels.map(i64::from), song.audio_parameters().bits_per_sample.map(i64::from), now]).map_err(map_constraint)?;
     maintain_search(connection, song)?;
-    touch_root(connection, song.root())
+    touch_root(connection, song.root())?;
+    // Sync foundation (task 3.11): a song write is a syncable fact — append its
+    // full snapshot to outbox in this same transaction. Relative path + fields
+    // only; never an absolute path.
+    let id = song.id().to_string();
+    let payload = serde_json::json!({
+        "relative_path": song.path().display(),
+        "title": title,
+        "artist": artist,
+        "album": album,
+        "availability": availability_to_db(song.availability()),
+    });
+    enqueue_object_snapshot(
+        connection,
+        super::sync::KIND_SONG,
+        &id,
+        &payload,
+        super::sync::OP_UPSERT,
+    )?;
+    Ok(())
+}
+
+/// Append an outbox row from a full JSON snapshot of `kind`/uuid, deriving the
+/// object's monotone revision from its outbox history and mirroring the ordinal
+/// onto the canonical column (`playlists`/`library_roots`/`song_overrides`).
+/// `songs.revision` is deliberately NOT touched (it is the persistence layer's
+/// optimistic tag — see sync.rs module doc). The parses of `uuid` are not
+/// needed: outbox stores opaque object UUIDs.
+pub(crate) fn enqueue_object_snapshot(
+    connection: &Connection,
+    kind: &str,
+    object_uuid: &str,
+    payload: &serde_json::Value,
+    operation: &str,
+) -> Result<(), Error> {
+    let json = serde_json::to_string(payload).unwrap_or_else(|_| "{}".to_owned());
+    let revision = super::sync::enqueue_sync(connection, kind, object_uuid, &json, operation)?;
+    // Mirror onto canonical columns (idempotent; only present after 0005).
+    match kind {
+        super::sync::KIND_PLAYLIST => {
+            let id = parse_id::<PlaylistId>(object_uuid, "PlaylistId")?;
+            super::sync::mirror_playlist_revision(connection, id, revision)?;
+        }
+        super::sync::KIND_OVERRIDE => {
+            let song = parse_id::<SongId>(object_uuid, "SongId")?;
+            super::sync::mirror_override_revision(connection, song, revision)?;
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn maintain_search(connection: &Connection, song: &Song) -> Result<(), Error> {
@@ -99,6 +148,27 @@ pub(crate) fn set_song_availability(
 }
 
 pub(crate) fn delete_song(connection: &Connection, id: SongId) -> Result<(), Error> {
+    // `delete_song` is reached only through an Echo-initiated delete finalization
+    // (never an external missing — that keeps `availability = missing` and its
+    // associations). So a delete here IS a syncable tombstone + delete-outbox
+    // row; together they let the deletion propagate cross-device (task 3.12).
+    let id_str = id.to_string();
+    let revision =
+        super::sync::current_outbox_revision(connection, super::sync::KIND_SONG, &id_str)?;
+    super::sync::write_tombstone(
+        connection,
+        super::sync::KIND_SONG,
+        &id_str,
+        revision.saturating_add(1),
+    )?;
+    let payload = serde_json::json!({ "tombstone": true });
+    super::sync::enqueue_sync(
+        connection,
+        super::sync::KIND_SONG,
+        &id_str,
+        &serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_owned()),
+        super::sync::OP_DELETE,
+    )?;
     // FTS external-content tables are not necessarily cleaned by a foreign
     // key cascade. Remove the searchable row in the same finalization
     // transaction before deleting the canonical song record.
@@ -124,7 +194,17 @@ pub(crate) fn set_song_favorite(
             params![id.to_string(), i64::from(favorite), now_ms()],
         )
         .map_err(storage)?;
-    touch_root_for_song(connection, id)
+    touch_root_for_song(connection, id)?;
+    // Favorite is a syncable field (design §3): full snapshot to outbox, same tx.
+    let payload = serde_json::json!({ "is_favorite": favorite });
+    enqueue_object_snapshot(
+        connection,
+        super::sync::KIND_SONG,
+        &id.to_string(),
+        &payload,
+        super::sync::OP_UPSERT,
+    )?;
+    Ok(())
 }
 pub(crate) fn increment_play_count(connection: &Connection, id: SongId) -> Result<(), Error> {
     connection
@@ -152,6 +232,18 @@ pub(crate) fn create_playlist(
 ) -> Result<(), Error> {
     let now = now_ms();
     connection.execute("INSERT INTO playlists (uuid, library_root_uuid, display_name, normalized_name_key, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?5)", params![id.to_string(), root.to_string(), name, playlist_name_key(name), now]).map_err(map_constraint)?;
+    // Playlist creation is a syncable fact.
+    let payload = serde_json::json!({
+        "display_name": name,
+        "members": [],
+    });
+    enqueue_object_snapshot(
+        connection,
+        super::sync::KIND_PLAYLIST,
+        &id.to_string(),
+        &payload,
+        super::sync::OP_UPSERT,
+    )?;
     Ok(())
 }
 pub(crate) fn add_member(
@@ -181,7 +273,47 @@ pub(crate) fn add_member(
         return Ok(());
     }
     connection.execute("INSERT INTO playlist_songs (playlist_uuid, song_uuid, position, added_at) VALUES (?1, ?2, ?3, ?4)", params![playlist.to_string(), song.to_string(), i64::try_from(position).unwrap_or(i64::MAX), now_ms()]).map_err(map_constraint)?;
+    // Membership add is a playlist logic change — enqueue a playlist snapshot
+    // whose payload records the new member set (position appended) so 二期 has
+    // the authoritative member list for this revision.
+    let members_json = playlist_members_excerpt(connection, playlist)?;
+    let payload = serde_json::json!({
+        "members": members_json,
+    });
+    enqueue_object_snapshot(
+        connection,
+        super::sync::KIND_PLAYLIST,
+        &playlist.to_string(),
+        &payload,
+        super::sync::OP_UPSERT,
+    )?;
     Ok(())
+}
+
+/// Read the current member set of a playlist as a JSON array of `{song_uuid,
+/// position}`, for use inside a playlist outbox payload. The excerpt is
+/// root-relative only (UUID + position), never an absolute path.
+pub(crate) fn playlist_members_excerpt(
+    connection: &Connection,
+    playlist: PlaylistId,
+) -> Result<serde_json::Value, Error> {
+    let mut statement = connection
+        .prepare(
+            "SELECT song_uuid, position FROM playlist_songs WHERE playlist_uuid = ?1 ORDER BY position, song_uuid",
+        )
+        .map_err(storage)?;
+    let rows = statement
+        .query_map(params![playlist.to_string()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .map_err(storage)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(storage)?;
+    let members: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|(song_uuid, position)| serde_json::json!({ "song_uuid": song_uuid, "position": position }))
+        .collect();
+    Ok(serde_json::Value::Array(members))
 }
 
 pub(crate) fn operation_item(
@@ -189,7 +321,7 @@ pub(crate) fn operation_item(
     operation: OperationId,
     item: &str,
 ) -> Result<Option<OperationItem>, Error> {
-    connection.query_row("SELECT i.kind, i.state, COALESCE(i.song_uuid, j.reserved_song_uuid), i.target_relative_path, i.expected_hash, i.normalized_target_path, i.source_locator, i.staging_relative_path FROM operation_items i JOIN operation_journal j ON j.operation_uuid = i.operation_uuid WHERE i.operation_uuid = ?1 AND i.item_key = ?2", params![operation.to_string(), item], super::conversion::operation_item_from_row).optional().map_err(storage)
+    connection.query_row("SELECT i.kind, i.state, COALESCE(i.song_uuid, j.reserved_song_uuid), i.target_relative_path, i.expected_hash, i.item_key, i.normalized_target_path, i.source_locator, i.staging_relative_path FROM operation_items i JOIN operation_journal j ON j.operation_uuid = i.operation_uuid WHERE i.operation_uuid = ?1 AND i.item_key = ?2", params![operation.to_string(), item], super::conversion::operation_item_from_row).optional().map_err(storage)
 }
 /// Idempotently create the operation envelope (the journal's total-state row
 /// every per-resource item attaches to; design §8). Repeats are no-ops so

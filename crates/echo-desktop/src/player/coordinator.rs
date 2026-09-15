@@ -115,6 +115,14 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
         &self.queue
     }
 
+    /// Mutable access to the queue — for the deletion coordinator (task 8.11),
+    /// which snapshots/removes entries under the same lock the command layer
+    /// already holds. Every other mutation goes through coordinator methods.
+    #[must_use]
+    pub fn queue_mut(&mut self) -> &mut Queue {
+        &mut self.queue
+    }
+
     /// The current queue entry, if any.
     #[must_use]
     pub fn current(&self) -> Option<&QueueEntry> {
@@ -141,7 +149,59 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
             .current_id()
             .expect("view context always yields a current entry");
         self.load_entry(current_id, song);
-        self.mode = PlayMode::Sequential;
+        // The user's mode persists across context switches (设计: 记忆播放模式) —
+        // a new context never resets it.
+    }
+
+    /// Cold-start priming (设计: 有歌时默认入栏，不发声): build the queue from
+    /// the view context exactly like [`Self::play_context`], but load the
+    /// selected song **paused** — the file is decoded so the player bar shows
+    /// real metadata/duration, and no sound is ever produced until the user
+    /// presses play.
+    pub fn play_context_paused(&mut self, ctx: &ViewContext) {
+        let selected = ctx.selected_index.min(ctx.songs.len().saturating_sub(1));
+        let song = ctx.songs[selected];
+        self.queue = ctx.build_queue();
+        self.failed_round.clear();
+        if let Some(current_id) = self.queue.current_id() {
+            let session = self.new_load_session(current_id);
+            self.player
+                .send(PlayerCommand::LoadLibrarySongPaused {
+                    song_id: song,
+                    session_id: session,
+                })
+                .ok();
+        }
+    }
+
+    /// Apply a restored playback session (task 8.9, 冷启动恢复): adopt the
+    /// rebuilt queue and mode, restore the volume/mute settings on the actor,
+    /// and load the current entry **paused** (恢复后绝不自动发声). The current
+    /// entry's last position is persisted but intentionally not seeked here —
+    /// the load completes asynchronously; resuming mid-track is a follow-up.
+    pub fn restore_session(&mut self, queue: Queue, mode: PlayMode, volume: f64, muted: bool) {
+        self.queue = queue;
+        self.mode = mode;
+        self.failed_round.clear();
+        self.player.send(PlayerCommand::SetVolume(volume)).ok();
+        // `SetMute`, not `ToggleMute`: the session records the state the user
+        // left behind, so restoring must reproduce it. A relative toggle is
+        // only correct if this runs exactly once — a repeated restore (a
+        // double-invoked command, React StrictMode mounting twice) would flip
+        // the flag back and silently un-mute the player. The absolute form is
+        // idempotent.
+        self.player.send(PlayerCommand::SetMute(muted)).ok();
+        if let Some(id) = self.queue.current_id() {
+            if let Some(song) = self.queue.get(id).and_then(|e| e.item.song_id()) {
+                let session = self.new_load_session(id);
+                self.player
+                    .send(PlayerCommand::LoadLibrarySongPaused {
+                        song_id: song,
+                        session_id: session,
+                    })
+                    .ok();
+            }
+        }
     }
 
     /// Play a single temporary file immediately (system file open outside the
@@ -260,7 +320,12 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
     }
 
     fn next_from_mode(&mut self) -> Option<QueueEntryId> {
-        loop {
+        // 列表循环 makes sequential advance wrap forever, so "no progress"
+        // (every entry failed this round) can no longer be detected by an
+        // `Exhausted` return. Cap the walk at one full loop plus the wrap; a
+        // cap out means nothing playable remains — stop instead of spinning.
+        let max_attempts = self.queue.len() + 1;
+        for _ in 0..max_attempts {
             match self.queue.advance_in_mode(self.mode) {
                 Some(id) => {
                     if self.failed_round.contains(&id) {
@@ -298,6 +363,9 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
                 }
             }
         }
+        // A full loop found nothing un-failed: stop (never spin).
+        self.player.send(PlayerCommand::Stop).ok();
+        None
     }
 
     /// Record that the current entry failed to load/decode and advance past it
@@ -330,7 +398,11 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
     /// the previous entry in history.
     pub fn previous(&mut self) {
         let now = self.player.snapshot().position.unwrap_or(0.0);
-        let has_current = self.player.snapshot().current_item.is_some();
+        // "Is anything loaded" is a queue fact, so ask the queue. The player
+        // snapshot carries transport state only (it has no queue-entry id), and
+        // reading it here made the >5 s restart rule dead code in production
+        // while the FakePlayer-based test stayed green.
+        let has_current = self.queue.current().is_some();
         if has_current && now > PREVIOUS_RESTART_THRESHOLD {
             // Restart the current track.
             self.player.send(PlayerCommand::Seek(0.0)).ok();
@@ -395,6 +467,14 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
         let session = PlaybackSessionId::new();
         self.active_load_session = Some((entry_id, session));
         session
+    }
+
+    /// The active load session: the current entry id and the
+    /// `PlaybackSessionId` issued for it (statistics, 8.10). `None` before the
+    /// first load.
+    #[must_use]
+    pub const fn active_load_session(&self) -> Option<(QueueEntryId, PlaybackSessionId)> {
+        self.active_load_session
     }
 
     /// Access the player port directly (for tests that need to inspect the
@@ -517,7 +597,7 @@ mod tests {
     }
 
     #[test]
-    fn next_advances_in_order() {
+    fn next_advances_in_order_and_wraps_around() {
         let player = FakePlayer::new();
         let mut coord = PlaybackCoordinator::new(player);
         let s1 = song();
@@ -529,12 +609,94 @@ mod tests {
         assert_eq!(coord.current().unwrap().item.song_id(), Some(s1));
         coord.advance_to_next();
         assert_eq!(coord.current().unwrap().item.song_id(), Some(s2));
-        // Advancing past the end stops.
+        // 列表循环: advancing past the end returns to the first entry.
         coord.advance_to_next();
+        assert_eq!(coord.current().unwrap().item.song_id(), Some(s1));
         assert_eq!(
             coord.snapshot().state,
-            echo_core::domain::state::PlaybackState::Stopped
+            echo_core::domain::state::PlaybackState::Playing,
+            "the queue keeps playing after the wrap"
         );
+    }
+
+    #[test]
+    fn play_context_keeps_the_user_mode() {
+        // 设计: 记忆播放模式 — a new context never resets the mode back to
+        // sequential (the old hardcode did exactly that on every play click).
+        let player = FakePlayer::new();
+        let mut coord = PlaybackCoordinator::new(player);
+        coord.set_mode(PlayMode::RepeatOne);
+        coord.play_context(&ViewContext {
+            songs: vec![song(), song()],
+            selected_index: 0,
+        });
+        assert_eq!(coord.mode(), PlayMode::RepeatOne);
+    }
+
+    #[test]
+    fn play_context_paused_loads_without_playing() {
+        let player = FakePlayer::new();
+        let mut coord = PlaybackCoordinator::new(player);
+        let s1 = song();
+        coord.play_context_paused(&ViewContext {
+            songs: vec![s1, song()],
+            selected_index: 0,
+        });
+        assert_eq!(coord.current().unwrap().item.song_id(), Some(s1));
+        assert_eq!(
+            coord.snapshot().state,
+            echo_core::domain::state::PlaybackState::Paused,
+            "cold-start priming must never make a sound"
+        );
+        assert_eq!(coord.player().last_loaded_song(), Some(s1));
+    }
+
+    #[test]
+    fn restore_session_recovers_queue_mode_and_settings_paused() {
+        let player = FakePlayer::new();
+        let mut coord = PlaybackCoordinator::new(player);
+        let s1 = song();
+        let s2 = song();
+        let queue = ViewContext {
+            songs: vec![s1, s2],
+            selected_index: 1,
+        }
+        .build_queue();
+        // current is s2 per the view context.
+        assert_eq!(queue.current().unwrap().item.song_id(), Some(s2));
+        coord.restore_session(queue, PlayMode::Shuffle, 0.42, true);
+        assert_eq!(coord.current().unwrap().item.song_id(), Some(s2));
+        assert_eq!(coord.mode(), PlayMode::Shuffle);
+        assert_eq!(
+            coord.snapshot().state,
+            echo_core::domain::state::PlaybackState::Paused
+        );
+        assert!((coord.snapshot().volume - 0.42).abs() < f64::EPSILON);
+        assert!(coord.snapshot().muted);
+    }
+
+    #[test]
+    fn restore_session_replay_keeps_persisted_mute() {
+        // A restore that runs twice (a double-invoked boot command, React
+        // StrictMode mounting the boot effect twice) must reproduce the
+        // recorded state instead of toggling it away. The coordinator sends the
+        // absolute `SetMute`, so the replay is a no-op; a relative toggle would
+        // have un-muted the player on the second pass.
+        let player = FakePlayer::new();
+        let mut coord = PlaybackCoordinator::new(player);
+        let s1 = song();
+        let build = || {
+            ViewContext {
+                songs: vec![s1],
+                selected_index: 0,
+            }
+            .build_queue()
+        };
+        coord.restore_session(build(), PlayMode::Sequential, 0.45, true);
+        assert!(coord.snapshot().muted, "the first restore mutes");
+        coord.restore_session(build(), PlayMode::Sequential, 0.45, true);
+        assert!(coord.snapshot().muted, "replaying the restore stays muted");
+        assert!((coord.snapshot().volume - 0.45).abs() < f64::EPSILON);
     }
 
     #[test]

@@ -7,7 +7,7 @@
  * absolute path ever crosses this boundary — only the opaque active-root id.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { bridge } from "../../bridge";
 import { subscribe } from "../../bridge";
@@ -28,32 +28,29 @@ const INITIAL: LibraryStatus = {
   scanning: false,
 };
 
-export function useLibraryStatus(): LibraryStatus {
+export function useLibraryStatus(): LibraryStatus & { refresh: () => Promise<void> } {
   const [status, setStatus] = useState<LibraryStatus>(INITIAL);
+  const revision = useRef(0);
+  const invalidate = useCallback(() => ++revision.current, []);
+
+  const refresh = useCallback(async () => {
+    const request = invalidate();
+    const value = (await bridge.call("library_status")) as LibraryStatus;
+    if (request === revision.current) setStatus(value);
+  }, [invalidate]);
 
   useEffect(() => {
-    let cancelled = false;
-    void bridge.call("library_status").then((value: unknown) => {
-      if (!cancelled) setStatus(value as LibraryStatus);
-    });
+    // A failed startup read keeps the choose/retry entry available.
+    void refresh().catch(() => {});
     const unlisten = subscribe("library://status", (payload: unknown) => {
+      invalidate();
       setStatus(payload as LibraryStatus);
     });
     return () => {
-      cancelled = true;
+      invalidate();
       unlisten.then((fn) => fn());
     };
-  }, []);
+  }, [refresh, invalidate]);
 
-  const refresh = useCallback(() => {
-    void bridge.call("library_status").then((value: unknown) => {
-      setStatus(value as LibraryStatus);
-    });
-  }, []);
-
-  // Expose refresh for callers (e.g. retry buttons); it is unused in the
-  // current render path but wired for the retry flow (task 10.7).
-  void refresh;
-
-  return status;
+  return { ...status, refresh };
 }

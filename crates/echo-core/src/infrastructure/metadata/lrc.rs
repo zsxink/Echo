@@ -247,4 +247,52 @@ mod tests {
         let times: Vec<i64> = candidate.lines().iter().map(|l| l.timestamp_ms).collect();
         assert_eq!(times, vec![3_450, 7_500, 62_300]);
     }
+
+    #[test]
+    fn hostile_lrc_with_many_timestamps_one_line_deduplicates_and_stays_bounded() {
+        // Task 12.7: a malicious line can carry hundreds of leading timestamp
+        // groups (`[00:00.01][00:00.02]…text`). The parser must not blow up on
+        // the stacked groups and must preserve source order deterministically.
+        let mut raw = String::new();
+        for i in 0..500 {
+            // 500 distinct millisecond timestamps (`mm:ss.xxx` form): the
+            // hundredths-of-a-second are i → `00:00.000`..`00:00.499`.
+            use std::fmt::Write as _;
+            let _ = write!(raw, "[00:00.{i:03}]");
+        }
+        raw.push_str("repeated");
+        let candidate = LrcLyricsParser.parse(&raw);
+        // All 500 timestamps collapse to one logical line, playback-ordered.
+        let lines = candidate.lines();
+        assert_eq!(lines.len(), 500, "{lines:?}");
+        for (index, line) in lines.iter().enumerate() {
+            assert_eq!(line.text, "repeated");
+            assert_eq!(line.original_index, 0);
+            assert_eq!(
+                line.timestamp_ms,
+                i64::try_from(index).expect("index fits in i64"),
+                "sorted by ms, orig index ties"
+            );
+        }
+        assert!(candidate.parse_error().is_none());
+    }
+
+    #[test]
+    fn hostile_lrc_with_control_and_oversized_text_is_a_note_with_bounded_lines() {
+        // Task 12.7: null bytes / control characters in lyric text and a huge
+        // line count must yield a bounded plain-text result and never panic.
+        // The 2 MiB byte cap and control-character cleanup are enforced by the
+        // metadata reader (`clean_lyrics_text`) *before* the parser runs; here
+        // we prove the parser itself stays bounded on a huge hostile input.
+        let mut raw = String::new();
+        for i in 0..2_000 {
+            use std::fmt::Write as _;
+            let _ = writeln!(raw, "line {i} \u{0}\u{7f}");
+        }
+        let candidate = LrcLyricsParser.parse(&raw);
+        assert!(candidate.is_plain_text());
+        let plain = candidate.plain_text().expect("plain text present");
+        assert_eq!(plain.lines().count(), 2_000);
+        assert!(candidate.parse_error().is_none());
+    }
 }

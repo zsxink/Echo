@@ -39,6 +39,12 @@ export interface PagedSongs {
   readonly isLast: boolean;
 }
 
+export interface LibraryCountsDto {
+  readonly all: number;
+  readonly favorites: number;
+  readonly recent: number;
+}
+
 export interface PlaylistView {
   readonly id: string;
   readonly name: string;

@@ -24,6 +24,7 @@ mod migrations {
     pub const ROOT_WRITE_SAFETY: &str = include_str!("migrations/0003_root_write_safety.sql");
     pub const SONG_AUDIO_PARAMETERS: &str =
         include_str!("migrations/0004_song_audio_parameters.sql");
+    pub const SYNC_FOUNDATION: &str = include_str!("migrations/0005_sync_foundation.sql");
 }
 
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -74,6 +75,7 @@ pub(crate) fn apply_migrations(connection: &mut Connection) -> Result<(), Error>
             (2, migrations::LIBRARY_ASSETS),
             (3, migrations::ROOT_WRITE_SAFETY),
             (4, migrations::SONG_AUDIO_PARAMETERS),
+            (5, migrations::SYNC_FOUNDATION),
         ],
     )
 }

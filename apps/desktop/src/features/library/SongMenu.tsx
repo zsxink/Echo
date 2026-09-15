@@ -1,23 +1,60 @@
 /**
- * Song action menu (task 10.8 / 10.9).
+ * 歌曲操作菜单 (task 10.6 / 10.8) — the prototype's `.song-menu`.
  *
- * A per-song menu exposing single-song operations only (本期无全选批量): 播放,
- * 下一首播放, 加入歌单, 显示详情, 打开本地目录, 删除（含确认 + 10 秒撤销）。
- * The menu is always bound to the SongId that opened it; clicking outside or
- * Escape closes it. The delete flow shows a real confirmation and a 10-second
- * undo affordance — a cancel / failed delete never fabricates a deletion.
+ * DOM, geometry and copy come from the prototype
+ * (`docs/prototype/echo-desktop-player.html`): a fixed 248px popover holding a
+ * `.menu-song` card and a stack of `.menu-action` rows, positioned with the
+ * prototype's own clamp
+ *   left = clamp(12, min(innerWidth − 260, trigger.right − 248))
+ *   top  = clamp(12, min(innerHeight − 254, trigger.bottom + 6))
+ * There is no scrim in the prototype — the menu closes on an outside pointer
+ * press — so neither is there one here.
+ *
+ * The delete flow follows the prototype exactly:
+ *  删除 → the 阻断确认 dialog (`.confirmation-dialog`) → on success the menu
+ *  closes and the 撤销 affordance appears in the toast (`.toast` +
+ *  `.toast-action`) with a real 10-second window. A failed delete keeps the menu
+ *  open with an inline `.menu-error` — it never fabricates a deletion.
+ *
+ * Item set: the prototype's five actions (下一首播放 / 添加到歌单 / 显示歌曲详情 /
+ * 打开本地目录 / 删除) plus 播放 / 加入播放队列 / 收藏, which this release exposes
+ * as real capabilities (tasks 10.6 / 10.8). Every extra row uses the prototype's
+ * `.menu-action` anatomy — nothing bespoke. 关闭 is intentionally absent: the
+ * prototype has no such item, and Escape / outside-click already cover it.
  */
 
-import { useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+} from "react";
 
-import { bridge } from "../../bridge";
+import { assetUrl, bridge } from "../../bridge";
+import { useCoverKeys } from "../../app/coverArt";
 import { OverlayTier, useFocusTrap, useOverlay, useRovingFocus } from "../../app/overlays";
+import { Icon } from "../../app/Icon";
+import { notify } from "../../app/toast";
 import type { SongView } from "../../ipc/ipc-types.generated";
+import { coverClass, invalidateLibraryCounts } from "./coverPalette";
+
+/** Viewport rect of the control that opened the menu. */
+export interface MenuAnchor {
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly left: number;
+}
 
 export interface SongMenuProps {
   readonly song: SongView;
   readonly root: string;
   readonly readOnly: boolean;
+  /** Where to anchor the popover; omitted falls back to the viewport corner. */
+  readonly anchor?: MenuAnchor | null;
   readonly onClose: () => void;
   readonly onPlay: () => void;
   /** Insert this song right after the current one ("下一首播放", task 10.6). */
@@ -31,10 +68,18 @@ export interface SongMenuProps {
   readonly extraActions?: ReactNode;
 }
 
+/** Menu geometry from the prototype's own constants. */
+const MENU_WIDTH = 248;
+const MENU_HEIGHT = 254;
+const VIEWPORT_GAP = 12;
+/** The 撤销 window (task 10.8). */
+const UNDO_WINDOW_MS = 10_000;
+
 export function SongMenu({
   song,
   root,
   readOnly,
+  anchor,
   onClose,
   onPlay,
   onPlayNext,
@@ -46,13 +91,38 @@ export function SongMenu({
 }: SongMenuProps) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [undo, setUndo] = useState<string | null>(null); // operation id
   const [error, setError] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLElement>(null);
+  // The menu shows the same artwork the row does. Asking for this one id is
+  // free when the list already resolved it (the store de-duplicates) and is the
+  // only source when the menu is opened from somewhere else.
+  const coverKey = useCoverKeys([song.id]).get(song.id) || null;
+  // Hook order is fixed: placement is computed before any early return, so the
+  // menu never changes its hook count between renders.
+  const style = usePlacement(anchor, menuRef);
   // Single overlay stack: the menu is a `Menu` tier layer; Escape closes it via
   // the global handler, focus is trapped, and focus returns to the row on close.
   useOverlay({ tier: OverlayTier.Menu, onClose, containerRef: menuRef });
   useFocusTrap(menuRef);
+
+  // Outside press closes the menu, as in the prototype (which stops propagation
+  // on the trigger instead of drawing a scrim). Suspended while a higher layer
+  // owned by this component is open, so the press lands on that layer.
+  const dismissable = !confirmDelete && !detailOpen;
+  useEffect(() => {
+    if (!dismissable) return;
+    function onPointerDown(event: Event) {
+      const target = event.target as Node | null;
+      if (target && menuRef.current?.contains(target)) return;
+      onClose();
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [dismissable, onClose]);
+
+  const title = song.title ?? "未命名歌曲";
+  const artist = song.artist ?? "未知艺人";
+  const unavailable = song.availability !== "available";
 
   async function reveal() {
     try {
@@ -61,9 +131,14 @@ export function SongMenu({
         revealed: boolean;
       };
       if (!result.revealed) {
-        // Soft failure — show the relative path instead; never absolute.
-        setError(`已在资料库中找到：${result.relativePath}（无法打开文件管理器）`);
+        // Soft failure — show the relative path instead; never an absolute one.
+        notify({
+          message: `已在资料库中找到：${result.relativePath}（无法打开文件管理器）`,
+        });
+        onClose();
+        return;
       }
+      notify("已打开所在文件夹");
       onClose();
     } catch {
       setError("无法定位该文件");
@@ -78,133 +153,163 @@ export function SongMenu({
         root,
         song: song.id,
       })) as string;
-      setUndo(operation);
       onRefresh();
-    } catch (err) {
-      setError("删除失败，请重试");
-      void err;
-    }
-  }
-
-  async function undoDelete() {
-    if (!undo) return;
-    try {
-      await bridge.call("undo_delete", { root, operation: undo });
-      setUndo(null);
-      onRefresh();
+      // The song leaves every view's total, not just this one's rows.
+      invalidateLibraryCounts();
+      // The prototype removes the row and reports through the toast, whose
+      // 撤销 action is the only way back. The window really closes at 10s.
+      notify({
+        message: `已将「${title}」移至回收站，${UNDO_WINDOW_MS / 1000} 秒内可撤销`,
+        actionLabel: "撤销",
+        autoDismissMs: UNDO_WINDOW_MS,
+        onAction: () => {
+          void bridge
+            .call("undo_delete", { root, operation })
+            .then(() => {
+              notify(`已恢复「${title}」`);
+              onRefresh();
+              invalidateLibraryCounts();
+            })
+            .catch(() => notify({ message: "撤销失败或已超时", error: true }));
+        },
+      });
+      onClose();
     } catch {
-      setError("撤销失败或已超时");
-      setUndo(null);
+      setError("删除失败，请重试");
     }
   }
 
-  // Roving-focus menu items (WAI-ARIA menu pattern). The invoking action id is
-  // stable so the active item can be tracked and focused with arrow keys. This
-  // must be hoisted above any early return to keep the hook order stable.
+  // Roving-focus menu items (WAI-ARIA menu pattern). Hoisted above any early
+  // return so the hook order stays stable.
   const items = [
-    { id: "song-menu-play", label: "播放", run: () => onPlay() },
+    { id: "song-menu-play", label: "播放", icon: "play", run: () => onPlay() },
     {
-      id: "song-menu-play-next",
+      id: "song-menu-next",
       label: "下一首播放",
+      icon: "playNext",
       run: () => onPlayNext?.(),
-      disabled: !onPlayNext || song.availability !== "available",
+      disabled: !onPlayNext || unavailable,
+    },
+    {
+      id: "song-menu-add-playlist",
+      label: "添加到歌单",
+      icon: "plus",
+      run: () => onAddToPlaylist?.(),
+      disabled: readOnly || !onAddToPlaylist || unavailable,
+    },
+    {
+      id: "song-menu-detail",
+      label: "显示歌曲详情",
+      icon: "info",
+      run: () => setDetailOpen(true),
+    },
+    {
+      id: "song-menu-folder",
+      label: "打开本地目录",
+      icon: "folder",
+      run: () => void reveal(),
+      disabled: unavailable,
     },
     {
       id: "song-menu-enqueue",
       label: "加入播放队列",
+      icon: "queue",
       run: () => onEnqueue?.(),
-      disabled: !onEnqueue || song.availability !== "available",
+      disabled: !onEnqueue || unavailable,
     },
-    { id: "song-menu-detail", label: "显示歌曲详情", run: () => setDetailOpen(true) },
     {
-      id: "song-menu-reveal",
-      label: "打开本地目录",
-      run: () => void reveal(),
-      disabled: song.availability !== "available",
+      id: "song-menu-favorite",
+      label: song.favorite ? "取消收藏" : "收藏",
+      icon: "heart",
+      run: () => onFavorite(!song.favorite),
+      disabled: readOnly,
     },
     ...(readOnly
       ? []
       : [
           {
-            id: "song-menu-add-to-playlist",
-            label: "加入歌单…",
-            run: () => onAddToPlaylist?.(),
-            disabled: !onAddToPlaylist || song.availability !== "available",
-          },
-          {
-            id: "song-menu-favorite",
-            label: song.favorite ? "取消收藏" : "收藏",
-            run: () => onFavorite(!song.favorite),
-          },
-          {
             id: "song-menu-delete",
-            label: "删除…",
-            run: () => setConfirmDelete(true),
+            label: "删除",
+            icon: "trash",
+            run: () => {
+              setError(null);
+              setConfirmDelete(true);
+            },
             danger: true,
           },
         ]),
-    { id: "song-menu-close", label: "关闭", run: onClose, muted: true },
-  ].map((it) => ({ ...it, disabled: it.disabled ?? false }));
-  const { activeId, onMenuKeyDown, setActive } = useRovingFocus(items);
+  ].map((item) => ({ ...item, disabled: item.disabled ?? false }));
+  const { onMenuKeyDown, setActive } = useRovingFocus(items);
 
-  if (undo) {
+  // The prototype focuses `#menu-next` when the menu opens, not the first row.
+  // Declared after `useOverlay` so this effect runs after the overlay's own
+  // "focus the first focusable" pass and wins.
+  useEffect(() => {
+    document.getElementById("song-menu-next")?.focus();
+  }, []);
+
+  if (confirmDelete) {
+    // The prototype closes the menu first and shows only the confirmation.
     return (
-      <div className="overlay-shell" data-testid="delete-undo">
-        <div className="menu" role="dialog" aria-modal="true" aria-label="删除撤销">
-          <p>歌曲已放入回收站，10 秒内可撤销。</p>
-          <div className="menu-actions">
-            <button type="button" className="btn btn-primary" onClick={() => void undoDelete()}>
-              撤销
-            </button>
-            <button type="button" className="btn" onClick={onClose}>
-              关闭
-            </button>
-          </div>
-        </div>
-      </div>
+      <ConfirmationDialog
+        title={`删除「${title}」？`}
+        description="歌曲会移至回收站。你仍可立即撤销本次操作。"
+        confirmLabel="移至回收站"
+        onConfirm={() => void deleteSong()}
+        onCancel={() => setConfirmDelete(false)}
+      />
     );
   }
 
   return (
-    <div className="overlay-shell" data-testid="song-menu" onClick={onClose}>
-      <div
-        className="menu"
+    <>
+      <section
+        className="song-menu"
         role="menu"
-        aria-label="歌曲操作"
+        aria-label="歌曲操作菜单"
         ref={menuRef}
-        onClick={(e) => e.stopPropagation()}
         onKeyDown={onMenuKeyDown}
+        style={style}
+        data-testid="song-menu"
       >
+        <div className="menu-song">
+          <div
+            className={`cover ${coverClass(song.id)}${coverKey ? " has-image" : ""}`}
+            aria-hidden="true"
+          >
+            {coverKey ? <img src={assetUrl(coverKey)} alt="" /> : null}
+          </div>
+          <div>
+            <b id="menu-title">{title}</b>
+            <span id="menu-artist">{artist}</span>
+          </div>
+        </div>
+
         {items.map((item) => (
           <button
             key={item.id}
             id={item.id}
             type="button"
             role="menuitem"
-            className={[
-              "menu-item",
-              item.danger ? "danger-text" : "",
-              item.muted ? "menu-item-muted" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
+            className={`menu-action${item.danger ? " danger" : ""}`}
             disabled={item.disabled}
             onClick={() => {
               if (!item.disabled) item.run();
             }}
             onFocus={() => setActive(item.id)}
-            aria-current={activeId === item.id ? "true" : undefined}
           >
+            <Icon name={item.icon} filled={item.icon === "heart" && song.favorite} />
             {item.label}
           </button>
         ))}
+
         {error ? (
           <p className="menu-error" role="alert">
             {error}
           </p>
         ) : null}
         {extraActions}
-      </div>
+      </section>
 
       {detailOpen ? (
         <SongDetail
@@ -213,54 +318,83 @@ export function SongMenu({
           onReveal={() => void reveal()}
         />
       ) : null}
-
-      {confirmDelete ? (
-        <SongDeleteConfirm
-          onCancel={() => setConfirmDelete(false)}
-          onConfirm={() => void deleteSong()}
-        />
-      ) : null}
-    </div>
+    </>
   );
 }
 
 /**
- * Blocking delete-confirmation dialog ("阻断确认/命名对话框" tier). Rendered as
- * a modal above the song menu; Escape closes it before the menu on the single
- * stack, and focus is trapped/restored.
+ * Anchored placement, using the prototype's own clamp (it never flips above the
+ * trigger — it just stays inside the viewport). Measured height is used when
+ * available so a long menu stays clickable.
  */
-function SongDeleteConfirm({
-  onCancel,
-  onConfirm,
-}: {
-  onCancel: () => void;
-  onConfirm: () => void;
+function usePlacement(
+  anchor: MenuAnchor | null | undefined,
+  menuRef: RefObject<HTMLElement | null>,
+): CSSProperties {
+  const [height, setHeight] = useState(0);
+  const measured = useRef(false);
+
+  useLayoutEffect(() => {
+    if (measured.current || !menuRef.current) return;
+    const box = menuRef.current.getBoundingClientRect();
+    if (box.height === 0) return;
+    measured.current = true;
+    setHeight(box.height);
+  }, [menuRef]);
+
+  if (!anchor) return {};
+  const viewportW = window.innerWidth || 1280;
+  const viewportH = window.innerHeight || 800;
+  const boxHeight = height > 0 ? height : MENU_HEIGHT;
+  return {
+    left: Math.max(
+      VIEWPORT_GAP,
+      Math.min(viewportW - MENU_WIDTH - VIEWPORT_GAP, anchor.right - MENU_WIDTH),
+    ),
+    top: Math.max(VIEWPORT_GAP, Math.min(viewportH - boxHeight - VIEWPORT_GAP, anchor.bottom + 6)),
+  };
+}
+
+/**
+ * The prototype's `.confirmation-dialog`: a blocking panel used for the delete
+ * confirmation. It is the `BlockingDialog` tier, so Escape closes it before
+ * anything beneath it.
+ */
+export function ConfirmationDialog(props: {
+  readonly title: string;
+  readonly description: string;
+  readonly confirmLabel: string;
+  readonly onConfirm: () => void;
+  readonly onCancel: () => void;
+  readonly cancelLabel?: string;
+  readonly testId?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  useOverlay({ tier: OverlayTier.BlockingDialog, onClose: onCancel, containerRef: ref });
+  useOverlay({ tier: OverlayTier.BlockingDialog, onClose: props.onCancel, containerRef: ref });
   useFocusTrap(ref);
 
   return (
-    <div className="overlay-shell">
-      <div
-        className="detail-card"
-        role="dialog"
-        aria-modal="true"
-        aria-label="确认删除"
-        ref={ref}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <p className="danger-text">确认删除这首歌曲？（可撤销）</p>
-        <div className="menu-actions">
-          <button type="button" className="btn btn-danger" onClick={onConfirm}>
-            确认删除
+    <section
+      className="confirmation-dialog"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="confirmation-title"
+      data-testid={props.testId}
+      ref={ref}
+    >
+      <div className="confirmation-panel">
+        <h2 id="confirmation-title">{props.title}</h2>
+        <p>{props.description}</p>
+        <div className="confirmation-actions">
+          <button type="button" className="btn" onClick={props.onCancel}>
+            {props.cancelLabel ?? "取消"}
           </button>
-          <button type="button" className="btn" onClick={onCancel}>
-            取消
+          <button type="button" className="btn btn-danger" onClick={props.onConfirm}>
+            {props.confirmLabel}
           </button>
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -281,16 +415,15 @@ export function SongDetail({
   useFocusTrap(detailRef);
 
   return (
-    <div className="overlay-shell">
-      <div
-        className="detail-card"
-        role="dialog"
-        aria-modal="true"
-        aria-label="歌曲详情"
-        ref={detailRef}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="detail-title">{song.title ?? "未命名歌曲"}</h3>
+    <section
+      className="confirmation-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-label="歌曲详情"
+      ref={detailRef}
+    >
+      <div className="confirmation-panel">
+        <h2>{song.title ?? "未命名歌曲"}</h2>
         <dl className="detail-grid">
           <dt>艺人</dt>
           <dd>{song.artist ?? "未知艺人"}</dd>
@@ -301,15 +434,15 @@ export function SongDetail({
           <dt>播放次数</dt>
           <dd>{song.playCount}</dd>
         </dl>
-        <div className="menu-actions">
-          <button type="button" className="btn" onClick={onReveal}>
-            打开本地目录
-          </button>
+        <div className="confirmation-actions">
           <button type="button" className="btn" onClick={onClose}>
             关闭
           </button>
+          <button type="button" className="btn btn-primary" onClick={onReveal}>
+            打开本地目录
+          </button>
         </div>
       </div>
-    </div>
+    </section>
   );
 }

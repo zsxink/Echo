@@ -291,3 +291,265 @@ pub(crate) fn operation_state_from_db(value: &str) -> Result<OperationState, Err
         }),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::entities::LyricsSource;
+    use crate::domain::ids::{LibraryRootId, SongId};
+    use crate::domain::state::scan::ScanState;
+    use crate::domain::state::OperationState as DomainOperationState;
+
+    /// Feed literal columns through a real `SELECT` and hand the first row to a
+    /// `..._from_row` mapper — the same path real queries use (a `rusqlite::Row`
+    /// cannot be constructed by value outside a statement).
+    fn first_row<T>(
+        values: &[rusqlite::types::Value],
+        mapper: impl FnOnce(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
+    ) -> rusqlite::Result<T> {
+        let connection = rusqlite::Connection::open_in_memory().expect("in-memory connection");
+        let placeholders: Vec<&str> = std::iter::repeat_n("?", values.len()).collect();
+        let mut statement = connection
+            .prepare(&format!("SELECT {}", placeholders.join(", ")))
+            .expect("literal select");
+        let mut rows = statement
+            .query(rusqlite::params_from_iter(values))
+            .expect("query literal row");
+        let row = rows.next()?.expect("one literal row");
+        mapper(row)
+    }
+
+    #[test]
+    fn root_from_row_maps_active_flags_and_availability() {
+        let id = LibraryRootId::new();
+        let values = [
+            rusqlite::types::Value::Text(id.to_string()),
+            rusqlite::types::Value::Text("/tmp/library".to_owned()),
+            rusqlite::types::Value::Integer(1),
+            rusqlite::types::Value::Integer(0),
+            rusqlite::types::Value::Text("unavailable".to_owned()),
+            rusqlite::types::Value::Integer(1),
+        ];
+        let root = first_row(&values, root_from_row).expect("root row");
+        assert_eq!(root.id(), id);
+        assert_eq!(root.absolute_path(), std::path::Path::new("/tmp/library"));
+        assert!(root.is_active());
+        assert!(!root.observed_write_capable());
+        assert!(
+            root.availability() == RootAvailability::Unavailable,
+            "storage string mapped to unavailable"
+        );
+        assert!(
+            root.write_safety_locked(),
+            "write_safety_locked column maps"
+        );
+    }
+
+    #[test]
+    fn scan_state_database_strings_round_trip() {
+        for (value, expected) in [
+            ("enumerating", ScanState::Enumerating),
+            ("parsing", ScanState::Parsing),
+            ("reconciling", ScanState::Reconciling),
+            ("completed", ScanState::Completed),
+            ("cancelled", ScanState::Cancelled),
+            ("failed", ScanState::Failed),
+            ("unknown-junk", ScanState::Queued),
+        ] {
+            assert_eq!(scan_state_from_db(value), expected, "{value}");
+        }
+    }
+
+    #[test]
+    fn audio_format_round_trips_and_rejects_unknown() {
+        for format in [
+            AudioFormat::Mpeg,
+            AudioFormat::Flac,
+            AudioFormat::Mp4,
+            AudioFormat::Ogg,
+            AudioFormat::Opus,
+            AudioFormat::Wav,
+            AudioFormat::UnknownDamaged,
+        ] {
+            let db = audio_format_to_db(format);
+            assert_eq!(audio_format_from_db(db).unwrap(), format, "{db}");
+        }
+        let error = audio_format_from_db("ape").expect_err("unsupported encoding");
+        assert!(matches!(error, Error::InvariantViolation { .. }));
+    }
+
+    #[test]
+    fn lyrics_source_and_text_kind_encodings_round_trip() {
+        let lines = vec![LyricsLine {
+            timestamp_ms: 1234,
+            text: "第一行".to_owned(),
+            original_index: 0,
+        }];
+        let timed = LyricsCandidate::with_raw_text(
+            LyricsSource::Embedded,
+            "raw".to_owned(),
+            lines.clone(),
+            None,
+            Some("diagnostic".to_owned()),
+        );
+        assert_eq!(text_kind_to_db(&timed), "timed");
+        let plain = LyricsCandidate::new(LyricsSource::Sidecar, lines.clone(), true);
+        assert_eq!(text_kind_to_db(&plain), "plain");
+        let mut empty = LyricsCandidate::new(LyricsSource::Override, lines, false);
+        empty.mark_empty_override();
+        assert_eq!(text_kind_to_db(&empty), "empty");
+
+        assert_eq!(
+            lyrics_source_from_db("override").unwrap(),
+            LyricsSource::Override
+        );
+        assert_eq!(
+            lyrics_source_from_db("embedded").unwrap(),
+            LyricsSource::Embedded
+        );
+        assert_eq!(
+            lyrics_source_from_db("sidecar").unwrap(),
+            LyricsSource::Sidecar
+        );
+        assert!(matches!(
+            lyrics_source_from_db("remote").unwrap_err(),
+            Error::InvariantViolation { .. }
+        ));
+    }
+
+    #[test]
+    fn timed_lines_json_round_trips_and_rejects_malformed() {
+        let candidate = LyricsCandidate::new(
+            LyricsSource::Embedded,
+            vec![
+                LyricsLine {
+                    timestamp_ms: 0,
+                    text: "第一".to_owned(),
+                    original_index: 2,
+                },
+                LyricsLine {
+                    timestamp_ms: 5_000,
+                    text: "第二".to_owned(),
+                    original_index: 0,
+                },
+            ],
+            true,
+        );
+        let json = timed_lines_to_json(&candidate);
+        let round = timed_lines_from_json(&json).expect("valid round trip");
+        assert_eq!(round.len(), 2);
+        // The encoded order is the candidate's line order; `original_index`
+        // survives so a consumer can re-sort.
+        assert_eq!(round[1].original_index, 0);
+
+        let mut corrupted = serde_json::json!([{ "text": "missing timestamp" }]).to_string();
+        let partial = timed_lines_from_json(&corrupted).expect_err("missing timestamp_ms");
+        assert!(matches!(partial, Error::InvariantViolation { .. }));
+        corrupted = "not json".to_owned();
+        assert!(matches!(
+            timed_lines_from_json(&corrupted).unwrap_err(),
+            Error::InvariantViolation { .. }
+        ));
+    }
+
+    #[test]
+    fn availability_encodings_round_trip_and_reject_unknown() {
+        for availability in [
+            SongAvailability::Available,
+            SongAvailability::Missing,
+            SongAvailability::PendingDelete,
+        ] {
+            assert_eq!(
+                availability_from_db(availability_to_db(availability)).unwrap(),
+                availability
+            );
+        }
+        assert!(matches!(
+            availability_from_db("gone").unwrap_err(),
+            Error::InvariantViolation { .. }
+        ));
+    }
+
+    #[test]
+    fn operation_states_encode_and_decode_with_inverse() {
+        for state in [
+            DomainOperationState::Planned,
+            DomainOperationState::CopyPending,
+            DomainOperationState::CopyApplied,
+            DomainOperationState::ValidatePending,
+            DomainOperationState::Validated,
+            DomainOperationState::PublishPending,
+            DomainOperationState::PublishApplied,
+            DomainOperationState::DatabaseCommitted,
+            DomainOperationState::Completed,
+            DomainOperationState::FailedRecoverable,
+            DomainOperationState::RolledBack,
+            DomainOperationState::StagePending,
+            DomainOperationState::StageApplied,
+            DomainOperationState::HiddenInDatabase,
+            DomainOperationState::RestorePending,
+            DomainOperationState::RestoreApplied,
+            DomainOperationState::Restored,
+            DomainOperationState::TrashPending,
+            DomainOperationState::TrashApplied,
+            DomainOperationState::DatabaseFinalized,
+            DomainOperationState::TrashOutcomeUnknown,
+        ] {
+            let db = operation_state_to_db(state);
+            assert_eq!(operation_state_from_db(db).unwrap(), state, "{db}");
+        }
+        assert!(matches!(
+            operation_state_from_db("evaporated").unwrap_err(),
+            Error::InvariantViolation { .. }
+        ));
+    }
+
+    #[test]
+    fn song_from_row_maps_nullable_audio_parameters_and_scan_facts() {
+        let id = SongId::new();
+        let root = LibraryRootId::new();
+        let path = RelativeMediaPath::new("歌手/晴天.flac").unwrap();
+        let values = [
+            rusqlite::types::Value::Text(id.to_string()),
+            rusqlite::types::Value::Text(root.to_string()),
+            rusqlite::types::Value::Text(path.display().to_owned()),
+            rusqlite::types::Value::Text("missing".to_owned()),
+            rusqlite::types::Value::Integer(1),  // favorite
+            rusqlite::types::Value::Integer(3),  // play_count
+            rusqlite::types::Value::Integer(7),  // revision
+            rusqlite::types::Value::Integer(5),  // added_at
+            rusqlite::types::Value::Null,        // title
+            rusqlite::types::Value::Null,        // artist
+            rusqlite::types::Value::Null,        // album
+            rusqlite::types::Value::Null,        // duration_ms
+            rusqlite::types::Value::Integer(10), // updated_at
+            rusqlite::types::Value::Text("cafe-".repeat(32)), // blake3
+            rusqlite::types::Value::Integer(12_345), // file_size
+            rusqlite::types::Value::Integer(1_111), // file_mtime_ns
+            rusqlite::types::Value::Text("flac".to_owned()), // format
+            rusqlite::types::Value::Integer(1411), // bitrate
+            rusqlite::types::Value::Integer(44_100), // sample_rate
+            rusqlite::types::Value::Integer(2),  // channels
+            rusqlite::types::Value::Null,        // bits_per_sample
+        ];
+        let song = first_row(&values, song_from_row).expect("song row");
+        assert_eq!(song.id(), id);
+        assert_eq!(song.root(), root);
+        assert_eq!(song.path(), &path);
+        assert_eq!(song.availability(), SongAvailability::Missing);
+        assert!(song.favorite());
+        assert_eq!(song.play_count().as_u64(), 3);
+        assert_eq!(song.revision().as_u64(), 7);
+        assert_eq!(song.added_at(), 5);
+        assert!(song.duration().is_none());
+        assert_eq!(song.blake3_hash(), Some("cafe-".repeat(32).as_str()));
+        assert_eq!(song.file_size(), Some(12_345));
+        assert_eq!(song.file_mtime_ns(), Some(1_111));
+        assert_eq!(song.format(), Some(AudioFormat::Flac));
+        let parameters = song.audio_parameters();
+        assert_eq!(parameters.bitrate_bps, Some(1411));
+        assert_eq!(parameters.sample_rate_hz, Some(44_100));
+        assert_eq!(parameters.channels, Some(2));
+        assert_eq!(parameters.bits_per_sample, None);
+    }
+}

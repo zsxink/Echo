@@ -329,6 +329,45 @@ mod tests {
         assert!(reader().read_bytes(b"definitely not audio").is_err());
     }
 
+    /// Task 12.7: hostile/malicious metadata must never panic, never leak an
+    /// unbounded resource, and must keep the audio record importable. Control
+    /// characters and NFKC junk in tags/lyrics are cleaned; oversized fields
+    /// are dropped with a diagnostic (the real boundaries are the 4 KiB tag /
+    /// 2 MiB lyrics / 20 MiB cover inputs, asserted separately in
+    /// `input_limits_skip_assets_but_keep_song_fields`).
+    #[test]
+    fn hostile_tags_with_controls_and_oversized_text_are_cleaned_or_diagnosed() {
+        // Control characters in the display title.
+        let cleaned_title = clean_display_text("晴\u{0}\u{7f}天\t夜里");
+        assert_eq!(
+            cleaned_title, "晴天 夜里",
+            "null/DEL stripped from tags; tab collapses to a display space"
+        );
+
+        // Null bytes and DEL hidden in lyrics are stripped per line, and the
+        // empty-line collapse keeps the structure.
+        let cleaned_lyrics = clean_lyrics_text("第一行\u{0}\n\u{7f}\n第二行");
+        assert_eq!(cleaned_lyrics, "第一行\n第二行");
+        assert!(!cleaned_lyrics.contains('\u{0}'));
+
+        // An over-limit field (simulated at the same boundary the reader uses)
+        // is dropped with the lyrics warning, never returned partially.
+        let mut parsed = ParsedMetadata::default();
+        let big = "\u{8d85}\u{9650}".repeat(1_048_576 / 2); // ~2 MiB
+        let result = limited_lyrics(Some(&big), 2 * 1024 * 1024, &mut parsed);
+        assert!(
+            result.is_none(),
+            "a bytes-over-limit lyrics field is dropped, not returned"
+        );
+        assert!(
+            parsed
+                .warnings
+                .iter()
+                .any(|w| w.kind == ParseWarningKind::LyricsLimit),
+            "the over-limit lyrics field records a lyrics_limit diagnostic"
+        );
+    }
+
     /// Copy a fixture into a temp dir and write over-limit fields with lofty
     /// (the only way to build a genuinely over-limit tag without shipping a
     /// giant fixture). The temp dir is intentionally kept alive for the test.
@@ -397,5 +436,88 @@ mod tests {
         assert_eq!(clean_lyrics_text("第一行\n\n第二行\u{0}"), "第一行\n第二行");
         assert_eq!(clean_lyrics_text("ＡＢ\nＣＤ"), "AB\nCD");
         assert_eq!(clean_lyrics_text("\n\n"), "");
+    }
+
+    #[test]
+    fn mime_of_maps_every_variant_with_a_default_fallback() {
+        use lofty::picture::MimeType;
+        assert_eq!(mime_of(Some(&MimeType::Png)), "image/png");
+        assert_eq!(mime_of(Some(&MimeType::Jpeg)), "image/jpeg");
+        assert_eq!(mime_of(Some(&MimeType::Tiff)), "image/tiff");
+        assert_eq!(mime_of(Some(&MimeType::Bmp)), "image/bmp");
+        assert_eq!(mime_of(Some(&MimeType::Gif)), "image/gif");
+        assert_eq!(
+            mime_of(Some(&MimeType::Unknown("image/webp".to_owned()))),
+            "image/webp"
+        );
+        assert_eq!(mime_of(None), "application/octet-stream");
+    }
+
+    /// The reader resolves the path through the root registry and maps a
+    /// missing file to an io error — the branch the adapter surfaces to the
+    /// scan pipeline before the layout probe.
+    #[test]
+    fn read_of_an_unregistered_root_or_missing_file_is_an_error() {
+        let reader = LoftyMetadataReader::new(RootRegistry::new());
+        let ghost = LibraryRootId::new();
+        let path = RelativeMediaPath::new("missing.flac").unwrap();
+        assert!(reader.read(ghost, &path).is_err());
+
+        let dir = tempfile::tempdir().unwrap();
+        let registry = RootRegistry::new();
+        let root = LibraryRootId::new();
+        registry.register(root, dir.path());
+        let reader = LoftyMetadataReader::new(registry);
+        assert!(reader.read(root, &path).is_err());
+        // The in-memory reader rejects garbage content and returns a
+        // corrupt-media classification, not a panic.
+        let error = reader.read_bytes(b"definitely not audio").unwrap_err();
+        assert_eq!(error.code(), "corrupt_media");
+    }
+
+    /// Tag values that collapse to empty after cleanup (`None`), and
+    /// over-limit values dropped with the right warning kind, stay consistent
+    /// between the field and lyrics variants.
+    #[test]
+    fn limited_field_and_lyrics_clean_to_empty_or_warn() {
+        let mut parsed = ParsedMetadata::default();
+        // Whitespace-only and control-only values collapse to None.
+        assert_eq!(
+            limited_field(Some("   "), "tag:title", 1024, &mut parsed),
+            None
+        );
+        assert_eq!(
+            limited_field(Some(""), "tag:title", 1024, &mut parsed),
+            None
+        );
+        assert_eq!(limited_lyrics(Some("\u{0}\n\n"), 1024, &mut parsed), None);
+        assert_eq!(limited_lyrics(Some(""), 1024, &mut parsed), None);
+        assert!(parsed.warnings.is_empty(), "empty values never warn");
+
+        // An over-limit field records exactly the TagLimit warning.
+        let mut over = ParsedMetadata::default();
+        let long = "长".repeat(200);
+        let value = limited_field(Some(&long), "tag:genre", 32, &mut over);
+        assert!(value.is_none());
+        assert_eq!(over.warnings.len(), 1);
+        assert_eq!(over.warnings[0].kind, ParseWarningKind::TagLimit);
+        assert_eq!(over.warnings[0].field, "tag:genre");
+    }
+
+    /// The fixture carry no album-artist or track-number; the untouched tag
+    /// fields stay `None` rather than producing junk values.
+    #[test]
+    fn absent_tags_stay_none_on_real_fixtures() {
+        let mp3 = read("tone-short.mp3");
+        assert_eq!(mp3.album_artist, None);
+        assert_eq!(mp3.track, None);
+        // The fixture embeds no cover; the parameters still come from the
+        // container (probe-owned duration stays unset).
+        assert!(mp3.cover.is_none());
+        assert!(mp3.duration.is_none());
+        assert!(
+            mp3.parameters.sample_rate_hz == Some(44_100),
+            "stream parameters parsed without a tag-aware branch"
+        );
     }
 }

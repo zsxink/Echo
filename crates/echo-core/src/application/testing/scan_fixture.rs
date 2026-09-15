@@ -126,6 +126,18 @@ impl ScanFixture {
 
     /// Script a successful audio probe + metadata for `path`.
     pub fn set_audio(&self, path: &str, title: &str, duration_ms: u64) {
+        self.script_audio(path, title, duration_ms, None);
+    }
+
+    /// Like [`set_audio`](Self::set_audio), but the file also carries artwork
+    /// embedded in its tags — the case the UI renders through `cover://`
+    /// (design §115 内置优先).
+    pub fn set_audio_with_cover(&self, path: &str, title: &str, duration_ms: u64, cover: &[u8]) {
+        self.script_audio(path, title, duration_ms, Some(cover));
+    }
+
+    /// Script the probe + metadata of one file, optionally with embedded artwork.
+    fn script_audio(&self, path: &str, title: &str, duration_ms: u64, cover: Option<&[u8]>) {
         self.probe.set(
             path,
             crate::application::ports::ProbeOutcome::Audio {
@@ -141,6 +153,10 @@ impl ScanFixture {
                 album: Some("专辑".to_owned()),
                 duration: Some(std::time::Duration::from_millis(duration_ms)),
                 format: AudioFormat::Flac,
+                cover: cover.map(|bytes| crate::domain::media::EmbeddedCover {
+                    bytes: bytes.to_vec(),
+                    mime: "image/png".to_owned(),
+                }),
                 ..ParsedMetadata::default()
             },
         );

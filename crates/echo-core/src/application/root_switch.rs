@@ -104,6 +104,16 @@ impl<'a> PrepareLibraryCandidate<'a> {
         let root_id = derive_root_id(&canonical);
         let existing = self.roots.by_id(root_id)?;
         let reused = existing.is_some();
+        // Acquire write capability for the candidate by establishing its owned
+        // staging dir (design §8: 首次获得写能力时 exclusive-create). A fresh
+        // writable directory must activate writable — otherwise imports/deletes
+        // are permanently LibraryUnavailable on first use. Idempotent.
+        //
+        // Best-effort: a genuinely read-only directory (OS refused the write,
+        // or the staged marker cannot be created) must NOT fail preparation —
+        // the root still activates read-only so scanning/playback work and only
+        // imports/deletes are disabled (spec: 只读根目录允许扫描和播放).
+        let _ = self.deps.fs.establish_write_capability(root_id);
         // `write_capable` reflects permission + ownership marker (task 4.2).
         let observed_write_capable = self.deps.fs.write_capable(root_id)?;
         let write_safety_locked = existing

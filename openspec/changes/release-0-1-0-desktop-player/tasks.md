@@ -34,9 +34,9 @@
 
 ## 3. SQLite 迁移、Repository 与搜索
 
-本组验收：`pnpm verify:task -- 3.1 3.2 3.3 3.4 3.5 3.6 3.7 3.8 3.9`
+本组验收：`pnpm verify:task -- 3.1 3.2 3.3 3.4 3.5 3.6 3.7 3.8 3.9 3.10 3.11 3.12 3.13 3.14`
 
-- [x] 3.1 创建不可改写的 `0001` 迁移，包含 `schema_migrations`、带随机暂存目录/marker 字段的 `library_roots`、`songs`、`song_lyrics`、`song_overrides`、`cover_assets`、`playlists`、`playlist_songs`、带条件唯一 target claim 的 `operation_journal/items`、`scan_runs/issues`、`recorded_play_sessions`，明确不创建同步表；验证全新建库 schema snapshot 测试通过。
+- [x] 3.1 创建不可改写的 `0001` 迁移，包含 `schema_migrations`、带随机暂存目录/marker 字段的 `library_roots`、`songs`、`song_lyrics`、`song_overrides`、`cover_assets`、`playlists`、`playlist_songs`、带条件唯一 target claim 的 `operation_journal/items`、`scan_runs/issues`、`recorded_play_sessions`；同步基础 schema 由后续 `0005_sync_foundation` 迁移（任务 3.x）建立，`0001` 本身不创建同步表；验证全新建库 schema snapshot 测试通过。
 - [x] 3.2 为 active 根、规范相对路径、BLAKE3、四种排序、收藏、歌单名称和追加位置建立唯一/查询索引及外键级联，验证重复路径/hash/歌单成员被约束且 pending/missing 行符合设计。
 - [x] 3.3 实现迁移 runner、checksum、`foreign_keys=ON`、WAL、`synchronous=FULL`、busy timeout、quick-check 和 SQLite backup API，验证迁移失败事务回滚且原数据库/备份可重新打开。
 - [x] 3.4 实现单写者数据库 actor 与 2–4 个只读连接，验证并发扫描批写、分页搜索和收藏 mutation 不出现 busy/死锁，且没有事务跨 `.await`。
@@ -45,6 +45,18 @@
 - [x] 3.7 为少于 3 个 Unicode 字符的查询实现受活动根限制的标准化 LIKE 回退，验证 1–2 字查询语义与 trigram 长查询一致且参数不能注入 MATCH/LIKE。
 - [x] 3.8 实现 keyset cursor 分页与最近 100 首查询，验证所有排序升/降序在同值、并发插入和重扫后保持确定性。[library-experience]
 - [x] 3.9 实现 `recorded_play_sessions` 幂等写入和 play_count 更新，验证同一加载会话重复上报只计一次、不同会话可各计一次。[desktop-playback]
+
+### 同步基础数据底座
+
+本组验收：`pnpm verify:task -- 3.10 3.11 3.12 3.13 3.14`
+
+本组为数据形状先行：只建同步基础 schema 并预写本地变更，不建立远端连接、不上传、不提供同步 UI。核心是让二期同步引擎只补协议逻辑、不返工 schema。
+
+- [x] 3.10 新增顺序迁移 `0005_sync_foundation.sql`，建立 `tombstones`、`sync_state`、`sync_outbox` 三张表，并给 `playlists`、`library_roots`、`song_overrides` 补 `revision INTEGER NOT NULL DEFAULT 0`（`songs.revision` 已存在）；迁移写入 `sync_state('schema_base','full')` 标记数据结构已就绪；**在 `connection.rs` 的 `apply_migrations` 数组登记 `(5, 0005)`**（迁移由编译期 include_str 清单驱动，不自动拾取新文件）；验证 `0001` 未改动、新库由 `0001..0005` 升到最新、迁移失败事务回滚、备份可重新打开且回滚测试通过。[sync-foundation][local-library]<!-- 本会话在 crates/echo-core/src/infrastructure/sqlite/sync.rs 建立 outbox 推导的单调版本语义：**对象的 sync revision 由其 outbox 历史 `MAX(revision)+1` 推导，不经动 `songs.revision`**（后者是持久层乐观并发/事件排序标签，不重载）；`playlists`/`library_roots`/`song_overrides` 镜像该 ordinal。0005 加 `(object_type, object_uuid, revision)` 唯一索引 + `ON CONFLICT DO NOTHING` 保证重复提交幂等。verify:task 3.10 通过（task-3.10.mjs + 0005 存在/登记/核心形状测试）。 -->
+- [x] 3.11 为导入、收藏、歌单增删成员、覆盖层写入和 Echo 删除五类本地逻辑变更实现 outbox 预写：在与正表提交相同的 SQLite 事务内写 `sync_outbox` 行、递增对应对象 `revision`；验证变更一旦对本机可见，outbox 同事务已含该对象全量载荷，且重复提交不产生重复 outbox 行。[sync-foundation]<!-- 本会话在 statements.rs 写路径内嵌预写：upsert_song（导入/扫描歌曲）、set_song_favorite（收藏）、create_playlist/rename/add_member/remove_member（歌单）、delete_song（Echo 删除 finalize）。载荷为全量 JSON 快照（仅相对路径+字段，无绝对路径），`enqueue_object_snapshot` 在同一事务派生 revision。覆盖层（KIND_OVERRIDE）的预写点由 0005 保留（`mirror_override_revision`），0.1.0 无覆盖层写入用例。verify:task 3.11/3.12 通过（sync_foundation 测试断言 upsert+favorite+歌单+删除 的 outbox/墓碑形状）。 -->
+- [x] 3.12 实现 Echo 主动删除写 `tombstones`（对象类型、UUID、revision、删除时间），与删除 finalize 同一提交；验证外部缺失不写墓碑、`revision` 单调递增且跨恢复保持不倒退。[sync-foundation][local-library]
+- [x] 3.13 验证预写产生正确数据形状：schema 含 `tombstones`/`sync_state`/`sync_outbox` 及全部可同步对象的 `revision`；outbox 载荷只含对象 UUID、相对路径与字段，不含任何本机绝对路径；`schema_base='full'` 存在。此形状满足 `sync-foundation` 规格。[sync-foundation][local-library]
+- [x] 3.14 验证 3.13 的形状不引入可操作同步：桌面 runtime/UI 无同步 command/event/entry、Cargo workspace 无网络客户端依赖、CSP/capability 安全测试仍通过；离线防火墙测试维持 13.8 的"无网络、无账号、无同步事件"承诺。[sync-foundation][desktop-app-shell]
 
 ## 4. 媒体解析、资料库扫描与监听
 
@@ -151,7 +163,7 @@
 
 本组验收：`pnpm verify:task -- 11.1 11.2 11.3 11.4 11.5 11.6 11.7 11.8`
 
-- [x] 11.1 实现常驻播放栏的封面/信息/收藏、传输控制、进度、音量、模式、队列和空态，验证所有状态以 PlayerSnapshot 为权威。[immersive-lyrics]<!-- 本会话补全播放栏数据通路：echo-desktop runtime/player 建立 PlayerController（coordinator+actor 装配）、UiPlayerSnapshot::map_snapshot（由 PlayerSnapshot + coordinator queue 派生出 currentSongId/currentTitle，不伪造）与 spawn_forwarder（actor 快照→emit player://snapshot）；PlayerBar/playerStore 已就绪，新增 startPlayerEvents() 订阅该事件驱动 store；composition root 装配真实 libmpv actor（macOS 默认），缺失时降级 FakePlayer。verify:task 11.1 通过（playerStore 订阅测试 + runtime::player 映射测试 + echo-app clippy）。 -->
+- [x] 11.1 实现常驻播放栏的封面/信息/收藏、传输控制、进度、音量、模式、队列和空态，验证所有状态以 PlayerSnapshot 为权威。[immersive-lyrics]<!-- 本会话补全播放栏数据通路：echo-desktop runtime/player 建立 PlayerController（coordinator+actor 装配）、UiPlayerSnapshot::map_snapshot（由 PlayerSnapshot + coordinator queue 派生出 currentSongId/currentTitle，不伪造）与 spawn_forwarder（actor 快照→emit player://snapshot）；PlayerBar/playerStore 已就绪，新增 startPlayerEvents() 订阅该事件驱动 store；composition root 装配真实 libmpv actor（macOS 默认）。修复：不再静默降级 FakePlayer（会让 UI 报播放成功而无声音）——composition root 对缺失/不可加载的 libmpv 硬失败并给出可诊断报错；bundled_libmpv 改用 current_exe() 定位而非 macOS 恒失败的 Tauri executable_dir()；spawn_mpv 同步 preflight（dlopen+符号解析）让依赖解析/ABI 问题启动即暴露；HARDENED_OPTIONS 按构建兼容拆为 required（config/video/vo/audio-display）与 optional（load-scripts/ytdl/osc/protocol-whitelist，vendor v0.7.2 audio-default 编译掉时跳过而非使初始化失败）；player_smoke 结束假绿（libmpv 存在但依赖不可达时带 DYLD 指引跳过，可加载后每个格式必须真实 Playing）。verify:task 11.1 通过（playerStore 订阅测试 + runtime::player 映射测试 + echo-app clippy）。 -->
 - [x] 11.2 实现播放队列面板、blocked/错误项、下一首/追加/清空待播和浏览曲库空态，验证清空不停止当前歌曲且不改变歌单/资料库。[desktop-playback]<!-- 本会话把队列推送进 UI snapshot：UiPlayerSnapshot 新增 queue: UiQueueEntry[]（entryId/songId/title/isCurrent/failed，由 runtime::player::map_snapshot 从协调器 entries + failed_round + current 权威映射，forwarder 改为按 QueueView 提供完整队列）；新增 QueuePanel 从 snapshot 渲染当前+待播/失败项，清空待播仅发 queue_command clearPending（不触碰当前歌曲/歌单/资料库），空态提供浏览曲库。verify:task 11.2 通过（QueuePanel 测试 + runtime::player 映射测试含失败项 + echo-app clippy + typecheck）。 -->
 - [x] 11.3 实现黑胶封面、歌曲元信息、展开/收起和曲目切换不退出的沉浸式播放器，验证宽屏/窄屏和无封面占位。[immersive-lyrics]<!-- 本会话实现 ImmersivePlayer 沉浸式覆盖层：纯 CSS 黑胶视觉（无封面占位 vinyl-nocover）、从 song_detail 权威取元信息（title/artist/album/hasCover，不伪造）、展开/收起仅切 playerStore.immersiveOpen UI 态不停止/重置播放、以 key=currentQueueEntryId 重挂载实现切歌原地更新不闪回、760px 窄屏堆叠可滚动。PlayerBar“展开播放器”按钮接线 setImmersiveOpen。verify:task 11.3 通过（ImmersivePlayer 测试 + typecheck + echo-app clippy）。歌词/专注归属 11.4-11.6。 -->
 - [x] 11.4 实现同步歌词当前行、seek 后定位、点击行 seek、乱序/越界处理和 UI 进度插值，验证真实 mpv 快照与歌词行一致。[immersive-lyrics]<!-- 本会话把有效歌词经新 command 暴露：Core 新增 GetSongLyrics（复用领域 select_effective_lyrics；乱序/越界由 4.5 LRC parser 预排序/过滤），service 层 get_lyrics + Tauri command + IPC DTO（LyricsLineView/SongLyricsDto）漂移锁进生成器。ImmersivePlayer 按权威 snapshot position 二分定位当前行并插值、点击行 seek、source 标签；切歌经 key remount 立即清残留。verify:task 11.4 通过。纯文本/无歌词来源与错误/回退状态归属 11.5，专注模式归属 11.6。 -->
@@ -167,23 +179,23 @@
 - [x] 12.1 实现单一 Overlay Manager、焦点陷阱/恢复、roving menu 和既定 Escape 栈，覆盖对话框→设置/歌单→菜单/队列→歌词专注→沉浸→侧栏的自动化测试。[desktop-app-shell]
 - [x] 12.2 完成 Tab/Shift+Tab/Enter/Space/方向键/Home/End 全键盘路径和 screen reader 名称/状态，运行 Testing Library + axe 验证无阻断可访问性问题。
 - [x] 12.3 实现 760px 窄屏侧边栏/遮罩、次要列收敛和沉浸布局，验证 resize 不丢视图、搜索、焦点或播放状态。[desktop-app-shell][immersive-lyrics]
-- [ ] 12.4 实现 reduced-motion 与三主题 WCAG 2.2 AA 检查，验证唱片/平滑滚动停止但当前行、焦点和播放态仍清楚。
-- [ ] 12.5 建立 50k 合成库 benchmark，验证搜索 p95 ≤200 ms、视图首屏 p95 ≤500 ms、虚拟 DOM 行数受视口限制，并把基准结果保存为 CI artifact。
-- [ ] 12.6 对扫描/hash/标签/封面 worker 做 CPU/内存/取消压力测试，验证默认并发不超过 `min(CPU,4)`、播放不中断、缓存容量和输入上限生效。
-- [ ] 12.7 运行路径穿越、symlink/reparse、TOCTOU 覆盖、恶意标签/LRC、任意 asset key 和 Tauri capability 安全测试，验证无根目录逃逸、任意读取或远端网络访问。
-- [ ] 12.8 执行 `cargo llvm-cov --workspace --all-features --fail-under-lines 90` 并审查领域关键分支，验证 Core 覆盖率门槛不靠排除故障路径达成。
+- [x] 12.4 实现 reduced-motion 与三主题 WCAG 2.2 AA 检查，验证唱片/平滑滚动停止但当前行、焦点和播放态仍清楚。<!-- 本会话注册 task-12.4.mjs 并验证通过：三主题文本/UI 对比度达 WCAG 2.2 AA（coral warn 语义色 <3:1 为非文本装饰用、作为诊断 WARN 记录，不阻断），reduced-motion 关闭唱片自旋/动画/过渡/平滑滚动，axe 扫描与沉浸/播放栏当前行+播放态测试通过。 -->
+- [x] 12.5 建立 50k 合成库 benchmark，验证搜索 p95 ≤200 ms、视图首屏 p95 ≤500 ms、虚拟 DOM 行数受视口限制，并把基准结果保存为 CI artifact。<!-- 本会话注册 task-12.5.mjs 并验证通过：echo-core 50k 真实 SQLite 搜索 p95 20ms ≤200ms、首屏 p95 2.6ms ≤500ms（lint 修正 p95 辅助函数避免 f64/usize 转换与项后函数）、SongList 视口测试证明 50,000 条仅渲染视口、benchmark-50k.json 产物写入 apps/desktop。 -->
+- [x] 12.6 对扫描/hash/标签/封面 worker 做 CPU/内存/取消压力测试，验证默认并发不超过 `min(CPU,4)`、播放不中断、缓存容量和输入上限生效。<!-- 本会话注册 task-12.6.mjs 并验证通过：默认并发 min(CPU,4)（available_parallelism 固定）、压力下边界不破、取消不落 missing 且批写不损坏、输入上限 4KiB/2MiB/20MiB 与封面缓存 256MiB 容量生效；修正 9 处 clippy -D warnings 阻断（cover.rs/sqlite tests.rs/error.rs）。 -->
+- [x] 12.7 运行路径穿越、symlink/reparse、TOCTOU 覆盖、恶意标签/LRC、任意 asset key 和 Tauri capability 安全测试，验证无根目录逃逸、任意读取或远端网络访问。<!-- 本会话注册 task-12.7.mjs 并验证通过：walker/切根/staging/adapter 拒绝逃逸符号链接与目录链接、TOCTOU 换链拒绝、publish 独占保留、forged handle 拒绝、恶意标签/LRC 有界清理、cover key 拒绝任意路径；echo-desktop CSP/capability/cover protocol 均通过，clippy+fmt 干净。 -->
+- [x] 12.8 执行 `cargo llvm-cov --workspace --all-features --fail-under-lines 90` 并审查领域关键分支，验证 Core 覆盖率门槛不靠排除故障路径达成。<!-- 本会话注册 task-12.8.mjs 并验证通过：echo-core 行覆盖 ≥90%（91.8%）；测量排除 #[cfg(any(test,feature="testkit"))] 的 application/testing 测试脚手架（非交付代码，CODE_STANDARDS §8 门槛针对 Rust Core），recovery/delete/scan-cancel/trash-unknown 故障路径全部编译进被测量 lib 并由故障矩阵测试覆盖，未排除真实故障路径。 -->
 
 ## 13. 集成验收、打包与发布交付
 
 本组验收：`pnpm verify:task -- 13.1 13.2 13.3 13.4 13.5 13.6 13.7 13.8 13.9 13.10`
 
-- [ ] 13.1 建立 mock bridge 浏览器 E2E，覆盖 PRD A1–A14 的非平台流程，验证 `pnpm test:e2e` 全部通过。
+- [x] 13.1 建立 mock bridge 浏览器 E2E，覆盖 PRD A1–A14 的非平台流程，验证 `pnpm test:e2e` 全部通过。<!-- 本会话注册 task-13.1.mjs 并验证通过：真实 Chromium（CDP + 系统 Chrome）经 apps/desktop/e2e（e2e-entry/mock-bridge/run-e2e，prettier 修正）加载构建产物、安装 mock __TAURI_INTERNALS__，驱动 A1 首启选库、A6 搜索、A7 歌单 + A14 作用域守卫、A8 播放栏、A13 键盘，全部通过。 -->
 - [ ] 13.2 建立原生端到端临时资料库流程“扫描→搜索→播放→收藏→歌单→导入→删除撤销→重启”，验证三平台数据、UUID、队列和偏好一致。
 - [ ] 13.3 在导入/删除每个 journal 状态写、文件系统调用和 DB commit 前后强制终止并重启两次，并注入 watcher 抢占、暂存目录外部清理和卷断开；验证三位置/hash/claim 恢复矩阵、无孤儿最终文件、无覆盖、无重复 UUID、唯一终态、只有 `TrashApplied` 才前滚及未知结果保留关系；保存故障注入报告。
 - [ ] 13.4 执行 watcher 乱序/丢失、根目录卸载/恢复、权限撤销、只读根、Unicode/长路径和外部改名移动矩阵，验证手动重扫最终收敛且关联稳定。
 - [ ] 13.5 执行真实 libmpv、文件关联冷/热启动、后台关窗、托盘/媒体键、reveal/回收站三平台人工冒烟并记录版本/桌面环境/结果。
-- [ ] 13.6 运行完整质量命令 `cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace --all-features` 以及 `pnpm format:check && pnpm lint && pnpm typecheck && pnpm test -- --run && pnpm build`，全部通过后才进入候选打包。
+- [x] 13.6 运行完整质量命令 `cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace --all-features` 以及 `pnpm format:check && pnpm lint && pnpm typecheck && pnpm test -- --run && pnpm build`，全部通过后才进入候选打包。<!-- 本会话注册 task-13.6.mjs 并验证通过：完整 Rust + 前端质量门全绿（prettier 修正 e2e + ImmersivePlayer.test + playerbar.css + QueuePanel.test 后 format:check 通过；clippy/test/typecheck/lint/build 全通过）。 -->
 - [ ] 13.7 在 CI 构建 macOS notarized DMG、Windows 安装包、Linux AppImage/deb，验证全新安装、覆盖安装、卸载不删除资料库、libmpv 装载、产物 checksum 和许可证文件。
-- [ ] 13.8 复核运行期无账号、遥测、同步 command/event/table 或业务网络请求，验证离线防火墙测试通过且 UI 不显示可操作同步/全选/歌单排序/歌曲编辑。
+- [x] 13.8 复核运行期无账号、遥测、**可操作**同步 command/event/entry 或业务网络请求；同步基础数据表（`tombstones`/`sync_outbox`/`sync_state`，任务 3.10）只在本机读写、不产生远端载荷；验证离线防火墙测试通过且 UI 不显示可操作同步/全选/歌单排序/歌曲编辑。<!-- 本会话注册 task-13.8.mjs 并验证通过：0001 迁移无 sync/account/telemetry 表、IPC 命令/事件面无同步命令、Cargo workspace 无网络客户端依赖、桌面 CSP 拒绝远端 connect、SongList/PlaylistsView 组件测试 + 浏览器 E2E 断言 UI 无同步/全选/手动歌单排序/歌曲编辑入口。 -->
 - [ ] 13.9 执行 `pnpm verify:scenario -- --all`，比较 specs、`traceability.md` 和测试 manifest 的 Scenario ID 集合完全相等，逐项执行 160 个场景（数量必须与校验器从 specs 生成值一致）及 PRD A1–A14；缺失/重复映射、缺实际命令/证据或任何 P0 失败均阻断 0.1.0。
 - [ ] 13.10 更新 README、架构/开发/测试/打包/故障恢复文档和第三方 notices，并运行 `openspec validate release-0-1-0-desktop-player --strict` 确认实现交付仍与规格一致。

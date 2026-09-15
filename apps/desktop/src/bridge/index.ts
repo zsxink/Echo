@@ -13,7 +13,7 @@
  * newer revision. Components render from typed state, never from raw IPC.
  */
 
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type { IpcErrorDto } from "../ipc/ipc-types.generated";
@@ -33,9 +33,15 @@ export interface BridgeCommandMap {
   }) => unknown;
   favorites: (args: { sort: string; cursor?: string | null; limit: number }) => unknown;
   recent: () => unknown;
+  /** Per-view song totals, answered by Core without opening any view — the
+   *  sidebar needs them before the user clicks. */
+  library_counts: () => unknown;
   playlists: () => unknown;
   playlist_members: (args: { playlistId: string }) => unknown;
   song_detail: (args: { songId: string }) => unknown;
+  /** The opaque cover-asset keys of a batch of songs (design §115 内置优先).
+   *  A song with no embedded artwork is absent from the returned map. */
+  song_cover_keys: (args: { songIds: string[] }) => unknown;
   set_favorite: (args: { songId: string; favorite: boolean }) => unknown;
   create_playlist: (args: { root: string; name: string }) => unknown;
   rename_playlist: (args: { id: string; name: string }) => unknown;
@@ -53,7 +59,14 @@ export interface BridgeCommandMap {
   set_close_behavior: (args: { behavior: string }) => unknown;
   // Player commands (task 11.1) — the UI sends coarse requests; the Rust
   // coordinator owns the queue + snapshot authority.
-  play_context: (args: { songs: string[]; selectedIndex: number }) => unknown;
+  play_context: (args: {
+    songs: string[];
+    selectedIndex: number;
+    /** The view the queue was built from (哪个歌单): "allSongs" / "favorites" /
+     *  "recent" / "search" / "playlist:<id>". Persisted locally, never synced. */
+    source?: string;
+  }) => unknown;
+  restore_playback_session: () => unknown;
   play_temporary_file: (args: { path: string; displayName: string }) => unknown;
   import_current_temporary_file: () => unknown;
   player_control: (args: { action: string }) => unknown;
@@ -98,6 +111,23 @@ export async function bridgeCall<TArgs extends unknown[], TResult>(
   return result as TResult;
 }
 
+/** The custom URI scheme that serves cover art (design §16).
+ *  The desktop registers it and the CSP grants it to `img-src`/`media-src`
+ *  only — never to scripts or fetches. */
+export const COVER_SCHEME = "cover";
+
+/**
+ * Turn an opaque cover-asset key into a URL the WebView can load.
+ *
+ * This is deliberately the *only* place that composes an asset URL, next to the
+ * only place that calls `invoke`/`listen`: no component has to know the scheme,
+ * and the key stays opaque — it is the cover cache's `cv1-…` identifier, never a
+ * filesystem path (the protocol re-validates it on the way in).
+ */
+export function assetUrl(key: string): string {
+  return convertFileSrc(key, COVER_SCHEME);
+}
+
 /** Subscribe to an event stream, returning the de-registration handle. */
 export async function subscribe<T>(
   event: string,
@@ -110,6 +140,7 @@ export async function subscribe<T>(
 export const bridge = {
   call: bridgeCall,
   subscribe,
+  assetUrl,
 };
 
 export type { UnlistenFn };

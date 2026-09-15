@@ -57,6 +57,9 @@ env/
 *.tmp
 *.temp
 .DS_Store
+# vitest writes a temp config next to the project and leaves it behind when a
+# run is interrupted; it is never a source file.
+vitest.config.ts.timestamp-*
 
 # Rust / Cargo
 /target/

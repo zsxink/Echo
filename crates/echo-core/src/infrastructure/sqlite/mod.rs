@@ -34,7 +34,7 @@ use crate::application::ports::{
     OperationItem, OperationJournalRepository, PlaylistRepository, RuntimeStateStore,
     ScanRunRepository, SongRepository, TxAccess, TxWork, UnitOfWork,
 };
-use crate::domain::catalog::{OpaqueCursor, Paged, SongSort};
+use crate::domain::catalog::{CatalogCounts, OpaqueCursor, Paged, SongSort, RECENT_VIEW_LIMIT};
 use crate::domain::entities::{
     LibraryRoot, LyricsCandidate, LyricsSource, MediaDiagnostic, PlaylistMember, Song,
     SongAvailability,
@@ -52,6 +52,7 @@ pub(crate) mod conversion;
 pub(crate) mod query;
 pub(crate) mod statements;
 pub(crate) mod support;
+pub(crate) mod sync;
 #[cfg(test)]
 mod tests;
 
@@ -65,7 +66,7 @@ use connection::{
 use conversion::{
     availability_from_db, operation_item_from_row, root_from_row, scan_state_from_db, song_from_row,
 };
-use query::{active_root_id, playlist_songs_query, query_active, SONG_SELECT};
+use query::{active_root_id, catalog_counts, playlist_songs_query, query_active, SONG_SELECT};
 use statements::{
     add_member, all_songs_in_root, attach_cover, begin_scan_run, clear_lyrics_candidate,
     cover_of_song, create_playlist, delete_song, ensure_operation_journal, finish_scan_run,
@@ -175,6 +176,19 @@ impl SqliteDatabase {
     /// database as healthy after startup/recovery.
     pub fn quick_check(&self) -> Result<(), Error> {
         self.with_reader(quick_check_connection)
+    }
+
+    /// Count outbox rows of one object kind. Diagnostics / 二期 read; 0.1.0
+    /// never pushes them, so this is a shape probe, not a sync surface.
+    pub fn outbox_kind_count(&self, kind: &str) -> Result<i64, Error> {
+        let kind = kind.to_owned();
+        self.with_reader(move |connection| sync::outbox_count(connection, &kind))
+    }
+
+    /// Read one `sync_state` key (connector config / cursor / schema marker).
+    pub fn sync_state_load(&self, key: &str) -> Result<Option<String>, Error> {
+        let key = key.to_owned();
+        self.with_reader(move |connection| sync::load_sync_state(connection, &key))
     }
 
     /// A deterministic schema snapshot used by migration integration tests.
@@ -372,7 +386,7 @@ impl SqliteDatabase {
         self.with_reader(|connection| {
             let root = active_root_id(connection)?.ok_or_else(|| Error::unavailable("library", "no active root"))?;
             let mut statement = connection
-                .prepare(&format!("{} WHERE s.library_root_uuid = ?1 AND s.availability = 'available' ORDER BY s.added_at DESC, s.uuid DESC LIMIT 100", SONG_SELECT))
+                .prepare(&format!("{} WHERE s.library_root_uuid = ?1 AND s.availability = 'available' ORDER BY s.added_at DESC, s.uuid DESC LIMIT {}", SONG_SELECT, RECENT_VIEW_LIMIT))
                 .map_err(storage)?;
             let songs = statement
                 .query_map(params![root.to_string()], song_from_row)
@@ -562,6 +576,10 @@ impl CatalogQueryRepository for SqliteDatabase {
         self.with_reader(move |connection| playlist_songs_query(connection, playlist))
     }
 
+    fn counts(&self) -> Result<CatalogCounts, Error> {
+        self.with_reader(catalog_counts)
+    }
+
     fn search(
         &self,
         query: &str,
@@ -631,12 +649,32 @@ impl PlaylistRepository for SqliteDatabase {
         self.writer.run(move |connection| {
             let key = playlist_name_key(&name);
             connection.execute("UPDATE playlists SET display_name = ?2, normalized_name_key = ?3, updated_at = ?4 WHERE uuid = ?1", params![id.to_string(), name, key, now_ms()]).map_err(map_constraint)?;
+            // Rename is a playlist logic change → outbox snapshot (task 3.11).
+            let payload = serde_json::json!({ "display_name": name });
+            statements::enqueue_object_snapshot(
+                connection,
+                sync::KIND_PLAYLIST,
+                &id.to_string(),
+                &payload,
+                sync::OP_UPSERT,
+            )?;
             Ok(())
         })
     }
 
     fn delete(&self, id: PlaylistId) -> Result<(), Error> {
         self.writer.run(move |connection| {
+            let revision =
+                sync::current_outbox_revision(connection, sync::KIND_PLAYLIST, &id.to_string())?;
+            // A user-initiated playlist delete is a durable, syncable tombstone
+            // (the deletion itself must propagate cross-device). Replayed deletes
+            // of an already-tombstoned playlist are idempotent.
+            sync::write_tombstone(
+                connection,
+                sync::KIND_PLAYLIST,
+                &id.to_string(),
+                revision.saturating_add(1),
+            )?;
             connection
                 .execute(
                     "DELETE FROM playlists WHERE uuid = ?1",
@@ -675,6 +713,16 @@ impl PlaylistRepository for SqliteDatabase {
                     params![playlist.to_string(), song.to_string()],
                 )
                 .map_err(storage)?;
+            // Membership removal is a playlist logic change.
+            let members_json = statements::playlist_members_excerpt(connection, playlist)?;
+            let payload = serde_json::json!({ "members": members_json });
+            statements::enqueue_object_snapshot(
+                connection,
+                sync::KIND_PLAYLIST,
+                &playlist.to_string(),
+                &payload,
+                sync::OP_UPSERT,
+            )?;
             Ok(())
         })
     }

@@ -73,7 +73,9 @@ unsafe impl Sync for MpvSys {}
 pub mod event_id {
     pub const NONE: i32 = 0;
     pub const SHUTDOWN: i32 = 1;
-    pub const LOG_MESSAGE: i32 = 6;
+    /// `MPV_EVENT_START_FILE = 6` (note: `LOG_MESSAGE` is 2, unused here —
+    /// log events fall through the catch-all arm).
+    pub const START_FILE: i32 = 6;
     pub const END_FILE: i32 = 7;
     pub const FILE_LOADED: i32 = 8;
     pub const PROPERTY_CHANGE: i32 = 22;
@@ -91,11 +93,24 @@ pub mod format_ {
 }
 
 /// `MPV_ERROR_*` codes (subset used by load/observe).
+///
+/// Note: `MPV_ERROR_OPTION_NOT_FOUND` and `MPV_ERROR_PROPERTY_FORMAT` share the
+/// numeric value `-5` in libmpv's client API. `set_option_string` returns
+/// `-5` when the option is *not supported by the compiled library* — distinct
+/// from a rejected value, which is a different code. The tolerant handle
+/// creation ([`Handle::create`]) uses `OPTION_NOT_FOUND` to skip hardening
+/// options that a capability-reduced build compiled out.
 pub mod err_ {
     pub const SUCCESS: i32 = 0;
     pub const NOMEM: i32 = -3;
     pub const PROPERTY_NOT_FOUND: i32 = -4;
+    /// `-5` is both `MPV_ERROR_OPTION_NOT_FOUND` (for `set_option_string`) and
+    /// `MPV_ERROR_PROPERTY_FORMAT` (for property reads); kept under the role it
+    /// plays in this module.
     pub const PROPERTY_FORMAT: i32 = -5;
+    /// `MPV_ERROR_OPTION_NOT_FOUND = -5`: the option does not exist in this
+    /// build (a capability compiled out), as opposed to a rejected value.
+    pub const OPTION_NOT_FOUND: i32 = -5;
     pub const PROPERTY_UNAVAILABLE: i32 = -6;
     pub const COMMAND: i32 = -9;
     pub const LOADING_FAILED: i32 = -17;
@@ -110,12 +125,29 @@ pub mod eof_reason {
     pub const REDIRECT: i32 = 4;
 }
 
+/// Payload of an `END_FILE` event — the head of `mpv/client.h`'s
+/// `mpv_event_end_file`. We only ever read `reason` (first field), so the
+/// trailing fields present in newer libmpv versions are intentionally not
+/// mirrored: declaring fewer fields can never overread.
+#[repr(C)]
+pub struct mpv_event_end_file {
+    pub reason: c_int,
+    pub error: c_int,
+}
+
 /// One observed property (subset: the named fields we read; everything else is
 /// opaque padding so we never dereference beyond what we own).
+///
+/// Layout **must** mirror `mpv/client.h`'s `mpv_event` exactly — including the
+/// `reply_userdata` field the naive eye skips: `data` sits at offset 16, not 8.
+/// Omitting `reply_userdata` once made every event's `data` read as the
+/// userdata itself (null), silently dropping every `PROPERTY_CHANGE`.
 #[repr(C)]
 pub struct mpv_event {
     pub event_id: c_int,
     pub error: c_int,
+    /// The `reply_userdata` we passed to `mpv_observe_property` (always 0).
+    pub reply_userdata: u64,
     /// `event_id == PROPERTY_CHANGE` → `*mut mpv_event_property`.
     pub data: *mut c_void,
 }
@@ -233,35 +265,87 @@ impl Handle {
     /// Create a new libmpv handle, apply the given `options` (audio-only /
     /// hardening, set BEFORE `mpv_initialize`), then initialize.
     ///
+    /// `required` must all succeed — a violation of a real hardening/safety
+    /// boundary (e.g. `config=no`) is a hard error. `optional` targets
+    /// capabilities that may be *compiled out* of a specific libmpv build
+    /// (e.g. the `audio-default` vendor build lacks Lua scripts, yt-dl and the
+    /// OSC — its `set_option_string` returns `MPV_ERROR_OPTION_NOT_FOUND`); an
+    /// option that the loaded library does not recognize (`-5`) is skipped with
+    /// a warning instead of failing the handle, because an unavailable
+    /// capability already satisfies the “disable it” hardening intent. Any
+    /// other option error is still fatal.
+    ///
     /// # Errors
     ///
     /// [`HandleError::Create`] if `mpv_create` returns null;
-    /// [`HandleError::Option{name}`] if an option cannot be set;
+    /// [`HandleError::Option{name}`] if a *required* option (or an `optional`
+    /// one with a non-`-5` error) cannot be set;
     /// [`HandleError::Initialize(code)`] if `mpv_initialize` fails. The newly
     /// created handle is released before returning on any failure.
     ///
     /// # Safety
     ///
     /// Must be called on the thread that will own the handle for its lifetime.
-    pub unsafe fn create(sys: &MpvSys, options: &[(&str, &str)]) -> Result<Self, HandleError> {
+    pub unsafe fn create(
+        sys: &MpvSys,
+        required: &[(&str, &str)],
+        optional: &[(&str, &str)],
+    ) -> Result<Self, HandleError> {
         // SAFETY: trivial FFI calls with the returned handle; no aliasing.
         let raw = unsafe { (sys.create)() };
         if raw.is_null() {
             return Err(HandleError::Create);
         }
         // Apply pre-init options; any failure releases the handle.
-        for (name, value) in options {
-            let cname = CString::new(*name).expect("option name has no NUL");
-            let cvalue = CString::new(*value).expect("option value has no NUL");
+        let apply = |name: &str, value: &str| -> Result<i32, HandleError> {
+            let cname = CString::new(name).expect("option name has no NUL");
+            let cvalue = CString::new(value).expect("option value has no NUL");
             // SAFETY: valid handle, NUL-clean strings, pre-init phase.
-            let code = unsafe { (sys.set_option_string)(raw, cname.as_ptr(), cvalue.as_ptr()) };
-            if code != err_::SUCCESS {
-                // SAFETY: release the partially-configured handle.
-                unsafe { (sys.terminate_destroy)(raw) };
-                return Err(HandleError::Option {
-                    name: (*name).to_owned(),
-                    code,
-                });
+            Ok(unsafe { (sys.set_option_string)(raw, cname.as_ptr(), cvalue.as_ptr()) })
+        };
+        for (name, value) in required {
+            match apply(name, value) {
+                Ok(code) if code != err_::SUCCESS => {
+                    // SAFETY: release the partially-configured handle.
+                    unsafe { (sys.terminate_destroy)(raw) };
+                    return Err(HandleError::Option {
+                        name: (*name).to_owned(),
+                        code,
+                    });
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    // SAFETY: release the partially-configured handle.
+                    unsafe { (sys.terminate_destroy)(raw) };
+                    return Err(e);
+                }
+            }
+        }
+        for (name, value) in optional {
+            match apply(name, value) {
+                Ok(code) if code != err_::SUCCESS => {
+                    if code == err_::OPTION_NOT_FOUND {
+                        tracing::warn!(
+                            name,
+                            "mpv actor: hardening option NOT supported by this libmpv build; \
+                             the capability is compiled out, skipping (its absence satisfies the \
+                             'disable' intent)"
+                        );
+                    } else {
+                        // SAFETY: release the partially-configured handle.
+                        unsafe { (sys.terminate_destroy)(raw) };
+                        return Err(HandleError::Option {
+                            name: (*name).to_owned(),
+                            code,
+                        });
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    // SAFETY: release the partially-configured handle.
+                    unsafe { (sys.terminate_destroy)(raw) };
+                    return Err(e);
+                }
             }
         }
         let code = unsafe { (sys.initialize)(raw) };

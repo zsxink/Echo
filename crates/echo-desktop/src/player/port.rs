@@ -11,7 +11,7 @@
 //! coordinator, queue, statistics and platform-control tests — none of which
 //! need to load libmpv.
 
-use echo_core::domain::ids::{PlaybackSessionId, QueueEntryId, SongId};
+use echo_core::domain::ids::{PlaybackSessionId, SongId};
 use echo_core::domain::state::PlaybackState;
 
 // ---------------------------------------------------------------------------
@@ -32,6 +32,15 @@ pub enum PlayerCommand {
     /// `SongId` to an absolute path via the repository (not the coordinator)
     /// and feeds it to the underlying player backend.
     LoadLibrarySong {
+        song_id: SongId,
+        session_id: PlaybackSessionId,
+    },
+    /// Load a library song **without starting playback** — the file is decoded
+    /// (so `duration` and the embedded cover are real) and held at position 0
+    /// in `Paused`. Used by the cold-start restore / default-current primed
+    /// state, which must show the real track in 播放控制栏 while never making a
+    /// sound before the user presses play (设计: 不得自动开始发声).
+    LoadLibrarySongPaused {
         song_id: SongId,
         session_id: PlaybackSessionId,
     },
@@ -64,7 +73,21 @@ pub enum PlayerCommand {
     /// Set the output volume (0.0 – 1.0, clamped by the actor).
     SetVolume(f64),
     /// Toggle mute, remembering the last non-zero volume.
+    ///
+    /// This is the *user intent* command (播放控制栏按钮、媒体键): "switch
+    /// whatever the output is doing". It is deliberately relative.
     ToggleMute,
+    /// Set mute to an **absolute** state, idempotently — the counterpart of
+    /// [`Self::ToggleMute`] for callers that already know the value they want.
+    ///
+    /// Cold-start session restore is exactly such a caller: the persisted
+    /// session records the mute state the user left behind, and restoring has
+    /// to *reproduce* it. A relative toggle cannot express that — replaying the
+    /// same restore (a double-invoked command, React StrictMode mounting twice)
+    /// flips the flag straight back and silently un-mutes the player. Applying
+    /// an absolute value lands on the recorded state no matter how many times
+    /// it runs.
+    SetMute(bool),
     /// Notify the actor whether the app is in the foreground. Drives the
     /// snapshot throttle: 10 Hz foreground, 1 Hz background (task 8.4).
     SetForeground(bool),
@@ -92,9 +115,16 @@ pub enum PlayerCommand {
 /// - [`PlaybackState`] — the authoritative state machine position.
 /// - `position` / `duration` — progress in seconds; `None` when not loaded.
 /// - `volume` / `muted` — audio output controls.
-/// - `current_item` — the queue entry currently loaded (if any).
 /// - `queue_len` — total entries including current; "pending" count for the UI.
 /// - `mode` — sequential / shuffle / repeat-one.
+///
+/// This snapshot deliberately carries **transport state only**. Queue membership,
+/// the current entry's identity and the active mode are owned by the
+/// `PlaybackCoordinator` (the actor never receives a `QueueEntryId`, and
+/// `build_snapshot` publishes `queue_len: 0` for exactly that reason). The UI
+/// snapshot is therefore assembled from both sources — see
+/// `runtime::player::map_snapshot` — and must never read queue identity off this
+/// struct.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlayerSnapshot {
     pub state: PlaybackState,
@@ -106,8 +136,6 @@ pub struct PlayerSnapshot {
     pub volume: f64,
     /// Whether the output is muted.
     pub muted: bool,
-    /// The queue entry currently loaded, if any.
-    pub current_item: Option<QueueEntryId>,
     /// Total queue length (including current entry).
     pub queue_len: usize,
     /// Active playback mode.
@@ -122,18 +150,19 @@ impl Default for PlayerSnapshot {
             duration: None,
             volume: 1.0,
             muted: false,
-            current_item: None,
             queue_len: 0,
             mode: PlayMode::Sequential,
         }
     }
 }
 
-/// Playback mode, matching the spec's three-mode model (顺序 / 随机 / 单曲循环).
+/// Playback mode, matching the spec's three-mode model (列表循环 / 随机 / 单曲循环).
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PlayMode {
-    /// Play entries in order; after the last entry, stop.
+    /// 列表循环: play entries in order and, after the last entry, wrap around
+    /// to the first one again. This is the **default** mode — a library is
+    /// meant to keep playing, not to stop after its last song.
     #[default]
     Sequential,
     /// Random order; each entry plays once per round before repeating.

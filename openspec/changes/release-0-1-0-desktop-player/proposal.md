@@ -6,6 +6,7 @@ Echo 目前只有已批准的产品/架构文档和可交互桌面原型，还�
 
 - 建立 Rust workspace、Tauri 2 桌面壳和 React + TypeScript + Vite UI，形成 `echo-core`、`echo-desktop`、`apps/desktop` 的分层工程。
 - 建立 SQLite 迁移、Repository、FTS5 索引和稳定 UUID 数据模型，保存资料库、歌曲、收藏、播放统计、歌单、覆盖层预留和可恢复操作日志。
+- 建立同步基础数据底座（`0005` 迁移）：全部可同步对象携带单调 `revision`，本地删除写入 `tombstones`，本地逻辑变更预写 `sync_outbox`，远程配置/游标预留 `sync_state`；0.1.0 只固定数据形状并预写本地变更，**不**建立远端连接、不推送、不提供同步 UI。
 - 支持选择一个本地资料库根目录、全量/增量扫描、文件监听、手动重扫、元数据/封面/歌词解析、BLAKE3 去重与移动重关联，以及资料库不可用状态。
 - 支持安全导入：复制外部音频和同名 `.lrc`，按默认目录规则组织，绝不覆盖已有文件，并通过暂存、校验、原子移动和操作日志实现崩溃恢复。
 - 支持系统文件关联；资料库内文件按已有 UUID 播放，资料库外文件作为不持久化、不计播放统计的临时播放项。
@@ -14,7 +15,7 @@ Echo 目前只有已批准的产品/架构文档和可交互桌面原型，还�
 - 通过 mpv/libmpv 提供桌面播放、队列、进度、音量、播放模式、媒体键/快捷键、播放统计和本机播放会话恢复。
 - 实现常驻播放栏、沉浸式黑胶播放器、同步歌词、歌词专注阅读、无歌词状态、三套主题、窄屏适配、键盘可达性和本机偏好。
 - 实现 macOS 菜单栏状态项、Windows/Linux 系统托盘和“关闭主窗口时退出或后台运行”的平台偏好。
-- 明确 0.1.0 不提供账号、网络依赖、S3/WebDAV 同步、可操作同步入口、全选批量操作、歌单手动排序、歌曲元数据写回/移动、自定义导入模板、目录树视图或移动端客户端。
+- 明确 0.1.0 不提供账号、网络依赖、可操作的 S3/WebDAV 同步（连接器、上传/下载、同步状态与入口）、全选批量操作、歌单手动排序、歌曲元数据写回/移动、自定义导入模板、目录树视图或移动端客户端；仅保留同步所需的数据形状与本地 outbox 预写。
 - 原型中与路线图冲突的模拟同步、全选批量和歌单排序交互不进入 0.1.0；`docs/PRODUCT.md`、`docs/ROADMAP.md` 与本变更规格优先于原型演示脚本。
 
 ## Capabilities
@@ -28,6 +29,7 @@ Echo 目前只有已批准的产品/架构文档和可交互桌面原型，还�
 - `playlist-management`: 歌单 CRUD、成员增删、追加顺序、重复成员规则和歌单失效歌曲处理。
 - `desktop-playback`: mpv 播放适配、播放队列、传输控制、进度/音量/播放模式、快捷键、播放统计和会话恢复。
 - `immersive-lyrics`: 常驻播放栏、封面、沉浸式黑胶播放器、时间同步歌词、专注阅读、无歌词状态和浮层交互。
+- `sync-foundation`: 同步基础数据形状（对象 `revision`、`tombstones`、`sync_outbox`、`sync_state`）与本地变更预写；只固定 schema 与本地队列，不含远端连接、推送或同步 UI。
 
 ### Modified Capabilities
 
@@ -37,7 +39,7 @@ Echo 目前只有已批准的产品/架构文档和可交互桌面原型，还�
 
 - **代码与模块**：新增 `Cargo.toml` workspace、`crates/echo-core`、`crates/echo-desktop`、`apps/desktop`、跨平台打包配置、迁移和测试基建。Core 不依赖 Tauri、mpv、React 或平台 UI。
 - **边界接口**：新增类型化 Tauri commands/events、播放器 Adapter、资料库/文件/标签/操作日志 Ports 和 UI DTO；歌曲和歌单跨层引用统一使用 UUID。
-- **本地数据**：新增 `echo.db` 及顺序迁移；用户音频和 `.lrc` 仍保留在所选资料库，绝不上传 SQLite。0.1.0 尚无已发布数据，因此无向后兼容迁移，但迁移框架必须从首版建立。
+- **本地数据**：新增 `echo.db` 及顺序迁移（含 `0005` 同步基础 schema）；用户音频和 `.lrc` 仍保留在所选资料库，绝不上传 SQLite；同步基础表只在本机读写，0.1.0 不产生任何远端载荷。0.1.0 尚无已发布数据，因此无向后兼容迁移，但迁移框架必须从首版建立。
 - **依赖**：Rust 侧使用 Tauri 2、rusqlite/SQLite FTS5、lofty、blake3、uuid、notify、tokio、serde、thiserror 等；桌面播放使用 mpv/libmpv；前端使用 React、TypeScript、Vite 和相应测试工具。新增依赖须锁定并通过许可证/三平台构建检查。
 - **系统集成**：需要目录/文件选择、文件监听、系统回收站、打开所在目录、文件关联、媒体键、托盘/菜单栏和单实例唤醒权限；各平台使用 Adapter 隔离。
 - **事实来源**：产品范围遵循 `docs/PRODUCT.md` 与 `docs/ROADMAP.md`，架构遵循 `docs/DESIGN.md`，界面遵循 `docs/interface-terminology.md` 与 `docs/prototype/`，实现门槛遵循 `openspec/CODE_STANDARDS.md`。

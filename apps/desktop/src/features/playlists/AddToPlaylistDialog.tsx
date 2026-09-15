@@ -1,34 +1,55 @@
 /**
- * Add-to-playlist selector (task 10.9).
+ * 添加到歌单选择器 (task 10.9) — the prototype's `.playlist-picker-dialog`.
  *
- * A multi-select that lists every playlist and lets the user add the song to
- * several at once via the single `add_to_playlists(song, targets)` mutation.
- * Duplicate membership is idempotent (the core rejects a repeat member, task
- * 6.6), and the list is re-fetched so the sidebar/playlist counts stay in sync.
- * A cancel never mutates anything.
+ * Reproduces the prototype's panel exactly: `.playlist-picker-head` title,
+ * `.playlist-picker-sub` ("将「歌曲」添加到："), a scrollable
+ * `.playlist-picker-list` of `.playlist-picker-option` rows (cover + name +
+ * member count + the round `.playlist-picker-check`), and a footer with
+ * `.playlist-picker-new` + 取消 / 确认.
+ *
+ * The commit sends **one** `add_to_playlists(song, targets)` mutation so a user
+ * adding a song to several playlists cannot half-succeed; duplicate membership is
+ * idempotent server-side (task 6.6). Cancel never mutates.
+ *
+ * Deviation from the prototype: its picker pre-selects the song's current
+ * memberships and commits a diff (adds *and* removals). The release's command
+ * contract for this surface is additive — removal lives in the playlist view
+ * (`remove_playlist_song`) — so the options start unselected here rather than
+ * implying a removal that would silently not happen.
  */
 
 import { useEffect, useRef, useState } from "react";
 
 import { bridge } from "../../bridge";
 import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
+import { Icon } from "../../app/Icon";
 import type { PlaylistView } from "../../ipc/ipc-types.generated";
+import { coverClass } from "../library/coverPalette";
+import { PlaylistNameDialog } from "./PlaylistNameDialog";
 
 export interface AddToPlaylistDialogProps {
   readonly songId: string;
+  /** Shown in the picker's sub line; the song's display title. */
+  readonly songTitle?: string;
   readonly onClose: () => void;
   readonly onDone: () => void;
 }
 
-export function AddToPlaylistDialog({ songId, onClose, onDone }: AddToPlaylistDialogProps) {
+export function AddToPlaylistDialog({
+  songId,
+  songTitle,
+  onClose,
+  onDone,
+}: AddToPlaylistDialogProps) {
   const [playlists, setPlaylists] = useState<readonly PlaylistView[]>([]);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const [creating, setCreating] = useState(false);
+  const dialogRef = useRef<HTMLElement>(null);
   // A `Picker`-tier dialog (设置/歌单选择器): Escape closes it via the single
   // stack, focus is trapped and restored on close.
-  useOverlay({ tier: OverlayTier.Picker, onClose, containerRef: dialogRef });
-  useFocusTrap(dialogRef);
+  useOverlay({ tier: OverlayTier.Picker, onClose, containerRef: dialogRef, enabled: !creating });
+  useFocusTrap(dialogRef, !creating);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,50 +104,107 @@ export function AddToPlaylistDialog({ songId, onClose, onDone }: AddToPlaylistDi
   }
 
   return (
-    <div className="overlay-shell" data-testid="add-to-playlist-dialog" onClick={onClose}>
-      <div
-        className="detail-card"
+    <>
+      <section
+        className="playlist-picker-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="加入歌单"
+        aria-labelledby="playlist-picker-title"
+        data-testid="add-to-playlist-dialog"
         ref={dialogRef}
-        onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="detail-title">加入歌单</h3>
-        {playlists.length === 0 ? (
-          <p className="workspace-hint">暂无歌单可添加</p>
-        ) : (
-          <ul className="playlist-picker" role="group" aria-label="选择歌单">
-            {playlists.map((playlist) => (
-              <li key={playlist.id}>
-                <label className="playlist-picker-item">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(playlist.id)}
-                    onChange={() => toggle(playlist.id)}
-                    aria-label={playlist.name}
-                  />
-                  <span>{playlist.name}</span>
-                </label>
-              </li>
-            ))}
-          </ul>
-        )}
-        {error ? (
-          <p className="workspace-error" role="alert">
-            {error}
+        <div className="playlist-picker-panel">
+          <div className="playlist-picker-head">
+            <h2 id="playlist-picker-title">添加到歌单</h2>
+          </div>
+          <p className="playlist-picker-sub" id="playlist-picker-sub">
+            将「{songTitle ?? "歌曲"}」添加到：
           </p>
-        ) : null}
-        <div className="menu-actions">
-          <button type="button" className="btn btn-primary" onClick={() => void confirm()}>
-            添加
-          </button>
-          <button type="button" className="btn" onClick={onClose}>
-            取消
-          </button>
+
+          <div className="playlist-picker-list" role="listbox" aria-label="选择歌单">
+            {playlists.length === 0 ? (
+              <div className="playlist-picker-empty">
+                <p>还没有歌单，先创建一个吧。</p>
+              </div>
+            ) : (
+              playlists.map((playlist) => {
+                const added = selected.has(playlist.id);
+                return (
+                  <button
+                    key={playlist.id}
+                    type="button"
+                    role="option"
+                    aria-selected={added}
+                    aria-label={playlist.name}
+                    className={`playlist-picker-option${added ? " added" : ""}`}
+                    onClick={() => {
+                      toggle(playlist.id);
+                      setError(null);
+                    }}
+                  >
+                    <span className={`cover ${coverClass(playlist.id)}`} aria-hidden="true" />
+                    <span className="playlist-picker-copy">
+                      <strong>{playlist.name}</strong>
+                      <span>{playlist.memberCount} 首歌曲</span>
+                    </span>
+                    <span className="playlist-picker-check" aria-hidden="true">
+                      <Icon name="check" />
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          {error ? (
+            <p className="playlist-name-error" role="alert">
+              {error}
+            </p>
+          ) : null}
+
+          <div className="playlist-picker-footer">
+            <button
+              type="button"
+              className="playlist-picker-new"
+              onClick={() => setCreating(true)}
+              data-testid="playlist-picker-new"
+            >
+              <Icon name="plus" />
+              新建歌单
+            </button>
+            <div className="playlist-picker-footer-actions">
+              <button type="button" className="playlist-picker-cancel" onClick={onClose}>
+                取消
+              </button>
+              <button
+                type="button"
+                className="playlist-picker-confirm"
+                onClick={() => void confirm()}
+              >
+                确认
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+      </section>
+
+      {creating ? (
+        <PlaylistNameDialog
+          mode="create"
+          existingNames={playlists.map((playlist) => playlist.name)}
+          onClose={() => setCreating(false)}
+          onDone={(name) => {
+            // Re-read the list so the new playlist is selectable right away.
+            void bridge
+              .call("playlists")
+              .then((value: unknown) => setPlaylists(value as PlaylistView[]))
+              .catch(() => {});
+            setCreating(false);
+            setError(`已创建歌单「${name}」，请选择它`);
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 

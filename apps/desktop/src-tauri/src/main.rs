@@ -23,6 +23,7 @@ use tauri::{
 };
 
 mod commands;
+mod dialogs;
 
 const MAIN_WINDOW: &str = "main";
 
@@ -31,22 +32,29 @@ const MAIN_WINDOW: &str = "main";
 /// design and the `BridgeCommandMap` consumer.
 const PLAYER_SNAPSHOT_EVENT: &str = "player://snapshot";
 
-/// Resolve the bundled libmpv dylib for the current platform. On macOS it is
-/// vendored into the app bundle's `Frameworks/` (see `build.rs` rpath +
-/// `tauri.conf.json`). Other platforms have not been vendored yet (deferred to
-/// their platform Gate); a missing dylib leaves the actor degraded (`Stopped`).
-fn bundled_libmpv(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+/// Resolve the bundled libmpv dylib for the current platform. On macOS the
+/// release app has it in `Echo.app/Contents/Frameworks`; `build.rs` stages the
+/// same dependency set in `target/Frameworks` for `tauri dev`. Both are reached
+/// through the *running executable's* own directory — not through Tauri's
+/// `executable_dir()`, which on macOS is unsupported (`dirs::executable_dir`
+/// returns `None`), so it can never be used to locate a sibling `Frameworks/`.
+fn bundled_libmpv(_app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     #[cfg(target_os = "macos")]
     {
-        // …/Echo.app/Contents/MacOS → …/Echo.app/Contents/Frameworks/libmpv.dylib
-        let executable_dir = app.path().executable_dir().ok()?;
-        let frameworks = executable_dir.parent()?.join("Frameworks");
+        // `current_exe` is accurate in both layouts we ship/stage. `Frameworks`
+        // sits two levels up from the executable in each — the rpath instrument
+        // is `@executable_path/../Frameworks` (one `..` from the exe's *parent*
+        // directory, matching `parent().parent()` here):
+        //   • dev:  target/debug/echo  → ../..  → target/Frameworks (staged set)
+        //   • .app: .../Contents/MacOS/echo → ../.. → .../Contents/Frameworks
+        let exe = std::env::current_exe().ok()?;
+        let frameworks = exe.parent()?.parent()?.join("Frameworks");
         let candidate = frameworks.join("libmpv.dylib");
         candidate.exists().then_some(candidate)
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = app;
+        let _ = _app;
         None
     }
 }
@@ -64,8 +72,9 @@ fn focus_main_window(app: &tauri::AppHandle) {
 /// store as managed state, plus the snapshot→frontend forwarder.
 ///
 /// Failure here is fatal (the app cannot serve commands without its runtime).
-/// Uses `AppServices::new` (cancelling dialogs, empty runtime state) — the real
-/// dialog/trash ports are shell-owned and wired in a later platform task.
+/// Uses `AppServices::with_runtime` with the real system dialogs (`TauriDialogs`)
+/// and the SQLite-backed runtime-state store, so directory/file selection and
+/// reveal come from the OS rather than a cancelling test double.
 ///
 /// # Errors
 ///
@@ -73,7 +82,12 @@ fn focus_main_window(app: &tauri::AppHandle) {
 /// assembly / recovery failure; propagated as a fatal startup error.
 #[allow(clippy::too_many_lines)]
 fn wire_composition(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let app_data = app.path().app_data_dir()?;
+    // The Gate overrides the data dir so a native run targets a hermetic temp
+    // library and can be killed/restarted safely. Production never sets it.
+    let app_data = match env::var("ECHO_GATE_DATA_DIR") {
+        Ok(dir) => std::path::PathBuf::from(dir),
+        Err(_) => app.path().app_data_dir()?,
+    };
     let db_path = app_data.join("echo.sqlite");
     let cover_dir = app_data.join("covers");
     let routed =
@@ -90,10 +104,32 @@ fn wire_composition(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
         .map_err(|error| format!("runtime recovery failed: {error}"))?;
     supervisor.on_ready();
 
-    let services = AppServices::new(routed.deps.clone(), scan_supervisor, supervisor);
+    // A scripted Gate run (native E2E) replaces the OS pickers with env-driven
+    // dialogs; everything else is identical to production.
+    let gate_dialogs: Arc<dyn echo_desktop::platform::dialogs::SystemDialogs> =
+        if env::var_os("ECHO_GATE_ROOT").is_some() || env::var_os("ECHO_GATE_IMPORT").is_some() {
+            Arc::new(dialogs::GateDialogs)
+        } else {
+            Arc::new(dialogs::TauriDialogs::new(app.handle().clone()))
+        };
+    let services = AppServices::with_runtime(
+        routed.deps.clone(),
+        scan_supervisor,
+        supervisor,
+        gate_dialogs,
+        routed.registry.clone(),
+        routed.database.clone(),
+        echo_core::application::root_switch::Blockers::new(),
+    );
     app.manage(services);
     app.manage(routed.registry.clone());
     app.manage(routed.deps.clone());
+    // The `cover://` protocol resolves bytes by opaque asset key (design §16).
+    // It looks the store up as the *dynamic* `CoverCache` type, so the cache has
+    // to be registered under exactly that type — the same instance the scan
+    // persists embedded artwork into (design §115 内置优先). Without this the
+    // protocol answers 404 for every request and no artwork ever renders.
+    app.manage(routed.deps.cover_cache.clone());
 
     // Theme / close-behavior persistence (task 7.6).
     let platform_default = if cfg!(target_os = "macos") {
@@ -101,44 +137,78 @@ fn wire_composition(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
     } else {
         echo_desktop::platform::local_state::PlatformCloseDefault::Other
     };
-    let local_state = DesktopStateStore::new(app_data.join("desktop-state.json"), platform_default);
-    app.manage(local_state);
+    let local_state = Arc::new(DesktopStateStore::new(
+        app_data.join("desktop-state.json"),
+        platform_default,
+    ));
+    app.manage(local_state.clone());
 
-    // Playback: spawn the libmpv actor, build the coordinator, and keep a
-    // handle the command layer drives. `bundled_libmpv` is `None` on platforms
-    // without vendored libmpv — the actor starts degraded.
+    // Playback: spawn the real libmpv actor and keep the coordinator handle
+    // the command layer drives.  Do not substitute FakePlayer here: it makes
+    // the UI report a successful play transition while producing no sound.
     let resolver = player::PlayerController::resolver(&routed.deps);
-    let controller = bundled_libmpv(app.handle()).map_or_else(
-        || player::PlayerController::over_fake(echo_desktop::player::fake::FakePlayer::new()),
-        |libmpv| {
-            player::PlayerController::spawn_mpv(&libmpv, resolver).unwrap_or_else(|_| {
-                eprintln!("libmpv unavailable; player degraded");
-                player::PlayerController::over_fake(echo_desktop::player::fake::FakePlayer::new())
-            })
-        },
-    );
+    let libmpv = bundled_libmpv(app.handle()).ok_or_else(|| {
+        "bundled libmpv is missing; playback cannot start (run the macOS build staging)".to_owned()
+    })?;
+    let controller = player::PlayerController::spawn_mpv(&libmpv, resolver)
+        .map_err(|error| format!("start libmpv player: {error}"))?;
+    let player_source: Arc<std::sync::Mutex<Option<String>>> =
+        Arc::new(std::sync::Mutex::new(None));
     let player_handle = commands::PlayerHandle {
         coordinator: controller.coordinator.clone(),
+        source: player_source.clone(),
     };
     app.manage(player_handle);
 
-    // Forward actor snapshots to the frontend as typed UI snapshots. The queue
-    // provider surfaces the coordinator's full queue (entries + per-round failed
-    // set + current entry) so the UI snapshot drives the queue panel (11.2).
+    // Session persistence (task 8.9 落盘接线): the saver thread throttles
+    // durable playback-session writes (queue / current / mode / volume / mute
+    // / position / source) onto the atomic desktop-state store. It shares the
+    // same store instance and the same source slot as the command layer.
+    let saver_persistence: Arc<dyn echo_desktop::player::session::SessionPersistence> = Arc::new(
+        echo_desktop::player::session::StateStoreSession::new(local_state),
+    );
+    player::spawn_session_saver(
+        controller.port.clone(),
+        controller.coordinator.clone(),
+        saver_persistence,
+        player_source,
+        std::time::Duration::from_secs(3),
+    );
+
+    // Forward actor snapshots to the frontend as typed UI snapshots. The actor
+    // contributes transport state; the coordinator supplies everything
+    // queue-derived (entries + per-round failed set + current entry + mode), so
+    // the UI snapshot reflects one consistent view of what is playing (11.2).
     let handle = app.handle().clone();
     let coordinator = controller.coordinator.clone();
-    let queue_provider: Arc<dyn Fn() -> player::QueueView + Send + Sync> = Arc::new(move || {
-        let coord = coordinator.lock().expect("player coordinator lock");
-        (
-            coord.queue().entries().to_vec(),
-            coord.failed_round().collect(),
-            coord.current().cloned(),
-        )
-    });
+    let queue_provider: Arc<dyn Fn() -> player::CoordinatorView + Send + Sync> =
+        Arc::new(move || {
+            let coord = coordinator.lock().expect("player coordinator lock");
+            player::CoordinatorView {
+                entries: coord.queue().entries().to_vec(),
+                failed_round: coord.failed_round().collect(),
+                current: coord.current().cloned(),
+                mode: coord.mode(),
+            }
+        });
     let emit: player::SnapshotEmitter = Box::new(move |ui| {
         let _ = handle.emit(PLAYER_SNAPSHOT_EVENT, ui);
     });
     player::spawn_forwarder(controller.port.clone(), queue_provider, emit);
+    // Auto-advance: a track reaching EOF (or failing to load) must drive the
+    // coordinator to the next entry. Without this the queue stalls on `ended`
+    // until the user presses next manually.
+    player::spawn_auto_advance(controller.port.clone(), controller.coordinator.clone());
+    // Playback statistics (task 8.10): feed the real snapshot stream into the
+    // accumulator so a qualified listen reaches Core's idempotent
+    // `record_playback` (play_count / 最近播放). Without this the accumulator
+    // had no production caller and play counts never moved.
+    let stats_sink = Arc::new(player::CorePlaybackRecorder::new(routed.database.clone()));
+    player::spawn_stats_recorder(
+        controller.port.clone(),
+        controller.coordinator.clone(),
+        stats_sink,
+    );
     Ok(())
 }
 
@@ -261,17 +331,86 @@ fn cover_protocol_handler<R: tauri::Runtime>(
     };
 
     match cache.get(&key) {
-        Ok(Some(bytes)) => HttpResponse::builder()
-            .status(200)
-            .header("Content-Type", "image/*")
-            .body(bytes)
-            .unwrap_or_default(),
+        Ok(Some(bytes)) => {
+            let media_type = cover_media_type(&bytes);
+            let mut response = HttpResponse::builder()
+                .status(200)
+                .header("Content-Type", media_type)
+                .header("Vary", "Origin");
+            // Canvas extraction needs an origin-clean image. Grant pixel reads
+            // only to the bundled renderer (and the fixed local dev server).
+            if let Some(origin) = request
+                .headers()
+                .get("Origin")
+                .and_then(|v| v.to_str().ok())
+            {
+                if cover_canvas_origin_allowed(origin) {
+                    response = response.header("Access-Control-Allow-Origin", origin);
+                }
+            }
+            response
+                .body(bytes)
+                .unwrap_or_default()
+        }
         // Unknown/malformed key for the store, or a transient storage miss —
         // same 404 as any missing asset.
         Ok(None) | Err(_) => HttpResponse::builder()
             .status(404)
             .body(vec![])
             .unwrap_or_default(),
+    }
+}
+
+fn cover_canvas_origin_allowed(origin: &str) -> bool {
+    matches!(
+        origin,
+        "tauri://localhost" | "http://tauri.localhost" | "https://tauri.localhost"
+    ) || (cfg!(debug_assertions) && origin == "http://localhost:1420")
+}
+
+#[cfg(test)]
+mod cover_canvas_tests {
+    #[test]
+    fn only_echo_renderer_origins_can_read_cover_pixels() {
+        for origin in [
+            "tauri://localhost",
+            "http://tauri.localhost",
+            "https://tauri.localhost",
+        ] {
+            assert!(super::cover_canvas_origin_allowed(origin));
+        }
+        for origin in [
+            "null",
+            "https://example.com",
+            "http://localhost:1421",
+            "http://tauri.localhost.evil.com",
+        ] {
+            assert!(!super::cover_canvas_origin_allowed(origin));
+        }
+        assert_eq!(
+            super::cover_canvas_origin_allowed("http://localhost:1420"),
+            cfg!(debug_assertions)
+        );
+    }
+}
+
+/// The media type of an embedded cover, derived from the bytes themselves.
+///
+/// The cache stores the original `mime.txt` next to the bytes, but the read port
+/// resolves bytes only — and a wildcard `image/*` is not a concrete media type,
+/// so `WebKit` will not decode the response into an `<img>`. The protocol
+/// therefore sniffs the container magic of the bytes it is about to serve. An
+/// unrecognised container is still served (as `application/octet-stream`) rather
+/// than hidden: a candidate that fails to decode is a local-library fact, not
+/// something the shell should pretend is missing.
+fn cover_media_type(bytes: &[u8]) -> &'static str {
+    match bytes {
+        [0xFF, 0xD8, 0xFF, ..] => "image/jpeg",
+        [0x89, b'P', b'N', b'G', ..] => "image/png",
+        [b'G', b'I', b'F', ..] => "image/gif",
+        [b'B', b'M', ..] => "image/bmp",
+        [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => "image/webp",
+        _ => "application/octet-stream",
     }
 }
 
@@ -291,6 +430,13 @@ fn main() {
                 deliver_file_open(app, path);
             }
         }))
+        // Native directory/file pickers in the Rust side (task 7.5 real wiring)
+        // and reveal-in-folder: `echo-desktop` stays Tauri-free, so the
+        // adapters live in this shell crate. Rust-side `DialogExt` calls do not
+        // go through the WebView capability system, so the main window keeps
+        // its minimal permission set (no dialog/fs permissions granted).
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             commands::get_bootstrap_state,
             commands::library_status,
@@ -298,10 +444,12 @@ fn main() {
             commands::search,
             commands::favorites,
             commands::recent,
+            commands::library_counts,
             commands::playlists,
             commands::playlist_members,
             commands::song_detail,
             commands::get_lyrics,
+            commands::song_cover_keys,
             commands::set_favorite,
             commands::create_playlist,
             commands::rename_playlist,
@@ -318,6 +466,7 @@ fn main() {
             commands::set_theme,
             commands::set_close_behavior,
             commands::play_context,
+            commands::restore_playback_session,
             commands::play_temporary_file,
             commands::import_current_temporary_file,
             commands::player_control,

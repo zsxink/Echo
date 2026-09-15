@@ -1,8 +1,13 @@
 /**
- * Task 10.9 — playlist management view: 40-grapheme validation, rename, delete
- * (which navigates away and never deletes song files). Membership append order
- * and idempotent duplicates are enforced by the core (tasks 6.6/6.7); the UI
- * surfaces the interaction and the outcome.
+ * Task 10.9 — playlist management view: it renders the same workspace DOM the
+ * prototype uses for every view (`.library-view` → `.library-head` →
+ * `.table-wrap`), carries the playlist's name and member count, renames through
+ * `rename_playlist`, and deletes through a real confirmation that navigates away
+ * and never deletes song files.
+ *
+ * The 40-grapheme naming rule lives in the shared `.playlist-name-dialog` and is
+ * covered by `PlaylistNameDialog.test.tsx`; membership append order and idempotent
+ * duplicates are enforced by the core (tasks 6.6/6.7).
  */
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -18,36 +23,43 @@ import { bridge } from "../../bridge";
 
 const call = vi.mocked(bridge.call);
 
-function mockBasicState() {
+/**
+ * Command-aware bridge mock. A one-shot `mockResolvedValueOnce` is wrong here:
+ * the view issues `playlist_members` first, so the queued value would land on
+ * that call instead of the one under test. Dispatching on the command name keeps
+ * every call deterministic regardless of order.
+ */
+function mockBridge(overrides: Record<string, unknown> = {}) {
   call.mockReset();
-  // playlist_members → empty
-  call.mockResolvedValueOnce([] as never);
-  // playlists → the current playlist
-  call.mockResolvedValueOnce([{ id: "pl-1", name: "深夜" }] as never);
+  call.mockImplementation(((command: string) =>
+    Promise.resolve(command in overrides ? overrides[command] : [])) as never);
+}
+
+function renderView(props: Partial<Parameters<typeof PlaylistsView>[0]> = {}) {
+  return render(
+    <PlaylistsView playlistId="pl-1" title="深夜" root="" readOnly={false} {...props} />,
+  );
 }
 
 describe("PlaylistsView (task 10.9)", () => {
-  it("rejects a create name longer than 40 graphemes", async () => {
-    mockBasicState();
-    render(<PlaylistsView playlistId="pl-1" />);
-    await screen.findByText("歌单：深夜");
+  it("renders the playlist inside the prototype's library-view DOM", async () => {
+    mockBridge();
+    const { container } = renderView();
+    await screen.findByTestId("playlist-view");
 
-    const long = "春".repeat(41);
-    const input = screen.getByLabelText("新歌单名称");
-    fireEvent.change(input, { target: { value: long } });
-    fireEvent.click(screen.getByText("创建歌单"));
-
-    expect(await screen.findByText(/名称不能超过 40 个字符/)).toBeInTheDocument();
-    expect(call).not.toHaveBeenCalledWith("create_playlist", expect.anything());
+    expect(container.querySelector(".workspace")).toBeNull();
+    expect(container.querySelector(".library-head")).toBeInTheDocument();
+    expect(container.querySelector(".table-wrap")).toBeInTheDocument();
+    expect(container.querySelector(".track-table")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "深夜" })).toBeInTheDocument();
   });
 
   it("renames the playlist through rename_playlist and updates the title", async () => {
-    mockBasicState();
-    call.mockResolvedValueOnce(undefined as never); // rename_playlist
-    render(<PlaylistsView playlistId="pl-1" />);
-    await screen.findByText("歌单：深夜");
+    mockBridge();
+    renderView();
+    await screen.findByTestId("playlist-view");
 
-    fireEvent.click(screen.getByText("重命名"));
+    fireEvent.click(screen.getByText("编辑歌单"));
     const renameInput = screen.getByLabelText("歌单新名称");
     fireEvent.change(renameInput, { target: { value: "午夜客厅" } });
     fireEvent.click(screen.getByText("保存"));
@@ -55,21 +67,27 @@ describe("PlaylistsView (task 10.9)", () => {
     await waitFor(() =>
       expect(call).toHaveBeenCalledWith("rename_playlist", { id: "pl-1", name: "午夜客厅" }),
     );
+    // The optimistic name is shown without waiting for the shell to re-read.
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "午夜客厅" })).toBeInTheDocument(),
+    );
   });
 
   it("deletes the playlist after confirmation and navigates away", async () => {
-    mockBasicState();
-    call.mockResolvedValueOnce(undefined as never); // delete_playlist
+    mockBridge({ delete_playlist: undefined });
     const onDeleted = vi.fn();
-    render(<PlaylistsView playlistId="pl-1" onDeleted={onDeleted} />);
-    await screen.findByText("歌单：深夜");
+    const onLibraryChanged = vi.fn();
+    renderView({ onDeleted, onLibraryChanged });
+    await screen.findByTestId("playlist-view");
 
     // No deletion before confirmation.
     fireEvent.click(screen.getByText("删除歌单"));
     expect(call).not.toHaveBeenCalledWith("delete_playlist", expect.anything());
+    expect(screen.getByText("删除歌单「深夜」？")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("确认删除"));
+    fireEvent.click(screen.getByText("确认删除歌单"));
     await waitFor(() => expect(call).toHaveBeenCalledWith("delete_playlist", { id: "pl-1" }));
     expect(onDeleted).toHaveBeenCalled();
+    expect(onLibraryChanged).toHaveBeenCalled();
   });
 });

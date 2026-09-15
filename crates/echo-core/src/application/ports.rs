@@ -29,7 +29,7 @@
 use std::io::Read;
 use std::time::Duration;
 
-use crate::domain::catalog::{OpaqueCursor, Paged, SongSort};
+use crate::domain::catalog::{CatalogCounts, OpaqueCursor, Paged, SongSort};
 use crate::domain::entities::{
     LibraryRoot, LyricsCandidate, LyricsSource, MediaDiagnostic, PlaylistMember, Song,
     SongAvailability,
@@ -112,6 +112,17 @@ pub trait CatalogQueryRepository: Send + Sync {
     /// One playlist's song rows ordered by member position (available +
     /// missing shown, pending-delete hidden, active root only).
     fn playlist_songs(&self, playlist: PlaylistId) -> Result<Vec<Song>, Error>;
+    /// How many songs each library view holds, as one total per view.
+    ///
+    /// This exists because a navigation count is needed *before* a view is
+    /// opened: paging to the end of a 50,000-song view to learn its size is
+    /// not an acceptable way to render a sidebar. Implementations must apply
+    /// the same membership rules as [`Self::all_songs`] / [`Self::favorites`]
+    /// (active root, available only) so a count never disagrees with the list
+    /// it advertises, and must fail with `Unavailable` — never return zero —
+    /// when there is no active root: zero means "empty library", which is a
+    /// different fact.
+    fn counts(&self) -> Result<CatalogCounts, Error>;
     /// Search overlay over the active root (task 6.2). `query` is matched
     /// case-insensitively as a full-query contains across title, artist and
     /// album of the *normalized* keys (FTS for ≥3 scalars, escaped LIKE for
@@ -639,6 +650,16 @@ pub trait LibraryFileSystem: Send + Sync {
     ) -> Result<(), Error>;
     /// Whether the root currently permits writes (permissions + marker).
     fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error>;
+    /// Acquire write capability for `root` by establishing its owned staging
+    /// directory (design §8: 首次获得写能力时 exclusive-create). Idempotent —
+    /// a root that already has capability is a no-op. Called by root
+    /// activation/prepare when a candidate root is brought writable, so a
+    /// freshly-chosen directory is never permanently read-only.
+    ///
+    /// # Errors
+    ///
+    /// Propagates the inability to create/verify the staging directory.
+    fn establish_write_capability(&self, root: LibraryRootId) -> Result<(), Error>;
 }
 
 // ---------------------------------------------------------------------------

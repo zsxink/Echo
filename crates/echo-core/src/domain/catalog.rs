@@ -273,6 +273,47 @@ impl<T> Paged<T> {
     }
 }
 
+/// The "最近添加" view is defined as the newest *100* songs; the view query and
+/// its count must agree, so the ceiling lives in the domain rather than being
+/// duplicated in SQL and in the UI.
+pub const RECENT_VIEW_LIMIT: usize = 100;
+
+/// How many songs each library view currently holds.
+///
+/// A count answers "how many songs would this view show", and is therefore
+/// computed from the same membership rules as the view itself: the active root
+/// only, `available` songs only (pending-delete is invisible everywhere). The
+/// UI needs it *before* a view is ever opened — that is the whole point of a
+/// navigation count — so it is a standalone total, never a derived "rows loaded
+/// so far" figure that a paged query happens to have in hand.
+///
+/// `recent` is capped at [`RECENT_VIEW_LIMIT`]: printing 5,000 next to a view
+/// that renders 100 rows would be a lie of a different shape.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct CatalogCounts {
+    pub all: usize,
+    pub favorites: usize,
+    pub recent: usize,
+}
+
+impl CatalogCounts {
+    /// Build counts from the raw available/favorited totals; `recent` is
+    /// clamped to the view's ceiling here so every repository implementation
+    /// agrees on it.
+    #[must_use]
+    pub const fn new(all: usize, favorites: usize) -> Self {
+        Self {
+            all,
+            favorites,
+            recent: if all > RECENT_VIEW_LIMIT {
+                RECENT_VIEW_LIMIT
+            } else {
+                all
+            },
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Playback context
 // ---------------------------------------------------------------------------

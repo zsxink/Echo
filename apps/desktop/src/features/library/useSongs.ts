@@ -73,6 +73,9 @@ export function useSongs(query: SongQuery): {
   readonly loadMore: () => void;
   readonly reset: () => void;
   readonly retry: () => void;
+  /** Apply one authoritative `SongView` (a committed mutation) to the loaded
+   *  page in place, so a toggle is visible without a full re-query. */
+  readonly patchSong: (song: SongView) => void;
 } {
   const [page, setPage] = useState<SongPage>({ songs: [], isLast: false });
   const [loading, setLoading] = useState(false);
@@ -153,7 +156,33 @@ export function useSongs(query: SongQuery): {
 
   const retry = useCallback(() => retryRef.current(), []);
 
-  return { page, loading, error, loadMore, reset, retry };
+  // In-view patch for a committed mutation (e.g. `set_favorite`'s returned
+  // authoritative SongView). The favorites view only ever shows favorites, so
+  // there a committed un-favorite removes the row; a song that just became a
+  // favorite is appended (the next full query restores the authoritative sort).
+  const patchSong = useCallback(
+    (song: SongView) => {
+      setPage((prev) => {
+        const index = prev.songs.findIndex((s) => s.id === song.id);
+        if (query.inFavorites && !song.favorite) {
+          if (index < 0) return prev;
+          return { ...prev, songs: prev.songs.filter((s) => s.id !== song.id) };
+        }
+        if (index >= 0) {
+          const songs = prev.songs.slice();
+          songs[index] = song;
+          return { ...prev, songs };
+        }
+        if (query.inFavorites) {
+          return { ...prev, songs: [...prev.songs, song] };
+        }
+        return prev;
+      });
+    },
+    [query.inFavorites],
+  );
+
+  return { page, loading, error, loadMore, reset, retry, patchSong };
 }
 
 /** Turn a bridge failure into a short, user-safe message (no paths, ids). */

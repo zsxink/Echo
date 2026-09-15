@@ -1,0 +1,231 @@
+/* Persistent player bar, immersive now-playing surface, queue popover and the
+ *
+ * Verbatim from docs/prototype/echo-desktop-player.html (the visual source of
+ * truth). Do not hand-edit declarations here: change the prototype and re-run
+ * `node scripts/extract-prototype-css.mjs` so the app cannot drift from it.
+ * lyrics column.
+ *
+ * Declaration order is preserved. Imports follow the intended cascade:
+ * tokens → shell → library → player → responsive → app-extras.
+ */
+.playing-cover { width: 176px; aspect-ratio: 1; position: relative; isolation: isolate; border: 3px solid #08090a; border-radius: 50%; overflow: visible; background: repeating-radial-gradient(circle at center, #0e0f12 0 1.8px, #191b1f 2.4px 3.6px, #0a0b0d 4.2px 5.4px); box-shadow: 0 28px 52px rgba(0,0,0,.42), inset 0 0 0 1px rgba(255,255,255,.05); }
+.playing-cover::before { content: ""; position: absolute; z-index: -1; inset: -4.5%; border: 1px solid rgba(255,255,255,.10); border-radius: 50%; background: linear-gradient(145deg, #3b4048, #2c3036 62%); box-shadow: inset 0 0 0 1px rgba(0,0,0,.38), 0 18px 30px rgba(0,0,0,.2); }
+.playing-cover::after { content: ""; position: absolute; z-index: 1; inset: 3%; border-radius: 50%; pointer-events: none; background: conic-gradient(from 212deg, transparent 0deg 48deg, rgba(255,255,255,.07) 68deg, transparent 106deg 192deg, rgba(255,255,255,.028) 228deg, transparent 268deg); mix-blend-mode: screen; }
+.playing-cover .ring { position: absolute; z-index: 2; inset: 15.5%; overflow: hidden; border: 5px solid #0a0b0c; border-radius: 50%; background: linear-gradient(138deg, #ece3db 0 28%, #c9dae2 28% 51%, #e9c2b1 51% 69%, #fbecdf 69% 100%); box-shadow: 0 0 0 1px rgba(255,255,255,.10), inset 0 0 26px rgba(0,0,0,.16); display: grid; place-items: center; }
+.playing-cover .ring::before { content: ""; position: absolute; inset: 0; background: linear-gradient(112deg, transparent 0 36%, rgba(114,77,68,.47) 36.5% 38.5%, transparent 39% 56%, rgba(255,255,255,.48) 56.5% 59%, transparent 59.5%); transform: rotate(-12deg) scale(1.2); }
+.playing-cover .ring::after { display: none; }
+.playing-cover.is-playing .ring { animation: record-spin 12s linear infinite; }
+.tonearm { position: absolute; z-index: 4; top: -35%; left: 34.68%; width: 100%; height: 41.94%; pointer-events: none; transform: rotate(0deg); transform-origin: 15.3226% 23.8462%; transition: transform 480ms cubic-bezier(.2,.72,.2,1); }
+.playing-cover.is-playing .tonearm { transform: rotate(35deg); }
+.tonearm svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 3px 2px rgba(0,0,0,.22)); }
+.tonearm .arm-path { fill: none; stroke: #fffdf9; stroke-width: 10; stroke-linecap: round; stroke-linejoin: round; }
+.tonearm .arm-pivot-halo { fill: #343b49; }
+.tonearm .arm-pivot { fill: #fffdf9; stroke: #eef0f3; stroke-width: 3; }
+.tonearm .arm-hub { fill: #dedfe2; }
+.tonearm .cartridge { fill: #fffdf9; stroke: #c8cbd0; stroke-width: 2; }
+.tonearm .cartridge-front { fill: #fffdf9; stroke: #c8cbd0; stroke-width: 2; }
+.tonearm .cartridge-detail { fill: none; stroke: #d5d7db; stroke-width: 3; stroke-linecap: round; }
+@keyframes record-spin { to { transform: rotate(360deg); } }
+.now-title { margin-bottom: var(--space-1); font: 700 var(--text-lg)/var(--leading-tight) var(--font-display); letter-spacing: var(--tracking-display); }
+.now-artist { margin: 0; color: var(--fg-2); font-size: var(--text-sm); }
+.lyrics { margin: 0; padding: var(--space-4); background: var(--surface); border-radius: var(--radius-md); }
+.lyrics p { margin: var(--space-3) 0 0; color: var(--fg-2); font-size: var(--text-sm); line-height: 1.75; }
+.now-playing-popover .lyrics-empty { display: grid; place-content: center; gap: 6px; min-height: calc(2.25em * 5); margin: 0; color: color-mix(in oklab, var(--accent-on), transparent 34%); font-size: var(--text-sm); text-align: center; }
+.lyrics p strong { color: var(--fg); font-weight: 650; }
+.queue { border-top: 1px solid var(--border-soft); padding-top: var(--space-5); }
+.queue-title { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: var(--space-3); }
+.queue-heading { display: flex; align-items: baseline; gap: var(--space-2); }
+.queue-title h3 { margin: 0; font: 700 var(--text-base)/1 var(--font-display); }
+.queue-title span { color: var(--muted); font: 500 var(--text-xs)/1 var(--font-mono); }
+.queue-tools { display: flex; gap: var(--space-2); }
+.queue-tool { min-height: 44px; padding: 0 var(--space-3); margin-top: -8px; margin-bottom: -8px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font-size: var(--text-xs); cursor: pointer; }
+.queue-tool:hover { color: var(--danger); background: var(--surface-warm); }
+.queue-list { min-height: 0; display: grid; flex: 0 1 auto; gap: 2px; max-height: min(518px, calc(100vh - 200px)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: transparent transparent; }
+.queue-list::-webkit-scrollbar { width: 7px; }
+.queue-list::-webkit-scrollbar-track { background: transparent; }
+.queue-list::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--radius-pill); background: transparent; background-clip: padding-box; }
+.queue-list.is-scrolling { scrollbar-color: color-mix(in oklab, var(--muted), transparent 42%) transparent; }
+.queue-list.is-scrolling::-webkit-scrollbar-thumb { background: color-mix(in oklab, var(--muted), transparent 42%); }
+.queue-item { display: grid; grid-template-columns: 43px minmax(0, 1fr) 47px; gap: 11px; align-items: center; min-height: 50px; padding: 4px calc(var(--space-2) * .9); border-radius: var(--radius-sm); }
+.queue-item:hover { background: var(--surface); }
+.queue-cover { width: 43px; height: 43px; border-radius: var(--radius-sm); background: color-mix(in oklab, var(--accent), var(--fg) 44%); }
+.queue-cover-b { background: color-mix(in oklab, var(--warn), var(--fg) 62%); }
+.queue-cover-c { background: color-mix(in oklab, var(--success), var(--fg) 60%); }
+.queue-name { min-width: 0; }
+.queue-name b, .queue-name span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.queue-name b { font-size: var(--text-sm); font-weight: 650; }
+.queue-name span { margin-top: var(--space-1); color: var(--muted); font-size: var(--text-xs); }
+.queue-time { color: var(--muted); text-align: right; font: 500 var(--text-xs)/1 var(--font-mono); }
+.queue-empty { display: none; padding: var(--space-5) 0; color: var(--fg-2); font-size: var(--text-xs); }
+.queue-empty.show { display: block; }
+.queue-empty p { margin: var(--space-2) 0 var(--space-3); }
+.queue-empty .btn { min-height: 36px; padding-inline: var(--space-3); font-size: var(--text-xs); }
+.queue-popover { position: fixed; z-index: 5; right: var(--space-8); bottom: 88px; width: 317px; max-height: min(720px, calc(100vh - 120px)); overflow: hidden; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); box-shadow: var(--elev-raised); display: flex; flex-direction: column; }
+.queue-popover[hidden] { display: none; }
+.queue-popover .queue { min-height: 0; display: flex; flex: 1 1 auto; flex-direction: column; border-top: 0; padding-top: 0; }
+.queue-popover .queue-title { flex: none; padding-bottom: 11px; border-bottom: 1px solid var(--border-soft); }
+.playerbar { position: relative; grid-column: 1 / 3; grid-row: 2; border-top: 1px solid var(--border); background: var(--bg); display: grid; grid-template-columns: minmax(260px, 1fr) minmax(400px, 1.2fr) minmax(260px, 1fr); align-items: center; gap: var(--space-6); padding: var(--space-3) var(--space-6); }
+.player-track { display: flex; align-items: center; min-width: 0; gap: var(--space-2); }
+.player-track-card { min-width: 0; min-height: 56px; margin: -4px; padding: 4px; border: 0; border-radius: var(--radius-md); background: transparent; display: flex; flex: 1; gap: var(--space-3); align-items: center; text-align: left; color: var(--fg); cursor: pointer; transition: background var(--motion-fast) var(--ease-standard); }
+.player-track-card:hover { background: var(--surface); }
+.player-track-card[aria-expanded="true"] { background: var(--surface-warm); }
+.mini-cover { width: 48px; height: 48px; flex: none; border-radius: 50%; background: repeating-radial-gradient(circle at center, color-mix(in oklab, var(--fg), black 18%) 0 2px, color-mix(in oklab, var(--fg), black 34%) 3px 4px); position: relative; }
+.mini-cover::after { content: ""; position: absolute; inset: 12px; border-radius: 50%; border: 1px solid color-mix(in oklab, var(--accent-on), transparent 30%); }
+.player-track-text { min-width: 0; }
+.player-track-text b, .player-track-text span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-track-text b { font-size: var(--text-sm); }
+.player-track-text span { color: var(--muted); font-size: var(--text-xs); }
+.controls { display: grid; gap: var(--space-2); justify-items: center; }
+.control-buttons { display: flex; align-items: center; gap: var(--space-3); }
+.control { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; border: 0; color: var(--fg-2); background: transparent; cursor: pointer; border-radius: 50%; position: relative; }
+.control:not(.control-play)::after { content: ""; position: absolute; inset: -4px; }
+.control:hover { background: var(--surface); color: var(--fg); }
+.control.active { color: var(--accent); }
+.control svg { width: 18px; height: 18px; }
+#playback-mode { flex: none; overflow: visible; }
+#playback-mode svg { width: 20px; height: 20px; overflow: visible; }
+.control-play { width: 44px; height: 44px; color: var(--accent-on); background: var(--accent-strong); }
+.control-play:hover { color: var(--accent-on); background: var(--accent-strong-hover); }
+.progress-line { --progress: 37%; position: absolute; z-index: 3; inset: -4px 0 auto; width: 100%; height: 8px; }
+.progress-line::before, .progress-line::after { content: ""; position: absolute; top: 2px; height: 4px; border-radius: var(--radius-pill); pointer-events: none; }
+.progress-line::before { right: 0; left: 0; background: color-mix(in oklab, var(--fg), transparent 78%); }
+.progress-line::after { left: 0; width: var(--progress); background: var(--accent); }
+.progress { position: relative; z-index: 1; display: block; width: 100%; height: 8px; margin: 0; appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer; }
+.progress::-webkit-slider-runnable-track { height: 8px; background: transparent; }
+.progress::-webkit-slider-thumb { width: 12px; height: 12px; margin-top: -2px; appearance: none; -webkit-appearance: none; border: 1px solid var(--bg); border-radius: 50%; background: var(--accent); transition: transform var(--motion-fast) var(--ease-standard); }
+.progress::-moz-range-track { height: 8px; background: transparent; }
+.progress::-moz-range-progress { background: transparent; }
+.progress::-moz-range-thumb { width: 8px; height: 8px; border: 1px solid var(--bg); border-radius: 50%; background: var(--accent); }
+.progress:hover::-webkit-slider-thumb { transform: scale(1.16); }
+.progress:focus-visible { border-radius: var(--radius-pill); box-shadow: var(--focus-ring); outline: none; }
+.player-options { display: flex; justify-content: flex-end; align-items: center; gap: var(--space-2); }
+.volume-button { color: var(--fg-2); }
+.volume-button:hover { color: var(--fg); background: var(--surface); }
+.volume-button.is-muted { color: var(--muted); }
+.volume-button.is-muted:hover { color: var(--fg-2); background: var(--surface); }
+.volume-line { --volume: 70%; position: relative; width: 104px; height: 8px; }
+.volume-line::before, .volume-line::after { content: ""; position: absolute; top: 2px; height: 4px; border-radius: var(--radius-pill); pointer-events: none; }
+.volume-line::before { right: 0; left: 0; background: color-mix(in oklab, var(--fg), transparent 78%); }
+.volume-line::after { left: 0; width: var(--volume); background: var(--accent); }
+.volume { position: relative; z-index: 1; display: block; width: 100%; height: 8px; margin: 0; appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer; }
+.volume::-webkit-slider-runnable-track { height: 8px; background: transparent; }
+.volume::-webkit-slider-thumb { width: 12px; height: 12px; margin-top: -2px; appearance: none; -webkit-appearance: none; border: 1px solid var(--bg); border-radius: 50%; background: var(--accent); transition: transform var(--motion-fast) var(--ease-standard); }
+.volume::-moz-range-track { height: 8px; background: transparent; }
+.volume::-moz-range-progress { background: transparent; }
+.volume::-moz-range-thumb { width: 8px; height: 8px; border: 1px solid var(--bg); border-radius: 50%; background: var(--accent); }
+.volume:hover::-webkit-slider-thumb { transform: scale(1.16); }
+.volume:focus-visible { border-radius: var(--radius-pill); box-shadow: var(--focus-ring); outline: none; }
+.now-playing-popover { position: fixed; z-index: 8; inset: 0 0 88px; isolation: isolate; overflow: hidden; overscroll-behavior: none; padding: 80px clamp(28px, 5vw, 152px) clamp(40px, 6vh, 80px); color: var(--accent-on); display: grid; grid-template-columns: minmax(280px, .9fr) minmax(min(420px, calc(100vw - 760px)), 1fr); grid-template-rows: minmax(0, .74fr) minmax(0, 1fr); grid-template-areas: "record info" "record lyrics"; column-gap: clamp(32px, 6vw, 132px); background: color-mix(in oklab, var(--player-tint, var(--accent)), var(--fg) 84%); scrollbar-width: none; }
+.now-playing-popover::before { content: ""; position: absolute; z-index: -1; inset: -14%; background: color-mix(in oklab, var(--player-tint, var(--accent)), var(--bg) 58%); filter: blur(54px); opacity: .4; }
+.now-playing-popover[hidden] { display: none; }
+.now-playing-popover .playing-cover { grid-area: record; width: min(100%, 424px, 50vh); margin-left: auto; justify-self: end; align-self: center; }
+.now-playing-popover .playing-cover .ring { background: color-mix(in oklab, var(--player-tint, var(--accent)), var(--accent-on) 58%); }
+.now-playing-info { grid-area: info; min-width: 0; max-width: 620px; align-self: start; padding-bottom: 0; transform: translateY(var(--tonearm-info-offset, 0px)); }
+.now-playing-popover .now-title { color: var(--accent-on); font-size: clamp(var(--text-2xl), 4vw, var(--text-3xl)); }
+.song-meta { margin: var(--space-4) 0 0; color: color-mix(in oklab, var(--accent-on), transparent 34%); font-size: var(--text-sm); }
+.now-playing-popover::-webkit-scrollbar, .now-playing-popover .lyrics::-webkit-scrollbar { width: 0; height: 0; display: none; }
+.now-playing-popover .lyrics { grid-area: lyrics; min-width: 0; max-width: 620px; height: calc(2.25em * 5); align-self: start; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--space-3) 0 0; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; scrollbar-width: none; }
+.now-playing-popover .lyrics:focus-visible { outline: none; border-radius: var(--radius-sm); box-shadow: var(--focus-ring); }
+.lyrics-track { display: block; min-width: 0; max-width: 100%; min-height: 0; padding: var(--lyrics-edge-top, 0px) 0 var(--lyrics-edge-bottom, 0px); }
+.lyric-line { display: block; width: 100%; min-width: 0; max-width: 100%; min-height: 2.25em; margin: 0; padding: 0; border: 0; background: transparent; text-align: left; font-family: inherit; overflow-wrap: anywhere; word-break: break-word; white-space: normal; color: color-mix(in oklab, var(--accent-on), transparent 46%); font-size: var(--text-base); line-height: 2.25; transition: color var(--motion-fast) var(--ease-standard); }
+.lyric-line.is-current { color: var(--accent-on); font-weight: 650; }
+.mode-dismiss { position: absolute; top: var(--space-6); left: var(--space-6); width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: color-mix(in oklab, var(--accent-on), transparent 88%); color: var(--accent-on); display: grid; place-items: center; cursor: pointer; }
+.mode-dismiss:hover { background: color-mix(in oklab, var(--accent-on), transparent 76%); }
+.mode-dismiss svg { width: 22px; height: 22px; }
+@media (min-width: 761px) and (max-width: 980px) { .now-playing-popover { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-5); overflow-y: auto; } .now-playing-popover .playing-cover { margin-left: 0; justify-self: auto; align-self: auto; width: min(60vw, 320px, 42vh); } .now-playing-info { align-self: center; text-align: center; transform: none !important; pointer-events: auto; max-width: min(90vw, 480px); } .song-meta { text-align: center; } }
+@media (min-width: 981px) { .now-playing-popover { grid-template-rows: minmax(0, 1fr); grid-template-areas: "record lyrics"; } .now-playing-info { grid-area: lyrics; position: relative; z-index: 1; pointer-events: none; } .now-playing-popover .lyrics { grid-area: lyrics; min-height: 0; align-self: stretch; height: auto; margin-top: var(--lyrics-start-offset, 0px); padding-bottom: var(--space-2); } }
+/* --- 歌词专注阅读 (task 11.6) ---------------------------------------------
+ *
+ * The prototype's `body.lyrics-focus-open` is a rearrangement of the *same*
+ * surface, not a second surface: the `lyrics` grid area takes the only row and
+ * column left, the cover and meta hide, and the 常驻播放栏 below keeps the
+ * minimal playback controls — which is what the 152px bottom padding reserves
+ * (its own height while `player-mode-open`), plus the 88px inset above.
+ * `responsive.css` carries the ≤760px variant of the same rules.
+ *
+ * APP-ONLY, and the one block here that the extract script cannot reproduce:
+ * the prototype ships these declarations *inside its ≤760px media query only*,
+ * so on a wide window the prototype's own focus state hides nothing. Re-running
+ * `scripts/extract-prototype-css.mjs` therefore deletes this block (and the
+ * UA-reset declarations on `.lyric-line` above, which exist because the app
+ * renders lyric lines as <button> while the prototype renders <span>).
+ */
+body.player-mode-open.lyrics-focus-open .now-playing-popover {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "lyrics";
+  gap: 0;
+  padding: 72px var(--space-5) 152px;
+}
+body.player-mode-open.lyrics-focus-open .now-playing-popover .playing-cover,
+body.player-mode-open.lyrics-focus-open .now-playing-info {
+  display: none;
+}
+body.player-mode-open.lyrics-focus-open .now-playing-popover .lyrics {
+  max-height: none;
+  height: 100%;
+  align-self: stretch;
+  margin-top: 0;
+  /* Keep the comfortable 620px reading measure the surface already uses, but
+     centre it: the focus grid has a single column, so a left-aligned 620px
+     block would leave the whole right half of the screen empty. `width: 100%`
+     is required — a grid item with auto width + auto margins shrink-wraps to
+     its content instead of filling the column. */
+  width: 100%;
+  margin-inline: auto;
+  padding: clamp(72px, 16vh, 160px) 0 var(--space-8);
+  cursor: pointer;
+}
+body.player-mode-open.lyrics-focus-open .lyric-line {
+  font-size: clamp(var(--text-lg), 5.5vw, var(--text-xl));
+  line-height: 2.4;
+}
+body.player-mode-open { overflow: hidden; }
+body.player-mode-open .playerbar { position: relative; z-index: 9; background: color-mix(in oklab, var(--player-tint, var(--accent)), var(--fg) 76%); border-color: color-mix(in oklab, var(--accent-on), transparent 82%); color: var(--accent-on); backdrop-filter: blur(18px) saturate(135%); }
+body.player-mode-open .playerbar .player-track-card { color: var(--accent-on); background: transparent; }
+body.player-mode-open .playerbar .player-track-card:hover { background: color-mix(in oklab, var(--accent-on), transparent 87%); }
+body.player-mode-open .playerbar .player-track-card[aria-expanded="true"] { background: transparent; }
+body.player-mode-open .playerbar .player-track-card[aria-expanded="true"]:hover { background: color-mix(in oklab, var(--accent-on), transparent 87%); }
+body.player-mode-open .playerbar .player-track-text span, body.player-mode-open .playerbar .progress-line { color: color-mix(in oklab, var(--accent-on), transparent 42%); }
+body.player-mode-open .playerbar .control, body.player-mode-open .playerbar .row-action { color: color-mix(in oklab, var(--accent-on), transparent 26%); }
+body.player-mode-open .playerbar .control:hover, body.player-mode-open .playerbar .row-action:hover { color: var(--accent-on); background: color-mix(in oklab, var(--accent-on), transparent 90%); }
+body.player-mode-open .playerbar .control-play { color: var(--accent-on); background: var(--accent-strong); }
+body.player-mode-open .playerbar .control-play:hover { color: var(--accent-on); background: var(--accent-strong-hover); }
+body.player-mode-open .playerbar .progress-line::before, body.player-mode-open .playerbar .volume-line::before { background: color-mix(in oklab, var(--accent-on), transparent 76%); }
+body.player-mode-open .playerbar .progress-line::after, body.player-mode-open .playerbar .volume-line::after { background: var(--accent-strong); box-shadow: inset 0 0 0 1px var(--bg); }
+body.player-mode-open .playerbar .progress::-webkit-slider-thumb { border-color: var(--bg); background: var(--accent-strong); }
+body.player-mode-open .playerbar .progress::-moz-range-thumb { border-color: var(--bg); background: var(--accent-strong); }
+body.player-mode-open .playerbar .volume::-webkit-slider-thumb { border-color: var(--bg); background: var(--accent-strong); }
+body.player-mode-open .playerbar .volume::-moz-range-thumb { border-color: var(--bg); background: var(--accent-strong); }
+body.player-mode-open .playerbar .volume-button { color: var(--player-tint, var(--accent)); }
+body.player-mode-open .playerbar .volume-button:hover { color: var(--player-tint, var(--accent)); background: color-mix(in oklab, var(--player-tint, var(--accent)), transparent 82%); }
+body.player-mode-open .playerbar .volume-button.is-muted { color: color-mix(in oklab, var(--accent-on), transparent 42%); }
+body.player-mode-open .playerbar .volume-button.is-muted:hover { color: var(--accent-on); background: color-mix(in oklab, var(--accent-on), transparent 90%); }
+body.player-mode-open .queue-popover { z-index: 10; }
+body.player-mode-open .queue-popover { top: 92px; right: 0; bottom: 88px; width: min(520px, 38vw); max-height: none; padding: var(--space-6); border-radius: var(--radius-lg) 0 0 var(--radius-lg); border-color: var(--border-soft); }
+body.player-mode-open .queue-popover .queue-title { align-items: center; padding-bottom: var(--space-5); margin-bottom: var(--space-2); }
+body.player-mode-open .queue-popover .queue-title h3 { font-size: var(--text-xl); }
+body.player-mode-open .queue-popover .queue-title span { font-size: var(--text-sm); }
+body.player-mode-open .queue-popover .queue-list { gap: var(--space-1); }
+body.player-mode-open .queue-popover .queue-item { grid-template-columns: 56px minmax(0, 1fr) 60px; min-height: 76px; gap: var(--space-3); padding: var(--space-2); }
+body.player-mode-open .queue-popover .queue-cover { width: 56px; height: 56px; }
+body.player-mode-open .queue-popover .queue-name b { font-size: var(--text-base); font-weight: 650; }
+body.player-mode-open .queue-popover .queue-name span { margin-top: var(--space-1); font-size: var(--text-sm); }
+.volume:focus-visible { box-shadow: var(--focus-ring); outline: none; }
+.toast { position: fixed; left: 50%; bottom: 112px; z-index: 17; width: max-content; max-width: min(420px, calc(100vw - 32px)); min-height: 44px; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); box-shadow: var(--elev-raised); display: none; align-items: center; gap: var(--space-2); color: var(--fg-2); transform: translateX(-50%); white-space: nowrap; }
+.toast.show { display: flex; }
+.toast-icon { width: 22px; height: 22px; flex: none; display: grid; place-items: center; color: var(--accent-strong); }
+.toast-icon svg { width: 22px; height: 22px; display: block; }
+.toast-message { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--text-sm); font-weight: 500; }
+.toast.is-error { border-color: var(--danger); }
+.toast-action { flex: none; min-height: 32px; padding: 0 var(--space-2); border: 0; border-radius: var(--radius-sm); background: var(--surface); color: var(--accent-strong); font-weight: 650; cursor: pointer; }
+.toast-action:hover { background: var(--surface-warm); color: var(--accent-strong); }
+.confirmation-dialog { position: fixed; z-index: 30; inset: 0; display: grid; place-items: center; padding: var(--space-5); }
+.confirmation-dialog[hidden] { display: none; }
+.confirmation-dialog::before { content: ""; position: absolute; inset: 0; background: color-mix(in oklab, var(--fg), transparent 64%); }
+.confirmation-panel { position: relative; width: min(100%, 420px); padding: var(--space-6); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); box-shadow: var(--elev-raised); }
+.confirmation-panel h2 { margin: 0 0 var(--space-2); font: 700 var(--text-xl)/var(--leading-tight) var(--font-display); }
+.confirmation-panel p { margin: 0; color: var(--fg-2); }
+.confirmation-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-6); }
+.btn-danger { color: var(--accent-on); background: var(--danger); border-color: var(--danger); }
+.btn-danger:hover { color: var(--accent-on); background: color-mix(in oklab, var(--danger), black 8%); border-color: color-mix(in oklab, var(--danger), black 8%); }

@@ -11,7 +11,9 @@
 use rusqlite::types::{Value, ValueRef};
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 
-use crate::domain::catalog::{OpaqueCursor, Paged, SongSort, SongSortField, SortDirection};
+use crate::domain::catalog::{
+    CatalogCounts, OpaqueCursor, Paged, SongSort, SongSortField, SortDirection,
+};
 use crate::domain::entities::Song;
 use crate::domain::ids::{LibraryRootId, PlaylistId, Revision, SongId};
 use crate::error::{Error, Subject};
@@ -118,6 +120,41 @@ pub(crate) fn query_active(
         if is_last { None } else { next_cursor },
         is_last,
     ))
+}
+
+/// Per-view song totals for the navigation sidebar.
+///
+/// Two `COUNT(*)`s, not three: `recent` is not an independent population — the
+/// "最近添加" view is *defined* as the newest [`RECENT_VIEW_LIMIT`] available
+/// songs, so its count is `min(all, 100)` and is clamped in
+/// [`CatalogCounts::new`]. Counting it separately would mean re-stating the
+/// ceiling in SQL, and the two would drift the day the view's definition moves.
+///
+/// Both counts reuse the view-membership predicates of [`query_active`]
+/// (active root, `availability = 'available'`) so a number printed in the
+/// sidebar can never disagree with the list it advertises.
+pub(crate) fn catalog_counts(connection: &Connection) -> Result<CatalogCounts, Error> {
+    let root = active_root_id(connection)?
+        .ok_or_else(|| Error::unavailable("library", "no active root"))?;
+    let available = count_available_songs(connection, root, false)?;
+    let favorites = count_available_songs(connection, root, true)?;
+    Ok(CatalogCounts::new(available, favorites))
+}
+
+fn count_available_songs(
+    connection: &Connection,
+    root: LibraryRootId,
+    favorites: bool,
+) -> Result<usize, Error> {
+    let sql = if favorites {
+        "SELECT COUNT(*) FROM songs WHERE library_root_uuid = ?1 AND availability = 'available' AND is_favorite = 1"
+    } else {
+        "SELECT COUNT(*) FROM songs WHERE library_root_uuid = ?1 AND availability = 'available'"
+    };
+    let count: i64 = connection
+        .query_row(sql, params![root.to_string()], |row| row.get(0))
+        .map_err(storage)?;
+    Ok(usize::try_from(count).unwrap_or(0))
 }
 
 fn sort_sql(sort: SongSort) -> String {

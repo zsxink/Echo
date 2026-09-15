@@ -608,6 +608,11 @@ impl LibraryFileSystem for RootConstrainedFileSystem {
     fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
         self.staging.write_capable(root)
     }
+
+    fn establish_write_capability(&self, root: LibraryRootId) -> Result<(), Error> {
+        // Idempotent exclusive-create of the owned staging dir (design §8).
+        self.staging.ensure_dir(root).map(|_| ())
+    }
 }
 
 impl RootConstrainedFileSystem {
@@ -960,5 +965,295 @@ mod tests {
         let owned = fs.staging().ensure_dir(root).unwrap();
         assert_ne!(owned, foreign);
         assert!(fs.write_capable(root).unwrap());
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 5.5/5.10 + design §9: the persisted staging-path publish/discard
+    // surface and the `trash/<operation>` slot contract.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn publish_from_staging_path_resolves_the_journal_path_and_never_touches_foreign_paths() {
+        let (dir, root, fs) = setup();
+        // A full stage_stream installs the journal-shaped staging location.
+        let operation = OperationId::new();
+        let staged = StagedResource::new(operation, "audio").unwrap();
+        let copy = fs
+            .stage_stream(root, &staged, &mut (&b"journal-bytes"[..]))
+            .unwrap();
+
+        // The persisted staging *path* (what survives a crash) publishes with
+        // the same exclusive contract as `publish`.
+        let target = RelativeMediaPath::new("歌手/恢复.flac").unwrap();
+        fs.publish_from_staging_path(root, &copy.staged_path, &target)
+            .unwrap();
+        assert_eq!(
+            fs.read_head(root, &target, u64::MAX).unwrap(),
+            b"journal-bytes",
+            "the staged file landed at its target"
+        );
+
+        // A path *outside* Echo's staging area is refused before any write.
+        let outside = RelativeMediaPath::new("普通文件.mp3").unwrap();
+        std::fs::write(dir.path().join("普通文件.mp3"), b"user-file").unwrap();
+        let error = fs
+            .publish_from_staging_path(root, &outside, &target)
+            .expect_err("foreign staging path refused");
+        assert_eq!(error.code(), "permission");
+        // The reserved target was never left half-writes behind.
+        assert_eq!(
+            std::fs::read(dir.path().join(target.normalized())).unwrap(),
+            b"journal-bytes"
+        );
+    }
+
+    #[test]
+    fn discard_staging_path_only_removes_inside_ephemeral_staging() {
+        let (dir, root, fs) = setup();
+        // A persisted staging path created through the journal-shaped API is
+        // discardable.
+        let operation = OperationId::new();
+        let staged = StagedResource::new(operation, "audio").unwrap();
+        let copy = fs
+            .stage_stream(root, &staged, &mut (&b"to-delete"[..]))
+            .unwrap();
+        let staging_abs = dir.path().join(copy.staged_path.normalized());
+        assert!(staging_abs.is_file());
+        fs.discard_staging_path(root, &copy.staged_path).unwrap();
+        assert!(!staging_abs.exists(), "persisted staging file removed");
+
+        // Idempotent: an absent staging path succeeds.
+        fs.discard_staging_path(root, &copy.staged_path).unwrap();
+
+        // A foreign (non-staging) relative path is refused, never deleted.
+        let user_file = RelativeMediaPath::new("keep.mp3").unwrap();
+        std::fs::write(dir.path().join("keep.mp3"), b"user").unwrap();
+        let error = fs
+            .discard_staging_path(root, &user_file)
+            .expect_err("foreign path refused");
+        assert_eq!(error.code(), "permission");
+        assert!(dir.path().join("keep.mp3").is_file(), "user file intact");
+    }
+
+    #[test]
+    fn discard_published_removes_only_real_files_and_never_symlinks() {
+        let (dir, root, fs) = setup();
+        let target = RelativeMediaPath::new("被删.flac").unwrap();
+        std::fs::write(dir.path().join("被删.flac"), b"published").unwrap();
+
+        // A regular file is removed.
+        fs.discard_published(root, &target).unwrap();
+        assert!(!dir.path().join("被删.flac").exists(), "file removed");
+        // Idempotent: an absent target succeeds.
+        fs.discard_published(root, &target).unwrap();
+
+        // A symlink at the target is refused (never followed or removed), and
+        // a directory is never removed by `discard_published`.
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("precious.txt"), b"precious").unwrap();
+        let linked = RelativeMediaPath::new("linked.mp3").unwrap();
+        create_symlink(
+            &outside.path().join("precious.txt"),
+            &dir.path().join("linked.mp3"),
+        );
+        let error = fs
+            .discard_published(root, &linked)
+            .expect_err("symlink target refused");
+        assert_eq!(error.code(), "permission");
+        assert!(
+            std::fs::read(outside.path().join("precious.txt")).unwrap() == b"precious",
+            "symlink follow-through never touches the target"
+        );
+
+        let dir_path = RelativeMediaPath::new("目录").unwrap();
+        std::fs::create_dir_all(dir.path().join("目录")).unwrap();
+        fs.discard_published(root, &dir_path).unwrap();
+        assert!(
+            dir.path().join("目录").is_dir(),
+            "directories are never deleted"
+        );
+    }
+
+    #[test]
+    fn trash_slot_is_stable_and_stage_to_trash_is_a_same_volume_move() {
+        let (dir, root, fs) = setup();
+        let operation = OperationId::new();
+        let source = RelativeMediaPath::new("歌手/删除我.flac").unwrap();
+        std::fs::create_dir_all(dir.path().join("歌手")).unwrap();
+        std::fs::write(dir.path().join(source.normalized()), b"precious-audio").unwrap();
+
+        // Resolving the slot without moving anything returns a stable path.
+        let slot = fs.trash_path(root, operation, "audio").unwrap();
+        let slot_display = slot.display().to_owned();
+        assert!(slot_display.contains("/trash/"), "trash slot under trash/");
+        assert_eq!(
+            fs.trash_path(root, operation, "audio").unwrap().display(),
+            slot_display,
+            "slot is stable for the operation lifetime"
+        );
+
+        // The delete-stage move is a rename into the owned trash slot; the
+        // source disappears and the slot holds every byte.
+        let staged = fs
+            .stage_to_trash(root, operation, &source, "audio")
+            .unwrap();
+        assert_eq!(staged.display(), slot_display, "filled slot matches");
+        assert!(
+            !dir.path().join(source.normalized()).exists(),
+            "source moved"
+        );
+        let trash_abs = dir.path().join(staged.normalized());
+        assert_eq!(std::fs::read(&trash_abs).unwrap(), b"precious-audio");
+
+        // Restoring moves the file back out (undo) with the same exclusive
+        // reservation: the original name is free, so the restore succeeds.
+        fs.restore_from_trash(root, &staged, &source).unwrap();
+        assert!(!trash_abs.exists(), "trash slot emptied");
+        assert_eq!(
+            std::fs::read(dir.path().join(source.normalized())).unwrap(),
+            b"precious-audio",
+            "restored bytes intact"
+        );
+    }
+
+    #[test]
+    fn trash_slot_rejects_foreign_and_rejects_existing_names() {
+        let (dir, root, fs) = setup();
+        let outside = RelativeMediaPath::new("普通文件.mp3").unwrap();
+        std::fs::write(dir.path().join("普通文件.mp3"), b"user").unwrap();
+
+        // A crafted trash path outside the controlled `trash/*` slot is
+        // refused at resolve time.
+        let forged = RelativeMediaPath::new(&format!("trash/{}/audio", "x".repeat(36))).unwrap();
+        // The path must live under the *owned* staging directory to even reach
+        // the `trash` component check; a path under a foreign same-prefix
+        // directory is not owned.
+        let error = fs
+            .restore_from_trash(root, &forged, &outside)
+            .expect_err("foreign trash slot refused");
+        assert_eq!(error.code(), "permission");
+
+        // `stage_to_trash` refuses to move a source that is not a real regular
+        // file (a directory here).
+        let directory = RelativeMediaPath::new("目录").unwrap();
+        std::fs::create_dir_all(dir.path().join("目录")).unwrap();
+        let operation = OperationId::new();
+        let error = fs
+            .stage_to_trash(root, operation, &directory, "audio")
+            .expect_err("directory source refused");
+        assert_eq!(
+            error.code(),
+            "io",
+            "missing/directory source is an io error"
+        );
+
+        // Stage + restore both refuse to replace an existing target: a restore
+        // onto an occupied name is a conflict (the use case re-numbers).
+        let source = RelativeMediaPath::new("occupied.flac").unwrap();
+        std::fs::write(dir.path().join("occupied.flac"), b"source").unwrap();
+        let stage = fs
+            .stage_to_trash(root, operation, &source, "audio")
+            .unwrap();
+        std::fs::write(dir.path().join("occupied.flac"), b"new-user-file").unwrap();
+        let error = fs
+            .restore_from_trash(root, &stage, &source)
+            .expect_err("occupied restore target refused");
+        assert_eq!(error.code(), "conflict");
+        assert_eq!(
+            std::fs::read(dir.path().join("occupied.flac")).unwrap(),
+            b"new-user-file",
+            "the incumbent user file is untouched"
+        );
+    }
+
+    #[test]
+    fn file_meta_reports_size_and_mtime_and_not_found_is_an_io_error() {
+        let (dir, root, fs) = setup();
+        let path = RelativeMediaPath::new("meta.flac").unwrap();
+        std::fs::write(dir.path().join("meta.flac"), b"\0\0\0").unwrap();
+        let meta = fs.file_meta(root, &path).unwrap();
+        assert_eq!(meta.size, 3);
+
+        let missing = RelativeMediaPath::new("missing.flac").unwrap();
+        let error = fs.file_meta(root, &missing).expect_err("missing stat");
+        assert_eq!(error.code(), "io");
+        // The diagnostic origin is the exact absolute path (optimized for the
+        // caller to act on, never a log line).
+        assert!(error.diagnostic_origin().is_some());
+    }
+
+    #[test]
+    fn enumerate_is_idempotent_and_skips_the_owned_staging_dir() {
+        let (dir, root, fs) = setup();
+        std::fs::write(dir.path().join("a.mp3"), b"a").unwrap();
+        std::fs::create_dir_all(dir.path().join("artist")).unwrap();
+        std::fs::write(dir.path().join("artist/b.flac"), b"b").unwrap();
+        fs.staging().ensure_dir(root).unwrap();
+        std::fs::write(
+            fs.staging().ensure_dir(root).unwrap().join("staged.mp3"),
+            b"staged",
+        )
+        .unwrap();
+
+        let paths: Vec<_> = fs.enumerate(root).unwrap();
+        let displayed: Vec<_> = paths.iter().map(RelativeMediaPath::display).collect();
+        assert!(displayed.contains(&"a.mp3"));
+        assert!(displayed.contains(&"artist/b.flac"));
+        assert!(
+            displayed
+                .iter()
+                .all(|path| !path.starts_with(".echo-staging-")),
+            "the owned staging directory is invisible to enumeration"
+        );
+        // Idempotent: a second walk reports the same set.
+        assert_eq!(fs.enumerate(root).unwrap().len(), paths.len());
+    }
+
+    #[test]
+    fn read_head_of_a_missing_target_is_an_io_error() {
+        let (_dir, root, fs) = setup();
+        let missing = RelativeMediaPath::new("absent.flac").unwrap();
+        let error = fs.read_head(root, &missing, 16).expect_err("open");
+        assert_eq!(error.code(), "io");
+    }
+
+    #[test]
+    fn fresh_root_acquires_write_capability_by_establishing_staging() {
+        // design §8: a brand-new root is write-incapable until its owned staging
+        // directory is exclusive-created. This is what root activation/prepare
+        // calls, so a freshly-chosen writable dir is never permanently read-only
+        // (task 13.2 regression: import/delete were LibraryUnavailable on first
+        // use because nothing established the staging dir before measuring).
+        let (_dir, root, fs) = setup();
+
+        assert!(
+            !fs.write_capable(root).unwrap(),
+            "a fresh root must report write-incapable before staging exists"
+        );
+
+        fs.establish_write_capability(root).unwrap();
+        assert!(
+            fs.write_capable(root).unwrap(),
+            "acquiring capability makes the root writable"
+        );
+
+        // Idempotent: re-establishing is a no-op success, capability persists.
+        fs.establish_write_capability(root).unwrap();
+        assert!(fs.write_capable(root).unwrap());
+    }
+
+    #[test]
+    fn established_staging_dir_is_invisible_to_enumeration() {
+        let (_dir, root, fs) = setup();
+        fs.establish_write_capability(root).unwrap();
+
+        // The owned staging dir never appears as a song path.
+        let files = fs.enumerate(root).unwrap();
+        assert!(
+            files
+                .iter()
+                .all(|p| !p.display().starts_with(".echo-staging-")),
+            "owned staging is invisible to enumeration"
+        );
     }
 }

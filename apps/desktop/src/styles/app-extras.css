@@ -1,0 +1,537 @@
+/* Implementation-only additions on top of the prototype stylesheet layer.
+ *
+ * Everything visual comes from the extracted prototype CSS (tokens / shell /
+ * library / player / responsive). This file holds only the surfaces the
+ * prototype does not draw because it carries no real data:
+ *
+ *  - 状态页（首次启动选择资料库 / 资料库不可用 / 只读）: the prototype always
+ *    renders a populated library, so these three states are composed from the
+ *    prototype's own tokens and `.empty-results` rhythm.
+ *  - 真实曲库状态: a missing / pending-delete song must stay visible and
+ *    unplayable, so the prototype's `.track-row` gains two explicit modifiers.
+ *  - 列表加载/错误横幅: paged loading and a recoverable query failure.
+ *  - `.sr-only`, `.app-initial`: accessibility + first-launch layout (no sidebar).
+ */
+
+/* --- accessibility helper ------------------------------------------------- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- shell grid areas ----------------------------------------------------
+ *
+ * The prototype places the three shell children by line numbers:
+ *   .sidebar   { grid-row: 1 }             — the navigation column only
+ *   .playerbar { grid-column: 1 / 3; grid-row: 2 }
+ * So the player bar runs the **full width of the window**, under the sidebar as
+ * well as the workspace. Echo names the same areas so the first-launch layout
+ * can drop the sidebar column without touching any of the three children, and
+ * keeps the player bar spanning both columns exactly as the prototype does.
+ */
+.app {
+  grid-template-areas:
+    "sidebar workspace"
+    "playerbar playerbar";
+}
+.sidebar {
+  grid-area: sidebar;
+}
+.workspace {
+  grid-area: workspace;
+}
+.playerbar {
+  grid-area: playerbar;
+}
+
+/* --- first launch: no library configured yet, so no navigation to show ----
+ *
+ * With no library there is no sidebar to show, so the initial layout collapses
+ * to the workspace column and the choose-root page claims `grid-area: workspace`.
+ * This is the only layout the prototype never draws (it always ships a library).
+ */
+.app-initial {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) 88px;
+  grid-template-areas:
+    "workspace"
+    "playerbar";
+}
+.app-initial .sidebar {
+  display: none;
+}
+
+/* --- library status surfaces (无资料库 / 不可用 / 只读) -------------------
+ *
+ * The prototype always ships a configured, populated library, so these three
+ * states are composed from the prototype's own type tokens and `.empty-results`
+ * rhythm: an eyebrow, a display heading, one line of body copy and the action
+ * that moves the user forward.
+ */
+.workspace-empty {
+  grid-area: workspace;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-12) var(--space-6);
+  text-align: center;
+  background: var(--bg);
+}
+.workspace-empty .eyebrow {
+  margin-bottom: 0;
+}
+.workspace-empty h1 {
+  margin: 0;
+  font: 700 var(--text-2xl)/var(--leading-tight) var(--font-display);
+  letter-spacing: var(--tracking-display);
+}
+.workspace-empty p {
+  max-width: 520px;
+  margin: 0;
+  color: var(--fg-2);
+}
+.workspace-empty .status-reason {
+  color: var(--fg);
+  font-weight: 650;
+}
+.workspace-empty .status-error {
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+.workspace-empty .btn {
+  margin-top: var(--space-2);
+}
+
+/* --- real-library states the prototype's sample data never shows ---------- */
+.track-row.is-missing,
+.track-row.is-pending-delete {
+  cursor: default;
+}
+.track-row.is-missing .track-title,
+.track-row.is-pending-delete .track-title {
+  color: var(--muted);
+}
+.availability-tag {
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-pill);
+  color: var(--warn);
+  font: 500 var(--text-xs)/1.6 var(--font-mono);
+  white-space: nowrap;
+}
+.track-row.is-pending-delete .availability-tag {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* --- paged load / recoverable query failure ------------------------------ */
+.list-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+}
+.list-banner.is-error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.list-status {
+  padding: var(--space-12) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: center;
+  color: var(--fg-2);
+}
+.list-status.is-error {
+  color: var(--danger);
+}
+.list-status p {
+  margin: 0;
+}
+
+/* --- player bar: empty queue, embedded artwork, disabled transport --------
+ *
+ * 空播放态 (task 11.1): the bar is persistent chrome and always draws its four
+ * regions. With nothing current it keeps the prototype's grid — an empty
+ * 当前播放区 on the left, the transport in the middle, volume/queue on the
+ * right — rather than collapsing into a single centred sentence. Only the
+ * *content* of the slot goes quiet.
+ */
+.playerbar[data-empty="true"] .player-track-placeholder {
+  color: var(--muted);
+  font-weight: 500;
+}
+.playerbar[data-empty="true"] .mini-cover {
+  opacity: 0.55;
+}
+
+/* 内置封面 (design §115 内置优先): a real cover fills the same round slot the
+ * vinyl placeholder draws; the placeholder's centre-hole ring is dropped
+ * because it would read as a stray circle on top of artwork. */
+.mini-cover.has-image {
+  overflow: hidden;
+}
+.mini-cover.has-image::after {
+  display: none;
+}
+.mini-cover img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+/* An inert control must not look pressable: the prototype only styles
+ * `:hover`, and a disabled button still matches it, so both the base and hover
+ * states are pinned here. `.control-play` carries its own accent background and
+ * needs the muted treatment spelled out. */
+.control:disabled,
+.control:disabled:hover {
+  color: var(--muted);
+  background: transparent;
+  cursor: default;
+  opacity: 0.5;
+}
+.control-play:disabled,
+.control-play:disabled:hover {
+  color: color-mix(in oklab, var(--accent-on), transparent 32%);
+  background: color-mix(in oklab, var(--accent-strong), var(--bg) 62%);
+  cursor: default;
+  opacity: 1;
+}
+.progress:disabled,
+.volume:disabled {
+  cursor: default;
+}
+.progress:disabled::-webkit-slider-thumb,
+.volume:disabled::-webkit-slider-thumb {
+  transform: none;
+}
+.progress:disabled:hover::-webkit-slider-thumb,
+.volume:disabled:hover::-webkit-slider-thumb {
+  transform: none;
+}
+
+/* --- settings: real desktop preference rows ------------------------------ */
+.setting-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.setting-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.setting-choice input {
+  accent-color: var(--accent);
+}
+.settings-note {
+  margin: var(--space-2) 0 0;
+  color: var(--success);
+  font-size: var(--text-sm);
+}
+
+/* --- playlist view: member summary line ---------------------------------- */
+.playlist-summary {
+  margin: 0 0 var(--space-2);
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+}
+.playlist-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* --- song action menu: inline failure ------------------------------------ */
+.menu-error {
+  margin: var(--space-2) 0 0;
+  padding: 0 var(--space-3);
+  color: var(--danger);
+  font-size: var(--text-xs);
+}
+
+/* --- read-only song detail (a `.confirmation-panel` payload) ------------- */
+.detail-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-4) 0 0;
+}
+.detail-grid dt {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.detail-grid dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--text-sm);
+}
+
+/* --- dialogs that carry real import / playlist results ------------------- */
+.dialog-summary {
+  margin: 0 0 var(--space-3);
+  color: var(--fg-2);
+  font-size: var(--text-sm);
+}
+.dialog-results {
+  list-style: none;
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  font-size: var(--text-sm);
+}
+.dialog-results li {
+  padding: 3px 0;
+}
+.dialog-results .is-ok {
+  color: var(--success);
+}
+.dialog-results .is-dup {
+  color: var(--fg-2);
+}
+.dialog-results .is-fail {
+  color: var(--danger);
+}
+.dialog-field-error {
+  margin: var(--space-2) 0 0;
+  color: var(--danger);
+  font-size: var(--text-xs);
+}
+
+/* --- immersive player: embedded artwork as the record label ---------------
+ *
+ * 内置优先 (design §115): the artwork embedded in the playing file fills the
+ * vinyl's label area. The label is a circle inset 15.5% inside the record, so
+ * the image is clipped to it; the drawn label and its light streak stay in the
+ * cascade for a song with no embedded artwork.
+ */
+.playing-cover .ring-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+/* --- immersive player: 回到当前行 while auto-follow is paused -------------
+ *
+ * The prototype draws no control above the lyrics — it ships a `.lyrics-label`
+ * rule but never renders the element, and the product drops the source label
+ * entirely, so the lyrics own the whole block. The spec still requires a
+ * reachable "回到当前行" entry once manual scrolling pauses auto-follow
+ * (`immersive-lyrics`: 显示可操作的“回到当前行”入口或等价提示), so the control
+ * is an app-only surface and lives here, not in the extracted player layer.
+ *
+ * It floats *over* the column instead of claiming a row: absolutely positioned
+ * against the immersive surface — `.now-playing-popover` is `position: fixed`,
+ * while neither `.lyrics` nor `.lyrics-track` is positioned, so the containing
+ * block sits outside the scroller and `overflow-y: auto` neither clips nor
+ * moves it. It is rendered only while the follow is paused, so the lyrics get
+ * the row back the moment the reader is in sync again.
+ */
+.lyrics-resume {
+  position: absolute;
+  z-index: 3;
+  right: clamp(28px, 5vw, 152px);
+  bottom: var(--space-5);
+  min-height: 32px;
+  padding: 0 var(--space-4);
+  border: 1px solid color-mix(in oklab, var(--accent-on), transparent 62%);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--player-tint, var(--accent)), var(--fg) 72%);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 0.3);
+  color: var(--accent-on);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.lyrics-resume:hover {
+  background: color-mix(in oklab, var(--accent-on), transparent 82%);
+}
+
+/* --- immersive player: empty / no-lyrics states -------------------------- */
+.now-playing-empty {
+  grid-column: 1 / -1;
+  align-self: center;
+  justify-self: center;
+  margin: 0;
+  color: color-mix(in oklab, var(--accent-on), transparent 34%);
+}
+.now-playing-empty-state {
+  grid-column: 1 / -1;
+  display: grid;
+  place-items: center;
+  gap: var(--space-2);
+  align-self: center;
+  color: color-mix(in oklab, var(--accent-on), transparent 34%);
+  text-align: center;
+}
+.now-playing-meta-warn {
+  margin: var(--space-2) 0 0;
+  color: color-mix(in oklab, var(--accent-on), transparent 34%);
+  font-size: var(--text-sm);
+}
+.now-playing-import {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  flex-wrap: wrap;
+}
+.now-playing-import .btn {
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border-color: color-mix(in oklab, var(--accent-on), transparent 70%);
+  background: transparent;
+  color: var(--accent-on);
+  font-size: var(--text-xs);
+}
+.now-playing-import .btn:hover {
+  background: color-mix(in oklab, var(--accent-on), transparent 88%);
+}
+.now-playing-import-result {
+  color: color-mix(in oklab, var(--accent-on), transparent 20%);
+  font-size: var(--text-xs);
+}
+
+/* --- queue popover: failed / blocked / temporary entries ----------------- */
+.queue-item.is-failed .queue-name b,
+.queue-item.is-failed .queue-time {
+  color: var(--danger);
+}
+.queue-item.is-current .queue-name b {
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+.queue-temporary-tag {
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-warm);
+  color: var(--accent-strong);
+  font: 600 var(--text-xs)/1.7 var(--font-mono);
+}
+.queue-empty p {
+  color: var(--fg-2);
+}
+
+/* --- player bar: temporary (session-only) item --------------------------- */
+.player-temporary-tag {
+  margin-right: var(--space-1);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-warm);
+  color: var(--accent-strong);
+  font: 600 var(--text-xs)/1.7 var(--font-mono);
+}
+.player-track-card .btn {
+  min-height: 26px;
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+}
+
+/* --- reduced motion: stop smooth scrolling too (task 12.4) -----------------
+ *
+ * The prototype clamps `animation-duration` / `animation-iteration-count` /
+ * `transition-duration` on every element under reduced motion (its
+ * `@media (prefers-reduced-motion: reduce)` block, shipped in responsive.css),
+ * but it never clamps `scroll-behavior` — the prototype sets no smooth scrolling
+ * at all, so it has nothing to clamp. Task 12.4 additionally requires reduced
+ * motion to stop *smooth lyric scrolling*, so the app adds the missing clamp
+ * here rather than editing the extracted prototype declarations. A future
+ * `scroll-behavior: smooth` anywhere in the cascade is neutralised by this rule.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
+}
+
+/* --- macOS overlay titlebar: safe-area inset -------------------------------
+ *
+ * `tauri.conf.json` sets `titleBarStyle: "Overlay"` + `hiddenTitle: true` on
+ * macOS: the native white titlebar disappears and the web content extends to
+ * the window top, but the traffic lights keep floating over the top-left
+ * corner. `main.tsx` flips `--titlebar-inset` to 28px (the standard macOS
+ * titlebar height) only inside the Tauri WebView, so a plain browser preview
+ * of the frontend stays prototype-identical. Rules that reach the window's
+ * top edge offset themselves with this variable instead of a fixed 28px.
+ *
+ * Lives here, not in tokens.css: it is app-only state, and the extracted
+ * prototype layer must stay re-generable from the prototype HTML.
+ */
+:root {
+  --titlebar-inset: 0px;
+}
+
+/* The shell grid: sidebar + workspace start below the traffic lights. */
+.app {
+  padding-top: var(--titlebar-inset);
+}
+
+/* Window drag handle. With `hiddenTitle: true` there is no native titlebar to
+ * drag the window by, so the inset strip above the shell is the handle — its
+ * height *is* `--titlebar-inset`, so it collapses to nothing in a plain
+ * browser preview (0px) and covers exactly the 28px macOS reserves in the
+ * WebView. Rendered as the first child of `.app` so it sits above the shell
+ * grid without participating in it.
+ *
+ * Higher than every overlay (the tallest today is 32, `.playlist-picker-
+ * dialog`) so the window stays movable while a sheet is open — every sheet is
+ * `place-items: center`, so nothing interactive lives in the strip. The
+ * traffic lights are native views stacked above the WebView and stay clickable
+ * under it, exactly as in Tauri's own custom-titlebar example. */
+.titlebar-drag {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 40;
+  height: var(--titlebar-inset);
+  user-select: none;
+}
+
+/* Brand-row gap to the traffic lights: the 28px inset + the sidebar's own
+ * 16px padding leave ~26px of air below the lights; that reads as too much,
+ * so no extra nudge is added here — the icon sits 44px from the window top
+ * (~16px below the lights). */
+
+/* Sidebar hugs the window edge: left padding halves 16px → 8px. */
+.sidebar {
+  padding-left: calc(var(--space-4) * 0.5);
+}
+
+/* The immersive surface is position:fixed, so .app padding does not reach it.
+ * The 收起 button sits top-left — exactly where the traffic lights are — so it
+ * must clear them vertically. */
+.mode-dismiss {
+  top: calc(var(--space-6) + var(--titlebar-inset));
+}

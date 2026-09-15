@@ -2,14 +2,19 @@
 // Task 11.6 check: lyrics focus mode.
 //
 // Acceptance (immersive-lyrics spec §歌词专注模式 / §歌词滚动):
-//  - Enter focus from the immersive lyrics area; hide non-essential cover/meta,
-//    leave lyrics as the primary reading area, keep progress + minimal playback.
-//  - Exit focus via Escape / collapse / re-activating the lyrics area; Escape
-//    closes only the topmost surface (the focus panel), not the immersive player.
-//  - Playback controls work inside focus without forcing an exit.
+//  - Enter focus from the immersive lyrics area; hide non-essential cover/meta
+//    and let the lyrics take the surface. Focus is the prototype's
+//    `body.lyrics-focus-open` *state of the same surface*, not a second panel;
+//    the 常驻播放栏 below keeps the minimal playback controls.
+//  - Exit focus via Escape / the 收起 button / re-activating the lyrics area;
+//    Escape unwinds focus first, not the immersive player.
 //  - Manual scroll pauses auto-scroll 5 s; "回到当前行" (or time advance) resumes.
-// This check gates on the ImmersivePlayer tests (which cover enter/hide/Escape/
-// controls/restore) plus typecheck + echo-app clippy.
+//
+// This check gates on the ImmersivePlayer tests (which cover enter/hide/exit/
+// restore) plus typecheck + echo-app clippy. The *rendered* focus layout is
+// asserted in the browser by e2e/run-e2e.mjs (PRD A9): a unit test can prove
+// the state flipped while the surface stays invisible, which is exactly how
+// this shipped broken once.
 
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
@@ -36,4 +41,4 @@ run(
 );
 run("cargo", ["clippy", "-p", "echo-app", "--", "-D", "warnings"], ROOT);
 
-process.stdout.write("ok 11.6: lyrics focus mode (enter/hide/escape/controls/restore) verified\n");
+process.stdout.write("ok 11.6: lyrics focus mode (enter/take-surface/exit/restore) verified\n");

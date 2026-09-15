@@ -46,6 +46,8 @@ const MAX_ASSET_KEY_LEN: usize = 128;
 ///   nor `data:` outside the narrow image/media/font cases), so the
 ///   `WebView` cannot open a network connection even if script is later
 ///   injected.
+/// - `img-src` also permits the exact `http://cover.localhost` Tauri Windows
+///   protocol origin (intercepted by WebView2, not a remote server).
 /// - `img-src`/`media-src` additionally allow `cover:` (cover art served by
 ///   [`CoverProtocol`]) and `data:` (inline placeholders).
 /// - `object-src 'none'` (no plugin/embed), `frame-ancestors 'none'` (no
@@ -55,7 +57,7 @@ const MAX_ASSET_KEY_LEN: usize = 128;
 /// Kept a `const` so the shell's injected value and the static
 /// `tauri.conf.json` value are pinned to one definition and drift is a
 /// compile-time/test-time error, not a silent config change.
-pub const CSP: &str = "default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' cover: data:; media-src 'self' cover: data:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+pub const CSP: &str = "default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' cover: http://cover.localhost data:; media-src 'self' cover: data:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
 
 /// Validate the CSP on request — a helper for shell wiring that wants the
 /// same safety the const carries without importing a test-only path.
@@ -219,7 +221,7 @@ mod tests {
     fn csp_never_opens_a_remote_or_network_source() {
         for directive_fragment in ["*", "http:", "https:", "ws:", "wss:", "blob:"] {
             assert!(
-                !CSP.contains(directive_fragment),
+                !CSP.replace("http://cover.localhost", "").contains(directive_fragment),
                 "CSP must not contain the remote source {directive_fragment:?}: {CSP}"
             );
         }
@@ -229,7 +231,7 @@ mod tests {
     fn csp_allows_only_the_cover_scheme_for_images_and_media() {
         // The cover protocol is img/media-only; it must never be a script or
         // fetch source.
-        assert!(CSP.contains("img-src 'self' cover: data:"));
+        assert!(CSP.contains("img-src 'self' cover: http://cover.localhost data:"));
         assert!(CSP.contains("media-src 'self' cover: data:"));
         let script = CSP
             .split(';')

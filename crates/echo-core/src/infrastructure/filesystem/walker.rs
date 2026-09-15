@@ -202,4 +202,39 @@ mod tests {
             "directory symlinks are not descended: {paths:?}"
         );
     }
+
+    #[test]
+    fn walker_toctou_swap_to_symlink_is_rejected_on_re_enumeration() {
+        // Task 12.7 TOCTOU: between enumeration passes an attacker swaps a
+        // previously-regular inside file for a symlink to an outside file.
+        // Because every pass re-canonicalizes each candidate and requires it
+        // to remain inside the canonical root, the swapped-in symlink is
+        // rejected on re-enumeration — no stale trust of the earlier path.
+        let (dir, root, staging) = setup();
+        let outside = tempfile::tempdir().unwrap();
+        let secret = outside.path().join("secret.mp3");
+        std::fs::write(&secret, b"outside-secret").unwrap();
+
+        // Pass 1: the file is a real inside regular file.
+        std::fs::write(dir.path().join("swap.mp3"), b"inside").unwrap();
+        let (files, stats) = enumerate_files(root, &staging).unwrap();
+        assert!(files.iter().any(|p| p.display() == "swap.mp3"));
+        assert_eq!(stats.escapes_rejected, 0);
+
+        // The attacker replaces the inside file with a symlink to the outside
+        // secret (a classic TOCTOU swap after the first read).
+        std::fs::remove_file(dir.path().join("swap.mp3")).unwrap();
+        symlink(&secret, &dir.path().join("swap.mp3"));
+
+        // Pass 2 (the reconcile/read pass): the path must be re-validated —
+        // its canonical target is now outside the root, so it is rejected, and
+        // the outside content is never exposed as a library file.
+        let (files2, stats2) = enumerate_files(root, &staging).unwrap();
+        let paths2: Vec<_> = files2.iter().map(RelativeMediaPath::display).collect();
+        assert!(
+            !paths2.contains(&"swap.mp3"),
+            "TOCTOU-swapped symlink must not be read as a library file: {paths2:?}"
+        );
+        assert_eq!(stats2.escapes_rejected, 1);
+    }
 }

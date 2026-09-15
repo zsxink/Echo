@@ -23,7 +23,8 @@ use crate::player::actor::{FfiSpawnError, PlayerActor, SongResolver};
 use crate::player::coordinator::PlaybackCoordinator;
 use crate::player::fake::FakePlayer;
 use crate::player::port::{PlayMode, PlayerPort, PlayerSnapshot};
-use crate::player::queue::QueueItem;
+use crate::player::queue::{QueueItem, ViewContext};
+use crate::player::session::{rebuild_queue, snapshot_queue, SessionPersistence};
 
 /// One entry of the playback queue, as the queue panel renders it (task 11.2).
 ///
@@ -136,18 +137,20 @@ impl PlayerController<Arc<dyn PlayerPort>> {
     }
 }
 
-/// Map a raw actor [`PlayerSnapshot`] plus the current queue state into the
-/// UI shape. `entries` is the coordinator's full queue (current + pending, in
-/// play order); `failed_round` is the set of entry ids that failed to load or
-/// decode this round (task 8.7); `current` is the current queue entry, which
-/// supplies the `currentSongId` / title the snapshot itself lacks.
+/// Map the actor's [`PlayerSnapshot`] (transport state) plus the coordinator's
+/// queue view into the UI shape.
+///
+/// The split matters. The actor knows *how* playback is going (state, position,
+/// duration, volume, mute) but nothing about the queue: its commands carry a
+/// `SongId`, never a `QueueEntryId`, and it publishes `queue_len: 0` by design.
+/// The coordinator owns *what* is playing (the queue, the current entry, the
+/// mode). Every queue-derived field of the UI snapshot is therefore read from
+/// [`CoordinatorView`] — reading them off the actor's snapshot is what once left
+/// the player bar blank (empty 当前播放区 + dead mode button) while a song was
+/// audibly playing.
 #[must_use]
-pub fn map_snapshot(
-    raw: &PlayerSnapshot,
-    entries: &[crate::player::queue::QueueEntry],
-    failed_round: &std::collections::HashSet<echo_core::domain::ids::QueueEntryId>,
-    current: Option<&crate::player::queue::QueueEntry>,
-) -> UiPlayerSnapshot {
+pub fn map_snapshot(raw: &PlayerSnapshot, view: &CoordinatorView) -> UiPlayerSnapshot {
+    let current = view.current.as_ref();
     let current_id = current.map(|e| e.id);
     let (current_song_id, current_title) = match current.map(|e| &e.item) {
         Some(QueueItem::Library(id)) => (Some(id.to_string()), None),
@@ -159,7 +162,8 @@ pub fn map_snapshot(
     let (current_can_import, queue) = {
         let current_is_temporary =
             matches!(current.map(|e| &e.item), Some(QueueItem::Temporary(_)));
-        let queue = entries
+        let queue = view
+            .entries
             .iter()
             .map(|e| {
                 let is_temporary = matches!(&e.item, QueueItem::Temporary(_));
@@ -171,7 +175,7 @@ pub fn map_snapshot(
                         QueueItem::Temporary(t) => Some(t.display_name.clone()),
                     },
                     is_current: Some(e.id) == current_id,
-                    failed: failed_round.contains(&e.id),
+                    failed: view.failed_round.contains(&e.id),
                     can_import: is_temporary,
                 }
             })
@@ -191,10 +195,10 @@ pub fn map_snapshot(
         duration: raw.duration,
         volume: raw.volume,
         muted: raw.muted,
-        current_queue_entry_id: raw.current_item.map(|q| q.to_string()),
+        current_queue_entry_id: current_id.map(|q| q.to_string()),
         current_song_id,
-        queue_len: raw.queue_len,
-        mode: match raw.mode {
+        queue_len: view.entries.len(),
+        mode: match view.mode {
             PlayMode::Sequential => "sequential",
             PlayMode::Shuffle => "shuffle",
             PlayMode::RepeatOne => "repeatOne",
@@ -210,14 +214,232 @@ pub fn map_snapshot(
 /// so it can be moved into / shared across the forwarder thread.
 pub type SnapshotEmitter = Box<dyn Fn(UiPlayerSnapshot) + Send + Sync>;
 
-/// The coordinator's queue view the forwarder asks for on each snapshot: the
-/// full entries, the per-round failed set, and the current entry. Factored as a
-/// named tuple so the forwarder closure type stays clippy-clean.
-pub type QueueView = (
-    Vec<crate::player::queue::QueueEntry>,
-    std::collections::HashSet<echo_core::domain::ids::QueueEntryId>,
-    Option<crate::player::queue::QueueEntry>,
-);
+/// The production [`PlaybackRecorder`] sink: Core's idempotent
+/// `record_playback` (the `recorded_play_sessions` table + `play_count`
+/// increment). Storage errors are surfaced as the port's `Err(String)` so the
+/// accumulator can log them without ever stopping playback.
+pub struct CorePlaybackRecorder {
+    database: Arc<echo_core::infrastructure::sqlite::SqliteDatabase>,
+}
+
+impl CorePlaybackRecorder {
+    /// A sink bound to the shared SQLite database.
+    #[must_use]
+    pub fn new(database: Arc<echo_core::infrastructure::sqlite::SqliteDatabase>) -> Self {
+        Self { database }
+    }
+}
+
+impl crate::player::recording::PlaybackRecorder for CorePlaybackRecorder {
+    fn record(
+        &self,
+        session: echo_core::domain::ids::PlaybackSessionId,
+        song: echo_core::domain::ids::SongId,
+    ) -> Result<bool, String> {
+        self.database
+            .record_playback(session, song)
+            .map_err(|error| error.to_string())
+    }
+}
+
+/// Spawn the playback-statistics watcher (task 8.10): the missing production
+/// half of the accumulator.
+///
+/// `PlaybackStatsRecorder` had no production caller — every state transition
+/// went to the UI and the auto-advance watcher only, so `play_count` never
+/// moved and 最近播放 stayed empty. This thread subscribes to the actor's
+/// snapshot stream (subscribers fan out) and feeds the accumulator:
+///
+/// - a changed coordinator `active_load_session` begins a fresh listen session
+///   (`begin_library` for library entries; `begin_temporary` never records);
+/// - each snapshot updates the known duration and the transport state, then
+///   ticks the monotonic clock so mid-play listens still fire exactly once.
+///
+/// All accumulator state lives on this thread — no locking beyond the
+/// coordinator reads it already shares with the forwarder/auto-advance pair.
+pub fn spawn_stats_recorder(
+    port: Arc<dyn PlayerPort>,
+    coordinator: Arc<Mutex<PlaybackCoordinator<Arc<dyn PlayerPort>>>>,
+    sink: Arc<dyn crate::player::recording::PlaybackRecorder>,
+) {
+    use crate::player::queue::QueueItem;
+    use crate::player::recording::PlaybackStatsRecorder;
+    use echo_core::domain::ids::PlaybackSessionId;
+
+    let rx = port.subscribe_snapshots();
+    std::thread::Builder::new()
+        .name("echo-stats-recorder".into())
+        .spawn(move || {
+            let mut recorder = PlaybackStatsRecorder::new(sink);
+            let mut last_active: Option<(echo_core::domain::ids::QueueEntryId, PlaybackSessionId)> =
+                None;
+            while let Ok(snap) = rx.recv() {
+                // Detect a fresh load session: the coordinator issues a new
+                // PlaybackSessionId on every load_entry. Read the session and
+                // the current entry under one lock so they describe the same
+                // load.
+                let active = coordinator.lock().ok().map(|coord| {
+                    (
+                        coord.active_load_session(),
+                        coord.current().map(|e| e.item.clone()),
+                    )
+                });
+                if let Some((session, item)) = active {
+                    if session != last_active {
+                        match (session, item) {
+                            (Some((_, session_id)), Some(QueueItem::Library(song))) => {
+                                recorder.begin_library(session_id, song);
+                            }
+                            (Some((_, session_id)), _) => {
+                                // Temporary (or a session with no current
+                                // entry): never recorded (spec: 临时播放项不计统计).
+                                recorder.begin_temporary(session_id);
+                            }
+                            (None, _) => {}
+                        }
+                        last_active = session;
+                    }
+                }
+                if let Some(duration) = snap.duration {
+                    recorder.set_duration(duration);
+                }
+                recorder.on_state(snap.state);
+                recorder.tick();
+            }
+        })
+        .expect("spawn stats recorder thread");
+}
+
+/// The Core-delete boundary for [`DeletionCoordinator`]: the closure performs
+/// the real delete and returns the undo-operation id, which is captured into a
+/// shared slot the caller reads after a commit (a commit implies the id exists).
+struct CoreDelete<
+    F: Fn(echo_core::domain::ids::SongId) -> Result<String, echo_core::error::Error> + Send + Sync,
+> {
+    delete_core: F,
+    operation: Arc<Mutex<Option<String>>>,
+}
+
+impl<
+        F: Fn(echo_core::domain::ids::SongId) -> Result<String, echo_core::error::Error> + Send + Sync,
+    > crate::player::deletion::DeleteExecutor for CoreDelete<F>
+{
+    fn hide_for_delete(&self, song: echo_core::domain::ids::SongId) -> Result<(), String> {
+        match (self.delete_core)(song) {
+            Ok(operation) => {
+                if let Ok(mut slot) = self.operation.lock() {
+                    *slot = Some(operation);
+                }
+                Ok(())
+            }
+            Err(error) => Err(error.to_string()),
+        }
+    }
+}
+
+/// Wait for the actor to confirm the current file is released after the
+/// coordinated delete's `Stop` (task 8.11 unload barrier). Checks the live
+/// snapshot first (the Stop may already have been processed), then the stream,
+/// so a snapshot published between `send` and `subscribe` cannot be missed.
+fn wait_unload(
+    port: &Arc<dyn PlayerPort>,
+    timeout: std::time::Duration,
+) -> crate::player::deletion::UnloadOutcome {
+    use crate::player::deletion::UnloadOutcome;
+    let released = |state: PlaybackState| {
+        matches!(
+            state,
+            PlaybackState::Stopped | PlaybackState::Ended | PlaybackState::Failed
+        )
+    };
+    if released(port.snapshot().state) {
+        return UnloadOutcome::Confirmed;
+    }
+    let rx = port.subscribe_snapshots();
+    let deadline = std::time::Instant::now() + timeout;
+    while let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) {
+        match rx.recv_timeout(remaining) {
+            Ok(snap) if released(snap.state) => return UnloadOutcome::Confirmed,
+            Ok(_) => {}
+            Err(_) => break,
+        }
+    }
+    UnloadOutcome::TimedOut
+}
+
+/// Delete one song through the [`DeletionCoordinator`] (task 8.11) instead of
+/// calling Core directly (which used to bypass the player entirely: deleting
+/// the currently-playing song kept the queue showing a track that no longer
+/// exists, with no unload barrier before the file operation).
+///
+/// The whole coordination happens under the coordinator lock the command layer
+/// already uses, so no command can interleave with the snapshot/commit/rollback.
+/// `delete_core` runs the real delete (Core `DeleteSongs`) and returns the
+/// undo-operation id.
+///
+/// # Errors
+///
+/// A rolled-back delete (unload timeout / Core refusal) surfaces as `Err` with
+/// the reason — never a fabricated success.
+pub fn delete_song_coordinated(
+    coordinator: &Arc<Mutex<PlaybackCoordinator<Arc<dyn PlayerPort>>>>,
+    song: echo_core::domain::ids::SongId,
+    delete_core: impl Fn(echo_core::domain::ids::SongId) -> Result<String, echo_core::error::Error>
+        + Send
+        + Sync,
+    unload_timeout: std::time::Duration,
+) -> Result<String, String> {
+    use crate::player::deletion::{DeleteCommit, DeletionCoordinator};
+
+    // The player port outlives the guard (used inside the unload closure).
+    let port = {
+        let coord = coordinator
+            .lock()
+            .map_err(|_| "player coordinator poisoned")?;
+        coord.player().clone()
+    };
+    let operation: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let executor = CoreDelete {
+        delete_core,
+        operation: Arc::clone(&operation),
+    };
+    let mut deletion = DeletionCoordinator::new(port.clone(), executor);
+    let mut coord = coordinator
+        .lock()
+        .map_err(|_| "player coordinator poisoned")?;
+    let mode = coord.mode();
+    match deletion.delete_song(coord.queue_mut(), mode, song, || {
+        wait_unload(&port, unload_timeout)
+    }) {
+        Ok(DeleteCommit::Committed) => Ok(operation
+            .lock()
+            .ok()
+            .and_then(|mut slot| slot.take())
+            .unwrap_or_default()),
+        Ok(DeleteCommit::RolledBack) => {
+            Err("delete rolled back: the player still holds the file or Core refused".into())
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// The coordinator-owned half of a UI snapshot: the full queue entries, the
+/// per-round failed set, the current entry, and the active play mode.
+///
+/// Passed as one value (rather than four positional arguments) because every
+/// field is read from the same lock — the UI shape must be assembled from one
+/// consistent view of the queue, never from a mix of sources.
+#[derive(Clone, Debug)]
+pub struct CoordinatorView {
+    /// Every queue entry (current + pending, in play order).
+    pub entries: Vec<crate::player::queue::QueueEntry>,
+    /// Entries that failed to load/decode in the current round (task 8.7).
+    pub failed_round: std::collections::HashSet<echo_core::domain::ids::QueueEntryId>,
+    /// The current entry, if any.
+    pub current: Option<crate::player::queue::QueueEntry>,
+    /// The active playback mode (顺序 / 随机 / 单曲循环).
+    pub mode: PlayMode,
+}
 
 /// Bridge a sealed snapshot stream to the UI snapshot path.
 ///
@@ -226,13 +448,12 @@ pub type QueueView = (
 /// consumer has stale snapshots dropped (the actor's receiver is bounded) so
 /// this thread never blocks the actor.
 ///
-/// `queue_provider` returns the coordinator's current queue view — the full
-/// entries, the per-round failed set, and the current entry — so the UI
-/// snapshot can carry the whole queue for the panel (task 11.2), not just the
-/// current song.
+/// `queue_provider` returns the coordinator's current view, which supplies
+/// every queue-derived field of the UI snapshot (task 11.2) — the actor knows
+/// nothing about queue membership.
 pub fn spawn_forwarder(
     port: Arc<dyn PlayerPort>,
-    queue_provider: Arc<dyn Fn() -> QueueView + Send + Sync>,
+    queue_provider: Arc<dyn Fn() -> CoordinatorView + Send + Sync>,
     emit: SnapshotEmitter,
 ) {
     let rx = port.subscribe_snapshots();
@@ -240,19 +461,496 @@ pub fn spawn_forwarder(
         .name("echo-snapshot-forwarder".into())
         .spawn(move || {
             while let Ok(snap) = rx.recv() {
-                let (entries, failed, current) = queue_provider();
-                emit(map_snapshot(&snap, &entries, &failed, current.as_ref()));
+                emit(map_snapshot(&snap, &queue_provider()));
             }
         })
         .expect("spawn snapshot forwarder thread");
+}
+
+/// Spawn the session-saver thread (task 8.9 落盘接线): persist the durable
+/// playback session — queue, current, history, shuffle bag, mode, volume,
+/// mute, last position and the playing source (哪个歌单) — to the atomic
+/// desktop-state store.
+///
+/// Write policy (throttled, never hot):
+/// - every **state transition** saves once (a pause/stop/track change is the
+///   moment that matters for a crash);
+/// - while `Playing`, at most one save per `min_interval` (position progress
+///   does not justify an fsync per 10 Hz snapshot).
+///
+/// A save failure is swallowed (logged only) — persistence must never take
+/// playback down with it.
+pub fn spawn_session_saver(
+    port: Arc<dyn PlayerPort>,
+    coordinator: Arc<Mutex<PlaybackCoordinator<Arc<dyn PlayerPort>>>>,
+    persistence: Arc<dyn SessionPersistence>,
+    source: Arc<std::sync::Mutex<Option<String>>>,
+    min_interval: std::time::Duration,
+) {
+    let rx = port.subscribe_snapshots();
+    std::thread::Builder::new()
+        .name("echo-session-saver".into())
+        .spawn(move || {
+            let mut last_state = PlaybackState::Stopped;
+            let mut last_save = std::time::Instant::now() - min_interval;
+            while let Ok(raw) = rx.recv() {
+                let state_changed = raw.state != last_state;
+                let position_due =
+                    raw.state == PlaybackState::Playing && last_save.elapsed() >= min_interval;
+                last_state = raw.state;
+                if !state_changed && !position_due {
+                    continue;
+                }
+                last_save = std::time::Instant::now();
+                let session = {
+                    let coord = match coordinator.lock() {
+                        Ok(c) => c,
+                        Err(_) => continue,
+                    };
+                    snapshot_queue(
+                        coord.queue(),
+                        coord.mode(),
+                        raw.volume,
+                        raw.muted,
+                        raw.position,
+                        source.lock().ok().and_then(|s| s.clone()).as_deref(),
+                    )
+                };
+                let _ = persistence.save(Some(&session));
+            }
+        })
+        .expect("spawn session saver thread");
+}
+
+/// The restore-or-prime cold-start decision (task 8.9 + 默认态设计):
+///
+/// 1. A persisted session with entries is restored: the queue is rebuilt,
+///    mode/volume/mute re-applied, and the current entry loaded **paused**.
+/// 2. With nothing to restore but the library has songs, the *default* kicks
+///    in: the first song of 全部歌曲 (as given by `default_view_songs`) is
+///    primed into the 播放控制栏 paused, in 列表循环.
+/// 3. An empty library yields an empty queue — the bar stays empty.
+///
+/// `default_view_songs` is called at most once, only in case 2.
+pub fn restore_or_prime_playback(
+    coordinator: &Mutex<PlaybackCoordinator<Arc<dyn PlayerPort>>>,
+    persistence: &dyn SessionPersistence,
+    default_view_songs: impl FnOnce() -> Vec<echo_core::domain::ids::SongId>,
+) -> &'static str {
+    let restored = match persistence.load() {
+        Ok(Some(session)) if !session.entries.is_empty() => Some(session),
+        _ => None,
+    };
+    if let Some(session) = restored {
+        let (queue, _summary) = rebuild_queue(&session, &[]);
+        let volume = session.volume;
+        let muted = session.muted;
+        let mode = session.mode;
+        if let Ok(mut coord) = coordinator.lock() {
+            coord.restore_session(queue, mode, volume, muted);
+        }
+        return "restored";
+    }
+    // Nothing persisted: 默认全部歌曲第一条入栏 (paused, never a sound).
+    let songs = default_view_songs();
+    if songs.is_empty() {
+        return "empty";
+    }
+    let ctx = ViewContext {
+        songs,
+        selected_index: 0,
+    };
+    if let Ok(mut coord) = coordinator.lock() {
+        coord.play_context_paused(&ctx);
+    }
+    "primed"
+}
+
+/// Spawn the auto-advance watcher: the missing half of the playback loop.
+///
+/// The coordinator already owns the "what plays next" rules
+/// ([`PlaybackCoordinator::on_played_to_end`] / `on_load_error`), but nothing
+/// in production ever called them — a track reaching natural EOF published an
+/// `ended` snapshot to the UI and the queue stalled there until the user
+/// pressed next manually. This thread subscribes to the actor's snapshot
+/// stream (subscribers fan out, so the forwarder is unaffected) and drives the
+/// coordinator on the transitions the queue rules expect:
+///
+/// - `Stopped/… → Ended` (natural EOF, or a load failure surfaced as `Ended`):
+///   advance per the active mode (sequential/shuffle/repeat-one).
+/// - `… → Failed` (unknown song, unresolvable file): error-skip past the
+///   entry, never retrying it within the round.
+///
+/// The transition guard (only firing when the *previous* snapshot was in a
+/// different state) keeps a duplicate `Ended` publish from double-advancing.
+pub fn spawn_auto_advance(
+    port: Arc<dyn PlayerPort>,
+    coordinator: Arc<Mutex<PlaybackCoordinator<Arc<dyn PlayerPort>>>>,
+) {
+    let rx = port.subscribe_snapshots();
+    std::thread::Builder::new()
+        .name("echo-auto-advance".into())
+        .spawn(move || {
+            let mut last = PlaybackState::Stopped;
+            while let Ok(snap) = rx.recv() {
+                let state = snap.state;
+                if state != last {
+                    match state {
+                        PlaybackState::Ended => {
+                            if let Ok(mut coord) = coordinator.lock() {
+                                coord.on_played_to_end();
+                            }
+                        }
+                        PlaybackState::Failed => {
+                            if let Ok(mut coord) = coordinator.lock() {
+                                coord.on_load_error();
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                last = state;
+            }
+        })
+        .expect("spawn auto-advance thread");
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::player::fake::FakePlayer;
-    use crate::player::queue::{QueueEntry, QueueItem};
-    use echo_core::domain::ids::{QueueEntryId, SongId};
+    use crate::player::queue::{QueueEntry, QueueItem, ViewContext};
+    use crate::player::recording::PlaybackRecorder;
+    use crate::player::session::PlaybackSession;
+    use echo_core::domain::ids::{PlaybackSessionId, QueueEntryId, SongId};
+    use std::sync::Mutex as StdMutex;
+
+    /// An in-memory [`SessionPersistence`] double.
+    struct MemSession(StdMutex<Option<PlaybackSession>>);
+
+    impl MemSession {
+        fn empty() -> Self {
+            Self(StdMutex::new(None))
+        }
+        fn with(session: PlaybackSession) -> Self {
+            Self(StdMutex::new(Some(session)))
+        }
+    }
+
+    impl SessionPersistence for MemSession {
+        fn save(&self, session: Option<&PlaybackSession>) -> Result<(), String> {
+            *self.0.lock().expect("mem session lock") = session.cloned();
+            Ok(())
+        }
+        fn load(&self) -> Result<Option<PlaybackSession>, String> {
+            Ok(self.0.lock().expect("mem session lock").clone())
+        }
+    }
+
+    #[test]
+    fn restore_or_prime_restores_a_persisted_session_paused() {
+        // 冷启动恢复: a persisted session is rebuilt paused — never a sound.
+        let controller = PlayerController::over_fake(FakePlayer::new());
+        let s1 = SongId::new();
+        let s2 = SongId::new();
+        let session = crate::player::session::snapshot_queue(
+            &ViewContext {
+                songs: vec![s1, s2],
+                selected_index: 1,
+            }
+            .build_queue(),
+            PlayMode::Shuffle,
+            0.5,
+            false,
+            Some(3.0),
+            Some("playlist:p9"),
+        );
+        let store = MemSession::with(session);
+        let outcome = restore_or_prime_playback(&controller.coordinator, &store, || {
+            panic!("default view must not be queried when a session restores")
+        });
+        assert_eq!(outcome, "restored");
+        let coord = controller.coordinator.lock().expect("lock");
+        assert_eq!(coord.snapshot().state, PlaybackState::Paused);
+        assert_eq!(
+            coord.snapshot().volume,
+            0.5,
+            "volume is restored from the session"
+        );
+        assert_eq!(coord.mode(), PlayMode::Shuffle);
+    }
+
+    #[test]
+    fn restore_or_prime_primes_the_first_song_of_the_default_view() {
+        // Nothing persisted + a non-empty library: the first 全部歌曲 entry is
+        // primed into the player bar paused, in the default mode.
+        let controller = PlayerController::over_fake(FakePlayer::new());
+        let store = MemSession::empty();
+        let s1 = SongId::new();
+        let s2 = SongId::new();
+        let outcome = restore_or_prime_playback(&controller.coordinator, &store, || vec![s1, s2]);
+        assert_eq!(outcome, "primed");
+        let coord = controller.coordinator.lock().expect("lock");
+        assert_eq!(coord.snapshot().state, PlaybackState::Paused);
+        assert_eq!(coord.mode(), PlayMode::Sequential, "default is 列表循环");
+        assert_eq!(coord.current().unwrap().item.song_id(), Some(s1));
+        assert_eq!(
+            coord.queue().len(),
+            2,
+            "the whole default view is the queue"
+        );
+    }
+
+    #[test]
+    fn restore_or_prime_yields_an_empty_bar_for_an_empty_library() {
+        let controller = PlayerController::over_fake(FakePlayer::new());
+        let store = MemSession::empty();
+        let outcome = restore_or_prime_playback(&controller.coordinator, &store, Vec::new);
+        assert_eq!(outcome, "empty");
+        let coord = controller.coordinator.lock().expect("lock");
+        assert!(coord.queue().is_empty());
+        assert_eq!(coord.snapshot().state, PlaybackState::Stopped);
+    }
+
+    /// A recording sink that captures calls (for wiring assertions).
+    #[derive(Default)]
+    struct SpySink(StdMutex<Vec<(PlaybackSessionId, SongId)>>);
+
+    impl PlaybackRecorder for SpySink {
+        fn record(&self, session: PlaybackSessionId, song: SongId) -> Result<bool, String> {
+            self.0.lock().unwrap().push((session, song));
+            Ok(true)
+        }
+    }
+
+    #[test]
+    fn stats_recorder_records_a_qualified_library_listen_exactly_once() {
+        // Regression: PlaybackStatsRecorder had no production caller, so
+        // play_count never moved and 最近播放 stayed empty. The watcher must
+        // feed the real snapshot stream and fire the one RecordPlayback once
+        // the real monotonic clock crosses the threshold (no force_accumulate).
+        let spy = Arc::new(SpySink::default());
+        let sink: Arc<dyn PlaybackRecorder> = spy.clone();
+        let fake = Arc::new(FakePlayer::new());
+        let port: Arc<dyn PlayerPort> = fake.clone();
+        let coordinator = Arc::new(Mutex::new(PlaybackCoordinator::new(port.clone())));
+        spawn_stats_recorder(port.clone(), coordinator.clone(), sink);
+
+        let song = SongId::new();
+        {
+            let mut coord = coordinator.lock().expect("coordinator lock");
+            coord.play_context(&ViewContext {
+                songs: vec![song],
+                selected_index: 0,
+            });
+        }
+        // duration 0.2s → threshold min(30s, 50%) = 0.1s of *real* listening.
+        fake.set_duration(0.2);
+        fake.set_state(PlaybackState::Playing);
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        fake.set_state(PlaybackState::Paused); // settle point fires the record
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while std::time::Instant::now() < deadline {
+            let calls = spy.0.lock().unwrap().clone();
+            if calls.len() == 1 {
+                assert_eq!(calls[0].1, song);
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let calls = spy.0.lock().unwrap().clone();
+        panic!("expected exactly one record call, got {calls:?}");
+    }
+
+    #[test]
+    fn stats_recorder_never_records_temporary_items() {
+        // 临时播放项不计统计: a temporary load must not reach the sink even
+        // after listening well past the threshold.
+        let spy = Arc::new(SpySink::default());
+        let sink: Arc<dyn PlaybackRecorder> = spy.clone();
+        let fake = Arc::new(FakePlayer::new());
+        let port: Arc<dyn PlayerPort> = fake.clone();
+        let coordinator = Arc::new(Mutex::new(PlaybackCoordinator::new(port.clone())));
+        spawn_stats_recorder(port.clone(), coordinator.clone(), sink);
+
+        {
+            let mut coord = coordinator.lock().expect("coordinator lock");
+            coord.play_temporary(crate::player::coordinator::TemporaryPlay {
+                display_name: "temp".into(),
+                path: std::path::PathBuf::from("/tmp/echo-test.mp3"),
+                duration: Some(0.2),
+                on_active_root: false,
+            });
+        }
+        fake.set_state(PlaybackState::Playing);
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        fake.set_state(PlaybackState::Paused);
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert!(
+            spy.0.lock().unwrap().is_empty(),
+            "temporary playback must never be recorded"
+        );
+    }
+
+    #[test]
+    fn coordinated_delete_removes_current_song_and_commits() {
+        // Regression: delete_song bypassed the DeletionCoordinator entirely,
+        // so deleting the currently-playing song left the queue showing a
+        // track that no longer exists, with no unload barrier (task 8.11).
+
+        let fake = Arc::new(FakePlayer::new());
+        let port: Arc<dyn PlayerPort> = fake.clone();
+        let coordinator = Arc::new(Mutex::new(PlaybackCoordinator::new(port.clone())));
+        let s1 = SongId::new();
+        let s2 = SongId::new();
+        {
+            let mut coord = coordinator.lock().expect("coordinator lock");
+            coord.play_context(&ViewContext {
+                songs: vec![s1, s2],
+                selected_index: 0,
+            });
+        }
+        fake.set_state(PlaybackState::Playing);
+
+        let deleted = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = deleted.clone();
+        let outcome = delete_song_coordinated(
+            &coordinator,
+            s1,
+            move |song| {
+                sink.lock().unwrap().push(song);
+                Ok("op-1".into())
+            },
+            std::time::Duration::from_secs(2),
+        )
+        .expect("delete must commit");
+        assert_eq!(outcome, "op-1");
+        assert_eq!(deleted.lock().unwrap().as_slice(), &[s1]);
+
+        // The queue no longer references the deleted song, and the next
+        // available item aligned.
+        let view = coordinator.lock().expect("coordinator lock");
+        assert!(
+            view.queue()
+                .entries()
+                .iter()
+                .all(|e| e.item.song_id() != Some(s1)),
+            "deleted song must leave the queue"
+        );
+        assert_eq!(
+            view.current().and_then(|e| e.item.song_id()),
+            Some(s2),
+            "next entry becomes current"
+        );
+        // The player was stopped through the port (unload barrier path ran).
+        assert_eq!(fake.snapshot().state, PlaybackState::Stopped);
+    }
+
+    #[test]
+    fn coordinated_delete_rolls_back_when_core_refuses() {
+        let fake = Arc::new(FakePlayer::new());
+        let port: Arc<dyn PlayerPort> = fake.clone();
+        let coordinator = Arc::new(Mutex::new(PlaybackCoordinator::new(port.clone())));
+        let s1 = SongId::new();
+        let s2 = SongId::new();
+        {
+            let mut coord = coordinator.lock().expect("coordinator lock");
+            coord.play_context(&ViewContext {
+                songs: vec![s1, s2],
+                selected_index: 0,
+            });
+        }
+
+        let outcome = delete_song_coordinated(
+            &coordinator,
+            s1,
+            |_song| Err(echo_core::error::Error::unavailable("song", "locked")),
+            std::time::Duration::from_secs(2),
+        );
+        assert!(
+            outcome.is_err(),
+            "a Core refusal must roll back, not fake success"
+        );
+
+        // The queue was restored: the target is still current.
+        let view = coordinator.lock().expect("coordinator lock");
+        assert_eq!(
+            view.current().and_then(|e| e.item.song_id()),
+            Some(s1),
+            "rollback keeps the current entry"
+        );
+        assert_eq!(view.queue().entries().len(), 2);
+    }
+
+    #[test]
+    fn auto_advance_loads_the_next_track_when_a_song_naturally_ends() {
+        // Regression: a track reaching EOF published `ended` to the UI while
+        // the queue stalled — `on_played_to_end` had no production caller, so
+        // 唱完一首永远不会自动接下一首. The watcher must turn the Playing →
+        // Ended transition into a queue advance through the real snapshot
+        // subscription path.
+        let fake = Arc::new(FakePlayer::new());
+        let port: Arc<dyn PlayerPort> = fake.clone();
+        let coordinator = Arc::new(Mutex::new(PlaybackCoordinator::new(port.clone())));
+        spawn_auto_advance(port.clone(), coordinator.clone());
+
+        let s1 = SongId::new();
+        let s2 = SongId::new();
+        {
+            let mut coord = coordinator.lock().expect("coordinator lock");
+            coord.play_context(&ViewContext {
+                songs: vec![s1, s2],
+                selected_index: 0,
+            });
+        }
+        assert_eq!(fake.last_loaded_song(), Some(s1));
+
+        // The track plays out; the actor transitions Playing → Ended.
+        fake.set_state(PlaybackState::Playing);
+        fake.set_state(PlaybackState::Ended);
+
+        // The watcher runs on its own thread; poll for the advance.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while std::time::Instant::now() < deadline {
+            if fake.last_loaded_song() == Some(s2) {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("auto-advance never loaded the next song after Ended");
+    }
+
+    #[test]
+    fn auto_advance_does_not_double_advance_on_a_duplicate_ended_publish() {
+        // Two Ended snapshots in a row describe one end; the transition guard
+        // must advance exactly once (to s2), not skip straight to a stop.
+        let fake = Arc::new(FakePlayer::new());
+        let port: Arc<dyn PlayerPort> = fake.clone();
+        let coordinator = Arc::new(Mutex::new(PlaybackCoordinator::new(port.clone())));
+        spawn_auto_advance(port.clone(), coordinator.clone());
+
+        let s1 = SongId::new();
+        let s2 = SongId::new();
+        {
+            let mut coord = coordinator.lock().expect("coordinator lock");
+            coord.play_context(&ViewContext {
+                songs: vec![s1, s2],
+                selected_index: 0,
+            });
+        }
+        fake.set_state(PlaybackState::Ended);
+        fake.set_state(PlaybackState::Ended); // duplicate publish of the same end
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while std::time::Instant::now() < deadline {
+            if fake.last_loaded_song() == Some(s2) {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("auto-advance never loaded the next song after Ended");
+    }
 
     #[test]
     fn map_snapshot_maps_states_and_modes() {
@@ -262,15 +960,19 @@ mod tests {
             duration: Some(240.0),
             volume: 0.7,
             muted: false,
-            current_item: None,
             queue_len: 3,
             mode: PlayMode::Shuffle,
         };
-        let ui = map_snapshot(&raw, &[], &Default::default(), None);
+        let view = CoordinatorView {
+            entries: vec![],
+            failed_round: Default::default(),
+            current: None,
+            mode: PlayMode::Shuffle,
+        };
+        let ui = map_snapshot(&raw, &view);
         assert_eq!(ui.state, "playing");
         assert_eq!(ui.position, Some(12.5));
         assert_eq!(ui.mode, "shuffle");
-        assert_eq!(ui.queue_len, 3);
         assert_eq!(ui.current_song_id, None);
         assert_eq!(ui.current_title, None);
         assert!(ui.queue.is_empty());
@@ -285,15 +987,15 @@ mod tests {
         };
         let raw = PlayerSnapshot {
             state: PlaybackState::Paused,
-            current_item: Some(entry.id),
             ..PlayerSnapshot::default()
         };
-        let ui = map_snapshot(
-            &raw,
-            std::slice::from_ref(&entry),
-            &Default::default(),
-            Some(&entry),
-        );
+        let view = CoordinatorView {
+            entries: vec![entry.clone()],
+            failed_round: Default::default(),
+            current: Some(entry.clone()),
+            mode: PlayMode::Sequential,
+        };
+        let ui = map_snapshot(&raw, &view);
         assert_eq!(ui.current_song_id, Some(song.to_string()));
         assert_eq!(ui.current_queue_entry_id, Some(entry.id.to_string()));
         assert_eq!(ui.current_title, None);
@@ -302,6 +1004,40 @@ mod tests {
         assert_eq!(ui.queue[0].song_id, Some(song.to_string()));
         assert!(ui.queue[0].is_current);
         assert!(!ui.queue[0].failed);
+    }
+
+    #[test]
+    fn ui_queue_identity_comes_from_the_coordinator_not_the_transport_snapshot() {
+        // Regression for the blank player bar: the real actor never sets a
+        // queue-entry id (its `LoadLibrarySong` carries only a `SongId`), so a UI
+        // snapshot that read it from `PlayerSnapshot` produced
+        // `currentQueueEntryId: null` — the bar rendered its empty 当前播放区 and
+        // disabled transport while the song was audibly playing. Even with a
+        // bare transport snapshot (no queue fields at all) and a stale
+        // `queue_len`/`mode`, the UI must report the coordinator's truth.
+        let song = SongId::new();
+        let entry = QueueEntry {
+            id: QueueEntryId::new(),
+            item: QueueItem::Library(song),
+        };
+        let raw = PlayerSnapshot {
+            state: PlaybackState::Playing,
+            position: Some(1.0),
+            queue_len: 0,               // what the actor publishes
+            mode: PlayMode::Sequential, // what the actor publishes
+            ..PlayerSnapshot::default()
+        };
+        let view = CoordinatorView {
+            entries: vec![entry.clone()],
+            failed_round: Default::default(),
+            current: Some(entry.clone()),
+            mode: PlayMode::RepeatOne,
+        };
+        let ui = map_snapshot(&raw, &view);
+        assert_eq!(ui.current_queue_entry_id, Some(entry.id.to_string()));
+        assert_eq!(ui.current_song_id, Some(song.to_string()));
+        assert_eq!(ui.queue_len, 1, "queue length is the coordinator's queue");
+        assert_eq!(ui.mode, "repeatOne", "mode is the coordinator's mode");
     }
 
     #[test]
@@ -319,12 +1055,13 @@ mod tests {
             state: PlaybackState::Failed,
             ..PlayerSnapshot::default()
         };
-        let ui = map_snapshot(
-            &raw,
-            std::slice::from_ref(&entry),
-            &Default::default(),
-            Some(&entry),
-        );
+        let view = CoordinatorView {
+            entries: vec![entry.clone()],
+            failed_round: Default::default(),
+            current: Some(entry.clone()),
+            mode: PlayMode::Sequential,
+        };
+        let ui = map_snapshot(&raw, &view);
         assert_eq!(ui.current_song_id, None);
         assert_eq!(ui.current_title, Some("outside.m4a".into()));
         assert_eq!(ui.state, "failed");
@@ -351,11 +1088,15 @@ mod tests {
         let failed_round = std::collections::HashSet::from([failed.id]);
         let raw = PlayerSnapshot {
             state: PlaybackState::Playing,
-            current_item: Some(current.id),
-            queue_len: 2,
             ..PlayerSnapshot::default()
         };
-        let ui = map_snapshot(&raw, &entries, &failed_round, Some(&current));
+        let view = CoordinatorView {
+            entries,
+            failed_round,
+            current: Some(current),
+            mode: PlayMode::Sequential,
+        };
+        let ui = map_snapshot(&raw, &view);
         assert!(ui.queue[0].is_current);
         assert!(!ui.queue[0].failed);
         assert!(!ui.queue[1].is_current);
@@ -365,6 +1106,61 @@ mod tests {
         assert!(!ui.current_can_import);
         assert!(!ui.queue[0].can_import);
         assert!(!ui.queue[1].can_import);
+    }
+
+    #[test]
+    fn forwarder_emits_a_ui_snapshot_that_names_the_playing_song() {
+        // The full pipeline the player bar depends on, headless: the coordinator
+        // builds the queue and loads → the port publishes a snapshot → the
+        // forwarder maps it together with the coordinator's view → the UI
+        // snapshot names the current entry. Each earlier link passed its unit
+        // tests while the chain as a whole was broken (a dead subscription plus
+        // a queue-identity field read from the wrong source), so this asserts
+        // the end of the chain rather than its parts.
+        use crate::player::fake::FakePlayer;
+        use crate::player::queue::ViewContext;
+        use std::time::Duration;
+
+        let controller = PlayerController::over_fake(FakePlayer::new());
+        let song = SongId::new();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let coordinator = controller.coordinator.clone();
+        let provider: Arc<dyn Fn() -> CoordinatorView + Send + Sync> = Arc::new(move || {
+            let coord = coordinator.lock().expect("coordinator lock");
+            CoordinatorView {
+                entries: coord.queue().entries().to_vec(),
+                failed_round: coord.failed_round().collect(),
+                current: coord.current().cloned(),
+                mode: coord.mode(),
+            }
+        });
+        spawn_forwarder(
+            controller.port.clone(),
+            provider,
+            Box::new(move |ui| {
+                let _ = tx.send(ui);
+            }),
+        );
+
+        {
+            let mut coord = controller.coordinator.lock().expect("coordinator lock");
+            coord.play_context(&ViewContext {
+                songs: vec![song],
+                selected_index: 0,
+            });
+        }
+
+        let ui = rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("the forwarder must emit a UI snapshot after a play command");
+        assert_eq!(ui.state, "playing");
+        assert_eq!(ui.current_song_id, Some(song.to_string()));
+        assert!(
+            ui.current_queue_entry_id.is_some(),
+            "the player bar keys its non-empty 当前播放区 off this id"
+        );
+        assert_eq!(ui.queue.len(), 1);
+        assert!(ui.queue[0].is_current);
     }
 
     #[test]

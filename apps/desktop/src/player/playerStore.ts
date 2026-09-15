@@ -16,7 +16,7 @@
  * unchanged (authoritative rollback lives in the Rust actor, task 8.8).
  */
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { subscribe } from "../bridge";
 import type { UnlistenFn } from "../bridge";
@@ -102,6 +102,9 @@ class PlayerStore {
     focusOpen: false,
   };
   private listeners = new Set<Listener>();
+  /** `performance.now()` of the last `publish` — the interpolation anchor for
+   *  `useSmoothPosition` (the IPC stream is throttled to 10 Hz foreground). */
+  private lastPublishAt = 0;
 
   getSnapshot(): UiPlayerSnapshot {
     return this.snapshot;
@@ -114,7 +117,13 @@ class PlayerStore {
   /** Publish a snapshot received from the Desktop (via the bridge). */
   publish(snapshot: UiPlayerSnapshot): void {
     this.snapshot = snapshot;
+    this.lastPublishAt = performance.now();
     this.emit();
+  }
+
+  /** When the current snapshot arrived (for position interpolation). */
+  publishedAt(): number {
+    return this.lastPublishAt;
   }
 
   /** Set an optimistic pending action. It is cleared by the next snapshot
@@ -129,9 +138,11 @@ class PlayerStore {
     this.emit();
   }
 
-  /** Open or close the immersive player (task 11.3). */
+  /** Open or close the immersive player (task 11.3). Closing it also drops
+   *  歌词专注阅读, which is a state of that surface and would otherwise linger
+   *  and silently re-apply the next time the player opens. */
   setImmersiveOpen(open: boolean): void {
-    this.ui = { ...this.ui, immersiveOpen: open };
+    this.ui = { ...this.ui, immersiveOpen: open, focusOpen: open ? this.ui.focusOpen : false };
     this.emit();
   }
 
@@ -178,6 +189,42 @@ export function usePlayerUi(): PlayerUiState {
 
 /** The event the Rust runtime publishes each snapshot (matches `PLAYER_SNAPSHOT_EVENT`). */
 export const PLAYER_SNAPSHOT_EVENT = "player://snapshot";
+
+/**
+ * A per-frame estimate of the playback position.
+ *
+ * The desktop publishes snapshots at 10 Hz (foreground throttle), so rendering
+ * `snapshot.position` directly makes the progress bar, the transport readout
+ * and the lyric highlight step in visible ~100 ms jumps. While the state is
+ * `playing`, this hook advances the last authoritative position by wall-clock
+ * time via `requestAnimationFrame`; each arriving snapshot re-anchors the
+ * estimate, so seek/pause corrections are adopted immediately and drift never
+ * accumulates. Paused/stopped states render the snapshot value verbatim —
+ * this hook never fabricates a value the snapshot has not confirmed.
+ */
+export function useSmoothPosition(): number | null {
+  const snapshot = usePlayerSnapshot();
+  const { position, duration, state } = snapshot;
+  const [smooth, setSmooth] = useState<number | null>(position);
+
+  useEffect(() => {
+    if (state !== "playing" || position === null) {
+      setSmooth(position);
+      return;
+    }
+    const anchoredAt = playerStore.publishedAt();
+    let raf = 0;
+    const tick = () => {
+      const estimate = position + (performance.now() - anchoredAt) / 1000;
+      setSmooth(duration !== null ? Math.min(estimate, duration) : estimate);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [state, position, duration]);
+
+  return smooth;
+}
 
 /**
  * Subscribe to the desktop player snapshot stream and feed `playerStore`.

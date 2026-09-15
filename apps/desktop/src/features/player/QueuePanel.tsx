@@ -1,17 +1,16 @@
 /**
- * Playback queue panel (task 11.2).
+ * 播放队列面板 (task 11.2) — the prototype's `.queue-popover`.
  *
- * Renders the authoritative queue from the PlayerSnapshot (`snapshot.queue`):
- * the current entry followed by the pending entries, with per-entry failed /
- * blocked state surfaced. It offers "清空待播" (clear pending), and a browse
- * library action for the empty state.
+ * Renders the authoritative queue from the `PlayerSnapshot` (`snapshot.queue`):
+ * the current entry followed by the pending entries, each with a cover block,
+ * title + secondary line and duration, and per-entry failed / blocked state
+ * surfaced. The header carries the queue size and 清空待播 (clear pending).
  *
  * The snapshot is the single source of truth — this panel never fabricates a
- * queue. Clearing pending only removes *pending* entries; the current song
- * keeps playing and neither the library nor playlists are touched (the command
- * is `clearPending` on the Rust coordinator). Blocked (unavailable/missing)
- * and failed entries remain visible so the user understands why an item did
- * not play, and are skipped by the coordinator's error rules.
+ * queue. Clearing pending removes only *pending* entries: the current song keeps
+ * playing and neither the library nor playlists are touched. Blocked
+ * (unavailable/missing) and failed entries stay visible so the user understands
+ * why an item did not play.
  */
 
 import { useRef } from "react";
@@ -19,14 +18,15 @@ import { useRef } from "react";
 import { bridge } from "../../bridge";
 import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
 import { usePlayerSnapshot, usePlayerUi, playerStore } from "../../player/playerStore";
+import { coverClass } from "../library/coverPalette";
 
 export function QueuePanel() {
   const snapshot = usePlayerSnapshot();
   const ui = usePlayerUi();
   const panelRef = useRef<HTMLDivElement>(null);
-  // Queue panel is a `Menu`/`Queue`-tier overlay: Escape closes it via the
-  // single stack, focus is trapped, and focus returns to the open control.
-  // Hooks are hoisted above the early return (Rules of Hooks) and no-op closed.
+  // Queue panel is a `Menu`-tier overlay: Escape closes it via the single stack,
+  // focus is trapped, and focus returns to the open control. Hooks are hoisted
+  // above the early return (Rules of Hooks) and no-op while closed.
   const close = () => playerStore.setQueueOpen(false);
   useOverlay({
     tier: OverlayTier.Menu,
@@ -41,78 +41,81 @@ export function QueuePanel() {
   }
 
   const entries = snapshot.queue;
-  const hasPending = entries.some((e) => !e.isCurrent);
+  const hasPending = entries.some((entry) => !entry.isCurrent);
 
   function command(action: string) {
     void bridge.call("queue_command", { command: action });
   }
 
   return (
-    <div
-      className="queue-panel"
+    <section
+      className="queue-popover"
       data-testid="queue-panel"
       role="dialog"
       aria-label="播放队列"
       ref={panelRef}
     >
-      <div className="queue-panel-head">
-        <span className="queue-panel-title">播放队列</span>
-        <button type="button" className="icon-btn" aria-label="关闭队列" onClick={close}>
-          ✕
-        </button>
-      </div>
-
-      {entries.length === 0 ? (
-        <div className="queue-empty" data-testid="queue-empty">
-          <p className="queue-empty-text">队列为空</p>
-          <button type="button" className="btn" onClick={close}>
-            浏览曲库
-          </button>
-        </div>
-      ) : (
-        <ul className="queue-list" data-testid="queue-list">
-          {entries.map((entry) => (
-            <li
-              key={entry.entryId}
-              className={[
-                "queue-item",
-                entry.isCurrent ? "is-current" : "",
-                entry.failed ? "is-failed" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              aria-current={entry.isCurrent ? "true" : undefined}
+      <div className="queue">
+        <div className="queue-title">
+          <div className="queue-heading">
+            <h3>播放列表</h3>
+            <span id="queue-count">{entries.length} 首</span>
+          </div>
+          <div className="queue-tools">
+            <button
+              type="button"
+              className="queue-tool"
+              disabled={!hasPending}
+              onClick={() => command("clearPending")}
+              data-testid="clear-queue"
             >
-              <span className="queue-item-glyph" aria-hidden="true">
-                {entry.isCurrent ? "▶" : entry.failed ? "⛔" : entry.songId ? "♪" : "📄"}
-              </span>
-              <span className="queue-item-label">
-                {entry.title ?? "歌曲"}
-                {entry.canImport ? " " : ""}
-                {entry.canImport ? (
-                  <span className="queue-item-temporary-tag" aria-label="临时播放项">
-                    临时
-                  </span>
-                ) : null}
-              </span>
-              <span className="queue-item-id">
-                {entry.failed ? "加载失败" : entry.songId ? "资料库歌曲" : "临时文件"}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+              清空待播
+            </button>
+          </div>
+        </div>
 
-      <div className="queue-actions">
-        <button
-          type="button"
-          className="btn"
-          disabled={!hasPending}
-          onClick={() => command("clearPending")}
-        >
-          清空待播
-        </button>
+        {entries.length === 0 ? (
+          <div className="queue-empty show" data-testid="queue-empty">
+            <p>队列为空</p>
+            <button type="button" className="btn" onClick={close}>
+              浏览曲库
+            </button>
+          </div>
+        ) : (
+          <div className="queue-list" data-testid="queue-list">
+            {entries.map((entry) => (
+              <div
+                key={entry.entryId}
+                className={[
+                  "queue-item",
+                  entry.isCurrent ? "is-current" : "",
+                  entry.failed ? "is-failed" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                aria-current={entry.isCurrent ? "true" : undefined}
+              >
+                <span
+                  className={`queue-cover ${coverClass(entry.songId ?? entry.entryId)}`}
+                  aria-hidden="true"
+                />
+                <div className="queue-name">
+                  <b>{entry.title ?? "歌曲"}</b>
+                  <span>
+                    {entry.failed ? "加载失败" : entry.songId ? "资料库歌曲" : "临时文件"}
+                    {entry.canImport ? (
+                      <span className="queue-temporary-tag" aria-label="临时播放项">
+                        临时
+                      </span>
+                    ) : null}
+                  </span>
+                </div>
+                <span className="queue-time" />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-    </div>
+    </section>
   );
 }

@@ -22,10 +22,10 @@
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, RwLock};
+use std::sync::{mpsc, Arc, Mutex, RwLock};
 use std::thread::JoinHandle;
 
-use echo_core::domain::ids::{QueueEntryId, SongId};
+use echo_core::domain::ids::SongId;
 use echo_core::domain::state::PlaybackState;
 use echo_core::error::Error;
 
@@ -60,16 +60,73 @@ pub type SongResolver = Arc<dyn Fn(SongId) -> Result<std::path::PathBuf, Error> 
 /// This is a *defense-in-depth* layer: the actor additionally refuses any path
 /// that carries a URL scheme (see [`Backend::queue_load`] guards), so only
 /// Rust-validated local paths reach mpv.
-const HARDENED_OPTIONS: &[(&str, &str)] = &[
+///
+/// **Build-compat split.** The vendor `audio-default` libmpv **(media-kit
+/// v0.7.2)** compiles out Lua scripts, yt-dl and the OSC entirely — its
+/// `set_option_string` answers `MPV_ERROR_OPTION_NOT_FOUND` for
+/// `load-scripts`/`ytdl`/`osc`/`protocol-whitelist`. Those options are *always*
+/// desirable hardening, but on such a build the capability is simply absent,
+/// which already satisfies the "disable it" intent. They therefore live in
+/// [`HARDENED_OPTIONAL`] and are applied best-effort ([`ffi::Handle::create`]
+/// skips them with a warning when unsupported). The *required* set below is
+/// what the handle must genuinely enforce to be a safe audio-only player.
+const HARDENED_REQUIRED: &[(&str, &str)] = &[
     ("config", "no"),
-    ("load-scripts", "no"),
-    ("ytdl", "no"),
     ("video", "no"),
     ("vo", "null"),
     ("audio-display", "no"),
+];
+
+/// Hardening options that target capabilities a reduced build may compile out;
+/// applied best-effort (see [`HARDENED_REQUIRED`] comment).
+const HARDENED_OPTIONAL: &[(&str, &str)] = &[
+    ("load-scripts", "no"),
+    ("ytdl", "no"),
     ("osc", "no"),
     ("protocol-whitelist", "file"),
 ];
+
+/// Optional options extended from `ECHO_MPV_EXTRA_OPTIONS` (`name=value`,
+/// semicolon-separated), applied best-effort like [`HARDENED_OPTIONAL`].
+///
+/// A diagnostics escape hatch: the real-libmpv smoke sets `ao=null` so the
+/// event-plumbing assertions stay hermetic (a sandboxed CI runner can stall
+/// mpv's core in CoreAudio init — FILE_LOADED arrives but the playloop never
+/// starts and no property/EOF event is ever delivered). It must never carry
+/// security-relevant intent: everything here is best-effort.
+fn extra_options() -> Vec<(&'static str, &'static str)> {
+    let mut opts: Vec<(&'static str, &'static str)> = HARDENED_OPTIONAL.to_vec();
+    if let Ok(extra) = std::env::var("ECHO_MPV_EXTRA_OPTIONS") {
+        for pair in extra.split(';').filter_map(|s| s.split_once('=')) {
+            // Only a small allowlist of names can be injected, so the escape
+            // hatch can never re-enable a capability the hardening disabled.
+            const ALLOWED: &[&str] = &["ao"];
+            if ALLOWED.contains(&pair.0.trim()) {
+                // The option table needs 'static strs; the actor spawns once
+                // per process, so leaking the value is bounded and deliberate.
+                let value: &'static str = Box::leak(pair.1.to_owned().into_boxed_str());
+                opts.push(("ao", value));
+            }
+        }
+    }
+    opts
+}
+
+/// The continuous properties the actor subscribes to with
+/// `mpv_observe_property` (DOUBLE format) so the live UI keeps moving.
+///
+/// `time-pos` drives 播放进度条 and the synced-lyrics highlight; `duration`
+/// supplies the progress bar's range. Without these subscriptions the actor
+/// receives **no** `PROPERTY_CHANGE` event at all: `position`/`duration` stay
+/// `None` forever, so the progress bar sits at 0 and the lyrics never
+/// highlight — while the audio plays perfectly (the 播放控制栏 is fed only by
+/// snapshots, so a silent subscription reads as a frozen, "dead" bar).
+///
+/// They are subscribed on every [`BackendEvent::FileLoaded`] rather than once
+/// at handle creation because mpv refuses to observe a property that does not
+/// exist yet: while the player is idle `time-pos`/`duration` are *unavailable*
+/// and an early `mpv_observe_property` fails, silently subscribing to nothing.
+const OBSERVED_PROPERTIES: &[&str] = &["time-pos", "duration"];
 
 /// A normalized event the actor loop consumes from any backend. The real mpv
 /// backend and the test backend both produce these, so tests verify the loop's
@@ -94,6 +151,10 @@ pub enum BackendProperty {
     Volume(f64),
     /// Set mute on/off.
     Mute(bool),
+    /// Set the pause flag on/off. This is what actually stops and resumes the
+    /// audio in mpv; the transport commands must write it or the buttons only
+    /// move the actor's own state flag.
+    Pause(bool),
 }
 
 /// The platform player backend the actor drives. Synchronous and
@@ -106,9 +167,16 @@ trait Backend {
     /// pump so the command loop is never blocked on the backend.
     fn queue_load(&mut self, path: &Path);
 
-    /// Write a runtime property (seek / volume / mute). Returns `true` when
-    /// the backend accepted the write (task 8.8): the actor then commits the
-    /// snapshot immediately; a `false` means the write was rejected and the
+    /// Subscribe to the continuous properties the UI renders from
+    /// ([`OBSERVED_PROPERTIES`]). Called by the loop on every `FileLoaded` —
+    /// the first moment those properties exist — and idempotent (`mpv` replaces
+    /// the previous observation for the same name). A backend that subscribes
+    /// to nothing starves every snapshot-driven surface of live values.
+    fn observe_continuous(&mut self);
+
+    /// Write a runtime property (seek / volume / mute / pause). Returns `true`
+    /// when the backend accepted the write (task 8.8): the actor then commits
+    /// the snapshot immediately; a `false` means the write was rejected and the
     /// actor rolls back to the last authoritative snapshot.
     fn write_property(&mut self, prop: BackendProperty) -> bool;
 
@@ -136,8 +204,11 @@ impl MpvBackend {
         let sys =
             unsafe { ffi::MpvSys::load(libmpv_path) }.map_err(|_| ffi::HandleError::Create)?;
         // SAFETY: we own the only handle, created on this thread, hardened with
-        // the audio-only / least-privilege option set (task 8.3).
-        let handle = unsafe { ffi::Handle::create(&sys, HARDENED_OPTIONS) }?;
+        // the audio-only / least-privilege option set (task 8.3). `required`
+        // options must hold (config/video/vo); `optional` ones are applied
+        // best-effort because the vendor `audio-default` build compiles some
+        // capabilities out and reports them unknown.
+        let handle = unsafe { ffi::Handle::create(&sys, HARDENED_REQUIRED, &extra_options()) }?;
         Ok(MpvBackend {
             sys,
             handle,
@@ -173,7 +244,25 @@ impl MpvBackend {
         match event_id {
             ffi::event_id::SHUTDOWN => Some(BackendEvent::Shutdown),
             ffi::event_id::FILE_LOADED => Some(BackendEvent::FileLoaded),
-            ffi::event_id::END_FILE => Some(BackendEvent::Ended),
+            ffi::event_id::END_FILE => {
+                // Only a natural end-of-file (or an error while playing) is a
+                // real "track ended". When a new file replaces the current one
+                // (`loadfile replace`, i.e. every next/previous/jump), mpv ends
+                // the *old* file with reason STOP (or QUIT/REDIRECT); treating
+                // that as Ended made every manual skip publish a bogus `ended`
+                // and would double-advance once auto-advance is wired.
+                if data.is_null() {
+                    tracing::warn!("mpv actor: END_FILE with null payload; ignoring");
+                    return None;
+                }
+                // SAFETY: mpv guarantees a valid `mpv_event_end_file` for
+                // END_FILE; we read only the leading `reason` field.
+                let reason = unsafe { (*(data as *const ffi::mpv_event_end_file)).reason };
+                match reason {
+                    ffi::eof_reason::EOF | ffi::eof_reason::ERROR => Some(BackendEvent::Ended),
+                    _ => None,
+                }
+            }
             ffi::event_id::ERROR => {
                 tracing::warn!(code = error, "mpv actor: event error");
                 Some(BackendEvent::Ended)
@@ -215,6 +304,29 @@ impl Backend for MpvBackend {
         self.pending_load = Some(path.to_owned());
     }
 
+    fn observe_continuous(&mut self) {
+        // This is the call whose absence froze 播放进度条 and the lyrics: with no
+        // `mpv_observe_property` subscription the actor never received a single
+        // `time-pos`/`duration` change, so the UI snapshot's position/duration
+        // stayed `None` even though the file was audibly playing.
+        for name in OBSERVED_PROPERTIES {
+            let Ok(cname) = std::ffi::CString::new(*name) else {
+                continue;
+            };
+            // SAFETY: actor thread owns the handle; `cname` outlives the call.
+            if let Err(error) = unsafe {
+                self.handle
+                    .observe_property(&self.sys, 0, cname.as_c_str(), ffi::format_::DOUBLE)
+            } {
+                tracing::warn!(
+                    property = *name,
+                    error = %error,
+                    "mpv actor: observe_property failed; this signal will not reach the UI"
+                );
+            }
+        }
+    }
+
     fn write_property(&mut self, prop: BackendProperty) -> bool {
         // SAFETY: actor thread owns the handle; strings are NUL-clean.
         let ok = match prop {
@@ -244,6 +356,12 @@ impl Backend for MpvBackend {
                 // SAFETY: `set mute yes|no` is a stable mpv command.
                 unsafe { self.handle.command(&self.sys, &[c("set"), c("mute"), arg]) }.is_ok()
             }
+            BackendProperty::Pause(on) => {
+                let arg = c(if on { "yes" } else { "no" });
+                // SAFETY: `set pause yes|no` is a stable mpv command; it is how
+                // the audio is actually stopped and resumed.
+                unsafe { self.handle.command(&self.sys, &[c("set"), c("pause"), arg]) }.is_ok()
+            }
         };
         if !ok {
             tracing::warn!(?prop, "mpv actor: runtime property write rejected");
@@ -269,6 +387,10 @@ struct TestBackend {
     loads: Vec<String>,
     /// Shared recorder so tests can observe the writes the actor issued.
     props: Arc<std::sync::Mutex<Vec<BackendProperty>>>,
+    /// How many times the loop asked for the continuous-property subscription.
+    /// The real backend's `mpv_observe_property` is what makes the progress bar
+    /// and the lyrics move, so a test can prove the `FileLoaded` path asks.
+    observations: Arc<std::sync::atomic::AtomicUsize>,
     /// When true, the next `write_property` is rejected (authoritative
     /// rollback test, task 8.8).
     fail_next_property: bool,
@@ -285,6 +407,7 @@ impl TestBackend {
             events: events.into(),
             loads: Vec::new(),
             props: Arc::new(std::sync::Mutex::new(Vec::new())),
+            observations: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             fail_next_property: false,
             fail_all_properties: false,
             terminated: false,
@@ -307,6 +430,11 @@ impl Backend for TestBackend {
 
     fn queue_load(&mut self, path: &Path) {
         self.loads.push(path.display().to_string());
+    }
+
+    fn observe_continuous(&mut self) {
+        self.observations
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
     fn write_property(&mut self, prop: BackendProperty) -> bool {
@@ -335,6 +463,12 @@ impl Backend for TestBackend {
 pub struct PlayerActor {
     tx: mpsc::SyncSender<PlayerCommand>,
     snapshot: Arc<RwLock<PlayerSnapshot>>,
+    /// Live snapshot subscribers, each with a bounded mailbox (capacity 1). The
+    /// actor loop fans every published snapshot out to them; the composition
+    /// root registers the UI forwarder here. Without a *live* sender the
+    /// `player://snapshot` stream is silently empty and every snapshot-driven
+    /// surface (player bar, queue, progress) freezes at its initial value.
+    subscribers: Arc<Mutex<Vec<mpsc::SyncSender<PlayerSnapshot>>>>,
     stopped: Arc<AtomicBool>,
     join: Option<JoinHandle<()>>,
 }
@@ -350,14 +484,26 @@ impl PlayerActor {
     ///
     /// # Errors
     ///
-    /// [`FfiSpawnError::Spawn`] if the dedicated thread cannot be created. If
-    /// libmpv itself cannot be loaded the loop starts in a degraded `Stopped`
-    /// state (logged) rather than failing the runtime.
+    /// [`FfiSpawnError::Load`] if libmpv cannot be loaded or resolved (missing
+    /// file, unresolvable `@rpath` dependency, ABI-drifted symbol) — surfaced
+    /// synchronously so a broken load fails startup instead of degrading to a
+    /// silent `Stopped` that reports play transitions with no audio;
+    /// [`FfiSpawnError::Spawn`] if the dedicated thread cannot be created.
+    ///
+    /// The preflight dlopens the library and resolves every pinned symbol on the
+    /// calling thread, then drops it (owned by `MpvSys`, released on drop). The
+    /// actor re-opens it on its own thread so the handle stays thread-confined.
+    /// This is cheap (one dlopen) and covers the load failures that previously
+    /// only surfaced as a logged `drain_without_backend`.
     pub fn spawn_mpv(
         libmpv_path: &Path,
         snapshot: Arc<RwLock<PlayerSnapshot>>,
         resolver: Option<SongResolver>,
     ) -> Result<Self, FfiSpawnError> {
+        // SAFETY: `MpvSys::load` only dlopens and resolves symbols; the loaded
+        // library is owned by the returned `MpvSys` (`_lib`), which is dropped
+        // at the end of this scope. No handle is created here.
+        unsafe { ffi::MpvSys::load(libmpv_path) }.map_err(FfiSpawnError::Load)?;
         let path = libmpv_path.to_owned();
         Self::spawn_with(
             move || {
@@ -384,6 +530,8 @@ impl PlayerActor {
         let stopped = Arc::new(AtomicBool::new(false));
         let stopped_join = stopped.clone();
         let snapshot_join = snapshot.clone();
+        let subscribers = Arc::new(Mutex::new(Vec::new()));
+        let subscribers_join = subscribers.clone();
 
         let join = std::thread::Builder::new()
             .name("echo-mpv-actor".into())
@@ -396,7 +544,8 @@ impl PlayerActor {
                         return;
                     }
                 };
-                let mut loop_state = ActorLoop::new(backend, snapshot_join.clone());
+                let mut loop_state =
+                    ActorLoop::new(backend, snapshot_join.clone(), subscribers_join);
                 loop_state.resolver = resolver;
                 loop_state.run(rx);
                 // Loop exits only on Shutdown / backend shutdown; ordered
@@ -409,6 +558,7 @@ impl PlayerActor {
         Ok(PlayerActor {
             tx,
             snapshot,
+            subscribers,
             stopped,
             join: Some(join),
         })
@@ -464,9 +614,15 @@ impl PlayerPort for PlayerActor {
     }
 
     fn subscribe_snapshots(&self) -> mpsc::Receiver<PlayerSnapshot> {
-        // Single sink for now; multi-subscriber fanout joins the IPC event
-        // bridge (task 8.4). Return a never-delivering placeholder receiver.
-        let (_tx, rx) = mpsc::channel();
+        // A real, bounded mailbox: the actor loop fans every published snapshot
+        // into it. The previous "never-delivering placeholder" here made the
+        // whole `player://snapshot` stream a no-op in production — the player
+        // played fine while every snapshot-driven surface stayed blank.
+        let (tx, rx) = mpsc::sync_channel(1);
+        self.subscribers
+            .lock()
+            .expect("player subscribers poisoned")
+            .push(tx);
         rx
     }
 }
@@ -474,6 +630,11 @@ impl PlayerPort for PlayerActor {
 /// Errors spawning the actor.
 #[derive(Debug, thiserror::Error)]
 pub enum FfiSpawnError {
+    /// libmpv could not be loaded/resolved (missing file, unresolvable `@rpath`
+    /// dependency, or an ABI-drifted symbol). Surfaced synchronously at spawn so
+    /// a broken load fails startup instead of degrading to a silent `Stopped`.
+    #[error("bundled libmpv could not be loaded: {0}")]
+    Load(#[source] ffi::MpvLoadError),
     #[error("failed to spawn the libmpv actor thread: {0}")]
     Spawn(std::io::Error),
 }
@@ -482,11 +643,13 @@ pub enum FfiSpawnError {
 struct ActorLoop<B: Backend> {
     backend: B,
     generation: u64,
-    current_item: Option<QueueEntryId>,
     state: PlaybackState,
     position: Option<f64>,
     duration: Option<f64>,
     snapshot: Arc<RwLock<PlayerSnapshot>>,
+    /// The subscribers every published snapshot is fanned out to. Shared with
+    /// the [`PlayerActor`] handle so `subscribe_snapshots` can register more.
+    subscribers: Arc<Mutex<Vec<mpsc::SyncSender<PlayerSnapshot>>>>,
     volume: f64,
     muted: bool,
     /// The last non-zero volume, so unmuting restores it (task 8.8: mute 记住
@@ -505,15 +668,19 @@ struct ActorLoop<B: Backend> {
 }
 
 impl<B: Backend> ActorLoop<B> {
-    fn new(backend: B, snapshot: Arc<RwLock<PlayerSnapshot>>) -> Self {
+    fn new(
+        backend: B,
+        snapshot: Arc<RwLock<PlayerSnapshot>>,
+        subscribers: Arc<Mutex<Vec<mpsc::SyncSender<PlayerSnapshot>>>>,
+    ) -> Self {
         Self {
             backend,
             generation: 0,
-            current_item: None,
             state: PlaybackState::Stopped,
             position: None,
             duration: None,
             snapshot,
+            subscribers,
             volume: 1.0,
             muted: false,
             last_nonzero_volume: 1.0,
@@ -542,6 +709,7 @@ impl<B: Backend> ActorLoop<B> {
     fn publish(&mut self, gen: u64) {
         let snap = self.build_snapshot();
         *self.snapshot.write().expect("actor snapshot poisoned") = snap.clone();
+        self.fanout(&snap);
         let _ = gen;
         tracing::debug!(state = ?self.state, "mpv actor snapshot");
     }
@@ -556,10 +724,30 @@ impl<B: Backend> ActorLoop<B> {
         if now.duration_since(self.last_property_publish) >= interval {
             self.last_property_publish = now;
             let snap = self.build_snapshot();
-            *self.snapshot.write().expect("actor snapshot poisoned") = snap;
+            *self.snapshot.write().expect("actor snapshot poisoned") = snap.clone();
+            self.fanout(&snap);
             tracing::debug!(state = ?self.state, "mpv actor property snapshot (throttled)");
         }
         let _ = gen;
+    }
+
+    /// Hand a freshly published snapshot to every live subscriber.
+    ///
+    /// Each subscriber owns a **bounded** mailbox (capacity 1): a mailbox that
+    /// is still full means the consumer has not drained the previous snapshot
+    /// yet. A snapshot carries the whole player state, so skipping the stale one
+    /// is coalescing rather than data loss — and, crucially, the actor never
+    /// blocks on a slow consumer. Subscribers whose receiver is gone are pruned
+    /// here, so a dropped forwarder cannot leak or stall the actor.
+    fn fanout(&self, snap: &PlayerSnapshot) {
+        let mut subscribers = self
+            .subscribers
+            .lock()
+            .expect("player subscribers poisoned");
+        subscribers.retain(|tx| match tx.try_send(snap.clone()) {
+            Ok(()) | Err(mpsc::TrySendError::Full(_)) => true,
+            Err(mpsc::TrySendError::Disconnected(_)) => false,
+        });
     }
 
     fn build_snapshot(&self) -> PlayerSnapshot {
@@ -569,7 +757,6 @@ impl<B: Backend> ActorLoop<B> {
             duration: self.duration,
             volume: self.volume,
             muted: self.muted,
-            current_item: self.current_item,
             queue_len: 0, // queue membership is coordinator-owned (8.5)
             mode: self.mode,
         }
@@ -587,6 +774,11 @@ impl<B: Backend> ActorLoop<B> {
             match self.backend.pump() {
                 Some(BackendEvent::Shutdown) => return,
                 Some(BackendEvent::FileLoaded) => {
+                    // A loaded file is the first moment `time-pos`/`duration`
+                    // exist, so this is where the actor subscribes. Skipping it
+                    // leaves the actor with no property events at all and the
+                    // progress bar / lyrics frozen at 0.
+                    self.backend.observe_continuous();
                     self.state = PlaybackState::Playing;
                     self.publish(self.generation);
                 }
@@ -648,34 +840,66 @@ impl<B: Backend> ActorLoop<B> {
                     }
                 }
             }
+            PlayerCommand::LoadLibrarySongPaused {
+                song_id,
+                session_id: _session,
+            } => {
+                // Same resolution rules as `LoadLibrarySong`, but the backend
+                // is told to hold the file paused: the load completes (real
+                // duration + cover) while mpv's pause flag guarantees no sound
+                // until the user presses 播放.
+                self.generation += 1;
+                match self.resolver.as_ref().and_then(|r| (r)(song_id).ok()) {
+                    Some(path) => {
+                        self.load_path(&path);
+                        if !self.backend.write_property(BackendProperty::Pause(true)) {
+                            tracing::warn!("mpv actor: failed to set pause for paused load");
+                        }
+                    }
+                    None => {
+                        self.state = PlaybackState::Failed;
+                        self.publish(self.generation);
+                    }
+                }
+            }
             PlayerCommand::LoadTemporary {
                 display_name: _,
                 path,
                 session_id: _,
             } => self.load_path(&path),
             PlayerCommand::Play => {
-                if self.state.can_transition_to(PlaybackState::Playing) {
+                // The write is the point: previously this only flipped the
+                // actor's own state flag, so 播放/暂停 changed the icon while the
+                // audio kept running.
+                if self.backend.write_property(BackendProperty::Pause(false))
+                    && self.state.can_transition_to(PlaybackState::Playing)
+                {
                     self.state = PlaybackState::Playing;
                     self.publish(self.generation);
                 }
             }
             PlayerCommand::Pause => {
-                if self.state.can_transition_to(PlaybackState::Paused) {
+                if self.backend.write_property(BackendProperty::Pause(true))
+                    && self.state.can_transition_to(PlaybackState::Paused)
+                {
                     self.state = PlaybackState::Paused;
                     self.publish(self.generation);
                 }
             }
-            PlayerCommand::TogglePlayPause => match self.state {
-                PlaybackState::Playing => {
-                    self.state = PlaybackState::Paused;
-                    self.publish(self.generation);
+            PlayerCommand::TogglePlayPause => {
+                let target = match self.state {
+                    PlaybackState::Playing => Some(PlaybackState::Paused),
+                    PlaybackState::Paused => Some(PlaybackState::Playing),
+                    _ => None,
+                };
+                if let Some(target) = target {
+                    let pause = target == PlaybackState::Paused;
+                    if self.backend.write_property(BackendProperty::Pause(pause)) {
+                        self.state = target;
+                        self.publish(self.generation);
+                    }
                 }
-                PlaybackState::Paused => {
-                    self.state = PlaybackState::Playing;
-                    self.publish(self.generation);
-                }
-                _ => {}
-            },
+            }
             PlayerCommand::Next | PlayerCommand::Previous => {
                 // The coordinator advances the queue and issues a new load; mpv
                 // reaches natural EOF and reports Ended. We surface Ended so
@@ -733,6 +957,30 @@ impl<B: Backend> ActorLoop<B> {
                     self.publish(self.generation);
                 }
             }
+            PlayerCommand::SetMute(mute) => {
+                // Absolute, idempotent counterpart of `ToggleMute`, used by
+                // session restore: the persisted session dictates the output
+                // state, so re-applying it must land on the same value every
+                // time (a relative toggle would oscillate between restores).
+                // Already being at the target state is a no-op, not a rewiring.
+                if self.muted != mute {
+                    let restore = !mute && self.last_nonzero_volume > 0.0;
+                    if self
+                        .backend
+                        .write_property(BackendProperty::Mute(mute))
+                    {
+                        self.muted = mute;
+                        if restore {
+                            // Unmute back to the remembered non-zero volume.
+                            self.volume = self.last_nonzero_volume;
+                        } else if self.volume > 0.0 {
+                            // Remember the current audible volume before muting.
+                            self.last_nonzero_volume = self.volume;
+                        }
+                        self.publish(self.generation);
+                    }
+                }
+            }
             PlayerCommand::SetForeground(fg) => {
                 // Changing the throttle rate never forces a publish by itself;
                 // the next property event adopts the new interval. A pause /
@@ -742,9 +990,15 @@ impl<B: Backend> ActorLoop<B> {
                 self.last_property_publish = std::time::Instant::now();
             }
             PlayerCommand::Stop => {
+                // Stop must actually silence the backend, not only move the
+                // actor's state flag — mpv would otherwise keep the file open
+                // (and audible) after a coordinated delete's unload barrier.
+                // A full unload (releasing the fd) is a Windows-file-lock
+                // concern; on macOS unlink works on an open file and pausing
+                // is the honest transport stop.
+                let _ = self.backend.write_property(BackendProperty::Pause(true));
                 self.state = PlaybackState::Stopped;
                 self.position = None;
-                self.current_item = None;
                 self.publish(self.generation);
             }
         }
@@ -811,6 +1065,12 @@ mod tests {
         Arc::new(RwLock::new(PlayerSnapshot::default()))
     }
 
+    /// An empty subscriber registry for tests that drive `ActorLoop` directly
+    /// (no forwarder attached).
+    fn subscribers_stub() -> Arc<Mutex<Vec<mpsc::SyncSender<PlayerSnapshot>>>> {
+        Arc::new(Mutex::new(Vec::new()))
+    }
+
     /// Spawn an actor over a `TestBackend` replaying `events`, returning the
     /// actor, a shared snapshot the test can observe, and the shared property
     /// recorder (so `write_property` calls can be asserted, task 8.8).
@@ -836,6 +1096,42 @@ mod tests {
         )
         .expect("spawn");
         (actor, snapshot, props)
+    }
+
+    /// Spawn an actor whose `TestBackend` counts how often the loop asked it to
+    /// subscribe to the continuous properties — the request the real backend
+    /// turns into `mpv_observe_property`. Without it the actor receives no
+    /// `time-pos`/`duration` events and every live surface freezes.
+    fn spawn_test_observed(
+        events: Vec<BackendEvent>,
+    ) -> (
+        PlayerActor,
+        Arc<RwLock<PlayerSnapshot>>,
+        Arc<std::sync::atomic::AtomicUsize>,
+    ) {
+        let snapshot = snapshot_stub();
+        let observations = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observations_join = observations.clone();
+        let actor = PlayerActor::spawn_with(
+            move || -> Result<TestBackend, ffi::HandleError> {
+                let mut b = TestBackend::new(events);
+                b.observations = observations_join;
+                Ok(b)
+            },
+            snapshot.clone(),
+            None,
+        )
+        .expect("spawn");
+        (actor, snapshot, observations)
+    }
+
+    /// A `LoadTemporary` command for the throwaway test path.
+    fn load_temporary(path: &str) -> PlayerCommand {
+        PlayerCommand::LoadTemporary {
+            display_name: "a.flac".into(),
+            path: std::path::PathBuf::from(path),
+            session_id: echo_core::domain::ids::PlaybackSessionId::new(),
+        }
     }
 
     /// Wait (bounded) until `cond` holds on the shared snapshot.
@@ -1022,6 +1318,67 @@ mod tests {
     }
 
     #[test]
+    fn actor_set_mute_is_absolute_and_idempotent() {
+        // Session restore re-applies the persisted output state; replaying it
+        // must land on the same value instead of flipping. `ToggleMute` is
+        // relative, so a second replay would have un-muted the player.
+        let (mut actor, snapshot, props) = spawn_test(vec![]);
+        actor.send(PlayerCommand::SetVolume(0.6)).unwrap();
+        actor.send(PlayerCommand::SetMute(true)).unwrap();
+        let muted = wait_for(&snapshot, |s| s.muted);
+        assert!(
+            (muted.volume - 0.6).abs() < 1e-9,
+            "muting keeps the volume field (mute is only the flag, like mpv)"
+        );
+        // The same absolute value twice: no second backend write, no flip.
+        actor.send(PlayerCommand::SetMute(true)).unwrap();
+        actor.send(PlayerCommand::SetMute(true)).unwrap();
+        // A later command proves the actor drained the no-ops in order.
+        actor.send(PlayerCommand::Seek(1.0)).unwrap();
+        let _ = wait_for(&snapshot, |s| s.position == Some(1.0));
+        let writes = props.lock().unwrap().clone();
+        assert_eq!(
+            writes,
+            vec![
+                BackendProperty::Volume(0.6),
+                BackendProperty::Mute(true),
+                BackendProperty::Seek(1.0),
+            ],
+            "re-applying an already-satisfied absolute mute must be a no-op"
+        );
+        assert!(snapshot.read().unwrap().muted);
+        actor.shutdown();
+    }
+
+    #[test]
+    fn actor_set_mute_false_restores_remembered_volume() {
+        let (mut actor, snapshot, props) = spawn_test(vec![]);
+        actor.send(PlayerCommand::SetVolume(0.35)).unwrap();
+        actor.send(PlayerCommand::SetMute(true)).unwrap();
+        let muted = wait_for(&snapshot, |s| s.muted);
+        assert!((muted.volume - 0.35).abs() < 1e-9);
+        // Restoring the un-muted state brings the audible volume back.
+        actor.send(PlayerCommand::SetMute(false)).unwrap();
+        let unmuted = wait_for(&snapshot, |s| !s.muted && (s.volume - 0.35).abs() < 1e-9);
+        assert!((unmuted.volume - 0.35).abs() < 1e-9);
+        // Already un-muted → no further write.
+        actor.send(PlayerCommand::SetMute(false)).unwrap();
+        actor.send(PlayerCommand::Seek(2.0)).unwrap();
+        let _ = wait_for(&snapshot, |s| s.position == Some(2.0));
+        let writes = props.lock().unwrap().clone();
+        assert_eq!(
+            writes,
+            vec![
+                BackendProperty::Volume(0.35),
+                BackendProperty::Mute(true),
+                BackendProperty::Mute(false),
+                BackendProperty::Seek(2.0),
+            ]
+        );
+        actor.shutdown();
+    }
+
+    #[test]
     fn actor_rejected_property_leaves_snapshot_authoritative() {
         // Command-failure rollback (task 8.8): a backend-rejected write must
         // leave the snapshot (and thus the UI) consistent — never a position,
@@ -1055,12 +1412,93 @@ mod tests {
     // 8.4: snapshot throttling (10 Hz foreground / 1 Hz background)
     // ------------------------------------------------------------------
 
+    // ------------------------------------------------------------------
+    // 8.4: snapshot subscription (the `player://snapshot` stream's source)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn subscribe_snapshots_delivers_published_snapshots() {
+        // Regression: `subscribe_snapshots` used to hand back a receiver whose
+        // sender was dropped on the spot, so the forwarder thread exited
+        // immediately and the UI never saw a single snapshot. Playback worked
+        // (the actor loaded and played the file) while the player bar stayed
+        // blank — the failure mode is invisible to any test that only reads the
+        // shared snapshot, so this asserts the *subscription* path itself.
+        let (mut actor, _snapshot, _props) = spawn_test(vec![]);
+        let rx = actor.subscribe_snapshots();
+
+        actor.send(PlayerCommand::SetVolume(0.5)).unwrap();
+
+        let snap = rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("a subscriber must receive the snapshot published after a command");
+        assert!((snap.volume - 0.5).abs() < f64::EPSILON);
+        actor.shutdown();
+    }
+
+    #[test]
+    fn every_subscriber_receives_the_same_snapshot() {
+        let (mut actor, _snapshot, _props) = spawn_test(vec![]);
+        let rx_a = actor.subscribe_snapshots();
+        let rx_b = actor.subscribe_snapshots();
+        let timeout = std::time::Duration::from_secs(2);
+
+        actor.send(PlayerCommand::SetVolume(0.25)).unwrap();
+
+        let a = rx_a.recv_timeout(timeout).expect("subscriber A");
+        let b = rx_b.recv_timeout(timeout).expect("subscriber B");
+        assert_eq!(
+            a, b,
+            "fan-out delivers the same snapshot to every subscriber"
+        );
+        actor.shutdown();
+    }
+
+    #[test]
+    fn dropped_subscriber_is_pruned_and_live_ones_keep_receiving() {
+        let (mut actor, _snapshot, _props) = spawn_test(vec![]);
+        let dead = actor.subscribe_snapshots();
+        drop(dead); // the forwarder thread ended / the UI went away
+
+        let live = actor.subscribe_snapshots();
+        actor.send(PlayerCommand::SetVolume(0.75)).unwrap();
+
+        let snap = live
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("a live subscriber must still receive after a peer is dropped");
+        assert!((snap.volume - 0.75).abs() < f64::EPSILON);
+        actor.shutdown();
+    }
+
+    #[test]
+    fn slow_subscriber_skips_snapshots_instead_of_stalling_the_actor() {
+        // The mailbox is capacity-1: a consumer that never drains must not block
+        // the actor loop. Three publishes while nobody reads leave the *oldest*
+        // snapshot queued and drop the newer ones (each snapshot is full state,
+        // so the consumer is never shown stale-then-inconsistent data).
+        let (mut actor, _snapshot, _props) = spawn_test(vec![]);
+        let rx = actor.subscribe_snapshots();
+
+        actor.send(PlayerCommand::SetVolume(0.2)).unwrap();
+        actor.send(PlayerCommand::SetVolume(0.4)).unwrap();
+        actor.send(PlayerCommand::SetVolume(0.6)).unwrap();
+
+        let snap = rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("the not-yet-drained mailbox still delivers");
+        assert!(
+            (snap.volume - 0.2).abs() < f64::EPSILON,
+            "the actor dropped later snapshots rather than blocking on the slow consumer"
+        );
+        actor.shutdown();
+    }
+
     #[test]
     fn interval_lengths_match_10hz_foreground_and_1hz_background() {
         // The throttle must be 10 Hz foreground (100 ms) and 1 Hz background
         // (1000 ms). Assert the ActorLoop's interval selection directly.
         let snapshot = snapshot_stub();
-        let mut loop_state = ActorLoop::new(TestBackend::new(vec![]), snapshot);
+        let mut loop_state = ActorLoop::new(TestBackend::new(vec![]), snapshot, subscribers_stub());
         loop_state.foreground = true;
         assert_eq!(
             loop_state.property_interval(),
@@ -1114,7 +1552,11 @@ mod tests {
         // the interval does not overwrite the snapshot; once the interval has
         // elapsed it does. We drive a 10 ms interval to avoid sleeping 1 s.
         let snapshot = snapshot_stub();
-        let mut loop_state = ActorLoop::new(TestBackend::new(vec![]), snapshot.clone());
+        let mut loop_state = ActorLoop::new(
+            TestBackend::new(vec![]),
+            snapshot.clone(),
+            subscribers_stub(),
+        );
         loop_state.foreground = true;
         loop_state.position = Some(1.0);
         // Force "now": a publish right after is within the 100 ms interval →
@@ -1170,6 +1612,82 @@ mod tests {
     }
 
     #[test]
+    fn transport_pause_and_play_write_the_mpv_pause_flag() {
+        // Regression: 播放/暂停 only flipped the actor's own state flag — `pause`
+        // was never written to mpv, so the control bar changed its icon while
+        // the audio kept playing. Both commands must reach the backend.
+        let (mut actor, snapshot, props) = spawn_test(vec![BackendEvent::FileLoaded]);
+        actor.send(load_temporary("/music/a.flac")).unwrap();
+        wait_for(&snapshot, |s| s.state == PlaybackState::Playing);
+
+        actor.send(PlayerCommand::Pause).unwrap();
+        wait_for(&snapshot, |s| s.state == PlaybackState::Paused);
+        actor.send(PlayerCommand::Play).unwrap();
+        wait_for(&snapshot, |s| s.state == PlaybackState::Playing);
+
+        let writes = props.lock().unwrap().clone();
+        assert_eq!(
+            writes,
+            vec![BackendProperty::Pause(true), BackendProperty::Pause(false),],
+            "pause/resume must write mpv's `pause` property, not just the state flag"
+        );
+        actor.shutdown();
+    }
+
+    #[test]
+    fn toggle_play_pause_writes_the_pause_flag() {
+        let (mut actor, snapshot, props) = spawn_test(vec![BackendEvent::FileLoaded]);
+        actor.send(load_temporary("/music/a.flac")).unwrap();
+        wait_for(&snapshot, |s| s.state == PlaybackState::Playing);
+
+        actor.send(PlayerCommand::TogglePlayPause).unwrap();
+        wait_for(&snapshot, |s| s.state == PlaybackState::Paused);
+        // The space-bar hotkey path must reach mpv too.
+        assert_eq!(
+            props.lock().unwrap().clone(),
+            vec![BackendProperty::Pause(true)]
+        );
+        actor.shutdown();
+    }
+
+    #[test]
+    fn file_loaded_subscribes_to_the_continuous_properties() {
+        // Regression: `mpv_observe_property` was never called, so the actor
+        // received no `PROPERTY_CHANGE` at all — `position`/`duration` stayed
+        // `None`, freezing 播放进度条 and the synced-lyrics highlight while the
+        // song played. The load path is where the subscription must happen.
+        let (mut actor, snapshot, observations) =
+            spawn_test_observed(vec![BackendEvent::FileLoaded]);
+        assert_eq!(
+            observations.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "nothing is subscribed before a file is loaded"
+        );
+
+        actor.send(load_temporary("/music/a.flac")).unwrap();
+        wait_for(&snapshot, |s| s.state == PlaybackState::Playing);
+
+        assert!(
+            observations.load(std::sync::atomic::Ordering::SeqCst) >= 1,
+            "a loaded file must subscribe to time-pos/duration or the UI has no live values"
+        );
+        actor.shutdown();
+    }
+
+    #[test]
+    fn observed_properties_cover_position_and_duration() {
+        // The subscription set has to include the two properties the UI reads.
+        assert!(
+            OBSERVED_PROPERTIES.contains(&"time-pos"),
+            "播放进度条 / 歌词 advance off time-pos"
+        );
+        assert!(
+            OBSERVED_PROPERTIES.contains(&"duration"),
+            "the progress bar's range comes from duration"
+        );
+    }
+
+    #[test]
     fn ordered_destruction_terminates_backend_then_joins() {
         // Spawn over a TestBackend; after shutdown the actor must be stopped.
         // Because terminate() runs on the actor thread before join returns and
@@ -1201,9 +1719,15 @@ mod tests {
 
     #[test]
     fn hardened_options_are_audio_only_and_least_privilege() {
-        // The option set must (a) disable user config/scripts/ytdl, (b) forbid
-        // everything but the local file protocol, and (c) force pure audio.
-        let names: Vec<&str> = HARDENED_OPTIONS.iter().map(|(n, _)| *n).collect();
+        // The combined set must (a) disable user config/scripts/ytdl,
+        // (b) forbid everything but the local file protocol, and (c) force pure
+        // audio. Hardening intent is declared across the required + optional
+        // groups; the split only reflects what a build can accept.
+        let names: Vec<&str> = HARDENED_REQUIRED
+            .iter()
+            .chain(HARDENED_OPTIONAL)
+            .map(|(n, _)| *n)
+            .collect();
         for required in [
             "config",             // no user mpv.conf
             "load-scripts",       // no user scripts
@@ -1218,12 +1742,21 @@ mod tests {
                 "missing hardened option {required}"
             );
         }
-        let whitelist = HARDENED_OPTIONS
+        let whitelist = HARDENED_OPTIONAL
             .iter()
             .find(|(n, _)| *n == "protocol-whitelist")
             .map(|(_, v)| *v)
             .unwrap();
         assert_eq!(whitelist, "file");
+        // The strictly-required set must stay minimal and genuinely loadable on
+        // every libmpv build, while config/video/vo are true hard boundaries.
+        assert!(
+            HARDENED_REQUIRED.iter().all(|(n, _)| *n == "config"
+                || *n == "video"
+                || *n == "vo"
+                || *n == "audio-display"),
+            "required options are exactly the audio-only hard boundaries"
+        );
     }
 
     #[test]

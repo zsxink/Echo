@@ -1095,6 +1095,9 @@ mod tests {
         fn write_capable(&self, root: LibraryRootId) -> Result<bool, Error> {
             self.inner.write_capable(root)
         }
+        fn establish_write_capability(&self, root: LibraryRootId) -> Result<(), Error> {
+            self.inner.establish_write_capability(root)
+        }
     }
 
     struct CrashJournal {

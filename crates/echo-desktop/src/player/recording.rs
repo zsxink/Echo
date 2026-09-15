@@ -57,6 +57,19 @@ impl<R: PlaybackRecorder + ?Sized> PlaybackRecorder for &R {
     }
 }
 
+/// A shared sink is also a sink — so the composition root can hand the stats
+/// watcher an `Arc<dyn PlaybackRecorder>` (the database-backed adapter lives
+/// behind a trait object) without another wrapper type.
+impl<R: PlaybackRecorder + ?Sized> PlaybackRecorder for std::sync::Arc<R> {
+    fn record(
+        &self,
+        session: echo_core::domain::ids::PlaybackSessionId,
+        song: echo_core::domain::ids::SongId,
+    ) -> Result<bool, String> {
+        (**self).record(session, song)
+    }
+}
+
 impl PlaybackRecorder for NullRecorder {
     fn record(
         &self,
@@ -166,25 +179,25 @@ impl<R: PlaybackRecorder> PlaybackStatsRecorder<R> {
         }
     }
 
-    /// Observe a new playback position from mpv. This does **not** add listen
-    /// time (seek cannot cheat); it only supplies duration for the threshold.
-    /// Called periodically with the current `time-pos`.
-    pub fn observe_position(&mut self, _position: f64) {}
-
     /// Poll the accumulated clock each snapshot tick while playing, so a track
     /// that plays for many minutes across snapshot boundaries still reaches the
     /// threshold in a timely way (not only on the next pause/end).
+    ///
+    /// Each tick folds *only* the segment since the last tick into
+    /// `accumulated` and then re-anchors the wall clock, so no second is ever
+    /// counted twice and a long track keeps progressing toward the threshold.
     pub fn tick(&mut self) {
-        if let Some(since) = self.playing_since {
-            let elapsed = since.elapsed().as_secs_f64();
-            let mut total = elapsed;
+        if self.playing_since.is_some() {
+            let elapsed = self
+                .playing_since
+                .replace(std::time::Instant::now())
+                .map(|since| since.elapsed().as_secs_f64())
+                .unwrap_or(0.0);
             if let Some(state) = self.current.as_mut() {
-                total += state.accumulated;
-                // Don't mutate inside the borrow; recompute below.
-                let _ = total;
+                state.accumulated += elapsed;
             }
-            self.maybe_record();
         }
+        self.maybe_record();
     }
 
     /// Test-only: add raw accumulated seconds (bypasses the wall clock so a
@@ -199,41 +212,29 @@ impl<R: PlaybackRecorder> PlaybackStatsRecorder<R> {
     /// Fire the one allowed `RecordPlayback` when qualified (library only, not
     /// already recorded, threshold reached). Sinks the error — it must not stop
     /// playback.
+    ///
+    /// The threshold is checked on every settle point, including **mid-play**
+    /// ticks: the spec says a listen counts once the listener has heard
+    /// `min(30s, 50%)` of the track, not "once they pause or reach the end". A
+    /// scrobble that only fires on pause/end would silently lose every listen
+    /// of an app that is force-quit mid-track.
     fn maybe_record(&mut self) {
-        let Some(recorded) = self.current.as_ref().map(|s| s.recorded) else {
+        let Some(state) = self.current.as_mut() else {
             return;
         };
-        if recorded || self.playing_since.is_some() {
-            // Never fire mid-play (only on pause/end/tick settles) — guard also
-            // prevents double-counting the active segment.
+        if state.recorded {
             return;
         }
-        let session = self.current.as_ref().map(|s| s.session);
-        let song = self.current.as_ref().map(|s| s.song);
-        let reached = match (&self.current, &session, &song) {
-            (Some(state), Some(session), Some(song)) => {
-                let threshold = record_threshold(state.duration_seconds.unwrap_or(0.0));
-                if state.accumulated >= threshold {
-                    // Idempotent sink: a repeated call is a no-op by contract.
-                    match self.recorder.record(*session, *song) {
-                        Ok(_) => true,
-                        Err(e) => {
-                            tracing::warn!(error = %e, "playback record failed (non-fatal)");
-                            true
-                        }
-                    }
-                } else {
-                    false
-                }
-            }
-            _ => false,
-        };
-        if reached {
-            if let Some(state) = self.current.as_mut() {
-                // Mark recorded so we do not retry-spam the DB each tick.
-                state.recorded = true;
-            }
+        let threshold = record_threshold(state.duration_seconds.unwrap_or(0.0));
+        if state.accumulated < threshold {
+            return;
         }
+        if let Err(e) = self.recorder.record(state.session, state.song) {
+            tracing::warn!(error = %e, "playback record failed (non-fatal)");
+        }
+        // Mark recorded so we do not retry-spam the DB each tick. A repeated
+        // call is a no-op at the sink, but this keeps us off that path.
+        state.recorded = true;
     }
 }
 
@@ -361,6 +362,80 @@ mod tests {
         assert!(
             rec.playing_since.is_none(),
             "paused stops the monotonic clock"
+        );
+    }
+
+    // --- Real monotonic-clock coverage -------------------------------------
+    //
+    // Everything above drives `accumulated` with `#[cfg(test)] force_accumulate`,
+    // which bypasses the wall clock entirely — it therefore could not catch the
+    // defects these cover: `tick()` used to compute a total and then drop it
+    // (`let _ = total;`) so ticks contributed *nothing*, and `maybe_record()`
+    // returned early whenever `playing_since` was set, so a listen was only ever
+    // counted if the user paused or reached the end. Both made the whole module
+    // green-but-inert, exactly like no one calling it from production.
+    //
+    // These use tiny synthetic durations so the threshold is milliseconds and
+    // the test stays fast, but time really elapses and `tick()` really folds it.
+
+    #[test]
+    fn tick_folds_elapsed_wall_clock_time_into_the_listen() {
+        let recorder = CountingRecorder::default();
+        let mut rec = PlaybackStatsRecorder::new(&recorder);
+        rec.begin_library(PlaybackSessionId::new(), SongId::new());
+        // duration 100 ms → threshold min(50ms, 30s) = 50 ms.
+        rec.set_duration(0.1);
+        rec.on_state(PlaybackState::Playing);
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        // A tick while still playing must be enough — nobody has paused yet.
+        rec.tick();
+        assert_eq!(
+            recorder.recorded(),
+            1,
+            "a listen qualifies mid-play once the threshold is reached"
+        );
+    }
+
+    #[test]
+    fn repeated_ticks_do_not_double_count_the_elapsed_segment() {
+        let recorder = CountingRecorder::default();
+        let mut rec = PlaybackStatsRecorder::new(&recorder);
+        rec.begin_library(PlaybackSessionId::new(), SongId::new());
+        // duration 4 s → threshold min(2s, 30s) = 2 s of *real* listening.
+        rec.set_duration(4.0);
+        rec.on_state(PlaybackState::Playing);
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        // Five ticks over ~120 ms of wall clock must not inflate the listen into
+        // 2 s: each tick folds only the time since the previous one.
+        for _ in 0..5 {
+            rec.tick();
+        }
+        assert_eq!(
+            recorder.recorded(),
+            0,
+            "ticks fold time, they do not repeat it"
+        );
+    }
+
+    #[test]
+    fn a_paused_segment_really_accumulates_and_qualifies() {
+        let recorder = CountingRecorder::default();
+        let mut rec = PlaybackStatsRecorder::new(&recorder);
+        rec.begin_library(PlaybackSessionId::new(), SongId::new());
+        // duration 200 ms → threshold min(100ms, 30s) = 100 ms.
+        rec.set_duration(0.2);
+        // Two short playing segments separated by a pause add up.
+        rec.on_state(PlaybackState::Playing);
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        rec.on_state(PlaybackState::Paused);
+        assert_eq!(recorder.recorded(), 0, "60 ms is not a listen yet");
+        rec.on_state(PlaybackState::Playing);
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        rec.on_state(PlaybackState::Paused);
+        assert_eq!(
+            recorder.recorded(),
+            1,
+            "two 60 ms segments of a 200 ms song cross its 100 ms threshold"
         );
     }
 }

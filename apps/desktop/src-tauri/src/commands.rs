@@ -28,8 +28,8 @@ use std::sync::{Arc, Mutex};
 use echo_core::domain::catalog::{OpaqueCursor, SongSort, SongSortField, SortDirection};
 use echo_core::domain::ids::{LibraryRootId, OperationId, PlaylistId, SongId};
 use echo_desktop::ipc::dto::{
-    BootstrapSnapshot, ImportBatchDto, LibraryRootStatusDto, LibraryStatus, PagedSongs,
-    PlaylistView, RevealResultDto, ScanSnapshot, SongDetailView, SongView,
+    BootstrapSnapshot, ImportBatchDto, LibraryCountsDto, LibraryRootStatusDto, LibraryStatus,
+    PagedSongs, PlaylistView, RevealResultDto, ScanSnapshot, SongDetailView, SongView,
 };
 use echo_desktop::ipc::IpcErrorDto;
 use echo_desktop::player::coordinator::PlaybackCoordinator;
@@ -44,6 +44,11 @@ use tauri::State;
 /// forwarder thread reads the port separately (not via this handle).
 pub struct PlayerHandle {
     pub coordinator: Arc<Mutex<PlaybackCoordinator<Arc<dyn PlayerPort>>>>,
+    /// The view the current playback context was built from ("allSongs" /
+    /// "favorites" / "recent" / "search" / "playlist:<id>") — the 记住当前播
+    /// 放的是哪个歌单 half of local persistence. Written by `play_context`,
+    /// read by the session-saver thread (same shared slot).
+    pub source: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -171,6 +176,13 @@ pub fn recent(services: State<'_, AppServices>) -> Result<Vec<SongView>, IpcErro
     services.recent().map_err(IpcErrorDto::from)
 }
 
+/// Per-view song totals for the navigation sidebar (counts must be readable
+/// before a view is ever opened).
+#[tauri::command]
+pub fn library_counts(services: State<'_, AppServices>) -> Result<LibraryCountsDto, IpcErrorDto> {
+    services.library_counts().map_err(IpcErrorDto::from)
+}
+
 #[tauri::command]
 pub fn playlists(services: State<'_, AppServices>) -> Result<Vec<PlaylistView>, IpcErrorDto> {
     services.playlists().map_err(IpcErrorDto::from)
@@ -203,6 +215,28 @@ pub fn get_lyrics(
 ) -> Result<echo_core::application::detail::SongLyrics, IpcErrorDto> {
     let song = parse_id::<SongId>(&song_id, "songId")?;
     services.get_lyrics(song).map_err(IpcErrorDto::from)
+}
+
+/// The opaque cover-asset keys of a batch of songs (design §115 内置优先).
+///
+/// The library list asks once per rendered window rather than per row: a song
+/// whose audio file carries no embedded artwork is **absent** from the map and
+/// the UI keeps the prototype's palette placeholder for it. Values are the cover
+/// cache's opaque `cv1-…` keys, never a path — the `WebView` composes
+/// `cover://<key>` and the protocol resolves it.
+///
+/// A malformed id is skipped instead of failing the batch, so one stale row on
+/// screen cannot cost every other row its artwork.
+#[tauri::command]
+pub fn song_cover_keys(
+    services: State<'_, AppServices>,
+    song_ids: Vec<String>,
+) -> Result<std::collections::BTreeMap<String, String>, IpcErrorDto> {
+    let ids: Vec<SongId> = song_ids
+        .iter()
+        .filter_map(|id| id.parse::<SongId>().ok())
+        .collect();
+    services.cover_keys(&ids).map_err(IpcErrorDto::from)
 }
 
 #[tauri::command]
@@ -281,12 +315,23 @@ pub fn remove_playlist_song(
 #[tauri::command]
 pub fn delete_song(
     services: State<'_, AppServices>,
+    player: State<'_, PlayerHandle>,
     root: String,
     song: String,
 ) -> Result<String, IpcErrorDto> {
     let root = parse_id::<LibraryRootId>(&root, "root")?;
     let song = parse_id::<SongId>(&song, "song")?;
-    services.delete_song(root, song).map_err(IpcErrorDto::from)
+    // Coordinated delete (task 8.11): if the song is in the playback queue the
+    // coordinator snapshots/removes it under the same lock, stopping playback
+    // first when it is the current entry — never deleting a file the player is
+    // showing as current.
+    echo_desktop::runtime::player::delete_song_coordinated(
+        &player.coordinator,
+        song,
+        |song| services.delete_song(root, song),
+        std::time::Duration::from_secs(3),
+    )
+    .map_err(|reason| IpcErrorDto::from(&echo_core::error::Error::unavailable("delete", &reason)))
 }
 
 #[tauri::command]
@@ -303,16 +348,22 @@ pub fn undo_delete(
 }
 
 #[tauri::command]
-pub fn choose_library_root(
+pub async fn choose_library_root(
     services: State<'_, AppServices>,
 ) -> Result<Option<LibraryRootStatusDto>, IpcErrorDto> {
+    // Tauri executes synchronous commands on the event-loop thread. The real
+    // dialog adapter deliberately uses the plugin's blocking picker, which
+    // requires a worker thread while the native event loop continues pumping
+    // dialog events. Making this command async gives it that worker context.
     services.choose_library_root().map_err(IpcErrorDto::from)
 }
 
 #[tauri::command]
-pub fn choose_and_import_files(
+pub async fn choose_and_import_files(
     services: State<'_, AppServices>,
 ) -> Result<Option<ImportBatchDto>, IpcErrorDto> {
+    // Keep the other blocking native picker off the event loop for the same
+    // reason as `choose_library_root` above.
     services
         .choose_and_import_files()
         .map_err(IpcErrorDto::from)
@@ -346,7 +397,7 @@ pub fn cancel_scan(services: State<'_, AppServices>, root: String) -> bool {
 
 #[tauri::command]
 pub fn set_theme(
-    local_state: State<'_, echo_desktop::platform::local_state::DesktopStateStore>,
+    local_state: State<'_, Arc<echo_desktop::platform::local_state::DesktopStateStore>>,
     theme: String,
 ) -> Result<(), IpcErrorDto> {
     let theme = match theme.as_str() {
@@ -371,7 +422,7 @@ pub fn set_theme(
 
 #[tauri::command]
 pub fn set_close_behavior(
-    local_state: State<'_, echo_desktop::platform::local_state::DesktopStateStore>,
+    local_state: State<'_, Arc<echo_desktop::platform::local_state::DesktopStateStore>>,
     behavior: String,
 ) -> Result<(), IpcErrorDto> {
     let behavior = match behavior.as_str() {
@@ -410,6 +461,7 @@ pub fn play_context(
     state: State<'_, PlayerHandle>,
     songs: Vec<String>,
     selected_index: usize,
+    source: Option<String>,
 ) -> Result<(), IpcErrorDto> {
     let ids: Vec<SongId> = songs
         .iter()
@@ -428,7 +480,51 @@ pub fn play_context(
     };
     let mut coord = state.coordinator.lock().expect("player coordinator lock");
     coord.play_context(&ctx);
+    drop(coord);
+    // Record where this queue came from (哪个歌单) for local persistence.
+    if let Ok(mut slot) = state.source.lock() {
+        *slot = source;
+    }
     Ok(())
+}
+
+/// Cold-start playback restore (task 8.9 + 默认态): a persisted session is
+/// rebuilt paused; with nothing persisted, the first song of 全部歌曲 is
+/// primed into the 播放控制栏 (paused, 列表循环). Returns what happened:
+/// "restored" / "primed" / "empty". The frontend calls this once at boot.
+#[tauri::command]
+pub fn restore_playback_session(
+    services: State<'_, AppServices>,
+    state: State<'_, PlayerHandle>,
+    local_state: State<'_, Arc<echo_desktop::platform::local_state::DesktopStateStore>>,
+) -> Result<String, IpcErrorDto> {
+    let persistence = echo_desktop::player::session::StateStoreSession::new((*local_state).clone());
+    // Default view: 全部歌曲, 最近添加 (the UI's default sort), first page.
+    let default_view_songs = || -> Vec<SongId> {
+        let sort = echo_core::domain::catalog::SongSort {
+            field: echo_core::domain::catalog::SongSortField::AddedAt,
+            direction: echo_core::domain::catalog::SortDirection::Desc,
+        };
+        match services.all_songs(sort, None, 500) {
+            Ok(page) => page
+                .items
+                .iter()
+                .filter_map(|s| s.id.parse::<SongId>().ok())
+                .collect(),
+            Err(_) => Vec::new(),
+        }
+    };
+    let outcome = echo_desktop::runtime::player::restore_or_prime_playback(
+        &state.coordinator,
+        &persistence,
+        default_view_songs,
+    );
+    if outcome == "primed" {
+        if let Ok(mut slot) = state.source.lock() {
+            *slot = Some("allSongs".to_owned());
+        }
+    }
+    Ok(outcome.to_owned())
 }
 
 #[tauri::command]
@@ -470,13 +566,11 @@ pub fn import_current_temporary_file(
                 (t.path.clone(), t.display_name.clone())
             }
             _ => {
-                return Err(IpcErrorDto::from(
-                    &echo_core::error::Error::validation(
-                        echo_core::error::Subject::Other,
-                        "current",
-                        "no temporary item is playing",
-                    ),
-                ));
+                return Err(IpcErrorDto::from(&echo_core::error::Error::validation(
+                    echo_core::error::Subject::Other,
+                    "current",
+                    "no temporary item is playing",
+                )));
             }
         }
     };

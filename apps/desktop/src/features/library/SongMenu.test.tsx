@@ -8,6 +8,10 @@
  * Task 10.6 — "下一首播放" and "加入播放队列": the menu distinguishes play-next
  * (insert after current) from enqueue (append), bound to the SongId that opened
  * the menu.
+ *
+ * The 撤销 affordance is the prototype's toast (`.toast` + `.toast-action`), so
+ * the shell's `<ToastView />` is rendered alongside the menu — exactly as the
+ * real app does with one global toast.
  */
 
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -15,6 +19,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { SongView } from "../../ipc/ipc-types.generated";
 import { SongMenu } from "./SongMenu";
+import { ToastView } from "../../app/ToastView";
 
 function makeSong(overrides: Partial<SongView> = {}): SongView {
   return {
@@ -33,17 +38,20 @@ function makeSong(overrides: Partial<SongView> = {}): SongView {
 
 function renderMenu(song: SongView, overrides: Partial<Parameters<typeof SongMenu>[0]> = {}) {
   return render(
-    <SongMenu
-      song={song}
-      root=""
-      readOnly={false}
-      onClose={overrides.onClose ?? vi.fn()}
-      onPlay={overrides.onPlay ?? vi.fn()}
-      onPlayNext={overrides.onPlayNext}
-      onEnqueue={overrides.onEnqueue}
-      onFavorite={overrides.onFavorite ?? vi.fn()}
-      onRefresh={overrides.onRefresh ?? vi.fn()}
-    />,
+    <>
+      <SongMenu
+        song={song}
+        root=""
+        readOnly={false}
+        onClose={overrides.onClose ?? vi.fn()}
+        onPlay={overrides.onPlay ?? vi.fn()}
+        onPlayNext={overrides.onPlayNext}
+        onEnqueue={overrides.onEnqueue}
+        onFavorite={overrides.onFavorite ?? vi.fn()}
+        onRefresh={overrides.onRefresh ?? vi.fn()}
+      />
+      <ToastView />
+    </>,
   );
 }
 
@@ -63,11 +71,14 @@ describe("SongMenu task 10.8", () => {
   it("opens a real delete confirmation and never marks deleted before a confirm is chosen", () => {
     const onRefresh = vi.fn();
     renderMenu(makeSong(), { onRefresh });
-    fireEvent.click(screen.getByText("删除…"));
+    fireEvent.click(screen.getByText("删除"));
     // Confirmation is shown; the song is NOT deleted yet.
-    expect(screen.getByText("确认删除这首歌曲？（可撤销）")).toBeInTheDocument();
+    expect(screen.getByText("删除「Lacquer Love」？")).toBeInTheDocument();
+    expect(screen.getByText("歌曲会移至回收站。你仍可立即撤销本次操作。")).toBeInTheDocument();
     expect(onRefresh).not.toHaveBeenCalled();
-    expect(screen.queryByTestId("delete-undo")).not.toBeInTheDocument();
+    // The menu is replaced by the confirmation, as the prototype does.
+    expect(screen.queryByRole("menu", { name: "歌曲操作菜单" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("toast")).not.toBeInTheDocument();
   });
 
   it("dispatches delete and shows the 10-second undo affordance on success", async () => {
@@ -76,33 +87,34 @@ describe("SongMenu task 10.8", () => {
     const onRefresh = vi.fn();
     renderMenu(makeSong(), { onRefresh });
 
-    fireEvent.click(screen.getByText("删除…"));
-    fireEvent.click(screen.getByText("确认删除"));
+    fireEvent.click(screen.getByText("删除"));
+    fireEvent.click(screen.getByText("移至回收站"));
 
-    const undo = await screen.findByTestId("delete-undo");
-    expect(undo).toBeInTheDocument();
+    const toast = await screen.findByTestId("toast");
+    expect(toast).toBeInTheDocument();
     expect(screen.getByText(/10 秒内可撤销/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "撤销" })).toBeInTheDocument();
     expect(onRefresh).toHaveBeenCalled();
   });
 
   it("shows an error and keeps the song when delete fails — no fake deletion", async () => {
     renderMenu(makeSong());
     // No mock → the delete command rejects (setup default) → error path.
-    fireEvent.click(screen.getByText("删除…"));
-    fireEvent.click(screen.getByText("确认删除"));
+    fireEvent.click(screen.getByText("删除"));
+    fireEvent.click(screen.getByText("移至回收站"));
 
     expect(await screen.findByText("删除失败，请重试")).toBeInTheDocument();
     // No undo affordance appears for a failed delete.
-    expect(screen.queryByTestId("delete-undo")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("toast")).not.toBeInTheDocument();
   });
 
   it("cancelling the confirmation leaves the song untouched", () => {
     const onRefresh = vi.fn();
     renderMenu(makeSong(), { onRefresh });
-    fireEvent.click(screen.getByText("删除…"));
+    fireEvent.click(screen.getByText("删除"));
     fireEvent.click(screen.getByText("取消"));
     expect(onRefresh).not.toHaveBeenCalled();
-    expect(screen.queryByTestId("delete-undo")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("toast")).not.toBeInTheDocument();
   });
 });
 

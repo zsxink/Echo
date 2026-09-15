@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use crate::application::ports::*;
-use crate::domain::catalog::{OpaqueCursor, Paged, SongSort};
+use crate::domain::catalog::{CatalogCounts, OpaqueCursor, Paged, SongSort, RECENT_VIEW_LIMIT};
 use crate::domain::entities::{
     LibraryRoot, LyricsCandidate, LyricsSource, MediaDiagnostic, PlaylistMember, Song,
     SongAvailability,
@@ -431,8 +431,30 @@ impl CatalogQueryRepository for MemoryDatabase {
             .cloned()
             .collect();
         songs.sort_by(|a, b| b.added_at().cmp(&a.added_at()).then(b.id().cmp(&a.id())));
-        songs.truncate(100);
+        songs.truncate(RECENT_VIEW_LIMIT);
         Ok(songs)
+    }
+
+    fn counts(&self) -> Result<CatalogCounts, Error> {
+        let root = self.active_root()?.map(|record| record.id());
+        let Some(root) = root else {
+            // Zero would assert "the library is empty", which is a different
+            // fact from "there is no library to count".
+            return Err(Error::unavailable("library", "no active root"));
+        };
+        let store = self.lock();
+        let mut available = 0usize;
+        let mut favorites = 0usize;
+        for song in store.songs.values() {
+            if song.root() != root || song.availability() != SongAvailability::Available {
+                continue;
+            }
+            available += 1;
+            if song.favorite() {
+                favorites += 1;
+            }
+        }
+        Ok(CatalogCounts::new(available, favorites))
     }
 
     fn playlist_songs(&self, playlist: PlaylistId) -> Result<Vec<Song>, Error> {

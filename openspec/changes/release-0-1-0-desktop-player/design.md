@@ -7,7 +7,7 @@ Echo 当前仓库只有产品/架构文档和单文件交互原型，没有 Rust
 - `echo-core` 是跨平台共享业务核心，负责资料库、扫描、索引、导入和持久化；不得依赖 Tauri、mpv、React 或桌面系统 API。
 - 音频播放不进入 Core。桌面播放、队列、媒体键、托盘与文件关联属于桌面平台层。
 - SQLite 与用户资料库文件系统是两个不能形成单一原子事务的资源；任何跨资源写操作必须可恢复。
-- 0.1.0 离线运行，只允许一个活动资料库根目录，不初始化任何远端连接器或同步流程。
+- 0.1.0 离线运行，只允许一个活动资料库根目录，不初始化任何远端连接器或同步流程；但本地数据的**存储形状**从首版即为可同步（对象 `revision`、`tombstones`、`sync_outbox`、`sync_state` 与本地变更预写），使二期只补协议逻辑、不返工 schema。
 - UI 以原型为视觉/交互基准，但规格已明确排除模拟同步、全选批量、歌单手动排序和歌曲编辑。
 - 三平台仍是 0.1.0 的发布目标，CI 持续保留 macOS、Windows、Linux 的编译检查；当前工程骨架阶段只以 macOS 本机构建与安装 Gate 作为实现前置条件。Windows/Linux 的原生产物、运行时装载和人工冒烟验证明确递延，完成前不得宣称相应平台已经可发布。
 
@@ -24,7 +24,7 @@ Echo 当前仓库只有产品/架构文档和单文件交互原型，没有 Rust
 
 **Non-Goals:**
 
-- 不提前实现远端 JSON、同步调度、冲突裁决、墓碑/outbox 表或连接器；只保留未来迁移不会破坏的稳定 UUID、覆盖层读取语义和顺序迁移能力。
+- 不提前实现远端 JSON、同步调度、冲突裁决、连接器、上传/下载或同步 UI；0.1.0 只建同步基础数据形状（对象 `revision`、`tombstones`、`sync_outbox`、`sync_state`）并预写本地变更，不产生任何远端载荷。
 - 不把播放器抽象塞进 Core，也不让 Core 保存设备播放实例状态。
 - 不为未来移动端创建尚无调用方的通用 UI/播放器接口；移动端只复用 Core 的领域和应用边界。
 - 不提供插件系统、脚本 API、可配置导入模板或媒体标签写回。
@@ -127,7 +127,13 @@ echo-core/infrastructure ─implements→ echo-core/application ports
 | `scan_runs` / `scan_issues` | 扫描 generation、汇总和损坏/权限/重复文件诊断 |
 | `recorded_play_sessions` | `playback_session_uuid` 唯一、`song_uuid`、记录时间，用于播放次数幂等 |
 
-0.1.0 的 0001 **不创建** `tombstones`、`sync_state`、`sync_outbox`。`docs/DESIGN.md` 早期 Phase 0 清单中的同步预留由本 change 收窄；二期以新的顺序迁移按已批准同步协议创建，避免首版锁定未经行为验证的 schema。
+0.1.0 的 `0001` **不创建** `tombstones`、`sync_state`、`sync_outbox`；同步基础数据由新增的 `0005_sync_foundation.sql` 顺序迁移建立。`0001` 保持已发布的不可改写校验（任务 3.1），append-only 原则不破。
+
+同步基础表与对象 `revision` 覆盖 `songs`、`playlists`、`library_roots`、`song_overrides` 四个可同步候选对象；其中 `songs.revision` 已存在，其余由 `0005` 补 `revision INTEGER NOT NULL DEFAULT 0`。本地逻辑变更（导入、收藏、歌单增删成员、覆盖层、删除）在提交正表的同一事务内预写 `sync_outbox` 行并递增对象 `revision`，使本地数据从首日即为可同步形状；Echo 主动删除写入 `tombstones`。`sync_state` 于本迁移写入 `schema_base = full`，标记二期无须回填历史。
+
+数据形状与行为严格分离：0.1.0 不读也不推 `sync_outbox`、不消费 `tombstones`、不写入 `sync_state` 的连接配置，**不建立远端连接、不引入网络客户端依赖、不提供同步 UI**。二期同步引擎以新顺序迁移按已批准协议落地上传/下载与冲突裁决，只消费既有的 outbox/revision，不改动本迁移建立的表结构。
+
+权衡：提前建表有"锁定未经行为验证 schema"的风险，但同步所需的对象版本号与墓碑是离线优先架构的**结构性前提**，而非协议细节；二期若发现字段不足，仍可按 append-only 追加列（`0005` 本身不改）。相较二期回填历史 revision 与迁移既存删除记录，首版建骨架的返工更小，故采此方案。
 
 关键索引：
 
@@ -435,12 +441,12 @@ Core 使用可匹配错误 enum：`Validation`、`Permission`、`Unavailable`、
 - **[Linux 桌面环境的托盘、MPRIS、DBus 和单实例差异]** → 平台 capability 探测、降级提示、AppImage/deb 首批支持；Snap/Flatpak/rpm 单独验证后再宣称支持。
 - **[窗口恢复到已断开的显示器]** → 显示前验证几何位置，回退到主显示器居中可见区域。
 - **[前端缓存与 Core 真相漂移]** → event 只做失效提示，恢复/重连先拉 snapshot；所有 mutation 最终以 Core 返回和序列号为准。
-- **[二期同步 schema 尚未确定]** → 0.1.0 不预建同步表，只冻结 UUID、覆盖层读取语义和迁移机制；二期通过新 migration 落地已批准协议。
+- **[二期同步协议细节尚未确定]** → 0.1.0 只建同步基础数据形状（对象 `revision`、`tombstones`、`sync_outbox`、`sync_state`）并预写本地变更，固定 UUID、相对路径与迁移机制；上传/下载、连接器与冲突裁决等协议细节二期按已批准协议通过新 migration 落地，不改动本迁移已建立的表结构。
 
 ## Migration Plan
 
 1. **工程落地与平台 Gate**：建立 Rust/前端 workspace、工具链锁定、三平台 CI、最小 Tauri 壳和薄 binary；当前在开始文件写与完整播放器实现前，必须用 macOS 本地最小安装包验证随包 libmpv 装载、single-instance 冷/热唤醒、菜单栏、文件关联和显式退出。Windows/Linux 的托盘、libmpv 装载、文件关联与安装包验证递延至后续平台 Gate；在各自 Gate 通过前不得承诺发布。任一已启用平台阻断时先作范围/降级决策，不能只记录 issue 后继续承诺发布。
-2. **数据库 0001**：实现迁移、Repository、FTS5、测试 fixtures 和 schema/invariant 检查；生成一个空 `echo.db` 并完成向前/失败回滚测试。
+2. **数据库 0001 + 0005 同步基础底座**：实现 `0001` 迁移、Repository、FTS5、测试 fixtures 和 schema/invariant 检查；新增 `0005_sync_foundation` 建立同步基础表与对象 revision；生成一个空 `echo.db` 并完成向前/失败回滚测试。
 3. **只读资料库切片**：实现活动根目录、扫描/监听、元数据/封面/歌词、搜索排序和只读 UI；此阶段不开放任何文件写按钮。
 4. **文件写切片**：加入 import/delete journal、故障注入和启动恢复。只有所有状态点断电测试通过后才在 UI 开启导入/删除。
 5. **播放切片**：接入 PlayerActor、队列、统计、会话恢复、常驻播放栏和歌词；随后接入媒体控制、托盘、文件关联。

@@ -5,7 +5,7 @@
 - 本表逐项覆盖 specs 中的全部 Scenario；稳定 ID 不得复用，标题调整时保留原 ID。
 - 任务 1.3 建立测试 manifest 与执行器。每行指定的 manifest 必须包含正常路径、关键失败路径、fixture、预期结果和自动测试过滤器；Native 行还必须包含平台版本、人工步骤、操作者和证据路径。
 - 每行给出实际验收命令。`pnpm verify:scenario -- --all` 必须比较 specs、此表和测试 manifest 的 ID 集合完全相等，并逐项执行；缺失、重复、无命令、无证据或失败均返回非零。
-- 当前基线：55 个 Requirement，160 个 Scenario。Requirement 计数只用于审计，不再用整行继承代替场景映射。
+- 当前基线：59 个 Requirement，166 个 Scenario。Requirement 计数只用于审计，不再用整行继承代替场景映射。
 
 ## desktop-app-shell
 
@@ -201,6 +201,17 @@
 | SFI-R07-S02 | 单实例唤醒与重复打开 | 冷启动文件关联 | 9.1, 9.2 | Desktop/Native | `tests/native/SFI-R07-S02.md` | `pnpm verify:scenario -- SFI-R07-S02` |
 | SFI-R08-S01 | 跨平台路径与恢复后的幂等性 | 跨平台安全命名 | 5.5, 5.10, 13.3, 13.4 | Fault injection/Native | `tests/native/SFI-R08-S01.md` | `pnpm verify:scenario -- SFI-R08-S01` |
 | SFI-R08-S02 | 跨平台路径与恢复后的幂等性 | 重试导入幂等 | 5.5, 5.10, 13.3, 13.4 | Fault injection/Native | `tests/native/SFI-R08-S02.md` | `pnpm verify:scenario -- SFI-R08-S02` |
+
+## sync-foundation
+
+| Scenario ID | Requirement | Scenario | 任务 | 测试层 | 测试/步骤 manifest | 实际验收命令 |
+|---|---|---|---|---|---|---|
+| SYN-R01-S01 | 同步基础数据形状（schema 骨架） | 数据形状已就绪且离线边界不变 | 3.10, 3.13, 3.14, 13.8 | Core/Gate | `tests/scenarios/SYN-R01-S01.yaml` | `pnpm verify:scenario -- SYN-R01-S01` |
+| SYN-R01-S02 | 同步基础数据形状（schema 骨架） | 对象级 revision 单调递增 | 3.11 | Core | `tests/scenarios/SYN-R01-S02.yaml` | `pnpm verify:scenario -- SYN-R01-S02` |
+| SYN-R02-S01 | 本地变更预写 outbox | 导入与收藏变更是 outbox 条目 | 3.11 | Core | `tests/scenarios/SYN-R02-S01.yaml` | `pnpm verify:scenario -- SYN-R02-S01` |
+| SYN-R02-S02 | 本地变更预写 outbox | 预写不产生可操作同步 | 3.14, 13.8 | Core/Gate | `tests/scenarios/SYN-R02-S02.yaml` | `pnpm verify:scenario -- SYN-R02-S02` |
+| SYN-R03-S01 | 墓碑 | 删除产生墓碑 | 3.12 | Core | `tests/scenarios/SYN-R03-S01.yaml` | `pnpm verify:scenario -- SYN-R03-S01` |
+| SYN-R04-S01 | 可同步载荷不含本机路径 | 本机绝对路径不进入可同步载荷 | 3.13 | Core | `tests/scenarios/SYN-R04-S01.yaml` | `pnpm verify:scenario -- SYN-R04-S01` |
 
 ## 发布审计
 

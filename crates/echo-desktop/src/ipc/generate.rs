@@ -50,6 +50,12 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly isLast: boolean;\n");
     out.push_str("}\n\n");
 
+    out.push_str("export interface LibraryCountsDto {\n");
+    out.push_str("  readonly all: number;\n");
+    out.push_str("  readonly favorites: number;\n");
+    out.push_str("  readonly recent: number;\n");
+    out.push_str("}\n\n");
+
     out.push_str("export interface PlaylistView {\n");
     out.push_str("  readonly id: string;\n");
     out.push_str("  readonly name: string;\n");

@@ -1,0 +1,22 @@
+Echo 0.1.0 native end-to-end evidence (task 13.2)
+date: 2026-09-14T17:23:07.733Z
+host: darwin arm64
+rustc: rustc 1.96.0 (ac68faa20 2026-05-25)
+cargo: cargo 1.96.0 (30a34c682 2026-05-25)
+
+Driven flow (temp library):
+  scan → search → favorite → playlist → import → delete/undo → restart
+
+Assertions (native_e2e.rs):
+  - scan processes the seeded fixtures; search/listing resolve them
+  - favorite is set and survives the restart
+  - playlist created + member added and survives the restart
+  - external file imported via the dialog boundary yields a normal SongId
+  - delete + undo restores the favorited song (favorite + playlist intact)
+  - active root identity is stable across the restart
+  - no duplicate UUID after restart
+
+Suites run: echo-desktop native_e2e (1) · coordinator (player queue/session) · player_smoke (real libmpv)
+
+Note: three-platform data/UUID/queue/preference consistency actuals are the
+13.5 manual matrix; this host (macOS) runs the seam automatically.

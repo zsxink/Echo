@@ -1,0 +1,9 @@
+{
+  "searchP95Ms": 17.4,
+  "viewP95Ms": 3.6,
+  "songs": 50000,
+  "budgets": {
+    "search": 200,
+    "firstScreen": 500
+  }
+}

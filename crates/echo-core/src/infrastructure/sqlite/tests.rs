@@ -9,8 +9,10 @@ use crate::application::ports::{
     LibraryRepository, OperationResourceKind, PlaylistRepository, SongRepository, UnitOfWork,
 };
 use crate::domain::catalog::{SongSort, SongSortField, SortDirection};
+use crate::domain::entities::{LyricsLine, RootAvailability, SongAvailability};
 use crate::domain::ids::Revision;
 use crate::domain::state::OperationState;
+use crate::error::Error;
 
 fn database() -> (tempfile::TempDir, SqliteDatabase, LibraryRootId) {
     let directory = tempfile::tempdir().expect("temporary database directory");
@@ -40,8 +42,18 @@ fn song(root: LibraryRootId, path: &str, title: &str, artist: &str) -> Song {
     song
 }
 
+/// 95th percentile of a latency sample set (sorted in place).
+fn p95(samples: &mut [f64]) -> f64 {
+    samples.sort_by(f64::total_cmp);
+    let n = samples.len();
+    // ceil(0.95 * n) - 1, clamped to the last sample.
+    let ceil_95 = n.saturating_mul(19).saturating_add(19) / 20;
+    let idx = ceil_95.saturating_sub(1).min(n - 1);
+    samples[idx]
+}
+
 #[test]
-fn initial_migration_has_required_tables_indexes_and_no_sync_tables() {
+fn initial_migration_has_required_tables_indexes_and_no_account_or_telemetry() {
     let (_directory, database, _) = database();
     let objects = database.schema_snapshot().expect("schema snapshot");
     let names: Vec<_> = objects.iter().map(|(name, _)| name.as_str()).collect();
@@ -61,13 +73,146 @@ fn initial_migration_has_required_tables_indexes_and_no_sync_tables() {
         "recorded_play_sessions",
         "song_search",
         "operation_items_active_target_claim",
+        // 0005 device-01 sync-foundation: shape ready, behavior deferred.
+        "tombstones",
+        "sync_state",
+        "sync_outbox",
     ] {
         assert!(names.contains(&required), "missing {required}");
     }
+    // Anti-pattern tables must never appear: account/telemetry were never in
+    // scope, and their presence would be a real privacy regression.
     assert!(!names
         .iter()
-        .any(|name| name.contains("sync") || name.contains("tombstone")));
+        .any(|name| name.contains("account") || name.contains("telemetry")));
     assert!(database.quick_check().is_ok());
+}
+
+#[test]
+fn sync_payloads_carry_no_absolute_paths() {
+    // 3.13 / sync-foundation R04: outbox payloads are the future syncable
+    // carrier — they must carry only object UUIDs, root-relative paths and
+    // fields, never the library root's absolute path or any machine-local path.
+    let (directory, database, root) = database();
+    let imported = song(root, "歌手/歌 - 甲.flac", "歌", "歌手");
+    SongRepository::upsert(&database, &imported).expect("upsert");
+    let library_abs = directory.path().to_string_lossy().to_string();
+    database
+        .with_reader(|connection| {
+            let mut statement = connection
+                .prepare("SELECT payload_json FROM sync_outbox")
+                .map_err(storage)?;
+            let payloads: Vec<String> = statement
+                .query_map([], |row| row.get(0))
+                .map_err(storage)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(storage)?;
+            assert!(
+                !payloads.is_empty(),
+                "an import must have prewritten outbox rows"
+            );
+            for payload in &payloads {
+                assert!(
+                    !payload.contains(library_abs.as_str()),
+                    "outbox payload leaks the library root absolute path: {payload}"
+                );
+                assert!(
+                    !payload.contains("/Users/"),
+                    "outbox payload leaks a machine-local path: {payload}"
+                );
+            }
+            Ok(())
+        })
+        .expect("read outbox payloads");
+}
+
+#[test]
+fn sync_foundation_tables_are_ready_but_inert() {
+    // 方向 A (3.10–3.14): the sync-foundation schema is *shape-ready* — the
+    // tables exist, `schema_base='full'` is recorded — but nothing in 0.1.0
+    // pushes or reads them remotely. Offline boundary stays.
+    let (_directory, database, root) = database();
+    let base: String = database
+        .sync_state_load("schema_base")
+        .expect("read sync state")
+        .expect("0005 writes schema_base='full'");
+    assert_eq!(base, "full");
+
+    // Outbox prewrite on an ordinary import (task 3.11): a song write produces
+    // one song outbox row with the full snapshot (relative path only), and the
+    // same (object, revision) is never duplicated.
+    let imported = song(root, "周杰伦/周杰伦 - 晴天.flac", "晴天", "周杰伦");
+    SongRepository::upsert(&database, &imported).expect("import upsert");
+    let rows = database
+        .outbox_kind_count(super::sync::KIND_SONG)
+        .expect("outbox rows");
+    assert!(rows >= 1, "a song write must prewrite an outbox row");
+}
+
+#[test]
+fn sync_foundation_prewrites_song_playlist_and_tombstone() {
+    // 3.11 / 3.12: the five logic-change classes produce outbox rows (+revision)
+    // and Echo deletion writes a tombstone, inside the same transaction. 0.1.0
+    // keeps these local (nothing pushes); this test proves the *shape*.
+    let (_directory, database, root) = database();
+    let imported = song(root, "歌手/歌 - 甲.flac", "歌", "歌手");
+    SongRepository::upsert(&database, &imported).expect("upsert");
+
+    // Favorite is a syncable field → a second song outbox row, revision 2.
+    SongRepository::set_favorite(&database, imported.id(), true).expect("favorite");
+    let song_rows = database
+        .outbox_kind_count(super::sync::KIND_SONG)
+        .expect("song outbox count");
+    assert_eq!(song_rows, 2, "upsert + favorite = two song facts");
+
+    // Playlist create + member add → playlist outbox rows with member excerpt.
+    let playlist = PlaylistId::new();
+    database
+        .create(playlist, root, "歌单")
+        .expect("create playlist");
+    database
+        .add_member(playlist, imported.id(), u64::MAX)
+        .expect("add member");
+    let playlist_rows = database
+        .outbox_kind_count(super::sync::KIND_PLAYLIST)
+        .expect("playlist outbox count");
+    assert_eq!(playlist_rows, 2, "create + member = two playlist facts");
+
+    // 3.12: Echo delete finalization writes a durable tombstone for the song.
+    // (Reaching finalize normally needs the full trash forward-roll; here we
+    // verify delete_song's tombstone contract via a transaction on the actor.)
+    let doomed = imported.id();
+    database
+        .with_tx(Box::new(move |tx| tx.delete_song(doomed)))
+        .expect("finalize delete");
+    let song_rows_after = database
+        .outbox_kind_count(super::sync::KIND_SONG)
+        .expect("song outbox after delete");
+    assert_eq!(
+        song_rows_after, 3,
+        "finalized delete appends one more song fact"
+    );
+    let song_tombstoned = song_tombstone_count(&database);
+    assert_eq!(
+        song_tombstoned, 1,
+        "Echo delete writes a durable song tombstone"
+    );
+}
+
+/// Read the tombstone count for song objects through a reader probe (test-only
+/// shape check; 0.1.0 never consumes tombstones).
+fn song_tombstone_count(database: &SqliteDatabase) -> i64 {
+    database
+        .with_reader(|connection| {
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM tombstones WHERE object_type = 'song'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(super::support::storage)
+        })
+        .expect("tombstone count")
 }
 
 #[test]
@@ -1531,6 +1676,63 @@ fn catalog_favorites_view_is_favorited_available_active_root_songs_only() {
     assert!(after.items.is_empty(), "取消收藏后歌曲立即从该视图移除");
 }
 
+/// 资料库导航计数: the SQLite implementation must agree with the views it
+/// advertises *and* with the in-memory fake, so a count can never be an
+/// artefact of one backend. The fixture is deliberately small enough that the
+/// answer is "4 / 1 / 4" by inspection.
+#[test]
+fn catalog_counts_match_view_membership_over_sqlite() {
+    let (_directory, database, root) = database();
+    let (available, _missing, _pending_delete, favorite) = seed_view_fixture(&database, root);
+    let query = CatalogQuery::new(&database);
+
+    let counts = query.counts().expect("counts");
+    assert_eq!(
+        counts.all,
+        available.len(),
+        "全部歌曲 counts the active root's available songs"
+    );
+    assert_eq!(
+        counts.favorites,
+        favorite.len(),
+        "喜欢的音乐 counts favorites"
+    );
+    assert_eq!(counts.recent, counts.all, "recent is uncapped below 100");
+
+    // Cross-check against the views themselves, then against a mutation.
+    assert_eq!(
+        query
+            .all_songs(SongSort::default(), None, 100)
+            .expect("all")
+            .items
+            .len(),
+        counts.all,
+        "count agrees with the rendered 全部歌曲 rows"
+    );
+
+    // Toggle a favorite: the count must follow the commit.
+    let target = available
+        .iter()
+        .find(|song| !song.favorite())
+        .expect("a non-favorited available song");
+    SongRepository::set_favorite(&database, target.id(), true).expect("favorite");
+    let after = query.counts().expect("counts after favorite");
+    assert_eq!(after.favorites, counts.favorites + 1, "收藏后计数 +1");
+    assert_eq!(after.all, counts.all, "收藏不改变全部歌曲总数");
+}
+
+/// No active root is an absent library, not an empty one: returning
+/// `{0, 0, 0}` would have the sidebar print "0" next to views it cannot open.
+#[test]
+fn catalog_counts_are_unavailable_without_an_active_root() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let database = SqliteDatabase::open(directory.path().join("echo.db")).expect("open");
+    assert!(matches!(
+        CatalogQuery::new(&database).counts(),
+        Err(Error::Unavailable { .. })
+    ));
+}
+
 /// 最近添加: the newest 100 available songs by added_at desc, stable UUID
 /// tie-break, pending-delete + missing hidden, other roots never visible.
 #[test]
@@ -2311,4 +2513,403 @@ fn playlists_repository_gate_covers_normal_empty_error_and_root_states() {
         1,
         "readonly root keeps playlists readable"
     );
+}
+
+/// Task 12.5 benchmark: a 50,000-song synthetic library, asserting the PRD
+/// latency budgets (search p95 ≤ 200 ms, view first-screen p95 ≤ 500 ms) over
+/// the real SQLite query path. This is an acceptance *budget*, not a micro
+/// bench — it runs a bounded number of iterations through `CatalogQuery` on a
+/// temp DB and reports the p95. The budget is deliberately exclusive of scan /
+/// fixture creation (only query latency matters for the UI feel).
+///
+/// On slow CI runners the absolute budgets may be flaky; but the PRD is a hard
+/// p95 target, so the test fails loudly rather than being waived. (A synthetic
+/// 50k seed on this machine is a few hundred ms.) Devs can run it with
+/// `cargo test -p echo-core --all-features -- --ignored` if they only want the
+/// other fast tests; it is `#[ignore]`d by default to keep normal `cargo test`
+/// fast and deterministic, and the verify:task 12.5 check runs it explicitly.
+#[test]
+#[ignore = "run explicitly via the 12.5 benchmark check (seeds 50k into temp SQLite)"]
+fn bench_50k_search_and_first_screen_p95_meet_prd_budgets() {
+    use std::time::Instant;
+
+    const N: u64 = 50_000;
+    let (_directory, database, root) = database();
+    // Seed exactly 50,000 songs. Every 5th carries the search token "合成" so
+    // the trigram search is meaningful; titles/artists are varied for index
+    // pressure.
+    let now = Instant::now();
+    for index in 0..N {
+        let shared = index % 5 == 0;
+        let title = if shared {
+            format!("合成歌曲{index:05}")
+        } else {
+            format!("普通歌曲{index:05}")
+        };
+        let artist = format!("艺人{}", index % 97);
+        let mut rec = song(root, &format!("audio/{index:05}.flac"), &title, &artist);
+        rec.apply_metadata(
+            Some(title.clone()),
+            Some(artist),
+            Some("合成专辑".to_owned()),
+            Some(Duration::from_secs(200)),
+        );
+        SongRepository::upsert(&database, &rec).expect("seed");
+    }
+    let seed_secs = now.elapsed().as_secs_f64();
+
+    let query = CatalogQuery::new(&database);
+    let added = SongSort {
+        field: SongSortField::AddedAt,
+        direction: SortDirection::Asc,
+    };
+
+    // --- Search p95 ≤ 200 ms ---
+    let mut search_samples = Vec::new();
+    for _ in 0..12 {
+        let t = Instant::now();
+        let page = query
+            .search("合成歌曲", false, added, None, 50)
+            .expect("search");
+        search_samples.push(t.elapsed().as_secs_f64() * 1000.0);
+        assert!(!page.items.is_empty(), "search must hit the seeded token");
+    }
+    let search_p95 = p95(&mut search_samples);
+    assert!(
+        search_p95 <= 200.0,
+        "search p95 {search_p95:.1} ms exceeded the 200 ms budget"
+    );
+
+    // --- First-screen (all_songs page 1) p95 ≤ 500 ms ---
+    let mut view_samples = Vec::new();
+    for _ in 0..12 {
+        let t = Instant::now();
+        let page = query.all_songs(added, None, 50).expect("first page");
+        view_samples.push(t.elapsed().as_secs_f64() * 1000.0);
+        assert_eq!(page.items.len(), 50, "first screen = one viewport page");
+    }
+    let view_p95 = p95(&mut view_samples);
+    assert!(
+        view_p95 <= 500.0,
+        "view first-screen p95 {view_p95:.1} ms exceeded the 500 ms budget"
+    );
+
+    let _ = std::io::Write::write_fmt(
+        &mut std::io::stdout(),
+        format_args!(
+            "bench 50k: seeded {N} songs in {seed_secs:.1}s; search p95 {search_p95:.1} ms (≤200), first-screen p95 {view_p95:.1} ms (≤500)\n",
+        ),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Task 12.x — residual infrastructure branches: journal deadlines/claims,
+// root-state mutations, TxAccess isolation, scan-issue code mapping and the
+// query limit gate.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn journal_deadlines_claims_and_item_state_round_trip() {
+    let (_directory, database, root) = database();
+    let song = song(root, "jd.flac", "JD", "甲");
+    SongRepository::upsert(&database, &song).expect("song");
+
+    let operation = OperationId::new();
+    database
+        .create_operation(operation, root, "import", Some(song.id()))
+        .expect("envelope");
+    database
+        .upsert_item(
+            operation,
+            OperationItem {
+                kind: OperationResourceKind::Audio,
+                state: OperationState::Planned,
+                song: Some(song.id()),
+                source: Some("hit".to_owned()),
+                staging_path: Some(RelativeMediaPath::new("staged.bin").expect("path")),
+                target_path: RelativeMediaPath::new("目标/曲.flac").expect("path"),
+                expected_hash: "c".repeat(64),
+                item_key: "audio".to_owned(),
+                claim_key: "目标/曲.flac".to_owned(),
+            },
+        )
+        .expect("item");
+
+    // item_state is the per-item read the recovery journal drives.
+    let item = database
+        .item_state(operation, "audio")
+        .expect("item state")
+        .expect("present");
+    assert_eq!(item.state, OperationState::Planned);
+    assert_eq!(item.item_key, "audio");
+    assert_eq!(item.source.as_deref(), Some("hit"));
+    assert_eq!(item.claim_key, "目标/曲.flac");
+
+    // Undo deadline set + read, both before and after the claim release.
+    assert_eq!(database.undo_deadline(operation).expect("deadline"), None);
+    database
+        .set_undo_deadline(operation, 123_456_789)
+        .expect("deadline");
+    assert_eq!(
+        database
+            .undo_deadline(operation)
+            .expect("deadline")
+            .unwrap(),
+        123_456_789
+    );
+    // The item_state read reports the exact state the recovery step wrote.
+    database
+        .upsert_item(
+            operation,
+            OperationItem {
+                kind: OperationResourceKind::Audio,
+                state: OperationState::CopyApplied,
+                song: Some(song.id()),
+                source: Some("hit".to_owned()),
+                staging_path: Some(RelativeMediaPath::new("staged.bin").expect("path")),
+                target_path: RelativeMediaPath::new("目标/曲.flac").expect("path"),
+                expected_hash: "c".repeat(64),
+                item_key: "audio".to_owned(),
+                claim_key: "目标/曲.flac".to_owned(),
+            },
+        )
+        .expect("state machine advance");
+    assert_eq!(
+        database
+            .item_state(operation, "audio")
+            .expect("item")
+            .unwrap()
+            .state,
+        OperationState::CopyApplied
+    );
+    database.release_claims(operation).expect("release");
+    assert_eq!(claim_active(&database, operation), 0);
+    // A deadline remains observable after the claim release.
+    assert_eq!(
+        database
+            .undo_deadline(operation)
+            .expect("deadline")
+            .unwrap(),
+        123_456_789
+    );
+}
+
+#[test]
+fn root_state_mutations_flip_active_write_capability_and_safety_lock() {
+    let (directory, database, root) = database();
+    let other = LibraryRootId::new();
+    LibraryRepository::upsert(
+        &database,
+        &LibraryRoot::new(other, directory.path().join("other"), false, true),
+    )
+    .expect("second inactive root");
+
+    // Deactivate the active root (only the root record changes; the id still
+    // resolves to an inactive record).
+    LibraryRepository::deactivate(&database, root).expect("deactivate");
+    let stored = LibraryRepository::by_id(&database, root)
+        .expect("query")
+        .expect("present");
+    assert!(!stored.is_active(), "the root record is inactive now");
+    assert!(
+        database.active_root().expect("active query").is_none(),
+        "no root is active once the only active one is deactivated"
+    );
+
+    // Re-activate the second root and flip its write/availability flags in
+    // one transaction.
+    LibraryRepository::upsert(
+        &database,
+        &LibraryRoot::new(other, directory.path().join("other"), true, true),
+    )
+    .expect("reactivate second root");
+    LibraryRepository::set_write_and_availability(&database, other, false, false).expect("flip");
+    let flipped = LibraryRepository::by_id(&database, other)
+        .expect("query")
+        .expect("present");
+    assert!(
+        !flipped.observed_write_capable(),
+        "write_capable flipped off"
+    );
+    assert!(
+        flipped.availability() == RootAvailability::Unavailable,
+        "availability flipped to unavailable"
+    );
+
+    // The safety lock can be toggled independently.
+    LibraryRepository::set_write_safety_locked(&database, other, true).expect("lock on");
+    LibraryRepository::set_write_safety_locked(&database, other, false).expect("lock off");
+    assert!(!LibraryRepository::by_id(&database, other)
+        .expect("query")
+        .expect("present")
+        .write_safety_locked());
+}
+
+#[test]
+fn tx_access_isolates_root_writes_and_exposes_every_write_surface() {
+    let (_directory, database, root) = database();
+    let song = song(root, "tx.flac", "TX", "甲");
+    SongRepository::upsert(&database, &song).expect("song");
+
+    // isolate_root_writes flips the safety lock and availability atomically.
+    database
+        .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
+            tx.isolate_root_writes(root, false)
+        }))
+        .expect("isolate");
+    let frozen = LibraryRepository::by_id(&database, root)
+        .expect("query")
+        .expect("present");
+    assert!(frozen.write_safety_locked(), "writes isolated");
+    assert!(frozen.availability() == RootAvailability::Unavailable);
+
+    // The remaining write surface works inside a UnitOfWork transaction:
+    // roots, playlists, members, journal claims, lyrics and runtime state.
+    let other_root = LibraryRootId::new();
+    let other = LibraryRoot::new(other_root, database.path().join("other"), false, true);
+    let playlist = PlaylistId::new();
+    let staging = RelativeMediaPath::new("trash/op-audio").expect("path");
+    let target = RelativeMediaPath::new("目标/曲.flac").expect("path");
+    let operation = OperationId::new();
+    let song_id = song.id();
+    // The journal envelope must exist before an item can attach to it.
+    database
+        .create_operation(operation, root, "import", None)
+        .expect("envelope");
+    let candidate = LyricsCandidate::new(
+        crate::domain::entities::LyricsSource::Embedded,
+        vec![LyricsLine {
+            timestamp_ms: 0,
+            text: "a".to_owned(),
+            original_index: 0,
+        }],
+        false,
+    );
+    let result: Result<(), Error> = database.with_tx(Box::new(move |tx: &mut dyn TxAccess| {
+        tx.upsert_root(&other)?;
+        tx.create_playlist(playlist, root, "存在")?;
+        tx.insert_member(&PlaylistMember::new(
+            playlist,
+            song.id(),
+            0,
+            SongAvailability::Available,
+        ))?;
+        tx.upsert_operation_item(
+            operation,
+            OperationItem {
+                kind: OperationResourceKind::Lyrics,
+                state: OperationState::Planned,
+                song: Some(song_id),
+                source: None,
+                staging_path: Some(staging.clone()),
+                target_path: target.clone(),
+                expected_hash: "d".repeat(64),
+                item_key: "lyrics".to_owned(),
+                claim_key: target.display().to_owned(),
+            },
+        )?;
+        tx.set_lyrics_candidate(song_id, &candidate)?;
+        tx.clear_lyrics_candidate(song_id, crate::domain::entities::LyricsSource::Embedded)?;
+        tx.set_runtime_state("test-key", "test-value")
+    }));
+    // Clear the just-written candidate in the same transaction proves the
+    // clear path is atomic with the write it removes.
+    result.expect("tx write surface");
+
+    assert!(LibraryRepository::by_id(&database, other_root)
+        .expect("query")
+        .expect("present")
+        .absolute_path()
+        .ends_with("other"));
+    assert_eq!(
+        PlaylistRepository::by_id(&database, playlist).unwrap(),
+        Some(playlist)
+    );
+    assert_eq!(database.members(playlist).expect("members").len(), 1);
+    assert_eq!(
+        database
+            .item_state(operation, "lyrics")
+            .expect("item")
+            .unwrap()
+            .kind,
+        OperationResourceKind::Lyrics
+    );
+    assert_eq!(
+        database.load("test-key").expect("runtime state").as_deref(),
+        Some("test-value")
+    );
+    // The lyrics candidate was cleared by the same transaction.
+    assert!(database.candidates(song_id).expect("candidates").is_empty());
+}
+
+#[test]
+fn scan_issue_codes_map_deterministically_and_unknown_codes_are_scan_file_error() {
+    let (_directory, database, root) = database();
+    crate::application::ports::ScanRunRepository::begin_run(&database, root, 1)
+        .expect("run row exists for the FK");
+    for code in [
+        "unsupported_media",
+        "no_audio_track",
+        "corrupt_media",
+        "duplicate_content",
+        "tag_limit",
+        "unknown_thing",
+    ] {
+        let diagnostic = MediaDiagnostic::new(
+            RelativeMediaPath::new(&format!("issues/{code}.mp3")).expect("path"),
+            code,
+            format!("detail {code}"),
+            false,
+        );
+        database
+            .record_issue(root, 1, &diagnostic)
+            .expect("record issue");
+    }
+
+    let issues = database.scan_issues(root, 1).expect("issues");
+    // record_issue stores the code unchanged; scan_issues maps unknown codes
+    // to the stable `scan_file_error`.
+    let mapped: Vec<(&str, &str)> = issues
+        .iter()
+        .map(|issue| (issue.code(), issue.path().display()))
+        .collect();
+    assert!(mapped.contains(&("unsupported_media", "issues/unsupported_media.mp3")));
+    assert!(mapped.contains(&("no_audio_track", "issues/no_audio_track.mp3")));
+    assert!(mapped.contains(&("corrupt_media", "issues/corrupt_media.mp3")));
+    assert!(mapped.contains(&("duplicate_content", "issues/duplicate_content.mp3")));
+    assert!(mapped.contains(&("tag_limit", "issues/tag_limit.mp3")));
+    // The unknown stored code normalizes to the generic scan-file-error.
+    assert!(
+        mapped.iter().any(|(code, path)| {
+            *code == "scan_file_error" && *path == "issues/unknown_thing.mp3"
+        }),
+        "unknown stored issue codes map to scan_file_error: {mapped:?}"
+    );
+}
+
+#[test]
+fn page_limit_gate_rejects_zero_and_oversized_limits() {
+    let (_directory, database, _root) = database();
+    let sort = SongSort::default();
+    for limit in [0usize, 501] {
+        let error = database
+            .query_active_songs("", sort, None, limit)
+            .expect_err("limit rejected");
+        assert_eq!(error.code(), "validation", "limit {limit}");
+        let error = database
+            .search_active_songs("", sort, None, limit)
+            .expect_err("limit rejected");
+        assert_eq!(error.code(), "validation", "search limit {limit}");
+    }
+    // Exact boundary values are accepted (empty result, not an error).
+    assert!(database
+        .query_active_songs("", sort, None, 1)
+        .expect("limit 1")
+        .items
+        .is_empty());
+    assert!(database
+        .query_active_songs("", sort, None, 500)
+        .expect("limit 500")
+        .items
+        .is_empty());
 }

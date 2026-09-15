@@ -1,46 +1,42 @@
-/* Echo design tokens & three-theme system (task 10.1).
-   Source of truth: docs/prototype/brand-spec.md (§2 palette, §3 type, §4 space,
-   §5 motion, §6 icons). Theme names align with the IPC/interface terminology:
-   `coral` (默认珊瑚玫红), `cobalt` (深钴蓝), `turquoise` (松石绿) — never
-   light/dark. Color values use OKLCh as the brand spec mandates.
+/* Echo design tokens, three-theme system and base reset.
+ *
+ * Verbatim from docs/prototype/echo-desktop-player.html (the visual source of
+ * truth). Do not hand-edit declarations here: change the prototype and re-run
+ * `node scripts/extract-prototype-css.mjs` so the app cannot drift from it.
+ * Theme blocks use the prototype ids: wine (默认珊瑚玫红) / cobalt / green.
+ *
+ * Declaration order is preserved. Imports follow the intended cascade:
+ * tokens → shell → library → player → responsive → app-extras.
+ */
 
-   A theme only changes the accent (music symbols, primary actions, selection /
-   focus); every application background stays pure white. The favorite heart is
-   an independent red semantic (`--danger`) that no theme overrides.
-   */
+/* Echo design tokens
+ * 珊瑚玫红主题色 + 多主题（深钴蓝 / 松石绿），纯白工作表面，紧凑数据控件。
+ * 色值以 OKLch 书写，基准见 docs/prototype/brand-spec.md。
+ */
 
 :root {
-  /* --- Core workspace palette (unchanged across themes) --- */
   --bg: oklch(1 0 89.88);
   --surface: oklch(0.9642 0 89.88);
-  --surface-warm: oklch(0.946 0.016 19.38);
+  --surface-warm: oklch(0.9460 0.0160 19.38);
   --fg: oklch(0.2134 0 89.88);
-  --fg-2: oklch(0.418 0.025 19.38);
-  --muted: oklch(0.51 0.016 19.38);
-  --border: oklch(0.894 0.009 19.38);
-  --border-soft: oklch(0.93 0.005 19.38);
-
-  /* Token identity; the theme blocks below override these. */
-  --accent: oklch(0.6528 0.2219 19.38);
+  --fg-2: oklch(0.4180 0.0250 19.38);
+  --muted: oklch(0.5100 0.0160 19.38);
   --accent-strong: oklch(0.53 0.2219 19.38);
   --accent-strong-hover: color-mix(in oklab, var(--accent-strong), black 8%);
+  --theme-cobalt: oklch(0.3787 0.1953 263.35);
+  --meta: var(--theme-cobalt);
+  --border: oklch(0.8940 0.0090 19.38);
+  --border-soft: oklch(0.9300 0.0050 19.38);
+  --accent: oklch(0.6528 0.2219 19.38);
+  --accent-on: oklch(1 0 89.88);
   --accent-hover: color-mix(in oklab, var(--accent), black 8%);
   --accent-active: color-mix(in oklab, var(--accent), black 14%);
-  --accent-on: oklch(1 0 89.88);
-
-  /* Secondary semantic marker (meta / breadcrumb) — deep cobalt, stable. */
-  --meta: oklch(0.3787 0.1953 263.35);
-
-  /* Status colors (Ant-aligned). --danger drives the favorite heart + destructive ops. */
   --success: #22a06b;
   --warn: #faad14;
   --danger: #cf1322;
-
-  /* --- Typography (brand §3) --- */
   --font-display: "Ant Sans", "Alibaba PuHuiTi", Inter, Arial, sans-serif;
   --font-body: "Ant Sans", "Alibaba PuHuiTi", Inter, Arial, sans-serif;
   --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
-
   --text-xs: 12px;
   --text-sm: 14px;
   --text-base: 16px;
@@ -49,104 +45,77 @@
   --text-2xl: 32px;
   --text-3xl: 48px;
   --text-4xl: 64px;
-
   --leading-body: 1.52;
   --leading-tight: 1.08;
   --tracking-display: -0.018em;
-
-  /* --- Spacing (brand §4): 4/8/12/16/20/24/32/48 --- */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
   --space-5: 20px;
   --space-6: 24px;
-  --space-7: 32px;
-  --space-8: 48px;
-
-  /* --- Radius --- */
+  --space-8: 32px;
+  --space-12: 48px;
+  --section-y-desktop: 96px;
+  --section-y-tablet: 68px;
+  --section-y-phone: 48px;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 16px;
   --radius-pill: 9999px;
-
-  /* --- Elevation --- */
   --elev-flat: none;
   --elev-ring: 0 0 0 1px var(--border);
-  --elev-raised: 0 18px 42px rgba(31, 31, 31, 0.1);
-
-  /* --- Focus ring: accent-strong at 76% alpha --- */
-  --focus-ring: 0 0 0 4px color-mix(in oklab, var(--accent-strong), transparent 24%);
-
-  /* --- Motion (brand §5) --- */
+  --elev-raised: 0 18px 42px rgba(31, 31, 31, 0.10);
+  --focus-ring: 0 0 0 4px color-mix(in oklab, var(--accent-strong), transparent 76%);
   --motion-fast: 140ms;
   --motion-base: 220ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --container-max: 1200px;
+  --container-gutter-desktop: 36px;
+  --container-gutter-tablet: 24px;
+  --container-gutter-phone: 16px;
 }
 
-/* --- Theme: deep cobalt (calm, focused) --- */
 :root[data-echo-theme="cobalt"] {
-  --accent: var(--meta);
-  --accent-strong: oklch(0.31 0.185 263.35);
+  --accent: var(--theme-cobalt);
+  --accent-strong: oklch(0.3100 0.1850 263.35);
   --accent-strong-hover: color-mix(in oklab, var(--accent-strong), black 8%);
-  --surface-warm: oklch(0.946 0.014 263.35);
+  --surface-warm: oklch(0.9460 0.0140 263.35);
 }
 
-/* --- Theme: coral (default) — the :root tokens above already are coral; this
-      keeps the intent explicit and mirrors the brand block. --- */
+:root[data-echo-theme="wine"] {
+  --accent: oklch(0.6528 0.2219 19.38);
+  --surface-warm: oklch(0.9460 0.0160 19.38);
+}
+
+:root[data-echo-theme="green"] {
+  --accent: oklch(0.54 0.1330 159.56);
+  --accent-strong: oklch(0.44 0.1330 159.56);
+  --accent-strong-hover: color-mix(in oklab, var(--accent-strong), black 8%);
+  --surface-warm: oklch(0.9460 0.0180 159.56);
+}
+
+* { box-sizing: border-box; }
+html, body { overflow-x: hidden; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 400 var(--text-sm)/var(--leading-body) var(--font-body); }
+button, input { font: inherit; }
+button { color: inherit; }
+button:focus-visible, input:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* --- App alias: the desktop IPC `Theme` keys are coral / cobalt / turquoise
+ * (crates/echo-desktop/src/platform/local_state.rs). They map 1:1 onto the
+ * prototype's wine / cobalt / green blocks above, so the rendered surface is
+ * identical to the prototype — only the attribute spelling differs, because the
+ * persisted preference predates this alignment. Keep these two declarations in
+ * sync with the wine / green blocks. --- */
 :root[data-echo-theme="coral"] {
   --accent: oklch(0.6528 0.2219 19.38);
-  --surface-warm: oklch(0.946 0.016 19.38);
+  --surface-warm: oklch(0.9460 0.0160 19.38);
 }
 
-/* --- Theme: turquoise (balanced, soothing) --- */
 :root[data-echo-theme="turquoise"] {
-  --accent: oklch(0.54 0.133 159.56);
-  --accent-strong: oklch(0.44 0.133 159.56);
+  --accent: oklch(0.54 0.1330 159.56);
+  --accent-strong: oklch(0.44 0.1330 159.56);
   --accent-strong-hover: color-mix(in oklab, var(--accent-strong), black 8%);
-  --surface-warm: oklch(0.946 0.018 159.56);
-}
-
-html,
-body,
-#root {
-  margin: 0;
-  height: 100%;
-}
-
-body {
-  background: var(--bg);
-  color: var(--fg);
-  font-family: var(--font-body);
-  font-size: var(--text-sm);
-  line-height: var(--leading-body);
-}
-
-/* Constrained motion model: a user who prefers reduced motion gets near-static
-   transitions and single-shot, fast animations (brand §5). */
-@media (prefers-reduced-motion: reduce) {
-  * {
-    animation-duration: 1ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 1ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-
-/* A keyboard-visible, accessible focus ring on every interactive control. */
-:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-/* The record spin + tonearm animation used by the immersive player (brand §7).
-   It is disabled by the reduced-motion block above but the keyframes stay
-   available to `.record-spin` / `.tonearm`. */
-@keyframes echo-record-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  --surface-warm: oklch(0.9460 0.0180 159.56);
 }

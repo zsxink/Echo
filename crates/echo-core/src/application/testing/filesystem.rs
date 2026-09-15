@@ -568,6 +568,24 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
         let _ = root;
         Ok(*self.write_capable.lock().unwrap())
     }
+
+    fn establish_write_capability(&self, root: LibraryRootId) -> Result<(), Error> {
+        // The fake models the real adapter's exclusive-create. `set_write_capable`
+        // is the "does the OS permit writes" knob: a root set write-incapable
+        // means the OS refused it, so establishing the marker must FAIL exactly
+        // like the real `ensure_dir` on a read-only dir — never grant permission
+        // the OS denied. A root that was writable (or default) stays writable
+        // after the idempotent establish.
+        let _ = root;
+        if !*self.write_capable.lock().unwrap() {
+            return Err(Error::io(
+                "establish write capability",
+                std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+                "root",
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// Component-wise check that `path` resolves inside `root` (never a string
