@@ -61,6 +61,11 @@ env/
 # run is interrupted; it is never a source file.
 vitest.config.ts.timestamp-*
 
+# Verify gate evidence: written at run time by scripts/verify/checks/task-13.9.mjs
+# (scenario report) and check-native-attestation.mjs (platform attestation logs).
+# Run-time artifacts, never checked in.
+artifacts/
+
 # Rust / Cargo
 /target/
 **/target/
