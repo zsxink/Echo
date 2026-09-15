@@ -965,10 +965,7 @@ impl<B: Backend> ActorLoop<B> {
                 // Already being at the target state is a no-op, not a rewiring.
                 if self.muted != mute {
                     let restore = !mute && self.last_nonzero_volume > 0.0;
-                    if self
-                        .backend
-                        .write_property(BackendProperty::Mute(mute))
-                    {
+                    if self.backend.write_property(BackendProperty::Mute(mute)) {
                         self.muted = mute;
                         if restore {
                             // Unmute back to the remembered non-zero volume.

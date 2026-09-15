@@ -348,9 +348,7 @@ fn cover_protocol_handler<R: tauri::Runtime>(
                     response = response.header("Access-Control-Allow-Origin", origin);
                 }
             }
-            response
-                .body(bytes)
-                .unwrap_or_default()
+            response.body(bytes).unwrap_or_default()
         }
         // Unknown/malformed key for the store, or a transient storage miss —
         // same 404 as any missing asset.
@@ -366,32 +364,6 @@ fn cover_canvas_origin_allowed(origin: &str) -> bool {
         origin,
         "tauri://localhost" | "http://tauri.localhost" | "https://tauri.localhost"
     ) || (cfg!(debug_assertions) && origin == "http://localhost:1420")
-}
-
-#[cfg(test)]
-mod cover_canvas_tests {
-    #[test]
-    fn only_echo_renderer_origins_can_read_cover_pixels() {
-        for origin in [
-            "tauri://localhost",
-            "http://tauri.localhost",
-            "https://tauri.localhost",
-        ] {
-            assert!(super::cover_canvas_origin_allowed(origin));
-        }
-        for origin in [
-            "null",
-            "https://example.com",
-            "http://localhost:1421",
-            "http://tauri.localhost.evil.com",
-        ] {
-            assert!(!super::cover_canvas_origin_allowed(origin));
-        }
-        assert_eq!(
-            super::cover_canvas_origin_allowed("http://localhost:1420"),
-            cfg!(debug_assertions)
-        );
-    }
 }
 
 /// The media type of an embedded cover, derived from the bytes themselves.
@@ -581,4 +553,33 @@ fn main() {
             }
         }
     });
+}
+
+// Kept last: `clippy::items_after_test_module` requires a `#[cfg(test)]` module
+// to be the final item in the file, and `cover_media_type`/`main` below read
+// better next to the protocol handler they belong to.
+#[cfg(test)]
+mod cover_canvas_tests {
+    #[test]
+    fn only_echo_renderer_origins_can_read_cover_pixels() {
+        for origin in [
+            "tauri://localhost",
+            "http://tauri.localhost",
+            "https://tauri.localhost",
+        ] {
+            assert!(super::cover_canvas_origin_allowed(origin));
+        }
+        for origin in [
+            "null",
+            "https://example.com",
+            "http://localhost:1421",
+            "http://tauri.localhost.evil.com",
+        ] {
+            assert!(!super::cover_canvas_origin_allowed(origin));
+        }
+        assert_eq!(
+            super::cover_canvas_origin_allowed("http://localhost:1420"),
+            cfg!(debug_assertions)
+        );
+    }
 }

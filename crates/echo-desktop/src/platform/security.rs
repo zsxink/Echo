@@ -171,9 +171,23 @@ const PRIVILEGED_PREFIXES: &[&str] = &[
 ];
 
 /// The minimal permission set for the main window: the core default (window
-/// introspection getters) and nothing else. New commands get explicit
-/// `allow-<command>` entries when their tasks wire them; never a broad family.
-pub const MAIN_WINDOW_PERMISSIONS: &[&str] = &["core:default", "core:window:default"];
+/// introspection getters) plus the single command the window actually asks
+/// for. New commands get explicit `allow-<command>` entries when their tasks
+/// wire them; never a broad family.
+///
+/// `core:window:allow-start-dragging` is the one such entry. The window runs
+/// with `titleBarStyle: Overlay` + `hiddenTitle: true` on macOS, so the native
+/// titlebar that would otherwise drag it does not exist, and the frontend's
+/// drag strip (`.titlebar-drag`, driven by `data-tauri-drag-region`) asks the
+/// window to drag itself. It grants a single window command — no path, no
+/// filesystem, no process, no network surface — so task 7.7's requirement (no
+/// network connect, no arbitrary file read, no arbitrary opener/shell/SQL)
+/// still holds.
+pub const MAIN_WINDOW_PERMISSIONS: &[&str] = &[
+    "core:default",
+    "core:window:default",
+    "core:window:allow-start-dragging",
+];
 
 /// Validates a capability's granted-permission list.
 pub struct CapabilityPolicy;
@@ -221,7 +235,8 @@ mod tests {
     fn csp_never_opens_a_remote_or_network_source() {
         for directive_fragment in ["*", "http:", "https:", "ws:", "wss:", "blob:"] {
             assert!(
-                !CSP.replace("http://cover.localhost", "").contains(directive_fragment),
+                !CSP.replace("http://cover.localhost", "")
+                    .contains(directive_fragment),
                 "CSP must not contain the remote source {directive_fragment:?}: {CSP}"
             );
         }
