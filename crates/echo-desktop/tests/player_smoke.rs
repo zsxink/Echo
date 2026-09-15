@@ -288,6 +288,102 @@ fn guaranteed_formats_each_load_via_real_libmpv() {
     );
 }
 
+/// 冷启动「默认入栏」之后必须真的能出声（真 libmpv 回归）。
+///
+/// mpv 的 `pause` 是**粘性**的：官方手册在 Per-File Options 明确写着
+/// "if any option is changed at runtime (via input commands), they are not reset
+/// when a new file is played"。所以一次 [`PlayerCommand::LoadLibrarySongPaused`]
+/// 写下的 `pause=yes` 会跟着**后续每一个** `loadfile` 一起走 —— 用户点歌
+/// （`LoadLibrarySong`）拿到一个 `Playing` 快照，进度条还靠前端插值往前爬，扬声器
+/// 却一直是哑的；只有播放控制栏那条路径会写 `pause`，于是"只有点那个按钮才出声"。
+///
+/// 这条断言两个用户可见的事实，任一不成立都会红：
+/// 1. prime（暂停加载）之后快照必须是 `Paused` —— 否则 UI 画出暂停图标、进度条
+///    自己往前跑，却没有任何声音；
+/// 2. 点歌（播放意图的加载）之后 mpv 的时钟必须真的开始走 —— 暂停标志若还粘着，
+///    `time-pos` 会永远停在 0（既不走也不会到 EOF）。
+#[test]
+fn a_play_load_after_a_primed_paused_load_really_starts_the_clock() {
+    use echo_core::domain::ids::{PlaybackSessionId, SongId};
+    use echo_core::domain::state::PlaybackState;
+    use echo_desktop::player::actor::{PlayerActor, SongResolver};
+
+    set_null_audio_output();
+    let Some(libmpv) = vendored_libmpv() else {
+        eprintln!("libmpv not vendored; skipping primed-load smoke.");
+        return;
+    };
+    if !preflight_or_none(&libmpv) {
+        return;
+    }
+    let Some(root) = fixtures_root() else {
+        return;
+    };
+    let fixture = root.join("tone-short.flac");
+    assert!(fixture.exists(), "guaranteed fixture missing: {fixture:?}");
+
+    let resolved = fixture.clone();
+    let resolver: SongResolver = Arc::new(move |_| Ok(resolved.clone()));
+    let snapshot = Arc::new(RwLock::new(PlayerSnapshot::default()));
+    let mut actor = PlayerActor::spawn_mpv(&libmpv, snapshot, Some(resolver))
+        .expect("preflight passed so spawn_mpv succeeds");
+
+    // --- 1. 冷启动 prime：默认入栏，不得发声 -----------------------------
+    let _ = actor.send(PlayerCommand::LoadLibrarySongPaused {
+        song_id: SongId::new(),
+        session_id: PlaybackSessionId::new(),
+    });
+    let primed = wait_for(&actor, |s| s.state == PlaybackState::Paused);
+    assert_eq!(
+        primed.state,
+        PlaybackState::Paused,
+        "冷启动 prime 之后快照必须是 Paused：报成 Playing 会让 UI 显示暂停图标、\
+         进度条自己往前爬，实际上一声不出 [state={:?} position={:?} duration={:?}]",
+        primed.state,
+        primed.position,
+        primed.duration,
+    );
+    // 时钟必须冻在 0：这是「不自动发声」在快照上的可观测代理。
+    let frozen_a = wait_for(&actor, |s| s.position.is_some());
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let frozen_b = actor.snapshot();
+    assert_eq!(
+        (frozen_a.position, frozen_b.position),
+        (Some(0.0), Some(0.0)),
+        "prime 的暂停态必须让 mpv 时钟停在 0 [a={:?} b={:?}]",
+        frozen_a.position,
+        frozen_b.position,
+    );
+
+    // --- 2. 用户点歌：播放意图的加载必须真的开始走时钟 --------------------
+    let _ = actor.send(PlayerCommand::LoadLibrarySong {
+        song_id: SongId::new(),
+        session_id: PlaybackSessionId::new(),
+    });
+    let playing = wait_for(&actor, |s| s.state == PlaybackState::Playing);
+    assert_eq!(
+        playing.state,
+        PlaybackState::Playing,
+        "点歌必须进入 Playing [state={:?}]",
+        playing.state
+    );
+    // 1 秒的 fixture：position 在推进，或者已经自然播到 EOF。停在 0 且不到 EOF
+    // 只可能是 mpv 还粘着 prime 那次写入的 `pause=yes`。
+    let advanced = wait_for(&actor, |s| {
+        s.position.unwrap_or(0.0) > 0.0 || s.state == PlaybackState::Ended
+    });
+    assert!(
+        advanced.position.unwrap_or(0.0) > 0.0 || advanced.state == PlaybackState::Ended,
+        "点歌之后 mpv 的时钟没有走：载入路径没有把「播放」意图写回 pause，\
+         prime 留下的 pause=yes 粘住了后续每一次 loadfile \
+         [state={:?} position={:?}]",
+        advanced.state,
+        advanced.position,
+    );
+
+    actor.shutdown();
+}
+
 /// A second smoke asserting track-change + clean resource release: loading two
 /// consecutive tracks and shutting down must not panic or leak the actor thread.
 #[test]

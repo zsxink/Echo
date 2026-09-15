@@ -526,6 +526,25 @@ pub unsafe fn read_double(data: *const c_void) -> Option<f64> {
     Some(unsafe { *(data as *const c_double) })
 }
 
+/// Read a `FLAG`-format property value as a `0.0`/`1.0` double.
+///
+/// `mute` and `pause` are flags natively. mpv *accepts* observing them as
+/// `DOUBLE`, but every notification then carries `MPV_FORMAT_NONE` (verified
+/// against the vendored libmpv) — subscribing to the flag format is the only
+/// way the value actually arrives, and a flag's payload is a C `int`.
+///
+/// # Safety
+///
+/// `data` must be null or a valid `*const c_int` matching the declared
+/// property format (the observer must not misreport the format).
+pub unsafe fn read_flag(data: *const c_void) -> Option<f64> {
+    if data.is_null() {
+        return None;
+    }
+    // SAFETY: caller guarantees a valid `int` value per the property format.
+    Some(f64::from(unsafe { *(data as *const std::os::raw::c_int) }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

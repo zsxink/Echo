@@ -22,7 +22,7 @@ use echo_core::error::Error;
 use crate::player::actor::{FfiSpawnError, PlayerActor, SongResolver};
 use crate::player::coordinator::PlaybackCoordinator;
 use crate::player::fake::FakePlayer;
-use crate::player::port::{PlayMode, PlayerPort, PlayerSnapshot};
+use crate::player::port::{PlayMode, PlayerPort, PlayerSnapshot, VOLUME_EPSILON};
 use crate::player::queue::{QueueItem, ViewContext};
 use crate::player::session::{rebuild_queue, snapshot_queue, SessionPersistence};
 
@@ -475,8 +475,16 @@ pub fn spawn_forwarder(
 /// Write policy (throttled, never hot):
 /// - every **state transition** saves once (a pause/stop/track change is the
 ///   moment that matters for a crash);
+/// - a **volume / mute** change saves once its burst settles (see
+///   `AUDIO_SETTLE`), *without* waiting for `min_interval`;
 /// - while `Playing`, at most one save per `min_interval` (position progress
 ///   does not justify an fsync per 10 Hz snapshot).
+///
+/// The audio case is why the loop wakes on a timeout instead of blocking on the
+/// mailbox: 暂停后调音量 (or 静音) leaves *no* follow-up snapshot, so a policy of
+/// "save on the next snapshot, throttled" never wrote it — the stored session
+/// kept the pre-adjustment volume / `muted:true` and replayed that stale value
+/// on the next start.
 ///
 /// A save failure is swallowed (logged only) — persistence must never take
 /// playback down with it.
@@ -487,36 +495,93 @@ pub fn spawn_session_saver(
     source: Arc<std::sync::Mutex<Option<String>>>,
     min_interval: std::time::Duration,
 ) {
+    /// How long a volume/mute burst must stay quiet before it is written.
+    /// Dragging the slider publishes ~10 snapshots per second; waiting out that
+    /// gap collapses the whole drag into one save, while the value the user let
+    /// go on is still the one that lands.
+    const AUDIO_SETTLE: std::time::Duration = std::time::Duration::from_millis(250);
+    /// The save loop's wake-up period — short enough that a settled audio
+    /// change is flushed promptly after the last snapshot.
+    const SAVER_TICK: std::time::Duration = std::time::Duration::from_millis(100);
+
     let rx = port.subscribe_snapshots();
     std::thread::Builder::new()
         .name("echo-session-saver".into())
         .spawn(move || {
             let mut last_state = PlaybackState::Stopped;
+            let mut last_audio: Option<(f64, bool)> = None;
             let mut last_save = std::time::Instant::now() - min_interval;
-            while let Ok(raw) = rx.recv() {
-                let state_changed = raw.state != last_state;
-                let position_due =
-                    raw.state == PlaybackState::Playing && last_save.elapsed() >= min_interval;
-                last_state = raw.state;
-                if !state_changed && !position_due {
-                    continue;
-                }
-                last_save = std::time::Instant::now();
+            // An audio change observed but not yet written, waiting out its
+            // settle window. It carries the snapshot to write, because by the
+            // time the window closes no further snapshot has arrived.
+            let mut pending_audio: Option<(PlayerSnapshot, std::time::Instant)> = None;
+
+            let save = |snap: &PlayerSnapshot| {
                 let session = {
-                    let coord = match coordinator.lock() {
-                        Ok(c) => c,
-                        Err(_) => continue,
+                    let Ok(coord) = coordinator.lock() else {
+                        return;
                     };
                     snapshot_queue(
                         coord.queue(),
                         coord.mode(),
-                        raw.volume,
-                        raw.muted,
-                        raw.position,
+                        snap.volume,
+                        snap.muted,
+                        snap.position,
                         source.lock().ok().and_then(|s| s.clone()).as_deref(),
                     )
                 };
                 let _ = persistence.save(Some(&session));
+            };
+
+            loop {
+                match rx.recv_timeout(SAVER_TICK) {
+                    Ok(raw) => {
+                        let state_changed = raw.state != last_state;
+                        let audio_changed = last_audio.is_some_and(|(volume, muted)| {
+                            (raw.volume - volume).abs() > VOLUME_EPSILON || raw.muted != muted
+                        });
+                        last_state = raw.state;
+                        last_audio = Some((raw.volume, raw.muted));
+
+                        if audio_changed {
+                            pending_audio = Some((raw.clone(), std::time::Instant::now()));
+                        }
+                        if state_changed {
+                            // A transition (暂停 / 停止 / 换曲) is the moment a
+                            // crash would lose the most: write at once. It also
+                            // supersedes any audio change still settling.
+                            save(&raw);
+                            last_save = std::time::Instant::now();
+                            pending_audio = None;
+                            continue;
+                        }
+                        if raw.state == PlaybackState::Playing
+                            && last_save.elapsed() >= min_interval
+                        {
+                            save(&raw);
+                            last_save = std::time::Instant::now();
+                            pending_audio = None;
+                            continue;
+                        }
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        // The player is gone (app quitting): flush a settled
+                        // audio change so the last thing the user did survives.
+                        if let Some((snap, _)) = &pending_audio {
+                            save(snap);
+                        }
+                        break;
+                    }
+                }
+
+                if let Some((snap, changed_at)) = &pending_audio {
+                    if changed_at.elapsed() >= AUDIO_SETTLE {
+                        save(snap);
+                        last_save = std::time::Instant::now();
+                        pending_audio = None;
+                    }
+                }
             }
         })
         .expect("spawn session saver thread");
@@ -619,6 +684,7 @@ pub fn spawn_auto_advance(
 mod tests {
     use super::*;
     use crate::player::fake::FakePlayer;
+    use crate::player::port::PlayerCommand;
     use crate::player::queue::{QueueEntry, QueueItem, ViewContext};
     use crate::player::recording::PlaybackRecorder;
     use crate::player::session::PlaybackSession;
@@ -1184,6 +1250,147 @@ mod tests {
                 .iter()
                 .any(|e| e.item.song_id() == Some(song)),
             "enqueued song should appear in the queue entries"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // 会话落盘：暂停态下的音量 / 静音也必须落盘（用户报的"改了音量没保存"）
+    // ------------------------------------------------------------------
+
+    /// A [`SessionPersistence`] double that records every write, so a test can
+    /// assert both *what* was stored and *how often* the store was touched.
+    struct CountingSession(StdMutex<(usize, Option<PlaybackSession>)>);
+
+    impl CountingSession {
+        fn new() -> Self {
+            Self(StdMutex::new((0, None)))
+        }
+        fn saves(&self) -> usize {
+            self.0.lock().expect("counting session lock").0
+        }
+        fn last(&self) -> Option<PlaybackSession> {
+            self.0.lock().expect("counting session lock").1.clone()
+        }
+    }
+
+    impl SessionPersistence for CountingSession {
+        fn save(&self, session: Option<&PlaybackSession>) -> Result<(), String> {
+            let mut guard = self.0.lock().expect("counting session lock");
+            guard.0 += 1;
+            guard.1 = session.cloned();
+            Ok(())
+        }
+        fn load(&self) -> Result<Option<PlaybackSession>, String> {
+            Ok(self.0.lock().expect("counting session lock").1.clone())
+        }
+    }
+
+    /// Drive a fake player from `Stopped` to **`Paused` at `volume`** with the
+    /// saver already attached, and hand back the port plus the recording store.
+    ///
+    /// Order matters: the saver subscribes to the *live* stream, so it must be
+    /// attached before anything is published. The position throttle is set to
+    /// an hour, so once the transport settles the only thing that can make the
+    /// saver write is the audio change itself — which is what is under test.
+    fn paused_fake_with_saver(volume: f64) -> (Arc<dyn PlayerPort>, Arc<CountingSession>) {
+        let controller = PlayerController::over_fake(FakePlayer::new());
+        let store = Arc::new(CountingSession::new());
+        spawn_session_saver(
+            controller.port.clone(),
+            controller.coordinator.clone(),
+            store.clone(),
+            Arc::new(StdMutex::new(None)),
+            std::time::Duration::from_secs(3600),
+        );
+        controller
+            .port
+            .send(PlayerCommand::SetVolume(volume))
+            .expect("volume");
+        controller
+            .port
+            .send(PlayerCommand::LoadTemporary {
+                display_name: "a.flac".into(),
+                path: std::path::PathBuf::from("/music/a.flac"),
+                session_id: PlaybackSessionId::new(),
+            })
+            .expect("load");
+        controller.port.send(PlayerCommand::Pause).expect("pause");
+        (controller.port, store)
+    }
+
+    /// Wait (bounded) until `cond` holds, returning whether it did.
+    fn wait_until(mut cond: impl FnMut() -> bool, budget: std::time::Duration) -> bool {
+        let deadline = std::time::Instant::now() + budget;
+        while std::time::Instant::now() < deadline {
+            if cond() {
+                return true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        cond()
+    }
+
+    #[test]
+    fn a_volume_change_while_paused_reaches_the_store() {
+        // 用户暂停后调音量：暂停态下没有后续快照，位置推进的节流也够不着，
+        // 所以旧策略（"下一个快照才写，且受 min_interval 约束"）永远写不进去
+        // —— 存下的还是调整前的音量 / `muted:true`，下次启动被原样重放。
+        let (port, store) = paused_fake_with_saver(0.5);
+        // Two transitions (Playing, then Paused) are each written at once —
+        // that part always worked. Wait for both so the assertion below is
+        // about the volume change alone.
+        assert!(
+            wait_until(|| store.saves() >= 2, std::time::Duration::from_secs(3)),
+            "the transport transitions must be saved [saves={}]",
+            store.saves()
+        );
+        let after_transition = store.saves();
+
+        port.send(PlayerCommand::SetVolume(0.8))
+            .expect("set volume");
+
+        // The write must happen once the burst settles (~250 ms) with no
+        // further transition and no position progress to carry it.
+        assert!(
+            wait_until(
+                || store.saves() > after_transition,
+                std::time::Duration::from_secs(3)
+            ),
+            "暂停态下调的音量必须落盘，否则下次启动重放的是旧音量"
+        );
+        assert_eq!(
+            store.last().expect("a session was stored").volume,
+            0.8,
+            "落盘的必须是最新的音量"
+        );
+    }
+
+    #[test]
+    fn a_slider_drag_is_collapsed_into_one_save_of_its_final_value() {
+        // Dragging the volume slider publishes a burst of snapshots. Writing
+        // each one would fsync ~10×/second; the settle window collapses the
+        // burst into a single save — and it must be the value the user let go
+        // on, not one from the middle of the drag.
+        let (port, store) = paused_fake_with_saver(0.5);
+        assert!(
+            wait_until(|| store.saves() >= 2, std::time::Duration::from_secs(3)),
+            "the transport transitions must be saved first"
+        );
+
+        for step in [0.6, 0.7, 0.75, 0.9] {
+            port.send(PlayerCommand::SetVolume(step))
+                .expect("drag step");
+            // Faster than the settle window: one continuous drag.
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+
+        assert!(
+            wait_until(
+                || store.last().map(|s| s.volume) == Some(0.9),
+                std::time::Duration::from_secs(3)
+            ),
+            "落盘的必须是松手时的最终音量 [stored={:?}]",
+            store.last().map(|s| s.volume)
         );
     }
 }

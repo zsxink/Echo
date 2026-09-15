@@ -104,6 +104,14 @@ pub enum PlayerCommand {
 // PlayerSnapshot
 // ---------------------------------------------------------------------------
 
+/// Tolerance for comparing two volume values.
+///
+/// A volume makes a round trip through mpv (`0.0–1.0` here, `0.0–100.0` in
+/// mpv) before it is observed back, so the same loudness can come back a few
+/// ULPs off. Comparing exactly would make the actor (and the session saver)
+/// treat a no-op as a change and publish / fsync on every snapshot tick.
+pub const VOLUME_EPSILON: f64 = 1e-6;
+
 /// Immutable snapshot of the player's current state, published to the
 /// coordinator and UI after every meaningful state change.
 ///

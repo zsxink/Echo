@@ -30,7 +30,9 @@ use echo_core::domain::state::PlaybackState;
 use echo_core::error::Error;
 
 use super::ffi;
-use super::port::{PlayMode, PlayerCommand, PlayerError, PlayerPort, PlayerSnapshot};
+use super::port::{
+    PlayMode, PlayerCommand, PlayerError, PlayerPort, PlayerSnapshot, VOLUME_EPSILON,
+};
 
 /// Capacity of the bounded command channel.
 pub const COMMAND_CAPACITY: usize = 64;
@@ -123,10 +125,29 @@ fn extra_options() -> Vec<(&'static str, &'static str)> {
 /// snapshots, so a silent subscription reads as a frozen, "dead" bar).
 ///
 /// They are subscribed on every [`BackendEvent::FileLoaded`] rather than once
-/// at handle creation because mpv refuses to observe a property that does not
-/// exist yet: while the player is idle `time-pos`/`duration` are *unavailable*
-/// and an early `mpv_observe_property` fails, silently subscribing to nothing.
-const OBSERVED_PROPERTIES: &[&str] = &["time-pos", "duration"];
+/// at handle creation because while the player is idle these properties are
+/// *unavailable*: `mpv_observe_property` accepts the subscription but every
+/// notification then carries `MPV_FORMAT_NONE` (no value) — subscribing to
+/// nothing. Measured against the vendored libmpv, not assumed.
+///
+/// The audio controls are observed as well, and that is what makes the
+/// snapshot's `volume` / `muted` / transport state **mpv's own values** rather
+/// than the actor's guesses. Before, the actor's `PlayerCommand` handlers
+/// flipped their private fields and published them; any write mpv did not
+/// honour (or any mpv-side change) left the two diverged — UI said 未静音 while
+/// the output was muted, said `Playing` while the clock sat at 0.
+///
+/// **Each property carries the format it must be observed with.** `mute` and
+/// `pause` are `FLAG`s natively: asking for `DOUBLE` is accepted (returns ok)
+/// but every notification then arrives as `NONE`, i.e. it silently subscribes
+/// to nothing. `volume` / `time-pos` / `duration` are `DOUBLE`s.
+const OBSERVED_PROPERTIES: &[(&str, i32)] = &[
+    ("time-pos", ffi::format_::DOUBLE),
+    ("duration", ffi::format_::DOUBLE),
+    ("volume", ffi::format_::DOUBLE),
+    ("mute", ffi::format_::FLAG),
+    ("pause", ffi::format_::FLAG),
+];
 
 /// A normalized event the actor loop consumes from any backend. The real mpv
 /// backend and the test backend both produce these, so tests verify the loop's
@@ -167,11 +188,12 @@ trait Backend {
     /// pump so the command loop is never blocked on the backend.
     fn queue_load(&mut self, path: &Path);
 
-    /// Subscribe to the continuous properties the UI renders from
-    /// ([`OBSERVED_PROPERTIES`]). Called by the loop on every `FileLoaded` —
-    /// the first moment those properties exist — and idempotent (`mpv` replaces
-    /// the previous observation for the same name). A backend that subscribes
-    /// to nothing starves every snapshot-driven surface of live values.
+    /// Subscribe to the properties the UI renders from and the audio controls
+    /// the snapshot reports ([`OBSERVED_PROPERTIES`], each with its own
+    /// format). Called by the loop on every `FileLoaded` — the first moment the
+    /// per-file properties exist — and idempotent (`mpv` replaces the previous
+    /// observation for the same name). A backend that subscribes to nothing
+    /// starves every snapshot-driven surface of live values.
     fn observe_continuous(&mut self);
 
     /// Write a runtime property (seek / volume / mute / pause). Returns `true`
@@ -275,16 +297,23 @@ impl MpvBackend {
                 // SAFETY: `prop` valid this iteration.
                 let name = unsafe { ffi::read_c_str((*prop).name) };
                 let fmt = unsafe { (*prop).format };
-                if fmt == ffi::format_::DOUBLE {
-                    let value_ptr = unsafe { (*prop).data };
-                    // SAFETY: we declared DOUBLE for time-pos/duration.
-                    if let Some(value) = unsafe { ffi::read_double(value_ptr) } {
-                        if let Some(name) = name {
-                            return Some(BackendEvent::PropertyChanged { name, value });
-                        }
+                let value_ptr = unsafe { (*prop).data };
+                // The payload carries the property's *native* format, which is
+                // exactly why each property is observed with its own format: a
+                // FLAG requested as DOUBLE yields NONE on every notification.
+                // NONE means "unavailable right now" (no file loaded yet) and is
+                // dropped rather than guessed.
+                let value = match fmt {
+                    ffi::format_::DOUBLE => unsafe { ffi::read_double(value_ptr) },
+                    ffi::format_::FLAG => unsafe { ffi::read_flag(value_ptr) },
+                    _ => None,
+                };
+                match (name, value) {
+                    (Some(name), Some(value)) => {
+                        Some(BackendEvent::PropertyChanged { name, value })
                     }
+                    _ => None,
                 }
-                None
             }
             _ => None,
         }
@@ -309,17 +338,25 @@ impl Backend for MpvBackend {
         // `mpv_observe_property` subscription the actor never received a single
         // `time-pos`/`duration` change, so the UI snapshot's position/duration
         // stayed `None` even though the file was audibly playing.
-        for name in OBSERVED_PROPERTIES {
+        //
+        // The same call is also what keeps `volume` / `muted` / transport state
+        // honest: those are read back from mpv instead of being the actor's
+        // private guess, so a write mpv did not honour can no longer leave the
+        // UI claiming 有声 while the output is muted.
+        for (name, format) in OBSERVED_PROPERTIES {
             let Ok(cname) = std::ffi::CString::new(*name) else {
                 continue;
             };
             // SAFETY: actor thread owns the handle; `cname` outlives the call.
+            // The format must be the property's own (see OBSERVED_PROPERTIES):
+            // a wrong one is accepted here but silently yields NONE payloads.
             if let Err(error) = unsafe {
                 self.handle
-                    .observe_property(&self.sys, 0, cname.as_c_str(), ffi::format_::DOUBLE)
+                    .observe_property(&self.sys, 0, cname.as_c_str(), *format)
             } {
                 tracing::warn!(
                     property = *name,
+                    format = *format,
                     error = %error,
                     "mpv actor: observe_property failed; this signal will not reach the UI"
                 );
@@ -397,6 +434,24 @@ struct TestBackend {
     /// When true, *every* `write_property` is rejected — a simulated backend
     /// in a read-only/failed state (task 8.8 rollback over a batch of writes).
     fail_all_properties: bool,
+    /// When true, every [`Backend::queue_load`] schedules a `FileLoaded`, the
+    /// way the real backend's `loadfile` does.
+    ///
+    /// A *scripted* event list cannot express "one FILE_LOADED per load": the
+    /// pump drains it regardless of which load is in flight, so a second load
+    /// would consume an event that belonged to the first and then sit at
+    /// `Loading` forever. Load-intent tests need the load to *cause* the event.
+    file_loaded_on_load: bool,
+    /// When set, `observe_continuous` queues the audio properties the way mpv
+    /// does on every subscription: mpv replays the *current* value of each
+    /// observed property as soon as it is observed. `(volume 0–100, mute,
+    /// pause)` — mpv's native units, not ours.
+    ///
+    /// This is what makes the read-back path testable: the actor used to trust
+    /// the writes it just issued, so a value mpv held differently never reached
+    /// the snapshot. A scripted list alone cannot express "the subscription
+    /// produces events", and without that the whole driver is untestable.
+    audio_replay_on_observe: Option<(f64, bool, bool)>,
     terminated: bool,
 }
 
@@ -410,6 +465,8 @@ impl TestBackend {
             observations: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             fail_next_property: false,
             fail_all_properties: false,
+            file_loaded_on_load: false,
+            audio_replay_on_observe: None,
             terminated: false,
         }
     }
@@ -430,11 +487,34 @@ impl Backend for TestBackend {
 
     fn queue_load(&mut self, path: &Path) {
         self.loads.push(path.display().to_string());
+        if self.file_loaded_on_load {
+            // `loadfile` ⇒ FILE_LOADED, exactly like the real backend.
+            self.events.push_back(BackendEvent::FileLoaded);
+        }
     }
 
     fn observe_continuous(&mut self) {
         self.observations
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        // mpv replays the current value of every observed property the moment
+        // it is observed. Modelling that here is what lets a test drive the
+        // read-back path — without it the actor's own writes are the only
+        // thing any test can ever observe, which is precisely the blind spot
+        // that let `muted` diverge from mpv's real `mute`.
+        if let Some((volume, mute, pause)) = self.audio_replay_on_observe {
+            self.events.push_back(BackendEvent::PropertyChanged {
+                name: "volume".into(),
+                value: volume,
+            });
+            self.events.push_back(BackendEvent::PropertyChanged {
+                name: "mute".into(),
+                value: f64::from(u8::from(mute)),
+            });
+            self.events.push_back(BackendEvent::PropertyChanged {
+                name: "pause".into(),
+                value: f64::from(u8::from(pause)),
+            });
+        }
     }
 
     fn write_property(&mut self, prop: BackendProperty) -> bool {
@@ -665,6 +745,20 @@ struct ActorLoop<B: Backend> {
     /// `None` in tests that only exercise `LoadTemporary` / command routing;
     /// the production composition root always supplies a resolver.
     resolver: Option<SongResolver>,
+    /// The pause state the most recent load / transport command **wants** mpv
+    /// to be in.
+    ///
+    /// This exists because mpv's runtime `pause` is **sticky**: the manual is
+    /// explicit that "if any option is changed at runtime (via input commands),
+    /// they are not reset when a new file is played" (Per-File Options). So the
+    /// `pause=yes` a 冷启动 prime writes keeps silencing *every later*
+    /// `loadfile` until something writes `pause=no` — the actor's own `state`
+    /// flag moving to `Playing` was never enough, because it is not the audio.
+    ///
+    /// Re-asserted on every [`BackendEvent::FileLoaded`] (the first moment the
+    /// flag provably belongs to the new file) and used to decide which state to
+    /// publish, so 点歌真的出声 and 暂停态的加载不会被画成正在播放。
+    intended_paused: bool,
 }
 
 impl<B: Backend> ActorLoop<B> {
@@ -690,6 +784,9 @@ impl<B: Backend> ActorLoop<B> {
             // dropped first `time-pos` right after startup / a load).
             last_property_publish: std::time::Instant::now() - std::time::Duration::from_secs(1),
             resolver: None,
+            // A fresh actor has nothing loaded, so "not paused" is the only
+            // intent that can be true once a file actually loads.
+            intended_paused: false,
         }
     }
 
@@ -762,6 +859,26 @@ impl<B: Backend> ActorLoop<B> {
         }
     }
 
+    /// The transport state mpv's `pause` flag implies for a snapshot the flag
+    /// can actually express: `Playing` ⇄ `Paused`, or `None` when the flag
+    /// changes nothing.
+    ///
+    /// `Playing`/`Paused` are the *only* states the flag describes. A late
+    /// `pause=yes` echo must never rewrite an `Ended`/`Stopped`/`Failed`
+    /// snapshot into `Paused`: that would resurrect a finished track in the UI
+    /// (progress bar back at 0, a queue that already ran out showing as loaded).
+    fn transport_from_pause(current: PlaybackState, paused: bool) -> Option<PlaybackState> {
+        if !matches!(current, PlaybackState::Playing | PlaybackState::Paused) {
+            return None;
+        }
+        let next = if paused {
+            PlaybackState::Paused
+        } else {
+            PlaybackState::Playing
+        };
+        (next != current).then_some(next)
+    }
+
     fn run(&mut self, rx: mpsc::Receiver<PlayerCommand>) {
         loop {
             // Drain bounded commands first.
@@ -779,7 +896,38 @@ impl<B: Backend> ActorLoop<B> {
                     // leaves the actor with no property events at all and the
                     // progress bar / lyrics frozen at 0.
                     self.backend.observe_continuous();
-                    self.state = PlaybackState::Playing;
+                    // Re-assert the load's pause intent now that the flag
+                    // provably belongs to *this* file. mpv keeps a runtime
+                    // `pause` change across `loadfile`, so without this the
+                    // `pause=yes` a 冷启动 prime wrote silences every later
+                    // 点歌 (the clock never moves, yet the snapshot says
+                    // `Playing`), while a play-intent load can inherit a stale
+                    // ON flag. The load's intent — not the fact that a file
+                    // loaded — is what mpv must end up respecting.
+                    let pause_applied = self
+                        .backend
+                        .write_property(BackendProperty::Pause(self.intended_paused));
+                    if !pause_applied {
+                        tracing::warn!(
+                            paused = self.intended_paused,
+                            "mpv actor: failed to apply the load's pause intent"
+                        );
+                    }
+                    // …and publish the state the intent implies. `FileLoaded`
+                    // alone is not "playing": a primed / restored load is
+                    // decoded but silent, so publishing `Playing` there makes
+                    // the UI draw a pause icon and let `useSmoothPosition`
+                    // interpolate a progress bar forward for a track that is
+                    // not audibly playing. A *rejected* pause write cannot tell
+                    // which flag mpv ended up with, so the snapshot takes the
+                    // silent reading — 绝不报一个听不到的 `Playing`; the
+                    // transport button simply retries the write.
+                    let silent = self.intended_paused || !pause_applied;
+                    self.state = if silent {
+                        PlaybackState::Paused
+                    } else {
+                        PlaybackState::Playing
+                    };
                     self.publish(self.generation);
                 }
                 Some(BackendEvent::Ended) => {
@@ -788,26 +936,56 @@ impl<B: Backend> ActorLoop<B> {
                     self.publish(self.generation);
                 }
                 Some(BackendEvent::PropertyChanged { name, value }) => {
+                    // A discrete control change (transport / mute) must reach the
+                    // UI at once; the continuous position/duration stream stays
+                    // throttled so a 10-minute track does not push 10 Hz of
+                    // snapshots through the IPC bridge.
+                    let mut discrete = false;
                     match name.as_str() {
                         "time-pos" => self.position = Some(value),
                         "duration" => self.duration = Some(value),
                         // mpv reports volume in 0.0–100.0; we keep 0.0–1.0.
                         "volume" => {
-                            self.volume = (value / 100.0).clamp(0.0, 1.0);
+                            let volume = (value / 100.0).clamp(0.0, 1.0);
+                            if (self.volume - volume).abs() > VOLUME_EPSILON {
+                                self.volume = volume;
+                            }
                             if self.volume > 0.0 {
                                 self.last_nonzero_volume = self.volume;
                             }
                         }
                         "mute" => {
                             // mpv reports mute as 0.0 (off) or 1.0 (on) here.
-                            self.muted = value != 0.0;
+                            // This is what ends the reported 静音分叉: the actor
+                            // used to flip its own `muted` on a successful write
+                            // and never ask mpv, so a write that did not land
+                            // left the UI saying 未静音 while the output stayed
+                            // muted — and the next 调大音量 hit exactly that.
+                            let muted = value != 0.0;
+                            if self.muted != muted {
+                                self.muted = muted;
+                                discrete = true;
+                            }
+                        }
+                        "pause" => {
+                            // mpv's flag is the single source of truth for the
+                            // transport. `intended_paused` is deliberately *not*
+                            // touched here — that field is what the next load
+                            // must reach (a command's intent); this is what mpv
+                            // actually did.
+                            if let Some(next) = Self::transport_from_pause(self.state, value != 0.0)
+                            {
+                                self.state = next;
+                                discrete = true;
+                            }
                         }
                         _ => {}
                     }
-                    // Continuous position/duration refresh is throttled; a
-                    // seek/state transition is published immediately by the
-                    // command handler, so the UI never lags a user action.
-                    self.publish_throttled(self.generation);
+                    if discrete {
+                        self.publish(self.generation);
+                    } else {
+                        self.publish_throttled(self.generation);
+                    }
                 }
                 None => {
                     // No event: brief sleep to bound CPU. The real backend
@@ -831,6 +1009,11 @@ impl<B: Backend> ActorLoop<B> {
                 // load it. A missing resolver or an unknown/unbound song goes
                 // to `Failed` (never a broken `Playing`); the coordinator's
                 // error-skip then advances past it.
+                //
+                // 点歌是「播放」意图: the intent is re-asserted on FileLoaded,
+                // because a prior primed load left mpv with `pause=yes` and mpv
+                // does not clear that on a new file (see `intended_paused`).
+                self.intended_paused = false;
                 self.generation += 1;
                 match self.resolver.as_ref().and_then(|r| (r)(song_id).ok()) {
                     Some(path) => self.load_path(&path),
@@ -848,10 +1031,15 @@ impl<B: Backend> ActorLoop<B> {
                 // is told to hold the file paused: the load completes (real
                 // duration + cover) while mpv's pause flag guarantees no sound
                 // until the user presses 播放.
+                self.intended_paused = true;
                 self.generation += 1;
                 match self.resolver.as_ref().and_then(|r| (r)(song_id).ok()) {
                     Some(path) => {
                         self.load_path(&path);
+                        // Silence the window between `loadfile` and FileLoaded
+                        // as well: the flag is written now and re-asserted on
+                        // FileLoaded, so neither an idle mpv nor the new file
+                        // ever gets a chance to sound.
                         if !self.backend.write_property(BackendProperty::Pause(true)) {
                             tracing::warn!("mpv actor: failed to set pause for paused load");
                         }
@@ -866,11 +1054,15 @@ impl<B: Backend> ActorLoop<B> {
                 display_name: _,
                 path,
                 session_id: _,
-            } => self.load_path(&path),
+            } => {
+                self.intended_paused = false;
+                self.load_path(&path)
+            }
             PlayerCommand::Play => {
                 // The write is the point: previously this only flipped the
                 // actor's own state flag, so 播放/暂停 changed the icon while the
                 // audio kept running.
+                self.intended_paused = false;
                 if self.backend.write_property(BackendProperty::Pause(false))
                     && self.state.can_transition_to(PlaybackState::Playing)
                 {
@@ -879,6 +1071,7 @@ impl<B: Backend> ActorLoop<B> {
                 }
             }
             PlayerCommand::Pause => {
+                self.intended_paused = true;
                 if self.backend.write_property(BackendProperty::Pause(true))
                     && self.state.can_transition_to(PlaybackState::Paused)
                 {
@@ -895,6 +1088,9 @@ impl<B: Backend> ActorLoop<B> {
                 if let Some(target) = target {
                     let pause = target == PlaybackState::Paused;
                     if self.backend.write_property(BackendProperty::Pause(pause)) {
+                        // The user's latest transport choice is the intent a
+                        // pending load must not override when it lands.
+                        self.intended_paused = pause;
                         self.state = target;
                         self.publish(self.generation);
                     }
@@ -923,13 +1119,27 @@ impl<B: Backend> ActorLoop<B> {
                 if clamped > 0.0 {
                     self.last_nonzero_volume = clamped;
                 }
-                let wanted_muted = self.muted && clamped == 0.0;
-                if self
+                // …and clearing mute has to reach mpv, not just this struct:
+                // `volume` and `mute` are *independent* properties in mpv, so
+                // `set volume` leaves `mute=yes` untouched. Writing only the
+                // volume made the snapshot claim 未静音 while the output stayed
+                // muted — the UI showed sound and the speaker had none, and the
+                // next 调大音量 landed right on it (this defect family's audio
+                // form). Both writes must land for the change to be committed.
+                let unmute = self.muted && clamped > 0.0;
+                let volume_ok = self
                     .backend
-                    .write_property(BackendProperty::Volume(clamped))
-                {
+                    .write_property(BackendProperty::Volume(clamped));
+                let mute_ok = if unmute {
+                    self.backend.write_property(BackendProperty::Mute(false))
+                } else {
+                    true
+                };
+                if volume_ok && mute_ok {
                     self.volume = clamped;
-                    self.muted = wanted_muted;
+                    if unmute {
+                        self.muted = false;
+                    }
                     self.publish(self.generation);
                 }
             }
@@ -994,6 +1204,7 @@ impl<B: Backend> ActorLoop<B> {
                 // concern; on macOS unlink works on an open file and pausing
                 // is the honest transport stop.
                 let _ = self.backend.write_property(BackendProperty::Pause(true));
+                self.intended_paused = true;
                 self.state = PlaybackState::Stopped;
                 self.position = None;
                 self.publish(self.generation);
@@ -1231,6 +1442,109 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
+    // 音量的静音分叉 / 音频属性回读（用户报的"调大音量反而没声"）
+    // ------------------------------------------------------------------
+
+    /// Spawn an actor whose backend does the two things the real mpv backend
+    /// does and a scripted event list cannot express: it emits a `FileLoaded`
+    /// per load, and it **replays** mpv's current audio properties on every
+    /// subscription (mpv does exactly that the moment a property is observed).
+    #[allow(clippy::type_complexity)] // test-only 3-tuple is fine here
+    fn spawn_test_audio_readback(
+        replay: (f64, bool, bool),
+    ) -> (
+        PlayerActor,
+        Arc<RwLock<PlayerSnapshot>>,
+        Arc<std::sync::Mutex<Vec<BackendProperty>>>,
+    ) {
+        let snapshot = snapshot_stub();
+        let props = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let props_join = props.clone();
+        let actor = PlayerActor::spawn_with(
+            move || -> Result<TestBackend, ffi::HandleError> {
+                let mut b = TestBackend::new(vec![]);
+                b.props = props_join;
+                b.file_loaded_on_load = true;
+                b.audio_replay_on_observe = Some(replay);
+                Ok(b)
+            },
+            snapshot.clone(),
+            None,
+        )
+        .expect("spawn");
+        (actor, snapshot, props)
+    }
+
+    #[test]
+    fn the_audio_controls_are_read_back_from_mpv_on_every_load() {
+        // The snapshot must report what mpv *holds*, not what the actor last
+        // commanded. With mpv replaying 音量 40 / 静音 / 暂停 on subscription,
+        // the snapshot has to say exactly that — even though this very load
+        // asked for playback. Before the audio controls were observed, the
+        // actor's own opinion was final: UI 说未静音、实际静音（下一次「调大音量」
+        // 正好撞上），UI 说在播、时钟却不走。
+        let (mut actor, snapshot, props) = spawn_test_audio_readback((40.0, true, true));
+        actor.send(load_temporary("/music/a.flac")).unwrap();
+
+        let settled = wait_for(&snapshot, |s| s.state == PlaybackState::Paused && s.muted);
+        assert_eq!(
+            settled.state,
+            PlaybackState::Paused,
+            "mpv says still paused"
+        );
+        assert!(settled.muted, "mpv says muted");
+        assert!(
+            (settled.volume - 0.4).abs() < 1e-9,
+            "mpv's 0–100 volume lands in the snapshot as 0.0–1.0 [got {:?}]",
+            settled.volume
+        );
+        // The intent was still expressed to mpv — the divergence is resolved by
+        // mpv's answer, not by the actor ignoring the load's intent.
+        assert!(
+            props
+                .lock()
+                .unwrap()
+                .contains(&BackendProperty::Pause(false)),
+            "a play-intent load still clears mpv's pause flag"
+        );
+        actor.shutdown();
+    }
+
+    #[test]
+    fn pause_only_rewrites_the_transport_states_it_can_express() {
+        use PlaybackState as S;
+        // The flag means Playing ⇄ Paused …
+        assert_eq!(
+            ActorLoop::<TestBackend>::transport_from_pause(S::Playing, true),
+            Some(S::Paused)
+        );
+        assert_eq!(
+            ActorLoop::<TestBackend>::transport_from_pause(S::Paused, false),
+            Some(S::Playing)
+        );
+        // … a no-op when it already agrees …
+        assert_eq!(
+            ActorLoop::<TestBackend>::transport_from_pause(S::Playing, false),
+            None
+        );
+        // … and nothing else. A late `pause=yes` echo must not turn an
+        // `Ended`/`Stopped`/`Failed` snapshot into Paused — that would show a
+        // finished track as loaded playback again.
+        for state in [S::Ended, S::Stopped, S::Failed, S::Loading] {
+            assert_eq!(
+                ActorLoop::<TestBackend>::transport_from_pause(state, true),
+                None,
+                "pause must not rewrite {state:?}"
+            );
+            assert_eq!(
+                ActorLoop::<TestBackend>::transport_from_pause(state, false),
+                None,
+                "pause must not rewrite {state:?}"
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------
     // 8.8: seek / volume / mute through the actor (same path real mpv uses)
     // ------------------------------------------------------------------
 
@@ -1261,6 +1575,38 @@ mod tests {
         (actor, snapshot, props)
     }
 
+    /// Spawn an actor over a backend that resolves library songs through
+    /// `resolver` and emits a `FileLoaded` for **every** queued load (see
+    /// [`TestBackend::file_loaded_on_load`]), so a test can drive a real
+    /// `load → FileLoaded → load` sequence. `fail_all` makes every property
+    /// write fail, for the "never publish a state mpv did not reach" assertions.
+    #[allow(clippy::type_complexity)] // test-only 3-tuple is fine here
+    fn spawn_test_load_driven(
+        resolver: SongResolver,
+        fail_all: bool,
+    ) -> (
+        PlayerActor,
+        Arc<RwLock<PlayerSnapshot>>,
+        Arc<std::sync::Mutex<Vec<BackendProperty>>>,
+    ) {
+        let snapshot = snapshot_stub();
+        let props = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let props_join = props.clone();
+        let actor = PlayerActor::spawn_with(
+            move || -> Result<TestBackend, ffi::HandleError> {
+                let mut b = TestBackend::new(vec![]);
+                b.props = props_join;
+                b.file_loaded_on_load = true;
+                b.fail_all_properties = fail_all;
+                Ok(b)
+            },
+            snapshot.clone(),
+            Some(resolver),
+        )
+        .expect("spawn");
+        (actor, snapshot, props)
+    }
+
     #[test]
     fn actor_seek_publishes_position_and_writes_property() {
         let (mut actor, snapshot, props) = spawn_test(vec![]);
@@ -1281,10 +1627,19 @@ mod tests {
         actor.send(PlayerCommand::SetVolume(0.4)).unwrap();
         let final_snap = wait_for(&snapshot, |s| !s.muted && (s.volume - 0.4).abs() < 1e-9);
         assert!((final_snap.volume - 0.4).abs() < 1e-9);
+        // The un-mute has to reach mpv, not just this struct: `volume` and
+        // `mute` are independent properties there, so a lone `set volume`
+        // would leave `mute=yes` in force while the snapshot claimed 未静音 —
+        // UI says sound, speaker has none.
         let writes = props.lock().unwrap().clone();
         assert_eq!(
             writes,
-            vec![BackendProperty::Mute(true), BackendProperty::Volume(0.4)]
+            vec![
+                BackendProperty::Mute(true),
+                BackendProperty::Volume(0.4),
+                BackendProperty::Mute(false),
+            ],
+            "调音量必须把 mpv 的 mute 一起落下，否则 UI 说有声、扬声器是静音"
         );
         actor.shutdown();
     }
@@ -1625,7 +1980,13 @@ mod tests {
         let writes = props.lock().unwrap().clone();
         assert_eq!(
             writes,
-            vec![BackendProperty::Pause(true), BackendProperty::Pause(false),],
+            vec![
+                // The `LoadTemporary` that got us here is a *play* intent, so
+                // FileLoaded clears mpv's pause flag for the new file first.
+                BackendProperty::Pause(false),
+                BackendProperty::Pause(true),
+                BackendProperty::Pause(false),
+            ],
             "pause/resume must write mpv's `pause` property, not just the state flag"
         );
         actor.shutdown();
@@ -1639,10 +2000,105 @@ mod tests {
 
         actor.send(PlayerCommand::TogglePlayPause).unwrap();
         wait_for(&snapshot, |s| s.state == PlaybackState::Paused);
-        // The space-bar hotkey path must reach mpv too.
+        // The space-bar hotkey path must reach mpv too (the leading write is the
+        // load's play intent, re-asserted on FileLoaded).
         assert_eq!(
             props.lock().unwrap().clone(),
-            vec![BackendProperty::Pause(true)]
+            vec![BackendProperty::Pause(false), BackendProperty::Pause(true)]
+        );
+        actor.shutdown();
+    }
+
+    #[test]
+    fn a_paused_load_publishes_paused_and_reasserts_the_pause_flag() {
+        // 冷启动 prime / 会话恢复: the load is decoded but must never sound, and
+        // the snapshot must say `Paused` — publishing `Playing` there made the UI
+        // draw a pause icon and interpolate the progress bar forward for a silent
+        // track (the reported "启动就是正在播放/点歌进度走了却没声音").
+        let resolver: SongResolver = Arc::new(|_| Ok(std::path::PathBuf::from("/music/a.flac")));
+        let (mut actor, snapshot, props) = spawn_test_load_driven(resolver, false);
+
+        actor
+            .send(PlayerCommand::LoadLibrarySongPaused {
+                song_id: echo_core::domain::ids::SongId::new(),
+                session_id: echo_core::domain::ids::PlaybackSessionId::new(),
+            })
+            .expect("send");
+
+        let primed = wait_for(&snapshot, |s| s.state == PlaybackState::Paused);
+        assert_eq!(
+            primed.state,
+            PlaybackState::Paused,
+            "a primed load is decoded, not playing"
+        );
+        // The flag is written before the loadfile AND re-asserted on FileLoaded:
+        // mpv keeps a runtime `pause` across `loadfile`, so the intent has to be
+        // restated against the file that actually loaded.
+        assert_eq!(
+            props.lock().unwrap().clone(),
+            vec![BackendProperty::Pause(true), BackendProperty::Pause(true)],
+            "the paused load must hold mpv's `pause` flag on"
+        );
+        actor.shutdown();
+    }
+
+    #[test]
+    fn a_rejected_pause_write_on_a_play_load_publishes_paused_not_a_silent_playing() {
+        // If the backend rejects the `pause=no` a play-intent load needs, the
+        // actor cannot know which flag mpv ended up with. Reporting `Playing`
+        // there is exactly the reported bug (icon + moving progress bar, no
+        // sound), so the snapshot takes the silent reading instead.
+        let resolver: SongResolver = Arc::new(|_| Ok(std::path::PathBuf::from("/music/a.flac")));
+        let (mut actor, snapshot, _props) = spawn_test_load_driven(resolver, true);
+        actor
+            .send(PlayerCommand::LoadLibrarySong {
+                song_id: echo_core::domain::ids::SongId::new(),
+                session_id: echo_core::domain::ids::PlaybackSessionId::new(),
+            })
+            .unwrap();
+
+        let settled = wait_for(&snapshot, |s| s.state == PlaybackState::Paused);
+        assert_eq!(
+            settled.state,
+            PlaybackState::Paused,
+            "a rejected un-pause must never be published as Playing"
+        );
+        actor.shutdown();
+    }
+
+    #[test]
+    fn a_play_load_clears_the_pause_flag_a_primed_load_left_behind() {
+        // The reported bug, in the actor: 冷启动 prime writes `pause=yes`, mpv
+        // keeps it across `loadfile` (manual: "if any option is changed at
+        // runtime … they are not reset when a new file is played"), so 点歌 by
+        // `LoadLibrarySong` used to load a *silent* track while the snapshot said
+        // `Playing` — 进度条在走，扬声器没声，只有播放控制栏的 播放 才真的出声。
+        let resolver: SongResolver = Arc::new(|_| Ok(std::path::PathBuf::from("/music/a.flac")));
+        let (mut actor, snapshot, props) = spawn_test_load_driven(resolver, false);
+
+        actor
+            .send(PlayerCommand::LoadLibrarySongPaused {
+                song_id: echo_core::domain::ids::SongId::new(),
+                session_id: echo_core::domain::ids::PlaybackSessionId::new(),
+            })
+            .expect("send");
+        wait_for(&snapshot, |s| s.state == PlaybackState::Paused);
+
+        actor
+            .send(PlayerCommand::LoadLibrarySong {
+                song_id: echo_core::domain::ids::SongId::new(),
+                session_id: echo_core::domain::ids::PlaybackSessionId::new(),
+            })
+            .expect("send");
+        let playing = wait_for(&snapshot, |s| s.state == PlaybackState::Playing);
+        assert_eq!(playing.state, PlaybackState::Playing);
+
+        let writes = props.lock().unwrap().clone();
+        assert_eq!(
+            writes.last(),
+            Some(&BackendProperty::Pause(false)),
+            "a play-intent load must clear mpv's `pause` flag, or the track stays \
+             silent while the UI shows it playing [writes={writes:?}]"
         );
         actor.shutdown();
     }
@@ -1672,16 +2128,224 @@ mod tests {
     }
 
     #[test]
-    fn observed_properties_cover_position_and_duration() {
-        // The subscription set has to include the two properties the UI reads.
-        assert!(
-            OBSERVED_PROPERTIES.contains(&"time-pos"),
-            "播放进度条 / 歌词 advance off time-pos"
-        );
-        assert!(
-            OBSERVED_PROPERTIES.contains(&"duration"),
-            "the progress bar's range comes from duration"
-        );
+    fn observed_properties_cover_position_duration_and_the_audio_controls() {
+        // The subscription set has to include everything the snapshot claims to
+        // report: the two the UI reads (progress bar / lyrics) *and* the audio
+        // controls, which are what make `volume` / `muted` mpv's values rather
+        // than the actor's private guess.
+        let names: Vec<&str> = OBSERVED_PROPERTIES.iter().map(|(name, _)| *name).collect();
+        for required in ["time-pos", "duration", "volume", "mute", "pause"] {
+            assert!(
+                names.contains(&required),
+                "{required} must be observed or the snapshot reports a guess \
+                 instead of the value mpv actually holds [set={names:?}]"
+            );
+        }
+        // …and each with the format that actually delivers a payload. Measured
+        // against the vendored libmpv: observing `mute`/`pause` as DOUBLE is
+        // accepted by mpv but every notification then carries MPV_FORMAT_NONE
+        // (no value) — a subscription that looks fine and delivers nothing.
+        let format_of = |want: &str| {
+            OBSERVED_PROPERTIES
+                .iter()
+                .find(|(name, _)| *name == want)
+                .map(|(_, format)| *format)
+        };
+        assert_eq!(format_of("time-pos"), Some(ffi::format_::DOUBLE));
+        assert_eq!(format_of("duration"), Some(ffi::format_::DOUBLE));
+        assert_eq!(format_of("volume"), Some(ffi::format_::DOUBLE));
+        assert_eq!(format_of("mute"), Some(ffi::format_::FLAG));
+        assert_eq!(format_of("pause"), Some(ffi::format_::FLAG));
+    }
+
+    #[test]
+    fn a_flag_property_event_is_decoded_from_its_native_format() {
+        // The real backend decodes a FLAG payload (a C `int`) into the same
+        // `f64` event vocabulary. If that path regressed, `mute`/`pause`
+        // notifications would be dropped as "unavailable" forever and the
+        // snapshot would silently fall back to the actor's guesses.
+        assert_eq!(ffi::format_::FLAG, 3);
+        let on = [1i32];
+        // SAFETY: `on` is a live `int` for the duration of the call.
+        let decoded = unsafe { ffi::read_flag(on.as_ptr().cast()) };
+        assert_eq!(decoded, Some(1.0), "FLAG 1 → 1.0");
+        let off = [0i32];
+        // SAFETY: as above.
+        assert_eq!(unsafe { ffi::read_flag(off.as_ptr().cast()) }, Some(0.0));
+        // SAFETY: a null data pointer is explicitly allowed (unavailable).
+        assert_eq!(unsafe { ffi::read_flag(std::ptr::null()) }, None);
+    }
+
+    /// The vendored macOS libmpv, if this host has one — the same skip rule the
+    /// `player_smoke` suite uses, so a host without the bundle still passes.
+    fn vendored_libmpv() -> Option<std::path::PathBuf> {
+        for candidate in [
+            "../../apps/desktop/src-tauri/vendor/libmpv/macos/libmpv.dylib",
+            "apps/desktop/src-tauri/vendor/libmpv/macos/libmpv.dylib",
+        ] {
+            let path = std::path::Path::new(candidate);
+            if path.exists() {
+                return Some(path.to_path_buf());
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn libmpv_treats_volume_and_mute_as_independent_properties() {
+        // The causal chain behind 调大音量反而没声: in mpv, `set volume` does
+        // **not** clear `mute`. The actor used to write only the volume and then
+        // record `muted: false` in its own snapshot, so the UI claimed sound
+        // while the output was silenced — and the next 调大音量 landed on it.
+        // Checked against mpv, because "surely setting the volume unmutes" is
+        // precisely the assumption that produced the bug.
+        let Some(lib) = vendored_libmpv() else {
+            eprintln!("SKIP: no vendored libmpv on this host");
+            return;
+        };
+        // SAFETY: this test thread owns the handle for the whole test.
+        unsafe {
+            let sys = ffi::MpvSys::load(&lib).expect("dlopen the vendored libmpv");
+            let mut handle = ffi::Handle::create(&sys, &[], &[]).expect("create mpv handle");
+            let muted = std::ffi::CString::new("mute").expect("no NUL");
+            handle
+                .observe_property(&sys, 0, muted.as_c_str(), ffi::format_::FLAG)
+                .expect("observe mute");
+
+            // Wait (bounded) for mpv to report `mute == want`; `false` on timeout.
+            let wait_mute = |want: f64| -> bool {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+                while std::time::Instant::now() < deadline {
+                    let ev = handle.wait_event(&sys, 0.05);
+                    if ev.is_null() || (*ev).event_id != ffi::event_id::PROPERTY_CHANGE {
+                        continue;
+                    }
+                    let data = (*ev).data;
+                    if data.is_null() {
+                        continue;
+                    }
+                    let property = data as *const ffi::mpv_event_property;
+                    if ffi::read_c_str((*property).name).as_deref() != Some("mute")
+                        || (*property).format != ffi::format_::FLAG
+                    {
+                        continue;
+                    }
+                    if ffi::read_flag((*property).data) == Some(want) {
+                        return true;
+                    }
+                }
+                false
+            };
+            let set = |name: &str, value: &str| {
+                let args: Vec<std::ffi::CString> = ["set", name, value]
+                    .iter()
+                    .map(|s| std::ffi::CString::new(*s).expect("no NUL"))
+                    .collect();
+                handle
+                    .command(&sys, &args)
+                    .unwrap_or_else(|e| panic!("set {name} {value}: {e}"));
+            };
+
+            set("mute", "yes");
+            assert!(wait_mute(1.0), "mute=yes must take effect");
+            // The load path's volume write must not be assumed to un-mute.
+            set("volume", "40");
+            assert!(
+                !wait_mute(0.0),
+                "`set volume` must NOT clear mpv's `mute` — that is why the actor has to \
+                 write both, and why only writing the volume made the UI claim 未静音"
+            );
+            set("mute", "no");
+            assert!(wait_mute(0.0), "the explicit un-mute must take effect");
+            handle.terminate(&sys);
+        }
+    }
+
+    #[test]
+    fn observed_properties_really_deliver_values_from_libmpv() {
+        // The subscription table is a claim about *mpv's* behaviour, so it is
+        // checked against mpv rather than trusted: observing `mute`/`pause` with
+        // DOUBLE is **accepted** by `mpv_observe_property` and then delivers
+        // MPV_FORMAT_NONE forever — a subscription that looks healthy and
+        // reports nothing. That is how the audio controls ended up "observed"
+        // nowhere at all, leaving the snapshot to report the actor's own guess
+        // (UI 说未静音、实际静音；UI 说在播、时钟不走).
+        //
+        // Skipped only when the host has no vendored libmpv.
+        let Some(lib) = vendored_libmpv() else {
+            eprintln!("SKIP: no vendored libmpv on this host");
+            return;
+        };
+        // SAFETY: this test thread owns the handle for the whole test and
+        // terminates it before returning.
+        unsafe {
+            let sys = ffi::MpvSys::load(&lib).expect("dlopen the vendored libmpv");
+            let mut handle = ffi::Handle::create(&sys, &[], &[]).expect("create mpv handle");
+
+            for (name, format) in OBSERVED_PROPERTIES {
+                let cname = std::ffi::CString::new(*name).expect("no NUL");
+                handle
+                    .observe_property(&sys, 0, cname.as_c_str(), *format)
+                    .unwrap_or_else(|e| panic!("observe {name} as {format}: {e}"));
+            }
+            // Drive one change per property, so each observation must deliver.
+            for (name, value) in [("pause", "yes"), ("mute", "yes"), ("volume", "40")] {
+                let args: Vec<std::ffi::CString> = ["set", name, value]
+                    .iter()
+                    .map(|s| std::ffi::CString::new(*s).expect("no NUL"))
+                    .collect();
+                handle
+                    .command(&sys, &args)
+                    .unwrap_or_else(|e| panic!("set {name} {value}: {e}"));
+            }
+
+            let mut seen: Vec<(String, f64)> = Vec::new();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+            while std::time::Instant::now() < deadline {
+                let ev = handle.wait_event(&sys, 0.05);
+                if ev.is_null() || (*ev).event_id != ffi::event_id::PROPERTY_CHANGE {
+                    continue;
+                }
+                let data = (*ev).data;
+                if data.is_null() {
+                    continue;
+                }
+                let property = data as *const ffi::mpv_event_property;
+                let Some(name) = ffi::read_c_str((*property).name) else {
+                    continue;
+                };
+                let payload = match (*property).format {
+                    ffi::format_::DOUBLE => ffi::read_double((*property).data),
+                    ffi::format_::FLAG => ffi::read_flag((*property).data),
+                    _ => None,
+                };
+                if let Some(value) = payload {
+                    seen.push((name, value));
+                }
+            }
+            handle.terminate(&sys);
+
+            for wanted in ["pause", "mute", "volume"] {
+                assert!(
+                    seen.iter().any(|(name, _)| name == wanted),
+                    "mpv delivered no value for `{wanted}` with the format the actor observes \
+                     it with — the snapshot would silently fall back to a guess [seen={seen:?}]"
+                );
+            }
+            assert!(
+                seen.iter().any(|(name, v)| name == "pause" && *v == 1.0),
+                "pause=yes must arrive as 1.0 [seen={seen:?}]"
+            );
+            assert!(
+                seen.iter().any(|(name, v)| name == "mute" && *v == 1.0),
+                "mute=yes must arrive as 1.0 [seen={seen:?}]"
+            );
+            assert!(
+                seen.iter()
+                    .any(|(name, v)| name == "volume" && (*v - 40.0).abs() < 1e-9),
+                "set volume 40 must arrive as 40.0 [seen={seen:?}]"
+            );
+        }
     }
 
     #[test]
