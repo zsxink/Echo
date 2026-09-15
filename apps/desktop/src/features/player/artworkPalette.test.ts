@@ -96,6 +96,31 @@ describe("paletteFromPixels", () => {
     expect(tint.hue).toBeLessThan(310);
   });
 
+  it("returns one palette for one artwork, however many times it is asked", () => {
+    // Three near-identical greens whose weighted scores are almost tied, so the
+    // winner is decided by whatever clustering the extraction produces. It must
+    // not come from a random source: `QuantizerCelebi` seeds its k-means
+    // cluster assignment from `Math.random`, and on exactly this input it
+    // returned four different palettes across thirty runs. That is not a
+    // theoretical wobble — a cover like this (a green cover whose runner-up is
+    // a dark neutral) flipped between a tinted and an almost-theme background
+    // between launches, which reads in the app as "the background follows the
+    // cover… sometimes". Fifty runs make a random quantiser's escape
+    // improbable enough to be a reliable red.
+    const pixels = new Uint8ClampedArray([
+      ...Array.from({ length: 40 }, () => rgba(40, 60, 40)).flat(),
+      ...Array.from({ length: 38 }, () => rgba(45, 58, 42)).flat(),
+      ...Array.from({ length: 36 }, () => rgba(38, 62, 44)).flat(),
+    ]);
+
+    const first = paletteFromPixels(pixels);
+
+    expect(first).not.toBeNull();
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      expect(paletteFromPixels(pixels)).toEqual(first);
+    }
+  });
+
   it("keeps grayscale artwork neutral and supplies a dark, readable palette", () => {
     const pixels = new Uint8ClampedArray([
       ...Array.from({ length: 64 }, () => rgba(94, 94, 94)).flat(),

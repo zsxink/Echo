@@ -10,7 +10,8 @@
   "scripts": {
     "verify:task": "node scripts/verify/run-task.mjs",
     "verify:scenario": "node scripts/verify/run-scenario.mjs",
-    "verify:self-test": "node scripts/verify/self-test.mjs"
+    "verify:self-test": "node scripts/verify/self-test.mjs",
+    "verify:frontend-fresh": "node scripts/verify/checks/check-embedded-frontend.mjs"
   },
   "devDependencies": {}
 }

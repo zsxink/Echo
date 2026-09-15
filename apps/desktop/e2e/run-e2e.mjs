@@ -612,10 +612,164 @@ async function main() {
     abort("A13", e);
   }
 
-  // Cleanup
+  // ---------- A15: 沉浸式背景取自当前封面 ----------
+  //
+  // 封面取色 (`--player-tint` / `--player-background` / `--player-glow`) has no
+  // requirement of its own in `openspec/specs/immersive-lyrics`, so nothing else
+  // guards it — and every way it can break renders *identically to correct
+  // behaviour for a song with no artwork*, because `artwork.css` falls back to
+  // `var(--accent)`. A missing extraction, a canvas tainted by a refused
+  // cross-origin grant on the `cover://` protocol, a palette computed but never
+  // consumed by a rule: each one paints "the background still follows the
+  // theme". Asserting "a style property is set" would not see any of them, so
+  // every check below reads the surface's *painted* colour and compares it.
+  await goto("medium");
+  try {
+    await cdp.call("Emulation.setDeviceMetricsOverride", {
+      width: 1280,
+      height: 800,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await sleep(200);
+
+    // The tint is a body-level fact; the surface must be open for it to exist.
+    await evalJs(`(() => {
+      const rows = [...document.querySelectorAll('[data-testid^="song-row-"]')];
+      const row = rows[4]; // song-4: the mock covers every song where i % 3 !== 0.
+      if (!row) throw new Error('no library row at index 4');
+      row.click();
+    })()`);
+    await waitFor(
+      `document.querySelector('[data-testid="playerbar"]')?.getAttribute('data-empty') === null`,
+    );
+    await evalJs(`document.querySelector('[data-testid="now-playing-trigger"]').click()`);
+    await assert(
+      `!!document.querySelector('[data-testid="immersive"]')`,
+      "A15: the immersive surface did not open",
+    );
+
+    /** Read the body's tint state and what the surface actually paints. */
+    const readTint = () =>
+      evalJs(`(() => {
+        const body = document.body;
+        const pop = document.querySelector('[data-testid="immersive"]');
+        if (!pop) return null;
+        const resolved = getComputedStyle(body).getPropertyValue('--player-background').trim();
+        return {
+          outcome: body.getAttribute('data-artwork-tint'),
+          inline: body.style.getPropertyValue('--player-background'),
+          resolved,
+          painted: getComputedStyle(pop).backgroundColor,
+        };
+      })()`);
+
+    // Let the 800ms `--player-background` transition finish before reading the
+    // painted colour: mid-flight the two are equal anyway, but a comparison
+    // that only ever runs while both are animating proves less than it looks.
+    const settle = async (readyExpr) => {
+      const ok = await waitFor(readyExpr);
+      if (!ok) fail(`A15: the immersive tint never settled (${readyExpr})`);
+      await sleep(900);
+      const tint = await readTint();
+      if (!tint) fail("A15: the immersive surface closed while reading its tint");
+      return tint;
+    };
+
+    const covered = await settle(`document.body.getAttribute('data-artwork-tint') === 'cover'`);
+    if (!covered.inline)
+      fail(
+        "A15: a cover-bearing song produced no artwork palette (data-artwork-tint=cover but no colour)",
+      );
+    // The rule that paints the surface must actually consume the derived colour;
+    // a palette nobody reads is the "passes unit tests, invisible in the browser"
+    // failure this project has shipped before.
+    if (covered.painted !== covered.resolved)
+      fail(
+        `A15: the surface paints ${covered.painted} but --player-background resolves to ${covered.resolved} — no rule consumes the extracted colour`,
+      );
+    const coveredLuminance = await evalJs(`(() => {
+      const hex = ${JSON.stringify(covered.inline)};
+      if (!/^#[0-9a-f]{6}$/i.test(hex)) return null;
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+      const channel = (v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+      return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+    })()`);
+    // 深色化处理: the cover's hue is kept but its lightness is dropped, so a
+    // bright album cover cannot take the lyrics' contrast away.
+    if (coveredLuminance === null || coveredLuminance > 0.09)
+      fail(
+        `A15: the cover-derived background ${covered.inline} is not dark enough (relative luminance ${coveredLuminance}); 沉浸模式 must keep the lyrics readable`,
+      );
+
+    // A *different* cover must produce a *different* background — otherwise a
+    // constant that happens to look like a cover colour would pass everything
+    // above. The mock spreads its cover hues around the wheel for this.
+    await evalJs(`(() => {
+      const rows = [...document.querySelectorAll('[data-testid^="song-row-"]')];
+      const row = rows[7]; // song-7: a second covered song.
+      if (!row) throw new Error('no library row at index 7');
+      row.click();
+    })()`);
+    const second = await settle(
+      `(() => {
+        const v = getComputedStyle(document.body).getPropertyValue('--player-background').trim();
+        return v !== '' && v !== ${JSON.stringify(covered.resolved)};
+      })()`,
+    );
+    if (second.painted !== second.resolved)
+      fail("A15: the second cover's colour is not the one the surface paints");
+    if (second.inline === covered.inline)
+      fail("A15: two different covers produced the same background — the tint is not cover-driven");
+
+    // 没有封面才是默认的: back to the theme, with the outcome recorded as
+    // "none" (this song has no artwork) rather than "fallback" (artwork that
+    // could not be read).
+    await evalJs(`(() => {
+      const rows = [...document.querySelectorAll('[data-testid^="song-row-"]')];
+      const row = rows[0]; // song-0: every third song has no embedded cover.
+      if (!row) throw new Error('no library row at index 0');
+      row.click();
+    })()`);
+    const bare = await settle(`document.body.getAttribute('data-artwork-tint') === 'none'`);
+    if (bare.inline)
+      fail(`A15: a song with no artwork still carries an inline cover colour (${bare.inline})`);
+    if (bare.painted !== bare.resolved)
+      fail("A15: the theme fallback is not what the surface paints");
+    if (bare.resolved === covered.resolved)
+      fail(
+        "A15: the fallback background equals the cover-derived one — the cover colour is not being applied at all",
+      );
+
+    pass("A15: 沉浸式背景取自封面并深色化，两首不同封面得到不同背景，无封面回退主题色");
+  } catch (e) {
+    abort("A15", e);
+  }
+  await cdp.call("Emulation.clearDeviceMetricsOverride");
+
+  // Cleanup.
+  //
+  // `kill` only sends the signal: Chrome keeps flushing its profile for a
+  // moment afterwards, so removing `userData` immediately races it and throws
+  // `ENOTEMPTY`. That error escaped through `main().catch()`, which turned a
+  // fully green run into `FAIL 13.1` with no `ok 13.1` line at all — a false
+  // red in the one place a green gate is the whole point. Wait for the process
+  // to really exit, then treat a leftover temp directory as cleanup noise
+  // rather than an acceptance fact.
   cdp.close();
   chrome.kill("SIGKILL");
-  rmSync(userData, { recursive: true, force: true });
+  await Promise.race([
+    new Promise((resolve) => {
+      if (chrome.exitCode !== null || chrome.signalCode !== null) resolve();
+      else chrome.once("exit", resolve);
+    }),
+    sleep(2000),
+  ]);
+  try {
+    rmSync(userData, { recursive: true, force: true });
+  } catch {
+    // The OS reaps its own temp directory; nothing here is asserted on.
+  }
   server.close();
 
   if (failures) {
@@ -623,7 +777,7 @@ async function main() {
     process.stderr.write(`FAIL 13.1: ${failures} acceptance check(s) failed\n`);
   } else {
     process.stdout.write(
-      "ok 13.1: mock-bridge browser E2E covers PRD A1/A6/A7/A8/A9/A13/A14 non-platform acceptance in real Chromium\n",
+      "ok 13.1: mock-bridge browser E2E covers PRD A1/A6/A7/A8/A9/A13/A14 non-platform acceptance in real Chromium, plus A15 (app-only 沉浸式封面取色，无 PRD 条目)\n",
     );
   }
 }

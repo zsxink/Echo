@@ -41,6 +41,8 @@ describe("immersive artwork tint", () => {
     expect(document.body.style.getPropertyValue("--player-tint")).toBe(palette.tint);
     act(() => vi.advanceTimersByTime(3000));
     expect(document.body.style.getPropertyValue("--player-tint")).toBe("");
+    // A cover that never resolved is not "this song has no artwork".
+    expect(document.body.dataset.artworkTint).toBe("fallback");
   });
   it("clears stale artwork for missing and failed covers", async () => {
     document.body.style.setProperty("--player-tint", "red");
@@ -49,10 +51,31 @@ describe("immersive artwork tint", () => {
       { initialProps: { key: null as string | null } },
     );
     expect(document.body.style.getPropertyValue("--player-tint")).toBe("");
+    expect(document.body.dataset.artworkTint).toBe("none");
     document.body.style.setProperty("--player-tint", "red");
     vi.mocked(loadArtworkPalette).mockResolvedValue(null);
     rerender({ key: "failed" });
     await act(async () => {});
     expect(document.body.style.getPropertyValue("--player-tint")).toBe("");
+    expect(document.body.dataset.artworkTint).toBe("fallback");
+  });
+
+  /**
+   * The three outcomes paint identically (`artwork.css` falls back to
+   * `var(--accent)`), so nothing in the rendered page can tell a working
+   * extraction from a silently broken one — this attribute is the only
+   * difference, and the browser suite asserts on it.
+   */
+  it("distinguishes a read cover from a song without one, and forgets both on close", async () => {
+    vi.mocked(loadArtworkPalette).mockResolvedValue(palette);
+    const { unmount } = renderHook(() => useArtworkTint("a", "a", false));
+    await act(async () => {});
+    expect(document.body.dataset.artworkTint).toBe("cover");
+
+    // Leaving the immersive surface: no tint and no outcome to report.
+    unmount();
+    clearArtworkTint();
+    expect(document.body.dataset.artworkTint).toBeUndefined();
+    expect(document.body.style.getPropertyValue("--player-background")).toBe("");
   });
 });

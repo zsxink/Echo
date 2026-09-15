@@ -206,7 +206,14 @@ function emptyError(code: string, messageKey: string, retryable: boolean): IpcEr
  * unchanged, and both artwork paths stay observable in the preview.
  */
 function coverAssetUrl(key: string): string {
-  const hue = [...key].reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) % 360, 7);
+  // Spread the hue around the whole wheel. The obvious `% 360` inside the fold
+  // leaves every `cv1-mockN` key on the same value up to its last character
+  // (the keys share a prefix), which parked every mock cover in a single
+  // 10-degree band. The immersive tint is verified by *comparing* the
+  // background two different covers produce, so a fixture that cannot express
+  // two different covers would make that assertion vacuous.
+  const hue =
+    ([...key].reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) % 1_000_003, 7) * 137) % 360;
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">` +
     `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">` +

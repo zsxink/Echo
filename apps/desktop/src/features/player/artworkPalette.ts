@@ -1,9 +1,49 @@
-import { Hct, QuantizerCelebi, argbFromRgb, hexFromArgb } from "@material/material-color-utilities";
+import { Hct, QuantizerWu, argbFromRgb, hexFromArgb } from "@material/material-color-utilities";
 
 export interface ArtworkPalette {
   readonly tint: string;
   readonly background: string;
   readonly glow: string;
+}
+
+/**
+ * The cover's dominant swatches, each with the pixel weight behind it.
+ *
+ * `QuantizerCelebi` is the obvious choice and the wrong one: it refines Wu's
+ * boxes with a k-means pass that seeds the initial cluster *assignment* from
+ * `Math.random`, so the very same cover returns a different palette on
+ * different calls. Cover art whose primaries sit close together — a green
+ * cover whose runner-up is a dark neutral — then flips between a tinted and a
+ * near-theme background from one launch to the next, which reads in the app as
+ * "the background follows the cover… sometimes". Wu's pass splits the RGB cube
+ * by pixel weight and calls no random source at all, so identical pixels give
+ * an identical palette — and the immersive colour for a song is reproducible.
+ *
+ * Wu returns colours without populations, so each pixel is assigned to its
+ * nearest swatch to recover the area weighting the selection below needs.
+ */
+function dominantSwatches(pixels: number[], maxColors: number): { argb: number; count: number }[] {
+  const swatches = new QuantizerWu().quantize(pixels, maxColors);
+  const counts = new Array<number>(swatches.length).fill(0);
+  for (const pixel of pixels) {
+    const red = (pixel >> 16) & 0xff;
+    const green = (pixel >> 8) & 0xff;
+    const blue = pixel & 0xff;
+    let nearest = 0;
+    let nearestDistance = Infinity;
+    for (let index = 0; index < swatches.length; index += 1) {
+      const distance =
+        (red - ((swatches[index] >> 16) & 0xff)) ** 2 +
+        (green - ((swatches[index] >> 8) & 0xff)) ** 2 +
+        (blue - (swatches[index] & 0xff)) ** 2;
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearest = index;
+      }
+    }
+    counts[nearest] += 1;
+  }
+  return swatches.map((argb, index) => ({ argb, count: counts[index] }));
 }
 
 /** Population leads; chroma can break a tie but a small bright logo must not
@@ -21,10 +61,11 @@ export function paletteFromPixels(bytes: Uint8ClampedArray): ArtworkPalette | nu
     for (let sample = 0; sample < weight; sample += 1) pixels.push(color);
   }
   if (!pixels.length) return null;
-  const colors = [...QuantizerCelebi.quantize(pixels, 16)].map(([argb, count]) => ({
+  const colors = dominantSwatches(pixels, 16).map(({ argb, count }) => ({
     color: Hct.fromInt(argb),
     count,
   }));
+  if (!colors.length) return null;
   colors.sort(
     (a, b) =>
       b.count * (1 + Math.min(b.color.chroma, 48) / 96) -
