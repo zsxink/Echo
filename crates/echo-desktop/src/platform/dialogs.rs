@@ -101,32 +101,6 @@ impl TestDialogs {
         }
     }
 
-    /// A double that returns `picked` from the file picker.
-    #[must_use]
-    pub const fn with_pick(picked: Option<PickedImport>) -> Self {
-        Self {
-            directory: std::sync::Mutex::new(None),
-            pick: std::sync::Mutex::new(picked),
-            revealed: std::sync::Mutex::new(Vec::new()),
-            reveal_outcome: RevealOutcome::Revealed,
-        }
-    }
-
-    /// A double that returns `directory` from the directory picker and
-    /// `picked` from the file picker (a dialog port that answers both).
-    #[must_use]
-    pub const fn with_both(
-        directory: Option<std::path::PathBuf>,
-        picked: Option<PickedImport>,
-    ) -> Self {
-        Self {
-            directory: std::sync::Mutex::new(directory),
-            pick: std::sync::Mutex::new(picked),
-            revealed: std::sync::Mutex::new(Vec::new()),
-            reveal_outcome: RevealOutcome::Revealed,
-        }
-    }
-
     /// The relative locate-markers passed to `reveal`, in order (for asserting
     /// the caller revealed by `SongId` without the dialog leaking a path).
     pub fn revealed(&self) -> Vec<String> {

@@ -46,11 +46,13 @@ use echo_core::infrastructure::filesystem::RootRegistry;
 /// A brand-new runtime-state store with no persisted values: a first launch has
 /// no `root_epoch` yet, so a switch sees epoch 0 and advances to 1. The real
 /// desktop composition root passes its durable `SQLite` store via
-/// [`AppServices::with_runtime`]; this is the deterministic default for tests
-/// and for a composition root that has not wired persistence yet.
+/// [`AppServices::with_runtime`]; this is the deterministic default used by the
+/// test-only [`AppServices::new`] composition root.
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Default)]
 struct DefaultRuntimeState;
 
+#[cfg(test)]
 impl RuntimeStateStore for DefaultRuntimeState {
     fn load(&self, _key: &str) -> Result<Option<String>, Error> {
         Ok(None)
@@ -80,10 +82,11 @@ pub struct AppServices {
 }
 
 impl AppServices {
-    /// Assemble the composition root with a dialog boundary that always
-    /// cancels (a safe default until the shell wires its real picker), a fresh
-    /// root registry, a fresh blocker registry and a brand-new (empty)
-    /// runtime-state store.
+    /// Test-only composition root: a dialog boundary that always cancels, a
+    /// fresh root registry, a fresh blocker registry and a brand-new (empty)
+    /// runtime-state store. Production wiring goes through [`Self::with_runtime`]
+    /// with the shell's real `SystemDialogs` adapter.
+    #[cfg(test)]
     #[must_use]
     pub fn new(
         deps: std::sync::Arc<ScanDeps>,
