@@ -26,8 +26,7 @@ import { fileURLToPath } from "node:url";
 import { allScenarioIds, traceabilityIdsFor } from "./spec-scenarios.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(new URL(".", import.meta.url))), "..");
-const CHANGE = resolve(ROOT, "openspec", "changes", "release-0-1-0-desktop-player");
-const TRACE = resolve(CHANGE, "traceability.md");
+const TRACE = resolve(ROOT, "docs", "traceability.md");
 const MANIFEST = resolve(ROOT, "scripts", "verify", "manifest.json");
 
 // P0 scenario families that must be automated, not human-only (traceability

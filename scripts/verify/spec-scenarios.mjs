@@ -2,10 +2,10 @@
 // Authoritative scenario-ID assigner for the 0.1.0 specs.
 //
 // The spec .md files under
-//   openspec/changes/release-0-1-0-desktop-player/specs/<area>/spec.md
+//   openspec/specs/<area>/spec.md
 // carry `### Requirement: <title>` and `#### Scenario: <title>` headings with
-// NO inline IDs. The stable IDs live in `traceability.md` (the per-area
-// prefix map is fixed there: DAS/DP/IL/LE/LL/PM/SFI).
+// NO inline IDs. The stable IDs live in `docs/traceability.md` (the per-area
+// prefix map is fixed there: DAS/DP/IL/LE/LL/PM/SFI/SYN).
 //
 // This script derives `<AREA>-R<NN>-S<NN>` deterministically from heading
 // order in each spec file and emits the ordered list. It is the authoritative
@@ -26,11 +26,9 @@ const ROOT = resolve(dirname(fileURLToPath(new URL(".", import.meta.url))), ".."
 const SPECS_DIR = resolve(
   ROOT,
   "openspec",
-  "changes",
-  "release-0-1-0-desktop-player",
   "specs",
 );
-const CHANGE_DIR = resolve(SPECS_DIR, "..");
+const TRACE_PATH = resolve(ROOT, "docs", "traceability.md");
 
 // The per-area prefix is fixed by traceability.md; an area maps 1:1 to a
 // directory and a prefix. Order here is the stable publication order.
@@ -93,7 +91,7 @@ export function parseSpec(area) {
  * @returns {Set<string>}
  */
 export function traceabilityIdsFor(areaName) {
-  const text = readFileSync(resolve(CHANGE_DIR, "traceability.md"), "utf8");
+  const text = readFileSync(TRACE_PATH, "utf8");
   const lines = text.split("\n");
   const inSection = new RegExp(`^## ${areaName}$`);
   let sectionStart = lines.findIndex((l) => inSection.test(l.trim()));

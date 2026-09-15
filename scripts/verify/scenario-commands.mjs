@@ -61,6 +61,12 @@ export const COMMANDS = {
   "DAS-R08-S03": REACT("src/app/overlays.test.tsx"),
   "DAS-R09-S01": CHECK("13.8"), // offline/no-network
   "DAS-R09-S02": CHECK("13.8"),
+  // wire-desktop-system-dialogs: real OS dialogs/reveal, WebView stays pathless.
+  "DAS-R10-S01": CHECK("wire-dialogs"), // TauriDialogs native folder pick wired
+  "DAS-R10-S02": CHECK("wire-dialogs"),
+  "DAS-R10-S03": CHECK("wire-dialogs"), // capability set stays free of dialog/fs
+  "DAS-R11-S01": REACT("src/app/App.test.tsx"), // workspace-empty claims full workspace
+  "DAS-R11-S02": REACT("src/app/App.test.tsx"),
 
   // ===== desktop-playback (DP) =====
   "DP-R01-S01": "cargo test -p echo-desktop --all-features --test player_smoke",
@@ -142,6 +148,15 @@ export const COMMANDS = {
   "LE-R06-S04": COREC("scan::tests::enumerate_failure_marks_run_failed_without_missing"),
   "LE-R07-S01": COREC("bench_50k"), // p95 budgets
   "LE-R07-S02": REACT("src/features/library/SongList.test.tsx"),
+  // library-nav-counts: backend-driven view counts, invalidation on changes.
+  "LE-R08-S01": REACT("src/features/library/libraryNavCounts.test.tsx"),
+  "LE-R08-S02": REACT("src/features/library/libraryNavCounts.test.tsx"),
+  "LE-R08-S03": REACT("src/features/library/libraryNavCounts.test.tsx"),
+  "LE-R08-S04": REACT("src/features/library/libraryNavCounts.test.tsx"),
+  "LE-R09-S01": REACT("src/features/library/libraryNavCounts.test.tsx"),
+  "LE-R09-S02": REACT("src/features/library/libraryNavCounts.test.tsx"),
+  "LE-R09-S03": REACT("src/features/library/libraryNavCounts.test.tsx"),
+  "LE-R09-S04": REACT("src/features/library/libraryNavCounts.test.tsx"),
 
   // ===== local-library (LL) =====
   "LL-R01-S01": COREC("root_switch::"),
@@ -207,6 +222,14 @@ export const COMMANDS = {
   "SFI-R07-S02": CHECK("9.1"),
   "SFI-R08-S01": COREC("recover::tests::recovery_never_creates_a_duplicate_when_a_watcher_preempts"), // P0
   "SFI-R08-S02": COREC("recover::tests::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"), // P0
+
+  // ===== sync-foundation (SYN) =====
+  "SYN-R01-S01": CHECK("3.10"), // 0005 schema landed without touching 0001
+  "SYN-R01-S02": COREC("infrastructure::sqlite::tests::sync_foundation"),
+  "SYN-R02-S01": COREC("infrastructure::sqlite::tests::sync_foundation"),
+  "SYN-R02-S02": CHECK("3.14"), // outbox prewritten, no operable sync entry
+  "SYN-R03-S01": COREC("infrastructure::sqlite::tests::sync_foundation"),
+  "SYN-R04-S01": COREC("infrastructure::sqlite::tests::sync_payloads_carry_no_absolute_paths"),
 };
 
 import { allScenarioIds } from "./spec-scenarios.mjs";

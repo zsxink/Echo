@@ -24,10 +24,9 @@ import { scenarioCommands } from "./scenario-commands.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(new URL(".", import.meta.url))), "..");
 const MANIFEST_PATH = resolve(ROOT, "scripts", "verify", "manifest.json");
-const TRACE = resolve(ROOT, "openspec", "changes", "release-0-1-0-desktop-player", "traceability.md");
+const TRACE = resolve(ROOT, "docs", "traceability.md");
 const SCENARIOS_DIR = resolve(ROOT, "tests", "scenarios");
 const NATIVE_DIR = resolve(ROOT, "tests", "native");
-const CHANGE = resolve(ROOT, "openspec", "changes", "release-0-1-0-desktop-player");
 
 // Which IDs are native (tests/native/*.md) — authoritative from traceability.
 function nativeIds() {
@@ -135,8 +134,11 @@ for (const d of ids) {
 const nativeCount = entries.filter((e) => e.isNative).length;
 const yamlCount = entries.length - nativeCount;
 console.log(`plan: ${entries.length} scenarios (${yamlCount} automatable .yaml, ${nativeCount} native .md)`);
-if (nativeCount !== 45 || yamlCount !== 115) {
-  console.error(`expected 45 native / 115 yaml, got ${nativeCount}/${yamlCount}`);
+// The native rows are the fixed three-platform human matrix (45 for 0.1.0);
+// every new spec scenario is automatable, so the yaml count grows with the
+// spec-derived total rather than being pinned.
+if (nativeCount < 45) {
+  console.error(`expected at least 45 native .md rows, got ${nativeCount}`);
   process.exit(1);
 }
 

@@ -20,8 +20,7 @@ import { fileURLToPath } from "node:url";
 import { allScenarioIds } from "./spec-scenarios.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(new URL(".", import.meta.url))), "..");
-const CHANGE = resolve(ROOT, "openspec", "changes", "release-0-1-0-desktop-player");
-const TRACE = resolve(CHANGE, "traceability.md");
+const TRACE = resolve(ROOT, "docs", "traceability.md");
 const PRD_OUT = resolve(ROOT, "docs", "acceptance", "PRD-matrix.md");
 
 // The A# → scenario-ID families that prove it. Prefix families use the

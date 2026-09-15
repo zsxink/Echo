@@ -2114,6 +2114,36 @@
       "manifest": "tests/native/DAS-R09-S02.md"
     },
     {
+      "id": "DAS-R10-S01",
+      "title": "从欢迎界面打开原生目录选择器",
+      "command": "node scripts/verify/checks/task-wire-dialogs.mjs",
+      "manifest": "tests/scenarios/DAS-R10-S01.yaml"
+    },
+    {
+      "id": "DAS-R10-S02",
+      "title": "取消原生目录选择",
+      "command": "node scripts/verify/checks/task-wire-dialogs.mjs",
+      "manifest": "tests/scenarios/DAS-R10-S02.yaml"
+    },
+    {
+      "id": "DAS-R10-S03",
+      "title": "WebView 不接触文件系统路径",
+      "command": "node scripts/verify/checks/task-wire-dialogs.mjs",
+      "manifest": "tests/scenarios/DAS-R10-S03.yaml"
+    },
+    {
+      "id": "DAS-R11-S01",
+      "title": "未配置时显示完整初始化页",
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx",
+      "manifest": "tests/scenarios/DAS-R11-S01.yaml"
+    },
+    {
+      "id": "DAS-R11-S02",
+      "title": "资料库不可用时显示完整状态页",
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx",
+      "manifest": "tests/scenarios/DAS-R11-S02.yaml"
+    },
+    {
       "id": "DP-R01-S01",
       "title": "播放资料库歌曲",
       "command": "cargo test -p echo-desktop --all-features --test player_smoke",
@@ -2558,6 +2588,54 @@
       "manifest": "tests/scenarios/LE-R07-S02.yaml"
     },
     {
+      "id": "LE-R08-S01",
+      "title": "未打开过的视图也显示计数",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx",
+      "manifest": "tests/scenarios/LE-R08-S01.yaml"
+    },
+    {
+      "id": "LE-R08-S02",
+      "title": "计数不受分页影响",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx",
+      "manifest": "tests/scenarios/LE-R08-S02.yaml"
+    },
+    {
+      "id": "LE-R08-S03",
+      "title": "计数与视图定义一致",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx",
+      "manifest": "tests/scenarios/LE-R08-S03.yaml"
+    },
+    {
+      "id": "LE-R08-S04",
+      "title": "最近添加上限",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx",
+      "manifest": "tests/scenarios/LE-R08-S04.yaml"
+    },
+    {
+      "id": "LE-R09-S01",
+      "title": "在其他视图切换收藏后计数更新",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx",
+      "manifest": "tests/scenarios/LE-R09-S01.yaml"
+    },
+    {
+      "id": "LE-R09-S02",
+      "title": "导入与删除后计数更新",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx",
+      "manifest": "tests/scenarios/LE-R09-S02.yaml"
+    },
+    {
+      "id": "LE-R09-S03",
+      "title": "刷新期间不显示空白",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx",
+      "manifest": "tests/scenarios/LE-R09-S03.yaml"
+    },
+    {
+      "id": "LE-R09-S04",
+      "title": "资料库不可用时",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx",
+      "manifest": "tests/scenarios/LE-R09-S04.yaml"
+    },
+    {
       "id": "LL-R01-S01",
       "title": "选择根目录并建立资料库",
       "command": "cargo test -p echo-core --all-features root_switch::",
@@ -2920,13 +2998,13 @@
     {
       "id": "SYN-R01-S02",
       "title": "对象级 revision 单调递增",
-      "command": "cargo test -p echo-core --all-features --lib infrastructure::sqlite::tests::sync_foundation",
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_foundation",
       "manifest": "tests/scenarios/SYN-R01-S02.yaml"
     },
     {
       "id": "SYN-R02-S01",
       "title": "导入与收藏变更是 outbox 条目",
-      "command": "cargo test -p echo-core --all-features --lib infrastructure::sqlite::tests::sync_foundation",
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_foundation",
       "manifest": "tests/scenarios/SYN-R02-S01.yaml"
     },
     {
@@ -2938,13 +3016,13 @@
     {
       "id": "SYN-R03-S01",
       "title": "删除产生墓碑",
-      "command": "cargo test -p echo-core --all-features --lib infrastructure::sqlite::tests::sync_foundation",
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_foundation",
       "manifest": "tests/scenarios/SYN-R03-S01.yaml"
     },
     {
       "id": "SYN-R04-S01",
       "title": "本机绝对路径不进入可同步载荷",
-      "command": "cargo test -p echo-core --all-features --lib infrastructure::sqlite::tests::sync_payloads_carry_no_absolute_paths",
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_payloads_carry_no_absolute_paths",
       "manifest": "tests/scenarios/SYN-R04-S01.yaml"
     }
   ]
