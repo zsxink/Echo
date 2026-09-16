@@ -55,7 +55,10 @@ async function fetchPage(query: SongQuery, cursor?: string | null): Promise<Page
   if (query.search.trim().length > 0) {
     return bridge.call("search", {
       query: query.search,
-      in_favorites: false,
+      // Tauri maps Rust's `in_favorites` argument to the `inFavorites` JSON
+      // key. Sending snake_case makes command deserialization fail before the
+      // search service runs.
+      inFavorites: false,
       sort,
       cursor: cursor ?? null,
       limit,
@@ -80,6 +83,10 @@ export function useSongs(query: SongQuery): {
   const [page, setPage] = useState<SongPage>({ songs: [], isLast: false });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Mutations such as an import keep the query itself unchanged. Keep a
+  // separate revision so `reset()` can invalidate the loaded page *and* issue
+  // a new first-page request for the currently selected view.
+  const [refreshEpoch, setRefreshEpoch] = useState(0);
   const requests = useRef(new Map<string, number>());
   const key = pageKey(query);
   const cursorRef = useRef<string | undefined>(undefined);
@@ -123,7 +130,7 @@ export function useSongs(query: SongQuery): {
       requests.current.delete(key);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, refreshEpoch]);
 
   const loadMore = useCallback(async () => {
     if (!cursorRef.current || loading) return;
@@ -151,8 +158,8 @@ export function useSongs(query: SongQuery): {
     cursorRef.current = undefined;
     setPage({ songs: [], isLast: false });
     setError(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+    setRefreshEpoch((epoch) => epoch + 1);
+  }, []);
 
   const retry = useCallback(() => retryRef.current(), []);
 
