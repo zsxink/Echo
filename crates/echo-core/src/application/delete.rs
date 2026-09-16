@@ -529,7 +529,7 @@ mod tests {
         let fixture = ScanFixture::new();
         let song = seed_song(
             &fixture,
-            "歌手/周杰伦 - 晴天.flac",
+            "media/歌手/周杰伦 - 晴天.flac",
             b"audio-bytes",
             Some(b"lrc-bytes"),
         );
@@ -552,8 +552,9 @@ mod tests {
             "lyrics left the library"
         );
         let trash_dir = base
-            .join(".echo-test-staging/trash")
-            .join(outcome.operation.to_string());
+            .join(crate::domain::library::STAGING_ROOT)
+            .join("trash")
+            .join(outcome.operation.as_uuid().simple().to_string());
         assert_eq!(
             std::fs::read(trash_dir.join("audio")).unwrap(),
             b"audio-bytes"
@@ -622,11 +623,11 @@ mod tests {
         // Files back at their original paths with the exact bytes.
         let base = fixture.fs.root_path(fixture.root).expect("root");
         assert_eq!(
-            std::fs::read(base.join("歌手/周杰伦 - 晴天.flac")).unwrap(),
+            std::fs::read(base.join("media/歌手/周杰伦 - 晴天.flac")).unwrap(),
             b"audio-bytes"
         );
         assert_eq!(
-            std::fs::read(base.join("歌手/周杰伦 - 晴天.lrc")).unwrap(),
+            std::fs::read(base.join("media/歌手/周杰伦 - 晴天.lrc")).unwrap(),
             b"lrc-bytes"
         );
 
@@ -653,7 +654,7 @@ mod tests {
         let fixture = ScanFixture::new();
         let song = seed_song(
             &fixture,
-            "歌手/周杰伦 - 晴天.flac",
+            "media/歌手/周杰伦 - 晴天.flac",
             b"audio-bytes",
             Some(b"lrc-bytes"),
         );
@@ -662,8 +663,8 @@ mod tests {
             .unwrap();
 
         // Foreign content occupies the original paths before the undo.
-        fixture.write_file("歌手/周杰伦 - 晴天.flac", b"foreign-audio");
-        fixture.write_file("歌手/周杰伦 - 晴天.lrc", b"foreign-lrc");
+        fixture.write_file("media/歌手/周杰伦 - 晴天.flac", b"foreign-audio");
+        fixture.write_file("media/歌手/周杰伦 - 晴天.lrc", b"foreign-lrc");
 
         RestoreDeletedOperation::new(&fixture.deps)
             .restore(fixture.root, outcome.operation)
@@ -672,20 +673,20 @@ mod tests {
         let base = fixture.fs.root_path(fixture.root).expect("root");
         // The foreign files are untouched; our files land at numbered paths.
         assert_eq!(
-            std::fs::read(base.join("歌手/周杰伦 - 晴天.flac")).unwrap(),
+            std::fs::read(base.join("media/歌手/周杰伦 - 晴天.flac")).unwrap(),
             b"foreign-audio"
         );
         assert_eq!(
-            std::fs::read(base.join("歌手/周杰伦 - 晴天.lrc")).unwrap(),
+            std::fs::read(base.join("media/歌手/周杰伦 - 晴天.lrc")).unwrap(),
             b"foreign-lrc"
         );
         assert_eq!(
-            std::fs::read(base.join("歌手/周杰伦 - 晴天 (1).flac")).unwrap(),
+            std::fs::read(base.join("media/歌手/周杰伦 - 晴天 (1).flac")).unwrap(),
             b"audio-bytes",
             "audio restored to the safe numbered path"
         );
         assert_eq!(
-            std::fs::read(base.join("歌手/周杰伦 - 晴天 (1).lrc")).unwrap(),
+            std::fs::read(base.join("media/歌手/周杰伦 - 晴天 (1).lrc")).unwrap(),
             b"lrc-bytes",
             "lyrics restored to the safe numbered path"
         );
@@ -715,8 +716,9 @@ mod tests {
         let base = fixture.fs.root_path(fixture.root).expect("root");
         assert!(!base.join("歌手/周杰伦 - 晴天.flac").exists());
         assert!(base
-            .join(".echo-test-staging/trash")
-            .join(outcome.operation.to_string())
+            .join(crate::domain::library::STAGING_ROOT)
+            .join("trash")
+            .join(outcome.operation.as_uuid().simple().to_string())
             .join("audio")
             .exists());
     }

@@ -160,8 +160,11 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
             .get(&root)
             .cloned()
             .expect("root");
+        // Mirror the real walker (portable layout §5): only `media/` is the
+        // managed tree; root-level artist folders / loose files / the `echo/`
+        // control surface are never candidates.
         let mut out = Vec::new();
-        walk_dir(&base, &base, &mut out);
+        walk_media(&base, &mut out);
         Ok(out)
     }
     fn file_meta(&self, root: LibraryRootId, path: &RelativeMediaPath) -> Result<FileMeta, Error> {
@@ -238,7 +241,7 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
     }
 
     /// Mirrors the real adapter: chunked pump + BLAKE3 accumulated during the
-    /// copy, staged under `<root>/.echo-test-staging/import/<operation>/`.
+    /// copy, staged under `<root>/echo/tmp/<operation>/` (portable layout).
     fn stage_stream(
         &self,
         root: LibraryRootId,
@@ -256,9 +259,8 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
             .cloned()
             .ok_or_else(|| Error::unavailable("test root", "unknown root"))?;
         let slot = base
-            .join(".echo-test-staging")
-            .join("import")
-            .join(staged.operation().to_string());
+            .join(crate::domain::library::STAGING_ROOT)
+            .join(staged.operation().as_uuid().simple().to_string());
         std::fs::create_dir_all(&slot).map_err(|e| Error::io("stage mkdir", e, slot.clone()))?;
         let path = slot.join(staged.resource_key());
         let mut file = std::fs::OpenOptions::new()
@@ -281,9 +283,11 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
                 .map_err(|e| Error::io("stage write", e, path.clone()))?;
             size = size.saturating_add(u64::try_from(read).unwrap_or(u64::MAX));
         }
+        // The portable layout: staged path is `echo/tmp/<op>/<key>`.
         let staged_rel = RelativeMediaPath::new(&format!(
-            ".echo-test-staging/import/{}/{}",
-            staged.operation(),
+            "{}/{}/{}",
+            crate::domain::library::STAGING_ROOT,
+            staged.operation().as_uuid().simple(),
             staged.resource_key()
         ))?;
         self.staged.lock().unwrap().insert(
@@ -339,7 +343,8 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
             return Err(err);
         }
         // Only Echo's own staging area may be republished after a crash: the
-        // persisted staging path must live under `<root>/.echo-test-staging/`.
+        // persisted staging path must live under `<root>/echo/tmp/` (the
+        // portable staging root).
         let base = self
             .roots
             .lock()
@@ -348,11 +353,11 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
             .cloned()
             .ok_or_else(|| Error::unavailable("test root", "unknown root"))?;
         // The journal's staging path is root-relative; resolve it and verify
-        // it sits directly under the root's `.echo-test-staging` directory
-        // (never a foreign location). Component-wise check, not a string
-        // prefix, so a crafted name cannot evade the boundary.
+        // it sits directly under the root's `echo/tmp` directory (never a
+        // foreign location). Component-wise check, not a string prefix, so a
+        // crafted name cannot evade the boundary.
         let staging_abs = base.join(staging_path.normalized());
-        let staging_root = base.join(".echo-test-staging");
+        let staging_root = base.join(crate::domain::library::STAGING_ROOT);
         let inside = staging_abs
             .strip_prefix(&staging_root)
             .is_ok_and(|rest| !rest.as_os_str().is_empty() && !rest.starts_with(".."));
@@ -401,7 +406,7 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
             .cloned()
             .ok_or_else(|| Error::unavailable("test root", "unknown root"))?;
         let staging_abs = base.join(staging_path.normalized());
-        let staging_root = base.join(".echo-test-staging");
+        let staging_root = base.join(crate::domain::library::STAGING_ROOT);
         let inside = staging_abs
             .strip_prefix(&staging_root)
             .is_ok_and(|rest| !rest.as_os_str().is_empty() && !rest.starts_with(".."));
@@ -452,7 +457,10 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
         resource_key: &str,
     ) -> Result<RelativeMediaPath, Error> {
         let trash_rel = RelativeMediaPath::new(&format!(
-            ".echo-test-staging/trash/{operation}/{resource_key}"
+            "{}/trash/{}/{}",
+            crate::domain::library::STAGING_ROOT,
+            operation.as_uuid().simple(),
+            resource_key
         ))?;
         let base = self
             .roots
@@ -461,7 +469,9 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
             .get(&root)
             .cloned()
             .ok_or_else(|| Error::unavailable("test root", "unknown root"))?;
-        let staging_root = base.join(".echo-test-staging").join("trash");
+        let staging_root = base
+            .join(crate::domain::library::STAGING_ROOT)
+            .join("trash");
         if !is_under(&base.join(trash_rel.normalized()), &staging_root) {
             return Err(Error::permission(
                 "trash path",
@@ -489,7 +499,9 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
             .cloned()
             .ok_or_else(|| Error::unavailable("test root", "unknown root"))?;
         let trash_rel = self.trash_path(root, operation, resource_key)?;
-        let staging_root = base.join(".echo-test-staging").join("trash");
+        let staging_root = base
+            .join(crate::domain::library::STAGING_ROOT)
+            .join("trash");
         if !is_under(&base.join(trash_rel.normalized()), &staging_root) {
             return Err(Error::permission(
                 "stage to trash",
@@ -540,7 +552,11 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
             .get(&root)
             .cloned()
             .ok_or_else(|| Error::unavailable("test root", "unknown root"))?;
-        let staging_root = base.join(".echo-test-staging").join("trash");
+
+        #[allow(clippy::all)] // keep call sites identical to `is_under` helper
+        let staging_root = base
+            .join(crate::domain::library::STAGING_ROOT)
+            .join("trash");
         if !is_under(&base.join(trash.normalized()), &staging_root) {
             return Err(Error::permission(
                 "restore from trash",
@@ -600,11 +616,15 @@ fn walk_dir(base: &Path, dir: &Path, out: &mut Vec<RelativeMediaPath>) {
         for e in entries.flatten() {
             let p = e.path();
             if p.is_dir() {
-                // The fake's private staging area is invisible to scans, like
-                // the real walker's marker-verified skip.
-                if p.file_name()
-                    .is_some_and(|name| name == ".echo-test-staging")
-                {
+                // The portable control surface (`echo/`) is invisible to
+                // scans, like the real walker's control-path skip: neither the
+                // manifest, the object records nor `echo/tmp/` staging ever
+                // appear as library files.
+                if p.strip_prefix(base).is_ok_and(|rel| {
+                    rel.components()
+                        .next()
+                        .is_some_and(|c| c.as_os_str() == crate::domain::library::CONTROL_ROOT)
+                }) {
                     continue;
                 }
                 walk_dir(base, &p, out);
@@ -613,6 +633,29 @@ fn walk_dir(base: &Path, dir: &Path, out: &mut Vec<RelativeMediaPath>) {
                     out.push(rp);
                 }
             }
+        }
+    }
+}
+
+/// Walk exactly the managed `media/` tree, mirroring the real walker
+/// (`walker::enumerate_files`): a path outside `media/` (old-layout artist
+/// folders, loose root files, the `echo/` control surface) is never a library
+/// candidate.
+fn walk_media(base: &Path, out: &mut Vec<RelativeMediaPath>) {
+    let media = base.join(crate::domain::library::MEDIA_ROOT);
+    if !media.is_dir() {
+        return;
+    }
+    let mut files = Vec::new();
+    walk_dir(&media, &media, &mut files);
+    for relative in files {
+        // Re-emit as `media/<rest>` root-relative, like the real walker.
+        if let Ok(rp) = RelativeMediaPath::new(&format!(
+            "{}/{}",
+            crate::domain::library::MEDIA_ROOT,
+            relative.display()
+        )) {
+            out.push(rp);
         }
     }
 }
@@ -631,32 +674,26 @@ mod tests {
         let fs = FakeLibraryFileSystem::with_root(r);
         // Only a typed, adapter-owned staging handle can be published.
         let staged = StagedResource::new(OperationId::new(), "audio").unwrap();
+        let target = RelativeMediaPath::new("media/华语/华语 - 稻香.mp3").unwrap();
         fs.stage_bytes(r, &staged, b"audio").unwrap();
-        fs.publish(
-            r,
-            &staged,
-            &RelativeMediaPath::new("华语/稻香.mp3").unwrap(),
-        )
-        .unwrap();
+        fs.publish(r, &staged, &target).unwrap();
         assert!(fs
             .roots
             .lock()
             .unwrap()
             .get(&r)
             .unwrap()
-            .join("华语/稻香.mp3")
+            .join("media/华语/华语 - 稻香.mp3")
             .exists());
-        // Enumerate sees it.
+        // Enumerate sees it (under the managed media/ tree).
         let found = fs.enumerate(r).unwrap();
         assert_eq!(found.len(), 1);
-        assert_eq!(found[0].display(), "华语/稻香.mp3");
+        assert_eq!(found[0].display(), "media/华语/华语 - 稻香.mp3");
 
         // Fault injection simulates permission revocation.
         fs.inject_fault(Error::unavailable("test root", "权限被撤销"));
         assert!(fs.enumerate(r).is_err());
-        assert!(fs
-            .read_head(r, &RelativeMediaPath::new("华语/稻香.mp3").unwrap(), 4)
-            .is_err());
+        assert!(fs.read_head(r, &target, 4).is_err());
         fs.clear_fault();
         assert!(fs.enumerate(r).is_ok());
 

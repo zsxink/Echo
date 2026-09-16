@@ -36,6 +36,9 @@ use std::time::Duration;
 
 use crate::application::ports::*;
 use crate::domain::ids::*;
+use crate::domain::library::{
+    LibraryManifest, PortableRecord, PortableSerialize, RecordKind, MEDIA_ROOT,
+};
 use crate::error::Error;
 
 /// Shared interior-mutability cell backing every in-memory fake.
@@ -129,12 +132,19 @@ impl FakeMediaProbe {
 
 impl MediaProbe for FakeMediaProbe {
     fn probe(&self, _root: LibraryRootId, path: &RelativeMediaPath) -> Result<ProbeOutcome, Error> {
-        Ok(self
-            .map
-            .lock()
-            .unwrap()
+        let map = self.map.lock().unwrap();
+        Ok(map
             .get(path.normalized())
             .cloned()
+            // Prefix-tolerant: seeding may use either the `media/…` form the
+            // scan sees, or a bare test path. Fall back across the two forms.
+            .or_else(|| {
+                let normalized = path.normalized();
+                normalized
+                    .strip_prefix(&format!("{MEDIA_ROOT}/"))
+                    .and_then(|rest| map.get(rest).cloned())
+                    .or_else(|| map.get(&format!("{MEDIA_ROOT}/{normalized}")).cloned())
+            })
             .unwrap_or(ProbeOutcome::Unsupported))
     }
 }
@@ -172,13 +182,21 @@ impl MetadataReader for FakeMetadataReader {
         _root: LibraryRootId,
         path: &RelativeMediaPath,
     ) -> Result<crate::domain::media::ParsedMetadata, Error> {
-        Ok(self
-            .map
-            .lock()
-            .unwrap()
-            .get(path.normalized())
+        let map = self.map.lock().unwrap();
+        let normalized = path.normalized();
+        let meta = map
+            .get(normalized)
             .cloned()
-            .unwrap_or_default())
+            // Prefix-tolerant seeding, mirroring [`FakeMediaProbe`]: the scan
+            // looks up `media/…`, a test may seed either form.
+            .or_else(|| {
+                normalized
+                    .strip_prefix(&format!("{MEDIA_ROOT}/"))
+                    .and_then(|rest| map.get(rest).cloned())
+                    .or_else(|| map.get(&format!("{MEDIA_ROOT}/{normalized}")).cloned())
+            })
+            .unwrap_or_default();
+        Ok(meta)
     }
     fn read_bytes(&self, content: &[u8]) -> Result<crate::domain::media::ParsedMetadata, Error> {
         Ok(self
@@ -499,6 +517,115 @@ impl MediaProbe for SlowProbe {
     fn probe(&self, root: LibraryRootId, path: &RelativeMediaPath) -> Result<ProbeOutcome, Error> {
         std::thread::sleep(self.delay);
         self.inner.probe(root, path)
+    }
+}
+
+/// An in-memory [`ControlPlanePort`] double. Records are stored in a
+/// `BTreeMap` keyed by `(root, kind, uuid)`; the manifest is stored per root.
+/// Shared via [`Shared`] so the same fake backs a `ScanDeps` used across many
+/// use cases in one test.
+#[derive(Clone, Debug, Default)]
+pub struct MemoryControlPlane {
+    manifest: Shared<BTreeMap<LibraryRootId, LibraryManifest>>,
+    records: Shared<BTreeMap<(LibraryRootId, RecordKind, String), PortableRecord>>,
+    usable: Arc<Mutex<bool>>,
+}
+
+impl MemoryControlPlane {
+    /// A fresh, usable in-memory control surface.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            usable: Arc::new(Mutex::new(true)),
+            ..Default::default()
+        }
+    }
+}
+
+impl MemoryControlPlane {
+    /// The manifest stored for `root`.
+    #[must_use]
+    pub fn manifest_of(&self, root: LibraryRootId) -> Option<LibraryManifest> {
+        self.manifest.lock().unwrap().get(&root).cloned()
+    }
+
+    /// All records of one root.
+    #[must_use]
+    pub fn records_of(&self, root: LibraryRootId) -> Vec<PortableRecord> {
+        self.records
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|((r, _, _), _)| *r == root)
+            .map(|(_, rc)| rc.clone())
+            .collect()
+    }
+
+    /// Script whether the control plane reports itself usable.
+    pub fn set_usable(&self, usable: bool) {
+        *self.usable.lock().unwrap() = usable;
+    }
+}
+
+impl ControlPlanePort for MemoryControlPlane {
+    fn write_manifest(&self, root: LibraryRootId, manifest: &LibraryManifest) -> Result<(), Error> {
+        self.manifest.lock().unwrap().insert(root, manifest.clone());
+        Ok(())
+    }
+
+    fn read_manifest(&self, root: LibraryRootId) -> Result<Option<LibraryManifest>, Error> {
+        Ok(self.manifest_of(root))
+    }
+
+    fn write_record(&self, root: LibraryRootId, record: &PortableRecord) -> Result<(), Error> {
+        let key = (root, record.kind(), record.object_uuid().to_string());
+        self.records.lock().unwrap().insert(key, record.clone());
+        Ok(())
+    }
+
+    fn read_record(
+        &self,
+        root: LibraryRootId,
+        kind: RecordKind,
+        object_uuid: &str,
+    ) -> Result<Option<PortableRecord>, Error> {
+        Ok(self
+            .records
+            .lock()
+            .unwrap()
+            .get(&(root, kind, object_uuid.to_string()))
+            .cloned())
+    }
+
+    fn delete_record(
+        &self,
+        root: LibraryRootId,
+        kind: RecordKind,
+        object_uuid: &str,
+    ) -> Result<(), Error> {
+        self.records
+            .lock()
+            .unwrap()
+            .remove(&(root, kind, object_uuid.to_string()));
+        Ok(())
+    }
+
+    fn list_records(&self, root: LibraryRootId, kind: RecordKind) -> Result<Vec<String>, Error> {
+        let mut out: Vec<String> = self
+            .records
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|((r, k, _), _)| *r == root && *k == kind)
+            .map(|(_, rc)| rc.to_canonical_json().unwrap_or_default())
+            .collect();
+        out.sort();
+        Ok(out)
+    }
+
+    fn control_plane_usable(&self, root: LibraryRootId) -> Result<bool, Error> {
+        let _ = root;
+        Ok(*self.usable.lock().unwrap())
     }
 }
 

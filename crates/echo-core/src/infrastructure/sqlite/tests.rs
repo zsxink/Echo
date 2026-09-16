@@ -6,7 +6,8 @@ use rusqlite::params;
 use super::*;
 use crate::application::catalog::CatalogQuery;
 use crate::application::ports::{
-    LibraryRepository, OperationResourceKind, PlaylistRepository, SongRepository, UnitOfWork,
+    DeviceIdProvider, LibraryRepository, OperationResourceKind, PlaylistRepository, SongRepository,
+    SyncStateReader, UnitOfWork,
 };
 use crate::domain::catalog::{SongSort, SongSortField, SortDirection};
 use crate::domain::entities::{LyricsLine, RootAvailability, SongAvailability};
@@ -77,6 +78,8 @@ fn initial_migration_has_required_tables_indexes_and_no_account_or_telemetry() {
         "tombstones",
         "sync_state",
         "sync_outbox",
+        // 0006 portable-layout: device/HLC/member-UUID shape.
+        "device_state",
     ] {
         assert!(names.contains(&required), "missing {required}");
     }
@@ -158,12 +161,16 @@ fn sync_foundation_prewrites_song_playlist_and_tombstone() {
     let imported = song(root, "歌手/歌 - 甲.flac", "歌", "歌手");
     SongRepository::upsert(&database, &imported).expect("upsert");
 
-    // Favorite is a syncable field → a second song outbox row, revision 2.
+    // Favorite is an independent syncable fact keyed by the song UUID.
     SongRepository::set_favorite(&database, imported.id(), true).expect("favorite");
     let song_rows = database
         .outbox_kind_count(super::sync::KIND_SONG)
         .expect("song outbox count");
-    assert_eq!(song_rows, 2, "upsert + favorite = two song facts");
+    assert_eq!(song_rows, 1, "favorite does not overwrite the song fact");
+    let favorite_rows = database
+        .outbox_kind_count(super::sync::KIND_FAVORITE)
+        .expect("favorite outbox count");
+    assert_eq!(favorite_rows, 1, "favorite creates its own portable fact");
 
     // Playlist create + member add → playlist outbox rows with member excerpt.
     let playlist = PlaylistId::new();
@@ -189,7 +196,7 @@ fn sync_foundation_prewrites_song_playlist_and_tombstone() {
         .outbox_kind_count(super::sync::KIND_SONG)
         .expect("song outbox after delete");
     assert_eq!(
-        song_rows_after, 3,
+        song_rows_after, 2,
         "finalized delete appends one more song fact"
     );
     let song_tombstoned = song_tombstone_count(&database);
@@ -213,6 +220,159 @@ fn song_tombstone_count(database: &SqliteDatabase) -> i64 {
                 .map_err(super::support::storage)
         })
         .expect("tombstone count")
+}
+
+fn outbox_revisions(database: &SqliteDatabase, kind: &str, uuid: &str) -> Vec<i64> {
+    database
+        .with_reader(|connection| {
+            let mut statement = connection
+                .prepare(
+                    "SELECT revision FROM sync_outbox WHERE object_type = ?1 AND object_uuid = ?2 ORDER BY revision",
+                )
+                .map_err(super::support::storage)?;
+            let rows = statement
+                .query_map(params![kind, uuid], |row| row.get::<_, i64>(0))
+                .map_err(super::support::storage)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(super::support::storage)?;
+            Ok(rows)
+        })
+        .expect("outbox revisions")
+}
+
+fn outbox_latest_payload(database: &SqliteDatabase, kind: &str, uuid: &str) -> String {
+    database
+        .with_reader(|connection| {
+            connection
+                .query_row(
+                    "SELECT payload_json FROM sync_outbox WHERE object_type = ?1 AND object_uuid = ?2 ORDER BY revision DESC LIMIT 1",
+                    params![kind, uuid],
+                    |row| row.get::<_, String>(0),
+                )
+                .map_err(super::support::storage)
+        })
+        .expect("latest payload")
+}
+
+/// Task 1.3: consecutive writes to the same object yield strictly monotone
+/// revisions, and the outbox payload reflects the full current object state.
+/// Favorites are independent portable facts, so their revision history must
+/// not alter the song object's media-metadata history.
+#[test]
+fn sync_object_revisions_are_monotone_and_payloads_are_full() {
+    let (_directory, database, root) = database();
+    let imported = song(root, "歌手/歌 - 甲.flac", "歌", "歌手");
+    SongRepository::upsert(&database, &imported).expect("upsert");
+    let id = imported.id().to_string();
+
+    // Favorite → its own first revision and a payload with no local path or
+    // runtime state. The imported song remains at revision one.
+    SongRepository::set_favorite(&database, imported.id(), true).expect("favorite");
+    let revisions = outbox_revisions(&database, super::sync::KIND_SONG, &id);
+    assert_eq!(
+        revisions,
+        vec![1],
+        "favorite does not overwrite song object"
+    );
+    let favorite_revisions = outbox_revisions(&database, super::sync::KIND_FAVORITE, &id);
+    assert_eq!(
+        favorite_revisions,
+        vec![1],
+        "favorite starts its own revision"
+    );
+    let latest = outbox_latest_payload(&database, super::sync::KIND_FAVORITE, &id);
+    let parsed: serde_json::Value = serde_json::from_str(&latest).expect("payload json");
+    assert_eq!(parsed["is_favorite"], serde_json::Value::Bool(true));
+    assert_eq!(parsed["song_uuid"], serde_json::Value::String(id.clone()));
+    assert!(parsed.get("relative_path").is_none());
+    assert!(parsed.get("play_count").is_none());
+
+    // Un-favorite → the favorite object's second revision, monotone continues.
+    SongRepository::set_favorite(&database, imported.id(), false).expect("unfavorite");
+    let revisions = outbox_revisions(&database, super::sync::KIND_FAVORITE, &id);
+    assert_eq!(revisions, vec![1, 2], "monotone across consecutive writes");
+
+    // Playlist: create → member add, both monotone and full.
+    let playlist = PlaylistId::new();
+    database
+        .create(playlist, root, "通勤")
+        .expect("create playlist");
+    database
+        .add_member(playlist, imported.id(), u64::MAX)
+        .expect("add member");
+    let pl = playlist.to_string();
+    let pl_revisions = outbox_revisions(&database, super::sync::KIND_PLAYLIST, &pl);
+    assert_eq!(pl_revisions, vec![1, 2], "playlist revisions monotone");
+    let pl_payload = outbox_latest_payload(&database, super::sync::KIND_PLAYLIST, &pl);
+    let parsed: serde_json::Value = serde_json::from_str(&pl_payload).expect("payload json");
+    assert!(
+        parsed["members"].as_array().is_some_and(|m| m.len() == 1),
+        "member payload carries the full member set"
+    );
+    // The member excerpt now carries a stable member UUID (task 1.2 mapping).
+    let member = parsed["members"][0].clone();
+    assert!(
+        member.get("member_uuid").is_some(),
+        "member payload carries member_uuid"
+    );
+}
+
+/// Task 1.3: availability changes are syncable facts carrying the full object
+/// snapshot, with a monotone revision (a scan marking a song missing must not
+/// produce a duplicate/regressed revision).
+#[test]
+fn sync_availability_change_is_a_full_outbox_fact() {
+    let (_directory, database, root) = database();
+    let imported = song(root, "歌手/歌 - 甲.flac", "歌", "歌手");
+    SongRepository::upsert(&database, &imported).expect("upsert");
+    let id = imported.id().to_string();
+
+    SongRepository::set_availability(&database, imported.id(), SongAvailability::Missing)
+        .expect("mark missing");
+    let revisions = outbox_revisions(&database, super::sync::KIND_SONG, &id);
+    assert_eq!(
+        revisions,
+        vec![1, 2],
+        "availability is a second monotone fact"
+    );
+    let payload = outbox_latest_payload(&database, super::sync::KIND_SONG, &id);
+    assert!(payload.contains("miss"), "payload reflects missing state");
+    assert!(payload.contains("relative_path"), "full payload present");
+}
+
+/// Task 1.3: concurrent sequential submissions for the same object (via the
+/// single-writer actor) never interleave or produce duplicate revisions.
+#[test]
+fn sync_concurrent_sequential_submissions_stay_monotone() {
+    let (_directory, database, root) = database();
+    let imported = song(root, "歌手/歌 - 甲.flac", "歌", "歌手");
+    SongRepository::upsert(&database, &imported).expect("upsert");
+    let id = imported.id();
+
+    std::thread::scope(|scope| {
+        let database = &database;
+        for i in 0..8 {
+            scope.spawn(move || {
+                // Alternate favorite on/off — each is a separate mutation, each
+                // enqueues a revision.
+                if i % 2 == 0 {
+                    SongRepository::set_favorite(database, id, true).expect("fav on");
+                } else {
+                    SongRepository::set_favorite(database, id, false).expect("fav off");
+                }
+            });
+        }
+    });
+
+    let id = id.to_string();
+    let revisions = outbox_revisions(&database, super::sync::KIND_FAVORITE, &id);
+    // Eight concurrent toggles become eight ordered favorite facts, no gaps.
+    assert_eq!(revisions.len(), 8, "8 facts, no lost/duplicate revisions");
+    let expected: Vec<i64> = (1..=8).collect();
+    assert_eq!(
+        revisions, expected,
+        "revisions are strictly 1..9 with no gaps or duplicates"
+    );
 }
 
 #[test]
@@ -563,6 +723,99 @@ fn migration_checksum_and_backup_are_reopenable() {
     assert!(direct.prepare("SELECT * FROM rollback_marker").is_err());
 }
 
+/// Migration 0006 adds the portable-layout shape: a device id store, HLC
+/// columns on syncable objects, and a stable per-member UUID on playlist
+/// members.
+#[test]
+fn migration_0006_portable_layout_columns_exist() {
+    let (directory, _database, _) = database();
+    // A fresh DB runs 0001..=0006. Probe the 0006 additions directly.
+    let mut direct = open_writer(&directory.path().join("plain.db")).expect("connection");
+    apply_migrations(&mut direct).expect("all migrations");
+    direct
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('songs') WHERE name = 'hlc_wall_secs'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("songs.hlc_wall_secs");
+    direct
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('playlist_songs') WHERE name = 'member_uuid'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("playlist_songs.member_uuid");
+    direct
+        .query_row(
+            "SELECT value FROM device_state WHERE key = 'device_id'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .expect("device_state seeded");
+    drop(direct);
+}
+
+/// A database created at migration 0005 (a "pre-portable" install) upgrades
+/// cleanly through 0006 without losing data or violating the immutable released
+/// migrations.
+#[test]
+fn migration_0006_upgrades_a_migration_0005_database() {
+    let directory = tempfile::tempdir().expect("temp dir");
+    let path = directory.path().join("old.db");
+    let mut direct = open_writer(&path).expect("connection");
+    // Ensure schema_migrations table exists (normally done by apply_migrations).
+    direct
+        .execute_batch("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, checksum TEXT NOT NULL, applied_at INTEGER NOT NULL);")
+        .expect("create schema_migrations");
+    // Apply 1..=5 only, then prove 0006 applies on top.
+    let set: Vec<(i64, &str)> = vec![
+        (1, include_str!("migrations/0001_initial.sql")),
+        (2, include_str!("migrations/0002_library_assets.sql")),
+        (3, include_str!("migrations/0003_root_write_safety.sql")),
+        (4, include_str!("migrations/0004_song_audio_parameters.sql")),
+        (5, include_str!("migrations/0005_sync_foundation.sql")),
+    ];
+    apply_migration_set(&mut direct, &set).expect("1..=5 apply");
+    // A song + playlist member from the pre-portable era (no member_uuid yet).
+    direct
+        .execute_batch(
+            "INSERT INTO library_roots (uuid, absolute_path, normalized_path_key, is_active, write_capable, availability, created_at, updated_at)
+                VALUES ('root1', '/lib/root', '/lib/root', 1, 1, 'available', 1, 1);
+             INSERT INTO songs (uuid, library_root_uuid, relative_path, normalized_relative_path, title, title_sort, artist_sort, album_sort, added_at, availability, created_at, updated_at)
+                VALUES ('song1', 'root1', '歌手/歌.flac', '歌手/歌.flac', '歌', '歌', '歌手', '', 1, 'available', 1, 1);
+             INSERT INTO playlists (uuid, library_root_uuid, display_name, normalized_name_key, created_at, updated_at)
+                VALUES ('pl1', 'root1', '列表', '列表', 1, 1);
+             INSERT INTO playlist_songs (playlist_uuid, song_uuid, position, added_at)
+                VALUES ('pl1', 'song1', 0, 1);",
+        )
+        .expect("seed pre-portable data");
+    apply_migrations(&mut direct).expect("upgrade to 0006");
+
+    // The backfill gave the pre-existing member a stable UUID.
+    let member_uuid: Option<String> = direct
+        .query_row(
+            "SELECT member_uuid FROM playlist_songs WHERE playlist_uuid = 'pl1' AND song_uuid = 'song1'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("member row");
+    assert!(
+        member_uuid.is_some_and(|value| !value.is_empty()),
+        "pre-existing member gets a stable UUID on upgrade"
+    );
+    // The upgrade did not modify released migrations.
+    let checksums = direct
+        .query_row(
+            "SELECT COUNT(*) FROM schema_migrations WHERE version IN (1,2,3,4,5) AND checksum <> ''",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("checksums");
+    assert_eq!(checksums, 5, "all five released migrations recorded");
+    drop(direct);
+}
+
 fn claim_item(song: Option<SongId>, target: &str, key: &str) -> OperationItem {
     OperationItem {
         kind: OperationResourceKind::Audio,
@@ -675,6 +928,20 @@ fn playlist_members_reject_cross_root_and_position_conflicts() {
     database
         .add_member(playlist, song_a.id(), u64::MAX)
         .expect("append a at 0");
+    let original_member = database.members(playlist).expect("member")[0].id();
+    // The same song in a different playlist is a distinct logical membership,
+    // so it gets a distinct UUID rather than inheriting the song identity.
+    let other_playlist = PlaylistId::new();
+    database
+        .create(other_playlist, root, "另一张歌单")
+        .expect("other playlist");
+    database
+        .add_member(other_playlist, song_a.id(), u64::MAX)
+        .expect("member in other playlist");
+    assert_ne!(
+        original_member,
+        database.members(other_playlist).expect("other member")[0].id()
+    );
     // …but an explicit position clash with another member is a real conflict,
     // never a silent no-op (no INSERT OR IGNORE on position).
     let other = song(root, "c.flac", "C", "丙");
@@ -686,6 +953,9 @@ fn playlist_members_reject_cross_root_and_position_conflicts() {
     database
         .add_member(playlist, song_a.id(), u64::MAX)
         .expect("re-adding an existing member is idempotent");
+    let repeated = database.members(playlist).expect("member after re-add")[0].clone();
+    assert_eq!(repeated.id(), original_member, "member UUID remains stable");
+    assert_eq!(repeated.position(), 0, "re-add preserves its append order");
     database
         .add_member(playlist, other.id(), u64::MAX)
         .expect("append c at 1");
@@ -696,6 +966,25 @@ fn playlist_members_reject_cross_root_and_position_conflicts() {
     assert_eq!(members[0].position(), 0);
     assert_eq!(members[1].song(), other.id());
     assert_eq!(members[1].position(), 1);
+
+    database
+        .remove_member(playlist, song_a.id())
+        .expect("remove member");
+    let tombstoned: i64 = database
+        .with_reader(move |connection| {
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM tombstones WHERE object_type = 'playlist-item' AND object_uuid = ?1",
+                    [original_member.to_string()],
+                    |row| row.get(0),
+                )
+                .map_err(super::support::storage)
+        })
+        .expect("playlist-item tombstone query");
+    assert_eq!(
+        tombstoned, 1,
+        "removal retains a recovery-consumable tombstone"
+    );
 }
 
 #[test]
@@ -871,7 +1160,7 @@ fn import_target_claims_are_conditionally_unique_until_release() {
         None,
     )
     .expect("envelope");
-    let claimed = RelativeMediaPath::new("歌手/歌手 - 晴天.flac").expect("path");
+    let claimed = RelativeMediaPath::new("media/歌手/歌手 - 晴天.flac").expect("path");
     stack
         .database
         .upsert_item(
@@ -934,7 +1223,7 @@ fn import_target_claims_are_conditionally_unique_until_release() {
             report.results[0]
         );
     };
-    assert_eq!(target.display(), "歌手/歌手 - 晴天.flac");
+    assert_eq!(target.display(), "media/歌手/歌手 - 晴天.flac");
     assert!(
         stack.library_dir.join(target.display()).is_file(),
         "the full audio is published"
@@ -979,6 +1268,7 @@ use crate::application::testing::clock::{FakeIdGenerator, ManualClock, SteppingC
 use crate::application::testing::filesystem::FakeLibraryFileSystem;
 use crate::application::testing::small_fakes::{
     FakeFileHasher, FakeLyricsParser, FakeMediaProbe, FakeMetadataReader, FakeTrash,
+    MemoryControlPlane,
 };
 use crate::application::trash::{finalize_persisted_trash, FinalizeExpiredDeletes};
 use crate::domain::state::scan::ScanState as ScanRunState;
@@ -1056,7 +1346,9 @@ impl ScanStack {
         let db_covers: Arc<dyn CoverRepository> = db.clone();
         let db_runs: Arc<dyn ScanRunRepository> = db.clone();
         let db_journal: Arc<dyn OperationJournalRepository> = db.clone();
-        let db_uow: Arc<dyn UnitOfWork> = db;
+        let db_uow: Arc<dyn UnitOfWork> = db.clone();
+        let db_device: Arc<dyn DeviceIdProvider> = db.clone();
+        let db_sync: Arc<dyn SyncStateReader> = db;
         ScanDeps {
             roots: db_root,
             songs: db_songs,
@@ -1077,6 +1369,9 @@ impl ScanStack {
                     .expect("cover cache"),
             ),
             ids: Arc::new(FakeIdGenerator::new()),
+            control: Arc::new(MemoryControlPlane::new()),
+            device_id: db_device,
+            sync: db_sync,
             clock: Arc::new(ManualClock::new()),
             config: ScanConfig {
                 batch_size: 2,
@@ -1087,7 +1382,13 @@ impl ScanStack {
     }
 
     fn write(&self, path: &str, bytes: &[u8]) {
-        let absolute = self.library_dir.join(path);
+        // The fake filesystem's `enumerate` only discovers `media/` (mirroring
+        // the real walker, portable layout §5), so seeds land under `media/`.
+        let absolute = if path.starts_with("media/") {
+            self.library_dir.join(path)
+        } else {
+            self.library_dir.join(format!("media/{path}"))
+        };
         if let Some(parent) = absolute.parent() {
             std::fs::create_dir_all(parent).expect("parent dir");
         }
@@ -1100,7 +1401,7 @@ fn seed_trash_operation(
     state: OperationState,
 ) -> (ScanDeps, Song, PlaylistId, OperationId) {
     let deps = stack.deps();
-    let song = song(stack.root, "song.flac", "Song", "Artist");
+    let song = song(stack.root, "media/song.flac", "Song", "Artist");
     SongRepository::upsert(stack.database.as_ref(), &song).expect("seed song");
     SongRepository::set_availability(
         stack.database.as_ref(),
@@ -1119,7 +1420,8 @@ fn seed_trash_operation(
         .expect("member");
 
     let operation = OperationId::new();
-    let staging = RelativeMediaPath::new(&format!("trash/{operation}/audio")).expect("stage path");
+    let staging =
+        RelativeMediaPath::new(&format!("media/trash/{operation}/audio")).expect("stage path");
     stack.write(staging.display(), b"staged-song");
     let expected_hash = deps.hasher.hash(stack.root, &staging).expect("stage hash");
     OperationJournalRepository::ensure_operation(
@@ -1267,7 +1569,7 @@ fn scan_pipeline_persists_songs_lyrics_covers_and_progress() {
     let song = page
         .items
         .iter()
-        .find(|song| song.path().display() == "a.mp3")
+        .find(|song| song.path().display() == "media/a.mp3")
         .expect("song");
     assert_eq!(song.title(), Some("A"));
     assert!(song.blake3_hash().is_some(), "scan facts persisted");
@@ -1282,7 +1584,7 @@ fn scan_pipeline_persists_songs_lyrics_covers_and_progress() {
     let song_b = page
         .items
         .iter()
-        .find(|song| song.path().display() == "华语/b.flac")
+        .find(|song| song.path().display() == "media/华语/b.flac")
         .expect("song b");
     let candidates_b = stack.database.candidates(song_b.id()).expect("candidates");
     let sources_b: Vec<_> = candidates_b

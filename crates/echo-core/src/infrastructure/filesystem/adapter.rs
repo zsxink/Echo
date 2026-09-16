@@ -19,10 +19,7 @@ use super::walker;
 /// Chunk size of the streaming copy (bounded memory: a multi-gigabyte source
 /// never buffers whole in RAM).
 const COPY_CHUNK_BYTES: usize = 64 * 1024;
-/// Design §8: imports stage under `import/<operation-id>` inside the
-/// controlled staging directory.
-const IMPORT_STAGING_SUBDIR: &str = "import";
-/// Design §9: deletions stage into `trash/<operation-id>` inside the same
+// Design §9: deletions stage into `trash/<operation-id>` inside the same
 /// controlled staging directory (同盘 rename, recovery-safe and skipped by the
 /// scanner because the whole staging directory is marker-verified).
 const TRASH_STAGING_SUBDIR: &str = "trash";
@@ -82,11 +79,10 @@ impl RootConstrainedFileSystem {
     }
 
     /// The adapter-private staging slot of one operation resource:
-    /// `<staging>/import/<operation>/<resource>` (design §8).
+    /// `<echo/tmp>/<operation-id>/<resource>` (portable-layout spec:
+    /// `tmp/<operation-id>`).
     fn slot(staging_dir: &Path, staged: &StagedResource) -> PathBuf {
-        staging_dir
-            .join(IMPORT_STAGING_SUBDIR)
-            .join(staged.operation().as_uuid().simple().to_string())
+        staging_dir.join(staged.operation().as_uuid().simple().to_string())
     }
 
     /// Write bytes into a fresh file under the root's staging directory and
@@ -166,21 +162,11 @@ impl RootConstrainedFileSystem {
             .map_err(|source| Error::io("finalize staging copy", source, file.clone()))?;
         fsync_dir(&slot);
 
-        // The journal wants the staged location relative to the root; the
-        // staging directory name is stable (marker-verified reuse).
-        let root_abs = self.registry.path_of(root)?;
-        let staging_name = match staging_dir.strip_prefix(&root_abs) {
-            Ok(relative) => relative.to_string_lossy().replace('\\', "/"),
-            Err(source) => {
-                return Err(Error::io(
-                    "resolve staging location",
-                    std::io::Error::other(source),
-                    staging_dir.clone(),
-                ))
-            }
-        };
+        // The journal wants the staged location relative to the root; for the
+        // portable layout this is always `echo/tmp/<operation>/<resource>`.
         let staged_path = RelativeMediaPath::new(&format!(
-            "{staging_name}/{IMPORT_STAGING_SUBDIR}/{}/{}",
+            "{}/{}/{}",
+            crate::domain::library::STAGING_ROOT,
             staged.operation().as_uuid().simple(),
             staged.resource_key()
         ))?;
@@ -469,6 +455,7 @@ impl LibraryFileSystem for RootConstrainedFileSystem {
         operation: OperationId,
         resource_key: &str,
     ) -> Result<RelativeMediaPath, Error> {
+        // Portable layout: deletes stage into `echo/tmp/trash/<operation>/<key>`.
         let staging_dir = self.staging.ensure_dir(root)?;
         let root_abs = self.registry.path_of(root)?;
         let trash_rel = RelativeMediaPath::new(&format!(
@@ -617,17 +604,9 @@ impl LibraryFileSystem for RootConstrainedFileSystem {
 
 impl RootConstrainedFileSystem {
     /// Whether `path` resolves inside a marker-verified Echo staging directory
-    /// of `root` (walking up from the file to its `.echo-staging-*` ancestor).
+    /// of `root` (walking up from the file to the owned `echo/tmp` ancestor).
     fn owned_staging_ancestor(&self, path: &Path, root: LibraryRootId) -> bool {
-        let Some(ancestor) = path.ancestors().find(|p| {
-            p.file_name().is_some_and(|name| {
-                name.to_string_lossy()
-                    .starts_with(super::staging::STAGING_DIR_PREFIX)
-            })
-        }) else {
-            return false;
-        };
-        self.staging.check(ancestor, root) == super::staging::StagingCheck::Owned
+        self.staging.owned_staging_ancestor(path, root)
     }
 
     /// Verify a `trash/*` root-relative path resolves inside the owned staging
@@ -640,20 +619,15 @@ impl RootConstrainedFileSystem {
         trash: &RelativeMediaPath,
     ) -> Result<PathBuf, Error> {
         let abs = self.abs(root, trash)?;
-        let Some(ancestor) = abs.ancestors().find(|p| {
-            p.file_name().is_some_and(|name| {
-                name.to_string_lossy()
-                    .starts_with(super::staging::STAGING_DIR_PREFIX)
-            })
-        }) else {
+        let Some(ancestor) = self.staging.staging_root(root) else {
             return Err(Error::permission("trash path", PermKind::NotOwner));
         };
-        if self.staging.check(ancestor, root) != super::staging::StagingCheck::Owned {
+        if self.staging.check(&ancestor, root) != super::staging::StagingCheck::Owned {
             return Err(Error::permission("trash path", PermKind::NotOwner));
         }
         // The component immediately below the staging dir must be `trash`.
         let under = abs
-            .strip_prefix(ancestor)
+            .strip_prefix(&ancestor)
             .map_err(|_| Error::permission("trash path", PermKind::NotOwner))?;
         let first = under
             .components()
@@ -816,17 +790,16 @@ mod tests {
         let copy = fs.stage_stream(root, &staged, &mut reader).unwrap();
         assert_eq!(copy.size, u64::try_from(content.len()).unwrap());
         assert_eq!(copy.blake3, blake3::hash(&content).to_hex().to_string());
-        // The staged slot follows design §8: `<staging>/import/<operation>`.
+        // The staged slot follows the portable layout: `echo/tmp/<operation>`.
         assert!(
-            copy.staged_path
-                .display()
-                .split('/')
-                .next()
-                .is_some_and(|first| first.starts_with(".echo-staging-")),
+            copy.staged_path.display().starts_with("echo/tmp/"),
             "staged under the controlled directory: {}",
             copy.staged_path.display()
         );
-        assert!(copy.staged_path.display().contains("/import/"));
+        assert!(copy
+            .staged_path
+            .display()
+            .contains(&format!("{}/audio", staged.operation().as_uuid().simple())));
         // The staged file physically exists under the root and round-trips.
         let staged_abs = dir.path().join(copy.staged_path.normalized());
         assert_eq!(std::fs::read(&staged_abs).unwrap(), content);
@@ -1185,9 +1158,13 @@ mod tests {
     #[test]
     fn enumerate_is_idempotent_and_skips_the_owned_staging_dir() {
         let (dir, root, fs) = setup();
-        std::fs::write(dir.path().join("a.mp3"), b"a").unwrap();
-        std::fs::create_dir_all(dir.path().join("artist")).unwrap();
-        std::fs::write(dir.path().join("artist/b.flac"), b"b").unwrap();
+        std::fs::create_dir_all(dir.path().join("media/华语")).unwrap();
+        std::fs::write(dir.path().join("media/a.mp3"), b"a").unwrap();
+        std::fs::write(dir.path().join("media/华语/b.flac"), b"b").unwrap();
+        // Root-level content (old layout) is never enumerated.
+        std::fs::write(dir.path().join("loose.mp3"), b"loose").unwrap();
+        std::fs::create_dir_all(dir.path().join("周杰伦")).unwrap();
+        std::fs::write(dir.path().join("周杰伦/晴天.flac"), b"old").unwrap();
         fs.staging().ensure_dir(root).unwrap();
         std::fs::write(
             fs.staging().ensure_dir(root).unwrap().join("staged.mp3"),
@@ -1197,13 +1174,17 @@ mod tests {
 
         let paths: Vec<_> = fs.enumerate(root).unwrap();
         let displayed: Vec<_> = paths.iter().map(RelativeMediaPath::display).collect();
-        assert!(displayed.contains(&"a.mp3"));
-        assert!(displayed.contains(&"artist/b.flac"));
+        assert!(displayed.contains(&"media/a.mp3"));
+        assert!(displayed.contains(&"media/华语/b.flac"));
         assert!(
             displayed
                 .iter()
                 .all(|path| !path.starts_with(".echo-staging-")),
             "the owned staging directory is invisible to enumeration"
+        );
+        assert!(
+            displayed.iter().all(|path| path.starts_with("media/")),
+            "only media/ content is enumerated, never root/old-layout: {displayed:?}"
         );
         // Idempotent: a second walk reports the same set.
         assert_eq!(fs.enumerate(root).unwrap().len(), paths.len());

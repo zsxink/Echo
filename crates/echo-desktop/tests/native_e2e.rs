@@ -186,7 +186,11 @@ fn temp_library(root: &Path) {
     // Seed a small library with the real licensed audio fixtures so the scan's
     // media probe actually parses them (fake bytes would be classified as
     // corrupt/unsupported). Fixtures live at the workspace root.
-    std::fs::create_dir_all(root).expect("root");
+    // A portable library discovers managed audio only below `media/`; keeping
+    // fixtures in that tree also proves the control surface never becomes a
+    // scan candidate.
+    let media = root.join("media");
+    std::fs::create_dir_all(&media).expect("media root");
     let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .nth(2)
@@ -195,7 +199,7 @@ fn temp_library(root: &Path) {
         ("fixtures/audio/tone-short.mp3", "tone-a.mp3"),
         ("fixtures/audio/tone-short.flac", "tone-b.flac"),
     ] {
-        std::fs::copy(repo.join(from), root.join(to)).expect("copy real fixture");
+        std::fs::copy(repo.join(from), media.join(to)).expect("copy real fixture");
     }
 }
 

@@ -1,38 +1,42 @@
-//! The controlled staging directory: random name, exclusive-create, ownership
-//! marker (task 4.2 / design §8).
+//! The controlled staging directory: the portable `echo/tmp/` tree under the
+//! library root, exclusive-create, ownership marker (task 3.2 / design §8).
 //!
 //! Echo writes only inside a staging directory it created itself:
 //!
-//! - The name is `.echo-staging-<128-bit random hex>` and the directory is
-//!   created with `create_dir` (exclusive at the filesystem level).
+//! - The directory is the fixed portable `echo/tmp/` under the library root
+//!   (portable-library-layout spec); `create_dir` (exclusive at the
+//!   filesystem level) establishes it on first use.
 //! - Immediately after creation Echo writes `.echo-ownership-marker`, whose
 //!   body carries the application magic, the owning `LibraryRootId` and a
 //!   format version, and then reads it back to prove the write landed.
-//! - If the chosen name already exists the directory is verified: only a
-//!   directory with a fully matching marker (and no symlink) may be reused.
-//!   Anything else — a user directory that happens to share the name, a
-//!   forged/corrupt marker, a symlink or reparse point — makes Echo pick
-//!   another random name. When no safe name can be established Echo disables
-//!   its write capability for the root and **never** takes over, ignores or
-//!   cleans up the foreign directory.
+//! - If `echo/tmp` already exists the directory is verified: only a directory
+//!   with a fully matching marker (and no symlink) may be reused. Anything
+//!   else — a user-created `echo/tmp` without our marker, a forged/corrupt
+//!   marker, a symlink or reparse point — makes the root *not write-capable*:
+//!   Echo **never** takes over, ignores into, or cleans up the foreign
+//!   directory (the control surface is reserved, not assumed).
+//!
+//! The marker file keeps its historical name/body so an `echo/tmp` created by
+//! an earlier run is verified the same way; nothing about the ownership proof
+//! changes, only the directory it lives in.
 
 use std::path::{Path, PathBuf};
 
 use crate::domain::ids::LibraryRootId;
+use crate::domain::library::STAGING_ROOT;
 use crate::error::{Error, PermKind};
 
 use super::registry::RootRegistry;
 
-/// Prefix every Echo staging directory carries.
-pub const STAGING_DIR_PREFIX: &str = ".echo-staging-";
 /// The marker file inside a staging directory.
 pub const MARKER_FILE_NAME: &str = ".echo-ownership-marker";
 /// Application magic: the first field of every marker body.
 pub const MARKER_MAGIC: &str = "Echo controlled staging directory";
 /// Marker format version.
 pub const MARKER_FORMAT_VERSION: u32 = 1;
-/// How many random names Echo tries before giving up (writes disabled).
-const MAX_NAME_ATTEMPTS: usize = 8;
+/// Kept for historical references to the random-name scheme that the portable
+/// layout replaced (`echo/tmp` is now the single fixed staging root).
+pub const STAGING_DIR_PREFIX: &str = ".echo-staging-";
 
 /// Why a directory does or does not belong to Echo.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -45,13 +49,14 @@ pub enum StagingCheck {
     Missing,
 }
 
-/// What the walker should do with a `.echo-staging-*` directory.
+/// What the walker should do with the portable `echo/` control surface.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StagingDecision {
-    /// Marker matches: Echo's private directory — skip it entirely.
+    /// Marker matches: Echo's private staging tree — skip it entirely.
     Skip,
-    /// Not owned by Echo: a user directory with a coincidental name. Scan it
-    /// like any other user content; never ignore, take over or clean it.
+    /// Not owned by Echo: a user directory in the reserved control path. The
+    /// media scan never enters `echo/` regardless, so this arm exists for
+    /// callers that ask explicitly; Echo never ignores it into a scan.
     Scan,
 }
 
@@ -77,10 +82,11 @@ impl StagingManager {
     ///
     /// # Errors
     ///
-    /// [`Error::Permission`] when no safe staging directory can be created —
-    /// the caller must treat the root as not write-capable. Foreign
-    /// directories are never touched, so repeated attempts with fresh random
-    /// names are the only remedy.
+    /// [`Error::Permission`] when the portable `echo/tmp` cannot be created
+    /// or is not an Echo-owned directory (a user-created or forged/symlinked
+    /// `echo/tmp`). The caller must then treat the root as not write-capable;
+    /// Echo never stages into, takes over, or cleans up a foreign control
+    /// surface.
     pub fn ensure_dir(&self, root: LibraryRootId) -> Result<PathBuf, Error> {
         if let Some((path, StagingCheck::Owned)) = self.existing_dir(root) {
             return Ok(path);
@@ -88,58 +94,43 @@ impl StagingManager {
         let base = self.registry.path_of(root)?;
         std::fs::create_dir_all(&base)
             .map_err(|source| Error::io("prepare root", source, &base))?;
-        for _ in 0..MAX_NAME_ATTEMPTS {
-            let candidate = base.join(format!("{STAGING_DIR_PREFIX}{}", random_128_bit_hex()));
-            match std::fs::create_dir(&candidate) {
-                Ok(()) => {
-                    match write_marker(&candidate, root) {
-                        Ok(()) => return Ok(candidate),
-                        Err(error) => {
-                            // The directory was created by us in this very
-                            // attempt and owns nothing yet: remove the shell
-                            // (best effort) and try a new name.
-                            let _ = std::fs::remove_dir(&candidate);
-                            tracing::debug!(root = %root, error = %error, "staging marker write failed; retrying with a new name");
-                        }
-                    }
+        // Ensure the parent `echo/` exists before trying exclusive-create on
+        // `echo/tmp`; `create_dir_all` is idempotent when `echo/` is already
+        // present (our own marker-owned dir or an already-existing parent).
+        let parent = base.join(crate::domain::library::CONTROL_ROOT);
+        std::fs::create_dir_all(&parent)
+            .map_err(|source| Error::io("prepare control surface", source, parent.clone()))?;
+        let candidate = base.join(STAGING_ROOT);
+        match std::fs::create_dir(&candidate) {
+            Ok(()) => write_marker(&candidate, root).map(|()| candidate),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                // Someone owns `echo/tmp`. It is only ours when the marker
+                // fully matches; otherwise the root is not write-capable and
+                // the directory is never inspected, cleaned or taken over.
+                if self.check(&candidate, root) == StagingCheck::Owned {
+                    Ok(candidate)
+                } else {
+                    Err(Error::permission(
+                        "create staging directory",
+                        PermKind::NotOwner,
+                    ))
                 }
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                    // Someone owns this name. If it is genuinely our own
-                    // directory from an earlier run, reuse it; otherwise pick
-                    // another random name — never inspect, clean or take over.
-                    if self.check(&candidate, root) == StagingCheck::Owned {
-                        return Ok(candidate);
-                    }
-                }
-                Err(error) => return Err(Error::io("create staging directory", error, candidate)),
             }
+            Err(error) => Err(Error::io("create staging directory", error, candidate)),
         }
-        Err(Error::permission(
-            "create staging directory",
-            PermKind::NotOwner,
-        ))
     }
 
-    /// The current staging directory of `root`: the first `.echo-staging-*`
-    /// directory whose marker fully matches. Foreign same-prefix directories
-    /// are skipped, never adopted — an Echo-owned directory is still found
-    /// when a user happens to have created one with the prefix earlier.
+    /// The current staging directory of `root`: the portable `echo/tmp`
+    /// directory whose marker fully matches. A foreign/corrupt/symlinked
+    /// `echo/tmp` is never adopted.
     fn existing_dir(&self, root: LibraryRootId) -> Option<(PathBuf, StagingCheck)> {
         let base = self.registry.path_of(root).ok()?;
-        for entry in std::fs::read_dir(&base).ok()?.flatten() {
-            if !entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with(STAGING_DIR_PREFIX)
-            {
-                continue;
-            }
-            let path = entry.path();
-            if self.check(&path, root) == StagingCheck::Owned {
-                return Some((path, StagingCheck::Owned));
-            }
+        let path = base.join(STAGING_ROOT);
+        if self.check(&path, root) == StagingCheck::Owned {
+            Some((path, StagingCheck::Owned))
+        } else {
+            None
         }
-        None
     }
 
     /// Verify one directory against `root` (marker + symlink checks).
@@ -183,6 +174,27 @@ impl StagingManager {
             self.existing_dir(root),
             Some((_, StagingCheck::Owned))
         ))
+    }
+
+    /// The absolute path of `root`'s owned staging root (`echo/tmp`), when
+    /// established. `None` when the root is not write-capable (no owned
+    /// `echo/tmp`).
+    #[must_use]
+    pub fn staging_root(&self, root: LibraryRootId) -> Option<PathBuf> {
+        self.existing_dir(root).map(|(path, _)| path)
+    }
+
+    /// Whether `path` resolves inside `root`'s owned `echo/tmp` staging tree
+    /// (walking up from the file to the `echo/tmp` ancestor that carries a
+    /// fully matching marker). A file/dir under a foreign, corrupt or symlinked
+    /// `echo/tmp` is never recognized as Echo's own — the boundary is the
+    /// marker, not the name.
+    #[must_use]
+    pub fn owned_staging_ancestor(&self, path: &Path, root: LibraryRootId) -> bool {
+        let Some(owned) = self.staging_root(root) else {
+            return false;
+        };
+        path.ancestors().any(|p| p == owned)
     }
 }
 
@@ -243,29 +255,6 @@ fn write_marker(dir: &Path, root: LibraryRootId) -> Result<(), Error> {
     Ok(())
 }
 
-/// A 128-bit random hex string for the directory name. Two v4 UUIDs (each 122
-/// random bits) are folded through BLAKE3, whose 128-bit output prefix is
-/// uniformly random — cheap, dependency-free and ample for name uniqueness.
-fn random_128_bit_hex() -> String {
-    let a = uuid::Uuid::new_v4().as_u128().to_le_bytes();
-    let b = uuid::Uuid::new_v4().as_u128().to_le_bytes();
-    let mut input = [0u8; 32];
-    input[..16].copy_from_slice(&a);
-    input[16..].copy_from_slice(&b);
-    let hash = blake3::hash(&input);
-    let bytes: [u8; 16] = hash.as_bytes()[..16].try_into().expect("16 of 32 bytes");
-    hex(&bytes)
-}
-
-fn hex(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        use std::fmt::Write as _;
-        let _ = write!(out, "{byte:02x}");
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -284,15 +273,19 @@ mod tests {
         (dir, registry, root, manager)
     }
 
+    fn staging_error_code(result: Result<PathBuf, Error>) -> Option<&'static str> {
+        result.map_err(|error| error.code()).err()
+    }
+
     #[test]
-    fn staging_dir_is_created_with_matching_marker() {
-        let (_dir, _registry, root, manager) = setup();
+    fn staging_dir_is_emitted_as_echo_tmp_with_matching_marker() {
+        let (dir, _registry, root, manager) = setup();
         let staging = manager.ensure_dir(root).unwrap();
-        assert!(staging
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .starts_with(STAGING_DIR_PREFIX));
+        assert_eq!(
+            staging,
+            dir.path().join("echo/tmp"),
+            "the portable layout staging root is exactly echo/tmp"
+        );
         assert_eq!(manager.check(&staging, root), StagingCheck::Owned);
         assert!(manager.write_capable(root).unwrap());
         // Idempotent: the second call reuses the same directory.
@@ -300,20 +293,28 @@ mod tests {
     }
 
     #[test]
-    fn forged_or_corrupt_marker_is_never_ours() {
+    fn foreign_or_corrupt_echo_tmp_never_becomes_ours() {
         let (_dir, _registry, root, manager) = setup();
         let base = manager.registry.path_of(root).unwrap();
-        let foreign = base.join(format!("{STAGING_DIR_PREFIX}forbidden"));
+        let foreign = base.join("echo/tmp");
         std::fs::create_dir_all(&foreign).unwrap();
 
-        // A user directory with the staging name but no marker.
+        // A user directory occupying `echo/tmp` with no marker: not ours.
         assert_eq!(manager.check(&foreign, root), StagingCheck::NotOurs);
         assert_eq!(
             manager.walker_decision(&foreign, root),
             StagingDecision::Scan
         );
+        // `ensure_dir` cannot adopt it and the root becomes non-write-capable:
+        // Echo never stages into the reserved control path.
+        assert_eq!(
+            staging_error_code(manager.ensure_dir(root)),
+            Some("permission")
+        );
+        assert!(!manager.write_capable(root).unwrap());
+        assert!(foreign.is_dir(), "the foreign echo/tmp is left untouched");
 
-        // A forged marker with the wrong root id.
+        // A forged marker with the wrong root id is still not ours.
         std::fs::write(
             foreign.join(MARKER_FILE_NAME),
             StagingMarker::new(LibraryRootId::new()).body(),
@@ -321,24 +322,18 @@ mod tests {
         .unwrap();
         assert_eq!(manager.check(&foreign, root), StagingCheck::NotOurs);
         assert_eq!(
-            manager.walker_decision(&foreign, root),
-            StagingDecision::Scan
+            staging_error_code(manager.ensure_dir(root)),
+            Some("permission")
         );
 
         // A corrupt marker body.
         std::fs::write(foreign.join(MARKER_FILE_NAME), "not a marker").unwrap();
         assert_eq!(manager.check(&foreign, root), StagingCheck::NotOurs);
-
-        // The manager neither took over nor cleaned the foreign directory.
-        assert!(foreign.is_dir());
-        ensure_dir_picks_a_safe_name(&manager, root, &foreign);
-    }
-
-    fn ensure_dir_picks_a_safe_name(manager: &StagingManager, root: LibraryRootId, foreign: &Path) {
-        let staging = manager.ensure_dir(root).unwrap();
-        assert_ne!(staging, foreign);
-        assert_eq!(manager.check(&staging, root), StagingCheck::Owned);
-        assert!(foreign.is_dir(), "foreign directory left untouched");
+        assert!(
+            manager.ensure_dir(root).is_err(),
+            "a corrupt marker still refuses the root"
+        );
+        assert!(foreign.is_dir(), "foreign echo/tmp left untouched");
     }
 
     #[test]
@@ -346,12 +341,19 @@ mod tests {
         let (dir, _registry, root, manager) = setup();
         let base = dir.path();
         let outside = tempfile::tempdir().unwrap();
-        let link = base.join(format!("{STAGING_DIR_PREFIX}linked"));
+        let link = base.join("echo/tmp");
+        std::fs::create_dir_all(base.join("echo")).unwrap();
         create_symlink(outside.path(), &link);
         assert_eq!(manager.check(&link, root), StagingCheck::NotOurs);
         assert_eq!(manager.walker_decision(&link, root), StagingDecision::Scan);
-        let staging = manager.ensure_dir(root).unwrap();
-        assert_ne!(staging, link, "symlink name must not be adopted");
+        assert!(
+            manager.ensure_dir(root).is_err(),
+            "a symlinked echo/tmp must not be adopted"
+        );
+        assert_eq!(
+            staging_error_code(manager.ensure_dir(root)),
+            Some("permission")
+        );
     }
 
     /// Platform-neutral symlink creation for tests: `ln -s` on Unix-like

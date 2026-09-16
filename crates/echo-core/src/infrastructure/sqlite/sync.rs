@@ -8,7 +8,8 @@
 //! the offline boundary stays. 二期 consumes `outbox` rows and `revision` as-is.
 //!
 //! Object kinds (五类逻辑对象, design §3-5 + sync-foundation spec):
-//!   - `song`     — import/upsert + favorite + availability/hide
+//!   - `song`     — import/upsert + availability/hide
+//!   - `favorite` — the independent per-song favorite fact
 //!   - `playlist` — create/rename/delete + membership add/remove
 //!   - `override` — song_overrides revision (written by future override cases)
 //!   - `tombstone`— Echo-initiated durable deletion record
@@ -41,7 +42,13 @@ use super::support::{now_ms, storage};
 
 /// Outbox object kinds (二期 payload routing keys).
 pub(crate) const KIND_SONG: &str = "song";
+/// A favorite is an independent portable object keyed by its song UUID. This
+/// keeps a favorite toggle from overwriting the song object's media metadata.
+pub(crate) const KIND_FAVORITE: &str = "favorite";
 pub(crate) const KIND_PLAYLIST: &str = "playlist";
+/// A single playlist membership, identified independently from both its
+/// playlist and song so a removal can propagate without deleting either.
+pub(crate) const KIND_PLAYLIST_ITEM: &str = "playlist-item";
 pub(crate) const KIND_OVERRIDE: &str = "override";
 // KIND_TOMBSTONE is used by 二期 routing and the tombstone tests; 0.1.0 keeps
 // song/playlist tombstones via `write_tombstone`'s kind argument.

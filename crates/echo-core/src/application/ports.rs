@@ -34,7 +34,12 @@ use crate::domain::entities::{
     LibraryRoot, LyricsCandidate, LyricsSource, MediaDiagnostic, PlaylistMember, Song,
     SongAvailability,
 };
-use crate::domain::ids::{LibraryRootId, OperationId, PlaylistId, RelativeMediaPath, SongId};
+use crate::domain::ids::{
+    LibraryRootId, OperationId, PlaylistId, RelativeMediaPath, Revision, SongId,
+};
+use crate::domain::library::{
+    DeviceId, HybridLogicalClock, LibraryManifest, PortableRecord, RecordKind,
+};
 use crate::domain::media::{AudioFormat, ParsedMetadata};
 use crate::domain::state::scan::{ScanProgress, ScanState};
 use crate::error::Error;
@@ -842,6 +847,90 @@ pub trait IdGenerator: Send + Sync {
     fn new_playlist_id(&self) -> PlaylistId;
     fn new_operation_id(&self) -> OperationId;
     fn new_library_root_id(&self) -> LibraryRootId;
+}
+
+/// The single, stable logical identity of this device (migration 0006
+/// `device_state`). Every portable record's `updated_by_device_id` comes from
+/// here; it is generated once and never regenerated, and is local-only (never
+/// part of the `echo/` control surface).
+pub trait DeviceIdProvider: Send + Sync {
+    /// The device id portable records must be stamped with.
+    fn current_device_id(&self) -> DeviceId;
+}
+
+/// Read-back of the sync-foundation shape for a *committed* object: the
+/// outbox-derived monotone revision and the HLC the object's last write
+/// stamped. Used by the materializers to build portable records that share the
+/// exact revision/HLC the `SQLite` row and outbox row carry.
+pub trait SyncStateReader: Send + Sync {
+    /// The object's current outbox revision (`MAX(revision)`), or `Revision(0)`
+    /// when nothing has been enqueued for it yet.
+    fn outbox_revision(&self, object_type: &str, object_uuid: &str) -> Result<Revision, Error>;
+    /// The HLC last stamped into the object's canonical row (`songs`,
+    /// `song_overrides`, `playlists`), or `None` before the first stamp.
+    fn object_hlc(
+        &self,
+        object_type: &str,
+        object_uuid: &str,
+    ) -> Result<Option<HybridLogicalClock>, Error>;
+}
+
+// ---------------------------------------------------------------------------
+// Portable library control plane
+// ---------------------------------------------------------------------------
+
+/// The portable `echo/` control surface of a library.
+///
+/// This port abstracts the on-disk layout of the portable library — the
+/// versioned [`LibraryManifest`] at `echo/manifest.json` and the per-object
+/// [`PortableRecord`] files under `echo/records/<kind>/<prefix>/<uuid>.json`.
+/// The control surface is what a future sync connector uploads/downloads (and
+/// what a new device reads to restore the library), while `echo/tmp/` stays
+/// a local-only recovery workspace that never enters this port.
+///
+/// Implementations must:
+///
+/// - Read/write each file **atomically** (write-to-temp + fsync + rename, never
+///   in-place), so a filesystem-synced copy never observes a half-written JSON.
+/// - Ignore temporaries (a same-dir temp file) and incomplete/version-unsupported
+///   records, reporting them as absent so the caller retries on the next write.
+/// - Never resolve an absolute path or a `..`-escaping path: [`ControlPath`]
+///   values are already validated to stay inside `echo/` and outside
+///   `echo/tmp/`.
+///
+/// The library's logical identity is the [`LibraryId`] carried by the manifest;
+/// a device verifies it before treating a directory as its sync source.
+pub trait ControlPlanePort: Send + Sync {
+    /// Write (create or replace) the manifest at `echo/manifest.json`.
+    fn write_manifest(&self, root: LibraryRootId, manifest: &LibraryManifest) -> Result<(), Error>;
+    /// Read the manifest. `Ok(None)` when `echo/manifest.json` is absent or
+    /// not yet initialized.
+    fn read_manifest(&self, root: LibraryRootId) -> Result<Option<LibraryManifest>, Error>;
+    /// Write (create or replace) one object record. The path is derived from
+    /// the record kind + UUID prefix.
+    fn write_record(&self, root: LibraryRootId, record: &PortableRecord) -> Result<(), Error>;
+    /// Read one object record by kind + UUID. `Ok(None)` when the record is
+    /// absent or is a malformed/unsupported temporary.
+    fn read_record(
+        &self,
+        root: LibraryRootId,
+        kind: RecordKind,
+        object_uuid: &str,
+    ) -> Result<Option<PortableRecord>, Error>;
+    /// Remove one object record. Missing records are a no-op.
+    fn delete_record(
+        &self,
+        root: LibraryRootId,
+        kind: RecordKind,
+        object_uuid: &str,
+    ) -> Result<(), Error>;
+    /// Enumerate every record of one kind as their raw portable JSON (paths,
+    /// not parsed content — for restore, which re-projects). Sorted by UUID.
+    fn list_records(&self, root: LibraryRootId, kind: RecordKind) -> Result<Vec<String>, Error>;
+    /// Whether the library's control surface is usable (the `echo/` directory
+    /// can be created/updated). `Ok(false)` when the control plane is not
+    /// usable — the library must not be enabled for sync/logic changes.
+    fn control_plane_usable(&self, root: LibraryRootId) -> Result<bool, Error>;
 }
 
 // ---------------------------------------------------------------------------

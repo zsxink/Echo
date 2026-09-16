@@ -19,6 +19,7 @@ use crate::domain::entities::{
     LibraryRoot, LyricsCandidate, LyricsSource, RootAvailability, Song, SongAvailability,
 };
 use crate::domain::ids::{LibraryRootId, OperationId, PlaylistId, SongId};
+use crate::domain::library::HybridLogicalClock;
 use crate::domain::state::scan::ScanProgress;
 use crate::error::Error;
 
@@ -46,6 +47,40 @@ pub(crate) fn upsert_root(connection: &Connection, root: &LibraryRoot) -> Result
     Ok(())
 }
 
+/// Build a full object snapshot payload for the current state of a song.
+/// This reads the post-mutation state from the connection (valid inside the
+/// calling transaction) and produces the complete outbox payload that the sync
+/// engine expects for cross-device conflict resolution (task 1.3: complete
+/// object payloads for all syncable objects).
+pub(crate) fn song_full_snapshot_payload(
+    connection: &Connection,
+    id: SongId,
+) -> Result<serde_json::Value, Error> {
+    connection
+        .query_row(
+            "SELECT relative_path, title, artist, album, is_favorite, availability FROM songs WHERE uuid = ?1",
+            params![id.to_string()],
+            |row| {
+                let relative_path: String = row.get(0)?;
+                let title: Option<String> = row.get(1)?;
+                let artist: Option<String> = row.get(2)?;
+                let album: Option<String> = row.get(3)?;
+                let is_favorite: bool = row.get::<_, i64>(4)? != 0;
+                let availability: String = row.get(5)?;
+                Ok(serde_json::json!({
+                    "song_uuid": id.to_string(),
+                    "relative_path": relative_path,
+                    "title": title,
+                    "artist": artist,
+                    "album": album,
+                    "is_favorite": is_favorite,
+                    "availability": availability,
+                }))
+            },
+        )
+        .map_err(storage)
+}
+
 #[allow(clippy::too_many_lines)]
 pub(crate) fn upsert_song(connection: &Connection, song: &Song) -> Result<(), Error> {
     let now = now_ms();
@@ -62,23 +97,22 @@ pub(crate) fn upsert_song(connection: &Connection, song: &Song) -> Result<(), Er
     maintain_search(connection, song)?;
     touch_root(connection, song.root())?;
     // Sync foundation (task 3.11): a song write is a syncable fact — append its
-    // full snapshot to outbox in this same transaction. Relative path + fields
-    // only; never an absolute path.
+    // full snapshot to outbox in this same transaction. The snapshot is read
+    // back from the post-write state so it is always authoritative; payload is
+    // relative path + fields only, never an absolute path.
     let id = song.id().to_string();
-    let payload = serde_json::json!({
-        "relative_path": song.path().display(),
-        "title": title,
-        "artist": artist,
-        "album": album,
-        "availability": availability_to_db(song.availability()),
-    });
-    enqueue_object_snapshot(
+    let payload = song_full_snapshot_payload(connection, song.id())?;
+    let _revision = enqueue_object_snapshot(
         connection,
         super::sync::KIND_SONG,
         &id,
         &payload,
         super::sync::OP_UPSERT,
     )?;
+    // Stamp the object's HLC (migration 0006) so the portable record built
+    // after the commit carries the same clock the DB row holds.
+    let now_secs = u64::try_from(now_ms().max(0)).unwrap_or(0) / 1_000;
+    let _ = advance_object_hlc(connection, super::sync::KIND_SONG, &id, now_secs)?;
     Ok(())
 }
 
@@ -88,13 +122,16 @@ pub(crate) fn upsert_song(connection: &Connection, song: &Song) -> Result<(), Er
 /// `songs.revision` is deliberately NOT touched (it is the persistence layer's
 /// optimistic tag — see sync.rs module doc). The parses of `uuid` are not
 /// needed: outbox stores opaque object UUIDs.
+///
+/// Returns the enqueued object revision so callers can stamp a portable record
+/// (design §2: record and outbox share the same monotone revision).
 pub(crate) fn enqueue_object_snapshot(
     connection: &Connection,
     kind: &str,
     object_uuid: &str,
     payload: &serde_json::Value,
     operation: &str,
-) -> Result<(), Error> {
+) -> Result<i64, Error> {
     let json = serde_json::to_string(payload).unwrap_or_else(|_| "{}".to_owned());
     let revision = super::sync::enqueue_sync(connection, kind, object_uuid, &json, operation)?;
     // Mirror onto canonical columns (idempotent; only present after 0005).
@@ -109,7 +146,56 @@ pub(crate) fn enqueue_object_snapshot(
         }
         _ => {}
     }
-    Ok(())
+    Ok(revision)
+}
+
+/// Advance the HLC column of one object's canonical row and return the new
+/// clock. The 0006 columns (`songs`/`song_overrides`/`playlists`.`hlc_*`) are
+/// the durable, per-object HLC; the portable record stamped after the commit
+/// must share the value this returns (single source of truth).
+pub(crate) fn advance_object_hlc(
+    connection: &Connection,
+    kind: &str,
+    object_uuid: &str,
+    now_wall_secs: u64,
+) -> Result<HybridLogicalClock, Error> {
+    let (table, column) = match kind {
+        super::sync::KIND_SONG => ("songs", "uuid"),
+        super::sync::KIND_PLAYLIST => ("playlists", "uuid"),
+        super::sync::KIND_OVERRIDE => ("song_overrides", "song_uuid"),
+        _ => {
+            // Unknown kinds carry no HLC column; default the new clock.
+            return Ok(HybridLogicalClock::new(now_wall_secs, 0));
+        }
+    };
+    let (prev_wall, prev_counter): (i64, i64) = connection
+        .query_row(
+            &format!("SELECT hlc_wall_secs, hlc_counter FROM {table} WHERE {column} = ?1"),
+            [object_uuid.to_owned()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(storage)?
+        .unwrap_or((0, 0));
+    let prev = HybridLogicalClock::new(
+        u64::try_from(prev_wall).unwrap_or(0),
+        u32::try_from(prev_counter).unwrap_or(0),
+    );
+    let next = crate::domain::library::next_hlc(prev, now_wall_secs);
+    connection
+        .execute(
+            &format!(
+                "UPDATE {table} SET hlc_wall_secs = ?1, hlc_counter = ?2, updated_at = ?3 WHERE {column} = ?4"
+            ),
+            rusqlite::params![
+                i64::try_from(next.wall_secs).unwrap_or(i64::MAX),
+                i64::from(next.counter),
+                now_ms(),
+                object_uuid
+            ],
+        )
+        .map_err(storage)?;
+    Ok(next)
 }
 
 fn maintain_search(connection: &Connection, song: &Song) -> Result<(), Error> {
@@ -144,7 +230,26 @@ pub(crate) fn set_song_availability(
             params![id.to_string(), availability_to_db(availability), now_ms()],
         )
         .map_err(storage)?;
-    touch_root_for_song(connection, id)
+    touch_root_for_song(connection, id)?;
+    // Availability is a syncable field (task 1.3): write a full object
+    // snapshot to the outbox in the same transaction so the sync engine
+    // always sees the post-mutation state.
+    let payload = song_full_snapshot_payload(connection, id)?;
+    enqueue_object_snapshot(
+        connection,
+        super::sync::KIND_SONG,
+        &id.to_string(),
+        &payload,
+        super::sync::OP_UPSERT,
+    )?;
+    let now_secs = u64::try_from(now_ms().max(0)).unwrap_or(0) / 1_000;
+    let _ = advance_object_hlc(
+        connection,
+        super::sync::KIND_SONG,
+        &id.to_string(),
+        now_secs,
+    )?;
+    Ok(())
 }
 
 pub(crate) fn delete_song(connection: &Connection, id: SongId) -> Result<(), Error> {
@@ -195,14 +300,28 @@ pub(crate) fn set_song_favorite(
         )
         .map_err(storage)?;
     touch_root_for_song(connection, id)?;
-    // Favorite is a syncable field (design §3): full snapshot to outbox, same tx.
-    let payload = serde_json::json!({ "is_favorite": favorite });
+    // A favorite is its own portable object keyed by the song UUID. Keep it
+    // separate from the song snapshot so a favorite-only mutation cannot
+    // overwrite media metadata on another device. The canonical row and this
+    // complete favorite payload still commit in the same transaction.
+    let payload = serde_json::json!({
+        "song_uuid": id.to_string(),
+        "is_favorite": favorite,
+    });
     enqueue_object_snapshot(
         connection,
-        super::sync::KIND_SONG,
+        super::sync::KIND_FAVORITE,
         &id.to_string(),
         &payload,
         super::sync::OP_UPSERT,
+    )?;
+    // Stamp the song HLC so the favorite portable record shares the clock.
+    let now_secs = u64::try_from(now_ms().max(0)).unwrap_or(0) / 1_000;
+    let _ = advance_object_hlc(
+        connection,
+        super::sync::KIND_SONG,
+        &id.to_string(),
+        now_secs,
     )?;
     Ok(())
 }
@@ -244,6 +363,13 @@ pub(crate) fn create_playlist(
         &payload,
         super::sync::OP_UPSERT,
     )?;
+    let now_secs = u64::try_from(now_ms().max(0)).unwrap_or(0) / 1_000;
+    let _ = advance_object_hlc(
+        connection,
+        super::sync::KIND_PLAYLIST,
+        &id.to_string(),
+        now_secs,
+    )?;
     Ok(())
 }
 pub(crate) fn add_member(
@@ -251,6 +377,7 @@ pub(crate) fn add_member(
     playlist: PlaylistId,
     song: SongId,
     position: u64,
+    member_uuid: crate::domain::ids::PlaylistItemId,
 ) -> Result<(), Error> {
     // Appending (u64::MAX) takes the next free position. Re-adding a song that
     // is already a member is idempotent (same position, no duplicate row). A
@@ -272,7 +399,7 @@ pub(crate) fn add_member(
     if existing.is_some() {
         return Ok(());
     }
-    connection.execute("INSERT INTO playlist_songs (playlist_uuid, song_uuid, position, added_at) VALUES (?1, ?2, ?3, ?4)", params![playlist.to_string(), song.to_string(), i64::try_from(position).unwrap_or(i64::MAX), now_ms()]).map_err(map_constraint)?;
+    connection.execute("INSERT INTO playlist_songs (playlist_uuid, song_uuid, position, added_at, member_uuid) VALUES (?1, ?2, ?3, ?4, ?5)", params![playlist.to_string(), song.to_string(), i64::try_from(position).unwrap_or(i64::MAX), now_ms(), member_uuid.to_string()]).map_err(map_constraint)?;
     // Membership add is a playlist logic change — enqueue a playlist snapshot
     // whose payload records the new member set (position appended) so 二期 has
     // the authoritative member list for this revision.
@@ -291,27 +418,34 @@ pub(crate) fn add_member(
 }
 
 /// Read the current member set of a playlist as a JSON array of `{song_uuid,
-/// position}`, for use inside a playlist outbox payload. The excerpt is
-/// root-relative only (UUID + position), never an absolute path.
+/// position, member_uuid}`, for use inside a playlist outbox payload. The
+/// excerpt is root-relative only (UUID + position + member UUID), never an
+/// absolute path.
 pub(crate) fn playlist_members_excerpt(
     connection: &Connection,
     playlist: PlaylistId,
 ) -> Result<serde_json::Value, Error> {
     let mut statement = connection
         .prepare(
-            "SELECT song_uuid, position FROM playlist_songs WHERE playlist_uuid = ?1 ORDER BY position, song_uuid",
+            "SELECT song_uuid, position, member_uuid FROM playlist_songs WHERE playlist_uuid = ?1 ORDER BY position, song_uuid",
         )
         .map_err(storage)?;
     let rows = statement
         .query_map(params![playlist.to_string()], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+            ))
         })
         .map_err(storage)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(storage)?;
     let members: Vec<serde_json::Value> = rows
         .into_iter()
-        .map(|(song_uuid, position)| serde_json::json!({ "song_uuid": song_uuid, "position": position }))
+        .map(|(song_uuid, position, member_uuid)| {
+            serde_json::json!({ "song_uuid": song_uuid, "position": position, "member_uuid": member_uuid })
+        })
         .collect();
     Ok(serde_json::Value::Array(members))
 }

@@ -27,6 +27,7 @@
 //!   marker fully matches (`magic` + `LibraryRootId` + format version).
 
 pub mod adapter;
+pub mod control_plane;
 pub mod hasher;
 pub mod registry;
 pub mod staging;
@@ -34,6 +35,7 @@ pub mod walker;
 pub mod watcher;
 
 pub use adapter::RootConstrainedFileSystem;
+pub use control_plane::RootControlPlane;
 pub use hasher::Blake3ContentHasher;
 pub use registry::RootRegistry;
 pub use staging::{

@@ -350,7 +350,7 @@ mod tests {
     use crate::application::recover::RecoverOperations;
     use crate::application::testing::{FakeLibraryFileSystem, FakeTrash, ScanFixture};
     use crate::domain::entities::{LibraryRoot, Song};
-    use crate::domain::ids::{PlaylistId, Revision, SongId};
+    use crate::domain::ids::{PlaylistId, RelativeMediaPath, Revision, SongId};
     use crate::domain::media::AudioFormat;
 
     fn seed_delete(fixture: &ScanFixture) -> (SongId, PlaylistId) {
@@ -404,8 +404,9 @@ mod tests {
             .fs
             .root_path(fixture.root)
             .expect("fixture root")
-            .join(".echo-test-staging/trash")
-            .join(operation.to_string())
+            .join(crate::domain::library::STAGING_ROOT)
+            .join("trash")
+            .join(operation.as_uuid().simple().to_string())
             .join("audio")
     }
 
@@ -419,8 +420,9 @@ mod tests {
             self.calls.lock().unwrap().push(operation);
             std::fs::remove_file(
                 self.root
-                    .join(".echo-test-staging/trash")
-                    .join(operation.to_string())
+                    .join(crate::domain::library::STAGING_ROOT)
+                    .join("trash")
+                    .join(operation.as_uuid().simple().to_string())
                     .join("audio"),
             )
             .expect("simulate a platform move before its error");
@@ -640,8 +642,20 @@ mod tests {
         let first = expired_pending(&fixture, song);
         let second = OperationId::new();
         let original = fixture.database.items(first).unwrap().remove(0);
-        let staging = fixture.path(&format!(".echo-test-staging/trash/{second}/audio"));
-        fixture.write_file(staging.display(), b"delete-bytes");
+        let staging = RelativeMediaPath::new(&format!(
+            "{}/trash/{}/audio",
+            crate::domain::library::STAGING_ROOT,
+            second.as_uuid().simple()
+        ))
+        .expect("valid staging path");
+        let staging_absolute = fixture
+            .fs
+            .root_path(fixture.root)
+            .expect("fixture root")
+            .join(staging.display());
+        std::fs::create_dir_all(staging_absolute.parent().expect("staging parent"))
+            .expect("create staging parent");
+        std::fs::write(&staging_absolute, b"delete-bytes").expect("write staged audio");
         OperationJournalRepository::ensure_operation(
             &fixture.database,
             second,

@@ -20,10 +20,11 @@ use std::time::Duration;
 
 use crate::application::ports::TxAccess;
 use crate::application::ports::{
-    CatalogQueryRepository, Clock, ContentHasher, CoverAssetRef, CoverCache, CoverRepository,
-    FileMeta, IdGenerator, LibraryFileSystem, LibraryRepository, LyricsParser, LyricsRepository,
-    MediaProbe, MetadataReader, OperationJournalRepository, PlaylistRepository, ProbeOutcome,
-    ScanRunRepository, SongRepository, UnitOfWork,
+    CatalogQueryRepository, Clock, ContentHasher, ControlPlanePort, CoverAssetRef, CoverCache,
+    CoverRepository, DeviceIdProvider, FileMeta, IdGenerator, LibraryFileSystem, LibraryRepository,
+    LyricsParser, LyricsRepository, MediaProbe, MetadataReader, OperationJournalRepository,
+    PlaylistRepository, ProbeOutcome, ScanRunRepository, SongRepository, SyncStateReader,
+    UnitOfWork,
 };
 use crate::application::relink::{ParsedFile, RelinkPlanner, Resolution};
 use crate::domain::entities::{
@@ -89,6 +90,15 @@ pub struct ScanDeps {
     pub lyrics_parser: Arc<dyn LyricsParser>,
     pub cover_cache: Arc<dyn CoverCache>,
     pub journal: Arc<dyn OperationJournalRepository>,
+    /// The portable `echo/` control surface (manifest + records). Used by the
+    /// library-initialization, materialization and restore use cases (tasks
+    /// 2.2/2.3/3.2/4.x); scan and watcher rely on it only to keep the control
+    /// surface out of media.
+    pub control: Arc<dyn ControlPlanePort>,
+    /// The single stable device identity (migration 0006 `device_state`).
+    pub device_id: Arc<dyn DeviceIdProvider>,
+    /// Read-back of a committed object's outbox revision + HLC (sync shape).
+    pub sync: Arc<dyn SyncStateReader>,
     pub ids: Arc<dyn IdGenerator>,
     pub clock: Arc<dyn Clock>,
     pub config: ScanConfig,
@@ -1112,7 +1122,7 @@ mod tests {
         assert_eq!(songs.len(), 2);
         let a = songs
             .iter()
-            .find(|s| s.path().display() == "a.mp3")
+            .find(|s| s.path().display() == "media/a.mp3")
             .unwrap();
         assert_eq!(a.title(), Some("A"));
         assert!(
@@ -1317,7 +1327,7 @@ mod tests {
         // The primary is the smallest canonical path key, deterministically.
         let songs = fixture.all_songs();
         assert_eq!(songs.len(), 1);
-        assert_eq!(songs[0].path().display(), "a-second.mp3");
+        assert_eq!(songs[0].path().display(), "media/a-second.mp3");
         let primary_id = songs[0].id();
 
         // The primary file disappears: the record goes missing (UUID kept).
@@ -1338,7 +1348,7 @@ mod tests {
         let songs = fixture.all_songs();
         assert_eq!(songs.len(), 1);
         assert_eq!(songs[0].id(), primary_id, "UUID kept on promotion");
-        assert_eq!(songs[0].path().display(), "z-first.mp3");
+        assert_eq!(songs[0].path().display(), "media/z-first.mp3");
         assert_eq!(songs[0].availability(), SongAvailability::Available);
     }
 
@@ -1365,7 +1375,7 @@ mod tests {
         assert_eq!(summary.progress.created, 0);
         let relinked = fixture.all_songs().into_iter().next().unwrap();
         assert_eq!(relinked.id(), gone.id(), "weak re-link keeps the UUID");
-        assert_eq!(relinked.path().display(), "new/tone.flac");
+        assert_eq!(relinked.path().display(), "media/new/tone.flac");
     }
 
     #[test]

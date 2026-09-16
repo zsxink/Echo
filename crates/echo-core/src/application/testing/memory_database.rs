@@ -16,6 +16,7 @@ use crate::domain::entities::{
     SongAvailability,
 };
 use crate::domain::ids::*;
+use crate::domain::library::{DeviceId, HybridLogicalClock};
 use crate::domain::state::scan::{ScanProgress, ScanState};
 use crate::domain::text::playlist_name_key;
 use crate::error::Error;
@@ -37,6 +38,9 @@ struct Store {
     issues: Vec<(LibraryRootId, u64, MediaDiagnostic)>,
     runtime_state: BTreeMap<String, String>,
     fail_root_isolation: bool,
+    outbox_revisions: BTreeMap<(String, String), i64>,
+    object_hlcs: BTreeMap<(String, String), HybridLogicalClock>,
+    device_id: DeviceId,
 }
 
 /// The in-memory mirror of a `scan_runs` row.
@@ -60,7 +64,13 @@ pub struct MemoryDatabase {
 impl MemoryDatabase {
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            store: Arc::new(Mutex::new(Store {
+                device_id: DeviceId::from_uuid(uuid::Uuid::new_v4()),
+                ..Store::default()
+            })),
+            fail_commit: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Store> {
@@ -153,6 +163,18 @@ impl MemoryDatabase {
             .iter()
             .filter(|(_, (_, _, reserved))| *reserved == Some(song))
             .map(|(operation, _)| *operation)
+            .collect()
+    }
+
+    /// The sync outbox rows of one object (assertion helper: recovery must
+    /// converge to exactly one outbox row for the imported song).
+    #[must_use]
+    pub fn outbox_rows(&self, object_type: &str, object_uuid: &str) -> Vec<i64> {
+        self.lock()
+            .outbox_revisions
+            .iter()
+            .filter(|((kind, uuid), _)| kind == object_type && uuid == object_uuid)
+            .map(|(_, revision)| *revision)
             .collect()
     }
 }
@@ -713,13 +735,62 @@ impl RuntimeStateStore for MemoryDatabase {
     }
 }
 
+impl crate::application::ports::DeviceIdProvider for MemoryDatabase {
+    fn current_device_id(&self) -> DeviceId {
+        self.lock().device_id
+    }
+}
+
+impl crate::application::ports::SyncStateReader for MemoryDatabase {
+    fn outbox_revision(&self, object_type: &str, object_uuid: &str) -> Result<Revision, Error> {
+        let store = self.lock();
+        Ok(Revision::from_u64(
+            store
+                .outbox_revisions
+                .get(&(object_type.to_owned(), object_uuid.to_owned()))
+                .copied()
+                .unwrap_or(0)
+                .max(0) as u64,
+        ))
+    }
+
+    fn object_hlc(
+        &self,
+        object_type: &str,
+        object_uuid: &str,
+    ) -> Result<Option<HybridLogicalClock>, Error> {
+        let store = self.lock();
+        Ok(store
+            .object_hlcs
+            .get(&(object_type.to_owned(), object_uuid.to_owned()))
+            .copied()
+            .filter(|hlc| *hlc != HybridLogicalClock::default()))
+    }
+}
+
 /// The transaction view: an isolated copy committed on success.
 struct MemoryTx<'a> {
     store: &'a mut Store,
 }
 
+impl MemoryTx<'_> {
+    /// Mirror the sqlite write path: a song logic change is a syncable fact —
+    /// bump the object's outbox revision in the same transaction.
+    fn bump_song_revision(&mut self, id: SongId) {
+        let key = ("song".to_owned(), id.to_string());
+        let next = self
+            .store
+            .outbox_revisions
+            .get(&key)
+            .copied()
+            .map_or(1, |rev| rev + 1);
+        self.store.outbox_revisions.insert(key, next);
+    }
+}
+
 impl TxAccess for MemoryTx<'_> {
     fn upsert_song(&mut self, song: &Song) -> Result<(), Error> {
+        self.bump_song_revision(song.id());
         self.store.songs.insert(song.id(), song.clone());
         Ok(())
     }
@@ -735,6 +806,7 @@ impl TxAccess for MemoryTx<'_> {
         id: SongId,
         availability: SongAvailability,
     ) -> Result<(), Error> {
+        self.bump_song_revision(id);
         if let Some(song) = self.store.songs.get_mut(&id) {
             match availability {
                 SongAvailability::Available => song.restore_available(),
@@ -745,6 +817,7 @@ impl TxAccess for MemoryTx<'_> {
         Ok(())
     }
     fn set_song_favorite(&mut self, id: SongId, favorite: bool) -> Result<(), Error> {
+        self.bump_song_revision(id);
         if let Some(song) = self.store.songs.get_mut(&id) {
             song.set_favorite(favorite);
         }

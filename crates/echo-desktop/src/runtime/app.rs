@@ -24,7 +24,7 @@ use echo_core::application::scan::ScanDeps;
 use echo_core::error::Error;
 use echo_core::infrastructure::core::{UuidV4Generator, WallClock};
 use echo_core::infrastructure::filesystem::{
-    Blake3ContentHasher, RootConstrainedFileSystem, RootRegistry,
+    Blake3ContentHasher, RootConstrainedFileSystem, RootControlPlane, RootRegistry,
 };
 use echo_core::infrastructure::metadata::{
     DiskCoverCache, LoftyMetadataReader, LrcLyricsParser, SymphoniaMediaProbe,
@@ -89,6 +89,13 @@ pub fn assemble(db_path: &Path, cover_cache_dir: &Path) -> Result<RoutedRuntime,
         hasher: Arc::new(Blake3ContentHasher::new(registry.clone())),
         lyrics_parser: Arc::new(LrcLyricsParser),
         cover_cache,
+        // The portable `echo/` control surface (manifest + records) for the
+        // library-initialization and restore use cases.
+        control: Arc::new(RootControlPlane::new(registry.clone())),
+        // The single device identity + sync-shape reader ride on the same
+        // SQLite database (see 0006 device_state / sync-outbox shape).
+        device_id: database.clone(),
+        sync: database.clone(),
         ids: Arc::new(UuidV4Generator),
         clock: Arc::new(WallClock::new()),
         config: Default::default(),

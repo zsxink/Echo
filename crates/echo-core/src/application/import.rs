@@ -13,8 +13,9 @@
 //! (`<root>/.echo-staging-…/import/<operation-id>`): the copy runs in bounded
 //! chunks with BLAKE3 accumulated during the copy, the staged file is fsynced
 //! before it counts as staged, and the source file is read exactly once and
-//! never modified. The target `歌手/歌手 - 歌曲名.原扩展名` (task 5.2) is
-//! planned from the tags of the staged copy, then the conditional unique
+//! never modified. The target `media/歌手/歌手 - 歌曲名.原扩展名` (task 5.2;
+//! all media published under the portable `media/` tree, task 3.1) is planned
+//! from the tags of the staged copy, then the conditional unique
 //! target claim plus the reserved identity are persisted before the publish;
 //! the publish itself reserves the target exclusively (create-new) and swaps
 //! the verified staged copy in with one same-filesystem rename, so the song
@@ -53,6 +54,7 @@ use crate::application::scan::{
 };
 use crate::domain::entities::LyricsSource;
 use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath, SongId};
+use crate::domain::library::{PortableRecord, MEDIA_ROOT};
 use crate::domain::state::OperationState;
 use crate::domain::text::{
     target_artist_component, target_file_stem, truncate_component_with_extension,
@@ -885,6 +887,7 @@ impl<'a> PlanImport<'a> {
         lrc_published: bool,
     ) -> Result<(), Error> {
         let entity = song_from_parsed(planned.reserved, planned.root, &parsed.file);
+        let entity_for_record = entity.clone();
         let embedded = parsed
             .embedded_lyrics
             .clone()
@@ -918,6 +921,31 @@ impl<'a> PlanImport<'a> {
                 tx.upsert_operation_item(operation, committed)?;
                 Ok(())
             }))?;
+        // Materialize the portable song record once the row is durably
+        // committed (design §2: the record is the durable form of the outbox
+        // payload, sharing the exact revision/HLC the row holds). The gate
+        // makes the "控制面不可写" scenario an explicit refusal of the import;
+        // recovery re-drives idempotently if we crash here.
+        crate::application::portable_materialize::ensure_control_plane_writable(
+            self.deps.control.as_ref(),
+            planned.root,
+        )?;
+        let device = self.deps.device_id.current_device_id();
+        let (revision, hlc) = crate::application::portable_materialize::committed_version(
+            self.deps.sync.as_ref(),
+            "song",
+            &planned.reserved.to_string(),
+            device,
+        )?;
+        let record = crate::application::portable_materialize::song_record(
+            device,
+            hlc,
+            revision,
+            &entity_for_record,
+        )?;
+        self.deps
+            .control
+            .write_record(planned.root, &PortableRecord::Song(record))?;
         // Terminal state releases the target claim (port contract) so retries
         // and other operations can claim the same path again.
         self.deps.journal.upsert_item(
@@ -942,7 +970,8 @@ fn supported_extension_of(display_name: &str) -> Option<String> {
     SUPPORTED_EXTENSIONS.contains(&ext.as_str()).then_some(ext)
 }
 
-/// Plan the tag-driven import target `歌手/歌手 - 歌曲名.扩展名` (task 5.2).
+/// Plan the tag-driven import target `media/歌手/歌手 - 歌曲名.扩展名` (task
+/// 5.2; media published under the portable `media/` tree, task 3.1).
 ///
 /// - Missing/blank tags take the visible fallbacks 未知艺人 / 未命名歌曲
 ///   (domain rule [`target_file_stem`]);
@@ -971,7 +1000,10 @@ fn plan_named_target(
             format!("{base_stem} ({suffix})")
         };
         let file = truncate_component_with_extension(&stem, extension, TARGET_COMPONENT_BYTES);
-        if let Ok(path) = RelativeMediaPath::new(&format!("{dir}/{file}")) {
+        // The portable layout publishes every imported song under the `media/`
+        // tree (design §1); the `歌手/歌手 - 歌曲名.扩展名` artist-naming
+        // scheme, BLAKE3 dedup and ` (n)` numbering are unchanged.
+        if let Ok(path) = RelativeMediaPath::new(&format!("{MEDIA_ROOT}/{dir}/{file}")) {
             if !is_taken(path.identity_key()) {
                 return Some(path);
             }
@@ -1053,7 +1085,8 @@ mod tests {
     use crate::application::scan::ScanConfig;
     use crate::application::testing::clock::{FakeIdGenerator, ManualClock};
     use crate::application::testing::small_fakes::{
-        FakeFileHasher, FakeLyricsParser, FakeMediaProbe, FakeMetadataReader, MemoryCoverCache,
+        FakeFileHasher, FakeLyricsParser, FakeMediaProbe, FakeMetadataReader, MemoryControlPlane,
+        MemoryCoverCache,
     };
     use crate::application::testing::ScanFixture;
     use crate::application::testing::{FakeImportSources, FakeLibraryFileSystem, MemoryDatabase};
@@ -1553,13 +1586,13 @@ mod tests {
     fn mixed_batch_reports_each_input_independently() {
         let g = gated();
         // An existing library record owning some content, for the duplicate.
-        let existing = seed_song(&g, "已有/other.flac", b"library-original");
+        let existing = seed_song(&g, "media/已有/other.flac", b"library-original");
         // The successful input: a supported audio file whose tags name the
         // target 歌手/歌手 - 晴天.flac and whose published file parses cleanly.
         g.sources.add("good", "晴天.flac", b"sunny-bytes");
         tagged(&g, b"sunny-bytes", Some("歌手"), Some("晴天"));
         g.fixture
-            .set_audio("歌手/歌手 - 晴天.flac", "晴天", 269_000);
+            .set_audio("media/歌手/歌手 - 晴天.flac", "晴天", 269_000);
         g.sources.add("dup", "重复.flac", b"library-original");
         g.sources.add("text", "notes.txt", b"not audio");
         g.sources.add("locked", "locked.flac", b"unreadable");
@@ -1588,7 +1621,7 @@ mod tests {
                 report.results[0]
             );
         };
-        assert_eq!(target.display(), "歌手/歌手 - 晴天.flac");
+        assert_eq!(target.display(), "media/歌手/歌手 - 晴天.flac");
         assert_eq!(
             report.results[1],
             ImportOutcome::Duplicate {
@@ -1612,7 +1645,7 @@ mod tests {
             .fs
             .root_path(g.fixture.root)
             .expect("root")
-            .join("歌手/歌手 - 晴天.flac");
+            .join("media/歌手/歌手 - 晴天.flac");
         assert_eq!(
             std::fs::read(&published).expect("published bytes"),
             b"sunny-bytes"
@@ -1626,7 +1659,7 @@ mod tests {
         assert_eq!(record.title(), Some("晴天"));
         assert_eq!(
             record.path(),
-            &RelativeMediaPath::new("歌手/歌手 - 晴天.flac").unwrap()
+            &RelativeMediaPath::new("media/歌手/歌手 - 晴天.flac").unwrap()
         );
         assert!(violations(&g).is_empty());
     }
@@ -1637,7 +1670,7 @@ mod tests {
         g.sources.add("good", "晴天.flac", b"reserved-bytes");
         tagged(&g, b"reserved-bytes", Some("歌手"), Some("晴天"));
         g.fixture
-            .set_audio("歌手/歌手 - 晴天.flac", "晴天", 269_000);
+            .set_audio("media/歌手/歌手 - 晴天.flac", "晴天", 269_000);
 
         let report = PlanImport::new(&g.deps, &g.sources)
             .run(g.fixture.root, &[source("good")])
@@ -1684,11 +1717,11 @@ mod tests {
         let g = gated();
         g.sources.add("a", "a.flac", b"content-a");
         tagged(&g, b"content-a", Some("歌手"), Some("A"));
-        g.fixture.set_audio("歌手/歌手 - A.flac", "A", 1_000);
+        g.fixture.set_audio("media/歌手/歌手 - A.flac", "A", 1_000);
         g.sources.fail("b", "外部文件不可读");
         g.sources.add("c", "c.flac", b"content-c");
         tagged(&g, b"content-c", Some("歌手"), Some("C"));
-        g.fixture.set_audio("歌手/歌手 - C.flac", "C", 3_000);
+        g.fixture.set_audio("media/歌手/歌手 - C.flac", "C", 3_000);
 
         let report = PlanImport::new(&g.deps, &g.sources)
             .run(g.fixture.root, &[source("a"), source("b"), source("c")])
@@ -1708,8 +1741,8 @@ mod tests {
             "both successful inputs committed"
         );
         let root_dir = g.fixture.fs.root_path(g.fixture.root).expect("root");
-        assert!(root_dir.join("歌手/歌手 - A.flac").exists());
-        assert!(root_dir.join("歌手/歌手 - C.flac").exists());
+        assert!(root_dir.join("media/歌手/歌手 - A.flac").exists());
+        assert!(root_dir.join("media/歌手/歌手 - C.flac").exists());
         // The failed input left no claim behind: retries start clean.
         assert_eq!(g.fixture.database.released_claims().len(), 2);
         assert!(violations(&g).is_empty());
@@ -1720,7 +1753,8 @@ mod tests {
         let g = gated();
         g.sources.add("x", "tune.flac", b"same-content");
         tagged(&g, b"same-content", Some("歌手"), Some("Tune"));
-        g.fixture.set_audio("歌手/歌手 - Tune.flac", "Tune", 1_000);
+        g.fixture
+            .set_audio("media/歌手/歌手 - Tune.flac", "Tune", 1_000);
         g.sources.add("y", "copy.flac", b"same-content");
 
         let report = PlanImport::new(&g.deps, &g.sources)
@@ -1770,12 +1804,12 @@ mod tests {
     fn same_name_different_content_gets_minimal_conflict_number() {
         let g = gated();
         g.fixture
-            .write_file("歌手/歌手 - 晴天.flac", b"original-content");
-        seed_song(&g, "歌手/歌手 - 晴天.flac", b"original-content");
+            .write_file("media/歌手/歌手 - 晴天.flac", b"original-content");
+        seed_song(&g, "media/歌手/歌手 - 晴天.flac", b"original-content");
         g.sources.add("new", "晴天.flac", b"different-content");
         tagged(&g, b"different-content", Some("歌手"), Some("晴天"));
         g.fixture
-            .set_audio("歌手/歌手 - 晴天 (2).flac", "晴天", 1_000);
+            .set_audio("media/歌手/歌手 - 晴天 (2).flac", "晴天", 1_000);
 
         let report = PlanImport::new(&g.deps, &g.sources)
             .run(g.fixture.root, &[source("new")])
@@ -1787,25 +1821,25 @@ mod tests {
         };
         assert_eq!(
             target.display(),
-            "歌手/歌手 - 晴天 (2).flac",
+            "media/歌手/歌手 - 晴天 (2).flac",
             "minimal (n) after the occupied name"
         );
 
         let root_dir = g.fixture.fs.root_path(g.fixture.root).expect("root");
         assert_eq!(
-            std::fs::read(root_dir.join("歌手/歌手 - 晴天.flac")).expect("original"),
+            std::fs::read(root_dir.join("media/歌手/歌手 - 晴天.flac")).expect("original"),
             b"original-content",
             "the existing file is never replaced"
         );
         assert_eq!(
-            std::fs::read(root_dir.join("歌手/歌手 - 晴天 (2).flac")).expect("new"),
+            std::fs::read(root_dir.join("media/歌手/歌手 - 晴天 (2).flac")).expect("new"),
             b"different-content"
         );
         assert_eq!(g.fixture.all_songs().len(), 2);
         let record = g.deps.songs.by_id(song).expect("query").expect("record");
         assert_eq!(
             record.path(),
-            &RelativeMediaPath::new("歌手/歌手 - 晴天 (2).flac").unwrap()
+            &RelativeMediaPath::new("media/歌手/歌手 - 晴天 (2).flac").unwrap()
         );
     }
 
@@ -1822,7 +1856,7 @@ mod tests {
         g.sources.add("hit", "晴天.FLAC", b"hit-bytes");
         tagged(&g, b"hit-bytes", Some("周杰伦"), Some("晴天"));
         g.fixture
-            .set_audio("周杰伦/周杰伦 - 晴天.flac", "晴天", 269_000);
+            .set_audio("media/周杰伦/周杰伦 - 晴天.flac", "晴天", 269_000);
 
         let report = PlanImport::new(&g.deps, &g.sources)
             .run(g.fixture.root, &[source("hit")])
@@ -1835,7 +1869,7 @@ mod tests {
 
         assert_eq!(
             target.display(),
-            "周杰伦/周杰伦 - 晴天.flac",
+            "media/周杰伦/周杰伦 - 晴天.flac",
             "target is 歌手/歌手 - 歌曲名.扩展名"
         );
         let published = g
@@ -1858,14 +1892,17 @@ mod tests {
         let g = gated();
         // No tags at all → 未知艺人/未知艺人 - 未命名歌曲.flac.
         g.sources.add("none", "mystery.flac", b"bytes-none");
-        g.fixture
-            .set_audio("未知艺人/未知艺人 - 未命名歌曲.flac", "未命名歌曲", 1_000);
+        g.fixture.set_audio(
+            "media/未知艺人/未知艺人 - 未命名歌曲.flac",
+            "未命名歌曲",
+            1_000,
+        );
         // Blank (whitespace-only) tags count as missing → same fallback, so
         // this input collides with the first and takes the minimal (2).
         g.sources.add("blank", "blank.flac", b"bytes-blank");
         tagged(&g, b"bytes-blank", Some("   "), Some("\u{3000}"));
         g.fixture.set_audio(
-            "未知艺人/未知艺人 - 未命名歌曲 (2).flac",
+            "media/未知艺人/未知艺人 - 未命名歌曲 (2).flac",
             "未命名歌曲",
             2_000,
         );
@@ -1873,12 +1910,12 @@ mod tests {
         g.sources.add("title-only", "t.flac", b"bytes-title");
         tagged(&g, b"bytes-title", Some("\t"), Some("晴天"));
         g.fixture
-            .set_audio("未知艺人/未知艺人 - 晴天.flac", "晴天", 3_000);
+            .set_audio("media/未知艺人/未知艺人 - 晴天.flac", "晴天", 3_000);
         // Artist only → the title still takes 未命名歌曲.
         g.sources.add("artist-only", "a.flac", b"bytes-artist");
         tagged(&g, b"bytes-artist", Some("周杰伦"), None);
         g.fixture
-            .set_audio("周杰伦/周杰伦 - 未命名歌曲.flac", "未命名歌曲", 4_000);
+            .set_audio("media/周杰伦/周杰伦 - 未命名歌曲.flac", "未命名歌曲", 4_000);
 
         let report = PlanImport::new(&g.deps, &g.sources)
             .run(
@@ -1903,10 +1940,10 @@ mod tests {
         assert_eq!(
             targets,
             vec![
-                "未知艺人/未知艺人 - 未命名歌曲.flac",
-                "未知艺人/未知艺人 - 未命名歌曲 (2).flac",
-                "未知艺人/未知艺人 - 晴天.flac",
-                "周杰伦/周杰伦 - 未命名歌曲.flac",
+                "media/未知艺人/未知艺人 - 未命名歌曲.flac",
+                "media/未知艺人/未知艺人 - 未命名歌曲 (2).flac",
+                "media/未知艺人/未知艺人 - 晴天.flac",
+                "media/周杰伦/周杰伦 - 未命名歌曲.flac",
             ]
         );
         assert_eq!(g.fixture.all_songs().len(), 4);
@@ -1920,11 +1957,12 @@ mod tests {
         g.sources.add("messy", "track.flac", b"bytes-messy");
         tagged(&g, b"bytes-messy", Some("AC/DC"), Some("问\u{1}春*归?"));
         g.fixture
-            .set_audio("AC_DC/AC_DC - 问春_归_.flac", "问春归", 1_000);
+            .set_audio("media/AC_DC/AC_DC - 问春_归_.flac", "问春归", 1_000);
         // A Windows reserved device name as the artist.
         g.sources.add("con", "demo.flac", b"bytes-con");
         tagged(&g, b"bytes-con", Some("CON"), Some("Demo"));
-        g.fixture.set_audio("CON_/CON_ - Demo.flac", "Demo", 2_000);
+        g.fixture
+            .set_audio("media/CON_/CON_ - Demo.flac", "Demo", 2_000);
 
         let report = PlanImport::new(&g.deps, &g.sources)
             .run(g.fixture.root, &[source("messy"), source("con")])
@@ -1940,22 +1978,30 @@ mod tests {
             .collect();
         assert_eq!(
             targets,
-            vec!["AC_DC/AC_DC - 问春_归_.flac", "CON_/CON_ - Demo.flac"]
+            vec![
+                "media/AC_DC/AC_DC - 问春_归_.flac",
+                "media/CON_/CON_ - Demo.flac"
+            ]
         );
         // No platform-forbidden character survives inside any component
-        // (the one `/` per target is the separator the builder itself emits).
+        // (the two `/` per target are the `media/` prefix and the separator
+        // the builder itself emits).
         for target in &targets {
             let components: Vec<&str> = target.split('/').collect();
-            assert_eq!(components.len(), 2, "artist/file form: {target}");
-            for component in components {
+            assert_eq!(components.len(), 3, "media/artist/file form: {target}");
+            assert_eq!(
+                components[0], "media",
+                "portable media tree prefix: {target}"
+            );
+            for component in &components[1..] {
                 for c in ['\\', ':', '*', '?', '"', '<', '>', '|'] {
                     assert!(!component.contains(c), "{c:?} survived in {target}");
                 }
             }
         }
         let root_dir = g.fixture.fs.root_path(g.fixture.root).expect("root");
-        assert!(root_dir.join("AC_DC/AC_DC - 问春_归_.flac").exists());
-        assert!(root_dir.join("CON_/CON_ - Demo.flac").exists());
+        assert!(root_dir.join("media/AC_DC/AC_DC - 问春_归_.flac").exists());
+        assert!(root_dir.join("media/CON_/CON_ - Demo.flac").exists());
     }
 
     #[test]
@@ -1964,7 +2010,7 @@ mod tests {
         // A far-over-cap title (CJK: 3 bytes per char).
         let long_title = "这是一段非常长的歌曲标题".repeat(12);
         let expected_title_target = format!(
-            "{}/{}",
+            "{MEDIA_ROOT}/{}/{}",
             target_artist_component(Some("周杰伦"), TARGET_COMPONENT_BYTES),
             truncate_component_with_extension(
                 &target_file_stem(Some("周杰伦"), Some(&long_title)),
@@ -1978,7 +2024,7 @@ mod tests {
         // A far-over-cap artist: the directory component is bounded too.
         let long_artist = "很长的艺人名字组合".repeat(30);
         let expected_artist_target = format!(
-            "{}/{}",
+            "{MEDIA_ROOT}/{}/{}",
             target_artist_component(Some(&long_artist), TARGET_COMPONENT_BYTES),
             truncate_component_with_extension(
                 &target_file_stem(Some(&long_artist), Some("短")),
@@ -2008,7 +2054,9 @@ mod tests {
             "the target follows the domain truncation rule exactly"
         );
         for target in &targets {
-            let (dir, file) = target.rsplit_once('/').expect("artist/file form");
+            let (tree, rest) = target.split_once('/').expect("media/artist/file form");
+            assert_eq!(tree, "media", "portable media tree prefix: {target}");
+            let (dir, file) = rest.rsplit_once('/').expect("artist/file form");
             assert!(dir.len() <= TARGET_COMPONENT_BYTES, "{dir}");
             assert!(file.len() <= TARGET_COMPONENT_BYTES, "{file}");
             assert!(
@@ -2031,15 +2079,16 @@ mod tests {
         let g = gated();
         // Both the base name and its first numbered successor are taken
         // (library record + on-disk file each); the import must land on (3).
-        g.fixture.write_file("歌手/歌手 - 晴天.flac", b"content-1");
-        seed_song(&g, "歌手/歌手 - 晴天.flac", b"content-1");
         g.fixture
-            .write_file("歌手/歌手 - 晴天 (2).flac", b"content-2");
-        seed_song(&g, "歌手/歌手 - 晴天 (2).flac", b"content-2");
+            .write_file("media/歌手/歌手 - 晴天.flac", b"content-1");
+        seed_song(&g, "media/歌手/歌手 - 晴天.flac", b"content-1");
+        g.fixture
+            .write_file("media/歌手/歌手 - 晴天 (2).flac", b"content-2");
+        seed_song(&g, "media/歌手/歌手 - 晴天 (2).flac", b"content-2");
         g.sources.add("new", "晴天.flac", b"content-3");
         tagged(&g, b"content-3", Some("歌手"), Some("晴天"));
         g.fixture
-            .set_audio("歌手/歌手 - 晴天 (3).flac", "晴天", 1_000);
+            .set_audio("media/歌手/歌手 - 晴天 (3).flac", "晴天", 1_000);
 
         let report = PlanImport::new(&g.deps, &g.sources)
             .run(g.fixture.root, &[source("new")])
@@ -2049,15 +2098,15 @@ mod tests {
         else {
             panic!("the import must succeed under a numbered name");
         };
-        assert_eq!(target.display(), "歌手/歌手 - 晴天 (3).flac");
+        assert_eq!(target.display(), "media/歌手/歌手 - 晴天 (3).flac");
         let root_dir = g.fixture.fs.root_path(g.fixture.root).expect("root");
         assert_eq!(
-            std::fs::read(root_dir.join("歌手/歌手 - 晴天.flac")).expect("first"),
+            std::fs::read(root_dir.join("media/歌手/歌手 - 晴天.flac")).expect("first"),
             b"content-1",
             "occupied names are never replaced"
         );
         assert_eq!(
-            std::fs::read(root_dir.join("歌手/歌手 - 晴天 (2).flac")).expect("second"),
+            std::fs::read(root_dir.join("media/歌手/歌手 - 晴天 (2).flac")).expect("second"),
             b"content-2"
         );
         assert_eq!(g.fixture.all_songs().len(), 3);
@@ -2070,11 +2119,12 @@ mod tests {
         // claim the first input's freshly planned target.
         g.sources.add("first", "one.flac", b"content-1");
         tagged(&g, b"content-1", Some("歌手"), Some("同名"));
-        g.fixture.set_audio("歌手/歌手 - 同名.flac", "同名", 1_000);
+        g.fixture
+            .set_audio("media/歌手/歌手 - 同名.flac", "同名", 1_000);
         g.sources.add("second", "two.flac", b"content-2");
         tagged(&g, b"content-2", Some("歌手"), Some("同名"));
         g.fixture
-            .set_audio("歌手/歌手 - 同名 (2).flac", "同名", 2_000);
+            .set_audio("media/歌手/歌手 - 同名 (2).flac", "同名", 2_000);
 
         let report = PlanImport::new(&g.deps, &g.sources)
             .run(g.fixture.root, &[source("first"), source("second")])
@@ -2089,7 +2139,10 @@ mod tests {
             .collect();
         assert_eq!(
             targets,
-            vec!["歌手/歌手 - 同名.flac", "歌手/歌手 - 同名 (2).flac"]
+            vec![
+                "media/歌手/歌手 - 同名.flac",
+                "media/歌手/歌手 - 同名 (2).flac"
+            ]
         );
         assert_eq!(g.fixture.all_songs().len(), 2, "two records, two files");
     }
@@ -2101,11 +2154,11 @@ mod tests {
         // (external placement, or a database that was dropped): planning must
         // still not claim the name.
         g.fixture
-            .write_file("歌手/歌手 - 晴天.flac", b"someone-else");
+            .write_file("media/歌手/歌手 - 晴天.flac", b"someone-else");
         g.sources.add("new", "晴天.flac", b"fresh-bytes");
         tagged(&g, b"fresh-bytes", Some("歌手"), Some("晴天"));
         g.fixture
-            .set_audio("歌手/歌手 - 晴天 (2).flac", "晴天", 1_000);
+            .set_audio("media/歌手/歌手 - 晴天 (2).flac", "晴天", 1_000);
 
         let report = PlanImport::new(&g.deps, &g.sources)
             .run(g.fixture.root, &[source("new")])
@@ -2115,10 +2168,10 @@ mod tests {
         else {
             panic!("the import must succeed under a numbered name");
         };
-        assert_eq!(target.display(), "歌手/歌手 - 晴天 (2).flac");
+        assert_eq!(target.display(), "media/歌手/歌手 - 晴天 (2).flac");
         let root_dir = g.fixture.fs.root_path(g.fixture.root).expect("root");
         assert_eq!(
-            std::fs::read(root_dir.join("歌手/歌手 - 晴天.flac")).expect("existing"),
+            std::fs::read(root_dir.join("media/歌手/歌手 - 晴天.flac")).expect("existing"),
             b"someone-else",
             "the disk-only file keeps its bytes"
         );
@@ -2269,7 +2322,7 @@ mod tests {
         let g = gated();
         let planter = Arc::new(RacePlanter {
             inner: g.fixture.fs.clone(),
-            plant: std::sync::Mutex::new(Some("歌手/歌手 - 晴天.flac".to_owned())),
+            plant: std::sync::Mutex::new(Some("media/歌手/歌手 - 晴天.flac".to_owned())),
         });
         let deps = {
             let fs: Arc<dyn LibraryFileSystem> = planter;
@@ -2280,7 +2333,8 @@ mod tests {
         };
         g.sources.add("new", "晴天.flac", b"new-bytes");
         tagged(&g, b"new-bytes", Some("歌手"), Some("晴天"));
-        g.fixture.set_audio("歌手/歌手 - 晴天.flac", "晴天", 1_000);
+        g.fixture
+            .set_audio("media/歌手/歌手 - 晴天.flac", "晴天", 1_000);
 
         let report = PlanImport::new(&deps, &g.sources)
             .run(g.fixture.root, &[source("new")])
@@ -2295,7 +2349,7 @@ mod tests {
         // operation's claim was released for a clean retry.
         let root_dir = g.fixture.fs.root_path(g.fixture.root).expect("root");
         assert_eq!(
-            std::fs::read(root_dir.join("歌手/歌手 - 晴天.flac")).expect("planted"),
+            std::fs::read(root_dir.join("media/歌手/歌手 - 晴天.flac")).expect("planted"),
             b"planted-first"
         );
         assert!(g.fixture.all_songs().is_empty());
@@ -2318,7 +2372,7 @@ mod tests {
         g.sources.add("big", "大文件.flac", &content);
         tagged(&g, &content, Some("歌手"), Some("大文件"));
         g.fixture
-            .set_audio("歌手/歌手 - 大文件.flac", "大文件", 1_000);
+            .set_audio("media/歌手/歌手 - 大文件.flac", "大文件", 1_000);
 
         let report = PlanImport::new(&g.deps, &g.sources)
             .run(g.fixture.root, &[source("big")])
@@ -2326,7 +2380,7 @@ mod tests {
         let ImportOutcome::Imported { song, target, .. } = &report.results[0] else {
             panic!("the streamed input must import");
         };
-        assert_eq!(target.display(), "歌手/歌手 - 大文件.flac");
+        assert_eq!(target.display(), "media/歌手/歌手 - 大文件.flac");
 
         // The published file holds every byte of the streamed copy.
         let published = g
@@ -2334,7 +2388,7 @@ mod tests {
             .fs
             .root_path(g.fixture.root)
             .expect("root")
-            .join("歌手/歌手 - 大文件.flac");
+            .join("media/歌手/歌手 - 大文件.flac");
         assert_eq!(
             std::fs::read(&published).expect("published bytes"),
             content,
@@ -2360,7 +2414,8 @@ mod tests {
         let g = gated();
         g.sources.add("good", "晴天.flac", b"journal-bytes");
         tagged(&g, b"journal-bytes", Some("歌手"), Some("晴天"));
-        g.fixture.set_audio("歌手/歌手 - 晴天.flac", "晴天", 1_000);
+        g.fixture
+            .set_audio("media/歌手/歌手 - 晴天.flac", "晴天", 1_000);
 
         let report = PlanImport::new(&g.deps, &g.sources)
             .run(g.fixture.root, &[source("good")])
@@ -2389,7 +2444,9 @@ mod tests {
         );
         let staging = item.staging_path.as_ref().expect("staged location");
         assert!(
-            staging.display().starts_with(".echo-test-staging/import/"),
+            staging
+                .display()
+                .starts_with(crate::domain::library::STAGING_ROOT),
             "staged inside the operation's slot: {}",
             staging.display()
         );
@@ -2436,7 +2493,7 @@ mod tests {
         let sources = FakeImportSources::new();
         sources.add("good", "晴天.flac", b"visible-bytes");
         tag_content(&fixture, b"visible-bytes", Some("歌手"), Some("晴天"));
-        fixture.set_audio("歌手/歌手 - 晴天.flac", "晴天", 1_000);
+        fixture.set_audio("media/歌手/歌手 - 晴天.flac", "晴天", 1_000);
 
         let report = PlanImport::new(&deps, &sources)
             .run(fixture.root, &[source("good")])
@@ -2459,7 +2516,7 @@ mod tests {
             .fs
             .root_path(fixture.root)
             .expect("root")
-            .join("歌手/歌手 - 晴天.flac");
+            .join("media/歌手/歌手 - 晴天.flac");
         assert_eq!(
             std::fs::read(&published).expect("published"),
             b"visible-bytes"
@@ -2467,13 +2524,13 @@ mod tests {
         let songs = fixture.all_songs();
         assert_eq!(songs.len(), 1);
         assert_eq!(songs[0].id(), song);
-        assert_eq!(songs[0].path().display(), "歌手/歌手 - 晴天.flac");
+        assert_eq!(songs[0].path().display(), "media/歌手/歌手 - 晴天.flac");
     }
 
     #[test]
     fn duplicate_and_failed_inputs_discard_their_staged_copies() {
         let g = gated();
-        let existing = seed_song(&g, "已有/other.flac", b"duplicate-content");
+        let existing = seed_song(&g, "media/已有/other.flac", b"duplicate-content");
         // The duplicate's staged copy is created (dedup runs after the
         // streaming copy) and must be discarded without a claim.
         g.sources.add("dup", "重复.flac", b"duplicate-content");
@@ -2481,7 +2538,7 @@ mod tests {
         // its planned target between the batch snapshot and the publish).
         let planter = Arc::new(RacePlanter {
             inner: g.fixture.fs.clone(),
-            plant: std::sync::Mutex::new(Some("歌手/歌手 - 晴天.flac".to_owned())),
+            plant: std::sync::Mutex::new(Some("media/歌手/歌手 - 晴天.flac".to_owned())),
         });
         let deps = {
             let fs: Arc<dyn LibraryFileSystem> = planter;
@@ -2492,7 +2549,8 @@ mod tests {
         };
         g.sources.add("new", "晴天.flac", b"fresh-bytes");
         tagged(&g, b"fresh-bytes", Some("歌手"), Some("晴天"));
-        g.fixture.set_audio("歌手/歌手 - 晴天.flac", "晴天", 1_000);
+        g.fixture
+            .set_audio("media/歌手/歌手 - 晴天.flac", "晴天", 1_000);
 
         let report = PlanImport::new(&deps, &g.sources)
             .run(g.fixture.root, &[source("dup"), source("new")])
@@ -2519,7 +2577,7 @@ mod tests {
         // The conflicting file keeps its bytes (never overwritten).
         let root_dir = g.fixture.fs.root_path(g.fixture.root).expect("root");
         assert_eq!(
-            std::fs::read(root_dir.join("歌手/歌手 - 晴天.flac")).expect("planted"),
+            std::fs::read(root_dir.join("media/歌手/歌手 - 晴天.flac")).expect("planted"),
             b"planted-first"
         );
     }
@@ -2552,14 +2610,14 @@ mod tests {
         };
         let probe = FakeMediaProbe::new();
         probe.set(
-            "歌手/歌手 - 晴天.flac",
+            "media/歌手/歌手 - 晴天.flac",
             crate::application::ports::ProbeOutcome::Audio {
                 format: AudioFormat::Flac,
                 duration: Some(std::time::Duration::from_secs(1)),
             },
         );
         let metadata = FakeMetadataReader::new();
-        metadata.set("歌手/歌手 - 晴天.flac", tags.clone());
+        metadata.set("media/歌手/歌手 - 晴天.flac", tags.clone());
         metadata.set_bytes(b"original-source-bytes", tags);
         (probe, metadata)
     }
@@ -2588,6 +2646,9 @@ mod tests {
             hasher: Arc::new(FakeFileHasher::new(Arc::clone(fs))),
             lyrics_parser: Arc::new(FakeLyricsParser::new()),
             cover_cache: Arc::new(MemoryCoverCache::new()),
+            control: Arc::new(MemoryControlPlane::new()),
+            device_id: Arc::new(database.clone()),
+            sync: Arc::new(database.clone()),
             ids: Arc::new(FakeIdGenerator::new()),
             clock: Arc::new(ManualClock::new()),
             config: ScanConfig::default(),
@@ -2627,7 +2688,7 @@ mod tests {
         else {
             panic!("the import must succeed: {:?}", report.results[0]);
         };
-        assert_eq!(target.display(), "歌手/歌手 - 晴天.flac");
+        assert_eq!(target.display(), "media/歌手/歌手 - 晴天.flac");
 
         // 源文件内容/名称/位置不变: the source was copied, never moved.
         assert_eq!(
@@ -2654,7 +2715,7 @@ mod tests {
 
         // The full audio was published into the library and committed.
         assert_eq!(
-            std::fs::read(library.path().join("歌手/歌手 - 晴天.flac")).expect("published"),
+            std::fs::read(library.path().join("media/歌手/歌手 - 晴天.flac")).expect("published"),
             b"original-source-bytes"
         );
         assert_eq!(database.songs().len(), 1);
@@ -2666,27 +2727,15 @@ mod tests {
             b"user-content"
         );
         assert_eq!(std::fs::read_dir(&foreign).expect("read dir").count(), 1);
-        let staging_dirs: Vec<std::path::PathBuf> = std::fs::read_dir(library.path())
-            .expect("root")
-            .flatten()
-            .map(|entry| entry.path())
-            .filter(|path| {
-                path.file_name()
-                    .is_some_and(|name| name.to_string_lossy().starts_with(".echo-staging-"))
-            })
-            .collect();
-        let owned_dirs: Vec<std::path::PathBuf> = staging_dirs
-            .into_iter()
-            .filter(|path| *path != foreign)
-            .collect();
-        assert_eq!(
-            owned_dirs.len(),
-            1,
-            "exactly one Echo-owned staging directory: {owned_dirs:?}"
-        );
+        // Echo staged inside its own portable control surface: `echo/tmp/` is
+        // created and marker-owned, and `media/` gained the song. The foreign
+        // legacy-prefix directory is never touched or adopted.
         assert!(
-            owned_dirs[0].join(".echo-ownership-marker").is_file(),
-            "the owned staging directory carries its marker"
+            library
+                .path()
+                .join("echo/tmp/.echo-ownership-marker")
+                .is_file(),
+            "the portable echo/tmp staging root carries its ownership marker"
         );
     }
 
@@ -2726,7 +2775,7 @@ mod tests {
             .add_sidecar("hit", "晴天.lrc", b"[00:01.00]sidecar line");
         tagged(&g, b"audio-bytes", Some("歌手"), Some("晴天"));
         g.fixture
-            .set_audio("歌手/歌手 - 晴天.flac", "晴天", 269_000);
+            .set_audio("media/歌手/歌手 - 晴天.flac", "晴天", 269_000);
 
         let report = PlanImport::new(&g.deps, &g.sources)
             .run(g.fixture.root, &[source("hit")])
@@ -2742,16 +2791,16 @@ mod tests {
         };
 
         // The sidecar pairs with the audio's final base name.
-        assert_eq!(target.display(), "歌手/歌手 - 晴天.flac");
+        assert_eq!(target.display(), "media/歌手/歌手 - 晴天.flac");
         assert_eq!(
             &*lyrics,
             &LyricsImportResult::Imported {
-                target: RelativeMediaPath::new("歌手/歌手 - 晴天.lrc").unwrap()
+                target: RelativeMediaPath::new("media/歌手/歌手 - 晴天.lrc").unwrap()
             },
             "the result reports the published sidecar"
         );
         assert_eq!(
-            read_library_file(&g, "歌手/歌手 - 晴天.lrc"),
+            read_library_file(&g, "media/歌手/歌手 - 晴天.lrc"),
             b"[00:01.00]sidecar line",
             "the sidecar bytes landed at the paired target"
         );
@@ -2782,9 +2831,9 @@ mod tests {
             .add_sidecar("hit", "晴天.lrc", b"[00:01.00]sidecar line");
         tagged(&g, b"audio-bytes", Some("歌手"), Some("晴天"));
         g.fixture
-            .set_audio("歌手/歌手 - 晴天.flac", "晴天", 269_000);
+            .set_audio("media/歌手/歌手 - 晴天.flac", "晴天", 269_000);
         // The published audio carries embedded lyrics (USLT/lyrics tag).
-        with_embedded_lyrics(&g, "歌手/歌手 - 晴天.flac", "[00:01.00]embedded line");
+        with_embedded_lyrics(&g, "media/歌手/歌手 - 晴天.flac", "[00:01.00]embedded line");
 
         let report = PlanImport::new(&g.deps, &g.sources)
             .run(g.fixture.root, &[source("hit")])
@@ -2818,14 +2867,15 @@ mod tests {
         let g = gated();
         // The base name is occupied by an existing record+file; the audio
         // lands on `(2)`, and the sidecar must follow the SAME final stem.
-        g.fixture.write_file("歌手/歌手 - 晴天.flac", b"incumbent");
-        seed_song(&g, "歌手/歌手 - 晴天.flac", b"incumbent");
+        g.fixture
+            .write_file("media/歌手/歌手 - 晴天.flac", b"incumbent");
+        seed_song(&g, "media/歌手/歌手 - 晴天.flac", b"incumbent");
         g.sources.add("new", "晴天.flac", b"audio-bytes");
         g.sources
             .add_sidecar("new", "晴天.lrc", b"[00:01.00]sidecar line");
         tagged(&g, b"audio-bytes", Some("歌手"), Some("晴天"));
         g.fixture
-            .set_audio("歌手/歌手 - 晴天 (2).flac", "晴天", 1_000);
+            .set_audio("media/歌手/歌手 - 晴天 (2).flac", "晴天", 1_000);
 
         let report = PlanImport::new(&g.deps, &g.sources)
             .run(g.fixture.root, &[source("new")])
@@ -2840,20 +2890,23 @@ mod tests {
             panic!("the numbered input must import: {:?}", report.results[0]);
         };
 
-        assert_eq!(target.display(), "歌手/歌手 - 晴天 (2).flac");
+        assert_eq!(target.display(), "media/歌手/歌手 - 晴天 (2).flac");
         assert_eq!(
             &*lyrics,
             &LyricsImportResult::Imported {
-                target: RelativeMediaPath::new("歌手/歌手 - 晴天 (2).lrc").unwrap()
+                target: RelativeMediaPath::new("media/歌手/歌手 - 晴天 (2).lrc").unwrap()
             },
             "the sidecar pairs with the FINAL numbered base name"
         );
         assert_eq!(
-            read_library_file(&g, "歌手/歌手 - 晴天 (2).lrc"),
+            read_library_file(&g, "media/歌手/歌手 - 晴天 (2).lrc"),
             b"[00:01.00]sidecar line"
         );
         // The incumbent pair survives untouched.
-        assert_eq!(read_library_file(&g, "歌手/歌手 - 晴天.flac"), b"incumbent");
+        assert_eq!(
+            read_library_file(&g, "media/歌手/歌手 - 晴天.flac"),
+            b"incumbent"
+        );
         let candidates =
             crate::application::ports::LyricsRepository::candidates(&g.fixture.database, song)
                 .unwrap();
@@ -2870,7 +2923,8 @@ mod tests {
         let g = gated();
         g.sources.add("bare", "晴天.flac", b"audio-bytes");
         tagged(&g, b"audio-bytes", Some("歌手"), Some("晴天"));
-        g.fixture.set_audio("歌手/歌手 - 晴天.flac", "晴天", 1_000);
+        g.fixture
+            .set_audio("media/歌手/歌手 - 晴天.flac", "晴天", 1_000);
 
         let report = PlanImport::new(&g.deps, &g.sources)
             .run(g.fixture.root, &[source("bare")])
@@ -2890,7 +2944,7 @@ mod tests {
                 .fs
                 .root_path(g.fixture.root)
                 .unwrap()
-                .join("歌手/歌手 - 晴天.lrc")
+                .join("media/歌手/歌手 - 晴天.lrc")
                 .exists(),
             "没有同名 `.lrc` 时不得创建空歌词文件"
         );
@@ -2906,7 +2960,7 @@ mod tests {
         g.sources.fail_sidecar("hit", "侧车文件不可读");
         tagged(&g, b"audio-bytes", Some("歌手"), Some("晴天"));
         g.fixture
-            .set_audio("歌手/歌手 - 晴天.flac", "晴天", 269_000);
+            .set_audio("media/歌手/歌手 - 晴天.flac", "晴天", 269_000);
 
         let report = PlanImport::new(&g.deps, &g.sources)
             .run(g.fixture.root, &[source("hit")])
@@ -2930,7 +2984,7 @@ mod tests {
         let record = g.deps.songs.by_id(song).expect("query").expect("record");
         assert_eq!(record.path(), &target);
         assert!(
-            read_library_file(&g, "歌手/歌手 - 晴天.flac") == b"audio-bytes",
+            read_library_file(&g, "media/歌手/歌手 - 晴天.flac") == b"audio-bytes",
             "audio published"
         );
         // 不留半侧车: no `.lrc` at the paired target and nothing staged.
@@ -2939,7 +2993,7 @@ mod tests {
                 .fs
                 .root_path(g.fixture.root)
                 .unwrap()
-                .join("歌手/歌手 - 晴天.lrc")
+                .join("media/歌手/歌手 - 晴天.lrc")
                 .exists(),
             "no half or empty sidecar is left behind"
         );
@@ -2962,13 +3016,14 @@ mod tests {
     fn sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent() {
         let g = gated();
         // A foreign `.lrc` already sits at the exact paired target.
-        g.fixture.write_file("歌手/歌手 - 晴天.lrc", b"foreign-lrc");
+        g.fixture
+            .write_file("media/歌手/歌手 - 晴天.lrc", b"foreign-lrc");
         g.sources.add("hit", "晴天.flac", b"audio-bytes");
         g.sources
             .add_sidecar("hit", "晴天.lrc", b"[00:01.00]my sidecar");
         tagged(&g, b"audio-bytes", Some("歌手"), Some("晴天"));
         g.fixture
-            .set_audio("歌手/歌手 - 晴天.flac", "晴天", 269_000);
+            .set_audio("media/歌手/歌手 - 晴天.flac", "晴天", 269_000);
 
         let report = PlanImport::new(&g.deps, &g.sources)
             .run(g.fixture.root, &[source("hit")])
@@ -2985,12 +3040,12 @@ mod tests {
 
         // 音频成功 / 歌词失败，且不留半侧车：the incumbent keeps its bytes.
         assert_eq!(
-            read_library_file(&g, "歌手/歌手 - 晴天.lrc"),
+            read_library_file(&g, "media/歌手/歌手 - 晴天.lrc"),
             b"foreign-lrc",
             "the occupying file is never replaced"
         );
         assert_eq!(
-            read_library_file(&g, "歌手/歌手 - 晴天.flac"),
+            read_library_file(&g, "media/歌手/歌手 - 晴天.flac"),
             b"audio-bytes",
             "the audio import still succeeded"
         );
@@ -3025,7 +3080,7 @@ mod tests {
         assert_eq!(lyrics_row.claim_key, lyrics_row.target_path.identity_key());
         assert_eq!(
             lyrics_row.target_path,
-            RelativeMediaPath::new("歌手/歌手 - 晴天.lrc").unwrap()
+            RelativeMediaPath::new("media/歌手/歌手 - 晴天.lrc").unwrap()
         );
         assert_eq!(
             lyrics_row.source.as_deref(),
@@ -3084,7 +3139,8 @@ mod tests {
         g.sources
             .add_sidecar("hit", "晴天.lrc", b"[00:01.00]sidecar line"); // 25 bytes
         tagged(&g, b"audio-bytes", Some("歌手"), Some("晴天"));
-        g.fixture.set_audio("歌手/歌手 - 晴天.flac", "晴天", 1_000);
+        g.fixture
+            .set_audio("media/歌手/歌手 - 晴天.flac", "晴天", 1_000);
 
         let report = PlanImport::new(&g.deps, &lying)
             .run(g.fixture.root, &[source("hit")])
@@ -3103,7 +3159,7 @@ mod tests {
                 .fs
                 .root_path(g.fixture.root)
                 .unwrap()
-                .join("歌手/歌手 - 晴天.lrc")
+                .join("media/歌手/歌手 - 晴天.lrc")
                 .exists(),
             "a mismatched sidecar never publishes"
         );
@@ -3140,11 +3196,11 @@ mod tests {
         let ImportOutcome::Imported { target, lyrics, .. } = &report.results[0] else {
             panic!("the import must succeed: {:?}", report.results[0]);
         };
-        assert_eq!(target.display(), "歌手/歌手 - 晴天.flac");
+        assert_eq!(target.display(), "media/歌手/歌手 - 晴天.flac");
         assert_eq!(
             &**lyrics,
             &LyricsImportResult::Imported {
-                target: RelativeMediaPath::new("歌手/歌手 - 晴天.lrc").unwrap()
+                target: RelativeMediaPath::new("media/歌手/歌手 - 晴天.lrc").unwrap()
             }
         );
 
@@ -3163,7 +3219,7 @@ mod tests {
         );
         // The published pair sits beside each other in the library.
         assert_eq!(
-            std::fs::read(library.path().join("歌手/歌手 - 晴天.lrc")).expect("published"),
+            std::fs::read(library.path().join("media/歌手/歌手 - 晴天.lrc")).expect("published"),
             b"[00:01.00]sidecar line"
         );
         assert_eq!(database.songs().len(), 1);
@@ -3181,7 +3237,7 @@ mod tests {
         assert_eq!(lyrics_row.state, OperationState::Completed);
         assert_eq!(
             lyrics_row.target_path,
-            RelativeMediaPath::new("歌手/歌手 - 晴天.lrc").unwrap()
+            RelativeMediaPath::new("media/歌手/歌手 - 晴天.lrc").unwrap()
         );
         assert_eq!(
             lyrics_row.expected_hash,
@@ -3255,7 +3311,7 @@ mod tests {
                 *injected = true;
             }
             let concurrent_path =
-                RelativeMediaPath::new("其他/并发 - 同内容.flac").expect("valid path");
+                RelativeMediaPath::new("media/其他/并发 - 同内容.flac").expect("valid path");
             let abs = self
                 .inner
                 .root_path(self.root)
@@ -3401,7 +3457,7 @@ mod tests {
         g.sources.add("hit", "晴天.flac", content);
         tagged(&g, content, Some("歌手"), Some("晴天"));
         g.fixture
-            .set_audio("歌手/歌手 - 晴天.flac", "晴天", 269_000);
+            .set_audio("media/歌手/歌手 - 晴天.flac", "晴天", 269_000);
 
         let report = PlanImport::new(&deps, &g.sources)
             .run(g.fixture.root, &[source("hit")])
@@ -3433,11 +3489,11 @@ mod tests {
         // report for the single input held no committed reservation.
         let root_dir = g.fixture.fs.root_path(g.fixture.root).expect("root");
         assert!(
-            !root_dir.join("歌手/歌手 - 晴天.flac").exists(),
+            !root_dir.join("media/歌手/歌手 - 晴天.flac").exists(),
             "the duplicate we just published is removed"
         );
         assert!(
-            root_dir.join("其他/并发 - 同内容.flac").exists(),
+            root_dir.join("media/其他/并发 - 同内容.flac").exists(),
             "the concurrent song's file is the one that stays"
         );
         // The concurrent record carries the exact content hash (so the dedup
@@ -3463,7 +3519,8 @@ mod tests {
         let content = b"retry-bytes";
         g.sources.add("a", "once.flac", content);
         tagged(&g, content, Some("歌手"), Some("晴天"));
-        g.fixture.set_audio("歌手/歌手 - 晴天.flac", "晴天", 1_000);
+        g.fixture
+            .set_audio("media/歌手/歌手 - 晴天.flac", "晴天", 1_000);
 
         // First run imports the content under a fresh reserved UUID.
         let first = PlanImport::new(&g.deps, &g.sources)
@@ -3494,12 +3551,134 @@ mod tests {
         assert_eq!(g.fixture.all_songs().len(), 1);
         let root_dir = g.fixture.fs.root_path(g.fixture.root).expect("root");
         assert_eq!(
-            std::fs::read(root_dir.join("歌手/歌手 - 晴天.flac")).expect("published"),
+            std::fs::read(root_dir.join("media/歌手/歌手 - 晴天.flac")).expect("published"),
             content,
             "the single file is byte-identical"
         );
         // The first import's claim was released once; the duplicate never held
         // a claim (it was recognized before planning).
         assert_eq!(g.fixture.database.released_claims().len(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 3.1: the portable `media/` layout. Every imported song (and its
+    // `.lrc`) is published under `media/<artist>/<artist> - <title>`; the
+    // safe-naming, BLAKE3 dedup and ` (n)` conflict-numbering behaviours are
+    // preserved under the new tree.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn batch_import_lands_under_media_and_keeps_dedup_and_numbering() {
+        let g = gated();
+        // Two tags-torn inputs (same artist/title) would collide under one
+        // artist folder, plus an exact-content duplicate inside the same batch.
+        g.sources.add("a", "one.flac", b"bytes-a");
+        tagged(&g, b"bytes-a", Some("周杰伦"), Some("晴天"));
+        g.fixture
+            .set_audio("media/周杰伦/周杰伦 - 晴天.flac", "晴天", 1_000);
+        g.sources.add("b", "two.flac", b"bytes-b");
+        tagged(&g, b"bytes-b", Some("周杰伦"), Some("晴天"));
+        g.fixture
+            .set_audio("media/周杰伦/周杰伦 - 晴天 (2).flac", "晴天", 2_000);
+        g.sources.add("c", "copy.flac", b"bytes-a");
+
+        // First input: lands under media/, file + record at the same target.
+        let report_a = PlanImport::new(&g.deps, &g.sources)
+            .run(g.fixture.root, &[source("a")])
+            .expect("batch-level success");
+        let ImportOutcome::Imported {
+            song: song_a,
+            target: target_a,
+            ..
+        } = &report_a.results[0]
+        else {
+            panic!("the first audio input must import");
+        };
+        assert!(
+            target_a.display().starts_with("media/"),
+            "imported target lives under media/: {}",
+            target_a.display()
+        );
+        let root_dir = g.fixture.fs.root_path(g.fixture.root).expect("root");
+        assert_eq!(
+            std::fs::read(root_dir.join(target_a.normalized())).expect("published"),
+            b"bytes-a"
+        );
+        let record_a = g.deps.songs.by_id(*song_a).expect("query").expect("record");
+        assert_eq!(
+            record_a.path(),
+            target_a,
+            "the record's path is the media/ target"
+        );
+
+        // Second input (same tags): minimal ` (n)` under media/.
+        // Third input (same content as the first): BLAKE3 dedup returns it.
+        let report = PlanImport::new(&g.deps, &g.sources)
+            .run(g.fixture.root, &[source("b"), source("c")])
+            .expect("batch-level success");
+        let ImportOutcome::Imported { target, .. } = &report.results[0] else {
+            panic!(
+                "the second tagged input must import: {:?}",
+                report.results[0]
+            );
+        };
+        assert_eq!(
+            target.display(),
+            "media/周杰伦/周杰伦 - 晴天 (2).flac",
+            "minimal (n) numbering under media/"
+        );
+        assert_eq!(
+            report.results[1],
+            ImportOutcome::Duplicate { existing: *song_a },
+            "BLAKE3 dedup holds across the media/ batch"
+        );
+        // One file per logical song, both under media/.
+        assert_eq!(g.fixture.all_songs().len(), 2);
+        assert!(root_dir.join("media/周杰伦/周杰伦 - 晴天.flac").is_file());
+        assert!(root_dir
+            .join("media/周杰伦/周杰伦 - 晴天 (2).flac")
+            .is_file());
+    }
+
+    #[test]
+    fn imported_song_materializes_a_portable_record_with_the_committed_revision() {
+        let g = gated();
+        g.sources.add("a", "one.flac", b"bytes-a");
+        tagged(&g, b"bytes-a", Some("周杰伦"), Some("晴天"));
+        g.fixture
+            .set_audio("media/周杰伦/周杰伦 - 晴天.flac", "晴天", 1_000);
+
+        let report = PlanImport::new(&g.deps, &g.sources)
+            .run(g.fixture.root, &[source("a")])
+            .expect("import succeeds");
+        let ImportOutcome::Imported { song, .. } = &report.results[0] else {
+            panic!("audio must import");
+        };
+
+        // The portable record is materialized into the control plane (task 3.2:
+        // object-records are the durable form of the outbox full payload).
+        let records = g.fixture.control.records_of(g.fixture.root);
+        let song_records: Vec<_> = records
+            .iter()
+            .filter(|rec| matches!(rec, PortableRecord::Song(_)))
+            .collect();
+        assert_eq!(song_records.len(), 1, "one song record materialized");
+        let PortableRecord::Song(song_record) = &song_records[0] else {
+            unreachable!("filtered above");
+        };
+        assert_eq!(song_record.song_uuid, song.as_uuid());
+        assert_eq!(
+            song_record.media_path.as_str(),
+            "media/周杰伦/周杰伦 - 晴天.flac",
+            "the record carries the media/ relative path, never an absolute one"
+        );
+        // Revision/HLC match a committed object (never zero).
+        assert!(
+            song_record.revision.as_u64() >= 1,
+            "record carries the monotone outbox revision: {}",
+            song_record.revision
+        );
+        // The content hash round-trips.
+        assert!(song_record.content_hash.len() >= 32);
     }
 }

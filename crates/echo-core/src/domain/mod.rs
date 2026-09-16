@@ -6,6 +6,7 @@
 pub mod catalog;
 pub mod entities;
 pub mod ids;
+pub mod library;
 pub mod media;
 pub mod state;
 pub mod text;

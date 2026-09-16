@@ -49,6 +49,7 @@ use crate::error::{Error, Subject};
 pub(crate) mod actor;
 pub(crate) mod connection;
 pub(crate) mod conversion;
+pub(crate) mod device_state;
 pub(crate) mod query;
 pub(crate) mod statements;
 pub(crate) mod support;
@@ -132,6 +133,9 @@ pub struct SqliteDatabase {
     path: PathBuf,
     writer: SqliteWriteActor,
     readers: ReaderPool,
+    /// The single stable identity of this device (migration 0006), loaded once
+    /// at open. Portable records are stamped with it.
+    device_id: crate::domain::library::DeviceId,
 }
 
 impl SqliteDatabase {
@@ -147,6 +151,9 @@ impl SqliteDatabase {
         }
         apply_migrations(&mut writer)?;
         quick_check_connection(&writer)?;
+        // Load/mint the device identity on the writer connection before any
+        // reader is handed out, so every portable record sees it.
+        let device_id = device_state::load_or_create_device_id(&writer)?;
 
         let mut readers = Vec::with_capacity(reader_count());
         for _ in 0..reader_count() {
@@ -156,6 +163,7 @@ impl SqliteDatabase {
             path,
             writer: SqliteWriteActor::spawn(writer),
             readers: ReaderPool::new(readers),
+            device_id,
         })
     }
 
@@ -658,6 +666,13 @@ impl PlaylistRepository for SqliteDatabase {
                 &payload,
                 sync::OP_UPSERT,
             )?;
+            let now_secs = u64::try_from(now_ms().max(0)).unwrap_or(0) / 1_000;
+            statements::advance_object_hlc(
+                connection,
+                sync::KIND_PLAYLIST,
+                &id.to_string(),
+                now_secs,
+            )?;
             Ok(())
         })
     }
@@ -687,9 +702,16 @@ impl PlaylistRepository for SqliteDatabase {
 
     fn members(&self, id: PlaylistId) -> Result<Vec<PlaylistMember>, Error> {
         self.with_reader(move |connection| {
-            let mut statement = connection.prepare("SELECT ps.playlist_uuid, ps.song_uuid, ps.position, s.availability FROM playlist_songs ps JOIN songs s ON s.uuid = ps.song_uuid WHERE ps.playlist_uuid = ?1 ORDER BY ps.position, ps.song_uuid").map_err(storage)?;
+            let mut statement = connection.prepare("SELECT ps.member_uuid, ps.playlist_uuid, ps.song_uuid, ps.position, s.availability FROM playlist_songs ps JOIN songs s ON s.uuid = ps.song_uuid WHERE ps.playlist_uuid = ?1 ORDER BY ps.position, ps.song_uuid").map_err(storage)?;
             let members = statement.query_map(params![id.to_string()], |row| {
-                Ok(PlaylistMember::new(parse_id(&row.get::<_, String>(0)?, "PlaylistId").map_err(to_sql_error)?, parse_id(&row.get::<_, String>(1)?, "SongId").map_err(to_sql_error)?, row.get::<_, u64>(2)?, availability_from_db(&row.get::<_, String>(3)?).map_err(to_sql_error)?))
+                let member_uuid = row.get::<_, Option<String>>(0)?.unwrap_or_default();
+                Ok(PlaylistMember::with_id(
+                    parse_id(&member_uuid, "PlaylistItemId").map_err(to_sql_error)?,
+                    parse_id(&row.get::<_, String>(1)?, "PlaylistId").map_err(to_sql_error)?,
+                    parse_id(&row.get::<_, String>(2)?, "SongId").map_err(to_sql_error)?,
+                    row.get::<_, u64>(3)?,
+                    availability_from_db(&row.get::<_, String>(4)?).map_err(to_sql_error)?,
+                ))
             }).map_err(storage)?.collect::<Result<Vec<_>, _>>().map_err(storage)?;
             Ok(members)
         })
@@ -700,19 +722,44 @@ impl PlaylistRepository for SqliteDatabase {
             // Membership lookup + insert are one transaction so a concurrent
             // mutation cannot slip a duplicate or position clash between them.
             let transaction = connection.transaction().map_err(storage)?;
-            add_member(&transaction, playlist, song, position)?;
+            let member_uuid = crate::domain::ids::PlaylistItemId::new();
+            add_member(&transaction, playlist, song, position, member_uuid)?;
             transaction.commit().map_err(storage)
         })
     }
 
     fn remove_member(&self, playlist: PlaylistId, song: SongId) -> Result<(), Error> {
         self.writer.run(move |connection| {
+            // Capture the stable membership identity before erasing its local
+            // projection. The tombstone is what prevents a recovery on another
+            // device from resurrecting this member.
+            let member_uuid: Option<String> = connection
+                .query_row(
+                    "SELECT member_uuid FROM playlist_songs WHERE playlist_uuid = ?1 AND song_uuid = ?2",
+                    params![playlist.to_string(), song.to_string()],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(storage)?;
             connection
                 .execute(
                     "DELETE FROM playlist_songs WHERE playlist_uuid = ?1 AND song_uuid = ?2",
                     params![playlist.to_string(), song.to_string()],
                 )
                 .map_err(storage)?;
+            if let Some(member_uuid) = member_uuid {
+                let revision = sync::current_outbox_revision(
+                    connection,
+                    sync::KIND_PLAYLIST_ITEM,
+                    &member_uuid,
+                )?;
+                sync::write_tombstone(
+                    connection,
+                    sync::KIND_PLAYLIST_ITEM,
+                    &member_uuid,
+                    revision.saturating_add(1),
+                )?;
+            }
             // Membership removal is a playlist logic change.
             let members_json = statements::playlist_members_excerpt(connection, playlist)?;
             let payload = serde_json::json!({ "members": members_json });
@@ -722,6 +769,13 @@ impl PlaylistRepository for SqliteDatabase {
                 &playlist.to_string(),
                 &payload,
                 sync::OP_UPSERT,
+            )?;
+            let now_secs = u64::try_from(now_ms().max(0)).unwrap_or(0) / 1_000;
+            statements::advance_object_hlc(
+                connection,
+                sync::KIND_PLAYLIST,
+                &playlist.to_string(),
+                now_secs,
             )?;
             Ok(())
         })
@@ -806,6 +860,75 @@ impl OperationJournalRepository for SqliteDatabase {
     }
 }
 
+impl crate::application::ports::DeviceIdProvider for SqliteDatabase {
+    fn current_device_id(&self) -> crate::domain::library::DeviceId {
+        self.device_id
+    }
+}
+
+impl crate::application::ports::SyncStateReader for SqliteDatabase {
+    fn outbox_revision(
+        &self,
+        object_type: &str,
+        object_uuid: &str,
+    ) -> Result<crate::domain::ids::Revision, Error> {
+        let object_type = object_type.to_owned();
+        let object_uuid = object_uuid.to_owned();
+        self.with_reader(move |connection| {
+            sync::current_outbox_revision(connection, &object_type, &object_uuid)
+        })
+        .map(|revision| {
+            crate::domain::ids::Revision::from_u64(u64::try_from(revision.max(0)).unwrap_or(0))
+        })
+    }
+
+    fn object_hlc(
+        &self,
+        object_type: &str,
+        object_uuid: &str,
+    ) -> Result<Option<crate::domain::library::HybridLogicalClock>, Error> {
+        let object_type = object_type.to_owned();
+        let object_uuid = object_uuid.to_owned();
+        self.with_reader(move |connection| {
+            let sql = match object_type.as_str() {
+                sync::KIND_SONG | sync::KIND_FAVORITE => {
+                    "SELECT hlc_wall_secs, hlc_counter FROM songs WHERE uuid = ?1"
+                }
+                sync::KIND_OVERRIDE => {
+                    "SELECT hlc_wall_secs, hlc_counter FROM song_overrides WHERE song_uuid = ?1"
+                }
+                sync::KIND_PLAYLIST => {
+                    "SELECT hlc_wall_secs, hlc_counter FROM playlists WHERE uuid = ?1"
+                }
+                _ => {
+                    return Err(Error::validation(
+                        crate::error::Subject::Other,
+                        "object_type",
+                        "no HLC column for this object kind",
+                    ));
+                }
+            };
+            let row: Option<(i64, i64)> = connection
+                .query_row(sql, rusqlite::params![object_uuid], |row| {
+                    Ok((row.get(0)?, row.get(1)?))
+                })
+                .optional()
+                .map_err(storage)?;
+            let (wall, counter) = row.unwrap_or((0, 0));
+            let wall = u64::try_from(wall).unwrap_or(0);
+            let counter = u32::try_from(counter).unwrap_or(0);
+            // `(0, 0)` is the untouched default; treat it as "never stamped".
+            if wall == 0 && counter == 0 {
+                Ok(None)
+            } else {
+                Ok(Some(crate::domain::library::HybridLogicalClock::new(
+                    wall, counter,
+                )))
+            }
+        })
+    }
+}
+
 impl UnitOfWork for SqliteDatabase {
     fn with_tx(&self, f: TxWork) -> Result<(), Error> {
         self.writer.run(move |connection| {
@@ -871,6 +994,7 @@ impl TxAccess for SqliteTx<'_> {
             member.playlist(),
             member.song(),
             member.position(),
+            member.id(),
         )
     }
     fn remove_member(&mut self, playlist: PlaylistId, song: SongId) -> Result<(), Error> {

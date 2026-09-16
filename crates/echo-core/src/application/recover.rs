@@ -704,8 +704,16 @@ impl<'a> RecoverOperations<'a> {
                 if self.deps.songs.by_id(song)?.is_none() {
                     self.commit_record(root, operation, item, song)?;
                 } else {
-                    // Record exists: advance the journal to DatabaseCommitted.
+                    // Record exists: advance the journal to DatabaseCommitted,
+                    // then ensure the portable song record is there too. A
+                    // crash between the DB commit and the record write (the
+                    // import's materialization step, or commit_record's own)
+                    // leaves a committed song without its record; re-driving
+                    // it idempotently overwrites the same record file with the
+                    // same revision/HLC (design §2), so recovery converges to
+                    // exactly one record.
                     self.upsert(root, operation, item, OperationState::DatabaseCommitted)?;
+                    self.materialize_recovered_song(root, song)?;
                 }
             }
             OperationResourceKind::Lyrics => {
@@ -799,6 +807,10 @@ impl<'a> RecoverOperations<'a> {
                         tx.upsert_operation_item(operation, committed)?;
                         Ok(())
                     }))?;
+                // Materialize the portable song record exactly like a live
+                // import (idempotent: a crash before/after this write re-drives
+                // the same revision, overwriting the same record file).
+                self.materialize_recovered_song(root, song_id)?;
                 Ok(())
             }
             FileOutcome::FastSkip { .. } | FileOutcome::Diagnostic(_) => Err(Error::CorruptMedia {
@@ -806,6 +818,37 @@ impl<'a> RecoverOperations<'a> {
                 reason: "recovered target could not be parsed into a record".to_owned(),
             }),
         }
+    }
+
+    /// Build + write the portable song record for a recovered song, sharing the
+    /// exact revision/HLC the committed row holds (design §2). Mirrors the live
+    /// import materialization; a crash here leaves the record missing and the
+    /// next recovery pass re-drives it idempotently.
+    fn materialize_recovered_song(
+        &self,
+        root: LibraryRootId,
+        song_id: crate::domain::ids::SongId,
+    ) -> Result<(), Error> {
+        let Some(song) = self.deps.songs.by_id(song_id)? else {
+            return Ok(()); // Not yet committed → the roll_forward guard handles it.
+        };
+        crate::application::portable_materialize::ensure_control_plane_writable(
+            self.deps.control.as_ref(),
+            root,
+        )?;
+        let device = self.deps.device_id.current_device_id();
+        let (revision, hlc) = crate::application::portable_materialize::committed_version(
+            self.deps.sync.as_ref(),
+            "song",
+            &song_id.to_string(),
+            device,
+        )?;
+        let record =
+            crate::application::portable_materialize::song_record(device, hlc, revision, &song)?;
+        self.deps
+            .control
+            .write_record(root, &crate::domain::library::PortableRecord::Song(record))?;
+        Ok(())
     }
 
     /// Whether `target` is only Echo's own empty reservation placeholder (a
@@ -893,9 +936,12 @@ mod tests {
     use crate::application::ports::{
         FileMeta, ImportSource, OperationJournalRepository, PlaylistRepository, SongRepository,
     };
-    use crate::application::testing::{FakeImportSources, ScanFixture};
+    use crate::application::testing::{
+        small_fakes::MemoryControlPlane, FakeImportSources, ScanFixture,
+    };
     use crate::domain::entities::SongAvailability;
     use crate::domain::ids::SongId;
+    use crate::domain::library::PortableRecord;
     use crate::domain::media::ParsedMetadata;
 
     // -----------------------------------------------------------------------
@@ -924,6 +970,8 @@ mod tests {
         State(&'static str),
         /// The delete/restore trash rename (`stage_to_trash`/`restore_from_trash`).
         TrashMove,
+        /// The portable song-record materialization (`control.write_record`).
+        RecordWrite,
     }
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1204,6 +1252,63 @@ mod tests {
         }
     }
 
+    /// A `MemoryControlPlane` wrapper that crashes at the portable-record write
+    /// (`control.write_record`), the new materialization side effect. Like the
+    /// fs/journal wrappers, it shares the underlying fake with the fixture so
+    /// recovery (via the fixture's own deps) sees the durable record state.
+    struct CrashControlPlane {
+        inner: MemoryControlPlane,
+        ctrl: Arc<Controller>,
+    }
+
+    impl crate::application::ports::ControlPlanePort for CrashControlPlane {
+        fn write_manifest(
+            &self,
+            root: LibraryRootId,
+            manifest: &crate::domain::library::LibraryManifest,
+        ) -> Result<(), Error> {
+            self.inner.write_manifest(root, manifest)
+        }
+        fn read_manifest(
+            &self,
+            root: LibraryRootId,
+        ) -> Result<Option<crate::domain::library::LibraryManifest>, Error> {
+            self.inner.read_manifest(root)
+        }
+        fn write_record(&self, root: LibraryRootId, record: &PortableRecord) -> Result<(), Error> {
+            self.ctrl.crash(&Site::RecordWrite, Phase::Before);
+            let result = self.inner.write_record(root, record);
+            self.ctrl.crash(&Site::RecordWrite, Phase::After);
+            result
+        }
+        fn read_record(
+            &self,
+            root: LibraryRootId,
+            kind: crate::domain::library::RecordKind,
+            object_uuid: &str,
+        ) -> Result<Option<PortableRecord>, Error> {
+            self.inner.read_record(root, kind, object_uuid)
+        }
+        fn delete_record(
+            &self,
+            root: LibraryRootId,
+            kind: crate::domain::library::RecordKind,
+            object_uuid: &str,
+        ) -> Result<(), Error> {
+            self.inner.delete_record(root, kind, object_uuid)
+        }
+        fn list_records(
+            &self,
+            root: LibraryRootId,
+            kind: crate::domain::library::RecordKind,
+        ) -> Result<Vec<String>, Error> {
+            self.inner.list_records(root, kind)
+        }
+        fn control_plane_usable(&self, root: LibraryRootId) -> Result<bool, Error> {
+            self.inner.control_plane_usable(root)
+        }
+    }
+
     /// The crash-wired deps for one import run: the same shared fakes as the
     /// fixture, so after the injected crash the fixture's own (unwrapped) deps
     /// see the durable journal/fs state for recovery.
@@ -1224,10 +1329,16 @@ mod tests {
             inner: Arc::new(fixture.database.clone()),
             ctrl: ctrl.clone(),
         });
+        let control: Arc<dyn crate::application::ports::ControlPlanePort> =
+            Arc::new(CrashControlPlane {
+                inner: fixture.control.clone(),
+                ctrl: ctrl.clone(),
+            });
         crate::application::scan::ScanDeps {
             uow,
             fs,
             journal,
+            control,
             ..ScanDeps::clone(&fixture.deps)
         }
     }
@@ -1237,7 +1348,7 @@ mod tests {
     }
 
     /// Register a single well-formed source whose tags name
-    /// `歌手/歌手 - 晴天.flac` and whose published file parses cleanly.
+    /// `media/歌手/歌手 - 晴天.flac` and whose published file parses cleanly.
     fn wire_single(fixture: &ScanFixture, sources: &FakeImportSources, key: &str, bytes: &[u8]) {
         sources.add(key, "晴天.flac", bytes);
         fixture.metadata.set_bytes(
@@ -1248,7 +1359,7 @@ mod tests {
                 ..ParsedMetadata::default()
             },
         );
-        fixture.set_audio("歌手/歌手 - 晴天.flac", "晴天", 269_000);
+        fixture.set_audio("media/歌手/歌手 - 晴天.flac", "晴天", 269_000);
     }
 
     /// Run `PlanImport` for the single wired source; panics if the crash did
@@ -1329,7 +1440,7 @@ mod tests {
             "recovery reuses the journal-reserved UUID, never a second one"
         );
         assert_eq!(
-            read_file(fixture, "歌手/歌手 - 晴天.flac"),
+            read_file(fixture, "media/歌手/歌手 - 晴天.flac"),
             Some(b"sunny-bytes".to_vec()),
             "the final file exists exactly once with the exact bytes"
         );
@@ -1372,6 +1483,11 @@ mod tests {
             (Site::Publish, Phase::After),
             (Site::Commit, Phase::Before),
             (Site::Commit, Phase::After),
+            // A crash after the DB commit but before/after the portable record
+            // write (the new materialization side effect): recovery must
+            // re-drive the record idempotently.
+            (Site::RecordWrite, Phase::Before),
+            (Site::RecordWrite, Phase::After),
         ];
         for (site, phase) in expect_success {
             let fixture = ScanFixture::new();
@@ -1409,6 +1525,68 @@ mod tests {
     }
 
     #[test]
+    fn crash_during_record_materialization_converges_to_one_record_and_outbox() {
+        // The record write happens AFTER the DB commit, so a crash there is a
+        // distinctive window: the song row + outbox row are durable but the
+        // `echo/records/songs/<prefix>/<uuid>.json` is not (Before) or was
+        // only half-applied (After). Recovery's roll_forward must re-drive the
+        // materialization idempotently — same revision, overwriting the same
+        // record file — leaving exactly ONE SongRecord and ONE outbox row.
+        for (site, phase) in [
+            (Site::RecordWrite, Phase::Before),
+            (Site::RecordWrite, Phase::After),
+        ] {
+            let fixture = ScanFixture::new();
+            let ctrl = Arc::new(Controller::default());
+            run_import_until_crash(&fixture, &ctrl, Point { site, phase });
+            assert!(ctrl.fired(), "the crash fired at {site:?} {phase:?}");
+            let operation = single_operation(&fixture);
+            let reserved = reserved_of(&fixture, operation);
+
+            // First recovery converges to the unique terminal state and writes
+            // exactly one portable record + one outbox row.
+            RecoverOperations::new(&fixture.deps)
+                .run(fixture.root)
+                .unwrap();
+            assert_unique_terminal(&fixture, operation, reserved);
+            let records = fixture.control.records_of(fixture.root);
+            assert_eq!(
+                records.len(),
+                1,
+                "exactly one portable record at {site:?} {phase:?}: {records:?}"
+            );
+            let PortableRecord::Song(song_record) = &records[0] else {
+                panic!("the record is a song record");
+            };
+            assert_eq!(
+                song_record.song_uuid,
+                reserved.as_uuid(),
+                "the record carries the journal-reserved identity"
+            );
+            assert_eq!(
+                fixture.database.outbox_rows("song", &reserved.to_string()),
+                vec![1],
+                "exactly one sync-outbox row (revision 1)"
+            );
+
+            // Second recovery is a no-op: still one record, one outbox row.
+            RecoverOperations::new(&fixture.deps)
+                .run(fixture.root)
+                .unwrap();
+            assert_eq!(
+                fixture.control.records_of(fixture.root).len(),
+                1,
+                "second recovery does not duplicate the record at {site:?} {phase:?}"
+            );
+            assert_eq!(
+                fixture.database.outbox_rows("song", &reserved.to_string()),
+                vec![1],
+                "second recovery does not duplicate the outbox row"
+            );
+        }
+    }
+
+    #[test]
     fn copy_crash_before_any_journal_leaves_nothing_to_recover() {
         // A crash during the streaming copy happens during pre-flight, before
         // the journal envelope/claim exists: nothing is recoverable, nothing
@@ -1434,7 +1612,7 @@ mod tests {
             .unwrap();
         assert!(report.touched.is_empty(), "no incomplete journal items");
         assert!(
-            read_file(&fixture, "歌手/歌手 - 晴天.flac").is_none(),
+            read_file(&fixture, "media/歌手/歌手 - 晴天.flac").is_none(),
             "no orphan final file"
         );
     }
@@ -1455,7 +1633,7 @@ mod tests {
                 ..ParsedMetadata::default()
             },
         );
-        fixture.set_audio("歌手/歌手 - 晴天.flac", "晴天", 269_000);
+        fixture.set_audio("media/歌手/歌手 - 晴天.flac", "晴天", 269_000);
         let report = PlanImport::new(&fixture.deps, &sources)
             .run(fixture.root, &[source("broken")])
             .expect("batch-level success");
@@ -1469,7 +1647,7 @@ mod tests {
             "no record from a truncated copy"
         );
         assert!(
-            read_file(&fixture, "歌手/歌手 - 晴天.flac").is_none(),
+            read_file(&fixture, "media/歌手/歌手 - 晴天.flac").is_none(),
             "no final file from a truncated copy"
         );
     }
@@ -1491,7 +1669,7 @@ mod tests {
         );
         let operation = single_operation(&fixture);
         let reserved = reserved_of(&fixture, operation);
-        let target = "歌手/歌手 - 晴天.flac";
+        let target = "media/歌手/歌手 - 晴天.flac";
         assert!(
             read_file(&fixture, target).is_some(),
             "audio already published"
@@ -1559,8 +1737,8 @@ mod tests {
                 let _ = std::fs::remove_file(base.join(staging.normalized()));
             }
         }
-        std::fs::create_dir_all(base.join("歌手")).expect("mkdir artist");
-        std::fs::write(base.join("歌手/歌手 - 晴天.flac"), b"foreign-content")
+        std::fs::create_dir_all(base.join("media/歌手")).expect("mkdir artist");
+        std::fs::write(base.join("media/歌手/歌手 - 晴天.flac"), b"foreign-content")
             .expect("write foreign");
 
         RecoverOperations::new(&fixture.deps)
@@ -1568,7 +1746,7 @@ mod tests {
             .unwrap();
         assert!(fixture.all_songs().is_empty(), "no record, no second UUID");
         assert_eq!(
-            read_file(&fixture, "歌手/歌手 - 晴天.flac"),
+            read_file(&fixture, "media/歌手/歌手 - 晴天.flac"),
             Some(b"foreign-content".to_vec()),
             "the foreign file is never overwritten"
         );
@@ -1588,7 +1766,7 @@ mod tests {
             .run(fixture.root)
             .unwrap();
         assert_eq!(
-            read_file(&fixture, "歌手/歌手 - 晴天.flac"),
+            read_file(&fixture, "media/歌手/歌手 - 晴天.flac"),
             Some(b"foreign-content".to_vec()),
             "second recovery still never overwrites"
         );
@@ -1655,8 +1833,9 @@ mod tests {
     fn read_trash(fixture: &ScanFixture, operation: OperationId, key: &str) -> Option<Vec<u8>> {
         let base = fixture.fs.root_path(fixture.root).expect("root");
         std::fs::read(
-            base.join(".echo-test-staging/trash")
-                .join(operation.to_string())
+            base.join(crate::domain::library::STAGING_ROOT)
+                .join("trash")
+                .join(operation.as_uuid().simple().to_string())
                 .join(key),
         )
         .ok()
@@ -1727,7 +1906,12 @@ mod tests {
         // StageApplied` (原缺失而暂存匹配) and then finish the hide.
         let fixture = ScanFixture::new();
         let ctrl = Arc::new(Controller::default());
-        let song = seed_delete_song(&fixture, "歌手/周杰伦 - 晴天.flac", b"audio-bytes", None);
+        let song = seed_delete_song(
+            &fixture,
+            "media/歌手/周杰伦 - 晴天.flac",
+            b"audio-bytes",
+            None,
+        );
         let deps = crash_deps(&fixture, &ctrl);
         ctrl.arm(Point {
             site: Site::State("stage_applied"),
@@ -1745,7 +1929,7 @@ mod tests {
         let operation = single_operation(&fixture);
         // The rename landed before the crash: original gone, trash has the
         // exact bytes.
-        assert_eq!(read_file(&fixture, "歌手/周杰伦 - 晴天.flac"), None);
+        assert_eq!(read_file(&fixture, "media/歌手/周杰伦 - 晴天.flac"), None);
         assert_eq!(
             read_trash(&fixture, operation, "audio"),
             Some(b"audio-bytes".to_vec())
@@ -1771,7 +1955,7 @@ mod tests {
             "unique hidden state: {items:?}"
         );
         assert_eq!(
-            read_file(&fixture, "歌手/周杰伦 - 晴天.flac"),
+            read_file(&fixture, "media/歌手/周杰伦 - 晴天.flac"),
             None,
             "audio stays staged"
         );
@@ -1802,7 +1986,12 @@ mod tests {
         // empty. Recovery re-stages from the persisted source, then hides.
         let fixture = ScanFixture::new();
         let ctrl = Arc::new(Controller::default());
-        let song = seed_delete_song(&fixture, "歌手/周杰伦 - 晴天.flac", b"audio-bytes", None);
+        let song = seed_delete_song(
+            &fixture,
+            "media/歌手/周杰伦 - 晴天.flac",
+            b"audio-bytes",
+            None,
+        );
         let deps = crash_deps(&fixture, &ctrl);
         ctrl.arm(Point {
             site: Site::TrashMove,
@@ -1819,7 +2008,7 @@ mod tests {
 
         let operation = single_operation(&fixture);
         assert_eq!(
-            read_file(&fixture, "歌手/周杰伦 - 晴天.flac"),
+            read_file(&fixture, "media/歌手/周杰伦 - 晴天.flac"),
             Some(b"audio-bytes".to_vec()),
             "the rename never ran"
         );
@@ -1839,7 +2028,7 @@ mod tests {
                 .availability(),
             SongAvailability::PendingDelete
         );
-        assert_eq!(read_file(&fixture, "歌手/周杰伦 - 晴天.flac"), None);
+        assert_eq!(read_file(&fixture, "media/歌手/周杰伦 - 晴天.flac"), None);
         assert_eq!(
             read_trash(&fixture, operation, "audio"),
             Some(b"audio-bytes".to_vec())
@@ -1858,7 +2047,7 @@ mod tests {
         let ctrl = Arc::new(Controller::default());
         let song = seed_delete_song(
             &fixture,
-            "歌手/周杰伦 - 晴天.flac",
+            "media/歌手/周杰伦 - 晴天.flac",
             b"audio-bytes",
             Some(b"lrc-bytes"),
         );
@@ -1923,7 +2112,12 @@ mod tests {
         // original, and the song is brought back to Available (keeping UUID,
         // favorite, stats — and the playlist position is untouched by delete).
         let fixture = ScanFixture::new();
-        let song = seed_delete_song(&fixture, "歌手/周杰伦 - 晴天.flac", b"audio-bytes", None);
+        let song = seed_delete_song(
+            &fixture,
+            "media/歌手/周杰伦 - 晴天.flac",
+            b"audio-bytes",
+            None,
+        );
         let playlist = crate::domain::ids::PlaylistId::new();
         fixture
             .database
@@ -1954,7 +2148,7 @@ mod tests {
 
         // The rename already landed: file home, item still `RestorePending`.
         assert_eq!(
-            read_file(&fixture, "歌手/周杰伦 - 晴天.flac"),
+            read_file(&fixture, "media/歌手/周杰伦 - 晴天.flac"),
             Some(b"audio-bytes".to_vec())
         );
         let items = fixture.database.items(operation).unwrap();
@@ -2011,7 +2205,12 @@ mod tests {
         // in the trash slot. Recovery retries the restore into the original
         // path, verifies the hash, and brings the song back to Available.
         let fixture = ScanFixture::new();
-        let song = seed_delete_song(&fixture, "歌手/周杰伦 - 晴天.flac", b"audio-bytes", None);
+        let song = seed_delete_song(
+            &fixture,
+            "media/歌手/周杰伦 - 晴天.flac",
+            b"audio-bytes",
+            None,
+        );
         let outcome = DeleteSongs::new(&fixture.deps)
             .delete(fixture.root, song)
             .unwrap();
@@ -2034,7 +2233,7 @@ mod tests {
         );
         assert!(ctrl.fired());
 
-        assert_eq!(read_file(&fixture, "歌手/周杰伦 - 晴天.flac"), None);
+        assert_eq!(read_file(&fixture, "media/歌手/周杰伦 - 晴天.flac"), None);
         assert_eq!(
             read_trash(&fixture, operation, "audio"),
             Some(b"audio-bytes".to_vec())
@@ -2052,7 +2251,7 @@ mod tests {
             SongAvailability::Available
         );
         assert_eq!(
-            read_file(&fixture, "歌手/周杰伦 - 晴天.flac"),
+            read_file(&fixture, "media/歌手/周杰伦 - 晴天.flac"),
             Some(b"audio-bytes".to_vec())
         );
         let items = fixture.database.items(operation).unwrap();
@@ -2073,10 +2272,10 @@ mod tests {
         // 不删除任一文件; 一项冲突不得阻塞根目录内所有无关操作的恢复). The foreign
         // content is never replaced and the held claim stays reserved.
         let fixture = ScanFixture::new();
-        let song_a = seed_delete_song(&fixture, "歌手/周杰伦 - 晴天.flac", b"audio-a", None);
+        let song_a = seed_delete_song(&fixture, "media/歌手/周杰伦 - 晴天.flac", b"audio-a", None);
         let song_b = seed_delete_song(
             &fixture,
-            "歌手/林俊杰 - 不为谁而作的歌.flac",
+            "media/歌手/林俊杰 - 不为谁而作的歌.flac",
             b"audio-b",
             None,
         );
@@ -2128,10 +2327,10 @@ mod tests {
 
         // Re-occupy A's original with foreign content AND exhaust every safe
         // numbered candidate so `safe_restore_target` conflicts for A.
-        fixture.write_file("歌手/周杰伦 - 晴天.flac", b"foreign-audio");
+        fixture.write_file("media/歌手/周杰伦 - 晴天.flac", b"foreign-audio");
         for suffix in 1..=100_u32 {
             fixture.write_file(
-                &format!("歌手/周杰伦 - 晴天 ({suffix}).flac"),
+                &format!("media/歌手/周杰伦 - 晴天 ({suffix}).flac"),
                 b"foreign-numbered",
             );
         }
@@ -2152,7 +2351,7 @@ mod tests {
             "A is held, not aborted: {a_items:?}"
         );
         assert_eq!(
-            read_file(&fixture, "歌手/周杰伦 - 晴天.flac"),
+            read_file(&fixture, "media/歌手/周杰伦 - 晴天.flac"),
             Some(b"foreign-audio".to_vec()),
             "the foreign occupant at A's original is never replaced"
         );
@@ -2179,7 +2378,7 @@ mod tests {
             "B recovers to Restored: {b_items:?}"
         );
         assert_eq!(
-            read_file(&fixture, "歌手/林俊杰 - 不为谁而作的歌.flac"),
+            read_file(&fixture, "media/歌手/林俊杰 - 不为谁而作的歌.flac"),
             Some(b"audio-b".to_vec())
         );
         assert!(
@@ -2195,7 +2394,12 @@ mod tests {
         // (`FailedRecoverable`), never delete either file, leave the song
         // available and keep the claim (design §9: 两处证据矛盾时不删除任一文件).
         let fixture = ScanFixture::new();
-        let song = seed_delete_song(&fixture, "歌手/周杰伦 - 晴天.flac", b"audio-bytes", None);
+        let song = seed_delete_song(
+            &fixture,
+            "media/歌手/周杰伦 - 晴天.flac",
+            b"audio-bytes",
+            None,
+        );
         let ctrl = Arc::new(Controller::default());
         let deps = crash_deps(&fixture, &ctrl);
         ctrl.arm(Point {
@@ -2209,11 +2413,12 @@ mod tests {
         assert!(ctrl.fired());
         let operation = single_operation(&fixture);
 
-        fixture.write_file("歌手/周杰伦 - 晴天.flac", b"foreign-original");
+        fixture.write_file("media/歌手/周杰伦 - 晴天.flac", b"foreign-original");
         let base = fixture.fs.root_path(fixture.root).expect("root");
         std::fs::write(
-            base.join(".echo-test-staging/trash")
-                .join(operation.to_string())
+            base.join(crate::domain::library::STAGING_ROOT)
+                .join("trash")
+                .join(operation.as_uuid().simple().to_string())
                 .join("audio"),
             b"foreign-trash",
         )
@@ -2224,7 +2429,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            read_file(&fixture, "歌手/周杰伦 - 晴天.flac"),
+            read_file(&fixture, "media/歌手/周杰伦 - 晴天.flac"),
             Some(b"foreign-original".to_vec()),
             "the original file is never deleted"
         );
@@ -2259,7 +2464,12 @@ mod tests {
         // flow (`HiddenInDatabase → TrashPending`); recovery must NOT restore
         // the song or the file, and `RestoreDeletedOperation` refuses it.
         let fixture = ScanFixture::new();
-        let song = seed_delete_song(&fixture, "歌手/周杰伦 - 晴天.flac", b"audio-bytes", None);
+        let song = seed_delete_song(
+            &fixture,
+            "media/歌手/周杰伦 - 晴天.flac",
+            b"audio-bytes",
+            None,
+        );
         let outcome = DeleteSongs::new(&fixture.deps)
             .delete(fixture.root, song)
             .unwrap();
@@ -2302,7 +2512,7 @@ mod tests {
         let fixture = ScanFixture::new();
         let song = seed_delete_song(
             &fixture,
-            "artist/song.flac",
+            "media/artist/song.flac",
             b"audio-bytes",
             Some(b"lyrics-bytes"),
         );

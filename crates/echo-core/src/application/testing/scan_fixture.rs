@@ -5,6 +5,7 @@
 //! system, deterministic probe/metadata maps, content-addressed hashing and
 //! one shared in-memory database. Tests never touch a real user directory.
 
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::application::ports::SongRepository;
@@ -13,12 +14,30 @@ use crate::application::testing::clock::{FakeIdGenerator, ManualClock};
 use crate::application::testing::filesystem::FakeLibraryFileSystem;
 use crate::application::testing::memory_database::{MemoryDatabase, ScanRunRow};
 use crate::application::testing::small_fakes::{
-    FakeFileHasher, FakeLyricsParser, FakeMediaProbe, FakeMetadataReader, MemoryCoverCache,
+    FakeFileHasher, FakeLyricsParser, FakeMediaProbe, FakeMetadataReader, MemoryControlPlane,
+    MemoryCoverCache,
 };
 use crate::domain::entities::Song;
 use crate::domain::ids::{LibraryRootId, RelativeMediaPath};
+use crate::domain::library::MEDIA_ROOT;
 use crate::domain::media::{AudioFormat, ParsedMetadata};
 use crate::error::Error;
+
+/// Normalize a test's relative path into the managed `media/` tree (portable
+/// layout §5: the only scanable content). A path already under `media/` is
+/// left untouched; a bare test path (`歌手/晴天.flac`, `a.mp3`) is prefixed.
+/// The fake filesystem's `enumerate` mirrors the real walker and only reports
+/// `media/` paths, so every fixture helper resolves test paths into that tree —
+/// while keeping the test seeding readable.
+fn in_media(value: &str) -> Cow<'_, str> {
+    if value == MEDIA_ROOT
+        || value.starts_with(MEDIA_ROOT) && value.as_bytes().get(MEDIA_ROOT.len()) == Some(&b'/')
+    {
+        Cow::Borrowed(value)
+    } else {
+        Cow::Owned(format!("{MEDIA_ROOT}/{value}"))
+    }
+}
 
 /// A fully wired in-memory library runtime for use-case tests. Every
 /// repository view shares one `MemoryDatabase` store, exactly like the real
@@ -32,6 +51,7 @@ pub struct ScanFixture {
     pub probe: FakeMediaProbe,
     pub metadata: FakeMetadataReader,
     pub database: MemoryDatabase,
+    pub control: MemoryControlPlane,
     pub clock: ManualClock,
 }
 
@@ -57,6 +77,9 @@ impl ScanFixture {
         let database = MemoryDatabase::new();
         let cover_cache: Arc<dyn crate::application::ports::CoverCache> =
             Arc::new(MemoryCoverCache::new());
+        let control_plane_fake = MemoryControlPlane::new();
+        let control_plane: Arc<dyn crate::application::ports::ControlPlanePort> =
+            Arc::new(control_plane_fake.clone());
         let clock = ManualClock::new();
         let ids: Arc<dyn crate::application::ports::IdGenerator> = Arc::new(FakeIdGenerator::new());
         let clock_dyn: Arc<dyn crate::application::ports::Clock> = Arc::new(clock.clone());
@@ -76,6 +99,9 @@ impl ScanFixture {
             hasher,
             lyrics_parser,
             cover_cache,
+            control: control_plane,
+            device_id: Arc::new(database.clone()),
+            sync: Arc::new(database.clone()),
             ids,
             clock: clock_dyn,
             config: ScanConfig {
@@ -92,36 +118,38 @@ impl ScanFixture {
             probe,
             metadata,
             database,
+            control: control_plane_fake,
             clock,
         }
     }
 
-    /// Write a file into the fixture root (test setup).
+    /// Write a file into the fixture root's `media/` tree (test setup). A bare
+    /// path is resolved under `media/` (portable layout §5).
     pub fn write_file(&self, path: &str, bytes: &[u8]) {
         let base = self
             .fs
             .root_path(self.root)
             .expect("fixture root registered");
-        let absolute = base.join(path);
+        let absolute = base.join(in_media(path).as_ref());
         if let Some(parent) = absolute.parent() {
             std::fs::create_dir_all(parent).expect("create parent directory");
         }
         std::fs::write(absolute, bytes).expect("write fixture file");
     }
 
-    /// Remove a file from the fixture root (test setup).
+    /// Remove a file from the fixture root's `media/` tree (test setup).
     pub fn remove_file(&self, path: &str) {
         let base = self
             .fs
             .root_path(self.root)
             .expect("fixture root registered");
-        std::fs::remove_file(base.join(path)).expect("remove fixture file");
+        std::fs::remove_file(base.join(in_media(path).as_ref())).expect("remove fixture file");
     }
 
-    /// A relative path helper.
+    /// A relative path helper, resolved into the managed `media/` tree.
     #[must_use]
     pub fn path(&self, value: &str) -> RelativeMediaPath {
-        RelativeMediaPath::new(value).expect("valid relative path")
+        RelativeMediaPath::new(in_media(value).as_ref()).expect("valid relative path")
     }
 
     /// Script a successful audio probe + metadata for `path`.
@@ -137,6 +165,10 @@ impl ScanFixture {
     }
 
     /// Script the probe + metadata of one file, optionally with embedded artwork.
+    /// The maps are keyed by the bare test path (as tests always have); the
+    /// fakes' prefix-tolerant readers resolve the scan's `media/…` candidates
+    /// back onto those keys, so an explicit `metadata.set` written after
+    /// `set_audio` can still override fields like embedded lyrics.
     fn script_audio(&self, path: &str, title: &str, duration_ms: u64, cover: Option<&[u8]>) {
         self.probe.set(
             path,

@@ -136,6 +136,17 @@ uuid_id! {
     PlaybackSessionId,
     doc = "Identity of one playback load session; makes playback statistics idempotent."
 }
+uuid_id! {
+    /// Stable identity of one playlist member (a song within a playlist).
+    ///
+    /// Each membership has its own independent identity so member additions,
+    /// removals and re-orders can propagate across devices without collapsing
+    /// onto the whole playlist (playlist-management spec: 每个成员关系 MUST
+    /// 拥有独立、稳定的成员 UUID). Never derived from the `SQLite` row id or
+    /// the song's path.
+    PlaylistItemId,
+    doc = "Stable identity of one playlist member."
+}
 
 // ---------------------------------------------------------------------------
 // Queue entry identity

@@ -31,7 +31,7 @@
 use std::time::Duration;
 
 use crate::domain::ids::{
-    LibraryRootId, PlayCount, PlaylistId, RelativeMediaPath, Revision, SongId,
+    LibraryRootId, PlayCount, PlaylistId, PlaylistItemId, RelativeMediaPath, Revision, SongId,
 };
 use crate::domain::media::{AudioFormat, AudioParameters};
 
@@ -515,8 +515,15 @@ impl LibraryRoot {
 // ---------------------------------------------------------------------------
 
 /// A playlist membership row.
+///
+/// Carries an independent, stable member identity ([`PlaylistItemId`]) in
+/// addition to the song identity and its position, so member-level logic
+/// changes (add / remove / reorder) can be tracked and propagated across
+/// devices without rewriting the whole playlist record (playlist-management
+/// spec: "每个成员关系 MUST 拥有独立、稳定的成员 UUID").
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct PlaylistMember {
+    id: PlaylistItemId,
     playlist: PlaylistId,
     song: SongId,
     position: u64,
@@ -524,14 +531,17 @@ pub struct PlaylistMember {
 }
 
 impl PlaylistMember {
+    /// Construct a member with an explicit, stable member identity.
     #[must_use]
-    pub const fn new(
+    pub const fn with_id(
+        id: PlaylistItemId,
         playlist: PlaylistId,
         song: SongId,
         position: u64,
         song_availability: SongAvailability,
     ) -> Self {
         Self {
+            id,
             playlist,
             song,
             position,
@@ -539,6 +549,28 @@ impl PlaylistMember {
         }
     }
 
+    /// Construct a member, minting a fresh stable identity.
+    #[must_use]
+    pub fn new(
+        playlist: PlaylistId,
+        song: SongId,
+        position: u64,
+        song_availability: SongAvailability,
+    ) -> Self {
+        Self::with_id(
+            PlaylistItemId::new(),
+            playlist,
+            song,
+            position,
+            song_availability,
+        )
+    }
+
+    /// The stable member identity.
+    #[must_use]
+    pub const fn id(&self) -> PlaylistItemId {
+        self.id
+    }
     #[must_use]
     pub const fn playlist(&self) -> PlaylistId {
         self.playlist
@@ -846,6 +878,8 @@ mod tests {
         let mut m = PlaylistMember::new(playlist, song_id, 0, SongAvailability::Available);
         assert_eq!(m.position(), 0);
         assert_eq!(m.song(), song_id);
+        // Every member has a stable, independent identity.
+        assert_ne!(m.id(), PlaylistItemId::new());
         m.mirror_song(SongAvailability::Missing);
         assert_eq!(m.song_availability(), SongAvailability::Missing);
         assert_eq!(m.song(), song_id, "mirroring must not touch identity");

@@ -24,6 +24,9 @@ use echo_core::application::playlist::{
     AddToPlaylists, CreatePlaylist, DeletePlaylist, PlaylistMembers, RemoveFromPlaylist,
     RenamePlaylist,
 };
+use echo_core::application::portable_materialize::{
+    committed_version, ensure_control_plane_writable, favorite_record, FAVORITE_OBJECT_TYPE,
+};
 use echo_core::application::ports::{PlaylistRepository, RuntimeStateStore};
 use echo_core::application::root_switch::{
     derive_root_id, ActivateLibrary, Blockers, PrepareLibraryCandidate,
@@ -31,6 +34,7 @@ use echo_core::application::root_switch::{
 use echo_core::application::scan::{CancelScan, ScanDeps, ScanSummary, ScanSupervisor, StartScan};
 use echo_core::domain::catalog::{OpaqueCursor, SongSort};
 use echo_core::domain::ids::{LibraryRootId, OperationId, PlaylistId, SongId};
+use echo_core::domain::library::PortableRecord;
 use echo_core::error::Error;
 
 use crate::ipc::dto::{
@@ -359,7 +363,31 @@ impl AppServices {
     /// storage errors propagate.
     pub fn set_favorite(&self, song: SongId, favorite: bool) -> Result<SongView, Error> {
         self.guard_writes()?;
+        let root = self
+            .deps
+            .roots
+            .active_root()?
+            .ok_or_else(|| Error::unavailable("library", "no active root"))?;
+        // Check before the SQLite transaction: a control-plane-disabled library
+        // must reject logical mutations rather than commit a fact it cannot
+        // materialize for recovery.
+        ensure_control_plane_writable(self.deps.control.as_ref(), root.id())?;
         let result = SetFavorite::new(self.deps.songs.as_ref()).execute(song, favorite)?;
+        let device = self.deps.device_id.current_device_id();
+        let (revision, hlc) = committed_version(
+            self.deps.sync.as_ref(),
+            FAVORITE_OBJECT_TYPE,
+            &song.to_string(),
+            device,
+        )?;
+        let record = PortableRecord::Favorite(favorite_record(
+            device,
+            hlc,
+            revision,
+            song,
+            result.favorite,
+        ));
+        self.deps.control.write_record(root.id(), &record)?;
         Ok(SongView::from(&result.song))
     }
 
@@ -676,6 +704,7 @@ mod tests {
     use echo_core::application::testing::scan_fixture::ScanFixture;
     use echo_core::application::testing::small_fakes::FakeTrash;
     use echo_core::domain::entities::LibraryRoot;
+    use echo_core::domain::library::PortableSerialize;
 
     use crate::platform::dialogs::TestDialogs;
     use crate::runtime::StartupSupervisor;
@@ -820,6 +849,34 @@ mod tests {
         let favs = app.favorites(SongSort::default(), None, 100).expect("favs");
         assert_eq!(favs.items.len(), 1);
         assert_eq!(favs.items[0].id, ids[0].to_string());
+    }
+
+    #[test]
+    fn favorite_commit_materializes_a_portable_record_without_local_state() {
+        let fixture = ScanFixture::new();
+        let ids = seed_songs(&fixture, 1);
+        let app = services(&fixture);
+
+        app.set_favorite(ids[0], true).expect("favourite");
+
+        let record = fixture
+            .deps
+            .control
+            .read_record(
+                fixture.root,
+                echo_core::domain::library::RecordKind::Favorite,
+                &ids[0].to_string(),
+            )
+            .expect("read record")
+            .expect("favorite materialized");
+        let json = record.to_canonical_json().expect("portable json");
+        assert!(json.contains("is_favorite"));
+        for forbidden in ["/library", "sqlite", "credential", "play_count"] {
+            assert!(
+                !json.contains(forbidden),
+                "portable favorite must not expose {forbidden}"
+            );
+        }
     }
 
     #[test]

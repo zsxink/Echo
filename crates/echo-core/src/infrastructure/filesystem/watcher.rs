@@ -28,6 +28,7 @@ use crate::application::ports::{
     FileEvent, FileEventKind, FileEventSource, FileEventSubscription, RESCAN_SENTINEL,
 };
 use crate::domain::ids::{LibraryRootId, RelativeMediaPath};
+use crate::domain::library::MEDIA_ROOT;
 use crate::error::Error;
 
 use super::registry::RootRegistry;
@@ -84,14 +85,25 @@ impl Coalescer {
         }
     }
 
-    /// Echo's controlled staging directories live directly under the root;
-    /// writes into them are Echo's own (imports, publishes) and never library
-    /// events. Publishing *out* of staging surfaces as the destination's
-    /// Created event, which is the part reconciliation cares about.
-    fn is_staging(relative: &RelativeMediaPath) -> bool {
+    /// Echo's managed media tree is exactly `media/` (portable layout §5).
+    /// Any path outside it — the `echo/` control surface (`echo/tmp/`
+    /// staging, manifest, records), a legacy `.echo-staging-*` dir, or
+    /// old-layout root-level artist folders/loose files — is never a library
+    /// event and is dropped from the stream. Publishing *out* of staging
+    /// surfaces as the destination's Created event (the destination is under
+    /// `media/`), which is the part reconciliation cares about.
+    fn not_under_media(relative: &RelativeMediaPath) -> bool {
+        !Self::media_root_component(relative)
+    }
+
+    /// Whether the path's first component is exactly `media` — the managed
+    /// tree. `media_upload/x.mp3` or a loose root file is NOT under media.
+    fn media_root_component(relative: &RelativeMediaPath) -> bool {
         relative
             .normalized()
-            .starts_with(super::staging::STAGING_DIR_PREFIX)
+            .split('/')
+            .next()
+            .is_some_and(|component| component == MEDIA_ROOT)
     }
 
     /// Normalize one raw notify event into pending state.
@@ -101,7 +113,7 @@ impl Coalescer {
         match &event.kind {
             EventKind::Create(_) => {
                 for relative in self.relatives(&event.paths) {
-                    if Self::is_staging(&relative) {
+                    if Self::not_under_media(&relative) {
                         continue;
                     }
                     self.pending.insert(
@@ -116,7 +128,7 @@ impl Coalescer {
             }
             EventKind::Modify(ModifyKind::Name(RenameMode::Both)) if event.paths.len() == 2 => {
                 if let Some((from, to)) = self.rename_pair(&event.paths[0], &event.paths[1]) {
-                    match (Self::is_staging(&from), Self::is_staging(&to)) {
+                    match (Self::not_under_media(&from), Self::not_under_media(&to)) {
                         // Publish out of staging: the destination appearing is
                         // a creation, not a library-visible rename.
                         (true, false) => self.pending.insert(
@@ -144,7 +156,10 @@ impl Coalescer {
             EventKind::Modify(ModifyKind::Name(_)) => {
                 // One-sided rename. If it touches Echo's staging area it is
                 // our own work — never a rescan downgrade.
-                let touches_staging = self.relatives(&event.paths).iter().any(Self::is_staging);
+                let touches_staging = self
+                    .relatives(&event.paths)
+                    .iter()
+                    .any(Self::not_under_media);
                 if !touches_staging {
                     // The counterpart is unknown, so reconciliation must
                     // rescan instead of guessing.
@@ -161,7 +176,7 @@ impl Coalescer {
             EventKind::Modify(_) => {
                 // Data/metadata/any changes behave as modifications.
                 for relative in self.relatives(&event.paths) {
-                    if Self::is_staging(&relative) {
+                    if Self::not_under_media(&relative) {
                         continue;
                     }
                     self.pending.insert(
@@ -176,7 +191,7 @@ impl Coalescer {
             }
             EventKind::Remove(_) => {
                 for relative in self.relatives(&event.paths) {
-                    if Self::is_staging(&relative) {
+                    if Self::not_under_media(&relative) {
                         continue;
                     }
                     self.pending.insert(
@@ -295,6 +310,13 @@ impl Coalescer {
 
 fn sample(path: &Path) -> Option<(u64, i64)> {
     let meta = std::fs::metadata(path).ok()?;
+    // Directory notifications are a by-product of recursively watching the
+    // library root. They are not media changes: only regular files may reach
+    // scan reconciliation. In particular, creating `media/` must not mask the
+    // immediately following audio-file notification.
+    if !meta.is_file() {
+        return None;
+    }
     let modified = meta
         .modified()
         .ok()?
@@ -466,16 +488,25 @@ mod tests {
             .add_path(root.join(name))
     }
 
+    /// A `media/<name>` absolute path (the only managed tree — events for
+    /// anything else are not library events).
+    fn media_path(base: &std::path::Path, name: &str) -> std::path::PathBuf {
+        let absolute = base.join("media").join(name);
+        std::fs::create_dir_all(absolute.parent().unwrap()).unwrap();
+        absolute
+    }
+
     #[test]
     fn coalescer_debounces_a_write_burst_into_one_event() {
         let (dir, _root, mut coalescer) = setup();
         let base = dir.path().to_path_buf();
-        std::fs::write(base.join("tone.mp3"), vec![1u8; 512]).unwrap();
+        let file = media_path(&base, "tone.mp3");
+        std::fs::write(&file, vec![1u8; 512]).unwrap();
         for chunk in 1..4u8 {
-            std::fs::write(base.join("tone.mp3"), vec![chunk; 512]).unwrap();
-            coalescer.absorb(&modified(&base, "tone.mp3"));
+            std::fs::write(&file, vec![chunk; 512]).unwrap();
+            coalescer.absorb(&modified(base.join("media").as_path(), "tone.mp3"));
         }
-        coalescer.absorb(&created(&base, "tone.mp3"));
+        coalescer.absorb(&created(base.join("media").as_path(), "tone.mp3"));
         // Before the debounce window elapses nothing is emitted.
         let mut emitted = Vec::new();
         coalescer.flush_ready(&mut |event| emitted.push(event));
@@ -489,7 +520,7 @@ mod tests {
         std::thread::sleep(timings().sample_delay + Duration::from_millis(5));
         coalescer.flush_ready(&mut |event| emitted.push(event));
         assert_eq!(emitted.len(), 1, "four writes collapse into one event");
-        assert_eq!(emitted[0].path.display(), "tone.mp3");
+        assert_eq!(emitted[0].path.display(), "media/tone.mp3");
         assert!(matches!(
             emitted[0].kind,
             FileEventKind::Created | FileEventKind::Modified
@@ -504,9 +535,9 @@ mod tests {
     fn coalescer_double_samples_before_emitting() {
         let (dir, _root, mut coalescer) = setup();
         let base = dir.path().to_path_buf();
-        let file = base.join("growing.mp3");
+        let file = media_path(&base, "growing.mp3");
         std::fs::write(&file, b"part").unwrap();
-        coalescer.absorb(&created(&base, "growing.mp3"));
+        coalescer.absorb(&created(base.join("media").as_path(), "growing.mp3"));
         std::thread::sleep(timings().debounce + Duration::from_millis(10));
 
         // Flush 1 takes the first sample — nothing is emitted yet.
@@ -532,16 +563,16 @@ mod tests {
         std::thread::sleep(timings().sample_delay + Duration::from_millis(5));
         coalescer.flush_ready(&mut |event| emitted.push(event));
         assert_eq!(emitted.len(), 1, "stable file emits after confirmation");
-        assert_eq!(emitted[0].path.display(), "growing.mp3");
+        assert_eq!(emitted[0].path.display(), "media/growing.mp3");
     }
 
     #[test]
     fn coalescer_drops_created_events_for_vanished_files() {
         let (dir, _root, mut coalescer) = setup();
         let base = dir.path().to_path_buf();
-        let file = base.join("ephemeral.mp3");
+        let file = media_path(&base, "ephemeral.mp3");
         std::fs::write(&file, b"here").unwrap();
-        coalescer.absorb(&created(&base, "ephemeral.mp3"));
+        coalescer.absorb(&created(base.join("media").as_path(), "ephemeral.mp3"));
         std::thread::sleep(timings().debounce + Duration::from_millis(10));
         coalescer.flush_ready(&mut |_| panic!("nothing emitted yet"));
         std::fs::remove_file(&file).unwrap();
@@ -558,23 +589,26 @@ mod tests {
     fn coalescer_normalizes_removal_and_rename_and_overflow() {
         let (dir, _root, mut coalescer) = setup();
         let base = dir.path().to_path_buf();
-        coalescer.absorb(&removed(&base, "gone.mp3"));
+        coalescer.absorb(&removed(base.join("media").as_path(), "gone.mp3"));
         std::thread::sleep(timings().debounce + Duration::from_millis(10));
         let mut emitted = Vec::new();
         coalescer.flush_ready(&mut |event| emitted.push(event));
         assert_eq!(emitted.len(), 1);
         assert_eq!(emitted[0].kind, FileEventKind::Removed);
+        assert_eq!(emitted[0].path.display(), "media/gone.mp3");
 
         // A real on-disk rename: the source disappears, the destination
         // exists (this is what lets the pair be ordered without trusting the
         // backend's from/to declaration order).
-        std::fs::write(base.join("old.mp3"), b"x").unwrap();
-        std::fs::rename(base.join("old.mp3"), base.join("new.mp3")).unwrap();
+        let media = base.join("media");
+        std::fs::create_dir_all(&media).unwrap();
+        std::fs::write(media.join("old.mp3"), b"x").unwrap();
+        std::fs::rename(media.join("old.mp3"), media.join("new.mp3")).unwrap();
         let mut renamed = notify::Event::new(notify::EventKind::Modify(
             notify::event::ModifyKind::Name(notify::event::RenameMode::Both),
         ))
-        .add_path(base.join("old.mp3"))
-        .add_path(base.join("new.mp3"));
+        .add_path(media.join("old.mp3"))
+        .add_path(media.join("new.mp3"));
         renamed.paths.reverse(); // order robustness check
         coalescer.absorb(&renamed);
         std::thread::sleep(timings().debounce + Duration::from_millis(10));
@@ -583,14 +617,15 @@ mod tests {
         let Some(FileEventKind::Renamed { from }) = emitted.first().map(|e| e.kind.clone()) else {
             panic!("expected rename event, got {emitted:?}");
         };
-        assert_eq!(from.display(), "old.mp3");
-        assert_eq!(emitted[0].path.display(), "new.mp3");
+        assert_eq!(from.display(), "media/old.mp3");
+        assert_eq!(emitted[0].path.display(), "media/new.mp3");
 
-        // A one-sided rename degrades to a rescan signal.
-        let one_sided = notify::Event::new(notify::EventKind::Modify(
+        // A one-sided rename — of a path *outside* media — degrades to a
+        // rescan signal (like any unclassifiable library change).
+        let one_sided = notify::Event::new(notify::event::EventKind::Modify(
             notify::event::ModifyKind::Name(notify::event::RenameMode::From),
         ))
-        .add_path(base.join("old.mp3"));
+        .add_path(media.join("old.mp3"));
         coalescer.absorb(&one_sided);
         std::thread::sleep(timings().debounce + Duration::from_millis(10));
         let mut emitted = Vec::new();
@@ -613,7 +648,9 @@ mod tests {
         registry.register(root, dir.path());
         let source = NotifyFileEventSource::new(registry).with_timings(timings());
         let mut subscription = source.subscribe(root).unwrap();
-        std::fs::write(dir.path().join("tone.mp3"), vec![9u8; 4096]).unwrap();
+        let media = dir.path().join("media");
+        std::fs::create_dir_all(&media).unwrap();
+        std::fs::write(media.join("tone.mp3"), vec![9u8; 4096]).unwrap();
         // The port's `recv` is blocking; run it on a helper thread and poll
         // with a deadline so a broken pipeline fails the test instead of
         // hanging the suite.
@@ -630,7 +667,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         };
         assert_eq!(event.root, root);
-        assert_eq!(event.path.display(), "tone.mp3");
+        assert_eq!(event.path.display(), "media/tone.mp3");
     }
 
     // -----------------------------------------------------------------------
@@ -638,10 +675,14 @@ mod tests {
     // rename variants, unknown event kinds and one-sided rename degradation.
     // -----------------------------------------------------------------------
 
-    /// A staging-relative helper mirroring `is_staging`: events under a
-    /// `.echo-staging-*` directory are Echo's own and never surface.
+    /// A staging-relative helper mirroring the portable layout: writes under
+    /// `echo/tmp` are Echo's own and never surface.
     fn staging_dir(base: &std::path::Path) -> std::path::PathBuf {
-        base.join(".echo-staging-test")
+        base.join("echo/tmp/stage-op")
+    }
+
+    fn audio_under_media(base: &std::path::Path, name: &str) -> std::path::PathBuf {
+        base.join("media").join(name)
     }
 
     #[test]
@@ -672,7 +713,8 @@ mod tests {
         let staging = staging_dir(&base);
         std::fs::create_dir_all(&staging).unwrap();
         let staged_file = staging.join("staged.flac");
-        let published = base.join("published.flac");
+        let published = audio_under_media(&base, "published.flac");
+        std::fs::create_dir_all(base.join("media")).unwrap();
         std::fs::write(&staged_file, b"whole").unwrap();
         std::fs::rename(&staged_file, &published).unwrap();
         let rename = notify::Event::new(notify::EventKind::Modify(
@@ -694,7 +736,7 @@ mod tests {
         // path).
         assert_eq!(emitted.len(), 1, "publish out of staging becomes Created");
         assert_eq!(emitted[0].kind, FileEventKind::Created);
-        assert_eq!(emitted[0].path.display(), "published.flac");
+        assert_eq!(emitted[0].path.display(), "media/published.flac");
     }
 
     #[test]
@@ -703,15 +745,16 @@ mod tests {
         let base = dir.path().to_path_buf();
         let staging = staging_dir(&base);
         std::fs::create_dir_all(&staging).unwrap();
-        let library_file = base.join("library.flac");
-        std::fs::write(&library_file, b"x").unwrap();
+        let published = audio_under_media(&base, "library.flac");
+        std::fs::create_dir_all(base.join("media")).unwrap();
+        std::fs::write(&published, b"x").unwrap();
 
         // A move *into* staging (the delete stage) is Echo's own work.
-        std::fs::rename(&library_file, staging.join("delete.flac")).unwrap();
+        std::fs::rename(&published, staging.join("delete.flac")).unwrap();
         let into_staging = notify::Event::new(notify::EventKind::Modify(
             notify::event::ModifyKind::Name(notify::event::RenameMode::Both),
         ))
-        .add_path(library_file)
+        .add_path(published)
         .add_path(staging.join("delete.flac"));
         coalescer.absorb(&into_staging);
         std::thread::sleep(timings().debounce + Duration::from_millis(10));
@@ -730,6 +773,29 @@ mod tests {
         let mut emitted = Vec::new();
         coalescer.flush_ready(&mut |event| emitted.push(event));
         assert!(emitted.is_empty(), "one-sided staging rename is filtered");
+    }
+
+    #[test]
+    fn absorb_drops_root_level_and_old_layout_events_that_are_never_in_media() {
+        // Portable layout §5: only `media/` is the managed tree. Events for
+        // a root-level loose file or an old-layout artist folder (no `media/`
+        // prefix) are never library events.
+        let (dir, _root, mut coalescer) = setup();
+        let base = dir.path().to_path_buf();
+        let loose = base.join("loose.mp3");
+        std::fs::create_dir_all(base.join("周杰伦")).unwrap();
+        std::fs::write(&loose, b"x").unwrap();
+        std::fs::write(base.join("周杰伦/晴天.flac"), b"old").unwrap();
+
+        coalescer.absorb(&created(&base, "loose.mp3"));
+        coalescer.absorb(&created(&base.join("周杰伦"), "晴天.flac"));
+        std::thread::sleep(timings().debounce + Duration::from_millis(10));
+        let mut emitted = Vec::new();
+        coalescer.flush_ready(&mut |event| emitted.push(event));
+        assert!(
+            emitted.is_empty(),
+            "old-layout/root content never becomes a library event: {emitted:?}"
+        );
     }
 
     #[test]
@@ -765,10 +831,12 @@ mod tests {
 
         // A one-sided rename touching ordinary library files degrades to a
         // rescan (the counterpart path is unknown).
+        let media = base.join("media");
+        std::fs::create_dir_all(&media).unwrap();
         let one_sided = notify::Event::new(notify::EventKind::Modify(
             notify::event::ModifyKind::Name(notify::event::RenameMode::From),
         ))
-        .add_path(base.join("mystery.flac"));
+        .add_path(media.join("mystery.flac"));
         coalescer.absorb(&one_sided);
         std::thread::sleep(timings().debounce + Duration::from_millis(10));
         let mut emitted = Vec::new();
@@ -783,32 +851,34 @@ mod tests {
     fn rename_pair_orders_from_declaration_and_existence() {
         let (dir, _root, coalescer) = setup();
         let base = dir.path().to_path_buf();
+        let media = base.join("media");
+        std::fs::create_dir_all(&media).unwrap();
 
         // Both paths exist: declaration order wins (source first per notify).
-        std::fs::write(base.join("lhs.flac"), b"a").unwrap();
-        std::fs::write(base.join("rhs.flac"), b"b").unwrap();
+        std::fs::write(media.join("lhs.flac"), b"a").unwrap();
+        std::fs::write(media.join("rhs.flac"), b"b").unwrap();
         let (from, to) = coalescer
-            .rename_pair(&base.join("lhs.flac"), &base.join("rhs.flac"))
+            .rename_pair(&media.join("lhs.flac"), &media.join("rhs.flac"))
             .expect("both exist");
-        assert_eq!(from.display(), "lhs.flac");
-        assert_eq!(to.display(), "rhs.flac");
+        assert_eq!(from.display(), "media/lhs.flac");
+        assert_eq!(to.display(), "media/rhs.flac");
 
         // Only the destination exists: it is `to`, whatever the declaration
         // order said (macOS/backend disagreement robustness).
-        std::fs::remove_file(base.join("lhs.flac")).unwrap();
-        std::fs::write(base.join("rhs.flac"), b"b").unwrap();
+        std::fs::remove_file(media.join("lhs.flac")).unwrap();
+        std::fs::write(media.join("rhs.flac"), b"b").unwrap();
         let (from, to) = coalescer
-            .rename_pair(&base.join("rhs.flac"), &base.join("lhs.flac"))
+            .rename_pair(&media.join("rhs.flac"), &media.join("lhs.flac"))
             .expect("destination exists");
-        assert_eq!(from.display(), "lhs.flac");
-        assert_eq!(to.display(), "rhs.flac");
+        assert_eq!(from.display(), "media/lhs.flac");
+        assert_eq!(to.display(), "media/rhs.flac");
 
         // A path outside the root has no relative form: no pair.
         let outside = tempfile::tempdir().unwrap();
         std::fs::write(outside.path().join("x.flac"), b"x").unwrap();
         assert!(
             coalescer
-                .rename_pair(&base.join("rhs.flac"), &outside.path().join("x.flac"))
+                .rename_pair(&media.join("rhs.flac"), &outside.path().join("x.flac"))
                 .is_none(),
             "an unrelateable path cannot pair"
         );
@@ -818,9 +888,9 @@ mod tests {
     fn a_modified_file_that_vanishes_between_samples_is_not_emitted() {
         let (dir, _root, mut coalescer) = setup();
         let base = dir.path().to_path_buf();
-        let file = base.join("fading.mp3");
+        let file = media_path(&base, "fading.mp3");
         std::fs::write(&file, b"first").unwrap();
-        coalescer.absorb(&modified(&base, "fading.mp3"));
+        coalescer.absorb(&modified(base.join("media").as_path(), "fading.mp3"));
         std::thread::sleep(timings().debounce + Duration::from_millis(10));
         // First sample taken; the file disappears before the confirmation.
         let mut emitted = Vec::new();
@@ -842,8 +912,8 @@ mod tests {
     fn flush_ready_skips_unparsable_pending_keys() {
         let (dir, _root, mut coalescer) = setup();
         let base = dir.path().to_path_buf();
-        let odd = base.join("a/./odd.mp3");
-        std::fs::create_dir_all(base.join("a")).unwrap();
+        let odd = base.join("media/a/./odd.mp3");
+        std::fs::create_dir_all(base.join("media/a")).unwrap();
         std::fs::write(&odd, b"x").unwrap();
         let raw = notify::Event::new(notify::EventKind::Create(notify::event::CreateKind::File))
             .add_path(odd);

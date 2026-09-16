@@ -411,9 +411,14 @@ mod tests {
     use crate::domain::state::OperationState;
 
     fn event(fixture: &ScanFixture, kind: FileEventKind, path: &str) -> FileEvent {
+        let path = if path.starts_with("media/") {
+            path.to_owned()
+        } else {
+            format!("media/{path}")
+        };
         FileEvent {
             root: fixture.root,
-            path: RelativeMediaPath::new(path).expect("valid path"),
+            path: RelativeMediaPath::new(&path).expect("valid path"),
             kind,
         }
     }
@@ -540,7 +545,7 @@ mod tests {
             .handle_event(event(
                 &fixture,
                 FileEventKind::Renamed {
-                    from: RelativeMediaPath::new("old.mp3").unwrap(),
+                    from: RelativeMediaPath::new("media/old.mp3").unwrap(),
                 },
                 "new.mp3",
             ))
@@ -573,10 +578,10 @@ mod tests {
             song: Some(reserved),
             source: None,
             staging_path: None,
-            target_path: RelativeMediaPath::new("importing.mp3").unwrap(),
+            target_path: RelativeMediaPath::new("media/importing.mp3").unwrap(),
             expected_hash: "a".repeat(64),
             item_key: "audio".to_owned(),
-            claim_key: RelativeMediaPath::new("importing.mp3")
+            claim_key: RelativeMediaPath::new("media/importing.mp3")
                 .unwrap()
                 .identity_key()
                 .to_owned(),
@@ -621,10 +626,10 @@ mod tests {
             song: Some(reserved),
             source: None,
             staging_path: None,
-            target_path: RelativeMediaPath::new("published.mp3").unwrap(),
+            target_path: RelativeMediaPath::new("media/published.mp3").unwrap(),
             expected_hash: "a".repeat(64),
             item_key: "audio".to_owned(),
-            claim_key: RelativeMediaPath::new("published.mp3")
+            claim_key: RelativeMediaPath::new("media/published.mp3")
                 .unwrap()
                 .identity_key()
                 .to_owned(),
