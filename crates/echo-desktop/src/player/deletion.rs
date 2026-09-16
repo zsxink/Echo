@@ -24,7 +24,7 @@
 use echo_core::domain::ids::{QueueEntryId, SongId};
 
 use super::port::{PlayMode, PlayerCommand, PlayerPort};
-use super::queue::{Queue, QueueEntry};
+use super::queue::{HistoryRecord, Queue, QueueEntry};
 
 /// The outcome the deletion coordinator reports to the caller.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -74,12 +74,12 @@ pub struct DeletionCoordinator<P: PlayerPort, E: DeleteExecutor> {
 
 /// A queue snapshot of the entries referencing one song, captured before the
 /// delete so it can be restored verbatim on rollback (keeping entry ids, the
-/// current reference and the shuffle bag intact).
+/// current reference, the timestamped history and the shuffle bag intact).
 #[derive(Clone, Debug, Default)]
 pub struct DeletedSnapshot {
     pub entries: Vec<QueueEntry>,
     pub current_id: Option<QueueEntryId>,
-    pub history: Vec<QueueEntryId>,
+    pub history: Vec<HistoryRecord>,
     pub shuffle_bag: Vec<QueueEntryId>,
     pub shuffle_active: bool,
     pub mode: PlayMode,
@@ -101,7 +101,7 @@ impl<P: PlayerPort, E: DeleteExecutor> DeletionCoordinator<P, E> {
         self.snapshot = Some(DeletedSnapshot {
             entries: queue.entries().to_vec(),
             current_id: queue.current_id(),
-            history: queue.history().to_vec(),
+            history: queue.history_records().to_vec(),
             shuffle_bag: queue.shuffle_bag().to_vec(),
             shuffle_active: queue.is_shuffle(),
             mode,
@@ -186,8 +186,9 @@ impl<P: PlayerPort, E: DeleteExecutor> DeletionCoordinator<P, E> {
 }
 
 /// Rebuild a shallow queue from a persisted snapshot (entries + current +
-/// history + shuffle bag). `Queue` has no direct over-write constructor, so we
-/// push all entries and re-apply current/history/shuffle references.
+/// timestamped history + shuffle bag). `Queue` has no direct over-write
+/// constructor, so we push all entries and re-apply current/history/shuffle
+/// references.
 fn rebuild_shallow_queue(snapshot: &DeletedSnapshot) -> Queue {
     let mut queue = Queue::new();
     for entry in &snapshot.entries {
@@ -196,6 +197,7 @@ fn rebuild_shallow_queue(snapshot: &DeletedSnapshot) -> Queue {
     if let Some(current) = snapshot.current_id {
         queue.set_current(current);
     }
+    queue.restore_history(snapshot.history.iter().copied());
     queue.set_shuffle(snapshot.shuffle_active, snapshot.shuffle_bag.clone());
     queue
 }
@@ -354,6 +356,42 @@ mod tests {
         // Entries restored.
         assert_eq!(queue.len(), 2);
         assert_eq!(queue.current_id(), Some(a));
+    }
+
+    #[test]
+    fn rollback_restores_timestamped_history_so_previous_remains_available() {
+        let player = FakePlayer::new();
+        let mut coord = coord_with_deleter(player, FailDelete);
+        let s1 = song();
+        let s2 = song();
+        let s3 = song();
+        let mut queue = Queue::new();
+        let a = queue.push(lib_entry(s1));
+        let b = queue.push(lib_entry(s2));
+        let c = queue.push(lib_entry(s3));
+        queue.set_current(a);
+        queue.set_current(b);
+        queue.set_current(c); // history: [c, b, a]; current = c
+        let _ = a;
+
+        // Delete s1 (non-current) fails at the Core boundary → rollback.
+        let result = coord
+            .delete_song(&mut queue, PlayMode::Sequential, s1, || {
+                panic!("no unload for a non-current target")
+            })
+            .expect("delete");
+        assert_eq!(result, DeleteCommit::RolledBack);
+
+        // The rollback restored entries, current AND the timestamped history.
+        assert_eq!(queue.current_id(), Some(c));
+        let restored: Vec<QueueEntryId> = queue
+            .history_records()
+            .iter()
+            .map(|record| record.entry_id)
+            .collect();
+        assert_eq!(restored, vec![c, b, a]);
+        // "previous" still works: most recent entry ≠ current that exists.
+        assert_eq!(queue.previous(), Some(b));
     }
 
     #[test]
