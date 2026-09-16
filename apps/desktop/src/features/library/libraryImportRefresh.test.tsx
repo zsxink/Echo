@@ -89,18 +89,37 @@ describe("导入完成后的资料库刷新", () => {
     });
   });
 
-  it.each([
-    ["recent" as const, "最近添加", "recent"],
-    ["favorites" as const, "喜欢的音乐", "favorites"],
-  ])("does not expose all-songs sorting in the %s view", async (view, title, command) => {
+  it("keeps 最近添加 as a fixed chronological view", async () => {
     mocks.setInvoke(
-      command,
-      command === "recent" ? [beforeImport] : { items: [beforeImport], isLast: true, nextCursor: null },
+      "recent",
+      [beforeImport],
     );
 
-    render(<LibraryWorkspace view={view} title={title} root="root-1" readOnly={false} />);
+    render(<LibraryWorkspace view="recent" title="最近添加" root="root-1" readOnly={false} />);
 
     expect(await screen.findByText(beforeImport.title)).toBeInTheDocument();
     expect(screen.queryByTestId("sort-button")).not.toBeInTheDocument();
+  });
+
+  it("keeps a favorites sort separate from the all-songs sort", async () => {
+    mocks.setInvoke("all_songs", { items: [beforeImport], isLast: true, nextCursor: null });
+    mocks.setInvoke("favorites", { items: [beforeImport], isLast: true, nextCursor: null });
+
+    const { rerender } = render(
+      <LibraryWorkspace view="all" title="全部歌曲" root="root-1" readOnly={false} />,
+    );
+    await screen.findByText(beforeImport.title);
+    fireEvent.click(screen.getByTestId("sort-button"));
+    fireEvent.click(screen.getByText("歌曲名称"));
+
+    rerender(<LibraryWorkspace view="favorites" title="喜欢的音乐" root="root-1" readOnly={false} />);
+    expect(await screen.findByTestId("sort-button")).toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith(
+        "favorites",
+        expect.objectContaining({ sort: "addedAt:desc" }),
+      ),
+    );
   });
 });

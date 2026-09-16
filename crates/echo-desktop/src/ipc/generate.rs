@@ -61,6 +61,7 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly name: string;\n");
     out.push_str("  readonly memberCount: number;\n");
     out.push_str("  readonly coverKey?: string;\n");
+    out.push_str("  readonly automaticCoverKey?: string;\n");
     out.push_str("  readonly hasCustomCover: boolean;\n");
     out.push_str("}\n\n");
 

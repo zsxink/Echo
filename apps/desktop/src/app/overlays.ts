@@ -54,6 +54,8 @@ export enum OverlayTier {
 interface Registration {
   readonly tier: OverlayTier;
   readonly closer: () => void;
+  readonly containerRef: RefObject<HTMLElement | null>;
+  readonly dismissOnInteractOutside: boolean;
   readonly seq: number;
 }
 
@@ -106,6 +108,23 @@ function installEscapeHandler(): void {
 // handler, so Escape can never close several layers at once.
 installEscapeHandler();
 
+/** Menus are transient: one press in another surface dismisses the top menu
+ * before that surface receives its own click. Dialogs keep their explicit
+ * confirm/cancel contract and therefore opt out by default. */
+window.addEventListener(
+  "pointerdown",
+  (event) => {
+    const id = topId();
+    const registration = id === null ? undefined : open.get(id);
+    if (!registration?.dismissOnInteractOutside) return;
+    const target = event.target as Node | null;
+    if (target && registration.containerRef.current?.contains(target)) return;
+    open.delete(id!);
+    registration.closer();
+  },
+  true,
+);
+
 export interface OverlayOptions {
   readonly tier: OverlayTier;
   readonly onClose: () => void;
@@ -113,6 +132,9 @@ export interface OverlayOptions {
   readonly containerRef: RefObject<HTMLElement | null>;
   /** When false the overlay is not registered on the stack (default true). */
   readonly enabled?: boolean;
+  /** Close when the user begins an interaction outside this layer. Menus do so
+   * by default; dialogs and full-screen surfaces require an explicit choice. */
+  readonly dismissOnInteractOutside?: boolean;
 }
 
 /**
@@ -120,7 +142,13 @@ export interface OverlayOptions {
  * component: traps/reveals focus while open and restores it to the trigger on
  * close. Escape is handled once globally by the stack in priority order.
  */
-export function useOverlay({ tier, onClose, containerRef, enabled = true }: OverlayOptions): void {
+export function useOverlay({
+  tier,
+  onClose,
+  containerRef,
+  enabled = true,
+  dismissOnInteractOutside = tier === OverlayTier.Menu,
+}: OverlayOptions): void {
   const id = useRef(`o-${nextId++}`).current;
   // Remember the document.activeElement at open to restore it on close.
   const restoreFocus = useRef<HTMLElement | null>(null);
@@ -129,7 +157,13 @@ export function useOverlay({ tier, onClose, containerRef, enabled = true }: Over
     if (!enabled) return;
     restoreFocus.current = (document.activeElement as HTMLElement | null) ?? null;
     seqCounter += 1;
-    open.set(id, { tier, closer: onClose, seq: seqCounter });
+    open.set(id, {
+      tier,
+      closer: onClose,
+      containerRef,
+      dismissOnInteractOutside,
+      seq: seqCounter,
+    });
 
     // Move focus into the overlay (spec: 打开时焦点进入其内容). Prefer an
     // autofocus element, else the first focusable, else the container.
@@ -149,7 +183,7 @@ export function useOverlay({ tier, onClose, containerRef, enabled = true }: Over
         trigger.focus();
       }
     };
-  }, [id, onClose, tier, enabled, containerRef]);
+  }, [id, onClose, tier, enabled, containerRef, dismissOnInteractOutside]);
 }
 
 /** Trap Tab/Shift+Tab inside a container so focus cannot escape an overlay. */

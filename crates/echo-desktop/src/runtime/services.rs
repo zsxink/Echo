@@ -414,28 +414,29 @@ impl AppServices {
         let mut views = Vec::with_capacity(ids.len());
         for id in ids {
             let name = PlaylistRepository::name(repos, id)?.unwrap_or_default();
-            let count = repos.members(id)?.len();
+            let members = repos.members(id)?;
+            let count = members.len();
             // A manual choice always wins. Otherwise the newest member's
             // embedded artwork is the playlist cover; a brand-new playlist
             // deliberately has no cover at all.
             let custom_cover_key = PlaylistRepository::cover_key(repos, id)?;
             let has_custom_cover = custom_cover_key.is_some();
-            let cover_key = match custom_cover_key {
-                some @ Some(_) => some,
-                None => repos
-                    .members(id)?
-                    .last()
-                    .map(|member| member.song())
-                    .map(|song| self.deps.covers.cover_of(song))
-                    .transpose()?
-                    .flatten()
-                    .map(|cover| cover.asset_key),
-            };
+            // Work backwards so adding a song without artwork never clears a
+            // previously resolved automatic cover.
+            let mut automatic_cover_key = None;
+            for member in members.iter().rev() {
+                if let Some(cover) = self.deps.covers.cover_of(member.song())? {
+                    automatic_cover_key = Some(cover.asset_key);
+                    break;
+                }
+            }
+            let cover_key = custom_cover_key.or_else(|| automatic_cover_key.clone());
             views.push(PlaylistView::from((
                 id,
                 name,
                 count,
                 cover_key,
+                automatic_cover_key,
                 has_custom_cover,
             )));
         }
@@ -450,12 +451,14 @@ impl AppServices {
     pub fn playlist_members(&self, playlist: PlaylistId) -> Result<Vec<SongView>, Error> {
         let rows = PlaylistMembers::new(self.deps.playlists.as_ref()).execute(playlist)?;
         let mut out = Vec::with_capacity(rows.len());
-        for member in rows {
+        // Repository membership order is append order (oldest first). The
+        // playlist view is chronological in the other direction: the song
+        // added last is the first row.
+        for member in rows.into_iter().rev() {
             if let Some(song) = self.deps.songs.by_id(member.song())? {
                 out.push(SongView::from(&song));
             }
         }
-        // Keep the position order the query returned.
         Ok(out)
     }
 
@@ -1052,8 +1055,10 @@ mod tests {
         let fixture = ScanFixture::new();
         fixture.write_file("older.flac", b"older-audio");
         fixture.write_file("newer.flac", b"newer-audio");
+        fixture.write_file("no-art.flac", b"no-art-audio");
         fixture.set_audio_with_cover("older.flac", "旧封面", 1_000, b"older-cover");
         fixture.set_audio_with_cover("newer.flac", "新封面", 1_000, b"newer-cover");
+        fixture.set_audio("no-art.flac", "无封面", 1_000);
         StartScan::new(&fixture.deps, &fixture.supervisor)
             .run(fixture.root)
             .expect("scan");
@@ -1077,6 +1082,10 @@ mod tests {
             .iter()
             .find(|song| song.title() == Some("新封面"))
             .expect("newer");
+        let no_art = songs
+            .iter()
+            .find(|song| song.title() == Some("无封面"))
+            .expect("no-art");
         app.add_to_playlists(older.id(), &[playlist])
             .expect("add older");
         app.add_to_playlists(newer.id(), &[playlist])
@@ -1086,6 +1095,13 @@ mod tests {
         assert_eq!(
             app.playlists().expect("list")[0].cover_key.as_deref(),
             Some(latest_key.as_str())
+        );
+        app.add_to_playlists(no_art.id(), &[playlist])
+            .expect("add song without art");
+        assert_eq!(
+            app.playlists().expect("list")[0].cover_key.as_deref(),
+            Some(latest_key.as_str()),
+            "a later song without artwork leaves the prior automatic cover intact"
         );
 
         app.set_playlist_cover(playlist, Some(b"manual-cover".to_vec()), Some("image/png"))
@@ -1167,7 +1183,12 @@ mod tests {
         app.add_to_playlists(ids[0], &[id]).expect("add 1");
         app.add_to_playlists(ids[1], &[id]).expect("add 2");
         let members = app.playlist_members(id).expect("members");
-        assert_eq!(members.len(), 2, "members commit in position order");
+        assert_eq!(members.len(), 2, "both members are committed");
+        assert_eq!(
+            members[0].id,
+            ids[1].to_string(),
+            "the last-added song is the first playlist row"
+        );
 
         let views = app.playlists().expect("list");
         assert_eq!(views.len(), 1);

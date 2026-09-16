@@ -6,17 +6,17 @@
  *   library-head 当前视图标题 + 计数 + 排序方式（图标按钮 + 排序菜单）
  *   table-wrap   歌曲表格（`.track-table`）
  *
- * It owns the search text, the four sort fields with direction, the row action
- * menu, and the import / add-to-playlist dialogs. Excluded on purpose (一期范围):
- * 同步、全选批量操作、歌单内手动排序、歌曲信息编辑。
+ * It owns the search text, this view's persisted sort, the row action menu,
+ * and the import / add-to-playlist dialogs. Excluded on purpose (一期范围):
+ * 同步、全选批量操作、歌曲信息编辑。
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { bridge } from "../../bridge";
 import { usePlayerSnapshot } from "../../player/playerStore";
 import type { ImportBatchDto, SongView } from "../../ipc/ipc-types.generated";
-import { LibraryViewKind, SongSortField } from "./types";
+import { LibraryViewKind } from "./types";
 import { bumpLibraryCount, invalidateLibraryCounts } from "./coverPalette";
 import { SongList } from "./SongList";
 import { useSongs } from "./useSongs";
@@ -25,9 +25,10 @@ import { SongMenu } from "./SongMenu";
 import type { MenuAnchor } from "./SongMenu";
 import { AddToPlaylistDialog } from "../playlists/AddToPlaylistDialog";
 import { ImportBatchDialog } from "../import/ImportBatchDialog";
+import { SongSortControl } from "./SongSortControl";
+import { useStoredSongSort } from "./useStoredSongSort";
 import { Icon } from "../../app/Icon";
 import { notify } from "../../app/toast";
-import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
 import { Topbar } from "../../app/shell";
 
 interface LibraryWorkspaceProps {
@@ -39,14 +40,6 @@ interface LibraryWorkspaceProps {
   readonly onLibraryChanged?: () => void;
 }
 
-/** The prototype's sort menu: four fields, then a separator and the direction. */
-const SORT_FIELDS: readonly { readonly key: SongSortField; readonly label: string }[] = [
-  { key: "addedAt", label: "最近添加" },
-  { key: "title", label: "歌曲名称" },
-  { key: "artist", label: "艺人" },
-  { key: "playCount", label: "播放次数" },
-];
-
 export function LibraryWorkspace({
   view,
   title,
@@ -55,35 +48,23 @@ export function LibraryWorkspace({
   onLibraryChanged,
 }: LibraryWorkspaceProps) {
   const [search, setSearch] = useState("");
-  const [sortField, setSortField] = useState<SongSortField>("addedAt");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [sortOpen, setSortOpen] = useState(false);
+  const [sort, setSort] = useStoredSongSort(view);
   // The menu is anchored to the `.song-more` control that opened it, as the
   // prototype does — never to a fixed corner.
   const [menuFor, setMenuFor] = useState<{ song: SongView; anchor: MenuAnchor } | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [addToPlaylistFor, setAddToPlaylistFor] = useState<SongView | null>(null);
   const snapshot = usePlayerSnapshot();
-  const sortWrapRef = useRef<HTMLDivElement>(null);
-
-  useOverlay({
-    tier: OverlayTier.Menu,
-    onClose: () => setSortOpen(false),
-    containerRef: sortWrapRef,
-    enabled: sortOpen,
-  });
-  useFocusTrap(sortWrapRef, sortOpen);
-
   const query = useMemo(
     () => ({
       view,
       search,
-      sort: { field: sortField, direction: sortDir },
+      sort,
       inFavorites: view === "favorites",
       root,
       readOnly,
     }),
-    [view, search, sortField, sortDir, root, readOnly],
+    [view, search, sort, root, readOnly],
   );
   const { page, loading, error, loadMore, reset, retry, patchSong } = useSongs(query);
 
@@ -120,11 +101,11 @@ export function LibraryWorkspace({
       void bridge.call("play_library_context", {
         view: view as "all" | "recent" | "favorites",
         query: search,
-        sort: `${sortField}:${sortDir}`,
+        sort: `${query.sort.field}:${query.sort.direction}`,
         selectedSong: song.id,
       });
     },
-    [view, search, sortField, sortDir],
+    [view, search, query.sort],
   );
 
   const onPlayNext = useCallback((song: SongView) => {
@@ -140,9 +121,9 @@ export function LibraryWorkspace({
       .catch(() => notify({ message: "加入播放队列失败，请重试", error: true }));
   }, []);
 
-  // Only 全部歌曲 accepts user-selected global sorting. Recent and favorites
-  // have their own deterministic definitions.
-  const showSort = view === "all";
+  // 最近添加 is intentionally a fixed chronological view. 全部歌曲 and 喜欢的
+  // 音乐 each own a saved menu selection rather than sharing one global sort.
+  const showSort = view !== "recent";
 
   return (
     <>
@@ -183,60 +164,7 @@ export function LibraryWorkspace({
             </div>
             {showSort ? (
               <div className="library-tools">
-                <div className="sort-wrap" ref={sortWrapRef}>
-                  <button
-                    type="button"
-                    className="tool-button tool-icon"
-                    aria-label="排序方式"
-                    title="排序方式"
-                    aria-expanded={sortOpen}
-                    onClick={() => setSortOpen((open) => !open)}
-                    data-testid="sort-button"
-                  >
-                    <Icon name="sort" />
-                  </button>
-                  <div
-                    className="sort-popover"
-                    role="menu"
-                    aria-label="排序选项"
-                    hidden={!sortOpen}
-                  >
-                    {SORT_FIELDS.map((field) => (
-                      <button
-                        key={field.key}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={field.key === sortField}
-                        className={`sort-option${field.key === sortField ? " active" : ""}`}
-                        onClick={() => {
-                          setSortField(field.key);
-                          setSortOpen(false);
-                        }}
-                      >
-                        <Icon className="sort-check" name="check" />
-                        <span>{field.label}</span>
-                      </button>
-                    ))}
-                    <div className="sort-divider" role="separator" />
-                    {(["asc", "desc"] as const).map((direction) => (
-                      <button
-                        key={direction}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={direction === sortDir}
-                        className={`sort-option${direction === sortDir ? " active" : ""}`}
-                        data-sort-direction={direction}
-                        onClick={() => {
-                          setSortDir(direction);
-                          setSortOpen(false);
-                        }}
-                      >
-                        <Icon className="sort-check" name="check" />
-                        <span>{direction === "asc" ? "升序" : "降序"}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                <SongSortControl sort={sort} onChange={setSort} />
               </div>
             ) : null}
           </div>

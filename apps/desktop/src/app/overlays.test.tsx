@@ -121,6 +121,13 @@ describe("Overlay manager (task 12.1)", () => {
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Tab" });
     expect(screen.getByTestId("btn-trapped")).toBeInTheDocument();
   });
+
+  it("dismisses the top menu when an interaction starts elsewhere", () => {
+    render(<StackHost />);
+    fireEvent.click(screen.getByTestId("open-menu"));
+    fireEvent.pointerDown(screen.getByTestId("open-dialog"));
+    expect(screen.queryByTestId("overlay-menu")).not.toBeInTheDocument();
+  });
 });
 
 describe("Roving menu focus (task 12.1)", () => {

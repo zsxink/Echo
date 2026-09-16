@@ -179,7 +179,8 @@ export function useSongs(query: SongQuery): {
   // In-view patch for a committed mutation (e.g. `set_favorite`'s returned
   // authoritative SongView). The favorites view only ever shows favorites, so
   // there a committed un-favorite removes the row; a song that just became a
-  // favorite is appended (the next full query restores the authoritative sort).
+  // favorite is inserted where the active favorites sort places it, so the
+  // immediate update agrees with the following authoritative query.
   const patchSong = useCallback(
     (song: SongView) => {
       setPage((prev) => {
@@ -194,7 +195,10 @@ export function useSongs(query: SongQuery): {
           return { ...prev, songs };
         }
         if (query.inFavorites) {
-          return { ...prev, songs: [...prev.songs, song] };
+          const index = favoriteInsertIndex(prev.songs, song, query.sort);
+          const songs = prev.songs.slice();
+          songs.splice(index, 0, song);
+          return { ...prev, songs };
         }
         return prev;
       });
@@ -203,6 +207,21 @@ export function useSongs(query: SongQuery): {
   );
 
   return { page, loading, error, loadMore, reset, retry, patchSong };
+}
+
+function favoriteInsertIndex(songs: readonly SongView[], song: SongView, sort: SongSort): number {
+  if (sort.field === "addedAt") return sort.direction === "desc" ? 0 : songs.length;
+  const direction = sort.direction === "asc" ? 1 : -1;
+  const compare = (candidate: SongView, existing: SongView) => {
+    if (sort.field === "playCount") return (candidate.playCount - existing.playCount) * direction;
+    const field = sort.field === "title" ? "title" : "artist";
+    const value = (candidate[field] ?? "").localeCompare(existing[field] ?? "", "zh-Hans-CN", {
+      sensitivity: "base",
+    });
+    return value * direction;
+  };
+  const index = songs.findIndex((existing) => compare(song, existing) < 0);
+  return index < 0 ? songs.length : index;
 }
 
 /** Turn a bridge failure into a short, user-safe message (no paths, ids). */

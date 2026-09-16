@@ -96,4 +96,34 @@ describe("useSongs search command", () => {
       }),
     );
   });
+
+  it("puts a newly favorited song at the top of the loaded favorites", async () => {
+    mocks.setInvoke("favorites", {
+      items: [{ id: "older", title: "Earlier favorite" }],
+      isLast: true,
+      nextCursor: null,
+    });
+    const { result } = renderHook(() => useSongs({ ...query, view: "favorites", inFavorites: true }));
+
+    await waitFor(() => expect(result.current.page.songs.map((song) => song.id)).toEqual(["older"]));
+    act(() => result.current.patchSong({ id: "newest", title: "Just favorited", favorite: true } as never));
+
+    expect(result.current.page.songs.map((song) => song.id)).toEqual(["newest", "older"]);
+  });
+
+  it("inserts a newly favorited song into the active manual order", async () => {
+    mocks.setInvoke("favorites", {
+      items: [{ id: "zebra", title: "Zebra" }],
+      isLast: true,
+      nextCursor: null,
+    });
+    const { result } = renderHook(() =>
+      useSongs({ ...query, view: "favorites", inFavorites: true, sort: { field: "title", direction: "asc" } }),
+    );
+
+    await waitFor(() => expect(result.current.page.songs.map((song) => song.id)).toEqual(["zebra"]));
+    act(() => result.current.patchSong({ id: "apple", title: "Apple", favorite: true } as never));
+
+    expect(result.current.page.songs.map((song) => song.id)).toEqual(["apple", "zebra"]);
+  });
 });

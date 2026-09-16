@@ -84,6 +84,9 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 .cover-e { background: color-mix(in oklab, var(--fg-2), var(--accent) 22%); }
 .cover.has-image::before, .cover.has-image::after { content: none; }
 .cover.has-image img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
+/* Playlist placeholders intentionally stay as a single, stable colour rather
+   than borrowing the song-list's record glyph. */
+.playlist-cover:not(.has-image)::before, .playlist-cover:not(.has-image)::after { content: none; }
 .track-text { min-width: 0; }
 .track-title, .track-artist, .track-album { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .track-title { font-size: var(--text-sm); font-weight: 650; }
@@ -156,7 +159,9 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 .playlist-cover-hint-overlay svg { width: 18px; height: 18px; flex: none; }
 .playlist-cover-preview:hover .playlist-cover-hint-overlay, .playlist-cover-preview:focus-visible .playlist-cover-hint-overlay { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .playlist-cover-hint-overlay { transition: none; } }
-.playlist-name-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: calc(var(--space-5) * .4); }
+.playlist-name-actions { display: flex; flex-wrap: nowrap; align-items: center; justify-content: flex-end; gap: var(--space-2); margin-top: calc(var(--space-5) * .4); }
+.playlist-name-actions .btn { min-height: 36px; padding-inline: var(--space-3); white-space: nowrap; }
+.playlist-reset-cover { margin-right: auto; }
 .playlist-picker-dialog { position: fixed; z-index: 32; inset: 0; display: grid; place-items: center; padding: var(--space-5); }
 .playlist-picker-dialog[hidden] { display: none; }
 .playlist-picker-dialog::before { content: ""; position: absolute; inset: 0; background: color-mix(in oklab, var(--fg), transparent 64%); }

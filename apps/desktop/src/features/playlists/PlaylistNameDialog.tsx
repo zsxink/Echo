@@ -27,6 +27,8 @@ export interface PlaylistNameDialogProps {
   readonly initialName?: string;
   /** Current effective cover, used as the edit preview. */
   readonly initialCoverKey?: string;
+  /** The resolved automatic cover behind any manual selection. */
+  readonly automaticCoverKey?: string;
   readonly hasCustomCover?: boolean;
   /** Active library identity. Required for creates; never infer or fabricate it. */
   readonly root?: string;
@@ -42,6 +44,7 @@ export function PlaylistNameDialog({
   playlistId,
   initialName = "",
   initialCoverKey,
+  automaticCoverKey,
   hasCustomCover = false,
   root,
   existingNames,
@@ -179,7 +182,7 @@ export function PlaylistNameDialog({
               aria-label="选择歌单封面图片"
               onClick={() => coverInputRef.current?.click()}
             >
-              <span className={`cover ${coverClass(playlistId ?? "playlist")}${coverPreview ? " has-image" : ""}`}>
+              <span className={`cover playlist-cover ${coverClass(playlistId ?? "playlist")}${coverPreview ? " has-image" : ""}`}>
                 {coverPreview ? <img src={coverPreview.startsWith("blob:") ? coverPreview : bridge.assetUrl(coverPreview)} alt="当前歌单封面" /> : null}
               </span>
               <span className="playlist-cover-hint-overlay"><Icon name="edit" />更换图片</span>
@@ -206,14 +209,22 @@ export function PlaylistNameDialog({
                 reader.readAsArrayBuffer(file);
               }}
             />
-            {coverChange !== null && (coverChange !== undefined || hasCustomCover) ? (
-              <button type="button" className="btn" onClick={() => { setCoverChange(null); setCoverMime(null); setCoverPreview(undefined); }}>
-                恢复自动封面
-              </button>
-            ) : null}
           </div>
         ) : null}
         <div className="playlist-name-actions">
+          {coverChange !== null && (coverChange !== undefined || hasCustomCover) ? (
+            <button
+              type="button"
+              className="btn playlist-reset-cover"
+              onClick={() => {
+                setCoverChange(null);
+                setCoverMime(null);
+                setCoverPreview(automaticCoverKey);
+              }}
+            >
+              自动封面
+            </button>
+          ) : null}
           <button type="button" className="btn" onClick={onClose}>
             取消
           </button>

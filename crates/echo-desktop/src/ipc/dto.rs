@@ -224,16 +224,29 @@ pub struct PlaylistView {
     /// Opaque `cover://` cache key. Missing for a new/empty playlist or when
     /// its newest member has no embedded artwork.
     pub cover_key: Option<String>,
+    /// The effective automatic artwork (the newest member that has embedded
+    /// artwork), available even while a manual cover is active.
+    pub automatic_cover_key: Option<String>,
     /// Whether `cover_key` is a user choice rather than automatic member art.
     pub has_custom_cover: bool,
 }
 
-impl From<(PlaylistId, String, usize, Option<String>, bool)> for PlaylistView {
+impl
+    From<(
+        PlaylistId,
+        String,
+        usize,
+        Option<String>,
+        Option<String>,
+        bool,
+    )> for PlaylistView
+{
     fn from(
-        (id, name, count, cover_key, has_custom_cover): (
+        (id, name, count, cover_key, automatic_cover_key, has_custom_cover): (
             PlaylistId,
             String,
             usize,
+            Option<String>,
             Option<String>,
             bool,
         ),
@@ -243,6 +256,7 @@ impl From<(PlaylistId, String, usize, Option<String>, bool)> for PlaylistView {
             name,
             member_count: count,
             cover_key,
+            automatic_cover_key,
             has_custom_cover,
         }
     }

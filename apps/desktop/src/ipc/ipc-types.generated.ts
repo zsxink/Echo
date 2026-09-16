@@ -50,6 +50,7 @@ export interface PlaylistView {
   readonly name: string;
   readonly memberCount: number;
   readonly coverKey?: string;
+  readonly automaticCoverKey?: string;
   readonly hasCustomCover: boolean;
 }
 

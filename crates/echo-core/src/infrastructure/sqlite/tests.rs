@@ -1978,6 +1978,64 @@ fn catalog_favorites_view_is_favorited_available_active_root_songs_only() {
     assert!(after.items.is_empty(), "取消收藏后歌曲立即从该视图移除");
 }
 
+#[test]
+fn catalog_favorites_orders_by_the_latest_favorite_action() {
+    let (_directory, database, root) = database();
+    let first = song(root, "songs/first.flac", "先收藏", "艺人");
+    let last = song(root, "songs/last.flac", "后收藏", "艺人");
+    SongRepository::upsert(&database, &first).expect("seed first");
+    SongRepository::upsert(&database, &last).expect("seed last");
+    SongRepository::set_favorite(&database, first.id(), true).expect("favorite first");
+    SongRepository::set_favorite(&database, last.id(), true).expect("favorite last");
+
+    // 最近添加 in the favorites view means the favorite action time, not the
+    // song's original library insertion time.
+    let page = CatalogQuery::new(&database)
+        .favorites(
+            SongSort {
+                field: SongSortField::AddedAt,
+                direction: SortDirection::Desc,
+            },
+            None,
+            100,
+        )
+        .expect("favorites");
+
+    assert_eq!(
+        page.items.iter().map(Song::id).collect::<Vec<_>>(),
+        vec![last.id(), first.id()],
+        "the song liked last is the first favorite row"
+    );
+}
+
+#[test]
+fn catalog_favorites_honors_its_own_manual_sort() {
+    let (_directory, database, root) = database();
+    let alphabetically_first = song(root, "songs/first.flac", "A song", "艺人");
+    let alphabetically_last = song(root, "songs/last.flac", "Z song", "艺人");
+    SongRepository::upsert(&database, &alphabetically_first).expect("seed first");
+    SongRepository::upsert(&database, &alphabetically_last).expect("seed last");
+    SongRepository::set_favorite(&database, alphabetically_first.id(), true).expect("favorite first");
+    SongRepository::set_favorite(&database, alphabetically_last.id(), true).expect("favorite last");
+
+    let page = CatalogQuery::new(&database)
+        .favorites(
+            SongSort {
+                field: SongSortField::Title,
+                direction: SortDirection::Asc,
+            },
+            None,
+            100,
+        )
+        .expect("favorites by title");
+
+    assert_eq!(
+        page.items.iter().map(Song::id).collect::<Vec<_>>(),
+        vec![alphabetically_first.id(), alphabetically_last.id()],
+        "a favorites-only choice must not inherit the default recent-favorite order"
+    );
+}
+
 /// 资料库导航计数: the SQLite implementation must agree with the views it
 /// advertises *and* with the in-memory fake, so a count can never be an
 /// artefact of one backend. The fixture is deliberately small enough that the

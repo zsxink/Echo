@@ -295,7 +295,16 @@ pub(crate) fn set_song_favorite(
 ) -> Result<(), Error> {
     connection
         .execute(
-            "UPDATE songs SET is_favorite = ?2, updated_at = ?3 WHERE uuid = ?1",
+            "UPDATE songs
+             SET is_favorite = ?2,
+                 favorited_at = CASE WHEN ?2 = 1 THEN MAX(?3, COALESCE((
+                     SELECT MAX(favorited_at) + 1 FROM songs
+                     WHERE library_root_uuid = (
+                         SELECT library_root_uuid FROM songs WHERE uuid = ?1
+                     )
+                 ), ?3)) ELSE NULL END,
+                 updated_at = ?3
+             WHERE uuid = ?1",
             params![id.to_string(), i64::from(favorite), now_ms()],
         )
         .map_err(storage)?;

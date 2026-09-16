@@ -61,6 +61,47 @@ describe("PlaylistsView (task 10.9)", () => {
     expect(screen.getByRole("heading", { name: "深夜" })).toBeInTheDocument();
   });
 
+  it("shows recently added playlist members first", async () => {
+    mockBridge({
+      playlist_members: [
+        { id: "newer", title: "刚加入", favorite: false, playCount: 0, availability: "available" },
+        { id: "older", title: "较早加入", favorite: false, playCount: 0, availability: "available" },
+      ],
+    });
+    renderView();
+
+    await screen.findByTestId("song-row-newer");
+    expect(screen.getAllByTestId(/song-row-/).map((row) => row.dataset.songId)).toEqual([
+      "newer",
+      "older",
+    ]);
+  });
+
+  it("sorts this playlist's members without changing their membership chronology default", async () => {
+    mockBridge({
+      playlist_members: [
+        { id: "newer", title: "Zebra", favorite: false, playCount: 0, availability: "available" },
+        { id: "older", title: "Apple", favorite: false, playCount: 0, availability: "available" },
+      ],
+    });
+    renderView();
+    await screen.findByTestId("song-row-newer");
+
+    fireEvent.click(screen.getByTestId("sort-button"));
+    fireEvent.click(screen.getByText("歌曲名称"));
+
+    expect(screen.getAllByTestId(/song-row-/).map((row) => row.dataset.songId)).toEqual([
+      "newer",
+      "older",
+    ]);
+    fireEvent.click(screen.getByTestId("sort-button"));
+    fireEvent.click(screen.getByText("升序"));
+    expect(screen.getAllByTestId(/song-row-/).map((row) => row.dataset.songId)).toEqual([
+      "older",
+      "newer",
+    ]);
+  });
+
   it("renames the playlist through rename_playlist and updates the title", async () => {
     mockBridge();
     renderView();

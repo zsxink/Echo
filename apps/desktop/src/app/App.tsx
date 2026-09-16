@@ -252,6 +252,7 @@ export function App() {
                   playlistId={activePlaylistId}
                   title={viewTitle}
                   coverKey={playlists.find((playlist) => playlist.id === activePlaylistId)?.coverKey}
+                  automaticCoverKey={playlists.find((playlist) => playlist.id === activePlaylistId)?.automaticCoverKey}
                   hasCustomCover={playlists.find((playlist) => playlist.id === activePlaylistId)?.hasCustomCover}
                   root={status.activeRoot ?? ""}
                   existingNames={playlists.map((playlist) => playlist.name)}

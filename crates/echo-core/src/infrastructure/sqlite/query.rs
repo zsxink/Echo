@@ -89,12 +89,12 @@ pub(crate) fn query_active(
     }
     if let Some(cursor) = cursor {
         let id = decode_cursor(cursor.keyset())?;
-        let keys = cursor_keys(connection, id, sort)?;
-        let (predicate, cursor_values) = keyset_predicate(sort, keys)?;
+        let keys = cursor_keys(connection, id, sort, favorites)?;
+        let (predicate, cursor_values) = keyset_predicate(sort, keys, favorites)?;
         clauses.push(predicate);
         values.extend(cursor_values);
     }
-    let order = sort_sql(sort);
+    let order = sort_sql(sort, favorites);
     let sql = format!(
         "{} WHERE {} ORDER BY {} LIMIT ?",
         SONG_SELECT,
@@ -157,7 +157,17 @@ fn count_available_songs(
     Ok(usize::try_from(count).unwrap_or(0))
 }
 
-fn sort_sql(sort: SongSort) -> String {
+fn sort_sql(sort: SongSort, favorites: bool) -> String {
+    if favorites && sort.field == SongSortField::AddedAt {
+        let direction = if sort.direction == SortDirection::Asc {
+            "ASC"
+        } else {
+            "DESC"
+        };
+        return format!(
+            "COALESCE(s.favorited_at, s.added_at) {direction}, s.uuid {direction}"
+        );
+    }
     let direction = if sort.direction == SortDirection::Asc {
         "ASC"
     } else {
@@ -175,12 +185,21 @@ fn sort_sql(sort: SongSort) -> String {
         .collect::<Vec<_>>()
         .join(", ")
 }
-fn cursor_keys(connection: &Connection, id: SongId, sort: SongSort) -> Result<Vec<Value>, Error> {
-    let columns = match sort.field {
+fn cursor_keys(
+    connection: &Connection,
+    id: SongId,
+    sort: SongSort,
+    favorites: bool,
+) -> Result<Vec<Value>, Error> {
+    let columns = if favorites && sort.field == SongSortField::AddedAt {
+        "COALESCE(favorited_at, added_at), uuid"
+    } else {
+        match sort.field {
         SongSortField::AddedAt => "added_at, uuid",
         SongSortField::Title => "title_sort, artist_sort, uuid",
         SongSortField::Artist => "artist_sort, title_sort, uuid",
         SongSortField::PlayCount => "play_count, title_sort, artist_sort, uuid",
+        }
     };
     let mut statement = connection
         .prepare(&format!("SELECT {columns} FROM songs WHERE uuid = ?1"))
@@ -209,12 +228,20 @@ fn cursor_keys(connection: &Connection, id: SongId, sort: SongSort) -> Result<Ve
         .map_err(storage)?
         .ok_or_else(|| Error::conflict("cursor song no longer exists"))
 }
-fn keyset_predicate(sort: SongSort, keys: Vec<Value>) -> Result<(String, Vec<Value>), Error> {
-    let columns: Vec<&str> = match sort.field {
+fn keyset_predicate(
+    sort: SongSort,
+    keys: Vec<Value>,
+    favorites: bool,
+) -> Result<(String, Vec<Value>), Error> {
+    let columns: Vec<&str> = if favorites && sort.field == SongSortField::AddedAt {
+        vec!["COALESCE(s.favorited_at, s.added_at)", "s.uuid"]
+    } else {
+        match sort.field {
         SongSortField::AddedAt => vec!["s.added_at", "s.uuid"],
         SongSortField::Title => vec!["s.title_sort", "s.artist_sort", "s.uuid"],
         SongSortField::Artist => vec!["s.artist_sort", "s.title_sort", "s.uuid"],
         SongSortField::PlayCount => vec!["s.play_count", "s.title_sort", "s.artist_sort", "s.uuid"],
+        }
     };
     if columns.len() != keys.len() {
         return Err(Error::InvariantViolation {

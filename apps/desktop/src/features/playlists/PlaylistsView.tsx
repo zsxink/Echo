@@ -15,12 +15,15 @@
  * song file.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { bridge } from "../../bridge";
 import { usePlayerSnapshot } from "../../player/playerStore";
 import type { SongView } from "../../ipc/ipc-types.generated";
 import { SongList } from "../library/SongList";
+import { SongSortControl } from "../library/SongSortControl";
+import { useStoredSongSort } from "../library/useStoredSongSort";
+import type { SongSort } from "../library/types";
 import { bumpLibraryCount, invalidateLibraryCounts } from "../library/coverPalette";
 import { publishSongUpdate } from "../library/songUpdates";
 import { ConfirmationDialog, SongMenu, type MenuAnchor } from "../library/SongMenu";
@@ -34,6 +37,7 @@ export interface PlaylistsViewProps {
   /** The playlist's display name, resolved by the shell. */
   readonly title: string;
   readonly coverKey?: string;
+  readonly automaticCoverKey?: string;
   readonly hasCustomCover?: boolean;
   readonly root: string;
   /** Authoritative sibling names from the shell, for local rename validation. */
@@ -49,6 +53,7 @@ export function PlaylistsView({
   playlistId,
   title,
   coverKey,
+  automaticCoverKey,
   hasCustomCover = false,
   root,
   existingNames,
@@ -57,6 +62,7 @@ export function PlaylistsView({
   onLibraryChanged,
 }: PlaylistsViewProps) {
   const [members, setMembers] = useState<readonly SongView[]>([]);
+  const [sort, setSort] = useStoredSongSort(`playlist:${playlistId}`);
   const [name, setName] = useState(title);
   const [menuFor, setMenuFor] = useState<{ song: SongView; anchor: MenuAnchor } | null>(null);
   const [renaming, setRenaming] = useState(false);
@@ -77,6 +83,8 @@ export function PlaylistsView({
       .then((value: unknown) => {
         if (id !== request.current) return;
         if (Array.isArray(value)) {
+          // The native command already returns newest playlist additions
+          // first. Keep that order for both the rendered list and playback.
           setMembers(value as SongView[]);
           setLoadError(null);
         }
@@ -151,6 +159,7 @@ export function PlaylistsView({
   }
 
   const unavailableCount = members.filter((s) => s.availability !== "available").length;
+  const sortedMembers = useMemo(() => sortPlaylistMembers(members, sort), [members, sort]);
 
   return (
     <>
@@ -166,6 +175,7 @@ export function PlaylistsView({
               <span className="library-total">{members.length} 首</span>
             </div>
             <div className="library-tools">
+              <SongSortControl sort={sort} onChange={setSort} />
               <button
                 type="button"
                 className="tool-button"
@@ -197,7 +207,7 @@ export function PlaylistsView({
           ) : null}
 
           <SongList
-            songs={members}
+            songs={sortedMembers}
             search=""
             loading={false}
             isLast
@@ -260,6 +270,7 @@ export function PlaylistsView({
           playlistId={playlistId}
           initialName={name}
           initialCoverKey={coverKey}
+          automaticCoverKey={automaticCoverKey}
           hasCustomCover={hasCustomCover}
           existingNames={existingNames}
           onClose={() => setRenaming(false)}
@@ -281,4 +292,32 @@ export function PlaylistsView({
       ) : null}
     </>
   );
+}
+
+/** The native list is newest membership first. Other choices sort only this
+ * playlist's loaded members, keeping its membership order as the tie-break. */
+function sortPlaylistMembers(members: readonly SongView[], sort: SongSort): readonly SongView[] {
+  const indexed = members.map((song, index) => ({ song, index }));
+  const direction = sort.direction === "asc" ? 1 : -1;
+  const compareText = (left: string | undefined, right: string | undefined) =>
+    (left ?? "").localeCompare(right ?? "", "zh-Hans-CN", { sensitivity: "base" });
+  indexed.sort((left, right) => {
+    if (sort.field === "addedAt") {
+      return sort.direction === "desc" ? left.index - right.index : right.index - left.index;
+    }
+    let value = 0;
+    switch (sort.field) {
+      case "title":
+        value = compareText(left.song.title, right.song.title);
+        break;
+      case "artist":
+        value = compareText(left.song.artist, right.song.artist);
+        break;
+      case "playCount":
+        value = left.song.playCount - right.song.playCount;
+        break;
+    }
+    return value === 0 ? left.index - right.index : value * direction;
+  });
+  return indexed.map(({ song }) => song);
 }
