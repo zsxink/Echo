@@ -1,6 +1,10 @@
 import { Hct, QuantizerWu, argbFromRgb, hexFromArgb } from "@material/material-color-utilities";
 
-import { warn } from "../../logging/log";
+// The `.ts` extension is explicit on purpose: this module is also loaded
+// directly by `scripts/diagnostics/artwork-palette-report.mjs` through Node's
+// type stripping, whose ESM resolver accepts only exact paths. Everything the
+// bundler sees is unaffected (`allowImportingTsExtensions` is on).
+import { warn } from "../../logging/log.ts";
 
 export interface ArtworkPalette {
   /** The record label's ink — the cover colour, kept saturated enough to read

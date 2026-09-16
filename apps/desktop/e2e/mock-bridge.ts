@@ -125,9 +125,8 @@ type UnnamedCommands = Exclude<keyof BridgeCommandMap, Command>;
 
 /** `true` while the union above names every command the bridge declares; a
  *  *command name* the moment one does not, which fails the assignment. */
-export const MOCK_NAMES_EVERY_COMMAND: [UnnamedCommands] extends [never]
-  ? true
-  : UnnamedCommands = true;
+export const MOCK_NAMES_EVERY_COMMAND: [UnnamedCommands] extends [never] ? true : UnnamedCommands =
+  true;
 
 /** How an invoke result can be wired. */
 type Handler = (args: AnyRecord, state: E2EState) => unknown;
@@ -183,8 +182,16 @@ function toView(s: MockSong): import("../src/ipc/ipc-types.generated").SongView 
  * Commands whose completion republishes the player snapshot, exactly as the
  * real runtime does after the actor accepts a playback request.
  */
+/** Commands that make the runtime republish the player snapshot.
+ *
+ * A command that starts playback but is missing here accepts the request and
+ * tells nobody: the handler updates the mock's own state, no event leaves, and
+ * the player bar stays as it was. `play_library_context` was missing on the day
+ * the app switched to it from `play_context`, which is what A8 was reporting —
+ * the click worked, the song never reached the bar. */
 const PLAYER_COMMANDS: ReadonlySet<string> = new Set([
   "play_context",
+  "play_library_context",
   "play_temporary_file",
   "player_control",
   "queue_command",
@@ -477,9 +484,7 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
       const playable = state.songs.filter((s) => s.availability === "available");
       const scoped = view === "favorites" ? playable.filter((s) => s.favorite) : playable;
       const q = String(query ?? "").toLowerCase();
-      const matched = q
-        ? scoped.filter((s) => (s.title ?? "").toLowerCase().includes(q))
-        : scoped;
+      const matched = q ? scoped.filter((s) => (s.title ?? "").toLowerCase().includes(q)) : scoped;
       const id = (selectedSong as string | undefined) ?? matched[0]?.id;
       if (!id) return emptyError("unavailable", "noLibrary", true);
       st.nowPlaying = { songId: id, position: 0, playing: true };
