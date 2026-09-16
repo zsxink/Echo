@@ -477,8 +477,8 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 #playback-mode svg { width: 20px; height: 20px; overflow: visible; }
 .control-play { width: 44px; height: 44px; color: var(--accent-on); background: var(--accent-strong); }
 .control-play:hover { color: var(--accent-on); background: var(--accent-strong-hover); }
-.progress-line { --progress: 37%; position: absolute; z-index: 3; inset: -4px 0 auto; width: 100%; height: 8px; }
-.progress-line::before, .progress-line::after { content: ""; position: absolute; top: 2px; height: 4px; border-radius: var(--radius-pill); pointer-events: none; }
+.progress-line { --progress: 37%; --slider-track-height: 4px; position: absolute; z-index: 3; inset: -4px 0 auto; width: 100%; height: 8px; }
+.progress-line::before, .progress-line::after { content: ""; position: absolute; top: calc((8px - var(--slider-track-height)) / 2); height: var(--slider-track-height); border-radius: var(--radius-pill); pointer-events: none; }
 .progress-line::before { right: 0; left: 0; background: color-mix(in oklab, var(--fg), transparent 78%); }
 .progress-line::after { left: 0; width: var(--progress); background: var(--accent); }
 .progress { position: relative; z-index: 1; display: block; width: 100%; height: 8px; margin: 0; appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer; }
@@ -494,8 +494,8 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 .volume-button:hover { color: var(--fg); background: var(--surface); }
 .volume-button.is-muted { color: var(--muted); }
 .volume-button.is-muted:hover { color: var(--fg-2); background: var(--surface); }
-.volume-line { --volume: 70%; position: relative; width: 104px; height: 8px; }
-.volume-line::before, .volume-line::after { content: ""; position: absolute; top: 2px; height: 4px; border-radius: var(--radius-pill); pointer-events: none; }
+.volume-line { --volume: 70%; --slider-track-height: 4px; position: relative; width: 104px; height: 8px; }
+.volume-line::before, .volume-line::after { content: ""; position: absolute; top: calc((8px - var(--slider-track-height)) / 2); height: var(--slider-track-height); border-radius: var(--radius-pill); pointer-events: none; }
 .volume-line::before { right: 0; left: 0; background: color-mix(in oklab, var(--fg), transparent 78%); }
 .volume-line::after { left: 0; width: var(--volume); background: var(--accent); }
 .volume { position: relative; z-index: 1; display: block; width: 100%; height: 8px; margin: 0; appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer; }
@@ -527,6 +527,7 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 @media (min-width: 981px) { .now-playing-popover { grid-template-rows: minmax(0, 1fr); grid-template-areas: "record lyrics"; } .now-playing-info { grid-area: lyrics; position: relative; z-index: 1; pointer-events: none; } .now-playing-popover .lyrics { grid-area: lyrics; min-height: 0; align-self: stretch; height: auto; margin-top: var(--lyrics-start-offset, 0px); padding-bottom: var(--space-2); } }
 body.player-mode-open { overflow: hidden; }
 body.player-mode-open .playerbar { position: relative; z-index: 9; background: color-mix(in oklab, var(--player-tint, var(--accent)), var(--fg) 76%); border-color: color-mix(in oklab, var(--accent-on), transparent 82%); color: var(--accent-on); backdrop-filter: blur(18px) saturate(135%); }
+body.player-mode-open .progress-line, body.player-mode-open .volume-line { --slider-track-height: 2px; }
 body.player-mode-open .playerbar .player-track-card { color: var(--accent-on); background: transparent; }
 body.player-mode-open .playerbar .player-track-card:hover { background: color-mix(in oklab, var(--accent-on), transparent 87%); }
 body.player-mode-open .playerbar .player-track-card[aria-expanded="true"] { background: transparent; }
@@ -537,7 +538,7 @@ body.player-mode-open .playerbar .control:hover, body.player-mode-open .playerba
 body.player-mode-open .playerbar .control-play { color: var(--accent-on); background: var(--accent-strong); }
 body.player-mode-open .playerbar .control-play:hover { color: var(--accent-on); background: var(--accent-strong-hover); }
 body.player-mode-open .playerbar .progress-line::before, body.player-mode-open .playerbar .volume-line::before { background: color-mix(in oklab, var(--accent-on), transparent 76%); }
-body.player-mode-open .playerbar .progress-line::after, body.player-mode-open .playerbar .volume-line::after { background: var(--accent-strong); box-shadow: inset 0 0 0 1px var(--bg); }
+body.player-mode-open .playerbar .progress-line::after, body.player-mode-open .playerbar .volume-line::after { background: var(--accent-strong); }
 body.player-mode-open .playerbar .progress::-webkit-slider-thumb { border-color: var(--bg); background: var(--accent-strong); }
 body.player-mode-open .playerbar .progress::-moz-range-thumb { border-color: var(--bg); background: var(--accent-strong); }
 body.player-mode-open .playerbar .volume::-webkit-slider-thumb { border-color: var(--bg); background: var(--accent-strong); }
