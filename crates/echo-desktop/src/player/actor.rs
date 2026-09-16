@@ -1333,6 +1333,33 @@ mod tests {
         (actor, snapshot, observations)
     }
 
+    /// A backend whose `queue_load` emits its `FileLoaded` event afterwards,
+    /// matching the causal ordering of libmpv instead of relying on a startup
+    /// race in a scripted event queue.
+    type FileLoadedActorFixture = (
+        PlayerActor,
+        Arc<RwLock<PlayerSnapshot>>,
+        Arc<std::sync::Mutex<Vec<BackendProperty>>>,
+    );
+
+    fn spawn_test_file_loaded_on_load() -> FileLoadedActorFixture {
+        let snapshot = snapshot_stub();
+        let props = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let props_join = props.clone();
+        let actor = PlayerActor::spawn_with(
+            move || -> Result<TestBackend, ffi::HandleError> {
+                let mut backend = TestBackend::new(vec![]);
+                backend.props = props_join;
+                backend.file_loaded_on_load = true;
+                Ok(backend)
+            },
+            snapshot.clone(),
+            None,
+        )
+        .expect("spawn");
+        (actor, snapshot, props)
+    }
+
     /// A `LoadTemporary` command for the throwaway test path.
     fn load_temporary(path: &str) -> PlayerCommand {
         PlayerCommand::LoadTemporary {
@@ -1357,6 +1384,20 @@ mod tests {
         snapshot.read().expect("snapshot poisoned").clone()
     }
 
+    fn wait_for_property_writes(
+        props: &Arc<std::sync::Mutex<Vec<BackendProperty>>>,
+        count: usize,
+    ) -> Vec<BackendProperty> {
+        for _ in 0..100 {
+            let writes = props.lock().expect("properties poisoned").clone();
+            if writes.len() >= count {
+                return writes;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        props.lock().expect("properties poisoned").clone()
+    }
+
     fn tpos(v: f64) -> BackendEvent {
         BackendEvent::PropertyChanged {
             name: "time-pos".into(),
@@ -1379,9 +1420,11 @@ mod tests {
 
     #[test]
     fn load_drives_state_from_stopped_to_playing_via_file_loaded() {
-        // A backend that reports FileLoaded (after loadfile) should drive the
-        // actor Loading → Playing. We inject the FileLoaded event.
-        let (mut actor, snapshot, _props) = spawn_test(vec![BackendEvent::FileLoaded]);
+        // `TestBackend::load` emits FileLoaded *after* the actor receives this
+        // command, just like mpv. Pre-seeding the event races actor startup and
+        // can consume it while stopped, which tests neither the load transition
+        // nor the production event ordering.
+        let (mut actor, snapshot, _props) = spawn_test_file_loaded_on_load();
         assert_eq!(actor.snapshot().state, PlaybackState::Stopped);
 
         actor
@@ -2003,7 +2046,7 @@ mod tests {
         // The space-bar hotkey path must reach mpv too (the leading write is the
         // load's play intent, re-asserted on FileLoaded).
         assert_eq!(
-            props.lock().unwrap().clone(),
+            wait_for_property_writes(&props, 2),
             vec![BackendProperty::Pause(false), BackendProperty::Pause(true)]
         );
         actor.shutdown();

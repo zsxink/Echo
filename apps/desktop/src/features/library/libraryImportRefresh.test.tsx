@@ -88,4 +88,19 @@ describe("导入完成后的资料库刷新", () => {
       expect(calls).toBeGreaterThan(callsBeforeImport);
     });
   });
+
+  it.each([
+    ["recent" as const, "最近添加", "recent"],
+    ["favorites" as const, "喜欢的音乐", "favorites"],
+  ])("does not expose all-songs sorting in the %s view", async (view, title, command) => {
+    mocks.setInvoke(
+      command,
+      command === "recent" ? [beforeImport] : { items: [beforeImport], isLast: true, nextCursor: null },
+    );
+
+    render(<LibraryWorkspace view={view} title={title} root="root-1" readOnly={false} />);
+
+    expect(await screen.findByText(beforeImport.title)).toBeInTheDocument();
+    expect(screen.queryByTestId("sort-button")).not.toBeInTheDocument();
+  });
 });

@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 scenario_id: LL-R02-S03
 requirement: 扫描、监听与手动重扫
-scenario: 监听外部新增和修改
+scenario: 忽略控制面目录
 layer: automated
 command: "cargo test -p echo-core --all-features scan::tests::progress_persisted_throttled_and_terminal_state_kept"
 

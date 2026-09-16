@@ -118,6 +118,27 @@ describe("QueuePanel (task 11.2)", () => {
     expect(screen.getByText("加载失败")).toBeInTheDocument();
   });
 
+  it("keeps blocked restored entries visible with retry guidance", () => {
+    playerStore.setQueueOpen(true);
+    playerStore.publish(
+      makeSnapshot({
+        queue: [
+          {
+            entryId: "blocked",
+            songId: "s1",
+            title: null,
+            isCurrent: false,
+            failed: false,
+            blocked: true,
+            canImport: false,
+          },
+        ],
+      }),
+    );
+    render(<QueuePanel />);
+    expect(screen.getByText("暂时不可用，可在资料库恢复后重试")).toBeInTheDocument();
+  });
+
   it("清空待播 sends clearPending and does not stop the current song or touch playlists", () => {
     call.mockReset();
     call.mockResolvedValue(undefined);

@@ -185,8 +185,14 @@ fn wire_composition(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
         Arc::new(move || {
             let coord = coordinator.lock().expect("player coordinator lock");
             player::CoordinatorView {
-                entries: coord.queue().entries().to_vec(),
+                entries: coord.queue_view(),
                 failed_round: coord.failed_round().collect(),
+                blocked: coord
+                    .queue_view()
+                    .iter()
+                    .filter(|entry| coord.queue().is_blocked(entry.id))
+                    .map(|entry| entry.id)
+                    .collect(),
                 current: coord.current().cloned(),
                 mode: coord.mode(),
             }
@@ -338,7 +344,8 @@ fn cover_protocol_handler<R: tauri::Runtime>(
                 .header("Content-Type", media_type)
                 .header("Vary", "Origin");
             // Canvas extraction needs an origin-clean image. Grant pixel reads
-            // only to the bundled renderer (and the fixed local dev server).
+            // only to the bundled renderer (and, in a dev build, the local dev
+            // server — whatever port it picked).
             if let Some(origin) = request
                 .headers()
                 .get("Origin")
@@ -346,6 +353,14 @@ fn cover_protocol_handler<R: tauri::Runtime>(
             {
                 if cover_canvas_origin_allowed(origin) {
                     response = response.header("Access-Control-Allow-Origin", origin);
+                } else if cfg!(debug_assertions) {
+                    // A refused pixel read is otherwise completely silent: the
+                    // probe's `crossOrigin` request fails, the palette resolves
+                    // to `null`, and the immersive surface falls back to the
+                    // theme colour for *every* song while the DOM cover still
+                    // renders. This line is the only place the refusal is
+                    // observable, so make it observable on purpose.
+                    eprintln!("cover: refused pixel access to origin {origin}");
                 }
             }
             response.body(bytes).unwrap_or_default()
@@ -359,11 +374,43 @@ fn cover_protocol_handler<R: tauri::Runtime>(
     }
 }
 
+/// The origins allowed to read cover **pixels** (an origin-clean `<img>` plus a
+/// canvas read-back).
+///
+/// The bundled renderer has one fixed origin per platform — see the three
+/// literals below. A dev build does not: with no `devUrl` configured, `tauri
+/// dev` serves `frontendDist` from its own static server, which picks its port
+/// at runtime (1430, or the next free one). Naming a single dev port here made
+/// the whitelist stop matching the moment the CLI chose another one — and that
+/// failure is invisible end to end: the probe's `crossOrigin` request gets no
+/// `Access-Control-Allow-Origin`, the palette resolves to `null`, and the
+/// immersive surface falls back to the theme colour for *every* song, while the
+/// DOM cover (which needs no CORS) keeps rendering normally.
+///
+/// A dev build therefore accepts any loopback origin rather than a guessed
+/// port. Release builds keep the fixed, enumerated set.
 fn cover_canvas_origin_allowed(origin: &str) -> bool {
-    matches!(
+    if matches!(
         origin,
         "tauri://localhost" | "http://tauri.localhost" | "https://tauri.localhost"
-    ) || (cfg!(debug_assertions) && origin == "http://localhost:1420")
+    ) {
+        return true;
+    }
+    cfg!(debug_assertions) && is_loopback_http_origin(origin)
+}
+
+/// `http://<loopback>:<port>` — the shape of a local dev server's origin.
+///
+/// The port is required, and the host must be loopback: `Origin: null` (a
+/// sandboxed or `data:` document), `http://localhost` with no port, and
+/// `http://localhost.example.com` all parse as URLs but none of them is the
+/// renderer.
+fn is_loopback_http_origin(origin: &str) -> bool {
+    tauri::Url::parse(origin).is_ok_and(|url| {
+        url.scheme() == "http"
+            && url.port().is_some()
+            && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"))
+    })
 }
 
 /// The media type of an embedded cover, derived from the bytes themselves.
@@ -438,6 +485,7 @@ fn main() {
             commands::set_theme,
             commands::set_close_behavior,
             commands::play_context,
+            commands::play_library_context,
             commands::restore_playback_session,
             commands::play_temporary_file,
             commands::import_current_temporary_file,
@@ -572,14 +620,44 @@ mod cover_canvas_tests {
         for origin in [
             "null",
             "https://example.com",
-            "http://localhost:1421",
             "http://tauri.localhost.evil.com",
+            "http://localhost.evil.com:1430",
+            "http://192.168.1.10:1430",
+            "file:///tmp/cover.html",
         ] {
-            assert!(!super::cover_canvas_origin_allowed(origin));
+            assert!(!super::cover_canvas_origin_allowed(origin), "{origin}");
         }
-        assert_eq!(
-            super::cover_canvas_origin_allowed("http://localhost:1420"),
-            cfg!(debug_assertions)
-        );
+    }
+
+    /// The port of the dev server is chosen by the CLI at runtime, so the
+    /// renderer's dev origin is *not* a constant. Pinning one port — this suite
+    /// used to pin 1420, while `tauri dev` served 1430 — is precisely how the
+    /// immersive palette came to fall back to the theme for every song: the
+    /// whitelist stopped matching and nothing anywhere said so.
+    #[test]
+    fn a_dev_build_accepts_whatever_loopback_port_the_renderer_is_served_from() {
+        for origin in [
+            "http://localhost:1420",
+            "http://localhost:1430",
+            "http://localhost:1431",
+            "http://127.0.0.1:1430",
+        ] {
+            assert!(super::is_loopback_http_origin(origin), "{origin}");
+            assert_eq!(
+                super::cover_canvas_origin_allowed(origin),
+                cfg!(debug_assertions),
+                "{origin}"
+            );
+        }
+        // Loopback-shaped but not a renderer: no port, not http, not loopback.
+        for origin in [
+            "http://localhost",
+            "http://127.0.0.1",
+            "https://localhost:1430",
+            "ftp://localhost:1430",
+            "localhost:1430",
+        ] {
+            assert!(!super::is_loopback_http_origin(origin), "{origin}");
+        }
     }
 }

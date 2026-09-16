@@ -34,6 +34,8 @@ export interface UiQueueEntry {
   readonly title: string | null;
   readonly isCurrent: boolean;
   readonly failed: boolean;
+  /** A restored entry whose song/root is temporarily unavailable. */
+  readonly blocked?: boolean;
   /** True when this entry is a session-only temporary item (no library song_id)
    *  that can be imported into the active library (task 11.7). */
   readonly canImport: boolean;

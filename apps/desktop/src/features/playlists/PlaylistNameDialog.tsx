@@ -23,17 +23,20 @@ export interface PlaylistNameDialogProps {
   /** Required for `mode="edit"` — the playlist being renamed. */
   readonly playlistId?: string;
   readonly initialName?: string;
+  /** Active library identity. Required for creates; never infer or fabricate it. */
+  readonly root?: string;
   /** Names already in use; the current playlist's own name is excluded. */
   readonly existingNames: readonly string[];
   readonly onClose: () => void;
   /** Called with the accepted (trimmed) name after the mutation succeeds. */
-  readonly onDone: (name: string) => void;
+  readonly onDone: (name: string, createdId?: string) => void;
 }
 
 export function PlaylistNameDialog({
   mode,
   playlistId,
   initialName = "",
+  root,
   existingNames,
   onClose,
   onDone,
@@ -75,15 +78,21 @@ export function PlaylistNameDialog({
       return;
     }
     if (busy) return;
+    if (creating && !root?.trim()) {
+      setError("当前资料库不可用，请恢复后重试");
+      return;
+    }
     setBusy(true);
     const name = value.trim();
     try {
       if (creating) {
-        await bridge.call("create_playlist", { root: "", name });
+        const createdId = await bridge.call("create_playlist", { root, name });
+        if (typeof createdId === "string") onDone(name, createdId);
+        else onDone(name);
       } else {
         await bridge.call("rename_playlist", { id: playlistId, name });
+        onDone(name);
       }
-      onDone(name);
       onClose();
     } catch (err) {
       // A duplicate name is rejected server-side too (task 6.6); never invent a
@@ -158,19 +167,22 @@ export function PlaylistNameDialog({
 /** The 新建歌单 entry — the sidebar `+` and the picker's 新建歌单 both use this. */
 export function PlaylistCreateDialog({
   existingNames,
+  root,
   onClose,
   onCreated,
 }: {
   readonly existingNames: readonly string[];
+  readonly root?: string;
   readonly onClose: () => void;
-  readonly onCreated?: (name: string) => void;
+  readonly onCreated?: (name: string, createdId?: string) => void;
 }) {
   return (
     <PlaylistNameDialog
       mode="create"
+      root={root}
       existingNames={existingNames}
       onClose={onClose}
-      onDone={(name) => onCreated?.(name)}
+      onDone={(name, createdId) => onCreated?.(name, createdId)}
     />
   );
 }

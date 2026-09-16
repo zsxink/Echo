@@ -172,8 +172,11 @@ pub fn favorites(
 }
 
 #[tauri::command]
-pub fn recent(services: State<'_, AppServices>) -> Result<Vec<SongView>, IpcErrorDto> {
-    services.recent().map_err(IpcErrorDto::from)
+pub fn recent(
+    services: State<'_, AppServices>,
+    query: String,
+) -> Result<Vec<SongView>, IpcErrorDto> {
+    services.recent(&query).map_err(IpcErrorDto::from)
 }
 
 /// Per-view song totals for the navigation sidebar (counts must be readable
@@ -488,6 +491,44 @@ pub fn play_context(
     Ok(())
 }
 
+/// Resolve a library view on desktop before building a queue. Unlike
+/// `play_context`, this accepts no client-side page of song IDs.
+#[tauri::command]
+pub fn play_library_context(
+    services: State<'_, AppServices>,
+    state: State<'_, PlayerHandle>,
+    view: String,
+    query: String,
+    sort: String,
+    selected_song: String,
+) -> Result<(), IpcErrorDto> {
+    let sort = parse_sort(&sort)?;
+    let selected = parse_id::<SongId>(&selected_song, "selectedSong")?;
+    let songs = services
+        .resolve_library_playback_context(&view, &query, sort, selected)
+        .map_err(IpcErrorDto::from)?;
+    let selected_index = songs
+        .iter()
+        .position(|song| *song == selected)
+        .ok_or_else(|| {
+            IpcErrorDto::from(&echo_core::error::Error::conflict(
+                "selected song is no longer in the active library view",
+            ))
+        })?;
+    state
+        .coordinator
+        .lock()
+        .expect("player coordinator lock")
+        .play_context(&ViewContext {
+            songs,
+            selected_index,
+        });
+    if let Ok(mut slot) = state.source.lock() {
+        *slot = Some(view);
+    }
+    Ok(())
+}
+
 /// Cold-start playback restore (task 8.9 + 默认态): a persisted session is
 /// rebuilt paused; with nothing persisted, the first song of 全部歌曲 is
 /// primed into the 播放控制栏 (paused, 列表循环). Returns what happened:
@@ -517,6 +558,7 @@ pub fn restore_playback_session(
     let outcome = echo_desktop::runtime::player::restore_or_prime_playback(
         &state.coordinator,
         &persistence,
+        |session| services.playback_restore_verdicts(session),
         default_view_songs,
     );
     if outcome == "primed" {
@@ -611,6 +653,7 @@ pub fn player_control(state: State<'_, PlayerHandle>, action: String) -> Result<
 
 #[tauri::command]
 pub fn queue_command(
+    services: State<'_, AppServices>,
     state: State<'_, PlayerHandle>,
     command: String,
     song_id: Option<String>,
@@ -632,6 +675,7 @@ pub fn queue_command(
             }
         }
         "clearPending" => coord.clear_pending(),
+        "retryBlocked" => coord.retry_blocked(|song| services.playback_song_is_playable(song)),
         _ => {}
     }
     Ok(())

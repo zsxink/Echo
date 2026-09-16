@@ -41,6 +41,9 @@ pub struct UiQueueEntry {
     pub title: Option<String>,
     pub is_current: bool,
     pub failed: bool,
+    /// A restored library entry whose file or root is currently unavailable.
+    /// It remains visible and is retried only when availability returns.
+    pub blocked: bool,
     /// True when this is a session-only temporary item (no `song_id`) that can
     /// be imported into the active library (task 11.7). Derived; never false
     /// for a library entry.
@@ -176,6 +179,7 @@ pub fn map_snapshot(raw: &PlayerSnapshot, view: &CoordinatorView) -> UiPlayerSna
                     },
                     is_current: Some(e.id) == current_id,
                     failed: view.failed_round.contains(&e.id),
+                    blocked: view.blocked.contains(&e.id),
                     can_import: is_temporary,
                 }
             })
@@ -435,6 +439,8 @@ pub struct CoordinatorView {
     pub entries: Vec<crate::player::queue::QueueEntry>,
     /// Entries that failed to load/decode in the current round (task 8.7).
     pub failed_round: std::collections::HashSet<echo_core::domain::ids::QueueEntryId>,
+    /// Restored entries preserved as currently unavailable.
+    pub blocked: std::collections::HashSet<echo_core::domain::ids::QueueEntryId>,
     /// The current entry, if any.
     pub current: Option<crate::player::queue::QueueEntry>,
     /// The active playback mode (顺序 / 随机 / 单曲循环).
@@ -600,6 +606,9 @@ pub fn spawn_session_saver(
 pub fn restore_or_prime_playback(
     coordinator: &Mutex<PlaybackCoordinator<Arc<dyn PlayerPort>>>,
     persistence: &dyn SessionPersistence,
+    restore_verdicts: impl FnOnce(
+        &crate::player::session::PlaybackSession,
+    ) -> Vec<crate::player::session::RestoreVerdict>,
     default_view_songs: impl FnOnce() -> Vec<echo_core::domain::ids::SongId>,
 ) -> &'static str {
     let restored = match persistence.load() {
@@ -607,7 +616,7 @@ pub fn restore_or_prime_playback(
         _ => None,
     };
     if let Some(session) = restored {
-        let (queue, _summary) = rebuild_queue(&session, &[]);
+        let (queue, _summary) = rebuild_queue(&session, &restore_verdicts(&session));
         let volume = session.volume;
         let muted = session.muted;
         let mode = session.mode;
@@ -732,9 +741,12 @@ mod tests {
             Some("playlist:p9"),
         );
         let store = MemSession::with(session);
-        let outcome = restore_or_prime_playback(&controller.coordinator, &store, || {
-            panic!("default view must not be queried when a session restores")
-        });
+        let outcome = restore_or_prime_playback(
+            &controller.coordinator,
+            &store,
+            |_| vec![],
+            || panic!("default view must not be queried when a session restores"),
+        );
         assert_eq!(outcome, "restored");
         let coord = controller.coordinator.lock().expect("lock");
         assert_eq!(coord.snapshot().state, PlaybackState::Paused);
@@ -754,7 +766,8 @@ mod tests {
         let store = MemSession::empty();
         let s1 = SongId::new();
         let s2 = SongId::new();
-        let outcome = restore_or_prime_playback(&controller.coordinator, &store, || vec![s1, s2]);
+        let outcome =
+            restore_or_prime_playback(&controller.coordinator, &store, |_| vec![], || vec![s1, s2]);
         assert_eq!(outcome, "primed");
         let coord = controller.coordinator.lock().expect("lock");
         assert_eq!(coord.snapshot().state, PlaybackState::Paused);
@@ -771,7 +784,8 @@ mod tests {
     fn restore_or_prime_yields_an_empty_bar_for_an_empty_library() {
         let controller = PlayerController::over_fake(FakePlayer::new());
         let store = MemSession::empty();
-        let outcome = restore_or_prime_playback(&controller.coordinator, &store, Vec::new);
+        let outcome =
+            restore_or_prime_playback(&controller.coordinator, &store, |_| vec![], Vec::new);
         assert_eq!(outcome, "empty");
         let coord = controller.coordinator.lock().expect("lock");
         assert!(coord.queue().is_empty());
@@ -1032,6 +1046,7 @@ mod tests {
         let view = CoordinatorView {
             entries: vec![],
             failed_round: Default::default(),
+            blocked: Default::default(),
             current: None,
             mode: PlayMode::Shuffle,
         };
@@ -1058,6 +1073,7 @@ mod tests {
         let view = CoordinatorView {
             entries: vec![entry.clone()],
             failed_round: Default::default(),
+            blocked: Default::default(),
             current: Some(entry.clone()),
             mode: PlayMode::Sequential,
         };
@@ -1096,6 +1112,7 @@ mod tests {
         let view = CoordinatorView {
             entries: vec![entry.clone()],
             failed_round: Default::default(),
+            blocked: Default::default(),
             current: Some(entry.clone()),
             mode: PlayMode::RepeatOne,
         };
@@ -1124,6 +1141,7 @@ mod tests {
         let view = CoordinatorView {
             entries: vec![entry.clone()],
             failed_round: Default::default(),
+            blocked: Default::default(),
             current: Some(entry.clone()),
             mode: PlayMode::Sequential,
         };
@@ -1159,6 +1177,7 @@ mod tests {
         let view = CoordinatorView {
             entries,
             failed_round,
+            blocked: Default::default(),
             current: Some(current),
             mode: PlayMode::Sequential,
         };
@@ -1172,6 +1191,22 @@ mod tests {
         assert!(!ui.current_can_import);
         assert!(!ui.queue[0].can_import);
         assert!(!ui.queue[1].can_import);
+    }
+
+    #[test]
+    fn map_snapshot_surfaces_blocked_queue_entries() {
+        let entry = QueueEntry {
+            id: QueueEntryId::new(),
+            item: QueueItem::Library(SongId::new()),
+        };
+        let view = CoordinatorView {
+            entries: vec![entry.clone()],
+            failed_round: Default::default(),
+            blocked: std::collections::HashSet::from([entry.id]),
+            current: Some(entry),
+            mode: PlayMode::Sequential,
+        };
+        assert!(map_snapshot(&PlayerSnapshot::default(), &view).queue[0].blocked);
     }
 
     #[test]
@@ -1194,8 +1229,14 @@ mod tests {
         let provider: Arc<dyn Fn() -> CoordinatorView + Send + Sync> = Arc::new(move || {
             let coord = coordinator.lock().expect("coordinator lock");
             CoordinatorView {
-                entries: coord.queue().entries().to_vec(),
+                entries: coord.queue_view(),
                 failed_round: coord.failed_round().collect(),
+                blocked: coord
+                    .queue_view()
+                    .iter()
+                    .filter(|entry| coord.queue().is_blocked(entry.id))
+                    .map(|entry| entry.id)
+                    .collect(),
                 current: coord.current().cloned(),
                 mode: coord.mode(),
             }

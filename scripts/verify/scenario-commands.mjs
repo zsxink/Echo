@@ -87,7 +87,10 @@ export const COMMANDS = {
   "DP-R06-S01": COREC("infrastructure::sqlite::tests::playback_sessions_are_idempotent"),
   "DP-R06-S02": COREC("infrastructure::sqlite::tests::playback_sessions_are_idempotent"),
   "DP-R07-S01": DESK("platform::local_state"),
-  "DP-R07-S02": DESK("platform::local_state"),
+  // Phase-one recovery regression: desktop queue/session paths plus the
+  // committed playlist and failure-feedback UI path run as one registered
+  // offline acceptance command.
+  "DP-R07-S02": "cargo test -p echo-desktop --all-features --lib && pnpm --dir apps/desktop test",
   "DP-R07-S03": DESK("platform::local_state"),
   "DP-R08-S01": CHECK("9.4"),
   "DP-R08-S02": REACT("src/player/useGlobalPlayerHotkeys.test.tsx"),

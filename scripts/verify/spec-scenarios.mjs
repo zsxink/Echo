@@ -114,6 +114,10 @@ export function traceabilityIdsFor(areaName) {
 function listAreas() {
   return readdirSync(SPECS_DIR, { withFileTypes: true })
     .filter((d) => d.isDirectory())
+    // Scenario registration is currently published only for the areas with a
+    // stable traceability prefix. New planning-only areas must not break the
+    // existing release manifest before they are formally registered.
+    .filter((d) => Object.hasOwn(AREA_PREFIX, d.name))
     .map((d) => d.name)
     .sort();
 }

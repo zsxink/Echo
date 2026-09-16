@@ -115,19 +115,16 @@ export function LibraryWorkspace({
 
   const onPlay = useCallback(
     (song: SongView) => {
-      // Play a context built from the current loaded view (task 11.1): the
-      // desktop player resolves each SongId → file and drives the queue; the UI
-      // only sends the deterministic list + the selected start index. The
-      // source tells the desktop which view the queue came from (哪个歌单) so
-      // it can be remembered locally across restarts.
-      const selectedIndex = page.songs.findIndex((s) => s.id === song.id);
-      void bridge.call("play_context", {
-        songs: page.songs.map((s) => s.id),
-        selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
-        source: view,
+      // The desktop resolves every page of the declared active-root view. A
+      // rendered page is never treated as the playback-context boundary.
+      void bridge.call("play_library_context", {
+        view: view as "all" | "recent" | "favorites",
+        query: search,
+        sort: `${sortField}:${sortDir}`,
+        selectedSong: song.id,
       });
     },
-    [page.songs, view],
+    [view, search, sortField, sortDir],
   );
 
   const onPlayNext = useCallback((song: SongView) => {
@@ -137,14 +134,15 @@ export function LibraryWorkspace({
 
   const onEnqueue = useCallback((song: SongView) => {
     // Append the song to the end of the queue ("加入播放队列", task 10.6).
-    void bridge.call("queue_command", { command: "enqueue", songId: song.id });
-    notify(`已将 ${song.title ?? "歌曲"} 加入播放队列`);
+    void bridge
+      .call("queue_command", { command: "enqueue", songId: song.id })
+      .then(() => notify(`已将 ${song.title ?? "歌曲"} 加入播放队列`))
+      .catch(() => notify({ message: "加入播放队列失败，请重试", error: true }));
   }, []);
 
-  // 排序方式 is offered on every view that can actually honour it. 最近添加 is a
-  // fixed "recent 100" ranking with no sort parameter in the command contract, so
-  // the control is not shown there rather than shown and ignored.
-  const showSort = view !== "recent";
+  // Only 全部歌曲 accepts user-selected global sorting. Recent and favorites
+  // have their own deterministic definitions.
+  const showSort = view === "all";
 
   return (
     <>
@@ -299,6 +297,7 @@ export function LibraryWorkspace({
         <AddToPlaylistDialog
           songId={addToPlaylistFor.id}
           songTitle={addToPlaylistFor.title ?? "歌曲"}
+          root={root}
           onClose={() => setAddToPlaylistFor(null)}
           onDone={() => {
             reset();

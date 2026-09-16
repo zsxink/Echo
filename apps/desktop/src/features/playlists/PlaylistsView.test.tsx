@@ -37,7 +37,14 @@ function mockBridge(overrides: Record<string, unknown> = {}) {
 
 function renderView(props: Partial<Parameters<typeof PlaylistsView>[0]> = {}) {
   return render(
-    <PlaylistsView playlistId="pl-1" title="深夜" root="" readOnly={false} {...props} />,
+    <PlaylistsView
+      playlistId="pl-1"
+      title="深夜"
+      root=""
+      existingNames={["深夜", "通勤"]}
+      readOnly={false}
+      {...props}
+    />,
   );
 }
 
@@ -71,6 +78,19 @@ describe("PlaylistsView (task 10.9)", () => {
     await waitFor(() =>
       expect(screen.getByRole("heading", { name: "午夜客厅" })).toBeInTheDocument(),
     );
+  });
+
+  it("rejects an authoritative sibling name before issuing a rename", async () => {
+    mockBridge();
+    renderView();
+    await screen.findByTestId("playlist-view");
+
+    fireEvent.click(screen.getByText("编辑歌单"));
+    fireEvent.change(screen.getByLabelText("歌单新名称"), { target: { value: "通勤" } });
+    fireEvent.click(screen.getByText("保存"));
+
+    expect(await screen.findByText("已存在同名歌单，请换一个名称。")).toBeInTheDocument();
+    expect(call).not.toHaveBeenCalledWith("rename_playlist", expect.anything());
   });
 
   it("deletes the playlist after confirmation and navigates away", async () => {

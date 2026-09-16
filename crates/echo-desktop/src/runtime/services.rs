@@ -33,6 +33,7 @@ use echo_core::application::root_switch::{
 };
 use echo_core::application::scan::{CancelScan, ScanDeps, ScanSummary, ScanSupervisor, StartScan};
 use echo_core::domain::catalog::{OpaqueCursor, SongSort};
+use echo_core::domain::entities::SongAvailability;
 use echo_core::domain::ids::{LibraryRootId, OperationId, PlaylistId, SongId};
 use echo_core::domain::library::PortableRecord;
 use echo_core::error::Error;
@@ -86,6 +87,130 @@ pub struct AppServices {
 }
 
 impl AppServices {
+    /// Resolve a complete, deterministic library view on the desktop side for
+    /// playback. The WebView supplies only declarative view/filter/sort and a
+    /// selected UUID, so pagination and active-root changes cannot truncate or
+    /// contaminate a playback queue.
+    pub fn resolve_library_playback_context(
+        &self,
+        view: &str,
+        query: &str,
+        sort: SongSort,
+        selected: SongId,
+    ) -> Result<Vec<SongId>, Error> {
+        const PAGE_SIZE: usize = 500;
+        let catalog = CatalogQuery::new(self.deps.catalog.as_ref());
+        if view == "recent" {
+            let needle = query.trim().to_lowercase();
+            return Ok(catalog
+                .recent_100()?
+                .into_iter()
+                .filter(|song| {
+                    needle.is_empty()
+                        || [song.title(), song.artist(), song.album()]
+                            .into_iter()
+                            .flatten()
+                            .any(|field| field.to_lowercase().contains(&needle))
+                })
+                .map(|song| song.id())
+                .collect());
+        }
+
+        let mut ids = Vec::new();
+        let mut cursor = None;
+        loop {
+            let page = match view {
+                "all" if query.trim().is_empty() => {
+                    catalog.all_songs(sort, cursor.as_ref(), PAGE_SIZE)?
+                }
+                "all" => catalog.search(query, false, sort, cursor.as_ref(), PAGE_SIZE)?,
+                "favorites" if query.trim().is_empty() => {
+                    catalog.favorites(sort, cursor.as_ref(), PAGE_SIZE)?
+                }
+                "favorites" => catalog.search(query, true, sort, cursor.as_ref(), PAGE_SIZE)?,
+                _ => {
+                    return Err(Error::validation(
+                        echo_core::error::Subject::Other,
+                        "view",
+                        "unknown library playback view".to_owned(),
+                    ))
+                }
+            };
+            ids.extend(page.items.into_iter().map(|song| song.id()));
+            if page.is_last {
+                break;
+            }
+            cursor = page.next_cursor;
+            if cursor.is_none() {
+                break;
+            }
+        }
+        if ids.contains(&selected) {
+            Ok(ids)
+        } else {
+            Err(Error::conflict(
+                "selected song is no longer in the active library view",
+            ))
+        }
+    }
+    /// Classify a persisted player session against the active library without
+    /// exposing paths to the WebView. Missing media is retryable/blocked;
+    /// absent, foreign-root and Echo-pending-delete identities are dropped.
+    pub fn playback_restore_verdicts(
+        &self,
+        session: &crate::player::session::PlaybackSession,
+    ) -> Vec<crate::player::session::RestoreVerdict> {
+        let active = self
+            .deps
+            .roots
+            .active_root()
+            .ok()
+            .flatten()
+            .map(|root| root.id());
+        session
+            .entries
+            .iter()
+            .filter_map(|entry| entry.clone().parse().map(|(_, song)| song))
+            .map(|song_id| {
+                let disposition = match (active, self.deps.songs.by_id(song_id)) {
+                    (Some(root), Ok(Some(song))) if song.root() == root => {
+                        match song.availability() {
+                            SongAvailability::Available => {
+                                crate::player::session::RestoreDisposition::Restore
+                            }
+                            SongAvailability::Missing => {
+                                crate::player::session::RestoreDisposition::Blocked
+                            }
+                            SongAvailability::PendingDelete => {
+                                crate::player::session::RestoreDisposition::Drop
+                            }
+                        }
+                    }
+                    _ => crate::player::session::RestoreDisposition::Drop,
+                };
+                crate::player::session::RestoreVerdict {
+                    song_id,
+                    disposition,
+                }
+            })
+            .collect()
+    }
+
+    /// True only for a currently active, available library song; used to make
+    /// preserved blocked queue entries retryable after a recovery scan.
+    pub fn playback_song_is_playable(&self, song_id: SongId) -> bool {
+        let active = self
+            .deps
+            .roots
+            .active_root()
+            .ok()
+            .flatten()
+            .map(|root| root.id());
+        matches!(
+            (active, self.deps.songs.by_id(song_id)),
+            (Some(root), Ok(Some(song))) if song.root() == root && song.availability().is_playable()
+        )
+    }
     /// Test-only composition root: a dialog boundary that always cancels, a
     /// fresh root registry, a fresh blocker registry and a brand-new (empty)
     /// runtime-state store. Production wiring goes through [`Self::with_runtime`]
@@ -254,9 +379,24 @@ impl AppServices {
     /// # Errors
     ///
     /// `Unavailable` when there is no active root; storage errors propagate.
-    pub fn recent(&self) -> Result<Vec<SongView>, Error> {
+    pub fn recent(&self, query: &str) -> Result<Vec<SongView>, Error> {
         let songs = CatalogQuery::new(self.deps.catalog.as_ref()).recent_100()?;
-        Ok(songs.iter().map(SongView::from).collect())
+        let needle = query.trim().to_lowercase();
+        Ok(songs
+            .iter()
+            .map(SongView::from)
+            .filter(|song| {
+                needle.is_empty()
+                    || [
+                        song.title.as_deref(),
+                        song.artist.as_deref(),
+                        song.album.as_deref(),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .any(|field| field.to_lowercase().contains(&needle))
+            })
+            .collect())
     }
 
     /// List playlists of the active root with member counts.
@@ -399,6 +539,18 @@ impl AppServices {
     /// `Unavailable` when writes are disabled; storage errors propagate.
     pub fn create_playlist(&self, root: LibraryRootId, name: &str) -> Result<String, Error> {
         self.guard_writes()?;
+        // The command's root comes from the shell status snapshot.  Recheck it
+        // at the mutation boundary: a status event can race a root switch, and
+        // creating in an old/forged root would make the new playlist invisible
+        // to the active navigation.
+        let active = self
+            .deps
+            .roots
+            .active_root()?
+            .map(|candidate| candidate.id());
+        if active != Some(root) {
+            return Err(Error::unavailable("library", "active root changed"));
+        }
         Ok(CreatePlaylist::new(self.deps.playlists.as_ref())
             .execute(root, name)?
             .to_string())

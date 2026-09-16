@@ -8,7 +8,7 @@
  * than crashing the shell.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { bridge } from "../../bridge";
 import type { PlaylistView } from "../../ipc/ipc-types.generated";
@@ -25,14 +25,19 @@ export interface LibraryPlaylists {
  *   soon as the library becomes configured, so a freshly activated library's
  *   playlists arrive without any extra wiring in the shell.
  */
-export function useLibraryPlaylists(enabled = true): LibraryPlaylists {
+export function useLibraryPlaylists(enabled = true, activeRoot?: string): LibraryPlaylists {
   const [playlists, setPlaylists] = useState<readonly PlaylistView[]>([]);
   const [revision, setRevision] = useState(0);
+  const rootRef = useRef<string | undefined>(activeRoot);
 
   useEffect(() => {
     if (!enabled) {
       setPlaylists([]);
       return;
+    }
+    if (rootRef.current !== activeRoot) {
+      rootRef.current = activeRoot;
+      setPlaylists([]);
     }
     let cancelled = false;
     void bridge
@@ -46,7 +51,10 @@ export function useLibraryPlaylists(enabled = true): LibraryPlaylists {
     return () => {
       cancelled = true;
     };
-  }, [revision, enabled]);
+  // Root identity is intentionally a query input, even though the command
+  // itself resolves the active root on desktop.  It resets the stale sidebar
+  // immediately and makes a delayed previous-root result harmless.
+  }, [revision, enabled, activeRoot]);
 
   const reload = useCallback(() => setRevision((value) => value + 1), []);
 

@@ -20,12 +20,25 @@
 // name referenced by the freshly built `index.html` is absent from the binary,
 // the binary is serving an older frontend.
 //
+// Two builds write the *same* `target/debug/echo`, and only one of them embeds
+// anything:
+//
+//   cargo build -p echo-app   → embeds apps/desktop/dist, no dev server
+//   tauri dev                 → injects a devUrl, embeds no frontend at all,
+//                               and serves dist from its own static server
+//
+// So while `tauri dev` owns the binary this check would fail every time, for a
+// reason that is not a defect — and a gate that is always red is a gate nobody
+// reads. A build that embeds *none* of the current assets but does carry a
+// loopback server URL is reported as a skip, named for what it is.
+//
 // Usage:
 //   node scripts/verify/checks/check-embedded-frontend.mjs [--bin <path>]
 //
 // Exits 0 when the binary matches the dist, 1 when it is stale. A missing
-// binary is reported as a skip (not a failure) so the check stays usable
-// before the first build — the skip is always printed, never silent.
+// binary, and a `tauri dev` build, are reported as skips (not failures) so the
+// check stays usable outside the run it is meant to guard — the skip is always
+// printed, never silent.
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
@@ -40,6 +53,28 @@ const CANDIDATE_BINARIES = [
   resolve(ROOT, "apps", "desktop", "src-tauri", "target", "debug", "echo"),
   resolve(ROOT, "apps", "desktop", "src-tauri", "target", "release", "echo"),
 ];
+
+/** The CLI's static dev server, as a dev build embeds it — or `null`.
+ *
+ *  Scanned as bytes rather than by decoding a 100 MB binary to a string, and
+ *  with a mandatory numeric port so the CSP's `http://cover.localhost` (no
+ *  port) cannot be mistaken for it. */
+function findDevServerUrl(buffer) {
+  for (const prefix of [
+    "http://127.0.0.1:",
+    "http://localhost:",
+    "https://127.0.0.1:",
+    "https://localhost:",
+  ]) {
+    const at = buffer.indexOf(Buffer.from(prefix, "utf8"));
+    if (at === -1) continue;
+    let end = at + prefix.length;
+    while (end < buffer.length && buffer[end] >= 0x30 && buffer[end] <= 0x39) end += 1;
+    if (end === at + prefix.length) continue;
+    return buffer.subarray(at, end).toString("utf8");
+  }
+  return null;
+}
 
 function resolveBinary() {
   const flag = process.argv.indexOf("--bin");
@@ -78,17 +113,51 @@ if (!assets || !assets.length) {
 }
 
 const haystack = readFileSync(binary);
-const stale = assets.filter((name) => !haystack.includes(Buffer.from(name, "utf8")));
+const missing = assets.filter((name) => !haystack.includes(Buffer.from(name, "utf8")));
+const embedded = assets.length - missing.length;
 
-if (stale.length) {
+// Some names match but not all: this binary embeds a frontend, just not this
+// one. There is no reading of that other than "stale".
+if (missing.length && embedded) {
   process.stderr.write(
     [
       `FAIL embedded-frontend: ${binary} does not embed the current frontend.`,
-      `  missing from the binary: ${stale.join(", ")}`,
+      `  missing from the binary: ${missing.join(", ")}`,
+      `  (${embedded} of ${assets.length} present — an older bundle of the same app)`,
       `  the binary predates the last \`pnpm --dir apps/desktop build\`.`,
       `  rebuild so the dist is re-embedded: cargo build -p echo-app`,
       `  (a stale binary runs old UI while looking healthy — this is why a`,
       `   shipped frontend change can appear to have done nothing)`,
+      "",
+    ].join("\n"),
+  );
+  process.exit(1);
+}
+
+// Nothing matches. Either the whole bundle rotated (stale) or this binary was
+// never meant to embed one, because `tauri dev` rebuilds the same path with a
+// devUrl and serves the frontend from its own server instead.
+if (missing.length) {
+  const devServer = findDevServerUrl(haystack);
+  if (devServer) {
+    process.stdout.write(
+      [
+        `SKIP embedded-frontend: ${binary} is a \`tauri dev\` build.`,
+        `  it carries the dev server URL ${devServer} and embeds no frontend: the`,
+        `  window loads apps/desktop/dist from that server, not from the binary.`,
+        `  This check guards the *embedded* build, so compare like with like: stop`,
+        `  \`tauri dev\`, run \`cargo build -p echo-app\`, then re-run this check.`,
+        "",
+      ].join("\n"),
+    );
+    process.exit(0);
+  }
+  process.stderr.write(
+    [
+      `FAIL embedded-frontend: ${binary} embeds no frontend asset at all.`,
+      `  none of ${assets.join(", ")} appear in it, and it carries no dev server URL,`,
+      `  so it is a stale embedded build rather than a \`tauri dev\` one.`,
+      `  rebuild: cargo build -p echo-app`,
       "",
     ].join("\n"),
   );

@@ -16,6 +16,7 @@
  */
 
 /** The subset of the generated DTOs the browser journey needs. */
+import type { BridgeCommandMap } from "../src/bridge";
 import type { IpcErrorDto, LibraryRootStatusDto, Theme } from "../src/ipc/ipc-types.generated";
 
 type AnyRecord = Record<string, unknown>;
@@ -87,9 +88,46 @@ type Command =
   | "toggle_mute"
   | "seek"
   | "play_context"
+  | "play_library_context"
   | "play_temporary_file"
   | "import_current_temporary_file"
+  | "delete_song"
+  | "undo_delete"
+  | "restore_playback_session"
   | "get_lyrics";
+
+/**
+ * Commands the app can invoke but this mock deliberately does not model, so the
+ * list above stays a complete *name* of the bridge contract even where there is
+ * no answer behind it. `invoke` throws for these, naming the command; nothing
+ * reaches them silently.
+ *
+ * `delete_song` / `undo_delete` are covered by the Rust fault matrix and the UI
+ * component tests. `restore_playback_session` is called once at boot and
+ * *swallowed* by its caller (`main.tsx`), so modelling it would quietly prime
+ * the player bar and break A8's "the bar starts empty on a library-only seed"
+ * precondition — the browser journey deliberately starts cold.
+ */
+
+/**
+ * Every command the app's bridge declares must be *named* in the union above,
+ * even when it has no handler. The list is hand-written and used to drift in
+ * silence: `play_library_context` was missing for exactly that reason — the app
+ * switched to it, the double kept answering `play_context`, and clicking a
+ * library row threw "unknown command" inside a `void bridge.call(...)` nobody
+ * was watching. The browser journey went red three checks later, on assertions
+ * with no visible connection to the cause.
+ *
+ * `never` means nothing is missing. Otherwise this becomes the name of a
+ * command that has to be added above.
+ */
+type UnnamedCommands = Exclude<keyof BridgeCommandMap, Command>;
+
+/** `true` while the union above names every command the bridge declares; a
+ *  *command name* the moment one does not, which fails the assignment. */
+export const MOCK_NAMES_EVERY_COMMAND: [UnnamedCommands] extends [never]
+  ? true
+  : UnnamedCommands = true;
 
 /** How an invoke result can be wired. */
 type Handler = (args: AnyRecord, state: E2EState) => unknown;
@@ -227,8 +265,13 @@ function coverAssetUrl(key: string): string {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-/** Build the default handler table for the mock backend. */
-function buildHandlers(state: E2EState): Record<Command, Handler> {
+/** Build the default handler table for the mock backend.
+ *
+ * Partial by design: `Command` names the whole bridge contract so it can be
+ * checked against the real one, while this table answers only the part the
+ * browser journey drives. Anything named but not answered throws with its own
+ * name — see `invoke`. */
+function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
   const paged = (songs: MockSong[]) => ({
     items: songs.slice(0, 100).map(toView),
     nextCursor: undefined,
@@ -426,6 +469,22 @@ function buildHandlers(state: E2EState): Record<Command, Handler> {
       st.nowPlaying = { songId: id, position: 0, playing: true };
       return st.nowPlaying;
     },
+    // The desktop-side twin of `play_context`: the app names a *view* and a
+    // song, and Core resolves the whole view on its own. View membership and
+    // ordering are Core's and are covered by the Rust suite, so the mock only
+    // has to start the clicked song — which is what the bar assertion reads.
+    play_library_context: ({ view, query, selectedSong }, st) => {
+      const playable = state.songs.filter((s) => s.availability === "available");
+      const scoped = view === "favorites" ? playable.filter((s) => s.favorite) : playable;
+      const q = String(query ?? "").toLowerCase();
+      const matched = q
+        ? scoped.filter((s) => (s.title ?? "").toLowerCase().includes(q))
+        : scoped;
+      const id = (selectedSong as string | undefined) ?? matched[0]?.id;
+      if (!id) return emptyError("unavailable", "noLibrary", true);
+      st.nowPlaying = { songId: id, position: 0, playing: true };
+      return st.nowPlaying;
+    },
     play_temporary_file: ({ displayName }) => ({
       songId: "temp-song",
       title: displayName ?? "临时文件",
@@ -466,7 +525,7 @@ function buildHandlers(state: E2EState): Record<Command, Handler> {
 
 /** The mock internals installed on `window.__TAURI_INTERNALS__`. */
 export class MockBridge {
-  private handlers: Record<Command, Handler>;
+  private handlers: Partial<Record<Command, Handler>>;
   readonly state: E2EState;
   readonly calls: string[] = [];
   private listeners = new Map<string, Set<(payload: unknown) => void>>();
@@ -526,7 +585,13 @@ export class MockBridge {
       return null;
     }
     const handler = this.handlers[cmd as Command];
-    if (!handler) throw new Error(`mock-bridge: unknown command ${cmd}`);
+    if (!handler) {
+      // Either the app invokes a command this double has never heard of, or it
+      // names one in `Command` and deliberately leaves it unmodelled. Both are
+      // drift between the app and the mock; the command name is the whole of
+      // what a reader needs to act on it.
+      throw new Error(`mock-bridge: \`${cmd}\` has no handler`);
+    }
     const result = handler((args ?? {}) as AnyRecord, this.state);
     // A playback request republishes the snapshot, as the real runtime does
     // once the actor has accepted it.

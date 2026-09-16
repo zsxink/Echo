@@ -32,7 +32,7 @@ export interface BridgeCommandMap {
     limit: number;
   }) => unknown;
   favorites: (args: { sort: string; cursor?: string | null; limit: number }) => unknown;
-  recent: () => unknown;
+  recent: (args: { query: string }) => unknown;
   /** Per-view song totals, answered by Core without opening any view — the
    *  sidebar needs them before the user clicks. */
   library_counts: () => unknown;
@@ -65,6 +65,12 @@ export interface BridgeCommandMap {
     /** The view the queue was built from (哪个歌单): "allSongs" / "favorites" /
      *  "recent" / "search" / "playlist:<id>". Persisted locally, never synced. */
     source?: string;
+  }) => unknown;
+  play_library_context: (args: {
+    view: "all" | "recent" | "favorites";
+    query: string;
+    sort: string;
+    selectedSong: string;
   }) => unknown;
   restore_playback_session: () => unknown;
   play_temporary_file: (args: { path: string; displayName: string }) => unknown;

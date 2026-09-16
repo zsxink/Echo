@@ -17,6 +17,8 @@
 //! - Every mutation that touches an entry works by `QueueEntryId` — never by
 //!   `SongId`-based identity — so duplicate songs stay distinct.
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use echo_core::domain::ids::{QueueEntryId, SongId};
 
 use super::port::PlayMode;
@@ -27,6 +29,15 @@ use super::port::PlayMode;
 pub struct QueueEntry {
     pub id: QueueEntryId,
     pub item: QueueItem,
+}
+
+/// One visit to a queue entry, recorded at the wall-clock instant playback
+/// moved to it.  It deliberately keeps the queue-entry identity rather than a
+/// song identity: repeated songs remain independently navigable.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HistoryRecord {
+    pub entry_id: QueueEntryId,
+    pub played_at_ms: u64,
 }
 
 /// What a queue entry refers to.
@@ -76,9 +87,9 @@ pub struct Queue {
     /// separately by entry id for "previous".
     entries: Vec<QueueEntry>,
     current_index: Option<usize>,
-    /// Recently played entry ids, most-recent first, capped.
-    history: Vec<QueueEntryId>,
-    history_cap: usize,
+    /// Recently played entries, newest first. Retention is time based so
+    /// previous remains meaningful across restart without unbounded growth.
+    history: Vec<HistoryRecord>,
     /// The active shuffle round: a FIFO of `QueueEntryId`s in the order they
     /// will play, in shuffle mode. Each id appears at most once per round, so
     /// a round never repeats an entry (design §8.6). Built by the coordinator
@@ -89,6 +100,9 @@ pub struct Queue {
     /// Whether shuffle mode is currently active. The bag is only consulted in
     /// shuffle mode; switching modes never rebuilds it (切模式不丢当前项).
     shuffle_active: bool,
+    /// Entries restored while their media/root is unavailable. They remain in
+    /// the queue and UI projection, but traversal skips them until retried.
+    blocked: std::collections::HashSet<QueueEntryId>,
 }
 
 /// A result of advancing/removing that the caller should surface.
@@ -108,9 +122,9 @@ impl Queue {
             entries: Vec::new(),
             current_index: None,
             history: Vec::new(),
-            history_cap: 100,
             shuffle_bag: Vec::new(),
             shuffle_active: false,
+            blocked: std::collections::HashSet::new(),
         }
     }
 
@@ -212,8 +226,29 @@ impl Queue {
 
     /// The recent history (most-recent first).
     #[must_use]
-    pub fn history(&self) -> &[QueueEntryId] {
+    pub fn history(&self) -> Vec<QueueEntryId> {
+        self.history.iter().map(|record| record.entry_id).collect()
+    }
+
+    /// Timestamped history records, newest first, used for durable session
+    /// persistence. Entries older than three days are pruned before exposure.
+    #[must_use]
+    pub fn history_records(&self) -> &[HistoryRecord] {
         &self.history
+    }
+
+    /// Restore timestamped history after the queue itself has been rebuilt.
+    /// Invalid/missing entry IDs and expired records are ignored so a corrupt
+    /// session cannot prevent startup.
+    pub fn restore_history(&mut self, records: impl IntoIterator<Item = HistoryRecord>) {
+        self.history = records
+            .into_iter()
+            .filter(|record| {
+                self.contains(record.entry_id) && !history_expired(record.played_at_ms)
+            })
+            .collect();
+        self.history
+            .sort_by_key(|record| std::cmp::Reverse(record.played_at_ms));
     }
 
     /// Look up an entry by id (covers current, pending and history entries
@@ -223,12 +258,59 @@ impl Queue {
         self.entries.iter().find(|e| e.id == id)
     }
 
+    /// Mark a restored entry blocked or available without changing its queue
+    /// identity or position.
+    pub fn set_blocked(&mut self, entry_id: QueueEntryId, blocked: bool) {
+        if !self.contains(entry_id) {
+            return;
+        }
+        if blocked {
+            self.blocked.insert(entry_id);
+        } else {
+            self.blocked.remove(&entry_id);
+        }
+    }
+
+    #[must_use]
+    pub fn is_blocked(&self, entry_id: QueueEntryId) -> bool {
+        self.blocked.contains(&entry_id)
+    }
+
     /// All entries in append order — current, pending, and any historical
     /// entry still present in the list. Used by session persistence (8.9) to
     /// snapshot the full queue with independent entry ids intact.
     #[must_use]
     pub fn entries(&self) -> &[QueueEntry] {
         &self.entries
+    }
+
+    /// The user-facing queue projection: current first, then only entries
+    /// still pending in the active playback order. Storage remains append
+    /// ordered so history and duplicate entry identities are never rewritten.
+    #[must_use]
+    pub fn view_entries(&self) -> Vec<QueueEntry> {
+        let Some(current) = self.current() else {
+            return self.entries.clone();
+        };
+        let mut view = vec![current.clone()];
+        let pending = self.pending_ids();
+        let order = if self.shuffle_active {
+            self.shuffle_bag
+                .iter()
+                .copied()
+                .filter(|id| pending.contains(id))
+                .chain(
+                    pending
+                        .iter()
+                        .copied()
+                        .filter(|id| !self.shuffle_bag.contains(id)),
+                )
+                .collect()
+        } else {
+            pending
+        };
+        view.extend(order.into_iter().filter_map(|id| self.get(id).cloned()));
+        view
     }
 
     /// Append an entry to the END of the queue (queue join). Does not disturb
@@ -263,8 +345,7 @@ impl Queue {
     pub fn set_current(&mut self, entry_id: QueueEntryId) -> Option<QueueEntryId> {
         let pos = self.entries.iter().position(|e| e.id == entry_id)?;
         self.current_index = Some(pos);
-        self.history.insert(0, entry_id);
-        self.history.truncate(self.history_cap);
+        self.record_history(entry_id);
         Some(entry_id)
     }
 
@@ -279,8 +360,7 @@ impl Queue {
         };
         let id = self.entries[next_index].id;
         self.current_index = Some(next_index);
-        self.history.insert(0, id);
-        self.history.truncate(self.history_cap);
+        self.record_history(id);
         QueueAdvance::Played(id)
     }
 
@@ -291,8 +371,7 @@ impl Queue {
     fn wrap_to_first(&mut self) -> Option<QueueEntryId> {
         let first = self.entries.first()?.id;
         self.current_index = Some(0);
-        self.history.insert(0, first);
-        self.history.truncate(self.history_cap);
+        self.record_history(first);
         Some(first)
     }
 
@@ -328,8 +407,7 @@ impl Queue {
                     }
                 };
                 self.current_index = Some(pos);
-                self.history.insert(0, id);
-                self.history.truncate(self.history_cap);
+                self.record_history(id);
                 Some(id)
             }
             PlayMode::RepeatOne => self.current_id(),
@@ -342,11 +420,11 @@ impl Queue {
         let current = self.current_id()?;
         // Find the most recent history entry different from current that still
         // exists in the queue.
-        let index = self
-            .history
-            .iter()
-            .position(|&h| h != current && self.entries.iter().any(|e| e.id == h))?;
-        let prev = self.history[index];
+        self.prune_history();
+        let index = self.history.iter().position(|h| {
+            h.entry_id != current && self.entries.iter().any(|e| e.id == h.entry_id)
+        })?;
+        let prev = self.history[index].entry_id;
         let pos = self
             .entries
             .iter()
@@ -441,7 +519,8 @@ impl Queue {
                 }
             }
         }
-        self.history.retain(|&h| h != entry_id);
+        self.history.retain(|h| h.entry_id != entry_id);
+        self.blocked.remove(&entry_id);
     }
 
     /// Remove a specific entry by id if it is not the current one. Returns
@@ -460,10 +539,12 @@ impl Queue {
                     self.current_index = Some(ci - 1);
                 }
             }
-            self.history.retain(|&h| h != entry_id);
+            self.history.retain(|h| h.entry_id != entry_id);
+            self.blocked.remove(&entry_id);
             return true;
         }
-        self.history.retain(|&h| h != entry_id);
+        self.history.retain(|h| h.entry_id != entry_id);
+        self.blocked.remove(&entry_id);
         false
     }
 
@@ -498,6 +579,36 @@ impl Queue {
         }
         seen
     }
+
+    fn record_history(&mut self, entry_id: QueueEntryId) {
+        self.prune_history();
+        self.history.insert(
+            0,
+            HistoryRecord {
+                entry_id,
+                played_at_ms: now_ms(),
+            },
+        );
+    }
+
+    fn prune_history(&mut self) {
+        self.history
+            .retain(|record| !history_expired(record.played_at_ms));
+    }
+}
+
+const HISTORY_RETENTION_MS: u64 = 3 * 24 * 60 * 60 * 1000;
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| {
+            duration.as_millis().try_into().unwrap_or(u64::MAX)
+        })
+}
+
+fn history_expired(played_at_ms: u64) -> bool {
+    now_ms().saturating_sub(played_at_ms) > HISTORY_RETENTION_MS
 }
 
 /// A view-context play request: the coordinator derives the queue from a
@@ -657,6 +768,56 @@ mod tests {
         assert_eq!(q.current().map(|e| e.id), Some(b));
         assert_eq!(q.previous(), Some(a));
         assert_eq!(q.current().map(|e| e.id), Some(a));
+    }
+
+    #[test]
+    fn view_projection_keeps_current_first_and_excludes_history() {
+        let mut q = Queue::new();
+        let first = q.push(lib(song()));
+        let current = q.push(lib(song()));
+        let pending = q.push(lib(song()));
+        q.set_current(first);
+        q.set_current(current);
+
+        let ids: Vec<_> = q.view_entries().into_iter().map(|entry| entry.id).collect();
+        assert_eq!(ids, vec![current, pending]);
+        assert!(
+            !ids.contains(&first),
+            "historical entries are not pending UI rows"
+        );
+    }
+
+    #[test]
+    fn view_projection_uses_shuffle_order_without_collapsing_duplicate_songs() {
+        let repeated = song();
+        let mut q = Queue::new();
+        let current = q.push(lib(repeated));
+        let first_pending = q.push(lib(repeated));
+        let second_pending = q.push(lib(song()));
+        q.set_current(current);
+        q.set_shuffle(true, vec![second_pending, first_pending]);
+
+        let ids: Vec<_> = q.view_entries().into_iter().map(|entry| entry.id).collect();
+        assert_eq!(ids, vec![current, second_pending, first_pending]);
+        assert_ne!(
+            current, first_pending,
+            "duplicate songs retain queue-entry identity"
+        );
+    }
+
+    #[test]
+    fn view_projection_reflects_insert_next_and_clear_pending() {
+        let mut q = Queue::new();
+        let current = q.push(lib(song()));
+        let tail = q.push(lib(song()));
+        q.set_current(current);
+        let next = q.insert_next(lib(song()));
+        let ids: Vec<_> = q.view_entries().into_iter().map(|entry| entry.id).collect();
+        assert_eq!(ids, vec![current, next, tail]);
+
+        q.clear_pending();
+        let ids: Vec<_> = q.view_entries().into_iter().map(|entry| entry.id).collect();
+        assert_eq!(ids, vec![current]);
     }
 
     #[test]

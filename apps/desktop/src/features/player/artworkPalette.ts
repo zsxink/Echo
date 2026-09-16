@@ -1,5 +1,7 @@
 import { Hct, QuantizerWu, argbFromRgb, hexFromArgb } from "@material/material-color-utilities";
 
+import { warn } from "../../logging/log";
+
 export interface ArtworkPalette {
   /** The record label's ink — the cover colour, kept saturated enough to read
    * against the black vinyl it sits on. */
@@ -147,7 +149,17 @@ export function loadArtworkPalette(key: string, url: string): Promise<ArtworkPal
         finish(null);
       }
     };
-    image.onerror = () => finish(null);
+    // A refused `cover://` grant arrives here, and nowhere else: `crossOrigin`
+    // turns a missing `Access-Control-Allow-Origin` into a load failure, so a
+    // page whose origin the protocol does not recognise loses the whole
+    // palette while the DOM cover (no CORS involved) keeps rendering. Say so —
+    // the key is opaque, never a path.
+    image.onerror = () => {
+      warn("cover pixels could not be read; the immersive tint falls back", "player.artwork", {
+        key,
+      });
+      finish(null);
+    };
     image.src = url;
   }).then((palette) => {
     inFlight.delete(key);

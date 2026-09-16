@@ -115,6 +115,14 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
         &self.queue
     }
 
+    /// The authoritative user-facing queue order: the current entry first,
+    /// followed by mode-aware pending entries.  The queue storage itself stays
+    /// private to traversal, history and persistence concerns.
+    #[must_use]
+    pub fn queue_view(&self) -> Vec<QueueEntry> {
+        self.queue.view_entries()
+    }
+
     /// Mutable access to the queue — for the deletion coordinator (task 8.11),
     /// which snapshots/removes entries under the same lock the command layer
     /// already holds. Every other mutation goes through coordinator methods.
@@ -191,7 +199,16 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
         // the flag back and silently un-mute the player. The absolute form is
         // idempotent.
         self.player.send(PlayerCommand::SetMute(muted)).ok();
-        if let Some(id) = self.queue.current_id() {
+        if self
+            .queue
+            .current_id()
+            .is_some_and(|id| self.queue.is_blocked(id))
+        {
+            // A restored unavailable current remains visible in the projection,
+            // but must never be sent to the actor. Advance to a playable entry
+            // without deleting or reordering the blocked record.
+            self.next_from_mode();
+        } else if let Some(id) = self.queue.current_id() {
             if let Some(song) = self.queue.get(id).and_then(|e| e.item.song_id()) {
                 let session = self.new_load_session(id);
                 self.player
@@ -328,7 +345,7 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
         for _ in 0..max_attempts {
             match self.queue.advance_in_mode(self.mode) {
                 Some(id) => {
-                    if self.failed_round.contains(&id) {
+                    if self.failed_round.contains(&id) || self.queue.is_blocked(id) {
                         // This entry failed earlier this round — auto-attempt
                         // it only once; skip it (task 8.7).
                         continue;
@@ -461,6 +478,35 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
     #[must_use]
     pub fn contains(&self, id: QueueEntryId) -> bool {
         self.queue.contains(id)
+    }
+
+    /// Recheck restored blocked entries after a root/file recovery. Entries
+    /// retain their identities and order; newly available items are eligible
+    /// for the next transport action immediately.
+    pub fn retry_blocked(
+        &mut self,
+        mut playable: impl FnMut(echo_core::domain::ids::SongId) -> bool,
+    ) {
+        let ids: Vec<_> = self
+            .queue
+            .entries()
+            .iter()
+            .filter_map(|entry| {
+                self.queue
+                    .is_blocked(entry.id)
+                    .then(|| {
+                        entry
+                            .item
+                            .song_id()
+                            .filter(|song| playable(*song))
+                            .map(|_| entry.id)
+                    })
+                    .flatten()
+            })
+            .collect();
+        for id in ids {
+            self.queue.set_blocked(id, false);
+        }
     }
 
     fn new_load_session(&mut self, entry_id: QueueEntryId) -> PlaybackSessionId {
@@ -888,6 +934,27 @@ mod tests {
         coord.player().set_position(2.0);
         coord.previous();
         assert_eq!(coord.current().unwrap().item.song_id(), Some(s1));
+    }
+
+    #[test]
+    fn recovered_blocked_entry_becomes_eligible_after_retry() {
+        let player = FakePlayer::new();
+        let mut coord = PlaybackCoordinator::new(player);
+        let s1 = song();
+        let s2 = song();
+        coord.play_context(&ViewContext {
+            songs: vec![s1, s2],
+            selected_index: 0,
+        });
+        let blocked = coord.queue().pending_ids()[0];
+        coord.queue_mut().set_blocked(blocked, true);
+        assert_eq!(
+            coord.advance_to_next(),
+            Some(coord.queue().current_id().unwrap()),
+            "blocked item is skipped"
+        );
+        coord.retry_blocked(|song| song == s2);
+        assert!(!coord.queue().is_blocked(blocked));
     }
 
     // -- Task 8.8: seek / volume / mute via the coordinator -----------------

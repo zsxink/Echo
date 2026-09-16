@@ -50,6 +50,25 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("keeps the authoritative picker open when membership commit fails", async () => {
+    call.mockReset();
+    call.mockResolvedValueOnce([{ id: "pl-1", name: "Chill", memberCount: 3 }] as never);
+    call.mockRejectedValueOnce(new Error("offline"));
+    const onClose = vi.fn();
+    const onDone = vi.fn();
+    render(<AddToPlaylistDialog songId="song-9" onClose={onClose} onDone={onDone} />);
+
+    await screen.findByLabelText("Chill");
+    fireEvent.click(screen.getByLabelText("Chill"));
+    fireEvent.click(screen.getByText("确认"));
+
+    expect(await screen.findByText("添加失败，请重试")).toBeInTheDocument();
+    expect(screen.getByTestId("add-to-playlist-dialog")).toBeInTheDocument();
+    expect(screen.getByLabelText("Chill")).toHaveAttribute("aria-selected", "true");
+    expect(onDone).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("does not mutate and reports when no playlist is selected", async () => {
     call.mockReset();
     call.mockResolvedValueOnce([{ id: "pl-1", name: "Chill", memberCount: 0 }] as never);
@@ -73,6 +92,23 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
     render(<AddToPlaylistDialog songId="song-9" onClose={vi.fn()} onDone={vi.fn()} />);
     expect(await screen.findByText("还没有歌单，先创建一个吧。")).toBeInTheDocument();
     expect(screen.getByText("新建歌单")).toBeInTheDocument();
+  });
+
+  it("passes the active root into the inline create dialog", async () => {
+    call.mockReset();
+    call.mockResolvedValueOnce([] as never);
+    render(
+      <AddToPlaylistDialog songId="song-9" root="root-1" onClose={vi.fn()} onDone={vi.fn()} />,
+    );
+
+    expect(await screen.findByText("还没有歌单，先创建一个吧。")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("playlist-picker-new"));
+    fireEvent.change(screen.getByLabelText("新歌单名称"), { target: { value: "通勤" } });
+    fireEvent.click(screen.getByText("创建歌单"));
+
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith("create_playlist", { root: "root-1", name: "通勤" }),
+    );
   });
 
   it("cancelling closes without sending any mutation", async () => {

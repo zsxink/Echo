@@ -15,7 +15,7 @@
  * song file.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { bridge } from "../../bridge";
 import { usePlayerSnapshot } from "../../player/playerStore";
@@ -34,6 +34,8 @@ export interface PlaylistsViewProps {
   /** The playlist's display name, resolved by the shell. */
   readonly title: string;
   readonly root: string;
+  /** Authoritative sibling names from the shell, for local rename validation. */
+  readonly existingNames: readonly string[];
   readonly readOnly: boolean;
   /** The playlist no longer exists — the shell returns to 全部歌曲. */
   readonly onDeleted?: () => void;
@@ -45,6 +47,7 @@ export function PlaylistsView({
   playlistId,
   title,
   root,
+  existingNames,
   readOnly,
   onDeleted,
   onLibraryChanged,
@@ -54,18 +57,29 @@ export function PlaylistsView({
   const [menuFor, setMenuFor] = useState<{ song: SongView; anchor: MenuAnchor } | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const request = useRef(0);
   const snapshot = usePlayerSnapshot();
 
   // The shell owns the list; keep the optimistic name in step with it.
   useEffect(() => setName(title), [title]);
 
   const loadMembers = useCallback(() => {
+    const id = ++request.current;
     void bridge
       .call("playlist_members", { playlistId })
       // A malformed payload degrades to an empty list instead of tearing down
       // the whole view (the IPC contract says this is always an array).
-      .then((value: unknown) => setMembers(Array.isArray(value) ? (value as SongView[]) : []))
-      .catch(() => setMembers([]));
+      .then((value: unknown) => {
+        if (id !== request.current) return;
+        if (Array.isArray(value)) {
+          setMembers(value as SongView[]);
+          setLoadError(null);
+        }
+      })
+      .catch(() => {
+        if (id === request.current) setLoadError("加载歌单失败，请重试");
+      });
   }, [playlistId]);
 
   useEffect(loadMembers, [loadMembers]);
@@ -115,15 +129,21 @@ export function PlaylistsView({
   );
 
   const onEnqueue = useCallback((song: SongView) => {
-    void bridge.call("queue_command", { command: "enqueue", songId: song.id });
-    notify(`已将 ${song.title ?? "歌曲"} 加入播放队列`);
+    void bridge
+      .call("queue_command", { command: "enqueue", songId: song.id })
+      .then(() => notify(`已将 ${song.title ?? "歌曲"} 加入播放队列`))
+      .catch(() => notify({ message: "加入播放队列失败，请重试", error: true }));
   }, []);
 
   async function removeMember(song: SongView) {
-    await bridge.call("remove_playlist_song", { playlist: playlistId, song: song.id });
-    loadMembers();
-    onLibraryChanged?.();
-    setMenuFor(null);
+    try {
+      await bridge.call("remove_playlist_song", { playlist: playlistId, song: song.id });
+      loadMembers();
+      onLibraryChanged?.();
+      setMenuFor(null);
+    } catch {
+      notify({ message: "移除歌曲失败，请重试", error: true });
+    }
   }
 
   const unavailableCount = members.filter((s) => s.availability !== "available").length;
@@ -166,6 +186,11 @@ export function PlaylistsView({
           <p className="playlist-summary">
             共 {members.length} 首{unavailableCount > 0 ? `（${unavailableCount} 首不可用）` : ""}
           </p>
+          {loadError ? (
+            <button type="button" className="btn" onClick={loadMembers}>
+              {loadError}
+            </button>
+          ) : null}
 
           <SongList
             songs={members}
@@ -230,7 +255,7 @@ export function PlaylistsView({
           mode="edit"
           playlistId={playlistId}
           initialName={name}
-          existingNames={[]}
+          existingNames={existingNames}
           onClose={() => setRenaming(false)}
           onDone={(next) => {
             setName(next);

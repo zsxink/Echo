@@ -41,10 +41,10 @@ use serde::{Deserialize, Serialize};
 use super::port::PlayMode;
 #[cfg(test)]
 use super::queue::TemporaryItem;
-use super::queue::{Queue, QueueEntry, QueueItem};
+use super::queue::{HistoryRecord, Queue, QueueEntry, QueueItem};
 
 /// The current on-disk session schema version.
-pub const SESSION_VERSION: u32 = 1;
+pub const SESSION_VERSION: u32 = 2;
 
 /// The serialized, durable playback-session document (camelCase, versioned).
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -56,8 +56,9 @@ pub struct PlaybackSession {
     /// The current entry id, if any.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current: Option<String>,
-    /// History entry ids, most-recent first.
-    pub history: Vec<String>,
+    /// Timestamped entry history, newest first. `PersistedHistoryRecord`
+    /// accepts legacy string IDs while deserializing version-1 sessions.
+    pub history: Vec<PersistedHistoryRecord>,
     /// The active shuffle round (entry ids in play order).
     pub shuffle_bag: Vec<String>,
     /// Whether shuffle mode was active.
@@ -102,6 +103,32 @@ impl PlaybackSession {
 pub struct PersistedEntry {
     pub queue_entry_id: String,
     pub song_id: String,
+}
+
+/// A persisted history visit. The custom untagged representation lets a
+/// version-1 `history: ["entry-id"]` document load safely; old records are
+/// deliberately assigned timestamp zero and expire rather than becoming an
+/// immortal or misleading previous-track entry.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PersistedHistoryRecord {
+    Timestamped { entry_id: String, played_at_ms: u64 },
+    Legacy(String),
+}
+
+impl PersistedHistoryRecord {
+    fn parse(self) -> Option<HistoryRecord> {
+        match self {
+            Self::Timestamped {
+                entry_id,
+                played_at_ms,
+            } => Some(HistoryRecord {
+                entry_id: entry_id.parse().ok()?,
+                played_at_ms,
+            }),
+            Self::Legacy(_) => None,
+        }
+    }
 }
 
 impl PersistedEntry {
@@ -169,7 +196,14 @@ pub fn snapshot_queue(
         version: SESSION_VERSION,
         entries,
         current: queue.current_id().map(|id| id.to_string()),
-        history: queue.history().iter().map(|id| id.to_string()).collect(),
+        history: queue
+            .history_records()
+            .iter()
+            .map(|record| PersistedHistoryRecord::Timestamped {
+                entry_id: record.entry_id.to_string(),
+                played_at_ms: record.played_at_ms,
+            })
+            .collect(),
         shuffle_bag: queue
             .shuffle_bag()
             .iter()
@@ -201,7 +235,7 @@ pub fn rebuild_queue(
     session: &PlaybackSession,
     verdicts: &[RestoreVerdict],
 ) -> (Queue, RestoreSummary) {
-    let mut verdict_by_song: HashSet<SongId> = HashSet::new();
+    let mut verdict_by_song = std::collections::HashMap::new();
     let mut dropped: HashSet<SongId> = HashSet::new();
     for verdict in verdicts {
         match verdict.disposition {
@@ -209,7 +243,7 @@ pub fn rebuild_queue(
                 dropped.insert(verdict.song_id);
             }
             _ => {
-                verdict_by_song.insert(verdict.song_id);
+                verdict_by_song.insert(verdict.song_id, verdict.disposition);
             }
         }
     }
@@ -221,11 +255,13 @@ pub fn rebuild_queue(
             continue; // malformed id: skip
         };
         // Determine disposition: explicit drop beats all; otherwise restore.
-        let disposition = if dropped.contains(&sid) {
-            RestoreDisposition::Drop
-        } else {
-            RestoreDisposition::Restore
-        };
+        let disposition = verdict_by_song.get(&sid).copied().unwrap_or_else(|| {
+            if dropped.contains(&sid) {
+                RestoreDisposition::Drop
+            } else {
+                RestoreDisposition::Restore
+            }
+        });
         match disposition {
             RestoreDisposition::Drop => {
                 dropped_count += 1;
@@ -239,6 +275,7 @@ pub fn rebuild_queue(
                     id: qid,
                     item: QueueItem::Library(sid),
                 });
+                queue.set_blocked(qid, disposition == RestoreDisposition::Blocked);
             }
         }
     }
@@ -250,6 +287,14 @@ pub fn rebuild_queue(
         }
     }
 
+    queue.restore_history(
+        session
+            .history
+            .iter()
+            .cloned()
+            .filter_map(PersistedHistoryRecord::parse),
+    );
+
     // Restore the shuffle bag / active flag (never re-shuffled — 恢复后不重洗).
     let bag: Vec<QueueEntryId> = session
         .shuffle_bag
@@ -258,13 +303,17 @@ pub fn rebuild_queue(
         .collect();
     queue.set_shuffle(session.shuffle_active, bag);
 
-    let _ = verdict_by_song; // reserved for caller-authored blocked handling
     (
         queue,
         RestoreSummary {
             restored: session.entries.len().saturating_sub(dropped_count),
             dropped: dropped_count,
-            blocked: session.entries.len().saturating_sub(dropped_count),
+            blocked: session
+                .entries
+                .iter()
+                .filter_map(|entry| entry.clone().parse().map(|(_, song)| song))
+                .filter(|song| verdict_by_song.get(song) == Some(&RestoreDisposition::Blocked))
+                .count(),
         },
     )
 }
@@ -328,8 +377,8 @@ impl SessionPersistence for StateStoreSession {
             return Ok(None);
         };
         match serde_json::from_value::<PlaybackSession>(value) {
-            Ok(session) if session.version == SESSION_VERSION => Ok(Some(session)),
-            // Unknown/old version: treat as empty (safe), never restore garbage.
+            Ok(session) if matches!(session.version, 1 | SESSION_VERSION) => Ok(Some(session)),
+            // Unknown version: treat as empty (safe), never restore garbage.
             _ => Ok(None),
         }
     }
@@ -508,6 +557,32 @@ mod tests {
         assert!(
             persist.load().expect("load unknown").is_none(),
             "unknown version is a safe empty restore"
+        );
+    }
+
+    #[test]
+    fn restore_keeps_fresh_history_and_counts_only_blocked_entries() {
+        let song = SongId::new();
+        let mut queue = Queue::new();
+        let entry = queue.push(lib_entry(song));
+        queue.set_current(entry);
+        let session = snapshot_queue(&queue, PlayMode::Sequential, 1.0, false, None, None);
+        let (rebuilt, summary) = rebuild_queue(
+            &session,
+            &[RestoreVerdict {
+                song_id: song,
+                disposition: RestoreDisposition::Blocked,
+            }],
+        );
+        assert!(rebuilt.is_blocked(entry));
+        assert!(!rebuilt.history_records().is_empty());
+        assert_eq!(
+            summary,
+            RestoreSummary {
+                restored: 1,
+                blocked: 1,
+                dropped: 0
+            }
         );
     }
 }

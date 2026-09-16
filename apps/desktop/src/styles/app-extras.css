@@ -365,6 +365,62 @@ button.lyric-line {
   cursor: pointer;
 }
 
+/* --- immersive player: 歌词专注阅读 on a window wider than 760px ----------
+ *
+ * The prototype declares focus mode only *inside its own* `@media (max-width:
+ * 760px)` block: on a wider window its `body.lyrics-focus-open` hides nothing,
+ * because the declarations that do the rearranging never apply. The app offers
+ * the state at every width, so the wide-window half of the same rearrangement
+ * has to be supplied from here. `responsive.css` still carries the prototype's
+ * ≤760px variant.
+ *
+ * It lives in this layer, and not in `player.css`, because `player.css` is
+ * generated: `scripts/extract-prototype-css.mjs` reproduces it from the
+ * prototype, so any rule the prototype does not contain is deleted on the next
+ * run. That is not hypothetical — this block used to sit in `player.css`
+ * labelled APP-ONLY, and a later re-extraction removed it, taking focus mode
+ * with it. A guard inside a generated file is not a guard.
+ *
+ * The state is a rearrangement of the *same* surface, not a second surface: the
+ * `lyrics` grid area takes the only row and column left, the cover and the
+ * metadata hide, and the 常驻播放栏 below keeps the minimal transport — which
+ * is what the 152px bottom padding reserves (its own height while
+ * `player-mode-open`) plus the 88px inset above it.
+ */
+body.player-mode-open.lyrics-focus-open .now-playing-popover {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "lyrics";
+  gap: 0;
+  padding: 72px var(--space-5) 152px;
+}
+body.player-mode-open.lyrics-focus-open .now-playing-popover .playing-cover,
+body.player-mode-open.lyrics-focus-open .now-playing-info {
+  display: none;
+}
+body.player-mode-open.lyrics-focus-open .now-playing-popover .lyrics {
+  max-height: none;
+  height: 100%;
+  align-self: stretch;
+  /* The wide layout pushes the lyrics down by the measured height of the song
+     title; with the title hidden that offset is just a hole at the top of the
+     column. */
+  margin-top: 0;
+  /* Keep the surface's comfortable 620px reading measure, but centre it: the
+     focus grid has a single column, so a left-aligned 620px block would leave
+     the whole right half of the screen empty. `width: 100%` is required — a
+     grid item with auto width and auto margins shrink-wraps to its content
+     instead of filling the column. */
+  width: 100%;
+  margin-inline: auto;
+  padding: clamp(72px, 16vh, 160px) 0 var(--space-8);
+  cursor: pointer;
+}
+body.player-mode-open.lyrics-focus-open .lyric-line {
+  font-size: clamp(var(--text-lg), 5.5vw, var(--text-xl));
+  line-height: 2.4;
+}
+
 /* --- immersive player: 回到当前行 while auto-follow is paused -------------
  *
  * The prototype draws no control above the lyrics — it ships a `.lyrics-label`

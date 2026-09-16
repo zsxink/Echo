@@ -31,6 +31,8 @@ export interface AddToPlaylistDialogProps {
   readonly songId: string;
   /** Shown in the picker's sub line; the song's display title. */
   readonly songTitle?: string;
+  /** The active root is required if the picker creates a playlist inline. */
+  readonly root?: string;
   readonly onClose: () => void;
   readonly onDone: () => void;
 }
@@ -38,6 +40,7 @@ export interface AddToPlaylistDialogProps {
 export function AddToPlaylistDialog({
   songId,
   songTitle,
+  root,
   onClose,
   onDone,
 }: AddToPlaylistDialogProps) {
@@ -191,6 +194,7 @@ export function AddToPlaylistDialog({
       {creating ? (
         <PlaylistNameDialog
           mode="create"
+          root={root}
           existingNames={playlists.map((playlist) => playlist.name)}
           onClose={() => setCreating(false)}
           onDone={(name) => {

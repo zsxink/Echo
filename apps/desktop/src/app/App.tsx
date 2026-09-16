@@ -70,7 +70,10 @@ export function App() {
   // topbar button; while open a scrim covers the workspace.
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
-  const { playlists, reload: reloadPlaylists } = useLibraryPlaylists(status.configured);
+  const { playlists, reload: reloadPlaylists } = useLibraryPlaylists(
+    status.configured,
+    status.activeRoot,
+  );
 
   // 资料库导航计数 (tasks.md 4.2): fetched up front and re-fetched whenever
   // anything could have changed a total, so "喜欢的音乐" shows its size before
@@ -177,7 +180,7 @@ export function App() {
                     className="playlist-create"
                     aria-label="添加歌单"
                     title="添加歌单"
-                    disabled={status.readOnly}
+                    disabled={status.readOnly || !status.activeRoot || status.unavailable}
                     onClick={() => setPlaylistNameOpen(true)}
                     data-testid="create-playlist"
                   >
@@ -246,6 +249,7 @@ export function App() {
                   playlistId={activePlaylistId}
                   title={viewTitle}
                   root={status.activeRoot ?? ""}
+                  existingNames={playlists.map((playlist) => playlist.name)}
                   readOnly={status.readOnly}
                   onDeleted={() => {
                     selectView("all");
@@ -281,10 +285,12 @@ export function App() {
         {playlistNameOpen ? (
           <PlaylistCreateDialog
             existingNames={playlists.map((playlist) => playlist.name)}
+            root={status.activeRoot}
             onClose={() => setPlaylistNameOpen(false)}
-            onCreated={() => {
+            onCreated={(_name, createdId) => {
               setPlaylistNameOpen(false);
               reloadPlaylists();
+              if (createdId) selectView("playlist", createdId);
             }}
           />
         ) : null}

@@ -62,6 +62,11 @@ export function QueuePanel() {
             <span id="queue-count">{entries.length} 首</span>
           </div>
           <div className="queue-tools">
+            {entries.some((entry) => entry.blocked) ? (
+              <button type="button" className="queue-tool" onClick={() => command("retryBlocked")}>
+                重试不可用项
+              </button>
+            ) : null}
             <button
               type="button"
               className="queue-tool"
@@ -90,6 +95,7 @@ export function QueuePanel() {
                   "queue-item",
                   entry.isCurrent ? "is-current" : "",
                   entry.failed ? "is-failed" : "",
+                  entry.blocked ? "is-blocked" : "",
                 ]
                   .filter(Boolean)
                   .join(" ")}
@@ -102,7 +108,13 @@ export function QueuePanel() {
                 <div className="queue-name">
                   <b>{entry.title ?? "歌曲"}</b>
                   <span>
-                    {entry.failed ? "加载失败" : entry.songId ? "资料库歌曲" : "临时文件"}
+                    {entry.blocked
+                      ? "暂时不可用，可在资料库恢复后重试"
+                      : entry.failed
+                        ? "加载失败"
+                        : entry.songId
+                          ? "资料库歌曲"
+                          : "临时文件"}
                     {entry.canImport ? (
                       <span className="queue-temporary-tag" aria-label="临时播放项">
                         临时

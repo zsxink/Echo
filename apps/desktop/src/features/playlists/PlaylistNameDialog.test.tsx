@@ -17,11 +17,12 @@ import { bridge } from "../../bridge";
 
 const call = vi.mocked(bridge.call);
 
-function renderCreate(existingNames: readonly string[] = []) {
+function renderCreate(existingNames: readonly string[] = [], root?: string) {
   return render(
     <PlaylistNameDialog
       mode="create"
       existingNames={existingNames}
+      root={root}
       onClose={vi.fn()}
       onDone={vi.fn()}
     />,
@@ -53,22 +54,37 @@ describe("PlaylistNameDialog (task 10.9)", () => {
     expect(call).not.toHaveBeenCalledWith("create_playlist", expect.anything());
   });
 
-  it("creates the playlist with the trimmed name and reports it", async () => {
+  it("rejects a create when no active root is available", async () => {
     call.mockReset();
-    call.mockResolvedValueOnce(undefined as never);
+    renderCreate();
+    fireEvent.change(screen.getByLabelText("新歌单名称"), { target: { value: "通勤" } });
+    fireEvent.click(screen.getByText("创建歌单"));
+    expect(await screen.findByText("当前资料库不可用，请恢复后重试")).toBeInTheDocument();
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it("creates the playlist with the active root and trimmed name", async () => {
+    call.mockReset();
+    call.mockResolvedValueOnce("playlist-new" as never);
     const onDone = vi.fn();
     const onClose = vi.fn();
     render(
-      <PlaylistNameDialog mode="create" existingNames={[]} onClose={onClose} onDone={onDone} />,
+      <PlaylistNameDialog
+        mode="create"
+        root="root-1"
+        existingNames={[]}
+        onClose={onClose}
+        onDone={onDone}
+      />,
     );
 
     fireEvent.change(screen.getByLabelText("新歌单名称"), { target: { value: "  通勤  " } });
     fireEvent.click(screen.getByText("创建歌单"));
 
     await waitFor(() =>
-      expect(call).toHaveBeenCalledWith("create_playlist", { root: "", name: "通勤" }),
+      expect(call).toHaveBeenCalledWith("create_playlist", { root: "root-1", name: "通勤" }),
     );
-    expect(onDone).toHaveBeenCalledWith("通勤");
+    expect(onDone).toHaveBeenCalledWith("通勤", "playlist-new");
     expect(onClose).toHaveBeenCalled();
   });
 

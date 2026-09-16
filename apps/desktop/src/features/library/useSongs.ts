@@ -39,17 +39,30 @@ function pageKey(query: SongQuery): string {
     query.sort.field,
     query.sort.direction,
     query.playlistId ?? "",
+    // The desktop resolves queries against its active root.  Cache and request
+    // identity must nevertheless include that root so a late old-root reply
+    // cannot win after the shell has switched roots.
+    query.root ?? "",
   ].join("|");
 }
 
 async function fetchPage(query: SongQuery, cursor?: string | null): Promise<PagedSongs> {
   const limit = 200;
   if (query.view === "recent") {
-    const items = (await bridge.call("recent")) as SongView[];
+    const items = (await bridge.call("recent", { query: query.search.trim() })) as SongView[];
     return { items, isLast: true };
   }
   const sort = `${query.sort.field}:${query.sort.direction}`;
   if (query.view === "favorites" || query.inFavorites) {
+    if (query.search.trim().length > 0) {
+      return bridge.call("search", {
+        query: query.search,
+        inFavorites: true,
+        sort,
+        cursor: cursor ?? null,
+        limit,
+      });
+    }
     return bridge.call("favorites", { sort, cursor: cursor ?? null, limit });
   }
   if (query.search.trim().length > 0) {
