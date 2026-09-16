@@ -30,8 +30,16 @@ function contrast(first: [number, number, number], second: [number, number, numb
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-function whiteAt70PercentOver(background: [number, number, number]): [number, number, number] {
-  return background.map((channel) => Math.round(255 * 0.7 + channel * 0.3)) as [
+/** The ink `artwork.css` paints inactive lyrics with, composited over whatever
+ * sits behind the column — the stylesheet fades to 20% transparency. Opacity is
+ * what makes muted lyrics unreadable on a light surface (the prototype's
+ * 30%-transparent *white* was readable on a dark one; the same pair inverted is
+ * not), so this is the pair worth pinning. */
+function inkAt80PercentOver(
+  ink: [number, number, number],
+  background: [number, number, number],
+): [number, number, number] {
+  return ink.map((channel, index) => Math.round(channel * 0.8 + background[index] * 0.2)) as [
     number,
     number,
     number,
@@ -121,7 +129,7 @@ describe("paletteFromPixels", () => {
     }
   });
 
-  it("keeps grayscale artwork neutral and supplies a dark, readable palette", () => {
+  it("keeps grayscale artwork neutral and supplies a light, readable palette", () => {
     const pixels = new Uint8ClampedArray([
       ...Array.from({ length: 64 }, () => rgba(94, 94, 94)).flat(),
       ...Array.from({ length: 32 }, () => rgba(180, 180, 180)).flat(),
@@ -130,13 +138,24 @@ describe("paletteFromPixels", () => {
     const palette = paletteFromPixels(pixels);
 
     expect(palette).not.toBeNull();
-    for (const color of [palette!.tint, palette!.background, palette!.glow]) {
+    for (const color of [palette!.tint, palette!.background, palette!.glow, palette!.on]) {
       const [red, green, blue] = hexToRgb(color);
       expect(Hct.fromInt(argbFromRgb(red, green, blue)).chroma).toBeLessThan(5);
     }
-    expect(Hct.fromInt(argbFromRgb(...hexToRgb(palette!.background))).tone).toBeLessThan(18);
+    // 素白: the surface is a light paper now, so a *dark* background is the
+    // regression — the failure mode that made every cover read as 黑灰.
+    expect(Hct.fromInt(argbFromRgb(...hexToRgb(palette!.background))).tone).toBeGreaterThan(80);
+    // The two colours the immersion surface actually paints on top of each
+    // other: ink on paper, at AAA.
+    expect(contrast(hexToRgb(palette!.background), hexToRgb(palette!.on))).toBeGreaterThanOrEqual(
+      7,
+    );
+    // And the weakest pair on the surface: an inactive lyric over the corner
+    // wash, which must still clear AA.
     const glow = hexToRgb(palette!.glow);
-    expect(contrast(whiteAt70PercentOver(glow), glow)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(inkAt80PercentOver(hexToRgb(palette!.on), glow), glow)).toBeGreaterThanOrEqual(
+      4.5,
+    );
   });
 });
 

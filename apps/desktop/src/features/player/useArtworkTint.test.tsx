@@ -4,7 +4,7 @@ import { clearArtworkTint, useArtworkTint } from "./useArtworkTint";
 import { loadArtworkPalette, type ArtworkPalette } from "./artworkPalette";
 
 vi.mock("./artworkPalette", () => ({ loadArtworkPalette: vi.fn() }));
-const palette = { tint: "#aaaaaa", background: "#111111", glow: "#222222" };
+const palette = { tint: "#aaaaaa", background: "#111111", glow: "#222222", on: "#333333" };
 afterEach(() => {
   clearArtworkTint();
   vi.clearAllMocks();
@@ -71,11 +71,15 @@ describe("immersive artwork tint", () => {
     const { unmount } = renderHook(() => useArtworkTint("a", "a", false));
     await act(async () => {});
     expect(document.body.dataset.artworkTint).toBe("cover");
+    // The surface is light, so the ink that makes it readable is part of the
+    // palette rather than the theme's fixed white `--accent-on`.
+    expect(document.body.style.getPropertyValue("--player-on")).toBe("#333333");
 
     // Leaving the immersive surface: no tint and no outcome to report.
     unmount();
     clearArtworkTint();
     expect(document.body.dataset.artworkTint).toBeUndefined();
     expect(document.body.style.getPropertyValue("--player-background")).toBe("");
+    expect(document.body.style.getPropertyValue("--player-on")).toBe("");
   });
 });

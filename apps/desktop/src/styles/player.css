@@ -92,10 +92,10 @@
 .progress-line::after { left: 0; width: var(--progress); background: var(--accent); }
 .progress { position: relative; z-index: 1; display: block; width: 100%; height: 8px; margin: 0; appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer; }
 .progress::-webkit-slider-runnable-track { height: 8px; background: transparent; }
-.progress::-webkit-slider-thumb { width: 12px; height: 12px; margin-top: -2px; appearance: none; -webkit-appearance: none; border: 1px solid var(--bg); border-radius: 50%; background: var(--accent); transition: transform var(--motion-fast) var(--ease-standard); }
+.progress::-webkit-slider-thumb { width: 12px; height: 12px; margin-top: -2px; appearance: none; -webkit-appearance: none; border: 2px solid var(--bg); border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent), var(--border) 62%); transition: transform var(--motion-fast) var(--ease-standard); }
 .progress::-moz-range-track { height: 8px; background: transparent; }
 .progress::-moz-range-progress { background: transparent; }
-.progress::-moz-range-thumb { width: 8px; height: 8px; border: 1px solid var(--bg); border-radius: 50%; background: var(--accent); }
+.progress::-moz-range-thumb { width: 8px; height: 8px; border: 2px solid var(--bg); border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent), var(--border) 62%); }
 .progress:hover::-webkit-slider-thumb { transform: scale(1.16); }
 .progress:focus-visible { border-radius: var(--radius-pill); box-shadow: var(--focus-ring); outline: none; }
 .player-options { display: flex; justify-content: flex-end; align-items: center; gap: var(--space-2); }
@@ -109,10 +109,10 @@
 .volume-line::after { left: 0; width: var(--volume); background: var(--accent); }
 .volume { position: relative; z-index: 1; display: block; width: 100%; height: 8px; margin: 0; appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer; }
 .volume::-webkit-slider-runnable-track { height: 8px; background: transparent; }
-.volume::-webkit-slider-thumb { width: 12px; height: 12px; margin-top: -2px; appearance: none; -webkit-appearance: none; border: 1px solid var(--bg); border-radius: 50%; background: var(--accent); transition: transform var(--motion-fast) var(--ease-standard); }
+.volume::-webkit-slider-thumb { width: 12px; height: 12px; margin-top: -2px; appearance: none; -webkit-appearance: none; border: 2px solid var(--bg); border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent), var(--border) 62%); transition: transform var(--motion-fast) var(--ease-standard); }
 .volume::-moz-range-track { height: 8px; background: transparent; }
 .volume::-moz-range-progress { background: transparent; }
-.volume::-moz-range-thumb { width: 8px; height: 8px; border: 1px solid var(--bg); border-radius: 50%; background: var(--accent); }
+.volume::-moz-range-thumb { width: 8px; height: 8px; border: 2px solid var(--bg); border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent), var(--border) 62%); }
 .volume:hover::-webkit-slider-thumb { transform: scale(1.16); }
 .volume:focus-visible { border-radius: var(--radius-pill); box-shadow: var(--focus-ring); outline: none; }
 .now-playing-popover { position: fixed; z-index: 8; inset: 0 0 88px; isolation: isolate; overflow: hidden; overscroll-behavior: none; padding: 80px clamp(28px, 5vw, 152px) clamp(40px, 6vh, 80px); color: var(--accent-on); display: grid; grid-template-columns: minmax(280px, .9fr) minmax(min(420px, calc(100vw - 760px)), 1fr); grid-template-rows: minmax(0, .74fr) minmax(0, 1fr); grid-template-areas: "record info" "record lyrics"; column-gap: clamp(32px, 6vw, 132px); background: color-mix(in oklab, var(--player-tint, var(--accent)), var(--fg) 84%); scrollbar-width: none; }
@@ -124,62 +124,16 @@
 .now-playing-popover .now-title { color: var(--accent-on); font-size: clamp(var(--text-2xl), 4vw, var(--text-3xl)); }
 .song-meta { margin: var(--space-4) 0 0; color: color-mix(in oklab, var(--accent-on), transparent 34%); font-size: var(--text-sm); }
 .now-playing-popover::-webkit-scrollbar, .now-playing-popover .lyrics::-webkit-scrollbar { width: 0; height: 0; display: none; }
-.now-playing-popover .lyrics { grid-area: lyrics; min-width: 0; max-width: 620px; height: calc(2.25em * 5); align-self: start; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--space-3) 0 0; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; scrollbar-width: none; }
+.now-playing-popover .lyrics { grid-area: lyrics; min-width: 0; max-width: 620px; height: calc(2.25em * 5); align-self: start; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scroll-behavior: smooth; padding: 0 var(--space-3) 0 0; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; scrollbar-width: none; }
 .now-playing-popover .lyrics:focus-visible { outline: none; border-radius: var(--radius-sm); box-shadow: var(--focus-ring); }
 .lyrics-track { display: block; min-width: 0; max-width: 100%; min-height: 0; padding: var(--lyrics-edge-top, 0px) 0 var(--lyrics-edge-bottom, 0px); }
-.lyric-line { display: block; width: 100%; min-width: 0; max-width: 100%; min-height: 2.25em; margin: 0; padding: 0; border: 0; background: transparent; text-align: left; font-family: inherit; overflow-wrap: anywhere; word-break: break-word; white-space: normal; color: color-mix(in oklab, var(--accent-on), transparent 46%); font-size: var(--text-base); line-height: 2.25; transition: color var(--motion-fast) var(--ease-standard); }
+.lyric-line { display: block; width: 100%; min-width: 0; max-width: 100%; min-height: 2.25em; margin: 0; padding: 0; border: 0; appearance: none; -webkit-appearance: none; background: transparent; font-family: inherit; text-align: left; cursor: pointer; overflow-wrap: anywhere; word-break: break-word; white-space: normal; color: color-mix(in oklab, var(--accent-on), transparent 46%); font-size: var(--text-base); line-height: 2.25; transition: color var(--motion-base) var(--ease-standard), font-weight var(--motion-base) var(--ease-standard); }
 .lyric-line.is-current { color: var(--accent-on); font-weight: 650; }
 .mode-dismiss { position: absolute; top: var(--space-6); left: var(--space-6); width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: color-mix(in oklab, var(--accent-on), transparent 88%); color: var(--accent-on); display: grid; place-items: center; cursor: pointer; }
 .mode-dismiss:hover { background: color-mix(in oklab, var(--accent-on), transparent 76%); }
 .mode-dismiss svg { width: 22px; height: 22px; }
 @media (min-width: 761px) and (max-width: 980px) { .now-playing-popover { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-5); overflow-y: auto; } .now-playing-popover .playing-cover { margin-left: 0; justify-self: auto; align-self: auto; width: min(60vw, 320px, 42vh); } .now-playing-info { align-self: center; text-align: center; transform: none !important; pointer-events: auto; max-width: min(90vw, 480px); } .song-meta { text-align: center; } }
 @media (min-width: 981px) { .now-playing-popover { grid-template-rows: minmax(0, 1fr); grid-template-areas: "record lyrics"; } .now-playing-info { grid-area: lyrics; position: relative; z-index: 1; pointer-events: none; } .now-playing-popover .lyrics { grid-area: lyrics; min-height: 0; align-self: stretch; height: auto; margin-top: var(--lyrics-start-offset, 0px); padding-bottom: var(--space-2); } }
-/* --- 歌词专注阅读 (task 11.6) ---------------------------------------------
- *
- * The prototype's `body.lyrics-focus-open` is a rearrangement of the *same*
- * surface, not a second surface: the `lyrics` grid area takes the only row and
- * column left, the cover and meta hide, and the 常驻播放栏 below keeps the
- * minimal playback controls — which is what the 152px bottom padding reserves
- * (its own height while `player-mode-open`), plus the 88px inset above.
- * `responsive.css` carries the ≤760px variant of the same rules.
- *
- * APP-ONLY, and the one block here that the extract script cannot reproduce:
- * the prototype ships these declarations *inside its ≤760px media query only*,
- * so on a wide window the prototype's own focus state hides nothing. Re-running
- * `scripts/extract-prototype-css.mjs` therefore deletes this block (and the
- * UA-reset declarations on `.lyric-line` above, which exist because the app
- * renders lyric lines as <button> while the prototype renders <span>).
- */
-body.player-mode-open.lyrics-focus-open .now-playing-popover {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-  grid-template-areas: "lyrics";
-  gap: 0;
-  padding: 72px var(--space-5) 152px;
-}
-body.player-mode-open.lyrics-focus-open .now-playing-popover .playing-cover,
-body.player-mode-open.lyrics-focus-open .now-playing-info {
-  display: none;
-}
-body.player-mode-open.lyrics-focus-open .now-playing-popover .lyrics {
-  max-height: none;
-  height: 100%;
-  align-self: stretch;
-  margin-top: 0;
-  /* Keep the comfortable 620px reading measure the surface already uses, but
-     centre it: the focus grid has a single column, so a left-aligned 620px
-     block would leave the whole right half of the screen empty. `width: 100%`
-     is required — a grid item with auto width + auto margins shrink-wraps to
-     its content instead of filling the column. */
-  width: 100%;
-  margin-inline: auto;
-  padding: clamp(72px, 16vh, 160px) 0 var(--space-8);
-  cursor: pointer;
-}
-body.player-mode-open.lyrics-focus-open .lyric-line {
-  font-size: clamp(var(--text-lg), 5.5vw, var(--text-xl));
-  line-height: 2.4;
-}
 body.player-mode-open { overflow: hidden; }
 body.player-mode-open .playerbar { position: relative; z-index: 9; background: color-mix(in oklab, var(--player-tint, var(--accent)), var(--fg) 76%); border-color: color-mix(in oklab, var(--accent-on), transparent 82%); color: var(--accent-on); backdrop-filter: blur(18px) saturate(135%); }
 body.player-mode-open .playerbar .player-track-card { color: var(--accent-on); background: transparent; }

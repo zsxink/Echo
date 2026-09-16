@@ -1,9 +1,17 @@
 import { Hct, QuantizerWu, argbFromRgb, hexFromArgb } from "@material/material-color-utilities";
 
 export interface ArtworkPalette {
+  /** The record label's ink — the cover colour, kept saturated enough to read
+   * against the black vinyl it sits on. */
   readonly tint: string;
+  /** The immersion surface itself: a near-white paper carrying the cover's hue. */
   readonly background: string;
+  /** A deeper wash of the secondary hue, for the surface's corner gradient. */
   readonly glow: string;
+  /** Content colour for the immersion surface — title, meta, lyrics. The
+   * surface is *light*, so this is a dark tone of the cover's own hue; the
+   * theme's `--accent-on` (white) would be invisible on it. */
+  readonly on: string;
 }
 
 /**
@@ -83,10 +91,17 @@ export function paletteFromPixels(bytes: Uint8ClampedArray): ArtworkPalette | nu
     )?.color ?? primary;
   const tone = (color: Hct, lightness: number, cap: number) =>
     hexFromArgb(Hct.from(color.hue, neutral ? 0 : Math.min(color.chroma, cap), lightness).toInt());
+  // 素白, not 深色: the immersion surface is a light paper that carries the
+  // cover's hue, because a dark surface derived from a dark-ish cover lands on
+  // near-black for most artwork and the tint stops being readable as colour at
+  // all. Lightness stays high and chroma is loosened so the hue is actually
+  // visible; `on` supplies the dark ink for it. Every pair here keeps WCAG AAA
+  // (>7:1) contrast, which the unit suite and the browser suite both assert.
   return {
     tint: tone(primary, 65, 40),
-    background: tone(primary, 12, 24),
-    glow: tone(secondary, 22, 30),
+    background: tone(primary, 92, 16),
+    glow: tone(secondary, 84, 24),
+    on: tone(primary, 24, 12),
   };
 }
 

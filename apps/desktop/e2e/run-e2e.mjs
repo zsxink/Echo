@@ -659,6 +659,7 @@ async function main() {
         return {
           outcome: body.getAttribute('data-artwork-tint'),
           inline: body.style.getPropertyValue('--player-background'),
+          ink: body.style.getPropertyValue('--player-on'),
           resolved,
           painted: getComputedStyle(pop).backgroundColor,
         };
@@ -688,18 +689,49 @@ async function main() {
       fail(
         `A15: the surface paints ${covered.painted} but --player-background resolves to ${covered.resolved} — no rule consumes the extracted colour`,
       );
-    const coveredLuminance = await evalJs(`(() => {
-      const hex = ${JSON.stringify(covered.inline)};
-      if (!/^#[0-9a-f]{6}$/i.test(hex)) return null;
-      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
-      const channel = (v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
-      return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-    })()`);
-    // 深色化处理: the cover's hue is kept but its lightness is dropped, so a
-    // bright album cover cannot take the lyrics' contrast away.
-    if (coveredLuminance === null || coveredLuminance > 0.09)
+    // Relative luminance, read through the browser's own colour engine (a 1x1
+    // canvas) instead of a hand-rolled parser. A registered `<color>` custom
+    // property serialises a `color-mix()` as `oklab(…)`, which no hex reader
+    // understands, and the composited pixel is the honest thing to measure
+    // anyway. Black is painted first on purpose: a value the browser rejected
+    // would then measure as black and fail the "must be light" check loudly,
+    // rather than passing it.
+    const luminanceOf = (cssColor) =>
+      evalJs(`(() => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1;
+        canvas.height = 1;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = 'rgb(0 0 0)';
+        ctx.fillStyle = ${JSON.stringify(cssColor)};
+        ctx.fillRect(0, 0, 1, 1);
+        const [red, green, blue] = ctx.getImageData(0, 0, 1, 1).data;
+        const channel = (v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+        return 0.2126 * channel(red / 255) + 0.7152 * channel(green / 255) + 0.0722 * channel(blue / 255);
+      })()`);
+    const ratio = (first, second) => {
+      const [hi, lo] = [first, second].sort((a, b) => b - a);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    const coveredPaper = await luminanceOf(covered.inline);
+    // 素白: the cover's hue is kept but its lightness is *raised* into a paper.
+    // The failure this guards is the old scheme's, where a dark surface derived
+    // from a dark-ish cover landed on near-black for most artwork and the whole
+    // immersion surface read as 黑灰.
+    if (coveredPaper === null || coveredPaper < 0.6)
       fail(
-        `A15: the cover-derived background ${covered.inline} is not dark enough (relative luminance ${coveredLuminance}); 沉浸模式 must keep the lyrics readable`,
+        `A15: the cover-derived background ${covered.inline} is not light enough (relative luminance ${coveredPaper}); 沉浸模式 leans 素白`,
+      );
+    // Lightness alone is not readability: assert the pair the surface paints.
+    // The ink is part of the cover-derived palette, so a hue that happens to be
+    // pale cannot quietly take the lyrics' contrast away.
+    if (!covered.ink)
+      fail("A15: a cover-bearing song published no ink (--player-on) for the light surface");
+    const coveredInk = await luminanceOf(covered.ink);
+    const coveredContrast = coveredInk === null ? 0 : ratio(coveredPaper, coveredInk);
+    if (coveredContrast < 7)
+      fail(
+        `A15: ink ${covered.ink} on paper ${covered.inline} is only ${coveredContrast.toFixed(1)}:1 (needs AAA 7:1)`,
       );
 
     // A *different* cover must produce a *different* background — otherwise a
@@ -740,8 +772,17 @@ async function main() {
       fail(
         "A15: the fallback background equals the cover-derived one — the cover colour is not being applied at all",
       );
+    // The designed default is a paper too: a song without artwork must not drop
+    // the surface back to a dark panel while the rest of the mode is 素白.
+    const barePaper = await luminanceOf(bare.painted);
+    if (barePaper === null || barePaper < 0.6)
+      fail(
+        `A15: the theme fallback ${bare.painted} is not light enough (relative luminance ${barePaper})`,
+      );
 
-    pass("A15: 沉浸式背景取自封面并深色化，两首不同封面得到不同背景，无封面回退主题色");
+    pass(
+      "A15: 沉浸式背景取自封面并素白化，浅色底 + 深色墨对比 ≥ 7:1，两首不同封面得到不同背景，无封面回退主题纸色",
+    );
   } catch (e) {
     abort("A15", e);
   }

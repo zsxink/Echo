@@ -2,7 +2,12 @@ import { useEffect } from "react";
 
 import { loadArtworkPalette, type ArtworkPalette } from "./artworkPalette";
 
-const properties = ["--player-tint", "--player-background", "--player-glow"] as const;
+const properties = [
+  "--player-tint",
+  "--player-background",
+  "--player-glow",
+  "--player-on",
+] as const;
 
 /**
  * Why the immersive surface ended up without a cover colour, published on
@@ -50,7 +55,12 @@ function applyPalette(
   outcome: Exclude<ArtworkTintOutcome, "cover">,
 ): void {
   if (!palette) return fallBackToTheme(outcome);
-  for (const [index, color] of [palette.tint, palette.background, palette.glow].entries()) {
+  for (const [index, color] of [
+    palette.tint,
+    palette.background,
+    palette.glow,
+    palette.on,
+  ].entries()) {
     document.body.style.setProperty(properties[index], color);
   }
   document.body.dataset.artworkTint = "cover";
