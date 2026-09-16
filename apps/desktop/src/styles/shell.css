@@ -40,8 +40,13 @@
 .playlist-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-count { margin-left: auto; color: var(--muted); font: 500 var(--text-xs)/1 var(--font-mono); }
 .side-foot { margin-top: auto; display: grid; gap: var(--space-2); }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); flex: none; }
 .link-button { border: 0; background: none; color: var(--fg-2); padding: var(--space-2); text-align: left; cursor: pointer; border-radius: var(--radius-sm); }
 .link-button:hover { background: var(--surface); color: var(--fg); }
+.sync-button { width: 100%; display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-xs); }
+.sync-label { color: var(--fg-2); }
+.sync-button #sync-label { margin-left: auto; color: var(--muted); }
+.sync-button:disabled { cursor: wait; opacity: .55; }
 .theme-control { position: relative; }
 #theme-trigger { width: 100%; display: flex; align-items: center; gap: var(--space-2); }
 #theme-current { margin-left: auto; color: var(--muted); font: 500 var(--text-xs)/1 var(--font-mono); }
