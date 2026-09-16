@@ -145,7 +145,9 @@ export function AddToPlaylistDialog({
                       setError(null);
                     }}
                   >
-                    <span className={`cover ${coverClass(playlist.id)}`} aria-hidden="true" />
+                    <span className={`cover ${coverClass(playlist.id)}${playlist.coverKey ? " has-image" : ""}`} aria-hidden="true">
+                      {playlist.coverKey ? <img src={bridge.assetUrl(playlist.coverKey)} alt="" /> : null}
+                    </span>
                     <span className="playlist-picker-copy">
                       <strong>{playlist.name}</strong>
                       <span>{playlist.memberCount} 首歌曲</span>

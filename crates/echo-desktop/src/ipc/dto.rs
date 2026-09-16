@@ -221,14 +221,29 @@ pub struct PlaylistView {
     pub id: String,
     pub name: String,
     pub member_count: usize,
+    /// Opaque `cover://` cache key. Missing for a new/empty playlist or when
+    /// its newest member has no embedded artwork.
+    pub cover_key: Option<String>,
+    /// Whether `cover_key` is a user choice rather than automatic member art.
+    pub has_custom_cover: bool,
 }
 
-impl From<(PlaylistId, String, usize)> for PlaylistView {
-    fn from((id, name, count): (PlaylistId, String, usize)) -> Self {
+impl From<(PlaylistId, String, usize, Option<String>, bool)> for PlaylistView {
+    fn from(
+        (id, name, count, cover_key, has_custom_cover): (
+            PlaylistId,
+            String,
+            usize,
+            Option<String>,
+            bool,
+        ),
+    ) -> Self {
         Self {
             id: id.to_string(),
             name,
             member_count: count,
+            cover_key,
+            has_custom_cover,
         }
     }
 }

@@ -45,6 +45,8 @@ export interface BridgeCommandMap {
   set_favorite: (args: { songId: string; favorite: boolean }) => unknown;
   create_playlist: (args: { root: string; name: string }) => unknown;
   rename_playlist: (args: { id: string; name: string }) => unknown;
+  /** `bytes: null` clears a manually selected cover and restores auto artwork. */
+  set_playlist_cover: (args: { id: string; bytes: number[] | null; mime?: string | null }) => unknown;
   delete_playlist: (args: { id: string }) => unknown;
   add_to_playlists: (args: { song: string; targets: string[] }) => unknown;
   remove_playlist_song: (args: { playlist: string; song: string }) => unknown;

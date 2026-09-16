@@ -729,14 +729,15 @@ pub(crate) fn cover_of_song(
         .map_err(storage)
 }
 
-/// Every asset key referenced by any song of the root — the GC keep-set.
+/// Every asset key referenced by a song or a user-selected playlist cover of
+/// the root — the GC keep-set.
 pub(crate) fn referenced_asset_keys(
     connection: &Connection,
     root: LibraryRootId,
 ) -> Result<Vec<String>, Error> {
     let mut statement = connection
         .prepare(
-            "SELECT ca.asset_key FROM songs s JOIN cover_assets ca ON ca.content_hash = s.cover_hash WHERE s.library_root_uuid = ?1",
+            "SELECT ca.asset_key FROM songs s JOIN cover_assets ca ON ca.content_hash = s.cover_hash WHERE s.library_root_uuid = ?1 UNION SELECT cover_asset_key FROM playlists WHERE library_root_uuid = ?1 AND cover_asset_key IS NOT NULL",
         )
         .map_err(storage)?;
     let keys = statement

@@ -72,6 +72,7 @@ type Command =
   | "set_favorite"
   | "create_playlist"
   | "rename_playlist"
+  | "set_playlist_cover"
   | "delete_playlist"
   | "add_to_playlists"
   | "remove_playlist_song"

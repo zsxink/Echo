@@ -33,6 +33,8 @@ export interface PlaylistsViewProps {
   readonly playlistId: string;
   /** The playlist's display name, resolved by the shell. */
   readonly title: string;
+  readonly coverKey?: string;
+  readonly hasCustomCover?: boolean;
   readonly root: string;
   /** Authoritative sibling names from the shell, for local rename validation. */
   readonly existingNames: readonly string[];
@@ -46,6 +48,8 @@ export interface PlaylistsViewProps {
 export function PlaylistsView({
   playlistId,
   title,
+  coverKey,
+  hasCustomCover = false,
   root,
   existingNames,
   readOnly,
@@ -255,6 +259,8 @@ export function PlaylistsView({
           mode="edit"
           playlistId={playlistId}
           initialName={name}
+          initialCoverKey={coverKey}
+          hasCustomCover={hasCustomCover}
           existingNames={existingNames}
           onClose={() => setRenaming(false)}
           onDone={(next) => {

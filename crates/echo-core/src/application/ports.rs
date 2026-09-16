@@ -150,6 +150,9 @@ pub trait PlaylistRepository: Send + Sync {
     /// The display name of one playlist (used by the desktop to render the
     /// playlist list; task 7.3).
     fn name(&self, id: PlaylistId) -> Result<Option<String>, Error>;
+    /// A user-selected cover asset key. `None` means the playlist follows its
+    /// most recently added song's embedded artwork.
+    fn cover_key(&self, id: PlaylistId) -> Result<Option<String>, Error>;
     fn by_name(
         &self,
         root: LibraryRootId,
@@ -158,6 +161,8 @@ pub trait PlaylistRepository: Send + Sync {
     fn list(&self, root: LibraryRootId) -> Result<Vec<PlaylistId>, Error>;
     fn create(&self, id: PlaylistId, root: LibraryRootId, name: &str) -> Result<(), Error>;
     fn rename(&self, id: PlaylistId, to_normalized_name: &str) -> Result<(), Error>;
+    /// Set (or clear) the user-selected cover. Clearing restores auto-cover.
+    fn set_cover_key(&self, id: PlaylistId, key: Option<&str>) -> Result<(), Error>;
     fn delete(&self, id: PlaylistId) -> Result<(), Error>;
     fn members(&self, id: PlaylistId) -> Result<Vec<PlaylistMember>, Error>;
     fn add_member(&self, playlist: PlaylistId, song: SongId, position: u64) -> Result<(), Error>;

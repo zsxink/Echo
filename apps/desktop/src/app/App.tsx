@@ -34,6 +34,7 @@
 
 import { useCallback, useRef, useState } from "react";
 
+import { bridge } from "../bridge";
 import { ChooseRootView } from "../features/workspace/ChooseRootView";
 import { useLibraryPlaylists } from "../features/playlists/useLibraryPlaylists";
 import { LibraryStatusView } from "../features/workspace/LibraryStatusView";
@@ -206,9 +207,11 @@ export function App() {
                       onClick={() => selectView("playlist", playlist.id)}
                     >
                       <span
-                        className={`cover playlist-cover ${coverClass(playlist.id)}`}
+                        className={`cover playlist-cover ${coverClass(playlist.id)}${playlist.coverKey ? " has-image" : ""}`}
                         aria-hidden="true"
-                      />
+                      >
+                        {playlist.coverKey ? <img src={bridge.assetUrl(playlist.coverKey)} alt="" /> : null}
+                      </span>
                       <span className="playlist-name">{playlist.name}</span>
                       {/* `memberCount` is authoritative from the backend — no
                           need to open the playlist to know its size. */}
@@ -248,6 +251,8 @@ export function App() {
                 <PlaylistsView
                   playlistId={activePlaylistId}
                   title={viewTitle}
+                  coverKey={playlists.find((playlist) => playlist.id === activePlaylistId)?.coverKey}
+                  hasCustomCover={playlists.find((playlist) => playlist.id === activePlaylistId)?.hasCustomCover}
                   root={status.activeRoot ?? ""}
                   existingNames={playlists.map((playlist) => playlist.name)}
                   readOnly={status.readOnly}

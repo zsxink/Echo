@@ -49,6 +49,8 @@ export interface PlaylistView {
   readonly id: string;
   readonly name: string;
   readonly memberCount: number;
+  readonly coverKey?: string;
+  readonly hasCustomCover: boolean;
 }
 
 export interface LibraryRootStatusDto {

@@ -472,6 +472,7 @@ fn main() {
             commands::set_favorite,
             commands::create_playlist,
             commands::rename_playlist,
+            commands::set_playlist_cover,
             commands::delete_playlist,
             commands::add_to_playlists,
             commands::remove_playlist_song,

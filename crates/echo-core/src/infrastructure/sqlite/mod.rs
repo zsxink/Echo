@@ -629,6 +629,20 @@ impl PlaylistRepository for SqliteDatabase {
         })
     }
 
+    fn cover_key(&self, id: PlaylistId) -> Result<Option<String>, Error> {
+        self.with_reader(move |connection| {
+            connection
+                .query_row(
+                    "SELECT cover_asset_key FROM playlists WHERE uuid = ?1",
+                    params![id.to_string()],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .optional()
+                .map_err(storage)
+                .map(|value| value.flatten())
+        })
+    }
+
     fn by_name(
         &self,
         root: LibraryRootId,
@@ -673,6 +687,19 @@ impl PlaylistRepository for SqliteDatabase {
                 &id.to_string(),
                 now_secs,
             )?;
+            Ok(())
+        })
+    }
+
+    fn set_cover_key(&self, id: PlaylistId, key: Option<&str>) -> Result<(), Error> {
+        let key = key.map(str::to_owned);
+        self.writer.run(move |connection| {
+            connection
+                .execute(
+                    "UPDATE playlists SET cover_asset_key = ?2, updated_at = ?3 WHERE uuid = ?1",
+                    params![id.to_string(), key, now_ms()],
+                )
+                .map_err(storage)?;
             Ok(())
         })
     }

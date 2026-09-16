@@ -192,6 +192,7 @@ impl LibraryRepository for MemoryLibraryRepository {
 #[derive(Clone, Debug, Default)]
 pub struct MemoryPlaylistRepository {
     names: Shared<BTreeMap<PlaylistId, (LibraryRootId, String)>>,
+    covers: Shared<BTreeMap<PlaylistId, String>>,
     members: Shared<BTreeMap<(PlaylistId, SongId), PlaylistMember>>,
     next_position: Shared<BTreeMap<PlaylistId, u64>>,
 }
@@ -214,6 +215,9 @@ impl PlaylistRepository for MemoryPlaylistRepository {
             .unwrap()
             .get(&id)
             .map(|(_, name)| name.clone()))
+    }
+    fn cover_key(&self, id: PlaylistId) -> Result<Option<String>, Error> {
+        Ok(self.covers.lock().unwrap().get(&id).cloned())
     }
     fn by_name(
         &self,
@@ -249,6 +253,15 @@ impl PlaylistRepository for MemoryPlaylistRepository {
     fn rename(&self, id: PlaylistId, to_normalized_name: &str) -> Result<(), Error> {
         if let Some((_, n)) = self.names.lock().unwrap().get_mut(&id) {
             to_normalized_name.clone_into(n);
+        }
+        Ok(())
+    }
+    fn set_cover_key(&self, id: PlaylistId, key: Option<&str>) -> Result<(), Error> {
+        let mut covers = self.covers.lock().unwrap();
+        if let Some(key) = key {
+            covers.insert(id, key.to_owned());
+        } else {
+            covers.remove(&id);
         }
         Ok(())
     }

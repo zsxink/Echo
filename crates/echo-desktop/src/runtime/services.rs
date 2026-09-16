@@ -415,7 +415,29 @@ impl AppServices {
         for id in ids {
             let name = PlaylistRepository::name(repos, id)?.unwrap_or_default();
             let count = repos.members(id)?.len();
-            views.push(PlaylistView::from((id, name, count)));
+            // A manual choice always wins. Otherwise the newest member's
+            // embedded artwork is the playlist cover; a brand-new playlist
+            // deliberately has no cover at all.
+            let custom_cover_key = PlaylistRepository::cover_key(repos, id)?;
+            let has_custom_cover = custom_cover_key.is_some();
+            let cover_key = match custom_cover_key {
+                some @ Some(_) => some,
+                None => repos
+                    .members(id)?
+                    .last()
+                    .map(|member| member.song())
+                    .map(|song| self.deps.covers.cover_of(song))
+                    .transpose()?
+                    .flatten()
+                    .map(|cover| cover.asset_key),
+            };
+            views.push(PlaylistView::from((
+                id,
+                name,
+                count,
+                cover_key,
+                has_custom_cover,
+            )));
         }
         Ok(views)
     }
@@ -565,6 +587,45 @@ impl AppServices {
     pub fn rename_playlist(&self, id: PlaylistId, name: &str) -> Result<(), Error> {
         self.guard_writes()?;
         RenamePlaylist::new(self.deps.playlists.as_ref()).execute(id, name)
+    }
+
+    /// Persist a user-selected image as the playlist cover. `None` clears the
+    /// manual choice and returns the playlist to automatic newest-song artwork.
+    pub fn set_playlist_cover(
+        &self,
+        id: PlaylistId,
+        bytes: Option<Vec<u8>>,
+        mime: Option<&str>,
+    ) -> Result<(), Error> {
+        self.guard_writes()?;
+        if PlaylistRepository::by_id(self.deps.playlists.as_ref(), id)?.is_none() {
+            return Err(Error::unavailable("playlist", "not found"));
+        }
+        let key = match bytes {
+            None => None,
+            Some(bytes) => {
+                const MAX_COVER_BYTES: usize = 5 * 1024 * 1024;
+                let mime = mime.unwrap_or_default();
+                if bytes.is_empty() || bytes.len() > MAX_COVER_BYTES {
+                    return Err(Error::validation(
+                        echo_core::error::Subject::Other,
+                        "cover",
+                        "image must be between 1 byte and 5 MiB",
+                    ));
+                }
+                if !matches!(mime, "image/jpeg" | "image/png" | "image/webp") {
+                    return Err(Error::validation(
+                        echo_core::error::Subject::Other,
+                        "cover",
+                        "unsupported image type",
+                    ));
+                }
+                // The cache owns raw image bytes and returns an opaque key;
+                // neither a source path nor the bytes cross back to the UI.
+                Some(self.deps.cover_cache.put(&bytes, mime)?)
+            }
+        };
+        self.deps.playlists.set_cover_key(id, key.as_deref())
     }
 
     /// Delete a playlist (songs untouched).
@@ -984,6 +1045,66 @@ mod tests {
 
         assert_eq!(keys.len(), 1);
         assert!(keys.contains_key(&known.to_string()));
+    }
+
+    #[test]
+    fn playlist_cover_is_empty_then_follows_latest_member_unless_manually_set() {
+        let fixture = ScanFixture::new();
+        fixture.write_file("older.flac", b"older-audio");
+        fixture.write_file("newer.flac", b"newer-audio");
+        fixture.set_audio_with_cover("older.flac", "旧封面", 1_000, b"older-cover");
+        fixture.set_audio_with_cover("newer.flac", "新封面", 1_000, b"newer-cover");
+        StartScan::new(&fixture.deps, &fixture.supervisor)
+            .run(fixture.root)
+            .expect("scan");
+        let app = services(&fixture);
+        let playlist = app
+            .create_playlist(fixture.root, "测试歌单")
+            .expect("create");
+        let playlist = PlaylistId::from_str(&playlist).expect("playlist id");
+
+        assert!(
+            app.playlists().expect("list")[0].cover_key.is_none(),
+            "new playlist is blank"
+        );
+
+        let songs = fixture.all_songs();
+        let older = songs
+            .iter()
+            .find(|song| song.title() == Some("旧封面"))
+            .expect("older");
+        let newer = songs
+            .iter()
+            .find(|song| song.title() == Some("新封面"))
+            .expect("newer");
+        app.add_to_playlists(older.id(), &[playlist])
+            .expect("add older");
+        app.add_to_playlists(newer.id(), &[playlist])
+            .expect("add newer");
+        let latest_key =
+            app.cover_keys(&[newer.id()]).expect("cover key")[&newer.id().to_string()].clone();
+        assert_eq!(
+            app.playlists().expect("list")[0].cover_key.as_deref(),
+            Some(latest_key.as_str())
+        );
+
+        app.set_playlist_cover(playlist, Some(b"manual-cover".to_vec()), Some("image/png"))
+            .expect("set manual cover");
+        let manual_key = app.playlists().expect("list")[0]
+            .cover_key
+            .clone()
+            .expect("manual key");
+        assert_ne!(
+            manual_key, latest_key,
+            "manual choice wins over automatic artwork"
+        );
+
+        app.set_playlist_cover(playlist, None, None)
+            .expect("restore automatic");
+        assert_eq!(
+            app.playlists().expect("list")[0].cover_key.as_deref(),
+            Some(latest_key.as_str())
+        );
     }
 
     #[test]

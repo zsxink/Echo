@@ -17,12 +17,17 @@ import { useMemo, useRef, useState } from "react";
 
 import { bridge } from "../../bridge";
 import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
+import { Icon } from "../../app/Icon";
+import { coverClass } from "../library/coverPalette";
 
 export interface PlaylistNameDialogProps {
   readonly mode: "create" | "edit";
   /** Required for `mode="edit"` — the playlist being renamed. */
   readonly playlistId?: string;
   readonly initialName?: string;
+  /** Current effective cover, used as the edit preview. */
+  readonly initialCoverKey?: string;
+  readonly hasCustomCover?: boolean;
   /** Active library identity. Required for creates; never infer or fabricate it. */
   readonly root?: string;
   /** Names already in use; the current playlist's own name is excluded. */
@@ -36,6 +41,8 @@ export function PlaylistNameDialog({
   mode,
   playlistId,
   initialName = "",
+  initialCoverKey,
+  hasCustomCover = false,
   root,
   existingNames,
   onClose,
@@ -45,7 +52,12 @@ export function PlaylistNameDialog({
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // `undefined` = untouched; `null` = explicitly restore automatic artwork.
+  const [coverChange, setCoverChange] = useState<number[] | null | undefined>(undefined);
+  const [coverMime, setCoverMime] = useState<string | null>(null);
+  const [coverPreview, setCoverPreview] = useState<string | undefined>(initialCoverKey);
   const dialogRef = useRef<HTMLElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
   // The prototype puts this dialog in the `BlockingDialog` position of its own
   // stack (it is above the picker that may open it).
   useOverlay({ tier: OverlayTier.BlockingDialog, onClose, containerRef: dialogRef });
@@ -91,6 +103,13 @@ export function PlaylistNameDialog({
         else onDone(name);
       } else {
         await bridge.call("rename_playlist", { id: playlistId, name });
+        if (coverChange !== undefined) {
+          await bridge.call("set_playlist_cover", {
+            id: playlistId,
+            bytes: coverChange,
+            mime: coverChange ? coverMime : null,
+          });
+        }
         onDone(name);
       }
       onClose();
@@ -151,6 +170,49 @@ export function PlaylistNameDialog({
             {visible}
           </p>
         </div>
+        {!creating ? (
+          <div className="playlist-cover-field">
+            <span>歌单封面</span>
+            <button
+              type="button"
+              className="playlist-cover-preview"
+              aria-label="选择歌单封面图片"
+              onClick={() => coverInputRef.current?.click()}
+            >
+              <span className={`cover ${coverClass(playlistId ?? "playlist")}${coverPreview ? " has-image" : ""}`}>
+                {coverPreview ? <img src={coverPreview.startsWith("blob:") ? coverPreview : bridge.assetUrl(coverPreview)} alt="当前歌单封面" /> : null}
+              </span>
+              <span className="playlist-cover-hint-overlay"><Icon name="edit" />更换图片</span>
+            </button>
+            <input
+              ref={coverInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              hidden
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                event.currentTarget.value = "";
+                if (!file) return;
+                if (file.size > 5 * 1024 * 1024) { setError("封面图片不能超过 5 MB。"); return; }
+                const reader = new FileReader();
+                reader.onload = () => {
+                  const bytes = new Uint8Array(reader.result as ArrayBuffer);
+                  setCoverChange(Array.from(bytes));
+                  setCoverMime(file.type);
+                  setCoverPreview(URL.createObjectURL(file));
+                  setError(null);
+                };
+                reader.onerror = () => setError("读取封面图片失败，请重试。");
+                reader.readAsArrayBuffer(file);
+              }}
+            />
+            {coverChange !== null && (coverChange !== undefined || hasCustomCover) ? (
+              <button type="button" className="btn" onClick={() => { setCoverChange(null); setCoverMime(null); setCoverPreview(undefined); }}>
+                恢复自动封面
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <div className="playlist-name-actions">
           <button type="button" className="btn" onClick={onClose}>
             取消

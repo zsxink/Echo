@@ -26,7 +26,7 @@ use crate::error::Error;
 struct Store {
     songs: BTreeMap<SongId, Song>,
     roots: BTreeMap<LibraryRootId, LibraryRoot>,
-    playlists: BTreeMap<PlaylistId, (LibraryRootId, String)>,
+    playlists: BTreeMap<PlaylistId, (LibraryRootId, String, Option<String>)>,
     members: BTreeMap<(PlaylistId, SongId), PlaylistMember>,
     operations: BTreeMap<(OperationId, String), OperationItem>,
     envelopes: BTreeMap<OperationId, (LibraryRootId, String, Option<SongId>)>,
@@ -311,7 +311,18 @@ impl PlaylistRepository for MemoryDatabase {
         Ok(self.lock().playlists.contains_key(&id).then_some(id))
     }
     fn name(&self, id: PlaylistId) -> Result<Option<String>, Error> {
-        Ok(self.lock().playlists.get(&id).map(|(_, name)| name.clone()))
+        Ok(self
+            .lock()
+            .playlists
+            .get(&id)
+            .map(|(_, name, _)| name.clone()))
+    }
+    fn cover_key(&self, id: PlaylistId) -> Result<Option<String>, Error> {
+        Ok(self
+            .lock()
+            .playlists
+            .get(&id)
+            .and_then(|(_, _, key)| key.clone()))
     }
     fn by_name(
         &self,
@@ -323,7 +334,7 @@ impl PlaylistRepository for MemoryDatabase {
             .lock()
             .playlists
             .iter()
-            .find(|(_, (r, n))| *r == root && playlist_name_key(n) == key)
+            .find(|(_, (r, n, _))| *r == root && playlist_name_key(n) == key)
             .map(|(id, _)| *id))
     }
     fn list(&self, root: LibraryRootId) -> Result<Vec<PlaylistId>, Error> {
@@ -331,7 +342,7 @@ impl PlaylistRepository for MemoryDatabase {
             .lock()
             .playlists
             .iter()
-            .filter(|(_, (r, _))| *r == root)
+            .filter(|(_, (r, _, _))| *r == root)
             .map(|(id, _)| *id)
             .collect())
     }
@@ -341,28 +352,34 @@ impl PlaylistRepository for MemoryDatabase {
         if store
             .playlists
             .iter()
-            .any(|(_, (r, n))| *r == root && playlist_name_key(n) == key)
+            .any(|(_, (r, n, _))| *r == root && playlist_name_key(n) == key)
         {
             return Err(Error::conflict("playlist name already exists"));
         }
-        store.playlists.insert(id, (root, name.to_owned()));
+        store.playlists.insert(id, (root, name.to_owned(), None));
         Ok(())
     }
     fn rename(&self, id: PlaylistId, to_normalized_name: &str) -> Result<(), Error> {
         let mut store = self.lock();
-        let Some((root, _)) = store.playlists.get(&id).cloned() else {
+        let Some((root, _, _)) = store.playlists.get(&id).cloned() else {
             return Ok(());
         };
         let key = playlist_name_key(to_normalized_name);
         if store
             .playlists
             .iter()
-            .any(|(other, (r, n))| *other != id && *r == root && playlist_name_key(n) == key)
+            .any(|(other, (r, n, _))| *other != id && *r == root && playlist_name_key(n) == key)
         {
             return Err(Error::conflict("playlist name already exists"));
         }
-        if let Some((_, name)) = store.playlists.get_mut(&id) {
+        if let Some((_, name, _)) = store.playlists.get_mut(&id) {
             to_normalized_name.clone_into(name);
+        }
+        Ok(())
+    }
+    fn set_cover_key(&self, id: PlaylistId, key: Option<&str>) -> Result<(), Error> {
+        if let Some((_, _, cover)) = self.lock().playlists.get_mut(&id) {
+            *cover = key.map(str::to_owned);
         }
         Ok(())
     }
@@ -875,7 +892,9 @@ impl TxAccess for MemoryTx<'_> {
         root: LibraryRootId,
         name: &str,
     ) -> Result<(), Error> {
-        self.store.playlists.insert(id, (root, name.to_owned()));
+        self.store
+            .playlists
+            .insert(id, (root, name.to_owned(), None));
         Ok(())
     }
     fn insert_member(&mut self, member: &PlaylistMember) -> Result<(), Error> {

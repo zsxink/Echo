@@ -26,6 +26,7 @@ mod migrations {
         include_str!("migrations/0004_song_audio_parameters.sql");
     pub const SYNC_FOUNDATION: &str = include_str!("migrations/0005_sync_foundation.sql");
     pub const PORTABLE_LAYOUT: &str = include_str!("migrations/0006_portable_layout.sql");
+    pub const PLAYLIST_COVERS: &str = include_str!("migrations/0007_playlist_covers.sql");
 }
 
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -78,6 +79,7 @@ pub(crate) fn apply_migrations(connection: &mut Connection) -> Result<(), Error>
             (4, migrations::SONG_AUDIO_PARAMETERS),
             (5, migrations::SYNC_FOUNDATION),
             (6, migrations::PORTABLE_LAYOUT),
+            (7, migrations::PLAYLIST_COVERS),
         ],
     )
 }

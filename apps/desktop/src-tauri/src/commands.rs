@@ -279,6 +279,19 @@ pub fn rename_playlist(
 }
 
 #[tauri::command]
+pub fn set_playlist_cover(
+    services: State<'_, AppServices>,
+    id: String,
+    bytes: Option<Vec<u8>>,
+    mime: Option<String>,
+) -> Result<(), IpcErrorDto> {
+    let playlist = parse_id::<PlaylistId>(&id, "id")?;
+    services
+        .set_playlist_cover(playlist, bytes, mime.as_deref())
+        .map_err(IpcErrorDto::from)
+}
+
+#[tauri::command]
 pub fn delete_playlist(services: State<'_, AppServices>, id: String) -> Result<(), IpcErrorDto> {
     let playlist = parse_id::<PlaylistId>(&id, "id")?;
     services
