@@ -8,7 +8,7 @@
  * Declaration order is preserved. Imports follow the intended cascade:
  * tokens → shell → library → player → responsive → app-extras.
  */
-.library-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-5); margin-bottom: var(--space-2); }
+.library-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-5); margin-bottom: var(--space-1); }
 .eyebrow { margin: 0 0 var(--space-2); color: var(--muted); font: 600 var(--text-xs)/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
 h1, h2, h3, p { margin-top: 0; }
 h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font-display); letter-spacing: var(--tracking-display); }
@@ -52,8 +52,8 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 .track-table col.actions { width: 108px; }
 .track-table thead { background: var(--bg); color: var(--muted); font: 600 var(--text-xs)/1 var(--font-mono); letter-spacing: .04em; }
 .track-table th { position: sticky; top: 0; z-index: 1; background: var(--bg); }
-.track-table th { height: 32px; padding: 0 var(--space-2); text-align: left; font-weight: inherit; }
-.track-table td { height: 52px; padding: 0 calc(var(--space-2) * .8); border-top: 0; vertical-align: middle; }
+.track-table th { height: 28px; padding: 0 var(--space-2); text-align: left; font-weight: inherit; }
+.track-table td { height: 44px; padding: 0 calc(var(--space-2) * .8); border-top: 0; vertical-align: middle; }
 .track-table th:last-child, .track-table td:last-child { padding-inline: calc(var(--space-2) * .75); }
 .track-row { cursor: pointer; transition: background var(--motion-fast) var(--ease-standard); }
 .track-row:hover { background: var(--surface); }
@@ -74,7 +74,7 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 @keyframes playing-bars { to { transform: scaleY(.38); } }
 .track-play svg { width: 16px; }
 .track-main { display: flex; align-items: center; min-width: 0; gap: var(--space-2); }
-.cover { flex: none; width: 34px; height: 34px; border-radius: var(--radius-sm); overflow: hidden; position: relative; background: color-mix(in oklab, var(--accent), var(--fg) 45%); }
+.cover { flex: none; width: 32px; height: 32px; border-radius: var(--radius-sm); overflow: hidden; position: relative; background: color-mix(in oklab, var(--accent), var(--fg) 45%); }
 .cover::before, .cover::after { content: ""; position: absolute; border: 1px solid color-mix(in oklab, var(--accent-on), transparent 35%); }
 .cover::before { inset: 6px; border-radius: 50%; }
 .cover::after { width: 4px; height: 4px; border-radius: 50%; top: 15px; left: 15px; background: var(--accent-on); border: 0; }

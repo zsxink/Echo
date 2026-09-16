@@ -20,10 +20,10 @@
 
 - [x] 4.1 更新歌单成员创建/删除用例和 SQLite 适配器，使用稳定成员 UUID、追加顺序键与成员墓碑；验证跨歌单添加产生不同成员 UUID、重复添加保持原位置、删除可被恢复流程消费。
 - [x] 4.2 更新收藏和其他可同步变更的事务边界，保证正表、outbox 与可携带对象资料在可恢复流程中一致；验证任何载荷均不包含本机绝对路径、数据库路径、凭据或播放状态。
-- [ ] 4.3 在 desktop composition root 装配资料库控制面与恢复服务，但不装配 RemoteConnector、不新增网络依赖或同步 UI；运行 `cargo test -p echo-desktop` 和桌面 IPC 相关测试。
+- [x] 4.3 在 desktop composition root 装配资料库控制面与恢复服务，但不装配 RemoteConnector、不新增网络依赖或同步 UI；运行 `cargo test -p echo-desktop` 和桌面 IPC 相关测试。
 
 ## 5. 文档与全量验证
 
 - [x] 5.1 更新 `docs/DESIGN.md`、`docs/ROADMAP.md` 和相关示例，将新导入布局改为 `media/` 并说明 `echo/`、`echo/tmp/` 与 SQLite 的边界；人工核对文档不承诺一期同步入口。
 - [x] 5.2 更新测试夹具和原生验收材料，覆盖新资料库、旧布局拒绝、控制面不可写、新设备全量恢复与媒体缺失恢复；运行 `pnpm --filter @echo/desktop test`（或项目实际等效测试命令）。
-- [ ] 5.3 执行交付检查：`cargo fmt --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings`、`cargo test --workspace`、`pnpm lint`、`pnpm typecheck`、`pnpm test` 和 `openspec validate establish-portable-library-layout --strict`，修复本 change 引入的失败后记录结果。
+- [x] 5.3 执行交付检查：`cargo fmt --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings`、`cargo test --workspace`、`pnpm lint`、`pnpm typecheck`、`pnpm test` 和 `openspec validate establish-portable-library-layout --strict`，修复本 change 引入的失败后记录结果。

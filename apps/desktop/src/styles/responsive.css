@@ -53,3 +53,28 @@
 }
 @media (max-width: 760px) { .settings-dialog { align-items: end; padding: var(--space-4); } .settings-panel { width: 100%; max-height: min(740px, calc(100dvh - 32px)); } .settings-dialog-head { padding: calc(var(--space-5) * .8) calc(var(--space-4) * .8) calc(var(--space-4) * .8); } .settings-scroll { padding: calc(var(--space-4) * .8); } .settings-intro { margin-bottom: var(--space-5); } .settings-section { padding: calc(var(--space-5) * .8) calc(var(--space-4) * .8); } .setting-row { grid-template-columns: 1fr; align-items: stretch; gap: var(--space-4); } .setting-row .btn { width: 100%; } .storage-path { max-width: 100%; } .theme-choices { grid-template-columns: 1fr; } .setting-theme-option { min-height: 76px; flex-direction: row; align-items: center; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 1ms !important; animation-duration: 1ms !important; animation-iteration-count: 1 !important; } }
+/* Artwork colors inherit through the keyed track surface and the persistent
+ * playback bar. Registered colors interpolate on their stable body ancestor. */
+@property --player-tint { syntax: '<color>'; inherits: true; initial-value: #b8999e; }
+@property --player-background { syntax: '<color>'; inherits: true; initial-value: #201a1b; }
+@property --player-glow { syntax: '<color>'; inherits: true; initial-value: #382d2f; }
+body.player-mode-open {
+  --player-tint: var(--accent);
+  --player-background: color-mix(in oklab, var(--accent), #151515 82%);
+  --player-glow: color-mix(in oklab, var(--accent), #151515 66%);
+  transition: --player-tint 800ms ease-out, --player-background 800ms ease-out, --player-glow 800ms ease-out;
+}
+body.player-mode-open .now-playing-popover { background: var(--player-background); }
+body.player-mode-open .now-playing-popover::before {
+  inset: 0;
+  background: radial-gradient(ellipse at 18% 38%, var(--player-glow), transparent 72%);
+  filter: none;
+  opacity: 1;
+}
+body.player-mode-open .playerbar { background: var(--player-background); }
+body.player-mode-open .queue-popover { background: var(--player-background); }
+body.player-mode-open .lyric-line { color: color-mix(in oklab, var(--accent-on), transparent 30%); }
+body.player-mode-open .lyric-line.is-current { color: var(--accent-on); }
+@media (prefers-reduced-motion: reduce) {
+  body.player-mode-open { transition: none; }
+}

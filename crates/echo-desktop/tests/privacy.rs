@@ -23,11 +23,12 @@
 //!   in the diagnostics directory and never leaves it.
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use echo_desktop::ipc::error::{ErrorPolicy, IpcErrorDto};
-use echo_desktop::platform::diagnostics::Diagnostics;
+use echo_desktop::platform::diagnostics::{Diagnostics, RollingLog};
 
 /// An absolute path that must never appear verbatim in default logs.
 const ABS_PATH: &str = "/Users/someone/Music/Albums/Night Drive/song.mp3";
@@ -136,8 +137,12 @@ fn structured_logging_never_leaks_path_lyric_tag_or_content() {
         path: PathBuf::from(ABS_PATH),
     };
     let safe_line = err.to_log(echo_core::logging::DiagnosticMode::Off);
-    tracing::info!(target: "echo_desktop", operation = "metadata_read", "{}", safe_line);
-    tracing::info!(target: "echo_desktop", operation = "privacy-flush", "flush marker");
+    // The process-global subscriber may already belong to the test harness.
+    // Exercise the same production rolling writer directly here; installer
+    // idempotency is covered by the platform unit test.
+    let mut writer = RollingLog::new(diag.log_path(), 1024 * 1024, 1, 2 * 1024 * 1024);
+    writeln!(writer, "operation=metadata_read {safe_line}").expect("write redacted event");
+    writer.flush().expect("flush redacted event");
     let text = fs::read_to_string(&log_path).unwrap_or_default();
 
     // Safe fields survive (error code + redacted file name).

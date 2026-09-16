@@ -231,6 +231,10 @@ impl io::Write for RollingLog {
         }
         let file = inner.file.as_mut().expect("opened above");
         let n = file.write(buf)?;
+        // A tracing formatter may not call `flush` after every event. Logs are
+        // diagnostic evidence, so make each completed event visible promptly
+        // rather than leaving it buffered until process shutdown.
+        file.flush()?;
         inner.written += n as u64;
         Ok(n)
     }
