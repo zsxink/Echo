@@ -51,6 +51,12 @@ Wrap playlist membership mutation and enqueue mutations in awaited handlers. Ref
 
 Optimistic UI was considered only for favorite toggling because that operation already has authoritative rollback. It is not used for playlist create/remove or queue commands because their current implementation lacks a reliable correction snapshot at the mutation point.
 
+### 7. 删除回滚必须恢复时间戳播放历史
+
+歌曲删除的队列快照/回滚路径（`deletion.rs`）快照并重建 entries、current 与 shuffle bag，但未重建 history：`DeletedSnapshot.history` 仍是 `Vec<QueueEntryId>`（从 `queue.history()` 取），而 `Queue` 内部已迁移为 `Vec<HistoryRecord>`；回滚时该字段被快照却从不被消费。删除在播放器边界失败触发回滚后，回滚队列会丢失全部播放历史，“上一首”直到产生新的历史点才恢复可用。
+
+修复方案：将 `DeletedSnapshot.history` 迁移为 `Vec<HistoryRecord>`，快照改用 `queue.history_records()`；`rebuild_shallow_queue` 回滚时经 `restore_history` 重建（自动过滤已不在 entries 的 id 与过期记录）。该回滚路径本就不重排 entries/current/shuffle，history 一并恢复，与“回退不得停止当前播放”的契约一致。
+
 ### 6. Restore regression checks before adding new acceptance evidence
 
 Diagnose and fix the actor test's load-event/state transition rather than relaxing its expected `Playing` state. Ensure diagnostic-hook tests isolate their temporary output and no test logger writes to the asserted clean target. Add focused regression tests, then register a native/mock bridge flow that covers create → add → play → modes → previous → restart and run it together with existing Rust/frontend quality gates.

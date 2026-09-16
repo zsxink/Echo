@@ -15,6 +15,7 @@
 - [x] 3.2 Update UI snapshot DTO mapping and QueuePanel rendering to consume the projection and expose blocked state; verify runtime mapping and frontend queue tests assert current entry remains index zero after next/previous/mode changes.
 - [x] 3.3 Replace count-only history with timestamped, three-day, entry-ID-based records; persist and backward-compatibly restore it in desktop session state; verify expiry, restart, duplicate entries, deleted/missing records, and pending-order preservation.
 - [x] 3.4 Preserve restore verdicts as blocked entry state through coordinator/runtime/UI and report correct restored/blocked/drop counts; verify blocked entries remain visible, skip safely, and become retryable when availability returns.
+- [ ] 3.5 Migrate the deletion-coordinator snapshot history to `Vec<HistoryRecord>` and rebuild it on rollback; verify a failed delete restores entries, current, shuffle and timestamped history so "previous" remains available — a regression test covering the rollback path must fail before the fix and pass after.
 
 ## 4. Correct library query and playback-context boundaries
 
