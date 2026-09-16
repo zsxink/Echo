@@ -342,6 +342,29 @@
   border-radius: 50%;
 }
 
+/* --- immersive player: React-only lyric behaviour -------------------------
+ *
+ * The prototype renders lyric rows as spans, while the app uses buttons so a
+ * timed row can seek and remain keyboard accessible. Keep the button semantics
+ * without leaking the platform's native button chrome into the lyric column.
+ * These rules intentionally live in the app-only layer: player.css is generated
+ * from the prototype and may be replaced by the extraction script.
+ */
+.now-playing-popover .lyrics {
+  scroll-behavior: smooth;
+}
+button.lyric-line {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
 /* --- immersive player: 回到当前行 while auto-follow is paused -------------
  *
  * The prototype draws no control above the lyrics — it ships a `.lyrics-label`
