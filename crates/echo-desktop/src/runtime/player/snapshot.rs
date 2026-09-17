@@ -1,6 +1,7 @@
 //! UI snapshot mapping + forwarder (task 11.2).
 
 use std::collections::HashMap;
+use std::hash::BuildHasher;
 use std::sync::Arc;
 
 use echo_core::domain::ids::SongId;
@@ -22,10 +23,10 @@ use super::{CoordinatorView, QueueEntryMeta, QueueItem, UiPlayerSnapshot, UiQueu
 /// the player bar blank (empty 当前播放区 + dead mode button) while a song was
 /// audibly playing.
 #[must_use]
-pub fn map_snapshot(
+pub fn map_snapshot<S: BuildHasher>(
     raw: &crate::player::port::PlayerSnapshot,
     view: &CoordinatorView,
-    metadata: &HashMap<SongId, QueueEntryMeta>,
+    metadata: &HashMap<SongId, QueueEntryMeta, S>,
 ) -> UiPlayerSnapshot {
     let current = view.current.as_ref();
     let current_id = current.map(|e| e.id);

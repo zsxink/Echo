@@ -152,7 +152,7 @@ impl StagedResource {
 /// [`RelativeMediaPath`].
 /// Internal adapter-completeness contract. Public use cases consume the
 /// focused capabilities exposed from `filesystem_capabilities` instead.
-pub(crate) trait LegacyLibraryFileSystem: Send + Sync {
+pub trait LegacyLibraryFileSystem: Send + Sync {
     /// Enumerate supported files under `root`. Follows no symlinks (leaks out
     /// of the root are rejected by the adapter).
     fn enumerate(&self, root: LibraryRootId) -> Result<Vec<RelativeMediaPath>, Error>;

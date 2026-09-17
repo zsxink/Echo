@@ -322,8 +322,8 @@ fn a_play_load_after_a_primed_paused_load_really_starts_the_clock() {
     let fixture = root.join("tone-short.flac");
     assert!(fixture.exists(), "guaranteed fixture missing: {fixture:?}");
 
-    let resolved = fixture;
-    let resolver: SongResolver = Arc::new(move |_| Ok(resolved.clone()));
+    let tone_path = fixture;
+    let resolver: SongResolver = Arc::new(move |_| Ok(tone_path.clone()));
     let snapshot = Arc::new(RwLock::new(PlayerSnapshot::default()));
     let mut actor = PlayerActor::spawn_mpv(&libmpv, snapshot, Some(resolver))
         .expect("preflight passed so spawn_mpv succeeds");

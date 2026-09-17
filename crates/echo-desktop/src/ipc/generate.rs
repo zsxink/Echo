@@ -175,7 +175,7 @@ pub fn generated_typescript() -> String {
 
     out.push_str("export type Theme = 'coral' | 'cobalt' | 'turquoise';\n");
     out.push_str("export type CloseBehavior = 'exit' | 'background';\n");
-    out.push_str("\n");
+    out.push('\n');
     out.push_str("/** Generated command name → successful return DTO contract. */\n");
     out.push_str("export interface IpcCommandResultMap {\n");
     out.push_str("  readonly get_bootstrap_state: BootstrapSnapshot;\n");

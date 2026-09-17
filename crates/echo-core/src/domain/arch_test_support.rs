@@ -111,10 +111,11 @@ pub fn layering_violations(layer: &str, source: &str) -> Vec<String> {
         .lines()
         .flat_map(|line| {
             let code = code_before_comment(line);
-            forbidden.iter().filter_map(move |edge| {
-                code.contains(edge)
-                    .then(|| format!("{layer} references {edge}: {line}"))
-            })
+            forbidden
+                .iter()
+                .copied()
+                .filter(move |edge| code.contains(*edge))
+                .map(move |edge| format!("{layer} references {edge}: {line}"))
         })
         .collect()
 }

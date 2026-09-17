@@ -1,6 +1,6 @@
 use super::{report::*, *};
 
-impl<'a> PlanImport<'a> {
+impl PlanImport<'_> {
     pub(super) fn stage_and_plan(
         &self,
         root: LibraryRootId,

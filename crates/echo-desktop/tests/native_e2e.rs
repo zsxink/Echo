@@ -209,32 +209,43 @@ const SORT: SongSort = SongSort {
 };
 
 /// The full native loop, then a restart against the same data dir.
-#[test]
-fn native_loop_and_restart_preserve_relationships() {
-    let data = tempfile::tempdir().expect("data dir");
-    let root_dir = tempfile::tempdir().expect("root dir");
-    temp_library(root_dir.path());
+/// Everything the restart half asserts against, established by launch 1.
+struct NativeLoopOutcome {
+    root: echo_core::domain::ids::LibraryRootId,
+    /// Web-facing id of the song that was favorited, added to the playlist,
+    /// deleted and then restored by undo.
+    fav_song: String,
+    playlist: String,
+    imported_song: String,
+}
 
-    // --- launch 1: scan→search→favorite→playlist→import→delete/undo ---
-    // One external file (a real licensed fixture OUTSIDE the root) to bring in
-    // via the picker. The temp dir must outlive the import, so it lives at
-    // test scope. A distinct format (ogg) is genuinely new content, so BLAKE3
-    // dedup does not collapse it into a seeded duplicate.
-    let _import_stay = tempfile::tempdir().expect("import src");
+/// Launch 1: drive scan to search to favorite to playlist to import to
+/// delete/undo over `data_dir`, returning the relationships that a restart
+/// must preserve.
+///
+/// `import_stay` must outlive this call: it holds the external fixture the
+/// picker hands in, and the import copies out of it. A distinct format (ogg)
+/// is genuinely new content, so BLAKE3 dedup does not collapse it into a
+/// seeded duplicate.
+fn first_launch_establishes_relationships(
+    data_dir: &Path,
+    root_dir: &Path,
+    import_stay: &Path,
+) -> NativeLoopOutcome {
     let import_src = {
         let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
             .nth(2)
             .expect("workspace root");
-        let p = _import_stay.path().join("imported-song.ogg");
+        let p = import_stay.join("imported-song.ogg");
         std::fs::copy(repo.join("fixtures/audio/tone-short.ogg"), &p).expect("copy real fixture");
         p
     };
     let dialogs = Arc::new(ScriptedDialogs::with_root_and_import(
-        root_dir.path().to_path_buf(),
+        root_dir.to_path_buf(),
         vec![import_src],
     ));
-    let app = services(data.path(), dialogs);
+    let app = services(data_dir, dialogs);
 
     let status = app
         .choose_library_root()
@@ -301,10 +312,20 @@ fn native_loop_and_restart_preserve_relationships() {
         "playlist membership survives undo"
     );
 
-    // --- restart: assemble a second AppServices over the SAME data dir ---
-    // (proxy for a process restart; boot recovery re-runs over the same DB).
+    NativeLoopOutcome {
+        root,
+        fav_song,
+        playlist,
+        imported_song,
+    }
+}
+
+/// Launch 2: assemble a second `AppServices` over the SAME data dir (a proxy
+/// for a process restart, so boot recovery re-runs over the same DB) and prove
+/// the relationships from launch 1 are intact.
+fn restart_preserves_relationships(data_dir: &Path, outcome: &NativeLoopOutcome) {
     let dialogs2 = Arc::new(ScriptedDialogs::default());
-    let app2 = services(data.path(), dialogs2);
+    let app2 = services(data_dir, dialogs2);
 
     // The active root, favorites, playlist and imported song all survive.
     let root2 = app2
@@ -314,33 +335,35 @@ fn native_loop_and_restart_preserve_relationships() {
         .expect("active root still configured");
     assert_eq!(
         root2,
-        root.to_string(),
+        outcome.root.to_string(),
         "root identity stable across restart"
     );
 
     // A restart creates a new process-local RootRegistry. Re-scan the same
     // directory before checking persisted relationships: this proves startup
-    // restored the persisted root-id → path binding rather than merely reading
+    // restored the persisted root-id to path binding rather than merely reading
     // the catalog rows that happened to remain in SQLite.
-    app2.start_scan(root)
+    app2.start_scan(outcome.root)
         .expect("same active root resolves for scanning after restart");
 
     let faves2 = app2
         .favorites(SORT, None, 16)
         .expect("favorites after restart");
     assert!(
-        faves2.items.iter().any(|s| s.id == fav_song),
+        faves2.items.iter().any(|s| s.id == outcome.fav_song),
         "favorite survives restart"
     );
 
     let playlists2 = app2.playlists().expect("playlists after restart");
     assert!(
-        playlists2.iter().any(|p| p.id == playlist),
+        playlists2.iter().any(|p| p.id == outcome.playlist),
         "playlist survives restart"
     );
 
     let imported2 = app2
-        .song_detail(echo_core::domain::ids::SongId::from_str(&imported_song).expect("imported id"))
+        .song_detail(
+            echo_core::domain::ids::SongId::from_str(&outcome.imported_song).expect("imported id"),
+        )
         .expect("imported song detail seen after restart");
     assert_eq!(
         imported2.availability, "available",
@@ -350,6 +373,27 @@ fn native_loop_and_restart_preserve_relationships() {
     // No duplicate UUID: the imported song appears exactly once across a fresh
     // scan of the same root.
     let all2 = app2.all_songs(SORT, None, 32).expect("all after restart");
-    let occurrences = all2.items.iter().filter(|s| s.id == imported_song).count();
+    let occurrences = all2
+        .items
+        .iter()
+        .filter(|s| s.id == outcome.imported_song)
+        .count();
     assert_eq!(occurrences, 1, "no duplicate UUID after restart");
+}
+
+/// The full native loop, then a restart against the same data dir.
+#[test]
+fn native_loop_and_restart_preserve_relationships() {
+    let data = tempfile::tempdir().expect("data dir");
+    let root_dir = tempfile::tempdir().expect("root dir");
+    temp_library(root_dir.path());
+
+    // One external file (a real licensed fixture OUTSIDE the root) to bring in
+    // via the picker. The temp dir must outlive the import, so it stays at test
+    // scope rather than inside the phase helpers.
+    let import_stay = tempfile::tempdir().expect("import src");
+
+    let outcome =
+        first_launch_establishes_relationships(data.path(), root_dir.path(), import_stay.path());
+    restart_preserves_relationships(data.path(), &outcome);
 }

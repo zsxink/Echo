@@ -30,10 +30,10 @@ impl<'a> ResolvePlaybackContext<'a> {
     ///
     /// Propagates catalog failures and returns `Conflict` when the selected
     /// song no longer belongs to the requested view.
-    pub fn run(&self, request: PlaybackContextRequest) -> Result<PlaybackContextResolved, Error> {
+    pub fn run(&self, request: &PlaybackContextRequest) -> Result<PlaybackContextResolved, Error> {
         let songs = match request.view {
-            ViewRef::Recent => self.resolve_recent(&request)?,
-            ViewRef::AllSongs | ViewRef::Favorites => self.resolve_library(&request)?,
+            ViewRef::Recent => self.resolve_recent(request)?,
+            ViewRef::AllSongs | ViewRef::Favorites => self.resolve_library(request)?,
             ViewRef::Playlist { id } => self.resolve_playlist(id)?,
         };
         let conflict = match request.view {
@@ -254,7 +254,7 @@ mod tests {
             Paged::new(songs, None, true),
         ]);
         let resolved = ResolvePlaybackContext::new(&catalog)
-            .run(PlaybackContextRequest::new(
+            .run(&PlaybackContextRequest::new(
                 ViewRef::AllSongs,
                 sort(),
                 selected,
@@ -274,13 +274,13 @@ mod tests {
         let request =
             PlaybackContextRequest::new(ViewRef::Recent, sort(), matched.id()).with_query("mixed");
         let resolved = ResolvePlaybackContext::new(&database)
-            .run(request)
+            .run(&request)
             .expect("recent query resolves");
         assert_eq!(resolved.songs, vec![matched.id()]);
 
         let err = ResolvePlaybackContext::new(&database)
             .run(
-                PlaybackContextRequest::new(ViewRef::Recent, sort(), other.id())
+                &PlaybackContextRequest::new(ViewRef::Recent, sort(), other.id())
                     .with_query("mixed"),
             )
             .expect_err("filtered-out selection conflicts");
@@ -300,7 +300,7 @@ mod tests {
         PlaylistRepository::add_member(&database, playlist, second.id(), 1).expect("add second");
 
         let resolved = ResolvePlaybackContext::new(&database)
-            .run(PlaybackContextRequest::new(
+            .run(&PlaybackContextRequest::new(
                 ViewRef::Playlist { id: playlist },
                 sort(),
                 second.id(),

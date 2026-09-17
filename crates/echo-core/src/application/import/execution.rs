@@ -1,6 +1,6 @@
 use super::{report::*, *};
 
-impl<'a> PlanImport<'a> {
+impl PlanImport<'_> {
     fn write_state(&self, planned: &PlannedInput, state: OperationState) -> Result<(), Error> {
         self.deps
             .journal

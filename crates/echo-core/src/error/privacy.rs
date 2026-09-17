@@ -7,14 +7,14 @@
 
 use super::*;
 
-pub(crate) fn log_one(code: &'static str, key: &'static str, value: &str) -> Vec<u8> {
+pub fn log_one(code: &'static str, key: &'static str, value: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(32);
     write!(out, "error.code={code} {key}={}", json_field(value)).expect("write to Vec");
     out
 }
 
 /// Build a `error.code=<code> k1=v1 k2=v2` log fragment.
-pub(crate) fn log_two(
+pub fn log_two(
     code: &'static str,
     k1: &'static str,
     v1: &str,
@@ -31,12 +31,12 @@ pub(crate) fn log_two(
 /// message (UI, IPC payload, panic text) ever carries a filesystem location.
 /// Unlike the log scrubbers this keeps readable text — only path spans are
 /// replaced.
-pub(crate) fn redact_display(text: &str) -> String {
+pub fn redact_display(text: &str) -> String {
     redact_path_spans(text)
 }
 
 /// Display form of a [`PermKind`].
-pub(crate) const fn aspect(kind: PermKind) -> &'static str {
+pub const fn aspect(kind: PermKind) -> &'static str {
     match kind {
         PermKind::Denied => "denied",
         PermKind::ReadOnly => "read_only",
@@ -81,7 +81,7 @@ const SENSITIVE_KV_KEYS: &[&str] = &[
 ];
 
 /// Scrub a free-text operation description into a log-safe line.
-pub(crate) fn scrub_operation(operation: &str) -> String {
+pub fn scrub_operation(operation: &str) -> String {
     let step1 = scrub_sensitive_values(operation);
     redact_path_spans(&step1)
 }
@@ -112,7 +112,7 @@ fn split_kv_value(after_eq: &str) -> (&str, &str) {
 }
 
 /// Replace each sensitive `key=value` field with `key=<opaque hash>`.
-pub(crate) fn scrub_sensitive_values(text: &str) -> String {
+pub fn scrub_sensitive_values(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     while !rest.is_empty() {
@@ -133,7 +133,7 @@ pub(crate) fn scrub_sensitive_values(text: &str) -> String {
 
 /// Redact bare absolute-path spans (which may contain spaces) not already
 /// behind a `key=`. The span terminates at `]`, `)`, `(`, `,` or the end.
-pub(crate) fn redact_path_spans(text: &str) -> String {
+pub fn redact_path_spans(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
@@ -156,7 +156,7 @@ pub(crate) fn redact_path_spans(text: &str) -> String {
 }
 
 /// Whether an absolute-path span starts at byte `i`.
-pub(crate) fn is_absolute_path_start(bytes: &[u8], i: usize) -> bool {
+pub fn is_absolute_path_start(bytes: &[u8], i: usize) -> bool {
     match bytes[i] {
         b'/' | b'\\' => true,
         b'f' if bytes[i..].starts_with(b"file://") => true,
@@ -170,7 +170,7 @@ pub(crate) fn is_absolute_path_start(bytes: &[u8], i: usize) -> bool {
 }
 
 /// Length (in bytes) of the path-start token at `i`.
-pub(crate) fn path_start_len(bytes: &[u8], i: usize) -> usize {
+pub fn path_start_len(bytes: &[u8], i: usize) -> usize {
     if bytes[i] == b'f' && bytes[i..].starts_with(b"file://") {
         7
     } else {
@@ -179,12 +179,12 @@ pub(crate) fn path_start_len(bytes: &[u8], i: usize) -> usize {
 }
 
 /// Hash free-text value so lyrics/tags/payload never reach a log verbatim.
-pub(crate) fn scrub_text(text: &str) -> String {
+pub fn scrub_text(text: &str) -> String {
     redact_sensitive(text)
 }
 
 /// Quote a free-text field for consistent JSON-ish log output.
-pub(crate) fn json_field(s: &str) -> String {
+pub fn json_field(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');
     for c in s.chars() {

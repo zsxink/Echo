@@ -88,7 +88,7 @@ impl AppServices {
     ) -> Result<Vec<SongId>, Error> {
         let request = PlaybackContextRequest::library_view(view, query, sort, selected)?;
         Ok(ResolvePlaybackContext::new(self.deps.catalog.as_ref())
-            .run(request)?
+            .run(&request)?
             .songs)
     }
 
@@ -99,7 +99,7 @@ impl AppServices {
         selected: SongId,
     ) -> Result<Vec<SongId>, Error> {
         Ok(ResolvePlaybackContext::new(self.deps.catalog.as_ref())
-            .run(PlaybackContextRequest::new(
+            .run(&PlaybackContextRequest::new(
                 ViewRef::Playlist { id: playlist },
                 SongSort::default(),
                 selected,

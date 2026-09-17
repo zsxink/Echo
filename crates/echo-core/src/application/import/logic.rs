@@ -210,9 +210,6 @@ mod planning;
 #[path = "report.rs"]
 mod report;
 
-#[cfg(test)]
-include!("tests.rs");
-
 /// One input's reserved plan: the identity, staged resource and target every
 /// later step (and any recovery, in task 5.5) must agree on.
 struct PlannedInput {
@@ -235,3 +232,6 @@ struct PlannedInput {
     /// size mismatch, no safe target). The audio still imports.
     lrc_failure: Option<LyricsFailure>,
 }
+
+#[cfg(test)]
+include!("tests.rs");
