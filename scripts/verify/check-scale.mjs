@@ -20,10 +20,7 @@ const BASELINE = {
     "crates/echo-core/src/domain/library.rs",
     "crates/echo-core/src/infrastructure/filesystem/adapter.rs",
     "crates/echo-core/src/infrastructure/sqlite/mod.rs",
-    "crates/echo-desktop/src/platform/local_state.rs",
     "crates/echo-desktop/src/player/actor.rs",
-    "crates/echo-desktop/src/player/coordinator.rs",
-    "crates/echo-desktop/src/player/queue.rs",
   ],
   traits: [
     "crates/echo-core/src/application/ports/repository.rs::OperationJournalRepository",
