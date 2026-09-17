@@ -57,6 +57,10 @@ function snapshotOf(song: typeof SONG) {
         isCurrent: true,
         failed: false,
         canImport: false,
+        blocked: false,
+        artist: null,
+        durationS: null,
+        coverKey: null,
       },
     ],
   });

@@ -13,12 +13,35 @@
  * why an item did not play.
  */
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
-import { bridge } from "../../bridge";
+import { assetUrl, bridge } from "../../bridge";
 import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
 import { usePlayerSnapshot, usePlayerUi, playerStore } from "../../player/playerStore";
 import { coverClass } from "../library/coverPalette";
+import { formatDuration } from "../library/SongRow";
+
+function QueueCover({
+  coverKey,
+  identity,
+}: {
+  readonly coverKey: string | null;
+  readonly identity: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (!coverKey || failed) {
+    return <span className={`queue-cover ${coverClass(identity)}`} aria-label="无封面" />;
+  }
+  return (
+    <img
+      className="queue-cover"
+      src={assetUrl(coverKey)}
+      alt=""
+      data-testid="queue-cover-image"
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 export function QueuePanel() {
   const snapshot = usePlayerSnapshot();
@@ -101,20 +124,15 @@ export function QueuePanel() {
                   .join(" ")}
                 aria-current={entry.isCurrent ? "true" : undefined}
               >
-                <span
-                  className={`queue-cover ${coverClass(entry.songId ?? entry.entryId)}`}
-                  aria-hidden="true"
-                />
+                <QueueCover coverKey={entry.coverKey} identity={entry.songId ?? entry.entryId} />
                 <div className="queue-name">
-                  <b>{entry.title ?? "歌曲"}</b>
+                  <b>{entry.title ?? "未知歌曲"}</b>
                   <span>
                     {entry.blocked
                       ? "暂时不可用，可在资料库恢复后重试"
                       : entry.failed
                         ? "加载失败"
-                        : entry.songId
-                          ? "资料库歌曲"
-                          : "临时文件"}
+                        : (entry.artist ?? (entry.canImport ? "临时文件" : "未知艺人"))}
                     {entry.canImport ? (
                       <span className="queue-temporary-tag" aria-label="临时播放项">
                         临时
@@ -122,7 +140,9 @@ export function QueuePanel() {
                     ) : null}
                   </span>
                 </div>
-                <span className="queue-time" />
+                <span className="queue-time">
+                  {entry.durationS === null ? "时长未知" : formatDuration(entry.durationS)}
+                </span>
               </div>
             ))}
           </div>

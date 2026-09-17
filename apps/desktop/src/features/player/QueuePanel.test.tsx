@@ -16,6 +16,7 @@ import { QueuePanel } from "./QueuePanel";
 
 vi.mock("../../bridge", () => ({
   bridge: { call: vi.fn() },
+  assetUrl: (key: string) => `cover://${key}`,
 }));
 
 import { bridge } from "../../bridge";
@@ -57,18 +58,26 @@ describe("QueuePanel (task 11.2)", () => {
           {
             entryId: "e1",
             songId: "s1",
-            title: null,
+            title: "晴天",
             isCurrent: true,
             failed: false,
             canImport: false,
+            blocked: false,
+            artist: "周杰伦",
+            durationS: 239,
+            coverKey: "cover-s1",
           },
           {
             entryId: "e2",
             songId: "s2",
-            title: null,
+            title: "七里香",
             isCurrent: false,
             failed: false,
             canImport: false,
+            blocked: false,
+            artist: "周杰伦",
+            durationS: 245,
+            coverKey: null,
           },
           {
             entryId: "e3",
@@ -77,6 +86,10 @@ describe("QueuePanel (task 11.2)", () => {
             isCurrent: false,
             failed: false,
             canImport: true,
+            blocked: false,
+            artist: null,
+            durationS: null,
+            coverKey: null,
           },
         ],
       }),
@@ -84,8 +97,10 @@ describe("QueuePanel (task 11.2)", () => {
 
     render(<QueuePanel />);
     expect(screen.getByTestId("queue-list")).toBeInTheDocument();
-    // The two library song ids and the temporary title are all rendered.
-    expect(screen.getAllByText("资料库歌曲").length).toBe(2);
+    expect(screen.getByText("晴天")).toBeInTheDocument();
+    expect(screen.getAllByText("周杰伦").length).toBe(2);
+    expect(screen.getByText("3:59")).toBeInTheDocument();
+    expect(screen.getByTestId("queue-cover-image")).toHaveAttribute("src", "cover://cover-s1");
     expect(screen.getByText("outside.m4a")).toBeInTheDocument();
   });
 
@@ -101,6 +116,10 @@ describe("QueuePanel (task 11.2)", () => {
             isCurrent: true,
             failed: false,
             canImport: false,
+            blocked: false,
+            artist: null,
+            durationS: null,
+            coverKey: null,
           },
           {
             entryId: "e2",
@@ -109,6 +128,10 @@ describe("QueuePanel (task 11.2)", () => {
             isCurrent: false,
             failed: true,
             canImport: false,
+            blocked: false,
+            artist: null,
+            durationS: null,
+            coverKey: null,
           },
         ],
       }),
@@ -131,6 +154,9 @@ describe("QueuePanel (task 11.2)", () => {
             failed: false,
             blocked: true,
             canImport: false,
+            artist: null,
+            durationS: null,
+            coverKey: null,
           },
         ],
       }),
@@ -153,6 +179,10 @@ describe("QueuePanel (task 11.2)", () => {
             isCurrent: true,
             failed: false,
             canImport: false,
+            blocked: false,
+            artist: null,
+            durationS: null,
+            coverKey: null,
           },
           {
             entryId: "e2",
@@ -161,6 +191,10 @@ describe("QueuePanel (task 11.2)", () => {
             isCurrent: false,
             failed: false,
             canImport: false,
+            blocked: false,
+            artist: null,
+            durationS: null,
+            coverKey: null,
           },
         ],
       }),

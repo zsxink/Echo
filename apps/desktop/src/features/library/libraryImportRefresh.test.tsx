@@ -90,10 +90,7 @@ describe("导入完成后的资料库刷新", () => {
   });
 
   it("keeps 最近添加 as a fixed chronological view", async () => {
-    mocks.setInvoke(
-      "recent",
-      [beforeImport],
-    );
+    mocks.setInvoke("recent", [beforeImport]);
 
     render(<LibraryWorkspace view="recent" title="最近添加" root="root-1" readOnly={false} />);
 
@@ -112,7 +109,9 @@ describe("导入完成后的资料库刷新", () => {
     fireEvent.click(screen.getByTestId("sort-button"));
     fireEvent.click(screen.getByText("歌曲名称"));
 
-    rerender(<LibraryWorkspace view="favorites" title="喜欢的音乐" root="root-1" readOnly={false} />);
+    rerender(
+      <LibraryWorkspace view="favorites" title="喜欢的音乐" root="root-1" readOnly={false} />,
+    );
     expect(await screen.findByTestId("sort-button")).toBeInTheDocument();
 
     await waitFor(() =>

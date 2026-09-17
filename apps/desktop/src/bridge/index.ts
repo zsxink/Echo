@@ -46,7 +46,11 @@ export interface BridgeCommandMap {
   create_playlist: (args: { root: string; name: string }) => unknown;
   rename_playlist: (args: { id: string; name: string }) => unknown;
   /** `bytes: null` clears a manually selected cover and restores auto artwork. */
-  set_playlist_cover: (args: { id: string; bytes: number[] | null; mime?: string | null }) => unknown;
+  set_playlist_cover: (args: {
+    id: string;
+    bytes: number[] | null;
+    mime?: string | null;
+  }) => unknown;
   delete_playlist: (args: { id: string }) => unknown;
   add_to_playlists: (args: { song: string; targets: string[] }) => unknown;
   remove_playlist_song: (args: { playlist: string; song: string }) => unknown;
@@ -60,14 +64,11 @@ export interface BridgeCommandMap {
   set_theme: (args: { theme: string }) => unknown;
   set_close_behavior: (args: { behavior: string }) => unknown;
   // Player commands (task 11.1) — the UI sends coarse requests; the Rust
-  // coordinator owns the queue + snapshot authority.
-  play_context: (args: {
-    songs: string[];
-    selectedIndex: number;
-    /** The view the queue was built from (哪个歌单): "allSongs" / "favorites" /
-     *  "recent" / "search" / "playlist:<id>". Persisted locally, never synced. */
-    source?: string;
-  }) => unknown;
+  // coordinator owns the queue + snapshot authority. Playback contexts are
+  // resolved on the desktop: the UI submits only a view/selected song, never
+  // a song-id list (spec: 视图播放重建队列数量 — a paged/partial client list
+  // must not truncate the queue).
+  play_playlist_context: (args: { playlist: string; selectedSong: string }) => unknown;
   play_library_context: (args: {
     view: "all" | "recent" | "favorites";
     query: string;

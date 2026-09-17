@@ -12,6 +12,34 @@ export interface IpcErrorDto {
 
 export type IpcResult<T> = T | IpcErrorDto;
 
+export interface UiQueueEntry {
+  readonly entryId: string;
+  readonly songId: string | null;
+  readonly title: string | null;
+  readonly isCurrent: boolean;
+  readonly failed: boolean;
+  readonly blocked: boolean;
+  readonly canImport: boolean;
+  readonly artist: string | null;
+  readonly durationS: number | null;
+  readonly coverKey: string | null;
+}
+
+export interface UiPlayerSnapshot {
+  readonly state: 'stopped' | 'loading' | 'playing' | 'paused' | 'ended' | 'failed';
+  readonly position: number | null;
+  readonly duration: number | null;
+  readonly volume: number;
+  readonly muted: boolean;
+  readonly currentQueueEntryId: string | null;
+  readonly currentSongId: string | null;
+  readonly queueLen: number;
+  readonly mode: 'sequential' | 'shuffle' | 'repeatOne';
+  readonly currentTitle: string | null;
+  readonly currentCanImport: boolean;
+  readonly queue: readonly UiQueueEntry[];
+}
+
 export interface BootstrapSnapshot {
   readonly ready: boolean;
   readonly writesAllowed: boolean;

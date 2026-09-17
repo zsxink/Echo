@@ -40,15 +40,15 @@
 .queue-tools { display: flex; gap: var(--space-2); }
 .queue-tool { min-height: 44px; padding: 0 var(--space-3); margin-top: -8px; margin-bottom: -8px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font-size: var(--text-xs); cursor: pointer; }
 .queue-tool:hover { color: var(--danger); background: var(--surface-warm); }
-.queue-list { min-height: 0; display: grid; flex: 0 1 auto; gap: 2px; max-height: min(518px, calc(100vh - 200px)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: transparent transparent; }
+.queue-list { min-height: 0; display: grid; flex: 0 1 auto; gap: var(--queue-row-gap); max-height: min(var(--queue-list-max-height), calc(100vh - 200px)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: transparent transparent; }
 .queue-list::-webkit-scrollbar { width: 7px; }
 .queue-list::-webkit-scrollbar-track { background: transparent; }
 .queue-list::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--radius-pill); background: transparent; background-clip: padding-box; }
 .queue-list.is-scrolling { scrollbar-color: color-mix(in oklab, var(--muted), transparent 42%) transparent; }
 .queue-list.is-scrolling::-webkit-scrollbar-thumb { background: color-mix(in oklab, var(--muted), transparent 42%); }
-.queue-item { display: grid; grid-template-columns: 43px minmax(0, 1fr) 47px; gap: 11px; align-items: center; min-height: 50px; padding: 4px calc(var(--space-2) * .9); border-radius: var(--radius-sm); }
+.queue-item { display: grid; grid-template-columns: var(--queue-cover-size) minmax(0, 1fr) 47px; gap: 11px; align-items: center; min-height: var(--queue-row-height); padding: 4px calc(var(--space-2) * .9); border-radius: var(--radius-sm); }
 .queue-item:hover { background: var(--surface); }
-.queue-cover { width: 43px; height: 43px; border-radius: var(--radius-sm); background: color-mix(in oklab, var(--accent), var(--fg) 44%); }
+.queue-cover { width: var(--queue-cover-size); height: var(--queue-cover-size); border-radius: var(--radius-sm); background: color-mix(in oklab, var(--accent), var(--fg) 44%); object-fit: cover; }
 .queue-cover-b { background: color-mix(in oklab, var(--warn), var(--fg) 62%); }
 .queue-cover-c { background: color-mix(in oklab, var(--success), var(--fg) 60%); }
 .queue-name { min-width: 0; }
@@ -60,7 +60,7 @@
 .queue-empty.show { display: block; }
 .queue-empty p { margin: var(--space-2) 0 var(--space-3); }
 .queue-empty .btn { min-height: 36px; padding-inline: var(--space-3); font-size: var(--text-xs); }
-.queue-popover { position: fixed; z-index: 5; right: var(--space-8); bottom: 88px; width: 317px; max-height: min(720px, calc(100vh - 120px)); overflow: hidden; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); box-shadow: var(--elev-raised); display: flex; flex-direction: column; }
+.queue-popover { --queue-panel-width: 317px; --queue-row-height: 50px; --queue-cover-size: 43px; --queue-row-gap: 2px; --queue-list-max-height: 414px; position: fixed; z-index: 5; right: var(--space-8); bottom: 88px; width: var(--queue-panel-width); max-height: min(720px, calc(100vh - 120px)); overflow: hidden; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); box-shadow: var(--elev-raised); display: flex; flex-direction: column; }
 .queue-popover[hidden] { display: none; }
 .queue-popover .queue { min-height: 0; display: flex; flex: 1 1 auto; flex-direction: column; border-top: 0; padding-top: 0; }
 .queue-popover .queue-title { flex: none; padding-bottom: 11px; border-bottom: 1px solid var(--border-soft); }
@@ -157,15 +157,6 @@ body.player-mode-open .playerbar .volume-button:hover { color: var(--player-tint
 body.player-mode-open .playerbar .volume-button.is-muted { color: color-mix(in oklab, var(--accent-on), transparent 42%); }
 body.player-mode-open .playerbar .volume-button.is-muted:hover { color: var(--accent-on); background: color-mix(in oklab, var(--accent-on), transparent 90%); }
 body.player-mode-open .queue-popover { z-index: 10; }
-body.player-mode-open .queue-popover { top: 92px; right: 0; bottom: 88px; width: min(520px, 38vw); max-height: none; padding: var(--space-6); border-radius: var(--radius-lg) 0 0 var(--radius-lg); border-color: var(--border-soft); }
-body.player-mode-open .queue-popover .queue-title { align-items: center; padding-bottom: var(--space-5); margin-bottom: var(--space-2); }
-body.player-mode-open .queue-popover .queue-title h3 { font-size: var(--text-xl); }
-body.player-mode-open .queue-popover .queue-title span { font-size: var(--text-sm); }
-body.player-mode-open .queue-popover .queue-list { gap: var(--space-1); }
-body.player-mode-open .queue-popover .queue-item { grid-template-columns: 56px minmax(0, 1fr) 60px; min-height: 76px; gap: var(--space-3); padding: var(--space-2); }
-body.player-mode-open .queue-popover .queue-cover { width: 56px; height: 56px; }
-body.player-mode-open .queue-popover .queue-name b { font-size: var(--text-base); font-weight: 650; }
-body.player-mode-open .queue-popover .queue-name span { margin-top: var(--space-1); font-size: var(--text-sm); }
 .volume:focus-visible { box-shadow: var(--focus-ring); outline: none; }
 .toast { position: fixed; left: 50%; bottom: 112px; z-index: 17; width: max-content; max-width: min(420px, calc(100vw - 32px)); min-height: 44px; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); box-shadow: var(--elev-raised); display: none; align-items: center; gap: var(--space-2); color: var(--fg-2); transform: translateX(-50%); white-space: nowrap; }
 .toast.show { display: flex; }

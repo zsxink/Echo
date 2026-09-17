@@ -110,14 +110,15 @@ export function PlaylistsView({
 
   const onPlay = useCallback(
     (song: SongView) => {
-      const selectedIndex = members.findIndex((s) => s.id === song.id);
-      void bridge.call("play_context", {
-        songs: members.map((s) => s.id),
-        selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
-        source: `playlist:${playlistId}`,
+      // The desktop resolves the playlist's full member set itself; the UI
+      // submits only the selected song. A partial/paged list can never
+      // truncate the queue (spec: 视图播放重建队列数量).
+      void bridge.call("play_playlist_context", {
+        playlist: playlistId,
+        selectedSong: song.id,
       });
     },
-    [members, playlistId],
+    [playlistId],
   );
 
   const onFavorite = useCallback(

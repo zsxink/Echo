@@ -153,6 +153,36 @@ impl AppServices {
             ))
         }
     }
+
+    /// Resolve a playlist's members on the desktop side for playback — the
+    /// playlist counterpart of [`Self::resolve_library_playback_context`].
+    ///
+    /// The queue is built from the **full** member set the user sees (newest
+    /// first, matching `playlist_members`), exactly once per song, so a paged
+    /// or partial client-side list can never truncate the queue. The catalog
+    /// query is active-root-scoped and hides pending-delete songs — the same
+    /// authoritative view the playlist UI reads.
+    pub fn resolve_playlist_playback_context(
+        &self,
+        playlist: PlaylistId,
+        selected: SongId,
+    ) -> Result<Vec<SongId>, Error> {
+        let catalog = CatalogQuery::new(self.deps.catalog.as_ref());
+        // `playlist` yields the members in append (position) order — oldest
+        // first. The playlist view is the reverse: the song added last is the
+        // first row, so reverse to match what the user sees.
+        let mut songs = catalog.playlist(playlist)?;
+        songs.reverse();
+        let ids: Vec<SongId> = songs.into_iter().map(|song| song.id()).collect();
+        if ids.contains(&selected) {
+            Ok(ids)
+        } else {
+            Err(Error::conflict(
+                "selected song is no longer a member of the playlist",
+            ))
+        }
+    }
+
     /// Classify a persisted player session against the active library without
     /// exposing paths to the WebView. Missing media is retryable/blocked;
     /// absent, foreign-root and Echo-pending-delete identities are dropped.
@@ -919,6 +949,7 @@ mod tests {
     use echo_core::application::ports::LibraryRepository;
     use echo_core::application::testing::scan_fixture::ScanFixture;
     use echo_core::application::testing::small_fakes::FakeTrash;
+    use echo_core::domain::catalog::{SongSort, SongSortField, SortDirection};
     use echo_core::domain::entities::LibraryRoot;
     use echo_core::domain::library::PortableSerialize;
 
@@ -1048,6 +1079,175 @@ mod tests {
 
         assert_eq!(keys.len(), 1);
         assert!(keys.contains_key(&known.to_string()));
+    }
+
+    #[test]
+    fn playlist_playback_context_resolves_the_full_member_set() {
+        // 视图播放重建队列数量 for playlists: the desktop resolves every
+        // member (newest first, matching the playlist view), exactly once per
+        // song, regardless of any paging the list UI may have done.
+        let fixture = ScanFixture::new();
+        let ids = seed_songs(&fixture, 4);
+        let app = services(&fixture);
+        let playlist = PlaylistId::from_str(
+            &app.create_playlist(fixture.root, "播放歌单")
+                .expect("create"),
+        )
+        .expect("playlist id");
+        // Add in 0,1,2 order → view order (newest first) is 2,1,0.
+        for id in [ids[0], ids[1], ids[2]] {
+            app.add_to_playlists(id, &[playlist]).expect("add member");
+        }
+
+        let resolved = app
+            .resolve_playlist_playback_context(playlist, ids[1])
+            .expect("resolve");
+        assert_eq!(
+            resolved,
+            vec![ids[2], ids[1], ids[0]],
+            "the queue is the full member set newest-first, selected song present"
+        );
+
+        // A non-member selection is a conflict, never a silent partial queue.
+        let err = app
+            .resolve_playlist_playback_context(playlist, ids[3])
+            .expect_err("selection not a member");
+        assert!(
+            matches!(err, Error::Conflict { .. }),
+            "an out-of-set selection must be refused"
+        );
+    }
+
+    #[test]
+    fn playlist_playback_context_skips_deleted_members_not_truncating_others() {
+        // A deleted song is hidden from the playlist view, so the resolved
+        // queue drops only that song — the remaining members still form the
+        // full, deterministic queue (no partial/paged truncation).
+        let fixture = ScanFixture::new();
+        let ids = seed_songs(&fixture, 3);
+        let app = services(&fixture);
+        let playlist =
+            PlaylistId::from_str(&app.create_playlist(fixture.root, "删除后").expect("create"))
+                .expect("playlist id");
+        let target = ids[0];
+        for &id in &ids {
+            app.add_to_playlists(id, &[playlist]).expect("add member");
+        }
+        app.delete_song(fixture.root, target)
+            .expect("delete member");
+
+        let resolved = app
+            .resolve_playlist_playback_context(playlist, ids[1])
+            .expect("resolve");
+        assert_eq!(
+            resolved,
+            vec![ids[2], ids[1]],
+            "the deleted member is skipped, the rest survive in order"
+        );
+    }
+
+    #[test]
+    fn library_playback_context_resolves_the_full_all_view() {
+        // 视图播放重建队列数量 for the 全部歌曲 view: the desktop resolves
+        // every available song of the active root — reading through pages until
+        // `is_last` — so no paged/partial client list can shorten the queue.
+        let fixture = ScanFixture::new();
+        let ids = seed_songs(&fixture, 6);
+        let app = services(&fixture);
+        let sort = SongSort {
+            field: SongSortField::AddedAt,
+            direction: SortDirection::Desc,
+        };
+        let resolved = app
+            .resolve_library_playback_context("all", "", sort, ids[2])
+            .expect("resolve the all view");
+        assert_eq!(
+            resolved.len(),
+            ids.len(),
+            "every song of the view is a queue member, never a first-page slice"
+        );
+        assert!(
+            resolved.contains(&ids[2]),
+            "the selected song is a member of the resolved queue"
+        );
+    }
+
+    #[test]
+    fn library_playback_context_rejects_selection_outside_the_all_view() {
+        // An out-of-view selection is a conflict, never a silent partial queue:
+        // a stale/foreign selected id must not assemble a queue it is absent from.
+        let fixture = ScanFixture::new();
+        let ids = seed_songs(&fixture, 3);
+        let app = services(&fixture);
+        let sort = SongSort {
+            field: SongSortField::AddedAt,
+            direction: SortDirection::Desc,
+        };
+        let err = app
+            .resolve_library_playback_context("all", "", sort, SongId::new())
+            .expect_err("foreign selection");
+        assert!(
+            matches!(err, Error::Conflict { .. }),
+            "a selection outside the view is refused"
+        );
+        let _ = ids;
+    }
+
+    #[test]
+    fn library_playback_context_resolves_only_favorites() {
+        // 喜欢的音乐 view: the queue is exactly the favorited member set — no
+        // non-favorite leaks in, and favorites that page beyond one window are
+        // all present.
+        let fixture = ScanFixture::new();
+        let ids = seed_songs(&fixture, 5);
+        let app = services(&fixture);
+        for fav in [ids[0], ids[2], ids[4]] {
+            app.set_favorite(fav, true).expect("favorite");
+        }
+        let sort = SongSort {
+            field: SongSortField::Title,
+            direction: SortDirection::Asc,
+        };
+        let resolved = app
+            .resolve_library_playback_context("favorites", "", sort, ids[2])
+            .expect("resolve the favorites view");
+        let mut expected = vec![ids[0], ids[2], ids[4]];
+        expected.sort();
+        let mut got = resolved.clone();
+        got.sort();
+        assert_eq!(
+            got, expected,
+            "only favorited songs form the queue, all of them"
+        );
+    }
+
+    #[test]
+    fn library_playback_context_resolves_search_within_the_view() {
+        // 资料库搜索: the desktop applies the same query the list shows, so the
+        // queue is the matching subset — never a partial page of it. The
+        // selected song must appear in the result for the command to accept it.
+        let fixture = ScanFixture::new();
+        let ids = seed_songs(&fixture, 4);
+        let app = services(&fixture);
+        // All four titles contain "标题" so this query matches the full set;
+        // a query string shorter than three Unicode scalars uses LIKE, which
+        // is a reliable substring match for CJK text in SQLite.
+        let sort = SongSort {
+            field: SongSortField::Title,
+            direction: SortDirection::Asc,
+        };
+        let resolved = app
+            .resolve_library_playback_context("all", "标题", sort, ids[2])
+            .expect("resolve the search subset");
+        assert_eq!(
+            resolved.len(),
+            ids.len(),
+            "every title-matching song is a queue member — not a page slice"
+        );
+        assert!(
+            resolved.contains(&ids[2]),
+            "the selected song is a member of the resolved queue"
+        );
     }
 
     #[test]

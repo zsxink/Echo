@@ -88,7 +88,7 @@ type Command =
   | "set_volume"
   | "toggle_mute"
   | "seek"
-  | "play_context"
+  | "play_playlist_context"
   | "play_library_context"
   | "play_temporary_file"
   | "import_current_temporary_file"
@@ -114,7 +114,7 @@ type Command =
  * Every command the app's bridge declares must be *named* in the union above,
  * even when it has no handler. The list is hand-written and used to drift in
  * silence: `play_library_context` was missing for exactly that reason — the app
- * switched to it, the double kept answering `play_context`, and clicking a
+ * switched to it, the double kept answering the retired context command, and clicking a
  * library row threw "unknown command" inside a `void bridge.call(...)` nobody
  * was watching. The browser journey went red three checks later, on assertions
  * with no visible connection to the cause.
@@ -191,7 +191,7 @@ function toView(s: MockSong): import("../src/ipc/ipc-types.generated").SongView 
  * the app switched to it from `play_context`, which is what A8 was reporting —
  * the click worked, the song never reached the bar. */
 const PLAYER_COMMANDS: ReadonlySet<string> = new Set([
-  "play_context",
+  "play_playlist_context",
   "play_library_context",
   "play_temporary_file",
   "player_control",
@@ -207,7 +207,7 @@ const PLAYER_SNAPSHOT_EVENT = "player://snapshot";
 /**
  * Derive the UI player snapshot from the mock's playback state.
  *
- * Without this the mock accepted `play_context` and told nobody: the player bar
+ * Without this the mock accepted a playback command and told nobody: the player bar
  * stayed empty and the row playing indicator never appeared, so "clicking a song
  * plays it" was unobservable from the preview (and the A8 acceptance check
  * passed vacuously, satisfied by the library rows rather than the player bar).
@@ -466,13 +466,10 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
       if (st.nowPlaying) st.nowPlaying.position = Number(position);
       return st.nowPlaying;
     },
-    play_context: ({ songs, selectedIndex }, st) => {
-      // Mirror the real `play_context`: the *selected* song becomes current, not
-      // the first one in the list. Ignoring the index made every UI check that
-      // clicks a row unable to tell the two apart.
-      const ids = (songs as string[] | undefined) ?? [];
-      const index = Math.min(Math.max(Number(selectedIndex) || 0, 0), Math.max(ids.length - 1, 0));
-      const id = ids[index] ?? state.songs[0]?.id;
+    play_playlist_context: ({ selectedSong }, st) => {
+      // The desktop resolves the complete playlist itself. The mock only has
+      // to expose the clicked entry as current for the presentation journey.
+      const id = (selectedSong as string | undefined) ?? state.songs[0]?.id;
       if (!id) return emptyError("unavailable", "noLibrary", true);
       st.nowPlaying = { songId: id, position: 0, playing: true };
       return st.nowPlaying;

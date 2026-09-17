@@ -51,9 +51,9 @@ export function useLibraryPlaylists(enabled = true, activeRoot?: string): Librar
     return () => {
       cancelled = true;
     };
-  // Root identity is intentionally a query input, even though the command
-  // itself resolves the active root on desktop.  It resets the stale sidebar
-  // immediately and makes a delayed previous-root result harmless.
+    // Root identity is intentionally a query input, even though the command
+    // itself resolves the active root on desktop.  It resets the stale sidebar
+    // immediately and makes a delayed previous-root result harmless.
   }, [revision, enabled, activeRoot]);
 
   const reload = useCallback(() => setRevision((value) => value + 1), []);

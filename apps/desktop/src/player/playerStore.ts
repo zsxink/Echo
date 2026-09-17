@@ -20,47 +20,16 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { subscribe } from "../bridge";
 import type { UnlistenFn } from "../bridge";
+import type { UiPlayerSnapshot } from "../ipc/ipc-types.generated";
+
+// The event payload is an IPC DTO, so it belongs to the generated contract.
+// Re-export from this store for existing presentation consumers while keeping
+// Rust's serde shape as the sole source of truth.
+export type { UiPlayerSnapshot, UiQueueEntry } from "../ipc/ipc-types.generated";
 
 /** The UI-facing playback state, mirrored from the IPC `PlayerSnapshot`.
  *  The Rust runtime (`runtime::player::UiPlayerSnapshot`) publishes this camelCase
  *  shape via the `player://snapshot` event; the store just adopts it. */
-/** One entry of the playback queue as the queue panel renders it (task 11.2).
- *  Mirrored from the IPC snapshot; `entryId` is the stable queue identity (a
- *  repeated song appears as independent entries), `songId`/`title` identify the
- *  item, and `failed` marks an entry that failed to load/decode this round. */
-export interface UiQueueEntry {
-  readonly entryId: string;
-  readonly songId: string | null;
-  readonly title: string | null;
-  readonly isCurrent: boolean;
-  readonly failed: boolean;
-  /** A restored entry whose song/root is temporarily unavailable. */
-  readonly blocked?: boolean;
-  /** True when this entry is a session-only temporary item (no library song_id)
-   *  that can be imported into the active library (task 11.7). */
-  readonly canImport: boolean;
-}
-
-export interface UiPlayerSnapshot {
-  readonly state: "stopped" | "loading" | "playing" | "paused" | "ended" | "failed";
-  readonly position: number | null;
-  readonly duration: number | null;
-  readonly volume: number;
-  readonly muted: boolean;
-  readonly currentQueueEntryId: string | null;
-  readonly currentSongId: string | null;
-  readonly queueLen: number;
-  readonly mode: "sequential" | "shuffle" | "repeatOne";
-  /** Display title of the current entry (temporary file), when not a library song. */
-  readonly currentTitle?: string | null;
-  /** True when the current entry is a temporary item that can be imported into
-   *  the active library (task 11.7). The frontend uses this to show the
-   *  "导入到资料库" entry point and disable favorite/playlist controls. */
-  readonly currentCanImport: boolean;
-  /** The full queue the panel renders (current + pending, in play order). */
-  readonly queue: readonly UiQueueEntry[];
-}
-
 export const EMPTY_SNAPSHOT: UiPlayerSnapshot = {
   state: "stopped",
   position: null,

@@ -25,6 +25,17 @@ use super::queue::{Queue, QueueEntry, QueueItem, ViewContext};
 /// (task 8.6: ">5 秒上一首回到开头").
 const PREVIOUS_RESTART_THRESHOLD: f64 = 5.0;
 
+/// The source of a transport transition. Keeping these distinct makes the
+/// repeat-one and manual-priority contracts explicit instead of encoding them
+/// as temporary mode switches.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum NavigationEvent {
+    NaturalEnd,
+    ManualNext,
+    ManualPrevious,
+    ErrorSkip,
+}
+
 /// Drives a [`Queue`] over a [`PlayerPort`].
 pub struct PlaybackCoordinator<P: PlayerPort, S: ShuffleSource = DefaultShuffle> {
     player: P,
@@ -207,7 +218,7 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
             // A restored unavailable current remains visible in the projection,
             // but must never be sent to the actor. Advance to a playable entry
             // without deleting or reordering the blocked record.
-            self.next_from_mode();
+            self.next_from_mode(self.mode);
         } else if let Some(id) = self.queue.current_id() {
             if let Some(song) = self.queue.get(id).and_then(|e| e.item.song_id()) {
                 let session = self.new_load_session(id);
@@ -326,37 +337,61 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
     /// the bag empties it is refreshed for a fresh round. Returns the new
     /// current entry id, or `None` if the queue stopped.
     pub fn advance_to_next(&mut self) -> Option<QueueEntryId> {
-        // Explicit next always leaves repeat-one.
-        if self.mode == PlayMode::RepeatOne {
-            self.mode = match self.queue.is_shuffle() {
-                true => PlayMode::Shuffle,
-                false => PlayMode::Sequential,
-            };
-        }
-        self.next_from_mode()
+        self.navigate(NavigationEvent::ManualNext)
     }
 
-    fn next_from_mode(&mut self) -> Option<QueueEntryId> {
+    fn navigate(&mut self, event: NavigationEvent) -> Option<QueueEntryId> {
+        match event {
+            NavigationEvent::ManualPrevious => {
+                return self.previous_from_mode();
+            }
+            NavigationEvent::NaturalEnd if self.mode == PlayMode::RepeatOne => {
+                let id = self.queue.current_id()?;
+                let song = self.queue.get(id).and_then(|entry| entry.item.song_id())?;
+                self.load_entry(id, song);
+                return Some(id);
+            }
+            NavigationEvent::NaturalEnd | NavigationEvent::ManualNext => {
+                if let Some(id) = self.queue.advance_priority() {
+                    return self.load_queue_entry(id);
+                }
+            }
+            NavigationEvent::ErrorSkip => {}
+        }
+
+        // A manual next in repeat-one follows list-loop order, but does not
+        // silently change the user-selected mode. Error skip uses the same
+        // transient order to avoid retrying a failed repeat-one entry.
+        let mode = if matches!(
+            event,
+            NavigationEvent::ManualNext | NavigationEvent::ErrorSkip
+        ) && self.mode == PlayMode::RepeatOne
+        {
+            PlayMode::Sequential
+        } else {
+            self.mode
+        };
+        self.next_from_mode(mode)
+    }
+
+    fn next_from_mode(&mut self, mode: PlayMode) -> Option<QueueEntryId> {
         // 列表循环 makes sequential advance wrap forever, so "no progress"
         // (every entry failed this round) can no longer be detected by an
         // `Exhausted` return. Cap the walk at one full loop plus the wrap; a
         // cap out means nothing playable remains — stop instead of spinning.
         let max_attempts = self.queue.len() + 1;
         for _ in 0..max_attempts {
-            match self.queue.advance_in_mode(self.mode) {
+            match self.queue.advance_in_mode(mode) {
                 Some(id) => {
                     if self.failed_round.contains(&id) || self.queue.is_blocked(id) {
                         // This entry failed earlier this round — auto-attempt
                         // it only once; skip it (task 8.7).
                         continue;
                     }
-                    if let Some(song) = self.queue.get(id).and_then(|e| e.item.song_id()) {
-                        self.load_entry(id, song);
-                    }
-                    return Some(id);
+                    return self.load_queue_entry(id);
                 }
                 None => {
-                    if self.mode == PlayMode::Shuffle {
+                    if mode == PlayMode::Shuffle {
                         // Bag exhausted: refresh a fresh round from pending.
                         let pending_ids = self.queue.pending_ids();
                         // If every pending entry already failed this round,
@@ -394,14 +429,7 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
         if let Some(id) = self.queue.current_id() {
             self.failed_round.insert(id);
         }
-        // Error advance bypasses repeat-one (design §8.7: 错误推进绕过单曲循环).
-        if self.mode == PlayMode::RepeatOne {
-            self.mode = match self.queue.is_shuffle() {
-                true => PlayMode::Shuffle,
-                false => PlayMode::Sequential,
-            };
-        }
-        self.next_from_mode()
+        self.navigate(NavigationEvent::ErrorSkip)
     }
 
     /// The set of entries that failed in the current round (for diagnostics).
@@ -425,11 +453,7 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
             self.player.send(PlayerCommand::Seek(0.0)).ok();
             return;
         }
-        if let Some(prev_id) = self.queue.previous() {
-            if let Some(song) = self.queue.get(prev_id).and_then(|e| e.item.song_id()) {
-                self.load_entry(prev_id, song);
-            }
-        }
+        let _ = self.navigate(NavigationEvent::ManualPrevious);
     }
 
     /// Seek to an absolute position (seconds) within the current track.
@@ -461,17 +485,7 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
     /// new current entry id, or `None` if the queue stopped. (Error-specific
     /// skip is task 8.7.)
     pub fn on_played_to_end(&mut self) -> Option<QueueEntryId> {
-        if self.mode == PlayMode::RepeatOne {
-            // Repeat the current entry.
-            if let Some(id) = self.queue.current_id() {
-                if let Some(song) = self.queue.get(id).and_then(|e| e.item.song_id()) {
-                    self.load_entry(id, song);
-                    return Some(id);
-                }
-            }
-            return None;
-        }
-        self.next_from_mode()
+        self.navigate(NavigationEvent::NaturalEnd)
     }
 
     /// Whether a queue entry exists (by id).
@@ -538,6 +552,24 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
                 session_id: session,
             })
             .ok();
+    }
+
+    fn load_queue_entry(&mut self, entry_id: QueueEntryId) -> Option<QueueEntryId> {
+        let song = self
+            .queue
+            .get(entry_id)
+            .and_then(|entry| entry.item.song_id())?;
+        self.load_entry(entry_id, song);
+        Some(entry_id)
+    }
+
+    fn previous_from_mode(&mut self) -> Option<QueueEntryId> {
+        let previous = if self.mode == PlayMode::Sequential {
+            self.queue.previous_in_loop()
+        } else {
+            self.queue.previous()
+        }?;
+        self.load_queue_entry(previous)
     }
 }
 
@@ -677,6 +709,51 @@ mod tests {
             selected_index: 0,
         });
         assert_eq!(coord.mode(), PlayMode::RepeatOne);
+    }
+
+    #[test]
+    fn new_view_context_replaces_old_pending_and_priority_lane() {
+        // 视图播放是替换而非追加 (spec: 从曲库开始播放 / 视图播放重建队列数量):
+        // a fresh context must leave no entry from an older context or its manual
+        // "play next" lane behind — no persisted/old-session pending bleeds in.
+        let player = FakePlayer::new();
+        let mut coord = PlaybackCoordinator::new(player);
+        let old = song();
+        let old2 = song();
+        coord.play_context(&ViewContext {
+            songs: vec![old, old2],
+            selected_index: 0,
+        });
+        coord.play_next(lib_entry(song())); // a priority-lane entry from the old context
+        assert_eq!(coord.queue().priority_ids().len(), 1);
+
+        let s1 = song();
+        let s2 = song();
+        let s3 = song();
+        coord.play_context(&ViewContext {
+            songs: vec![s1, s2, s3],
+            selected_index: 1,
+        });
+
+        assert_eq!(
+            coord.current().unwrap().item.song_id(),
+            Some(s2),
+            "the selected song of the new view is current"
+        );
+        assert!(
+            coord.queue().priority_ids().is_empty(),
+            "a new context never inherits the old priority lane"
+        );
+        let view_ids: Vec<_> = coord
+            .queue_view()
+            .into_iter()
+            .map(|entry| entry.item.song_id().unwrap())
+            .collect();
+        assert_eq!(
+            view_ids,
+            vec![s2, s3, s1],
+            "the new view's queue starts at the selection and wraps around"
+        );
     }
 
     #[test]
@@ -865,7 +942,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_next_leaves_repeat_one() {
+    fn explicit_next_advances_repeat_one_without_changing_selected_mode() {
         let player = FakePlayer::new();
         let mut coord = PlaybackCoordinator::new(player);
         let s1 = song();
@@ -875,9 +952,9 @@ mod tests {
             selected_index: 0,
         });
         coord.set_mode(PlayMode::RepeatOne);
-        // Explicit next must leave repeat-one and go to the next entry.
+        // Explicit next must use list-loop order while retaining repeat-one.
         coord.advance_to_next();
-        assert_eq!(coord.mode(), PlayMode::Sequential);
+        assert_eq!(coord.mode(), PlayMode::RepeatOne);
         assert_eq!(coord.current().unwrap().item.song_id(), Some(s2));
     }
 
@@ -1066,8 +1143,8 @@ mod tests {
         assert!(next.is_some());
         assert_eq!(
             coord.mode(),
-            PlayMode::Sequential,
-            "error advance leaves repeat-one"
+            PlayMode::RepeatOne,
+            "error skip must not mutate the selected playback mode"
         );
         assert_eq!(coord.current().unwrap().item.song_id(), Some(s2));
     }

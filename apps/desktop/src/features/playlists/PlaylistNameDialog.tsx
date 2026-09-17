@@ -182,10 +182,24 @@ export function PlaylistNameDialog({
               aria-label="选择歌单封面图片"
               onClick={() => coverInputRef.current?.click()}
             >
-              <span className={`cover playlist-cover ${coverClass(playlistId ?? "playlist")}${coverPreview ? " has-image" : ""}`}>
-                {coverPreview ? <img src={coverPreview.startsWith("blob:") ? coverPreview : bridge.assetUrl(coverPreview)} alt="当前歌单封面" /> : null}
+              <span
+                className={`cover playlist-cover ${coverClass(playlistId ?? "playlist")}${coverPreview ? " has-image" : ""}`}
+              >
+                {coverPreview ? (
+                  <img
+                    src={
+                      coverPreview.startsWith("blob:")
+                        ? coverPreview
+                        : bridge.assetUrl(coverPreview)
+                    }
+                    alt="当前歌单封面"
+                  />
+                ) : null}
               </span>
-              <span className="playlist-cover-hint-overlay"><Icon name="edit" />更换图片</span>
+              <span className="playlist-cover-hint-overlay">
+                <Icon name="edit" />
+                更换图片
+              </span>
             </button>
             <input
               ref={coverInputRef}
@@ -196,7 +210,10 @@ export function PlaylistNameDialog({
                 const file = event.currentTarget.files?.[0];
                 event.currentTarget.value = "";
                 if (!file) return;
-                if (file.size > 5 * 1024 * 1024) { setError("封面图片不能超过 5 MB。"); return; }
+                if (file.size > 5 * 1024 * 1024) {
+                  setError("封面图片不能超过 5 MB。");
+                  return;
+                }
                 const reader = new FileReader();
                 reader.onload = () => {
                   const bytes = new Uint8Array(reader.result as ArrayBuffer);

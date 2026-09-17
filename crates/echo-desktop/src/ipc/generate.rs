@@ -24,6 +24,37 @@ pub fn generated_typescript() -> String {
     out.push_str("}\n\n");
     out.push_str("export type IpcResult<T> = T | IpcErrorDto;\n\n");
 
+    // Player snapshots travel on the typed `player://snapshot` event rather
+    // than a command response, but they are still a cross-process IPC DTO.
+    // Keep this canonical definition generated alongside command DTOs so UI
+    // consumers cannot drift from the Rust serde contract.
+    out.push_str("export interface UiQueueEntry {\n");
+    out.push_str("  readonly entryId: string;\n");
+    out.push_str("  readonly songId: string | null;\n");
+    out.push_str("  readonly title: string | null;\n");
+    out.push_str("  readonly isCurrent: boolean;\n");
+    out.push_str("  readonly failed: boolean;\n");
+    out.push_str("  readonly blocked: boolean;\n");
+    out.push_str("  readonly canImport: boolean;\n");
+    out.push_str("  readonly artist: string | null;\n");
+    out.push_str("  readonly durationS: number | null;\n");
+    out.push_str("  readonly coverKey: string | null;\n");
+    out.push_str("}\n\n");
+    out.push_str("export interface UiPlayerSnapshot {\n");
+    out.push_str("  readonly state: 'stopped' | 'loading' | 'playing' | 'paused' | 'ended' | 'failed';\n");
+    out.push_str("  readonly position: number | null;\n");
+    out.push_str("  readonly duration: number | null;\n");
+    out.push_str("  readonly volume: number;\n");
+    out.push_str("  readonly muted: boolean;\n");
+    out.push_str("  readonly currentQueueEntryId: string | null;\n");
+    out.push_str("  readonly currentSongId: string | null;\n");
+    out.push_str("  readonly queueLen: number;\n");
+    out.push_str("  readonly mode: 'sequential' | 'shuffle' | 'repeatOne';\n");
+    out.push_str("  readonly currentTitle: string | null;\n");
+    out.push_str("  readonly currentCanImport: boolean;\n");
+    out.push_str("  readonly queue: readonly UiQueueEntry[];\n");
+    out.push_str("}\n\n");
+
     out.push_str("export interface BootstrapSnapshot {\n");
     out.push_str("  readonly ready: boolean;\n");
     out.push_str("  readonly writesAllowed: boolean;\n");

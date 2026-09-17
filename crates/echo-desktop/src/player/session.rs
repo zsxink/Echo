@@ -44,7 +44,7 @@ use super::queue::TemporaryItem;
 use super::queue::{HistoryRecord, Queue, QueueEntry, QueueItem};
 
 /// The current on-disk session schema version.
-pub const SESSION_VERSION: u32 = 2;
+pub const SESSION_VERSION: u32 = 3;
 
 /// The serialized, durable playback-session document (camelCase, versioned).
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -61,6 +61,10 @@ pub struct PlaybackSession {
     pub history: Vec<PersistedHistoryRecord>,
     /// The active shuffle round (entry ids in play order).
     pub shuffle_bag: Vec<String>,
+    /// FIFO manual "play next" lane. Missing in v1/v2 sessions means no
+    /// manual priorities, preserving backward-compatible restore behavior.
+    #[serde(default)]
+    pub priority: Vec<String>,
     /// Whether shuffle mode was active.
     pub shuffle_active: bool,
     /// Playback settings.
@@ -87,6 +91,7 @@ impl PlaybackSession {
             current: None,
             history: Vec::new(),
             shuffle_bag: Vec::new(),
+            priority: Vec::new(),
             shuffle_active: false,
             mode: PlayMode::Sequential,
             source: None,
@@ -192,6 +197,16 @@ pub fn snapshot_queue(
             QueueItem::Temporary(_) => None,
         })
         .collect();
+    let priority: Vec<String> = queue
+        .priority_ids()
+        .iter()
+        .filter(|id| {
+            entries
+                .iter()
+                .any(|entry| entry.queue_entry_id == id.to_string())
+        })
+        .map(std::string::ToString::to_string)
+        .collect();
     PlaybackSession {
         version: SESSION_VERSION,
         entries,
@@ -209,6 +224,7 @@ pub fn snapshot_queue(
             .iter()
             .map(|id| id.to_string())
             .collect(),
+        priority,
         shuffle_active: queue.is_shuffle(),
         mode,
         source: source.map(std::string::ToString::to_string),
@@ -302,6 +318,13 @@ pub fn rebuild_queue(
         .filter_map(|s| s.parse().ok())
         .collect();
     queue.set_shuffle(session.shuffle_active, bag);
+    queue.set_priority(
+        session
+            .priority
+            .iter()
+            .filter_map(|id| id.parse().ok())
+            .collect(),
+    );
 
     (
         queue,
@@ -377,7 +400,7 @@ impl SessionPersistence for StateStoreSession {
             return Ok(None);
         };
         match serde_json::from_value::<PlaybackSession>(value) {
-            Ok(session) if matches!(session.version, 1 | SESSION_VERSION) => Ok(Some(session)),
+            Ok(session) if matches!(session.version, 1..=SESSION_VERSION) => Ok(Some(session)),
             // Unknown version: treat as empty (safe), never restore garbage.
             _ => Ok(None),
         }
@@ -513,6 +536,7 @@ mod tests {
             current: None,
             history: vec![],
             shuffle_bag: vec![],
+            priority: vec![],
             shuffle_active: false,
             mode: PlayMode::Sequential,
             source: None,
@@ -557,6 +581,76 @@ mod tests {
         assert!(
             persist.load().expect("load unknown").is_none(),
             "unknown version is a safe empty restore"
+        );
+    }
+
+    #[test]
+    fn priority_lane_round_trips_through_snapshot_and_rebuild() {
+        use echo_core::domain::ids::QueueEntryId;
+        let s1 = SongId::new();
+        let s2 = SongId::new();
+        let mut queue = Queue::new();
+        let current = queue.push(lib_entry(s1));
+        queue.set_current(current);
+        let a = queue.insert_next(lib_entry(s2));
+        let b = queue.insert_next(lib_entry(s1)); // duplicate song, own id
+
+        let session = snapshot_queue(&queue, PlayMode::Sequential, 1.0, false, None, None);
+        assert_eq!(session.priority.len(), 2);
+        // The lane survives a rebuild with the same FIFO order.
+        let (rebuilt, _summary) = rebuild_queue(&session, &[]);
+        assert_eq!(
+            rebuilt
+                .priority_ids()
+                .iter()
+                .map(id_string)
+                .collect::<Vec<_>>(),
+            [a, b].iter().map(id_string).collect::<Vec<_>>()
+        );
+        fn id_string(id: &QueueEntryId) -> String {
+            std::string::ToString::to_string(id)
+        }
+    }
+
+    #[test]
+    fn old_session_without_priority_restores_with_an_empty_lane() {
+        // v1/v2 documents have no `priority` field; `#[serde(default)]` must
+        // restore them as an empty manual lane (backward-compatible playback).
+        let dir = tempfile::tempdir().expect("temp");
+        let path = dir.path().join("desktop-state.json");
+        let store = DesktopStateStore::new(
+            path.clone(),
+            crate::platform::local_state::PlatformCloseDefault::Other,
+        );
+        let raw = serde_json::json!({
+            "version": 2,
+            "entries": [
+                { "queueEntryId": QueueEntryId::new().to_string(), "songId": SongId::new().to_string() }
+            ],
+            "history": [],
+            "shuffleBag": [],
+            "shuffleActive": false,
+            "mode": "sequential",
+            "volume": 0.8,
+            "muted": false
+        });
+        store
+            .set_playback_session(Some(raw))
+            .expect("store opaque payload");
+        let persist = StateStoreSession::new(std::sync::Arc::new(store));
+        let loaded = persist
+            .load()
+            .expect("load")
+            .expect("version 2 is restored, not dropped");
+        assert_eq!(loaded.version, 2);
+        assert!(
+            loaded.priority.is_empty(),
+            "an old session must restore with no manual priorities"
+        );
+        let (rebuilt, _summary) = rebuild_queue(&loaded, &[]);
+        assert!(
+            rebuilt.priority_ids().is_empty(),
+            "rebuilt queue carries the empty lane from the old session"
         );
     }
 

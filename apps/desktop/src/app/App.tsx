@@ -210,7 +210,9 @@ export function App() {
                         className={`cover playlist-cover ${coverClass(playlist.id)}${playlist.coverKey ? " has-image" : ""}`}
                         aria-hidden="true"
                       >
-                        {playlist.coverKey ? <img src={bridge.assetUrl(playlist.coverKey)} alt="" /> : null}
+                        {playlist.coverKey ? (
+                          <img src={bridge.assetUrl(playlist.coverKey)} alt="" />
+                        ) : null}
                       </span>
                       <span className="playlist-name">{playlist.name}</span>
                       {/* `memberCount` is authoritative from the backend — no
@@ -251,9 +253,16 @@ export function App() {
                 <PlaylistsView
                   playlistId={activePlaylistId}
                   title={viewTitle}
-                  coverKey={playlists.find((playlist) => playlist.id === activePlaylistId)?.coverKey}
-                  automaticCoverKey={playlists.find((playlist) => playlist.id === activePlaylistId)?.automaticCoverKey}
-                  hasCustomCover={playlists.find((playlist) => playlist.id === activePlaylistId)?.hasCustomCover}
+                  coverKey={
+                    playlists.find((playlist) => playlist.id === activePlaylistId)?.coverKey
+                  }
+                  automaticCoverKey={
+                    playlists.find((playlist) => playlist.id === activePlaylistId)
+                      ?.automaticCoverKey
+                  }
+                  hasCustomCover={
+                    playlists.find((playlist) => playlist.id === activePlaylistId)?.hasCustomCover
+                  }
                   root={status.activeRoot ?? ""}
                   existingNames={playlists.map((playlist) => playlist.name)}
                   readOnly={status.readOnly}

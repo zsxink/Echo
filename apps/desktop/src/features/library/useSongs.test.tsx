@@ -103,10 +103,16 @@ describe("useSongs search command", () => {
       isLast: true,
       nextCursor: null,
     });
-    const { result } = renderHook(() => useSongs({ ...query, view: "favorites", inFavorites: true }));
+    const { result } = renderHook(() =>
+      useSongs({ ...query, view: "favorites", inFavorites: true }),
+    );
 
-    await waitFor(() => expect(result.current.page.songs.map((song) => song.id)).toEqual(["older"]));
-    act(() => result.current.patchSong({ id: "newest", title: "Just favorited", favorite: true } as never));
+    await waitFor(() =>
+      expect(result.current.page.songs.map((song) => song.id)).toEqual(["older"]),
+    );
+    act(() =>
+      result.current.patchSong({ id: "newest", title: "Just favorited", favorite: true } as never),
+    );
 
     expect(result.current.page.songs.map((song) => song.id)).toEqual(["newest", "older"]);
   });
@@ -118,10 +124,17 @@ describe("useSongs search command", () => {
       nextCursor: null,
     });
     const { result } = renderHook(() =>
-      useSongs({ ...query, view: "favorites", inFavorites: true, sort: { field: "title", direction: "asc" } }),
+      useSongs({
+        ...query,
+        view: "favorites",
+        inFavorites: true,
+        sort: { field: "title", direction: "asc" },
+      }),
     );
 
-    await waitFor(() => expect(result.current.page.songs.map((song) => song.id)).toEqual(["zebra"]));
+    await waitFor(() =>
+      expect(result.current.page.songs.map((song) => song.id)).toEqual(["zebra"]),
+    );
     act(() => result.current.patchSong({ id: "apple", title: "Apple", favorite: true } as never));
 
     expect(result.current.page.songs.map((song) => song.id)).toEqual(["apple", "zebra"]);

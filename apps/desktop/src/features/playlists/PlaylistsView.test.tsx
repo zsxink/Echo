@@ -65,7 +65,13 @@ describe("PlaylistsView (task 10.9)", () => {
     mockBridge({
       playlist_members: [
         { id: "newer", title: "刚加入", favorite: false, playCount: 0, availability: "available" },
-        { id: "older", title: "较早加入", favorite: false, playCount: 0, availability: "available" },
+        {
+          id: "older",
+          title: "较早加入",
+          favorite: false,
+          playCount: 0,
+          availability: "available",
+        },
       ],
     });
     renderView();

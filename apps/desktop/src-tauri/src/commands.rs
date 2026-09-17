@@ -46,8 +46,8 @@ pub struct PlayerHandle {
     pub coordinator: Arc<Mutex<PlaybackCoordinator<Arc<dyn PlayerPort>>>>,
     /// The view the current playback context was built from ("allSongs" /
     /// "favorites" / "recent" / "search" / "playlist:<id>") — the 记住当前播
-    /// 放的是哪个歌单 half of local persistence. Written by `play_context`,
-    /// read by the session-saver thread (same shared slot).
+    /// 放的是哪个歌单 half of local persistence. Written by the playback-context
+    /// commands, read by the session-saver thread (same shared slot).
     pub source: Arc<std::sync::Mutex<Option<String>>>,
 }
 
@@ -472,34 +472,41 @@ fn lib_entry(song: SongId) -> QueueEntry {
     }
 }
 
+/// Start playback from a playlist, resolving the full member set on the
+/// desktop side. The WebView supplies only the playlist id and the selected
+/// song — never a song-id list — so a paged or partial client-side list cannot
+/// truncate the queue (spec: 视图播放重建队列数量). The queue is atomically
+/// replaced: any previous queue and manual "play next" lane are discarded.
 #[tauri::command]
-pub fn play_context(
+pub fn play_playlist_context(
+    services: State<'_, AppServices>,
     state: State<'_, PlayerHandle>,
-    songs: Vec<String>,
-    selected_index: usize,
-    source: Option<String>,
+    playlist: String,
+    selected_song: String,
 ) -> Result<(), IpcErrorDto> {
-    let ids: Vec<SongId> = songs
+    let playlist = parse_id::<PlaylistId>(&playlist, "playlist")?;
+    let selected = parse_id::<SongId>(&selected_song, "selectedSong")?;
+    let songs = services
+        .resolve_playlist_playback_context(playlist, selected)
+        .map_err(IpcErrorDto::from)?;
+    let selected_index = songs
         .iter()
-        .filter_map(|s| s.parse::<SongId>().ok())
-        .collect();
-    if ids.is_empty() {
-        return Err(IpcErrorDto::from(&echo_core::error::Error::validation(
-            echo_core::error::Subject::Other,
-            "songs",
-            "no valid songs".to_owned(),
-        )));
-    }
-    let ctx = ViewContext {
-        songs: ids,
-        selected_index,
-    };
-    let mut coord = state.coordinator.lock().expect("player coordinator lock");
-    coord.play_context(&ctx);
-    drop(coord);
-    // Record where this queue came from (哪个歌单) for local persistence.
+        .position(|song| *song == selected)
+        .ok_or_else(|| {
+            IpcErrorDto::from(&echo_core::error::Error::conflict(
+                "selected song is no longer a member of the playlist",
+            ))
+        })?;
+    state
+        .coordinator
+        .lock()
+        .expect("player coordinator lock")
+        .play_context(&ViewContext {
+            songs,
+            selected_index,
+        });
     if let Ok(mut slot) = state.source.lock() {
-        *slot = source;
+        *slot = Some(format!("playlist:{playlist}"));
     }
     Ok(())
 }

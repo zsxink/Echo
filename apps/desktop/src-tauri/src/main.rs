@@ -200,7 +200,19 @@ fn wire_composition(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
     let emit: player::SnapshotEmitter = Box::new(move |ui| {
         let _ = handle.emit(PLAYER_SNAPSHOT_EVENT, ui);
     });
-    player::spawn_forwarder(controller.port.clone(), queue_provider, emit);
+    // The queue-panel metadata resolver: maps library song ids to title /
+    // artist / duration / cover-asset-key, batch-cached per song so the 10 Hz
+    // position stream never triggers per-row metadata queries (task 2.2).
+    let queue_metadata = Arc::new(player::QueueMetadataResolver::new(
+        routed.deps.songs.clone(),
+        routed.deps.covers.clone(),
+    ));
+    player::spawn_forwarder(
+        controller.port.clone(),
+        queue_provider,
+        queue_metadata,
+        emit,
+    );
     // Auto-advance: a track reaching EOF (or failing to load) must drive the
     // coordinator to the next entry. Without this the queue stalls on `ended`
     // until the user presses next manually.
@@ -485,7 +497,7 @@ fn main() {
             commands::cancel_scan,
             commands::set_theme,
             commands::set_close_behavior,
-            commands::play_context,
+            commands::play_playlist_context,
             commands::play_library_context,
             commands::restore_playback_session,
             commands::play_temporary_file,

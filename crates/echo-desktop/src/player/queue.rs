@@ -100,6 +100,11 @@ pub struct Queue {
     /// Whether shuffle mode is currently active. The bag is only consulted in
     /// shuffle mode; switching modes never rebuilds it (切模式不丢当前项).
     shuffle_active: bool,
+    /// Entries explicitly requested through "play next", in the exact FIFO
+    /// order in which they must be consumed.  The entries also live in
+    /// `entries`; this separate ID-only lane preserves the user's intent even
+    /// when a circular projection crosses the physical storage boundary.
+    priority: Vec<QueueEntryId>,
     /// Entries restored while their media/root is unavailable. They remain in
     /// the queue and UI projection, but traversal skips them until retried.
     blocked: std::collections::HashSet<QueueEntryId>,
@@ -124,6 +129,7 @@ impl Queue {
             history: Vec::new(),
             shuffle_bag: Vec::new(),
             shuffle_active: false,
+            priority: Vec::new(),
             blocked: std::collections::HashSet::new(),
         }
     }
@@ -138,6 +144,28 @@ impl Queue {
     #[must_use]
     pub fn shuffle_bag(&self) -> &[QueueEntryId] {
         &self.shuffle_bag
+    }
+
+    /// The manual "play next" lane, in actual consumption order.
+    #[must_use]
+    pub fn priority_ids(&self) -> &[QueueEntryId] {
+        &self.priority
+    }
+
+    /// Restore the persisted priority lane after entries have been rebuilt.
+    /// Unknown, blocked, duplicate, and current IDs are discarded so a stale
+    /// session can never corrupt traversal.
+    pub fn set_priority(&mut self, ids: Vec<QueueEntryId>) {
+        let current = self.current_id();
+        self.priority = ids
+            .into_iter()
+            .filter(|id| Some(*id) != current && self.contains(*id) && !self.is_blocked(*id))
+            .fold(Vec::new(), |mut unique, id| {
+                if !unique.contains(&id) {
+                    unique.push(id);
+                }
+                unique
+            });
     }
 
     /// Enter shuffle mode. `order` is a shuffle of the pending ids that will
@@ -266,6 +294,7 @@ impl Queue {
         }
         if blocked {
             self.blocked.insert(entry_id);
+            self.priority.retain(|id| *id != entry_id);
         } else {
             self.blocked.remove(&entry_id);
         }
@@ -293,7 +322,7 @@ impl Queue {
             return self.entries.clone();
         };
         let mut view = vec![current.clone()];
-        let pending = self.pending_ids();
+        let pending = self.circular_pending_ids();
         let order = if self.shuffle_active {
             self.shuffle_bag
                 .iter()
@@ -309,7 +338,15 @@ impl Queue {
         } else {
             pending
         };
-        view.extend(order.into_iter().filter_map(|id| self.get(id).cloned()));
+        let mut emitted = vec![current.id];
+        for id in self.priority.iter().copied().chain(order) {
+            if !emitted.contains(&id) && !self.is_blocked(id) {
+                if let Some(entry) = self.get(id).cloned() {
+                    emitted.push(id);
+                    view.push(entry);
+                }
+            }
+        }
         view
     }
 
@@ -326,17 +363,32 @@ impl Queue {
         id
     }
 
-    /// Insert `entry` immediately after the current entry (or at the head if
-    /// there is no current). "下一首播放" (design §12).
+    /// Add an entry to the tail of the FIFO "play next" lane.  Physical
+    /// placement directly after the lane keeps subsequent list-loop traversal
+    /// intuitive; the lane itself is authoritative for consumption order.
     pub fn insert_next(&mut self, entry: QueueEntry) -> QueueEntryId {
         let id = entry.id;
         let insert_at = match self.current_index {
-            Some(i) => i + 1,
+            Some(i) => i + 1 + self.priority.len(),
             None => 0,
         };
         self.entries.insert(insert_at, entry);
+        self.priority.push(id);
         // A None current that now has a head item: leave for the coordinator.
         id
+    }
+
+    /// Consume the first valid manual priority entry. Manual previous and
+    /// error skip intentionally never call this method.
+    pub fn advance_priority(&mut self) -> Option<QueueEntryId> {
+        while let Some(id) = self.priority.first().copied() {
+            self.priority.remove(0);
+            if self.contains(id) && !self.is_blocked(id) {
+                self.set_current(id);
+                return Some(id);
+            }
+        }
+        None
     }
 
     /// Mark `entry_id` as the current one and record it in history. Used by the
@@ -434,11 +486,36 @@ impl Queue {
         Some(prev)
     }
 
+    /// Move through the canonical list order in reverse, wrapping from the
+    /// first entry to the last. This deliberately does not consume or reorder
+    /// the manual priority lane.
+    pub fn previous_in_loop(&mut self) -> Option<QueueEntryId> {
+        let current = self.current_index?;
+        if self.entries.is_empty() {
+            return None;
+        }
+        let previous = if current == 0 {
+            self.entries.len() - 1
+        } else {
+            current - 1
+        };
+        let id = self.entries[previous].id;
+        self.current_index = Some(previous);
+        self.record_history(id);
+        Some(id)
+    }
+
     /// Remove every pending entry (clear the upnext) WITHOUT touching the
     /// current entry or history. "清空只移除待播" (design §12, 8.6).
     pub fn clear_pending(&mut self) {
         if let Some(i) = self.current_index {
-            self.entries.truncate(i + 1);
+            let current = self.entries[i].clone();
+            self.entries = vec![current];
+            self.current_index = Some(0);
+            let retained = self.entries[0].id;
+            self.history.retain(|record| record.entry_id == retained);
+            self.shuffle_bag.clear();
+            self.priority.clear();
         } else if !self.entries.is_empty() {
             // No current: keep nothing (nothing is being played).
             self.entries.clear();
@@ -521,6 +598,8 @@ impl Queue {
         }
         self.history.retain(|h| h.entry_id != entry_id);
         self.blocked.remove(&entry_id);
+        self.priority.retain(|id| *id != entry_id);
+        self.shuffle_bag.retain(|id| *id != entry_id);
     }
 
     /// Remove a specific entry by id if it is not the current one. Returns
@@ -541,10 +620,14 @@ impl Queue {
             }
             self.history.retain(|h| h.entry_id != entry_id);
             self.blocked.remove(&entry_id);
+            self.priority.retain(|id| *id != entry_id);
+            self.shuffle_bag.retain(|id| *id != entry_id);
             return true;
         }
         self.history.retain(|h| h.entry_id != entry_id);
         self.blocked.remove(&entry_id);
+        self.priority.retain(|id| *id != entry_id);
+        self.shuffle_bag.retain(|id| *id != entry_id);
         false
     }
 
@@ -578,6 +661,19 @@ impl Queue {
             }
         }
         seen
+    }
+
+    /// Every non-current entry in the next list-loop order, including entries
+    /// before the current storage position which will play after wrapping.
+    fn circular_pending_ids(&self) -> Vec<QueueEntryId> {
+        let Some(current) = self.current_index else {
+            return self.entries.iter().map(|entry| entry.id).collect();
+        };
+        self.entries[current + 1..]
+            .iter()
+            .chain(self.entries[..current].iter())
+            .map(|entry| entry.id)
+            .collect()
     }
 
     fn record_history(&mut self, entry_id: QueueEntryId) {
@@ -771,7 +867,7 @@ mod tests {
     }
 
     #[test]
-    fn view_projection_keeps_current_first_and_excludes_history() {
+    fn view_projection_keeps_current_first_and_includes_loop_wrap() {
         let mut q = Queue::new();
         let first = q.push(lib(song()));
         let current = q.push(lib(song()));
@@ -780,11 +876,64 @@ mod tests {
         q.set_current(current);
 
         let ids: Vec<_> = q.view_entries().into_iter().map(|entry| entry.id).collect();
-        assert_eq!(ids, vec![current, pending]);
-        assert!(
-            !ids.contains(&first),
-            "historical entries are not pending UI rows"
+        assert_eq!(ids, vec![current, pending, first]);
+    }
+
+    #[test]
+    fn play_next_lane_is_fifo_and_projection_precedes_normal_entries() {
+        let mut q = Queue::new();
+        let current = q.push(lib(song()));
+        let normal = q.push(lib(song()));
+        q.set_current(current);
+        let a = q.insert_next(lib(song()));
+        let b = q.insert_next(lib(song()));
+        let c = q.insert_next(lib(song()));
+
+        assert_eq!(q.priority_ids(), &[a, b, c]);
+        let ids: Vec<_> = q.view_entries().into_iter().map(|entry| entry.id).collect();
+        assert_eq!(ids, vec![current, a, b, c, normal]);
+        assert_eq!(q.advance_priority(), Some(a));
+        assert_eq!(q.advance_priority(), Some(b));
+        assert_eq!(q.advance_priority(), Some(c));
+        assert_eq!(q.advance_priority(), None);
+    }
+
+    #[test]
+    fn blocked_or_removed_priority_entries_never_reach_projection_or_consumer() {
+        let mut q = Queue::new();
+        let current = q.push(lib(song()));
+        q.set_current(current);
+        let blocked = q.insert_next(lib(song()));
+        let removed = q.insert_next(lib(song()));
+        q.set_blocked(blocked, true);
+        assert!(q.remove(removed));
+
+        assert!(q.priority_ids().is_empty());
+        assert_eq!(
+            q.view_entries()
+                .into_iter()
+                .map(|entry| entry.id)
+                .collect::<Vec<_>>(),
+            vec![current]
         );
+        assert_eq!(q.advance_priority(), None);
+    }
+
+    #[test]
+    fn clear_pending_keeps_only_current_even_after_loop_wrap() {
+        let mut q = Queue::new();
+        let first = q.push(lib(song()));
+        let current = q.push(lib(song()));
+        let last = q.push(lib(song()));
+        q.set_current(current);
+        q.insert_next(lib(song()));
+        q.clear_pending();
+
+        assert_eq!(q.entries().len(), 1);
+        assert_eq!(q.current_id(), Some(current));
+        assert!(!q.contains(first));
+        assert!(!q.contains(last));
+        assert!(q.priority_ids().is_empty());
     }
 
     #[test]

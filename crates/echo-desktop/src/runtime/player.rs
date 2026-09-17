@@ -16,6 +16,7 @@
 use std::sync::{Arc, Mutex, RwLock};
 
 use echo_core::application::scan::ScanDeps;
+use echo_core::domain::ids::SongId;
 use echo_core::domain::state::PlaybackState;
 use echo_core::error::Error;
 
@@ -23,7 +24,7 @@ use crate::player::actor::{FfiSpawnError, PlayerActor, SongResolver};
 use crate::player::coordinator::PlaybackCoordinator;
 use crate::player::fake::FakePlayer;
 use crate::player::port::{PlayMode, PlayerPort, PlayerSnapshot, VOLUME_EPSILON};
-use crate::player::queue::{QueueItem, ViewContext};
+use crate::player::queue::{QueueEntry, QueueItem, ViewContext};
 use crate::player::session::{rebuild_queue, snapshot_queue, SessionPersistence};
 
 /// One entry of the playback queue, as the queue panel renders it (task 11.2).
@@ -38,6 +39,8 @@ use crate::player::session::{rebuild_queue, snapshot_queue, SessionPersistence};
 pub struct UiQueueEntry {
     pub entry_id: String,
     pub song_id: Option<String>,
+    /// The display title. For a library entry it is the resolved song title
+    /// (metadata); for a temporary item the session-provided display name.
     pub title: Option<String>,
     pub is_current: bool,
     pub failed: bool,
@@ -48,6 +51,117 @@ pub struct UiQueueEntry {
     /// be imported into the active library (task 11.7). Derived; never false
     /// for a library entry.
     pub can_import: bool,
+    /// The entry's artist — resolved library metadata; `None` for temporary
+    /// items or a library song without an artist.
+    pub artist: Option<String>,
+    /// The entry's duration in seconds — library metadata; `None` for
+    /// temporary items or when the duration is unknown.
+    pub duration_s: Option<u64>,
+    /// The entry's opaque `cover://` asset key (design §16); `None` when the
+    /// song carries no embedded artwork. Never an absolute path.
+    pub cover_key: Option<String>,
+}
+
+/// The resolved presentation metadata of one library queue entry (task 2.2).
+///
+/// This is what the queue panel needs beyond the queue identity itself:
+/// title/artist/duration from the library catalog plus the opaque cover
+/// asset key. It is resolved in batches and cached per song so the 10 Hz
+/// position stream never triggers per-row metadata queries (design: 队列变更
+/// 时缓存/批量解析, 高频位置事件复用已解析的队列 DTO).
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct QueueEntryMeta {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub duration_s: Option<u64>,
+    pub cover_key: Option<String>,
+}
+
+/// Resolves and caches presentation metadata for library queue entries.
+///
+/// The resolver sits between the snapshot forwarder and the library: each
+/// snapshot asks for the *current* set of song ids; the resolver answers from
+/// its per-song cache and only queries the repository for ids it has not seen
+/// (a queue change). Metadata for an id that no longer resolves (deleted /
+/// foreign) is cached as `None` so a transient message cannot trigger a query
+/// storm, and it stays that way until the process is restarted or the entry
+/// is re-added to a fresh context.
+pub struct QueueMetadataResolver {
+    songs: Arc<dyn echo_core::application::ports::SongRepository>,
+    covers: Arc<dyn echo_core::application::ports::CoverRepository>,
+    // An unknown/deleted id is cached as `QueueEntryMeta::default()`, whose
+    // fields serialize as explicit nulls. Keeping one value type avoids a
+    // second "not found" representation and makes cache hits unambiguous.
+    cache: std::sync::Mutex<std::collections::HashMap<SongId, QueueEntryMeta>>,
+}
+
+impl QueueMetadataResolver {
+    /// A resolver over the same repository pair `AppServices` uses.
+    #[must_use]
+    pub fn new(
+        songs: Arc<dyn echo_core::application::ports::SongRepository>,
+        covers: Arc<dyn echo_core::application::ports::CoverRepository>,
+    ) -> Self {
+        Self {
+            songs,
+            covers,
+            cache: std::sync::Mutex::new(std::collections::HashMap::new()),
+        }
+    }
+
+    /// Resolve the metadata of every library id in `queue`, batch-cached.
+    ///
+    /// Misses are resolved once and cached (as `QueueEntryMeta::default()` —
+    /// explicit nulls — for ids that do not resolve); hits are answered from
+    /// the cache, so repeated 10 Hz snapshots of an unchanged queue cost zero
+    /// repository queries. Temporary items (no `song_id`) are never queried
+    /// and never appear in the map (they already carry a display title).
+    pub fn resolve(&self, queue: &[QueueEntry]) -> std::collections::HashMap<SongId, QueueEntryMeta> {
+        let mut result = std::collections::HashMap::new();
+        let mut missing = std::collections::HashSet::new();
+        {
+            let cache = self.cache.lock().expect("metadata cache lock");
+            for entry in queue {
+                if let QueueItem::Library(id) = entry.item {
+                    match cache.get(&id) {
+                        Some(meta) => {
+                            result.insert(id, meta.clone());
+                        }
+                        // Duplicate songs are distinct queue entries but share
+                        // one library metadata record, so resolve each song id
+                        // at most once per snapshot.
+                        None => {
+                            missing.insert(id);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Resolve only the ids we have never seen (a queue change) — the
+        // batched part of the contract. Deletion race: an entry dropped from
+        // the library mid-queue resolves to explicit nulls, never an error.
+        if !missing.is_empty() {
+            let mut cache = self.cache.lock().expect("metadata cache lock");
+            for id in &missing {
+                let song = self.songs.by_id(*id).ok().flatten();
+                let cover = song
+                    .as_ref()
+                    .and_then(|song| self.covers.cover_of(song.id()).ok().flatten());
+                let meta = song
+                    .map(|song| QueueEntryMeta {
+                        title: song.title().map(ToOwned::to_owned),
+                        artist: song.artist().map(ToOwned::to_owned),
+                        duration_s: song.duration().map(|d| d.as_secs()),
+                        cover_key: cover.map(|cover| cover.asset_key),
+                    })
+                    .unwrap_or_default();
+                cache.insert(*id, meta.clone());
+                result.insert(*id, meta);
+            }
+        }
+        result
+    }
 }
 
 /// The UI-facing playback snapshot (mirrors the frontend `UiPlayerSnapshot`).
@@ -152,11 +266,20 @@ impl PlayerController<Arc<dyn PlayerPort>> {
 /// the player bar blank (empty 当前播放区 + dead mode button) while a song was
 /// audibly playing.
 #[must_use]
-pub fn map_snapshot(raw: &PlayerSnapshot, view: &CoordinatorView) -> UiPlayerSnapshot {
+pub fn map_snapshot(
+    raw: &PlayerSnapshot,
+    view: &CoordinatorView,
+    metadata: &std::collections::HashMap<SongId, QueueEntryMeta>,
+) -> UiPlayerSnapshot {
     let current = view.current.as_ref();
     let current_id = current.map(|e| e.id);
     let (current_song_id, current_title) = match current.map(|e| &e.item) {
-        Some(QueueItem::Library(id)) => (Some(id.to_string()), None),
+        Some(QueueItem::Library(id)) => {
+            // A library song's display title is its resolved metadata — the
+            // player bar shows the real title, not a placeholder.
+            let title = metadata.get(id).and_then(|meta| meta.title.clone());
+            (Some(id.to_string()), title)
+        }
         Some(QueueItem::Temporary(t)) => (None, Some(t.display_name.clone())),
         None => (None, None),
     };
@@ -170,17 +293,26 @@ pub fn map_snapshot(raw: &PlayerSnapshot, view: &CoordinatorView) -> UiPlayerSna
             .iter()
             .map(|e| {
                 let is_temporary = matches!(&e.item, QueueItem::Temporary(_));
+                let song_meta = e
+                    .item
+                    .song_id()
+                    .and_then(|id| metadata.get(&id))
+                    .cloned()
+                    .unwrap_or_default();
                 UiQueueEntry {
                     entry_id: e.id.to_string(),
                     song_id: e.item.song_id().map(|id| id.to_string()),
                     title: match &e.item {
-                        QueueItem::Library(_) => None,
+                        QueueItem::Library(_) => song_meta.title,
                         QueueItem::Temporary(t) => Some(t.display_name.clone()),
                     },
                     is_current: Some(e.id) == current_id,
                     failed: view.failed_round.contains(&e.id),
                     blocked: view.blocked.contains(&e.id),
                     can_import: is_temporary,
+                    artist: song_meta.artist,
+                    duration_s: song_meta.duration_s,
+                    cover_key: song_meta.cover_key,
                 }
             })
             .collect();
@@ -456,10 +588,14 @@ pub struct CoordinatorView {
 ///
 /// `queue_provider` returns the coordinator's current view, which supplies
 /// every queue-derived field of the UI snapshot (task 11.2) — the actor knows
-/// nothing about queue membership.
+/// nothing about queue membership. `metadata` resolves the presentation
+/// metadata (title/artist/duration/cover) of the queue's library entries,
+/// batch-cached so repeated position snapshots never re-query per row (task
+/// 2.2).
 pub fn spawn_forwarder(
     port: Arc<dyn PlayerPort>,
     queue_provider: Arc<dyn Fn() -> CoordinatorView + Send + Sync>,
+    metadata: Arc<QueueMetadataResolver>,
     emit: SnapshotEmitter,
 ) {
     let rx = port.subscribe_snapshots();
@@ -467,7 +603,9 @@ pub fn spawn_forwarder(
         .name("echo-snapshot-forwarder".into())
         .spawn(move || {
             while let Ok(snap) = rx.recv() {
-                emit(map_snapshot(&snap, &queue_provider()));
+                let view = queue_provider();
+                let meta = metadata.resolve(&view.entries);
+                emit(map_snapshot(&snap, &view, &meta));
             }
         })
         .expect("spawn snapshot forwarder thread");
@@ -1050,7 +1188,7 @@ mod tests {
             current: None,
             mode: PlayMode::Shuffle,
         };
-        let ui = map_snapshot(&raw, &view);
+        let ui = map_snapshot(&raw, &view, &std::collections::HashMap::new());
         assert_eq!(ui.state, "playing");
         assert_eq!(ui.position, Some(12.5));
         assert_eq!(ui.mode, "shuffle");
@@ -1077,7 +1215,7 @@ mod tests {
             current: Some(entry.clone()),
             mode: PlayMode::Sequential,
         };
-        let ui = map_snapshot(&raw, &view);
+        let ui = map_snapshot(&raw, &view, &std::collections::HashMap::new());
         assert_eq!(ui.current_song_id, Some(song.to_string()));
         assert_eq!(ui.current_queue_entry_id, Some(entry.id.to_string()));
         assert_eq!(ui.current_title, None);
@@ -1116,7 +1254,7 @@ mod tests {
             current: Some(entry.clone()),
             mode: PlayMode::RepeatOne,
         };
-        let ui = map_snapshot(&raw, &view);
+        let ui = map_snapshot(&raw, &view, &std::collections::HashMap::new());
         assert_eq!(ui.current_queue_entry_id, Some(entry.id.to_string()));
         assert_eq!(ui.current_song_id, Some(song.to_string()));
         assert_eq!(ui.queue_len, 1, "queue length is the coordinator's queue");
@@ -1145,7 +1283,7 @@ mod tests {
             current: Some(entry.clone()),
             mode: PlayMode::Sequential,
         };
-        let ui = map_snapshot(&raw, &view);
+        let ui = map_snapshot(&raw, &view, &std::collections::HashMap::new());
         assert_eq!(ui.current_song_id, None);
         assert_eq!(ui.current_title, Some("outside.m4a".into()));
         assert_eq!(ui.state, "failed");
@@ -1181,7 +1319,7 @@ mod tests {
             current: Some(current),
             mode: PlayMode::Sequential,
         };
-        let ui = map_snapshot(&raw, &view);
+        let ui = map_snapshot(&raw, &view, &std::collections::HashMap::new());
         assert!(ui.queue[0].is_current);
         assert!(!ui.queue[0].failed);
         assert!(!ui.queue[1].is_current);
@@ -1206,7 +1344,15 @@ mod tests {
             current: Some(entry),
             mode: PlayMode::Sequential,
         };
-        assert!(map_snapshot(&PlayerSnapshot::default(), &view).queue[0].blocked);
+        assert!(
+            map_snapshot(
+                &PlayerSnapshot::default(),
+                &view,
+                &std::collections::HashMap::new()
+            )
+            .queue[0]
+            .blocked
+        );
     }
 
     #[test]
@@ -1241,9 +1387,16 @@ mod tests {
                 mode: coord.mode(),
             }
         });
+        // A metadata resolver over the empty in-memory database: the queue has
+        // no library songs to resolve here, but the forwarder must ask for
+        // metadata with every snapshot (task 2.2) and never fail on an empty
+        // result.
+        let db = Arc::new(echo_core::application::testing::memory_database::MemoryDatabase::new());
+        let metadata = Arc::new(QueueMetadataResolver::new(db.clone(), db.clone()));
         spawn_forwarder(
             controller.port.clone(),
             provider,
+            metadata,
             Box::new(move |ui| {
                 let _ = tx.send(ui);
             }),
@@ -1433,5 +1586,180 @@ mod tests {
             "落盘的必须是松手时的最终音量 [stored={:?}]",
             store.last().map(|s| s.volume)
         );
+    }
+
+    // ------------------------------------------------------------------
+    // 队列展示元数据 (task 2.2 / 2.3)
+    // ------------------------------------------------------------------
+
+    /// A `MemoryDatabase` seeded with one library song (title/artist/duration)
+    /// and an attached cover, so resolver tests have real metadata to resolve.
+    fn seeded_db() -> (
+        Arc<echo_core::application::testing::memory_database::MemoryDatabase>,
+        SongId,
+    ) {
+        use echo_core::application::ports::{SongRepository, UnitOfWork};
+        use echo_core::domain::ids::{LibraryRootId, RelativeMediaPath, Revision};
+        let db = Arc::new(echo_core::application::testing::memory_database::MemoryDatabase::new());
+        let song_id = SongId::new();
+        let mut song = echo_core::domain::entities::Song::new(
+            song_id,
+            LibraryRootId::new(),
+            RelativeMediaPath::new("a.flac").expect("path"),
+            Revision::INITIAL,
+        );
+        song.apply_metadata(
+            Some("晴天".to_owned()),
+            Some("周杰伦".to_owned()),
+            Some("叶惠美".to_owned()),
+            Some(std::time::Duration::from_secs(239)),
+        );
+        db.upsert(&song).expect("seed song");
+        db.with_tx(Box::new(move |tx| {
+            tx.attach_cover(
+                song_id,
+                &echo_core::application::ports::CoverAssetRef {
+                    content_hash: "hash".to_owned(),
+                    mime: "image/png".to_owned(),
+                    asset_key: "cv1-seeded".to_owned(),
+                },
+            )
+        }))
+        .expect("seed cover");
+        (db, song_id)
+    }
+
+    #[test]
+    fn metadata_resolver_resolves_library_entry_fields() {
+        // 队列展示信息: library entries resolve to title / artist / duration /
+        // cover key — the real presentation fields the queue panel needs, not
+        // a generic "歌曲"/"资料库歌曲" placeholder.
+        let (db, song_id) = seeded_db();
+        let resolver = QueueMetadataResolver::new(db.clone(), db.clone());
+        let entry = QueueEntry {
+            id: QueueEntryId::new(),
+            item: QueueItem::Library(song_id),
+        };
+        let meta = resolver.resolve(&[entry]);
+        let meta = meta
+            .get(&song_id)
+            .expect("the queue song is resolved");
+        assert_eq!(meta.title.as_deref(), Some("晴天"));
+        assert_eq!(meta.artist.as_deref(), Some("周杰伦"));
+        assert_eq!(meta.duration_s, Some(239));
+        assert_eq!(meta.cover_key.as_deref(), Some("cv1-seeded"));
+    }
+
+    #[test]
+    fn metadata_resolver_skips_temporary_items_without_querying() {
+        // 临时项兜底: session-only temporary items are never queried — they
+        // carry their own display name, and the resolver does not attempt a
+        // library lookup that could fail for a non-library file.
+        let (db, _song_id) = seeded_db();
+        let resolver = QueueMetadataResolver::new(db.clone(), db.clone());
+        let temp = QueueEntry {
+            id: QueueEntryId::new(),
+            item: QueueItem::Temporary(crate::player::queue::TemporaryItem {
+                display_name: "访谈录音.m4a".to_owned(),
+                path: std::path::PathBuf::from("/tmp/interview.m4a"),
+                duration: None,
+                on_active_root: false,
+            }),
+        };
+        let meta = resolver.resolve(&[temp]);
+        assert!(
+            meta.is_empty(),
+            "temporary items resolve to no metadata map entry"
+        );
+    }
+
+    #[test]
+    fn metadata_resolver_caches_resolved_ids_across_snapshots() {
+        // 高频位置事件复用已解析的队列 DTO: once resolved, a repeated resolve
+        // of the same song id answers from the cache — no re-query, no error
+        // — so the 10 Hz position stream never triggers per-row lookups.
+        let (db, song_id) = seeded_db();
+        // Remove the song after the first resolve: the second resolve must
+        // still answer from cache rather than querying an absent id.
+        let entry = QueueEntry {
+            id: QueueEntryId::new(),
+            item: QueueItem::Library(song_id),
+        };
+        let resolver = QueueMetadataResolver::new(db.clone(), db.clone());
+        let first = resolver.resolve(&[entry.clone()]);
+        assert!(
+            first.contains_key(&song_id),
+            "first resolve queries the library"
+        );
+        use echo_core::application::ports::UnitOfWork;
+        let song_id_copy = song_id;
+        db.with_tx(Box::new(move |tx| tx.delete_song(song_id_copy)))
+            .expect("delete after first resolve");
+        let second = resolver.resolve(&[entry]);
+        assert_eq!(
+            second.get(&song_id).cloned(),
+            first.get(&song_id).cloned(),
+            "the cached metadata is reused for an unchanged queue id"
+        );
+    }
+
+    #[test]
+    fn metadata_resolver_gives_explicit_nulls_for_unknown_ids() {
+        // A queue entry whose id no longer resolves (deletion race / foreign
+        // id) gets explicit nulls rather than failing the snapshot — the entry
+        // still renders with defined-but-empty presentation fields.
+        let (db, _) = seeded_db();
+        let resolver = QueueMetadataResolver::new(db.clone(), db.clone());
+        let ghost = SongId::new();
+        let entry = QueueEntry {
+            id: QueueEntryId::new(),
+            item: QueueItem::Library(ghost),
+        };
+        let meta = resolver.resolve(&[entry]);
+        assert_eq!(
+            meta.get(&ghost).cloned(),
+            Some(QueueEntryMeta::default()),
+            "an id that does not resolve maps to explicit null metadata"
+        );
+    }
+
+    #[test]
+    fn map_snapshot_attaches_resolved_metadata_to_each_entry() {
+        // The UI snapshot's queue entries carry the resolved metadata — title /
+        // artist / duration / cover — so the panel renders real songs, and the
+        // current entry's title feeds the player bar.
+        let song = SongId::new();
+        let entry = QueueEntry {
+            id: QueueEntryId::new(),
+            item: QueueItem::Library(song),
+        };
+        let raw = PlayerSnapshot {
+            state: PlaybackState::Playing,
+            ..PlayerSnapshot::default()
+        };
+        let view = CoordinatorView {
+            entries: vec![entry.clone()],
+            failed_round: Default::default(),
+            blocked: Default::default(),
+            current: Some(entry),
+            mode: PlayMode::Sequential,
+        };
+        let mut metadata = std::collections::HashMap::new();
+        metadata.insert(
+            song,
+            QueueEntryMeta {
+                title: Some("晴天".to_owned()),
+                artist: Some("周杰伦".to_owned()),
+                duration_s: Some(239),
+                cover_key: Some("cv1-seeded".to_owned()),
+            },
+        );
+        let ui = map_snapshot(&raw, &view, &metadata);
+        assert_eq!(ui.current_title.as_deref(), Some("晴天"));
+        let row = &ui.queue[0];
+        assert_eq!(row.title.as_deref(), Some("晴天"));
+        assert_eq!(row.artist.as_deref(), Some("周杰伦"));
+        assert_eq!(row.duration_s, Some(239));
+        assert_eq!(row.cover_key.as_deref(), Some("cv1-seeded"));
     }
 }
