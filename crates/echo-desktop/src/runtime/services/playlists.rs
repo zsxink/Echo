@@ -47,6 +47,12 @@ impl super::AppServices {
 
     /// Persist a user-selected image as the playlist cover. `None` clears the
     /// manual choice and returns the playlist to automatic newest-song artwork.
+    ///
+    /// # Errors
+    ///
+    /// `Unavailable` when writes are disabled or `id` is not a known playlist;
+    /// `Validation` when the image is empty, exceeds 5 MiB, or its MIME type is
+    /// not JPEG/PNG/WebP; cover-cache and storage failures propagate.
     pub fn set_playlist_cover(
         &self,
         id: PlaylistId,

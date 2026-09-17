@@ -58,6 +58,12 @@ impl super::AppServices {
     /// `Unavailable` when writes are disabled, no root is active, or the path
     /// is unreadable; infrastructure errors propagate; per-input problems
     /// become `ImportResultDto::Failed`.
+    ///
+    /// # Panics
+    ///
+    /// Never: `PlanImport::run` yields exactly one result per submitted source
+    /// and this call submits exactly one, so the single-source invariant the
+    /// `expect` names always holds.
     pub fn import_single_path(
         &self,
         absolute_path: &std::path::Path,

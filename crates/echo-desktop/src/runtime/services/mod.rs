@@ -79,6 +79,12 @@ impl AppServices {
     /// Resolve a complete, deterministic library view through Core. The
     /// desktop only adapts the command parameters and returns Core's ordered
     /// context to its player coordinator.
+    ///
+    /// # Errors
+    ///
+    /// `Validation` when `view` names no known library view; `Conflict` when
+    /// `selected` is not part of the resolved view (including when the recent
+    /// filter excludes it); catalog failures propagate.
     pub fn resolve_library_playback_context(
         &self,
         view: &str,
@@ -93,6 +99,11 @@ impl AppServices {
     }
 
     /// Resolve a playlist's visible order through the shared Core use case.
+    ///
+    /// # Errors
+    ///
+    /// `Conflict` when `selected` is not a member of the playlist; catalog
+    /// failures propagate.
     pub fn resolve_playlist_playback_context(
         &self,
         playlist: PlaylistId,

@@ -31,6 +31,13 @@ use crate::player::session::{rebuild_queue, snapshot_queue};
 ///
 /// A save failure is swallowed (logged only) — persistence must never take
 /// playback down with it.
+///
+/// # Panics
+///
+/// If the `echo-session-saver` worker thread cannot be spawned (composition
+/// time, before any playback exists), and inside that thread if `min_interval`
+/// exceeds `Instant::now()` since the clock's epoch — the `checked_sub` below
+/// underflows. Both are startup/precondition faults, not runtime conditions.
 #[allow(clippy::needless_pass_by_value)] // The port is moved into the saver thread.
 pub fn spawn_session_saver(
     port: Arc<dyn PlayerPort>,

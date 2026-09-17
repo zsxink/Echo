@@ -48,6 +48,12 @@ impl PlaybackRecorder for CorePlaybackRecorder {
 ///
 /// All accumulator state lives on this thread — no locking beyond the
 /// coordinator reads it already shares with the forwarder/auto-advance pair.
+///
+/// # Panics
+///
+/// If the `echo-stats-recorder` worker thread cannot be spawned. This happens
+/// at composition time, before any playback exists, so it is a fatal startup
+/// fault rather than a recoverable runtime error.
 #[allow(clippy::needless_pass_by_value)] // The port is moved into the recorder thread.
 pub fn spawn_stats_recorder(
     port: Arc<dyn PlayerPort>,

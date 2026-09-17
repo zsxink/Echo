@@ -46,6 +46,11 @@ impl QueueMetadataResolver {
     /// the cache, so repeated 10 Hz snapshots of an unchanged queue cost zero
     /// repository queries. Temporary items (no `song_id`) are never queried
     /// and never appear in the map (they already carry a display title).
+    ///
+    /// # Panics
+    ///
+    /// Only if the cache mutex is poisoned — a thread panicked while holding
+    /// it, which indicates a bug in this resolver.
     pub fn resolve(
         &self,
         queue: &[crate::player::queue::QueueEntry],

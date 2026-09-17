@@ -24,6 +24,12 @@ use super::PlayerPort;
 ///
 /// The transition guard (only firing when the *previous* snapshot was in a
 /// different state) keeps a duplicate `Ended` publish from double-advancing.
+///
+/// # Panics
+///
+/// If the `echo-auto-advance` worker thread cannot be spawned. This happens at
+/// composition time, before any playback exists, so it is a fatal startup
+/// fault rather than a recoverable runtime error.
 #[allow(clippy::needless_pass_by_value)] // The port is moved into the worker thread.
 pub fn spawn_auto_advance(
     port: Arc<dyn PlayerPort>,

@@ -387,6 +387,11 @@ impl PlaybackContextRequest {
     /// Build a request from the stable library-view names accepted by the
     /// desktop command boundary. Unknown names are rejected in Core so every
     /// platform shares one validation rule.
+    ///
+    /// # Errors
+    ///
+    /// `Validation` when `view` is not one of `"all"`, `"recent"` or
+    /// `"favorites"` — the boundary's string vocabulary has no other members.
     pub fn library_view(
         view: &str,
         query: impl Into<String>,

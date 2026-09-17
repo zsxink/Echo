@@ -115,6 +115,12 @@ pub fn map_snapshot<S: BuildHasher>(
 /// metadata (title/artist/duration/cover) of the queue's library entries,
 /// batch-cached so repeated position snapshots never re-query per row (task
 /// 2.2).
+///
+/// # Panics
+///
+/// If the `echo-snapshot-forwarder` worker thread cannot be spawned. This
+/// happens at composition time, before any playback exists, so it is a fatal
+/// startup fault rather than a recoverable runtime error.
 #[allow(clippy::needless_pass_by_value)] // The port is moved into the forwarder thread.
 pub fn spawn_forwarder(
     port: Arc<dyn PlayerPort>,
