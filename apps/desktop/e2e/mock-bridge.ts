@@ -83,6 +83,7 @@ type Command =
   | "cancel_scan"
   | "set_theme"
   | "set_close_behavior"
+  | "get_close_behavior"
   | "player_control"
   | "queue_command"
   | "set_volume"
@@ -449,6 +450,7 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
       st.closeBehavior = behavior as "exit" | "background";
       return { behavior: st.closeBehavior };
     },
+    get_close_behavior: (_args, st) => st.closeBehavior,
 
     player_control: ({ action }, st) => {
       const cur = st.nowPlaying;

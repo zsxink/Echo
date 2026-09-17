@@ -112,7 +112,8 @@ export function QueuePanel() {
         ) : (
           <div className="queue-list" data-testid="queue-list">
             {entries.map((entry) => (
-              <div
+              <button
+                type="button"
                 key={entry.entryId}
                 className={[
                   "queue-item",
@@ -123,6 +124,14 @@ export function QueuePanel() {
                   .filter(Boolean)
                   .join(" ")}
                 aria-current={entry.isCurrent ? "true" : undefined}
+                aria-label={`播放 ${entry.title ?? "未知歌曲"}`}
+                disabled={entry.blocked || entry.failed}
+                onClick={() =>
+                  void bridge.call("queue_command", {
+                    command: "playEntry",
+                    entryId: entry.entryId,
+                  })
+                }
               >
                 <QueueCover coverKey={entry.coverKey} identity={entry.songId ?? entry.entryId} />
                 <div className="queue-name">
@@ -143,7 +152,7 @@ export function QueuePanel() {
                 <span className="queue-time">
                   {entry.durationS === null ? "时长未知" : formatDuration(entry.durationS)}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
         )}

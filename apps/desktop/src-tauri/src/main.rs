@@ -36,17 +36,19 @@ mod dialogs;
 
 const MAIN_WINDOW: &str = "main";
 
+type SharedPlaybackCoordinator = Arc<Mutex<PlaybackCoordinator<Arc<dyn PlayerPort>>>>;
+
 /// The tray is created before playback composition. This small adapter keeps a
 /// stable managed instance for its whole lifetime, then receives the real
 /// coordinator once the player is ready instead of leaving menu controls on a
 /// startup-only no-op sink.
 #[derive(Default)]
 struct RuntimeStatusMenuSink {
-    coordinator: Mutex<Option<Arc<Mutex<PlaybackCoordinator<Arc<dyn PlayerPort>>>>>>,
+    coordinator: Mutex<Option<SharedPlaybackCoordinator>>,
 }
 
 impl RuntimeStatusMenuSink {
-    fn install(&self, coordinator: Arc<Mutex<PlaybackCoordinator<Arc<dyn PlayerPort>>>>) {
+    fn install(&self, coordinator: SharedPlaybackCoordinator) {
         if let Ok(mut slot) = self.coordinator.lock() {
             *slot = Some(coordinator);
         }
@@ -549,6 +551,7 @@ fn main() {
             commands::cancel_scan,
             commands::set_theme,
             commands::set_close_behavior,
+            commands::get_close_behavior,
             commands::play_playlist_context,
             commands::play_library_context,
             commands::restore_playback_session,

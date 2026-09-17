@@ -639,7 +639,7 @@ impl PlaylistRepository for SqliteDatabase {
                 )
                 .optional()
                 .map_err(storage)
-                .map(|value| value.flatten())
+                .map(std::option::Option::flatten)
         })
     }
 

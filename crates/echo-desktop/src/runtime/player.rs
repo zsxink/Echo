@@ -1688,7 +1688,7 @@ mod tests {
             item: QueueItem::Library(song_id),
         };
         let resolver = QueueMetadataResolver::new(db.clone(), db.clone());
-        let first = resolver.resolve(&[entry.clone()]);
+        let first = resolver.resolve(std::slice::from_ref(&entry));
         assert!(
             first.contains_key(&song_id),
             "first resolve queries the library"

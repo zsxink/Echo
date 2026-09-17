@@ -552,6 +552,38 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
         }
     }
 
+    /// Select an existing playable queue entry and start it immediately.
+    ///
+    /// The queue projection exposes entry IDs rather than song IDs because the
+    /// same song may appear more than once. Selecting by entry ID preserves
+    /// that identity, history and the current queue context.
+    pub fn play_queue_entry(&mut self, entry_id: QueueEntryId) -> Option<QueueEntryId> {
+        if self.queue.is_blocked(entry_id) || self.failed_round.contains(&entry_id) {
+            return None;
+        }
+        let entry = self.queue.get(entry_id)?.clone();
+        self.queue.set_current(entry_id)?;
+        let session = self.new_load_session(entry_id);
+        match entry.item {
+            QueueItem::Library(song_id) => self
+                .player
+                .send(PlayerCommand::LoadLibrarySong {
+                    song_id,
+                    session_id: session,
+                })
+                .ok(),
+            QueueItem::Temporary(item) => self
+                .player
+                .send(PlayerCommand::LoadTemporary {
+                    display_name: item.display_name,
+                    path: item.path,
+                    session_id: session,
+                })
+                .ok(),
+        };
+        Some(entry_id)
+    }
+
     fn new_load_session(&mut self, entry_id: QueueEntryId) -> PlaybackSessionId {
         let session = PlaybackSessionId::new();
         self.active_load_session = Some((entry_id, session));
@@ -1055,6 +1087,23 @@ mod tests {
                 .mode,
             PlayMode::Shuffle
         );
+    }
+
+    #[test]
+    fn selecting_a_queue_entry_makes_it_current_and_loads_it() {
+        let player = FakePlayer::new();
+        let mut coord = PlaybackCoordinator::new(player);
+        let first = song();
+        let selected = song();
+        coord.play_context(&ViewContext {
+            songs: vec![first, selected],
+            selected_index: 0,
+        });
+        let selected_entry = coord.queue_view()[1].id;
+
+        assert_eq!(coord.play_queue_entry(selected_entry), Some(selected_entry));
+        assert_eq!(coord.current().map(|entry| entry.id), Some(selected_entry));
+        assert_eq!(coord.player().last_loaded_song(), Some(selected));
     }
 
     #[test]

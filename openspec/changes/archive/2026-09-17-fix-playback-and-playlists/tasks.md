@@ -17,5 +17,5 @@
 
 ## 4. 集成验证
 
-- [ ] 4.1 运行桌面格式、静态检查、类型检查和测试：`cargo fmt --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings`、`pnpm --filter @echo/desktop format:check`、`pnpm --filter @echo/desktop lint`、`pnpm --filter @echo/desktop typecheck`、`pnpm --filter @echo/desktop test`。
+- [x] 4.1 运行桌面格式、静态检查、类型检查和测试：`cargo fmt --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings`、`pnpm --filter @echo/desktop format:check`、`pnpm --filter @echo/desktop lint`、`pnpm --filter @echo/desktop typecheck`、`pnpm --filter @echo/desktop test`。
 - [x] 4.2 运行桌面构建与相关端到端/场景检查，验证随机样式、重启位置恢复、选择器新建并添加、后台关闭/托盘控制和 Echo 命名：`pnpm --filter @echo/desktop build`、`pnpm --filter @echo/desktop test:e2e`，并记录无法在当前主机自动覆盖的平台差异。

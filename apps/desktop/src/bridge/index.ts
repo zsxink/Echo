@@ -63,6 +63,7 @@ export interface BridgeCommandMap {
   cancel_scan: (args: { root: string }) => unknown;
   set_theme: (args: { theme: string }) => unknown;
   set_close_behavior: (args: { behavior: string }) => unknown;
+  get_close_behavior: () => string;
   // Player commands (task 11.1) — the UI sends coarse requests; the Rust
   // coordinator owns the queue + snapshot authority. Playback contexts are
   // resolved on the desktop: the UI submits only a view/selected song, never
@@ -79,7 +80,7 @@ export interface BridgeCommandMap {
   play_temporary_file: (args: { path: string; displayName: string }) => unknown;
   import_current_temporary_file: () => unknown;
   player_control: (args: { action: string }) => unknown;
-  queue_command: (args: { command: string; songId?: string }) => unknown;
+  queue_command: (args: { command: string; songId?: string; entryId?: string }) => unknown;
   set_volume: (args: { volume: number }) => unknown;
   toggle_mute: () => unknown;
   seek: (args: { position: number }) => unknown;

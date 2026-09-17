@@ -141,6 +141,49 @@ describe("QueuePanel (task 11.2)", () => {
     expect(screen.getByText("加载失败")).toBeInTheDocument();
   });
 
+  it("plays a selectable queue entry by its queue-entry identity", () => {
+    call.mockReset();
+    call.mockResolvedValue(undefined);
+    playerStore.setQueueOpen(true);
+    playerStore.publish(
+      makeSnapshot({
+        queue: [
+          {
+            entryId: "current-copy",
+            songId: "same-song",
+            title: "重复曲目",
+            isCurrent: true,
+            failed: false,
+            blocked: false,
+            canImport: false,
+            artist: "Echo",
+            durationS: 120,
+            coverKey: null,
+          },
+          {
+            entryId: "selected-copy",
+            songId: "same-song",
+            title: "重复曲目",
+            isCurrent: false,
+            failed: false,
+            blocked: false,
+            canImport: false,
+            artist: "Echo",
+            durationS: 120,
+            coverKey: null,
+          },
+        ],
+      }),
+    );
+
+    render(<QueuePanel />);
+    fireEvent.click(screen.getAllByRole("button", { name: "播放 重复曲目" })[1]);
+    expect(call).toHaveBeenCalledWith("queue_command", {
+      command: "playEntry",
+      entryId: "selected-copy",
+    });
+  });
+
   it("keeps blocked restored entries visible with retry guidance", () => {
     playerStore.setQueueOpen(true);
     playerStore.publish(
@@ -163,6 +206,7 @@ describe("QueuePanel (task 11.2)", () => {
     );
     render(<QueuePanel />);
     expect(screen.getByText("暂时不可用，可在资料库恢复后重试")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "播放 未知歌曲" })).toBeDisabled();
   });
 
   it("清空待播 sends clearPending and does not stop the current song or touch playlists", () => {

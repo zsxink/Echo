@@ -17,7 +17,7 @@
  * choice and are never overridden.
  */
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { bridge } from "../../bridge";
 import { Icon } from "../../app/Icon";
@@ -65,15 +65,38 @@ export function SettingsView({ onClose }: { readonly onClose: () => void }) {
   useOverlay({ tier: OverlayTier.Picker, onClose, containerRef: panelRef });
   useFocusTrap(panelRef);
 
+  useEffect(() => {
+    let current = true;
+    void bridge
+      .call("get_close_behavior")
+      .then((behavior) => {
+        if (current && (behavior === "background" || behavior === "exit")) {
+          setCloseBehavior(behavior);
+        }
+      })
+      .catch(() => {
+        if (current) setNotice("无法读取关闭行为，暂按当前显示设置");
+      });
+    return () => {
+      current = false;
+    };
+  }, []);
+
   function chooseTheme(next: Theme) {
     // setTheme persists + stamps data-echo-theme; selection semantics update.
     setTheme(next);
     setNotice(`${THEME_OPTIONS.find((option) => option.value === next)?.name ?? ""} 已应用`);
   }
 
-  function chooseClose(next: CloseBehavior) {
+  async function chooseClose(next: CloseBehavior) {
+    const previous = closeBehavior;
     setCloseBehavior(next);
-    void bridge.call("set_close_behavior", { behavior: next });
+    try {
+      await bridge.call("set_close_behavior", { behavior: next });
+    } catch {
+      setCloseBehavior(previous);
+      setNotice("关闭行为保存失败，已恢复原设置");
+    }
   }
 
   async function chooseDirectory() {
@@ -194,7 +217,7 @@ export function SettingsView({ onClose }: { readonly onClose: () => void }) {
                     type="radio"
                     name="close-behavior"
                     checked={closeBehavior === "background"}
-                    onChange={() => chooseClose("background")}
+                    onChange={() => void chooseClose("background")}
                   />
                   保持在后台运行
                 </label>
@@ -203,7 +226,7 @@ export function SettingsView({ onClose }: { readonly onClose: () => void }) {
                     type="radio"
                     name="close-behavior"
                     checked={closeBehavior === "exit"}
-                    onChange={() => chooseClose("exit")}
+                    onChange={() => void chooseClose("exit")}
                   />
                   退出应用
                 </label>

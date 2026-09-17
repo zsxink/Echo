@@ -46,8 +46,9 @@
 .queue-list::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--radius-pill); background: transparent; background-clip: padding-box; }
 .queue-list.is-scrolling { scrollbar-color: color-mix(in oklab, var(--muted), transparent 42%) transparent; }
 .queue-list.is-scrolling::-webkit-scrollbar-thumb { background: color-mix(in oklab, var(--muted), transparent 42%); }
-.queue-item { display: grid; grid-template-columns: var(--queue-cover-size) minmax(0, 1fr) 47px; gap: 11px; align-items: center; min-height: var(--queue-row-height); padding: 4px calc(var(--space-2) * .9); border-radius: var(--radius-sm); }
+.queue-item { display: grid; width: 100%; grid-template-columns: var(--queue-cover-size) minmax(0, 1fr) 47px; gap: 11px; align-items: center; min-height: var(--queue-row-height); padding: 4px calc(var(--space-2) * .9); border: 0; border-radius: var(--radius-sm); background: transparent; color: inherit; cursor: pointer; text-align: left; }
 .queue-item:hover { background: var(--surface); }
+.queue-item:disabled { cursor: not-allowed; opacity: .58; }
 .queue-cover { width: var(--queue-cover-size); height: var(--queue-cover-size); border-radius: var(--radius-sm); background: color-mix(in oklab, var(--accent), var(--fg) 44%); object-fit: cover; }
 .queue-cover-b { background: color-mix(in oklab, var(--warn), var(--fg) 62%); }
 .queue-cover-c { background: color-mix(in oklab, var(--success), var(--fg) 60%); }

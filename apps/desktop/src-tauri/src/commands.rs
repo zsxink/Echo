@@ -484,6 +484,20 @@ pub fn set_close_behavior(
     })
 }
 
+/// Return the resolved desktop close behavior, including the platform default
+/// when the user has never saved a preference.
+#[tauri::command]
+pub fn get_close_behavior(
+    local_state: State<'_, Arc<echo_desktop::platform::local_state::DesktopStateStore>>,
+) -> Result<String, IpcErrorDto> {
+    local_state.close_behavior().map(String::from).map_err(|_| {
+        IpcErrorDto::from(&echo_core::error::Error::unavailable(
+            "preferences",
+            "read failed",
+        ))
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Player commands (task 10.6 / 11.1). The snapshot event is the authority;
 // these return `Ok(())` and let the actor's authoritative rollback drive UI.
@@ -497,7 +511,7 @@ fn lib_entry(song: SongId) -> QueueEntry {
 }
 
 /// Start playback from a playlist, resolving the full member set on the
-/// desktop side. The WebView supplies only the playlist id and the selected
+/// desktop side. The `WebView` supplies only the playlist id and the selected
 /// song — never a song-id list — so a paged or partial client-side list cannot
 /// truncate the queue (spec: 视图播放重建队列数量). The queue is atomically
 /// replaced: any previous queue and manual "play next" lane are discarded.
@@ -701,6 +715,7 @@ pub fn queue_command(
     state: State<'_, PlayerHandle>,
     command: String,
     song_id: Option<String>,
+    entry_id: Option<String>,
 ) -> Result<(), IpcErrorDto> {
     let mut coord = state.coordinator.lock().expect("player coordinator lock");
     match command.as_str() {
@@ -715,6 +730,13 @@ pub fn queue_command(
             if let Some(raw) = song_id {
                 if let Ok(id) = raw.parse::<SongId>() {
                     coord.play_next(lib_entry(id));
+                }
+            }
+        }
+        "playEntry" => {
+            if let Some(raw) = entry_id {
+                if let Ok(id) = raw.parse() {
+                    coord.play_queue_entry(id);
                 }
             }
         }
