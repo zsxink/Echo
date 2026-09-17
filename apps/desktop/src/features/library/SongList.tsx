@@ -23,8 +23,8 @@ import { useCoverKeys } from "../../app/coverArt";
 import { SongRow } from "./SongRow";
 import type { MenuAnchor } from "./SongMenu";
 
-/** `.track-table td { height: 52px }` — kept in sync with the stylesheet. */
-const ROW_HEIGHT = 52;
+/** `.track-table td { height: 44px }` — kept in sync with the stylesheet. */
+const ROW_HEIGHT = 44;
 const OVERSCAN = 6;
 
 export interface SongListProps {

@@ -140,6 +140,22 @@ describe("SongList windowing (task 10.6)", () => {
     expect(firstRow!.querySelector(".track-number span")?.textContent).toBe("01");
   });
 
+  it("uses the rendered 44px row height when choosing the scrolled window", () => {
+    const songs = makeSongs(100);
+    const { container } = renderList(songs, null);
+    const viewport = screen.getByTestId("song-list");
+    // jsdom has no layout engine, so provide the scroll container's viewport
+    // height explicitly. At 440px, the first rendered row after six rows of
+    // overscan must be song 4: a stale 52px virtual-row value would render song
+    // 2 instead, leaving visible controls bound to the wrong song after scroll.
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 440 });
+
+    fireEvent.scroll(viewport, { target: { scrollTop: 440 } });
+
+    const firstRow = container.querySelector<HTMLElement>(".track-row");
+    expect(firstRow).toHaveAttribute("data-song-id", "song-4");
+  });
+
   it("shows the empty state when there are no songs", () => {
     const { container } = renderList([], null);
     const empty = screen.getByTestId("list-empty");
