@@ -1,5 +1,7 @@
 use super::*;
 
+use std::collections::HashSet;
+
 #[test]
 fn metadata_resolver_resolves_library_entry_fields() {
     // 队列展示信息: library entries resolve to title / artist / duration /
@@ -107,8 +109,8 @@ fn map_snapshot_attaches_resolved_metadata_to_each_entry() {
     };
     let view = CoordinatorView {
         entries: vec![entry.clone()],
-        failed_round: Default::default(),
-        blocked: Default::default(),
+        failed_round: HashSet::default(),
+        blocked: HashSet::default(),
         current: Some(entry),
         mode: PlayMode::Sequential,
     };

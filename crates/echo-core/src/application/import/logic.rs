@@ -42,23 +42,11 @@
 //! the plan reservation and the terminal result — and verifies size/hash at
 //! the published location before the database commit.
 
-use crate::application::ports::{
-    ImportSource, ImportSourceInfo, ImportSourceReader, OperationItem, OperationResourceKind,
-    StagedResource, TxAccess,
-};
-use crate::application::relink::song_from_parsed;
-use crate::application::scan::{
-    parse_single_file, rewrap, FileOutcome, ParsedOutcome, ScanDeps, SUPPORTED_EXTENSIONS,
-};
-use crate::domain::entities::LyricsSource;
+use crate::application::ports::{ImportSourceReader, StagedResource};
+use crate::application::scan::ScanDeps;
 use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath, SongId};
 use crate::domain::import::ImportConflictIndex;
-use crate::domain::library::{PortableRecord, MEDIA_ROOT};
-use crate::domain::state::OperationState;
-use crate::domain::text::{
-    target_artist_component, target_file_stem, truncate_component_with_extension,
-};
-use crate::error::{Error, Subject};
+use crate::error::Error;
 
 /// The one staging resource every import audio operation owns.
 const IMPORT_AUDIO_RESOURCE: &str = "audio";

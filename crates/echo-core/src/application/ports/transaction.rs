@@ -1,4 +1,10 @@
-use super::*;
+use crate::domain::entities::{
+    LibraryRoot, LyricsCandidate, LyricsSource, PlaylistMember, Song, SongAvailability,
+};
+use crate::domain::ids::{LibraryRootId, OperationId, PlaylistId, SongId};
+use crate::error::Error;
+
+use super::repository::{CoverAssetRef, OperationItem};
 
 pub trait UnitOfWork: Send + Sync {
     /// Run `f` inside one `SQLite` transaction, committing on success and

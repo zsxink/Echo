@@ -1,7 +1,11 @@
 //! Focused filesystem capabilities consumed by application use cases.
 
-use super::filesystem::LegacyLibraryFileSystem;
-use super::*;
+use std::io::Read;
+
+use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath};
+use crate::error::Error;
+
+use super::filesystem::{FileMeta, LegacyLibraryFileSystem, StagedCopy, StagedResource};
 
 /// Enumerates and reads root-constrained library files.
 pub trait LibraryFileReader: Send + Sync {

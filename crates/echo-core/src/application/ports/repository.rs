@@ -1,4 +1,7 @@
-use super::*;
+use crate::domain::catalog::{CatalogCounts, OpaqueCursor, Paged, SongSort};
+use crate::domain::entities::{LibraryRoot, PlaylistMember, Song, SongAvailability};
+use crate::domain::ids::{LibraryRootId, OperationId, PlaylistId, RelativeMediaPath, SongId};
+use crate::error::Error;
 
 pub trait LibraryRepository: Send + Sync {
     /// The single active root, if any.

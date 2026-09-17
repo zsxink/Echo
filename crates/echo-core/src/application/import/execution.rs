@@ -1,4 +1,17 @@
-use super::{report::*, *};
+use crate::application::ports::TxAccess;
+use crate::application::relink::song_from_parsed;
+use crate::application::scan::{parse_single_file, rewrap, FileOutcome, ParsedOutcome};
+use crate::domain::entities::LyricsSource;
+use crate::domain::ids::{LibraryRootId, SongId};
+use crate::domain::library::PortableRecord;
+use crate::domain::state::OperationState;
+use crate::error::Error;
+
+use super::report::{journal_item, journal_lrc_item};
+use super::{
+    ExecuteError, LyricsFailure, LyricsImportResult, PlanImport, PlannedInput, PlannedLrc,
+    IMPORT_OPERATION,
+};
 
 impl PlanImport<'_> {
     fn write_state(&self, planned: &PlannedInput, state: OperationState) -> Result<(), Error> {

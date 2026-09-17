@@ -1,4 +1,14 @@
-use super::*;
+use std::time::Duration;
+
+use crate::domain::entities::{LyricsCandidate, MediaDiagnostic};
+use crate::domain::ids::{
+    LibraryRootId, OperationId, PlaylistId, RelativeMediaPath, Revision, SongId,
+};
+use crate::domain::library::{DeviceId, HybridLogicalClock};
+use crate::domain::state::scan::{ScanProgress, ScanState};
+use crate::error::Error;
+
+use super::repository::CoverAssetRef;
 
 pub trait LyricsRepository: Send + Sync {
     /// Every stored candidate of the song (all sources, valid or not).

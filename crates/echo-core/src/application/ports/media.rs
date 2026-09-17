@@ -1,4 +1,9 @@
-use super::*;
+use std::time::Duration;
+
+use crate::domain::entities::LyricsCandidate;
+use crate::domain::ids::{LibraryRootId, RelativeMediaPath};
+use crate::domain::media::{AudioFormat, ParsedMetadata};
+use crate::error::Error;
 
 /// Container-level media probe: format + duration + audio parameters.
 /// Deliberately separate from tag reading so probing can live on its own

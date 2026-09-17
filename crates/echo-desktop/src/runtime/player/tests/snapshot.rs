@@ -1,5 +1,7 @@
 use super::*;
 
+use std::collections::HashSet;
+
 #[test]
 fn map_snapshot_maps_states_and_modes() {
     let raw = PlayerSnapshot {
@@ -13,8 +15,8 @@ fn map_snapshot_maps_states_and_modes() {
     };
     let view = CoordinatorView {
         entries: vec![],
-        failed_round: Default::default(),
-        blocked: Default::default(),
+        failed_round: HashSet::default(),
+        blocked: HashSet::default(),
         current: None,
         mode: PlayMode::Shuffle,
     };
@@ -40,8 +42,8 @@ fn map_snapshot_derives_current_song_id_from_library_entry() {
     };
     let view = CoordinatorView {
         entries: vec![entry.clone()],
-        failed_round: Default::default(),
-        blocked: Default::default(),
+        failed_round: HashSet::default(),
+        blocked: HashSet::default(),
         current: Some(entry.clone()),
         mode: PlayMode::Sequential,
     };
@@ -79,8 +81,8 @@ fn ui_queue_identity_comes_from_the_coordinator_not_the_transport_snapshot() {
     };
     let view = CoordinatorView {
         entries: vec![entry.clone()],
-        failed_round: Default::default(),
-        blocked: Default::default(),
+        failed_round: HashSet::default(),
+        blocked: HashSet::default(),
         current: Some(entry.clone()),
         mode: PlayMode::RepeatOne,
     };
@@ -108,8 +110,8 @@ fn map_snapshot_surfaces_temporary_title_without_song_id() {
     };
     let view = CoordinatorView {
         entries: vec![entry.clone()],
-        failed_round: Default::default(),
-        blocked: Default::default(),
+        failed_round: HashSet::default(),
+        blocked: HashSet::default(),
         current: Some(entry),
         mode: PlayMode::Sequential,
     };
@@ -145,7 +147,7 @@ fn map_snapshot_flags_failed_entries_and_distinguishes_current() {
     let view = CoordinatorView {
         entries,
         failed_round,
-        blocked: Default::default(),
+        blocked: HashSet::default(),
         current: Some(current),
         mode: PlayMode::Sequential,
     };
@@ -169,7 +171,7 @@ fn map_snapshot_surfaces_blocked_queue_entries() {
     };
     let view = CoordinatorView {
         entries: vec![entry.clone()],
-        failed_round: Default::default(),
+        failed_round: HashSet::default(),
         blocked: std::collections::HashSet::from([entry.id]),
         current: Some(entry),
         mode: PlayMode::Sequential,

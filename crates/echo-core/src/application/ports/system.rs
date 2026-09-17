@@ -1,4 +1,6 @@
-use super::*;
+use crate::domain::ids::{LibraryRootId, OperationId};
+use crate::domain::library::{LibraryManifest, PortableRecord, RecordKind};
+use crate::error::Error;
 
 pub trait ControlPlanePort: Send + Sync {
     /// Write (create or replace) the manifest at `echo/manifest.json`.

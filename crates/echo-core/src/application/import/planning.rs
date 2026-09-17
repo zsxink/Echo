@@ -1,4 +1,12 @@
-use super::{report::*, *};
+use crate::application::ports::{ImportSource, ImportSourceInfo, StagedResource};
+use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath};
+use crate::error::{Error, Subject};
+
+use super::report::{failed_of, lrc_target_of, plan_named_target};
+use super::{
+    BatchState, ImportOutcome, LyricsFailure, PlanImport, PlannedInput, PlannedLrc,
+    IMPORT_AUDIO_RESOURCE, IMPORT_LRC_RESOURCE, IMPORT_OPERATION,
+};
 
 impl PlanImport<'_> {
     pub(super) fn stage_and_plan(

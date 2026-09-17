@@ -6,24 +6,6 @@
 
 #![allow(clippy::missing_errors_doc)]
 
-use std::io::Read;
-use std::time::Duration;
-
-use crate::domain::catalog::{CatalogCounts, OpaqueCursor, Paged, SongSort};
-use crate::domain::entities::{
-    LibraryRoot, LyricsCandidate, LyricsSource, MediaDiagnostic, PlaylistMember, Song,
-    SongAvailability,
-};
-use crate::domain::ids::{
-    LibraryRootId, OperationId, PlaylistId, RelativeMediaPath, Revision, SongId,
-};
-use crate::domain::library::{
-    DeviceId, HybridLogicalClock, LibraryManifest, PortableRecord, RecordKind,
-};
-use crate::domain::media::{AudioFormat, ParsedMetadata};
-use crate::domain::state::scan::{ScanProgress, ScanState};
-use crate::error::Error;
-
 pub(crate) mod filesystem;
 mod filesystem_capabilities;
 mod media;

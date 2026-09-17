@@ -1,4 +1,15 @@
-use super::{report::*, *};
+use crate::application::ports::{ImportSource, ImportSourceInfo, ImportSourceReader};
+use crate::application::scan::ScanDeps;
+use crate::domain::ids::LibraryRootId;
+use crate::domain::import::ImportConflictIndex;
+use crate::domain::state::OperationState;
+use crate::error::Error;
+
+use super::report::{failed_of, journal_item, journal_lrc_item, supported_extension_of};
+use super::{
+    BatchState, ExecuteError, ImportBatchReport, ImportOutcome, PlanImport, PlannedInput,
+    IMPORT_OPERATION,
+};
 
 impl<'a> PlanImport<'a> {
     #[must_use]

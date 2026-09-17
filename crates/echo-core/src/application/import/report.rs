@@ -1,4 +1,17 @@
-use super::*;
+use crate::application::ports::{OperationItem, OperationResourceKind};
+use crate::application::scan::SUPPORTED_EXTENSIONS;
+use crate::domain::ids::RelativeMediaPath;
+use crate::domain::library::MEDIA_ROOT;
+use crate::domain::state::OperationState;
+use crate::domain::text::{
+    target_artist_component, target_file_stem, truncate_component_with_extension,
+};
+use crate::error::Error;
+
+use super::{
+    ImportOutcome, PlannedInput, PlannedLrc, IMPORT_AUDIO_RESOURCE, IMPORT_LRC_RESOURCE,
+    MAX_NUMBERING, TARGET_COMPONENT_BYTES,
+};
 
 pub(super) fn supported_extension_of(display_name: &str) -> Option<String> {
     let file_name = display_name.rsplit(['/', '\\']).next()?;
