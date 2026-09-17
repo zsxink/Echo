@@ -148,7 +148,7 @@ impl FakeLibraryFileSystem {
     }
 }
 
-impl LibraryFileSystem for FakeLibraryFileSystem {
+impl crate::application::ports::filesystem::LegacyLibraryFileSystem for FakeLibraryFileSystem {
     fn enumerate(&self, root: LibraryRootId) -> Result<Vec<RelativeMediaPath>, Error> {
         if let Some(err) = self.fault_error() {
             return Err(err);
@@ -498,7 +498,12 @@ impl LibraryFileSystem for FakeLibraryFileSystem {
             .get(&root)
             .cloned()
             .ok_or_else(|| Error::unavailable("test root", "unknown root"))?;
-        let trash_rel = self.trash_path(root, operation, resource_key)?;
+        let trash_rel = crate::application::ports::filesystem::LegacyLibraryFileSystem::trash_path(
+            self,
+            root,
+            operation,
+            resource_key,
+        )?;
         let staging_root = base
             .join(crate::domain::library::STAGING_ROOT)
             .join("trash");

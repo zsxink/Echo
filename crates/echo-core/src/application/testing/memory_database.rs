@@ -805,7 +805,7 @@ impl MemoryTx<'_> {
     }
 }
 
-impl TxAccess for MemoryTx<'_> {
+impl TxSongWriter for MemoryTx<'_> {
     fn upsert_song(&mut self, song: &Song) -> Result<(), Error> {
         self.bump_song_revision(song.id());
         self.store.songs.insert(song.id(), song.clone());
@@ -846,6 +846,9 @@ impl TxAccess for MemoryTx<'_> {
         }
         Ok(())
     }
+}
+
+impl TxRootWriter for MemoryTx<'_> {
     fn upsert_root(&mut self, root: &LibraryRoot) -> Result<(), Error> {
         if root.is_active() {
             let others: Vec<LibraryRootId> = self
@@ -886,6 +889,9 @@ impl TxAccess for MemoryTx<'_> {
         }
         Ok(())
     }
+}
+
+impl TxPlaylistWriter for MemoryTx<'_> {
     fn create_playlist(
         &mut self,
         id: PlaylistId,
@@ -908,6 +914,9 @@ impl TxAccess for MemoryTx<'_> {
         self.store.members.remove(&(playlist, song));
         Ok(())
     }
+}
+
+impl TxOperationWriter for MemoryTx<'_> {
     fn upsert_operation_item(
         &mut self,
         operation: OperationId,
@@ -926,6 +935,9 @@ impl TxAccess for MemoryTx<'_> {
         self.store.undo_deadlines.insert(operation, deadline_ms);
         Ok(())
     }
+}
+
+impl TxLyricsWriter for MemoryTx<'_> {
     fn set_lyrics_candidate(
         &mut self,
         song: SongId,
@@ -940,6 +952,9 @@ impl TxAccess for MemoryTx<'_> {
         self.store.lyrics.remove(&(song, source));
         Ok(())
     }
+}
+
+impl TxStateWriter for MemoryTx<'_> {
     fn attach_cover(&mut self, song: SongId, cover: &CoverAssetRef) -> Result<(), Error> {
         self.store.covers.insert(song, cover.clone());
         Ok(())

@@ -32,7 +32,8 @@ use rusqlite::{Connection, OptionalExtension, Transaction};
 use crate::application::ports::{
     CatalogQueryRepository, CoverAssetRef, CoverRepository, LibraryRepository, LyricsRepository,
     OperationItem, OperationJournalRepository, PlaylistRepository, RuntimeStateStore,
-    ScanRunRepository, SongRepository, TxAccess, TxWork, UnitOfWork,
+    ScanRunRepository, SongRepository, TxLyricsWriter, TxOperationWriter, TxPlaylistWriter,
+    TxRootWriter, TxSongWriter, TxStateWriter, TxWork, UnitOfWork,
 };
 use crate::domain::catalog::{CatalogCounts, OpaqueCursor, Paged, SongSort, RECENT_VIEW_LIMIT};
 use crate::domain::entities::{
@@ -975,7 +976,7 @@ struct SqliteTx<'connection> {
     transaction: &'connection Transaction<'connection>,
 }
 
-impl TxAccess for SqliteTx<'_> {
+impl TxSongWriter for SqliteTx<'_> {
     fn upsert_song(&mut self, song: &Song) -> Result<(), Error> {
         upsert_song(self.transaction, song)
     }
@@ -995,6 +996,9 @@ impl TxAccess for SqliteTx<'_> {
     fn increment_song_play_count(&mut self, id: SongId) -> Result<(), Error> {
         increment_play_count(self.transaction, id)
     }
+}
+
+impl TxRootWriter for SqliteTx<'_> {
     fn upsert_root(&mut self, root: &LibraryRoot) -> Result<(), Error> {
         upsert_root(self.transaction, root)
     }
@@ -1007,6 +1011,9 @@ impl TxAccess for SqliteTx<'_> {
             .map_err(storage)?;
         Ok(())
     }
+}
+
+impl TxPlaylistWriter for SqliteTx<'_> {
     fn create_playlist(
         &mut self,
         id: PlaylistId,
@@ -1033,6 +1040,9 @@ impl TxAccess for SqliteTx<'_> {
             .map_err(storage)?;
         Ok(())
     }
+}
+
+impl TxOperationWriter for SqliteTx<'_> {
     fn upsert_operation_item(
         &mut self,
         operation: OperationId,
@@ -1052,6 +1062,9 @@ impl TxAccess for SqliteTx<'_> {
             .map_err(storage)?;
         Ok(())
     }
+}
+
+impl TxLyricsWriter for SqliteTx<'_> {
     fn set_lyrics_candidate(
         &mut self,
         song: SongId,
@@ -1062,6 +1075,9 @@ impl TxAccess for SqliteTx<'_> {
     fn clear_lyrics_candidate(&mut self, song: SongId, source: LyricsSource) -> Result<(), Error> {
         clear_lyrics_candidate(self.transaction, song, source)
     }
+}
+
+impl TxStateWriter for SqliteTx<'_> {
     fn attach_cover(&mut self, song: SongId, cover: &CoverAssetRef) -> Result<(), Error> {
         attach_cover(self.transaction, song, cover)
     }

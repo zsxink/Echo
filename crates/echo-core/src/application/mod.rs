@@ -29,6 +29,7 @@ pub mod delete;
 pub mod detail;
 pub mod favorite;
 pub mod import;
+pub mod playback_context;
 pub mod playlist;
 pub mod portable;
 pub mod portable_materialize;
@@ -41,7 +42,15 @@ pub mod scan;
 pub mod trash;
 pub mod watch;
 
-/// Test doubles for the ports ([`ports`]). Compiled only under `cargo test`
-/// or the `testkit` feature so no fake leaks into a production build.
+/// First-class test support for the application ports ([`ports`]). Compiled
+/// only under `cargo test` or the `testkit` feature so no fake leaks into a
+/// production build.
 #[cfg(any(test, feature = "testkit"))]
-pub mod testing;
+#[path = "testing/mod.rs"]
+pub mod testkit;
+
+/// Backwards-compatible name for [`testkit`]. New code should import test
+/// doubles from `application::testkit`; keeping this alias avoids a source
+/// compatibility break for existing desktop and Core tests.
+#[cfg(any(test, feature = "testkit"))]
+pub use testkit as testing;

@@ -6,7 +6,9 @@
 pub mod catalog;
 pub mod entities;
 pub mod ids;
+pub mod import;
 pub mod library;
 pub mod media;
+pub mod playback_restore;
 pub mod state;
 pub mod text;

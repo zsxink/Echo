@@ -105,6 +105,42 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly activeRoot: string;\n");
     out.push_str("}\n\n");
 
+    out.push_str("export interface LibraryStatus {\n");
+    out.push_str("  readonly configured: boolean;\n");
+    out.push_str("  readonly readOnly: boolean;\n");
+    out.push_str("  readonly unavailable: boolean;\n");
+    out.push_str("  readonly scanning: boolean;\n");
+    out.push_str("  readonly activeRoot?: string;\n");
+    out.push_str("}\n\n");
+
+    out.push_str("export interface ScanSnapshot {\n");
+    out.push_str("  readonly generation: number;\n");
+    out.push_str("  readonly cancelled: boolean;\n");
+    out.push_str("  readonly state: string;\n");
+    out.push_str("  readonly discovered: number;\n");
+    out.push_str("  readonly processed: number;\n");
+    out.push_str("  readonly created: number;\n");
+    out.push_str("  readonly updated: number;\n");
+    out.push_str("  readonly missing: number;\n");
+    out.push_str("  readonly skipped: number;\n");
+    out.push_str("  readonly failed: number;\n");
+    out.push_str("}\n\n");
+
+    out.push_str("export interface SongDetailView {\n");
+    out.push_str("  readonly songId: string;\n");
+    out.push_str("  readonly relativePath: string;\n");
+    out.push_str("  readonly title?: string;\n");
+    out.push_str("  readonly artist?: string;\n");
+    out.push_str("  readonly album?: string;\n");
+    out.push_str("  readonly durationS?: number;\n");
+    out.push_str("  readonly format?: string;\n");
+    out.push_str("  readonly playCount: number;\n");
+    out.push_str("  readonly favorite: boolean;\n");
+    out.push_str("  readonly hasCover: boolean;\n");
+    out.push_str("  readonly lyrics: string;\n");
+    out.push_str("  readonly availability: SongAvailability;\n");
+    out.push_str("}\n\n");
+
     out.push_str("export type ImportResultDto =\n");
     out.push_str("  | { readonly kind: 'imported'; readonly operationId: string; readonly songId: string; readonly relativePath: string }\n");
     out.push_str("  | { readonly kind: 'duplicate'; readonly existingSongId: string }\n");
@@ -139,6 +175,49 @@ pub fn generated_typescript() -> String {
 
     out.push_str("export type Theme = 'coral' | 'cobalt' | 'turquoise';\n");
     out.push_str("export type CloseBehavior = 'exit' | 'background';\n");
+    out.push_str("\n");
+    out.push_str("/** Generated command name → successful return DTO contract. */\n");
+    out.push_str("export interface IpcCommandResultMap {\n");
+    out.push_str("  readonly get_bootstrap_state: BootstrapSnapshot;\n");
+    out.push_str("  readonly library_status: LibraryStatus;\n");
+    out.push_str("  readonly all_songs: PagedSongs;\n");
+    out.push_str("  readonly search: PagedSongs;\n");
+    out.push_str("  readonly favorites: PagedSongs;\n");
+    out.push_str("  readonly recent: readonly SongView[];\n");
+    out.push_str("  readonly library_counts: LibraryCountsDto;\n");
+    out.push_str("  readonly playlists: readonly PlaylistView[];\n");
+    out.push_str("  readonly playlist_members: readonly SongView[];\n");
+    out.push_str("  readonly song_detail: SongDetailView;\n");
+    out.push_str("  readonly song_cover_keys: Readonly<Record<string, string>>;\n");
+    out.push_str("  readonly set_favorite: SongView;\n");
+    out.push_str("  readonly create_playlist: string;\n");
+    out.push_str("  readonly rename_playlist: void;\n");
+    out.push_str("  readonly set_playlist_cover: void;\n");
+    out.push_str("  readonly delete_playlist: void;\n");
+    out.push_str("  readonly add_to_playlists: void;\n");
+    out.push_str("  readonly remove_playlist_song: void;\n");
+    out.push_str("  readonly delete_song: string;\n");
+    out.push_str("  readonly undo_delete: string;\n");
+    out.push_str("  readonly choose_library_root: LibraryRootStatusDto | null;\n");
+    out.push_str("  readonly choose_and_import_files: ImportBatchDto | null;\n");
+    out.push_str("  readonly reveal_song: RevealResultDto;\n");
+    out.push_str("  readonly start_scan: ScanSnapshot;\n");
+    out.push_str("  readonly cancel_scan: boolean;\n");
+    out.push_str("  readonly set_theme: void;\n");
+    out.push_str("  readonly set_close_behavior: void;\n");
+    out.push_str("  readonly get_close_behavior: CloseBehavior;\n");
+    out.push_str("  readonly play_playlist_context: void;\n");
+    out.push_str("  readonly play_library_context: void;\n");
+    out.push_str("  readonly restore_playback_session: string;\n");
+    out.push_str("  readonly play_temporary_file: void;\n");
+    out.push_str("  readonly import_current_temporary_file: ImportResultDto;\n");
+    out.push_str("  readonly player_control: void;\n");
+    out.push_str("  readonly queue_command: void;\n");
+    out.push_str("  readonly set_volume: void;\n");
+    out.push_str("  readonly toggle_mute: void;\n");
+    out.push_str("  readonly seek: void;\n");
+    out.push_str("  readonly get_lyrics: SongLyricsDto;\n");
+    out.push_str("}\n");
     out
 }
 
@@ -176,6 +255,14 @@ mod tests {
         assert!(!ts.contains("relative_path"), "no snake_case leaks");
         assert!(!ts.contains("absolutePath"), "no absolute path type");
         assert!(ts.contains("IpcErrorDto"), "error DTO present");
+        assert!(
+            ts.contains("export interface IpcCommandResultMap"),
+            "command return contract present"
+        );
+        assert!(
+            !ts.contains(": unknown;"),
+            "command return contracts must never fall back to unknown"
+        );
         // Determinism: run twice -> identical.
         assert_eq!(ts, generated_typescript());
     }

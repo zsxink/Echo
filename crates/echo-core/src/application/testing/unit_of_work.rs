@@ -88,7 +88,7 @@ struct MemoryTx<'a> {
     state: &'a mut MemoryTxState,
 }
 
-impl TxAccess for MemoryTx<'_> {
+impl TxSongWriter for MemoryTx<'_> {
     fn upsert_song(&mut self, song: &Song) -> Result<(), Error> {
         self.state.songs.insert(song.id(), song.clone());
         Ok(())
@@ -130,7 +130,9 @@ impl TxAccess for MemoryTx<'_> {
         }
         Ok(())
     }
+}
 
+impl TxRootWriter for MemoryTx<'_> {
     fn upsert_root(&mut self, root: &LibraryRoot) -> Result<(), Error> {
         self.state.roots.insert(root.id(), root.clone());
         Ok(())
@@ -146,7 +148,9 @@ impl TxAccess for MemoryTx<'_> {
         }
         Ok(())
     }
+}
 
+impl TxPlaylistWriter for MemoryTx<'_> {
     fn create_playlist(
         &mut self,
         id: PlaylistId,
@@ -156,7 +160,6 @@ impl TxAccess for MemoryTx<'_> {
         self.state.playlists.insert(id, (root, name.to_owned()));
         Ok(())
     }
-
     fn insert_member(&mut self, member: &PlaylistMember) -> Result<(), Error> {
         self.state
             .members
@@ -164,12 +167,13 @@ impl TxAccess for MemoryTx<'_> {
             .or_insert_with(|| member.clone());
         Ok(())
     }
-
     fn remove_member(&mut self, playlist: PlaylistId, song: SongId) -> Result<(), Error> {
         self.state.members.remove(&(playlist, song));
         Ok(())
     }
+}
 
+impl TxOperationWriter for MemoryTx<'_> {
     fn upsert_operation_item(
         &mut self,
         operation: OperationId,
@@ -189,7 +193,9 @@ impl TxAccess for MemoryTx<'_> {
         self.state.undo_deadlines.insert(operation, deadline_ms);
         Ok(())
     }
+}
 
+impl TxLyricsWriter for MemoryTx<'_> {
     fn set_lyrics_candidate(
         &mut self,
         song: SongId,
@@ -205,7 +211,9 @@ impl TxAccess for MemoryTx<'_> {
         self.state.lyrics.remove(&(song, source));
         Ok(())
     }
+}
 
+impl TxStateWriter for MemoryTx<'_> {
     fn attach_cover(&mut self, song: SongId, cover: &CoverAssetRef) -> Result<(), Error> {
         self.state.covers.insert(song, cover.clone());
         Ok(())

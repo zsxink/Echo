@@ -1,7 +1,7 @@
-//! Test doubles for the application ports (task 2.7).
+//! First-class test support for the application ports (task 2.7).
 //!
 //! These fakes are **test-only**: they live under `#[cfg(any(test, feature =
-//! "testkit"))]` so use-case tests can simulate permission revocation, crash
+//! "testkit"))]` as [`crate::application::testkit`] so use-case tests can simulate permission revocation, crash
 //! points, trash failure and out-of-order watcher events without touching a
 //! real user directory or real SQLite.
 //!

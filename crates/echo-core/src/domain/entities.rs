@@ -34,6 +34,7 @@ use crate::domain::ids::{
     LibraryRootId, PlayCount, PlaylistId, PlaylistItemId, RelativeMediaPath, Revision, SongId,
 };
 use crate::domain::media::{AudioFormat, AudioParameters};
+use crate::error::Error;
 
 // ---------------------------------------------------------------------------
 // Song
@@ -491,6 +492,20 @@ impl LibraryRoot {
     #[must_use]
     pub fn absolute_path(&self) -> &std::path::Path {
         &self.absolute_path
+    }
+
+    /// Resolve one song's safe root-relative media path to its local absolute
+    /// position. The root identity check prevents a caller from accidentally
+    /// combining a song with a different library's directory.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Conflict` when the song belongs to another library root.
+    pub fn resolve_song_path(&self, song: &Song) -> Result<std::path::PathBuf, Error> {
+        if song.root() != self.id {
+            return Err(Error::conflict("song belongs to a different library root"));
+        }
+        Ok(self.absolute_path.join(song.path().normalized()))
     }
 
     /// Set write capability (derived from permissions + ownership marker).

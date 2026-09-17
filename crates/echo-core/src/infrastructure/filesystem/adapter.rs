@@ -8,7 +8,8 @@ use std::io::{Read, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use crate::application::ports::{FileMeta, LibraryFileSystem, StagedCopy, StagedResource};
+use crate::application::ports::filesystem::LegacyLibraryFileSystem;
+use crate::application::ports::{FileMeta, StagedCopy, StagedResource};
 use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath};
 use crate::error::{Error, PermKind};
 
@@ -209,7 +210,7 @@ impl RootConstrainedFileSystem {
     }
 }
 
-impl LibraryFileSystem for RootConstrainedFileSystem {
+impl crate::application::ports::filesystem::LegacyLibraryFileSystem for RootConstrainedFileSystem {
     fn enumerate(&self, root: LibraryRootId) -> Result<Vec<RelativeMediaPath>, Error> {
         // Reject an enumeration when the root itself is unreadable; per-entry
         // failures are skipped inside the walker.

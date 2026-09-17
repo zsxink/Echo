@@ -16,12 +16,12 @@
 //!   snapshot and the selected [`SongId`]. It deliberately contains no
 //!   `Vec<SongId>` of the view — a 50,000-song library never ships its UUIDs
 //!   over IPC; the context is resolved server-side into a cursor + selection.
-//! - [`PlaybackContextResolved`] — the resolved plan: entry index + total +
-//!   cursor that the desktop coordinator reads back.
+//! - [`PlaybackContextResolved`] — the server-side ordered playback plan.
 
 use crate::domain::entities::Song;
-use crate::domain::ids::{Revision, SongId};
+use crate::domain::ids::{PlaylistId, Revision, SongId};
 use crate::domain::text::normalized_key;
+use crate::error::{Error, ValidationSubject};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 // ---------------------------------------------------------------------------
@@ -330,6 +330,10 @@ pub struct PlaybackContextRequest {
     /// Cursor snapshot to resolve from (server-side). A request without a
     /// cursor may resolve the first page.
     pub cursor: Option<OpaqueCursor>,
+    /// Optional text filter for the library views. It stays server-side with
+    /// the rest of the request and is never expanded into song identifiers.
+    #[serde(default)]
+    pub query: String,
     /// The selected song to start at (must be within the resolved view).
     pub selected: SongId,
 }
@@ -340,21 +344,19 @@ pub enum ViewRef {
     AllSongs,
     Recent,
     Favorites,
-    Playlist { id: crate::domain::ids::PlaylistId },
+    Playlist { id: PlaylistId },
 }
 
 /// The server-side resolved form of a [`PlaybackContextRequest`].
 ///
-/// Desktop resolves this without re-querying per entry: the entry index and
-/// the continuation cursor let the coordinator walk the whole view lazily.
+/// This is deliberately resolved inside Core: platform players receive the
+/// ordered identifiers but do not recreate filtering, paging or ordering.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PlaybackContextResolved {
-    /// Total visible songs in the view at resolution time.
-    pub total: u64,
+    /// Ordered songs in the exact order represented by the view.
+    pub songs: Vec<SongId>,
     /// Index (0-based) of the selected song within the sorted view.
-    pub selected_index: u64,
-    /// Cursor for the remainder after `selected_index`.
-    pub after_selected: OpaqueCursor,
+    pub selected_index: usize,
 }
 
 impl PlaybackContextRequest {
@@ -364,6 +366,7 @@ impl PlaybackContextRequest {
             view,
             sort,
             cursor: None,
+            query: String::new(),
             selected,
         }
     }
@@ -372,6 +375,37 @@ impl PlaybackContextRequest {
     pub fn with_cursor(mut self, cursor: OpaqueCursor) -> Self {
         self.cursor = Some(cursor);
         self
+    }
+
+    /// Attach the optional library text filter to a typed request.
+    #[must_use]
+    pub fn with_query(mut self, query: impl Into<String>) -> Self {
+        self.query = query.into();
+        self
+    }
+
+    /// Build a request from the stable library-view names accepted by the
+    /// desktop command boundary. Unknown names are rejected in Core so every
+    /// platform shares one validation rule.
+    pub fn library_view(
+        view: &str,
+        query: impl Into<String>,
+        sort: SongSort,
+        selected: SongId,
+    ) -> Result<Self, Error> {
+        let view = match view {
+            "all" => ViewRef::AllSongs,
+            "recent" => ViewRef::Recent,
+            "favorites" => ViewRef::Favorites,
+            _ => {
+                return Err(Error::validation(
+                    ValidationSubject::Other,
+                    "view",
+                    "unknown library playback view".to_owned(),
+                ))
+            }
+        };
+        Ok(Self::new(view, sort, selected).with_query(query))
     }
 }
 

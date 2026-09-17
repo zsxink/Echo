@@ -1015,7 +1015,7 @@ mod tests {
         ctrl: Arc<Controller>,
     }
 
-    impl crate::application::ports::LibraryFileSystem for CrashFs {
+    impl crate::application::ports::filesystem::LegacyLibraryFileSystem for CrashFs {
         fn enumerate(&self, root: LibraryRootId) -> Result<Vec<RelativeMediaPath>, Error> {
             self.inner.enumerate(root)
         }

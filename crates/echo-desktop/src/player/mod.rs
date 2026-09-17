@@ -15,8 +15,8 @@
 //!   and `PlayerError`. The adapter boundary between the coordinator and the
 //!   platform player actor.
 //! - [`fake`] — `FakePlayer`, an in-process test double that processes
-//!   commands synchronously. Coordinator, queue, statistics and
-//!   platform-control tests use this to avoid loading libmpv.
+//!   commands synchronously. It is compiled only for this crate's unit tests,
+//!   so production builds never contain a substitute for the mpv adapter.
 //! - [`ffi`] — the isolated `unsafe` libmpv binding (dynamic loading, minimal
 //!   symbol set).
 //! - [`actor`] — the dedicated OS-thread actor that owns the libmpv handle.
@@ -27,6 +27,7 @@
 pub mod actor;
 pub mod coordinator;
 pub mod deletion;
+#[cfg(test)]
 pub mod fake;
 pub mod ffi;
 pub mod port;
