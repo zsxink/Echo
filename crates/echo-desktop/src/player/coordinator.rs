@@ -337,6 +337,13 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
     /// the bag empties it is refreshed for a fresh round. Returns the new
     /// current entry id, or `None` if the queue stopped.
     pub fn advance_to_next(&mut self) -> Option<QueueEntryId> {
+        // A one-entry view has no different next item. Re-loading the same
+        // file creates an unnecessary Loading -> Paused window in mpv and can
+        // leave the UI transport state behind the audible player. Treat both
+        // directions as an explicit replay instead.
+        if self.queue.len() == 1 && self.replay_current() {
+            return self.queue.current_id();
+        }
         self.navigate(NavigationEvent::ManualNext)
     }
 
@@ -442,6 +449,12 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
     /// moving back (task 8.6: ">5 秒上一首回到开头"). Otherwise it moves to
     /// the previous entry in history.
     pub fn previous(&mut self) {
+        // There is no historical/list predecessor in a one-entry queue. A
+        // seek plus an explicit play keeps the replay audible and makes the
+        // transport state authoritative immediately.
+        if self.queue.len() == 1 && self.replay_current() {
+            return;
+        }
         let now = self.player.snapshot().position.unwrap_or(0.0);
         // "Is anything loaded" is a queue fact, so ask the queue. The player
         // snapshot carries transport state only (it has no queue-entry id), and
@@ -561,6 +574,19 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
             .and_then(|entry| entry.item.song_id())?;
         self.load_entry(entry_id, song);
         Some(entry_id)
+    }
+
+    /// Restart the sole current queue entry from the beginning.
+    ///
+    /// Returns `false` when the queue has no current entry, allowing callers
+    /// to retain their normal navigation fallback.
+    fn replay_current(&mut self) -> bool {
+        if self.queue.current_id().is_none() {
+            return false;
+        }
+        self.player.send(PlayerCommand::Seek(0.0)).ok();
+        self.player.send(PlayerCommand::Play).ok();
+        true
     }
 
     fn previous_from_mode(&mut self) -> Option<QueueEntryId> {
@@ -694,6 +720,26 @@ mod tests {
             coord.snapshot().state,
             echo_core::domain::state::PlaybackState::Playing,
             "the queue keeps playing after the wrap"
+        );
+    }
+
+    #[test]
+    fn next_replays_single_entry_instead_of_reloading_or_pausing() {
+        let player = FakePlayer::new();
+        let mut coord = PlaybackCoordinator::new(player);
+        let s = song();
+        coord.play_context(&ViewContext {
+            songs: vec![s],
+            selected_index: 0,
+        });
+        coord.seek(24.0);
+
+        let current = coord.queue().current_id();
+        assert_eq!(coord.advance_to_next(), current);
+        assert_eq!(coord.snapshot().position, Some(0.0));
+        assert_eq!(
+            coord.snapshot().state,
+            echo_core::domain::state::PlaybackState::Playing
         );
     }
 
@@ -1011,6 +1057,25 @@ mod tests {
         coord.player().set_position(2.0);
         coord.previous();
         assert_eq!(coord.current().unwrap().item.song_id(), Some(s1));
+    }
+
+    #[test]
+    fn previous_replays_single_entry_instead_of_pausing() {
+        let player = FakePlayer::new();
+        let mut coord = PlaybackCoordinator::new(player);
+        let s = song();
+        coord.play_context(&ViewContext {
+            songs: vec![s],
+            selected_index: 0,
+        });
+        coord.seek(24.0);
+
+        coord.previous();
+        assert_eq!(coord.snapshot().position, Some(0.0));
+        assert_eq!(
+            coord.snapshot().state,
+            echo_core::domain::state::PlaybackState::Playing
+        );
     }
 
     #[test]
