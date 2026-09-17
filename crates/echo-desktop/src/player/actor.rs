@@ -2429,12 +2429,17 @@ mod tests {
                      it with — the snapshot would silently fall back to a guess [seen={seen:?}]"
                 );
             }
+            // `pause`/`mute` are observed as MPV_FORMAT_FLAG and `volume` as a
+            // DOUBLE, but all three arrive through one payload, so every value
+            // is compared with the same tolerance `volume` already uses.
             assert!(
-                seen.iter().any(|(name, v)| name == "pause" && *v == 1.0),
+                seen.iter()
+                    .any(|(name, v)| name == "pause" && (*v - 1.0).abs() < 1e-9),
                 "pause=yes must arrive as 1.0 [seen={seen:?}]"
             );
             assert!(
-                seen.iter().any(|(name, v)| name == "mute" && *v == 1.0),
+                seen.iter()
+                    .any(|(name, v)| name == "mute" && (*v - 1.0).abs() < 1e-9),
                 "mute=yes must arrive as 1.0 [seen={seen:?}]"
             );
             assert!(

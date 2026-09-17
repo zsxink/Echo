@@ -294,5 +294,18 @@ fn without_test_modules(source: &str) -> String {
 
 fn brace_delta(line: &str) -> i32 {
     let code = code_before_comment(line);
-    code.matches('{').count() as i32 - code.matches('}').count() as i32
+    // Explicit conversion rather than `as`: both counts are per-line character
+    // counts, so the invariant holds, and `try_into` turns it into a loud
+    // failure instead of a silent wrap if it ever stops holding.
+    let opens: i32 = code
+        .matches('{')
+        .count()
+        .try_into()
+        .expect("brace count fits");
+    let closes: i32 = code
+        .matches('}')
+        .count()
+        .try_into()
+        .expect("brace count fits");
+    opens - closes
 }

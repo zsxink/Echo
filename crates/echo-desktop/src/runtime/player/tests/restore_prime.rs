@@ -28,12 +28,12 @@ fn restore_or_prime_restores_a_persisted_session_paused() {
     assert_eq!(outcome, "restored");
     let coord = controller.coordinator.lock().expect("lock");
     assert_eq!(coord.snapshot().state, PlaybackState::Paused);
-    assert_eq!(
-        coord.snapshot().volume,
-        0.5,
+    assert!(
+        (coord.snapshot().volume - 0.5).abs() < 1e-9,
         "volume is restored from the session"
     );
     assert_eq!(coord.mode(), PlayMode::Shuffle);
+    drop(coord);
 }
 
 #[test]
@@ -56,6 +56,7 @@ fn restore_or_prime_primes_the_first_song_of_the_default_view() {
         2,
         "the whole default view is the queue"
     );
+    drop(coord);
 }
 
 #[test]
@@ -67,4 +68,5 @@ fn restore_or_prime_yields_an_empty_bar_for_an_empty_library() {
     let coord = controller.coordinator.lock().expect("lock");
     assert!(coord.queue().is_empty());
     assert_eq!(coord.snapshot().state, PlaybackState::Stopped);
+    drop(coord);
 }

@@ -69,21 +69,25 @@ fn controller_over_fake_is_headless_and_runnable() {
     let controller = PlayerController::over_fake(FakePlayer::new());
     // The coordinator holds the port; locking and driving it must not need
     // libmpv.
-    let mut coord = controller.coordinator.lock().expect("lock");
-    let song = SongId::new();
-    let entry = QueueEntry {
-        id: QueueEntryId::new(),
-        item: QueueItem::Library(song),
-    };
-    coord.enqueue(entry);
-    // `enqueue` appends to the queue (not yet current); assert the song is
-    // present so the coordinator drove a real command headlessly.
-    assert!(
-        coord
-            .queue()
-            .entries()
-            .iter()
-            .any(|e| e.item.song_id() == Some(song)),
-        "enqueued song should appear in the queue entries"
-    );
+    // Scoped: the coordinator lock is released as soon as the assertions are done.
+    {
+        let mut coord = controller.coordinator.lock().expect("lock");
+        let song = SongId::new();
+        let entry = QueueEntry {
+            id: QueueEntryId::new(),
+            item: QueueItem::Library(song),
+        };
+        coord.enqueue(entry);
+        // `enqueue` appends to the queue (not yet current); assert the song is
+        // present so the coordinator drove a real command headlessly.
+        assert!(
+            coord
+                .queue()
+                .entries()
+                .iter()
+                .any(|e| e.item.song_id() == Some(song)),
+            "enqueued song should appear in the queue entries"
+        );
+        drop(coord);
+    }
 }

@@ -74,24 +74,31 @@ impl QueueMetadataResolver {
         // Resolve only the ids we have never seen (a queue change) — the
         // batched part of the contract. Deletion race: an entry dropped from
         // the library mid-queue resolves to explicit nulls, never an error.
-        if !missing.is_empty() {
-            let mut cache = self.cache.lock().expect("metadata cache lock");
-            for id in &missing {
-                let song = self.songs.by_id(*id).ok().flatten();
-                let cover = song
-                    .as_ref()
-                    .and_then(|song| self.covers.cover_of(song.id()).ok().flatten());
-                let meta = song
-                    .map(|song| QueueEntryMeta {
-                        title: song.title().map(ToOwned::to_owned),
-                        artist: song.artist().map(ToOwned::to_owned),
-                        duration_s: song.duration().map(|d| d.as_secs()),
-                        cover_key: cover.map(|cover| cover.asset_key),
-                    })
-                    .unwrap_or_default();
-                cache.insert(*id, meta.clone());
-                result.insert(*id, meta);
-            }
+        //
+        // The cache mutex is taken per insert and never across a repository
+        // read. `by_id`/`cover_of` are I/O; holding the lock over them would
+        // serialise every resolver behind one queue change, so the expensive
+        // part deliberately happens unlocked. Inserts are idempotent — two
+        // threads resolving the same id compute the same record — so narrowing
+        // the lock loses nothing.
+        for id in &missing {
+            let song = self.songs.by_id(*id).ok().flatten();
+            let cover = song
+                .as_ref()
+                .and_then(|song| self.covers.cover_of(song.id()).ok().flatten());
+            let meta = song
+                .map(|song| QueueEntryMeta {
+                    title: song.title().map(ToOwned::to_owned),
+                    artist: song.artist().map(ToOwned::to_owned),
+                    duration_s: song.duration().map(|d| d.as_secs()),
+                    cover_key: cover.map(|cover| cover.asset_key),
+                })
+                .unwrap_or_default();
+            self.cache
+                .lock()
+                .expect("metadata cache lock")
+                .insert(*id, meta.clone());
+            result.insert(*id, meta);
         }
         result
     }

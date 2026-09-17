@@ -36,20 +36,24 @@ fn coordinated_delete_removes_current_song_and_commits() {
     assert_eq!(deleted.lock().unwrap().as_slice(), &[s1]);
 
     // The queue no longer references the deleted song, and the next
-    // available item aligned.
-    let view = coordinator.lock().expect("coordinator lock");
-    assert!(
-        view.queue()
-            .entries()
-            .iter()
-            .all(|e| e.item.song_id() != Some(s1)),
-        "deleted song must leave the queue"
-    );
-    assert_eq!(
-        view.current().and_then(|e| e.item.song_id()),
-        Some(s2),
-        "next entry becomes current"
-    );
+    // available item aligned. The coordinator lock is released before the
+    // player assertion — it is not part of the coordinator's state.
+    {
+        let view = coordinator.lock().expect("coordinator lock");
+        assert!(
+            view.queue()
+                .entries()
+                .iter()
+                .all(|e| e.item.song_id() != Some(s1)),
+            "deleted song must leave the queue"
+        );
+        assert_eq!(
+            view.current().and_then(|e| e.item.song_id()),
+            Some(s2),
+            "next entry becomes current"
+        );
+        drop(view);
+    }
     // The player was stopped through the port (unload barrier path ran).
     assert_eq!(fake.snapshot().state, PlaybackState::Stopped);
 }
@@ -80,12 +84,16 @@ fn coordinated_delete_rolls_back_when_core_refuses() {
         "a Core refusal must roll back, not fake success"
     );
 
-    // The queue was restored: the target is still current.
-    let view = coordinator.lock().expect("coordinator lock");
-    assert_eq!(
-        view.current().and_then(|e| e.item.song_id()),
-        Some(s1),
-        "rollback keeps the current entry"
-    );
-    assert_eq!(view.queue().entries().len(), 2);
+    // The queue was restored: the target is still current. Scoped so the
+    // coordinator lock is released at the end of the assertions.
+    {
+        let view = coordinator.lock().expect("coordinator lock");
+        assert_eq!(
+            view.current().and_then(|e| e.item.song_id()),
+            Some(s1),
+            "rollback keeps the current entry"
+        );
+        assert_eq!(view.queue().entries().len(), 2);
+        drop(view);
+    }
 }

@@ -28,9 +28,9 @@ fn a_volume_change_while_paused_reaches_the_store() {
         ),
         "暂停态下调的音量必须落盘，否则下次启动重放的是旧音量"
     );
-    assert_eq!(
-        store.last().expect("a session was stored").volume,
-        0.8,
+    let persisted = store.last().expect("a session was stored");
+    assert!(
+        (persisted.volume - 0.8).abs() < 1e-9,
         "落盘的必须是最新的音量"
     );
 }

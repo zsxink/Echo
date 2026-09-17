@@ -70,9 +70,12 @@ impl CountingSession {
 
 impl SessionPersistence for CountingSession {
     fn save(&self, session: Option<&PlaybackSession>) -> Result<(), String> {
-        let mut guard = self.0.lock().expect("counting session lock");
-        guard.0 += 1;
-        guard.1 = session.cloned();
+        // Scoped so the count is visible to `load()` before `save` returns.
+        {
+            let mut guard = self.0.lock().expect("counting session lock");
+            guard.0 += 1;
+            guard.1 = session.cloned();
+        }
         Ok(())
     }
     fn load(&self) -> Result<Option<PlaybackSession>, String> {
