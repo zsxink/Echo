@@ -759,6 +759,9 @@ struct ActorLoop<B: Backend> {
     /// flag provably belongs to the new file) and used to decide which state to
     /// publish, so 点歌真的出声 and 暂停态的加载不会被画成正在播放。
     intended_paused: bool,
+    /// A seek received during asynchronous file loading. mpv resets its
+    /// position as `loadfile` completes, so this is applied on `FileLoaded`.
+    pending_seek: Option<f64>,
 }
 
 impl<B: Backend> ActorLoop<B> {
@@ -787,6 +790,7 @@ impl<B: Backend> ActorLoop<B> {
             // A fresh actor has nothing loaded, so "not paused" is the only
             // intent that can be true once a file actually loads.
             intended_paused: false,
+            pending_seek: None,
         }
     }
 
@@ -912,6 +916,16 @@ impl<B: Backend> ActorLoop<B> {
                             paused = self.intended_paused,
                             "mpv actor: failed to apply the load's pause intent"
                         );
+                    }
+                    if let Some(position) = self.pending_seek.take() {
+                        if self.backend.write_property(BackendProperty::Seek(position)) {
+                            self.position = Some(position);
+                        } else {
+                            tracing::warn!(
+                                position,
+                                "mpv actor: failed to restore playback position"
+                            );
+                        }
                     }
                     // …and publish the state the intent implies. `FileLoaded`
                     // alone is not "playing": a primed / restored load is
@@ -1105,12 +1119,20 @@ impl<B: Backend> ActorLoop<B> {
                 self.publish(self.generation);
             }
             PlayerCommand::Seek(pos) => {
+                if self.state == PlaybackState::Loading {
+                    self.pending_seek = Some(pos);
+                    return true;
+                }
                 // Seek publishes immediately on success; on backend rejection
                 // the snapshot is untouched (authoritative rollback, task 8.8).
                 if self.backend.write_property(BackendProperty::Seek(pos)) {
                     self.position = Some(pos);
                     self.publish(self.generation);
                 }
+            }
+            PlayerCommand::SetMode(mode) => {
+                self.mode = mode;
+                self.publish(self.generation);
             }
             PlayerCommand::SetVolume(vol) => {
                 let clamped = vol.clamp(0.0, 1.0);
@@ -1215,6 +1237,7 @@ impl<B: Backend> ActorLoop<B> {
 
     fn load_path(&mut self, path: &Path) {
         self.generation += 1;
+        self.pending_seek = None;
         // Defense-in-depth (task 8.3): only Rust-validated LOCAL paths reach
         // mpv. Refuse anything that looks like a URL/scheme (`http://`, `smb://`,
         // `mms://`, …) so a caller can never smuggle a networked protocol in,
@@ -2081,6 +2104,37 @@ mod tests {
             props.lock().unwrap().clone(),
             vec![BackendProperty::Pause(true), BackendProperty::Pause(true)],
             "the paused load must hold mpv's `pause` flag on"
+        );
+        actor.shutdown();
+    }
+
+    #[test]
+    fn seek_queued_during_paused_load_runs_after_file_loaded() {
+        let resolver: SongResolver = Arc::new(|_| Ok(std::path::PathBuf::from("/music/a.flac")));
+        let (mut actor, snapshot, props) = spawn_test_load_driven(resolver, false);
+
+        actor
+            .send(PlayerCommand::LoadLibrarySongPaused {
+                song_id: echo_core::domain::ids::SongId::new(),
+                session_id: echo_core::domain::ids::PlaybackSessionId::new(),
+            })
+            .expect("send paused load");
+        actor
+            .send(PlayerCommand::Seek(37.5))
+            .expect("queue restore seek");
+
+        let restored = wait_for(&snapshot, |s| {
+            s.state == PlaybackState::Paused && s.position == Some(37.5)
+        });
+        assert_eq!(restored.position, Some(37.5));
+        assert_eq!(
+            props.lock().expect("property writes").clone(),
+            vec![
+                BackendProperty::Pause(true),
+                BackendProperty::Pause(true),
+                BackendProperty::Seek(37.5),
+            ],
+            "the restore seek must follow FileLoaded's pause write"
         );
         actor.shutdown();
     }

@@ -69,7 +69,11 @@ export function PlayerBar() {
 
   // rAF-interpolated so the bar/滑块 glide instead of stepping per snapshot.
   const position = useSmoothPosition() ?? 0;
-  const duration = snapshot.duration ?? 0;
+  // mpv can report duration after its paused restore snapshot. The library
+  // detail is already authoritative metadata for this song, so use it as a
+  // temporary range fallback: restored progress is immediately visible and
+  // seekable without waiting for the user to press Play.
+  const duration = snapshot.duration ?? detail?.durationS ?? 0;
   const progress = duration > 0 ? Math.min(100, (position / duration) * 100) : 0;
   // The real title/artist once `song_detail` answers; a temporary item carries
   // its own display name in the snapshot and has no library detail at all.
@@ -141,7 +145,7 @@ export function PlayerBar() {
           max={duration || 0}
           step="any"
           value={position}
-          disabled={!hasCurrent}
+          disabled={!hasCurrent || duration <= 0}
           onKeyDown={(event) => {
             const delta =
               event.key === "ArrowRight" || event.key === "ArrowUp"
@@ -278,13 +282,12 @@ export function PlayerBar() {
           </button>
           <button
             type="button"
-            className={`control${snapshot.mode === "sequential" ? "" : " active"}`}
+            className="control"
             id="playback-mode"
             aria-label={mode.label}
             title={mode.label}
             aria-pressed={snapshot.mode !== "sequential"}
             data-mode={snapshot.mode}
-            disabled={!hasCurrent}
             onClick={() => command(`mode:${mode.next}`)}
           >
             <Icon name={mode.icon} />

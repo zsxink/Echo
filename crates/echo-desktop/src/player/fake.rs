@@ -274,6 +274,9 @@ impl PlayerPort for FakePlayer {
                     }
                     guard.snapshot.position = Some(pos);
                 }
+                PlayerCommand::SetMode(mode) => {
+                    guard.snapshot.mode = mode;
+                }
                 PlayerCommand::SetVolume(vol) => {
                     if guard.fail_next_property {
                         guard.fail_next_property = false;

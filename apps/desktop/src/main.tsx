@@ -19,17 +19,18 @@ if (!root) {
   throw new Error("Echo: #root element is missing from index.html");
 }
 
-// Subscribe to the desktop player snapshot stream (task 11.1): the store is
-// driven by the authoritative Rust snapshot event, not by local fabrication.
-void startPlayerEvents();
-
-// Cold-start playback (task 8.9 + 默认态): restore the last locally-persisted
-// session (哪个歌单的哪首歌 / 播放模式 / 音量) paused, or — with nothing
-// persisted — prime the first song of 全部歌曲 into the 播放控制栏. Never
-// makes a sound on its own; runs after the snapshot subscription so the
-// restored state reaches the store. Failures are silent: an empty bar is an
-// acceptable degradation, a broken boot is not.
-void bridge.call("restore_playback_session", {}).catch(() => undefined);
+// The restore command publishes the initial authoritative snapshot. `listen`
+// is asynchronous, so restoring concurrently can lose that one event and
+// leave the paused bar/lyrics at zero until the user presses Play. Register the
+// listener first, then request restore; a subscription failure still permits a
+// safe, silent restore rather than blocking startup.
+void (async () => {
+  try {
+    await startPlayerEvents();
+  } finally {
+    await bridge.call("restore_playback_session", {}).catch(() => undefined);
+  }
+})();
 
 // macOS overlay titlebar (tauri.conf.json `titleBarStyle: "Overlay"`): the
 // native titlebar is hidden but the traffic lights keep floating over the

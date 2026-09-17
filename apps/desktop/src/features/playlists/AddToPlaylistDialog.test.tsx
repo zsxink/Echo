@@ -111,6 +111,32 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
     );
   });
 
+  it("selects a playlist created from the picker so the original song can be added", async () => {
+    call.mockReset();
+    call.mockResolvedValueOnce([] as never);
+    call.mockResolvedValueOnce("pl-new" as never); // create_playlist
+    call.mockResolvedValueOnce([{ id: "pl-new", name: "通勤", memberCount: 0 }] as never); // refresh after creation
+    call.mockResolvedValueOnce(undefined as never); // add_to_playlists
+
+    render(
+      <AddToPlaylistDialog songId="song-9" root="root-1" onClose={vi.fn()} onDone={vi.fn()} />,
+    );
+    await screen.findByText("还没有歌单，先创建一个吧。");
+    fireEvent.click(screen.getByTestId("playlist-picker-new"));
+    fireEvent.change(screen.getByLabelText("新歌单名称"), { target: { value: "通勤" } });
+    fireEvent.click(screen.getByText("创建歌单"));
+
+    const created = await screen.findByLabelText("通勤");
+    await waitFor(() => expect(created).toHaveAttribute("aria-selected", "true"));
+    fireEvent.click(screen.getByText("确认"));
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith("add_to_playlists", {
+        song: "song-9",
+        targets: ["pl-new"],
+      }),
+    );
+  });
+
   it("cancelling closes without sending any mutation", async () => {
     call.mockReset();
     call.mockResolvedValueOnce([{ id: "pl-1", name: "Chill", memberCount: 0 }] as never);

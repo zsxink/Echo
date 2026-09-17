@@ -35,6 +35,7 @@ use echo_desktop::ipc::IpcErrorDto;
 use echo_desktop::player::coordinator::PlaybackCoordinator;
 use echo_desktop::player::port::{PlayerCommand, PlayerPort};
 use echo_desktop::player::queue::{QueueEntry, QueueItem, ViewContext};
+use echo_desktop::player::session::{snapshot_queue, SessionPersistence};
 use echo_desktop::runtime::services::AppServices;
 use tauri::State;
 
@@ -49,6 +50,29 @@ pub struct PlayerHandle {
     /// 放的是哪个歌单 half of local persistence. Written by the playback-context
     /// commands, read by the session-saver thread (same shared slot).
     pub source: Arc<std::sync::Mutex<Option<String>>>,
+    /// The desktop-local session store is shared with the throttled saver so
+    /// lifecycle boundaries can force one final write before hiding or exit.
+    pub persistence: Arc<dyn SessionPersistence>,
+}
+
+/// Persist the latest authoritative playback snapshot synchronously for a
+/// lifecycle boundary. Normal progress writes remain throttled in the runtime;
+/// this only closes the gap where a window/tray exit happens between ticks.
+pub fn flush_player_session(state: &PlayerHandle) {
+    let Ok(coordinator) = state.coordinator.lock() else {
+        return;
+    };
+    let snapshot = coordinator.snapshot();
+    let source = state.source.lock().ok().and_then(|value| value.clone());
+    let session = snapshot_queue(
+        coordinator.queue(),
+        coordinator.mode(),
+        snapshot.volume,
+        snapshot.muted,
+        snapshot.position,
+        source.as_deref(),
+    );
+    let _ = state.persistence.save(Some(&session));
 }
 
 // ---------------------------------------------------------------------------

@@ -204,14 +204,22 @@ export function AddToPlaylistDialog({
           root={root}
           existingNames={playlists.map((playlist) => playlist.name)}
           onClose={() => setCreating(false)}
-          onDone={(name) => {
-            // Re-read the list so the new playlist is selectable right away.
+          onDone={(name, createdId) => {
+            // The create command returns the authoritative id. Keep the picker
+            // mounted, refresh its list, and select that id so confirmation can
+            // immediately add the original song without making the user find it
+            // again. A re-read also supplies the updated sidebar count upstream.
             void bridge
               .call("playlists")
-              .then((value: unknown) => setPlaylists(value as PlaylistView[]))
-              .catch(() => {});
+              .then((value: unknown) => {
+                setPlaylists(value as PlaylistView[]);
+                if (createdId) {
+                  setSelected((previous) => new Set(previous).add(createdId));
+                }
+              })
+              .catch(() => setError("歌单已创建，但列表刷新失败，请重试"));
             setCreating(false);
-            setError(`已创建歌单「${name}」，请选择它`);
+            setError(createdId ? null : `已创建歌单「${name}」，请选择它`);
           }}
         />
       ) : null}

@@ -194,11 +194,18 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
     }
 
     /// Apply a restored playback session (task 8.9, 冷启动恢复): adopt the
-    /// rebuilt queue and mode, restore the volume/mute settings on the actor,
-    /// and load the current entry **paused** (恢复后绝不自动发声). The current
-    /// entry's last position is persisted but intentionally not seeked here —
-    /// the load completes asynchronously; resuming mid-track is a follow-up.
-    pub fn restore_session(&mut self, queue: Queue, mode: PlayMode, volume: f64, muted: bool) {
+    /// rebuilt queue and mode, restore the volume/mute settings and last valid
+    /// position on the actor, and load the current entry **paused** (恢复后绝不
+    /// 自动发声). Commands are ordered by the actor, so the seek follows the
+    /// paused load rather than racing it from another thread.
+    pub fn restore_session(
+        &mut self,
+        queue: Queue,
+        mode: PlayMode,
+        volume: f64,
+        muted: bool,
+        position: Option<f64>,
+    ) {
         self.queue = queue;
         self.mode = mode;
         self.failed_round.clear();
@@ -228,6 +235,10 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
                         session_id: session,
                     })
                     .ok();
+                if let Some(position) = position.filter(|value| value.is_finite() && *value >= 0.0)
+                {
+                    self.player.send(PlayerCommand::Seek(position)).ok();
+                }
             }
         }
     }
@@ -296,6 +307,11 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
                 .set_shuffle(false, self.queue.shuffle_bag().to_vec());
         }
         self.mode = mode;
+        // Mode is coordinator-owned queue state, but the UI is driven only by
+        // the player snapshot stream. Publish this discrete change through the
+        // port so switching modes while paused or with an empty queue updates
+        // the visible control immediately.
+        self.player.send(PlayerCommand::SetMode(mode)).ok();
     }
 
     fn enter_shuffle(&mut self) {
@@ -833,7 +849,7 @@ mod tests {
         .build_queue();
         // current is s2 per the view context.
         assert_eq!(queue.current().unwrap().item.song_id(), Some(s2));
-        coord.restore_session(queue, PlayMode::Shuffle, 0.42, true);
+        coord.restore_session(queue, PlayMode::Shuffle, 0.42, true, Some(12.5));
         assert_eq!(coord.current().unwrap().item.song_id(), Some(s2));
         assert_eq!(coord.mode(), PlayMode::Shuffle);
         assert_eq!(
@@ -842,6 +858,7 @@ mod tests {
         );
         assert!((coord.snapshot().volume - 0.42).abs() < f64::EPSILON);
         assert!(coord.snapshot().muted);
+        assert_eq!(coord.snapshot().position, Some(12.5));
     }
 
     #[test]
@@ -861,9 +878,9 @@ mod tests {
             }
             .build_queue()
         };
-        coord.restore_session(build(), PlayMode::Sequential, 0.45, true);
+        coord.restore_session(build(), PlayMode::Sequential, 0.45, true, None);
         assert!(coord.snapshot().muted, "the first restore mutes");
-        coord.restore_session(build(), PlayMode::Sequential, 0.45, true);
+        coord.restore_session(build(), PlayMode::Sequential, 0.45, true, None);
         assert!(coord.snapshot().muted, "replaying the restore stays muted");
         assert!((coord.snapshot().volume - 0.45).abs() < f64::EPSILON);
     }
@@ -1020,6 +1037,24 @@ mod tests {
         coord.set_mode(PlayMode::RepeatOne);
         coord.set_mode(PlayMode::Sequential);
         assert_eq!(coord.current().unwrap().item.song_id(), Some(s1));
+    }
+
+    #[test]
+    fn mode_switch_publishes_snapshot_without_a_current_track() {
+        let player = FakePlayer::new();
+        let snapshots = player.subscribe_snapshots();
+        let mut coord = PlaybackCoordinator::new(player);
+
+        coord.set_mode(PlayMode::Shuffle);
+
+        assert_eq!(coord.mode(), PlayMode::Shuffle);
+        assert_eq!(
+            snapshots
+                .recv()
+                .expect("mode change must publish a snapshot")
+                .mode,
+            PlayMode::Shuffle
+        );
     }
 
     #[test]

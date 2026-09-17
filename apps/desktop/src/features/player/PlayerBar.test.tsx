@@ -183,14 +183,20 @@ describe("PlayerBar — empty queue", () => {
     expect(screen.queryByRole("button", { name: "导入到资料库" })).not.toBeInTheDocument();
   });
 
-  it("disables the transport but keeps volume + queue live", () => {
+  it("disables track-specific transport but keeps global controls live", () => {
     render(<PlayerBar />);
     expect(screen.getByRole("button", { name: "上一首" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "播放" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "下一首" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "喜欢当前歌曲" })).toBeDisabled();
     expect(screen.getByRole("slider", { name: "播放进度" })).toBeDisabled();
-    // Neither of these depends on the current track.
+    // These controls do not need a current track. Mode remains selectable so
+    // the next queued song starts with the user's chosen playback behavior.
+    expect(screen.getByRole("button", { name: "列表循环" })).toBeEnabled();
+    capturedInvoke.mockResolvedValueOnce(null);
+    fireEvent.click(screen.getByRole("button", { name: "列表循环" }));
+    expect(capturedInvoke).toHaveBeenCalledWith("player_control", { action: "mode:shuffle" });
+    // Neither of these depends on the current track either.
     expect(screen.getByRole("slider", { name: "音量" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "显示播放队列" })).toBeEnabled();
   });
@@ -201,6 +207,11 @@ describe("PlayerBar — empty queue", () => {
     expect(screen.getByTestId("playerbar")).not.toHaveAttribute("data-empty");
     expect(screen.getByRole("button", { name: "暂停" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "上一首" })).toBeEnabled();
+  });
+
+  it("disables seeking until the current track has a usable duration", () => {
+    renderWithSnapshot({ state: "loading", duration: null, position: null });
+    expect(screen.getByRole("slider", { name: "播放进度" })).toBeDisabled();
   });
 });
 
@@ -283,6 +294,48 @@ describe("PlayerBar (task 11.8) — range keyboard stepping", () => {
     expect(seek).toHaveValue("32.125");
     expect(seek).toHaveAttribute("min", "0");
     expect(seek).toHaveAttribute("max", "120");
+  });
+
+  it("uses the library duration so a paused restored track is seekable immediately", async () => {
+    // @ts-expect-error - the test hook installed by setup.ts
+    globalThis.__echoTest.setInvoke("song_detail", {
+      songId: "song-restored",
+      relativePath: "restored.flac",
+      title: "恢复的歌曲",
+      artist: "Echo",
+      album: null,
+      durationS: 245,
+      playCount: 0,
+      favorite: false,
+      hasCover: false,
+      availability: "available",
+    });
+    renderWithSnapshot({
+      state: "paused",
+      position: 37.5,
+      duration: null,
+      currentSongId: "song-restored",
+      currentCanImport: false,
+      queue: [
+        {
+          entryId: "entry-restored",
+          songId: "song-restored",
+          title: "恢复的歌曲",
+          isCurrent: true,
+          failed: false,
+          canImport: false,
+          blocked: false,
+          artist: "Echo",
+          durationS: 245,
+          coverKey: null,
+        },
+      ],
+    });
+
+    await waitFor(() => expect(screen.getByRole("slider", { name: "播放进度" })).toBeEnabled());
+    const seek = screen.getByRole("slider", { name: "播放进度" });
+    expect(seek).toHaveValue("37.5");
+    expect(seek).toHaveAttribute("max", "245");
   });
 
   it.each([

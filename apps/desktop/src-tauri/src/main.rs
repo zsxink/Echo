@@ -4,13 +4,22 @@
 //! `echo-core`; desktop runtime, player and platform implementation grow in
 //! `echo-desktop` in their respective tasks.
 
-use std::{env, fs::OpenOptions, io::Write, sync::Arc, thread, time::Duration};
+use std::{
+    env,
+    fs::OpenOptions,
+    io::Write,
+    sync::{Arc, Mutex},
+    thread,
+    time::Duration,
+};
 
 use echo_core::application::ports::CoverCache;
 use echo_core::domain::state::PlaybackState;
-use echo_desktop::platform::local_state::DesktopStateStore;
+use echo_desktop::platform::local_state::{CloseBehavior, DesktopStateStore};
 use echo_desktop::platform::security::{CoverError, CoverProtocol};
-use echo_desktop::platform::status_menu::{self, NoopSink, PlaySummary, StatusMenuSink};
+use echo_desktop::platform::status_menu::{self, PlaySummary, StatusMenuSink};
+use echo_desktop::player::coordinator::PlaybackCoordinator;
+use echo_desktop::player::port::{PlayerCommand, PlayerPort};
 use echo_desktop::runtime::app::assemble;
 use echo_desktop::runtime::player;
 use echo_desktop::runtime::services::AppServices;
@@ -18,7 +27,7 @@ use echo_desktop::runtime::StartupSupervisor;
 use tauri::{
     http::{Request as HttpRequest, Response as HttpResponse},
     menu::{MenuBuilder, MenuItemBuilder},
-    tray::TrayIconBuilder,
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, RunEvent,
 };
 
@@ -26,6 +35,47 @@ mod commands;
 mod dialogs;
 
 const MAIN_WINDOW: &str = "main";
+
+/// The tray is created before playback composition. This small adapter keeps a
+/// stable managed instance for its whole lifetime, then receives the real
+/// coordinator once the player is ready instead of leaving menu controls on a
+/// startup-only no-op sink.
+#[derive(Default)]
+struct RuntimeStatusMenuSink {
+    coordinator: Mutex<Option<Arc<Mutex<PlaybackCoordinator<Arc<dyn PlayerPort>>>>>>,
+}
+
+impl RuntimeStatusMenuSink {
+    fn install(&self, coordinator: Arc<Mutex<PlaybackCoordinator<Arc<dyn PlayerPort>>>>) {
+        if let Ok(mut slot) = self.coordinator.lock() {
+            *slot = Some(coordinator);
+        }
+    }
+}
+
+impl StatusMenuSink for RuntimeStatusMenuSink {
+    fn on_command(&self, command: PlayerCommand) {
+        let Ok(slot) = self.coordinator.lock() else {
+            return;
+        };
+        let Some(coordinator) = slot.as_ref() else {
+            return;
+        };
+        let Ok(mut coordinator) = coordinator.lock() else {
+            return;
+        };
+        match command {
+            PlayerCommand::TogglePlayPause => {
+                let _ = coordinator.player().send(PlayerCommand::TogglePlayPause);
+            }
+            PlayerCommand::Previous => coordinator.previous(),
+            PlayerCommand::Next => {
+                let _ = coordinator.advance_to_next();
+            }
+            _ => {}
+        }
+    }
+}
 
 /// The event name carrying a `UiPlayerSnapshot` to the frontend (`playerStore`
 /// subscribes via the bridge). Matches the `ipc::events` `player://snapshot`
@@ -154,19 +204,21 @@ fn wire_composition(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
         .map_err(|error| format!("start libmpv player: {error}"))?;
     let player_source: Arc<std::sync::Mutex<Option<String>>> =
         Arc::new(std::sync::Mutex::new(None));
-    let player_handle = commands::PlayerHandle {
-        coordinator: controller.coordinator.clone(),
-        source: player_source.clone(),
-    };
-    app.manage(player_handle);
-
     // Session persistence (task 8.9 落盘接线): the saver thread throttles
-    // durable playback-session writes (queue / current / mode / volume / mute
-    // / position / source) onto the atomic desktop-state store. It shares the
-    // same store instance and the same source slot as the command layer.
+    // durable playback-session writes onto the atomic desktop-state store.
     let saver_persistence: Arc<dyn echo_desktop::player::session::SessionPersistence> = Arc::new(
         echo_desktop::player::session::StateStoreSession::new(local_state),
     );
+    let player_handle = commands::PlayerHandle {
+        coordinator: controller.coordinator.clone(),
+        source: player_source.clone(),
+        persistence: saver_persistence.clone(),
+    };
+    app.manage(player_handle);
+    if let Some(sink) = app.try_state::<Arc<RuntimeStatusMenuSink>>() {
+        sink.install(controller.coordinator.clone());
+    }
+
     player::spawn_session_saver(
         controller.port.clone(),
         controller.coordinator.clone(),
@@ -529,7 +581,7 @@ fn main() {
             // `status_menu` (unit-tested); the shell only builds the widgets and
             // dispatches. Until the composition root connects a sink, transport
             // clicks fall through to `NoopSink`.
-            app.manage::<Arc<dyn StatusMenuSink>>(Arc::new(NoopSink) as Arc<dyn StatusMenuSink>);
+            app.manage(Arc::new(RuntimeStatusMenuSink::default()));
 
             let summary_text = {
                 let playback = PlaySummary {
@@ -565,17 +617,38 @@ fn main() {
 
             TrayIconBuilder::with_id("echo-gate")
                 .menu(&menu)
+                // A hidden main window needs a direct, discoverable way back:
+                // clicking the platform status item is equivalent to choosing
+                // “显示 Echo” from its menu. Restrict this to left-button release
+                // so right-click continues to open the platform menu normally.
+                .on_tray_icon_event(|tray, event| {
+                    if matches!(
+                        event,
+                        TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        }
+                    ) {
+                        focus_main_window(tray.app_handle());
+                    }
+                })
                 .on_menu_event(|app, event| {
                     match event.id().as_ref() {
                         status_menu::MENU_SHOW => focus_main_window(app),
-                        status_menu::MENU_QUIT => app.exit(0),
+                        status_menu::MENU_QUIT => {
+                            if let Some(player) = app.try_state::<commands::PlayerHandle>() {
+                                commands::flush_player_session(&player);
+                            }
+                            app.exit(0);
+                        }
                         id => {
                             // Transport item: forward the coarse player command
                             // to the playback sink. The composition root
                             // installs the coordinator forwarder; `NoopSink`
                             // remains until then.
                             if let Some(command) = status_menu::transport_command(id) {
-                                if let Some(sink) = app.try_state::<Arc<dyn StatusMenuSink>>() {
+                                if let Some(sink) = app.try_state::<Arc<RuntimeStatusMenuSink>>() {
                                     sink.on_command(command);
                                 }
                             }
@@ -604,15 +677,45 @@ fn main() {
         }
     };
 
-    app.run(|app, event| {
+    app.run(|app, event| match event {
         // macOS delivers file-association opens through `RunEvent::Opened`; they
         // go through the same FIFO as the single-instance argv path (task 9.1).
-        if let RunEvent::Opened { urls } = event {
+        RunEvent::Opened { urls } => {
             focus_main_window(app);
             for url in urls {
                 deliver_file_open(app, url.to_string());
             }
         }
+        // Clicking the macOS Dock icon emits `Reopen`, rather than a tray-icon
+        // event. Restore the hidden player window only when no window is visible.
+        RunEvent::Reopen {
+            has_visible_windows,
+            ..
+        } => {
+            if !has_visible_windows {
+                focus_main_window(app);
+            }
+        }
+        RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::CloseRequested { api, .. },
+            ..
+        } => {
+            let background = app
+                .try_state::<Arc<DesktopStateStore>>()
+                .and_then(|store| store.close_behavior().ok())
+                == Some(CloseBehavior::Background);
+            if label == MAIN_WINDOW && background {
+                if let Some(player) = app.try_state::<commands::PlayerHandle>() {
+                    commands::flush_player_session(&player);
+                }
+                api.prevent_close();
+                if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+                    let _ = window.hide();
+                }
+            }
+        }
+        _ => {}
     });
 }
 

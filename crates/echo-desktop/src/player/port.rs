@@ -70,6 +70,11 @@ pub enum PlayerCommand {
     Previous,
     /// Seek to an absolute position in seconds within the current track.
     Seek(f64),
+    /// Publish the user-selected queue traversal mode with the next player
+    /// snapshot. The coordinator remains the owner of queue behavior; the
+    /// actor carries this value solely so a mode-only change reaches snapshot
+    /// subscribers even when no media property has changed.
+    SetMode(PlayMode),
     /// Set the output volume (0.0 – 1.0, clamped by the actor).
     SetVolume(f64),
     /// Toggle mute, remembering the last non-zero volume.

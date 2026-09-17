@@ -761,8 +761,9 @@ pub fn restore_or_prime_playback(
         let volume = session.volume;
         let muted = session.muted;
         let mode = session.mode;
+        let position = session.position;
         if let Ok(mut coord) = coordinator.lock() {
-            coord.restore_session(queue, mode, volume, muted);
+            coord.restore_session(queue, mode, volume, muted, position);
         }
         return "restored";
     }
