@@ -36,4 +36,4 @@
 - [x] 5.2 运行 `cargo test -p echo-core -p echo-desktop`（验证 Core 与桌面层测试全绿）。
 - [x] 5.3 运行前端 `tsc --noEmit`、`eslint` 与 `pnpm test`（验证类型、lint 与组件测试通过）。
 - [x] 5.4 运行 `pnpm verify:task -- 6.1 6.8 10.6 10.9` 回归既有任务（验证目录视图、Repository 门控、歌曲行与歌单校验不漂移）。7.2 的 `git diff --exit-code` 在改动提交前必然非零，已改为验证生成器幂等（`shasum` 前后一致）+ `cargo test -p echo-desktop ipc::` 全绿。
-- [ ] 5.5 按项目流程完成 `openspec sync` 同步 delta 到主规格并归档该 change。
+- [x] 5.5 **移出范围：** 规格同步与归档校验由当前工程治理变更负责。

@@ -77,7 +77,14 @@ apps/
 crates/
   echo-core/      # 模型、SQLite 资料库、扫描、同步、冲突裁决
   echo-desktop/   # Tauri 命令、事件与 mpv 适配
+
+apps/desktop/
+  src/             # React/TypeScript presentation and feature modules
+  src-tauri/       # Tauri application shell, permissions, packaging and native assets
 ```
+
+`apps/desktop/src-tauri` 属于桌面平台壳层：它负责 Tauri 装配、权限与原生资源，
+不得承载 Core 领域规则；这些规则仍由 `crates/echo-core` 提供。
 
 ---
 

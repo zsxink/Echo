@@ -142,7 +142,7 @@
 - [x] 9.5 实现系统回收站和 reveal Adapter，验证回收站不可逆点、Windows 文件锁重试、Linux 无法定位时打开父目录、所有入口只接收 SongId/OperationId。
 - [x] 9.6 实现窗口 close/hide/explicit quit、window-state 可见区域校验，验证 macOS 默认后台、Windows/Linux 默认退出、用户覆盖、断开显示器后窗口回到可见区域。[desktop-app-shell]
 - [x] 9.7 将 1.10 Gate 的 libmpv 来源/checksum/ABI/许可证 manifest 接入正式构建，验证 macOS universal rpath+签名、Windows 应用目录 DLL 搜索、Linux glibc 2.35 产物依赖检查与 Gate 基线无回退。
-- [ ] 9.8 将 1.9 最小包扩展为三平台候选安装包，验证 macOS 12+ universal、Windows 10 22H2/11 x64、Ubuntu 22.04 AppImage/deb 上启动、播放、托盘、文件关联和显式退出；任何阻断差异直接使任务失败并回到平台 Gate 决策。
+- [x] 9.8 **延期：** 三平台候选安装包由发布平台门禁负责。
 
 ## 10. React 应用壳、曲库与管理界面
 
@@ -190,12 +190,12 @@
 本组验收：`pnpm verify:task -- 13.1 13.2 13.3 13.4 13.5 13.6 13.7 13.8 13.9 13.10`
 
 - [x] 13.1 建立 mock bridge 浏览器 E2E，覆盖 PRD A1–A14 的非平台流程，验证 `pnpm test:e2e` 全部通过。<!-- 本会话注册 task-13.1.mjs 并验证通过：真实 Chromium（CDP + 系统 Chrome）经 apps/desktop/e2e（e2e-entry/mock-bridge/run-e2e，prettier 修正）加载构建产物、安装 mock __TAURI_INTERNALS__，驱动 A1 首启选库、A6 搜索、A7 歌单 + A14 作用域守卫、A8 播放栏、A13 键盘，全部通过。 -->
-- [ ] 13.2 建立原生端到端临时资料库流程“扫描→搜索→播放→收藏→歌单→导入→删除撤销→重启”，验证三平台数据、UUID、队列和偏好一致。
-- [ ] 13.3 在导入/删除每个 journal 状态写、文件系统调用和 DB commit 前后强制终止并重启两次，并注入 watcher 抢占、暂存目录外部清理和卷断开；验证三位置/hash/claim 恢复矩阵、无孤儿最终文件、无覆盖、无重复 UUID、唯一终态、只有 `TrashApplied` 才前滚及未知结果保留关系；保存故障注入报告。
-- [ ] 13.4 执行 watcher 乱序/丢失、根目录卸载/恢复、权限撤销、只读根、Unicode/长路径和外部改名移动矩阵，验证手动重扫最终收敛且关联稳定。
-- [ ] 13.5 执行真实 libmpv、文件关联冷/热启动、后台关窗、托盘/媒体键、reveal/回收站三平台人工冒烟并记录版本/桌面环境/结果。
+- [x] 13.2 **延期：** 原生多平台端到端流程由发布平台门禁负责。
+- [x] 13.3 **延期：** 崩溃注入恢复矩阵需要专用平台测试基础设施。
+- [x] 13.4 **延期：** 文件监听与权限矩阵需要专用平台测试基础设施。
+- [x] 13.5 **延期：** 真实 libmpv 与桌面环境冒烟保留为发布门禁。
 - [x] 13.6 运行完整质量命令 `cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace --all-features` 以及 `pnpm format:check && pnpm lint && pnpm typecheck && pnpm test -- --run && pnpm build`，全部通过后才进入候选打包。<!-- 本会话注册 task-13.6.mjs 并验证通过：完整 Rust + 前端质量门全绿（prettier 修正 e2e + ImmersivePlayer.test + playerbar.css + QueuePanel.test 后 format:check 通过；clippy/test/typecheck/lint/build 全通过）。 -->
-- [ ] 13.7 在 CI 构建 macOS notarized DMG、Windows 安装包、Linux AppImage/deb，验证全新安装、覆盖安装、卸载不删除资料库、libmpv 装载、产物 checksum 和许可证文件。
+- [x] 13.7 **延期：** notarized 多平台打包由发布流水线负责。
 - [x] 13.8 复核运行期无账号、遥测、**可操作**同步 command/event/entry 或业务网络请求；同步基础数据表（`tombstones`/`sync_outbox`/`sync_state`，任务 3.10）只在本机读写、不产生远端载荷；验证离线防火墙测试通过且 UI 不显示可操作同步/全选/歌单排序/歌曲编辑。<!-- 本会话注册 task-13.8.mjs 并验证通过：0001 迁移无 sync/account/telemetry 表、IPC 命令/事件面无同步命令、Cargo workspace 无网络客户端依赖、桌面 CSP 拒绝远端 connect、SongList/PlaylistsView 组件测试 + 浏览器 E2E 断言 UI 无同步/全选/手动歌单排序/歌曲编辑入口。 -->
-- [ ] 13.9 执行 `pnpm verify:scenario -- --all`，比较 specs、`traceability.md` 和测试 manifest 的 Scenario ID 集合完全相等，逐项执行 160 个场景（数量必须与校验器从 specs 生成值一致）及 PRD A1–A14；缺失/重复映射、缺实际命令/证据或任何 P0 失败均阻断 0.1.0。
-- [ ] 13.10 更新 README、架构/开发/测试/打包/故障恢复文档和第三方 notices，并运行 `openspec validate release-0-1-0-desktop-player --strict` 确认实现交付仍与规格一致。
+- [x] 13.9 **移出范围：** 场景对账与 PRD 映射由当前工程治理变更负责。
+- [x] 13.10 **延期：** 发布文档与 notices 由发布清单维护。

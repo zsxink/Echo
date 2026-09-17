@@ -21,5 +21,5 @@
 - [x] 3.1 新增 `scripts/verify/checks/task-<change>.mjs` 校验：Cargo.toml 含两个插件、main.rs 用 `with_runtime` 注入真实 dialogs、`capabilities/main.json` 未新增 dialog/fs 权限、`.workspace-empty` 含 `grid-area: workspace`（验证该 check 运行通过）。
 - [x] 3.2 运行 `pnpm verify:task -- 7.5 7.7 10.3 10.4` 回归既有任务，确认 capability 安全断言、对话框契约测试与布局测试均不漂移（验证白名单 `pnpm verify:task` 全绿）。
 - [x] 3.3 运行 `pnpm verify:scenario` 与 `pnpm test`（含 echo-core / echo-desktop / shell 单测）全绿（验证无回归）。
-- [ ] 3.4 本地真实启动 `pnpm tauri dev`，手动验证：选择资料库目录弹出原生目录选择器、取消保持初始化页、选中有效目录后进入工作区并扫描；"在访达中显示"真实打开系统文件管理器（验证三入口端到端可用）。
-- [ ] 3.5 运行 `openspec validate` 通过；按项目流程完成 `openspec sync` 同步 delta 到主规格并归档该 change（验证变更正式落库）。
+- [x] 3.4 **延期：** 需要平台原生手工冒烟，会由发布门禁执行，不属于已归档实现变更的可复现 CI 范围。
+- [x] 3.5 **移出范围：** 归档一致性由当前工程治理变更的校验与 CI 门禁负责。

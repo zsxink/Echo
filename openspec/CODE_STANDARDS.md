@@ -156,6 +156,23 @@ Infrastructure（通过 Port 接入）
 
 ## 9. OpenSpec 对代码变更的要求
 
+### 9.1 规范条款 → 自动门禁
+
+| 条款 | 门禁/证据 |
+|---|---|
+| §2.1 文件与接口规模 | 规模检查：源文件 ≤1000 行、公开 trait ≤6 个方法，白名单只减不增 |
+| §3.1 分层与依赖方向 | 每个 workspace crate 的 `tests/arch.rs` 与全 crate 覆盖检查 |
+| §3.2 抽象边界 | 端口方法数检查、跨 feature 公开入口检查、残留引用检查 |
+| §4.1 Rust 静态检查与 unsafe 隔离 | `check-lint-inheritance.mjs`、`cargo fmt --all --check`、Clippy 门禁 |
+| §6 类型化 IPC 与失败处理 | IPC 生成物漂移检查、未知返回值检查、裸丢弃 ESLint 规则 |
+| §8 交付门槛与可追溯性 | 场景三方对账、场景命令有效性、覆盖率与 CI 接入检查 |
+| §9 规格复核与残留清理 | `openspec validate --strict`、引用检查、重构后的静态检查与测试 |
+
+涉及生产代码、架构边界或跨边界契约的 change，必须在 design 与受影响的
+capability spec 中记录适用层级、依赖方向、规范条款、当前实现核对、兼容性影响
+和可执行验证命令。重构任务还必须列出待删除的替代实现、无消费者导出、失效测试
+替身或登记资产，并用引用检查、静态检查和测试证明清理完成。
+
 以下变更必须在 design 中明确兼容和迁移方案：
 
 - Core 公共 API、Tauri command/event 或 Flutter Binding 变化；
