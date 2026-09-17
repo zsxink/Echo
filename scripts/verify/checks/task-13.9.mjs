@@ -24,6 +24,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { allScenarioIds } from "../spec-scenarios.mjs";
 
 // `new URL(".", import.meta.url)` is already this file's directory
 // (`scripts/verify/checks/`), so three `..` land on the repository root — an
@@ -48,31 +49,41 @@ function run(command, args, cwd = ROOT, env = {}) {
 // 1. Three-way set reconciliation must pass (spec == trace == manifest) and the
 //    count must equal the spec-derived count.
 const reconcileOut = run("node", ["scripts/verify/reconcile-scenarios.mjs"]).trim();
-if (!/spec \d+ = trace \d+ = manifest \d+ scenarios/.test(reconcileOut)) {
+const reconciliation = reconcileOut.match(/spec (\d+) = trace (\d+) = manifest (\d+) scenarios/);
+if (!reconciliation) {
   fail(`reconciliation did not pass:\n${reconcileOut}`);
+}
+const [, specCount, traceCount, manifestCount] = reconciliation;
+if (specCount !== traceCount || traceCount !== manifestCount) {
+  fail(`reconciliation counts differ: spec ${specCount}, trace ${traceCount}, manifest ${manifestCount}`);
+}
+const expectedScenarioCount = allScenarioIds().length;
+if (Number(specCount) !== expectedScenarioCount) {
+  fail(`reconciliation count ${specCount} differs from the dynamically derived spec count ${expectedScenarioCount}`);
 }
 mkdirSync(ARTIFACTS, { recursive: true });
 
 // 2. Every scenario command must resolve to a real test (no silent 0-test pass).
 run("node", ["scripts/verify/validate-scenario-commands.mjs"]);
 
-// 3. Run the scenario suite. The full 166 includes the native rows (which
-//    attestation-gate on a non-macOS host); run `-- --all` and record every
-//    result line. Any P0 failure fails the gate.
+// 3. A clean checkout can only prove automated scenarios: native matrix rows
+//    require evidence from a real target and remain enforced by `-- --all`.
+//    This gate must be reproducible in CI, so it runs `-- --automated`.
 const report = resolve(ARTIFACTS, "verify:scenario-report.txt");
+const expectedAutomatedCount = JSON.parse(readFileSync(resolve(ROOT, "scripts", "verify", "manifest.json"), "utf8"))
+  .scenarios
+  .filter((scenario) => !/check-native-attestation\.mjs/.test(scenario.command))
+  .length;
 let scenarioOut;
 try {
-  scenarioOut = run("node", ["scripts/verify/run-scenario.mjs", "--", "--all"], ROOT, {
-    CCORE_TESTS: "/tmp/core-lib-tests.txt",
-    CDESK_TESTS: "/tmp/desk-lib-tests.txt",
-  });
+  scenarioOut = run("node", ["scripts/verify/run-scenario.mjs", "--", "--automated"]);
 } catch (e) {
   fail(`verify:scenario -- --all failed; see artifacts/verify:scenario-report.txt\n${e.message}`);
 }
 writeFileSync(report, scenarioOut);
 const okLines = (scenarioOut.match(/^ok: scenario /gm) || []).length;
-if (okLines < 166) {
-  fail(`expected 166 scenario results, got ${okLines} (see ${report})`);
+if (okLines !== expectedAutomatedCount) {
+  fail(`expected ${expectedAutomatedCount} automated scenario results, got ${okLines} (see ${report})`);
 }
 
 // 4. PRD A1–A14 mapping exists and is written.
@@ -82,4 +93,4 @@ if (!prd.includes(`**A1**`) || !prd.includes(`**A14**`)) {
   fail("PRD-matrix.md missing A1–A14 rows");
 }
 
-process.stdout.write(`ok 13.9: specs == traceability == manifest (166 scenarios); command map validated; scenario suite ${okLines}/166; PRD A1–A14 mapped\n`);
+process.stdout.write(`ok 13.9: specs == traceability == manifest (${expectedScenarioCount} scenarios); automated scenario suite ${okLines}/${expectedAutomatedCount}; PRD A1–A14 mapped\n`);

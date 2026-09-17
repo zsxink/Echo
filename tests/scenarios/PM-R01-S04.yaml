@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 scenario_id: PM-R01-S04
 requirement: 歌单 CRUD
-scenario: 删除歌单
+scenario: 重命名歌单
 layer: automated
 command: "cargo test -p echo-core --all-features playlist"
 

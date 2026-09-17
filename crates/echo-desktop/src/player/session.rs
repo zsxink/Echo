@@ -84,7 +84,7 @@ pub struct PlaybackSession {
 impl PlaybackSession {
     /// A new empty session (nothing to restore).
     #[must_use]
-    pub fn empty() -> Self {
+    pub const fn empty() -> Self {
         Self {
             version: SESSION_VERSION,
             entries: Vec::new(),
@@ -222,7 +222,7 @@ pub fn snapshot_queue(
         shuffle_bag: queue
             .shuffle_bag()
             .iter()
-            .map(|id| id.to_string())
+            .map(std::string::ToString::to_string)
             .collect(),
         priority,
         shuffle_active: queue.is_shuffle(),
@@ -379,7 +379,9 @@ pub struct StateStoreSession {
 impl StateStoreSession {
     /// Wrap the local-state store as a session persistence boundary.
     #[must_use]
-    pub fn new(store: std::sync::Arc<crate::platform::local_state::DesktopStateStore>) -> Self {
+    pub const fn new(
+        store: std::sync::Arc<crate::platform::local_state::DesktopStateStore>,
+    ) -> Self {
         Self { store }
     }
 }
@@ -415,6 +417,7 @@ impl SessionPersistence for StateStoreSession {
 mod tests {
     use super::*;
     use crate::platform::local_state::DesktopStateStore;
+    use crate::player::port::VOLUME_EPSILON;
 
     fn lib_entry(s: SongId) -> QueueEntry {
         QueueEntry {
@@ -461,7 +464,7 @@ mod tests {
         assert!(session.current.is_some());
         assert_eq!(session.mode, PlayMode::Shuffle);
         assert_eq!(session.source.as_deref(), Some("playlist:p1"));
-        assert_eq!(session.volume, 0.6);
+        assert!((session.volume - 0.6).abs() < VOLUME_EPSILON, "volume kept");
         assert!(session.muted);
         assert_eq!(session.position, Some(12.5));
         let _ = a;
@@ -522,7 +525,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("temp");
         let path = dir.path().join("desktop-state.json");
         let store = DesktopStateStore::new(
-            path.clone(),
+            path,
             crate::platform::local_state::PlatformCloseDefault::Other,
         );
         let persist = StateStoreSession::new(std::sync::Arc::new(store));
@@ -549,7 +552,10 @@ mod tests {
         assert!(loaded.is_some(), "round-trips");
         let loaded = loaded.unwrap();
         assert_eq!(loaded.version, SESSION_VERSION);
-        assert_eq!(loaded.volume, 0.9);
+        assert!(
+            (loaded.volume - 0.9).abs() < VOLUME_EPSILON,
+            "volume survives"
+        );
         // Clear works.
         persist.save(None).expect("clear");
         assert!(persist.load().expect("load after clear").is_none());
@@ -561,7 +567,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("temp");
         let path = dir.path().join("desktop-state.json");
         let store = DesktopStateStore::new(
-            path.clone(),
+            path,
             crate::platform::local_state::PlatformCloseDefault::Other,
         );
         let raw = serde_json::json!({
@@ -586,7 +592,6 @@ mod tests {
 
     #[test]
     fn priority_lane_round_trips_through_snapshot_and_rebuild() {
-        use echo_core::domain::ids::QueueEntryId;
         let s1 = SongId::new();
         let s2 = SongId::new();
         let mut queue = Queue::new();
@@ -603,13 +608,13 @@ mod tests {
             rebuilt
                 .priority_ids()
                 .iter()
-                .map(id_string)
+                .map(std::string::ToString::to_string)
                 .collect::<Vec<_>>(),
-            [a, b].iter().map(id_string).collect::<Vec<_>>()
+            [a, b]
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect::<Vec<_>>()
         );
-        fn id_string(id: &QueueEntryId) -> String {
-            std::string::ToString::to_string(id)
-        }
     }
 
     #[test]
@@ -619,7 +624,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("temp");
         let path = dir.path().join("desktop-state.json");
         let store = DesktopStateStore::new(
-            path.clone(),
+            path,
             crate::platform::local_state::PlatformCloseDefault::Other,
         );
         let raw = serde_json::json!({

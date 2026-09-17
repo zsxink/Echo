@@ -98,7 +98,7 @@ function nativeMd(id, entry, req) {
     "## 证据与记录",
     "",
     "- operator: (填写执行人)",
-    "- evidence-path: artifacts/native-attestations/`declare()`",
+    `- evidence-path: artifacts/native-attestations/${id}.log`,
     "- date: (YYYY-MM-DD)",
     "- result: (pass / fail + 说明)",
   ].join("\n") + "\n";
@@ -134,13 +134,9 @@ for (const d of ids) {
 const nativeCount = entries.filter((e) => e.isNative).length;
 const yamlCount = entries.length - nativeCount;
 console.log(`plan: ${entries.length} scenarios (${yamlCount} automatable .yaml, ${nativeCount} native .md)`);
-// The native rows are the fixed three-platform human matrix (45 for 0.1.0);
-// every new spec scenario is automatable, so the yaml count grows with the
-// spec-derived total rather than being pinned.
-if (nativeCount < 45) {
-  console.error(`expected at least 45 native .md rows, got ${nativeCount}`);
-  process.exit(1);
-}
+// Native rows are derived from traceability; their count is intentionally not
+// pinned, because scenarios may be promoted from manual evidence to automated
+// coverage (or vice versa) as the implementation evolves.
 
 if (!process.argv.includes("--write")) {
   let changed = 0;

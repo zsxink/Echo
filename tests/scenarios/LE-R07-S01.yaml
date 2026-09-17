@@ -4,7 +4,7 @@ scenario_id: LE-R07-S01
 requirement: 大曲库浏览
 scenario: 浏览大量歌曲
 layer: automated
-command: "cargo test -p echo-core --all-features bench_50k"
+command: "cargo test -p echo-core --all-features bench_50k_search_and_first_screen_p95_meet_prd_budgets"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

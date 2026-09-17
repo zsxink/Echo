@@ -1,4 +1,4 @@
-//! PlaybackCoordinator — drives the queue against a `PlayerPort` (task 8.5).
+//! `PlaybackCoordinator` — drives the queue against a `PlayerPort` (task 8.5).
 //!
 //! The coordinator is the single owner of "what should play next": it holds a
 //! [`Queue`], decides the next entry per the active [`super::port::PlayMode`],
@@ -51,7 +51,7 @@ pub struct PlaybackCoordinator<P: PlayerPort, S: ShuffleSource = DefaultShuffle>
     /// keyed by `queueEntryId` (task 8.7). Each entry is auto-attempted at
     /// most once per round; error advance skips these rather than retrying
     /// (and bypasses repeat-one). Cleared when a fresh queue session starts
-    /// (play_context / play_temporary) so a damaged file is retried on the
+    /// (`play_context` / `play_temporary`) so a damaged file is retried on the
     /// next explicit play.
     failed_round: std::collections::HashSet<QueueEntryId>,
 }
@@ -74,10 +74,12 @@ impl ShuffleSource for DefaultShuffle {
     fn shuffle(&mut self, len: usize, seed: u64) -> Vec<usize> {
         let mut xs: Vec<usize> = (0..len).collect();
         let mut state: u64 = seed
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
         for i in (1..len).rev() {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
             let j = (state >> 33) as usize % (i + 1);
             xs.swap(i, j);
         }
@@ -88,8 +90,8 @@ impl ShuffleSource for DefaultShuffle {
 impl<P: PlayerPort> PlaybackCoordinator<P> {
     /// A new coordinator bound to a player port and the default shuffle source.
     #[must_use]
-    pub fn new(player: P) -> PlaybackCoordinator<P, DefaultShuffle> {
-        PlaybackCoordinator::with_shuffle(player, DefaultShuffle)
+    pub fn new(player: P) -> Self {
+        Self::with_shuffle(player, DefaultShuffle)
     }
 }
 
@@ -156,6 +158,10 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
 
     /// Start playback of a view context: build the queue, set the selected
     /// song current, and load it immediately.
+    /// # Panics
+    ///
+    /// Panics only if queue construction violates the `ViewContext` invariant
+    /// that the chosen song becomes the current queue entry.
     pub fn play_context(&mut self, ctx: &ViewContext) {
         // The coordinator derives the queue from the server-resolved songs; the
         // selected song becomes current.
@@ -332,12 +338,11 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
             .queue
             .pending_ids()
             .first()
-            .map(|id| self.id_key(*id))
-            .unwrap_or(0);
-        len.wrapping_mul(2654435761).wrapping_add(first)
+            .map_or(0, |id| Self::id_key(*id));
+        len.wrapping_mul(2_654_435_761).wrapping_add(first)
     }
 
-    fn id_key(&self, id: QueueEntryId) -> u64 {
+    fn id_key(id: QueueEntryId) -> u64 {
         // Use the entry's raw bits when available; fall back to its position
         // hash. QueueEntryId is an opaque 96-bit id — fold to u64.
         use std::hash::{Hash, Hasher};
@@ -404,39 +409,34 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
         // cap out means nothing playable remains — stop instead of spinning.
         let max_attempts = self.queue.len() + 1;
         for _ in 0..max_attempts {
-            match self.queue.advance_in_mode(mode) {
-                Some(id) => {
-                    if self.failed_round.contains(&id) || self.queue.is_blocked(id) {
-                        // This entry failed earlier this round — auto-attempt
-                        // it only once; skip it (task 8.7).
-                        continue;
-                    }
-                    return self.load_queue_entry(id);
+            if let Some(id) = self.queue.advance_in_mode(mode) {
+                if self.failed_round.contains(&id) || self.queue.is_blocked(id) {
+                    // This entry failed earlier this round — auto-attempt
+                    // it only once; skip it (task 8.7).
+                    continue;
                 }
-                None => {
-                    if mode == PlayMode::Shuffle {
-                        // Bag exhausted: refresh a fresh round from pending.
-                        let pending_ids = self.queue.pending_ids();
-                        // If every pending entry already failed this round,
-                        // stop rather than spin (task 8.7).
-                        let all_failed = !pending_ids.is_empty()
-                            && pending_ids.iter().all(|id| self.failed_round.contains(id));
-                        if pending_ids.is_empty() || all_failed {
-                            self.player.send(PlayerCommand::Stop).ok();
-                            return None;
-                        }
-                        let order = self.shuffle.shuffle(pending_ids.len(), self.round_seed());
-                        let bag: Vec<QueueEntryId> =
-                            order.into_iter().map(|i| pending_ids[i]).collect();
-                        self.queue.set_shuffle(true, bag);
-                        continue;
-                    }
-                    // No pending (or all sequential pending were failed/skipped):
-                    // stop playing.
+                return self.load_queue_entry(id);
+            }
+            if mode == PlayMode::Shuffle {
+                // Bag exhausted: refresh a fresh round from pending.
+                let pending_ids = self.queue.pending_ids();
+                // If every pending entry already failed this round,
+                // stop rather than spin (task 8.7).
+                let all_failed = !pending_ids.is_empty()
+                    && pending_ids.iter().all(|id| self.failed_round.contains(id));
+                if pending_ids.is_empty() || all_failed {
                     self.player.send(PlayerCommand::Stop).ok();
                     return None;
                 }
+                let order = self.shuffle.shuffle(pending_ids.len(), self.round_seed());
+                let bag: Vec<QueueEntryId> = order.into_iter().map(|i| pending_ids[i]).collect();
+                self.queue.set_shuffle(true, bag);
+                continue;
             }
+            // No pending (or all sequential pending were failed/skipped):
+            // stop playing.
+            self.player.send(PlayerCommand::Stop).ok();
+            return None;
         }
         // A full loop found nothing un-failed: stop (never spin).
         self.player.send(PlayerCommand::Stop).ok();
@@ -601,7 +601,7 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
     /// Access the player port directly (for tests that need to inspect the
     /// fake player's internal state, e.g. `last_loaded_song`).
     #[must_use]
-    pub fn player(&self) -> &P {
+    pub const fn player(&self) -> &P {
         &self.player
     }
 
@@ -628,7 +628,7 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
     ///
     /// Returns `false` when the queue has no current entry, allowing callers
     /// to retain their normal navigation fallback.
-    fn replay_current(&mut self) -> bool {
+    fn replay_current(&self) -> bool {
         if self.queue.current_id().is_none() {
             return false;
         }
@@ -1271,7 +1271,7 @@ mod tests {
         assert!(next.is_some());
         assert_eq!(coord.current().unwrap().item.song_id(), Some(s3));
         // The failed entry is recorded (and not revisited this round).
-        assert!(coord.failed_round().collect::<Vec<_>>().contains(&bad));
+        assert!(coord.failed_round().any(|x| x == bad));
     }
 
     #[test]

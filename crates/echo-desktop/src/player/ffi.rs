@@ -1,3 +1,5 @@
+#![allow(unsafe_code)] // libmpv FFI is isolated here; safety invariants follow.
+
 //! Minimal, isolated `unsafe` FFI binding over the vendored libmpv (task 8.2).
 //!
 //! **Scope and safety:** this is the *only* module in `echo-desktop` that
@@ -194,7 +196,7 @@ impl MpvSys {
         // 1.10 Gate's pinned ABI/checksum manifest.
         // `_lib` moves `lib`, so it must be the LAST field (Rust evaluates
         // struct fields in order; the symbol fields below still borrow `lib`).
-        let sys = MpvSys {
+        let sys = Self {
             create: sym!(b"mpv_create\0", unsafe extern "C" fn() -> *mut c_void),
             initialize: sym!(
                 b"mpv_initialize\0",
@@ -283,6 +285,12 @@ impl Handle {
     /// [`HandleError::Initialize(code)`] if `mpv_initialize` fails. The newly
     /// created handle is released before returning on any failure.
     ///
+    /// # Panics
+    ///
+    /// If an option name or value contains an interior NUL byte — the actor
+    /// only ever passes compile-time constants, so this is unreachable in
+    /// practice.
+    ///
     /// # Safety
     ///
     /// Must be called on the thread that will own the handle for its lifetime.
@@ -354,7 +362,7 @@ impl Handle {
             unsafe { (sys.terminate_destroy)(raw) };
             return Err(HandleError::Initialize(code));
         }
-        Ok(Handle {
+        Ok(Self {
             raw,
             terminated: false,
         })
@@ -391,6 +399,12 @@ impl Handle {
 
     /// Subscribe to a property with the given [format_]. Returns the mpv error.
     ///
+    /// # Errors
+    ///
+    /// [`HandleError::Observe`] when mpv rejects the subscription (unknown
+    /// property, wrong format for an already-observed property, or a
+    /// terminated handle).
+    ///
     /// # Safety
     ///
     /// As [`Self::command`]. Property data arrives on the actor event loop.
@@ -417,6 +431,7 @@ impl Handle {
     /// # Safety
     ///
     /// Must only be called from the actor thread.
+    #[must_use]
     pub unsafe fn wait_event(&self, sys: &MpvSys, timeout: f64) -> *mut mpv_event {
         // SAFETY: valid handle, actor-thread-confined.
         unsafe { (sys.wait_event)(self.raw, timeout) }
@@ -482,6 +497,7 @@ pub enum HandleError {
 /// # Safety
 ///
 /// `ptr` must be null (→ `None`) or point to a valid NUL-terminated C string.
+#[must_use]
 pub unsafe fn read_c_str(ptr: *const c_char) -> Option<String> {
     if ptr.is_null() {
         return None;
@@ -518,12 +534,13 @@ pub enum FfiInputError {
 ///
 /// `data` must be null or a valid `*const c_double` matching the declared
 /// property format (the observer must not misreport the format).
+#[must_use]
 pub unsafe fn read_double(data: *const c_void) -> Option<f64> {
     if data.is_null() {
         return None;
     }
     // SAFETY: caller guarantees a valid `f64` value per the property format.
-    Some(unsafe { *(data as *const c_double) })
+    Some(unsafe { *data.cast::<c_double>() })
 }
 
 /// Read a `FLAG`-format property value as a `0.0`/`1.0` double.
@@ -537,12 +554,13 @@ pub unsafe fn read_double(data: *const c_void) -> Option<f64> {
 ///
 /// `data` must be null or a valid `*const c_int` matching the declared
 /// property format (the observer must not misreport the format).
+#[must_use]
 pub unsafe fn read_flag(data: *const c_void) -> Option<f64> {
     if data.is_null() {
         return None;
     }
     // SAFETY: caller guarantees a valid `int` value per the property format.
-    Some(f64::from(unsafe { *(data as *const std::os::raw::c_int) }))
+    Some(f64::from(unsafe { *data.cast::<std::os::raw::c_int>() }))
 }
 
 #[cfg(test)]

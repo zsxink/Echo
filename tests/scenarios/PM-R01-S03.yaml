@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 scenario_id: PM-R01-S03
 requirement: 歌单 CRUD
-scenario: 重命名歌单
+scenario: 创建提交失败
 layer: automated
 command: "cargo test -p echo-core --all-features playlist"
 

@@ -3,7 +3,7 @@
 //! The queue lives entirely on the desktop player layer (design §12: 队列与播放
 //! 会话留在桌面层). [`QueueEntryId`] from `echo-core` is the stable identity of
 //! one *entry*; the same [`SongId`] appended twice gets two independent entry
-//! IDs and is never collapsed (design §12: 同一 SongId 的每次追加拥有不同
+//! IDs and is never collapsed (design §12: 同一 `SongId` 的每次追加拥有不同
 //! queue entry ID，不能折叠).
 //!
 //! [`Queue`] is a pure, testable container — current entry, pending entries,
@@ -111,7 +111,7 @@ pub struct Queue {
 }
 
 /// A result of advancing/removing that the caller should surface.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QueueAdvance {
     /// Clean advance to a new entry.
     Played(QueueEntryId),
@@ -136,7 +136,7 @@ impl Queue {
 
     /// Whether shuffle mode is active (the bag is consulted on advance).
     #[must_use]
-    pub fn is_shuffle(&self) -> bool {
+    pub const fn is_shuffle(&self) -> bool {
         self.shuffle_active
     }
 
@@ -450,13 +450,10 @@ impl Queue {
             PlayMode::Shuffle => {
                 let id = self.shuffle_bag.first().copied()?;
                 self.shuffle_bag.remove(0);
-                let pos = match self.entries.iter().position(|e| e.id == id) {
-                    Some(p) => p,
-                    None => {
-                        // Id no longer present (removed while shuffled): skip
-                        // and continue popping.
-                        return self.advance_in_mode(PlayMode::Shuffle);
-                    }
+                let Some(pos) = self.entries.iter().position(|e| e.id == id) else {
+                    // Id no longer present (removed while shuffled): skip and
+                    // continue popping.
+                    return self.advance_in_mode(PlayMode::Shuffle);
                 };
                 self.current_index = Some(pos);
                 self.record_history(id);
@@ -468,6 +465,10 @@ impl Queue {
 
     /// Move to the previous entry (history): the most recent distinct entry
     /// before the current one. Returns its id, or `None` if there is no prior.
+    /// # Panics
+    ///
+    /// Panics only if internal history is corrupted after `prune_history` has
+    /// established that the selected entry remains in the queue.
     pub fn previous(&mut self) -> Option<QueueEntryId> {
         let current = self.current_id()?;
         // Find the most recent history entry different from current that still
@@ -556,12 +557,6 @@ impl Queue {
         if current_was_target {
             removed.clear(); // recompute below against the live list
             let current_id = self.current_id();
-            let target_remaining: Vec<QueueEntryId> = self
-                .entries
-                .iter()
-                .filter(|e| e.item.song_id() == Some(song))
-                .map(|e| e.id)
-                .collect();
             // Advance to the next available entry (or stop).
             match self.advance_next() {
                 QueueAdvance::Played(id) => removed.push(id),
@@ -569,10 +564,18 @@ impl Queue {
                     self.current_index = None;
                 }
             }
-            // Drop every remaining target entry from the list (incl. the old
-            // current that `advance_next` left in history).
-            let leftover: Vec<QueueEntryId> =
-                target_remaining.into_iter().chain(current_id).collect();
+            // Drop every remaining target entry from the live list (incl. the
+            // old current that `advance_next` left in history). `advance_next`
+            // only moves `current_index` and appends to the history — it never
+            // touches `entries` — so reading the list here is equivalent to
+            // snapshotting it before the advance.
+            let leftover: Vec<QueueEntryId> = self
+                .entries
+                .iter()
+                .filter(|e| e.item.song_id() == Some(song))
+                .map(|e| e.id)
+                .chain(current_id)
+                .collect();
             for id in leftover {
                 self.remove_direct(id);
             }
@@ -634,10 +637,11 @@ impl Queue {
     /// Whether an entry (by id) is currently pending (not current).
     #[must_use]
     pub fn is_pending(&self, entry_id: QueueEntryId) -> bool {
-        match self.current_index {
-            Some(i) => self.entries[i + 1..].iter().any(|e| e.id == entry_id),
-            None => false,
-        }
+        self.current_index.is_some_and(|index| {
+            self.entries[index + 1..]
+                .iter()
+                .any(|entry| entry.id == entry_id)
+        })
     }
 
     /// Whether an entry id exists anywhere in the queue (current, pending, or
@@ -710,7 +714,7 @@ fn history_expired(played_at_ms: u64) -> bool {
 /// A view-context play request: the coordinator derives the queue from a
 /// deterministic list of songs (server-resolved by the Core playback-context
 /// request) starting at a selected song. Task 8.5: 视图上下文.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ViewContext {
     /// The deterministic song list to build the queue from (all songs of the
     /// view, in play order). Duplicate `SongId`s are kept as separate entries.
@@ -766,17 +770,17 @@ mod tests {
 
     #[test]
     fn duplicate_song_ids_get_independent_entry_ids() {
-        let s = song();
-        let mut q = Queue::new();
-        let a = q.push(lib(s));
-        let b = q.push(lib(s));
-        let c = q.push(lib(s));
+        let song_id = song();
+        let mut queue = Queue::new();
+        let first = queue.push(lib(song_id));
+        let second = queue.push(lib(song_id));
+        let third = queue.push(lib(song_id));
         // Three distinct QueueEntryIds for the same SongId.
-        assert_ne!(a, b);
-        assert_ne!(b, c);
-        assert_ne!(a, c);
-        assert_eq!(q.distinct_song_ids(), vec![s]);
-        assert_eq!(q.len(), 3);
+        assert_ne!(first, second);
+        assert_ne!(second, third);
+        assert_ne!(first, third);
+        assert_eq!(queue.distinct_song_ids(), vec![song_id]);
+        assert_eq!(queue.len(), 3);
     }
 
     #[test]
@@ -1035,22 +1039,22 @@ mod tests {
 
     #[test]
     fn shuffle_bag_never_repeats_within_a_round() {
-        let s = song(); // same song, three duplicates
-        let s1 = song();
-        let s2 = song();
-        let mut q = Queue::new();
-        let a = q.push(lib(s));
-        let b = q.push(lib(s1));
-        let c = q.push(lib(s2));
-        q.set_current(a);
+        let duplicate = song(); // same song, two entries
+        let other = song();
+        let third_song = song();
+        let mut queue = Queue::new();
+        let first_entry = queue.push(lib(duplicate));
+        let second_entry = queue.push(lib(other));
+        let third_entry = queue.push(lib(third_song));
+        queue.set_current(first_entry);
         // A round of three distinct entry ids.
-        q.set_shuffle(true, vec![b, c, a]);
+        queue.set_shuffle(true, vec![second_entry, third_entry, first_entry]);
         let mut seen = vec![];
-        while let Some(id) = q.advance_in_mode(PlayMode::Shuffle) {
+        while let Some(id) = queue.advance_in_mode(PlayMode::Shuffle) {
             seen.push(id);
         }
-        // Duplicate SongId entries (a and b differ by id even if same song)
-        // never fold together — a round visits each entry id once.
+        // Duplicate SongId entries (first and second differ by id even if same
+        // song) never fold together — a round visits each entry id once.
         assert_eq!(seen.len(), 3);
         for w in seen.windows(2) {
             assert_ne!(w[0], w[1]);

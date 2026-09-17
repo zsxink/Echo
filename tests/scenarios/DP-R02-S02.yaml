@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 scenario_id: DP-R02-S02
 requirement: 播放队列
-scenario: 加入队列
+scenario: 视图播放重建队列数量
 layer: automated
 command: "pnpm --filter @echo/desktop test -- --run src/features/player/QueuePanel.test.tsx"
 

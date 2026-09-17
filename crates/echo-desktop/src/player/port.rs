@@ -88,7 +88,7 @@ pub enum PlayerCommand {
     /// Cold-start session restore is exactly such a caller: the persisted
     /// session records the mute state the user left behind, and restoring has
     /// to *reproduce* it. A relative toggle cannot express that — replaying the
-    /// same restore (a double-invoked command, React StrictMode mounting twice)
+    /// same restore (a double-invoked command, React `StrictMode` mounting twice)
     /// flips the flag straight back and silently un-mutes the player. Applying
     /// an absolute value lands on the recorded state no matter how many times
     /// it runs.

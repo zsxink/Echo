@@ -142,6 +142,11 @@ impl WindowState {
     /// fits, else snapped to the work-area origin). A degenerate work area
     /// (zero width/height) leaves the position untouched so the shell can fall
     /// back to its defaults instead of guessing.
+    ///
+    /// # Panics
+    ///
+    /// This cannot panic for valid integers: the computed coordinates are
+    /// clamped to the full `i32` range before conversion.
     #[must_use]
     pub fn clamp_to_visible(self, work: WorkArea) -> Self {
         let (ww, wh) = (u64::from(work.width), u64::from(work.height));
@@ -150,31 +155,33 @@ impl WindowState {
         }
         let (w, h) = (u64::from(self.width), u64::from(self.height));
         let (wx0, wy0) = (i128::from(work.x), i128::from(work.y));
-        let (wx1, wy1) = (wx0 + ww as i128, wy0 + wh as i128);
+        let (wx1, wy1) = (wx0 + i128::from(ww), wy0 + i128::from(wh));
         let (x, y) = (i128::from(self.x), i128::from(self.y));
-        let (x1, y1) = (x + w as i128, y + h as i128);
+        let (x1, y1) = (x + i128::from(w), y + i128::from(h));
 
         // Does the saved window still overlap the visible area at all?
         let overlaps = x < wx1 && x1 > wx0 && y < wy1 && y1 > wy0;
-        let (nx, ny) = if !overlaps {
+        let (nx, ny) = if overlaps {
+            (x, y)
+        } else {
             // Not visible (the display it was on was disconnected): re-anchor it
             // into the work area — centred when it fits, else with its top-left
             // at the work-area origin — and clamp so it never spills past the
             // right/bottom edge (leaving at least the top-left reachable).
-            let fit_w = w.min(ww) as i128;
-            let fit_h = h.min(wh) as i128;
-            let cx = wx0 + (ww as i128 - w as i128) / 2;
-            let cy = wy0 + (wh as i128 - h as i128) / 2;
+            let fit_w = i128::from(w.min(ww));
+            let fit_h = i128::from(h.min(wh));
+            let cx = wx0 + (i128::from(ww) - i128::from(w)) / 2;
+            let cy = wy0 + (i128::from(wh) - i128::from(h)) / 2;
             let nx = cx.clamp(wx0, wx1 - fit_w);
             let ny = cy.clamp(wy0, wy1 - fit_h);
             (nx, ny)
-        } else {
-            (x, y)
         };
 
         Self {
-            x: nx.clamp(i128::from(i32::MIN), i128::from(i32::MAX)) as i32,
-            y: ny.clamp(i128::from(i32::MIN), i128::from(i32::MAX)) as i32,
+            x: i32::try_from(nx.clamp(i128::from(i32::MIN), i128::from(i32::MAX)))
+                .expect("value was clamped to the i32 range"),
+            y: i32::try_from(ny.clamp(i128::from(i32::MIN), i128::from(i32::MAX)))
+                .expect("value was clamped to the i32 range"),
             width: self.width,
             height: self.height,
             maximized: self.maximized,

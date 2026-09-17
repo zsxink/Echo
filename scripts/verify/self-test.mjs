@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Task 1.3 self-test: the verify:task runner must exit nonzero for unknown
-// IDs, missing commands, failing commands and missing human evidence, and must
-// never modify lockfiles.
+// Task 1.3 self-test: verification runners must exit nonzero for unknown IDs,
+// missing commands, failing commands, missing human evidence, or a selected
+// test command that ran zero tests; they must never modify lockfiles.
 //
 // It drives the real runner against a temporary fixture manifest and asserts
 // each failure mode plus one passing case, then checks the repo lockfiles are
@@ -9,13 +9,14 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
 const RUNNER = resolve(ROOT, "scripts", "verify", "run-task.mjs");
+const SCENARIO_RUNNER = resolve(ROOT, "scripts", "verify", "run-scenario.mjs");
 const LOCKFILES = ["Cargo.lock", "pnpm-lock.yaml"].map((f) =>
   resolve(ROOT, f),
 );
@@ -46,6 +47,14 @@ function runRunner(manifestPath, args) {
   });
 }
 
+function runScenarioRunner(manifestPath, args, env = {}) {
+  return spawnSync(process.execPath, [SCENARIO_RUNNER, ...args], {
+    cwd: ROOT,
+    encoding: "utf8",
+    env: { ...process.env, ...env, ECHO_VERIFY_MANIFEST: manifestPath },
+  });
+}
+
 const dir = mkdtempSync(join(tmpdir(), "echo-verify-selftest-"));
 const fixture = resolve(dir, "manifest.json");
 writeFileSync(
@@ -68,6 +77,37 @@ writeFileSync(
   "utf8",
 );
 
+const scenarioFixture = resolve(dir, "scenario-manifest.json");
+const fakeBin = resolve(dir, "bin");
+mkdirSync(fakeBin);
+const fakeCargo = resolve(fakeBin, "cargo");
+writeFileSync(
+  fakeCargo,
+  "#!/bin/sh\ncase \"$*\" in\n  *one-filter*) printf 'test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\\n' ;;\n  *) printf 'test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\\n' ;;\nesac\n",
+  "utf8",
+);
+chmodSync(fakeCargo, 0o755);
+writeFileSync(
+  scenarioFixture,
+  JSON.stringify({
+    version: 1,
+    tasks: [],
+    scenarios: [
+      {
+        id: "zero-tests",
+        title: "zero selected tests",
+        command: "cargo test -- impossible-filter",
+      },
+      {
+        id: "one-test",
+        title: "one selected test",
+        command: "cargo test -- one-filter",
+      },
+    ],
+  }),
+  "utf8",
+);
+
 // Failure modes must return nonzero.
 const cases = [
   [["bogus-id"], "unknown id is nonzero"],
@@ -84,6 +124,14 @@ for (const [args, label] of cases) {
 // Successful single task returns zero.
 const okRun = runRunner(fixture, ["ok"]);
 assert(okRun.status === 0, "passing task is zero");
+
+// A selected Cargo command that produces a successful zero-test result must
+// still fail; a nonzero count proves the normal path remains accepted.
+const scenarioEnv = { PATH: `${fakeBin}:${process.env.PATH || ""}` };
+const zeroScenario = runScenarioRunner(scenarioFixture, ["zero-tests"], scenarioEnv);
+assert(zeroScenario.status !== 0, "zero selected tests is nonzero");
+const oneScenario = runScenarioRunner(scenarioFixture, ["one-test"], scenarioEnv);
+assert(oneScenario.status === 0, "selected test count above zero is accepted");
 
 // Lockfiles must be unchanged after a run.
 const before = LOCKFILES.map(hashOf);

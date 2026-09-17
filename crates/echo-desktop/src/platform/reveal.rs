@@ -40,7 +40,7 @@ pub enum RevealTarget {
 /// - `Failed` → no target; the caller reports the relative path instead (the
 ///   existing soft-failure path in `AppServices::reveal_song`).
 #[must_use]
-pub fn target_for(outcome: BackendReveal) -> Option<RevealTarget> {
+pub const fn target_for(outcome: BackendReveal) -> Option<RevealTarget> {
     match outcome {
         BackendReveal::RevealedFile => Some(RevealTarget::TheFile),
         BackendReveal::NotLocatable => Some(RevealTarget::ParentDirectory),

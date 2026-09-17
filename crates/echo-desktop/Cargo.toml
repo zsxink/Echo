@@ -26,9 +26,7 @@ tempfile = "3"
 name = "echo-generate-ipc"
 path = "src/bin/generate_ipc.rs"
 
-# echo-desktop is the ONE workspace crate that may contain `unsafe`: it owns
-# the libmpv FFI adapter (player/ffi). This explicitly relaxes the
-# workspace-wide `unsafe_code = "forbid"` (echo-core keeps it forbidden), and
-# every other module of echo-desktop forbids `unsafe` again (module headers).
-[lints.rust]
-unsafe_code = "allow"
+# Inherit the workspace's complete lint policy. The only necessary `unsafe`
+# allowance is declared, documented, and limited in the two libmpv modules.
+[lints]
+workspace = true

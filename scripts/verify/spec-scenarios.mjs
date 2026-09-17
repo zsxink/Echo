@@ -38,7 +38,9 @@ const AREA_PREFIX = {
   "immersive-lyrics": "IL",
   "library-experience": "LE",
   "local-library": "LL",
+  "phase-one-acceptance": "PHA",
   "playlist-management": "PM",
+  "portable-library-layout": "PLL",
   "safe-file-ingestion": "SFI",
   "sync-foundation": "SYN",
 };
@@ -111,7 +113,7 @@ export function traceabilityIdsFor(areaName) {
   return ids;
 }
 
-function listAreas() {
+export function listAreas() {
   return readdirSync(SPECS_DIR, { withFileTypes: true })
     .filter((d) => d.isDirectory())
     // Scenario registration is currently published only for the areas with a

@@ -34,8 +34,9 @@ use crate::player::session::{rebuild_queue, snapshot_queue, SessionPersistence};
 /// songs or the session-only `title` for temporary items, whether it is the
 /// current entry, and whether it failed to load/decode this round (error state).
 /// Everything is derived from the authoritative queue — never fabricated.
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(clippy::struct_excessive_bools)] // Serde DTO shape mirrors independent player capabilities for the frontend contract.
 pub struct UiQueueEntry {
     pub entry_id: String,
     pub song_id: Option<String>,
@@ -208,6 +209,7 @@ impl PlayerController {
     /// Mirrors `AppServices::reveal_song`: `Song::root()` → `LibraryRoot
     /// .absolute_path()` joined with `Song::path().normalized()`. The absolute
     /// path is consumed only on the actor thread and never returned to a DTO.
+    #[must_use]
     pub fn resolver(deps: &Arc<ScanDeps>) -> SongResolver {
         let songs = deps.songs.clone();
         let roots = deps.roots.clone();
@@ -362,9 +364,9 @@ pub struct CorePlaybackRecorder {
 }
 
 impl CorePlaybackRecorder {
-    /// A sink bound to the shared SQLite database.
+    /// A sink bound to the shared `SQLite` database.
     #[must_use]
-    pub fn new(database: Arc<echo_core::infrastructure::sqlite::SqliteDatabase>) -> Self {
+    pub const fn new(database: Arc<echo_core::infrastructure::sqlite::SqliteDatabase>) -> Self {
         Self { database }
     }
 }
@@ -396,6 +398,7 @@ impl crate::player::recording::PlaybackRecorder for CorePlaybackRecorder {
 ///
 /// All accumulator state lives on this thread — no locking beyond the
 /// coordinator reads it already shares with the forwarder/auto-advance pair.
+#[allow(clippy::needless_pass_by_value)] // The port is moved into the recorder thread.
 pub fn spawn_stats_recorder(
     port: Arc<dyn PlayerPort>,
     coordinator: Arc<Mutex<PlaybackCoordinator<Arc<dyn PlayerPort>>>>,
@@ -595,6 +598,7 @@ pub struct CoordinatorView {
 /// metadata (title/artist/duration/cover) of the queue's library entries,
 /// batch-cached so repeated position snapshots never re-query per row (task
 /// 2.2).
+#[allow(clippy::needless_pass_by_value)] // The port is moved into the forwarder thread.
 pub fn spawn_forwarder(
     port: Arc<dyn PlayerPort>,
     queue_provider: Arc<dyn Fn() -> CoordinatorView + Send + Sync>,
@@ -635,6 +639,7 @@ pub fn spawn_forwarder(
 ///
 /// A save failure is swallowed (logged only) — persistence must never take
 /// playback down with it.
+#[allow(clippy::needless_pass_by_value)] // The port is moved into the saver thread.
 pub fn spawn_session_saver(
     port: Arc<dyn PlayerPort>,
     coordinator: Arc<Mutex<PlaybackCoordinator<Arc<dyn PlayerPort>>>>,
@@ -657,7 +662,7 @@ pub fn spawn_session_saver(
         .spawn(move || {
             let mut last_state = PlaybackState::Stopped;
             let mut last_audio: Option<(f64, bool)> = None;
-            let mut last_save = std::time::Instant::now() - min_interval;
+            let mut last_save = std::time::Instant::now().checked_sub(min_interval).unwrap();
             // An audio change observed but not yet written, waiting out its
             // settle window. It carries the snapshot to write, because by the
             // time the window closes no further snapshot has arrived.
@@ -799,6 +804,7 @@ pub fn restore_or_prime_playback(
 ///
 /// The transition guard (only firing when the *previous* snapshot was in a
 /// different state) keeps a duplicate `Ended` publish from double-advancing.
+#[allow(clippy::needless_pass_by_value)] // The port is moved into the worker thread.
 pub fn spawn_auto_advance(
     port: Arc<dyn PlayerPort>,
     coordinator: Arc<Mutex<PlaybackCoordinator<Arc<dyn PlayerPort>>>>,
@@ -1072,7 +1078,7 @@ mod tests {
     #[test]
     fn coordinated_delete_rolls_back_when_core_refuses() {
         let fake = Arc::new(FakePlayer::new());
-        let port: Arc<dyn PlayerPort> = fake.clone();
+        let port: Arc<dyn PlayerPort> = fake;
         let coordinator = Arc::new(Mutex::new(PlaybackCoordinator::new(port.clone())));
         let s1 = SongId::new();
         let s2 = SongId::new();
@@ -1284,7 +1290,7 @@ mod tests {
             entries: vec![entry.clone()],
             failed_round: Default::default(),
             blocked: Default::default(),
-            current: Some(entry.clone()),
+            current: Some(entry),
             mode: PlayMode::Sequential,
         };
         let ui = map_snapshot(&raw, &view, &std::collections::HashMap::new());
@@ -1396,7 +1402,7 @@ mod tests {
         // metadata with every snapshot (task 2.2) and never fail on an empty
         // result.
         let db = Arc::new(echo_core::application::testing::memory_database::MemoryDatabase::new());
-        let metadata = Arc::new(QueueMetadataResolver::new(db.clone(), db.clone()));
+        let metadata = Arc::new(QueueMetadataResolver::new(db.clone(), db));
         spawn_forwarder(
             controller.port.clone(),
             provider,
@@ -1639,7 +1645,7 @@ mod tests {
         // cover key — the real presentation fields the queue panel needs, not
         // a generic "歌曲"/"资料库歌曲" placeholder.
         let (db, song_id) = seeded_db();
-        let resolver = QueueMetadataResolver::new(db.clone(), db.clone());
+        let resolver = QueueMetadataResolver::new(db.clone(), db);
         let entry = QueueEntry {
             id: QueueEntryId::new(),
             item: QueueItem::Library(song_id),
@@ -1658,7 +1664,7 @@ mod tests {
         // carry their own display name, and the resolver does not attempt a
         // library lookup that could fail for a non-library file.
         let (db, _song_id) = seeded_db();
-        let resolver = QueueMetadataResolver::new(db.clone(), db.clone());
+        let resolver = QueueMetadataResolver::new(db.clone(), db);
         let temp = QueueEntry {
             id: QueueEntryId::new(),
             item: QueueItem::Temporary(crate::player::queue::TemporaryItem {
@@ -1711,7 +1717,7 @@ mod tests {
         // id) gets explicit nulls rather than failing the snapshot — the entry
         // still renders with defined-but-empty presentation fields.
         let (db, _) = seeded_db();
-        let resolver = QueueMetadataResolver::new(db.clone(), db.clone());
+        let resolver = QueueMetadataResolver::new(db.clone(), db);
         let ghost = SongId::new();
         let entry = QueueEntry {
             id: QueueEntryId::new(),

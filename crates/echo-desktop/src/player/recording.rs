@@ -18,7 +18,7 @@
 //!
 //! The desktop layer owns this accumulator; the actual idempotent persistence
 //! (the `recorded_play_sessions` table behind `RecordPlayback`) lives in
-//! `echo-core`'s SQLite store and is reached through a small [`PlaybackRecorder`]
+//! `echo-core`'s `SQLite` store and is reached through a small [`PlaybackRecorder`]
 //! port so this module stays player/testable without a real database.
 
 /// Idempotent playback-recording boundary. The real desktop composition root
@@ -90,7 +90,7 @@ struct ListenState {
     duration_seconds: Option<f64>,
     /// Cumulative real listening seconds this session.
     accumulated: f64,
-    /// Whether the one allowed RecordPlayback has already fired.
+    /// Whether the one allowed `RecordPlayback` has already fired.
     recorded: bool,
 }
 
@@ -108,7 +108,7 @@ pub struct PlaybackStatsRecorder<R: PlaybackRecorder> {
 impl<R: PlaybackRecorder> PlaybackStatsRecorder<R> {
     /// A recorder bound to a `PlaybackRecorder` sink.
     #[must_use]
-    pub fn new(recorder: R) -> Self {
+    pub const fn new(recorder: R) -> Self {
         Self {
             recorder,
             current: None,
@@ -159,23 +159,20 @@ impl<R: PlaybackRecorder> PlaybackStatsRecorder<R> {
     ///
     /// - Entering `Playing` starts the monotonic clock.
     /// - Leaving `Playing` (pause/end/stop) stops it and, on a qualified
-    ///   library session, may fire the one RecordPlayback.
+    ///   library session, may fire the one `RecordPlayback`.
     pub fn on_state(&mut self, state: echo_core::domain::state::PlaybackState) {
-        match state {
-            echo_core::domain::state::PlaybackState::Playing => {
-                if self.playing_since.is_none() {
-                    self.playing_since = Some(std::time::Instant::now());
+        if state == echo_core::domain::state::PlaybackState::Playing {
+            if self.playing_since.is_none() {
+                self.playing_since = Some(std::time::Instant::now());
+            }
+        } else {
+            if let Some(since) = self.playing_since.take() {
+                let elapsed = since.elapsed().as_secs_f64();
+                if let Some(state) = &mut self.current {
+                    state.accumulated += elapsed;
                 }
             }
-            _ => {
-                if let Some(since) = self.playing_since.take() {
-                    let elapsed = since.elapsed().as_secs_f64();
-                    if let Some(state) = &mut self.current {
-                        state.accumulated += elapsed;
-                    }
-                }
-                self.maybe_record();
-            }
+            self.maybe_record();
         }
     }
 
@@ -191,8 +188,7 @@ impl<R: PlaybackRecorder> PlaybackStatsRecorder<R> {
             let elapsed = self
                 .playing_since
                 .replace(std::time::Instant::now())
-                .map(|since| since.elapsed().as_secs_f64())
-                .unwrap_or(0.0);
+                .map_or(0.0, |since| since.elapsed().as_secs_f64());
             if let Some(state) = self.current.as_mut() {
                 state.accumulated += elapsed;
             }
@@ -289,21 +285,30 @@ mod tests {
 
     impl PlaybackRecorder for CountingRecorder {
         fn record(&self, _session: PlaybackSessionId, _song: SongId) -> Result<bool, String> {
-            let mut c = self.count.lock().unwrap();
-            *c += 1;
+            *self.count.lock().unwrap() += 1;
             Ok(true)
         }
+    }
+
+    /// `record_threshold` returns `f64` seconds; compare with a tolerance
+    /// rather than exact equality.
+    fn assert_threshold(duration: f64, expected: f64) {
+        let actual = record_threshold(duration);
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "record_threshold({duration}) = {actual}, expected {expected}"
+        );
     }
 
     #[test]
     fn threshold_uses_min_30s_of_half_duration() {
         // duration 100s → half = 50s → threshold = 30s (capped).
-        assert_eq!(record_threshold(100.0), 30.0);
+        assert_threshold(100.0, 30.0);
         // duration 40s → half = 20s → threshold = 20s (uncapped).
-        assert_eq!(record_threshold(40.0), 20.0);
+        assert_threshold(40.0, 20.0);
         // unknown/non-positive duration → flat 30s floor.
-        assert_eq!(record_threshold(0.0), 30.0);
-        assert_eq!(record_threshold(-5.0), 30.0);
+        assert_threshold(0.0, 30.0);
+        assert_threshold(-5.0, 30.0);
     }
 
     #[test]

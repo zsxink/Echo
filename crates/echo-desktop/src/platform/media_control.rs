@@ -66,7 +66,7 @@ impl MediaKey {
 /// `None` here rather than guessing an absolute value. An [`MediaKey::Unknown`]
 /// key also yields `None` (never a fabricated toggle).
 #[must_use]
-pub fn to_player_command(key: MediaKey) -> Option<PlayerCommand> {
+pub const fn to_player_command(key: MediaKey) -> Option<PlayerCommand> {
     match key {
         MediaKey::PlayPause => Some(PlayerCommand::TogglePlayPause),
         MediaKey::Previous => Some(PlayerCommand::Previous),

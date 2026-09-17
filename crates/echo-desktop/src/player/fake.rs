@@ -191,6 +191,7 @@ impl Default for FakePlayer {
 }
 
 impl PlayerPort for FakePlayer {
+    #[allow(clippy::too_many_lines)] // Test adapter mirrors all PlayerCommand variants in one place.
     fn send(&self, cmd: PlayerCommand) -> Result<(), PlayerError> {
         if self.shutdown.load(Ordering::Acquire) {
             return Err(PlayerError::ActorClosed);
@@ -396,6 +397,7 @@ impl FakePlayer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::player::port::VOLUME_EPSILON;
     use echo_core::domain::ids::SongId;
     use echo_core::domain::state::PlaybackState;
 
@@ -582,11 +584,17 @@ mod tests {
         fake.fail_next_property();
         fake.send(PlayerCommand::Seek(9.0)).unwrap();
         assert_eq!(fake.snapshot().position, before_state.position);
-        assert_eq!(fake.snapshot().volume, before_state.volume);
+        assert!(
+            (fake.snapshot().volume - before_state.volume).abs() < VOLUME_EPSILON,
+            "a rejected property write must leave the volume untouched"
+        );
 
         fake.fail_next_property();
         fake.send(PlayerCommand::SetVolume(0.9)).unwrap();
-        assert_eq!(fake.snapshot().volume, before_state.volume);
+        assert!(
+            (fake.snapshot().volume - before_state.volume).abs() < VOLUME_EPSILON,
+            "a rejected volume write must not land"
+        );
 
         fake.fail_next_property();
         fake.send(PlayerCommand::ToggleMute).unwrap();

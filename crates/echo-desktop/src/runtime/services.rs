@@ -88,7 +88,7 @@ pub struct AppServices {
 
 impl AppServices {
     /// Resolve a complete, deterministic library view on the desktop side for
-    /// playback. The WebView supplies only declarative view/filter/sort and a
+    /// playback. The `WebView` supplies only declarative view/filter/sort and a
     /// selected UUID, so pagination and active-root changes cannot truncate or
     /// contaminate a playback queue.
     pub fn resolve_library_playback_context(
@@ -184,7 +184,7 @@ impl AppServices {
     }
 
     /// Classify a persisted player session against the active library without
-    /// exposing paths to the WebView. Missing media is retryable/blocked;
+    /// exposing paths to the `WebView`. Missing media is retryable/blocked;
     /// absent, foreign-root and Echo-pending-delete identities are dropped.
     pub fn playback_restore_verdicts(
         &self,
@@ -872,7 +872,7 @@ impl AppServices {
     /// library root (task 11.7: "import current temporary playback item").
     ///
     /// The path stays entirely desktop-side — it is never forwarded to the
-    /// WebView. The caller (the Tauri command layer) extracts it from the
+    /// `WebView`. The caller (the Tauri command layer) extracts it from the
     /// coordinator's current queue entry and passes it here.
     ///
     /// Returns `Ok(result)` with the single-file import result (imported /
@@ -1213,7 +1213,7 @@ mod tests {
             .expect("resolve the favorites view");
         let mut expected = vec![ids[0], ids[2], ids[4]];
         expected.sort();
-        let mut got = resolved.clone();
+        let mut got = resolved;
         got.sort();
         assert_eq!(
             got, expected,

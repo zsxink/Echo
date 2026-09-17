@@ -1,3 +1,5 @@
+#![allow(unsafe_code)] // Calls into the documented, isolated libmpv FFI adapter.
+
 //! Dedicated OS-thread actor that owns the player backend (task 8.2).
 //!
 //! The libmpv handle is created on a dedicated thread and never moves off it.
@@ -93,7 +95,7 @@ const HARDENED_OPTIONAL: &[(&str, &str)] = &[
 ///
 /// A diagnostics escape hatch: the real-libmpv smoke sets `ao=null` so the
 /// event-plumbing assertions stay hermetic (a sandboxed CI runner can stall
-/// mpv's core in CoreAudio init — FILE_LOADED arrives but the playloop never
+/// mpv's core in `CoreAudio` init — `FILE_LOADED` arrives but the playloop never
 /// starts and no property/EOF event is ever delivered). It must never carry
 /// security-relevant intent: everything here is best-effort.
 fn extra_options() -> Vec<(&'static str, &'static str)> {
@@ -231,7 +233,7 @@ impl MpvBackend {
         // best-effort because the vendor `audio-default` build compiles some
         // capabilities out and reports them unknown.
         let handle = unsafe { ffi::Handle::create(&sys, HARDENED_REQUIRED, &extra_options()) }?;
-        Ok(MpvBackend {
+        Ok(Self {
             sys,
             handle,
             pending_load: None,
@@ -419,6 +421,7 @@ impl Backend for MpvBackend {
 /// A scripted backend for testing the actor loop without libmpv. It replays a
 /// fixed event sequence and records loads / termination / property writes.
 #[cfg(test)]
+#[allow(clippy::struct_excessive_bools)] // Independent capability switches of a scripted backend, not state combinations.
 struct TestBackend {
     events: std::collections::VecDeque<BackendEvent>,
     loads: Vec<String>,
@@ -437,7 +440,7 @@ struct TestBackend {
     /// When true, every [`Backend::queue_load`] schedules a `FileLoaded`, the
     /// way the real backend's `loadfile` does.
     ///
-    /// A *scripted* event list cannot express "one FILE_LOADED per load": the
+    /// A *scripted* event list cannot express "one `FILE_LOADED` per load": the
     /// pump drains it regardless of which load is in flight, so a second load
     /// would consume an event that belonged to the first and then sit at
     /// `Loading` forever. Load-intent tests need the load to *cause* the event.
@@ -475,14 +478,14 @@ impl TestBackend {
 #[cfg(test)]
 impl Backend for TestBackend {
     fn pump(&mut self) -> Option<BackendEvent> {
-        match self.events.pop_front() {
-            Some(ev) => Some(ev),
-            None => {
+        self.events.pop_front().map_or_else(
+            || {
                 // Idle: small artificial delay to bound the loop's CPU cost.
                 std::thread::sleep(std::time::Duration::from_millis(1));
                 None
-            }
-        }
+            },
+            Some,
+        )
     }
 
     fn queue_load(&mut self, path: &Path) {
@@ -635,7 +638,7 @@ impl PlayerActor {
             })
             .map_err(FfiSpawnError::Spawn)?;
 
-        Ok(PlayerActor {
+        Ok(Self {
             tx,
             snapshot,
             subscribers,
@@ -741,7 +744,7 @@ struct ActorLoop<B: Backend> {
     foreground: bool,
     /// When the last *property* snapshot was published, for throttling.
     last_property_publish: std::time::Instant,
-    /// Resolves a library SongId → absolute file path on the actor thread.
+    /// Resolves a library `SongId` → absolute file path on the actor thread.
     /// `None` in tests that only exercise `LoadTemporary` / command routing;
     /// the production composition root always supplies a resolver.
     resolver: Option<SongResolver>,
@@ -785,7 +788,9 @@ impl<B: Backend> ActorLoop<B> {
             foreground: true,
             // Backdate so the first property event always publishes (avoids a
             // dropped first `time-pos` right after startup / a load).
-            last_property_publish: std::time::Instant::now() - std::time::Duration::from_secs(1),
+            last_property_publish: std::time::Instant::now()
+                .checked_sub(std::time::Duration::from_secs(1))
+                .unwrap(),
             resolver: None,
             // A fresh actor has nothing loaded, so "not paused" is the only
             // intent that can be true once a file actually loads.
@@ -796,18 +801,18 @@ impl<B: Backend> ActorLoop<B> {
 
     /// The throttle interval for continuous (property-driven) snapshot
     /// refreshes: 10 Hz foreground, 1 Hz background (task 8.4).
-    fn property_interval(&self) -> std::time::Duration {
+    const fn property_interval(&self) -> std::time::Duration {
         if self.foreground {
             std::time::Duration::from_millis(100)
         } else {
-            std::time::Duration::from_millis(1000)
+            std::time::Duration::from_secs(1)
         }
     }
 
     /// Persist a *discrete* snapshot immediately (track change, seek, pause,
     /// mute, volume, ended). `gen` is the generation this snapshot was observed
     /// under, used by the coordinator to tag/reject stale IPC events (8.4).
-    fn publish(&mut self, gen: u64) {
+    fn publish(&self, gen: u64) {
         let snap = self.build_snapshot();
         *self.snapshot.write().expect("actor snapshot poisoned") = snap.clone();
         self.fanout(&snap);
@@ -851,7 +856,7 @@ impl<B: Backend> ActorLoop<B> {
         });
     }
 
-    fn build_snapshot(&self) -> PlayerSnapshot {
+    const fn build_snapshot(&self) -> PlayerSnapshot {
         PlayerSnapshot {
             state: self.state,
             position: self.position,
@@ -883,6 +888,7 @@ impl<B: Backend> ActorLoop<B> {
         (next != current).then_some(next)
     }
 
+    #[allow(clippy::needless_pass_by_value)] // The receiver is intentionally owned by the actor thread.
     fn run(&mut self, rx: mpsc::Receiver<PlayerCommand>) {
         loop {
             // Drain bounded commands first.
@@ -1012,6 +1018,7 @@ impl<B: Backend> ActorLoop<B> {
     }
 
     /// Handle a command; returns false to exit the loop (Shutdown).
+    #[allow(clippy::too_many_lines)] // Command variants share one state-transition boundary; task 5 splits the actor module.
     fn handle_command(&mut self, cmd: PlayerCommand) -> bool {
         match cmd {
             PlayerCommand::Shutdown => return false,
@@ -1029,12 +1036,11 @@ impl<B: Backend> ActorLoop<B> {
                 // does not clear that on a new file (see `intended_paused`).
                 self.intended_paused = false;
                 self.generation += 1;
-                match self.resolver.as_ref().and_then(|r| (r)(song_id).ok()) {
-                    Some(path) => self.load_path(&path),
-                    None => {
-                        self.state = PlaybackState::Failed;
-                        self.publish(self.generation);
-                    }
+                if let Some(path) = self.resolver.as_ref().and_then(|r| (r)(song_id).ok()) {
+                    self.load_path(&path);
+                } else {
+                    self.state = PlaybackState::Failed;
+                    self.publish(self.generation);
                 }
             }
             PlayerCommand::LoadLibrarySongPaused {
@@ -1047,21 +1053,18 @@ impl<B: Backend> ActorLoop<B> {
                 // until the user presses 播放.
                 self.intended_paused = true;
                 self.generation += 1;
-                match self.resolver.as_ref().and_then(|r| (r)(song_id).ok()) {
-                    Some(path) => {
-                        self.load_path(&path);
-                        // Silence the window between `loadfile` and FileLoaded
-                        // as well: the flag is written now and re-asserted on
-                        // FileLoaded, so neither an idle mpv nor the new file
-                        // ever gets a chance to sound.
-                        if !self.backend.write_property(BackendProperty::Pause(true)) {
-                            tracing::warn!("mpv actor: failed to set pause for paused load");
-                        }
+                if let Some(path) = self.resolver.as_ref().and_then(|r| (r)(song_id).ok()) {
+                    self.load_path(&path);
+                    // Silence the window between `loadfile` and FileLoaded
+                    // as well: the flag is written now and re-asserted on
+                    // FileLoaded, so neither an idle mpv nor the new file
+                    // ever gets a chance to sound.
+                    if !self.backend.write_property(BackendProperty::Pause(true)) {
+                        tracing::warn!("mpv actor: failed to set pause for paused load");
                     }
-                    None => {
-                        self.state = PlaybackState::Failed;
-                        self.publish(self.generation);
-                    }
+                } else {
+                    self.state = PlaybackState::Failed;
+                    self.publish(self.generation);
                 }
             }
             PlayerCommand::LoadTemporary {
@@ -1070,7 +1073,7 @@ impl<B: Backend> ActorLoop<B> {
                 session_id: _,
             } => {
                 self.intended_paused = false;
-                self.load_path(&path)
+                self.load_path(&path);
             }
             PlayerCommand::Play => {
                 // The write is the point: previously this only flipped the
@@ -1925,7 +1928,7 @@ mod tests {
         loop_state.foreground = false;
         assert_eq!(
             loop_state.property_interval(),
-            std::time::Duration::from_millis(1000)
+            std::time::Duration::from_secs(1)
         );
     }
 
@@ -1970,11 +1973,7 @@ mod tests {
         // the interval does not overwrite the snapshot; once the interval has
         // elapsed it does. We drive a 10 ms interval to avoid sleeping 1 s.
         let snapshot = snapshot_stub();
-        let mut loop_state = ActorLoop::new(
-            TestBackend::new(vec![]),
-            snapshot.clone(),
-            subscribers_stub(),
-        );
+        let mut loop_state = ActorLoop::new(TestBackend::new(vec![]), snapshot, subscribers_stub());
         loop_state.foreground = true;
         loop_state.position = Some(1.0);
         // Force "now": a publish right after is within the 100 ms interval →
@@ -1986,8 +1985,9 @@ mod tests {
         assert_eq!(loop_state.snapshot.read().unwrap().position, None);
 
         // Backdate the last publish so the interval has elapsed → publishes.
-        loop_state.last_property_publish =
-            std::time::Instant::now() - std::time::Duration::from_millis(200);
+        loop_state.last_property_publish = std::time::Instant::now()
+            .checked_sub(std::time::Duration::from_millis(200))
+            .unwrap();
         loop_state.publish_throttled(0);
         assert_eq!(
             loop_state.snapshot.read().unwrap().position,
@@ -2582,8 +2582,8 @@ mod tests {
         // Use a temp file path so we can assert the exact resolved path reached
         // the backend without leaking anything to DTOs.
         let dir = tempfile::tempdir().expect("tempdir");
-        let resolved = dir.path().join("track.flac");
-        let expected = resolved.clone();
+        let track_path = dir.path().join("track.flac");
+        let expected = track_path;
         let song_id = SongId::new();
         let resolver: SongResolver = Arc::new(move |id| {
             assert_eq!(id, song_id, "resolver given a different song");

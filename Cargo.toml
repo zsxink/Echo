@@ -56,7 +56,10 @@ libloading = "0.7"
 proptest = "1"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# `deny` keeps unsafe disallowed throughout the workspace while permitting the
+# documented, smallest-possible FFI modules to opt out locally. `forbid` would
+# make that safety isolation mechanically impossible.
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = "warn"

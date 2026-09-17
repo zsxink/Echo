@@ -23,7 +23,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { allScenarioIds, traceabilityIdsFor } from "./spec-scenarios.mjs";
+import { allScenarioIds, listAreas, traceabilityIdsFor } from "./spec-scenarios.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(new URL(".", import.meta.url))), "..");
 const TRACE = resolve(ROOT, "docs", "traceability.md");
@@ -43,8 +43,10 @@ function fail(msg) {
 const derived = allScenarioIds();
 const derivedIds = new Set(derived.map((s) => s.id));
 
-// --- traceability IDs (all 7 sections) ---
-const fields = new Set(["desktop-app-shell", "desktop-playback", "immersive-lyrics", "library-experience", "local-library", "playlist-management", "safe-file-ingestion", "sync-foundation"]);
+// Every spec area must be represented in traceability. Deriving the field list
+// from the registered prefix map prevents a new area from being silently
+// excluded from the three-way reconciliation.
+const fields = new Set(listAreas());
 const traceIds = new Set();
 for (const f of fields) for (const id of traceabilityIdsFor(f)) traceIds.add(id);
 

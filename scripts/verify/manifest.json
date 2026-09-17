@@ -2144,6 +2144,24 @@
       "manifest": "tests/scenarios/DAS-R11-S02.yaml"
     },
     {
+      "id": "DAS-R12-S01",
+      "title": "关闭窗口后继续后台播放",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R12-S01",
+      "manifest": "tests/scenarios/DAS-R12-S01.yaml"
+    },
+    {
+      "id": "DAS-R12-S02",
+      "title": "从后台入口退出",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R12-S02",
+      "manifest": "tests/scenarios/DAS-R12-S02.yaml"
+    },
+    {
+      "id": "DAS-R13-S01",
+      "title": "可见应用身份一致",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R13-S01",
+      "manifest": "tests/scenarios/DAS-R13-S01.yaml"
+    },
+    {
       "id": "DP-R01-S01",
       "title": "播放资料库歌曲",
       "command": "cargo test -p echo-desktop --all-features --test player_smoke",
@@ -2163,129 +2181,243 @@
     },
     {
       "id": "DP-R02-S02",
-      "title": "加入队列",
+      "title": "视图播放重建队列数量",
       "command": "pnpm --filter @echo/desktop test -- --run src/features/player/QueuePanel.test.tsx",
       "manifest": "tests/scenarios/DP-R02-S02.yaml"
     },
     {
       "id": "DP-R02-S03",
-      "title": "下一首播放",
+      "title": "加入队列",
       "command": "pnpm --filter @echo/desktop test -- --run src/features/player/QueuePanel.test.tsx",
       "manifest": "tests/scenarios/DP-R02-S03.yaml"
     },
     {
       "id": "DP-R02-S04",
-      "title": "清空队列",
+      "title": "下一首播放",
       "command": "pnpm --filter @echo/desktop test -- --run src/features/player/QueuePanel.test.tsx",
       "manifest": "tests/scenarios/DP-R02-S04.yaml"
     },
     {
+      "id": "DP-R02-S05",
+      "title": "连续下一首播放",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R02-S05",
+      "manifest": "tests/scenarios/DP-R02-S05.yaml"
+    },
+    {
+      "id": "DP-R02-S06",
+      "title": "当前项始终置顶",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R02-S06",
+      "manifest": "tests/scenarios/DP-R02-S06.yaml"
+    },
+    {
+      "id": "DP-R02-S07",
+      "title": "清空队列",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R02-S07",
+      "manifest": "tests/scenarios/DP-R02-S07.yaml"
+    },
+    {
       "id": "DP-R03-S01",
-      "title": "基础传输控制",
+      "title": "队列显示歌曲信息",
       "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::mode_switch_keeps_current_item",
       "manifest": "tests/scenarios/DP-R03-S01.yaml"
     },
     {
       "id": "DP-R03-S02",
-      "title": "切换播放模式",
+      "title": "队列超过八首",
       "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::next_advances_in_order",
       "manifest": "tests/scenarios/DP-R03-S02.yaml"
     },
     {
       "id": "DP-R03-S03",
-      "title": "定位和音量",
+      "title": "队列不超过八首",
       "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::previous_moves_back_within_5_seconds",
       "manifest": "tests/scenarios/DP-R03-S03.yaml"
     },
     {
+      "id": "DP-R03-S04",
+      "title": "沉浸模式尺寸一致",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R03-S04",
+      "manifest": "tests/scenarios/DP-R03-S04.yaml"
+    },
+    {
       "id": "DP-R04-S01",
-      "title": "单曲加载失败",
+      "title": "基础传输控制",
       "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::error_skips_bad_entry_and_plays_next_sequential",
       "manifest": "tests/scenarios/DP-R04-S01.yaml"
     },
     {
       "id": "DP-R04-S02",
-      "title": "单曲循环中的加载失败",
+      "title": "列表循环导航",
       "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::error_advance_all_bad_stops_without_spin",
       "manifest": "tests/scenarios/DP-R04-S02.yaml"
     },
     {
       "id": "DP-R04-S03",
-      "title": "资料库不可用期间播放",
+      "title": "随机播放导航",
       "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::error_advance_never_retries_same_entry_in_round",
       "manifest": "tests/scenarios/DP-R04-S03.yaml"
     },
     {
+      "id": "DP-R04-S04",
+      "title": "单曲循环的自然结束与手动下一首",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R04-S04",
+      "manifest": "tests/scenarios/DP-R04-S04.yaml"
+    },
+    {
+      "id": "DP-R04-S05",
+      "title": "切换播放模式",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R04-S05",
+      "manifest": "tests/scenarios/DP-R04-S05.yaml"
+    },
+    {
+      "id": "DP-R04-S06",
+      "title": "定位和音量",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R04-S06",
+      "manifest": "tests/scenarios/DP-R04-S06.yaml"
+    },
+    {
       "id": "DP-R05-S01",
-      "title": "打开资料库外文件",
+      "title": "单曲加载失败",
       "command": "node scripts/verify/checks/task-9.2.mjs",
       "manifest": "tests/native/DP-R05-S01.md"
     },
     {
       "id": "DP-R05-S02",
-      "title": "临时项执行持久化操作",
+      "title": "单曲循环中的加载失败",
       "command": "node scripts/verify/checks/task-11.7.mjs",
       "manifest": "tests/native/DP-R05-S02.md"
     },
     {
+      "id": "DP-R05-S03",
+      "title": "资料库不可用期间播放",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R05-S03",
+      "manifest": "tests/scenarios/DP-R05-S03.yaml"
+    },
+    {
       "id": "DP-R06-S01",
-      "title": "达到播放阈值",
+      "title": "打开资料库外文件",
       "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::playback_sessions_are_idempotent",
       "manifest": "tests/scenarios/DP-R06-S01.yaml"
     },
     {
       "id": "DP-R06-S02",
-      "title": "未达到阈值或 seek 作弊",
+      "title": "临时项执行持久化操作",
       "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::playback_sessions_are_idempotent",
       "manifest": "tests/scenarios/DP-R06-S02.yaml"
     },
     {
       "id": "DP-R07-S01",
-      "title": "正常恢复",
+      "title": "达到播放阈值",
       "command": "cargo test -p echo-desktop --all-features platform::local_state",
       "manifest": "tests/scenarios/DP-R07-S01.yaml"
     },
     {
       "id": "DP-R07-S02",
-      "title": "部分歌曲不可用",
+      "title": "未达到阈值或 seek 作弊",
       "command": "cargo test -p echo-desktop --all-features --lib && pnpm --dir apps/desktop test",
       "manifest": "tests/scenarios/DP-R07-S02.yaml"
     },
     {
-      "id": "DP-R07-S03",
-      "title": "文件关联覆盖普通恢复",
-      "command": "cargo test -p echo-desktop --all-features platform::local_state",
-      "manifest": "tests/scenarios/DP-R07-S03.yaml"
-    },
-    {
       "id": "DP-R08-S01",
-      "title": "使用媒体键",
+      "title": "正常恢复",
       "command": "node scripts/verify/checks/task-9.4.mjs",
       "manifest": "tests/native/DP-R08-S01.md"
     },
     {
       "id": "DP-R08-S02",
-      "title": "使用应用快捷键",
+      "title": "部分歌曲不可用",
       "command": "pnpm --filter @echo/desktop test -- --run src/player/useGlobalPlayerHotkeys.test.tsx",
       "manifest": "tests/native/DP-R08-S02.md"
     },
     {
+      "id": "DP-R08-S03",
+      "title": "文件关联覆盖普通恢复",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R08-S03",
+      "manifest": "tests/scenarios/DP-R08-S03.yaml"
+    },
+    {
       "id": "DP-R09-S01",
-      "title": "关闭窗口退出",
+      "title": "使用媒体键",
       "command": "node scripts/verify/checks/task-9.3.mjs",
       "manifest": "tests/native/DP-R09-S01.md"
     },
     {
       "id": "DP-R09-S02",
-      "title": "关闭窗口后台运行",
+      "title": "使用应用快捷键",
       "command": "node scripts/verify/checks/task-9.3.mjs",
       "manifest": "tests/native/DP-R09-S02.md"
     },
     {
-      "id": "DP-R09-S03",
+      "id": "DP-R10-S01",
+      "title": "关闭窗口退出",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R10-S01",
+      "manifest": "tests/scenarios/DP-R10-S01.yaml"
+    },
+    {
+      "id": "DP-R10-S02",
+      "title": "关闭窗口后台运行",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R10-S02",
+      "manifest": "tests/scenarios/DP-R10-S02.yaml"
+    },
+    {
+      "id": "DP-R10-S03",
       "title": "托盘控制",
-      "command": "node scripts/verify/checks/task-9.6.mjs",
-      "manifest": "tests/native/DP-R09-S03.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R10-S03",
+      "manifest": "tests/scenarios/DP-R10-S03.yaml"
+    },
+    {
+      "id": "DP-R11-S01",
+      "title": "列表循环上一首",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R11-S01",
+      "manifest": "tests/scenarios/DP-R11-S01.yaml"
+    },
+    {
+      "id": "DP-R11-S02",
+      "title": "三天内回退",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R11-S02",
+      "manifest": "tests/scenarios/DP-R11-S02.yaml"
+    },
+    {
+      "id": "DP-R11-S03",
+      "title": "历史跨重启",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R11-S03",
+      "manifest": "tests/scenarios/DP-R11-S03.yaml"
+    },
+    {
+      "id": "DP-R11-S04",
+      "title": "过期或失效历史",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R11-S04",
+      "manifest": "tests/scenarios/DP-R11-S04.yaml"
+    },
+    {
+      "id": "DP-R11-S05",
+      "title": "删除回滚保留历史",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R11-S05",
+      "manifest": "tests/scenarios/DP-R11-S05.yaml"
+    },
+    {
+      "id": "DP-R12-S01",
+      "title": "非沉浸模式切换为随机播放",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R12-S01",
+      "manifest": "tests/scenarios/DP-R12-S01.yaml"
+    },
+    {
+      "id": "DP-R12-S02",
+      "title": "主题切换期间保持随机模式",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R12-S02",
+      "manifest": "tests/scenarios/DP-R12-S02.yaml"
+    },
+    {
+      "id": "DP-R13-S01",
+      "title": "退出后恢复播放位置",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R13-S01",
+      "manifest": "tests/scenarios/DP-R13-S01.yaml"
+    },
+    {
+      "id": "DP-R13-S02",
+      "title": "持久化位置超出有效范围",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R13-S02",
+      "manifest": "tests/scenarios/DP-R13-S02.yaml"
     },
     {
       "id": "IL-R01-S01",
@@ -2486,6 +2618,12 @@
       "manifest": "tests/scenarios/LE-R02-S03.yaml"
     },
     {
+      "id": "LE-R02-S04",
+      "title": "切换活动资料库后查询",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R02-S04",
+      "manifest": "tests/scenarios/LE-R02-S04.yaml"
+    },
+    {
       "id": "LE-R03-S01",
       "title": "选择排序字段",
       "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_all_songs_keyset_pages",
@@ -2578,7 +2716,7 @@
     {
       "id": "LE-R07-S01",
       "title": "浏览大量歌曲",
-      "command": "cargo test -p echo-core --all-features bench_50k",
+      "command": "cargo test -p echo-core --all-features bench_50k_search_and_first_screen_p95_meet_prd_budgets",
       "manifest": "tests/scenarios/LE-R07-S01.yaml"
     },
     {
@@ -2786,6 +2924,18 @@
       "manifest": "tests/native/LL-R08-S03.md"
     },
     {
+      "id": "PHA-R01-S01",
+      "title": "歌单与队列日常流程",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs PHA-R01-S01",
+      "manifest": "tests/scenarios/PHA-R01-S01.yaml"
+    },
+    {
+      "id": "PHA-R01-S02",
+      "title": "回归质量门",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs PHA-R01-S02",
+      "manifest": "tests/scenarios/PHA-R01-S02.yaml"
+    },
+    {
       "id": "PM-R01-S01",
       "title": "创建歌单",
       "command": "cargo test -p echo-core --all-features playlist",
@@ -2799,15 +2949,21 @@
     },
     {
       "id": "PM-R01-S03",
-      "title": "重命名歌单",
+      "title": "创建提交失败",
       "command": "cargo test -p echo-core --all-features playlist",
       "manifest": "tests/scenarios/PM-R01-S03.yaml"
     },
     {
       "id": "PM-R01-S04",
-      "title": "删除歌单",
+      "title": "重命名歌单",
       "command": "cargo test -p echo-core --all-features playlist",
       "manifest": "tests/scenarios/PM-R01-S04.yaml"
+    },
+    {
+      "id": "PM-R01-S05",
+      "title": "删除歌单",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs PM-R01-S05",
+      "manifest": "tests/scenarios/PM-R01-S05.yaml"
     },
     {
       "id": "PM-R02-S01",
@@ -2868,6 +3024,72 @@
       "title": "失效歌曲恢复",
       "command": "cargo test -p echo-core --all-features playlist",
       "manifest": "tests/scenarios/PM-R05-S04.yaml"
+    },
+    {
+      "id": "PM-R06-S01",
+      "title": "成员移除失败",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs PM-R06-S01",
+      "manifest": "tests/scenarios/PM-R06-S01.yaml"
+    },
+    {
+      "id": "PM-R06-S02",
+      "title": "入队失败",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs PM-R06-S02",
+      "manifest": "tests/scenarios/PM-R06-S02.yaml"
+    },
+    {
+      "id": "PM-R07-S01",
+      "title": "从选择器创建并添加歌曲",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs PM-R07-S01",
+      "manifest": "tests/scenarios/PM-R07-S01.yaml"
+    },
+    {
+      "id": "PM-R07-S02",
+      "title": "从选择器创建失败",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs PM-R07-S02",
+      "manifest": "tests/scenarios/PM-R07-S02.yaml"
+    },
+    {
+      "id": "PLL-R01-S01",
+      "title": "新资料库导入一首歌曲",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs PLL-R01-S01",
+      "manifest": "tests/scenarios/PLL-R01-S01.yaml"
+    },
+    {
+      "id": "PLL-R01-S02",
+      "title": "控制面目录不可写",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs PLL-R01-S02",
+      "manifest": "tests/scenarios/PLL-R01-S02.yaml"
+    },
+    {
+      "id": "PLL-R02-S01",
+      "title": "检查资料库控制面",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs PLL-R02-S01",
+      "manifest": "tests/scenarios/PLL-R02-S01.yaml"
+    },
+    {
+      "id": "PLL-R02-S02",
+      "title": "路径数据被序列化",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs PLL-R02-S02",
+      "manifest": "tests/scenarios/PLL-R02-S02.yaml"
+    },
+    {
+      "id": "PLL-R02-S03",
+      "title": "同步忽略临时目录",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs PLL-R02-S03",
+      "manifest": "tests/scenarios/PLL-R02-S03.yaml"
+    },
+    {
+      "id": "PLL-R03-S01",
+      "title": "全新设备恢复完整资料",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs PLL-R03-S01",
+      "manifest": "tests/scenarios/PLL-R03-S01.yaml"
+    },
+    {
+      "id": "PLL-R03-S02",
+      "title": "同步资料先于媒体到达",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs PLL-R03-S02",
+      "manifest": "tests/scenarios/PLL-R03-S02.yaml"
     },
     {
       "id": "SFI-R01-S01",

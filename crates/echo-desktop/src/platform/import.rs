@@ -71,17 +71,14 @@ impl SingleFileImport {
 
     /// The logical handle consumed by `PlanImport`.
     #[must_use]
-    pub fn source(&self) -> &ImportSource {
+    pub const fn source(&self) -> &ImportSource {
         &self.source
     }
 
     /// Try to resolve a same-basename `.lrc` sidecar beside `audio_path`.
     /// Returns the absolute path to the sidecar and its display metadata if
-    /// found and is a regular file; `Ok(None)` when no sidecar exists.
-    fn resolve_sidecar(
-        audio_path: &Path,
-        audio_display: &str,
-    ) -> Result<Option<(PathBuf, SidecarInfo)>, Error> {
+    /// found and is a regular file; `None` when no sidecar exists.
+    fn resolve_sidecar(audio_path: &Path, audio_display: &str) -> Option<(PathBuf, SidecarInfo)> {
         let stem = match audio_display.rfind('.') {
             Some(i) if i > 0 => &audio_display[..i],
             _ => audio_display,
@@ -95,17 +92,17 @@ impl SingleFileImport {
                         .and_then(|n| n.to_str())
                         .unwrap_or("sidecar.lrc")
                         .to_owned();
-                    return Ok(Some((
+                    return Some((
                         candidate,
                         SidecarInfo {
                             display_name: name,
                             size: meta.len(),
                         },
-                    )));
+                    ));
                 }
             }
         }
-        Ok(None)
+        None
     }
 }
 
@@ -154,7 +151,7 @@ impl ImportSourceReader for SingleFileImport {
                 "unknown source",
             ));
         }
-        Ok(Self::resolve_sidecar(&self.path, &self.display_name)?.map(|(_p, info)| info))
+        Ok(Self::resolve_sidecar(&self.path, &self.display_name).map(|(_p, info)| info))
     }
 
     fn open_sidecar<'a>(
@@ -168,8 +165,7 @@ impl ImportSourceReader for SingleFileImport {
                 "unknown source",
             ));
         }
-        let Some((side_path, _info)) = Self::resolve_sidecar(&self.path, &self.display_name)?
-        else {
+        let Some((side_path, _info)) = Self::resolve_sidecar(&self.path, &self.display_name) else {
             return Ok(None);
         };
         let file = fs::File::open(&side_path)

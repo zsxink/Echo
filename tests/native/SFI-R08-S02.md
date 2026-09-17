@@ -22,6 +22,6 @@
 ## 证据与记录
 
 - operator: (填写执行人)
-- evidence-path: artifacts/native-attestations/`declare()`
+- evidence-path: artifacts/native-attestations/SFI-R08-S02.log
 - date: (YYYY-MM-DD)
 - result: (pass / fail + 说明)

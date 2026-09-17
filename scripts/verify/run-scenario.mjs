@@ -4,6 +4,8 @@
 // Usage:
 //   pnpm verify:scenario -- <scenario-id...>   run the listed scenarios
 //   pnpm verify:scenario -- --all              run every registered scenario
+//   pnpm verify:scenario -- --automated        run only scenarios with an
+//                                               executable automated command
 //   pnpm verify:scenario -- --list             print scenario ids from the manifest
 //
 // Scenarios are resolved/validated against scripts/verify/manifest.json's
@@ -19,7 +21,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
-const MANIFEST = resolve(ROOT, "scripts", "verify", "manifest.json");
+const MANIFEST = process.env.ECHO_VERIFY_MANIFEST || resolve(ROOT, "scripts", "verify", "manifest.json");
 
 function fail(msg) {
   process.stderr.write(`error: ${msg}\n`);
@@ -28,6 +30,24 @@ function fail(msg) {
 
 const manifest = JSON.parse(readFileSync(MANIFEST, "utf8"));
 const scenarios = manifest.scenarios || [];
+
+function selectedTestCommand(command) {
+  return /\bcargo\s+test\b/.test(command) || /\bpnpm\b.*\btest\s+--\s+--run\b/.test(command);
+}
+
+function executedTestCount(output) {
+  let count = 0;
+  // Cargo emits one result line per test binary. A filter that matches nothing
+  // exits successfully, but every result line reports `0 passed`.
+  for (const match of output.matchAll(/test result: .*?\b(\d+) passed;/g)) {
+    count += Number(match[1]);
+  }
+  // Vitest's summary uses `Tests  N passed` (with flexible terminal spacing).
+  for (const match of output.matchAll(/\bTests\s+(\d+)\s+passed\b/g)) {
+    count += Number(match[1]);
+  }
+  return count;
+}
 
 function runScenario(id) {
   const sc = scenarios.find((s) => s.id === id);
@@ -48,6 +68,14 @@ function runScenario(id) {
     fail(`scenario ${id}: command exited ${result.status}: ${sc.command}`);
     return false;
   }
+  if (selectedTestCommand(sc.command)) {
+    const output = `${result.stdout || ""}${result.stderr || ""}`;
+    const count = executedTestCount(output);
+    if (count === 0) {
+      fail(`scenario ${id}: selected test command ran zero tests: ${sc.command}`);
+      return false;
+    }
+  }
   process.stdout.write(`ok: scenario ${id} (${sc.title})\n`);
   return true;
 }
@@ -62,8 +90,12 @@ if (argv.includes("--list")) {
 let requested;
 if (argv.includes("--all")) {
   requested = scenarios.map((s) => s.id);
+} else if (argv.includes("--automated")) {
+  requested = scenarios
+    .filter((s) => !/check-native-attestation\.mjs/.test(s.command))
+    .map((s) => s.id);
 } else {
-  const ids = argv.flatMap((a) => (a === "--all" ? [] : a.split(/\s+/)));
+  const ids = argv.flatMap((a) => (["--all", "--automated"].includes(a) ? [] : a.split(/\s+/)));
   requested = ids.filter(Boolean);
 }
 if (!requested.length) {

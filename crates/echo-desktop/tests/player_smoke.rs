@@ -36,7 +36,7 @@ use echo_desktop::player::actor::PlayerActor;
 use echo_desktop::player::port::{PlayerCommand, PlayerPort, PlayerSnapshot};
 
 /// Force a null audio output for every spawned backend. Without it a
-/// sandboxed runner can stall mpv's core inside CoreAudio init: FILE_LOADED
+/// sandboxed runner can stall mpv's core inside `CoreAudio` init: `FILE_LOADED`
 /// arrives but the playloop never starts and *no* property/EOF event is ever
 /// delivered — indistinguishable from a broken event pipe. The smoke asserts
 /// event plumbing, not audio hardware, so decouple it.
@@ -104,7 +104,7 @@ fn wait_for(actor: &PlayerActor, cond: impl Fn(&PlayerSnapshot) -> bool) -> Play
 }
 
 /// Preflight whether the vendored libmpv can actually be *loaded* on this host
-/// (dlopen + symbol resolution, i.e. its `@rpath` FFmpeg dependencies are
+/// (dlopen + symbol resolution, i.e. its `@rpath` `FFmpeg` dependencies are
 /// reachable). A bare `cargo test` runner has no `Frameworks/` rpath, so the
 /// deps are only found when `DYLD_LIBRARY_PATH`/`LD_LIBRARY_PATH` is set or the
 /// test runs through the packaged app. `spawn_mpv` surfaces exactly this as
@@ -239,7 +239,7 @@ fn guaranteed_formats_each_load_via_real_libmpv() {
     for name in guaranteed {
         let path = root.join(name);
         assert!(
-            path.exists() && path.metadata().map(|m| m.len() > 0).unwrap_or(false),
+            path.exists() && path.metadata().is_ok_and(|m| m.len() > 0),
             "guaranteed fixture missing: {name}"
         );
         if run_format_smoke(&libmpv, &path) {
@@ -322,7 +322,7 @@ fn a_play_load_after_a_primed_paused_load_really_starts_the_clock() {
     let fixture = root.join("tone-short.flac");
     assert!(fixture.exists(), "guaranteed fixture missing: {fixture:?}");
 
-    let resolved = fixture.clone();
+    let resolved = fixture;
     let resolver: SongResolver = Arc::new(move |_| Ok(resolved.clone()));
     let snapshot = Arc::new(RwLock::new(PlayerSnapshot::default()));
     let mut actor = PlayerActor::spawn_mpv(&libmpv, snapshot, Some(resolver))

@@ -47,7 +47,7 @@ const MAX_ASSET_KEY_LEN: usize = 128;
 ///   `WebView` cannot open a network connection even if script is later
 ///   injected.
 /// - `img-src` also permits the exact `http://cover.localhost` Tauri Windows
-///   protocol origin (intercepted by WebView2, not a remote server).
+///   protocol origin (intercepted by `WebView2`, not a remote server).
 /// - `img-src`/`media-src` additionally allow `cover:` (cover art served by
 ///   [`CoverProtocol`]) and `data:` (inline placeholders).
 /// - `object-src 'none'` (no plugin/embed), `frame-ancestors 'none'` (no
@@ -427,7 +427,7 @@ mod tests {
     /// (mp3/flac/m4a/ogg/opus/wav) — never a superset (an unvetted format Echo
     /// claims to open) nor a subset (a guaranteed format the user can no longer
     /// open by double-clicking). This is the shell half of "配置保证格式文件
-    /// 关联"; the open-path resolution (SongId vs temporary item) is playback
+    /// 关联"; the open-path resolution (`SongId` vs temporary item) is playback
     /// layer (11.7) and is not shell logic.
     #[test]
     fn tauri_conf_file_associations_cover_the_guaranteed_formats() {

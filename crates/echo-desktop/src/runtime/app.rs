@@ -20,7 +20,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use echo_core::application::ports::LibraryRepository;
-use echo_core::application::scan::ScanDeps;
+use echo_core::application::scan::{ScanConfig, ScanDeps};
 use echo_core::error::Error;
 use echo_core::infrastructure::core::{UuidV4Generator, WallClock};
 use echo_core::infrastructure::filesystem::{
@@ -50,7 +50,7 @@ pub struct RoutedRuntime {
 
 /// Assemble the production `ScanDeps`.
 ///
-/// `db_path` is the SQLite database file (created if absent); `cover_cache_dir`
+/// `db_path` is the `SQLite` database file (created if absent); `cover_cache_dir`
 /// is the directory for the disk cover cache. Returns the ready deps plus the
 /// shared registry.
 ///
@@ -98,7 +98,7 @@ pub fn assemble(db_path: &Path, cover_cache_dir: &Path) -> Result<RoutedRuntime,
         sync: database.clone(),
         ids: Arc::new(UuidV4Generator),
         clock: Arc::new(WallClock::new()),
-        config: Default::default(),
+        config: ScanConfig::default(),
     });
 
     Ok(RoutedRuntime {
@@ -121,6 +121,8 @@ mod tests {
 
     #[test]
     fn assemble_builds_a_real_scan_deps_over_a_fresh_db() {
+        fn assert_send_sync<T: Send + Sync>(_: &T) {}
+
         let (dir, cache) = dirs();
         // `assemble` returning ok is the wiring proof: the real SQLite database
         // applies migrations and passes its quick-check, the disk cover cache
@@ -128,7 +130,6 @@ mod tests {
         // adapter constructs with the shared registry — all headless.
         let routed = assemble(&dir.path().join("echo.sqlite"), &cache).unwrap();
         // The deps must be usable across the runtime/command boundary.
-        fn assert_send_sync<T: Send + Sync>(_: &T) {}
         assert_send_sync(routed.deps.as_ref());
     }
 

@@ -1,7 +1,7 @@
 //! Native end-to-end driver (task 13.2 / 13.3).
 //!
 //! Drives the REAL composition root that the Tauri shell uses — `assemble` +
-//! `AppServices` with a scripted dialog boundary — over a **temp SQLite
+//! `AppServices` with a scripted dialog boundary — over a **temp `SQLite`
 //! library**, exercising the complete local loop a real session touches:
 //!
 //!   scan → search → favorite → playlist → import → delete/undo → restart
@@ -12,7 +12,7 @@
 //! process restart would observe.
 //!
 //! This is the echo-desktop-hosted driver the `task-13.2` check runs (and the
-//! seam the 13.3 kill/restart check re-drives). It is hermetic: no WebView, no
+//! seam the 13.3 kill/restart check re-drives). It is hermetic: no `WebView`, no
 //! OS dialogs, no real libmpv (real player smoke is the `player_smoke` suite
 //! and the 13.5 manual track).
 
@@ -177,7 +177,7 @@ fn services(data_dir: &Path, dialogs: Arc<dyn SystemDialogs>) -> AppServices {
         startup,
         dialogs,
         routed.registry.clone(),
-        routed.database.clone(),
+        routed.database,
         echo_core::application::root_switch::Blockers::new(),
     )
 }
@@ -253,7 +253,7 @@ fn native_loop_and_restart_preserve_relationships() {
         .expect("all songs")
         .items
         .into_iter()
-        .map(|s| s.id.clone())
+        .map(|s| s.id)
         .collect();
     assert!(song_ids.len() >= 2, "songs listed after scan");
 

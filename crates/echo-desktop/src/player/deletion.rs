@@ -8,7 +8,7 @@
 //! 1. **Snapshot** the target `SongId`'s `current`/queue/history/shuffle entry
 //!    ids so a rollback can rebuild a valid queue.
 //! 2. If the target is the **current** item, stop it and wait for the
-//!    PlayerActor to confirm `unloaded(generation)` (the player no longer holds
+//!    `PlayerActor` to confirm `unloaded(generation)` (the player no longer holds
 //!    the file) — a Windows file handle would otherwise keep the delete from
 //!    working.
 //! 3. Call Core delete; only when it returns `StageApplied`/`HiddenInDatabase`
@@ -38,7 +38,7 @@ pub enum DeleteCommit {
 }
 
 /// A bounded verdict from the player boundary about whether an unload
-/// completed. In a real process this is derived from a PlayerActor generation
+/// completed. In a real process this is derived from a `PlayerActor` generation
 /// acknowledgment; the abstraction keeps the coordinator testable.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UnloadOutcome {
@@ -88,7 +88,7 @@ pub struct DeletedSnapshot {
 impl<P: PlayerPort, E: DeleteExecutor> DeletionCoordinator<P, E> {
     /// A coordinator bound to the player port and the delete executor.
     #[must_use]
-    pub fn new(player: P, executor: E) -> Self {
+    pub const fn new(player: P, executor: E) -> Self {
         Self {
             player,
             executor,
@@ -121,7 +121,7 @@ impl<P: PlayerPort, E: DeleteExecutor> DeletionCoordinator<P, E> {
 
     /// The outcome of this coordinator's last delete attempt.
     #[must_use]
-    pub fn last_snapshot(&self) -> Option<&DeletedSnapshot> {
+    pub const fn last_snapshot(&self) -> Option<&DeletedSnapshot> {
         self.snapshot.as_ref()
     }
 }
@@ -223,7 +223,7 @@ mod tests {
         }
     }
 
-    /// A delete executor that always succeeds (hide_for_delete returns Ok).
+    /// A delete executor that always succeeds (`hide_for_delete` returns Ok).
     struct SucceedDelete;
 
     impl DeleteExecutor for SucceedDelete {
