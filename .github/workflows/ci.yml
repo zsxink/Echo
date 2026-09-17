@@ -130,6 +130,25 @@ jobs:
           toolchain: 1.96.0
           components: rustfmt, clippy
 
+      # The governance gates run `cargo test --workspace --all-targets
+      # --all-features`, which builds the echo-app Tauri shell. Without these
+      # the Linux build fails before any gate executes.
+      - name: Install Linux webview dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
+          librsvg2-dev patchelf
+
+      # The coverage gate shells out to `cargo llvm-cov`. The companion
+      # `llvm-tools-preview` component is declared in rust-toolchain.toml and
+      # re-asserted here so this step fails early and legibly if it ever drifts.
+      # `taiki-e/install-action` would be faster, but `cargo install --locked`
+      # keeps the supply chain to crates.io and matches local setup.
+      - name: Install coverage tooling
+        run: |
+          rustup component add llvm-tools-preview
+          cargo install cargo-llvm-cov --locked
+
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -151,5 +170,7 @@ jobs:
       - name: Run release gate without external artifacts
         run: node scripts/verify/checks/task-13.9.mjs
 
+      # OpenSpec is a pinned devDependency, not a globally installed tool, so
+      # the CLI is only reachable through pnpm.
       - name: Validate archived OpenSpec changes
-        run: openspec validate --archived
+        run: pnpm exec openspec validate --archived

@@ -1,6 +1,7 @@
 # 架构/规范治理 — 剩余工作交接
 
-> 基线：`089a50a`（`chore: enforce architecture and code standards`）之后的收尾提交。
+> 基线：`main` 上 `089a50a`（`chore: enforce architecture and code standards`）之后的 5 个收尾提交，
+> 用 `git log --oneline -6` 定位。下面所有数值都在这组提交的顶端重跑过。
 > OpenSpec change：`openspec/changes/enforce-architecture-and-code-standards/`
 > 完成度：**38/47**，逐项原因见该 change 的 `tasks.md` 末尾「收尾状态」表。
 >
@@ -8,7 +9,26 @@
 
 ---
 
-## 0. 先跑通这些命令（照抄，不要凭印象）
+## 0. 已实测基线（在当前 HEAD 重跑过，可直接引用）
+
+| 项 | 实测值 | 命令 |
+|---|---|---|
+| Rust 测试 | 732 passed / 0 failed | `cargo test --workspace` |
+| Core 单元覆盖率 | **91.77% 行**（91.19% 区域） | `cargo llvm-cov -p echo-core --all-features --ignore-filename-regex application/testing --fail-under-lines 90` |
+| 前端测试 | 177 passed / 26 files | `pnpm test --run` |
+| lint | 0 error / 6 warning | `pnpm lint` |
+| 规模豁免 | 11 文件 / 4 trait（棘轮，只能减） | `node scripts/verify/check-scale.mjs` |
+| 场景对账 | spec 218 = trace 218 = manifest 218 | `node scripts/verify/reconcile-scenarios.mjs` |
+| 场景命令重复度 | 218 场景 / 124 命令（1.76x），最差簇 16 | `node scripts/verify/check-scenario-churn.mjs` |
+| 注册检查数 | 84 个 | `node scripts/verify/check-verification-validity.mjs` |
+| 聚合门禁 | **exit 0，12 道全绿** | `pnpm verify:governance` |
+| clippy `-D warnings` | **❌ 93 条 warning** | `cargo clippy --workspace --all-targets -- -D warnings` |
+
+**唯一结构性红灯是 clippy。** 覆盖率是绿的——但见下面第 8 节的坑，它是"看起来红过"的那一个。
+
+---
+
+## 1. 先跑通这些命令（照抄，不要凭印象）
 
 ```bash
 # 前端
@@ -25,9 +45,9 @@ pnpm verify:governance
 # 构建纯净性（含产物级证明，会真跑一次 cargo check）
 ECHO_PURITY_REQUIRE_BUILD=1 node scripts/verify/check-build-purity.mjs
 
-# OpenSpec
-openspec validate enforce-architecture-and-code-standards --strict
-openspec validate --archived
+# OpenSpec（CLI 是根 devDependency，走 pnpm exec；CI 同一条命令）
+pnpm exec openspec validate enforce-architecture-and-code-standards --strict
+pnpm exec openspec validate --archived
 ```
 
 注意：`cargo` 子命令的参数分隔符 `--` 不能省；`src-tauri` 的包名是 **`echo-app`**（不是 `echo-desktop`），
@@ -35,7 +55,7 @@ openspec validate --archived
 
 ---
 
-## 1. 唯一的结构性红灯：clippy 存量告警（任务 2.3 / 8.1）
+## 2. 唯一的结构性红灯：clippy 存量告警（任务 2.3 / 8.1）
 
 `cargo clippy --workspace --all-targets -- -D warnings` **失败**。
 
@@ -72,7 +92,7 @@ openspec validate --archived
 
 ---
 
-## 2. 剩余规模超标文件（任务 5.5 / 5.8）
+## 3. 剩余规模超标文件（任务 5.5 / 5.8）
 
 `scripts/verify/check-scale.mjs` 是一条**棘轮门禁**：豁免清单 `scripts/verify/scale-allowlist.json`
 **只能减不能增**。当前豁免 11 个文件 + 4 个 trait。
@@ -107,7 +127,7 @@ openspec validate --archived
 
 ---
 
-## 3. 检查有效性证明（任务 7.6）
+## 4. 检查有效性证明（任务 7.6）
 
 已有 84 个检查的静态 evidence + failure 路由门禁（`check-verification-validity.mjs`），
 并已用「注册一个空的 `console.log` 式检查」证明它会失败。
@@ -132,7 +152,7 @@ openspec validate --archived
 
 ---
 
-## 4. 场景命令重复治理的完整形态（任务 7.7）
+## 5. 场景命令重复治理的完整形态（任务 7.7）
 
 已建棘轮门禁 `check-scenario-churn.mjs`：场景命令重复度 ≤1.8x、单命令 ≤16 个场景，**只能降不能升**。
 
@@ -146,7 +166,7 @@ openspec validate --archived
 
 ---
 
-## 5. 场景全量 / 真机 / 归档（任务 8.3 / 8.4 / 8.5）
+## 6. 场景全量 / 真机 / 归档（任务 8.3 / 8.4 / 8.5）
 
 - **8.3**：`pnpm verify:scenario -- --all` 没全跑过。其中含 native 举证行，需要**真机产物**（macOS 本机）。
 - **8.4 真机冒烟**：没做。需要在真机上走一遍播放 / 恢复路径。可参考的排查手段见
@@ -162,7 +182,7 @@ openspec validate --archived
 
 ---
 
-## 6. 本轮新增并已「接电」的门禁（背景信息，勿重复造）
+## 7. 本轮新增并已「接电」的门禁（背景信息，勿重复造）
 
 `scripts/verify/manifest.json` 新增任务 **14.1–14.7**，接入 `pnpm verify:governance`
 （`scripts/verify/ci-governance.mjs`）与 CI 的 `governance` job：
@@ -181,7 +201,7 @@ openspec validate --archived
 
 ---
 
-## 7. 施工纪律（本轮用血换的）
+## 8. 施工纪律（本轮用血换的）
 
 1. **动手前先备份工作树**。本轮 `main` 上有 88 个未提交改动且**编译是红的**；
    `tar czf /tmp/echo-wip-*.tar.gz` 这个动作后来真救了场（一个子代理留下 525 个编译错误的半成品，
@@ -194,3 +214,9 @@ openspec validate --archived
    本轮定稿的方案被独立复核纠正了 8 处，其中 3 处会导致错误施工。
 5. **不要为了让门禁变绿而放宽门禁**。本轮拆测试文件时架构守卫真抓到一条存量越界，
    正确做法是改目录让它合规。
+
+6. **覆盖率数字在大重构后不可信，要先清插桩缓存**。本轮 `cargo llvm-cov` 复用了拆分前的
+   instrumented 产物，把已缩到 8 行的 `application/import.rs` 仍按 603 行的旧版本统计，
+   报出 **73.48%** 的假红；`cargo llvm-cov clean --workspace` 后同一命令得到 **91.77%**，
+   门禁 exit 0。**看到覆盖率突然掉十几个点，先 `clean` 再下结论**——否则会去追一个不存在的
+   覆盖率缺口。CI 上是干净 runner，不受影响；这个坑只在本机复现。

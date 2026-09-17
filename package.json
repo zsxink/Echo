@@ -14,5 +14,7 @@
     "verify:governance": "node scripts/verify/ci-governance.mjs",
     "verify:frontend-fresh": "node scripts/verify/checks/check-embedded-frontend.mjs"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@fission-ai/openspec": "1.13.0"
+  }
 }

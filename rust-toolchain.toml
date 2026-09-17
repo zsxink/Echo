@@ -1,6 +1,9 @@
 # Pin the Rust toolchain so builds are reproducible across machines and CI.
 # Use stable; update deliberately, in lockstep with Cargo.toml `rust-version`.
+# `llvm-tools-preview` is required by `cargo llvm-cov`, which the task-12.8
+# coverage gate invokes; declaring it here means a fresh clone can run
+# `pnpm verify:governance` without a separate manual install.
 [toolchain]
 channel = "1.96.0"
-components = ["rustfmt", "clippy"]
+components = ["rustfmt", "clippy", "llvm-tools-preview"]
 profile = "minimal"
