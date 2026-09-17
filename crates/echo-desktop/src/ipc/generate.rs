@@ -41,7 +41,9 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly coverKey: string | null;\n");
     out.push_str("}\n\n");
     out.push_str("export interface UiPlayerSnapshot {\n");
-    out.push_str("  readonly state: 'stopped' | 'loading' | 'playing' | 'paused' | 'ended' | 'failed';\n");
+    out.push_str(
+        "  readonly state: 'stopped' | 'loading' | 'playing' | 'paused' | 'ended' | 'failed';\n",
+    );
     out.push_str("  readonly position: number | null;\n");
     out.push_str("  readonly duration: number | null;\n");
     out.push_str("  readonly volume: number;\n");

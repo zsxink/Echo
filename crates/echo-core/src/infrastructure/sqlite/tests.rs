@@ -2015,7 +2015,8 @@ fn catalog_favorites_honors_its_own_manual_sort() {
     let alphabetically_last = song(root, "songs/last.flac", "Z song", "艺人");
     SongRepository::upsert(&database, &alphabetically_first).expect("seed first");
     SongRepository::upsert(&database, &alphabetically_last).expect("seed last");
-    SongRepository::set_favorite(&database, alphabetically_first.id(), true).expect("favorite first");
+    SongRepository::set_favorite(&database, alphabetically_first.id(), true)
+        .expect("favorite first");
     SongRepository::set_favorite(&database, alphabetically_last.id(), true).expect("favorite last");
 
     let page = CatalogQuery::new(&database)

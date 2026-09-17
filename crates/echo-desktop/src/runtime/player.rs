@@ -116,7 +116,10 @@ impl QueueMetadataResolver {
     /// the cache, so repeated 10 Hz snapshots of an unchanged queue cost zero
     /// repository queries. Temporary items (no `song_id`) are never queried
     /// and never appear in the map (they already carry a display title).
-    pub fn resolve(&self, queue: &[QueueEntry]) -> std::collections::HashMap<SongId, QueueEntryMeta> {
+    pub fn resolve(
+        &self,
+        queue: &[QueueEntry],
+    ) -> std::collections::HashMap<SongId, QueueEntryMeta> {
         let mut result = std::collections::HashMap::new();
         let mut missing = std::collections::HashSet::new();
         {
@@ -1351,7 +1354,7 @@ mod tests {
                 &std::collections::HashMap::new()
             )
             .queue[0]
-            .blocked
+                .blocked
         );
     }
 
@@ -1641,9 +1644,7 @@ mod tests {
             item: QueueItem::Library(song_id),
         };
         let meta = resolver.resolve(&[entry]);
-        let meta = meta
-            .get(&song_id)
-            .expect("the queue song is resolved");
+        let meta = meta.get(&song_id).expect("the queue song is resolved");
         assert_eq!(meta.title.as_deref(), Some("晴天"));
         assert_eq!(meta.artist.as_deref(), Some("周杰伦"));
         assert_eq!(meta.duration_s, Some(239));

@@ -164,9 +164,7 @@ fn sort_sql(sort: SongSort, favorites: bool) -> String {
         } else {
             "DESC"
         };
-        return format!(
-            "COALESCE(s.favorited_at, s.added_at) {direction}, s.uuid {direction}"
-        );
+        return format!("COALESCE(s.favorited_at, s.added_at) {direction}, s.uuid {direction}");
     }
     let direction = if sort.direction == SortDirection::Asc {
         "ASC"
@@ -195,10 +193,10 @@ fn cursor_keys(
         "COALESCE(favorited_at, added_at), uuid"
     } else {
         match sort.field {
-        SongSortField::AddedAt => "added_at, uuid",
-        SongSortField::Title => "title_sort, artist_sort, uuid",
-        SongSortField::Artist => "artist_sort, title_sort, uuid",
-        SongSortField::PlayCount => "play_count, title_sort, artist_sort, uuid",
+            SongSortField::AddedAt => "added_at, uuid",
+            SongSortField::Title => "title_sort, artist_sort, uuid",
+            SongSortField::Artist => "artist_sort, title_sort, uuid",
+            SongSortField::PlayCount => "play_count, title_sort, artist_sort, uuid",
         }
     };
     let mut statement = connection
@@ -237,10 +235,12 @@ fn keyset_predicate(
         vec!["COALESCE(s.favorited_at, s.added_at)", "s.uuid"]
     } else {
         match sort.field {
-        SongSortField::AddedAt => vec!["s.added_at", "s.uuid"],
-        SongSortField::Title => vec!["s.title_sort", "s.artist_sort", "s.uuid"],
-        SongSortField::Artist => vec!["s.artist_sort", "s.title_sort", "s.uuid"],
-        SongSortField::PlayCount => vec!["s.play_count", "s.title_sort", "s.artist_sort", "s.uuid"],
+            SongSortField::AddedAt => vec!["s.added_at", "s.uuid"],
+            SongSortField::Title => vec!["s.title_sort", "s.artist_sort", "s.uuid"],
+            SongSortField::Artist => vec!["s.artist_sort", "s.title_sort", "s.uuid"],
+            SongSortField::PlayCount => {
+                vec!["s.play_count", "s.title_sort", "s.artist_sort", "s.uuid"]
+            }
         }
     };
     if columns.len() != keys.len() {
