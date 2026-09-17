@@ -18,8 +18,7 @@ import { useRef, useState } from "react";
 import { assetUrl, bridge } from "../../bridge";
 import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
 import { usePlayerSnapshot, usePlayerUi, playerStore } from "../../player/playerStore";
-import { coverClass } from "../library/coverPalette";
-import { formatDuration } from "../library/SongRow";
+import { coverClass, formatDuration } from "../library";
 
 function QueueCover({
   coverKey,
@@ -67,7 +66,7 @@ export function QueuePanel() {
   const hasPending = entries.some((entry) => !entry.isCurrent);
 
   function command(action: string) {
-    void bridge.call("queue_command", { command: action });
+    bridge.fireAndForget("queue_command", { command: action });
   }
 
   return (
@@ -127,7 +126,7 @@ export function QueuePanel() {
                 aria-label={`播放 ${entry.title ?? "未知歌曲"}`}
                 disabled={entry.blocked || entry.failed}
                 onClick={() =>
-                  void bridge.call("queue_command", {
+                  bridge.fireAndForget("queue_command", {
                     command: "playEntry",
                     entryId: entry.entryId,
                   })

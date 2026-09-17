@@ -16,9 +16,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { playerStore, type UiPlayerSnapshot } from "./playerStore";
 import { useGlobalPlayerHotkeys } from "./useGlobalPlayerHotkeys";
 
-vi.mock("../bridge", () => ({
-  bridge: { call: vi.fn() },
-}));
+vi.mock("../bridge", () => {
+  // Task 6.1: non-blocking IPC goes through `bridge.fireAndForget`, which must
+  // still be observable here — it delegates to the same `call` spy so every
+  // assertion below keeps working unchanged.
+  const call = vi.fn();
+  return {
+    bridge: {
+      call,
+      fireAndForget: (command: string, ...args: unknown[]) => {
+        void call(command, ...args);
+      },
+    },
+  };
+});
 
 import { bridge } from "../bridge";
 

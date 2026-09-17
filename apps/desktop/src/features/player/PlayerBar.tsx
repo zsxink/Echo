@@ -39,10 +39,9 @@ import {
 } from "../../player/playerStore";
 import { useCoverKeys } from "../../app/coverArt";
 import { Icon } from "../../app/Icon";
-import { formatDuration } from "../library/SongRow";
+import { formatDuration } from "../library";
 import { useSongDetail } from "./useSongDetail";
-import { bumpLibraryCount } from "../library/coverPalette";
-import { publishSongUpdate } from "../library/songUpdates";
+import { bumpLibraryCount, publishSongUpdate } from "../library";
 import type { SongView } from "../../ipc/ipc-types.generated";
 
 export function PlayerBar() {
@@ -84,7 +83,7 @@ export function PlayerBar() {
 
   function command(action: string) {
     // Coarse player control; the Rust coordinator owns the queue + snapshot.
-    void bridge.call("player_control", { action });
+    bridge.fireAndForget("player_control", { action });
   }
 
   async function importToLibrary() {
@@ -92,9 +91,7 @@ export function PlayerBar() {
     setImporting(true);
     setImportResult(null);
     try {
-      const result = (await bridge.call("import_current_temporary_file")) as {
-        kind: string;
-      };
+      const result = await bridge.call("import_current_temporary_file");
       switch (result.kind) {
         case "imported":
           setImportResult("已导入到资料库");
@@ -163,9 +160,9 @@ export function PlayerBar() {
                     : null;
             if (target === null) return;
             event.preventDefault();
-            void bridge.call("seek", { position: target });
+            bridge.fireAndForget("seek", { position: target });
           }}
-          onChange={(event) => void bridge.call("seek", { position: Number(event.target.value) })}
+            onChange={(event) => bridge.fireAndForget("seek", { position: Number(event.target.value) })}
         />
       </div>
 
@@ -302,7 +299,7 @@ export function PlayerBar() {
           aria-label={snapshot.muted ? "取消静音" : "静音"}
           title={snapshot.muted ? "取消静音" : "静音"}
           aria-pressed={snapshot.muted}
-          onClick={() => void bridge.call("toggle_mute")}
+          onClick={() => bridge.fireAndForget("toggle_mute")}
         >
           <Icon name={snapshot.muted ? "volumeMuted" : "volume"} />
         </button>
@@ -321,7 +318,7 @@ export function PlayerBar() {
             step={0.05}
             value={snapshot.volume}
             onChange={(event) =>
-              void bridge.call("set_volume", { volume: Number(event.target.value) })
+              bridge.fireAndForget("set_volume", { volume: Number(event.target.value) })
             }
           />
         </div>

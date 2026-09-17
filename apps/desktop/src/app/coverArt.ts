@@ -23,9 +23,10 @@
  * until the user happened to scroll.
  */
 
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef } from "react";
 
 import { bridge } from "../bridge";
+import { ExternalStore, useExternalStore } from "./externalStore";
 
 /** One reading of the cache. `generation` changes on invalidation. */
 interface CoverSnapshot {
@@ -34,28 +35,11 @@ interface CoverSnapshot {
   readonly covers: ReadonlyMap<string, string>;
 }
 
-let snapshot: CoverSnapshot = { generation: 0, covers: new Map() };
+const coverStore = new ExternalStore<CoverSnapshot>({ generation: 0, covers: new Map() });
 /** Ids already asked about — with or without artwork — so we never re-ask. */
 const asked = new Set<string>();
 /** Ids with a request in flight, so a re-render cannot duplicate one. */
 const inFlight = new Set<string>();
-const listeners = new Set<() => void>();
-
-function emit(): void {
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-function getSnapshot(): CoverSnapshot {
-  return snapshot;
-}
-
 /** Ask the desktop for any of `songIds` whose artwork is not resolved yet. */
 export function requestCovers(songIds: readonly string[]): void {
   const wanted = songIds.filter((id) => !asked.has(id) && !inFlight.has(id));
@@ -63,15 +47,14 @@ export function requestCovers(songIds: readonly string[]): void {
   for (const id of wanted) inFlight.add(id);
 
   void bridge
-    .call<[{ songIds: string[] }], Record<string, string> | null | undefined>("song_cover_keys", {
-      songIds: wanted,
-    })
+    .call("song_cover_keys", { songIds: wanted })
     .then((found) => {
       // A shell that cannot answer the command (an older build, a test double
       // with no handler) resolves to a non-object: every song is then
       // artwork-less, which is the same end state as a file with no embedded
       // cover — never a thrown request that loses the whole batch.
       const answer = found ?? {};
+      const snapshot = coverStore.getSnapshot();
       const next = new Map(snapshot.covers);
       let changed = false;
       for (const id of wanted) {
@@ -85,8 +68,7 @@ export function requestCovers(songIds: readonly string[]): void {
       // No artwork in this window is the common case: republishing an identical
       // map would wake every subscriber for no visible change.
       if (!changed) return;
-      snapshot = { generation: snapshot.generation, covers: next };
-      emit();
+      coverStore.setSnapshot({ generation: snapshot.generation, covers: next });
     })
     .catch(() => {
       // A failed lookup must not become a retry loop on every render: record the
@@ -106,8 +88,8 @@ export function requestCovers(songIds: readonly string[]): void {
 export function invalidateCovers(): void {
   asked.clear();
   inFlight.clear();
-  snapshot = { generation: snapshot.generation + 1, covers: new Map() };
-  emit();
+  const snapshot = coverStore.getSnapshot();
+  coverStore.setSnapshot({ generation: snapshot.generation + 1, covers: new Map() });
 }
 
 /**
@@ -120,7 +102,7 @@ export function invalidateCovers(): void {
  * a late answer for one row never reflows the others.
  */
 export function useCoverKeys(songIds: readonly string[]): ReadonlyMap<string, string> {
-  const current = useSyncExternalStore(subscribe, getSnapshot);
+  const current = useExternalStore(coverStore);
   const latest = useRef(songIds);
   latest.current = songIds;
   // Re-ask when the rendered window changes *or* when the cache was invalidated

@@ -49,7 +49,7 @@ function pageKey(query: SongQuery): string {
 async function fetchPage(query: SongQuery, cursor?: string | null): Promise<PagedSongs> {
   const limit = 200;
   if (query.view === "recent") {
-    const items = (await bridge.call("recent", { query: query.search.trim() })) as SongView[];
+    const items = await bridge.call("recent", { query: query.search.trim() });
     return { items, isLast: true };
   }
   const sort = `${query.sort.field}:${query.sort.direction}`;

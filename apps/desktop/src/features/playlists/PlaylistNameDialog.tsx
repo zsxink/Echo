@@ -18,7 +18,7 @@ import { useMemo, useRef, useState } from "react";
 import { bridge } from "../../bridge";
 import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
 import { Icon } from "../../app/Icon";
-import { coverClass } from "../library/coverPalette";
+import { coverClass } from "../library";
 
 export interface PlaylistNameDialogProps {
   readonly mode: "create" | "edit";
@@ -93,18 +93,22 @@ export function PlaylistNameDialog({
       return;
     }
     if (busy) return;
-    if (creating && !root?.trim()) {
-      setError("当前资料库不可用，请恢复后重试");
-      return;
-    }
     setBusy(true);
     const name = value.trim();
     try {
       if (creating) {
-        const createdId = await bridge.call("create_playlist", { root, name });
-        if (typeof createdId === "string") onDone(name, createdId);
-        else onDone(name);
+        const activeRoot = root?.trim();
+        if (!activeRoot) {
+          setError("当前资料库不可用，请恢复后重试");
+          return;
+        }
+        const createdId = await bridge.call("create_playlist", { root: activeRoot, name });
+        onDone(name, createdId);
       } else {
+        if (!playlistId) {
+          setError("歌单已不存在，请刷新后重试");
+          return;
+        }
         await bridge.call("rename_playlist", { id: playlistId, name });
         if (coverChange !== undefined) {
           await bridge.call("set_playlist_cover", {

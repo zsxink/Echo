@@ -15,7 +15,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { LibraryWorkspace } from "./LibraryWorkspace";
-import { PlayerBar } from "../player/PlayerBar";
+import { PlayerBar } from "../player";
 import { playerStore } from "../../player/playerStore";
 
 const mocks = (

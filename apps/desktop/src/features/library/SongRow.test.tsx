@@ -21,7 +21,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SongView } from "../../ipc/ipc-types.generated";
-import { coverClass } from "./coverPalette";
+import { coverClass } from "./coverClass";
 import { SongRow } from "./SongRow";
 
 function makeSong(extra: Partial<SongView> = {}): SongView {

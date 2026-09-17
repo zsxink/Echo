@@ -14,10 +14,20 @@ import { describe, expect, it, vi } from "vitest";
 import { playerStore, type UiPlayerSnapshot } from "../../player/playerStore";
 import { QueuePanel } from "./QueuePanel";
 
-vi.mock("../../bridge", () => ({
-  bridge: { call: vi.fn() },
-  assetUrl: (key: string) => `cover://${key}`,
-}));
+vi.mock("../../bridge", () => {
+  const call = vi.fn();
+  return {
+    bridge: {
+      call,
+      // Task 6.1 keeps the fire-and-forget path observable: delegate to the
+      // same spy so assertions about "which command was sent" still hold.
+      fireAndForget: (command: string, ...args: unknown[]) => {
+        void call(command, ...args);
+      },
+    },
+    assetUrl: (key: string) => `cover://${key}`,
+  };
+});
 
 import { bridge } from "../../bridge";
 

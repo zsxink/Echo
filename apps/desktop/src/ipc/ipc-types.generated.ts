@@ -88,6 +88,42 @@ export interface LibraryRootStatusDto {
   readonly activeRoot: string;
 }
 
+export interface LibraryStatus {
+  readonly configured: boolean;
+  readonly readOnly: boolean;
+  readonly unavailable: boolean;
+  readonly scanning: boolean;
+  readonly activeRoot?: string;
+}
+
+export interface ScanSnapshot {
+  readonly generation: number;
+  readonly cancelled: boolean;
+  readonly state: string;
+  readonly discovered: number;
+  readonly processed: number;
+  readonly created: number;
+  readonly updated: number;
+  readonly missing: number;
+  readonly skipped: number;
+  readonly failed: number;
+}
+
+export interface SongDetailView {
+  readonly songId: string;
+  readonly relativePath: string;
+  readonly title?: string;
+  readonly artist?: string;
+  readonly album?: string;
+  readonly durationS?: number;
+  readonly format?: string;
+  readonly playCount: number;
+  readonly favorite: boolean;
+  readonly hasCover: boolean;
+  readonly lyrics: string;
+  readonly availability: SongAvailability;
+}
+
 export type ImportResultDto =
   | { readonly kind: 'imported'; readonly operationId: string; readonly songId: string; readonly relativePath: string }
   | { readonly kind: 'duplicate'; readonly existingSongId: string }
@@ -120,3 +156,46 @@ export interface SongLyricsDto {
 
 export type Theme = 'coral' | 'cobalt' | 'turquoise';
 export type CloseBehavior = 'exit' | 'background';
+
+/** Generated command name → successful return DTO contract. */
+export interface IpcCommandResultMap {
+  readonly get_bootstrap_state: BootstrapSnapshot;
+  readonly library_status: LibraryStatus;
+  readonly all_songs: PagedSongs;
+  readonly search: PagedSongs;
+  readonly favorites: PagedSongs;
+  readonly recent: readonly SongView[];
+  readonly library_counts: LibraryCountsDto;
+  readonly playlists: readonly PlaylistView[];
+  readonly playlist_members: readonly SongView[];
+  readonly song_detail: SongDetailView;
+  readonly song_cover_keys: Readonly<Record<string, string>>;
+  readonly set_favorite: SongView;
+  readonly create_playlist: string;
+  readonly rename_playlist: void;
+  readonly set_playlist_cover: void;
+  readonly delete_playlist: void;
+  readonly add_to_playlists: void;
+  readonly remove_playlist_song: void;
+  readonly delete_song: string;
+  readonly undo_delete: string;
+  readonly choose_library_root: LibraryRootStatusDto | null;
+  readonly choose_and_import_files: ImportBatchDto | null;
+  readonly reveal_song: RevealResultDto;
+  readonly start_scan: ScanSnapshot;
+  readonly cancel_scan: boolean;
+  readonly set_theme: void;
+  readonly set_close_behavior: void;
+  readonly get_close_behavior: CloseBehavior;
+  readonly play_playlist_context: void;
+  readonly play_library_context: void;
+  readonly restore_playback_session: string;
+  readonly play_temporary_file: void;
+  readonly import_current_temporary_file: ImportResultDto;
+  readonly player_control: void;
+  readonly queue_command: void;
+  readonly set_volume: void;
+  readonly toggle_mute: void;
+  readonly seek: void;
+  readonly get_lyrics: SongLyricsDto;
+}

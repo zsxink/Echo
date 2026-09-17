@@ -16,7 +16,6 @@ import { useState } from "react";
 
 import { bridge, BridgeError } from "../../bridge";
 import { invalidateCovers } from "../../app/coverArt";
-import type { LibraryRootStatusDto } from "../../ipc/ipc-types.generated";
 
 export function ChooseRootView({ onActivated }: { onActivated: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
@@ -26,7 +25,7 @@ export function ChooseRootView({ onActivated }: { onActivated: () => Promise<voi
     setBusy(true);
     setError(null);
     try {
-      const result = (await bridge.call("choose_library_root")) as LibraryRootStatusDto | null;
+      const result = await bridge.call("choose_library_root");
       if (result === null) {
         // Cancelled: stay on the initialize view — never a scan/success claim.
         return;

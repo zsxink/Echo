@@ -61,7 +61,7 @@ export function useGlobalPlayerHotkeys(): void {
         const snap = playerStore.getSnapshot();
         if (snap.currentQueueEntryId === null) return;
         event.preventDefault();
-        void bridge.call("player_control", { action: "toggle" });
+        bridge.fireAndForget("player_control", { action: "toggle" });
         return;
       }
 
@@ -85,13 +85,13 @@ export function useGlobalPlayerHotkeys(): void {
           break;
         case "m":
         case "M":
-          void bridge.call("toggle_mute");
+          bridge.fireAndForget("toggle_mute");
           break;
         case ".":
-          void bridge.call("player_control", { action: "next" });
+          bridge.fireAndForget("player_control", { action: "next" });
           break;
         case ",":
-          void bridge.call("player_control", { action: "previous" });
+          bridge.fireAndForget("player_control", { action: "previous" });
           break;
         default:
           return;
@@ -108,13 +108,13 @@ export function useGlobalPlayerHotkeys(): void {
     const snap = playerStore.getSnapshot();
     if (snap.currentQueueEntryId === null || snap.position === null) return;
     const target = Math.max(0, snap.position + delta);
-    void bridge.call("seek", { position: target });
+    bridge.fireAndForget("seek", { position: target });
   }
 
   /** Step volume by a relative delta, clamped to [0, 1]. */
   function volumeRelative(delta: number): void {
     const snap = playerStore.getSnapshot();
     const next = Math.min(1, Math.max(0, snap.volume + delta));
-    void bridge.call("set_volume", { volume: next });
+    bridge.fireAndForget("set_volume", { volume: next });
   }
 }

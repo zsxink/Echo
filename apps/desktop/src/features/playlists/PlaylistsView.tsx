@@ -20,13 +20,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { bridge } from "../../bridge";
 import { usePlayerSnapshot } from "../../player/playerStore";
 import type { SongView } from "../../ipc/ipc-types.generated";
-import { SongList } from "../library/SongList";
-import { SongSortControl } from "../library/SongSortControl";
-import { useStoredSongSort } from "../library/useStoredSongSort";
-import type { SongSort } from "../library/types";
-import { bumpLibraryCount, invalidateLibraryCounts } from "../library/coverPalette";
-import { publishSongUpdate } from "../library/songUpdates";
-import { ConfirmationDialog, SongMenu, type MenuAnchor } from "../library/SongMenu";
+import {
+  SongList,
+  SongSortControl,
+  useStoredSongSort,
+  bumpLibraryCount,
+  invalidateLibraryCounts,
+  publishSongUpdate,
+  ConfirmationDialog,
+  SongMenu,
+  type MenuAnchor,
+  type SongSort,
+} from "../library";
 import { PlaylistNameDialog } from "./PlaylistNameDialog";
 import { Icon } from "../../app/Icon";
 import { Topbar } from "../../app/shell";
@@ -113,7 +118,7 @@ export function PlaylistsView({
       // The desktop resolves the playlist's full member set itself; the UI
       // submits only the selected song. A partial/paged list can never
       // truncate the queue (spec: 视图播放重建队列数量).
-      void bridge.call("play_playlist_context", {
+      bridge.fireAndForget("play_playlist_context", {
         playlist: playlistId,
         selectedSong: song.id,
       });
@@ -237,7 +242,7 @@ export function PlaylistsView({
             setMenuFor(null);
           }}
           onPlayNext={() => {
-            void bridge.call("queue_command", {
+            bridge.fireAndForget("queue_command", {
               command: "playNext",
               songId: menuFor.song.id,
             });

@@ -21,12 +21,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { playerStore, type UiPlayerSnapshot } from "../../player/playerStore";
 import { ImmersivePlayer } from "./ImmersivePlayer";
 
-vi.mock("../../bridge", () => ({
-  bridge: { call: vi.fn() },
-  // The real shell composes `cover://<key>`; the test only needs a URL that
-  // carries the opaque key.
-  assetUrl: (key: string) => `cover://${key}`,
-}));
+vi.mock("../../bridge", () => {
+  const call = vi.fn();
+  return {
+    bridge: {
+      call,
+      // Task 6.1 keeps the fire-and-forget path observable: delegate to the
+      // same spy so assertions about "which command was sent" still hold.
+      fireAndForget: (command: string, ...args: unknown[]) => {
+        void call(command, ...args);
+      },
+    },
+    // The real shell composes `cover://<key>`; the test only needs a URL that
+    // carries the opaque key.
+    assetUrl: (key: string) => `cover://${key}`,
+  };
+});
 
 import { bridge } from "../../bridge";
 
@@ -70,7 +80,7 @@ function mockService(
     parseError: null as string | null,
     ...lyrics,
   };
-  call.mockImplementation(async (cmd: string, ...rest: unknown[]) => {
+  call.mockImplementation((async (cmd: string, ...rest: unknown[]) => {
     if (cmd === "song_detail")
       return {
         songId: (rest[0] as Record<string, unknown>)?.songId,
@@ -82,7 +92,7 @@ function mockService(
     // absent from the map.
     if (cmd === "song_cover_keys") return meta.coverKeys ?? {};
     return undefined;
-  });
+  }) as never);
 }
 
 describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
@@ -232,14 +242,14 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
 
   it("updates in place on track change", async () => {
     call.mockReset();
-    call.mockImplementation(async (cmd: string, ...rest: unknown[]) => {
+    call.mockImplementation((async (cmd: string, ...rest: unknown[]) => {
       const songId = (rest[0] as Record<string, unknown>)?.songId;
       if (cmd === "song_detail")
         return { songId, title: songId === "s1" ? "One" : "Two", hasCover: true };
       if (cmd === "get_lyrics")
         return { source: null, timed: false, lines: [], plainText: "", parseError: null };
       return undefined;
-    });
+    }) as never);
 
     playerStore.setImmersiveOpen(true);
     playerStore.publish(

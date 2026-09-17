@@ -75,7 +75,7 @@ export function ImportBatchDialog({ onClose, onDone }: ImportBatchDialogProps) {
   async function chooseAndImport() {
     setBusy(true);
     try {
-      const result = (await bridge.call("choose_and_import_files")) as ImportBatchDto | null;
+      const result = await bridge.call("choose_and_import_files");
       if (result === null) {
         // Cancelled dialog: no success, no failure — a genuine no-op.
         onClose();

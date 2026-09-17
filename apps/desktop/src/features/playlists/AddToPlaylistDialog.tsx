@@ -24,7 +24,7 @@ import { bridge } from "../../bridge";
 import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
 import { Icon } from "../../app/Icon";
 import type { PlaylistView } from "../../ipc/ipc-types.generated";
-import { coverClass } from "../library/coverPalette";
+import { coverClass } from "../library";
 import { PlaylistNameDialog } from "./PlaylistNameDialog";
 
 export interface AddToPlaylistDialogProps {

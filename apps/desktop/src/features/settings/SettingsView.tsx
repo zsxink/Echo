@@ -23,7 +23,7 @@ import { bridge } from "../../bridge";
 import { Icon } from "../../app/Icon";
 import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
 import type { CloseBehavior } from "../../ipc/ipc-types.generated";
-import { useLibraryStatus } from "../workspace/useLibraryStatus";
+import { useLibraryStatus } from "../workspace";
 import { useTheme, type Theme } from "./useTheme";
 
 /**
@@ -102,7 +102,7 @@ export function SettingsView({ onClose }: { readonly onClose: () => void }) {
   async function chooseDirectory() {
     setChoosing(true);
     try {
-      const result = (await bridge.call("choose_library_root")) as unknown | null;
+      const result = await bridge.call("choose_library_root");
       // A cancelled picker is a genuine no-op — the dialog stays open and the
       // current directory keeps being reported.
       if (result !== null) await status.refresh();

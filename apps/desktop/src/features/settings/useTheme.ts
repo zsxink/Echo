@@ -53,9 +53,7 @@ export function useTheme(): UseThemeResult {
     }
     // Persist atomically desktop-side; a failed persist keeps the local value
     // and the store falls back on next load — never fatal.
-    void bridge.call("set_theme", { theme: next }).catch(() => {
-      /* non-fatal */
-    });
+    bridge.fireAndForget("set_theme", { theme: next });
   }, []);
 
   return { theme, setTheme };

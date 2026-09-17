@@ -35,7 +35,7 @@ export function useLibraryStatus(): LibraryStatus & { refresh: () => Promise<voi
 
   const refresh = useCallback(async () => {
     const request = invalidate();
-    const value = (await bridge.call("library_status")) as LibraryStatus;
+    const value = await bridge.call("library_status");
     if (request === revision.current) setStatus(value);
   }, [invalidate]);
 

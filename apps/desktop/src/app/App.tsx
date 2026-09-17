@@ -30,22 +30,18 @@
  * fidelity — it was invention, and it violated task 10.4 / 13.8 and the
  * phase-one scope in `docs/ROADMAP.md` ("不包含：资料库同步与可操作的同步入口").
  * Sync arrives in phase two.
+ *
+ * All state and the sidebar's overlay/focus behaviour are orchestrated by
+ * `useAppShell` (task 6.6); this file keeps only the layout.
  */
-
-import { useCallback, useRef, useState } from "react";
 
 import { bridge } from "../bridge";
 import { ChooseRootView } from "../features/workspace/ChooseRootView";
-import { useLibraryPlaylists } from "../features/playlists/useLibraryPlaylists";
 import { LibraryStatusView } from "../features/workspace/LibraryStatusView";
-import { useLibraryStatus } from "../features/workspace/useLibraryStatus";
+import type { LibraryCountView } from "../features/library/libraryCounts";
+import { useLibraryCounts } from "../features/library/libraryCounts";
 import type { LibraryViewKind } from "../features/library/types";
-import {
-  coverClass,
-  useLibraryCounts,
-  useLibraryCountSync,
-  type LibraryCountView,
-} from "../features/library/coverPalette";
+import { coverClass } from "../features/library/coverClass";
 import { LibraryWorkspace } from "../features/library/LibraryWorkspace";
 import { PlaylistCreateDialog } from "../features/playlists/PlaylistNameDialog";
 import { PlaylistsView } from "../features/playlists/PlaylistsView";
@@ -53,59 +49,29 @@ import { SettingsView } from "../features/settings/SettingsView";
 import { PlayerBar } from "../features/player/PlayerBar";
 import { ImmersivePlayer } from "../features/player/ImmersivePlayer";
 import { QueuePanel } from "../features/player/QueuePanel";
-import { useTheme } from "../features/settings/useTheme";
-import { useGlobalPlayerHotkeys } from "../player/useGlobalPlayerHotkeys";
-import { OverlayTier, useFocusTrap, useOverlay } from "./overlays";
 import { Icon } from "./Icon";
-import { ShellNavProvider, type ShellNav } from "./shell";
+import { ShellNavProvider } from "./shell";
 import { ToastView } from "./ToastView";
+import { useAppShell } from "./useAppShell";
 
 export function App() {
-  const { theme } = useTheme();
-  const status = useLibraryStatus();
-  const [libraryView, setLibraryView] = useState<LibraryViewKind>("all");
-  const [activePlaylistId, setActivePlaylistId] = useState<string | null>(null);
-  const [playlistNameOpen, setPlaylistNameOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  // Narrow-screen sidebar toggle (task 12.3): the sidebar collapses behind the
-  // topbar button; while open a scrim covers the workspace.
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const sidebarRef = useRef<HTMLElement>(null);
-  const { playlists, reload: reloadPlaylists } = useLibraryPlaylists(
-    status.configured,
-    status.activeRoot,
-  );
-
-  // 资料库导航计数 (tasks.md 4.2): fetched up front and re-fetched whenever
-  // anything could have changed a total, so "喜欢的音乐" shows its size before
-  // the user ever opens it.
-  useLibraryCountSync(status.configured && !status.unavailable);
-
-  // Global playback shortcuts (Space toggle, arrows step/volume, M mute,
-  // ,/. prev/next) — task 11.8. Ignored while focus is in an input/overlay.
-  useGlobalPlayerHotkeys();
-
-  const selectView = useCallback((view: LibraryViewKind, playlistId?: string | null) => {
-    setLibraryView(view);
-    setActivePlaylistId(playlistId ?? null);
-    // Selecting a view closes the narrow-screen sidebar (task 12.3).
-    setSidebarOpen(false);
-  }, []);
-
-  // The open narrow-screen sidebar is the `Sidebar`-tier layer: it closes last
-  // on the single Escape stack, and focus returns to the topbar button.
-  useOverlay({
-    tier: OverlayTier.Sidebar,
-    onClose: () => setSidebarOpen(false),
-    containerRef: sidebarRef,
-    enabled: sidebarOpen,
-  });
-  useFocusTrap(sidebarRef, sidebarOpen);
-
-  const nav: ShellNav = {
+  const {
+    theme,
+    status,
+    libraryView,
+    activePlaylistId,
+    playlists,
+    reloadPlaylists,
+    selectView,
+    nav,
+    sidebarRef,
     sidebarOpen,
-    onToggleSidebar: () => setSidebarOpen((open) => !open),
-  };
+    closeSidebar,
+    playlistNameOpen,
+    setPlaylistNameOpen,
+    settingsOpen,
+    setSettingsOpen,
+  } = useAppShell();
 
   const activePlaylist = playlists.find((playlist) => playlist.id === activePlaylistId) ?? null;
   const viewTitle =
@@ -242,7 +208,7 @@ export function App() {
               className="sidebar-scrim"
               aria-label="关闭侧边栏"
               hidden={!sidebarOpen}
-              onClick={() => setSidebarOpen(false)}
+              onClick={() => closeSidebar()}
               data-testid="sidebar-mask"
             />
 

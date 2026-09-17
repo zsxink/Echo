@@ -18,22 +18,24 @@
  */
 
 import type { SongView } from "../../ipc/ipc-types.generated";
+import { ExternalStore } from "../../app/externalStore";
 
-type Listener = (song: SongView) => void;
-
-const listeners = new Set<Listener>();
+const songUpdateStore = new ExternalStore<SongView | null>(null);
 
 /** Publish an authoritative song view returned by a committed mutation. */
 export function publishSongUpdate(song: SongView): void {
-  for (const listener of listeners) {
-    listener(song);
-  }
+  songUpdateStore.setSnapshot(song);
 }
 
 /** Subscribe to committed song updates; returns the unsubscribe handle. */
-export function subscribeSongUpdates(listener: Listener): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
+export function subscribeSongUpdates(listener: (song: SongView) => void): () => void {
+  return songUpdateStore.subscribe(() => {
+    const song = songUpdateStore.getSnapshot();
+    if (song) listener(song);
+  });
+}
+
+/** Test teardown seam for the shared event snapshot. */
+export function resetSongUpdates(): void {
+  songUpdateStore.setSnapshot(null);
 }

@@ -10,7 +10,7 @@
  * component can report an outcome without prop drilling.
  */
 
-import { useSyncExternalStore } from "react";
+import { ExternalStore, useExternalStore } from "./externalStore";
 
 export interface ToastRequest {
   readonly message: string;
@@ -32,38 +32,30 @@ export interface ToastState extends ToastRequest {
   readonly id: number;
 }
 
-type Listener = () => void;
-
 class ToastStore {
-  private current: ToastState | null = null;
+  private readonly state = new ExternalStore<ToastState | null>(null);
   private seq = 0;
-  private listeners = new Set<Listener>();
 
   get(): ToastState | null {
-    return this.current;
+    return this.state.getSnapshot();
   }
 
   show(request: ToastRequest): void {
     this.seq += 1;
-    this.current = { ...request, id: this.seq };
-    this.emit();
+    this.state.setSnapshot({ ...request, id: this.seq });
   }
 
   dismiss(): void {
-    if (this.current === null) return;
-    this.current = null;
-    this.emit();
+    if (this.state.getSnapshot() === null) return;
+    this.state.setSnapshot(null);
   }
 
-  subscribe(listener: Listener): () => void {
-    this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
+  subscribe(listener: () => void): () => void {
+    return this.state.subscribe(listener);
   }
 
-  private emit(): void {
-    for (const listener of this.listeners) listener();
+  stateForRender(): ExternalStore<ToastState | null> {
+    return this.state;
   }
 }
 
@@ -71,10 +63,7 @@ export const toastStore = new ToastStore();
 
 /** Render from the current toast. */
 export function useToast(): ToastState | null {
-  return useSyncExternalStore(
-    (cb) => toastStore.subscribe(cb),
-    () => toastStore.get(),
-  );
+  return useExternalStore(toastStore.stateForRender());
 }
 
 /** Imperative helper for event handlers. */

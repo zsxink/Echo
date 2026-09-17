@@ -30,7 +30,7 @@ import type { SongView } from "../../ipc/ipc-types.generated";
 import { assetUrl } from "../../bridge";
 import { Icon } from "../../app/Icon";
 import type { MenuAnchor } from "./SongMenu";
-import { coverClass } from "./coverPalette";
+import { coverClass } from "./coverClass";
 
 export interface SongRowProps {
   readonly song: SongView;

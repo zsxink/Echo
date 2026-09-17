@@ -16,76 +16,91 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-import type { IpcErrorDto } from "../ipc/ipc-types.generated";
+import type { IpcCommandResultMap, IpcErrorDto } from "../ipc/ipc-types.generated";
 
-/** A typed command name → signature. Keep in sync with the Rust `AppServices`
- *  surface; the generator produces the DTO shapes. */
-export interface BridgeCommandMap {
-  get_bootstrap_state: () => unknown;
-  library_status: () => unknown;
-  all_songs: (args: { sort: string; cursor?: string | null; limit: number }) => unknown;
-  search: (args: {
+type EmptyArgs = [args?: Record<string, never>];
+
+/**
+ * The transport argument contract remains here because it describes the
+ * JavaScript/Tauri invocation shape. Return values deliberately do not: they
+ * are projected from Rust's generated `IpcCommandResultMap` below.
+ */
+interface BridgeCommandArguments {
+  get_bootstrap_state: EmptyArgs;
+  library_status: EmptyArgs;
+  all_songs: [args: { sort: string; cursor?: string | null; limit: number }];
+  search: [args: {
     query: string;
-    in_favorites: boolean;
+    inFavorites: boolean;
     sort: string;
     cursor?: string | null;
     limit: number;
-  }) => unknown;
-  favorites: (args: { sort: string; cursor?: string | null; limit: number }) => unknown;
-  recent: (args: { query: string }) => unknown;
-  /** Per-view song totals, answered by Core without opening any view — the
-   *  sidebar needs them before the user clicks. */
-  library_counts: () => unknown;
-  playlists: () => unknown;
-  playlist_members: (args: { playlistId: string }) => unknown;
-  song_detail: (args: { songId: string }) => unknown;
-  /** The opaque cover-asset keys of a batch of songs (design §115 内置优先).
-   *  A song with no embedded artwork is absent from the returned map. */
-  song_cover_keys: (args: { songIds: string[] }) => unknown;
-  set_favorite: (args: { songId: string; favorite: boolean }) => unknown;
-  create_playlist: (args: { root: string; name: string }) => unknown;
-  rename_playlist: (args: { id: string; name: string }) => unknown;
-  /** `bytes: null` clears a manually selected cover and restores auto artwork. */
-  set_playlist_cover: (args: {
+  }];
+  favorites: [args: { sort: string; cursor?: string | null; limit: number }];
+  recent: [args: { query: string }];
+  library_counts: EmptyArgs;
+  playlists: EmptyArgs;
+  playlist_members: [args: { playlistId: string }];
+  song_detail: [args: { songId: string }];
+  song_cover_keys: [args: { songIds: string[] }];
+  set_favorite: [args: { songId: string; favorite: boolean }];
+  create_playlist: [args: { root: string; name: string }];
+  rename_playlist: [args: { id: string; name: string }];
+  set_playlist_cover: [args: {
     id: string;
     bytes: number[] | null;
     mime?: string | null;
-  }) => unknown;
-  delete_playlist: (args: { id: string }) => unknown;
-  add_to_playlists: (args: { song: string; targets: string[] }) => unknown;
-  remove_playlist_song: (args: { playlist: string; song: string }) => unknown;
-  delete_song: (args: { root: string; song: string }) => unknown;
-  undo_delete: (args: { root: string; operation: string }) => unknown;
-  choose_library_root: () => unknown;
-  choose_and_import_files: () => unknown;
-  reveal_song: (args: { songId: string }) => unknown;
-  start_scan: (args: { root: string }) => unknown;
-  cancel_scan: (args: { root: string }) => unknown;
-  set_theme: (args: { theme: string }) => unknown;
-  set_close_behavior: (args: { behavior: string }) => unknown;
-  get_close_behavior: () => string;
-  // Player commands (task 11.1) — the UI sends coarse requests; the Rust
-  // coordinator owns the queue + snapshot authority. Playback contexts are
-  // resolved on the desktop: the UI submits only a view/selected song, never
-  // a song-id list (spec: 视图播放重建队列数量 — a paged/partial client list
-  // must not truncate the queue).
-  play_playlist_context: (args: { playlist: string; selectedSong: string }) => unknown;
-  play_library_context: (args: {
+  }];
+  delete_playlist: [args: { id: string }];
+  add_to_playlists: [args: { song: string; targets: string[] }];
+  remove_playlist_song: [args: { playlist: string; song: string }];
+  delete_song: [args: { root: string; song: string }];
+  undo_delete: [args: { root: string; operation: string }];
+  choose_library_root: EmptyArgs;
+  choose_and_import_files: EmptyArgs;
+  reveal_song: [args: { songId: string }];
+  start_scan: [args: { root: string }];
+  cancel_scan: [args: { root: string }];
+  set_theme: [args: { theme: string }];
+  set_close_behavior: [args: { behavior: string }];
+  get_close_behavior: EmptyArgs;
+  play_playlist_context: [args: { playlist: string; selectedSong: string }];
+  play_library_context: [args: {
     view: "all" | "recent" | "favorites";
     query: string;
     sort: string;
     selectedSong: string;
-  }) => unknown;
-  restore_playback_session: () => unknown;
-  play_temporary_file: (args: { path: string; displayName: string }) => unknown;
-  import_current_temporary_file: () => unknown;
-  player_control: (args: { action: string }) => unknown;
-  queue_command: (args: { command: string; songId?: string; entryId?: string }) => unknown;
-  set_volume: (args: { volume: number }) => unknown;
-  toggle_mute: () => unknown;
-  seek: (args: { position: number }) => unknown;
-  get_lyrics: (args: { songId: string }) => unknown;
+  }];
+  restore_playback_session: EmptyArgs;
+  play_temporary_file: [args: { path: string; displayName: string }];
+  import_current_temporary_file: EmptyArgs;
+  player_control: [args: { action: string }];
+  queue_command: [args: { command: string; songId?: string; entryId?: string }];
+  set_volume: [args: { volume: number }];
+  toggle_mute: EmptyArgs;
+  seek: [args: { position: number }];
+  get_lyrics: [args: { songId: string }];
 }
+
+type AssertNever<T extends never> = T;
+type CommandArguments<C extends keyof IpcCommandResultMap> =
+  // The two assertions deliberately fail TypeScript compilation if either the
+  // Rust generated command table or the hand-written Tauri payload table moves
+  // without the other. They live in this used type so `noUnusedLocals` also
+  // keeps the drift gate live.
+  [
+    AssertNever<Exclude<keyof IpcCommandResultMap, keyof BridgeCommandArguments>>,
+    AssertNever<Exclude<keyof BridgeCommandArguments, keyof IpcCommandResultMap>>,
+  ] extends [never, never]
+    ? C extends keyof BridgeCommandArguments
+      ? BridgeCommandArguments[C]
+      : never
+    : never;
+
+/** A typed command name → signature with generated, concrete return values. */
+export type BridgeCommandMap = {
+  [C in keyof IpcCommandResultMap]: (...args: CommandArguments<C>) => IpcCommandResultMap[C];
+};
 
 /** An unwrapper that treats the error envelope as a thrown value. */
 export class BridgeError extends Error {
@@ -108,17 +123,58 @@ function isErrorDto(value: unknown): value is IpcErrorDto {
 }
 
 /** Invoke one typed command, unwrapping the IpcResult envelope. */
-export async function bridgeCall<TArgs extends unknown[], TResult>(
-  command: keyof BridgeCommandMap,
-  ...args: TArgs
-): Promise<TResult> {
+export async function bridgeCall<C extends keyof BridgeCommandMap>(
+  command: C,
+  ...args: Parameters<BridgeCommandMap[C]>
+): Promise<ReturnType<BridgeCommandMap[C]>> {
   // arg0 is the payload object (or undefined for commands taking none).
   const payload: unknown = args.length > 0 ? (args[0] as unknown) : {};
   const result: unknown = await invoke(command as string, payload as Record<string, unknown>);
   if (isErrorDto(result)) {
     throw new BridgeError(result);
   }
-  return result as TResult;
+  return result as ReturnType<BridgeCommandMap[C]>;
+}
+
+/** A failure that an intentional non-blocking invocation reports. */
+export interface BridgeFailure {
+  readonly command: keyof BridgeCommandMap;
+  readonly error: unknown;
+}
+
+type BridgeFailureReporter = (failure: BridgeFailure) => void;
+
+const defaultFailureReporter: BridgeFailureReporter = ({ command, error }) => {
+  // The desktop WebView console is collected by the Tauri devtools/runtime
+  // logs. Non-blocking UI work has no component-local error surface, so this
+  // is the observability boundary instead of a silent rejected promise.
+  console.error(`Echo bridge command failed: ${command}`, error);
+};
+
+let bridgeFailureReporter: BridgeFailureReporter = defaultFailureReporter;
+
+/** Report an IPC failure from a call whose UI intentionally degrades in place. */
+export function reportBridgeFailure(command: keyof BridgeCommandMap, error: unknown): void {
+  bridgeFailureReporter({ command, error });
+}
+
+/** Test seam for asserting that intentionally non-blocking calls remain observable. */
+export function setBridgeFailureReporter(reporter: BridgeFailureReporter | null): void {
+  bridgeFailureReporter = reporter ?? defaultFailureReporter;
+}
+
+/**
+ * Start an IPC call whose result is intentionally irrelevant.
+ *
+ * This is the only fire-and-forget spelling: it records rejected calls instead
+ * of relying on `void bridge.call(...)`, which discards an unregistered command
+ * or transport failure without a trace.
+ */
+export function fireAndForget<C extends keyof BridgeCommandMap>(
+  command: C,
+  ...args: Parameters<BridgeCommandMap[C]>
+): void {
+  void bridgeCall(command, ...args).catch((error: unknown) => reportBridgeFailure(command, error));
 }
 
 /** The custom URI scheme that serves cover art (design §16).
@@ -149,6 +205,7 @@ export async function subscribe<T>(
 /** A tiny typed facade used by the app's store layer. */
 export const bridge = {
   call: bridgeCall,
+  fireAndForget,
   subscribe,
   assetUrl,
 };

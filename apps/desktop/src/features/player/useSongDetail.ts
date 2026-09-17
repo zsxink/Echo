@@ -16,7 +16,7 @@
 import { useEffect, useState } from "react";
 
 import { bridge } from "../../bridge";
-import { subscribeSongUpdates } from "../library/songUpdates";
+import { subscribeSongUpdates } from "../library";
 
 /** Mirrors the IPC `SongDetailView` (`crates/echo-desktop/src/ipc/dto.rs`). */
 export interface SongDetail {
@@ -43,7 +43,7 @@ export function useSongDetail(songId: string | null): SongDetail | null {
     bridge
       .call("song_detail", { songId })
       .then((dto) => {
-        if (!cancelled) setDetail(dto as SongDetail);
+        if (!cancelled) setDetail(dto);
       })
       .catch(() => {
         // A failed detail read degrades to "unknown", never to a fabricated one.

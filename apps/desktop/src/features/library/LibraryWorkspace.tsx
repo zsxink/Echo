@@ -17,14 +17,14 @@ import { bridge } from "../../bridge";
 import { usePlayerSnapshot } from "../../player/playerStore";
 import type { ImportBatchDto, SongView } from "../../ipc/ipc-types.generated";
 import { LibraryViewKind } from "./types";
-import { bumpLibraryCount, invalidateLibraryCounts } from "./coverPalette";
+import { bumpLibraryCount, invalidateLibraryCounts } from "./libraryCounts";
 import { SongList } from "./SongList";
 import { useSongs } from "./useSongs";
 import { publishSongUpdate, subscribeSongUpdates } from "./songUpdates";
 import { SongMenu } from "./SongMenu";
 import type { MenuAnchor } from "./SongMenu";
-import { AddToPlaylistDialog } from "../playlists/AddToPlaylistDialog";
-import { ImportBatchDialog } from "../import/ImportBatchDialog";
+import { ImportBatchDialog } from "../import";
+import { AddToPlaylistDialog } from "../playlists";
 import { SongSortControl } from "./SongSortControl";
 import { useStoredSongSort } from "./useStoredSongSort";
 import { Icon } from "../../app/Icon";
@@ -98,7 +98,7 @@ export function LibraryWorkspace({
     (song: SongView) => {
       // The desktop resolves every page of the declared active-root view. A
       // rendered page is never treated as the playback-context boundary.
-      void bridge.call("play_library_context", {
+      bridge.fireAndForget("play_library_context", {
         view: view as "all" | "recent" | "favorites",
         query: search,
         sort: `${query.sort.field}:${query.sort.direction}`,
@@ -110,7 +110,7 @@ export function LibraryWorkspace({
 
   const onPlayNext = useCallback((song: SongView) => {
     // Insert the song right after the current one ("下一首播放", task 10.6).
-    void bridge.call("queue_command", { command: "playNext", songId: song.id });
+    bridge.fireAndForget("queue_command", { command: "playNext", songId: song.id });
   }, []);
 
   const onEnqueue = useCallback((song: SongView) => {

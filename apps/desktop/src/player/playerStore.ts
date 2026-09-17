@@ -8,7 +8,7 @@
  * never fabricates a final value the snapshot has not confirmed.
  *
  * The three-part state split (design §14):
- *  - Core query/mutation state → TanStack-style query cache (see `app/store`).
+ *  - Core query/mutation state → the feature/application query boundary.
  *  - Player live state → this external store (snapshot-driven).
  *  - UI temp state → local component reducer (menus, focus, lyric scroll).
  *
@@ -16,11 +16,12 @@
  * unchanged (authoritative rollback lives in the Rust actor, task 8.8).
  */
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 
 import { subscribe } from "../bridge";
 import type { UnlistenFn } from "../bridge";
 import type { UiPlayerSnapshot } from "../ipc/ipc-types.generated";
+import { ExternalStore, useExternalStore } from "../app/externalStore";
 
 // The event payload is an IPC DTO, so it belongs to the generated contract.
 // Re-export from this store for existing presentation consumers while keeping
@@ -62,78 +63,73 @@ interface PlayerUiState {
   focusOpen: boolean;
 }
 
-type Listener = () => void;
+interface PlayerStoreState {
+  readonly snapshot: UiPlayerSnapshot;
+  readonly ui: PlayerUiState;
+  readonly publishedAt: number;
+}
 
 class PlayerStore {
-  private snapshot: UiPlayerSnapshot = EMPTY_SNAPSHOT;
-  private ui: PlayerUiState = {
-    pending: null,
-    queueOpen: false,
-    immersiveOpen: false,
-    focusOpen: false,
-  };
-  private listeners = new Set<Listener>();
-  /** `performance.now()` of the last `publish` — the interpolation anchor for
-   *  `useSmoothPosition` (the IPC stream is throttled to 10 Hz foreground). */
-  private lastPublishAt = 0;
+  private readonly state = new ExternalStore<PlayerStoreState>({
+    snapshot: EMPTY_SNAPSHOT,
+    ui: { pending: null, queueOpen: false, immersiveOpen: false, focusOpen: false },
+    publishedAt: 0,
+  });
 
   getSnapshot(): UiPlayerSnapshot {
-    return this.snapshot;
+    return this.state.getSnapshot().snapshot;
   }
 
   getUi(): PlayerUiState {
-    return this.ui;
+    return this.state.getSnapshot().ui;
   }
 
   /** Publish a snapshot received from the Desktop (via the bridge). */
   publish(snapshot: UiPlayerSnapshot): void {
-    this.snapshot = snapshot;
-    this.lastPublishAt = performance.now();
-    this.emit();
+    this.state.update((current) => ({
+      ...current,
+      snapshot,
+      publishedAt: performance.now(),
+    }));
   }
 
   /** When the current snapshot arrived (for position interpolation). */
   publishedAt(): number {
-    return this.lastPublishAt;
+    return this.state.getSnapshot().publishedAt;
   }
 
   /** Set an optimistic pending action. It is cleared by the next snapshot
    *  publish — the snapshot is always the authority. */
   setPending(pending: PlayerUiState["pending"]): void {
-    this.ui = { ...this.ui, pending };
-    this.emit();
+    this.updateUi((ui) => ({ ...ui, pending }));
   }
 
   setQueueOpen(open: boolean): void {
-    this.ui = { ...this.ui, queueOpen: open };
-    this.emit();
+    this.updateUi((ui) => ({ ...ui, queueOpen: open }));
   }
 
   /** Open or close the immersive player (task 11.3). Closing it also drops
    *  歌词专注阅读, which is a state of that surface and would otherwise linger
    *  and silently re-apply the next time the player opens. */
   setImmersiveOpen(open: boolean): void {
-    this.ui = { ...this.ui, immersiveOpen: open, focusOpen: open ? this.ui.focusOpen : false };
-    this.emit();
+    this.updateUi((ui) => ({ ...ui, immersiveOpen: open, focusOpen: open ? ui.focusOpen : false }));
   }
 
   /** Open or close the lyrics focus mode (task 11.6). */
   setFocusOpen(open: boolean): void {
-    this.ui = { ...this.ui, focusOpen: open };
-    this.emit();
+    this.updateUi((ui) => ({ ...ui, focusOpen: open }));
   }
 
-  subscribe(listener: Listener): () => void {
-    this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
+  subscribe(listener: () => void): () => void {
+    return this.state.subscribe(listener);
   }
 
-  private emit(): void {
-    for (const listener of this.listeners) {
-      listener();
-    }
+  stateForRender(): ExternalStore<PlayerStoreState> {
+    return this.state;
+  }
+
+  private updateUi(updater: (ui: PlayerUiState) => PlayerUiState): void {
+    this.state.update((current) => ({ ...current, ui: updater(current.ui) }));
   }
 }
 
@@ -144,18 +140,12 @@ export const playerStore = new PlayerStore();
 export function usePlayerSnapshot(): UiPlayerSnapshot {
   // Subscribe to the combined snapshot+ui so any change re-renders; the hook
   // returns only the authoritative snapshot.
-  return useSyncExternalStore(
-    (cb) => playerStore.subscribe(cb),
-    () => playerStore.getSnapshot(),
-  );
+  return useExternalStore(playerStore.stateForRender(), (state) => state.snapshot);
 }
 
 /** A hook for the UI-only player state (queue panel open, pending action). */
 export function usePlayerUi(): PlayerUiState {
-  return useSyncExternalStore(
-    (cb) => playerStore.subscribe(cb),
-    () => playerStore.getUi(),
-  );
+  return useExternalStore(playerStore.stateForRender(), (state) => state.ui);
 }
 
 /** The event the Rust runtime publishes each snapshot (matches `PLAYER_SNAPSHOT_EVENT`). */

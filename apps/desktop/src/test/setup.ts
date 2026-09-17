@@ -79,6 +79,6 @@ afterEach(async () => {
   // The library counts are a module-level store like the toast and cover
   // caches: a count fetched in one test would otherwise decide what the next
   // one renders.
-  const { resetLibraryCounts } = await import("../features/library/coverPalette");
-  resetLibraryCounts();
+  const { resetLibraryState } = await import("../features/library");
+  resetLibraryState();
 });

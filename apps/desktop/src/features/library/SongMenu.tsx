@@ -21,17 +21,14 @@
  * as real capabilities (tasks 10.6 / 10.8). Every extra row uses the prototype's
  * `.menu-action` anatomy — nothing bespoke. 关闭 is intentionally absent: the
  * prototype has no such item, and Escape / outside-click already cover it.
+ *
+ * Decomposition (task 6.6): the anchored placement (`usePlacement`), the
+ * blocking confirm dialog (`ConfirmationDialog`) and the read-only detail
+ * (`SongDetail`) each live in their own module so this file keeps the menu's
+ * item set, the reveal/delete flows and the surface markup (CODE_STANDARDS §6).
  */
 
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-  type RefObject,
-} from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { assetUrl, bridge } from "../../bridge";
 import { useCoverKeys } from "../../app/coverArt";
@@ -39,7 +36,11 @@ import { OverlayTier, useFocusTrap, useOverlay, useRovingFocus } from "../../app
 import { Icon } from "../../app/Icon";
 import { notify } from "../../app/toast";
 import type { SongView } from "../../ipc/ipc-types.generated";
-import { coverClass, invalidateLibraryCounts } from "./coverPalette";
+import { coverClass } from "./coverClass";
+import { invalidateLibraryCounts } from "./libraryCounts";
+import { usePlacement } from "./usePlacement";
+import { ConfirmationDialog } from "./ConfirmationDialog";
+import { SongDetail } from "./SongDetail";
 
 /** Viewport rect of the control that opened the menu. */
 export interface MenuAnchor {
@@ -68,10 +69,6 @@ export interface SongMenuProps {
   readonly extraActions?: ReactNode;
 }
 
-/** Menu geometry from the prototype's own constants. */
-const MENU_WIDTH = 248;
-const MENU_HEIGHT = 254;
-const VIEWPORT_GAP = 12;
 /** The 撤销 window (task 10.8). */
 const UNDO_WINDOW_MS = 10_000;
 
@@ -126,10 +123,7 @@ export function SongMenu({
 
   async function reveal() {
     try {
-      const result = (await bridge.call("reveal_song", { songId: song.id })) as {
-        relativePath: string;
-        revealed: boolean;
-      };
+      const result = await bridge.call("reveal_song", { songId: song.id });
       if (!result.revealed) {
         // Soft failure — show the relative path instead; never an absolute one.
         notify({
@@ -149,10 +143,10 @@ export function SongMenu({
     setConfirmDelete(false);
     setError(null);
     try {
-      const operation = (await bridge.call("delete_song", {
+      const operation = await bridge.call("delete_song", {
         root,
         song: song.id,
-      })) as string;
+      });
       onRefresh();
       // The song leaves every view's total, not just this one's rows.
       invalidateLibraryCounts();
@@ -319,130 +313,5 @@ export function SongMenu({
         />
       ) : null}
     </>
-  );
-}
-
-/**
- * Anchored placement, using the prototype's own clamp (it never flips above the
- * trigger — it just stays inside the viewport). Measured height is used when
- * available so a long menu stays clickable.
- */
-function usePlacement(
-  anchor: MenuAnchor | null | undefined,
-  menuRef: RefObject<HTMLElement | null>,
-): CSSProperties {
-  const [height, setHeight] = useState(0);
-  const measured = useRef(false);
-
-  useLayoutEffect(() => {
-    if (measured.current || !menuRef.current) return;
-    const box = menuRef.current.getBoundingClientRect();
-    if (box.height === 0) return;
-    measured.current = true;
-    setHeight(box.height);
-  }, [menuRef]);
-
-  if (!anchor) return {};
-  const viewportW = window.innerWidth || 1280;
-  const viewportH = window.innerHeight || 800;
-  const boxHeight = height > 0 ? height : MENU_HEIGHT;
-  return {
-    left: Math.max(
-      VIEWPORT_GAP,
-      Math.min(viewportW - MENU_WIDTH - VIEWPORT_GAP, anchor.right - MENU_WIDTH),
-    ),
-    top: Math.max(VIEWPORT_GAP, Math.min(viewportH - boxHeight - VIEWPORT_GAP, anchor.bottom + 6)),
-  };
-}
-
-/**
- * The prototype's `.confirmation-dialog`: a blocking panel used for the delete
- * confirmation. It is the `BlockingDialog` tier, so Escape closes it before
- * anything beneath it.
- */
-export function ConfirmationDialog(props: {
-  readonly title: string;
-  readonly description: string;
-  readonly confirmLabel: string;
-  readonly onConfirm: () => void;
-  readonly onCancel: () => void;
-  readonly cancelLabel?: string;
-  readonly testId?: string;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  useOverlay({ tier: OverlayTier.BlockingDialog, onClose: props.onCancel, containerRef: ref });
-  useFocusTrap(ref);
-
-  return (
-    <section
-      className="confirmation-dialog"
-      role="alertdialog"
-      aria-modal="true"
-      aria-labelledby="confirmation-title"
-      data-testid={props.testId}
-      ref={ref}
-    >
-      <div className="confirmation-panel">
-        <h2 id="confirmation-title">{props.title}</h2>
-        <p>{props.description}</p>
-        <div className="confirmation-actions">
-          <button type="button" className="btn" onClick={props.onCancel}>
-            {props.cancelLabel ?? "取消"}
-          </button>
-          <button type="button" className="btn btn-danger" onClick={props.onConfirm}>
-            {props.confirmLabel}
-          </button>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/** Read-only song detail (task 10.8): relative path only, never absolute. */
-export function SongDetail({
-  song,
-  onClose,
-  onReveal,
-}: {
-  song: SongView;
-  onClose: () => void;
-  onReveal: () => void;
-}) {
-  const detailRef = useRef<HTMLDivElement>(null);
-  // A `Picker`-tier dialog above the menu: Escape closes it before the menu and
-  // focus is trapped + restored.
-  useOverlay({ tier: OverlayTier.Picker, onClose, containerRef: detailRef });
-  useFocusTrap(detailRef);
-
-  return (
-    <section
-      className="confirmation-dialog"
-      role="dialog"
-      aria-modal="true"
-      aria-label="歌曲详情"
-      ref={detailRef}
-    >
-      <div className="confirmation-panel">
-        <h2>{song.title ?? "未命名歌曲"}</h2>
-        <dl className="detail-grid">
-          <dt>艺人</dt>
-          <dd>{song.artist ?? "未知艺人"}</dd>
-          <dt>专辑</dt>
-          <dd>{song.album ?? "—"}</dd>
-          <dt>资料库相对路径</dt>
-          <dd data-testid="detail-relative-path">{song.relativePath}</dd>
-          <dt>播放次数</dt>
-          <dd>{song.playCount}</dd>
-        </dl>
-        <div className="confirmation-actions">
-          <button type="button" className="btn" onClick={onClose}>
-            关闭
-          </button>
-          <button type="button" className="btn btn-primary" onClick={onReveal}>
-            打开本地目录
-          </button>
-        </div>
-      </div>
-    </section>
   );
 }
