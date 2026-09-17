@@ -1948,6 +1948,76 @@
           "cmd": "node scripts/verify/checks/task-wire-dialogs.mjs"
         }
       ]
+    },
+    {
+      "id": "14.1",
+      "title": "Static analysis inheritance across every workspace crate",
+      "commands": [
+        {
+          "desc": "assert every crate inherits lints.workspace and adds no crate-level override",
+          "cmd": "node scripts/verify/check-lint-inheritance.mjs"
+        }
+      ]
+    },
+    {
+      "id": "14.2",
+      "title": "Source-file and public-trait scale limits",
+      "commands": [
+        {
+          "desc": "assert no source file exceeds 1000 lines and no pub trait exceeds 6 methods beyond the frozen allowlist",
+          "cmd": "node scripts/verify/check-scale.mjs"
+        }
+      ]
+    },
+    {
+      "id": "14.3",
+      "title": "Toolchain actually matches rust-toolchain.toml",
+      "commands": [
+        {
+          "desc": "assert the active rustc is the pinned channel",
+          "cmd": "node scripts/verify/check-toolchain.mjs"
+        }
+      ]
+    },
+    {
+      "id": "14.4",
+      "title": "Scenario YAML fields agree with the executable registry",
+      "commands": [
+        {
+          "desc": "parse every scenario manifest and assert id, requirement, title, layer, command and filter fields",
+          "cmd": "node scripts/verify/validate-scenario-manifests.mjs"
+        }
+      ]
+    },
+    {
+      "id": "14.5",
+      "title": "Every registered check can fail and observes something",
+      "commands": [
+        {
+          "desc": "assert each registered check exposes a failure route and evidence",
+          "cmd": "node scripts/verify/check-verification-validity.mjs"
+        }
+      ]
+    },
+    {
+      "id": "14.6",
+      "title": "Test-only modules stay out of the default build",
+      "commands": [
+        {
+          "desc": "prove the desktop player fake and the Core testkit are cfg-gated and absent from default builds",
+          "cmd": "node scripts/verify/check-build-purity.mjs"
+        }
+      ]
+    },
+    {
+      "id": "14.7",
+      "title": "Scenario command churn only decreases",
+      "commands": [
+        {
+          "desc": "freeze the scenarios-per-command ratio and worst cluster size",
+          "cmd": "node scripts/verify/check-scenario-churn.mjs"
+        }
+      ]
     }
   ],
   "scenarios": [

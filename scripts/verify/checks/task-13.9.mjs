@@ -5,7 +5,7 @@
 //   - compare the Scenario ID sets of specs · traceability.md · test manifest
 //     are EXACTLY equal (reconcile-scenarios.mjs enforces this);
 //   - `pnpm verify:scenario -- --all` executes scenarios; the count equals the
-//     spec-derived count (must be 166 today: 160 original + 6 sync-foundation),
+//     dynamically derived spec count,
 //     and missing/duplicate mapping, missing actual command/evidence, or any
 //     P0 failure blocks 0.1.0;
 //   - every scenario command resolves to a real test (no silent 0-test pass);
@@ -13,15 +13,15 @@
 //     the macOS-runnable command for each A path; the native/manual remainder
 //     is the platform-Gate handoff).
 //
-// On macOS this runs the fully-automatable subset of the 160 and asserts a
-// per-scenario result log + the set-equal reconciliation. Rows whose behavior
+// On macOS this runs the fully-automatable subset and asserts a per-scenario
+// result log + the set-equal reconciliation. Rows whose behavior
 // is a real multi-platform OS interaction (the 45 native manifests) are
 // checked for attestation evidence where the platform is not macOS; on macOS
 // the automated subsets (player_smoke, task checks) are exercised via their
 // scenario commands.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { allScenarioIds } from "../spec-scenarios.mjs";
@@ -47,9 +47,9 @@ function run(command, args, cwd = ROOT, env = {}) {
 }
 
 // 1. Three-way set reconciliation must pass (spec == trace == manifest) and the
-//    count must equal the spec-derived count.
+//    reported counts must agree with the spec-derived count.
 const reconcileOut = run("node", ["scripts/verify/reconcile-scenarios.mjs"]).trim();
-const reconciliation = reconcileOut.match(/spec (\d+) = trace (\d+) = manifest (\d+) scenarios/);
+const reconciliation = reconcileOut.match(/^reconcile: spec (\d+) = trace (\d+) = manifest (\d+) scenarios$/m);
 if (!reconciliation) {
   fail(`reconciliation did not pass:\n${reconcileOut}`);
 }
@@ -65,6 +65,7 @@ mkdirSync(ARTIFACTS, { recursive: true });
 
 // 2. Every scenario command must resolve to a real test (no silent 0-test pass).
 run("node", ["scripts/verify/validate-scenario-commands.mjs"]);
+run("node", ["scripts/verify/validate-scenario-manifests.mjs"]);
 
 // 3. A clean checkout can only prove automated scenarios: native matrix rows
 //    require evidence from a real target and remain enforced by `-- --all`.
@@ -78,7 +79,7 @@ let scenarioOut;
 try {
   scenarioOut = run("node", ["scripts/verify/run-scenario.mjs", "--", "--automated"]);
 } catch (e) {
-  fail(`verify:scenario -- --all failed; see artifacts/verify:scenario-report.txt\n${e.message}`);
+  fail(`verify:scenario -- --automated failed; see artifacts/verify:scenario-report.txt\n${e.message}`);
 }
 writeFileSync(report, scenarioOut);
 const okLines = (scenarioOut.match(/^ok: scenario /gm) || []).length;

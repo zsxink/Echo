@@ -103,6 +103,11 @@ writeFileSync(
         title: "one selected test",
         command: "cargo test -- one-filter",
       },
+      {
+        id: "one-test-duplicate",
+        title: "same selected test in another scenario",
+        command: "cargo test -- one-filter",
+      },
     ],
   }),
   "utf8",
@@ -132,6 +137,15 @@ const zeroScenario = runScenarioRunner(scenarioFixture, ["zero-tests"], scenario
 assert(zeroScenario.status !== 0, "zero selected tests is nonzero");
 const oneScenario = runScenarioRunner(scenarioFixture, ["one-test"], scenarioEnv);
 assert(oneScenario.status === 0, "selected test count above zero is accepted");
+const duplicateScenarios = runScenarioRunner(
+  scenarioFixture,
+  ["one-test", "one-test-duplicate"],
+  scenarioEnv,
+);
+assert(
+  duplicateScenarios.status === 0 && /scenario batches: 1 commands for 2 scenarios/.test(duplicateScenarios.stdout),
+  "duplicate scenario commands execute in one batch",
+);
 
 // Lockfiles must be unchanged after a run.
 const before = LOCKFILES.map(hashOf);

@@ -1,0 +1,21 @@
+{
+  "files": [
+    "crates/echo-core/src/application/recover.rs",
+    "crates/echo-core/src/application/scan.rs",
+    "crates/echo-core/src/application/testing/memory_database.rs",
+    "crates/echo-core/src/domain/entities.rs",
+    "crates/echo-core/src/domain/library.rs",
+    "crates/echo-core/src/infrastructure/filesystem/adapter.rs",
+    "crates/echo-core/src/infrastructure/sqlite/mod.rs",
+    "crates/echo-desktop/src/platform/local_state.rs",
+    "crates/echo-desktop/src/player/actor.rs",
+    "crates/echo-desktop/src/player/coordinator.rs",
+    "crates/echo-desktop/src/player/queue.rs"
+  ],
+  "traits": [
+    "crates/echo-core/src/application/ports/repository.rs::OperationJournalRepository",
+    "crates/echo-core/src/application/ports/repository.rs::PlaylistRepository",
+    "crates/echo-core/src/application/ports/repository.rs::SongRepository",
+    "crates/echo-core/src/application/ports/system.rs::ControlPlanePort"
+  ]
+}

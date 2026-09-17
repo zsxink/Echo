@@ -49,7 +49,7 @@ function executedTestCount(output) {
   return count;
 }
 
-function runScenario(id) {
+function runScenario(id, resultByCommand) {
   const sc = scenarios.find((s) => s.id === id);
   if (!sc) {
     fail(`unknown scenario id: ${id}`);
@@ -59,22 +59,27 @@ function runScenario(id) {
     fail(`scenario ${id}: no verification command registered`);
     return false;
   }
-  const result = spawnSync(sc.command, {
-    cwd: ROOT,
-    shell: true,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  if (result.status !== 0) {
-    fail(`scenario ${id}: command exited ${result.status}: ${sc.command}`);
-    return false;
-  }
-  if (selectedTestCommand(sc.command)) {
-    const output = `${result.stdout || ""}${result.stderr || ""}`;
-    const count = executedTestCount(output);
-    if (count === 0) {
-      fail(`scenario ${id}: selected test command ran zero tests: ${sc.command}`);
-      return false;
+  let outcome = resultByCommand.get(sc.command);
+  if (!outcome) {
+    const result = spawnSync(sc.command, {
+      cwd: ROOT,
+      shell: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    outcome = { status: result.status, output: `${result.stdout || ""}${result.stderr || ""}` };
+    if (outcome.status === 0 && selectedTestCommand(sc.command)) {
+      outcome.count = executedTestCount(outcome.output);
+      if (outcome.count === 0) outcome.status = 1;
     }
+    resultByCommand.set(sc.command, outcome);
+  }
+  if (outcome.status !== 0) {
+    if (selectedTestCommand(sc.command) && outcome.count === 0) {
+      fail(`scenario ${id}: selected test command ran zero tests: ${sc.command}`);
+    } else {
+      fail(`scenario ${id}: command exited ${outcome.status}: ${sc.command}`);
+    }
+    return false;
   }
   process.stdout.write(`ok: scenario ${id} (${sc.title})\n`);
   return true;
@@ -104,7 +109,9 @@ if (!requested.length) {
 }
 
 let ok = true;
+const resultByCommand = new Map();
 for (const id of requested) {
-  if (!runScenario(id)) ok = false;
+  if (!runScenario(id, resultByCommand)) ok = false;
 }
+process.stdout.write(`scenario batches: ${resultByCommand.size} commands for ${requested.length} scenarios\n`);
 process.exit(ok ? 0 : 1);

@@ -23,9 +23,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain (stable, rustfmt + clippy)
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain (pinned, rustfmt + clippy)
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.96.0
           components: rustfmt, clippy
 
       - name: Install Linux webview dependencies
@@ -90,8 +91,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain (stable)
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain (pinned)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
 
       - uses: actions/setup-node@v4
         with:
@@ -114,3 +117,39 @@ jobs:
           name: macos-libmpv-gate-report
           path: target/aarch64-apple-darwin/release/bundle/macos/echo-libmpv-report.md
           if-no-files-found: error
+
+  governance:
+    name: Governance gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (pinned, rustfmt + clippy)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+          components: rustfmt, clippy
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify active Rust toolchain
+        run: node scripts/verify/check-toolchain.mjs
+
+      - name: Run governance gates
+        run: pnpm verify:governance
+
+      - name: Run release gate without external artifacts
+        run: node scripts/verify/checks/task-13.9.mjs
+
+      - name: Validate archived OpenSpec changes
+        run: openspec validate --archived
