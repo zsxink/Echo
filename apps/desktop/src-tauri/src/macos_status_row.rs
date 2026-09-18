@@ -101,11 +101,18 @@ define_class!(
 
     impl StatusRowView {
         // SAFETY: AppKit supplies a live event while the app-lifetime view is on
-        // the main thread. The coordinate conversion produces this view's local
-        // x-coordinate, which maps to one half-open control region.
+        // the main thread. The status bar delivers clicks as a synthesized event
+        // centered on the item: `locationInWindow` is always the item's center no
+        // matter where the user clicks. The window's live mouse location carries
+        // the real cursor position, which maps to one half-open control region.
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
-            let local = self.convertPoint_fromView(event.locationInWindow(), None);
+            let synthesized = event.locationInWindow();
+            let real = match self.window() {
+                Some(window) => window.mouseLocationOutsideOfEventStream(),
+                None => synthesized,
+            };
+            let local = self.convertPoint_fromView(real, None);
             if let Some(action) = action_at_x(local.x) {
                 self.dispatch(action);
             }
