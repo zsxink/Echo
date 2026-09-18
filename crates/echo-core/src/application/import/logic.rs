@@ -100,6 +100,10 @@ pub enum ImportOutcome {
         song: SongId,
         /// The final root-relative path of the published audio.
         target: RelativeMediaPath,
+        /// The published name received the close-name ` (n)` numbering — a
+        /// name conflict resolved successfully (spec: 重名后成功). `false` for
+        /// a clean, un-numbered target.
+        renamed: bool,
         /// What happened to the optional same-basename `.lrc` (boxed to keep
         /// the batch result cheap — the sidecar result is `Copy`-free).
         lyrics: Box<LyricsImportResult>,
@@ -107,8 +111,9 @@ pub enum ImportOutcome {
     /// The content hash already belongs to a library record — no copy, no
     /// second UUID; the caller points the user at the existing song.
     Duplicate { existing: SongId },
-    /// The input is not an importable audio type (extension matrix).
-    Unsupported,
+    /// The input is not an importable audio file: a benign normal-skip with
+    /// nothing to do (spec: 无需处理的正常跳过属于非失败结果). Never a failure.
+    Skipped,
     /// The library root could not accept writes; the whole batch was refused
     /// before any copy (spec: 资料库不可用 → 开始复制前拒绝整批).
     LibraryUnavailable,
@@ -205,6 +210,9 @@ struct PlannedInput {
     target: RelativeMediaPath,
     operation: OperationId,
     reserved: SongId,
+    /// The published name is close-name-numbered relative to the no-conflict
+    /// ideal target (spec: 重名后成功). `false` for a clean target.
+    renamed: bool,
     /// The logical source locator recorded in the journal item (never a path).
     source: Option<String>,
     /// The staged resource handle driving the controlled staging directory.

@@ -14,25 +14,32 @@ use std::{
 };
 
 use echo_core::application::ports::CoverCache;
+#[cfg(not(target_os = "macos"))]
 use echo_core::domain::state::PlaybackState;
 use echo_desktop::platform::local_state::{CloseBehavior, DesktopStateStore};
 use echo_desktop::platform::security::{CoverError, CoverProtocol};
-use echo_desktop::platform::status_menu::{self, PlaySummary, StatusMenuSink};
+use echo_desktop::platform::status_menu::StatusMenuSink;
+#[cfg(not(target_os = "macos"))]
+use echo_desktop::platform::status_menu::{self, PlaySummary};
 use echo_desktop::player::coordinator::PlaybackCoordinator;
 use echo_desktop::player::port::{PlayerCommand, PlayerPort};
 use echo_desktop::runtime::app::assemble;
 use echo_desktop::runtime::player;
 use echo_desktop::runtime::services::AppServices;
 use echo_desktop::runtime::StartupSupervisor;
+#[cfg(not(target_os = "macos"))]
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
+#[cfg(not(target_os = "macos"))]
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{
     http::{Request as HttpRequest, Response as HttpResponse},
-    menu::{MenuBuilder, MenuItemBuilder},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, RunEvent,
 };
 
 mod commands;
 mod dialogs;
+#[cfg(target_os = "macos")]
+mod macos_status_popover;
 
 const MAIN_WINDOW: &str = "main";
 
@@ -584,81 +591,91 @@ fn main() {
             // `status_menu` (unit-tested); the shell only builds the widgets and
             // dispatches. Until the composition root connects a sink, transport
             // clicks fall through to `NoopSink`.
-            app.manage(Arc::new(RuntimeStatusMenuSink::default()));
+            let status_sink = Arc::new(RuntimeStatusMenuSink::default());
+            app.manage(status_sink.clone());
 
-            let summary_text = {
-                let playback = PlaySummary {
-                    state: PlaybackState::Stopped,
-                    ..PlaySummary::default()
+            #[cfg(target_os = "macos")]
+            macos_status_popover::install(status_sink)?;
+
+            #[cfg(not(target_os = "macos"))]
+            {
+                let summary_text = {
+                    let playback = PlaySummary {
+                        state: PlaybackState::Stopped,
+                        ..PlaySummary::default()
+                    };
+                    format!("{} — {}", playback.title_line(), playback.status_line())
                 };
-                format!("{} — {}", playback.title_line(), playback.status_line())
-            };
-            let summary = MenuItemBuilder::with_id("echo-summary", summary_text.as_str())
-                .enabled(false)
+                let summary = MenuItemBuilder::with_id("echo-summary", summary_text.as_str())
+                    .enabled(false)
+                    .build(app)?;
+                let play_pause = MenuItemBuilder::with_id(
+                    status_menu::MENU_PLAY_PAUSE,
+                    status_menu::play_pause_label(PlaybackState::Stopped),
+                )
                 .build(app)?;
-            let play_pause = MenuItemBuilder::with_id(
-                status_menu::MENU_PLAY_PAUSE,
-                status_menu::play_pause_label(PlaybackState::Stopped),
-            )
-            .build(app)?;
-            let previous =
-                MenuItemBuilder::with_id(status_menu::MENU_PREVIOUS, "上一首").build(app)?;
-            let next = MenuItemBuilder::with_id(status_menu::MENU_NEXT, "下一首").build(app)?;
-            let show = MenuItemBuilder::with_id(status_menu::MENU_SHOW, "显示 Echo").build(app)?;
-            let quit = MenuItemBuilder::with_id(status_menu::MENU_QUIT, "退出").build(app)?;
-            let menu = MenuBuilder::new(app)
-                .item(&summary)
-                .separator()
-                .item(&play_pause)
-                .item(&previous)
-                .item(&next)
-                .separator()
-                .item(&show)
-                .separator()
-                .item(&quit)
-                .build()?;
+                let previous =
+                    MenuItemBuilder::with_id(status_menu::MENU_PREVIOUS, "上一首").build(app)?;
+                let next = MenuItemBuilder::with_id(status_menu::MENU_NEXT, "下一首").build(app)?;
+                let show =
+                    MenuItemBuilder::with_id(status_menu::MENU_SHOW, "显示 Echo").build(app)?;
+                let quit = MenuItemBuilder::with_id(status_menu::MENU_QUIT, "退出").build(app)?;
+                let menu = MenuBuilder::new(app)
+                    .item(&summary)
+                    .separator()
+                    .item(&play_pause)
+                    .item(&previous)
+                    .item(&next)
+                    .separator()
+                    .item(&show)
+                    .separator()
+                    .item(&quit)
+                    .build()?;
 
-            TrayIconBuilder::with_id("echo-gate")
-                .menu(&menu)
-                // A hidden main window needs a direct, discoverable way back:
-                // clicking the platform status item is equivalent to choosing
-                // “显示 Echo” from its menu. Restrict this to left-button release
-                // so right-click continues to open the platform menu normally.
-                .on_tray_icon_event(|tray, event| {
-                    if matches!(
-                        event,
-                        TrayIconEvent::Click {
-                            button: MouseButton::Left,
-                            button_state: MouseButtonState::Up,
-                            ..
-                        }
-                    ) {
-                        focus_main_window(tray.app_handle());
-                    }
-                })
-                .on_menu_event(|app, event| {
-                    match event.id().as_ref() {
-                        status_menu::MENU_SHOW => focus_main_window(app),
-                        status_menu::MENU_QUIT => {
-                            if let Some(player) = app.try_state::<commands::PlayerHandle>() {
-                                commands::flush_player_session(&player);
+                TrayIconBuilder::with_id("echo-gate")
+                    .menu(&menu)
+                    // A hidden main window needs a direct, discoverable way back:
+                    // clicking the platform status item is equivalent to choosing
+                    // “显示 Echo” from its menu. Restrict this to left-button release
+                    // so right-click continues to open the platform menu normally.
+                    .on_tray_icon_event(|tray, event| {
+                        if matches!(
+                            event,
+                            TrayIconEvent::Click {
+                                button: MouseButton::Left,
+                                button_state: MouseButtonState::Up,
+                                ..
                             }
-                            app.exit(0);
+                        ) {
+                            focus_main_window(tray.app_handle());
                         }
-                        id => {
-                            // Transport item: forward the coarse player command
-                            // to the playback sink. The composition root
-                            // installs the coordinator forwarder; `NoopSink`
-                            // remains until then.
-                            if let Some(command) = status_menu::transport_command(id) {
-                                if let Some(sink) = app.try_state::<Arc<RuntimeStatusMenuSink>>() {
-                                    sink.on_command(command);
+                    })
+                    .on_menu_event(|app, event| {
+                        match event.id().as_ref() {
+                            status_menu::MENU_SHOW => focus_main_window(app),
+                            status_menu::MENU_QUIT => {
+                                if let Some(player) = app.try_state::<commands::PlayerHandle>() {
+                                    commands::flush_player_session(&player);
+                                }
+                                app.exit(0);
+                            }
+                            id => {
+                                // Transport item: forward the coarse player command
+                                // to the playback sink. The composition root
+                                // installs the coordinator forwarder; `NoopSink`
+                                // remains until then.
+                                if let Some(command) = status_menu::transport_command(id) {
+                                    if let Some(sink) =
+                                        app.try_state::<Arc<RuntimeStatusMenuSink>>()
+                                    {
+                                        sink.on_command(command);
+                                    }
                                 }
                             }
                         }
-                    }
-                })
-                .build(app)?;
+                    })
+                    .build(app)?;
+            }
 
             // -----------------------------------------------------------------
             wire_composition(app)?;

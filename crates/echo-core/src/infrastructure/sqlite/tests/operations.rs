@@ -269,6 +269,10 @@ fn catalog_favorites_orders_by_the_latest_favorite_action() {
     SongRepository::upsert(&database, &first).expect("seed first");
     SongRepository::upsert(&database, &last).expect("seed last");
     SongRepository::set_favorite(&database, first.id(), true).expect("favorite first");
+    // `favorited_at` records the real commit clock. Cross a millisecond here
+    // rather than manufacturing a timestamp in production just to make a
+    // same-tick test sort differently.
+    std::thread::sleep(std::time::Duration::from_millis(2));
     SongRepository::set_favorite(&database, last.id(), true).expect("favorite last");
 
     // 最近添加 in the favorites view means the favorite action time, not the

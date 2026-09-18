@@ -297,12 +297,11 @@ pub(crate) fn set_song_favorite(
         .execute(
             "UPDATE songs
              SET is_favorite = ?2,
-                 favorited_at = CASE WHEN ?2 = 1 THEN MAX(?3, COALESCE((
-                     SELECT MAX(favorited_at) + 1 FROM songs
-                     WHERE library_root_uuid = (
-                         SELECT library_root_uuid FROM songs WHERE uuid = ?1
-                     )
-                 ), ?3)) ELSE NULL END,
+                 favorited_at = CASE
+                     WHEN ?2 = 0 THEN NULL
+                     WHEN is_favorite = 0 THEN ?3
+                     ELSE favorited_at
+                 END,
                  updated_at = ?3
              WHERE uuid = ?1",
             params![id.to_string(), i64::from(favorite), now_ms()],

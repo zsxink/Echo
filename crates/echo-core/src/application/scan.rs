@@ -16,7 +16,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 
 use crate::application::ports::TxAccess;
 use crate::application::ports::{
@@ -357,8 +357,13 @@ impl<'a> StartScan<'a> {
                         Resolution::Create => {
                             progress.created += 1;
                             let id = self.deps.ids.new_song_id();
-                            let mut entity =
-                                Song::new(id, root, parsed.file.path.clone(), Revision::INITIAL);
+                            let mut entity = Song::with_added_at(
+                                id,
+                                root,
+                                parsed.file.path.clone(),
+                                Revision::INITIAL,
+                                self.wall_clock_ms(),
+                            );
                             entity.apply_metadata(
                                 parsed.file.meta.title.clone(),
                                 parsed.file.meta.artist.clone(),
@@ -413,11 +418,12 @@ impl<'a> StartScan<'a> {
         parsed: &ParsedOutcome,
     ) -> Result<(), Error> {
         let song = entity.unwrap_or_else(|| {
-            Song::new(
+            Song::with_added_at(
                 self.deps.ids.new_song_id(),
                 root,
                 parsed.file.path.clone(),
                 Revision::INITIAL,
+                self.wall_clock_ms(),
             )
         });
         // Lyrics candidates: embedded + sidecar. Absent sources are cleared —
@@ -449,6 +455,19 @@ impl<'a> StartScan<'a> {
                 }
                 Ok(())
             }))
+    }
+
+    /// A new song's event fact is read from the injected backend clock at the
+    /// persistence boundary, never derived from a revision or supplied by UI.
+    fn wall_clock_ms(&self) -> u64 {
+        self.deps
+            .clock
+            .now_wall()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+            .try_into()
+            .unwrap_or(u64::MAX)
     }
 
     /// The final missing pass: available songs whose path a *fully completed*
@@ -1662,6 +1681,11 @@ mod tests {
         start_scan(&fixture).run(fixture.root).expect("scan");
         let song = fixture.all_songs().into_iter().next().unwrap();
         let added_at = song.added_at();
+        assert_eq!(
+            added_at,
+            fixture.clock.wall_ms(),
+            "uses the injected wall clock"
+        );
         // Change the file content and its tags → the rescan re-parses and
         // updates, not re-creates (an unchanged file is a fast-skip by
         // design).

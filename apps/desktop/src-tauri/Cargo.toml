@@ -23,6 +23,13 @@ tauri-plugin-dialog = "2.4.0"
 tauri-plugin-opener = "2.5.0"
 tauri-plugin-single-instance = "2.4.3"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# The status-item panel is an AppKit boundary. Keeping the bindings target
+# scoped prevents Cocoa from leaking into the portable desktop/Core layers.
+objc2 = "0.6.4"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSAccessibilityProtocols", "NSButton", "NSControl", "NSPopover", "NSResponder", "NSStatusBar", "NSStatusBarButton", "NSStatusItem", "NSView", "NSViewController"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSGeometry", "NSObject", "NSString"] }
+
 [dev-dependencies]
 # TempDir for `dialogs` multi-file import unit tests; resolves only for tests.
 tempfile = { version = "3" }

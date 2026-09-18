@@ -142,9 +142,9 @@ pub fn generated_typescript() -> String {
     out.push_str("}\n\n");
 
     out.push_str("export type ImportResultDto =\n");
-    out.push_str("  | { readonly kind: 'imported'; readonly operationId: string; readonly songId: string; readonly relativePath: string }\n");
+    out.push_str("  | { readonly kind: 'imported'; readonly operationId: string; readonly songId: string; readonly relativePath: string; readonly renamed: boolean }\n");
     out.push_str("  | { readonly kind: 'duplicate'; readonly existingSongId: string }\n");
-    out.push_str("  | { readonly kind: 'unsupported' }\n");
+    out.push_str("  | { readonly kind: 'skipped' }\n");
     out.push_str("  | { readonly kind: 'libraryUnavailable' }\n");
     out.push_str(
         "  | { readonly kind: 'failed'; readonly code: string; readonly message: string };\n\n",

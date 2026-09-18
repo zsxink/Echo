@@ -629,6 +629,7 @@ pub fn restore_playback_session(
 
 #[tauri::command]
 pub fn play_temporary_file(
+    services: State<'_, AppServices>,
     state: State<'_, PlayerHandle>,
     path: String,
     display_name: String,
@@ -638,6 +639,16 @@ pub fn play_temporary_file(
     let coord = state.coordinator.clone();
     {
         let mut coord = coord.lock().expect("player coordinator lock");
+        if let Some(song_id) = services
+            .active_song_for_path(std::path::Path::new(&path))
+            .map_err(IpcErrorDto::from)?
+        {
+            coord.play_context(&ViewContext {
+                songs: vec![song_id],
+                selected_index: 0,
+            });
+            return Ok(());
+        }
         coord.play_temporary(echo_desktop::player::coordinator::TemporaryPlay {
             display_name,
             path: std::path::PathBuf::from(path),

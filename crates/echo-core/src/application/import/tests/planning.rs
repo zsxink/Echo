@@ -533,7 +533,11 @@ fn mixed_batch_reports_each_input_independently() {
         },
         "library content duplicate returns the existing UUID"
     );
-    assert_eq!(report.results[2], ImportOutcome::Unsupported);
+    assert_eq!(
+        report.results[2],
+        ImportOutcome::Skipped,
+        "a non-audio input in a multi-select is a benign normal-skip"
+    );
     let ImportOutcome::Failed { code, .. } = &report.results[3] else {
         panic!(
             "the unreadable source must fail, not abort: {:?}",

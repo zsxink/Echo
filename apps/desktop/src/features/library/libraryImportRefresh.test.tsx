@@ -78,7 +78,6 @@ describe("导入完成后的资料库刷新", () => {
           },
     );
     fireEvent.click(screen.getByTestId("import-button"));
-    fireEvent.click(await screen.findByText("选择文件并导入"));
 
     expect(await screen.findByText(afterImport.title)).toBeInTheDocument();
     await waitFor(() => {

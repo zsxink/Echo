@@ -173,6 +173,29 @@ impl AppServices {
         )
     }
 
+    /// Resolve a system-opened file to an active-library identity when it is
+    /// already managed. The absolute path never crosses the IPC boundary or
+    /// reaches Core; it is used only by this desktop adapter to choose between
+    /// a one-item library queue and a session-only temporary item.
+    ///
+    /// # Errors
+    ///
+    /// Propagates active-root and song-repository read failures.
+    pub fn active_song_for_path(&self, path: &std::path::Path) -> Result<Option<SongId>, Error> {
+        let Some(root) = self.deps.roots.active_root()? else {
+            return Ok(None);
+        };
+        let opened = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        for song in self.deps.songs.all_in_root(root.id())? {
+            let candidate = root.resolve_song_path(&song)?;
+            let candidate = candidate.canonicalize().unwrap_or(candidate);
+            if candidate == opened {
+                return Ok(Some(song.id()));
+            }
+        }
+        Ok(None)
+    }
+
     /// Test-only composition root: a dialog boundary that always cancels, a
     /// fresh root registry, a fresh blocker registry and a brand-new (empty)
     /// runtime-state store. Production wiring goes through [`Self::with_runtime`]

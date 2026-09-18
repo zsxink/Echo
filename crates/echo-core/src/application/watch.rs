@@ -32,6 +32,16 @@ use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath, Revision
 use crate::domain::state::OperationState;
 use crate::error::Error;
 
+fn wall_now_ms(clock: &dyn crate::application::ports::Clock) -> u64 {
+    clock
+        .now_wall()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX)
+}
+
 /// Why the coordinator requested a rescan instead of interpreting events.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RescanReason {
@@ -225,7 +235,12 @@ impl WatchCoordinator {
                     }
                     Resolution::Create => {
                         let id = self.deps.ids.new_song_id();
-                        let entity = Some(song_from_parsed(id, root, &parsed.file));
+                        let entity = Some(song_from_parsed(
+                            id,
+                            root,
+                            &parsed.file,
+                            wall_now_ms(self.deps.clock.as_ref()),
+                        ));
                         planner.register_created(entity.clone().expect("just built"));
                         self.apply_outcome(root, entity, &parsed)?;
                         Ok(EventOutcome::Applied {
@@ -348,7 +363,12 @@ impl WatchCoordinator {
     ) -> Result<(), Error> {
         match parse_single_file(&self.deps, root, path) {
             FileOutcome::Parsed(parsed) => {
-                let entity = Some(song_from_parsed(song_id, root, &parsed.file));
+                let entity = Some(song_from_parsed(
+                    song_id,
+                    root,
+                    &parsed.file,
+                    wall_now_ms(self.deps.clock.as_ref()),
+                ));
                 self.apply_outcome(root, entity, &parsed)
             }
             FileOutcome::FastSkip { .. } | FileOutcome::Diagnostic(_) => Ok(()),

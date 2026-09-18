@@ -274,11 +274,14 @@ pub enum ImportResultDto {
         song_id: String,
         /// Library-relative published path (never absolute).
         relative_path: String,
+        /// The published name took the close-name ` (n)` numbering
+        /// (spec: 重名后成功). Non-failure, presented as a rename.
+        renamed: bool,
     },
     /// The content already belongs to a library record; no copy was made.
     Duplicate { existing_song_id: String },
-    /// Not an importable audio type.
-    Unsupported,
+    /// Not an importable audio file: a benign normal-skip (non-failure).
+    Skipped,
     /// The root could not accept writes; the whole batch was refused.
     LibraryUnavailable,
     /// This input failed; `code` is a stable machine code.
@@ -293,16 +296,18 @@ impl From<echo_core::application::import::ImportOutcome> for ImportResultDto {
                 operation,
                 song,
                 target,
+                renamed,
                 ..
             } => Self::Imported {
                 operation_id: operation.to_string(),
                 song_id: song.to_string(),
                 relative_path: target.to_string(),
+                renamed,
             },
             O::Duplicate { existing } => Self::Duplicate {
                 existing_song_id: existing.to_string(),
             },
-            O::Unsupported => Self::Unsupported,
+            O::Skipped => Self::Skipped,
             O::LibraryUnavailable => Self::LibraryUnavailable,
             O::Failed { code, message } => Self::Failed {
                 code: code.to_owned(),

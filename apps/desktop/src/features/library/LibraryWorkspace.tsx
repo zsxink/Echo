@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { bridge } from "../../bridge";
 import { usePlayerSnapshot } from "../../player/playerStore";
-import type { ImportBatchDto, SongView } from "../../ipc/ipc-types.generated";
+import type { ImportResultDto, SongView } from "../../ipc/ipc-types.generated";
 import { LibraryViewKind } from "./types";
 import { bumpLibraryCount, invalidateLibraryCounts } from "./libraryCounts";
 import { SongList } from "./SongList";
@@ -23,7 +23,7 @@ import { useSongs } from "./useSongs";
 import { publishSongUpdate, subscribeSongUpdates } from "./songUpdates";
 import { SongMenu } from "./SongMenu";
 import type { MenuAnchor } from "./SongMenu";
-import { ImportBatchDialog } from "../import";
+import { ImportFailureDialog, classifyImportResults } from "../import";
 import { AddToPlaylistDialog } from "../playlists";
 import { SongSortControl } from "./SongSortControl";
 import { useStoredSongSort } from "./useStoredSongSort";
@@ -52,7 +52,8 @@ export function LibraryWorkspace({
   // The menu is anchored to the `.song-more` control that opened it, as the
   // prototype does — never to a fixed corner.
   const [menuFor, setMenuFor] = useState<{ song: SongView; anchor: MenuAnchor } | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importFailures, setImportFailures] = useState<readonly ImportResultDto[] | null>(null);
   const [addToPlaylistFor, setAddToPlaylistFor] = useState<SongView | null>(null);
   const snapshot = usePlayerSnapshot();
   const query = useMemo(
@@ -67,6 +68,23 @@ export function LibraryWorkspace({
     [view, search, sort, root, readOnly],
   );
   const { page, loading, error, loadMore, reset, retry, patchSong } = useSongs(query);
+
+  const runImport = useCallback(async () => {
+    if (importing) return;
+    setImporting(true);
+    try {
+      const batch = await bridge.call("choose_and_import_files");
+      if (batch === null) return;
+      const feedback = classifyImportResults(batch.results);
+      reset();
+      invalidateLibraryCounts();
+      onLibraryChanged?.();
+      if (feedback.nonFailures.length > 0) notify(feedback.summary);
+      if (feedback.failures.length > 0) setImportFailures(feedback.failures);
+    } finally {
+      setImporting(false);
+    }
+  }, [importing, onLibraryChanged, reset]);
 
   const onFavorite = useCallback(
     (song: SongView, favorite: boolean) => {
@@ -144,11 +162,12 @@ export function LibraryWorkspace({
             type="button"
             className="btn btn-primary"
             id="import-button"
-            aria-busy={importOpen}
-            onClick={() => setImportOpen(true)}
+            aria-busy={importing}
+            disabled={importing}
+            onClick={() => void runImport()}
             data-testid="import-button"
           >
-            导入
+            {importing ? "导入中…" : "导入"}
           </button>
         ) : null}
       </Topbar>
@@ -179,7 +198,7 @@ export function LibraryWorkspace({
             playing={snapshot.state === "playing"}
             error={error}
             onRetry={retry}
-            onImport={() => setImportOpen(true)}
+            onImport={() => void runImport()}
             onLoadMore={loadMore}
             onClearSearch={() => setSearch("")}
             onPlay={onPlay}
@@ -235,18 +254,8 @@ export function LibraryWorkspace({
         />
       ) : null}
 
-      {importOpen ? (
-        <ImportBatchDialog
-          onClose={() => setImportOpen(false)}
-          onDone={(batch: ImportBatchDto) => {
-            reset();
-            invalidateLibraryCounts();
-            onLibraryChanged?.();
-            notify(
-              `导入完成：成功 ${batch.results.filter((r) => r.kind === "imported").length} 首`,
-            );
-          }}
-        />
+      {importFailures ? (
+        <ImportFailureDialog results={importFailures} onClose={() => setImportFailures(null)} />
       ) : null}
     </>
   );

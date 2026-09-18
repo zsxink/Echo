@@ -100,8 +100,12 @@ fn same_name_different_content_gets_minimal_conflict_number() {
     let report = PlanImport::new(&g.deps, &g.sources)
         .run(g.fixture.root, &[source("new")])
         .expect("batch-level success");
-    let ImportOutcome::Imported { song, target, .. } =
-        report.results.into_iter().next().expect("one")
+    let ImportOutcome::Imported {
+        song,
+        target,
+        renamed,
+        ..
+    } = report.results.into_iter().next().expect("one")
     else {
         panic!("the import must succeed under a numbered name");
     };
@@ -109,6 +113,10 @@ fn same_name_different_content_gets_minimal_conflict_number() {
         target.display(),
         "media/歌手/歌手 - 晴天 (2).flac",
         "minimal (n) after the occupied name"
+    );
+    assert!(
+        renamed,
+        "a close-name collision resolved by (n) numbering is reported as renamed"
     );
 
     let root_dir = g.fixture.fs.root_path(g.fixture.root).expect("root");
@@ -126,6 +134,29 @@ fn same_name_different_content_gets_minimal_conflict_number() {
     assert_eq!(
         record.path(),
         &RelativeMediaPath::new("media/歌手/歌手 - 晴天 (2).flac").unwrap()
+    );
+}
+
+#[test]
+fn clean_target_is_not_reported_as_renamed() {
+    let g = gated();
+    g.sources.add("hit", "晴天.flac", b"sunny-bytes");
+    tagged(&g, b"sunny-bytes", Some("歌手"), Some("晴天"));
+    g.fixture
+        .set_audio("media/歌手/歌手 - 晴天.flac", "晴天", 1_000);
+
+    let report = PlanImport::new(&g.deps, &g.sources)
+        .run(g.fixture.root, &[source("hit")])
+        .expect("batch-level success");
+    let ImportOutcome::Imported { renamed, target, .. } =
+        report.results.into_iter().next().expect("one")
+    else {
+        panic!("the import must succeed");
+    };
+    assert_eq!(target.display(), "media/歌手/歌手 - 晴天.flac");
+    assert!(
+        !renamed,
+        "a target that takes its ideal name is a plain import, not a rename"
     );
 }
 

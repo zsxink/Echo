@@ -6,6 +6,7 @@ use crate::domain::ids::{LibraryRootId, SongId};
 use crate::domain::library::PortableRecord;
 use crate::domain::state::OperationState;
 use crate::error::Error;
+use std::time::UNIX_EPOCH;
 
 use super::report::{journal_item, journal_lrc_item};
 use super::{
@@ -278,7 +279,16 @@ impl PlanImport<'_> {
         parsed: &ParsedOutcome,
         lrc_published: bool,
     ) -> Result<(), Error> {
-        let entity = song_from_parsed(planned.reserved, planned.root, &parsed.file);
+        let added_at = self
+            .deps
+            .clock
+            .now_wall()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+            .try_into()
+            .unwrap_or(u64::MAX);
+        let entity = song_from_parsed(planned.reserved, planned.root, &parsed.file, added_at);
         let entity_for_record = entity.clone();
         let embedded = parsed
             .embedded_lyrics

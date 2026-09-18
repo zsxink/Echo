@@ -35,6 +35,8 @@
  * `useAppShell` (task 6.6); this file keeps only the layout.
  */
 
+import { useEffect } from "react";
+
 import { bridge } from "../bridge";
 import { ChooseRootView } from "../features/workspace/ChooseRootView";
 import { LibraryStatusView } from "../features/workspace/LibraryStatusView";
@@ -72,6 +74,27 @@ export function App() {
     settingsOpen,
     setSettingsOpen,
   } = useAppShell();
+
+  // Finder / file-manager opens are a desktop-owned playback request, never an
+  // import. The player coordinator atomically replaces its context for each
+  // accepted file; registering here also covers paths drained after cold start.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void bridge
+      .subscribe<readonly string[]>("app://file-open-request", (paths) => {
+        // A Finder/open-with request is one isolated playback context. Do not
+        // turn a multi-URL OS delivery into an implicit queue: consume only
+        // its first item and let a later request replace this context.
+        const path = paths[0];
+        if (!path) return;
+        const displayName = path.split(/[\\/]/).filter(Boolean).at(-1) ?? "音频文件";
+        bridge.fireAndForget("play_temporary_file", { path, displayName });
+      })
+      .then((dispose) => {
+        unlisten = dispose;
+      });
+    return () => unlisten?.();
+  }, []);
 
   const activePlaylist = playlists.find((playlist) => playlist.id === activePlaylistId) ?? null;
   const viewTitle =

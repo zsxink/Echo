@@ -788,10 +788,12 @@ impl<'a> RecoverOperations<'a> {
                     item_key: item.item_key.clone(),
                     claim_key: item.claim_key.clone(),
                 };
+                let added_at =
+                    u64::try_from(wall_now_ms(self.deps.clock.as_ref())?).unwrap_or(u64::MAX);
                 self.deps
                     .uow
                     .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
-                        let entity = song_from_parsed(song_id, root, &parsed.file);
+                        let entity = song_from_parsed(song_id, root, &parsed.file, added_at);
                         tx.upsert_song(&entity)?;
                         match embedded {
                             Some(candidate) => tx.set_lyrics_candidate(song_id, &candidate)?,

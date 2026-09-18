@@ -82,9 +82,10 @@ impl<'a> PlanImport<'a> {
             Err(error) => return failed_of(&error),
         };
         // The extension is both the type filter and the target's 原扩展名
-        // (normalized to lowercase for a deterministic target name).
+        // (normalized to lowercase for a deterministic target name). A non-
+        // audio input in a multi-select is a benign skip, not a failure.
         let Some(ext) = supported_extension_of(&info.display_name) else {
-            return ImportOutcome::Unsupported;
+            return ImportOutcome::Skipped;
         };
         let planned = match self.stage_and_plan(root, source, &info, &ext, state) {
             Ok(planned) => planned,
@@ -145,6 +146,7 @@ impl<'a> PlanImport<'a> {
                     operation: planned.operation,
                     song: planned.reserved,
                     target: planned.target.clone(),
+                    renamed: planned.renamed,
                     lyrics: Box::new(lyrics),
                 }
             }

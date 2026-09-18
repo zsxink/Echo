@@ -21,3 +21,8 @@ Echo 是本地优先的跨平台音乐播放器。项目以 OpenSpec 驱动需�
 ## OpenSpec
 
 具体上下文和产物规则见 `openspec/config.yaml`，代码规范见 `openspec/CODE_STANDARDS.md`。根据任务使用 propose、update、apply、sync、archive 或 explore；规划与实现不要在同一阶段混做。
+
+## 执行完成约束
+
+- 执行已批准的 OpenSpec change 时，持续完成任务清单、更新勾选状态并运行规定验证；不得仅因阶段性进展、上下文切换或单项验证通过而自行停止。
+- 仅在任务全部完成，或出现需要用户作出不可替代的范围/产品决策、外部权限或环境阻塞时，才向用户交还控制权。

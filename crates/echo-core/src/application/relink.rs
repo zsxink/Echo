@@ -269,8 +269,14 @@ impl MusicKey {
 /// (reserved `SongId`) share this: the parsed file describes facts, the
 /// caller owns identity.
 #[must_use]
-pub(crate) fn song_from_parsed(id: SongId, root: LibraryRootId, file: &ParsedFile) -> Song {
-    let mut entity = Song::new(id, root, file.path.clone(), Revision::INITIAL);
+pub(crate) fn song_from_parsed(
+    id: SongId,
+    root: LibraryRootId,
+    file: &ParsedFile,
+    added_at: u64,
+) -> Song {
+    // A revision is an optimistic-concurrency tag, not an event timestamp.
+    let mut entity = Song::with_added_at(id, root, file.path.clone(), Revision::INITIAL, added_at);
     entity.apply_metadata(
         file.meta.title.clone(),
         file.meta.artist.clone(),

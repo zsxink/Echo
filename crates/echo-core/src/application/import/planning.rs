@@ -81,6 +81,15 @@ impl PlanImport<'_> {
                 "no safe unique target name for the parsed tags",
             ))
         })?;
+        // Detect close-name conflict resolution (spec: 重名后成功): the
+        // final target differs from the ideal no-conflict name.
+        let renamed = plan_named_target(
+            meta.artist.as_deref(),
+            meta.title.as_deref(),
+            ext,
+            &mut |_| false,
+        )
+        .map_or(false, |ideal| ideal != target);
         // The optional same-basename `.lrc` sub-resource (task 5.4): plan it
         // around the FINAL audio target, so the sidecar pairs with the exact
         // base name the audio lands on (including the `(n)` numbering). A
@@ -92,6 +101,7 @@ impl PlanImport<'_> {
             target,
             operation,
             reserved,
+            renamed,
             source: Some(source.key().to_owned()),
             staged,
             staged_path: copy.staged_path,
