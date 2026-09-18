@@ -29,13 +29,15 @@ interface BridgeCommandArguments {
   get_bootstrap_state: EmptyArgs;
   library_status: EmptyArgs;
   all_songs: [args: { sort: string; cursor?: string | null; limit: number }];
-  search: [args: {
-    query: string;
-    inFavorites: boolean;
-    sort: string;
-    cursor?: string | null;
-    limit: number;
-  }];
+  search: [
+    args: {
+      query: string;
+      inFavorites: boolean;
+      sort: string;
+      cursor?: string | null;
+      limit: number;
+    },
+  ];
   favorites: [args: { sort: string; cursor?: string | null; limit: number }];
   recent: [args: { query: string }];
   library_counts: EmptyArgs;
@@ -46,11 +48,13 @@ interface BridgeCommandArguments {
   set_favorite: [args: { songId: string; favorite: boolean }];
   create_playlist: [args: { root: string; name: string }];
   rename_playlist: [args: { id: string; name: string }];
-  set_playlist_cover: [args: {
-    id: string;
-    bytes: number[] | null;
-    mime?: string | null;
-  }];
+  set_playlist_cover: [
+    args: {
+      id: string;
+      bytes: number[] | null;
+      mime?: string | null;
+    },
+  ];
   delete_playlist: [args: { id: string }];
   add_to_playlists: [args: { song: string; targets: string[] }];
   remove_playlist_song: [args: { playlist: string; song: string }];
@@ -65,12 +69,14 @@ interface BridgeCommandArguments {
   set_close_behavior: [args: { behavior: string }];
   get_close_behavior: EmptyArgs;
   play_playlist_context: [args: { playlist: string; selectedSong: string }];
-  play_library_context: [args: {
-    view: "all" | "recent" | "favorites";
-    query: string;
-    sort: string;
-    selectedSong: string;
-  }];
+  play_library_context: [
+    args: {
+      view: "all" | "recent" | "favorites";
+      query: string;
+      sort: string;
+      selectedSong: string;
+    },
+  ];
   restore_playback_session: EmptyArgs;
   play_temporary_file: [args: { path: string; displayName: string }];
   import_current_temporary_file: EmptyArgs;

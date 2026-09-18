@@ -162,7 +162,9 @@ export function PlayerBar() {
             event.preventDefault();
             bridge.fireAndForget("seek", { position: target });
           }}
-            onChange={(event) => bridge.fireAndForget("seek", { position: Number(event.target.value) })}
+          onChange={(event) =>
+            bridge.fireAndForget("seek", { position: Number(event.target.value) })
+          }
         />
       </div>
 
