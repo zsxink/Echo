@@ -321,7 +321,41 @@ async function main() {
     abort("A7/A14", e);
   }
 
-  // ---------- A8: clicking a song shows it in the player bar ----------
+  // ---------- Import state and failure feedback ----------
+  await goto("medium");
+  try {
+    await assert(
+      `!!document.querySelector('[data-testid="import-button"]')`,
+      "import: import button is missing",
+    );
+    const before = await evalJs(`document.querySelector('[data-testid="import-button"]')?.textContent?.trim()`);
+    if (before !== "导入") fail("import: button is not idle before picking");
+
+    await evalJs(`window.__echoE2E__.state.importMode = 'mixed'`);
+    await evalJs(`document.querySelector('[data-testid="import-button"]').click()`);
+    await assert(
+      `document.querySelector('[data-testid="import-button"]')?.textContent?.trim() === '导入'`,
+      "import: button did not return to idle after completion",
+    );
+    await assert(
+      `document.body.innerText.includes('导入失败') && document.body.innerText.includes('文件损坏')`,
+      "import: mixed batch did not show the failure-only detail dialog",
+    );
+    pass("import: mixed result returns to idle and exposes failure detail");
+
+    await evalJs(`document.querySelector('[data-testid="import-close"]')?.click()`);
+    await evalJs(`window.__echoE2E__.state.importMode = 'failed'`);
+    await evalJs(`document.querySelector('[data-testid="import-button"]').click()`);
+    await assert(
+      `!!document.querySelector('[data-testid="import-dialog"]')`,
+      "import: all-failure batch did not show a dialog",
+    );
+    pass("import: all-failure result shows a dialog without a success summary");
+  } catch (e) {
+    abort("import", e);
+  }
+
+
   //
   // Driven by a *click*, not by a seeded now-playing item. The mock emits the
   // current snapshot to every new subscriber, so a scenario that seeds

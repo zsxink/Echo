@@ -120,6 +120,33 @@ describe("Library activation without a status event", () => {
   });
 });
 
+describe("File-open playback", () => {
+  it("replaces playback for every path drained after cold start", async () => {
+    render(<App />);
+    await waitFor(() =>
+      expect((invoke as unknown as { mock: { calls: unknown[][] } }).mock.calls).toContainEqual([
+        "library_status",
+        {},
+      ]),
+    );
+
+    const callbacks = (globalThis as unknown as {
+      __echoTest: { emit: (event: string, payload: unknown) => void };
+    }).__echoTest;
+    callbacks.emit("app://file-open-request", ["/tmp/first.flac", "/tmp/second.flac"]);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("play_temporary_file", {
+        path: "/tmp/first.flac",
+        displayName: "first.flac",
+      });
+      expect(invoke).toHaveBeenCalledWith("play_temporary_file", {
+        path: "/tmp/second.flac",
+        displayName: "second.flac",
+      });
+    });
+  });
+});
 describe("Phase-one scope guard", () => {
   const mocks = (
     globalThis as unknown as {

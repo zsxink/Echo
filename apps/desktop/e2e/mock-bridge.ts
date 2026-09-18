@@ -53,6 +53,7 @@ export interface E2EState {
   playlists: { id: string; name: string; memberCount: number }[];
   theme: Theme;
   closeBehavior: "exit" | "background";
+  importMode: "success" | "cancelled" | "mixed" | "failed";
   nowPlaying: { songId: string; position: number; playing: boolean } | null;
 }
 
@@ -142,6 +143,7 @@ export function defaultState(): E2EState {
     playlists: [],
     theme: "coral",
     closeBehavior: "exit",
+    importMode: "success",
     nowPlaying: null,
   };
 }
@@ -426,18 +428,28 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
       return { cancelled: false, root: st.activeRoot };
     },
     choose_and_import_files: (_args, st) => {
+      if (st.importMode === "cancelled") return null;
+      if (st.importMode === "failed") {
+        return { results: [{ kind: "failed", code: "corrupt", message: "文件损坏" }] };
+      }
       const next = st.songs.length;
       st.songs.push(makeSong(next, { title: `新导入 ${next}` }));
-      return {
-        results: [
-          {
-            kind: "imported",
-            operationId: `op-${next}`,
-            songId: `song-${next}`,
-            relativePath: `新导入 ${next}.mp3`,
-          },
-        ],
+      const imported = {
+        kind: "imported",
+        operationId: `op-${next}`,
+        songId: `song-${next}`,
+        relativePath: `新导入 ${next}.mp3`,
       };
+      if (st.importMode === "mixed") {
+        return {
+          results: [
+            imported,
+            { kind: "failed", code: "corrupt", message: "文件损坏" },
+            { kind: "skipped" },
+          ],
+        };
+      }
+      return { results: [imported] };
     },
     start_scan: () => ({ generation: 1, cancelled: false }),
     cancel_scan: () => ({ generation: 1, cancelled: true }),

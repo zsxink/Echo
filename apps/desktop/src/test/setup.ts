@@ -9,13 +9,19 @@ import { toastStore } from "../app/toast";
 // `listen` registers no-ops so event subscriptions are inert.
 const invokeHandlers = new Map<string, unknown>();
 
+const eventListeners = new Map<string, (payload: unknown) => void>();
+
 // @ts-expect-error - we attach a test hook to the mock object itself
 globalThis.__echoTest = {
   setInvoke(command: string, value: unknown) {
     invokeHandlers.set(command, value);
   },
+  emit(event: string, payload: unknown) {
+    eventListeners.get(event)?.({ payload });
+  },
   reset() {
     invokeHandlers.clear();
+    eventListeners.clear();
   },
 };
 
@@ -41,7 +47,10 @@ const tauriCore = {
 };
 
 const tauriEvent = {
-  listen: vi.fn(async () => () => {}),
+  listen: vi.fn(async (event: string, handler: (payload: unknown) => void) => {
+    eventListeners.set(event, handler);
+    return () => eventListeners.delete(event);
+  }),
 };
 
 vi.mock("@tauri-apps/api/core", () => tauriCore);

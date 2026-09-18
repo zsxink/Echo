@@ -15,14 +15,23 @@ describe("ImportFailureDialog", () => {
     render(
       <ImportFailureDialog
         onClose={onClose}
-        results={[{ kind: "skipped" }, { kind: "failed", code: "io", message: "读取出错" }]}
+        results={[{ kind: "failed", code: "io", message: "读取出错" }]}
       />,
     );
-    expect(screen.getByText("部分文件未能导入")).toBeInTheDocument();
+    expect(screen.getByText("导入失败")).toBeInTheDocument();
     expect(screen.queryByText(/已导入/)).not.toBeInTheDocument();
-    expect(screen.getByText("已跳过：非音频文件，无需处理。")).toBeInTheDocument();
     expect(screen.getByText("失败：读取出错")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("import-close"));
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("renders a library-unavailable failure", () => {
+    render(
+      <ImportFailureDialog
+        onClose={() => undefined}
+        results={[{ kind: "libraryUnavailable" }]}
+      />,
+    );
+    expect(screen.getByText("资料库不可用，未开始导入。")).toBeInTheDocument();
   });
 });

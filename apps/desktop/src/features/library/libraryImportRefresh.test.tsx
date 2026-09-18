@@ -88,6 +88,41 @@ describe("导入完成后的资料库刷新", () => {
     });
   });
 
+  it("returns the import control to idle after picker cancellation", async () => {
+    mocks.setInvoke("all_songs", { items: [beforeImport], isLast: true, nextCursor: null });
+    let resolvePicker: (value: null) => void = () => undefined;
+    mocks.setInvoke(
+      "choose_and_import_files",
+      new Promise<null>((resolve) => {
+        resolvePicker = resolve;
+      }),
+    );
+
+    render(<LibraryWorkspace view="all" title="全部歌曲" root="root-1" readOnly={false} />);
+    await screen.findByText(beforeImport.title);
+
+    fireEvent.click(screen.getByTestId("import-button"));
+    expect(screen.getByTestId("import-button")).toBeDisabled();
+    expect(screen.getByTestId("import-button")).toHaveTextContent("导入中…");
+
+    resolvePicker(null);
+
+    await waitFor(() => expect(screen.getByTestId("import-button")).toBeEnabled());
+    expect(screen.getByTestId("import-button")).toHaveTextContent("导入");
+  });
+
+  it("shows a failure dialog when the import command is rejected", async () => {
+    mocks.setInvoke("all_songs", { items: [beforeImport], isLast: true, nextCursor: null });
+    mocks.setInvoke("choose_and_import_files", new Error("library unavailable"));
+
+    render(<LibraryWorkspace view="all" title="全部歌曲" root="root-1" readOnly={false} />);
+    await screen.findByText(beforeImport.title);
+    fireEvent.click(screen.getByTestId("import-button"));
+
+    await waitFor(() => expect(screen.getByTestId("import-dialog")).toBeInTheDocument());
+    expect(screen.getByTestId("import-dialog")).toHaveTextContent("导入失败");
+  });
+
   it("keeps 最近添加 as a fixed chronological view", async () => {
     mocks.setInvoke("recent", [beforeImport]);
 

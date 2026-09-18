@@ -81,6 +81,15 @@ export function LibraryWorkspace({
       onLibraryChanged?.();
       if (feedback.nonFailures.length > 0) notify(feedback.summary);
       if (feedback.failures.length > 0) setImportFailures(feedback.failures);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "导入命令失败";
+      setImportFailures([
+        {
+          kind: "failed",
+          code: "import_command",
+          message,
+        },
+      ]);
     } finally {
       setImporting(false);
     }

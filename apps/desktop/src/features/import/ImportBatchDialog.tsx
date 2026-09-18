@@ -80,7 +80,7 @@ export function ImportFailureDialog({ results, onClose }: ImportFailureDialogPro
       ref={dialogRef}
     >
       <div className="confirmation-panel">
-        <h2 id="import-title">部分文件未能导入</h2>
+        <h2 id="import-title">导入失败</h2>
         <p className="dialog-summary">以下项目需要处理；已完成的导入不会受影响。</p>
         <ul className="dialog-results">
           {results.map((result, index) => (

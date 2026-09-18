@@ -23,24 +23,27 @@ impl super::AppServices {
     ///
     /// # Errors
     ///
-    /// `Unavailable` when writes are disabled or no root is active; only
-    /// batch-level failures propagate — per-input problems become
-    /// `ImportResultDto::Failed` so one bad file cannot abort the batch.
+    /// `Unavailable` when writes are disabled or no root is active; after a
+    /// picker selection every requested source receives a typed batch result,
+    /// including an unavailable root, so the UI can render one consistent
+    /// failure surface.
     pub fn choose_and_import_files(&self) -> Result<Option<ImportBatchDto>, Error> {
-        self.guard_writes()?;
         let Some(picked) = self.dialogs.pick_audio_files()? else {
             // Cancelled: not an error, not a success — a genuine no-op.
             return Ok(None);
         };
-        let root = self
-            .deps
-            .roots
-            .active_root()?
-            .map(|r| r.id())
-            .ok_or_else(|| Error::unavailable("library", "no active library root"))?;
         if picked.sources.is_empty() {
             return Ok(Some(ImportBatchDto { results: vec![] }));
         }
+        if let Err(error) = self.guard_writes() {
+            return Ok(Some(unavailable_batch(picked.sources.len(), &error)));
+        }
+        let Some(root) = self.deps.roots.active_root()?.map(|root| root.id()) else {
+            return Ok(Some(unavailable_batch(
+                picked.sources.len(),
+                &Error::unavailable("library", "no active library root"),
+            )));
+        };
         let report =
             self.import_batch_concurrently(root, picked.reader.as_ref(), &picked.sources)?;
         Ok(Some(ImportBatchDto::from(report)))
@@ -136,6 +139,14 @@ impl super::AppServices {
             .next()
             .expect("import batch has at least one result");
         Ok(ImportResultDto::from(outcome))
+    }
+}
+
+fn unavailable_batch(count: usize, _error: &Error) -> ImportBatchDto {
+    ImportBatchDto {
+        results: std::iter::repeat_with(|| ImportResultDto::LibraryUnavailable)
+            .take(count)
+            .collect(),
     }
 }
 

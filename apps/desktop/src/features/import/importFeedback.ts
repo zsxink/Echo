@@ -13,8 +13,7 @@ export interface ImportFeedback {
  */
 export function classifyImportResults(results: readonly ImportResultDto[]): ImportFeedback {
   const nonFailures = results.filter(
-    (result) =>
-      result.kind === "imported" || result.kind === "duplicate" || result.kind === "skipped",
+    (result) => result.kind === "imported" || result.kind === "duplicate" || result.kind === "skipped",
   );
   const failures = results.filter(
     (result) => result.kind === "failed" || result.kind === "libraryUnavailable",

@@ -82,13 +82,13 @@ export function App() {
     let unlisten: (() => void) | undefined;
     void bridge
       .subscribe<readonly string[]>("app://file-open-request", (paths) => {
-        // A Finder/open-with request is one isolated playback context. Do not
-        // turn a multi-URL OS delivery into an implicit queue: consume only
-        // its first item and let a later request replace this context.
-        const path = paths[0];
-        if (!path) return;
-        const displayName = path.split(/[\\/]/).filter(Boolean).at(-1) ?? "音频文件";
-        bridge.fireAndForget("play_temporary_file", { path, displayName });
+        // Each accepted OS path is an independent replacement request. A
+        // cold-start drain may contain several requests, so process every path
+        // rather than silently dropping all but the first.
+        for (const path of paths) {
+          const displayName = path.split(/[\\/]/).filter(Boolean).at(-1) ?? "音频文件";
+          bridge.fireAndForget("play_temporary_file", { path, displayName });
+        }
       })
       .then((dispose) => {
         unlisten = dispose;
