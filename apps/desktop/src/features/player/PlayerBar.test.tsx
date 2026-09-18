@@ -9,7 +9,7 @@
  *  - Library songs (with a currentSongId) do NOT show the import button or badge.
  */
 
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PlayerBar } from "./PlayerBar";
@@ -379,5 +379,177 @@ describe("PlayerBar (task 11.8) — range keyboard stepping", () => {
     const status = screen.getByTestId("player-status-text");
     expect(status.textContent).toContain("正在播放");
     expect(status.getAttribute("aria-live")).toBe("polite");
+  });
+});
+
+/**
+ * DP-R12 非沉浸播放模式视觉语义.
+ *
+ * The persistent bar must show 随机播放 with a *neutral* style: shuffle may not
+ * borrow the theme's accent colour, and switching to it (or switching the theme
+ * afterwards) must leave the current song and the queue untouched. Selection is
+ * carried by readable semantics (`aria-pressed` / `data-mode`), not by paint.
+ *
+ * The bar paints the theme accent through exactly one class — `.control.active`
+ * (styles/player.css), the 喜欢 heart's selected state — and gives
+ * `#playback-mode` no colour of its own. So "the mode button never carries
+ * `active`" *is* "shuffle is never painted with the accent", and the first test
+ * here pins both halves of that in the same render: the heart has the class, the
+ * mode button does not.
+ */
+describe("PlayerBar — 非沉浸播放模式视觉语义 (DP-R12)", () => {
+  const MODE_QUEUE: UiPlayerSnapshot["queue"] = [
+    {
+      entryId: "entry-1",
+      songId: null,
+      title: "晴天.mp3",
+      isCurrent: true,
+      failed: false,
+      canImport: true,
+      blocked: false,
+      artist: null,
+      durationS: null,
+      coverKey: null,
+    },
+    {
+      entryId: "entry-2",
+      songId: null,
+      title: "夜曲.flac",
+      isCurrent: false,
+      failed: false,
+      canImport: true,
+      blocked: false,
+      artist: null,
+      durationS: null,
+      coverKey: null,
+    },
+  ];
+
+  /** Publish a playing bar in `mode` without re-mounting (the store is external). */
+  function publishMode(mode: UiPlayerSnapshot["mode"], overrides: Partial<UiPlayerSnapshot> = {}) {
+    playerStore.publish({
+      state: "playing",
+      position: 30,
+      duration: 120,
+      volume: 0.8,
+      muted: false,
+      currentQueueEntryId: "entry-1",
+      currentSongId: null,
+      queueLen: 2,
+      currentTitle: "晴天.mp3",
+      currentCanImport: true,
+      mode,
+      queue: MODE_QUEUE,
+      ...overrides,
+    });
+  }
+
+  /** The mode control, addressed by the id its own stylesheet targets. */
+  function modeButton(): HTMLButtonElement {
+    const button = document.querySelector<HTMLButtonElement>("#playback-mode");
+    if (!button) throw new Error("#playback-mode is not rendered");
+    return button;
+  }
+
+  /** Every control action the bar asked the backend to perform. */
+  const controlActions = () =>
+    capturedInvoke.mock.calls
+      .filter(([command]) => command === "player_control")
+      .map(([, args]) => (args as { action: string }).action);
+
+  function renderWithTheme(theme: string) {
+    return render(
+      <div data-echo-theme={theme}>
+        <PlayerBar />
+      </div>,
+    );
+  }
+
+  it("keeps the theme accent on the 喜欢 heart, never on the mode button", async () => {
+    // @ts-expect-error - the test hook installed by setup.ts
+    globalThis.__echoTest.setInvoke("song_cover_keys", {});
+    // @ts-expect-error - the test hook installed by setup.ts
+    globalThis.__echoTest.setInvoke("song_detail", {
+      songId: "song-abc",
+      relativePath: "a.mp3",
+      title: "晴天",
+      artist: "Echo Unit",
+      album: null,
+      durationS: 120,
+      format: "mp3",
+      playCount: 0,
+      favorite: true,
+      hasCover: false,
+      availability: "available",
+    });
+    publishMode("shuffle", {
+      currentSongId: "song-abc",
+      currentTitle: null,
+      currentCanImport: false,
+    });
+    render(<PlayerBar />);
+
+    // The bar paints the theme accent through exactly one selected class —
+    // `.control.active` (styles/player.css) — and the 喜欢 heart owns it. This
+    // is the control the spec calls 已定义为强调的选中语义.
+    const heart = await screen.findByRole("button", { name: "取消喜欢当前歌曲" });
+    expect(heart).toHaveClass("active");
+
+    // 随机播放 is just as "on" — it says so readably — but it must not borrow
+    // that class, which is what keeps the accent off it under any theme.
+    expect(modeButton()).toHaveAttribute("aria-pressed", "true");
+    expect(modeButton()).not.toHaveClass("active");
+    expect(modeButton().className).toBe("control");
+  });
+
+  it("switches to 随机播放 with a neutral button and leaves the queue alone", () => {
+    capturedInvoke.mockResolvedValue(null);
+    publishMode("sequential");
+    render(<PlayerBar />);
+
+    expect(modeButton()).toHaveAttribute("data-mode", "sequential");
+    expect(modeButton()).toHaveAttribute("aria-pressed", "false");
+    expect(modeButton()).toHaveAccessibleName("列表循环");
+
+    fireEvent.click(modeButton());
+
+    // The switch is a mode change and nothing else — no queue command is issued.
+    expect(controlActions()).toEqual(["mode:shuffle"]);
+    expect(capturedInvoke).not.toHaveBeenCalledWith("queue_command", expect.anything());
+
+    // The backend confirms 随机播放; the bar adopts it without borrowing paint.
+    act(() => publishMode("shuffle"));
+
+    expect(modeButton()).toHaveAttribute("data-mode", "shuffle");
+    // 可读语义表明随机播放已选中 …
+    expect(modeButton()).toHaveAttribute("aria-pressed", "true");
+    expect(modeButton()).toHaveAccessibleName("随机播放");
+    // … while the glyph itself stays neutral (no accent-bearing class).
+    expect(modeButton().className).toBe("control");
+    expect(screen.getByTestId("player-status-text").textContent).toContain("随机播放");
+    // The current item is the one the switch started from.
+    expect(screen.getByTestId("now-playing-trigger")).toHaveTextContent("晴天.mp3");
+  });
+
+  it("keeps 随机播放 neutral while the theme changes", () => {
+    publishMode("shuffle");
+    const { rerender } = renderWithTheme("coral");
+
+    expect(modeButton()).toHaveAttribute("data-mode", "shuffle");
+    expect(modeButton()).toHaveAttribute("aria-pressed", "true");
+    const before = modeButton().outerHTML;
+
+    rerender(
+      <div data-echo-theme="cobalt">
+        <PlayerBar />
+      </div>,
+    );
+
+    // The control is theme-independent: not a single attribute moved.
+    expect(modeButton().outerHTML).toBe(before);
+    expect(modeButton()).not.toHaveClass("active");
+    expect(modeButton()).toHaveAttribute("data-mode", "shuffle");
+    expect(modeButton().className).toBe("control");
+    expect(screen.getByTestId("now-playing-trigger")).toHaveTextContent("晴天.mp3");
   });
 });

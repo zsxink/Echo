@@ -22,7 +22,15 @@ function scalar(text, key, file) {
     errors.push(`${file}: missing non-empty ${key}`);
     return "";
   }
-  return match[1].trim().replace(/^"|"$/g, "");
+  // Generated values are double-quoted with `\` and `"` escaped
+  // (gen-scenario-manifests.mjs `yamlEscape`). Undo the escaping here too, or a
+  // command containing a quote — e.g. a vitest `-t "<name>"` selector — compares
+  // as `\"` against the registry's `"` and reports phantom "command drift".
+  return match[1]
+    .trim()
+    .replace(/^"|"$/g, "")
+    .replace(/\\\\/g, "\\")
+    .replace(/\\"/g, '"');
 }
 
 for (const name of readdirSync(SCENARIOS).filter((entry) => entry.endsWith(".yaml"))) {

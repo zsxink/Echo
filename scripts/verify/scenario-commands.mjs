@@ -23,12 +23,20 @@
 //   cargo test -p echo-core --all-features <filter>      Core targeted filter
 //   cargo test -p echo-desktop --all-features <filter>   Desktop/clip filter
 //   pnpm --filter @echo/desktop test -- --run <file>     React vitest file
+//   pnpm --filter @echo/desktop test -- --run <file> -t "<name>"  one vitest case
 //   node scripts/verify/checks/task-<N>.mjs              existing gate check
 //   node scripts/verify/checks/check-native-attestation.mjs <ID>  human-only
 
 const COREC = (f) => `cargo test -p echo-core --all-features ${f}`;
 const DESK = (f) => `cargo test -p echo-desktop --all-features ${f}`;
 const REACT = (f) => `pnpm --filter @echo/desktop test -- --run ${f}`;
+/**
+ * React vitest narrowed to a single test name. Use it when a scenario's THEN
+ * clause is proven by one case in a shared file: pointing two scenarios at the
+ * same whole file makes one broken case blank both, which is exactly the
+ * clustering the churn ratchet exists to measure.
+ */
+const REACT_T = (f, name) => `pnpm --filter @echo/desktop test -- --run ${f} -t "${name}"`;
 const CHECK = (n) => `node scripts/verify/checks/task-${n}.mjs`;
 const ATTEST = (id) => `node scripts/verify/checks/check-native-attestation.mjs ${id}`;
 
@@ -95,7 +103,10 @@ export const COMMANDS = {
   // entry, and an explicit next ignores the single-repeat rule.
   "DP-R04-S04": DESK("repeat_one"),
   "DP-R04-S05": DESK("player::coordinator::tests::mode_switch_keeps_current_item"),
-  "DP-R04-S06": DESK("player::coordinator::tests::seek_updates_snapshot_through_coordinator"),
+  // 定位和音量 (DP-R04-S06) 的 THEN 是「拖动进度条 / 音量滑块 / 点击静音」三件事,
+  // 所以命令必须同时覆盖三条 —— 只指 seek 那条等于把音量与静音留成未验收。
+  // 这三条 coordinator 级用例共用 `_through_coordinator` 后缀, 且只匹配这三条。
+  "DP-R04-S06": DESK("_through_coordinator"),
   "DP-R05-S01": CHECK("9.2"), // file association + temp-item
   "DP-R05-S02": CHECK("11.7"),
   "DP-R05-S03": DESK("player::coordinator::tests::recovered_blocked_entry_becomes_eligible_after_retry"),
@@ -115,11 +126,22 @@ export const COMMANDS = {
   // The three-day-history and session-restore family: history entry lookup,
   // snapshot round-trip across a restart, stale-entry filtering, rollback
   // keeping the timestamped history, and restore landing paused.
-  "DP-R11-S01": DESK("player::coordinator::tests::previous_replays_single_entry_instead_of_pausing"),
+  // 列表循环的"上一首"按上下文取前一项并首项回绕 —— `coordinator/tests.rs` 那条
+  // single-entry 用例只证明"单条目队列重播而不暂停"，证明不了走位与回绕，所以指向
+  // queue 级的那条新用例（见 docs/native-attestation-playbook.md §7.3）。
+  "DP-R11-S01": DESK("player::queue::tests::previous_in_loop_walks_the_context_backwards_and_wraps_to_the_tail"),
   "DP-R11-S02": DESK("player::queue::tests::previous_returns_history_entry"),
   "DP-R11-S03": DESK("player::session::tests::state_store_save_load_round_trip_is_atomic_and_clears"),
   "DP-R11-S04": DESK("player::session::tests::restore_keeps_fresh_history_and_counts_only_blocked_entries"),
   "DP-R11-S05": DESK("player::deletion::tests::rollback_restores_timestamped_history_so_previous_remains_available"),
+  // DP-R12 非沉浸播放模式视觉语义 — the persistent bar must show 随机播放 with a
+  // neutral style while still reading as selected. PlayerBar.test.tsx pins both
+  // halves in one render: the 喜欢 heart carries `.control.active` (the bar's only
+  // accent-bearing selected class), and the mode button never does — under any
+  // theme. The colour claim is proven through that class, not by asserting on
+  // stylesheet text.
+  "DP-R12-S01": REACT_T("src/features/player/PlayerBar.test.tsx", "with a neutral button"),
+  "DP-R12-S02": REACT_T("src/features/player/PlayerBar.test.tsx", "while the theme changes"),
   "DP-R13-S01": DESK("player::coordinator::tests::restore_session_recovers_queue_mode_and_settings_paused"),
   "DP-R13-S02": COREC("playback_restore"),
 
@@ -205,7 +227,11 @@ export const COMMANDS = {
   // S05's is "update records once watcher events settle" — proven by the
   // coalescer that normalises removal/rename/overflow into one rescan.
   "LL-R02-S04": COREC("manifest_incompatible_version_fails_check"),
-  "LL-R02-S05": COREC("coalescer_normalizes_removal_and_rename_and_overflow"),
+  // 监听外部新增和修改 (LL-R02-S05) 的 THEN 是「事件稳定后更新记录与索引」+「事件丢失
+  // 时手动重扫收敛」, 涉及新增/删除/移动/修改四类。只指 coalescer 那条只证明事件被归一化,
+  // 证明不了记录/索引更新 —— 改指 watch 集成层整组 (settle / rename 保 UUID / publish 复用
+  // journal id / overflow 退化为重扫), 重扫收敛那半由 scan 侧的 *_converge_after_rescan 覆盖。
+  "LL-R02-S05": COREC("application::watch::tests::"),
   "LL-R03-S01": COREC("infrastructure::sqlite::tests::playback_sessions_are_idempotent"), // fixture format matrix
   "LL-R03-S02": COREC("probe"),
   "LL-R03-S03": COREC("infrastructure::sqlite::tests::scan_pipeline_persists"),
@@ -244,15 +270,13 @@ export const COMMANDS = {
   "PM-R05-S03": COREC("echo_delete_finalize_cascades_memberships"),
   "PM-R05-S04": COREC("playlist"),
   // R06/R07 rows never existed in this table at all — the whole sub-family fell
-  // through the fallback. R07-S01/S02 are the picker's create-then-add path and
-  // its rejection path.
-  //
-  // PM-R06-S01 (成员移除失败) is deliberately NOT registered. The failure path
-  // exists in PlaylistsView.tsx (`移除歌曲失败，请重试`) but no test covers it, and
-  // AddToPlaylistDialog's failure case is about *adding* a song, not removing a
-  // member — pointing R06-S01 at it would manufacture a green for a THEN clause
-  // nothing asserts. It stays on the fallback until the PlaylistsView test
-  // exists (tracked in docs/native-attestation-playbook.md as a class-丙 gap).
+  // through the fallback. R06 is 歌单异步操作反馈, and both of its THEN clauses are
+  // *failure* paths (成员留在原位 / 不显示"已加入播放队列" 成功反馈), so it is
+  // registered against the tests written for exactly those paths: a happy-path
+  // suite would manufacture a green for a clause nothing asserts. R07 is the
+  // picker's create-then-add path and its rejection path.
+  "PM-R06-S01": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "keeps the member in place"),
+  "PM-R06-S02": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "never claims"),
   "PM-R07-S01": REACT("src/features/playlists/AddToPlaylistDialog.test.tsx"),
   "PM-R07-S02": REACT("src/features/playlists/PlaylistNameDialog.test.tsx"),
 

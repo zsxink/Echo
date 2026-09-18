@@ -4,7 +4,7 @@ scenario_id: PM-R06-S02
 requirement: 歌单异步操作反馈
 scenario: 入队失败
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs PM-R06-S02"
+command: "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"never claims\""
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

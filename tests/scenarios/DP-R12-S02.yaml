@@ -4,7 +4,7 @@ scenario_id: DP-R12-S02
 requirement: 非沉浸播放模式视觉语义
 scenario: 主题切换期间保持随机模式
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs DP-R12-S02"
+command: "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx -t \"while the theme changes\""
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

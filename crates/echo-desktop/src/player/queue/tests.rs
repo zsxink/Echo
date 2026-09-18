@@ -115,6 +115,39 @@ fn previous_returns_history_entry() {
     assert_eq!(q.current().map(|e| e.id), Some(a));
 }
 
+/// 列表循环下的"上一首"（DP-R11-S01）。
+///
+/// The requirement is explicit that list-loop must walk the **playback context
+/// position** (first item wrapping to the last) and must never substitute the
+/// random/cross-mode history. `previous_returns_history_entry` above covers the
+/// history path, and `coordinator::tests::previous_replays_single_entry_...`
+/// covers the single-entry dispatch — between them they leave the actual walk
+/// and its wrap unproven, which is why this case exists.
+#[test]
+fn previous_in_loop_walks_the_context_backwards_and_wraps_to_the_tail() {
+    let mut q = Queue::new();
+    let a = q.push(lib(song()));
+    let b = q.push(lib(song()));
+    let c = q.push(lib(song()));
+    q.set_current(b);
+    let queued_next = q.insert_next(lib(song()));
+
+    // 切到上下文的上一项，且不消费手动待播项。
+    assert_eq!(q.previous_in_loop(), Some(a));
+    assert_eq!(q.current_id(), Some(a));
+    assert_eq!(q.priority_ids(), &[queued_next]);
+    // 按新的当前位置重新投影待播项：当前位置置顶，顺序保持。
+    let ids: Vec<_> = q.view_entries().into_iter().map(|entry| entry.id).collect();
+    assert_eq!(ids, vec![a, queued_next, b, c]);
+
+    // 首项回绕至末项。
+    q.set_current(a);
+    assert_eq!(q.previous_in_loop(), Some(c));
+    assert_eq!(q.current_id(), Some(c));
+    let ids: Vec<_> = q.view_entries().into_iter().map(|entry| entry.id).collect();
+    assert_eq!(ids, vec![c, queued_next, a, b]);
+}
+
 #[test]
 fn view_projection_keeps_current_first_and_includes_loop_wrap() {
     let mut q = Queue::new();

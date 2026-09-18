@@ -2362,7 +2362,7 @@
     {
       "id": "DP-R04-S06",
       "title": "定位和音量",
-      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::seek_updates_snapshot_through_coordinator",
+      "command": "cargo test -p echo-desktop --all-features _through_coordinator",
       "manifest": "tests/scenarios/DP-R04-S06.yaml"
     },
     {
@@ -2458,7 +2458,7 @@
     {
       "id": "DP-R11-S01",
       "title": "列表循环上一首",
-      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::previous_replays_single_entry_instead_of_pausing",
+      "command": "cargo test -p echo-desktop --all-features player::queue::tests::previous_in_loop_walks_the_context_backwards_and_wraps_to_the_tail",
       "manifest": "tests/scenarios/DP-R11-S01.yaml"
     },
     {
@@ -2488,13 +2488,13 @@
     {
       "id": "DP-R12-S01",
       "title": "非沉浸模式切换为随机播放",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R12-S01",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx -t \"with a neutral button\"",
       "manifest": "tests/scenarios/DP-R12-S01.yaml"
     },
     {
       "id": "DP-R12-S02",
       "title": "主题切换期间保持随机模式",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R12-S02",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx -t \"while the theme changes\"",
       "manifest": "tests/scenarios/DP-R12-S02.yaml"
     },
     {
@@ -2908,7 +2908,7 @@
     {
       "id": "LL-R02-S05",
       "title": "监听外部新增和修改",
-      "command": "cargo test -p echo-core --all-features coalescer_normalizes_removal_and_rename_and_overflow",
+      "command": "cargo test -p echo-core --all-features application::watch::tests::",
       "manifest": "tests/scenarios/LL-R02-S05.yaml"
     },
     {
@@ -3118,13 +3118,13 @@
     {
       "id": "PM-R06-S01",
       "title": "成员移除失败",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs PM-R06-S01",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"keeps the member in place\"",
       "manifest": "tests/scenarios/PM-R06-S01.yaml"
     },
     {
       "id": "PM-R06-S02",
       "title": "入队失败",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs PM-R06-S02",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"never claims\"",
       "manifest": "tests/scenarios/PM-R06-S02.yaml"
     },
     {

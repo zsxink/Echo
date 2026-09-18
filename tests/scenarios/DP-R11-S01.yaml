@@ -4,7 +4,7 @@ scenario_id: DP-R11-S01
 requirement: 三天播放历史与回退
 scenario: 列表循环上一首
 layer: automated
-command: "cargo test -p echo-desktop --all-features player::coordinator::tests::previous_replays_single_entry_instead_of_pausing"
+command: "cargo test -p echo-desktop --all-features player::queue::tests::previous_in_loop_walks_the_context_backwards_and_wraps_to_the_tail"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

@@ -14,7 +14,7 @@
 // Usage: node scripts/verify/validate-scenario-commands.mjs
 
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { scenarioCommands } from "./scenario-commands.mjs";
@@ -76,12 +76,25 @@ for (const { id, command } of scenarioCommands()) {
     continue;
   }
 
-  // vitest file references
-  m = command.match(/^pnpm --filter @echo\/desktop test -- --run\s+(.+)$/);
+  // vitest file references, optionally narrowed to one test name with `-t`.
+  //
+  // A `-t` that names nothing runs zero tests — the same silent false-pass as a
+  // cargo filter that matches nothing, which is why the name is resolved against
+  // the file here instead of being trusted. (`run-scenario.mjs` also rejects a
+  // selected-test command that reports 0 passed, but this gate is the one that
+  // runs on every static pass.)
+  m = command.match(/^pnpm --filter @echo\/desktop test -- --run\s+(\S+\.test\.tsx?)(?:\s+-t\s+(.+))?$/);
   if (m) {
-    const file = m[1].trim();
+    const file = m[1];
     const p = resolve(ROOT, "apps", "desktop", file);
-    if (!existsSync(p)) fail(`${id}: vitest file missing ${file}`);
+    if (!existsSync(p)) {
+      fail(`${id}: vitest file missing ${file}`);
+    } else if (m[2]) {
+      const name = m[2].trim().replace(/^["']|["']$/g, "");
+      if (!readFileSync(p, "utf8").includes(name)) {
+        fail(`${id}: vitest -t '${name}' is not a test name in ${file}`);
+      }
+    }
     continue;
   }
 

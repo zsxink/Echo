@@ -1,8 +1,9 @@
-# 41 个 attestation 场景：判定与处置
+# attestation 场景（原 41 条）：判定、处置与结果
 
-> 在 HEAD `7927f4c` 上实测得出。本文档回答两件事：
+> 判定在 HEAD `7927f4c` 实测得出，登记落在 `009034f` 及后续提交。本文档回答三件事：
 > ① 为什么这 41 个场景会落到 `check-native-attestation.mjs`；
-> ② 逐条判定它们是「已有针对性测试可登记」「有测试但覆盖不全，先补测试」还是「确实必须人工举证」。
+> ② 逐条判定它们是「已有针对性测试可登记」「有测试但覆盖不全，先补测试」还是「确实必须人工举证」；
+> ③ **最终状态与还剩多少**（§0 结果列 / §7）。
 >
 > 复验命令（任何数字都可重跑）：
 > ```bash
@@ -10,27 +11,41 @@
 > import { COMMANDS } from "./scripts/verify/scenario-commands.mjs";
 > import { allScenarioIds } from "./scripts/verify/spec-scenarios.mjs";
 > const un = allScenarioIds().filter(d => !(d.id in COMMANDS));
-> console.log(un.length);'      # → 41
+> console.log(un.length);'      # 判定时 → 41；登记后 → 9
 > ```
 
 ## 0. 结论摘要
 
-| 类 | 条数 | 含义 | 处置 |
-|---|---|---|---|
-| **甲** 可登记为自动化 | **28** | 存在针对性测试，且覆盖 spec 的 `THEN` 全部要点 | 改 `scenario-commands.mjs` 登记真命令 |
-| **丙** 有测试但覆盖不全 | **4** | 存在相关测试，但只覆盖正常路径/部分要点，登记即假绿 | **先补测试**，再登记 |
-| **乙** 必须人工举证 | **9** | 核心是真实 OS 交互（进程存活 / 托盘 / 应用身份 / 真实打开文件 / 真实布局 / 端到端验收） | 操作者在真机执行本文 §5 的步骤并写 log |
+| 类 | 条数 | 含义 | 处置 | 结果 |
+|---|---|---|---|---|
+| **甲** 可登记为自动化 | **28** | 存在针对性测试，且覆盖 spec 的 `THEN` 全部要点 | 改 `scenario-commands.mjs` 登记真命令 | ✅ 已登记（`009034f`） |
+| **丙** 有测试但覆盖不全 | **4** | 存在相关测试，但只覆盖正常路径/部分要点，登记即假绿 | **先补测试**，再登记 | ✅ 用例已补并登记（§3） |
+| **乙** 必须人工举证 | **9** | 核心是真实 OS 交互（进程存活 / 托盘 / 应用身份 / 真实打开文件 / 真实布局 / 端到端验收） | 操作者在真机执行本文 §5 的步骤并写 log | ⏳ 待操作者（对应任务 8.4） |
 
-28 + 4 + 9 = 41。乙类 9 条正是 `task-9.6.mjs` 注释所说的 *"cross-platform native validation is
+28 + 4 + 9 = 41。**施工结果：人工/兜底面 41 → 9**，`COMMANDS` 表 179 → 211 条；仍留在兜底上的 9 条与
+§4 的乙类逐条相同（`DAS-R12-S01/S02`、`DAS-R13-S01`、`DP-R03-S04`、`DP-R08-S03`、
+`DP-R10-S01/S02/S03`、`PHA-R01-S01`），可用上面那条复验命令直接对出来。
+
+乙类 9 条正是 `task-9.6.mjs` 注释所说的 *"cross-platform native validation is
 deferred to the platform Gate"*，也与 `scenario-commands.mjs` 顶部注释列举的 `live tray gesture /
 OS file-open integration / the 3-platform smoke itself` 一一对应 —— **注释描述的那条分支确实存在，
 只是它同时被当成了"未登记"的兜底，把另外 32 条也吸了进去。**
 
-> **本文档在施工中被修正过一次**：`PM-R06-S01` 起初被判为甲类，依据是
-> `AddToPlaylistDialog.test.tsx` 的 "membership commit fails"。落地时核对用例正文发现它断言的是
-> **添加**歌曲失败（"添加失败，请重试" + 选择器保持），而该场景要求的是 **移除成员**失败
-> （成员留原位、导航计数不变）。后者在 `PlaylistsView.tsx:163` 有实现、无测试 ⇒ 改判丙类。
-> 教训：判"有没有测试覆盖这个 `THEN`"必须读**用例正文**，不能只看用例标题像不像。
+> **本文档在施工中被修正过三次**（同一条教训，三种不同长相）：
+> 1. `PM-R06-S01` 起初被判为甲类，依据是 `AddToPlaylistDialog.test.tsx` 的 "membership commit
+>    fails"。落地时核对用例正文发现它断言的是**添加**歌曲失败（"添加失败，请重试" + 选择器保持），
+>    而该场景要求的是**移除成员**失败（成员留原位、导航计数不变）。后者在 `PlaylistsView.tsx:163`
+>    有实现、无测试 ⇒ 改判丙类。
+> 2. `DP-R11-S01`（列表循环上一首）登记到了 `previous_replays_single_entry_instead_of_pausing`。
+>    读正文才发现它构造的是**单条目**队列，断言"再按一次上一首回到 0:00 且仍在播放"，
+>    与 THEN 的「切到前一项 / 首项回绕 / 重新投影待播」无关 ⇒ 属丙类漏判，已补 queue 级用例。
+> 3. `DP-R04-S06`（定位和音量）只登记了 seek 那一条，漏掉音量与静音；`LL-R02-S05`
+>    （监听外部新增和修改）只登记了 coalescer 归一化那一条，漏掉"记录/索引更新"这一核心。
+>
+> ⇒ **教训：判"有没有测试覆盖这个 `THEN`"必须读用例正文，且要逐个子句对，不能只看用例标题像不像。**
+> 第 2、3 条都是**命令确实命中了一个真测试**、`validate-scenario-commands.mjs` 也放行了，但那个测试
+> 证明的不是这条 `THEN` —— 这类错误**没有门禁能自动发现**（校验器只能验"命令命中 ≥1 个测试"），
+> 所以本文 §7.3 记录了一次人工语义复核。
 
 ## 1. 根因：一个 `||` 把两件事混成了一个出口
 
@@ -62,9 +77,19 @@ export function scenarioCommands() {
 
 ## 2. 甲类：可登记为自动化（28 条）
 
+> 本表是**判定依据**（每条当时看到的针对性测试），不是最终登记值的抄本：**权威登记见
+> `scripts/verify/scenario-commands.mjs` 的 `COMMANDS` 表**。其中 3 条的登记目标在落地/复核时改过
+> （`DP-R11-S01`、`DP-R04-S06`、`LL-R02-S05`，见文首修正记录与 §7.3）。
+> 列当前登记值：
+> ```bash
+> node --input-type=module -e '
+> import { COMMANDS } from "./scripts/verify/scenario-commands.mjs";
+> for (const [id, c] of Object.entries(COMMANDS)) if (/^(DP|LE|LL|PM|PLL|PHA)-/.test(id)) console.log(id, c);'
+> ```
+
 命令形式沿用现有 helper（`scenario-commands.mjs`）：
 `COREC(f)` = `cargo test -p echo-core --all-features <f>`；`DESK(f)` = `cargo test -p echo-desktop --all-features <f>`；
-`REACT(f)` = `pnpm --filter @echo/desktop test -- --run <f>`。
+`REACT(f)` = `pnpm --filter @echo/desktop test -- --run <f>`；`REACT_T(f, name)` = 同前但用 `-t "<name>"` 收窄到单个用例。
 
 | 场景 ID | 要验的行为（spec `THEN` 摘要） | 现有针对性测试 | 建议 |
 |---|---|---|---|
@@ -97,20 +122,28 @@ export function scenarioCommands() {
 | PLL-R03-S02 | 资料先到、媒体未到时显示不可用并保留 UUID，媒体到达后恢复且不产生第二首 | `application/portable.rs` `restore_projects_records_and_keeps_missing_without_media` | `COREC("restore_projects_records_and_keeps_missing_without_media")` |
 | PHA-R01-S02 | 回归质量门：Rust/前端/格式/静态检查与登记场景均通过 | `scripts/verify/ci-governance.mjs` —— 含 `cargo test --workspace --all-targets --all-features`、前端构建、覆盖率、三方对账、命令棘轮、纯净性、注入证明共 14 道 | 直接写字符串 `"node scripts/verify/ci-governance.mjs"`（**该门禁很重**，全量场景会因此明显变长；若不可接受，可改为指向 `CHECK("1.2")` 只覆盖前端那一半） |
 
-## 3. 丙类：有测试但覆盖不全 —— **登记前必须先补测试**（4 条）
+## 3. 丙类：有测试但覆盖不全 —— **已按「先补测试再登记」收口**（4 条）
 
-这三条的 spec `THEN` 明确要求**失败路径或视觉语义**，而现有测试只覆盖了正常路径 / 逻辑侧。
-**如果直接登记，就是用成功路径测试冒充失败路径验收 —— 属于假绿，比留人工更糟。**
+这四条的 spec `THEN` 明确要求**失败路径或视觉语义**，而当时存在的测试只覆盖了正常路径 / 逻辑侧。
+**直接登记就是用成功路径测试冒充失败路径验收 —— 属于假绿，比留人工更糟。** 所以先补用例，再登记。
 
-| 场景 ID | spec 要求（缺的那部分加粗） | 现有测试只覆盖 | 缺口 |
+| 场景 ID | spec 要求（缺的那部分加粗） | 当时只有 | 已补的用例（现登记指向它） |
 |---|---|---|---|
-| **PM-R06-S01** 成员移除失败 | 失败时**成员留在原位**、**导航计数不变**、显示移除失败信息 | `PlaylistsView.tsx:163` 有实现（`移除歌曲失败，请重试`）但**无任何测试**；`AddToPlaylistDialog` 的失败用例断言的是**添加**失败，不是移除 | 缺「`remove_playlist_song` reject 时成员不移除、导航计数不回退」的用例 |
-| **PM-R06-S02** 入队失败 | 失败时**不显示"已加入播放队列"**、保持服务端确认状态、**显示失败信息** | `features/library/SongMenu.test.tsx` `enqueue appends to the queue via onEnqueue`（**成功路径**） | 缺「入队命令 reject 时 UI 不给成功反馈」的用例 |
-| **DP-R12-S01** 非沉浸切换随机播放 | 随机图标**保持中性样式**、界面以**可读语义**表明已选中 | `player/queue/tests.rs` `shuffle_bag_*`（**顺序逻辑**，非样式） | 缺 PlayerBar 随机按钮的样式/`aria-pressed` 断言 |
-| **DP-R12-S02** 主题切换保持随机 | 随机图标**不得变为新主题强调色**、模式与队列不受影响 | `player/coordinator/tests.rs` `play_context_keeps_the_user_mode`（**模式不被改**，非颜色） | 缺「主题切换后按钮 class 不含 accent 色」的断言 |
+| **PM-R06-S01** 成员移除失败 | 失败时**成员留在原位**、**导航计数不变**、显示移除失败信息 | `PlaylistsView.tsx:163` 有实现（`移除歌曲失败，请重试`）但**无任何测试** | `PlaylistsView.test.tsx` — `keeps the member in place and reports it when 从歌单移除 fails`（断言：失败文案、两个成员顺序不变、`playlist_members` 只取过一次、`onLibraryChanged` 未被调用） |
+| **PM-R06-S02** 入队失败 | 失败时**不显示"已加入播放队列"**、保持服务端确认状态、**显示失败信息** | `SongMenu.test.tsx` 只断言 `onEnqueue` 回调被调用（连 bridge 都没碰） | `PlaylistsView.test.tsx` — `never claims 加入播放队列 succeeded when the enqueue fails`（断言：失败文案、`/已将/` 不出现、`queue_command` 确实被发过） |
+| **DP-R12-S01** 非沉浸切换随机播放 | 随机图标**保持中性样式**、界面以**可读语义**表明已选中 | `player/queue/tests.rs` `shuffle_bag_*`（**顺序逻辑**，非样式） | `PlayerBar.test.tsx` — `switches to 随机播放 with a neutral button and leaves the queue alone`（断言：`aria-pressed=true` + 可读名 = 随机播放、class 恰为 `control`、唯一发出的控制指令是 `mode:shuffle`、当前曲不变） |
+| **DP-R12-S02** 主题切换保持随机 | 随机图标**不得变为新主题强调色**、模式与队列不受影响 | `player/coordinator/tests.rs` `play_context_keeps_the_user_mode`（**模式不被改**，非颜色） | `PlayerBar.test.tsx` — `keeps 随机播放 neutral while the theme changes`（断言：换主题前后 `outerHTML` 逐字不变、不带 `active`）+ `keeps the theme accent on the 喜欢 heart, never on the mode button` |
 
-处置建议：为这三条各补一个用例（前一个在 `SongMenu.test.tsx`，后两个在 `PlayerBar.test.tsx`），
-再登记。补测试的量很小，且堵住的是**真实的验收漏洞**。
+**DP-R12 的"颜色"是怎么被证明的**：`styles/player.css` 里带强调色的选中态**只有一个** ——
+`.control.active { color: var(--accent) }`，而它只被 喜欢 心形按钮使用；`#playback-mode` 在样式表里
+只设了 `flex` / `overflow`，**没有任何颜色规则**，按钮的 `className` 也是无条件的 `"control"`。
+所以「随机按钮永远不带 `active`」与「随机按钮不会被刷成主题强调色」是同一件事，测试就把这两半在
+**同一次渲染里**钉住（心形带 `active`、随机按钮不带）。这样断言的是真实类契约，而不是去读样式表文本
+（vitest 会把 `.css` 一律替换成空模块，`?raw` / `?inline` 都拿不到内容，实测均为 `""`）。
+
+> 这四条都做过**正控**（把违规注进去、确认按名失败、再逐字节还原）：
+> 给 `#playback-mode` 加上 `active`、把入队失败也报成功、把移除失败也当成功刷新列表 —— 补的用例全部
+> 按名变红，而文件里原有的 6 / 27 条用例保持绿色，证明它们不是空断言。
 
 ## 4. 乙类：必须人工举证（9 条）
 
@@ -220,13 +253,13 @@ steps:
 node scripts/verify/checks/check-native-attestation.mjs DAS-R12-S01
 ```
 
-## 7. 执行顺序（甲乙丙各一条路）
+## 7. 执行顺序与**实际执行记录**
 
-1. **甲类 28 条**：在 `scripts/verify/scenario-commands.mjs` 的 `COMMANDS` 表登记 §2 的建议命令
-   （**必须改这张表**，`manifest.json` 是生成物，手改会被静默抹掉），然后
-   `node scripts/verify/gen-scenario-manifests.mjs --write`。
-2. **丙类 4 条**：先在对应测试文件补用例，再按甲类登记。
-3. **乙类 9 条**：操作者按 §5 执行，按 §6 写 log。
+1. **甲类 28 条** —— ✅ 已在 `scripts/verify/scenario-commands.mjs` 的 `COMMANDS` 表登记
+   （**必须改这张表**，`manifest.json` 是生成物，手改会被静默抹掉），随后
+   `node scripts/verify/gen-scenario-manifests.mjs --write` 重生三棵树。
+2. **丙类 4 条** —— ✅ 先补用例（§3 表），再登记；四条都用**正控**验过会失败。
+3. **乙类 9 条** —— ⏳ 待操作者按 §5 执行、按 §6 写 log。这是当前唯一的阻塞面。
 4. 回归（顺序有讲究，**一道都不能漏**）：
 
    ```bash
@@ -234,7 +267,7 @@ node scripts/verify/checks/check-native-attestation.mjs DAS-R12-S01
    node scripts/verify/validate-scenario-commands.mjs  # 每条命令真能命中测试 ← 最容易漏
    node scripts/verify/validate-scenario-manifests.mjs
    node scripts/verify/check-scenario-churn.mjs        # 重复度棘轮
-   pnpm verify:scenario -- --all                       # 期望：只剩未填 log 的乙类行红
+   pnpm verify:scenario -- --all                       # 期望：只剩未填 log 的乙类 9 行红
    ```
 
    `validate-scenario-commands.mjs` 才是"命令真能命中测试"的那道门禁。本次施工中
@@ -243,14 +276,88 @@ node scripts/verify/checks/check-native-attestation.mjs DAS-R12-S01
    于是这个红被带进了一个已提交的 commit。修法是让校验器剥离 `-- <args>`，而不是删掉
    `-- --ignored`（删了就退回"bench 跑 0 个测试"的假绿）。
 
-> ⚠️ **churn 口径**：分母是**不同命令数**。所以 ① 每条场景用互不相同的命令 → 分母增大、重复度
-> **下降**；② 多条场景共用同一命令 → 分母不变、重复度**上升**。本次登记 28 条后实测 **1.79x**
-> （30 个重复组里我新增的撞车只有 2 组，其余 28 组是既有的），阈值 1.8x —— 通过但贴边。
-> 将来逼近阈值时，优先把**语义仍然贴切**的重复命令拆开，**不要**为了凑数把命令改成不相关的测试。
+### 7.1 登记 32 条时**又**暴露的两个门禁缺陷（已修）
+
+这两条都不是"缺检查"，而是"检查在，但被绕过了"——和本文 §1 是同一类问题，所以留在这里。
+
+1. **`validate-scenario-manifests.mjs` 的引号往返不闭合**：生成器 `yamlEscape` 会把命令里的
+   `"` 转义成 `\"`，而校验器 `scalar()` 只 `replace(/^"|"$/g,"")` **剥掉外层引号、不解转义**。
+   于是命令里只要出现一个双引号（本次 DP-R12/PM-R06 用了 vitest 的 `-t "<测试名>"`），
+   比对结果就是 `\"` vs `"` → 报**幻影 `command drift`**。它同时把注入套件的
+   `scenario-manifests/dropped-required-field` 打成红：**正控（未改动树）自己先失败**。
+   修法是让 `scalar()` 真正解转义（`\\` → `\`、`\"` → `"`）。这条在本次之前从未触发过，
+   因为此前没有任何一条命令带引号——**"从没红过"和"不会红"是两件事**。
+2. **`validate-scenario-commands.mjs` 不校验 vitest 的 `-t` 选择器**：`cargo` 侧它会验"filter 至少命中
+   1 个测试"，但 vitest 侧原来只验文件存在。一旦允许 `-t "<名字>"`，写错名字就会选 0 个测试——
+   正是该校验器存在的理由（"the release gate must never pass a scenario against zero tests"）。
+   已补：把 `-t` 后的名字拿回文件里 `.includes()` 核对，并做了正控（换成不存在的名字 → 指名报错、退出 1）。
+
+### 7.2 churn 口径：登记这些行会**推高**重复度，别靠调阈值解决
+
+分母是**不同命令数**：① 每条场景用互不相同的命令 → 分母增大、重复度**下降**；
+② 多条场景共用同一命令 → 分母不变、重复度**上升**。
+
+本次的真实教训：4 条丙类最初都登记成"整文件"级命令（PM 两条共用 `PlaylistsView.test.tsx`、
+DP 两条共用 `PlayerBar.test.tsx`），而且**替换掉了 4 条互不相同的 attestation 字符串** →
+不同命令数 123 → 120，重复度 **1.77x → 1.82x，超过冻结阈值 1.8x**。
+
+处置**不是**把阈值从 1.8 抬到 1.85，而是给这四条各自加上 `-t "<测试名>"` 收窄到**唯一证明它的那个用例**
+（新增 `REACT_T(f, name)` helper）：不同命令数回到 123，重复度回到 **1.77x**，阈值一字未动，
+而且顺带把"一条用例坏掉同时影响两条场景"的簇也拆开了——这正是棘轮想量到的东西。
+
+> 将来逼近阈值时，优先把**语义仍然贴切**的重复命令收窄到具体测试名，
+> **不要**为了凑数把命令改成不相关的测试，也不要调阈值。
+
+### 7.3 甲类登记的**语义复核**（本次施工做了，但不是全部）
+
+7.1 修的两条都是"门禁被绕过"；这一条是**门禁本来就管不到的地方**：
+`validate-scenario-commands.mjs` 只能证明"命令命中 ≥1 个真测试"，证明不了"命中的测试就是这条
+`THEN`"。所以命令写对了、测试也存在，仍可能是在验另一件事——**这正是 DP-R11-S01 那种错的生存空间。**
+
+本次做的筛选（可重跑，思路是"拿判定依据当线索"）：把 §2 每一行里提到的测试名个数，与该条命令
+**实际命中**的测试个数对比，出现的 11 行再逐条对着 spec 的 `THEN` 原句判：
+
+```bash
+cargo test -p echo-desktop --all-features -- --list > /tmp/desk.txt
+cargo test -p echo-core    --all-features -- --list > /tmp/core.txt
+# 然后对每条命令取 filter 子串，统计 /tmp/*.txt 里 includes(filter) 的行数，
+# 与该行 §2 提到的测试名个数比较。
+```
+
+结果分三类：
+
+- **真缺陷，已改指（3 条）**：
+  - `DP-R11-S01` —— 命令指向的用例只证明"单条目队列重播"。已新增
+    `player::queue::tests::previous_in_loop_walks_the_context_backwards_and_wraps_to_the_tail`
+    （断言：切前一项 + 首项回绕 + 按新位置重新投影 + 不消费优先区）并改指它；该用例做过正控
+    （把回绕改成 `saturating_sub` → 按名失败 → 逐字节还原）。
+  - `DP-R04-S06` 定位和音量 —— `THEN` 是"进度条 / 音量滑块 / 静音"三件事，原来只指 seek 那条。
+    改指 `DESK("_through_coordinator")`，该子串**恰好**命中 seek / set_volume / unmute 三条
+    coordinator 级用例（已用 `-- --list` 核过是 3 条，不多不少）。
+  - `LL-R02-S05` 监听外部新增和修改 —— `THEN` 的核心是"事件稳定后更新**记录与索引**"，
+    原来只指 coalescer 归一化那条（那是"事件被合并"，不是"记录被更新"）。改指
+    `COREC("application::watch::tests::")`（8 条：settle 收敛 / rename 保 UUID / publish 复用
+    journal id / overflow 退化为重扫 …）。"手动重扫收敛"那半由 `application::scan::tests::*_converge_after_rescan` 覆盖。
+- **看着可疑、读过后判定够用（单测即可证明整条 `THEN`）**：`DP-R02-S05`、`DP-R13-S01`、`PLL-R02-S03`。
+- **需要两条测试才能覆盖、但一条 cargo filter 无法同时命名（残留不精确）**：`DP-R02-S07`、
+  `DP-R11-S03`、`LL-R02-S04`、`PLL-R01-S02`、`PLL-R02-S01`。这些条目的主用例已覆盖 `THEN` 的主要子句，
+  次要子句由 §2 列出的另一条测试证明；cargo 只接受**一个**子串过滤器，两条测试名不共享子串时无法合并。
+  ⚠️ 这**不是**"已完整验收"，而是"主路径已自动验收 + 次子句仅有具名证据"。
+
+> **残留不精确的正确解法是任务 7.7**（按模块聚合 + 每个场景追溯到一个具体测试名）——这正是它被移出
+> 本 change、另开一个的原因。在那之前，这 5 条的不精确是**已知且已登记**的，不是被忽略的。
+
+> ⚠️ 这个筛选是**启发式**：线索来自我给 §2 写的判断，不是直接来自 spec。它能抓出"登记范围窄于自己
+> 的判断"，抓不出"判断本身错了"（`DP-R11-S01` 就属于后者，是靠读正文才发现的）。
+> 唯一可靠的复核方式仍是**逐条读 spec 的 `THEN` 子句 + 读用例正文**。
 
 > ⚠️ **发现但本次未修的既有错配**：`DP-R03-S01/S02/S03` 三个场景是「队列显示歌曲信息 /
 > 队列超过八首 / 队列不超过八首」，命令却是 `mode_switch_keeps_current_item`、
 > `next_advances_in_order`、`previous_moves_back_within_5_seconds` —— 与队列面板展示无关。
-> `validate-scenario-commands.mjs` 只保证「命令命中 ≥1 个测试」，**无法判断语义是否对应**，
-> 所以这类错配它抓不到（这是该校验器的固有上限，不是缺陷）。修它要逐条重新论证 R03 该指向哪个
-> 投影/面板测试，属独立工作。
+> 修它要逐条重新论证 R03 该指向哪个投影/面板测试，属独立工作。
+
+> ⚠️ **孤儿生成物（同一类问题的另一面）**：`tests/scenarios/DP-R07-S03.yaml` 来自**已归档**的
+> 0.1.0 change，不在活动 registry 里。`gen-scenario-manifests.mjs --write` **不清理**不再登记的产物，
+> 也没有门禁按目录枚举去发现它——`validate-scenario-manifests.mjs` 会为它打一行 `warning ... is not in
+> the current registry` 然后继续（这是刻意的：它负责字段有效性，登记归属归 reconcile）。
+> 结果就是"多出来的生成物"既不会被删也不会被查。要不要删属于独立决定（它是一份 0.1.0 的归档证据）。

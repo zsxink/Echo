@@ -4,7 +4,7 @@ scenario_id: DP-R12-S01
 requirement: 非沉浸播放模式视觉语义
 scenario: 非沉浸模式切换为随机播放
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs DP-R12-S01"
+command: "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx -t \"with a neutral button\""
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.
