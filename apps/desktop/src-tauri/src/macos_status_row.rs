@@ -26,7 +26,8 @@ use objc2::{
     sel, AnyThread, DefinedClass, MainThreadOnly,
 };
 use objc2_app_kit::{
-    NSAccessibility, NSButton, NSEvent, NSImage, NSStatusBar, NSStatusItem, NSView,
+    NSAccessibility, NSButton, NSEvent, NSImage, NSMenu, NSMenuItem, NSStatusBar, NSStatusItem,
+    NSView,
 };
 use objc2_foundation::{ns_string, MainThreadMarker, NSData, NSPoint, NSRect, NSSize};
 
@@ -84,7 +85,9 @@ fn action_at_x(x: f64) -> Option<StatusAction> {
 struct StatusRowViewIvars {
     sink: Arc<dyn StatusMenuSink>,
     show_main_window: Arc<dyn Fn() + Send + Sync>,
+    quit: Arc<dyn Fn() + Send + Sync>,
     play_pause: RefCell<Option<Retained<NSButton>>>,
+    context_menu: RefCell<Option<Retained<NSMenu>>>,
 }
 
 define_class!(
@@ -108,10 +111,9 @@ define_class!(
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
             let synthesized = event.locationInWindow();
-            let real = match self.window() {
-                Some(window) => window.mouseLocationOutsideOfEventStream(),
-                None => synthesized,
-            };
+            let real = self
+                .window()
+                .map_or(synthesized, |window| window.mouseLocationOutsideOfEventStream());
             let local = self.convertPoint_fromView(real, None);
             if let Some(action) = action_at_x(local.x) {
                 self.dispatch(action);
@@ -147,6 +149,22 @@ define_class!(
         fn show_main_window(&self, _sender: &AnyObject) {
             self.dispatch(StatusAction::ShowWindow);
         }
+
+        #[unsafe(method(quitApplication:))]
+        fn quit_application(&self, _sender: &AnyObject) {
+            (self.ivars().quit)();
+        }
+
+        // SAFETY: AppKit supplies a live right-click event while the
+        // app-lifetime view is on the main thread. The stored context menu's
+        // targets are this same view, so its selectors resolve validly.
+        #[unsafe(method(rightMouseDown:))]
+        fn right_mouse_down(&self, event: &NSEvent) {
+            let Some(menu) = self.ivars().context_menu.borrow().as_ref().cloned() else {
+                return;
+            };
+            NSMenu::popUpContextMenu_withEvent_forView(menu.as_ref(), event, self);
+        }
     }
 );
 
@@ -156,11 +174,14 @@ impl StatusRowView {
         height: f64,
         sink: Arc<dyn StatusMenuSink>,
         show_main_window: Arc<dyn Fn() + Send + Sync>,
+        quit: Arc<dyn Fn() + Send + Sync>,
     ) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(StatusRowViewIvars {
             sink,
             show_main_window,
+            quit,
             play_pause: RefCell::new(None),
+            context_menu: RefCell::new(None),
         });
         let frame = NSRect::new(
             NSPoint::new(0.0, 0.0),
@@ -173,6 +194,10 @@ impl StatusRowView {
 
     fn set_play_pause_button(&self, button: Retained<NSButton>) {
         self.ivars().play_pause.replace(Some(button));
+    }
+
+    fn set_context_menu(&self, menu: Retained<NSMenu>) {
+        self.ivars().context_menu.replace(Some(menu));
     }
 
     fn refresh_play_pause(&self, state: PlaybackState) {
@@ -208,12 +233,13 @@ struct StatusRowRoot {
 pub fn install(
     sink: Arc<dyn StatusMenuSink>,
     show_main_window: Arc<dyn Fn() + Send + Sync>,
+    quit: Arc<dyn Fn() + Send + Sync>,
 ) -> Result<(), String> {
     let mtm = MainThreadMarker::new()
         .ok_or_else(|| "macOS status controls must be installed on the main thread".to_owned())?;
     let bar = NSStatusBar::systemStatusBar();
     let item = bar.statusItemWithLength(STATUS_ROW_WIDTH);
-    let view = StatusRowView::new(mtm, bar.thickness(), sink, show_main_window);
+    let view = StatusRowView::new(mtm, bar.thickness(), sink, show_main_window, quit);
 
     let previous = make_button(&view, mtm, 0.0, "上一首", sel!(previous:));
     set_symbol_button(&previous, "backward.end.fill", "上一首");
@@ -239,6 +265,10 @@ pub fn install(
     view.setAccessibilityElement(false);
     #[allow(deprecated)]
     item.setView(Some(&view));
+
+    // Right-click context menu: 显示窗口 reuse the same row action, 退出 runs
+    // the shell's quit closure (flush session + `app.exit`).
+    view.set_context_menu(build_context_menu(mtm, &view));
 
     STATUS_VIEW
         .set(std::ptr::from_ref::<StatusRowView>(view.as_ref()) as usize)
@@ -293,6 +323,35 @@ fn make_button(
     }
     view.addSubview(&button);
     button
+}
+
+fn build_context_menu(mtm: MainThreadMarker, view: &StatusRowView) -> Retained<NSMenu> {
+    let menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), ns_string!(""));
+    let show = unsafe {
+        NSMenuItem::initWithTitle_action_keyEquivalent(
+            NSMenuItem::alloc(mtm),
+            &objc2_foundation::NSString::from_str("显示窗口"),
+            Some(sel!(showMainWindow:)),
+            ns_string!(""),
+        )
+    };
+    let quit = unsafe {
+        NSMenuItem::initWithTitle_action_keyEquivalent(
+            NSMenuItem::alloc(mtm),
+            &objc2_foundation::NSString::from_str("退出"),
+            Some(sel!(quitApplication:)),
+            ns_string!(""),
+        )
+    };
+    // SAFETY: The menu retains its items. Each item's target is this
+    // app-lifetime view, whose action selectors are implemented in this class.
+    unsafe {
+        show.setTarget(Some(view));
+        quit.setTarget(Some(view));
+    }
+    menu.addItem(&show);
+    menu.addItem(&quit);
+    menu
 }
 
 fn dispatch_action(sink: &dyn StatusMenuSink, show_main_window: &dyn Fn(), action: StatusAction) {

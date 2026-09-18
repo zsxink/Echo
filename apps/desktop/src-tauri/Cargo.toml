@@ -27,7 +27,7 @@ tauri-plugin-single-instance = "2.4.3"
 # The status-item panel is an AppKit boundary. Keeping the bindings target
 # scoped prevents Cocoa from leaking into the portable desktop/Core layers.
 objc2 = "0.6.4"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSAccessibilityProtocols", "NSButton", "NSControl", "NSEvent", "NSImage", "NSResponder", "NSStatusBar", "NSStatusItem", "NSView"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSAccessibilityProtocols", "NSButton", "NSControl", "NSEvent", "NSImage", "NSMenu", "NSMenuItem", "NSResponder", "NSStatusBar", "NSStatusItem", "NSView"] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSData", "NSGeometry", "NSObject", "NSString"] }
 
 [dev-dependencies]

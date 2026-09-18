@@ -623,10 +623,17 @@ fn main() {
 
             #[cfg(target_os = "macos")]
             {
-                let app_handle = app.handle().clone();
+                let show_handle = app.handle().clone();
+                let quit_handle = app.handle().clone();
                 macos_status_row::install(
                     status_sink,
-                    Arc::new(move || focus_main_window(&app_handle)),
+                    Arc::new(move || focus_main_window(&show_handle)),
+                    Arc::new(move || {
+                        if let Some(player) = quit_handle.try_state::<commands::PlayerHandle>() {
+                            commands::flush_player_session(&player);
+                        }
+                        quit_handle.exit(0);
+                    }),
                 )?;
             }
 
