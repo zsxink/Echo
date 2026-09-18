@@ -123,9 +123,9 @@
 
 | 任务 | 现状 | 为什么没做完 |
 |---|---|---|
-| 7.7 场景命令重复治理 | 棘轮门禁 14.7 在位并生效（实测 218 场景 / 124 命令 = **1.76x**、最差簇 16，只能降不能升） | 完整的"按模块聚合并保留到测试名追溯"需改写 218 条验收行，会同时牵动 `tests/*.yaml`、`gen-scenario-manifests.mjs`、`docs/traceability.md` 与 `reconcile-scenarios.mjs` 对账，风险高，交后续 change |
-| 8.3 场景全量 | self-test ✅、三方对账 218 = 218 = 218 ✅、`openspec validate --archived` 退出码 0（7 个归档变更全过）✅ | `pnpm verify:scenario -- --all` 含 **44 个真机场景行**，需要 `artifacts/native-attestations/<ID>.log` 逐条举证，该目录当前**不存在** —— 阻塞在 8.4 |
-| 8.4 真机冒烟 | 未做 | 需在本机实际运行 app 走播放 / 恢复 / 歌单上下文等路径，并为 44 条真机行留下格式完整的举证 |
+| 7.7 场景命令重复治理 | 棘轮门禁 14.7 在位并生效（实测 218 场景 / 124 命令 = **1.76x**、最差簇 16，只能降不能升） | **已决定移出本 change、另开一个**（2026-09-18 决策）。完整的"按模块聚合并保留到测试名追溯"要改写 218 条验收行、逐条判断约 130 个场景各对应哪个测试名，会同时牵动 `scenario-commands.mjs`、`tests/*.yaml`、`docs/traceability.md` 与 `reconcile-scenarios.mjs` 对账；已有 14.7 棘轮锁住不恶化，推迟不会变差 |
+| 8.3 场景全量 | self-test ✅（10 断言）、三方对账 218 = 218 = 218 ✅、`openspec validate --archived` 退出码 0 ✅；`pnpm verify:scenario -- --all` 实测 **175 过 / 43 红，exit 1** | 43 红 = **41** 条人工 OS 行缺举证（设计如此，见 `scenario-commands.mjs` 顶部注释：托盘手势 / OS 文件打开集成 / 三平台冒烟）+ **2** 条真缺陷。**2 条真缺陷本轮已修并验证**：`LE-R05-S04` 的 `task-9.5.mjs` 读已被拆分的 `runtime/services.rs`（现为 `services/reveal.rs`）→ ENOENT；`LE-R07-S01` 命令漏 `-- --ignored`，`#[ignore]` 的 50k bench 跑了 0 个测试。剩余 41 条阻塞在 8.4 |
+| 8.4 真机冒烟 | 未做 | 需操作者在真机上执行那 **41** 条人工 OS 行，并留下 7 字段齐全的 `artifacts/native-attestations/<ID>.log`。⚠️ 8.4 列举的七类行为里有若干条正落在这 41 条内（`DP-R02-S05` 连续下一首、`DP-R04-S04` 单曲循环、`DP-R08-S03` 恢复、`PHA-R01-S01` 歌单与队列日常流程），**所以它不是纯自动化可收口的** |
 | 8.5 归档确认 | 未做 | 依赖 8.3 / 8.4 |
 
 **本段新增并已接电的门禁**（manifest `14.1`–`14.9`，全部接进 `pnpm verify:governance` 与 CI 的 `governance` job）：
