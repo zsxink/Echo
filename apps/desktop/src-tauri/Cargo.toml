@@ -27,12 +27,15 @@ tauri-plugin-single-instance = "2.4.3"
 # The status-item panel is an AppKit boundary. Keeping the bindings target
 # scoped prevents Cocoa from leaking into the portable desktop/Core layers.
 objc2 = "0.6.4"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSAccessibilityProtocols", "NSButton", "NSControl", "NSPopover", "NSResponder", "NSStatusBar", "NSStatusBarButton", "NSStatusItem", "NSView", "NSViewController"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSGeometry", "NSObject", "NSString"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSAccessibilityProtocols", "NSButton", "NSControl", "NSEvent", "NSImage", "NSResponder", "NSStatusBar", "NSStatusItem", "NSView"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSData", "NSGeometry", "NSObject", "NSString"] }
 
 [dev-dependencies]
 # TempDir for `dialogs` multi-file import unit tests; resolves only for tests.
 tempfile = { version = "3" }
+# Tauri's deterministic mock runtime proves the existing main-window lifecycle
+# without creating a real WebView during unit tests.
+tauri = { version = "2.11.5", features = ["test"] }
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }

@@ -2,7 +2,7 @@
 
 See `proposal.md` for motivation and the delta specs for behavioral contracts. Echo already separates shared library logic (`echo-core`) from desktop player, Tauri and React surfaces. The current import command has one batch-level operation and a blocking result modal; platform status-menu and temporary-file pathways exist but require completion and tightening.
 
-The existing SQLite schema already contains `songs.added_at`, `songs.favorited_at`, `playlists.created_at` and `playlist_songs.added_at`. This change therefore audits and corrects their write/read semantics instead of introducing duplicate timestamp columns. These values are absolute epoch instants; timezone is a presentation conversion, not a second stored clock.
+The existing SQLite schema already contains `songs.added_at`, `songs.favorited_at`, `playlists.created_at` and `playlist_songs.added_at`. This change therefore audits and corrects their write/read semantics instead of introducing duplicate timestamp columns. These values are absolute epoch instants; timezone is a presentation conversion, not a second stored clock. The current macOS status implementation opens a control surface from one status item, while the required interaction places every control directly in the menu bar and keeps the application main window single-instance.
 
 The design preserves the project dependency direction: React only consumes typed Tauri commands/events; desktop orchestration owns native dialogs, status items and player commands; Core owns import outcomes, transaction boundaries, timestamps and persistence. Core continues to have no UI, Tauri or mpv dependency.
 
@@ -23,13 +23,15 @@ The design preserves the project dependency direction: React only consumes typed
 
 ## Decisions
 
-### 1. Keep native integration in the desktop platform layer
+### 1. Keep native integration and the single main-window lifecycle in the desktop platform layer
 
-The Tauri configuration, bundle metadata, native menu labels and status-menu title will all derive from the single canonical display name `Echo`. The desktop runtime will expose a small transport-command adapter shared by main-window, media-key and status-menu handlers, so status controls dispatch the same command/event path as the player rather than owning a second player instance.
+The Tauri configuration, bundle metadata and native labels will all derive from the single canonical display name `Echo`. The desktop runtime will expose a small transport-command adapter shared by main-window, media-key and menu-bar handlers, so menu-bar controls dispatch the same command/event path as the player rather than owning a second player instance.
 
-On macOS, activating the status item will open an anchored popover/custom status-item panel containing one horizontal row of three icon buttons in the fixed order Previous, Play/Pause, Next. Button state derives from the authoritative playback snapshot, each button has an accessibility label, and the panel is visually verified against the supplied reference. Windows and Linux retain their existing semantic tray commands and are not required to copy this macOS layout.
+On macOS, the native platform adapter will install one fixed-width `NSStatusItem` containing a custom AppKit view in the fixed visual order Previous, Play/Pause, Next, Echo brand icon. The view exposes four equal, non-overlapping horizontal regions and handles pointer events at the root: the local x-coordinate deterministically maps to exactly one action. Decorative child buttons render the four icons and retain separate accessibility labels/actions, but pointer hit testing is owned by the root view so overlapping or misrouted child targets cannot turn every click into one command. These controls remain visible in the menu bar itself; no click reveals a dropdown or popover containing the transport controls. The playback icon and enabled states derive from the authoritative playback snapshot, and the full row is visually verified against the supplied reference. The Echo region uses the approved black brand mark and is the sole window-opening affordance in this row. Windows and Linux retain their existing semantic tray commands and are not required to copy this macOS layout.
 
-Alternative considered: three ordinary native menu rows. That is simpler but does not match the confirmed horizontal three-button interaction, so it is rejected. The custom panel remains in the desktop platform layer and sends the same player commands as every other control surface.
+The main window remains addressable by one stable label. Echo-icon activation first resolves that existing window, then unminimizes, shows and focuses it; creation is permitted only when the labeled window does not exist, with repeated activation guarded so concurrent clicks cannot create duplicates. Closing or hiding follows the existing background-playback policy and does not spawn a replacement window while the original still exists.
+
+Alternatives considered: ordinary native menu rows or an anchored custom popover. Both require an extra click and move the controls outside the menu bar, so they are rejected. Four separate `NSStatusItem`s are also rejected because the system spacing makes the control row consume too much menu-bar width. Allowing every Echo-icon activation to construct a window is rejected because it would split UI state and may create multiple playback surfaces.
 
 ### 2. Make concurrency a bounded worker-thread coordinator, not a Core/UI concern
 
@@ -93,12 +95,13 @@ No SQLite schema migration is expected. Any IPC result refinement remains additi
 - [Parallel speedup is hidden by serialized SQLite commits] → parallelize the expensive copy/hash/probe stages, prove overlap with a barrier test, and measure against a controlled serialized baseline.
 - [Timestamp field exists but carries a synthetic sequence rather than a real instant] → audit every constructor/write call, correct only that write path, and test round-trip values with an injected fixed clock.
 - [Timezone change makes displayed time appear different] → keep the stored instant immutable and define current-timezone conversion as presentation behavior.
-- [Status-menu state races window/player state] → use one snapshot source and idempotent transport commands; test repeated native command dispatch.
+- [Menu-bar state races window/player state] → use one snapshot source and idempotent transport commands; test repeated native command dispatch.
+- [Rapid Echo-icon activation creates duplicate windows] → resolve one stable main-window label before creation, serialize the absent-window creation path, and regression-test repeated activation.
 - [System open arrives during startup] → queue it through existing single-instance readiness handling, then execute the atomic temporary-session replacement once the player is ready.
 
 ## Rollout Plan
 
 1. Audit existing timestamps and correct only incorrect write/read paths; assert schema snapshots remain unchanged unless implementation evidence proves an unavoidable compatibility defect.
 2. Add the bounded worker pool and result classifier, then update generated IPC types, React shell and E2E mock together.
-3. Add the macOS status-item popover and the all-path single-item file-open command, then collect automated and manual macOS evidence.
+3. Add the macOS always-visible menu-bar control row, single-instance Echo-icon window activation and the all-path single-item file-open command, then collect automated and manual macOS evidence.
 4. Rollback requires only reverting application code because no timestamp schema migration or historical backfill is planned.

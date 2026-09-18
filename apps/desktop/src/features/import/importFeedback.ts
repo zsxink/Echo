@@ -13,16 +13,19 @@ export interface ImportFeedback {
  */
 export function classifyImportResults(results: readonly ImportResultDto[]): ImportFeedback {
   const nonFailures = results.filter(
-    (result) => result.kind === "imported" || result.kind === "duplicate",
+    (result) =>
+      result.kind === "imported" || result.kind === "duplicate" || result.kind === "skipped",
   );
   const failures = results.filter(
-    (result) => result.kind !== "imported" && result.kind !== "duplicate",
+    (result) => result.kind === "failed" || result.kind === "libraryUnavailable",
   );
   const imported = nonFailures.filter((result) => result.kind === "imported").length;
   const duplicates = nonFailures.filter((result) => result.kind === "duplicate").length;
+  const skipped = nonFailures.filter((result) => result.kind === "skipped").length;
+  const skippedText = skipped > 0 ? `，跳过 ${skipped} 个` : "";
   return {
     nonFailures,
     failures,
-    summary: `导入完成：已导入 ${imported} 首，重复 ${duplicates} 首`,
+    summary: `导入完成：已导入 ${imported} 首，重复 ${duplicates} 首${skippedText}`,
   };
 }

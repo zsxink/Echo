@@ -39,7 +39,7 @@ use tauri::{
 mod commands;
 mod dialogs;
 #[cfg(target_os = "macos")]
-mod macos_status_popover;
+mod macos_status_row;
 
 const MAIN_WINDOW: &str = "main";
 
@@ -118,12 +118,36 @@ fn bundled_libmpv(_app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     }
 }
 
-fn focus_main_window(app: &tauri::AppHandle) {
+fn focus_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    // Resolve the stable window label only. Status-item activation never
+    // constructs a WebView, so rapid/repeated activation cannot produce a
+    // second main window or a second playback composition.
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
+}
+
+/// Feed the macOS status row from the player port's authoritative snapshot
+/// stream. `AppKit` is main-thread-only, so each state update is scheduled onto
+/// Tauri's main thread; a closed player is normal during process shutdown.
+#[cfg(target_os = "macos")]
+fn spawn_macos_status_row_snapshot_refresh(app: tauri::AppHandle, port: &Arc<dyn PlayerPort>) {
+    let initial = port.snapshot().state;
+    let initial_app = app.clone();
+    let _ = initial_app.run_on_main_thread(move || {
+        macos_status_row::refresh_play_pause(initial);
+    });
+    let snapshots = port.subscribe_snapshots();
+    thread::spawn(move || {
+        while let Ok(snapshot) = snapshots.recv() {
+            let state = snapshot.state;
+            let _ = app.run_on_main_thread(move || {
+                macos_status_row::refresh_play_pause(state);
+            });
+        }
+    });
 }
 
 /// Wire the composition root (task 7.3 / 10.2): assemble the real `ScanDeps`,
@@ -227,6 +251,9 @@ fn wire_composition(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
     if let Some(sink) = app.try_state::<Arc<RuntimeStatusMenuSink>>() {
         sink.install(controller.coordinator.clone());
     }
+
+    #[cfg(target_os = "macos")]
+    spawn_macos_status_row_snapshot_refresh(app.handle().clone(), &controller.port);
 
     player::spawn_session_saver(
         controller.port.clone(),
@@ -595,7 +622,13 @@ fn main() {
             app.manage(status_sink.clone());
 
             #[cfg(target_os = "macos")]
-            macos_status_popover::install(status_sink)?;
+            {
+                let app_handle = app.handle().clone();
+                macos_status_row::install(
+                    status_sink,
+                    Arc::new(move || focus_main_window(&app_handle)),
+                )?;
+            }
 
             #[cfg(not(target_os = "macos"))]
             {
@@ -795,5 +828,29 @@ mod cover_canvas_tests {
         ] {
             assert!(!super::is_loopback_http_origin(origin), "{origin}");
         }
+    }
+
+    #[test]
+    fn main_window_activation_restores_one_existing_window_without_creating_another() {
+        use tauri::Manager;
+
+        let app = tauri::test::mock_app();
+        let main = tauri::WebviewWindowBuilder::new(&app, super::MAIN_WINDOW, Default::default())
+            .build()
+            .expect("mock main window");
+
+        main.hide().expect("hide mock window");
+        super::focus_main_window(&app.handle());
+        assert!(main.is_visible().expect("read visible state"));
+
+        main.minimize().expect("minimize mock window");
+        super::focus_main_window(&app.handle());
+        assert!(!main.is_minimized().expect("read minimized state"));
+
+        for _ in 0..4 {
+            super::focus_main_window(&app.handle());
+        }
+        assert_eq!(app.webview_windows().len(), 1);
+        assert!(app.get_webview_window(super::MAIN_WINDOW).is_some());
     }
 }

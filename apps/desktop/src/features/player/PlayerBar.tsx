@@ -99,8 +99,8 @@ export function PlayerBar() {
         case "duplicate":
           setImportResult("资料库已有相同歌曲");
           break;
-        case "unsupported":
-          setImportResult("不支持的格式");
+        case "skipped":
+          setImportResult("不支持的格式，未导入");
           break;
         case "failed":
           setImportResult("导入失败");

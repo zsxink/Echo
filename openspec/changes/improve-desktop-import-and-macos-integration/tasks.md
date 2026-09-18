@@ -14,8 +14,9 @@
 ## 3. Desktop identity, menu bar and external-file playback
 
 - [ ] 3.1 Change Tauri/bundle metadata and native labels to the exact user-visible name `Echo`; verify the macOS bundle configuration and app-shell tests contain no user-visible lowercase `echo` identity.
-- [ ] 3.2 Implement the macOS status-item anchored popover/custom panel with one horizontal Previous, Play/Pause and Next icon row; wire it to the authoritative transport command/snapshot path and verify accessibility labels, single dispatch, state refresh and window/player consistency.
-- [ ] 3.3 Make every OS file-open request atomically replace the active context with exactly one entry and start playback without import; verify separate tests for active-library UUID reuse and external temporary items, next/previous boundaries, session filtering, no import writes and cold-start priority.
+- [x] 3.2 Replace the macOS dropdown/popover and four-spaced-item implementations with one compact, fixed-width menu-bar control ordered Previous, Play/Pause, Next and black Echo brand icon; route root-view clicks through four non-overlapping x-coordinate regions, wire transport actions to the authoritative command/snapshot path, and verify accessibility labels/actions, exact boundary routing, single dispatch, play/pause state refresh, exact order and absence of a control dropdown/popover.
+- [x] 3.3 Make the Echo menu-bar icon show, unminimize and focus the one stably labeled main window, guarding creation so repeated or rapid activation cannot create a second main window or playback session; verify hidden, minimized, already-visible and repeated-click cases with focused native tests.
+- [ ] 3.4 Make every OS file-open request atomically replace the active context with exactly one entry and start playback without import; verify separate tests for active-library UUID reuse and external temporary items, next/previous boundaries, session filtering, no import writes and cold-start priority.
 
 ## 4. React import interaction and feedback
 
@@ -27,4 +28,4 @@
 
 - [x] 5.1 Run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `cargo test --workspace`; fix all formatting, lint and regression failures.
 - [x] 5.2 Run `pnpm --filter @echo/desktop format:check`, `pnpm --filter @echo/desktop lint`, `pnpm --filter @echo/desktop typecheck`, `pnpm --filter @echo/desktop build`, and `pnpm --filter @echo/desktop test`.
-- [ ] 5.3 Run `pnpm verify:task` and `openspec validate improve-desktop-import-and-macos-integration --strict`; record macOS screenshot/manual evidence for the `Echo` app name, horizontal three-icon status-item panel, background control synchronization, multi-thread import speed/feedback, current-timezone presentation and Finder single-file playback for both library and external files.
+- [ ] 5.3 Run `pnpm verify:task` and `openspec validate improve-desktop-import-and-macos-integration --strict`; record macOS screenshot/manual evidence for the `Echo` app name, always-visible Previous/Play-Pause/Next/Echo menu-bar row with no dropdown, single-instance main-window activation, background control synchronization, multi-thread import speed/feedback, current-timezone presentation and Finder single-file playback for both library and external files.

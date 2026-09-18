@@ -2,7 +2,7 @@
  * Multi-select import (task 10.10).
  *
  * Triggers the Rust file dialog (choose_and_import_files → per-input results)
- * and renders a per-file report: imported / duplicate / unsupported /
+ * and renders a per-file report: imported / duplicate / skipped /
  * library-unavailable / failed, with reasons. A mixed batch never asks the user
  * to redo the successes; a failed item is retryable without touching the
  * already-imported ones (a fresh dialog re-plans and dedups by BLAKE3).
@@ -28,6 +28,7 @@ function ResultLine({ result }: { result: ImportResultDto }) {
     return (
       <li className="is-ok" data-testid="import-line">
         已导入：{result.relativePath}
+        {result.renamed ? "（已重名编号）" : ""}
       </li>
     );
   }
@@ -38,10 +39,10 @@ function ResultLine({ result }: { result: ImportResultDto }) {
       </li>
     );
   }
-  if (result.kind === "unsupported") {
+  if (result.kind === "skipped") {
     return (
-      <li className="is-fail" data-testid="import-line">
-        不支持的文件类型。
+      <li className="is-ok" data-testid="import-line">
+        已跳过：非音频文件，无需处理。
       </li>
     );
   }

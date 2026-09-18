@@ -55,8 +55,8 @@ function importResultText(kind: string): string {
       return "已导入到资料库";
     case "duplicate":
       return "资料库已有相同歌曲";
-    case "unsupported":
-      return "不支持的格式";
+    case "skipped":
+      return "不支持的格式，未导入";
     case "failed":
       return "导入失败";
     default:

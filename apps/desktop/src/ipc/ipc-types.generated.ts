@@ -125,9 +125,9 @@ export interface SongDetailView {
 }
 
 export type ImportResultDto =
-  | { readonly kind: 'imported'; readonly operationId: string; readonly songId: string; readonly relativePath: string }
+  | { readonly kind: 'imported'; readonly operationId: string; readonly songId: string; readonly relativePath: string; readonly renamed: boolean }
   | { readonly kind: 'duplicate'; readonly existingSongId: string }
-  | { readonly kind: 'unsupported' }
+  | { readonly kind: 'skipped' }
   | { readonly kind: 'libraryUnavailable' }
   | { readonly kind: 'failed'; readonly code: string; readonly message: string };
 
