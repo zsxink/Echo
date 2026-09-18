@@ -24,7 +24,12 @@
 
 - [x] 2.1 恢复 `echo-desktop` 的 workspace lint 继承：`crates/echo-desktop/Cargo.toml:33-34` 当前声明 `[lints.rust] unsafe_code = "allow"` 且无 `lints.workspace = true`，整包丢失 workspace 的 `clippy::all/pedantic/nursery`（实测：同构最小 workspace 中此写法得到 **0 warnings**）。cargo 不允许两者共存（实测报错 `cannot override 'workspace.lints' in 'lints'`），因此改为 `workspace = true`，并把 `unsafe_code` 放宽下移到 `crates/echo-desktop/src/player/ffi.rs`（60 处 unsafe，必要时 `player/actor.rs` 的 28 处）的模块级，按 `openspec/CODE_STANDARDS.md` §4.1 补安全前提注释。先以警告模式观察一轮并统计告警分布。验证：`cargo clippy --workspace --all-targets --all-features -- -D warnings` 与 `cargo fmt --all --check` 通过。
 - [x] 2.2 新增 lint 继承门禁：检查每个 crate 的 `[lints]` 段是否继承 workspace；任一 crate 声明 crate 级覆盖即失败。验证：临时给某 crate 加 crate 级 `[lints.rust]`，门禁必须失败；移除后通过。
-- [ ] 2.3 按模块分批清理 2.1 暴露的存量告警，只修静态检查问题、不改逻辑。验证：每批处理后 `cargo clippy --workspace --all-targets --all-features -- -D warnings` 与 `cargo test --workspace` 均通过。
+- [x] 2.3 按模块分批清理 2.1 暴露的存量告警，只修静态检查问题、不改逻辑。验证：每批处理后 `cargo clippy --workspace --all-targets --all-features -- -D warnings` 与 `cargo test --workspace` 均通过。
+  - 完成证据（HEAD `70ce9cb` 止，四组四个提交）：74 → 0 条唯一告警。机械类 17 / 风格类 23 / 语义类 24 / 文档类 10。
+    判据：`cargo clippy --workspace --all-targets --all-features -- -D warnings` 退出码 **0**（此前是唯一的结构性红灯）。
+    `significant_drop_tightening` 里的生产代码一处是真实缺陷：`runtime/player/metadata.rs` 把 metadata 缓存锁
+    跨两次仓库读持有，已改为按插入取锁。另：清 `redundant_pub_crate` 时把 `LegacyLibraryFileSystem` 翻成 `pub`，
+    新触发了规模门禁（17 方法 > 6），两门禁冲突按"该 trait 本就是 crate 内部适配器完整性契约"解回 `pub(crate)`（提交 `44fe603`）。
 - [x] 2.4 新增平台层架构守卫 `crates/echo-desktop/tests/arch.rs`：把 `crates/echo-core/tests/arch.rs` 的探测器实现抽为共享的 dev-only 测试支持并复用；覆盖 (a) 平台层不得把"资料库根 + 相对路径"组合为绝对位置，(b) 平台层不得出现与 Core 用例等价的分页遍历、顺序反转或可用性裁决，(c) 允许清单显式登记且只减不增；包含能拒绝合成违规的自证用例。验证：`cargo test -p echo-desktop --test arch` 通过；临时引入一处违规，守卫必须失败并指出文件。
 - [x] 2.5 让守卫覆盖全部 crate：校验 workspace 每个 crate 都有架构守卫测试并被执行。验证：临时移走或跳过某个 crate 的守卫，检查必须失败。
 - [x] 2.6 补齐守卫的已知盲区并显式记录：现有 `echo-core/tests/arch.rs` 中，**分层方向探测器与 crate 依赖探测器**只匹配 `use` / `pub use` / `extern crate` 前缀行（实测 `layering_violations`、`crate_use_violations`），因此行内全限定路径（如 `crate::infrastructure::…`）会逃逸；而 `platform_cfg_violations` 是全行 `contains`，不受此限——**不要笼统说"所有探测器都只扫 use 行"**。为受影响的探测器补一个"以行内全限定路径写成的合成违规"自证用例；确实无法覆盖的写法在守卫内以已知盲区注释登记，并在 design 中同步。验证：合成违规用例能拒绝该写法；守卫注释中列出的盲区与实际一致。
@@ -48,10 +53,21 @@
 - [x] 5.2 先把测试就近分散：把 `crates/echo-core/src/application/import.rs` 的内联测试（该文件约 3,684 行中约 2,610 行为测试）与 `crates/echo-core/src/infrastructure/sqlite/tests.rs`（约 3,276 行纯测试）按被测模块就近拆分，符合 `CODE_STANDARDS.md` §2.1「相关测试就近放在被测模块旁，不集中成巨型测试文件」。禁止删除或跳过任何既有测试。验证：文件行数显著下降；`cargo test -p echo-core` 通过且测试总数不减少。
 - [x] 5.3 拆分 `crates/echo-core/src/application/import.rs` 的生产逻辑（总 3,684 行，其中生产约 1,073 行）为按职责的子模块（计划 / 执行 / 报告 / 歌词），并把其中的去重与冲突判定下沉为 Core 领域服务，使移动端可复用。**口径说明**：按"非测试行数"计，它是全仓库**唯一**生产代码越过 1000 行的文件；按当前 HEAD 的"文件总行数"计，有 15 个 Rust 源文件越线（含本文件），其中多数体积来自内联测试（如 `player/actor.rs` 总 2,670 行而生产仅约 420 行），两者的处置优先级不同，不要混为一谈。验证：每个文件 ≤500 行；`cargo test -p echo-core` 通过；导入相关场景通过。
 - [x] 5.4 拆分 `crates/echo-core/src/application/ports.rs`（956 行、**26 个 `pub trait`**、全在一个文件）：按 repository / filesystem / media / system / sync 分文件，根部 re-export 保持公共入口稳定；拆分 `TxAccess`（17 方法）与 `LibraryFileSystem`（17 方法，实测一个 trait 混了枚举与元数据、暂存与发布、废纸篓、写能力探测四类关注点）。注意：小端口（2–4 方法）已符合 §3.2，不要为统一而改造它们。验证：既有 `use echo_core::application::ports::X` 的调用方无需改动导入路径；每个 trait ≤6 方法；`cargo test -p echo-core` 通过。
-- [ ] 5.5 拆分 `crates/echo-desktop/src/runtime/services.rs`（约 1,591 行、约 30+ 个 `pub fn`，覆盖启动引导、曲库查询、收藏、歌单、删除撤销、导入、扫描、根目录切换、主题、播放上下文、会话裁决、揭示文件）为按能力划分的命令编排模块（读 / 写+gate / 工作区 / 播放），共享同一 `Deps` 值对象；不得改动 Tauri command 的名称与参数。同时按行数收敛其余超限文件：`player/queue.rs`（约 1,110）、`platform/local_state.rs`（约 1,124）、`player/coordinator.rs`（约 1,377）、`runtime/player.rs`（约 1,767）。**不要动 `PlayerPort`（3 方法，全仓最好的抽象）。** 验证：`cargo test -p echo-desktop` 通过；命令清单与 `crates/echo-desktop/src/ipc/` 的契约、`apps/desktop/src-tauri` 的权限配置保持一致（`main.json` 的 permissions 与 `security.rs` 的常量必须完全一致）。
+- [x] 5.5 拆分 `crates/echo-desktop/src/runtime/services.rs`（约 1,591 行、约 30+ 个 `pub fn`，覆盖启动引导、曲库查询、收藏、歌单、删除撤销、导入、扫描、根目录切换、主题、播放上下文、会话裁决、揭示文件）为按能力划分的命令编排模块（读 / 写+gate / 工作区 / 播放），共享同一 `Deps` 值对象；不得改动 Tauri command 的名称与参数。同时按行数收敛其余超限文件：`player/queue.rs`（约 1,110）、`platform/local_state.rs`（约 1,124）、`player/coordinator.rs`（约 1,377）、`runtime/player.rs`（约 1,767）。**不要动 `PlayerPort`（3 方法，全仓最好的抽象）。** 验证：`cargo test -p echo-desktop` 通过；命令清单与 `crates/echo-desktop/src/ipc/` 的契约、`apps/desktop/src-tauri` 的权限配置保持一致（`main.json` 的 permissions 与 `security.rs` 的常量必须完全一致）。
+  - 完成证据（提交 `939bc93`）：`runtime/services.rs` → `runtime/services/`（catalog/delete/favorites/import/library/playlists/reveal + tests），
+    `runtime/player.rs` → `runtime/player/`；`coordinator.rs` 1377→663、`local_state.rs` 1131→671、`queue.rs` 1114→756
+    （三者的"超限"几乎全部来自内联测试，按 6 行搬迁到 `<module>/tests.rs`，`super` 仍指向被测模块，零可见性改动）。
+    四个文件条目从 `scale-allowlist.json` 与 `check-scale.mjs` 的不可增 BASELINE 里摘除（11 → 7 文件）。
+    判据：`node scripts/verify/check-scale.mjs` 退出 0；`cargo test -p echo-desktop` 通过。
 - [x] 5.6 门控测试替身：`crates/echo-desktop/src/player/fake.rs`（约 723 行）是测试替身但未门控、始终进入默认构建；按仓库既有惯例（`application/testing/*` 用 `cfg(any(test, feature = "testkit"))`）加门控，并新增构建纯净性门禁。验证：默认构建产物中不含该适配器；`cargo build -p echo-desktop` 与 `cargo test -p echo-desktop` 均通过。
 - [x] 5.7 拆分 `crates/echo-core/src/error.rs`（823 行单一巨型错误枚举）：按层（domain / application / infrastructure）拆分为子模块，保留 `thiserror` 的可匹配错误类型。**注意**：跨 IPC 边界的错误映射**已经正确**——`crates/echo-desktop/src/ipc/error.rs:52-81` 已把 `CoreError` 显式映射为 `IpcErrorDto`，并有钉住 code 表与 `retryable` 策略的测试（审计曾判定此处越界，复验已推翻）。因此本项**只做内聚拆分，不改动边界映射**，也不得破坏既有 DTO 形状与 code 稳定性。验证：`cargo test -p echo-core` 与 `cargo test -p echo-desktop ipc::error` 通过；既有错误 code 集合不变。
-- [ ] 5.8 把测试替身目录提升为一等公民：`crates/echo-core/src/application/testing/` 现约 **3,931 行**（`memory_database.rs` 1,013、`small_fakes.rs` 747、`filesystem.rs` 706、`repositories.rs` 650…），其中 `memory_database.rs` 是完整的内存数据库实现，而非 §2.1 所说的"小 fake"。把它提升为 `testkit` 模块（沿用既有 `testkit` feature），并按 port 分组拆分文件。验证：`cargo test -p echo-core` 通过；`cargo test -p echo-core --features testkit` 通过；`cargo build -p echo-core`（默认特性）不编译该目录。
+- [x] 5.8 把测试替身目录提升为一等公民：`crates/echo-core/src/application/testing/` 现约 **3,931 行**（`memory_database.rs` 1,013、`small_fakes.rs` 747、`filesystem.rs` 706、`repositories.rs` 650…），其中 `memory_database.rs` 是完整的内存数据库实现，而非 §2.1 所说的"小 fake"。把它提升为 `testkit` 模块（沿用既有 `testkit` feature），并按 port 分组拆分文件。验证：`cargo test -p echo-core` 通过；`cargo test -p echo-core --features testkit` 通过；`cargo build -p echo-core`（默认特性）不编译该目录。
+  - 完成证据（提交 `b2ddc09`）：`memory_database.rs` 1028 → 192 行，按 port 拆成 `memory_database/`
+    {catalog 146, journal 80, media 93, repositories 263, runtime 42, transactions 203, tests 42}。
+    与 5.5 那三个不同，这里的超限在**生产代码**里（只搬测试模块只能到 986 行），所以按 port 拆。
+    每个分组本就是连续块，且组内自引用闭合，可见性未变。条目从 `scale-allowlist.json` 与 BASELINE 摘除（7 文件）。
+    判据：`cargo test -p echo-core` 与 `cargo test -p echo-core --features testkit` 通过；
+    `cargo build -p echo-core` 默认特性不编译该目录（由 `check-build-purity.mjs` 的静态层 + 产物层证明）。
 
 ## 6. 前端架构收敛
 
@@ -69,7 +85,20 @@
 - [x] 7.3 对齐工具链：`.github/workflows/ci.yml` 两处（第 27、94 行）使用 `dtolnay/rust-toolchain@stable`，而 `rust-toolchain.toml` 钉的是 `channel = "1.96.0"`——CI 会安装并激活浮动 stable，使"本地钉版本"失去意义。改为按仓库钉住的版本安装，并在 CI 校验实际生效版本与 `rust-toolchain.toml` 一致。验证：CI 日志中的编译器版本与 `rust-toolchain.toml` 一致；把两者改成不同值，校验必须失败。
 - [x] 7.4 归档一致性校验接入执行：`openspec validate --archived` 已具备该能力并且以退出码 1 失败（实测 4 个归档变更失败、共 12 个未勾选任务），缺的是执行——仓库没有任何 git 钩子（`.git/hooks/` 仅剩 sample，无 husky）。把它接入 pre-commit 或 CI，使未完成任务无法静默归档。验证：在 7.8 完成前运行 `openspec validate --archived`，退出码为 1 且被 CI 判为失败；7.8 完成后退出码为 0。
 - [x] 7.5 处置未被真正解析的登记资产：`tests/` 下有 **136 个 yaml**。它们**确实被读取**——`reconcile-scenarios.mjs` 会对每个登记路径做"非空"断言——但其字段（command / requirement / automated filter 等）**没有任何脚本解析消费**，等于只校验了"文件不为空"。逐个判定为"接入门禁（解析字段并断言）"或"删除"。**不要按"无人读取"处理**：直接删除会让对账门禁从"红"变成"输入缺失"而崩坏。验证：`tests/` 下每个 yaml 都能指出解析其字段的脚本与断言；无法指出者已删除或已接入。
-- [ ] 7.6 证明其余检查的有效性：本轮只对 79 个检查中的少数做了断言强度审计，其余为**未知有效性**。对每个检查建立"注入违规即失败"的可复现证明（或标记为未知并排序处理），优先处理断言为空、只查退出码、或依赖仓库外产物的检查。验证：检查清单中每一项都有"会失败"的证据链；新增检查必须随附该证明。
+- [x] 7.6 证明其余检查的有效性：本轮只对 79 个检查中的少数做了断言强度审计，其余为**未知有效性**。对每个检查建立"注入违规即失败"的可复现证明（或标记为未知并排序处理），优先处理断言为空、只查退出码、或依赖仓库外产物的检查。验证：检查清单中每一项都有"会失败"的证据链；新增检查必须随附该证明。
+  - 完成证据：新增 `scripts/verify/injection-suite.mjs`（manifest **14.8**，已接入 `verify:governance` 与 CI 的
+    governance job）。**22 条注入证明全部实跑通过**：注入违规 → 门禁非 0 退出 → 断言失败原因 → 还原工作树
+    （逐文件哈希校验 + 逐路径 git 状态比对）。判据：`node scripts/verify/injection-suite.mjs` 退出 0。
+  - 覆盖分类（由套件自己机械执行，不是文档承诺）：86 个已登记检查分两类——
+    **自包含类**（断言在检查内部）共 7 个，**全部**有注入证明（lint 继承 / 规模 / 场景 YAML / 检查有效性 /
+    构建纯净性 / 场景命令棘轮 / 嵌入前端新鲜度；另有 wire-dialogs 与 native-attestation 断言簇）；
+    **委托类**（断言在它调用的子命令里）79 个——对它们注入一个失败的"测试"只能证明子命令，真正会静默通过的
+    是**忽略子命令退出码**，因此证据是结构性的：`check-verification-validity.mjs` 新增规则"凡调用子进程的检查
+    必须比较 `.status`"，对全部 79 个成立，并由 `delegation/*` 三条样例（cargo、pnpm、runner）实跑演示。
+    套件对"自包含但无证明"直接退出 1 ⇒ **新增检查必须随附证明**这条要求是机械的。
+  - 顺带查实的两处"接了线但没插电"：`pnpm --dir apps/desktop format:check` 早已红灯（`task-1.2` 因此是红的，
+    却不在 `verify:governance` 里），已修；`check-embedded-frontend.mjs` 只能靠手工 `pnpm verify:frontend-fresh`
+    触发、未登记进 manifest，已登记为 **14.9**。
 - [ ] 7.7 治理场景命令的重复执行：实测 209 条场景命令只对应 **115 条不同命令（1.82×）**，最高一条被引用 16 次（`pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx`），单条命令失效会同时影响多个场景。按模块聚合场景到更少的命令批次，并保留每个场景到具体测试名的追溯。验证：重复度下降；`pnpm verify:scenario` 的通过/失败集合与改造前一致。
 - [x] 7.8 处置历史遗留：`openspec/changes/archive/` 下遗留任务已逐项标记为延期或移出范围；归档目录不再有未勾选任务。
 - [x] 7.9 治理文档同步：`docs/DESIGN.md` 已补齐 `apps/desktop/src-tauri` 层级；`playerStore` 注释不再引用不存在的 `app/store`；`AGENT.md` 指定 `docs/DESIGN.md` 为架构层级唯一真相；`CODE_STANDARDS.md` 已增加规范—门禁映射表。
@@ -77,7 +106,9 @@
 
 ## 8. 集成验证
 
-- [ ] 8.1 Rust 侧全量检查：`cargo fmt --all --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings`、`cargo test --workspace --all-features`。
+- [x] 8.1 Rust 侧全量检查：`cargo fmt --all --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings`、`cargo test --workspace --all-features`。
+  - 完成证据（HEAD `b2ddc09` + 本轮文档改动）：三条命令**退出码均为 0**，
+    `cargo test --workspace --all-features` = **732 passed / 0 failed**。此前 clippy 是唯一红灯，随 2.3 清零。
 - [x] 8.2 前端侧全量检查：`pnpm --dir apps/desktop typecheck`、`pnpm --dir apps/desktop lint`、`pnpm --dir apps/desktop test`、`pnpm --dir apps/desktop build`。
 - [ ] 8.3 门禁自检与场景全量：`pnpm verify:self-test`、`pnpm verify:scenario`；并确认 1.3 之后三方数量相等、`openspec validate --archived` 退出码为 0。
 - [ ] 8.4 真机冒烟：播放/暂停、切歌、队列顺序与随机/单曲循环、退出后恢复位置与队列、歌单播放上下文顺序、资料库"最近"视图播放、播放控制失败时的用户反馈（对应 6.1）。若并行会话已改动播放相关文件，先复查改动再验证。
@@ -85,22 +116,34 @@
 
 ---
 
-## 收尾状态（2026-09-18）
+## 收尾状态（2026-09-18，第二段）
 
-**已完成并验证 38/47。** 未完成项与原因（不粉饰）：
+**已完成并验证 43/47。** 未完成项与原因（不粉饰）：
 
 | 任务 | 现状 | 为什么没做完 |
 |---|---|---|
-| 2.3 clippy 存量告警 | 仍约 80 条 pedantic/nursery 告警 | 需逐告警改 MECE 的最小修复并分批回归，本轮未动；`cargo clippy -- -D warnings` 因此仍红 |
-| 5.5 echo-desktop 拆分 | `services.rs`(1525)/`player.rs`(1775) 已降到 ≤647；**未动**：`coordinator.rs` 1377、`local_state.rs` 1131、`queue.rs` 1114 | 代理半途中断，剩余三个文件各自 >1000 行仍在白名单内 |
-| 5.8 testkit 按 port 拆分 | 已提升为 `application::testkit`（cfg 门控 + 产物级证明已通），`memory_database.rs` 仍 1028 行 | 与 5.5/2.3 同一轮被中断 |
-| 7.6 检查有效性证明 | 已有 84 个检查的静态 evidence+failure 路由门禁，并已用注入的空检查证明它会失败 | 尚未为每个检查建立"注入违规即失败"的可执行样例 |
-| 7.7 场景命令重复治理 | 已建棘轮门禁 14.7（重复度 ≤1.8x、单命令 ≤16 场景，只能降不能升） | 完整"按模块聚合并保留到测试名的追溯"需改写 218 条验收行，风险高，交后续 change |
-| 8.1 Rust 全量 clippy | fmt ✅ fmt::check ✅ test 732 ✅ clippy -D warnings ❌ | 依赖 2.3 |
-| 8.3 场景全量 | self-test ✅ 三方对账 218 ✅ `openspec validate --archived` 0 ✅ | `pnpm verify:scenario -- --all` 未全跑（含 native 举证行，需真机产物） |
-| 8.4 真机冒烟 | 未做 | 需在本机实际运行 app 走播放/恢复路径 |
-| 8.5 归档确认 | 未做 | 依赖上述未完成项 |
+| 7.7 场景命令重复治理 | 棘轮门禁 14.7 在位并生效（实测 218 场景 / 124 命令 = **1.76x**、最差簇 16，只能降不能升） | 完整的"按模块聚合并保留到测试名追溯"需改写 218 条验收行，会同时牵动 `tests/*.yaml`、`gen-scenario-manifests.mjs`、`docs/traceability.md` 与 `reconcile-scenarios.mjs` 对账，风险高，交后续 change |
+| 8.3 场景全量 | self-test ✅、三方对账 218 = 218 = 218 ✅、`openspec validate --archived` 退出码 0（7 个归档变更全过）✅ | `pnpm verify:scenario -- --all` 含 **44 个真机场景行**，需要 `artifacts/native-attestations/<ID>.log` 逐条举证，该目录当前**不存在** —— 阻塞在 8.4 |
+| 8.4 真机冒烟 | 未做 | 需在本机实际运行 app 走播放 / 恢复 / 歌单上下文等路径，并为 44 条真机行留下格式完整的举证 |
+| 8.5 归档确认 | 未做 | 依赖 8.3 / 8.4 |
 
-**本轮新增并已接电的门禁**（manifest 14.1–14.7）：lint 继承 / 规模 / 工具链 / 场景 YAML 字段 /
-检查有效性 / 构建纯净性 / 场景命令棘轮。它们既登记在 `manifest.json`（`pnpm verify:task 14.1..14.7`），
-也已经接入 `pnpm verify:governance` 与 CI 的 `governance` job —— **接了电，不是躺着的脚本**。
+**本段新增并已接电的门禁**（manifest `14.1`–`14.9`，全部接进 `pnpm verify:governance` 与 CI 的 `governance` job）：
+
+| 门禁 | 脚本 | 它证明什么 |
+|---|---|---|
+| 14.1 lint 继承 | `check-lint-inheritance.mjs` | 每个 crate 只用 `lints.workspace = true`，无 crate 级覆盖 |
+| 14.2 规模棘轮 | `check-scale.mjs` + `scale-allowlist.json` | ≤1000 行 / 公开 trait ≤6 方法；清单只减不增（对比不可增的 BASELINE） |
+| 14.3 工具链钉版 | `check-toolchain.mjs` | 生效 rustc 与 `rust-toolchain.toml` 完全一致 |
+| 14.4 场景字段 | `validate-scenario-manifests.mjs` | 每个 YAML 的 id/requirement/title/layer/command/filter 与登记表一致 |
+| 14.5 检查有效性 | `check-verification-validity.mjs` | 每个登记检查有失败路径与观测；**调用子进程必须比较退出码** |
+| 14.6 构建纯净性 | `check-build-purity.mjs` | 测试专用模块有 cfg 门控，且默认构建的 `.d` 里不出现它们 |
+| 14.7 场景命令棘轮 | `check-scenario-churn.mjs` | 重复度与最差簇只降不升 |
+| **14.8 注入证明** | **`injection-suite.mjs`** | **22 条"注入违规即失败"的可复现证明 + 自包含检查必须带证明** |
+| **14.9 嵌入前端新鲜度** | **`check-embedded-frontend.mjs`** | **二进制里嵌的是当前 dist（此前只有手工入口，没人执行）** |
+
+⚠️ 本机的一条**假红**，别照着修：`check-build-purity.mjs` 在把 `verify:governance` 整条跑在一轮里时，
+可能被本机 agent 运行时的批量删除守卫拦下（`[safe-delete][SAFE_DELETE_BULK_CONFIRM_REQUIRED]`，
+`count` 累计超过阈值 50、`scope=turn`），堆栈落在 `check-build-purity.mjs:94` 的 `rmSync`。
+单独跑该门禁是 **exit 0**（`ok build purity: 2 test-only units are cfg-gated and absent from default builds`）。
+CI 的干净 runner 没有这个守卫。辨认方法：报错里出现 `node-safe-delete-shim.cjs` 就是它。
+

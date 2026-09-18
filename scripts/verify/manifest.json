@@ -2018,6 +2018,26 @@
           "cmd": "node scripts/verify/check-scenario-churn.mjs"
         }
       ]
+    },
+    {
+      "id": "14.8",
+      "title": "Every registered gate fails when its rule is actually violated",
+      "commands": [
+        {
+          "desc": "inject a real violation per gate, observe the failure, restore the tree byte-for-byte",
+          "cmd": "node scripts/verify/injection-suite.mjs"
+        }
+      ]
+    },
+    {
+      "id": "14.9",
+      "title": "A built binary embeds the frontend that apps/desktop/dist currently holds",
+      "commands": [
+        {
+          "desc": "compare every content-hashed asset in dist/index.html against the built binary; a missing binary or a tauri dev build is a named SKIP",
+          "cmd": "node scripts/verify/checks/check-embedded-frontend.mjs"
+        }
+      ]
     }
   ],
   "scenarios": [

@@ -164,6 +164,13 @@ jobs:
       - name: Verify active Rust toolchain
         run: node scripts/verify/check-toolchain.mjs
 
+      # Two gates read `apps/desktop/dist`: the embedded-frontend freshness
+      # check compares a binary against it, and the injection proof for that
+      # check needs it to be able to express its violation at all. Building it
+      # here is what keeps those from degrading into named skips.
+      - name: Build the frontend bundle the desktop shell embeds
+        run: pnpm --dir apps/desktop build
+
       - name: Run governance gates
         run: pnpm verify:governance
 
