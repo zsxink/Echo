@@ -32,6 +32,18 @@
 // asserts `git status --porcelain` is byte-identical before and after, so a
 // failed injection cannot leave the working tree polluted.
 //
+// Environment: the local agent runtime wraps `fs.rm` with a bulk-delete guard
+// counted per conversation turn. Past its threshold every deletion is refused,
+// which breaks gates that prune files as housekeeping *and* this suite's own
+// probe cleanup. Those entries are reported by name as unevaluable rather than
+// failed, so identical code cannot flip verdict between runs; CI has no such
+// shim and sets `ECHO_INJECTION_REQUIRE_ALL=1`, which makes every skip a
+// failure. See `environmentBlocked`. The same runtime can also present a
+// filesystem view in which a probe written by one invocation is still visible
+// to the next — hence `createProbe` reuses a reserved probe name instead of
+// refusing it, and `scratchInventory` asserts its own cleanup directly rather
+// than trusting `git status` (which cannot see `artifacts/` in any case).
+//
 // Usage:
 //   node scripts/verify/injection-suite.mjs [--list] [--only <substring>]
 //
@@ -51,7 +63,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
@@ -72,7 +84,39 @@ const snapshots = new Map();
 const createdFiles = new Set();
 /** absPath -> `git status --porcelain -- <path>` as found, for the final check. */
 const touched = new Map();
+/**
+ * Scratch paths this suite owns and cannot be held responsible for removing.
+ * Filled when a pre-existing probe is reused, and when the environment refuses
+ * to delete one we created. Excluded from the drift verdict — they are
+ * untracked scratch with a reserved name, not repository content.
+ */
+const scratchPaths = new Set();
 let restored = true;
+
+/**
+ * The local agent runtime wraps `fs.rm` with a bulk-delete guard that counts
+ * deletions **per conversation turn** (`scope: "turn"`). A long turn crosses
+ * the threshold, and from then on *every* deletion is refused — including the
+ * ones a gate performs as ordinary housekeeping (vite emptying
+ * `dist/assets`, `check-build-purity.mjs` pruning stale `*.d` files) and the
+ * removal of this suite's own probe scratch.
+ *
+ * That is an environment artifact, not a repository defect: CI has no such
+ * shim. Left unclassified it makes the suite flip verdict between runs of
+ * identical code, which is worse than either answer. So it is detected by name
+ * and reported by name — a skip locally, a failure under
+ * `ECHO_INJECTION_REQUIRE_ALL=1` (which CI always sets).
+ */
+const ENV_DELETE_GUARD = /\[safe-delete\]\[SAFE_DELETE_BULK_CONFIRM_REQUIRED\]/;
+function environmentBlocked(text) {
+  return ENV_DELETE_GUARD.test(text || "");
+}
+
+/** Names reserved for this suite, so a leftover can be reused rather than
+ *  mistaken for a real file that happens to occupy the path. */
+function isProbeName(name) {
+  return name.startsWith("__probe_") || name.startsWith("__injection_probe");
+}
 
 function digest(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -168,7 +212,16 @@ function replaceWithinBlock(target, blockHeader, needle, replacement) {
 
 function createProbe(target, content) {
   const abs = guardPath(target);
-  if (existsSync(abs)) throw new Error(`probe path already exists: ${abs}`);
+  if (existsSync(abs) && !isProbeName(basename(abs))) {
+    throw new Error(`probe path already exists: ${abs}`);
+  }
+  if (existsSync(abs)) {
+    // A previous run's scratch the environment would not delete. Reusing it is
+    // safe (the name is reserved for this suite) and avoids a cascade in which
+    // one refused cleanup makes every later probe entry fail as "already
+    // exists" — a harness failure dressed up as a broken gate.
+    scratchPaths.add(abs);
+  }
   // Record the *pre-creation* status: an untracked file becomes `?? ...` the
   // moment it is written, so recording afterwards would report the (correct)
   // cleanup as drift.
@@ -199,7 +252,16 @@ function restoreAll() {
   for (const abs of createdFiles) {
     try {
       rmSync(abs, { force: true });
+      // `rmSync` returning is not evidence the path is gone (a shim, a watched
+      // directory, a denied unlink can all leave it in place). Check.
+      if (existsSync(abs)) {
+        scratchPaths.add(abs);
+        process.stderr.write(
+          `warn injection-suite: probe still present after rmSync (${abs})\n`,
+        );
+      }
     } catch (error) {
+      if (environmentBlocked(error.message)) scratchPaths.add(abs);
       process.stderr.write(`warn injection-suite: probe left behind (${abs}: ${error.message})\n`);
     }
   }
@@ -217,21 +279,32 @@ function resetTree() {
 function sweepStaleProbes() {
   const swept = [];
   const blocked = [];
-  for (const dir of [join(ROOT, "scripts", "verify", "checks"), ATT_DIR]) {
-    if (!existsSync(dir)) continue;
-    for (const name of readdirSync(dir)) {
-      if (name.startsWith("__probe_") || name.startsWith("__injection_probe")) {
-        const path = join(dir, name);
-        try {
-          rmSync(path, { force: true });
-          swept.push(path);
-        } catch (error) {
-          blocked.push(`${path}: ${error.message}`);
-        }
-      }
+  for (const path of scratchInventory()) {
+    try {
+      rmSync(path, { force: true });
+      if (existsSync(path)) throw new Error("rmSync returned but the path is still present");
+      swept.push(path);
+    } catch (error) {
+      blocked.push({ path, message: error.message });
     }
   }
   return { swept, blocked };
+}
+
+/** Probe-named files under the directories this suite writes scratch into.
+ *  Asserted directly rather than through `git status`: `artifacts/` is
+ *  gitignored (.gitignore:67), so a stray attestation probe is invisible to the
+ *  drift check and the suite would report "restored byte-for-byte" while
+ *  scratch sat on disk. */
+function scratchInventory() {
+  const found = [];
+  for (const dir of [join(ROOT, "scripts", "verify", "checks"), ATT_DIR]) {
+    if (!existsSync(dir)) continue;
+    for (const name of readdirSync(dir)) {
+      if (isProbeName(name)) found.push(join(dir, name));
+    }
+  }
+  return found;
 }
 
 /** Removing our own scratch dirs must never decide the verdict: they live under
@@ -680,8 +753,12 @@ const { swept, blocked: blockedSweep } = sweepStaleProbes();
 for (const path of swept) {
   process.stdout.write(`note injection-suite: removed stale probe ${path.replace(`${ROOT}/`, "")}\n`);
 }
-for (const blocked of blockedSweep) {
-  process.stderr.write(`warn injection-suite: could not remove a stale probe (${blocked})\n`);
+for (const { path, message } of blockedSweep) {
+  // Scratch an earlier run left and this environment would not release. Named,
+  // and excluded from the leftover verdict below so a previous run's litter is
+  // not charged to this one.
+  scratchPaths.add(path);
+  process.stderr.write(`warn injection-suite: could not remove a stale probe (${path}: ${message})\n`);
 }
 
 const argv = process.argv.slice(2);
@@ -718,6 +795,18 @@ for (const entry of selected) {
     if (entry.baseline !== false) {
       const before = runGate(entry);
       if (before.status !== 0) {
+        if (environmentBlocked(outputOf(before))) {
+          // The gate could not run here at all, so this entry proves nothing.
+          // Naming it is the honest verdict; in CI the guard does not exist and
+          // REQUIRE_ALL turns this back into a hard failure.
+          record.state = requireAll ? "fail" : "skip";
+          record.detail =
+            "environment refuses deletions ([safe-delete] bulk guard), so the gate " +
+            `cannot run on this machine\nexit ${before.status}\n${outputOf(before)}`;
+          results.push(record);
+          if (record.state === "fail") failures.push(record);
+          continue;
+        }
         record.state = "fail";
         record.detail = `positive control failed: gate exits ${before.status} on the untouched tree\n${outputOf(before)}`;
         results.push(record);
@@ -752,7 +841,11 @@ for (const entry of selected) {
 }
 
 const driftedPaths = [...touched.keys()].filter(
-  (abs) => recordedStatus(abs) !== currentStatus(abs),
+  (abs) =>
+    recordedStatus(abs) !== currentStatus(abs) &&
+    // Scratch this suite owns is not repository content, and the environment
+    // may simply refuse to delete it. Reported separately, not as drift.
+    !scratchPaths.has(abs),
 );
 
 function currentStatus(abs) {
@@ -833,7 +926,21 @@ for (const record of results) {
   }
 }
 
+if (scratchPaths.size) {
+  process.stderr.write(
+    `note injection-suite: ${scratchPaths.size} probe scratch path(s) could not be removed ` +
+      `by this environment and were left as untracked scratch; the next run reuses or sweeps them:\n` +
+      `${[...scratchPaths].map((p) => `  ${p.replace(`${ROOT}/`, "")}`).join("\n")}\n`,
+  );
+}
+
 const treeIntact = restored && driftedPaths.length === 0;
+
+// Scratch this run created and did not reclaim. `git status` cannot see it
+// (`artifacts/` is ignored), so it is asserted here: a suite that claims a
+// byte-for-byte restore while leaving files behind is the same class of
+// dishonesty it exists to catch.
+const leftoverScratch = scratchInventory().filter((path) => !scratchPaths.has(path));
 
 for (const blocked of cleanupScratch()) {
   process.stderr.write(`warn injection-suite: scratch dir not removed (${blocked})\n`);
@@ -845,6 +952,14 @@ process.stdout.write(
     ` (${((Date.now() - startedAt) / 1000).toFixed(1)}s)\n`,
 );
 
+if (leftoverScratch.length) {
+  process.stderr.write(
+    `FAIL injection-suite: ${leftoverScratch.length} probe scratch path(s) survived the run:\n` +
+      `${leftoverScratch.map((p) => `- ${p.replace(`${ROOT}/`, "")}`).join("\n")}\n` +
+      `every probe this suite creates must be gone by the time it exits\n`,
+  );
+  process.exit(1);
+}
 if (!treeIntact) {
   process.stderr.write(
     `FAIL injection-suite: the working tree was not restored byte-for-byte.\n` +
@@ -866,4 +981,11 @@ if (failures.length) {
   process.stderr.write(`injection-suite: ${failures.length} gate proof(s) failed\n`);
   process.exit(1);
 }
-process.stdout.write("injection-suite: every registered gate failed exactly as claimed\n");
+if (skipped.length) {
+  process.stdout.write(
+    `injection-suite: every evaluable gate failed exactly as claimed; ` +
+      `${skipped.length} entry(ies) were not evaluable on this machine and are named above\n`,
+  );
+} else {
+  process.stdout.write("injection-suite: every registered gate failed exactly as claimed\n");
+}
