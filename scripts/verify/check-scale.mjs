@@ -15,7 +15,6 @@ const BASELINE = {
   files: [
     "crates/echo-core/src/application/recover.rs",
     "crates/echo-core/src/application/scan.rs",
-    "crates/echo-core/src/application/testing/memory_database.rs",
     "crates/echo-core/src/domain/entities.rs",
     "crates/echo-core/src/domain/library.rs",
     "crates/echo-core/src/infrastructure/filesystem/adapter.rs",
