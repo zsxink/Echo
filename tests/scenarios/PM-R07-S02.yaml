@@ -4,7 +4,7 @@ scenario_id: PM-R07-S02
 requirement: 歌单选择器内新建歌单
 scenario: 从选择器创建失败
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs PM-R07-S02"
+command: "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistNameDialog.test.tsx"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

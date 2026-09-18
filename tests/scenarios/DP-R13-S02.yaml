@@ -4,7 +4,7 @@ scenario_id: DP-R13-S02
 requirement: 播放位置的本机会话持久化
 scenario: 持久化位置超出有效范围
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs DP-R13-S02"
+command: "cargo test -p echo-core --all-features playback_restore"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

@@ -4,7 +4,7 @@ scenario_id: LL-R02-S04
 requirement: 扫描、监听与手动重扫
 scenario: 不兼容旧资料库布局
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs LL-R02-S04"
+command: "cargo test -p echo-core --all-features manifest_incompatible_version_fails_check"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

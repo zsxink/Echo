@@ -4,7 +4,7 @@ scenario_id: LL-R02-S05
 requirement: 扫描、监听与手动重扫
 scenario: 监听外部新增和修改
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs LL-R02-S05"
+command: "cargo test -p echo-core --all-features coalescer_normalizes_removal_and_rename_and_overflow"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

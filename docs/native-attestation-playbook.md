@@ -17,14 +17,20 @@
 
 | 类 | 条数 | 含义 | 处置 |
 |---|---|---|---|
-| **甲** 可登记为自动化 | **29** | 存在针对性测试，且覆盖 spec 的 `THEN` 全部要点 | 改 `scenario-commands.mjs` 登记真命令 |
-| **丙** 有测试但覆盖不全 | **3** | 存在相关测试，但只覆盖正常路径/部分要点，登记即假绿 | **先补测试**，再登记 |
+| **甲** 可登记为自动化 | **28** | 存在针对性测试，且覆盖 spec 的 `THEN` 全部要点 | 改 `scenario-commands.mjs` 登记真命令 |
+| **丙** 有测试但覆盖不全 | **4** | 存在相关测试，但只覆盖正常路径/部分要点，登记即假绿 | **先补测试**，再登记 |
 | **乙** 必须人工举证 | **9** | 核心是真实 OS 交互（进程存活 / 托盘 / 应用身份 / 真实打开文件 / 真实布局 / 端到端验收） | 操作者在真机执行本文 §5 的步骤并写 log |
 
-29 + 3 + 9 = 41。乙类 9 条正是 `task-9.6.mjs` 注释所说的 *"cross-platform native validation is
+28 + 4 + 9 = 41。乙类 9 条正是 `task-9.6.mjs` 注释所说的 *"cross-platform native validation is
 deferred to the platform Gate"*，也与 `scenario-commands.mjs` 顶部注释列举的 `live tray gesture /
 OS file-open integration / the 3-platform smoke itself` 一一对应 —— **注释描述的那条分支确实存在，
 只是它同时被当成了"未登记"的兜底，把另外 32 条也吸了进去。**
+
+> **本文档在施工中被修正过一次**：`PM-R06-S01` 起初被判为甲类，依据是
+> `AddToPlaylistDialog.test.tsx` 的 "membership commit fails"。落地时核对用例正文发现它断言的是
+> **添加**歌曲失败（"添加失败，请重试" + 选择器保持），而该场景要求的是 **移除成员**失败
+> （成员留原位、导航计数不变）。后者在 `PlaylistsView.tsx:163` 有实现、无测试 ⇒ 改判丙类。
+> 教训：判"有没有测试覆盖这个 `THEN`"必须读**用例正文**，不能只看用例标题像不像。
 
 ## 1. 根因：一个 `||` 把两件事混成了一个出口
 
@@ -54,7 +60,7 @@ export function scenarioCommands() {
 
 即：只要该行为的核心能被一个针对性测试证明，就该登记真命令；只有核心是真实 OS 交互的才走人工。
 
-## 2. 甲类：可登记为自动化（30 条）
+## 2. 甲类：可登记为自动化（28 条）
 
 命令形式沿用现有 helper（`scenario-commands.mjs`）：
 `COREC(f)` = `cargo test -p echo-core --all-features <f>`；`DESK(f)` = `cargo test -p echo-desktop --all-features <f>`；
@@ -65,7 +71,7 @@ export function scenarioCommands() {
 | DP-R02-S05 | 下一首播放 A、B、C 顺序，普通待播保持相对顺序 | `player/queue/tests.rs` `play_next_lane_is_fifo_and_projection_precedes_normal_entries`、`insert_next_goes_immediately_after_current` | `DESK("player::queue::tests::play_next_lane_is_fifo_and_projection_precedes_normal_entries")` |
 | DP-R02-S06 | 切歌/自然结束/历史回退后列表首项=当前项，回绕项在尾部 | `player/queue/tests.rs` `view_projection_keeps_current_first_and_includes_loop_wrap` | `DESK("player::queue::tests::view_projection_keeps_current_first_and_includes_loop_wrap")` |
 | DP-R02-S07 | 清空待播但不删歌曲/歌单成员，当前曲继续播 | `player/queue/tests.rs` `clear_pending_keeps_current_and_history`、`clear_pending_keeps_only_current_even_after_loop_wrap` | `DESK("player::queue::tests::clear_pending_keeps_current_and_history")` |
-| DP-R04-S04 | 单曲循环自然结束重播同项；手动下一首忽略单曲重复 | `player/coordinator/tests.rs` `repeat_one_repeats_current_on_end`、`explicit_next_advances_repeat_one_without_changing_selected_mode` | `DESK("player::coordinator::tests::repeat_one")` |
+| DP-R04-S04 | 单曲循环自然结束重播同项；手动下一首忽略单曲重复 | `player/coordinator/tests.rs` `repeat_one_repeats_current_on_end`、`explicit_next_advances_repeat_one_without_changing_selected_mode` | `DESK("repeat_one")` —— **不带模块前缀**，一次命中上面两条（覆盖该场景的两个 `THEN`） |
 | DP-R04-S05 | 切模式保留当前曲与待播，不丢 FIFO 优先区 | `player/coordinator/tests.rs` `mode_switch_keeps_current_item` | `DESK("player::coordinator::tests::mode_switch_keeps_current_item")` |
 | DP-R04-S06 | 更新 mpv 位置/音量/静音并显示新状态 | `player/coordinator/tests.rs` `seek_updates_snapshot_through_coordinator`、`set_volume_clamps_and_clears_mute_through_coordinator`、`unmute_restores_last_nonzero_volume_through_coordinator` | `DESK("player::coordinator::tests::seek_updates_snapshot_through_coordinator")` |
 | DP-R05-S03 | 根不可用时拒绝/暂停并提示，恢复后可重试，不删队列引用 | `player/coordinator/tests.rs` `recovered_blocked_entry_becomes_eligible_after_retry` | `DESK("player::coordinator::tests::recovered_blocked_entry_becomes_eligible_after_retry")` |
@@ -80,8 +86,7 @@ export function scenarioCommands() {
 | LL-R02-S04 | 旧布局目录被明确拒绝，不扫描/不迁移 UUID | `domain/library.rs` `manifest_incompatible_version_fails_check`、`layout_validator_rejects_echo_under_media` | `COREC("manifest_incompatible_version_fails_check")` |
 | LL-R02-S05 | 监听事件稳定后更新记录与索引；可用手动重扫收敛 | `infrastructure/filesystem/watcher.rs` `coalescer_normalizes_removal_and_rename_and_overflow`、`application/scan.rs` `external_missing_recovers_on_original_path_restoring_everything` | `COREC("coalescer_normalizes_removal_and_rename_and_overflow")` |
 | PM-R01-S05 | 删歌单及其成员关系，不删歌曲文件/记录/其他歌单成员 | `application/playlist.rs` `delete_owns_playlist_and_members_but_not_songs_or_other_playlists` | `COREC("application::playlist::tests::delete_owns_playlist_and_members_but_not_songs_or_other_playlists")` |
-| PM-R06-S01 | 移除失败时成员留在原位、计数不变、显示失败 | `features/playlists/AddToPlaylistDialog.test.tsx` `keeps the authoritative picker open when membership commit fails` | `REACT("src/features/playlists/AddToPlaylistDialog.test.tsx")` |
-| PM-R07-S01 | 选择器内新建并选中，确认后追加到新歌单末尾 | `features/playlists/PlaylistNameDialog.test.tsx` `creates the playlist with the active root and trimmed name`、`AddToPlaylistDialog.test.tsx` `selects a playlist created from the picker so the original song can be added` | `REACT("src/features/playlists/PlaylistNameDialog.test.tsx")` |
+| PM-R07-S01 | 选择器内新建并选中，确认后追加到新歌单末尾 | `features/playlists/AddToPlaylistDialog.test.tsx` `selects a playlist created from the picker so the original song can be added`、`passes the active root into the inline create dialog` | `REACT("src/features/playlists/AddToPlaylistDialog.test.tsx")` —— 该用例就是「创建后选中并把原歌曲追加」，比只断言"建成了"更贴 `THEN` |
 | PM-R07-S02 | 无效名/创建失败时保留选择器上下文与输入，不伪造歌单 | `features/playlists/PlaylistNameDialog.test.tsx` `rejects a name longer than 40 graphemes without calling create_playlist`、`rejects a create when no active root is available` | `REACT("src/features/playlists/PlaylistNameDialog.test.tsx")` |
 | PLL-R01-S01 | 发布到 `media/<艺人>/<艺人> - <标题>.<ext>`，歌词同目录同基名 | `application/import/tests/execution.rs` `default_target_is_artist_folder_with_artist_minus_title` | `COREC("default_target_is_artist_folder_with_artist_minus_title")` |
 | PLL-R01-S02 | 控制面不可写时不作为可管理资料库启用，只读仍可浏览 | `infrastructure/filesystem/control_plane.rs` `control_plane_usable_detects_writable_and_readable`、`application/root_switch.rs` `read_only_root_activates_readonly_and_disables_writes` | `COREC("control_plane_usable_detects_writable_and_readable")` |
@@ -92,13 +97,14 @@ export function scenarioCommands() {
 | PLL-R03-S02 | 资料先到、媒体未到时显示不可用并保留 UUID，媒体到达后恢复且不产生第二首 | `application/portable.rs` `restore_projects_records_and_keeps_missing_without_media` | `COREC("restore_projects_records_and_keeps_missing_without_media")` |
 | PHA-R01-S02 | 回归质量门：Rust/前端/格式/静态检查与登记场景均通过 | `scripts/verify/ci-governance.mjs` —— 含 `cargo test --workspace --all-targets --all-features`、前端构建、覆盖率、三方对账、命令棘轮、纯净性、注入证明共 14 道 | 直接写字符串 `"node scripts/verify/ci-governance.mjs"`（**该门禁很重**，全量场景会因此明显变长；若不可接受，可改为指向 `CHECK("1.2")` 只覆盖前端那一半） |
 
-## 3. 丙类：有测试但覆盖不全 —— **登记前必须先补测试**（3 条）
+## 3. 丙类：有测试但覆盖不全 —— **登记前必须先补测试**（4 条）
 
 这三条的 spec `THEN` 明确要求**失败路径或视觉语义**，而现有测试只覆盖了正常路径 / 逻辑侧。
 **如果直接登记，就是用成功路径测试冒充失败路径验收 —— 属于假绿，比留人工更糟。**
 
 | 场景 ID | spec 要求（缺的那部分加粗） | 现有测试只覆盖 | 缺口 |
 |---|---|---|---|
+| **PM-R06-S01** 成员移除失败 | 失败时**成员留在原位**、**导航计数不变**、显示移除失败信息 | `PlaylistsView.tsx:163` 有实现（`移除歌曲失败，请重试`）但**无任何测试**；`AddToPlaylistDialog` 的失败用例断言的是**添加**失败，不是移除 | 缺「`remove_playlist_song` reject 时成员不移除、导航计数不回退」的用例 |
 | **PM-R06-S02** 入队失败 | 失败时**不显示"已加入播放队列"**、保持服务端确认状态、**显示失败信息** | `features/library/SongMenu.test.tsx` `enqueue appends to the queue via onEnqueue`（**成功路径**） | 缺「入队命令 reject 时 UI 不给成功反馈」的用例 |
 | **DP-R12-S01** 非沉浸切换随机播放 | 随机图标**保持中性样式**、界面以**可读语义**表明已选中 | `player/queue/tests.rs` `shuffle_bag_*`（**顺序逻辑**，非样式） | 缺 PlayerBar 随机按钮的样式/`aria-pressed` 断言 |
 | **DP-R12-S02** 主题切换保持随机 | 随机图标**不得变为新主题强调色**、模式与队列不受影响 | `player/coordinator/tests.rs` `play_context_keeps_the_user_mode`（**模式不被改**，非颜色） | 缺「主题切换后按钮 class 不含 accent 色」的断言 |
@@ -106,7 +112,7 @@ export function scenarioCommands() {
 处置建议：为这三条各补一个用例（前一个在 `SongMenu.test.tsx`，后两个在 `PlayerBar.test.tsx`），
 再登记。补测试的量很小，且堵住的是**真实的验收漏洞**。
 
-## 4. 乙类：必须人工举证（8 条）
+## 4. 乙类：必须人工举证（9 条）
 
 判据：`THEN` 的核心是**真实进程存活 / 真实托盘或菜单栏入口 / 真实应用身份外观 / 操作系统显式打开文件 /
 真实渲染尺寸**，任何单测都无法证明。操作步骤见 §5。
@@ -216,14 +222,35 @@ node scripts/verify/checks/check-native-attestation.mjs DAS-R12-S01
 
 ## 7. 执行顺序（甲乙丙各一条路）
 
-1. **甲类 30 条**：在 `scripts/verify/scenario-commands.mjs` 的 `COMMANDS` 表登记 §2 的建议命令
+1. **甲类 28 条**：在 `scripts/verify/scenario-commands.mjs` 的 `COMMANDS` 表登记 §2 的建议命令
    （**必须改这张表**，`manifest.json` 是生成物，手改会被静默抹掉），然后
    `node scripts/verify/gen-scenario-manifests.mjs --write`。
-2. **丙类 3 条**：先在对应测试文件补用例，再按甲类登记。
-3. **乙类 8 条**：操作者按 §5 执行，按 §6 写 log。
-4. 回归：`node scripts/verify/reconcile-scenarios.mjs`（三方 218 = 218 = 218）、
-   `node scripts/verify/check-scenario-churn.mjs`（重复度棘轮，当前 1.76x）、
-   最后 `pnpm verify:scenario -- --all` —— 红的应当**只剩未填 log 的乙类行**。
+2. **丙类 4 条**：先在对应测试文件补用例，再按甲类登记。
+3. **乙类 9 条**：操作者按 §5 执行，按 §6 写 log。
+4. 回归（顺序有讲究，**一道都不能漏**）：
 
-> ⚠️ 甲类登记会**降低** `check-scenario-churn` 的分母（同一命令被更多场景引用时重复度上升）。
-> 登记后必须重跑该门禁；若越过 1.8x 阈值，应改用更精确的 filter 或按 §2 的合并口径调整。
+   ```bash
+   node scripts/verify/reconcile-scenarios.mjs         # 三方 218 = 218 = 218
+   node scripts/verify/validate-scenario-commands.mjs  # 每条命令真能命中测试 ← 最容易漏
+   node scripts/verify/validate-scenario-manifests.mjs
+   node scripts/verify/check-scenario-churn.mjs        # 重复度棘轮
+   pnpm verify:scenario -- --all                       # 期望：只剩未填 log 的乙类行红
+   ```
+
+   `validate-scenario-commands.mjs` 才是"命令真能命中测试"的那道门禁。本次施工中
+   `LE-R07-S01` 的 `-- --ignored` 就是被它抓出来的：校验器把 `-- --ignored`（cargo 的测试二进制
+   分隔符）当成了 filter 的一部分 → 0 命中。**上一轮只跑了 reconcile 与 churn，漏了它**，
+   于是这个红被带进了一个已提交的 commit。修法是让校验器剥离 `-- <args>`，而不是删掉
+   `-- --ignored`（删了就退回"bench 跑 0 个测试"的假绿）。
+
+> ⚠️ **churn 口径**：分母是**不同命令数**。所以 ① 每条场景用互不相同的命令 → 分母增大、重复度
+> **下降**；② 多条场景共用同一命令 → 分母不变、重复度**上升**。本次登记 28 条后实测 **1.79x**
+> （30 个重复组里我新增的撞车只有 2 组，其余 28 组是既有的），阈值 1.8x —— 通过但贴边。
+> 将来逼近阈值时，优先把**语义仍然贴切**的重复命令拆开，**不要**为了凑数把命令改成不相关的测试。
+
+> ⚠️ **发现但本次未修的既有错配**：`DP-R03-S01/S02/S03` 三个场景是「队列显示歌曲信息 /
+> 队列超过八首 / 队列不超过八首」，命令却是 `mode_switch_keeps_current_item`、
+> `next_advances_in_order`、`previous_moves_back_within_5_seconds` —— 与队列面板展示无关。
+> `validate-scenario-commands.mjs` 只保证「命令命中 ≥1 个测试」，**无法判断语义是否对应**，
+> 所以这类错配它抓不到（这是该校验器的固有上限，不是缺陷）。修它要逐条重新论证 R03 该指向哪个
+> 投影/面板测试，属独立工作。

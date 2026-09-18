@@ -4,7 +4,7 @@ scenario_id: DP-R11-S02
 requirement: 三天播放历史与回退
 scenario: 三天内回退
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs DP-R11-S02"
+command: "cargo test -p echo-desktop --all-features player::queue::tests::previous_returns_history_entry"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

@@ -4,7 +4,7 @@ scenario_id: PLL-R02-S02
 requirement: 可携带对象资料
 scenario: 路径数据被序列化
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs PLL-R02-S02"
+command: "cargo test -p echo-core --all-features sync_payloads_carry_no_absolute_paths"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

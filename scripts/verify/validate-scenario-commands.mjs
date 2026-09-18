@@ -50,16 +50,24 @@ for (const { id, command } of scenarioCommands()) {
     continue;
   }
   // cargo test lib filters
+  //
+  // A trailing `-- <args>` is cargo's separator for the test binary (e.g.
+  // `-- --ignored` to also run `#[ignore]`d tests), NOT part of the filter.
+  // Without stripping it the whole tail is compared as one filter string and
+  // matches nothing — which reports a correct command as broken, and would push
+  // someone to remove `-- --ignored` and reintroduce the "runs zero tests"
+  // false-pass this validator exists to prevent.
+  const cargoFilter = (raw) => raw.trim().replace(/\s+--\s+.*$/, "");
   m = command.match(/^cargo test -p echo-core --all-features\s+([^\s&][^&]*?)(?:\s+&&|$)/);
   if (m) {
-    const filter = m[1].trim();
+    const filter = cargoFilter(m[1]);
     const hits = coreTests.filter((t) => t.includes(filter));
     if (!hits.length) fail(`${id}: cargo echo-core filter '${filter}' matches 0 tests`);
     continue;
   }
   m = command.match(/^cargo test -p echo-desktop --all-features\s+([^\s&][^&]*?)(?:\s+&&|$)/);
   if (m) {
-    const filter = m[1].trim();
+    const filter = cargoFilter(m[1]);
     // Cargo's `--lib` / `--test` selectors do not name one test. They still
     // execute a real target, so the runtime runner supplies the final count.
     if (filter.startsWith("-")) continue;
@@ -77,11 +85,15 @@ for (const { id, command } of scenarioCommands()) {
     continue;
   }
 
-  // task-check scripts
-  m = command.match(/^node (scripts\/verify\/checks\/[A-Za-z0-9_.-]+\.mjs)(?:\s|$)/);
+  // verify scripts — the per-task checks under `checks/` plus top-level
+  // aggregate gates (the phase-one acceptance scenario points at the governance
+  // gate). The regex pins the path to `scripts/verify/` and a `..` segment is
+  // rejected, so widening this cannot be used to reference a file elsewhere.
+  m = command.match(/^node (scripts\/verify\/[A-Za-z0-9_./-]+\.mjs)(?:\s|$)/);
   if (m) {
     const p = resolve(ROOT, m[1]);
-    if (!existsSync(p)) fail(`${id}: task-check script missing ${p}`);
+    if (m[1].includes("..")) fail(`${id}: verify script path escapes scripts/verify: ${m[1]}`);
+    else if (!existsSync(p)) fail(`${id}: verify script missing ${p}`);
     continue;
   }
 

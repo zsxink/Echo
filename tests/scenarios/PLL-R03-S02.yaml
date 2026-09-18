@@ -4,7 +4,7 @@ scenario_id: PLL-R03-S02
 requirement: 新设备资料库重建
 scenario: 同步资料先于媒体到达
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs PLL-R03-S02"
+command: "cargo test -p echo-core --all-features restore_projects_records_and_keeps_missing_without_media"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

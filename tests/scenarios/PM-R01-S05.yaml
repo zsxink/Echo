@@ -4,7 +4,7 @@ scenario_id: PM-R01-S05
 requirement: 歌单 CRUD
 scenario: 删除歌单
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs PM-R01-S05"
+command: "cargo test -p echo-core --all-features delete_owns_playlist_and_members_but_not_songs_or_other_playlists"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

@@ -4,7 +4,7 @@ scenario_id: PLL-R01-S01
 requirement: 受管理资料库目录布局
 scenario: 新资料库导入一首歌曲
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs PLL-R01-S01"
+command: "cargo test -p echo-core --all-features default_target_is_artist_folder_with_artist_minus_title"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

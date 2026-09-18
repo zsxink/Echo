@@ -4,7 +4,7 @@ scenario_id: PLL-R01-S02
 requirement: 受管理资料库目录布局
 scenario: 控制面目录不可写
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs PLL-R01-S02"
+command: "cargo test -p echo-core --all-features control_plane_usable_detects_writable_and_readable"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

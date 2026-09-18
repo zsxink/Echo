@@ -76,14 +76,29 @@ export const COMMANDS = {
   "DP-R02-S02": REACT("src/features/player/QueuePanel.test.tsx"),
   "DP-R02-S03": REACT("src/features/player/QueuePanel.test.tsx"),
   "DP-R02-S04": REACT("src/features/player/QueuePanel.test.tsx"),
+  // R02-S05..S07 were never registered and therefore fell through the
+  // `COMMANDS[id] || ATTEST(id)` fallback, reading as "needs an operator" when
+  // nobody had judged them at all. The queue suite proves each THEN clause:
+  // play-next lane order, the current entry pinned first with the loop wrap
+  // last, and clear-pending keeping the current song. Judged in
+  // docs/native-attestation-playbook.md.
+  "DP-R02-S05": DESK("player::queue::tests::play_next_lane_is_fifo_and_projection_precedes_normal_entries"),
+  "DP-R02-S06": DESK("player::queue::tests::view_projection_keeps_current_first_and_includes_loop_wrap"),
+  "DP-R02-S07": DESK("player::queue::tests::clear_pending_keeps_current_and_history"),
   "DP-R03-S01": DESK("player::coordinator::tests::mode_switch_keeps_current_item"),
   "DP-R03-S02": DESK("player::coordinator::tests::next_advances_in_order"),
   "DP-R03-S03": DESK("player::coordinator::tests::previous_moves_back_within_5_seconds"),
   "DP-R04-S01": DESK("player::coordinator::tests::error_skips_bad_entry_and_plays_next_sequential"),
   "DP-R04-S02": DESK("player::coordinator::tests::error_advance_all_bad_stops_without_spin"),
   "DP-R04-S03": DESK("player::coordinator::tests::error_advance_never_retries_same_entry_in_round"),
+  // `repeat_one` covers both THEN clauses of R04-S04: natural end replays the
+  // entry, and an explicit next ignores the single-repeat rule.
+  "DP-R04-S04": DESK("repeat_one"),
+  "DP-R04-S05": DESK("player::coordinator::tests::mode_switch_keeps_current_item"),
+  "DP-R04-S06": DESK("player::coordinator::tests::seek_updates_snapshot_through_coordinator"),
   "DP-R05-S01": CHECK("9.2"), // file association + temp-item
   "DP-R05-S02": CHECK("11.7"),
+  "DP-R05-S03": DESK("player::coordinator::tests::recovered_blocked_entry_becomes_eligible_after_retry"),
   "DP-R06-S01": COREC("infrastructure::sqlite::tests::playback_sessions_are_idempotent"),
   "DP-R06-S02": COREC("infrastructure::sqlite::tests::playback_sessions_are_idempotent"),
   "DP-R07-S01": DESK("platform::local_state"),
@@ -97,6 +112,16 @@ export const COMMANDS = {
   "DP-R09-S01": CHECK("9.3"),
   "DP-R09-S02": CHECK("9.3"),
   "DP-R09-S03": CHECK("9.6"),
+  // The three-day-history and session-restore family: history entry lookup,
+  // snapshot round-trip across a restart, stale-entry filtering, rollback
+  // keeping the timestamped history, and restore landing paused.
+  "DP-R11-S01": DESK("player::coordinator::tests::previous_replays_single_entry_instead_of_pausing"),
+  "DP-R11-S02": DESK("player::queue::tests::previous_returns_history_entry"),
+  "DP-R11-S03": DESK("player::session::tests::state_store_save_load_round_trip_is_atomic_and_clears"),
+  "DP-R11-S04": DESK("player::session::tests::restore_keeps_fresh_history_and_counts_only_blocked_entries"),
+  "DP-R11-S05": DESK("player::deletion::tests::rollback_restores_timestamped_history_so_previous_remains_available"),
+  "DP-R13-S01": DESK("player::coordinator::tests::restore_session_recovers_queue_mode_and_settings_paused"),
+  "DP-R13-S02": COREC("playback_restore"),
 
   // ===== immersive-lyrics (IL) =====
   "IL-R01-S01": REACT("src/features/player/PlayerBar.test.tsx"),
@@ -134,6 +159,10 @@ export const COMMANDS = {
   "LE-R02-S01": COREC("infrastructure::sqlite::tests::catalog_search_matches_full_query"),
   "LE-R02-S02": COREC("infrastructure::sqlite::tests::catalog_search_empty_query"),
   "LE-R02-S03": REACT("src/features/library/SongList.test.tsx"),
+  // R02-S04 was never registered (fallback read as "needs an operator"): the
+  // THEN clause is "drop the old root's results and only accept the new root's",
+  // which is exactly the delayed-response test in useSongs.
+  "LE-R02-S04": REACT("src/features/library/useSongs.test.tsx"),
   "LE-R03-S01": COREC("infrastructure::sqlite::tests::catalog_all_songs_keyset_pages"),
   "LE-R03-S02": COREC("infrastructure::sqlite::tests::catalog_favorites_view"),
   "LE-R03-S03": COREC("infrastructure::sqlite::tests::catalog_recent_100"),
@@ -171,6 +200,12 @@ export const COMMANDS = {
   "LL-R02-S01": COREC("scan::tests::manual_rescan_is_repeatable_and_converges"),
   "LL-R02-S02": COREC("watch::tests::watch_events_converge_under_out_of_order_and_duplicate_delivery"),
   "LL-R02-S03": COREC("scan::tests::progress_persisted_throttled_and_terminal_state_kept"),
+  // R02-S04/R02-S05 were never registered. S04's THEN clause is "refuse the old
+  // layout, do not scan or migrate it" — proven by the manifest version check.
+  // S05's is "update records once watcher events settle" — proven by the
+  // coalescer that normalises removal/rename/overflow into one rescan.
+  "LL-R02-S04": COREC("manifest_incompatible_version_fails_check"),
+  "LL-R02-S05": COREC("coalescer_normalizes_removal_and_rename_and_overflow"),
   "LL-R03-S01": COREC("infrastructure::sqlite::tests::playback_sessions_are_idempotent"), // fixture format matrix
   "LL-R03-S02": COREC("probe"),
   "LL-R03-S03": COREC("infrastructure::sqlite::tests::scan_pipeline_persists"),
@@ -194,6 +229,10 @@ export const COMMANDS = {
   "PM-R01-S02": COREC("playlist"),
   "PM-R01-S03": COREC("playlist"),
   "PM-R01-S04": COREC("playlist"),
+  // R01-S05 (delete a playlist without touching songs or other playlists) was
+  // never registered; this test asserts exactly "owns the playlist and its
+  // memberships but not songs or other playlists".
+  "PM-R01-S05": COREC("delete_owns_playlist_and_members_but_not_songs_or_other_playlists"),
   "PM-R02-S01": COREC("playlist"),
   "PM-R02-S02": COREC("playlist"),
   "PM-R03-S01": COREC("playlist"),
@@ -204,6 +243,18 @@ export const COMMANDS = {
   "PM-R05-S02": COREC("playlist_missing_members_stay_visible"),
   "PM-R05-S03": COREC("echo_delete_finalize_cascades_memberships"),
   "PM-R05-S04": COREC("playlist"),
+  // R06/R07 rows never existed in this table at all — the whole sub-family fell
+  // through the fallback. R07-S01/S02 are the picker's create-then-add path and
+  // its rejection path.
+  //
+  // PM-R06-S01 (成员移除失败) is deliberately NOT registered. The failure path
+  // exists in PlaylistsView.tsx (`移除歌曲失败，请重试`) but no test covers it, and
+  // AddToPlaylistDialog's failure case is about *adding* a song, not removing a
+  // member — pointing R06-S01 at it would manufacture a green for a THEN clause
+  // nothing asserts. It stays on the fallback until the PlaylistsView test
+  // exists (tracked in docs/native-attestation-playbook.md as a class-丙 gap).
+  "PM-R07-S01": REACT("src/features/playlists/AddToPlaylistDialog.test.tsx"),
+  "PM-R07-S02": REACT("src/features/playlists/PlaylistNameDialog.test.tsx"),
 
   // ===== safe-file-ingestion (SFI) =====
   "SFI-R01-S01": COREC("import"), // per-input mixed results
@@ -236,6 +287,28 @@ export const COMMANDS = {
   "SYN-R02-S02": CHECK("3.14"), // outbox prewritten, no operable sync entry
   "SYN-R03-S01": COREC("infrastructure::sqlite::tests::sync_foundation"),
   "SYN-R04-S01": COREC("infrastructure::sqlite::tests::sync_payloads_carry_no_absolute_paths"),
+
+  // ===== portable-library-layout (PLL) =====
+  // This whole area was absent from the table, so all seven rows were reading as
+  // "needs an operator" through the fallback. Each has a targeted test: the
+  // artist-folder publish path, control-plane usability, the manifest/record
+  // round trips, the absolute-path-free payload, ignoring echo/tmp, and restore
+  // projecting UUIDs while keeping media-less records.
+  "PLL-R01-S01": COREC("default_target_is_artist_folder_with_artist_minus_title"),
+  "PLL-R01-S02": COREC("control_plane_usable_detects_writable_and_readable"),
+  "PLL-R02-S01": COREC("manifest_round_trips_atomically"),
+  "PLL-R02-S02": COREC("sync_payloads_carry_no_absolute_paths"),
+  "PLL-R02-S03": COREC("tmp_files_are_ignored_as_records"),
+  "PLL-R03-S01": COREC("application::restore"),
+  "PLL-R03-S02": COREC("restore_projects_records_and_keeps_missing_without_media"),
+
+  // ===== phase-one-acceptance (PHA) =====
+  // S02 is the regression quality gate itself: workspace tests + frontend build
+  // + coverage + reconciliation + churn + purity + injection proofs live in the
+  // governance gate. It cannot include `verify:scenario --all` without recursing
+  // into itself, so the "registered flow scenarios pass" half is carried by
+  // S01's acceptance walkthrough (manual, see the playbook).
+  "PHA-R01-S02": "node scripts/verify/ci-governance.mjs",
 };
 
 import { allScenarioIds } from "./spec-scenarios.mjs";

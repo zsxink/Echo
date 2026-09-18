@@ -4,7 +4,7 @@ scenario_id: DP-R05-S03
 requirement: 播放错误处理
 scenario: 资料库不可用期间播放
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs DP-R05-S03"
+command: "cargo test -p echo-desktop --all-features player::coordinator::tests::recovered_blocked_entry_becomes_eligible_after_retry"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

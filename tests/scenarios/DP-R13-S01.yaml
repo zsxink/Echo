@@ -4,7 +4,7 @@ scenario_id: DP-R13-S01
 requirement: 播放位置的本机会话持久化
 scenario: 退出后恢复播放位置
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs DP-R13-S01"
+command: "cargo test -p echo-desktop --all-features player::coordinator::tests::restore_session_recovers_queue_mode_and_settings_paused"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

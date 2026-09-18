@@ -4,7 +4,7 @@ scenario_id: PHA-R01-S02
 requirement: 一期日常流程验收基线
 scenario: 回归质量门
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs PHA-R01-S02"
+command: "node scripts/verify/ci-governance.mjs"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

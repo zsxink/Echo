@@ -4,7 +4,7 @@ scenario_id: DP-R02-S07
 requirement: 播放队列
 scenario: 清空队列
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs DP-R02-S07"
+command: "cargo test -p echo-desktop --all-features player::queue::tests::clear_pending_keeps_current_and_history"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

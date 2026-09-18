@@ -2290,19 +2290,19 @@
     {
       "id": "DP-R02-S05",
       "title": "连续下一首播放",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R02-S05",
+      "command": "cargo test -p echo-desktop --all-features player::queue::tests::play_next_lane_is_fifo_and_projection_precedes_normal_entries",
       "manifest": "tests/scenarios/DP-R02-S05.yaml"
     },
     {
       "id": "DP-R02-S06",
       "title": "当前项始终置顶",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R02-S06",
+      "command": "cargo test -p echo-desktop --all-features player::queue::tests::view_projection_keeps_current_first_and_includes_loop_wrap",
       "manifest": "tests/scenarios/DP-R02-S06.yaml"
     },
     {
       "id": "DP-R02-S07",
       "title": "清空队列",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R02-S07",
+      "command": "cargo test -p echo-desktop --all-features player::queue::tests::clear_pending_keeps_current_and_history",
       "manifest": "tests/scenarios/DP-R02-S07.yaml"
     },
     {
@@ -2350,19 +2350,19 @@
     {
       "id": "DP-R04-S04",
       "title": "单曲循环的自然结束与手动下一首",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R04-S04",
+      "command": "cargo test -p echo-desktop --all-features repeat_one",
       "manifest": "tests/scenarios/DP-R04-S04.yaml"
     },
     {
       "id": "DP-R04-S05",
       "title": "切换播放模式",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R04-S05",
+      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::mode_switch_keeps_current_item",
       "manifest": "tests/scenarios/DP-R04-S05.yaml"
     },
     {
       "id": "DP-R04-S06",
       "title": "定位和音量",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R04-S06",
+      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::seek_updates_snapshot_through_coordinator",
       "manifest": "tests/scenarios/DP-R04-S06.yaml"
     },
     {
@@ -2380,7 +2380,7 @@
     {
       "id": "DP-R05-S03",
       "title": "资料库不可用期间播放",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R05-S03",
+      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::recovered_blocked_entry_becomes_eligible_after_retry",
       "manifest": "tests/scenarios/DP-R05-S03.yaml"
     },
     {
@@ -2458,31 +2458,31 @@
     {
       "id": "DP-R11-S01",
       "title": "列表循环上一首",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R11-S01",
+      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::previous_replays_single_entry_instead_of_pausing",
       "manifest": "tests/scenarios/DP-R11-S01.yaml"
     },
     {
       "id": "DP-R11-S02",
       "title": "三天内回退",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R11-S02",
+      "command": "cargo test -p echo-desktop --all-features player::queue::tests::previous_returns_history_entry",
       "manifest": "tests/scenarios/DP-R11-S02.yaml"
     },
     {
       "id": "DP-R11-S03",
       "title": "历史跨重启",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R11-S03",
+      "command": "cargo test -p echo-desktop --all-features player::session::tests::state_store_save_load_round_trip_is_atomic_and_clears",
       "manifest": "tests/scenarios/DP-R11-S03.yaml"
     },
     {
       "id": "DP-R11-S04",
       "title": "过期或失效历史",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R11-S04",
+      "command": "cargo test -p echo-desktop --all-features player::session::tests::restore_keeps_fresh_history_and_counts_only_blocked_entries",
       "manifest": "tests/scenarios/DP-R11-S04.yaml"
     },
     {
       "id": "DP-R11-S05",
       "title": "删除回滚保留历史",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R11-S05",
+      "command": "cargo test -p echo-desktop --all-features player::deletion::tests::rollback_restores_timestamped_history_so_previous_remains_available",
       "manifest": "tests/scenarios/DP-R11-S05.yaml"
     },
     {
@@ -2500,13 +2500,13 @@
     {
       "id": "DP-R13-S01",
       "title": "退出后恢复播放位置",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R13-S01",
+      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::restore_session_recovers_queue_mode_and_settings_paused",
       "manifest": "tests/scenarios/DP-R13-S01.yaml"
     },
     {
       "id": "DP-R13-S02",
       "title": "持久化位置超出有效范围",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R13-S02",
+      "command": "cargo test -p echo-core --all-features playback_restore",
       "manifest": "tests/scenarios/DP-R13-S02.yaml"
     },
     {
@@ -2710,7 +2710,7 @@
     {
       "id": "LE-R02-S04",
       "title": "切换活动资料库后查询",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R02-S04",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.tsx",
       "manifest": "tests/scenarios/LE-R02-S04.yaml"
     },
     {
@@ -2902,13 +2902,13 @@
     {
       "id": "LL-R02-S04",
       "title": "不兼容旧资料库布局",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LL-R02-S04",
+      "command": "cargo test -p echo-core --all-features manifest_incompatible_version_fails_check",
       "manifest": "tests/scenarios/LL-R02-S04.yaml"
     },
     {
       "id": "LL-R02-S05",
       "title": "监听外部新增和修改",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LL-R02-S05",
+      "command": "cargo test -p echo-core --all-features coalescer_normalizes_removal_and_rename_and_overflow",
       "manifest": "tests/scenarios/LL-R02-S05.yaml"
     },
     {
@@ -3022,7 +3022,7 @@
     {
       "id": "PHA-R01-S02",
       "title": "回归质量门",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs PHA-R01-S02",
+      "command": "node scripts/verify/ci-governance.mjs",
       "manifest": "tests/scenarios/PHA-R01-S02.yaml"
     },
     {
@@ -3052,7 +3052,7 @@
     {
       "id": "PM-R01-S05",
       "title": "删除歌单",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs PM-R01-S05",
+      "command": "cargo test -p echo-core --all-features delete_owns_playlist_and_members_but_not_songs_or_other_playlists",
       "manifest": "tests/scenarios/PM-R01-S05.yaml"
     },
     {
@@ -3130,55 +3130,55 @@
     {
       "id": "PM-R07-S01",
       "title": "从选择器创建并添加歌曲",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs PM-R07-S01",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx",
       "manifest": "tests/scenarios/PM-R07-S01.yaml"
     },
     {
       "id": "PM-R07-S02",
       "title": "从选择器创建失败",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs PM-R07-S02",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistNameDialog.test.tsx",
       "manifest": "tests/scenarios/PM-R07-S02.yaml"
     },
     {
       "id": "PLL-R01-S01",
       "title": "新资料库导入一首歌曲",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs PLL-R01-S01",
+      "command": "cargo test -p echo-core --all-features default_target_is_artist_folder_with_artist_minus_title",
       "manifest": "tests/scenarios/PLL-R01-S01.yaml"
     },
     {
       "id": "PLL-R01-S02",
       "title": "控制面目录不可写",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs PLL-R01-S02",
+      "command": "cargo test -p echo-core --all-features control_plane_usable_detects_writable_and_readable",
       "manifest": "tests/scenarios/PLL-R01-S02.yaml"
     },
     {
       "id": "PLL-R02-S01",
       "title": "检查资料库控制面",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs PLL-R02-S01",
+      "command": "cargo test -p echo-core --all-features manifest_round_trips_atomically",
       "manifest": "tests/scenarios/PLL-R02-S01.yaml"
     },
     {
       "id": "PLL-R02-S02",
       "title": "路径数据被序列化",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs PLL-R02-S02",
+      "command": "cargo test -p echo-core --all-features sync_payloads_carry_no_absolute_paths",
       "manifest": "tests/scenarios/PLL-R02-S02.yaml"
     },
     {
       "id": "PLL-R02-S03",
       "title": "同步忽略临时目录",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs PLL-R02-S03",
+      "command": "cargo test -p echo-core --all-features tmp_files_are_ignored_as_records",
       "manifest": "tests/scenarios/PLL-R02-S03.yaml"
     },
     {
       "id": "PLL-R03-S01",
       "title": "全新设备恢复完整资料",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs PLL-R03-S01",
+      "command": "cargo test -p echo-core --all-features application::restore",
       "manifest": "tests/scenarios/PLL-R03-S01.yaml"
     },
     {
       "id": "PLL-R03-S02",
       "title": "同步资料先于媒体到达",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs PLL-R03-S02",
+      "command": "cargo test -p echo-core --all-features restore_projects_records_and_keeps_missing_without_media",
       "manifest": "tests/scenarios/PLL-R03-S02.yaml"
     },
     {

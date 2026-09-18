@@ -4,7 +4,7 @@ scenario_id: LE-R02-S04
 requirement: 资料库搜索
 scenario: 切换活动资料库后查询
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs LE-R02-S04"
+command: "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.tsx"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

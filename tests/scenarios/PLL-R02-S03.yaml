@@ -4,7 +4,7 @@ scenario_id: PLL-R02-S03
 requirement: 可携带对象资料
 scenario: 同步忽略临时目录
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs PLL-R02-S03"
+command: "cargo test -p echo-core --all-features tmp_files_are_ignored_as_records"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

@@ -4,7 +4,7 @@ scenario_id: DP-R04-S04
 requirement: 播放模式与传输控制
 scenario: 单曲循环的自然结束与手动下一首
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs DP-R04-S04"
+command: "cargo test -p echo-desktop --all-features repeat_one"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

@@ -4,7 +4,7 @@ scenario_id: PLL-R02-S01
 requirement: 可携带对象资料
 scenario: 检查资料库控制面
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs PLL-R02-S01"
+command: "cargo test -p echo-core --all-features manifest_round_trips_atomically"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.
