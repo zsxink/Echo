@@ -2806,7 +2806,7 @@
     {
       "id": "LE-R07-S01",
       "title": "浏览大量歌曲",
-      "command": "cargo test -p echo-core --all-features bench_50k_search_and_first_screen_p95_meet_prd_budgets",
+      "command": "cargo test -p echo-core --all-features bench_50k_search_and_first_screen_p95_meet_prd_budgets -- --ignored",
       "manifest": "tests/scenarios/LE-R07-S01.yaml"
     },
     {

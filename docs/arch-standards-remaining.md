@@ -157,21 +157,60 @@ pnpm exec openspec validate --archived
 
 ## 6. 场景全量 / 真机 / 归档（任务 8.3 / 8.4 / 8.5，未完成）
 
-**8.3 已完成的部分**（在 `6866700` 上实测）：
+**8.3 已完成的部分**（在 `e7bf5b7` 上实测）：
 - `pnpm verify:self-test` → 10 条断言全过，退出码 0；
-- 三方对账 `spec 218 = trace 218 = manifest 218`；
+- 三方对账 `spec 218 = trace 218 = manifest 218`，退出码 0；
 - `pnpm exec openspec validate --archived` → `7 passed, 0 failed`，**退出码 0**。
 
-**8.3 卡住的部分**：`pnpm verify:scenario -- --all` 含 **44 个真机场景行**
-（`tests/native/*.md`，命令被映射成 `check-native-attestation.mjs <ID>`），
-它要求每行有 `artifacts/native-attestations/<ID>.log` 且**七个字段齐全**
-（`os` / `versions` / `desktop-env` / `operator` / `result` / `evidence-path` / `date`，
-且 `result:` 必须是 pass/ok）。该目录**当前不存在**，所以这 44 行必然红。
+**8.3 未完成的部分**：`pnpm verify:scenario -- --all` 实测 **218 个场景里 175 过 / 43 红，退出码 1**。
+43 红分两类，性质完全不同：
 
-**8.4 真机冒烟**（未做）就是要产出这些举证。可参考的排查手段见 `.workbuddy/memory/MEMORY.md`
-的「无 devtools 时的真机排查」小节（`eprintln!` / 临时 `#[tauri::command]` + `invoke` /
-`osascript` + `screencapture` 读像素 / 改 `desktop-state.json` 的 `playbackSession.current`；
-歌曲表是 `songs` 不是 `tracks`）。
+| 类 | 数量 | 形态 | 结论 |
+|---|---|---|---|
+| 缺人工举证 | **41** | 命令是 `check-native-attestation.mjs <ID>`，缺 `artifacts/native-attestations/<ID>.log` | 未完成的工作，需操作者在真机执行 |
+| 真缺陷 | **1** | `LE-R05-S04` → `task-9.5.mjs` 读 `runtime/services.rs`（已被拆成 `runtime/services/`）→ ENOENT 崩 | **本轮已修**（改读 `services/reveal.rs`） |
+| 真缺陷 | **1** | `LE-R07-S01` → 命令漏了 `-- --ignored`，`#[ignore]` 的 50k bench 跑了 **0 个测试** | **本轮已修**（manifest 加 `-- --ignored`） |
+
+复现：
+```bash
+pnpm verify:scenario -- --all          # 退出码 1
+node scripts/verify/run-scenario.mjs LE-R05-S04   # 修后 ok
+node scripts/verify/run-scenario.mjs LE-R07-S01   # 修后 ok
+```
+另注：运行器的失败行前缀是 **`error:`**，不是 `FAIL`。用 `grep '^FAIL'` 统计会得到 0，
+从而误判成"零失败"——这轮真的这样误判过一次。
+
+**⚠️ 我在这件事上连续给过两次相反的错误结论，错法都记在这里**：
+
+1. 第一版文档写"44 个 native 场景行（`tests/native/*.md`）的命令被映射成
+   `check-native-attestation.mjs`"——**数字和对象都错**：真正走 attestation 的是 **41 个**场景，
+   且它们**没有一个**在 `tests/native/` 下有 `.md`。
+2. 本轮我先"订正"成"**0 行走 attestation，不需要任何 log**"——**这才是全错的**。
+   错因：拿 `tests/native/*.md` 的**文件名**当集合去筛 manifest（44 个），得出 0，
+   再把 0 当成"不存在"。真相是那 44 个 `.md` 对应的是**另一批**场景（它们全部有自动化命令、
+   且**没有** `tests/scenarios/*.yaml`）；attestation 那 41 个场景各有 yaml、却不在 `tests/native/` 里。
+3. 同一个病还犯了第二次：用 `grep '^FAIL'` 统计失败 → 0 → 报"零失败"（前缀其实是 `error:`）。
+
+**教训（可直接复用）**：算任何"有多少个 X"之前，先确认**集合本身是同一个集合**。
+`tests/native/*.md` ↔ manifest 场景是**两套命名空间**，用文件名去 join 会静默得到 0，
+而 0 看起来和"没有"一模一样。**先打印分母，再相信分子。**
+
+**41 个 attestation 场景的登记是自相矛盾的**（这是 8.4 真正要处理的东西）：
+它们的 `tests/scenarios/<ID>.yaml` 里写着 `layer: automated` 与
+`automated_filter: the command above`，而同一行的 `command` 却是 `check-native-attestation.mjs`。
+41 个全部如此（实测 `layer` 分布 `{automated: 41}`）。看标题（关闭窗口后继续后台播放、托盘控制、
+历史跨重启…）这些**确实是** headless 无法自动化的 OS 级行为，所以更像
+**生成器把 layer 统一写成 `automated`**，而不是"本该自动化却漏了命令"。
+无论哪种解释，都需要先定案再动 —— 不要直接补 41 份 attestation 把红刷绿。
+
+**8.4 真机冒烟**：8.4 列举的七类行为在 manifest 里都有对应场景（播放/暂停 24、切歌 4、
+队列顺序与随机/单曲循环 16、退出后恢复 12、歌单播放上下文 6、资料库"最近"视图 2、控制失败反馈 13），
+但其中若干条正落在上面那 41 个 attestation 场景里（如 `DP-R02-S05` 连续下一首播放、
+`DP-R04-S04` 单曲循环、`DP-R08-S03` 恢复、`PHA-R01-S01` 歌单与队列日常流程）。
+**所以 8.4 不是纯自动化可收口的**：它就是要产出这些人工举证。
+"真机"那一半里可自动化的部分由 `cargo test -p echo-desktop --test player_smoke`
+（真 vendored libmpv）承担。
+
 
 **8.5 归档**：依赖上面全部完成。`openspec archive` 前务必跑 `openspec validate --archived`
 （它会检查未勾选任务并**退出码 1**）。

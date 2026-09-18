@@ -149,7 +149,10 @@ export const COMMANDS = {
   "LE-R06-S02": REACT("src/features/library/SongList.test.tsx"),
   "LE-R06-S03": REACT("src/features/library/SongList.test.tsx"),
   "LE-R06-S04": COREC("scan::tests::enumerate_failure_marks_run_failed_without_missing"),
-  "LE-R07-S01": COREC("bench_50k_search_and_first_screen_p95_meet_prd_budgets"), // p95 budgets
+  // The 50k budget bench is `#[ignore]`d so a normal `cargo test` stays fast —
+  // without `-- --ignored` cargo runs zero tests, which `run-scenario.mjs`
+  // correctly rejects rather than passing on an empty selection.
+  "LE-R07-S01": `${COREC("bench_50k_search_and_first_screen_p95_meet_prd_budgets")} -- --ignored`,
   "LE-R07-S02": REACT("src/features/library/SongList.test.tsx"),
   // library-nav-counts: backend-driven view counts, invalidation on changes.
   "LE-R08-S01": REACT("src/features/library/libraryNavCounts.test.tsx"),

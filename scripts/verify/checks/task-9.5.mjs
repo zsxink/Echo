@@ -54,8 +54,11 @@ if (!revealOut.includes("test result: ok.")) {
 run("cargo", ["clippy", "-p", "echo-app", "--", "-D", "warnings"], "echo-app clippy clean");
 
 // The service boundary accepts SongId and returns only a relative path.
+// `runtime/services.rs` was split into a `runtime/services/` module; the reveal
+// entry now lives in `reveal.rs`. Reading the old path threw ENOENT and made
+// this check fail for a reason unrelated to what it guards.
 const services = readFileSync(
-  resolve(ROOT, "crates", "echo-desktop", "src", "runtime", "services.rs"),
+  resolve(ROOT, "crates", "echo-desktop", "src", "runtime", "services", "reveal.rs"),
   "utf8",
 );
 if (!services.includes("pub fn reveal_song(&self, song: SongId)")) {
