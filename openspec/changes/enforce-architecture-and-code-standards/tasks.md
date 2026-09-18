@@ -92,10 +92,11 @@
   - 覆盖分类（由套件自己机械执行，不是文档承诺）：86 个已登记检查分两类——
     **自包含类**（断言在检查内部）共 7 个，**全部**有注入证明（lint 继承 / 规模 / 场景 YAML / 检查有效性 /
     构建纯净性 / 场景命令棘轮 / 嵌入前端新鲜度；另有 wire-dialogs 与 native-attestation 断言簇）；
-    **委托类**（断言在它调用的子命令里）79 个——对它们注入一个失败的"测试"只能证明子命令，真正会静默通过的
-    是**忽略子命令退出码**，因此证据是结构性的：`check-verification-validity.mjs` 新增规则"凡调用子进程的检查
-    必须比较 `.status`"，对全部 79 个成立，并由 `delegation/*` 三条样例（cargo、pnpm、runner）实跑演示。
-    套件对"自包含但无证明"直接退出 1 ⇒ **新增检查必须随附证明**这条要求是机械的。
+    **委托类**（断言在它调用的子命令里）共 79 个，其中 4 个（toolchain / build-purity / task-2.1 / task-1.2）
+    另有动态证明（合计 11 个有动态证明），其余 75 个——对它们注入一个失败的"测试"只能证明子命令，
+    真正会静默通过的是**忽略子命令退出码**，因此证据是结构性的：`check-verification-validity.mjs` 新增规则
+    "凡调用子进程的检查必须比较 `.status`"，79 个全部成立，并由 `delegation/*` 三条样例（cargo、pnpm、runner）
+    实跑演示。套件对"自包含但无证明"直接退出 1 ⇒ **新增检查必须随附证明**这条要求是机械的。
   - 顺带查实的两处"接了线但没插电"：`pnpm --dir apps/desktop format:check` 早已红灯（`task-1.2` 因此是红的，
     却不在 `verify:governance` 里），已修；`check-embedded-frontend.mjs` 只能靠手工 `pnpm verify:frontend-fresh`
     触发、未登记进 manifest，已登记为 **14.9**。

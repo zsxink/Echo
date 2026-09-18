@@ -1,49 +1,55 @@
 # 架构/规范治理 — 剩余工作交接
 
-> 基线：`main` 上 `089a50a`（`chore: enforce architecture and code standards`）之后的 5 个收尾提交，
-> 用 `git log --oneline -6` 定位。下面所有数值都在这组提交的顶端重跑过。
+> 基线：`main` 上 `6866700`（`test(verify): prove every gate fails when its rule is violated`）。
+> 用 `git log --oneline -12` 可回看到本段全部提交。
 > OpenSpec change：`openspec/changes/enforce-architecture-and-code-standards/`
-> 完成度：**38/47**，逐项原因见该 change 的 `tasks.md` 末尾「收尾状态」表。
+> 完成度：**43/47**，逐项原因见该 change 的 `tasks.md` 末尾「收尾状态」表。
 >
-> 本文只写**还没做完的事**，以及**怎么判断做完**。所有数值都在本文件所基于的 HEAD 上重跑过。
+> 本文只写**还没做完的事**、**怎么判断做完**，以及**本轮用血换的纪律**。
+> 所有数值都在本文件所基于的 HEAD 上重跑过；引用时请带 HEAD。
 
 ---
 
-## 0. 已实测基线（在当前 HEAD 重跑过，可直接引用）
+## 0. 已实测基线（在 `6866700` 上重跑，可直接引用）
 
 | 项 | 实测值 | 命令 |
 |---|---|---|
-| Rust 测试 | 732 passed / 0 failed | `cargo test --workspace` |
-| Core 单元覆盖率 | **91.77% 行**（91.19% 区域） | `cargo llvm-cov -p echo-core --all-features --ignore-filename-regex application/testing --fail-under-lines 90` |
-| 前端测试 | 177 passed / 26 files | `pnpm test --run` |
-| lint | 0 error / 6 warning | `pnpm lint` |
-| 规模豁免 | 11 文件 / 4 trait（棘轮，只能减） | `node scripts/verify/check-scale.mjs` |
+| Rust 测试 | 732 passed / 0 failed | `cargo test --workspace --all-features` |
+| clippy | **exit 0**（唯一的结构性红灯已灭） | `cargo clippy --workspace --all-targets --all-features -- -D warnings` |
+| 覆盖率门禁 | exit 0（≥90% 行，排除 `application/testing`） | `node scripts/verify/checks/task-12.8.mjs` |
+| 前端测试 | 177 passed / 26 files | `pnpm --dir apps/desktop test` |
+| 前端 lint | 0 error / 6 warning | `pnpm --dir apps/desktop lint` |
+| 前端 format | 全过（本轮才修好，见 §2） | `pnpm --dir apps/desktop format:check` |
+| 规模豁免 | 7 文件 / 4 trait（棘轮，只能减） | `node scripts/verify/check-scale.mjs` |
 | 场景对账 | spec 218 = trace 218 = manifest 218 | `node scripts/verify/reconcile-scenarios.mjs` |
-| 场景命令重复度 | 218 场景 / 124 命令（1.76x），最差簇 16 | `node scripts/verify/check-scenario-churn.mjs` |
-| 注册检查数 | 84 个 | `node scripts/verify/check-verification-validity.mjs` |
-| 聚合门禁 | **exit 0，12 道全绿** | `pnpm verify:governance` |
-| clippy `-D warnings` | **❌ 93 条 warning** | `cargo clippy --workspace --all-targets -- -D warnings` |
-
-**唯一结构性红灯是 clippy。** 覆盖率是绿的——但见下面第 8 节的坑，它是"看起来红过"的那一个。
+| 场景命令重复度 | 218 场景 / 124 命令（**1.76x**），最差簇 16 | `node scripts/verify/check-scenario-churn.mjs` |
+| 已登记检查数 | **86** | `node scripts/verify/check-verification-validity.mjs` |
+| 注入证明 | **22/22 通过，工作树逐字节还原** | `node scripts/verify/injection-suite.mjs` |
 
 ---
 
 ## 1. 先跑通这些命令（照抄，不要凭印象）
 
 ```bash
-# 前端
-cd apps/desktop && pnpm typecheck && pnpm lint && pnpm test --run && pnpm build
+# 前端（format:check 不能漏，它曾经红着没人知道）
+cd apps/desktop && pnpm format:check && pnpm typecheck && pnpm lint && pnpm test --run && pnpm build
 
 # Rust
 cargo fmt --all --check
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings   # ← 当前唯一结构性红灯
+cargo test --workspace --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-# 治理门禁（聚合入口，等价于 CI 的 governance job）
+# 治理门禁（聚合入口，等价于 CI 的 governance job，含 14.1–14.9）
 pnpm verify:governance
+
+# 注入证明（22 条；单独跑更快，其中 3 条会真跑 cargo/pnpm 做正向对照）
+node scripts/verify/injection-suite.mjs
 
 # 构建纯净性（含产物级证明，会真跑一次 cargo check）
 ECHO_PURITY_REQUIRE_BUILD=1 node scripts/verify/check-build-purity.mjs
+
+# 嵌入前端新鲜度（二进制不存在时打印 SKIP，不静默通过）
+node scripts/verify/checks/check-embedded-frontend.mjs
 
 # OpenSpec（CLI 是根 devDependency，走 pnpm exec；CI 同一条命令）
 pnpm exec openspec validate enforce-architecture-and-code-standards --strict
@@ -55,126 +61,120 @@ pnpm exec openspec validate --archived
 
 ---
 
-## 2. 唯一的结构性红灯：clippy 存量告警（任务 2.3 / 8.1）
+## 2. 已关闭：clippy 存量告警（任务 2.3 / 8.1）
 
-`cargo clippy --workspace --all-targets -- -D warnings` **失败**。
+**已完成。** `cargo clippy --workspace --all-targets --all-features -- -D warnings` 退出码 0。
 
-当前实测（`cargo clippy --workspace --all-targets`，本 HEAD）：**93 条 warning**，分布：
+74 条唯一告警分四组清掉（每组一个提交 + 一次全量回归，提交链 `14e1cf4` → `a8c3c82` → `3a93460` → `70ce9cb`）：
+机械类 17 / 风格类 23 / 语义类 24 / 文档类 10。
 
-| 条数 | lint |
-|---:|---|
-| 14 | `wildcard_imports`（wildcard import） |
-| 12 | `default_trait_access`（`HashSet::default()` 更清晰） |
-| 11 | `redundant_pub_crate`（private module 里的 `pub(crate)`） |
-| 8 | `significant_drop_tightening` |
-| 6 | `missing_panics_doc` |
-| 12 | `cast_possible_truncation` / `cast_possible_wrap`（usize→i32，各 6） |
-| 4 | `float_cmp` |
-| 4 | `missing_errors_doc` |
-| 3 | `filter_map_bool_then` |
-| 2 | `needless_lifetimes` |
-| 其余 | 各 1 条（underscore binding、too_many_lines、needless_pass_by_value、implicit_hasher、items_after_test_module、single_char_push_str、similar_names 等） |
+两处值得记住：
 
-**判据**：`cargo clippy --workspace --all-targets -- -D warnings` 退出码 0。
-
-**建议做法**：不要一次性 `--fix`。按 **lint 分组**推进，每组一次提交 + 一次全量 `cargo test`：
-1. 机械类（`redundant_pub_crate`、`needless_lifetimes`、`filter_map_bool_then`、`single_char_push_str`）——
-   纯改写，风险最低，先清掉约 17 条。
-2. 风格类（`wildcard_imports` 14、`default_trait_access` 12）——需要把通配导入展开成显式列表；
-   **注意 `prelude` 类模块展开后容易漏 item**，改完必须编译。
-3. 语义类（`significant_drop_tightening` 8、`cast_*` 12、`float_cmp` 4）——**必须逐个看**，
-   每一处都可能是真实缺陷或误报，禁止批量 `#[allow]`。
-4. 文档类（`missing_panics_doc` / `missing_errors_doc` 共 10）——补 `# Panics` / `# Errors` 段。
-
-**同时要确认**：这些 lint 是从哪来的（workspace `[lints]`？`Cargo.toml`？CI？）。
-如果它们**不在任何 lint 配置里、只是因为默认 `clippy::all` 升级才出现**，那"清零"这件事的性质就变了——
-先确认门禁到底要求哪一档，别为了绿灯去 `allow`。
+- **语义组有一处是真缺陷，不是误报。** `runtime/player/metadata.rs` 把 metadata 缓存锁跨两次仓库读
+  （`songs.by_id` + `covers.cover_of`）持有，等于把每个未命中 id 的两次 I/O 串行化在一次队列变更后面。
+  已改为按插入取锁（插入幂等，收窄无损失）。这类 lint **不要批量 `#[allow]`**。
+- **清零时踩到两个门禁打架。** 清 `redundant_pub_crate` 把 private module 里的 `pub(crate)` 翻成 `pub`，
+  顺带把 `LegacyLibraryFileSystem`（17 方法）变成了公开 trait，新触发规模门禁（公开 trait ≤6 方法）。
+  豁免清单**不能**吸收它（清单与不可增的 BASELINE 逐字比对，扩容本身就是失败）。
+  该 trait 本就是"适配器完整性内部契约"，正解是解回 `pub(crate)` 并就地写明原因（提交 `44fe603`）。
+  **教训：`pub(crate)` → `pub` 不是纯机械改动，它会改变其它门禁的输入。**
 
 ---
 
-## 3. 剩余规模超标文件（任务 5.5 / 5.8）
+## 3. 已关闭：规模超标文件（任务 5.5 / 5.8）
 
-`scripts/verify/check-scale.mjs` 是一条**棘轮门禁**：豁免清单 `scripts/verify/scale-allowlist.json`
-**只能减不能增**。当前豁免 11 个文件 + 4 个 trait。
+`scripts/verify/check-scale.mjs` 是棘轮门禁：豁免清单 `scripts/verify/scale-allowlist.json`
+**只能减不能增**，且与 `check-scale.mjs` 里的 `BASELINE` 常量逐字比对。当前豁免 **7 文件 / 4 trait**。
 
-本轮已从清单里摘掉 4 个文件 / 2 个 trait（`import.rs`、`sqlite/tests.rs`、`runtime/services.rs`、
-`runtime/player.rs`；`TxAccess`、`LibraryFileSystem`）。
+本轮从清单摘掉 4 个文件（`coordinator.rs`、`local_state.rs`、`queue.rs`、`testing/memory_database.rs`），
+此前一段已摘掉 `runtime/services.rs`、`runtime/player.rs` 等。
 
-仍在清单里、**还能继续拆的**（本 HEAD 实测）：
+**拆分手法（两种，按"超限在哪"选）**：
 
-| 文件 | 行数 | 备注 |
-|---|---:|---|
-| `crates/echo-desktop/src/player/coordinator.rs` | 1377 | |
-| `crates/echo-desktop/src/platform/local_state.rs` | 1131 | |
-| `crates/echo-desktop/src/player/queue.rs` | 1114 | |
-| `crates/echo-core/src/application/testing/memory_database.rs` | 1028 | 测试替身，任务 5.8 |
+1. **超限来自内联测试** → 把 `#[cfg(test)] mod tests { … }` 整块搬到 `<module>/tests.rs`。
+   `coordinator.rs` 1377→663、`local_state.rs` 1131→671、`queue.rs` 1114→756 都是这一类，
+   `super` 仍解析到被测模块，零可见性改动。
+2. **超限来自生产代码** → 按 port/能力分组拆成 `<module>/` 子目录 + 根部薄壳。
+   `memory_database.rs` 1028→192 是这一类（只搬测试只能到 986 行，必须真拆）。
+   子模块用 `use super::*` 是**该模块既有政策**：`application/testing.rs` 对整个 testkit
+   用带理由的 `#![allow(pedantic/nursery)]` 明确豁免（脚手架，非出货业务代码），不是被压掉的告警。
 
-其余豁免项（`recover.rs`、`scan.rs`、`domain/entities.rs`、`domain/library.rs`、
-`infrastructure/filesystem/adapter.rs`、`infrastructure/sqlite/mod.rs`、`player/actor.rs`）尚未逐个复核是否真的拆不动。
+**判据**：文件 ≤1000 行后从 `scale-allowlist.json` **和** `check-scale.mjs` 的 `BASELINE` 里同时删条目，
+`check-scale.mjs` 仍退出 0。删条目后报红 → 说明没真降下来，**不许把条目加回去**。
 
-**拆分手法（本轮已用两次，推荐照搬）**：
-`tests.rs` 这类文件本来就被 `include!` 进上级模块 → 按顶层 item 切成若干块再用 `include!` 拼回去，
-**同一命名空间，交叉引用全部自动保持，不需要动任何可见性**。
-- 普通 `#[cfg(test)] mod tests;` 要转成 `tests/mod.rs` + 子块，**不能同时留 `tests.rs`**
-  （rustc 报 "file for module found at both"）。
-- `#[test]` 属性不是独立 item，切分要**以 `fn`/`impl`/`const` 为锚点向上吸收紧邻属性与注释**。
-- 块内 `include_str!("migrations/…")` 的相对基准跟着 include 后的目录走，要改成 `../migrations/`。
-- **目标目录名会影响架构守卫的豁免判定**。拆出的块要放进真正的 `tests/` 目录
-  （守卫豁免 `/tests/`），**不要为了让它过而放宽守卫**。
-
-**判据**：文件降到 ≤1000 行后，从 `scale-allowlist.json` 里删掉该条目，`check-scale.mjs` 仍退出 0。
-如果某个文件删条目后门禁报红 → 说明没真降下来，**不许把条目加回去**。
+**仍在豁免清单里的 7 个文件**（都是存量，尚未逐个复核是否真的拆不动）：
+`application/recover.rs` 2548、`application/scan.rs` 1819、`domain/library.rs` 1311、
+`infrastructure/filesystem/adapter.rs` 1241、`infrastructure/sqlite/mod.rs` 1150、`domain/entities.rs` 1054、
+`player/actor.rs` 2675。
 
 ---
 
-## 4. 检查有效性证明（任务 7.6）
+## 4. 已关闭：检查有效性证明（任务 7.6）
 
-已有 84 个检查的静态 evidence + failure 路由门禁（`check-verification-validity.mjs`），
-并已用「注册一个空的 `console.log` 式检查」证明它会失败。
+`check-verification-validity.mjs` 证明的是**静态**属性（每个检查有失败路径与观测点）。
+"有 `process.exit(1)`"与"该退出码挂在它声称守的条件上"是两件事。
 
-**还没做**：为每个检查建立**可执行的注入样例** —— 即"注入违规 → 该检查必须退出非 0"的自动化用例。
-本轮只对新增的 7 条门禁手工做了这个证明（见下表），没有体系化。
+**`scripts/verify/injection-suite.mjs`（manifest `14.8`，已接 `verify:governance` 与 CI）** 补上后者：
+真注入违规 → 跑门禁 → 断言**失败原因就是声明的那条** → 还原工作树。
+三种注入方式，按侵入性从低到高：
 
-已手工证明过的（可作模板）：
+- **fixture**：给门禁一个它本来就接受的可选根（`ECHO_SCALE_ROOT`、`ECHO_LINT_CHECK_ROOT`），**一个仓库文件都不碰**；
+- **argument**：用参数点名一个违规（`--bin <垃圾文件>`、一个没有举证的场景 id）；
+- **mutate**：改一个仓库文件，跑完还原。每个目标先做内存快照 + 磁盘备份，`finally` 还原，**按哈希校验**，
+  并额外逐路径比对前后 git 状态。
 
-| 门禁 | 注入方式 | 结果 |
-|---|---|---|
-| `check-lint-inheritance` | 给某个 crate 加 `[lints.rust]`，不继承 workspace | 失败 ✅ |
-| `check-scale` | 造一个 1100 行源文件 | 失败 ✅ |
-| `check-verification-validity` | 注册一个只有 `console.log` 的空检查 | 失败 ✅ |
-| `check-toolchain` | 改错位 `rust-toolchain.toml` | 失败 ✅ |
-| `check-build-purity` | 去掉 `pub mod fake;` 的 `#[cfg(test)]` | 静态层 + 产物层**同时**抓到 ✅ |
-| `check-scenario-churn` | 收紧阈值 | 失败 ✅ |
+**22 条证明全绿**；每条还断言门禁在**未污染的工作树上是通过的**（正向对照），所以"恒红"的门禁混不进来。
+三条无法在任意机器上为绿的门禁（dev 构建的二进制、本就"尚无举证"的真机行）显式标注 `baseline: false`
+并附一个明确的通过用例。
 
-**建议做法**：新增 `scripts/verify/self-test.mjs` 的 `--inject` 模式，或单独一个
-`scripts/verify/injection-suite.mjs`，把上表固化成可重复执行的用例。注意所有注入都要能**自动回滚**
-（写临时备份 → 改 → 跑 → 还原 → 断言还原成功），否则失败的注入会污染工作树。
+**完整性是机械的，不是文档承诺**：套件自己读 manifest，把 86 个已登记检查分两类——
+**自包含类**（断言在检查内部）**7 个，全部有注入证明**，新增一个没有证明的会让套件退出 1；
+**委托类**（断言在它调用的子命令里）**79 个**，其中 4 个（`toolchain` / `build-purity` / `task-2.1` / `task-1.2`）
+另有动态证明，合计 **11 个有动态证明**；其余 **75 个**由结构规则覆盖（套件每次运行都会打印这个数）。
+对委托类注入一个失败的"测试"只能证明子命令，真正会静默通过的是**忽略子命令退出码**，
+因此证据是结构性的：`check-verification-validity.mjs` 新增规则"凡调用子进程的检查必须比较 `.status`"，
+79 个全部成立，并由 `delegation/*` 三条样例实跑演示（cargo、pnpm、runner）。
+
+**要加一条新证明**：在 `ENTRIES` 里加一条 `{ id, guard, check, expect, baseline, inject }`，
+`expect` 必须写清**失败原因的原文片段**，不要只写 `process.exit(1)`。
 
 ---
 
-## 5. 场景命令重复治理的完整形态（任务 7.7）
+## 5. 场景命令重复治理的完整形态（任务 7.7，未完成）
 
-已建棘轮门禁 `check-scenario-churn.mjs`：场景命令重复度 ≤1.8x、单命令 ≤16 个场景，**只能降不能升**。
+已建棘轮门禁 `check-scenario-churn.mjs`（`14.7`）：重复度 ≤1.8x、单命令 ≤16 个场景，**只能降不能升**。
+实测 218 场景 / 124 命令 = **1.76x**、最差簇 16。
 
-**还没做**：完整的"按模块聚合并保留到测试名的追溯"。这需要改写 **218 条验收行**，
-风险高（会同时牵动 `tests/*.yaml`、`gen-scenario-manifests.mjs`、`docs/traceability.md`、以及
+**还没做**：完整的"按模块聚合并保留到测试名追溯"。这需要改写 **218 条验收行**，风险高
+（会同时牵动 `tests/*.yaml`、`gen-scenario-manifests.mjs`、`docs/traceability.md`、以及
 `reconcile-scenarios.mjs` 的对账），**建议单开一个 change**，不要塞进这一个。
 
 **先决条件**：动它之前先读 `scripts/verify/reconcile-scenarios.mjs:86` —— 它对每个登记路径做
-**非空断言**。曾经有人（包括我）把"136 个 YAML 无人读取"误读成"可以删"，实际删了会让门禁
+**非空断言**。曾有人（包括我）把"136 个 YAML 无人读取"误读成"可以删"，实际删了会让门禁
 从"报红"变成"输入缺失"而崩坏。**删任何场景 YAML 之前先确认它在对账表里。**
 
 ---
 
-## 6. 场景全量 / 真机 / 归档（任务 8.3 / 8.4 / 8.5）
+## 6. 场景全量 / 真机 / 归档（任务 8.3 / 8.4 / 8.5，未完成）
 
-- **8.3**：`pnpm verify:scenario -- --all` 没全跑过。其中含 native 举证行，需要**真机产物**（macOS 本机）。
-- **8.4 真机冒烟**：没做。需要在真机上走一遍播放 / 恢复路径。可参考的排查手段见
-  `.workbuddy/memory/MEMORY.md` 的「无 devtools 时的真机排查」小节
-  （`eprintln!` / 临时 `#[tauri::command]` + `invoke` / `osascript` + `screencapture` 读像素 /
-  改 `desktop-state.json` 的 `playbackSession.current`）。
-- **8.5 归档**：依赖上面全部完成。`openspec archive` 前务必跑 `openspec validate --archived`
-  （它会检查未勾选任务并**退出码 1**）。
+**8.3 已完成的部分**（在 `6866700` 上实测）：
+- `pnpm verify:self-test` → 10 条断言全过，退出码 0；
+- 三方对账 `spec 218 = trace 218 = manifest 218`；
+- `pnpm exec openspec validate --archived` → `7 passed, 0 failed`，**退出码 0**。
+
+**8.3 卡住的部分**：`pnpm verify:scenario -- --all` 含 **44 个真机场景行**
+（`tests/native/*.md`，命令被映射成 `check-native-attestation.mjs <ID>`），
+它要求每行有 `artifacts/native-attestations/<ID>.log` 且**七个字段齐全**
+（`os` / `versions` / `desktop-env` / `operator` / `result` / `evidence-path` / `date`，
+且 `result:` 必须是 pass/ok）。该目录**当前不存在**，所以这 44 行必然红。
+
+**8.4 真机冒烟**（未做）就是要产出这些举证。可参考的排查手段见 `.workbuddy/memory/MEMORY.md`
+的「无 devtools 时的真机排查」小节（`eprintln!` / 临时 `#[tauri::command]` + `invoke` /
+`osascript` + `screencapture` 读像素 / 改 `desktop-state.json` 的 `playbackSession.current`；
+歌曲表是 `songs` 不是 `tracks`）。
+
+**8.5 归档**：依赖上面全部完成。`openspec archive` 前务必跑 `openspec validate --archived`
+（它会检查未勾选任务并**退出码 1**）。
 
 **⚠️ 归档流程的两个静默坑**（本轮踩过）：
 - 新增能力 spec 必须带 `## Purpose`（≥50 字符），否则归档后主 spec 留 `TBD` 占位。
@@ -182,41 +182,62 @@ pnpm exec openspec validate --archived
 
 ---
 
-## 7. 本轮新增并已「接电」的门禁（背景信息，勿重复造）
+## 7. 门禁全集（14.1–14.9，都已接电）
 
-`scripts/verify/manifest.json` 新增任务 **14.1–14.7**，接入 `pnpm verify:governance`
-（`scripts/verify/ci-governance.mjs`）与 CI 的 `governance` job：
+登记在 `scripts/verify/manifest.json`，接入 `pnpm verify:governance`（`scripts/verify/ci-governance.mjs`）
+与 CI 的 `governance` job：
 
-1. `check-lint-inheritance.mjs` — lint 配置继承
-2. `check-scale.mjs` + `scale-allowlist.json` — 规模棘轮
-3. `check-toolchain.mjs` — 工具链钉版
-4. `validate-scenario-manifests.mjs` — 场景 YAML 字段
-5. `check-verification-validity.mjs` — 检查有效性（静态）
-6. `check-build-purity.mjs` — 构建纯净性（静态 + 产物级）
-7. `check-scenario-churn.mjs` — 场景命令重复棘轮
+| 任务 | 脚本 | 它证明什么 |
+|---|---|---|
+| 14.1 | `check-lint-inheritance.mjs` | 每个 crate 只用 `lints.workspace = true`，无 crate 级覆盖 |
+| 14.2 | `check-scale.mjs` + `scale-allowlist.json` | ≤1000 行 / 公开 trait ≤6 方法；清单只减不增 |
+| 14.3 | `check-toolchain.mjs` | 生效 rustc 与 `rust-toolchain.toml` 完全一致 |
+| 14.4 | `validate-scenario-manifests.mjs` | 每个 YAML 字段与登记表一致 |
+| 14.5 | `check-verification-validity.mjs` | 失败路径 + 观测点；**调用子进程必须比较退出码** |
+| 14.6 | `check-build-purity.mjs` | 测试专用模块 cfg 门控 + 默认构建的 `.d` 里不出现 |
+| 14.7 | `check-scenario-churn.mjs` | 场景命令重复度与最差簇只降不升 |
+| 14.8 | `injection-suite.mjs` | 22 条"注入违规即失败"证明 + 自包含检查必须带证明 |
+| 14.9 | `checks/check-embedded-frontend.mjs` | 二进制里嵌的是当前 `dist`（此前只有手工入口） |
 
-**教训值得重复一遍**：这 5 个检查（1/2/3/4/5）在本轮之前**已经存在，但不在 `manifest.json` 里**，
-所以从来没人执行过 —— 排查门禁类问题时，**先问"这个检查有没有被执行"，再考虑写新检查**。
-新写但不接电 = 又一个死门禁。
+CI 的 governance job 在跑 `pnpm verify:governance` 之前会先 `pnpm --dir apps/desktop build`：
+14.8 里"嵌入前端"那条证明需要一个可比的 `dist`，否则会退化成具名 skip。
+`ci-governance.mjs` 设 `ECHO_INJECTION_REQUIRE_ALL=1`，把那种 skip 变成失败
+（与 `check-build-purity.mjs` 的 `ECHO_PURITY_REQUIRE_BUILD=1` 同一契约）。
+
+**教训值得重复一遍**：14.1–14.5 这些检查在本段之前**已经存在，但不在 `manifest.json` 里**，
+所以从来没人执行过；本轮又发现两个同类——`pnpm --dir apps/desktop format:check` 早已红灯
+（导致 `task-1.2` 是红的而没人知道），`check-embedded-frontend.mjs` 只有手工入口。
+排查门禁类问题，**先问"这个检查有没有被执行"，再考虑写新检查**。新写但不接电 = 又一个死门禁。
 
 ---
 
-## 8. 施工纪律（本轮用血换的）
+## 8. 施工纪律（用血换的，别重蹈）
 
-1. **动手前先备份工作树**。本轮 `main` 上有 88 个未提交改动且**编译是红的**；
-   `tar czf /tmp/echo-wip-*.tar.gz` 这个动作后来真救了场（一个子代理留下 525 个编译错误的半成品，
-   靠它整份回滚）。
-2. **高峰期不要把事情摊给多个 sub-agent**。本轮 3 个并行子代理**同时撞模型速率限制集体阵亡**，
-   留下半吊子工作树。它们共享同一速率池。
-3. **"统计为 0" 极易被误读成"代码里没有"**。`grep -E '^\s+pub fn'` 在 BSD grep 下恒 0 命中（不支持 `\s`）。
-   要换 `[[:space:]]` 或换工具复核。
+1. **动手前先备份工作树**。`tar czf /tmp/echo-wip-*.tar.gz` 这个动作救过场
+   （一个子代理留下 525 个编译错误的半成品，靠它整份回滚）。
+2. **高峰期不要把事摊给多个 sub-agent**。并行子代理共享同一速率池，会同时撞限流集体阵亡，
+   留下半吊子工作树。
+3. **"统计为 0" 极易被误读成"代码里没有"**。`grep -E '^\s+pub fn'` 在 BSD grep 下恒 0 命中
+   （不支持 `\s`）。要换 `[[:space:]]` 或换工具复核。同族坑：`\|`、`\b`。
 4. **结论会随 HEAD 漂移**。写进 spec 的每个数值都要能回答"在哪个 HEAD、用什么命令重跑出来"。
-   本轮定稿的方案被独立复核纠正了 8 处，其中 3 处会导致错误施工。
-5. **不要为了让门禁变绿而放宽门禁**。本轮拆测试文件时架构守卫真抓到一条存量越界，
+   一条定稿方案被独立复核纠正过 8 处，其中 3 处会导致错误施工。
+5. **不要为了让门禁变绿而放宽门禁**。拆测试文件时架构守卫真抓到一条存量越界，
    正确做法是改目录让它合规。
-
-6. **覆盖率数字在大重构后不可信，要先清插桩缓存**。本轮 `cargo llvm-cov` 复用了拆分前的
-   instrumented 产物，把已缩到 8 行的 `application/import.rs` 仍按 603 行的旧版本统计，
-   报出 **73.48%** 的假红；`cargo llvm-cov clean --workspace` 后同一命令得到 **91.77%**，
-   门禁 exit 0。**看到覆盖率突然掉十几个点，先 `clean` 再下结论**——否则会去追一个不存在的
-   覆盖率缺口。CI 上是干净 runner，不受影响；这个坑只在本机复现。
+6. **覆盖率数字在大重构后不可信，要先清插桩缓存**。`cargo llvm-cov` 会复用拆分前的 instrumented
+   产物，把已缩到 8 行的 `application/import.rs` 仍按旧的 603 行统计，报出 **73.48%** 的假红；
+   `cargo llvm-cov clean --workspace` 后同一命令得到 **91.77%**。看到覆盖率突然掉十几个点，
+   **先 `clean` 再下结论**。CI 是干净 runner，不受影响。
+7. **写"注入断言"时，替换串不能仍然包含被查的子串。** 把 `tauri-plugin-dialog` 改成
+   `tauri-plugin-dialog-DISABLED`，对人是"删掉了"，对 `String.includes` 是**什么都没改**——
+   门禁保持绿色，而证明会以"注入无效"的样子失败。要改成一个不含原串的形态（`…dial0g`）。
+8. **改共享声明值时，`replace` 的第一个命中通常是别的规则。** `app-extras.css` 里
+   `grid-area: workspace` 先出现在另一个选择器上，全局替换第一处等于没碰目标块。
+   注入要**限定在目标块内**（`replaceWithinBlock`）。
+9. **断言"失败原因"时先确认分隔符**。`check-scale` 打的是 `FAIL scale gate:\n- …`（冒号后是换行），
+   写 `/FAIL scale gate: [\s\S]*/` 会永远不匹配——而"期望失败"的断言不匹配时表现为
+   **"门禁失败了但原因不对"**，很容易被读成门禁有问题。本轮 5 条期望值就是这么修出来的。
+10. **本机可能出现的假红：agent 运行时的批量删除守卫。** 在把 `verify:governance` 整条跑在一轮里时，
+    `check-build-purity.mjs:94` 的 `rmSync` 可能抛
+    `[safe-delete][SAFE_DELETE_BULK_CONFIRM_REQUIRED]`（`count` 累计超阈值 50、`scope=turn`）。
+    **单独跑该门禁是 exit 0**，CI 的干净 runner 也没有这个守卫。
+    辨认方法：报错里出现 `node-safe-delete-shim.cjs` 就是它，别去改仓库。
