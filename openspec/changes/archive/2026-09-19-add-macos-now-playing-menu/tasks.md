@@ -17,5 +17,5 @@
 
 - [x] 4.1 在 macOS 手工验证：播放歌曲后系统 Now Playing 可显示 Echo 信息（由系统决定布局/展示时机），封面与标题正确，控制中心和媒体键的播放、暂停、上一首、下一首与主窗口同步；记录结果。
 - [x] 4.2 验证既有 `NSStatusItem` 菜单栏控制仍可用，且 Windows/Linux 原托盘路径未变；运行 `cargo test --workspace --all-features` 并确认通过。
-- [ ] 4.3 执行交付门禁：运行 `cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings`、`pnpm --filter @echo/desktop format:check`、`pnpm --filter @echo/desktop lint`、`pnpm --filter @echo/desktop typecheck`、`pnpm --filter @echo/desktop test -- --run` 与 `openspec validate add-macos-now-playing-menu --strict`，并修复本变更导致的失败。
+- [x] 4.3 执行交付门禁：运行 `cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings`、`pnpm --filter @echo/desktop format:check`、`pnpm --filter @echo/desktop lint`、`pnpm --filter @echo/desktop typecheck`、`pnpm --filter @echo/desktop test -- --run` 与 `openspec validate add-macos-now-playing-menu --strict`，并修复本变更导致的失败。
 
