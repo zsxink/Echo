@@ -168,7 +168,7 @@ export function scenarioCommands() {
 
 ## 5. 乙类人工步骤（操作者照做）
 
-通用前置：`pnpm --dir apps/desktop build`，以**裸二进制**启动（`cargo build` 后直接跑 `target/debug/echo`），
+通用前置：`pnpm --dir apps/desktop build`，以**裸二进制**启动（`cargo build` 后直接跑 `target/debug/Echo`），
 确保嵌入的是当前前端；准备 1 首 ≥30s 的本地歌曲。每条完成后写 §6 的 log。
 
 ### DAS-R12-S01 关闭窗口后继续后台播放

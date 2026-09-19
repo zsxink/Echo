@@ -20,7 +20,7 @@
 // name referenced by the freshly built `index.html` is absent from the binary,
 // the binary is serving an older frontend.
 //
-// Two builds write the *same* `target/debug/echo`, and only one of them embeds
+// Two builds write the *same* `target/debug/Echo`, and only one of them embeds
 // anything:
 //
 //   cargo build -p echo-app   → embeds apps/desktop/dist, no dev server
@@ -48,10 +48,10 @@ const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "
 const DIST_INDEX = resolve(ROOT, "apps", "desktop", "dist", "index.html");
 
 const CANDIDATE_BINARIES = [
-  resolve(ROOT, "target", "debug", "echo"),
-  resolve(ROOT, "target", "release", "echo"),
-  resolve(ROOT, "apps", "desktop", "src-tauri", "target", "debug", "echo"),
-  resolve(ROOT, "apps", "desktop", "src-tauri", "target", "release", "echo"),
+  resolve(ROOT, "target", "debug", "Echo"),
+  resolve(ROOT, "target", "release", "Echo"),
+  resolve(ROOT, "apps", "desktop", "src-tauri", "target", "debug", "Echo"),
+  resolve(ROOT, "apps", "desktop", "src-tauri", "target", "release", "Echo"),
 ];
 
 /** The CLI's static dev server, as a dev build embeds it — or `null`.

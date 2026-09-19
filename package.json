@@ -8,6 +8,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "echo": "node scripts/echo.mjs",
     "verify:task": "node scripts/verify/run-task.mjs",
     "verify:scenario": "node scripts/verify/run-scenario.mjs",
     "verify:self-test": "node scripts/verify/self-test.mjs",

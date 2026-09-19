@@ -10,7 +10,7 @@ description = "Echo desktop application binary (extremely thin Tauri shell)."
 # concerns to `echo-desktop`. Core never sees Tauri or libmpv types.
 
 [[bin]]
-name = "echo"
+name = "Echo"
 path = "src/main.rs"
 
 [dependencies]
@@ -28,7 +28,8 @@ tauri-plugin-single-instance = "2.4.3"
 # scoped prevents Cocoa from leaking into the portable desktop/Core layers.
 objc2 = "0.6.4"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSAccessibilityProtocols", "NSButton", "NSControl", "NSEvent", "NSImage", "NSMenu", "NSMenuItem", "NSResponder", "NSStatusBar", "NSStatusItem", "NSView"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSData", "NSGeometry", "NSObject", "NSString"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSData", "NSDictionary", "NSValue", "NSObject", "NSString"] }
+block2 = "0.6.1"
 
 [dev-dependencies]
 # TempDir for `dialogs` multi-file import unit tests; resolves only for tests.

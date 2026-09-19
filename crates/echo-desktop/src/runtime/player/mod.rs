@@ -82,6 +82,7 @@ pub struct UiQueueEntry {
 pub struct QueueEntryMeta {
     pub title: Option<String>,
     pub artist: Option<String>,
+    pub album: Option<String>,
     pub duration_s: Option<u64>,
     pub cover_key: Option<String>,
 }

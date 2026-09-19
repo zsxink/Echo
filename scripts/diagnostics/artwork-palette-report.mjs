@@ -29,7 +29,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const appSupport = join(homedir(), "Library/Application Support/org.echo-player.echo");
+const appSupport = join(homedir(), "Library/Application Support/com.zsxink.echo");
 const coversDir = join(appSupport, "covers");
 const database = join(appSupport, "echo.sqlite");
 const scratch = join(repoRoot, "artifacts", ".palette-scratch");
@@ -530,7 +530,7 @@ ${rows.map(card).join("\n")}
 
 <footer>
   <p>由 <code>node --experimental-strip-types scripts/diagnostics/artwork-palette-report.mjs</code> 生成
-  · 输入 <code>~/Library/Application Support/org.echo-player.echo/{covers,echo.sqlite}</code>
+  · 输入 <code>~/Library/Application Support/com.zsxink.echo/{covers,echo.sqlite}</code>
   · 只读，除 <code>artifacts/</code> 外不写任何文件。</p>
   ${skipped.length ? `<p>跳过 ${skipped.length} 项：${skipped.map(([h, why]) => `${h.slice(0, 10)} (${why})`).join("、")}</p>` : ""}
 </footer>

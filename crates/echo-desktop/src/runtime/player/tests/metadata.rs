@@ -17,6 +17,7 @@ fn metadata_resolver_resolves_library_entry_fields() {
     let meta = meta.get(&song_id).expect("the queue song is resolved");
     assert_eq!(meta.title.as_deref(), Some("晴天"));
     assert_eq!(meta.artist.as_deref(), Some("周杰伦"));
+    assert_eq!(meta.album.as_deref(), Some("叶惠美"));
     assert_eq!(meta.duration_s, Some(239));
     assert_eq!(meta.cover_key.as_deref(), Some("cv1-seeded"));
 }
@@ -120,6 +121,7 @@ fn map_snapshot_attaches_resolved_metadata_to_each_entry() {
         QueueEntryMeta {
             title: Some("晴天".to_owned()),
             artist: Some("周杰伦".to_owned()),
+            album: Some("叶惠美".to_owned()),
             duration_s: Some(239),
             cover_key: Some("cv1-seeded".to_owned()),
         },

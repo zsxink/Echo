@@ -22,7 +22,7 @@ use echo_desktop::platform::status_menu::StatusMenuSink;
 #[cfg(not(target_os = "macos"))]
 use echo_desktop::platform::status_menu::{self, PlaySummary};
 use echo_desktop::player::coordinator::PlaybackCoordinator;
-use echo_desktop::player::port::{PlayerCommand, PlayerPort};
+use echo_desktop::player::port::{PlayerCommand, PlayerError, PlayerPort};
 use echo_desktop::runtime::app::assemble;
 use echo_desktop::runtime::player;
 use echo_desktop::runtime::services::AppServices;
@@ -38,6 +38,8 @@ use tauri::{
 
 mod commands;
 mod dialogs;
+#[cfg(target_os = "macos")]
+mod macos_now_playing;
 #[cfg(target_os = "macos")]
 mod macos_status_row;
 
@@ -63,25 +65,40 @@ impl RuntimeStatusMenuSink {
 }
 
 impl StatusMenuSink for RuntimeStatusMenuSink {
-    fn on_command(&self, command: PlayerCommand) {
-        let Ok(slot) = self.coordinator.lock() else {
-            return;
-        };
-        let Some(coordinator) = slot.as_ref() else {
-            return;
-        };
-        let Ok(mut coordinator) = coordinator.lock() else {
-            return;
-        };
+    fn on_command(&self, command: PlayerCommand) -> Result<(), PlayerError> {
+        let slot = self.coordinator.lock().map_err(|_| PlayerError::Backend {
+            message: "playback coordinator lock poisoned".to_owned(),
+        })?;
+        let coordinator = slot.as_ref().ok_or_else(|| PlayerError::Backend {
+            message: "playback coordinator is not installed".to_owned(),
+        })?;
+        let mut coordinator = coordinator.lock().map_err(|_| PlayerError::Backend {
+            message: "playback coordinator lock poisoned".to_owned(),
+        })?;
         match command {
-            PlayerCommand::TogglePlayPause => {
-                let _ = coordinator.player().send(PlayerCommand::TogglePlayPause);
+            PlayerCommand::Play | PlayerCommand::Pause | PlayerCommand::TogglePlayPause => {
+                coordinator.player().send(command)
             }
-            PlayerCommand::Previous => coordinator.previous(),
+            PlayerCommand::Previous => {
+                if coordinator.current().is_none() {
+                    return Err(PlayerError::Backend {
+                        message: "no current track".to_owned(),
+                    });
+                }
+                coordinator.previous();
+                Ok(())
+            }
             PlayerCommand::Next => {
-                let _ = coordinator.advance_to_next();
+                coordinator
+                    .advance_to_next()
+                    .map(|_| ())
+                    .ok_or_else(|| PlayerError::Backend {
+                        message: "no next track".to_owned(),
+                    })
             }
-            _ => {}
+            _ => Err(PlayerError::Backend {
+                message: "unsupported system playback command".to_owned(),
+            }),
         }
     }
 }
@@ -104,8 +121,8 @@ fn bundled_libmpv(_app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
         // sits two levels up from the executable in each — the rpath instrument
         // is `@executable_path/../Frameworks` (one `..` from the exe's *parent*
         // directory, matching `parent().parent()` here):
-        //   • dev:  target/debug/echo  → ../..  → target/Frameworks (staged set)
-        //   • .app: .../Contents/MacOS/echo → ../.. → .../Contents/Frameworks
+        //   • dev:  target/debug/Echo  → ../..  → target/Frameworks (staged set)
+        //   • .app: .../Contents/MacOS/Echo → ../.. → .../Contents/Frameworks
         let exe = std::env::current_exe().ok()?;
         let frameworks = exe.parent()?.parent()?.join("Frameworks");
         let candidate = frameworks.join("libmpv.dylib");
@@ -150,7 +167,67 @@ fn spawn_macos_status_row_snapshot_refresh(app: tauri::AppHandle, port: &Arc<dyn
     });
 }
 
-/// Wire the composition root (task 7.3 / 10.2): assemble the real `ScanDeps`,
+#[cfg(target_os = "macos")]
+fn spawn_macos_now_playing_refresh(
+    app: tauri::AppHandle,
+    port: &Arc<dyn PlayerPort>,
+    coordinator: SharedPlaybackCoordinator,
+    metadata: Arc<player::QueueMetadataResolver>,
+    cover_cache: Arc<dyn CoverCache>,
+) {
+    let snapshots = port.subscribe_snapshots();
+    thread::spawn(move || {
+        while let Ok(snapshot) = snapshots.recv() {
+            let current = {
+                let coord = coordinator.lock().expect("player coordinator lock");
+                coord.current().cloned()
+            };
+            let track = current.as_ref().and_then(|entry| {
+                let (title, artist, album, duration, cover_key) = match &entry.item {
+                    echo_desktop::player::queue::QueueItem::Temporary(item) => (
+                        Some(item.display_name.clone()),
+                        None,
+                        None,
+                        item.duration,
+                        None,
+                    ),
+                    echo_desktop::player::queue::QueueItem::Library(song_id) => {
+                        let resolved = metadata.resolve(std::slice::from_ref(entry));
+                        let item = resolved.get(song_id)?;
+                        (
+                            item.title.clone(),
+                            item.artist.clone(),
+                            item.album.clone(),
+                            item.duration_s.map(|s| s as f64),
+                            item.cover_key.clone(),
+                        )
+                    }
+                };
+                Some(macos_now_playing::NowPlayingTrack {
+                    entry_id: entry.id.to_string(),
+                    title: title?,
+                    artist,
+                    album,
+                    duration,
+                    cover_key,
+                })
+            });
+            let mut projection = macos_now_playing::project(&snapshot, track.as_ref());
+            if let (Some(projection), Some(cover_key)) = (
+                projection.as_mut(),
+                track.as_ref().and_then(|track| track.cover_key.as_ref()),
+            ) {
+                projection.artwork = cover_cache.get(cover_key).ok().flatten();
+            }
+            let _ = app.run_on_main_thread(move || match projection {
+                Some(projection) => macos_now_playing::publish(&projection),
+                None => macos_now_playing::clear(),
+            });
+        }
+        let _ = app.run_on_main_thread(macos_now_playing::clear);
+    });
+}
+
 /// build `AppServices`, and register the playback coordinator + actor + theme
 /// store as managed state, plus the snapshot→frontend forwarder.
 ///
@@ -298,8 +375,16 @@ fn wire_composition(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
     player::spawn_forwarder(
         controller.port.clone(),
         queue_provider,
-        queue_metadata,
+        queue_metadata.clone(),
         emit,
+    );
+    #[cfg(target_os = "macos")]
+    spawn_macos_now_playing_refresh(
+        app.handle().clone(),
+        &controller.port,
+        controller.coordinator.clone(),
+        queue_metadata.clone(),
+        routed.deps.cover_cache.clone(),
     );
     // Auto-advance: a track reaching EOF (or failing to load) must drive the
     // coordinator to the next entry. Without this the queue stalls on `ended`
@@ -623,6 +708,11 @@ fn main() {
 
             #[cfg(target_os = "macos")]
             {
+                macos_now_playing::install(status_sink.clone())?;
+            }
+
+            #[cfg(target_os = "macos")]
+            {
                 let show_handle = app.handle().clone();
                 let quit_handle = app.handle().clone();
                 macos_status_row::install(
@@ -708,7 +798,7 @@ fn main() {
                                     if let Some(sink) =
                                         app.try_state::<Arc<RuntimeStatusMenuSink>>()
                                     {
-                                        sink.on_command(command);
+                                        let _ = sink.on_command(command);
                                     }
                                 }
                             }
@@ -738,6 +828,10 @@ fn main() {
     };
 
     app.run(|app, event| match event {
+        RunEvent::ExitRequested { .. } => {
+            #[cfg(target_os = "macos")]
+            macos_now_playing::clear();
+        }
         // macOS delivers file-association opens through `RunEvent::Opened`; they
         // go through the same FIFO as the single-instance argv path (task 9.1).
         RunEvent::Opened { urls } => {

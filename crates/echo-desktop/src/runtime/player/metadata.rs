@@ -95,6 +95,7 @@ impl QueueMetadataResolver {
                 .map(|song| QueueEntryMeta {
                     title: song.title().map(ToOwned::to_owned),
                     artist: song.artist().map(ToOwned::to_owned),
+                    album: song.album().map(ToOwned::to_owned),
                     duration_s: song.duration().map(|d| d.as_secs()),
                     cover_key: cover.map(|cover| cover.asset_key),
                 })

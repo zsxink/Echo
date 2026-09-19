@@ -356,7 +356,7 @@ fn build_context_menu(mtm: MainThreadMarker, view: &StatusRowView) -> Retained<N
 
 fn dispatch_action(sink: &dyn StatusMenuSink, show_main_window: &dyn Fn(), action: StatusAction) {
     if let Some(command) = action.command() {
-        sink.on_command(command);
+        let _ = sink.on_command(command);
     } else {
         show_main_window();
     }
@@ -456,8 +456,12 @@ mod tests {
         #[derive(Default)]
         struct RecordingSink(Mutex<Vec<PlayerCommand>>);
         impl StatusMenuSink for RecordingSink {
-            fn on_command(&self, command: PlayerCommand) {
+            fn on_command(
+                &self,
+                command: PlayerCommand,
+            ) -> Result<(), echo_desktop::player::port::PlayerError> {
                 self.0.lock().expect("recording sink lock").push(command);
+                Ok(())
             }
         }
 

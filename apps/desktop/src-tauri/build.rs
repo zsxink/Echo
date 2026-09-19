@@ -3,8 +3,9 @@ fn main() {
     // deliberately owned by the desktop shell, never by echo-core.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
         println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
+        println!("cargo:rustc-link-lib=framework=MediaPlayer");
 
-        // `tauri dev` runs `target/{profile}/echo`, rather than an `.app`
+        // `tauri dev` runs `target/{profile}/Echo`, rather than an `.app`
         // bundle.  libmpv is loaded at runtime, and its FFmpeg dependencies
         // are addressed as `@rpath/lib*.dylib`; stage the complete vendored
         // set where the development executable's rpath resolves it:

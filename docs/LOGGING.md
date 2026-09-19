@@ -56,7 +56,7 @@ pub fn to_log(&self, diagnostic: DiagnosticMode) -> String
 ## 3. 本地诊断目录约定
 
 - Rust 层保持**平台无关**：不得自行解析 app-data 目录。`echo-core` 只提供目录名常量 `echolog::diagnostics_dir_name()` → `"echo/logs"`。
-- **桌面 runtime（`echo-desktop`）拥有解析权限**：把 `echo/logs` 解析到平台 app-data 目录下的实际位置（macOS `~/Library/Application Support/Echo/logs`、Windows `%APPDATA%\echo\logs`、Linux `$XDG_DATA_HOME/echo/logs`），由 task 7.x runtime 落地。
+- **桌面 runtime（`echo-desktop`）拥有解析权限**：把 `echo/logs` 解析到平台 app-data 目录下的实际位置（macOS `~/Library/Application Support/com.zsxink.echo/logs`、Windows `%APPDATA%\com.zsxink.echo\logs`、Linux `$XDG_DATA_HOME/com.zsxink.echo/logs`），由 task 7.x runtime 落地。
 - 目录内容：
   - 应用结构化日志（`tracing`，带轮转与大小上限，例如单文件 ≤ 10 MiB、累计 ≤ 50 MiB、保留最近若干份）；
   - **panic hook 与崩溃转储**（崩溃时写入该目录，便于离线诊断）。

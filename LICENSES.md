@@ -26,8 +26,8 @@ expressions always include a permissive alternative (e.g. MIT or Apache-2.0).
 | Crate | Version | License | Source |
 | --- | --- | --- | --- |
 | `echo-app` | 0.1.0 | MIT OR Apache-2.0 | workspace (`apps/desktop/src-tauri`) |
-| `echo-core` | 0.1.0 | MIT OR Apache-2.0 | <https://github.com/echo-player/echo> |
-| `echo-desktop` | 0.1.0 | MIT OR Apache-2.0 | <https://github.com/echo-player/echo> |
+| `echo-core` | 0.1.0 | MIT OR Apache-2.0 | <https://github.com/zsxink/Echo> |
+| `echo-desktop` | 0.1.0 | MIT OR Apache-2.0 | <https://github.com/zsxink/Echo> |
 
 ## Rust transitive dependencies (from `Cargo.lock`)
 

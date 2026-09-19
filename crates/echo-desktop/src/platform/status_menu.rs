@@ -15,7 +15,7 @@
 
 use echo_core::domain::state::PlaybackState;
 
-use crate::player::port::PlayerCommand;
+use crate::player::port::{PlayerCommand, PlayerError};
 
 /// Semantic id of the "显示 Echo" item — wakes and focuses the main window.
 pub const MENU_SHOW: &str = "show";
@@ -106,7 +106,13 @@ pub fn transport_command(id: &str) -> Option<PlayerCommand> {
 /// [`PlaybackCoordinator`]: crate::player::coordinator::PlaybackCoordinator
 pub trait StatusMenuSink: Send + Sync {
     /// Deliver one coarse playback command from a transport click.
-    fn on_command(&self, command: PlayerCommand);
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PlayerError`] when the transport cannot perform the command
+    /// (for example when there is nothing playable or the player rejects it);
+    /// the shell surfaces this as an unavailable/unsupported result.
+    fn on_command(&self, command: PlayerCommand) -> Result<(), PlayerError>;
 }
 
 /// Default sink: does nothing. The shell manages this until the composition
@@ -114,7 +120,9 @@ pub trait StatusMenuSink: Send + Sync {
 pub struct NoopSink;
 
 impl StatusMenuSink for NoopSink {
-    fn on_command(&self, _command: PlayerCommand) {}
+    fn on_command(&self, _command: PlayerCommand) -> Result<(), PlayerError> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]

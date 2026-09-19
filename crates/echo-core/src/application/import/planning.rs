@@ -89,7 +89,7 @@ impl PlanImport<'_> {
             ext,
             &mut |_| false,
         )
-        .map_or(false, |ideal| ideal != target);
+        .is_some_and(|ideal| ideal != target);
         // The optional same-basename `.lrc` sub-resource (task 5.4): plan it
         // around the FINAL audio target, so the sidecar pairs with the exact
         // base name the audio lands on (including the `(n)` numbering). A
