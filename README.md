@@ -98,6 +98,7 @@ pnpm echo help          # 查看全部命令
 ```
 
 - 首次 `cargo` 编译会拉取并构建全部 Rust 依赖，耗时较长属正常。
+- 发布：推送形如 `v0.1.0` 的 git tag 会触发 GitHub Actions（`.github/workflows/release.yml`）构建 macOS、Windows、Linux 安装包并发布为 GitHub Release，含 `SHA256SUMS` 与第三方许可证说明。产物当前**未签名/未公证**（macOS 首次启动需在「隐私与安全性」中放行；签名与 notarization 为后续项）。
 - 数据目录：`$APP_DATA/com.zsxink.echo`（SQLite 单文件库，cover 缓存在 `covers/`）
 - Gate 测试模式：`ECHO_GATE_DATA_DIR=<tmp>` 覆盖数据目录；`ECHO_GATE_ROOT`/`ECHO_GATE_IMPORT` 替换系统选择器（native E2E 使用）
 

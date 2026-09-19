@@ -1,0 +1,159 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Git tag to release as (e.g. v0.1.0). Leave empty to use the current GITHUB_REF."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            arch: aarch64
+            bundle_dir: target/release/bundle/macos
+            artifacts: "*.dmg"
+          - os: windows-latest
+            arch: x64
+            bundle_dir: target/release/bundle/nsis
+            artifacts: "*.exe"
+          - os: ubuntu-latest
+            arch: x64
+            bundle_dir: target/release/bundle
+            artifacts: "*.deb;*.AppImage"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches app version (when a tag is given)
+        shell: bash
+        run: |
+          REF_NAME=""
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # push.tags only fires for tag refs, so GITHUB_REF_NAME is a tag.
+            REF_NAME="${GITHUB_REF_NAME}"
+          elif [ -n "${{ github.event.inputs.tag }}" ]; then
+            REF_NAME="${{ github.event.inputs.tag }}"
+          fi
+          if [ -n "$REF_NAME" ]; then
+            node scripts/release/verify-version.mjs "$REF_NAME" apps/desktop/src-tauri/tauri.conf.json
+          else
+            echo "workflow_dispatch without a tag input: skipping version check"
+          fi
+
+      - name: Install Rust toolchain (pinned)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+
+      - name: Install Linux webview dependencies
+        if: runner.os == 'Linux'
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
+          librsvg2-dev patchelf
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build release bundles
+        run: pnpm echo release
+
+      - name: Assert expected artifacts exist
+        shell: bash
+        run: |
+          IFS=';' read -ra patterns <<< "${{ matrix.artifacts }}"
+          found=0
+          for pat in "${patterns[@]}"; do
+            if compgen -G "${{ matrix.bundle_dir }}/$pat" > /dev/null; then
+              found=$((found+1))
+            else
+              echo "::error::Missing expected artifact: ${{ matrix.bundle_dir }}/$pat"
+              exit 1
+            fi
+          done
+          echo "found $found artifact pattern(s)"
+
+      - name: Generate SHA256SUMS
+        shell: bash
+        working-directory: ${{ matrix.bundle_dir }}
+        run: |
+          shopt -s nullglob
+          for f in *; do
+            if [ -f "$f" ]; then
+              sha256sum "$f"
+            fi
+          done > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Upload platform artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: echo-${{ matrix.arch }}
+          path: |
+            ${{ matrix.bundle_dir }}
+            apps/desktop/src-tauri/vendor/libmpv/macos/NOTICE.md
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    if: github.event_name == 'push' || github.event.inputs.tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: echo-*
+          merge-multiple: true
+          path: artifacts
+
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
+            artifacts/**/*.deb
+            artifacts/**/*.AppImage
+            artifacts/**/SHA256SUMS
+            artifacts/**/NOTICE.md
+          generate_release_notes: true
+          fail_on_unmatched_files: true
