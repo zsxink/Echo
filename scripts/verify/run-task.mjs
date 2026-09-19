@@ -37,7 +37,15 @@ function runCommand(cmd, taskId) {
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (result.status !== 0) {
-    fail(`task ${taskId}: command exited ${result.status}: ${cmd}`);
+    // Surface the task's own diagnostic output — swallowing it makes a
+    // failing gate (e.g. macOS task-1.9) impossible to debug from CI logs.
+    const stderr = `${result.stderr || ""}`.trim();
+    const stdout = `${result.stdout || ""}`.trim();
+    const detail = stderr || stdout;
+    fail(
+      `task ${taskId}: command exited ${result.status}: ${cmd}` +
+        (detail ? `\n${detail}` : ""),
+    );
     return false;
   }
   return true;
