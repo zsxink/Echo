@@ -66,12 +66,16 @@ impl RuntimeStatusMenuSink {
 
 impl StatusMenuSink for RuntimeStatusMenuSink {
     fn on_command(&self, command: PlayerCommand) -> Result<(), PlayerError> {
-        let slot = self.coordinator.lock().map_err(|_| PlayerError::Backend {
-            message: "playback coordinator lock poisoned".to_owned(),
-        })?;
-        let coordinator = slot.as_ref().ok_or_else(|| PlayerError::Backend {
-            message: "playback coordinator is not installed".to_owned(),
-        })?;
+        let coordinator = {
+            let slot = self.coordinator.lock().map_err(|_| PlayerError::Backend {
+                message: "playback coordinator lock poisoned".to_owned(),
+            })?;
+            slot.as_ref()
+                .ok_or_else(|| PlayerError::Backend {
+                    message: "playback coordinator is not installed".to_owned(),
+                })?
+                .clone()
+        };
         let mut coordinator = coordinator.lock().map_err(|_| PlayerError::Backend {
             message: "playback coordinator lock poisoned".to_owned(),
         })?;
@@ -198,6 +202,9 @@ fn spawn_macos_now_playing_refresh(
                             item.title.clone(),
                             item.artist.clone(),
                             item.album.clone(),
+                            // Media durations are integer seconds far below 2^53,
+                            // so the u64→f64 cast is exact for every real track.
+                            #[allow(clippy::cast_precision_loss)]
                             item.duration_s.map(|s| s as f64),
                             item.cover_key.clone(),
                         )
@@ -383,7 +390,7 @@ fn wire_composition(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
         app.handle().clone(),
         &controller.port,
         controller.coordinator.clone(),
-        queue_metadata.clone(),
+        queue_metadata,
         routed.deps.cover_cache.clone(),
     );
     // Auto-advance: a track reaching EOF (or failing to load) must drive the
@@ -936,20 +943,24 @@ mod cover_canvas_tests {
         use tauri::Manager;
 
         let app = tauri::test::mock_app();
-        let main = tauri::WebviewWindowBuilder::new(&app, super::MAIN_WINDOW, Default::default())
-            .build()
-            .expect("mock main window");
+        let main = tauri::WebviewWindowBuilder::new(
+            &app,
+            super::MAIN_WINDOW,
+            tauri::WebviewUrl::default(),
+        )
+        .build()
+        .expect("mock main window");
 
         main.hide().expect("hide mock window");
-        super::focus_main_window(&app.handle());
+        super::focus_main_window(app.handle());
         assert!(main.is_visible().expect("read visible state"));
 
         main.minimize().expect("minimize mock window");
-        super::focus_main_window(&app.handle());
+        super::focus_main_window(app.handle());
         assert!(!main.is_minimized().expect("read minimized state"));
 
         for _ in 0..4 {
-            super::focus_main_window(&app.handle());
+            super::focus_main_window(app.handle());
         }
         assert_eq!(app.webview_windows().len(), 1);
         assert!(app.get_webview_window(super::MAIN_WINDOW).is_some());

@@ -414,7 +414,7 @@ mod tests {
                 StatusAction::ShowWindow,
             ]
         );
-        assert_eq!(STATUS_ROW_WIDTH, 104.0);
+        assert!((STATUS_ROW_WIDTH - 104.0).abs() < f64::EPSILON);
     }
 
     #[test]

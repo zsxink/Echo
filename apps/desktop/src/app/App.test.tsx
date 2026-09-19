@@ -130,9 +130,11 @@ describe("File-open playback", () => {
       ]),
     );
 
-    const callbacks = (globalThis as unknown as {
-      __echoTest: { emit: (event: string, payload: unknown) => void };
-    }).__echoTest;
+    const callbacks = (
+      globalThis as unknown as {
+        __echoTest: { emit: (event: string, payload: unknown) => void };
+      }
+    ).__echoTest;
     callbacks.emit("app://file-open-request", ["/tmp/first.flac", "/tmp/second.flac"]);
 
     await waitFor(() => {

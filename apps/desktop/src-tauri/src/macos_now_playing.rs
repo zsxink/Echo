@@ -1,4 +1,4 @@
-//! macOS Now Playing projection and MediaPlayer adapter.
+//! macOS Now Playing projection and `MediaPlayer` adapter.
 //!
 //! The pure projection types in this module keep filesystem paths and platform
 //! objects out of the playback domain. The Objective-C bridge is confined to
@@ -77,10 +77,7 @@ fn finite_positive(value: Option<f64>) -> Option<f64> {
 #[must_use]
 fn clamp_position(position: Option<f64>, duration: Option<f64>) -> Option<f64> {
     let position = position.filter(|value| value.is_finite() && *value >= 0.0)?;
-    Some(match duration {
-        Some(duration) => position.min(duration),
-        None => position,
-    })
+    Some(duration.map_or(position, |duration| position.min(duration)))
 }
 
 #[must_use]
@@ -109,9 +106,7 @@ impl RemoteCommand {
 
 #[cfg(target_os = "macos")]
 mod native {
-    use std::ffi::CStr;
-
-    use super::*;
+    use super::{Arc, NowPlayingProjection, OnceLock, RemoteCommand, StatusMenuSink};
     use block2::RcBlock;
     use objc2::{
         define_class, extern_class, extern_methods, msg_send,
@@ -207,14 +202,10 @@ mod native {
         if NOW_PLAYING.get().is_some() {
             return Err("macOS Now Playing is already installed".to_owned());
         }
-        let center_class = objc2::runtime::AnyClass::get(
-            CStr::from_bytes_with_nul(b"MPNowPlayingInfoCenter\0").expect("static class name"),
-        )
-        .ok_or_else(|| "MediaPlayer framework is unavailable".to_owned())?;
-        let command_center_class = objc2::runtime::AnyClass::get(
-            CStr::from_bytes_with_nul(b"MPRemoteCommandCenter\0").expect("static class name"),
-        )
-        .ok_or_else(|| "MediaPlayer command center is unavailable".to_owned())?;
+        let center_class = objc2::runtime::AnyClass::get(c"MPNowPlayingInfoCenter")
+            .ok_or_else(|| "MediaPlayer framework is unavailable".to_owned())?;
+        let command_center_class = objc2::runtime::AnyClass::get(c"MPRemoteCommandCenter")
+            .ok_or_else(|| "MediaPlayer command center is unavailable".to_owned())?;
         let center: Retained<AnyObject> = unsafe { msg_send![center_class, defaultCenter] };
         let commands: Retained<AnyObject> =
             unsafe { msg_send![command_center_class, sharedCommandCenter] };
@@ -248,8 +239,7 @@ mod native {
         action: objc2::runtime::Sel,
     ) {
         let property = NSString::from_str(property);
-        let command: Retained<AnyObject> =
-            unsafe { msg_send![&*commands, valueForKey: &*property] };
+        let command: Retained<AnyObject> = unsafe { msg_send![commands, valueForKey: &*property] };
         let _: Retained<AnyObject> =
             unsafe { msg_send![&*command, addTarget: target, action: action] };
     }
@@ -391,7 +381,7 @@ mod tests {
         .expect("current track should publish");
         assert_eq!(projection.title, "Song");
         assert_eq!(projection.position, Some(120.0));
-        assert_eq!(projection.rate, 1.0);
+        assert!((projection.rate - 1.0).abs() < f64::EPSILON);
         assert_eq!(projection.artist.as_deref(), Some("Artist"));
         assert_eq!(projection.cover_key.as_deref(), Some("cv1-asset"));
     }

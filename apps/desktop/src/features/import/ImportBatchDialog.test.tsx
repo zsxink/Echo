@@ -27,10 +27,7 @@ describe("ImportFailureDialog", () => {
 
   it("renders a library-unavailable failure", () => {
     render(
-      <ImportFailureDialog
-        onClose={() => undefined}
-        results={[{ kind: "libraryUnavailable" }]}
-      />,
+      <ImportFailureDialog onClose={() => undefined} results={[{ kind: "libraryUnavailable" }]} />,
     );
     expect(screen.getByText("资料库不可用，未开始导入。")).toBeInTheDocument();
   });

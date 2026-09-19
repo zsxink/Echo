@@ -23,20 +23,20 @@ impl super::AppServices {
     ///
     /// # Errors
     ///
-    /// `Unavailable` when writes are disabled or no root is active; after a
-    /// picker selection every requested source receives a typed batch result,
-    /// including an unavailable root, so the UI can render one consistent
-    /// failure surface.
+    /// `Unavailable` when writes are disabled — the write gate is authoritative
+    /// before any dialog work, so a library not ready for writes refuses the
+    /// whole import up front (consistent with [`Self::import_single_path`]).
+    /// After a picker selection every requested source receives a typed batch
+    /// result, including an unavailable root, so the UI can render one
+    /// consistent failure surface.
     pub fn choose_and_import_files(&self) -> Result<Option<ImportBatchDto>, Error> {
+        self.guard_writes()?;
         let Some(picked) = self.dialogs.pick_audio_files()? else {
             // Cancelled: not an error, not a success — a genuine no-op.
             return Ok(None);
         };
         if picked.sources.is_empty() {
             return Ok(Some(ImportBatchDto { results: vec![] }));
-        }
-        if let Err(error) = self.guard_writes() {
-            return Ok(Some(unavailable_batch(picked.sources.len(), &error)));
         }
         let Some(root) = self.deps.roots.active_root()?.map(|root| root.id()) else {
             return Ok(Some(unavailable_batch(

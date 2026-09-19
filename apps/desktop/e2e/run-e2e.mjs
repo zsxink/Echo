@@ -328,7 +328,9 @@ async function main() {
       `!!document.querySelector('[data-testid="import-button"]')`,
       "import: import button is missing",
     );
-    const before = await evalJs(`document.querySelector('[data-testid="import-button"]')?.textContent?.trim()`);
+    const before = await evalJs(
+      `document.querySelector('[data-testid="import-button"]')?.textContent?.trim()`,
+    );
     if (before !== "导入") fail("import: button is not idle before picking");
 
     await evalJs(`window.__echoE2E__.state.importMode = 'mixed'`);
@@ -354,7 +356,6 @@ async function main() {
   } catch (e) {
     abort("import", e);
   }
-
 
   //
   // Driven by a *click*, not by a seeded now-playing item. The mock emits the
