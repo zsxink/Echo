@@ -48,8 +48,14 @@ fn set_null_audio_output() {
 /// `None` if it is not present (so the suite can skip cleanly on hosts without
 /// the bundled library).
 fn vendored_libmpv() -> Option<std::path::PathBuf> {
-    // `cargo test` runs with CWD = crate dir (crates/echo-desktop); the vendored
-    // lib + fixtures live at the workspace root two levels up.
+    // The vendored library is the macOS dylib bundled into the .app; its
+    // Mach-O image cannot be dlopened on Windows/Linux, so only resolve it on
+    // macOS (callers skip cleanly elsewhere). `cargo test` runs with CWD =
+    // crate dir (crates/echo-desktop); the vendored lib + fixtures live at the
+    // workspace root two levels up.
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
     for candidate in [
         "apps/desktop/src-tauri/vendor/libmpv/macos/libmpv.dylib",
         "../../apps/desktop/src-tauri/vendor/libmpv/macos/libmpv.dylib",

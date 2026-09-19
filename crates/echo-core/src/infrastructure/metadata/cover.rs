@@ -199,16 +199,22 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), Error> {
 }
 
 fn directory_bytes(dir: &Path) -> u64 {
+    let Ok(metadata) = std::fs::metadata(dir) else {
+        return 0;
+    };
+    if metadata.is_file() {
+        return metadata.len();
+    }
     let Ok(entries) = std::fs::read_dir(dir) else {
         return 0;
     };
     entries
         .flatten()
-        // `DirEntry::metadata` reuses the enumeration handle, which can fail on
-        // Windows for a just-renamed file (the entry's backing handle may not
-        // yet resolve); a fresh `path().metadata()` is the stable read.
-        .filter_map(|entry| entry.path().metadata().ok())
-        .map(|meta| meta.len())
+        // Recurse into entry subdirectories (`<hash>/original.bin` +
+        // `<hash>/mime.txt`) and sum the *file* sizes. A directory node's own
+        // `len()` is filesystem-specific (non-zero on Unix, usually 0 on
+        // Windows), so it is never a reliable storage figure.
+        .map(|entry| directory_bytes(&entry.path()))
         .sum()
 }
 

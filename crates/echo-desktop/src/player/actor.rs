@@ -2282,6 +2282,14 @@ mod tests {
     /// The vendored macOS libmpv, if this host has one — the same skip rule the
     /// `player_smoke` suite uses, so a host without the bundle still passes.
     fn vendored_libmpv() -> Option<std::path::PathBuf> {
+        // The vendored library is the macOS dylib bundled into the .app; its
+        // Mach-O image cannot be dlopened on Windows/Linux (the workspace
+        // builds these tests everywhere, and `--all-features` gates run them
+        // on every platform). Resolve it only on macOS and let the caller's
+        // SKIP branch handle the rest.
+        if !cfg!(target_os = "macos") {
+            return None;
+        }
         for candidate in [
             "../../apps/desktop/src-tauri/vendor/libmpv/macos/libmpv.dylib",
             "apps/desktop/src-tauri/vendor/libmpv/macos/libmpv.dylib",
