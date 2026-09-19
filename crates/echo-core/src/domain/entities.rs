@@ -348,6 +348,19 @@ impl Song {
         self.bump();
     }
 
+    /// Restore a play count merged from portable records.
+    ///
+    /// The counter is monotone: a projection can only ever raise it, so a
+    /// library restored from `echo/records/play-stats/` never loses plays this
+    /// device recorded but that another device had not yet merged. Repeated
+    /// projections are therefore idempotent (same value, no double counting).
+    pub fn restore_play_count(&mut self, count: PlayCount) {
+        if count.as_u64() > self.play_count.as_u64() {
+            self.play_count = count;
+            self.bump();
+        }
+    }
+
     /// Rehydrate a song from the trusted local storage adapter.
     ///
     /// This is crate-visible on purpose: SQL rows must be converted back into

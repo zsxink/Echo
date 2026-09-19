@@ -184,6 +184,7 @@
 | LL-R01-S01 | 单一资料库根目录与本地持久化 | 选择根目录并建立资料库 | 3.1, 4.1, 10.3 | Core/Desktop/E2E | `tests/scenarios/LL-R01-S01.yaml` | `pnpm verify:scenario -- LL-R01-S01` |
 | LL-R01-S02 | 单一资料库根目录与本地持久化 | 安全切换活动根目录 | 3.1, 4.1, 10.3 | Core/Desktop/E2E | `tests/scenarios/LL-R01-S02.yaml` | `pnpm verify:scenario -- LL-R01-S02` |
 | LL-R01-S03 | 单一资料库根目录与本地持久化 | 切换根目录失败 | 3.1, 4.1, 10.3 | Core/Desktop/E2E | `tests/scenarios/LL-R01-S03.yaml` | `pnpm verify:scenario -- LL-R01-S03` |
+| LL-R01-S04 | 单一资料库根目录与本地持久化 | 本机数据库丢失后重新选择同一目录 | 15.2, 15.3 | Core | `tests/scenarios/LL-R01-S04.yaml` | `pnpm verify:scenario -- LL-R01-S04` |
 | LL-R02-S01 | 扫描、监听与手动重扫 | 首次扫描发现支持文件 | 4.7, 4.9, 4.10 | Core/Infrastructure | `tests/scenarios/LL-R02-S01.yaml` | `pnpm verify:scenario -- LL-R02-S01` |
 | LL-R02-S02 | 扫描、监听与手动重扫 | 忽略不支持文件 | 4.7, 4.9, 4.10 | Core/Infrastructure | `tests/scenarios/LL-R02-S02.yaml` | `pnpm verify:scenario -- LL-R02-S02` |
 | LL-R02-S03 | 扫描、监听与手动重扫 | 监听外部新增和修改 | 4.7, 4.9, 4.10 | Core/Infrastructure | `tests/scenarios/LL-R02-S03.yaml` | `pnpm verify:scenario -- LL-R02-S03` |
@@ -294,11 +295,25 @@
 |---|---|---|---|---|---|---|
 | PLL-R01-S01 | 受管理资料库目录布局 | 新资料库导入一首歌曲 | — | Gate | `tests/scenarios/PLL-R01-S01.yaml` | `pnpm verify:scenario -- PLL-R01-S01` |
 | PLL-R01-S02 | 受管理资料库目录布局 | 控制面目录不可写 | — | Gate | `tests/scenarios/PLL-R01-S02.yaml` | `pnpm verify:scenario -- PLL-R01-S02` |
+| PLL-R01-S03 | 受管理资料库目录布局 | 每种对象种类都有对应目录 | 15.1 | Gate | `tests/scenarios/PLL-R01-S03.yaml` | `pnpm verify:scenario -- PLL-R01-S03` |
 | PLL-R02-S01 | 可携带对象资料 | 检查资料库控制面 | — | Gate | `tests/scenarios/PLL-R02-S01.yaml` | `pnpm verify:scenario -- PLL-R02-S01` |
 | PLL-R02-S02 | 可携带对象资料 | 路径数据被序列化 | — | Gate | `tests/scenarios/PLL-R02-S02.yaml` | `pnpm verify:scenario -- PLL-R02-S02` |
 | PLL-R02-S03 | 可携带对象资料 | 同步忽略临时目录 | — | Gate | `tests/scenarios/PLL-R02-S03.yaml` | `pnpm verify:scenario -- PLL-R02-S03` |
-| PLL-R03-S01 | 新设备资料库重建 | 全新设备恢复完整资料 | — | Gate | `tests/scenarios/PLL-R03-S01.yaml` | `pnpm verify:scenario -- PLL-R03-S01` |
-| PLL-R03-S02 | 新设备资料库重建 | 同步资料先于媒体到达 | — | Gate | `tests/scenarios/PLL-R03-S02.yaml` | `pnpm verify:scenario -- PLL-R03-S02` |
+| PLL-R02-S04 | 可携带对象资料 | 歌单与成员的变更被材料化 | 15.4 | Gate | `tests/scenarios/PLL-R02-S04.yaml` | `pnpm verify:scenario -- PLL-R02-S04` |
+| PLL-R02-S05 | 可携带对象资料 | 播放统计随资料库移动 | 15.4 | Gate | `tests/scenarios/PLL-R02-S05.yaml` | `pnpm verify:scenario -- PLL-R02-S05` |
+| PLL-R02-S06 | 可携带对象资料 | 取消收藏不留下悬空记录 | 15.4 | Gate | `tests/scenarios/PLL-R02-S06.yaml` | `pnpm verify:scenario -- PLL-R02-S06` |
+| PLL-R03-S01 | 新设备资料库重建 | 全新设备恢复完整资料 | 15.3 | Gate | `tests/scenarios/PLL-R03-S01.yaml` | `pnpm verify:scenario -- PLL-R03-S01` |
+| PLL-R03-S02 | 新设备资料库重建 | 同步资料先于媒体到达 | 15.3 | Gate | `tests/scenarios/PLL-R03-S02.yaml` | `pnpm verify:scenario -- PLL-R03-S02` |
+| PLL-R03-S03 | 新设备资料库重建 | 本机数据库丢失后重开同一资料库 | 15.3 | Gate | `tests/scenarios/PLL-R03-S03.yaml` | `pnpm verify:scenario -- PLL-R03-S03` |
+| PLL-R03-S04 | 新设备资料库重建 | 重复打开结果稳定 | 15.3 | Gate | `tests/scenarios/PLL-R03-S04.yaml` | `pnpm verify:scenario -- PLL-R03-S04` |
+| PLL-R04-S01 | 控制面存在性与自愈 | 首次启用即建立 manifest | 15.2 | Gate | `tests/scenarios/PLL-R04-S01.yaml` | `pnpm verify:scenario -- PLL-R04-S01` |
+| PLL-R04-S02 | 控制面存在性与自愈 | manifest 缺失时自愈 | 15.2 | Gate | `tests/scenarios/PLL-R04-S02.yaml` | `pnpm verify:scenario -- PLL-R04-S02` |
+| PLL-R04-S03 | 控制面存在性与自愈 | 控制面不可写时不破坏既有内容 | 15.2 | Gate | `tests/scenarios/PLL-R04-S03.yaml` | `pnpm verify:scenario -- PLL-R04-S03` |
+| PLL-R05-S01 | 对象资料接续与对账 | 打开资料库先接续再扫描 | 15.3 | Gate | `tests/scenarios/PLL-R05-S01.yaml` | `pnpm verify:scenario -- PLL-R05-S01` |
+| PLL-R05-S02 | 对象资料接续与对账 | 对象资料与媒体不一致 | 15.3 | Gate | `tests/scenarios/PLL-R05-S02.yaml` | `pnpm verify:scenario -- PLL-R05-S02` |
+| PLL-R05-S03 | 对象资料接续与对账 | 墓碑优先于陈旧记录 | 15.3 | Gate | `tests/scenarios/PLL-R05-S03.yaml` | `pnpm verify:scenario -- PLL-R05-S03` |
+| PLL-R05-S04 | 对象资料接续与对账 | 重复接续结果稳定 | 15.3 | Gate | `tests/scenarios/PLL-R05-S04.yaml` | `pnpm verify:scenario -- PLL-R05-S04` |
+| PLL-R05-S05 | 对象资料接续与对账 | 较新的本机身份不被旧记录覆盖 | 15.3 | Gate | `tests/scenarios/PLL-R05-S05.yaml` | `pnpm verify:scenario -- PLL-R05-S05` |
 
 ## 发布审计
 

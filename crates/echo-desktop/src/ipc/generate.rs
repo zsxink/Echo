@@ -103,6 +103,14 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly configured: boolean;\n");
     out.push_str("  readonly readOnly: boolean;\n");
     out.push_str("  readonly activeRoot: string;\n");
+    out.push_str("  readonly manifestHealed: boolean;\n");
+    out.push_str("  readonly controlPlaneReadOnly: boolean;\n");
+    out.push_str("  readonly continuedSongs: number;\n");
+    out.push_str("  readonly continuedFavorites: number;\n");
+    out.push_str("  readonly continuedPlaylists: number;\n");
+    out.push_str("  readonly continuedMembers: number;\n");
+    out.push_str("  readonly continuedPlayStats: number;\n");
+    out.push_str("  readonly unusableRecords: number;\n");
     out.push_str("}\n\n");
 
     out.push_str("export interface LibraryStatus {\n");

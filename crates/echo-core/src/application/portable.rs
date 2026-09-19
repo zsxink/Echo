@@ -14,12 +14,124 @@
 //!    database as soon as possible, enabling playlist restoration and the
 //!    "media-not-yet-available" path.
 
-use crate::application::ports::ControlPlanePort;
 use crate::application::ports::SongRepository;
+use crate::application::ports::{ControlPlanePort, ManifestState};
 use crate::domain::entities::Song;
 use crate::domain::ids::{LibraryRootId, Revision};
 use crate::domain::library::{LibraryId, LibraryManifest, PortableRecord};
 use crate::error::Error;
+
+/// The version stamp written into `echo/manifest.json`.
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// What [`EnsureControlPlane`] did to make the control surface usable.
+///
+/// The variant matters: a healed root must be reported (and must never be
+/// mistaken for a brand-new library), and a root whose manifest this build
+/// cannot read is a refusal, not a blank slate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ControlPlaneStatus {
+    /// A compatible manifest was already present.
+    Ready { library_id: LibraryId },
+    /// First enablement of a writable root: the manifest was created.
+    Initialized { library_id: LibraryId },
+    /// `echo/records/` held object records but the manifest was missing: the
+    /// manifest was rebuilt from the surviving records (design D3 case 2).
+    /// No object or UUID was touched.
+    Healed { library_id: LibraryId },
+    /// `echo/` cannot be created or updated: the root stays read-only and no
+    /// control-plane file was written (design D3 / spec 控制面不可写).
+    NotUsable,
+}
+
+impl ControlPlaneStatus {
+    /// The library identity, when the control surface is usable.
+    #[must_use]
+    pub const fn library_id(self) -> Option<LibraryId> {
+        match self {
+            Self::Ready { library_id }
+            | Self::Initialized { library_id }
+            | Self::Healed { library_id } => Some(library_id),
+            Self::NotUsable => None,
+        }
+    }
+
+    /// Whether this pass had to rebuild a missing manifest.
+    #[must_use]
+    pub const fn healed(self) -> bool {
+        matches!(self, Self::Healed { .. })
+    }
+}
+
+/// Guarantee `echo/manifest.json` exists for an enabled library (design D3).
+///
+/// Three distinct situations, in order:
+///
+/// 1. The manifest exists and this build understands it → no write.
+/// 2. The manifest is missing but `echo/records/` holds object records →
+///    **self-heal**: write a manifest, keep every object and UUID, and report
+///    [`ControlPlaneStatus::Healed`]. This is the real-world case behind
+///    issue #1, where a manifest-less directory would otherwise be scanned as
+///    a brand-new library and every song would be minted a fresh UUID.
+/// 3. The manifest is missing and there are no records → first enablement,
+///    create it.
+///
+/// A manifest this build cannot read (`Incompatible`/`Malformed`) is **never**
+/// overwritten: continuation is refused so a newer library is not silently
+/// downgraded. A control surface that cannot be written reports
+/// [`ControlPlaneStatus::NotUsable`] without touching any file.
+pub struct EnsureControlPlane<'a> {
+    control: &'a dyn ControlPlanePort,
+}
+
+impl<'a> EnsureControlPlane<'a> {
+    #[must_use]
+    pub const fn new(control: &'a dyn ControlPlanePort) -> Self {
+        Self { control }
+    }
+
+    /// Ensure the control surface of `root` is initialized and report what it
+    /// took to get there.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::UnsupportedMedia`] when a manifest exists but its
+    /// format is newer than this build supports, or is unparseable — the file
+    /// is left untouched. Propagates control-surface read/write failures.
+    pub fn run(&self, root: LibraryRootId) -> Result<ControlPlaneStatus, Error> {
+        if !self.control.control_plane_usable(root)? {
+            // The root stays read-only: no logic change may be committed to a
+            // database that cannot materialize it into `echo/`.
+            return Ok(ControlPlaneStatus::NotUsable);
+        }
+        match self.control.manifest_state(root)? {
+            ManifestState::Compatible(manifest) => Ok(ControlPlaneStatus::Ready {
+                library_id: manifest.library_id,
+            }),
+            ManifestState::Incompatible { format_version } => Err(Error::UnsupportedMedia {
+                operation: "open library".to_owned(),
+                reason: format!(
+                    "portable manifest format version {format_version} is newer than this build supports"
+                ),
+            }),
+            ManifestState::Malformed => Err(Error::UnsupportedMedia {
+                operation: "open library".to_owned(),
+                reason: "portable manifest is unreadable".to_owned(),
+            }),
+            ManifestState::Absent => {
+                let library_id = LibraryId::from_uuid(uuid::Uuid::new_v4());
+                let healed = self.control.records_present(root)?;
+                self.control
+                    .write_manifest(root, &LibraryManifest::new(library_id, APP_VERSION))?;
+                Ok(if healed {
+                    ControlPlaneStatus::Healed { library_id }
+                } else {
+                    ControlPlaneStatus::Initialized { library_id }
+                })
+            }
+        }
+    }
+}
 
 /// Initialize a new portable library: write the initial `echo/manifest.json`
 /// and mark the root as active.
@@ -45,15 +157,10 @@ impl<'a> InitPortableLibrary<'a> {
     ///
     /// Propagates a control-surface write or read failure.
     pub fn run(&self, root: LibraryRootId) -> Result<LibraryId, Error> {
-        // Idempotent: if a manifest already exists, return its library id.
-        if let Some(existing) = self.control.read_manifest(root)? {
-            return Ok(existing.library_id);
-        }
-        // First write: create a fresh manifest with a stable library id.
-        let library_id = LibraryId::from_uuid(uuid::Uuid::new_v4());
-        let manifest = LibraryManifest::new(library_id, "0.1.0");
-        self.control.write_manifest(root, &manifest)?;
-        Ok(library_id)
+        EnsureControlPlane::new(self.control)
+            .run(root)?
+            .library_id()
+            .ok_or_else(|| Error::unavailable("library", "control surface is not writable"))
     }
 }
 
@@ -156,6 +263,88 @@ mod tests {
             .run(fixture.root)
             .expect("second init (idempotent)");
         assert_eq!(lib_id, read);
+    }
+
+    #[test]
+    fn ensure_control_plane_initializes_a_fresh_writable_root() {
+        let fixture = ScanFixture::new();
+        assert!(!fixture.control.records_present(fixture.root).unwrap());
+
+        let status = EnsureControlPlane::new(&fixture.control)
+            .run(fixture.root)
+            .expect("first ensure");
+        assert!(matches!(status, ControlPlaneStatus::Initialized { .. }));
+        // The manifest now exists and a second pass is a no-op.
+        let again = EnsureControlPlane::new(&fixture.control)
+            .run(fixture.root)
+            .expect("second ensure");
+        assert!(matches!(again, ControlPlaneStatus::Ready { .. }));
+        assert_eq!(status.library_id(), again.library_id());
+    }
+
+    #[test]
+    fn ensure_control_plane_heals_a_manifest_less_directory_with_records() {
+        let fixture = ScanFixture::new();
+        // The real-world issue #1 shape: object records survived, the manifest
+        // did not (the directory was later rescanned and every song minted a
+        // fresh UUID).
+        let song_uuid = uuid::Uuid::new_v4();
+        seed_record(&fixture.control, fixture.root, song_uuid);
+        assert!(fixture.control.records_present(fixture.root).unwrap());
+        assert!(fixture.control.manifest_of(fixture.root).is_none());
+
+        let status = EnsureControlPlane::new(&fixture.control)
+            .run(fixture.root)
+            .expect("heal");
+        assert!(
+            matches!(status, ControlPlaneStatus::Healed { .. }),
+            "a records-bearing directory is healed, never treated as new"
+        );
+        assert!(status.healed());
+        // Self-heal preserves every object and UUID: nothing was rewritten.
+        let records = fixture.control.records_of(fixture.root);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].object_uuid(), song_uuid);
+    }
+
+    #[test]
+    fn ensure_control_plane_refuses_a_newer_manifest_without_touching_it() {
+        let fixture = ScanFixture::new();
+        let future = LibraryManifest {
+            format_version: crate::domain::library::CURRENT_FORMAT_VERSION + 7,
+            library_id: LibraryId::from_uuid(uuid::Uuid::new_v4()),
+            written_by_app_version: "9.9.9".to_owned(),
+        };
+        fixture.control.set_manifest(fixture.root, future.clone());
+
+        let error = EnsureControlPlane::new(&fixture.control)
+            .run(fixture.root)
+            .expect_err("a newer manifest is a refusal");
+        assert_eq!(error.code(), "unsupported_media");
+        // The self-heal path must not have overwritten the file.
+        assert_eq!(fixture.control.manifest_of(fixture.root), Some(future));
+        // And the adapter no longer even reports it as readable.
+        assert!(fixture
+            .control
+            .read_manifest(fixture.root)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn ensure_control_plane_reports_an_unusable_surface_without_writing() {
+        let fixture = ScanFixture::new();
+        fixture.control.set_usable(false);
+        let status = EnsureControlPlane::new(&fixture.control)
+            .run(fixture.root)
+            .expect("reported, not failed");
+        assert_eq!(status, ControlPlaneStatus::NotUsable);
+        assert!(fixture.control.manifest_of(fixture.root).is_none());
+        // The higher-level initializer refuses a logic change outright.
+        let error = InitPortableLibrary::new(&fixture.control)
+            .run(fixture.root)
+            .expect_err("no manifest without a writable control surface");
+        assert_eq!(error.code(), "unavailable");
     }
 
     #[test]

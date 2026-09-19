@@ -74,8 +74,9 @@ use statements::{
     cover_of_song, create_playlist, delete_song, ensure_operation_journal, finish_scan_run,
     incomplete_operation_items, increment_play_count, latest_scan_generation, load_runtime_state,
     lyrics_candidates, operation_item, record_scan_issue, referenced_asset_keys,
-    release_operation_claims, set_lyrics_candidate, set_song_availability, set_song_favorite,
-    store_runtime_state, update_scan_progress, upsert_operation_item, upsert_root, upsert_song,
+    release_operation_claims, set_lyrics_candidate, set_play_count, set_song_availability,
+    set_song_favorite, store_runtime_state, update_scan_progress, upsert_member,
+    upsert_operation_item, upsert_root, upsert_song,
 };
 use support::{map_constraint, now_ms, parse_id, storage, to_sql_error};
 
@@ -556,6 +557,14 @@ impl SongRepository for SqliteDatabase {
             transaction.commit().map_err(storage)
         })
     }
+
+    fn set_play_count(&self, id: SongId, count: u64) -> Result<(), Error> {
+        self.writer.run(move |connection| {
+            let transaction = connection.transaction().map_err(storage)?;
+            set_play_count(&transaction, id, count)?;
+            transaction.commit().map_err(storage)
+        })
+    }
 }
 
 impl CatalogQueryRepository for SqliteDatabase {
@@ -756,6 +765,15 @@ impl PlaylistRepository for SqliteDatabase {
         })
     }
 
+    fn upsert_member(&self, member: &PlaylistMember) -> Result<(), Error> {
+        let member = member.clone();
+        self.writer.run(move |connection| {
+            let transaction = connection.transaction().map_err(storage)?;
+            upsert_member(&transaction, &member)?;
+            transaction.commit().map_err(storage)
+        })
+    }
+
     fn remove_member(&self, playlist: PlaylistId, song: SongId) -> Result<(), Error> {
         self.writer.run(move |connection| {
             // Capture the stable membership identity before erasing its local
@@ -928,13 +946,12 @@ impl crate::application::ports::SyncStateReader for SqliteDatabase {
                 sync::KIND_PLAYLIST => {
                     "SELECT hlc_wall_secs, hlc_counter FROM playlists WHERE uuid = ?1"
                 }
-                _ => {
-                    return Err(Error::validation(
-                        crate::error::Subject::Other,
-                        "object_type",
-                        "no HLC column for this object kind",
-                    ));
-                }
+                // Kinds with no canonical HLC column (a playlist membership or
+                // a play-stats record lives in a join/detail table) answer
+                // `None` — "not stamped yet" — rather than failing the caller.
+                // A materialized record then falls back to the revision's own
+                // ordering, which is the authoritative signal on one device.
+                _ => return Ok(None),
             };
             let row: Option<(i64, i64)> = connection
                 .query_row(sql, rusqlite::params![object_uuid], |row| {

@@ -35,7 +35,7 @@
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
-use crate::application::ports::ControlPlanePort;
+use crate::application::ports::{ControlPlanePort, ManifestState};
 use crate::domain::ids::LibraryRootId;
 use crate::domain::library::{
     LibraryManifest, PortableRecord, PortableSerialize, RecordKind, CONTROL_ROOT,
@@ -235,6 +235,61 @@ impl ControlPlanePort for RootControlPlane {
         }
         records.sort();
         Ok(records)
+    }
+
+    fn manifest_state(&self, root: LibraryRootId) -> Result<ManifestState, Error> {
+        let manifest_path = self.echo_dir(root)?.join(MANIFEST_NAME);
+        if !manifest_path.is_file() {
+            return Ok(ManifestState::Absent);
+        }
+        let bytes = std::fs::read(&manifest_path)
+            .map_err(|source| Error::io("read manifest", source, &manifest_path))?;
+        // A file we cannot parse is a refusal, never a self-heal trigger: the
+        // self-heal path must not clobber a control-plane file it cannot read.
+        let Ok(manifest) = serde_json::from_slice::<LibraryManifest>(&bytes) else {
+            return Ok(ManifestState::Malformed);
+        };
+        if manifest.format_version > MANIFEST_FORMAT {
+            return Ok(ManifestState::Incompatible {
+                format_version: manifest.format_version,
+            });
+        }
+        Ok(ManifestState::Compatible(manifest))
+    }
+
+    fn records_present(&self, root: LibraryRootId) -> Result<bool, Error> {
+        let records_dir = self.echo_dir(root)?.join(RECORDS_DIR);
+        if !records_dir.is_dir() {
+            return Ok(false);
+        }
+        for kind in RecordKind::ALL {
+            let kind_dir = records_dir.join(kind.dir_name());
+            if !kind_dir.is_dir() {
+                continue;
+            }
+            for prefix_entry in std::fs::read_dir(&kind_dir)
+                .map_err(|source| Error::io("scan records", source, &kind_dir))?
+                .flatten()
+            {
+                let prefix_path = prefix_entry.path();
+                if !prefix_path.is_dir() {
+                    continue;
+                }
+                for record_entry in std::fs::read_dir(&prefix_path)
+                    .map_err(|source| Error::io("scan records", source, &prefix_path))?
+                    .flatten()
+                {
+                    let name = record_entry.file_name().to_string_lossy().to_string();
+                    let is_json = std::path::Path::new(&name)
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("json"));
+                    if is_json && !Self::is_temp_name(&name) {
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+        Ok(false)
     }
 
     fn control_plane_usable(&self, root: LibraryRootId) -> Result<bool, Error> {
@@ -466,6 +521,82 @@ mod tests {
                 &LibraryManifest::new(LibraryId::from_uuid(uuid::Uuid::new_v4()), "0.1.0"),
             )
             .expect("write manifest");
+    }
+
+    #[test]
+    fn manifest_state_separates_absent_compatible_and_future() {
+        let (dir, _registry, root, plane) = setup();
+        // 1. Absent: nothing written yet.
+        assert_eq!(
+            plane.manifest_state(root).expect("state"),
+            ManifestState::Absent
+        );
+        assert!(!plane.records_present(root).expect("records"));
+
+        // 2. Compatible: this build's own manifest.
+        let manifest = LibraryManifest::new(LibraryId::from_uuid(uuid::Uuid::new_v4()), "0.1.0");
+        plane.write_manifest(root, &manifest).expect("write");
+        assert_eq!(
+            plane.manifest_state(root).expect("state"),
+            ManifestState::Compatible(manifest)
+        );
+
+        // 3. Future format: present but untouchable — the self-heal path must
+        //    never see this as "absent".
+        let echo = dir.path().join("echo");
+        std::fs::write(
+            echo.join("manifest.json"),
+            format!(
+                "{{\"format_version\": 99, \"library_id\": \"{}\", \"written_by_app_version\": \"9.9.9\"}}",
+                uuid::Uuid::new_v4()
+            ),
+        )
+        .expect("write future manifest");
+        assert_eq!(
+            plane.manifest_state(root).expect("state"),
+            ManifestState::Incompatible { format_version: 99 }
+        );
+
+        // 4. Unparseable: also a refusal, not a self-heal trigger.
+        std::fs::write(echo.join("manifest.json"), "not json at all").expect("corrupt manifest");
+        assert_eq!(
+            plane.manifest_state(root).expect("state"),
+            ManifestState::Malformed
+        );
+    }
+
+    #[test]
+    fn records_present_ignores_temporaries_and_counts_every_kind() {
+        let (dir, _registry, root, plane) = setup();
+        // A kind directory holding only a temp file is *not* "records present"
+        // (an interrupted write must not turn a fresh root into a heal target).
+        let echo = dir.path().join("echo");
+        let songs = echo.join("records").join("songs").join("ab");
+        std::fs::create_dir_all(&songs).expect("shard dir");
+        std::fs::write(songs.join("x.json.tmp-1"), "{}").expect("temp");
+        assert!(!plane.records_present(root).expect("records"));
+
+        // A real record of any kind makes the directory a continuation target.
+        let song_uuid = uuid::Uuid::new_v4();
+        plane
+            .write_record(root, &sample_record(song_uuid))
+            .expect("write song record");
+        assert!(plane.records_present(root).expect("records"));
+
+        let fav_uuid = uuid::Uuid::new_v4();
+        plane
+            .write_record(
+                root,
+                &PortableRecord::Favorite(crate::domain::library::FavoriteRecord {
+                    song_uuid: fav_uuid,
+                    revision: Revision::INITIAL,
+                    updated_by_device_id: DeviceId::new(),
+                    hlc: HybridLogicalClock::default(),
+                    is_favorite: true,
+                }),
+            )
+            .expect("write favorite record");
+        assert!(plane.records_present(root).expect("records"));
     }
 
     #[test]

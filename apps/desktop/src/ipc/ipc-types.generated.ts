@@ -86,6 +86,14 @@ export interface LibraryRootStatusDto {
   readonly configured: boolean;
   readonly readOnly: boolean;
   readonly activeRoot: string;
+  readonly manifestHealed: boolean;
+  readonly controlPlaneReadOnly: boolean;
+  readonly continuedSongs: number;
+  readonly continuedFavorites: number;
+  readonly continuedPlaylists: number;
+  readonly continuedMembers: number;
+  readonly continuedPlayStats: number;
+  readonly unusableRecords: number;
 }
 
 export interface LibraryStatus {

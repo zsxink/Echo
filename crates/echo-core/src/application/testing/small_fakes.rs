@@ -37,7 +37,8 @@ use std::time::Duration;
 use crate::application::ports::*;
 use crate::domain::ids::*;
 use crate::domain::library::{
-    LibraryManifest, PortableRecord, PortableSerialize, RecordKind, MEDIA_ROOT,
+    LibraryManifest, PortableRecord, PortableSerialize, RecordKind, CURRENT_FORMAT_VERSION,
+    MEDIA_ROOT,
 };
 use crate::error::Error;
 
@@ -565,6 +566,12 @@ impl MemoryControlPlane {
     pub fn set_usable(&self, usable: bool) {
         *self.usable.lock().unwrap() = usable;
     }
+
+    /// Seed a manifest as if it were already on disk — including one from a
+    /// *future* format version, which the self-heal path must refuse to touch.
+    pub fn set_manifest(&self, root: LibraryRootId, manifest: LibraryManifest) {
+        self.manifest.lock().unwrap().insert(root, manifest);
+    }
 }
 
 impl ControlPlanePort for MemoryControlPlane {
@@ -574,7 +581,11 @@ impl ControlPlanePort for MemoryControlPlane {
     }
 
     fn read_manifest(&self, root: LibraryRootId) -> Result<Option<LibraryManifest>, Error> {
-        Ok(self.manifest_of(root))
+        // Mirrors the real adapter: a manifest from a newer format version is
+        // reported absent so no caller trusts it.
+        Ok(self
+            .manifest_of(root)
+            .filter(LibraryManifest::is_compatible))
     }
 
     fn write_record(&self, root: LibraryRootId, record: &PortableRecord) -> Result<(), Error> {
@@ -626,6 +637,27 @@ impl ControlPlanePort for MemoryControlPlane {
     fn control_plane_usable(&self, root: LibraryRootId) -> Result<bool, Error> {
         let _ = root;
         Ok(*self.usable.lock().unwrap())
+    }
+
+    fn manifest_state(&self, root: LibraryRootId) -> Result<ManifestState, Error> {
+        Ok(match self.manifest_of(root) {
+            None => ManifestState::Absent,
+            Some(manifest) if manifest.format_version > CURRENT_FORMAT_VERSION => {
+                ManifestState::Incompatible {
+                    format_version: manifest.format_version,
+                }
+            }
+            Some(manifest) => ManifestState::Compatible(manifest),
+        })
+    }
+
+    fn records_present(&self, root: LibraryRootId) -> Result<bool, Error> {
+        Ok(self
+            .records
+            .lock()
+            .unwrap()
+            .keys()
+            .any(|(r, _, _)| *r == root))
     }
 }
 

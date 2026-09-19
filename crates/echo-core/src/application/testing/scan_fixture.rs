@@ -18,7 +18,7 @@ use crate::application::testing::small_fakes::{
     MemoryCoverCache,
 };
 use crate::domain::entities::Song;
-use crate::domain::ids::{LibraryRootId, RelativeMediaPath};
+use crate::domain::ids::{LibraryRootId, RelativeMediaPath, SongId};
 use crate::domain::library::MEDIA_ROOT;
 use crate::domain::media::{AudioFormat, ParsedMetadata};
 use crate::error::Error;
@@ -53,6 +53,20 @@ pub struct ScanFixture {
     pub database: MemoryDatabase,
     pub control: MemoryControlPlane,
     pub clock: ManualClock,
+}
+
+/// Two generations of the same files, as a real library ended up carrying
+/// them (design evidence E4): the local rows hold the **newer** identity a
+/// later scan re-minted, while `echo/records/songs` still holds the earlier
+/// one — disjoint UUIDs, identical `media/` paths.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DetachedLegacyRecords {
+    /// Local rows (newer), as `(library-relative path, local UUID)`.
+    pub local: Vec<(String, SongId)>,
+    /// Recorded identities (older) for the same paths, in the same order.
+    pub recorded: Vec<(String, uuid::Uuid)>,
+    /// Favorite records written beside the song records, as `(song UUID, is_favorite)`.
+    pub favorites: Vec<(uuid::Uuid, bool)>,
 }
 
 impl Default for ScanFixture {
@@ -198,6 +212,82 @@ impl ScanFixture {
     #[must_use]
     pub fn all_songs(&self) -> Vec<Song> {
         SongRepository::all_in_root(&self.database, self.root).expect("song snapshot")
+    }
+
+    /// Seed the **detached legacy records** shape that design evidence
+    /// E4/E6/E7 measured on a real library: `echo/records/` describes exactly
+    /// the same `media/` files as the local database, but under a *disjoint*
+    /// set of UUIDs — an earlier generation, re-minted when the app data was
+    /// wiped once — and there is no manifest.
+    ///
+    /// Favorites are written for a subset of the song records, as E6 found.
+    /// Returns both identity generations in the same file order.
+    #[must_use]
+    pub fn seed_detached_legacy_records(&self, files: usize) -> DetachedLegacyRecords {
+        use crate::application::portable_materialize::{favorite_record, song_record};
+        use crate::application::ports::ControlPlanePort;
+        use crate::domain::ids::{Revision, SongId};
+        use crate::domain::library::{
+            FavoriteRecord, HybridLogicalClock, PortableRecord, SongRecord,
+        };
+
+        const HLC: HybridLogicalClock = HybridLogicalClock::new(1_700_000_000, 0);
+        let device = self.deps.device_id.current_device_id();
+        let mut result = DetachedLegacyRecords::default();
+        for index in 0..files {
+            let path = format!("歌手/曲目{index:03}.flac");
+            let bytes = format!("audio-bytes-{index}").into_bytes();
+            self.write_file(&path, &bytes);
+            self.set_audio(&path, &format!("曲目{index:03}"), 180_000);
+            let media = self.path(&path);
+
+            // The local row: the newer generation a later scan minted.
+            let local_id = SongId::new();
+            let mut local = Song::new(local_id, self.root, media, Revision::INITIAL);
+            local.apply_scan_facts(
+                self.deps.hasher.hash_of_bytes(&bytes),
+                bytes.len() as u64,
+                1,
+                AudioFormat::Flac,
+            );
+            SongRepository::upsert(&self.database, &local).expect("seed a local row");
+
+            // The record: the earlier generation of the same path.
+            let recorded_uuid = uuid::Uuid::new_v4();
+            let built = song_record(device, HLC, Revision::INITIAL, &local).expect("song record");
+            let record = SongRecord {
+                song_uuid: recorded_uuid,
+                ..built
+            };
+            self.control
+                .write_record(self.root, &PortableRecord::Song(record))
+                .expect("write the legacy song record");
+
+            // E6: the favorite records are a strict subset of the song records.
+            if index % 3 == 0 {
+                let is_favorite = index % 2 == 0;
+                self.control
+                    .write_record(
+                        self.root,
+                        &PortableRecord::Favorite(FavoriteRecord {
+                            is_favorite,
+                            ..favorite_record(
+                                device,
+                                HLC,
+                                Revision::INITIAL,
+                                SongId::from_uuid(recorded_uuid),
+                                is_favorite,
+                            )
+                        }),
+                    )
+                    .expect("write the legacy favorite record");
+                result.favorites.push((recorded_uuid, is_favorite));
+            }
+
+            result.local.push((path.clone(), local_id));
+            result.recorded.push((path, recorded_uuid));
+        }
+        result
     }
 
     /// One run row of the fixture root.

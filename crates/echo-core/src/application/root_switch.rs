@@ -30,6 +30,7 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+use crate::application::continuation::{ContinuationReport, ContinueFromRecords};
 use crate::application::ports::{LibraryRepository, RuntimeStateStore, TxAccess};
 use crate::application::scan::{ScanDeps, ScanSummary, ScanSupervisor, StartScan};
 use crate::domain::entities::{LibraryRoot, RootAvailability};
@@ -62,6 +63,24 @@ pub struct PreparedCandidate {
     pub reused: bool,
     pub write_capable: bool,
     pub scan: ScanSummary,
+    /// The object-record continuation that ran before the scan, when the
+    /// directory carries a portable control surface (`echo/`). `None` for a
+    /// legacy directory without one — those stay pure scan targets so the
+    /// pre-portable behaviour is untouched.
+    pub continuation: Option<ContinuationReport>,
+    /// `true` when the control surface refused continuation (a manifest newer
+    /// than this build, or an unreadable one). The candidate is still usable
+    /// for reads, but must activate read-only: its user data cannot be
+    /// materialized locally.
+    pub control_plane_degraded: bool,
+}
+
+impl PreparedCandidate {
+    /// Whether the root may accept logic changes (writes) after preparation.
+    #[must_use]
+    pub const fn writes_allowed(&self) -> bool {
+        self.write_capable && !self.control_plane_degraded
+    }
 }
 
 /// Prepares a candidate root: record, full enumeration, candidate scan.
@@ -124,6 +143,13 @@ impl<'a> PrepareLibraryCandidate<'a> {
         prepared.set_write_safety_locked(write_safety_locked);
         self.roots.upsert(&prepared)?;
 
+        // Continuation before the scan (design D2): a directory that already
+        // owns object records must hand its UUIDs to the local store *before*
+        // `media/` is enumerated, or every file looks new and gets a fresh
+        // identity — the data loss behind issue #1.
+        let (continuation, control_plane_degraded) =
+            self.continue_from_records(root_id, write_capable);
+
         // Candidate scan: complete enumeration + reconcile required.
         match StartScan::new(self.deps, self.supervisor).run(root_id) {
             Ok(scan) => Ok(PreparedCandidate {
@@ -131,6 +157,8 @@ impl<'a> PrepareLibraryCandidate<'a> {
                 reused,
                 write_capable,
                 scan,
+                continuation,
+                control_plane_degraded,
             }),
             Err(error) => {
                 // The candidate failed: keep the record (retryable), mark it
@@ -139,6 +167,49 @@ impl<'a> PrepareLibraryCandidate<'a> {
                     .roots
                     .set_write_and_availability(root_id, write_capable, false);
                 Err(error)
+            }
+        }
+    }
+
+    /// Continue the candidate's local state from its portable object records.
+    ///
+    /// Only writable roots are touched: a read-only root cannot materialize
+    /// what it adopts, so it keeps the pre-existing scan-only behaviour.
+    ///
+    /// A refusal (`unsupported_media` — a newer/unreadable manifest) is *not* a
+    /// preparation failure: the directory still opens for reads, flagged
+    /// degraded so activation drops write capability. Every other failure
+    /// propagates and leaves the old active root serving.
+    fn continue_from_records(
+        &self,
+        root_id: LibraryRootId,
+        write_capable: bool,
+    ) -> (Option<ContinuationReport>, bool) {
+        if !write_capable {
+            return (None, false);
+        }
+        match ContinueFromRecords::new(
+            self.deps.control.as_ref(),
+            self.deps.songs.as_ref(),
+            self.deps.playlists.as_ref(),
+            self.deps.uow.as_ref(),
+        )
+        .run(root_id)
+        {
+            Ok(report) => (Some(report), false),
+            Err(error) if error.code() == "unsupported_media" => {
+                tracing::warn!(
+                    reason = %error,
+                    "portable control surface is newer than this build — opening read-only"
+                );
+                (None, true)
+            }
+            Err(error) => {
+                tracing::warn!(
+                    reason = %error,
+                    "object-record continuation failed — the candidate falls back to a plain scan"
+                );
+                (None, false)
             }
         }
     }
@@ -321,8 +392,10 @@ fn to_invariant(error: &crate::domain::state::TransitionError) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::continuation::ProjectionReport;
     use crate::application::delete::DeleteSongs;
     use crate::application::import::{ImportOutcome, PlanImport};
+    use crate::application::ports::ControlPlanePort;
     use crate::application::ports::ImportSource;
     use crate::application::testing::{FakeImportSources, ScanFixture};
     use crate::domain::entities::Song;
@@ -339,6 +412,227 @@ mod tests {
         let root_id = derive_root_id(&path.canonicalize().expect("canonical"));
         fixture.fs.add_root_at(root_id, path.to_path_buf());
         root_id
+    }
+
+    /// Put one real audio file into a candidate root's `media/` tree (the
+    /// fixture's own `write_file` targets the fixture root, not the candidate).
+    fn seed_candidate_media(dir: &std::path::Path) {
+        let target = dir.join("media").join("歌手");
+        std::fs::create_dir_all(&target).expect("media dir");
+        std::fs::write(target.join("歌手 - 晴天.flac"), b"audio-bytes").expect("write file");
+    }
+
+    /// One portable song record for `root` (the shape a previous session left
+    /// behind in `echo/records/songs/`).
+    fn candidate_song_record(song_uuid: uuid::Uuid) -> crate::domain::library::PortableRecord {
+        crate::domain::library::PortableRecord::Song(crate::domain::library::SongRecord {
+            song_uuid,
+            revision: Revision::INITIAL,
+            updated_by_device_id: crate::domain::library::DeviceId::new(),
+            hlc: crate::domain::library::HybridLogicalClock::new(1_700_000_000, 0),
+            media_path: crate::domain::library::LibraryRelativePath::new(
+                "media/歌手/歌手 - 晴天.flac",
+            )
+            .expect("media path"),
+            content_hash: "hash".to_owned(),
+            title: Some("晴天".to_owned()),
+            artist: Some("歌手".to_owned()),
+            album: None,
+        })
+    }
+
+    #[test]
+    fn prepare_continues_object_records_before_scanning_media() {
+        let fixture = fixture();
+        let dir = tempfile::tempdir().expect("temp dir");
+        let root_id = bind_candidate(&fixture, dir.path());
+        // What a previous session left in `echo/`: a song record, no manifest
+        // (the real-world issue #1 shape). The media file is present too.
+        let song_uuid = uuid::Uuid::new_v4();
+        fixture
+            .control
+            .write_record(root_id, &candidate_song_record(song_uuid))
+            .expect("seed record");
+        seed_candidate_media(dir.path());
+        fixture.set_audio("歌手/歌手 - 晴天.flac", "晴天", 200_000);
+
+        let prepared =
+            PrepareLibraryCandidate::new(&fixture.deps, &fixture.database, &fixture.supervisor)
+                .prepare(dir.path())
+                .expect("prepare");
+        let continuation = prepared
+            .continuation
+            .expect("a directory with records is continued");
+        assert!(
+            continuation.control_plane.healed(),
+            "a manifest-less but records-bearing directory is healed"
+        );
+        assert_eq!(continuation.projection.songs, 1);
+
+        // The decisive assertion: the scanned media kept the record's UUID —
+        // the scan did not mint a second identity for the same file.
+        let songs =
+            crate::application::ports::SongRepository::all_in_root(&fixture.database, root_id)
+                .expect("songs");
+        assert_eq!(songs.len(), 1, "one identity, not one per open");
+        assert_eq!(songs[0].id(), SongId::from_uuid(song_uuid));
+    }
+
+    /// The ordering guarantee behind "continue, then scan" (requirement
+    /// 对象资料接续与对账): media the records already own keeps its UUID, while
+    /// media no record describes is still discovered in the same pass — the
+    /// scan is not replaced by the continuation, it runs *after* it.
+    #[test]
+    fn prepare_continues_records_then_scans_only_unrecorded_media() {
+        let fixture = fixture();
+        let dir = tempfile::tempdir().expect("temp dir");
+        let root_id = bind_candidate(&fixture, dir.path());
+        let song_uuid = uuid::Uuid::new_v4();
+        fixture
+            .control
+            .write_record(root_id, &candidate_song_record(song_uuid))
+            .expect("seed record");
+        seed_candidate_media(dir.path());
+        // A second file the portable records do NOT describe.
+        let target = dir.path().join("media").join("歌手");
+        std::fs::write(target.join("歌手 - 稻香.flac"), b"audio-bytes-2").expect("write file");
+        fixture.set_audio("歌手/歌手 - 晴天.flac", "晴天", 200_000);
+        fixture.set_audio("歌手/歌手 - 稻香.flac", "稻香", 180_000);
+
+        let prepared =
+            PrepareLibraryCandidate::new(&fixture.deps, &fixture.database, &fixture.supervisor)
+                .prepare(dir.path())
+                .expect("prepare");
+
+        let songs =
+            crate::application::ports::SongRepository::all_in_root(&fixture.database, root_id)
+                .expect("songs");
+        assert_eq!(songs.len(), 2, "the scan still reaches unrecorded media");
+        assert!(
+            songs
+                .iter()
+                .any(|song| song.id() == SongId::from_uuid(song_uuid)),
+            "the continued song kept its record UUID instead of being re-minted"
+        );
+        assert!(
+            songs
+                .iter()
+                .any(|song| song.id() != SongId::from_uuid(song_uuid)),
+            "media with no record is registered once, not swallowed by the continuation"
+        );
+        assert_eq!(
+            prepared.scan.progress.state,
+            ScanState::Completed,
+            "continuation does not leave the scan half-done"
+        );
+    }
+
+    /// Re-selecting a directory that already owns a control plane must be
+    /// *non-destructive*: the local database is rebuilt from the records, the
+    /// media tree is neither moved nor rewritten, and the directory is
+    /// recognised as managed (a manifest exists afterwards).
+    #[test]
+    fn prepare_reuses_record_identities_and_leaves_media_untouched() {
+        let fixture = fixture();
+        let dir = tempfile::tempdir().expect("temp dir");
+        let root_id = bind_candidate(&fixture, dir.path());
+        let song_uuid = uuid::Uuid::new_v4();
+        fixture
+            .control
+            .write_record(root_id, &candidate_song_record(song_uuid))
+            .expect("seed record");
+        seed_candidate_media(dir.path());
+        fixture.set_audio("歌手/歌手 - 晴天.flac", "晴天", 200_000);
+        let media = dir
+            .path()
+            .join("media")
+            .join("歌手")
+            .join("歌手 - 晴天.flac");
+        let before = std::fs::read(&media).expect("media bytes");
+
+        PrepareLibraryCandidate::new(&fixture.deps, &fixture.database, &fixture.supervisor)
+            .prepare(dir.path())
+            .expect("prepare");
+
+        assert_eq!(
+            std::fs::read(&media).expect("media still there"),
+            before,
+            "reopening a managed directory must not rewrite the media tree"
+        );
+        let songs =
+            crate::application::ports::SongRepository::all_in_root(&fixture.database, root_id)
+                .expect("songs");
+        assert_eq!(songs.len(), 1);
+        assert_eq!(songs[0].id(), SongId::from_uuid(song_uuid));
+        assert!(
+            fixture
+                .control
+                .read_manifest(root_id)
+                .expect("manifest read")
+                .is_some(),
+            "the directory is recognised as managed: a manifest now exists"
+        );
+    }
+
+    #[test]
+    fn prepare_degrades_to_read_only_on_a_newer_manifest() {
+        let fixture = fixture();
+        let dir = tempfile::tempdir().expect("temp dir");
+        let root_id = bind_candidate(&fixture, dir.path());
+        fixture.control.set_manifest(
+            root_id,
+            crate::domain::library::LibraryManifest {
+                format_version: crate::domain::library::CURRENT_FORMAT_VERSION + 3,
+                library_id: crate::domain::library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+                written_by_app_version: "9.9.9".to_owned(),
+            },
+        );
+        let prepared =
+            PrepareLibraryCandidate::new(&fixture.deps, &fixture.database, &fixture.supervisor)
+                .prepare(dir.path())
+                .expect("prepare still succeeds for reads");
+        assert!(
+            prepared.control_plane_degraded,
+            "a newer manifest refuses continuation instead of being overwritten"
+        );
+        assert!(!prepared.writes_allowed());
+        assert!(
+            prepared.continuation.is_none(),
+            "nothing was projected from a control surface this build cannot read"
+        );
+        // The manifest file itself was not rewritten (byte-for-byte intact).
+        let stored = fixture.control.manifest_of(root_id).expect("kept");
+        assert_eq!(
+            stored.format_version,
+            crate::domain::library::CURRENT_FORMAT_VERSION + 3
+        );
+    }
+
+    #[test]
+    fn prepare_leaves_a_legacy_directory_as_a_plain_scan_target() {
+        let fixture = fixture();
+        let dir = tempfile::tempdir().expect("temp dir");
+        let root_id = bind_candidate(&fixture, dir.path());
+        seed_candidate_media(dir.path());
+        fixture.set_audio("歌手/歌手 - 晴天.flac", "晴天", 200_000);
+
+        let prepared =
+            PrepareLibraryCandidate::new(&fixture.deps, &fixture.database, &fixture.supervisor)
+                .prepare(dir.path())
+                .expect("prepare");
+        let continuation = prepared.continuation.expect("the manifest is established");
+        assert!(
+            !continuation.control_plane.healed(),
+            "a directory with no prior records is initialized, not healed"
+        );
+        assert_eq!(continuation.projection, ProjectionReport::default());
+        // The scan still discovers the media normally (pre-portable behaviour).
+        assert_eq!(
+            crate::application::ports::SongRepository::all_in_root(&fixture.database, root_id)
+                .expect("songs")
+                .len(),
+            1
+        );
     }
 
     #[test]

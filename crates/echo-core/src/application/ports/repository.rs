@@ -38,6 +38,10 @@ pub trait SongRepository: Send + Sync {
     fn set_availability(&self, id: SongId, availability: SongAvailability) -> Result<(), Error>;
     fn set_favorite(&self, id: SongId, favorite: bool) -> Result<(), Error>;
     fn increment_play_count(&self, id: SongId) -> Result<(), Error>;
+    /// Restore a play count merged from portable `play-stats` records. The
+    /// counter only ever rises, so a repeated continuation is idempotent (and
+    /// never erases plays this device recorded locally).
+    fn set_play_count(&self, id: SongId, count: u64) -> Result<(), Error>;
 }
 
 /// Keyset-paginated catalog queries over the **active root** (task 6.1,
@@ -116,6 +120,10 @@ pub trait PlaylistRepository: Send + Sync {
     fn delete(&self, id: PlaylistId) -> Result<(), Error>;
     fn members(&self, id: PlaylistId) -> Result<Vec<PlaylistMember>, Error>;
     fn add_member(&self, playlist: PlaylistId, song: SongId, position: u64) -> Result<(), Error>;
+    /// Insert or refresh a membership **by its stable member identity** — the
+    /// continuation path must reuse the UUID carried by the portable
+    /// `playlist-items` record instead of minting a fresh one on every open.
+    fn upsert_member(&self, member: &PlaylistMember) -> Result<(), Error>;
     fn remove_member(&self, playlist: PlaylistId, song: SongId) -> Result<(), Error>;
 }
 

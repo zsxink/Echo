@@ -2038,6 +2038,58 @@
           "cmd": "node scripts/verify/checks/check-embedded-frontend.mjs"
         }
       ]
+    },
+    {
+      "id": "15.1",
+      "title": "对象种类与可携带目录布局一一对应",
+      "commands": [
+        {
+          "desc": "every RecordKind declares a dir_name(), is enumerated by RecordKind::ALL, and maps to a directory the portable-library-layout spec publishes",
+          "cmd": "node scripts/verify/checks/task-15.1.mjs"
+        }
+      ]
+    },
+    {
+      "id": "15.2",
+      "title": "控制面存在性与自愈（首次建立 / manifest 缺失自愈 / 高版本拒绝接续）",
+      "commands": [
+        {
+          "desc": "manifest state separation and EnsureControlPlane self-heal",
+          "cmd": "cargo test -p echo-core --all-features application::portable"
+        },
+        {
+          "desc": "manifest absent vs. incompatible vs. malformed",
+          "cmd": "cargo test -p echo-core --all-features control_plane"
+        }
+      ]
+    },
+    {
+      "id": "15.3",
+      "title": "打开资料库先接续再扫描，投影全部对象种类且幂等",
+      "commands": [
+        {
+          "desc": "continuation projects songs/favorites/playlists/members/play-stats and stays idempotent",
+          "cmd": "cargo test -p echo-core --all-features application::continuation"
+        },
+        {
+          "desc": "continuation runs before StartScan and degrades read-only on a newer manifest",
+          "cmd": "cargo test -p echo-core --all-features root_switch"
+        }
+      ]
+    },
+    {
+      "id": "15.4",
+      "title": "逻辑变更被材料化（歌单/成员/墓碑/播放统计）",
+      "commands": [
+        {
+          "desc": "playlist create/rename/delete/add/remove materialize records and tombstones; recorded plays materialize additive play-stats",
+          "cmd": "cargo test -p echo-desktop --all-features services::tests"
+        },
+        {
+          "desc": "import and favorite write points still materialize",
+          "cmd": "cargo test -p echo-core --all-features portable"
+        }
+      ]
     }
   ],
   "scenarios": [
@@ -2548,25 +2600,25 @@
     {
       "id": "DP-R14-S01",
       "title": "从超过单页上限的资料库视图开始播放",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R14-S01",
+      "command": "cargo test -p echo-core --all-features application::playback_context::tests::resolves_all_pages_and_validates_selected_song",
       "manifest": "tests/scenarios/DP-R14-S01.yaml"
     },
     {
       "id": "DP-R14-S02",
       "title": "从\"最近\"视图开始播放",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R14-S02",
+      "command": "cargo test -p echo-core --all-features application::playback_context::tests::recent_filters_case_insensitively_and_rejects_absent_selection",
       "manifest": "tests/scenarios/DP-R14-S02.yaml"
     },
     {
       "id": "DP-R14-S03",
       "title": "从歌单开始播放",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R14-S03",
+      "command": "cargo test -p echo-core --all-features application::playback_context::tests::playlist_uses_newest_member_first",
       "manifest": "tests/scenarios/DP-R14-S03.yaml"
     },
     {
       "id": "DP-R14-S04",
       "title": "选中项已不在上下文中",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R14-S04",
+      "command": "cargo test -p echo-core --all-features application::playback_context::tests::unknown_library_view_is_rejected_in_core",
       "manifest": "tests/scenarios/DP-R14-S04.yaml"
     },
     {
@@ -2960,6 +3012,12 @@
       "manifest": "tests/scenarios/LL-R01-S03.yaml"
     },
     {
+      "id": "LL-R01-S04",
+      "title": "本机数据库丢失后重新选择同一目录",
+      "command": "cargo test -p echo-core --all-features root_switch::tests::prepare_reuses_record_identities_and_leaves_media_untouched",
+      "manifest": "tests/scenarios/LL-R01-S04.yaml"
+    },
+    {
       "id": "LL-R02-S01",
       "title": "首次扫描发现支持文件",
       "command": "cargo test -p echo-core --all-features scan::tests::manual_rescan_is_repeatable_and_converges",
@@ -3272,6 +3330,12 @@
       "manifest": "tests/scenarios/PLL-R01-S02.yaml"
     },
     {
+      "id": "PLL-R01-S03",
+      "title": "每种对象种类都有对应目录",
+      "command": "node scripts/verify/checks/task-15.1.mjs",
+      "manifest": "tests/scenarios/PLL-R01-S03.yaml"
+    },
+    {
       "id": "PLL-R02-S01",
       "title": "检查资料库控制面",
       "command": "cargo test -p echo-core --all-features manifest_round_trips_atomically",
@@ -3290,9 +3354,27 @@
       "manifest": "tests/scenarios/PLL-R02-S03.yaml"
     },
     {
+      "id": "PLL-R02-S04",
+      "title": "歌单与成员的变更被材料化",
+      "command": "cargo test -p echo-desktop --all-features playlist_mutations_materialize_records_and_tombstones",
+      "manifest": "tests/scenarios/PLL-R02-S04.yaml"
+    },
+    {
+      "id": "PLL-R02-S05",
+      "title": "播放统计随资料库移动",
+      "command": "cargo test -p echo-desktop --all-features recorded_plays_materialize_additive_play_stats",
+      "manifest": "tests/scenarios/PLL-R02-S05.yaml"
+    },
+    {
+      "id": "PLL-R02-S06",
+      "title": "取消收藏不留下悬空记录",
+      "command": "cargo test -p echo-desktop --all-features unfavorite_materializes_a_false_record_so_it_never_returns",
+      "manifest": "tests/scenarios/PLL-R02-S06.yaml"
+    },
+    {
       "id": "PLL-R03-S01",
       "title": "全新设备恢复完整资料",
-      "command": "cargo test -p echo-core --all-features application::restore",
+      "command": "cargo test -p echo-core --all-features application::continuation::tests::continuation_restores_songs_favorites_playlists_and_member_order",
       "manifest": "tests/scenarios/PLL-R03-S01.yaml"
     },
     {
@@ -3300,6 +3382,66 @@
       "title": "同步资料先于媒体到达",
       "command": "cargo test -p echo-core --all-features restore_projects_records_and_keeps_missing_without_media",
       "manifest": "tests/scenarios/PLL-R03-S02.yaml"
+    },
+    {
+      "id": "PLL-R03-S03",
+      "title": "本机数据库丢失后重开同一资料库",
+      "command": "cargo test -p echo-core --all-features root_switch::tests::prepare_continues_object_records_before_scanning_media",
+      "manifest": "tests/scenarios/PLL-R03-S03.yaml"
+    },
+    {
+      "id": "PLL-R03-S04",
+      "title": "重复打开结果稳定",
+      "command": "cargo test -p echo-core --all-features restore_is_idempotent_across_repeats",
+      "manifest": "tests/scenarios/PLL-R03-S04.yaml"
+    },
+    {
+      "id": "PLL-R04-S01",
+      "title": "首次启用即建立 manifest",
+      "command": "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_initializes_a_fresh_writable_root",
+      "manifest": "tests/scenarios/PLL-R04-S01.yaml"
+    },
+    {
+      "id": "PLL-R04-S02",
+      "title": "manifest 缺失时自愈",
+      "command": "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_heals_a_manifest_less_directory_with_records",
+      "manifest": "tests/scenarios/PLL-R04-S02.yaml"
+    },
+    {
+      "id": "PLL-R04-S03",
+      "title": "控制面不可写时不破坏既有内容",
+      "command": "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_reports_an_unusable_surface_without_writing",
+      "manifest": "tests/scenarios/PLL-R04-S03.yaml"
+    },
+    {
+      "id": "PLL-R05-S01",
+      "title": "打开资料库先接续再扫描",
+      "command": "cargo test -p echo-core --all-features root_switch::tests::prepare_continues_records_then_scans_only_unrecorded_media",
+      "manifest": "tests/scenarios/PLL-R05-S01.yaml"
+    },
+    {
+      "id": "PLL-R05-S02",
+      "title": "对象资料与媒体不一致",
+      "command": "cargo test -p echo-core --all-features application::continuation::tests::dangling_records_are_counted_and_never_invented",
+      "manifest": "tests/scenarios/PLL-R05-S02.yaml"
+    },
+    {
+      "id": "PLL-R05-S03",
+      "title": "墓碑优先于陈旧记录",
+      "command": "cargo test -p echo-core --all-features application::continuation::tests::tombstone_outranks_a_stale_record_and_is_never_resurrected",
+      "manifest": "tests/scenarios/PLL-R05-S03.yaml"
+    },
+    {
+      "id": "PLL-R05-S04",
+      "title": "重复接续结果稳定",
+      "command": "cargo test -p echo-core --all-features application::continuation::tests::continuation_is_idempotent_across_repeated_opens",
+      "manifest": "tests/scenarios/PLL-R05-S04.yaml"
+    },
+    {
+      "id": "PLL-R05-S05",
+      "title": "较新的本机身份不被旧记录覆盖",
+      "command": "cargo test -p echo-core --all-features application::continuation::tests::detached_legacy_records_are_superseded_by_the_matching_local_rows",
+      "manifest": "tests/scenarios/PLL-R05-S05.yaml"
     },
     {
       "id": "SFI-R01-S01",

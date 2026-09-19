@@ -4,7 +4,7 @@ scenario_id: DP-R14-S02
 requirement: 播放上下文的解析归属与顺序语义
 scenario: 从"最近"视图开始播放
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs DP-R14-S02"
+command: "cargo test -p echo-core --all-features application::playback_context::tests::recent_filters_case_insensitively_and_rejects_absent_selection"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

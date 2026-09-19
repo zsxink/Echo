@@ -65,6 +65,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
+import { objectKindEntries } from "./injection-object-kinds.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
 const BACKUP_DIR = mkdtempSync(join(tmpdir(), "echo-injection-backup-"));
@@ -383,16 +384,13 @@ const ATT_DIR = join(ROOT, "artifacts", "native-attestations");
 const ATT_FIELDS = ["os", "versions", "desktop-env", "operator", "result", "evidence-path", "date"];
 
 // ---------------------------------------------------------------------------
-// The registry
-//
-// Each entry: { id, guard, check, expect, baseline, inject }
+// The registry. Each entry: { id, guard, check, expect, baseline, inject }
 //   guard    what the gate claims to protect (the condition being violated)
 //   check    [command, args] that runs the gate
 //   expect   regex the gate's output must match when it fails
 //   baseline whether the gate must be green on the untouched tree
 //   inject   () => { env?, args? } — performs the violation
 // ---------------------------------------------------------------------------
-
 const ENTRIES = [
   // ---- 14.1 lint inheritance -------------------------------------------
   {
@@ -743,6 +741,10 @@ const ENTRIES = [
       return {};
     },
   },
+
+  // The 15.1 cluster lives in its own module: this file is within ~20 lines of
+  // the 1000-line scale ceiling and the cluster needs a fixture helper.
+  ...objectKindEntries(fixture),
 ];
 
 // ---------------------------------------------------------------------------

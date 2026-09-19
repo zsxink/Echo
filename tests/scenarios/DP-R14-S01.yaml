@@ -4,7 +4,7 @@ scenario_id: DP-R14-S01
 requirement: 播放上下文的解析归属与顺序语义
 scenario: 从超过单页上限的资料库视图开始播放
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs DP-R14-S01"
+command: "cargo test -p echo-core --all-features application::playback_context::tests::resolves_all_pages_and_validates_selected_song"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

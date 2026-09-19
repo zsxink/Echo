@@ -413,7 +413,12 @@ fn wire_composition(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
     // accumulator so a qualified listen reaches Core's idempotent
     // `record_playback` (play_count / 最近播放). Without this the accumulator
     // had no production caller and play counts never moved.
-    let stats_sink = Arc::new(player::CorePlaybackRecorder::new(routed.database.clone()));
+    let stats_sink = Arc::new(player::CorePlaybackRecorder::new(
+        routed.database.clone(),
+        routed.deps.control.clone(),
+        routed.deps.device_id.clone(),
+        routed.deps.roots.clone(),
+    ));
     player::spawn_stats_recorder(
         controller.port.clone(),
         controller.coordinator.clone(),

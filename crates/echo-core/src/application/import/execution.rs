@@ -335,7 +335,7 @@ impl PlanImport<'_> {
         let device = self.deps.device_id.current_device_id();
         let (revision, hlc) = crate::application::portable_materialize::committed_version(
             self.deps.sync.as_ref(),
-            "song",
+            crate::application::portable_materialize::SONG_OBJECT_TYPE,
             &planned.reserved.to_string(),
             device,
         )?;

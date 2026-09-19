@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use echo_core::application::scan::ScanSummary;
 use echo_core::domain::catalog::{CatalogCounts, OpaqueCursor, Paged};
 use echo_core::domain::entities::{Song, SongAvailability};
-use echo_core::domain::ids::{PlaylistId, SongId};
+use echo_core::domain::ids::{LibraryRootId, PlaylistId, SongId};
 
 /// The bootstrap snapshot every session starts from (task 7.3 `get_bootstrap_state`).
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -83,8 +83,15 @@ impl From<Paged<Song>> for PagedSongs {
 /// The outcome of choosing a library root (task 7.5 `choose_library_root`).
 /// Reaches the UI as a path-free snapshot; the absolute directory was consumed
 /// entirely desktop-side.
+///
+/// The booleans are independent availability flags (`read_only` = the root's
+/// write capability, `manifest_healed` = this open rebuilt a missing manifest,
+/// `control_plane_read_only` = the control surface refused continuation);
+/// collapsing them would hide *which* capability is missing, so — as with
+/// [`LibraryStatus`] — the natural shape wins.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(clippy::struct_excessive_bools)]
 pub struct LibraryRootStatusDto {
     /// Whether a library root is now configured.
     pub configured: bool,
@@ -92,6 +99,43 @@ pub struct LibraryRootStatusDto {
     pub read_only: bool,
     /// The active root id (never an absolute path).
     pub active_root: String,
+    /// Whether this open had to rebuild a missing `echo/manifest.json` from
+    /// the surviving object records (never a re-scan with fresh identities).
+    pub manifest_healed: bool,
+    /// True when the control surface refused continuation (a manifest newer
+    /// than this build): the library opened for reads only.
+    pub control_plane_read_only: bool,
+    /// Objects continued from `echo/records/` in this open, by kind.
+    pub continued_songs: usize,
+    pub continued_favorites: usize,
+    pub continued_playlists: usize,
+    /// Playlist memberships restored, in record order.
+    pub continued_members: usize,
+    /// Play counts restored from `play-stats` records.
+    pub continued_play_stats: usize,
+    /// Records that could not be placed into the effective view. They are kept
+    /// on disk — never deleted — and reported so the loss is visible.
+    pub unusable_records: usize,
+}
+
+impl LibraryRootStatusDto {
+    /// A freshly configured root with nothing continued (no control surface).
+    #[must_use]
+    pub fn configured(active_root: LibraryRootId, read_only: bool) -> Self {
+        Self {
+            configured: true,
+            read_only,
+            active_root: active_root.to_string(),
+            manifest_healed: false,
+            control_plane_read_only: false,
+            continued_songs: 0,
+            continued_favorites: 0,
+            continued_playlists: 0,
+            continued_members: 0,
+            continued_play_stats: 0,
+            unusable_records: 0,
+        }
+    }
 }
 
 /// The library's read-only availability + write capability (task 7.3

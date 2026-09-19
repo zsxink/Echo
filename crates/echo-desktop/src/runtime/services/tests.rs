@@ -425,6 +425,42 @@ fn favorite_commit_materializes_a_portable_record_without_local_state() {
     }
 }
 
+/// PLL-R02-S06: un-favouriting is a *state*, not a deletion. The record must
+/// survive as `is_favorite: false` so reopening the library never resurrects
+/// the song into 「我的喜欢」.
+#[test]
+fn unfavorite_materializes_a_false_record_so_it_never_returns() {
+    let fixture = ScanFixture::new();
+    let ids = seed_songs(&fixture, 1);
+    let app = services(&fixture);
+
+    app.set_favorite(ids[0], true).expect("favourite");
+    app.set_favorite(ids[0], false).expect("unfavourite");
+
+    let record = fixture
+        .deps
+        .control
+        .read_record(
+            fixture.root,
+            echo_core::domain::library::RecordKind::Favorite,
+            &ids[0].to_string(),
+        )
+        .expect("read record")
+        .expect("the unfavorite overwrote the record instead of dropping it");
+    let json = record.to_canonical_json().expect("portable json");
+    assert!(
+        json.contains("\"is_favorite\":false"),
+        "the portable record must carry the cancelled state: {json}"
+    );
+
+    // And the local view agrees — the song is gone from 「我的喜欢」.
+    let favs = app.favorites(SongSort::default(), None, 100).expect("favs");
+    assert!(
+        favs.items.is_empty(),
+        "a cancelled favorite must not reappear in the favorites view"
+    );
+}
+
 #[test]
 fn playlist_mutations_return_snapshots_seen_by_subsequent_reads() {
     let fixture = ScanFixture::new();
@@ -645,3 +681,117 @@ fn reveal_song_reveals_by_id_and_returns_only_the_relative_path() {
     assert!(view.revealed);
     assert_eq!(view.song_id, ids[0].to_string());
 }
+
+/// Every committed playlist/membership change must reach `echo/records/`,
+/// otherwise the next "open this directory" (on a wiped app-data directory or
+/// another machine) cannot rebuild it — the defect behind issue #1. Deletes are
+/// materialized as tombstones, never as a silent disappearance.
+#[test]
+fn playlist_mutations_materialize_records_and_tombstones() {
+    let fixture = ScanFixture::new();
+    let ids = seed_songs(&fixture, 2);
+    let app = services(&fixture);
+
+    let playlist = PlaylistId::from_str(
+        &app.create_playlist(fixture.root, "通勤路上")
+            .expect("create"),
+    )
+    .expect("playlist id");
+    app.add_to_playlists(ids[0], &[playlist])
+        .expect("add member");
+
+    let kinds = |records: &[echo_core::domain::library::PortableRecord]| {
+        let mut set: Vec<echo_core::domain::library::RecordKind> =
+            records.iter().map(PortableRecord::kind).collect();
+        set.sort_by_key(|kind| kind.dir_name());
+        set
+    };
+    let records = fixture.control.records_of(fixture.root);
+    assert!(
+        kinds(&records).contains(&echo_core::domain::library::RecordKind::Playlist),
+        "the playlist is materialized: {records:?}"
+    );
+    assert!(
+        kinds(&records).contains(&echo_core::domain::library::RecordKind::PlaylistItem),
+        "the membership is materialized with its own identity: {records:?}"
+    );
+    // The member record carries the *member* UUID, so a remove can be
+    // tombstoned without touching the playlist or the song.
+    let item = records
+        .iter()
+        .find(|record| record.kind() == echo_core::domain::library::RecordKind::PlaylistItem)
+        .expect("item record")
+        .clone();
+
+    app.remove_playlist_song(playlist, ids[0])
+        .expect("remove member");
+    let records = fixture.control.records_of(fixture.root);
+    let tombstones: Vec<_> = records
+        .iter()
+        .filter(|record| record.is_tombstone())
+        .collect();
+    assert_eq!(tombstones.len(), 1, "one tombstone per removed member");
+    assert_eq!(
+        tombstones[0].object_uuid(),
+        item.object_uuid(),
+        "the tombstone names the member UUID"
+    );
+
+    app.delete_playlist(playlist).expect("delete playlist");
+    let records = fixture.control.records_of(fixture.root);
+    assert!(
+        records
+            .iter()
+            .filter(|record| record.is_tombstone())
+            .any(|record| record.object_uuid() == playlist.as_uuid()),
+        "a deleted playlist is tombstoned, so it cannot be resurrected"
+    );
+}
+
+/// Play statistics are materialized per device so two devices merge additively
+/// (design D4) and a rebuild restores the merged count.
+#[test]
+fn recorded_plays_materialize_additive_play_stats() {
+    let fixture = ScanFixture::new();
+    let ids = seed_songs(&fixture, 1);
+    let device = fixture.deps.device_id.current_device_id();
+    let song = ids[0];
+
+    let record = |count: u64| echo_core::domain::library::PlayStatsRecord {
+        song_uuid: song.as_uuid(),
+        revision: echo_core::domain::ids::Revision::INITIAL,
+        updated_by_device_id: device,
+        hlc: echo_core::domain::library::HybridLogicalClock::default(),
+        by_device: std::collections::BTreeMap::from([(device.as_uuid(), count)]),
+    };
+    let other_device = echo_core::domain::library::DeviceId::new();
+
+    // Two devices each play once, and this device plays a second time.
+    let merged = echo_core::application::portable_materialize::merge_play_stats(
+        None,
+        device,
+        echo_core::domain::library::HybridLogicalClock::default(),
+        song,
+    );
+    assert_eq!(merged.total(), 1);
+    let merged = echo_core::application::portable_materialize::merge_play_stats(
+        Some(record(1)),
+        other_device,
+        echo_core::domain::library::HybridLogicalClock::default(),
+        song,
+    );
+    assert_eq!(
+        merged.total(),
+        2,
+        "a second device's play adds instead of overwriting"
+    );
+    let merged = echo_core::application::portable_materialize::merge_play_stats(
+        Some(record(1)),
+        device,
+        echo_core::domain::library::HybridLogicalClock::default(),
+        song,
+    );
+    assert_eq!(merged.total(), 2, "this device's own second play counts");
+}
+
+use echo_core::domain::library::PortableRecord;

@@ -841,7 +841,7 @@ impl<'a> RecoverOperations<'a> {
         let device = self.deps.device_id.current_device_id();
         let (revision, hlc) = crate::application::portable_materialize::committed_version(
             self.deps.sync.as_ref(),
-            "song",
+            crate::application::portable_materialize::SONG_OBJECT_TYPE,
             &song_id.to_string(),
             device,
         )?;
@@ -1308,6 +1308,15 @@ mod tests {
         }
         fn control_plane_usable(&self, root: LibraryRootId) -> Result<bool, Error> {
             self.inner.control_plane_usable(root)
+        }
+        fn manifest_state(
+            &self,
+            root: LibraryRootId,
+        ) -> Result<crate::application::ports::ManifestState, Error> {
+            self.inner.manifest_state(root)
+        }
+        fn records_present(&self, root: LibraryRootId) -> Result<bool, Error> {
+            self.inner.records_present(root)
         }
     }
 

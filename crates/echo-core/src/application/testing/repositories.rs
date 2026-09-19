@@ -119,6 +119,12 @@ impl SongRepository for MemorySongRepository {
         }
         Ok(())
     }
+    fn set_play_count(&self, id: SongId, count: u64) -> Result<(), Error> {
+        if let Some(s) = self.songs.lock().unwrap().get_mut(&id) {
+            s.restore_play_count(crate::domain::ids::PlayCount::from_u64(count));
+        }
+        Ok(())
+    }
 }
 
 /// In-memory library-root store.
@@ -298,6 +304,13 @@ impl PlaylistRepository for MemoryPlaylistRepository {
             (playlist, song),
             PlaylistMember::new(playlist, song, position, SongAvailability::Available),
         );
+        Ok(())
+    }
+    fn upsert_member(&self, member: &PlaylistMember) -> Result<(), Error> {
+        self.members
+            .lock()
+            .unwrap()
+            .insert((member.playlist(), member.song()), member.clone());
         Ok(())
     }
     fn remove_member(&self, playlist: PlaylistId, song: SongId) -> Result<(), Error> {

@@ -25,6 +25,7 @@
 
 pub mod boot;
 pub mod catalog;
+pub mod continuation;
 pub mod delete;
 pub mod detail;
 pub mod favorite;

@@ -94,11 +94,24 @@ impl super::AppServices {
         )
         .activate(root_id)?;
 
-        let status = LibraryRootStatusDto {
-            configured: true,
-            read_only: !prepare.write_capable,
-            active_root: root_id.to_string(),
-        };
+        let mut status = LibraryRootStatusDto::configured(
+            root_id,
+            !prepare.write_capable || prepare.control_plane_degraded,
+        );
+        // The continuation report (design D7): what this open recovered from
+        // `echo/records/`, whether the manifest had to be healed, and how many
+        // records could not be placed.
+        status.control_plane_read_only = prepare.control_plane_degraded;
+        if let Some(continuation) = prepare.continuation.as_ref() {
+            status.manifest_healed = continuation.control_plane.healed();
+            status.continued_songs = continuation.projection.songs;
+            status.continued_favorites = continuation.projection.favorites;
+            status.continued_playlists = continuation.projection.playlists;
+            status.continued_members = continuation.projection.members;
+            status.continued_play_stats = continuation.projection.play_stats;
+            status.unusable_records =
+                continuation.projection.invalid + continuation.projection.superseded;
+        }
         Ok(Some(status))
     }
 

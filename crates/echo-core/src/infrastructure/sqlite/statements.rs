@@ -16,7 +16,8 @@ use rusqlite::{Connection, OptionalExtension};
 
 use crate::application::ports::{CoverAssetRef, OperationItem, OperationResourceKind};
 use crate::domain::entities::{
-    LibraryRoot, LyricsCandidate, LyricsSource, RootAvailability, Song, SongAvailability,
+    LibraryRoot, LyricsCandidate, LyricsSource, PlaylistMember, RootAvailability, Song,
+    SongAvailability,
 };
 use crate::domain::ids::{LibraryRootId, OperationId, PlaylistId, SongId};
 use crate::domain::library::HybridLogicalClock;
@@ -333,6 +334,46 @@ pub(crate) fn set_song_favorite(
     )?;
     Ok(())
 }
+/// Restore a play count from a portable `play-stats` record. `MAX()` keeps the
+/// counter monotone: a continuation can raise the count but never erase plays
+/// this device already recorded, which also makes re-projection idempotent.
+pub(crate) fn set_play_count(connection: &Connection, id: SongId, count: u64) -> Result<(), Error> {
+    connection
+        .execute(
+            "UPDATE songs SET play_count = MAX(play_count, ?2), updated_at = ?3 WHERE uuid = ?1",
+            params![
+                id.to_string(),
+                i64::try_from(count).unwrap_or(i64::MAX),
+                now_ms()
+            ],
+        )
+        .map_err(storage)?;
+    touch_root_for_song(connection, id)
+}
+
+/// Insert or refresh a playlist membership **by member UUID**. The
+/// continuation path reuses the identity carried by the portable
+/// `playlist-items` record; a fresh UUID per open would drift from the very
+/// records being replayed (and from their tombstones).
+pub(crate) fn upsert_member(connection: &Connection, member: &PlaylistMember) -> Result<(), Error> {
+    connection
+        .execute(
+            "INSERT INTO playlist_songs (playlist_uuid, song_uuid, position, added_at, member_uuid)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(playlist_uuid, song_uuid)
+             DO UPDATE SET position = excluded.position, member_uuid = excluded.member_uuid",
+            params![
+                member.playlist().to_string(),
+                member.song().to_string(),
+                i64::try_from(member.position()).unwrap_or(i64::MAX),
+                now_ms(),
+                member.id().to_string()
+            ],
+        )
+        .map_err(map_constraint)?;
+    Ok(())
+}
+
 pub(crate) fn increment_play_count(connection: &Connection, id: SongId) -> Result<(), Error> {
     connection
         .execute(

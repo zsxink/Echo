@@ -24,14 +24,15 @@
 //! The coordinator is idempotent: re-running against the same records + media
 //! preserves every UUID.
 
+use crate::application::continuation::{ContinueFromRecords, ProjectionReport};
 use crate::application::ports::{
-    ContentHasher, ControlPlanePort, LibraryFileSystem, MediaProbe, MetadataReader, ProbeOutcome,
-    SongRepository, UnitOfWork,
+    ContentHasher, ControlPlanePort, LibraryFileSystem, MediaProbe, MetadataReader,
+    PlaylistRepository, ProbeOutcome, SongRepository, UnitOfWork,
 };
 use crate::application::relink::{ParsedFile, RelinkPlanner, Resolution};
 use crate::domain::entities::{Song, SongAvailability};
-use crate::domain::ids::{LibraryRootId, RelativeMediaPath, Revision, SongId};
-use crate::domain::library::{LibraryId, LibraryManifest, PortableRecord, RecordKind};
+use crate::domain::ids::{LibraryRootId, RelativeMediaPath};
+use crate::domain::library::{LibraryId, LibraryManifest};
 use crate::error::Error;
 
 /// Outcome of one restore pass.
@@ -39,6 +40,9 @@ use crate::error::Error;
 pub struct RestoreOutcome {
     /// Songs projected from portable song records.
     pub projected_songs: usize,
+    /// The full per-kind projection report (songs, favorites, playlists,
+    /// members, play stats, tombstones, unplaceable records).
+    pub projection: ProjectionReport,
     /// Files found under `media/` and reconciled onto projected identities.
     pub media_reconciled: usize,
     /// Records that remain `Missing` (no media arrived yet).
@@ -52,6 +56,7 @@ pub struct RestoreOutcome {
 pub struct RestoreLibrary<'a> {
     control: &'a dyn ControlPlanePort,
     songs: &'a dyn SongRepository,
+    playlists: &'a dyn PlaylistRepository,
     fs: &'a dyn LibraryFileSystem,
     hasher: &'a dyn ContentHasher,
     probe: &'a dyn MediaProbe,
@@ -69,6 +74,7 @@ impl<'a> RestoreLibrary<'a> {
     pub const fn new(
         control: &'a dyn ControlPlanePort,
         songs: &'a dyn SongRepository,
+        playlists: &'a dyn PlaylistRepository,
         fs: &'a dyn LibraryFileSystem,
         hasher: &'a dyn ContentHasher,
         probe: &'a dyn MediaProbe,
@@ -79,6 +85,7 @@ impl<'a> RestoreLibrary<'a> {
         Self {
             control,
             songs,
+            playlists,
             fs,
             hasher,
             probe,
@@ -103,10 +110,17 @@ impl<'a> RestoreLibrary<'a> {
             .ok_or_else(|| Error::unavailable("library", "no portable manifest present"))?;
         self.verify_manifest(&manifest)?;
 
-        // 2. Project portable song records (stable UUIDs, media Missing).
+        // 2. Project portable records (stable UUIDs, media Missing). This is
+        //    the same projection the root-switch continuation runs, so the
+        //    new-device path and the "open a local directory again" path
+        //    cannot drift apart.
+        let projection =
+            ContinueFromRecords::new(self.control, self.songs, self.playlists, self.uow)
+                .run(root)?
+                .projection;
         let snapshot = self.songs.all_in_root(root).unwrap_or_default();
         let mut planner = RelinkPlanner::new(snapshot);
-        let projected = self.project_records(root, &mut planner)?;
+        let projected = projection.songs;
 
         // 3. Scan `media/` and hash-relink files onto projected identities.
         let mut reconciled = 0;
@@ -141,6 +155,7 @@ impl<'a> RestoreLibrary<'a> {
 
         Ok(RestoreOutcome {
             projected_songs: projected,
+            projection,
             media_reconciled: reconciled,
             missing,
             rejected,
@@ -164,41 +179,6 @@ impl<'a> RestoreLibrary<'a> {
             }
         }
         Ok(())
-    }
-
-    /// Project every portable song record into the store, registering the
-    /// snapshot entities into `planner` so the media scan resolves against
-    /// them. Media is not yet guaranteed, so each lies `Missing`.
-    fn project_records(
-        &self,
-        root: LibraryRootId,
-        planner: &mut RelinkPlanner,
-    ) -> Result<usize, Error> {
-        let raw_records = self.control.list_records(root, RecordKind::Song)?;
-        let projected_count = raw_records.len();
-        for raw in raw_records {
-            let record: PortableRecord =
-                serde_json::from_str(&raw).map_err(|e| Error::Storage {
-                    what: "record parse".to_owned(),
-                    source: Box::new(e),
-                })?;
-            if let PortableRecord::Song(s) = &record {
-                let path = RelativeMediaPath::new(s.media_path.as_str())?;
-                let mut song = Song::new(
-                    SongId::from_uuid(s.song_uuid),
-                    root,
-                    path,
-                    Revision::INITIAL,
-                );
-                song.apply_metadata(s.title.clone(), s.artist.clone(), s.album.clone(), None);
-                // Media not yet present: keep Missing so every UUID association
-                // survives until the file is transferred.
-                song.mark_missing();
-                self.persist_song(&song)?;
-                planner.register_created(song);
-            }
-        }
-        Ok(projected_count)
     }
 
     /// Enumerate the supported audio files under `media/` only.
@@ -251,7 +231,10 @@ mod tests {
     use super::*;
     use crate::application::ports::SongRepository;
     use crate::application::testing::scan_fixture::ScanFixture;
-    use crate::domain::library::{DeviceId, HybridLogicalClock, LibraryRelativePath, SongRecord};
+    use crate::domain::ids::{Revision, SongId};
+    use crate::domain::library::{
+        DeviceId, HybridLogicalClock, LibraryRelativePath, PortableRecord, SongRecord,
+    };
 
     /// Seed one song record into the fixture's control plane.
     fn seed_song_record(fixture: &ScanFixture, song_uuid: uuid::Uuid) {
@@ -291,6 +274,7 @@ mod tests {
         let restore = RestoreLibrary::new(
             &fixture.control,
             fixture.deps.songs.as_ref(),
+            fixture.deps.playlists.as_ref(),
             fixture.deps.fs.as_ref(),
             fixture.deps.hasher.as_ref(),
             fixture.deps.probe.as_ref(),
@@ -324,6 +308,7 @@ mod tests {
         let restore = RestoreLibrary::new(
             &fixture.control,
             fixture.deps.songs.as_ref(),
+            fixture.deps.playlists.as_ref(),
             fixture.deps.fs.as_ref(),
             fixture.deps.hasher.as_ref(),
             fixture.deps.probe.as_ref(),
@@ -359,6 +344,7 @@ mod tests {
         let restore = RestoreLibrary::new(
             &fixture.control,
             fixture.deps.songs.as_ref(),
+            fixture.deps.playlists.as_ref(),
             fixture.deps.fs.as_ref(),
             fixture.deps.hasher.as_ref(),
             fixture.deps.probe.as_ref(),

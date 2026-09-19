@@ -128,6 +128,12 @@ impl SongRepository for MemoryDatabase {
         }
         Ok(())
     }
+    fn set_play_count(&self, id: SongId, count: u64) -> Result<(), Error> {
+        if let Some(song) = self.lock().songs.get_mut(&id) {
+            song.restore_play_count(crate::domain::ids::PlayCount::from_u64(count));
+        }
+        Ok(())
+    }
 }
 
 impl PlaylistRepository for MemoryDatabase {
@@ -254,6 +260,12 @@ impl PlaylistRepository for MemoryDatabase {
             (playlist, song),
             PlaylistMember::new(playlist, song, position, SongAvailability::Available),
         );
+        Ok(())
+    }
+    fn upsert_member(&self, member: &PlaylistMember) -> Result<(), Error> {
+        self.lock()
+            .members
+            .insert((member.playlist(), member.song()), member.clone());
         Ok(())
     }
     fn remove_member(&self, playlist: PlaylistId, song: SongId) -> Result<(), Error> {

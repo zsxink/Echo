@@ -24,6 +24,7 @@
 //! `echo/records/<kind>/<uuid-prefix>/<uuid>.json`.  Each variant holds a
 //! [`RecordKind`] discriminator.
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -474,11 +475,29 @@ pub enum RecordKind {
     PlaylistItem,
     /// A song override (user-edited metadata or lyrics override layer).
     Override,
+    /// Per-song play statistics (additive, per-device counters).
+    PlayStats,
     /// A durable deletion record propagated across devices.
     Tombstone,
 }
 
 impl RecordKind {
+    /// Every object kind the layout carries (excluding [`Self::Tombstone`],
+    /// which is a deletion marker rather than a live object).
+    ///
+    /// This is the single source of truth for "which directories exist": the
+    /// projection/reconciliation passes and the layout-consistency gate both
+    /// enumerate it, so a new kind cannot silently skip materialization.
+    pub const ALL: &'static [Self] = &[
+        Self::Song,
+        Self::Favorite,
+        Self::Playlist,
+        Self::PlaylistItem,
+        Self::Override,
+        Self::PlayStats,
+        Self::Tombstone,
+    ];
+
     /// The directory name under `echo/records/` for this kind.
     #[must_use]
     pub const fn dir_name(self) -> &'static str {
@@ -488,6 +507,7 @@ impl RecordKind {
             Self::Playlist => "playlists",
             Self::PlaylistItem => "playlist-items",
             Self::Override => "overrides",
+            Self::PlayStats => "play-stats",
             Self::Tombstone => "tombstones",
         }
     }
@@ -496,7 +516,9 @@ impl RecordKind {
     #[must_use]
     pub const fn valid_operations(self) -> &'static [TraitOperation] {
         match self {
-            Self::Song | Self::Favorite | Self::Override => &[TraitOperation::Upsert],
+            Self::Song | Self::Favorite | Self::Override | Self::PlayStats => {
+                &[TraitOperation::Upsert]
+            }
             Self::Playlist | Self::PlaylistItem => {
                 &[TraitOperation::Upsert, TraitOperation::Delete]
             }
@@ -536,6 +558,7 @@ pub enum PortableRecord {
     Playlist(PlaylistRecord),
     PlaylistItem(PlaylistItemRecord),
     Override(OverrideRecord),
+    PlayStats(PlayStatsRecord),
     Tombstone(TombstoneRecord),
 }
 
@@ -549,6 +572,7 @@ impl PortableRecord {
             Self::Playlist(_) => RecordKind::Playlist,
             Self::PlaylistItem(_) => RecordKind::PlaylistItem,
             Self::Override(_) => RecordKind::Override,
+            Self::PlayStats(_) => RecordKind::PlayStats,
             Self::Tombstone(_) => RecordKind::Tombstone,
         }
     }
@@ -562,6 +586,7 @@ impl PortableRecord {
             Self::Playlist(r) => r.playlist_uuid,
             Self::PlaylistItem(r) => r.item_uuid,
             Self::Override(r) => r.song_uuid,
+            Self::PlayStats(r) => r.song_uuid,
             Self::Tombstone(r) => r.object_uuid,
         }
     }
@@ -575,6 +600,7 @@ impl PortableRecord {
             Self::Playlist(r) => r.revision,
             Self::PlaylistItem(r) => r.revision,
             Self::Override(r) => r.revision,
+            Self::PlayStats(r) => r.revision,
             Self::Tombstone(r) => r.revision,
         }
     }
@@ -588,6 +614,7 @@ impl PortableRecord {
             Self::Playlist(r) => r.updated_by_device_id,
             Self::PlaylistItem(r) => r.updated_by_device_id,
             Self::Override(r) => r.updated_by_device_id,
+            Self::PlayStats(r) => r.updated_by_device_id,
             Self::Tombstone(r) => r.updated_by_device_id,
         }
     }
@@ -601,6 +628,7 @@ impl PortableRecord {
             Self::Playlist(r) => r.hlc,
             Self::PlaylistItem(r) => r.hlc,
             Self::Override(r) => r.hlc,
+            Self::PlayStats(r) => r.hlc,
             Self::Tombstone(r) => r.hlc,
         }
     }
@@ -624,6 +652,7 @@ impl PortableRecord {
             Self::Playlist(r) => r.playlist_uuid,
             Self::PlaylistItem(r) => r.item_uuid,
             Self::Override(r) => r.song_uuid,
+            Self::PlayStats(r) => r.song_uuid,
             Self::Tombstone(r) => r.object_uuid,
         }
     }
@@ -732,6 +761,64 @@ pub struct OverrideRecord {
     pub album: Option<String>,
     /// Overridden lyrics text (the user-edited override layer).
     pub lyrics_text: Option<String>,
+}
+
+/// A play-statistics record: how often one song has been played.
+///
+/// Stored at `echo/records/play-stats/<uuid-prefix>/<song-uuid>.json`.
+///
+/// The counter is **additive per device** (`by_device`) rather than a single
+/// last-writer-wins number: two devices that each played the same song once
+/// must merge to 2, never to 1. Writing the same device's bucket again
+/// overwrites that bucket (idempotent), so replaying a write never double
+/// counts. `total()` is the sum a reader projects into `play_count`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PlayStatsRecord {
+    pub song_uuid: uuid::Uuid,
+    pub revision: Revision,
+    pub updated_by_device_id: DeviceId,
+    pub hlc: HybridLogicalClock,
+    /// Play counts keyed by the device that recorded them (`Σ = play_count`).
+    pub by_device: BTreeMap<uuid::Uuid, u64>,
+}
+
+impl PlayStatsRecord {
+    /// The merged play count (`Σ by_device`), saturating instead of wrapping.
+    #[must_use]
+    pub fn total(&self) -> u64 {
+        self.by_device
+            .values()
+            .fold(0u64, |sum, count| sum.saturating_add(*count))
+    }
+
+    /// A copy with `device`'s bucket bumped to `count` (never lowered by a
+    /// merge: a stale remote record must not shrink a monotone counter).
+    #[must_use]
+    pub fn with_device_count(mut self, device: DeviceId, count: u64) -> Self {
+        let key = device.as_uuid();
+        let merged =
+            self.by_device.get(&key).map_or(
+                count,
+                |current| {
+                    if count > *current {
+                        count
+                    } else {
+                        *current
+                    }
+                },
+            );
+        self.by_device.insert(key, merged);
+        self
+    }
+
+    /// A copy carrying a new version stamp (used when a merge supersedes the
+    /// record that is already on disk).
+    #[must_use]
+    pub const fn with_revision(mut self, revision: Revision, hlc: HybridLogicalClock) -> Self {
+        self.revision = revision;
+        self.hlc = hlc;
+        self
+    }
 }
 
 /// A tombstone record: a durable deletion propagated across devices.
@@ -1078,6 +1165,78 @@ mod tests {
     fn record_kind_display_matches_dir_name() {
         assert_eq!(RecordKind::Song.to_string(), "songs");
         assert_eq!(RecordKind::Tombstone.to_string(), "tombstones");
+        assert_eq!(RecordKind::PlayStats.to_string(), "play-stats");
+    }
+
+    #[test]
+    fn record_kind_all_covers_every_variant_once() {
+        // The projection pass and the layout gate both enumerate `ALL`; a
+        // variant missing here is a kind whose records are silently dropped.
+        assert_eq!(RecordKind::ALL.len(), 7);
+        for kind in RecordKind::ALL {
+            assert!(
+                RecordKind::ALL
+                    .iter()
+                    .filter(|other| *other == kind)
+                    .count()
+                    == 1,
+                "{kind} must appear exactly once"
+            );
+            assert!(!kind.dir_name().is_empty());
+        }
+    }
+
+    #[test]
+    fn play_stats_counts_merge_additively_and_idempotently() {
+        let device_a = DeviceId::new();
+        let device_b = DeviceId::new();
+        let base = PlayStatsRecord {
+            song_uuid: uuid::Uuid::new_v4(),
+            revision: Revision::INITIAL,
+            updated_by_device_id: device_a,
+            hlc: HybridLogicalClock::new(1_700_000_000, 0),
+            by_device: BTreeMap::new(),
+        };
+        assert_eq!(base.total(), 0);
+
+        // Two devices each play once → the merged count is 2 (never 1: an
+        // LWW counter would have dropped one device's play).
+        let merged = base
+            .with_device_count(device_a, 1)
+            .with_device_count(device_b, 1);
+        assert_eq!(merged.total(), 2);
+
+        // Re-writing a device's bucket is idempotent, never a doubling.
+        let again = merged.with_device_count(device_a, 1);
+        assert_eq!(again.total(), 2, "same device re-write does not double");
+        // A monotone counter is never lowered by a stale merge.
+        let stale = again.clone().with_device_count(device_b, 0);
+        assert_eq!(stale.total(), 2, "a lower count never shrinks the total");
+        // A real new play on one device still adds.
+        assert_eq!(again.with_device_count(device_b, 2).total(), 3);
+    }
+
+    #[test]
+    fn play_stats_record_round_trips_through_json() {
+        let device = DeviceId::new();
+        let song_uuid = uuid::Uuid::new_v4();
+        let record = PortableRecord::PlayStats(PlayStatsRecord {
+            song_uuid,
+            revision: Revision::from_u64(4),
+            updated_by_device_id: device,
+            hlc: HybridLogicalClock::new(1_700_000_000, 3),
+            by_device: BTreeMap::from([(device.as_uuid(), 7)]),
+        });
+        assert_eq!(record.kind(), RecordKind::PlayStats);
+        assert_eq!(record.object_uuid(), song_uuid);
+        let json = record.to_canonical_json().unwrap();
+        let back: PortableRecord = serde_json::from_str(&json).unwrap();
+        assert_eq!(record, back);
+        if let PortableRecord::PlayStats(stats) = &back {
+            assert_eq!(stats.total(), 7);
+        } else {
+            panic!("expected PlayStats variant");
+        }
     }
 
     // ── PortableRecord ──────────────────────────────────────────────────

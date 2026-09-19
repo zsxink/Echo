@@ -1,6 +1,47 @@
 use crate::domain::ids::{LibraryRootId, OperationId};
-use crate::domain::library::{LibraryManifest, PortableRecord, RecordKind};
+use crate::domain::library::{LibraryManifest, PortableRecord, RecordKind, CURRENT_FORMAT_VERSION};
 use crate::error::Error;
+
+/// The observable state of `echo/manifest.json` (design D3).
+///
+/// `Absent` and `Incompatible`/`Malformed` must never collapse into one
+/// answer: "no manifest" is the self-heal trigger, while a manifest this build
+/// cannot understand is a **refusal** — overwriting it would silently downgrade
+/// a newer library.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ManifestState {
+    /// No `echo/manifest.json` at all (a brand-new root, or a root whose
+    /// manifest was lost while `echo/records/` survived).
+    Absent,
+    /// A manifest this build can read and whose format version it supports.
+    Compatible(LibraryManifest),
+    /// A manifest written by a newer format version. Continuation is refused
+    /// and the file must be left byte-for-byte untouched.
+    Incompatible { format_version: u64 },
+    /// A manifest file that is present but not parseable. Same refusal as
+    /// `Incompatible` — never overwritten by the self-heal path.
+    Malformed,
+}
+
+impl ManifestState {
+    /// The manifest when this build may act on it.
+    #[must_use]
+    pub const fn compatible(&self) -> Option<&LibraryManifest> {
+        match self {
+            Self::Compatible(manifest) => Some(manifest),
+            Self::Absent | Self::Incompatible { .. } | Self::Malformed => None,
+        }
+    }
+
+    /// Whether the file exists (whatever its state).
+    #[must_use]
+    pub const fn present(&self) -> bool {
+        !matches!(self, Self::Absent)
+    }
+}
+
+/// The format version this build writes (re-exported for adapters).
+pub const SUPPORTED_FORMAT_VERSION: u64 = CURRENT_FORMAT_VERSION;
 
 pub trait ControlPlanePort: Send + Sync {
     /// Write (create or replace) the manifest at `echo/manifest.json`.
@@ -33,6 +74,13 @@ pub trait ControlPlanePort: Send + Sync {
     /// can be created/updated). `Ok(false)` when the control plane is not
     /// usable — the library must not be enabled for sync/logic changes.
     fn control_plane_usable(&self, root: LibraryRootId) -> Result<bool, Error>;
+    /// The state of `echo/manifest.json`, distinguishing "no file" from "a
+    /// file this build must not touch" (design D3).
+    fn manifest_state(&self, root: LibraryRootId) -> Result<ManifestState, Error>;
+    /// Whether `echo/records/` already carries at least one object record of
+    /// any kind. Cheap (directory scan, no file reads): it decides whether a
+    /// manifest-less directory is a brand-new root or a self-heal candidate.
+    fn records_present(&self, root: LibraryRootId) -> Result<bool, Error>;
 }
 
 // ---------------------------------------------------------------------------

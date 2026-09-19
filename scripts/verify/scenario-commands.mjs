@@ -220,6 +220,9 @@ export const COMMANDS = {
   "LL-R01-S01": COREC("root_switch::"),
   "LL-R01-S02": COREC("root_switch::"),
   "LL-R01-S03": COREC("root_switch::"),
+  // Re-selecting a managed directory after the local database was wiped: the
+  // identities come from `echo/records/`, the media tree is untouched.
+  "LL-R01-S04": COREC("root_switch::tests::prepare_reuses_record_identities_and_leaves_media_untouched"),
   "LL-R02-S01": COREC("scan::tests::manual_rescan_is_repeatable_and_converges"),
   "LL-R02-S02": COREC("watch::tests::watch_events_converge_under_out_of_order_and_duplicate_delivery"),
   "LL-R02-S03": COREC("scan::tests::progress_persisted_throttled_and_terminal_state_kept"),
@@ -319,13 +322,48 @@ export const COMMANDS = {
   // artist-folder publish path, control-plane usability, the manifest/record
   // round trips, the absolute-path-free payload, ignoring echo/tmp, and restore
   // projecting UUIDs while keeping media-less records.
+  //
+  // R03-S01/S02 used to be `COREC("application::restore")` — a whole-module
+  // filter that only ever asserted *song* projection while the playbook claimed
+  // 喜欢/歌单/成员顺序 coverage. After `restore-user-data-from-library-records`
+  // each row points at the case that asserts the THEN clause it is registered
+  // for, so breaking playlists/member-order/favorites now fails the scenario
+  // instead of hiding behind a passing song test.
   "PLL-R01-S01": COREC("default_target_is_artist_folder_with_artist_minus_title"),
   "PLL-R01-S02": COREC("control_plane_usable_detects_writable_and_readable"),
+  // The layout↔RecordKind mapping is a structural invariant, not a behaviour
+  // one test can carry: a kind with no directory is silently dropped.
+  "PLL-R01-S03": CHECK("15.1"),
   "PLL-R02-S01": COREC("manifest_round_trips_atomically"),
   "PLL-R02-S02": COREC("sync_payloads_carry_no_absolute_paths"),
   "PLL-R02-S03": COREC("tmp_files_are_ignored_as_records"),
-  "PLL-R03-S01": COREC("application::restore"),
+  "PLL-R02-S04": DESK("playlist_mutations_materialize_records_and_tombstones"),
+  "PLL-R02-S05": DESK("recorded_plays_materialize_additive_play_stats"),
+  "PLL-R02-S06": DESK("unfavorite_materializes_a_false_record_so_it_never_returns"),
+  "PLL-R03-S01": COREC(
+    "application::continuation::tests::continuation_restores_songs_favorites_playlists_and_member_order",
+  ),
   "PLL-R03-S02": COREC("restore_projects_records_and_keeps_missing_without_media"),
+  "PLL-R03-S03": COREC("root_switch::tests::prepare_continues_object_records_before_scanning_media"),
+  "PLL-R03-S04": COREC("restore_is_idempotent_across_repeats"),
+  "PLL-R04-S01": COREC(
+    "application::portable::tests::ensure_control_plane_initializes_a_fresh_writable_root",
+  ),
+  "PLL-R04-S02": COREC(
+    "application::portable::tests::ensure_control_plane_heals_a_manifest_less_directory_with_records",
+  ),
+  "PLL-R04-S03": COREC(
+    "application::portable::tests::ensure_control_plane_reports_an_unusable_surface_without_writing",
+  ),
+  "PLL-R05-S01": COREC("root_switch::tests::prepare_continues_records_then_scans_only_unrecorded_media"),
+  "PLL-R05-S02": COREC("application::continuation::tests::dangling_records_are_counted_and_never_invented"),
+  "PLL-R05-S03": COREC(
+    "application::continuation::tests::tombstone_outranks_a_stale_record_and_is_never_resurrected",
+  ),
+  "PLL-R05-S04": COREC("application::continuation::tests::continuation_is_idempotent_across_repeated_opens"),
+  "PLL-R05-S05": COREC(
+    "application::continuation::tests::detached_legacy_records_are_superseded_by_the_matching_local_rows",
+  ),
 
   // ===== phase-one-acceptance (PHA) =====
   // S02 is the regression quality gate itself: workspace tests + frontend build

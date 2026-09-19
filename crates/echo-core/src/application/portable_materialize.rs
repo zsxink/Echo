@@ -19,19 +19,46 @@
 //!   [`write_record_guarded`], which is best-effort — the DB delete is already
 //!   committed and must not roll back because a control-plane write failed.
 
+use std::collections::BTreeMap;
+
 use crate::application::ports::{ControlPlanePort, SyncStateReader};
 use crate::domain::entities::Song;
 use crate::domain::ids::{LibraryRootId, PlaylistId, PlaylistItemId, Revision, SongId};
 use crate::domain::library::{
-    DeviceId, FavoriteRecord, HybridLogicalClock, LibraryRelativePath, PlaylistItemRecord,
-    PlaylistRecord, PortableRecord, RecordKind, SongRecord, TombstoneRecord,
+    DeviceId, FavoriteRecord, HybridLogicalClock, LibraryRelativePath, PlayStatsRecord,
+    PlaylistItemRecord, PlaylistRecord, PortableRecord, RecordKind, SongRecord, TombstoneRecord,
 };
 use crate::error::Error;
+
+/// The outbox object type of a song. Kept here rather than leaking the
+/// `SQLite` adapter's internal constants into the application layer.
+pub const SONG_OBJECT_TYPE: &str = "song";
 
 /// The outbox object type for the independent favorite fact. Kept here rather
 /// than leaking the `SQLite` adapter's internal constants into the application
 /// layer.
 pub const FAVORITE_OBJECT_TYPE: &str = "favorite";
+
+/// The outbox object type of a playlist (create/rename/delete).
+pub const PLAYLIST_OBJECT_TYPE: &str = "playlist";
+
+/// The outbox object type of one playlist membership.
+pub const PLAYLIST_ITEM_OBJECT_TYPE: &str = "playlist-item";
+
+/// The object type of play statistics. `play-stats` has no outbox row (a play
+/// is not a syncable logic change on its own), so its revision is derived from
+/// the record it supersedes.
+pub const PLAY_STATS_OBJECT_TYPE: &str = "play-stats";
+
+/// The outbox object type of a song override layer.
+///
+/// Scoped out of this change (decision A, 2026-09-20): `LyricsSource::Override`
+/// exists as a lyrics *priority*, but 0.1.0 has no user-facing override
+/// **mutation** entry point to materialize from, so nothing writes this kind
+/// yet. Continuation still reads and validates `overrides/` records, and the
+/// `15.1` gate keeps the kind mapped to its directory, so the missing piece is
+/// one write point — not a spec gap.
+pub const OVERRIDE_OBJECT_TYPE: &str = "override";
 
 /// Verify the library's control surface is writable before a logic mutation.
 ///
@@ -74,6 +101,31 @@ pub fn write_record_guarded(
         tracing::warn!(
             kind = %record.kind(),
             "control surface not usable — skipping post-commit record write"
+        );
+    }
+    Ok(())
+}
+
+/// Best-effort record removal for post-commit fan-out (undoing a delete). A
+/// control-plane failure is logged and swallowed: the DB change is already
+/// committed and must never roll back because a record could not be removed.
+///
+/// # Errors
+///
+/// `Ok(())` even on a failed control-plane removal; only a read of writability
+/// that itself errors propagates.
+pub fn delete_record_guarded(
+    control: &dyn ControlPlanePort,
+    root: LibraryRootId,
+    kind: RecordKind,
+    object_uuid: &str,
+) -> Result<(), Error> {
+    if control.control_plane_usable(root)? {
+        control.delete_record(root, kind, object_uuid)?;
+    } else {
+        tracing::warn!(
+            %kind,
+            "control surface not usable — skipping post-commit record removal"
         );
     }
     Ok(())
@@ -161,6 +213,57 @@ pub const fn playlist_item_record(
         playlist_uuid: playlist.as_uuid(),
         song_uuid: song.as_uuid(),
         position,
+    }
+}
+
+/// Build the portable play-statistics record for one completed play.
+///
+/// Play counts are **additive per device**: `by_device` carries this device's
+/// own total, so merging two devices' records sums instead of letting the last
+/// writer overwrite the other's plays (design D4). The revision advances past
+/// the record being superseded.
+#[must_use]
+pub const fn play_stats_record(
+    device: DeviceId,
+    hlc: HybridLogicalClock,
+    revision: Revision,
+    song: SongId,
+    by_device: BTreeMap<uuid::Uuid, u64>,
+) -> PlayStatsRecord {
+    PlayStatsRecord {
+        song_uuid: song.as_uuid(),
+        revision,
+        updated_by_device_id: device,
+        hlc,
+        by_device,
+    }
+}
+
+/// Merge one new play into the record already on disk (or start a fresh one).
+///
+/// Re-writing the same device's bucket is idempotent — a replayed write never
+/// doubles the count.
+#[must_use]
+pub fn merge_play_stats(
+    existing: Option<PlayStatsRecord>,
+    device: DeviceId,
+    hlc: HybridLogicalClock,
+    song: SongId,
+) -> PlayStatsRecord {
+    if let Some(record) = existing {
+        let current = record
+            .by_device
+            .get(&device.as_uuid())
+            .copied()
+            .unwrap_or(0);
+        let revision = Revision::from_u64(record.revision.as_u64().saturating_add(1));
+        record
+            .with_device_count(device, current.saturating_add(1))
+            .with_revision(revision, hlc)
+    } else {
+        let mut by_device = BTreeMap::new();
+        by_device.insert(device.as_uuid(), 1);
+        play_stats_record(device, hlc, Revision::INITIAL, song, by_device)
     }
 }
 
