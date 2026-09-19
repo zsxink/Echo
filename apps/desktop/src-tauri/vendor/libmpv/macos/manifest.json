@@ -7,10 +7,7 @@
   "asset": "libmpv-libs_v0.7.2_macos-universal-audio-default.tar.gz",
   "sourceUrl": "https://github.com/media-kit/libmpv-darwin-build/releases/download/v0.7.2/libmpv-libs_v0.7.2_macos-universal-audio-default.tar.gz",
   "assetSha256": "2083852560cd1c4fabb1ca86b534bd3aaddebd4db965cb7110903f0604d31862",
-  "architectures": [
-    "arm64",
-    "x86_64"
-  ],
+  "architectures": ["arm64", "x86_64"],
   "libmpvAbi": "2.0.0",
   "mpvBuild": "0.36.0",
   "licenses": [
