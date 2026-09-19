@@ -659,7 +659,11 @@ fn sync_directory(dir: &Path) {
     }
 }
 
+// The no-op tail could trivially be `const`, but the unix twin above calls
+// `File::open`, so the pair cannot be uniform `const fn` (mirrors
+// `bundled_libmpv` in the app shell).
 #[cfg(not(unix))]
+#[allow(clippy::missing_const_for_fn)]
 fn sync_directory(_dir: &Path) {}
 
 /// The desktop-state storage error surface. Kept minimal: callers only need
