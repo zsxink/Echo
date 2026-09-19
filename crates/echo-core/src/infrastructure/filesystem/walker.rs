@@ -281,7 +281,7 @@ mod tests {
         let secret = outside.path().join("secret.mp3");
         std::fs::write(&secret, b"outside").unwrap();
         let link = dir.path().join("media/escape.mp3");
-        let None = symlink(&secret, &link) else {
+        let Some(()) = symlink(&secret, &link) else {
             return;
         };
         std::fs::write(dir.path().join("media/inside.mp3"), b"inside").unwrap();
@@ -304,7 +304,7 @@ mod tests {
         std::fs::create_dir_all(outside.path().join("music")).unwrap();
         std::fs::write(outside.path().join("music/x.mp3"), b"x").unwrap();
         let link = dir.path().join("media/linked");
-        let None = symlink(&outside.path().join("music"), &link) else {
+        let Some(()) = symlink(&outside.path().join("music"), &link) else {
             return;
         };
 
@@ -338,7 +338,7 @@ mod tests {
         // The attacker replaces the inside file with a symlink to the outside
         // secret (a classic TOCTOU swap after the first read).
         std::fs::remove_file(dir.path().join("media/swap.mp3")).unwrap();
-        let None = symlink(&secret, &dir.path().join("media/swap.mp3")) else {
+        let Some(()) = symlink(&secret, &dir.path().join("media/swap.mp3")) else {
             return;
         };
 

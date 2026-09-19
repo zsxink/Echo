@@ -343,7 +343,7 @@ mod tests {
         let outside = tempfile::tempdir().unwrap();
         let link = base.join("echo/tmp");
         std::fs::create_dir_all(base.join("echo")).unwrap();
-        let None = create_symlink(outside.path(), &link) else {
+        let Some(()) = create_symlink(outside.path(), &link) else {
             return;
         };
         assert_eq!(manager.check(&link, root), StagingCheck::NotOurs);
