@@ -153,26 +153,29 @@
 | LE-R03-S03 | 全部歌曲排序 | 非全部歌曲视图排序 | 3.8, 6.1, 10.5 | Core/React | `tests/scenarios/LE-R03-S03.yaml` | `pnpm verify:scenario -- LE-R03-S03` |
 | LE-R04-S01 | 歌曲收藏 | 收藏歌曲 | 6.3, 10.6 | Core/React | `tests/scenarios/LE-R04-S01.yaml` | `pnpm verify:scenario -- LE-R04-S01` |
 | LE-R04-S02 | 歌曲收藏 | 取消收藏 | 6.3, 10.6 | Core/React | `tests/scenarios/LE-R04-S02.yaml` | `pnpm verify:scenario -- LE-R04-S02` |
-| LE-R05-S01 | 歌曲操作与详情 | 打开歌曲操作菜单 | 6.4, 8.11, 10.6, 10.8 | Core/Desktop/React/Native | `tests/native/LE-R05-S01.md` | `pnpm verify:scenario -- LE-R05-S01` |
-| LE-R05-S02 | 歌曲操作与详情 | 查看歌曲详情 | 6.4, 8.11, 10.6, 10.8 | Core/Desktop/React/Native | `tests/native/LE-R05-S02.md` | `pnpm verify:scenario -- LE-R05-S02` |
-| LE-R05-S03 | 歌曲操作与详情 | 删除当前播放歌曲 | 6.4, 8.11, 10.6, 10.8 | Core/Desktop/React/Native | `tests/native/LE-R05-S03.md` | `pnpm verify:scenario -- LE-R05-S03` |
-| LE-R05-S04 | 歌曲操作与详情 | 打开本地目录 | 6.4, 8.11, 10.6, 10.8, 9.5 | Core/Desktop/React/Native | `tests/native/LE-R05-S04.md` | `pnpm verify:scenario -- LE-R05-S04` |
-| LE-R05-S05 | 歌曲操作与详情 | 删除歌曲 | 6.4, 8.11, 10.6, 10.8 | Core/Desktop/React/Native | `tests/native/LE-R05-S05.md` | `pnpm verify:scenario -- LE-R05-S05` |
-| LE-R05-S06 | 歌曲操作与详情 | 回收站结果无法证明 | 6.4, 8.11, 10.6, 10.8, 5.8, 13.3 | Core/Desktop/React/Native | `tests/native/LE-R05-S06.md` | `pnpm verify:scenario -- LE-R05-S06` |
-| LE-R06-S01 | 资料库状态反馈 | 初次加载 | 4.10, 10.3, 10.7 | Core/React | `tests/scenarios/LE-R06-S01.yaml` | `pnpm verify:scenario -- LE-R06-S01` |
-| LE-R06-S02 | 资料库状态反馈 | 资料库为空 | 4.10, 10.3, 10.7 | Core/React | `tests/scenarios/LE-R06-S02.yaml` | `pnpm verify:scenario -- LE-R06-S02` |
-| LE-R06-S03 | 资料库状态反馈 | 资料库不可用 | 4.10, 10.3, 10.7 | Core/React | `tests/scenarios/LE-R06-S03.yaml` | `pnpm verify:scenario -- LE-R06-S03` |
-| LE-R06-S04 | 资料库状态反馈 | 加载或扫描失败 | 4.10, 10.3, 10.7 | Core/React | `tests/scenarios/LE-R06-S04.yaml` | `pnpm verify:scenario -- LE-R06-S04` |
-| LE-R07-S01 | 大曲库浏览 | 浏览大量歌曲 | 3.8, 10.6, 12.5 | Core/React/Perf | `tests/scenarios/LE-R07-S01.yaml` | `pnpm verify:scenario -- LE-R07-S01` |
-| LE-R07-S02 | 大曲库浏览 | 搜索或排序后保持定位 | 3.8, 10.6, 12.5 | Core/React/Perf | `tests/scenarios/LE-R07-S02.yaml` | `pnpm verify:scenario -- LE-R07-S02` |
-| LE-R08-S01 | 资料库视图计数 | 未打开过的视图也显示计数 | nav 1.1–2.5, 4.1–4.5 | Core/Desktop/React | `tests/scenarios/LE-R08-S01.yaml` | `pnpm verify:scenario -- LE-R08-S01` |
-| LE-R08-S02 | 资料库视图计数 | 计数不受分页影响 | nav 2.1, 4.2 | Core/React | `tests/scenarios/LE-R08-S02.yaml` | `pnpm verify:scenario -- LE-R08-S02` |
-| LE-R08-S03 | 资料库视图计数 | 计数与视图定义一致 | nav 2.1–2.3 | Core | `tests/scenarios/LE-R08-S03.yaml` | `pnpm verify:scenario -- LE-R08-S03` |
-| LE-R08-S04 | 资料库视图计数 | 最近添加上限 | nav 1.1, 2.3 | Core | `tests/scenarios/LE-R08-S04.yaml` | `pnpm verify:scenario -- LE-R08-S04` |
-| LE-R09-S01 | 计数失效与刷新 | 在其他视图切换收藏后计数更新 | nav 4.2–4.4 | React | `tests/scenarios/LE-R09-S01.yaml` | `pnpm verify:scenario -- LE-R09-S01` |
-| LE-R09-S02 | 计数失效与刷新 | 导入与删除后计数更新 | nav 4.4 | React | `tests/scenarios/LE-R09-S02.yaml` | `pnpm verify:scenario -- LE-R09-S02` |
-| LE-R09-S03 | 计数失效与刷新 | 刷新期间不显示空白 | nav 4.2–4.3 | React | `tests/scenarios/LE-R09-S03.yaml` | `pnpm verify:scenario -- LE-R09-S03` |
-| LE-R09-S04 | 计数失效与刷新 | 资料库不可用时 | nav 4.2 | React | `tests/scenarios/LE-R09-S04.yaml` | `pnpm verify:scenario -- LE-R09-S04` |
+| LE-R05-S01 | 收藏事实时间真实性 | 标记喜欢 | 13.9, 13.13 | Core/Native | `tests/native/LE-R05-S01.md` | `pnpm verify:scenario -- LE-R05-S01` |
+| LE-R05-S02 | 收藏事实时间真实性 | 取消后再次收藏 | 13.9, 13.13 | Core/Native | `tests/native/LE-R05-S02.md` | `pnpm verify:scenario -- LE-R05-S02` |
+| LE-R05-S03 | 收藏事实时间真实性 | 收藏时间按当前时区呈现 | 13.9, 13.13 | Core/Native | `tests/native/LE-R05-S03.md` | `pnpm verify:scenario -- LE-R05-S03` |
+| LE-R06-S01 | 歌曲操作与详情 | 打开歌曲操作菜单 | 6.4, 8.11, 10.6, 10.8 | Core/Desktop/React | `tests/scenarios/LE-R06-S01.yaml` | `pnpm verify:scenario -- LE-R06-S01` |
+| LE-R06-S02 | 歌曲操作与详情 | 查看歌曲详情 | 6.4, 8.11, 10.6, 10.8 | Core/Desktop/React | `tests/scenarios/LE-R06-S02.yaml` | `pnpm verify:scenario -- LE-R06-S02` |
+| LE-R06-S03 | 歌曲操作与详情 | 删除当前播放歌曲 | 6.4, 8.11, 10.6, 10.8 | Core/Desktop/React | `tests/scenarios/LE-R06-S03.yaml` | `pnpm verify:scenario -- LE-R06-S03` |
+| LE-R06-S04 | 歌曲操作与详情 | 打开本地目录 | 6.4, 8.11, 10.6, 10.8, 9.5 | Core/Desktop/React | `tests/scenarios/LE-R06-S04.yaml` | `pnpm verify:scenario -- LE-R06-S04` |
+| LE-R06-S05 | 歌曲操作与详情 | 删除歌曲 | 6.4, 8.11, 10.6, 10.8 | Core/Desktop/React | `tests/scenarios/LE-R06-S05.yaml` | `pnpm verify:scenario -- LE-R06-S05` |
+| LE-R06-S06 | 歌曲操作与详情 | 回收站结果无法证明 | 6.4, 8.11, 10.6, 10.8, 5.8, 13.3 | Core/Desktop/React | `tests/scenarios/LE-R06-S06.yaml` | `pnpm verify:scenario -- LE-R06-S06` |
+| LE-R07-S01 | 资料库状态反馈 | 初次加载 | 4.10, 10.3, 10.7 | Core/React | `tests/scenarios/LE-R07-S01.yaml` | `pnpm verify:scenario -- LE-R07-S01` |
+| LE-R07-S02 | 资料库状态反馈 | 资料库为空 | 4.10, 10.3, 10.7 | Core/React | `tests/scenarios/LE-R07-S02.yaml` | `pnpm verify:scenario -- LE-R07-S02` |
+| LE-R07-S03 | 资料库状态反馈 | 资料库不可用 | 4.10, 10.3, 10.7 | Core/React | `tests/scenarios/LE-R07-S03.yaml` | `pnpm verify:scenario -- LE-R07-S03` |
+| LE-R07-S04 | 资料库状态反馈 | 加载或扫描失败 | 4.10, 10.3, 10.7 | Core/React | `tests/scenarios/LE-R07-S04.yaml` | `pnpm verify:scenario -- LE-R07-S04` |
+| LE-R08-S01 | 大曲库浏览 | 浏览大量歌曲 | 3.8, 10.6, 12.5 | Core/React/Perf | `tests/scenarios/LE-R08-S01.yaml` | `pnpm verify:scenario -- LE-R08-S01` |
+| LE-R08-S02 | 大曲库浏览 | 搜索或排序后保持定位 | 3.8, 10.6, 12.5 | Core/React/Perf | `tests/scenarios/LE-R08-S02.yaml` | `pnpm verify:scenario -- LE-R08-S02` |
+| LE-R09-S01 | 资料库视图计数 | 未打开过的视图也显示计数 | nav 1.1–2.5, 4.1–4.5 | Core/Desktop/React | `tests/scenarios/LE-R09-S01.yaml` | `pnpm verify:scenario -- LE-R09-S01` |
+| LE-R09-S02 | 资料库视图计数 | 计数不受分页影响 | nav 2.1, 4.2 | Core/React | `tests/scenarios/LE-R09-S02.yaml` | `pnpm verify:scenario -- LE-R09-S02` |
+| LE-R09-S03 | 资料库视图计数 | 计数与视图定义一致 | nav 2.1–2.3 | Core | `tests/scenarios/LE-R09-S03.yaml` | `pnpm verify:scenario -- LE-R09-S03` |
+| LE-R09-S04 | 资料库视图计数 | 最近添加上限 | nav 1.1, 2.3 | Core | `tests/scenarios/LE-R09-S04.yaml` | `pnpm verify:scenario -- LE-R09-S04` |
+| LE-R10-S01 | 计数失效与刷新 | 在其他视图切换收藏后计数更新 | nav 4.2–4.4 | React | `tests/scenarios/LE-R10-S01.yaml` | `pnpm verify:scenario -- LE-R10-S01` |
+| LE-R10-S02 | 计数失效与刷新 | 导入与删除后计数更新 | nav 4.4 | React | `tests/scenarios/LE-R10-S02.yaml` | `pnpm verify:scenario -- LE-R10-S02` |
+| LE-R10-S03 | 计数失效与刷新 | 刷新期间不显示空白 | nav 4.2–4.3 | React | `tests/scenarios/LE-R10-S03.yaml` | `pnpm verify:scenario -- LE-R10-S03` |
+| LE-R10-S04 | 计数失效与刷新 | 资料库不可用时 | nav 4.2 | React | `tests/scenarios/LE-R10-S04.yaml` | `pnpm verify:scenario -- LE-R10-S04` |
 
 ## local-library
 
@@ -203,6 +206,9 @@
 | LL-R08-S01 | 跨平台路径、隐私与性能约束 | Unicode 和平台路径 | 4.2, 7.7, 12.5–12.7, 13.4 | Security/Perf/Native | `tests/native/LL-R08-S01.md` | `pnpm verify:scenario -- LL-R08-S01` |
 | LL-R08-S02 | 跨平台路径、隐私与性能约束 | 扫描期间继续使用界面 | 4.2, 7.7, 12.5–12.7, 13.4 | Security/Perf/Native | `tests/native/LL-R08-S02.md` | `pnpm verify:scenario -- LL-R08-S02` |
 | LL-R08-S03 | 跨平台路径、隐私与性能约束 | 不泄露本机路径 | 4.2, 7.7, 12.5–12.7, 13.4, 1.8, 7.8 | Security/Perf/Native | `tests/native/LL-R08-S03.md` | `pnpm verify:scenario -- LL-R08-S03` |
+| LL-R09-S01 | 导入事实时间真实性与时区呈现 | 真实导入时间 | 5.5, 13.9, 13.13 | Core/Native | `tests/scenarios/LL-R09-S01.yaml` | `pnpm verify:scenario -- LL-R09-S01` |
+| LL-R09-S02 | 导入事实时间真实性与时区呈现 | 重复或重扫不改写时间 | 5.5, 13.9, 13.13 | Core/Native | `tests/scenarios/LL-R09-S02.yaml` | `pnpm verify:scenario -- LL-R09-S02` |
+| LL-R09-S03 | 导入事实时间真实性与时区呈现 | 当前时区转换 | 5.5, 13.9, 13.13 | Core/Native | `tests/scenarios/LL-R09-S03.yaml` | `pnpm verify:scenario -- LL-R09-S03` |
 
 ## playlist-management
 
@@ -227,6 +233,10 @@
 | PM-R06-S02 | 歌单异步操作反馈 | 入队失败 | — | Gate | `tests/scenarios/PM-R06-S02.yaml` | `pnpm verify:scenario -- PM-R06-S02` |
 | PM-R07-S01 | 歌单选择器内新建歌单 | 从选择器创建并添加歌曲 | — | Gate | `tests/scenarios/PM-R07-S01.yaml` | `pnpm verify:scenario -- PM-R07-S01` |
 | PM-R07-S02 | 歌单选择器内新建歌单 | 从选择器创建失败 | — | Gate | `tests/scenarios/PM-R07-S02.yaml` | `pnpm verify:scenario -- PM-R07-S02` |
+| PM-R08-S01 | 歌单与成员事实时间真实性 | 创建歌单时记录时间 | 6.5, 6.6, 13.9, 13.13 | Core/Native | `tests/scenarios/PM-R08-S01.yaml` | `pnpm verify:scenario -- PM-R08-S01` |
+| PM-R08-S02 | 歌单与成员事实时间真实性 | 加入歌单时记录时间 | 6.5, 6.6, 13.9, 13.13 | Core/Native | `tests/scenarios/PM-R08-S02.yaml` | `pnpm verify:scenario -- PM-R08-S02` |
+| PM-R08-S03 | 歌单与成员事实时间真实性 | 重复加入不重写时间 | 6.5, 6.6, 13.9, 13.13 | Core/Native | `tests/scenarios/PM-R08-S03.yaml` | `pnpm verify:scenario -- PM-R08-S03` |
+| PM-R08-S04 | 歌单与成员事实时间真实性 | 歌单时间按当前时区呈现 | 6.5, 6.6, 13.9, 13.13 | Core/Native | `tests/scenarios/PM-R08-S04.yaml` | `pnpm verify:scenario -- PM-R08-S04` |
 
 ## safe-file-ingestion
 
@@ -254,6 +264,11 @@
 | SFI-R07-S02 | 单实例唤醒与重复打开 | 冷启动文件关联 | 9.1, 9.2 | Desktop/Native | `tests/native/SFI-R07-S02.md` | `pnpm verify:scenario -- SFI-R07-S02` |
 | SFI-R08-S01 | 跨平台路径与恢复后的幂等性 | 跨平台安全命名 | 5.5, 5.10, 13.3, 13.4 | Fault injection/Native | `tests/native/SFI-R08-S01.md` | `pnpm verify:scenario -- SFI-R08-S01` |
 | SFI-R08-S02 | 跨平台路径与恢复后的幂等性 | 重试导入幂等 | 5.5, 5.10, 13.3, 13.4 | Fault injection/Native | `tests/native/SFI-R08-S02.md` | `pnpm verify:scenario -- SFI-R08-S02` |
+| SFI-R09-S01 | 受控并发批量导入与非阻塞反馈 | 大批量并发导入 | 2.1, 2.2, 13.9, 13.13 | Core/Fault injection | `tests/scenarios/SFI-R09-S01.yaml` | `pnpm verify:scenario -- SFI-R09-S01` |
+| SFI-R09-S02 | 受控并发批量导入与非阻塞反馈 | 无失败结果完成 | 2.1, 2.2, 13.9, 13.13 | Core/Fault injection | `tests/scenarios/SFI-R09-S02.yaml` | `pnpm verify:scenario -- SFI-R09-S02` |
+| SFI-R09-S03 | 受控并发批量导入与非阻塞反馈 | 批次包含失败 | 2.1, 2.2, 13.9, 13.13 | Core/Fault injection | `tests/scenarios/SFI-R09-S03.yaml` | `pnpm verify:scenario -- SFI-R09-S03` |
+| SFI-R09-S04 | 受控并发批量导入与非阻塞反馈 | 全部项目失败 | 2.1, 2.2, 13.9, 13.13 | Core/Fault injection | `tests/scenarios/SFI-R09-S04.yaml` | `pnpm verify:scenario -- SFI-R09-S04` |
+| SFI-R09-S05 | 受控并发批量导入与非阻塞反馈 | 多线程重叠可验证 | 2.1, 2.2, 13.9, 13.13 | Core/Fault injection | `tests/scenarios/SFI-R09-S05.yaml` | `pnpm verify:scenario -- SFI-R09-S05` |
 
 ## sync-foundation
 

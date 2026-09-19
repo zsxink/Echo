@@ -661,9 +661,7 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
             if let Ok(result) = result_rx.try_recv() {
-                let event = result
-                    .expect("subscription ok")
-                    .expect("event delivered");
+                let event = result.expect("subscription ok").expect("event delivered");
                 assert_eq!(event.root, root);
                 assert_eq!(event.path.display(), "media/tone.mp3");
                 return;
@@ -680,7 +678,9 @@ mod tests {
                     media.join("tone.mp3").exists(),
                     "no event within the deadline and the file is missing — watcher pipeline is broken"
                 );
-                eprintln!("skipping end-to-end watcher test: runner filesystem emits no notify events");
+                eprintln!(
+                    "skipping end-to-end watcher test: runner filesystem emits no notify events"
+                );
                 return;
             }
             std::thread::sleep(Duration::from_millis(20));

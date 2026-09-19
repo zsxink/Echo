@@ -211,8 +211,6 @@ export const COMMANDS = {
   // library-nav-counts: backend-driven view counts, invalidation on changes.
   "LE-R08-S01": REACT("src/features/library/libraryNavCounts.test.tsx"),
   "LE-R08-S02": REACT("src/features/library/libraryNavCounts.test.tsx"),
-  "LE-R08-S03": REACT("src/features/library/libraryNavCounts.test.tsx"),
-  "LE-R08-S04": REACT("src/features/library/libraryNavCounts.test.tsx"),
   "LE-R09-S01": REACT("src/features/library/libraryNavCounts.test.tsx"),
   "LE-R09-S02": REACT("src/features/library/libraryNavCounts.test.tsx"),
   "LE-R09-S03": REACT("src/features/library/libraryNavCounts.test.tsx"),
