@@ -2,7 +2,7 @@
 
 > 基线：`main` 上 `6866700`（`test(verify): prove every gate fails when its rule is violated`）。
 > 用 `git log --oneline -12` 可回看到本段全部提交。
-> OpenSpec change：`openspec/changes/enforce-architecture-and-code-standards/`
+> OpenSpec change：`openspec/changes/archive/2026-09-18-enforce-architecture-and-code-standards/`（已归档）
 > 完成度：**43/47**，逐项原因见该 change 的 `tasks.md` 末尾「收尾状态」表。
 >
 > 本文只写**还没做完的事**、**怎么判断做完**，以及**本轮用血换的纪律**。
@@ -52,7 +52,7 @@ ECHO_PURITY_REQUIRE_BUILD=1 node scripts/verify/check-build-purity.mjs
 node scripts/verify/checks/check-embedded-frontend.mjs
 
 # OpenSpec（CLI 是根 devDependency，走 pnpm exec；CI 同一条命令）
-pnpm exec openspec validate enforce-architecture-and-code-standards --strict
+# 该 change 已归档，归档子项用 --archived 校验（未归档时才用 <name> --strict 定向校验）
 pnpm exec openspec validate --archived
 ```
 

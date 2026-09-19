@@ -46,6 +46,12 @@
 | DAS-R12-S01 | 后台播放生命周期完整性 | 关闭窗口后继续后台播放 | — | Gate | `tests/scenarios/DAS-R12-S01.yaml` | `pnpm verify:scenario -- DAS-R12-S01` |
 | DAS-R12-S02 | 后台播放生命周期完整性 | 从后台入口退出 | — | Gate | `tests/scenarios/DAS-R12-S02.yaml` | `pnpm verify:scenario -- DAS-R12-S02` |
 | DAS-R13-S01 | Echo 应用名称一致性 | 可见应用身份一致 | — | Gate | `tests/scenarios/DAS-R13-S01.yaml` | `pnpm verify:scenario -- DAS-R13-S01` |
+| DAS-R14-S01 | macOS 菜单栏传输控制与应用身份 | 从常驻菜单栏控制传输 | — | Desktop/Native | `tests/native/DAS-R14-S01.md` | `pnpm verify:scenario -- DAS-R14-S01` |
+| DAS-R14-S02 | macOS 菜单栏传输控制与应用身份 | 紧凑控件按点击位置隔离动作 | — | Desktop/Native | `tests/native/DAS-R14-S02.md` | `pnpm verify:scenario -- DAS-R14-S02` |
+| DAS-R14-S03 | macOS 菜单栏传输控制与应用身份 | 状态栏控制视觉验收 | — | Desktop/Native | `tests/native/DAS-R14-S03.md` | `pnpm verify:scenario -- DAS-R14-S03` |
+| DAS-R14-S04 | macOS 菜单栏传输控制与应用身份 | Echo 图标打开单例窗口 | — | Desktop/Native | `tests/native/DAS-R14-S04.md` | `pnpm verify:scenario -- DAS-R14-S04` |
+| DAS-R14-S05 | macOS 菜单栏传输控制与应用身份 | 重复点击不创建多个窗口 | — | Desktop/Native | `tests/native/DAS-R14-S05.md` | `pnpm verify:scenario -- DAS-R14-S05` |
+| DAS-R14-S06 | macOS 菜单栏传输控制与应用身份 | 打包后的身份显示 | — | Desktop/Native | `tests/native/DAS-R14-S06.md` | `pnpm verify:scenario -- DAS-R14-S06` |
 
 ## desktop-playback
 
@@ -94,6 +100,10 @@
 | DP-R12-S02 | 非沉浸播放模式视觉语义 | 主题切换期间保持随机模式 | — | Gate | `tests/scenarios/DP-R12-S02.yaml` | `pnpm verify:scenario -- DP-R12-S02` |
 | DP-R13-S01 | 播放位置的本机会话持久化 | 退出后恢复播放位置 | — | Gate | `tests/scenarios/DP-R13-S01.yaml` | `pnpm verify:scenario -- DP-R13-S01` |
 | DP-R13-S02 | 播放位置的本机会话持久化 | 持久化位置超出有效范围 | — | Gate | `tests/scenarios/DP-R13-S02.yaml` | `pnpm verify:scenario -- DP-R13-S02` |
+| DP-R14-S01 | 播放上下文的解析归属与顺序语义 | 从超过单页上限的资料库视图开始播放 | — | Core | `tests/scenarios/DP-R14-S01.yaml` | `pnpm verify:scenario -- DP-R14-S01` |
+| DP-R14-S02 | 播放上下文的解析归属与顺序语义 | 从“最近”视图开始播放 | — | Core | `tests/scenarios/DP-R14-S02.yaml` | `pnpm verify:scenario -- DP-R14-S02` |
+| DP-R14-S03 | 播放上下文的解析归属与顺序语义 | 从歌单开始播放 | — | Core | `tests/scenarios/DP-R14-S03.yaml` | `pnpm verify:scenario -- DP-R14-S03` |
+| DP-R14-S04 | 播放上下文的解析归属与顺序语义 | 选中项已不在上下文中 | — | Core | `tests/scenarios/DP-R14-S04.yaml` | `pnpm verify:scenario -- DP-R14-S04` |
 
 ## immersive-lyrics
 

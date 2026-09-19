@@ -368,10 +368,6 @@ function generate() {
   ].join("\n");
   writeFileSync(resolve(AUDIO_DIR, "tone-short.lrc"), synced);
 
-  // K2) lyrics/tone-short.synced.lrc — same synced lyrics kept in the lyrics
-  // subdir for consumers that look there.
-  writeFileSync(resolve(LYRICS_DIR, "tone-short.synced.lrc"), synced);
-
   // K3) lyrics/tone-short.plain.txt — plain-text lyrics, no timestamps.
   const plain = [
     "Echo Fixtures — Tone Lyrics",

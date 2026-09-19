@@ -117,7 +117,6 @@ export const COMMANDS = {
   // committed playlist and failure-feedback UI path run as one registered
   // offline acceptance command.
   "DP-R07-S02": "cargo test -p echo-desktop --all-features --lib && pnpm --dir apps/desktop test",
-  "DP-R07-S03": DESK("platform::local_state"),
   "DP-R08-S01": CHECK("9.4"),
   "DP-R08-S02": REACT("src/player/useGlobalPlayerHotkeys.test.tsx"),
   "DP-R09-S01": CHECK("9.3"),
@@ -144,6 +143,10 @@ export const COMMANDS = {
   "DP-R12-S02": REACT_T("src/features/player/PlayerBar.test.tsx", "while the theme changes"),
   "DP-R13-S01": DESK("player::coordinator::tests::restore_session_recovers_queue_mode_and_settings_paused"),
   "DP-R13-S02": COREC("playback_restore"),
+  "DP-R14-S01": COREC("application::playback_context::tests::resolves_all_pages_and_validates_selected_song"),
+  "DP-R14-S02": COREC("application::playback_context::tests::recent_filters_case_insensitively_and_rejects_absent_selection"),
+  "DP-R14-S03": COREC("application::playback_context::tests::playlist_uses_newest_member_first"),
+  "DP-R14-S04": COREC("application::playback_context::tests::unknown_library_view_is_rejected_in_core"),
 
   // ===== immersive-lyrics (IL) =====
   "IL-R01-S01": REACT("src/features/player/PlayerBar.test.tsx"),

@@ -1,6 +1,6 @@
-# LE-R05-S01 — 标记喜欢
+# DAS-R14-S01 — 从常驻菜单栏控制传输
 
-> Requirement: 收藏事实时间真实性
+> Requirement: macOS 菜单栏传输控制与应用身份
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）
 
 ## 目标平台
@@ -22,6 +22,6 @@
 ## 证据与记录
 
 - operator: (填写执行人)
-- evidence-path: artifacts/native-attestations/LE-R05-S01.log
+- evidence-path: artifacts/native-attestations/DAS-R14-S01.log
 - date: (YYYY-MM-DD)
 - result: (pass / fail + 说明)

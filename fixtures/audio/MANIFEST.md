@@ -50,8 +50,7 @@ determinism check in `task-1.6.mjs`).
 | `tone-short-video.mp4` | 14.6 K | MP4 (AAC + H.264) | "mp4 **with** an audio track" | `ffmpeg -f lavfi -i <sine> -f lavfi -i color=c=black:s=64x64:r=1:d=1 -map 0:a -map 1:v -c:a aac -b:a 96k -c:v libx264 -t 1 -pix_fmt yuv420p -shortest` + fixed metadata |
 | `no-audio.mp4` | 1.5 K | MP4 (H.264 only) | corner case: mp4 with **no** audio track | `ffmpeg -f lavfi -i color=c=steelblue:s=64x64:r=1:d=1 -c:v libx264 -t 1 -pix_fmt yuv420p -an` |
 | `tone-corrupted.mp3` | 135 B | broken MP3 container | corrupt-media diagnostics | Generate the full `tone-short`-equivalent mp3, then truncate **mid-frame**: keep the ID3v2 tag plus the first 3 bytes of the first MPEG audio frame, so no complete frame survives. `ffprobe` reports `Failed to find two consecutive MPEG audio frames / Invalid data`. (A 60% whole-file truncation was evaluated; MP3's streaming resilience still lets ffprobe open it, so the fixture truncates inside the first frame instead for a genuinely broken container.) |
-| `lyrics/tone-short.synced.lrc` | 199 B | LRC (synced) | synced lyrics with `[ti:]` header and `[mm:ss.xx]` lines at 0.00/0.25/0.50/0.75/1.00 | Hand-written (generated) text in `scripts/gen-fixtures.mjs` |
-| `tone-short.lrc` | 199 B | LRC (synced) | sidecar pairing (`tone-short.mp3` + `tone-short.lrc`), Echo's `<basename>.lrc` convention | Same synced LRC content as above, placed next to the mp3 |
+| `tone-short.lrc` | 199 B | LRC (synced) | sidecar pairing (`tone-short.mp3` + `tone-short.lrc`), Echo's `<basename>.lrc` convention | Hand-written (generated) text in `scripts/gen-fixtures.mjs` |
 | `lyrics/tone-short.plain.txt` | 127 B | plain text | plain-text lyrics candidate, no timestamps | Hand-written (generated) text in `scripts/gen-fixtures.mjs` |
 
 Every audio fixture is a 1-second 440 Hz sine at 44.1 kHz, mono (Ogg/Vorbis is
