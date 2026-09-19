@@ -841,6 +841,8 @@ fn main() {
         }
         // macOS delivers file-association opens through `RunEvent::Opened`; they
         // go through the same FIFO as the single-instance argv path (task 9.1).
+        // The variant is macOS-only, so it can never match on other targets.
+        #[cfg(target_os = "macos")]
         RunEvent::Opened { urls } => {
             focus_main_window(app);
             for url in urls {
@@ -849,6 +851,7 @@ fn main() {
         }
         // Clicking the macOS Dock icon emits `Reopen`, rather than a tray-icon
         // event. Restore the hidden player window only when no window is visible.
+        #[cfg(target_os = "macos")]
         RunEvent::Reopen {
             has_visible_windows,
             ..

@@ -28,12 +28,12 @@ jobs:
         include:
           - os: macos-latest
             arch: aarch64
-            bundle_dir: target/release/bundle/macos
-            artifacts: "*.dmg"
+            bundle_dir: target/release/bundle
+            artifacts: "dmg/*.dmg"
           - os: windows-latest
             arch: x64
-            bundle_dir: target/release/bundle/nsis
-            artifacts: "*.exe"
+            bundle_dir: target/release/bundle
+            artifacts: "nsis/*.exe"
           - os: ubuntu-latest
             arch: x64
             bundle_dir: target/release/bundle
