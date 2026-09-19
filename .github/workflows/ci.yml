@@ -23,6 +23,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The filesystem gate tests create real symlinks (walker / staging never
+      # follow an escaping or externally-owned link). Windows runners only allow
+      # `mklink` with Developer Mode enabled; flip the registry switch so the
+      # tests exercise the real code rather than skipping.
+      - name: Enable Windows Developer Mode for symlinks
+        if: runner.os == 'Windows'
+        run: |
+          reg add "HKLM\Software\Microsoft\Windows\CurrentVersion\AppModelUnlock" /v AllowDevelopmentWithoutDevLicense /t REG_DWORD /d 1 /f
+
       - name: Install Rust toolchain (pinned, rustfmt + clippy)
         uses: dtolnay/rust-toolchain@master
         with:

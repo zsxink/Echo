@@ -750,14 +750,16 @@ mod tests {
 
     #[test]
     fn path_exists_propagates_real_root_access_errors_but_not_not_found() {
+        // RootConstrainedFileSystem treats the root as an opaque base path and
+        // resolves media paths beneath it. Registering a *file* as a root
+        // yields an `ENOTDIR`-style probe failure on Unix, which must surface as
+        // a real error rather than absence. Windows has no `ENOTDIR`: resolving
+        // under a file component yields `NotFound`, so the "not mistaken for
+        // absence" half is inherently unix-specific and gated accordingly.
         let dir = tempfile::tempdir().unwrap();
         let registry = RootRegistry::new();
         let missing_root = LibraryRootId::new();
         registry.register(missing_root, dir.path());
-        let root = LibraryRootId::new();
-        let not_a_directory = dir.path().join("not-a-directory");
-        std::fs::write(&not_a_directory, b"file").unwrap();
-        registry.register(root, &not_a_directory);
         let fs = RootConstrainedFileSystem::new(registry);
 
         assert!(!fs
@@ -767,10 +769,19 @@ mod tests {
             )
             .expect("a missing target remains a normal false result"));
 
-        let error = fs
-            .path_exists(root, &RelativeMediaPath::new("child.flac").unwrap())
-            .expect_err("a root access failure must not be mistaken for absence");
-        assert_eq!(error.code(), "io");
+        #[cfg(unix)]
+        {
+            let root = LibraryRootId::new();
+            let not_a_directory = dir.path().join("not-a-directory");
+            std::fs::write(&not_a_directory, b"file").unwrap();
+            let file_as_root = RootRegistry::new();
+            file_as_root.register(root, &not_a_directory);
+            let fs = RootConstrainedFileSystem::new(file_as_root);
+            let error = fs
+                .path_exists(root, &RelativeMediaPath::new("child.flac").unwrap())
+                .expect_err("a root access failure must not be mistaken for absence");
+            assert_eq!(error.code(), "io");
+        }
     }
 
     // -----------------------------------------------------------------------
