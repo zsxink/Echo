@@ -429,13 +429,17 @@ mod tests {
         rec.begin_library(PlaybackSessionId::new(), SongId::new());
         // duration 200 ms → threshold min(100ms, 30s) = 100 ms.
         rec.set_duration(0.2);
-        // Two short playing segments separated by a pause add up.
+        // Two short playing segments separated by a pause add up. Each segment is
+        // injected via `force_accumulate`; the real `on_state(Paused)` settle adds
+        // only a few microseconds of true wall-clock on top of it, so the 60 vs
+        // 100 ms assertions are exact. `thread::sleep(60)` overshoots on a loaded
+        // CI runner and made "60 ms is not a listen yet" flaky across runs.
         rec.on_state(PlaybackState::Playing);
-        std::thread::sleep(std::time::Duration::from_millis(60));
+        rec.force_accumulate(0.06);
         rec.on_state(PlaybackState::Paused);
         assert_eq!(recorder.recorded(), 0, "60 ms is not a listen yet");
         rec.on_state(PlaybackState::Playing);
-        std::thread::sleep(std::time::Duration::from_millis(60));
+        rec.force_accumulate(0.06);
         rec.on_state(PlaybackState::Paused);
         assert_eq!(
             recorder.recorded(),
