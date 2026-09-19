@@ -204,7 +204,10 @@ fn directory_bytes(dir: &Path) -> u64 {
     };
     entries
         .flatten()
-        .filter_map(|entry| entry.metadata().ok())
+        // `DirEntry::metadata` reuses the enumeration handle, which can fail on
+        // Windows for a just-renamed file (the entry's backing handle may not
+        // yet resolve); a fresh `path().metadata()` is the stable read.
+        .filter_map(|entry| entry.path().metadata().ok())
         .map(|meta| meta.len())
         .sum()
 }
