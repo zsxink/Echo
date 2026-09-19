@@ -39,6 +39,25 @@ jobs:
       - name: Format check
         run: cargo fmt --all -- --check
 
+      # `cargo clippy`/`cargo test --workspace` compile the echo-app Tauri
+      # shell, whose `generate_context!` macro requires the built frontend at
+      # apps/desktop/dist (frontendDist). Build it here so the Rust job is not
+      # coupled to the frontend job's output.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend for Tauri context
+        run: pnpm --dir apps/desktop build
+
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
@@ -107,6 +126,11 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # task-1.9 runs `tauri build --bundles app`, whose generate_context!
+      # macro requires the built frontend at apps/desktop/dist.
+      - name: Build frontend for Tauri context
+        run: pnpm --dir apps/desktop build
 
       - name: Build and verify macOS platform Gate
         run: pnpm verify:task -- 1.9 1.10
