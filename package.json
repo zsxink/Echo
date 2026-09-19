@@ -5,7 +5,7 @@
   "description": "Echo — local-first cross-platform music player (workspace root)",
   "packageManager": "pnpm@11.18.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "echo": "node scripts/echo.mjs",
