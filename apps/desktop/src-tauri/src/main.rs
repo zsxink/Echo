@@ -118,7 +118,13 @@ const PLAYER_SNAPSHOT_EVENT: &str = "player://snapshot";
 /// through the *running executable's* own directory — not through Tauri's
 /// `executable_dir()`, which on macOS is unsupported (`dirs::executable_dir`
 /// returns `None`), so it can never be used to locate a sibling `Frameworks/`.
-fn bundled_libmpv(_app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+// The parameter exists only to keep a uniform call signature across platforms;
+// the non-macOS branch cannot return a libmpv path, so the handle is unused.
+// `missing_const_for_fn` is allowed because the macOS branch calls
+// `std::env::current_exe()` (not const), which gates the whole fn — yet on a
+// non-macOS build the body would otherwise satisfy the lint.
+#[allow(clippy::missing_const_for_fn)]
+fn bundled_libmpv(_: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     #[cfg(target_os = "macos")]
     {
         // `current_exe` is accurate in both layouts we ship/stage. `Frameworks`
@@ -134,7 +140,6 @@ fn bundled_libmpv(_app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = _app;
         None
     }
 }
@@ -379,10 +384,17 @@ fn wire_composition(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
         routed.deps.songs.clone(),
         routed.deps.covers.clone(),
     ));
+    // macOS hands the resolver on to the Now Playing refresh below, so it needs
+    // a second handle for the forwarder; other targets own it solely in the
+    // forwarder thread and can move it outright.
+    #[cfg(target_os = "macos")]
+    let forwarder_metadata = queue_metadata.clone();
+    #[cfg(not(target_os = "macos"))]
+    let forwarder_metadata = queue_metadata;
     player::spawn_forwarder(
         controller.port.clone(),
         queue_provider,
-        queue_metadata.clone(),
+        forwarder_metadata,
         emit,
     );
     #[cfg(target_os = "macos")]
@@ -711,7 +723,13 @@ fn main() {
             // dispatches. Until the composition root connects a sink, transport
             // clicks fall through to `NoopSink`.
             let status_sink = Arc::new(RuntimeStatusMenuSink::default());
-            app.manage(status_sink.clone());
+            // macOS keeps a handle for the Now Playing / status row installs
+            // below; other platforms hand the sink wholly to the managed state.
+            #[cfg(target_os = "macos")]
+            let managed_status_sink = status_sink.clone();
+            #[cfg(not(target_os = "macos"))]
+            let managed_status_sink = status_sink;
+            app.manage(managed_status_sink);
 
             #[cfg(target_os = "macos")]
             {

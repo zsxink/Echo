@@ -32,7 +32,11 @@
 //! this task provides its durable, atomic storage slot (an opaque value) so
 //! the coordinator never has to touch a raw file.
 
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
+// `File::open` is only reached through the unix-only `sync_directory`; on
+// Windows importing it would be an unused-import (and a `-D warnings` failure).
+#[cfg(unix)]
+use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
