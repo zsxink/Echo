@@ -34,10 +34,12 @@ use crate::player::session::{rebuild_queue, snapshot_queue};
 ///
 /// # Panics
 ///
-/// If the `echo-session-saver` worker thread cannot be spawned (composition
-/// time, before any playback exists), and inside that thread if `min_interval`
-/// exceeds `Instant::now()` since the clock's epoch — the `checked_sub` below
-/// underflows. Both are startup/precondition faults, not runtime conditions.
+/// Only if the `echo-session-saver` worker thread cannot be spawned (a
+/// composition-time fault, before any playback exists). The `last_save`
+/// baseline clamps to `Instant::now()` instead of panicking when
+/// `min_interval` exceeds the time since the platform clock's epoch —
+/// Windows anchors `Instant` to system start, so a freshly booted runner
+/// underflows a large interval (e.g. a 1 h gate).
 #[allow(clippy::needless_pass_by_value)] // The port is moved into the saver thread.
 pub fn spawn_session_saver(
     port: Arc<dyn PlayerPort>,
@@ -61,7 +63,12 @@ pub fn spawn_session_saver(
         .spawn(move || {
             let mut last_state = PlaybackState::Stopped;
             let mut last_audio: Option<(f64, bool)> = None;
-            let mut last_save = std::time::Instant::now().checked_sub(min_interval).unwrap();
+            // `Instant`'s epoch is platform-defined: Windows anchors it to
+            // system start, so a fresh runner has < min_interval elapsed and
+            // `checked_sub` would underflow. Clamp to `now` instead — the
+            // baseline just means "nothing saved yet", so clamping is exact.
+            let monotonic = std::time::Instant::now();
+            let mut last_save = monotonic.checked_sub(min_interval).unwrap_or(monotonic);
             // An audio change observed but not yet written, waiting out its
             // settle window. It carries the snapshot to write, because by the
             // time the window closes no further snapshot has arrived.
