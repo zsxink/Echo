@@ -49,12 +49,22 @@ pub fn is_rust_source(relative: &Path) -> bool {
 
 #[must_use]
 pub fn is_exempt_source(relative: &Path) -> bool {
-    let path = relative.to_string_lossy();
-    path.contains("/tests/")
-        || path.contains("/benches/")
-        || path.ends_with("/tests.rs")
-        || path.ends_with("_test.rs")
-        || path.ends_with(".test.rs")
+    // Compare on components, not string `/`-separated paths: on Windows the
+    // lossy string uses `\`, so `contains("/tests/")` silently fails to
+    // exempt `application\import\tests\report.rs` and the arch test starts
+    // flagging test-only infrastructure references.
+    let components: Vec<_> = relative.components().collect();
+    components.iter().any(|component| {
+        matches!(component, Component::Normal(name) if {
+            let name = name.to_string_lossy();
+            name == "tests" || name == "benches"
+        })
+    }) || components.last().is_some_and(|component| {
+        matches!(component, Component::Normal(name) if {
+            let name = name.to_string_lossy();
+            name == "tests.rs" || name.ends_with("_test.rs") || name.ends_with(".test.rs")
+        })
+    })
 }
 
 /// Returns forbidden dependency declarations in a Cargo manifest.
