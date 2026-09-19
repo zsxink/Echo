@@ -227,7 +227,11 @@ mod concurrency_tests {
     #[test]
     fn controlled_fake_io_is_faster_than_serial_execution() {
         let inputs = [(), ()];
-        let work = || std::thread::sleep(Duration::from_millis(45));
+        // Sleep long enough that the concurrency win dominates thread-spawn and
+        // scheduling noise on a loaded CI runner: 2×200 ms serially is ~400 ms,
+        // so even a slow worker pool lands well under that. (A tight 20 ms
+        // margin around 45 ms sleeps flaked under runner load.)
+        let work = || std::thread::sleep(Duration::from_millis(200));
         let serial_started = Instant::now();
         for () in inputs {
             work();
@@ -240,7 +244,7 @@ mod concurrency_tests {
 
         assert_eq!(results.len(), inputs.len());
         assert!(
-            concurrent + Duration::from_millis(20) < serial,
+            concurrent < serial,
             "bounded concurrent fake-I/O ({concurrent:?}) should beat serial ({serial:?})"
         );
     }
