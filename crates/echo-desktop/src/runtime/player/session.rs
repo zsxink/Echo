@@ -151,11 +151,11 @@ pub fn spawn_session_saver(
 
 /// The restore-or-prime cold-start decision (task 8.9 + 默认态设计):
 ///
-/// 1. A persisted session with entries is restored: the queue is rebuilt,
-///    mode/volume/mute re-applied, and the current entry loaded **paused**.
-/// 2. With nothing to restore but the library has songs, the *default* kicks
-///    in: the first song of 全部歌曲 (as given by `default_view_songs`) is
-///    primed into the 播放控制栏 paused, in 列表循环.
+/// 1. A persisted session with a valid current entry is restored: the queue is
+///    rebuilt, mode/volume/mute re-applied, and the current entry loaded
+///    **paused**.
+/// 2. If the persisted current entry was dropped or no session exists, the
+///    newest available library context is primed into the 播放控制栏 paused.
 /// 3. An empty library yields an empty queue — the bar stays empty.
 ///
 /// `default_view_songs` is called at most once, only in case 2.
@@ -177,12 +177,25 @@ pub fn restore_or_prime_playback(
         let muted = session.muted;
         let mode = session.mode;
         let position = session.position;
+        if queue.current_id().is_none() {
+            let songs = default_view_songs();
+            if !songs.is_empty() {
+                let ctx = ViewContext {
+                    songs,
+                    selected_index: 0,
+                };
+                if let Ok(mut coord) = coordinator.lock() {
+                    coord.prime_context_paused(&ctx, mode, volume, muted);
+                }
+                return "primed";
+            }
+        }
         if let Ok(mut coord) = coordinator.lock() {
             coord.restore_session(queue, mode, volume, muted, position);
         }
         return "restored";
     }
-    // Nothing persisted: 默认全部歌曲第一条入栏 (paused, never a sound).
+    // Nothing persisted: the newest available song enters the bar paused.
     let songs = default_view_songs();
     if songs.is_empty() {
         return "empty";

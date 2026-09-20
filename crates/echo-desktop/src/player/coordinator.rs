@@ -199,6 +199,24 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
         }
     }
 
+    /// Prime a new context while preserving restored playback settings. This
+    /// is used when a persisted current entry is gone or after the first
+    /// successful library import; it must remain paused and must not be
+    /// treated as a user-initiated play action.
+    pub fn prime_context_paused(
+        &mut self,
+        ctx: &ViewContext,
+        mode: PlayMode,
+        volume: f64,
+        muted: bool,
+    ) {
+        self.mode = mode;
+        self.player.send(PlayerCommand::SetMode(mode)).ok();
+        self.player.send(PlayerCommand::SetVolume(volume)).ok();
+        self.player.send(PlayerCommand::SetMute(muted)).ok();
+        self.play_context_paused(ctx);
+    }
+
     /// Apply a restored playback session (task 8.9, 冷启动恢复): adopt the
     /// rebuilt queue and mode, restore the volume/mute settings and last valid
     /// position on the actor, and load the current entry **paused** (恢复后绝不

@@ -28,8 +28,9 @@ use std::sync::{Arc, Mutex};
 use echo_core::domain::catalog::{OpaqueCursor, SongSort, SongSortField, SortDirection};
 use echo_core::domain::ids::{LibraryRootId, OperationId, PlaylistId, SongId};
 use echo_desktop::ipc::dto::{
-    BootstrapSnapshot, ImportBatchDto, LibraryCountsDto, LibraryRootStatusDto, LibraryStatus,
-    PagedSongs, PlaylistView, RevealResultDto, ScanSnapshot, SongDetailView, SongView,
+    BootstrapSnapshot, ImportBatchDto, ImportResultDto, LibraryCountsDto, LibraryRootStatusDto,
+    LibraryStatus, PagedSongs, PlaylistView, RevealResultDto, ScanSnapshot, SongDetailView,
+    SongView,
 };
 use echo_desktop::ipc::IpcErrorDto;
 use echo_desktop::player::coordinator::PlaybackCoordinator;
@@ -401,12 +402,46 @@ pub async fn choose_library_root(
 #[tauri::command]
 pub async fn choose_and_import_files(
     services: State<'_, AppServices>,
+    state: State<'_, PlayerHandle>,
 ) -> Result<Option<ImportBatchDto>, IpcErrorDto> {
     // Keep the other blocking native picker off the event loop for the same
     // reason as `choose_library_root` above.
-    services
+    let result = services
         .choose_and_import_files()
-        .map_err(IpcErrorDto::from)
+        .map_err(IpcErrorDto::from)?;
+    if result.as_ref().is_some_and(|batch| {
+        batch
+            .results
+            .iter()
+            .any(|item| matches!(item, ImportResultDto::Imported { .. }))
+    }) {
+        prime_initial_library_song(&services, &state);
+    }
+    Ok(result)
+}
+
+/// Put the newest available library song into the paused player bar only when
+/// no current entry exists. Import completion is deliberately idempotent: it
+/// never replaces a user-selected or restored current item.
+fn prime_initial_library_song(services: &AppServices, state: &PlayerHandle) {
+    let mut coordinator = state.coordinator.lock().expect("player coordinator lock");
+    if coordinator.current().is_some() {
+        return;
+    }
+    let Some(song) = services.latest_available_song().ok().flatten() else {
+        return;
+    };
+    let snapshot = coordinator.snapshot();
+    let mode = coordinator.mode();
+    coordinator.prime_context_paused(
+        &ViewContext {
+            songs: vec![song],
+            selected_index: 0,
+        },
+        mode,
+        snapshot.volume,
+        snapshot.muted,
+    );
 }
 
 #[tauri::command]
@@ -598,20 +633,15 @@ pub fn restore_playback_session(
     local_state: State<'_, Arc<echo_desktop::platform::local_state::DesktopStateStore>>,
 ) -> Result<String, IpcErrorDto> {
     let persistence = echo_desktop::player::session::StateStoreSession::new((*local_state).clone());
-    // Default view: 全部歌曲, 最近添加 (the UI's default sort), first page.
+    // Initial playback candidate: Core owns the 最近添加 ordering and returns
+    // the newest available song in the active root.
     let default_view_songs = || -> Vec<SongId> {
-        let sort = echo_core::domain::catalog::SongSort {
-            field: echo_core::domain::catalog::SongSortField::AddedAt,
-            direction: echo_core::domain::catalog::SortDirection::Desc,
-        };
-        match services.all_songs(sort, None, 500) {
-            Ok(page) => page
-                .items
-                .iter()
-                .filter_map(|s| s.id.parse::<SongId>().ok())
-                .collect(),
-            Err(_) => Vec::new(),
-        }
+        services
+            .latest_available_song()
+            .ok()
+            .flatten()
+            .into_iter()
+            .collect()
     };
     let outcome = echo_desktop::runtime::player::restore_or_prime_playback(
         &state.coordinator,

@@ -110,6 +110,17 @@ impl super::AppServices {
             .collect())
     }
 
+    /// Return the newest available song in the active root for initial
+    /// playback selection. The ordering remains owned by Core rather than
+    /// being reconstructed from a desktop page.
+    ///
+    /// # Errors
+    ///
+    /// `Unavailable` when there is no active root; storage errors propagate.
+    pub fn latest_available_song(&self) -> Result<Option<SongId>, Error> {
+        CatalogQuery::new(self.deps.catalog.as_ref()).latest_available_song()
+    }
+
     /// List playlists of the active root with member counts.
     ///
     /// # Errors

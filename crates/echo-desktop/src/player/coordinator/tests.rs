@@ -6,6 +6,7 @@ use super::*;
 use crate::player::fake::FakePlayer;
 use crate::player::queue::TemporaryItem;
 use echo_core::domain::ids::SongId;
+use echo_core::domain::state::PlaybackState;
 
 /// A deterministic [`ShuffleSource`] that returns a fixed permutation so
 /// shuffle play order is fully asserted in tests.
@@ -255,6 +256,30 @@ fn restore_session_replay_keeps_persisted_mute() {
     coord.restore_session(build(), PlayMode::Sequential, 0.45, true, None);
     assert!(coord.snapshot().muted, "replaying the restore stays muted");
     assert!((coord.snapshot().volume - 0.45).abs() < f64::EPSILON);
+}
+
+#[test]
+fn prime_context_paused_preserves_settings_without_playing() {
+    let player = FakePlayer::new();
+    let mut coord = PlaybackCoordinator::new(player);
+    let song = song();
+    coord.prime_context_paused(
+        &ViewContext {
+            songs: vec![song],
+            selected_index: 0,
+        },
+        PlayMode::Shuffle,
+        0.42,
+        true,
+    );
+
+    assert_eq!(coord.current().unwrap().item.song_id(), Some(song));
+    assert_eq!(coord.queue().len(), 1);
+    assert_eq!(coord.mode(), PlayMode::Shuffle);
+    assert_eq!(coord.snapshot().state, PlaybackState::Paused);
+    assert!((coord.snapshot().volume - 0.42).abs() < f64::EPSILON);
+    assert!(coord.snapshot().muted);
+    assert_eq!(coord.player().last_loaded_song(), Some(song));
 }
 
 #[test]

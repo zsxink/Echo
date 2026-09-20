@@ -85,6 +85,18 @@ impl<'a> CatalogQuery<'a> {
         self.repo.recent_100()
     }
 
+    /// The newest available song in the active root, using the same stable
+    /// ordering as the 最近添加 view. The recent view is already ordered and
+    /// capped after the newest rows, so its first item is the exact candidate
+    /// needed for initial playback selection.
+    ///
+    /// # Errors
+    ///
+    /// `Unavailable` when there is no active root; storage errors propagate.
+    pub fn latest_available_song(&self) -> Result<Option<crate::domain::ids::SongId>, Error> {
+        Ok(self.recent_100()?.into_iter().next().map(|song| song.id()))
+    }
+
     /// 资料库导航计数: one total per library view (task: 侧边栏在打开视图前
     /// 就显示其歌曲数).
     ///
@@ -337,7 +349,6 @@ mod tests {
             2,
             "inactive-root songs are never visible"
         );
-
         // Playlist: available + missing shown, pending-delete hidden.
         let playlist = PlaylistId::new();
         let mut missing = Song::new(
@@ -374,5 +385,20 @@ mod tests {
         assert_eq!(songs.len(), 2, "available + missing, pending hidden");
         assert_eq!(songs[0].id(), all.items[0].id(), "position order");
         assert_eq!(songs[1].id(), missing.id());
+    }
+
+    #[test]
+    fn latest_available_song_uses_recent_order() {
+        let db = MemoryDatabase::new();
+        let root = LibraryRootId::new();
+        LibraryRepository::upsert(&db, &LibraryRoot::new(root, ".".into(), true, true))
+            .expect("active root");
+        seed_memory(&db, root);
+        let query = CatalogQuery::new(&db);
+        let recent = query.recent_100().expect("recent");
+        assert_eq!(
+            query.latest_available_song().expect("latest"),
+            Some(recent[0].id())
+        );
     }
 }
