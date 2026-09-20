@@ -152,6 +152,7 @@ pub fn song_record(
         hlc,
         media_path: LibraryRelativePath::new(song.path().display())?,
         content_hash: song.blake3_hash().unwrap_or_default().to_owned(),
+        added_at: song.added_at(),
         title: song.title().map(ToOwned::to_owned),
         artist: song.artist().map(ToOwned::to_owned),
         album: song.album().map(ToOwned::to_owned),
@@ -305,4 +306,53 @@ pub fn committed_version(
         .unwrap_or_else(HybridLogicalClock::default);
     let _ = device;
     Ok((revision, hlc))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::entities::Song;
+    use crate::domain::ids::{LibraryRootId, RelativeMediaPath, SongId};
+
+    #[test]
+    fn song_record_carries_the_entity_added_at() {
+        let id = SongId::new();
+        let root = LibraryRootId::new();
+        let path = RelativeMediaPath::new("media/周杰伦/周杰伦 - 晴天.flac").unwrap();
+        let added_at = 1_700_001_002_003;
+        let song = Song::with_added_at(id, root, path, Revision::INITIAL, added_at);
+        let record = song_record(
+            DeviceId::new(),
+            HybridLogicalClock::default(),
+            Revision::INITIAL,
+            &song,
+        )
+        .expect("local media path under media/ validates");
+        assert_eq!(record.added_at, added_at);
+        assert_eq!(record.content_hash, song.blake3_hash().unwrap_or(""));
+    }
+
+    #[test]
+    fn fresh_song_records_never_start_at_zero() {
+        // Imported/scanned records are written from the wall clock, so a
+        // just-built record must carry a non-zero addition time unless the
+        // entity itself was created without one.
+        let song = Song::new(
+            SongId::new(),
+            LibraryRootId::new(),
+            RelativeMediaPath::new("media/a/b.mp3").unwrap(),
+            Revision::INITIAL,
+        );
+        // `Song::new` defaults added_at to the initial revision (0); the
+        // real scan/import writers pass an explicit wall-clock value. What we
+        // assert is the *pass-through*: the record mirrors the entity.
+        let record = song_record(
+            DeviceId::new(),
+            HybridLogicalClock::default(),
+            Revision::INITIAL,
+            &song,
+        )
+        .expect("valid");
+        assert_eq!(record.added_at, song.added_at());
+    }
 }

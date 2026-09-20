@@ -232,7 +232,8 @@ impl<'a> ContinueFromRecords<'a> {
                     continue;
                 }
             }
-            let mut song = Song::new(id, root, path, Revision::INITIAL);
+            let mut song =
+                Song::with_added_at(id, root, path, Revision::INITIAL, song_record.added_at);
             song.apply_metadata(
                 song_record.title.clone(),
                 song_record.artist.clone(),

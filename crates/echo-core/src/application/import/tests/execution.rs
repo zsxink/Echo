@@ -58,6 +58,50 @@ fn duplicate_content_within_a_batch_creates_one_record() {
 }
 
 #[test]
+fn imported_song_record_carries_a_non_zero_added_at() {
+    use crate::application::ports::ControlPlanePort as _;
+    let g = gated();
+    g.sources.add("x", "晴天.flac", b"content-a");
+    tagged(&g, b"content-a", Some("歌手"), Some("晴天"));
+    g.fixture
+        .set_audio("media/歌手/歌手 - 晴天.flac", "晴天", 1_000);
+
+    let report = PlanImport::new(&g.deps, &g.sources)
+        .run(g.fixture.root, &[source("x")])
+        .expect("batch-level success");
+    let ImportOutcome::Imported { song, .. } = report.results.into_iter().next().expect("one")
+    else {
+        panic!("the input must import");
+    };
+
+    // The committed local row and the portable record must agree on the
+    // addition time (task record-imported-at §2.2).
+    let local = g.fixture.all_songs().into_iter().next().expect("committed row");
+    assert_eq!(local.id(), song, "the committed row is the imported song");
+    let raw = g
+        .fixture
+        .control
+        .list_records(g.fixture.root, crate::domain::library::RecordKind::Song)
+        .expect("list song records")
+        .into_iter()
+        .next()
+        .expect("one song record published");
+    let PortableRecord::Song(record) =
+        serde_json::from_str::<PortableRecord>(&raw).expect("parse song record")
+    else {
+        panic!("expected a song record");
+    };
+    assert_ne!(
+        record.added_at, 0,
+        "an imported song carries the wall-clock addition time, not the historical fallback"
+    );
+    assert_eq!(
+        record.added_at, local.added_at(),
+        "portable record and local row agree on the addition time"
+    );
+}
+
+#[test]
 fn unavailable_root_rejects_the_whole_batch_before_copying() {
     let g = gated();
     g.sources.add("good", "晴天.flac", b"some-bytes");

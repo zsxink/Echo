@@ -245,6 +245,7 @@ mod tests {
             hlc: HybridLogicalClock::new(1_700_000_000, 0),
             media_path: LibraryRelativePath::new("media/歌手/歌手 - 晴天.flac").unwrap(),
             content_hash: "abc123".to_owned(),
+            added_at: 1_700_001_002_003,
             title: Some("晴天".to_owned()),
             artist: Some("歌手".to_owned()),
             album: Some("专辑".to_owned()),
@@ -287,6 +288,16 @@ mod tests {
         // One song projected, media absent → Missing, no files reconciled.
         assert_eq!(outcome.projected_songs, 1);
         assert_eq!(outcome.media_reconciled, 0);
+
+        // The projected row keeps the record's addition time even though the
+        // media has not arrived (spec 从资料库恢复或接续时还原歌曲入库时刻
+        // — time is preserved on unavailable songs too).
+        let projected =
+            SongRepository::by_id(fixture.deps.songs.as_ref(), SongId::from_uuid(song_uuid))
+                .expect("read")
+                .expect("projected");
+        assert_eq!(projected.availability(), SongAvailability::Missing);
+        assert_eq!(projected.added_at(), 1_700_001_002_003);
     }
 
     #[test]

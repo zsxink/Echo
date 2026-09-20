@@ -15,6 +15,10 @@ use crate::domain::library::{
 const HLC: HybridLogicalClock = HybridLogicalClock::new(1_700_000_000, 0);
 
 fn song_record(song_uuid: uuid::Uuid, path: &str) -> PortableRecord {
+    song_record_at(song_uuid, path, 1_700_001_002_003)
+}
+
+fn song_record_at(song_uuid: uuid::Uuid, path: &str, added_at: u64) -> PortableRecord {
     PortableRecord::Song(SongRecord {
         song_uuid,
         revision: Revision::INITIAL,
@@ -22,6 +26,7 @@ fn song_record(song_uuid: uuid::Uuid, path: &str) -> PortableRecord {
         hlc: HLC,
         media_path: LibraryRelativePath::new(path).expect("media path"),
         content_hash: "hash".to_owned(),
+        added_at,
         title: Some("晴天".to_owned()),
         artist: Some("歌手".to_owned()),
         album: None,
@@ -563,4 +568,85 @@ fn a_wiped_database_is_rebuilt_from_the_records_at_real_scale() {
     let again = continuation(&fixture).run(fixture.root).expect("reported");
     assert_eq!(again.projection, report.projection);
     assert_eq!(fixture.all_songs().len(), 87);
+}
+
+#[test]
+fn song_record_json_with_new_fields_still_parses() {
+    // A record carrying the new fields (added_at) must deserialize cleanly —
+    // older readers ignore unknown keys, they never fail on them.
+    let json = r#"{
+        "type": "song",
+        "song_uuid": "1f4b6a2c-8c3e-4d5a-9e21-0b6f2a3c4d5e",
+        "revision": 7,
+        "updated_by_device_id": "6f2a3c4d-5e6f-4a7b-8c9d-0a1b2c3d4e5f",
+        "hlc": {"wall_secs": 1700000000, "counter": 2},
+        "media_path": {"normalized": "media/歌手/歌手 - 晴天.flac"},
+        "content_hash": "abc123",
+        "added_at": 1700000000123,
+        "title": "晴天",
+        "artist": "歌手",
+        "album": null
+    }"#;
+    let PortableRecord::Song(song) =
+        serde_json::from_str::<PortableRecord>(json).expect("parse with new fields")
+    else {
+        panic!("expected a song record");
+    };
+    assert_eq!(
+        song.added_at, 1_700_000_000_123,
+        "the new field round-trips through the wire shape"
+    );
+    assert_eq!(song.title.as_deref(), Some("晴天"));
+}
+
+#[test]
+fn projection_restores_the_recorded_added_at_and_its_order() {
+    let fixture = ScanFixture::new();
+    let older = uuid::Uuid::new_v4();
+    let newer = uuid::Uuid::new_v4();
+    let mid = uuid::Uuid::new_v4();
+    let older_at = 1_700_000_000_000;
+    let newer_at = 1_700_100_000_000;
+    let mid_at = 1_700_050_000_000;
+
+    fixture
+        .control
+        .write_record(
+            fixture.root,
+            &song_record_at(older, "media/歌手/歌 - 旧.flac", older_at),
+        )
+        .expect("older");
+    fixture
+        .control
+        .write_record(
+            fixture.root,
+            &song_record_at(newer, "media/歌手/歌 - 新.flac", newer_at),
+        )
+        .expect("newer");
+    fixture
+        .control
+        .write_record(
+            fixture.root,
+            &song_record_at(mid, "media/歌手/歌 - 中.flac", mid_at),
+        )
+        .expect("mid");
+
+    continuation(&fixture).run(fixture.root).expect("continue");
+
+    let read = |song: uuid::Uuid| {
+        SongRepository::by_id(fixture.deps.songs.as_ref(), SongId::from_uuid(song))
+            .expect("read")
+            .expect("projected")
+    };
+    assert_eq!(read(older).added_at(), older_at);
+    assert_eq!(read(newer).added_at(), newer_at);
+    assert_eq!(read(mid).added_at(), mid_at);
+
+    // 「最近添加」按 added_at 降序:同记录顺序一致。
+    let mut all = fixture.all_songs();
+    all.sort_by_key(|song| (std::cmp::Reverse(song.added_at()), song.id().to_string()));
+    let ordered: Vec<SongId> = all.iter().map(crate::domain::entities::Song::id).collect();
+    assert_eq!(ordered[0], SongId::from_uuid(newer), "newest goes first");
+    assert_eq!(ordered[1], SongId::from_uuid(mid));
+    assert_eq!(ordered[2], SongId::from_uuid(older));
 }

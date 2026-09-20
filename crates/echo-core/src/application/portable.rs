@@ -243,6 +243,7 @@ mod tests {
             hlc: HybridLogicalClock::new(1_700_000_000, 0),
             media_path: LibraryRelativePath::new("media/歌手/歌手 - 晴天.flac").unwrap(),
             content_hash: "abc123".to_owned(),
+            added_at: 1_700_001_002_003,
             title: Some("晴天".to_owned()),
             artist: Some("歌手".to_owned()),
             album: None,

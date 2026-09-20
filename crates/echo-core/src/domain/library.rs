@@ -687,6 +687,12 @@ pub struct SongRecord {
     pub media_path: LibraryRelativePath,
     /// Full-file BLAKE3 content hash (hex).
     pub content_hash: String,
+    /// Wall-clock milliseconds when this song was added to the library
+    /// (`Song::added_at`). Missing on records written before this field
+    /// existed: `#[serde(default)]` reads them back as `0`, which matches the
+    /// historical fallback order exactly.
+    #[serde(default)]
+    pub added_at: u64,
     /// Display title parsed from tags.
     pub title: Option<String>,
     /// Display artist parsed from tags.
@@ -1251,6 +1257,7 @@ mod tests {
             hlc: HybridLogicalClock::default(),
             media_path: LibraryRelativePath::new("media/周杰伦/周杰伦 - 晴天.flac").unwrap(),
             content_hash: "abc123".to_owned(),
+            added_at: 1_700_001_002_003,
             title: Some("晴天".to_owned()),
             artist: Some("周杰伦".to_owned()),
             album: None,
@@ -1393,6 +1400,7 @@ mod tests {
             hlc: HybridLogicalClock::new(1000, 0),
             media_path: LibraryRelativePath::new("media/artist/song.flac").unwrap(),
             content_hash: "abc123".to_owned(),
+            added_at: 1_700_001_002_003,
             title: Some("测试".to_owned()),
             artist: None,
             album: None,
@@ -1420,6 +1428,7 @@ mod tests {
             hlc: HybridLogicalClock::new(1_700_000_000, 1),
             media_path: LibraryRelativePath::new("media/周杰伦/周杰伦 - 晴天.flac").unwrap(),
             content_hash: "deadbeef".to_owned(),
+            added_at: 1_700_001_002_003,
             title: Some("晴天".to_owned()),
             artist: Some("周杰伦".to_owned()),
             album: Some("叶惠美".to_owned()),
@@ -1427,6 +1436,44 @@ mod tests {
         let json = rec.to_canonical_json().unwrap();
         let back: PortableRecord = serde_json::from_str(&json).unwrap();
         assert_eq!(rec, back);
+    }
+
+    #[test]
+    fn song_record_without_added_at_reads_back_as_zero() {
+        // Records written before `added_at` existed carry no such field. The
+        // `#[serde(default)]` must read them back as 0 — exactly the value the
+        // historical `Song::new` reconstruction produced — rather than fail.
+        let rec = PortableRecord::Song(SongRecord {
+            song_uuid: uuid::Uuid::new_v4(),
+            revision: Revision::INITIAL,
+            updated_by_device_id: DeviceId::new(),
+            hlc: HybridLogicalClock::new(1_700_000_000, 0),
+            media_path: LibraryRelativePath::new("media/周杰伦/周杰伦 - 晴天.flac").unwrap(),
+            content_hash: "abc123".to_owned(),
+            added_at: 1_700_001_002_003,
+            title: Some("晴天".to_owned()),
+            artist: Some("周杰伦".to_owned()),
+            album: None,
+        });
+        let mut value = serde_json::to_value(&rec).expect("serialize");
+        value
+            .as_object_mut()
+            .expect("record object")
+            .remove("added_at");
+        let legacy: PortableRecord = serde_json::from_value(value).expect("read legacy record");
+        let PortableRecord::Song(legacy_song) = legacy else {
+            panic!("expected a song record");
+        };
+        assert_eq!(
+            legacy_song.added_at, 0,
+            "missing added_at falls back to the historical zero order"
+        );
+        assert_eq!(
+            legacy_song.song_uuid,
+            rec.object_uuid(),
+            "identity survives"
+        );
+        assert_eq!(legacy_song.title, Some("晴天".to_owned()));
     }
 
     // ── Library manifest path constant ──────────────────────────────────

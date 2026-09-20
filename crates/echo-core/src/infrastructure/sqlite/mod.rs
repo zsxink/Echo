@@ -158,7 +158,8 @@ impl SqliteDatabase {
             std::fs::create_dir_all(parent).map_err(|source| {
                 Error::io(
                     "create database parent directory",
-                    source, parent.to_path_buf(),
+                    source,
+                    parent.to_path_buf(),
                 )
             })?;
         }
