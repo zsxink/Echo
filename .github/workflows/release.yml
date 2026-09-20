@@ -28,14 +28,17 @@ jobs:
         include:
           - os: macos-latest
             arch: aarch64
+            platform: macos
             bundle_dir: target/release/bundle
             artifacts: "dmg/*.dmg"
           - os: windows-latest
             arch: x64
+            platform: windows
             bundle_dir: target/release/bundle
             artifacts: "nsis/*.exe"
           - os: ubuntu-latest
             arch: x64
+            platform: linux
             bundle_dir: target/release/bundle
             artifacts: "deb/*.deb;appimage/*.AppImage"
     steps:
@@ -105,13 +108,13 @@ jobs:
         run: |
           find . -maxdepth 2 -type f \
             \( -name "*.dmg" -o -name "*.exe" -o -name "*.deb" -o -name "*.AppImage" \) \
-            | xargs sha256sum > SHA256SUMS-${{ matrix.arch }}
-          cat SHA256SUMS-${{ matrix.arch }}
+            | xargs sha256sum > SHA256SUMS-${{ matrix.platform }}-${{ matrix.arch }}
+          cat SHA256SUMS-${{ matrix.platform }}-${{ matrix.arch }}
 
       - name: Upload platform artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: echo-${{ matrix.arch }}
+          name: echo-${{ matrix.platform }}
           path: |
             ${{ matrix.bundle_dir }}
             apps/desktop/src-tauri/vendor/libmpv/macos/NOTICE.md
