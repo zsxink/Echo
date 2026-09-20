@@ -13,7 +13,8 @@
     "verify:scenario": "node scripts/verify/run-scenario.mjs",
     "verify:self-test": "node scripts/verify/self-test.mjs",
     "verify:governance": "node scripts/verify/ci-governance.mjs",
-    "verify:frontend-fresh": "node scripts/verify/checks/check-embedded-frontend.mjs"
+    "verify:frontend-fresh": "node scripts/verify/checks/check-embedded-frontend.mjs",
+    "default-player": "node scripts/macos-default-player.mjs"
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.13.0"
