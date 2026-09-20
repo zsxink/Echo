@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="560" viewBox="0 0 900 560">
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16131f"/>
+      <stop offset="0.52" stop-color="#0d1721"/>
+      <stop offset="1" stop-color="#101014"/>
+    </linearGradient>
+    <radialGradient id="coral" cx="0.12" cy="0.08" r="0.62">
+      <stop offset="0" stop-color="#ff5b72" stop-opacity="0.44"/>
+      <stop offset="0.5" stop-color="#d83c68" stop-opacity="0.13"/>
+      <stop offset="1" stop-color="#d83c68" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blue" cx="0.92" cy="0.86" r="0.7">
+      <stop offset="0" stop-color="#36b7e8" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#36b7e8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ff5b72" stop-opacity="0"/>
+      <stop offset="0.22" stop-color="#ff5b72" stop-opacity="0.8"/>
+      <stop offset="0.78" stop-color="#36b7e8" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#36b7e8" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="blur"><feGaussianBlur stdDeviation="28"/></filter>
+  </defs>
+  <rect width="900" height="560" fill="url(#paper)"/>
+  <rect width="900" height="560" fill="url(#coral)"/>
+  <rect width="900" height="560" fill="url(#blue)"/>
+  <circle cx="110" cy="70" r="150" fill="#ff5b72" opacity="0.12" filter="url(#blur)"/>
+  <circle cx="820" cy="500" r="180" fill="#36b7e8" opacity="0.10" filter="url(#blur)"/>
+  <path d="M0 470 C170 390 230 520 405 448 S700 360 900 430" fill="none" stroke="#fff" stroke-opacity="0.045" stroke-width="1"/>
+  <path d="M0 486 C170 406 230 536 405 464 S700 376 900 446" fill="none" stroke="#fff" stroke-opacity="0.03" stroke-width="1"/>
+  <rect x="64" y="58" width="772" height="1" fill="url(#rule)" opacity="0.7"/>
+  <path d="M16.3 6.25v12.1c-1.62-.94-3.7-1.28-5.65-.76-3.9 1.02-6.02 4.58-4.76 7.42 1.2 2.75 5.27 3.3 8.82 1.2 2.65-1.57 4.35-4.08 4.79-6.36V9.1c3.45-.3 5.95-1.7 7.2-4.05V1.45C24.6 4.14 21.05 5.75 16.3 6.25Z" transform="translate(64 74) scale(1.25)" fill="#FA3E56"/>
+  <text x="120" y="103" fill="#ffffff" fill-opacity="0.96" font-family="-apple-system, BlinkMacSystemFont, Helvetica Neue, sans-serif" font-size="30" font-weight="700" letter-spacing="4">ECHO</text>
+  <text x="121" y="132" fill="#dce7f0" fill-opacity="0.68" font-family="-apple-system, BlinkMacSystemFont, Helvetica Neue, sans-serif" font-size="13" font-weight="500">一处安静的音乐空间</text>
+  <path d="M395 278 H505" fill="none" stroke="#fff" stroke-opacity="0.22" stroke-width="2"/>
+  <path d="M495 268 L507 278 L495 288" fill="none" stroke="#fff" stroke-opacity="0.65" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="450" y="352" text-anchor="middle" fill="#fff" fill-opacity="0.66" font-family="-apple-system, BlinkMacSystemFont, Helvetica Neue, sans-serif" font-size="13" font-weight="500">将 Echo 拖到 Applications 以安装</text>
+  <rect x="64" y="492" width="772" height="1" fill="#fff" fill-opacity="0.10"/>
+  <text x="64" y="524" fill="#dce7f0" fill-opacity="0.48" font-family="-apple-system, BlinkMacSystemFont, Helvetica Neue, sans-serif" font-size="11">本地 · 私密 · 属于你</text>
+  <text x="836" y="524" text-anchor="end" fill="#dce7f0" fill-opacity="0.48" font-family="-apple-system, BlinkMacSystemFont, Helvetica Neue, sans-serif" font-size="11">Echo 桌面版</text>
+</svg>
