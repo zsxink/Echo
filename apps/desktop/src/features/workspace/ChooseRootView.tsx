@@ -34,6 +34,10 @@ export function ChooseRootView({ onActivated }: { onActivated: () => Promise<voi
       // A new root may reuse the same SongIds for different files, so cached
       // artwork must not survive the switch.
       invalidateCovers();
+      // Startup restoration runs before the first library root is selected.
+      // Re-run it after activation so a newly opened library can prime its
+      // newest available song into the paused playback bar.
+      await bridge.call("restore_playback_session", {}).catch(() => undefined);
       await onActivated();
     } catch (err) {
       const message = err instanceof BridgeError ? err.message : "选择资料库时出错";

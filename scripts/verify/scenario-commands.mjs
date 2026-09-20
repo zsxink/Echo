@@ -131,8 +131,8 @@ export const COMMANDS = {
   "DP-R11-S01": DESK("player::queue::tests::previous_in_loop_walks_the_context_backwards_and_wraps_to_the_tail"),
   "DP-R11-S02": DESK("player::queue::tests::previous_returns_history_entry"),
   "DP-R11-S03": DESK("player::session::tests::state_store_save_load_round_trip_is_atomic_and_clears"),
-  "DP-R11-S04": DESK("player::session::tests::restore_keeps_fresh_history_and_counts_only_blocked_entries"),
-  "DP-R11-S05": DESK("player::deletion::tests::rollback_restores_timestamped_history_so_previous_remains_available"),
+  "DP-R12-S04": DESK("player::session::tests::restore_keeps_fresh_history_and_counts_only_blocked_entries"),
+  "DP-R12-S05": DESK("player::deletion::tests::rollback_restores_timestamped_history_so_previous_remains_available"),
   // DP-R12 非沉浸播放模式视觉语义 — the persistent bar must show 随机播放 with a
   // neutral style while still reading as selected. PlayerBar.test.tsx pins both
   // halves in one render: the 喜欢 heart carries `.control.active` (the bar's only
@@ -145,8 +145,8 @@ export const COMMANDS = {
   "DP-R13-S02": COREC("playback_restore"),
   "DP-R14-S01": COREC("application::playback_context::tests::resolves_all_pages_and_validates_selected_song"),
   "DP-R14-S02": COREC("application::playback_context::tests::recent_filters_case_insensitively_and_rejects_absent_selection"),
-  "DP-R14-S03": COREC("application::playback_context::tests::playlist_uses_newest_member_first"),
-  "DP-R14-S04": COREC("application::playback_context::tests::unknown_library_view_is_rejected_in_core"),
+  "DP-R15-S03": COREC("application::playback_context::tests::playlist_uses_newest_member_first"),
+  "DP-R15-S04": COREC("application::playback_context::tests::unknown_library_view_is_rejected_in_core"),
 
   // ===== immersive-lyrics (IL) =====
   "IL-R01-S01": REACT("src/features/player/PlayerBar.test.tsx"),
@@ -345,7 +345,7 @@ export const COMMANDS = {
   ),
   "PLL-R03-S02": COREC("restore_projects_records_and_keeps_missing_without_media"),
   "PLL-R03-S03": COREC("root_switch::tests::prepare_continues_object_records_before_scanning_media"),
-  "PLL-R03-S04": COREC("restore_is_idempotent_across_repeats"),
+  "PLL-R05-S04": COREC("restore_is_idempotent_across_repeats"),
   "PLL-R04-S01": COREC(
     "application::portable::tests::ensure_control_plane_initializes_a_fresh_writable_root",
   ),
@@ -361,7 +361,7 @@ export const COMMANDS = {
     "application::continuation::tests::tombstone_outranks_a_stale_record_and_is_never_resurrected",
   ),
   "PLL-R05-S04": COREC("application::continuation::tests::continuation_is_idempotent_across_repeated_opens"),
-  "PLL-R05-S05": COREC(
+  "PLL-R07-S05": COREC(
     "application::continuation::tests::detached_legacy_records_are_superseded_by_the_matching_local_rows",
   ),
 

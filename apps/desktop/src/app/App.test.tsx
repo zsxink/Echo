@@ -82,6 +82,7 @@ describe("Library activation without a status event", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "选择资料库目录" }));
     expect(await screen.findByTestId("workspace")).toBeInTheDocument();
+    expect(invoke).toHaveBeenCalledWith("restore_playback_session", {});
     expect(screen.queryByTestId("choose-root")).not.toBeInTheDocument();
     expect(screen.getByTestId("echo-shell")).not.toHaveClass("app-initial");
     if (kind === "empty") expect(await screen.findByText("曲库为空")).toBeInTheDocument();
@@ -113,6 +114,7 @@ describe("Library activation without a status event", () => {
     });
     // Reject the refresh, after the picker has successfully returned.
     call.mockResolvedValueOnce({ configured: true, readOnly: false, activeRoot: "root-1" });
+    call.mockResolvedValueOnce("empty");
     call.mockRejectedValueOnce(new Error("status unavailable"));
     fireEvent.click(screen.getByRole("button", { name: "选择资料库目录" }));
     expect(await screen.findByRole("alert")).toBeInTheDocument();

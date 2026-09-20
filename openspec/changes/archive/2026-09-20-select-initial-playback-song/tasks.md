@@ -19,3 +19,4 @@
 - [x] 4.1 补齐跨层场景测试，覆盖空资料库、首次成功导入、首次导入失败、重开已有资料库、上次歌曲被外部删除、所有歌曲不可用、有效 current 优先恢复以及不自动播放；执行对应 Rust 和桌面测试命令并保存通过结果
 - [x] 4.2 执行 `cargo fmt --all --check && cargo clippy --workspace --all-targets --all-features -- -D warnings`、`pnpm --dir apps/desktop lint`、`pnpm --dir apps/desktop format:check`、`pnpm --dir apps/desktop build`，修复本变更引入的格式、静态检查、类型或构建问题
 - [x] 4.3 执行 `openspec validate --strict`，核对两份增量规格与实现测试场景一致，确认没有新增数据库/播放会话迁移或绕过 Core/播放器分层的实现残留
+- [x] 4.4 资料库选择或重新扫描完成后再次触发初始播放项恢复，覆盖冷启动先于资料库选择的时序

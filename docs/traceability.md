@@ -60,25 +60,25 @@
 | DP-R01-S01 | 桌面音频播放 | 播放资料库歌曲 | 8.1–8.4, 8.12 | Desktop/Native | `tests/native/DP-R01-S01.md` | `pnpm verify:scenario -- DP-R01-S01` |
 | DP-R01-S02 | 桌面音频播放 | 文件不可用 | 8.1–8.4, 8.12 | Desktop/Native | `tests/native/DP-R01-S02.md` | `pnpm verify:scenario -- DP-R01-S02` |
 | DP-R02-S01 | 播放队列 | 从曲库开始播放 | 8.5, 8.6, 11.2 | Desktop/React | `tests/scenarios/DP-R02-S01.yaml` | `pnpm verify:scenario -- DP-R02-S01` |
-| DP-R02-S02 | 播放队列 | 加入队列 | 8.5, 8.6, 11.2 | Desktop/React | `tests/scenarios/DP-R02-S02.yaml` | `pnpm verify:scenario -- DP-R02-S02` |
-| DP-R02-S03 | 播放队列 | 下一首播放 | 8.5, 8.6, 11.2 | Desktop/React | `tests/scenarios/DP-R02-S03.yaml` | `pnpm verify:scenario -- DP-R02-S03` |
-| DP-R02-S04 | 播放队列 | 清空队列 | 8.5, 8.6, 11.2 | Desktop/React | `tests/scenarios/DP-R02-S04.yaml` | `pnpm verify:scenario -- DP-R02-S04` |
-| DP-R03-S01 | 播放模式与传输控制 | 基础传输控制 | 8.6, 8.8, 11.1 | Desktop/React | `tests/scenarios/DP-R03-S01.yaml` | `pnpm verify:scenario -- DP-R03-S01` |
-| DP-R03-S02 | 播放模式与传输控制 | 切换播放模式 | 8.6, 8.8, 11.1 | Desktop/React | `tests/scenarios/DP-R03-S02.yaml` | `pnpm verify:scenario -- DP-R03-S02` |
-| DP-R03-S03 | 播放模式与传输控制 | 定位和音量 | 8.6, 8.8, 11.1 | Desktop/React | `tests/scenarios/DP-R03-S03.yaml` | `pnpm verify:scenario -- DP-R03-S03` |
-| DP-R04-S01 | 播放错误处理 | 单曲加载失败 | 8.7, 11.2 | Desktop/React | `tests/scenarios/DP-R04-S01.yaml` | `pnpm verify:scenario -- DP-R04-S01` |
-| DP-R04-S02 | 播放错误处理 | 单曲循环中的加载失败 | 8.7, 11.2 | Desktop/React | `tests/scenarios/DP-R04-S02.yaml` | `pnpm verify:scenario -- DP-R04-S02` |
-| DP-R04-S03 | 播放错误处理 | 资料库不可用期间播放 | 8.7, 11.2 | Desktop/React | `tests/scenarios/DP-R04-S03.yaml` | `pnpm verify:scenario -- DP-R04-S03` |
-| DP-R05-S01 | 临时播放项边界 | 打开资料库外文件 | 9.2, 11.7 | Desktop/Native | `tests/native/DP-R05-S01.md` | `pnpm verify:scenario -- DP-R05-S01` |
-| DP-R05-S02 | 临时播放项边界 | 临时项执行持久化操作 | 9.2, 11.7 | Desktop/Native | `tests/native/DP-R05-S02.md` | `pnpm verify:scenario -- DP-R05-S02` |
-| DP-R06-S01 | 播放统计 | 达到播放阈值 | 3.9, 8.10 | Core/Desktop | `tests/scenarios/DP-R06-S01.yaml` | `pnpm verify:scenario -- DP-R06-S01` |
-| DP-R06-S02 | 播放统计 | 未达到阈值或 seek 作弊 | 3.9, 8.10 | Core/Desktop | `tests/scenarios/DP-R06-S02.yaml` | `pnpm verify:scenario -- DP-R06-S02` |
-| DP-R07-S01 | 会话恢复 | 正常恢复 | 7.6, 8.9 | Desktop | `tests/scenarios/DP-R07-S01.yaml` | `pnpm verify:scenario -- DP-R07-S01` |
-| DP-R07-S02 | 会话恢复 | 部分歌曲不可用 | 7.6, 8.9 | Desktop | `tests/scenarios/DP-R07-S02.yaml` | `pnpm verify:scenario -- DP-R07-S02` |
-| DP-R08-S01 | 媒体键与快捷键 | 使用媒体键 | 9.4, 11.8 | Desktop/React/Native | `tests/native/DP-R08-S01.md` | `pnpm verify:scenario -- DP-R08-S01` |
-| DP-R08-S02 | 媒体键与快捷键 | 使用应用快捷键 | 9.4, 11.8 | Desktop/React/Native | `tests/native/DP-R08-S02.md` | `pnpm verify:scenario -- DP-R08-S02` |
-| DP-R09-S01 | 后台与托盘控制 | 关闭窗口退出 | 9.3, 9.6 | Desktop/Native | `tests/native/DP-R09-S01.md` | `pnpm verify:scenario -- DP-R09-S01` |
-| DP-R09-S02 | 后台与托盘控制 | 关闭窗口后台运行 | 9.3, 9.6 | Desktop/Native | `tests/native/DP-R09-S02.md` | `pnpm verify:scenario -- DP-R09-S02` |
+| DP-R02-S03 | 播放队列 | 加入队列 | 8.5, 8.6, 11.2 | Desktop/React | `tests/scenarios/DP-R02-S02.yaml` | `pnpm verify:scenario -- DP-R02-S02` |
+| DP-R02-S04 | 播放队列 | 下一首播放 | 8.5, 8.6, 11.2 | Desktop/React | `tests/scenarios/DP-R02-S03.yaml` | `pnpm verify:scenario -- DP-R02-S03` |
+| DP-R02-S07 | 播放队列 | 清空队列 | 8.5, 8.6, 11.2 | Desktop/React | `tests/scenarios/DP-R02-S04.yaml` | `pnpm verify:scenario -- DP-R02-S04` |
+| DP-R04-S01 | 播放模式与传输控制 | 基础传输控制 | 8.6, 8.8, 11.1 | Desktop/React | `tests/scenarios/DP-R03-S01.yaml` | `pnpm verify:scenario -- DP-R03-S01` |
+| DP-R04-S05 | 播放模式与传输控制 | 切换播放模式 | 8.6, 8.8, 11.1 | Desktop/React | `tests/scenarios/DP-R03-S02.yaml` | `pnpm verify:scenario -- DP-R03-S02` |
+| DP-R04-S06 | 播放模式与传输控制 | 定位和音量 | 8.6, 8.8, 11.1 | Desktop/React | `tests/scenarios/DP-R03-S03.yaml` | `pnpm verify:scenario -- DP-R03-S03` |
+| DP-R05-S01 | 播放错误处理 | 单曲加载失败 | 8.7, 11.2 | Desktop/React | `tests/scenarios/DP-R04-S01.yaml` | `pnpm verify:scenario -- DP-R04-S01` |
+| DP-R05-S02 | 播放错误处理 | 单曲循环中的加载失败 | 8.7, 11.2 | Desktop/React | `tests/scenarios/DP-R04-S02.yaml` | `pnpm verify:scenario -- DP-R04-S02` |
+| DP-R05-S03 | 播放错误处理 | 资料库不可用期间播放 | 8.7, 11.2 | Desktop/React | `tests/scenarios/DP-R04-S03.yaml` | `pnpm verify:scenario -- DP-R04-S03` |
+| DP-R07-S01 | 临时播放项边界 | 打开资料库外文件 | 9.2, 11.7 | Desktop/Native | `tests/native/DP-R05-S01.md` | `pnpm verify:scenario -- DP-R05-S01` |
+| DP-R07-S02 | 临时播放项边界 | 临时项执行持久化操作 | 9.2, 11.7 | Desktop/Native | `tests/native/DP-R05-S02.md` | `pnpm verify:scenario -- DP-R05-S02` |
+| DP-R08-S01 | 播放统计 | 达到播放阈值 | 3.9, 8.10 | Core/Desktop | `tests/scenarios/DP-R06-S01.yaml` | `pnpm verify:scenario -- DP-R06-S01` |
+| DP-R08-S02 | 播放统计 | 未达到阈值或 seek 作弊 | 3.9, 8.10 | Core/Desktop | `tests/scenarios/DP-R06-S02.yaml` | `pnpm verify:scenario -- DP-R06-S02` |
+| DP-R09-S01 | 会话恢复 | 正常恢复 | 7.6, 8.9 | Desktop | `tests/scenarios/DP-R07-S01.yaml` | `pnpm verify:scenario -- DP-R07-S01` |
+| DP-R09-S02 | 会话恢复 | 部分歌曲不可用 | 7.6, 8.9 | Desktop | `tests/scenarios/DP-R07-S02.yaml` | `pnpm verify:scenario -- DP-R07-S02` |
+| DP-R10-S01 | 媒体键与快捷键 | 使用媒体键 | 9.4, 11.8 | Desktop/React/Native | `tests/native/DP-R08-S01.md` | `pnpm verify:scenario -- DP-R08-S01` |
+| DP-R10-S02 | 媒体键与快捷键 | 使用应用快捷键 | 9.4, 11.8 | Desktop/React/Native | `tests/native/DP-R08-S02.md` | `pnpm verify:scenario -- DP-R08-S02` |
+| DP-R11-S01 | 后台与托盘控制 | 关闭窗口退出 | 9.3, 9.6 | Desktop/Native | `tests/native/DP-R09-S01.md` | `pnpm verify:scenario -- DP-R09-S01` |
+| DP-R11-S02 | 后台与托盘控制 | 关闭窗口后台运行 | 9.3, 9.6 | Desktop/Native | `tests/native/DP-R09-S02.md` | `pnpm verify:scenario -- DP-R09-S02` |
 | DP-R02-S05 | 播放队列 | 连续下一首播放 | — | Gate | `tests/scenarios/DP-R02-S05.yaml` | `pnpm verify:scenario -- DP-R02-S05` |
 | DP-R02-S06 | 播放队列 | 当前项始终置顶 | — | Gate | `tests/scenarios/DP-R02-S06.yaml` | `pnpm verify:scenario -- DP-R02-S06` |
 | DP-R02-S07 | 播放队列 | 清空队列 | — | Gate | `tests/scenarios/DP-R02-S07.yaml` | `pnpm verify:scenario -- DP-R02-S07` |
@@ -87,23 +87,23 @@
 | DP-R04-S05 | 播放模式与传输控制 | 切换播放模式 | — | Gate | `tests/scenarios/DP-R04-S05.yaml` | `pnpm verify:scenario -- DP-R04-S05` |
 | DP-R04-S06 | 播放模式与传输控制 | 定位和音量 | — | Gate | `tests/scenarios/DP-R04-S06.yaml` | `pnpm verify:scenario -- DP-R04-S06` |
 | DP-R05-S03 | 播放错误处理 | 资料库不可用期间播放 | — | Gate | `tests/scenarios/DP-R05-S03.yaml` | `pnpm verify:scenario -- DP-R05-S03` |
-| DP-R08-S03 | 会话恢复 | 文件关联覆盖普通恢复 | — | Gate | `tests/scenarios/DP-R08-S03.yaml` | `pnpm verify:scenario -- DP-R08-S03` |
-| DP-R10-S01 | 后台与托盘控制 | 关闭窗口退出 | — | Gate | `tests/scenarios/DP-R10-S01.yaml` | `pnpm verify:scenario -- DP-R10-S01` |
-| DP-R10-S02 | 后台与托盘控制 | 关闭窗口后台运行 | — | Gate | `tests/scenarios/DP-R10-S02.yaml` | `pnpm verify:scenario -- DP-R10-S02` |
-| DP-R10-S03 | 后台与托盘控制 | 托盘控制 | — | Gate | `tests/scenarios/DP-R10-S03.yaml` | `pnpm verify:scenario -- DP-R10-S03` |
-| DP-R11-S01 | 三天播放历史与回退 | 列表循环上一首 | — | Gate | `tests/scenarios/DP-R11-S01.yaml` | `pnpm verify:scenario -- DP-R11-S01` |
-| DP-R11-S02 | 三天播放历史与回退 | 三天内回退 | — | Gate | `tests/scenarios/DP-R11-S02.yaml` | `pnpm verify:scenario -- DP-R11-S02` |
-| DP-R11-S03 | 三天播放历史与回退 | 历史跨重启 | — | Gate | `tests/scenarios/DP-R11-S03.yaml` | `pnpm verify:scenario -- DP-R11-S03` |
-| DP-R11-S04 | 三天播放历史与回退 | 过期或失效历史 | — | Gate | `tests/scenarios/DP-R11-S04.yaml` | `pnpm verify:scenario -- DP-R11-S04` |
-| DP-R11-S05 | 三天播放历史与回退 | 删除回滚保留历史 | — | Gate | `tests/scenarios/DP-R11-S05.yaml` | `pnpm verify:scenario -- DP-R11-S05` |
-| DP-R12-S01 | 非沉浸播放模式视觉语义 | 非沉浸模式切换为随机播放 | — | Gate | `tests/scenarios/DP-R12-S01.yaml` | `pnpm verify:scenario -- DP-R12-S01` |
-| DP-R12-S02 | 非沉浸播放模式视觉语义 | 主题切换期间保持随机模式 | — | Gate | `tests/scenarios/DP-R12-S02.yaml` | `pnpm verify:scenario -- DP-R12-S02` |
-| DP-R13-S01 | 播放位置的本机会话持久化 | 退出后恢复播放位置 | — | Gate | `tests/scenarios/DP-R13-S01.yaml` | `pnpm verify:scenario -- DP-R13-S01` |
-| DP-R13-S02 | 播放位置的本机会话持久化 | 持久化位置超出有效范围 | — | Gate | `tests/scenarios/DP-R13-S02.yaml` | `pnpm verify:scenario -- DP-R13-S02` |
-| DP-R14-S01 | 播放上下文的解析归属与顺序语义 | 从超过单页上限的资料库视图开始播放 | — | Core | `tests/scenarios/DP-R14-S01.yaml` | `pnpm verify:scenario -- DP-R14-S01` |
+| DP-R09-S03 | 会话恢复 | 文件关联覆盖普通恢复 | — | Gate | `tests/scenarios/DP-R08-S03.yaml` | `pnpm verify:scenario -- DP-R08-S03` |
+| DP-R11-S01 | 后台与托盘控制 | 关闭窗口退出 | — | Gate | `tests/scenarios/DP-R10-S01.yaml` | `pnpm verify:scenario -- DP-R10-S01` |
+| DP-R11-S02 | 后台与托盘控制 | 关闭窗口后台运行 | — | Gate | `tests/scenarios/DP-R10-S02.yaml` | `pnpm verify:scenario -- DP-R10-S02` |
+| DP-R11-S03 | 后台与托盘控制 | 托盘控制 | — | Gate | `tests/scenarios/DP-R10-S03.yaml` | `pnpm verify:scenario -- DP-R10-S03` |
+| DP-R12-S01 | 三天播放历史与回退 | 列表循环上一首 | — | Gate | `tests/scenarios/DP-R11-S01.yaml` | `pnpm verify:scenario -- DP-R11-S01` |
+| DP-R12-S02 | 三天播放历史与回退 | 三天内回退 | — | Gate | `tests/scenarios/DP-R11-S02.yaml` | `pnpm verify:scenario -- DP-R11-S02` |
+| DP-R12-S03 | 三天播放历史与回退 | 历史跨重启 | — | Gate | `tests/scenarios/DP-R11-S03.yaml` | `pnpm verify:scenario -- DP-R11-S03` |
+| DP-R12-S04 | 三天播放历史与回退 | 过期或失效历史 | — | Gate | `tests/scenarios/DP-R11-S04.yaml` | `pnpm verify:scenario -- DP-R11-S04` |
+| DP-R12-S05 | 三天播放历史与回退 | 删除回滚保留历史 | — | Gate | `tests/scenarios/DP-R11-S05.yaml` | `pnpm verify:scenario -- DP-R11-S05` |
+| DP-R13-S01 | 非沉浸播放模式视觉语义 | 非沉浸模式切换为随机播放 | — | Gate | `tests/scenarios/DP-R12-S01.yaml` | `pnpm verify:scenario -- DP-R12-S01` |
+| DP-R13-S02 | 非沉浸播放模式视觉语义 | 主题切换期间保持随机模式 | — | Gate | `tests/scenarios/DP-R12-S02.yaml` | `pnpm verify:scenario -- DP-R12-S02` |
+| DP-R14-S01 | 播放位置的本机会话持久化 | 退出后恢复播放位置 | — | Gate | `tests/scenarios/DP-R13-S01.yaml` | `pnpm verify:scenario -- DP-R13-S01` |
+| DP-R14-S02 | 播放位置的本机会话持久化 | 持久化位置超出有效范围 | — | Gate | `tests/scenarios/DP-R13-S02.yaml` | `pnpm verify:scenario -- DP-R13-S02` |
+| DP-R15-S01 | 播放上下文的解析归属与顺序语义 | 从超过单页上限的资料库视图开始播放 | — | Core | `tests/scenarios/DP-R14-S01.yaml` | `pnpm verify:scenario -- DP-R14-S01` |
 | DP-R14-S02 | 播放上下文的解析归属与顺序语义 | 从“最近”视图开始播放 | — | Core | `tests/scenarios/DP-R14-S02.yaml` | `pnpm verify:scenario -- DP-R14-S02` |
-| DP-R14-S03 | 播放上下文的解析归属与顺序语义 | 从歌单开始播放 | — | Core | `tests/scenarios/DP-R14-S03.yaml` | `pnpm verify:scenario -- DP-R14-S03` |
-| DP-R14-S04 | 播放上下文的解析归属与顺序语义 | 选中项已不在上下文中 | — | Core | `tests/scenarios/DP-R14-S04.yaml` | `pnpm verify:scenario -- DP-R14-S04` |
+| DP-R15-S03 | 播放上下文的解析归属与顺序语义 | 从歌单开始播放 | — | Core | `tests/scenarios/DP-R14-S03.yaml` | `pnpm verify:scenario -- DP-R14-S03` |
+| DP-R15-S04 | 播放上下文的解析归属与顺序语义 | 选中项已不在上下文中 | — | Core | `tests/scenarios/DP-R14-S04.yaml` | `pnpm verify:scenario -- DP-R14-S04` |
 
 ## immersive-lyrics
 
@@ -187,7 +187,7 @@
 | LL-R01-S04 | 单一资料库根目录与本地持久化 | 本机数据库丢失后重新选择同一目录 | 15.2, 15.3 | Core | `tests/scenarios/LL-R01-S04.yaml` | `pnpm verify:scenario -- LL-R01-S04` |
 | LL-R02-S01 | 扫描、监听与手动重扫 | 首次扫描发现支持文件 | 4.7, 4.9, 4.10 | Core/Infrastructure | `tests/scenarios/LL-R02-S01.yaml` | `pnpm verify:scenario -- LL-R02-S01` |
 | LL-R02-S02 | 扫描、监听与手动重扫 | 忽略不支持文件 | 4.7, 4.9, 4.10 | Core/Infrastructure | `tests/scenarios/LL-R02-S02.yaml` | `pnpm verify:scenario -- LL-R02-S02` |
-| LL-R02-S03 | 扫描、监听与手动重扫 | 监听外部新增和修改 | 4.7, 4.9, 4.10 | Core/Infrastructure | `tests/scenarios/LL-R02-S03.yaml` | `pnpm verify:scenario -- LL-R02-S03` |
+| LL-R02-S05 | 扫描、监听与手动重扫 | 监听外部新增和修改 | 4.7, 4.9, 4.10 | Core/Infrastructure | `tests/scenarios/LL-R02-S03.yaml` | `pnpm verify:scenario -- LL-R02-S03` |
 | LL-R02-S04 | 扫描、监听与手动重扫 | 不兼容旧资料库布局 | — | Gate | `tests/scenarios/LL-R02-S04.yaml` | `pnpm verify:scenario -- LL-R02-S04` |
 | LL-R02-S05 | 扫描、监听与手动重扫 | 监听外部新增和修改 | — | Gate | `tests/scenarios/LL-R02-S05.yaml` | `pnpm verify:scenario -- LL-R02-S05` |
 | LL-R03-S01 | 一期格式与内容解析矩阵 | 解析内嵌数据 | 1.6, 4.3–4.5, 8.12 | Core/Desktop/Native | `tests/native/LL-R03-S01.md` | `pnpm verify:scenario -- LL-R03-S01` |
@@ -217,8 +217,8 @@
 |---|---|---|---|---|---|---|
 | PM-R01-S01 | 歌单 CRUD | 创建歌单 | 6.5, 10.9 | Core/React | `tests/scenarios/PM-R01-S01.yaml` | `pnpm verify:scenario -- PM-R01-S01` |
 | PM-R01-S02 | 歌单 CRUD | 名称无效 | 6.5, 10.9 | Core/React | `tests/scenarios/PM-R01-S02.yaml` | `pnpm verify:scenario -- PM-R01-S02` |
-| PM-R01-S03 | 歌单 CRUD | 重命名歌单 | 6.5, 10.9 | Core/React | `tests/scenarios/PM-R01-S03.yaml` | `pnpm verify:scenario -- PM-R01-S03` |
-| PM-R01-S04 | 歌单 CRUD | 删除歌单 | 6.5, 10.9 | Core/React | `tests/scenarios/PM-R01-S04.yaml` | `pnpm verify:scenario -- PM-R01-S04` |
+| PM-R01-S04 | 歌单 CRUD | 重命名歌单 | 6.5, 10.9 | Core/React | `tests/scenarios/PM-R01-S03.yaml` | `pnpm verify:scenario -- PM-R01-S03` |
+| PM-R01-S05 | 歌单 CRUD | 删除歌单 | 6.5, 10.9 | Core/React | `tests/scenarios/PM-R01-S04.yaml` | `pnpm verify:scenario -- PM-R01-S04` |
 | PM-R02-S01 | 歌单查看与成员顺序 | 打开歌单 | 3.2, 6.1, 6.6, 10.9 | Core/React | `tests/scenarios/PM-R02-S01.yaml` | `pnpm verify:scenario -- PM-R02-S01` |
 | PM-R02-S02 | 歌单查看与成员顺序 | 追加后查看 | 3.2, 6.1, 6.6, 10.9 | Core/React | `tests/scenarios/PM-R02-S02.yaml` | `pnpm verify:scenario -- PM-R02-S02` |
 | PM-R03-S01 | 歌单成员添加 | 添加单首歌曲 | 6.6, 10.9 | Core/React | `tests/scenarios/PM-R03-S01.yaml` | `pnpm verify:scenario -- PM-R03-S01` |
@@ -263,13 +263,13 @@
 | SFI-R06-S05 | 源文件、系统关联与安全边界 | 暂存目录名称与用户内容冲突 | 4.2, 7.5, 9.2, 12.7, 5.3, 5.7 | Security/Native | `tests/native/SFI-R06-S05.md` | `pnpm verify:scenario -- SFI-R06-S05` |
 | SFI-R07-S01 | 单实例唤醒与重复打开 | 已运行实例接收文件关联 | 9.1, 9.2 | Desktop/Native | `tests/native/SFI-R07-S01.md` | `pnpm verify:scenario -- SFI-R07-S01` |
 | SFI-R07-S02 | 单实例唤醒与重复打开 | 冷启动文件关联 | 9.1, 9.2 | Desktop/Native | `tests/native/SFI-R07-S02.md` | `pnpm verify:scenario -- SFI-R07-S02` |
-| SFI-R08-S01 | 跨平台路径与恢复后的幂等性 | 跨平台安全命名 | 5.5, 5.10, 13.3, 13.4 | Fault injection/Native | `tests/native/SFI-R08-S01.md` | `pnpm verify:scenario -- SFI-R08-S01` |
-| SFI-R08-S02 | 跨平台路径与恢复后的幂等性 | 重试导入幂等 | 5.5, 5.10, 13.3, 13.4 | Fault injection/Native | `tests/native/SFI-R08-S02.md` | `pnpm verify:scenario -- SFI-R08-S02` |
-| SFI-R09-S01 | 受控并发批量导入与非阻塞反馈 | 大批量并发导入 | 2.1, 2.2, 13.9, 13.13 | Core/Fault injection | `tests/scenarios/SFI-R09-S01.yaml` | `pnpm verify:scenario -- SFI-R09-S01` |
-| SFI-R09-S02 | 受控并发批量导入与非阻塞反馈 | 无失败结果完成 | 2.1, 2.2, 13.9, 13.13 | Core/Fault injection | `tests/scenarios/SFI-R09-S02.yaml` | `pnpm verify:scenario -- SFI-R09-S02` |
-| SFI-R09-S03 | 受控并发批量导入与非阻塞反馈 | 批次包含失败 | 2.1, 2.2, 13.9, 13.13 | Core/Fault injection | `tests/scenarios/SFI-R09-S03.yaml` | `pnpm verify:scenario -- SFI-R09-S03` |
-| SFI-R09-S04 | 受控并发批量导入与非阻塞反馈 | 全部项目失败 | 2.1, 2.2, 13.9, 13.13 | Core/Fault injection | `tests/scenarios/SFI-R09-S04.yaml` | `pnpm verify:scenario -- SFI-R09-S04` |
-| SFI-R09-S05 | 受控并发批量导入与非阻塞反馈 | 多线程重叠可验证 | 2.1, 2.2, 13.9, 13.13 | Core/Fault injection | `tests/scenarios/SFI-R09-S05.yaml` | `pnpm verify:scenario -- SFI-R09-S05` |
+| SFI-R09-S01 | 跨平台路径与恢复后的幂等性 | 跨平台安全命名 | 5.5, 5.10, 13.3, 13.4 | Fault injection/Native | `tests/native/SFI-R08-S01.md` | `pnpm verify:scenario -- SFI-R08-S01` |
+| SFI-R09-S02 | 跨平台路径与恢复后的幂等性 | 重试导入幂等 | 5.5, 5.10, 13.3, 13.4 | Fault injection/Native | `tests/native/SFI-R08-S02.md` | `pnpm verify:scenario -- SFI-R08-S02` |
+| SFI-R10-S01 | 受控并发批量导入与非阻塞反馈 | 大批量并发导入 | 2.1, 2.2, 13.9, 13.13 | Core/Fault injection | `tests/scenarios/SFI-R09-S01.yaml` | `pnpm verify:scenario -- SFI-R09-S01` |
+| SFI-R10-S02 | 受控并发批量导入与非阻塞反馈 | 无失败结果完成 | 2.1, 2.2, 13.9, 13.13 | Core/Fault injection | `tests/scenarios/SFI-R09-S02.yaml` | `pnpm verify:scenario -- SFI-R09-S02` |
+| SFI-R10-S03 | 受控并发批量导入与非阻塞反馈 | 批次包含失败 | 2.1, 2.2, 13.9, 13.13 | Core/Fault injection | `tests/scenarios/SFI-R09-S03.yaml` | `pnpm verify:scenario -- SFI-R09-S03` |
+| SFI-R10-S04 | 受控并发批量导入与非阻塞反馈 | 全部项目失败 | 2.1, 2.2, 13.9, 13.13 | Core/Fault injection | `tests/scenarios/SFI-R09-S04.yaml` | `pnpm verify:scenario -- SFI-R09-S04` |
+| SFI-R10-S05 | 受控并发批量导入与非阻塞反馈 | 多线程重叠可验证 | 2.1, 2.2, 13.9, 13.13 | Core/Fault injection | `tests/scenarios/SFI-R09-S05.yaml` | `pnpm verify:scenario -- SFI-R09-S05` |
 
 ## sync-foundation
 
@@ -302,18 +302,18 @@
 | PLL-R02-S04 | 可携带对象资料 | 歌单与成员的变更被材料化 | 15.4 | Gate | `tests/scenarios/PLL-R02-S04.yaml` | `pnpm verify:scenario -- PLL-R02-S04` |
 | PLL-R02-S05 | 可携带对象资料 | 播放统计随资料库移动 | 15.4 | Gate | `tests/scenarios/PLL-R02-S05.yaml` | `pnpm verify:scenario -- PLL-R02-S05` |
 | PLL-R02-S06 | 可携带对象资料 | 取消收藏不留下悬空记录 | 15.4 | Gate | `tests/scenarios/PLL-R02-S06.yaml` | `pnpm verify:scenario -- PLL-R02-S06` |
-| PLL-R03-S01 | 新设备资料库重建 | 全新设备恢复完整资料 | 15.3 | Gate | `tests/scenarios/PLL-R03-S01.yaml` | `pnpm verify:scenario -- PLL-R03-S01` |
-| PLL-R03-S02 | 新设备资料库重建 | 同步资料先于媒体到达 | 15.3 | Gate | `tests/scenarios/PLL-R03-S02.yaml` | `pnpm verify:scenario -- PLL-R03-S02` |
-| PLL-R03-S03 | 新设备资料库重建 | 本机数据库丢失后重开同一资料库 | 15.3 | Gate | `tests/scenarios/PLL-R03-S03.yaml` | `pnpm verify:scenario -- PLL-R03-S03` |
-| PLL-R03-S04 | 新设备资料库重建 | 重复打开结果稳定 | 15.3 | Gate | `tests/scenarios/PLL-R03-S04.yaml` | `pnpm verify:scenario -- PLL-R03-S04` |
-| PLL-R04-S01 | 控制面存在性与自愈 | 首次启用即建立 manifest | 15.2 | Gate | `tests/scenarios/PLL-R04-S01.yaml` | `pnpm verify:scenario -- PLL-R04-S01` |
-| PLL-R04-S02 | 控制面存在性与自愈 | manifest 缺失时自愈 | 15.2 | Gate | `tests/scenarios/PLL-R04-S02.yaml` | `pnpm verify:scenario -- PLL-R04-S02` |
-| PLL-R04-S03 | 控制面存在性与自愈 | 控制面不可写时不破坏既有内容 | 15.2 | Gate | `tests/scenarios/PLL-R04-S03.yaml` | `pnpm verify:scenario -- PLL-R04-S03` |
-| PLL-R05-S01 | 对象资料接续与对账 | 打开资料库先接续再扫描 | 15.3 | Gate | `tests/scenarios/PLL-R05-S01.yaml` | `pnpm verify:scenario -- PLL-R05-S01` |
-| PLL-R05-S02 | 对象资料接续与对账 | 对象资料与媒体不一致 | 15.3 | Gate | `tests/scenarios/PLL-R05-S02.yaml` | `pnpm verify:scenario -- PLL-R05-S02` |
-| PLL-R05-S03 | 对象资料接续与对账 | 墓碑优先于陈旧记录 | 15.3 | Gate | `tests/scenarios/PLL-R05-S03.yaml` | `pnpm verify:scenario -- PLL-R05-S03` |
-| PLL-R05-S04 | 对象资料接续与对账 | 重复接续结果稳定 | 15.3 | Gate | `tests/scenarios/PLL-R05-S04.yaml` | `pnpm verify:scenario -- PLL-R05-S04` |
-| PLL-R05-S05 | 对象资料接续与对账 | 较新的本机身份不被旧记录覆盖 | 15.3 | Gate | `tests/scenarios/PLL-R05-S05.yaml` | `pnpm verify:scenario -- PLL-R05-S05` |
+| PLL-R05-S01 | 新设备资料库重建 | 全新设备恢复完整资料 | 15.3 | Gate | `tests/scenarios/PLL-R03-S01.yaml` | `pnpm verify:scenario -- PLL-R03-S01` |
+| PLL-R05-S02 | 新设备资料库重建 | 同步资料先于媒体到达 | 15.3 | Gate | `tests/scenarios/PLL-R03-S02.yaml` | `pnpm verify:scenario -- PLL-R03-S02` |
+| PLL-R05-S03 | 新设备资料库重建 | 本机数据库丢失后重开同一资料库 | 15.3 | Gate | `tests/scenarios/PLL-R03-S03.yaml` | `pnpm verify:scenario -- PLL-R03-S03` |
+| PLL-R05-S04 | 新设备资料库重建 | 重复打开结果稳定 | 15.3 | Gate | `tests/scenarios/PLL-R03-S04.yaml` | `pnpm verify:scenario -- PLL-R03-S04` |
+| PLL-R06-S01 | 控制面存在性与自愈 | 首次启用即建立 manifest | 15.2 | Gate | `tests/scenarios/PLL-R04-S01.yaml` | `pnpm verify:scenario -- PLL-R04-S01` |
+| PLL-R06-S02 | 控制面存在性与自愈 | manifest 缺失时自愈 | 15.2 | Gate | `tests/scenarios/PLL-R04-S02.yaml` | `pnpm verify:scenario -- PLL-R04-S02` |
+| PLL-R06-S03 | 控制面存在性与自愈 | 控制面不可写时不破坏既有内容 | 15.2 | Gate | `tests/scenarios/PLL-R04-S03.yaml` | `pnpm verify:scenario -- PLL-R04-S03` |
+| PLL-R07-S01 | 对象资料接续与对账 | 打开资料库先接续再扫描 | 15.3 | Gate | `tests/scenarios/PLL-R05-S01.yaml` | `pnpm verify:scenario -- PLL-R05-S01` |
+| PLL-R07-S02 | 对象资料接续与对账 | 对象资料与媒体不一致 | 15.3 | Gate | `tests/scenarios/PLL-R05-S02.yaml` | `pnpm verify:scenario -- PLL-R05-S02` |
+| PLL-R07-S03 | 对象资料接续与对账 | 墓碑优先于陈旧记录 | 15.3 | Gate | `tests/scenarios/PLL-R05-S03.yaml` | `pnpm verify:scenario -- PLL-R05-S03` |
+| PLL-R07-S04 | 对象资料接续与对账 | 重复接续结果稳定 | 15.3 | Gate | `tests/scenarios/PLL-R05-S04.yaml` | `pnpm verify:scenario -- PLL-R05-S04` |
+| PLL-R07-S05 | 对象资料接续与对账 | 较新的本机身份不被旧记录覆盖 | 15.3 | Gate | `tests/scenarios/PLL-R05-S05.yaml` | `pnpm verify:scenario -- PLL-R05-S05` |
 
 ## 发布审计
 

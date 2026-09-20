@@ -239,6 +239,8 @@ pub fn install(
         .ok_or_else(|| "macOS status controls must be installed on the main thread".to_owned())?;
     let bar = NSStatusBar::systemStatusBar();
     let item = bar.statusItemWithLength(STATUS_ROW_WIDTH);
+    item.setLength(STATUS_ROW_WIDTH);
+    item.setVisible(true);
     let view = StatusRowView::new(mtm, bar.thickness(), sink, show_main_window, quit);
 
     let previous = make_button(&view, mtm, 0.0, "上一首", sel!(previous:));
@@ -263,9 +265,25 @@ pub fn install(
     // The children remain separate accessible buttons, while the root owns all
     // pointer hit testing and routes from the event x-coordinate.
     view.setAccessibilityElement(false);
-    #[allow(deprecated)]
-    item.setView(Some(&view));
-
+    // `NSStatusItem.setView:` is deprecated and is not reliable on recent
+    // AppKit. Keep the system-owned status button and attach our content to
+    // that button instead; this preserves the item's normal menu-bar layout
+    // and visibility handling.
+    let status_button = item
+        .button(mtm)
+        .ok_or_else(|| "macOS status item has no standard button".to_owned())?;
+    status_button.addSubview(&view);
+    let status_frame = status_button.frame();
+    let view_frame = view.frame();
+    tracing::info!(target: "echo_desktop",
+        item_visible = item.isVisible(),
+        item_length = item.length(),
+        status_button_width = status_frame.size.width,
+        status_button_height = status_frame.size.height,
+        view_width = view_frame.size.width,
+        view_height = view_frame.size.height,
+        "installed macOS status row"
+    );
     // Right-click context menu: 显示窗口 reuse the same row action, 退出 runs
     // the shell's quit closure (flush session + `app.exit`).
     view.set_context_menu(build_context_menu(mtm, &view));

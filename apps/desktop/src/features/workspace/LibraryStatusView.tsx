@@ -29,6 +29,9 @@ export function LibraryStatusView({ status }: { status: LibraryStatus }) {
     if (status.activeRoot) {
       invalidateCovers();
       await bridge.call("start_scan", { root: status.activeRoot });
+      // A rescan can make the previously remembered song unavailable. Apply
+      // the same initial-song fallback after the scan has reconciled records.
+      await bridge.call("restore_playback_session", {}).catch(() => undefined);
     }
   }
 
