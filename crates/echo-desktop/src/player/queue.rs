@@ -59,9 +59,39 @@ pub struct TemporaryItem {
     pub path: std::path::PathBuf,
     /// Best-effort duration (seconds), `None` if unknown yet.
     pub duration: Option<f64>,
+    /// Metadata parsed directly from the opened file. It is session-only and
+    /// never becomes a library record until the user explicitly imports it.
+    pub metadata: TemporaryMetadata,
     /// Whether this temporary item's file is on the *currently active* root
     /// (i.e. it was opened from a non-active root / outside the library).
     pub on_active_root: bool,
+}
+
+/// Presentation metadata for a temporary file-open playback item.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TemporaryMetadata {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub duration: Option<f64>,
+    pub cover_key: Option<String>,
+    pub lyrics: Option<TemporaryLyrics>,
+}
+
+/// Parsed lyrics carried by a temporary playback item.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TemporaryLyrics {
+    pub source: Option<String>,
+    pub timed: bool,
+    pub lines: Vec<TemporaryLyricLine>,
+    pub plain_text: String,
+    pub parse_error: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TemporaryLyricLine {
+    pub seconds: f64,
+    pub text: String,
 }
 
 impl QueueItem {

@@ -36,6 +36,10 @@ export interface UiPlayerSnapshot {
   readonly queueLen: number;
   readonly mode: 'sequential' | 'shuffle' | 'repeatOne';
   readonly currentTitle: string | null;
+  readonly currentArtist?: string | null;
+  readonly currentAlbum?: string | null;
+  readonly currentCoverKey?: string | null;
+  readonly currentLyrics?: SongLyricsDto | null;
   readonly currentCanImport: boolean;
   readonly queue: readonly UiQueueEntry[];
 }

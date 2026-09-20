@@ -105,6 +105,8 @@ body.player-mode-open .mode-dismiss:hover {
   background: color-mix(in oklab, var(--player-on), transparent 76%);
 }
 body.player-mode-open .now-playing-import .btn {
+  min-height: 28px;
+  padding-inline: var(--space-3);
   border-color: color-mix(in oklab, var(--player-on), transparent 70%);
   color: var(--player-on);
 }

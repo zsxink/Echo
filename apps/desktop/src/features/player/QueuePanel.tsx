@@ -140,12 +140,7 @@ export function QueuePanel() {
                       ? "暂时不可用，可在资料库恢复后重试"
                       : entry.failed
                         ? "加载失败"
-                        : (entry.artist ?? (entry.canImport ? "临时文件" : "未知艺人"))}
-                    {entry.canImport ? (
-                      <span className="queue-temporary-tag" aria-label="临时播放项">
-                        临时
-                      </span>
-                    ) : null}
+                        : (entry.artist ?? "未知艺人")}
                   </span>
                 </div>
                 <span className="queue-time">

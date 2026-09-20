@@ -2,9 +2,9 @@
  * PlayerBar tests — temporary playback item identification and import (task 11.7).
  *
  * Verifies:
- *  - A "临时" badge is shown when the current entry is a session-only temporary
- *    item (currentSongId is null, currentCanImport is true).
- *  - An "导入到资料库" button appears only for temporary items.
+ *  - Temporary items do not carry a visible "临时" badge.
+ *  - The persistent player bar exposes a small "导入" button only for
+ *    file-browser temporary playback.
  *  - The import button sends the `import_current_temporary_file` command.
  *  - Library songs (with a currentSongId) do NOT show the import button or badge.
  */
@@ -15,6 +15,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PlayerBar } from "./PlayerBar";
 import { playerStore } from "../../player/playerStore";
 import type { UiPlayerSnapshot } from "../../player/playerStore";
+import { invalidateCovers } from "../../app/coverArt";
 
 // Bridge calls are mocked globally by setup.ts; capture them for assertion.
 let capturedInvoke: ReturnType<typeof vi.fn>;
@@ -24,6 +25,7 @@ beforeEach(async () => {
   const tauriCore = await import("@tauri-apps/api/core");
   capturedInvoke = (tauriCore as unknown as { invoke: ReturnType<typeof vi.fn> }).invoke;
   capturedInvoke.mockClear();
+  invalidateCovers();
 
   // Reset the player store to the stopped/empty state.
   playerStore.publish({
@@ -79,11 +81,15 @@ function renderWithSnapshot(snapshot: Partial<UiPlayerSnapshot> = {}) {
   return render(<PlayerBar />);
 }
 
-describe("PlayerBar (task 11.7) — temporary item badge", () => {
-  it("shows the 临时 badge when the current entry is a temporary item", () => {
+describe("PlayerBar (task 11.7) — temporary item label", () => {
+  it("does not show a 临时 badge when the current entry is temporary", () => {
     renderWithSnapshot();
-    expect(screen.getByLabelText("临时播放项")).toBeInTheDocument();
-    expect(screen.getByLabelText("临时播放项").textContent).toBe("临时");
+    expect(screen.queryByLabelText("临时播放项")).not.toBeInTheDocument();
+  });
+
+  it("shows a small 导入 button only for a temporary item", () => {
+    renderWithSnapshot();
+    expect(screen.getByRole("button", { name: "导入" })).toBeInTheDocument();
   });
 
   it("does NOT show the 临时 badge for a library song", () => {
@@ -107,63 +113,14 @@ describe("PlayerBar (task 11.7) — temporary item badge", () => {
       ],
     });
     expect(screen.queryByLabelText("临时播放项")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "导入" })).not.toBeInTheDocument();
   });
-});
 
-describe("PlayerBar (task 11.7) — import to library button", () => {
-  it("shows the import button when a temporary item is playing", () => {
+  it("imports the current temporary file when clicked", () => {
     renderWithSnapshot();
-    expect(screen.getByRole("button", { name: "导入到资料库" })).toBeInTheDocument();
-  });
-
-  it("does NOT show the import button for a library song", () => {
-    renderWithSnapshot({
-      currentSongId: "song-abc",
-      currentCanImport: false,
-      queue: [
-        {
-          entryId: "entry-2",
-          songId: "song-abc",
-          title: null,
-          isCurrent: true,
-          failed: false,
-          canImport: false,
-          blocked: false,
-          artist: null,
-          durationS: null,
-          coverKey: null,
-        },
-      ],
-    });
-    expect(screen.queryByRole("button", { name: "导入到资料库" })).not.toBeInTheDocument();
-  });
-
-  it("sends import_current_temporary_file when clicked", async () => {
-    renderWithSnapshot();
-    const btn = screen.getByRole("button", { name: "导入到资料库" });
-    // The mock returns a success result for import_current_temporary_file.
-    capturedInvoke.mockResolvedValueOnce({ kind: "imported", songId: "new-123" });
-    fireEvent.click(btn);
-    // Wait for the async handler.
-    await screen.findByTestId("playerbar");
+    capturedInvoke.mockResolvedValueOnce(null);
+    fireEvent.click(screen.getByRole("button", { name: "导入" }));
     expect(capturedInvoke).toHaveBeenCalledWith("import_current_temporary_file", {});
-  });
-
-  it("shows importing state while the command is in flight", async () => {
-    renderWithSnapshot();
-    // Return a never-resolving promise to simulate a slow import.
-    capturedInvoke.mockReturnValueOnce(new Promise(() => {}));
-    fireEvent.click(screen.getByRole("button", { name: "导入到资料库" }));
-    expect(screen.getByText("导入中…")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "导入到资料库" })).toBeDisabled();
-  });
-
-  it("shows result text after import completes", async () => {
-    renderWithSnapshot();
-    capturedInvoke.mockResolvedValueOnce({ kind: "imported" });
-    fireEvent.click(screen.getByRole("button", { name: "导入到资料库" }));
-    await screen.findByText("已导入到资料库");
-    expect(screen.getByText("已导入到资料库")).toBeInTheDocument();
   });
 });
 
@@ -180,7 +137,7 @@ describe("PlayerBar — empty queue", () => {
     expect(screen.getByRole("button", { name: "列表循环" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "显示播放队列" })).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "音量" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "导入到资料库" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "导入" })).not.toBeInTheDocument();
   });
 
   it("disables track-specific transport but keeps global controls live", () => {

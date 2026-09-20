@@ -48,8 +48,6 @@ export function PlayerBar() {
   const snapshot = usePlayerSnapshot();
   const ui = usePlayerUi();
   const detail = useSongDetail(snapshot.currentSongId);
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<string | null>(null);
   // A cover asset can disappear under a live key (the cache is garbage-collected
   // outside the referenced keep-set). A broken image would be worse than the
   // vinyl placeholder, so a load failure falls back to it — remembered per song
@@ -63,7 +61,7 @@ export function PlayerBar() {
   // 内置封面 (design §115 内置优先): one batched lookup per mounted bar, skipped
   // entirely while nothing is current (an empty id list is never requested).
   const coverKeys = useCoverKeys(songId ? [songId] : []);
-  const coverKey = songId ? (coverKeys.get(songId) ?? null) : null;
+  const coverKey = songId ? (coverKeys.get(songId) ?? null) : (snapshot.currentCoverKey ?? null);
   const artwork = coverKey && failedCoverId !== songId ? assetUrl(coverKey) : null;
 
   // rAF-interpolated so the bar/滑块 glide instead of stepping per snapshot.
@@ -79,40 +77,12 @@ export function PlayerBar() {
   const title = isTemporary ? snapshot.currentTitle : (detail?.title ?? snapshot.currentTitle);
   // Until `song_detail` answers, the 当前播放区 carries the real playback
   // duration instead of inventing an artist name.
-  const subline = detail?.artist ?? (duration > 0 ? formatDuration(duration) : null);
+  const subline =
+    detail?.artist ?? snapshot.currentArtist ?? (duration > 0 ? formatDuration(duration) : null);
 
   function command(action: string) {
     // Coarse player control; the Rust coordinator owns the queue + snapshot.
     bridge.fireAndForget("player_control", { action });
-  }
-
-  async function importToLibrary() {
-    if (importing) return;
-    setImporting(true);
-    setImportResult(null);
-    try {
-      const result = await bridge.call("import_current_temporary_file");
-      switch (result.kind) {
-        case "imported":
-          setImportResult("已导入到资料库");
-          break;
-        case "duplicate":
-          setImportResult("资料库已有相同歌曲");
-          break;
-        case "skipped":
-          setImportResult("不支持的格式，未导入");
-          break;
-        case "failed":
-          setImportResult("导入失败");
-          break;
-        default:
-          setImportResult("导入完成");
-      }
-    } catch {
-      setImportResult("导入失败");
-    } finally {
-      setImporting(false);
-    }
   }
 
   const mode = MODES[snapshot.mode];
@@ -182,14 +152,7 @@ export function PlayerBar() {
           </div>
           <div className="player-track-text">
             <b>
-              {isTemporary ? (
-                <>
-                  <span className="player-temporary-tag" aria-label="临时播放项">
-                    临时
-                  </span>
-                  {title ?? "临时歌曲"}
-                </>
-              ) : title ? (
+              {title ? (
                 title
               ) : (
                 // 空播放态 — an empty song slot, not a "未在播放" sentence.
@@ -202,22 +165,14 @@ export function PlayerBar() {
           </div>
         </button>
         {isTemporary ? (
-          <>
-            {importResult ? (
-              <span className="player-import-result" role="status">
-                {importResult}
-              </span>
-            ) : null}
-            <button
-              type="button"
-              className="btn"
-              aria-label="导入到资料库"
-              disabled={importing}
-              onClick={() => void importToLibrary()}
-            >
-              {importing ? "导入中…" : "导入到资料库"}
-            </button>
-          </>
+          <button
+            type="button"
+            className="btn player-import-button"
+            aria-label="导入"
+            onClick={() => bridge.fireAndForget("import_current_temporary_file")}
+          >
+            导入
+          </button>
         ) : null}
       </div>
 

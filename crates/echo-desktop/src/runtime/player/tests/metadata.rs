@@ -35,6 +35,7 @@ fn metadata_resolver_skips_temporary_items_without_querying() {
             display_name: "访谈录音.m4a".to_owned(),
             path: std::path::PathBuf::from("/tmp/interview.m4a"),
             duration: None,
+            metadata: Default::default(),
             on_active_root: false,
         }),
     };

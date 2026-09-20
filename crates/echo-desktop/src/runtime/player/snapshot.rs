@@ -9,7 +9,10 @@ use echo_core::domain::state::PlaybackState;
 
 use super::metadata::QueueMetadataResolver;
 use super::PlayerPort;
-use super::{CoordinatorView, QueueEntryMeta, QueueItem, UiPlayerSnapshot, UiQueueEntry};
+use super::{
+    CoordinatorView, QueueEntryMeta, QueueItem, UiLyricLine, UiPlayerSnapshot, UiQueueEntry,
+    UiTemporaryLyrics,
+};
 
 /// Map the actor's [`PlayerSnapshot`] (transport state) plus the coordinator's
 /// queue view into the UI shape.
@@ -30,15 +33,53 @@ pub fn map_snapshot<S: BuildHasher>(
 ) -> UiPlayerSnapshot {
     let current = view.current.as_ref();
     let current_id = current.map(|e| e.id);
-    let (current_song_id, current_title) = match current.map(|e| &e.item) {
+    let (
+        current_song_id,
+        current_title,
+        current_artist,
+        current_album,
+        current_cover_key,
+        current_lyrics,
+    ) = match current.map(|e| &e.item) {
         Some(QueueItem::Library(id)) => {
             // A library song's display title is its resolved metadata — the
             // player bar shows the real title, not a placeholder.
             let title = metadata.get(id).and_then(|meta| meta.title.clone());
-            (Some(id.to_string()), title)
+            let song_meta = metadata.get(id).cloned().unwrap_or_default();
+            (
+                Some(id.to_string()),
+                title,
+                song_meta.artist,
+                song_meta.album,
+                song_meta.cover_key,
+                None,
+            )
         }
-        Some(QueueItem::Temporary(t)) => (None, Some(t.display_name.clone())),
-        None => (None, None),
+        Some(QueueItem::Temporary(t)) => (
+            None,
+            t.metadata
+                .title
+                .clone()
+                .or_else(|| Some(t.display_name.clone())),
+            t.metadata.artist.clone(),
+            t.metadata.album.clone(),
+            t.metadata.cover_key.clone(),
+            t.metadata.lyrics.as_ref().map(|lyrics| UiTemporaryLyrics {
+                source: lyrics.source.clone(),
+                timed: lyrics.timed,
+                lines: lyrics
+                    .lines
+                    .iter()
+                    .map(|line| UiLyricLine {
+                        seconds: line.seconds,
+                        text: line.text.clone(),
+                    })
+                    .collect(),
+                plain_text: lyrics.plain_text.clone(),
+                parse_error: lyrics.parse_error.clone(),
+            }),
+        ),
+        None => (None, None, None, None, None, None),
     };
     // A session-only temporary item (no library `song_id`) can be imported into
     // the active library (task 11.7); a library entry cannot.
@@ -61,15 +102,32 @@ pub fn map_snapshot<S: BuildHasher>(
                     song_id: e.item.song_id().map(|id| id.to_string()),
                     title: match &e.item {
                         QueueItem::Library(_) => song_meta.title,
-                        QueueItem::Temporary(t) => Some(t.display_name.clone()),
+                        QueueItem::Temporary(t) => t
+                            .metadata
+                            .title
+                            .clone()
+                            .or_else(|| Some(t.display_name.clone())),
                     },
                     is_current: Some(e.id) == current_id,
                     failed: view.failed_round.contains(&e.id),
                     blocked: view.blocked.contains(&e.id),
                     can_import: is_temporary,
-                    artist: song_meta.artist,
-                    duration_s: song_meta.duration_s,
-                    cover_key: song_meta.cover_key,
+                    artist: match &e.item {
+                        QueueItem::Library(_) => song_meta.artist,
+                        QueueItem::Temporary(t) => t.metadata.artist.clone(),
+                    },
+                    duration_s: match &e.item {
+                        QueueItem::Library(_) => song_meta.duration_s,
+                        QueueItem::Temporary(t) => t
+                            .metadata
+                            .duration
+                            .or(t.duration)
+                            .map(|seconds| seconds.max(0.0) as u64),
+                    },
+                    cover_key: match &e.item {
+                        QueueItem::Library(_) => song_meta.cover_key,
+                        QueueItem::Temporary(t) => t.metadata.cover_key.clone(),
+                    },
                 }
             })
             .collect();
@@ -97,6 +155,10 @@ pub fn map_snapshot<S: BuildHasher>(
             super::PlayMode::RepeatOne => "repeatOne",
         },
         current_title,
+        current_artist,
+        current_album,
+        current_cover_key,
+        current_lyrics,
         current_can_import,
         queue,
     }

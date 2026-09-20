@@ -278,6 +278,7 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
                 display_name: item.display_name,
                 path: item.path,
                 duration: item.duration,
+                metadata: item.metadata,
                 on_active_root: item.on_active_root,
             }),
         };
@@ -671,6 +672,7 @@ pub struct TemporaryPlay {
     pub display_name: String,
     pub path: std::path::PathBuf,
     pub duration: Option<f64>,
+    pub metadata: super::queue::TemporaryMetadata,
     pub on_active_root: bool,
 }
 

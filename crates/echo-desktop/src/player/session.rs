@@ -433,6 +433,7 @@ mod tests {
                 display_name: "t.mp3".into(),
                 path: std::path::PathBuf::from("/tmp/t.mp3"),
                 duration: None,
+                metadata: Default::default(),
                 on_active_root: false,
             }),
         }

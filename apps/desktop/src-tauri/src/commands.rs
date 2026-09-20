@@ -667,6 +667,8 @@ pub fn play_temporary_file(
     // The path comes from an OS file-open boundary that already validated it
     // (task 9.1/9.2); the actor re-checks local-path hardness on load.
     let coord = state.coordinator.clone();
+    let file_path = std::path::PathBuf::from(&path);
+    let metadata = services.read_temporary_metadata(&file_path);
     {
         let mut coord = coord.lock().expect("player coordinator lock");
         if let Some(song_id) = services
@@ -681,8 +683,9 @@ pub fn play_temporary_file(
         }
         coord.play_temporary(echo_desktop::player::coordinator::TemporaryPlay {
             display_name,
-            path: std::path::PathBuf::from(path),
-            duration: None,
+            path: file_path,
+            duration: metadata.duration,
+            metadata,
             on_active_root: false,
         });
     }

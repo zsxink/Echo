@@ -101,6 +101,7 @@ fn map_snapshot_surfaces_temporary_title_without_song_id() {
             display_name: "outside.m4a".into(),
             path: "/tmp/outside.m4a".into(),
             duration: None,
+            metadata: Default::default(),
             on_active_root: false,
         }),
     };

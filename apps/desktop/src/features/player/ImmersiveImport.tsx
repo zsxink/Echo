@@ -3,7 +3,7 @@ import { useState } from "react";
 import { bridge } from "../../bridge";
 
 /**
- * "导入到资料库" inside the immersive surface when the current entry is a
+ * "导入" inside the immersive surface when the current entry is a
  * session-only temporary item. Shows inline status after the import completes
  * and is disabled while the request is in flight.
  */
@@ -27,9 +27,6 @@ export function ImmersiveImport() {
 
   return (
     <div className="now-playing-import" data-testid="immersive-import">
-      <span className="player-temporary-tag" aria-label="临时播放项">
-        临时
-      </span>
       {result ? (
         <span className="now-playing-import-result" data-testid="import-result">
           {result}
@@ -39,10 +36,10 @@ export function ImmersiveImport() {
           type="button"
           className="btn"
           disabled={importing}
-          aria-label="导入到资料库"
+          aria-label="导入"
           onClick={() => void doImport()}
         >
-          {importing ? "导入中…" : "导入到资料库"}
+          {importing ? "导入中…" : "导入"}
         </button>
       )}
     </div>

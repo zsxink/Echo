@@ -53,7 +53,6 @@ import { useLyrics } from "./useLyrics";
 import { useLyricsFollow } from "./useLyricsFollow";
 import { useLyricsStartOffset } from "./useLyricsStartOffset";
 import { LyricsColumn } from "./LyricsColumn";
-import { ImmersiveImport } from "./ImmersiveImport";
 
 // ---------------------------------------------------------------------------
 // Component
@@ -132,7 +131,8 @@ function ImmersiveBody(props: {
   // Metadata for the current library song. The `key` remounts this body with
   // the new currentSongId, so a track change always re-reads the detail.
   const detail = useSongDetail(snapshot.currentSongId);
-  const lyrics = useLyrics(snapshot.currentSongId);
+  const libraryLyrics = useLyrics(snapshot.currentSongId);
+  const lyrics = snapshot.currentSongId ? libraryLyrics : (snapshot.currentLyrics ?? null);
 
   // Lyrics follow state is lifted here so 回到当前行 floats over the lyrics (it
   // is the only affordance that has to outlive the scroll position) and the
@@ -149,32 +149,30 @@ function ImmersiveBody(props: {
   // hides its scrollbar, so there is no third way to scroll it.
   const onReaderScroll = () => pauseFollow();
 
-  const isTemporary = snapshot.currentCanImport;
   const title =
     detail?.title ?? snapshot.currentTitle ?? (snapshot.currentSongId ? "当前歌曲" : "未命名");
-  const artist = detail?.artist ?? null;
-  const album = detail?.album ?? null;
-  const hasCover = detail?.hasCover ?? false;
+  const artist = detail?.artist ?? snapshot.currentArtist ?? null;
+  const album = detail?.album ?? snapshot.currentAlbum ?? null;
   // 内置封面 (design §115 内置优先): the artwork embedded in the file becomes the
   // record's label. A song with no embedded artwork keeps the drawn label, so
   // `hasCover` alone is not enough — the key has to resolve too.
   const songId = snapshot.currentSongId;
   const coverKeys = useCoverKeys(songId ? [songId] : []);
   const [failedCoverId, setFailedCoverId] = useState<string | null>(null);
-  const coverKey = songId ? (coverKeys.get(songId) ?? null) : null;
+  const coverKey = songId ? (coverKeys.get(songId) ?? null) : (snapshot.currentCoverKey ?? null);
   const artwork: string | null =
-    hasCover && coverKey && failedCoverId !== songId ? assetUrl(coverKey) : null;
+    coverKey && failedCoverId !== (songId ?? coverKey) ? assetUrl(coverKey) : null;
   useArtworkTint(
     coverKey,
     artwork,
-    !!songId && failedCoverId !== songId && (!detail || (hasCover && !coverKey)),
+    !!coverKey && failedCoverId !== (songId ?? coverKey),
   );
   const position = useSmoothPosition() ?? 0;
   const duration = snapshot.duration ?? detail?.durationS ?? 0;
 
   // Everything that changes the *rendered height* of the metadata block: the
   // lyrics column is offset below it by measurement, not by the stylesheet.
-  const infoSignature = `${title}|${artist ?? ""}|${album ?? ""}|${duration}|${isTemporary}`;
+  const infoSignature = `${title}|${artist ?? ""}|${album ?? ""}|${duration}`;
   useLyricsStartOffset(shellRef, infoSignature);
 
   // Leaving 歌词专注阅读 through 收起 returns focus to the lyrics area — the
@@ -250,7 +248,7 @@ function ImmersiveBody(props: {
                   className="ring-art"
                   src={artwork}
                   alt=""
-                  onError={() => setFailedCoverId(songId)}
+                  onError={() => setFailedCoverId(songId ?? coverKey)}
                 />
               ) : null}
             </span>
@@ -267,7 +265,6 @@ function ImmersiveBody(props: {
               {album ? `\u3000专辑：${album}` : ""}
               {duration > 0 ? `\u3000${formatDuration(duration)}` : ""}
             </p>
-            {isTemporary ? <ImmersiveImport /> : null}
           </div>
 
           <LyricsColumn

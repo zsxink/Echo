@@ -54,6 +54,10 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly queueLen: number;\n");
     out.push_str("  readonly mode: 'sequential' | 'shuffle' | 'repeatOne';\n");
     out.push_str("  readonly currentTitle: string | null;\n");
+    out.push_str("  readonly currentArtist?: string | null;\n");
+    out.push_str("  readonly currentAlbum?: string | null;\n");
+    out.push_str("  readonly currentCoverKey?: string | null;\n");
+    out.push_str("  readonly currentLyrics?: SongLyricsDto | null;\n");
     out.push_str("  readonly currentCanImport: boolean;\n");
     out.push_str("  readonly queue: readonly UiQueueEntry[];\n");
     out.push_str("}\n\n");

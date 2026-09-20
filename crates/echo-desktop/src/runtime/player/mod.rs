@@ -71,6 +71,24 @@ pub struct UiQueueEntry {
     pub cover_key: Option<String>,
 }
 
+/// Lyrics carried by a session-only temporary playback item.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiTemporaryLyrics {
+    pub source: Option<String>,
+    pub timed: bool,
+    pub lines: Vec<UiLyricLine>,
+    pub plain_text: String,
+    pub parse_error: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiLyricLine {
+    pub seconds: f64,
+    pub text: String,
+}
+
 /// The resolved presentation metadata of one library queue entry (task 2.2).
 ///
 /// This is what the queue panel needs beyond the queue identity itself:
@@ -105,6 +123,10 @@ pub struct UiPlayerSnapshot {
     /// The current queue entry's display fields, for the player bar. `None`
     /// when nothing is current.
     pub current_title: Option<String>,
+    pub current_artist: Option<String>,
+    pub current_album: Option<String>,
+    pub current_cover_key: Option<String>,
+    pub current_lyrics: Option<UiTemporaryLyrics>,
     /// True when the current entry is a session-only temporary item that can be
     /// imported into the active library (task 11.7).
     pub current_can_import: bool,

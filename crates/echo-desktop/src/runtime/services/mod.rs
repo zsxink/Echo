@@ -35,6 +35,7 @@ use echo_core::infrastructure::filesystem::RootRegistry;
 
 use crate::ipc::dto::BootstrapSnapshot;
 use crate::platform::dialogs::SystemDialogs;
+use crate::player::queue::{TemporaryLyricLine, TemporaryLyrics, TemporaryMetadata};
 use crate::runtime::StartupSupervisor;
 
 /// A brand-new runtime-state store with no persisted values: a first launch has
@@ -76,6 +77,65 @@ pub struct AppServices {
 }
 
 impl AppServices {
+    /// Read presentation metadata for a file opened outside the library.
+    ///
+    /// This intentionally does not create a song row. It only gives the
+    /// session-only player enough data to render the same title/artist/album,
+    /// cover and lyrics that a scanned library song would expose.
+    pub fn read_temporary_metadata(&self, path: &std::path::Path) -> TemporaryMetadata {
+        let bytes = match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(_) => return TemporaryMetadata::default(),
+        };
+        let parsed = self.deps.metadata.read_bytes(&bytes).ok();
+        let Some(parsed) = parsed else {
+            return TemporaryMetadata::default();
+        };
+
+        let cover_key = parsed
+            .cover
+            .as_ref()
+            .and_then(|cover| self.deps.cover_cache.put(&cover.bytes, &cover.mime).ok());
+        let embedded = parsed
+            .embedded_lyrics
+            .as_deref()
+            .map(|raw| self.deps.lyrics_parser.parse(raw))
+            .filter(|candidate| candidate.is_effective())
+            .map(|candidate| ("embedded", candidate));
+        let lyrics = embedded.or_else(|| {
+            let sidecar = path.with_extension("lrc");
+            let raw = std::fs::read(&sidecar).ok()?;
+            if raw.len() > self.deps.config.lyrics_limit {
+                return None;
+            }
+            let text = String::from_utf8(raw).ok()?;
+            let candidate = self.deps.lyrics_parser.parse(&text);
+            candidate.is_effective().then_some(("sidecar", candidate))
+        });
+
+        TemporaryMetadata {
+            title: parsed.title,
+            artist: parsed.artist,
+            album: parsed.album,
+            duration: parsed.duration.map(|duration| duration.as_secs_f64()),
+            cover_key,
+            lyrics: lyrics.map(|(source, candidate)| TemporaryLyrics {
+                source: Some(source.to_owned()),
+                timed: !candidate.lines().is_empty(),
+                lines: candidate
+                    .lines()
+                    .iter()
+                    .map(|line| TemporaryLyricLine {
+                        seconds: line.timestamp_ms as f64 / 1000.0,
+                        text: line.text.clone(),
+                    })
+                    .collect(),
+                plain_text: candidate.plain_text().unwrap_or_default().to_owned(),
+                parse_error: candidate.parse_error().map(ToOwned::to_owned),
+            }),
+        }
+    }
+
     /// Resolve a complete, deterministic library view through Core. The
     /// desktop only adapts the command parameters and returns Core's ordered
     /// context to its player coordinator.

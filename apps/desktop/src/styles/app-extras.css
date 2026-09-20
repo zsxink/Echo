@@ -501,7 +501,7 @@ body.player-mode-open.lyrics-focus-open .lyric-line {
   font-size: var(--text-xs);
 }
 
-/* --- queue popover: failed / blocked / temporary entries ----------------- */
+/* --- queue popover: failed / blocked entries ------------------------------ */
 .queue-item.is-failed .queue-name b,
 .queue-item.is-failed .queue-time {
   color: var(--danger);
@@ -510,31 +510,22 @@ body.player-mode-open.lyrics-focus-open .lyric-line {
   color: var(--accent-strong);
   font-weight: 700;
 }
-.queue-temporary-tag {
-  margin-left: var(--space-2);
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-pill);
-  background: var(--surface-warm);
-  color: var(--accent-strong);
-  font: 600 var(--text-xs)/1.7 var(--font-mono);
-}
 .queue-empty p {
   color: var(--fg-2);
 }
 
-/* --- player bar: temporary (session-only) item --------------------------- */
-.player-temporary-tag {
-  margin-right: var(--space-1);
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-pill);
-  background: var(--surface-warm);
-  color: var(--accent-strong);
-  font: 600 var(--text-xs)/1.7 var(--font-mono);
-}
-.player-track-card .btn {
+/* --- player bar: compact import action ----------------------------------- */
+.player-import-button {
   min-height: 26px;
   padding: 0 var(--space-2);
+  flex: 0 0 auto;
+  border-color: color-mix(in oklab, currentColor, transparent 70%);
+  background: transparent;
+  color: inherit;
   font-size: var(--text-xs);
+}
+.player-import-button:hover {
+  background: color-mix(in oklab, currentColor, transparent 90%);
 }
 
 /* --- reduced motion: stop smooth scrolling too (task 12.4) -----------------

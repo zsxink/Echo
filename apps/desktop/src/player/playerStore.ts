@@ -42,6 +42,10 @@ export const EMPTY_SNAPSHOT: UiPlayerSnapshot = {
   queueLen: 0,
   mode: "sequential",
   currentTitle: null,
+  currentArtist: null,
+  currentAlbum: null,
+  currentCoverKey: null,
+  currentLyrics: null,
   currentCanImport: false,
   queue: [],
 };

@@ -308,6 +308,7 @@ fn play_temporary_is_session_only() {
         display_name: "x.mp3".into(),
         path: std::path::PathBuf::from("/tmp/x.mp3"),
         duration: None,
+        metadata: Default::default(),
         on_active_root: false,
     });
     assert_eq!(coord.current().unwrap().item.song_id(), None);
@@ -317,6 +318,7 @@ fn play_temporary_is_session_only() {
             display_name: "x.mp3".into(),
             path: std::path::PathBuf::from("/tmp/x.mp3"),
             duration: None,
+            metadata: Default::default(),
             on_active_root: false,
         })
     );
