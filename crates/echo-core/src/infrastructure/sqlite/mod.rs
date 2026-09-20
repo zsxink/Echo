@@ -150,8 +150,18 @@ impl SqliteDatabase {
     /// exist — would otherwise fail before the first migration.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
         let path = path.as_ref().to_path_buf();
-        // TEMP-REVERT (TDD red phase): parent-dir creation removed temporarily
-        // to prove the regression test fails against the buggy code.
+        // SQLite's `Connection::open` refuses to create parent directories, so
+        // a cold start on a fresh machine — where the platform app-data
+        // directory does not yet exist — must materialize it here (regression:
+        // `open_creates_a_missing_parent_directory` in schema.rs).
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|source| {
+                Error::io(
+                    "create database parent directory",
+                    source, parent.to_path_buf(),
+                )
+            })?;
+        }
         let had_database = path.exists() && file_is_non_empty(&path)?;
         let mut writer = open_writer(&path)?;
         if had_database {
