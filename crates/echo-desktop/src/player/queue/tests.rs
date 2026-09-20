@@ -389,3 +389,236 @@ fn repeat_one_returns_current_forever() {
     assert_eq!(q.advance_in_mode(PlayMode::RepeatOne), Some(a));
     assert_eq!(q.advance_in_mode(PlayMode::RepeatOne), Some(a));
 }
+
+fn temp(path: &str) -> QueueItem {
+    QueueItem::Temporary(Box::new(TemporaryItem {
+        display_name: "tmp".into(),
+        path: std::path::PathBuf::from(path),
+        duration: None,
+        metadata: TemporaryMetadata::default(),
+        on_active_root: false,
+    }))
+}
+
+#[test]
+fn priority_lane_physical_contiguity() {
+    // The lane is a contiguous slice right after the current entry. Inserting
+    // A, B, C must keep every lane member adjacent to current and ahead of the
+    // ordinary pending entries — re-insert must never fall between old members.
+    let s1 = song();
+    let normal1 = song();
+    let normal2 = song();
+    let mut q = Queue::new();
+    let current = q.push(lib(s1));
+    let n1 = q.push(lib(normal1));
+    let n2 = q.push(lib(normal2));
+    q.set_current(current);
+
+    let a = q.insert_next(lib(song()));
+    let b = q.insert_next(lib(song()));
+    let c = q.insert_next(lib(song()));
+
+    // Physical order and lane are identical: current, lane, then ordinary.
+    assert_eq!(q.priority_ids(), &[a, b, c]);
+    assert_eq!(
+        q.entries().iter().map(|e| e.id).collect::<Vec<_>>(),
+        vec![current, a, b, c, n1, n2]
+    );
+
+    // Clearing pending keeps only the current entry.
+    q.clear_pending();
+    assert_eq!(q.entries().len(), 1);
+    assert_eq!(q.current_id(), Some(current));
+    assert!(q.priority_ids().is_empty());
+}
+
+#[test]
+fn insert_next_after_moved_current_keeps_lane_contiguous() {
+    // Session restore / play_queue_entry can move current to an entry that sits
+    // ahead of stored lane members (physically earlier).  The next insert must
+    // still land after *all* lane members, never between them.
+    let mut q = Queue::new();
+    let head = q.push(lib(song()));
+    let cur = q.push(lib(song()));
+    q.set_current(cur);
+    let x = q.insert_next(lib(song()));
+    let y = q.insert_next(lib(song()));
+    // Physically: head, cur, x, y.
+    assert_eq!(
+        q.entries().iter().map(|e| e.id).collect::<Vec<_>>(),
+        vec![head, cur, x, y]
+    );
+
+    // Restore/skip makes `head` the current again — current now sits *before*
+    // the lane instead of right before it.
+    q.set_current(head);
+    let z = q.insert_next(lib(song()));
+    assert_eq!(q.priority_ids(), &[x, y, z]);
+    // The lane still follows current (head) as a contiguous slice: head, x, y,
+    // z, cur — cur trails as an ordinary/restored member, never interleaving.
+    assert_eq!(
+        q.entries().iter().map(|e| e.id).collect::<Vec<_>>(),
+        vec![head, x, y, z, cur]
+    );
+    assert_eq!(q.current_id(), Some(head));
+}
+
+#[test]
+fn remove_keeps_priority_lane_consistent() {
+    let s1 = song();
+    let normal = song();
+    let mut q = Queue::new();
+    q.push(lib(s1)); // will be current
+    let n1 = q.push(lib(normal));
+    let cur_id = q.entries()[0].id;
+    q.set_current(cur_id);
+    let a = q.insert_next(lib(song()));
+    let b = q.insert_next(lib(song()));
+
+    // Remove a lane member: lane keeps order and stays contiguous.
+    assert!(q.remove(a));
+    assert_eq!(q.priority_ids(), &[b]);
+    // Insert another lane member must go after b.
+    let c = q.insert_next(lib(song()));
+    assert_eq!(q.priority_ids(), &[b, c]);
+    assert_eq!(
+        q.entries().iter().map(|e| e.id).collect::<Vec<_>>(),
+        vec![cur_id, b, c, n1]
+    );
+
+    // Remove an ordinary pending entry: current/lane unaffected.
+    assert!(q.remove(n1));
+    assert_eq!(q.priority_ids(), &[b, c]);
+    let view: Vec<_> = q.view_entries().into_iter().map(|e| e.id).collect();
+    assert_eq!(view, vec![cur_id, b, c]);
+}
+
+#[test]
+fn promote_to_priority_moves_existing_entry_to_lane_front() {
+    let target = song();
+    let s1 = song();
+    let mut q = Queue::new();
+    let current = q.push(lib(s1));
+    let normal = q.push(lib(target)); // target is an ordinary pending entry
+    let tail = q.push(lib(song()));
+    q.set_current(current);
+    assert_eq!(q.pending_ids(), vec![normal, tail]);
+
+    // "Play next" the target: no duplicate is created — the existing entry is
+    // promoted to the lane front.
+    let promoted = q.promote_to_priority(lib(target));
+    assert_eq!(promoted, normal);
+    assert_eq!(q.priority_ids(), &[normal]);
+    // It now fronts the lane, immediately after current; tail stays pending.
+    let view: Vec<_> = q.view_entries().into_iter().map(|e| e.id).collect();
+    assert_eq!(view, vec![current, normal, tail]);
+    // No new entry: queue length unchanged.
+    assert_eq!(q.entries().len(), 3);
+}
+
+#[test]
+fn promote_to_priority_is_idempotent_for_same_song() {
+    let s = song();
+    let mut q = Queue::new();
+    let current = q.push(lib(song()));
+    q.set_current(current);
+    let promoted = [
+        q.promote_to_priority(lib(s)),
+        q.promote_to_priority(lib(s)),
+        q.promote_to_priority(lib(s)),
+    ];
+    // Repeated "next" of one song collapses to a single lane copy.
+    assert_eq!(promoted[0], promoted[1]);
+    assert_eq!(promoted[1], promoted[2]);
+    assert_eq!(q.priority_ids(), &[promoted[0]]);
+    assert_eq!(q.entries().len(), 2); // current + the one promoted entry
+}
+
+#[test]
+fn promote_to_priority_appends_when_not_queued() {
+    let mut q = Queue::new();
+    let current = q.push(lib(song()));
+    q.set_current(current);
+    let a = q.promote_to_priority(lib(song()));
+    let b = q.promote_to_priority(lib(song()));
+    assert_eq!(q.priority_ids(), &[a, b]);
+    assert_eq!(q.entries().len(), 3);
+}
+
+#[test]
+fn promote_matches_temporary_by_path() {
+    let mut q = Queue::new();
+    let current = q.push(lib(song()));
+    q.set_current(current);
+    let _ordinary = q.push(QueueEntry {
+        id: QueueEntryId::new(),
+        item: temp("/tmp/a.mp3"),
+    });
+    // Same path already queued → promote, no duplicate.
+    let promoted = q.promote_to_priority(QueueEntry {
+        id: QueueEntryId::new(),
+        item: temp("/tmp/a.mp3"),
+    });
+    assert_eq!(q.priority_ids(), vec![promoted]);
+    assert_eq!(q.entries().len(), 2); // current + the promoted temp
+
+    // A different temp path is a distinct identity → appended.
+    let other = q.promote_to_priority(QueueEntry {
+        id: QueueEntryId::new(),
+        item: temp("/tmp/b.mp3"),
+    });
+    assert_eq!(q.priority_ids(), vec![promoted, other]);
+    assert_eq!(q.entries().len(), 3);
+}
+
+#[test]
+fn promote_does_not_fold_ordinary_duplicates_or_current() {
+    let s = song();
+    let mut q = Queue::new();
+    q.push(lib(s)); // ordinary duplicate #1 (also the one we promote)
+    let current = q.push(lib(song()));
+    q.set_current(current);
+    // Two "加入队列" duplicates for s in the ordinary area.
+    let d1 = q.push(lib(s));
+    let d2 = q.push(lib(s));
+
+    // Promote one copy to the lane; the other stays an ordinary member.
+    let promoted = q.promote_to_priority(lib(s));
+    assert_eq!(q.priority_ids(), vec![promoted]);
+    assert!(q.is_pending(d1)); // still pending
+    assert!(q.is_pending(d2)); // still pending
+    assert_ne!(promoted, d1);
+    assert_ne!(promoted, d2);
+    assert_eq!(q.entries().len(), 4);
+
+    // Promoting the *current* song is a no-op that adds nothing.
+    let current_song_id = q.current().unwrap().item.song_id().unwrap();
+    let n = q.promote_to_priority(lib(current_song_id));
+    assert_eq!(q.entries().len(), 4);
+    assert_eq!(n, current);
+}
+
+#[test]
+fn restore_with_duplicate_lane_ids_for_one_song_collapses_on_promote() {
+    // spec 「优先区重复副本清理」: a restored session can carry two lane IDs
+    // that both refer to the same song.  The next "play next" involving that
+    // song must collapse the lane to a single copy at the front.
+    let s = song();
+    let mut q = Queue::new();
+    let current = q.push(lib(song()));
+    q.set_current(current);
+    // Two ordinary entries for s (a restored session kept both).
+    let e1 = q.push(lib(s));
+    let e2 = q.push(lib(s));
+    // The stale session put BOTH of them in the priority lane.
+    q.set_priority(vec![e1, e2]);
+
+    assert_eq!(q.priority_ids(), &[e1, e2]);
+    let promoted = q.promote_to_priority(lib(s));
+    // Lane now has exactly one copy, fronted by the promoted entry.
+    assert_eq!(q.priority_ids(), vec![promoted]);
+    // One of the two entries remains an ordinary pending member.
+    let pending: Vec<_> = q.pending_ids();
+    assert_eq!(pending.len(), 2); // promoted + the other duplicate
+    assert_ne!(promoted, e2); // one of the original lane copies is ordinary now
+}

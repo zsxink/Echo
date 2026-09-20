@@ -109,6 +109,20 @@ impl QueueItem {
             Self::Temporary(_) => None,
         }
     }
+
+    /// Whether two items denote the *same playable* for "play next"
+    /// dedup/promote purposes.  Library songs match by stable `SongId`;
+    /// session-only temporary items match by the path that identifies them.
+    /// This deliberately does NOT collapse `QueueEntryId`s — two library
+    /// entries for one song remain distinct ordinary queue members.
+    #[must_use]
+    pub fn matches_identity(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Library(a), Self::Library(b)) => a == b,
+            (Self::Temporary(a), Self::Temporary(b)) => a.path == b.path,
+            _ => false,
+        }
+    }
 }
 
 /// A pure queue container: current + pending + bounded history.
@@ -402,16 +416,131 @@ impl Queue {
     /// Add an entry to the tail of the FIFO "play next" lane.  Physical
     /// placement directly after the lane keeps subsequent list-loop traversal
     /// intuitive; the lane itself is authoritative for consumption order.
+    ///
+    /// The lane is maintained as a real contiguous slice right after the
+    /// current entry (not `current_index + 1 + priority.len()`, which lands new
+    /// entries *between* old lane members the moment a restore/切歌/回绕 moves
+    /// the current entry ahead of stored lane members — the "下一首越插越靠后 /
+    /// 乱序" defect of issue 5). If the lane has drifted apart, it is first
+    /// re-located to sit flush after the current entry, then the new entry is
+    /// appended to its tail.
     pub fn insert_next(&mut self, entry: QueueEntry) -> QueueEntryId {
         let id = entry.id;
-        let insert_at = match self.current_index {
-            Some(i) => i + 1 + self.priority.len(),
-            None => 0,
-        };
-        self.entries.insert(insert_at, entry);
+        self.relocate_priority_lane();
+        let base = self.current_index.map_or(0, |i| i + 1);
+        self.entries.insert(base + self.priority.len(), entry);
         self.priority.push(id);
-        // A None current that now has a head item: leave for the coordinator.
         id
+    }
+
+    /// Ensure the priority lane occupies `[current_index+1, current_index +
+    /// priority.len())` physically, in lane order.  `set_current` (切歌、
+    /// `play_queue_entry`、会话恢复) can point the current entry at a position
+    /// that no longer borders the lane, or a previous remove/re-insert can
+    /// strand lane members; this re-locates them so the contiguous-slice
+    /// invariant holds again before the next insert.
+    fn relocate_priority_lane(&mut self) {
+        if self.priority.is_empty() {
+            return;
+        }
+        let base = self.current_index.map_or(0, |i| i + 1);
+        // The lane already occupies the slot right after current, in order.
+        let contiguous = self
+            .priority
+            .iter()
+            .enumerate()
+            .all(|(k, id)| self.entries.get(base + k).map(|e| &e.id) == Some(id));
+        if contiguous {
+            return;
+        }
+
+        // Snapshot the lane entries (in lane order) so we can rebuild the slice.
+        // Owned on purpose: `entries` is re-borrowed mutably below (retain), so
+        // the lane snapshot must be a value, not an iterator borrowing the lane.
+        #[allow(clippy::needless_collect)]
+        let lane_entries: Vec<QueueEntry> = self
+            .priority
+            .iter()
+            .filter_map(|id| self.get(*id).cloned())
+            .collect();
+
+        // Remove every lane member in one pass, counting how many sat before
+        // `current_index` so the index keeps pointing at the same entry.
+        let removed_before_current = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(pos, e)| {
+                self.priority.contains(&e.id) && self.current_index.is_some_and(|ci| *pos < ci)
+            })
+            .count();
+        self.entries.retain(|e| !self.priority.contains(&e.id));
+        if let Some(ci) = self.current_index.as_mut() {
+            *ci = ci.saturating_sub(removed_before_current);
+        }
+
+        // Rebase after removals (removing lane members before current moves the
+        // current index forward, so the lane must follow it).
+        let base = self.current_index.map_or(0, |i| i + 1);
+        for (k, e) in lane_entries.into_iter().enumerate() {
+            self.entries.insert(base + k, e);
+        }
+    }
+
+    /// "Play next" with dedup + promote.  If an entry whose [`QueueItem`]
+    /// matches `item` already exists in the queue, no new entry is created:
+    /// the existing one is promoted to the very front of the FIFO lane (right
+    /// after the current entry) and becomes the single priority copy.  If the
+    /// item is not queued yet it is appended to the lane tail like
+    /// [`Self::insert_next`].  Returns the entry id that now fronts the lane.
+    ///
+    /// Ordinary entries for the same song elsewhere in the queue are left
+    /// untouched — only the "play next" lane dedups ("加入播放队列" still
+    /// allows duplicates).  Any *lane* copies for the same playable are
+    /// collapsed to the promoted one (restored sessions can hold several lane
+    /// IDs for one song; spec 「优先区重复副本清理」).  A match against the
+    /// *current* entry does not move it (it is playing); the current id is
+    /// returned and no duplicate is added.
+    pub fn promote_to_priority(&mut self, entry: QueueEntry) -> QueueEntryId {
+        // First queued entry with the same playable identity.
+        let Some(match_idx) = self
+            .entries
+            .iter()
+            .position(|e| e.item.matches_identity(&entry.item))
+        else {
+            return self.insert_next(entry);
+        };
+
+        // The current entry itself: never queued against itself.
+        if Some(match_idx) == self.current_index {
+            return self.entries[match_idx].id;
+        }
+
+        let matched = self.entries[match_idx].clone();
+        let promoted_id = matched.id;
+        self.entries.remove(match_idx);
+        if let Some(ci) = self.current_index {
+            if match_idx < ci {
+                self.current_index = Some(ci - 1);
+            }
+        }
+        // Collapse every *lane* copy of the same playable (including this entry's
+        // old position) so the promoted entry is the lane's single copy.
+        let lane = std::mem::take(&mut self.priority);
+        self.priority = lane
+            .into_iter()
+            .filter(|id| *id != promoted_id && !self.entry_matches(*id, &entry.item))
+            .collect();
+
+        let base = self.current_index.map_or(0, |i| i + 1);
+        self.entries.insert(base, matched);
+        self.priority.insert(0, promoted_id);
+        promoted_id
+    }
+
+    /// Whether the entry `id` refers to a playable matching `item`.
+    fn entry_matches(&self, id: QueueEntryId, item: &QueueItem) -> bool {
+        self.get(id).is_some_and(|e| e.item.matches_identity(item))
     }
 
     /// Consume the first valid manual priority entry. Manual previous and

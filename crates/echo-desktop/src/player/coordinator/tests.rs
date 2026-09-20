@@ -741,3 +741,62 @@ fn error_advance_in_shuffle_skips_failed_entry() {
     assert_eq!(coord.current().unwrap().item.song_id(), Some(s3));
     assert_ne!(third, failed_id);
 }
+
+#[test]
+fn play_next_promotes_an_already_queued_song_instead_of_duplicating() {
+    // spec: 下一首播放同一首去重 / 提升不重复展开普通待播. If the song is
+    // already an ordinary pending member, "play next" must promote that entry
+    // to the lane front and create no second entry.
+    let player = FakePlayer::new();
+    let mut coord = PlaybackCoordinator::new(player);
+    let target = song();
+    let other = song();
+    coord.play_context(&ViewContext {
+        songs: vec![song(), target, other],
+        selected_index: 0,
+    });
+    let before_len = coord.queue().entries().len();
+
+    let promoted = coord.play_next(lib_entry(target));
+    assert_eq!(coord.queue().entries().len(), before_len); // no new entry
+    assert_eq!(coord.queue().priority_ids(), vec![promoted]);
+    assert_eq!(coord.queue().pending_ids().len(), 2); // promoted + other
+}
+
+#[test]
+fn play_next_appends_when_song_is_not_queued() {
+    let player = FakePlayer::new();
+    let mut coord = PlaybackCoordinator::new(player);
+    coord.play_context(&ViewContext {
+        songs: vec![song(), song()],
+        selected_index: 0,
+    });
+    let before_len = coord.queue().entries().len();
+
+    let fresh = song();
+    let added = coord.play_next(lib_entry(fresh));
+    assert_eq!(coord.queue().entries().len(), before_len + 1); // appended
+    assert_eq!(coord.queue().priority_ids(), vec![added]);
+    assert_eq!(
+        coord.queue().get(added).unwrap().item.song_id(),
+        Some(fresh)
+    );
+}
+
+#[test]
+fn play_next_repeatedly_same_song_keeps_single_lane_copy() {
+    let player = FakePlayer::new();
+    let mut coord = PlaybackCoordinator::new(player);
+    coord.play_context(&ViewContext {
+        songs: vec![song(), song(), song()],
+        selected_index: 0,
+    });
+
+    let s = song();
+    coord.play_next(lib_entry(s));
+    let again = coord.play_next(lib_entry(s));
+    let third = coord.play_next(lib_entry(s));
+    assert_eq!(again, third);
+    assert_eq!(coord.queue().priority_ids().len(), 1);
+    assert_eq!(coord.queue().priority_ids()[0], again);
+}

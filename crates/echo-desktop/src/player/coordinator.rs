@@ -305,8 +305,12 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
 
     /// Insert an entry immediately after the current ("下一首播放"). Returns
     /// the new entry id.
+    ///
+    /// Dedup + promote: if a queue entry with the same song/temporary identity
+    /// already exists it is promoted to the front of the "next" lane instead of
+    /// creating a duplicate (see `Queue::promote_to_priority`).
     pub fn play_next(&mut self, entry: QueueEntry) -> QueueEntryId {
-        self.queue.insert_next(entry)
+        self.queue.promote_to_priority(entry)
     }
 
     /// Clear all pending entries, keeping the current one playing.
