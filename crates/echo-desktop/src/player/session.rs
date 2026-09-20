@@ -39,9 +39,9 @@ use echo_core::domain::ids::{QueueEntryId, SongId};
 use serde::{Deserialize, Serialize};
 
 use super::port::PlayMode;
-#[cfg(test)]
-use super::queue::TemporaryItem;
 use super::queue::{HistoryRecord, Queue, QueueEntry, QueueItem};
+#[cfg(test)]
+use super::queue::{TemporaryItem, TemporaryMetadata};
 
 /// The current on-disk session schema version.
 pub const SESSION_VERSION: u32 = 3;
@@ -429,13 +429,13 @@ mod tests {
     fn temp_entry() -> QueueEntry {
         QueueEntry {
             id: QueueEntryId::new(),
-            item: QueueItem::Temporary(TemporaryItem {
+            item: QueueItem::Temporary(Box::new(TemporaryItem {
                 display_name: "t.mp3".into(),
                 path: std::path::PathBuf::from("/tmp/t.mp3"),
                 duration: None,
-                metadata: Default::default(),
+                metadata: TemporaryMetadata::default(),
                 on_active_root: false,
-            }),
+            })),
         }
     }
 

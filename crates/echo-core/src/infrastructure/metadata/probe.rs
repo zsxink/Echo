@@ -27,7 +27,7 @@ use std::time::Duration;
 use symphonia::core::codecs::CodecType;
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::FormatOptions;
-use symphonia::core::io::{MediaSourceStream, MediaSourceStreamOptions};
+use symphonia::core::io::{MediaSource, MediaSourceStream, MediaSourceStreamOptions};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
@@ -57,20 +57,33 @@ struct AudioTrack {
     duration: Option<Duration>,
 }
 
+impl ContainerKind {
+    /// The public outcome for a classified container.
+    const fn into_outcome(self) -> ProbeOutcome {
+        match self {
+            Self::Audio(track) => ProbeOutcome::Audio {
+                format: track.format,
+                duration: track.duration,
+            },
+            Self::NoAudioTrack => ProbeOutcome::NoAudioTrack,
+        }
+    }
+}
+
 impl SymphoniaMediaProbe {
     #[must_use]
     pub const fn new(registry: RootRegistry) -> Self {
         Self { registry }
     }
 
-    /// One probe attempt. `Ok` classifies the container, `Err` is the raw
-    /// Symphonia failure (the caller decides corrupt-vs-unsupported).
-    fn probe_reader(
-        abs: &std::path::Path,
-        extension: Option<&str>,
-    ) -> Result<ContainerKind, SymphoniaError> {
-        let file = std::fs::File::open(abs)?;
-        let stream = MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default());
+    /// One probe attempt over any seekable source. `Ok` classifies the
+    /// container, `Err` is the raw Symphonia failure (the caller decides
+    /// corrupt-vs-unsupported).
+    fn probe_source<S>(source: S, extension: Option<&str>) -> Result<ContainerKind, SymphoniaError>
+    where
+        S: MediaSource + 'static,
+    {
+        let stream = MediaSourceStream::new(Box::new(source), MediaSourceStreamOptions::default());
         let mut hint = Hint::new();
         if let Some(extension) = extension {
             hint.with_extension(extension);
@@ -106,6 +119,14 @@ impl SymphoniaMediaProbe {
         }
         Ok(ContainerKind::NoAudioTrack)
     }
+
+    /// The path-based attempt: open the file, then probe its content.
+    fn probe_reader(
+        abs: &std::path::Path,
+        extension: Option<&str>,
+    ) -> Result<ContainerKind, SymphoniaError> {
+        Self::probe_source(std::fs::File::open(abs)?, extension)
+    }
 }
 
 impl MediaProbe for SymphoniaMediaProbe {
@@ -113,13 +134,7 @@ impl MediaProbe for SymphoniaMediaProbe {
         let abs = self.registry.path_of(root)?.join(path.normalized());
         // Content first: the extension must never decide the format.
         match Self::probe_reader(&abs, None) {
-            Ok(ContainerKind::Audio(track)) => {
-                return Ok(ProbeOutcome::Audio {
-                    format: track.format,
-                    duration: track.duration,
-                });
-            }
-            Ok(ContainerKind::NoAudioTrack) => return Ok(ProbeOutcome::NoAudioTrack),
+            Ok(kind) => return Ok(kind.into_outcome()),
             Err(SymphoniaError::Unsupported(_)) => {}
             Err(SymphoniaError::IoError(source)) => {
                 return Err(classify_io("probe", source, abs));
@@ -138,14 +153,37 @@ impl MediaProbe for SymphoniaMediaProbe {
         // the content is simply not a supported format (disguised extension).
         let extension = path.extension();
         match Self::probe_reader(&abs, extension.as_deref()) {
-            Ok(ContainerKind::Audio(track)) => Ok(ProbeOutcome::Audio {
-                format: track.format,
-                duration: track.duration,
-            }),
-            Ok(ContainerKind::NoAudioTrack) => Ok(ProbeOutcome::NoAudioTrack),
+            Ok(kind) => Ok(kind.into_outcome()),
             Err(SymphoniaError::IoError(source)) => Err(classify_io("probe", source, abs)),
             Err(_) => Ok(ProbeOutcome::Unsupported),
         }
+    }
+
+    fn probe_bytes(&self, content: &[u8], extension: Option<&str>) -> Result<ProbeOutcome, Error> {
+        // The same two attempts as `probe`, with the file read from memory
+        // instead of opened from a library root. There is no path here, so an
+        // I/O-shaped failure cannot name one — and cannot arise: the bytes are
+        // already in hand.
+        //
+        // `MediaSourceStream` takes an owned `'static` source, hence the
+        // `Vec`: one copy per attempt, and the second one only happens when
+        // content probing found no reader and the name gets its retry.
+        match Self::probe_source(std::io::Cursor::new(content.to_vec()), None) {
+            Ok(kind) => return Ok(kind.into_outcome()),
+            Err(SymphoniaError::Unsupported(_)) => {}
+            Err(other) => {
+                return Err(Error::CorruptMedia {
+                    operation: "probe".to_owned(),
+                    reason: other.to_string(),
+                });
+            }
+        }
+        // Content matched no reader and the name did not help either: not
+        // supported media, which is a classification, not a failure.
+        Self::probe_source(std::io::Cursor::new(content.to_vec()), extension).map_or_else(
+            |_| Ok(ProbeOutcome::Unsupported),
+            |kind| Ok(kind.into_outcome()),
+        )
     }
 }
 
@@ -254,6 +292,55 @@ mod tests {
             assert_eq!(format, expected, "{fixture}");
             assert!(duration.is_some(), "{fixture} reports duration");
         }
+    }
+
+    #[test]
+    fn probing_bytes_matches_probing_the_path() {
+        // A file opened from the file browser reaches the probe as bytes — it
+        // has no library root to resolve. Classification *and* duration must
+        // match the path-based probe exactly, or the same file would show one
+        // length in the queue and another once imported.
+        for fixture in [
+            "tone-short.mp3",
+            "tone-short.flac",
+            "tone-short.m4a",
+            "tone-short.ogg",
+            "tone-short.opus",
+            "tone-short.wav",
+        ] {
+            let (_dir, registry, root, relative) = setup(fixture);
+            let probe = SymphoniaMediaProbe::new(registry);
+            let by_path = probe.probe(root, &relative).unwrap();
+            let bytes = std::fs::read(fixtures_dir().join(fixture)).unwrap();
+            let extension = fixture.rsplit_once('.').map(|(_, ext)| ext);
+            assert_eq!(
+                probe.probe_bytes(&bytes, extension).unwrap(),
+                by_path,
+                "{fixture}"
+            );
+            // Duration is precisely what a temporary item was missing, so it
+            // has to survive the byte path, not just the classification.
+            let ProbeOutcome::Audio { duration, .. } = by_path else {
+                panic!("{fixture} must probe as audio");
+            };
+            assert!(duration.is_some(), "{fixture} reports duration from bytes");
+        }
+    }
+
+    #[test]
+    fn probing_bytes_classifies_unsupported_and_no_audio_content() {
+        let probe = SymphoniaMediaProbe::new(RootRegistry::new());
+        // Content decides: PNG bytes named .mp3 are not supported media.
+        assert_eq!(
+            probe.probe_bytes(&png_bytes(), Some("mp3")).unwrap(),
+            ProbeOutcome::Unsupported
+        );
+        // A supported container with no audio track keeps its classification.
+        let bytes = std::fs::read(fixtures_dir().join("no-audio.mp4")).unwrap();
+        assert_eq!(
+            probe.probe_bytes(&bytes, Some("mp4")).unwrap(),
+            ProbeOutcome::NoAudioTrack
+        );
     }
 
     #[test]

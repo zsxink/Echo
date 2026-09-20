@@ -171,10 +171,14 @@ fn services(data_dir: &Path, dialogs: Arc<dyn SystemDialogs>) -> AppServices {
         .run_recovery(&routed.deps, &scan_supervisor, &trash)
         .expect("boot recovery resolves the gate");
     startup.on_ready();
+    // The shell's frontend registers its file-open listener after the WebView
+    // loads; this harness has no WebView, so it declares the gate open in the
+    // same order the shell does (deliver-file-opens-after-frontend-ready).
+    startup.mark_frontend_ready();
     AppServices::with_runtime(
         routed.deps.clone(),
         scan_supervisor,
-        startup,
+        std::sync::Arc::new(startup),
         dialogs,
         routed.registry.clone(),
         routed.database,

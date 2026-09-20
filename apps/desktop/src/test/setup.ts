@@ -39,6 +39,13 @@ const tauriCore = {
     if (command === "library_status") {
       return { configured: false, readOnly: false, unavailable: false, scanning: false };
     }
+    // The frontend-ready signal fires on every App mount from the same effect
+    // that registers the file-open listener (deliver-file-opens-after-
+    // frontend-ready). It returns void and no test needs to decode its result,
+    // so treat it like library_status: default success, no per-test opt-in.
+    if (command === "file_open_frontend_ready") {
+      return null;
+    }
     throw new Error(`No mock for tauri command: ${command}`);
   }),
   // The real shell registers the `cover://` scheme; tests only need a URL that

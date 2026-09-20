@@ -10,6 +10,7 @@ use echo_core::domain::catalog::{SongSortField, SortDirection};
 use echo_core::domain::entities::LibraryRoot;
 use echo_core::domain::ids::{OperationId, PlaylistId};
 use echo_core::domain::library::PortableSerialize;
+use echo_core::domain::media::{AudioFormat, ParsedMetadata};
 
 use crate::platform::dialogs::TestDialogs;
 
@@ -34,7 +35,7 @@ fn services_with_dialogs(fixture: &ScanFixture, dialogs: TestDialogs) -> AppServ
     AppServices::with_runtime(
         std::sync::Arc::clone(&fixture.deps),
         ScanSupervisor::new(),
-        startup,
+        std::sync::Arc::new(startup),
         std::sync::Arc::new(dialogs),
         RootRegistry::new(),
         std::sync::Arc::new(fixture.database.clone()),
@@ -601,7 +602,7 @@ fn choose_library_root_is_refused_when_fs_is_unavailable() {
     let app = AppServices::with_runtime(
         std::sync::Arc::clone(&fixture.deps),
         ScanSupervisor::new(),
-        startup,
+        std::sync::Arc::new(startup),
         std::sync::Arc::new(dialogs),
         RootRegistry::new(),
         std::sync::Arc::new(fixture.database.clone()),
@@ -885,4 +886,112 @@ fn open_path_of_a_non_active_root_never_resolves_to_the_old_uuid() {
         resolved, None,
         "an old-root file must never play through the old root's UUID"
     );
+}
+
+/// D3 of deliver-file-opens-after-frontend-ready: there is exactly one startup
+/// supervisor. The shell registers an `Arc<StartupSupervisor>` (so the OS
+/// file-open handler can consult it before `AppServices` exists) and hands the
+/// same `Arc` to the composition root — a second, independently-constructed
+/// instance would let the shell's file-open delivery gate and this root's
+/// readiness gate diverge, and the divergence would be invisible: both would
+/// answer, just differently.
+#[test]
+fn the_composition_root_shares_the_shells_startup_supervisor() {
+    let fixture = ScanFixture::new();
+    let shell = std::sync::Arc::new(StartupSupervisor::new());
+    let app = AppServices::with_runtime(
+        std::sync::Arc::clone(&fixture.deps),
+        ScanSupervisor::new(),
+        std::sync::Arc::clone(&shell),
+        std::sync::Arc::new(TestDialogs::cancelling()),
+        RootRegistry::new(),
+        std::sync::Arc::new(fixture.database.clone()),
+        Blockers::new(),
+    );
+
+    assert!(
+        std::ptr::eq(app.startup(), &*shell),
+        "the composition root must expose the shell's supervisor, not a copy"
+    );
+
+    // Behavior across the two handles, not just pointer identity: a path queued
+    // through the shell's handle is drained through the root's handle, and the
+    // root sees the phase the shell set.
+    shell.on_ready();
+    assert_eq!(app.startup().phase(), crate::runtime::StartupPhase::Ready);
+    assert_eq!(
+        shell.receive_file_open(std::path::PathBuf::from("/music/shared.flac")),
+        None,
+        "queued: the frontend listener has not registered yet"
+    );
+    assert_eq!(
+        app.startup().mark_frontend_ready(),
+        vec![std::path::PathBuf::from("/music/shared.flac")]
+    );
+    assert_eq!(
+        app.startup()
+            .receive_file_open(std::path::PathBuf::from("/music/after.flac")),
+        Some(std::path::PathBuf::from("/music/after.flac"))
+    );
+}
+
+/// A file opened from the file browser is read for its presentation metadata
+/// before it becomes a queue item. Duration is probe-owned — the tag reader
+/// deliberately never fills it — and a file outside the library gets no scan
+/// pass, so this read is a temporary item's only duration source. Without it
+/// the queue row read 时长未知 while the progress bar, fed by the engine,
+/// already showed the real length.
+#[test]
+fn temporary_metadata_duration_comes_from_the_probe() {
+    let fixture = ScanFixture::new();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("西楼别序.mp3");
+    let content: &[u8] = b"outside-the-library-bytes";
+    std::fs::write(&path, content).unwrap();
+
+    // The seeded tags carry only the display fields: the real tag reader
+    // returns `duration: None`, so seeding one would test a situation that
+    // cannot happen.
+    fixture.metadata.set_bytes(
+        content,
+        ParsedMetadata {
+            title: Some("西楼别序".to_owned()),
+            artist: Some("尹昔眠".to_owned()),
+            ..ParsedMetadata::default()
+        },
+    );
+    fixture.probe.set_bytes(
+        content,
+        ProbeOutcome::Audio {
+            format: AudioFormat::Mpeg,
+            duration: Some(std::time::Duration::from_secs(227)),
+        },
+    );
+
+    let metadata = services(&fixture).read_temporary_metadata(&path);
+
+    assert_eq!(metadata.title.as_deref(), Some("西楼别序"));
+    assert_eq!(metadata.artist.as_deref(), Some("尹昔眠"));
+    assert_eq!(
+        metadata.duration,
+        Some(227.0),
+        "the probe is a temporary item's only duration source"
+    );
+}
+
+/// The other half of the contract: content the probe cannot classify keeps an
+/// unknown duration unknown. A row showing a made-up length would be worse
+/// than one admitting it does not know.
+#[test]
+fn temporary_metadata_keeps_an_unsupported_duration_unknown() {
+    let fixture = ScanFixture::new();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mystery.mp3");
+    let content: &[u8] = b"not-media-at-all";
+    std::fs::write(&path, content).unwrap();
+    fixture.probe.set_bytes(content, ProbeOutcome::Unsupported);
+
+    let metadata = services(&fixture).read_temporary_metadata(&path);
+
+    assert_eq!(metadata.duration, None);
 }

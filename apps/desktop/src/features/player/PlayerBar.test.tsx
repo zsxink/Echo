@@ -226,6 +226,34 @@ describe("PlayerBar — 内置封面 (design §115 内置优先)", () => {
     expect(screen.getByText("陈婧霏")).toBeInTheDocument();
   });
 
+  it("renders the embedded artwork for a temporary item (no library song id)", async () => {
+    // A file opened from the file browser carries no `songId`, so the bar takes
+    // the key straight off the snapshot. The load-failure memory is keyed the
+    // same way: keying it on `songId` alone compared the initial `null` with
+    // that `null` and silently disabled the artwork of every such file, while
+    // the immersive view (same lookup) drew it fine.
+    const { container } = renderWithSnapshot({ currentCoverKey: "cv1-temp" });
+    const img = await waitFor(() => {
+      const found = container.querySelector<HTMLImageElement>(".mini-cover img");
+      if (!found) throw new Error("temporary artwork not rendered yet");
+      return found;
+    });
+    expect(img.getAttribute("src")).toBe("cover://cv1-temp");
+    expect(container.querySelector(".mini-cover")).toHaveClass("has-image");
+  });
+
+  it("falls back to the vinyl placeholder when a temporary item's artwork breaks", async () => {
+    const { container } = renderWithSnapshot({ currentCoverKey: "cv1-broken" });
+    const img = await waitFor(() => {
+      const found = container.querySelector<HTMLImageElement>(".mini-cover img");
+      if (!found) throw new Error("temporary artwork not rendered yet");
+      return found;
+    });
+    fireEvent.error(img);
+    await waitFor(() => expect(container.querySelector(".mini-cover img")).toBeNull());
+    expect(container.querySelector(".mini-cover")).not.toHaveClass("has-image");
+  });
+
   it("keeps the vinyl placeholder for a song with no embedded artwork", async () => {
     // @ts-expect-error - the test hook installed by setup.ts
     globalThis.__echoTest.setInvoke("song_cover_keys", {});

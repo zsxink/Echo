@@ -22,10 +22,11 @@
 //! ever copied or threaded by hand.
 
 use echo_core::application::playback_context::ResolvePlaybackContext;
-use echo_core::application::ports::RuntimeStateStore;
+use echo_core::application::ports::{ProbeOutcome, RuntimeStateStore};
 use echo_core::application::root_switch::Blockers;
 use echo_core::application::scan::{ScanDeps, ScanSupervisor};
 use echo_core::domain::catalog::{PlaybackContextRequest, SongSort, ViewRef};
+use echo_core::domain::entities::LyricsCandidate;
 use echo_core::domain::ids::{PlaylistId, SongId};
 use echo_core::domain::playback_restore::{
     is_playable_in_active_root, playback_restore_disposition, PlaybackRestoreDisposition,
@@ -62,7 +63,13 @@ impl RuntimeStateStore for DefaultRuntimeState {
 pub struct AppServices {
     deps: std::sync::Arc<ScanDeps>,
     supervisor: ScanSupervisor,
-    startup: StartupSupervisor,
+    /// The one and only startup supervisor: the shell `manage`s this very
+    /// `Arc`, so the readiness gate and the file-open delivery gate that
+    /// `deliver_file_open` reads are the same state this composition root
+    /// exposes ([`Self::startup`]). A second, separately-constructed instance
+    /// would let the two gates diverge silently
+    /// (deliver-file-opens-after-frontend-ready, D3).
+    startup: std::sync::Arc<StartupSupervisor>,
     dialogs: std::sync::Arc<dyn SystemDialogs>,
     /// The root-id → absolute-path binding the file-system adapters resolve.
     /// The desktop owns it so candidate prepare/activate can bind a picked
@@ -82,15 +89,32 @@ impl AppServices {
     /// This intentionally does not create a song row. It only gives the
     /// session-only player enough data to render the same title/artist/album,
     /// cover and lyrics that a scanned library song would expose.
+    #[must_use]
     pub fn read_temporary_metadata(&self, path: &std::path::Path) -> TemporaryMetadata {
-        let bytes = match std::fs::read(path) {
-            Ok(bytes) => bytes,
-            Err(_) => return TemporaryMetadata::default(),
+        let Ok(bytes) = std::fs::read(path) else {
+            return TemporaryMetadata::default();
         };
         let parsed = self.deps.metadata.read_bytes(&bytes).ok();
         let Some(parsed) = parsed else {
             return TemporaryMetadata::default();
         };
+
+        // Duration is probe-owned — the tag reader deliberately leaves it to
+        // the probe, which for a library song runs during the scan. A file
+        // opened from outside the library never gets that pass, so it is
+        // probed here: without it the queue row reads 时长未知 while the
+        // progress bar, fed by the engine, already shows the real length.
+        // Best-effort by design: a file that will not parse keeps the rest of
+        // its metadata and plays with an unknown length.
+        let duration = self
+            .deps
+            .probe
+            .probe_bytes(&bytes, path.extension().and_then(std::ffi::OsStr::to_str))
+            .ok()
+            .and_then(|outcome| match outcome {
+                ProbeOutcome::Audio { duration, .. } => duration,
+                ProbeOutcome::NoAudioTrack | ProbeOutcome::Unsupported => None,
+            });
 
         let cover_key = parsed
             .cover
@@ -100,7 +124,7 @@ impl AppServices {
             .embedded_lyrics
             .as_deref()
             .map(|raw| self.deps.lyrics_parser.parse(raw))
-            .filter(|candidate| candidate.is_effective())
+            .filter(LyricsCandidate::is_effective)
             .map(|candidate| ("embedded", candidate));
         let lyrics = embedded.or_else(|| {
             let sidecar = path.with_extension("lrc");
@@ -117,7 +141,7 @@ impl AppServices {
             title: parsed.title,
             artist: parsed.artist,
             album: parsed.album,
-            duration: parsed.duration.map(|duration| duration.as_secs_f64()),
+            duration: duration.map(|duration| duration.as_secs_f64()),
             cover_key,
             lyrics: lyrics.map(|(source, candidate)| TemporaryLyrics {
                 source: Some(source.to_owned()),
@@ -125,9 +149,15 @@ impl AppServices {
                 lines: candidate
                     .lines()
                     .iter()
-                    .map(|line| TemporaryLyricLine {
-                        seconds: line.timestamp_ms as f64 / 1000.0,
-                        text: line.text.clone(),
+                    .map(|line| {
+                        // Lyrics timestamps are milliseconds, and the f64
+                        // mantissa only caps out at ~285 000 years of audio.
+                        #[allow(clippy::cast_precision_loss)]
+                        let seconds = line.timestamp_ms as f64 / 1000.0;
+                        TemporaryLyricLine {
+                            seconds,
+                            text: line.text.clone(),
+                        }
                     })
                     .collect(),
                 plain_text: candidate.plain_text().unwrap_or_default().to_owned(),
@@ -181,6 +211,7 @@ impl AppServices {
     /// Classify a persisted player session against the active library without
     /// exposing paths to the `WebView`. Missing media is retryable/blocked;
     /// absent, foreign-root and Echo-pending-delete identities are dropped.
+    #[must_use]
     pub fn playback_restore_verdicts(
         &self,
         session: &crate::player::session::PlaybackSession,
@@ -219,6 +250,7 @@ impl AppServices {
 
     /// True only for a currently active, available library song; used to make
     /// preserved blocked queue entries retryable after a recovery scan.
+    #[must_use]
     pub fn playback_song_is_playable(&self, song_id: SongId) -> bool {
         let active = self
             .deps
@@ -270,7 +302,7 @@ impl AppServices {
         Self {
             deps,
             supervisor,
-            startup,
+            startup: std::sync::Arc::new(startup),
             dialogs: std::sync::Arc::new(crate::platform::dialogs::TestDialogs::cancelling()),
             registry: RootRegistry::new(),
             state: std::sync::Arc::new(DefaultRuntimeState),
@@ -282,11 +314,15 @@ impl AppServices {
     /// boundary (`choose_library_root`, `choose_and_import_files`,
     /// `reveal_song`), the shared root registry the runtime uses and a
     /// caller-provided runtime-state store + blocker registry.
+    ///
+    /// `startup` is the supervisor the shell already `manage`s: the caller
+    /// passes its own `Arc`, so the gate this root reads is the gate the shell
+    /// reads (deliver-file-opens-after-frontend-ready, D3).
     #[must_use]
     pub fn with_runtime(
         deps: std::sync::Arc<ScanDeps>,
         supervisor: ScanSupervisor,
-        startup: StartupSupervisor,
+        startup: std::sync::Arc<StartupSupervisor>,
         dialogs: std::sync::Arc<dyn SystemDialogs>,
         registry: RootRegistry,
         state: std::sync::Arc<dyn RuntimeStateStore>,
@@ -316,8 +352,11 @@ impl AppServices {
         &self.blockers
     }
 
-    /// The shared startup gate (runtime wires it in before IPC opens).
-    pub const fn startup(&self) -> &StartupSupervisor {
+    /// The shared startup gate (runtime wires it in before IPC opens). This is
+    /// the shell-managed instance, not a copy: the shell's file-open delivery
+    /// gate and this composition root's readiness gate are one object.
+    #[must_use]
+    pub fn startup(&self) -> &StartupSupervisor {
         &self.startup
     }
 

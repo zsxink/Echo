@@ -65,3 +65,20 @@ recipe.steps.forEach((step, index) => {
     process.exit(result.status ?? 1);
   }
 });
+
+// Tauri copies the DMG background correctly, but Finder's AppleScript styling
+// can persist a stale volume-relative background reference on macOS. Re-write
+// the final DMG metadata against its final mounted path before handing it off,
+// and normalize the icon layout (.DS_Store 直接改字节) so that "Finder 忽略了
+// 图标坐标" 这类问题不会再从 release 产物里溜出去。
+if (subcommand === "release" && process.platform === "darwin") {
+  const result = spawnSync(process.execPath, ["scripts/release/style-dmg.mjs"], {
+    stdio: "inherit",
+    shell: USE_SHELL,
+  });
+  if (result.error) {
+    console.error(`DMG 收尾失败: ${result.error.message}`);
+    process.exit(1);
+  }
+  if (result.status !== 0) process.exit(result.status ?? 1);
+}

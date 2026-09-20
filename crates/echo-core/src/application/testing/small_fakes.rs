@@ -119,6 +119,10 @@ impl FileEventSubscription for ScriptedSubscription {
 #[derive(Clone, Debug, Default)]
 pub struct FakeMediaProbe {
     map: Arc<Mutex<BTreeMap<String, ProbeOutcome>>>,
+    /// Outcomes keyed by raw content, for the byte-probing path (a file
+    /// opened from outside the library has no root-relative name to key on) —
+    /// the same shape [`FakeMetadataReader`] uses for import sources.
+    bytes_map: Arc<Mutex<BTreeMap<Vec<u8>, ProbeOutcome>>>,
 }
 
 impl FakeMediaProbe {
@@ -128,6 +132,13 @@ impl FakeMediaProbe {
     }
     pub fn set(&self, path: &str, outcome: ProbeOutcome) {
         self.map.lock().unwrap().insert(path.to_owned(), outcome);
+    }
+    /// Register what probing a *content* buffer concludes.
+    pub fn set_bytes(&self, content: &[u8], outcome: ProbeOutcome) {
+        self.bytes_map
+            .lock()
+            .unwrap()
+            .insert(content.to_vec(), outcome);
     }
 }
 
@@ -146,6 +157,16 @@ impl MediaProbe for FakeMediaProbe {
                     .and_then(|rest| map.get(rest).cloned())
                     .or_else(|| map.get(&format!("{MEDIA_ROOT}/{normalized}")).cloned())
             })
+            .unwrap_or(ProbeOutcome::Unsupported))
+    }
+
+    fn probe_bytes(&self, content: &[u8], _extension: Option<&str>) -> Result<ProbeOutcome, Error> {
+        Ok(self
+            .bytes_map
+            .lock()
+            .unwrap()
+            .get(content)
+            .cloned()
             .unwrap_or(ProbeOutcome::Unsupported))
     }
 }
@@ -518,6 +539,11 @@ impl MediaProbe for SlowProbe {
     fn probe(&self, root: LibraryRootId, path: &RelativeMediaPath) -> Result<ProbeOutcome, Error> {
         std::thread::sleep(self.delay);
         self.inner.probe(root, path)
+    }
+
+    fn probe_bytes(&self, content: &[u8], extension: Option<&str>) -> Result<ProbeOutcome, Error> {
+        std::thread::sleep(self.delay);
+        self.inner.probe_bytes(content, extension)
     }
 }
 

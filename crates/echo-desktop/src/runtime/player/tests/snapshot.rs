@@ -97,13 +97,13 @@ fn ui_queue_identity_comes_from_the_coordinator_not_the_transport_snapshot() {
 fn map_snapshot_surfaces_temporary_title_without_song_id() {
     let entry = QueueEntry {
         id: QueueEntryId::new(),
-        item: QueueItem::Temporary(crate::player::queue::TemporaryItem {
+        item: QueueItem::Temporary(Box::new(crate::player::queue::TemporaryItem {
             display_name: "outside.m4a".into(),
             path: "/tmp/outside.m4a".into(),
             duration: None,
-            metadata: Default::default(),
+            metadata: crate::player::queue::TemporaryMetadata::default(),
             on_active_root: false,
-        }),
+        })),
     };
     let raw = PlayerSnapshot {
         state: PlaybackState::Failed,

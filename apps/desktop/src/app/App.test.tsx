@@ -123,6 +123,25 @@ describe("Library activation without a status event", () => {
 });
 
 describe("File-open playback", () => {
+  it("signals frontend readiness after the listener registers, then still plays drained paths", async () => {
+    render(<App />);
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("file_open_frontend_ready", {}));
+    // The ready signal must not swallow the playback contract: paths drained
+    // after cold start are still consumed by the listener that just registered.
+    const callbacks = (
+      globalThis as unknown as {
+        __echoTest: { emit: (event: string, payload: unknown) => void };
+      }
+    ).__echoTest;
+    callbacks.emit("app://file-open-request", ["/tmp/drained.flac"]);
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("play_temporary_file", {
+        path: "/tmp/drained.flac",
+        displayName: "drained.flac",
+      }),
+    );
+  });
+
   it("replaces playback for every path drained after cold start", async () => {
     render(<App />);
     await waitFor(() =>

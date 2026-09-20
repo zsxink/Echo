@@ -57,7 +57,7 @@ fn stats_recorder_never_records_temporary_items() {
             display_name: "temp".into(),
             path: std::path::PathBuf::from("/tmp/echo-test.mp3"),
             duration: Some(0.2),
-            metadata: Default::default(),
+            metadata: crate::player::queue::TemporaryMetadata::default(),
             on_active_root: false,
         });
     }

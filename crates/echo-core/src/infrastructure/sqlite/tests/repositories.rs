@@ -496,6 +496,15 @@ impl crate::application::ports::MediaProbe for SlowProbe {
         std::thread::sleep(self.delay);
         self.inner.probe(root, path)
     }
+
+    fn probe_bytes(
+        &self,
+        content: &[u8],
+        extension: Option<&str>,
+    ) -> Result<crate::application::ports::ProbeOutcome, Error> {
+        std::thread::sleep(self.delay);
+        self.inner.probe_bytes(content, extension)
+    }
 }
 
 #[test]

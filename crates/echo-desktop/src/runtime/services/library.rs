@@ -128,6 +128,7 @@ impl super::AppServices {
     }
 
     /// Cancel the active scan of `root`; `true` when one was cancelled.
+    #[must_use]
     pub fn cancel_scan(&self, root: LibraryRootId) -> bool {
         CancelScan::new(&self.supervisor).cancel(root)
     }

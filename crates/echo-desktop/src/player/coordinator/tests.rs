@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::player::fake::FakePlayer;
-use crate::player::queue::TemporaryItem;
+use crate::player::queue::{TemporaryItem, TemporaryMetadata};
 use echo_core::domain::ids::SongId;
 use echo_core::domain::state::PlaybackState;
 
@@ -308,19 +308,19 @@ fn play_temporary_is_session_only() {
         display_name: "x.mp3".into(),
         path: std::path::PathBuf::from("/tmp/x.mp3"),
         duration: None,
-        metadata: Default::default(),
+        metadata: TemporaryMetadata::default(),
         on_active_root: false,
     });
     assert_eq!(coord.current().unwrap().item.song_id(), None);
     assert_eq!(
         coord.current().unwrap().item,
-        QueueItem::Temporary(TemporaryItem {
+        QueueItem::Temporary(Box::new(TemporaryItem {
             display_name: "x.mp3".into(),
             path: std::path::PathBuf::from("/tmp/x.mp3"),
             duration: None,
-            metadata: Default::default(),
+            metadata: TemporaryMetadata::default(),
             on_active_root: false,
-        })
+        }))
     );
 }
 

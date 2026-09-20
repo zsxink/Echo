@@ -39,6 +39,17 @@ run(
 );
 run("cargo", ["test", "-p", "echo-desktop", "platform::import"], ROOT);
 run("cargo", ["test", "-p", "echo-desktop", "runtime::player"], ROOT);
+// The temporary item's presentation metadata (title/artist/album/duration/
+// cover) is read straight off the opened file: duration is probe-owned, so
+// `read_temporary_metadata` has to probe the bytes itself or the queue row
+// reads 时长未知 while the engine plays the file with a known length.
+run(
+  "cargo",
+  ["test", "-p", "echo-desktop", "runtime::services::tests::temporary_metadata"],
+  ROOT,
+);
 run("cargo", ["clippy", "-p", "echo-app", "--", "-D", "warnings"], ROOT);
 
-process.stdout.write("ok 11.7: temporary item badge + import-to-library verified\n");
+process.stdout.write(
+  "ok 11.7: temporary item metadata (cover/duration) + import-to-library verified\n",
+);

@@ -274,13 +274,13 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
         let path = item.path.clone();
         let entry = QueueEntry {
             id: QueueEntryId::new(),
-            item: QueueItem::Temporary(super::queue::TemporaryItem {
+            item: QueueItem::Temporary(Box::new(super::queue::TemporaryItem {
                 display_name: item.display_name,
                 path: item.path,
                 duration: item.duration,
                 metadata: item.metadata,
                 on_active_root: item.on_active_root,
-            }),
+            })),
         };
         let id = entry.id;
         self.queue = Queue::new();

@@ -37,7 +37,7 @@
 
 import { useEffect } from "react";
 
-import { bridge } from "../bridge";
+import { bridge, reportBridgeFailure } from "../bridge";
 import { ChooseRootView } from "../features/workspace/ChooseRootView";
 import { LibraryStatusView } from "../features/workspace/LibraryStatusView";
 import type { LibraryCountView } from "../features/library/libraryCounts";
@@ -80,6 +80,14 @@ export function App() {
   // accepted file; registering here also covers paths drained after cold start.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    const signalReady = () =>
+      // The listener is now in place, so the shell may drain every file-open
+      // that arrived before it (deliver-file-opens-after-frontend-ready): Tauri
+      // drops an emit with no registered JS listener, so paths from a cold-start
+      // double-click wait in the startup FIFO until this command opens the gate.
+      // Idempotent on the backend — the second call drains an empty queue — so
+      // React StrictMode's double-invoked effect is harmless.
+      bridge.fireAndForget("file_open_frontend_ready");
     void bridge
       .subscribe<readonly string[]>("app://file-open-request", (paths) => {
         // Each element is a DECODED absolute filesystem path: the shell's
@@ -95,6 +103,14 @@ export function App() {
       })
       .then((dispose) => {
         unlisten = dispose;
+        signalReady();
+      })
+      .catch((error: unknown) => {
+        // The listener could not be registered. Fire the ready signal anyway so
+        // the shell still drains (the emit is dropped server-side, but nothing
+        // silently in a stuck pre-ready queue) and surface the failure (D2).
+        signalReady();
+        reportBridgeFailure("file_open_frontend_ready", error);
       });
     return () => unlisten?.();
   }, []);

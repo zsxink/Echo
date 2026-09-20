@@ -221,6 +221,7 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly play_playlist_context: void;\n");
     out.push_str("  readonly play_library_context: void;\n");
     out.push_str("  readonly restore_playback_session: string;\n");
+    out.push_str("  readonly file_open_frontend_ready: void;\n");
     out.push_str("  readonly play_temporary_file: void;\n");
     out.push_str("  readonly import_current_temporary_file: ImportResultDto;\n");
     out.push_str("  readonly player_control: void;\n");

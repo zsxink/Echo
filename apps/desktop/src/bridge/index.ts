@@ -78,6 +78,7 @@ interface BridgeCommandArguments {
     },
   ];
   restore_playback_session: EmptyArgs;
+  file_open_frontend_ready: EmptyArgs;
   play_temporary_file: [args: { path: string; displayName: string }];
   import_current_temporary_file: EmptyArgs;
   player_control: [args: { action: string }];

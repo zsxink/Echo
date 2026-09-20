@@ -97,6 +97,7 @@ type Command =
   | "delete_song"
   | "undo_delete"
   | "restore_playback_session"
+  | "file_open_frontend_ready"
   | "get_lyrics";
 
 /**

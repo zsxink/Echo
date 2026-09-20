@@ -52,6 +52,12 @@ export function PlayerBar() {
   // outside the referenced keep-set). A broken image would be worse than the
   // vinyl placeholder, so a load failure falls back to it — remembered per song
   // so a later track still gets its own attempt.
+  //
+  // The memory is keyed by `songId ?? coverKey`: a file opened from the file
+  // browser has no library id, and keying on `songId` alone compares the
+  // initial `null` against that `null` — false — which disabled the artwork of
+  // every temporary item while the immersive view (same lookup, `?? coverKey`)
+  // drew it fine.
   const [failedCoverId, setFailedCoverId] = useState<string | null>(null);
 
   const hasCurrent = snapshot.currentQueueEntryId !== null;
@@ -62,7 +68,7 @@ export function PlayerBar() {
   // entirely while nothing is current (an empty id list is never requested).
   const coverKeys = useCoverKeys(songId ? [songId] : []);
   const coverKey = songId ? (coverKeys.get(songId) ?? null) : (snapshot.currentCoverKey ?? null);
-  const artwork = coverKey && failedCoverId !== songId ? assetUrl(coverKey) : null;
+  const artwork = coverKey && failedCoverId !== (songId ?? coverKey) ? assetUrl(coverKey) : null;
 
   // rAF-interpolated so the bar/滑块 glide instead of stepping per snapshot.
   const position = useSmoothPosition() ?? 0;
@@ -148,7 +154,9 @@ export function PlayerBar() {
           data-testid="now-playing-trigger"
         >
           <div className={`mini-cover${artwork ? " has-image" : ""}`} aria-hidden="true">
-            {artwork ? <img src={artwork} alt="" onError={() => setFailedCoverId(songId)} /> : null}
+            {artwork ? (
+              <img src={artwork} alt="" onError={() => setFailedCoverId(songId ?? coverKey)} />
+            ) : null}
           </div>
           <div className="player-track-text">
             <b>

@@ -916,6 +916,14 @@ mod tests {
                 .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
             outcome
         }
+
+        fn probe_bytes(
+            &self,
+            content: &[u8],
+            extension: Option<&str>,
+        ) -> Result<ProbeOutcome, Error> {
+            self.inner.probe_bytes(content, extension)
+        }
     }
 
     use crate::application::delete::DeleteSongs;

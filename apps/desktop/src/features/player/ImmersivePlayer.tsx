@@ -162,11 +162,7 @@ function ImmersiveBody(props: {
   const coverKey = songId ? (coverKeys.get(songId) ?? null) : (snapshot.currentCoverKey ?? null);
   const artwork: string | null =
     coverKey && failedCoverId !== (songId ?? coverKey) ? assetUrl(coverKey) : null;
-  useArtworkTint(
-    coverKey,
-    artwork,
-    !!coverKey && failedCoverId !== (songId ?? coverKey),
-  );
+  useArtworkTint(coverKey, artwork, !!coverKey && failedCoverId !== (songId ?? coverKey));
   const position = useSmoothPosition() ?? 0;
   const duration = snapshot.duration ?? detail?.durationS ?? 0;
 

@@ -22,12 +22,17 @@
 //!
 //! During startup, file-open requests from the OS (a second launch, a file
 //! association) are not dropped: they enter a bounded FIFO and are drained once
-//! the runtime reports ready. An unknown/indeterminate journal outcome leaves
-//! the root **read-only** — destructive operations stay disabled until explicit
-//! operator recovery ([`GateKind::ReadOnly`]).
+//! the runtime reports ready **and** the frontend has registered its file-open
+//! listener (`mark_frontend_ready`). "Runtime ready" alone is not enough — a
+//! `RunEvent::Opened` arrives while the `WebView` is still booting, and Tauri
+//! silently drops an event emitted before any JS listener exists
+//! (deliver-file-opens-after-frontend-ready). An unknown/indeterminate journal
+//! outcome leaves the root **read-only** — destructive operations stay disabled
+//! until explicit operator recovery ([`GateKind::ReadOnly`]).
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use echo_core::application::boot::{BootRecovery, BootRecoveryState};
@@ -127,25 +132,23 @@ impl<T> PendingOpen<T> {
         }
     }
 
+    /// The queue guard. Callers hold it across *both* the readiness-gate read
+    /// and the queue mutation so a path can never slip in between the gate
+    /// flipping and the drain that already consumed the queue (see
+    /// [`StartupSupervisor::receive_file_open`]).
+    fn lock(&self) -> std::sync::MutexGuard<'_, VecDeque<T>> {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     /// Enqueue a request. When the buffer is full the *oldest* entry is pushed
     /// out (bounded memory), never blocking the OS handler.
-    fn enqueue(&self, item: T) {
-        let mut queue = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+    fn enqueue(&self, queue: &mut VecDeque<T>, item: T) {
         if queue.len() >= self.capacity {
             queue.pop_front();
         }
         queue.push_back(item);
-    }
-
-    fn drain(&self) -> Vec<T> {
-        let mut queue = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        queue.drain(..).collect()
     }
 }
 
@@ -159,6 +162,15 @@ pub struct StartupSupervisor {
     /// are normalized local paths — the shell owns the URL→path conversion
     /// (normalize-os-file-open-paths), so this queue never sees a URL string.
     pending_opens: PendingOpen<PathBuf>,
+    /// Whether the frontend `WebView` has registered its file-open listener
+    /// (deliver-file-opens-after-frontend-ready). `receive_file_open` returns
+    /// a path immediately only once the runtime is `Ready` **and** the frontend
+    /// listener is in place; before then the path is queued. This is the second
+    /// delivery gate — the `StartupPhase` gate covers "supervisor not ready",
+    /// this one covers "supervisor ready but frontend listener not yet
+    /// registered", which is exactly the cold-start window where a direct
+    /// `app.emit` would be silently dropped by Tauri.
+    frontend_ready: AtomicBool,
 }
 
 impl Default for StartupSupervisor {
@@ -178,6 +190,7 @@ impl StartupSupervisor {
             gate: Mutex::new(None),
             report: Mutex::new(None),
             pending_opens: PendingOpen::new(Self::PENDING_OPEN_CAPACITY),
+            frontend_ready: AtomicBool::new(false),
         }
     }
 
@@ -244,32 +257,73 @@ impl StartupSupervisor {
         Ok(completed)
     }
 
-    /// Mark the platform integration finished; the runtime is now fully ready
-    /// and any retained file-opens are drained.
-    pub fn on_ready(&self) -> Vec<PathBuf> {
+    /// Mark the platform integration finished; the runtime is now fully ready.
+    ///
+    /// This does **not** drain or emit file-opens: at the point it is called
+    /// (shell setup end) the `WebView` has not yet registered its file-open
+    /// listener, so an emit would be silently dropped by Tauri. Paths stay in
+    /// the queue until [`Self::mark_frontend_ready`] drains them — the single
+    /// delivery point, so nothing is lost and nothing is replayed.
+    pub fn on_ready(&self) {
         *self
             .phase
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = StartupPhase::Ready;
-        self.pending_opens.drain()
     }
 
-    /// Receive a file-open request from the OS. While not ready it lands in
-    /// the bounded FIFO; when ready it is returned immediately. The payload is
-    /// a decoded absolute filesystem path — the shell's `open_targets` already
-    /// normalized any OS-level URL before this point (normalize-os-file-open-paths).
+    /// Advance the `frontend_ready` gate to true and hand back every path that
+    /// was queued while the runtime was starting up or the frontend listener
+    /// was not yet registered (deliver-file-opens-after-frontend-ready). The
+    /// shell emits each of them to `FILE_OPEN_REQUEST`; the frontend listens
+    /// before calling this, so the emit lands.
+    ///
+    /// The gate is flipped while holding the queue lock, and
+    /// [`Self::receive_file_open`] reads the gate under that same lock: either
+    /// the path is enqueued *before* this drain and is handed back here, or the
+    /// gate was already true when it arrived and it is delivered immediately.
+    /// There is no window in which a path is enqueued after the drain and
+    /// never read.
+    ///
+    /// Idempotent: once `frontend_ready` is `true`, [`Self::receive_file_open`]
+    /// returns paths immediately instead of queueing them, so a repeat call
+    /// only ever drains an empty queue — the `StrictMode` double-effect of the
+    /// frontend effect that calls this is safe, and no path is replayed.
+    ///
+    /// # Panics
+    ///
+    /// Never. Internal mutex poisoning is recovered rather than panicked.
+    pub fn mark_frontend_ready(&self) -> Vec<PathBuf> {
+        let mut queue = self.pending_opens.lock();
+        self.frontend_ready.store(true, Ordering::SeqCst);
+        queue.drain(..).collect()
+    }
+
+    /// Receive a file-open request from the OS. While the runtime is not yet
+    /// `Ready`, or the frontend file-open listener has not yet registered, it
+    /// lands in the bounded FIFO; when both gates pass it is returned
+    /// immediately. The payload is a decoded absolute filesystem path — the
+    /// shell's `open_targets` already normalized any OS-level URL before this
+    /// point (normalize-os-file-open-paths).
+    ///
+    /// # Panics
+    ///
+    /// Never. Internal mutex poisoning is recovered rather than panicked.
     pub fn receive_file_open(&self, path: PathBuf) -> Option<PathBuf> {
         let ready = *self
             .phase
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             == StartupPhase::Ready;
-        if ready {
-            Some(path)
-        } else {
-            self.pending_opens.enqueue(path);
-            None
+        // Same lock as `mark_frontend_ready`'s flag flip + drain: a path that
+        // arrives concurrently with the frontend registering its listener is
+        // either drained by that call or delivered immediately here, never
+        // parked in a queue nothing will read again.
+        let mut queue = self.pending_opens.lock();
+        if ready && self.frontend_ready.load(Ordering::SeqCst) {
+            return Some(path);
         }
+        self.pending_opens.enqueue(&mut queue, path);
+        None
     }
 
     /// The current gate, if recovery has resolved it.
@@ -359,23 +413,57 @@ mod tests {
         assert!(supervisor.reads_allowed());
         assert!(supervisor.writes_allowed());
 
-        // Drain after ready.
-        let opened = supervisor.on_ready();
-        assert_eq!(opened, vec![PathBuf::from("/music/a.flac")]);
-        // A later open is immediate.
+        // The runtime is ready, but the frontend listener is not: the path must
+        // stay queued. Emitting here is exactly the cold-start bug this gate
+        // exists to prevent — Tauri drops an event with no registered listener.
+        supervisor.on_ready();
+        assert_eq!(supervisor.phase(), StartupPhase::Ready);
         assert_eq!(
             supervisor.receive_file_open(PathBuf::from("/music/b.flac")),
-            Some(PathBuf::from("/music/b.flac"))
+            None
         );
+
+        // The frontend registers its listener: everything queued so far comes
+        // back in arrival order...
+        assert_eq!(
+            supervisor.mark_frontend_ready(),
+            vec![
+                PathBuf::from("/music/a.flac"),
+                PathBuf::from("/music/b.flac")
+            ]
+        );
+        // ...and an open after that is delivered immediately.
+        assert_eq!(
+            supervisor.receive_file_open(PathBuf::from("/music/c.flac")),
+            Some(PathBuf::from("/music/c.flac"))
+        );
+    }
+
+    /// The frontend effect that calls `mark_frontend_ready` can run twice
+    /// (`StrictMode` double-invocation, a listener re-registered after a reload).
+    /// A repeat must not replay anything: each path is delivered exactly once.
+    #[test]
+    fn frontend_ready_gate_is_idempotent_and_never_replays() {
+        let supervisor = StartupSupervisor::new();
+        supervisor.on_ready();
+        supervisor.receive_file_open(PathBuf::from("/music/once.flac"));
+
+        assert_eq!(
+            supervisor.mark_frontend_ready(),
+            vec![PathBuf::from("/music/once.flac")]
+        );
+        assert!(supervisor.mark_frontend_ready().is_empty());
+        assert!(supervisor.mark_frontend_ready().is_empty());
     }
 
     #[test]
     fn pending_open_fifo_is_bounded_and_keeps_newest() {
         let supervisor = StartupSupervisor::new();
+        supervisor.on_ready(); // the bound is about the queue, not the phase
         for index in 0..(StartupSupervisor::PENDING_OPEN_CAPACITY + 5) {
             supervisor.receive_file_open(PathBuf::from(format!("/music/{index}.flac")));
         }
-        let drained = supervisor.on_ready();
+        let drained = supervisor.mark_frontend_ready();
         assert_eq!(drained.len(), StartupSupervisor::PENDING_OPEN_CAPACITY);
         // The oldest entries were evicted — newest kept.
         let kept_oldest: Vec<u64> = drained

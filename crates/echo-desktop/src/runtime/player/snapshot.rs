@@ -14,6 +14,73 @@ use super::{
     UiTemporaryLyrics,
 };
 
+/// Round a duration in seconds to a whole second for the UI. Fractional
+/// seconds are intentional loss (the UI only shows seconds) and negatives are
+/// clamped away first, so both clippy casts are deliberate.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn duration_seconds(seconds: f64) -> u64 {
+    seconds.max(0.0) as u64
+}
+
+/// Build the UI queue rows plus whether the current entry can be imported
+/// (a session-only temporary item, task 11.7; a library entry cannot).
+/// Extracted from [`map_snapshot`] so that function stays under the
+/// file-size lint.
+fn build_queue<S: BuildHasher>(
+    view: &CoordinatorView,
+    metadata: &HashMap<SongId, QueueEntryMeta, S>,
+) -> (bool, Vec<UiQueueEntry>) {
+    let current_id = view.current.as_ref().map(|e| e.id);
+    let current_is_temporary = matches!(
+        view.current.as_ref().map(|e| &e.item),
+        Some(QueueItem::Temporary(_))
+    );
+    let queue = view
+        .entries
+        .iter()
+        .map(|e| {
+            let is_temporary = matches!(&e.item, QueueItem::Temporary(_));
+            let song_meta = e
+                .item
+                .song_id()
+                .and_then(|id| metadata.get(&id))
+                .cloned()
+                .unwrap_or_default();
+            UiQueueEntry {
+                entry_id: e.id.to_string(),
+                song_id: e.item.song_id().map(|id| id.to_string()),
+                title: match &e.item {
+                    QueueItem::Library(_) => song_meta.title,
+                    QueueItem::Temporary(t) => t
+                        .metadata
+                        .title
+                        .clone()
+                        .or_else(|| Some(t.display_name.clone())),
+                },
+                is_current: Some(e.id) == current_id,
+                failed: view.failed_round.contains(&e.id),
+                blocked: view.blocked.contains(&e.id),
+                can_import: is_temporary,
+                artist: match &e.item {
+                    QueueItem::Library(_) => song_meta.artist,
+                    QueueItem::Temporary(t) => t.metadata.artist.clone(),
+                },
+                duration_s: match &e.item {
+                    QueueItem::Library(_) => song_meta.duration_s,
+                    QueueItem::Temporary(t) => {
+                        t.metadata.duration.or(t.duration).map(duration_seconds)
+                    }
+                },
+                cover_key: match &e.item {
+                    QueueItem::Library(_) => song_meta.cover_key,
+                    QueueItem::Temporary(t) => t.metadata.cover_key.clone(),
+                },
+            }
+        })
+        .collect();
+    (current_is_temporary, queue)
+}
+
 /// Map the actor's [`PlayerSnapshot`] (transport state) plus the coordinator's
 /// queue view into the UI shape.
 ///
@@ -83,56 +150,7 @@ pub fn map_snapshot<S: BuildHasher>(
     };
     // A session-only temporary item (no library `song_id`) can be imported into
     // the active library (task 11.7); a library entry cannot.
-    let (current_can_import, queue) = {
-        let current_is_temporary =
-            matches!(current.map(|e| &e.item), Some(QueueItem::Temporary(_)));
-        let queue = view
-            .entries
-            .iter()
-            .map(|e| {
-                let is_temporary = matches!(&e.item, QueueItem::Temporary(_));
-                let song_meta = e
-                    .item
-                    .song_id()
-                    .and_then(|id| metadata.get(&id))
-                    .cloned()
-                    .unwrap_or_default();
-                UiQueueEntry {
-                    entry_id: e.id.to_string(),
-                    song_id: e.item.song_id().map(|id| id.to_string()),
-                    title: match &e.item {
-                        QueueItem::Library(_) => song_meta.title,
-                        QueueItem::Temporary(t) => t
-                            .metadata
-                            .title
-                            .clone()
-                            .or_else(|| Some(t.display_name.clone())),
-                    },
-                    is_current: Some(e.id) == current_id,
-                    failed: view.failed_round.contains(&e.id),
-                    blocked: view.blocked.contains(&e.id),
-                    can_import: is_temporary,
-                    artist: match &e.item {
-                        QueueItem::Library(_) => song_meta.artist,
-                        QueueItem::Temporary(t) => t.metadata.artist.clone(),
-                    },
-                    duration_s: match &e.item {
-                        QueueItem::Library(_) => song_meta.duration_s,
-                        QueueItem::Temporary(t) => t
-                            .metadata
-                            .duration
-                            .or(t.duration)
-                            .map(|seconds| seconds.max(0.0) as u64),
-                    },
-                    cover_key: match &e.item {
-                        QueueItem::Library(_) => song_meta.cover_key,
-                        QueueItem::Temporary(t) => t.metadata.cover_key.clone(),
-                    },
-                }
-            })
-            .collect();
-        (current_is_temporary, queue)
-    };
+    let (current_can_import, queue) = build_queue(view, metadata);
     UiPlayerSnapshot {
         state: match raw.state {
             PlaybackState::Stopped => "stopped",

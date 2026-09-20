@@ -10,6 +10,23 @@ use crate::error::Error;
 /// actor / thread budget.
 pub trait MediaProbe: Send + Sync {
     fn probe(&self, root: LibraryRootId, path: &RelativeMediaPath) -> Result<ProbeOutcome, Error>;
+    /// Probe in-memory content, mirroring [`MetadataReader::read_bytes`].
+    ///
+    /// A file opened from outside the library — the file-browser temporary
+    /// playback item — has no root to resolve and no scanned record: its bytes
+    /// are all there is. Duration is probe-owned (the tag reader never fills
+    /// it), so this is the only way such a file has a length to show before
+    /// the engine starts reporting one.
+    ///
+    /// `extension` mirrors the path-based probe's second attempt: content
+    /// decides the format first, the name is only a retry hint for
+    /// legitimate-but-unsniffable streams.
+    ///
+    /// # Errors
+    ///
+    /// A recognized-but-damaged container (`CorruptMedia`); unrecognized
+    /// content is `Ok(ProbeOutcome::Unsupported)`, never an error.
+    fn probe_bytes(&self, content: &[u8], extension: Option<&str>) -> Result<ProbeOutcome, Error>;
 }
 
 /// Probe result.

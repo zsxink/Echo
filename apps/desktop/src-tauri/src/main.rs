@@ -255,7 +255,10 @@ fn spawn_macos_now_playing_refresh(
 /// `Io`/`Storage` when the database or cover cache cannot open, or `String` on
 /// assembly / recovery failure; propagated as a fatal startup error.
 #[allow(clippy::too_many_lines)]
-fn wire_composition(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+fn wire_composition(
+    app: &tauri::App,
+    startup: &Arc<StartupSupervisor>,
+) -> Result<(), Box<dyn std::error::Error>> {
     // The Gate overrides the data dir so a native run targets a hermetic temp
     // library and can be killed/restarted safely. Production never sets it.
     let app_data = match env::var("ECHO_GATE_DATA_DIR") {
@@ -270,7 +273,14 @@ fn wire_composition(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
     // Run crash recovery (a fresh DB has no pending operations) and open the
     // readiness gate BEFORE constructing AppServices, so the gate is resolved
     // when the command surface becomes callable.
-    let supervisor = StartupSupervisor::new();
+    //
+    // This is the process-wide supervisor created at the top of `main`, not a
+    // new one: the OS file-open paths consult it directly, so recovery, the
+    // frontend-ready gate and `AppServices::startup()` must all be the same
+    // object (deliver-file-opens-after-frontend-ready, D3). A second instance
+    // would let the shell's delivery gate and the command surface's readiness
+    // gate diverge with nothing to notice it.
+    let supervisor = Arc::clone(startup);
     let scan_supervisor = echo_core::application::scan::ScanSupervisor::new();
     let trash = echo_desktop::platform::trash::DesktopTrash::default();
     supervisor
@@ -462,44 +472,59 @@ fn record_gate_open(paths: &[PathBuf]) {
 
 /// The shell→frontend event carrying one accepted file-open path (task 9.1).
 /// The frontend bridge subscribes to this; the payload is a single absolute
-/// path that was either delivered immediately or drained from the pre-ready
-/// FIFO. The event name also appears in `echo-desktop::ipc::events`.
+/// path that was either delivered immediately or drained from the startup FIFO.
+/// The event name also appears in `echo-desktop::ipc::events`.
 const FILE_OPEN_REQUEST: &str = "app://file-open-request";
 
-/// Route one OS file-open path through the startup FIFO (task 9.1).
+/// Deliver a batch of accepted file-open paths to the frontend.
 ///
-/// While the runtime is still initializing — the supervisor is not yet
-/// `Ready` — the path is stashed in the bounded FIFO and later drained by
-/// [`drain_pending_opens`], never silently dropped. Once ready, the path is
-/// delivered to the frontend immediately. A racing second launch before the
-/// supervisor is registered focuses the window and records for the Gate rather
-/// than panicking.
-fn deliver_file_open(app: &tauri::AppHandle, path: PathBuf) {
-    let Some(supervisor) = app.try_state::<StartupSupervisor>() else {
-        focus_main_window(app);
-        record_gate_open(&[path]);
+/// The single place that emits [`FILE_OPEN_REQUEST`], so a path — delivered
+/// immediately or drained later — is recorded for the Gate exactly once.
+fn emit_file_opens(app: &tauri::AppHandle, paths: Vec<PathBuf>) {
+    if paths.is_empty() {
         return;
-    };
-    // `receive_file_open` returns `Some` only when the runtime is already
-    // ready; a `None` means the path was queued for the `on_ready()` drain.
-    if let Some(ready_path) = supervisor.receive_file_open(path) {
-        record_gate_open(std::slice::from_ref(&ready_path));
-        let _ = app.emit(FILE_OPEN_REQUEST, vec![ready_path]);
+    }
+    record_gate_open(&paths);
+    let _ = app.emit(FILE_OPEN_REQUEST, paths);
+}
+
+/// Route one OS file-open path through the startup supervisor (task 9.1).
+///
+/// While the runtime is still initializing — or the frontend has not yet
+/// registered its file-open listener — the path is stashed in the bounded FIFO
+/// and later drained by [`drain_pending_opens`], never silently dropped.
+/// `receive_file_open` returns `Some` only once **both** gates are open, and
+/// only then is an emit safe: Tauri drops an event with no registered JS
+/// listener, which is what happened to every cold-start double-click before
+/// `deliver-file-opens-after-frontend-ready`.
+///
+/// `startup` is passed in rather than looked up through `try_state` on purpose.
+/// macOS delivers a cold-start `odoc` **before `.setup()` runs**, so a managed
+/// state lookup is `None` at exactly the moment the first — and only — open
+/// request arrives; that lookup is what dropped the path and made a
+/// double-click merely launch the app. The caller owns the process-wide
+/// instance created at the top of [`main`], so there is no window in which a
+/// path can arrive with nowhere to go.
+fn deliver_file_open(app: &tauri::AppHandle, startup: &StartupSupervisor, path: PathBuf) {
+    if let Some(ready_path) = startup.receive_file_open(path) {
+        emit_file_opens(app, vec![ready_path]);
     }
 }
 
-/// Signal that the shell finished initializing and drain every file-open that
-/// arrived during startup, delivering each to the frontend (task 9.1). Paths
-/// received before ready are never dropped — they are all emitted here.
-fn drain_pending_opens(app: &tauri::AppHandle) {
-    let Some(supervisor) = app.try_state::<StartupSupervisor>() else {
-        return;
-    };
-    let drained = supervisor.on_ready();
-    if !drained.is_empty() {
-        record_gate_open(&drained);
-        let _ = app.emit(FILE_OPEN_REQUEST, drained);
-    }
+/// The frontend registered its `app://file-open-request` listener: open the
+/// delivery gate and hand back every path queued before that
+/// (deliver-file-opens-after-frontend-ready).
+///
+/// This is the **only** delivery point for queued paths. The shell cannot drain
+/// them when `.setup()` finishes — the `WebView` has not loaded yet, so
+/// `js_event_listeners` is still empty and Tauri would drop the emit. Paths
+/// therefore wait here instead of being lost.
+///
+/// Idempotent (see [`StartupSupervisor::mark_frontend_ready`]): a repeat call
+/// drains an empty queue, so the frontend effect may run twice.
+fn drain_pending_opens(app: &tauri::AppHandle, startup: &StartupSupervisor) {
+    let drained = startup.mark_frontend_ready();
+    emit_file_opens(app, drained);
 }
 
 /// The `cover://` asset protocol (design §16): serves cover art bytes from the
@@ -646,18 +671,32 @@ const fn cover_media_type(bytes: &[u8]) -> &'static str {
 
 #[allow(clippy::too_many_lines)]
 fn main() {
+    // Created here — before the Tauri application exists — on purpose. macOS
+    // delivers a cold-start `odoc` (a double-clicked file) while
+    // `Builder::build()` is still running, i.e. **before `.setup()`**: a
+    // supervisor registered only inside `.setup()` is therefore still missing
+    // when the first and only open request of that launch arrives, `try_state`
+    // returns `None`, and the path is dropped — "Echo 启动了但没播放". One
+    // process-wide instance is shared by the managed state, the single-instance
+    // argv path and the `RunEvent::Opened` path, so there is no instant at which
+    // an open request has nowhere to be queued.
+    let startup = Arc::new(StartupSupervisor::new());
+
     let app = match tauri::Builder::default()
         // The single-instance plugin is registered first, as required by the
         // plugin, so a later platform adapter cannot create a second process.
         .register_uri_scheme_protocol("cover", cover_protocol_handler)
-        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            // A second launch (or a file-open) on a running instance: wake the
-            // main window, then forward each path exactly once through the
-            // startup FIFO (task 9.1). `skip(1)` drops the argv program name;
-            // macOS/Windows/Linux argv unification is task 9.2.
-            focus_main_window(app);
-            for path in args.into_iter().skip(1) {
-                deliver_file_open(app, PathBuf::from(path));
+        .plugin(tauri_plugin_single_instance::init({
+            let startup = Arc::clone(&startup);
+            move |app, args, _cwd| {
+                // A second launch (or a file-open) on a running instance: wake the
+                // main window, then forward each path exactly once through the
+                // startup FIFO (task 9.1). `skip(1)` drops the argv program name;
+                // macOS/Windows/Linux argv unification is task 9.2.
+                focus_main_window(app);
+                for path in args.into_iter().skip(1) {
+                    deliver_file_open(app, &startup, PathBuf::from(path));
+                }
             }
         }))
         // Native directory/file pickers in the Rust side (task 7.5 real wiring)
@@ -702,153 +741,167 @@ fn main() {
             commands::restore_playback_session,
             commands::play_temporary_file,
             commands::import_current_temporary_file,
+            commands::file_open_frontend_ready,
             commands::player_control,
             commands::queue_command,
             commands::set_volume,
             commands::toggle_mute,
             commands::seek,
         ])
-        .setup(|app| {
-            // Register the startup supervisor first so any OS file-open that
-            // arrives while the shell is still initializing is queued in the
-            // FIFO rather than dropped (task 9.1).
-            app.manage(StartupSupervisor::new());
+        .setup({
+            let startup = Arc::clone(&startup);
+            move |app| {
+                // Register the process-wide supervisor as managed state so the
+                // command layer — which cannot capture a closure and must reach
+                // it through `try_state` — sees the *same* object the shell's
+                // open paths use (deliver-file-opens-after-frontend-ready, D3).
+                // Every command runs only after the frontend has loaded, so this
+                // state is always registered by then; it is the open paths that
+                // can fire earlier, which is why they take the captured `Arc`
+                // instead of a state lookup.
+                app.manage(Arc::clone(&startup));
 
-            // Structured tracing + panic hook (task 7.8, design §17): install
-            // the rolling-file logger and the local crash diagnostic before
-            // anything else so all startup work is observable. The diagnostics
-            // directory is `app_data_dir/logs`; logs stay local, never uploaded.
-            let app_data = app.path().app_data_dir()?;
-            let diagnostics = echo_desktop::platform::diagnostics::Diagnostics::new(app_data);
-            let _installed = diagnostics.install_logger();
-            diagnostics.install_panic_hook();
+                // Structured tracing + panic hook (task 7.8, design §17): install
+                // the rolling-file logger and the local crash diagnostic before
+                // anything else so all startup work is observable. The diagnostics
+                // directory is `app_data_dir/logs`; logs stay local, never uploaded.
+                let app_data = app.path().app_data_dir()?;
+                let diagnostics = echo_desktop::platform::diagnostics::Diagnostics::new(app_data);
+                let _installed = diagnostics.install_logger();
+                diagnostics.install_panic_hook();
 
-            // Productionized platform entry (task 9.3): a current-play summary
-            // plus 播放/暂停、上一首、下一首、显示 Echo、退出. The summary and
-            // the transport→command mapping are decision-logic in
-            // `status_menu` (unit-tested); the shell only builds the widgets and
-            // dispatches. Until the composition root connects a sink, transport
-            // clicks fall through to `NoopSink`.
-            let status_sink = Arc::new(RuntimeStatusMenuSink::default());
-            // macOS keeps a handle for the Now Playing / status row installs
-            // below; other platforms hand the sink wholly to the managed state.
-            #[cfg(target_os = "macos")]
-            let managed_status_sink = status_sink.clone();
-            #[cfg(not(target_os = "macos"))]
-            let managed_status_sink = status_sink;
-            app.manage(managed_status_sink);
+                // Productionized platform entry (task 9.3): a current-play summary
+                // plus 播放/暂停、上一首、下一首、显示 Echo、退出. The summary and
+                // the transport→command mapping are decision-logic in
+                // `status_menu` (unit-tested); the shell only builds the widgets and
+                // dispatches. Until the composition root connects a sink, transport
+                // clicks fall through to `NoopSink`.
+                let status_sink = Arc::new(RuntimeStatusMenuSink::default());
+                // macOS keeps a handle for the Now Playing / status row installs
+                // below; other platforms hand the sink wholly to the managed state.
+                #[cfg(target_os = "macos")]
+                let managed_status_sink = status_sink.clone();
+                #[cfg(not(target_os = "macos"))]
+                let managed_status_sink = status_sink;
+                app.manage(managed_status_sink);
 
-            #[cfg(target_os = "macos")]
-            {
-                macos_now_playing::install(status_sink.clone())?;
-            }
+                #[cfg(target_os = "macos")]
+                {
+                    macos_now_playing::install(status_sink.clone())?;
+                }
 
-            #[cfg(target_os = "macos")]
-            {
-                let show_handle = app.handle().clone();
-                let quit_handle = app.handle().clone();
-                macos_status_row::install(
-                    status_sink,
-                    Arc::new(move || focus_main_window(&show_handle)),
-                    Arc::new(move || {
-                        if let Some(player) = quit_handle.try_state::<commands::PlayerHandle>() {
-                            commands::flush_player_session(&player);
-                        }
-                        quit_handle.exit(0);
-                    }),
-                )?;
-            }
+                #[cfg(target_os = "macos")]
+                {
+                    let show_handle = app.handle().clone();
+                    let quit_handle = app.handle().clone();
+                    macos_status_row::install(
+                        status_sink,
+                        Arc::new(move || focus_main_window(&show_handle)),
+                        Arc::new(move || {
+                            if let Some(player) = quit_handle.try_state::<commands::PlayerHandle>()
+                            {
+                                commands::flush_player_session(&player);
+                            }
+                            quit_handle.exit(0);
+                        }),
+                    )?;
+                }
 
-            #[cfg(not(target_os = "macos"))]
-            {
-                let summary_text = {
-                    let playback = PlaySummary {
-                        state: PlaybackState::Stopped,
-                        ..PlaySummary::default()
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let summary_text = {
+                        let playback = PlaySummary {
+                            state: PlaybackState::Stopped,
+                            ..PlaySummary::default()
+                        };
+                        format!("{} — {}", playback.title_line(), playback.status_line())
                     };
-                    format!("{} — {}", playback.title_line(), playback.status_line())
-                };
-                let summary = MenuItemBuilder::with_id("echo-summary", summary_text.as_str())
-                    .enabled(false)
+                    let summary = MenuItemBuilder::with_id("echo-summary", summary_text.as_str())
+                        .enabled(false)
+                        .build(app)?;
+                    let play_pause = MenuItemBuilder::with_id(
+                        status_menu::MENU_PLAY_PAUSE,
+                        status_menu::play_pause_label(PlaybackState::Stopped),
+                    )
                     .build(app)?;
-                let play_pause = MenuItemBuilder::with_id(
-                    status_menu::MENU_PLAY_PAUSE,
-                    status_menu::play_pause_label(PlaybackState::Stopped),
-                )
-                .build(app)?;
-                let previous =
-                    MenuItemBuilder::with_id(status_menu::MENU_PREVIOUS, "上一首").build(app)?;
-                let next = MenuItemBuilder::with_id(status_menu::MENU_NEXT, "下一首").build(app)?;
-                let show =
-                    MenuItemBuilder::with_id(status_menu::MENU_SHOW, "显示 Echo").build(app)?;
-                let quit = MenuItemBuilder::with_id(status_menu::MENU_QUIT, "退出").build(app)?;
-                let menu = MenuBuilder::new(app)
-                    .item(&summary)
-                    .separator()
-                    .item(&play_pause)
-                    .item(&previous)
-                    .item(&next)
-                    .separator()
-                    .item(&show)
-                    .separator()
-                    .item(&quit)
-                    .build()?;
+                    let previous = MenuItemBuilder::with_id(status_menu::MENU_PREVIOUS, "上一首")
+                        .build(app)?;
+                    let next =
+                        MenuItemBuilder::with_id(status_menu::MENU_NEXT, "下一首").build(app)?;
+                    let show =
+                        MenuItemBuilder::with_id(status_menu::MENU_SHOW, "显示 Echo").build(app)?;
+                    let quit =
+                        MenuItemBuilder::with_id(status_menu::MENU_QUIT, "退出").build(app)?;
+                    let menu = MenuBuilder::new(app)
+                        .item(&summary)
+                        .separator()
+                        .item(&play_pause)
+                        .item(&previous)
+                        .item(&next)
+                        .separator()
+                        .item(&show)
+                        .separator()
+                        .item(&quit)
+                        .build()?;
 
-                TrayIconBuilder::with_id("echo-gate")
-                    .menu(&menu)
-                    // A hidden main window needs a direct, discoverable way back:
-                    // clicking the platform status item is equivalent to choosing
-                    // “显示 Echo” from its menu. Restrict this to left-button release
-                    // so right-click continues to open the platform menu normally.
-                    .on_tray_icon_event(|tray, event| {
-                        if matches!(
-                            event,
-                            TrayIconEvent::Click {
-                                button: MouseButton::Left,
-                                button_state: MouseButtonState::Up,
-                                ..
-                            }
-                        ) {
-                            focus_main_window(tray.app_handle());
-                        }
-                    })
-                    .on_menu_event(|app, event| {
-                        match event.id().as_ref() {
-                            status_menu::MENU_SHOW => focus_main_window(app),
-                            status_menu::MENU_QUIT => {
-                                if let Some(player) = app.try_state::<commands::PlayerHandle>() {
-                                    commands::flush_player_session(&player);
+                    TrayIconBuilder::with_id("echo-gate")
+                        .menu(&menu)
+                        // A hidden main window needs a direct, discoverable way back:
+                        // clicking the platform status item is equivalent to choosing
+                        // “显示 Echo” from its menu. Restrict this to left-button release
+                        // so right-click continues to open the platform menu normally.
+                        .on_tray_icon_event(|tray, event| {
+                            if matches!(
+                                event,
+                                TrayIconEvent::Click {
+                                    button: MouseButton::Left,
+                                    button_state: MouseButtonState::Up,
+                                    ..
                                 }
-                                app.exit(0);
+                            ) {
+                                focus_main_window(tray.app_handle());
                             }
-                            id => {
-                                // Transport item: forward the coarse player command
-                                // to the playback sink. The composition root
-                                // installs the coordinator forwarder; `NoopSink`
-                                // remains until then.
-                                if let Some(command) = status_menu::transport_command(id) {
-                                    if let Some(sink) =
-                                        app.try_state::<Arc<RuntimeStatusMenuSink>>()
+                        })
+                        .on_menu_event(|app, event| {
+                            match event.id().as_ref() {
+                                status_menu::MENU_SHOW => focus_main_window(app),
+                                status_menu::MENU_QUIT => {
+                                    if let Some(player) = app.try_state::<commands::PlayerHandle>()
                                     {
-                                        let _ = sink.on_command(command);
+                                        commands::flush_player_session(&player);
+                                    }
+                                    app.exit(0);
+                                }
+                                id => {
+                                    // Transport item: forward the coarse player command
+                                    // to the playback sink. The composition root
+                                    // installs the coordinator forwarder; `NoopSink`
+                                    // remains until then.
+                                    if let Some(command) = status_menu::transport_command(id) {
+                                        if let Some(sink) =
+                                            app.try_state::<Arc<RuntimeStatusMenuSink>>()
+                                        {
+                                            let _ = sink.on_command(command);
+                                        }
                                     }
                                 }
                             }
-                        }
-                    })
-                    .build(app)?;
+                        })
+                        .build(app)?;
+                }
+
+                // -----------------------------------------------------------------
+                wire_composition(app, &startup)?;
+
+                schedule_gate_exit(app.handle().clone());
+
+                // The shell is fully initialized — but that is *not* the moment to
+                // deliver file-opens. The WebView has not loaded, so no JS listener
+                // is registered and Tauri would drop the emit; the paths stay in the
+                // queue until the frontend calls `file_open_frontend_ready`
+                // (deliver-file-opens-after-frontend-ready).
+                Ok(())
             }
-
-            // -----------------------------------------------------------------
-            wire_composition(app)?;
-
-            schedule_gate_exit(app.handle().clone());
-
-            // The shell is fully initialized: mark the runtime ready and drain
-            // any file-opens received during setup, delivered in arrival order
-            // and never silently dropped (task 9.1).
-            drain_pending_opens(app.handle());
-            Ok(())
         })
         .build(tauri::generate_context!())
     {
@@ -859,52 +912,55 @@ fn main() {
         }
     };
 
-    app.run(|app, event| match event {
-        RunEvent::ExitRequested { .. } => {
+    app.run({
+        let startup = Arc::clone(&startup);
+        move |app, event| match event {
+            RunEvent::ExitRequested { .. } => {
+                #[cfg(target_os = "macos")]
+                macos_now_playing::clear();
+            }
+            // macOS delivers file-association opens through `RunEvent::Opened`; they
+            // go through the same FIFO as the single-instance argv path (task 9.1).
+            // The variant is macOS-only, so it can never match on other targets.
             #[cfg(target_os = "macos")]
-            macos_now_playing::clear();
-        }
-        // macOS delivers file-association opens through `RunEvent::Opened`; they
-        // go through the same FIFO as the single-instance argv path (task 9.1).
-        // The variant is macOS-only, so it can never match on other targets.
-        #[cfg(target_os = "macos")]
-        RunEvent::Opened { urls } => {
-            focus_main_window(app);
-            for path in open_targets::open_targets(&urls) {
-                deliver_file_open(app, path);
-            }
-        }
-        // Clicking the macOS Dock icon emits `Reopen`, rather than a tray-icon
-        // event. Restore the hidden player window only when no window is visible.
-        #[cfg(target_os = "macos")]
-        RunEvent::Reopen {
-            has_visible_windows,
-            ..
-        } => {
-            if !has_visible_windows {
+            RunEvent::Opened { urls } => {
                 focus_main_window(app);
-            }
-        }
-        RunEvent::WindowEvent {
-            label,
-            event: tauri::WindowEvent::CloseRequested { api, .. },
-            ..
-        } => {
-            let background = app
-                .try_state::<Arc<DesktopStateStore>>()
-                .and_then(|store| store.close_behavior().ok())
-                == Some(CloseBehavior::Background);
-            if label == MAIN_WINDOW && background {
-                if let Some(player) = app.try_state::<commands::PlayerHandle>() {
-                    commands::flush_player_session(&player);
-                }
-                api.prevent_close();
-                if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-                    let _ = window.hide();
+                for path in open_targets::open_targets(&urls) {
+                    deliver_file_open(app, &startup, path);
                 }
             }
+            // Clicking the macOS Dock icon emits `Reopen`, rather than a tray-icon
+            // event. Restore the hidden player window only when no window is visible.
+            #[cfg(target_os = "macos")]
+            RunEvent::Reopen {
+                has_visible_windows,
+                ..
+            } => {
+                if !has_visible_windows {
+                    focus_main_window(app);
+                }
+            }
+            RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::CloseRequested { api, .. },
+                ..
+            } => {
+                let background = app
+                    .try_state::<Arc<DesktopStateStore>>()
+                    .and_then(|store| store.close_behavior().ok())
+                    == Some(CloseBehavior::Background);
+                if label == MAIN_WINDOW && background {
+                    if let Some(player) = app.try_state::<commands::PlayerHandle>() {
+                        commands::flush_player_session(&player);
+                    }
+                    api.prevent_close();
+                    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+                        let _ = window.hide();
+                    }
+                }
+            }
+            _ => {}
         }
-        _ => {}
     });
 }
 

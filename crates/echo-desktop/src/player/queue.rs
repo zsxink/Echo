@@ -47,7 +47,13 @@ pub enum QueueItem {
     Library(SongId),
     /// A session-only temporary item with its validated absolute path and a
     /// snapshot of its metadata. Not persisted; filtered on save (8.9).
-    Temporary(TemporaryItem),
+    ///
+    /// Boxed on purpose: the queue holds a whole playback context in one
+    /// `Vec<QueueEntry>`, so an inline `TemporaryItem` — path, six metadata
+    /// fields and the parsed lyrics — would set the size of *every* entry,
+    /// including the overwhelmingly common `Library(SongId)`, which is a
+    /// 16-byte id. At most one entry is ever temporary.
+    Temporary(Box<TemporaryItem>),
 }
 
 /// A temporary (session-only) playback item outside the active library.
