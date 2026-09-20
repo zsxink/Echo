@@ -103,7 +103,14 @@ impl SongRepository for MemoryDatabase {
             .collect())
     }
     fn upsert(&self, song: &Song) -> Result<(), Error> {
-        self.lock().songs.insert(song.id(), song.clone());
+        // Same contract as the SQL upsert (see `testing::song_upsert`): user
+        // state on an existing row is never carried by a metadata write.
+        let mut guard = self.lock();
+        let merged = crate::application::testing::song_upsert::metadata_upsert(
+            guard.songs.get(&song.id()),
+            song,
+        );
+        guard.songs.insert(song.id(), merged);
         Ok(())
     }
     fn set_availability(&self, id: SongId, availability: SongAvailability) -> Result<(), Error> {

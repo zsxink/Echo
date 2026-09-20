@@ -348,11 +348,31 @@ impl<'a> StartScan<'a> {
                     match resolution {
                         Resolution::Keep { song } | Resolution::Relink { song } => {
                             progress.updated += 1;
+                            let revived = planner
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .revived(song);
                             let entity = planner
                                 .lock()
                                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                                 .song(song);
                             self.apply_parsed(root, entity, parsed)?;
+                            // The file was just parsed at this record's path, so
+                            // presence is proven: the Missing -> Available flip
+                            // must reach the row. `upsert_song` deliberately
+                            // never writes `availability` (a stale snapshot must
+                            // not roll it backward), so the revival goes through
+                            // the dedicated mutation — the same shape the
+                            // fast-skip branch uses. Without it, a
+                            // continuation-projected library stays `missing`
+                            // and therefore invisible forever: portable records
+                            // carry no size/mtime, so those rows can never
+                            // fast-skip, only land here.
+                            if revived {
+                                self.deps
+                                    .songs
+                                    .set_availability(song, SongAvailability::Available)?;
+                            }
                         }
                         Resolution::Create => {
                             progress.created += 1;
@@ -1035,6 +1055,38 @@ mod tests {
         assert_eq!(member.song(), target);
     }
 
+    /// The shape a continuation projection leaves behind: identity + metadata
+    /// only, no scan facts (portable records carry no size/mtime), marked
+    /// missing because availability is the scan's to establish.
+    #[test]
+    fn scan_persists_the_revival_of_a_record_projected_song() {
+        let fixture = ScanFixture::new();
+        fixture.write_file("歌手/晴天.flac", b"audio-bytes");
+        fixture.set_audio("歌手/晴天.flac", "晴天", 269_000);
+        let target_path = fixture.path("歌手/晴天.flac");
+
+        let id = SongId::new();
+        let mut song = Song::new(id, fixture.root, target_path.clone(), Revision::INITIAL);
+        song.apply_metadata(Some("晴天".to_owned()), Some("歌手".to_owned()), None, None);
+        song.mark_missing();
+        SongRepository::upsert(&fixture.database, &song).expect("seed projected song");
+
+        // No hash/size/mtime on the row: the fast-skip branch (the only one
+        // that used to persist a revival) can never apply here.
+        let summary = start_scan(&fixture).run(fixture.root).expect("scan");
+        assert_eq!(summary.progress.updated, 1, "refreshed in place");
+
+        let restored = song_by_path(&fixture, &target_path)
+            .expect("lookup")
+            .expect("record kept");
+        assert_eq!(restored.id(), id, "the projected identity is adopted");
+        assert_eq!(
+            restored.availability(),
+            SongAvailability::Available,
+            "a file parsed at the record's path proves presence: the row must not stay missing"
+        );
+    }
+
     #[test]
     fn external_missing_relinks_on_same_hash_path_keeping_relationships() {
         let fixture = ScanFixture::new();
@@ -1283,10 +1335,10 @@ mod tests {
         let original = song_by_path(&fixture, &fixture.path("album/song.flac"))
             .expect("lookup")
             .expect("song");
-        let mut favorite = original.clone();
-        favorite.set_favorite(true);
-        crate::application::ports::SongRepository::upsert(&fixture.database, &favorite)
-            .expect("favorite set");
+        // Favorite goes through its dedicated mutation: a metadata upsert
+        // never carries user state (the SQLite `DO UPDATE` list deliberately
+        // omits `is_favorite`, `play_count` and `availability`).
+        SongRepository::set_favorite(&fixture.database, original.id(), true).expect("favorite set");
 
         // Rescan with no change: fast-skip, no re-parse, favorite intact.
         let summary = start_scan(&fixture).run(fixture.root).expect("rescan");
@@ -1805,13 +1857,13 @@ mod tests {
             "a deep unicode path is indexed as one song"
         );
 
+        // Favorite goes through its dedicated mutation: a metadata upsert
+        // never carries user state (the SQLite `DO UPDATE` list deliberately
+        // omits `is_favorite`, `play_count` and `availability`).
         let original = song_by_path(&fixture, &fixture.path(deep))
             .expect("lookup")
             .expect("deep-path song");
-        let mut favorite = original.clone();
-        favorite.set_favorite(true);
-        crate::application::ports::SongRepository::upsert(&fixture.database, &favorite)
-            .expect("favorite set");
+        SongRepository::set_favorite(&fixture.database, original.id(), true).expect("favorite set");
 
         // External move (rename) on disk → same content, new path, same UUID.
         let moved = "歌手/黑胶 精选/新目录/曲目一-移动后.flac";

@@ -90,7 +90,13 @@ struct MemoryTx<'a> {
 
 impl TxSongWriter for MemoryTx<'_> {
     fn upsert_song(&mut self, song: &Song) -> Result<(), Error> {
-        self.state.songs.insert(song.id(), song.clone());
+        // Same contract as the SQL upsert (see `testing::song_upsert`): user
+        // state on an existing row is never carried by a metadata write.
+        let merged = crate::application::testing::song_upsert::metadata_upsert(
+            self.state.songs.get(&song.id()),
+            song,
+        );
+        self.state.songs.insert(song.id(), merged);
         Ok(())
     }
 

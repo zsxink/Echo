@@ -60,6 +60,7 @@ pub mod memory_database;
 pub mod repositories;
 pub mod scan_fixture;
 pub mod small_fakes;
+pub mod song_upsert;
 pub mod unit_of_work;
 
 pub use clock::{FakeClock, FakeIdGenerator, ManualClock, SteppingClock};
@@ -75,4 +76,5 @@ pub use small_fakes::{
     FakeFileHasher, FakeHasher, FakeImportSources, FakeLyricsParser, FakeMediaProbe,
     FakeMetadataReader, FakeTrash, MemoryCoverCache, ScriptedFileEvents, SlowProbe,
 };
+pub use song_upsert::metadata_upsert;
 pub use unit_of_work::MemoryUnitOfWork;

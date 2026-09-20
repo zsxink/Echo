@@ -61,6 +61,13 @@ pub struct RelinkPlanner {
     /// Records whose identity a file already claimed during this scan — a
     /// second file matching the same missing record is ambiguous.
     claimed: HashSet<SongId>,
+    /// Records this scan proved present after they were `Missing`
+    /// (revivals). `upsert_song` deliberately never writes `availability`
+    /// (a stale snapshot must not roll user/availability state backward), so
+    /// the caller persists each revival through the dedicated mutation
+    /// instead. Without this the flip lives in memory only and a
+    /// record-projected library stays invisible forever.
+    revived: HashSet<SongId>,
 }
 
 impl RelinkPlanner {
@@ -70,6 +77,7 @@ impl RelinkPlanner {
         Self {
             songs,
             claimed: HashSet::new(),
+            revived: HashSet::new(),
         }
     }
 
@@ -83,6 +91,8 @@ impl RelinkPlanner {
             // here too (task 5.9 mirror image of the fast-skip `restore`).
             if song.availability() == SongAvailability::Missing {
                 song.restore_available();
+                let id = song.id();
+                self.revived.insert(id);
             }
             let id = song.id();
             Self::fold_facts(song, file);
@@ -154,8 +164,20 @@ impl RelinkPlanner {
     /// agree, or the final missing pass could contradict it).
     pub fn restore_available(&mut self, id: SongId) {
         if let Some(song) = self.songs.iter_mut().find(|song| song.id() == id) {
-            song.restore_available();
+            if song.availability() == SongAvailability::Missing {
+                song.restore_available();
+                self.revived.insert(id);
+            }
         }
+    }
+
+    /// Whether this scan proved `id` present while its snapshot row was
+    /// `Missing`. The caller persists the flip: a revival is a fact the file
+    /// itself established, so it belongs in the dedicated mutation, not in
+    /// the metadata upsert.
+    #[must_use]
+    pub fn revived(&self, id: SongId) -> bool {
+        self.revived.contains(&id)
     }
 
     /// The current snapshot (initial songs + folded decisions).
@@ -192,6 +214,9 @@ impl RelinkPlanner {
     fn relink(&mut self, id: SongId, file: &ParsedFile) {
         self.claimed.insert(id);
         if let Some(song) = self.songs.iter_mut().find(|song| song.id() == id) {
+            if song.availability() == SongAvailability::Missing {
+                self.revived.insert(id);
+            }
             song.relink(file.path.clone());
             song.restore_available();
             Self::fold_facts(song, file);

@@ -26,7 +26,13 @@ impl MemoryTx<'_> {
 impl TxSongWriter for MemoryTx<'_> {
     fn upsert_song(&mut self, song: &Song) -> Result<(), Error> {
         self.bump_song_revision(song.id());
-        self.store.songs.insert(song.id(), song.clone());
+        // Same contract as the SQL upsert (see `testing::song_upsert`): user
+        // state on an existing row is never carried by a metadata write.
+        let merged = crate::application::testing::song_upsert::metadata_upsert(
+            self.store.songs.get(&song.id()),
+            song,
+        );
+        self.store.songs.insert(song.id(), merged);
         Ok(())
     }
     fn delete_song(&mut self, id: SongId) -> Result<(), Error> {
