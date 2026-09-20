@@ -558,7 +558,7 @@ fn choose_library_root_prepares_and_activates_a_directory() {
     assert!(maybe.is_some(), "a confirmed directory is a success");
     let status = maybe.expect("some");
     assert!(status.configured);
-    assert!(status.active_root != fixture.root.to_string());
+    assert_ne!(status.active_root, fixture.root.to_string());
     // The old default root is not active; the chosen one is.
     let active = fixture
         .database
@@ -795,3 +795,94 @@ fn recorded_plays_materialize_additive_play_stats() {
 }
 
 use echo_core::domain::library::PortableRecord;
+
+// ==== system file-open dispatch (SFI-R06, normalize-os-file-open-paths) ====
+//
+// The shell hands a decoded absolute path to `play_temporary_file`; its first
+// move is `active_song_for_path`, whose answer decides between "play the
+// existing library identity" and "create a session temporary item". These
+// tests pin the predicate the dispatch depends on — the coordinator's
+// temporary-item behavior itself is covered by
+// `coordinator::tests::play_temporary_is_session_only`.
+
+#[test]
+fn open_path_outside_the_active_library_is_not_a_library_uuid() {
+    // SFI-R06-S01: a system-opened file that matches no library record must
+    // resolve to `None`, so the caller creates a temporary item instead of
+    // borrowing a wrong identity.
+    let f = ScanFixture::new();
+    let svc = services(&f);
+
+    let resolved = svc
+        .active_song_for_path(std::path::Path::new("/tmp/We Will Rock You - Queen.flac"))
+        .expect("read");
+
+    assert_eq!(
+        resolved, None,
+        "a non-library file must not resolve to a song"
+    );
+}
+
+#[test]
+fn open_path_of_an_active_library_song_resolves_to_its_uuid() {
+    // SFI-R06-S02: a path inside the active root that matches an existing
+    // record resolves to that song's UUID — the caller plays the existing
+    // identity (its overrides, favorites, stats) instead of a temporary item.
+    let f = ScanFixture::new();
+    f.write_file("a.flac", b"audio");
+    f.set_audio("a.flac", "标题", 1_000);
+    StartScan::new(&f.deps, &f.supervisor)
+        .run(f.root)
+        .expect("scan");
+    let svc = services(&f);
+
+    let root = f
+        .deps
+        .roots
+        .active_root()
+        .expect("root query")
+        .expect("active root");
+    let song = &f.deps.songs.all_in_root(f.root).expect("songs")[0];
+    let opened = root.resolve_song_path(song).expect("resolve");
+
+    let resolved = svc.active_song_for_path(&opened).expect("read");
+    assert_eq!(
+        resolved,
+        Some(song.id()),
+        "an in-library file must resolve to its recorded UUID"
+    );
+}
+
+#[test]
+fn open_path_of_a_non_active_root_never_resolves_to_the_old_uuid() {
+    // SFI-R06-S03: a file under a retained-but-inactive root must not resolve
+    // to the old root's song identity — the active-root isolation is not
+    // bypassed by a UUID, so the file plays as a session temporary item.
+    use echo_core::domain::entities::Song;
+    use echo_core::domain::ids::{LibraryRootId, RelativeMediaPath, Revision, SongId};
+
+    let f = ScanFixture::new();
+    let old_root = LibraryRootId::new();
+    LibraryRepository::upsert(
+        &f.database,
+        &LibraryRoot::new(old_root, "/old-library".into(), false, true),
+    )
+    .expect("old root");
+    let old_song = Song::new(
+        SongId::new(),
+        old_root,
+        RelativeMediaPath::new("media/old.flac").unwrap(),
+        Revision::INITIAL,
+    );
+    f.deps.songs.upsert(&old_song).expect("old song");
+    let svc = services(&f);
+
+    let resolved = svc
+        .active_song_for_path(std::path::Path::new("/old-library/media/old.flac"))
+        .expect("read");
+
+    assert_eq!(
+        resolved, None,
+        "an old-root file must never play through the old root's UUID"
+    );
+}

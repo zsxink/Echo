@@ -82,9 +82,12 @@ export function App() {
     let unlisten: (() => void) | undefined;
     void bridge
       .subscribe<readonly string[]>("app://file-open-request", (paths) => {
-        // Each accepted OS path is an independent replacement request. A
-        // cold-start drain may contain several requests, so process every path
-        // rather than silently dropping all but the first.
+        // Each element is a DECODED absolute filesystem path: the shell's
+        // `open_targets` already converted the OS `file://` URL and decoded
+        // percent-encoding exactly once (normalize-os-file-open-paths). Do NOT
+        // URL-decode here — a filename may legitimately contain a literal
+        // `%20`, and a second decode would corrupt it. The display name is the
+        // final path segment, taken verbatim.
         for (const path of paths) {
           const displayName = path.split(/[\\/]/).filter(Boolean).at(-1) ?? "音频文件";
           bridge.fireAndForget("play_temporary_file", { path, displayName });

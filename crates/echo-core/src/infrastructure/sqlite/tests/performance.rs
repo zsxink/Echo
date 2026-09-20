@@ -244,7 +244,7 @@ fn tx_access_isolates_root_writes_and_exposes_every_write_surface() {
         .expect("query")
         .expect("present");
     assert!(frozen.write_safety_locked(), "writes isolated");
-    assert!(frozen.availability() == RootAvailability::Unavailable);
+    assert_eq!(frozen.availability(), RootAvailability::Unavailable);
 
     // The remaining write surface works inside a UnitOfWork transaction:
     // roots, playlists, members, journal claims, lyrics and runtime state.

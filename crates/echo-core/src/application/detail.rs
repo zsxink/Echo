@@ -333,7 +333,7 @@ mod tests {
         assert!(!detail.relative_path.starts_with('/'), "no absolute path");
         assert!(detail_path_is_relative(&detail), "path stays relative");
         assert_eq!(detail.availability, "available");
-        assert!(detail.audio.sample_rate_hz == Some(44_100));
+        assert_eq!(detail.audio.sample_rate_hz, Some(44_100));
         assert_eq!(detail.lyrics, LyricsAvailability::None, "no lyrics stored");
     }
 

@@ -256,9 +256,9 @@
 | SFI-R04-S05 | 暂存、校验、原子移动与操作日志 | 发布后 watcher 抢先观察 | 5.3–5.5, 13.3, 4.9, 5.5 | Core/Fault injection | `tests/scenarios/SFI-R04-S05.yaml` | `pnpm verify:scenario -- SFI-R04-S05` |
 | SFI-R05-S01 | 逐文件结果与资料库不可用反馈 | 混合结果 | 5.1, 10.3, 10.10 | Core/React | `tests/scenarios/SFI-R05-S01.yaml` | `pnpm verify:scenario -- SFI-R05-S01` |
 | SFI-R05-S02 | 逐文件结果与资料库不可用反馈 | 导入时根目录断开 | 5.1, 10.3, 10.10 | Core/React | `tests/scenarios/SFI-R05-S02.yaml` | `pnpm verify:scenario -- SFI-R05-S02` |
-| SFI-R06-S01 | 源文件、系统关联与安全边界 | 外部文件直接打开 | 4.2, 7.5, 9.2, 12.7 | Security/Native | `tests/native/SFI-R06-S01.md` | `pnpm verify:scenario -- SFI-R06-S01` |
-| SFI-R06-S02 | 源文件、系统关联与安全边界 | 活动资料库内文件直接打开 | 4.2, 7.5, 9.2, 12.7 | Security/Native | `tests/native/SFI-R06-S02.md` | `pnpm verify:scenario -- SFI-R06-S02` |
-| SFI-R06-S03 | 源文件、系统关联与安全边界 | 非活动旧资料库文件直接打开 | 4.2, 7.5, 9.2, 12.7, 8.9 | Security/Native | `tests/native/SFI-R06-S03.md` | `pnpm verify:scenario -- SFI-R06-S03` |
+| SFI-R06-S01 | 源文件、系统关联与安全边界 | 外部文件直接打开 | 4.2, 7.5, 9.1, 9.2 | Security/Native | `tests/native/SFI-R06-S01.md` | `pnpm verify:scenario -- SFI-R06-S01` |
+| SFI-R06-S02 | 源文件、系统关联与安全边界 | 活动资料库内文件直接打开 | 4.2, 7.5, 9.1, 9.2 | Security/Native | `tests/native/SFI-R06-S02.md` | `pnpm verify:scenario -- SFI-R06-S02` |
+| SFI-R06-S03 | 源文件、系统关联与安全边界 | 非活动旧资料库文件直接打开 | 4.2, 7.5, 9.1, 9.2, 8.9 | Security/Native | `tests/native/SFI-R06-S03.md` | `pnpm verify:scenario -- SFI-R06-S03` |
 | SFI-R06-S04 | 源文件、系统关联与安全边界 | 源文件保持不变 | 4.2, 7.5, 9.2, 12.7, 5.3 | Security/Native | `tests/native/SFI-R06-S04.md` | `pnpm verify:scenario -- SFI-R06-S04` |
 | SFI-R06-S05 | 源文件、系统关联与安全边界 | 暂存目录名称与用户内容冲突 | 4.2, 7.5, 9.2, 12.7, 5.3, 5.7 | Security/Native | `tests/native/SFI-R06-S05.md` | `pnpm verify:scenario -- SFI-R06-S05` |
 | SFI-R07-S01 | 单实例唤醒与重复打开 | 已运行实例接收文件关联 | 9.1, 9.2 | Desktop/Native | `tests/native/SFI-R07-S01.md` | `pnpm verify:scenario -- SFI-R07-S01` |

@@ -2090,6 +2090,36 @@
           "cmd": "cargo test -p echo-core --all-features portable"
         }
       ]
+    },
+    {
+      "id": "16.1",
+      "title": "OS 文件打开载荷在壳边界归一化为本地路径（normalize-os-file-open-paths）",
+      "commands": [
+        {
+          "desc": "open_targets owns the URL->path conversion; shell<->runtime contract carried by PathBuf",
+          "cmd": "node scripts/verify/checks/task-16.1.mjs"
+        }
+      ]
+    },
+    {
+      "id": "16.2",
+      "title": "每次加载尝试先重置进度事实（normalize-os-file-open-paths）",
+      "commands": [
+        {
+          "desc": "begin_load is the single reset entry point; three Failed entry points and the Loading snapshot carry no stale progress",
+          "cmd": "node scripts/verify/checks/task-16.2.mjs"
+        }
+      ]
+    },
+    {
+      "id": "16.3",
+      "title": "场景验收命令必须自带可执行的失败证明（治理）",
+      "commands": [
+        {
+          "desc": "every scenario-backed node check is proven, self-contained, pure-delegation or explicitly declared",
+          "cmd": "node scripts/verify/check-scenario-command-proof.mjs"
+        }
+      ]
     }
   ],
   "scenarios": [
@@ -3524,19 +3554,19 @@
     {
       "id": "SFI-R06-S01",
       "title": "外部文件直接打开",
-      "command": "node scripts/verify/checks/task-12.7.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path",
       "manifest": "tests/native/SFI-R06-S01.md"
     },
     {
       "id": "SFI-R06-S02",
       "title": "活动资料库内文件直接打开",
-      "command": "node scripts/verify/checks/task-12.7.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path",
       "manifest": "tests/native/SFI-R06-S02.md"
     },
     {
       "id": "SFI-R06-S03",
       "title": "非活动旧资料库文件直接打开",
-      "command": "node scripts/verify/checks/task-12.7.mjs",
+      "command": "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path",
       "manifest": "tests/native/SFI-R06-S03.md"
     },
     {

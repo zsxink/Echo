@@ -75,7 +75,7 @@ fixtures/           音频/封面/字幕 fixtures
 |---|---|---|
 | Node.js | ≥ 20（见 `.nvmrc`） | 前端与脚本 |
 | pnpm | 11（`packageManager` 固定为 `pnpm@11.18.0`） | 可 `corepack enable` 自动启用 |
-| Rust | 1.96.0（`rust-toolchain.toml` 自动安装） | 含 `rustfmt`/`clippy`，首次编译较慢 |
+| Rust | 1.98.1（`rust-toolchain.toml` 自动安装） | 含 `rustfmt`/`clippy`，首次编译较慢 |
 | libmpv | 已随仓库 vendored（`apps/desktop/src-tauri/vendor/libmpv/macos`） | macOS 开箱可用；Windows/Linux 需按平台提供 |
 
 **启动**

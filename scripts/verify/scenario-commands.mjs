@@ -298,9 +298,9 @@ export const COMMANDS = {
   "SFI-R04-S05": COREC("recover::tests::truncated_source_is_rejected_and_leaves_nothing"), // P0
   "SFI-R05-S01": COREC("import"),
   "SFI-R05-S02": REACT("src/features/import/ImportBatchDialog.test.tsx"),
-  "SFI-R06-S01": CHECK("12.7"), // security boundary automated
-  "SFI-R06-S02": CHECK("12.7"),
-  "SFI-R06-S03": CHECK("12.7"),
+  "SFI-R06-S01": `node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path`, // normalized open outside library -> temporary item (dispatch predicate)
+  "SFI-R06-S02": `node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path`, // in-library open resolves to the existing UUID
+  "SFI-R06-S03": `node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path`, // old-root file never resolves through the old UUID
   "SFI-R06-S04": COREC("import"),
   "SFI-R06-S05": COREC("staging"),
   "SFI-R07-S01": CHECK("9.1"),

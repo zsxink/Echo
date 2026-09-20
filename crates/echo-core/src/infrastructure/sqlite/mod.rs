@@ -143,8 +143,15 @@ pub struct SqliteDatabase {
 impl SqliteDatabase {
     /// Open (or create) a database, configure safety pragmas, apply migrations
     /// and verify its quick integrity check.
+    ///
+    /// The database's parent directory is created when absent: SQLite's
+    /// `Connection::open` refuses to create parent directories, so a cold start
+    /// on a fresh machine — where the platform app-data directory does not yet
+    /// exist — would otherwise fail before the first migration.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
         let path = path.as_ref().to_path_buf();
+        // TEMP-REVERT (TDD red phase): parent-dir creation removed temporarily
+        // to prove the regression test fails against the buggy code.
         let had_database = path.exists() && file_is_non_empty(&path)?;
         let mut writer = open_writer(&path)?;
         if had_database {

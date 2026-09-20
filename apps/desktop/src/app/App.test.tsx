@@ -148,6 +148,38 @@ describe("File-open playback", () => {
       });
     });
   });
+
+  it("never URL-decodes a payload that already contains a literal %20", async () => {
+    // The shell decodes the OS `file://` URL exactly once
+    // (normalize-os-file-open-paths). A filename may legitimately contain a
+    // literal `%20`, so the frontend must pass the payload through verbatim —
+    // a second decode here would corrupt such names.
+    render(<App />);
+    await waitFor(() =>
+      expect((invoke as unknown as { mock: { calls: unknown[][] } }).mock.calls).toContainEqual([
+        "library_status",
+        {},
+      ]),
+    );
+
+    const callbacks = (
+      globalThis as unknown as {
+        __echoTest: { emit: (event: string, payload: unknown) => void };
+      }
+    ).__echoTest;
+    callbacks.emit("app://file-open-request", ["/tmp/My%20Mix.flac"]);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("play_temporary_file", {
+        path: "/tmp/My%20Mix.flac",
+        displayName: "My%20Mix.flac",
+      });
+    });
+    expect(invoke).not.toHaveBeenCalledWith("play_temporary_file", {
+      path: "/tmp/My Mix.flac",
+      displayName: "My Mix.flac",
+    });
+  });
 });
 describe("Phase-one scope guard", () => {
   const mocks = (

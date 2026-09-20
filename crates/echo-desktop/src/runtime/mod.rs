@@ -27,6 +27,7 @@
 //! operator recovery ([`GateKind::ReadOnly`]).
 
 use std::collections::VecDeque;
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 use echo_core::application::boot::{BootRecovery, BootRecoveryState};
@@ -154,8 +155,10 @@ pub struct StartupSupervisor {
     phase: Mutex<StartupPhase>,
     gate: Mutex<Option<GateKind>>,
     report: Mutex<Option<StartupReport>>,
-    /// Bounded FIFO for file-open requests received while not ready.
-    pending_opens: PendingOpen<String>,
+    /// Bounded FIFO for file-open requests received while not ready. Elements
+    /// are normalized local paths — the shell owns the URL→path conversion
+    /// (normalize-os-file-open-paths), so this queue never sees a URL string.
+    pending_opens: PendingOpen<PathBuf>,
 }
 
 impl Default for StartupSupervisor {
@@ -243,7 +246,7 @@ impl StartupSupervisor {
 
     /// Mark the platform integration finished; the runtime is now fully ready
     /// and any retained file-opens are drained.
-    pub fn on_ready(&self) -> Vec<String> {
+    pub fn on_ready(&self) -> Vec<PathBuf> {
         *self
             .phase
             .lock()
@@ -252,8 +255,10 @@ impl StartupSupervisor {
     }
 
     /// Receive a file-open request from the OS. While not ready it lands in
-    /// the bounded FIFO; when ready it is returned immediately.
-    pub fn receive_file_open(&self, path: String) -> Option<String> {
+    /// the bounded FIFO; when ready it is returned immediately. The payload is
+    /// a decoded absolute filesystem path — the shell's `open_targets` already
+    /// normalized any OS-level URL before this point (normalize-os-file-open-paths).
+    pub fn receive_file_open(&self, path: PathBuf) -> Option<PathBuf> {
         let ready = *self
             .phase
             .lock()
@@ -343,7 +348,7 @@ mod tests {
 
         // A file-open during boot is retained, not dropped.
         assert_eq!(
-            supervisor.receive_file_open("/music/a.flac".to_owned()),
+            supervisor.receive_file_open(PathBuf::from("/music/a.flac")),
             None
         );
 
@@ -356,11 +361,11 @@ mod tests {
 
         // Drain after ready.
         let opened = supervisor.on_ready();
-        assert_eq!(opened, vec!["/music/a.flac".to_owned()]);
+        assert_eq!(opened, vec![PathBuf::from("/music/a.flac")]);
         // A later open is immediate.
         assert_eq!(
-            supervisor.receive_file_open("/music/b.flac".to_owned()),
-            Some("/music/b.flac".to_owned())
+            supervisor.receive_file_open(PathBuf::from("/music/b.flac")),
+            Some(PathBuf::from("/music/b.flac"))
         );
     }
 
@@ -368,7 +373,7 @@ mod tests {
     fn pending_open_fifo_is_bounded_and_keeps_newest() {
         let supervisor = StartupSupervisor::new();
         for index in 0..(StartupSupervisor::PENDING_OPEN_CAPACITY + 5) {
-            supervisor.receive_file_open(format!("/music/{index}.flac"));
+            supervisor.receive_file_open(PathBuf::from(format!("/music/{index}.flac")));
         }
         let drained = supervisor.on_ready();
         assert_eq!(drained.len(), StartupSupervisor::PENDING_OPEN_CAPACITY);
@@ -376,7 +381,8 @@ mod tests {
         let kept_oldest: Vec<u64> = drained
             .iter()
             .filter_map(|p| {
-                p.strip_prefix("/music/")
+                p.to_string_lossy()
+                    .strip_prefix("/music/")
                     .and_then(|n| n.strip_suffix(".flac"))
                     .and_then(|n| n.parse::<u64>().ok())
             })

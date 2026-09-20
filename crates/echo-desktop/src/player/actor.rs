@@ -455,6 +455,13 @@ struct TestBackend {
     /// the snapshot. A scripted list alone cannot express "the subscription
     /// produces events", and without that the whole driver is untestable.
     audio_replay_on_observe: Option<(f64, bool, bool)>,
+    /// When set, `observe_continuous` queues a `duration` property event the
+    /// way mpv replays an observed property's current value on subscription.
+    /// Only `duration` — a static fact reported once — is modelled here: a
+    /// `time-pos` replay would be published first and reset the throttle
+    /// window, swallowing the `duration` snapshot that follows microseconds
+    /// later (the real backend keeps ticking `time-pos`, the fake does not).
+    media_replay_on_observe: Option<f64>,
     terminated: bool,
 }
 
@@ -470,6 +477,7 @@ impl TestBackend {
             fail_all_properties: false,
             file_loaded_on_load: false,
             audio_replay_on_observe: None,
+            media_replay_on_observe: None,
             terminated: false,
         }
     }
@@ -516,6 +524,12 @@ impl Backend for TestBackend {
             self.events.push_back(BackendEvent::PropertyChanged {
                 name: "pause".into(),
                 value: f64::from(u8::from(pause)),
+            });
+        }
+        if let Some(duration) = self.media_replay_on_observe {
+            self.events.push_back(BackendEvent::PropertyChanged {
+                name: "duration".into(),
+                value: duration,
             });
         }
     }
@@ -1035,7 +1049,7 @@ impl<B: Backend> ActorLoop<B> {
                 // because a prior primed load left mpv with `pause=yes` and mpv
                 // does not clear that on a new file (see `intended_paused`).
                 self.intended_paused = false;
-                self.generation += 1;
+                self.begin_load();
                 if let Some(path) = self.resolver.as_ref().and_then(|r| (r)(song_id).ok()) {
                     self.load_path(&path);
                 } else {
@@ -1052,7 +1066,7 @@ impl<B: Backend> ActorLoop<B> {
                 // duration + cover) while mpv's pause flag guarantees no sound
                 // until the user presses 播放.
                 self.intended_paused = true;
-                self.generation += 1;
+                self.begin_load();
                 if let Some(path) = self.resolver.as_ref().and_then(|r| (r)(song_id).ok()) {
                     self.load_path(&path);
                     // Silence the window between `loadfile` and FileLoaded
@@ -1073,6 +1087,7 @@ impl<B: Backend> ActorLoop<B> {
                 session_id: _,
             } => {
                 self.intended_paused = false;
+                self.begin_load();
                 self.load_path(&path);
             }
             PlayerCommand::Play => {
@@ -1238,9 +1253,20 @@ impl<B: Backend> ActorLoop<B> {
         true
     }
 
-    fn load_path(&mut self, path: &Path) {
+    /// Begin one load attempt: bump the generation and clear the stale
+    /// progress facts (normalize-os-file-open-paths). Every load entry point —
+    /// the two library-song resolver branches and `LoadTemporary` — MUST call
+    /// this first, so a `Loading` or `Failed` snapshot never carries the
+    /// `position`/`duration` left over from the previously loaded file.
+    fn begin_load(&mut self) -> u64 {
         self.generation += 1;
         self.pending_seek = None;
+        self.position = None;
+        self.duration = None;
+        self.generation
+    }
+
+    fn load_path(&mut self, path: &Path) {
         // Defense-in-depth (task 8.3): only Rust-validated LOCAL paths reach
         // mpv. Refuse anything that looks like a URL/scheme (`http://`, `smb://`,
         // `mms://`, …) so a caller can never smuggle a networked protocol in,
@@ -2684,6 +2710,126 @@ mod tests {
 
         let s = wait_for(&snapshot, |s| s.state == PlaybackState::Failed);
         assert_eq!(s.state, PlaybackState::Failed, "resolve error -> Failed");
+        actor.shutdown();
+    }
+
+    /// Pre-seed the shared snapshot with stale progress facts so a "cleared"
+    /// assertion is non-vacuous: if a load path forgot to reset them, the
+    /// published snapshot would still carry these values (issue #6: the UI
+    /// showed the previous file's `5:18` while the new open had already
+    /// failed).
+    fn seed_stale_progress(snapshot: &Arc<RwLock<PlayerSnapshot>>) {
+        let mut s = snapshot.write().expect("snapshot poisoned");
+        s.position = Some(7.5);
+        s.duration = Some(318.0);
+    }
+
+    #[test]
+    fn a_rejected_non_local_load_clears_stale_progress_facts() {
+        // Defense-in-depth rejection (`://` present) publishes `Failed`; the
+        // failure snapshot must not carry the previous file's progress.
+        let (mut actor, snapshot, _props) = spawn_test(vec![]);
+        seed_stale_progress(&snapshot);
+
+        actor.send(load_temporary("http://x/a.flac")).unwrap();
+        let failed = wait_for(&snapshot, |s| s.state == PlaybackState::Failed);
+        assert_eq!(failed.position, None, "position must reset on Failed");
+        assert_eq!(failed.duration, None, "duration must reset on Failed");
+        actor.shutdown();
+    }
+
+    #[test]
+    fn a_library_song_resolve_failure_clears_stale_progress_facts() {
+        use echo_core::domain::ids::SongId;
+
+        let snapshot = snapshot_stub();
+        seed_stale_progress(&snapshot);
+        let resolver: SongResolver =
+            Arc::new(|_| Err(echo_core::error::Error::unavailable("song", "unknown")));
+        let mut actor = PlayerActor::spawn_with(
+            move || -> Result<TestBackend, ffi::HandleError> { Ok(TestBackend::new(vec![])) },
+            snapshot.clone(),
+            Some(resolver),
+        )
+        .expect("spawn");
+        actor
+            .send(PlayerCommand::LoadLibrarySong {
+                song_id: SongId::new(),
+                session_id: echo_core::domain::ids::PlaybackSessionId::new(),
+            })
+            .expect("send");
+
+        let failed = wait_for(&snapshot, |s| s.state == PlaybackState::Failed);
+        assert_eq!(failed.position, None, "position must reset on Failed");
+        assert_eq!(failed.duration, None, "duration must reset on Failed");
+        actor.shutdown();
+    }
+
+    #[test]
+    fn a_paused_library_song_resolve_failure_clears_stale_progress_facts() {
+        use echo_core::domain::ids::SongId;
+
+        let snapshot = snapshot_stub();
+        seed_stale_progress(&snapshot);
+        let resolver: SongResolver =
+            Arc::new(|_| Err(echo_core::error::Error::unavailable("song", "unknown")));
+        let mut actor = PlayerActor::spawn_with(
+            move || -> Result<TestBackend, ffi::HandleError> { Ok(TestBackend::new(vec![])) },
+            snapshot.clone(),
+            Some(resolver),
+        )
+        .expect("spawn");
+        actor
+            .send(PlayerCommand::LoadLibrarySongPaused {
+                song_id: SongId::new(),
+                session_id: echo_core::domain::ids::PlaybackSessionId::new(),
+            })
+            .expect("send");
+
+        let failed = wait_for(&snapshot, |s| s.state == PlaybackState::Failed);
+        assert_eq!(failed.position, None, "position must reset on Failed");
+        assert_eq!(failed.duration, None, "duration must reset on Failed");
+        actor.shutdown();
+    }
+
+    #[test]
+    fn entering_loading_starts_without_stale_progress_facts() {
+        // A fresh load publishes `Loading` before mpv reports anything; that
+        // snapshot must not carry the previous file's progress either.
+        let (mut actor, snapshot, _props) = spawn_test(vec![]);
+        seed_stale_progress(&snapshot);
+
+        actor.send(load_temporary("/music/a.flac")).unwrap();
+        let loading = wait_for(&snapshot, |s| s.state == PlaybackState::Loading);
+        assert_eq!(loading.position, None, "position must reset on Loading");
+        assert_eq!(loading.duration, None, "duration must reset on Loading");
+        actor.shutdown();
+    }
+
+    #[test]
+    fn file_loaded_still_drives_progress_from_mpv_reports() {
+        // The reset must not eat real facts: after `FileLoaded`, mpv-reported
+        // time-pos/duration keep driving the snapshot (the subscription replay
+        // models mpv's observe behaviour).
+        let snapshot = snapshot_stub();
+        let snapshot_join = snapshot.clone();
+        let mut actor = PlayerActor::spawn_with(
+            move || -> Result<TestBackend, ffi::HandleError> {
+                let mut b = TestBackend::new(vec![]);
+                b.file_loaded_on_load = true;
+                b.media_replay_on_observe = Some(318.0);
+                Ok(b)
+            },
+            snapshot_join,
+            None,
+        )
+        .expect("spawn");
+
+        actor.send(load_temporary("/music/a.flac")).unwrap();
+        let loaded = wait_for(&snapshot, |s| {
+            s.state == PlaybackState::Playing && s.duration == Some(318.0)
+        });
+        assert_eq!(loaded.duration, Some(318.0));
         actor.shutdown();
     }
 }

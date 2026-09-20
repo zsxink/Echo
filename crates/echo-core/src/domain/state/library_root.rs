@@ -344,7 +344,7 @@ mod tests {
         barrier.transition(RootSwitchState::QuiesceOldRoot).unwrap();
         barrier.transition(RootSwitchState::Failed).unwrap();
         barrier.transition(RootSwitchState::Prepare).unwrap();
-        assert!(barrier.state() == RootSwitchState::Prepare);
+        assert_eq!(barrier.state(), RootSwitchState::Prepare);
         assert!(barrier.accepts_epoch(RootEpoch::from_u64(7)));
         assert!(!barrier.accepts_epoch(RootEpoch::from_u64(8)));
     }

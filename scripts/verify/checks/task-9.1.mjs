@@ -13,7 +13,11 @@
 //      drains-in-order, ready-drain and later-opens-immediate);
 //   3. the shell actually routes both open paths through the supervisor
 //      (grep-level structural guard against a regression to a direct,
-//      un-FIFO'd `app.emit`).
+//      un-FIFO'd `app.emit`);
+//   4. the macOS `RunEvent::Opened` payload is normalized to filesystem paths
+//      via `open_targets` (normalize-os-file-open-paths): the URL→path
+//      conversion unit tests pass on this host, and no `url.to_string()`
+//      survives in the shell.
 
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -85,4 +89,34 @@ if (directEmits > 2) {
   fail(`unexpected direct file-open emits in shell: ${directEmits}`);
 }
 
-process.stdout.write("ok 9.1: single-instance + init FIFO wiring, runtime FIFO tests green\n");
+// 4. Behavior guard for the OS-boundary normalization
+//    (normalize-os-file-open-paths). The structural tokens alone cannot tell a
+//    decoded path from a raw `file://` string (the original bug slipped past
+//    them), so the behavior itself is pinned by the `open_targets` unit tests,
+//    which run on every host even though the only caller is macOS-only.
+const appTestOut = run(
+  "cargo",
+  ["test", "-p", "echo-app", "--locked", "open_targets"],
+  "echo-app open_targets tests",
+);
+for (const name of [
+  "decodes_percent_encoding_and_keeps_order",
+  "drops_non_file_schemes",
+  "mixed_input_keeps_only_file_targets_in_order",
+]) {
+  if (!appTestOut.includes(`test open_targets::tests::${name} ... ok`)) {
+    fail(`open_targets test not green: ${name}`);
+  }
+}
+if (main.includes("url.to_string()")) {
+  fail(
+    "main.rs stringifies a URL again (url.to_string()): the Opened payload must be normalized through open_targets, never handed downstream as a URL string",
+  );
+}
+if (!main.includes("open_targets::open_targets(&urls)")) {
+  fail("the RunEvent::Opened branch no longer normalizes payloads via open_targets");
+}
+
+process.stdout.write(
+  "ok 9.1: single-instance + init FIFO wiring, open normalization, runtime FIFO tests green\n",
+);

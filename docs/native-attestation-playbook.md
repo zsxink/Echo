@@ -32,6 +32,15 @@ OS file-open integration / the 3-platform smoke itself` 一一对应 —— **�
 只是它同时被当成了"未登记"的兜底，把另外 32 条也吸了进去。**
 
 > **本文档在施工中被修正过三次**（同一条教训，三种不同长相）：
+> 0. **normalize-os-file-open-paths（2026-09-20）覆盖口径更正**：`SFI-R06-S01/S02/S03`
+>    （外部文件直接打开 / 活动库内文件 / 非活动旧库文件）此前登记的命令是
+>    `task-12.7.mjs`（安全加固：路径穿越/TOCTOU/恶意标签/asset key），与三条场景
+>    THEN 子句（路径 → 临时项 / 路径 → 既有 UUID / 旧根不得绕过隔离）**无交集** ——
+>    正是下文教训 2 的形态：命令命中真测试、校验器放行，但证明的不是 THEN。
+>    现已改指 `task-9.1.mjs`（壳侧归一化）+ `runtime::services::tests::open_path`
+>    三个定向测试（分派谓词），覆盖描述同步更正于 `docs/traceability.md`。
+>    新增治理门禁 `check-scenario-command-proof.mjs`（manifest 16.3）机械校验
+>    「场景命令必须有可执行的失败证明」，防止同类错配再次静默通过。
 > 1. `PM-R06-S01` 起初被判为甲类，依据是 `AddToPlaylistDialog.test.tsx` 的 "membership commit
 >    fails"。落地时核对用例正文发现它断言的是**添加**歌曲失败（"添加失败，请重试" + 选择器保持），
 >    而该场景要求的是**移除成员**失败（成员留原位、导航计数不变）。后者在 `PlaylistsView.tsx:163`

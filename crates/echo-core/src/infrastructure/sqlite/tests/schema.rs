@@ -37,6 +37,32 @@ fn p95(samples: &mut [f64]) -> f64 {
 }
 
 #[test]
+fn open_creates_a_missing_parent_directory() {
+    // Cold-start contract (see the desktop setup hook): `SqliteDatabase::open`
+    // must create the database's parent directory. SQLite's `Connection::open`
+    // refuses to create parent directories, so without this the very first
+    // launch on a fresh machine (where `app_data_dir` does not yet exist)
+    // fails with a masked `storage error: sqlite`.
+    let base = tempfile::tempdir().expect("temporary base directory");
+    let db_path = base.path().join("nested").join("still_deeper").join("echo.db");
+    assert!(
+        !db_path.parent().expect("parent").exists(),
+        "precondition: parent directory must be absent"
+    );
+    let database = SqliteDatabase::open(&db_path).expect("open creates parent dirs");
+    assert!(
+        db_path.parent().expect("parent").exists(),
+        "open must create the missing parent directory"
+    );
+    // The database must be genuinely usable afterwards, not just created.
+    let objects = database.schema_snapshot().expect("schema usable after open");
+    assert!(
+        objects.iter().any(|(name, _)| name == "songs"),
+        "migrations ran and the schema is queryable"
+    );
+}
+
+#[test]
 fn initial_migration_has_required_tables_indexes_and_no_account_or_telemetry() {
     let (_directory, database, _) = database();
     let objects = database.schema_snapshot().expect("schema snapshot");

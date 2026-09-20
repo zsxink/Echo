@@ -66,6 +66,7 @@ import { tmpdir } from "node:os";
 import { join, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { objectKindEntries } from "./injection-object-kinds.mjs";
+import { governanceEntries } from "./injection-governance.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
 const BACKUP_DIR = mkdtempSync(join(tmpdir(), "echo-injection-backup-"));
@@ -509,7 +510,7 @@ const ENTRIES = [
     inject() {
       replaceIn(
         join(ROOT, "rust-toolchain.toml"),
-        'channel = "1.96.0"',
+        'channel = "1.98.1"',
         'channel = "99.0.0"',
       );
       return {};
@@ -694,6 +695,11 @@ const ENTRIES = [
       return { env: failingBinary("cargo") };
     },
   },
+
+  // ---- normalize-os-file-open-paths + scenario-command governance --------
+  // Entries live in their own module (scale ceiling); they mutate exactly one
+  // repository file each and are restored by hash like every other entry.
+  ...governanceEntries({ replaceIn, createProbe, ROOT }),
 
   // ---- wire-desktop-system-dialogs (a pure-node assertion cluster) ------
   {

@@ -8,6 +8,7 @@ use std::{
     env,
     fs::OpenOptions,
     io::Write,
+    path::PathBuf,
     sync::{Arc, Mutex},
     thread,
     time::Duration,
@@ -42,6 +43,7 @@ mod dialogs;
 mod macos_now_playing;
 #[cfg(target_os = "macos")]
 mod macos_status_row;
+mod open_targets;
 
 const MAIN_WINDOW: &str = "main";
 
@@ -446,7 +448,7 @@ fn schedule_gate_exit(app: tauri::AppHandle) {
 
 /// The Gate uses this opt-in log to assert that a hot second launch delivered
 /// its file path to the already-running instance. Production never sets it.
-fn record_gate_open(paths: &[String]) {
+fn record_gate_open(paths: &[PathBuf]) {
     let Ok(log_path) = env::var("ECHO_GATE_OPEN_LOG") else {
         return;
     };
@@ -454,7 +456,7 @@ fn record_gate_open(paths: &[String]) {
         return;
     };
     for path in paths {
-        let _ = writeln!(log, "{path}");
+        let _ = writeln!(log, "{}", path.to_string_lossy());
     }
 }
 
@@ -472,7 +474,7 @@ const FILE_OPEN_REQUEST: &str = "app://file-open-request";
 /// delivered to the frontend immediately. A racing second launch before the
 /// supervisor is registered focuses the window and records for the Gate rather
 /// than panicking.
-fn deliver_file_open(app: &tauri::AppHandle, path: String) {
+fn deliver_file_open(app: &tauri::AppHandle, path: PathBuf) {
     let Some(supervisor) = app.try_state::<StartupSupervisor>() else {
         focus_main_window(app);
         record_gate_open(&[path]);
@@ -631,7 +633,7 @@ fn is_loopback_http_origin(origin: &str) -> bool {
 /// unrecognised container is still served (as `application/octet-stream`) rather
 /// than hidden: a candidate that fails to decode is a local-library fact, not
 /// something the shell should pretend is missing.
-fn cover_media_type(bytes: &[u8]) -> &'static str {
+const fn cover_media_type(bytes: &[u8]) -> &'static str {
     match bytes {
         [0xFF, 0xD8, 0xFF, ..] => "image/jpeg",
         [0x89, b'P', b'N', b'G', ..] => "image/png",
@@ -655,7 +657,7 @@ fn main() {
             // macOS/Windows/Linux argv unification is task 9.2.
             focus_main_window(app);
             for path in args.into_iter().skip(1) {
-                deliver_file_open(app, path);
+                deliver_file_open(app, PathBuf::from(path));
             }
         }))
         // Native directory/file pickers in the Rust side (task 7.5 real wiring)
@@ -868,8 +870,8 @@ fn main() {
         #[cfg(target_os = "macos")]
         RunEvent::Opened { urls } => {
             focus_main_window(app);
-            for url in urls {
-                deliver_file_open(app, url.to_string());
+            for path in open_targets::open_targets(&urls) {
+                deliver_file_open(app, path);
             }
         }
         // Clicking the macOS Dock icon emits `Reopen`, rather than a tray-icon

@@ -1,0 +1,14 @@
+{
+  "comment": "Explicit declarations for hybrid scenario-backed checks whose internal (repository-content) assertions do not yet have a mutation-backed injection proof. This file is the ratchet that replaced the silent 'contains spawnSync => wholesale exemption' classification: each gap is named and reasoned, NEW hybrids cannot be added silently (the governance check fails for them), and removing a declaration requires adding an injection entry. Tracked as follow-up work beyond change normalize-os-file-open-paths, which only proved its own boundary (task-9.1).",
+  "declared": {
+    "scripts/verify/checks/task-3.10.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",
+    "scripts/verify/checks/task-3.14.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",
+    "scripts/verify/checks/task-12.4.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",
+    "scripts/verify/checks/task-12.6.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",
+    "scripts/verify/checks/task-12.7.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",
+    "scripts/verify/checks/task-13.8.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",
+    "scripts/verify/checks/task-9.2.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",
+    "scripts/verify/checks/task-9.3.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",
+    "scripts/verify/checks/task-9.6.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change"
+  }
+}

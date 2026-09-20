@@ -15,6 +15,7 @@ const checks = [
   ["toolchain pin", "node", ["scripts/verify/check-toolchain.mjs"]],
   ["verification validity", "node", ["scripts/verify/check-verification-validity.mjs"]],
   ["scenario command churn", "node", ["scripts/verify/check-scenario-churn.mjs"]],
+  ["scenario command proof", "node", ["scripts/verify/check-scenario-command-proof.mjs"]],
   ["build purity", "node", ["scripts/verify/check-build-purity.mjs"]],
   ["architecture and workspace tests", "cargo", ["test", "--workspace", "--all-targets", "--all-features"]],
   ["generated contract drift", "cargo", ["test", "-p", "echo-desktop", "ipc::generate::tests::committed_generated_file_is_in_sync_with_the_generator"]],
