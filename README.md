@@ -1,6 +1,8 @@
-# Echo
+# <img src="docs/prototype/echo-icon.svg" width="28" height="28" alt="" /> Echo
 
 本地优先的跨平台音乐播放器：扫描并管理你自己的音乐资料库，展示封面与歌词，维护播放列表和歌单。不依赖账号或流媒体曲库；音乐始终属于你，远端只承担个人设备间的可替换同步。
+
+> **最新发布**：[v0.1.0](https://github.com/zsxink/Echo/releases/tag/v0.1.0) — macOS · Windows · Linux 安装包（DMG / EXE / deb / AppImage）
 
 ## 产品定位
 
@@ -26,7 +28,7 @@
 
 ## 现状与路线
 
-当前处于一期（完整桌面版播放器），已以 macOS 单平台验证为基线封版，Windows/Linux 的安装包、原生 E2E 与故障恢复矩阵等正在扩展。资料库同步、批量操作与移动端在后续阶段立项。
+当前处于一期（完整桌面版播放器）。0.1.0 已封版：GitHub Actions 三平台构建并发布 macOS、Windows、Linux 安装包与 `SHA256SUMS` 校验（见 [Releases](https://github.com/zsxink/Echo/releases)）；macOS 单平台的运行、原生 E2E 与故障恢复矩阵验证已完成，Windows/Linux 的原生 E2E 与恢复矩阵正在扩展。资料库同步、批量操作与移动端在后续阶段立项。
 
 | 阶段 | 主题 | 主要交付 | 完成标志 |
 |---|---|---|---|
