@@ -3,10 +3,13 @@
 # This is the single config file used by both `cargo deny check` and
 # `cargo deny check advisories`. Run from the repo root.
 #
-# License policy: Echo itself is licensed `MIT OR Apache-2.0` (root
-# Cargo.toml). The allow list below accepts every license that appears in the
-# current transitive crate graph plus the common permissive licenses we expect
-# future crates to carry. Because every crate in the lockfile declares an
+# License policy: Echo itself is source-available under a custom Business
+# Source License 1.1-based license (root Cargo.toml + LICENSE); the workspace
+# members are marked `[licenses.private]` below, so their `BUSL-1.1` manifest
+# license does not participate in the allow-list check. The allow list below
+# accepts every license that appears in the current transitive crate graph
+# plus the common permissive licenses we expect future crates to carry.
+# Because every crate in the lockfile declares an
 # SPDX `license` expression (verified via `cargo metadata`), and the
 # `accept`-style of cargo-deny 0.20.x denies everything not explicitly
 # allowed, the effective policy is "permissive vacuously-safe" — any crate
@@ -93,15 +96,12 @@ ignore = [
 # gates only on the offline-safe local checks.
 
 [licenses]
-# SPDX license expressions accepted for every crate in the graph. The set
-# reflects Echo's `MIT OR Apache-2.0` stance plus the other permissive
-# licenses common in the crates-io ecosystem (ISC, BSD-*, Zlib, Unicode-*,
-# Unlicense, CC0, 0BSD, MPL-2.0, ...) so adding a well-behaved dependency
-# does not require a config churn. Current lockfile-only special-cases that
-# parse as expressions and are covered by the disjunction of their parts:
-# `(MIT OR Apache-2.0) AND Unicode-3.0` (unicode-ident), `Unlicense OR MIT`
-# (memchr), `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT`
-# (linux-raw-sys, rustix) and the MIT-only tokio-rs family (tracing*, slab).
+# SPDX license expressions accepted for every crate in the graph. This set
+# covers the third-party dependency graph (Echo's own source-available custom
+# license is not a dependency and is excluded via [licenses.private] below).
+# It reflects the permissive licenses common in the crates-io ecosystem
+# (ISC, BSD-*, Zlib, Unicode-*, Unlicense, CC0, 0BSD, MPL-2.0, ...) plus a few
+# larger permissives so adding a well-behaved dependency
 allow = [
   "MIT",
   "MIT-0",
@@ -122,8 +122,9 @@ allow = [
 confidence-threshold = 0.8
 # Workspace/private path members (echo-app, echo-core, echo-desktop) carry
 # `license.workspace = true`; cargo-deny resolves their license via the
-# workspace manifest, so mark them private and ignore their individual
-# license-file scanning. They are covered by the same repository policy as
-# their published workspace manifest.
+# workspace manifest (now `BUSL-1.1`, the source-available custom license), so
+# mark them private and ignore their individual license-file scanning. They
+# are covered by the same repository policy as their published workspace
+# manifest.
 [licenses.private]
 ignore = true

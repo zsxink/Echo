@@ -9,9 +9,8 @@ for the Rust graph continuously. After lockfile changes that alter the crate
 set, regenerate this file (see footer) and update `deny.toml`'s allow list if a
 new license appears.
 
-Echo itself is licensed **`MIT OR Apache-2.0`** (see the root `Cargo.toml`).
-All third-party crates below are permissive-licensed; the few `OR`/`AND`
-expressions always include a permissive alternative (e.g. MIT or Apache-2.0).
+Echo itself is licensed under a custom license based on **Business Source License 1.1** — personal study/research use only, no commercial use, no redistribution (see the root [`LICENSE`](LICENSE)).
+Workspace members (`echo-app`, `echo-core`, `echo-desktop`) report `BUSL-1.1` in their manifests via the workspace `license` field. All third-party crates below are permissive-licensed; the few `OR`/`AND` expressions always include a permissive alternative (e.g. MIT or Apache-2.0).
 
 > **libmpv note:** the platform player binary (libmpv, LGPL-2.1+ / ISC) is
 > bundled separately at packaging time and is **not** a Cargo or npm
@@ -25,9 +24,11 @@ expressions always include a permissive alternative (e.g. MIT or Apache-2.0).
 
 | Crate | Version | License | Source |
 | --- | --- | --- | --- |
-| `echo-app` | 0.1.0 | MIT OR Apache-2.0 | workspace (`apps/desktop/src-tauri`) |
-| `echo-core` | 0.1.0 | MIT OR Apache-2.0 | <https://github.com/zsxink/Echo> |
-| `echo-desktop` | 0.1.0 | MIT OR Apache-2.0 | <https://github.com/zsxink/Echo> |
+| `echo-app` | 0.1.0 | BUSL-1.1* | workspace (`apps/desktop/src-tauri`) |
+| `echo-core` | 0.1.0 | BUSL-1.1* | <https://github.com/zsxink/Echo> |
+| `echo-desktop` | 0.1.0 | BUSL-1.1* | <https://github.com/zsxink/Echo> |
+
+\* Custom license based on Business Source License 1.1 — see root `LICENSE`.
 
 ## Rust transitive dependencies (from `Cargo.lock`)
 

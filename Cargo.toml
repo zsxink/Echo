@@ -10,7 +10,18 @@ members = [
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.81"
-license = "MIT OR Apache-2.0"
+# Echo is licensed under a custom source-available license based on Business
+# Source License 1.1 (personal study/research use, no commercial use, no
+# redistribution — see LICENSE). Cargo's `license` field accepts the SPDX
+# identifier for the underlying BSL-1.1 structure.
+#
+# `publish = false` marks every workspace member as private (never published
+# to crates.io). Combined with `[licenses.private] ignore = true` in
+# deny.toml, this keeps Echo's own BUSL-1.1 license out of the permissive
+# allow-list that governs third-party dependencies: cargo-deny exempts
+# unpublished workspace crates from the allow-list check.
+license = "BUSL-1.1"
+publish = false
 repository = "https://github.com/zsxink/Echo"
 
 [workspace.dependencies]

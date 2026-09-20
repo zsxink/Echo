@@ -126,3 +126,9 @@ node scripts/verify/reconcile-scenarios.mjs         # specs↔traceability↔man
 ### 一期边界（重要）
 
 离线、无账号、无网络：UI 不渲染同步入口，bridge 无 sync/upload/download 命令，Cargo workspace 无网络客户端依赖，CSP 拒绝远程连接。同步仅以"基础数据形状"存在（`0005_sync_foundation.sql` 的 revision/outbox/tombstone），二期才接入引擎（见 `sync-foundation` 规格）。
+
+### 许可证
+
+Echo 采用**基于 Business Source License 1.1 的定制授权**（个人学习与研究用途）：禁止任何商业用途、私自销售/转卖与再分发；Change Date（2099-12-31）后按 GPL-2.0-or-later 提供。详见根目录 [`LICENSE`](LICENSE)。
+
+第三方依赖的许可清单见 [`LICENSES.md`](LICENSES.md)（由 `cargo deny` 与前端 prod 依赖审计维护）。
