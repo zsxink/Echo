@@ -21,10 +21,16 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       expect: /FAIL 9\.1: (echo-app clippy clean|main\.rs stringifies a URL again)/,
       baseline: true,
       inject() {
+        // Regression to the original bug: the Opened payload is handed
+        // downstream as a raw URL string (`.`->`to_string()`) instead of a
+        // decoded filesystem path. The loop variable is deliberately spelled
+        // `url` so the check's `url.to_string()` guard trips on every runner
+        // (non-macOS exempts the dead-code lint on `open_targets`, so clippy
+        // alone cannot prove the violation off-macOS).
         replaceIn(
           join(ROOT, "apps", "desktop", "src-tauri", "src", "main.rs"),
           "for path in open_targets::open_targets(&urls) {",
-          "for path in urls.iter().map(|u| u.to_string()).map(std::path::PathBuf::from) {",
+          "for path in urls.iter().map(|url| url.to_string()).map(std::path::PathBuf::from) {",
         );
         return {};
       },

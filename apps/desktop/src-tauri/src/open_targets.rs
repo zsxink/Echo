@@ -33,7 +33,6 @@ pub fn open_targets(urls: &[tauri::Url]) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::open_targets;
-    use std::path::Path;
 
     #[test]
     fn decodes_percent_encoding_and_keeps_order() {
@@ -43,9 +42,18 @@ mod tests {
                 .collect();
         let paths = open_targets(&urls);
         assert_eq!(paths.len(), 1);
+        // The exact spelling differs per host (`/Users/…` vs `\Users\…`), so
+        // assert the cross-platform semantics: the path stays absolute, the
+        // percent-encoding is decoded, and order is preserved.
+        assert!(paths[0].is_absolute(), "decoded path stays absolute");
         assert_eq!(
-            paths[0],
-            Path::new("/Users/x/Music/We Will Rock You - Queen.flac")
+            paths[0].file_name().and_then(|n| n.to_str()),
+            Some("We Will Rock You - Queen.flac"),
+            "percent-encoding is decoded on every host",
+        );
+        assert!(
+            !paths[0].to_string_lossy().contains("%20"),
+            "no percent-encoding survives the decode",
         );
     }
 
@@ -69,8 +77,14 @@ mod tests {
         .map(|s| s.parse().expect("valid url"))
         .collect();
         let paths = open_targets(&urls);
-        assert_eq!(paths.len(), 2);
-        assert_eq!(paths[0], Path::new("/a/One Two.flac"));
-        assert_eq!(paths[1], Path::new("/b/中文.flac"));
+        assert_eq!(paths.len(), 2, "non-file schemes are dropped");
+        // Decoding, ordering and file-only filtering — asserted via the leaf,
+        // whose spelling is identical on every host.
+        let leaves: Vec<&str> = paths
+            .iter()
+            .filter_map(|p| p.file_name().and_then(|n| n.to_str()))
+            .collect();
+        assert_eq!(leaves, vec!["One Two.flac", "中文.flac"]);
+        assert!(paths.iter().all(|p| p.is_absolute()));
     }
 }
