@@ -14,6 +14,11 @@ use std::{
     time::Duration,
 };
 
+// Only the macOS Now Playing refresh reads cover bytes in the shell; the
+// `cover://` protocol itself lives in cover_protocol.rs, which sources
+// `CoverCache` from echo-desktop. Keep the import platform-scoped so
+// `-D warnings` clippy stays green on Windows/Linux.
+#[cfg(target_os = "macos")]
 use echo_core::application::ports::CoverCache;
 #[cfg(not(target_os = "macos"))]
 use echo_core::domain::state::PlaybackState;
