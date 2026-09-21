@@ -17,6 +17,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../../app/App";
+import { invalidateLibrary } from "./libraryInvalidation";
 
 const mocks = (
   globalThis as unknown as {
@@ -114,6 +115,23 @@ describe("资料库导航计数", () => {
     // The committed mutation invalidates the cache and triggers a fresh read —
     // the old code never re-read, so a toggle made outside the favorites view
     // left its count frozen forever.
+    await waitFor(() =>
+      expect(
+        vi.mocked(invoke).mock.calls.filter(([c]) => c === "library_counts").length,
+      ).toBeGreaterThan(before),
+    );
+  });
+
+  it("re-counts after a player-bar import invalidation", async () => {
+    await act(async () => {
+      render(<App />);
+    });
+
+    await waitFor(() => expect(countOf("all")).toHaveTextContent("42"));
+    const before = vi.mocked(invoke).mock.calls.filter(([c]) => c === "library_counts").length;
+
+    act(() => invalidateLibrary());
+
     await waitFor(() =>
       expect(
         vi.mocked(invoke).mock.calls.filter(([c]) => c === "library_counts").length,

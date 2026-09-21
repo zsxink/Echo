@@ -324,6 +324,65 @@ fn play_temporary_is_session_only() {
     );
 }
 
+#[test]
+fn importing_current_temporary_entry_replaces_it_in_place_and_resumes_playing() {
+    let player = FakePlayer::new();
+    let mut coord = PlaybackCoordinator::new(player);
+    let path = std::path::PathBuf::from("/tmp/x.mp3");
+    let imported = song();
+    coord.play_temporary(TemporaryPlay {
+        display_name: "x.mp3".into(),
+        path: path.clone(),
+        duration: Some(180.0),
+        metadata: TemporaryMetadata::default(),
+        on_active_root: false,
+    });
+    let entry_id = coord.current().expect("temporary current").id;
+    coord.seek(42.5);
+
+    assert!(coord.replace_current_temporary_with_library(entry_id, &path, imported));
+    assert_eq!(coord.current().expect("library current").id, entry_id);
+    assert_eq!(
+        coord.current().and_then(|entry| entry.item.song_id()),
+        Some(imported)
+    );
+    assert_eq!(coord.snapshot().state, PlaybackState::Playing);
+    assert_eq!(coord.snapshot().position, Some(42.5));
+    assert_eq!(coord.player().last_loaded_song(), Some(imported));
+}
+
+#[test]
+fn importing_current_temporary_entry_preserves_pause_and_rejects_stale_completion() {
+    let player = FakePlayer::new();
+    let mut coord = PlaybackCoordinator::new(player);
+    let path = std::path::PathBuf::from("/tmp/x.mp3");
+    coord.play_temporary(TemporaryPlay {
+        display_name: "x.mp3".into(),
+        path: path.clone(),
+        duration: None,
+        metadata: TemporaryMetadata::default(),
+        on_active_root: false,
+    });
+    let entry_id = coord.current().expect("temporary current").id;
+    coord.player().send(PlayerCommand::Pause).unwrap();
+    let before = coord.current().unwrap().clone();
+
+    assert!(!coord.replace_current_temporary_with_library(
+        entry_id,
+        std::path::Path::new("/tmp/other.mp3"),
+        song(),
+    ));
+    assert_eq!(coord.current(), Some(&before));
+
+    let imported = song();
+    assert!(coord.replace_current_temporary_with_library(entry_id, &path, imported));
+    assert_eq!(
+        coord.current().and_then(|entry| entry.item.song_id()),
+        Some(imported)
+    );
+    assert_eq!(coord.snapshot().state, PlaybackState::Paused);
+}
+
 // -- Task 8.6: modes, shuffle bag, ">5s previous" ------------------------
 
 #[test]

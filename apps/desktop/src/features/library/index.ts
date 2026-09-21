@@ -1,6 +1,7 @@
 /** Public library-feature contract. Cross-feature consumers import only here. */
 import { resetLibraryCounts as resetCounts } from "./libraryCounts";
 import { resetSongUpdates as resetUpdates } from "./songUpdates";
+import { resetLibraryInvalidations as resetInvalidations } from "./libraryInvalidation";
 
 export { LibraryWorkspace } from "./LibraryWorkspace";
 export { SongList } from "./SongList";
@@ -43,10 +44,16 @@ export {
 } from "./libraryCounts";
 export type { LibraryCountView, LibraryCounts } from "./libraryCounts";
 export { publishSongUpdate, resetSongUpdates, subscribeSongUpdates } from "./songUpdates";
+export {
+  invalidateLibrary,
+  resetLibraryInvalidations,
+  subscribeLibraryInvalidations,
+} from "./libraryInvalidation";
 export type { LibraryViewKind, SongSort } from "./types";
 
 /** Reset feature-owned external state between isolated tests. */
 export function resetLibraryState(): void {
   resetCounts();
   resetUpdates();
+  resetInvalidations();
 }

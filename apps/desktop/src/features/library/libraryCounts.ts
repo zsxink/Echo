@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ExternalStore, useExternalStore } from "../../app/externalStore";
 import { bridge, reportBridgeFailure, subscribe } from "../../bridge";
 import { subscribeSongUpdates } from "./songUpdates";
+import { subscribeLibraryInvalidations } from "./libraryInvalidation";
 
 export type LibraryCountView = "all" | "favorites" | "recent";
 
@@ -89,10 +90,12 @@ export function useLibraryCountSync(enabled = true): void {
       })
       .catch((error: unknown) => reportBridgeFailure("library_status", error));
     const unsubscribe = subscribeSongUpdates(invalidate);
+    const unsubscribeLibrary = subscribeLibraryInvalidations(invalidate);
     setInvalidateHandler(invalidate);
     return () => {
       unlisten?.();
       unsubscribe();
+      unsubscribeLibrary();
       if (invalidateHandler === invalidate) invalidateHandler = null;
     };
   }, [enabled, invalidate]);

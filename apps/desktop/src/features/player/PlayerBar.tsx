@@ -28,7 +28,7 @@
  * custom properties on `.progress-line` / `.volume-line`.
  */
 
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 
 import { assetUrl, bridge } from "../../bridge";
 import {
@@ -41,7 +41,7 @@ import { useCoverKeys } from "../../app/coverArt";
 import { Icon } from "../../app/Icon";
 import { formatDuration } from "../library";
 import { useSongDetail } from "./useSongDetail";
-import { bumpLibraryCount, publishSongUpdate } from "../library";
+import { bumpLibraryCount, invalidateLibrary, publishSongUpdate } from "../library";
 import type { SongView } from "../../ipc/ipc-types.generated";
 
 export function PlayerBar() {
@@ -59,10 +59,19 @@ export function PlayerBar() {
   // every temporary item while the immersive view (same lookup, `?? coverKey`)
   // drew it fine.
   const [failedCoverId, setFailedCoverId] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<string | null>(null);
 
   const hasCurrent = snapshot.currentQueueEntryId !== null;
   const isTemporary = hasCurrent && snapshot.currentCanImport;
   const songId = snapshot.currentSongId;
+
+  useEffect(() => {
+    // A completion message belongs to the entry that was imported. Do not
+    // leave it attached to a different temporary song if the user navigates
+    // while the import request is in flight.
+    setImportResult(null);
+  }, [snapshot.currentQueueEntryId]);
 
   // 内置封面 (design §115 内置优先): one batched lookup per mounted bar, skipped
   // entirely while nothing is current (an empty id list is never requested).
@@ -89,6 +98,23 @@ export function PlayerBar() {
   function command(action: string) {
     // Coarse player control; the Rust coordinator owns the queue + snapshot.
     bridge.fireAndForget("player_control", { action });
+  }
+
+  async function importTemporary() {
+    if (importing) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const result = await bridge.call("import_current_temporary_file");
+      setImportResult(importResultText(result.kind));
+      if (result.kind === "imported" || result.kind === "duplicate") {
+        invalidateLibrary();
+      }
+    } catch {
+      setImportResult("导入失败");
+    } finally {
+      setImporting(false);
+    }
   }
 
   const mode = MODES[snapshot.mode];
@@ -173,14 +199,22 @@ export function PlayerBar() {
           </div>
         </button>
         {isTemporary ? (
-          <button
-            type="button"
-            className="btn player-import-button"
-            aria-label="导入"
-            onClick={() => bridge.fireAndForget("import_current_temporary_file")}
-          >
-            导入
-          </button>
+          importResult ? (
+            <span className="player-import-result" data-testid="player-import-result">
+              {importResult}
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="btn player-import-button"
+              aria-label="导入"
+              aria-busy={importing}
+              disabled={importing}
+              onClick={() => void importTemporary()}
+            >
+              {importing ? "导入中…" : "导入"}
+            </button>
+          )
         ) : null}
       </div>
 
@@ -307,6 +341,21 @@ export function PlayerBar() {
       </span>
     </footer>
   );
+}
+
+function importResultText(kind: string): string {
+  switch (kind) {
+    case "imported":
+      return "已导入到资料库";
+    case "duplicate":
+      return "资料库已有相同歌曲";
+    case "skipped":
+      return "不支持的格式，未导入";
+    case "libraryUnavailable":
+      return "资料库不可用";
+    default:
+      return "导入失败";
+  }
 }
 
 /** 播放模式: label, next mode in the cycle, and its solid glyph.

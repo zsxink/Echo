@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { bridge } from "../../bridge";
 import type { PagedSongs, SongView } from "../../ipc/ipc-types.generated";
 import type { LibraryViewKind, SongSort } from "./types";
+import { subscribeLibraryInvalidations } from "./libraryInvalidation";
 
 export interface SongPage {
   readonly songs: readonly SongView[];
@@ -175,6 +176,15 @@ export function useSongs(query: SongQuery): {
   }, []);
 
   const retry = useCallback(() => retryRef.current(), []);
+
+  // Imports initiated by a sibling surface (the persistent player bar) do not
+  // have access to this hook's local reset callback. Re-run the authoritative
+  // first-page query while retaining the last committed page until it returns.
+  useEffect(() => {
+    return subscribeLibraryInvalidations(() => {
+      setRefreshEpoch((epoch) => epoch + 1);
+    });
+  }, []);
 
   // In-view patch for a committed mutation (e.g. `set_favorite`'s returned
   // authoritative SongView). The favorites view only ever shows favorites, so

@@ -17,6 +17,7 @@ import { usePlayerSnapshot } from "../../player/playerStore";
 import type { ImportResultDto, SongView } from "../../ipc/ipc-types.generated";
 import { LibraryViewKind } from "./types";
 import { bumpLibraryCount, invalidateLibraryCounts } from "./libraryCounts";
+import { invalidateLibrary } from "./libraryInvalidation";
 import { SongList } from "./SongList";
 import { useSongs } from "./useSongs";
 import { publishSongUpdate, subscribeSongUpdates } from "./songUpdates";
@@ -120,8 +121,7 @@ export function LibraryWorkspace({
       const batch = await bridge.call("choose_and_import_files");
       if (batch === null) return;
       const feedback = classifyImportResults(batch.results);
-      reset();
-      invalidateLibraryCounts();
+      if (feedback.nonFailures.length > 0) invalidateLibrary();
       onLibraryChanged?.();
       if (feedback.nonFailures.length > 0) notify(feedback.summary);
       if (feedback.failures.length > 0) setImportFailures(feedback.failures);
@@ -137,7 +137,7 @@ export function LibraryWorkspace({
     } finally {
       setImporting(false);
     }
-  }, [importing, onLibraryChanged, reset]);
+  }, [importing, onLibraryChanged]);
 
   const onFavorite = useCallback(
     (song: SongView, favorite: boolean) => {

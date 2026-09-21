@@ -297,6 +297,69 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
             .ok();
     }
 
+    /// Convert the still-current temporary entry into its committed library
+    /// identity without rebuilding the queue. The expected path and entry id
+    /// are supplied by the command layer so an import that completes after the
+    /// user has switched tracks cannot replace a newer playback intent.
+    ///
+    /// The player is reloaded from the same media content at the old position,
+    /// preserving whether the user was actively listening or had paused.
+    pub fn replace_current_temporary_with_library(
+        &mut self,
+        entry_id: QueueEntryId,
+        expected_path: &std::path::Path,
+        song_id: echo_core::domain::ids::SongId,
+    ) -> bool {
+        let Some(current) = self.queue.current() else {
+            return false;
+        };
+        let QueueItem::Temporary(item) = &current.item else {
+            return false;
+        };
+        if current.id != entry_id || item.path != expected_path {
+            return false;
+        }
+
+        let snapshot = self.snapshot();
+        let Some(entry) = self.queue.get_mut(entry_id) else {
+            return false;
+        };
+        entry.item = QueueItem::Library(song_id);
+
+        let session = self.new_load_session(entry_id);
+        match snapshot.state {
+            echo_core::domain::state::PlaybackState::Playing => {
+                self.player
+                    .send(PlayerCommand::LoadLibrarySong {
+                        song_id,
+                        session_id: session,
+                    })
+                    .ok();
+            }
+            echo_core::domain::state::PlaybackState::Paused => {
+                self.player
+                    .send(PlayerCommand::LoadLibrarySongPaused {
+                        song_id,
+                        session_id: session,
+                    })
+                    .ok();
+            }
+            _ => {
+                // Import is initiated from an active player item in production.
+                // Keep unusual terminal/loading states conservative: the queue
+                // identity is committed, but do not invent a new play intent.
+                return true;
+            }
+        }
+        if let Some(position) = snapshot
+            .position
+            .filter(|value| value.is_finite() && *value >= 0.0)
+        {
+            self.player.send(PlayerCommand::Seek(position)).ok();
+        }
+        true
+    }
+
     /// Append an entry to the end of the queue ("加入队列", 8.5).
     /// Returns the new entry id.
     pub fn enqueue(&mut self, entry: QueueEntry) -> QueueEntryId {

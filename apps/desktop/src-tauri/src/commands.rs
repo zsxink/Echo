@@ -730,11 +730,12 @@ pub fn import_current_temporary_file(
 ) -> Result<echo_desktop::ipc::dto::ImportResultDto, IpcErrorDto> {
     // Read the temp file path from the coordinator under a short lock, then
     // release the lock before calling the (potentially slow) import pipeline.
-    let (path, display_name) = {
+    let (entry_id, path, display_name) = {
         let coord = state.coordinator.lock().expect("player coordinator lock");
         match coord.current().map(|e| &e.item) {
             Some(echo_desktop::player::queue::QueueItem::Temporary(t)) => {
-                (t.path.clone(), t.display_name.clone())
+                let entry_id = coord.current().expect("current entry still exists").id;
+                (entry_id, t.path.clone(), t.display_name.clone())
             }
             _ => {
                 return Err(IpcErrorDto::from(&echo_core::error::Error::validation(
@@ -745,9 +746,22 @@ pub fn import_current_temporary_file(
             }
         }
     };
-    services
+    let result = services
         .import_single_path(&path, &display_name)
-        .map_err(IpcErrorDto::from)
+        .map_err(IpcErrorDto::from)?;
+
+    let song_id = match &result {
+        echo_desktop::ipc::dto::ImportResultDto::Imported { song_id, .. }
+        | echo_desktop::ipc::dto::ImportResultDto::Duplicate {
+            existing_song_id: song_id,
+        } => song_id.parse::<SongId>().ok(),
+        _ => None,
+    };
+    if let Some(song_id) = song_id {
+        let mut coord = state.coordinator.lock().expect("player coordinator lock");
+        let _ = coord.replace_current_temporary_with_library(entry_id, &path, song_id);
+    }
+    Ok(result)
 }
 
 #[tauri::command]

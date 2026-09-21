@@ -116,11 +116,57 @@ describe("PlayerBar (task 11.7) — temporary item label", () => {
     expect(screen.queryByRole("button", { name: "导入" })).not.toBeInTheDocument();
   });
 
-  it("imports the current temporary file when clicked", () => {
+  it("imports the current temporary file when clicked", async () => {
     renderWithSnapshot();
-    capturedInvoke.mockResolvedValueOnce(null);
+    capturedInvoke.mockResolvedValueOnce({
+      kind: "imported",
+      operationId: "operation-1",
+      songId: "song-imported",
+      relativePath: "media/song.mp3",
+      renamed: false,
+    });
     fireEvent.click(screen.getByRole("button", { name: "导入" }));
     expect(capturedInvoke).toHaveBeenCalledWith("import_current_temporary_file", {});
+    expect(await screen.findByTestId("player-import-result")).toHaveTextContent("已导入到资料库");
+  });
+
+  it("shows 导入中 and ignores repeated clicks until the request completes", async () => {
+    let resolveImport: (value: unknown) => void = () => undefined;
+    capturedInvoke.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveImport = resolve;
+        }),
+    );
+    renderWithSnapshot();
+
+    const button = screen.getByRole("button", { name: "导入" });
+    fireEvent.click(button);
+    expect(button).toBeDisabled();
+    expect(button).toHaveTextContent("导入中…");
+    fireEvent.click(button);
+    expect(
+      capturedInvoke.mock.calls.filter(([command]) => command === "import_current_temporary_file"),
+    ).toHaveLength(1);
+
+    resolveImport({
+      kind: "duplicate",
+      existingSongId: "song-existing",
+    });
+    expect(await screen.findByTestId("player-import-result")).toHaveTextContent(
+      "资料库已有相同歌曲",
+    );
+  });
+
+  it.each([
+    ["skipped", "不支持的格式，未导入"],
+    ["failed", "导入失败"],
+  ])("shows a non-success result without claiming an import (%s)", async (kind, message) => {
+    capturedInvoke.mockResolvedValueOnce({ kind });
+    renderWithSnapshot();
+
+    fireEvent.click(screen.getByRole("button", { name: "导入" }));
+    expect(await screen.findByTestId("player-import-result")).toHaveTextContent(message);
   });
 });
 

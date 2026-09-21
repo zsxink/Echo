@@ -336,6 +336,13 @@ impl Queue {
         self.entries.iter().find(|e| e.id == id)
     }
 
+    /// Mutable lookup by stable queue-entry identity. The coordinator uses
+    /// this for in-place identity transitions that must not reorder history or
+    /// the pending lanes.
+    pub fn get_mut(&mut self, id: QueueEntryId) -> Option<&mut QueueEntry> {
+        self.entries.iter_mut().find(|e| e.id == id)
+    }
+
     /// Mark a restored entry blocked or available without changing its queue
     /// identity or position.
     pub fn set_blocked(&mut self, entry_id: QueueEntryId, blocked: bool) {

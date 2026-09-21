@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useSongs, type SongQuery } from "./useSongs";
+import { invalidateLibrary } from "./libraryInvalidation";
 
 const mocks = (
   globalThis as unknown as {
@@ -138,5 +139,16 @@ describe("useSongs search command", () => {
     act(() => result.current.patchSong({ id: "apple", title: "Apple", favorite: true } as never));
 
     expect(result.current.page.songs.map((song) => song.id)).toEqual(["apple", "zebra"]);
+  });
+
+  it("refreshes the current view from a sibling-surface library invalidation", async () => {
+    mocks.setInvoke("all_songs", { items: [{ id: "before" }], isLast: true, nextCursor: null });
+    const { result } = renderHook(() => useSongs(query));
+    await waitFor(() => expect(result.current.page.songs[0]?.id).toBe("before"));
+
+    mocks.setInvoke("all_songs", { items: [{ id: "after" }], isLast: true, nextCursor: null });
+    act(() => invalidateLibrary());
+
+    await waitFor(() => expect(result.current.page.songs[0]?.id).toBe("after"));
   });
 });
