@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 scenario_id: DP-R02-S07
 requirement: 播放队列
-scenario: 清空队列
+scenario: 下一首播放同一首去重
 layer: automated
 command: "cargo test -p echo-desktop --all-features player::queue::tests::clear_pending_keeps_current_and_history"
 

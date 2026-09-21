@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 scenario_id: DP-R02-S04
 requirement: 播放队列
-scenario: 下一首播放
+scenario: 加入队列
 layer: automated
 command: "pnpm --filter @echo/desktop test -- --run src/features/player/QueuePanel.test.tsx"
 

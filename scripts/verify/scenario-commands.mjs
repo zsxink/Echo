@@ -307,6 +307,14 @@ export const COMMANDS = {
   "SFI-R07-S02": CHECK("9.1"),
   "SFI-R08-S01": COREC("recover::tests::recovery_never_creates_a_duplicate_when_a_watcher_preempts"), // P0
   "SFI-R08-S02": COREC("recover::tests::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"), // P0
+  // R08（normalize-os-file-open-paths）的余下三条是结构契约，不是单条数据断言：
+  // S03 归一化由 `open_targets(&[tauri::Url]) -> Vec<PathBuf>` 的类型签名强制、
+  // S04 前端不得二次解码、S05 壳层不得回退到 `try_state` 查找。三者都由 task-9.1
+  // 的门（open_targets 单测 + main.rs 结构断言）覆盖，故与同族 P0 一样必须是
+  // automated 命令，不能落到人工 attestation 回退。
+  "SFI-R08-S03": CHECK("9.1"), // P0: 归一化契约由类型强制
+  "SFI-R08-S04": CHECK("9.1"), // P0: 前端不得二次解码
+  "SFI-R08-S05": CHECK("9.1"), // P0: 纵深防御不得被放宽
 
   // ===== sync-foundation (SYN) =====
   "SYN-R01-S01": CHECK("3.10"), // 0005 schema landed without touching 0001
