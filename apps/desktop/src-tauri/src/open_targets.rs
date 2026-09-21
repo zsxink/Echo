@@ -33,24 +33,25 @@ pub fn open_targets(urls: &[tauri::Url]) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::open_targets;
-    use std::path::PathBuf;
 
     #[test]
     fn decodes_percent_encoding_and_keeps_order() {
-        // Build the file URL from an absolute path so the fixture is valid on
-        // every host: `url::Url::to_file_path` rejects unix-style `/Users/…`
-        // inputs on Windows (only drive-letter prefixes decode), which would
-        // otherwise empty the result there.
-        let abs = PathBuf::from("/")
+        // Build the file URL from a real absolute path on the host. A
+        // constructed fixture like `/Music/…` is not enough: on Windows a
+        // root-only path (`\Music\…`) is not an absolute path with a drive
+        // prefix, so `Url::from_file_path` — which requires one — would fail
+        // to build the fixture in the first place. `temp_dir()` is absolute
+        // on every host.
+        let abs = std::env::temp_dir()
             .join("Music")
             .join("We Will Rock You - Queen.flac");
         let source = tauri::Url::from_file_path(&abs).expect("absolute path becomes a file url");
         let urls = vec![source];
         let paths = open_targets(&urls);
         assert_eq!(paths.len(), 1);
-        // The exact spelling differs per host (`/Music/…` vs `\Music\…`), so
-        // assert the cross-platform semantics: the path stays absolute, the
-        // encoding round-trips to the same leaf name, and order is preserved.
+        // The exact spelling differs per host (`/var/…` vs `C:\…`), so assert
+        // the cross-platform semantics: the path stays absolute, the encoding
+        // round-trips to the same leaf name, and order is preserved.
         assert!(paths[0].is_absolute(), "decoded path stays absolute");
         assert_eq!(
             paths[0].file_name().and_then(|n| n.to_str()),
@@ -74,11 +75,11 @@ mod tests {
 
     #[test]
     fn mixed_input_keeps_only_file_targets_in_order() {
-        // Same platform-portability note as the test above: build the two file
-        // URLs from absolute paths rather than hard-coding unix spellings that
-        // `Url::to_file_path` cannot decode on Windows.
-        let first = PathBuf::from("/a").join("One Two.flac");
-        let second = PathBuf::from("/b").join("中文.flac");
+        // Same portability note as the test above: build the two file URLs
+        // from real absolute paths so the fixture is valid on every host
+        // (drive-letter prefix required by `Url::from_file_path` on Windows).
+        let first = std::env::temp_dir().join("a").join("One Two.flac");
+        let second = std::env::temp_dir().join("b").join("中文.flac");
         let urls = vec![
             tauri::Url::from_file_path(&first).expect("absolute path becomes a file url"),
             "http://x/a.flac".parse().expect("valid url"),

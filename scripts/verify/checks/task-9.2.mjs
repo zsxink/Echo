@@ -44,11 +44,12 @@ if (!testOut.includes("tauri_conf_file_associations_cover_the_guaranteed_formats
 // 2. Both OS open paths converge on the FIFO via `deliver_file_open`.
 const main = readFileSync(resolve(ROOT, "apps", "desktop", "src-tauri", "src", "main.rs"), "utf8");
 // The single-instance callback and RunEvent::Opened must both call the FIFO
-// router, never emit directly.
-if (!/for path in args\.into_iter\(\)\.skip\(1\) \{\s*deliver_file_open\(app, path\);/.test(main)) {
+// router, never emit directly. The router takes the process-wide supervisor
+// plus the raw OS payload (`PathBuf` from argv, decoded path from `open_targets`).
+if (!/for path in args\.into_iter\(\)\.skip\(1\) \{\s*deliver_file_open\(app, &startup, PathBuf::from\(path\)\);/.test(main)) {
   fail("single-instance argv path does not route through deliver_file_open");
 }
-if (!/for url in urls \{\s*deliver_file_open\(app, url\.to_string\(\)\);/.test(main)) {
+if (!/for path in open_targets::open_targets\(&urls\) \{\s*deliver_file_open\(app, &startup, path\);/.test(main)) {
   fail("RunEvent::Opened path does not route through deliver_file_open");
 }
 if (!main.includes("RunEvent::Opened") || !main.includes("FILE_OPEN_REQUEST")) {

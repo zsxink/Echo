@@ -35,7 +35,10 @@ function selectedTestCommand(command) {
   return /\bcargo\s+test\b/.test(command) || /\bpnpm\b.*\btest\s+--\s+--run\b/.test(command);
 }
 
-function executedTestCount(output) {
+function executedTestCount(rawOutput) {
+  // Vitest colours its summary when it detects a TTY / `CI` (the runner runs
+  // tests too, but the checks here must not, so strip ANSI before counting).
+  const output = rawOutput.replace(/\u001B\[[0-9;]*[A-Za-z]/g, "");
   let count = 0;
   // Cargo emits one result line per test binary. A filter that matches nothing
   // exits successfully, but every result line reports `0 passed`.
