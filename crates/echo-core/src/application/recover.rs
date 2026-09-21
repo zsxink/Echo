@@ -63,15 +63,6 @@ fn wall_now_ms(clock: &dyn crate::application::ports::Clock) -> Result<i64, Erro
     Ok(i64::try_from(millis).unwrap_or(i64::MAX))
 }
 
-/// The logical per-resource trash-slot name, mirroring the delete use case's
-/// item key (design §9: `trash/<operation-id>/<resource>`).
-const fn delete_item_key(kind: OperationResourceKind) -> &'static str {
-    match kind {
-        OperationResourceKind::Audio => "audio",
-        OperationResourceKind::Lyrics => "lyrics",
-    }
-}
-
 /// Per-item recovery result.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ItemResult {
@@ -465,12 +456,10 @@ impl<'a> RecoverOperations<'a> {
                         why: "stage-pending delete item without a staged path".to_owned(),
                     });
                 };
-                self.deps.fs.stage_to_trash(
-                    root,
-                    operation,
-                    &item.target_path,
-                    delete_item_key(item.kind),
-                )?;
+                let trash_name = crate::application::delete::trash_resource_name(&trash_path)?;
+                self.deps
+                    .fs
+                    .stage_to_trash(root, operation, &item.target_path, trash_name)?;
                 if self.deps.hasher.hash(root, &trash_path)? != item.expected_hash {
                     return Err(Error::CorruptMedia {
                         operation: DELETE_OPERATION.to_owned(),
@@ -1840,16 +1829,29 @@ mod tests {
     // the song back to Available keeping UUID/favorite/stats/playlist position.
     // -----------------------------------------------------------------------
 
-    /// Read a file from the owned `trash/<operation>/<key>` slot.
+    /// Read a file from the staging path persisted for one journal item. The
+    /// basename is now the original media filename; using the journal path
+    /// keeps these tests compatible with older `audio`/`lyrics` entries too.
+    fn trash_path(fixture: &ScanFixture, operation: OperationId, key: &str) -> std::path::PathBuf {
+        fixture
+            .database
+            .items(operation)
+            .expect("delete items")
+            .into_iter()
+            .find(|item| item.item_key == key)
+            .and_then(|item| item.staging_path)
+            .map(|path| {
+                fixture
+                    .fs
+                    .root_path(fixture.root)
+                    .expect("root")
+                    .join(path.normalized())
+            })
+            .expect("journal staging path")
+    }
+
     fn read_trash(fixture: &ScanFixture, operation: OperationId, key: &str) -> Option<Vec<u8>> {
-        let base = fixture.fs.root_path(fixture.root).expect("root");
-        std::fs::read(
-            base.join(crate::domain::library::STAGING_ROOT)
-                .join("trash")
-                .join(operation.as_uuid().simple().to_string())
-                .join(key),
-        )
-        .ok()
+        std::fs::read(trash_path(fixture, operation, key)).ok()
     }
 
     /// The same-basename `.lrc` sidecar path beside an audio path.
@@ -2425,15 +2427,8 @@ mod tests {
         let operation = single_operation(&fixture);
 
         fixture.write_file("media/歌手/周杰伦 - 晴天.flac", b"foreign-original");
-        let base = fixture.fs.root_path(fixture.root).expect("root");
-        std::fs::write(
-            base.join(crate::domain::library::STAGING_ROOT)
-                .join("trash")
-                .join(operation.as_uuid().simple().to_string())
-                .join("audio"),
-            b"foreign-trash",
-        )
-        .expect("write contradictory trash");
+        std::fs::write(trash_path(&fixture, operation, "audio"), b"foreign-trash")
+            .expect("write contradictory trash");
 
         RecoverOperations::new(&fixture.deps)
             .run(fixture.root)

@@ -94,6 +94,8 @@ pub trait ControlPlanePort: Send + Sync {
 /// `TrashPending`/`TrashOutcomeUnknown`.
 pub trait SystemTrashPort: Send + Sync {
     /// Move the whole `trash/<operation-id>` directory to the system trash.
+    /// Its child files retain their original library basenames so the deleted
+    /// song remains recognizable when the trash entry is inspected.
     ///
     /// Returns `Ok(())` ONLY when the platform call unambiguously succeeded.
     /// Any other outcome is a failure the journal must preserve.

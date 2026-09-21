@@ -1068,11 +1068,13 @@ mod tests {
         std::fs::write(dir.path().join(source.normalized()), b"precious-audio").unwrap();
 
         // Resolving the slot without moving anything returns a stable path.
-        let slot = fs.trash_path(root, operation, "audio").unwrap();
+        let slot = fs.trash_path(root, operation, "删除我.flac").unwrap();
         let slot_display = slot.display().to_owned();
         assert!(slot_display.contains("/trash/"), "trash slot under trash/");
         assert_eq!(
-            fs.trash_path(root, operation, "audio").unwrap().display(),
+            fs.trash_path(root, operation, "删除我.flac")
+                .unwrap()
+                .display(),
             slot_display,
             "slot is stable for the operation lifetime"
         );
@@ -1080,7 +1082,7 @@ mod tests {
         // The delete-stage move is a rename into the owned trash slot; the
         // source disappears and the slot holds every byte.
         let staged = fs
-            .stage_to_trash(root, operation, &source, "audio")
+            .stage_to_trash(root, operation, &source, "删除我.flac")
             .unwrap();
         assert_eq!(staged.display(), slot_display, "filled slot matches");
         assert!(
@@ -1137,7 +1139,7 @@ mod tests {
         let source = RelativeMediaPath::new("occupied.flac").unwrap();
         std::fs::write(dir.path().join("occupied.flac"), b"source").unwrap();
         let stage = fs
-            .stage_to_trash(root, operation, &source, "audio")
+            .stage_to_trash(root, operation, &source, "occupied.flac")
             .unwrap();
         std::fs::write(dir.path().join("occupied.flac"), b"new-user-file").unwrap();
         let error = fs

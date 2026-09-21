@@ -210,7 +210,8 @@ impl<'a> DeleteSongs<'a> {
         expected_hash: &str,
     ) -> Result<(), Error> {
         let key = delete_item_key(kind);
-        let trash_path = self.deps.fs.trash_path(root, operation, key)?;
+        let trash_name = trash_resource_name(source)?;
+        let trash_path = self.deps.fs.trash_path(root, operation, trash_name)?;
         let item = OperationItem {
             kind: kind.into(),
             state: OperationState::StagePending,
@@ -223,7 +224,10 @@ impl<'a> DeleteSongs<'a> {
             claim_key: source.identity_key().to_owned(),
         };
         self.deps.journal.upsert_item(operation, item.clone())?;
-        let moved = self.deps.fs.stage_to_trash(root, operation, source, key)?;
+        let moved = self
+            .deps
+            .fs
+            .stage_to_trash(root, operation, source, trash_name)?;
         debug_assert_eq!(moved, trash_path, "adapter trash path must be stable");
         // Verify the staged copy against the expected hash (设计: 验证暂存 hash
         // 后才写 StageApplied).
@@ -458,13 +462,24 @@ pub(crate) fn safe_restore_target(
     Err(Error::conflict("no safe restore path available"))
 }
 
-/// The logical per-resource item key for the trash slot (adapter-owned layout
-/// below `trash/<operation-id>`).
+/// The logical per-resource item key used by the journal (and therefore kept
+/// stable as `audio`/`lyrics` for database compatibility). The physical trash
+/// entry uses the source file's original basename instead.
 const fn delete_item_key(kind: DeleteResourceKind) -> &'static str {
     match kind {
         DeleteResourceKind::Audio => "audio",
         DeleteResourceKind::Lyrics => "lyrics",
     }
+}
+
+/// Use the original filename for the physical trash entry while keeping the
+/// journal's logical resource key stable. This makes the item recognizable in
+/// the system trash and keeps old journals recoverable because recovery reads
+/// the persisted staging filename.
+pub(crate) fn trash_resource_name(path: &RelativeMediaPath) -> Result<&str, Error> {
+    path.file_name().ok_or_else(|| Error::InvariantViolation {
+        why: "delete resource path without a filename".to_owned(),
+    })
 }
 
 /// Wall-clock epoch millis from a [`crate::application::ports::Clock`]
@@ -595,11 +610,11 @@ mod tests {
             .join("trash")
             .join(outcome.operation.as_uuid().simple().to_string());
         assert_eq!(
-            std::fs::read(trash_dir.join("audio")).unwrap(),
+            std::fs::read(trash_dir.join("周杰伦 - 晴天.flac")).unwrap(),
             b"audio-bytes"
         );
         assert_eq!(
-            std::fs::read(trash_dir.join("lyrics")).unwrap(),
+            std::fs::read(trash_dir.join("周杰伦 - 晴天.lrc")).unwrap(),
             b"lrc-bytes"
         );
 
@@ -754,12 +769,15 @@ mod tests {
         // Nothing moved: the audio remains staged in the trash slot.
         let base = fixture.fs.root_path(fixture.root).expect("root");
         assert!(!base.join("歌手/周杰伦 - 晴天.flac").exists());
-        assert!(base
-            .join(crate::domain::library::STAGING_ROOT)
-            .join("trash")
-            .join(outcome.operation.as_uuid().simple().to_string())
-            .join("audio")
-            .exists());
+        let staged_audio = fixture
+            .database
+            .items(outcome.operation)
+            .unwrap()
+            .into_iter()
+            .find(|item| item.item_key == "audio")
+            .and_then(|item| item.staging_path)
+            .expect("audio staging path");
+        assert!(base.join(staged_audio.normalized()).exists());
     }
 
     #[test]

@@ -268,10 +268,11 @@ pub(crate) trait LegacyLibraryFileSystem: Send + Sync {
     /// The use case persists this location in the `StagePending` journal item
     /// *before* the rename, so a crash between the state write and the move
     /// still leaves a durable, resolvable staged location for recovery.
-    /// `resource_key` is a logical per-resource item name (e.g. `audio` /
-    /// `lyrics`), never a filesystem path. The adapter owns the slot layout;
-    /// the returned path must be stable and match what [`Self::stage_to_trash`]
-    /// later fills.
+    /// `resource_key` is one safe filename component chosen by the use case
+    /// (the delete flow uses the source file's original basename), never a
+    /// filesystem path. The journal's logical item key remains separate. The
+    /// adapter owns the slot layout; the returned path must be stable and
+    /// match what [`Self::stage_to_trash`] later fills.
     fn trash_path(
         &self,
         root: LibraryRootId,
@@ -281,15 +282,15 @@ pub(crate) trait LegacyLibraryFileSystem: Send + Sync {
     /// Move a *library-published* file at `source` into Echo's controlled
     /// `trash/<operation-id>` slot (design §9: 同盘 rename 移入专属受控目录的
     /// `trash/<operation-id>`), i.e. the delete stage. Like [`Self::publish`],
-    /// the adapter owns the physical slot: `resource_key` is a logical
-    /// per-resource item name (e.g. `audio` / `lyrics`), never a filesystem
-    /// path, and the resolved trash file is created exclusively (an existing
-    /// entry is a conflict, never replaced). `source` must be a real library
-    /// file (a symlink/reparse target is refused). The move is a same-volume
-    /// rename so the staged copy is atomically visible whole. Returns the
-    /// root-relative trash path the journal records and that recovery/undo
-    /// later resolve; an implementation must keep it stable for the
-    /// operation's lifetime and equal to [`Self::trash_path`].
+    /// the adapter owns the physical slot: `resource_key` is one safe filename
+    /// component, never a filesystem path, and the resolved trash file is
+    /// created exclusively (an existing entry is a conflict, never replaced).
+    /// `source` must be a real library file (a symlink/reparse target is
+    /// refused). The move is a same-volume rename so the staged copy is
+    /// atomically visible whole. Returns the root-relative trash path the
+    /// journal records and that recovery/undo later resolve; an implementation
+    /// must keep it stable for the operation's lifetime and equal to
+    /// [`Self::trash_path`].
     fn stage_to_trash(
         &self,
         root: LibraryRootId,

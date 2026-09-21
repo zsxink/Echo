@@ -400,14 +400,19 @@ mod tests {
     }
 
     fn staged_file(fixture: &ScanFixture, operation: OperationId) -> std::path::PathBuf {
+        let staging = fixture
+            .database
+            .items(operation)
+            .expect("delete items")
+            .into_iter()
+            .find(|item| item.item_key == "audio")
+            .and_then(|item| item.staging_path)
+            .expect("audio staging path");
         fixture
             .fs
             .root_path(fixture.root)
             .expect("fixture root")
-            .join(crate::domain::library::STAGING_ROOT)
-            .join("trash")
-            .join(operation.as_uuid().simple().to_string())
-            .join("audio")
+            .join(staging.normalized())
     }
 
     struct RemoveThenFailTrash {
@@ -418,14 +423,18 @@ mod tests {
     impl SystemTrashPort for RemoveThenFailTrash {
         fn send_to_trash(&self, _root: LibraryRootId, operation: OperationId) -> Result<(), Error> {
             self.calls.lock().unwrap().push(operation);
-            std::fs::remove_file(
-                self.root
-                    .join(crate::domain::library::STAGING_ROOT)
-                    .join("trash")
-                    .join(operation.as_uuid().simple().to_string())
-                    .join("audio"),
-            )
-            .expect("simulate a platform move before its error");
+            let operation_dir = self
+                .root
+                .join(crate::domain::library::STAGING_ROOT)
+                .join("trash")
+                .join(operation.as_uuid().simple().to_string());
+            let staged = std::fs::read_dir(&operation_dir)
+                .expect("operation staging directory")
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .find(|path| path.is_file())
+                .expect("staged file");
+            std::fs::remove_file(staged).expect("simulate a platform move before its error");
             Err(Error::unavailable(
                 "system trash",
                 "simulated post-call failure",
