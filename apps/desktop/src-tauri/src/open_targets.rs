@@ -33,27 +33,33 @@ pub fn open_targets(urls: &[tauri::Url]) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::open_targets;
+    use std::path::PathBuf;
 
     #[test]
     fn decodes_percent_encoding_and_keeps_order() {
-        let urls: Vec<tauri::Url> =
-            std::iter::once("file:///Users/x/Music/We%20Will%20Rock%20You%20-%20Queen.flac")
-                .map(|s| s.parse().expect("valid url"))
-                .collect();
+        // Build the file URL from an absolute path so the fixture is valid on
+        // every host: `url::Url::to_file_path` rejects unix-style `/Users/…`
+        // inputs on Windows (only drive-letter prefixes decode), which would
+        // otherwise empty the result there.
+        let abs = PathBuf::from("/")
+            .join("Music")
+            .join("We Will Rock You - Queen.flac");
+        let source = tauri::Url::from_file_path(&abs).expect("absolute path becomes a file url");
+        let urls = vec![source];
         let paths = open_targets(&urls);
         assert_eq!(paths.len(), 1);
-        // The exact spelling differs per host (`/Users/…` vs `\Users\…`), so
+        // The exact spelling differs per host (`/Music/…` vs `\Music\…`), so
         // assert the cross-platform semantics: the path stays absolute, the
-        // percent-encoding is decoded, and order is preserved.
+        // encoding round-trips to the same leaf name, and order is preserved.
         assert!(paths[0].is_absolute(), "decoded path stays absolute");
         assert_eq!(
             paths[0].file_name().and_then(|n| n.to_str()),
             Some("We Will Rock You - Queen.flac"),
-            "percent-encoding is decoded on every host",
+            "space survives the URL round-trip on every host",
         );
-        assert!(
-            !paths[0].to_string_lossy().contains("%20"),
-            "no percent-encoding survives the decode",
+        assert_eq!(
+            paths[0], abs,
+            "the path round-trips exactly on the host that produced it",
         );
     }
 
@@ -68,14 +74,16 @@ mod tests {
 
     #[test]
     fn mixed_input_keeps_only_file_targets_in_order() {
-        let urls: Vec<tauri::Url> = [
-            "file:///a/One%20Two.flac",
-            "http://x/a.flac",
-            "file:///b/%E4%B8%AD%E6%96%87.flac",
-        ]
-        .iter()
-        .map(|s| s.parse().expect("valid url"))
-        .collect();
+        // Same platform-portability note as the test above: build the two file
+        // URLs from absolute paths rather than hard-coding unix spellings that
+        // `Url::to_file_path` cannot decode on Windows.
+        let first = PathBuf::from("/a").join("One Two.flac");
+        let second = PathBuf::from("/b").join("中文.flac");
+        let urls = vec![
+            tauri::Url::from_file_path(&first).expect("absolute path becomes a file url"),
+            "http://x/a.flac".parse().expect("valid url"),
+            tauri::Url::from_file_path(&second).expect("absolute path becomes a file url"),
+        ];
         let paths = open_targets(&urls);
         assert_eq!(paths.len(), 2, "non-file schemes are dropped");
         // Decoding, ordering and file-only filtering — asserted via the leaf,
@@ -86,5 +94,7 @@ mod tests {
             .collect();
         assert_eq!(leaves, vec!["One Two.flac", "中文.flac"]);
         assert!(paths.iter().all(|p| p.is_absolute()));
+        assert_eq!(paths[0], first);
+        assert_eq!(paths[1], second);
     }
 }

@@ -110,9 +110,21 @@ try {
     fail(`hot start did not hand off to the running instance (${hot.status})\n${hot.stdout || ""}${hot.stderr || ""}`);
   }
 
-  await wait(500);
-  if (!existsSync(openedLog) || !readFileSync(openedLog, "utf8").includes(basename(FIXTURE))) {
-    fail("hot single-instance launch did not deliver the opened audio path to the first instance");
+  // Delivery is asynchronous on the first instance's side: the path is handed
+  // to the running instance immediately, but the shell only writes the log
+  // once the frontend has registered its `app://file-open-request` listener
+  // (the path waits in the startup FIFO until then). On a slow or headless
+  // runner the WebView can take several seconds to load, so poll for the log
+  // rather than guessing a fixed delay.
+  const deadline = Date.now() + 10000;
+  let opened = "";
+  for (;;) {
+    if (existsSync(openedLog)) opened = readFileSync(openedLog, "utf8");
+    if (opened.includes(basename(FIXTURE))) break;
+    if (Date.now() > deadline) {
+      fail("hot single-instance launch did not deliver the opened audio path to the first instance");
+    }
+    await wait(200);
   }
 
   const exitCode = await once(first, "close");
