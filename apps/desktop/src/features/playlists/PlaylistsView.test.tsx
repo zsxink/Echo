@@ -198,6 +198,94 @@ describe("PlaylistsView (task 10.9)", () => {
     expect(onDeleted).toHaveBeenCalled();
     expect(onLibraryChanged).toHaveBeenCalled();
   });
+
+  it("uses the selected set for right-click batch menus", async () => {
+    const members = [
+      { id: "song-1", title: "晴天", favorite: false, playCount: 0, availability: "available" },
+      { id: "song-2", title: "夜曲", favorite: true, playCount: 0, availability: "available" },
+    ];
+    mockBridge({ playlist_members: members });
+    renderView();
+    await screen.findByTestId("song-row-song-1");
+
+    fireEvent.click(screen.getByTestId("selection-mode-button"));
+    fireEvent.contextMenu(screen.getByTestId("song-row-song-1"));
+    expect(screen.getByTestId("batch-song-menu")).toHaveTextContent("已选 1 首歌曲");
+
+    fireEvent.click(screen.getByTestId("song-select-song-2"));
+    fireEvent.contextMenu(screen.getByTestId("song-row-song-1"));
+    expect(screen.getByTestId("batch-song-menu")).toHaveTextContent("已选 2 首歌曲");
+  });
+
+  it("exits multi-select when switching to another playlist", async () => {
+    const members = [
+      { id: "song-1", title: "晴天", favorite: false, playCount: 0, availability: "available" },
+    ];
+    mockBridge({ playlist_members: members });
+    const { rerender } = renderView();
+    await screen.findByTestId("song-row-song-1");
+
+    fireEvent.click(screen.getByTestId("selection-mode-button"));
+    fireEvent.click(screen.getByTestId("song-select-song-1"));
+    expect(screen.getByTestId("selection-mode-button")).toHaveAttribute("aria-pressed", "true");
+
+    rerender(
+      <PlaylistsView
+        playlistId="pl-2"
+        title="通勤"
+        root=""
+        existingNames={["深夜", "通勤"]}
+        readOnly={false}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("selection-mode-button")).toHaveAttribute("aria-pressed", "false"),
+    );
+    expect(screen.queryByTestId("song-select-song-1")).not.toBeInTheDocument();
+  });
+
+  it("removes the selected members one by one and refreshes the playlist", async () => {
+    const members = [
+      { id: "song-1", title: "晴天", favorite: false, playCount: 0, availability: "available" },
+      { id: "song-2", title: "夜曲", favorite: false, playCount: 0, availability: "available" },
+    ];
+    const onLibraryChanged = vi.fn();
+    mockBridge({ playlist_members: members, remove_playlist_song: undefined });
+    renderView({ onLibraryChanged });
+    await screen.findByTestId("song-row-song-1");
+
+    fireEvent.click(screen.getByTestId("selection-mode-button"));
+    fireEvent.click(screen.getByTestId("song-select-song-1"));
+    fireEvent.click(screen.getByTestId("song-select-song-2"));
+    fireEvent.contextMenu(screen.getByTestId("song-row-song-1"));
+    fireEvent.click(screen.getByTestId("batch-remove-playlist"));
+
+    await waitFor(() => {
+      expect(call).toHaveBeenCalledWith("remove_playlist_song", {
+        playlist: "pl-1",
+        song: "song-1",
+      });
+      expect(call).toHaveBeenCalledWith("remove_playlist_song", {
+        playlist: "pl-1",
+        song: "song-2",
+      });
+    });
+    expect(onLibraryChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables batch writes for a read-only playlist", async () => {
+    mockBridge({ playlist_members: [{ id: "song-1", title: "晴天", favorite: false }] });
+    renderView({ readOnly: true });
+    await screen.findByTestId("song-row-song-1");
+
+    fireEvent.click(screen.getByTestId("selection-mode-button"));
+    fireEvent.click(screen.getByTestId("song-select-song-1"));
+    fireEvent.contextMenu(screen.getByTestId("song-row-song-1"));
+    expect(screen.getByTestId("batch-add-playlist")).toBeDisabled();
+    expect(screen.queryByTestId("batch-delete")).toBeNull();
+    expect(screen.getByTestId("batch-play-next")).toBeEnabled();
+  });
 });
 
 /**

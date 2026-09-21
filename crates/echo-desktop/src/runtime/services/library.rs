@@ -27,7 +27,13 @@ impl super::AppServices {
             .is_some_and(|root| self.supervisor.is_scanning(root.id()));
         Ok(LibraryStatus {
             configured: root.is_some(),
-            read_only: root.as_ref().is_some_and(|root| !root.write_capable()),
+            // The filesystem bit alone is not enough to determine whether a
+            // mutation is legal. Startup recovery can keep the library in a
+            // durable read-only gate even when the directory itself is
+            // writable; expose the effective capability so the UI does not
+            // offer actions that every command will reject as unavailable.
+            read_only: !self.startup.writes_allowed()
+                || root.as_ref().is_some_and(|root| !root.write_capable()),
             unavailable: root.as_ref().is_some_and(|root| {
                 !matches!(
                     root.availability(),

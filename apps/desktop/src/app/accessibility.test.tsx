@@ -97,6 +97,20 @@ describe("Keyboard path (task 12.2)", () => {
     expect(await screen.findByRole("heading", { name: "喜欢的音乐" })).toBeInTheDocument();
   });
 
+  it("exits multi-select when switching to another library view", async () => {
+    renderConfiguredShell();
+    await screen.findByTestId("song-row-song-1");
+
+    fireEvent.click(screen.getByTestId("selection-mode-button"));
+    fireEvent.click(screen.getByTestId("song-select-song-1"));
+    expect(screen.getByTestId("selection-mode-button")).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: /^喜欢的音乐/ }));
+    await screen.findByRole("heading", { name: "喜欢的音乐" });
+    expect(screen.getByTestId("selection-mode-button")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByTestId("song-select-song-1")).not.toBeInTheDocument();
+  });
+
   it("the song action menu is keyboard-reachable with roving focus", async () => {
     renderConfiguredShell();
     // Open the song menu from the row's "⋯" control (aria-label="歌曲操作").

@@ -23,27 +23,39 @@ import { useEffect, useRef, useState } from "react";
 import { bridge } from "../../bridge";
 import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
 import { Icon } from "../../app/Icon";
-import type { PlaylistView } from "../../ipc/ipc-types.generated";
-import { coverClass } from "../library";
+import { notify } from "../../app/toast";
+import type { PlaylistView, SongView } from "../../ipc/ipc-types.generated";
+import { coverClass, formatBatchResult, runAddToPlaylistsBatch } from "../library";
 import { PlaylistNameDialog } from "./PlaylistNameDialog";
 
 export interface AddToPlaylistDialogProps {
-  readonly songId: string;
+  /** Backward-compatible single-song entry point. */
+  readonly songId?: string;
+  /** Batch entry point; ids are submitted in display order. */
+  readonly songIds?: readonly string[];
+  /** Optional authoritative views for batch eligibility and result details. */
+  readonly songs?: readonly SongView[];
   /** Shown in the picker's sub line; the song's display title. */
   readonly songTitle?: string;
   /** The active root is required if the picker creates a playlist inline. */
   readonly root?: string;
+  /** Effective library write capability, including the startup recovery gate. */
+  readonly readOnly?: boolean;
   readonly onClose: () => void;
   readonly onDone: () => void;
 }
 
 export function AddToPlaylistDialog({
   songId,
+  songIds,
+  songs,
   songTitle,
   root,
+  readOnly = false,
   onClose,
   onDone,
 }: AddToPlaylistDialogProps) {
+  const selectedSongIds = songs?.map((song) => song.id) ?? songIds ?? (songId ? [songId] : []);
   const [playlists, setPlaylists] = useState<readonly PlaylistView[]>([]);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -82,27 +94,39 @@ export function AddToPlaylistDialog({
   }
 
   async function confirm() {
-    if (selected.size === 0) {
+    if (selected.size === 0 || selectedSongIds.length === 0) {
       setError("请至少选择一个歌单");
       return;
     }
     setError(null);
     try {
-      await bridge.call("add_to_playlists", {
-        song: songId,
-        targets: Array.from(selected),
-      });
-      onDone();
-      onClose();
-    } catch (err) {
-      // A conflict (already a member) is idempotent by design; only surface a
-      // non-idempotent failure.
-      if (codeOf(err) !== "conflict") {
-        setError("添加失败，请重试");
-      } else {
+      const operationSongs =
+        songs ??
+        selectedSongIds.map((id): SongView => ({
+          id,
+          favorite: false,
+          playCount: 0,
+          availability: "available",
+          relativePath: "",
+        }));
+      const result = await runAddToPlaylistsBatch(operationSongs, Array.from(selected));
+      if (result.failed > 0) {
+        setError(
+          selectedSongIds.length === 1
+            ? "添加失败，请重试"
+            : `部分歌曲添加失败（${formatBatchResult(result)}）`,
+        );
+        return;
+      }
+      if (result.skipped > 0 || selectedSongIds.length > 1) {
+        notify(`添加到歌单：${formatBatchResult(result)}`);
+      }
+      if (result.succeeded > 0 || result.skipped > 0) {
         onDone();
         onClose();
       }
+    } catch {
+      setError("添加失败，请重试");
     }
   }
 
@@ -121,7 +145,9 @@ export function AddToPlaylistDialog({
             <h2 id="playlist-picker-title">添加到歌单</h2>
           </div>
           <p className="playlist-picker-sub" id="playlist-picker-sub">
-            将「{songTitle ?? "歌曲"}」添加到：
+            {selectedSongIds.length === 1
+              ? `将「${songTitle ?? "歌曲"}」添加到：`
+              : `将已选 ${selectedSongIds.length} 首歌曲添加到：`}
           </p>
 
           <div className="playlist-picker-list" role="listbox" aria-label="选择歌单">
@@ -176,6 +202,8 @@ export function AddToPlaylistDialog({
             <button
               type="button"
               className="playlist-picker-new"
+              disabled={readOnly}
+              title={readOnly ? "当前资料库为只读状态" : undefined}
               onClick={() => setCreating(true)}
               data-testid="playlist-picker-new"
             >
@@ -189,6 +217,7 @@ export function AddToPlaylistDialog({
               <button
                 type="button"
                 className="playlist-picker-confirm"
+                disabled={readOnly}
                 onClick={() => void confirm()}
               >
                 确认
@@ -225,11 +254,4 @@ export function AddToPlaylistDialog({
       ) : null}
     </>
   );
-}
-
-function codeOf(err: unknown): string {
-  if (err instanceof Error && "code" in err) {
-    return (err as unknown as { code?: string }).code ?? "";
-  }
-  return "";
 }

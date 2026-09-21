@@ -91,6 +91,48 @@ describe("SongRow playback binding", () => {
     expect(props.onPlay).not.toHaveBeenCalled();
   });
 
+  it("opens the selection-aware menu from the context menu without playing", () => {
+    const onContextMenu = vi.fn();
+    const { props } = renderRow({ onContextMenu });
+    const row = screen.getByTestId("song-row-song-1");
+
+    fireEvent.contextMenu(row, { clientX: 120, clientY: 230 });
+
+    expect(onContextMenu).toHaveBeenCalledTimes(1);
+    expect(onContextMenu).toHaveBeenCalledWith({
+      top: 230,
+      right: 120,
+      bottom: 230,
+      left: 120,
+      kind: "pointer",
+    });
+    expect(props.onPlay).not.toHaveBeenCalled();
+  });
+
+  it("keeps the selection control separate from row playback", () => {
+    const onToggleSelection = vi.fn();
+    const { props } = renderRow({ onToggleSelection, bulkSelected: true, selectionMode: true });
+    const select = screen.getByTestId("song-select-song-1");
+
+    expect(select).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(select);
+
+    expect(onToggleSelection).toHaveBeenCalledTimes(1);
+    expect(props.onPlay).not.toHaveBeenCalled();
+  });
+
+  it("opens the batch menu from the keyboard menu key", () => {
+    const onContextMenu = vi.fn();
+    const { props } = renderRow({ onContextMenu });
+    const row = screen.getByTestId("song-row-song-1");
+    row.focus();
+
+    fireEvent.keyDown(row, { key: "ContextMenu" });
+
+    expect(onContextMenu).toHaveBeenCalledTimes(1);
+    expect(props.onPlay).not.toHaveBeenCalled();
+  });
+
   it("plays from the keyboard, the way the prototype's tabbable row does", () => {
     const { props } = renderRow();
     const row = screen.getByTestId("song-row-song-1");

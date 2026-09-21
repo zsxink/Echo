@@ -80,6 +80,16 @@ const GLYPHS: Record<string, Glyph> = {
     ),
   },
   check: { strokeWidth: 2.4, nodes: <path d="m5 12 4.2 4.2L19 6.8" /> },
+  selectAll: {
+    nodes: (
+      <>
+        <circle cx="5" cy="6" r="1" fill="currentColor" stroke="none" />
+        <circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" />
+        <circle cx="5" cy="18" r="1" fill="currentColor" stroke="none" />
+        <path d="M10 6h10M10 12h10M10 18h10" />
+      </>
+    ),
+  },
   more: {
     solid: true,
     nodes: (

@@ -45,6 +45,10 @@ export interface SongRowProps {
    * playback animates the bars — a paused song keeps them frozen.
    */
   readonly playing: boolean;
+  /** True when this row belongs to the current bulk-selection set. */
+  readonly bulkSelected?: boolean;
+  /** Selection controls are shown only after the workspace enters multi-select mode. */
+  readonly selectionMode?: boolean;
   /**
    * The opaque cover-asset key of this song's **embedded** artwork, or `null`
    * when the file carries none (design §115 内置优先). The prototype's palette
@@ -54,6 +58,9 @@ export interface SongRowProps {
   readonly onPlay: () => void;
   readonly onFavorite: (favorite: boolean) => void;
   readonly onEnqueue: () => void;
+  readonly onToggleSelection?: () => void;
+  /** Opens the selection-aware menu without triggering playback. */
+  readonly onContextMenu?: (anchor: MenuAnchor) => void;
   /** The menu anchors to the control that opened it, as the prototype does. */
   readonly onOpenMenu: (anchor: MenuAnchor) => void;
 }
@@ -92,9 +99,13 @@ export function SongRow({
   nowPlaying,
   playing,
   coverKey,
+  bulkSelected = false,
+  selectionMode = false,
   onPlay,
   onFavorite,
   onEnqueue,
+  onToggleSelection,
+  onContextMenu,
   onOpenMenu,
 }: SongRowProps) {
   const missing = song.availability === "missing";
@@ -118,6 +129,7 @@ export function SongRow({
       className={[
         "track-row",
         nowPlaying ? "selected" : "",
+        bulkSelected ? "bulk-selected" : "",
         // The stylesheet gates the bars' animation on `.is-playing`, so the
         // indicator only dances while playback actually runs (frozen when
         // paused) — the prototype's `.is-playing` binding.
@@ -128,6 +140,7 @@ export function SongRow({
         .filter(Boolean)
         .join(" ")}
       aria-current={nowPlaying ? "true" : undefined}
+      aria-selected={selectionMode ? bulkSelected : undefined}
       // The prototype's row is the keyboard play path (`tabindex="0"` +
       // Enter/Space). An unplayable row is not a target, so it stays out of the
       // tab order rather than being focusable and inert.
@@ -137,14 +150,44 @@ export function SongRow({
         play();
       }}
       onKeyDown={(event: KeyboardEvent<HTMLTableRowElement>) => {
+        if (
+          onContextMenu &&
+          (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey))
+        ) {
+          event.preventDefault();
+          onContextMenu?.(anchorOf(event.currentTarget));
+          return;
+        }
         if (event.key !== "Enter" && event.key !== " ") return;
         if (fromRowControl(event.target)) return;
         event.preventDefault();
         play();
       }}
+      onContextMenu={(event) => {
+        if (!onContextMenu) return;
+        event.preventDefault();
+        onContextMenu?.(pointerAnchorOf(event.clientX, event.clientY));
+      }}
       data-song-id={song.id}
       data-testid={`song-row-${song.id}`}
     >
+      {selectionMode ? (
+        <td className="selection-column">
+          <button
+            type="button"
+            className={`row-select${bulkSelected ? " active" : ""}`}
+            aria-label={bulkSelected ? `取消选择${title}` : `选择${title}`}
+            aria-pressed={bulkSelected}
+            data-testid={`song-select-${song.id}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleSelection?.();
+            }}
+          >
+            {bulkSelected ? <Icon name="check" /> : null}
+          </button>
+        </td>
+      ) : null}
       <td className="track-number">
         <span>{String(index).padStart(2, "0")}</span>
         <button
@@ -237,4 +280,19 @@ export function SongRow({
       </td>
     </tr>
   );
+}
+
+function anchorOf(element: HTMLElement): MenuAnchor {
+  const box = element.getBoundingClientRect();
+  return { top: box.top, right: box.right, bottom: box.bottom, left: box.left };
+}
+
+function pointerAnchorOf(clientX: number, clientY: number): MenuAnchor {
+  return {
+    top: clientY,
+    right: clientX,
+    bottom: clientY,
+    left: clientX,
+    kind: "pointer",
+  };
 }

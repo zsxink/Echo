@@ -123,9 +123,7 @@ export function PlaylistNameDialog({
     } catch (err) {
       // A duplicate name is rejected server-side too (task 6.6); never invent a
       // success for it.
-      setError(
-        codeOf(err) === "conflict" ? "已存在同名歌单，请换一个名称。" : "保存歌单失败，请重试",
-      );
+      setError(saveErrorMessage(err, creating));
     } finally {
       setBusy(false);
     }
@@ -297,4 +295,22 @@ function codeOf(err: unknown): string {
     return (err as unknown as { code?: string }).code ?? "";
   }
   return "";
+}
+
+function saveErrorMessage(err: unknown, creating: boolean): string {
+  switch (codeOf(err)) {
+    case "conflict":
+      return "已存在同名歌单，请换一个名称。";
+    case "permission":
+      return "当前资料库没有写入权限，请检查目录权限。";
+    case "unavailable":
+      return "当前资料库不可用或已切换，请刷新后重试。";
+    case "validation":
+      return "歌单信息无效，请检查名称或封面。";
+    case "io":
+    case "storage":
+      return "资料库保存失败，请检查磁盘空间后重试。";
+    default:
+      return creating ? "创建歌单失败，请重试" : "保存歌单失败，请重试";
+  }
 }

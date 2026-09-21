@@ -20,6 +20,7 @@ import { useRef, useState } from "react";
 
 import type { SongView } from "../../ipc/ipc-types.generated";
 import { useCoverKeys } from "../../app/coverArt";
+import { Icon } from "../../app/Icon";
 import { SongRow } from "./SongRow";
 import type { MenuAnchor } from "./SongMenu";
 
@@ -37,6 +38,14 @@ export interface SongListProps {
   readonly currentSongId: string | null;
   /** True while playback is actually running — animates the current row's bars. */
   readonly playing: boolean;
+  /** Stable ids selected by the owning workspace, including off-window rows. */
+  readonly selectedIds?: ReadonlySet<string>;
+  /** Selection controls and the extra column are visible only in this mode. */
+  readonly selectionMode?: boolean;
+  readonly allLoadedSelected?: boolean;
+  readonly onToggleSelection?: (song: SongView) => void;
+  readonly onToggleSelectAll?: () => void;
+  readonly onContextMenu?: (song: SongView, anchor: MenuAnchor) => void;
   /** A recoverable load error (task 10.7); existing content is preserved. */
   readonly error?: string | null;
   readonly onRetry?: () => void;
@@ -52,8 +61,20 @@ export interface SongListProps {
 }
 
 export function SongList(props: SongListProps) {
-  const { songs, search, loading, isLast, readOnly, currentSongId, playing, error, onRetry } =
-    props;
+  const {
+    songs,
+    search,
+    loading,
+    isLast,
+    readOnly,
+    currentSongId,
+    playing,
+    selectedIds = new Set<string>(),
+    selectionMode = false,
+    allLoadedSelected = false,
+    error,
+    onRetry,
+  } = props;
   const [scrollTop, setScrollTop] = useState(0);
   const viewportRef = useRef<HTMLDivElement>(null);
 
@@ -126,6 +147,7 @@ export function SongList(props: SongListProps) {
       ) : null}
       <table className="track-table">
         <colgroup>
+          {selectionMode ? <col className="selection" /> : null}
           <col className="number" />
           <col className="title" />
           <col className="album" />
@@ -134,7 +156,20 @@ export function SongList(props: SongListProps) {
         </colgroup>
         <thead>
           <tr>
-            <th>#</th>
+            {selectionMode ? (
+              <th className="selection-column">
+                <button
+                  type="button"
+                  className={`list-select-all${allLoadedSelected ? " active" : ""}`}
+                  aria-label={allLoadedSelected ? "取消全选当前已加载歌曲" : "全选当前已加载歌曲"}
+                  aria-pressed={allLoadedSelected}
+                  disabled={songs.length === 0}
+                  onClick={props.onToggleSelectAll}
+                >
+                  {allLoadedSelected ? <Icon name="check" /> : null}
+                </button>
+              </th>
+            ) : null}
             <th>歌曲</th>
             <th className="album">专辑</th>
             <th>时长</th>
@@ -151,10 +186,16 @@ export function SongList(props: SongListProps) {
               readOnly={readOnly}
               nowPlaying={currentSongId !== null && song.id === currentSongId}
               playing={playing}
+              selectionMode={selectionMode}
+              bulkSelected={selectionMode && selectedIds.has(song.id)}
               coverKey={coverKeys.get(song.id) ?? null}
               onPlay={() => props.onPlay(song)}
               onFavorite={(favorite) => props.onFavorite(song, favorite)}
               onEnqueue={() => props.onEnqueue(song)}
+              onToggleSelection={() => props.onToggleSelection?.(song)}
+              onContextMenu={
+                props.onContextMenu ? (anchor) => props.onContextMenu?.(song, anchor) : undefined
+              }
               onOpenMenu={(anchor) => props.onOpenMenu(song, anchor)}
             />
           ))}

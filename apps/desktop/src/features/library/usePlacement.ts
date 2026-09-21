@@ -30,6 +30,12 @@ export function usePlacement(
   const viewportW = window.innerWidth || 1280;
   const viewportH = window.innerHeight || 800;
   const boxHeight = height > 0 ? height : MENU_HEIGHT;
+  if (anchor.kind === "pointer") {
+    return {
+      left: Math.max(VIEWPORT_GAP, Math.min(viewportW - MENU_WIDTH - VIEWPORT_GAP, anchor.left)),
+      top: Math.max(VIEWPORT_GAP, Math.min(viewportH - boxHeight - VIEWPORT_GAP, anchor.top)),
+    };
+  }
   return {
     left: Math.max(
       VIEWPORT_GAP,

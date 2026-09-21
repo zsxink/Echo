@@ -110,4 +110,24 @@ describe("PlaylistNameDialog (task 10.9)", () => {
     );
     expect(onDone).toHaveBeenCalledWith("深夜");
   });
+
+  it("surfaces a read-only backend failure instead of the generic save error", async () => {
+    call.mockReset();
+    const error = Object.assign(new Error("permission"), { code: "permission" });
+    call.mockRejectedValueOnce(error);
+    render(
+      <PlaylistNameDialog
+        mode="edit"
+        playlistId="pl-1"
+        initialName="深夜"
+        existingNames={[]}
+        onClose={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("保存"));
+
+    expect(await screen.findByText("当前资料库没有写入权限，请检查目录权限。")).toBeInTheDocument();
+  });
 });

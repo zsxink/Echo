@@ -165,6 +165,44 @@ describe("SongList windowing (task 10.6)", () => {
     expect(container.querySelectorAll(".track-row").length).toBe(0);
   });
 
+  it("restores a controlled bulk selection after a virtual row leaves and re-enters", () => {
+    const songs = makeSongs(100);
+    const selectedIds = new Set(["song-0"]);
+    const { container } = render(
+      <SongList
+        songs={songs}
+        search=""
+        loading={false}
+        isLast
+        readOnly={false}
+        currentSongId={null}
+        playing={false}
+        selectionMode
+        selectedIds={selectedIds}
+        onToggleSelection={vi.fn()}
+        onToggleSelectAll={vi.fn()}
+        onLoadMore={noop}
+        onClearSearch={noop}
+        onPlay={noop}
+        onFavorite={noop}
+        onEnqueue={noop}
+        onOpenMenu={noop}
+      />,
+    );
+    expect(screen.getByTestId("song-row-song-0")).toHaveClass("bulk-selected");
+    expect(screen.getByTestId("song-select-song-0").querySelector("svg")).toBeInTheDocument();
+    expect(screen.getByTestId("song-select-song-1").querySelector("svg")).toBeNull();
+    expect(screen.getByLabelText("全选当前已加载歌曲").querySelector("svg")).toBeNull();
+
+    const viewport = screen.getByTestId("song-list");
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 440 });
+    fireEvent.scroll(viewport, { target: { scrollTop: 440 } });
+    expect(container.querySelector('[data-testid="song-row-song-0"]')).toBeNull();
+
+    fireEvent.scroll(viewport, { target: { scrollTop: 0 } });
+    expect(screen.getByTestId("song-row-song-0")).toHaveClass("bulk-selected");
+  });
+
   it("shows a retryable error state instead of a fake empty library on load failure (task 10.7)", () => {
     const onRetry = vi.fn();
     render(

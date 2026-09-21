@@ -8,6 +8,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
+import { ToastView } from "../../app/ToastView";
 
 vi.mock("../../bridge", () => ({
   bridge: {
@@ -69,6 +70,42 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("runs a multi-song add sequentially and keeps partial failures visible", async () => {
+    call.mockReset();
+    call.mockResolvedValueOnce([{ id: "pl-1", name: "Chill", memberCount: 3 }] as never);
+    call.mockResolvedValueOnce(undefined as never);
+    call.mockRejectedValueOnce(Object.assign(new Error("duplicate"), { code: "conflict" }));
+
+    const onClose = vi.fn();
+    const onDone = vi.fn();
+    render(
+      <>
+        <AddToPlaylistDialog songIds={["song-1", "song-2"]} onClose={onClose} onDone={onDone} />
+        <ToastView />
+      </>,
+    );
+
+    await screen.findByLabelText("Chill");
+    fireEvent.click(screen.getByLabelText("Chill"));
+    fireEvent.click(screen.getByText("确认"));
+
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith("add_to_playlists", {
+        song: "song-1",
+        targets: ["pl-1"],
+      }),
+    );
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith("add_to_playlists", {
+        song: "song-2",
+        targets: ["pl-1"],
+      }),
+    );
+    expect(await screen.findByText("添加到歌单：成功 1，跳过 1")).toBeInTheDocument();
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("does not mutate and reports when no playlist is selected", async () => {
     call.mockReset();
     call.mockResolvedValueOnce([{ id: "pl-1", name: "Chill", memberCount: 0 }] as never);
@@ -83,6 +120,25 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
     expect(call).not.toHaveBeenCalledWith("add_to_playlists", expect.anything());
     expect(onDone).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("disables playlist mutations on a read-only library", async () => {
+    call.mockReset();
+    call.mockResolvedValueOnce([] as never);
+    render(
+      <AddToPlaylistDialog
+        songId="song-9"
+        root="root-1"
+        readOnly
+        onClose={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("playlist-picker-new")).toBeDisabled();
+      expect(screen.getByRole("button", { name: "确认" })).toBeDisabled();
+    });
   });
 
   it("shows the prototype's empty-list copy when there is no playlist yet", async () => {

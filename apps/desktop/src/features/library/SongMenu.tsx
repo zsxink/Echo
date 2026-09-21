@@ -42,12 +42,14 @@ import { usePlacement } from "./usePlacement";
 import { ConfirmationDialog } from "./ConfirmationDialog";
 import { SongDetail } from "./SongDetail";
 
-/** Viewport rect of the control that opened the menu. */
+/** Viewport anchor for the control or pointer location that opened the menu. */
 export interface MenuAnchor {
   readonly top: number;
   readonly right: number;
   readonly bottom: number;
   readonly left: number;
+  /** Context-menu anchors use the pointer location instead of a trigger box. */
+  readonly kind?: "pointer";
 }
 
 export interface SongMenuProps {

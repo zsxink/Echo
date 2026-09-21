@@ -21,6 +21,17 @@ import { bridge } from "../../bridge";
 import { usePlayerSnapshot } from "../../player/playerStore";
 import type { SongView } from "../../ipc/ipc-types.generated";
 import {
+  BatchSongMenu,
+  SelectionModeButton,
+  formatBatchFailureDetails,
+  formatBatchResult,
+  runDeleteBatch,
+  runFavoriteBatch,
+  runQueueBatch,
+  runRemoveFromPlaylistBatch,
+  undoDeleteBatch,
+  useSongSelection,
+  type BatchResult,
   SongList,
   SongSortControl,
   useStoredSongSort,
@@ -33,6 +44,7 @@ import {
   type SongSort,
 } from "../library";
 import { PlaylistNameDialog } from "./PlaylistNameDialog";
+import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
 import { Icon } from "../../app/Icon";
 import { Topbar } from "../../app/shell";
 import { notify } from "../../app/toast";
@@ -70,11 +82,36 @@ export function PlaylistsView({
   const [sort, setSort] = useStoredSongSort(`playlist:${playlistId}`);
   const [name, setName] = useState(title);
   const [menuFor, setMenuFor] = useState<{ song: SongView; anchor: MenuAnchor } | null>(null);
+  const [batchMenuFor, setBatchMenuFor] = useState<{
+    readonly song: SongView;
+    readonly anchor: MenuAnchor;
+  } | null>(null);
+  const [addToPlaylistFor, setAddToPlaylistFor] = useState<readonly SongView[] | null>(null);
+  const [batchDeleteFor, setBatchDeleteFor] = useState<readonly SongView[] | null>(null);
+  const [batchBusy, setBatchBusy] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const request = useRef(0);
   const snapshot = usePlayerSnapshot();
+  const selectionKey = `${playlistId}|${sort.field}|${sort.direction}`;
+  const selection = useSongSelection(selectionKey);
+  const clearSelection = selection.clear;
+  const [selectionMode, setSelectionMode] = useState(false);
+  const exitSelectionMode = useCallback(() => {
+    selection.clear();
+    setBatchMenuFor(null);
+    setBatchDeleteFor(null);
+    setSelectionMode(false);
+  }, [selection]);
+  useEffect(() => {
+    // A different playlist is a different selection context; leave multi-
+    // select before showing its members.
+    clearSelection();
+    setBatchMenuFor(null);
+    setBatchDeleteFor(null);
+    setSelectionMode(false);
+  }, [clearSelection, playlistId]);
 
   // The shell owns the list; keep the optimistic name in step with it.
   useEffect(() => setName(title), [title]);
@@ -91,13 +128,14 @@ export function PlaylistsView({
           // The native command already returns newest playlist additions
           // first. Keep that order for both the rendered list and playback.
           setMembers(value as SongView[]);
+          clearSelection();
           setLoadError(null);
         }
       })
       .catch(() => {
         if (id === request.current) setLoadError("加载歌单失败，请重试");
       });
-  }, [playlistId]);
+  }, [clearSelection, playlistId]);
 
   useEffect(loadMembers, [loadMembers]);
 
@@ -166,6 +204,165 @@ export function PlaylistsView({
 
   const unavailableCount = members.filter((s) => s.availability !== "available").length;
   const sortedMembers = useMemo(() => sortPlaylistMembers(members, sort), [members, sort]);
+  const selectedSongs = useMemo(
+    () => sortedMembers.filter((song) => selection.selectedIds.has(song.id)),
+    [selection.selectedIds, sortedMembers],
+  );
+  const allLoadedSelected =
+    sortedMembers.length > 0 && sortedMembers.every((song) => selection.selectedIds.has(song.id));
+
+  const notifyBatch = useCallback((result: BatchResult<SongView>) => {
+    const details = formatBatchFailureDetails(result, (song) => song.title ?? "未命名歌曲");
+    notify({
+      message: `批量操作：${formatBatchResult(result)}${details ? `。${details}` : ""}`,
+      error: result.failed > 0,
+    });
+  }, []);
+
+  const applyBatchFavorite = useCallback(
+    async (favorite: boolean) => {
+      const targets = selectedSongs.filter(
+        (song) => song.availability === "available" && song.favorite !== favorite,
+      );
+      if (
+        targets.length === 0 &&
+        selectedSongs.every((song) => song.availability === "available")
+      ) {
+        notify("没有需要变更的歌曲");
+        return;
+      }
+      setBatchBusy(true);
+      try {
+        bumpLibraryCount("favorites", favorite ? targets.length : -targets.length);
+        const result = await runFavoriteBatch(selectedSongs, favorite);
+        for (const item of result.items) {
+          if (item.status === "success" && item.value) publishSongUpdate(item.value);
+        }
+        if (result.failed > 0)
+          bumpLibraryCount("favorites", favorite ? -result.failed : result.failed);
+        loadMembers();
+        notifyBatch(result);
+        exitSelectionMode();
+      } catch {
+        notify({ message: "批量操作失败，请重试", error: true });
+      } finally {
+        setBatchBusy(false);
+      }
+    },
+    [exitSelectionMode, loadMembers, notifyBatch, selectedSongs],
+  );
+
+  const applyBatchQueue = useCallback(
+    async (command: "enqueue" | "playNext") => {
+      setBatchBusy(true);
+      try {
+        const result = await runQueueBatch(selectedSongs, command);
+        notifyBatch(result);
+        exitSelectionMode();
+      } catch {
+        notify({ message: "批量操作失败，请重试", error: true });
+      } finally {
+        setBatchBusy(false);
+      }
+    },
+    [exitSelectionMode, notifyBatch, selectedSongs],
+  );
+
+  const openBatchMenu = useCallback(
+    (song: SongView, anchor: MenuAnchor) => {
+      if (!selection.isSelected(song.id)) selection.replace(song.id);
+      setBatchMenuFor({ song, anchor });
+    },
+    [selection],
+  );
+
+  const batchMenuSongs = useMemo(() => {
+    if (!batchMenuFor) return [];
+    if (selectedSongs.some((song) => song.id === batchMenuFor.song.id)) return selectedSongs;
+    return [batchMenuFor.song];
+  }, [batchMenuFor, selectedSongs]);
+
+  const applyBatchRemove = useCallback(async () => {
+    setBatchMenuFor(null);
+    setBatchBusy(true);
+    try {
+      const result = await runRemoveFromPlaylistBatch(playlistId, batchMenuSongs);
+      loadMembers();
+      onLibraryChanged?.();
+      notifyBatch(result);
+      exitSelectionMode();
+    } catch {
+      notify({ message: "批量操作失败，请重试", error: true });
+    } finally {
+      setBatchBusy(false);
+    }
+  }, [batchMenuSongs, exitSelectionMode, loadMembers, notifyBatch, onLibraryChanged, playlistId]);
+
+  const batchHandlers = useMemo(
+    () => ({
+      onFavorite: (favorite: boolean) => {
+        setBatchMenuFor(null);
+        void applyBatchFavorite(favorite);
+      },
+      onAddToPlaylist: () => {
+        setBatchMenuFor(null);
+        setAddToPlaylistFor(batchMenuSongs);
+      },
+      onPlayNext: () => {
+        setBatchMenuFor(null);
+        void applyBatchQueue("playNext");
+      },
+      onEnqueue: () => {
+        setBatchMenuFor(null);
+        void applyBatchQueue("enqueue");
+      },
+      onDelete: () => {
+        setBatchMenuFor(null);
+        setBatchDeleteFor(batchMenuSongs);
+      },
+      onRemoveFromPlaylist: () => void applyBatchRemove(),
+    }),
+    [applyBatchFavorite, applyBatchQueue, applyBatchRemove, batchMenuSongs],
+  );
+
+  const confirmBatchDelete = useCallback(async () => {
+    if (!batchDeleteFor) return;
+    const songs = batchDeleteFor;
+    setBatchDeleteFor(null);
+    setBatchBusy(true);
+    const result = await runDeleteBatch(root, songs);
+    loadMembers();
+    invalidateLibraryCounts();
+    exitSelectionMode();
+    setBatchBusy(false);
+    const operations = result.items.flatMap((item) =>
+      item.status === "success" && item.value ? [item.value] : [],
+    );
+    const details = result.items
+      .filter((item) => item.status !== "success")
+      .map((item) => `${item.item.title ?? "未命名歌曲"}：${item.message ?? "未完成"}`)
+      .join("；");
+    const baseMessage = `批量删除：${formatBatchResult(result)}`;
+    if (operations.length === 0) {
+      notify({ message: details ? `${baseMessage}。${details}` : baseMessage, error: true });
+      return;
+    }
+    notify({
+      message: `${baseMessage}，10 秒内可撤销${details ? `。${details}` : ""}`,
+      actionLabel: "撤销",
+      autoDismissMs: 10_000,
+      onAction: () => {
+        void undoDeleteBatch(root, operations).then((undo) => {
+          loadMembers();
+          invalidateLibraryCounts();
+          notify({
+            message: `撤回删除：成功 ${undo.succeeded}，失败 ${undo.failed}`,
+            error: undo.failed > 0,
+          });
+        });
+      },
+    });
+  }, [batchDeleteFor, exitSelectionMode, loadMembers, root]);
 
   return (
     <>
@@ -182,6 +379,13 @@ export function PlaylistsView({
             </div>
             <div className="library-tools">
               <SongSortControl sort={sort} onChange={setSort} />
+              <SelectionModeButton
+                active={selectionMode}
+                onToggle={() => {
+                  if (selectionMode) exitSelectionMode();
+                  else setSelectionMode(true);
+                }}
+              />
               <button
                 type="button"
                 className="tool-button"
@@ -220,6 +424,14 @@ export function PlaylistsView({
             readOnly={readOnly}
             currentSongId={snapshot.currentSongId}
             playing={snapshot.state === "playing"}
+            selectionMode={selectionMode}
+            selectedIds={selection.selectedIds}
+            allLoadedSelected={allLoadedSelected}
+            onToggleSelection={(song) => selection.toggle(song.id)}
+            onToggleSelectAll={() =>
+              selection.toggleAllLoaded(sortedMembers.map((song) => song.id))
+            }
+            onContextMenu={selectionMode ? openBatchMenu : undefined}
             onLoadMore={() => {}}
             onClearSearch={() => {}}
             onPlay={onPlay}
@@ -267,6 +479,42 @@ export function PlaylistsView({
               从歌单移除
             </button>
           }
+        />
+      ) : null}
+
+      {selectionMode && batchMenuFor && batchMenuSongs.length > 0 ? (
+        <BatchSongMenu
+          anchor={batchMenuFor.anchor}
+          songs={batchMenuSongs}
+          readOnly={readOnly || batchBusy}
+          inPlaylist
+          handlers={batchHandlers}
+          onClose={() => setBatchMenuFor(null)}
+        />
+      ) : null}
+
+      {addToPlaylistFor ? (
+        <AddToPlaylistDialog
+          songIds={addToPlaylistFor.map((song) => song.id)}
+          songs={addToPlaylistFor}
+          root={root}
+          readOnly={readOnly || batchBusy}
+          onClose={() => setAddToPlaylistFor(null)}
+          onDone={() => {
+            loadMembers();
+            onLibraryChanged?.();
+            exitSelectionMode();
+          }}
+        />
+      ) : null}
+
+      {batchDeleteFor ? (
+        <ConfirmationDialog
+          title={`删除已选 ${batchDeleteFor.length} 首歌曲？`}
+          description="可删除歌曲会移至回收站；不可删除项会在结果中明确列出。整批成功项可在 10 秒内撤回。"
+          confirmLabel="批量移至回收站"
+          onConfirm={() => void confirmBatchDelete()}
+          onCancel={() => setBatchDeleteFor(null)}
         />
       ) : null}
 

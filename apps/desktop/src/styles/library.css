@@ -45,7 +45,8 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 .table-wrap:hover::-webkit-scrollbar-thumb, .table-wrap:focus-within::-webkit-scrollbar-thumb { background: color-mix(in oklab, var(--muted), transparent 42%); }
 .table-wrap::-webkit-scrollbar-thumb:hover { background: color-mix(in oklab, var(--fg), transparent 48%); }
 .track-table { width: 100%; min-width: 100%; border-collapse: collapse; table-layout: fixed; }
-.track-table col.number { width: 26px; }
+.track-table col.selection { width: 42px; }
+.track-table col.number { width: 44px; }
 .track-table col.title { width: 42%; }
 .track-table col.album { width: 25%; }
 .track-table col.time { width: 58px; }
@@ -55,6 +56,13 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 .track-table th { height: 28px; padding: 0 var(--space-2); text-align: left; font-weight: inherit; }
 .track-table td { height: 44px; padding: 0 calc(var(--space-2) * .8); border-top: 0; vertical-align: middle; }
 .track-table th:last-child, .track-table td:last-child { padding-inline: calc(var(--space-2) * .75); }
+.track-table th.selection-column, .track-table td.selection-column { padding-inline: var(--space-1); text-align: center; }
+.list-select-all, .row-select { width: 18px; height: 18px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--bg); color: var(--muted); cursor: pointer; display: inline-grid; place-items: center; vertical-align: middle; }
+.list-select-all { width: 18px; height: 18px; border-radius: 50%; }
+.list-select-all:hover, .row-select:hover, .list-select-all.active, .row-select.active { border-color: var(--accent-strong); color: var(--accent-strong); background: var(--surface-warm); }
+.list-select-all:disabled { opacity: .45; cursor: default; }
+.list-select-all svg { width: 10px; height: 10px; }
+.row-select svg { width: 13px; height: 13px; }
 .track-row { cursor: pointer; transition: background var(--motion-fast) var(--ease-standard); }
 .track-row:hover { background: var(--surface); }
 .track-row:focus-visible { outline: none; box-shadow: inset var(--focus-ring); }
@@ -102,6 +110,10 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 .favorite:hover { background: color-mix(in oklab, var(--danger), var(--bg) 94%); }
 .favorite.active svg { fill: var(--danger); }
 .song-menu { position: fixed; z-index: 16; width: 248px; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); box-shadow: var(--elev-raised); }
+.batch-song-menu { width: 248px; }
+.batch-menu-head { display: grid; gap: 2px; padding: var(--space-2); margin-bottom: var(--space-2); border-bottom: 1px solid var(--border-soft); }
+.batch-menu-head strong { font-size: var(--text-sm); }
+.batch-menu-head span { color: var(--muted); font-size: var(--text-xs); }
 .song-menu[hidden] { display: none; }
 .menu-song { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: var(--space-3); align-items: center; padding: var(--space-2); margin-bottom: var(--space-2); border-bottom: 1px solid var(--border-soft); }
 .menu-song .cover { width: 40px; height: 40px; }
@@ -138,7 +150,7 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 .playlist-card-edit svg { width: 16px; height: 16px; }
 .playlist-context-menu { position: fixed; z-index: 28; width: 160px; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); box-shadow: var(--elev-raised); }
 .playlist-context-menu[hidden] { display: none; }
-.playlist-name-dialog { position: fixed; z-index: 31; inset: 0; display: grid; place-items: center; padding: var(--space-5); }
+.playlist-name-dialog { position: fixed; z-index: 33; inset: 0; display: grid; place-items: center; padding: var(--space-5); }
 .playlist-name-dialog[hidden] { display: none; }
 .playlist-name-dialog::before { content: ""; position: absolute; inset: 0; background: color-mix(in oklab, var(--fg), transparent 64%); }
 .playlist-name-panel { position: relative; width: min(100%, 296px); box-sizing: border-box; padding: calc(var(--space-5) * .4); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); box-shadow: var(--elev-raised); }

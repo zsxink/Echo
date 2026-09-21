@@ -537,6 +537,30 @@ fn library_status_reflects_configuration_and_scan_in_flight() {
 }
 
 #[test]
+fn library_status_marks_an_unresolved_write_gate_as_read_only() {
+    let fixture = ScanFixture::new();
+    LibraryRepository::upsert(
+        &fixture.database,
+        &LibraryRoot::new(fixture.root, "/library".into(), true, true),
+    )
+    .expect("active root");
+    let app = AppServices::new(
+        std::sync::Arc::clone(&fixture.deps),
+        ScanSupervisor::new(),
+        StartupSupervisor::new(),
+    );
+
+    let status = app.library_status().expect("status");
+
+    assert!(status.configured);
+    assert!(
+        status.read_only,
+        "the UI must match the mutation write gate"
+    );
+    assert!(!status.unavailable);
+}
+
+#[test]
 fn cancelled_library_root_dialog_is_a_noop_never_a_success() {
     let fixture = ScanFixture::new();
     // Cancelling dialogs port; writes are allowed, so a real switch *could*
