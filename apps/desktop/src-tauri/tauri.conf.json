@@ -46,9 +46,9 @@
       "minimumSystemVersion": "12.0",
       "dmg": {
         "background": "dmg/background.png",
-        "windowSize": { "width": 900, "height": 560 },
-        "appPosition": { "x": 235, "y": 278 },
-        "applicationFolderPosition": { "x": 665, "y": 278 }
+        "windowSize": { "width": 720, "height": 460 },
+        "appPosition": { "x": 170, "y": 225 },
+        "applicationFolderPosition": { "x": 550, "y": 225 }
       },
       "files": {
         "Frameworks/libavcodec.dylib": "vendor/libmpv/macos/libavcodec.dylib",

@@ -38,8 +38,11 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const DMG_DIR = join(ROOT, "target/release/bundle/dmg");
 const TAURI_CONF = join(ROOT, "apps/desktop/src-tauri/tauri.conf.json");
+const BACKGROUND_SOURCE = join(ROOT, "apps/desktop/src-tauri/dmg/background.png");
 const STORE = ".DS_Store";
 const SKIP_LAYOUT_CHECK = process.env.ECHO_DMG_SKIP_LAYOUT_CHECK === "1";
+const FINDER_ICON_SIZE = 96;
+const FINDER_TEXT_SIZE = 13;
 
 function run(command, args, options = {}) {
   return execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
@@ -80,14 +83,17 @@ function layoutConfig() {
     folderItem: "Applications",
     appPosition,
     applicationFolderPosition,
+    iconSize: FINDER_ICON_SIZE,
+    textSize: FINDER_TEXT_SIZE,
   };
 }
 
 // ---------------------------------------------------------------- Finder 外观
 
-function appleScript(volumePath) {
+function appleScript(volumePath, layout) {
   const volumeName = volumePath.slice("/Volumes/".length);
   const background = `${volumePath}/.background/background.png`;
+  const bounds = `{100, 100, ${100 + layout.windowSize.width}, ${100 + layout.windowSize.height}}`;
   return `on run
   tell application "Finder"
     tell disk "${volumeName}"
@@ -98,16 +104,18 @@ function appleScript(volumePath) {
         set current view to icon view
         set toolbar visible to false
         set statusbar visible to false
-        set the bounds to {100, 100, 1000, 660}
+        set the bounds to ${bounds}
       end tell
       delay 1
       tell icon view options of container window
         set arrangement to not arranged
+        set icon size to ${layout.iconSize}
+        set text size to ${layout.textSize}
         set background picture to POSIX file "${background}"
       end tell
       tell container window
-        set position of item "Echo.app" to {235, 278}
-        set position of item "Applications" to {665, 278}
+        set position of item "${layout.appItem}" to {${layout.appPosition.x}, ${layout.appPosition.y}}
+        set position of item "${layout.folderItem}" to {${layout.applicationFolderPosition.x}, ${layout.applicationFolderPosition.y}}
       end tell
       delay 1
       close
@@ -118,10 +126,12 @@ function appleScript(volumePath) {
         set current view to icon view
         set toolbar visible to false
         set statusbar visible to false
-        set the bounds to {100, 100, 1000, 660}
+        set the bounds to ${bounds}
       end tell
       tell icon view options of container window
         set arrangement to not arranged
+        set icon size to ${layout.iconSize}
+        set text size to ${layout.textSize}
       end tell
       delay 2
     end tell
@@ -331,6 +341,22 @@ function auditStore(mountPoint, layout) {
     const arrangeBy = iconView.value.arrangeBy;
     if (arrangeBy === undefined) warnings.push(`icvp 未写 arrangeBy，无法确认排列方式（无法断言 Finder 是否采纳图标坐标）`);
     else if (arrangeBy !== "none") problems.push(`arrangeBy=${JSON.stringify(arrangeBy)}；${arrangedHint}`);
+    if (iconView.value.backgroundType !== 2) {
+      problems.push(`backgroundType=${JSON.stringify(iconView.value.backgroundType)}；应为图片背景 2`);
+    }
+    if (!iconView.value.backgroundImageAlias) problems.push(`缺少 backgroundImageAlias`);
+    if (iconView.value.iconSize !== layout.iconSize) {
+      problems.push(`iconSize=${JSON.stringify(iconView.value.iconSize)} ≠ ${layout.iconSize}`);
+    }
+    if (iconView.value.textSize !== layout.textSize) {
+      problems.push(`textSize=${JSON.stringify(iconView.value.textSize)} ≠ ${layout.textSize}`);
+    }
+  }
+
+  const background = join(mountPoint, ".background", "background.png");
+  if (!existsSync(background)) problems.push(`缺少 .background/background.png`);
+  else if (!readFileSync(background).equals(readFileSync(BACKGROUND_SOURCE))) {
+    problems.push(`.background/background.png 与源背景图不一致`);
   }
 
   const locations = readIconLocations(data);
@@ -407,7 +433,7 @@ function main() {
       console.log("ECHO_DMG_SKIP_FINDER=1：跳过 Finder 外观改写（背景图/窗口尺寸沿用 Tauri 产物）");
     } else {
       volumePath = mountedVolume(run("hdiutil", ["attach", "-readwrite", "-nobrowse", rwDmg]));
-      writeFileSync(script, appleScript(volumePath));
+      writeFileSync(script, appleScript(volumePath, layout));
       run("osascript", [script]);
       run("hdiutil", ["detach", volumePath], { stdio: "ignore" });
       volumePath = undefined;
