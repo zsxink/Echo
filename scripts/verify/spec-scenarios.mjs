@@ -33,6 +33,7 @@ const TRACE_PATH = resolve(ROOT, "docs", "traceability.md");
 // The per-area prefix is fixed by traceability.md; an area maps 1:1 to a
 // directory and a prefix. Order here is the stable publication order.
 const AREA_PREFIX = {
+  "ci-release-pipeline": "CRP",
   "desktop-app-shell": "DAS",
   "desktop-playback": "DP",
   "immersive-lyrics": "IL",

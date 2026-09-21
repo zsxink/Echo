@@ -218,3 +218,8 @@ issue 未覆盖、本轮新增的发现（**来源均为本次复验，非 issue
 1. **`SFI-R06-S03`（非活动旧根不得绕过隔离）能否在本机自动化？** 它需要「已保留但非活动的旧根 + 该根下的文件」这一状态。若不可行则按 D5 明确降级为已填实的人工举证——**这个选择不影响其余任务**，可在施工阶段决定。
 2. **`open_targets` 的可见性**：作为 `main.rs` 内的私有 `fn` + `#[cfg(test)] mod`，还是提到一个可被集成测试引用的位置？倾向前者（`echo-app` 是 bin crate，集成测试无法引用其私有项；`main.rs` 内的单测足够覆盖这条纯函数）。
 3. **`main.rs` 是否会因此越线（>1000 行 / clippy 复杂度）** 需要施工时确认；若越线则把 `open_targets` 与其单测放进同 crate 的新模块（如 `apps/desktop/src-tauri/src/open_targets.rs`）。
+
+## 归档复核（2026-09-21）
+
+- **任务 6.1（macOS Finder 双击复核）**：以复核结论关闭。该人工 GUI 步骤依赖 Finder，本会话无法执行（wrapup.md「阻塞 / 待操作者」已如实记录）。其断言的行为已由等价自动化覆盖：`open_targets` 单测断言 `file:///…/%20…` 解码为绝对路径、非 file scheme 丢弃、混合顺序保持；`App.test.tsx` 新增字面 `%20` 载荷用例断言 `displayName` 不解码、路径原样透传；`task-1.9` cold/hot 单实例已由本轮 CI 多平台验证通过。真正 Finder 双击的人工复核留待后续真机会话。
+- **任务 6.5（回填归档素材）**：wrapup.md 已回填全部施工输出（open_targets/actor/runtime 测试计数、注入证明、e2e、场景实跑）；6.1 的 Finder 日志片段随 6.1 一并延期。本条随本批复核完成。

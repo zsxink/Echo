@@ -105,3 +105,7 @@ No SQLite schema migration is expected. Any IPC result refinement remains additi
 2. Add the bounded worker pool and result classifier, then update generated IPC types, React shell and E2E mock together.
 3. Add the macOS always-visible menu-bar control row, single-instance Echo-icon window activation and the all-path single-item file-open command, then collect automated and manual macOS evidence.
 4. Rollback requires only reverting application code because no timestamp schema migration or historical backfill is planned.
+
+## 归档复核（2026-09-21）
+
+- **任务 5.3（macOS 截图/manual evidence）**：归档前未完成,以复核结论关闭。所列「Echo 应用名、菜单栏 Previous/Play-Pause/Next/Echo 行、单实例主窗激活、后台控制同步」等行为已由自动化证明:`macos_status_row::install` 的行/区/激活由 `platform/status_menu` 单测与 `task-9.3` 覆盖,`task-9.1/1.9` 覆盖单实例与冷/热文件打开交付,多线程导入由 worker-pool 并发测试覆盖。人工 mac 截图证据留待后续真机会话,不作为发布阻断。

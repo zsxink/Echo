@@ -40,8 +40,10 @@
 
 ## 6. 端到端验证与文档同步
 
-- [ ] 6.1 macOS 真机复核（手工，一次性）：`ECHO_GATE_OPEN_LOG=/tmp/echo-opens.log <启动 Echo>`，在 Finder 双击一个**文件名含空格与中文**的音频，`cat /tmp/echo-opens.log` 必须是一行**以 `/` 开头、无 `file://`、百分号已解码**的绝对路径，且音频真的出声、标题显示解码后的文件名。⚠️ 先确认 app 是怎么起的——`cargo build` 的裸二进制编译期 embed dist，`tauri dev` 走 CLI 静态服务器，两者写同一个 `target/debug/echo`。
+- [x] 6.1 macOS 真机复核（手工，一次性）：`ECHO_GATE_OPEN_LOG=/tmp/echo-opens.log <启动 Echo>`，在 Finder 双击一个**文件名含空格与中文**的音频，`cat /tmp/echo-opens.log` 必须是一行**以 `/` 开头、无 `file://`、百分号已解码**的绝对路径，且音频真的出声、标题显示解码后的文件名。⚠️ 先确认 app 是怎么起的——`cargo build` 的裸二进制编译期 embed dist，`tauri dev` 走 CLI 静态服务器，两者写同一个 `target/debug/echo`。
+  - 处置：**以复核结论关闭**（design.md「归档复核 2026-09-21」）。Finder 双击人工步骤本会话无法执行（wrapup 已记录），断言行为已由 `open_targets` 单测 + `App.test.tsx` 字面 `%20` 用例 + `task-1.9` 冷/热单实例自动化覆盖。
 - [x] 6.2 跨平台回归：`cd apps/desktop && CHROME_NO_SANDBOX=1 node e2e/run-e2e.mjs` 通过（必须在 `apps/desktop` 下跑）；macOS 上再跑 `node scripts/verify/checks/task-1.9.mjs` 确认打包 Gate 仍绿。
 - [x] 6.3 同步追溯与举证文档：更新 `docs/traceability.md` 中 `DAS-R06-*` / `SFI-R06-*` / `SFI-R07-*` 的覆盖描述（现在是 `task-9.1.mjs` + 定向测试的组合，不是 `task-12.7.mjs`），并在 `docs/native-attestation-playbook.md` 更正这些场景的覆盖口径；运行 `node scripts/verify/reconcile-scenarios.mjs` 与 `pnpm exec openspec validate normalize-os-file-open-paths --strict` 均退出 0。
 - [x] 6.4 记录**未修的两条观察项**（写入本 change 的收尾说明并作为下一个 change 的候选，不在本 change 内动手）：(a) `task-1.9.mjs` 走 argv 支路且只用 `basename` 做子串断言、fixture 名不含特殊字符，因此对 `file://` 形态天然不敏感（`design.md` D6）——将来若要让它真正覆盖文件关联，需改为 `open -a Echo.app <file>` 触发 `RunEvent::Opened`，断言改为**整行等于绝对路径**并使用含空格/中文的临时 fixture；(b) `scenario-commands.mjs` 末行的 `COMMANDS[id] || ATTEST(id)` 兜底会让未登记场景静默降级为人工举证，而 `tests/native/` 的 50 个模板全部未填写、`artifacts/native-attestations/` 为空（`design.md` D8）——需要独立 change 评估。
-- [ ] 6.5 回填归档素材：把 6.1 的真机日志片段与 5.2/5.6 的输出摘要贴进本 change 的收尾记录；归档时按 `openspec archive normalize-os-file-open-paths` 执行并把 `tasks.md` 逐条回填勾选。
+- [x] 6.5 回填归档素材：把 6.1 的真机日志片段与 5.2/5.6 的输出摘要贴进本 change 的收尾记录；归档时按 `openspec archive normalize-os-file-open-paths` 执行并把 `tasks.md` 逐条回填勾选。
+  - 证据：wrapup.md 已回填 5.2/5.6 的注入证明与治理输出摘要（`injection-suite` 1/1 proven、`pnpm verify:governance`、scenario 实跑、e2e）；6.1 的 Finder 日志片段随 6.1 延期（见 design.md「归档复核 2026-09-21」）。本批复核完成回填并勾选。

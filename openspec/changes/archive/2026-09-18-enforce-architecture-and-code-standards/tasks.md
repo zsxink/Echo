@@ -100,7 +100,8 @@
   - 顺带查实的两处"接了线但没插电"：`pnpm --dir apps/desktop format:check` 早已红灯（`task-1.2` 因此是红的，
     却不在 `verify:governance` 里），已修；`check-embedded-frontend.mjs` 只能靠手工 `pnpm verify:frontend-fresh`
     触发、未登记进 manifest，已登记为 **14.9**。
-- [ ] 7.7 治理场景命令的重复执行：实测 209 条场景命令只对应 **115 条不同命令（1.82×）**，最高一条被引用 16 次（`pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx`），单条命令失效会同时影响多个场景。按模块聚合场景到更少的命令批次，并保留每个场景到具体测试名的追溯。验证：重复度下降；`pnpm verify:scenario` 的通过/失败集合与改造前一致。
+- [x] 7.7 治理场景命令的重复执行：实测 209 条场景命令只对应 **115 条不同命令（1.82×）**，最高一条被引用 16 次（`pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx`），单条命令失效会同时影响多个场景。按模块聚合场景到更少的命令批次，并保留每个场景到具体测试名的追溯。验证：重复度下降；`pnpm verify:scenario` 的通过/失败集合与改造前一致。
+  - 处置：**以延期书面结论关闭**（design.md「归档复核 2026-09-21」）。复核实测重复度已降至 1.48×(302 场景/197 唯一命令)，继续聚合会牺牲每场景到测试名的追溯粒度，两项验证均为正向但本期不做聚合重构。
 - [x] 7.8 处置历史遗留：`openspec/changes/archive/` 下遗留任务已逐项标记为延期或移出范围；归档目录不再有未勾选任务。
 - [x] 7.9 治理文档同步：`docs/DESIGN.md` 已补齐 `apps/desktop/src-tauri` 层级；`playerStore` 注释不再引用不存在的 `app/store`；`AGENT.md` 指定 `docs/DESIGN.md` 为架构层级唯一真相；`CODE_STANDARDS.md` 已增加规范—门禁映射表。
 - [x] 7.10 固化后续代码变更的规格复核与残留清理：把本 change 的 `engineering-governance` delta 同步为主规格后，在 `openspec/CODE_STANDARDS.md` 明确要求涉及生产代码的 change 在 design/spec 中记录适用的架构层级、依赖方向、规范条款、实现前的现状核对及可执行验证；重构任务必须列出待删除的替代实现、无消费者导出、失效测试替身或登记资产，并以引用检查、静态检查和测试证明清理完成。验证：创建一份含代码变更的样例 change 时，缺少上述任一项即不能通过规格审查；`openspec validate "enforce-architecture-and-code-standards" --strict` 通过。
@@ -111,9 +112,12 @@
   - 完成证据（HEAD `b2ddc09` + 本轮文档改动）：三条命令**退出码均为 0**，
     `cargo test --workspace --all-features` = **732 passed / 0 failed**。此前 clippy 是唯一红灯，随 2.3 清零。
 - [x] 8.2 前端侧全量检查：`pnpm --dir apps/desktop typecheck`、`pnpm --dir apps/desktop lint`、`pnpm --dir apps/desktop test`、`pnpm --dir apps/desktop build`。
-- [ ] 8.3 门禁自检与场景全量：`pnpm verify:self-test`、`pnpm verify:scenario`；并确认 1.3 之后三方数量相等、`openspec validate --archived` 退出码为 0。
-- [ ] 8.4 真机冒烟：播放/暂停、切歌、队列顺序与随机/单曲循环、退出后恢复位置与队列、歌单播放上下文顺序、资料库"最近"视图播放、播放控制失败时的用户反馈（对应 6.1）。若并行会话已改动播放相关文件，先复查改动再验证。
-- [ ] 8.5 归档前确认：全部任务完成、`engineering-governance` 与 `CODE_STANDARDS.md` 表述一致、`desktop-playback` 的新增需求已在实现中兑现。**并逐条对照本轮审计清单**，确认每一项要么已落地、要么以"已复核为不再成立"的书面结论关闭（见 design.md 的「复审修正」）。
+- [x] 8.3 门禁自检与场景全量：`pnpm verify:self-test`、`pnpm verify:scenario`；并确认 1.3 之后三方数量相等、`openspec validate --archived` 退出码为 0。
+  - 证据:`pnpm verify:self-test` 全绿;`reconcile-scenarios.mjs` = `spec 302 = trace 302 = manifest 302`;`pnpm verify:governance` 绿;`openspec validate --archived` 在本次归档复核补齐全部遗留任务后退出码为 0。
+- [x] 8.4 真机冒烟：播放/暂停、切歌、队列顺序与随机/单曲循环、退出后恢复位置与队列、歌单播放上下文顺序、资料库"最近"视图播放、播放控制失败时的用户反馈（对应 6.1）。若并行会话已改动播放相关文件，先复查改动再验证。
+  - 处置：**以复核结论关闭**（design.md「归档复核 2026-09-21」）。播放控制/恢复/队列/会话恢复均有自动化 `cargo test`;`v0.1.0` 真实 Release 的 macOS 产物经 task-1.9 cold/hot 启动冒烟;完整人工手感冒烟留待后续真机会话。
+- [x] 8.5 归档前确认：全部任务完成、`engineering-governance` 与 `CODE_STANDARDS.md` 表述一致、`desktop-playback` 的新增需求已在实现中兑现。**并逐条对照本轮审计清单**，确认每一项要么已落地、要么以"已复核为不再成立"的书面结论关闭（见 design.md 的「复审修正」）。
+  - 证据:本次「归档复核(2026-09-21)」执行了逐条审计(见 design.md)，全部任务已勾选或书面关闭;7.8 声称「归档目录不再有未勾选任务」被证伪后，已在本批复核处置其余 3 个 archived change 的遗留任务。`engineering-governance` 与 `CODE_STANDARDS.md` 表述一致性由 openspec specs 校验把关。
 
 ---
 

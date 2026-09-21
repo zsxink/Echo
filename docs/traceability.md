@@ -348,6 +348,22 @@
 | PLL-R07-S04 | 对象资料接续与对账 | 重复接续结果稳定 | 15.3 | Gate | `tests/scenarios/PLL-R07-S04.yaml` | `pnpm verify:scenario -- PLL-R07-S04` |
 | PLL-R07-S05 | 对象资料接续与对账 | 较新的本机身份不被旧记录覆盖 | 15.3 | Gate | `tests/scenarios/PLL-R07-S05.yaml` | `pnpm verify:scenario -- PLL-R07-S05` |
 
+## ci-release-pipeline
+
+| Scenario ID | Requirement | Scenario | 任务 | 测试层 | 测试/步骤 manifest | 实际验收命令 |
+|---|---|---|---|---|---|---|
+| CRP-R01-S01 | API tag 触发发布 | 语义化 tag 触发构建 | 13.9 | Gate | `tests/scenarios/CRP-R01-S01.yaml` | `pnpm verify:scenario -- CRP-R01-S01` |
+| CRP-R01-S02 | API tag 触发发布 | 版本不匹配时拒绝发布 | 13.9 | Gate | `tests/scenarios/CRP-R01-S02.yaml` | `pnpm verify:scenario -- CRP-R01-S02` |
+| CRP-R01-S03 | API tag 触发发布 | 手动触发 | 13.9 | Gate | `tests/scenarios/CRP-R01-S03.yaml` | `pnpm verify:scenario -- CRP-R01-S03` |
+| CRP-R02-S01 | 三平台产物矩阵 | macOS 产物 | 13.9 | Gate | `tests/scenarios/CRP-R02-S01.yaml` | `pnpm verify:scenario -- CRP-R02-S01` |
+| CRP-R02-S02 | 三平台产物矩阵 | Windows 产物 | 13.9 | Gate | `tests/scenarios/CRP-R02-S02.yaml` | `pnpm verify:scenario -- CRP-R02-S02` |
+| CRP-R02-S03 | 三平台产物矩阵 | Linux 产物 | 13.9 | Gate | `tests/scenarios/CRP-R02-S03.yaml` | `pnpm verify:scenario -- CRP-R02-S03` |
+| CRP-R03-S01 | 产物完整性校验 | 校验清单随发布物上传 | 13.9 | Gate | `tests/scenarios/CRP-R03-S01.yaml` | `pnpm verify:scenario -- CRP-R03-S01` |
+| CRP-R03-S02 | 产物完整性校验 | 缺失产物导致失败 | 13.9 | Gate | `tests/scenarios/CRP-R03-S02.yaml` | `pnpm verify:scenario -- CRP-R03-S02` |
+| CRP-R04-S01 | 第三方许可证随发布物提供 | 许可证说明随包上传 | 13.9 | Gate | `tests/scenarios/CRP-R04-S01.yaml` | `pnpm verify:scenario -- CRP-R04-S01` |
+| CRP-R05-S01 | 发布为 GitHub Release | 资产汇总到 tag 对应 Release | 13.9 | Gate | `tests/scenarios/CRP-R05-S01.yaml` | `pnpm verify:scenario -- CRP-R05-S01` |
+| CRP-R05-S02 | 发布为 GitHub Release | 重复触发不产生重复 Release | 13.9 | Gate | `tests/scenarios/CRP-R05-S02.yaml` | `pnpm verify:scenario -- CRP-R05-S02` |
+
 ## 发布审计
 
 1. 运行 `pnpm verify:scenario -- --all`，保存逐场景结果与集合差异报告。

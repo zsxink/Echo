@@ -2124,6 +2124,72 @@
   ],
   "scenarios": [
     {
+      "id": "CRP-R01-S01",
+      "title": "语义化 tag 触发构建",
+      "command": "node scripts/verify/checks/task-crp.mjs",
+      "manifest": "tests/scenarios/CRP-R01-S01.yaml"
+    },
+    {
+      "id": "CRP-R01-S02",
+      "title": "版本不匹配时拒绝发布",
+      "command": "node scripts/verify/checks/task-crp.mjs",
+      "manifest": "tests/scenarios/CRP-R01-S02.yaml"
+    },
+    {
+      "id": "CRP-R01-S03",
+      "title": "手动触发",
+      "command": "node scripts/verify/checks/task-crp.mjs",
+      "manifest": "tests/scenarios/CRP-R01-S03.yaml"
+    },
+    {
+      "id": "CRP-R02-S01",
+      "title": "macOS 产物",
+      "command": "node scripts/verify/checks/task-crp.mjs",
+      "manifest": "tests/scenarios/CRP-R02-S01.yaml"
+    },
+    {
+      "id": "CRP-R02-S02",
+      "title": "Windows 产物",
+      "command": "node scripts/verify/checks/task-crp.mjs",
+      "manifest": "tests/scenarios/CRP-R02-S02.yaml"
+    },
+    {
+      "id": "CRP-R02-S03",
+      "title": "Linux 产物",
+      "command": "node scripts/verify/checks/task-crp.mjs",
+      "manifest": "tests/scenarios/CRP-R02-S03.yaml"
+    },
+    {
+      "id": "CRP-R03-S01",
+      "title": "校验清单随发布物上传",
+      "command": "node scripts/verify/checks/task-crp.mjs",
+      "manifest": "tests/scenarios/CRP-R03-S01.yaml"
+    },
+    {
+      "id": "CRP-R03-S02",
+      "title": "缺失产物导致失败",
+      "command": "node scripts/verify/checks/task-crp.mjs",
+      "manifest": "tests/scenarios/CRP-R03-S02.yaml"
+    },
+    {
+      "id": "CRP-R04-S01",
+      "title": "许可证说明随包上传",
+      "command": "node scripts/verify/checks/task-crp.mjs",
+      "manifest": "tests/scenarios/CRP-R04-S01.yaml"
+    },
+    {
+      "id": "CRP-R05-S01",
+      "title": "资产汇总到 tag 对应 Release",
+      "command": "node scripts/verify/checks/task-crp.mjs",
+      "manifest": "tests/scenarios/CRP-R05-S01.yaml"
+    },
+    {
+      "id": "CRP-R05-S02",
+      "title": "重复触发不产生重复 Release",
+      "command": "node scripts/verify/checks/task-crp.mjs",
+      "manifest": "tests/scenarios/CRP-R05-S02.yaml"
+    },
+    {
       "id": "DAS-R01-S01",
       "title": "首次选择有效目录",
       "command": "cargo test -p echo-core --all-features root_switch::tests::empty_directory_activates",

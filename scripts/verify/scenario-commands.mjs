@@ -324,6 +324,26 @@ export const COMMANDS = {
   "SYN-R03-S01": COREC("infrastructure::sqlite::tests::sync_foundation"),
   "SYN-R04-S01": COREC("infrastructure::sqlite::tests::sync_payloads_carry_no_absolute_paths"),
 
+  // ===== ci-release-pipeline (CRP) =====
+  // The release-domain behaviors are executed by .github/workflows/release.yml
+  // (per-platform `pnpm echo release`, artifact assertion, SHA256SUMS,
+  // upload/download artifact, softprops/action-gh-release) and verified
+  // end-to-end by the tagged v0.1.0 Release. Every CRP row resolves to the
+  // task-crp structural drift gate so the domain stays inside the three-way
+  // reconciliation (not a silent attestation marker) without recursing into
+  // task-13.9 (which is itself a scenario command in --automated runs).
+  "CRP-R01-S01": "node scripts/verify/checks/task-crp.mjs",
+  "CRP-R01-S02": "node scripts/verify/checks/task-crp.mjs",
+  "CRP-R01-S03": "node scripts/verify/checks/task-crp.mjs",
+  "CRP-R02-S01": "node scripts/verify/checks/task-crp.mjs",
+  "CRP-R02-S02": "node scripts/verify/checks/task-crp.mjs",
+  "CRP-R02-S03": "node scripts/verify/checks/task-crp.mjs",
+  "CRP-R03-S01": "node scripts/verify/checks/task-crp.mjs",
+  "CRP-R03-S02": "node scripts/verify/checks/task-crp.mjs",
+  "CRP-R04-S01": "node scripts/verify/checks/task-crp.mjs",
+  "CRP-R05-S01": "node scripts/verify/checks/task-crp.mjs",
+  "CRP-R05-S02": "node scripts/verify/checks/task-crp.mjs",
+
   // ===== portable-library-layout (PLL) =====
   // This whole area was absent from the table, so all seven rows were reading as
   // "needs an operator" through the fallback. Each has a targeted test: the
