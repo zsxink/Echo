@@ -146,6 +146,57 @@ fn sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumb
     );
 }
 
+#[test]
+fn pending_delete_content_is_not_an_import_conflict() {
+    let g = gated();
+    let bytes = b"audio-bytes";
+    let old_song = seed_song(&g, "media/歌手/歌手 - 晴天.flac", bytes);
+    g.deps
+        .songs
+        .set_availability(old_song.id(), SongAvailability::PendingDelete)
+        .expect("mark the old song pending delete");
+
+    // The delete flow has moved the old file into its trash staging area, so
+    // the old database path is not occupied by a live library file.
+    g.sources.add("hit", "晴天.flac", bytes);
+    tagged(&g, bytes, Some("歌手"), Some("晴天"));
+    g.fixture
+        .set_audio("media/歌手/歌手 - 晴天.flac", "晴天", 269_000);
+
+    let report = PlanImport::new(&g.deps, &g.sources)
+        .run(g.fixture.root, &[source("hit")])
+        .expect("batch-level success");
+    let ImportOutcome::Imported { song, target, .. } = report
+        .results
+        .first()
+        .cloned()
+        .expect("one result")
+    else {
+        panic!("a pending-delete record must not cause duplicate import: {:?}", report.results);
+    };
+
+    assert_ne!(song, old_song.id(), "re-import gets a fresh song identity");
+    assert_eq!(target.display(), "media/歌手/歌手 - 晴天.flac");
+    assert_eq!(
+        g.deps
+            .songs
+            .by_id(old_song.id())
+            .expect("old song query")
+            .expect("old row remains")
+            .availability(),
+        SongAvailability::PendingDelete
+    );
+    assert_eq!(
+        g.deps
+            .songs
+            .by_id(song)
+            .expect("new song query")
+            .expect("new row")
+            .availability(),
+        SongAvailability::Available
+    );
+}
+
 /// A reader double whose sidecar description lies about the content size —
 /// a vanished/raced `.lrc` mid-selection (verify the audio still imports).
 struct SizeLyingReader {

@@ -1,7 +1,7 @@
 use crate::application::ports::TxAccess;
 use crate::application::relink::song_from_parsed;
 use crate::application::scan::{parse_single_file, rewrap, FileOutcome, ParsedOutcome};
-use crate::domain::entities::LyricsSource;
+use crate::domain::entities::{LyricsSource, SongAvailability};
 use crate::domain::ids::{LibraryRootId, SongId};
 use crate::domain::library::PortableRecord;
 use crate::domain::state::OperationState;
@@ -58,6 +58,13 @@ impl PlanImport<'_> {
         reserved: SongId,
     ) -> Result<Option<SongId>, Error> {
         for song in self.deps.songs.all_in_root(root)? {
+            // A pending-delete or externally-missing row is retained for
+            // recovery/relinking, but it is not a live content holder. The
+            // final check must apply the same availability rule as planning,
+            // otherwise a race-safe commit could resurrect Issue #12.
+            if song.availability() != SongAvailability::Available {
+                continue;
+            }
             if song.blake3_hash() == Some(published_hash) && song.id() != reserved {
                 return Ok(Some(song.id()));
             }

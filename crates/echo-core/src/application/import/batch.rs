@@ -1,5 +1,6 @@
 use crate::application::ports::{ImportSource, ImportSourceInfo, ImportSourceReader};
 use crate::application::scan::ScanDeps;
+use crate::domain::entities::SongAvailability;
 use crate::domain::ids::LibraryRootId;
 use crate::domain::import::ImportConflictIndex;
 use crate::domain::state::OperationState;
@@ -57,6 +58,13 @@ impl<'a> PlanImport<'a> {
     fn batch_state(&self, root: LibraryRootId) -> Result<BatchState, Error> {
         let mut conflicts = ImportConflictIndex::default();
         for song in self.deps.songs.all_in_root(root)? {
+            // Missing and Echo-pending-delete records remain in the repository
+            // for UUID/recovery semantics, but they no longer represent a
+            // playable catalogue holder or a logical target claimed by the
+            // current import. Actual files on disk are still reserved below.
+            if song.availability() != SongAvailability::Available {
+                continue;
+            }
             if let Some(hash) = song.blake3_hash() {
                 conflicts.record_content(hash, song.id());
             }

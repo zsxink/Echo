@@ -16,7 +16,7 @@ mod tests {
     };
     use crate::application::testing::ScanFixture;
     use crate::application::testing::{FakeImportSources, FakeLibraryFileSystem, MemoryDatabase};
-    use crate::domain::entities::{select_effective_lyrics, LyricsSource, Song};
+    use crate::domain::entities::{select_effective_lyrics, LyricsSource, Song, SongAvailability};
     use crate::domain::ids::Revision;
     use crate::domain::library::{PortableRecord, MEDIA_ROOT};
     use crate::domain::media::{AudioFormat, ParsedMetadata};
