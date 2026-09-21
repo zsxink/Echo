@@ -435,7 +435,12 @@ function main() {
       volumePath = mountedVolume(run("hdiutil", ["attach", "-readwrite", "-nobrowse", rwDmg]));
       writeFileSync(script, appleScript(volumePath, layout));
       run("osascript", [script]);
-      run("hdiutil", ["detach", volumePath], { stdio: "ignore" });
+      try {
+        run("hdiutil", ["detach", volumePath], { stdio: "ignore" });
+      } catch {
+        // Finder 的 close/reopen 可能把卷短暂解锁或已推出；detach 只是清理性动作，
+        // 第 2 步会用独立 mountpoint 重新挂载 rwDmg，这里失败不影响产物。
+      }
       volumePath = undefined;
     }
 
