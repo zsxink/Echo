@@ -14,7 +14,7 @@
  * real app does with one global toast.
  */
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SongView } from "../../ipc/ipc-types.generated";
@@ -95,6 +95,40 @@ describe("SongMenu task 10.8", () => {
     expect(screen.getByText(/10 秒内可撤销/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "撤销" })).toBeInTheDocument();
     expect(onRefresh).toHaveBeenCalled();
+  });
+
+  it("auto-dismisses the restored toast after clicking undo", async () => {
+    // @ts-expect-error test hook
+    globalThis.__echoTest.setInvoke("delete_song", "op-123");
+    // @ts-expect-error test hook
+    globalThis.__echoTest.setInvoke("undo_delete", undefined);
+    renderMenu(makeSong());
+
+    fireEvent.click(screen.getByText("删除"));
+    fireEvent.click(screen.getByText("移至回收站"));
+    const undo = await screen.findByRole("button", { name: "撤销" });
+
+    // A real browser focuses the action button on click. This is the state
+    // that previously leaked into the replacement toast and stopped its timer.
+    fireEvent.focus(undo);
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(undo);
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText("已恢复「Lacquer Love」")).toBeInTheDocument();
+      expect(screen.getByTestId("toast")).toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3200);
+      });
+      expect(screen.queryByText("已恢复「Lacquer Love」")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows an error and keeps the song when delete fails — no fake deletion", async () => {

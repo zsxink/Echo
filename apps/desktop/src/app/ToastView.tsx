@@ -22,9 +22,14 @@ const DISMISS_MS = 3200;
 
 export function ToastView() {
   const toast = useToast();
-  const [paused, setPaused] = useState(false);
+  // Pause belongs to one rendered toast. When an action replaces the current
+  // toast (for example, 撤销 -> 已恢复), the component remains mounted, but
+  // the new toast must start its own dismissal timer instead of inheriting the
+  // old toast's hover/focus pause.
+  const [pausedToastId, setPausedToastId] = useState<number | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const id = toast?.id ?? null;
+  const paused = id !== null && pausedToastId === id;
   const autoDismissMs = toast?.autoDismissMs ?? null;
   const hasAction = Boolean(toast?.onAction);
 
@@ -51,10 +56,10 @@ export function ToastView() {
       role="status"
       aria-live="polite"
       data-testid="toast"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocus={() => setPaused(true)}
-      onBlur={() => setPaused(false)}
+      onMouseEnter={() => setPausedToastId(id)}
+      onMouseLeave={() => setPausedToastId(null)}
+      onFocus={() => setPausedToastId(id)}
+      onBlur={() => setPausedToastId(null)}
     >
       <span className="toast-icon" aria-hidden="true">
         <Icon name="note" />
