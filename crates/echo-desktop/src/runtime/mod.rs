@@ -48,6 +48,9 @@ pub mod app;
 /// Playback assembly: coordinator + actor + UI snapshot mapping (task 10.6/11.1).
 pub mod player;
 
+/// Lifecycle-bound scheduler for expired delete finalization.
+pub mod trash_worker;
+
 /// The phases of the supervisor sequence, in order.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StartupPhase {

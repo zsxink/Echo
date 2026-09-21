@@ -20,18 +20,20 @@ use std::{
 // `-D warnings` clippy stays green on Windows/Linux.
 #[cfg(target_os = "macos")]
 use echo_core::application::ports::CoverCache;
+use echo_core::application::ports::SystemTrashPort;
 #[cfg(not(target_os = "macos"))]
 use echo_core::domain::state::PlaybackState;
 use echo_desktop::platform::local_state::{CloseBehavior, DesktopStateStore};
 use echo_desktop::platform::status_menu::StatusMenuSink;
 #[cfg(not(target_os = "macos"))]
 use echo_desktop::platform::status_menu::{self, PlaySummary};
+use echo_desktop::platform::trash::{TrashCrateBackend, TrashWithBackend};
 use echo_desktop::player::coordinator::PlaybackCoordinator;
 use echo_desktop::player::port::{PlayerCommand, PlayerError, PlayerPort};
 use echo_desktop::runtime::app::assemble;
 use echo_desktop::runtime::player;
 use echo_desktop::runtime::services::AppServices;
-use echo_desktop::runtime::StartupSupervisor;
+use echo_desktop::runtime::{trash_worker::TrashFinalizationWorker, StartupSupervisor};
 #[cfg(not(target_os = "macos"))]
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 #[cfg(not(target_os = "macos"))]
@@ -284,11 +286,15 @@ fn wire_composition(
     // gate diverge with nothing to notice it.
     let supervisor = Arc::clone(startup);
     let scan_supervisor = echo_core::application::scan::ScanSupervisor::new();
-    let trash = echo_desktop::platform::trash::DesktopTrash::default();
+    let trash: Arc<dyn SystemTrashPort> = Arc::new(TrashWithBackend::new(TrashCrateBackend::new(
+        routed.registry.clone(),
+    )));
     supervisor
-        .run_recovery(&routed.deps, &scan_supervisor, &trash)
+        .run_recovery(&routed.deps, &scan_supervisor, trash.as_ref())
         .map_err(|error| format!("runtime recovery failed: {error}"))?;
     supervisor.on_ready();
+    let trash_worker = TrashFinalizationWorker::start(routed.deps.clone(), Arc::clone(&trash))
+        .map_err(|error| format!("trash finalization worker failed: {error}"))?;
 
     // A scripted Gate run (native E2E) replaces the OS pickers with env-driven
     // dialogs; everything else is identical to production.
@@ -308,6 +314,7 @@ fn wire_composition(
         echo_core::application::root_switch::Blockers::new(),
     );
     app.manage(services);
+    app.manage(trash_worker);
     app.manage(routed.registry.clone());
     app.manage(routed.deps.clone());
     // The `cover://` protocol resolves bytes by opaque asset key (design §16).

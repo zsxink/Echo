@@ -18,6 +18,7 @@ tracing-subscriber = { workspace = true }
 # Dynamic loading of the vendored libmpv (macOS dylib in the app bundle). The
 # echo-desktop shell owns this platform bridge; echo-core never sees it.
 libloading = { workspace = true }
+trash = { workspace = true }
 
 [dev-dependencies]
 echo-core = { path = "../echo-core", features = ["testkit"] }

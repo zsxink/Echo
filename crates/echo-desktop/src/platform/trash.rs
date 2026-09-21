@@ -22,6 +22,7 @@ use std::time::Duration;
 use echo_core::application::ports::SystemTrashPort;
 use echo_core::domain::ids::{LibraryRootId, OperationId};
 use echo_core::error::Error;
+use echo_core::infrastructure::filesystem::RootRegistry;
 
 /// Maximum number of attempts for a trash call that fails with a file lock
 /// (Windows). Bounded so a permanently-locked file cannot spin forever.
@@ -67,9 +68,75 @@ pub trait TrashBackend: Send + Sync {
     ) -> Result<(), TrashBackendError>;
 }
 
+/// Production backend that hands Echo-owned delete staging directories to the
+/// operating system's recycle bin/trash.
+#[derive(Clone, Debug)]
+pub struct TrashCrateBackend {
+    registry: RootRegistry,
+}
+
+impl TrashCrateBackend {
+    /// Build a backend over the registry shared by the desktop filesystem
+    /// adapters.
+    #[must_use]
+    pub const fn new(registry: RootRegistry) -> Self {
+        Self { registry }
+    }
+
+    /// Resolve and validate one Echo delete staging directory. The checks are
+    /// deliberately performed immediately before the OS call: a path can be
+    /// replaced by a symlink after journaling, and the adapter must fail closed
+    /// rather than hand an arbitrary path to the trash implementation.
+    fn resolve_target(
+        &self,
+        root: &LibraryRootId,
+        operation: &OperationId,
+    ) -> Result<std::path::PathBuf, TrashBackendError> {
+        let root_path = self
+            .registry
+            .path_of(*root)
+            .map_err(|_| TrashBackendError::Other)?;
+        let root_canonical =
+            std::fs::canonicalize(&root_path).map_err(|_| TrashBackendError::Other)?;
+        let mut target = root_path;
+        let operation_dir = operation.as_uuid().simple().to_string();
+        for component in ["echo", "tmp", "trash", operation_dir.as_str()] {
+            target.push(component);
+            let metadata =
+                std::fs::symlink_metadata(&target).map_err(|_| TrashBackendError::Other)?;
+            if metadata.file_type().is_symlink() {
+                return Err(TrashBackendError::Other);
+            }
+        }
+        if !std::fs::metadata(&target)
+            .map_err(|_| TrashBackendError::Other)?
+            .is_dir()
+        {
+            return Err(TrashBackendError::Other);
+        }
+        let target_canonical =
+            std::fs::canonicalize(&target).map_err(|_| TrashBackendError::Other)?;
+        if !target_canonical.starts_with(&root_canonical) {
+            return Err(TrashBackendError::Other);
+        }
+        Ok(target_canonical)
+    }
+}
+
+impl TrashBackend for TrashCrateBackend {
+    fn move_to_trash(
+        &self,
+        root: &LibraryRootId,
+        operation: &OperationId,
+    ) -> Result<(), TrashBackendError> {
+        let target = self.resolve_target(root, operation)?;
+        trash::delete(target).map_err(|_| TrashBackendError::Other)
+    }
+}
+
 /// A [`SystemTrashPort`] over an injected [`TrashBackend`], applying the
 /// Windows file-lock retry policy and the irreversibility contract.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct DesktopTrash {
     /// The backend to retry. Retried in place (the caller supplies a concrete
     /// backend type).
@@ -152,7 +219,7 @@ impl SystemTrashPort for DesktopTrash {
 
 /// A [`SystemTrashPort`] that carries a concrete backend. `D` is the backend
 /// type the composition root provides.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct TrashWithBackend<D> {
     backend: D,
     policy: DesktopTrash,
@@ -235,6 +302,82 @@ mod tests {
         let op = OperationId::from_str("00000000-0000-0000-0000-000000000002")
             .expect("valid operation id");
         (root, op)
+    }
+
+    fn staging_fixture() -> (tempfile::TempDir, RootRegistry, LibraryRootId, OperationId) {
+        let dir = tempfile::tempdir().expect("temporary root");
+        let registry = RootRegistry::new();
+        let (root, operation) = ids();
+        registry.register(root, dir.path());
+        std::fs::create_dir_all(
+            dir.path()
+                .join("echo")
+                .join("tmp")
+                .join("trash")
+                .join(operation.as_uuid().simple().to_string()),
+        )
+        .expect("staging directory");
+        (dir, registry, root, operation)
+    }
+
+    #[test]
+    fn production_backend_accepts_only_a_real_echo_staging_directory() {
+        let (dir, registry, root, operation) = staging_fixture();
+        let backend = TrashCrateBackend::new(registry);
+        let resolved = backend
+            .resolve_target(&root, &operation)
+            .expect("valid staging directory");
+        assert_eq!(
+            resolved,
+            dir.path()
+                .canonicalize()
+                .unwrap()
+                .join("echo/tmp/trash")
+                .join(operation.as_uuid().simple().to_string())
+        );
+    }
+
+    #[test]
+    fn production_backend_rejects_unbound_and_missing_targets() {
+        let dir = tempfile::tempdir().expect("temporary root");
+        let registry = RootRegistry::new();
+        let (root, operation) = ids();
+        let backend = TrashCrateBackend::new(registry.clone());
+        assert_eq!(
+            backend.resolve_target(&root, &operation),
+            Err(TrashBackendError::Other)
+        );
+
+        registry.register(root, dir.path());
+        assert_eq!(
+            backend.resolve_target(&root, &operation),
+            Err(TrashBackendError::Other)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn production_backend_rejects_symlinked_staging_targets() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().expect("temporary root");
+        let outside = tempfile::tempdir().expect("outside root");
+        let registry = RootRegistry::new();
+        let (root, operation) = ids();
+        registry.register(root, dir.path());
+        let trash = dir.path().join("echo/tmp/trash");
+        std::fs::create_dir_all(&trash).expect("trash parent");
+        symlink(
+            outside.path(),
+            trash.join(operation.as_uuid().simple().to_string()),
+        )
+        .expect("symlink staging target");
+
+        let backend = TrashCrateBackend::new(registry);
+        assert_eq!(
+            backend.resolve_target(&root, &operation),
+            Err(TrashBackendError::Other)
+        );
     }
 
     #[test]
