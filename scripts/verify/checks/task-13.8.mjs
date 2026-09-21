@@ -167,7 +167,10 @@ run("pnpm", ["--filter", "@echo/desktop", "typecheck"], APP);
 // how this gate used to look green without ever proving the scope guard.
 function runDesktopTest(filter) {
   const out = run("pnpm", ["--filter", "@echo/desktop", "test", filter], APP);
-  const files = Number((out.match(/Test Files\s+(\d+)/) ?? [])[1] ?? 0);
+  // Vitest colours its reporter when `CI` is set; strip ANSI before the count
+  // regex, exactly as run-scenario.mjs does, or CI misreads the summary.
+  const plain = out.replace(/\u001B\[[0-9;]*[A-Za-z]/g, "");
+  const files = Number((plain.match(/Test Files\s+(\d+)/) ?? [])[1] ?? 0);
   if (files !== 1) {
     fail(`'${filter}' matched ${files} test files (expected exactly 1) — the filter did not apply`);
   }
