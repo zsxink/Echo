@@ -337,6 +337,7 @@ export function PlaylistsView({
     setBatchBusy(true);
     const result = await runDeleteBatch(root, songs);
     loadMembers();
+    onLibraryChanged?.();
     invalidateLibraryCounts();
     exitSelectionMode();
     setBatchBusy(false);
@@ -359,6 +360,7 @@ export function PlaylistsView({
       onAction: () => {
         void undoDeleteBatch(root, operations).then((undo) => {
           loadMembers();
+          onLibraryChanged?.();
           invalidateLibraryCounts();
           notify({
             message: `撤回删除：成功 ${undo.succeeded}，失败 ${undo.failed}`,
@@ -367,7 +369,7 @@ export function PlaylistsView({
         });
       },
     });
-  }, [batchDeleteFor, exitSelectionMode, loadMembers, root]);
+  }, [batchDeleteFor, exitSelectionMode, loadMembers, onLibraryChanged, root]);
 
   return (
     <>

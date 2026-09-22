@@ -227,12 +227,27 @@ impl PlaylistRepository for MemoryDatabase {
         Ok(())
     }
     fn members(&self, id: PlaylistId) -> Result<Vec<PlaylistMember>, Error> {
-        let mut rows: Vec<_> = self
-            .lock()
+        let store = self.lock();
+        let mut rows: Vec<_> = store
             .members
             .values()
             .filter(|member| member.playlist() == id)
-            .cloned()
+            .map(|member| {
+                // Mirror SQLite's `members()` JOIN: the member's reported
+                // availability is the *song's* live availability, so a
+                // pending-delete song stops counting immediately while its
+                // membership row survives (undo restores it). The stored
+                // member is stale by design otherwise.
+                let Some(song) = store.songs.get(&member.song()) else {
+                    return member.clone();
+                };
+                if song.availability() == member.song_availability() {
+                    return member.clone();
+                }
+                let mut live = member.clone();
+                live.mirror_song(song.availability());
+                live
+            })
             .collect();
         // Mirror the SQL order: position, then stable UUID tie-break.
         rows.sort_by(|a, b| {

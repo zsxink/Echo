@@ -9,6 +9,7 @@ use echo_core::application::detail::{GetSongDetail, GetSongLyrics};
 use echo_core::application::playlist::PlaylistMembers;
 use echo_core::application::ports::PlaylistRepository;
 use echo_core::domain::catalog::{OpaqueCursor, SongSort};
+use echo_core::domain::entities::SongAvailability;
 use echo_core::domain::ids::{PlaylistId, SongId};
 use echo_core::error::Error;
 
@@ -137,7 +138,15 @@ impl super::AppServices {
         for id in ids {
             let name = PlaylistRepository::name(repos, id)?.unwrap_or_default();
             let members = repos.members(id)?;
-            let count = members.len();
+            // Pending-delete members are hidden from the playlist view
+            // (`playlist_songs_query` filters `availability <> 'pending_delete'`),
+            // so the sidebar count and auto-cover must agree: a just-deleted
+            // song stops counting within its undo window without removing the
+            // membership row undo may still restore.
+            let count = members
+                .iter()
+                .filter(|m| m.song_availability() != SongAvailability::PendingDelete)
+                .count();
             // A manual choice always wins. Otherwise the newest member's
             // embedded artwork is the playlist cover; a brand-new playlist
             // deliberately has no cover at all.
@@ -147,6 +156,9 @@ impl super::AppServices {
             // previously resolved automatic cover.
             let mut automatic_cover_key = None;
             for member in members.iter().rev() {
+                if member.song_availability() == SongAvailability::PendingDelete {
+                    continue;
+                }
                 if let Some(cover) = self.deps.covers.cover_of(member.song())? {
                     automatic_cover_key = Some(cover.asset_key);
                     break;

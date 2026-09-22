@@ -521,6 +521,41 @@ fn delete_and_undo_roundtrip_restores_the_song() {
     assert!(back.items.iter().any(|s| s.id == ids[0].to_string()));
 }
 
+/// The sidebar playlist count must drop within the delete undo window even
+/// though the membership row survives (finalization only cascades it away via
+/// `delete_song`). The count is a *live* projection of the members' song
+/// availability, exactly like the playlist view's `playlist_songs_query`, so a
+/// just-deleted song stops counting immediately and undo restores the count.
+#[test]
+fn delete_then_undo_reflects_playlist_member_count_within_undo_window() {
+    let fixture = ScanFixture::new();
+    let ids = seed_songs(&fixture, 2);
+    let app = services(&fixture);
+
+    let playlist = app
+        .create_playlist(fixture.root, "删除计数")
+        .expect("create");
+    let id = PlaylistId::from_str(&playlist).expect("valid playlist id");
+    app.add_to_playlists(ids[0], &[id]).expect("add to playlist");
+    app.add_to_playlists(ids[1], &[id]).expect("add second song");
+
+    let count = |app: &AppServices| app.playlists().expect("list")[0].member_count;
+    assert_eq!(count(&app), 2, "both members counted before delete");
+
+    let operation = app
+        .delete_song(fixture.root, ids[0])
+        .expect("delete returns undo op");
+    assert_eq!(
+        count(&app),
+        1,
+        "pending-delete member must not count within the undo window"
+    );
+
+    app.undo_delete(fixture.root, OperationId::from_str(&operation).expect("op"))
+        .expect("undo restores");
+    assert_eq!(count(&app), 2, "undo restores the playlist count");
+}
+
 #[test]
 fn library_status_reflects_configuration_and_scan_in_flight() {
     let fixture = ScanFixture::new();
