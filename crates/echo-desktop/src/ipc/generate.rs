@@ -70,6 +70,7 @@ pub fn generated_typescript() -> String {
     out.push_str("}\n\n");
 
     out.push_str("export type SongAvailability = 'available' | 'missing' | 'pending-delete';\n\n");
+    out.push_str("export type SongQuality = 'sq' | 'hq';\n\n");
     out.push_str("export interface SongView {\n");
     out.push_str("  readonly id: string;\n");
     out.push_str("  readonly title?: string;\n");
@@ -80,6 +81,7 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly playCount: number;\n");
     out.push_str("  readonly availability: SongAvailability;\n");
     out.push_str("  readonly relativePath: string;\n");
+    out.push_str("  readonly quality?: SongQuality;\n");
     out.push_str("}\n\n");
 
     out.push_str("export interface PagedSongs {\n");

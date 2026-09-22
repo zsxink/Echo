@@ -226,7 +226,14 @@ export function SongRow({
             ) : null}
           </div>
           <div className="track-text">
-            <div className="track-title">{title}</div>
+            <div className="track-title">
+              <span className="track-title-text">{title}</span>
+              {song.quality ? (
+                <span className={`quality-badge q-${song.quality}`} aria-hidden="true">
+                  {song.quality.toUpperCase()}
+                </span>
+              ) : null}
+            </div>
             <div className="track-artist">
               {artist}
               {unavailable ? (

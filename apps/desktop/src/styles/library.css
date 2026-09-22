@@ -96,8 +96,14 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
    than borrowing the song-list's record glyph. */
 .playlist-cover:not(.has-image)::before, .playlist-cover:not(.has-image)::after { content: none; }
 .track-text { min-width: 0; }
-.track-title, .track-artist, .track-album { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.track-title { font-size: var(--text-sm); font-weight: 650; }
+.track-title { display: flex; align-items: baseline; gap: var(--space-1); min-width: 0; font-size: var(--text-sm); font-weight: 650; }
+.track-title-text, .track-artist, .track-album { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The quality badge rides at the end of the title: it never wraps, never
+   shrinks, and survives a long title's ellipsis (its own text truncates
+   independently). Pure decoration — click-through, off the tab order. */
+.quality-badge { flex: none; font: 650 var(--text-xs)/1 var(--font-mono); letter-spacing: .05em; pointer-events: none; }
+.q-sq { color: var(--quality-sq); }
+.q-hq { color: var(--quality-hq); }
 .track-artist, .track-album, .track-time { color: var(--muted); font-size: var(--text-xs); }
 .track-album { color: var(--fg-2); }
 .row-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }

@@ -209,3 +209,42 @@ describe("SongRow title and artwork", () => {
     expect(cover?.querySelector("img")).toBeNull();
   });
 });
+
+describe("SongRow quality badge", () => {
+  it.each([
+    ["sq", "SQ"],
+    ["hq", "HQ"],
+  ] as const)("renders the %s badge after the title", (quality, label) => {
+    const { container } = renderRow({ song: makeSong({ quality }) });
+    const badge = container.querySelector(".track-title .quality-badge");
+
+    expect(badge).not.toBeNull();
+    expect(badge).toHaveClass(`q-${quality}`);
+    expect(badge).toHaveTextContent(label);
+    // The badge is decoration, not a control: no button role is exposed and
+    // the plain-title guard still holds.
+    expect(screen.queryByRole("button", { name: label })).toBeNull();
+  });
+
+  it("does not render a badge nor reserve space when the song has no quality tier", () => {
+    const { container } = renderRow();
+    expect(container.querySelector(".track-title .quality-badge")).toBeNull();
+    expect(container.querySelector(".track-title")).toHaveTextContent("心房");
+  });
+
+  it("does not interfere with row playback when clicking the badge", () => {
+    const { props } = renderRow({ song: makeSong({ quality: "sq" }) });
+
+    const badge = screen.getByText("SQ");
+    fireEvent.click(badge);
+
+    expect(props.onPlay).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the album column unaffected by the badge", () => {
+    const { container } = renderRow({ song: makeSong({ quality: "hq" }) });
+    const row = container.querySelector(".track-row");
+    const album = row?.querySelector(".track-album");
+    expect(album).toHaveTextContent("猩红");
+  });
+});

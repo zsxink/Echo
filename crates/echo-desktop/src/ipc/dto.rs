@@ -11,6 +11,7 @@ use echo_core::application::scan::ScanSummary;
 use echo_core::domain::catalog::{CatalogCounts, OpaqueCursor, Paged};
 use echo_core::domain::entities::{Song, SongAvailability};
 use echo_core::domain::ids::{LibraryRootId, PlaylistId, SongId};
+use echo_core::domain::media::{AudioFormat, AudioParameters};
 
 /// The bootstrap snapshot every session starts from (task 7.3 `get_bootstrap_state`).
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -41,6 +42,22 @@ pub struct SongView {
     pub availability: String,
     /// The library-relative path (never absolute).
     pub relative_path: String,
+    /// Derived sound-quality tier, when the persisted scan facts put the file
+    /// in the SQ or HQ bucket. Derived at read time — never persisted, so old
+    /// rows show a badge without a rescan.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quality: Option<QualityTierDto>,
+}
+
+/// The badge tier shown after a song title in the library list.
+///
+/// Derived from the scan facts (`format` + audio parameters) the moment the
+/// row is built; see [`derive_quality`]. Serialized as `"sq"` / `"hq"`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum QualityTierDto {
+    Sq,
+    Hq,
 }
 
 impl From<&Song> for SongView {
@@ -55,8 +72,58 @@ impl From<&Song> for SongView {
             play_count: song.play_count().as_u64(),
             availability: availability_label(song.availability()),
             relative_path: song.path().display().to_string(),
+            quality: derive_quality(song.format(), song.audio_parameters()),
         }
     }
+}
+
+/// Derive the quality tier shown as a badge (SQ, then HQ) from the scan facts.
+///
+/// Pure read-time derivation: a plain comparison of persisted stream
+/// parameters, no I/O and no DB writes. SQ wins over HQ when both match.
+/// Formats outside the lossless set (e.g. `Ape`), below the code-rate
+/// thresholds, or with missing parameters yield `None`.
+///
+/// - **SQ**: FLAC/WAV; or bits-per-sample ≥ 24; or sample rate ≥ 96 kHz.
+/// - **HQ**: MP3 ≥ 320 kbps; MP4/AAC ≥ 256 kbps; Opus/Ogg ≥ 256 kbps.
+///
+/// Bitrates compare in bps (`320 kbps == 320_000`) to avoid unit mix-ups.
+#[must_use]
+fn derive_quality(format: Option<AudioFormat>, params: AudioParameters) -> Option<QualityTierDto> {
+    let format = format?;
+    // A damaged/unrecognized file never earns a badge.
+    if format == AudioFormat::UnknownDamaged {
+        return None;
+    }
+
+    let AudioParameters {
+        bitrate_bps,
+        sample_rate_hz,
+        bits_per_sample,
+        ..
+    } = params;
+
+    // SQ by container or by stream depth/rate — applies to any format family.
+    let sq = matches!(format, AudioFormat::Flac | AudioFormat::Wav)
+        || bits_per_sample.is_some_and(|bits| bits >= 24)
+        || sample_rate_hz.is_some_and(|hz| hz >= 96_000);
+    if sq {
+        return Some(QualityTierDto::Sq);
+    }
+
+    // HQ by code rate, per format family. 320 kbps and 256 kbps in bps.
+    let hq = match format {
+        AudioFormat::Mpeg => bitrate_bps.is_some_and(|bps| bps >= 320_000),
+        AudioFormat::Mp4 => bitrate_bps.is_some_and(|bps| bps >= 256_000),
+        AudioFormat::Ogg | AudioFormat::Opus => bitrate_bps.is_some_and(|bps| bps >= 256_000),
+        // The lossless arms already returned as SQ; damaged returned above;
+        // APE never earns HQ on its own.
+        AudioFormat::Flac | AudioFormat::Wav | AudioFormat::UnknownDamaged | AudioFormat::Ape => {
+            false
+        }
+    };
+
+    hq.then_some(QualityTierDto::Hq)
 }
 
 /// A keyset-paginated page of song views.
@@ -458,6 +525,19 @@ mod tests {
         song
     }
 
+    fn with_scan_facts(song: &mut Song, format: AudioFormat, params: AudioParameters) {
+        song.apply_scan_facts_with_params("hash".to_owned(), 1_024, 0, format, params);
+    }
+
+    fn params(bitrate: Option<u64>, rate: Option<u32>, bits: Option<u16>) -> AudioParameters {
+        AudioParameters {
+            bitrate_bps: bitrate,
+            sample_rate_hz: rate,
+            channels: Some(2),
+            bits_per_sample: bits,
+        }
+    }
+
     #[test]
     fn song_view_is_camel_case_relative_path_only() {
         let view = SongView::from(&song());
@@ -474,6 +554,169 @@ mod tests {
         assert_eq!(
             json.get("availability").and_then(|v| v.as_str()),
             Some("available")
+        );
+    }
+
+    #[test]
+    fn song_view_serializes_quality_as_camel_case_and_omits_none() {
+        let sq = SongView::from(&song());
+        let json = serde_json::to_value(&sq).expect("serialize");
+        // No scan facts yet → no quality at all, and the key is absent.
+        assert!(json.get("quality").is_none());
+
+        let mut damaged = song();
+        with_scan_facts(
+            &mut damaged,
+            AudioFormat::Mpeg,
+            params(Some(128_000), None, None),
+        );
+        let damaged_view = SongView::from(&damaged);
+        assert!(serde_json::to_value(&damaged_view)
+            .expect("serialize")
+            .get("quality")
+            .is_none());
+
+        let mut hq = song();
+        with_scan_facts(
+            &mut hq,
+            AudioFormat::Mpeg,
+            params(Some(320_000), None, None),
+        );
+        let hq_view = SongView::from(&hq);
+        let hq_json = serde_json::to_value(&hq_view).expect("serialize");
+        assert_eq!(
+            hq_json.get("quality").and_then(|v| v.as_str()),
+            Some("hq"),
+            "badge tier serializes as the lowercase camelCase field value"
+        );
+    }
+
+    #[test]
+    fn derive_quality_marks_lossless_formats_sq() {
+        for format in [AudioFormat::Flac, AudioFormat::Wav] {
+            // Even with no stream parameters at all, the container earns SQ.
+            assert_eq!(
+                derive_quality(Some(format), AudioParameters::default()),
+                Some(QualityTierDto::Sq),
+                "{format:?} should be SQ by format alone"
+            );
+        }
+    }
+
+    #[test]
+    fn derive_quality_honors_bit_depth_and_sample_rate_for_sq() {
+        // 24-bit at an otherwise "low" rate still lands in SQ.
+        assert_eq!(
+            derive_quality(
+                Some(AudioFormat::Mpeg),
+                params(Some(128_000), Some(44_100), Some(24)),
+            ),
+            Some(QualityTierDto::Sq)
+        );
+        // 96 kHz at 16-bit also earns SQ.
+        assert_eq!(
+            derive_quality(
+                Some(AudioFormat::Mp4),
+                params(Some(192_000), Some(96_000), Some(16)),
+            ),
+            Some(QualityTierDto::Sq)
+        );
+        // 23-bit is not SQ by depth, and 95_999 Hz is not SQ by rate.
+        assert_eq!(
+            derive_quality(
+                Some(AudioFormat::Mpeg),
+                params(Some(320_000), Some(44_100), Some(23)),
+            ),
+            Some(QualityTierDto::Hq),
+            "23-bit keeps the MP3 in HQ, not SQ"
+        );
+        assert_eq!(
+            derive_quality(
+                Some(AudioFormat::Mpeg),
+                params(Some(320_000), Some(95_999), Some(16)),
+            ),
+            Some(QualityTierDto::Hq),
+            "95_999 Hz keeps the MP3 in HQ, not SQ"
+        );
+    }
+
+    #[test]
+    fn derive_quality_hq_thresholds_per_format() {
+        // MP3: 319_999 bps is not HQ; 320_000 bps is.
+        assert_eq!(
+            derive_quality(Some(AudioFormat::Mpeg), params(Some(319_999), None, None)),
+            None
+        );
+        assert_eq!(
+            derive_quality(Some(AudioFormat::Mpeg), params(Some(320_000), None, None)),
+            Some(QualityTierDto::Hq)
+        );
+        // MP4: 255_999 is not HQ; 256_000 is.
+        assert_eq!(
+            derive_quality(Some(AudioFormat::Mp4), params(Some(255_999), None, None)),
+            None
+        );
+        assert_eq!(
+            derive_quality(Some(AudioFormat::Mp4), params(Some(256_000), None, None)),
+            Some(QualityTierDto::Hq)
+        );
+        // Opus/Ogg: 256_000 reaches HQ.
+        assert_eq!(
+            derive_quality(Some(AudioFormat::Opus), params(Some(256_000), None, None)),
+            Some(QualityTierDto::Hq)
+        );
+        assert_eq!(
+            derive_quality(Some(AudioFormat::Ogg), params(Some(320_000), None, None)),
+            Some(QualityTierDto::Hq)
+        );
+    }
+
+    #[test]
+    fn derive_quality_returns_none_for_low_rate_missing_params_and_damaged() {
+        // 128 kbps MP3 — the poster-child "no badge" row.
+        assert_eq!(
+            derive_quality(Some(AudioFormat::Mpeg), params(Some(128_000), None, None)),
+            None
+        );
+        // Parameters entirely missing.
+        assert_eq!(
+            derive_quality(Some(AudioFormat::Mpeg), AudioParameters::default()),
+            None
+        );
+        assert_eq!(derive_quality(None, AudioParameters::default()), None);
+        // Damaged files never get a badge, even with a high bitrate.
+        assert_eq!(
+            derive_quality(
+                Some(AudioFormat::UnknownDamaged),
+                params(Some(320_000), None, Some(24)),
+            ),
+            None
+        );
+        // APE never earns HQ on its own.
+        assert_eq!(
+            derive_quality(Some(AudioFormat::Ape), params(Some(320_000), None, None)),
+            None
+        );
+    }
+
+    #[test]
+    fn derive_quality_prefers_sq_over_hq_when_both_match() {
+        // A 24-bit / 44.1 kHz FLAC satisfies both buckets; SQ wins.
+        assert_eq!(
+            derive_quality(
+                Some(AudioFormat::Flac),
+                params(Some(320_000), Some(44_100), Some(24)),
+            ),
+            Some(QualityTierDto::Sq)
+        );
+        // A high-rate MP3 would also meet the SQ-by-rate rule.
+        assert_eq!(
+            derive_quality(
+                Some(AudioFormat::Mpeg),
+                params(Some(320_000), Some(96_000), None)
+            ),
+            Some(QualityTierDto::Sq),
+            "rate-based SQ beats the HQ code-rate check"
         );
     }
 

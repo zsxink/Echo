@@ -53,6 +53,8 @@ export interface BootstrapSnapshot {
 
 export type SongAvailability = 'available' | 'missing' | 'pending-delete';
 
+export type SongQuality = 'sq' | 'hq';
+
 export interface SongView {
   readonly id: string;
   readonly title?: string;
@@ -63,6 +65,7 @@ export interface SongView {
   readonly playCount: number;
   readonly availability: SongAvailability;
   readonly relativePath: string;
+  readonly quality?: SongQuality;
 }
 
 export interface PagedSongs {

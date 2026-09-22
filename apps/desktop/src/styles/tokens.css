@@ -34,6 +34,10 @@
   --success: #22a06b;
   --warn: #faad14;
   --danger: #cf1322;
+  /* Sound-quality badge text: SQ yellow / HQ blue, chosen to read as warm gold
+     vs. cool blue on every theme's background (see the per-theme overrides). */
+  --quality-sq: #b8860b;
+  --quality-hq: oklch(0.42 0.15 263.35);
   --font-display: "Ant Sans", "Alibaba PuHuiTi", Inter, Arial, sans-serif;
   --font-body: "Ant Sans", "Alibaba PuHuiTi", Inter, Arial, sans-serif;
   --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
@@ -81,6 +85,10 @@
   --accent-strong: oklch(0.3100 0.1850 263.35);
   --accent-strong-hover: color-mix(in oklab, var(--accent-strong), black 8%);
   --surface-warm: oklch(0.9460 0.0140 263.35);
+  /* On the cool cobalt surface the badge blue needs more chroma and the gold
+     more lightness to stay distinct from both the background and the accent. */
+  --quality-hq: oklch(0.50 0.21 263.35);
+  --quality-sq: #d4a017;
 }
 
 :root[data-echo-theme="wine"] {
@@ -118,4 +126,9 @@ button:focus-visible, input:focus-visible { outline: none; box-shadow: var(--foc
   --accent-strong: oklch(0.44 0.1330 159.56);
   --accent-strong-hover: color-mix(in oklab, var(--accent-strong), black 8%);
   --surface-warm: oklch(0.9460 0.0180 159.56);
+  /* Turquoise is a green accent: plain gold (a green + red mix) muddies into
+     olive, so the badge gold shifts toward amber and the blue keeps a cool
+     saturation that the green surface doesn't swallow. */
+  --quality-sq: #c27700;
+  --quality-hq: oklch(0.44 0.16 263.35);
 }
