@@ -12,7 +12,7 @@
  * regression back to counting loaded rows fails here immediately.
  */
 
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -137,6 +137,65 @@ describe("资料库导航计数", () => {
         vi.mocked(invoke).mock.calls.filter(([c]) => c === "library_counts").length,
       ).toBeGreaterThan(before),
     );
+  });
+
+  it("refreshes playlist member counts after deleting and undoing a library song", async () => {
+    let playlistCount = 1;
+    mocks.setInvoke("playlists", () => [
+      { id: "list-1", name: "通勤", memberCount: playlistCount },
+    ]);
+    mocks.setInvoke("delete_song", "op-123");
+    mocks.setInvoke("undo_delete", undefined);
+
+    await act(async () => {
+      render(<App />);
+    });
+    await waitFor(() => expect(screen.getByTestId("playlist-count-list-1")).toHaveTextContent("1"));
+    await screen.findByText("晴天");
+
+    const playlistsBeforeDelete = vi.mocked(invoke).mock.calls.filter(
+      ([command]) => command === "playlists",
+    ).length;
+    playlistCount = 0;
+    fireEvent.click(within(screen.getByTestId("song-row-song-1")).getByLabelText("歌曲操作"));
+    fireEvent.click(screen.getByText("删除"));
+    fireEvent.click(screen.getByText("移至回收站"));
+
+    await waitFor(() => expect(screen.getByTestId("playlist-count-list-1")).toHaveTextContent("0"));
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === "playlists").length,
+    ).toBeGreaterThan(playlistsBeforeDelete);
+
+    const playlistsAfterDelete = vi.mocked(invoke).mock.calls.filter(
+      ([command]) => command === "playlists",
+    ).length;
+    playlistCount = 1;
+    fireEvent.click(await screen.findByRole("button", { name: "撤销" }));
+
+    await waitFor(() => expect(screen.getByTestId("playlist-count-list-1")).toHaveTextContent("1"));
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === "playlists").length,
+    ).toBeGreaterThan(playlistsAfterDelete);
+  });
+
+  it("does not refresh playlist counts when deleting a library song fails", async () => {
+    mocks.setInvoke("delete_song", new Error("delete failed"));
+    await act(async () => {
+      render(<App />);
+    });
+    await screen.findByText("晴天");
+    const playlistsBeforeDelete = vi.mocked(invoke).mock.calls.filter(
+      ([command]) => command === "playlists",
+    ).length;
+
+    fireEvent.click(within(screen.getByTestId("song-row-song-1")).getByLabelText("歌曲操作"));
+    fireEvent.click(screen.getByText("删除"));
+    fireEvent.click(screen.getByText("移至回收站"));
+
+    await screen.findByText("删除失败，请重试");
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === "playlists").length,
+    ).toBe(playlistsBeforeDelete);
   });
 
   it("shows no count when the backend cannot answer, without breaking the shell", async () => {

@@ -86,6 +86,10 @@ export function LibraryWorkspace({
     [view, search, sort, root, readOnly],
   );
   const { page, loading, error, loadMore, reset, retry, patchSong } = useSongs(query);
+  const refreshAfterSongMutation = useCallback(() => {
+    reset();
+    onLibraryChanged?.();
+  }, [onLibraryChanged, reset]);
   const selectionKey = useMemo(
     () => [view, search.trim().toLowerCase(), sort.field, sort.direction, root].join("|"),
     [view, search, sort, root],
@@ -437,7 +441,7 @@ export function LibraryWorkspace({
             setAddToPlaylistFor([menuFor.song]);
             setMenuFor(null);
           }}
-          onRefresh={reset}
+          onRefresh={refreshAfterSongMutation}
         />
       ) : null}
 

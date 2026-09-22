@@ -139,6 +139,11 @@ export function PlaylistsView({
 
   useEffect(loadMembers, [loadMembers]);
 
+  const refreshAfterSongMutation = useCallback(() => {
+    loadMembers();
+    onLibraryChanged?.();
+  }, [loadMembers, onLibraryChanged]);
+
   async function deletePlaylist() {
     setConfirmDelete(false);
     try {
@@ -468,7 +473,7 @@ export function PlaylistsView({
             onFavorite(menuFor.song, favorite);
             setMenuFor(null);
           }}
-          onRefresh={loadMembers}
+          onRefresh={refreshAfterSongMutation}
           extraActions={
             <button
               type="button"

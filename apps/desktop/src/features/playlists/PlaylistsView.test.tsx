@@ -274,6 +274,28 @@ describe("PlaylistsView (task 10.9)", () => {
     expect(onLibraryChanged).toHaveBeenCalledTimes(1);
   });
 
+  it("refreshes the sidebar count after deleting and undoing a playlist member", async () => {
+    const members = [
+      { id: "song-1", title: "晴天", favorite: false, playCount: 0, availability: "available" },
+    ];
+    const onLibraryChanged = vi.fn();
+    mockBridge({ playlist_members: members, delete_song: "op-123", undo_delete: undefined });
+    renderView({ onLibraryChanged }, { withToast: true });
+    await screen.findByTestId("song-row-song-1");
+
+    fireEvent.click(within(screen.getByTestId("song-row-song-1")).getByLabelText("歌曲操作"));
+    await screen.findByTestId("song-menu");
+    fireEvent.click(screen.getByText("删除"));
+    fireEvent.click(screen.getByText("移至回收站"));
+
+    await waitFor(() => expect(call).toHaveBeenCalledWith("delete_song", expect.anything()));
+    expect(onLibraryChanged).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(await screen.findByRole("button", { name: "撤销" }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith("undo_delete", expect.anything()));
+    expect(onLibraryChanged).toHaveBeenCalledTimes(2);
+  });
+
   it("disables batch writes for a read-only playlist", async () => {
     mockBridge({ playlist_members: [{ id: "song-1", title: "晴天", favorite: false }] });
     renderView({ readOnly: true });

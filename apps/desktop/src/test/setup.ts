@@ -32,6 +32,7 @@ const tauriCore = {
       // An `Error` handler means "this command fails" — the way to test a
       // failing path without leaking an unhandled rejected promise.
       if (value instanceof Error) throw value;
+      if (typeof value === "function") return (value as () => unknown)();
       return value;
     }
     // Default: `library_status` reports unconfigured (shows the choose-root
