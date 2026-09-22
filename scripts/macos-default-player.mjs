@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // macOS 默认音频播放器设置工具
 //
-// 把 Echo（bundle id com.zsxink.echo）设为 mp3/flac/m4a/ogg/opus/wav 这些
+// 把 Echo（bundle id com.zsxink.echo）设为 mp3/flac/m4a/ogg/opus/wav/ape 这些
 // 系统音频格式的默认打开应用。
 //
 // 为什么需要它：macOS 把"某类文件的默认打开方式"记录在 LaunchServices
@@ -30,6 +30,7 @@ const FORMATS = [
   { ext: "ogg", uti: "org.xiph.ogg-audio" },
   { ext: "opus", uti: "org.xiph.ogg-audio" },
   { ext: "wav", uti: "com.microsoft.waveform-audio" },
+  { ext: "ape", uti: "org.monkeysaudio.ape" },
 ];
 
 if (process.platform !== "darwin") {

@@ -16,6 +16,7 @@ pub enum AudioFormat {
     #[default]
     Mpeg,
     Flac,
+    Ape,
     /// MP4 container (`.m4a` or `.mp4` with an audio track).
     Mp4,
     Ogg,
@@ -32,6 +33,7 @@ impl AudioFormat {
         match self {
             Self::Mpeg => "mp3",
             Self::Flac => "flac",
+            Self::Ape => "ape",
             Self::Mp4 => "m4a",
             Self::Ogg => "ogg",
             Self::Opus => "opus",

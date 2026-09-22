@@ -424,7 +424,7 @@ mod tests {
 
     /// Task 9.2 drift guard: the shell's file-association registration must
     /// cover exactly the format families the media stack guarantees
-    /// (mp3/flac/m4a/ogg/opus/wav) — never a superset (an unvetted format Echo
+    /// (mp3/flac/m4a/ogg/opus/wav/ape) — never a superset (an unvetted format Echo
     /// claims to open) nor a subset (a guaranteed format the user can no longer
     /// open by double-clicking). This is the shell half of "配置保证格式文件
     /// 关联"; the open-path resolution (`SongId` vs temporary item) is playback
@@ -435,6 +435,7 @@ mod tests {
         let guaranteed: std::collections::BTreeSet<String> = [
             AudioFormat::Mpeg,
             AudioFormat::Flac,
+            AudioFormat::Ape,
             AudioFormat::Mp4,
             AudioFormat::Ogg,
             AudioFormat::Opus,

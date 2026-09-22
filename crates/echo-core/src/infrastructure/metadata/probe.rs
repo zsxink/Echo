@@ -22,8 +22,11 @@
 //!   case).
 //! - The file itself is missing/unopenable → [`Error::Io`].
 
+use std::io::{BufReader, Read, Seek};
 use std::time::Duration;
 
+use lofty::file::AudioFile;
+use lofty::probe::Probe as LoftyProbe;
 use symphonia::core::codecs::CodecType;
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::FormatOptions;
@@ -127,12 +130,53 @@ impl SymphoniaMediaProbe {
     ) -> Result<ContainerKind, SymphoniaError> {
         Self::probe_source(std::fs::File::open(abs)?, extension)
     }
+
+    /// Lofty is the metadata/properties reader for APE. Symphonia exposes the
+    /// APE codec constant but does not ship an APE demuxer, so APE needs this
+    /// small content-signature path in the probe as well.
+    fn probe_ape_reader<R>(reader: R) -> Result<ContainerKind, Error>
+    where
+        R: Read + Seek,
+    {
+        let probe =
+            LoftyProbe::new(reader)
+                .guess_file_type()
+                .map_err(|error| Error::CorruptMedia {
+                    operation: "probe".to_owned(),
+                    reason: error.to_string(),
+                })?;
+        let tagged = probe.read().map_err(|error| Error::CorruptMedia {
+            operation: "probe".to_owned(),
+            reason: error.to_string(),
+        })?;
+        let duration = tagged.properties().duration();
+        Ok(ContainerKind::Audio(AudioTrack {
+            format: AudioFormat::Ape,
+            duration: (!duration.is_zero()).then_some(duration),
+        }))
+    }
+
+    fn path_has_ape_signature(abs: &std::path::Path) -> Result<bool, std::io::Error> {
+        let mut file = std::fs::File::open(abs)?;
+        let mut signature = [0_u8; 3];
+        Ok(file.read_exact(&mut signature).is_ok() && signature == *b"MAC")
+    }
 }
 
 impl MediaProbe for SymphoniaMediaProbe {
     fn probe(&self, root: LibraryRootId, path: &RelativeMediaPath) -> Result<ProbeOutcome, Error> {
         let abs = self.registry.path_of(root)?.join(path.normalized());
         // Content first: the extension must never decide the format.
+        match Self::path_has_ape_signature(&abs) {
+            Ok(true) => {
+                let file = std::fs::File::open(&abs)
+                    .map_err(|source| classify_io("probe", source, abs.clone()))?;
+                return Self::probe_ape_reader(BufReader::new(file))
+                    .map(ContainerKind::into_outcome);
+            }
+            Ok(false) => {}
+            Err(source) => return Err(classify_io("probe", source, abs)),
+        }
         match Self::probe_reader(&abs, None) {
             Ok(kind) => return Ok(kind.into_outcome()),
             Err(SymphoniaError::Unsupported(_)) => {}
@@ -168,6 +212,10 @@ impl MediaProbe for SymphoniaMediaProbe {
         // `MediaSourceStream` takes an owned `'static` source, hence the
         // `Vec`: one copy per attempt, and the second one only happens when
         // content probing found no reader and the name gets its retry.
+        if content.starts_with(b"MAC") {
+            return Self::probe_ape_reader(std::io::Cursor::new(content.to_vec()))
+                .map(ContainerKind::into_outcome);
+        }
         match Self::probe_source(std::io::Cursor::new(content.to_vec()), None) {
             Ok(kind) => return Ok(kind.into_outcome()),
             Err(SymphoniaError::Unsupported(_)) => {}
@@ -204,7 +252,7 @@ fn classify_io(operation: &str, source: std::io::Error, path: std::path::PathBuf
     }
 }
 
-/// The codec-to-format mapping for the phase-1 matrix.
+/// The codec-to-format mapping for the Symphonia-backed part of the matrix.
 fn codec_to_format(codec: CodecType) -> Option<AudioFormat> {
     if codec == symphonia::core::codecs::CODEC_TYPE_MP3 {
         Some(AudioFormat::Mpeg)

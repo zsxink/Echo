@@ -17,9 +17,10 @@
 use std::io::BufReader;
 use std::path::Path;
 
+use lofty::picture::Picture;
 use lofty::prelude::*;
 use lofty::probe::Probe;
-use lofty::tag::ItemKey;
+use lofty::tag::{ItemKey, Tag, TagType};
 
 use crate::application::ports::MetadataReader;
 use crate::domain::ids::{LibraryRootId, RelativeMediaPath};
@@ -135,22 +136,8 @@ fn read_from_reader<R: std::io::Read + std::io::Seek>(
             &mut parsed,
         );
         parsed.track = tag.track();
-        parsed.embedded_lyrics =
-            limited_lyrics(tag.get_string(&ItemKey::Lyrics), limits.lyrics, &mut parsed);
-        if let Some(picture) = tag.pictures().first() {
-            let data = picture.data();
-            if data.len() > limits.cover {
-                parsed.warnings.push(ParseWarning {
-                    kind: ParseWarningKind::CoverLimit,
-                    field: "cover".to_owned(),
-                });
-            } else if !data.is_empty() {
-                parsed.cover = Some(EmbeddedCover {
-                    bytes: data.to_vec(),
-                    mime: mime_of(picture.mime_type()),
-                });
-            }
-        }
+        parsed.embedded_lyrics = limited_lyrics(lyrics_from_tag(tag), limits.lyrics, &mut parsed);
+        read_cover(tag, limits.cover, &mut parsed);
     }
     // Stream parameters come from the container properties (lofty reads the
     // audio stream, not the tag text); duration/format stay probe-owned.
@@ -165,6 +152,84 @@ fn read_from_reader<R: std::io::Read + std::io::Seek>(
         bits_per_sample: properties.bit_depth().map(u16::from),
     };
     Ok(parsed)
+}
+
+/// Read lyrics from the normalized tag, including the common APE
+/// `UNSYNCEDLYRICS` field that lofty intentionally leaves as an unknown key.
+fn lyrics_from_tag(tag: &Tag) -> Option<&str> {
+    tag.get_string(&ItemKey::Lyrics).or_else(|| {
+        tag.items().find_map(|item| {
+            let ItemKey::Unknown(key) = item.key() else {
+                return None;
+            };
+            let normalized: String = key
+                .chars()
+                .filter(char::is_ascii_alphanumeric)
+                .flat_map(char::to_lowercase)
+                .collect();
+            matches!(normalized.as_str(), "lyrics" | "unsyncedlyrics")
+                .then(|| item.value().text())
+                .flatten()
+        })
+    })
+}
+
+/// Read the first cover represented by lofty's regular picture collection or
+/// by an APE binary cover-art item. APE stores pictures as binary items whose
+/// value includes a description, MIME signature and image bytes; lofty exposes
+/// those items as `ItemKey::Unknown` rather than populating `Tag::pictures`.
+fn read_cover(tag: &Tag, limit: usize, parsed: &mut ParsedMetadata) {
+    if let Some(picture) = tag.pictures().first() {
+        store_cover(picture.data(), picture.mime_type(), limit, parsed);
+        return;
+    }
+
+    if tag.tag_type() != TagType::Ape {
+        return;
+    }
+
+    for item in tag.items() {
+        let ItemKey::Unknown(key) = item.key() else {
+            continue;
+        };
+        if !lofty::ape::APE_PICTURE_TYPES
+            .iter()
+            .any(|known| known.eq_ignore_ascii_case(key))
+        {
+            continue;
+        }
+        let Some(bytes) = item.value().binary() else {
+            continue;
+        };
+        let Ok(picture) = Picture::from_ape_bytes(key, bytes) else {
+            parsed.warnings.push(ParseWarning {
+                kind: ParseWarningKind::TagDecode,
+                field: "cover".to_owned(),
+            });
+            continue;
+        };
+        store_cover(picture.data(), picture.mime_type(), limit, parsed);
+        return;
+    }
+}
+
+fn store_cover(
+    data: &[u8],
+    mime: Option<&lofty::picture::MimeType>,
+    limit: usize,
+    parsed: &mut ParsedMetadata,
+) {
+    if data.len() > limit {
+        parsed.warnings.push(ParseWarning {
+            kind: ParseWarningKind::CoverLimit,
+            field: "cover".to_owned(),
+        });
+    } else if !data.is_empty() {
+        parsed.cover = Some(EmbeddedCover {
+            bytes: data.to_vec(),
+            mime: mime_of(mime),
+        });
+    }
 }
 
 /// Clean a raw tag value: control-character strip + NFKC + whitespace collapse.
@@ -308,6 +373,40 @@ mod tests {
             flac.cover.is_some(),
             "the FLAC fixture embeds the generated cover"
         );
+    }
+
+    #[test]
+    fn ape_unknown_items_supply_cover_and_unsynced_lyrics() {
+        use lofty::tag::{ItemValue, TagItem};
+
+        let mut tag = Tag::new(TagType::Ape);
+        tag.insert_unchecked(TagItem::new(
+            ItemKey::Unknown("COVER ART (FRONT)".to_owned()),
+            ItemValue::Binary(
+                [
+                    b"Cover Art (Front).jpg\0".as_slice(),
+                    &[0xff, 0xd8, 0xff, 0xe0, 0, 0x10, b'J', b'F', b'I', b'F'],
+                ]
+                .concat(),
+            ),
+        ));
+        tag.insert_unchecked(TagItem::new(
+            ItemKey::Unknown("UNSYNCEDLYRICS".to_owned()),
+            ItemValue::Text("[00:01.00]first line".to_owned()),
+        ));
+
+        assert_eq!(
+            lyrics_from_tag(&tag),
+            Some("[00:01.00]first line"),
+            "common APE lyrics key is not in lofty's normalized map"
+        );
+
+        let mut parsed = ParsedMetadata::default();
+        read_cover(&tag, InputLimits::defaults().cover, &mut parsed);
+        let cover = parsed.cover.expect("APE binary picture becomes a cover");
+        assert_eq!(cover.mime, "image/jpeg");
+        assert_eq!(&cover.bytes[..4], &[0xff, 0xd8, 0xff, 0xe0]);
+        assert!(parsed.warnings.is_empty());
     }
 
     /// Task 5.2: import sources are named from their bytes, before anything

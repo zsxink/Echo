@@ -56,7 +56,9 @@ impl SystemDialogs for TauriDialogs {
             .file()
             .add_filter(
                 "音频",
-                &["mp3", "flac", "m4a", "aac", "ogg", "opus", "wav", "aiff"],
+                &[
+                    "mp3", "flac", "m4a", "aac", "ogg", "opus", "wav", "aiff", "ape",
+                ],
             )
             .blocking_pick_files();
         let Some(files) = some else {

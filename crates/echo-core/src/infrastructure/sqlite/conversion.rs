@@ -108,6 +108,7 @@ pub(crate) fn audio_format_from_db(value: &str) -> Result<AudioFormat, Error> {
     match value {
         "mp3" => Ok(AudioFormat::Mpeg),
         "flac" => Ok(AudioFormat::Flac),
+        "ape" => Ok(AudioFormat::Ape),
         "m4a" => Ok(AudioFormat::Mp4),
         "ogg" => Ok(AudioFormat::Ogg),
         "opus" => Ok(AudioFormat::Opus),
@@ -365,6 +366,7 @@ mod tests {
         for format in [
             AudioFormat::Mpeg,
             AudioFormat::Flac,
+            AudioFormat::Ape,
             AudioFormat::Mp4,
             AudioFormat::Ogg,
             AudioFormat::Opus,
@@ -374,7 +376,7 @@ mod tests {
             let db = audio_format_to_db(format);
             assert_eq!(audio_format_from_db(db).unwrap(), format, "{db}");
         }
-        let error = audio_format_from_db("ape").expect_err("unsupported encoding");
+        let error = audio_format_from_db("not-a-format").expect_err("unsupported encoding");
         assert!(matches!(error, Error::InvariantViolation { .. }));
     }
 

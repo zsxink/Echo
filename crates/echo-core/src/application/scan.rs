@@ -37,8 +37,8 @@ use crate::error::Error;
 /// The cheap extension filter (design §6.2): enumeration returns every
 /// regular file; the scan probes only these. Everything else is a skip. The
 /// import pipeline applies the same matrix to user-selected sources (task 5.1).
-pub(crate) const SUPPORTED_EXTENSIONS: [&str; 7] =
-    ["mp3", "flac", "m4a", "mp4", "ogg", "opus", "wav"];
+pub(crate) const SUPPORTED_EXTENSIONS: [&str; 8] =
+    ["mp3", "flac", "m4a", "mp4", "ogg", "opus", "wav", "ape"];
 
 /// Scan pipeline tuning.
 #[derive(Clone, Copy, Debug)]

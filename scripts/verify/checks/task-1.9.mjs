@@ -19,7 +19,7 @@ const MACOS = join(BUNDLE, "Contents", "MacOS");
 const FRAMEWORKS = join(BUNDLE, "Contents", "Frameworks");
 const EXECUTABLE = join(MACOS, "echo");
 const FIXTURE = resolve(ROOT, "fixtures", "audio", "tone-short.mp3");
-const REQUIRED_EXTENSIONS = ["mp3", "flac", "m4a", "ogg", "opus", "wav"];
+const REQUIRED_EXTENSIONS = ["mp3", "flac", "m4a", "ogg", "opus", "wav", "ape"];
 
 function fail(message) {
   process.stderr.write(`FAIL 1.9: ${message}\n`);
