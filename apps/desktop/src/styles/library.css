@@ -101,9 +101,11 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 /* The quality badge rides at the end of the title: it never wraps, never
    shrinks, and survives a long title's ellipsis (its own text truncates
    independently). Pure decoration — click-through, off the tab order. */
-.quality-badge { flex: none; font: 650 var(--text-xs)/1 var(--font-mono); letter-spacing: .05em; pointer-events: none; }
-.q-sq { color: var(--quality-sq); }
-.q-hq { color: var(--quality-hq); }
+.quality-badge { flex: none; font: 650 var(--text-2xs)/1 var(--font-mono); letter-spacing: .05em; pointer-events: none; }
+/* Fade the tuned per-theme hues at the usage site rather than editing the
+   tokens, so every theme softens by the same amount. */
+.q-sq { color: color-mix(in oklab, var(--quality-sq), transparent 30%); }
+.q-hq { color: color-mix(in oklab, var(--quality-hq), transparent 30%); }
 .track-artist, .track-album, .track-time { color: var(--muted); font-size: var(--text-xs); }
 .track-album { color: var(--fg-2); }
 .row-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }

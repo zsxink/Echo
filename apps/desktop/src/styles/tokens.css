@@ -41,6 +41,7 @@
   --font-display: "Ant Sans", "Alibaba PuHuiTi", Inter, Arial, sans-serif;
   --font-body: "Ant Sans", "Alibaba PuHuiTi", Inter, Arial, sans-serif;
   --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
+  --text-2xs: 10px;
   --text-xs: 12px;
   --text-sm: 14px;
   --text-base: 16px;
