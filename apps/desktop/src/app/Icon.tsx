@@ -53,6 +53,22 @@ const GLYPHS: Record<string, Glyph> = {
       <path d="M20.8 4.6a5.4 5.4 0 0 0-7.6 0L12 5.8l-1.2-1.2a5.4 5.4 0 1 0-7.6 7.6L12 21l8.8-8.8a5.4 5.4 0 0 0 0-7.6Z" />
     ),
   },
+  artist: {
+    nodes: (
+      <>
+        <circle cx="12" cy="8" r="3.2" />
+        <path d="M5 20c.7-3.4 3.2-5.1 7-5.1s6.3 1.7 7 5.1" />
+      </>
+    ),
+  },
+  album: {
+    nodes: (
+      <>
+        <rect x="4" y="4" width="16" height="16" rx="2" />
+        <circle cx="12" cy="12" r="3" />
+      </>
+    ),
+  },
   plus: { nodes: <path d="M12 5v14M5 12h14" /> },
 
   // --- topbar / toolbar ----------------------------------------------------
@@ -104,6 +120,8 @@ const GLYPHS: Record<string, Glyph> = {
   menu: { nodes: <path d="M4 6h16M4 12h16M4 18h16" /> },
   close: { nodes: <path d="m6 6 12 12M18 6 6 18" /> },
   chevronDown: { strokeWidth: 2, nodes: <path d="m6 9 6 6 6-6" /> },
+  chevronLeft: { strokeWidth: 2, nodes: <path d="m14 6-6 6 6 6" /> },
+  chevronRight: { strokeWidth: 2, nodes: <path d="m10 6 6 6-6 6" /> },
   drag: { nodes: <path d="M4 9h16M4 15h16" /> },
 
   // --- transport -----------------------------------------------------------

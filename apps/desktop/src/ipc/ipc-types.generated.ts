@@ -74,6 +74,17 @@ export interface PagedSongs {
   readonly isLast: boolean;
 }
 
+export interface CatalogCollectionView {
+  readonly kind: 'artist' | 'album';
+  readonly artistKey: string;
+  readonly albumKey?: string;
+  readonly artist: string;
+  readonly name: string;
+  readonly songCount: number;
+  readonly coverKey?: string;
+  readonly hasCustomCover: boolean;
+}
+
 export interface LibraryCountsDto {
   readonly all: number;
   readonly favorites: number;
@@ -180,6 +191,9 @@ export interface IpcCommandResultMap {
   readonly search: PagedSongs;
   readonly favorites: PagedSongs;
   readonly recent: readonly SongView[];
+  readonly catalog_collections: readonly CatalogCollectionView[];
+  readonly catalog_collection_songs: readonly SongView[];
+  readonly set_artist_cover: void;
   readonly library_counts: LibraryCountsDto;
   readonly playlists: readonly PlaylistView[];
   readonly playlist_members: readonly SongView[];

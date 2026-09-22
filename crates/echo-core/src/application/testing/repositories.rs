@@ -447,6 +447,7 @@ impl LyricsRepository for MemoryLyricsRepository {
 #[derive(Clone, Debug, Default)]
 pub struct MemoryCoverRepository {
     covers: Shared<BTreeMap<(LibraryRootId, SongId), CoverAssetRef>>,
+    artist_covers: Shared<BTreeMap<(LibraryRootId, String), String>>,
 }
 
 impl MemoryCoverRepository {
@@ -470,6 +471,33 @@ impl CoverRepository for MemoryCoverRepository {
             .find(|((_, s), _)| *s == song)
             .map(|(_, cover)| cover.clone()))
     }
+    fn artist_cover_key(
+        &self,
+        root: LibraryRootId,
+        artist_key: &str,
+    ) -> Result<Option<String>, Error> {
+        Ok(self
+            .artist_covers
+            .lock()
+            .unwrap()
+            .get(&(root, artist_key.to_owned()))
+            .cloned())
+    }
+    fn set_artist_cover_key(
+        &self,
+        root: LibraryRootId,
+        artist_key: &str,
+        key: Option<&str>,
+    ) -> Result<(), Error> {
+        let mut covers = self.artist_covers.lock().unwrap();
+        let identity = (root, artist_key.to_owned());
+        if let Some(key) = key {
+            covers.insert(identity, key.to_owned());
+        } else {
+            covers.remove(&identity);
+        }
+        Ok(())
+    }
     fn referenced_asset_keys(&self, root: LibraryRootId) -> Result<Vec<String>, Error> {
         Ok(self
             .covers
@@ -478,6 +506,14 @@ impl CoverRepository for MemoryCoverRepository {
             .iter()
             .filter(|((r, _), _)| *r == root)
             .map(|(_, cover)| cover.asset_key.clone())
+            .chain(
+                self.artist_covers
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|((r, _), _)| *r == root)
+                    .map(|(_, key)| key.clone()),
+            )
             .collect())
     }
 }

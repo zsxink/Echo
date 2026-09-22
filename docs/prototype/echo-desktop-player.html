@@ -133,10 +133,6 @@ button:focus-visible, input:focus-visible { outline: none; box-shadow: var(--foc
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); flex: none; }
 .link-button { border: 0; background: none; color: var(--fg-2); padding: var(--space-2); text-align: left; cursor: pointer; border-radius: var(--radius-sm); }
 .link-button:hover { background: var(--surface); color: var(--fg); }
-.sync-button { width: 100%; display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-xs); }
-.sync-label { color: var(--fg-2); }
-.sync-button #sync-label { margin-left: auto; color: var(--muted); }
-.sync-button:disabled { cursor: wait; opacity: .55; }
 .theme-control { position: relative; }
 #theme-trigger { width: 100%; display: flex; align-items: center; gap: var(--space-2); }
 #theme-current { margin-left: auto; color: var(--muted); font: 500 var(--text-xs)/1 var(--font-mono); }
@@ -194,6 +190,9 @@ button:focus-visible, input:focus-visible { outline: none; box-shadow: var(--foc
 .setting-row strong, .setting-row span { display: block; }
 .setting-row strong { font-size: var(--text-sm); }
 .setting-row .setting-help { margin-top: var(--space-1); color: var(--muted); font-size: var(--text-xs); }
+.setting-choices { display: grid; gap: var(--space-2); }
+.setting-choice { display: flex; align-items: center; gap: var(--space-2); color: var(--fg-2); font-size: var(--text-xs); cursor: pointer; }
+.setting-choice input { accent-color: var(--accent-strong); }
 .storage-value { min-width: 0; }
 .storage-path { max-width: 430px; overflow: hidden; color: var(--fg-2); font: 500 var(--text-xs)/1.45 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .storage-path.is-empty { color: var(--muted); font-family: var(--font-body); }
@@ -258,6 +257,10 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 .track-table th { height: 28px; padding: 0 var(--space-2); text-align: left; font-weight: inherit; }
 .track-table td { height: 44px; padding: 0 calc(var(--space-2) * .8); border-top: 0; vertical-align: middle; }
 .track-table th:last-child, .track-table td:last-child { padding-inline: calc(var(--space-2) * .75); }
+.track-table th.selection-column, .track-table td.selection-column { padding-inline: var(--space-1); text-align: center; }
+.list-select-all, .row-select { width: 18px; height: 18px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--bg); color: var(--muted); cursor: pointer; display: inline-grid; place-items: center; vertical-align: middle; }
+.list-select-all:hover, .row-select:hover, .list-select-all.active, .row-select.active { border-color: var(--accent-strong); background: var(--surface-warm); color: var(--accent-strong); }
+.list-select-all svg, .row-select svg { width: 11px; height: 11px; }
 .track-row { cursor: pointer; transition: background var(--motion-fast) var(--ease-standard); }
 .track-row:hover { background: var(--surface); }
 .track-row:focus-visible { outline: none; box-shadow: inset var(--focus-ring); }
@@ -336,6 +339,46 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 .playlist-card-edit:hover { background: var(--surface); color: var(--fg); }
 .playlist-card-edit:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .playlist-card-edit svg { width: 16px; height: 16px; }
+.collection-directory { min-height: 0; flex: 1 1 auto; overflow-y: auto; padding: var(--space-2) 0 var(--space-6); scrollbar-width: thin; scrollbar-color: transparent transparent; }
+.collection-directory:hover, .collection-directory:focus-within { scrollbar-color: color-mix(in oklab, var(--muted), transparent 42%) transparent; }
+.collection-directory::-webkit-scrollbar { width: 10px; }
+.collection-directory::-webkit-scrollbar-track { background: transparent; }
+.collection-directory::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: var(--radius-pill); background: transparent; background-clip: padding-box; }
+.collection-directory:hover::-webkit-scrollbar-thumb, .collection-directory:focus-within::-webkit-scrollbar-thumb { background: color-mix(in oklab, var(--muted), transparent 42%); }
+.collection-directory::-webkit-scrollbar-thumb:hover { background: color-mix(in oklab, var(--fg), transparent 48%); }
+.collection-directory[hidden] { display: none; }
+.collection-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: var(--space-2); }
+.collection-card { position: relative; min-width: 0; min-height: 88px; }
+.collection-open { width: 100%; min-height: 88px; display: grid; grid-template-columns: 64px minmax(0, 1fr) 18px; align-items: center; gap: var(--space-3); padding: var(--space-3); border: 1px solid transparent; border-radius: var(--radius-md); background: transparent; color: var(--fg); text-align: left; cursor: pointer; transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard); }
+.collection-open:hover { border-color: var(--border); background: var(--surface); transform: translateY(-1px); }
+.collection-open:active { transform: translateY(0); }
+.collection-art { position: relative; width: 64px; height: 64px; overflow: hidden; border-radius: var(--radius-md); background: var(--surface-warm); }
+.collection-art .cover, .collection-art img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
+.collection-copy { min-width: 0; }
+.collection-copy strong, .collection-copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.collection-copy strong { font-size: var(--text-base); font-weight: 680; }
+.collection-copy span { margin-top: 2px; color: var(--muted); font-size: var(--text-xs); }
+.collection-chevron { color: var(--muted); }
+.collection-chevron svg { width: 16px; height: 16px; }
+.collection-cover-edit { position: absolute; z-index: 1; top: calc(var(--space-3) + 34px); left: calc(var(--space-3) + 34px); width: 28px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--bg); color: var(--fg-2); display: grid; place-items: center; cursor: pointer; opacity: 0; transform: translateY(2px); transition: opacity var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
+.collection-card:hover .collection-cover-edit, .collection-cover-edit:focus-visible { opacity: 1; transform: translateY(0); }
+.collection-cover-edit:hover { color: var(--accent-strong); }
+.collection-cover-edit svg { width: 14px; height: 14px; }
+.collection-cover-note { display: block; margin-top: var(--space-1); color: var(--muted); font-size: 11px; line-height: 1.2; }
+.collection-back { display: none; width: 28px; height: 28px; margin-left: calc(var(--space-2) * -1); padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--fg-2); place-items: center; cursor: pointer; }
+.collection-back.is-visible { display: grid; }
+.collection-back:hover { background: var(--surface); color: var(--fg); }
+.collection-back svg { width: 18px; height: 18px; }
+.collection-empty { display: none; padding: var(--space-12); color: var(--fg-2); text-align: center; }
+.collection-empty.show { display: block; }
+.collection-song-list { display: grid; flex: 1 1 auto; min-height: 0; gap: 1px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: transparent transparent; padding-bottom: var(--space-6); }
+.collection-song-list:hover, .collection-song-list:focus-within { scrollbar-color: color-mix(in oklab, var(--muted), transparent 42%) transparent; }
+.collection-song-list::-webkit-scrollbar { width: 10px; }
+.collection-song-list::-webkit-scrollbar-track { background: transparent; }
+.collection-song-list::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: var(--radius-pill); background: transparent; background-clip: padding-box; }
+.collection-song-list:hover::-webkit-scrollbar-thumb, .collection-song-list:focus-within::-webkit-scrollbar-thumb { background: color-mix(in oklab, var(--muted), transparent 42%); }
+.collection-song-list::-webkit-scrollbar-thumb:hover { background: color-mix(in oklab, var(--fg), transparent 48%); }
+.collection-song-head { position: sticky; top: 0; z-index: 1; padding: 0; background: var(--bg); }
 .playlist-context-menu { position: fixed; z-index: 28; width: 160px; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); box-shadow: var(--elev-raised); }
 .playlist-context-menu[hidden] { display: none; }
 .playlist-name-dialog { position: fixed; z-index: 31; inset: 0; display: grid; place-items: center; padding: var(--space-5); }
@@ -576,7 +619,7 @@ body.player-mode-open .queue-popover .queue-name span { margin-top: var(--space-
 .btn-danger { color: var(--accent-on); background: var(--danger); border-color: var(--danger); }
 .btn-danger:hover { color: var(--accent-on); background: color-mix(in oklab, var(--danger), black 8%); border-color: color-mix(in oklab, var(--danger), black 8%); }
 @media (max-width: 1100px) { .app { grid-template-columns: 196px minmax(520px, 1fr); } .playerbar { grid-template-columns: minmax(180px, 1fr) minmax(300px, 1.2fr) minmax(160px, 1fr); } .queue-popover { right: var(--space-6); } }
-@media (max-width: 760px) { body.sidebar-mobile-open { overflow: hidden; } .app { display: block; min-width: 0; height: 100dvh; min-height: 0; overflow: hidden; padding-bottom: 88px; } .workspace { height: calc(100dvh - 88px); } .sidebar { display: flex; position: fixed; z-index: 14; inset: 0 auto 0 0; width: min(280px, calc(100vw - 48px)); padding: var(--space-6) var(--space-4); transform: translateX(-100%); transition: transform var(--motion-base) var(--ease-standard); box-shadow: var(--elev-raised); } body.sidebar-mobile-open .sidebar { transform: translateX(0); } .sidebar-toggle { display: grid; width: 44px; height: 44px; flex: none; place-items: center; } .sidebar-toggle .sidebar-open-icon { display: none; } .sidebar-toggle[aria-expanded="true"] .sidebar-closed-icon { display: none; } .sidebar-toggle[aria-expanded="true"] .sidebar-open-icon { display: block; } .sidebar-scrim:not([hidden]) { display: block; position: fixed; z-index: 13; inset: 0; border: 0; background: color-mix(in oklab, var(--fg), transparent 72%); cursor: pointer; } .topbar { padding: 0 var(--space-4); min-height: 64px; gap: var(--space-3); } .crumb { display: none; } .content { min-height: 0; padding: var(--space-5) var(--space-4); overflow: hidden; } .library-head { align-items: stretch; flex-direction: column; gap: var(--space-3); } .list-context { min-width: 0; min-height: 44px; flex-wrap: nowrap; white-space: nowrap; } .library-tools { min-height: 44px; } .tool-button.tool-icon { width: 44px; min-height: 44px; } .track-table col.album, .track-table th.album, .track-table td.album { display: none; } .playerbar { position: fixed; z-index: 2; bottom: 0; left: 0; right: 0; grid-template-columns: 1fr auto; padding: var(--space-3) var(--space-4); gap: var(--space-3); } .controls { display: block; } .control-buttons .control:not(.control-play) { display: none; } .player-options { display: none; } .queue-popover { right: var(--space-4); bottom: 82px; width: min(352px, calc(100vw - 32px)); max-height: calc(100vh - 110px); } .now-playing-popover { bottom: 88px; padding: 84px var(--space-5) 40px; grid-template-columns: 1fr; gap: var(--space-6); overflow: auto; } .now-playing-popover .playing-cover { width: min(66vw, 280px); margin: 0 auto; justify-self: center; } .now-playing-copy { margin: 0 auto; } }
+  @media (max-width: 760px) { body.sidebar-mobile-open { overflow: hidden; } .app { display: block; min-width: 0; height: 100dvh; min-height: 0; overflow: hidden; padding-bottom: 88px; } .workspace { height: calc(100dvh - 88px); } .sidebar { display: flex; position: fixed; z-index: 14; inset: 0 auto 0 0; width: min(280px, calc(100vw - 48px)); padding: var(--space-6) var(--space-4); transform: translateX(-100%); transition: transform var(--motion-base) var(--ease-standard); box-shadow: var(--elev-raised); } body.sidebar-mobile-open .sidebar { transform: translateX(0); } .sidebar-toggle { display: grid; width: 44px; height: 44px; flex: none; place-items: center; } .sidebar-toggle .sidebar-open-icon { display: none; } .sidebar-toggle[aria-expanded="true"] .sidebar-closed-icon { display: none; } .sidebar-toggle[aria-expanded="true"] .sidebar-open-icon { display: block; } .sidebar-scrim:not([hidden]) { display: block; position: fixed; z-index: 13; inset: 0; border: 0; background: color-mix(in oklab, var(--fg), transparent 72%); cursor: pointer; } .topbar { padding: 0 var(--space-4); min-height: 64px; gap: var(--space-3); } .crumb { display: none; } .content { min-height: 0; padding: var(--space-5) var(--space-4); overflow: hidden; } .library-head { align-items: stretch; flex-direction: column; gap: var(--space-3); } .list-context { min-width: 0; min-height: 44px; flex-wrap: nowrap; white-space: nowrap; } .library-tools { min-height: 44px; } .tool-button.tool-icon { width: 44px; min-height: 44px; } .track-table col.album, .track-table th.album, .track-table td.album { display: none; } .collection-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); } .collection-open { grid-template-columns: 48px minmax(0, 1fr); min-height: 72px; gap: var(--space-2); padding: var(--space-2); } .collection-art { width: 48px; height: 48px; } .collection-chevron { display: none; } .collection-cover-edit { top: calc(var(--space-2) + 24px); left: calc(var(--space-2) + 24px); opacity: 1; transform: none; } .collection-copy strong { font-size: var(--text-sm); } .collection-cover-note { display: none; } .playerbar { position: fixed; z-index: 2; bottom: 0; left: 0; right: 0; grid-template-columns: 1fr auto; padding: var(--space-3) var(--space-4); gap: var(--space-3); } .controls { display: block; } .control-buttons .control:not(.control-play) { display: none; } .player-options { display: none; } .queue-popover { right: var(--space-4); bottom: 82px; width: min(352px, calc(100vw - 32px)); max-height: calc(100vh - 110px); } .now-playing-popover { bottom: 88px; padding: 84px var(--space-5) 40px; grid-template-columns: 1fr; gap: var(--space-6); overflow: auto; } .now-playing-popover .playing-cover { width: min(66vw, 280px); margin: 0 auto; justify-self: center; } .now-playing-copy { margin: 0 auto; } }
 @media (max-width: 760px) { body.player-mode-open { overflow: hidden; } body.player-mode-open .now-playing-popover { inset: 0; display: grid; grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "info" "record" "lyrics"; gap: var(--space-4); padding: 72px var(--space-5) 152px; } body.player-mode-open .now-playing-info { align-self: start; padding: 0; transform: none; } body.player-mode-open .now-playing-popover .now-title { font-size: clamp(var(--text-xl), 8vw, var(--text-2xl)); } body.player-mode-open .song-meta { margin-top: var(--space-2); font-size: var(--text-xs); } body.player-mode-open .now-playing-popover .playing-cover { width: min(82vw, 330px); margin: 0 auto; justify-self: center; align-self: center; } body.player-mode-open .now-playing-popover .tonearm { display: block; } body.player-mode-open .now-playing-popover .lyrics { width: 100%; max-width: none; max-height: calc(2.25em * 5); align-self: end; padding: 0; cursor: pointer; } body.player-mode-open .now-playing-popover .lyrics p { font-size: var(--text-sm); line-height: 2.25; } body.player-mode-open .playerbar { position: fixed; z-index: 9; bottom: 0; left: 0; right: 0; min-height: 132px; grid-template-columns: 1fr; grid-template-rows: 56px 44px; gap: var(--space-1); padding: var(--space-3) var(--space-5) max(var(--space-2), env(safe-area-inset-bottom)); background: color-mix(in oklab, var(--player-tint, var(--accent)), var(--fg) 68%); } body.player-mode-open .playerbar .player-track { display: none; } body.player-mode-open .playerbar .controls { display: grid; align-self: center; } body.player-mode-open .playerbar .control-buttons { width: min(100%, 360px); justify-content: space-between; gap: var(--space-2); } body.player-mode-open .playerbar .control-buttons .control:not(.control-play) { display: grid; } body.player-mode-open .playerbar .control { width: 44px; height: 44px; } body.player-mode-open .playerbar .control-play { width: 52px; height: 52px; } body.player-mode-open .playerbar .player-options { display: flex; justify-content: center; gap: var(--space-3); min-height: 44px; } body.player-mode-open .playerbar .volume-line { width: 68px; } body.player-mode-open .playerbar .progress-line { inset: -4px 0 auto; } body.player-mode-open.lyrics-focus-open .now-playing-popover { grid-template-rows: minmax(0, 1fr); grid-template-areas: "lyrics"; gap: 0; padding: 72px var(--space-5) 152px; } body.player-mode-open.lyrics-focus-open .now-playing-info, body.player-mode-open.lyrics-focus-open .now-playing-popover .playing-cover { display: none; } body.player-mode-open.lyrics-focus-open .now-playing-popover .lyrics { max-height: none; height: 100%; align-self: stretch; padding: clamp(72px, 16vh, 160px) 0 var(--space-8); cursor: pointer; } body.player-mode-open.lyrics-focus-open .now-playing-popover .lyrics p { font-size: clamp(var(--text-lg), 5.5vw, var(--text-xl)); line-height: 2.4; } }
 @media (max-width: 760px) { .topbar { min-height: 56px; gap: var(--space-2); } .sidebar-toggle { border-color: transparent; background: transparent; } .sidebar-toggle:hover { border-color: transparent; background: transparent; } .search { min-height: 44px; padding: 0 var(--space-3); } .search svg { width: 16px; } #import-button { min-height: 36px; padding: 0 var(--space-3); font-size: var(--text-xs); } .library-head { flex-direction: row; align-items: center; justify-content: space-between; gap: var(--space-2); } .list-context { flex: 1; min-height: 36px; gap: var(--space-2); } .library-tools { flex: none; min-height: 36px; } .tool-button.tool-icon { width: 36px; min-height: 36px; } }
 @media (max-width: 760px) { .sidebar { width: 45vw; padding-inline: var(--space-2); } .sidebar .brand { padding-inline: 0; } .sidebar .nav-item { gap: var(--space-2); padding-inline: var(--space-2); } .sidebar .nav-count { display: none; } .workspace, .playerbar { transition: transform var(--motion-base) var(--ease-standard); } body.sidebar-mobile-open .workspace, body.sidebar-mobile-open .playerbar { transform: translateX(45vw); } }
@@ -657,6 +700,8 @@ body.player-mode-open .lyric-line.is-current { color: var(--accent-on); }
         <button class="nav-item active" data-view="全部歌曲" data-od-id="nav-library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h16"/></svg>全部歌曲<span class="nav-count">100</span></button>
         <button class="nav-item" data-view="最近添加" data-od-id="nav-recent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"/><path d="M12 7v5l3 2"/></svg>最近添加</button>
         <button class="nav-item" data-view="喜欢的音乐" data-od-id="nav-favorites"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20.8 4.6a5.4 5.4 0 0 0-7.6 0L12 5.8l-1.2-1.2a5.4 5.4 0 1 0-7.6 7.6L12 21l8.8-8.8a5.4 5.4 0 0 0 0-7.6Z"/></svg>喜欢的音乐<span class="nav-count">1</span></button>
+        <button class="nav-item" data-view="歌手" data-od-id="nav-artists"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c.7-3.4 3.2-5.1 7-5.1s6.3 1.7 7 5.1"/></svg>歌手<span class="nav-count" id="artist-nav-count">5</span></button>
+        <button class="nav-item" data-view="专辑" data-od-id="nav-albums"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M12 12h.01"/></svg>专辑<span class="nav-count" id="album-nav-count">5</span></button>
       </nav>
       <nav class="nav-group playlist-navigation" aria-label="歌单" data-od-id="playlist-navigation">
         <div class="nav-section-head"><span class="nav-label">歌单</span><button class="playlist-create" id="playlist-create" type="button" aria-label="添加歌单" title="添加歌单" data-od-id="create-playlist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
@@ -667,8 +712,8 @@ body.player-mode-open .lyric-line.is-current { color: var(--accent-on); }
         </div>
       </nav>
       <div class="side-foot">
-        <button class="link-button sync-button" id="sync-button" type="button" aria-busy="false" data-od-id="sync-button"><span class="sync-label" id="sync-action-label">同步</span><span class="status-dot" id="sync-dot"></span><span id="sync-label">资料库已同步</span></button>
         <button class="link-button settings-button" id="settings-button" type="button" data-od-id="settings-button">设置</button>
+        <span hidden><button id="sync-button" type="button"></button><span id="sync-action-label"></span><span id="sync-label"></span><span id="sync-dot"></span></span>
       </div>
     </aside>
     <button class="sidebar-scrim" id="sidebar-scrim" type="button" aria-label="关闭侧边栏" hidden></button>
@@ -706,6 +751,7 @@ body.player-mode-open .lyric-line.is-current { color: var(--accent-on); }
             <header class="settings-section-head"><h2>本地存储</h2><p>选择 Echo 用于扫描、索引和管理音乐文件的文件夹。</p></header>
             <div class="setting-row"><div class="storage-value"><strong>音乐目录</strong><span class="storage-path is-empty" id="storage-path" title="尚未选择音乐目录">尚未选择音乐目录</span><span class="setting-help">桌面端专属设置；移动端默认使用系统媒体库。</span></div><button class="btn btn-primary" id="storage-directory-button" type="button" data-od-id="choose-storage-directory">选择文件夹</button></div>
             <p class="setting-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 10v5M12 7h.01"/></svg><span>更改目录不会移动或删除现有音乐；Echo 会在下次扫描时更新资料库。</span></p>
+            <div class="setting-row"><div class="storage-value"><strong>重新扫描资料库</strong><span class="setting-help">检查并更新已变化音频文件中的封面、歌词和标签，不会移动或删除原始文件。</span></div><button class="btn" id="rescan-library-button" type="button" data-od-id="rescan-library">重新扫描</button></div>
           </section>
           <section class="settings-section" data-od-id="theme-settings">
             <header class="settings-section-head"><h2>主题</h2><p>主题仅影响强调色与主要操作，保持纯白的音乐工作区。</p></header>
@@ -715,11 +761,15 @@ body.player-mode-open .lyric-line.is-current { color: var(--accent-on); }
               <button class="theme-option setting-theme-option" type="button" aria-pressed="false" data-theme="green" data-theme-name="松石绿" data-od-id="theme-green"><span class="theme-swatch green"></span><span class="theme-option-copy"><strong>松石绿</strong><span>平衡、舒缓</span></span></button>
             </div>
           </section>
+          <section class="settings-section" data-od-id="close-behavior-settings">
+            <header class="settings-section-head"><h2>应用行为</h2><p>关闭主窗口时 Echo 如何结束。</p></header>
+            <div class="setting-row"><div class="storage-value"><strong>关闭主窗口时</strong><span class="setting-help">选择退出应用，或留在后台继续播放；桌面端专属设置。</span></div><div class="setting-choices" role="radiogroup" aria-label="关闭主窗口时"><label class="setting-choice"><input type="radio" name="close-behavior" value="background" checked>保持在后台运行</label><label class="setting-choice"><input type="radio" name="close-behavior" value="exit">退出应用</label></div></div>
+          </section>
           <section class="settings-section" data-od-id="about-echo">
             <header class="settings-section-head"><h2>关于 Echo</h2><p>一个本地优先的音乐播放器，为自己的音乐资料库而设计。</p></header>
             <div class="about-list">
               <div class="about-item"><strong>本地优先</strong><span>管理自己的音乐文件、封面、歌词和歌单，不依赖账号或流媒体目录。</span></div>
-              <div class="about-item"><strong>设备间同步</strong><span>可通过 S3 或 WebDAV 在个人设备间同步资料库，远端始终可替换。</span></div>
+              <div class="about-item"><strong>资料库维护</strong><span>可重新扫描本机资料库，更新封面、歌词与歌曲标签。</span></div>
               <div class="about-item"><strong>桌面优先</strong><span>面向 macOS、Windows 和 Linux 的个人音乐管理与播放体验。</span></div>
             </div>
           </section>
@@ -1103,6 +1153,7 @@ body.player-mode-open .lyric-line.is-current { color: var(--accent-on); }
       document.getElementById('player-artist').textContent = artist;
       applyPlayerTint(row.dataset.cover);
       refreshLyricsState();
+      syncCollectionQueue();
       notify(`正在播放：${title}`);
     }
     const generatedTracks = Array.from({ length: 95 }, (_, index) => {
@@ -1139,7 +1190,7 @@ body.player-mode-open .lyric-line.is-current { color: var(--accent-on); }
     applyPlayerTint(document.querySelector('.track-row.selected')?.dataset.cover);
     setPlaying(true);
     document.getElementById('main-play').addEventListener('click', () => { clearInterval(window.__progressTimer); setPlaying(document.getElementById('main-play').getAttribute('aria-label') === '播放'); });
-    document.querySelectorAll('.favorite').forEach(button => { button.setAttribute('aria-pressed', String(button.classList.contains('active'))); button.addEventListener('click', event => { event.stopPropagation(); const active = button.classList.toggle('active'); button.setAttribute('aria-pressed', String(active)); button.setAttribute('aria-label', `${active ? '取消喜欢' : '喜欢'}${button.closest('.track-row')?.dataset.title || '当前歌曲'}`); notify(active ? '已收藏' : '已取消收藏'); applyLibraryView(document.getElementById('view-title').textContent); }); });
+    document.querySelectorAll('.favorite').forEach(button => { button.setAttribute('aria-pressed', String(button.classList.contains('active'))); button.addEventListener('click', event => { event.stopPropagation(); const active = button.classList.toggle('active'); button.setAttribute('aria-pressed', String(active)); button.setAttribute('aria-label', `${active ? '取消喜欢' : '喜欢'}${button.closest('.track-row')?.dataset.title || '当前歌曲'}`); notify(active ? '已收藏' : '已取消收藏'); applyLibraryView(currentView); }); });
     const queueList = document.getElementById('queue-list');
     let queueScrollbarTimer;
     queueList.addEventListener('scroll', () => {
@@ -1155,6 +1206,29 @@ body.player-mode-open .lyric-line.is-current { color: var(--accent-on); }
       document.getElementById('queue-count').textContent = `${count} 首`;
       queueEmpty.classList.toggle('show', count === 0);
       clearQueueButton.disabled = count === 0;
+    }
+    function syncCollectionQueue() {
+      if (!activeCollection) return;
+      const rows = [...document.querySelectorAll('.track-row')].filter(row => !row.hidden);
+      queueList.replaceChildren(...rows.map(row => {
+        const item = document.createElement('div');
+        item.className = 'queue-item';
+        const cover = document.createElement('span');
+        cover.className = `queue-cover${row.dataset.cover && row.dataset.cover !== 'a' ? ` queue-cover-${row.dataset.cover}` : ''}`;
+        const name = document.createElement('div');
+        name.className = 'queue-name';
+        const title = document.createElement('b');
+        title.textContent = row.dataset.title || '未命名歌曲';
+        const artist = document.createElement('span');
+        artist.textContent = row.dataset.artist || '未知艺人';
+        name.append(title, artist);
+        const time = document.createElement('span');
+        time.className = 'queue-time';
+        time.textContent = row.dataset.time || '--:--';
+        item.append(cover, name, time);
+        return item;
+      }));
+      updateQueue();
     }
     clearQueueButton.addEventListener('click', () => {
       const snapshot = queueList.innerHTML;
@@ -1294,15 +1368,94 @@ body.player-mode-open .lyric-line.is-current { color: var(--accent-on); }
     const libraryView = document.getElementById('library-view');
     const trackTableWrap = libraryView.querySelector('.table-wrap');
     const libraryTools = libraryView.querySelector('.library-tools');
-    trackTableWrap.insertAdjacentHTML('afterend', '<section class="playlist-directory" id="playlist-directory" hidden data-od-id="playlist-directory"><div class="playlist-grid" id="playlist-grid"></div></section>');
+    trackTableWrap.insertAdjacentHTML('afterend', '<section class="playlist-directory" id="playlist-directory" hidden data-od-id="playlist-directory"><div class="playlist-grid" id="playlist-grid"></div></section><section class="collection-directory" id="collection-directory" hidden data-od-id="library-collection-directory"><div class="collection-grid" id="collection-grid"></div><div class="collection-empty" id="collection-empty"><h2>没有找到匹配的内容</h2><p>试试其他歌手或专辑名称。</p></div></section>');
     libraryTools.insertAdjacentHTML('afterbegin', '<div class="sort-wrap playlist-sort-wrap" id="playlist-sort-wrap" hidden><button class="tool-button tool-icon" id="playlist-sort-button" type="button" aria-label="歌单排序方式" title="歌单排序方式" aria-expanded="false" data-od-id="playlist-sort-control"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><text x="2.6" y="9" fill="currentColor" stroke="none" font-size="7" font-weight="700">A</text><text x="2.6" y="20" fill="currentColor" stroke="none" font-size="7" font-weight="700">Z</text><path d="M14 4v15m-3-3 3 3 3-3"/></svg></button><div class="sort-popover" id="playlist-sort-popover" role="menu" aria-label="歌单排序选项" hidden><button class="sort-option" type="button" role="menuitemradio" aria-checked="false" data-playlist-sort-key="name"><svg class="sort-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m5 12 4.2 4.2L19 6.8"/></svg><span>歌单名称</span></button><button class="sort-option active" type="button" role="menuitemradio" aria-checked="true" data-playlist-sort-key="created"><svg class="sort-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m5 12 4.2 4.2L19 6.8"/></svg><span>创建时间</span></button><div class="sort-divider" role="separator"></div><button class="sort-option" type="button" role="menuitemradio" aria-checked="false" data-playlist-sort-direction="asc"><svg class="sort-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m5 12 4.2 4.2L19 6.8"/></svg><span>升序</span></button><button class="sort-option active" type="button" role="menuitemradio" aria-checked="true" data-playlist-sort-direction="desc"><svg class="sort-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m5 12 4.2 4.2L19 6.8"/></svg><span>降序</span></button></div></div>');
     const playlistDirectory = document.getElementById('playlist-directory');
     const playlistGrid = document.getElementById('playlist-grid');
+    const collectionDirectory = document.getElementById('collection-directory');
+    const collectionGrid = document.getElementById('collection-grid');
+    const collectionEmpty = document.getElementById('collection-empty');
+    collectionDirectory.insertAdjacentHTML('afterend', '<input id="artist-cover-input" type="file" accept="image/*" hidden>');
+    const artistCoverInput = document.getElementById('artist-cover-input');
+    const artistCoverImages = new Map();
+    let pendingArtistCover = null;
+    const listContext = libraryView.querySelector('.list-context');
+    listContext.insertAdjacentHTML('afterbegin', '<button class="collection-back" id="collection-back" type="button" aria-label="返回聚合浏览" title="返回"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg></button>');
+    const collectionBack = document.getElementById('collection-back');
+    let currentView = '全部歌曲';
+    let activeCollection = null;
     const playlistSortWrap = document.getElementById('playlist-sort-wrap');
     const playlistSortButton = document.getElementById('playlist-sort-button');
     const playlistSortPopover = document.getElementById('playlist-sort-popover');
     playlistSortWrap.remove();
     const selectAllButton = document.getElementById('select-all');
+    // Echo enters multi-select explicitly. The control is not a permanent
+    // “select all” action: checkboxes (including the header action) appear only
+    // after the user enters this mode.
+    selectAllButton.setAttribute('aria-label', '进入多选');
+    selectAllButton.title = '进入多选';
+    let selectionMode = false;
+    const selectionCheck = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m5 12 4.2 4.2L19 6.8"/></svg>';
+    function updateSelectionHeader() {
+      const rows = [...document.querySelectorAll('.track-row')].filter(row => !row.hidden);
+      const selected = rows.filter(row => row.classList.contains('bulk-selected'));
+      const header = document.getElementById('list-select-all');
+      if (!header) return;
+      const all = rows.length > 0 && selected.length === rows.length;
+      header.classList.toggle('active', all);
+      header.setAttribute('aria-pressed', String(all));
+      header.setAttribute('aria-label', all ? '取消全选当前已加载歌曲' : '全选当前已加载歌曲');
+      header.innerHTML = all ? selectionCheck : '';
+    }
+    function setSelectionMode(enabled) {
+      selectionMode = enabled;
+      selectAllButton.classList.toggle('active', enabled);
+      selectAllButton.setAttribute('aria-pressed', String(enabled));
+      selectAllButton.setAttribute('aria-label', enabled ? '退出多选' : '进入多选');
+      selectAllButton.title = enabled ? '退出多选' : '进入多选';
+      const table = document.querySelector('.track-table');
+      if (enabled) {
+        table.querySelector('colgroup').insertAdjacentHTML('afterbegin', '<col class="selection">');
+        table.querySelector('thead tr').insertAdjacentHTML('afterbegin', '<th class="selection-column"><button class="list-select-all" id="list-select-all" type="button" aria-label="全选当前已加载歌曲" aria-pressed="false"></button></th>');
+        document.querySelectorAll('.track-row').forEach(row => {
+          const title = row.dataset.title || '歌曲';
+          row.insertAdjacentHTML('afterbegin', `<td class="selection-column"><button class="row-select" type="button" aria-label="选择${escapeHtml(title)}" aria-pressed="false"></button></td>`);
+          row.querySelector('.row-select').addEventListener('click', event => {
+            event.stopPropagation();
+            const active = row.classList.toggle('bulk-selected');
+            event.currentTarget.classList.toggle('active', active);
+            event.currentTarget.setAttribute('aria-pressed', String(active));
+            event.currentTarget.setAttribute('aria-label', `${active ? '取消选择' : '选择'}${title}`);
+            event.currentTarget.innerHTML = active ? selectionCheck : '';
+            updateSelectionHeader();
+          });
+        });
+        document.getElementById('list-select-all').addEventListener('click', () => {
+          const rows = [...document.querySelectorAll('.track-row')].filter(row => !row.hidden);
+          const shouldSelect = rows.some(row => !row.classList.contains('bulk-selected'));
+          rows.forEach(row => {
+            row.classList.toggle('bulk-selected', shouldSelect);
+            const control = row.querySelector('.row-select');
+            control.classList.toggle('active', shouldSelect);
+            control.setAttribute('aria-pressed', String(shouldSelect));
+            control.innerHTML = shouldSelect ? selectionCheck : '';
+          });
+          updateSelectionHeader();
+        });
+      } else {
+        table.querySelector('col.selection')?.remove();
+        table.querySelector('th.selection-column')?.remove();
+        document.querySelectorAll('.track-row').forEach(row => {
+          row.classList.remove('bulk-selected');
+          row.querySelector('td.selection-column')?.remove();
+        });
+      }
+    }
+    // Capture prevents the retired all-select listener below from running.
+    selectAllButton.addEventListener('click', event => {
+      event.stopImmediatePropagation();
+      setSelectionMode(!selectionMode);
+    }, { capture: true });
     const playlistCreatedOrder = new Map([...document.querySelectorAll('.playlist-item')].map((item, index) => [item, index]));
     let playlistCreationSequence = playlistCreatedOrder.size;
     let playlistSortKey = 'created';
@@ -1316,7 +1469,8 @@ body.player-mode-open .lyric-line.is-current { color: var(--accent-on); }
     playlistOverviewButton.setAttribute('title', '打开全部歌单');
     playlistOverviewButton.setAttribute('data-od-id', 'playlist-overview');
     playlistOverviewButton.innerHTML = '<span>歌单</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
-    playlistNavLabel.replaceWith(playlistOverviewButton);
+    // The implemented shell keeps “歌单” as a section label; it does not expose
+    // a separate all-playlists directory yet.
     const sortButton = document.getElementById('sort-button');
     const sortPopover = document.getElementById('sort-popover');
     const sortWrap = sortButton.closest('.sort-wrap');
@@ -1442,15 +1596,112 @@ body.player-mode-open .lyric-line.is-current { color: var(--accent-on); }
       notify(`歌单按${label}${direction}排序`);
     }));
     document.getElementById('select-all').addEventListener('click', event => { const button = event.currentTarget; const selected = button.getAttribute('aria-pressed') !== 'true'; document.querySelectorAll('.track-row').forEach(row => { row.classList.toggle('bulk-selected', selected); row.setAttribute('aria-selected', String(selected)); }); button.setAttribute('aria-pressed', String(selected)); button.setAttribute('aria-label', selected ? '取消全选歌曲' : '全选歌曲'); button.title = selected ? '取消全选歌曲' : '全选歌曲'; notify(selected ? '已全选歌曲' : '已取消全选'); });
+    function getCollectionEntries(kind) {
+      const key = kind === '歌手' ? 'artist' : 'album';
+      const secondaryKey = kind === '歌手' ? 'album' : 'artist';
+      const entries = new Map();
+      document.querySelectorAll('.track-row').forEach(row => {
+        const name = row.dataset[key];
+        if (!name) return;
+        const rowOrder = initialTrackOrder.get(row) ?? Number.MAX_SAFE_INTEGER;
+        const entry = entries.get(name) || { name, count: 0, secondary: new Set(), cover: row.dataset.cover || 'a', latestOrder: rowOrder };
+        entry.count += 1;
+        if (row.dataset[secondaryKey]) entry.secondary.add(row.dataset[secondaryKey]);
+        // The first item in the recent-added order is the newest in this prototype.
+        // An artist has no independent artwork until the user chooses one, so its
+        // presentation inherits that newest album's cover rather than a generic tile.
+        if (rowOrder < entry.latestOrder) {
+          entry.cover = row.dataset.cover || 'a';
+          entry.latestOrder = rowOrder;
+        }
+        if (kind === '歌手') entry.coverImage = artistCoverImages.get(name) || null;
+        entries.set(name, entry);
+      });
+      return [...entries.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'));
+    }
+    function collectionCoverClass(cover) { return cover === 'a' ? '' : ` cover-${cover}`; }
+    function chooseArtistCover(name) {
+      pendingArtistCover = name;
+      artistCoverInput.value = '';
+      artistCoverInput.click();
+    }
+    artistCoverInput.addEventListener('change', () => {
+      const file = artistCoverInput.files?.[0];
+      if (!file || !pendingArtistCover) return;
+      const artist = pendingArtistCover;
+      const reader = new FileReader();
+      reader.addEventListener('load', () => {
+        artistCoverImages.set(artist, String(reader.result));
+        if (currentView === '歌手' && !collectionDirectory.hidden) renderCollectionDirectory('歌手');
+        notify(`已更新${artist}的歌手封面`);
+      });
+      reader.readAsDataURL(file);
+    });
+    function renderCollectionDirectory(kind) {
+      const query = searchInput.value.trim().toLowerCase();
+      const entries = getCollectionEntries(kind);
+      collectionDirectory.dataset.kind = kind === '歌手' ? 'artists' : 'albums';
+      collectionGrid.innerHTML = '';
+      let visible = 0;
+      entries.forEach(entry => {
+        const searchable = [entry.name, ...entry.secondary].join(' ').toLowerCase();
+        if (query && !searchable.includes(query)) return;
+        visible += 1;
+        const secondary = kind === '歌手'
+          ? `${entry.count} 首歌曲 · ${entry.secondary.size} 张专辑`
+          : `${[...entry.secondary][0] || '未知艺人'} · ${entry.count} 首歌曲`;
+        const isArtist = kind === '歌手';
+        const card = document.createElement('article');
+        card.className = 'collection-card';
+        card.dataset.name = entry.name;
+        card.setAttribute('data-od-id', `${kind === '歌手' ? 'artist' : 'album'}-collection-${visible}`);
+        card.innerHTML = `<button class="collection-open" type="button" aria-label="打开${escapeHtml(kind)}${escapeHtml(entry.name)}，${escapeHtml(secondary)}"><span class="collection-art" aria-hidden="true"><span class="cover${collectionCoverClass(entry.cover)}"></span></span><span class="collection-copy"><strong>${escapeHtml(entry.name)}</strong><span>${escapeHtml(secondary)}</span>${isArtist ? `<small class="collection-cover-note">${entry.coverImage ? '自定义封面' : '最新专辑封面'}</small>` : ''}</span><span class="collection-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m9 6 6 6-6 6"/></svg></span></button>`;
+        if (entry.coverImage) {
+          const image = document.createElement('img');
+          image.src = entry.coverImage;
+          image.alt = '';
+          card.querySelector('.collection-art').replaceChildren(image);
+        }
+        card.querySelector('.collection-open').addEventListener('click', () => openCollection(kind, entry.name));
+        collectionGrid.append(card);
+      });
+      collectionEmpty.classList.toggle('show', visible === 0);
+      document.getElementById('library-count').textContent = query
+        ? `搜索结果 · ${visible} ${kind === '歌手' ? '位歌手' : '张专辑'}`
+        : `${visible} ${kind === '歌手' ? '位歌手' : '张专辑'}`;
+      document.getElementById('artist-nav-count').textContent = getCollectionEntries('歌手').length;
+      document.getElementById('album-nav-count').textContent = getCollectionEntries('专辑').length;
+    }
+    function openCollection(kind, name) {
+      activeCollection = { kind, name };
+      document.getElementById('view-title').textContent = name;
+      document.getElementById('crumb-label').textContent = `${kind} / ${name}`;
+      collectionBack.classList.add('is-visible');
+      applyLibraryView(kind);
+    }
+    collectionBack.addEventListener('click', () => {
+      activeCollection = null;
+      document.getElementById('view-title').textContent = currentView;
+      document.getElementById('crumb-label').textContent = currentView;
+      collectionBack.classList.remove('is-visible');
+      applyLibraryView(currentView);
+    });
     const searchInput = document.getElementById('search-input');
     searchInput.addEventListener('input', () => applyLibraryFilter());
     function applyLibraryFilter() {
+      if (!collectionDirectory.hidden) {
+        renderCollectionDirectory(currentView);
+        return;
+      }
       const query = searchInput.value.trim().toLowerCase();
       let visible = 0;
       document.querySelectorAll('.track-row').forEach(row => {
+        const inCollection = !activeCollection || row.dataset[activeCollection.kind === '歌手' ? 'artist' : 'album'] === activeCollection.name;
+        const inView = currentView === '全部歌曲' || currentView === '最近添加' || (currentView === '喜欢的音乐' && row.querySelector('.favorite.active')) || (!['全部歌曲', '最近添加', '喜欢的音乐'].includes(currentView) && (row.dataset.playlists || '').split('|').includes(currentView));
         const hit = [row.dataset.title, row.dataset.artist, row.dataset.album].join(' ').toLowerCase().includes(query);
-        row.hidden = !hit;
-        if (hit) visible += 1;
+        const show = inView && inCollection && hit;
+        row.hidden = !show;
+        if (show) visible += 1;
       });
       document.getElementById('empty-results').classList.toggle('show', visible === 0);
       document.getElementById('library-count').textContent = query ? `搜索结果 · ${visible} 首` : `${visible.toLocaleString('zh-CN')} 首`;
@@ -1463,6 +1714,9 @@ body.player-mode-open .lyric-line.is-current { color: var(--accent-on); }
       document.querySelectorAll('.nav-item').forEach(x => { x.classList.toggle('active', x === item); x.setAttribute('aria-current', x === item ? 'true' : 'false'); });
       playlistOverviewButton.classList.remove('active');
       playlistOverviewButton.removeAttribute('aria-current');
+      currentView = viewName;
+      activeCollection = null;
+      collectionBack.classList.remove('is-visible');
       document.getElementById('view-title').textContent = viewName;
       document.getElementById('crumb-label').textContent = viewName;
       applyLibraryView(viewName);
@@ -1478,6 +1732,9 @@ body.player-mode-open .lyric-line.is-current { color: var(--accent-on); }
       document.querySelectorAll('.nav-item').forEach(x => { x.classList.toggle('active', x === item); x.setAttribute('aria-current', x === item ? 'true' : 'false'); });
       playlistOverviewButton.classList.remove('active');
       playlistOverviewButton.removeAttribute('aria-current');
+      currentView = name;
+      activeCollection = null;
+      collectionBack.classList.remove('is-visible');
       document.getElementById('view-title').textContent = name;
       document.getElementById('crumb-label').textContent = name;
       applyLibraryView(name);
@@ -1488,6 +1745,9 @@ body.player-mode-open .lyric-line.is-current { color: var(--accent-on); }
       document.querySelectorAll('.nav-item').forEach(item => { item.classList.remove('active'); item.setAttribute('aria-current', 'false'); });
       playlistOverviewButton.classList.add('active');
       playlistOverviewButton.setAttribute('aria-current', 'page');
+      currentView = '全部歌单';
+      activeCollection = null;
+      collectionBack.classList.remove('is-visible');
       document.getElementById('view-title').textContent = '全部歌单';
       document.getElementById('crumb-label').textContent = '全部歌单';
       applyLibraryView('全部歌单');
@@ -1499,17 +1759,41 @@ body.player-mode-open .lyric-line.is-current { color: var(--accent-on); }
       const isAllSongs = viewName === '全部歌曲' || isRecentAdded;
       const isFavorites = viewName === '喜欢的音乐';
       const isPlaylistDirectory = viewName === '全部歌单';
-      trackTableWrap.hidden = isPlaylistDirectory;
+      const isAggregateLibraryView = viewName === '歌手' || viewName === '专辑';
+      const isCollectionDirectory = (viewName === '歌手' || viewName === '专辑') && !activeCollection;
+      const supportsBulkSelection = !isPlaylistDirectory && (!isAggregateLibraryView || Boolean(activeCollection));
+      trackTableWrap.hidden = isPlaylistDirectory || isCollectionDirectory;
       playlistDirectory.hidden = !isPlaylistDirectory;
+      collectionDirectory.hidden = !isCollectionDirectory;
       playlistSortWrap.hidden = !isPlaylistDirectory;
-      selectAllButton.hidden = isPlaylistDirectory;
-      sortWrap.hidden = isRecentAdded || isPlaylistDirectory;
+      // Aggregate directories are browse-and-enter views. Once an artist or
+      // album is open, its song list supports the same bulk selection affordance
+      // as the main library list.
+      if (!supportsBulkSelection && selectionMode) setSelectionMode(false);
+      selectAllButton.hidden = !supportsBulkSelection;
+      if (!supportsBulkSelection && selectAllButton.getAttribute('aria-pressed') === 'true') {
+        document.querySelectorAll('.track-row.bulk-selected').forEach(row => {
+          row.classList.remove('bulk-selected');
+          row.setAttribute('aria-selected', 'false');
+        });
+        selectAllButton.setAttribute('aria-pressed', 'false');
+        selectAllButton.setAttribute('aria-label', '全选歌曲');
+        selectAllButton.title = '全选歌曲';
+      }
+      sortWrap.hidden = isRecentAdded || isPlaylistDirectory || isCollectionDirectory;
       if (isPlaylistDirectory) {
         sortPopover.hidden = true;
         sortButton.setAttribute('aria-expanded', 'false');
         renderPlaylistDirectory();
         const count = document.querySelectorAll('.playlist-item').length;
         document.getElementById('library-count').textContent = `${count.toLocaleString('zh-CN')} 个歌单`;
+        document.getElementById('empty-results').classList.remove('show');
+        return;
+      }
+      if (isCollectionDirectory) {
+        sortPopover.hidden = true;
+        sortButton.setAttribute('aria-expanded', 'false');
+        renderCollectionDirectory(viewName);
         document.getElementById('empty-results').classList.remove('show');
         return;
       }
@@ -1522,16 +1806,7 @@ body.player-mode-open .lyric-line.is-current { color: var(--accent-on); }
         sortButton.setAttribute('aria-expanded', 'false');
         sortTrackRows();
       }
-      let visible = 0;
-      document.querySelectorAll('.track-row').forEach(row => {
-        const show = isAllSongs
-          || (isFavorites && row.querySelector('.favorite.active'))
-          || (!isAllSongs && !isFavorites && (row.dataset.playlists || '').split('|').includes(viewName));
-        row.hidden = !show;
-        if (show) visible += 1;
-      });
-      document.getElementById('library-count').textContent = `${visible.toLocaleString('zh-CN')} 首`;
-      document.getElementById('empty-results').classList.toggle('show', visible === 0);
+      applyLibraryFilter();
     }
     function validatePlaylistName(value, exceptItem = null) {
       const name = String(value || '').trim();
@@ -1717,6 +1992,21 @@ body.player-mode-open .lyric-line.is-current { color: var(--accent-on); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     });
     storageDirectoryButton.addEventListener('click', () => storageDirectoryInput.click());
+    const rescanLibraryButton = document.getElementById('rescan-library-button');
+    rescanLibraryButton.addEventListener('click', () => {
+      if (rescanLibraryButton.disabled) return;
+      rescanLibraryButton.disabled = true;
+      rescanLibraryButton.textContent = '正在扫描…';
+      window.setTimeout(() => {
+        rescanLibraryButton.disabled = false;
+        rescanLibraryButton.textContent = '重新扫描';
+        notify('资料库已重新扫描，封面、歌词和标签已更新');
+      }, 900);
+    });
+    document.querySelectorAll('input[name="close-behavior"]').forEach(input => input.addEventListener('change', event => {
+      const label = event.currentTarget.value === 'background' ? '保持在后台运行' : '退出应用';
+      notify(`关闭主窗口时将${label}`);
+    }));
     storageDirectoryInput.addEventListener('change', () => {
       const firstFile = storageDirectoryInput.files?.[0];
       if (!firstFile) return;

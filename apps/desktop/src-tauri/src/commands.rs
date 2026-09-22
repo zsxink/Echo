@@ -116,6 +116,20 @@ fn parse_sort(token: &str) -> Result<SongSort, IpcErrorDto> {
     Ok(SongSort { field, direction })
 }
 
+fn parse_collection_kind(
+    token: &str,
+) -> Result<echo_core::domain::catalog::CatalogCollectionKind, IpcErrorDto> {
+    match token {
+        "artist" => Ok(echo_core::domain::catalog::CatalogCollectionKind::Artist),
+        "album" => Ok(echo_core::domain::catalog::CatalogCollectionKind::Album),
+        _ => Err(IpcErrorDto::from(&echo_core::error::Error::validation(
+            echo_core::error::Subject::Query,
+            "kind",
+            "unknown collection kind".to_owned(),
+        ))),
+    }
+}
+
 fn parse_cursor(token: Option<String>) -> Result<Option<OpaqueCursor>, IpcErrorDto> {
     let Some(token) = token else { return Ok(None) };
     // The frontend forwards the opaque cursor token (a JSON string) verbatim.
@@ -203,6 +217,47 @@ pub fn recent(
     query: String,
 ) -> Result<Vec<SongView>, IpcErrorDto> {
     services.recent(&query).map_err(IpcErrorDto::from)
+}
+
+#[tauri::command]
+pub fn catalog_collections(
+    services: State<'_, AppServices>,
+    kind: String,
+    search: String,
+) -> Result<Vec<echo_desktop::ipc::dto::CatalogCollectionView>, IpcErrorDto> {
+    services
+        .collections(parse_collection_kind(&kind)?, &search)
+        .map_err(IpcErrorDto::from)
+}
+
+#[tauri::command]
+pub fn catalog_collection_songs(
+    services: State<'_, AppServices>,
+    kind: String,
+    artist_key: String,
+    album_key: Option<String>,
+    search: String,
+) -> Result<Vec<SongView>, IpcErrorDto> {
+    services
+        .collection_songs(
+            parse_collection_kind(&kind)?,
+            &artist_key,
+            album_key.as_deref(),
+            &search,
+        )
+        .map_err(IpcErrorDto::from)
+}
+
+#[tauri::command]
+pub fn set_artist_cover(
+    services: State<'_, AppServices>,
+    artist_key: String,
+    bytes: Option<Vec<u8>>,
+    mime: Option<String>,
+) -> Result<(), IpcErrorDto> {
+    services
+        .set_artist_cover(&artist_key, bytes, mime.as_deref())
+        .map_err(IpcErrorDto::from)
 }
 
 /// Per-view song totals for the navigation sidebar (counts must be readable
@@ -595,12 +650,52 @@ pub fn play_library_context(
     query: String,
     sort: String,
     selected_song: String,
+    artist_key: Option<String>,
+    album_key: Option<String>,
 ) -> Result<(), IpcErrorDto> {
     let sort = parse_sort(&sort)?;
     let selected = parse_id::<SongId>(&selected_song, "selectedSong")?;
-    let songs = services
-        .resolve_library_playback_context(&view, &query, sort, selected)
-        .map_err(IpcErrorDto::from)?;
+    let songs = match view.as_str() {
+        "artist" => {
+            let key = artist_key.as_deref().ok_or_else(|| {
+                IpcErrorDto::from(&echo_core::error::Error::validation(
+                    echo_core::error::Subject::Query,
+                    "artistKey",
+                    "artist key is required".to_owned(),
+                ))
+            })?;
+            services
+                .resolve_collection_playback_context(
+                    echo_core::domain::catalog::CatalogCollectionKind::Artist,
+                    key,
+                    None,
+                    &query,
+                    selected,
+                )
+                .map_err(IpcErrorDto::from)?
+        }
+        "album" => {
+            let key = album_key.as_deref().ok_or_else(|| {
+                IpcErrorDto::from(&echo_core::error::Error::validation(
+                    echo_core::error::Subject::Query,
+                    "albumKey",
+                    "album key is required".to_owned(),
+                ))
+            })?;
+            services
+                .resolve_collection_playback_context(
+                    echo_core::domain::catalog::CatalogCollectionKind::Album,
+                    artist_key.as_deref().unwrap_or_default(),
+                    Some(key),
+                    &query,
+                    selected,
+                )
+                .map_err(IpcErrorDto::from)?
+        }
+        _ => services
+            .resolve_library_playback_context(&view, &query, sort, selected)
+            .map_err(IpcErrorDto::from)?,
+    };
     let selected_index = songs
         .iter()
         .position(|song| *song == selected)

@@ -1131,6 +1131,41 @@ impl CoverRepository for SqliteDatabase {
     fn cover_of(&self, song: SongId) -> Result<Option<CoverAssetRef>, Error> {
         self.with_reader(move |connection| cover_of_song(connection, song))
     }
+    fn artist_cover_key(
+        &self,
+        root: LibraryRootId,
+        artist_key: &str,
+    ) -> Result<Option<String>, Error> {
+        let artist_key = artist_key.to_owned();
+        self.with_reader(move |connection| connection.query_row(
+            "SELECT cover_asset_key FROM artist_covers WHERE library_root_uuid = ?1 AND artist_key = ?2",
+            params![root.to_string(), artist_key],
+            |row| row.get(0),
+        ).optional().map_err(storage))
+    }
+    fn set_artist_cover_key(
+        &self,
+        root: LibraryRootId,
+        artist_key: &str,
+        key: Option<&str>,
+    ) -> Result<(), Error> {
+        let artist_key = artist_key.to_owned();
+        let key = key.map(str::to_owned);
+        self.writer.run(move |connection| {
+            if let Some(key) = key {
+                connection.execute(
+                    "INSERT INTO artist_covers (library_root_uuid, artist_key, cover_asset_key, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(library_root_uuid, artist_key) DO UPDATE SET cover_asset_key = excluded.cover_asset_key, updated_at = excluded.updated_at",
+                    params![root.to_string(), artist_key, key, now_ms()],
+                ).map_err(storage)?;
+            } else {
+                connection.execute(
+                    "DELETE FROM artist_covers WHERE library_root_uuid = ?1 AND artist_key = ?2",
+                    params![root.to_string(), artist_key],
+                ).map_err(storage)?;
+            }
+            Ok(())
+        })
+    }
     fn referenced_asset_keys(&self, root: LibraryRootId) -> Result<Vec<String>, Error> {
         self.with_reader(move |connection| referenced_asset_keys(connection, root))
     }

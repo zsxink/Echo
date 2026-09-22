@@ -156,6 +156,62 @@ describe("SongList windowing (task 10.6)", () => {
     expect(firstRow).toHaveAttribute("data-song-id", "song-4");
   });
 
+  it("resets its virtual offset after a refresh empties the current page", () => {
+    const songs = makeSongs(100);
+    const rendered = renderList(songs, null);
+    const viewport = screen.getByTestId("song-list");
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 440 });
+
+    fireEvent.scroll(viewport, { target: { scrollTop: 880 } });
+    expect(rendered.container.querySelector(".track-row")).toHaveAttribute(
+      "data-song-id",
+      "song-14",
+    );
+
+    // `useSongs.reset()` temporarily provides an empty page before the first
+    // replacement page resolves. The next page must begin at song 0, rather
+    // than inheriting the prior list's virtual spacer.
+    rendered.rerender(
+      <SongList
+        songs={[]}
+        search=""
+        loading={false}
+        isLast
+        readOnly={false}
+        currentSongId={null}
+        playing={false}
+        onLoadMore={noop}
+        onClearSearch={noop}
+        onPlay={noop}
+        onFavorite={noop}
+        onEnqueue={noop}
+        onOpenMenu={noop}
+      />,
+    );
+    rendered.rerender(
+      <SongList
+        songs={songs}
+        search=""
+        loading={false}
+        isLast
+        readOnly={false}
+        currentSongId={null}
+        playing={false}
+        onLoadMore={noop}
+        onClearSearch={noop}
+        onPlay={noop}
+        onFavorite={noop}
+        onEnqueue={noop}
+        onOpenMenu={noop}
+      />,
+    );
+
+    expect(rendered.container.querySelector(".track-row")).toHaveAttribute(
+      "data-song-id",
+      "song-0",
+    );
+  });
+
   it("shows the empty state when there are no songs", () => {
     const { container } = renderList([], null);
     const empty = screen.getByTestId("list-empty");

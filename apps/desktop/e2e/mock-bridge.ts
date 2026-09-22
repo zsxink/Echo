@@ -65,6 +65,9 @@ type Command =
   | "search"
   | "favorites"
   | "recent"
+  | "catalog_collections"
+  | "catalog_collection_songs"
+  | "set_artist_cover"
   | "library_counts"
   | "playlists"
   | "playlist_members"
@@ -321,6 +324,67 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
     },
     favorites: () => paged(state.songs.filter((s) => s.favorite && s.availability === "available")),
     recent: () => paged(state.songs.filter((s) => s.availability === "available").slice(0, 100)),
+    catalog_collections: ({ kind, search }) => {
+      const query = String(search ?? "")
+        .trim()
+        .toLowerCase();
+      const available = state.songs.filter((song) => song.availability === "available");
+      const keyOf = (value: string | undefined, fallback: string) =>
+        (value?.trim() || fallback).toLowerCase();
+      const groups = new Map<
+        string,
+        { artistKey: string; albumKey?: string; artist: string; name: string; songs: MockSong[] }
+      >();
+      for (const song of available) {
+        const artist = song.artist.trim() || "未知艺人";
+        const artistKey = keyOf(song.artist, "未知艺人");
+        const album = song.album.trim() || "未知专辑";
+        const albumKey = keyOf(song.album, "未知专辑");
+        const artistDirectory = kind === "artist";
+        const groupKey = artistDirectory ? artistKey : `${artistKey}:${albumKey}`;
+        const group = groups.get(groupKey) ?? {
+          artistKey,
+          albumKey: artistDirectory ? undefined : albumKey,
+          artist,
+          name: artistDirectory ? artist : album,
+          songs: [],
+        };
+        group.songs.push(song);
+        groups.set(groupKey, group);
+      }
+      return [...groups.values()]
+        .filter((group) => !query || `${group.name} ${group.artist}`.toLowerCase().includes(query))
+        .sort((a, b) => a.name.localeCompare(b.name, "zh-CN"))
+        .map((group) => ({
+          kind,
+          artistKey: group.artistKey,
+          albumKey: group.albumKey,
+          artist: group.artist,
+          name: group.name,
+          songCount: group.songs.length,
+          coverKey: group.songs.find((song) => song.coverKey)?.coverKey,
+        }));
+    },
+    catalog_collection_songs: ({ kind, artistKey, albumKey, search }) => {
+      const query = String(search ?? "")
+        .trim()
+        .toLowerCase();
+      const keyOf = (value: string | undefined, fallback: string) =>
+        (value?.trim() || fallback).toLowerCase();
+      return state.songs
+        .filter((song) => song.availability === "available")
+        .filter((song) => keyOf(song.artist, "未知艺人") === artistKey)
+        .filter((song) => kind === "artist" || keyOf(song.album, "未知专辑") === albumKey)
+        .filter(
+          (song) =>
+            !query ||
+            [song.title, song.artist, song.album].some((value) =>
+              value.toLowerCase().includes(query),
+            ),
+        )
+        .map(toView);
+    },
+    set_artist_cover: () => null,
     library_counts: () => {
       // Mirrors the Core rule: the active root's available songs, with 最近添加
       // capped at its own ceiling.
@@ -493,9 +557,17 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
     // song, and Core resolves the whole view on its own. View membership and
     // ordering are Core's and are covered by the Rust suite, so the mock only
     // has to start the clicked song — which is what the bar assertion reads.
-    play_library_context: ({ view, query, selectedSong }, st) => {
+    play_library_context: ({ view, query, selectedSong, artistKey, albumKey }, st) => {
       const playable = state.songs.filter((s) => s.availability === "available");
-      const scoped = view === "favorites" ? playable.filter((s) => s.favorite) : playable;
+      let scoped = view === "favorites" ? playable.filter((s) => s.favorite) : playable;
+      if (view === "artist" && artistKey) {
+        const artist = String(artistKey).toLowerCase();
+        scoped = scoped.filter((s) => (s.artist ?? "").toLowerCase() === artist);
+      }
+      if (view === "album" && albumKey) {
+        const album = String(albumKey).toLowerCase();
+        scoped = scoped.filter((s) => (s.album ?? "").toLowerCase() === album);
+      }
       const q = String(query ?? "").toLowerCase();
       const matched = q ? scoped.filter((s) => (s.title ?? "").toLowerCase().includes(q)) : scoped;
       const id = (selectedSong as string | undefined) ?? matched[0]?.id;

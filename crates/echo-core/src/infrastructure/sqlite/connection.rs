@@ -28,6 +28,7 @@ mod migrations {
     pub const PORTABLE_LAYOUT: &str = include_str!("migrations/0006_portable_layout.sql");
     pub const PLAYLIST_COVERS: &str = include_str!("migrations/0007_playlist_covers.sql");
     pub const FAVORITE_ORDER: &str = include_str!("migrations/0008_favorite_order.sql");
+    pub const ARTIST_COVERS: &str = include_str!("migrations/0009_artist_covers.sql");
 }
 
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -82,6 +83,7 @@ pub(crate) fn apply_migrations(connection: &mut Connection) -> Result<(), Error>
             (6, migrations::PORTABLE_LAYOUT),
             (7, migrations::PLAYLIST_COVERS),
             (8, migrations::FAVORITE_ORDER),
+            (9, migrations::ARTIST_COVERS),
         ],
     )
 }

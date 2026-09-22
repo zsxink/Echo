@@ -90,6 +90,17 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly isLast: boolean;\n");
     out.push_str("}\n\n");
 
+    out.push_str("export interface CatalogCollectionView {\n");
+    out.push_str("  readonly kind: 'artist' | 'album';\n");
+    out.push_str("  readonly artistKey: string;\n");
+    out.push_str("  readonly albumKey?: string;\n");
+    out.push_str("  readonly artist: string;\n");
+    out.push_str("  readonly name: string;\n");
+    out.push_str("  readonly songCount: number;\n");
+    out.push_str("  readonly coverKey?: string;\n");
+    out.push_str("  readonly hasCustomCover: boolean;\n");
+    out.push_str("}\n\n");
+
     out.push_str("export interface LibraryCountsDto {\n");
     out.push_str("  readonly all: number;\n");
     out.push_str("  readonly favorites: number;\n");
@@ -198,6 +209,9 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly search: PagedSongs;\n");
     out.push_str("  readonly favorites: PagedSongs;\n");
     out.push_str("  readonly recent: readonly SongView[];\n");
+    out.push_str("  readonly catalog_collections: readonly CatalogCollectionView[];\n");
+    out.push_str("  readonly catalog_collection_songs: readonly SongView[];\n");
+    out.push_str("  readonly set_artist_cover: void;\n");
     out.push_str("  readonly library_counts: LibraryCountsDto;\n");
     out.push_str("  readonly playlists: readonly PlaylistView[];\n");
     out.push_str("  readonly playlist_members: readonly SongView[];\n");

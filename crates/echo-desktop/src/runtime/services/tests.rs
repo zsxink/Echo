@@ -6,7 +6,7 @@ use echo_core::application::root_switch::derive_root_id;
 use echo_core::application::scan::StartScan;
 use echo_core::application::testing::scan_fixture::ScanFixture;
 use echo_core::application::testing::small_fakes::FakeTrash;
-use echo_core::domain::catalog::{SongSortField, SortDirection};
+use echo_core::domain::catalog::{CatalogCollectionKind, SongSortField, SortDirection};
 use echo_core::domain::entities::LibraryRoot;
 use echo_core::domain::ids::{OperationId, PlaylistId};
 use echo_core::domain::library::PortableSerialize;
@@ -228,6 +228,38 @@ fn library_playback_context_resolves_the_full_all_view() {
         resolved.contains(&ids[2]),
         "the selected song is a member of the resolved queue"
     );
+}
+
+#[test]
+fn collection_playback_context_resolves_the_current_detail_view() {
+    let fixture = ScanFixture::new();
+    let ids = seed_songs(&fixture, 4);
+    let app = services(&fixture);
+
+    let resolved = app
+        .resolve_collection_playback_context(
+            CatalogCollectionKind::Artist,
+            "歌手",
+            None,
+            "",
+            ids[2],
+        )
+        .expect("resolve the artist detail view");
+
+    assert_eq!(resolved.len(), ids.len());
+    assert!(resolved.contains(&ids[2]));
+
+    let album_resolved = app
+        .resolve_collection_playback_context(
+            CatalogCollectionKind::Album,
+            "",
+            Some("专辑"),
+            "",
+            ids[1],
+        )
+        .expect("resolve the album detail view");
+    assert_eq!(album_resolved.len(), ids.len());
+    assert!(album_resolved.contains(&ids[1]));
 }
 
 #[test]

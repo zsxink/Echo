@@ -11,9 +11,13 @@
 //! keyset cursors and rely on identical results across repeat requests.
 
 use crate::application::ports::CatalogQueryRepository;
-use crate::domain::catalog::{CatalogCounts, OpaqueCursor, Paged, SongSort};
+use crate::domain::catalog::{
+    CatalogCollection, CatalogCollectionKind, CatalogCounts, OpaqueCursor, Paged, SongSort,
+    SongSortField, SortDirection,
+};
 use crate::domain::entities::Song;
 use crate::domain::ids::PlaylistId;
+use crate::domain::text::normalized_key;
 use crate::error::Error;
 
 /// The catalog read-model the UI consumes (task 6.1).
@@ -120,6 +124,157 @@ impl<'a> CatalogQuery<'a> {
     pub fn playlist(&self, playlist: PlaylistId) -> Result<Vec<Song>, Error> {
         self.repo.playlist_songs(playlist)
     }
+
+    /// Derive artist or album directory entries inside Core, never from a
+    /// partially loaded `WebView` page.
+    ///
+    /// # Errors
+    ///
+    /// `Unavailable` when there is no active root; storage errors propagate.
+    pub fn collections(
+        &self,
+        kind: CatalogCollectionKind,
+        search: &str,
+    ) -> Result<Vec<CatalogCollection>, Error> {
+        let needle = normalized_key(search.trim());
+        let mut groups: std::collections::BTreeMap<(String, Option<String>), Vec<Song>> =
+            std::collections::BTreeMap::new();
+        for song in self.all_available_songs()? {
+            let artist = effective_artist(&song);
+            let artist_key = normalized_key(artist);
+            let key = match kind {
+                CatalogCollectionKind::Artist => (artist_key, None),
+                // An album directory is keyed by its normalized display name.
+                // The artist shown on the card comes from the newest member,
+                // but must not split an album into one card per artist.
+                CatalogCollectionKind::Album => {
+                    (String::new(), Some(normalized_key(effective_album(&song))))
+                }
+            };
+            groups.entry(key).or_default().push(song);
+        }
+
+        let mut collections = Vec::with_capacity(groups.len());
+        for ((group_artist_key, album_key), mut members) in groups {
+            sort_newest(&mut members);
+            let Some(newest) = members.first() else {
+                continue;
+            };
+            let artist = effective_artist(newest).to_owned();
+            let artist_key = if kind == CatalogCollectionKind::Artist {
+                group_artist_key
+            } else {
+                normalized_key(&artist)
+            };
+            let name = match kind {
+                CatalogCollectionKind::Artist => artist.clone(),
+                CatalogCollectionKind::Album => effective_album(newest).to_owned(),
+            };
+            let matches = normalized_key(&name).contains(&needle)
+                || matches!(kind, CatalogCollectionKind::Album)
+                    && members
+                        .iter()
+                        .any(|song| normalized_key(effective_artist(song)).contains(&needle));
+            if matches {
+                collections.push(CatalogCollection {
+                    kind,
+                    artist_key,
+                    album_key,
+                    artist,
+                    name,
+                    song_count: members.len(),
+                    latest_song: newest.id(),
+                });
+            }
+        }
+        collections.sort_by(|left, right| {
+            normalized_key(&left.name)
+                .cmp(&normalized_key(&right.name))
+                .then_with(|| left.artist_key.cmp(&right.artist_key))
+                .then_with(|| left.album_key.cmp(&right.album_key))
+        });
+        Ok(collections)
+    }
+
+    /// Songs in one artist/album collection, newest first.
+    ///
+    /// # Errors
+    ///
+    /// `Unavailable` when there is no active root; storage errors propagate.
+    pub fn collection_songs(
+        &self,
+        kind: CatalogCollectionKind,
+        artist_key: &str,
+        album_key: Option<&str>,
+        search: &str,
+    ) -> Result<Vec<Song>, Error> {
+        let needle = normalized_key(search.trim());
+        let mut songs: Vec<_> = self
+            .all_available_songs()?
+            .into_iter()
+            .filter(|song| {
+                if matches!(kind, CatalogCollectionKind::Artist)
+                    && normalized_key(effective_artist(song)) != artist_key
+                {
+                    return false;
+                }
+                if matches!(kind, CatalogCollectionKind::Album)
+                    && Some(normalized_key(effective_album(song)).as_str()) != album_key
+                {
+                    return false;
+                }
+                needle.is_empty()
+                    || [
+                        song.title().unwrap_or(""),
+                        effective_artist(song),
+                        effective_album(song),
+                    ]
+                    .iter()
+                    .any(|value| normalized_key(value).contains(&needle))
+            })
+            .collect();
+        sort_newest(&mut songs);
+        Ok(songs)
+    }
+
+    fn all_available_songs(&self) -> Result<Vec<Song>, Error> {
+        let sort = SongSort {
+            field: SongSortField::AddedAt,
+            direction: SortDirection::Desc,
+        };
+        let mut cursor = None;
+        let mut songs = Vec::new();
+        loop {
+            let page = self.repo.all_songs(sort, cursor.as_ref(), 500)?;
+            songs.extend(page.items);
+            let Some(next) = page.next_cursor else { break };
+            cursor = Some(next);
+        }
+        Ok(songs)
+    }
+}
+
+fn effective_artist(song: &Song) -> &str {
+    match song.artist().map(str::trim) {
+        Some(value) if !value.is_empty() => value,
+        _ => "未知艺人",
+    }
+}
+
+fn effective_album(song: &Song) -> &str {
+    match song.album().map(str::trim) {
+        Some(value) if !value.is_empty() => value,
+        _ => "未知专辑",
+    }
+}
+
+fn sort_newest(songs: &mut [Song]) {
+    songs.sort_by(|left, right| {
+        right
+            .added_at()
+            .cmp(&left.added_at())
+            .then_with(|| right.id().cmp(&left.id()))
+    });
 }
 
 #[cfg(test)]
@@ -399,6 +554,79 @@ mod tests {
         assert_eq!(
             query.latest_available_song().expect("latest"),
             Some(recent[0].id())
+        );
+    }
+
+    #[test]
+    fn collections_group_by_normalized_identity_and_detail_keeps_latest_first() {
+        let db = MemoryDatabase::new();
+        let root = LibraryRootId::new();
+        LibraryRepository::upsert(&db, &LibraryRoot::new(root, ".".into(), true, true))
+            .expect("active root");
+        for (path, title, artist, album, added_at) in [
+            ("one.flac", "one", "  Alice ", "First", 1),
+            ("two.flac", "two", "alice", "First", 2),
+            ("three.flac", "three", "Alice", "Second", 3),
+            ("four.flac", "four", "", "", 4),
+            ("five.flac", "five", "Bob", "First", 5),
+        ] {
+            let mut song = Song::with_added_at(
+                SongId::new(),
+                root,
+                RelativeMediaPath::new(path).expect("path"),
+                Revision::INITIAL,
+                added_at,
+            );
+            song.apply_metadata(
+                Some(title.to_owned()),
+                Some(artist.to_owned()),
+                Some(album.to_owned()),
+                None,
+            );
+            SongRepository::upsert(&db, &song).expect("seed");
+        }
+
+        let query = CatalogQuery::new(&db);
+        let artists = query
+            .collections(CatalogCollectionKind::Artist, "alice")
+            .expect("artist groups");
+        assert_eq!(artists.len(), 1);
+        assert_eq!(artists[0].artist_key, "alice");
+        assert_eq!(artists[0].song_count, 3);
+
+        let albums = query
+            .collections(CatalogCollectionKind::Album, "")
+            .expect("album groups");
+        assert_eq!(albums.len(), 3, "albums are grouped by normalized album name");
+        let first = albums
+            .iter()
+            .find(|album| album.name == "First")
+            .expect("first album");
+        assert_eq!(first.song_count, 3);
+        let searched = query
+            .collections(CatalogCollectionKind::Album, "alice")
+            .expect("album artist search");
+        assert_eq!(
+            searched.iter().filter(|album| album.name == "First").count(),
+            1,
+            "album search matches any contributing artist"
+        );
+        let songs = query
+            .collection_songs(
+                CatalogCollectionKind::Album,
+                &first.artist_key,
+                first.album_key.as_deref(),
+                "",
+            )
+            .expect("first album songs");
+        let titles: Vec<_> = songs
+            .iter()
+            .map(|song| song.title().unwrap_or(""))
+            .collect();
+        assert_eq!(
+            titles,
+            ["five", "two", "one"],
+            "detail includes same-named album songs across artists in newest-added order"
         );
     }
 }

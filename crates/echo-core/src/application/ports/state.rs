@@ -19,6 +19,21 @@ pub trait LyricsRepository: Send + Sync {
 pub trait CoverRepository: Send + Sync {
     /// The cover reference of one song, if any.
     fn cover_of(&self, song: SongId) -> Result<Option<CoverAssetRef>, Error>;
+    /// A user-selected artist cover, scoped to one library root and normalized
+    /// artist identity. `None` deliberately selects automatic album artwork.
+    fn artist_cover_key(
+        &self,
+        root: LibraryRootId,
+        artist_key: &str,
+    ) -> Result<Option<String>, Error>;
+    /// Store or clear the user-selected artist cover. The supplied value is an
+    /// opaque `CoverCache` asset key, never an image path.
+    fn set_artist_cover_key(
+        &self,
+        root: LibraryRootId,
+        artist_key: &str,
+        key: Option<&str>,
+    ) -> Result<(), Error>;
     /// Every asset key still referenced by any song of the root — the GC
     /// keep-set (`CoverCache::gc` must never delete a referenced asset).
     fn referenced_asset_keys(&self, root: LibraryRootId) -> Result<Vec<String>, Error>;

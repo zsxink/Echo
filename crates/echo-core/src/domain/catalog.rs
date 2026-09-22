@@ -77,6 +77,31 @@ pub struct SongSort {
     pub direction: SortDirection,
 }
 
+/// A directory dimension derived from available songs in the active library.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CatalogCollectionKind {
+    Artist,
+    Album,
+}
+
+/// One artist or album entry in the catalog directory.
+///
+/// The normalized keys are presentation-independent identities: callers can
+/// re-open a group without matching against case- or Unicode-sensitive labels.
+/// For album entries, `album_key` is the grouping identity and `artist` /
+/// `artist_key` describe the newest member used for presentation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CatalogCollection {
+    pub kind: CatalogCollectionKind,
+    pub artist_key: String,
+    pub album_key: Option<String>,
+    pub artist: String,
+    pub name: String,
+    pub song_count: usize,
+    /// Most recently added member, used to resolve automatic artwork.
+    pub latest_song: SongId,
+}
+
 impl SongSort {
     /// Total order between two songs for this sort. `Ordering::Equal` occurs
     /// only when the two songs share the same `SongId` (impossible for distinct

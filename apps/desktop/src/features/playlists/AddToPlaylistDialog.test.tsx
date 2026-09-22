@@ -159,12 +159,38 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
 
     expect(await screen.findByText("还没有歌单，先创建一个吧。")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("playlist-picker-new"));
-    fireEvent.change(screen.getByLabelText("新歌单名称"), { target: { value: "通勤" } });
+    const input = await screen.findByLabelText<HTMLInputElement>("新歌单名称");
+    // Opening the nested dialog must leave focus in its field. If the picker
+    // restores focus while being paused, macOS CJK IME composition is cancelled.
+    expect(input).toHaveFocus();
+    fireEvent.change(input, { target: { value: "通勤" } });
     fireEvent.click(screen.getByText("创建歌单"));
 
     await waitFor(() =>
       expect(call).toHaveBeenCalledWith("create_playlist", { root: "root-1", name: "通勤" }),
     );
+  });
+
+  it("keeps CJK composition in the inline create field until it is committed", async () => {
+    call.mockReset();
+    call.mockResolvedValueOnce([] as never);
+    render(
+      <AddToPlaylistDialog songId="song-9" root="root-1" onClose={vi.fn()} onDone={vi.fn()} />,
+    );
+
+    await screen.findByText("还没有歌单，先创建一个吧。");
+    fireEvent.click(screen.getByTestId("playlist-picker-new"));
+    const input = await screen.findByLabelText<HTMLInputElement>("新歌单名称");
+
+    fireEvent.compositionStart(input);
+    fireEvent.change(input, { target: { value: "tongqin" } });
+    expect(input).toHaveValue("tongqin");
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    fireEvent.compositionEnd(input, { data: "通勤" });
+    fireEvent.change(input, { target: { value: "通勤" } });
+    expect(input).toHaveValue("通勤");
+    expect(input).toHaveFocus();
   });
 
   it("selects a playlist created from the picker so the original song can be added", async () => {

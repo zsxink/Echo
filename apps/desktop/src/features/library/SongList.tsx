@@ -16,7 +16,7 @@
  * confuse an unfinished load with a full library (task 10.7).
  */
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { SongView } from "../../ipc/ipc-types.generated";
 import { useCoverKeys } from "../../app/coverArt";
@@ -77,6 +77,16 @@ export function SongList(props: SongListProps) {
   } = props;
   const [scrollTop, setScrollTop] = useState(0);
   const viewportRef = useRef<HTMLDivElement>(null);
+
+  // A refresh clears the loaded page before the new first page arrives. The
+  // component stays mounted during that gap, so its virtual offset must not
+  // survive into the replacement data — otherwise the leading spacer leaves a
+  // large blank area and the new list appears to start halfway down.
+  useEffect(() => {
+    if (songs.length !== 0) return;
+    setScrollTop(0);
+    if (viewportRef.current) viewportRef.current.scrollTop = 0;
+  }, [songs.length]);
 
   const searching = search.trim().length > 0;
 

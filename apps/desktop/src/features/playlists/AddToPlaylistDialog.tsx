@@ -61,9 +61,12 @@ export function AddToPlaylistDialog({
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const dialogRef = useRef<HTMLElement>(null);
-  // A `Picker`-tier dialog (设置/歌单选择器): Escape closes it via the single
-  // stack, focus is trapped and restored on close.
-  useOverlay({ tier: OverlayTier.Picker, onClose, containerRef: dialogRef, enabled: !creating });
+  // Keep the picker registered while its create dialog is open. Disabling it
+  // would run the picker's focus-restoration cleanup after the child attempts
+  // to focus its input, stealing focus and breaking CJK IME composition.
+  // The child is a higher-priority BlockingDialog, so Escape still dismisses
+  // it first; only the underlying picker trap is paused.
+  useOverlay({ tier: OverlayTier.Picker, onClose, containerRef: dialogRef });
   useFocusTrap(dialogRef, !creating);
 
   useEffect(() => {
@@ -150,7 +153,7 @@ export function AddToPlaylistDialog({
               : `将已选 ${selectedSongIds.length} 首歌曲添加到：`}
           </p>
 
-          <div className="playlist-picker-list" role="listbox" aria-label="选择歌单">
+          <div className="playlist-picker-list" role="listbox" aria-label="选择歌单" tabIndex={0}>
             {playlists.length === 0 ? (
               <div className="playlist-picker-empty">
                 <p>还没有歌单，先创建一个吧。</p>

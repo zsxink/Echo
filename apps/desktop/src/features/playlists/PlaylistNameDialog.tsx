@@ -61,6 +61,7 @@ export function PlaylistNameDialog({
   const [coverPreview, setCoverPreview] = useState<string | undefined>(initialCoverKey);
   const dialogRef = useRef<HTMLElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  const composing = useRef(false);
   // The prototype puts this dialog in the `BlockingDialog` position of its own
   // stack (it is above the picker that may open it).
   useOverlay({ tier: OverlayTier.BlockingDialog, onClose, containerRef: dialogRef });
@@ -157,9 +158,23 @@ export function PlaylistNameDialog({
             aria-describedby="playlist-name-error"
             value={value}
             autoFocus
+            onCompositionStart={() => {
+              composing.current = true;
+            }}
+            onCompositionEnd={(event) => {
+              composing.current = false;
+              const nextValue = event.currentTarget.value;
+              setValue(nextValue);
+              if (touched) setError(validate(nextValue) || null);
+            }}
             onChange={(event) => {
-              setValue(event.target.value);
-              if (touched) setError(validate(event.target.value) || null);
+              const nextValue = event.target.value;
+              setValue(nextValue);
+              // IMEs emit intermediate Latin text while a CJK character is
+              // still being composed. Keep that composition stable and only
+              // validate the committed value, avoiding visual reflow and
+              // candidate-window jumps.
+              if (touched && !composing.current) setError(validate(nextValue) || null);
             }}
             onBlur={() => {
               setTouched(true);

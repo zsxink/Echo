@@ -45,6 +45,7 @@ import { useLibraryCounts } from "../features/library/libraryCounts";
 import type { LibraryViewKind } from "../features/library/types";
 import { coverClass } from "../features/library/coverClass";
 import { LibraryWorkspace } from "../features/library/LibraryWorkspace";
+import { CollectionDirectory } from "../features/library/CollectionDirectory";
 import { PlaylistCreateDialog } from "../features/playlists/PlaylistNameDialog";
 import { PlaylistsView } from "../features/playlists/PlaylistsView";
 import { SettingsView } from "../features/settings/SettingsView";
@@ -123,7 +124,11 @@ export function App() {
         ? "最近添加"
         : libraryView === "favorites"
           ? "喜欢的音乐"
-          : "全部歌曲";
+          : libraryView === "artists"
+            ? "歌手"
+            : libraryView === "albums"
+              ? "专辑"
+              : "全部歌曲";
 
   const navItem = (
     view: LibraryViewKind,
@@ -179,6 +184,8 @@ export function App() {
                 {navItem("all", "全部歌曲", "library", "all")}
                 {navItem("recent", "最近添加", "recent", "recent")}
                 {navItem("favorites", "喜欢的音乐", "heart", "favorites")}
+                {navItem("artists", "歌手", "artist")}
+                {navItem("albums", "专辑", "album")}
               </nav>
 
               <nav className="nav-group playlist-navigation" aria-label="歌单">
@@ -279,6 +286,11 @@ export function App() {
                     reloadPlaylists();
                   }}
                   onLibraryChanged={reloadPlaylists}
+                />
+              ) : libraryView === "artists" || libraryView === "albums" ? (
+                <CollectionDirectory
+                  kind={libraryView === "artists" ? "artist" : "album"}
+                  root={status.activeRoot ?? ""}
                 />
               ) : (
                 <LibraryWorkspace

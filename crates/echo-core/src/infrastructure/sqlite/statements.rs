@@ -786,7 +786,7 @@ pub(crate) fn referenced_asset_keys(
 ) -> Result<Vec<String>, Error> {
     let mut statement = connection
         .prepare(
-            "SELECT ca.asset_key FROM songs s JOIN cover_assets ca ON ca.content_hash = s.cover_hash WHERE s.library_root_uuid = ?1 UNION SELECT cover_asset_key FROM playlists WHERE library_root_uuid = ?1 AND cover_asset_key IS NOT NULL",
+            "SELECT ca.asset_key FROM songs s JOIN cover_assets ca ON ca.content_hash = s.cover_hash WHERE s.library_root_uuid = ?1 UNION SELECT cover_asset_key FROM playlists WHERE library_root_uuid = ?1 AND cover_asset_key IS NOT NULL UNION SELECT cover_asset_key FROM artist_covers WHERE library_root_uuid = ?1",
         )
         .map_err(storage)?;
     let keys = statement

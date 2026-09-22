@@ -8,14 +8,193 @@ use echo_core::application::catalog::CatalogQuery;
 use echo_core::application::detail::{GetSongDetail, GetSongLyrics};
 use echo_core::application::playlist::PlaylistMembers;
 use echo_core::application::ports::PlaylistRepository;
-use echo_core::domain::catalog::{OpaqueCursor, SongSort};
+use echo_core::domain::catalog::{
+    CatalogCollection, CatalogCollectionKind, OpaqueCursor, SongSort,
+};
 use echo_core::domain::entities::SongAvailability;
 use echo_core::domain::ids::{PlaylistId, SongId};
+use echo_core::domain::text::normalized_key;
 use echo_core::error::Error;
 
-use crate::ipc::dto::{LibraryCountsDto, PagedSongs, PlaylistView, SongDetailView, SongView};
+use crate::ipc::dto::{
+    CatalogCollectionView, LibraryCountsDto, PagedSongs, PlaylistView, SongDetailView, SongView,
+};
 
 impl super::AppServices {
+    /// Artist or album entries of the active library. The Core query owns
+    /// grouping; this platform layer only resolves opaque cover-cache keys.
+    ///
+    /// # Errors
+    ///
+    /// `Unavailable` when no active library exists; catalog and cover storage
+    /// failures propagate.
+    pub fn collections(
+        &self,
+        kind: CatalogCollectionKind,
+        search: &str,
+    ) -> Result<Vec<CatalogCollectionView>, Error> {
+        let query = CatalogQuery::new(self.deps.catalog.as_ref());
+        let collections = query.collections(kind, search)?;
+        collections
+            .into_iter()
+            .map(|collection| {
+                let (cover_key, has_custom_cover) = self.collection_cover(&query, &collection)?;
+                Ok(CatalogCollectionView::from_collection(
+                    collection,
+                    cover_key,
+                    has_custom_cover,
+                ))
+            })
+            .collect()
+    }
+
+    /// Songs inside one opaque artist/album collection identity.
+    ///
+    /// # Errors
+    ///
+    /// `Unavailable` when no active library exists; catalog failures
+    /// propagate.
+    pub fn collection_songs(
+        &self,
+        kind: CatalogCollectionKind,
+        artist_key: &str,
+        album_key: Option<&str>,
+        search: &str,
+    ) -> Result<Vec<SongView>, Error> {
+        CatalogQuery::new(self.deps.catalog.as_ref())
+            .collection_songs(kind, artist_key, album_key, search)
+            .map(|songs| songs.iter().map(SongView::from).collect())
+    }
+
+    /// Resolve a complete artist or album detail list for playback. The list
+    /// is rebuilt from Core so the player queue mirrors the current detail
+    /// view instead of only playing the clicked song.
+    ///
+    /// # Errors
+    ///
+    /// Returns a conflict when the selected song no longer belongs to the
+    /// active collection; catalog failures propagate unchanged.
+    pub fn resolve_collection_playback_context(
+        &self,
+        kind: CatalogCollectionKind,
+        artist_key: &str,
+        album_key: Option<&str>,
+        search: &str,
+        selected: SongId,
+    ) -> Result<Vec<SongId>, Error> {
+        let songs = CatalogQuery::new(self.deps.catalog.as_ref())
+            .collection_songs(kind, artist_key, album_key, search)?;
+        let ids: Vec<_> = songs.iter().map(echo_core::domain::entities::Song::id).collect();
+        if !ids.contains(&selected) {
+            return Err(Error::conflict(
+                "selected song is no longer in the active collection",
+            ));
+        }
+        Ok(ids)
+    }
+
+    fn collection_cover(
+        &self,
+        query: &CatalogQuery<'_>,
+        collection: &CatalogCollection,
+    ) -> Result<(Option<String>, bool), Error> {
+        if collection.kind == CatalogCollectionKind::Artist {
+            let root = self
+                .deps
+                .roots
+                .active_root()?
+                .ok_or_else(|| Error::unavailable("library", "no active root"))?
+                .id();
+            if let Some(custom) = self
+                .deps
+                .covers
+                .artist_cover_key(root, &collection.artist_key)?
+            {
+                return Ok((Some(custom), true));
+            }
+        }
+
+        let members = if collection.kind == CatalogCollectionKind::Artist {
+            // Keep artist fallback artwork scoped to that artist. Album
+            // collections intentionally merge artists, so querying the album
+            // dimension here could otherwise select another artist's cover.
+            let artist_songs = query.collection_songs(
+                CatalogCollectionKind::Artist,
+                &collection.artist_key,
+                None,
+                "",
+            )?;
+            let Some(newest) = artist_songs.first() else {
+                return Ok((None, false));
+            };
+            let latest_album = normalized_key(newest.album().unwrap_or("未知专辑"));
+            artist_songs
+                .into_iter()
+                .filter(|song| normalized_key(song.album().unwrap_or("未知专辑")) == latest_album)
+                .collect()
+        } else {
+            query.collection_songs(
+                CatalogCollectionKind::Album,
+                &collection.artist_key,
+                collection.album_key.as_deref(),
+                "",
+            )?
+        };
+        for song in members {
+            if let Some(cover) = self.deps.covers.cover_of(song.id())? {
+                return Ok((Some(cover.asset_key), false));
+            }
+        }
+        Ok((None, false))
+    }
+
+    /// Set, replace, or clear the explicit cover for one artist. `None`
+    /// restores the automatic newest-added-album artwork.
+    ///
+    /// # Errors
+    ///
+    /// `Unavailable` when writes are disabled or no active root exists;
+    /// validation, cover-cache, and storage failures propagate.
+    pub fn set_artist_cover(
+        &self,
+        artist_key: &str,
+        bytes: Option<Vec<u8>>,
+        mime: Option<&str>,
+    ) -> Result<(), Error> {
+        self.guard_writes()?;
+        let root = self
+            .deps
+            .roots
+            .active_root()?
+            .ok_or_else(|| Error::unavailable("library", "no active root"))?
+            .id();
+        let key = match bytes {
+            None => None,
+            Some(bytes) => {
+                const MAX_COVER_BYTES: usize = 5 * 1024 * 1024;
+                let mime = mime.unwrap_or_default();
+                if bytes.is_empty() || bytes.len() > MAX_COVER_BYTES {
+                    return Err(Error::validation(
+                        echo_core::error::Subject::Other,
+                        "cover",
+                        "image must be between 1 byte and 5 MiB",
+                    ));
+                }
+                if !matches!(mime, "image/jpeg" | "image/png" | "image/webp") {
+                    return Err(Error::validation(
+                        echo_core::error::Subject::Other,
+                        "cover",
+                        "unsupported image type",
+                    ));
+                }
+                Some(self.deps.cover_cache.put(&bytes, mime)?)
+            }
+        };
+        self.deps
+            .covers
+            .set_artist_cover_key(root, artist_key, key.as_deref())
+    }
+
     /// 全部歌曲, keyset-paginated, mapped to `PagedSongs`.
     ///
     /// # Errors

@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 use echo_core::application::scan::ScanSummary;
-use echo_core::domain::catalog::{CatalogCounts, OpaqueCursor, Paged};
+use echo_core::domain::catalog::{CatalogCollection, CatalogCounts, OpaqueCursor, Paged};
 use echo_core::domain::entities::{Song, SongAvailability};
 use echo_core::domain::ids::{LibraryRootId, PlaylistId, SongId};
 use echo_core::domain::media::{AudioFormat, AudioParameters};
@@ -47,6 +47,48 @@ pub struct SongView {
     /// rows show a badge without a rescan.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quality: Option<QualityTierDto>,
+}
+
+/// One artist or album directory entry. Its keys are opaque stable identities;
+/// the `WebView` may return them to the desktop but never interprets them. For
+/// album entries, `album_key` identifies the merged album name and `artist_key`
+/// is the representative artist of the newest member.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogCollectionView {
+    pub kind: String,
+    pub artist_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub album_key: Option<String>,
+    pub artist: String,
+    pub name: String,
+    pub song_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cover_key: Option<String>,
+    pub has_custom_cover: bool,
+}
+
+impl CatalogCollectionView {
+    pub(crate) fn from_collection(
+        collection: CatalogCollection,
+        cover_key: Option<String>,
+        has_custom_cover: bool,
+    ) -> Self {
+        Self {
+            kind: match collection.kind {
+                echo_core::domain::catalog::CatalogCollectionKind::Artist => "artist",
+                echo_core::domain::catalog::CatalogCollectionKind::Album => "album",
+            }
+            .to_owned(),
+            artist_key: collection.artist_key,
+            album_key: collection.album_key,
+            artist: collection.artist,
+            name: collection.name,
+            song_count: collection.song_count,
+            cover_key,
+            has_custom_cover,
+        }
+    }
 }
 
 /// The badge tier shown after a song title in the library list.

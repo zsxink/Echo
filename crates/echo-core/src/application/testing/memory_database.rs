@@ -34,6 +34,7 @@ struct Store {
     released_claims: Vec<OperationId>,
     lyrics: BTreeMap<(SongId, LyricsSource), LyricsCandidate>,
     covers: BTreeMap<SongId, CoverAssetRef>,
+    artist_covers: BTreeMap<(LibraryRootId, String), String>,
     runs: BTreeMap<(LibraryRootId, u64), ScanRunRow>,
     issues: Vec<(LibraryRootId, u64, MediaDiagnostic)>,
     runtime_state: BTreeMap<String, String>,

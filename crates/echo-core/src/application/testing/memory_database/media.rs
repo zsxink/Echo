@@ -12,6 +12,32 @@ impl CoverRepository for MemoryDatabase {
     fn cover_of(&self, song: SongId) -> Result<Option<CoverAssetRef>, Error> {
         Ok(self.cover_of(song))
     }
+    fn artist_cover_key(
+        &self,
+        root: LibraryRootId,
+        artist_key: &str,
+    ) -> Result<Option<String>, Error> {
+        Ok(self
+            .lock()
+            .artist_covers
+            .get(&(root, artist_key.to_owned()))
+            .cloned())
+    }
+    fn set_artist_cover_key(
+        &self,
+        root: LibraryRootId,
+        artist_key: &str,
+        key: Option<&str>,
+    ) -> Result<(), Error> {
+        let mut store = self.lock();
+        let identity = (root, artist_key.to_owned());
+        if let Some(key) = key {
+            store.artist_covers.insert(identity, key.to_owned());
+        } else {
+            store.artist_covers.remove(&identity);
+        }
+        Ok(())
+    }
     fn referenced_asset_keys(&self, root: LibraryRootId) -> Result<Vec<String>, Error> {
         let songs = self.all_in_root(root)?;
         let store = self.lock();
@@ -19,6 +45,13 @@ impl CoverRepository for MemoryDatabase {
             .iter()
             .filter_map(|song| store.covers.get(&song.id()))
             .map(|cover| cover.asset_key.clone())
+            .chain(
+                store
+                    .artist_covers
+                    .iter()
+                    .filter(|((entry_root, _), _)| *entry_root == root)
+                    .map(|(_, key)| key.clone()),
+            )
             .collect())
     }
 }

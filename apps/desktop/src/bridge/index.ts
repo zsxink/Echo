@@ -40,6 +40,11 @@ interface BridgeCommandArguments {
   ];
   favorites: [args: { sort: string; cursor?: string | null; limit: number }];
   recent: [args: { query: string }];
+  catalog_collections: [args: { kind: "artist" | "album"; search: string }];
+  catalog_collection_songs: [
+    args: { kind: "artist" | "album"; artistKey: string; albumKey?: string | null; search: string },
+  ];
+  set_artist_cover: [args: { artistKey: string; bytes: number[] | null; mime?: string | null }];
   library_counts: EmptyArgs;
   playlists: EmptyArgs;
   playlist_members: [args: { playlistId: string }];
@@ -71,10 +76,12 @@ interface BridgeCommandArguments {
   play_playlist_context: [args: { playlist: string; selectedSong: string }];
   play_library_context: [
     args: {
-      view: "all" | "recent" | "favorites";
+      view: "all" | "recent" | "favorites" | "artist" | "album";
       query: string;
       sort: string;
       selectedSong: string;
+      artistKey?: string;
+      albumKey?: string;
     },
   ];
   restore_playback_session: EmptyArgs;
