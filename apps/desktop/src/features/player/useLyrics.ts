@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { bridge } from "../../bridge";
+import { subscribeLibraryInvalidations } from "../library";
 
 /** One timed lyrics line (mirrors the IPC `LyricsLineView`). */
 export interface LyricsLine {
@@ -25,6 +26,14 @@ export interface SongLyrics {
  */
 export function useLyrics(songId: string | null): SongLyrics | null {
   const [lyrics, setLyrics] = useState<SongLyrics | null>(null);
+  const [libraryRevision, setLibraryRevision] = useState(0);
+
+  useEffect(() => {
+    return subscribeLibraryInvalidations(() => {
+      setLibraryRevision((revision) => revision + 1);
+    });
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     setLyrics(null);
@@ -42,6 +51,6 @@ export function useLyrics(songId: string | null): SongLyrics | null {
     return () => {
       cancelled = true;
     };
-  }, [songId]);
+  }, [songId, libraryRevision]);
   return lyrics;
 }

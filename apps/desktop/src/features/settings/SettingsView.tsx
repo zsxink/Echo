@@ -20,9 +20,11 @@
 import { useEffect, useRef, useState } from "react";
 
 import { bridge } from "../../bridge";
+import { invalidateCovers } from "../../app/coverArt";
 import { Icon } from "../../app/Icon";
 import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
 import type { CloseBehavior } from "../../ipc/ipc-types.generated";
+import { invalidateLibrary } from "../library";
 import { useLibraryStatus } from "../workspace";
 import { useTheme, type Theme } from "./useTheme";
 
@@ -58,6 +60,7 @@ export function SettingsView({ onClose }: { readonly onClose: () => void }) {
   const status = useLibraryStatus();
   const [closeBehavior, setCloseBehavior] = useState<CloseBehavior>("background");
   const [choosing, setChoosing] = useState(false);
+  const [rescanning, setRescanning] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const panelRef = useRef<HTMLElement>(null);
   // A `Picker`-tier layer: Escape closes it before the menus beneath it, focus is
@@ -113,6 +116,27 @@ export function SettingsView({ onClose }: { readonly onClose: () => void }) {
     }
   }
 
+  async function rescanLibrary() {
+    const root = status.activeRoot;
+    if (!root || status.scanning || rescanning) return;
+
+    setRescanning(true);
+    setNotice(null);
+    try {
+      await bridge.call("start_scan", { root });
+      // A rescan can keep the same SongId while replacing metadata and its
+      // embedded cover. Refresh every mounted surface after the committed scan.
+      invalidateCovers();
+      invalidateLibrary();
+      await status.refresh();
+      setNotice("资料库已重新扫描，封面、歌词和标签已更新");
+    } catch {
+      setNotice("资料库扫描失败，请稍后重试");
+    } finally {
+      setRescanning(false);
+    }
+  }
+
   return (
     <section
       className="settings-dialog"
@@ -159,7 +183,7 @@ export function SettingsView({ onClose }: { readonly onClose: () => void }) {
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={choosing}
+                disabled={choosing || status.scanning || rescanning}
                 onClick={() => void chooseDirectory()}
                 data-testid="storage-directory-button"
               >
@@ -170,6 +194,23 @@ export function SettingsView({ onClose }: { readonly onClose: () => void }) {
               <Icon name="info" />
               <span>更改目录不会移动或删除现有音乐；Echo 会在下次扫描时更新资料库。</span>
             </p>
+            <div className="setting-row">
+              <div className="storage-value">
+                <strong>重新扫描资料库</strong>
+                <span className="setting-help">
+                  检查并更新已变化音频文件中的封面、歌词和标签，不会移动或删除原始文件。
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn"
+                disabled={!status.activeRoot || status.scanning || rescanning || choosing}
+                onClick={() => void rescanLibrary()}
+                data-testid="rescan-library-button"
+              >
+                {status.scanning || rescanning ? "正在扫描…" : "重新扫描"}
+              </button>
+            </div>
           </section>
 
           <section className="settings-section">
