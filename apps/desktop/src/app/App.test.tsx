@@ -241,3 +241,76 @@ describe("Phase-one scope guard", () => {
     expect(document.body.textContent ?? "").not.toMatch(/同步|sync/i);
   });
 });
+
+describe("Library directory views", () => {
+  const mocks = (
+    globalThis as unknown as {
+      __echoTest: { setInvoke: (command: string, value: unknown) => void };
+    }
+  ).__echoTest;
+
+  const artistEntry = {
+    kind: "artist",
+    artistKey: "alice",
+    artist: "Alice",
+    name: "Alice",
+    songCount: 2,
+    coverKey: null,
+    hasCustomCover: false,
+  };
+  const albumEntry = {
+    kind: "album",
+    artistKey: "alice",
+    albumKey: "first album",
+    artist: "Alice",
+    name: "First album",
+    songCount: 2,
+    coverKey: null,
+    hasCustomCover: false,
+  };
+
+  // 歌手 and 专辑 render the same component at the same tree position, so its
+  // state survives the switch unless the view identity resets it. The reported
+  // bug was exactly that: 歌手's cards stayed on screen under 专辑 chrome. This
+  // guards the wiring end to end (the sidebar click, the kind the shell passes,
+  // and the directory's own reset).
+  it("shows 专辑's own entries after switching from 歌手", async () => {
+    await act(async () => {
+      render(<App />);
+    });
+    mocks.setInvoke("choose_library_root", {
+      configured: true,
+      readOnly: false,
+      activeRoot: "root-1",
+    });
+    mocks.setInvoke("library_status", {
+      configured: true,
+      readOnly: false,
+      unavailable: false,
+      scanning: false,
+      activeRoot: "root-1",
+    });
+    mocks.setInvoke("all_songs", { items: [], isLast: true, nextCursor: null });
+    mocks.setInvoke("playlists", []);
+    mocks.setInvoke("library_counts", { all: 0, recent: 0, favorites: 0 });
+    let entries: unknown = [artistEntry];
+    // The test hook hands the handler no arguments, so the fixture is swapped
+    // between the two views instead of being keyed by the requested kind.
+    mocks.setInvoke("catalog_collections", () => entries);
+
+    fireEvent.click(screen.getByRole("button", { name: "选择资料库目录" }));
+    await screen.findByTestId("workspace");
+
+    fireEvent.click(screen.getByRole("button", { name: "歌手" }));
+    await screen.findByRole("button", { name: "打开歌手 Alice" });
+
+    entries = [albumEntry];
+    fireEvent.click(screen.getByRole("button", { name: "专辑" }));
+    // Match on the entry, not on the chrome prefix: the aria-label is built
+    // from the CURRENT kind (`打开${title} ${name}`), so a stale artist card
+    // is relabelled 打开专辑 Alice the moment the view switches — asserting
+    // on "打开歌手 …" would pass with the bug still present.
+    expect(screen.queryByRole("button", { name: /打开.*Alice/ })).not.toBeInTheDocument();
+    await screen.findByRole("button", { name: "打开专辑 First album" });
+  });
+});

@@ -180,6 +180,12 @@ export function SongList(props: SongListProps) {
                 </button>
               </th>
             ) : null}
+            {/* Prototype thead: `<th>#</th><th>歌曲</th><th class="album">专辑</th>
+                <th>时长</th><th aria-label="歌曲操作"></th>`. The `#` cell is
+                required: `table-layout: fixed` assigns thead cells to colgroup
+                columns in order, so dropping it shifted every header one column
+                to the left (歌曲 over 序号, 时长 over 专辑). */}
+            <th aria-label="序号" />
             <th>歌曲</th>
             <th className="album">专辑</th>
             <th>时长</th>

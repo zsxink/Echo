@@ -291,6 +291,8 @@ export function App() {
                 <CollectionDirectory
                   kind={libraryView === "artists" ? "artist" : "album"}
                   root={status.activeRoot ?? ""}
+                  readOnly={status.readOnly}
+                  onLibraryChanged={reloadPlaylists}
                 />
               ) : (
                 <LibraryWorkspace
