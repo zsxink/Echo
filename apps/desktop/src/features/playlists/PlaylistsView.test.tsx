@@ -333,6 +333,53 @@ describe("PlaylistsView (task 10.9)", () => {
     expect(screen.queryByTestId("batch-delete")).toBeNull();
     expect(screen.getByTestId("batch-play-next")).toBeEnabled();
   });
+
+  it("opens the add-to-playlist picker from a member's song menu", async () => {
+    const members = [
+      { id: "song-1", title: "晴天", favorite: false, playCount: 0, availability: "available" },
+    ];
+    mockBridge({ playlist_members: members, playlists: [{ id: "pl-2", name: "通勤", memberCount: 2 }] });
+    const onLibraryChanged = vi.fn();
+    renderView({ onLibraryChanged }, { withToast: true });
+    await screen.findByTestId("song-row-song-1");
+
+    fireEvent.click(within(screen.getByTestId("song-row-song-1")).getByLabelText("歌曲操作"));
+    await screen.findByTestId("song-menu");
+
+    // The single-song menu entry is enabled — not disabled as it was before the
+    // wiring fix.
+    const addEntry = screen.getByText("添加到歌单").closest("button");
+    expect(addEntry).not.toBeDisabled();
+
+    fireEvent.click(screen.getByText("添加到歌单"));
+    const dialog = await screen.findByTestId("add-to-playlist-dialog");
+    // The view passes songs without a display title, so the picker uses its
+    // fallback "歌曲" copy — what matters is that it opened at all.
+    expect(within(dialog).getByText(/添加到：/)).toBeInTheDocument();
+
+    // Confirm a target; the picker commits through the same batch path the
+    // library workspace uses (add_to_playlists with the song id).
+    fireEvent.click(await within(dialog).findByLabelText("通勤"));
+    fireEvent.click(within(dialog).getByText("确认"));
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith("add_to_playlists", {
+        song: "song-1",
+        targets: ["pl-2"],
+      }),
+    );
+    await waitFor(() => expect(onLibraryChanged).toHaveBeenCalled());
+  });
+
+  it("keeps 添加到歌单 disabled for a read-only playlist", async () => {
+    mockBridge({ playlist_members: [{ id: "song-1", title: "晴天", favorite: false }] });
+    renderView({ readOnly: true });
+    await screen.findByTestId("song-row-song-1");
+
+    fireEvent.click(within(screen.getByTestId("song-row-song-1")).getByLabelText("歌曲操作"));
+    await screen.findByTestId("song-menu");
+    expect(screen.getByText("添加到歌单").closest("button")).toBeDisabled();
+    expect(screen.queryByTestId("add-to-playlist-dialog")).toBeNull();
+  });
 });
 
 /**

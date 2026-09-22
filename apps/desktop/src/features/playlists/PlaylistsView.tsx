@@ -475,6 +475,12 @@ export function PlaylistsView({
             onFavorite(menuFor.song, favorite);
             setMenuFor(null);
           }}
+          onAddToPlaylist={() => {
+            // Reuse the same selection dialog the batch path uses: a single
+            // song opens the picker just as it does in the library workspace.
+            setAddToPlaylistFor([menuFor.song]);
+            setMenuFor(null);
+          }}
           onRefresh={refreshAfterSongMutation}
           extraActions={
             <button
