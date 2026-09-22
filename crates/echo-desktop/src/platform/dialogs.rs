@@ -16,6 +16,14 @@
 use echo_core::application::ports::{ImportSource, ImportSourceReader};
 use echo_core::error::Error;
 
+/// The audio extensions the import dialog offers, aligned one-for-one with the
+/// format families the media stack guarantees (`AudioFormat`, minus the
+/// `UnknownDamaged` placeholder). A single source of truth so the dialog filter
+/// and its drift test cannot diverge; the file-association guard in
+/// `platform::security` already pins the same set against the bundle
+/// registrations.
+pub const AUDIO_DIALOG_EXTENSIONS: [&str; 7] = ["mp3", "flac", "ape", "m4a", "ogg", "opus", "wav"];
+
 /// The outcome of a reveal-in-folder side effect. Callers render only
 /// `SongId`/relative-path data; the absolute location never crosses back.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -174,5 +182,50 @@ mod tests {
         assert_eq!(outcome, RevealOutcome::Revealed);
         assert_eq!(dialogs.revealed(), vec!["晴天.flac".to_owned()]);
         // No test observes an absolute path — the port consumes it.
+    }
+
+    /// The import dialog offers exactly the format families the media stack
+    /// guarantees (drift guard, mirroring the file-association test in
+    /// `platform::security`). `aac`/`aiff` are not in the core matrix and must
+    /// never appear as selectable-but-unimportable filters.
+    #[test]
+    fn audio_dialog_filter_matches_the_media_stack() {
+        use echo_core::domain::media::AudioFormat;
+
+        let guaranteed: Vec<&str> = [
+            AudioFormat::Mpeg,
+            AudioFormat::Flac,
+            AudioFormat::Ape,
+            AudioFormat::Mp4,
+            AudioFormat::Ogg,
+            AudioFormat::Opus,
+            AudioFormat::Wav,
+        ]
+        .into_iter()
+        .map(AudioFormat::extension)
+        .collect();
+        assert_eq!(
+            AUDIO_DIALOG_EXTENSIONS.len(),
+            guaranteed.len(),
+            "one filter per guaranteed family"
+        );
+        for ext in AUDIO_DIALOG_EXTENSIONS {
+            assert!(
+                guaranteed.contains(&ext),
+                "dialog filter '{ext}' is not a guaranteed format"
+            );
+        }
+        for ext in guaranteed {
+            assert!(
+                AUDIO_DIALOG_EXTENSIONS.contains(&ext),
+                "guaranteed format '{ext}' is missing from the dialog filter"
+            );
+        }
+        // The exact offenders this guard exists for.
+        assert!(!AUDIO_DIALOG_EXTENSIONS.contains(&"aac"));
+        assert!(!AUDIO_DIALOG_EXTENSIONS.contains(&"aiff"));
+        // The added formats the change is about must be registered.
+        assert!(AUDIO_DIALOG_EXTENSIONS.contains(&"m4a"));
+        assert!(AUDIO_DIALOG_EXTENSIONS.contains(&"wav"));
     }
 }

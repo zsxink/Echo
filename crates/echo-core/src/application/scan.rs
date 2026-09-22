@@ -1254,6 +1254,35 @@ mod tests {
     }
 
     #[test]
+    fn tagless_wav_scans_into_a_wav_record_with_empty_tags() {
+        let fixture = ScanFixture::new();
+        // A real WAV has no tag support; the file is a supported container the
+        // probe recognizes as audio while the tag reader yields no fields.
+        fixture.write_file("tone.wav", b"wav-bytes");
+        fixture.probe.set(
+            "tone.wav",
+            crate::application::ports::ProbeOutcome::Audio {
+                format: crate::domain::media::AudioFormat::Wav,
+                duration: Some(std::time::Duration::from_secs(3)),
+            },
+        );
+        let summary = start_scan(&fixture).run(fixture.root).expect("scan ok");
+        assert_eq!(summary.progress.created, 1, "the wav is a song, not a skip");
+        assert_eq!(summary.progress.failed, 0);
+        let song = fixture
+            .all_songs()
+            .into_iter()
+            .next()
+            .expect("one wav song recorded");
+        assert_eq!(song.format(), Some(crate::domain::media::AudioFormat::Wav));
+        // No tags to read: title/artist stay None (the UI/overlay shows the
+        // existing missing-tag fallbacks), duration comes from the probe.
+        assert_eq!(song.title(), None);
+        assert_eq!(song.artist(), None);
+        assert_eq!(song.duration(), Some(std::time::Duration::from_secs(3)));
+    }
+
+    #[test]
     fn cancel_mid_scan_never_marks_missing() {
         let fixture = ScanFixture::new();
         for index in 0..6 {

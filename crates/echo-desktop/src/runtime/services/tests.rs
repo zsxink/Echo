@@ -536,8 +536,10 @@ fn delete_then_undo_reflects_playlist_member_count_within_undo_window() {
         .create_playlist(fixture.root, "删除计数")
         .expect("create");
     let id = PlaylistId::from_str(&playlist).expect("valid playlist id");
-    app.add_to_playlists(ids[0], &[id]).expect("add to playlist");
-    app.add_to_playlists(ids[1], &[id]).expect("add second song");
+    app.add_to_playlists(ids[0], &[id])
+        .expect("add to playlist");
+    app.add_to_playlists(ids[1], &[id])
+        .expect("add second song");
 
     let count = |app: &AppServices| app.playlists().expect("list")[0].member_count;
     assert_eq!(count(&app), 2, "both members counted before delete");

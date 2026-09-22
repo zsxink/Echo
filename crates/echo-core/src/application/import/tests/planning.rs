@@ -619,3 +619,38 @@ fn import_reserves_operation_and_song_ids_before_side_effects() {
     assert_eq!(record.id(), song);
     assert_eq!(record.path(), &target);
 }
+
+/// A tag-less `.wav` (PCM carries no real tags) goes through the same import
+/// planning and lands under the visible deterministic fallbacks, never
+/// failing because there is no title to name the target.
+#[test]
+fn untagged_wav_import_uses_the_missing_tag_fallbacks() {
+    let g = gated();
+    g.sources.add("song.wav", "song.wav", b"wav-bytes");
+    tagged(&g, b"wav-bytes", None, None);
+    // The post-publish verification re-probes the published file under its
+    // target path; a recognized-but-untagged wav still probes as WAV audio.
+    g.fixture.probe.set(
+        "media/未知艺人/未知艺人 - 未命名歌曲.wav",
+        crate::application::ports::ProbeOutcome::Audio {
+            format: AudioFormat::Wav,
+            duration: Some(std::time::Duration::from_millis(1_000)),
+        },
+    );
+
+    let batch = [source("song.wav")];
+    let report = PlanImport::new(&g.deps, &g.sources)
+        .run(g.fixture.root, &batch)
+        .expect("batch-level success");
+
+    let ImportOutcome::Imported { target, .. } = &report.results[0] else {
+        panic!(
+            "a tag-less wav must still import: {:?}",
+            report.results[0]
+        );
+    };
+    assert_eq!(
+        target.display(),
+        "media/未知艺人/未知艺人 - 未命名歌曲.wav"
+    );
+}

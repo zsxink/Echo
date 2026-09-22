@@ -50,16 +50,15 @@ impl SystemDialogs for TauriDialogs {
     }
 
     fn pick_audio_files(&self) -> Result<Option<PickedImport>, Error> {
+        let extensions: Vec<&str> = {
+            use echo_desktop::platform::dialogs::AUDIO_DIALOG_EXTENSIONS;
+            AUDIO_DIALOG_EXTENSIONS.to_vec()
+        };
         let some = self
             .handle
             .dialog()
             .file()
-            .add_filter(
-                "音频",
-                &[
-                    "mp3", "flac", "m4a", "aac", "ogg", "opus", "wav", "aiff", "ape",
-                ],
-            )
+            .add_filter("音频", &extensions)
             .blocking_pick_files();
         let Some(files) = some else {
             return Ok(None);
