@@ -596,6 +596,8 @@ body.player-mode-open.lyrics-focus-open .lyric-line {
 
 /* Sidebar hugs the window edge: left padding halves 16px → 8px. */
 .sidebar {
+  padding-block: var(--space-3);
+  padding-right: var(--space-3);
   padding-left: calc(var(--space-4) * 0.5);
 }
 

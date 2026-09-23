@@ -57,7 +57,7 @@ export interface SongRowProps {
   readonly coverKey?: string | null;
   readonly onPlay: () => void;
   readonly onFavorite: (favorite: boolean) => void;
-  readonly onEnqueue: () => void;
+  readonly onPlayNext: () => void;
   readonly onToggleSelection?: () => void;
   /** Opens the selection-aware menu without triggering playback. */
   readonly onContextMenu?: (anchor: MenuAnchor) => void;
@@ -103,7 +103,7 @@ export function SongRow({
   selectionMode = false,
   onPlay,
   onFavorite,
-  onEnqueue,
+  onPlayNext,
   onToggleSelection,
   onContextMenu,
   onOpenMenu,
@@ -265,9 +265,9 @@ export function SongRow({
           <button
             type="button"
             className="row-action add-queue"
-            aria-label={`将${title}加入播放队列`}
+            aria-label={`将${title}设为下一首播放`}
             disabled={readOnly || unavailable}
-            onClick={onEnqueue}
+            onClick={onPlayNext}
           >
             <Icon name="plus" />
           </button>

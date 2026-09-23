@@ -53,7 +53,7 @@ function renderList(songs: readonly SongView[], currentSongId: string | null, pl
       onClearSearch={noop}
       onPlay={noop}
       onFavorite={noop}
-      onEnqueue={noop}
+      onPlayNext={noop}
       onOpenMenu={noop}
     />,
   );
@@ -184,7 +184,7 @@ describe("SongList windowing (task 10.6)", () => {
         onClearSearch={noop}
         onPlay={noop}
         onFavorite={noop}
-        onEnqueue={noop}
+        onPlayNext={noop}
         onOpenMenu={noop}
       />,
     );
@@ -201,7 +201,7 @@ describe("SongList windowing (task 10.6)", () => {
         onClearSearch={noop}
         onPlay={noop}
         onFavorite={noop}
-        onEnqueue={noop}
+        onPlayNext={noop}
         onOpenMenu={noop}
       />,
     );
@@ -241,7 +241,7 @@ describe("SongList windowing (task 10.6)", () => {
         onClearSearch={noop}
         onPlay={noop}
         onFavorite={noop}
-        onEnqueue={noop}
+        onPlayNext={noop}
         onOpenMenu={noop}
       />,
     );
@@ -276,7 +276,7 @@ describe("SongList windowing (task 10.6)", () => {
         onClearSearch={noop}
         onPlay={noop}
         onFavorite={noop}
-        onEnqueue={noop}
+        onPlayNext={noop}
         onOpenMenu={noop}
       />,
     );
@@ -305,7 +305,7 @@ describe("SongList windowing (task 10.6)", () => {
         onClearSearch={noop}
         onPlay={noop}
         onFavorite={noop}
-        onEnqueue={noop}
+        onPlayNext={noop}
         onOpenMenu={noop}
       />,
     );
@@ -333,7 +333,7 @@ describe("SongList windowing (task 10.6)", () => {
         onClearSearch={noop}
         onPlay={noop}
         onFavorite={noop}
-        onEnqueue={noop}
+        onPlayNext={noop}
         onOpenMenu={noop}
       />,
     );
@@ -357,7 +357,7 @@ describe("SongList windowing (task 10.6)", () => {
         onClearSearch={noop}
         onPlay={noop}
         onFavorite={noop}
-        onEnqueue={noop}
+        onPlayNext={noop}
         onOpenMenu={noop}
       />,
     );

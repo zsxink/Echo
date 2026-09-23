@@ -49,7 +49,7 @@ function renderRow(overrides: Partial<Parameters<typeof SongRow>[0]> = {}) {
     coverKey: null,
     onPlay: vi.fn(),
     onFavorite: vi.fn(),
-    onEnqueue: vi.fn(),
+    onPlayNext: vi.fn(),
     onOpenMenu: vi.fn(),
     ...overrides,
   };
@@ -82,8 +82,8 @@ describe("SongRow playback binding", () => {
     expect(props.onFavorite).toHaveBeenCalledWith(true);
     expect(props.onPlay).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "将心房加入播放队列" }));
-    expect(props.onEnqueue).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "将心房设为下一首播放" }));
+    expect(props.onPlayNext).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole("button", { name: "歌曲操作" }));
     expect(props.onOpenMenu).toHaveBeenCalledTimes(1);

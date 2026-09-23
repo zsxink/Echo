@@ -242,3 +242,10 @@ macOS SHALL 提供菜单栏状态项，Windows 与 Linux SHALL 提供系统托�
 #### Scenario: 打包后的身份显示
 - **WHEN** 用户在 macOS 中查看 Echo 的应用包、窗口、原生菜单或菜单栏入口
 - **THEN** 每个面向用户的名称均为 `Echo`
+
+### Requirement: 应用禁用 WebView 默认右键菜单
+桌面应用 SHALL 在应用工作区中阻止 WebView 的默认上下文菜单，避免浏览器菜单干扰 Echo 的桌面交互；歌曲列表的行内菜单行为由 `library-experience` 定义。
+
+#### Scenario: 在应用工作区右键
+- **WHEN** 用户在 Echo 工作区任意位置触发右键
+- **THEN** 系统不显示 WebView 默认上下文菜单

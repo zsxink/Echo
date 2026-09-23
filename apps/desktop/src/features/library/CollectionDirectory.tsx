@@ -237,7 +237,10 @@ export function CollectionDirectory({
       const targets = selectedSongs.filter(
         (song) => song.availability === "available" && song.favorite !== favorite,
       );
-      if (targets.length === 0 && selectedSongs.every((song) => song.availability === "available")) {
+      if (
+        targets.length === 0 &&
+        selectedSongs.every((song) => song.availability === "available")
+      ) {
         notify("没有需要变更的歌曲");
         return;
       }
@@ -428,14 +431,17 @@ export function CollectionDirectory({
               allLoadedSelected={allSongsSelected}
               onToggleSelection={(song) => selection.toggle(song.id)}
               onToggleSelectAll={() => selection.toggleAllLoaded(songs.map((song) => song.id))}
-              onContextMenu={selectionMode ? openBatchMenu : undefined}
+              onContextMenu={(song, anchor) => {
+                if (selectionMode) openBatchMenu(song, anchor);
+                else setMenuFor({ song, anchor });
+              }}
               error={error}
               onRetry={refreshSongs}
               onLoadMore={() => {}}
               onClearSearch={() => setSearch("")}
               onPlay={play}
               onFavorite={onFavorite}
-              onEnqueue={onEnqueue}
+              onPlayNext={onPlayNext}
               onOpenMenu={(song, anchor) => setMenuFor({ song, anchor })}
             />
           ) : (

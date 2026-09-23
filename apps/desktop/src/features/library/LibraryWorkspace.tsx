@@ -400,7 +400,10 @@ export function LibraryWorkspace({
             allLoadedSelected={allLoadedSelected}
             onToggleSelection={(song) => selection.toggle(song.id)}
             onToggleSelectAll={() => selection.toggleAllLoaded(page.songs.map((song) => song.id))}
-            onContextMenu={selectionMode ? openBatchMenu : undefined}
+            onContextMenu={(song, anchor) => {
+              if (selectionMode) openBatchMenu(song, anchor);
+              else setMenuFor({ song, anchor });
+            }}
             error={error}
             onRetry={retry}
             onImport={() => void runImport()}
@@ -408,7 +411,7 @@ export function LibraryWorkspace({
             onClearSearch={() => setSearch("")}
             onPlay={onPlay}
             onFavorite={onFavorite}
-            onEnqueue={onEnqueue}
+            onPlayNext={onPlayNext}
             onOpenMenu={(song, anchor) => setMenuFor({ song, anchor })}
           />
         </div>

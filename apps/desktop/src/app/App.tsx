@@ -76,6 +76,12 @@ export function App() {
     setSettingsOpen,
   } = useAppShell();
 
+  useEffect(() => {
+    const preventDefaultContextMenu = (event: Event) => event.preventDefault();
+    document.addEventListener("contextmenu", preventDefaultContextMenu);
+    return () => document.removeEventListener("contextmenu", preventDefaultContextMenu);
+  }, []);
+
   // Finder / file-manager opens are a desktop-owned playback request, never an
   // import. The player coordinator atomically replaces its context for each
   // accepted file; registering here also covers paths drained after cold start.

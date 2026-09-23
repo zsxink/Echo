@@ -55,7 +55,7 @@ export interface SongListProps {
   readonly onClearSearch: () => void;
   readonly onPlay: (song: SongView) => void;
   readonly onFavorite: (song: SongView, favorite: boolean) => void;
-  readonly onEnqueue: (song: SongView) => void;
+  readonly onPlayNext: (song: SongView) => void;
   /** Opens the row's `.song-more` menu, anchored to the control that opened it. */
   readonly onOpenMenu: (song: SongView, anchor: MenuAnchor) => void;
 }
@@ -207,7 +207,7 @@ export function SongList(props: SongListProps) {
               coverKey={coverKeys.get(song.id) ?? null}
               onPlay={() => props.onPlay(song)}
               onFavorite={(favorite) => props.onFavorite(song, favorite)}
-              onEnqueue={() => props.onEnqueue(song)}
+              onPlayNext={() => props.onPlayNext(song)}
               onToggleSelection={() => props.onToggleSelection?.(song)}
               onContextMenu={
                 props.onContextMenu ? (anchor) => props.onContextMenu?.(song, anchor) : undefined

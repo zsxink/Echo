@@ -438,12 +438,17 @@ export function PlaylistsView({
             onToggleSelectAll={() =>
               selection.toggleAllLoaded(sortedMembers.map((song) => song.id))
             }
-            onContextMenu={selectionMode ? openBatchMenu : undefined}
+            onContextMenu={(song, anchor) => {
+              if (selectionMode) openBatchMenu(song, anchor);
+              else setMenuFor({ song, anchor });
+            }}
             onLoadMore={() => {}}
             onClearSearch={() => {}}
             onPlay={onPlay}
             onFavorite={onFavorite}
-            onEnqueue={onEnqueue}
+            onPlayNext={(song) =>
+              bridge.fireAndForget("queue_command", { command: "playNext", songId: song.id })
+            }
             onOpenMenu={(song, anchor) => setMenuFor({ song, anchor })}
           />
         </div>
