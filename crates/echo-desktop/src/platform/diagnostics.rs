@@ -518,6 +518,11 @@ mod tests {
     #[allow(clippy::significant_drop_tightening)]
     #[test]
     fn panic_payload_extracts_str_payloads() {
+        // Panic hooks are process-global; serialize this temporary replacement
+        // with the other hook tests so parallel test execution cannot race it.
+        let _hook_guard = PANIC_HOOK_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         // `PanicHookInfo` is not constructible outside a real panic, so the
         // pure helper is exercised through the real hook machinery via
         // `catch_unwind`. Interior mutability is required because the hook
