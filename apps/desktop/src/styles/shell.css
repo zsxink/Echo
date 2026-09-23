@@ -14,12 +14,12 @@
 .brand { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-1) var(--space-2); font: 700 var(--text-xl)/1 var(--font-display); letter-spacing: var(--tracking-display); }
 .brand-mark { width: 28px; height: 28px; display: grid; place-items: center; flex: none; background: var(--bg); color: var(--accent); border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .brand-mark svg { width: 20px; height: 20px; display: block; }
-.brand-actions { position: absolute; left: min(104px, calc(100% - 64px)); top: 50%; display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: var(--radius-sm); background: var(--bg); box-shadow: var(--elev-raised); opacity: 0; pointer-events: none; transform: translateY(-50%) scale(.96); transform-origin: left center; transition: opacity var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard); }
-.brand-import-slot { width: 28px; height: 28px; flex: none; }
+.brand-actions { position: absolute; left: min(104px, calc(100% - 88px)); top: 50%; display: flex; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--border-soft); border-radius: var(--radius-pill); background: var(--surface-warm); box-shadow: var(--elev-raised); opacity: 0; pointer-events: none; transform: translateY(-50%) scale(.96); transform-origin: left center; transition: opacity var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard); }
+.brand-import-slot { width: 36px; height: 36px; flex: none; }
 .brand-area:hover .brand-actions, .brand-area:focus-within .brand-actions { opacity: 1; pointer-events: auto; transform: translateY(-50%) scale(1); }
-.brand-action { width: 28px; height: 28px; flex: none; display: grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--muted); cursor: pointer; }
-.brand-action svg { width: 16px; height: 16px; }
-.brand-action:hover:not(:disabled) { background: var(--surface); color: var(--fg); }
+.brand-action { width: 36px; height: 36px; flex: none; display: grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: var(--radius-pill); background: transparent; color: var(--muted); cursor: pointer; transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
+.brand-action svg { width: 20px; height: 20px; }
+.brand-action:hover:not(:disabled), .brand-action:focus-visible { background: var(--surface); color: var(--fg); }
 .brand-action:disabled { color: var(--muted); cursor: not-allowed; opacity: .52; }
 .nav-group { display: grid; gap: 2px; }
 .nav-label { padding: var(--space-1) var(--space-3) var(--space-1); color: var(--muted); font: 600 var(--text-xs)/1 var(--font-mono); letter-spacing: .08em; }
