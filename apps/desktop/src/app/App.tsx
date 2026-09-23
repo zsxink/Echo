@@ -21,9 +21,8 @@
  * snapshot and renders the workspace / read-only / unavailable / first-launch
  * states accordingly.
  *
- * 应用工具区 holds 设置 only — the prototype's sidebar has no theme
- * dropdown (`.theme-control` exists in its stylesheet but no markup uses it);
- * theme switching lives in 设置, which is where the prototype puts it.
+ * The Echo brand row owns compact Settings and Import actions. Theme switching
+ * stays in 设置, which is where the prototype puts it.
  *
  * There is deliberately **no** sync control in this shell. The prototype has no
  * `.sync-button` markup either (grep it), so reproducing one never was shell
@@ -31,11 +30,11 @@
  * phase-one scope in `docs/ROADMAP.md` ("不包含：资料库同步与可操作的同步入口").
  * Sync arrives in phase two.
  *
- * All state and the sidebar's overlay/focus behaviour are orchestrated by
- * `useAppShell` (task 6.6); this file keeps only the layout.
+ * Navigation and overlay/focus behaviour are orchestrated by `useAppShell`
+ * (task 6.6); this file also provides the brand-area portal slot for importing.
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { bridge, reportBridgeFailure } from "../bridge";
 import { ChooseRootView } from "../features/workspace/ChooseRootView";
@@ -58,6 +57,7 @@ import { ToastView } from "./ToastView";
 import { useAppShell } from "./useAppShell";
 
 export function App() {
+  const [importTarget, setImportTarget] = useState<HTMLDivElement | null>(null);
   const {
     theme,
     status,
@@ -178,11 +178,26 @@ export function App() {
               aria-label="资料库导航"
               ref={sidebarRef}
             >
-              <div className="brand" aria-label="Echo，本地音乐播放器">
-                <span className="brand-mark" aria-hidden="true">
-                  <Icon name="note" />
-                </span>
-                <span>Echo</span>
+              <div className="brand-area" data-testid="brand-area">
+                <div className="brand" aria-label="Echo，本地音乐播放器">
+                  <span className="brand-mark" aria-hidden="true">
+                    <Icon name="note" />
+                  </span>
+                  <span className="brand-name">Echo</span>
+                </div>
+                <div className="brand-actions">
+                  <button
+                    type="button"
+                    className="brand-action"
+                    aria-label="设置"
+                    title="设置"
+                    onClick={() => setSettingsOpen(true)}
+                    data-testid="settings-button"
+                  >
+                    <Icon name="settings" />
+                  </button>
+                  <div className="brand-import-slot" ref={setImportTarget} />
+                </div>
               </div>
 
               <nav className="nav-group" aria-label="主导航">
@@ -246,16 +261,6 @@ export function App() {
                 </div>
               </nav>
 
-              <div className="side-foot">
-                <button
-                  type="button"
-                  className="link-button settings-button"
-                  onClick={() => setSettingsOpen(true)}
-                  data-testid="settings-button"
-                >
-                  设置
-                </button>
-              </div>
             </aside>
 
             <button
@@ -307,6 +312,7 @@ export function App() {
                   root={status.activeRoot ?? ""}
                   readOnly={status.readOnly}
                   onLibraryChanged={reloadPlaylists}
+                  importTarget={importTarget}
                 />
               )}
 

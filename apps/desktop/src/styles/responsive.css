@@ -29,6 +29,7 @@
   .queue-popover .queue-time { font-size: var(--text-xs); }
   .queue-popover .queue-empty { padding: var(--space-4) 0; }
 }
+@media (max-width: 400px) { .brand-name { display: none; } }
 /* 移动端播放模式下 toast 位于增高后的播放栏上方，避免被遮挡。 */
 @media (max-width: 760px) {
   body.player-mode-open .toast { bottom: calc(132px + max(var(--space-2), env(safe-area-inset-bottom))); }
