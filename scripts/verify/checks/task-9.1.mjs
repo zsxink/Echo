@@ -72,10 +72,11 @@ for (const name of [
   }
 }
 // The composition-root single-supervisor assertion lives in the services
-// module (runtime::services::tests), which already existed before this change.
+// module (runtime::services::tests::open_path), which already existed before
+// this change.
 if (
   !testOut.includes(
-    "test runtime::services::tests::the_composition_root_shares_the_shells_startup_supervisor ... ok",
+    "test runtime::services::tests::open_path::the_composition_root_shares_the_shells_startup_supervisor ... ok",
   )
 ) {
   fail("runtime test not green: the_composition_root_shares_the_shells_startup_supervisor");

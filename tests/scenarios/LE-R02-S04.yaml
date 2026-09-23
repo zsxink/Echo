@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 scenario_id: LE-R02-S04
 requirement: 资料库搜索
-scenario: 切换活动资料库后查询
+scenario: 搜索无结果
 layer: automated
 command: "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.tsx"
 

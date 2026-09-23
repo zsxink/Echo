@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 scenario_id: LE-R06-S03
 requirement: 歌曲操作与详情
-scenario: 删除当前播放歌曲
+scenario: 查看歌曲详情
 layer: automated
 command: "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx"
 

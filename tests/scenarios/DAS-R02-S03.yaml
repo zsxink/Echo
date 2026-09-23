@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 scenario_id: DAS-R02-S03
 requirement: 应用框架必须提供稳定的目录入口
-scenario: 访问一期明确排除的入口
+scenario: 进入多选模式
 layer: automated
 command: "node scripts/verify/checks/task-13.8.mjs"
 

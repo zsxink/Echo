@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 scenario_id: LE-R06-S04
 requirement: 歌曲操作与详情
-scenario: 打开本地目录
+scenario: 删除当前播放歌曲
 layer: automated
 command: "cargo test -p echo-core --all-features scan::tests::enumerate_failure_marks_run_failed_without_missing"
 

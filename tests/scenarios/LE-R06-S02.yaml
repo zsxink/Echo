@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 scenario_id: LE-R06-S02
 requirement: 歌曲操作与详情
-scenario: 查看歌曲详情
+scenario: 打开多选操作菜单
 layer: automated
 command: "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx"
 

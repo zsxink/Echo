@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 scenario_id: PM-R05-S04
 requirement: 失效歌曲成员
-scenario: 失效歌曲恢复
+scenario: 删除后仍在撤销窗口内
 layer: automated
 command: "cargo test -p echo-core --all-features playlist"
 

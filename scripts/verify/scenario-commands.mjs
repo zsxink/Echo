@@ -49,6 +49,24 @@ export const COMMANDS = {
   "DAS-R02-S01": REACT("src/app/narrow.test.tsx"),
   "DAS-R02-S02": REACT("src/features/library/SongList.test.tsx"),
   "DAS-R02-S03": CHECK("13.8"), // 一期排除入口 scope guard
+  // Batch menu (S04): the row opens the selection-wide menu from both the
+  // context menu and the keyboard menu key — proven by SongRow's batch-menu
+  // and keyboard-menu cases. S05 is the management-action side of the same
+  // requirement (no sync, provided batch entry): task-13.8 asserts the UI has
+  // no operable sync entry anywhere.
+  "DAS-R02-S04": REACT("src/features/library/SongRow.test.tsx"),
+  "DAS-R02-S05": CHECK("13.8"),
+  // CSS-only interaction behaviors: the brand operations are revealed/closed
+  // by `:hover`/`:focus-within` in shell.css (task 7.4 + the compact brand
+  // action change), the desktop hit targets are 36px (44px in narrow, asserted
+  // by the narrow.css media query), and the search-box chrome is unchanged by
+  // the import move. None of these is a JS-assertable behavior — each is a
+  // rendered visual property verified by an operator against the prototype.
+  "DAS-R02-S06": ATTEST("DAS-R02-S06"),
+  "DAS-R02-S07": ATTEST("DAS-R02-S07"),
+  "DAS-R02-S08": REACT("src/app/accessibility.test.tsx"), // keyboard order reaches brand actions
+  "DAS-R02-S09": ATTEST("DAS-R02-S09"),
+  "DAS-R02-S10": ATTEST("DAS-R02-S10"),
   "DAS-R03-S01": DESK("platform::local_state"),
   "DAS-R03-S02": DESK("platform::local_state"),
   "DAS-R03-S03": DESK("platform::local_state"),
@@ -75,6 +93,11 @@ export const COMMANDS = {
   "DAS-R10-S03": CHECK("wire-dialogs"), // capability set stays free of dialog/fs
   "DAS-R11-S01": REACT("src/app/App.test.tsx"), // workspace-empty claims full workspace
   "DAS-R11-S02": REACT("src/app/App.test.tsx"),
+  // R12–R14 由对应 gate 覆盖 (见下)。
+  // DAS-R15: 应用在应用工作区阻止 WebView 默认右键菜单。App.tsx 在加载时向
+  // document 注册全局 `contextmenu` preventDefault(非测试可见行为); 该开关由
+  // 人工验证(在应用工作区右键不出现浏览器菜单)。
+  "DAS-R15-S01": ATTEST("DAS-R15-S01"),
 
   // ===== desktop-playback (DP) =====
   "DP-R01-S01": "cargo test -p echo-desktop --all-features --test player_smoke",
@@ -117,6 +140,11 @@ export const COMMANDS = {
   // committed playlist and failure-feedback UI path run as one registered
   // offline acceptance command.
   "DP-R07-S02": "cargo test -p echo-desktop --all-features --lib && pnpm --dir apps/desktop test",
+  // 临时播放项边界 (R07-S03/S04): 当前临时项导入成功后原位替换 queue entry 并
+  // 恢复播放(S03), 导入失败保留原临时 entry 与播放状态(S04), 分别由 coordinator
+  // 的 dedicated 测试证明。
+  "DP-R07-S03": DESK("player::coordinator::tests::importing_current_temporary_entry_replaces_it_in_place_and_resumes_playing"),
+  "DP-R07-S04": DESK("player::coordinator::tests::importing_current_temporary_entry_preserves_pause_and_rejects_stale_completion"),
   "DP-R08-S01": CHECK("9.4"),
   "DP-R08-S02": REACT("src/player/useGlobalPlayerHotkeys.test.tsx"),
   "DP-R09-S01": CHECK("9.3"),
@@ -188,6 +216,10 @@ export const COMMANDS = {
   // THEN clause is "drop the old root's results and only accept the new root's",
   // which is exactly the delayed-response test in useSongs.
   "LE-R02-S04": REACT("src/features/library/useSongs.test.tsx"),
+  // R02-S05 (切换活动资料库后查询): same delayed-response suite — dropping the
+  // old root's in-flight query and only accepting the new root's.
+  "LE-R02-S05": REACT("src/features/library/useSongs.test.tsx"),
+  "LE-R01-S04": REACT("src/features/library/CollectionDirectory.test.tsx"), // 切换歌手或专辑目录
   "LE-R03-S01": COREC("infrastructure::sqlite::tests::catalog_all_songs_keyset_pages"),
   "LE-R03-S02": COREC("infrastructure::sqlite::tests::catalog_favorites_view"),
   "LE-R03-S03": COREC("infrastructure::sqlite::tests::catalog_recent_100"),
@@ -203,14 +235,37 @@ export const COMMANDS = {
   "LE-R06-S02": REACT("src/features/library/SongList.test.tsx"),
   "LE-R06-S03": REACT("src/features/library/SongList.test.tsx"),
   "LE-R06-S04": COREC("scan::tests::enumerate_failure_marks_run_failed_without_missing"),
+  // R06-S05..S06 (打开本地目录 / 删除歌曲) belong to the song-operations UI in
+  // SongMenu; S05 由 task-9.5 的 reveal-by-SongId adapter 证明。S07–S10 是删除
+  // 的回收站边界: 不重启最终化 / 暂败重试 / 结果无法证明 / 路径边界保护 —— 由
+  // trash 套件与 task-12.7 安全 gate 证明 (与 LL-R07 同一组测试)。
+  "LE-R06-S07": COREC("trash::tests::explicit_system_trash_success_persists_applied_then_finalizes"),
+  "LE-R06-S08": COREC("trash::tests::system_trash_failure_keeps_the_verified_staging_for_retry"),
+  "LE-R06-S09": COREC("trash::tests::post_call_trash_error_rechecks_missing_staging_and_stops_other_operations"),
+  "LE-R06-S10": CHECK("12.7"), // trash 目标只接受绑定根下匹配的 echo/tmp/trash/<op-id>
   // The 50k budget bench is `#[ignore]`d so a normal `cargo test` stays fast —
   // without `-- --ignored` cargo runs zero tests, which `run-scenario.mjs`
   // correctly rejects rather than passing on an empty selection.
   "LE-R07-S01": `${COREC("bench_50k_search_and_first_screen_p95_meet_prd_budgets")} -- --ignored`,
   "LE-R07-S02": REACT("src/features/library/SongList.test.tsx"),
+  // R07-S03..S04 written inline below; S05–S09 (多选保留/全选/跨分页/查询上下文/
+  // 虚拟列表) by the selection suite + SongList virtual-row cases.
+  "LE-R07-S05": REACT("src/features/library/batchLibraryOperations.test.tsx"),
+  "LE-R07-S06": REACT("src/features/library/useSongSelection.test.tsx"),
+  "LE-R07-S07": REACT_T("src/features/library/SongList.test.tsx", "restores a controlled bulk selection after a virtual row leaves and re-enters"),
+  "LE-R07-S08": REACT_T("src/features/library/useSongSelection.test.tsx", "clears when the view/query selection scope changes"),
+  "LE-R07-S09": REACT("src/features/library/SongList.test.tsx"), // 虚拟列表行 key 稳定 + viewport slice
   // library-nav-counts: backend-driven view counts, invalidation on changes.
   "LE-R08-S01": REACT("src/features/library/libraryNavCounts.test.tsx"),
   "LE-R08-S02": REACT("src/features/library/libraryNavCounts.test.tsx"),
+  // R08-S03..S08 (批量: 歌单移除/队列操作/删除撤回/不可删项/只读根/失败):
+  // 批量操作套件 + PlaylistsView 批量移除 + 只读表面禁用写操作。
+  "LE-R08-S03": REACT("src/features/playlists/PlaylistsView.test.tsx"),
+  "LE-R08-S04": REACT("src/features/library/batchOperations.test.ts"),
+  "LE-R08-S05": REACT("src/features/library/batchLibraryOperations.test.tsx"),
+  "LE-R08-S06": REACT("src/features/library/batchOperations.test.ts"),
+  "LE-R08-S07": REACT("src/features/library/BatchSongActions.test.tsx"),
+  "LE-R08-S08": REACT("src/features/library/batchLibraryOperations.test.tsx"),
   "LE-R09-S01": REACT("src/features/library/libraryNavCounts.test.tsx"),
   "LE-R09-S02": REACT("src/features/library/libraryNavCounts.test.tsx"),
   "LE-R09-S03": REACT("src/features/library/libraryNavCounts.test.tsx"),
@@ -236,9 +291,16 @@ export const COMMANDS = {
   // 证明不了记录/索引更新 —— 改指 watch 集成层整组 (settle / rename 保 UUID / publish 复用
   // journal id / overflow 退化为重扫), 重扫收敛那半由 scan 侧的 *_converge_after_rescan 覆盖。
   "LL-R02-S05": COREC("application::watch::tests::"),
+  // S06 (设置页手动重扫) 与 S07 (无活动库不可重扫): SettingsView 的 rescan 套件
+  // 分别证明「重扫进行中禁止重复点击并提交结果」与「无根目录/扫描中禁用入口」。
+  "LL-R02-S06": REACT_T("src/features/settings/SettingsView.test.tsx", "starts a scan for the active library and reports completion"),
+  "LL-R02-S07": REACT_T("src/features/settings/SettingsView.test.tsx", "disables rescan when no library root is configured"),
   "LL-R03-S01": COREC("infrastructure::sqlite::tests::playback_sessions_are_idempotent"), // fixture format matrix
   "LL-R03-S02": COREC("probe"),
   "LL-R03-S03": COREC("infrastructure::sqlite::tests::scan_pipeline_persists"),
+  // S04 (m4a 内嵌标签) 与 S05 (wav 无标签兜底): 由 metadata tags 系列证明。
+  "LL-R03-S04": COREC("infrastructure::metadata::tags::tests::m4a_tags_parse_from_in_memory_import_source_bytes"),
+  "LL-R03-S05": COREC("tagless_wav_reads_as_ok_with_empty_fields"),
   "LL-R04-S01": COREC("scan::tests::fast_skip_unchanged_files_and_relink_on_move"),
   "LL-R04-S02": COREC("scan::tests::external_missing_relinks_on_same_hash_path_keeping_relationships"),
   "LL-R04-S03": COREC("scan::tests::duplicate_hash_paths_get_deterministic_primary"),
@@ -250,6 +312,8 @@ export const COMMANDS = {
   "LL-R07-S01": COREC("trash::tests::persisted_trash_applied_is_the_only_automatic_database_finalization_proof"), // P0
   "LL-R07-S02": COREC("trash::tests::external_staging_cleanup_becomes_unknown_and_preserves_relationships"),
   "LL-R07-S03": COREC("scan::tests::external_deletion_is_missing_not_pending_delete_and_keeps_relationships"),
+  // S04 (文件恢复: 原路径恢复或同 BLAKE3 重扫恢复可用状态): 由外部缺失恢复测试证明。
+  "LL-R07-S04": COREC("scan::tests::external_missing_recovers_on_original_path_restoring_everything"), // P0
   "LL-R08-S01": CHECK("12.7"), // P0 path/security automated
   "LL-R08-S02": CHECK("12.6"), // P0 perf/stress automated
   "LL-R08-S03": COREC("permission"), // privacy/offline automated
@@ -268,7 +332,22 @@ export const COMMANDS = {
   "PM-R03-S01": COREC("playlist"),
   "PM-R03-S02": COREC("playlist"),
   "PM-R03-S03": COREC("playlist"),
+  // R03-S04..S06: 从歌单视图单曲菜单添加、只读视图禁用入口、重复添加仍幂等 ——
+  // 由 PlaylistsView 的 picker/只读测试与 core 幂等添加测试分别证明。S07 (批量
+  // 添加部分失败) 由 AddToPlaylistDialog 的顺序提交 + 部分失败可见性测试证明。
+  "PM-R03-S04": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "opens the add-to-playlist picker from a member's song menu"),
+  "PM-R03-S05": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "keeps 添加到歌单 disabled for a read-only playlist"),
+  "PM-R03-S06": COREC("add_to_multiple_playlists_is_atomic_and_idempotent"),
+  "PM-R03-S07": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "runs a multi-song add sequentially and keeps partial failures visible"),
   "PM-R04-S01": COREC("playlist"),
+  // R04-S02/S03: 批量移除成员与部分失败聚合 —— 由 PlaylistsView 的批量移除刷新与
+  // batchOperations 的批量失败聚合测试证明。
+  "PM-R04-S02": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "removes the selected members one by one and refreshes the playlist"),
+  "PM-R04-S03": REACT("src/features/library/batchOperations.test.ts"),
+  // R05-S05/S06: 删除在撤销窗口内的撤销, 与失效歌曲恢复 —— 由 PlaylistsView 的
+  // 删除撤销刷新与 sqlite 的 missing 成员恢复(不产生重复)证明。
+  "PM-R05-S05": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "refreshes the sidebar after a batch delete and its undo"),
+  "PM-R05-S06": COREC("playlist_missing_members_stay_visible_and_recover_without_duplicates"),
   "PM-R05-S01": COREC("playlist_missing_members_stay_visible"),
   "PM-R05-S02": COREC("playlist_missing_members_stay_visible"),
   "PM-R05-S03": COREC("echo_delete_finalize_cascades_memberships"),
@@ -281,40 +360,68 @@ export const COMMANDS = {
   // picker's create-then-add path and its rejection path.
   "PM-R06-S01": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "keeps the member in place"),
   "PM-R06-S02": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "never claims"),
+  "PM-R06-S03": REACT("src/features/library/batchOperations.test.ts"), // 批量操作结果聚合
   "PM-R07-S01": REACT("src/features/playlists/AddToPlaylistDialog.test.tsx"),
   "PM-R07-S02": REACT("src/features/playlists/PlaylistNameDialog.test.tsx"),
 
   // ===== safe-file-ingestion (SFI) =====
+  // R01: 多选导入与默认目标命名. S03 (无标签 wav) is proven by the dedicated
+  // untagged-wav case; S01/S02 by the per-input mixed reports.
   "SFI-R01-S01": COREC("import"), // per-input mixed results
   "SFI-R01-S02": COREC("import"),
-  "SFI-R02-S01": COREC("sidecar"),
-  "SFI-R02-S02": COREC("sidecar"),
-  "SFI-R03-S01": COREC("dedup"),
-  "SFI-R03-S02": COREC("import"),
-  "SFI-R04-S01": COREC("recover::tests::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"), // P0
-  "SFI-R04-S02": COREC("recover::tests::copy_crash_before_any_journal_leaves_nothing_to_recover"), // P0
-  "SFI-R04-S03": COREC("recover::tests::contradictory_stage_evidence_holds_and_deletes_nothing"), // P0
-  "SFI-R04-S04": COREC("recover::tests::nothing_recoverable_rolls_back_and_releases_cleanly"), // P0
-  "SFI-R04-S05": COREC("recover::tests::truncated_source_is_rejected_and_leaves_nothing"), // P0
+  "SFI-R01-S03": COREC("untagged_wav_import_uses_the_missing_tag_fallbacks"),
+  // R02: 导入选择过滤器与支持矩阵一致.
+  "SFI-R02-S01": COREC("import"),
+  // R03: 同名歌词侧车导入. S02 (LRC 不可读) 继承旧 SFI-R02-S02 的 sidecar 验证.
+  "SFI-R03-S01": COREC("sidecar"),
+  "SFI-R03-S02": COREC("sidecar"),
+  // R04: BLAKE3 去重与重名编号.
+  "SFI-R04-S01": COREC("dedup"),
+  "SFI-R04-S02": COREC("import"),
+  "SFI-R04-S03": COREC("recover::tests::nothing_recoverable_rolls_back_and_releases_cleanly"), // P0: 不可用记录不占用目标
+  "SFI-R04-S04": COREC("dedup"),
+  // R05: 暂存、校验、原子移动与操作日志. S03/S04/S05 由 recover 与侧车失败测试证明;
+  // S05 保持 P0 自动化(发布后 watcher 抢占 -> 唯一 UUID).
   "SFI-R05-S01": COREC("import"),
-  "SFI-R05-S02": REACT("src/features/import/ImportBatchDialog.test.tsx"),
-  "SFI-R06-S01": `node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path`, // normalized open outside library -> temporary item (dispatch predicate)
-  "SFI-R06-S02": `node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path`, // in-library open resolves to the existing UUID
-  "SFI-R06-S03": `node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path`, // old-root file never resolves through the old UUID
-  "SFI-R06-S04": COREC("import"),
-  "SFI-R06-S05": COREC("staging"),
-  "SFI-R07-S01": CHECK("9.1"),
-  "SFI-R07-S02": CHECK("9.1"),
-  "SFI-R08-S01": COREC("recover::tests::recovery_never_creates_a_duplicate_when_a_watcher_preempts"), // P0
-  "SFI-R08-S02": COREC("recover::tests::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"), // P0
-  // R08（normalize-os-file-open-paths）的余下三条是结构契约，不是单条数据断言：
+  "SFI-R05-S02": COREC("import"),
+  "SFI-R05-S03": COREC("recover::tests::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"), // P0
+  "SFI-R05-S04": COREC("sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent"),
+  "SFI-R05-S05": COREC("recover::tests::recovery_never_creates_a_duplicate_when_a_watcher_preempts"), // P0
+  // R06: 逐文件结果与资料库不可用反馈.
+  "SFI-R06-S01": COREC("import"),
+  "SFI-R06-S02": COREC("import"),
+  // R07: 源文件、系统关联与安全边界. S03/S04/S05 是旧 SFI-R06-S03/04/05 的编号迁移:
+  // 非活动旧资料库打开走 open_path 分派谓词, 源文件保持与暂存冲突走 import/staging.
+  "SFI-R07-S01": `node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path`, // external open -> temporary item
+  "SFI-R07-S02": `node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path`, // in-library open resolves to the existing UUID
+  "SFI-R07-S03": `node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path`, // old-root file never resolves through the old UUID
+  "SFI-R07-S04": COREC("import"),
+  "SFI-R07-S05": COREC("staging"),
+  // R08: 单实例唤醒与重复打开.
+  "SFI-R08-S01": CHECK("9.1"),
+  "SFI-R08-S02": CHECK("9.1"),
+  // R09（normalize-os-file-open-paths）余下三条是结构契约，不是单条数据断言：
   // S03 归一化由 `open_targets(&[tauri::Url]) -> Vec<PathBuf>` 的类型签名强制、
   // S04 前端不得二次解码、S05 壳层不得回退到 `try_state` 查找。三者都由 task-9.1
   // 的门（open_targets 单测 + main.rs 结构断言）覆盖，故与同族 P0 一样必须是
   // automated 命令，不能落到人工 attestation 回退。
-  "SFI-R08-S03": CHECK("9.1"), // P0: 归一化契约由类型强制
-  "SFI-R08-S04": CHECK("9.1"), // P0: 前端不得二次解码
-  "SFI-R08-S05": CHECK("9.1"), // P0: 纵深防御不得被放宽
+  "SFI-R09-S01": CHECK("9.1"), // 带百分号编码的 file URL 归一化
+  "SFI-R09-S02": CHECK("9.1"), // 非 file scheme 丢弃
+  "SFI-R09-S03": CHECK("9.1"), // 归一化契约由类型强制
+  "SFI-R09-S04": CHECK("9.1"), // 前端不得二次解码
+  "SFI-R09-S05": CHECK("9.1"), // 纵深防御不得被放宽
+  // R10: 跨平台路径与恢复后的幂等性.
+  "SFI-R10-S01": COREC("import"),
+  "SFI-R10-S02": COREC("import"),
+  // R11: 受控并发批量导入与非阻塞反馈. S01–S04 由导入批处理与结果分类器证明.
+  // S05 (多线程重叠可验证) 需要两个文件在同一同步屏障等待后同时进入阶段 —— 当前
+  // import 是顺序执行(无并发 worker), 该承诺由人工记录(attestation)验证, 直到
+  // 导入实际并发化 (mirrors the scan worker bound test).
+  "SFI-R11-S01": COREC("batch_import_lands_under_media_and_keeps_dedup_and_numbering"),
+  "SFI-R11-S02": REACT_T("src/features/import/importFeedback.test.ts", "treats imported, duplicate and skipped as non-failures"),
+  "SFI-R11-S03": REACT_T("src/features/import/importFeedback.test.ts", "reports only real failures in the failure list"),
+  "SFI-R11-S04": REACT("src/features/import/ImportBatchDialog.test.tsx"),
+  "SFI-R11-S05": ATTEST("SFI-R11-S05"), // 实现为顺序导入; 并发重叠待导入并发化后证明
 
   // ===== sync-foundation (SYN) =====
   "SYN-R01-S01": CHECK("3.10"), // 0005 schema landed without touching 0001

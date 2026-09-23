@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 scenario_id: LE-R02-S03
 requirement: 资料库搜索
-scenario: 搜索无结果
+scenario: 搜索词为空
 layer: automated
 command: "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx"
 

@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 scenario_id: LE-R06-S05
 requirement: 歌曲操作与详情
-scenario: 删除歌曲
+scenario: 打开本地目录
 layer: automated
 command: "node scripts/verify/checks/check-native-attestation.mjs LE-R06-S05"
 

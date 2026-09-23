@@ -643,6 +643,10 @@ pub fn play_playlist_context(
 
 /// Resolve a library view on desktop before building a queue. Unlike
 /// `play_context`, this accepts no client-side page of song IDs.
+///
+/// `artist_key`/`album_key` only matter for the artist/album views; the
+/// remaining views pass them as `None`.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn play_library_context(
     services: State<'_, AppServices>,

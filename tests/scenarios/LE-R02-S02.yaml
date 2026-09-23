@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 scenario_id: LE-R02-S02
 requirement: 资料库搜索
-scenario: 搜索词为空
+scenario: 搜索聚合目录
 layer: automated
 command: "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_search_empty_query"
 
