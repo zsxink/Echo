@@ -11,6 +11,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { bridge } from "../../bridge";
 import { usePlayerSnapshot } from "../../player/playerStore";
@@ -50,6 +51,8 @@ interface LibraryWorkspaceProps {
   readonly readOnly: boolean;
   /** A mutation the sidebar also reflects (playlist membership, imports). */
   readonly onLibraryChanged?: () => void;
+  /** App-shell target for the import button; absent in isolated workspace views. */
+  readonly importTarget?: HTMLElement | null;
 }
 
 export function LibraryWorkspace({
@@ -58,6 +61,7 @@ export function LibraryWorkspace({
   root,
   readOnly,
   onLibraryChanged,
+  importTarget,
 }: LibraryWorkspaceProps) {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useStoredSongSort(view);
@@ -142,6 +146,22 @@ export function LibraryWorkspace({
       setImporting(false);
     }
   }, [importing, onLibraryChanged]);
+
+  const importButton = (
+    <button
+      type="button"
+      className={importTarget === undefined ? "btn btn-primary" : "brand-action"}
+      id="import-button"
+      aria-label={importTarget === undefined ? undefined : importing ? "正在导入" : "导入"}
+      title={importTarget === undefined ? undefined : importing ? "正在导入" : "导入"}
+      aria-busy={importing}
+      disabled={importing}
+      onClick={() => void runImport()}
+      data-testid="import-button"
+    >
+      {importTarget === undefined ? importing ? "导入中…" : "导入" : <Icon name="upload" />}
+    </button>
+  );
 
   const onFavorite = useCallback(
     (song: SongView, favorite: boolean) => {
@@ -351,20 +371,10 @@ export function LibraryWorkspace({
             data-testid="search-input"
           />
         </label>
-        {!readOnly ? (
-          <button
-            type="button"
-            className="btn btn-primary"
-            id="import-button"
-            aria-busy={importing}
-            disabled={importing}
-            onClick={() => void runImport()}
-            data-testid="import-button"
-          >
-            {importing ? "导入中…" : "导入"}
-          </button>
-        ) : null}
+        {!readOnly && importTarget === undefined ? importButton : null}
       </Topbar>
+
+      {!readOnly && importTarget ? createPortal(importButton, importTarget) : null}
 
       <main className="content" data-testid="library-workspace">
         <div className="library-view">

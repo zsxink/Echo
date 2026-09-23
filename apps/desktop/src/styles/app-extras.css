@@ -600,6 +600,9 @@ body.player-mode-open.lyrics-focus-open .lyric-line {
   padding-right: var(--space-3);
   padding-left: calc(var(--space-4) * 0.5);
 }
+.sidebar .nav-item {
+  min-height: 40px;
+}
 
 /* The immersive surface is position:fixed, so .app padding does not reach it.
  * The 收起 button sits top-left — exactly where the traffic lights are — so it
