@@ -84,7 +84,10 @@ describe("SettingsView library rescan", () => {
 
   it("disables rescan while the directory picker is active", async () => {
     let resolvePicker!: (value: null) => void;
-    mocks.setInvoke("choose_library_root", new Promise<null>((resolve) => (resolvePicker = resolve)));
+    mocks.setInvoke(
+      "choose_library_root",
+      new Promise<null>((resolve) => (resolvePicker = resolve)),
+    );
     render(<SettingsView onClose={() => undefined} />);
 
     act(() => fireEvent.click(screen.getByTestId("storage-directory-button")));

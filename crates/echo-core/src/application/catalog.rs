@@ -597,7 +597,11 @@ mod tests {
         let albums = query
             .collections(CatalogCollectionKind::Album, "")
             .expect("album groups");
-        assert_eq!(albums.len(), 3, "albums are grouped by normalized album name");
+        assert_eq!(
+            albums.len(),
+            3,
+            "albums are grouped by normalized album name"
+        );
         let first = albums
             .iter()
             .find(|album| album.name == "First")
@@ -607,7 +611,10 @@ mod tests {
             .collections(CatalogCollectionKind::Album, "alice")
             .expect("album artist search");
         assert_eq!(
-            searched.iter().filter(|album| album.name == "First").count(),
+            searched
+                .iter()
+                .filter(|album| album.name == "First")
+                .count(),
             1,
             "album search matches any contributing artist"
         );

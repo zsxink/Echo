@@ -10,6 +10,82 @@ function mockCommand(command: string, value: unknown) {
 }
 
 describe("CollectionDirectory", () => {
+  it("sorts each directory independently and restores its persisted preference", async () => {
+    localStorage.removeItem("echo-directory-sort:artist");
+    localStorage.removeItem("echo-directory-sort:album");
+    mockCommand("catalog_collections", [
+      {
+        kind: "artist",
+        artistKey: "beta",
+        artist: "Beta",
+        name: "Beta",
+        songCount: 5,
+      },
+      {
+        kind: "artist",
+        artistKey: "alpha",
+        artist: "Alpha",
+        name: "Alpha",
+        songCount: 1,
+      },
+    ]);
+
+    const { rerender, unmount } = render(<CollectionDirectory kind="artist" root="root-1" />);
+    const artistCards = () =>
+      screen.getAllByRole("button", { name: /打开歌手/ }).map((button) => button.textContent);
+    await screen.findByRole("button", { name: /打开歌手 Alpha/ });
+    expect(artistCards()[0]).toContain("Alpha");
+
+    fireEvent.click(screen.getByTestId("sort-button"));
+    expect(screen.getByRole("menuitemradio", { name: "歌手名称" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitemradio", { name: "歌曲数量" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "歌曲数量" }));
+    fireEvent.click(screen.getByTestId("sort-button"));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "降序" }));
+    expect(artistCards()[0]).toContain("Beta");
+    expect(JSON.parse(localStorage.getItem("echo-directory-sort:artist") ?? "null")).toEqual({
+      field: "songCount",
+      direction: "desc",
+    });
+
+    mockCommand("catalog_collections", [
+      { kind: "album", artistKey: "a", albumKey: "z", artist: "A", name: "Zulu", songCount: 1 },
+      { kind: "album", artistKey: "a", albumKey: "a", artist: "A", name: "Alpha", songCount: 5 },
+    ]);
+    rerender(<CollectionDirectory kind="album" root="root-1" />);
+    const albumCards = () =>
+      screen.getAllByRole("button", { name: /打开专辑/ }).map((button) => button.textContent);
+    await screen.findByRole("button", { name: /打开专辑 Alpha/ });
+    expect(albumCards()[0]).toContain("Alpha");
+    fireEvent.click(screen.getByTestId("sort-button"));
+    expect(screen.getByRole("menuitemradio", { name: "专辑名称" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "专辑名称" }));
+    fireEvent.click(screen.getByTestId("sort-button"));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "降序" }));
+    expect(albumCards()[0]).toContain("Zulu");
+
+    mockCommand("catalog_collections", [
+      {
+        kind: "artist",
+        artistKey: "beta",
+        artist: "Beta",
+        name: "Beta",
+        songCount: 5,
+      },
+      {
+        kind: "artist",
+        artistKey: "alpha",
+        artist: "Alpha",
+        name: "Alpha",
+        songCount: 1,
+      },
+    ]);
+    rerender(<CollectionDirectory kind="artist" root="root-1" />);
+    await screen.findByRole("button", { name: /打开歌手 Beta/ });
+    expect(artistCards()[0]).toContain("Beta");
+    unmount();
+  });
+
   it("shows artist cards and reuses the library song table with selection in the detail", async () => {
     mockCommand("catalog_collections", [
       {
@@ -173,10 +249,7 @@ describe("CollectionDirectory", () => {
     const { rerender } = render(<CollectionDirectory kind="artist" root="root-1" />);
     await screen.findByRole("button", { name: /打开.*Alice/ });
 
-    mockCommand(
-      "catalog_collections",
-      new Error("catalog_collections failed"),
-    );
+    mockCommand("catalog_collections", new Error("catalog_collections failed"));
     rerender(<CollectionDirectory kind="album" root="root-1" />);
 
     await screen.findByText("加载目录失败，请重试");

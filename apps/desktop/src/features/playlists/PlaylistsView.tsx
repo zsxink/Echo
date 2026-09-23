@@ -33,6 +33,7 @@ import {
   useSongSelection,
   type BatchResult,
   SongList,
+  SORT_FIELDS,
   SongSortControl,
   useStoredSongSort,
   bumpLibraryCount,
@@ -385,7 +386,11 @@ export function PlaylistsView({
               <span className="library-total">{members.length} 首</span>
             </div>
             <div className="library-tools">
-              <SongSortControl sort={sort} onChange={setSort} />
+              <SongSortControl
+                sort={sort}
+                onChange={setSort}
+                fields={SORT_FIELDS.filter(({ value }) => value !== "album")}
+              />
               <SelectionModeButton
                 active={selectionMode}
                 onToggle={() => {
@@ -584,6 +589,12 @@ function sortPlaylistMembers(members: readonly SongView[], sort: SongSort): read
         break;
       case "artist":
         value = compareText(left.song.artist, right.song.artist);
+        break;
+      case "album":
+        value = compareText(
+          left.song.album?.trim() || "未知专辑",
+          right.song.album?.trim() || "未知专辑",
+        );
         break;
       case "playCount":
         value = left.song.playCount - right.song.playCount;

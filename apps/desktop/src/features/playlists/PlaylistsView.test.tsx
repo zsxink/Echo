@@ -338,7 +338,10 @@ describe("PlaylistsView (task 10.9)", () => {
     const members = [
       { id: "song-1", title: "晴天", favorite: false, playCount: 0, availability: "available" },
     ];
-    mockBridge({ playlist_members: members, playlists: [{ id: "pl-2", name: "通勤", memberCount: 2 }] });
+    mockBridge({
+      playlist_members: members,
+      playlists: [{ id: "pl-2", name: "通勤", memberCount: 2 }],
+    });
     const onLibraryChanged = vi.fn();
     renderView({ onLibraryChanged }, { withToast: true });
     await screen.findByTestId("song-row-song-1");

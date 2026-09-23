@@ -89,6 +89,8 @@ export interface LibraryCountsDto {
   readonly all: number;
   readonly favorites: number;
   readonly recent: number;
+  readonly artists: number;
+  readonly albums: number;
 }
 
 export interface PlaylistView {

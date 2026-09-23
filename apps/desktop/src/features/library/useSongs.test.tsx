@@ -98,7 +98,7 @@ describe("useSongs search command", () => {
     );
   });
 
-  it("puts a newly favorited song at the top of the loaded favorites", async () => {
+  it("refreshes favorites after a song becomes a favorite", async () => {
     mocks.setInvoke("favorites", {
       items: [{ id: "older", title: "Earlier favorite" }],
       isLast: true,
@@ -111,14 +111,24 @@ describe("useSongs search command", () => {
     await waitFor(() =>
       expect(result.current.page.songs.map((song) => song.id)).toEqual(["older"]),
     );
+    mocks.setInvoke("favorites", {
+      items: [
+        { id: "newest", title: "Just favorited" },
+        { id: "older", title: "Earlier favorite" },
+      ],
+      isLast: true,
+      nextCursor: null,
+    });
     act(() =>
       result.current.patchSong({ id: "newest", title: "Just favorited", favorite: true } as never),
     );
 
-    expect(result.current.page.songs.map((song) => song.id)).toEqual(["newest", "older"]);
+    await waitFor(() =>
+      expect(result.current.page.songs.map((song) => song.id)).toEqual(["newest", "older"]),
+    );
   });
 
-  it("inserts a newly favorited song into the active manual order", async () => {
+  it("uses repository order when refreshing a newly favorited song in manual sort", async () => {
     mocks.setInvoke("favorites", {
       items: [{ id: "zebra", title: "Zebra" }],
       isLast: true,
@@ -136,9 +146,19 @@ describe("useSongs search command", () => {
     await waitFor(() =>
       expect(result.current.page.songs.map((song) => song.id)).toEqual(["zebra"]),
     );
+    mocks.setInvoke("favorites", {
+      items: [
+        { id: "apple", title: "Apple" },
+        { id: "zebra", title: "Zebra" },
+      ],
+      isLast: true,
+      nextCursor: null,
+    });
     act(() => result.current.patchSong({ id: "apple", title: "Apple", favorite: true } as never));
 
-    expect(result.current.page.songs.map((song) => song.id)).toEqual(["apple", "zebra"]);
+    await waitFor(() =>
+      expect(result.current.page.songs.map((song) => song.id)).toEqual(["apple", "zebra"]),
+    );
   });
 
   it("refreshes the current view from a sibling-surface library invalidation", async () => {

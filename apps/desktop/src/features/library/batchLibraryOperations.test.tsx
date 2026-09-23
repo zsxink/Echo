@@ -47,7 +47,13 @@ function renderWorkspace() {
 beforeEach(() => {
   mocks.setInvoke("all_songs", { items: SONGS, isLast: true, nextCursor: null });
   mocks.setInvoke("song_cover_keys", {});
-  mocks.setInvoke("library_counts", { all: 2, favorites: 0, recent: 2 });
+  mocks.setInvoke("library_counts", {
+    all: 2,
+    favorites: 0,
+    recent: 2,
+    artists: 1,
+    albums: 2,
+  });
   mocks.setInvoke("playlists", []);
 });
 
