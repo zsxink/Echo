@@ -355,6 +355,8 @@ pub struct LibraryCountsDto {
     /// Capped at the 最近添加 view's own ceiling (100): the count must not
     /// promise more songs than the view renders.
     pub recent: u64,
+    pub artists: u64,
+    pub albums: u64,
 }
 
 impl From<CatalogCounts> for LibraryCountsDto {
@@ -363,6 +365,8 @@ impl From<CatalogCounts> for LibraryCountsDto {
             all: counts.all as u64,
             favorites: counts.favorites as u64,
             recent: counts.recent as u64,
+            artists: counts.artists as u64,
+            albums: counts.albums as u64,
         }
     }
 }

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { SongSort, SongSortField } from "./types";
 
 const DEFAULT_SORT: SongSort = { field: "addedAt", direction: "desc" };
-const SORT_FIELDS: readonly SongSortField[] = ["addedAt", "title", "artist", "playCount"];
+const SORT_FIELDS: readonly SongSortField[] = ["addedAt", "title", "artist", "album", "playCount"];
 
 function load(scope: string): SongSort {
   try {

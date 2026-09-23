@@ -138,7 +138,19 @@ pub(crate) fn catalog_counts(connection: &Connection) -> Result<CatalogCounts, E
         .ok_or_else(|| Error::unavailable("library", "no active root"))?;
     let available = count_available_songs(connection, root, false)?;
     let favorites = count_available_songs(connection, root, true)?;
-    Ok(CatalogCounts::new(available, favorites))
+    let (artists, albums) = connection
+        .query_row(
+            "SELECT COUNT(DISTINCT CASE WHEN artist_sort = '' THEN '未知艺人' ELSE artist_sort END), COUNT(DISTINCT CASE WHEN album_sort = '' THEN '未知专辑' ELSE album_sort END) FROM songs WHERE library_root_uuid = ?1 AND availability = 'available'",
+            params![root.to_string()],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+        )
+        .map_err(storage)?;
+    Ok(CatalogCounts::new(
+        available,
+        favorites,
+        usize::try_from(artists).unwrap_or(0),
+        usize::try_from(albums).unwrap_or(0),
+    ))
 }
 
 fn count_available_songs(
@@ -175,6 +187,7 @@ fn sort_sql(sort: SongSort, favorites: bool) -> String {
         SongSortField::AddedAt => "s.added_at, s.uuid",
         SongSortField::Title => "s.title_sort, s.artist_sort, s.uuid",
         SongSortField::Artist => "s.artist_sort, s.title_sort, s.uuid",
+        SongSortField::Album => "CASE WHEN s.album_sort = '' THEN '未知专辑' ELSE s.album_sort END, s.title_sort, s.artist_sort, s.uuid",
         SongSortField::PlayCount => "s.play_count, s.title_sort, s.artist_sort, s.uuid",
     };
     columns
@@ -196,6 +209,7 @@ fn cursor_keys(
             SongSortField::AddedAt => "added_at, uuid",
             SongSortField::Title => "title_sort, artist_sort, uuid",
             SongSortField::Artist => "artist_sort, title_sort, uuid",
+            SongSortField::Album => "CASE WHEN album_sort = '' THEN '未知专辑' ELSE album_sort END, title_sort, artist_sort, uuid",
             SongSortField::PlayCount => "play_count, title_sort, artist_sort, uuid",
         }
     };
@@ -238,6 +252,12 @@ fn keyset_predicate(
             SongSortField::AddedAt => vec!["s.added_at", "s.uuid"],
             SongSortField::Title => vec!["s.title_sort", "s.artist_sort", "s.uuid"],
             SongSortField::Artist => vec!["s.artist_sort", "s.title_sort", "s.uuid"],
+            SongSortField::Album => vec![
+                "CASE WHEN s.album_sort = '' THEN '未知专辑' ELSE s.album_sort END",
+                "s.title_sort",
+                "s.artist_sort",
+                "s.uuid",
+            ],
             SongSortField::PlayCount => {
                 vec!["s.play_count", "s.title_sort", "s.artist_sort", "s.uuid"]
             }

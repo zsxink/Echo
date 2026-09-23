@@ -84,7 +84,10 @@ impl super::AppServices {
     ) -> Result<Vec<SongId>, Error> {
         let songs = CatalogQuery::new(self.deps.catalog.as_ref())
             .collection_songs(kind, artist_key, album_key, search)?;
-        let ids: Vec<_> = songs.iter().map(echo_core::domain::entities::Song::id).collect();
+        let ids: Vec<_> = songs
+            .iter()
+            .map(echo_core::domain::entities::Song::id)
+            .collect();
         if !ids.contains(&selected) {
             return Err(Error::conflict(
                 "selected song is no longer in the active collection",

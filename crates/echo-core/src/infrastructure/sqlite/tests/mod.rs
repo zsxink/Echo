@@ -4,7 +4,7 @@ use crate::application::ports::{
     DeviceIdProvider, LibraryRepository, OperationResourceKind, PlaylistRepository, SongRepository,
     SyncStateReader, TxAccess, UnitOfWork,
 };
-use crate::domain::catalog::{SongSort, SongSortField, SortDirection};
+use crate::domain::catalog::{CatalogCollectionKind, SongSort, SongSortField, SortDirection};
 use crate::domain::entities::{LyricsLine, RootAvailability, SongAvailability};
 use crate::domain::ids::Revision;
 use crate::domain::state::OperationState;

@@ -93,6 +93,7 @@ fn parse_sort(token: &str) -> Result<SongSort, IpcErrorDto> {
         "addedAt" => SongSortField::AddedAt,
         "title" => SongSortField::Title,
         "artist" => SongSortField::Artist,
+        "album" => SongSortField::Album,
         "playCount" => SongSortField::PlayCount,
         _ => {
             return Err(IpcErrorDto::from(&echo_core::error::Error::validation(

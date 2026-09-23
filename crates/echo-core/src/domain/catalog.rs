@@ -4,8 +4,8 @@
 //! consume, kept in the domain so the ordering and paging rules are testable
 //! without a database:
 //!
-//! - [`SongSort`] — the stable, four-field sort ("最近添加 / 歌曲名称 / 艺人 /
-//!   播放次数", each in either direction) with the deterministic tie-break
+//! - [`SongSort`] — the stable, five-field sort ("最近添加 / 歌曲名称 / 歌手 /
+//!   专辑 / 播放次数", each in either direction) with the deterministic tie-break
 //!   (artist→title→added→UUID as secondary keys). Sorting is **total**: no two
 //!   distinct songs order equal.
 //! - [`OpaqueCursor`] — the server-side keyset cursor. The UI never builds or
@@ -36,15 +36,23 @@ pub enum SongSortField {
     AddedAt,
     /// 歌曲名称 (title).
     Title,
-    /// 艺人 (artist).
+    /// 歌手 (artist).
     Artist,
+    /// 专辑 (album).
+    Album,
     /// 播放次数 (play count).
     PlayCount,
 }
 
 impl SongSortField {
-    /// All four fields (used by views/golden tests).
-    pub const ALL: [Self; 4] = [Self::AddedAt, Self::Title, Self::Artist, Self::PlayCount];
+    /// All five fields (used by views/golden tests).
+    pub const ALL: [Self; 5] = [
+        Self::AddedAt,
+        Self::Title,
+        Self::Artist,
+        Self::Album,
+        Self::PlayCount,
+    ];
 }
 
 /// Sort direction.
@@ -135,6 +143,7 @@ impl SongSort {
                 .cmp(&normalized_key(rhs.title().unwrap_or(""))),
             SongSortField::Artist => normalized_key(lhs.artist().unwrap_or(""))
                 .cmp(&normalized_key(rhs.artist().unwrap_or(""))),
+            SongSortField::Album => album_key(lhs).cmp(&album_key(rhs)),
         }
     }
 
@@ -150,6 +159,10 @@ impl SongSort {
             SongSortField::Title => artist(lhs).cmp(&artist(rhs)),
             // SQL: … ORDER BY artist_sort, title_sort, uuid
             SongSortField::Artist => title(lhs).cmp(&title(rhs)),
+            // SQL: … ORDER BY album_sort, title_sort, artist_sort, uuid
+            SongSortField::Album => title(lhs)
+                .cmp(&title(rhs))
+                .then_with(|| artist(lhs).cmp(&artist(rhs))),
             // SQL: … ORDER BY play_count, title_sort, artist_sort, uuid
             SongSortField::PlayCount => title(lhs)
                 .cmp(&title(rhs))
@@ -159,6 +172,15 @@ impl SongSort {
         }
         .then_with(|| lhs.id().cmp(&rhs.id()))
     }
+}
+
+fn album_key(song: &Song) -> String {
+    let album = song
+        .album()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("未知专辑");
+    normalized_key(album)
 }
 
 // ---------------------------------------------------------------------------
@@ -319,6 +341,8 @@ pub struct CatalogCounts {
     pub all: usize,
     pub favorites: usize,
     pub recent: usize,
+    pub artists: usize,
+    pub albums: usize,
 }
 
 impl CatalogCounts {
@@ -326,7 +350,7 @@ impl CatalogCounts {
     /// clamped to the view's ceiling here so every repository implementation
     /// agrees on it.
     #[must_use]
-    pub const fn new(all: usize, favorites: usize) -> Self {
+    pub const fn new(all: usize, favorites: usize, artists: usize, albums: usize) -> Self {
         Self {
             all,
             favorites,
@@ -335,6 +359,8 @@ impl CatalogCounts {
             } else {
                 all
             },
+            artists,
+            albums,
         }
     }
 }

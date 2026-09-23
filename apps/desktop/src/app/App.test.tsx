@@ -292,7 +292,13 @@ describe("Library directory views", () => {
     });
     mocks.setInvoke("all_songs", { items: [], isLast: true, nextCursor: null });
     mocks.setInvoke("playlists", []);
-    mocks.setInvoke("library_counts", { all: 0, recent: 0, favorites: 0 });
+    mocks.setInvoke("library_counts", {
+      all: 0,
+      recent: 0,
+      favorites: 0,
+      artists: 0,
+      albums: 0,
+    });
     let entries: unknown = [artistEntry];
     // The test hook hands the handler no arguments, so the fixture is swapped
     // between the two views instead of being keyed by the requested kind.
@@ -301,11 +307,11 @@ describe("Library directory views", () => {
     fireEvent.click(screen.getByRole("button", { name: "选择资料库目录" }));
     await screen.findByTestId("workspace");
 
-    fireEvent.click(screen.getByRole("button", { name: "歌手" }));
+    fireEvent.click(screen.getByRole("button", { name: /^歌手/ }));
     await screen.findByRole("button", { name: "打开歌手 Alice" });
 
     entries = [albumEntry];
-    fireEvent.click(screen.getByRole("button", { name: "专辑" }));
+    fireEvent.click(screen.getByRole("button", { name: /^专辑/ }));
     // Match on the entry, not on the chrome prefix: the aria-label is built
     // from the CURRENT kind (`打开${title} ${name}`), so a stale artist card
     // is relabelled 打开专辑 Alice the moment the view switches — asserting
