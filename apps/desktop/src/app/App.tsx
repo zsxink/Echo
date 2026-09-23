@@ -260,7 +260,6 @@ export function App() {
                   ))}
                 </div>
               </nav>
-
             </aside>
 
             <button
