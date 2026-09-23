@@ -13,15 +13,23 @@ import { bridge, reportBridgeFailure, subscribe } from "../../bridge";
 import { subscribeSongUpdates } from "./songUpdates";
 import { subscribeLibraryInvalidations } from "./libraryInvalidation";
 
-export type LibraryCountView = "all" | "favorites" | "recent";
+export type LibraryCountView = "all" | "favorites" | "recent" | "artists" | "albums";
 
 export interface LibraryCounts {
   readonly all: number | null;
   readonly favorites: number | null;
   readonly recent: number | null;
+  readonly artists: number | null;
+  readonly albums: number | null;
 }
 
-const EMPTY_COUNTS: LibraryCounts = { all: null, favorites: null, recent: null };
+const EMPTY_COUNTS: LibraryCounts = {
+  all: null,
+  favorites: null,
+  recent: null,
+  artists: null,
+  albums: null,
+};
 const libraryCountsStore = new ExternalStore<LibraryCounts>(EMPTY_COUNTS);
 
 /** Replace cached totals with the backend's authoritative snapshot. */
@@ -30,7 +38,9 @@ export function setLibraryCounts(next: LibraryCounts): void {
   if (
     current.all === next.all &&
     current.favorites === next.favorites &&
-    current.recent === next.recent
+    current.recent === next.recent &&
+    current.artists === next.artists &&
+    current.albums === next.albums
   ) {
     return;
   }
@@ -72,7 +82,13 @@ export function useLibraryCountSync(enabled = true): void {
       .call("library_counts")
       .then((dto) => {
         if (!cancelled) {
-          setLibraryCounts({ all: dto.all, favorites: dto.favorites, recent: dto.recent });
+          setLibraryCounts({
+            all: dto.all,
+            favorites: dto.favorites,
+            recent: dto.recent,
+            artists: dto.artists,
+            albums: dto.albums,
+          });
         }
       })
       .catch((error: unknown) => reportBridgeFailure("library_counts", error));

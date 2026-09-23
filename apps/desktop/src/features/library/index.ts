@@ -12,6 +12,7 @@ export type { BatchSongActionHandlers, BatchSongActionOptions } from "./BatchSon
 export { ConfirmationDialog } from "./ConfirmationDialog";
 export type { MenuAnchor, SongMenuProps } from "./SongMenu";
 export { SongSortControl } from "./SongSortControl";
+export { SORT_FIELDS } from "./types";
 export { useStoredSongSort } from "./useStoredSongSort";
 export { useSongSelection } from "./useSongSelection";
 export type { SongSelection } from "./useSongSelection";

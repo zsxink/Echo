@@ -50,16 +50,35 @@ impl CatalogQueryRepository for MemoryDatabase {
         let store = self.lock();
         let mut available = 0usize;
         let mut favorites = 0usize;
+        let mut artists = std::collections::HashSet::new();
+        let mut albums = std::collections::HashSet::new();
         for song in store.songs.values() {
             if song.root() != root || song.availability() != SongAvailability::Available {
                 continue;
             }
             available += 1;
+            artists.insert(crate::domain::text::normalized_key(
+                song.artist()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("未知艺人"),
+            ));
+            albums.insert(crate::domain::text::normalized_key(
+                song.album()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("未知专辑"),
+            ));
             if song.favorite() {
                 favorites += 1;
             }
         }
-        Ok(CatalogCounts::new(available, favorites))
+        Ok(CatalogCounts::new(
+            available,
+            favorites,
+            artists.len(),
+            albums.len(),
+        ))
     }
 
     fn playlist_songs(&self, playlist: PlaylistId) -> Result<Vec<Song>, Error> {

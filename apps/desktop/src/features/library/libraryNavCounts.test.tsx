@@ -50,7 +50,13 @@ function configuredLibrary() {
   mocks.setInvoke("all_songs", { items: [SONG], isLast: true, nextCursor: null });
   mocks.setInvoke("song_cover_keys", {});
   mocks.setInvoke("playlists", [{ id: "list-1", name: "通勤", memberCount: 3 }]);
-  mocks.setInvoke("library_counts", { all: 42, favorites: 7, recent: 42 });
+  mocks.setInvoke("library_counts", {
+    all: 42,
+    favorites: 7,
+    recent: 42,
+    artists: 18,
+    albums: 30,
+  });
 }
 
 const countOf = (view: string) => screen.getByTestId(`nav-count-${view}`);
@@ -76,6 +82,8 @@ describe("资料库导航计数", () => {
     await waitFor(() => expect(countOf("all")).toHaveTextContent("42"));
     expect(countOf("recent")).toHaveTextContent("42");
     expect(countOf("favorites")).toHaveTextContent("7");
+    expect(countOf("artists")).toHaveTextContent("18");
+    expect(countOf("albums")).toHaveTextContent("30");
   });
 
   it("prints the backend total, not the number of rows the page loaded", async () => {
@@ -153,9 +161,9 @@ describe("资料库导航计数", () => {
     await waitFor(() => expect(screen.getByTestId("playlist-count-list-1")).toHaveTextContent("1"));
     await screen.findByText("晴天");
 
-    const playlistsBeforeDelete = vi.mocked(invoke).mock.calls.filter(
-      ([command]) => command === "playlists",
-    ).length;
+    const playlistsBeforeDelete = vi
+      .mocked(invoke)
+      .mock.calls.filter(([command]) => command === "playlists").length;
     playlistCount = 0;
     fireEvent.click(within(screen.getByTestId("song-row-song-1")).getByLabelText("歌曲操作"));
     fireEvent.click(screen.getByText("删除"));
@@ -166,9 +174,9 @@ describe("资料库导航计数", () => {
       vi.mocked(invoke).mock.calls.filter(([command]) => command === "playlists").length,
     ).toBeGreaterThan(playlistsBeforeDelete);
 
-    const playlistsAfterDelete = vi.mocked(invoke).mock.calls.filter(
-      ([command]) => command === "playlists",
-    ).length;
+    const playlistsAfterDelete = vi
+      .mocked(invoke)
+      .mock.calls.filter(([command]) => command === "playlists").length;
     playlistCount = 1;
     fireEvent.click(await screen.findByRole("button", { name: "撤销" }));
 
@@ -184,18 +192,18 @@ describe("资料库导航计数", () => {
       render(<App />);
     });
     await screen.findByText("晴天");
-    const playlistsBeforeDelete = vi.mocked(invoke).mock.calls.filter(
-      ([command]) => command === "playlists",
-    ).length;
+    const playlistsBeforeDelete = vi
+      .mocked(invoke)
+      .mock.calls.filter(([command]) => command === "playlists").length;
 
     fireEvent.click(within(screen.getByTestId("song-row-song-1")).getByLabelText("歌曲操作"));
     fireEvent.click(screen.getByText("删除"));
     fireEvent.click(screen.getByText("移至回收站"));
 
     await screen.findByText("删除失败，请重试");
-    expect(
-      vi.mocked(invoke).mock.calls.filter(([command]) => command === "playlists").length,
-    ).toBe(playlistsBeforeDelete);
+    expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "playlists").length).toBe(
+      playlistsBeforeDelete,
+    );
   });
 
   it("shows no count when the backend cannot answer, without breaking the shell", async () => {

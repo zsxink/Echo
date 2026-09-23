@@ -39,6 +39,8 @@ import type { BatchResult } from "./batchOperations";
 import { useSongSelection } from "./useSongSelection";
 import { ConfirmationDialog } from "./ConfirmationDialog";
 import { AddToPlaylistDialog } from "../playlists";
+import { SortMenu } from "./SortMenu";
+import { useStoredDirectorySort } from "./useStoredDirectorySort";
 
 export interface CollectionDirectoryProps {
   readonly kind: "artist" | "album";
@@ -72,6 +74,36 @@ export function CollectionDirectory({
   const directoryRequest = useRef(0);
   const detailRequest = useRef(0);
   const title = kind === "artist" ? "歌手" : "专辑";
+  const [sort, setSort] = useStoredDirectorySort(kind);
+  const sortOptions =
+    kind === "artist"
+      ? [
+          { value: "name" as const, label: "歌手名称" },
+          { value: "songCount" as const, label: "歌曲数量" },
+        ]
+      : [
+          { value: "name" as const, label: "专辑名称" },
+          { value: "songCount" as const, label: "歌曲数量" },
+        ];
+  const orderedEntries = useMemo(() => {
+    const compareText = (left: string, right: string) => (left < right ? -1 : left > right ? 1 : 0);
+    const nameKey = (entry: CatalogCollectionView) =>
+      kind === "artist" ? entry.artistKey : (entry.albumKey ?? "");
+    return [...entries].sort((left, right) => {
+      const primary =
+        sort.field === "name"
+          ? compareText(nameKey(left), nameKey(right))
+          : left.songCount - right.songCount;
+      const directed = sort.direction === "asc" ? primary : -primary;
+      if (directed !== 0) return directed;
+      const byName = compareText(nameKey(left), nameKey(right));
+      if (byName !== 0) return byName;
+      return compareText(
+        `${left.artistKey}:${left.albumKey ?? ""}`,
+        `${right.artistKey}:${right.albumKey ?? ""}`,
+      );
+    });
+  }, [entries, kind, sort.direction, sort.field]);
   const [selectionMode, setSelectionMode] = useState(false);
   const selectionKey = useMemo(
     () => [kind, root, selected?.artistKey ?? "", selected?.albumKey ?? "", search].join("|"),
@@ -412,7 +444,11 @@ export function CollectionDirectory({
                   }}
                 />
               </div>
-            ) : null}
+            ) : (
+              <div className="library-tools">
+                <SortMenu sort={sort} options={sortOptions} onChange={setSort} />
+              </div>
+            )}
           </div>
 
           {selected ? (
@@ -447,7 +483,7 @@ export function CollectionDirectory({
           ) : (
             <section className="collection-directory" aria-busy={loading}>
               <div className="collection-grid">
-                {entries.map((entry) => (
+                {orderedEntries.map((entry) => (
                   <article
                     className="collection-card"
                     key={`${entry.artistKey}:${entry.albumKey ?? ""}`}

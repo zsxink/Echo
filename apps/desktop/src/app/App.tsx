@@ -205,8 +205,8 @@ export function App() {
                 {navItem("all", "全部歌曲", "library", "all")}
                 {navItem("recent", "最近添加", "recent", "recent")}
                 {navItem("favorites", "喜欢的音乐", "heart", "favorites")}
-                {navItem("artists", "歌手", "artist")}
-                {navItem("albums", "专辑", "album")}
+                {navItem("artists", "歌手", "artist", "artists")}
+                {navItem("albums", "专辑", "album", "albums")}
               </nav>
 
               <nav className="nav-group playlist-navigation" aria-label="歌单">
@@ -260,7 +260,6 @@ export function App() {
                   ))}
                 </div>
               </nav>
-
             </aside>
 
             <button

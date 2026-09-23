@@ -133,7 +133,7 @@ fn seed_view_fixture(
         record.apply_metadata(
             Some(format!("title {index}")),
             Some(format!("artist {index}")),
-            Some("album".to_owned()),
+            Some(format!("album {}", index % 3)),
             Some(Duration::from_secs(180)),
         );
         if index == 2 {
@@ -346,6 +346,8 @@ fn catalog_counts_match_view_membership_over_sqlite() {
         "喜欢的音乐 counts favorites"
     );
     assert_eq!(counts.recent, counts.all, "recent is uncapped below 100");
+    assert_eq!(counts.artists, query.collections(CatalogCollectionKind::Artist, "").unwrap().len());
+    assert_eq!(counts.albums, query.collections(CatalogCollectionKind::Album, "").unwrap().len());
 
     // Cross-check against the views themselves, then against a mutation.
     assert_eq!(
@@ -527,6 +529,13 @@ fn catalog_all_songs_keyset_pages_stably_and_rejects_stale_cursor() {
                 cursor = page.next_cursor;
                 assert!(cursor.is_some(), "non-last page must carry a cursor");
             }
+            let mut ordered = expected.clone();
+            ordered.sort_by(|left, right| sort.compare(left, right));
+            assert_eq!(
+                collected,
+                ordered.iter().map(Song::id).collect::<Vec<_>>(),
+                "{field:?} {direction:?} preserves the comparator order across pages"
+            );
             let mut expected_ids: Vec<_> = expected.iter().map(Song::id).collect();
             expected_ids.sort();
             collected.sort();

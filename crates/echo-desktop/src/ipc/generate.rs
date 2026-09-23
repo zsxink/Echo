@@ -105,6 +105,8 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly all: number;\n");
     out.push_str("  readonly favorites: number;\n");
     out.push_str("  readonly recent: number;\n");
+    out.push_str("  readonly artists: number;\n");
+    out.push_str("  readonly albums: number;\n");
     out.push_str("}\n\n");
 
     out.push_str("export interface PlaylistView {\n");
