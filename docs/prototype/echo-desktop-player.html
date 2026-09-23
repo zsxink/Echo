@@ -104,12 +104,13 @@ button:focus-visible, input:focus-visible { outline: none; box-shadow: var(--foc
 .brand { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-1) var(--space-2); font: 700 var(--text-xl)/1 var(--font-display); letter-spacing: var(--tracking-display); }
 .brand-mark { width: 28px; height: 28px; display: grid; place-items: center; flex: none; background: var(--bg); color: var(--accent); border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .brand-mark svg { width: 20px; height: 20px; display: block; }
-.brand-actions { position: absolute; left: min(104px, calc(100% - 88px)); top: 50%; display: flex; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--border-soft); border-radius: var(--radius-pill); background: var(--surface-warm); box-shadow: var(--elev-raised); opacity: 0; pointer-events: none; transform: translateY(-50%) scale(.96); transform-origin: left center; transition: opacity var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard); }
+.brand-actions { display: flex; align-items: center; gap: var(--space-2); margin-left: var(--space-2); opacity: 0; pointer-events: none; transform: translateX(-4px); transition: opacity var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard); }
+.brand-area:hover .brand-actions, .brand-area:focus-within .brand-actions { opacity: 1; pointer-events: auto; transform: translateX(0); }
+/* 应用端导入按钮经 portal 挂载（task 6.6），此空槽为其预留同尺寸位置。 */
 .brand-import-slot { width: 36px; height: 36px; flex: none; }
-.brand-area:hover .brand-actions, .brand-area:focus-within .brand-actions { opacity: 1; pointer-events: auto; transform: translateY(-50%) scale(1); }
-.brand-action { width: 36px; height: 36px; flex: none; display: grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: var(--radius-pill); background: transparent; color: var(--muted); cursor: pointer; transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
+.brand-action { width: 36px; height: 36px; flex: none; display: grid; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); color: var(--fg-2); cursor: pointer; transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
 .brand-action svg { width: 20px; height: 20px; }
-.brand-action:hover:not(:disabled), .brand-action:focus-visible { background: var(--surface); color: var(--fg); }
+.brand-action:hover:not(:disabled), .brand-action:focus-visible { background: var(--surface-warm); color: var(--fg); }
 .brand-action:disabled { color: var(--muted); cursor: not-allowed; opacity: .52; }
 .nav-group { display: grid; gap: 2px; }
 .nav-label { padding: var(--space-1) var(--space-3) var(--space-1); color: var(--muted); font: 600 var(--text-xs)/1 var(--font-mono); letter-spacing: .08em; }
@@ -656,7 +657,7 @@ body.player-mode-open .queue-popover .queue-name span { margin-top: var(--space-
   body.player-mode-open .queue-popover .queue-name span { margin-top: 0; font-size: var(--text-xs); }
 }
 @media (max-width: 400px) { .brand-name { display: none; } }
-@media (max-width: 760px) { .brand-actions { left: min(104px, calc(100% - 100px)); } .brand-action, .brand-import-slot { width: 44px; height: 44px; } }
+@media (max-width: 760px) { .brand-action, .brand-import-slot { width: 44px; height: 44px; } }
 /* 移动端播放模式下 toast 位于增高后的播放栏上方，避免被遮挡。 */
 @media (max-width: 760px) {
   body.player-mode-open .toast { bottom: calc(132px + max(var(--space-2), env(safe-area-inset-bottom))); }
@@ -704,7 +705,7 @@ body.player-mode-open .lyric-line.is-current { color: var(--accent-on); }
       <div class="brand-area" data-od-id="echo-brand-area">
         <div class="brand" aria-label="Echo，本地音乐播放器" data-od-id="echo-brand"><span class="brand-mark" aria-hidden="true" data-od-id="echo-icon"><svg viewBox="0 0 32 32" fill="none"><path d="M16.3 6.25v12.1c-1.62-.94-3.7-1.28-5.65-.76-3.9 1.02-6.02 4.58-4.76 7.42 1.2 2.75 5.27 3.3 8.82 1.2 2.65-1.57 4.35-4.08 4.79-6.36V9.1c3.45-.3 5.95-1.7 7.2-4.05V1.45C24.6 4.14 21.05 5.75 16.3 6.25Z" fill="currentColor"/></svg></span><span class="brand-name">Echo</span></div>
         <div class="brand-actions">
-          <button class="brand-action" id="settings-button" type="button" aria-label="设置" title="设置" data-od-id="settings-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.8 7.8 0 0 0 0-2l1.4-1.1-1.4-2.4-1.7.7a7.4 7.4 0 0 0-1.7-1L15.8 5h-2.8l-.3 2.2a7.4 7.4 0 0 0-1.7 1l-1.7-.7-1.4 2.4 1.4 1.1a7.8 7.8 0 0 0 0 2l-1.4 1.1 1.4 2.4 1.7-.7a7.4 7.4 0 0 0 1.7 1l.3 2.2h2.8l.3-2.2a7.4 7.4 0 0 0 1.7-1l1.7.7 1.4-2.4z"/></svg></button>
+          <button class="brand-action" id="settings-button" type="button" aria-label="设置" title="设置" data-od-id="settings-button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
           <button class="brand-action" id="import-button" type="button" aria-label="导入" title="导入" aria-busy="false" data-od-id="import-music"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3m-4 4 4-4 4 4M4 15v5h16v-5"/></svg></button>
         </div>
       </div>

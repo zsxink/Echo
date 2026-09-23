@@ -12,14 +12,15 @@
 .sidebar { grid-row: 1; min-height: 0; overflow: hidden; padding: var(--space-4); border-right: 1px solid var(--border-soft); display: flex; flex-direction: column; gap: var(--space-2); background: var(--bg); }
 .brand-area { position: relative; width: 100%; min-height: 36px; display: flex; align-items: center; }
 .brand { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-1) var(--space-2); font: 700 var(--text-xl)/1 var(--font-display); letter-spacing: var(--tracking-display); }
-.brand-mark { width: 28px; height: 28px; display: grid; place-items: center; flex: none; background: var(--bg); color: var(--accent); border: 1px solid var(--border); border-radius: var(--radius-sm); }
-.brand-mark svg { width: 20px; height: 20px; display: block; }
-.brand-actions { position: absolute; left: min(104px, calc(100% - 88px)); top: 50%; display: flex; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--border-soft); border-radius: var(--radius-pill); background: var(--surface-warm); box-shadow: var(--elev-raised); opacity: 0; pointer-events: none; transform: translateY(-50%) scale(.96); transform-origin: left center; transition: opacity var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard); }
-.brand-import-slot { width: 36px; height: 36px; flex: none; }
-.brand-area:hover .brand-actions, .brand-area:focus-within .brand-actions { opacity: 1; pointer-events: auto; transform: translateY(-50%) scale(1); }
-.brand-action { width: 36px; height: 36px; flex: none; display: grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: var(--radius-pill); background: transparent; color: var(--muted); cursor: pointer; transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
-.brand-action svg { width: 20px; height: 20px; }
-.brand-action:hover:not(:disabled), .brand-action:focus-visible { background: var(--surface); color: var(--fg); }
+.brand-mark { width: 32px; height: 32px; display: grid; place-items: center; flex: none; background: var(--bg); color: var(--accent); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.brand-mark svg { width: 22px; height: 22px; display: block; }
+.brand-actions { display: flex; align-items: center; gap: var(--space-2); margin-left: var(--space-2); opacity: 0; pointer-events: none; transform: translateX(-4px); transition: opacity var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard); }
+.brand-area:hover .brand-actions, .brand-area:focus-within .brand-actions { opacity: 1; pointer-events: auto; transform: translateX(0); }
+/* 应用端导入按钮经 portal 挂载（task 6.6），此空槽为其预留同尺寸位置。 */
+.brand-import-slot { width: 32px; height: 32px; flex: none; }
+.brand-action { width: 32px; height: 32px; flex: none; display: grid; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); color: var(--fg-2); cursor: pointer; transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
+.brand-action svg { width: 18px; height: 18px; }
+.brand-action:hover:not(:disabled), .brand-action:focus-visible { background: var(--surface-warm); color: var(--fg); }
 .brand-action:disabled { color: var(--muted); cursor: not-allowed; opacity: .52; }
 .nav-group { display: grid; gap: 2px; }
 .nav-label { padding: var(--space-1) var(--space-3) var(--space-1); color: var(--muted); font: 600 var(--text-xs)/1 var(--font-mono); letter-spacing: .08em; }
@@ -47,7 +48,6 @@
 .playlist-cover::after { width: 3px; height: 3px; top: 12px; left: 12px; }
 .playlist-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-count { margin-left: auto; color: var(--muted); font: 500 var(--text-xs)/1 var(--font-mono); }
-.side-foot { margin-top: auto; display: grid; gap: var(--space-2); }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); flex: none; }
 .link-button { border: 0; background: none; color: var(--fg-2); padding: var(--space-2); text-align: left; cursor: pointer; border-radius: var(--radius-sm); }
 .link-button:hover { background: var(--surface); color: var(--fg); }
@@ -64,7 +64,6 @@
 .theme-swatch.cobalt { background: var(--theme-cobalt); }
 .theme-swatch.wine { background: oklch(0.6528 0.2219 19.38); }
 .theme-swatch.green { background: oklch(0.54 0.1330 159.56); }
-.settings-button { width: 100%; display: flex; align-items: center; }
 .workspace { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
 .topbar { min-height: 68px; padding: 0 var(--space-6); border-bottom: 1px solid var(--border-soft); display: flex; align-items: center; gap: var(--space-5); }
 .crumb { color: var(--muted); white-space: nowrap; }
@@ -108,6 +107,9 @@
 .setting-row strong, .setting-row span { display: block; }
 .setting-row strong { font-size: var(--text-sm); }
 .setting-row .setting-help { margin-top: var(--space-1); color: var(--muted); font-size: var(--text-xs); }
+.setting-choices { display: grid; gap: var(--space-2); }
+.setting-choice { display: flex; align-items: center; gap: var(--space-2); color: var(--fg-2); font-size: var(--text-xs); cursor: pointer; }
+.setting-choice input { accent-color: var(--accent-strong); }
 .storage-value { min-width: 0; }
 .storage-path { max-width: 430px; overflow: hidden; color: var(--fg-2); font: 500 var(--text-xs)/1.45 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .storage-path.is-empty { color: var(--muted); font-family: var(--font-body); }
