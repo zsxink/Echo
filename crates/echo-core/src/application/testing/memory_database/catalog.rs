@@ -158,8 +158,9 @@ impl MemoryDatabase {
             .cloned()
             .collect();
         songs.sort_by(|a, b| sort.compare(a, b));
+        let total_count = songs.len();
         let is_last = songs.len() <= limit;
         songs.truncate(limit);
-        Ok(Paged::new(songs, None, is_last))
+        Ok(Paged::new(songs, None, is_last).with_total_count(total_count))
     }
 }

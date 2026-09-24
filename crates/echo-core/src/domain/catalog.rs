@@ -303,6 +303,9 @@ pub fn cursor_compatible(cursor: &OpaqueCursor, current_revision: Revision) -> b
 #[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Paged<T> {
     pub items: Vec<T>,
+    /// Total rows matching the query before pagination is applied.
+    #[serde(default)]
+    pub total_count: usize,
     /// `None` means this was the last page (no more rows).
     pub next_cursor: Option<OpaqueCursor>,
     /// True when the page is known to be the final one.
@@ -311,12 +314,19 @@ pub struct Paged<T> {
 
 impl<T> Paged<T> {
     #[must_use]
-    pub const fn new(items: Vec<T>, next_cursor: Option<OpaqueCursor>, is_last: bool) -> Self {
+    pub fn new(items: Vec<T>, next_cursor: Option<OpaqueCursor>, is_last: bool) -> Self {
         Self {
+            total_count: items.len(),
             items,
             next_cursor,
             is_last,
         }
+    }
+
+    #[must_use]
+    pub const fn with_total_count(mut self, total_count: usize) -> Self {
+        self.total_count = total_count;
+        self
     }
 }
 

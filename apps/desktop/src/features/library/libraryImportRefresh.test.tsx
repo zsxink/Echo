@@ -56,13 +56,16 @@ describe("导入完成后的资料库刷新", () => {
     ["all" as const, "全部歌曲", "all_songs"],
     ["recent" as const, "最近添加", "recent"],
   ])("refreshes %s after its import completes", async (view, title, command) => {
-    mocks.setInvoke(command, { items: [beforeImport], isLast: true, nextCursor: null });
-    if (command === "recent") {
-      mocks.setInvoke(command, [beforeImport]);
-    }
+    mocks.setInvoke(
+      command,
+      command === "recent"
+        ? [beforeImport]
+        : { items: [beforeImport], totalCount: 274, isLast: true, nextCursor: null },
+    );
 
     render(<LibraryWorkspace view={view} title={title} root="root-1" readOnly={false} />);
     expect(await screen.findByText(beforeImport.title)).toBeInTheDocument();
+    expect(await screen.findByText(command === "recent" ? "1 首" : "274 首")).toBeInTheDocument();
     const callsBeforeImport = (
       invoke as unknown as { mock: { calls: unknown[][] } }
     ).mock.calls.filter(([called]) => called === command).length;
@@ -73,6 +76,7 @@ describe("导入完成后的资料库刷新", () => {
         ? [afterImport]
         : {
             items: [afterImport],
+            totalCount: 275,
             isLast: true,
             nextCursor: null,
           },
@@ -80,6 +84,7 @@ describe("导入完成后的资料库刷新", () => {
     fireEvent.click(screen.getByTestId("import-button"));
 
     expect(await screen.findByText(afterImport.title)).toBeInTheDocument();
+    if (command === "all") expect(await screen.findByText("275 首")).toBeInTheDocument();
     await waitFor(() => {
       const calls = (invoke as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter(
         ([called]) => called === command,

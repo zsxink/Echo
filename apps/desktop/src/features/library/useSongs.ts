@@ -17,6 +17,7 @@ import { subscribeLibraryInvalidations } from "./libraryInvalidation";
 
 export interface SongPage {
   readonly songs: readonly SongView[];
+  readonly totalCount: number;
   readonly nextCursor?: string;
   readonly isLast: boolean;
 }
@@ -51,7 +52,7 @@ async function fetchPage(query: SongQuery, cursor?: string | null): Promise<Page
   const limit = 200;
   if (query.view === "recent") {
     const items = await bridge.call("recent", { query: query.search.trim() });
-    return { items, isLast: true };
+    return { items, totalCount: items.length, isLast: true };
   }
   const sort = `${query.sort.field}:${query.sort.direction}`;
   if (query.view === "favorites" || query.inFavorites) {
@@ -94,7 +95,7 @@ export function useSongs(query: SongQuery): {
    *  page in place, so a toggle is visible without a full re-query. */
   readonly patchSong: (song: SongView) => void;
 } {
-  const [page, setPage] = useState<SongPage>({ songs: [], isLast: false });
+  const [page, setPage] = useState<SongPage>({ songs: [], totalCount: 0, isLast: false });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Mutations such as an import keep the query itself unchanged. Keep a
@@ -120,7 +121,12 @@ export function useSongs(query: SongQuery): {
         const result = await fetchPage(query);
         if (requests.current.get(key) === reqId) {
           cursorRef.current = result.nextCursor;
-          setPage({ songs: result.items, nextCursor: result.nextCursor, isLast: result.isLast });
+          setPage({
+            songs: result.items,
+            totalCount: result.totalCount ?? result.items.length,
+            nextCursor: result.nextCursor,
+            isLast: result.isLast,
+          });
         }
       } catch (err) {
         // A failed/stale fetch must not wipe existing content (task 10.7);
@@ -158,6 +164,7 @@ export function useSongs(query: SongQuery): {
         cursorRef.current = result.nextCursor;
         setPage((prev) => ({
           songs: [...prev.songs, ...result.items],
+          totalCount: result.totalCount ?? prev.totalCount,
           nextCursor: result.nextCursor,
           isLast: result.isLast,
         }));
@@ -170,7 +177,7 @@ export function useSongs(query: SongQuery): {
 
   const reset = useCallback(() => {
     cursorRef.current = undefined;
-    setPage({ songs: [], isLast: false });
+    setPage({ songs: [], totalCount: 0, isLast: false });
     setError(null);
     setRefreshEpoch((epoch) => epoch + 1);
   }, []);
@@ -200,7 +207,11 @@ export function useSongs(query: SongQuery): {
         const index = prev.songs.findIndex((s) => s.id === song.id);
         if (query.inFavorites && !song.favorite) {
           if (index < 0) return prev;
-          return { ...prev, songs: prev.songs.filter((s) => s.id !== song.id) };
+          return {
+            ...prev,
+            songs: prev.songs.filter((s) => s.id !== song.id),
+            totalCount: Math.max(0, prev.totalCount - 1),
+          };
         }
         if (index >= 0) {
           const songs = prev.songs.slice();

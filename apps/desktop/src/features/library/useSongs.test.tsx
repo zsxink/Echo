@@ -21,8 +21,47 @@ const query: SongQuery = {
 
 describe("useSongs search command", () => {
   beforeEach(() => {
+    vi.mocked(invoke).mockClear();
     mocks.setInvoke("all_songs", { items: [], isLast: true, nextCursor: null });
     mocks.setInvoke("search", { items: [], isLast: true, nextCursor: null });
+  });
+
+  it("keeps the full query total stable while loading another page", async () => {
+    mocks.setInvoke("all_songs", {
+      items: Array.from({ length: 200 }, (_, index) => ({ id: `song-${index}` })),
+      totalCount: 274,
+      isLast: false,
+      nextCursor: "cursor-2",
+    });
+    const { result } = renderHook(() => useSongs(query));
+    await waitFor(() => expect(result.current.page.songs).toHaveLength(200));
+    expect(result.current.page.totalCount).toBe(274);
+
+    mocks.setInvoke("all_songs", {
+      items: [{ id: "song-200" }],
+      totalCount: 274,
+      isLast: true,
+      nextCursor: null,
+    });
+    await act(async () => result.current.loadMore());
+
+    expect(result.current.page.songs).toHaveLength(201);
+    expect(result.current.page.totalCount).toBe(274);
+  });
+
+  it("uses the filtered favorites search total", async () => {
+    mocks.setInvoke("search", {
+      items: [{ id: "favorite-1" }],
+      totalCount: 241,
+      isLast: false,
+      nextCursor: "favorites-next",
+    });
+    const { result } = renderHook(() =>
+      useSongs({ ...query, view: "favorites", inFavorites: true, search: "爵士" }),
+    );
+
+    await waitFor(() => expect(result.current.page.songs).toHaveLength(1));
+    expect(result.current.page.totalCount).toBe(241);
   });
 
   it("uses Tauri's camelCase argument name for the favorites filter", async () => {
@@ -126,6 +165,27 @@ describe("useSongs search command", () => {
     await waitFor(() =>
       expect(result.current.page.songs.map((song) => song.id)).toEqual(["newest", "older"]),
     );
+  });
+
+  it("decrements the favorites total when a committed unfavorite removes a row", async () => {
+    mocks.setInvoke("favorites", {
+      items: [
+        { id: "favorite-1", title: "第一首" },
+        { id: "favorite-2", title: "第二首" },
+      ],
+      totalCount: 2,
+      isLast: true,
+      nextCursor: null,
+    });
+    const { result } = renderHook(() =>
+      useSongs({ ...query, view: "favorites", inFavorites: true }),
+    );
+
+    await waitFor(() => expect(result.current.page.totalCount).toBe(2));
+    act(() => result.current.patchSong({ id: "favorite-1", favorite: false } as never));
+
+    expect(result.current.page.songs.map((song) => song.id)).toEqual(["favorite-2"]);
+    expect(result.current.page.totalCount).toBe(1);
   });
 
   it("uses repository order when refreshing a newly favorited song in manual sort", async () => {

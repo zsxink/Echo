@@ -70,6 +70,7 @@ export interface SongView {
 
 export interface PagedSongs {
   readonly items: readonly SongView[];
+  readonly totalCount: number;
   readonly nextCursor?: string;
   readonly isLast: boolean;
 }

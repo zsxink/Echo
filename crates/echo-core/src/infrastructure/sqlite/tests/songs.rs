@@ -131,6 +131,7 @@ fn catalog_search_overlays_on_favorites_view() {
     let fav = query
         .search("周", true, SongSort::default(), None, 100)
         .expect("search 周 in favorites");
+    assert_eq!(fav.total_count, 1, "favorite search count includes the favorite filter");
     assert_eq!(fav.items.len(), 1);
     assert_eq!(fav.items[0].id(), rows[0].0);
 
@@ -163,8 +164,13 @@ fn catalog_search_stale_request_cancelled_after_write_invalidation() {
         direction: SortDirection::Asc,
     };
     let first = query.search("", false, sort, None, 2).expect("page 1");
+    assert_eq!(first.total_count, 4, "first page carries the full view total");
     let cursor = first.next_cursor.expect("non-last page cursor");
     assert!(!first.is_last);
+    let second = query
+        .search("", false, sort, Some(&cursor), 2)
+        .expect("page 2");
+    assert_eq!(second.total_count, 4, "cursor must not shrink the total");
 
     // A write bumps the root revision, invalidating the in-flight search.
     let mut later = Song::new(
@@ -229,6 +235,7 @@ fn catalog_search_pages_deterministically_across_large_library() {
         let page = query
             .search("", false, sort, cursor.as_ref(), 7)
             .expect("page");
+        assert_eq!(page.total_count, 55, "every page reports the full total");
         for r in &page.items {
             ids.push(r.id());
         }
@@ -254,6 +261,7 @@ fn catalog_search_pages_deterministically_across_large_library() {
         let page = query
             .search("共歌曲", false, sort, cursor.as_ref(), 5)
             .expect("search page");
+        assert_eq!(page.total_count, 19, "search count includes its filter");
         for r in &page.items {
             hits.push(r.id());
         }
