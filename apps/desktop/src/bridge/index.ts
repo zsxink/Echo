@@ -33,6 +33,10 @@ interface BridgeCommandArguments {
     args: {
       query: string;
       inFavorites: boolean;
+      // Tauri maps Rust's `playlist` argument to this same JSON key; sending
+      // `playlistId` would deserialize the option to `None` and search the
+      // whole library instead of the playlist.
+      playlist?: string | null;
       sort: string;
       cursor?: string | null;
       limit: number;
@@ -73,7 +77,7 @@ interface BridgeCommandArguments {
   set_theme: [args: { theme: string }];
   set_close_behavior: [args: { behavior: string }];
   get_close_behavior: EmptyArgs;
-  play_playlist_context: [args: { playlist: string; selectedSong: string }];
+  play_playlist_context: [args: { playlist: string; selectedSong: string; query?: string | null }];
   play_library_context: [
     args: {
       view: "all" | "recent" | "favorites" | "artist" | "album";

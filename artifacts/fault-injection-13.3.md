@@ -1,6 +1,6 @@
 # Echo 0.1.0 fault-injection report (task 13.3)
 
-- date: 2026-09-14T17:23:08.615Z
+- date: 2026-09-24T08:07:15.167Z
 - host: darwin arm64
 
 ## Injection harness

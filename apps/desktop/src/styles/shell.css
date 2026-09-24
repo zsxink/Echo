@@ -16,8 +16,6 @@
 .brand-mark svg { width: 22px; height: 22px; display: block; }
 .brand-actions { display: flex; align-items: center; gap: var(--space-2); margin-left: var(--space-2); opacity: 0; pointer-events: none; transform: translateX(-4px); transition: opacity var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard); }
 .brand-area:hover .brand-actions, .brand-area:focus-within .brand-actions { opacity: 1; pointer-events: auto; transform: translateX(0); }
-/* 应用端导入按钮经 portal 挂载（task 6.6），此空槽为其预留同尺寸位置。 */
-.brand-import-slot { width: 32px; height: 32px; flex: none; }
 .brand-action { width: 32px; height: 32px; flex: none; display: grid; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); color: var(--fg-2); cursor: pointer; transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
 .brand-action svg { width: 18px; height: 18px; }
 .brand-action:hover:not(:disabled), .brand-action:focus-visible { background: var(--surface-warm); color: var(--fg); }

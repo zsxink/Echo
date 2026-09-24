@@ -132,6 +132,17 @@ const GLYPHS: Record<string, Glyph> = {
   chevronLeft: { strokeWidth: 2, nodes: <path d="m14 6-6 6 6 6" /> },
   chevronRight: { strokeWidth: 2, nodes: <path d="m10 6 6 6-6 6" /> },
   drag: { nodes: <path d="M4 9h16M4 15h16" /> },
+  // 定位当前播放歌曲：一个靶心十字，结合"当前位置/回到此处"的语义（playlist-
+  // search-locate-import 4.1）。原型没有此字形，故按既有 1.8px 线型规范绘制。
+  locate: {
+    nodes: (
+      <>
+        <circle cx="12" cy="12" r="7" />
+        <circle cx="12" cy="12" r="2.4" />
+        <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+      </>
+    ),
+  },
 
   // --- transport -----------------------------------------------------------
   play: { solid: true, nodes: <path d="m8 5 11 7-11 7V5Z" /> },

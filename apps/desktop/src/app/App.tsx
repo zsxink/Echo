@@ -34,9 +34,10 @@
  * (task 6.6); this file also provides the brand-area portal slot for importing.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import { bridge, reportBridgeFailure } from "../bridge";
+import { useImport } from "../features/import";
 import { ChooseRootView } from "../features/workspace/ChooseRootView";
 import { LibraryStatusView } from "../features/workspace/LibraryStatusView";
 import type { LibraryCountView } from "../features/library/libraryCounts";
@@ -57,7 +58,6 @@ import { ToastView } from "./ToastView";
 import { useAppShell } from "./useAppShell";
 
 export function App() {
-  const [importTarget, setImportTarget] = useState<HTMLDivElement | null>(null);
   const {
     theme,
     status,
@@ -75,6 +75,12 @@ export function App() {
     settingsOpen,
     setSettingsOpen,
   } = useAppShell();
+  // The import entry is shell-owned (playlist-search-locate-import 5.2): it is
+  // rendered into the sidebar brand area, so the action stays available under
+  // every library view — 歌单, 歌手/专辑目录 and their details included.
+  const { importing, runImport, renderImportDialog } = useImport({
+    onImportCommitted: reloadPlaylists,
+  });
 
   useEffect(() => {
     const preventDefaultContextMenu = (event: Event) => event.preventDefault();
@@ -196,7 +202,21 @@ export function App() {
                   >
                     <Icon name="settings" />
                   </button>
-                  <div className="brand-import-slot" ref={setImportTarget} />
+                  {!status.readOnly ? (
+                    <button
+                      type="button"
+                      className="brand-action"
+                      id="import-button"
+                      aria-label={importing ? "正在导入" : "导入"}
+                      title={importing ? "正在导入" : "导入"}
+                      aria-busy={importing}
+                      disabled={importing}
+                      onClick={() => void runImport()}
+                      data-testid="import-button"
+                    >
+                      <Icon name="upload" />
+                    </button>
+                  ) : null}
                 </div>
               </div>
 
@@ -311,11 +331,11 @@ export function App() {
                   root={status.activeRoot ?? ""}
                   readOnly={status.readOnly}
                   onLibraryChanged={reloadPlaylists}
-                  importTarget={importTarget}
                 />
               )}
 
               {settingsOpen ? <SettingsView onClose={() => setSettingsOpen(false)} /> : null}
+              {renderImportDialog()}
             </section>
           </>
         ) : (

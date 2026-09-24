@@ -158,7 +158,7 @@ fn playlist_playback_context_resolves_the_full_member_set() {
     }
 
     let resolved = app
-        .resolve_playlist_playback_context(playlist, ids[1])
+        .resolve_playlist_playback_context(playlist, ids[1], String::new())
         .expect("resolve");
     assert_eq!(
         resolved,
@@ -168,7 +168,7 @@ fn playlist_playback_context_resolves_the_full_member_set() {
 
     // A non-member selection is a conflict, never a silent partial queue.
     let err = app
-        .resolve_playlist_playback_context(playlist, ids[3])
+        .resolve_playlist_playback_context(playlist, ids[3], String::new())
         .expect_err("selection not a member");
     assert!(
         matches!(err, Error::Conflict { .. }),
@@ -195,7 +195,7 @@ fn playlist_playback_context_skips_deleted_members_not_truncating_others() {
         .expect("delete member");
 
     let resolved = app
-        .resolve_playlist_playback_context(playlist, ids[1])
+        .resolve_playlist_playback_context(playlist, ids[1], String::new())
         .expect("resolve");
     assert_eq!(
         resolved,

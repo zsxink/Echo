@@ -55,6 +55,18 @@ async function fetchPage(query: SongQuery, cursor?: string | null): Promise<Page
     return { items, totalCount: items.length, isLast: true };
   }
   const sort = `${query.sort.field}:${query.sort.direction}`;
+  // 歌单视图：搜索词（可为空）统一走带歌单范围的 search，让空词恢复歌单
+  // 完整成员、有词限定在当前歌单，并复用既有的键集分页与后端排序。
+  if (query.view === "playlist" && query.playlistId) {
+    return bridge.call("search", {
+      query: query.search,
+      inFavorites: false,
+      playlist: query.playlistId,
+      sort,
+      cursor: cursor ?? null,
+      limit,
+    });
+  }
   if (query.view === "favorites" || query.inFavorites) {
     if (query.search.trim().length > 0) {
       return bridge.call("search", {

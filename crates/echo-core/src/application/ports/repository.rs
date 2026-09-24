@@ -86,12 +86,17 @@ pub trait CatalogQueryRepository: Send + Sync {
     /// case-insensitively as a full-query contains across title, artist and
     /// album of the *normalized* keys (FTS for ≥3 scalars, escaped LIKE for
     /// short queries). `in_favorites` restricts results to favorited songs so
-    /// search can combine with either the all-songs or the favorites view. The
-    /// result is keyset-paginated identically to [`Self::all_songs`].
+    /// search can combine with either the all-songs or the favorites view.
+    /// `playlist` restricts results to that playlist's members (available +
+    /// externally-missing shown, pending-delete hidden, matching the
+    /// `playlist_songs` view) when set — it is mutually exclusive with
+    /// `in_favorites`, and passing both is an invariant violation. The result
+    /// is keyset-paginated identically to [`Self::all_songs`].
     fn search(
         &self,
         query: &str,
         in_favorites: bool,
+        playlist: Option<PlaylistId>,
         sort: SongSort,
         cursor: Option<&OpaqueCursor>,
         limit: usize,

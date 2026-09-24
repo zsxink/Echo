@@ -329,14 +329,14 @@ async function main() {
       "import: import button is missing",
     );
     const before = await evalJs(
-      `document.querySelector('[data-testid="import-button"]')?.textContent?.trim()`,
+      `document.querySelector('[data-testid="import-button"]')?.getAttribute('aria-label')`,
     );
     if (before !== "导入") fail("import: button is not idle before picking");
 
     await evalJs(`window.__echoE2E__.state.importMode = 'mixed'`);
     await evalJs(`document.querySelector('[data-testid="import-button"]').click()`);
     await assert(
-      `document.querySelector('[data-testid="import-button"]')?.textContent?.trim() === '导入'`,
+      `document.querySelector('[data-testid="import-button"]')?.getAttribute('aria-label') === '导入'`,
       "import: button did not return to idle after completion",
     );
     await assert(

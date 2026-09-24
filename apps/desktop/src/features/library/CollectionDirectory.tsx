@@ -41,6 +41,7 @@ import { ConfirmationDialog } from "./ConfirmationDialog";
 import { AddToPlaylistDialog } from "../playlists";
 import { SortMenu } from "./SortMenu";
 import { useStoredDirectorySort } from "./useStoredDirectorySort";
+import { useLocateSong, LocateButton } from "./useLocateSong";
 
 export interface CollectionDirectoryProps {
   readonly kind: "artist" | "album";
@@ -118,6 +119,7 @@ export function CollectionDirectory({
     [songs, selection.selectedIds],
   );
   const snapshot = usePlayerSnapshot();
+  const { locateSongId, onLocate, onLocateSettled } = useLocateSong();
 
   const [menuFor, setMenuFor] = useState<{ song: SongView; anchor: MenuAnchor } | null>(null);
   const [batchMenuFor, setBatchMenuFor] = useState<{
@@ -436,6 +438,7 @@ export function CollectionDirectory({
             </div>
             {selected ? (
               <div className="library-tools">
+                <LocateButton onClick={onLocate} />
                 <SelectionModeButton
                   active={selectionMode}
                   onToggle={() => {
@@ -462,6 +465,8 @@ export function CollectionDirectory({
               readOnly={readOnly}
               currentSongId={snapshot.currentSongId}
               playing={snapshot.state === "playing"}
+              locateSongId={locateSongId}
+              onLocateSettled={onLocateSettled}
               selectionMode={selectionMode}
               selectedIds={selection.selectedIds}
               allLoadedSelected={allSongsSelected}

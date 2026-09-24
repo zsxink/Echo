@@ -286,7 +286,7 @@ impl SqliteDatabase {
         cursor: Option<&OpaqueCursor>,
         limit: usize,
     ) -> Result<Paged<Song>, Error> {
-        self.query_active_songs_respecting_favorites(query, false, sort, cursor, limit)
+        self.query_active_songs_respecting_favorites(query, false, None, sort, cursor, limit)
     }
 
     /// Return a cursor page for the active root. Cursor boundaries are real
@@ -298,16 +298,19 @@ impl SqliteDatabase {
         cursor: Option<&OpaqueCursor>,
         limit: usize,
     ) -> Result<Paged<Song>, Error> {
-        self.query_active_songs_respecting_favorites(query, false, sort, cursor, limit)
+        self.query_active_songs_respecting_favorites(query, false, None, sort, cursor, limit)
     }
 
     /// The favorites-aware paginated query over the active root (task 6.2).
     /// `in_favorites` limits results to favorited songs so search can overlay
-    /// on either the all-songs or the favorites view.
+    /// on either the all-songs or the favorites view; `playlist` narrows to
+    /// one playlist's members (mutually exclusive with `in_favorites`).
+    #[allow(clippy::too_many_arguments)]
     pub fn query_active_songs_respecting_favorites(
         &self,
         query: &str,
         in_favorites: bool,
+        playlist: Option<PlaylistId>,
         sort: SongSort,
         cursor: Option<&OpaqueCursor>,
         limit: usize,
@@ -326,6 +329,7 @@ impl SqliteDatabase {
                 connection,
                 &query,
                 in_favorites,
+                playlist,
                 sort,
                 cursor.as_ref(),
                 limit,
@@ -601,7 +605,7 @@ impl CatalogQueryRepository for SqliteDatabase {
         cursor: Option<&OpaqueCursor>,
         limit: usize,
     ) -> Result<Paged<Song>, Error> {
-        self.query_active_songs_respecting_favorites("", true, sort, cursor, limit)
+        self.query_active_songs_respecting_favorites("", true, None, sort, cursor, limit)
     }
 
     fn recent_100(&self) -> Result<Vec<Song>, Error> {
@@ -620,11 +624,19 @@ impl CatalogQueryRepository for SqliteDatabase {
         &self,
         query: &str,
         in_favorites: bool,
+        playlist: Option<PlaylistId>,
         sort: SongSort,
         cursor: Option<&OpaqueCursor>,
         limit: usize,
     ) -> Result<Paged<Song>, Error> {
-        self.query_active_songs_respecting_favorites(query, in_favorites, sort, cursor, limit)
+        self.query_active_songs_respecting_favorites(
+            query,
+            in_favorites,
+            playlist,
+            sort,
+            cursor,
+            limit,
+        )
     }
 }
 

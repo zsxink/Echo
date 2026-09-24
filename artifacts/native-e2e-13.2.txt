@@ -1,8 +1,8 @@
 Echo 0.1.0 native end-to-end evidence (task 13.2)
-date: 2026-09-14T17:23:07.733Z
+date: 2026-09-24T08:07:14.317Z
 host: darwin arm64
-rustc: rustc 1.96.0 (ac68faa20 2026-05-25)
-cargo: cargo 1.96.0 (30a34c682 2026-05-25)
+rustc: rustc 1.98.1 (48a229cea 2026-09-01)
+cargo: cargo 1.98.1 (797e8a9bc 2026-08-05)
 
 Driven flow (temp library):
   scan → search → favorite → playlist → import → delete/undo → restart

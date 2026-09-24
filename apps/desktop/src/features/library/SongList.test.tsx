@@ -14,7 +14,7 @@
  */
 
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { SongView } from "../../ipc/ipc-types.generated";
 import { SongList } from "./SongList";
@@ -362,5 +362,195 @@ describe("SongList windowing (task 10.6)", () => {
       />,
     );
     expect(screen.queryByText("导入歌曲")).not.toBeInTheDocument();
+  });
+});
+
+/** Render a SongList with mocked viewport metrics, so the locate clamp against
+ *  `scrollHeight - clientHeight` sees real sizes (jsdom measures 0 on both).
+ *  The getters are spied on `HTMLElement.prototype` *before* render, so the
+ *  effect's first run already reads the fixed dimensions; `afterEach` restores
+ *  them so no measurement leaks into the following test. */
+const ROW_HEIGHT = 44;
+
+function renderLocated(
+  songs: readonly SongView[],
+  locateSongId: string | null,
+  {
+    isLast = true,
+    loading = false,
+    viewportHeight = 440,
+    contentHeight,
+    onLoadMore = noop,
+  }: {
+    isLast?: boolean;
+    loading?: boolean;
+    viewportHeight?: number;
+    contentHeight?: number;
+    onLoadMore?: () => void;
+  } = {},
+) {
+  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(
+    contentHeight ?? songs.length * ROW_HEIGHT,
+  );
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(viewportHeight);
+  const view = render(
+    <SongList
+      songs={songs}
+      search=""
+      loading={loading}
+      isLast={isLast}
+      readOnly={false}
+      currentSongId={locateSongId}
+      playing={false}
+      locateSongId={locateSongId}
+      onLoadMore={onLoadMore}
+      onClearSearch={noop}
+      onPlay={noop}
+      onFavorite={noop}
+      onPlayNext={noop}
+      onOpenMenu={noop}
+    />,
+  );
+  return { view, viewport: screen.getByTestId("song-list") };
+}
+
+describe("SongList locate (playlist-search-locate-import 4.2)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("scrolls the matched song row to the top of the visible area", () => {
+    const songs = makeSongs(20);
+    const { viewport } = renderLocated(songs, songs[7].id);
+    // `index * ROW_HEIGHT` — the numeric alignment, never a DOM lookup.
+    expect(viewport.scrollTop).toBe(7 * ROW_HEIGHT);
+  });
+
+  it("clamps an end-of-list target to the last reachable position", () => {
+    const songs = makeSongs(20);
+    // A short viewport whose bottom cannot move the last rows to the absolute
+    // top: scroll must align to `scrollHeight - clientHeight`.
+    const { viewport } = renderLocated(songs, songs[19].id, { viewportHeight: 300 });
+    expect(viewport.scrollTop).toBe(20 * ROW_HEIGHT - 300);
+  });
+
+  it("keeps the clamp at zero when the list fits inside the viewport", () => {
+    const songs = makeSongs(3);
+    const { viewport } = renderLocated(songs, songs[2].id, { viewportHeight: 300 });
+    expect(viewport.scrollTop).toBe(0);
+  });
+
+  it("ignores a null intent and leaves the scroll position untouched", () => {
+    const songs = makeSongs(10);
+    const { viewport } = renderLocated(songs, null);
+    expect(viewport.scrollTop).toBe(0);
+  });
+
+  it("pulls the next page when the target is not yet loaded, then scrolls once it lands", () => {
+    const loaded = makeSongs(10);
+    const onLoadMore = vi.fn();
+    // `isLast=false`, `loading=false` → the intent triggers `onLoadMore`, not a
+    // scroll. A 44px viewport leaves room for the incoming page to reach the
+    // target's absolute top once it is found.
+    const { view, viewport } = renderLocated(loaded, "song-12", {
+      isLast: false,
+      viewportHeight: 44,
+      onLoadMore,
+    });
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+    expect(viewport.scrollTop).toBe(0);
+
+    // The next page lands with the target as song 12; the effect re-runs on the
+    // `songs` change and scrolls it to the top.
+    const nextSongs = [
+      ...loaded,
+      ...makeSongs(3).map((song, offset) => ({ ...song, id: `song-${10 + offset}` })),
+    ];
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(
+      nextSongs.length * ROW_HEIGHT,
+    );
+    view.rerender(
+      <SongList
+        songs={nextSongs}
+        search=""
+        loading={false}
+        isLast
+        readOnly={false}
+        currentSongId="song-12"
+        playing={false}
+        locateSongId="song-12"
+        onLoadMore={onLoadMore}
+        onClearSearch={noop}
+        onPlay={noop}
+        onFavorite={noop}
+        onPlayNext={noop}
+        onOpenMenu={noop}
+      />,
+    );
+    expect(viewport.scrollTop).toBe(12 * ROW_HEIGHT);
+  });
+
+  it("does not pull the next page while a load is already in flight", () => {
+    const onLoadMore = vi.fn();
+    renderLocated(makeSongs(10), "song-12", { isLast: false, loading: true, onLoadMore });
+    expect(onLoadMore).not.toHaveBeenCalled();
+  });
+
+  it("leaves a last-page miss untouched (the caller notifies instead)", () => {
+    const songs = makeSongs(10);
+    const onLoadMore = vi.fn();
+    const { viewport } = renderLocated(songs, "absent-song", { isLast: true, onLoadMore });
+    expect(viewport.scrollTop).toBe(0);
+    expect(onLoadMore).not.toHaveBeenCalled();
+  });
+
+  it("reports a found target so the caller can settle the intent", () => {
+    const songs = makeSongs(10);
+    const onLocateSettled = vi.fn();
+    const view = render(
+      <SongList
+        songs={songs}
+        search=""
+        loading={false}
+        isLast
+        readOnly={false}
+        currentSongId={songs[3].id}
+        playing={false}
+        locateSongId={songs[3].id}
+        onLocateSettled={onLocateSettled}
+        onLoadMore={noop}
+        onClearSearch={noop}
+        onPlay={noop}
+        onFavorite={noop}
+        onPlayNext={noop}
+        onOpenMenu={noop}
+      />,
+    );
+    expect(onLocateSettled).toHaveBeenCalledWith("found");
+    view.unmount();
+  });
+
+  it("reports a last-page miss as absent so the caller voices it", () => {
+    const songs = makeSongs(10);
+    const onLocateSettled = vi.fn();
+    const view = render(
+      <SongList
+        songs={songs}
+        search=""
+        loading={false}
+        isLast
+        readOnly={false}
+        currentSongId={null}
+        playing={false}
+        locateSongId="absent-song"
+        onLocateSettled={onLocateSettled}
+        onLoadMore={noop}
+        onClearSearch={noop}
+        onPlay={noop}
+        onFavorite={noop}
+        onPlayNext={noop}
+        onOpenMenu={noop}
+      />,
+    );
+    expect(onLocateSettled).toHaveBeenCalledWith("absent");
+    view.unmount();
   });
 });

@@ -11,14 +11,12 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
 
 import { bridge } from "../../bridge";
 import { usePlayerSnapshot } from "../../player/playerStore";
-import type { ImportResultDto, SongView } from "../../ipc/ipc-types.generated";
+import type { SongView } from "../../ipc/ipc-types.generated";
 import { LibraryViewKind } from "./types";
 import { bumpLibraryCount, invalidateLibraryCounts } from "./libraryCounts";
-import { invalidateLibrary } from "./libraryInvalidation";
 import { SongList } from "./SongList";
 import { useSongs } from "./useSongs";
 import { publishSongUpdate, subscribeSongUpdates } from "./songUpdates";
@@ -36,10 +34,10 @@ import {
 import type { BatchResult } from "./batchOperations";
 import { useSongSelection } from "./useSongSelection";
 import { ConfirmationDialog } from "./ConfirmationDialog";
-import { ImportFailureDialog, classifyImportResults } from "../import";
 import { AddToPlaylistDialog } from "../playlists";
 import { SongSortControl } from "./SongSortControl";
 import { useStoredSongSort } from "./useStoredSongSort";
+import { useLocateSong, LocateButton } from "./useLocateSong";
 import { Icon } from "../../app/Icon";
 import { notify } from "../../app/toast";
 import { Topbar } from "../../app/shell";
@@ -51,8 +49,6 @@ interface LibraryWorkspaceProps {
   readonly readOnly: boolean;
   /** A mutation the sidebar also reflects (playlist membership, imports). */
   readonly onLibraryChanged?: () => void;
-  /** App-shell target for the import button; absent in isolated workspace views. */
-  readonly importTarget?: HTMLElement | null;
 }
 
 export function LibraryWorkspace({
@@ -61,15 +57,12 @@ export function LibraryWorkspace({
   root,
   readOnly,
   onLibraryChanged,
-  importTarget,
 }: LibraryWorkspaceProps) {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useStoredSongSort(view);
   // The menu is anchored to the `.song-more` control that opened it, as the
   // prototype does — never to a fixed corner.
   const [menuFor, setMenuFor] = useState<{ song: SongView; anchor: MenuAnchor } | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [importFailures, setImportFailures] = useState<readonly ImportResultDto[] | null>(null);
   const [addToPlaylistFor, setAddToPlaylistFor] = useState<readonly SongView[] | null>(null);
   const [batchMenuFor, setBatchMenuFor] = useState<{
     readonly song: SongView;
@@ -90,6 +83,7 @@ export function LibraryWorkspace({
     [view, search, sort, root, readOnly],
   );
   const { page, loading, error, loadMore, reset, retry, patchSong } = useSongs(query);
+  const { locateSongId, onLocate, onLocateSettled } = useLocateSong();
   const refreshAfterSongMutation = useCallback(() => {
     reset();
     onLibraryChanged?.();
@@ -121,47 +115,6 @@ export function LibraryWorkspace({
   );
   const allLoadedSelected =
     page.songs.length > 0 && page.songs.every((song) => selection.selectedIds.has(song.id));
-
-  const runImport = useCallback(async () => {
-    if (importing) return;
-    setImporting(true);
-    try {
-      const batch = await bridge.call("choose_and_import_files");
-      if (batch === null) return;
-      const feedback = classifyImportResults(batch.results);
-      if (feedback.nonFailures.length > 0) invalidateLibrary();
-      onLibraryChanged?.();
-      if (feedback.nonFailures.length > 0) notify(feedback.summary);
-      if (feedback.failures.length > 0) setImportFailures(feedback.failures);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "导入命令失败";
-      setImportFailures([
-        {
-          kind: "failed",
-          code: "import_command",
-          message,
-        },
-      ]);
-    } finally {
-      setImporting(false);
-    }
-  }, [importing, onLibraryChanged]);
-
-  const importButton = (
-    <button
-      type="button"
-      className={importTarget === undefined ? "btn btn-primary" : "brand-action"}
-      id="import-button"
-      aria-label={importTarget === undefined ? undefined : importing ? "正在导入" : "导入"}
-      title={importTarget === undefined ? undefined : importing ? "正在导入" : "导入"}
-      aria-busy={importing}
-      disabled={importing}
-      onClick={() => void runImport()}
-      data-testid="import-button"
-    >
-      {importTarget === undefined ? importing ? "导入中…" : "导入" : <Icon name="upload" />}
-    </button>
-  );
 
   const onFavorite = useCallback(
     (song: SongView, favorite: boolean) => {
@@ -371,10 +324,7 @@ export function LibraryWorkspace({
             data-testid="search-input"
           />
         </label>
-        {!readOnly && importTarget === undefined ? importButton : null}
       </Topbar>
-
-      {!readOnly && importTarget ? createPortal(importButton, importTarget) : null}
 
       <main className="content" data-testid="library-workspace">
         <div className="library-view">
@@ -387,6 +337,7 @@ export function LibraryWorkspace({
             </div>
             <div className="library-tools">
               {showSort ? <SongSortControl sort={sort} onChange={setSort} /> : null}
+              <LocateButton onClick={onLocate} />
               <SelectionModeButton
                 active={selectionMode}
                 onToggle={() => {
@@ -405,6 +356,8 @@ export function LibraryWorkspace({
             readOnly={readOnly}
             currentSongId={snapshot.currentSongId}
             playing={snapshot.state === "playing"}
+            locateSongId={locateSongId}
+            onLocateSettled={onLocateSettled}
             selectionMode={selectionMode}
             selectedIds={selection.selectedIds}
             allLoadedSelected={allLoadedSelected}
@@ -416,7 +369,6 @@ export function LibraryWorkspace({
             }}
             error={error}
             onRetry={retry}
-            onImport={() => void runImport()}
             onLoadMore={loadMore}
             onClearSearch={() => setSearch("")}
             onPlay={onPlay}
@@ -494,10 +446,6 @@ export function LibraryWorkspace({
           onConfirm={() => void confirmBatchDelete()}
           onCancel={() => setBatchDeleteFor(null)}
         />
-      ) : null}
-
-      {importFailures ? (
-        <ImportFailureDialog results={importFailures} onClose={() => setImportFailures(null)} />
       ) : null}
     </>
   );

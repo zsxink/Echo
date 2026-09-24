@@ -42,10 +42,16 @@ pub(crate) fn query_active(
     connection: &Connection,
     query: &str,
     favorites: bool,
+    playlist: Option<PlaylistId>,
     sort: SongSort,
     cursor: Option<&OpaqueCursor>,
     limit: usize,
 ) -> Result<Paged<Song>, Error> {
+    if favorites && playlist.is_some() {
+        return Err(Error::InvariantViolation {
+            why: "search cannot restrict to favorites and a playlist at once".to_owned(),
+        });
+    }
     // These reads must share one WAL snapshot. A writer may commit on the
     // separate writer connection between statements; without this transaction
     // the total, cursor revision, and page contents could describe different
@@ -69,29 +75,27 @@ pub(crate) fn query_active(
     }
     let mut clauses = vec![
         "s.library_root_uuid = ?".to_owned(),
-        "s.availability = 'available'".to_owned(),
+        if playlist.is_some() {
+            "s.availability <> 'pending_delete'".to_owned()
+        } else {
+            "s.availability = 'available'".to_owned()
+        },
     ];
     let mut values = vec![Value::Text(root.to_string())];
     if favorites {
         clauses.push("s.is_favorite = 1".to_owned());
     }
-    if !query.is_empty() {
-        if query.chars().count() < 3 {
-            clauses.push("(s.title_sort LIKE ? ESCAPE '\\' OR s.artist_sort LIKE ? ESCAPE '\\' OR s.album_sort LIKE ? ESCAPE '\\')".to_owned());
-            let like = format!("%{}%", escape_like(query));
-            values.extend([
-                Value::Text(like.clone()),
-                Value::Text(like.clone()),
-                Value::Text(like),
-            ]);
-        } else {
-            clauses.push(
-                "s.uuid IN (SELECT song_uuid FROM song_search WHERE song_search MATCH ?)"
-                    .to_owned(),
-            );
-            values.push(Value::Text(escape_match(query)));
-        }
+    if let Some(playlist) = playlist {
+        clauses.push(
+            "EXISTS (SELECT 1 FROM playlist_songs ps \
+             WHERE ps.song_uuid = s.uuid AND ps.playlist_uuid = ?)"
+                .to_owned(),
+        );
+        values.push(Value::Text(playlist.to_string()));
     }
+    let (search_clauses, search_values) = query_clauses(query);
+    clauses.extend(search_clauses);
+    values.extend(search_values);
     // Count the full result set from the view and search predicates. Cursor
     // predicates are deliberately added only afterwards so pagination never
     // changes the displayed total.
@@ -139,6 +143,33 @@ pub(crate) fn query_active(
     Ok(page)
 }
 
+/// Predicates a search term contributes to the active view query: a normalized
+/// LIKE across title/artist/album for short terms (≤2 scalars), or an FTS5
+/// `song_search` match for longer ones. An empty query contributes nothing, so
+/// the caller restores the full underlying view.
+fn query_clauses(query: &str) -> (Vec<String>, Vec<Value>) {
+    if query.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+    let mut clauses = Vec::new();
+    let mut values = Vec::new();
+    if query.chars().count() < 3 {
+        clauses.push("(s.title_sort LIKE ? ESCAPE '\\' OR s.artist_sort LIKE ? ESCAPE '\\' OR s.album_sort LIKE ? ESCAPE '\\')".to_owned());
+        let like = format!("%{}%", escape_like(query));
+        values.extend([
+            Value::Text(like.clone()),
+            Value::Text(like.clone()),
+            Value::Text(like),
+        ]);
+    } else {
+        clauses.push(
+            "s.uuid IN (SELECT song_uuid FROM song_search WHERE song_search MATCH ?)".to_owned(),
+        );
+        values.push(Value::Text(escape_match(query)));
+    }
+    (clauses, values)
+}
+
 /// Per-view song totals for the navigation sidebar.
 ///
 /// Two `COUNT(*)`s, not three: `recent` is not an independent population — the
@@ -148,8 +179,6 @@ pub(crate) fn query_active(
 /// ceiling in SQL, and the two would drift the day the view's definition moves.
 ///
 /// Both counts reuse the view-membership predicates of [`query_active`]
-/// (active root, `availability = 'available'`) so a number printed in the
-/// sidebar can never disagree with the list it advertises.
 pub(crate) fn catalog_counts(connection: &Connection) -> Result<CatalogCounts, Error> {
     let root = active_root_id(connection)?
         .ok_or_else(|| Error::unavailable("library", "no active root"))?;

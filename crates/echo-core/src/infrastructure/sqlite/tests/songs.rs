@@ -11,6 +11,7 @@ fn catalog_search_matches_full_query_word_ignoring_case_across_fields() {
         .search(
             "sunny",
             false,
+            None,
             SongSort {
                 field: SongSortField::Title,
                 direction: SortDirection::Asc,
@@ -32,6 +33,7 @@ fn catalog_search_matches_full_query_word_ignoring_case_across_fields() {
         .search(
             "杰",
             false,
+            None,
             SongSort {
                 field: SongSortField::Title,
                 direction: SortDirection::Asc,
@@ -51,6 +53,7 @@ fn catalog_search_matches_full_query_word_ignoring_case_across_fields() {
         .search(
             "叶惠美",
             false,
+            None,
             SongSort {
                 field: SongSortField::Title,
                 direction: SortDirection::Asc,
@@ -73,6 +76,7 @@ fn catalog_search_empty_query_restores_full_view() {
         .search(
             "",
             false,
+            None,
             SongSort {
                 field: SongSortField::AddedAt,
                 direction: SortDirection::Asc,
@@ -106,7 +110,7 @@ fn catalog_search_no_results_returns_empty_page_not_error() {
     let query = CatalogQuery::new(&database);
 
     let page = query
-        .search("不存在的歌名xyz", false, SongSort::default(), None, 100)
+        .search("不存在的歌名xyz", false, None, SongSort::default(), None, 100)
         .expect("no-results is not an error");
     assert!(page.items.is_empty());
     assert!(page.is_last);
@@ -122,14 +126,14 @@ fn catalog_search_overlays_on_favorites_view() {
 
     // 全视图搜索 "周" -> 三条（晴天、七里香 艺人周杰伦；吉它版艺人杰倫不含；remix Jay 不含）
     let all = query
-        .search("周", false, SongSort::default(), None, 100)
+        .search("周", false, None, SongSort::default(), None, 100)
         .expect("search 周");
     assert!(all.items.iter().any(|s| s.id() == rows[0].0));
     assert!(all.items.iter().any(|s| s.id() == rows[2].0));
 
     // 叠加 favorites：只有 favorite 的晴天命中。
     let fav = query
-        .search("周", true, SongSort::default(), None, 100)
+        .search("周", true, None, SongSort::default(), None, 100)
         .expect("search 周 in favorites");
     assert_eq!(fav.total_count, 1, "favorite search count includes the favorite filter");
     assert_eq!(fav.items.len(), 1);
@@ -140,6 +144,7 @@ fn catalog_search_overlays_on_favorites_view() {
         .search(
             "",
             true,
+            None,
             SongSort {
                 field: SongSortField::AddedAt,
                 direction: SortDirection::Asc,
@@ -163,12 +168,12 @@ fn catalog_search_stale_request_cancelled_after_write_invalidation() {
         field: SongSortField::Title,
         direction: SortDirection::Asc,
     };
-    let first = query.search("", false, sort, None, 2).expect("page 1");
+    let first = query.search("", false, None, sort, None, 2).expect("page 1");
     assert_eq!(first.total_count, 4, "first page carries the full view total");
     let cursor = first.next_cursor.expect("non-last page cursor");
     assert!(!first.is_last);
     let second = query
-        .search("", false, sort, Some(&cursor), 2)
+        .search("", false, None, sort, Some(&cursor), 2)
         .expect("page 2");
     assert_eq!(second.total_count, 4, "cursor must not shrink the total");
 
@@ -187,7 +192,7 @@ fn catalog_search_stale_request_cancelled_after_write_invalidation() {
     );
     SongRepository::upsert(&database, &later).expect("write bumps revision");
     assert!(
-        query.search("", false, sort, Some(&cursor), 2).is_err(),
+        query.search("", false, None, sort, Some(&cursor), 2).is_err(),
         "过期请求取消：revision 变化后 cursor 必须被拒绝"
     );
 }
@@ -233,7 +238,7 @@ fn catalog_search_pages_deterministically_across_large_library() {
     let mut cursor: Option<OpaqueCursor> = None;
     loop {
         let page = query
-            .search("", false, sort, cursor.as_ref(), 7)
+            .search("", false, None, sort, cursor.as_ref(), 7)
             .expect("page");
         assert_eq!(page.total_count, 55, "every page reports the full total");
         for r in &page.items {
@@ -259,7 +264,7 @@ fn catalog_search_pages_deterministically_across_large_library() {
     let mut cursor = None;
     loop {
         let page = query
-            .search("共歌曲", false, sort, cursor.as_ref(), 5)
+            .search("共歌曲", false, None, sort, cursor.as_ref(), 5)
             .expect("search page");
         assert_eq!(page.total_count, 19, "search count includes its filter");
         for r in &page.items {
@@ -282,7 +287,7 @@ fn catalog_search_pages_deterministically_across_large_library() {
         let mut cursor = None;
         loop {
             let page = query
-                .search("共歌曲", false, sort, cursor.as_ref(), 5)
+                .search("共歌曲", false, None, sort, cursor.as_ref(), 5)
                 .expect("repeat");
             for r in &page.items {
                 ids.push(r.id());
@@ -545,4 +550,185 @@ fn playlists_repository_gate_covers_normal_empty_error_and_root_states() {
         1,
         "readonly root keeps playlists readable"
     );
+}
+
+// ---------------------------------------------------------------------------
+// 歌单内搜索（playlist-search-locate-import）：当前歌单成员内包含搜索
+// ---------------------------------------------------------------------------
+
+fn playlists_search_sort() -> SongSort {
+    SongSort {
+        field: SongSortField::Title,
+        direction: SortDirection::Asc,
+    }
+}
+
+/// 歌单内搜索只命中当前歌单成员，不匹配其他歌单歌曲或全库歌曲。
+#[test]
+fn playlist_search_restricts_to_playlist_members() {
+    let (_directory, database, root) = database();
+    let alpha = song(root, "a.flac", "Alpha", "艺人甲");
+    let beta = song(root, "b.flac", "Beta", "艺人乙");
+    let gamma = song(root, "c.flac", "Alpha 二", "艺人丙");
+    let outside = song(root, "d.flac", "Alpha 全库", "艺人丁");
+    for entry in [&alpha, &beta, &gamma, &outside] {
+        SongRepository::upsert(&database, entry).expect("seed song");
+    }
+    let playlist = PlaylistId::new();
+    database.create(playlist, root, "歌单").expect("playlist");
+    for entry in [&alpha, &beta, &gamma] {
+        database
+            .add_member(playlist, entry.id(), u64::MAX)
+            .expect("member");
+    }
+
+    let query = CatalogQuery::new(&database);
+    // FTS 路径（≥3 字符）
+    let page = query
+        .search("Alpha", false, Some(playlist), playlists_search_sort(), None, 100)
+        .expect("playlist search");
+    assert_eq!(page.total_count, 2, "two members match, outside song excluded");
+    assert_eq!(page.items.len(), 2);
+    assert!(page.items.iter().any(|s| s.id() == alpha.id()));
+    assert!(page.items.iter().any(|s| s.id() == gamma.id()));
+    assert!(
+        page.items.iter().all(|s| s.id() != outside.id()),
+        "non-member must not be returned"
+    );
+
+    // 短查询 LIKE 路径（<3 字符）
+    let short = query
+        .search("Be", false, Some(playlist), playlists_search_sort(), None, 100)
+        .expect("playlist short search");
+    assert_eq!(short.total_count, 1);
+    assert_eq!(short.items[0].id(), beta.id());
+}
+
+/// 歌单内搜索空词恢复歌单完整成员；无命中返回空结果而非全库。
+#[test]
+fn playlist_search_empty_query_restores_members_and_no_hit_is_empty() {
+    let (_directory, database, root) = database();
+    let first = song(root, "a.flac", "One", "艺人甲");
+    let second = song(root, "b.flac", "Two", "艺人乙");
+    for entry in [&first, &second] {
+        SongRepository::upsert(&database, entry).expect("seed song");
+    }
+    let playlist = PlaylistId::new();
+    database.create(playlist, root, "歌单").expect("playlist");
+    for entry in [&first, &second] {
+        database
+            .add_member(playlist, entry.id(), u64::MAX)
+            .expect("member");
+    }
+
+    let query = CatalogQuery::new(&database);
+    let cleared = query
+        .search("", false, Some(playlist), playlists_search_sort(), None, 100)
+        .expect("cleared search");
+    assert_eq!(cleared.total_count, 2, "empty query restores full membership");
+
+    let none = query
+        .search(
+            "不存在xyz",
+            false,
+            Some(playlist),
+            playlists_search_sort(),
+            None,
+            100,
+        )
+        .expect("no-hit search");
+    assert_eq!(none.total_count, 0, "no membership hits");
+    assert!(none.items.is_empty());
+}
+
+/// 歌单内搜索与歌单成员视图同可见性：缺失（外部删除）成员可搜到，pending-delete 成员不出现。
+#[test]
+fn playlist_search_shares_member_visibility_not_available_only() {
+    let (_directory, database, root) = database();
+    let missing = song(root, "m.flac", "Missing 歌", "艺人甲");
+    let doomed = song(root, "p.flac", "Doomed 歌", "艺人乙");
+    let healthy = song(root, "h.flac", "Healthy 歌", "艺人丙");
+    for entry in [&missing, &doomed, &healthy] {
+        SongRepository::upsert(&database, entry).expect("seed song");
+    }
+    let playlist = PlaylistId::new();
+    database.create(playlist, root, "歌单").expect("playlist");
+    for entry in [&missing, &doomed, &healthy] {
+        database
+            .add_member(playlist, entry.id(), u64::MAX)
+            .expect("member");
+    }
+    SongRepository::set_availability(&database, missing.id(), SongAvailability::Missing)
+        .expect("mark missing");
+    SongRepository::set_availability(&database, doomed.id(), SongAvailability::PendingDelete)
+        .expect("mark pending delete");
+
+    let query = CatalogQuery::new(&database);
+    let page = query
+        .search("歌", false, Some(playlist), playlists_search_sort(), None, 100)
+        .expect("playlist visibility search");
+    let ids: Vec<_> = page.items.iter().map(Song::id).collect();
+    assert!(
+        ids.contains(&missing.id()),
+        "missing member stays searchable like the playlist view"
+    );
+    assert!(ids.contains(&healthy.id()));
+    assert!(
+        !ids.contains(&doomed.id()),
+        "pending-delete member is hidden like the playlist view"
+    );
+}
+
+/// 歌单内搜索键集分页：游标跨页完整迭代，总数为筛选后的完整数。
+#[test]
+fn playlist_search_pages_with_keyset_cursors() {
+    let (_directory, database, root) = database();
+    let playlist = PlaylistId::new();
+    database.create(playlist, root, "歌单").expect("playlist");
+    let mut matching = Vec::new();
+    for number in 0..4 {
+        let entry = song(root, &format!("m{number}.flac"), &format!("曲目 {number}"), "歌手");
+        SongRepository::upsert(&database, &entry).expect("seed song");
+        database
+            .add_member(playlist, entry.id(), u64::MAX)
+            .expect("member");
+        matching.push(entry.id());
+    }
+    for number in 0..3 {
+        let entry = song(root, &format!("n{number}.flac"), &format!("其他 {number}"), "歌手");
+        SongRepository::upsert(&database, &entry).expect("seed song");
+        database
+            .add_member(playlist, entry.id(), u64::MAX)
+            .expect("member");
+    }
+
+    let query = CatalogQuery::new(&database);
+    let mut seen = Vec::new();
+    let mut cursor = None;
+    loop {
+        let result = query
+            .search(
+                "曲目",
+                false,
+                Some(playlist),
+                playlists_search_sort(),
+                cursor.as_ref(),
+                2,
+            )
+            .expect("search page");
+        assert_eq!(result.total_count, 4, "count is the filtered total");
+        for entry in &result.items {
+            seen.push(entry.id());
+        }
+        if result.is_last {
+            break;
+        }
+        cursor = result.next_cursor;
+    }
+    assert_eq!(seen.len(), 4, "all matching members returned across pages");
+    let unique: std::collections::HashSet<_> = seen.iter().copied().collect();
+    assert_eq!(unique.len(), 4, "pages do not repeat a member");
+    for id in &matching {
+        assert!(seen.contains(id), "every matching member is found");
+    }
 }

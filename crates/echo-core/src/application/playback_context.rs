@@ -33,8 +33,12 @@ impl<'a> ResolvePlaybackContext<'a> {
     pub fn run(&self, request: &PlaybackContextRequest) -> Result<PlaybackContextResolved, Error> {
         let songs = match request.view {
             ViewRef::Recent => self.resolve_recent(request)?,
-            ViewRef::AllSongs | ViewRef::Favorites => self.resolve_library(request)?,
-            ViewRef::Playlist { id } => self.resolve_playlist(id)?,
+            ViewRef::Playlist { id } if request.query.trim().is_empty() => {
+                self.resolve_playlist(id)?
+            }
+            ViewRef::AllSongs | ViewRef::Favorites | ViewRef::Playlist { .. } => {
+                self.resolve_library(request)?
+            }
         };
         let conflict = match request.view {
             ViewRef::Playlist { .. } => "selected song is no longer a member of the playlist",
@@ -67,6 +71,7 @@ impl<'a> ResolvePlaybackContext<'a> {
                 ViewRef::AllSongs => catalog.search(
                     &request.query,
                     false,
+                    None,
                     request.sort,
                     cursor.as_ref(),
                     PAGE_SIZE,
@@ -77,11 +82,27 @@ impl<'a> ResolvePlaybackContext<'a> {
                 ViewRef::Favorites => catalog.search(
                     &request.query,
                     true,
+                    None,
                     request.sort,
                     cursor.as_ref(),
                     PAGE_SIZE,
                 )?,
-                ViewRef::Recent | ViewRef::Playlist { .. } => unreachable!("library view only"),
+                ViewRef::Playlist { .. } if request.query.trim().is_empty() => {
+                    // The full playlist is read eagerly by `resolve_playlist`
+                    // (newest-first to mirror the visible order); this search
+                    // path is only reached for playlist + query, matching the
+                    // spec "歌单内搜索" filtered playback queue.
+                    unreachable!("playlist without query goes through resolve_playlist")
+                }
+                ViewRef::Playlist { id } => catalog.search(
+                    &request.query,
+                    false,
+                    Some(id),
+                    request.sort,
+                    cursor.as_ref(),
+                    PAGE_SIZE,
+                )?,
+                ViewRef::Recent => unreachable!("library view only"),
             };
             ids.extend(page.items.into_iter().map(|song| song.id()));
             if page.is_last {
@@ -227,6 +248,7 @@ mod tests {
             &self,
             _query: &str,
             _in_favorites: bool,
+            _playlist: Option<PlaylistId>,
             _sort: SongSort,
             _cursor: Option<&OpaqueCursor>,
             _limit: usize,
@@ -315,5 +337,69 @@ mod tests {
         let err = PlaybackContextRequest::library_view("unknown", "", sort(), SongId::new())
             .expect_err("unknown view is invalid");
         assert!(matches!(err, Error::Validation { .. }));
+    }
+
+    #[test]
+    fn playlist_with_query_limits_playback_queue_to_filtered_members() {
+        let (database, root) = catalog();
+        let matched = song(root, "matched.flac", "Lovely Track");
+        let other = song(root, "other.flac", "Other");
+        let also_matched = song(root, "also.flac", "Lovely 二");
+        for entry in [&matched, &other, &also_matched] {
+            SongRepository::upsert(&database, entry).expect("seed song");
+        }
+        let playlist = PlaylistId::new();
+        PlaylistRepository::create(&database, playlist, root, "搜索歌单").expect("create playlist");
+        // 成员按追加顺序入库；用户可见顺序是 newest-first。
+        for (position, entry) in [&matched, &other, &also_matched].into_iter().enumerate() {
+            PlaylistRepository::add_member(&database, playlist, entry.id(), position as u64)
+                .expect("add member");
+        }
+
+        let resolved = ResolvePlaybackContext::new(&database)
+            .run(
+                &PlaybackContextRequest::new(
+                    ViewRef::Playlist { id: playlist },
+                    sort(),
+                    matched.id(),
+                )
+                .with_query("lovely"),
+            )
+            .expect("playlist search resolves");
+        let mut expect = vec![matched.id(), also_matched.id()];
+        expect.sort();
+        let mut actual = resolved.songs.clone();
+        actual.sort();
+        assert_eq!(actual, expect, "queue is exactly the filtered members");
+        assert!(
+            !resolved.songs.contains(&other.id()),
+            "unfiltered member is not in the playback queue"
+        );
+    }
+
+    #[test]
+    fn playlist_with_query_selection_outside_filter_conflicts() {
+        let (database, root) = catalog();
+        let matched = song(root, "matched.flac", "Lovely");
+        let other = song(root, "other.flac", "Other");
+        for entry in [&matched, &other] {
+            SongRepository::upsert(&database, entry).expect("seed song");
+        }
+        let playlist = PlaylistId::new();
+        PlaylistRepository::create(&database, playlist, root, "筛选队列").expect("create playlist");
+        PlaylistRepository::add_member(&database, playlist, matched.id(), 0).expect("add first");
+        PlaylistRepository::add_member(&database, playlist, other.id(), 1).expect("add second");
+
+        let err = ResolvePlaybackContext::new(&database)
+            .run(
+                &PlaybackContextRequest::new(
+                    ViewRef::Playlist { id: playlist },
+                    sort(),
+                    other.id(),
+                )
+                .with_query("lovely"),
+            )
+            .expect_err("selection outside the filtered queue conflicts");
+        assert!(matches!(err, Error::Conflict { .. }));
     }
 }

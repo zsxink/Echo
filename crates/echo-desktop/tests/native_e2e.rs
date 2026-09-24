@@ -273,7 +273,9 @@ fn first_launch_establishes_relationships(
     assert!(song_ids.len() >= 2, "songs listed after scan");
 
     // Search must find a seeded title.
-    let search = app.search("tone", false, SORT, None, 16).expect("search");
+    let search = app
+        .search("tone", false, None, SORT, None, 16)
+        .expect("search");
     assert!(!search.items.is_empty(), "search hits the seeded title");
 
     // Favorite the first song.

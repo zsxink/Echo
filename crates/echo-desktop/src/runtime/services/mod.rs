@@ -198,13 +198,24 @@ impl AppServices {
         &self,
         playlist: PlaylistId,
         selected: SongId,
+        query: String,
     ) -> Result<Vec<SongId>, Error> {
-        Ok(ResolvePlaybackContext::new(self.deps.catalog.as_ref())
-            .run(&PlaybackContextRequest::new(
+        let request = if query.trim().is_empty() {
+            PlaybackContextRequest::new(
                 ViewRef::Playlist { id: playlist },
                 SongSort::default(),
                 selected,
-            ))?
+            )
+        } else {
+            PlaybackContextRequest::new(
+                ViewRef::Playlist { id: playlist },
+                SongSort::default(),
+                selected,
+            )
+            .with_query(query)
+        };
+        Ok(ResolvePlaybackContext::new(self.deps.catalog.as_ref())
+            .run(&request)?
             .songs)
     }
 

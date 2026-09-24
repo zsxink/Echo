@@ -12,11 +12,12 @@
  */
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { LibraryWorkspace } from "./LibraryWorkspace";
 import { PlayerBar } from "../player";
 import { playerStore } from "../../player/playerStore";
+import { ToastView } from "../../app/ToastView";
 
 const mocks = (
   globalThis as unknown as {
@@ -139,5 +140,92 @@ describe("favorite sync across the song list and the player bar", () => {
     });
     await waitFor(() => expect(rowHeart()).toHaveAttribute("aria-pressed", "false"));
     expect(barHeart()).toHaveAttribute("aria-pressed", "false");
+  });
+});
+
+/**
+ * LIB-LOC 定位当前播放歌曲 (playlist-search-locate-import 4.3).
+ *
+ * The library workspace's `.library-tools` owns a locate control: a playing
+ * current song rolls to its row, an absent song tells the user (the list here
+ * is complete), and nothing playing voices the no-playback message.
+ */
+describe("LibraryWorkspace — 定位正在播放的歌曲 (LIB-LOC)", () => {
+  const EMPTY_SNAPSHOT = {
+    state: "stopped" as const,
+    position: null,
+    duration: null,
+    volume: 1,
+    muted: false,
+    currentQueueEntryId: null,
+    currentSongId: null,
+    queueLen: 0,
+    mode: "sequential" as const,
+    currentTitle: null,
+    currentArtist: null,
+    currentAlbum: null,
+    currentCoverKey: null,
+    currentLyrics: null,
+    currentCanImport: false,
+    queue: [],
+  };
+
+  function setCurrentSong(songId: string | null) {
+    if (songId === null) {
+      playerStore.publish(EMPTY_SNAPSHOT);
+      return;
+    }
+    playerStore.publish({ ...EMPTY_SNAPSHOT, currentSongId: songId });
+  }
+
+  afterEach(() => {
+    act(() => setCurrentSong(null));
+  });
+
+  /** The workspace + the shell's single toast surface (locate feedback
+   *  appears there, so it must be mounted to assert on). */
+  function renderWithToast() {
+    return render(
+      <>
+        <LibraryWorkspace view="all" title="全部歌曲" root="root-1" readOnly={false} />
+        <ToastView />
+      </>,
+    );
+  }
+
+  it("voices 当前没有正在播放的歌曲 when nothing is playing", async () => {
+    mocks.setInvoke("all_songs", { items: [SONG], isLast: true, nextCursor: null });
+    setCurrentSong(null);
+    renderWithToast();
+    await waitFor(() => screen.getByTestId("song-row-song-1"));
+
+    act(() => fireEvent.click(screen.getByTestId("locate-song")));
+
+    expect(await screen.findByTestId("toast")).toHaveTextContent("当前没有正在播放的歌曲");
+  });
+
+  it("rolls to the playing song without a toast", async () => {
+    mocks.setInvoke("all_songs", { items: [SONG], isLast: true, nextCursor: null });
+    setCurrentSong(SONG.id);
+    renderWithToast();
+    await waitFor(() => screen.getByTestId("song-row-song-1"));
+
+    act(() => fireEvent.click(screen.getByTestId("locate-song")));
+
+    // Found → settles without a toast; the numeric scroll is covered by
+    // SongList's own tests, so here jsdom's tiny viewport clamps to 0.
+    expect(screen.queryByTestId("toast")).toBeNull();
+    expect(screen.getByTestId("song-list")).toHaveProperty("scrollTop", 0);
+  });
+
+  it("voices 当前歌曲不在此列表中 for a playing song outside the list", async () => {
+    mocks.setInvoke("all_songs", { items: [SONG], isLast: true, nextCursor: null });
+    setCurrentSong("outside-song");
+    renderWithToast();
+    await waitFor(() => screen.getByTestId("song-row-song-1"));
+
+    act(() => fireEvent.click(screen.getByTestId("locate-song")));
+
+    expect(await screen.findByTestId("toast")).toHaveTextContent("当前歌曲不在此列表中");
   });
 });

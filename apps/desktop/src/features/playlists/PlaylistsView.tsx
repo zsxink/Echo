@@ -19,7 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { bridge } from "../../bridge";
 import { usePlayerSnapshot } from "../../player/playerStore";
-import type { SongView } from "../../ipc/ipc-types.generated";
+import type { PagedSongs, SongView } from "../../ipc/ipc-types.generated";
 import {
   BatchSongMenu,
   SelectionModeButton,
@@ -43,6 +43,8 @@ import {
   SongMenu,
   type MenuAnchor,
   type SongSort,
+  useLocateSong,
+  LocateButton,
 } from "../library";
 import { PlaylistNameDialog } from "./PlaylistNameDialog";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
@@ -82,6 +84,13 @@ export function PlaylistsView({
   const [members, setMembers] = useState<readonly SongView[]>([]);
   const [sort, setSort] = useStoredSongSort(`playlist:${playlistId}`);
   const [name, setName] = useState(title);
+  const [searchText, setSearchText] = useState("");
+  const [searching, setSearching] = useState(false);
+  // 歌单内搜索（playlist-search-locate-import）：非空搜索词由后端 `search`
+  // 命令在“当前歌单”范围内分页返回；空词时 `searched` 为 null，视图回退到
+  // 全量成员列表（保留追加顺序语义与批量操作）。
+  const [searched, setSearched] = useState<PagedSongs | null>(null);
+  const searchRequest = useRef(0);
   const [menuFor, setMenuFor] = useState<{ song: SongView; anchor: MenuAnchor } | null>(null);
   const [batchMenuFor, setBatchMenuFor] = useState<{
     readonly song: SongView;
@@ -95,6 +104,7 @@ export function PlaylistsView({
   const [loadError, setLoadError] = useState<string | null>(null);
   const request = useRef(0);
   const snapshot = usePlayerSnapshot();
+  const { locateSongId, onLocate, onLocateSettled } = useLocateSong();
   const selectionKey = `${playlistId}|${sort.field}|${sort.direction}`;
   const selection = useSongSelection(selectionKey);
   const clearSelection = selection.clear;
@@ -140,6 +150,47 @@ export function PlaylistsView({
 
   useEffect(loadMembers, [loadMembers]);
 
+  // 歌单内搜索：非空词走后端 `search`（限定当前歌单），空词清空搜索结果
+  // 让视图回退到全量成员。相同 playlistId + 排序下改变搜索词才重新请求。
+  const playlistsMemberSearch = useCallback(
+    (query: string) => {
+      const trimmed = query.trim();
+      const id = ++searchRequest.current;
+      if (trimmed.length === 0) {
+        setSearched(null);
+        setSearching(false);
+        return;
+      }
+      setSearching(true);
+      void bridge
+        .call("search", {
+          query: trimmed,
+          inFavorites: false,
+          // IPC key is `playlist` (Tauri's camelCase of Rust's `playlist` param).
+          playlist: playlistId,
+          sort: `${sort.field}:${sort.direction}`,
+          cursor: null,
+          limit: 200,
+        })
+        .then((value) => {
+          if (id !== searchRequest.current) return;
+          setSearched(value as PagedSongs);
+          setSearching(false);
+          clearSelection();
+        })
+        .catch(() => {
+          if (id !== searchRequest.current) return;
+          setSearching(false);
+          notify({ message: "搜索歌单失败，请重试", error: true });
+        });
+    },
+    [clearSelection, playlistId, sort],
+  );
+
+  useEffect(() => {
+    playlistsMemberSearch(searchText);
+  }, [playlistsMemberSearch, searchText]);
+
   const refreshAfterSongMutation = useCallback(() => {
     loadMembers();
     onLibraryChanged?.();
@@ -159,15 +210,17 @@ export function PlaylistsView({
 
   const onPlay = useCallback(
     (song: SongView) => {
-      // The desktop resolves the playlist's full member set itself; the UI
-      // submits only the selected song. A partial/paged list can never
-      // truncate the queue (spec: 视图播放重建队列数量).
+      // The desktop resolves the playlist context itself; the UI submits only
+      // the selected song plus the active in-playlist filter. A search-preset
+      // view therefore plays exactly the filtered queue, never the whole
+      // playlist (spec: 歌单搜索后播放队列与筛选后列表一致).
       bridge.fireAndForget("play_playlist_context", {
         playlist: playlistId,
         selectedSong: song.id,
+        query: searchText.trim() || null,
       });
     },
-    [playlistId],
+    [playlistId, searchText],
   );
 
   const onFavorite = useCallback(
@@ -210,12 +263,14 @@ export function PlaylistsView({
 
   const unavailableCount = members.filter((s) => s.availability !== "available").length;
   const sortedMembers = useMemo(() => sortPlaylistMembers(members, sort), [members, sort]);
+  // 搜索态展示后端筛选结果，空词回退到全量成员；批量/全选按当前显示集作用。
+  const displayedSongs = searched ? searched.items : sortedMembers;
   const selectedSongs = useMemo(
-    () => sortedMembers.filter((song) => selection.selectedIds.has(song.id)),
-    [selection.selectedIds, sortedMembers],
+    () => displayedSongs.filter((song) => selection.selectedIds.has(song.id)),
+    [displayedSongs, selection.selectedIds],
   );
   const allLoadedSelected =
-    sortedMembers.length > 0 && sortedMembers.every((song) => selection.selectedIds.has(song.id));
+    displayedSongs.length > 0 && displayedSongs.every((song) => selection.selectedIds.has(song.id));
 
   const notifyBatch = useCallback((result: BatchResult<SongView>) => {
     const details = formatBatchFailureDetails(result, (song) => song.title ?? "未命名歌曲");
@@ -374,7 +429,17 @@ export function PlaylistsView({
 
   return (
     <>
-      <Topbar title={name} />
+      <Topbar title={name}>
+        <label className="search" data-testid="playlist-search-field">
+          <Icon name="search" />
+          <input
+            type="search"
+            placeholder="搜索歌曲、艺人或专辑"
+            value={searchText}
+            onChange={(event) => setSearchText(event.target.value)}
+          />
+        </label>
+      </Topbar>
 
       <main className="content">
         <div className="library-view" data-testid="playlist-view">
@@ -383,7 +448,9 @@ export function PlaylistsView({
               <h1 id="view-title" data-testid="view-title">
                 {name}
               </h1>
-              <span className="library-total">{members.length} 首</span>
+              <span className="library-total">
+                {searched ? `${searched.totalCount} 首` : `${members.length} 首`}
+              </span>
             </div>
             <div className="library-tools">
               <SongSortControl
@@ -391,6 +458,7 @@ export function PlaylistsView({
                 onChange={setSort}
                 fields={SORT_FIELDS.filter(({ value }) => value !== "album")}
               />
+              <LocateButton onClick={onLocate} />
               <SelectionModeButton
                 active={selectionMode}
                 onToggle={() => {
@@ -420,7 +488,8 @@ export function PlaylistsView({
           </div>
 
           <p className="playlist-summary">
-            共 {members.length} 首{unavailableCount > 0 ? `（${unavailableCount} 首不可用）` : ""}
+            共 {searched ? searched.totalCount : members.length} 首
+            {!searched && unavailableCount > 0 ? `（${unavailableCount} 首不可用）` : ""}
           </p>
           {loadError ? (
             <button type="button" className="btn" onClick={loadMembers}>
@@ -429,26 +498,28 @@ export function PlaylistsView({
           ) : null}
 
           <SongList
-            songs={sortedMembers}
-            search=""
-            loading={false}
-            isLast
+            songs={displayedSongs}
+            search={searchText}
+            loading={searching}
+            isLast={searched ? searched.isLast : true}
             readOnly={readOnly}
             currentSongId={snapshot.currentSongId}
             playing={snapshot.state === "playing"}
+            locateSongId={locateSongId}
+            onLocateSettled={onLocateSettled}
             selectionMode={selectionMode}
             selectedIds={selection.selectedIds}
             allLoadedSelected={allLoadedSelected}
             onToggleSelection={(song) => selection.toggle(song.id)}
             onToggleSelectAll={() =>
-              selection.toggleAllLoaded(sortedMembers.map((song) => song.id))
+              selection.toggleAllLoaded(displayedSongs.map((song) => song.id))
             }
             onContextMenu={(song, anchor) => {
               if (selectionMode) openBatchMenu(song, anchor);
               else setMenuFor({ song, anchor });
             }}
             onLoadMore={() => {}}
-            onClearSearch={() => {}}
+            onClearSearch={() => setSearchText("")}
             onPlay={onPlay}
             onFavorite={onFavorite}
             onPlayNext={(song) =>

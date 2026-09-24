@@ -187,14 +187,19 @@ pub fn search(
     services: State<'_, AppServices>,
     query: String,
     in_favorites: bool,
+    playlist: Option<String>,
     sort: String,
     cursor: Option<String>,
     limit: usize,
 ) -> Result<PagedSongs, IpcErrorDto> {
     let sort = parse_sort(&sort)?;
     let cursor = parse_cursor(cursor)?;
+    let playlist = playlist
+        .filter(|value| !value.is_empty())
+        .map(|value| parse_id::<PlaylistId>(&value, "playlist"))
+        .transpose()?;
     services
-        .search(&query, in_favorites, sort, cursor.as_ref(), limit)
+        .search(&query, in_favorites, playlist, sort, cursor.as_ref(), limit)
         .map_err(IpcErrorDto::from)
 }
 
@@ -613,11 +618,12 @@ pub fn play_playlist_context(
     state: State<'_, PlayerHandle>,
     playlist: String,
     selected_song: String,
+    query: Option<String>,
 ) -> Result<(), IpcErrorDto> {
     let playlist = parse_id::<PlaylistId>(&playlist, "playlist")?;
     let selected = parse_id::<SongId>(&selected_song, "selectedSong")?;
     let songs = services
-        .resolve_playlist_playback_context(playlist, selected)
+        .resolve_playlist_playback_context(playlist, selected, query.unwrap_or_default())
         .map_err(IpcErrorDto::from)?;
     let selected_index = songs
         .iter()

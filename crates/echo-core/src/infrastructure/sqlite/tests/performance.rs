@@ -52,7 +52,7 @@ fn bench_50k_search_and_first_screen_p95_meet_prd_budgets() {
     for _ in 0..12 {
         let t = Instant::now();
         let page = query
-            .search("合成歌曲", false, added, None, 50)
+            .search("合成歌曲", false, None, added, None, 50)
             .expect("search");
         search_samples.push(t.elapsed().as_secs_f64() * 1000.0);
         assert!(!page.items.is_empty(), "search must hit the seeded token");

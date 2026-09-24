@@ -53,6 +53,16 @@ export interface SongListProps {
   readonly onImport?: () => void;
   readonly onLoadMore: () => void;
   readonly onClearSearch: () => void;
+  /** A locate intent (task 4.2): scroll the row for this SongId to the top of
+   *  the visible area. The caller passes the playing SongId on click and stops
+   *  passing it when the intent is done; `null`/undefined means no intent. The
+   *  effect re-runs on `songs`/`isLast`/`loading` so a target still in a
+   *  not-yet-loaded page keeps pulling pages until it is found. */
+  readonly locateSongId?: string | null;
+  /** Called when a locate intent settles: the target was found and scrolled
+   *  (`"found"`), or the loaded list turned out to be complete without it
+   *  (`"absent"`). The caller clears its intent here and voices the miss. */
+  readonly onLocateSettled?: (result: "found" | "absent") => void;
   readonly onPlay: (song: SongView) => void;
   readonly onFavorite: (song: SongView, favorite: boolean) => void;
   readonly onPlayNext: (song: SongView) => void;
@@ -74,6 +84,9 @@ export function SongList(props: SongListProps) {
     allLoadedSelected = false,
     error,
     onRetry,
+    locateSongId = null,
+    onLoadMore,
+    onLocateSettled,
   } = props;
   const [scrollTop, setScrollTop] = useState(0);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -105,6 +118,37 @@ export function SongList(props: SongListProps) {
   // what keeps this cheap: a 50k-song library asks about the rows on screen,
   // not the rows that exist.
   const coverKeys = useCoverKeys(visible.map((song) => song.id));
+
+  // Locate intent (task 4.2). The table is windowed, so the target row may not
+  // be rendered — scrolling is numeric (`index * ROW_HEIGHT`), never a DOM
+  // lookup. A found row is aligned to the viewport top, clamped to the last
+  // reachable position near the list end. A target not in the loaded rows pulls
+  // the next page (when one exists and none is in flight); the `songs`/`loading`
+  // dependencies re-run this once the page lands, so an unloaded target is
+  // reached asynchronously. A last-page miss settles as `"absent"` so the caller
+  // can voice it and clear the intent.
+  useEffect(() => {
+    if (!locateSongId) return;
+    const viewport = viewportRef.current;
+    const index = songs.findIndex((song) => song.id === locateSongId);
+    if (index >= 0 && viewport) {
+      const top = index * ROW_HEIGHT;
+      const maxTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+      const targetTop = Math.min(top, maxTop);
+      setScrollTop(targetTop);
+      viewport.scrollTop = targetTop;
+      onLocateSettled?.("found");
+      return;
+    }
+    if (!viewport) return;
+    if (!isLast && !loading) {
+      onLoadMore();
+      return;
+    }
+    // Otherwise the list is complete (or a load is in flight); a complete list
+    // without the target is the miss — the caller voices it and clears.
+    if (isLast && !loading) onLocateSettled?.("absent");
+  }, [locateSongId, songs, isLast, loading, onLoadMore, onLocateSettled]);
 
   if (loading && songs.length === 0) {
     return (
@@ -139,7 +183,7 @@ export function SongList(props: SongListProps) {
         setScrollTop(el.scrollTop);
         // Near the bottom → request the next page (task 10.5 keyset).
         if (el.scrollTop + el.clientHeight >= el.scrollHeight - ROW_HEIGHT * 4) {
-          if (!isLast && !loading) props.onLoadMore();
+          if (!isLast && !loading) onLoadMore();
         }
       }}
     >

@@ -11,7 +11,7 @@ impl CatalogQueryRepository for MemoryDatabase {
         cursor: Option<&OpaqueCursor>,
         limit: usize,
     ) -> Result<Paged<Song>, Error> {
-        self.mem_catalog(false, None, sort, cursor, limit)
+        self.mem_catalog(false, None, None, sort, cursor, limit)
     }
 
     fn favorites(
@@ -20,7 +20,7 @@ impl CatalogQueryRepository for MemoryDatabase {
         cursor: Option<&OpaqueCursor>,
         limit: usize,
     ) -> Result<Paged<Song>, Error> {
-        self.mem_catalog(true, None, sort, cursor, limit)
+        self.mem_catalog(true, None, None, sort, cursor, limit)
     }
 
     fn recent_100(&self) -> Result<Vec<Song>, Error> {
@@ -108,11 +108,12 @@ impl CatalogQueryRepository for MemoryDatabase {
         &self,
         query: &str,
         in_favorites: bool,
+        playlist: Option<PlaylistId>,
         sort: SongSort,
         cursor: Option<&OpaqueCursor>,
         limit: usize,
     ) -> Result<Paged<Song>, Error> {
-        self.mem_catalog(in_favorites, Some(query), sort, cursor, limit)
+        self.mem_catalog(in_favorites, playlist, Some(query), sort, cursor, limit)
     }
 }
 
@@ -120,6 +121,7 @@ impl MemoryDatabase {
     fn mem_catalog(
         &self,
         favorites: bool,
+        playlist: Option<PlaylistId>,
         query: Option<&str>,
         sort: SongSort,
         _cursor: Option<&OpaqueCursor>,
@@ -132,17 +134,36 @@ impl MemoryDatabase {
                 "must be 1 through 500",
             ));
         }
+        if favorites && playlist.is_some() {
+            return Err(Error::InvariantViolation {
+                why: "search cannot restrict to favorites and a playlist at once".to_owned(),
+            });
+        }
         let root = self.active_root()?.map(|record| record.id());
         let normalized_query = query
             .filter(|value| !value.is_empty())
             .map(crate::domain::text::normalized_key);
-        let mut songs: Vec<Song> = self
-            .lock()
+        let store = self.lock();
+        // A song belongs to the playlist when a member row references it; the
+        // real store keeps position, but matching only needs membership here.
+        let in_playlist = playlist.map(|id| {
+            store
+                .members
+                .iter()
+                .filter(|((playlist_id, _), _)| *playlist_id == id)
+                .map(|((_, song), _)| *song)
+                .collect::<std::collections::HashSet<_>>()
+        });
+        let mut songs: Vec<Song> = store
             .songs
             .values()
             .filter(|song| {
+                let in_membership = in_playlist
+                    .as_ref()
+                    .map_or(true, |members| members.contains(&song.id()));
                 root.is_some_and(|r| song.root() == r)
-                    && song.availability() == SongAvailability::Available
+                    && in_membership
+                    && (playlist.is_some() || song.availability() == SongAvailability::Available)
                     && (!favorites || song.favorite())
                     && normalized_query.as_deref().map_or(true, |needle| {
                         let haystacks = [

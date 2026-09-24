@@ -320,3 +320,103 @@ describe("Library directory views", () => {
     await screen.findByRole("button", { name: "打开专辑 First album" });
   });
 });
+
+/**
+ * SHELL-IMP 品牌区导入入口 (playlist-search-locate-import 5.2).
+ *
+ * The import entry moved from `LibraryWorkspace` up to the shell's brand area,
+ * so it must stay rendered under 歌单/歌手/专辑 views — never vanish with the
+ * routed view — and stay disabled/hidden for a read-only library.
+ */
+describe("品牌区导入入口所有视图可用 (SHELL-IMP)", () => {
+  const mocks = (
+    globalThis as unknown as {
+      __echoTest: { setInvoke: (command: string, value: unknown) => void };
+    }
+  ).__echoTest;
+
+  const SONG = {
+    id: "saved-song",
+    title: "已有歌曲",
+    artist: "Echo",
+    album: "Album",
+    durationS: 120,
+    favorite: false,
+    playCount: 0,
+    availability: "available" as const,
+    relativePath: "song.flac",
+  };
+  const PLAYLIST = { id: "pl-1", name: "通勤", memberCount: 1 };
+  const ARTIST = {
+    kind: "artist",
+    artistKey: "alice",
+    artist: "Alice",
+    name: "Alice",
+    songCount: 1,
+    coverKey: null,
+    hasCustomCover: false,
+  };
+
+  async function activateLibrary(readOnly = false) {
+    await act(async () => {
+      render(<App />);
+    });
+    mocks.setInvoke("choose_library_root", {
+      configured: true,
+      readOnly,
+      activeRoot: "root-1",
+    });
+    mocks.setInvoke("library_status", {
+      configured: true,
+      readOnly,
+      unavailable: false,
+      scanning: false,
+      activeRoot: "root-1",
+    });
+    mocks.setInvoke("all_songs", { items: [SONG], isLast: true, nextCursor: null });
+    mocks.setInvoke("playlists", [PLAYLIST]);
+    mocks.setInvoke("library_counts", {
+      all: 1,
+      recent: 1,
+      favorites: 0,
+      artists: 1,
+      albums: 0,
+    });
+    mocks.setInvoke("catalog_collections", [ARTIST]);
+    mocks.setInvoke("catalog_collection_songs", [SONG]);
+    mocks.setInvoke("playlist_members", [SONG]);
+    fireEvent.click(screen.getByRole("button", { name: "选择资料库目录" }));
+    await screen.findByTestId("workspace");
+  }
+
+  it("keeps the import button in the brand area under the playlist view", async () => {
+    await activateLibrary();
+    await screen.findByText("已有歌曲");
+    expect(screen.getByTestId("import-button")).toBeInTheDocument();
+
+    // The sidebar's playlist items carry `role="listitem"` (they live in a
+    // `role="list"`); they are not queryable by button role, so click through
+    // the name text's parent button.
+    const playlistName = await screen.findByText("通勤");
+    fireEvent.click(playlistName.closest("button")!);
+    await screen.findByTestId("playlist-view");
+    expect(screen.getByTestId("import-button")).toBeInTheDocument();
+  });
+
+  it("keeps the import button in the brand area under the artist directory", async () => {
+    await activateLibrary();
+    await screen.findByText("已有歌曲");
+    expect(screen.getByTestId("import-button")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^歌手/ }));
+    await screen.findByRole("button", { name: "打开歌手 Alice" });
+    expect(screen.getByTestId("import-button")).toBeInTheDocument();
+  });
+
+  it("hides the import button for a read-only library", async () => {
+    await activateLibrary(true);
+    await screen.findByText("已有歌曲");
+    expect(screen.getByTestId("settings-button")).toBeInTheDocument();
+    expect(screen.queryByTestId("import-button")).not.toBeInTheDocument();
+  });
+});

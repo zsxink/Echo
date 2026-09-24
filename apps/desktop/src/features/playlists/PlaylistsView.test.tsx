@@ -10,11 +10,13 @@
  * duplicates are enforced by the core (tasks 6.6/6.7).
  */
 
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor, within, act } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PlaylistsView } from "./PlaylistsView";
+import type { SongView } from "../../ipc/ipc-types.generated";
 import { ToastView } from "../../app/ToastView";
+import { playerStore } from "../../player/playerStore";
 
 // `assetUrl` and `fireAndForget` are part of the surface the row menu and the
 // view import from the bridge; stub the whole module so neither is `undefined`
@@ -448,5 +450,203 @@ describe("PlaylistsView — 歌单异步操作反馈失败路径 (PM-R06)", () =
     expect(screen.getByTestId("toast")).not.toHaveTextContent(/已将/);
     // The request really was attempted: this is the failure path, not a no-op.
     expect(call).toHaveBeenCalledWith("queue_command", { command: "enqueue", songId: "song-1" });
+  });
+});
+
+/**
+ * PLA-LOC 定位当前播放歌曲 (playlist-search-locate-import 4.3).
+ *
+ * The playlist view's `.library-tools` owns a locate control. It reads the
+ * player snapshot's current SongId: a miss (nothing playing) and an absent
+ * target (not a member of this playlist — the list is complete locally) both
+ * voice a Toast and leave the list untouched; a member that is playing rolls
+ * the list to it (SongList's numeric alignment is covered separately).
+ */
+describe("PlaylistsView — 定位正在播放的歌曲 (PLA-LOC)", () => {
+  const MEMBERS = [
+    { id: "song-1", title: "晴天", favorite: false, playCount: 0, availability: "available" },
+    { id: "song-2", title: "夜曲", favorite: false, playCount: 0, availability: "available" },
+  ];
+
+  /** A minimal player snapshot for the given current song (or none). */
+  function setCurrentSong(songId: string | null) {
+    playerStore.publish({
+      state: songId ? "playing" : "stopped",
+      position: null,
+      duration: null,
+      volume: 1,
+      muted: false,
+      currentQueueEntryId: songId ? "entry-1" : null,
+      currentSongId: songId,
+      queueLen: songId ? 1 : 0,
+      mode: "sequential",
+      currentTitle: null,
+      currentArtist: null,
+      currentAlbum: null,
+      currentCoverKey: null,
+      currentLyrics: null,
+      currentCanImport: false,
+      queue: [],
+    });
+  }
+
+  afterEach(() => {
+    act(() => setCurrentSong(null));
+  });
+
+  it("voices 当前没有正在播放的歌曲 and stays put when nothing is playing", async () => {
+    mockBridge({ playlist_members: MEMBERS });
+    setCurrentSong(null);
+    renderView({}, { withToast: true });
+    await screen.findByTestId("song-row-song-1");
+
+    fireEvent.click(screen.getByTestId("locate-song"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("toast")).toHaveTextContent("当前没有正在播放的歌曲"),
+    );
+    // No row scrolled (scrollTop stays 0; the toast is the only outcome).
+    expect(screen.getByTestId("song-list")).toHaveProperty("scrollTop", 0);
+  });
+
+  it("rolls to a playing member of the playlist without a toast", async () => {
+    mockBridge({ playlist_members: MEMBERS });
+    setCurrentSong("song-1");
+    renderView({}, { withToast: true });
+    await screen.findByTestId("song-row-song-1");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("locate-song"));
+    });
+
+    // The target is a member and the local list is complete → the intent
+    // settles as found: no toast is raised and the list scrolls (naturally to
+    // 0 here, clamped by the tiny jsdom viewport).
+    expect(screen.queryByTestId("toast")).toBeNull();
+    expect(screen.getByTestId("song-list")).toHaveProperty("scrollTop", 0);
+  });
+
+  it("voices 当前歌曲不在此列表中 for a playing song outside the playlist", async () => {
+    mockBridge({ playlist_members: MEMBERS });
+    setCurrentSong("outside-song");
+    renderView({}, { withToast: true });
+    await screen.findByTestId("song-row-song-1");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("locate-song"));
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("toast")).toHaveTextContent("当前歌曲不在此列表中"),
+    );
+    expect(screen.getByTestId("song-list")).toHaveProperty("scrollTop", 0);
+  });
+});
+
+/**
+ * PLA-SRCH 歌单内搜索 (playlist-search-locate-import 3.2).
+ *
+ * The playlist's topbar search scopes to the current playlist: a non-empty term
+ * goes through the `search` command with `playlist` (the argument Tauri maps
+ * the Rust `playlist: Option<String>` parameter to), an empty term restores
+ * the full member list, and a term with no match renders the playlist's search
+ * empty state with the clear action.
+ */
+describe("PlaylistsView — 歌单内搜索 (PLA-SRCH)", () => {
+  const MEMBERS: SongView[] = [
+    {
+      id: "song-1",
+      title: "晴天",
+      artist: "周杰伦",
+      album: "叶惠美",
+      durationS: 239,
+      favorite: false,
+      playCount: 0,
+      availability: "available",
+      relativePath: "sunny.flac",
+    },
+    {
+      id: "song-2",
+      title: "夜曲",
+      artist: "周杰伦",
+      album: "十一月的萧邦",
+      durationS: 301,
+      favorite: false,
+      playCount: 0,
+      availability: "available",
+      relativePath: "nocturne.flac",
+    },
+  ];
+
+  it("searches within the current playlist through the scoped search command", async () => {
+    mockBridge({
+      playlist_members: MEMBERS,
+      search: {
+        items: [MEMBERS[0]],
+        totalCount: 1,
+        isLast: true,
+        nextCursor: null,
+      },
+    });
+    renderView();
+    await screen.findByTestId("song-row-song-1");
+
+    const searchInput = within(screen.getByTestId("playlist-search-field")).getByRole("searchbox");
+    fireEvent.change(searchInput, { target: { value: "晴天" } });
+
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith(
+        "search",
+        expect.objectContaining({ playlist: "pl-1", query: "晴天" }),
+      ),
+    );
+    // Only the matching member (太阳) renders.
+    expect(screen.getByTestId("song-row-song-1")).toBeInTheDocument();
+    expect(screen.queryByTestId("song-row-song-2")).not.toBeInTheDocument();
+    // The total reflects the search result, not the full member list.
+    expect(screen.getByText("1 首")).toBeInTheDocument();
+  });
+
+  it("restores the full member list when the search is cleared", async () => {
+    mockBridge({
+      playlist_members: MEMBERS,
+      search: {
+        items: [MEMBERS[0]],
+        totalCount: 1,
+        isLast: true,
+        nextCursor: null,
+      },
+    });
+    renderView();
+    await screen.findByTestId("song-row-song-1");
+
+    const searchInput = within(screen.getByTestId("playlist-search-field")).getByRole("searchbox");
+    fireEvent.change(searchInput, { target: { value: "晴天" } });
+    await waitFor(() => expect(screen.queryByTestId("song-row-song-2")).not.toBeInTheDocument());
+
+    fireEvent.change(searchInput, { target: { value: "" } });
+
+    await waitFor(() => screen.findByTestId("song-row-song-2"));
+    expect(screen.getByTestId("song-row-song-1")).toBeInTheDocument();
+    expect(screen.getByText("2 首")).toBeInTheDocument();
+  });
+
+  it("shows the playlist search empty state with a clear action on no hit", async () => {
+    mockBridge({
+      playlist_members: MEMBERS,
+      search: { items: [], totalCount: 0, isLast: true, nextCursor: null },
+    });
+    renderView();
+    await screen.findByTestId("song-row-song-1");
+
+    const searchInput = within(screen.getByTestId("playlist-search-field")).getByRole("searchbox");
+    fireEvent.change(searchInput, { target: { value: "不存在" } });
+
+    await waitFor(() => expect(screen.getByTestId("list-empty")).toBeInTheDocument());
+    expect(screen.getByText("没有找到匹配的音乐")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("清除搜索"));
+    await waitFor(() => screen.findByTestId("song-row-song-1"));
+    expect(screen.getByTestId("song-row-song-2")).toBeInTheDocument();
   });
 });

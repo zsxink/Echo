@@ -1,7 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { CollectionDirectory } from "./CollectionDirectory";
+import { playerStore } from "../../player/playerStore";
+import { ToastView } from "../../app/ToastView";
 
 function mockCommand(command: string, value: unknown) {
   // The shared jsdom setup exposes a small Tauri-command test hook.
@@ -255,5 +257,126 @@ describe("CollectionDirectory", () => {
     await screen.findByText("加载目录失败，请重试");
     expect(screen.queryByRole("button", { name: /打开.*Alice/ })).not.toBeInTheDocument();
     expect(screen.getByText("没有找到匹配的内容")).toBeInTheDocument();
+  });
+});
+
+/**
+ * DIR-LOC 聚合详情页定位 (playlist-search-locate-import 4.3).
+ *
+ * The locate control lives in the opened artist/album detail's `.library-tools`
+ * only (the card grid has no song list to scroll). Playing a song of that
+ * collection rolls to it; a song outside the collection (here: the list is the
+ * whole collection at once) is voiced without moving.
+ */
+describe("CollectionDirectory — 聚合详情定位 (DIR-LOC)", () => {
+  const album = {
+    kind: "album" as const,
+    artistKey: "alice",
+    albumKey: "first",
+    artist: "Alice",
+    name: "First album",
+    songCount: 1,
+    coverKey: null,
+    hasCustomCover: false,
+  };
+  const SONG = {
+    id: "song-1",
+    title: "First song",
+    artist: "Alice",
+    album: "First album",
+    durationS: 211,
+    favorite: false,
+    playCount: 0,
+    availability: "available" as const,
+    relativePath: "first.flac",
+  };
+
+  const EMPTY_SNAPSHOT = {
+    state: "stopped" as const,
+    position: null,
+    duration: null,
+    volume: 1,
+    muted: false,
+    currentQueueEntryId: null,
+    currentSongId: null,
+    queueLen: 0,
+    mode: "sequential" as const,
+    currentTitle: null,
+    currentArtist: null,
+    currentAlbum: null,
+    currentCoverKey: null,
+    currentLyrics: null,
+    currentCanImport: false,
+    queue: [],
+  };
+
+  function setCurrentSong(songId: string | null) {
+    playerStore.publish(songId ? { ...EMPTY_SNAPSHOT, currentSongId: songId } : EMPTY_SNAPSHOT);
+  }
+
+  afterEach(() => {
+    act(() => playerStore.publish(EMPTY_SNAPSHOT));
+  });
+
+  async function openDetail(withToast = false) {
+    mockCommand("catalog_collections", [album]);
+    mockCommand("catalog_collection_songs", [SONG]);
+    render(
+      withToast ? (
+        <>
+          <CollectionDirectory kind="album" root="root-1" />
+          <ToastView />
+        </>
+      ) : (
+        <CollectionDirectory kind="album" root="root-1" />
+      ),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /打开专辑/ }));
+    await screen.findByText("First song");
+  }
+
+  it("offers the locate control only in the opened collection detail", async () => {
+    mockCommand("catalog_collections", [album]);
+    mockCommand("catalog_collection_songs", [SONG]);
+    render(<CollectionDirectory kind="album" root="root-1" />);
+    // The card grid has no song list — no locate control yet.
+    expect(screen.queryByTestId("locate-song")).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: /打开专辑/ }));
+    await screen.findByText("First song");
+    expect(screen.getByTestId("locate-song")).toBeInTheDocument();
+  });
+
+  it("rolls to a playing song of the collection without a toast", async () => {
+    setCurrentSong(SONG.id);
+    await openDetail();
+
+    fireEvent.click(screen.getByTestId("locate-song"));
+    // Found in the whole-collection list → settled, no toast; jsdom's tiny
+    // viewport clamps the numeric scroll to 0.
+    expect(screen.queryByTestId("toast")).toBeNull();
+    expect(screen.getByTestId("song-list")).toHaveProperty("scrollTop", 0);
+  });
+
+  it("voices 当前没有正在播放的歌曲 when nothing is playing", async () => {
+    setCurrentSong(null);
+    await openDetail(true);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("locate-song"));
+    });
+    expect(await screen.findByTestId("toast")).toHaveTextContent("当前没有正在播放的歌曲");
+    expect(screen.getByTestId("song-list")).toHaveProperty("scrollTop", 0);
+  });
+
+  it("voices 当前歌曲不在此列表中 for a playing song outside the collection", async () => {
+    setCurrentSong("outside-song");
+    await openDetail(true);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("locate-song"));
+    });
+    expect(await screen.findByTestId("toast")).toHaveTextContent("当前歌曲不在此列表中");
+    expect(screen.getByTestId("song-list")).toHaveProperty("scrollTop", 0);
   });
 });

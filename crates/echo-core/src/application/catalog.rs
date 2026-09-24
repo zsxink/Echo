@@ -62,7 +62,9 @@ impl<'a> CatalogQuery<'a> {
 
     /// 资料库搜索: case-insensitive full-query contains overlay over title,
     /// artist and album of the active root. `in_favorites` narrows to the
-    /// favorites view; an empty `query` restores the full underlying view.
+    /// favorites view; `playlist` narrows to one playlist's members (mutually
+    /// exclusive with `in_favorites`); an empty `query` restores the full
+    /// underlying view.
     ///
     /// # Errors
     ///
@@ -72,11 +74,13 @@ impl<'a> CatalogQuery<'a> {
         &self,
         query: &str,
         in_favorites: bool,
+        playlist: Option<PlaylistId>,
         sort: SongSort,
         cursor: Option<&OpaqueCursor>,
         limit: usize,
     ) -> Result<Paged<Song>, Error> {
-        self.repo.search(query, in_favorites, sort, cursor, limit)
+        self.repo
+            .search(query, in_favorites, playlist, sort, cursor, limit)
     }
 
     /// 最近添加: the active root's most recently added available songs, at

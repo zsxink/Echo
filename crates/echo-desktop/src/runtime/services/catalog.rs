@@ -224,6 +224,7 @@ impl super::AppServices {
         &self,
         query: &str,
         in_favorites: bool,
+        playlist: Option<PlaylistId>,
         sort: SongSort,
         cursor: Option<&OpaqueCursor>,
         limit: usize,
@@ -231,6 +232,7 @@ impl super::AppServices {
         let page = CatalogQuery::new(self.deps.catalog.as_ref()).search(
             query,
             in_favorites,
+            playlist,
             sort,
             cursor,
             limit,

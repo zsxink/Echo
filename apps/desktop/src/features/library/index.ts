@@ -16,6 +16,8 @@ export { SORT_FIELDS } from "./types";
 export { useStoredSongSort } from "./useStoredSongSort";
 export { useSongSelection } from "./useSongSelection";
 export type { SongSelection } from "./useSongSelection";
+export { useLocateSong, LocateButton } from "./useLocateSong";
+export type { LocateSongController } from "./useLocateSong";
 export {
   runAddToPlaylistsBatch,
   runDeleteBatch,
