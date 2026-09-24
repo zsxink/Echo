@@ -173,6 +173,8 @@ fn derive_quality(format: Option<AudioFormat>, params: AudioParameters) -> Optio
 #[serde(rename_all = "camelCase")]
 pub struct PagedSongs {
     pub items: Vec<SongView>,
+    /// Total rows matching the query before pagination is applied.
+    pub total_count: usize,
     /// Opaque next-page cursor, if not the last page.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
@@ -182,6 +184,7 @@ pub struct PagedSongs {
 impl From<Paged<Song>> for PagedSongs {
     fn from(page: Paged<Song>) -> Self {
         Self {
+            total_count: page.total_count,
             items: page.items.iter().map(SongView::from).collect(),
             next_cursor: page.next_cursor.map(|c| c.to_string()),
             is_last: page.is_last,

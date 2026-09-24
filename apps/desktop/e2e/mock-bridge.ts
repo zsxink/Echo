@@ -289,6 +289,7 @@ function coverAssetUrl(key: string): string {
 function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
   const paged = (songs: MockSong[]) => ({
     items: songs.slice(0, 100).map(toView),
+    totalCount: songs.length,
     nextCursor: undefined,
     isLast: true,
   });

@@ -46,9 +46,14 @@ pub(crate) fn query_active(
     cursor: Option<&OpaqueCursor>,
     limit: usize,
 ) -> Result<Paged<Song>, Error> {
-    let root = active_root_id(connection)?
+    // These reads must share one WAL snapshot. A writer may commit on the
+    // separate writer connection between statements; without this transaction
+    // the total, cursor revision, and page contents could describe different
+    // catalog states.
+    let transaction = connection.unchecked_transaction().map_err(storage)?;
+    let root = active_root_id(&transaction)?
         .ok_or_else(|| Error::unavailable("library", "no active root"))?;
-    let revision: u64 = connection
+    let revision: u64 = transaction
         .query_row(
             "SELECT updated_at FROM library_roots WHERE uuid = ?1",
             params![root.to_string()],
@@ -87,9 +92,21 @@ pub(crate) fn query_active(
             values.push(Value::Text(escape_match(query)));
         }
     }
+    // Count the full result set from the view and search predicates. Cursor
+    // predicates are deliberately added only afterwards so pagination never
+    // changes the displayed total.
+    let count_sql = format!(
+        "SELECT COUNT(*) FROM songs s WHERE {}",
+        clauses.join(" AND ")
+    );
+    let total_count: i64 = transaction
+        .query_row(&count_sql, params_from_iter(values.clone()), |row| {
+            row.get(0)
+        })
+        .map_err(storage)?;
     if let Some(cursor) = cursor {
         let id = decode_cursor(cursor.keyset())?;
-        let keys = cursor_keys(connection, id, sort, favorites)?;
+        let keys = cursor_keys(&transaction, id, sort, favorites)?;
         let (predicate, cursor_values) = keyset_predicate(sort, keys, favorites)?;
         clauses.push(predicate);
         values.extend(cursor_values);
@@ -102,12 +119,13 @@ pub(crate) fn query_active(
         order
     );
     values.push(Value::Integer(i64::try_from(limit + 1).unwrap_or(501)));
-    let mut statement = connection.prepare(&sql).map_err(storage)?;
+    let mut statement = transaction.prepare(&sql).map_err(storage)?;
     let mut songs = statement
         .query_map(params_from_iter(values), song_from_row)
         .map_err(storage)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(storage)?;
+    drop(statement);
     let is_last = songs.len() <= limit;
     if !is_last {
         songs.pop();
@@ -115,11 +133,10 @@ pub(crate) fn query_active(
     let next_cursor = songs
         .last()
         .map(|song| OpaqueCursor::encode(Revision::from_u64(revision), encode_cursor(song.id())));
-    Ok(Paged::new(
-        songs,
-        if is_last { None } else { next_cursor },
-        is_last,
-    ))
+    let page = Paged::new(songs, if is_last { None } else { next_cursor }, is_last)
+        .with_total_count(usize::try_from(total_count).unwrap_or(0));
+    transaction.commit().map_err(storage)?;
+    Ok(page)
 }
 
 /// Per-view song totals for the navigation sidebar.

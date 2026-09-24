@@ -383,7 +383,7 @@ export function LibraryWorkspace({
               <h1 id="view-title" data-testid="view-title">
                 {title}
               </h1>
-              <span className="library-total">{page.songs.length} 首</span>
+              <span className="library-total">{page.totalCount} 首</span>
             </div>
             <div className="library-tools">
               {showSort ? <SongSortControl sort={sort} onChange={setSort} /> : null}

@@ -86,6 +86,7 @@ pub fn generated_typescript() -> String {
 
     out.push_str("export interface PagedSongs {\n");
     out.push_str("  readonly items: readonly SongView[];\n");
+    out.push_str("  readonly totalCount: number;\n");
     out.push_str("  readonly nextCursor?: string;\n");
     out.push_str("  readonly isLast: boolean;\n");
     out.push_str("}\n\n");
