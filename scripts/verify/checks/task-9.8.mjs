@@ -105,7 +105,10 @@ if (r.status !== 0) {
     // WebView2 probe is report-only; a missing runtime is not a gate failure.
     process.stdout.write("  ok: WebView2 report-only probe printed (missing runtime is not a failure)\n");
   } else {
-    fail(`libmpv_platform probe failed (exit ${r.status})\n${out}`);
+    fail(
+      `libmpv_platform probe failed (exit ${r.status}, err ${r.error})\n${out}` +
+        (out.trim() ? "" : "\n  (probe produced no stdout/stderr — likely a hard win32 process abort)"),
+    );
   }
 }
 if (!out.includes(`${probeTest} ... ok`)) {

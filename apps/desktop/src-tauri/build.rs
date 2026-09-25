@@ -84,7 +84,7 @@ fn stage_symlink(cached: &std::path::Path, dest: &std::path::Path) {
 }
 
 #[cfg(not(unix))]
-fn stage_symlink(_cached: &std::path::Path, _dest: &std::path::Path) {}
+const fn stage_symlink(_cached: &std::path::Path, _dest: &std::path::Path) {}
 
 fn is_vendored_library(name: &str, target_os: &str) -> bool {
     // A vendored library is picked by the OS-appropriate extension. `.dll` /

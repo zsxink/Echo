@@ -71,7 +71,12 @@ mod gate {
     /// Resolve the platform's vendored manifest rooted at `dir` (searching
     /// `apps/desktop/src-tauri/vendor/libmpv/<os>/manifest.json`), or `None`
     /// on platforms the Windows/Linux Gate does not cover (macOS → task 8.12).
+    // The three platform implementations share one signature so the caller is
+    // uniform; the Windows/Linux arms always produce a path. The `Option` is
+    // API shape (macOS yields `None`), so the always-`Some` arms carry an
+    // allow instead of being re-shaped per platform.
     #[cfg(target_os = "windows")]
+    #[allow(clippy::unnecessary_wraps)]
     fn platform_manifest_path(dir: &std::path::Path) -> Option<std::path::PathBuf> {
         Some(
             dir.join("apps/desktop/src-tauri/vendor/libmpv/windows")
@@ -79,6 +84,7 @@ mod gate {
         )
     }
     #[cfg(target_os = "linux")]
+    #[allow(clippy::unnecessary_wraps)]
     fn platform_manifest_path(dir: &std::path::Path) -> Option<std::path::PathBuf> {
         Some(
             dir.join("apps/desktop/src-tauri/vendor/libmpv/linux")
@@ -90,7 +96,7 @@ mod gate {
         None
     }
 
-    /// Load + create + api_version + one command + terminate.
+    /// Load + create + `api_version` + one command + terminate.
     pub fn probe(path: &Path) {
         // SAFETY: trusted, pinned vendored artifact; single-threaded handle use.
         let sys = unsafe { ffi::MpvSys::load(path) }
@@ -103,7 +109,9 @@ mod gate {
         // major.
         let expected = manifest_abi_major();
         let version = handle.api_version(&sys);
-        let major = (version >> 16) as u32;
+        // `major` fits in 16 bits by construction (`(2 << 16) | minor`), so the
+        // narrow is total — assert rather than truncate.
+        let major = u32::try_from(version >> 16).expect("libmpv API major fits in u32");
         assert_eq!(
             major, expected,
             "vendored libmpv ABI major {major} != manifest major {expected} \
@@ -202,10 +210,10 @@ fn vendored_libmpv() -> Option<std::path::PathBuf> {
     None
 }
 
-/// Windows: WebView2 runtime presence is a *report*, never a gate failure. The
-/// design's risk section explicitly makes a missing WebView2 a non-failing,
-/// reportable condition so the Gate does not misclassify an environment issue
-/// as a supply-chain regression.
+/// Windows: `WebView2` runtime presence is a *report*, never a gate failure.
+/// The design's risk section explicitly makes a missing `WebView2` a
+/// non-failing, reportable condition so the Gate does not misclassify an
+/// environment issue as a supply-chain regression.
 #[cfg(target_os = "windows")]
 fn probe_webview2_report() {
     const REG_KEY: &str = r"HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
@@ -220,7 +228,7 @@ fn probe_webview2_report() {
     }
 }
 
-/// Windows gate: real libmpv-2.dll load + ABI + command, plus the WebView2
+/// Windows gate: real libmpv-2.dll load + ABI + command, plus the `WebView2`
 /// report-only probe.
 #[cfg(target_os = "windows")]
 #[test]
