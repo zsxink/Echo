@@ -30,13 +30,21 @@ fn profile_dir() -> std::path::PathBuf {
 /// entries keep their link semantics when `preserve_links` is set — `fs::copy`
 /// would dereference the link and produce a plain copy, breaking the
 /// unversioned `libmpv.so` → versioned real-file indirection the loader needs.
-fn stage_library_source(source: &std::path::Path, target: &std::path::Path, is_library: impl Fn(&str) -> bool, preserve_links: bool) {
+fn stage_library_source(
+    source: &std::path::Path,
+    target: &std::path::Path,
+    is_library: impl Fn(&str) -> bool,
+    preserve_links: bool,
+) {
     // A vendored tree may be absent in development (the Linux first build is
     // not committed yet, or a checkout is partial). Don't fail the whole build
     // over it — the loader returns an explicit error at startup if the library
     // is then missing.
     let Ok(entries) = std::fs::read_dir(source) else {
-        eprintln!("build.rs: note: vendored libmpv dir {} absent; skipping dev staging", source.display());
+        eprintln!(
+            "build.rs: note: vendored libmpv dir {} absent; skipping dev staging",
+            source.display()
+        );
         return;
     };
     std::fs::create_dir_all(target).expect("create dev staging directory");
@@ -71,16 +79,12 @@ fn is_vendored_library(name: &str, target_os: &str) -> bool {
     // suffixes (`libmpv.so.2.5`) the unversioned symlink points at, so it is
     // matched by base name + presence of the `.so` component.
     match target_os {
-        "windows" => {
-            std::path::Path::new(name)
-                .extension()
-                .is_some_and(|ext| ext == "dll")
-        }
-        "macos" => {
-            std::path::Path::new(name)
-                .extension()
-                .is_some_and(|ext| ext == "dylib")
-        }
+        "windows" => std::path::Path::new(name)
+            .extension()
+            .is_some_and(|ext| ext == "dll"),
+        "macos" => std::path::Path::new(name)
+            .extension()
+            .is_some_and(|ext| ext == "dylib"),
         _ => {
             (name.starts_with("libmpv") || name.starts_with("libav") || name.starts_with("libsw"))
                 && name.contains(".so")

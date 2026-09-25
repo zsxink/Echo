@@ -21,5 +21,11 @@ src/styles/library.css
 src/styles/player.css
 src/styles/responsive.css
 
+# Vendored third-party libmpv supply-chain assets (task 9.8 platform Gate).
+# manifest.json carries its own fixed 1-space-indent format that the Gate
+# checks (scripts/verify/manifest.json rule); NOTICE/BUILD_INFO are provenance
+# records kept verbatim. Never prettier-format them.
+src-tauri/vendor/
+
 # Vitest writes these temp config mirrors next to vitest.config.ts.
 vitest.config.ts.timestamp-*.mjs
