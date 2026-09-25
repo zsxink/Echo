@@ -4,7 +4,7 @@ scenario_id: LE-R06-S05
 requirement: 歌曲操作与详情
 scenario: 打开本地目录
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs LE-R06-S05"
+command: "node scripts/verify/checks/task-9.5.mjs"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

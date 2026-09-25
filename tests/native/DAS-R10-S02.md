@@ -1,6 +1,6 @@
-# DAS-R14-S06 — 打包后的身份显示
+# DAS-R10-S02 — 跨平台验证
 
-> Requirement: macOS 菜单栏传输控制与应用身份
+> Requirement: 三平台壳行为必须可验证且不依赖网络
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）
 
 ## 目标平台
@@ -22,6 +22,6 @@
 ## 证据与记录
 
 - operator: (填写执行人)
-- evidence-path: artifacts/native-attestations/DAS-R14-S06.log
+- evidence-path: artifacts/native-attestations/DAS-R10-S02.log
 - date: (YYYY-MM-DD)
 - result: (pass / fail + 说明)

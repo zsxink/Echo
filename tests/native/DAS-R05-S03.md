@@ -1,6 +1,6 @@
-# DAS-R05-S03 — 托盘或菜单栏初始化失败
+# DAS-R05-S03 — 关闭期间存在未完成初始化
 
-> Requirement: 系统托盘与菜单栏入口必须提供一致的后台控制
+> Requirement: 主窗口关闭行为必须符合用户选择并保留播放状态
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）
 
 ## 目标平台

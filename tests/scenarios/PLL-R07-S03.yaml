@@ -4,7 +4,7 @@ scenario_id: PLL-R07-S03
 requirement: 对象资料接续与对账
 scenario: 墓碑优先于陈旧记录
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs PLL-R07-S03"
+command: "cargo test -p echo-core --all-features application::continuation::tests::tombstone_outranks_a_stale_record_and_is_never_resurrected"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

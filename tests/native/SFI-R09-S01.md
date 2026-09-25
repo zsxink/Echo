@@ -1,6 +1,6 @@
-# SFI-R09-S01 — 跨平台安全命名
+# SFI-R09-S01 — 带百分号编码的 file URL 被归一化
 
-> Requirement: 跨平台路径与恢复后的幂等性
+> Requirement: 操作系统文件打开载荷必须先归一化为本地路径
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）
 
 ## 目标平台

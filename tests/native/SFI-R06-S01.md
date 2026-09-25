@@ -1,6 +1,6 @@
-# SFI-R06-S01 — 外部文件直接打开
+# SFI-R06-S01 — 混合结果
 
-> Requirement: 源文件、系统关联与安全边界
+> Requirement: 逐文件结果与资料库不可用反馈
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）
 
 ## 目标平台

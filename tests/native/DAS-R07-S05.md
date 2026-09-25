@@ -1,6 +1,6 @@
-# DAS-R14-S04 — Echo 图标打开单例窗口
+# DAS-R07-S05 — 运行中收到文件打开请求
 
-> Requirement: macOS 菜单栏传输控制与应用身份
+> Requirement: 应用必须保证单实例与文件打开唤醒
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）
 
 ## 目标平台
@@ -22,6 +22,6 @@
 ## 证据与记录
 
 - operator: (填写执行人)
-- evidence-path: artifacts/native-attestations/DAS-R14-S04.log
+- evidence-path: artifacts/native-attestations/DAS-R07-S05.log
 - date: (YYYY-MM-DD)
 - result: (pass / fail + 说明)

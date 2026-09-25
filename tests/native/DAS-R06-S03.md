@@ -1,6 +1,6 @@
-# DAS-R06-S03 — 首实例尚未就绪
+# DAS-R06-S03 — 托盘或菜单栏初始化失败
 
-> Requirement: 应用必须保证单实例与文件打开唤醒
+> Requirement: 系统托盘与菜单栏入口必须提供一致的后台控制
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）
 
 ## 目标平台

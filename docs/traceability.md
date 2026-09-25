@@ -5,23 +5,7 @@
 - 本表逐项覆盖 specs 中的全部 Scenario；稳定 ID 不得复用，标题调整时保留原 ID。
 - 任务 1.3 建立测试 manifest 与执行器。每行指定的 manifest 必须包含正常路径、关键失败路径、fixture、预期结果和自动测试过滤器；Native 行还必须包含平台版本、人工步骤、操作者和证据路径。
 - 每行给出实际验收命令。`pnpm verify:scenario -- --all` 必须比较 specs、此表和测试 manifest 的 ID 集合完全相等，并逐项执行；缺失、重复、无命令、无证据或失败均返回非零。
-- 当前基线：102 个 Requirement，366 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
-
-## ci-release-pipeline
-
-| Scenario ID | Requirement | Scenario | 任务 | 测试层 | 测试/步骤 manifest | 实际验收命令 |
-|---|---|---|---|---|---|---|
-| CRP-R01-S01 | API tag 触发发布 | 语义化 tag 触发构建 | 13.9 | Gate | `tests/scenarios/CRP-R01-S01.yaml` | `pnpm verify:scenario -- CRP-R01-S01` |
-| CRP-R01-S02 | API tag 触发发布 | 版本不匹配时拒绝发布 | 13.9 | Gate | `tests/scenarios/CRP-R01-S02.yaml` | `pnpm verify:scenario -- CRP-R01-S02` |
-| CRP-R01-S03 | API tag 触发发布 | 手动触发 | 13.9 | Gate | `tests/scenarios/CRP-R01-S03.yaml` | `pnpm verify:scenario -- CRP-R01-S03` |
-| CRP-R02-S01 | 三平台产物矩阵 | macOS 产物 | 13.9 | Gate | `tests/scenarios/CRP-R02-S01.yaml` | `pnpm verify:scenario -- CRP-R02-S01` |
-| CRP-R02-S02 | 三平台产物矩阵 | Windows 产物 | 13.9 | Gate | `tests/scenarios/CRP-R02-S02.yaml` | `pnpm verify:scenario -- CRP-R02-S02` |
-| CRP-R02-S03 | 三平台产物矩阵 | Linux 产物 | 13.9 | Gate | `tests/scenarios/CRP-R02-S03.yaml` | `pnpm verify:scenario -- CRP-R02-S03` |
-| CRP-R03-S01 | 产物完整性校验 | 校验清单随发布物上传 | 13.9 | Gate | `tests/scenarios/CRP-R03-S01.yaml` | `pnpm verify:scenario -- CRP-R03-S01` |
-| CRP-R03-S02 | 产物完整性校验 | 缺失产物导致失败 | 13.9 | Gate | `tests/scenarios/CRP-R03-S02.yaml` | `pnpm verify:scenario -- CRP-R03-S02` |
-| CRP-R04-S01 | 第三方许可证随发布物提供 | 许可证说明随包上传 | 13.9 | Gate | `tests/scenarios/CRP-R04-S01.yaml` | `pnpm verify:scenario -- CRP-R04-S01` |
-| CRP-R05-S01 | 发布为 GitHub Release | 资产汇总到 tag 对应 Release | 13.9 | Gate | `tests/scenarios/CRP-R05-S01.yaml` | `pnpm verify:scenario -- CRP-R05-S01` |
-| CRP-R05-S02 | 发布为 GitHub Release | 重复触发不产生重复 Release | 13.9 | Gate | `tests/scenarios/CRP-R05-S02.yaml` | `pnpm verify:scenario -- CRP-R05-S02` |
+- 当前基线：102 个 Requirement，390 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
 
 ## ci-release-pipeline
 
@@ -57,43 +41,46 @@
 | DAS-R02-S08 | 应用框架必须提供稳定的目录入口 | 键盘访问品牌操作 | 4.1, 7.1, 10.3, 13.2 | Core/React/E2E | `tests/scenarios/DAS-R02-S08.yaml` | `pnpm verify:scenario -- DAS-R02-S08` |
 | DAS-R02-S09 | 应用框架必须提供稳定的目录入口 | 便于点击品牌操作 | 4.1, 7.1, 10.3, 13.2 | Native/Gate | `tests/native/DAS-R02-S09.md` | `pnpm verify:scenario -- DAS-R02-S09` |
 | DAS-R02-S10 | 应用框架必须提供稳定的目录入口 | 保持搜索框外观 | 4.1, 7.1, 10.3, 13.2 | Native/Gate | `tests/native/DAS-R02-S10.md` | `pnpm verify:scenario -- DAS-R02-S10` |
-| DAS-R03-S01 | 主题与本机偏好必须持久化且可回退 | 切换主题 | 7.6, 10.1 | Desktop/React | `tests/scenarios/DAS-R03-S01.yaml` | `pnpm verify:scenario -- DAS-R03-S01` |
-| DAS-R03-S02 | 主题与本机偏好必须持久化且可回退 | 下次启动恢复主题 | 7.6, 10.1 | Desktop/React | `tests/scenarios/DAS-R03-S02.yaml` | `pnpm verify:scenario -- DAS-R03-S02` |
-| DAS-R03-S03 | 主题与本机偏好必须持久化且可回退 | 偏好不可保存或值非法 | 7.6, 10.1 | Desktop/React | `tests/scenarios/DAS-R03-S03.yaml` | `pnpm verify:scenario -- DAS-R03-S03` |
-| DAS-R04-S01 | 主窗口关闭行为必须符合用户选择并保留播放状态 | 选择退出应用 | 7.6, 9.6, 13.5 | Desktop/Native | `tests/native/DAS-R04-S01.md` | `pnpm verify:scenario -- DAS-R04-S01` |
-| DAS-R04-S02 | 主窗口关闭行为必须符合用户选择并保留播放状态 | 选择后台运行 | 7.6, 9.6, 13.5 | Desktop/Native | `tests/native/DAS-R04-S02.md` | `pnpm verify:scenario -- DAS-R04-S02` |
-| DAS-R04-S03 | 主窗口关闭行为必须符合用户选择并保留播放状态 | 关闭期间存在未完成初始化 | 7.6, 9.6, 13.5 | Desktop/Native | `tests/native/DAS-R04-S03.md` | `pnpm verify:scenario -- DAS-R04-S03` |
-| DAS-R05-S01 | 系统托盘与菜单栏入口必须提供一致的后台控制 | 从平台入口显示主窗口 | 9.3, 13.5 | Desktop/Native | `tests/native/DAS-R05-S01.md` | `pnpm verify:scenario -- DAS-R05-S01` |
-| DAS-R05-S02 | 系统托盘与菜单栏入口必须提供一致的后台控制 | 从平台入口控制播放 | 9.3, 13.5 | Desktop/Native | `tests/native/DAS-R05-S02.md` | `pnpm verify:scenario -- DAS-R05-S02` |
-| DAS-R05-S03 | 系统托盘与菜单栏入口必须提供一致的后台控制 | 托盘或菜单栏初始化失败 | 9.3, 13.5 | Desktop/Native | `tests/native/DAS-R05-S03.md` | `pnpm verify:scenario -- DAS-R05-S03` |
-| DAS-R06-S01 | 应用必须保证单实例与文件打开唤醒 | 重复启动应用 | 7.1, 9.1, 9.2 | Desktop/Native | `tests/native/DAS-R06-S01.md` | `pnpm verify:scenario -- DAS-R06-S01` |
-| DAS-R06-S02 | 应用必须保证单实例与文件打开唤醒 | 系统文件关联触发打开 | 7.1, 9.1, 9.2 | Desktop/Native | `tests/native/DAS-R06-S02.md` | `pnpm verify:scenario -- DAS-R06-S02` |
-| DAS-R06-S03 | 应用必须保证单实例与文件打开唤醒 | 首实例尚未就绪 | 7.1, 9.1, 9.2 | Desktop/Native | `tests/native/DAS-R06-S03.md` | `pnpm verify:scenario -- DAS-R06-S03` |
-| DAS-R06-S04 | 应用必须保证单实例与文件打开唤醒 | 前端监听器晚于文件打开请求就绪 | — | Gate | `tests/native/DAS-R06-S04.md` | `pnpm verify:scenario -- DAS-R06-S04` |
-| DAS-R06-S05 | 应用必须保证单实例与文件打开唤醒 | 运行中收到文件打开请求 | — | Gate | `tests/native/DAS-R06-S05.md` | `pnpm verify:scenario -- DAS-R06-S05` |
-| DAS-R07-S01 | 窄屏布局与浮层关闭必须可预测 | 打开和关闭窄屏侧边栏 | 10.4, 12.1, 12.3 | React/E2E | `tests/scenarios/DAS-R07-S01.yaml` | `pnpm verify:scenario -- DAS-R07-S01` |
-| DAS-R07-S02 | 窄屏布局与浮层关闭必须可预测 | 窗口从宽屏变为窄屏 | 10.4, 12.1, 12.3 | React/E2E | `tests/scenarios/DAS-R07-S02.yaml` | `pnpm verify:scenario -- DAS-R07-S02` |
-| DAS-R07-S03 | 窄屏布局与浮层关闭必须可预测 | 浮层点击外部 | 10.4, 12.1, 12.3 | React/E2E | `tests/scenarios/DAS-R07-S03.yaml` | `pnpm verify:scenario -- DAS-R07-S03` |
-| DAS-R08-S01 | 键盘焦点与 Escape 行为必须可访问 | 键盘遍历应用壳 | 11.8, 12.1, 12.2 | React/E2E | `tests/scenarios/DAS-R08-S01.yaml` | `pnpm verify:scenario -- DAS-R08-S01` |
-| DAS-R08-S02 | 键盘焦点与 Escape 行为必须可访问 | Escape 关闭最上层浮层 | 11.8, 12.1, 12.2 | React/E2E | `tests/scenarios/DAS-R08-S02.yaml` | `pnpm verify:scenario -- DAS-R08-S02` |
-| DAS-R08-S03 | 键盘焦点与 Escape 行为必须可访问 | 使用辅助技术 | 11.8, 12.1, 12.2 | React/E2E | `tests/scenarios/DAS-R08-S03.yaml` | `pnpm verify:scenario -- DAS-R08-S03` |
-| DAS-R09-S01 | 三平台壳行为必须可验证且不依赖网络 | 离线启动 | 1.5, 7.7, 9.8, 13.5, 13.7, 13.8 | Security/Native | `tests/native/DAS-R09-S01.md` | `pnpm verify:scenario -- DAS-R09-S01` |
-| DAS-R09-S02 | 三平台壳行为必须可验证且不依赖网络 | 跨平台验证 | 1.5, 7.7, 9.8, 13.5, 13.7, 13.8 | Security/Native | `tests/native/DAS-R09-S02.md` | `pnpm verify:scenario -- DAS-R09-S02` |
-| DAS-R10-S01 | 目录与导入文件选择必须由系统原生对话框提供 | 从欢迎界面打开原生目录选择器 | wire 1.1–1.8 | Desktop/Shell | `tests/scenarios/DAS-R10-S01.yaml` | `pnpm verify:scenario -- DAS-R10-S01` |
-| DAS-R10-S02 | 目录与导入文件选择必须由系统原生对话框提供 | 取消原生目录选择 | wire 1.4 | Desktop/Shell | `tests/scenarios/DAS-R10-S02.yaml` | `pnpm verify:scenario -- DAS-R10-S02` |
-| DAS-R10-S03 | 目录与导入文件选择必须由系统原生对话框提供 | WebView 不接触文件系统路径 | wire 1.7, 3.1 | Desktop/Shell | `tests/scenarios/DAS-R10-S03.yaml` | `pnpm verify:scenario -- DAS-R10-S03` |
-| DAS-R11-S01 | 欢迎/初始化界面必须占满工作区 | 未配置时显示完整初始化页 | wire 2.1–2.2 | React | `tests/scenarios/DAS-R11-S01.yaml` | `pnpm verify:scenario -- DAS-R11-S01` |
-| DAS-R11-S02 | 欢迎/初始化界面必须占满工作区 | 资料库不可用时显示完整状态页 | wire 2.1–2.2 | React | `tests/scenarios/DAS-R11-S02.yaml` | `pnpm verify:scenario -- DAS-R11-S02` |
-| DAS-R12-S01 | 后台播放生命周期完整性 | 关闭窗口后继续后台播放 | — | Gate | `tests/scenarios/DAS-R12-S01.yaml` | `pnpm verify:scenario -- DAS-R12-S01` |
-| DAS-R12-S02 | 后台播放生命周期完整性 | 从后台入口退出 | — | Gate | `tests/scenarios/DAS-R12-S02.yaml` | `pnpm verify:scenario -- DAS-R12-S02` |
-| DAS-R13-S01 | Echo 应用名称一致性 | 可见应用身份一致 | — | Gate | `tests/scenarios/DAS-R13-S01.yaml` | `pnpm verify:scenario -- DAS-R13-S01` |
-| DAS-R14-S01 | macOS 菜单栏传输控制与应用身份 | 从常驻菜单栏控制传输 | — | Desktop/Native | `tests/native/DAS-R14-S01.md` | `pnpm verify:scenario -- DAS-R14-S01` |
-| DAS-R14-S02 | macOS 菜单栏传输控制与应用身份 | 紧凑控件按点击位置隔离动作 | — | Desktop/Native | `tests/native/DAS-R14-S02.md` | `pnpm verify:scenario -- DAS-R14-S02` |
-| DAS-R14-S03 | macOS 菜单栏传输控制与应用身份 | 状态栏控制视觉验收 | — | Desktop/Native | `tests/native/DAS-R14-S03.md` | `pnpm verify:scenario -- DAS-R14-S03` |
-| DAS-R14-S04 | macOS 菜单栏传输控制与应用身份 | Echo 图标打开单例窗口 | — | Desktop/Native | `tests/native/DAS-R14-S04.md` | `pnpm verify:scenario -- DAS-R14-S04` |
-| DAS-R14-S05 | macOS 菜单栏传输控制与应用身份 | 重复点击不创建多个窗口 | — | Desktop/Native | `tests/native/DAS-R14-S05.md` | `pnpm verify:scenario -- DAS-R14-S05` |
-| DAS-R14-S06 | macOS 菜单栏传输控制与应用身份 | 打包后的身份显示 | — | Desktop/Native | `tests/native/DAS-R14-S06.md` | `pnpm verify:scenario -- DAS-R14-S06` |
-| DAS-R15-S01 | 应用禁用 WebView 默认右键菜单 | 在应用工作区右键 | 4.1, 7.1, 10.3, 13.2 | Native/Gate | `tests/native/DAS-R15-S01.md` | `pnpm verify:scenario -- DAS-R15-S01` |
+| DAS-R03-S01 | 品牌区导入入口所有视图可用 | 歌单视图导入可用 | 5.1, 5.2 | React | `tests/scenarios/DAS-R03-S01.yaml` | `pnpm verify:scenario -- DAS-R03-S01` |
+| DAS-R03-S02 | 品牌区导入入口所有视图可用 | 歌手/专辑视图导入可用 | 5.1, 5.2 | React | `tests/scenarios/DAS-R03-S02.yaml` | `pnpm verify:scenario -- DAS-R03-S02` |
+| DAS-R03-S03 | 品牌区导入入口所有视图可用 | 只读资目录禁用导入 | 5.2 | React | `tests/scenarios/DAS-R03-S03.yaml` | `pnpm verify:scenario -- DAS-R03-S03` |
+| DAS-R04-S01 | 主题与本机偏好必须持久化且可回退 | 切换主题 | 7.6, 10.1 | Desktop/React | `tests/scenarios/DAS-R04-S01.yaml` | `pnpm verify:scenario -- DAS-R04-S01` |
+| DAS-R04-S02 | 主题与本机偏好必须持久化且可回退 | 下次启动恢复主题 | 7.6, 10.1 | Desktop/React | `tests/scenarios/DAS-R04-S02.yaml` | `pnpm verify:scenario -- DAS-R04-S02` |
+| DAS-R04-S03 | 主题与本机偏好必须持久化且可回退 | 偏好不可保存或值非法 | 7.6, 10.1 | Desktop/React | `tests/scenarios/DAS-R04-S03.yaml` | `pnpm verify:scenario -- DAS-R04-S03` |
+| DAS-R05-S01 | 主窗口关闭行为必须符合用户选择并保留播放状态 | 选择退出应用 | 7.6, 9.6, 13.5 | Desktop/Native | `tests/native/DAS-R05-S01.md` | `pnpm verify:scenario -- DAS-R05-S01` |
+| DAS-R05-S02 | 主窗口关闭行为必须符合用户选择并保留播放状态 | 选择后台运行 | 7.6, 9.6, 13.5 | Desktop/Native | `tests/native/DAS-R05-S02.md` | `pnpm verify:scenario -- DAS-R05-S02` |
+| DAS-R05-S03 | 主窗口关闭行为必须符合用户选择并保留播放状态 | 关闭期间存在未完成初始化 | 7.6, 9.6, 13.5 | Desktop/Native | `tests/native/DAS-R05-S03.md` | `pnpm verify:scenario -- DAS-R05-S03` |
+| DAS-R06-S01 | 系统托盘与菜单栏入口必须提供一致的后台控制 | 从平台入口显示主窗口 | 9.3, 13.5 | Desktop/Native | `tests/native/DAS-R06-S01.md` | `pnpm verify:scenario -- DAS-R06-S01` |
+| DAS-R06-S02 | 系统托盘与菜单栏入口必须提供一致的后台控制 | 从平台入口控制播放 | 9.3, 13.5 | Desktop/Native | `tests/native/DAS-R06-S02.md` | `pnpm verify:scenario -- DAS-R06-S02` |
+| DAS-R06-S03 | 系统托盘与菜单栏入口必须提供一致的后台控制 | 托盘或菜单栏初始化失败 | 9.3, 13.5 | Desktop/Native | `tests/native/DAS-R06-S03.md` | `pnpm verify:scenario -- DAS-R06-S03` |
+| DAS-R07-S01 | 应用必须保证单实例与文件打开唤醒 | 重复启动应用 | 7.1, 9.1, 9.2 | Desktop/Native | `tests/native/DAS-R07-S01.md` | `pnpm verify:scenario -- DAS-R07-S01` |
+| DAS-R07-S02 | 应用必须保证单实例与文件打开唤醒 | 系统文件关联触发打开 | 7.1, 9.1, 9.2 | Desktop/Native | `tests/native/DAS-R07-S02.md` | `pnpm verify:scenario -- DAS-R07-S02` |
+| DAS-R07-S03 | 应用必须保证单实例与文件打开唤醒 | 首实例尚未就绪 | 7.1, 9.1, 9.2 | Desktop/Native | `tests/native/DAS-R07-S03.md` | `pnpm verify:scenario -- DAS-R07-S03` |
+| DAS-R07-S04 | 应用必须保证单实例与文件打开唤醒 | 前端监听器晚于文件打开请求就绪 | — | Gate | `tests/native/DAS-R07-S04.md` | `pnpm verify:scenario -- DAS-R07-S04` |
+| DAS-R07-S05 | 应用必须保证单实例与文件打开唤醒 | 运行中收到文件打开请求 | — | Gate | `tests/native/DAS-R07-S05.md` | `pnpm verify:scenario -- DAS-R07-S05` |
+| DAS-R08-S01 | 窄屏布局与浮层关闭必须可预测 | 打开和关闭窄屏侧边栏 | 10.4, 12.1, 12.3 | React/E2E | `tests/scenarios/DAS-R08-S01.yaml` | `pnpm verify:scenario -- DAS-R08-S01` |
+| DAS-R08-S02 | 窄屏布局与浮层关闭必须可预测 | 窗口从宽屏变为窄屏 | 10.4, 12.1, 12.3 | React/E2E | `tests/scenarios/DAS-R08-S02.yaml` | `pnpm verify:scenario -- DAS-R08-S02` |
+| DAS-R08-S03 | 窄屏布局与浮层关闭必须可预测 | 浮层点击外部 | 10.4, 12.1, 12.3 | React/E2E | `tests/scenarios/DAS-R08-S03.yaml` | `pnpm verify:scenario -- DAS-R08-S03` |
+| DAS-R09-S01 | 键盘焦点与 Escape 行为必须可访问 | 键盘遍历应用壳 | 11.8, 12.1, 12.2 | React/E2E | `tests/scenarios/DAS-R09-S01.yaml` | `pnpm verify:scenario -- DAS-R09-S01` |
+| DAS-R09-S02 | 键盘焦点与 Escape 行为必须可访问 | Escape 关闭最上层浮层 | 11.8, 12.1, 12.2 | React/E2E | `tests/scenarios/DAS-R09-S02.yaml` | `pnpm verify:scenario -- DAS-R09-S02` |
+| DAS-R09-S03 | 键盘焦点与 Escape 行为必须可访问 | 使用辅助技术 | 11.8, 12.1, 12.2 | React/E2E | `tests/scenarios/DAS-R09-S03.yaml` | `pnpm verify:scenario -- DAS-R09-S03` |
+| DAS-R10-S01 | 三平台壳行为必须可验证且不依赖网络 | 离线启动 | 1.5, 7.7, 9.8, 13.5, 13.7, 13.8 | Security/Native | `tests/native/DAS-R10-S01.md` | `pnpm verify:scenario -- DAS-R10-S01` |
+| DAS-R10-S02 | 三平台壳行为必须可验证且不依赖网络 | 跨平台验证 | 1.5, 7.7, 9.8, 13.5, 13.7, 13.8 | Security/Native | `tests/native/DAS-R10-S02.md` | `pnpm verify:scenario -- DAS-R10-S02` |
+| DAS-R11-S01 | 目录与导入文件选择必须由系统原生对话框提供 | 从欢迎界面打开原生目录选择器 | wire 1.1–1.8 | Desktop/Shell | `tests/scenarios/DAS-R11-S01.yaml` | `pnpm verify:scenario -- DAS-R11-S01` |
+| DAS-R11-S02 | 目录与导入文件选择必须由系统原生对话框提供 | 取消原生目录选择 | wire 1.4 | Desktop/Shell | `tests/scenarios/DAS-R11-S02.yaml` | `pnpm verify:scenario -- DAS-R11-S02` |
+| DAS-R11-S03 | 目录与导入文件选择必须由系统原生对话框提供 | WebView 不接触文件系统路径 | wire 1.7, 3.1 | Desktop/Shell | `tests/scenarios/DAS-R11-S03.yaml` | `pnpm verify:scenario -- DAS-R11-S03` |
+| DAS-R12-S01 | 欢迎/初始化界面必须占满工作区 | 未配置时显示完整初始化页 | wire 2.1–2.2 | React | `tests/scenarios/DAS-R12-S01.yaml` | `pnpm verify:scenario -- DAS-R12-S01` |
+| DAS-R12-S02 | 欢迎/初始化界面必须占满工作区 | 资料库不可用时显示完整状态页 | wire 2.1–2.2 | React | `tests/scenarios/DAS-R12-S02.yaml` | `pnpm verify:scenario -- DAS-R12-S02` |
+| DAS-R13-S01 | 后台播放生命周期完整性 | 关闭窗口后继续后台播放 | — | Gate | `tests/scenarios/DAS-R13-S01.yaml` | `pnpm verify:scenario -- DAS-R13-S01` |
+| DAS-R13-S02 | 后台播放生命周期完整性 | 从后台入口退出 | — | Gate | `tests/scenarios/DAS-R13-S02.yaml` | `pnpm verify:scenario -- DAS-R13-S02` |
+| DAS-R14-S01 | Echo 应用名称一致性 | 可见应用身份一致 | — | Gate | `tests/scenarios/DAS-R14-S01.yaml` | `pnpm verify:scenario -- DAS-R14-S01` |
+| DAS-R15-S01 | macOS 菜单栏传输控制与应用身份 | 从常驻菜单栏控制传输 | — | Desktop/Native | `tests/native/DAS-R15-S01.md` | `pnpm verify:scenario -- DAS-R15-S01` |
+| DAS-R15-S02 | macOS 菜单栏传输控制与应用身份 | 紧凑控件按点击位置隔离动作 | — | Desktop/Native | `tests/native/DAS-R15-S02.md` | `pnpm verify:scenario -- DAS-R15-S02` |
+| DAS-R15-S03 | macOS 菜单栏传输控制与应用身份 | 状态栏控制视觉验收 | — | Desktop/Native | `tests/native/DAS-R15-S03.md` | `pnpm verify:scenario -- DAS-R15-S03` |
+| DAS-R15-S04 | macOS 菜单栏传输控制与应用身份 | Echo 图标打开单例窗口 | — | Desktop/Native | `tests/native/DAS-R15-S04.md` | `pnpm verify:scenario -- DAS-R15-S04` |
+| DAS-R15-S05 | macOS 菜单栏传输控制与应用身份 | 重复点击不创建多个窗口 | — | Desktop/Native | `tests/native/DAS-R15-S05.md` | `pnpm verify:scenario -- DAS-R15-S05` |
+| DAS-R15-S06 | macOS 菜单栏传输控制与应用身份 | 打包后的身份显示 | — | Desktop/Native | `tests/native/DAS-R15-S06.md` | `pnpm verify:scenario -- DAS-R15-S06` |
+| DAS-R16-S01 | 应用禁用 WebView 默认右键菜单 | 在应用工作区右键 | 4.1, 7.1, 10.3, 13.2 | Native/Gate | `tests/native/DAS-R16-S01.md` | `pnpm verify:scenario -- DAS-R16-S01` |
 
 ## desktop-playback
 
@@ -211,8 +198,11 @@
 | LE-R02-S04 | 资料库搜索 | 搜索无结果 | 3.6, 3.7, 6.2, 10.5 | Core/React/Perf | `tests/scenarios/LE-R02-S04.yaml` | `pnpm verify:scenario -- LE-R02-S04` |
 | LE-R02-S05 | 资料库搜索 | 切换活动资料库后查询 | — | Gate | `tests/scenarios/LE-R02-S05.yaml` | `pnpm verify:scenario -- LE-R02-S05` |
 | LE-R03-S01 | 全部歌曲排序 | 选择排序字段 | 3.8, 6.1, 10.5 | Core/React | `tests/scenarios/LE-R03-S01.yaml` | `pnpm verify:scenario -- LE-R03-S01` |
-| LE-R03-S02 | 全部歌曲排序 | 排序值相同 | 3.8, 6.1, 10.5 | Core/React | `tests/scenarios/LE-R03-S02.yaml` | `pnpm verify:scenario -- LE-R03-S02` |
-| LE-R03-S03 | 全部歌曲排序 | 非全部歌曲视图排序 | 3.8, 6.1, 10.5 | Core/React | `tests/scenarios/LE-R03-S03.yaml` | `pnpm verify:scenario -- LE-R03-S03` |
+| LE-R03-S02 | 全部歌曲排序 | 按专辑排序 | 1.x, 2.x | React | `tests/scenarios/LE-R03-S02.yaml` | `pnpm verify:scenario -- LE-R03-S02` |
+| LE-R03-S03 | 全部歌曲排序 | 既有歌手排序术语 | 2.x | React | `tests/scenarios/LE-R03-S03.yaml` | `pnpm verify:scenario -- LE-R03-S03` |
+| LE-R03-S04 | 全部歌曲排序 | 排序值相同 | 3.8, 6.1, 10.5 | Core/React | `tests/scenarios/LE-R03-S04.yaml` | `pnpm verify:scenario -- LE-R03-S04` |
+| LE-R03-S05 | 全部歌曲排序 | 非全部歌曲视图排序 | 3.8, 6.1, 10.5 | Core/React | `tests/scenarios/LE-R03-S05.yaml` | `pnpm verify:scenario -- LE-R03-S05` |
+| LE-R03-S06 | 全部歌曲排序 | 重启后恢复全部歌曲排序 | 2.x | React | `tests/scenarios/LE-R03-S06.yaml` | `pnpm verify:scenario -- LE-R03-S06` |
 | LE-R04-S01 | 歌曲收藏 | 收藏歌曲 | 6.3, 10.6 | Core/React | `tests/scenarios/LE-R04-S01.yaml` | `pnpm verify:scenario -- LE-R04-S01` |
 | LE-R04-S02 | 歌曲收藏 | 取消收藏 | 6.3, 10.6 | Core/React | `tests/scenarios/LE-R04-S02.yaml` | `pnpm verify:scenario -- LE-R04-S02` |
 | LE-R05-S01 | 收藏事实时间真实性 | 标记喜欢 | 13.9, 13.13 | Core/Native | `tests/native/LE-R05-S01.md` | `pnpm verify:scenario -- LE-R05-S01` |
@@ -255,26 +245,40 @@
 | LE-R11-S02 | 资料库视图计数 | 计数不受分页影响 | nav 2.1, 4.2 | Core/React | `tests/native/LE-R11-S02.md` | `pnpm verify:scenario -- LE-R11-S02` |
 | LE-R11-S03 | 资料库视图计数 | 计数与视图定义一致 | nav 2.1–2.3 | Core | `tests/native/LE-R11-S03.md` | `pnpm verify:scenario -- LE-R11-S03` |
 | LE-R11-S04 | 资料库视图计数 | 最近添加上限 | nav 1.1, 2.3 | Core | `tests/scenarios/LE-R11-S04.yaml` | `pnpm verify:scenario -- LE-R11-S04` |
-| LE-R12-S01 | 计数失效与刷新 | 在其他视图切换收藏后计数更新 | nav 4.2–4.4 | React | `tests/scenarios/LE-R12-S01.yaml` | `pnpm verify:scenario -- LE-R12-S01` |
-| LE-R12-S02 | 计数失效与刷新 | 导入与删除后计数更新 | nav 4.4 | React | `tests/scenarios/LE-R12-S02.yaml` | `pnpm verify:scenario -- LE-R12-S02` |
-| LE-R12-S03 | 计数失效与刷新 | 播放栏导入后所有已挂载视图刷新 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R12-S03.md` | `pnpm verify:scenario -- LE-R12-S03` |
-| LE-R12-S04 | 计数失效与刷新 | 刷新期间不显示空白 | nav 4.2–4.3 | React | `tests/scenarios/LE-R12-S04.yaml` | `pnpm verify:scenario -- LE-R12-S04` |
-| LE-R12-S05 | 计数失效与刷新 | 资料库不可用时 | nav 4.2 | React | `tests/scenarios/LE-R12-S05.yaml` | `pnpm verify:scenario -- LE-R12-S05` |
-| LE-R13-S01 | 首次导入后资料库与播放栏显示选中歌曲 | 导入第一首歌曲 | — | Gate | `tests/native/LE-R13-S01.md` | `pnpm verify:scenario -- LE-R13-S01` |
-| LE-R13-S02 | 首次导入后资料库与播放栏显示选中歌曲 | 首次导入失败 | — | Gate | `tests/native/LE-R13-S02.md` | `pnpm verify:scenario -- LE-R13-S02` |
-| LE-R13-S03 | 首次导入后资料库与播放栏显示选中歌曲 | 已有歌曲时继续导入 | — | Gate | `tests/native/LE-R13-S03.md` | `pnpm verify:scenario -- LE-R13-S03` |
-| LE-R14-S01 | 常驻播放栏临时歌曲导入 | 导入进行中保护按钮 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R14-S01.md` | `pnpm verify:scenario -- LE-R14-S01` |
-| LE-R14-S02 | 常驻播放栏临时歌曲导入 | 导入完成刷新列表和计数 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R14-S02.md` | `pnpm verify:scenario -- LE-R14-S02` |
-| LE-R14-S03 | 常驻播放栏临时歌曲导入 | 导入未提交 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R14-S03.md` | `pnpm verify:scenario -- LE-R14-S03` |
-| LE-R15-S01 | 歌曲音质徽标 | 显示 SQ 徽标 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R15-S01.md` | `pnpm verify:scenario -- LE-R15-S01` |
-| LE-R15-S02 | 歌曲音质徽标 | 显示 HQ 徽标 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R15-S02.md` | `pnpm verify:scenario -- LE-R15-S02` |
-| LE-R15-S03 | 歌曲音质徽标 | 不显示徽标 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R15-S03.md` | `pnpm verify:scenario -- LE-R15-S03` |
-| LE-R15-S04 | 歌曲音质徽标 | 同时满足 SQ 与 HQ 条件 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R15-S04.md` | `pnpm verify:scenario -- LE-R15-S04` |
-| LE-R15-S05 | 歌曲音质徽标 | 徽标不影响行操作 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R15-S05.md` | `pnpm verify:scenario -- LE-R15-S05` |
-| LE-R15-S06 | 歌曲音质徽标 | 旧歌曲即时生效 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R15-S06.md` | `pnpm verify:scenario -- LE-R15-S06` |
-| LE-R16-S01 | 歌曲行提供一致的下一首播放与操作菜单入口 | 行内加号下一首播放 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R16-S01.md` | `pnpm verify:scenario -- LE-R16-S01` |
-| LE-R16-S02 | 歌曲行提供一致的下一首播放与操作菜单入口 | 普通模式右键歌曲行 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R16-S02.md` | `pnpm verify:scenario -- LE-R16-S02` |
-| LE-R16-S03 | 歌曲行提供一致的下一首播放与操作菜单入口 | 多选模式右键歌曲行 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R16-S03.md` | `pnpm verify:scenario -- LE-R16-S03` |
+| LE-R12-S01 | 分页歌曲列表显示匹配总数 | 打开未加载完的全部歌曲 | 1.x, 2.x | React | `tests/scenarios/LE-R12-S01.yaml` | `pnpm verify:scenario -- LE-R12-S01` |
+| LE-R12-S02 | 分页歌曲列表显示匹配总数 | 打开未加载完的喜欢的音乐 | 1.x, 2.x | React | `tests/scenarios/LE-R12-S02.yaml` | `pnpm verify:scenario -- LE-R12-S02` |
+| LE-R12-S03 | 分页歌曲列表显示匹配总数 | 搜索结果跨越多个分页 | 1.x | Core | `tests/scenarios/LE-R12-S03.yaml` | `pnpm verify:scenario -- LE-R12-S03` |
+| LE-R12-S04 | 分页歌曲列表显示匹配总数 | 加载后续页 | 1.x, 2.x | React | `tests/scenarios/LE-R12-S04.yaml` | `pnpm verify:scenario -- LE-R12-S04` |
+| LE-R12-S05 | 分页歌曲列表显示匹配总数 | 非分页列表 | 2.x | React | `tests/scenarios/LE-R12-S05.yaml` | `pnpm verify:scenario -- LE-R12-S05` |
+| LE-R13-S01 | 计数失效与刷新 | 在其他视图切换收藏后计数更新 | nav 4.2–4.4 | React | `tests/scenarios/LE-R13-S01.yaml` | `pnpm verify:scenario -- LE-R13-S01` |
+| LE-R13-S02 | 计数失效与刷新 | 导入与删除后计数更新 | nav 4.4 | React | `tests/scenarios/LE-R13-S02.yaml` | `pnpm verify:scenario -- LE-R13-S02` |
+| LE-R13-S03 | 计数失效与刷新 | 播放栏导入后所有已挂载视图刷新 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R13-S03.md` | `pnpm verify:scenario -- LE-R13-S03` |
+| LE-R13-S04 | 计数失效与刷新 | 刷新期间不显示空白 | nav 4.2–4.3 | React | `tests/scenarios/LE-R13-S04.yaml` | `pnpm verify:scenario -- LE-R13-S04` |
+| LE-R13-S05 | 计数失效与刷新 | 资料库不可用时 | nav 4.2 | React | `tests/scenarios/LE-R13-S05.yaml` | `pnpm verify:scenario -- LE-R13-S05` |
+| LE-R14-S01 | 首次导入后资料库与播放栏显示选中歌曲 | 导入第一首歌曲 | — | Gate | `tests/native/LE-R14-S01.md` | `pnpm verify:scenario -- LE-R14-S01` |
+| LE-R14-S02 | 首次导入后资料库与播放栏显示选中歌曲 | 首次导入失败 | — | Gate | `tests/native/LE-R14-S02.md` | `pnpm verify:scenario -- LE-R14-S02` |
+| LE-R14-S03 | 首次导入后资料库与播放栏显示选中歌曲 | 已有歌曲时继续导入 | — | Gate | `tests/native/LE-R14-S03.md` | `pnpm verify:scenario -- LE-R14-S03` |
+| LE-R15-S01 | 常驻播放栏临时歌曲导入 | 导入进行中保护按钮 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R15-S01.md` | `pnpm verify:scenario -- LE-R15-S01` |
+| LE-R15-S02 | 常驻播放栏临时歌曲导入 | 导入完成刷新列表和计数 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R15-S02.md` | `pnpm verify:scenario -- LE-R15-S02` |
+| LE-R15-S03 | 常驻播放栏临时歌曲导入 | 导入未提交 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R15-S03.md` | `pnpm verify:scenario -- LE-R15-S03` |
+| LE-R16-S01 | 歌曲音质徽标 | 显示 SQ 徽标 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R16-S01.md` | `pnpm verify:scenario -- LE-R16-S01` |
+| LE-R16-S02 | 歌曲音质徽标 | 显示 HQ 徽标 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R16-S02.md` | `pnpm verify:scenario -- LE-R16-S02` |
+| LE-R16-S03 | 歌曲音质徽标 | 不显示徽标 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R16-S03.md` | `pnpm verify:scenario -- LE-R16-S03` |
+| LE-R16-S04 | 歌曲音质徽标 | 同时满足 SQ 与 HQ 条件 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R16-S04.md` | `pnpm verify:scenario -- LE-R16-S04` |
+| LE-R16-S05 | 歌曲音质徽标 | 徽标不影响行操作 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R16-S05.md` | `pnpm verify:scenario -- LE-R16-S05` |
+| LE-R16-S06 | 歌曲音质徽标 | 旧歌曲即时生效 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R16-S06.md` | `pnpm verify:scenario -- LE-R16-S06` |
+| LE-R17-S01 | 歌曲行提供一致的下一首播放与操作菜单入口 | 行内加号下一首播放 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R17-S01.md` | `pnpm verify:scenario -- LE-R17-S01` |
+| LE-R17-S02 | 歌曲行提供一致的下一首播放与操作菜单入口 | 普通模式右键歌曲行 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R17-S02.md` | `pnpm verify:scenario -- LE-R17-S02` |
+| LE-R17-S03 | 歌曲行提供一致的下一首播放与操作菜单入口 | 多选模式右键歌曲行 | 6.1, 10.5 | Native/Gate | `tests/native/LE-R17-S03.md` | `pnpm verify:scenario -- LE-R17-S03` |
+| LE-R18-S01 | 歌单内搜索 | 在歌单内搜索 | 1.x–3.x | React | `tests/scenarios/LE-R18-S01.yaml` | `pnpm verify:scenario -- LE-R18-S01` |
+| LE-R18-S02 | 歌单内搜索 | 清空歌单搜索 | 1.x–3.x | React | `tests/scenarios/LE-R18-S02.yaml` | `pnpm verify:scenario -- LE-R18-S02` |
+| LE-R18-S03 | 歌单内搜索 | 歌单搜索无结果 | 1.x–3.x | React | `tests/scenarios/LE-R18-S03.yaml` | `pnpm verify:scenario -- LE-R18-S03` |
+| LE-R18-S04 | 歌单内搜索 | 歌单搜索不影响其他歌单 | 1.x–3.x | React | `tests/scenarios/LE-R18-S04.yaml` | `pnpm verify:scenario -- LE-R18-S04` |
+| LE-R19-S01 | 定位当前播放歌曲 | 定位到正在播放的歌曲 | 4.x | React | `tests/scenarios/LE-R19-S01.yaml` | `pnpm verify:scenario -- LE-R19-S01` |
+| LE-R19-S02 | 定位当前播放歌曲 | 视图无正在播放歌曲 | 4.x | React | `tests/scenarios/LE-R19-S02.yaml` | `pnpm verify:scenario -- LE-R19-S02` |
+| LE-R19-S03 | 定位当前播放歌曲 | 播放歌曲不属于当前视图 | 4.x | React | `tests/scenarios/LE-R19-S03.yaml` | `pnpm verify:scenario -- LE-R19-S03` |
+| LE-R19-S04 | 定位当前播放歌曲 | 定位目标位于列表末尾 | 4.x | React | `tests/scenarios/LE-R19-S04.yaml` | `pnpm verify:scenario -- LE-R19-S04` |
+| LE-R19-S05 | 定位当前播放歌曲 | 最近添加视图定位 | 4.x | Native | `tests/native/LE-R19-S05.md` | `pnpm verify:scenario -- LE-R19-S05` |
 
 ## local-library
 
@@ -358,6 +362,10 @@
 | PM-R08-S02 | 歌单与成员事实时间真实性 | 加入歌单时记录时间 | 6.5, 6.6, 13.9, 13.13 | Core/Native | `tests/scenarios/PM-R08-S02.yaml` | `pnpm verify:scenario -- PM-R08-S02` |
 | PM-R08-S03 | 歌单与成员事实时间真实性 | 重复加入不重写时间 | 6.5, 6.6, 13.9, 13.13 | Core/Native | `tests/scenarios/PM-R08-S03.yaml` | `pnpm verify:scenario -- PM-R08-S03` |
 | PM-R08-S04 | 歌单与成员事实时间真实性 | 歌单时间按当前时区呈现 | 6.5, 6.6, 13.9, 13.13 | Core/Native | `tests/scenarios/PM-R08-S04.yaml` | `pnpm verify:scenario -- PM-R08-S04` |
+| PM-R09-S01 | 歌单详情搜索 | 歌单详情提供搜索控件 | 1.x, 2.x, 3.x | React | `tests/scenarios/PM-R09-S01.yaml` | `pnpm verify:scenario -- PM-R09-S01` |
+| PM-R09-S02 | 歌单详情搜索 | 歌单详情清空搜索 | 1.x, 2.x, 3.x | React | `tests/scenarios/PM-R09-S02.yaml` | `pnpm verify:scenario -- PM-R09-S02` |
+| PM-R10-S01 | 歌单内定位当前播放歌曲 | 定位歌单中正在播放的歌曲 | 4.x | React | `tests/scenarios/PM-R10-S01.yaml` | `pnpm verify:scenario -- PM-R10-S01` |
+| PM-R10-S02 | 歌单内定位当前播放歌曲 | 歌单无正在播放歌曲 | 4.x | React | `tests/scenarios/PM-R10-S02.yaml` | `pnpm verify:scenario -- PM-R10-S02` |
 
 ## portable-library-layout
 
@@ -443,6 +451,7 @@
 | SYN-R02-S02 | 本地变更预写 outbox | 预写不产生可操作同步 | 3.14, 13.8 | Core/Gate | `tests/scenarios/SYN-R02-S02.yaml` | `pnpm verify:scenario -- SYN-R02-S02` |
 | SYN-R03-S01 | 墓碑 | 删除产生墓碑 | 3.12 | Core | `tests/scenarios/SYN-R03-S01.yaml` | `pnpm verify:scenario -- SYN-R03-S01` |
 | SYN-R04-S01 | 可同步载荷不含本机路径 | 本机绝对路径不进入可同步载荷 | 3.13 | Core | `tests/scenarios/SYN-R04-S01.yaml` | `pnpm verify:scenario -- SYN-R04-S01` |
+
 ## 发布审计
 
 1. 运行 `pnpm verify:scenario -- --all`，保存逐场景结果与集合差异报告。

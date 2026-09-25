@@ -1,6 +1,6 @@
-# DAS-R15-S01 — 在应用工作区右键
+# DAS-R15-S01 — 从常驻菜单栏控制传输
 
-> Requirement: 应用禁用 WebView 默认右键菜单
+> Requirement: macOS 菜单栏传输控制与应用身份
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）
 
 ## 目标平台

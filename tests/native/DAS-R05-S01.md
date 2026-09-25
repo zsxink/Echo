@@ -1,6 +1,6 @@
-# DAS-R05-S01 — 从平台入口显示主窗口
+# DAS-R05-S01 — 选择退出应用
 
-> Requirement: 系统托盘与菜单栏入口必须提供一致的后台控制
+> Requirement: 主窗口关闭行为必须符合用户选择并保留播放状态
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）
 
 ## 目标平台

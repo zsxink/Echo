@@ -4,7 +4,7 @@ scenario_id: DP-R12-S03
 requirement: 三天播放历史与回退
 scenario: 历史跨重启
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs DP-R12-S03"
+command: "cargo test -p echo-desktop --all-features restore_keeps_fresh_history_and_counts_only_blocked_entries"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

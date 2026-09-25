@@ -1,6 +1,6 @@
-# SFI-R09-S02 — 重试导入幂等
+# SFI-R09-S02 — 非文件 scheme 被丢弃
 
-> Requirement: 跨平台路径与恢复后的幂等性
+> Requirement: 操作系统文件打开载荷必须先归一化为本地路径
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）
 
 ## 目标平台

@@ -4,7 +4,7 @@ scenario_id: LE-R06-S06
 requirement: 歌曲操作与详情
 scenario: 删除歌曲
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs LE-R06-S06"
+command: "pnpm --filter @echo/desktop test -- --run src/features/library/SongMenu.test.tsx -t \"dispatches delete and shows the 10-second undo affordance on success\""
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

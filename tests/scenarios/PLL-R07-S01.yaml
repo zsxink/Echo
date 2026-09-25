@@ -4,7 +4,7 @@ scenario_id: PLL-R07-S01
 requirement: 对象资料接续与对账
 scenario: 打开资料库先接续再扫描
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs PLL-R07-S01"
+command: "cargo test -p echo-core --all-features root_switch::tests::prepare_continues_object_records_before_scanning_media"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

@@ -2,9 +2,9 @@
 # ----------------------------------------------------------------------
 scenario_id: LE-R03-S03
 requirement: 全部歌曲排序
-scenario: 非全部歌曲视图排序
+scenario: 既有歌手排序术语
 layer: automated
-command: "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_recent_100"
+command: "pnpm --filter @echo/desktop test -- --run src/features/library/songSortControl.test.tsx -t \"uses 歌手 terminology, offers 专辑, and updates the selected sort\""
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

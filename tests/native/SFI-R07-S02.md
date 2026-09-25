@@ -1,6 +1,6 @@
-# SFI-R07-S02 — 冷启动文件关联
+# SFI-R07-S02 — 活动资料库内文件直接打开
 
-> Requirement: 单实例唤醒与重复打开
+> Requirement: 源文件、系统关联与安全边界
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）
 
 ## 目标平台

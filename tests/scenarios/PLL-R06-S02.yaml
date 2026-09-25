@@ -4,7 +4,7 @@ scenario_id: PLL-R06-S02
 requirement: 控制面存在性与自愈
 scenario: manifest 缺失时自愈
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs PLL-R06-S02"
+command: "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_heals_a_manifest_less_directory_with_records"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

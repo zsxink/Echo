@@ -4,7 +4,7 @@ scenario_id: LE-R07-S03
 requirement: 视图内歌曲多选
 scenario: 聚合详情支持全选
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs LE-R07-S03"
+command: "pnpm --filter @echo/desktop test -- --run src/features/library/CollectionDirectory.test.tsx -t \"shows artist cards and reuses the library song table with selection in the detail\""
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

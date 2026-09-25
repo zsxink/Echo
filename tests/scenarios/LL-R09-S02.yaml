@@ -4,7 +4,7 @@ scenario_id: LL-R09-S02
 requirement: 导入事实时间真实性与时区呈现
 scenario: 重复或重扫不改写时间
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs LL-R09-S02"
+command: "cargo test -p echo-core --all-features revision_and_added_at_survive_rescans"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

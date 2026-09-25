@@ -1,6 +1,6 @@
-# DAS-R06-S02 — 系统文件关联触发打开
+# DAS-R06-S02 — 从平台入口控制播放
 
-> Requirement: 应用必须保证单实例与文件打开唤醒
+> Requirement: 系统托盘与菜单栏入口必须提供一致的后台控制
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）
 
 ## 目标平台

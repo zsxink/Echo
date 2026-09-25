@@ -1,6 +1,6 @@
-# DAS-R05-S02 — 从平台入口控制播放
+# DAS-R05-S02 — 选择后台运行
 
-> Requirement: 系统托盘与菜单栏入口必须提供一致的后台控制
+> Requirement: 主窗口关闭行为必须符合用户选择并保留播放状态
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）
 
 ## 目标平台

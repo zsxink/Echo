@@ -1,6 +1,6 @@
-# DAS-R06-S05 — 运行中收到文件打开请求
+# DAS-R15-S06 — 打包后的身份显示
 
-> Requirement: 应用必须保证单实例与文件打开唤醒
+> Requirement: macOS 菜单栏传输控制与应用身份
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）
 
 ## 目标平台
@@ -22,6 +22,6 @@
 ## 证据与记录
 
 - operator: (填写执行人)
-- evidence-path: artifacts/native-attestations/DAS-R06-S05.log
+- evidence-path: artifacts/native-attestations/DAS-R15-S06.log
 - date: (YYYY-MM-DD)
 - result: (pass / fail + 说明)

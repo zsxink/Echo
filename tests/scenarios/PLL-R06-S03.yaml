@@ -4,7 +4,7 @@ scenario_id: PLL-R06-S03
 requirement: 控制面存在性与自愈
 scenario: 控制面不可写时不破坏既有内容
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs PLL-R06-S03"
+command: "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_reports_an_unusable_surface_without_writing"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

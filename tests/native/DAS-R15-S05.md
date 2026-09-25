@@ -1,4 +1,4 @@
-# DAS-R14-S05 — 重复点击不创建多个窗口
+# DAS-R15-S05 — 重复点击不创建多个窗口
 
 > Requirement: macOS 菜单栏传输控制与应用身份
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）
@@ -22,6 +22,6 @@
 ## 证据与记录
 
 - operator: (填写执行人)
-- evidence-path: artifacts/native-attestations/DAS-R14-S05.log
+- evidence-path: artifacts/native-attestations/DAS-R15-S05.log
 - date: (YYYY-MM-DD)
 - result: (pass / fail + 说明)

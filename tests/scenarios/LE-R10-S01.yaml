@@ -4,7 +4,7 @@ scenario_id: LE-R10-S01
 requirement: 大曲库浏览
 scenario: 浏览大量歌曲
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs LE-R10-S01"
+command: "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"renders only a viewport slice of a 50,000-song library, not all rows\""
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

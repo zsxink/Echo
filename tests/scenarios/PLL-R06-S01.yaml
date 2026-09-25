@@ -4,7 +4,7 @@ scenario_id: PLL-R06-S01
 requirement: 控制面存在性与自愈
 scenario: 首次启用即建立 manifest
 layer: automated
-command: "node scripts/verify/checks/check-native-attestation.mjs PLL-R06-S01"
+command: "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_initializes_a_fresh_writable_root"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

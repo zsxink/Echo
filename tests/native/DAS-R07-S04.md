@@ -1,6 +1,6 @@
-# LE-R15-S04 — 同时满足 SQ 与 HQ 条件
+# DAS-R07-S04 — 前端监听器晚于文件打开请求就绪
 
-> Requirement: 歌曲音质徽标
+> Requirement: 应用必须保证单实例与文件打开唤醒
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）
 
 ## 目标平台
@@ -22,6 +22,6 @@
 ## 证据与记录
 
 - operator: (填写执行人)
-- evidence-path: artifacts/native-attestations/LE-R15-S04.log
+- evidence-path: artifacts/native-attestations/DAS-R07-S04.log
 - date: (YYYY-MM-DD)
 - result: (pass / fail + 说明)

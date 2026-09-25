@@ -1,6 +1,6 @@
-# LE-R15-S05 — 徽标不影响行操作
+# DAS-R15-S02 — 紧凑控件按点击位置隔离动作
 
-> Requirement: 歌曲音质徽标
+> Requirement: macOS 菜单栏传输控制与应用身份
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）
 
 ## 目标平台
@@ -22,6 +22,6 @@
 ## 证据与记录
 
 - operator: (填写执行人)
-- evidence-path: artifacts/native-attestations/LE-R15-S05.log
+- evidence-path: artifacts/native-attestations/DAS-R15-S02.log
 - date: (YYYY-MM-DD)
 - result: (pass / fail + 说明)

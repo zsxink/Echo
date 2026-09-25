@@ -1,6 +1,6 @@
-# DAS-R09-S02 — 跨平台验证
+# DAS-R07-S03 — 首实例尚未就绪
 
-> Requirement: 三平台壳行为必须可验证且不依赖网络
+> Requirement: 应用必须保证单实例与文件打开唤醒
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）
 
 ## 目标平台
@@ -22,6 +22,6 @@
 ## 证据与记录
 
 - operator: (填写执行人)
-- evidence-path: artifacts/native-attestations/DAS-R09-S02.log
+- evidence-path: artifacts/native-attestations/DAS-R07-S03.log
 - date: (YYYY-MM-DD)
 - result: (pass / fail + 说明)
