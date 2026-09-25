@@ -94,8 +94,15 @@ if (platform !== "macos") {
   }
 }
 
+// Windows: `cargo.exe` must be named explicitly. Node's spawnSync without a
+// shell does not resolve PATHEXT, so the bare `cargo` that works from pwsh (and
+// on unix) resolves to nothing under CreateProcess → ENOENT. The runner's PATH
+// still points at `.cargo\bin`, so naming the real executable gets the same
+// toolchain without shell quoting.
+const cargoBin = process.platform === "win32" ? "cargo.exe" : "cargo";
+
 const r = spawnSync(
-  "cargo",
+  cargoBin,
   ["test", "-p", "echo-desktop", "--all-features", "--test", "libmpv_platform", probeTest, "--", "--nocapture"],
   { cwd: ROOT, encoding: "utf8", env },
 );
