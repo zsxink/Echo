@@ -28,4 +28,4 @@
 ## 6. 最终复核
 
 - [x] 6.1 执行 `cargo fmt --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings`、`pnpm --filter @echo/desktop lint` 与 `typecheck`，全绿确认无格式/规范回归
-- [ ] 6.2 运行 `openspec validate --changes`、`pnpm verify:task -- --all`（受影响的已验证任务），并复核四个 delta spec 的 requirement 与实现一致（歌单搜索范围、定位边界、导入全视图可用）；确认 traceability 与场景清单同步
+- [x] 6.2 运行 `openspec validate --changes`、`pnpm verify:task -- --all`（受影响的已验证任务），并复核四个 delta spec 的 requirement 与实现一致（歌单搜索范围、定位边界、导入全视图可用）；确认 traceability 与场景清单同步
