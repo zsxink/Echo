@@ -66,12 +66,25 @@ fn stage_library_source(
         if is_symlink && preserve_links {
             let cached = std::fs::read_link(&path).expect("read vendored libmpv symlink");
             // Recreate the same relative/absolute link target next to the dest.
-            std::os::unix::fs::symlink(&cached, &dest).expect("recreate dev staging symlink");
+            stage_symlink(&cached, &dest);
         } else {
             std::fs::copy(&path, dest).expect("stage vendored libmpv dependency for development");
         }
     }
 }
+
+// Whether a symlinked vendored entry keeps its link next to the dev
+// executable. Only unix can express symlinks at all (Windows/msvc needs
+// Developer Mode and cannot rely on it), so the non-unix stub is unreachable:
+// `is_symlink` is always false there. Keeping the call site unconditional lets
+// the `if is_symlink && preserve_links` branch type-check on every target.
+#[cfg(unix)]
+fn stage_symlink(cached: &std::path::Path, dest: &std::path::Path) {
+    std::os::unix::fs::symlink(cached, dest).expect("recreate dev staging symlink");
+}
+
+#[cfg(not(unix))]
+fn stage_symlink(_cached: &std::path::Path, _dest: &std::path::Path) {}
 
 fn is_vendored_library(name: &str, target_os: &str) -> bool {
     // A vendored library is picked by the OS-appropriate extension. `.dll` /

@@ -49,7 +49,7 @@ mod gate {
                 return 0; // Platform outside this change (macOS: task 8.12).
             };
             let Ok(src) = std::fs::read_to_string(&manifest_path) else {
-                dir = d.parent().map(|p| p.to_path_buf());
+                dir = d.parent().map(Path::to_path_buf);
                 continue;
             };
             let Ok(value) = serde_json::from_str::<serde_json::Value>(&src) else {
