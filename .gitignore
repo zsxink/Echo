@@ -23,6 +23,14 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+# The Linux libmpv vendor tree is a *build product*, produced by
+# scripts/release/build-linux-libmpv.mjs inside the release runner (task 2.2)
+# rather than committed. Its provenance documents must still be trackable so
+# they can be committed: without these two lines `*.so` would take
+# manifest.json and NOTICE.md down with it, and task 2.2's "落仓" and
+# task-9.7's per-file SHA-256 gate would have nothing to read.
+!apps/desktop/src-tauri/vendor/libmpv/linux/manifest.json
+!apps/desktop/src-tauri/vendor/libmpv/linux/NOTICE.md
 venv/
 .venv/
 env/

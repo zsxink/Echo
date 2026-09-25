@@ -1616,6 +1616,10 @@
         {
           "desc": "manifest 结构/校验和、tauri.conf wiring、build.rs rpath、CI Gate 步骤；macOS 构建产物 rpath/签名/ABI/universal 验证；Windows/Linux 要求记录",
           "cmd": "node scripts/verify/checks/task-9.7.mjs"
+        },
+        {
+          "desc": "Linux 自建 libmpv 的产出侧：manifest.json（逐文件 SHA-256 + 四个 commit pin + glibc 上限）与 NOTICE.md 由构建脚本生成，符号链接不入 manifest",
+          "cmd": "node scripts/release/build-linux-libmpv.test.mjs"
         }
       ]
     },

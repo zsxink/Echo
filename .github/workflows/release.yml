@@ -86,8 +86,33 @@ jobs:
           libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
           librsvg2-dev patchelf
 
+      # Unlike macOS/Windows — where libmpv is a downloaded, digest-pinned
+      # upstream asset — Linux has no published single-file runtime that fits
+      # Echo's curated audio-only format set, so the runner builds it from the
+      # commits pinned in vendor/libmpv/linux/manifest.json. The apt set below
+      # is exactly build-linux-libmpv.mjs's documented prerequisite list.
+      - name: Install Linux libmpv build dependencies
+        if: runner.os == 'Linux'
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          build-essential git pkg-config python3
+          meson ninja-build yasm nasm autoconf automake libtool
+          libfreetype-dev libfontconfig1-dev libharfbuzz-dev libfribidi-dev
+          zlib1g-dev libunistring-dev libbz2-dev glslang-tools
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # Must precede "Build release bundles": tauri.conf.json's deb/appimage
+      # `files` map point at these exact paths, and the bundler fails outright
+      # when a custom file is missing. Produces libmpv.so + libav*.so +
+      # manifest.json + NOTICE.md, and re-verifies the glibc ceiling.
+      - name: Build vendored Linux libmpv
+        if: runner.os == 'Linux'
+        run: >-
+          node scripts/release/build-linux-libmpv.mjs
+          --work "${RUNNER_TEMP}/echo-libmpv-build"
+          --out apps/desktop/src-tauri/vendor/libmpv/linux
 
       - name: Build release bundles
         run: pnpm echo release
