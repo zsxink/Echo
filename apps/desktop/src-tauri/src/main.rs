@@ -3,6 +3,14 @@
 //! The binary owns only the Tauri application boundary. Domain work remains in
 //! `echo-core`; desktop runtime, player and platform implementation grow in
 //! `echo-desktop` in their respective tasks.
+//!
+//! Windows: the executable runs as a GUI-subsystem program, so no console
+//! (the black window) is attached at startup. `println!`/`eprintln!` output
+//! then goes nowhere visible, which is why all diagnostics route through the
+//! rolling-file logger + panic hook installed in `main` (task 7.8). The
+//! attribute is a no-op on macOS/Linux.
+
+#![windows_subsystem = "windows"]
 
 use std::{
     env,
@@ -118,35 +126,45 @@ impl StatusMenuSink for RuntimeStatusMenuSink {
 /// design and the `BridgeCommandMap` consumer.
 const PLAYER_SNAPSHOT_EVENT: &str = "player://snapshot";
 
-/// Resolve the bundled libmpv dylib for the current platform. On macOS the
-/// release app has it in `Echo.app/Contents/Frameworks`; `build.rs` stages the
-/// same dependency set in `target/Frameworks` for `tauri dev`. Both are reached
-/// through the *running executable's* own directory — not through Tauri's
-/// `executable_dir()`, which on macOS is unsupported (`dirs::executable_dir`
-/// returns `None`), so it can never be used to locate a sibling `Frameworks/`.
-// The parameter exists only to keep a uniform call signature across platforms;
-// the non-macOS branch cannot return a libmpv path, so the handle is unused.
-// `missing_const_for_fn` is allowed because the macOS branch calls
-// `std::env::current_exe()` (not const), which gates the whole fn — yet on a
-// non-macOS build the body would otherwise satisfy the lint.
+/// Resolve the bundled libmpv library for the current platform.
+///
+/// Every platform ships libmpv in the *running executable's* own directory —
+/// not through Tauri's `executable_dir()`, which on macOS is unsupported
+/// (`dirs::executable_dir` returns `None`), so it can never be used to locate
+/// a sibling `Frameworks/`.
+///
+///   • macOS: release app has it in `Echo.app/Contents/Frameworks`; `build.rs`
+///     stages the same dependency set in `target/Frameworks` for `tauri dev`.
+///     Two levels up from the executable in each:
+///       - dev:  target/debug/Echo  → ../..  → target/Frameworks
+///       - .app: .../Contents/MacOS/Echo → ../.. → .../Contents/Frameworks
+///   • Windows: NSIS installs the DLL set in the install root (`extraResources`,
+///     task 3.4), same directory as the executable. The packaged name is
+///     `libmpv-2.dll` (shinchiro ABI 2.5), not `libmpv-1.dll`.
+///   • Linux: deb/AppImage place `libmpv.so` in the same directory as the
+///     executable (`bundle.linux`, task 3.4); the real SONAME file is
+///     `libmpv.so.<ver>`, but Echo loads the unversioned `libmpv.so` the
+///     vendored tree offers as a symlink next to it.
 #[allow(clippy::missing_const_for_fn)]
 fn bundled_libmpv(_: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     #[cfg(target_os = "macos")]
     {
-        // `current_exe` is accurate in both layouts we ship/stage. `Frameworks`
-        // sits two levels up from the executable in each — the rpath instrument
-        // is `@executable_path/../Frameworks` (one `..` from the exe's *parent*
-        // directory, matching `parent().parent()` here):
-        //   • dev:  target/debug/Echo  → ../..  → target/Frameworks (staged set)
-        //   • .app: .../Contents/MacOS/Echo → ../.. → .../Contents/Frameworks
         let exe = std::env::current_exe().ok()?;
         let frameworks = exe.parent()?.parent()?.join("Frameworks");
         let candidate = frameworks.join("libmpv.dylib");
         candidate.exists().then_some(candidate)
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
     {
-        None
+        let exe = std::env::current_exe().ok()?;
+        let candidate = exe.parent()?.join("libmpv-2.dll");
+        candidate.exists().then_some(candidate)
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        let exe = std::env::current_exe().ok()?;
+        let candidate = exe.parent()?.join("libmpv.so");
+        candidate.exists().then_some(candidate)
     }
 }
 
@@ -341,7 +359,7 @@ fn wire_composition(
     // the UI report a successful play transition while producing no sound.
     let resolver = player::PlayerController::resolver(&routed.deps);
     let libmpv = bundled_libmpv(app.handle()).ok_or_else(|| {
-        "bundled libmpv is missing; playback cannot start (run the macOS build staging)".to_owned()
+        "bundled libmpv is missing; playback cannot start (run the platform build staging for this OS)".to_owned()
     })?;
     let controller = player::PlayerController::spawn_mpv(&libmpv, resolver)
         .map_err(|error| format!("start libmpv player: {error}"))?;

@@ -97,9 +97,9 @@ iOS 用户可连接同一资料库并完成稳定的同步、管理和播放；�
 - 一期固化离线的版本化对象资料、outbox、设备 ID/HLC 与恢复边界，但不建立连接器、网络依赖或同步 UI；二期在此基础上实现传输协议。
 - 每期开始前确认范围、验收标准和回归测试；未完成当前阶段的验收，不进入下一阶段。
 
-## 0.1.0 已封版项（macOS 已验证，三平台待扩展）
+## 0.1.0 已封版项（macOS 已验证；三平台 libmpv 基座落地、人工冒烟待扩展）
 
-0.1.0 以 macOS 单平台验证为基线封版；以下任务留待后续 change 完成三平台交付。
+0.1.0 以 macOS 单平台验证为基线封版；后续 change 持续交付三平台能力。**`introduce-windows-linux-libmpv`** 已落地 Windows/Linux 的 libmpv 装载基础（`bundled_libmpv` 三平台分支、build.rs dev 部署、NSIS/AppImage/deb bundle 布局）与平台 Gate（9.7 正式校验 + 9.8 三平台真机 load/ABI/command、Windows WebView2 报告），并随打包附带三份许可证说明；以下人工冒烟与发布期校验仍留待后续 change。
 
 - 9.8 三平台候选安装包：macOS 12+ universal、Windows 10 22H2/11 x64、Ubuntu 22.04 AppImage/deb 启动、播放、托盘、文件关联和显式退出验证。
 - 13.2 原生端到端临时资料库流程三平台数据、UUID、队列和偏好一致性验证。

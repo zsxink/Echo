@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "platform": "windows",
+  "kind": "x86_64-static-ffmpeg",
+  "publisher": "shinchiro/mpv-winbuild-cmake",
+  "release": "20260814",
+  "asset": "mpv-dev-x86_64-20260814-git-7b8915bc1d.7z",
+  "sourceUrl": "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260814/mpv-dev-x86_64-20260814-git-7b8915bc1d.7z",
+  "assetSha256": "0af22b28e920620036d3ae08fd9283156dc9af0420bf4df84b0e02282094599c",
+  "vulkanRuntime": "LunarG VulkanRT-1.4.304.0",
+  "vulkanSourceUrl": "https://sdk.lunarg.com/sdk/download/1.4.304.0/windows/VulkanRT-1.4.304.0-Components.zip",
+  "architectures": ["x86_64"],
+  "libmpvAbi": "2.5",
+  "mpvBuild": "mpv 20260814 git-7b8915bc1d",
+  "licenses": [
+    {
+      "component": "libmpv",
+      "license": "LGPL-2.1-or-later",
+      "source": "https://github.com/mpv-player/mpv"
+    },
+    {
+      "component": "FFmpeg (static)",
+      "license": "LGPL-2.1-or-later",
+      "source": "https://ffmpeg.org/legal.html"
+    },
+    {
+      "component": "Vulkan Loader",
+      "license": "Apache-2.0",
+      "source": "https://github.com/KhronosGroup/Vulkan-Loader"
+    }
+  ],
+  "files": {
+    "libmpv-2.dll": "f709c7ca8b183bec76b8158bf0c45c53018c63366750729352612f228ff7bdea",
+    "vulkan-1.dll": "c7ee7f7edeb5f2c175effa60621b33fc4b6d3e8764d03c9491c77d754bd804f1"
+  }
+}

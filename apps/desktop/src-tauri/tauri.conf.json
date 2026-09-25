@@ -27,6 +27,12 @@
   },
   "bundle": {
     "active": true,
+    "resources": {
+      "vendor/libmpv/windows/libmpv-2.dll": "libmpv-2.dll",
+      "vendor/libmpv/windows/vulkan-1.dll": "vulkan-1.dll",
+      "vendor/libmpv/windows/NOTICE.md": "NOTICE-libmpv-win.md",
+      "vendor/libmpv/windows/VulkanRT-LICENSE.txt": "VulkanRT-LICENSE.txt"
+    },
     "targets": ["app", "dmg", "nsis", "appimage", "deb"],
     "icon": [
       "icons/32x32.png",
@@ -63,6 +69,18 @@
         "Frameworks/libswresample.dylib": "vendor/libmpv/macos/libswresample.dylib",
         "Frameworks/libswscale.dylib": "vendor/libmpv/macos/libswscale.dylib",
         "Resources/third-party/libmpv/NOTICE.md": "vendor/libmpv/macos/NOTICE.md"
+      }
+    },
+    "linux": {
+      "deb": {
+        "files": {
+          "usr/bin/libmpv.so": "vendor/libmpv/linux/libmpv.so"
+        }
+      },
+      "appimage": {
+        "files": {
+          "usr/bin/libmpv.so": "vendor/libmpv/linux/libmpv.so"
+        }
       }
     }
   }

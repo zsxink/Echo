@@ -1620,6 +1620,16 @@
       ]
     },
     {
+      "id": "9.8",
+      "title": "三平台真实 libmpv 平台 Gate：Windows/Linux libloading 加载 vendor 库 + api_version ABI 断言 + 真实 mpv 命令；Windows WebView2 探测（仅报告）；删库/ABI 错配失败而非跳过",
+      "commands": [
+        {
+          "desc": "Windows/Linux 真机 load+ABI+command（tests/libmpv_platform.rs）+ 禁静默跳过哨兵；macOS 覆盖率存根由 8.12 承担",
+          "cmd": "node scripts/verify/checks/task-9.8.mjs"
+        }
+      ]
+    },
+    {
       "id": "10.1",
       "title": "设计 token 三主题与语义收藏红不被主题覆盖",
       "commands": [

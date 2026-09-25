@@ -2,9 +2,7 @@
 # all platforms. Without `eol=lf` the Windows CI runner forces CRLF checkouts
 # (core.autocrlf) and `prettier --check` flags every source file as mis-formatted
 # (Frontend (windows-latest) Format check was red for this exact reason).
-
 * text=auto eol=lf
-
 # Binary assets (and anything git may otherwise mis-detect as text) are never
 # line-ending normalized and never diffed as text.
 *.dylib binary
@@ -24,3 +22,4 @@
 *.opus binary
 *.flac binary
 *.aiff binary
+apps/desktop/src-tauri/vendor/libmpv/windows/libmpv-2.dll filter=lfs diff=lfs merge=lfs -text

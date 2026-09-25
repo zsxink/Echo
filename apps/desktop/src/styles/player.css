@@ -85,8 +85,13 @@
 .control svg { width: 18px; height: 18px; }
 #playback-mode { flex: none; overflow: visible; }
 #playback-mode svg { width: 20px; height: 20px; overflow: visible; }
-.control-play { width: 44px; height: 44px; color: var(--accent-on); background: var(--accent-strong); }
-.control-play:hover { color: var(--accent-on); background: var(--accent-strong-hover); }
+/* 播放暂停是传输控制区的主按钮，但它不再被一个实底圆包裹：44px 的热区保留
+ * （它与相邻 36px 控件在 flex 里居中对齐），视觉重量只由字形本身承担，所以
+ * 图标从 18px 放大到 30px。颜色改随主题色（--accent），静态态不给底色 ——
+ * “一个决定性视觉动作”留给黑胶，常规工作区保持朴素。 */
+.control-play { width: 44px; height: 44px; color: var(--accent); background: transparent; }
+.control-play svg { width: 30px; height: 30px; }
+.control-play:hover { color: var(--accent-hover); background: transparent; }
 .progress-line { --progress: 37%; --slider-track-height: 4px; position: absolute; z-index: 3; inset: -4px 0 auto; width: 100%; height: 8px; }
 .progress-line::before, .progress-line::after { content: ""; position: absolute; top: calc((8px - var(--slider-track-height)) / 2); height: var(--slider-track-height); border-radius: var(--radius-pill); pointer-events: none; }
 .progress-line::before { right: 0; left: 0; background: color-mix(in oklab, var(--fg), transparent 78%); }
@@ -145,8 +150,8 @@ body.player-mode-open .playerbar .player-track-card[aria-expanded="true"]:hover 
 body.player-mode-open .playerbar .player-track-text span, body.player-mode-open .playerbar .progress-line { color: color-mix(in oklab, var(--accent-on), transparent 42%); }
 body.player-mode-open .playerbar .control, body.player-mode-open .playerbar .row-action { color: color-mix(in oklab, var(--accent-on), transparent 26%); }
 body.player-mode-open .playerbar .control:hover, body.player-mode-open .playerbar .row-action:hover { color: var(--accent-on); background: color-mix(in oklab, var(--accent-on), transparent 90%); }
-body.player-mode-open .playerbar .control-play { color: var(--accent-on); background: var(--accent-strong); }
-body.player-mode-open .playerbar .control-play:hover { color: var(--accent-on); background: var(--accent-strong-hover); }
+body.player-mode-open .playerbar .control-play { color: var(--accent-on); background: transparent; }
+body.player-mode-open .playerbar .control-play:hover { color: var(--accent-on); background: color-mix(in oklab, var(--accent-on), transparent 90%); }
 body.player-mode-open .playerbar .progress-line::before, body.player-mode-open .playerbar .volume-line::before { background: color-mix(in oklab, var(--accent-on), transparent 76%); }
 body.player-mode-open .playerbar .progress-line::after, body.player-mode-open .playerbar .volume-line::after { background: var(--accent-strong); }
 body.player-mode-open .playerbar .progress::-webkit-slider-thumb { border-color: var(--bg); background: var(--accent-strong); }

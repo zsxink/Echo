@@ -102,6 +102,23 @@ jobs:
           done
           echo "found $found artifact pattern(s)"
 
+      # Each platform's vendored libmpv NOTICE (macOS/windows/linux are distinct
+      # provenance documents) must ride the Release with a platform-qualified
+      # name: upload-artifact merges echo-* into one dir, so three files named
+      # NOTICE.md at the same relative path would silently overwrite and leave
+      # only one on the Release. Rename so every NOTICE survives the merge.
+      - name: Stage platform NOTICE for release
+        shell: bash
+        run: |
+          set -euo pipefail
+          NOTICE="apps/desktop/src-tauri/vendor/libmpv/${{ matrix.platform }}/NOTICE.md"
+          if [ ! -f "$NOTICE" ]; then
+            echo "::error::Missing vendored libmpv NOTICE: $NOTICE"
+            exit 1
+          fi
+          cp "$NOTICE" "${{ matrix.bundle_dir }}/NOTICE-libmpv-${{ matrix.platform }}.md"
+          echo "staged NOTICE-libmpv-${{ matrix.platform }}.md"
+
       - name: Generate SHA256SUMS
         shell: bash
         working-directory: ${{ matrix.bundle_dir }}
@@ -115,9 +132,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: echo-${{ matrix.platform }}
-          path: |
-            ${{ matrix.bundle_dir }}
-            apps/desktop/src-tauri/vendor/libmpv/macos/NOTICE.md
+          path: ${{ matrix.bundle_dir }}
           if-no-files-found: error
 
   publish:
@@ -154,6 +169,6 @@ jobs:
             artifacts/**/*.deb
             artifacts/**/*.AppImage
             artifacts/**/SHA256SUMS-*
-            artifacts/**/NOTICE.md
+            artifacts/**/NOTICE*.md
           generate_release_notes: true
           fail_on_unmatched_files: true
