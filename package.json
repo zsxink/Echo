@@ -1,6 +1,6 @@
 {
   "name": "echo",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Echo — local-first cross-platform music player (workspace root)",
   "packageManager": "pnpm@11.18.0",
