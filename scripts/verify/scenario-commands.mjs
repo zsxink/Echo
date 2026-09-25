@@ -601,7 +601,7 @@ export const COMMANDS = {
   // task-13.9 (which is itself a scenario command in --automated runs).,
 };
 
-import { allScenarioIds } from "/Users/xian/Project/music/Echo/scripts/verify/spec-scenarios.mjs";
+import { allScenarioIds } from "./spec-scenarios.mjs";
 
 export function scenarioCommands() {
   const ids = allScenarioIds();
