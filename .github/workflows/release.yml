@@ -43,6 +43,11 @@ jobs:
             artifacts: "deb/*.deb;appimage/*.AppImage"
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The vendored Windows libmpv-2.dll is a Git-LFS object (114 MB);
+          # release packaging stages it into the NSIS install root, so the
+          # real (smudged) file must be on the runner.
+          lfs: true
 
       - name: Verify tag matches app version (when a tag is given)
         shell: bash

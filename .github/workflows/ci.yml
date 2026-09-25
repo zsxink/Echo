@@ -22,6 +22,11 @@ jobs:
           - windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The vendored Windows libmpv-2.dll is a Git-LFS object (114 MB >
+          # GitHub's 100 MB blob limit); the rust job needs the real file so
+          # build.rs can stage it for Windows dev runs.
+          lfs: true
 
       # The filesystem gate tests create real symlinks (walker / staging never
       # follow an escaping or externally-owned link). Windows runners only allow
@@ -156,6 +161,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Vendored libmpv-2.dll is Git-LFS; 9.7 checks its SHA-256 and 9.8
+          # loads it for real, so the actual (smudged) file is required.
+          lfs: true
 
       - name: Install Rust toolchain (pinned)
         uses: dtolnay/rust-toolchain@master
