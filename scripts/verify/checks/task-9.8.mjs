@@ -94,12 +94,17 @@ if (platform !== "macos") {
   }
 }
 
-// Windows: `cargo.exe` must be named explicitly. Node's spawnSync without a
-// shell does not resolve PATHEXT, so the bare `cargo` that works from pwsh (and
-// on unix) resolves to nothing under CreateProcess → ENOENT. The runner's PATH
-// still points at `.cargo\bin`, so naming the real executable gets the same
-// toolchain without shell quoting.
-const cargoBin = process.platform === "win32" ? "cargo.exe" : "cargo";
+// Resolve the cargo binary by CARGO_HOME instead of PATH. GitHub runners ship
+// rustup preinstalled, so dtolnay/rust-toolchain's `if ! command -v rustup`
+// branch (which appends `$CARGO_HOME\bin` to GITHUB_PATH) does NOT run, and the
+// step env does not reliably carry `.cargo\bin` on PATH. CARGO_HOME is always
+// set (the action writes it to GITHUB_ENV), so `$CARGO_HOME/bin/cargo[.exe]`
+// is the deterministic location. Node spawnSync without a shell also does not
+// resolve PATHEXT, so the `.exe` suffix must be explicit on Windows.
+const cargoBin =
+  process.platform === "win32"
+    ? resolve(process.env.CARGO_HOME || "", "bin", "cargo.exe")
+    : "cargo";
 
 const r = spawnSync(
   cargoBin,
