@@ -9,6 +9,7 @@
     "scripts/verify/checks/task-13.8.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",
     "scripts/verify/checks/task-9.2.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",
     "scripts/verify/checks/task-9.3.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",
-    "scripts/verify/checks/task-9.6.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change"
+    "scripts/verify/checks/task-9.6.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",
+    "scripts/verify/checks/task-9.5.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change"
   }
 }
