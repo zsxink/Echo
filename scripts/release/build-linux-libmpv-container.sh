@@ -59,7 +59,15 @@ fi
 echo "==> 在 ${IMAGE} 中构建 Linux libmpv（Node ${NODE_VERSION}，宿主 glibc 无关）"
 
 # 依赖列表与 release.yml 的 "Install Linux libmpv build dependencies" 保持一致，
-# 外加 git / curl / ca-certificates（取 Node 二进制）和 xz-utils（解包）。
+# 外加 git / curl / ca-certificates（取 Node 二进制）、xz-utils（解包）、
+# python3-pip（装 meson，见下）。
+#
+# meson 刻意**不从 apt 装**：22.04 只有 0.61.2，而 libplacebo 要求 >= 1.3.0
+# （首次容器构建实测：`Meson version is 0.61.2 but project requires >=1.3.0`）。
+# meson 是纯 Python、不链接 glibc，所以从 PyPI 装新版既满足版本下限、
+# 又不会把构建宿主的 glibc 抬上去——而 glibc 版本正是这里唯一真正要钉死的东西。
+# `pip install --break-system-packages` 是 Debian 12+ 起对外链 pip 的 PEP 668 拒绝
+# （externally-managed-environment）所需的显式开关；22.04 已经带这个限制。
 docker run --rm \
   --volume "${REPO_ROOT}:/src" \
   --volume "${WORK_DIR}:/work" \
@@ -69,11 +77,17 @@ docker run --rm \
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
     apt-get install -y --no-install-recommends \
-      build-essential git pkg-config python3 python3-setuptools \
-      meson ninja-build yasm nasm autoconf automake libtool libtool-bin \
+      build-essential git pkg-config python3 python3-setuptools python3-pip \
+      ninja-build yasm nasm autoconf automake libtool libtool-bin \
       libfreetype-dev libfontconfig1-dev libharfbuzz-dev libfribidi-dev \
       zlib1g-dev libunistring-dev libbz2-dev glslang-tools \
       patchelf curl ca-certificates xz-utils
+
+    # 装新版 meson 覆盖 apt 的 0.61.2，并让脚本早失败：真正报错要等到
+    # libplacebo 的 meson.build 才看得见，那时已经 clone 完四个仓库了。
+    pip3 install --break-system-packages --no-cache-dir 'meson>=1.3.0'
+    meson --version
+    command -v meson ninja python3 git curl patchelf
 
     # Node 的官方二进制是自包含的（只要求 glibc >= 2.28），在 2.35 的宿主上直接可用。
     curl -fsSL \"https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-x64.tar.xz\" \
