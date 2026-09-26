@@ -87,14 +87,21 @@ docker run --rm \
     #
     # 装进 venv 而不是往系统 Python 里装，有两个各自独立的原因：
     #
-    #  1. 不能靠 `pip install --break-system-packages` 绕过 PEP 668。那个开关是
-    #     pip 23.0.1 才加的，而 22.04 源里的 python3-pip 是 22.0.2（CI 实跑日志
-    #     里的 `python3-pip (22.0.2+dfsg-1ubuntu0.7)`）——旧 pip 会在**解析参数**
-    #     阶段就报 `no such option: --break-system-packages` 退出，根本走不到
+    #  1. 不能靠 --break-system-packages 绕过 PEP 668。那个开关是 pip 23.0.1
+    #     才加的，而 22.04 源里的 python3-pip 是 22.0.2（CI 实跑日志里 apt 装出
+    #     的是 python3-pip 22.0.2+dfsg-1ubuntu0.7）——旧 pip 会在**解析参数**阶段
+    #     就报 "no such option: --break-system-packages" 退出，根本走不到
     #     PEP 668 那一步。绕过开关在这张镜像上从一开始就不存在。
     #  2. venv 天然不是 externally-managed 的环境，所以无论 22.04 到底带不带
     #     EXTERNALLY-MANAGED 标记，pip 都不会拿 PEP 668 拒绝它。写法不依赖
     #     「这张镜像有没有那个标记」这个我们没在本地核实过的事实。
+    #
+    # 本段注释刻意不用反引号：整段在下面那个 bash -c "..." 的双引号里，
+    # **双引号内的反引号是活的**。写注释时带上反引号，命令替换会在**宿主**
+    # 上先跑一遍（run 36247701161 实测：宿主上多出一次
+    # "ERROR: You must give at least one requirement to install"，
+    # 紧接着 "line 70: syntax error near unexpected token"），
+    # 随后真正要执行的 payload 被这段替换污染。引号只表达含义，不做修饰。
     #
     # --system-site-packages：venv 里的 python3 仍能看到系统 site-packages，
     # 免得 meson 构建过程里 shell out 到 python3 时丢掉发行版装的模块。

@@ -149,8 +149,46 @@ assert(
     "必须重跑本文件全部断言。",
 );
 
-// 9. Guard against the test itself rotting into a no-op: if the file were
-//    emptied or the section renamed, every assertion above would still pass.
+// 9. The payload handed to `bash -c "..."` is a double-quoted string on the
+//    host, and **backticks are live inside double quotes** — even on a comment
+//    line. A comment written with backticks therefore runs its "quoted" words
+//    as a command substitution on the host before the container ever starts,
+//    and a pair containing shell metacharacters additionally breaks the host's
+//    own parse. CI run 36247701161 showed both halves at once:
+//      ERROR: You must give at least one requirement to install
+//      line 70: syntax error near unexpected token `22.0.2+dfsg-1ubuntu0.7'
+//    None of it was a libmpv problem, and none of it was visible in `bash -n`
+//    on the host — the corruption happens while the string is being assembled.
+const payloadStart = source.indexOf('bash -euxo pipefail -c "');
+const payloadEnd = source.lastIndexOf('"\n');
+const payload = payloadStart >= 0 ? source.slice(payloadStart, payloadEnd) : "";
+const backtickLines = payload
+  .split("\n")
+  .map((l, i) => [i + 1, l])
+  .filter(([, l]) => l.includes("`"));
+assert(
+  payload.length > 0 && backtickLines.length === 0,
+  "docker payload 内没有反引号（双引号里的反引号会在宿主上执行）",
+  backtickLines.map(([n, l]) => `  ${n}: ${l}`).join("\n") +
+    "\n注释里要用反引号强调，请改用引号或去掉。",
+);
+
+// 10. Same class of hazard, the other special: a `$(...)` in that payload is
+//     also live on the host. `\$PATH` is the one deliberate exception and is
+//     asserted separately in 3, because it is the escape that makes the
+//     container-side expansion happen there instead.
+const unescapedSubst = payload
+  .split("\n")
+  .map((l, i) => [i + 1, l])
+  .filter(([, l]) => /(?<!\\)\$\(/.test(l));
+assert(
+  unescapedSubst.length === 0,
+  "docker payload 内没有未转义的 $(...)（同样会在宿主上展开）",
+  unescapedSubst.map(([n, l]) => `  ${n}: ${l}`).join("\n"),
+);
+
+// 11. Guard against the test itself rotting into a no-op: if the file were
+//     emptied or the section renamed, every assertion above would still pass.
 assert(commentLines(/meson/).length > 0, "测试读到的不是空脚本", "脚本内容异常。");
 
 if (failures > 0) {
