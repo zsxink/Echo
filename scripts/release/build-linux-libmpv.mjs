@@ -91,6 +91,11 @@ const MANIFEST = resolve(ROOT, "apps/desktop/src-tauri/vendor/libmpv/linux/manif
 // a library demanding a newer GLIBC_ symbol cannot run on 22.04/24.04 installs.
 const GLIBC_MAX = 35;
 
+// The seven libraries Echo ships and mpv pulls in transitively. Matches both
+// the unversioned dev symlink and the versioned real file, so callers can pick
+// which they want rather than each re-deriving the soname shape.
+const SO_NAME = /^(lib(?:mpv|avcodec|avformat|avutil|swresample|swscale|avfilter))\.so(?:\.[0-9.]+)?$/;
+
 // The four component repos mpv-build's build/update scripts expect as
 // checkout dirs under the mpv-build tree. Names must match exactly:
 // scripts/*-config cd into these.
@@ -338,24 +343,51 @@ function build(buildDir) {
   run("sh", ["./build"], { cwd: buildDir, env: process.env, maxBuffer: 64 * 1024 * 1024 });
 }
 
+// Picks the shipped shared objects out of one build directory, as absolute
+// paths to the real versioned files.
+//
+// Match on soname, not `endsWith(".so")`. The real files are versioned
+// (libmpv.so.2.5, libavcodec.so.61) and so never end in ".so"; the only names
+// that do are the unversioned dev symlinks meson installs beside them. So a
+// plain `.endsWith(".so")` filter selected nothing at all and the `wanted` check
+// downstream failed on every Linux build. Dirent.isFile() is no-follow, so
+// those symlinks are skipped and the real versioned file beside them is
+// collected exactly once, under its own name — no blob is recorded twice.
+//
+// Exported (and pure apart from reading the directory) so the self-test can
+// drive it directly: it is unreachable from the script's own CLI, which has to
+// clone and compile ten-toolchains' worth of real sources first.
+export function realSharedObjectsIn(dir) {
+  if (!isDir(dir)) return [];
+  const found = [];
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (e.isFile() && SO_NAME.test(e.name)) found.push(realpathSync(join(dir, e.name)));
+  }
+  return found;
+}
+
 function collectArtifacts(buildDir, out, _buildTag) {
   // libplacebo/libass/ffmpeg are `meson/make install`ed into build_libs/lib;
   // mpv is only compiled (`mpv-build` does no install), so libmpv.so lives in
   // mpv/build. Merge both trees' real .so files into the vendor dir.
   const libDirs = [join(buildDir, "build_libs", "lib"), join(buildDir, "mpv", "build")];
-  const realFiles = [];
-  for (const d of libDirs) {
-    if (!isDir(d)) continue;
-    for (const e of readdirSync(d, { withFileTypes: true })) {
-      // Dirent isFile is no-follow: symlinks (libavcodec.so → .so.61) are
-      // skipped, the real versioned file below them is collected once.
-      if (e.isFile() && e.name.endsWith(".so")) realFiles.push(realpathSync(join(d, e.name)));
-    }
-  }
-  const uniq = [...new Set(realFiles)];
+  const uniq = [...new Set(libDirs.flatMap(realSharedObjectsIn))];
 
   const wanted = ["libmpv", "libavcodec", "libavformat", "libavutil",
                   "libswresample", "libswscale", "libavfilter"];
+  if (uniq.length === 0) {
+    // The generic `expected <lib>.so produced` message below cannot tell
+    // "this one library is missing" apart from "the filter matched nothing",
+    // which is the failure that actually happened here and the one that cost a
+    // release run. Say which, and what was there.
+    const seen = libDirs.flatMap((d) =>
+      isDir(d) ? readdirSync(d).slice(0, 20).map((n) => `${d}/${n}`) : [],
+    );
+    fail(
+      `no real .so files collected from ${libDirs.join(" or ")}` +
+      (seen.length ? `; found: ${seen.join(", ")}` : " (neither directory exists)"),
+    );
+  }
   const present = new Set(uniq.map((p) => p.split("/").pop().split(".")[0]));
   for (const w of wanted) {
     if (!present.has(w)) fail(`expected ${w}.so produced, not in ${libDirs.join(" or ")}`);
@@ -478,11 +510,6 @@ function sha256Of(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
-// A shipped shared object: libmpv.so, libmpv.so.2.5, libavcodec.so.61.
-// Not libavcodec.so.1 — that is the unversioned development symlink, and
-// statSync().isFile() follows the link, so the name is what tells them apart.
-const SO_NAME = /^(lib(?:mpv|avcodec|avformat|avutil|swresample|swscale|avfilter))\.so(?:\.[0-9.]+)?$/;
-
 // Every shipped shared object that is a real file. Must be lstat, not stat:
 // exists() below follows symlinks, which would admit the libmpv.so link and
 // hash its target under both names.
@@ -518,14 +545,16 @@ function provenanceFiles(out) {
   return Object.fromEntries([...found].map(([base, f]) => [f.name, f.digest]));
 }
 
-function resolveGlibcMax(out) {
+function resolveGlibcMax() {
   // Normal build path: checkGlibc() already measured and returned it.
-  // --emit-provenance path: no ELF to read, so record the ceiling the build
-  // was verified against rather than inventing a lower "measured" number.
-  if (hasBin("readelf")) {
-    const real = readdirSync(out).filter((n) => exists(join(out, n)));
-    if (real.length > 0) return checkGlibc(out);
-  }
+  // --emit-provenance path: it re-writes the provenance documents for a tree
+  // someone else built, so the ceiling recorded here is the contract that tree
+  // was verified against, not a fresh measurement. Never re-run readelf here:
+  // this mode exists precisely to work on a vendor tree the current host may
+  // not be able to introspect, and --emit-provenance's only caller is the
+  // provenance self-test, whose fixtures are text blobs rather than ELF. The
+  // measured check stays where it is load-bearing, in the real build path,
+  // where release.yml runs it against the freshly compiled libraries.
   return GLIBC_MAX;
 }
 
@@ -619,7 +648,10 @@ Gate re-verifies before packaging.
 `;
 }
 
-main();
+// Imported by the self-test for realSharedObjectsIn(); running the full build
+// on import would clone and compile four repos, so gate the entry point the
+// same way scripts/verify/spec-scenarios.mjs does.
+if (import.meta.url === `file://${process.argv[1]}`) main();
 
 function main() {
   const opts = parseArgs();
@@ -628,7 +660,7 @@ function main() {
   // documents the rest of the pipeline reads. Skips clone/build/readelf so it
   // is also the path the self-test drives.
   if (opts.emitOnly) {
-    emitProvenance(opts.out, JSON.parse(opts.buildTag), resolveGlibcMax(opts.out));
+    emitProvenance(opts.out, JSON.parse(opts.buildTag), resolveGlibcMax());
     return;
   }
 

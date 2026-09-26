@@ -410,7 +410,21 @@ function withImage(image, { readOnly = false, mountPoint } = {}, fn) {
 
 function toFormat(source, format, target) {
   if (existsSync(target)) unlinkSync(target);
-  run("hdiutil", ["convert", source, "-format", format, "-o", target], { stdio: "ignore" });
+  // Pipe (not stdio:"ignore") so a failure carries hdiutil's own reason. The
+  // UDZO step is load-bearing — it is what produces the shipped image — and it
+  // failed on a macOS runner with the message swallowed, leaving nothing but
+  // "Command failed" in the log and no way to tell a busy image from a full
+  // disk from a bad format. The detach/cleanup calls stay on stdio:"ignore":
+  // they are best-effort and their output is not worth failing over.
+  try {
+    run("hdiutil", ["convert", source, "-format", format, "-o", target]);
+  } catch (error) {
+    const detail = String(error.stderr ?? error.message).trim();
+    throw new Error(
+      `hdiutil convert ${source} -> ${format} 失败：${detail}\n` +
+      `（提示：源镜像若仍挂载着会转换失败，先 hdiutil info 确认没有卷指向 ${source}）`,
+    );
+  }
 }
 
 // ------------------------------------------------------------------------- 主流程

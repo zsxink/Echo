@@ -20,6 +20,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { realSharedObjectsIn } from "./build-linux-libmpv.mjs";
+
 const digestOf = (b) => createHash("sha256").update(b).digest("hex");
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
@@ -262,6 +264,60 @@ const buildTag = {
   assert(
     lstatSync(join(dir, "libmpv.so")).isSymbolicLink(),
     "the libmpv.so symlink survives emit-provenance",
+  );
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// --- 6. realSharedObjectsIn() finds the versioned real files ---------------
+// The filter that picks shipped .so files out of the build tree used to be
+// `e.name.endsWith(".so")`. That matches nothing: meson/make install put the
+// real library under a *versioned* name (libavcodec.so.61) and the unversioned
+// name is a dev symlink, which no-follow Dirent.isFile() then rejects. So the
+// collector gathered an empty set and every Linux build died at "expected
+// libmpv.so produced" — the failure that actually cost a release run.
+//
+// Driving this through the CLI is not an option: the entry point clones and
+// compiles four repos behind ten build prerequisites, so a macOS dev box can
+// never reach the collector. Test the selector against a directory shaped
+// exactly like the one mpv-build leaves behind.
+{
+  const dir = mkdtempSync(join(tmpdir(), "echo-libmpv-build-lib-"));
+  const versions = {
+    "libavcodec.so.61": "avcodec",
+    "libavformat.so.59": "avformat",
+    "libavutil.so.59": "avutil",
+    "libswresample.so.5": "swresample",
+    "libswscale.so.8": "swscale",
+    "libavfilter.so.10": "avfilter",
+  };
+  for (const [name, body] of Object.entries(versions)) {
+    writeFileSync(join(dir, name), body);
+    // meson installs the unversioned dev symlink next to the real file.
+    symlinkSync(name, join(dir, name.replace(/\.so(\.[0-9.]+)?$/, ".so")));
+  }
+  // Files that share the directory but are not part of the shipped set.
+  writeFileSync(join(dir, "libass.so.9"), "not-shipped");
+  writeFileSync(join(dir, "pkgconfig"), "not-a-library");
+
+  const got = realSharedObjectsIn(dir).map((p) => p.split("/").pop()).sort();
+  assert(
+    JSON.stringify(got) === JSON.stringify(Object.keys(versions).sort()),
+    "the build-tree selector picks the 6 versioned real .so files",
+    `got ${JSON.stringify(got)}`,
+  );
+  assert(
+    !got.includes("libass.so.9"),
+    "the build-tree selector ignores a shipped-set-external .so (libass)",
+    `got ${JSON.stringify(got)}`,
+  );
+  assert(
+    !got.some((n) => n.endsWith(".so") && !/\.\d/.test(n)),
+    "the build-tree selector never returns an unversioned dev symlink",
+    `got ${JSON.stringify(got)}`,
+  );
+  assert(
+    realSharedObjectsIn(join(dir, "does-not-exist")).length === 0,
+    "the build-tree selector returns [] for a directory that does not exist",
   );
   rmSync(dir, { recursive: true, force: true });
 }
