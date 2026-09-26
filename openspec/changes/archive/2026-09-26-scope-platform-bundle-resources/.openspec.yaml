@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-09-26
+# 行为契约的修正落在未归档的 introduce-windows-linux-libmpv 之内：本 change
+# 自身不新增也不修改任何 requirement，只修正其实现与校验，故不产出 spec delta。
+# 见 design.md 决策 3 与 tasks.md 3.1。
+skip_specs: true

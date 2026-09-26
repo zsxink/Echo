@@ -1614,7 +1614,7 @@
       "title": "libmpv manifest 接入正式构建：macOS universal rpath+签名、Windows DLL 搜索、Linux glibc 2.35 依赖检查、Gate 基线无回退",
       "commands": [
         {
-          "desc": "manifest 结构/校验和、tauri.conf wiring、build.rs rpath、CI Gate 步骤；macOS 构建产物 rpath/签名/ABI/universal 验证；Windows/Linux 要求记录",
+          "desc": "manifest 结构/校验和、tauri.conf wiring、build.rs rpath、CI Gate 步骤；macOS 构建产物 rpath/签名/ABI/universal 与产物纯净性（Resources/ 不含其它平台播放后端）验证；Windows 平台专属配置 tauri.windows.conf.json 的 DLL 映射与主配置无平台无关 resources；Linux 要求记录",
           "cmd": "node scripts/verify/checks/task-9.7.mjs"
         },
         {

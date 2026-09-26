@@ -5,8 +5,10 @@
 //
 //   • Windows: vendor integrity (SHA-256 against manifest), the
 //     bundled_libmpv `libmpv-2.dll` search next to the exe (with
-//     `#![windows_subsystem]`), and tauri.conf `bundle.resources` covering
-//     the whole DLL set in the install root.
+//     `#![windows_subsystem]`), and tauri.windows.conf.json `bundle.resources`
+//     covering the whole DLL set in the install root. That mapping is
+//     deliberately platform-scoped: the top-level `bundle.resources` is
+//     platform-agnostic and would leak the DLLs into the macOS/Linux builds.
 //   • Linux: vendor integrity, a glibc ceiling of ≤ 2.35 (task 2.2's build
 //     host), and tauri.conf `bundle.linux` placing libmpv.so into usr/bin.
 //     These are enforced once the CI first build has landed the tree; until
@@ -20,12 +22,14 @@
 //   3. build.rs contains the @executable_path/../Frameworks rpath arg.
 //   4. CI workflow includes the macOS Gate verification step (no regression).
 //   5. If a formal build artifact exists, runs the same rpath, signing, ABI
-//      and universal-architecture checks as the 1.10 Gate.
+//      and universal-architecture checks as the 1.10 Gate, plus a
+//      cross-platform purity check: the macOS bundle's Resources/ must not
+//      carry another platform's playback backend.
 //   6. (Windows only) formal Windows wiring checks above.
 //   7. (Linux only) formal Linux wiring checks above.
 
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -53,8 +57,25 @@ const TAURI_CONF = resolve(
   "src-tauri",
   "tauri.conf.json",
 );
+// Windows-only bundle resources live here: `bundle.resources` in the main
+// config is platform-agnostic and would ship the Windows DLL set to macOS
+// and Linux builds too.
+const TAURI_WINDOWS_CONF = resolve(
+  ROOT,
+  "apps",
+  "desktop",
+  "src-tauri",
+  "tauri.windows.conf.json",
+);
 const BUILD_RS = resolve(ROOT, "apps", "desktop", "src-tauri", "build.rs");
 const CI_WORKFLOW = resolve(ROOT, ".github", "workflows", "ci.yml");
+// CI builds with an explicit `--target`, which is what puts the bundle under
+// the triple directory this path names. A host build lands in
+// `target/release/bundle/...` instead and is skipped there — the triple path
+// stays the single source of truth so this check verifies the same artifact
+// CI does. In the macOS CI job task 1.9 runs first and leaves exactly this
+// bundle behind (it also universalises and re-signs it), so the assertions
+// below do execute on every macOS build; see the 9.7 step in ci.yml.
 const BUNDLE = resolve(
   ROOT,
   "target",
@@ -176,6 +197,22 @@ if (process.platform !== "darwin") {
   }
   pass("vendor checksums match manifest");
 
+  // Cross-platform purity: the macOS app bundle must not carry another
+  // platform's playback backend. `bundle.resources` in the main config is
+  // platform-agnostic, so a Windows mapping left there is copied into the
+  // macOS build and ships ~115 MB of unusable DLLs. Anything under Resources/
+  // that is not a macOS dylib is a leak; Frameworks/ is the macOS location
+  // and is checked by the checksum loop above.
+  const resourcesDir = resolve(BUNDLE, "Resources");
+  const foreign = readdirSync(resourcesDir, { withFileTypes: true })
+    .filter((e) => e.isFile() && (e.name.endsWith(".dll") || e.name.endsWith(".so") || e.name.endsWith(".so.*")))
+    .map((e) => e.name);
+  if (foreign.length > 0)
+    fail(
+      `macOS app bundle Resources/ carries non-macOS playback binaries: ${foreign.join(", ")}; platform-specific bundle resources must not be declared in the platform-agnostic bundle.resources`,
+    );
+  pass("macOS app bundle Resources/ carries no foreign-platform binaries");
+
   // Codesign verification
   const appBundle = resolve(BUNDLE, "..");
   run("codesign", ["--verify", "--deep", "--strict", appBundle]);
@@ -260,14 +297,24 @@ if (process.platform === "win32") {
     fail("main.rs lacks #![windows_subsystem = \"windows\"]");
   pass("bundled_libmpv Windows branch (libmpv-2.dll next to exe) present");
 
-  // 6c. tauri.conf bundles the whole DLL set into the install root.
-  const confWin = JSON.parse(readFileSync(TAURI_CONF, "utf8"));
+  // 6c. tauri.windows.conf.json bundles the whole DLL set into the install
+  // root. The mapping lives in the platform-specific config because the
+  // top-level `bundle.resources` is platform-agnostic: Tauri copies it into
+  // every target's build, which leaked the Windows DLLs into the macOS dmg.
+  // Keep asserting the main config stays free of it, so a regression back to
+  // the platform-agnostic field fails here instead of in a downloaded build.
+  const confMain = JSON.parse(readFileSync(TAURI_CONF, "utf8"));
+  if (confMain.bundle?.resources)
+    fail(
+      "tauri.conf.json declares platform-agnostic bundle.resources; Windows mappings must live in tauri.windows.conf.json so they do not leak into macOS/Linux artifacts",
+    );
+  const confWin = JSON.parse(readFileSync(TAURI_WINDOWS_CONF, "utf8"));
   const winResources = confWin.bundle?.resources ?? {};
   for (const filename of Object.keys(windowsManifest.files)) {
     if (filename.endsWith(".dll") && !winResources[`vendor/libmpv/windows/${filename}`])
-      fail(`tauri.conf bundle.resources missing Windows DLL mapping for ${filename}`);
+      fail(`tauri.windows.conf.json bundle.resources missing Windows DLL mapping for ${filename}`);
   }
-  pass("tauri.conf bundle.resources covers the Windows DLL set");
+  pass("tauri.windows.conf.json bundle.resources covers the Windows DLL set");
 } else {
   process.stdout.write(
     "  ok: Windows wiring checks are Windows-local; not run here\n",

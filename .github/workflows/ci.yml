@@ -146,8 +146,12 @@ jobs:
       - name: Build frontend for Tauri context
         run: pnpm --dir apps/desktop build
 
+      # 9.7 additionally asserts the macOS bundle carries no foreign-platform
+      # playback binaries and that the Windows DLL mappings stay in the
+      # platform-specific config. It reads the bundle 1.9 leaves behind, so it
+      # must run in the same job, after 1.9.
       - name: Build and verify macOS platform Gate
-        run: pnpm verify:task -- 1.9 1.10
+        run: pnpm verify:task -- 1.9 1.10 9.7
 
       - name: Upload libmpv Gate report
         uses: actions/upload-artifact@v4

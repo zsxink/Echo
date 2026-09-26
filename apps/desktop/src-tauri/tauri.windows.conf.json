@@ -1,0 +1,10 @@
+{
+  "bundle": {
+    "resources": {
+      "vendor/libmpv/windows/libmpv-2.dll": "libmpv-2.dll",
+      "vendor/libmpv/windows/vulkan-1.dll": "vulkan-1.dll",
+      "vendor/libmpv/windows/NOTICE.md": "NOTICE-libmpv-win.md",
+      "vendor/libmpv/windows/VulkanRT-LICENSE.txt": "VulkanRT-LICENSE.txt"
+    }
+  }
+}
