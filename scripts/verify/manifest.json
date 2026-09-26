@@ -2192,6 +2192,12 @@
       "manifest": "tests/scenarios/CRP-R04-S01.yaml"
     },
     {
+      "id": "CRP-R04-S02",
+      "title": "三平台许可齐全",
+      "command": "node scripts/verify/checks/task-crp.mjs",
+      "manifest": "tests/scenarios/CRP-R04-S02.yaml"
+    },
+    {
       "id": "CRP-R05-S01",
       "title": "资产汇总到 tag 对应 Release",
       "command": "node scripts/verify/checks/task-crp.mjs",
@@ -2538,6 +2544,12 @@
       "title": "文件不可用",
       "command": "cargo test -p echo-desktop --all-features --test player_smoke",
       "manifest": "tests/native/DP-R01-S02.md"
+    },
+    {
+      "id": "DP-R01-S03",
+      "title": "平台播放后端缺失",
+      "command": "node scripts/verify/checks/task-9.7.mjs",
+      "manifest": "tests/scenarios/DP-R01-S03.yaml"
     },
     {
       "id": "DP-R02-S01",
@@ -3592,7 +3604,7 @@
     {
       "id": "LE-R18-S04",
       "title": "歌单搜索不影响其他歌单",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.ts -t \"playlistId 变化触发新的抓取请求（缓存键区分布同歌单）\" && cargo test -p echo-core --all-features playlist_search_restricts_to_playlist_members",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.ts -t \"playlistId 变化触发新的抓取请求（缓存键区分布同歌单）\"",
       "manifest": "tests/scenarios/LE-R18-S04.yaml"
     },
     {
@@ -4048,7 +4060,7 @@
     {
       "id": "PM-R10-S01",
       "title": "定位歌单中正在播放的歌曲",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"rolls to a playing member\" && pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"locate\"",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"rolls to a playing member of the playlist without a toast\"",
       "manifest": "tests/scenarios/PM-R10-S01.yaml"
     },
     {

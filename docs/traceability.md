@@ -5,7 +5,7 @@
 - 本表逐项覆盖 specs 中的全部 Scenario；稳定 ID 不得复用，标题调整时保留原 ID。
 - 任务 1.3 建立测试 manifest 与执行器。每行指定的 manifest 必须包含正常路径、关键失败路径、fixture、预期结果和自动测试过滤器；Native 行还必须包含平台版本、人工步骤、操作者和证据路径。
 - 每行给出实际验收命令。`pnpm verify:scenario -- --all` 必须比较 specs、此表和测试 manifest 的 ID 集合完全相等，并逐项执行；缺失、重复、无命令、无证据或失败均返回非零。
-- 当前基线：102 个 Requirement，390 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
+- 当前基线：102 个 Requirement，392 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
 
 ## ci-release-pipeline
 
@@ -20,6 +20,7 @@
 | CRP-R03-S01 | 产物完整性校验 | 校验清单随发布物上传 | 13.9 | Gate | `tests/scenarios/CRP-R03-S01.yaml` | `pnpm verify:scenario -- CRP-R03-S01` |
 | CRP-R03-S02 | 产物完整性校验 | 缺失产物导致失败 | 13.9 | Gate | `tests/scenarios/CRP-R03-S02.yaml` | `pnpm verify:scenario -- CRP-R03-S02` |
 | CRP-R04-S01 | 第三方许可证随发布物提供 | 许可证说明随包上传 | 13.9 | Gate | `tests/scenarios/CRP-R04-S01.yaml` | `pnpm verify:scenario -- CRP-R04-S01` |
+| CRP-R04-S02 | 第三方许可证随发布物提供 | 三平台许可齐全 | 13.9 | Gate | `tests/scenarios/CRP-R04-S02.yaml` | `pnpm verify:scenario -- CRP-R04-S02` |
 | CRP-R05-S01 | 发布为 GitHub Release | 资产汇总到 tag 对应 Release | 13.9 | Gate | `tests/scenarios/CRP-R05-S01.yaml` | `pnpm verify:scenario -- CRP-R05-S01` |
 | CRP-R05-S02 | 发布为 GitHub Release | 重复触发不产生重复 Release | 13.9 | Gate | `tests/scenarios/CRP-R05-S02.yaml` | `pnpm verify:scenario -- CRP-R05-S02` |
 
@@ -88,6 +89,7 @@
 |---|---|---|---|---|---|---|
 | DP-R01-S01 | 桌面音频播放 | 播放资料库歌曲 | 8.1–8.4, 8.12 | Desktop/Native | `tests/native/DP-R01-S01.md` | `pnpm verify:scenario -- DP-R01-S01` |
 | DP-R01-S02 | 桌面音频播放 | 文件不可用 | 8.1–8.4, 8.12 | Desktop/Native | `tests/native/DP-R01-S02.md` | `pnpm verify:scenario -- DP-R01-S02` |
+| DP-R01-S03 | 桌面音频播放 | 平台播放后端缺失 | 9.7 | Gate | `tests/scenarios/DP-R01-S03.yaml` | `pnpm verify:scenario -- DP-R01-S03` |
 | DP-R02-S01 | 播放队列 | 从曲库开始播放 | 8.5, 8.6, 11.2 | Desktop/React | `tests/scenarios/DP-R02-S01.yaml` | `pnpm verify:scenario -- DP-R02-S01` |
 | DP-R02-S02 | 播放队列 | 视图播放重建队列数量 | — | Gate | `tests/scenarios/DP-R02-S02.yaml` | `pnpm verify:scenario -- DP-R02-S02` |
 | DP-R02-S03 | 播放队列 | 当前项始终置顶 | 8.5, 8.6, 11.2 | Desktop/React | `tests/scenarios/DP-R02-S03.yaml` | `pnpm verify:scenario -- DP-R02-S03` |

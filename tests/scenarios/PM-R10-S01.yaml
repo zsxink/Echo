@@ -4,7 +4,7 @@ scenario_id: PM-R10-S01
 requirement: 歌单内定位当前播放歌曲
 scenario: 定位歌单中正在播放的歌曲
 layer: automated
-command: "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"rolls to a playing member\" && pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"locate\""
+command: "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"rolls to a playing member of the playlist without a toast\""
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

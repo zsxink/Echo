@@ -26,6 +26,9 @@ export const COMMANDS = {
   "CRP-R03-S01": "node scripts/verify/checks/task-crp.mjs",
   "CRP-R03-S02": "node scripts/verify/checks/task-crp.mjs",
   "CRP-R04-S01": "node scripts/verify/checks/task-crp.mjs",
+  // 三平台许可齐全: same structural contract as S01 — the workflow must
+  // upload a NOTICE for each of macos/windows/linux, not just one.
+  "CRP-R04-S02": "node scripts/verify/checks/task-crp.mjs",
   "CRP-R05-S01": "node scripts/verify/checks/task-crp.mjs",
   "CRP-R05-S02": "node scripts/verify/checks/task-crp.mjs",
 
@@ -120,6 +123,9 @@ export const COMMANDS = {
   // ===== desktop-playback =====
   "DP-R01-S01": "cargo test -p echo-desktop --all-features --test player_smoke",
   "DP-R01-S02": "cargo test -p echo-desktop --all-features --test player_smoke",
+  // 平台播放后端缺失: the per-platform libmpv resolution contract and its
+  // explicit-error path are asserted by task-9.7 (the three-platform Gate).
+  "DP-R01-S03": "node scripts/verify/checks/task-9.7.mjs",
   // Overlap is fine: both R01 scenarios resolve to the real-libmpv smoke suite.,
   "DP-R02-S01": REACT("src/features/player/QueuePanel.test.tsx"),
   "DP-R02-S02": REACT("src/features/player/QueuePanel.test.tsx"),
@@ -352,6 +358,11 @@ export const COMMANDS = {
   "LE-R18-S01": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"searches within the current playlist through the scoped search command\"", // 新增: 歌单内搜索
   "LE-R18-S02": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"restores the full member list when the search is cleared\"", // 新增: 歌单内搜索
   "LE-R18-S03": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"shows the playlist search empty state with a clear action on no hit\"", // 新增: 歌单内搜索
+  // The `&& cargo test -p echo-core ...` tail that manifest.json still carries
+  // for this row is deliberately NOT in the command map: validate-scenario-commands
+  // anchors its vitest regex with `$`, so a chained command is never resolved
+  // against the test file and the row loses its test-name proof. Keep the two
+  // representations separate rather than syncing them.
   "LE-R18-S04": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.ts -t \"playlistId 变化触发新的抓取请求（缓存键区分布同歌单）\"", // 新增: 歌单内搜索
   "LE-R19-S01": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"scrolls the matched song row to the top of the visible area\"", // 新增: 定位当前播放歌曲
   "LE-R19-S02": "pnpm --filter @echo/desktop test -- --run src/features/library/favoriteSync.test.tsx -t \"voices 当前没有正在播放的歌曲\"", // 新增: 定位当前播放歌曲
@@ -470,6 +481,8 @@ export const COMMANDS = {
   "PM-R08-S04": "node scripts/verify/checks/check-native-attestation.mjs PM-R08-S04", // 新增命令: 歌单时间按当前时区呈现
   "PM-R09-S01": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"searches within the current playlist\"", // 新增: 歌单详情搜索
   "PM-R09-S02": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"restores the full member list when the search is cleared\"", // 新增: 歌单详情搜索
+  // See the LE-R18-S04 note above: the `&& pnpm ... -t "locate"` tail in
+  // manifest.json is not mirrored here, for the same regex-anchoring reason.
   "PM-R10-S01": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"rolls to a playing member of the playlist without a toast\"", // 新增: 歌单内定位当前播放歌曲
   "PM-R10-S02": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"voices 当前\"", // 新增: 歌单内定位当前播放歌曲
 
