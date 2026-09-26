@@ -67,6 +67,71 @@ function mountedVolume(output) {
   return line.slice(line.indexOf("/Volumes/"));
 }
 
+/** 同步睡 ms。Atomics.wait 是 node 里不依赖事件循环的阻塞等待。 */
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * `hdiutil info` 里每个已挂载镜像对应的设备节点，按 image-path 索引。
+ *
+ * hdiutil info 的输出以一行 `====` 分隔，每一段描述一个已挂载镜像：先是一组
+ * `image-path : …` 之类的键值，随后是该镜像的 `/dev/diskN*` 设备行。所以要拿到
+ * "某个镜像挂在哪个设备上"，得按段切开、在段内同时找 image-path 和第一个 /dev 行。
+ *
+ * 纯函数、导出，好在没有真实挂载卷的情况下也能覆盖分段与字段解析。
+ */
+export function parseAttachedDevices(output) {
+  const found = new Map();
+  for (const block of output.split(/^=+$/m)) {
+    const path = block.match(/^\s*image-path\s*:\s*(.+)$/m)?.[1]?.trim();
+    const device = block.match(/^\s*(\/dev\/disk\S*)/m)?.[1];
+    if (path && device) found.set(path, device);
+  }
+  return found;
+}
+
+function attachedDevices() {
+  return parseAttachedDevices(
+    run("hdiutil", ["info"], { stdio: ["ignore", "pipe", "ignore"] }),
+  );
+}
+
+/**
+ * 确保 `image` 不再挂着 —— `hdiutil convert` 的前置条件。
+ *
+ * convert 在源镜像仍挂载时报 `Resource temporarily unavailable`（EBUSY）。本机已复现：
+ * 挂载状态下 convert 报"资源暂时不可用"，detach 之后同一条命令成功。macOS runner 上
+ * 撞到的正是这条。
+ *
+ * 本脚本里每处 detach 都是尽力而为（Finder 的 close/reopen 会让卷短暂解锁，`catch {}`
+ * 直接吞掉失败），所以"detach 没报错"不等于"镜像已经松开"。而 convert 是产出
+ * UDZO 镜像的唯一承重步骤，源镜像没松开就在这里 EBUSY。
+ *
+ * 因此这里先等自然松开（detach 与 DiskImages 的回收之间有竞态，立刻查会误判），
+ * 超时再 -force，最后仍挂着才判定为真失败。
+ */
+function quiesceImage(image) {
+  const settleMs = 10_000;
+  const deadline = Date.now() + settleMs;
+  while (Date.now() < deadline) {
+    const device = attachedDevices().get(image);
+    if (!device) return;
+    sleep(250);
+  }
+  const device = attachedDevices().get(image);
+  if (device) {
+    run("hdiutil", ["detach", device, "-force"], { stdio: "ignore" });
+  }
+  const stillThere = attachedDevices().get(image);
+  if (stillThere) {
+    throw new Error(
+      `镜像仍挂载着，hdiutil convert 会报 EBUSY：${image} (${stillThere})\n` +
+      `（提示：先 hdiutil detach ${stillThere} -force，再重跑）`,
+    );
+  }
+}
+
 /** tauri.conf.json 是 DMG 布局的唯一真源，脚本不再抄一份坐标。 */
 function layoutConfig() {
   const conf = JSON.parse(readFileSync(TAURI_CONF, "utf8"));
@@ -410,6 +475,13 @@ function withImage(image, { readOnly = false, mountPoint } = {}, fn) {
 
 function toFormat(source, format, target) {
   if (existsSync(target)) unlinkSync(target);
+  // Convert reads the source image, so the source must be unattached first.
+  // Every detach in this script is best-effort (`catch {}`), so "no detach
+  // error" never meant "image released" — which is why the macOS runner died
+  // here with `hdiutil: convert failed - Resource temporarily unavailable`.
+  // Locally reproduced: same command succeeds once the image is detached.
+  // Quiesce before the call rather than diagnosing after it.
+  quiesceImage(source);
   // Pipe (not stdio:"ignore") so a failure carries hdiutil's own reason. The
   // UDZO step is load-bearing — it is what produces the shipped image — and it
   // failed on a macOS runner with the message swallowed, leaving nothing but
@@ -422,7 +494,8 @@ function toFormat(source, format, target) {
     const detail = String(error.stderr ?? error.message).trim();
     throw new Error(
       `hdiutil convert ${source} -> ${format} 失败：${detail}\n` +
-      `（提示：源镜像若仍挂载着会转换失败，先 hdiutil info 确认没有卷指向 ${source}）`,
+      `（源镜像挂载中会让 convert 报 EBUSY/资源暂时不可用；已在调用前 quiesce 过一次，` +
+      `仍失败请连 hdiutil info 的相关段一起贴出来）`,
     );
   }
 }
@@ -523,7 +596,13 @@ function verifyOnly(target) {
   if (audit.problems.length === 0) console.log(`DMG 布局校验通过：${dmg}`);
 }
 
-const [subcommand, target] = process.argv.slice(2);
-if (subcommand === "--layout-only") layoutOnly(target);
-else if (subcommand === "--verify") verifyOnly(target);
-else main();
+// Imported by the self-test for parseAttachedDevices(); running the styling
+// pipeline on import would mount and rewrite a real DMG, so gate the entry
+// point the same way build-linux-libmpv.mjs and scripts/verify/spec-scenarios.mjs
+// do.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const [subcommand, target] = process.argv.slice(2);
+  if (subcommand === "--layout-only") layoutOnly(target);
+  else if (subcommand === "--verify") verifyOnly(target);
+  else main();
+}

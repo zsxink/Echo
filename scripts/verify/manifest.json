@@ -88,6 +88,10 @@
         {
           "desc": "bundle, universal libmpv, file associations, tray and cold/hot single-instance Gate",
           "cmd": "node scripts/verify/checks/task-1.9.mjs"
+        },
+        {
+          "desc": "DMG 收尾脚本的已挂载镜像探测：hdiutil info 分段解析，convert 前先 quiesce（源镜像挂载会让 UDZO 转换报 EBUSY）",
+          "cmd": "node scripts/release/style-dmg.test.mjs"
         }
       ]
     },
