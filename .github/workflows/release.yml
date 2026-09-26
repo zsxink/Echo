@@ -111,12 +111,22 @@ jobs:
       # `files` map point at these exact paths, and the bundler fails outright
       # when a custom file is missing. Produces libmpv.so + libav*.so +
       # manifest.json + NOTICE.md, and re-verifies the glibc ceiling.
+      #
+      # Runs inside an Ubuntu 22.04 container, not on the runner. GLIBC_ symbol
+      # versions come from the *build host's* glibc headers — neither autotools
+      # nor meson has a "target glibc" switch — so a build on ubuntu-latest
+      # (24.04) yields a libmpv demanding GLIBC_2.38, which cannot load on the
+      # 22.04 installs Echo promises to support. The whole job cannot move to a
+      # 22.04 runner because webkit2gtk-4.1-dev is not in 22.04's repos, so only
+      # this step is containerised. checkGlibc() still enforces the real ceiling
+      # against the built artefacts, so raising GLIBC_MAX would not make this
+      # silently ship a 24.04-only build.
       - name: Build vendored Linux libmpv
         if: runner.os == 'Linux'
         run: >-
-          node scripts/release/build-linux-libmpv.mjs
-          --work "${RUNNER_TEMP}/echo-libmpv-build"
-          --out apps/desktop/src-tauri/vendor/libmpv/linux
+          scripts/release/build-linux-libmpv-container.sh
+          apps/desktop/src-tauri/vendor/libmpv/linux
+          "${RUNNER_TEMP}/echo-libmpv-build"
 
       - name: Build release bundles
         run: pnpm echo release

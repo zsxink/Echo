@@ -459,12 +459,37 @@ function checkGlibc(out) {
   }));
   const highest = highestGlibcSymbol(dumps);
   if (cmpVersion(highest.ver, [2, GLIBC_MAX, 0]) > 0) {
-    fail(`glibc requirement ${highest.ver.join(".")} (${highest.lib}) > 2.${GLIBC_MAX}`);
+    // Name the actual cause. This fires whenever the build ran on a host
+    // newer than the floor, which is the default on ubuntu-latest (24.04 /
+    // glibc 2.39): the symbols are a property of the *build host's* glibc
+    // headers, not of the code being compiled, so no amount of mpv/FFmpeg
+    // configuration moves them. The remedy is to build on a host at the floor
+    // (design.md fixes Ubuntu 22.04 / glibc 2.35 for exactly this reason).
+    fail(
+      `glibc requirement ${highest.ver.join(".")} (${highest.lib}) > 2.${GLIBC_MAX}\n` +
+      `  这是构建宿主机的 glibc 高于支持下限造成的：符号版本随宿主 glibc 头文件走，与编译选项无关。\n` +
+      `  修法=在 glibc 2.35（Ubuntu 22.04）上构建，而不是提高 GLIBC_MAX —— 后者会把产物锁死在 24.04+。\n` +
+      `  当前宿主：${describeHostGlibc()}`,
+    );
   }
   process.stdout.write(`ok: glibc ≤ 2.${GLIBC_MAX} (highest GLIBC_${highest.ver.join(".")} in ${highest.lib})\n`);
   // task-9.7 re-derives this from readelf; the manifest records it as the
   // documented ceiling so a manifest and a Gate run can never disagree.
   return Number(highest.ver[1]);
+}
+
+// One line naming the build host's glibc, for the failure message above.
+// Best-effort: `ldd --version` is the cheapest way to ask, and its absence
+// must not turn a real build failure into a confusing "command not found".
+function describeHostGlibc() {
+  try {
+    const out = run("ldd", ["--version"], { stdio: ["ignore", "pipe", "ignore"] });
+    const m = out.match(/\b(\d+)\.(\d+)\b/);
+    if (m) return `ldd ${m[1]}.${m[2]}`;
+  } catch {
+    // 落到下面的兜底文案
+  }
+  return `${process.platform} (ldd 不可用)`;
 }
 
 function cmpVersion(a, b) {
