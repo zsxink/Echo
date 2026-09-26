@@ -5,9 +5,8 @@
  * workspace shows a clear status while preserving any already-present content.
  * It never fakes a success; a retry re-reads status / triggers a re-scan.
  *
- * Built from the prototype's own primitives (`.eyebrow` + display heading +
- * body copy + buttons) — the prototype always ships a reachable library, so this
- * state has no counterpart markup to copy.
+ * The standalone prototype includes this state as `?preview=unavailable`; the
+ * app wires its retry action to the current library root and scan coordinator.
  */
 
 import { bridge } from "../../bridge";

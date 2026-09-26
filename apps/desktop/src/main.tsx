@@ -9,8 +9,8 @@ import "./styles/shell.css";
 import "./styles/library.css";
 import "./styles/player.css";
 import "./styles/responsive.css";
-// Implementation-only surfaces the prototype does not draw (status pages, real
-// library availability states, paged-load banners).
+// Implementation-only details the prototype cannot drive with live library
+// data (availability states, paged-load banners, accessibility helpers).
 import "./styles/app-extras.css";
 import "./styles/artwork.css";
 

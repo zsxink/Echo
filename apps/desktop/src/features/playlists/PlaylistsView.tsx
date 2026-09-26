@@ -8,11 +8,8 @@
  * which is why it read as a different application.
  *
  * Playlist-level actions live in `.library-tools` as prototype `.tool-button`s
- * (编辑歌单 / 删除歌单): the prototype reaches 编辑歌单 through a context menu on
- * the sidebar item, and has no 删除歌单 at all — both are real release
- * capabilities (task 10.9), so they are surfaced with the prototype's own tool
- * button rather than inventing new chrome. Deleting a playlist never deletes a
- * song file.
+ * (编辑歌单 / 删除歌单), matching the standalone prototype. Deleting a playlist
+ * never deletes a song file.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";

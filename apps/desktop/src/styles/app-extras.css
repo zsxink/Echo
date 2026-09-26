@@ -1,16 +1,15 @@
-/* Implementation-only additions on top of the prototype stylesheet layer.
+/* Small implementation-only additions on top of the prototype stylesheet layer.
  *
  * Everything visual comes from the extracted prototype CSS (tokens / shell /
- * library / player / responsive). This file holds only the surfaces the
- * prototype does not draw because it carries no real data:
+ * library / player / responsive). The prototype now includes first-launch,
+ * unavailable-library and desktop lyrics-focus previews. This file holds the
+ * remaining states that depend on real library data:
  *
- *  - 状态页（首次启动选择资料库 / 资料库不可用 / 只读）: the prototype always
- *    renders a populated library, so these three states are composed from the
- *    prototype's own tokens and `.empty-results` rhythm.
+ *  - 真实曲库中的只读状态、缺失歌曲状态和后台查询状态。
  *  - 真实曲库状态: a missing / pending-delete song must stay visible and
  *    unplayable, so the prototype's `.track-row` gains two explicit modifiers.
  *  - 列表加载/错误横幅: paged loading and a recoverable query failure.
- *  - `.sr-only`, `.app-initial`: accessibility + first-launch layout (no sidebar).
+ *  - `.sr-only`: accessibility helper.
  */
 
 /* --- accessibility helper ------------------------------------------------- */
@@ -24,93 +23,6 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
-}
-
-/* --- shell grid areas ----------------------------------------------------
- *
- * The prototype places the three shell children by line numbers:
- *   .sidebar   { grid-row: 1 }             — the navigation column only
- *   .playerbar { grid-column: 1 / 3; grid-row: 2 }
- * So the player bar runs the **full width of the window**, under the sidebar as
- * well as the workspace. Echo names the same areas so the first-launch layout
- * can drop the sidebar column without touching any of the three children, and
- * keeps the player bar spanning both columns exactly as the prototype does.
- */
-.app {
-  grid-template-areas:
-    "sidebar workspace"
-    "playerbar playerbar";
-}
-.sidebar {
-  grid-area: sidebar;
-}
-.workspace {
-  grid-area: workspace;
-}
-.playerbar {
-  grid-area: playerbar;
-}
-
-/* --- first launch: no library configured yet, so no navigation to show ----
- *
- * With no library there is no sidebar to show, so the initial layout collapses
- * to the workspace column and the choose-root page claims `grid-area: workspace`.
- * This is the only layout the prototype never draws (it always ships a library).
- */
-.app-initial {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) 88px;
-  grid-template-areas:
-    "workspace"
-    "playerbar";
-}
-.app-initial .sidebar {
-  display: none;
-}
-
-/* --- library status surfaces (无资料库 / 不可用 / 只读) -------------------
- *
- * The prototype always ships a configured, populated library, so these three
- * states are composed from the prototype's own type tokens and `.empty-results`
- * rhythm: an eyebrow, a display heading, one line of body copy and the action
- * that moves the user forward.
- */
-.workspace-empty {
-  grid-area: workspace;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
-  padding: var(--space-12) var(--space-6);
-  text-align: center;
-  background: var(--bg);
-}
-.workspace-empty .eyebrow {
-  margin-bottom: 0;
-}
-.workspace-empty h1 {
-  margin: 0;
-  font: 700 var(--text-2xl)/var(--leading-tight) var(--font-display);
-  letter-spacing: var(--tracking-display);
-}
-.workspace-empty p {
-  max-width: 520px;
-  margin: 0;
-  color: var(--fg-2);
-}
-.workspace-empty .status-reason {
-  color: var(--fg);
-  font-weight: 650;
-}
-.workspace-empty .status-error {
-  color: var(--danger);
-  font-size: var(--text-sm);
-}
-.workspace-empty .btn {
-  margin-top: var(--space-2);
 }
 
 /* --- real-library states the prototype's sample data never shows ---------- */
@@ -169,22 +81,6 @@
   margin: 0;
 }
 
-/* --- player bar: empty queue, embedded artwork, disabled transport --------
- *
- * 空播放态 (task 11.1): the bar is persistent chrome and always draws its four
- * regions. With nothing current it keeps the prototype's grid — an empty
- * 当前播放区 on the left, the transport in the middle, volume/queue on the
- * right — rather than collapsing into a single centred sentence. Only the
- * *content* of the slot goes quiet.
- */
-.playerbar[data-empty="true"] .player-track-placeholder {
-  color: var(--muted);
-  font-weight: 500;
-}
-.playerbar[data-empty="true"] .mini-cover {
-  opacity: 0.55;
-}
-
 /* 内置封面 (design §115 内置优先): a real cover fills the same round slot the
  * vinyl placeholder draws; the placeholder's centre-hole ring is dropped
  * because it would read as a stray circle on top of artwork. */
@@ -200,37 +96,6 @@
   display: block;
   object-fit: cover;
   border-radius: 50%;
-}
-
-/* An inert control must not look pressable: the prototype only styles
- * `:hover`, and a disabled button still matches it, so both the base and hover
- * states are pinned here. `.control-play` carries its own accent background and
- * needs the muted treatment spelled out. */
-.control:disabled,
-.control:disabled:hover {
-  color: var(--muted);
-  background: transparent;
-  cursor: default;
-  opacity: 0.5;
-}
-.control-play:disabled,
-.control-play:disabled:hover {
-  color: color-mix(in oklab, var(--accent-on), transparent 32%);
-  background: color-mix(in oklab, var(--accent-strong), var(--bg) 62%);
-  cursor: default;
-  opacity: 1;
-}
-.progress:disabled,
-.volume:disabled {
-  cursor: default;
-}
-.progress:disabled::-webkit-slider-thumb,
-.volume:disabled::-webkit-slider-thumb {
-  transform: none;
-}
-.progress:disabled:hover::-webkit-slider-thumb,
-.volume:disabled:hover::-webkit-slider-thumb {
-  transform: none;
 }
 
 /* --- settings: real desktop preference rows ------------------------------ */
@@ -256,12 +121,6 @@
   font-size: var(--text-sm);
 }
 
-/* --- playlist view: member summary line ---------------------------------- */
-.playlist-summary {
-  margin: 0 0 var(--space-2);
-  color: var(--fg-2);
-  font-size: var(--text-sm);
-}
 .playlist-row-actions {
   display: flex;
   align-items: center;
@@ -273,24 +132,6 @@
   padding: 0 var(--space-3);
   color: var(--danger);
   font-size: var(--text-xs);
-}
-
-/* --- read-only song detail (a `.confirmation-panel` payload) ------------- */
-.detail-grid {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: var(--space-2) var(--space-4);
-  margin: var(--space-4) 0 0;
-}
-.detail-grid dt {
-  color: var(--muted);
-  font-size: var(--text-xs);
-}
-.detail-grid dd {
-  margin: 0;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-size: var(--text-sm);
 }
 
 /* --- dialogs that carry real import / playlist results ------------------- */
@@ -363,62 +204,6 @@ button.lyric-line {
   background: transparent;
   text-align: left;
   cursor: pointer;
-}
-
-/* --- immersive player: 歌词专注阅读 on a window wider than 760px ----------
- *
- * The prototype declares focus mode only *inside its own* `@media (max-width:
- * 760px)` block: on a wider window its `body.lyrics-focus-open` hides nothing,
- * because the declarations that do the rearranging never apply. The app offers
- * the state at every width, so the wide-window half of the same rearrangement
- * has to be supplied from here. `responsive.css` still carries the prototype's
- * ≤760px variant.
- *
- * It lives in this layer, and not in `player.css`, because `player.css` is
- * generated: `scripts/extract-prototype-css.mjs` reproduces it from the
- * prototype, so any rule the prototype does not contain is deleted on the next
- * run. That is not hypothetical — this block used to sit in `player.css`
- * labelled APP-ONLY, and a later re-extraction removed it, taking focus mode
- * with it. A guard inside a generated file is not a guard.
- *
- * The state is a rearrangement of the *same* surface, not a second surface: the
- * `lyrics` grid area takes the only row and column left, the cover and the
- * metadata hide, and the 常驻播放栏 below keeps the minimal transport — which
- * is what the 152px bottom padding reserves (its own height while
- * `player-mode-open`) plus the 88px inset above it.
- */
-body.player-mode-open.lyrics-focus-open .now-playing-popover {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-  grid-template-areas: "lyrics";
-  gap: 0;
-  padding: 72px var(--space-5) 152px;
-}
-body.player-mode-open.lyrics-focus-open .now-playing-popover .playing-cover,
-body.player-mode-open.lyrics-focus-open .now-playing-info {
-  display: none;
-}
-body.player-mode-open.lyrics-focus-open .now-playing-popover .lyrics {
-  max-height: none;
-  height: 100%;
-  align-self: stretch;
-  /* The wide layout pushes the lyrics down by the measured height of the song
-     title; with the title hidden that offset is just a hole at the top of the
-     column. */
-  margin-top: 0;
-  /* Keep the surface's comfortable 620px reading measure, but centre it: the
-     focus grid has a single column, so a left-aligned 620px block would leave
-     the whole right half of the screen empty. `width: 100%` is required — a
-     grid item with auto width and auto margins shrink-wraps to its content
-     instead of filling the column. */
-  width: 100%;
-  margin-inline: auto;
-  padding: clamp(72px, 16vh, 160px) 0 var(--space-8);
-  cursor: pointer;
-}
-body.player-mode-open.lyrics-focus-open .lyric-line {
-  font-size: clamp(var(--text-lg), 5.5vw, var(--text-xl));
-  line-height: 2.4;
 }
 
 /* --- immersive player: 回到当前行 while auto-follow is paused -------------

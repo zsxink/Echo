@@ -6,10 +6,9 @@
  * shell re-renders into the library. Rejected roots surface a reason and a
  * re-choose entrance without overwriting any prior config.
  *
- * The prototype always ships a configured library, so this page is the one
- * surface it never draws; it is built from the prototype's own primitives
- * (`.eyebrow` + display heading + body copy + `.btn.btn-primary`) so it reads as
- * the same application.
+ * The standalone prototype includes this page as the `?preview=first-run`
+ * scenario. The app keeps the same layout and wording while the action is wired
+ * to the native folder picker.
  */
 
 import { useState } from "react";

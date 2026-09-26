@@ -133,3 +133,21 @@ button:focus-visible, input:focus-visible { outline: none; box-shadow: var(--foc
   --quality-sq: #c27700;
   --quality-hq: oklch(0.44 0.16 263.35);
 }
+
+/* --- App alias: the desktop IPC `Theme` keys are coral / cobalt / turquoise
+ * (crates/echo-desktop/src/platform/local_state.rs). They map 1:1 onto the
+ * prototype's wine / cobalt / green blocks above, so the rendered surface is
+ * identical to the prototype — only the attribute spelling differs, because the
+ * persisted preference predates this alignment. Keep these two declarations in
+ * sync with the wine / green blocks. --- */
+:root[data-echo-theme="coral"] {
+  --accent: oklch(0.6528 0.2219 19.38);
+  --surface-warm: oklch(0.9460 0.0160 19.38);
+}
+
+:root[data-echo-theme="turquoise"] {
+  --accent: oklch(0.54 0.1330 159.56);
+  --accent-strong: oklch(0.44 0.1330 159.56);
+  --accent-strong-hover: color-mix(in oklab, var(--accent-strong), black 8%);
+  --surface-warm: oklch(0.9460 0.0180 159.56);
+}

@@ -20,6 +20,7 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 .tool-button { min-height: 36px; padding: 0 var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--fg-2); cursor: pointer; display: inline-flex; align-items: center; gap: var(--space-2); }
 .tool-button:hover, .tool-button[aria-expanded="true"] { border-color: var(--fg-2); background: var(--surface); color: var(--fg); }
 .tool-button svg { width: 14px; height: 14px; }
+.library-tools > .tool-button[hidden], .sort-option[hidden] { display: none; }
 .tool-button.tool-icon { width: 36px; padding: 0; justify-content: center; border-color: transparent; background: transparent; }
 .tool-button.tool-icon:hover, .tool-button.tool-icon[aria-expanded="true"] { border-color: transparent; background: var(--surface); color: var(--fg); }
 .tool-button.tool-icon[aria-pressed="true"] { color: var(--accent-strong); background: var(--surface-warm); }
