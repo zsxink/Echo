@@ -4,8 +4,9 @@
 //
 // This script drives upstream mpv-build's build pipeline (libplacebo →
 // libass → FFmpeg → mpv, via `./build`) but manages the component checkouts
-// itself: it shallow-clones the four repos and pins each to the commit
-// recorded in the Linux vendor manifest. mpv-build's own `./update` does a
+// itself: it shallow-clones the four repos, pins each to the commit
+// recorded in the Linux vendor manifest, and populates that repo's own
+// submodules. mpv-build's own `./update` does a
 // full-history `git fetch` of all four upstreams, which is far too heavy for
 // CI — this script replaces only the checkout step, keeping mpv-build's
 // `-config`/`-build` scripts (and their *_options files) untouched.
@@ -218,6 +219,16 @@ function pinComponent(buildDir, name, commit, buildTag) {
   if (commit) fetchArgs.push(commit);
   run("git", fetchArgs);
   run("git", ["-C", abs, "checkout", "--quiet", "--detach", "FETCH_HEAD"]);
+  // Component repos carry their own submodules, and the build needs them
+  // checked out. libplacebo's `src/opengl/include/glad/meson.build` errors
+  // with "glad ... was not found in PYTHONPATH or `3rdparty`" when
+  // `3rdparty/glad` is left unpopulated — and that path is reached
+  // regardless of `-Dtests`/`-Ddemos`, so the GL headers it pulls in are not
+  // optional here. The superproject checkout above never populates them.
+  // `--init --recursive` fetches each submodule at the SHA the pinned
+  // superproject records, so this stays reproducible; the shallow depth does
+  // not propagate into submodules, which is the cost of that guarantee.
+  run("git", ["-C", abs, "submodule", "update", "--init", "--recursive", "--quiet"]);
   const head = run("git", ["-C", abs, "rev-parse", "HEAD"]).trim();
   if (commit && head !== commit) {
     fail(`pin drift for ${name}: manifest says ${commit}, checkout is ${head}`);
