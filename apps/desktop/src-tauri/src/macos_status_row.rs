@@ -26,8 +26,8 @@ use objc2::{
     sel, AnyThread, DefinedClass, MainThreadOnly,
 };
 use objc2_app_kit::{
-    NSAccessibility, NSButton, NSEvent, NSImage, NSMenu, NSMenuItem, NSStatusBar, NSStatusItem,
-    NSView,
+    NSAccessibility, NSButton, NSColor, NSEvent, NSImage, NSMenu, NSMenuItem, NSStatusBar,
+    NSStatusItem, NSView,
 };
 use objc2_foundation::{ns_string, MainThreadMarker, NSData, NSPoint, NSRect, NSSize};
 
@@ -244,13 +244,13 @@ pub fn install(
     let view = StatusRowView::new(mtm, bar.thickness(), sink, show_main_window, quit);
 
     let previous = make_button(&view, mtm, 0.0, "上一首", sel!(previous:));
-    set_symbol_button(&previous, "backward.end.fill", "上一首");
+    set_symbol_button(&previous, "backward.fill", "上一首");
 
     let play_pause = make_button(&view, mtm, CONTROL_WIDTH, "播放", sel!(togglePlayPause:));
     set_symbol_button(&play_pause, "play.fill", "播放");
 
     let next = make_button(&view, mtm, CONTROL_WIDTH * 2.0, "下一首", sel!(next:));
-    set_symbol_button(&next, "forward.end.fill", "下一首");
+    set_symbol_button(&next, "forward.fill", "下一首");
 
     let brand = make_button(
         &view,
@@ -387,6 +387,7 @@ fn set_symbol_button(button: &NSButton, symbol: &str, accessibility_label: &str)
         &symbol_name,
         Some(&description),
     ) {
+        image.setTemplate(true);
         image.setSize(NSSize::new(STATUS_IMAGE_SIZE, STATUS_IMAGE_SIZE));
         button.setTitle(ns_string!(""));
         button.setImage(Some(&image));
@@ -394,6 +395,7 @@ fn set_symbol_button(button: &NSButton, symbol: &str, accessibility_label: &str)
         button.setImage(None);
         button.setTitle(&description);
     }
+    set_status_button_tint(button);
     button.setAccessibilityLabel(Some(&description));
 }
 
@@ -411,6 +413,18 @@ fn set_brand_button(button: &NSButton) {
         button.setTitle(ns_string!("Echo"));
     }
     button.setAccessibilityLabel(Some(ns_string!("打开 Echo")));
+    set_status_button_tint(button);
+}
+
+fn set_status_button_tint(button: &NSButton) {
+    // Keep every status-row icon halfway between AppKit's primary and
+    // secondary label colors.
+    let primary = NSColor::labelColor();
+    let secondary = NSColor::secondaryLabelColor();
+    let tint = primary
+        .blendedColorWithFraction_ofColor(0.5, &secondary)
+        .unwrap_or(primary);
+    button.setContentTintColor(Some(&tint));
 }
 
 #[cfg(test)]
