@@ -90,13 +90,17 @@ jobs:
       # upstream asset — Linux has no published single-file runtime that fits
       # Echo's curated audio-only format set, so the runner builds it from the
       # commits pinned in vendor/libmpv/linux/manifest.json. The apt set below
-      # is exactly build-linux-libmpv.mjs's documented prerequisite list.
+      # is exactly build-linux-libmpv.mjs's documented prerequisite list, plus
+      # the two libtool package names Ubuntu splits it across: `libtool` ships
+      # the m4 macros libass's autoreconf needs, but the `libtool` script the
+      # prerequisite check looks up on PATH is in `libtool-bin`. Installing
+      # `libtool` alone leaves `command -v libtool` empty and the build aborts.
       - name: Install Linux libmpv build dependencies
         if: runner.os == 'Linux'
         run: >-
           sudo apt-get update && sudo apt-get install -y
           build-essential git pkg-config python3
-          meson ninja-build yasm nasm autoconf automake libtool
+          meson ninja-build yasm nasm autoconf automake libtool libtool-bin
           libfreetype-dev libfontconfig1-dev libharfbuzz-dev libfribidi-dev
           zlib1g-dev libunistring-dev libbz2-dev glslang-tools
 

@@ -55,7 +55,10 @@
 //
 // Prerequisites on the host (install via apt before running):
 //   build-essential git pkg-config python3 meson ninja-build patchelf
-//   yasm nasm autoconf automake libtool          (FFmpeg asm, libass autogen)
+//   yasm nasm autoconf automake libtool libtool-bin
+//     (FFmpeg asm, libass autogen; on Ubuntu the `libtool` package ships the
+//      m4 macros and libtoolize, the `libtool` script this script checks on
+//      PATH ships in libtool-bin — both are needed)
 //   libfreetype-dev libfontconfig1-dev libharfbuzz-dev libfribidi-dev
 //     (libass build-time deps — become system libmpv.so deps at runtime)
 //   zlib1g-dev libunistring-dev libbz2-dev       (FFmpeg/libass build-time)
