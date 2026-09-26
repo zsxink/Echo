@@ -429,6 +429,23 @@ function setRpath(out) {
   process.stdout.write("ok: patchelf set $ORIGIN rpath on vendored .so files\n");
 }
 
+// Highest GLIBC_x.y symbol version across a set of `readelf --version-info`
+// dumps, as `{ lib, ver }`. Kept separate from checkGlibc (and exported) so the
+// scan is testable without readelf or real ELF: it was here that `const
+// highest` threw "Assignment to constant variable" on the first symbol it
+// found, a line no run had ever executed because artifact collection always
+// failed first.
+export function highestGlibcSymbol(dumps) {
+  let highest = { lib: null, ver: [2, 0, 0] };
+  for (const { lib, dump } of dumps) {
+    for (const m of dump.matchAll(/GLIBC_([0-9]+)\.([0-9]+)(?:\.([0-9]+))?/g)) {
+      const v = [Number(m[1]), Number(m[2]), m[3] ? Number(m[3]) : 0];
+      if (cmpVersion(v, highest.ver) > 0) highest = { lib, ver: v };
+    }
+  }
+  return highest;
+}
+
 // Verifies the glibc ceiling and returns it, so the manifest can record the
 // measured bound rather than the assumed one.
 function checkGlibc(out) {
@@ -436,15 +453,11 @@ function checkGlibc(out) {
   // requires. Versioned libs (libavcodec.so.61) define the real demand; the
   // libmpv.so symlink resolves to the same blob. Symbol versions embed the
   // build host's glibc, so a 2.36+ distro would surface here and fail.
-  const highest = { lib: null, ver: [2, 0, 0] };
-  const libs = realSoFiles(out);
-  for (const name of libs) {
-    const dump = run("readelf", ["--version-info", join(out, name)]);
-    for (const m of dump.matchAll(/GLIBC_([0-9]+)\.([0-9]+)(?:\.([0-9]+))?/g)) {
-      const v = [Number(m[1]), Number(m[2]), m[3] ? Number(m[3]) : 0];
-      if (cmpVersion(v, highest.ver) > 0) highest = { lib: name, ver: v };
-    }
-  }
+  const dumps = realSoFiles(out).map((name) => ({
+    lib: name,
+    dump: run("readelf", ["--version-info", join(out, name)]),
+  }));
+  const highest = highestGlibcSymbol(dumps);
   if (cmpVersion(highest.ver, [2, GLIBC_MAX, 0]) > 0) {
     fail(`glibc requirement ${highest.ver.join(".")} (${highest.lib}) > 2.${GLIBC_MAX}`);
   }

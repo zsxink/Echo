@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { realSharedObjectsIn } from "./build-linux-libmpv.mjs";
+import { highestGlibcSymbol, realSharedObjectsIn } from "./build-linux-libmpv.mjs";
 
 const digestOf = (b) => createHash("sha256").update(b).digest("hex");
 
@@ -320,6 +320,48 @@ const buildTag = {
     "the build-tree selector returns [] for a directory that does not exist",
   );
   rmSync(dir, { recursive: true, force: true });
+}
+
+// --- 7. the glibc scan finds the highest symbol version ------------------
+// `const highest` in this loop threw "Assignment to constant variable" on the
+// first GLIBC_ symbol it found. Nothing caught it: the loop is only reachable
+// with real ELF plus a real readelf, and every run died in artifact collection
+// before ever reaching it. Feeding shaped readelf output through the extracted
+// scan covers the loop without either.
+{
+  // Trimmed from real `readelf --version-info` output: the version index lines
+  // carry the GLIBC_x.y names, the rest is noise the regex must skip.
+  const dump = `
+Version needs section '.gnu.version_r' contains 3 entries:
+  0x0020: Version: 1  File: libc.so.6  Cnt: 3
+  0x0030:   Name: GLIBC_2.17  Flags: none  Version: 3
+  0x0040:   Name: GLIBC_2.34  Flags: none  Version: 4
+  0x0050:   Name: GLIBC_PRIVATE  Flags: none  Version: 5
+`;
+  const found = highestGlibcSymbol([{ lib: "libavcodec.so.61", dump }]);
+  assert(
+    JSON.stringify(found.ver) === JSON.stringify([2, 34, 0]),
+    "the glibc scan picks the highest GLIBC_ version out of a readelf dump",
+    `got ${JSON.stringify(found)}`,
+  );
+  assert(
+    found.lib === "libavcodec.so.61",
+    "the glibc scan attributes the highest version to the library it came from",
+    `got ${JSON.stringify(found)}`,
+  );
+
+  // GLIBC_PRIVATE must not be read as a version, and a library whose symbols
+  // are all older than the baseline must leave the baseline in place.
+  const none = highestGlibcSymbol([{ lib: "libswscale.so.8", dump: "no symbols here" }]);
+  assert(
+    JSON.stringify(none.ver) === JSON.stringify([2, 0, 0]),
+    "the glibc scan falls back to the 2.0 baseline when a lib has no GLIBC_ symbols",
+    `got ${JSON.stringify(none)}`,
+  );
+  assert(
+    highestGlibcSymbol([{ lib: "a", dump: "GLIBC_PRIVATE" }]).ver[1] === 0,
+    "the glibc scan does not read GLIBC_PRIVATE as a symbol version",
+  );
 }
 
 process.stdout.write(
