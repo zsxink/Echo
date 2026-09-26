@@ -1624,6 +1624,10 @@
         {
           "desc": "Linux 自建 libmpv 的产出侧：manifest.json（逐文件 SHA-256 + 四个 commit pin + glibc 上限）与 NOTICE.md 由构建脚本生成，符号链接不入 manifest",
           "cmd": "node scripts/release/build-linux-libmpv.test.mjs"
+        },
+        {
+          "desc": "Linux libmpv 构建容器的引导步骤：meson 装进 venv 而非绕过 PEP 668（22.04 的 pip 22.0.2 没有 --break-system-packages 这个开关），基础镜像仍钉在 22.04",
+          "cmd": "node scripts/release/build-linux-libmpv-container.test.mjs"
         }
       ]
     },

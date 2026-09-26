@@ -66,8 +66,7 @@ echo "==> 在 ${IMAGE} 中构建 Linux libmpv（Node ${NODE_VERSION}，宿主 gl
 # （首次容器构建实测：`Meson version is 0.61.2 but project requires >=1.3.0`）。
 # meson 是纯 Python、不链接 glibc，所以从 PyPI 装新版既满足版本下限、
 # 又不会把构建宿主的 glibc 抬上去——而 glibc 版本正是这里唯一真正要钉死的东西。
-# `pip install --break-system-packages` 是 Debian 12+ 起对外链 pip 的 PEP 668 拒绝
-# （externally-managed-environment）所需的显式开关；22.04 已经带这个限制。
+# 具体装法（venv 而非系统 Python）见下方 pip 处的说明。
 docker run --rm \
   --volume "${REPO_ROOT}:/src" \
   --volume "${WORK_DIR}:/work" \
@@ -77,7 +76,7 @@ docker run --rm \
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
     apt-get install -y --no-install-recommends \
-      build-essential git pkg-config python3 python3-setuptools python3-pip \
+      build-essential git pkg-config python3 python3-setuptools python3-pip python3-venv \
       ninja-build yasm nasm autoconf automake libtool libtool-bin \
       libfreetype-dev libfontconfig1-dev libharfbuzz-dev libfribidi-dev \
       zlib1g-dev libunistring-dev libbz2-dev glslang-tools \
@@ -85,7 +84,23 @@ docker run --rm \
 
     # 装新版 meson 覆盖 apt 的 0.61.2，并让脚本早失败：真正报错要等到
     # libplacebo 的 meson.build 才看得见，那时已经 clone 完四个仓库了。
-    pip3 install --break-system-packages --no-cache-dir 'meson>=1.3.0'
+    #
+    # 装进 venv 而不是往系统 Python 里装，有两个各自独立的原因：
+    #
+    #  1. 不能靠 `pip install --break-system-packages` 绕过 PEP 668。那个开关是
+    #     pip 23.0.1 才加的，而 22.04 源里的 python3-pip 是 22.0.2（CI 实跑日志
+    #     里的 `python3-pip (22.0.2+dfsg-1ubuntu0.7)`）——旧 pip 会在**解析参数**
+    #     阶段就报 `no such option: --break-system-packages` 退出，根本走不到
+    #     PEP 668 那一步。绕过开关在这张镜像上从一开始就不存在。
+    #  2. venv 天然不是 externally-managed 的环境，所以无论 22.04 到底带不带
+    #     EXTERNALLY-MANAGED 标记，pip 都不会拿 PEP 668 拒绝它。写法不依赖
+    #     「这张镜像有没有那个标记」这个我们没在本地核实过的事实。
+    #
+    # --system-site-packages：venv 里的 python3 仍能看到系统 site-packages，
+    # 免得 meson 构建过程里 shell out 到 python3 时丢掉发行版装的模块。
+    python3 -m venv --system-site-packages /opt/echo-build-venv
+    /opt/echo-build-venv/bin/pip install --no-cache-dir 'meson>=1.3.0'
+    export PATH="/opt/echo-build-venv/bin:\$PATH"
     meson --version
     command -v meson ninja python3 git curl patchelf
 
