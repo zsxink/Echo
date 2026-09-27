@@ -15,8 +15,8 @@
 - [x] 2.4 在 macOS 上跑通 Gate：`pnpm verify:task -- 9.7 9.8` 全绿；`node scripts/verify/checks/task-9.7.mjs` 在无正式产物时按既有形态报告 pending 而非失败
       - 实测：`pnpm verify:task -- 9.7 9.8` 全绿；与 CI 完全一致的 `pnpm verify:task -- 1.9 1.10 9.7` 亦 exit 0；移走产物后单跑 9.7 输出 `skip: no formal build artifact found...` 且 exit 0
       - 依赖顺序：9.7 的 codesign/签名段读取的产物须先经 1.9 的 universal 合并 + `codesign --force --deep --sign -`（`task-1.9.mjs:56`）；裸 `tauri build` 的未重签产物会让 codesign 段失败。故 9.7 必须在 macOS CI 作业中排在 1.9 之后（已如此接线）
-- [ ] 2.5 在 Windows 上跑 `pnpm verify:task -- 9.7 9.8` 确认 DLL 映射与真实加载仍绿（Windows 专属，需在 windows-latest 或本地 Windows 执行；本地无法执行时在任务勾选中显式标注待 CI 验证，不得默认视为通过）
-      - **待 CI 验证**：本机为 macOS，Windows 分支（含本次改写的 6c）未执行。CI 的 `windows-platform-gate` 步骤已跑 `9.7 9.8`，但该作业需本次改动推送后才会以新配置运行
+- [x] 2.5 在 Windows 上跑 `pnpm verify:task -- 9.7 9.8` 确认 DLL 映射与真实加载仍绿（Windows 专属，需在 windows-latest 或本地 Windows 执行；本地无法执行时在任务勾选中显式标注待 CI 验证，不得默认视为通过）
+      - 实测：GitHub Actions `Windows platform Gate`（run 36300857129，job 108568141077）在 `windows-latest` 执行 `pnpm verify:task -- 9.7 9.8` 并通过
 
 ## 3. 规格与未归档 change 对齐
 

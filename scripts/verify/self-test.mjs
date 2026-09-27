@@ -83,7 +83,7 @@ mkdirSync(fakeBin);
 const fakeCargo = resolve(fakeBin, "cargo");
 writeFileSync(
   fakeCargo,
-  "#!/bin/sh\ncase \"$*\" in\n  *one-filter*) printf 'test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\\n' ;;\n  *) printf 'test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\\n' ;;\nesac\n",
+  "#!/bin/sh\ncase \"$*\" in\n  *one-filter*) name=one ;;\n  *two-filter*) name=two ;;\n  *) name=other ;;\nesac\nif [ -n \"$ECHO_FAKE_CARGO_MARKERS\" ] && [ \"$name\" != other ]; then\n  touch \"$ECHO_FAKE_CARGO_MARKERS/$name.started\"\n  other=one; [ \"$name\" = one ] && other=two\n  i=0\n  while [ ! -e \"$ECHO_FAKE_CARGO_MARKERS/$other.started\" ] && [ $i -lt 40 ]; do sleep 0.05; i=$((i + 1)); done\n  [ -e \"$ECHO_FAKE_CARGO_MARKERS/$other.started\" ] || exit 9\nfi\nif [ \"$name\" = other ]; then\n  printf 'test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\\n'\nelse\n  printf 'test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\\n'\nfi\n",
   "utf8",
 );
 chmodSync(fakeCargo, 0o755);
@@ -107,6 +107,11 @@ writeFileSync(
         id: "one-test-duplicate",
         title: "same selected test in another scenario",
         command: "cargo test -- one-filter",
+      },
+      {
+        id: "two-test",
+        title: "parallel selected test",
+        command: "cargo test -- two-filter",
       },
     ],
   }),
@@ -145,6 +150,18 @@ const duplicateScenarios = runScenarioRunner(
 assert(
   duplicateScenarios.status === 0 && /scenario batches: 1 commands for 2 scenarios/.test(duplicateScenarios.stdout),
   "duplicate scenario commands execute in one batch",
+);
+const markerDir = resolve(dir, "parallel-markers");
+mkdirSync(markerDir);
+const parallelScenarios = runScenarioRunner(
+  scenarioFixture,
+  ["one-test", "two-test"],
+  { ...scenarioEnv, ECHO_VERIFY_TEST_CONCURRENCY: "2", ECHO_FAKE_CARGO_MARKERS: markerDir },
+);
+assert(
+  parallelScenarios.status === 0
+    && /scenario batches: 2 commands for 2 scenarios/.test(parallelScenarios.stdout),
+  "independent test commands can execute concurrently",
 );
 
 // Lockfiles must be unchanged after a run.
