@@ -126,6 +126,11 @@ jobs:
           "${RUNNER_TEMP}/echo-libmpv-build"
 
       - name: Build release bundles
+        # linuxdeploy is distributed as an AppImage. Hosted Ubuntu runner
+        # images may not allow its FUSE mount, so use AppImage's extraction
+        # fallback when the Tauri bundler launches it.
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
         run: pnpm echo release
 
       - name: Assert expected artifacts exist
