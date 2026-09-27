@@ -3318,7 +3318,7 @@
     {
       "id": "LE-R06-S12",
       "title": "多选状态下再次点击行入口",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/BatchSongActions.test.tsx",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/batchLibraryOperations.test.tsx",
       "manifest": "tests/scenarios/LE-R06-S12.yaml"
     },
     {

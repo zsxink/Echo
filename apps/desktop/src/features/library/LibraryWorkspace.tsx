@@ -68,13 +68,28 @@ export function LibraryWorkspace({
   // own container; the row reaches them as this ref (fix-queue-trigger-toggle).
   const menuTriggerRef = useRef<HTMLElement | null>(null);
   const batchMenuTriggerRef = useRef<HTMLElement | null>(null);
-  /** Opens the single-song menu and records the row that triggered it. */
+  /**
+   * Opens the single-song menu, records the row that triggered it, and toggles:
+   * a second press on the row that already opened the menu closes it. The
+   * overlay stack treats that row as interior (see `triggerRef`), so the press
+   * no longer dismisses the menu by itself — without this branch the same
+   * gesture would just re-open it, which is issue #33.
+   */
   const setMenuFor = useCallback(
     (next: { song: SongView; anchor: MenuAnchor } | null, row?: HTMLElement) => {
-      menuTriggerRef.current = row ?? null;
+      if (next) {
+        const open = menuFor;
+        if (open && open.song.id === next.song.id && menuTriggerRef.current === row) {
+          setMenuForRaw(null);
+          return;
+        }
+        menuTriggerRef.current = row ?? null;
+      } else {
+        menuTriggerRef.current = null;
+      }
       setMenuForRaw(next);
     },
-    [],
+    [menuFor],
   );
   const [addToPlaylistFor, setAddToPlaylistFor] = useState<readonly SongView[] | null>(null);
   const [batchMenuFor, setBatchMenuFor] = useState<{
@@ -240,6 +255,14 @@ export function LibraryWorkspace({
     [exitSelectionMode, notifyBatch, selectedSongs],
   );
 
+  /**
+   * Opens the batch menu for the pressed row. Deliberately *not* a toggle: a
+   * second press on the same row re-opens it for the current selection, which
+   * is the contract the multi-select spec sets out (右键已选中歌曲保留选集) and
+   * what the batch suites assert. The row is still recorded in
+   * `batchMenuTriggerRef` so the overlay stack treats the press as interior
+   * rather than dismissing the menu out from under this very call.
+   */
   const openBatchMenu = useCallback(
     (song: SongView, anchor: MenuAnchor, row: HTMLElement) => {
       if (!selection.isSelected(song.id)) selection.replace(song.id);

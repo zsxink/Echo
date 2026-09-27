@@ -15,7 +15,7 @@
  */
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SongView } from "../../ipc/ipc-types.generated";
@@ -191,44 +191,59 @@ describe("SongMenu task 10.6", () => {
 describe("SongMenu trigger control (fix-queue-trigger-toggle)", () => {
   function RowWithMenu({ onClose, onPlay }: { onClose: () => void; onPlay: () => void }) {
     const triggerRef = useRef<HTMLElement | null>(null);
+    // A second press on the same row must close the menu, so the host carries
+    // the toggle the real views carry (LibraryWorkspace/PlaylistsView/
+    // CollectionDirectory). Without it the same gesture would re-open the menu.
+    const [open, setOpen] = useState(true);
     return (
       <div>
         <table>
           <tbody>
             <tr ref={(el) => (triggerRef.current = el)} data-testid="trigger-row">
               <td>
-                <button type="button" data-testid="trigger-button">
+                <button
+                  type="button"
+                  data-testid="trigger-button"
+                  onClick={() => setOpen((v) => !v)}
+                >
                   歌曲操作
                 </button>
               </td>
             </tr>
           </tbody>
         </table>
-        <SongMenu
-          song={makeSong()}
-          root=""
-          readOnly={false}
-          triggerRef={triggerRef}
-          onClose={onClose}
-          onPlay={onPlay}
-          onFavorite={vi.fn()}
-          onRefresh={vi.fn()}
-        />
+        {open ? (
+          <SongMenu
+            song={makeSong()}
+            root=""
+            readOnly={false}
+            triggerRef={triggerRef}
+            onClose={() => {
+              setOpen(false);
+              onClose();
+            }}
+            onPlay={onPlay}
+            onFavorite={vi.fn()}
+            onRefresh={vi.fn()}
+          />
+        ) : null}
       </div>
     );
   }
 
-  it("keeps the menu open while the press is on the row that opened it", () => {
+  it("closes on a second press of the row that opened it", () => {
     const onClose = vi.fn();
     const onPlay = vi.fn();
     render(<RowWithMenu onClose={onClose} onPlay={onPlay} />);
     expect(screen.getByTestId("song-menu")).toBeInTheDocument();
 
-    // The gesture the `.song-more` button makes: pointerdown then click.
+    // The gesture the `.song-more` button makes: pointerdown then click. The
+    // row counts as interior, so the stack does not dismiss — the click's
+    // toggle is what closes it, and the menu must be gone afterwards.
     fireEvent.pointerDown(screen.getByTestId("trigger-button"));
-    expect(onClose).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId("trigger-button"));
 
+    expect(screen.queryByTestId("song-menu")).not.toBeInTheDocument();
     // The row's own click handler still steps aside for its controls, so the
     // second press does not start playback either.
     expect(onPlay).not.toHaveBeenCalled();

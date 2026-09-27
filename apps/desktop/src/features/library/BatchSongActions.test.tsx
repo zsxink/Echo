@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SongView } from "../../ipc/ipc-types.generated";
@@ -140,47 +140,72 @@ describe("BatchSongActions", () => {
 
 /**
  * fix-queue-trigger-toggle — the popover is a sibling of the table, so without
- * `triggerRef` a second press on the row that opened the menu closed it only
- * for the same gesture to open it again.
+ * `triggerRef` a press on the row that opened the menu dismissed it out from
+ * under the very call that was about to re-open it for the current selection.
+ *
+ * Note the asymmetry with the single-song menu: the batch menu is deliberately
+ * NOT a toggle. A second press re-opens it for the current selection, which is
+ * the contract the multi-select spec sets out. These tests pin the *interior*
+ * behaviour only — the selection-set rules are proven at host level in
+ * `batchLibraryOperations.test.tsx`.
  */
 describe("BatchSongMenu trigger control (fix-queue-trigger-toggle)", () => {
   function RowWithTrigger({ onClose }: { readonly onClose: () => void }) {
     const triggerRef = useRef<HTMLElement | null>(null);
+    // The real views open unconditionally: the row is interior, so the stack
+    // does not dismiss, and this handler re-opens for the selection.
+    const [open, setOpen] = useState(true);
     return (
       <div>
         <table>
           <tbody>
             <tr ref={(el) => (triggerRef.current = el)} data-testid="trigger-row">
               <td>
-                <button type="button" data-testid="trigger-button">
+                <button type="button" data-testid="trigger-button" onClick={() => setOpen(true)}>
                   歌曲操作
                 </button>
               </td>
             </tr>
           </tbody>
         </table>
-        <BatchSongMenu
-          songs={[song("a")]}
-          readOnly={false}
-          inPlaylist={false}
-          handlers={handlers()}
-          triggerRef={triggerRef}
-          onClose={onClose}
-        />
+        {open ? (
+          <BatchSongMenu
+            songs={[song("a")]}
+            readOnly={false}
+            inPlaylist={false}
+            handlers={handlers()}
+            triggerRef={triggerRef}
+            onClose={() => {
+              setOpen(false);
+              onClose();
+            }}
+          />
+        ) : null}
       </div>
     );
   }
 
-  it("closes on a second press of the row that opened it", () => {
+  it("treats a press on the row as interior, so the menu survives the gesture", () => {
     const onClose = vi.fn();
     render(<RowWithTrigger onClose={onClose} />);
     const trigger = screen.getByTestId("trigger-button");
+    expect(screen.getByTestId("batch-song-menu")).toBeInTheDocument();
 
     fireEvent.pointerDown(trigger);
-    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(trigger);
 
-    // A press on any other row still dismisses it.
+    // Without `triggerRef` the pointerdown would dismiss and `onClose` would
+    // fire; the menu would only be back because the click re-opens it, which is
+    // exactly the 先关后开 churn this change removes.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByTestId("batch-song-menu")).toBeInTheDocument();
+  });
+
+  it("still dismisses on a press outside both the menu and the row", () => {
+    const onClose = vi.fn();
+    render(<RowWithTrigger onClose={onClose} />);
+
     fireEvent.pointerDown(document.body);
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalled();
   });
 });

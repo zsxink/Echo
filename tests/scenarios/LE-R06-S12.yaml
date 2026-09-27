@@ -4,7 +4,7 @@ scenario_id: LE-R06-S12
 requirement: 歌曲操作与详情
 scenario: 多选状态下再次点击行入口
 layer: automated
-command: "pnpm --filter @echo/desktop test -- --run src/features/library/BatchSongActions.test.tsx"
+command: "pnpm --filter @echo/desktop test -- --run src/features/library/batchLibraryOperations.test.tsx"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.
