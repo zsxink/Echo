@@ -99,19 +99,17 @@ describe("SongRow playback binding", () => {
     fireEvent.contextMenu(row, { clientX: 120, clientY: 230 });
 
     expect(onContextMenu).toHaveBeenCalledTimes(1);
-    // The row element travels with the anchor: the menu popover is a sibling of
-    // the table, so it can only count the row as interior through a ref
-    // (fix-queue-trigger-toggle).
-    expect(onContextMenu).toHaveBeenCalledWith(
-      {
-        top: 230,
-        right: 120,
-        bottom: 230,
-        left: 120,
-        kind: "pointer",
-      },
-      row,
-    );
+    // The anchor alone travels. Which row this was is not expressible as a DOM
+    // node here — windowing replaces the `<tr>` between two presses of the same
+    // row — so the caller identifies the entry point by the song the list passes
+    // it, not by a node (fix-queue-trigger-toggle).
+    expect(onContextMenu).toHaveBeenCalledWith({
+      top: 230,
+      right: 120,
+      bottom: 230,
+      left: 120,
+      kind: "pointer",
+    });
     expect(props.onPlay).not.toHaveBeenCalled();
   });
 

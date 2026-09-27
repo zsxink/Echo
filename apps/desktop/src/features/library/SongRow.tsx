@@ -60,9 +60,18 @@ export interface SongRowProps {
   readonly onPlayNext: () => void;
   readonly onToggleSelection?: () => void;
   /** Opens the selection-aware menu without triggering playback. */
-  readonly onContextMenu?: (anchor: MenuAnchor, row: HTMLElement) => void;
-  /** The menu anchors to the control that opened it, as the prototype does. */
-  readonly onOpenMenu: (anchor: MenuAnchor, row: HTMLElement) => void;
+  readonly onContextMenu?: (anchor: MenuAnchor) => void;
+  /**
+   * The menu anchors to the control that opened it, as the prototype does.
+   *
+   * The caller's half of "which entry point" is the song id, NOT the row
+   * element: the list is virtualised, so a row scrolled out of view and back is
+   * a newly constructed `<tr>` whose node identity means nothing by the second
+   * press (fix-queue-trigger-toggle). This is the `.song-more` gesture, so the
+   * control alone is interior to the menu — a press on the row body still
+   * dismisses it.
+   */
+  readonly onOpenMenu: (anchor: MenuAnchor) => void;
 }
 
 /** Format a duration in seconds as m:ss (player bar, chapters). */
@@ -155,7 +164,7 @@ export function SongRow({
           (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey))
         ) {
           event.preventDefault();
-          onContextMenu?.(anchorOf(event.currentTarget), event.currentTarget);
+          onContextMenu?.(anchorOf(event.currentTarget));
           return;
         }
         if (event.key !== "Enter" && event.key !== " ") return;
@@ -166,7 +175,7 @@ export function SongRow({
       onContextMenu={(event) => {
         if (!onContextMenu) return;
         event.preventDefault();
-        onContextMenu?.(pointerAnchorOf(event.clientX, event.clientY), event.currentTarget);
+        onContextMenu?.(pointerAnchorOf(event.clientX, event.clientY));
       }}
       data-song-id={song.id}
       data-testid={`song-row-${song.id}`}
@@ -278,10 +287,12 @@ export function SongRow({
             title="歌曲操作"
             onClick={(event: MouseEvent<HTMLButtonElement>) => {
               const box = event.currentTarget.getBoundingClientRect();
-              onOpenMenu(
-                { top: box.top, right: box.right, bottom: box.bottom, left: box.left },
-                event.currentTarget.closest("tr") as HTMLElement,
-              );
+              onOpenMenu({
+                top: box.top,
+                right: box.right,
+                bottom: box.bottom,
+                left: box.left,
+              });
             }}
           >
             <Icon name="more" />

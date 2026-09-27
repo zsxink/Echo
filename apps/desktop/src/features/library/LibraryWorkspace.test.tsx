@@ -13,7 +13,7 @@
  * 的既有契约），`triggerRef` 在这里只保证该次按压不会先收起再重开。
  */
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { App } from "../../app/App";
@@ -40,12 +40,14 @@ function makeSong(id: string, title: string) {
   };
 }
 
-async function renderWorkspace() {
+async function renderWorkspace(
+  songs = [makeSong("song-1", "Lacquer Love"), makeSong("song-2", "Velvet Night")],
+) {
   // @ts-expect-error test hook
   globalThis.__echoTest.setInvoke("library_status", CONFIGURED);
   // @ts-expect-error test hook
   globalThis.__echoTest.setInvoke("all_songs", {
-    items: [makeSong("song-1", "Lacquer Love"), makeSong("song-2", "Velvet Night")],
+    items: songs,
     isLast: true,
     nextCursor: null,
   });
@@ -53,7 +55,6 @@ async function renderWorkspace() {
   globalThis.__echoTest.setInvoke("set_volume", { ok: true });
   render(<App />);
   await screen.findByTestId("song-row-song-1");
-  await screen.findByTestId("song-row-song-2");
 }
 
 /** The real gesture the `.song-more` control makes: pointerdown then click. */
@@ -66,6 +67,17 @@ function press(element: HTMLElement) {
 function rightPress(row: HTMLElement) {
   fireEvent.pointerDown(row, { button: 2, buttons: 2 });
   fireEvent.contextMenu(row);
+}
+
+/**
+ * 121 首歌，`song-40` 落在初始渲染窗口内（jsdom 的 `clientHeight` 为 0，
+ * `SongList` 回退到 520px ⇒ 24 行），但滚远之后一定离开窗口。两次按压命中的是
+ * 同一个 song，却是两个不同的 DOM 节点。
+ */
+function windowedSongs() {
+  const songs = Array.from({ length: 120 }, (_, i) => makeSong(`song-${i}`, `Track ${i}`));
+  songs.splice(5, 0, makeSong("song-40", "Windowed Away"));
+  return songs;
 }
 
 describe("触发控件 toggle（fix-queue-trigger-toggle）", () => {
@@ -92,7 +104,6 @@ describe("触发控件 toggle（fix-queue-trigger-toggle）", () => {
   it("第二次点击仍会切换到另一行的菜单，而不是直接关掉", async () => {
     await renderWorkspace();
     const [first, second] = screen.getAllByRole("button", { name: "歌曲操作" });
-
     press(first);
     expect(await screen.findByRole("menu", { name: "歌曲操作菜单" })).toBeInTheDocument();
 
@@ -153,6 +164,74 @@ describe("触发控件 toggle（fix-queue-trigger-toggle）", () => {
     // Outside multi-select the row's secondary press drives the single-song
     // menu, which does toggle.
     rightPress(row);
+    await waitFor(() =>
+      expect(screen.queryByRole("menu", { name: "歌曲操作菜单" })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("右键打开的菜单仍由面板外按压和 Escape 收起", async () => {
+    // 触发控件计入「内部区域」只约束打开它的那个入口，不许把菜单整体变成
+    // 按不掉的浮层。这条路必须仍由菜单自己原有的规则收拾。
+    await renderWorkspace();
+    rightPress(screen.getByTestId("song-row-song-1"));
+    expect(await screen.findByRole("menu", { name: "歌曲操作菜单" })).toBeInTheDocument();
+
+    // 面板外部的按压仍然收起菜单，即使打开它的手势来自右键。
+    fireEvent.pointerDown(document.body);
+    await waitFor(() =>
+      expect(screen.queryByRole("menu", { name: "歌曲操作菜单" })).not.toBeInTheDocument(),
+    );
+
+    // Escape 同理：它由单一浮层栈关闭顶层，与触发控件无关。
+    rightPress(screen.getByTestId("song-row-song-1"));
+    expect(await screen.findByRole("menu", { name: "歌曲操作菜单" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByRole("menu", { name: "歌曲操作菜单" })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("入口控件在窗口化回收并重建之后，再次按压仍然关闭菜单", async () => {
+    // 这是把"哪个入口"写成 DOM 节点身份时漏掉的那个场景：列表窗口化，滚出
+    // 可视区的行会被回收，滚回来时是**新的** `<tr>` 和新的按钮。菜单仍然开着，
+    // 所以按下的还是同一个入口 —— 归属必须靠 song.id 判，不能靠节点。
+    await renderWorkspace(windowedSongs());
+
+    const before = screen.getByTestId("song-row-song-40");
+    press(within(before).getByRole("button", { name: "歌曲操作" }));
+    expect(await screen.findByRole("menu", { name: "歌曲操作菜单" })).toBeInTheDocument();
+
+    // Far enough that the row leaves the render window, then back to it.
+    const viewport = screen.getByTestId("song-list");
+    fireEvent.scroll(viewport, { target: { scrollTop: 4000 } });
+    await waitFor(() => expect(screen.queryByTestId("song-row-song-40")).not.toBeInTheDocument());
+    fireEvent.scroll(viewport, { target: { scrollTop: 0 } });
+    const after = await screen.findByTestId("song-row-song-40");
+    expect(after).not.toBe(before);
+
+    press(within(after).getByRole("button", { name: "歌曲操作" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("menu", { name: "歌曲操作菜单" })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("入口行在窗口化回收并重建之后，再次右键仍然切换菜单", async () => {
+    // Same story for the right-click path, whose trigger is the row: the row
+    // element recorded on the first press is a different object by the second.
+    await renderWorkspace(windowedSongs());
+
+    const before = screen.getByTestId("song-row-song-40");
+    rightPress(before);
+    expect(await screen.findByRole("menu", { name: "歌曲操作菜单" })).toBeInTheDocument();
+
+    const viewport = screen.getByTestId("song-list");
+    fireEvent.scroll(viewport, { target: { scrollTop: 4000 } });
+    await waitFor(() => expect(screen.queryByTestId("song-row-song-40")).not.toBeInTheDocument());
+    fireEvent.scroll(viewport, { target: { scrollTop: 0 } });
+    const after = await screen.findByTestId("song-row-song-40");
+    expect(after).not.toBe(before);
+
+    rightPress(after);
     await waitFor(() =>
       expect(screen.queryByRole("menu", { name: "歌曲操作菜单" })).not.toBeInTheDocument(),
     );

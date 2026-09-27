@@ -27,6 +27,7 @@ import { SongList } from "./SongList";
 import { SongMenu } from "./SongMenu";
 import type { MenuAnchor } from "./SongMenu";
 import { BatchSongMenu, SelectionModeButton } from "./BatchSongActions";
+import { useMenuTrigger } from "./menuTrigger";
 import {
   formatBatchFailureDetails,
   formatBatchResult,
@@ -122,33 +123,43 @@ export function CollectionDirectory({
   const { locateSongId, onLocate, onLocateSettled } = useLocateSong();
 
   const [menuFor, setMenuForRaw] = useState<{ song: SongView; anchor: MenuAnchor } | null>(null);
-  // The row that opened the menu currently on screen. Both menus are popovers
-  // rendered as siblings of the table, so they cannot see the row through their
-  // own container; the row reaches them as this ref (fix-queue-trigger-toggle).
-  const menuTriggerRef = useRef<HTMLElement | null>(null);
-  const batchMenuTriggerRef = useRef<HTMLElement | null>(null);
+  // Both menus are popovers rendered as siblings of the table, so they cannot
+  // see the row that opened them through their own container; the row reaches
+  // them as this ref, resolved live from the song id (fix-queue-trigger-toggle).
+  const menuTrigger = useMenuTrigger();
+  const batchMenuTrigger = useMenuTrigger();
   /**
-   * Opens the single-song menu, records the row that triggered it, and toggles:
-   * a second press on the row that already opened the menu closes it. The
-   * overlay stack treats that row as interior (see `triggerRef`), so the press
-   * no longer dismisses the menu by itself — without this branch the same
-   * gesture would just re-open it, which is issue #33.
+   * Opens the single-song menu, records which entry point triggered it, and
+   * toggles: a second press on the entry point that already opened the menu
+   * closes it. `control` distinguishes the two gestures — `.song-more` and the
+   * row's secondary button are different entry points, so switching between
+   * them on the same song is an open, not a close. The overlay stack treats the
+   * recorded entry point as interior (see `triggerRef`), so the press no longer
+   * dismisses the menu by itself — without this branch the same gesture would
+   * just re-open it, which is issue #33.
    */
   const setMenuFor = useCallback(
-    (next: { song: SongView; anchor: MenuAnchor } | null, row?: HTMLElement) => {
-      if (next) {
+    (
+      next: { song: SongView; anchor: MenuAnchor } | null,
+      entry: { songId: string; control: boolean } | null = null,
+    ) => {
+      if (next && entry) {
+        // "Same entry point" is a fact about `entry` and the menu on screen —
+        // never about DOM nodes, which windowing can replace between the two
+        // presses (fix-queue-trigger-toggle).
         const open = menuFor;
-        if (open && open.song.id === next.song.id && menuTriggerRef.current === row) {
+        if (open && open.song.id === entry.songId && menuTrigger.isControl === entry.control) {
           setMenuForRaw(null);
+          menuTrigger.clear();
           return;
         }
-        menuTriggerRef.current = row ?? null;
+        menuTrigger.record(entry.songId, entry.control);
       } else {
-        menuTriggerRef.current = null;
+        menuTrigger.clear();
       }
       setMenuForRaw(next);
     },
-    [menuFor],
+    [menuFor, menuTrigger],
   );
   const [batchMenuFor, setBatchMenuFor] = useState<{
     readonly song: SongView;
@@ -348,17 +359,17 @@ export function CollectionDirectory({
    * Opens the batch menu for the pressed row. Deliberately *not* a toggle: a
    * second press on the same row re-opens it for the current selection, which
    * is the contract the multi-select spec sets out (右键已选中歌曲保留选集) and
-   * what the batch suites assert. The row is still recorded in
-   * `batchMenuTriggerRef` so the overlay stack treats the press as interior
-   * rather than dismissing the menu out from under this very call.
+   * what the batch suites assert. The row is still recorded so the overlay stack
+   * treats the press as interior rather than dismissing the menu out from under
+   * this very call.
    */
   const openBatchMenu = useCallback(
-    (song: SongView, anchor: MenuAnchor, row: HTMLElement) => {
+    (song: SongView, anchor: MenuAnchor) => {
       if (!selection.isSelected(song.id)) selection.replace(song.id);
-      batchMenuTriggerRef.current = row;
+      batchMenuTrigger.record(song.id, false);
       setBatchMenuFor({ song, anchor });
     },
-    [selection],
+    [batchMenuTrigger, selection],
   );
 
   const batchMenuSongs = useMemo(() => {
@@ -509,9 +520,9 @@ export function CollectionDirectory({
               allLoadedSelected={allSongsSelected}
               onToggleSelection={(song) => selection.toggle(song.id)}
               onToggleSelectAll={() => selection.toggleAllLoaded(songs.map((song) => song.id))}
-              onContextMenu={(song, anchor, row) => {
-                if (selectionMode) openBatchMenu(song, anchor, row);
-                else setMenuFor({ song, anchor }, row);
+              onContextMenu={(song, anchor) => {
+                if (selectionMode) openBatchMenu(song, anchor);
+                else setMenuFor({ song, anchor }, { songId: song.id, control: false });
               }}
               error={error}
               onRetry={refreshSongs}
@@ -520,7 +531,9 @@ export function CollectionDirectory({
               onPlay={play}
               onFavorite={onFavorite}
               onPlayNext={onPlayNext}
-              onOpenMenu={(song, anchor, row) => setMenuFor({ song, anchor }, row)}
+              onOpenMenu={(song, anchor) =>
+                setMenuFor({ song, anchor }, { songId: song.id, control: true })
+              }
             />
           ) : (
             <section className="collection-directory" aria-busy={loading}>
@@ -577,7 +590,7 @@ export function CollectionDirectory({
           root={root}
           readOnly={readOnly}
           anchor={menuFor.anchor}
-          triggerRef={menuTriggerRef}
+          triggerRef={menuTrigger.triggerRef}
           onClose={() => setMenuFor(null)}
           onPlay={() => {
             play(menuFor.song);
@@ -610,7 +623,7 @@ export function CollectionDirectory({
           readOnly={readOnly || batchBusy}
           inPlaylist={false}
           handlers={batchHandlers}
-          triggerRef={batchMenuTriggerRef}
+          triggerRef={batchMenuTrigger.triggerRef}
           onClose={() => setBatchMenuFor(null)}
         />
       ) : null}

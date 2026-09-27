@@ -305,7 +305,7 @@ export const COMMANDS = {
   // mid-requirement) so the S07–S10 ids above keep pointing at the same cases.
   "LE-R06-S11": REACT("src/features/library/SongMenu.test.tsx"), // 再次点击歌曲操作入口
   "LE-R06-S12": REACT("src/features/library/batchLibraryOperations.test.tsx"), // 多选状态下再次点击行入口
-  "LE-R06-S13": REACT("src/features/library/SongMenu.test.tsx"), // 右键打开的菜单由指针交互收起
+  "LE-R06-S13": REACT_T("src/features/library/LibraryWorkspace.test.tsx", "右键打开的菜单仍由面板外按压和 Escape 收起"), // 右键打开的菜单由指针交互收起（宿主级：SongMenu 的 fixture 只从按钮打开，覆盖不到右键路径）
   // The 50k budget bench is `#[ignore]`d so a normal `cargo test` stays fast —
   // without `-- --ignored` cargo runs zero tests, which `run-scenario.mjs`
   // correctly rejects rather than passing on an empty selection.,

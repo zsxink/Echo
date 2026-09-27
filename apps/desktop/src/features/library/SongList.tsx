@@ -45,7 +45,7 @@ export interface SongListProps {
   readonly allLoadedSelected?: boolean;
   readonly onToggleSelection?: (song: SongView) => void;
   readonly onToggleSelectAll?: () => void;
-  readonly onContextMenu?: (song: SongView, anchor: MenuAnchor, row: HTMLElement) => void;
+  readonly onContextMenu?: (song: SongView, anchor: MenuAnchor) => void;
   /** A recoverable load error (task 10.7); existing content is preserved. */
   readonly error?: string | null;
   readonly onRetry?: () => void;
@@ -67,10 +67,10 @@ export interface SongListProps {
   readonly onFavorite: (song: SongView, favorite: boolean) => void;
   readonly onPlayNext: (song: SongView) => void;
   /** Opens the row's `.song-more` menu, anchored to the control that opened it.
-   *  The row element comes along so the caller can keep a ref to it — the menu
-   *  is a sibling of the table, so it can only count the row as part of its
-   *  interior this way (fix-queue-trigger-toggle). */
-  readonly onOpenMenu: (song: SongView, anchor: MenuAnchor, row: HTMLElement) => void;
+   *  The `song` passed here is what identifies the entry point — never the row
+   *  element, which windowing can replace between two presses of the same
+   *  control (fix-queue-trigger-toggle). */
+  readonly onOpenMenu: (song: SongView, anchor: MenuAnchor) => void;
 }
 
 export function SongList(props: SongListProps) {
@@ -257,11 +257,9 @@ export function SongList(props: SongListProps) {
               onPlayNext={() => props.onPlayNext(song)}
               onToggleSelection={() => props.onToggleSelection?.(song)}
               onContextMenu={
-                props.onContextMenu
-                  ? (anchor, row) => props.onContextMenu?.(song, anchor, row)
-                  : undefined
+                props.onContextMenu ? (anchor) => props.onContextMenu?.(song, anchor) : undefined
               }
-              onOpenMenu={(anchor, row) => props.onOpenMenu(song, anchor, row)}
+              onOpenMenu={(anchor) => props.onOpenMenu(song, anchor)}
             />
           ))}
           {first + visibleCount < songs.length ? (

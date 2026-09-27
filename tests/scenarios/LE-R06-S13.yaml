@@ -4,7 +4,7 @@ scenario_id: LE-R06-S13
 requirement: 歌曲操作与详情
 scenario: 右键打开的菜单由指针交互收起
 layer: automated
-command: "pnpm --filter @echo/desktop test -- --run src/features/library/SongMenu.test.tsx"
+command: "pnpm --filter @echo/desktop test -- --run src/features/library/LibraryWorkspace.test.tsx -t \"右键打开的菜单仍由面板外按压和 Escape 收起\""
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

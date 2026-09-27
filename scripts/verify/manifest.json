@@ -3324,7 +3324,7 @@
     {
       "id": "LE-R06-S13",
       "title": "右键打开的菜单由指针交互收起",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongMenu.test.tsx",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/LibraryWorkspace.test.tsx -t \"右键打开的菜单仍由面板外按压和 Escape 收起\"",
       "manifest": "tests/scenarios/LE-R06-S13.yaml"
     },
     {

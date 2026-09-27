@@ -1,9 +1,10 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SongView } from "../../ipc/ipc-types.generated";
 import { BatchSongMenu, type BatchSongActionHandlers } from "./BatchSongActions";
+import { useMenuTrigger } from "./menuTrigger";
 
 function song(id: string, favorite = false): SongView {
   return {
@@ -151,20 +152,28 @@ describe("BatchSongActions", () => {
  */
 describe("BatchSongMenu trigger control (fix-queue-trigger-toggle)", () => {
   function RowWithTrigger({ onClose }: { readonly onClose: () => void }) {
-    const triggerRef = useRef<HTMLElement | null>(null);
+    const trigger = useMenuTrigger();
     // The real views open unconditionally: the row is interior, so the stack
-    // does not dismiss, and this handler re-opens for the selection.
-    const [open, setOpen] = useState(true);
+    // does not dismiss, and this handler re-opens for the selection. The row
+    // (not the `.song-more` control) is the trigger, because in multi-select the
+    // menu is the row's context menu.
+    const [open, setOpen] = useState(false);
     return (
       <div>
         <table>
           <tbody>
-            <tr ref={(el) => (triggerRef.current = el)} data-testid="trigger-row">
-              <td>
-                <button type="button" data-testid="trigger-button" onClick={() => setOpen(true)}>
-                  歌曲操作
-                </button>
-              </td>
+            <tr
+              data-song-id="a"
+              data-testid="trigger-row"
+              onContextMenu={() => {
+                // The row itself is the trigger here, exactly as in multi-select:
+                // the menu is the row's context menu, so a press anywhere on the
+                // row is interior.
+                trigger.record("a", false);
+                setOpen(true);
+              }}
+            >
+              <td>行体</td>
             </tr>
           </tbody>
         </table>
@@ -174,7 +183,7 @@ describe("BatchSongMenu trigger control (fix-queue-trigger-toggle)", () => {
             readOnly={false}
             inPlaylist={false}
             handlers={handlers()}
-            triggerRef={triggerRef}
+            triggerRef={trigger.triggerRef}
             onClose={() => {
               setOpen(false);
               onClose();
@@ -188,11 +197,13 @@ describe("BatchSongMenu trigger control (fix-queue-trigger-toggle)", () => {
   it("treats a press on the row as interior, so the menu survives the gesture", () => {
     const onClose = vi.fn();
     render(<RowWithTrigger onClose={onClose} />);
-    const trigger = screen.getByTestId("trigger-button");
+    const row = screen.getByTestId("trigger-row");
+    fireEvent.pointerDown(row, { button: 2, buttons: 2 });
+    fireEvent.contextMenu(row);
     expect(screen.getByTestId("batch-song-menu")).toBeInTheDocument();
 
-    fireEvent.pointerDown(trigger);
-    fireEvent.click(trigger);
+    fireEvent.pointerDown(row, { button: 2, buttons: 2 });
+    fireEvent.contextMenu(row);
 
     // Without `triggerRef` the pointerdown would dismiss and `onClose` would
     // fire; the menu would only be back because the click re-opens it, which is
@@ -204,6 +215,9 @@ describe("BatchSongMenu trigger control (fix-queue-trigger-toggle)", () => {
   it("still dismisses on a press outside both the menu and the row", () => {
     const onClose = vi.fn();
     render(<RowWithTrigger onClose={onClose} />);
+    const row = screen.getByTestId("trigger-row");
+    fireEvent.pointerDown(row, { button: 2, buttons: 2 });
+    fireEvent.contextMenu(row);
 
     fireEvent.pointerDown(document.body);
     expect(onClose).toHaveBeenCalled();

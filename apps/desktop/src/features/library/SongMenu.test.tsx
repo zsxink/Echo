@@ -15,11 +15,12 @@
  */
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SongView } from "../../ipc/ipc-types.generated";
 import { SongMenu } from "./SongMenu";
+import { useMenuTrigger } from "./menuTrigger";
 import { ToastView } from "../../app/ToastView";
 
 function makeSong(overrides: Partial<SongView> = {}): SongView {
@@ -184,31 +185,41 @@ describe("SongMenu task 10.6", () => {
 
 /**
  * fix-queue-trigger-toggle — 歌曲操作 opens a popover that is a sibling of the
- * table, so the row has to be passed in explicitly. Without it, pressing 歌曲操作
- * again read as an outside press: the menu closed and the same gesture's click
- * re-opened it, which is issue #33.
+ * table, so the entry point has to be passed in explicitly. Without it, pressing
+ * 歌曲操作 again read as an outside press: the menu closed and the same gesture's
+ * click re-opened it, which is issue #33.
+ *
+ * The fixture drives the real `useMenuTrigger` over the real row anatomy
+ * (`<tr data-song-id>` holding `button.song-more`), so these tests also pin the
+ * hook's part of the contract — the trigger is the **control**, resolved live
+ * from the id, never the row element.
  */
 describe("SongMenu trigger control (fix-queue-trigger-toggle)", () => {
   function RowWithMenu({ onClose, onPlay }: { onClose: () => void; onPlay: () => void }) {
-    const triggerRef = useRef<HTMLElement | null>(null);
-    // A second press on the same row must close the menu, so the host carries
-    // the toggle the real views carry (LibraryWorkspace/PlaylistsView/
+    const trigger = useMenuTrigger();
+    // A second press on the same entry point must close the menu, so the host
+    // carries the toggle the real views carry (LibraryWorkspace/PlaylistsView/
     // CollectionDirectory). Without it the same gesture would re-open the menu.
-    const [open, setOpen] = useState(true);
+    const [open, setOpen] = useState(false);
     return (
       <div>
         <table>
           <tbody>
-            <tr ref={(el) => (triggerRef.current = el)} data-testid="trigger-row">
+            <tr data-song-id="song-1" data-testid="trigger-row">
               <td>
                 <button
                   type="button"
+                  className="row-action song-more"
                   data-testid="trigger-button"
-                  onClick={() => setOpen((v) => !v)}
+                  onClick={() => {
+                    trigger.record("song-1", true);
+                    setOpen((v) => !v);
+                  }}
                 >
                   歌曲操作
                 </button>
               </td>
+              <td data-testid="row-body">行体</td>
             </tr>
           </tbody>
         </table>
@@ -217,7 +228,7 @@ describe("SongMenu trigger control (fix-queue-trigger-toggle)", () => {
             song={makeSong()}
             root=""
             readOnly={false}
-            triggerRef={triggerRef}
+            triggerRef={trigger.triggerRef}
             onClose={() => {
               setOpen(false);
               onClose();
@@ -231,27 +242,52 @@ describe("SongMenu trigger control (fix-queue-trigger-toggle)", () => {
     );
   }
 
-  it("closes on a second press of the row that opened it", () => {
+  /** Open the menu the way a user does, and prove it opened. */
+  function openMenu() {
+    const button = screen.getByTestId("trigger-button");
+    fireEvent.pointerDown(button);
+    fireEvent.click(button);
+    expect(screen.getByTestId("song-menu")).toBeInTheDocument();
+  }
+
+  it("closes on a second press of the control that opened it", () => {
     const onClose = vi.fn();
     const onPlay = vi.fn();
     render(<RowWithMenu onClose={onClose} onPlay={onPlay} />);
-    expect(screen.getByTestId("song-menu")).toBeInTheDocument();
+    openMenu();
 
     // The gesture the `.song-more` button makes: pointerdown then click. The
-    // row counts as interior, so the stack does not dismiss — the click's
+    // control counts as interior, so the stack does not dismiss — the click's
     // toggle is what closes it, and the menu must be gone afterwards.
-    fireEvent.pointerDown(screen.getByTestId("trigger-button"));
-    fireEvent.click(screen.getByTestId("trigger-button"));
+    const button = screen.getByTestId("trigger-button");
+    fireEvent.pointerDown(button);
+    fireEvent.click(button);
 
     expect(screen.queryByTestId("song-menu")).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
     // The row's own click handler still steps aside for its controls, so the
     // second press does not start playback either.
     expect(onPlay).not.toHaveBeenCalled();
   });
 
+  it("still dismisses on a press on the rest of the row", () => {
+    // Only the control is interior. The rest of the row is a different gesture
+    // from the prototype's, and nothing toggles it — it must dismiss outright
+    // rather than look inert.
+    const onClose = vi.fn();
+    render(<RowWithMenu onClose={onClose} onPlay={vi.fn()} />);
+    openMenu();
+
+    fireEvent.pointerDown(screen.getByTestId("row-body"));
+
+    expect(onClose).toHaveBeenCalled();
+    expect(screen.queryByTestId("song-menu")).not.toBeInTheDocument();
+  });
+
   it("still closes on a press outside both the panel and the row", () => {
     const onClose = vi.fn();
     render(<RowWithMenu onClose={onClose} onPlay={vi.fn()} />);
+    openMenu();
 
     fireEvent.pointerDown(document.body);
     // Both dismissal paths run for one press — the stack's own listener and the
@@ -263,6 +299,7 @@ describe("SongMenu trigger control (fix-queue-trigger-toggle)", () => {
   it("suspends dismissal while the delete confirmation owns the screen", () => {
     const onClose = vi.fn();
     render(<RowWithMenu onClose={onClose} onPlay={vi.fn()} />);
+    openMenu();
     fireEvent.click(screen.getByRole("menuitem", { name: "删除" }));
     expect(screen.queryByTestId("song-menu")).not.toBeInTheDocument();
 
