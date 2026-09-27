@@ -354,6 +354,11 @@ button.lyric-line {
   padding-top: var(--titlebar-inset);
 }
 
+/* Initialize/status screens occupy the same workspace grid column as the library. */
+.workspace-empty {
+  grid-area: workspace;
+}
+
 /* Window drag handle. With `hiddenTitle: true` there is no native titlebar to
  * drag the window by, so the inset strip above the shell is the handle — its
  * height *is* `--titlebar-inset`, so it collapses to nothing in a plain

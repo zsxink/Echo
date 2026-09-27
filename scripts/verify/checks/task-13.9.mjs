@@ -20,7 +20,7 @@
 // the automated subsets (player_smoke, task checks) are exercised via their
 // scenario commands.
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,6 +44,31 @@ function run(command, args, cwd = ROOT, env = {}) {
     process.exit(1);
   }
   return `${r.stdout || ""}${r.stderr || ""}`;
+}
+
+function runStreaming(command, args, env = {}) {
+  return new Promise((resolveResult) => {
+    const child = spawn(command, args, {
+      cwd: ROOT,
+      env: { ...process.env, ...env },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const stdout = [];
+    const stderr = [];
+    child.stdout.on("data", (chunk) => {
+      stdout.push(chunk);
+      process.stdout.write(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr.push(chunk);
+      process.stderr.write(chunk);
+    });
+    child.on("error", (error) => resolveResult({ status: 1, output: error.message }));
+    child.on("close", (status) => resolveResult({
+      status: status ?? 1,
+      output: Buffer.concat([...stdout, ...stderr]).toString("utf8"),
+    }));
+  });
 }
 
 // 1. Three-way set reconciliation must pass (spec == trace == manifest) and the
@@ -77,7 +102,15 @@ const expectedAutomatedCount = JSON.parse(readFileSync(resolve(ROOT, "scripts", 
   .length;
 let scenarioOut;
 try {
-  scenarioOut = run("node", ["scripts/verify/run-scenario.mjs", "--", "--automated"]);
+  const scenarioResult = await runStreaming(
+    "node",
+    ["scripts/verify/run-scenario.mjs", "--", "--automated"],
+    { ECHO_GOVERNANCE_GATE_ALREADY_PASSED: process.env.ECHO_GOVERNANCE_GATE_ALREADY_PASSED || "0" },
+  );
+  if (scenarioResult.status !== 0) {
+    fail(`'node scripts/verify/run-scenario.mjs -- --automated' exited ${scenarioResult.status}`);
+  }
+  scenarioOut = scenarioResult.output;
 } catch (e) {
   fail(`verify:scenario -- --automated failed; see artifacts/verify:scenario-report.txt\n${e.message}`);
 }

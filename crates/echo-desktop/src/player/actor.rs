@@ -2092,7 +2092,7 @@ mod tests {
 
     #[test]
     fn toggle_play_pause_writes_the_pause_flag() {
-        let (mut actor, snapshot, props) = spawn_test(vec![BackendEvent::FileLoaded]);
+        let (mut actor, snapshot, props) = spawn_test_file_loaded_on_load();
         actor.send(load_temporary("/music/a.flac")).unwrap();
         wait_for(&snapshot, |s| s.state == PlaybackState::Playing);
 

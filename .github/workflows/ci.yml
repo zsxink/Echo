@@ -279,6 +279,11 @@ jobs:
         run: pnpm verify:governance
 
       - name: Run release gate without external artifacts
+        env:
+          # The full CI governance gate has already passed in the step above;
+          # reuse it for its matching scenario instead of running coverage and
+          # injection proofs a second time in the release scenario suite.
+          ECHO_GOVERNANCE_GATE_ALREADY_PASSED: "1"
         run: node scripts/verify/checks/task-13.9.mjs
 
       # OpenSpec is a pinned devDependency, not a globally installed tool, so

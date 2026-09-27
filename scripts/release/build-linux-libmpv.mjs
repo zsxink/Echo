@@ -689,7 +689,7 @@ Gate re-verifies before packaging.
 // Imported by the self-test for realSharedObjectsIn(); running the full build
 // on import would clone and compile four repos, so gate the entry point the
 // same way scripts/verify/spec-scenarios.mjs does.
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) main();
 
 function main() {
   const opts = parseArgs();
