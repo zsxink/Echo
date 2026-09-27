@@ -133,7 +133,7 @@ jobs:
         # fallback when the Tauri bundler launches it.
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
-        run: pnpm echo release
+        run: pnpm echo release ${{ runner.os == 'Linux' && '--verbose' || '' }}
 
       - name: Assert expected artifacts exist
         shell: bash
