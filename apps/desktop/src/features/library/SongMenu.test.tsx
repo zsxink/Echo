@@ -15,6 +15,7 @@
  */
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { useRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SongView } from "../../ipc/ipc-types.generated";
@@ -178,5 +179,83 @@ describe("SongMenu task 10.6", () => {
     renderMenu(makeSong());
     expect(screen.getByText("下一首播放")).toBeDisabled();
     expect(screen.getByText("加入播放队列")).toBeDisabled();
+  });
+});
+
+/**
+ * fix-queue-trigger-toggle — 歌曲操作 opens a popover that is a sibling of the
+ * table, so the row has to be passed in explicitly. Without it, pressing 歌曲操作
+ * again read as an outside press: the menu closed and the same gesture's click
+ * re-opened it, which is issue #33.
+ */
+describe("SongMenu trigger control (fix-queue-trigger-toggle)", () => {
+  function RowWithMenu({ onClose, onPlay }: { onClose: () => void; onPlay: () => void }) {
+    const triggerRef = useRef<HTMLElement | null>(null);
+    return (
+      <div>
+        <table>
+          <tbody>
+            <tr ref={(el) => (triggerRef.current = el)} data-testid="trigger-row">
+              <td>
+                <button type="button" data-testid="trigger-button">
+                  歌曲操作
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <SongMenu
+          song={makeSong()}
+          root=""
+          readOnly={false}
+          triggerRef={triggerRef}
+          onClose={onClose}
+          onPlay={onPlay}
+          onFavorite={vi.fn()}
+          onRefresh={vi.fn()}
+        />
+      </div>
+    );
+  }
+
+  it("keeps the menu open while the press is on the row that opened it", () => {
+    const onClose = vi.fn();
+    const onPlay = vi.fn();
+    render(<RowWithMenu onClose={onClose} onPlay={onPlay} />);
+    expect(screen.getByTestId("song-menu")).toBeInTheDocument();
+
+    // The gesture the `.song-more` button makes: pointerdown then click.
+    fireEvent.pointerDown(screen.getByTestId("trigger-button"));
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("trigger-button"));
+
+    // The row's own click handler still steps aside for its controls, so the
+    // second press does not start playback either.
+    expect(onPlay).not.toHaveBeenCalled();
+  });
+
+  it("still closes on a press outside both the panel and the row", () => {
+    const onClose = vi.fn();
+    render(<RowWithMenu onClose={onClose} onPlay={vi.fn()} />);
+
+    fireEvent.pointerDown(document.body);
+    // Both dismissal paths run for one press — the stack's own listener and the
+    // component's `dismissable` one — which is pre-existing and harmless because
+    // `onClose` is idempotent.
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("suspends dismissal while the delete confirmation owns the screen", () => {
+    const onClose = vi.fn();
+    render(<RowWithMenu onClose={onClose} onPlay={vi.fn()} />);
+    fireEvent.click(screen.getByRole("menuitem", { name: "删除" }));
+    expect(screen.queryByTestId("song-menu")).not.toBeInTheDocument();
+
+    onClose.mockClear();
+    fireEvent.pointerDown(document.body);
+
+    // The confirm dialog is a higher layer this component owns; the press lands
+    // on it rather than dismissing the menu underneath.
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

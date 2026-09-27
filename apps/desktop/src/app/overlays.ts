@@ -55,8 +55,35 @@ interface Registration {
   readonly tier: OverlayTier;
   readonly closer: () => void;
   readonly containerRef: RefObject<HTMLElement | null>;
+  /** The control that opened this layer, when it sits outside the container. */
+  readonly triggerRef?: RefObject<HTMLElement | null>;
   readonly dismissOnInteractOutside: boolean;
   readonly seq: number;
+}
+
+/**
+ * Whether a pointer target counts as *inside* a layer: its own container, or
+ * the control that opened it.
+ *
+ * The trigger is a separate ref rather than part of `containerRef` because
+ * triggers legitimately live outside the layer's own DOM — the queue button in
+ * the player bar, a row's 歌曲操作 button in a virtualised table. Without it,
+ * `pointerdown` on the trigger reads as "outside", dismisses the layer, and the
+ * same gesture's `click` then re-opens it, so the control looks inert.
+ *
+ * Exported for the few components that run their own outside-press check (the
+ * song menu suspends it while a nested dialog is up, which the stack cannot
+ * know) so they stay on one definition of "inside".
+ */
+export function isInsideOverlay(
+  containerRef: RefObject<HTMLElement | null>,
+  triggerRef: RefObject<HTMLElement | null> | undefined,
+  target: Node,
+): boolean {
+  return (
+    containerRef.current?.contains(target) === true ||
+    triggerRef?.current?.contains(target) === true
+  );
 }
 
 const open = new Map<string, Registration>();
@@ -118,7 +145,9 @@ window.addEventListener(
     const registration = id === null ? undefined : open.get(id);
     if (!registration?.dismissOnInteractOutside) return;
     const target = event.target as Node | null;
-    if (target && registration.containerRef.current?.contains(target)) return;
+    if (target && isInsideOverlay(registration.containerRef, registration.triggerRef, target)) {
+      return;
+    }
     open.delete(id!);
     registration.closer();
   },
@@ -130,6 +159,14 @@ export interface OverlayOptions {
   readonly onClose: () => void;
   /** A ref whose focusable content is trapped and initially focused. */
   readonly containerRef: RefObject<HTMLElement | null>;
+  /**
+   * The control that opened this overlay, when it is not a descendant of
+   * `containerRef`. It counts as part of the layer's interior, so pressing it
+   * again dismisses the layer instead of dismissing and immediately re-opening
+   * it. Only affects the outside-press check — never Escape priority, focus
+   * restore, or the Tab trap.
+   */
+  readonly triggerRef?: RefObject<HTMLElement | null>;
   /** When false the overlay is not registered on the stack (default true). */
   readonly enabled?: boolean;
   /** Close when the user begins an interaction outside this layer. Menus do so
@@ -146,6 +183,7 @@ export function useOverlay({
   tier,
   onClose,
   containerRef,
+  triggerRef,
   enabled = true,
   dismissOnInteractOutside = tier === OverlayTier.Menu,
 }: OverlayOptions): void {
@@ -163,6 +201,7 @@ export function useOverlay({
       tier,
       closer: () => onCloseRef.current(),
       containerRef,
+      triggerRef,
       dismissOnInteractOutside,
       seq: seqCounter,
     });
@@ -185,7 +224,7 @@ export function useOverlay({
         trigger.focus();
       }
     };
-  }, [id, tier, enabled, containerRef, dismissOnInteractOutside]);
+  }, [id, tier, enabled, containerRef, triggerRef, dismissOnInteractOutside]);
 }
 
 /** Trap Tab/Shift+Tab inside a container so focus cannot escape an overlay. */

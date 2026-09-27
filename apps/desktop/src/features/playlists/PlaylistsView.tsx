@@ -88,7 +88,20 @@ export function PlaylistsView({
   // 全量成员列表（保留追加顺序语义与批量操作）。
   const [searched, setSearched] = useState<PagedSongs | null>(null);
   const searchRequest = useRef(0);
-  const [menuFor, setMenuFor] = useState<{ song: SongView; anchor: MenuAnchor } | null>(null);
+  const [menuFor, setMenuForRaw] = useState<{ song: SongView; anchor: MenuAnchor } | null>(null);
+  // The row that opened the menu currently on screen. Both menus are popovers
+  // rendered as siblings of the table, so they cannot see the row through their
+  // own container; the row reaches them as this ref (fix-queue-trigger-toggle).
+  const menuTriggerRef = useRef<HTMLElement | null>(null);
+  const batchMenuTriggerRef = useRef<HTMLElement | null>(null);
+  /** Opens the single-song menu and records the row that triggered it. */
+  const setMenuFor = useCallback(
+    (next: { song: SongView; anchor: MenuAnchor } | null, row?: HTMLElement) => {
+      if (next) menuTriggerRef.current = row ?? null;
+      setMenuForRaw(next);
+    },
+    [],
+  );
   const [batchMenuFor, setBatchMenuFor] = useState<{
     readonly song: SongView;
     readonly anchor: MenuAnchor;
@@ -327,8 +340,9 @@ export function PlaylistsView({
   );
 
   const openBatchMenu = useCallback(
-    (song: SongView, anchor: MenuAnchor) => {
+    (song: SongView, anchor: MenuAnchor, row: HTMLElement) => {
       if (!selection.isSelected(song.id)) selection.replace(song.id);
+      batchMenuTriggerRef.current = row;
       setBatchMenuFor({ song, anchor });
     },
     [selection],
@@ -511,9 +525,9 @@ export function PlaylistsView({
             onToggleSelectAll={() =>
               selection.toggleAllLoaded(displayedSongs.map((song) => song.id))
             }
-            onContextMenu={(song, anchor) => {
-              if (selectionMode) openBatchMenu(song, anchor);
-              else setMenuFor({ song, anchor });
+            onContextMenu={(song, anchor, row) => {
+              if (selectionMode) openBatchMenu(song, anchor, row);
+              else setMenuFor({ song, anchor }, row);
             }}
             onLoadMore={() => {}}
             onClearSearch={() => setSearchText("")}
@@ -522,7 +536,7 @@ export function PlaylistsView({
             onPlayNext={(song) =>
               bridge.fireAndForget("queue_command", { command: "playNext", songId: song.id })
             }
-            onOpenMenu={(song, anchor) => setMenuFor({ song, anchor })}
+            onOpenMenu={(song, anchor, row) => setMenuFor({ song, anchor }, row)}
           />
         </div>
       </main>
@@ -533,6 +547,7 @@ export function PlaylistsView({
           root={root}
           readOnly={readOnly}
           anchor={menuFor.anchor}
+          triggerRef={menuTriggerRef}
           onClose={() => setMenuFor(null)}
           onPlay={() => {
             onPlay(menuFor.song);
@@ -580,6 +595,7 @@ export function PlaylistsView({
           readOnly={readOnly || batchBusy}
           inPlaylist
           handlers={batchHandlers}
+          triggerRef={batchMenuTriggerRef}
           onClose={() => setBatchMenuFor(null)}
         />
       ) : null}

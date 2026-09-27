@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { useRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SongView } from "../../ipc/ipc-types.generated";
@@ -134,5 +135,52 @@ describe("BatchSongActions", () => {
 
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(document.activeElement).toBe(trigger);
+  });
+});
+
+/**
+ * fix-queue-trigger-toggle — the popover is a sibling of the table, so without
+ * `triggerRef` a second press on the row that opened the menu closed it only
+ * for the same gesture to open it again.
+ */
+describe("BatchSongMenu trigger control (fix-queue-trigger-toggle)", () => {
+  function RowWithTrigger({ onClose }: { readonly onClose: () => void }) {
+    const triggerRef = useRef<HTMLElement | null>(null);
+    return (
+      <div>
+        <table>
+          <tbody>
+            <tr ref={(el) => (triggerRef.current = el)} data-testid="trigger-row">
+              <td>
+                <button type="button" data-testid="trigger-button">
+                  歌曲操作
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <BatchSongMenu
+          songs={[song("a")]}
+          readOnly={false}
+          inPlaylist={false}
+          handlers={handlers()}
+          triggerRef={triggerRef}
+          onClose={onClose}
+        />
+      </div>
+    );
+  }
+
+  it("closes on a second press of the row that opened it", () => {
+    const onClose = vi.fn();
+    render(<RowWithTrigger onClose={onClose} />);
+    const trigger = screen.getByTestId("trigger-button");
+
+    fireEvent.pointerDown(trigger);
+    expect(onClose).not.toHaveBeenCalled();
+
+    // A press on any other row still dismisses it.
+    fireEvent.pointerDown(document.body);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

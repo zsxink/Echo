@@ -28,11 +28,17 @@
  * item set, the reveal/delete flows and the surface markup (CODE_STANDARDS §6).
  */
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { assetUrl, bridge } from "../../bridge";
 import { useCoverKeys } from "../../app/coverArt";
-import { OverlayTier, useFocusTrap, useOverlay, useRovingFocus } from "../../app/overlays";
+import {
+  OverlayTier,
+  isInsideOverlay,
+  useFocusTrap,
+  useOverlay,
+  useRovingFocus,
+} from "../../app/overlays";
 import { Icon } from "../../app/Icon";
 import { notify } from "../../app/toast";
 import type { SongView } from "../../ipc/ipc-types.generated";
@@ -58,6 +64,13 @@ export interface SongMenuProps {
   readonly readOnly: boolean;
   /** Where to anchor the popover; omitted falls back to the viewport corner. */
   readonly anchor?: MenuAnchor | null;
+  /**
+   * The row that opened this menu. The popover is a sibling of the table, so the
+   * row is not inside `menuRef` — without this, pressing 歌曲操作 again reads as
+   * an outside press, closes the menu, and the same gesture re-opens it
+   * (fix-queue-trigger-toggle).
+   */
+  readonly triggerRef?: RefObject<HTMLElement | null>;
   readonly onClose: () => void;
   readonly onPlay: () => void;
   /** Insert this song right after the current one ("下一首播放", task 10.6). */
@@ -79,6 +92,7 @@ export function SongMenu({
   root,
   readOnly,
   anchor,
+  triggerRef,
   onClose,
   onPlay,
   onPlayNext,
@@ -101,23 +115,26 @@ export function SongMenu({
   const style = usePlacement(anchor, menuRef);
   // Single overlay stack: the menu is a `Menu` tier layer; Escape closes it via
   // the global handler, focus is trapped, and focus returns to the row on close.
-  useOverlay({ tier: OverlayTier.Menu, onClose, containerRef: menuRef });
+  useOverlay({ tier: OverlayTier.Menu, onClose, containerRef: menuRef, triggerRef });
   useFocusTrap(menuRef);
 
   // Outside press closes the menu, as in the prototype (which stops propagation
   // on the trigger instead of drawing a scrim). Suspended while a higher layer
   // owned by this component is open, so the press lands on that layer.
+  //
+  // The predicate is the stack's own, so "inside" means one definition: the
+  // popover *or* the row that opened it.
   const dismissable = !confirmDelete && !detailOpen;
   useEffect(() => {
     if (!dismissable) return;
     function onPointerDown(event: Event) {
       const target = event.target as Node | null;
-      if (target && menuRef.current?.contains(target)) return;
+      if (target && isInsideOverlay(menuRef, triggerRef, target)) return;
       onClose();
     }
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [dismissable, onClose]);
+  }, [dismissable, onClose, triggerRef]);
 
   const title = song.title ?? "未命名歌曲";
   const artist = song.artist ?? "未知艺人";

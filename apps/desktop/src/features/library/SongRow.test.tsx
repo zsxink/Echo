@@ -99,13 +99,19 @@ describe("SongRow playback binding", () => {
     fireEvent.contextMenu(row, { clientX: 120, clientY: 230 });
 
     expect(onContextMenu).toHaveBeenCalledTimes(1);
-    expect(onContextMenu).toHaveBeenCalledWith({
-      top: 230,
-      right: 120,
-      bottom: 230,
-      left: 120,
-      kind: "pointer",
-    });
+    // The row element travels with the anchor: the menu popover is a sibling of
+    // the table, so it can only count the row as interior through a ref
+    // (fix-queue-trigger-toggle).
+    expect(onContextMenu).toHaveBeenCalledWith(
+      {
+        top: 230,
+        right: 120,
+        bottom: 230,
+        left: 120,
+        kind: "pointer",
+      },
+      row,
+    );
     expect(props.onPlay).not.toHaveBeenCalled();
   });
 

@@ -34,7 +34,7 @@
  * (task 6.6); this file also provides the brand-area portal slot for importing.
  */
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { bridge, reportBridgeFailure } from "../bridge";
 import { useImport } from "../features/import";
@@ -81,6 +81,11 @@ export function App() {
   const { importing, runImport, renderImportDialog } = useImport({
     onImportCommitted: reloadPlaylists,
   });
+  // The queue popover and its trigger are siblings, so the panel cannot reach the
+  // button through its own container. Sharing one ref lets the panel count the
+  // button as part of its interior — a second press closes it instead of
+  // closing and immediately re-opening it.
+  const queueTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const preventDefaultContextMenu = (event: Event) => event.preventDefault();
@@ -344,9 +349,9 @@ export function App() {
 
         <ImmersivePlayer />
 
-        <QueuePanel />
+        <QueuePanel triggerRef={queueTriggerRef} />
 
-        <PlayerBar />
+        <PlayerBar queueTriggerRef={queueTriggerRef} />
 
         <ToastView />
 

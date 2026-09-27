@@ -10,7 +10,7 @@
  * action menus, and the import / add-to-playlist dialogs.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { bridge } from "../../bridge";
 import { usePlayerSnapshot } from "../../player/playerStore";
@@ -62,7 +62,20 @@ export function LibraryWorkspace({
   const [sort, setSort] = useStoredSongSort(view);
   // The menu is anchored to the `.song-more` control that opened it, as the
   // prototype does — never to a fixed corner.
-  const [menuFor, setMenuFor] = useState<{ song: SongView; anchor: MenuAnchor } | null>(null);
+  const [menuFor, setMenuForRaw] = useState<{ song: SongView; anchor: MenuAnchor } | null>(null);
+  // The row that opened the menu currently on screen. Both menus are popovers
+  // rendered as siblings of the table, so they cannot see the row through their
+  // own container; the row reaches them as this ref (fix-queue-trigger-toggle).
+  const menuTriggerRef = useRef<HTMLElement | null>(null);
+  const batchMenuTriggerRef = useRef<HTMLElement | null>(null);
+  /** Opens the single-song menu and records the row that triggered it. */
+  const setMenuFor = useCallback(
+    (next: { song: SongView; anchor: MenuAnchor } | null, row?: HTMLElement) => {
+      menuTriggerRef.current = row ?? null;
+      setMenuForRaw(next);
+    },
+    [],
+  );
   const [addToPlaylistFor, setAddToPlaylistFor] = useState<readonly SongView[] | null>(null);
   const [batchMenuFor, setBatchMenuFor] = useState<{
     readonly song: SongView;
@@ -228,8 +241,9 @@ export function LibraryWorkspace({
   );
 
   const openBatchMenu = useCallback(
-    (song: SongView, anchor: MenuAnchor) => {
+    (song: SongView, anchor: MenuAnchor, row: HTMLElement) => {
       if (!selection.isSelected(song.id)) selection.replace(song.id);
+      batchMenuTriggerRef.current = row;
       setBatchMenuFor({ song, anchor });
     },
     [selection],
@@ -363,9 +377,9 @@ export function LibraryWorkspace({
             allLoadedSelected={allLoadedSelected}
             onToggleSelection={(song) => selection.toggle(song.id)}
             onToggleSelectAll={() => selection.toggleAllLoaded(page.songs.map((song) => song.id))}
-            onContextMenu={(song, anchor) => {
-              if (selectionMode) openBatchMenu(song, anchor);
-              else setMenuFor({ song, anchor });
+            onContextMenu={(song, anchor, row) => {
+              if (selectionMode) openBatchMenu(song, anchor, row);
+              else setMenuFor({ song, anchor }, row);
             }}
             error={error}
             onRetry={retry}
@@ -374,7 +388,7 @@ export function LibraryWorkspace({
             onPlay={onPlay}
             onFavorite={onFavorite}
             onPlayNext={onPlayNext}
-            onOpenMenu={(song, anchor) => setMenuFor({ song, anchor })}
+            onOpenMenu={(song, anchor, row) => setMenuFor({ song, anchor }, row)}
           />
         </div>
       </main>
@@ -385,6 +399,7 @@ export function LibraryWorkspace({
           root={root}
           readOnly={readOnly}
           anchor={menuFor.anchor}
+          triggerRef={menuTriggerRef}
           onClose={() => setMenuFor(null)}
           onPlay={() => {
             onPlay(menuFor.song);
@@ -417,6 +432,7 @@ export function LibraryWorkspace({
           readOnly={readOnly || batchBusy}
           inPlaylist={false}
           handlers={batchHandlers}
+          triggerRef={batchMenuTriggerRef}
           onClose={() => setBatchMenuFor(null)}
         />
       ) : null}

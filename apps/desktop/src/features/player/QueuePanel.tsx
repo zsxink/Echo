@@ -13,7 +13,7 @@
  * why an item did not play.
  */
 
-import { useRef, useState } from "react";
+import { useRef, useState, type RefObject } from "react";
 
 import { assetUrl, bridge } from "../../bridge";
 import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
@@ -42,18 +42,29 @@ function QueueCover({
   );
 }
 
-export function QueuePanel() {
+export function QueuePanel({
+  triggerRef,
+}: {
+  readonly triggerRef?: RefObject<HTMLElement | null>;
+}) {
   const snapshot = usePlayerSnapshot();
   const ui = usePlayerUi();
   const panelRef = useRef<HTMLDivElement>(null);
   // Queue panel is a `Menu`-tier overlay: Escape closes it via the single stack,
   // focus is trapped, and focus returns to the open control. Hooks are hoisted
   // above the early return (Rules of Hooks) and no-op while closed.
+  //
+  // `triggerRef` is the player bar's queue button, which is *not* a descendant of
+  // the popover (moving the popover inside the bar would make `backdrop-filter`/
+  // `transform` on `.playerbar` its containing block). Registering it keeps a
+  // second press on that button from reading as an outside press — which closed
+  // the panel only for the same gesture's `click` to re-open it.
   const close = () => playerStore.setQueueOpen(false);
   useOverlay({
     tier: OverlayTier.Menu,
     onClose: close,
     containerRef: panelRef,
+    triggerRef,
     enabled: ui.queueOpen,
   });
   useFocusTrap(panelRef, ui.queueOpen);

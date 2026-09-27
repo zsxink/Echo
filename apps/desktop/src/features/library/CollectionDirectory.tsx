@@ -121,7 +121,20 @@ export function CollectionDirectory({
   const snapshot = usePlayerSnapshot();
   const { locateSongId, onLocate, onLocateSettled } = useLocateSong();
 
-  const [menuFor, setMenuFor] = useState<{ song: SongView; anchor: MenuAnchor } | null>(null);
+  const [menuFor, setMenuForRaw] = useState<{ song: SongView; anchor: MenuAnchor } | null>(null);
+  // The row that opened the menu currently on screen. Both menus are popovers
+  // rendered as siblings of the table, so they cannot see the row through their
+  // own container; the row reaches them as this ref (fix-queue-trigger-toggle).
+  const menuTriggerRef = useRef<HTMLElement | null>(null);
+  const batchMenuTriggerRef = useRef<HTMLElement | null>(null);
+  /** Opens the single-song menu and records the row that triggered it. */
+  const setMenuFor = useCallback(
+    (next: { song: SongView; anchor: MenuAnchor } | null, row?: HTMLElement) => {
+      if (next) menuTriggerRef.current = row ?? null;
+      setMenuForRaw(next);
+    },
+    [],
+  );
   const [batchMenuFor, setBatchMenuFor] = useState<{
     readonly song: SongView;
     readonly anchor: MenuAnchor;
@@ -317,8 +330,9 @@ export function CollectionDirectory({
   );
 
   const openBatchMenu = useCallback(
-    (song: SongView, anchor: MenuAnchor) => {
+    (song: SongView, anchor: MenuAnchor, row: HTMLElement) => {
       if (!selection.isSelected(song.id)) selection.replace(song.id);
+      batchMenuTriggerRef.current = row;
       setBatchMenuFor({ song, anchor });
     },
     [selection],
@@ -472,9 +486,9 @@ export function CollectionDirectory({
               allLoadedSelected={allSongsSelected}
               onToggleSelection={(song) => selection.toggle(song.id)}
               onToggleSelectAll={() => selection.toggleAllLoaded(songs.map((song) => song.id))}
-              onContextMenu={(song, anchor) => {
-                if (selectionMode) openBatchMenu(song, anchor);
-                else setMenuFor({ song, anchor });
+              onContextMenu={(song, anchor, row) => {
+                if (selectionMode) openBatchMenu(song, anchor, row);
+                else setMenuFor({ song, anchor }, row);
               }}
               error={error}
               onRetry={refreshSongs}
@@ -483,7 +497,7 @@ export function CollectionDirectory({
               onPlay={play}
               onFavorite={onFavorite}
               onPlayNext={onPlayNext}
-              onOpenMenu={(song, anchor) => setMenuFor({ song, anchor })}
+              onOpenMenu={(song, anchor, row) => setMenuFor({ song, anchor }, row)}
             />
           ) : (
             <section className="collection-directory" aria-busy={loading}>
@@ -540,6 +554,7 @@ export function CollectionDirectory({
           root={root}
           readOnly={readOnly}
           anchor={menuFor.anchor}
+          triggerRef={menuTriggerRef}
           onClose={() => setMenuFor(null)}
           onPlay={() => {
             play(menuFor.song);
@@ -572,6 +587,7 @@ export function CollectionDirectory({
           readOnly={readOnly || batchBusy}
           inPlaylist={false}
           handlers={batchHandlers}
+          triggerRef={batchMenuTriggerRef}
           onClose={() => setBatchMenuFor(null)}
         />
       ) : null}

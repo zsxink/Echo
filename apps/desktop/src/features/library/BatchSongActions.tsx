@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 
 import { OverlayTier, useFocusTrap, useOverlay, useRovingFocus } from "../../app/overlays";
 import { Icon } from "../../app/Icon";
@@ -59,14 +59,21 @@ export function BatchSongMenu({
   readOnly,
   inPlaylist,
   handlers,
+  triggerRef,
   onClose,
 }: BatchSongActionOptions & {
   readonly anchor?: MenuAnchor | null;
+  /**
+   * The row that opened this menu. The popover is a sibling of the table, so the
+   * row is not inside the menu's own container — without this, pressing the
+   * entry again closes and immediately re-opens it (fix-queue-trigger-toggle).
+   */
+  readonly triggerRef?: RefObject<HTMLElement | null>;
   readonly onClose: () => void;
 }) {
   const menuRef = useRef<HTMLElement>(null);
   const style = usePlacement(anchor, menuRef);
-  useOverlay({ tier: OverlayTier.Menu, onClose, containerRef: menuRef });
+  useOverlay({ tier: OverlayTier.Menu, onClose, containerRef: menuRef, triggerRef });
   useFocusTrap(menuRef);
 
   const actions = batchActions({ songs, readOnly, inPlaylist, handlers });

@@ -60,9 +60,9 @@ export interface SongRowProps {
   readonly onPlayNext: () => void;
   readonly onToggleSelection?: () => void;
   /** Opens the selection-aware menu without triggering playback. */
-  readonly onContextMenu?: (anchor: MenuAnchor) => void;
+  readonly onContextMenu?: (anchor: MenuAnchor, row: HTMLElement) => void;
   /** The menu anchors to the control that opened it, as the prototype does. */
-  readonly onOpenMenu: (anchor: MenuAnchor) => void;
+  readonly onOpenMenu: (anchor: MenuAnchor, row: HTMLElement) => void;
 }
 
 /** Format a duration in seconds as m:ss (player bar, chapters). */
@@ -155,7 +155,7 @@ export function SongRow({
           (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey))
         ) {
           event.preventDefault();
-          onContextMenu?.(anchorOf(event.currentTarget));
+          onContextMenu?.(anchorOf(event.currentTarget), event.currentTarget);
           return;
         }
         if (event.key !== "Enter" && event.key !== " ") return;
@@ -166,7 +166,7 @@ export function SongRow({
       onContextMenu={(event) => {
         if (!onContextMenu) return;
         event.preventDefault();
-        onContextMenu?.(pointerAnchorOf(event.clientX, event.clientY));
+        onContextMenu?.(pointerAnchorOf(event.clientX, event.clientY), event.currentTarget);
       }}
       data-song-id={song.id}
       data-testid={`song-row-${song.id}`}
@@ -278,7 +278,10 @@ export function SongRow({
             title="歌曲操作"
             onClick={(event: MouseEvent<HTMLButtonElement>) => {
               const box = event.currentTarget.getBoundingClientRect();
-              onOpenMenu({ top: box.top, right: box.right, bottom: box.bottom, left: box.left });
+              onOpenMenu(
+                { top: box.top, right: box.right, bottom: box.bottom, left: box.left },
+                event.currentTarget.closest("tr") as HTMLElement,
+              );
             }}
           >
             <Icon name="more" />
