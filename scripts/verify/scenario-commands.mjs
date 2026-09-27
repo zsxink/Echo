@@ -92,9 +92,17 @@ export const COMMANDS = {
   "DAS-R08-S01": REACT("src/app/narrow.test.tsx"), // （重编号自 DAS-R07-S01）
   "DAS-R08-S02": REACT("src/app/overlays.test.tsx"), // （重编号自 DAS-R07-S02）
   "DAS-R08-S03": REACT("src/app/overlays.test.tsx"), // （重编号自 DAS-R07-S03）
+  // fix-queue-trigger-toggle: 触发控件计入浮层内部区域. Each row points at the
+  // suite that owns the assertion it registers, so a regression in one path
+  // blanks only that path's scenario.
+  "DAS-R08-S04": REACT("src/features/player/QueuePanel.test.tsx"), // 再次点击播放队列触发控件
+  "DAS-R08-S05": REACT("src/features/player/PlayerBar.test.tsx"), // 触发控件状态与可访问名称
+  "DAS-R08-S06": REACT("src/app/overlays.test.tsx"), // 再次点击触发控件不触发外部动作
+  "DAS-R08-S07": REACT("src/app/overlays.test.tsx"), // 仍可点击真正外部区域关闭
   "DAS-R09-S01": REACT("src/app/accessibility.test.tsx"), // （重编号自 DAS-R08-S01）
   "DAS-R09-S02": REACT("src/app/accessibility.test.tsx"), // （重编号自 DAS-R08-S02）
   "DAS-R09-S03": REACT("src/app/overlays.test.tsx"), // （重编号自 DAS-R08-S03）
+  "DAS-R09-S04": REACT("src/app/overlays.test.tsx"), // 触发控件内部化不影响键盘路径
   "DAS-R10-S01": CHECK("13.8"), // offline/no-network, // （重编号自 DAS-R09-S01）
   "DAS-R10-S02": CHECK("13.8"),
   // wire-desktop-system-dialogs: real OS dialogs/reveal, WebView stays pathless., // （重编号自 DAS-R09-S02）
@@ -293,6 +301,11 @@ export const COMMANDS = {
   "LE-R06-S08": COREC("trash::tests::system_trash_failure_keeps_the_verified_staging_for_retry"),
   "LE-R06-S09": COREC("trash::tests::post_call_trash_error_rechecks_missing_staging_and_stops_other_operations"),
   "LE-R06-S10": CHECK("12.7"), // trash 目标只接受绑定根下匹配的 echo/tmp/trash/<op-id>
+  // fix-queue-trigger-toggle: 触发控件计入菜单内部区域. Appended (not inserted
+  // mid-requirement) so the S07–S10 ids above keep pointing at the same cases.
+  "LE-R06-S11": REACT("src/features/library/SongMenu.test.tsx"), // 再次点击歌曲操作入口
+  "LE-R06-S12": REACT("src/features/library/BatchSongActions.test.tsx"), // 多选状态下再次点击行入口
+  "LE-R06-S13": REACT("src/features/library/SongMenu.test.tsx"), // 右键打开的菜单由指针交互收起
   // The 50k budget bench is `#[ignore]`d so a normal `cargo test` stays fast —
   // without `-- --ignored` cargo runs zero tests, which `run-scenario.mjs`
   // correctly rejects rather than passing on an empty selection.,
@@ -471,6 +484,12 @@ export const COMMANDS = {
   "PM-R06-S03": REACT("src/features/library/batchOperations.test.ts"), // 批量操作结果聚合,
   "PM-R07-S01": REACT("src/features/playlists/AddToPlaylistDialog.test.tsx"),
   "PM-R07-S02": REACT("src/features/playlists/PlaylistNameDialog.test.tsx"),
+  // S03/S04 had no row here, so the generator fell back to the attestation
+  // checker and rewrote their committed manifests — which then tripped
+  // validate-scenario-manifests. The values below are what the committed
+  // manifests already claimed, so this only records them in the source of truth.
+  "PM-R07-S03": REACT("src/features/playlists/AddToPlaylistDialog.test.tsx"),
+  "PM-R07-S04": REACT("src/features/playlists/AddToPlaylistDialog.test.tsx"),
 
   // ===== safe-file-ingestion (SFI) =====
   // R01: 多选导入与默认目标命名. S03 (无标签 wav) is proven by the dedicated
