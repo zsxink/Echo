@@ -5,7 +5,7 @@
 - 本表逐项覆盖 specs 中的全部 Scenario；稳定 ID 不得复用，标题调整时保留原 ID。
 - 任务 1.3 建立测试 manifest 与执行器。每行指定的 manifest 必须包含正常路径、关键失败路径、fixture、预期结果和自动测试过滤器；Native 行还必须包含平台版本、人工步骤、操作者和证据路径。
 - 每行给出实际验收命令。`pnpm verify:scenario -- --all` 必须比较 specs、此表和测试 manifest 的 ID 集合完全相等，并逐项执行；缺失、重复、无命令、无证据或失败均返回非零。
-- 当前基线：102 个 Requirement，392 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
+- 当前基线：102 个 Requirement，394 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
 
 ## ci-release-pipeline
 
@@ -360,6 +360,8 @@
 | PM-R06-S03 | 歌单异步操作反馈 | 批量操作结果 | 6.5, 10.9 | Core/React | `tests/scenarios/PM-R06-S03.yaml` | `pnpm verify:scenario -- PM-R06-S03` |
 | PM-R07-S01 | 歌单选择器内新建歌单 | 从选择器创建并添加歌曲 | — | Gate | `tests/scenarios/PM-R07-S01.yaml` | `pnpm verify:scenario -- PM-R07-S01` |
 | PM-R07-S02 | 歌单选择器内新建歌单 | 从选择器创建失败 | — | Gate | `tests/scenarios/PM-R07-S02.yaml` | `pnpm verify:scenario -- PM-R07-S02` |
+| PM-R07-S03 | 歌单选择器内新建歌单 | 点击名称输入框并输入 | 1.1 | Gate | `tests/scenarios/PM-R07-S03.yaml` | `pnpm verify:scenario -- PM-R07-S03` |
+| PM-R07-S04 | 歌单选择器内新建歌单 | 取消新建并返回选择器 | 1.1, 1.2 | Gate | `tests/scenarios/PM-R07-S04.yaml` | `pnpm verify:scenario -- PM-R07-S04` |
 | PM-R08-S01 | 歌单与成员事实时间真实性 | 创建歌单时记录时间 | 6.5, 6.6, 13.9, 13.13 | Core/Native | `tests/scenarios/PM-R08-S01.yaml` | `pnpm verify:scenario -- PM-R08-S01` |
 | PM-R08-S02 | 歌单与成员事实时间真实性 | 加入歌单时记录时间 | 6.5, 6.6, 13.9, 13.13 | Core/Native | `tests/scenarios/PM-R08-S02.yaml` | `pnpm verify:scenario -- PM-R08-S02` |
 | PM-R08-S03 | 歌单与成员事实时间真实性 | 重复加入不重写时间 | 6.5, 6.6, 13.9, 13.13 | Core/Native | `tests/scenarios/PM-R08-S03.yaml` | `pnpm verify:scenario -- PM-R08-S03` |

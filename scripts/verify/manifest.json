@@ -4030,6 +4030,18 @@
       "manifest": "tests/scenarios/PM-R07-S02.yaml"
     },
     {
+      "id": "PM-R07-S03",
+      "title": "点击名称输入框并输入",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx",
+      "manifest": "tests/scenarios/PM-R07-S03.yaml"
+    },
+    {
+      "id": "PM-R07-S04",
+      "title": "取消新建并返回选择器",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx",
+      "manifest": "tests/scenarios/PM-R07-S04.yaml"
+    },
+    {
       "id": "PM-R08-S01",
       "title": "创建歌单时记录时间",
       "command": "node scripts/verify/checks/check-native-attestation.mjs PM-R08-S01",
