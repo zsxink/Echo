@@ -150,6 +150,8 @@ export function useOverlay({
   dismissOnInteractOutside = tier === OverlayTier.Menu,
 }: OverlayOptions): void {
   const id = useRef(`o-${nextId++}`).current;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   // Remember the document.activeElement at open to restore it on close.
   const restoreFocus = useRef<HTMLElement | null>(null);
 
@@ -159,7 +161,7 @@ export function useOverlay({
     seqCounter += 1;
     open.set(id, {
       tier,
-      closer: onClose,
+      closer: () => onCloseRef.current(),
       containerRef,
       dismissOnInteractOutside,
       seq: seqCounter,
@@ -183,7 +185,7 @@ export function useOverlay({
         trigger.focus();
       }
     };
-  }, [id, onClose, tier, enabled, containerRef, dismissOnInteractOutside]);
+  }, [id, tier, enabled, containerRef, dismissOnInteractOutside]);
 }
 
 /** Trap Tab/Shift+Tab inside a container so focus cannot escape an overlay. */

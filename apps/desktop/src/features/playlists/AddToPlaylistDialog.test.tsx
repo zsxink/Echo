@@ -4,7 +4,7 @@
  * are exactly the selected playlist ids.
  */
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
@@ -163,6 +163,8 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
     // Opening the nested dialog must leave focus in its field. If the picker
     // restores focus while being paused, macOS CJK IME composition is cancelled.
     expect(input).toHaveFocus();
+    fireEvent.click(input);
+    expect(input).toHaveFocus();
     fireEvent.change(input, { target: { value: "通勤" } });
     fireEvent.click(screen.getByText("创建歌单"));
 
@@ -182,6 +184,9 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
     fireEvent.click(screen.getByTestId("playlist-picker-new"));
     const input = await screen.findByLabelText<HTMLInputElement>("新歌单名称");
 
+    fireEvent.click(input);
+    expect(input).toHaveFocus();
+
     fireEvent.compositionStart(input);
     fireEvent.change(input, { target: { value: "tongqin" } });
     expect(input).toHaveValue("tongqin");
@@ -191,6 +196,33 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
     fireEvent.change(input, { target: { value: "通勤" } });
     expect(input).toHaveValue("通勤");
     expect(input).toHaveFocus();
+  });
+
+  it("keeps focus when the playlist list finishes loading behind the create dialog", async () => {
+    call.mockReset();
+    let resolvePlaylists!: (value: unknown) => void;
+    call.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePlaylists = resolve;
+      }) as never,
+    );
+    render(
+      <AddToPlaylistDialog songId="song-9" root="root-1" onClose={vi.fn()} onDone={vi.fn()} />,
+    );
+
+    const createTrigger = screen.getByTestId("playlist-picker-new");
+    createTrigger.focus();
+    fireEvent.click(createTrigger);
+    const input = await screen.findByLabelText<HTMLInputElement>("新歌单名称");
+    expect(input).toHaveFocus();
+
+    await act(async () => {
+      resolvePlaylists([{ id: "pl-1", name: "Chill", memberCount: 0 }]);
+    });
+
+    expect(await screen.findByLabelText("Chill")).toBeInTheDocument();
+    expect(input).toHaveFocus();
+    expect(screen.queryByText("请输入歌单名称。")).not.toBeInTheDocument();
   });
 
   it("selects a playlist created from the picker so the original song can be added", async () => {
@@ -226,9 +258,15 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
     const onClose = vi.fn();
     render(<AddToPlaylistDialog songId="song-9" onClose={onClose} onDone={() => {}} />);
     await screen.findByLabelText("Chill");
-    fireEvent.click(screen.getByText("取消"));
+    const createTrigger = screen.getByTestId("playlist-picker-new");
+    createTrigger.focus();
+    fireEvent.click(createTrigger);
+    const nameDialog = await screen.findByRole("dialog", { name: "新建歌单" });
+    fireEvent.click(within(nameDialog).getByText("取消"));
 
     expect(call).not.toHaveBeenCalledWith("add_to_playlists", expect.anything());
-    expect(onClose).toHaveBeenCalled();
+    expect(createTrigger).toHaveFocus();
+    expect(screen.getByTestId("add-to-playlist-dialog")).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

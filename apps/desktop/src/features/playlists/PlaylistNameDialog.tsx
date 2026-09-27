@@ -157,7 +157,6 @@ export function PlaylistNameDialog({
             aria-invalid={visible ? true : undefined}
             aria-describedby="playlist-name-error"
             value={value}
-            autoFocus
             onCompositionStart={() => {
               composing.current = true;
             }}
