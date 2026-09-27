@@ -3,7 +3,7 @@
 #
 # 为什么必须是容器：GLIBC_ 符号版本是**构建宿主机 glibc 头文件**的属性，不是被编译代码的属性。
 # 在 Ubuntu 24.04（glibc 2.39）上编出来的 libmpv 会引用 GLIBC_2.38 之类的符号，而 Echo 承诺
-# 支持 glibc 2.35+（Ubuntu 22.04 / 24.04）。那样的库在 22.04 上直接 `GLIBC_2.38 not found` 起不来。
+# 支持 glibc 2.35+（Ubuntu 22.04 / 24.04）。引用 GLIBC_2.38 的库在 22.04 上无法启动。
 # mpv/FFmpeg 的 configure 没有"目标 glibc 版本"这类开关（autotools 没有，meson 也没有），
 # 所以唯一能把符号版本压下来的办法就是换一个 glibc 2.35 的构建环境。
 # openspec design.md（introduce-windows-linux-libmpv）也是这么定的：构建容器固定 22.04。
@@ -62,8 +62,7 @@ echo "==> 在 ${IMAGE} 中构建 Linux libmpv（Node ${NODE_VERSION}，宿主 gl
 # 外加 git / curl / ca-certificates（取 Node 二进制）、xz-utils（解包）、
 # python3-pip（装 meson，见下）。
 #
-# meson 刻意**不从 apt 装**：22.04 只有 0.61.2，而 libplacebo 要求 >= 1.3.0
-# （首次容器构建实测：`Meson version is 0.61.2 but project requires >=1.3.0`）。
+# meson 刻意**不从 apt 装**：22.04 只有 0.61.2，而 libplacebo 要求 >= 1.3.0。
 # meson 是纯 Python、不链接 glibc，所以从 PyPI 装新版既满足版本下限、
 # 又不会把构建宿主的 glibc 抬上去——而 glibc 版本正是这里唯一真正要钉死的东西。
 # 具体装法（venv 而非系统 Python）见下方 pip 处的说明。
@@ -90,18 +89,15 @@ docker run --rm \
     #  1. 不能靠 --break-system-packages 绕过 PEP 668。那个开关是 pip 23.0.1
     #     才加的，而 22.04 源里的 python3-pip 是 22.0.2（CI 实跑日志里 apt 装出
     #     的是 python3-pip 22.0.2+dfsg-1ubuntu0.7）——旧 pip 会在**解析参数**阶段
-    #     就报 "no such option: --break-system-packages" 退出，根本走不到
+    #     就报 no such option: --break-system-packages 退出，根本走不到
     #     PEP 668 那一步。绕过开关在这张镜像上从一开始就不存在。
     #  2. venv 天然不是 externally-managed 的环境，所以无论 22.04 到底带不带
     #     EXTERNALLY-MANAGED 标记，pip 都不会拿 PEP 668 拒绝它。写法不依赖
     #     「这张镜像有没有那个标记」这个我们没在本地核实过的事实。
     #
-    # 本段注释刻意不用反引号：整段在下面那个 bash -c "..." 的双引号里，
-    # **双引号内的反引号是活的**。写注释时带上反引号，命令替换会在**宿主**
-    # 上先跑一遍（run 36247701161 实测：宿主上多出一次
-    # "ERROR: You must give at least one requirement to install"，
-    # 紧接着 "line 70: syntax error near unexpected token"），
-    # 随后真正要执行的 payload 被这段替换污染。引号只表达含义，不做修饰。
+    # 本段注释处于传给 bash -c 的双引号参数里，不能出现反引号或双引号：
+    # 它们会被宿主 shell 解释，改变容器收到的命令。之前 run 36247701161
+    # 中的反引号命令替换污染了 payload；后续修复又因双引号截断了 payload。
     #
     # --system-site-packages：venv 里的 python3 仍能看到系统 site-packages，
     # 免得 meson 构建过程里 shell out 到 python3 时丢掉发行版装的模块。

@@ -120,10 +120,12 @@ jobs:
       # silently ship a 24.04-only build.
       - name: Build vendored Linux libmpv
         if: runner.os == 'Linux'
-        run: >-
-          scripts/release/build-linux-libmpv-container.sh
-          apps/desktop/src-tauri/vendor/libmpv/linux
-          "${RUNNER_TEMP}/echo-libmpv-build"
+        run: |
+          scripts/release/build-linux-libmpv-container.sh \
+            apps/desktop/src-tauri/vendor/libmpv/linux \
+            "${RUNNER_TEMP}/echo-libmpv-build"
+          test -f apps/desktop/src-tauri/vendor/libmpv/linux/libmpv.so
+          test -f apps/desktop/src-tauri/vendor/libmpv/linux/manifest.json
 
       - name: Build release bundles
         # linuxdeploy is distributed as an AppImage. Hosted Ubuntu runner
