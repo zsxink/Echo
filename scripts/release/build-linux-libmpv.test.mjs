@@ -17,7 +17,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtempSync, lstatSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { highestGlibcSymbol, realSharedObjectsIn } from "./build-linux-libmpv.mjs";
@@ -299,7 +299,7 @@ const buildTag = {
   writeFileSync(join(dir, "libass.so.9"), "not-shipped");
   writeFileSync(join(dir, "pkgconfig"), "not-a-library");
 
-  const got = realSharedObjectsIn(dir).map((p) => p.split("/").pop()).sort();
+  const got = realSharedObjectsIn(dir).map((p) => basename(p)).sort();
   assert(
     JSON.stringify(got) === JSON.stringify(Object.keys(versions).sort()),
     "the build-tree selector picks the 6 versioned real .so files",
