@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { bridge } from "../../bridge";
+import { BridgeError, bridge } from "../../bridge";
 import { usePlayerSnapshot } from "../../player/playerStore";
 import type { PagedSongs, SongView } from "../../ipc/ipc-types.generated";
 import {
@@ -89,6 +89,10 @@ export function PlaylistsView({
   // 全量成员列表（保留追加顺序语义与批量操作）。
   const [searched, setSearched] = useState<PagedSongs | null>(null);
   const searchRequest = useRef(0);
+  // 歌单内搜索的续页游标（fix-playlist-search-pagination）。游标放 ref 而非
+  // state：它不参与渲染，放 state 只会多一次无谓重渲染。首屏返回的 nextCursor
+  // 写入这里，滚动触底时作为 `cursor` 传回后端取下一页。
+  const searchCursor = useRef<string | undefined>(undefined);
   const [menuFor, setMenuForRaw] = useState<{ song: SongView; anchor: MenuAnchor } | null>(null);
   // Both menus are popovers rendered as siblings of the table, so they cannot
   // see the row that opened them through their own container; the row reaches
@@ -188,11 +192,17 @@ export function PlaylistsView({
 
   // 歌单内搜索：非空词走后端 `search`（限定当前歌单），空词清空搜索结果
   // 让视图回退到全量成员。相同 playlistId + 排序下改变搜索词才重新请求。
+  //
+  // `cursor` 为 undefined 时取首屏；续页由 `loadMoreSearchResults` 以当前游标
+  // 再次调用本函数，追加到既有结果之后。每次调用都自增 `searchRequest`，
+  // 因此搜索词/排序/歌单变化与并发续页共用同一个失效裁决：只有最新一次请求
+  // 的结果可以写入界面（对齐 useSongs 的 reqId 语义）。
   const playlistsMemberSearch = useCallback(
-    (query: string) => {
+    (query: string, cursor?: string) => {
       const trimmed = query.trim();
       const id = ++searchRequest.current;
       if (trimmed.length === 0) {
+        searchCursor.current = undefined;
         setSearched(null);
         setSearching(false);
         return;
@@ -205,18 +215,34 @@ export function PlaylistsView({
           // IPC key is `playlist` (Tauri's camelCase of Rust's `playlist` param).
           playlist: playlistId,
           sort: `${sort.field}:${sort.direction}`,
-          cursor: null,
+          cursor: cursor ?? null,
           limit: 200,
         })
         .then((value) => {
           if (id !== searchRequest.current) return;
-          setSearched(value as PagedSongs);
+          const page = value as PagedSongs;
+          searchCursor.current = page.nextCursor;
+          setSearched((prev) =>
+            // 续页追加到既有结果之后；首屏（无 cursor）整体替换。totalCount
+            // 取后端每页返回的权威命中数，续页不重算——标题必须始终是完整
+            // 命中总数，而不是已加载行数。
+            cursor && prev ? { ...page, items: [...prev.items, ...page.items] } : page,
+          );
           setSearching(false);
-          clearSelection();
+          if (cursor === undefined) clearSelection();
         })
-        .catch(() => {
+        .catch((err: unknown) => {
           if (id !== searchRequest.current) return;
           setSearching(false);
+          if (cursor !== undefined && err instanceof BridgeError && err.code === "conflict") {
+            // 游标过期：资料库在两页之间被改动（导入/扫描/收藏都推进
+            // library_roots.updated_at），后端拒绝旧游标（"restart
+            // pagination"）。此时不丢弃游标，续页会永远以同一个过期游标再失败；
+            // 必须回到当前搜索条件的首屏重查。首屏不带游标，因此不会再次冲突。
+            searchCursor.current = undefined;
+            playlistsMemberSearch(query);
+            return;
+          }
           notify({ message: "搜索歌单失败，请重试", error: true });
         });
     },
@@ -224,8 +250,19 @@ export function PlaylistsView({
   );
 
   useEffect(() => {
+    // 条件（搜索词/排序/歌单）变化 → 丢弃旧游标，重新取首屏。
+    searchCursor.current = undefined;
     playlistsMemberSearch(searchText);
   }, [playlistsMemberSearch, searchText]);
+
+  // 歌曲列表触底续页（fix-playlist-search-pagination）。成员列表走
+  // `playlist_members` 全量返回、不分页，其 `isLast` 恒为 true，SongList 不会
+  // 触发本回调；搜索态才真正取下一页。游标为空表示已到末页，无须再请求。
+  const loadMoreSearchResults = useCallback(() => {
+    const cursor = searchCursor.current;
+    if (searchText.trim().length === 0 || !cursor || searching) return;
+    playlistsMemberSearch(searchText, cursor);
+  }, [playlistsMemberSearch, searchText, searching]);
 
   const refreshAfterSongMutation = useCallback(() => {
     loadMembers();
@@ -563,7 +600,7 @@ export function PlaylistsView({
               if (selectionMode) openBatchMenu(song, anchor);
               else setMenuFor({ song, anchor }, { songId: song.id, control: false });
             }}
-            onLoadMore={() => {}}
+            onLoadMore={loadMoreSearchResults}
             onClearSearch={() => setSearchText("")}
             onPlay={onPlay}
             onFavorite={onFavorite}

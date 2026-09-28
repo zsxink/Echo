@@ -24,12 +24,33 @@ import { playerStore } from "../../player/playerStore";
 vi.mock("../../bridge", () => ({
   assetUrl: (key: string) => `cover://${key}`,
   bridge: { call: vi.fn(), fireAndForget: vi.fn() },
+  // The view branches on `instanceof BridgeError` to recover from a stale
+  // pagination cursor, so the mock has to export a real class — a bare
+  // `undefined` would make every `instanceof` throw.
+  BridgeError: class BridgeError extends Error {
+    readonly code: string;
+    readonly retryable: boolean;
+    constructor(dto: { code: string; messageKey: string; retryable: boolean }) {
+      super(dto.messageKey);
+      this.code = dto.code;
+      this.retryable = dto.retryable;
+    }
+  },
 }));
 
-import { bridge } from "../../bridge";
+import { BridgeError, bridge } from "../../bridge";
 
 const call = vi.mocked(bridge.call);
 const fireAndForget = vi.mocked(bridge.fireAndForget);
+
+/** A rejected command carrying an IpcError-like `code`, as the bridge throws. */
+function bridgeError(code: string) {
+  return new (BridgeError as unknown as new (dto: {
+    code: string;
+    messageKey: string;
+    retryable: boolean;
+  }) => Error)({ code, messageKey: code, retryable: false });
+}
 
 /**
  * Command-aware bridge mock. A one-shot `mockResolvedValueOnce` is wrong here:
@@ -648,5 +669,205 @@ describe("PlaylistsView — 歌单内搜索 (PLA-SRCH)", () => {
     fireEvent.click(screen.getByText("清除搜索"));
     await waitFor(() => screen.findByTestId("song-row-song-1"));
     expect(screen.getByTestId("song-row-song-2")).toBeInTheDocument();
+  });
+
+  /**
+   * Keyset pagination over the playlist-scoped search (fix-playlist-search-pagination).
+   *
+   * `mockBridge` dispatches on the command name alone, which cannot express a
+   * second page: the continuation request is the same `search` command carrying
+   * the previous page's `nextCursor` as `cursor`. These cases install their own
+   * implementation that dispatches on `(query, cursor)`.
+   */
+  function mockPagedSearch(
+    pages: Readonly<Record<string, unknown>>,
+    fallback: unknown = { items: [], totalCount: 0, isLast: true, nextCursor: null },
+  ) {
+    mockBridge();
+    call.mockImplementation(((command: string, args: Record<string, unknown>) => {
+      if (command !== "search") return Promise.resolve(command === "playlist_members" ? MEMBERS : []);
+      return Promise.resolve(pages[String(args.cursor)] ?? fallback);
+    }) as never);
+  }
+
+  /** `.track-table td { height: 44px }` — mirrors `SongList.ROW_HEIGHT`. */
+  const ROW_HEIGHT = 44;
+
+  /**
+   * Scroll the list to its end. jsdom has no layout engine, so the scroll
+   * container needs a real height before "the bottom" is a position the
+   * windowed rows can still occupy: with a one-row viewport, the last row's
+   * top is both the bottom of the list and inside the rendered window.
+   */
+  function scrollToBottom(songCount: number) {
+    const viewport = screen.getByTestId("song-list");
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: ROW_HEIGHT });
+    Object.defineProperty(viewport, "scrollHeight", {
+      configurable: true,
+      value: songCount * ROW_HEIGHT,
+    });
+    fireEvent.scroll(viewport, { target: { scrollTop: (songCount - 1) * ROW_HEIGHT } });
+  }
+
+  it("appends the next page when the playlist search spills past one page", async () => {
+    mockPagedSearch({
+      null: { items: [MEMBERS[0]], totalCount: 2, isLast: false, nextCursor: "page-2" },
+      "page-2": { items: [MEMBERS[1]], totalCount: 2, isLast: true, nextCursor: null },
+    });
+    renderView();
+    await screen.findByTestId("song-row-song-1");
+
+    const searchInput = within(screen.getByTestId("playlist-search-field")).getByRole("searchbox");
+    fireEvent.change(searchInput, { target: { value: "周杰伦" } });
+    await screen.findByTestId("song-row-song-1");
+
+    scrollToBottom(1);
+
+    // The continuation carries the first page's cursor…
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith(
+        "search",
+        expect.objectContaining({ cursor: "page-2" }),
+      ),
+    );
+    // …and its rows are appended, not substituted for the loaded page.
+    await waitFor(() => screen.findByTestId("song-row-song-2"));
+    expect(screen.getByTestId("song-row-song-1")).toBeInTheDocument();
+    // The title keeps the full hit count rather than the loaded row count.
+    expect(screen.getByText("2 首")).toBeInTheDocument();
+  });
+
+  it("stops requesting pages once the playlist search reaches the last page", async () => {
+    mockPagedSearch({
+      null: { items: [MEMBERS[0]], totalCount: 2, isLast: false, nextCursor: "page-2" },
+      "page-2": { items: [MEMBERS[1]], totalCount: 2, isLast: true, nextCursor: null },
+    });
+    renderView();
+    await screen.findByTestId("song-row-song-1");
+
+    const searchInput = within(screen.getByTestId("playlist-search-field")).getByRole("searchbox");
+    fireEvent.change(searchInput, { target: { value: "周杰伦" } });
+    await screen.findByTestId("song-row-song-1");
+
+    scrollToBottom(1);
+    await waitFor(() => screen.findByTestId("song-row-song-2"));
+
+    // Both pages are now loaded and the last one reported `isLast`, so further
+    // scrolling must not buy a third request.
+    scrollToBottom(2);
+    scrollToBottom(2);
+
+    expect(call.mock.calls.filter(([command]) => command === "search")).toHaveLength(2);
+  });
+
+  it("discards a continuation page from a superseded playlist search", async () => {
+    // A continuation is in flight — carrying rows that match the *old* term —
+    // when the user retypes. If continuations did not share the first page's
+    // request counter, this page would append to the new term's results.
+    const lateSong: SongView = { ...MEMBERS[0], id: "song-late", title: "旧词的下一页" };
+    let releaseSecondPage: (value: unknown) => void = () => {};
+    const secondPage = new Promise((resolve) => {
+      releaseSecondPage = resolve;
+    });
+    mockBridge();
+    call.mockImplementation(((command: string, args: Record<string, unknown>) => {
+      if (command === "playlist_members") return Promise.resolve(MEMBERS);
+      if (command === "search") {
+        if (args.cursor === "page-2") return secondPage;
+        if (args.query === "夜曲") {
+          return Promise.resolve({ items: [MEMBERS[1]], totalCount: 1, isLast: true, nextCursor: null });
+        }
+        return Promise.resolve({
+          items: [MEMBERS[0]],
+          totalCount: 2,
+          isLast: false,
+          nextCursor: "page-2",
+        });
+      }
+      return Promise.resolve([]);
+    }) as never);
+
+    renderView();
+    await screen.findByTestId("song-row-song-1");
+
+    const searchInput = within(screen.getByTestId("playlist-search-field")).getByRole("searchbox");
+    fireEvent.change(searchInput, { target: { value: "周杰伦" } });
+    await screen.findByTestId("song-row-song-1");
+
+    scrollToBottom(1);
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith("search", expect.objectContaining({ cursor: "page-2" })),
+    );
+
+    fireEvent.change(searchInput, { target: { value: "夜曲" } });
+
+    // The new term's page commits…
+    await waitFor(() =>
+      expect(screen.queryByTestId("song-row-song-1")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("song-row-song-2")).toBeInTheDocument();
+
+    // …and the superseded term's continuation, arriving afterwards, is dropped.
+    await act(async () => {
+      releaseSecondPage({ items: [lateSong], totalCount: 2, isLast: true, nextCursor: null });
+      await secondPage;
+    });
+
+    expect(screen.queryByTestId("song-row-song-late")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("song-row-song-1")).not.toBeInTheDocument();
+    expect(screen.getByTestId("song-row-song-2")).toBeInTheDocument();
+  });
+
+  it("restarts the playlist search from the first page when a cursor goes stale", async () => {
+    // The backend rejects a cursor whose library revision has moved on
+    // ("catalog changed; restart pagination") — an import, scan or favorite
+    // toggle between two pages does exactly that. Keeping the dead cursor
+    // would make every continuation fail forever, so the view must re-query
+    // the current term from scratch instead of surfacing a dead end.
+    let restart = true;
+    mockBridge();
+    call.mockImplementation(((command: string, args: Record<string, unknown>) => {
+      if (command === "playlist_members") return Promise.resolve(MEMBERS);
+      if (command === "search") {
+        if (args.cursor === "page-2") {
+          if (restart) return Promise.reject(bridgeError("conflict"));
+          return Promise.resolve({ items: [MEMBERS[1]], totalCount: 2, isLast: true, nextCursor: null });
+        }
+        return Promise.resolve({
+          items: [MEMBERS[0]],
+          totalCount: 2,
+          isLast: false,
+          nextCursor: "page-2",
+        });
+      }
+      return Promise.resolve([]);
+    }) as never);
+
+    renderView();
+    await screen.findByTestId("song-row-song-1");
+
+    const searchInput = within(screen.getByTestId("playlist-search-field")).getByRole("searchbox");
+    fireEvent.change(searchInput, { target: { value: "周杰伦" } });
+    await screen.findByTestId("song-row-song-1");
+
+    // First continuation conflicts; the library then settles and the retry works.
+    const firstPageCalls = () =>
+      call.mock.calls.filter(
+        ([command, args]) => command === "search" && (args as { cursor: unknown }).cursor === null,
+      ).length;
+    expect(firstPageCalls()).toBe(1);
+
+    scrollToBottom(1);
+    await waitFor(() => expect(firstPageCalls()).toBe(2));
+    restart = false;
+    scrollToBottom(1);
+
+    // The recovery re-queried page one rather than reusing the stale cursor,
+    // and paging resumed from a fresh, live cursor.
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith("search", expect.objectContaining({ cursor: "page-2" })),
+    );
+    await waitFor(() => screen.findByTestId("song-row-song-2"));
+    expect(screen.getByText("2 首")).toBeInTheDocument();
   });
 });
