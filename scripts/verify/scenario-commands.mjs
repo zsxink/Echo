@@ -382,6 +382,9 @@ export const COMMANDS = {
   "LE-R18-S07": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "appends the next page when the playlist search spills past one page"), // 新增: 歌单内搜索分页
   "LE-R18-S08": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "discards a continuation page from a superseded playlist search"), // 新增: 歌单内搜索分页
   "LE-R18-S09": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "appends the next page when the playlist search spills past one page"), // 新增: 歌单内搜索分页
+  // 游标过期（conflict）后必须重取首屏，否则死游标让每次滚动都重复失败。
+  // 该行为由 CR 阶段补入，尚未分配独立 spec 场景 ID，先挂在 LE-R18-S05 上验证。
+  "LE-R18-S05-STALE-CURSOR": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "restarts the playlist search from the first page when a cursor goes stale"), // 新增: 游标过期恢复
   "LE-R19-S01": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"scrolls the matched song row to the top of the visible area\"", // 新增: 定位当前播放歌曲
   "LE-R19-S02": "pnpm --filter @echo/desktop test -- --run src/features/library/favoriteSync.test.tsx -t \"voices 当前没有正在播放的歌曲\"", // 新增: 定位当前播放歌曲
   "LE-R19-S03": "pnpm --filter @echo/desktop test -- --run src/features/library/favoriteSync.test.tsx -t \"voices 当前歌曲不在此列表中\"", // 新增: 定位当前播放歌曲
