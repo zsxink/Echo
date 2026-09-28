@@ -45,11 +45,13 @@ const fireAndForget = vi.mocked(bridge.fireAndForget);
 
 /** A rejected command carrying an IpcError-like `code`, as the bridge throws. */
 function bridgeError(code: string) {
-  return new (BridgeError as unknown as new (dto: {
-    code: string;
-    messageKey: string;
-    retryable: boolean;
-  }) => Error)({ code, messageKey: code, retryable: false });
+  return new (
+    BridgeError as unknown as new (dto: {
+      code: string;
+      messageKey: string;
+      retryable: boolean;
+    }) => Error
+  )({ code, messageKey: code, retryable: false });
 }
 
 /**
@@ -685,7 +687,8 @@ describe("PlaylistsView — 歌单内搜索 (PLA-SRCH)", () => {
   ) {
     mockBridge();
     call.mockImplementation(((command: string, args: Record<string, unknown>) => {
-      if (command !== "search") return Promise.resolve(command === "playlist_members" ? MEMBERS : []);
+      if (command !== "search")
+        return Promise.resolve(command === "playlist_members" ? MEMBERS : []);
       return Promise.resolve(pages[String(args.cursor)] ?? fallback);
     }) as never);
   }
@@ -725,10 +728,7 @@ describe("PlaylistsView — 歌单内搜索 (PLA-SRCH)", () => {
 
     // The continuation carries the first page's cursor…
     await waitFor(() =>
-      expect(call).toHaveBeenCalledWith(
-        "search",
-        expect.objectContaining({ cursor: "page-2" }),
-      ),
+      expect(call).toHaveBeenCalledWith("search", expect.objectContaining({ cursor: "page-2" })),
     );
     // …and its rows are appended, not substituted for the loaded page.
     await waitFor(() => screen.findByTestId("song-row-song-2"));
@@ -775,7 +775,12 @@ describe("PlaylistsView — 歌单内搜索 (PLA-SRCH)", () => {
       if (command === "search") {
         if (args.cursor === "page-2") return secondPage;
         if (args.query === "夜曲") {
-          return Promise.resolve({ items: [MEMBERS[1]], totalCount: 1, isLast: true, nextCursor: null });
+          return Promise.resolve({
+            items: [MEMBERS[1]],
+            totalCount: 1,
+            isLast: true,
+            nextCursor: null,
+          });
         }
         return Promise.resolve({
           items: [MEMBERS[0]],
@@ -802,9 +807,7 @@ describe("PlaylistsView — 歌单内搜索 (PLA-SRCH)", () => {
     fireEvent.change(searchInput, { target: { value: "夜曲" } });
 
     // The new term's page commits…
-    await waitFor(() =>
-      expect(screen.queryByTestId("song-row-song-1")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByTestId("song-row-song-1")).not.toBeInTheDocument());
     expect(screen.getByTestId("song-row-song-2")).toBeInTheDocument();
 
     // …and the superseded term's continuation, arriving afterwards, is dropped.
@@ -831,7 +834,12 @@ describe("PlaylistsView — 歌单内搜索 (PLA-SRCH)", () => {
       if (command === "search") {
         if (args.cursor === "page-2") {
           if (restart) return Promise.reject(bridgeError("conflict"));
-          return Promise.resolve({ items: [MEMBERS[1]], totalCount: 2, isLast: true, nextCursor: null });
+          return Promise.resolve({
+            items: [MEMBERS[1]],
+            totalCount: 2,
+            isLast: true,
+            nextCursor: null,
+          });
         }
         return Promise.resolve({
           items: [MEMBERS[0]],
