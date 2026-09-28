@@ -2422,6 +2422,30 @@
       "manifest": "tests/scenarios/DAS-R08-S03.yaml"
     },
     {
+      "id": "DAS-R08-S04",
+      "title": "再次点击播放队列触发控件",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/QueuePanel.test.tsx",
+      "manifest": "tests/scenarios/DAS-R08-S04.yaml"
+    },
+    {
+      "id": "DAS-R08-S05",
+      "title": "触发控件状态与可访问名称",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx",
+      "manifest": "tests/scenarios/DAS-R08-S05.yaml"
+    },
+    {
+      "id": "DAS-R08-S06",
+      "title": "再次点击触发控件不触发外部动作",
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx",
+      "manifest": "tests/scenarios/DAS-R08-S06.yaml"
+    },
+    {
+      "id": "DAS-R08-S07",
+      "title": "仍可点击真正外部区域关闭",
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx",
+      "manifest": "tests/scenarios/DAS-R08-S07.yaml"
+    },
+    {
       "id": "DAS-R09-S01",
       "title": "键盘遍历应用壳",
       "command": "pnpm --filter @echo/desktop test -- --run src/app/accessibility.test.tsx",
@@ -2438,6 +2462,12 @@
       "title": "使用辅助技术",
       "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx",
       "manifest": "tests/scenarios/DAS-R09-S03.yaml"
+    },
+    {
+      "id": "DAS-R09-S04",
+      "title": "触发控件内部化不影响键盘路径",
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx",
+      "manifest": "tests/scenarios/DAS-R09-S04.yaml"
     },
     {
       "id": "DAS-R10-S01",
@@ -3278,6 +3308,24 @@
       "title": "回收站目标受路径边界保护",
       "command": "node scripts/verify/checks/task-12.7.mjs",
       "manifest": "tests/scenarios/LE-R06-S10.yaml"
+    },
+    {
+      "id": "LE-R06-S11",
+      "title": "再次点击歌曲操作入口",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongMenu.test.tsx",
+      "manifest": "tests/scenarios/LE-R06-S11.yaml"
+    },
+    {
+      "id": "LE-R06-S12",
+      "title": "多选状态下再次点击行入口",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/batchLibraryOperations.test.tsx",
+      "manifest": "tests/scenarios/LE-R06-S12.yaml"
+    },
+    {
+      "id": "LE-R06-S13",
+      "title": "右键打开的菜单由指针交互收起",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/LibraryWorkspace.test.tsx -t \"右键打开的菜单仍由面板外按压和 Escape 收起\"",
+      "manifest": "tests/scenarios/LE-R06-S13.yaml"
     },
     {
       "id": "LE-R07-S01",

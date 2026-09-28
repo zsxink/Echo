@@ -42,6 +42,7 @@ import {
   type SongSort,
   useLocateSong,
   LocateButton,
+  useMenuTrigger,
 } from "../library";
 import { PlaylistNameDialog } from "./PlaylistNameDialog";
 import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
@@ -88,7 +89,45 @@ export function PlaylistsView({
   // 全量成员列表（保留追加顺序语义与批量操作）。
   const [searched, setSearched] = useState<PagedSongs | null>(null);
   const searchRequest = useRef(0);
-  const [menuFor, setMenuFor] = useState<{ song: SongView; anchor: MenuAnchor } | null>(null);
+  const [menuFor, setMenuForRaw] = useState<{ song: SongView; anchor: MenuAnchor } | null>(null);
+  // Both menus are popovers rendered as siblings of the table, so they cannot
+  // see the row that opened them through their own container; the row reaches
+  // them as this ref, resolved live from the song id (fix-queue-trigger-toggle).
+  const menuTrigger = useMenuTrigger();
+  const batchMenuTrigger = useMenuTrigger();
+  /**
+   * Opens the single-song menu, records which entry point triggered it, and
+   * toggles: a second press on the entry point that already opened the menu
+   * closes it. `control` distinguishes the two gestures — `.song-more` and the
+   * row's secondary button are different entry points, so switching between
+   * them on the same song is an open, not a close. The overlay stack treats the
+   * recorded entry point as interior (see `triggerRef`), so the press no longer
+   * dismisses the menu by itself — without this branch the same gesture would
+   * just re-open it, which is issue #33.
+   */
+  const setMenuFor = useCallback(
+    (
+      next: { song: SongView; anchor: MenuAnchor } | null,
+      entry: { songId: string; control: boolean } | null = null,
+    ) => {
+      if (next && entry) {
+        // "Same entry point" is a fact about `entry` and the menu on screen —
+        // never about DOM nodes, which windowing can replace between the two
+        // presses (fix-queue-trigger-toggle).
+        const open = menuFor;
+        if (open && open.song.id === entry.songId && menuTrigger.isControl === entry.control) {
+          setMenuForRaw(null);
+          menuTrigger.clear();
+          return;
+        }
+        menuTrigger.record(entry.songId, entry.control);
+      } else {
+        menuTrigger.clear();
+      }
+      setMenuForRaw(next);
+    },
+    [menuFor, menuTrigger],
+  );
   const [batchMenuFor, setBatchMenuFor] = useState<{
     readonly song: SongView;
     readonly anchor: MenuAnchor;
@@ -326,12 +365,21 @@ export function PlaylistsView({
     [exitSelectionMode, notifyBatch, selectedSongs],
   );
 
+  /**
+   * Opens the batch menu for the pressed row. Deliberately *not* a toggle: a
+   * second press on the same row re-opens it for the current selection, which
+   * is the contract the multi-select spec sets out (右键已选中歌曲保留选集) and
+   * what the batch suites assert. The row is still recorded so the overlay stack
+   * treats the press as interior rather than dismissing the menu out from under
+   * this very call.
+   */
   const openBatchMenu = useCallback(
     (song: SongView, anchor: MenuAnchor) => {
       if (!selection.isSelected(song.id)) selection.replace(song.id);
+      batchMenuTrigger.record(song.id, false);
       setBatchMenuFor({ song, anchor });
     },
-    [selection],
+    [batchMenuTrigger, selection],
   );
 
   const batchMenuSongs = useMemo(() => {
@@ -513,7 +561,7 @@ export function PlaylistsView({
             }
             onContextMenu={(song, anchor) => {
               if (selectionMode) openBatchMenu(song, anchor);
-              else setMenuFor({ song, anchor });
+              else setMenuFor({ song, anchor }, { songId: song.id, control: false });
             }}
             onLoadMore={() => {}}
             onClearSearch={() => setSearchText("")}
@@ -522,7 +570,9 @@ export function PlaylistsView({
             onPlayNext={(song) =>
               bridge.fireAndForget("queue_command", { command: "playNext", songId: song.id })
             }
-            onOpenMenu={(song, anchor) => setMenuFor({ song, anchor })}
+            onOpenMenu={(song, anchor) =>
+              setMenuFor({ song, anchor }, { songId: song.id, control: true })
+            }
           />
         </div>
       </main>
@@ -533,6 +583,7 @@ export function PlaylistsView({
           root={root}
           readOnly={readOnly}
           anchor={menuFor.anchor}
+          triggerRef={menuTrigger.triggerRef}
           onClose={() => setMenuFor(null)}
           onPlay={() => {
             onPlay(menuFor.song);
@@ -580,6 +631,7 @@ export function PlaylistsView({
           readOnly={readOnly || batchBusy}
           inPlaylist
           handlers={batchHandlers}
+          triggerRef={batchMenuTrigger.triggerRef}
           onClose={() => setBatchMenuFor(null)}
         />
       ) : null}

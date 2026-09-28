@@ -15,10 +15,12 @@
  */
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SongView } from "../../ipc/ipc-types.generated";
 import { SongMenu } from "./SongMenu";
+import { useMenuTrigger } from "./menuTrigger";
 import { ToastView } from "../../app/ToastView";
 
 function makeSong(overrides: Partial<SongView> = {}): SongView {
@@ -178,5 +180,134 @@ describe("SongMenu task 10.6", () => {
     renderMenu(makeSong());
     expect(screen.getByText("下一首播放")).toBeDisabled();
     expect(screen.getByText("加入播放队列")).toBeDisabled();
+  });
+});
+
+/**
+ * fix-queue-trigger-toggle — 歌曲操作 opens a popover that is a sibling of the
+ * table, so the entry point has to be passed in explicitly. Without it, pressing
+ * 歌曲操作 again read as an outside press: the menu closed and the same gesture's
+ * click re-opened it, which is issue #33.
+ *
+ * The fixture drives the real `useMenuTrigger` over the real row anatomy
+ * (`<tr data-song-id>` holding `button.song-more`), so these tests also pin the
+ * hook's part of the contract — the trigger is the **control**, resolved live
+ * from the id, never the row element.
+ */
+describe("SongMenu trigger control (fix-queue-trigger-toggle)", () => {
+  function RowWithMenu({ onClose, onPlay }: { onClose: () => void; onPlay: () => void }) {
+    const trigger = useMenuTrigger();
+    // A second press on the same entry point must close the menu, so the host
+    // carries the toggle the real views carry (LibraryWorkspace/PlaylistsView/
+    // CollectionDirectory). Without it the same gesture would re-open the menu.
+    const [open, setOpen] = useState(false);
+    return (
+      <div>
+        <table>
+          <tbody>
+            <tr data-song-id="song-1" data-testid="trigger-row">
+              <td>
+                <button
+                  type="button"
+                  className="row-action song-more"
+                  data-testid="trigger-button"
+                  onClick={() => {
+                    trigger.record("song-1", true);
+                    setOpen((v) => !v);
+                  }}
+                >
+                  歌曲操作
+                </button>
+              </td>
+              <td data-testid="row-body">行体</td>
+            </tr>
+          </tbody>
+        </table>
+        {open ? (
+          <SongMenu
+            song={makeSong()}
+            root=""
+            readOnly={false}
+            triggerRef={trigger.triggerRef}
+            onClose={() => {
+              setOpen(false);
+              onClose();
+            }}
+            onPlay={onPlay}
+            onFavorite={vi.fn()}
+            onRefresh={vi.fn()}
+          />
+        ) : null}
+      </div>
+    );
+  }
+
+  /** Open the menu the way a user does, and prove it opened. */
+  function openMenu() {
+    const button = screen.getByTestId("trigger-button");
+    fireEvent.pointerDown(button);
+    fireEvent.click(button);
+    expect(screen.getByTestId("song-menu")).toBeInTheDocument();
+  }
+
+  it("closes on a second press of the control that opened it", () => {
+    const onClose = vi.fn();
+    const onPlay = vi.fn();
+    render(<RowWithMenu onClose={onClose} onPlay={onPlay} />);
+    openMenu();
+
+    // The gesture the `.song-more` button makes: pointerdown then click. The
+    // control counts as interior, so the stack does not dismiss — the click's
+    // toggle is what closes it, and the menu must be gone afterwards.
+    const button = screen.getByTestId("trigger-button");
+    fireEvent.pointerDown(button);
+    fireEvent.click(button);
+
+    expect(screen.queryByTestId("song-menu")).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    // The row's own click handler still steps aside for its controls, so the
+    // second press does not start playback either.
+    expect(onPlay).not.toHaveBeenCalled();
+  });
+
+  it("still dismisses on a press on the rest of the row", () => {
+    // Only the control is interior. The rest of the row is a different gesture
+    // from the prototype's, and nothing toggles it — it must dismiss outright
+    // rather than look inert.
+    const onClose = vi.fn();
+    render(<RowWithMenu onClose={onClose} onPlay={vi.fn()} />);
+    openMenu();
+
+    fireEvent.pointerDown(screen.getByTestId("row-body"));
+
+    expect(onClose).toHaveBeenCalled();
+    expect(screen.queryByTestId("song-menu")).not.toBeInTheDocument();
+  });
+
+  it("still closes on a press outside both the panel and the row", () => {
+    const onClose = vi.fn();
+    render(<RowWithMenu onClose={onClose} onPlay={vi.fn()} />);
+    openMenu();
+
+    fireEvent.pointerDown(document.body);
+    // Both dismissal paths run for one press — the stack's own listener and the
+    // component's `dismissable` one — which is pre-existing and harmless because
+    // `onClose` is idempotent.
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("suspends dismissal while the delete confirmation owns the screen", () => {
+    const onClose = vi.fn();
+    render(<RowWithMenu onClose={onClose} onPlay={vi.fn()} />);
+    openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "删除" }));
+    expect(screen.queryByTestId("song-menu")).not.toBeInTheDocument();
+
+    onClose.mockClear();
+    fireEvent.pointerDown(document.body);
+
+    // The confirm dialog is a higher layer this component owns; the press lands
+    // on it rather than dismissing the menu underneath.
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

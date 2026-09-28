@@ -11,6 +11,7 @@
 
 import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createRef } from "react";
 
 import { PlayerBar } from "./PlayerBar";
 import { playerStore } from "../../player/playerStore";
@@ -582,5 +583,31 @@ describe("PlayerBar — 非沉浸播放模式视觉语义 (DP-R12)", () => {
     expect(modeButton()).toHaveAttribute("data-mode", "shuffle");
     expect(modeButton().className).toBe("control");
     expect(screen.getByTestId("now-playing-trigger")).toHaveTextContent("晴天.mp3");
+  });
+});
+
+/**
+ * fix-queue-trigger-toggle — the trigger's accessible name has to track the panel
+ * state, so a screen reader is told which action the button performs next.
+ */
+describe("PlayerBar queue trigger (fix-queue-trigger-toggle)", () => {
+  it("names the queue button by the action it performs next", () => {
+    render(<PlayerBar />);
+    const trigger = screen.getByTestId("queue-trigger");
+    expect(trigger).toHaveAccessibleName("显示播放队列");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+    act(() => playerStore.setQueueOpen(true));
+    expect(trigger).toHaveAccessibleName("隐藏播放队列");
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+    act(() => playerStore.setQueueOpen(false));
+    expect(trigger).toHaveAccessibleName("显示播放队列");
+  });
+
+  it("forwards the shared trigger ref to the queue button", () => {
+    const queueTriggerRef = createRef<HTMLButtonElement>();
+    render(<PlayerBar queueTriggerRef={queueTriggerRef} />);
+    expect(queueTriggerRef.current).toBe(screen.getByTestId("queue-trigger"));
   });
 });

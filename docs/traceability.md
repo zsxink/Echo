@@ -62,9 +62,14 @@
 | DAS-R08-S01 | 窄屏布局与浮层关闭必须可预测 | 打开和关闭窄屏侧边栏 | 10.4, 12.1, 12.3 | React/E2E | `tests/scenarios/DAS-R08-S01.yaml` | `pnpm verify:scenario -- DAS-R08-S01` |
 | DAS-R08-S02 | 窄屏布局与浮层关闭必须可预测 | 窗口从宽屏变为窄屏 | 10.4, 12.1, 12.3 | React/E2E | `tests/scenarios/DAS-R08-S02.yaml` | `pnpm verify:scenario -- DAS-R08-S02` |
 | DAS-R08-S03 | 窄屏布局与浮层关闭必须可预测 | 浮层点击外部 | 10.4, 12.1, 12.3 | React/E2E | `tests/scenarios/DAS-R08-S03.yaml` | `pnpm verify:scenario -- DAS-R08-S03` |
+| DAS-R08-S04 | 窄屏布局与浮层关闭必须可预测 | 再次点击播放队列触发控件 | 10.4, 12.1, 12.3 | React | `tests/scenarios/DAS-R08-S04.yaml` | `pnpm verify:scenario -- DAS-R08-S04` |
+| DAS-R08-S05 | 窄屏布局与浮层关闭必须可预测 | 触发控件状态与可访问名称 | 10.4, 12.1, 12.3 | React | `tests/scenarios/DAS-R08-S05.yaml` | `pnpm verify:scenario -- DAS-R08-S05` |
+| DAS-R08-S06 | 窄屏布局与浮层关闭必须可预测 | 再次点击触发控件不触发外部动作 | 10.4, 12.1, 12.3 | React | `tests/scenarios/DAS-R08-S06.yaml` | `pnpm verify:scenario -- DAS-R08-S06` |
+| DAS-R08-S07 | 窄屏布局与浮层关闭必须可预测 | 仍可点击真正外部区域关闭 | 10.4, 12.1, 12.3 | React | `tests/scenarios/DAS-R08-S07.yaml` | `pnpm verify:scenario -- DAS-R08-S07` |
 | DAS-R09-S01 | 键盘焦点与 Escape 行为必须可访问 | 键盘遍历应用壳 | 11.8, 12.1, 12.2 | React/E2E | `tests/scenarios/DAS-R09-S01.yaml` | `pnpm verify:scenario -- DAS-R09-S01` |
 | DAS-R09-S02 | 键盘焦点与 Escape 行为必须可访问 | Escape 关闭最上层浮层 | 11.8, 12.1, 12.2 | React/E2E | `tests/scenarios/DAS-R09-S02.yaml` | `pnpm verify:scenario -- DAS-R09-S02` |
 | DAS-R09-S03 | 键盘焦点与 Escape 行为必须可访问 | 使用辅助技术 | 11.8, 12.1, 12.2 | React/E2E | `tests/scenarios/DAS-R09-S03.yaml` | `pnpm verify:scenario -- DAS-R09-S03` |
+| DAS-R09-S04 | 键盘焦点与 Escape 行为必须可访问 | 触发控件内部化不影响键盘路径 | 11.8, 12.1, 12.2 | React | `tests/scenarios/DAS-R09-S04.yaml` | `pnpm verify:scenario -- DAS-R09-S04` |
 | DAS-R10-S01 | 三平台壳行为必须可验证且不依赖网络 | 离线启动 | 1.5, 7.7, 9.8, 13.5, 13.7, 13.8 | Security/Native | `tests/native/DAS-R10-S01.md` | `pnpm verify:scenario -- DAS-R10-S01` |
 | DAS-R10-S02 | 三平台壳行为必须可验证且不依赖网络 | 跨平台验证 | 1.5, 7.7, 9.8, 13.5, 13.7, 13.8 | Security/Native | `tests/native/DAS-R10-S02.md` | `pnpm verify:scenario -- DAS-R10-S02` |
 | DAS-R11-S01 | 目录与导入文件选择必须由系统原生对话框提供 | 从欢迎界面打开原生目录选择器 | wire 1.1–1.8 | Desktop/Shell | `tests/scenarios/DAS-R11-S01.yaml` | `pnpm verify:scenario -- DAS-R11-S01` |
@@ -220,6 +225,9 @@
 | LE-R06-S08 | 歌曲操作与详情 | 系统回收站暂时失败后重试 | 6.1, 10.5 | Core/React | `tests/scenarios/LE-R06-S08.yaml` | `pnpm verify:scenario -- LE-R06-S08` |
 | LE-R06-S09 | 歌曲操作与详情 | 回收站结果无法证明 | 6.4, 8.11, 10.6, 10.8, 5.8, 13.3 | Core/Desktop/React | `tests/scenarios/LE-R06-S09.yaml` | `pnpm verify:scenario -- LE-R06-S09` |
 | LE-R06-S10 | 歌曲操作与详情 | 回收站目标受路径边界保护 | 6.1, 10.5 | Core/React | `tests/scenarios/LE-R06-S10.yaml` | `pnpm verify:scenario -- LE-R06-S10` |
+| LE-R06-S11 | 歌曲操作与详情 | 再次点击歌曲操作入口 | 6.4, 8.11, 10.6, 10.8 | Desktop/React | `tests/scenarios/LE-R06-S11.yaml` | `pnpm verify:scenario -- LE-R06-S11` |
+| LE-R06-S12 | 歌曲操作与详情 | 多选状态下再次点击行入口 | 6.4, 8.11, 10.6, 10.8 | Desktop/React | `tests/scenarios/LE-R06-S12.yaml` | `pnpm verify:scenario -- LE-R06-S12` |
+| LE-R06-S13 | 歌曲操作与详情 | 右键打开的菜单由指针交互收起 | 6.4, 8.11, 10.6, 10.8 | Desktop/React | `tests/scenarios/LE-R06-S13.yaml` | `pnpm verify:scenario -- LE-R06-S13` |
 | LE-R07-S01 | 视图内歌曲多选 | 选择和取消选择歌曲 | 4.10, 10.3, 10.7 | Core/React | `tests/scenarios/LE-R07-S01.yaml` | `pnpm verify:scenario -- LE-R07-S01` |
 | LE-R07-S02 | 视图内歌曲多选 | 聚合目录不显示多选 | 4.10, 10.3, 10.7 | Core/React | `tests/scenarios/LE-R07-S02.yaml` | `pnpm verify:scenario -- LE-R07-S02` |
 | LE-R07-S03 | 视图内歌曲多选 | 聚合详情支持全选 | 4.10, 10.3, 10.7 | Core/React | `tests/scenarios/LE-R07-S03.yaml` | `pnpm verify:scenario -- LE-R07-S03` |

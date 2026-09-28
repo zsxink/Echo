@@ -28,7 +28,7 @@
  * custom properties on `.progress-line` / `.volume-line`.
  */
 
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties, type RefObject } from "react";
 
 import { assetUrl, bridge } from "../../bridge";
 import {
@@ -44,7 +44,11 @@ import { useSongDetail } from "./useSongDetail";
 import { bumpLibraryCount, invalidateLibrary, publishSongUpdate } from "../library";
 import type { SongView } from "../../ipc/ipc-types.generated";
 
-export function PlayerBar() {
+export function PlayerBar({
+  queueTriggerRef,
+}: {
+  readonly queueTriggerRef?: RefObject<HTMLButtonElement>;
+}) {
   const snapshot = usePlayerSnapshot();
   const ui = usePlayerUi();
   const detail = useSongDetail(snapshot.currentSongId);
@@ -324,10 +328,11 @@ export function PlayerBar() {
         <button
           type="button"
           className="control"
-          aria-label="显示播放队列"
+          aria-label={ui.queueOpen ? "隐藏播放队列" : "显示播放队列"}
           aria-expanded={ui.queueOpen}
           onClick={() => playerStore.setQueueOpen(!ui.queueOpen)}
           data-testid="queue-trigger"
+          ref={queueTriggerRef}
         >
           <Icon name="queue" />
         </button>

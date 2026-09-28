@@ -130,6 +130,86 @@ describe("Overlay manager (task 12.1)", () => {
   });
 });
 
+describe("Overlay trigger control (fix-queue-trigger-toggle)", () => {
+  /**
+   * The queue panel's real shape: the panel and its trigger are siblings, so the
+   * trigger is NOT inside the panel. `pointerdown` on the trigger used to read
+   * as "outside" — the panel closed and the same gesture's `click` re-opened it,
+   * leaving the button looking inert.
+   */
+  function SplitTriggerHost() {
+    const [open, setOpen] = useState(false);
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    const panelRef = useRef<HTMLDivElement>(null);
+    useOverlay({
+      tier: OverlayTier.Menu,
+      onClose: () => setOpen(false),
+      containerRef: panelRef,
+      triggerRef,
+      enabled: open,
+    });
+    useFocusTrap(panelRef, open);
+    return (
+      <div>
+        <button
+          type="button"
+          ref={triggerRef}
+          data-testid="queue-trigger"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          播放队列
+        </button>
+        {open ? (
+          <div ref={panelRef} data-testid="queue-panel" role="dialog" aria-label="播放队列">
+            <button type="button" data-testid="queue-item">
+              曲目
+            </button>
+          </div>
+        ) : null}
+        <button type="button" data-testid="elsewhere">
+          其它区域
+        </button>
+      </div>
+    );
+  }
+
+  it("closes on a second press of the trigger instead of reopening it", () => {
+    render(<SplitTriggerHost />);
+    const trigger = screen.getByTestId("queue-trigger");
+
+    fireEvent.click(trigger);
+    expect(screen.getByTestId("queue-panel")).toBeInTheDocument();
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+    // The real gesture: pointerdown then click at the same coordinates.
+    fireEvent.pointerDown(trigger);
+    fireEvent.click(trigger);
+    expect(screen.queryByTestId("queue-panel")).not.toBeInTheDocument();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("still dismisses on a press genuinely outside the layer and its trigger", () => {
+    render(<SplitTriggerHost />);
+    fireEvent.click(screen.getByTestId("queue-trigger"));
+    expect(screen.getByTestId("queue-panel")).toBeInTheDocument();
+
+    fireEvent.pointerDown(screen.getByTestId("elsewhere"));
+    expect(screen.queryByTestId("queue-panel")).not.toBeInTheDocument();
+  });
+
+  it("leaves a layer without a triggerRef on the container-only rule", () => {
+    render(<StackHost />);
+    fireEvent.click(screen.getByTestId("open-menu"));
+    expect(screen.getByTestId("overlay-menu")).toBeInTheDocument();
+
+    // No triggerRef was registered, so every press outside the panel — including
+    // the button that opened it — is still an outside press: unchanged behaviour.
+    fireEvent.pointerDown(screen.getByTestId("open-menu"));
+    expect(screen.queryByTestId("overlay-menu")).not.toBeInTheDocument();
+  });
+});
+
 describe("Roving menu focus (task 12.1)", () => {
   /** A `role="menu"` with three roving `role="menuitem"` entries. */
   function RovingMenu() {

@@ -99,6 +99,10 @@ describe("SongRow playback binding", () => {
     fireEvent.contextMenu(row, { clientX: 120, clientY: 230 });
 
     expect(onContextMenu).toHaveBeenCalledTimes(1);
+    // The anchor alone travels. Which row this was is not expressible as a DOM
+    // node here — windowing replaces the `<tr>` between two presses of the same
+    // row — so the caller identifies the entry point by the song the list passes
+    // it, not by a node (fix-queue-trigger-toggle).
     expect(onContextMenu).toHaveBeenCalledWith({
       top: 230,
       right: 120,

@@ -66,7 +66,10 @@ export interface SongListProps {
   readonly onPlay: (song: SongView) => void;
   readonly onFavorite: (song: SongView, favorite: boolean) => void;
   readonly onPlayNext: (song: SongView) => void;
-  /** Opens the row's `.song-more` menu, anchored to the control that opened it. */
+  /** Opens the row's `.song-more` menu, anchored to the control that opened it.
+   *  The `song` passed here is what identifies the entry point — never the row
+   *  element, which windowing can replace between two presses of the same
+   *  control (fix-queue-trigger-toggle). */
   readonly onOpenMenu: (song: SongView, anchor: MenuAnchor) => void;
 }
 

@@ -61,7 +61,16 @@ export interface SongRowProps {
   readonly onToggleSelection?: () => void;
   /** Opens the selection-aware menu without triggering playback. */
   readonly onContextMenu?: (anchor: MenuAnchor) => void;
-  /** The menu anchors to the control that opened it, as the prototype does. */
+  /**
+   * The menu anchors to the control that opened it, as the prototype does.
+   *
+   * The caller's half of "which entry point" is the song id, NOT the row
+   * element: the list is virtualised, so a row scrolled out of view and back is
+   * a newly constructed `<tr>` whose node identity means nothing by the second
+   * press (fix-queue-trigger-toggle). This is the `.song-more` gesture, so the
+   * control alone is interior to the menu — a press on the row body still
+   * dismisses it.
+   */
   readonly onOpenMenu: (anchor: MenuAnchor) => void;
 }
 
@@ -278,7 +287,12 @@ export function SongRow({
             title="歌曲操作"
             onClick={(event: MouseEvent<HTMLButtonElement>) => {
               const box = event.currentTarget.getBoundingClientRect();
-              onOpenMenu({ top: box.top, right: box.right, bottom: box.bottom, left: box.left });
+              onOpenMenu({
+                top: box.top,
+                right: box.right,
+                bottom: box.bottom,
+                left: box.left,
+              });
             }}
           >
             <Icon name="more" />

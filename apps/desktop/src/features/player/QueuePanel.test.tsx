@@ -9,9 +9,10 @@
  */
 
 import { fireEvent, render, screen } from "@testing-library/react";
+import { useRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { playerStore, type UiPlayerSnapshot } from "../../player/playerStore";
+import { playerStore, usePlayerUi, type UiPlayerSnapshot } from "../../player/playerStore";
 import { QueuePanel } from "./QueuePanel";
 
 vi.mock("../../bridge", () => {
@@ -272,5 +273,67 @@ describe("QueuePanel (task 11.2)", () => {
     render(<QueuePanel />);
     expect(screen.getByTestId("queue-empty")).toBeInTheDocument();
     expect(screen.getByText("浏览曲库")).toBeInTheDocument();
+  });
+});
+
+/**
+ * fix-queue-trigger-toggle — the trigger lives in the player bar, a sibling of the
+ * popover, so the panel only reaches it through an explicit `triggerRef`.
+ */
+describe("QueuePanel trigger control (fix-queue-trigger-toggle)", () => {
+  /** The popover and its trigger side by side, as `App` renders them. */
+  function QueueWithTrigger() {
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    const queueOpen = usePlayerUi().queueOpen;
+    return (
+      <div>
+        <button
+          type="button"
+          ref={triggerRef}
+          data-testid="queue-trigger"
+          aria-expanded={queueOpen}
+          onClick={() => playerStore.setQueueOpen(!queueOpen)}
+        >
+          播放队列
+        </button>
+        <QueuePanel triggerRef={triggerRef} />
+      </div>
+    );
+  }
+
+  it("closes on a second press of the trigger instead of reopening the panel", () => {
+    playerStore.setQueueOpen(false);
+    playerStore.publish(makeSnapshot({ queueLen: 1, queue: [] }));
+    render(<QueueWithTrigger />);
+    const trigger = screen.getByTestId("queue-trigger");
+
+    fireEvent.click(trigger);
+    expect(screen.getByTestId("queue-panel")).toBeInTheDocument();
+
+    // The real gesture on the trigger: pointerdown, then click. Before the fix
+    // the press dismissed the panel and the click re-opened it, so the panel
+    // never went away and the button looked inert.
+    fireEvent.pointerDown(trigger);
+    fireEvent.click(trigger);
+    expect(screen.queryByTestId("queue-panel")).not.toBeInTheDocument();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("still closes when the press lands outside both panel and trigger", () => {
+    playerStore.setQueueOpen(false);
+    playerStore.publish(makeSnapshot({ queueLen: 1, queue: [] }));
+    render(
+      <div>
+        <QueueWithTrigger />
+        <button type="button" data-testid="elsewhere">
+          其它区域
+        </button>
+      </div>,
+    );
+    fireEvent.click(screen.getByTestId("queue-trigger"));
+    expect(screen.getByTestId("queue-panel")).toBeInTheDocument();
+
+    fireEvent.pointerDown(screen.getByTestId("elsewhere"));
+    expect(screen.queryByTestId("queue-panel")).not.toBeInTheDocument();
   });
 });
