@@ -21,12 +21,13 @@ import { bridge } from "../../bridge";
 const call = vi.mocked(bridge.call);
 
 describe("AddToPlaylistDialog (task 10.9)", () => {
-  it("sends only the chosen playlist targets in one mutation, then closes", async () => {
+  it("preselects existing memberships read-only and submits only new targets", async () => {
     call.mockReset();
     call.mockResolvedValueOnce([
       { id: "pl-1", name: "Chill", memberCount: 3 },
       { id: "pl-2", name: "Focus", memberCount: 5 },
     ] as never);
+    call.mockResolvedValueOnce(["pl-1"] as never); // playlists_for_song
     call.mockResolvedValueOnce(undefined as never); // add_to_playlists
 
     const onClose = vi.fn();
@@ -35,7 +36,9 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
       <AddToPlaylistDialog songId="song-9" songTitle="心房" onClose={onClose} onDone={onDone} />,
     );
 
-    await screen.findByLabelText("Chill");
+    const existing = await screen.findByLabelText("Chill，已在其中");
+    expect(existing).toBeDisabled();
+    expect(existing).toHaveAttribute("aria-selected", "true");
     // The prototype's sub line names the song being added.
     expect(screen.getByText("将「心房」添加到：")).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("Focus"));
@@ -51,23 +54,69 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("keeps the authoritative picker open when membership commit fails", async () => {
+  it("closes unchanged single-song selection without a mutation or success toast", async () => {
     call.mockReset();
     call.mockResolvedValueOnce([{ id: "pl-1", name: "Chill", memberCount: 3 }] as never);
+    call.mockResolvedValueOnce(["pl-1"] as never);
+
+    const onClose = vi.fn();
+    const onDone = vi.fn();
+    render(
+      <>
+        <AddToPlaylistDialog songId="song-9" onClose={onClose} onDone={onDone} />
+        <ToastView />
+      </>,
+    );
+    await screen.findByLabelText("Chill，已在其中");
+    fireEvent.click(screen.getByText("确认"));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(call).not.toHaveBeenCalledWith("add_to_playlists", expect.anything());
+    expect(onDone).not.toHaveBeenCalled();
+    expect(screen.queryByText(/添加到歌单：/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the authoritative picker open when membership commit fails", async () => {
+    call.mockReset();
+    call.mockResolvedValueOnce([
+      { id: "pl-1", name: "Chill", memberCount: 3 },
+      { id: "pl-2", name: "Focus", memberCount: 2 },
+    ] as never);
+    call.mockResolvedValueOnce(["pl-1"] as never);
     call.mockRejectedValueOnce(new Error("offline"));
     const onClose = vi.fn();
     const onDone = vi.fn();
     render(<AddToPlaylistDialog songId="song-9" onClose={onClose} onDone={onDone} />);
 
-    await screen.findByLabelText("Chill");
-    fireEvent.click(screen.getByLabelText("Chill"));
+    await screen.findByLabelText("Chill，已在其中");
+    fireEvent.click(screen.getByLabelText("Focus"));
     fireEvent.click(screen.getByText("确认"));
 
     expect(await screen.findByText("添加失败，请重试")).toBeInTheDocument();
     expect(screen.getByTestId("add-to-playlist-dialog")).toBeInTheDocument();
-    expect(screen.getByLabelText("Chill")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Focus")).toHaveAttribute("aria-selected", "true");
     expect(onDone).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("falls back to additive selection with a visible warning when membership lookup fails", async () => {
+    call.mockReset();
+    call.mockResolvedValueOnce([{ id: "pl-1", name: "Chill", memberCount: 3 }] as never);
+    call.mockRejectedValueOnce(new Error("offline"));
+    call.mockResolvedValueOnce(undefined as never);
+    const onClose = vi.fn();
+    render(<AddToPlaylistDialog songId="song-9" onClose={onClose} onDone={vi.fn()} />);
+
+    expect(await screen.findByText("无法读取当前归属；仍可继续添加。")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Chill"));
+    fireEvent.click(screen.getByText("确认"));
+
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith("add_to_playlists", {
+        song: "song-9",
+        targets: ["pl-1"],
+      }),
+    );
   });
 
   it("runs a multi-song add sequentially and keeps partial failures visible", async () => {
@@ -86,6 +135,10 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
     );
 
     await screen.findByLabelText("Chill");
+    expect(
+      screen.getByText("所选歌单将应用于全部 2 首歌曲；已有成员保持不变。"),
+    ).toBeInTheDocument();
+    expect(call).not.toHaveBeenCalledWith("playlists_for_song", expect.anything());
     fireEvent.click(screen.getByLabelText("Chill"));
     fireEvent.click(screen.getByText("确认"));
 
@@ -109,6 +162,7 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
   it("does not mutate and reports when no playlist is selected", async () => {
     call.mockReset();
     call.mockResolvedValueOnce([{ id: "pl-1", name: "Chill", memberCount: 0 }] as never);
+    call.mockResolvedValueOnce([] as never);
 
     const onClose = vi.fn();
     const onDone = vi.fn();
@@ -124,6 +178,7 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
 
   it("disables playlist mutations on a read-only library", async () => {
     call.mockReset();
+    call.mockResolvedValueOnce([] as never);
     call.mockResolvedValueOnce([] as never);
     render(
       <AddToPlaylistDialog
@@ -144,6 +199,7 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
   it("shows the prototype's empty-list copy when there is no playlist yet", async () => {
     call.mockReset();
     call.mockResolvedValueOnce([] as never);
+    call.mockResolvedValueOnce([] as never);
 
     render(<AddToPlaylistDialog songId="song-9" onClose={vi.fn()} onDone={vi.fn()} />);
     expect(await screen.findByText("还没有歌单，先创建一个吧。")).toBeInTheDocument();
@@ -152,6 +208,7 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
 
   it("passes the active root into the inline create dialog", async () => {
     call.mockReset();
+    call.mockResolvedValueOnce([] as never);
     call.mockResolvedValueOnce([] as never);
     render(
       <AddToPlaylistDialog songId="song-9" root="root-1" onClose={vi.fn()} onDone={vi.fn()} />,
@@ -175,6 +232,7 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
 
   it("keeps CJK composition in the inline create field until it is committed", async () => {
     call.mockReset();
+    call.mockResolvedValueOnce([] as never);
     call.mockResolvedValueOnce([] as never);
     render(
       <AddToPlaylistDialog songId="song-9" root="root-1" onClose={vi.fn()} onDone={vi.fn()} />,
@@ -206,6 +264,7 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
         resolvePlaylists = resolve;
       }) as never,
     );
+    call.mockResolvedValueOnce([] as never);
     render(
       <AddToPlaylistDialog songId="song-9" root="root-1" onClose={vi.fn()} onDone={vi.fn()} />,
     );
@@ -228,6 +287,7 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
   it("selects a playlist created from the picker so the original song can be added", async () => {
     call.mockReset();
     call.mockResolvedValueOnce([] as never);
+    call.mockResolvedValueOnce([] as never); // playlists_for_song
     call.mockResolvedValueOnce("pl-new" as never); // create_playlist
     call.mockResolvedValueOnce([{ id: "pl-new", name: "通勤", memberCount: 0 }] as never); // refresh after creation
     call.mockResolvedValueOnce(undefined as never); // add_to_playlists
@@ -254,6 +314,7 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
   it("cancelling closes without sending any mutation", async () => {
     call.mockReset();
     call.mockResolvedValueOnce([{ id: "pl-1", name: "Chill", memberCount: 0 }] as never);
+    call.mockResolvedValueOnce([] as never);
 
     const onClose = vi.fn();
     render(<AddToPlaylistDialog songId="song-9" onClose={onClose} onDone={() => {}} />);

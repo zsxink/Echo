@@ -604,6 +604,7 @@ fn main() {
             commands::library_counts,
             commands::playlists,
             commands::playlist_members,
+            commands::playlists_for_song,
             commands::song_detail,
             commands::get_lyrics,
             commands::song_cover_keys,

@@ -200,6 +200,7 @@ export interface IpcCommandResultMap {
   readonly library_counts: LibraryCountsDto;
   readonly playlists: readonly PlaylistView[];
   readonly playlist_members: readonly SongView[];
+  readonly playlists_for_song: readonly string[];
   readonly song_detail: SongDetailView;
   readonly song_cover_keys: Readonly<Record<string, string>>;
   readonly set_favorite: SongView;

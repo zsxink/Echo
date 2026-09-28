@@ -116,6 +116,25 @@ impl<'a> ListPlaylists<'a> {
     }
 }
 
+/// Find the playlists containing one song in the local library.
+pub struct PlaylistsForSong<'a> {
+    repository: &'a dyn PlaylistRepository,
+}
+
+impl<'a> PlaylistsForSong<'a> {
+    #[must_use]
+    pub const fn new(repository: &'a dyn PlaylistRepository) -> Self {
+        Self { repository }
+    }
+
+    /// # Errors
+    ///
+    /// Storage errors propagate.
+    pub fn execute(&self, song: SongId) -> Result<Vec<PlaylistId>, Error> {
+        self.repository.playlists_for_song(song)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Memberships (task 6.6)
 // ---------------------------------------------------------------------------
@@ -381,6 +400,32 @@ mod tests {
             PlaylistRepository::members(&db, c).expect("C")[0].position(),
             7
         );
+    }
+
+    #[test]
+    fn playlists_for_song_returns_memberships_and_empty_for_unknown_song() {
+        let db = MemoryDatabase::new();
+        let root = root(&db);
+        let song = crate::domain::ids::SongId::new();
+        let record = crate::domain::entities::Song::new(
+            song,
+            root,
+            crate::domain::ids::RelativeMediaPath::new("song.flac").expect("path"),
+            crate::domain::ids::Revision::INITIAL,
+        );
+        crate::application::ports::SongRepository::upsert(&db, &record).expect("song");
+        let first = CreatePlaylist::new(&db).execute(root, "A").expect("A");
+        let second = CreatePlaylist::new(&db).execute(root, "B").expect("B");
+        let query = PlaylistsForSong::new(&db);
+
+        assert!(query.execute(song).expect("no memberships").is_empty());
+        PlaylistRepository::add_member(&db, second, song, u64::MAX).expect("second");
+        PlaylistRepository::add_member(&db, first, song, u64::MAX).expect("first");
+        let mut actual = query.execute(song).expect("memberships");
+        actual.sort();
+        let mut expected = vec![first, second];
+        expected.sort();
+        assert_eq!(actual, expected);
     }
 
     #[test]

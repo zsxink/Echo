@@ -11,11 +11,10 @@
  * adding a song to several playlists cannot half-succeed; duplicate membership is
  * idempotent server-side (task 6.6). Cancel never mutates.
  *
- * Deviation from the prototype: its picker pre-selects the song's current
- * memberships and commits a diff (adds *and* removals). The release's command
- * contract for this surface is additive — removal lives in the playlist view
- * (`remove_playlist_song`) — so the options start unselected here rather than
- * implying a removal that would silently not happen.
+ * Single-song sessions preselect authoritative memberships as read-only rows
+ * and submit only new choices. Batch sessions stay unselected because a shared
+ * checkbox cannot express each song's different memberships; the operation
+ * remains additive and duplicate-safe.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -56,8 +55,13 @@ export function AddToPlaylistDialog({
   onDone,
 }: AddToPlaylistDialogProps) {
   const selectedSongIds = songs?.map((song) => song.id) ?? songIds ?? (songId ? [songId] : []);
+  const singleSongId = selectedSongIds.length === 1 ? selectedSongIds[0] : undefined;
   const [playlists, setPlaylists] = useState<readonly PlaylistView[]>([]);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [existingMemberships, setExistingMemberships] = useState<ReadonlySet<string>>(new Set());
+  const [membershipStatus, setMembershipStatus] = useState<"loading" | "loaded" | "failed">(
+    singleSongId ? "loading" : "loaded",
+  );
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const dialogRef = useRef<HTMLElement>(null);
@@ -84,6 +88,33 @@ export function AddToPlaylistDialog({
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    setSelected(new Set());
+    setExistingMemberships(new Set());
+    if (!singleSongId) {
+      setMembershipStatus("loaded");
+      return () => {
+        cancelled = true;
+      };
+    }
+    setMembershipStatus("loading");
+    void bridge
+      .call("playlists_for_song", { song: singleSongId })
+      .then((ids) => {
+        if (cancelled) return;
+        setExistingMemberships(new Set(ids));
+        setMembershipStatus("loaded");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setMembershipStatus("failed");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [singleSongId]);
+
   function toggle(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -97,7 +128,16 @@ export function AddToPlaylistDialog({
   }
 
   async function confirm() {
-    if (selected.size === 0 || selectedSongIds.length === 0) {
+    if (selectedSongIds.length === 0 || membershipStatus === "loading") {
+      return;
+    }
+    const targets = Array.from(selected).filter((id) => !existingMemberships.has(id));
+    if (targets.length === 0 && existingMemberships.size > 0 && selectedSongIds.length === 1) {
+      setError(null);
+      onClose();
+      return;
+    }
+    if (targets.length === 0) {
       setError("请至少选择一个歌单");
       return;
     }
@@ -112,7 +152,7 @@ export function AddToPlaylistDialog({
           availability: "available",
           relativePath: "",
         }));
-      const result = await runAddToPlaylistsBatch(operationSongs, Array.from(selected));
+      const result = await runAddToPlaylistsBatch(operationSongs, targets);
       if (result.failed > 0) {
         setError(
           selectedSongIds.length === 1
@@ -160,16 +200,20 @@ export function AddToPlaylistDialog({
               </div>
             ) : (
               playlists.map((playlist) => {
-                const added = selected.has(playlist.id);
+                const alreadyMember = existingMemberships.has(playlist.id);
+                const added = alreadyMember || selected.has(playlist.id);
                 return (
                   <button
                     key={playlist.id}
                     type="button"
                     role="option"
                     aria-selected={added}
-                    aria-label={playlist.name}
-                    className={`playlist-picker-option${added ? " added" : ""}`}
+                    aria-label={`${playlist.name}${alreadyMember ? "，已在其中" : ""}`}
+                    aria-disabled={readOnly || alreadyMember}
+                    disabled={readOnly || alreadyMember}
+                    className={`playlist-picker-option${added ? " added" : ""}${alreadyMember ? " existing-membership" : ""}`}
                     onClick={() => {
+                      if (alreadyMember) return;
                       toggle(playlist.id);
                       setError(null);
                     }}
@@ -184,7 +228,7 @@ export function AddToPlaylistDialog({
                     </span>
                     <span className="playlist-picker-copy">
                       <strong>{playlist.name}</strong>
-                      <span>{playlist.memberCount} 首歌曲</span>
+                      <span>{alreadyMember ? "已在其中" : `${playlist.memberCount} 首歌曲`}</span>
                     </span>
                     <span className="playlist-picker-check" aria-hidden="true">
                       <Icon name="check" />
@@ -194,6 +238,22 @@ export function AddToPlaylistDialog({
               })
             )}
           </div>
+
+          {membershipStatus === "loading" ? (
+            <p className="playlist-picker-membership-notice" role="status">
+              正在读取歌曲的歌单归属…
+            </p>
+          ) : null}
+          {membershipStatus === "failed" ? (
+            <p className="playlist-picker-membership-notice warning" role="status">
+              无法读取当前归属；仍可继续添加。
+            </p>
+          ) : null}
+          {selectedSongIds.length > 1 ? (
+            <p className="playlist-picker-membership-notice" role="status">
+              所选歌单将应用于全部 {selectedSongIds.length} 首歌曲；已有成员保持不变。
+            </p>
+          ) : null}
 
           {error ? (
             <p className="playlist-name-error" role="alert">
@@ -220,7 +280,7 @@ export function AddToPlaylistDialog({
               <button
                 type="button"
                 className="playlist-picker-confirm"
-                disabled={readOnly}
+                disabled={readOnly || membershipStatus === "loading"}
                 onClick={() => void confirm()}
               >
                 确认

@@ -508,6 +508,10 @@ fn playlist_mutations_return_snapshots_seen_by_subsequent_reads() {
     // Add both songs; the list and members reflect them committed.
     app.add_to_playlists(ids[0], &[id]).expect("add 1");
     app.add_to_playlists(ids[1], &[id]).expect("add 2");
+    assert_eq!(
+        app.playlists_for_song(ids[0]).expect("membership lookup"),
+        vec![id]
+    );
     let members = app.playlist_members(id).expect("members");
     assert_eq!(members.len(), 2, "both members are committed");
     assert_eq!(
@@ -523,6 +527,10 @@ fn playlist_mutations_return_snapshots_seen_by_subsequent_reads() {
     // Removing a member is reflected by the next read; a non-member is a
     // no-op success.
     app.remove_playlist_song(id, ids[0]).expect("remove");
+    assert!(app
+        .playlists_for_song(ids[0])
+        .expect("membership lookup after removal")
+        .is_empty());
     assert_eq!(app.playlist_members(id).expect("after").len(), 1);
     app.remove_playlist_song(id, ids[0]).expect("no-op"); // already gone
 }

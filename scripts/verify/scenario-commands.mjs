@@ -382,6 +382,10 @@ export const COMMANDS = {
   "LE-R19-S03": "pnpm --filter @echo/desktop test -- --run src/features/library/favoriteSync.test.tsx -t \"voices 当前歌曲不在此列表中\"", // 新增: 定位当前播放歌曲
   "LE-R19-S04": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"clamps an end-of-list target to the last reachable position\"", // 新增: 定位当前播放歌曲
   "LE-R19-S05": "node scripts/verify/checks/check-native-attestation.mjs LE-R19-S05", // 新增: 定位当前播放歌曲
+  "LE-R20-S01": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "preselects existing memberships read-only and submits only new targets"), // 新增: 歌单选择器加载归属状态
+  "LE-R20-S02": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "falls back to additive selection with a visible warning"), // 新增: 歌单选择器加载归属状态
+  "LE-R20-S03": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "所选歌单将应用于全部"), // 新增: 歌单选择器加载归属状态
+  "LE-R20-S04": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "closes unchanged single-song selection without a mutation"), // 新增: 歌单选择器加载归属状态
 
   // ===== local-library =====
   "LL-R01-S01": COREC("root_switch::"),
@@ -504,6 +508,15 @@ export const COMMANDS = {
   // manifest.json is not mirrored here, for the same regex-anchoring reason.
   "PM-R10-S01": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"rolls to a playing member of the playlist without a toast\"", // 新增: 歌单内定位当前播放歌曲
   "PM-R10-S02": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"voices 当前\"", // 新增: 歌单内定位当前播放歌曲
+  // One dialog test asserts several scenarios; `-t` is a substring match, so the
+  // 4 React scenarios below all resolve to the same file with different needles.
+  "PM-R11-S01": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "preselects existing memberships read-only and submits only new targets"), // 新增: 歌单选择器反映单曲归属
+  "PM-R11-S02": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "preselects existing memberships read-only and submits only new targets"), // 新增: 歌单选择器反映单曲归属
+  "PM-R11-S03": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "closes unchanged single-song selection without a mutation"), // 新增: 歌单选择器反映单曲归属
+  "PM-R11-S04": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "所选歌单将应用于全部"), // 新增: 歌单选择器反映单曲归属
+  "PM-R12-S01": COREC("playlists_for_song_reads_membership_ids_from_the_active_database"), // 新增: 查询单曲的歌单归属
+  "PM-R12-S02": COREC("playlists_for_song_reads_membership_ids_from_the_active_database"), // 新增: 查询单曲的歌单归属
+  "PM-R12-S03": COREC("playlists_for_song_reads_membership_ids_from_the_active_database"), // 新增: 查询单曲的歌单归属
 
   // ===== portable-library-layout =====
   "PLL-R01-S01": COREC("default_target_is_artist_folder_with_artist_minus_title"),

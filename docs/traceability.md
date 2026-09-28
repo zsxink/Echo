@@ -289,6 +289,10 @@
 | LE-R19-S03 | 定位当前播放歌曲 | 播放歌曲不属于当前视图 | 4.x | React | `tests/scenarios/LE-R19-S03.yaml` | `pnpm verify:scenario -- LE-R19-S03` |
 | LE-R19-S04 | 定位当前播放歌曲 | 定位目标位于列表末尾 | 4.x | React | `tests/scenarios/LE-R19-S04.yaml` | `pnpm verify:scenario -- LE-R19-S04` |
 | LE-R19-S05 | 定位当前播放歌曲 | 最近添加视图定位 | 4.x | Native | `tests/native/LE-R19-S05.md` | `pnpm verify:scenario -- LE-R19-S05` |
+| LE-R20-S01 | 歌单选择器加载归属状态 | 归属查询进行中 | 3.3 | React | `tests/scenarios/LE-R20-S01.yaml` | `pnpm verify:scenario -- LE-R20-S01` |
+| LE-R20-S02 | 歌单选择器加载归属状态 | 归属查询失败并继续添加 | 3.3 | React | `tests/scenarios/LE-R20-S02.yaml` | `pnpm verify:scenario -- LE-R20-S02` |
+| LE-R20-S03 | 歌单选择器加载归属状态 | 批量模式说明 | 3.3 | React | `tests/scenarios/LE-R20-S03.yaml` | `pnpm verify:scenario -- LE-R20-S03` |
+| LE-R20-S04 | 歌单选择器加载归属状态 | 无变化不反馈成功 | 3.3 | React | `tests/scenarios/LE-R20-S04.yaml` | `pnpm verify:scenario -- LE-R20-S04` |
 
 ## local-library
 
@@ -378,6 +382,13 @@
 | PM-R09-S02 | 歌单详情搜索 | 歌单详情清空搜索 | 1.x, 2.x, 3.x | React | `tests/scenarios/PM-R09-S02.yaml` | `pnpm verify:scenario -- PM-R09-S02` |
 | PM-R10-S01 | 歌单内定位当前播放歌曲 | 定位歌单中正在播放的歌曲 | 4.x | React | `tests/scenarios/PM-R10-S01.yaml` | `pnpm verify:scenario -- PM-R10-S01` |
 | PM-R10-S02 | 歌单内定位当前播放歌曲 | 歌单无正在播放歌曲 | 4.x | React | `tests/scenarios/PM-R10-S02.yaml` | `pnpm verify:scenario -- PM-R10-S02` |
+| PM-R11-S01 | 歌单选择器反映单曲归属 | 单曲预选已有歌单 | 3.3 | React | `tests/scenarios/PM-R11-S01.yaml` | `pnpm verify:scenario -- PM-R11-S01` |
+| PM-R11-S02 | 歌单选择器反映单曲归属 | 仅提交新增差集 | 3.3 | React | `tests/scenarios/PM-R11-S02.yaml` | `pnpm verify:scenario -- PM-R11-S02` |
+| PM-R11-S03 | 歌单选择器反映单曲归属 | 未改动选择并确认 | 3.3 | React | `tests/scenarios/PM-R11-S03.yaml` | `pnpm verify:scenario -- PM-R11-S03` |
+| PM-R11-S04 | 歌单选择器反映单曲归属 | 批量选择歌曲 | 3.3 | React | `tests/scenarios/PM-R11-S04.yaml` | `pnpm verify:scenario -- PM-R11-S04` |
+| PM-R12-S01 | 查询单曲的歌单归属 | 查询已有归属 | 3.3 | Core | `tests/scenarios/PM-R12-S01.yaml` | `pnpm verify:scenario -- PM-R12-S01` |
+| PM-R12-S02 | 查询单曲的歌单归属 | 查询无归属歌曲 | 3.3 | Core | `tests/scenarios/PM-R12-S02.yaml` | `pnpm verify:scenario -- PM-R12-S02` |
+| PM-R12-S03 | 查询单曲的歌单归属 | 归属查询失败 | 3.3 | Core | `tests/scenarios/PM-R12-S03.yaml` | `pnpm verify:scenario -- PM-R12-S03` |
 
 ## portable-library-layout
 
