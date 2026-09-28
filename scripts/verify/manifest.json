@@ -3694,6 +3694,30 @@
       "manifest": "tests/native/LE-R19-S05.md"
     },
     {
+      "id": "LE-R20-S01",
+      "title": "归属查询进行中",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"preselects existing memberships read-only and submits only new targets\"",
+      "manifest": "tests/scenarios/LE-R20-S01.yaml"
+    },
+    {
+      "id": "LE-R20-S02",
+      "title": "归属查询失败并继续添加",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"falls back to additive selection with a visible warning\"",
+      "manifest": "tests/scenarios/LE-R20-S02.yaml"
+    },
+    {
+      "id": "LE-R20-S03",
+      "title": "批量模式说明",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"所选歌单将应用于全部\"",
+      "manifest": "tests/scenarios/LE-R20-S03.yaml"
+    },
+    {
+      "id": "LE-R20-S04",
+      "title": "无变化不反馈成功",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"closes unchanged single-song selection without a mutation\"",
+      "manifest": "tests/scenarios/LE-R20-S04.yaml"
+    },
+    {
       "id": "LL-R01-S01",
       "title": "选择根目录并建立资料库",
       "command": "cargo test -p echo-core --all-features root_switch::",
@@ -4136,6 +4160,48 @@
       "title": "歌单无正在播放歌曲",
       "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"voices 当前\"",
       "manifest": "tests/scenarios/PM-R10-S02.yaml"
+    },
+    {
+      "id": "PM-R11-S01",
+      "title": "单曲预选已有歌单",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"preselects existing memberships read-only and submits only new targets\"",
+      "manifest": "tests/scenarios/PM-R11-S01.yaml"
+    },
+    {
+      "id": "PM-R11-S02",
+      "title": "仅提交新增差集",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"preselects existing memberships read-only and submits only new targets\"",
+      "manifest": "tests/scenarios/PM-R11-S02.yaml"
+    },
+    {
+      "id": "PM-R11-S03",
+      "title": "未改动选择并确认",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"closes unchanged single-song selection without a mutation\"",
+      "manifest": "tests/scenarios/PM-R11-S03.yaml"
+    },
+    {
+      "id": "PM-R11-S04",
+      "title": "批量选择歌曲",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"所选歌单将应用于全部\"",
+      "manifest": "tests/scenarios/PM-R11-S04.yaml"
+    },
+    {
+      "id": "PM-R12-S01",
+      "title": "查询已有归属",
+      "command": "cargo test -p echo-core --all-features playlists_for_song_reads_membership_ids_from_the_active_database",
+      "manifest": "tests/scenarios/PM-R12-S01.yaml"
+    },
+    {
+      "id": "PM-R12-S02",
+      "title": "查询无归属歌曲",
+      "command": "cargo test -p echo-core --all-features playlists_for_song_reads_membership_ids_from_the_active_database",
+      "manifest": "tests/scenarios/PM-R12-S02.yaml"
+    },
+    {
+      "id": "PM-R12-S03",
+      "title": "归属查询失败",
+      "command": "cargo test -p echo-core --all-features playlists_for_song_reads_membership_ids_from_the_active_database",
+      "manifest": "tests/scenarios/PM-R12-S03.yaml"
     },
     {
       "id": "PLL-R01-S01",

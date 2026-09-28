@@ -259,7 +259,7 @@ impl PlaylistRepository for MemoryDatabase {
     }
     fn playlists_for_song(&self, song: SongId) -> Result<Vec<PlaylistId>, Error> {
         let store = self.lock();
-        let Some(song_root) = store.songs.get(&song).map(|record| record.root()) else {
+        let Some(song_root) = store.songs.get(&song).map(Song::root) else {
             return Ok(Vec::new());
         };
         Ok(store
