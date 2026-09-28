@@ -236,9 +236,10 @@ export function PlaylistsView({
           setSearching(false);
           if (cursor !== undefined && err instanceof BridgeError && err.code === "conflict") {
             // 游标过期：资料库在两页之间被改动（导入/扫描/收藏都推进
-            // library_roots.updated_at），后端拒绝旧游标（"restart
-            // pagination"）。此时不丢弃游标，续页会永远以同一个过期游标再失败；
-            // 必须回到当前搜索条件的首屏重查。首屏不带游标，因此不会再次冲突。
+            // library_roots.updated_at），后端以 "catalog changed; restart
+            // pagination" 拒绝旧游标。**必须**丢弃它——留着的话每次滚动触底都会
+            // 拿同一个已被拒绝的游标再失败一次，永远翻不下去。改从当前搜索词的
+            // 首屏重查；首屏不带游标，后端不会比对修订号，故不会再次冲突。
             searchCursor.current = undefined;
             playlistsMemberSearch(query);
             return;
