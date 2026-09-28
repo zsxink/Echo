@@ -290,6 +290,18 @@ pub fn playlist_members(
 }
 
 #[tauri::command]
+pub fn playlists_for_song(
+    services: State<'_, AppServices>,
+    song: String,
+) -> Result<Vec<String>, IpcErrorDto> {
+    let song = parse_id::<SongId>(&song, "song")?;
+    services
+        .playlists_for_song(song)
+        .map(|playlists| playlists.into_iter().map(|id| id.to_string()).collect())
+        .map_err(IpcErrorDto::from)
+}
+
+#[tauri::command]
 pub fn song_detail(
     services: State<'_, AppServices>,
     song_id: String,

@@ -6,7 +6,7 @@
 
 use echo_core::application::catalog::CatalogQuery;
 use echo_core::application::detail::{GetSongDetail, GetSongLyrics};
-use echo_core::application::playlist::PlaylistMembers;
+use echo_core::application::playlist::{PlaylistMembers, PlaylistsForSong};
 use echo_core::application::ports::PlaylistRepository;
 use echo_core::domain::catalog::{
     CatalogCollection, CatalogCollectionKind, OpaqueCursor, SongSort,
@@ -378,6 +378,29 @@ impl super::AppServices {
             }
         }
         Ok(out)
+    }
+
+    /// Return the playlist ids containing a song in the active library.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Unavailable` when no library is active or the song does not
+    /// belong to it; storage errors propagate.
+    pub fn playlists_for_song(&self, song: SongId) -> Result<Vec<PlaylistId>, Error> {
+        let root = self
+            .deps
+            .roots
+            .active_root()?
+            .ok_or_else(|| Error::unavailable("library", "no active root"))?;
+        let belongs_to_active_root = self
+            .deps
+            .songs
+            .by_id(song)?
+            .is_some_and(|record| record.root() == root.id());
+        if !belongs_to_active_root {
+            return Err(Error::unavailable("song", "not found in active library"));
+        }
+        PlaylistsForSong::new(self.deps.playlists.as_ref()).execute(song)
     }
 
     /// Read-only song detail.

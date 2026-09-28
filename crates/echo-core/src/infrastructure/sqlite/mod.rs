@@ -784,6 +784,26 @@ impl PlaylistRepository for SqliteDatabase {
         })
     }
 
+    fn playlists_for_song(&self, song: SongId) -> Result<Vec<PlaylistId>, Error> {
+        self.with_reader(move |connection| {
+            let mut statement = connection
+                .prepare(
+                    "SELECT ps.playlist_uuid FROM playlist_songs ps JOIN playlists p ON p.uuid = ps.playlist_uuid JOIN songs s ON s.uuid = ps.song_uuid AND s.library_root_uuid = p.library_root_uuid WHERE ps.song_uuid = ?1 ORDER BY ps.playlist_uuid",
+                )
+                .map_err(storage)?;
+            let playlists = statement
+                .query_map(params![song.to_string()], |row| row.get::<_, String>(0))
+                .map_err(storage)?
+                .map(|value| {
+                    value
+                        .map_err(storage)
+                        .and_then(|value| parse_id(&value, "PlaylistId"))
+                })
+                .collect();
+            playlists
+        })
+    }
+
     fn add_member(&self, playlist: PlaylistId, song: SongId, position: u64) -> Result<(), Error> {
         self.writer.run(move |connection| {
             // Membership lookup + insert are one transaction so a concurrent

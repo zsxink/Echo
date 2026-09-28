@@ -205,6 +205,10 @@ h1 { margin-bottom: 0; font: 750 var(--text-2xl)/var(--leading-tight) var(--font
 .playlist-picker-option.added .playlist-picker-check { border-color: var(--accent); background: var(--accent); color: var(--accent-on); }
 .playlist-picker-option.added .playlist-picker-copy strong { color: var(--accent); }
 .playlist-picker-option:not(.added) { font-weight: 400; }
+.playlist-picker-option.existing-membership { cursor: default; opacity: .76; }
+.playlist-picker-option.existing-membership:hover { background: transparent; }
+.playlist-picker-membership-notice { margin: 0; padding: var(--space-2) var(--space-3); color: var(--fg-2); font-size: var(--text-xs); }
+.playlist-picker-membership-notice.warning { color: var(--warning, var(--accent-strong)); }
 .playlist-picker-empty { padding: var(--space-6) var(--space-3); text-align: center; color: var(--fg-2); }
 .playlist-picker-empty p { margin: 0; }
 .playlist-picker-new { flex: none; align-self: flex-start; display: flex; align-items: center; gap: var(--space-2); min-height: 32px; margin-top: 0; padding: 0 var(--space-2); border: 0; background: transparent; color: var(--accent); font: 650 var(--text-sm)/1 var(--font-body); cursor: pointer; border-radius: var(--radius-sm); }

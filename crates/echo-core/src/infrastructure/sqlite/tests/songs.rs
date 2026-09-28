@@ -361,6 +361,44 @@ fn playlist_missing_members_stay_visible_and_recover_without_duplicates() {
     );
 }
 
+#[test]
+fn playlists_for_song_reads_membership_ids_from_the_active_database() {
+    let (_directory, database, root) = database();
+    let target = song(root, "target.flac", "Target", "Artist");
+    let other = song(root, "other.flac", "Other", "Artist");
+    SongRepository::upsert(&database, &target).expect("target");
+    SongRepository::upsert(&database, &other).expect("other");
+    let first = PlaylistId::new();
+    let second = PlaylistId::new();
+    let unrelated = PlaylistId::new();
+    database.create(first, root, "First").expect("first playlist");
+    database.create(second, root, "Second").expect("second playlist");
+    database
+        .create(unrelated, root, "Unrelated")
+        .expect("unrelated playlist");
+    database
+        .add_member(first, target.id(), u64::MAX)
+        .expect("first target");
+    database
+        .add_member(second, target.id(), u64::MAX)
+        .expect("second target");
+    database
+        .add_member(unrelated, other.id(), u64::MAX)
+        .expect("other song");
+
+    let mut memberships = database
+        .playlists_for_song(target.id())
+        .expect("membership query");
+    memberships.sort();
+    let mut expected = vec![first, second];
+    expected.sort();
+    assert_eq!(memberships, expected);
+    assert!(database
+        .playlists_for_song(SongId::new())
+        .expect("unknown song")
+        .is_empty());
+}
+
 /// Echo 主动删除 finalize 级联移除成员：`delete_song`（finalize 路径）在同一
 /// 事务内把歌曲和它所有歌单成员删除，其他歌单/歌曲不受影响且顺序保留。
 #[test]

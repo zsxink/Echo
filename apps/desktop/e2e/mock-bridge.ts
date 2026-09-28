@@ -71,6 +71,7 @@ type Command =
   | "library_counts"
   | "playlists"
   | "playlist_members"
+  | "playlists_for_song"
   | "song_detail"
   | "song_cover_keys"
   | "set_favorite"
@@ -398,6 +399,7 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
     },
 
     playlists: () => state.playlists,
+    playlists_for_song: () => [],
     playlist_members: ({ playlistId }) => {
       const p = state.playlists.find((x) => x.id === playlistId);
       return paged(p ? state.songs.slice(0, p.memberCount) : []);

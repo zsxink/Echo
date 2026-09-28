@@ -52,6 +52,7 @@ interface BridgeCommandArguments {
   library_counts: EmptyArgs;
   playlists: EmptyArgs;
   playlist_members: [args: { playlistId: string }];
+  playlists_for_song: [args: { song: string }];
   song_detail: [args: { songId: string }];
   song_cover_keys: [args: { songIds: string[] }];
   set_favorite: [args: { songId: string; favorite: boolean }];

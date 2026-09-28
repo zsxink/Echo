@@ -124,6 +124,8 @@ pub trait PlaylistRepository: Send + Sync {
     fn set_cover_key(&self, id: PlaylistId, key: Option<&str>) -> Result<(), Error>;
     fn delete(&self, id: PlaylistId) -> Result<(), Error>;
     fn members(&self, id: PlaylistId) -> Result<Vec<PlaylistMember>, Error>;
+    /// Playlist ids containing a song in the same library root.
+    fn playlists_for_song(&self, song: SongId) -> Result<Vec<PlaylistId>, Error>;
     fn add_member(&self, playlist: PlaylistId, song: SongId, position: u64) -> Result<(), Error>;
     /// Insert or refresh a membership **by its stable member identity** — the
     /// continuation path must reuse the UUID carried by the portable

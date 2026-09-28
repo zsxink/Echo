@@ -257,6 +257,24 @@ impl PlaylistRepository for MemoryDatabase {
         });
         Ok(rows)
     }
+    fn playlists_for_song(&self, song: SongId) -> Result<Vec<PlaylistId>, Error> {
+        let store = self.lock();
+        let Some(song_root) = store.songs.get(&song).map(|record| record.root()) else {
+            return Ok(Vec::new());
+        };
+        Ok(store
+            .members
+            .values()
+            .filter(|member| member.song() == song)
+            .filter(|member| {
+                store
+                    .playlists
+                    .get(&member.playlist())
+                    .is_some_and(|(playlist_root, _, _)| *playlist_root == song_root)
+            })
+            .map(PlaylistMember::playlist)
+            .collect())
+    }
     fn add_member(&self, playlist: PlaylistId, song: SongId, position: u64) -> Result<(), Error> {
         let mut store = self.lock();
         if store.members.contains_key(&(playlist, song)) {

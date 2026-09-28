@@ -287,6 +287,16 @@ impl PlaylistRepository for MemoryPlaylistRepository {
             .map(|(_, m)| m.clone())
             .collect())
     }
+    fn playlists_for_song(&self, song: SongId) -> Result<Vec<PlaylistId>, Error> {
+        Ok(self
+            .members
+            .lock()
+            .unwrap()
+            .keys()
+            .filter(|(_, member_song)| *member_song == song)
+            .map(|(playlist, _)| *playlist)
+            .collect())
+    }
     fn add_member(&self, playlist: PlaylistId, song: SongId, position: u64) -> Result<(), Error> {
         // A duplicate (playlist, song) is a no-op — never overwrites the
         // original position (design: repeated add is idempotent).

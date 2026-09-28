@@ -218,6 +218,7 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly library_counts: LibraryCountsDto;\n");
     out.push_str("  readonly playlists: readonly PlaylistView[];\n");
     out.push_str("  readonly playlist_members: readonly SongView[];\n");
+    out.push_str("  readonly playlists_for_song: readonly string[];\n");
     out.push_str("  readonly song_detail: SongDetailView;\n");
     out.push_str("  readonly song_cover_keys: Readonly<Record<string, string>>;\n");
     out.push_str("  readonly set_favorite: SongView;\n");
