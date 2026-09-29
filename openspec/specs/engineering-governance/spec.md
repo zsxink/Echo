@@ -5,6 +5,25 @@
 
 ## Requirements
 
+### Requirement: main 分支变更必须经过 Issue 与 Pull Request
+
+`main` MUST 配置为受保护分支。每项变更 MUST 有对应的 GitHub Issue，并在独立分支上实施；变更 MUST 通过关联该 Issue 的 Pull Request 合并到 `main`。任何人（包括仓库管理员）MUST NOT 直接向 `main` 推送、强推或删除该分支。
+
+#### Scenario: 未关联 Issue 的变更请求合并
+
+- **WHEN** 一个 Pull Request 未关联对应的 GitHub Issue
+- **THEN** 它不符合仓库变更流程，MUST NOT 合并
+
+#### Scenario: 变更直接推送到 main
+
+- **WHEN** 任意用户（包括管理员）尝试直接推送、强推或删除 `main`
+- **THEN** GitHub 分支保护拒绝该操作
+
+#### Scenario: 变更通过 Pull Request 合并
+
+- **WHEN** 变更在独立分支上完成，Pull Request 关联了对应 Issue，且满足仓库门禁
+- **THEN** 变更可以通过 Pull Request 合并到 `main`
+
 ### Requirement: 分层边界与领域规则归属
 
 系统 MUST 由共享 Core 单一提供与平台无关的领域规则，包括资料库视图或歌单到有序播放上下文的解析、歌曲到其资料库内绝对位置的解析，以及播放会话恢复时对各项可用性的裁决。平台层（桌面端、应用壳与后续移动端）MUST 只承担输入输出、平台能力与适配，不得为达成同一结果自行重新实现上述规则。

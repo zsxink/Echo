@@ -12,6 +12,7 @@ Echo 是本地优先的跨平台音乐播放器。项目以 OpenSpec 驱动需�
 - 规划使用 OpenSpec 的 propose/update 流程；实现只在 apply 阶段进行；完成后同步并归档。
 - 修改前读取相关文档和当前 change，发现冲突时先修正规格，保持文档、规格与实现一致。
 - PR、issue 一律使用中文；无特别说明的情况下，日常回答用中文（专业词汇除外）。
+- 每项变更必须先有对应的 GitHub Issue，在独立分支上实施，并通过关联该 Issue 的 Pull Request 合并到 `main`；禁止直接向 `main` 推送。
 
 ## 核心约束
 
