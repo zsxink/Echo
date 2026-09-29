@@ -87,6 +87,9 @@
 | DAS-R15-S05 | macOS 菜单栏传输控制与应用身份 | 重复点击不创建多个窗口 | — | Desktop/Native | `tests/native/DAS-R15-S05.md` | `pnpm verify:scenario -- DAS-R15-S05` |
 | DAS-R15-S06 | macOS 菜单栏传输控制与应用身份 | 打包后的身份显示 | — | Desktop/Native | `tests/native/DAS-R15-S06.md` | `pnpm verify:scenario -- DAS-R15-S06` |
 | DAS-R16-S01 | 应用禁用 WebView 默认右键菜单 | 在应用工作区右键 | 4.1, 7.1, 10.3, 13.2 | Native/Gate | `tests/native/DAS-R16-S01.md` | `pnpm verify:scenario -- DAS-R16-S01` |
+| DAS-R17-S01 | Background close exits macOS native fullscreen before hiding the main window | Close the main window from native fullscreen | — | Native/Gate | `tests/native/DAS-R17-S01.md` | `pnpm verify:scenario -- DAS-R17-S01` |
+| DAS-R17-S02 | Background close exits macOS native fullscreen before hiding the main window | Reopen after closing from native fullscreen | — | Native/Gate | `tests/native/DAS-R17-S02.md` | `pnpm verify:scenario -- DAS-R17-S02` |
+| DAS-R17-S03 | Background close exits macOS native fullscreen before hiding the main window | Background close while windowed | — | Native/Gate | `tests/native/DAS-R17-S03.md` | `pnpm verify:scenario -- DAS-R17-S03` |
 
 ## desktop-playback
 

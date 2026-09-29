@@ -2572,6 +2572,24 @@
       "manifest": "tests/native/DAS-R16-S01.md"
     },
     {
+      "id": "DAS-R17-S01",
+      "title": "Close the main window from native fullscreen",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R17-S01",
+      "manifest": "tests/native/DAS-R17-S01.md"
+    },
+    {
+      "id": "DAS-R17-S02",
+      "title": "Reopen after closing from native fullscreen",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R17-S02",
+      "manifest": "tests/native/DAS-R17-S02.md"
+    },
+    {
+      "id": "DAS-R17-S03",
+      "title": "Background close while windowed",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R17-S03",
+      "manifest": "tests/native/DAS-R17-S03.md"
+    },
+    {
       "id": "DP-R01-S01",
       "title": "播放资料库歌曲",
       "command": "cargo test -p echo-desktop --all-features --test player_smoke",
