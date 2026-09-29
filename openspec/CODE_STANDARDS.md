@@ -153,6 +153,7 @@ Infrastructure（通过 Port 接入）
 - React/Flutter 至少覆盖关键状态与用户路径；核心流程按 change 的验收场景补充端到端验证。
 - 涉及路径、文件监听或媒体解析的变更，应考虑 macOS、Windows、Linux 的路径分隔符、大小写、Unicode 和权限差异。
 - OpenSpec tasks 必须列出实际验证命令。工程建立后，最低检查包括对应栈的 format、lint/analyze、type-check、test 和 build。
+- 创建 Pull Request 前必须完成对应 OpenSpec change 的实现任务和规定验证；存在 delta spec 时先同步到主规格并验证，再归档 change。没有 delta spec 时也必须先归档。
 
 ## 9. OpenSpec 对代码变更的要求
 
