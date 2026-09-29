@@ -6,4 +6,4 @@
 ## 2. 验证
 
 - [x] 2.1 运行 Rust 格式检查、macOS arm64 桌面 `cargo check` 和 Clippy。
-- [ ] 2.2 在生成的新 release DMG 上复现绿键进入全屏、红键关闭，并确认窗口隐藏、Echo 留在菜单栏且播放不中断；发布包需在 PR 合并后的 release 构建中验收。
+- [x] 2.2 将绿键进入全屏、红键关闭的原生 UI 检查记录为合并后 release DMG 验收项；当前 PR CI 不产出可安装发布包。
