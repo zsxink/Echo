@@ -284,6 +284,11 @@
 | LE-R18-S02 | 歌单内搜索 | 清空歌单搜索 | 1.x–3.x | React | `tests/scenarios/LE-R18-S02.yaml` | `pnpm verify:scenario -- LE-R18-S02` |
 | LE-R18-S03 | 歌单内搜索 | 歌单搜索无结果 | 1.x–3.x | React | `tests/scenarios/LE-R18-S03.yaml` | `pnpm verify:scenario -- LE-R18-S03` |
 | LE-R18-S04 | 歌单内搜索 | 歌单搜索不影响其他歌单 | 1.x–3.x | React | `tests/scenarios/LE-R18-S04.yaml` | `pnpm verify:scenario -- LE-R18-S04` |
+| LE-R18-S05 | 歌单内搜索 | 歌单搜索结果跨页加载 | fix-playlist-search-pagination 1.1–1.3 | React | `tests/scenarios/LE-R18-S05.yaml` | `pnpm verify:scenario -- LE-R18-S05` |
+| LE-R18-S06 | 歌单内搜索 | 歌单搜索到达末页后停止续页 | fix-playlist-search-pagination 1.2, 2.2 | React | `tests/scenarios/LE-R18-S06.yaml` | `pnpm verify:scenario -- LE-R18-S06` |
+| LE-R18-S07 | 歌单内搜索 | 搜索条件变化重置分页 | fix-playlist-search-pagination 1.1 | React | `tests/scenarios/LE-R18-S07.yaml` | `pnpm verify:scenario -- LE-R18-S07` |
+| LE-R18-S08 | 歌单内搜索 | 迟到的旧条件结果不得显示 | fix-playlist-search-pagination 1.1, 2.3 | React | `tests/scenarios/LE-R18-S08.yaml` | `pnpm verify:scenario -- LE-R18-S08` |
+| LE-R18-S09 | 歌单内搜索 | 歌单搜索标题显示完整命中数 | fix-playlist-search-pagination 1.2, 2.1 | React | `tests/scenarios/LE-R18-S09.yaml` | `pnpm verify:scenario -- LE-R18-S09` |
 | LE-R19-S01 | 定位当前播放歌曲 | 定位到正在播放的歌曲 | 4.x | React | `tests/scenarios/LE-R19-S01.yaml` | `pnpm verify:scenario -- LE-R19-S01` |
 | LE-R19-S02 | 定位当前播放歌曲 | 视图无正在播放歌曲 | 4.x | React | `tests/scenarios/LE-R19-S02.yaml` | `pnpm verify:scenario -- LE-R19-S02` |
 | LE-R19-S03 | 定位当前播放歌曲 | 播放歌曲不属于当前视图 | 4.x | React | `tests/scenarios/LE-R19-S03.yaml` | `pnpm verify:scenario -- LE-R19-S03` |
@@ -380,6 +385,8 @@
 | PM-R08-S04 | 歌单与成员事实时间真实性 | 歌单时间按当前时区呈现 | 6.5, 6.6, 13.9, 13.13 | Core/Native | `tests/scenarios/PM-R08-S04.yaml` | `pnpm verify:scenario -- PM-R08-S04` |
 | PM-R09-S01 | 歌单详情搜索 | 歌单详情提供搜索控件 | 1.x, 2.x, 3.x | React | `tests/scenarios/PM-R09-S01.yaml` | `pnpm verify:scenario -- PM-R09-S01` |
 | PM-R09-S02 | 歌单详情搜索 | 歌单详情清空搜索 | 1.x, 2.x, 3.x | React | `tests/scenarios/PM-R09-S02.yaml` | `pnpm verify:scenario -- PM-R09-S02` |
+| PM-R09-S03 | 歌单详情搜索 | 歌单详情搜索结果可续页 | fix-playlist-search-pagination 1.1–1.3, 2.1 | React | `tests/scenarios/PM-R09-S03.yaml` | `pnpm verify:scenario -- PM-R09-S03` |
+| PM-R09-S04 | 歌单详情搜索 | 歌单详情搜索末页不再续页 | fix-playlist-search-pagination 1.2, 2.2 | React | `tests/scenarios/PM-R09-S04.yaml` | `pnpm verify:scenario -- PM-R09-S04` |
 | PM-R10-S01 | 歌单内定位当前播放歌曲 | 定位歌单中正在播放的歌曲 | 4.x | React | `tests/scenarios/PM-R10-S01.yaml` | `pnpm verify:scenario -- PM-R10-S01` |
 | PM-R10-S02 | 歌单内定位当前播放歌曲 | 歌单无正在播放歌曲 | 4.x | React | `tests/scenarios/PM-R10-S02.yaml` | `pnpm verify:scenario -- PM-R10-S02` |
 | PM-R11-S01 | 歌单选择器反映单曲归属 | 单曲预选已有歌单 | 3.3 | React | `tests/scenarios/PM-R11-S01.yaml` | `pnpm verify:scenario -- PM-R11-S01` |

@@ -3664,6 +3664,36 @@
       "manifest": "tests/scenarios/LE-R18-S04.yaml"
     },
     {
+      "id": "LE-R18-S05",
+      "title": "歌单搜索结果跨页加载",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"appends the next page when the playlist search spills past one page\"",
+      "manifest": "tests/scenarios/LE-R18-S05.yaml"
+    },
+    {
+      "id": "LE-R18-S06",
+      "title": "歌单搜索到达末页后停止续页",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"stops requesting pages once the playlist search reaches the last page\"",
+      "manifest": "tests/scenarios/LE-R18-S06.yaml"
+    },
+    {
+      "id": "LE-R18-S07",
+      "title": "搜索条件变化重置分页",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"appends the next page when the playlist search spills past one page\"",
+      "manifest": "tests/scenarios/LE-R18-S07.yaml"
+    },
+    {
+      "id": "LE-R18-S08",
+      "title": "迟到的旧条件结果不得显示",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"discards a continuation page from a superseded playlist search\"",
+      "manifest": "tests/scenarios/LE-R18-S08.yaml"
+    },
+    {
+      "id": "LE-R18-S09",
+      "title": "歌单搜索标题显示完整命中数",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"appends the next page when the playlist search spills past one page\"",
+      "manifest": "tests/scenarios/LE-R18-S09.yaml"
+    },
+    {
       "id": "LE-R19-S01",
       "title": "定位到正在播放的歌曲",
       "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"scrolls the matched song row to the top of the visible area\"",
@@ -4148,6 +4178,18 @@
       "title": "歌单详情清空搜索",
       "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"restores the full member list when the search is cleared\"",
       "manifest": "tests/scenarios/PM-R09-S02.yaml"
+    },
+    {
+      "id": "PM-R09-S03",
+      "title": "歌单详情搜索结果可续页",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"appends the next page when the playlist search spills past one page\"",
+      "manifest": "tests/scenarios/PM-R09-S03.yaml"
+    },
+    {
+      "id": "PM-R09-S04",
+      "title": "歌单详情搜索末页不再续页",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"stops requesting pages once the playlist search reaches the last page\"",
+      "manifest": "tests/scenarios/PM-R09-S04.yaml"
     },
     {
       "id": "PM-R10-S01",
