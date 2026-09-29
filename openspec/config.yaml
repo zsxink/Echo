@@ -45,3 +45,4 @@ operations:
   archive:
     guidance:
       - 归档前确认任务、验收标准和必要的规格同步均已完成
+      - 提交 Pull Request 前必须完成 OpenSpec change 归档；存在 delta spec 时先同步到主规格并验证同步结果

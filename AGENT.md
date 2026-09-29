@@ -9,7 +9,7 @@ Echo 是本地优先的跨平台音乐播放器。项目以 OpenSpec 驱动需�
 - 从产品、架构和路线图的整体一致性出发，不只处理局部问题。
 - `docs/PRODUCT.md`、`docs/DESIGN.md`、`docs/ROADMAP.md` 是项目级事实来源；其中架构图与模块层级只维护在 `docs/DESIGN.md`；界面以 `docs/interface-terminology.md` 和 `docs/prototype/` 为准。
 - 产品功能、技术方案、边界条件和验收标准等细节写入 OpenSpec，不在本文件重复维护。
-- 规划使用 OpenSpec 的 propose/update 流程；实现只在 apply 阶段进行；完成后同步并归档。
+- 规划使用 OpenSpec 的 propose/update 流程；实现只在 apply 阶段进行。实现完成并通过规定验证后，先同步所有 delta spec、完成 OpenSpec change 归档，再创建 Pull Request；未归档的 change 不得提 PR。没有 delta spec 时也要先完成归档。
 - 修改前读取相关文档和当前 change，发现冲突时先修正规格，保持文档、规格与实现一致。
 - PR、issue 一律使用中文；无特别说明的情况下，日常回答用中文（专业词汇除外）。
 - 每项变更必须先有对应的 GitHub Issue，在独立分支上实施，并通过关联该 Issue 的 Pull Request 合并到 `main`；禁止直接向 `main` 推送。

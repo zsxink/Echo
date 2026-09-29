@@ -125,6 +125,9 @@ export const COMMANDS = {
   "DAS-R15-S05": ATTEST("DAS-R15-S05"), // 重编号自 DAS-R14-S05；无专属测试，人工 attestation
   "DAS-R15-S06": ATTEST("DAS-R15-S06"), // 重编号自 DAS-R14-S06；无专属测试，人工 attestation
   "DAS-R16-S01": ATTEST("DAS-R15-S01"),
+  "DAS-R17-S01": ATTEST("DAS-R17-S01"), // 原生全屏下关闭窗口后退出全屏再隐藏
+  "DAS-R17-S02": ATTEST("DAS-R17-S02"), // 全屏后台关闭后重新打开窗口
+  "DAS-R17-S03": ATTEST("DAS-R17-S03"), // 窗口模式下关闭仍立即隐藏
 
   // ===== desktop-playback (DP) =====, // （重编号自 DAS-R15-S01）
 

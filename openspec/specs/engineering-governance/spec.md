@@ -251,6 +251,21 @@
 - **WHEN** 测试基建或测试初始化代码直接引用功能模块的内部文件
 - **THEN** 门禁失败；该能力必须由公开入口或共享原语提供
 
+### Requirement: OpenSpec change 必须在创建 Pull Request 前同步并归档
+每项通过 OpenSpec 管理的变更 MUST 在创建 Pull Request 前完成实现任务和规定验证。存在 delta spec 时 MUST 先将其同步到对应主规格并验证同步结果，然后归档 change；没有 delta spec 时 MUST 在创建 Pull Request 前归档 change。未归档的 change MUST NOT 进入 Pull Request 创建阶段。
+
+#### Scenario: 存在 delta spec 的变更准备提交 Pull Request
+- **WHEN** OpenSpec change 的实现任务和规定验证均已完成且存在 delta spec
+- **THEN** 维护者先同步 delta 到主规格并验证，再归档 change，之后才创建 Pull Request
+
+#### Scenario: 没有 delta spec 的变更准备提交 Pull Request
+- **WHEN** OpenSpec change 的实现任务和规定验证均已完成且没有 delta spec
+- **THEN** 维护者先归档 change，之后才创建 Pull Request
+
+#### Scenario: change 尚未归档
+- **WHEN** 维护者准备创建 Pull Request 但对应 OpenSpec change 仍在活动目录
+- **THEN** 交付流程要求先完成必要的规格同步和归档，Pull Request 模板明确提示该状态
+
 ### Requirement: 归档与文档一致性
 
 变更归档前 MUST 确认其任务已全部完成；确需遗留的任务 MUST 显式登记为延期或从范围中移除，MUST NOT 在未勾选状态下静默归档。面向维护者的架构与模块说明 MUST 只引用真实存在的模块、入口或检查；文档与实现不一致 MUST 在审查阶段被修正。
