@@ -12,6 +12,8 @@
 
 #![windows_subsystem = "windows"]
 
+#[cfg(any(target_os = "macos", test))]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     env,
     fs::OpenOptions,
@@ -58,6 +60,28 @@ mod macos_status_row;
 mod open_targets;
 
 const MAIN_WINDOW: &str = "main";
+
+/// Defers hiding the main window until macOS has completed fullscreen exit.
+#[cfg(any(target_os = "macos", test))]
+#[derive(Default)]
+struct PendingFullscreenHide {
+    pending: AtomicBool,
+}
+
+#[cfg(any(target_os = "macos", test))]
+impl PendingFullscreenHide {
+    fn begin(&self) {
+        self.pending.store(true, Ordering::Release);
+    }
+
+    fn cancel(&self) {
+        self.pending.store(false, Ordering::Release);
+    }
+
+    fn on_resize(&self, is_fullscreen: bool) -> bool {
+        !is_fullscreen && self.pending.swap(false, Ordering::AcqRel)
+    }
+}
 
 type SharedPlaybackCoordinator = Arc<Mutex<PlaybackCoordinator<Arc<dyn PlayerPort>>>>;
 
@@ -801,12 +825,17 @@ fn main() {
         }
     };
 
+    #[cfg(target_os = "macos")]
+    let pending_fullscreen_hide = Arc::new(PendingFullscreenHide::default());
+
     app.run({
         // Only the macOS `RunEvent::Opened` arm routes through the startup
         // supervisor; the closed-over `startup` (line 683) is enough for other
         // platforms, where a shadow would otherwise be an unused variable.
         #[cfg(target_os = "macos")]
         let startup = Arc::clone(&startup);
+        #[cfg(target_os = "macos")]
+        let pending_fullscreen_hide = Arc::clone(&pending_fullscreen_hide);
         move |app, event| match event {
             RunEvent::ExitRequested { .. } => {
                 #[cfg(target_os = "macos")]
@@ -833,6 +862,20 @@ fn main() {
                     focus_main_window(app);
                 }
             }
+            #[cfg(target_os = "macos")]
+            RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::Resized(_),
+                ..
+            } if label == MAIN_WINDOW => {
+                if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+                    if let Ok(is_fullscreen) = window.is_fullscreen() {
+                        if pending_fullscreen_hide.on_resize(is_fullscreen) {
+                            let _ = window.hide();
+                        }
+                    }
+                }
+            }
             RunEvent::WindowEvent {
                 label,
                 event: tauri::WindowEvent::CloseRequested { api, .. },
@@ -848,6 +891,23 @@ fn main() {
                     }
                     api.prevent_close();
                     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+                        #[cfg(target_os = "macos")]
+                        match window.is_fullscreen() {
+                            Ok(true) => {
+                                pending_fullscreen_hide.begin();
+                                if let Err(error) = window.set_fullscreen(false) {
+                                    pending_fullscreen_hide.cancel();
+                                    tracing::warn!(%error, "failed to exit fullscreen before hiding the main window");
+                                }
+                            }
+                            Ok(false) => {
+                                let _ = window.hide();
+                            }
+                            Err(error) => {
+                                tracing::warn!(%error, "failed to read fullscreen state before hiding the main window");
+                            }
+                        }
+                        #[cfg(not(target_os = "macos"))]
                         let _ = window.hide();
                     }
                 }
@@ -861,6 +921,23 @@ fn main() {
 // to be the final item in the file, and `cover_media_type`/`main` below read
 #[cfg(test)]
 mod cover_canvas_tests {
+    #[test]
+    fn fullscreen_close_waits_until_the_native_window_is_windowed() {
+        let pending = super::PendingFullscreenHide::default();
+
+        pending.begin();
+        assert!(!pending.on_resize(true), "intermediate fullscreen resize");
+        assert!(pending.on_resize(false), "fullscreen exit completed");
+        assert!(!pending.on_resize(false), "hide is completed only once");
+
+        pending.begin();
+        pending.cancel();
+        assert!(
+            !pending.on_resize(false),
+            "failed fullscreen exit is cancelled"
+        );
+    }
+
     #[test]
     fn main_window_activation_restores_one_existing_window_without_creating_another() {
         use tauri::Manager;
