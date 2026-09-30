@@ -13,10 +13,17 @@ pub struct PendingFullscreenHide {
 impl PendingFullscreenHide {
     pub(super) fn begin(&self) {
         self.pending.store(true, Ordering::Release);
+        self.exiting.store(true, Ordering::Release);
     }
 
     pub(super) fn cancel(&self) {
         self.pending.store(false, Ordering::Release);
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(super) fn abort_exit(&self) {
+        self.cancel();
+        self.exiting.store(false, Ordering::Release);
     }
 
     pub(super) fn is_exiting(&self) -> bool {
@@ -76,41 +83,50 @@ mod native {
         impl FullscreenExitObserver {
             #[unsafe(method(windowWillExitFullScreen:))]
             fn will_exit(&self, _notification: &NSNotification) {
+                tracing::debug!("main window will exit native fullscreen");
                 self.ivars().pending.will_exit();
             }
 
             #[unsafe(method(windowDidExitFullScreen:))]
             fn did_exit(&self, _notification: &NSNotification) {
                 let ivars = self.ivars();
+                tracing::debug!(pending = ivars.pending.is_pending(), "main window did exit native fullscreen");
                 if !ivars.pending.did_exit() {
                     return;
                 }
 
-                // Queue this after AppKit and Tao finish dispatching their own
-                // fullscreen-exit callbacks. Hiding inside the notification can
-                // still race Tao's restoration of the windowed frame.
+                // Tauri executes run_on_main_thread immediately when called on
+                // the main thread. Dispatch from a worker so the task cannot
+                // run until AppKit and Tao return to the event loop.
                 let app = ivars.app.clone();
                 let pending = Arc::clone(&ivars.pending);
                 let label = ivars.window_label;
-                if let Err(error) = ivars.app.run_on_main_thread(move || {
-                    if !pending.is_pending() {
-                        return;
-                    }
-                    if let Some(window) = app.get_webview_window(label) {
-                        match window.hide() {
-                            Ok(()) => pending.cancel(),
-                            Err(error) => tracing::warn!(%error, "failed to hide the main window after native fullscreen exit"),
+                std::thread::spawn(move || {
+                    let callback_app = app.clone();
+                    if let Err(error) = app.run_on_main_thread(move || {
+                        if !pending.is_pending() {
+                            return;
                         }
+                        if let Some(window) = callback_app.get_webview_window(label) {
+                            match window.hide() {
+                                Ok(()) => {
+                                    tracing::debug!("hid main window after native fullscreen exit");
+                                    pending.cancel();
+                                }
+                                Err(error) => tracing::warn!(%error, "failed to hide the main window after native fullscreen exit"),
+                            }
+                        }
+                    }) {
+                        tracing::warn!(%error, "failed to schedule main-window hide after native fullscreen exit");
                     }
-                }) {
-                    tracing::warn!(%error, "failed to schedule main-window hide after native fullscreen exit");
-                }
+                });
             }
         }
     );
 
     /// Observe only the main native window; other windows must not consume its
-    /// pending close. Called before the Tauri event loop starts.
+    /// pending close. Called on `RunEvent::Ready`, after Tauri creates the
+    /// configured window during setup.
     pub fn install(
         app: &AppHandle,
         pending: Arc<PendingFullscreenHide>,
@@ -150,6 +166,7 @@ mod native {
             );
         }
         OBSERVER.with(|slot| *slot.borrow_mut() = Some(observer));
+        tracing::debug!("installed main-window fullscreen observer");
         Ok(())
     }
 
