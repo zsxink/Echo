@@ -1,11 +1,13 @@
 //! macOS main-window lifecycle helpers for native fullscreen close behavior.
+#![allow(unsafe_code)]
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Defers hiding the main window until macOS has completed fullscreen exit.
+/// A close request that must wait for `AppKit`'s fullscreen exit to finish.
 #[derive(Default)]
 pub struct PendingFullscreenHide {
     pending: AtomicBool,
+    exiting: AtomicBool,
 }
 
 impl PendingFullscreenHide {
@@ -17,65 +19,150 @@ impl PendingFullscreenHide {
         self.pending.store(false, Ordering::Release);
     }
 
-    pub(super) fn on_resize(&self, is_fullscreen: bool) -> bool {
-        !is_fullscreen && self.pending.swap(false, Ordering::AcqRel)
+    pub(super) fn is_exiting(&self) -> bool {
+        self.exiting.load(Ordering::Acquire)
     }
 
-    #[cfg(target_os = "macos")]
-    fn is_pending(&self) -> bool {
+    pub(super) fn is_pending(&self) -> bool {
         self.pending.load(Ordering::Acquire)
     }
+
+    pub(super) fn will_exit(&self) {
+        self.exiting.store(true, Ordering::Release);
+    }
+
+    pub(super) fn did_exit(&self) -> bool {
+        self.exiting.store(false, Ordering::Release);
+        self.is_pending()
+    }
 }
 
-/// Retries the fullscreen close after `AppKit` has had time to finish its native
-/// transition. Tao normally emits a resize from `windowDidExitFullScreen`, but
-/// the installed app has shown that relying on that event alone can leave the
-/// window visible. The first retry is deliberately delayed so Tao's early
-/// fullscreen state update cannot hide the window during the animation.
 #[cfg(target_os = "macos")]
-pub fn schedule_fullscreen_hide_retries(
-    app: tauri::AppHandle,
-    pending: std::sync::Arc<PendingFullscreenHide>,
-    window_label: &'static str,
-) {
-    use std::{thread, time::Duration};
-    use tauri::Manager;
+mod native {
+    use std::{cell::RefCell, sync::Arc};
 
-    thread::spawn(move || {
-        for delay in [750, 500, 500, 1_000, 1_500] {
-            thread::sleep(Duration::from_millis(delay));
-            if !pending.is_pending() {
-                return;
+    use objc2::{
+        define_class, msg_send, rc::Retained, runtime::NSObjectProtocol, sel, DefinedClass,
+        MainThreadOnly,
+    };
+    use objc2_app_kit::{
+        NSWindow, NSWindowDidExitFullScreenNotification, NSWindowWillExitFullScreenNotification,
+    };
+    use objc2_foundation::{MainThreadMarker, NSNotification, NSNotificationCenter, NSObject};
+    use tauri::{AppHandle, Manager};
+
+    use super::PendingFullscreenHide;
+
+    // The notification center does not retain selector observers. Keep ours on
+    // the AppKit thread for the lifetime of the application.
+    thread_local! {
+        static OBSERVER: RefCell<Option<Retained<FullscreenExitObserver>>> = const { RefCell::new(None) };
+    }
+
+    struct ObserverIvars {
+        app: AppHandle,
+        pending: Arc<PendingFullscreenHide>,
+        window_label: &'static str,
+    }
+
+    define_class!(
+        #[unsafe(super = NSObject)]
+        #[thread_kind = MainThreadOnly]
+        #[ivars = ObserverIvars]
+        struct FullscreenExitObserver;
+
+        unsafe impl NSObjectProtocol for FullscreenExitObserver {}
+
+        impl FullscreenExitObserver {
+            #[unsafe(method(windowWillExitFullScreen:))]
+            fn will_exit(&self, _notification: &NSNotification) {
+                self.ivars().pending.will_exit();
             }
 
-            let app = app.clone();
-            let callback_app = app.clone();
-            let pending = std::sync::Arc::clone(&pending);
-            if let Err(error) = app.run_on_main_thread(move || {
-                if !pending.is_pending() {
+            #[unsafe(method(windowDidExitFullScreen:))]
+            fn did_exit(&self, _notification: &NSNotification) {
+                let ivars = self.ivars();
+                if !ivars.pending.did_exit() {
                     return;
                 }
-                let Some(window) = callback_app.get_webview_window(window_label) else {
-                    pending.cancel();
-                    return;
-                };
-                match window.is_fullscreen() {
-                    Ok(false) => match window.hide() {
-                        Ok(()) => pending.cancel(),
-                        Err(error) => {
-                            tracing::warn!(%error, "failed to hide the main window after fullscreen close");
+
+                // Queue this after AppKit and Tao finish dispatching their own
+                // fullscreen-exit callbacks. Hiding inside the notification can
+                // still race Tao's restoration of the windowed frame.
+                let app = ivars.app.clone();
+                let pending = Arc::clone(&ivars.pending);
+                let label = ivars.window_label;
+                if let Err(error) = ivars.app.run_on_main_thread(move || {
+                    if !pending.is_pending() {
+                        return;
+                    }
+                    if let Some(window) = app.get_webview_window(label) {
+                        match window.hide() {
+                            Ok(()) => pending.cancel(),
+                            Err(error) => tracing::warn!(%error, "failed to hide the main window after native fullscreen exit"),
                         }
-                    },
-                    Ok(true) => tracing::debug!("waiting for fullscreen exit before hiding the main window"),
-                    Err(error) => tracing::warn!(%error, "failed to read fullscreen state while retrying window hide"),
+                    }
+                }) {
+                    tracing::warn!(%error, "failed to schedule main-window hide after native fullscreen exit");
                 }
-            }) {
-                tracing::warn!(%error, "failed to schedule fullscreen close retry");
             }
         }
+    );
 
-        if pending.is_pending() {
-            tracing::warn!("main window remains visible after fullscreen close retries");
+    /// Observe only the main native window; other windows must not consume its
+    /// pending close. Called before the Tauri event loop starts.
+    pub fn install(
+        app: &AppHandle,
+        pending: Arc<PendingFullscreenHide>,
+        window_label: &'static str,
+    ) -> Result<(), String> {
+        let mtm = MainThreadMarker::new()
+            .ok_or_else(|| "fullscreen observer must be installed on the main thread".to_owned())?;
+        let window = app
+            .get_webview_window(window_label)
+            .ok_or_else(|| "main window is unavailable for fullscreen observer".to_owned())?;
+        let ns_window = window.ns_window().map_err(|error| error.to_string())?;
+        // SAFETY: Tauri returns the live NSWindow for this WebviewWindow. The
+        // observer is removed before the application releases its windows.
+        let ns_window = unsafe { &*ns_window.cast::<NSWindow>() };
+        let this = FullscreenExitObserver::alloc(mtm).set_ivars(ObserverIvars {
+            app: app.clone(),
+            pending,
+            window_label,
+        });
+        // SAFETY: NSObject's designated initializer is valid for this subclass.
+        let observer: Retained<FullscreenExitObserver> = unsafe { msg_send![super(this), init] };
+        let center = NSNotificationCenter::defaultCenter();
+        // SAFETY: Both selectors are implemented by this observer. The object
+        // filter is a live NSWindow and unregister() removes the observer.
+        unsafe {
+            center.addObserver_selector_name_object(
+                &observer,
+                sel!(windowWillExitFullScreen:),
+                Some(NSWindowWillExitFullScreenNotification),
+                Some(ns_window),
+            );
+            center.addObserver_selector_name_object(
+                &observer,
+                sel!(windowDidExitFullScreen:),
+                Some(NSWindowDidExitFullScreenNotification),
+                Some(ns_window),
+            );
         }
-    });
+        OBSERVER.with(|slot| *slot.borrow_mut() = Some(observer));
+        Ok(())
+    }
+
+    pub fn unregister() {
+        OBSERVER.with(|slot| {
+            if let Some(observer) = slot.borrow_mut().take() {
+                // SAFETY: This is the same live selector observer registered in
+                // install(), and AppKit no longer calls it after removal.
+                unsafe { NSNotificationCenter::defaultCenter().removeObserver(&observer) };
+            }
+        });
+    }
 }
+
+#[cfg(target_os = "macos")]
+pub use native::{install, unregister};

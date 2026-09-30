@@ -1,28 +1,28 @@
 ## Context
 
-PR #43 增加了全屏退出后的延迟隐藏：收到后台关闭请求时标记待隐藏、调用 `set_fullscreen(false)`，并在后续 `Resized` 事件确认窗口已退出全屏后隐藏。用户实测仍只恢复出窗口化窗口，未隐藏。当前代码还会忽略 `window.hide()` 的错误，并在调用隐藏前消费待处理标志，无法诊断或重试失败。
+PR #43 增加了全屏退出后的延迟隐藏：收到后台关闭请求时标记待隐藏、调用 `set_fullscreen(false)`，并在后续 `Resized` 事件确认窗口已退出全屏后隐藏。随后 PR #46 增加定时重试，但用户从该分支构建并安装 DMG 后仍复现窗口恢复原尺寸且保持可见。Tao 的 `set_fullscreen(false)` 在 AppKit 动画完成前先更新内部全屏标记，因此动画期间的 `Resized` 会误判为已退出全屏，并提前清除待隐藏状态；AppKit 最后恢复窗口时又将其显示出来。
 
 ## Goals / Non-Goals
 
-**Goals:** 在保留“先结束原生全屏转换，再隐藏”的顺序下可靠完成后台关闭；隐藏错误必须被记录，待处理动作只能在隐藏成功后清除。
+**Goals:** 以 AppKit 原生退出完成通知作为隐藏条件，可靠完成后台关闭；隐藏错误必须被记录，待处理动作只能在隐藏成功后清除。
 
 **Non-Goals:** 不改变全屏进入/退出按钮语义，不退出 Echo 进程，不调整播放和菜单栏行为，不改变 Windows/Linux。
 
 ## Decisions
 
-- 保留现有 CloseRequested → 退出全屏 → native transition 完成 → 隐藏的状态顺序，避免在动画期间直接隐藏而重现黑屏。
-- 保留 native 退出完成后的 `Resized` 隐藏路径；只有 `window.hide()` 成功才清除待处理状态，失败时记录日志并保留待处理状态。
-- 增加延迟、有界的主线程重试作为兜底，首轮等待 750ms，避免 Tao 提前更新 fullscreen 状态时在动画中隐藏窗口；重试期间仍处于全屏则继续等待，不隐藏。
-- 记录重试结束后仍未隐藏的状态，便于从 release 日志定位原生事件或窗口 API 失败。
+- 保留 CloseRequested → 退出全屏 → native transition 完成 → 隐藏的状态顺序，避免在动画期间直接隐藏而重现黑屏。
+- 只观察主 `NSWindow` 的 `NSWindowWillExitFullScreenNotification` 与 `NSWindowDidExitFullScreenNotification`。前者标记原生退出正在进行，后者将隐藏任务排入主线程队列，让 Tao 完成同轮事件分发后再隐藏。
+- 移除 `Resized` 和基于时间的重试作为完成依据；Tao 的缓存状态不能证明 AppKit 动画完成。退出动画中再次收到关闭请求时，仍等待原生完成通知。
+- 仅在 `window.hide()` 成功后清除待处理状态；安装观察器或隐藏失败时记录错误。
 - 规格复用当前 `desktop-app-shell` requirement；本 change 仅修复实现与既有规格的偏差，因此 `skip_specs: true`。
 
 ## Risks / Trade-offs
 
-- macOS 全屏退出由原生动画异步完成；重试必须等待窗口状态确认已切回窗口模式，不能在动画中隐藏。
-- 自动重试有界（最多 5 次，总等待约 4.25 秒），并保留失败日志，避免持续后台循环。
+- macOS 全屏退出由原生动画异步完成；通知观察器必须在应用运行期间存活，并在退出时注销。
+- 若 AppKit 未发出退出完成通知或 `hide()` 返回错误，窗口会保持可见并留下日志；不再靠猜测动画时长强行隐藏。
 
 ## Migration Plan
 
 无需数据迁移或配置变更；更新窗口生命周期处理与对应回归验证即可。
 
-合并后生成新的 release DMG，并在安装包中手工验证：绿色按钮进入原生全屏后点击红色按钮，主窗口隐藏、Echo 仍在菜单栏且播放不中断。当前 PR 的 CI 不生成可安装 release DMG，因此该项属于发布验收，不作为 PR 自动化门禁。
+生成包含修复的 release DMG，并在安装应用中手工验证：绿色按钮进入原生全屏后点击红色按钮，主窗口隐藏、Echo 仍在菜单栏且播放不中断。当前 PR 的 CI 不生成可安装 release DMG，因此该项属于发布验收，不作为 PR 自动化门禁。

@@ -808,6 +808,15 @@ fn main() {
 
     #[cfg(target_os = "macos")]
     let pending_fullscreen_hide = Arc::new(PendingFullscreenHide::default());
+    #[cfg(target_os = "macos")]
+    if let Err(error) = macos_window_lifecycle::install(
+        app.handle(),
+        Arc::clone(&pending_fullscreen_hide),
+        MAIN_WINDOW,
+    ) {
+        tracing::error!(%error, "failed to observe native fullscreen exit");
+        std::process::exit(1);
+    }
 
     app.run({
         // Only the macOS `RunEvent::Opened` arm routes through the startup
@@ -821,6 +830,8 @@ fn main() {
             RunEvent::ExitRequested { .. } => {
                 #[cfg(target_os = "macos")]
                 macos_now_playing::clear();
+                #[cfg(target_os = "macos")]
+                macos_window_lifecycle::unregister();
             }
             // macOS delivers file-association opens through `RunEvent::Opened`; they
             // go through the same FIFO as the single-instance argv path (task 9.1).
@@ -841,23 +852,6 @@ fn main() {
             } => {
                 if !has_visible_windows {
                     focus_main_window(app);
-                }
-            }
-            #[cfg(target_os = "macos")]
-            RunEvent::WindowEvent {
-                label,
-                event: tauri::WindowEvent::Resized(_),
-                ..
-            } if label == MAIN_WINDOW => {
-                if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-                    if let Ok(is_fullscreen) = window.is_fullscreen() {
-                        if pending_fullscreen_hide.on_resize(is_fullscreen) {
-                            if let Err(error) = window.hide() {
-                                pending_fullscreen_hide.begin();
-                                tracing::warn!(%error, "failed to hide the main window after fullscreen exit");
-                            }
-                        }
-                    }
                 }
             }
             RunEvent::WindowEvent {
@@ -882,16 +876,16 @@ fn main() {
                                 if let Err(error) = window.set_fullscreen(false) {
                                     pending_fullscreen_hide.cancel();
                                     tracing::warn!(%error, "failed to exit fullscreen before hiding the main window");
-                                } else {
-                                    macos_window_lifecycle::schedule_fullscreen_hide_retries(
-                                        app.clone(),
-                                        Arc::clone(&pending_fullscreen_hide),
-                                        MAIN_WINDOW,
-                                    );
                                 }
                             }
                             Ok(false) => {
-                                let _ = window.hide();
+                                if pending_fullscreen_hide.is_exiting()
+                                    || pending_fullscreen_hide.is_pending()
+                                {
+                                    pending_fullscreen_hide.begin();
+                                } else if let Err(error) = window.hide() {
+                                    tracing::warn!(%error, "failed to hide the main window after close");
+                                }
                             }
                             Err(error) => {
                                 tracing::warn!(%error, "failed to read fullscreen state before hiding the main window");
@@ -912,20 +906,20 @@ fn main() {
 #[cfg(test)]
 mod cover_canvas_tests {
     #[test]
-    fn fullscreen_close_waits_until_the_native_window_is_windowed() {
+    fn fullscreen_close_waits_for_appkit_completion() {
         let pending = super::PendingFullscreenHide::default();
 
         pending.begin();
-        assert!(!pending.on_resize(true), "intermediate fullscreen resize");
-        assert!(pending.on_resize(false), "fullscreen exit completed");
-        assert!(!pending.on_resize(false), "hide is completed only once");
+        pending.will_exit();
+        assert!(pending.is_exiting(), "native exit is still in progress");
+        assert!(pending.did_exit(), "native exit completes pending close");
+        assert!(!pending.is_exiting(), "native exit is complete");
+        pending.cancel();
+        assert!(!pending.did_exit(), "hide is completed only once");
 
         pending.begin();
         pending.cancel();
-        assert!(
-            !pending.on_resize(false),
-            "failed fullscreen exit is cancelled"
-        );
+        assert!(!pending.did_exit(), "failed fullscreen exit is cancelled");
     }
 
     #[test]
