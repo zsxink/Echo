@@ -12,8 +12,6 @@
 
 #![windows_subsystem = "windows"]
 
-#[cfg(any(target_os = "macos", test))]
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     env,
     fs::OpenOptions,
@@ -57,31 +55,14 @@ mod dialogs;
 mod macos_now_playing;
 #[cfg(target_os = "macos")]
 mod macos_status_row;
+#[cfg(any(target_os = "macos", test))]
+mod macos_window_lifecycle;
 mod open_targets;
 
 const MAIN_WINDOW: &str = "main";
 
-/// Defers hiding the main window until macOS has completed fullscreen exit.
 #[cfg(any(target_os = "macos", test))]
-#[derive(Default)]
-struct PendingFullscreenHide {
-    pending: AtomicBool,
-}
-
-#[cfg(any(target_os = "macos", test))]
-impl PendingFullscreenHide {
-    fn begin(&self) {
-        self.pending.store(true, Ordering::Release);
-    }
-
-    fn cancel(&self) {
-        self.pending.store(false, Ordering::Release);
-    }
-
-    fn on_resize(&self, is_fullscreen: bool) -> bool {
-        !is_fullscreen && self.pending.swap(false, Ordering::AcqRel)
-    }
-}
+use macos_window_lifecycle::PendingFullscreenHide;
 
 type SharedPlaybackCoordinator = Arc<Mutex<PlaybackCoordinator<Arc<dyn PlayerPort>>>>;
 
@@ -196,6 +177,10 @@ fn focus_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     // Resolve the stable window label only. Status-item activation never
     // constructs a WebView, so rapid/repeated activation cannot produce a
     // second main window or a second playback composition.
+    #[cfg(target_os = "macos")]
+    if let Some(pending) = app.try_state::<Arc<PendingFullscreenHide>>() {
+        pending.cancel();
+    }
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = window.show();
         let _ = window.unminimize();
@@ -827,6 +812,8 @@ fn main() {
 
     #[cfg(target_os = "macos")]
     let pending_fullscreen_hide = Arc::new(PendingFullscreenHide::default());
+    #[cfg(target_os = "macos")]
+    app.manage(Arc::clone(&pending_fullscreen_hide));
 
     app.run({
         // Only the macOS `RunEvent::Opened` arm routes through the startup
@@ -837,9 +824,24 @@ fn main() {
         #[cfg(target_os = "macos")]
         let pending_fullscreen_hide = Arc::clone(&pending_fullscreen_hide);
         move |app, event| match event {
+            #[cfg(target_os = "macos")]
+            RunEvent::Ready => {
+                // Tauri creates configured windows during setup(), which runs
+                // immediately before Ready. The window does not exist at build().
+                if let Err(error) = macos_window_lifecycle::install(
+                    app,
+                    Arc::clone(&pending_fullscreen_hide),
+                    MAIN_WINDOW,
+                ) {
+                    tracing::error!(%error, "failed to observe native fullscreen exit");
+                    app.exit(1);
+                }
+            }
             RunEvent::ExitRequested { .. } => {
                 #[cfg(target_os = "macos")]
                 macos_now_playing::clear();
+                #[cfg(target_os = "macos")]
+                macos_window_lifecycle::unregister();
             }
             // macOS delivers file-association opens through `RunEvent::Opened`; they
             // go through the same FIFO as the single-instance argv path (task 9.1).
@@ -858,22 +860,9 @@ fn main() {
                 has_visible_windows,
                 ..
             } => {
+                pending_fullscreen_hide.cancel();
                 if !has_visible_windows {
                     focus_main_window(app);
-                }
-            }
-            #[cfg(target_os = "macos")]
-            RunEvent::WindowEvent {
-                label,
-                event: tauri::WindowEvent::Resized(_),
-                ..
-            } if label == MAIN_WINDOW => {
-                if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-                    if let Ok(is_fullscreen) = window.is_fullscreen() {
-                        if pending_fullscreen_hide.on_resize(is_fullscreen) {
-                            let _ = window.hide();
-                        }
-                    }
                 }
             }
             RunEvent::WindowEvent {
@@ -894,14 +883,23 @@ fn main() {
                         #[cfg(target_os = "macos")]
                         match window.is_fullscreen() {
                             Ok(true) => {
+                                tracing::debug!("background close requested while main window is fullscreen");
                                 pending_fullscreen_hide.begin();
                                 if let Err(error) = window.set_fullscreen(false) {
-                                    pending_fullscreen_hide.cancel();
+                                    pending_fullscreen_hide.abort_exit();
                                     tracing::warn!(%error, "failed to exit fullscreen before hiding the main window");
                                 }
                             }
                             Ok(false) => {
-                                let _ = window.hide();
+                                tracing::debug!(native_exit_in_progress = pending_fullscreen_hide.is_exiting(), pending = pending_fullscreen_hide.is_pending(), "background close requested while Tao reports windowed");
+                                if pending_fullscreen_hide.is_exiting() {
+                                    pending_fullscreen_hide.begin();
+                                } else if let Err(error) = window.hide() {
+                                    tracing::warn!(%error, "failed to hide the main window after close");
+                                } else {
+                                    pending_fullscreen_hide.cancel();
+                                    tracing::debug!("hid windowed main window after background close");
+                                }
                             }
                             Err(error) => {
                                 tracing::warn!(%error, "failed to read fullscreen state before hiding the main window");
@@ -922,20 +920,20 @@ fn main() {
 #[cfg(test)]
 mod cover_canvas_tests {
     #[test]
-    fn fullscreen_close_waits_until_the_native_window_is_windowed() {
+    fn fullscreen_close_waits_for_appkit_completion() {
         let pending = super::PendingFullscreenHide::default();
 
         pending.begin();
-        assert!(!pending.on_resize(true), "intermediate fullscreen resize");
-        assert!(pending.on_resize(false), "fullscreen exit completed");
-        assert!(!pending.on_resize(false), "hide is completed only once");
+        pending.will_exit();
+        assert!(pending.is_exiting(), "native exit is still in progress");
+        assert!(pending.did_exit(), "native exit completes pending close");
+        assert!(!pending.is_exiting(), "native exit is complete");
+        pending.cancel();
+        assert!(!pending.did_exit(), "hide is completed only once");
 
         pending.begin();
         pending.cancel();
-        assert!(
-            !pending.on_resize(false),
-            "failed fullscreen exit is cancelled"
-        );
+        assert!(!pending.did_exit(), "failed fullscreen exit is cancelled");
     }
 
     #[test]
