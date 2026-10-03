@@ -2142,6 +2142,16 @@
           "cmd": "node scripts/verify/check-scenario-command-proof.mjs"
         }
       ]
+    },
+    {
+      "id": "AFX-1",
+      "title": "Audio-effects evidence discipline: task-id collisions, discredited structural claim, and probe capability",
+      "commands": [
+        {
+          "desc": "no audio-effects task number collides with a manifest id; the discredited 'extrastereo has no process_command' claim stays out; probe.py can still prove a runtime parameter change",
+          "cmd": "node scripts/verify/checks/task-audio-effects-evidence.mjs"
+        }
+      ]
     }
   ],
   "scenarios": [

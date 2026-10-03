@@ -157,7 +157,11 @@ fn transition_bound_protects_mixed_sign_interpolation() {
         ..EqCurve::default()
     });
     let bound = transition_preamp_db(&left, &right, environment(48_000)).unwrap();
-    assert_eq!(bound, -121.0);
+    // All ten bands alternate sign, so every band's positive endpoint max is
+    // 12 dB and the intermediate bound is the full 120 dB. The transition shares
+    // AUTO_HEADROOM_DB with the steady-state preamp; it used to add a separate
+    // 1.0 dB, which made the transition and steady state disagree.
+    assert_eq!(bound, -(120.0 + AUTO_HEADROOM_DB));
     assert_eq!(
         transition_preamp_db(
             &Payload::default(),

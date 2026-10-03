@@ -67,7 +67,7 @@ H_i(z)=(b0+b1*z^-1+b2*z^-2)/(1+a1*z^-1+a2*z^-2)
 responseDb(f)=effectivePreampDb+20log10(abs(product(H_i(exp(j*2πf/Fs)))))
 ```
 
-使用 f64、非反向 IIR、固定系数规则；候选 FFmpeg `equalizer` 指定 `t=q,w=√2,mix=1,normalize=false,precision=f64,block_size=0`，通过具名 lavfi 的 gain 命令改参。避免六个 biquad 系数逐条提交导致不一致。响应图复用后端计算结果，不在 UI 复制保护规则；在 20 Hz 到 min(20 kHz,0.45Fs) 的对数频点绘制合成 EQ 与实际 preamp，不包含空间/动态 limiter。共享数学测试误差≤0.1 dB，原生低电平扫频/脉冲响应与计算最大误差≤0.25 dB；保护不会触发的低电平样本用于此项。
+使用 f64、非反向 IIR、固定系数规则；候选 FFmpeg `equalizer` 指定 `t=q,w=√2,mix=1,normalize=false,precision=f64`，通过具名 lavfi 的 gain 命令改参（⚠️ 该运行时命令路径已实测不改变音频，见第 4 节与 `native-gate.md`）。避免六个 biquad 系数逐条提交导致不一致。响应图复用后端计算结果，不在 UI 复制保护规则；在 20 Hz 到 min(20 kHz,0.45Fs) 的对数频点绘制合成 EQ 与实际 preamp，不包含空间/动态 limiter。共享数学测试误差≤0.1 dB，原生低电平扫频/脉冲响应与计算最大误差≤0.25 dB；保护不会触发的低电平样本用于此项。**⚠️ 该 ≤0.25 dB 验收标准尚未测量**：现有证据只做了 997 Hz 打 1 kHz 段的单点响应（误差 −0.0041 dB，对 997 Hz 解析值 5.999529 而言真实误差约 −0.0037 dB）。已用 `probe.py --sweep-response` 尝试，但窗包络法测得的是窗内频率内容而非滤波器响应（误差随窗长从 +10.2 dB 单调收敛到安装增益 +5.949 dB），**无法分辨 0.25 dB**，故该检查显式输出 `usable_for_tolerance_verdict: false`。兑现此标准需逐频正弦扫频或窄于滤波器带宽的 FFT 分析，仍待补做。
 
 九个初始曲线（2026-10-02 专业资料复核后的试听候选；顺序为 31.25/62.5/125/250/500/1000/2000/4000/8000/16000 Hz，单位 dB；均 Auto/请求 0）：
 
@@ -127,13 +127,15 @@ RBJ公式属于算法依据；Q/采样率边界、0.5 dB步进、1 dB余量、li
 
 ### 4. 空间、整链增益及峰值保护
 
-空间采用 `M=(L+R)/2,S=(L-R)/2,L'=M+1.25S,R'=M-1.25S`，候选 `extrastereo=m=1.25:c=false`，不暴露空间编辑。width 是滤镜安装期参数：随包 FFmpeg 的 `extrastereo` 没有 `process_command`，mpv 的 `af-command spatial:m` 虽返回成功但不改变参数；实现不得发送该命令。线性段单声道折叠保留 M，最坏逐样本放大界为 1.25（约1.938 dB）；限幅可能改变整体幅度，仍须人声折叠试听。
+空间采用 `M=(L+R)/2,S=(L-R)/2,L'=M+1.25S,R'=M-1.25S`，候选 `extrastereo=m=1.25:c=false`，不暴露空间编辑。`width` 目前事实上是**安装期常量**：随包 FFmpeg 的 `extrastereo` 结构上确有 `process_command` 回调（2026-10-03 按 FFmpeg 6.0 真实字段布局复核，更正了此前「无回调」的错误结论），但 **PCM 判别性测量显示本随包库上任何 `af-command` 运行时改参都不改变输出**（EQ 增益、preamp、width 三者一致），而 mpv 因 `f_lavfi.c` 只判 `result >= 0` 仍返回 rc=0。实现因此不得发送 `spatial:m`，也不得把 rc=0 当生效证据；宽度变更须走重建链并以实测确认。线性段单声道折叠保留 M，最坏逐样本放大界为 1.25（约1.938 dB）；限幅可能改变整体幅度，仍须人声折叠试听。
 
 链序：浮点格式协商 → 独立 preamp → 十段 EQ **或**空间 → 不可关闭的末端 limiter → 既有输出链。新增链不写 mpv volume/mute，也不为衰减补偿主音量。关闭平滑过渡后移除全部新增处理，恢复既有旁路；过渡尾部也受保护。
 
-EQ 的风险 `G` 为有效整链最大幅频增益：DC/Nyquist、中心频点及 32769 个等距频点，并细化局部极大值；空间用1.938 dB。峰值保护上限 `safe=-max(0,G)`，中性全零 EQ 特例 safe=0；自动初始策略采用 `safe+0.5 dB`（中性仍为0），由不可关闭的末端 limiter 承接不超过0.5 dB的合成稳态超限并保护真实瞬态；手动采用 `min(request,safe)`。安全值可低于 -12。该0.5 dB补偿是 review 提出的保守调音初值，不是响度匹配，须由候选包 PCM 压力捕获确认sample-peak门槛。过渡期间使用旧/新/经过参数的最保守界；提高风险先收紧前置衰减，降低风险先降效果后放宽衰减。频响估计不能证明任意瞬态安全，末端 limiter 必不可少。
+EQ 的风险 `G` 为**栅格估计的稳态整链最大幅频增益**：DC/Nyquist、中心频点及 32769 个等距频点，并细化局部极大值；空间用1.938 dB。峰值保护上限 `safe=-max(0,G)`，中性全零 EQ 特例 safe=0；自动初始策略采用 `safe+0.5 dB`（中性仍为0），由不可关闭的末端 limiter 承接不超过0.5 dB的**稳态**合成超限；**该 0.5 dB 目前无实测 A/B 支撑**（evidence 目录无任何 BS.1770 测量文件），是从播放器视角的未验证调音偏好：其代价是相对其他播放器恒定响度偏高 0.5 dB，收益是 limiter 少介入 0.5 dB。手动采用 `min(request,safe)`。安全值可低于 -12。该补偿**不能**兜住 biquad 冲激振铃（见上），故不构成「任意瞬态安全」的保证。过渡期间使用旧/新/经过参数的最保守界；提高风险先收紧前置衰减，降低风险先降效果后放宽衰减。频响估计不能证明任意瞬态安全，末端 limiter 必不可少。
 
-限幅候选固定为 sample-peak，`limit=0.891250938`（-1 dBFS）、attack=5 ms、release=50 ms、level_in/out=1、asc=false、level=false、latency=true；不宣称 true-peak；-1 dBFS 的样本上限不等于 -1 dBTP，无法据此保证 DAC 重建或后置处理的 intersample peak。明确关闭空间内部 clipping 和 limiter 自动补增益，保持浮点中间余量。实际输出捕获全为有限值且 sample peak≤0 dBFS；若后置重采样等使保护失效，属于首项验证失败，不能放宽门槛。该阈值保留样本幅度余量，5/50 ms 是候选实现初值（也恰为FFmpeg该滤镜默认时间值），不是 ITU推荐或已证明最透明的设置；须在瞬态、持续低频和反相素材中审查失真/抽吸感。不承诺修复源失真或用户主音量额外放大。true-peak仅作为测量诊断记录，若日后增加true-peak处理或合规承诺需独立修订方案与预算，不在本轮扩大P0。
+限幅候选固定为 sample-peak，`limit=0.891250938`（-1 dBFS）、attack=5 ms、release=50 ms、level_in/out=1、asc=false、level=false、latency=true；不宣称 true-peak；-1 dBFS 的样本上限不等于 -1 dBTP，无法据此保证 DAC 重建或后置处理的 intersample peak。`level=false` 是必需项：FFmpeg 的 auto-level 默认开启，会把限幅后输出归一化回 0 dB 并破坏 preamp 预算。`latency=true` 表示 alimiter **自行补偿**前瞻延迟（FFmpeg 置 `in_trim=out_pad=attack*Fs-1`，实测在 48 kHz/5 ms 下抵消 239 样本，与公式一致），而非引入延迟。明确关闭空间内部 clipping 和 limiter 自动补增益，保持浮点中间余量。实际输出捕获全为有限值且 sample peak≤0 dBFS；若后置重采样等使保护失效，属于首项验证失败，不能放宽门槛。该阈值保留样本幅度余量，5/50 ms 恰为 FFmpeg 该滤镜默认值，但**沿用默认不构成工程论证**，须在瞬态、持续低频和反相素材中审查失真/抽吸感。不承诺修复源失真或用户主音量额外放大。true-peak仅作为测量诊断记录，若日后增加true-peak处理或合规承诺需独立修订方案与预算，不在本轮扩大P0。
+
+`G` 是**栅格估计的稳态峰值**而非严格上界：峰值搜索用 32769 点等距栅格加局部极大细化，没有区间界证明其为全局上界，且 biquad 冲激振铃可使瞬态超过该值。因此 0.5 dB 补偿只能承接**稳态**超限，**瞬态由 limiter 兜底但其充分性不由 `G` 保证**。实测过渡期线性插值不会超过端点 G（all+12、rock、相邻两段 +12 三种情形均收敛于 frac=1.0），故 30 ms 增益斜坡期间 preamp 预算够用。
 
 30 ms 连续过渡为目标：用户操作在 actor 下一轮立即开始斜坡，不叠加 debounce；稳态 gain/preamp 原地更新，类型切换/开关/采样率变化允许重新配置但不能断流。新滤镜链必须等 libmpv 报告重配置后再发送具名参数命令，避免命令早于滤镜实例就绪。具名命令存在不代表后端能平滑更新；须实际捕获验证斜坡、类型切换和首样本屏障。限幅延迟必须由播放链补偿，验证 seek、EOF 尾部、时长和歌词/进度差相对旁路不新增可测偏移（捕获时间容限 10 ms）。不把每个 input 重建链、静默断流或未评估双链引擎作为默认补救。
 

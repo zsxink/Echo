@@ -8,12 +8,12 @@
 
 | # | 类别 | 结论 | 严重度 |
 |---|---|---|---|
-| R1 | 假成功 | `extrastereo` 无 `process_command`，`af-command ... spatial:m` 返回 rc=0 但不生效 | 高（证据误判） |
+| R1 | 假成功 | **运行时改参整体无效**：EQ 增益 / preamp / width 的 `af-command` 均 rc=0 但 PCM 实测输出无变化。原归因「`extrastereo` 无 `process_command`」已证伪 | 高（证据误判 + 设计前提失效） |
 | R2 | 潜在死锁 | `install_pending` 仅由 `reconfirm()` 清除，依赖 AUDIO_RECONFIG 必然到达 | 中 |
 | R3 | 听感 | auto preamp 按合成峰值扣 1.6–5.9 dB，峰值落在 ~62 Hz，响度差盖过音色变化 | 高（用户可感知） |
 | R4 | 听感 | 九条曲线幅度过小（多数 ±0.5–2 dB），弱于可闻阈值 | 中 |
-| R5 | 已确认正确 | `g=0` 段数学上精确恒等；`alimiter level=false` 正确 | 无需修改 |
-| R6 | 环境 | 随包 vendor 已更新，但 `/Applications/Echo.app` 仍是旧库 | 阻断真机验证 |
+| R5 | 已确认正确 | `g=0` 段数学恒等；`alimiter level=false` 正确；`latency=true` 确实补偿延迟（实测 239 样本） | 无需修改 |
+| R6 | 环境 | 随包 vendor 已更新，但 `/Applications/Echo.app` 仍是旧库 | 阻断真机验证（已在修复轮解除） |
 
 ## 2. 复核方法与证据
 
@@ -25,47 +25,69 @@
 
 ### 2.2 运行时改参数能力（本次新增判据）
 
-判据是读 `AVFilter` 结构体末尾的 `process_command` 指针。**FFmpeg 6.0 的字段顺序必须写对**：
+判据是读 `AVFilter` 结构体末尾的 `process_command` 指针。
+
+> ⚠️ **2026-10-03 更正**：本节原以 `extrastereo` 作为「无回调」的对照组，据此得出 R1。该对照**不成立**——脚本当时按错误的字段顺序读取，错位读出 `nb_inputs=65536` 等荒谬值；而只比对 `filt.name`（offset 0）的 sanity check **任何布局都能通过**，故无鉴别力。
+
+**FFmpeg 6.0 的真实字段顺序**（`inputs`/`outputs` 在 `priv_class` **之前**，pad 计数是 `uint8`，`priv_size` 在 **offset 80**）：
 
 ```c
-name, description, priv_size, flags_internal, priv_class,
-inputs, nb_inputs, outputs, nb_outputs, process_command
+const char *name; const char *description;
+const AVFilterPad *inputs; const AVFilterPad *outputs;
+const AVClass *priv_class; int flags;
+uint8_t nb_inputs; uint8_t nb_outputs; uint8_t formats_state;
+int (*preinit)(...); int (*init)(...); void (*uninit)(...);
+union { ... } formats;
+int priv_size; int flags_internal;
+int (*process_command)(...);
+int (*activate)(...);
 ```
 
-顺序写错会**静默读到相邻内存**，表现为「所有滤镜都返回 True」这种无区分度的结果。改对后：
+修正布局并用导出的 `avfilter_filter_pad_count()` 交叉校验后，对随包库的实测：
 
-| 滤镜 | `process_command` | 运行时可改 |
-|---|---|---|
-| `equalizer` | 有 | ✅ `frequency`/`gain`/`width`/`width_type`/`mix`/`bypass` |
-| `volume` | 有 | ✅ `volume` |
-| `alimiter` | 有 | ✅ `limit`/`attack`/`release` |
-| `aformat` | 有 | ✅ |
-| `extrastereo` | **无** | ❌ |
+| 滤镜 | `priv_size` | `process_command` | 结构层能否改参 |
+|---|---:|---|---|
+| `equalizer` | 272 | 有 | ✅ |
+| `volume` | 200 | 有 | ✅ |
+| `alimiter` | 184 | 有 | ✅ |
+| `extrastereo` | 16 | 有 | ✅（**与原结论相反**） |
+| `aformat` | 56 | 无 | ❌ |
 
-上游依据：`af_biquads.c` 自 2017 年 `ce626f269` 起为 biquad 系滤镜加 `process_command`（后于 2019 年 `015cbca44` 改为 `ff_filter_process_command()`）；`extrastereo` 属 `af_stereotools.c`，从未提供该回调。
+**结构层结论不等于行为结论**：PCM 判别性实测（见 R1）显示三者运行时改参**均不改变音频**。故结构检查只能用作「存在性」，行为判据必须用 PCM 前后测量。
+
+上游依据：`af_biquads.c` 的 `process_command` 会 `av_opt_set` 后 `config_filter` 重算系数；`af_extrastereo.c` 赋 `.process_command = ff_filter_process_command`。mpv 侧补丁经 `otool` 反汇编确认存在。**故障点未定位。**
 
 ### 2.3 已确认正确的实现（不要动）
 
 - **`g=0` 的 peaking 段是精确恒等**。RBJ 解析式在 `A=10^(0/40)=1` 时 `a0=1+alpha`，`b0=(1+alpha)/a0=1`，`b1=a1`，`b2=a2` ⇒ 分子分母相同 ⇒ `H(z)≡1`，零幅度零相移。`math.rs` 的 `Biquad::IDENTITY` 特判与该性质一致。
 - **`alimiter ... level=false` 是对的**。FFmpeg `alimiter` 的 `level`（auto level）**默认开启**，会把限幅后的输出归一化回 0 dB；显式关闭才能让 `limit` 成为真实样本上限。`level_in`/`level_out` 是线性增益（默认 1.0），写 1 即直通，与 auto-level 无关。
-- **Q=√2 不是缺陷**。Wavelet / Poweramp 的十段图示 EQ 即 ISO 倍频程中心 + Q≈1.4，业界标准。
+- **`latency=true` 是对的**（2026-10-03 实测更正）。它表示 alimiter **自行补偿**前瞻延迟：FFmpeg 置 `in_trim = out_pad = attack*Fs - 1`，实测在 48 kHz/attack=5 ms 下抵消 **239 样本**（与 `5ms×48000−1=239` 精确一致）；`latency=false` 则残留全部 attack 延迟。此前「开启后多出延迟」的判断有误。
+- **Q=√2 的选择本身可接受，但「≈1 倍频程」只在 +6 dB 附近成立**。peaking 的 −3 dB 带宽**随增益变化**（Fs=48000 实测全宽）：+6 dB 时 1 kHz→0.999 octave；+12 dB 时 31.25 Hz→0.54、1 kHz→0.54、8 kHz→0.43、16 kHz→**0.21** octave。RaneNote 的「1 octave↔Q≈1.414」是**带通**关系，对 peaking 不适用。故固定 Q 的十段图示 EQ 中心频率按倍频程排布是合理的，但**不得宣传各段带宽恒定或严格等于一倍频程**。
 
 ## 3. 待修问题与方案
 
 ### R1 `extrastereo` 宽度调整是假成功
 
-**现象**：`native_effects.rs` 的空间链用 `af-command echo_spatial spatial:m <v>` 调宽度，返回 rc=0。实际 `extrastereo` 没有 `process_command`，命令被 `avfilter_graph_send_command` 拒绝（`AVERROR(ENOSYS)`），而 mpv 的 `f_lavfi.c` 只判 `return result >= 0` 就报成功。
+> **⚠️ 2026-10-03 修复轮结论更正（详见 `native-gate.md`）**：本条原结论「`extrastereo` 没有 `process_command`」**已被证伪**——按 FFmpeg 6.0 真实字段布局复核，随包库的 `extrastereo` **确有**该回调（此前 `inspect-filter-runtime.py` 的字段序错误导致假 False）。但 PCM 判别性实测显示：**本随包库上任何 `af-command` 运行时改参都不改变音频**（EQ 增益 / preamp / width 三者一致，rc 均为 0 而输出不变），而 mpv 因 `f_lavfi.c` 只判 `result >= 0` 报假成功。故「width 只能安装期生效」的**结论成立，但理由是运行时改参整体失效**，而非 ENOSYS 掩盖。方案 A 仍适用，任务 4.5 的负向断言需按此重新定性。
 
-**证据**：`evidence/macos-audio-app-bundle-probe.json` 中该命令 rc=0、error=null，且命令后 26 条日志无任何错误或重配置记录（对比 `af set` 换链时有完整的 `Setting option 'graph'` 与 `lavfi (echo_spatial)` 重初始化序列）。**rc=0 在此不构成生效证据。**
+**现象**：`native_effects.rs` 的空间链用 `af-command echo_spatial spatial:m <v>` 调宽度，返回 rc=0。PCM 实测输出无变化。
 
-**影响**：空间感 `width` 实际上固定为安装时的 `1.25`，拖动无响应。`Spatial::default()` 也是 1.25，所以当前**未暴露给用户的差异**；一旦 UI 开放宽度编辑即暴露。
+**证据（2026-10-03 PCM 判别性测量）**：固定 12 s 素材 + 固定 4 s 捕获窗（同链重复 5 次极差 0.0000 dB）：
 
-**方案（二选一，需产品决策）**：
+| 链 | 命令 | 实测 | 理论 |
+|---|---|---:|---:|
+| 安装期 `g=6` | 无 | **+5.9959 dB** | +6（逐位复现既有证据） |
+| 安装期 `g=0` | `eq5:gain 6`，rc=0 | **+0.0076 dB** | +6 |
+| 安装期 `m=1.25` | `spatial:m 1.4`，rc=0 | **+0.0000 dB** | +0.9844 |
+| 安装期 `volume=1` | `preamp:volume 0.5012`，rc=0 | **+0.0076 dB** | −6 |
 
-- **A（推荐）：承认 width 不可运行时调整**。`Payload::Spatial` 保留 `width` 但仅在安装时生效；UI 不暴露宽度滑块；`design.md` 第 4 节与 spec 中「候选 `extrastereo=m=1.25:c=false`」表述补充「width 为安装期参数」。改动面最小，不引入重建链的断流风险。
-- **B：宽度变更走 `af set` 重建整条链**。复用 `NativeEffects::remove` + `install` 路径，但**会重建滤镜图**，需要 native-gate 补充「重建期间无 underrun / 无爆音」的捕获证据，否则违反任务 1.3 的「类型切换允许重建但不能断流」。
+**影响**：空间感 `width` 事实上固定为安装时的 `1.25`，拖动无响应。**且此结论对 EQ 增益与 preamp 同样成立** ⇒ 依赖原地改参的 30 ms 斜坡当前**不可依赖**，`Spatial::default()` 也是 1.25，因此当前**未暴露给用户的差异**；一旦 UI 开放宽度编辑即暴露。
 
-**任务落点**：新增任务 4.6，验证含「`spatial:m` 命令后 `af` 快照与日志均无变化」这一负向断言（防回归）。
+**方案**：
+- **A（采用）**：承认 width 不可运行时调整，`Payload::Spatial` 保留 `width` 但仅在安装时生效；UI 不暴露宽度滑块。
+- **B**：宽度变更走 `af set`/`install` 重建整条链。因运行时改参已实测无效，**重建链是当前唯一被实测可改变音频的机制**，但需 native-gate 补充「重建期间无 underrun / 无爆音」的捕获证据。
+
+**任务落点**：任务 4.5 的负向断言保留（仍不应发送 `spatial:m`），但其**理由文本**须改为引用 PCM 实测，而非结构体检查。
 
 ### R2 `install_pending` 缺少自愈
 

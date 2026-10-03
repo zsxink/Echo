@@ -4,6 +4,43 @@ These tools prepare experiments for `introduce-audio-effects-equalizer`, task gr
 They do **not** complete the three-platform Gate or implement production effects.
 Only Python 3.9+ standard-library modules are required. Do not commit generated WAVs.
 
+## What counts as evidence
+
+`af-command` returning `rc=0` is **not** evidence that a parameter changed.
+mpv's `f_lavfi.c` only tests `result >= 0`, so a rejected command is reported as
+success, and the `af` property shows only the *configured* description, which
+mpv does not rewrite when a runtime command changes a parameter. The only
+admissible proof is a PCM measurement across the change.
+
+Measured on the packaged macOS library (2026-10-03): runtime parameter changes
+reach **no** filter — `equalizer`, `volume` and `extrastereo` all return `rc=0`
+while the captured output is bit-identical to the baseline. A static install-time
+gain is measured correctly by the same harness, so the null result is a real
+limitation rather than a broken tool. `native-gate.md` records the numbers.
+
+Because of that, do not treat these as interchangeable:
+
+| Question | Tool | What it proves |
+|---|---|---|
+| Does a filter expose a command callback? | `inspect-filter-runtime.py` | Structure only, and it refuses output if its layout cross-check fails |
+| Did a command change the audio? | `probe.py --runtime-parameter-proof` | Nothing changed, via PCM before/after |
+| Is the measurement itself trustworthy? | `probe.py` `static_gain_reference` | The harness detects a known install-time gain |
+| Does the chain match the design tolerance? | `probe.py --sweep-response` | **Not yet** — reports `usable_for_tolerance_verdict: false` |
+
+## Measurement traps
+
+Each of these produced a confidently wrong number during development:
+
+- **Pumping to EOF** makes the analysed window depend on decode timing; the same
+  chain measured +0.0076 dB and +1.6871 dB on two runs. Use a fixed window
+  (`--runtime-capture-seconds`).
+- **Bit depth differs**: fixtures are PCM32, `ao=pcm` emits PCM16. Normalize per
+  width, or the format change reads as about −96 dB of "response error".
+- **Limiter saturation hides changes.** Use a low-level fixture at the input's own
+  rate, otherwise both states clip to the same ceiling.
+- **Reproducing the recorded evidence** (`+5.9959 dB` at −54.0507 dBFS) requires
+  the 2 s fixture and `pump(duration + 0.25)`; longer fixtures give other numbers.
+
 ## Generate offline inputs
 
 From the repository root (PowerShell can use an equivalent temporary directory):

@@ -1,12 +1,45 @@
 //! Typed libmpv filter construction. Strings originate only from validated
 //! numeric payloads; user text, preset names and paths never enter this syntax.
-//! Runtime commands request a 30 ms parameter ramp. Only native capture can
-//! establish its audible continuity and filter-chain timing.
+//!
+//! # Runtime commands are not yet established to take effect
+//!
+//! `advance` expresses a 30 ms ramp by re-sending `af-command` for each labelled
+//! stage. A 2026-10-03 native measurement on the packaged macOS library found
+//! that NO runtime parameter change reached the audio, for any filter:
+//!
+//! | chain | commanded | measured |
+//! |---|---|---|
+//! | static `g=6` | install-time | **+5.9959 dB** (reproduces the recorded evidence) |
+//! | `g=0` installed | `af-command <label> eq5:gain 6`, rc=0 | **+0.0076 dB** (= baseline) |
+//! | `m=1.25` installed | `af-command <label> spatial:m 1.4`, rc=0 | **+0.0000 dB** (expected +0.9844) |
+//!
+//! `volume` behaved the same way, so this is not specific to one filter. The mpv
+//! compatibility patch IS present in the shipped dylib: `otool` shows both the
+//! colon-splitting lookup and the `"all"` fallback. Upstream, the biquad family
+//! re-runs its coefficient setup after a command, so the fault is not explained
+//! yet. Because mpv's `f_lavfi.c` only tests `result >= 0`, rc=0 is a FALSE
+//! SUCCESS here.
+//!
+//! Consequences for this module: the ramp below cannot be assumed to reach the
+//! output, and `af-command` return values prove nothing. Rebuilding the chain
+//! (`install`/`remove`) is the only mechanism measured to change the audio.
+//! Treat the in-place path as unproven until a native capture shows the
+//! intermediate gain states, and re-verify with
+//! `scripts/audio-effects/probe.py --capture-only --runtime-parameter-proof`.
 
-use crate::effects::{math::EffectsAnalysis, Payload, ProcessingEnvironment, BAND_FREQUENCIES};
+use crate::effects::{
+    math::{intermediate_gain_bound_db, EffectsAnalysis, AUTO_HEADROOM_DB},
+    Payload, ProcessingEnvironment, BAND_FREQUENCIES,
+};
 use std::time::{Duration, Instant};
 
 const TRANSITION: Duration = Duration::from_millis(30);
+// `latency=true` makes alimiter compensate its own lookahead delay: FFmpeg sets
+// `in_trim = out_pad = attack*Fs - 1`, so the output stays sample-aligned with
+// the input (measured: 239 samples at 48 kHz/5 ms, matching that formula). The
+// alternative `latency=false` leaves the full attack delay in the stream.
+// `level=false` is required because auto-level defaults to ON and would
+// normalise the limited output back up to 0 dB, destroying the preamp budget.
 const LIMITER: &str = "alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true";
 
 type Command<'a> = dyn FnMut(&[String]) -> Result<(), String> + 'a;
@@ -248,21 +281,24 @@ impl NativeEffects {
         }
         let current = self.current.as_ref().expect("installed configuration");
         // Sum of each peaking stage's positive gain is a conservative bound
-        // throughout an interpolation, including interior overlap maxima.
+        // throughout an interpolation, including interior overlap maxima. It
+        // shares AUTO_HEADROOM_DB with the steady-state preamp so the two
+        // cannot drift apart.
         let risk = match target.payload {
-            Payload::Eq(_) => current
-                .gains
-                .iter()
-                .zip(target.gains)
-                .map(|(old, new)| old.max(new).max(0.0))
-                .sum::<f64>(),
+            Payload::Eq(_) => intermediate_gain_bound_db(
+                current
+                    .gains
+                    .iter()
+                    .zip(target.gains)
+                    .map(|(old, new)| old.max(new)),
+            ),
             Payload::Spatial(_) => 20.0 * current.width.max(target.width).max(1.0).log10(),
         };
-        let protected =
-            current
-                .preamp
-                .min(target.preamp)
-                .min(if risk == 0.0 { 0.0 } else { -(risk + 1.0) });
+        let protected = current.preamp.min(target.preamp).min(if risk == 0.0 {
+            0.0
+        } else {
+            -(risk + AUTO_HEADROOM_DB)
+        });
         preamp(self.command_syntax, protected, command)?;
         self.ramp = Some(Ramp {
             target,

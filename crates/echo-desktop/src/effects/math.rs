@@ -110,7 +110,7 @@ pub fn analyze(
                 // The final limiter provides the remaining sample-peak
                 // protection; a small fixed lift avoids baking its full
                 // threshold margin into every automatic setting.
-                effective_preamp_db: safe_preamp_db + 0.5,
+                effective_preamp_db: safe_preamp_db + AUTO_HEADROOM_DB,
                 safe_preamp_db,
                 peak_gain_db,
                 active_bands: [false; 10],
@@ -136,7 +136,7 @@ pub fn analyze(
             };
             let safe_preamp_db = if neutral { 0.0 } else { -peak_gain_db.max(0.0) };
             let effective_preamp_db = match curve.preamp_mode {
-                PreampMode::Auto => safe_preamp_db + if neutral { 0.0 } else { 0.5 },
+                PreampMode::Auto => safe_preamp_db + if neutral { 0.0 } else { AUTO_HEADROOM_DB },
                 PreampMode::Manual => curve.requested_preamp_db.min(safe_preamp_db),
             };
             Ok(EffectsAnalysis {
@@ -216,9 +216,26 @@ pub fn response_points(analysis: &EffectsAnalysis, sample_rate: u32) -> Vec<Resp
         .collect()
 }
 
+/// Headroom the automatic preamp gives back above the strict peak-protection
+/// floor, letting the fixed end limiter absorb small steady overshoots instead
+/// of attenuating every sample. Shared so the steady state and the transition
+/// path cannot drift apart: an earlier revision used 1.0 dB while the steady
+/// state used 0.5 dB.
+pub const AUTO_HEADROOM_DB: f64 = 0.5;
+
+/// Upper bound for a transition's intermediate composed gain.
+///
+/// A peaking stage cannot exceed its positive requested gain, so summing the
+/// per-band positive endpoint maxima bounds every state of a linear ramp between
+/// them. This is conservative even when the composed curve peaks elsewhere, and
+/// it deliberately assumes no limiter help, because the frequency-domain `G` is
+/// not a bound on biquad ringing.
+#[must_use]
+pub fn intermediate_gain_bound_db(bounds: impl Iterator<Item = f64>) -> f64 {
+    bounds.map(|gain| gain.max(0.0)).sum()
+}
+
 /// Bound every linearly interpolated EQ state, including mixed-sign edits.
-/// A peaking stage cannot exceed its positive requested gain; summing per-band
-/// endpoint maxima is conservative even when the composed curve peaks elsewhere.
 /// # Errors
 /// Propagates invalid payload and unsupported-environment errors.
 pub fn transition_preamp_db(
@@ -229,14 +246,14 @@ pub fn transition_preamp_db(
     let old = analyze(previous, environment)?;
     let new = analyze(next, environment)?;
     let intermediate_bound = match (previous, next) {
-        (Payload::Eq(left), Payload::Eq(right)) => left
-            .gains_db
-            .iter()
-            .zip(right.gains_db)
-            .zip(new.active_bands)
-            .filter(|(_, active)| *active)
-            .map(|((left, right), _)| left.max(right).max(0.0))
-            .sum::<f64>(),
+        (Payload::Eq(left), Payload::Eq(right)) => intermediate_gain_bound_db(
+            left.gains_db
+                .iter()
+                .zip(right.gains_db)
+                .zip(new.active_bands)
+                .filter(|(_, active)| *active)
+                .map(|((left, right), _)| left.max(right)),
+        ),
         _ => old.peak_gain_db.max(new.peak_gain_db),
     };
     if intermediate_bound == 0.0 && old.effective_preamp_db == 0.0 && new.effective_preamp_db == 0.0
@@ -246,7 +263,7 @@ pub fn transition_preamp_db(
     Ok(old
         .effective_preamp_db
         .min(new.effective_preamp_db)
-        .min(-(intermediate_bound + 1.0).max(0.0)))
+        .min(-(intermediate_bound + AUTO_HEADROOM_DB).max(0.0)))
 }
 
 #[cfg(test)]

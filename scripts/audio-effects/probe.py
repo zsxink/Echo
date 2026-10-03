@@ -8,6 +8,7 @@ import math
 import os
 from pathlib import Path
 import platform
+import re
 import subprocess
 import sys
 import tempfile
@@ -138,6 +139,71 @@ def af_command_args(argument_count, label, target, option, value):
     return None
 
 
+def graph_text(mpv):
+    """Flatten the configured `af` graph to a comparable string.
+
+    mpv accepts a runtime command for a named filter and still reports rc=0 even
+    when the filter has no `process_command`, because f_lavfi.c only tests
+    `result >= 0`. Reading the configured graph back is what distinguishes
+    acceptance from an actual parameter change.
+    """
+    entries = mpv.get('af')
+    if not isinstance(entries, list):
+        return None
+    graphs = []
+    for entry in entries:
+        if isinstance(entry, dict):
+            params = entry.get('params')
+            if isinstance(params, dict) and isinstance(params.get('graph'), str):
+                graphs.append(params['graph'])
+    return '\n'.join(graphs) if graphs else None
+
+
+def option_value(graph, key):
+    """Return the last `key=value` in a filter graph string, or None.
+
+    Handles both bare filters (`m=1.25`) and labelled ones
+    (`extrastereo@spatial=m=1.25:c=false`).
+    """
+    if not graph:
+        return None
+    matches = re.findall(rf'(?:^|[@:;,]){re.escape(key)}=([^:,;\]]+)', graph)
+    return matches[-1] if matches else None
+
+
+def runtime_parameter_probe(mpv, argument_count, label, target, option, value):
+    """Send one runtime command and report whether the graph actually changed.
+
+    The caller must pass a `value` that DIFFERS from the installed one, otherwise
+    a no-op and a real change are indistinguishable. Returns a record carrying
+    the before/after graph so the verdict is auditable.
+    """
+    before = graph_text(mpv)
+    command = af_command_args(argument_count, label, target, option, value)
+    if not command:
+        return {'args': None, 'result': None, 'skipped': 'unsupported af-command signature',
+                'before': before, 'after': None, 'changed': False,
+                'before_value': None, 'after_value': None, 'requested': value,
+                'meaning': 'No command was issued, so nothing was established.'}
+    code = mpv.command(*command)
+    mpv.pump(0.15)
+    after = graph_text(mpv)
+    before_value = option_value(before, option)
+    after_value = option_value(after, option)
+    return {'args': list(command), 'result': code,
+            'before': before, 'after': after,
+            'before_value': before_value, 'after_value': after_value,
+            'requested': value, 'changed': after != before,
+            'observed_value': after_value,
+            'parameter_changed': after_value is not None and after_value != before_value,
+            'graph_is_configured_description': True,
+            'meaning': ('mpv reports the CONFIGURED filter description in `af`, which it does not '
+                        'rewrite when a runtime command changes a parameter, so an unchanged '
+                        'string is expected either way and proves nothing. This record establishes '
+                        'callability and the before/after description only; proving the parameter '
+                        'moved requires measuring the PCM output.')}
+
+
 def loaded_libraries():
     """Runtime mappings, not presumed neighboring dependency files."""
     paths = []
@@ -177,6 +243,182 @@ def wait_audio(mpv, seconds):
         if mpv.get('audio-out-params') is not None:
             return True
     return False
+
+
+def spatial_width_capture(args, source, af_arg_count):
+    """Prove or disprove a runtime `extrastereo m` change by measuring PCM.
+
+    Why PCM and not the `af` property: mpv reports the CONFIGURED filter
+    description there and never rewrites it when a runtime command changes a
+    parameter, so an unchanged string is expected either way and proves nothing.
+    rc is equally uninformative because mpv's f_lavfi.c only tests `result >= 0`
+    and therefore reports success for a rejected command.
+
+    Width is observable without any EQ: with `c=false` and a centre-free input,
+    L=M+m*S and R=M-m*S where M=(L+R)/2 and S=(L-R)/2, so raising m scales the
+    side difference by a measurable amount. A limiter-saturating fixture would
+    hide the change, so the caller must pass a low-level one.
+
+    Both captures share one chain definition; only the commanded width differs.
+    """
+    results = []
+    for commanded in (None, '1.4'):
+        chain = spatial_chain()
+        with tempfile.TemporaryDirectory() as workdir:
+            wav = Path(workdir) / 'out.wav'
+            handle = Mpv(args.libmpv, ao='pcm', ao_pcm_file=wav)
+            try:
+                handle.command('af', 'set', chain)
+                handle.command('loadfile', str(source))
+                wait_audio(handle, args.step_timeout)
+                if commanded is not None:
+                    command = af_command_args(af_arg_count, 'echo_spatial', 'spatial', 'm', commanded)
+                    if not command:
+                        return [{'error': 'unsupported af-command signature', 'commanded': commanded}]
+                    handle.command(*command)
+                    handle.pump(0.3)
+                # Capture a fixed window. Pumping to EOF instead makes the
+                # window depend on decode timing, which produced repeatable
+                # but mutually inconsistent results while testing.
+                handle.set('pause', 'no')
+                handle.pump(args.runtime_capture_seconds)
+                handle.set('pause', 'yes')
+            finally:
+                handle.close()
+            channels, width, out_rate, frames, raw = read_pcm_wave(wav)
+            step = channels * width
+            peak = float(1 << (8 * width - 1))
+            magnitude = [abs(int.from_bytes(raw[index:index + width], 'little', signed=True)) / peak
+                         for index in range(0, len(raw) - width + 1, step)]
+            results.append({'commanded_m': commanded, 'frames': frames, 'channels': channels,
+                            'sample_rate': out_rate, 'sample_width_bytes': width,
+                            'rms': (sum(value * value for value in magnitude) / len(magnitude)) ** 0.5
+                            if magnitude else None,
+                            'max_abs': max(magnitude) if magnitude else None})
+    baseline, changed = results[0], results[-1]
+    if baseline.get('rms') and changed.get('rms'):
+        rms_change_db = 20.0 * math.log10(changed['rms'] / baseline['rms'])
+    else:
+        rms_change_db = None
+    return [{'installed_baseline': baseline, 'after_command': changed,
+             'rms_change_db': rms_change_db,
+             'expected_rms_change_db': 20.0 * math.log10(1.4 / 1.25),
+             'runtime_m_confirmed': rms_change_db is not None and abs(rms_change_db) > 0.3,
+             'meaning': ('A measurable output-level change between the two captures is the only '
+                         'admissible evidence that the runtime width command took effect. rc=0 '
+                         'and an unchanged `af` string are not evidence either way.')}]
+
+
+
+def static_gain_reference_db(args):
+    """Measure a KNOWN install-time gain through the same capture path.
+
+    The runtime-parameter experiment reports "the command changed nothing". That
+    conclusion is only credible if this function can observe a change that was
+    baked into the chain at install time. Pumping to EOF instead of a fixed
+    window makes the analysed span depend on decode timing and produced
+    repeatable but mutually inconsistent numbers while developing this check, so
+    the window is fixed.
+    """
+    input_channels, input_width, input_rate, _, input_pcm = read_pcm_wave(args.input)
+    gain = float(args.capture_gain_db)
+    chain = individual_eq_chain(input_rate, {5: gain}, args.capture_preamp_db)
+    with tempfile.TemporaryDirectory() as workdir:
+        wav = Path(workdir) / 'reference.wav'
+        handle = Mpv(args.libmpv, ao='pcm', ao_pcm_file=wav)
+        try:
+            handle.command('af', 'set', chain)
+            handle.command('loadfile', str(args.input.resolve()))
+            wait_audio(handle, args.step_timeout)
+            handle.set('pause', 'no')
+            handle.pump(args.runtime_capture_seconds)
+            handle.set('pause', 'yes')
+        finally:
+            handle.close()
+        out_channels, out_width, out_rate, _, output_pcm = read_pcm_wave(wav)
+    return measure_sine_gain_db(input_pcm, output_pcm, 997.0, input_channels, input_width,
+                                out_width, out_rate)
+
+
+def sweep_response_error_db(args, rate, analysis_rate):
+    """Sweep-based magnitude-response check for the installed static chain.
+
+    design.md section 3 promises "native low-level sweep / impulse response
+    within 0.25 dB of the computed maximum error", but the recorded evidence only
+    measured a 997 Hz tone against a single band.
+
+    IMPORTANT — this reports a MEASUREMENT ENVELOPE, not the design tolerance.
+    A windowed peak-envelope ratio over a logarithmic sweep cannot resolve
+    0.25 dB: the window spans hundreds of Hz near 1 kHz, so the ratio tracks the
+    window's frequency content rather than the filter's response. Measured
+    behaviour during development: the error fell from +10.2 dB (10 ms window) to
+    a constant +5.949 dB (80 ms window), i.e. it converges on the installed gain
+    and the residual scatter is windowing artefact, not filter deviation.
+
+    Resolving the promised tolerance needs a per-frequency sine sweep (one
+    capture per tone, or an FFT with bin spacing narrower than the filter
+    bandwidth), which is not implemented. The result is therefore reported as
+    `usable_for_tolerance_verdict: false` so it cannot be mistaken for a pass.
+    """
+    sweep = sorted(args.input.parent.glob('*sweep*2ch*.wav'))
+    same_rate = [path for path in sweep if read_pcm_wave(path)[2] == rate and '60db' in path.name]
+    if not same_rate:
+        return {'skipped': 'No low-level sweep fixture at this rate beside --input.'}
+    source = same_rate[0]
+    _, input_width, _, _, input_pcm = read_pcm_wave(source)
+    chain = individual_eq_chain(rate, {5: args.capture_gain_db}, args.capture_preamp_db)
+    with tempfile.TemporaryDirectory() as workdir:
+        wav = Path(workdir) / 'sweep.wav'
+        handle = Mpv(args.libmpv, ao='pcm', ao_pcm_file=wav)
+        try:
+            handle.command('af', 'set', chain)
+            handle.command('loadfile', str(source))
+            wait_audio(handle, args.step_timeout)
+            handle.set('pause', 'no')
+            handle.pump(args.runtime_capture_seconds)
+            handle.set('pause', 'yes')
+        finally:
+            handle.close()
+        _, out_width, _, _, output_pcm = read_pcm_wave(wav)
+
+    # Scales are normalised per width: fixtures are 32-bit while ao=pcm emits
+    # 16-bit, so comparing raw integers would report the format change as ~96 dB
+    # of "response error".
+    window = max(1, int(args.sweep_window_ms / 1000.0 * rate))
+    in_scale = float(1 << (8 * input_width - 1))
+    out_scale = float(1 << (8 * out_width - 1))
+    errors = []
+    limit = min(len(input_pcm) // (2 * input_width), len(output_pcm) // (2 * out_width))
+    for block_start in range(window, limit - window, window):
+        in_peak = 0.0
+        out_peak = 0.0
+        for index in range(block_start, block_start + window):
+            in_peak = max(in_peak, abs(int.from_bytes(
+                input_pcm[(index * 2) * input_width:(index * 2) * input_width + input_width],
+                'little', signed=True)) / in_scale)
+            out_peak = max(out_peak, abs(int.from_bytes(
+                output_pcm[(index * 2) * out_width:(index * 2) * out_width + out_width],
+                'little', signed=True)) / out_scale)
+        if in_peak > 0 and out_peak > 0:
+            errors.append(20.0 * math.log10(out_peak / in_peak))
+    if not errors:
+        return {'skipped': 'Sweep capture too short for windowed comparison.'}
+    worst = max(errors, key=abs)
+    installed = float(args.capture_gain_db)
+    return {'input': source.name, 'windows': len(errors),
+            'window_ms': args.sweep_window_ms,
+            'mean_error_db': sum(errors) / len(errors),
+            'max_abs_error_db': worst,
+            'installed_gain_db': installed,
+            'residual_after_removing_installed_gain_db': worst - installed,
+            'converges_on_installed_gain': abs(worst - installed) < 1.0,
+            'usable_for_tolerance_verdict': False,
+            'tolerance_db_not_verified': args.response_tolerance_db,
+            'chain': chain,
+            'meaning': 'The envelope converges on the installed gain, so the chain is present and '
+                       'scaled as designed. The residual scatter is windowing artefact and CANNOT '
+                       'settle design section 3\'s 0.25 dB promise. Do not record this as a pass; '
+                       'a per-frequency sine sweep or a sufficiently narrow FFT is still required.'}
 
 
 def run_probe(args):
@@ -275,6 +517,31 @@ def run_probe(args):
                                      'gain_db': args.capture_gain_db, 'preamp_db': args.capture_preamp_db,
                                      'chain': capture_chain,
                                      'meaning': 'One isolated candidate chain was captured; this proves its processed PCM response only for this host/input/rate.'})
+            # Runtime-parameter proof. mpv reports the CONFIGURED `af`
+            # description and never rewrites it when a runtime command changes a
+            # parameter, so the only admissible evidence is measured audio.
+            if args.runtime_parameter_proof:
+                # Width is observable only on a centre-free signal that does not
+                # saturate the limiter, so pick a LOW-level antiphase fixture at
+                # the input's own rate: with a centred or limiter-limited signal
+                # both widths clip to the same ceiling and look identical.
+                _, _, input_rate, _, _ = read_pcm_wave(args.input)
+                candidates = sorted(args.input.parent.glob('*antiphase*2ch*.wav'))
+                same_rate = [path for path in candidates if read_pcm_wave(path)[2] == input_rate]
+                preferred = [path for path in same_rate if '60db' in path.name]
+                antiphase = preferred or same_rate or candidates
+                if antiphase:
+                    report['checks'].append({'name': 'runtime_parameter_pcm_proof',
+                                             'input': antiphase[0].name,
+                                             'low_level': bool(preferred),
+                                             **spatial_width_capture(args, antiphase[0], af_arg_count)[0]})
+                else:
+                    report['checks'].append({'name': 'runtime_parameter_pcm_proof',
+                                             'skipped': 'No antiphase stereo fixture beside --input; '
+                                                        'width changes are unobservable on a centred signal.'})
+            if args.sweep_response:
+                report['checks'].append({'name': 'sweep_response',
+                                         **sweep_response_error_db(args, rate, rate)})
             return report
         mpv.command('loadfile', str(args.input.resolve()))
         report['checks'].append({'name': 'initial_audio_ready', 'observed': wait_audio(mpv, args.step_timeout)})
@@ -298,28 +565,20 @@ def run_probe(args):
             report['checks'].append({'name': f'{name}_chain', 'chain': chain, 'command_result': result,
                                     'meaning': 'Command acceptance only; inspect logs and audio-out-params for initialization failures.'})
             if name.startswith('eq'):
-                commands = [('echo_eq', 'eq5', 'gain', '1'),
+                # Values must differ from the installed ones (g=0, volume 0 dB)
+                # or acceptance is indistinguishable from a silent no-op.
+                commands = [('echo_eq', 'eq5', 'gain', '6'),
                             ('echo_eq', 'preamp', 'volume', '0.501187233627272')] if name == 'eq' else [
-                            ('echo_eq5', 'eq5', 'gain', '1'),
+                            ('echo_eq5', 'eq5', 'gain', '6'),
                             ('echo_preamp', 'preamp', 'volume', '0.501187233627272')]
                 for label, target, option, value in commands:
-                    command = af_command_args(af_arg_count, label, target, option, value)
-                    code = mpv.command(*command) if command else None
-                    if command:
-                        mpv.pump(0.1)
-                    report['checks'].append({'name': 'af_command_syntax',
-                                             'args': list(command) if command else None,
-                                             'result': code, 'skipped': command is None,
-                                             'meaning': 'Acceptance does not prove parameter change, isolation, atomicity or smoothing.'})
+                    report['checks'].append({'name': 'af_command_parameter_change', **runtime_parameter_probe(
+                        mpv, af_arg_count, label, target, option, value)})
             if name == 'spatial':
-                command = af_command_args(af_arg_count, 'echo_spatial', 'spatial', 'm', '1.25')
-                code = mpv.command(*command) if command else None
-                if command:
-                    mpv.pump(0.1)
-                report['checks'].append({'name': 'spatial_filter_command',
-                                         'args': list(command) if command else None,
-                                         'result': code, 'skipped': command is None,
-                                         'meaning': 'Acceptance does not prove parameter change, isolation, atomicity or smoothing.'})
+                # Installed m=1.25; 1.4 is the smallest change that a real
+                # process_command must reflect in the configured graph.
+                report['checks'].append({'name': 'spatial_parameter_change', **runtime_parameter_probe(
+                    mpv, af_arg_count, 'echo_spatial', 'spatial', 'm', '1.4')})
             before = mpv.get('af')
             mpv.command('loadfile', str(args.input.resolve()))
             mpv.set('pause', 'no')
@@ -408,6 +667,31 @@ def run_probe(args):
             except (EOFError, ValueError, struct.error) as error:
                 report['capture']['analysis_error'] = f'{type(error).__name__}: {error}'
 
+            # Harness self-check. The runtime-parameter verdict below is only
+            # meaningful if this harness can detect a KNOWN static gain, so
+            # record the install-time reference alongside it. A harness that
+            # reports 0 dB for everything would otherwise "confirm" that
+            # runtime commands do nothing.
+            if args.runtime_parameter_proof:
+                reference = static_gain_reference_db(args)
+                if reference is None:
+                    report['checks'].append({
+                        'name': 'static_gain_reference',
+                        'error': 'could not measure the install-time reference gain; the runtime '
+                                 'verdict below is NOT trustworthy without it',
+                    })
+                else:
+                    report['checks'].append({
+                        'name': 'static_gain_reference',
+                        'expected_db': float(args.capture_gain_db),
+                        'measured_db': reference,
+                        'error_db': reference - float(args.capture_gain_db),
+                        'harness_valid': abs(reference - float(args.capture_gain_db)) <= 0.25,
+                        'meaning': 'Install-time gain measured through the same harness. If this is '
+                                   'not within 0.25 dB, a negative runtime result means the harness '
+                                   'is broken, not that the command was ignored.',
+                    })
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -421,6 +705,25 @@ def main():
                         help='null discards PCM; coreaudio plays at 1%% host volume; pcm writes processed output to a WAVE file.')
     parser.add_argument('--pcm-output', type=Path, help='Required with --ao pcm; captures processed libmpv output.')
     parser.add_argument('--capture-only', action='store_true', help='Capture one isolated static EQ chain; requires --ao pcm.')
+    parser.add_argument('--runtime-parameter-proof', action='store_true',
+                        help='With --capture-only, additionally capture the spatial chain twice with a '
+                             'different runtime extrastereo m to prove whether the command takes effect.')
+    parser.add_argument('--runtime-capture-seconds', type=float, default=4.0,
+                        help='Seconds of PCM to capture per runtime-parameter run. Must stay well '
+                             'inside the fixture duration: pumping to EOF makes the analysed window '
+                             'depend on decode timing and yields inconsistent results.')
+    parser.add_argument('--sweep-response', action='store_true',
+                        help='With --capture-only, also measure the installed chain response across '
+                             'the logarithmic sweep fixture and compare it against the design tolerance.')
+    parser.add_argument('--response-tolerance-db', type=float, default=0.25,
+                        help='The tolerance design.md section 3 promises. RECORDED ONLY: the '
+                             'windowed-sweep method cannot resolve it, so the check reports '
+                             'usable_for_tolerance_verdict=false instead of a pass.')
+    parser.add_argument('--sweep-window-ms', type=float, default=80.0,
+                        help='Envelope window for --sweep-response. A logarithmic sweep needs a '
+                             'window wide enough that one window spans a small fraction of the '
+                             'octave; too narrow and the ratio tracks window frequency content '
+                             'instead of the filter response.')
     parser.add_argument('--capture-gain-db', type=float, default=6.0,
                         help='Gain for the 1 kHz capture band when --capture-only is used (default: 6 dB).')
     parser.add_argument('--capture-preamp-db', type=float, default=0.0,

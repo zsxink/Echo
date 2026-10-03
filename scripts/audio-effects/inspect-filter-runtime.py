@@ -7,17 +7,31 @@ rejected command is reported to the caller as SUCCESS. Return codes from
 `af-command` are therefore not evidence that a parameter changed.
 
 This reads the `process_command` field of each `AVFilter` struct directly, which
-needs no audio and no graph. Two traps it avoids:
+needs no audio and no graph. Three traps it avoids:
 
-1. FFmpeg 6.0 field order is
-   name, description, priv_size, flags_internal, priv_class,
-   inputs, nb_inputs, outputs, nb_outputs, process_command
-   A wrong order silently reads adjacent memory and reports every filter as
-   supporting commands. `extrastereo` is the control: it has no callback, so a
-   run where it reports True means the layout is wrong.
-2. `av_buffersink_add_frame` and `av_buffersrc_add_frame` are inline in
-   libavfilter and are not resolvable through dlsym, so output-level
-   measurement needs a different harness than this.
+1. FFmpeg 6.0 declares the public fields in this order:
+   name, description, inputs, outputs, priv_class, flags,
+   nb_inputs, nb_outputs, formats_state, preinit, init, uninit, formats,
+   priv_size, flags_internal, process_command, activate
+   Note that `inputs`/`outputs` come BEFORE `priv_class`, `nb_inputs`/`nb_outputs`
+   are `uint8_t` packed together after `flags`, and `priv_size` only appears at
+   offset 80. A 2026-10-03 revision used the order
+   `name, description, priv_size, flags_internal, priv_class, inputs, ...`
+   instead, which misread every field after `description`: it reported
+   `nb_inputs=65536` and produced a false "extrastereo has no process_command"
+   that became the basis for the "width is install-time only" conclusion.
+   Upstream FFmpeg contradicts that conclusion: `af_extrastereo.c` assigns
+   `.process_command = ff_filter_process_command`.
+2. Comparing `name` proves nothing about later offsets, because `name` sits at
+   offset 0 and reads correctly under ANY layout. This tool therefore
+   cross-checks `nb_inputs`/`nb_outputs` against the exported
+   `avfilter_filter_pad_count()` and requires `priv_size` to be a plausible
+   struct size, then REFUSES to print per-filter verdicts if either fails.
+3. `av_buffersink_add_frame` and `av_buffersrc_add_frame` are inline in
+   libavfilter and not resolvable through dlsym, so output-level measurement
+   still needs a different harness. Structural agreement also does not prove a
+   command takes effect: confirm with a command whose value differs from the
+   installed one, then re-read the `af` graph.
 
 Usage:
     python3 scripts/audio-effects/inspect-filter-runtime.py \
@@ -32,11 +46,21 @@ import hashlib
 import sys
 from pathlib import Path
 
-# Field order per FFmpeg 6.0 libavfilter/avfilter.h.
+# Field order per FFmpeg 6.0 libavfilter/avfilter.h. The order below is the
+# one that header actually declares; note that `inputs`/`outputs` precede
+# `priv_class`, the pad counts are uint8_t packed after `flags`, and
+# `priv_size` sits at offset 80 rather than next to `description`.
 FIELDS_60 = [
-    "name", "description", "priv_size", "flags_internal", "priv_class",
-    "inputs", "nb_inputs", "outputs", "nb_outputs", "process_command",
+    "name", "description", "inputs", "outputs", "priv_class", "flags",
+    "nb_inputs", "nb_outputs", "formats_state", "preinit", "init", "uninit",
+    "formats", "priv_size", "flags_internal", "process_command", "activate",
 ]
+
+# Layout constraints that a correct reading must satisfy. `name` cannot
+# establish the layout because it lives at offset 0, so the pad counts are
+# cross-checked against the exported avfilter_filter_pad_count() instead of
+# being assumed. These filters all declare exactly one input and one output.
+MAX_PLAUSIBLE_PRIV_SIZE = 1 << 16
 
 DEFAULT_FILTERS = ["equalizer", "volume", "alimiter", "extrastereo", "aformat"]
 
@@ -76,13 +100,20 @@ class AVFilterPad(C.Structure):
 
 
 class AVFilter(C.Structure):
+    # Mirrors FFmpeg 6.0 libavfilter/avfilter.h exactly. The previous order put
+    # priv_size/flags_internal/priv_class before inputs/outputs and used
+    # 32-bit pad counts, which shifted every field after `description`.
     _fields_ = [
         ("name", C.c_char_p), ("description", C.c_char_p),
+        ("inputs", C.POINTER(AVFilterPad)), ("outputs", C.POINTER(AVFilterPad)),
+        ("priv_class", C.POINTER(AVClass)), ("flags", C.c_int),
+        ("nb_inputs", C.c_uint8), ("nb_outputs", C.c_uint8),
+        ("formats_state", C.c_uint8),
+        ("preinit", C.c_void_p), ("init", C.c_void_p), ("uninit", C.c_void_p),
+        ("formats", C.c_void_p),
         ("priv_size", C.c_int), ("flags_internal", C.c_int),
-        ("priv_class", C.POINTER(AVClass)),
-        ("inputs", C.POINTER(AVFilterPad)), ("nb_inputs", C.c_uint),
-        ("outputs", C.POINTER(AVFilterPad)), ("nb_outputs", C.c_uint),
         ("process_command", C.c_void_p),
+        ("activate", C.c_void_p),
     ]
 
 
@@ -99,44 +130,64 @@ def load(path: Path):
     get_by_name = lib.avfilter_get_by_name
     get_by_name.restype = C.c_void_p
     get_by_name.argtypes = [C.c_char_p]
+    # Exported since FFmpeg 4.0; gives pad counts without trusting our layout.
+    pad_count = lib.avfilter_filter_pad_count
+    pad_count.restype = C.c_uint
+    pad_count.argtypes = [C.c_void_p, C.c_uint]
     try:
         lib.avutil_version.restype = C.c_uint
         lib.avutil_version.argtypes = []
     except AttributeError:
         pass
-    return lib, get_by_name
+    return lib, get_by_name, pad_count
 
 
 def inspect(library: Path, names: list[str]) -> int:
-    lib, get_by_name = load(library)
+    lib, get_by_name, pad_count = load(library)
     print(f"library : {library}")
     print(f"sha256  : {digest(library)}")
     print()
-    print(f"{'filter':<14} {'present':<8} {'process_command':<16} verdict")
-    suspicious = False
+    rows = []
     for name in names:
         handle = get_by_name(name.encode())
         if not handle:
             print(f"{name:<14} {'no':<8} {'-':<16} not compiled into this build")
             continue
         filt = C.cast(handle, C.POINTER(AVFilter)).contents
-        # Sanity: the struct read must agree with its own name field.
         decoded = filt.name.decode() if filt.name else ""
-        callback = filt.process_command
-        supports = bool(callback)
-        if supports:
-            verdict = "runtime command accepted"
-        else:
-            verdict = "af-command is a silent no-op"
-        print(f"{name:<14} {'yes':<8} {str(supports):<16} {verdict}")
+        rows.append((name, decoded, int(filt.priv_size), int(filt.nb_inputs), int(filt.nb_outputs),
+                     bool(filt.process_command), pad_count(handle, 0), pad_count(handle, 1)))
+
+    # Layout assertions. A misaligned struct still yields a readable `name`, so
+    # the pad counts are compared against the library's own answers instead.
+    problems = []
+    for name, decoded, priv_size, nb_in, nb_out, _, auth_in, auth_out in rows:
         if decoded != name:
-            print(f"{'':<14} ! struct layout mismatch: read name {decoded!r}, expected {name!r}")
-            suspicious = True
-    if suspicious:
-        print("\nStruct layout mismatch detected; the process_command column is unreliable.")
+            problems.append(f"{name}: read name {decoded!r}, expected {name!r}")
+        if nb_in != auth_in or nb_out != auth_out:
+            problems.append(f"{name}: read nb_inputs/nb_outputs {nb_in}/{nb_out}, "
+                            f"library reports {auth_in}/{auth_out}")
+        if not 0 < priv_size <= MAX_PLAUSIBLE_PRIV_SIZE:
+            problems.append(f"{name}: priv_size {priv_size} is not a plausible struct size "
+                            f"(expected 1..{MAX_PLAUSIBLE_PRIV_SIZE})")
+
+    if problems:
+        print("struct layout FAILED its own assertions, so no per-filter verdict is reported:")
+        for problem in problems:
+            print(f"  - {problem}")
+        print("\nThe process_command column is meaningless until these pass. Check the field")
+        print("order and widths against this libavfilter's avfilter.h.")
         return 2
-    print("\nA False row means the filter exists but rejects runtime commands:")
-    print("mpv still reports rc=0 because f_lavfi.c only tests `result >= 0`.")
+
+    print(f"{'filter':<14} {'priv_size':<11} {'pads':<7} {'process_command':<16} verdict")
+    for name, _, priv_size, nb_in, nb_out, callback, _, _ in rows:
+        verdict = "runtime command accepted" if callback else "no runtime command callback"
+        print(f"{name:<14} {priv_size:<11} {f'{nb_in}/{nb_out}':<7} {str(callback):<16} {verdict}")
+    print("\nLayout cross-checked against avfilter_filter_pad_count(). A True row means the")
+    print("filter has a process_command callback; a False row means a command is rejected")
+    print("with AVERROR(ENOSYS) while mpv still reports rc=0 (f_lavfi.c tests `result >= 0`).")
+    print("Structural agreement is not behavioural proof: send a command whose value differs")
+    print("from the installed one, then re-read the `af` graph to observe the change.")
     return 0
 
 
