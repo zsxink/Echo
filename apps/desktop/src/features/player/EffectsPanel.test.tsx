@@ -61,7 +61,7 @@ function openPanel(effects: EffectsSnapshotDto) {
       <button type="button">外部目标</button>
     </>,
   );
-  fireEvent.click(screen.getByRole("button", { name: "显示音效" }));
+  fireEvent.click(screen.getByRole("button", { name: /^显示音效/ }));
 }
 
 beforeEach(() => {
@@ -128,7 +128,7 @@ describe("audio effects shared player state", () => {
 describe("nonmodal effects overlay", () => {
   it("closes once on a repeated trigger gesture", () => {
     openPanel(snapshot());
-    const trigger = screen.getByRole("button", { name: "隐藏音效" });
+    const trigger = screen.getByRole("button", { name: /^隐藏音效/ });
     fireEvent.pointerDown(trigger);
     fireEvent.click(trigger);
     expect(screen.queryByTestId("effects-panel")).not.toBeInTheDocument();
@@ -147,9 +147,9 @@ describe("nonmodal effects overlay", () => {
     act(() => target.focus());
     expect(target).toHaveFocus();
     expect(screen.queryByTestId("effects-panel")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "显示音效" }));
+    fireEvent.click(screen.getByRole("button", { name: /^显示音效/ }));
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.getByRole("button", { name: "显示音效" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: /^显示音效/ })).toHaveFocus();
   });
   it("uses linked tabs and left/right keys without changing playback", () => {
     openPanel(snapshot());

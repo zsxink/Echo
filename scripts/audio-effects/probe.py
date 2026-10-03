@@ -117,6 +117,27 @@ def spatial_chain():
     return '@echo_spatial:lavfi=[aformat=sample_fmts=dbl,volume@preamp=volume=-2.938200260161128dB:precision=double,extrastereo@spatial=m=1.25:c=false,' + LIMITER + ']'
 
 
+def af_command_signature(mpv):
+    """Return the loaded library's af-command positional argument count."""
+    commands = mpv.get('command-list')
+    if not isinstance(commands, list):
+        return None
+    for command in commands:
+        if isinstance(command, dict) and command.get('name') == 'af-command':
+            arguments = command.get('args')
+            return len(arguments) if isinstance(arguments, list) else None
+    return None
+
+
+def af_command_args(argument_count, label, target, option, value):
+    """Build the syntax reported by this library; never guess or retry."""
+    if argument_count == 3:
+        return ('af-command', label, f'{target}:{option}', value)
+    if argument_count == 4:
+        return ('af-command', label, option, value, target)
+    return None
+
+
 def loaded_libraries():
     """Runtime mappings, not presumed neighboring dependency files."""
     paths = []
@@ -206,6 +227,12 @@ def run_probe(args):
     try:
         version = mpv.lib.mpv_client_api_version()
         report['client_api'] = {'raw': version, 'major': version >> 16, 'minor': version & 0xffff}
+        af_arg_count = af_command_signature(mpv)
+        report['af_command_signature'] = {
+            'argument_count': af_arg_count,
+            'syntax': {3: 'patched-target-prefix', 4: 'upstream-separate-target'}.get(af_arg_count),
+            'meaning': 'Read from the selected library command-list; unknown signatures are not guessed.',
+        }
         report['runtime_libraries'] = loaded_libraries()
         # Optional dependency exports reached through this exact libmpv handle.
         report['ffmpeg_exports'] = {}
@@ -271,22 +298,27 @@ def run_probe(args):
             report['checks'].append({'name': f'{name}_chain', 'chain': chain, 'command_result': result,
                                     'meaning': 'Command acceptance only; inspect logs and audio-out-params for initialization failures.'})
             if name.startswith('eq'):
-                # Try exact four-argument instance target and older lavfi direct command.
-                # Errors are evidence; no fallback is silently called successful.
-                commands = [('af-command', 'echo_eq', 'eq5:gain', '1'),
-                                ('af-command', 'echo_eq', 'preamp:volume', '0.501187233627272')] if name == 'eq' else [
-                                ('af-command', 'echo_eq5', 'eq5:gain', '1'),
-                                ('af-command', 'echo_preamp', 'preamp:volume', '0.501187233627272')]
-                for command in commands:
-                    code = mpv.command(*command)
-                    mpv.pump(0.1)
-                    report['checks'].append({'name': 'af_command_syntax', 'args': list(command), 'result': code,
-                                            'meaning': 'Acceptance does not prove parameter change, isolation, atomicity or smoothing.'})
+                commands = [('echo_eq', 'eq5', 'gain', '1'),
+                            ('echo_eq', 'preamp', 'volume', '0.501187233627272')] if name == 'eq' else [
+                            ('echo_eq5', 'eq5', 'gain', '1'),
+                            ('echo_preamp', 'preamp', 'volume', '0.501187233627272')]
+                for label, target, option, value in commands:
+                    command = af_command_args(af_arg_count, label, target, option, value)
+                    code = mpv.command(*command) if command else None
+                    if command:
+                        mpv.pump(0.1)
+                    report['checks'].append({'name': 'af_command_syntax',
+                                             'args': list(command) if command else None,
+                                             'result': code, 'skipped': command is None,
+                                             'meaning': 'Acceptance does not prove parameter change, isolation, atomicity or smoothing.'})
             if name == 'spatial':
-                command = ('af-command', 'echo_spatial', 'spatial:m', '1.25')
-                code = mpv.command(*command)
-                mpv.pump(0.1)
-                report['checks'].append({'name': 'spatial_filter_command', 'args': list(command), 'result': code,
+                command = af_command_args(af_arg_count, 'echo_spatial', 'spatial', 'm', '1.25')
+                code = mpv.command(*command) if command else None
+                if command:
+                    mpv.pump(0.1)
+                report['checks'].append({'name': 'spatial_filter_command',
+                                         'args': list(command) if command else None,
+                                         'result': code, 'skipped': command is None,
                                          'meaning': 'Acceptance does not prove parameter change, isolation, atomicity or smoothing.'})
             before = mpv.get('af')
             mpv.command('loadfile', str(args.input.resolve()))
@@ -306,8 +338,10 @@ def run_probe(args):
             # aformat -> preamp -> individually named EQ stages -> limiter.
             capture_chain = individual_eq_chain(rate)
             chain_result = mpv.command('af', 'set', capture_chain)
-            preamp_result = mpv.command('af-command', 'echo_preamp', 'preamp:volume', '0.446683592150963')
-            band_result = mpv.command('af-command', 'echo_eq5', 'eq5:gain', '6')
+            preamp_args = af_command_args(af_arg_count, 'echo_preamp', 'preamp', 'volume', '0.446683592150963')
+            band_args = af_command_args(af_arg_count, 'echo_eq5', 'eq5', 'gain', '6')
+            preamp_result = mpv.command(*preamp_args) if preamp_args else -1
+            band_result = mpv.command(*band_args) if band_args else -1
             mpv.command('loadfile', str(args.input.resolve()))
             ready = wait_audio(mpv, args.step_timeout)
             duration = mpv.get('duration')

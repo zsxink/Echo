@@ -8,14 +8,16 @@ export function EffectsTrigger({ immersive = false }: { readonly immersive?: boo
   const ui = usePlayerUi();
   const effects = useAudioEffects();
   const enabled = effects?.document.requestedEnabled === true;
+  const confirmed = effects?.runtime.applied === "applied";
   const selected = effects?.document.selection;
-  const name = enabled
-    ? selected?.kind === "draft"
-      ? "自定义"
-      : selected?.kind === "preset"
-        ? effects?.presets.find((preset) => preset.id === selected.id)?.name
-        : undefined
-    : undefined;
+  const name =
+    enabled && confirmed
+      ? selected?.kind === "draft"
+        ? "自定义"
+        : selected?.kind === "preset"
+          ? effects?.presets.find((preset) => preset.id === selected.id)?.name
+          : undefined
+      : undefined;
   return (
     <button
       type="button"

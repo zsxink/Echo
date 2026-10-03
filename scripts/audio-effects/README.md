@@ -92,16 +92,27 @@ The experiments install/remove these explicit candidates:
 
 All candidates use
 `alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true`.
-Runtime trials record these exact client argv arrays, including errors:
+Runtime trials read `command-list` from the selected candidate library and record
+its `af-command` argument count and the exact client argv, including errors.
+The macOS mpv 0.36 compatibility build uses the patched target-prefix syntax:
 
 ```text
 af-command echo_eq eq5:gain 1
 af-command echo_eq preamp:volume 0.501187233627272
-af-command echo_eq5 eq5:gain 1
-af-command echo_preamp preamp:volume 0.501187233627272
 ```
 
-The bundled Echo mpv patch extends `af-command` with `<filter-id>:<option>` for the named lavfi instance; these calls confirm command acceptance on the candidate build. They do not establish measured gain change, isolation, internal state survival or smoothness. The two final commands exercise the separately labeled graph form. `loadfile` is issued again and configured `af` before/after is
+Upstream mpv 0.37 and newer takes the target as a separate final argument:
+
+```text
+af-command echo_eq gain 1 eq5
+af-command echo_preamp volume 0.501187233627272 preamp
+```
+
+The bundled macOS mpv patch extends `af-command` with `<filter-id>:<option>` for
+the named lavfi instance. Unknown signatures are recorded and not guessed or
+retried. These calls confirm command acceptance on the candidate build; they do
+not establish measured gain change, isolation, internal state survival or
+smoothness. `loadfile` is issued again and configured `af` before/after is
 recorded, with volume/mute snapshots. A failed install followed by equal empty `af` lists explicitly fails chain
 survival. Identical **nonempty** `af` is only configured-chain survival, not proof that internal runtime commands survived reload.
 

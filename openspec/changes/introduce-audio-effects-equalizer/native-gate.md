@@ -57,10 +57,33 @@ shasum -a 256 /Applications/Echo.app/Contents/Frameworks/libavfilter.dylib
 | macOS 候选 bundle PCM | `target/release/bundle/macos/Echo.app`；probe report `evidence/macos-pcm-response-probe.json`；CC0 997 Hz / -60 dBFS / 48 kHz / stereo 输入 SHA-256 `81d179034a32a2bc4cfbd1c20e492d036828e1c34fb5c3d7ba51b772b567672a` | 通过候选 bundle `ao=pcm` 捕获 96,000 帧、48 kHz、2ch、s16 输出；1 kHz EQ +6 dB 在 997 Hz 实测 `+5.9959 dB`，误差 `-0.0041 dB`；输出 sample-peak `-54.0507 dBFS`。所有 bundle dylib 哈希匹配 vendor manifest，运行时映射均来自候选 bundle。此单点响应不代表整条频响曲线或压力素材门槛；true-peak 未测，`gate_passed=false`。 |
 | macOS 候选 bundle limiter 压力点 | `evidence/macos-pcm-limiter-stress-probe.json`；CC0 997 Hz / -0.1 dBFS / 48 kHz / stereo 输入 | 单段 1 kHz/+12 dB、Auto preamp -11.5 dB（对应 `G=12 dB`、`safe+0.5 dB`）经过候选包实际滤镜输出；捕获 sample-peak `-0.99985 dBFS`，s16 integer PCM。此单音压力点不能替代扫频、宽带、脉冲、双声道反相及不同采样率矩阵；true-peak/听感未测，`gate_passed=false`。 |
 | macOS 候选 bundle CoreAudio | probe report `evidence/macos-audio-candidate-coreaudio-probe.json`；同一个候选 bundle 与 -60 dBFS fixture | 真实 CoreAudio 协商 48 kHz / 2ch / s32；十段 EQ、空间链、loadfile 链保留均成功；运行时 `eq5:gain`、preamp 具名命令调用返回 rc=0。rc=0 只说明调用被接收，不证明音频参数产生可测变化；`spatial:m` 更由结构体检查证实不受支持。测试音 mpv 音量限制为1%；`gate_passed=false`。 |
-| Windows | 未获得候选安装包、参考机或捕获设备 | 未测 |
+| Windows | 有固定 vendor DLL；未获得候选安装包、参考机或捕获设备 | 未测 |
 | `/Applications/Echo.app` 已安装候选 | `evidence/macos-installed-app-probe.json`；app 内 libavfilter SHA-256 与 vendor manifest 一致 | app 内 libmpv 探针成功初始化、建立包含十段 EQ 和 limiter 的链、更新 EQ/preamp 命令并在 `loadfile` 后保持配置链；仅命令/快照证据，未证明目标参数的 PCM 响应。`gate_passed=false`。 |
 | `/Applications/Echo.app` CoreAudio 与 mono | `evidence/macos-installed-app-coreaudio-probe.json`、`evidence/macos-installed-app-mono-probe.json` | CoreAudio 协商 48 kHz / stereo / s32；EQ 与 preamp 命令均返回 rc=0，十段链和 loadfile 后配置链存活。Mono 输入输出仍为 mono，探针跳过空间链。定向命令 rc=0 与 `process_command` 检查只证明可调用，不冒充参数 PCM 响应或设备听感。 |
 | Linux | 当前仓库无 `vendor/libmpv/linux` 候选目录/安装包或参考机 | 未测 |
+
+## Windows/Linux 开发侧复核（2026-10-03）
+
+Windows 的发行库已固定为 shinchiro `20260814` 的 x86-64 `libmpv-2.dll`
+（mpv `20260814 git-7b8915bc1d`、ABI 2.5；SHA-256
+`f709c7ca8b183bec76b8158bf0c45c53018c63366750729352612f228ff7bdea`，与
+`vendor/libmpv/windows/manifest.json` 一致）。macOS 主机上的 PE 架构/清单核对、
+`cargo check -p echo-desktop --target x86_64-pc-windows-gnu`、平台 Gate 检查
+`node scripts/verify/checks/task-9.7.mjs` / `task-9.8.mjs` 均通过；9.8 在此
+主机只执行 macOS 分支。Windows 平台 Gate 测试可交叉编译，不能在 macOS 上运行，
+也不能证明 DLL 内的 FFmpeg 滤镜与定向运行时命令行为。
+
+Linux 的供应链脚本、22.04 构建容器引导和 provenance 自测均通过：
+`node scripts/release/build-linux-libmpv.test.mjs`、
+`node scripts/release/build-linux-libmpv-container.test.mjs`。当前 checkout 未包含
+Linux manifest/候选 ELF；主机既没有 Docker/Podman/Lima，也没有 Linux C 工具链/系统
+sysroot。`cargo check -p echo-desktop --target x86_64-unknown-linux-gnu` 因缺少
+`x86_64-linux-gnu-gcc` 失败，因此不能据此宣称 Linux 编译或原生 Gate 通过。
+
+音频工具离线自测通过（10 项），macOS 本机 `cargo test -p echo-desktop` 通过
+（368 个单元测试及集成测试）。以上是共享实现、平台装载代码与实验工具的开发侧
+证据，不是 Windows/Linux 运行时滤镜链、PCM 响应或硬件验收；tasks 7.1–7.3
+仍待候选 Linux 运行库及各平台机器/捕获设备完成后更新。
 
 CoreAudio 能力探针的输出协商与候选包哈希记录见其原始报告；PCM 报告另外证明了固定 +6 dB 1 kHz EQ 的一项真实处理响应，并在近满幅单音上测得 sample-peak `-0.99985 dBFS`。`/Applications/Echo.app` 已更新为 vendor manifest 对应的候选包，旧包保留在备份目录。报告的 `gate_passed` 有意保持 `false`：这些点测不等于完整滤镜/采样率/压力验收，也不证明运行时更新的实际响应、平滑、设备时延、CPU、underrun 或听感。
 
@@ -90,6 +113,15 @@ macOS 探针的 fixture 是 48 kHz、双声道、2 秒 PCM32LE 低电平正弦�
 
 macOS vendor 包包含 FFmpeg 6.0 / mpv 0.36.0 本机 arm64 构建，FFmpeg 只打开 LGPL filters，关闭 GPL 和 nonfree；完整文件哈希、各 dylib 架构、许可证及构建来源记录在 `apps/desktop/src-tauri/vendor/libmpv/macos/manifest.json` 与 `NOTICE.md`。mpv 的 `af-command` 目标滤镜补丁位于 `scripts/release/patches/mpv-lavfi-target-command.patch`，Cocoa Objective-C 构建补丁一并固定。当前 Intel slices 沿用既有产物；macOS Gate 仍需在目标参考设备执行 PCM 环回捕获、filter loadfile/参数存活实测、100 次转换时延/underrun、CPU 和盲听记录。
 
-Linux 的固定构建脚本已配置同一组最小 LGPL FFmpeg filters，但该平台构建与实机验证按用户要求移至任务末尾；Windows 同样排在其后。
+Linux 的固定构建脚本已配置同一组最小 LGPL FFmpeg filters；当前 checkout 没有 Linux
+候选 ELF，macOS 主机也没有 Docker/Podman/Lima 可运行 Ubuntu 22.04 构建容器。Windows
+vendor DLL 已固定，但 Windows/Linux 原生探针与音效 Gate 仍需对应系统实际运行。
 
 macOS 的任务 1.2–1.5 和发布验收在 PCM/实时捕获与全部门槛完成前保持未勾选。当前机器有 CoreAudio 输出和内建麦克风，但没有虚拟 Loopback 捕获设备。需要为输出接入受支持的捕获链路后，按 `tasks.md` 记录完整响应、峰值、平滑、进度偏移、CPU 与 BS.1770-5 听感数据。
+运行时定向命令现在按 libmpv `command-list` 实际签名选择：3 参数使用 macOS
+0.36 补丁格式 `<target>:<option>`，4 参数使用上游格式 `option value target`；
+未知签名关闭原生效果请求，不尝试有误伤风险的盲目重试。Windows/Linux 平台 Gate
+也断言候选库暴露独立 target 参数。mpv 在 v0.37 引入该上游参数，见 [mpv 命令参考](https://github.com/mpv-player/mpv/blob/master/DOCS/man/input.rst)。
+更新后的探针已针对 macOS app bundle 实际运行：报告
+`evidence/macos-af-command-compat-probe.json` 读出 3 参数签名，EQ/preamp
+命令各返回 0；这验证了兼容路径及参数形状，仍不是实际增益变化的证据。

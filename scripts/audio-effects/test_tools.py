@@ -63,6 +63,29 @@ class FixtureTests(unittest.TestCase):
 
 
 class ProbeTests(unittest.TestCase):
+    def test_af_command_uses_only_the_detected_library_signature(self):
+        command_list = [
+            {'name': 'set', 'args': ['property', 'value']},
+            {'name': 'af-command', 'args': ['label', 'command', 'argument']},
+        ]
+        class MpvStub:
+            def get(self, _):
+                return command_list
+
+        mpv = MpvStub()
+        self.assertEqual(probe.af_command_signature(mpv), 3)
+        self.assertEqual(
+            probe.af_command_args(3, 'echo_eq5', 'eq5', 'gain', '6'),
+            ('af-command', 'echo_eq5', 'eq5:gain', '6'),
+        )
+        command_list[1]['args'].append('target')
+        self.assertEqual(probe.af_command_signature(mpv), 4)
+        self.assertEqual(
+            probe.af_command_args(4, 'echo_eq5', 'eq5', 'gain', '6'),
+            ('af-command', 'echo_eq5', 'gain', '6', 'eq5'),
+        )
+        self.assertIsNone(probe.af_command_args(None, 'echo_eq5', 'eq5', 'gain', '6'))
+
     def test_candidate_inactive_bands_and_safety_options(self):
         chain = probe.eq_chain(22050)
         self.assertEqual(chain.count('equalizer@'), 9)

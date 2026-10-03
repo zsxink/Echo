@@ -258,11 +258,16 @@ impl MpvBackend {
         // best-effort because the vendor `audio-default` build compiles some
         // capabilities out and reports them unknown.
         let handle = unsafe { ffi::Handle::create(&sys, HARDENED_REQUIRED, &extra_options()) }?;
+        // SAFETY: initialized handle belongs to this actor thread; metadata is
+        // available before playback and its allocation is released inside FFI.
+        let command_syntax = native_effects::AfCommandSyntax::from_argument_count(unsafe {
+            handle.af_command_argument_count(&sys)
+        });
         Ok(Self {
             sys,
             handle,
             pending_load: None,
-            effects: native_effects::NativeEffects::default(),
+            effects: native_effects::NativeEffects::new(command_syntax),
         })
     }
 
@@ -2477,6 +2482,10 @@ mod tests {
         unsafe {
             let sys = ffi::MpvSys::load(&lib).expect("dlopen the vendored libmpv");
             let mut handle = ffi::Handle::create(&sys, &[], &[]).expect("create mpv handle");
+            assert!(
+                matches!(handle.af_command_argument_count(&sys), Some(3 | 4)),
+                "af-command signature must be discoverable from bundled mpv metadata"
+            );
             let muted = std::ffi::CString::new("mute").expect("no NUL");
             handle
                 .observe_property(&sys, 0, muted.as_c_str(), ffi::format_::FLAG)

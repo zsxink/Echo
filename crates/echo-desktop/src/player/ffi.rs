@@ -61,6 +61,67 @@ pub struct MpvSys {
     pub wakeup: unsafe extern "C" fn(*mut c_void),
     /// `mpv_client_api_version` — the client API version, as a sanity check.
     pub client_api_version: unsafe extern "C" fn() -> u64,
+    get_property: unsafe extern "C" fn(*mut c_void, *const c_char, c_int, *mut c_void) -> c_int,
+    free_node_contents: unsafe extern "C" fn(*mut MpvNode),
+}
+
+// ABI layout from mpv/client.h. Read only command metadata; every returned node
+// remains owned by mpv until free_node_contents is called.
+#[repr(C)]
+struct MpvNode {
+    data: MpvNodeData,
+    format: c_int,
+}
+
+#[repr(C)]
+union MpvNodeData {
+    string: *const c_char,
+    flag: c_int,
+    int64: i64,
+    double: c_double,
+    list: *const MpvNodeList,
+    byte_array: *const c_void,
+}
+
+#[repr(C)]
+struct MpvNodeList {
+    num: c_int,
+    values: *const MpvNode,
+    keys: *const *const c_char,
+}
+
+impl MpvNode {
+    // SAFETY: callers only use nodes returned by mpv_get_property while the
+    // owning root node is alive. mpv guarantees the pointers for the node format.
+    unsafe fn values(&self, expected_format: c_int) -> Option<&[Self]> {
+        if self.format != expected_format {
+            return None;
+        }
+        let list = unsafe { self.data.list.as_ref() }?;
+        let len = usize::try_from(list.num).ok()?;
+        if len == 0 {
+            return Some(&[]);
+        }
+        if list.values.is_null() {
+            return None;
+        }
+        Some(unsafe { std::slice::from_raw_parts(list.values, len) })
+    }
+
+    unsafe fn get(&self, key: &str) -> Option<&Self> {
+        let values = unsafe { self.values(8) }?; // MPV_FORMAT_NODE_MAP
+        let list = unsafe { self.data.list.as_ref() }?;
+        if list.keys.is_null() {
+            return None;
+        }
+        for (index, value) in values.iter().enumerate() {
+            let name = unsafe { *list.keys.add(index) };
+            if !name.is_null() && unsafe { CStr::from_ptr(name) }.to_bytes() == key.as_bytes() {
+                return Some(value);
+            }
+        }
+        None
+    }
 }
 
 // SAFETY: `MpvSys` holds only resolved function pointers and the `Library` that
@@ -229,6 +290,14 @@ impl MpvSys {
             ),
             wakeup: sym!(b"mpv_wakeup\0", unsafe extern "C" fn(*mut c_void)),
             client_api_version: sym!(b"mpv_client_api_version\0", unsafe extern "C" fn() -> u64),
+            get_property: sym!(
+                b"mpv_get_property\0",
+                unsafe extern "C" fn(*mut c_void, *const c_char, c_int, *mut c_void) -> c_int
+            ),
+            free_node_contents: sym!(
+                b"mpv_free_node_contents\0",
+                unsafe extern "C" fn(*mut MpvNode)
+            ),
             _lib: lib,
         };
         Ok(sys)
@@ -395,6 +464,48 @@ impl Handle {
             return Err(HandleError::Command(code));
         }
         Ok(())
+    }
+
+    /// Inspect the loaded library's af-command signature without altering audio.
+    ///
+    /// # Safety
+    ///
+    /// Must be called from the owning actor thread with a live initialized handle.
+    #[must_use]
+    pub unsafe fn af_command_argument_count(&self, sys: &MpvSys) -> Option<usize> {
+        let name = c"command-list";
+        let mut root = MpvNode {
+            data: MpvNodeData { int64: 0 },
+            format: 0,
+        };
+        // SAFETY: NODE (6) writes a correctly sized root; mpv owns its contents.
+        let code = unsafe {
+            (sys.get_property)(
+                self.raw,
+                name.as_ptr(),
+                6,
+                std::ptr::from_mut(&mut root).cast(),
+            )
+        };
+        if code != err_::SUCCESS {
+            return None;
+        }
+        let count = (|| {
+            // SAFETY: all descendants belong to the live successful root read.
+            for command in unsafe { root.values(7) }? {
+                let name = unsafe { command.get("name") }?;
+                if name.format == format_::STRING
+                    && !unsafe { name.data.string }.is_null()
+                    && unsafe { CStr::from_ptr(name.data.string) }.to_bytes() == b"af-command"
+                {
+                    return Some(unsafe { command.get("args")?.values(7) }?.len());
+                }
+            }
+            None
+        })();
+        // SAFETY: root was successfully allocated by mpv; no descendants escape.
+        unsafe { (sys.free_node_contents)(&raw mut root) };
+        count
     }
 
     /// Subscribe to a property with the given [format_]. Returns the mpv error.

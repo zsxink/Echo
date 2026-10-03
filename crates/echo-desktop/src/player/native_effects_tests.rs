@@ -2,6 +2,125 @@
 
 use super::*;
 use crate::effects::{ChannelLayout, EqCurve, Spatial};
+
+#[test]
+fn af_command_syntax_tracks_the_loaded_library_signature() {
+    assert_eq!(
+        AfCommandSyntax::from_argument_count(Some(3)),
+        AfCommandSyntax::LegacyPatched
+    );
+    assert_eq!(
+        AfCommandSyntax::from_argument_count(Some(4)),
+        AfCommandSyntax::SeparateTarget
+    );
+    assert_eq!(
+        AfCommandSyntax::from_argument_count(None),
+        AfCommandSyntax::Unavailable
+    );
+    assert_eq!(
+        AfCommandSyntax::from_argument_count(Some(5)),
+        AfCommandSyntax::Unavailable
+    );
+}
+
+#[test]
+fn af_command_sends_filter_target_in_the_library_specific_position() {
+    let mut legacy = Vec::new();
+    AfCommandSyntax::LegacyPatched
+        .send("echo_eq4", "eq4", "gain", "3.5", &mut |args| {
+            legacy.push(args.to_vec());
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(legacy, [vec!["af-command", "echo_eq4", "eq4:gain", "3.5"]]);
+
+    let mut modern = Vec::new();
+    AfCommandSyntax::SeparateTarget
+        .send("echo_eq4", "eq4", "gain", "3.5", &mut |args| {
+            modern.push(args.to_vec());
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(
+        modern,
+        [vec!["af-command", "echo_eq4", "gain", "3.5", "eq4"]]
+    );
+}
+
+#[test]
+fn unknown_af_command_signature_fails_before_installing_audio_filters() {
+    let mut native = NativeEffects::new(AfCommandSyntax::Unavailable);
+    let payload = Payload::Eq(EqCurve::default());
+    let analysis = crate::effects::math::analyze(&payload, environment()).unwrap();
+    let mut commands = Vec::new();
+    assert!(native
+        .apply(&payload, environment(), &analysis, |args| {
+            commands.push(args.to_vec());
+            Ok(())
+        })
+        .is_err());
+    assert!(commands.is_empty());
+}
+
+#[test]
+fn separate_target_runtime_updates_keep_equalizer_and_preamp_targets_isolated() {
+    let mut native = NativeEffects::new(AfCommandSyntax::SeparateTarget);
+    let mut commands = Vec::new();
+    let payload = Payload::Eq(EqCurve::default());
+    let analysis = crate::effects::math::analyze(&payload, environment()).unwrap();
+    native
+        .apply(&payload, environment(), &analysis, |args| {
+            commands.push(args.to_vec());
+            Ok(())
+        })
+        .unwrap();
+    native.reconfirm();
+    native
+        .apply(&payload, environment(), &analysis, |args| {
+            commands.push(args.to_vec());
+            Ok(())
+        })
+        .unwrap();
+    complete(&mut native);
+    native
+        .apply(&payload, environment(), &analysis, |args| {
+            commands.push(args.to_vec());
+            Ok(())
+        })
+        .unwrap();
+
+    let mut edited = EqCurve::default();
+    edited.gains_db[4] = 2.0;
+    let edited = Payload::Eq(edited);
+    let analysis = crate::effects::math::analyze(&edited, environment()).unwrap();
+    native
+        .apply(&edited, environment(), &analysis, |args| {
+            commands.push(args.to_vec());
+            Ok(())
+        })
+        .unwrap();
+    complete(&mut native);
+    native
+        .apply(&edited, environment(), &analysis, |args| {
+            commands.push(args.to_vec());
+            Ok(())
+        })
+        .unwrap();
+
+    let updates = commands
+        .iter()
+        .filter(|args| args[0] == "af-command")
+        .collect::<Vec<_>>();
+    assert!(!updates.is_empty());
+    assert!(updates.iter().all(|args| args.len() == 5));
+    assert!(updates
+        .iter()
+        .any(|args| args[1] == "echo_eq4" && args[2] == "gain" && args[4] == "eq4"));
+    assert!(updates
+        .iter()
+        .any(|args| args[1] == "echo_preamp" && args[2] == "volume" && args[4] == "preamp"));
+}
+
 fn environment() -> ProcessingEnvironment {
     ProcessingEnvironment {
         sample_rate: 48_000,

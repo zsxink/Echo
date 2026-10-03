@@ -11,6 +11,51 @@ const LIMITER: &str = "alimiter=limit=0.891250938:attack=5:release=50:level_in=1
 
 type Command<'a> = dyn FnMut(&[String]) -> Result<(), String> + 'a;
 
+/// Upstream mpv added a separate lavfi target argument in 0.37. The pinned
+/// macOS 0.36 build instead carries our `<target>:<command>` compatibility patch.
+/// Select from the loaded library's command metadata, not its client API version.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum AfCommandSyntax {
+    #[default]
+    LegacyPatched,
+    SeparateTarget,
+    Unavailable,
+}
+
+impl AfCommandSyntax {
+    pub(super) const fn from_argument_count(count: Option<usize>) -> Self {
+        match count {
+            Some(3) => Self::LegacyPatched,
+            Some(4) => Self::SeparateTarget,
+            _ => Self::Unavailable,
+        }
+    }
+
+    fn send(
+        self,
+        label: &str,
+        target: &str,
+        option: &str,
+        value: &str,
+        command: &mut Command<'_>,
+    ) -> Result<(), String> {
+        match self {
+            Self::LegacyPatched => command(&strings(&[
+                "af-command",
+                label,
+                &format!("{target}:{option}"),
+                value,
+            ])),
+            Self::SeparateTarget => {
+                command(&strings(&["af-command", label, option, value, target]))
+            }
+            Self::Unavailable => {
+                Err("native audio filter command capability unavailable".to_owned())
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 struct Configuration {
     payload: Payload,
@@ -30,6 +75,7 @@ struct Ramp {
 
 #[derive(Default)]
 pub(super) struct NativeEffects {
+    command_syntax: AfCommandSyntax,
     current: Option<Configuration>,
     ramp: Option<Ramp>,
     labels: Vec<String>,
@@ -39,6 +85,13 @@ pub(super) struct NativeEffects {
 }
 
 impl NativeEffects {
+    pub(super) fn new(command_syntax: AfCommandSyntax) -> Self {
+        Self {
+            command_syntax,
+            ..Self::default()
+        }
+    }
+
     pub(super) fn reconfirm(&mut self) {
         self.reconfirm = true;
         self.ramp = None;
@@ -66,6 +119,9 @@ impl NativeEffects {
         analysis: &EffectsAnalysis,
         mut command: impl FnMut(&[String]) -> Result<(), String>,
     ) -> Result<bool, String> {
+        if self.command_syntax == AfCommandSyntax::Unavailable {
+            return Err("native audio filter command capability unavailable".to_owned());
+        }
         self.recover_stale_install();
         let target = Configuration {
             payload: payload.clone(),
@@ -207,7 +263,7 @@ impl NativeEffects {
                 .preamp
                 .min(target.preamp)
                 .min(if risk == 0.0 { 0.0 } else { -(risk + 1.0) });
-        preamp(protected, command)?;
+        preamp(self.command_syntax, protected, command)?;
         self.ramp = Some(Ramp {
             target,
             from_gains: current.gains,
@@ -239,12 +295,13 @@ impl NativeEffects {
                     }
                     let gain = ramp.from_gains[index]
                         + fraction * (ramp.target.gains[index] - ramp.from_gains[index]);
-                    command(&strings(&[
-                        "af-command",
+                    self.command_syntax.send(
                         &format!("echo_eq{index}"),
-                        &format!("eq{index}:gain"),
+                        &format!("eq{index}"),
+                        "gain",
                         &format!("{gain:.15}"),
-                    ]))?;
+                        command,
+                    )?;
                     current.gains[index] = gain;
                 }
             }
@@ -260,7 +317,7 @@ impl NativeEffects {
         let bypass = ramp.bypass;
         // Reduce effect risk first, then release the protective preamp. The
         // limiter remains present until the complete bypass ramp has finished.
-        preamp(target.preamp, command)?;
+        preamp(self.command_syntax, target.preamp, command)?;
         self.current = Some(target);
         self.ramp = None;
         if bypass {
@@ -329,13 +386,14 @@ impl NativeEffects {
     }
 }
 
-fn preamp(db: f64, command: &mut Command<'_>) -> Result<(), String> {
-    command(&strings(&[
-        "af-command",
+fn preamp(syntax: AfCommandSyntax, db: f64, command: &mut Command<'_>) -> Result<(), String> {
+    syntax.send(
         "echo_preamp",
-        "preamp:volume",
+        "preamp",
+        "volume",
         &format!("{:.15}", 10.0_f64.powf(db / 20.0)),
-    ]))
+        command,
+    )
 }
 fn strings(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
