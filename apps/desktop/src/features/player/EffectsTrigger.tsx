@@ -7,9 +7,9 @@ export function EffectsTrigger({ immersive = false }: { readonly immersive?: boo
   const ref = useRef<HTMLButtonElement>(null);
   const ui = usePlayerUi();
   const effects = useAudioEffects();
-  const applied = effects?.runtime.applied === "applied";
+  const enabled = effects?.document.requestedEnabled === true;
   const selected = effects?.document.selection;
-  const name = applied
+  const name = enabled
     ? selected?.kind === "draft"
       ? "自定义"
       : selected?.kind === "preset"
@@ -19,7 +19,7 @@ export function EffectsTrigger({ immersive = false }: { readonly immersive?: boo
   return (
     <button
       type="button"
-      className={`effects-trigger ${immersive ? "effects-trigger-immersive" : "control"}${applied ? " active" : ""}`}
+      className={`effects-trigger ${immersive ? "effects-trigger-immersive" : "control"}${!immersive && name ? " has-name" : ""}${enabled ? " active" : ""}`}
       aria-label={`${ui.effectsOpen ? "隐藏" : "显示"}音效${name ? `，已生效：${name}` : ""}`}
       aria-expanded={ui.effectsOpen}
       aria-controls="audio-effects-panel"
@@ -40,7 +40,7 @@ export function EffectsTrigger({ immersive = false }: { readonly immersive?: boo
         <path d="M5 3v5m0 4v9M12 3v10m0 4v4M19 3v2m0 4v12M2 10h6m1 5h6m1-8h6" />
       </svg>
       {immersive || name ? (
-        <span className={immersive ? "" : "sr-only"}>{name ?? "音效"}</span>
+        <span className={!immersive && name ? "effects-trigger-name" : ""}>{name ?? "音效"}</span>
       ) : null}
     </button>
   );

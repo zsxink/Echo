@@ -58,8 +58,6 @@ import { LyricsColumn } from "./LyricsColumn";
 // Component
 // ---------------------------------------------------------------------------
 
-import { EffectsTrigger } from "./EffectsTrigger";
-
 export function ImmersivePlayer() {
   const snapshot = usePlayerSnapshot();
   const ui = usePlayerUi();
@@ -210,8 +208,6 @@ function ImmersiveBody(props: {
       >
         <Icon name="chevronDown" />
       </button>
-
-      <EffectsTrigger immersive />
 
       {!hasCurrent ? (
         <p className="now-playing-empty">未在播放</p>
