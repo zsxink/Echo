@@ -5,7 +5,8 @@
  * so the UI never fabricates a final value.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { EffectsSnapshotDto } from "../ipc/ipc-types.generated";
 
 import {
   PLAYER_SNAPSHOT_EVENT,
@@ -73,5 +74,151 @@ describe("playerStore task 11.1", () => {
 
     await unlisten();
     expect(listeners.has(PLAYER_SNAPSHOT_EVENT)).toBe(false);
+  });
+});
+
+function effectsSnapshot(snapshotSequence?: number): EffectsSnapshotDto {
+  const curve = { gainsDb: Array(10).fill(0), preampMode: "auto" as const, requestedPreampDb: 0 };
+  return {
+    snapshotSequence,
+    document: {
+      schemaVersion: 1,
+      registryVersion: 1,
+      userPresets: [],
+      selection: { kind: "draft" },
+      retainedPayload: { kind: "eq", ...curve },
+      draft: curve,
+      requestedEnabled: true,
+    },
+    runtime: {
+      revision: 4,
+      playbackEpoch: 2,
+      persistenceStatus: "unsaved",
+      applied: "pending",
+      effectivePreampDb: null,
+      activeBands: [],
+      processingRate: null,
+      channelLayout: null,
+      reason: null,
+    },
+    presets: [],
+    responsePoints: [],
+    referenceResponse: true,
+    safePreampDb: 0,
+  };
+}
+
+describe("effects snapshot ordering", () => {
+  beforeEach(() => {
+    playerStore.stateForRender().update((state) => ({ ...state, effects: null }));
+  });
+
+  it("rejects delayed CRUD replies and queries at the same audio revision and epoch", () => {
+    const oldQuery = effectsSnapshot(1);
+    const curve = oldQuery.document.draft!;
+    const saved: EffectsSnapshotDto = {
+      ...oldQuery,
+      snapshotSequence: 2,
+      document: {
+        ...oldQuery.document,
+        draft: null,
+        selection: { kind: "preset", id: "user:one" },
+        userPresets: [{ id: "user:one", name: "Saved", curve }],
+      },
+      presets: [
+        {
+          id: "user:one",
+          name: "Saved",
+          description: "",
+          source: "user",
+          payload: { kind: "eq", ...curve },
+        },
+      ],
+    };
+    const renamed: EffectsSnapshotDto = {
+      ...saved,
+      snapshotSequence: 3,
+      document: { ...saved.document, userPresets: [{ id: "user:one", name: "Renamed", curve }] },
+      presets: [{ ...saved.presets[0], name: "Renamed" }],
+    };
+    const deleted: EffectsSnapshotDto = {
+      ...renamed,
+      snapshotSequence: 4,
+      document: { ...renamed.document, selection: { kind: "none" }, userPresets: [] },
+      presets: [],
+    };
+    playerStore.publishEffects(renamed);
+    playerStore.publishEffects(saved);
+    playerStore.publishEffects(oldQuery);
+    expect(playerStore.getEffects()).toEqual(renamed);
+    playerStore.publishEffects(deleted);
+    playerStore.publishEffects(renamed);
+    expect(playerStore.getEffects()).toEqual(deleted);
+  });
+
+  it("accepts later metadata and persistence while retaining terminal audio facts", () => {
+    const pending = effectsSnapshot(1);
+    const applied: EffectsSnapshotDto = {
+      ...pending,
+      referenceResponse: false,
+      responsePoints: [{ frequencyHz: 1000, gainDb: -3 }],
+      safePreampDb: -3,
+      runtime: {
+        ...pending.runtime,
+        applied: "applied",
+        effectivePreampDb: -3,
+        processingRate: 48_000,
+        channelLayout: "stereo",
+        activeBands: Array(10).fill(true),
+      },
+    };
+    const metadata: EffectsSnapshotDto = {
+      ...pending,
+      snapshotSequence: 2,
+      recoveryReason: "protected document",
+      document: {
+        ...pending.document,
+        userPresets: [{ id: "user:one", name: "New curve", curve: pending.document.draft! }],
+      },
+      runtime: { ...pending.runtime, persistenceStatus: "failed" },
+    };
+    playerStore.publishEffects(applied);
+    playerStore.publishEffects(metadata);
+    expect(playerStore.getEffects()).toEqual({
+      ...metadata,
+      runtime: { ...applied.runtime, persistenceStatus: "failed" },
+      referenceResponse: applied.referenceResponse,
+      responsePoints: applied.responsePoints,
+      safePreampDb: applied.safePreampDb,
+    });
+    playerStore.publishEffects({
+      ...metadata,
+      snapshotSequence: 3,
+      recoveryReason: undefined,
+      runtime: { ...metadata.runtime, persistenceStatus: "saved" },
+    });
+    expect(playerStore.getEffects()?.runtime.applied).toBe("applied");
+    expect(playerStore.getEffects()?.runtime.persistenceStatus).toBe("saved");
+    expect(playerStore.getEffects()?.recoveryReason).toBeUndefined();
+  });
+
+  it("keeps revision and epoch guards for DTOs without a capture sequence", () => {
+    const current = effectsSnapshot();
+    playerStore.publishEffects(current);
+    playerStore.publishEffects({ ...current, runtime: { ...current.runtime, revision: 3 } });
+    playerStore.publishEffects({ ...current, runtime: { ...current.runtime, playbackEpoch: 1 } });
+    expect(playerStore.getEffects()).toEqual(current);
+  });
+
+  it("does not let legacy pending replies replace terminal metadata", () => {
+    const pending = effectsSnapshot();
+    const terminal: EffectsSnapshotDto = {
+      ...pending,
+      document: { ...pending.document, selection: { kind: "none" } },
+      runtime: { ...pending.runtime, applied: "bypassed", persistenceStatus: "saved" },
+    };
+    playerStore.publishEffects(terminal);
+    playerStore.publishEffects(pending);
+    expect(playerStore.getEffects()).toEqual(terminal);
   });
 });

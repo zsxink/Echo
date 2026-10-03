@@ -60,7 +60,7 @@ impl EffectsService {
         next.runtime.persistence_status = PersistenceStatus::Saved;
         inner.state = next;
         inner.pending_since = None;
-        Ok(inner.state.clone())
+        Ok(inner.capture())
     }
 
     /// Confirm bypass before deleting the current preset; failed commits compensate.
@@ -128,6 +128,6 @@ impl EffectsService {
         next.runtime.persistence_status = PersistenceStatus::Saved;
         inner.state = next;
         inner.pending_since = None;
-        Ok(inner.state.clone())
+        Ok(inner.capture())
     }
 }

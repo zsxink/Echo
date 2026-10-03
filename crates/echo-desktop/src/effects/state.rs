@@ -14,6 +14,10 @@ use serde::{Deserialize, Serialize};
 pub struct EffectsState {
     pub document: EffectsDocument,
     pub runtime: EffectsRuntime,
+    /// Service capture order, independent of the native audio request revision.
+    pub snapshot_sequence: Option<u64>,
+    /// Durable recovery protection survives unrelated native confirmations.
+    pub recovery_reason: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -25,6 +29,10 @@ pub struct EffectsSnapshot {
     pub response_points: Vec<ResponsePoint>,
     pub reference_response: bool,
     pub safe_preamp_db: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot_sequence: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery_reason: Option<String>,
 }
 
 impl EffectsState {
@@ -36,6 +44,8 @@ impl EffectsState {
         let mut state = Self {
             document,
             runtime: EffectsRuntime::default(),
+            snapshot_sequence: None,
+            recovery_reason: None,
         };
         if state.document.requested_enabled {
             state.runtime.applied = AppliedState::Pending;
@@ -295,6 +305,8 @@ impl EffectsState {
             response_points,
             reference_response,
             safe_preamp_db: analysis.map(|value| value.safe_preamp_db),
+            snapshot_sequence: self.snapshot_sequence,
+            recovery_reason: self.recovery_reason.clone(),
         }
     }
 

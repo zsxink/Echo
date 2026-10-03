@@ -113,11 +113,18 @@ class PlayerStore {
     return this.state.getSnapshot().effects;
   }
 
-  /** Revisions protect rapid editing, while epochs reject old output confirmations. */
+  /** Capture order protects metadata too; revisions/epochs support older desktops. */
   publishEffects(effects: EffectsSnapshotDto): void {
     this.state.update((current) => {
-      const previous = current.effects?.runtime;
+      const previousEffects = current.effects;
+      const previous = previousEffects?.runtime;
       const incoming = effects.runtime;
+      if (
+        previousEffects?.snapshotSequence !== undefined &&
+        effects.snapshotSequence !== undefined &&
+        effects.snapshotSequence <= previousEffects.snapshotSequence
+      )
+        return current;
       if (
         previous &&
         (incoming.revision < previous.revision ||
@@ -126,15 +133,31 @@ class PlayerStore {
       )
         return current;
       // A command/query can finish after its application event. Accepted/Pending
-      // is not allowed to replace a terminal confirmation for the same request.
+      // retains terminal audio facts for the same request, but its later saved
+      // metadata and persistence receipt must still reach the panel.
       if (
         previous &&
         incoming.revision === previous.revision &&
         incoming.playbackEpoch === previous.playbackEpoch &&
         incoming.applied === "pending" &&
         previous.applied !== "pending"
-      )
-        return current;
+      ) {
+        if (
+          previousEffects?.snapshotSequence === undefined ||
+          effects.snapshotSequence === undefined
+        )
+          return current;
+        return {
+          ...current,
+          effects: {
+            ...effects,
+            runtime: { ...previous, persistenceStatus: incoming.persistenceStatus },
+            responsePoints: previousEffects.responsePoints,
+            referenceResponse: previousEffects.referenceResponse,
+            safePreampDb: previousEffects.safePreampDb,
+          },
+        };
+      }
       return { ...current, effects };
     });
   }

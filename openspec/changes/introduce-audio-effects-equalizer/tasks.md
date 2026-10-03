@@ -57,3 +57,12 @@
 - [ ] 7.1 为 Windows 与 Linux 各固定候选安装包、libmpv/FFmpeg 版本/哈希、参考机和捕获设备；按任务 1.1 建立同等工具记录。
 - [ ] 7.2 在 Windows 与 Linux 候选库补跑任务 1.2 的滤镜链/原地命令/单声道/峰值/loadfile 实验，逐平台附带原始报告。
 - [ ] 7.3 逐平台补跑任务 1.3 的 100 次延迟捕获及任务 1.4 的性能、underrun 和听感验收；随后回填跨平台差异与 6.1 的总 Gate 结论。未经这些证据不得宣称三平台完成。
+
+## 8. 实现复核修复（R7–R11；不替代原生 Gate）
+
+- [x] 8.1 修复不支持环境中的旁路过渡提前完成和安全状态残留（R7）；验证多轮 Pending→Unavailable、旁路失败持续阻止播放、旧失败状态恢复以及 mono→stereo，运行 `cargo test -p echo-desktop player::actor_effects`。
+- [x] 8.2 音效首样本屏障期间不发布 Playing，确认放行后才进入播放状态（R8）；验证 FileLoaded/Play/Toggle/输出重建，以及迟到重配置不复活已结束曲目，运行 `cargo test -p echo-desktop player::actor`。
+- [x] 8.3 读取快照失败后的重试仅重复读取，不提交音效或修复偏好（R9）；连续两次失败再成功，断言全为 GET，运行 `pnpm --dir apps/desktop test -- src/features/player/EffectsPanel.test.tsx`。
+- [x] 8.4 增加独立非持久化快照序号，拒绝同 revision/epoch 旧快照覆盖 CRUD 结果（R10）；不增加音频 revision/后端调用；运行 `cargo test -p echo-desktop effects_service`、`pnpm --dir apps/desktop test -- src/player/playerStore.test.ts` 与 IPC 生成漂移检查。
+- [x] 8.5 独立投影恢复失败原因并显示明确恢复失败提示，保留原数据直到显式修复成功（R11）；运行 service/DTO/Panel 回归，读取和普通写入失败不混淆。
+- [x] 8.6 完成修复后 Rust/前端全量回归及 OpenSpec 严格校验，记录现有治理失败与未完成原生 Gate，更新 `review-and-fixes.md`。Rust workspace/严格 Clippy/格式、前端 327 项测试/typecheck/lint/format/build/E2E、规模/IPC 漂移通过；治理对账仍有既有 45 项错误，原 2.4/6.2 不标完成。

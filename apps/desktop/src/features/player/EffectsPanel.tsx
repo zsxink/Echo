@@ -39,7 +39,9 @@ export function EffectsPanel() {
   const effects = useAudioEffects();
   const container = useRef<HTMLElement>(null);
   const [dialog, setDialog] = useState<EffectsDialogAction | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; source: "read" | "operation" } | null>(
+    null,
+  );
   const [announcement, setAnnouncement] = useState("");
   const [editing, setEditing] = useState<EqCurve | null>(null);
   const editSequence = useRef(0);
@@ -62,12 +64,22 @@ export function EffectsPanel() {
         if (active) setError(null);
       })
       .catch(() => {
-        if (active) setError("读取音效失败，请重试。");
+        if (active) setError({ message: "读取音效失败，请重试。", source: "read" });
       });
     return () => {
       active = false;
     };
   }, [ui.effectsOpen]);
+
+  async function retryReadSnapshot() {
+    try {
+      const snapshot = await bridge.call("get_audio_effects_snapshot");
+      playerStore.publishEffects(snapshot);
+      setError(null);
+    } catch {
+      setError({ message: "读取音效失败，请重试。", source: "read" });
+    }
+  }
 
   const status = effects ? effectsStatus(effects) : "正在读取音效…";
   useEffect(() => {
@@ -83,7 +95,7 @@ export function EffectsPanel() {
       setError(null);
       return snapshot;
     } catch (cause) {
-      setError("操作失败，请求和曲线已保留，请重试。");
+      setError({ message: "操作失败，请求和曲线已保留，请重试。", source: "operation" });
       throw cause;
     }
   }
@@ -184,27 +196,35 @@ export function EffectsPanel() {
             {error ||
             effects?.runtime.applied === "failed" ||
             effects?.runtime.applied === "unavailable" ||
-            effects?.runtime.persistenceStatus === "failed" ? (
+            effects?.runtime.persistenceStatus === "failed" ||
+            effects?.recoveryReason ? (
               <div className="effects-feedback" role="status">
                 {!canEnable ? (
                   <span id="effects-enable-reason">选择预设或编辑均衡器后可启用。</span>
                 ) : null}
                 <span>
-                  {error ||
-                    (effects?.runtime.persistenceStatus === "failed"
-                      ? "尚未保存到本机 · 内存草稿已保留"
-                      : status)}
+                  {error?.message ||
+                    (effects?.recoveryReason
+                      ? "音效恢复失败 · 原数据已保留，请重试修复。"
+                      : effects?.runtime.persistenceStatus === "failed"
+                        ? "尚未保存到本机 · 内存草稿已保留"
+                        : status)}
                 </span>
                 {error ||
                 effects?.runtime.applied === "failed" ||
                 effects?.runtime.applied === "unavailable" ||
-                effects?.runtime.persistenceStatus === "failed" ? (
+                effects?.runtime.persistenceStatus === "failed" ||
+                effects?.recoveryReason ? (
                   <button
                     className="effects-retry"
                     type="button"
-                    onClick={() => command(bridge.call("retry_audio_effects"))}
+                    onClick={() =>
+                      error?.source === "read"
+                        ? void retryReadSnapshot()
+                        : command(bridge.call("retry_audio_effects"))
+                    }
                   >
-                    重试
+                    {effects?.recoveryReason && error?.source !== "read" ? "重试修复" : "重试"}
                   </button>
                 ) : null}
               </div>

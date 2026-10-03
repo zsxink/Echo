@@ -72,6 +72,18 @@ struct Inner {
     state: EffectsState,
     pending_since: Option<Instant>,
     protected: Option<String>,
+    snapshot_sequence: u64,
+}
+
+impl Inner {
+    /// Allocate while locked, before a command reply or event can be delayed.
+    fn capture(&mut self) -> EffectsState {
+        self.snapshot_sequence = self.snapshot_sequence.saturating_add(1);
+        let mut state = self.state.clone();
+        state.snapshot_sequence = Some(self.snapshot_sequence);
+        state.recovery_reason.clone_from(&self.protected);
+        state
+    }
 }
 struct Shared {
     inner: Mutex<Inner>,
@@ -108,6 +120,7 @@ impl EffectsService {
                 state,
                 pending_since: None,
                 protected,
+                snapshot_sequence: 0,
             }),
             preferences,
             playback,
@@ -126,7 +139,7 @@ impl EffectsService {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let runtime = self.shared.playback.runtime();
         reconcile(&mut inner.state, runtime);
-        inner.state.clone()
+        inner.capture()
     }
 
     /// # Errors
@@ -173,7 +186,7 @@ impl EffectsService {
         inner.state = next;
         inner.pending_since = Some(Instant::now());
         self.worker.wake();
-        Ok(inner.state.clone())
+        Ok(inner.capture())
     }
 
     /// Flush the final tail on normal process exit; background hiding does not call it.
@@ -186,7 +199,7 @@ impl EffectsService {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         persist(&self.shared, &mut inner, PreferencesWrite::Normal)?;
-        Ok(inner.state.clone())
+        Ok(inner.capture())
     }
 
     /// Explicit repair keeps the saved recovery bytes, then commits the retained request.
@@ -200,7 +213,7 @@ impl EffectsService {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         persist(&self.shared, &mut inner, PreferencesWrite::Repair)?;
         inner.protected = None;
-        Ok(inner.state.clone())
+        Ok(inner.capture())
     }
 
     /// Retry the retained audio request and deliberately repair local preferences.
@@ -228,7 +241,7 @@ impl EffectsService {
         }
         persist(&self.shared, &mut inner, PreferencesWrite::Repair)?;
         inner.protected = None;
-        Ok(inner.state.clone())
+        Ok(inner.capture())
     }
 }
 

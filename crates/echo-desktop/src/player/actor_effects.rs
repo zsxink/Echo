@@ -293,18 +293,35 @@ impl Engine {
             Err(error) => {
                 // Unsupported layouts keep the ordinary transport usable, with
                 // explicit unavailability and confirmed bypass rather than a downmix.
-                let bypass = backend.bypass_effects();
-                mailbox.runtime.applied = if matches!(bypass, Ok(true)) {
-                    AppliedState::Unavailable
-                } else {
-                    AppliedState::Failed
-                };
                 mailbox.runtime.reason = Some(error.to_string());
                 mailbox.runtime.processing_rate = Some(environment.sample_rate);
                 mailbox.runtime.channel_layout = Some(environment.channel_layout);
+                match backend.bypass_effects() {
+                    Ok(false) => {
+                        // A smooth bypass may need several actor ticks before
+                        // the old chain is removed. Keep driving it while pause
+                        // still guards the first output sample.
+                        mailbox.runtime.applied = AppliedState::Pending;
+                        self.safe_to_play = false;
+                        return false;
+                    }
+                    Ok(true) => {
+                        mailbox.runtime.applied = AppliedState::Unavailable;
+                        mailbox.runtime.effective_preamp_db = Some(0.0);
+                        mailbox.runtime.active_bands = [false; 10];
+                        self.safe_to_play = true;
+                    }
+                    Err(message) => {
+                        mailbox.runtime.applied = AppliedState::Failed;
+                        mailbox.runtime.effective_preamp_db = None;
+                        mailbox.runtime.active_bands = [false; 10];
+                        mailbox.runtime.reason = Some(format!("{error}; bypass failed: {message}"));
+                        self.safe_to_play = false;
+                    }
+                }
                 self.completed = Some((target.revision, self.epoch));
                 self.shared.0 .1.notify_all();
-                matches!(bypass, Ok(true))
+                self.safe_to_play
             }
         }
     }

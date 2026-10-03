@@ -1,5 +1,6 @@
 use super::super::BackendEvent;
 use super::*;
+use std::collections::VecDeque;
 use std::path::Path;
 
 #[derive(Default)]
@@ -9,6 +10,7 @@ struct Driver {
     properties: Vec<BackendProperty>,
     fail_apply: bool,
     fail_bypass: bool,
+    bypass_results: VecDeque<Result<bool, String>>,
 }
 impl Backend for Driver {
     fn pump(&mut self) -> Option<BackendEvent> {
@@ -36,6 +38,9 @@ impl Backend for Driver {
     }
     fn bypass_effects(&mut self) -> Result<bool, String> {
         self.bypasses += 1;
+        if let Some(result) = self.bypass_results.pop_front() {
+            return result;
+        }
         if self.fail_bypass {
             Err("injected bypass failure".to_owned())
         } else {
@@ -170,6 +175,105 @@ fn mono_spatial_is_unavailable_with_confirmed_bypass() {
     assert!(engine.tick(&mut driver, true, true));
     assert_eq!(shared.runtime().applied, AppliedState::Unavailable);
     assert!(driver.applies.is_empty());
+}
+
+#[test]
+fn unsupported_environment_waits_for_bypass_then_caches_its_confirmed_safety() {
+    let shared = Shared::default();
+    let mut engine = Engine::new(shared.clone());
+    let mut driver = Driver::default();
+    environment(&mut engine, 48_000.0, 2.0);
+    let mut curve = crate::effects::EqCurve::default();
+    curve.gains_db[4] = 6.0;
+    shared.submit(1, true, Payload::Eq(curve)).unwrap();
+    assert!(engine.tick(&mut driver, true, false));
+    assert!(shared.runtime().active_bands.iter().any(|active| *active));
+    assert_ne!(shared.runtime().effective_preamp_db, Some(0.0));
+
+    shared
+        .submit(
+            2,
+            true,
+            Payload::Spatial(crate::effects::Spatial::default()),
+        )
+        .unwrap();
+    environment(&mut engine, 48_000.0, 1.0);
+    driver.bypass_results = [Ok(false), Ok(false), Ok(true)].into();
+    for expected_calls in 1..=2 {
+        assert!(!engine.tick(&mut driver, true, false));
+        assert_eq!(shared.runtime().applied, AppliedState::Pending);
+        assert_eq!(driver.bypasses, expected_calls);
+    }
+    assert!(engine.tick(&mut driver, true, false));
+    let runtime = shared.runtime();
+    assert_eq!(runtime.applied, AppliedState::Unavailable);
+    assert_eq!(runtime.effective_preamp_db, Some(0.0));
+    assert_eq!(runtime.active_bands, [false; 10]);
+    assert_eq!(runtime.processing_rate, Some(48_000));
+    assert_eq!(runtime.channel_layout, Some(ChannelLayout::Mono));
+    assert!(runtime.reason.is_some());
+    assert!(engine.tick(&mut driver, true, false));
+    assert_eq!(driver.bypasses, 3);
+
+    // The request survives temporary unavailability and is confirmed again
+    // when the observed input returns to a supported layout.
+    environment(&mut engine, 48_000.0, 2.0);
+    assert!(engine.tick(&mut driver, true, false));
+    assert_eq!(shared.runtime().applied, AppliedState::Applied);
+    assert_eq!(shared.runtime().revision, 2);
+    assert_eq!(driver.applies.len(), 2);
+}
+
+#[test]
+fn unsupported_environment_bypass_failure_stays_unsafe_on_later_ticks() {
+    let shared = Shared::default();
+    let mut engine = Engine::new(shared.clone());
+    let mut driver = Driver {
+        fail_bypass: true,
+        ..Default::default()
+    };
+    environment(&mut engine, 48_000.0, 1.0);
+    shared
+        .submit(
+            1,
+            true,
+            Payload::Spatial(crate::effects::Spatial::default()),
+        )
+        .unwrap();
+    for _ in 0..3 {
+        assert!(!engine.tick(&mut driver, true, false));
+        assert_eq!(shared.runtime().applied, AppliedState::Failed);
+    }
+    assert_eq!(driver.bypasses, 1);
+    assert!(driver.applies.is_empty());
+}
+
+#[test]
+fn confirmed_unavailable_bypass_reopens_a_previously_failed_playback_barrier() {
+    let shared = Shared::default();
+    let mut engine = Engine::new(shared.clone());
+    let mut driver = Driver {
+        fail_bypass: true,
+        ..Default::default()
+    };
+    shared.submit(1, false, Payload::default()).unwrap();
+    assert!(!engine.tick(&mut driver, true, false));
+    assert_eq!(shared.runtime().applied, AppliedState::Failed);
+
+    driver.fail_bypass = false;
+    environment(&mut engine, 48_000.0, 1.0);
+    shared
+        .submit(
+            2,
+            true,
+            Payload::Spatial(crate::effects::Spatial::default()),
+        )
+        .unwrap();
+    for _ in 0..3 {
+        assert!(engine.tick(&mut driver, true, false));
+        assert_eq!(shared.runtime().applied, AppliedState::Unavailable);
+    }
+    assert_eq!(driver.bypasses, 2);
 }
 
 #[test]

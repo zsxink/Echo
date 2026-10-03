@@ -123,6 +123,51 @@ describe("audio effects shared player state", () => {
     expect(screen.getByText(/当前音频环境不可用/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
   });
+  it("retries snapshot read failures with GET only until the read succeeds", async () => {
+    const effects = snapshot();
+    playerStore.publishEffects(effects);
+    call
+      .mockRejectedValueOnce(new Error("read failed"))
+      .mockRejectedValueOnce(new Error("read failed again"))
+      .mockResolvedValueOnce(effects);
+    render(
+      <>
+        <EffectsTrigger />
+        <EffectsPanel />
+      </>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^显示音效/ }));
+
+    await waitFor(() => expect(screen.getByText("读取音效失败，请重试。")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    await waitFor(() => expect(call).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("读取音效失败，请重试。")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    await waitFor(() => expect(call).toHaveBeenCalledTimes(3));
+    await waitFor(() =>
+      expect(screen.queryByText("读取音效失败，请重试。")).not.toBeInTheDocument(),
+    );
+    expect(call.mock.calls.map(([name]) => name)).toEqual([
+      "get_audio_effects_snapshot",
+      "get_audio_effects_snapshot",
+      "get_audio_effects_snapshot",
+    ]);
+  });
+  it("shows a recovery repair message without exposing its reason", async () => {
+    const base = snapshot();
+    const effects: EffectsSnapshotDto = {
+      ...base,
+      runtime: { ...base.runtime, persistenceStatus: "failed" },
+      recoveryReason: "private storage detail",
+    };
+    openPanel(effects);
+
+    expect(screen.getByText("音效恢复失败 · 原数据已保留，请重试修复。")).toBeInTheDocument();
+    expect(screen.queryByText("private storage detail")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重试修复" }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith("retry_audio_effects"));
+  });
 });
 
 describe("nonmodal effects overlay", () => {

@@ -230,3 +230,111 @@ fn merges_edits_and_flushes_final_tail() {
         8.0
     );
 }
+
+#[test]
+fn captures_order_metadata_and_persistence_without_audio_revisions() {
+    let (service, _, playback) = fixture();
+    let edited = service.edit(EqCurve::default()).unwrap();
+    let before_save = service.snapshot();
+    let submissions = playback.submissions.load(Ordering::SeqCst);
+    let saved = service.save("Ordered curve").unwrap();
+    let id = saved.document.user_presets[0].id.clone();
+    let renamed = service.rename(&id, "Renamed curve").unwrap();
+    let queried = service.snapshot();
+    // Deleting an unselected preset is metadata work too.
+    service.set_enabled(false).unwrap();
+    let before_delete = service.snapshot();
+    let submissions_before_delete = playback.submissions.load(Ordering::SeqCst);
+    let deleted = service.delete(&id).unwrap();
+    let final_query = service.snapshot();
+    assert!(edited.snapshot_sequence < before_save.snapshot_sequence);
+    assert!(before_save.snapshot_sequence < saved.snapshot_sequence);
+    assert!(saved.snapshot_sequence < renamed.snapshot_sequence);
+    assert!(renamed.snapshot_sequence < queried.snapshot_sequence);
+    assert!(before_delete.snapshot_sequence < deleted.snapshot_sequence);
+    assert!(deleted.snapshot_sequence < final_query.snapshot_sequence);
+    assert_eq!(saved.runtime.revision, edited.runtime.revision);
+    assert_eq!(renamed.runtime.revision, edited.runtime.revision);
+    assert_eq!(queried.runtime.revision, edited.runtime.revision);
+    assert_eq!(deleted.runtime.revision, before_delete.runtime.revision);
+    assert_eq!(submissions_before_delete, submissions + 1);
+    assert_eq!(
+        playback.submissions.load(Ordering::SeqCst),
+        submissions_before_delete
+    );
+    assert_eq!(saved.document.user_presets[0].name, "Ordered curve");
+    assert_eq!(queried.document.user_presets[0].name, "Renamed curve");
+    assert!(final_query.document.user_presets.is_empty());
+}
+
+#[test]
+fn query_orders_native_confirmation_and_persistence_receipts() {
+    let (service, _, playback) = fixture();
+    playback.active.store(false, Ordering::SeqCst);
+    let pending = service.edit(EqCurve::default()).unwrap();
+    {
+        let mut runtime = playback.runtime.lock().unwrap();
+        runtime.applied = AppliedState::Applied;
+        runtime.processing_rate = Some(48_000);
+        runtime.channel_layout = Some(crate::effects::ChannelLayout::Stereo);
+        runtime.effective_preamp_db = Some(0.0);
+    }
+    let applied = service.snapshot();
+    let persisted = service.flush().unwrap();
+    assert!(pending.snapshot_sequence < applied.snapshot_sequence);
+    assert!(applied.snapshot_sequence < persisted.snapshot_sequence);
+    assert_eq!(pending.runtime.revision, persisted.runtime.revision);
+    assert_eq!(applied.runtime.applied, AppliedState::Applied);
+    assert_eq!(
+        persisted.runtime.persistence_status,
+        PersistenceStatus::Saved
+    );
+}
+
+struct ProtectedPreferences {
+    writes: AtomicUsize,
+}
+impl EffectsPreferencesPort for ProtectedPreferences {
+    fn load(&self) -> Result<PreferencesRecovery, String> {
+        Ok(PreferencesRecovery::Protected {
+            raw: Some(serde_json::json!({ "schemaVersion": 999 })),
+            reason: "unsupported effects document".into(),
+        })
+    }
+    fn write(&self, _: &EffectsDocument, mode: PreferencesWrite) -> Result<(), String> {
+        assert_eq!(mode, PreferencesWrite::Repair);
+        self.writes.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+#[test]
+fn recovery_projection_survives_actor_queries_until_explicit_repair() {
+    let preferences = Arc::new(ProtectedPreferences {
+        writes: AtomicUsize::new(0),
+    });
+    let playback = Arc::new(Playback::default());
+    let service = EffectsService::restore(preferences.clone(), playback.clone());
+    for _ in 0..3 {
+        let state = service.snapshot();
+        assert_eq!(
+            state.recovery_reason.as_deref(),
+            Some("unsupported effects document")
+        );
+        assert_eq!(state.runtime.persistence_status, PersistenceStatus::Failed);
+        let dto = crate::ipc::effects::EffectsSnapshotDto::from(state.snapshot());
+        let value = serde_json::to_value(dto).unwrap();
+        assert_eq!(value["recoveryReason"], "unsupported effects document");
+        assert!(value["snapshotSequence"].as_u64().is_some());
+    }
+    assert_eq!(preferences.writes.load(Ordering::SeqCst), 0);
+    assert_eq!(playback.submissions.load(Ordering::SeqCst), 0);
+    let repaired = service.retry_persistence().unwrap();
+    assert_eq!(repaired.recovery_reason, None);
+    assert_eq!(
+        repaired.runtime.persistence_status,
+        PersistenceStatus::Saved
+    );
+    assert_eq!(service.snapshot().recovery_reason, None);
+    assert_eq!(preferences.writes.load(Ordering::SeqCst), 1);
+}

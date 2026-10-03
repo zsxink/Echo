@@ -16,6 +16,10 @@ pub struct EffectsSnapshotDto {
     pub response_points: Vec<ResponsePoint>,
     pub reference_response: bool,
     pub safe_preamp_db: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot_sequence: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recovery_reason: Option<String>,
 }
 
 impl From<EffectsSnapshot> for EffectsSnapshotDto {
@@ -27,6 +31,8 @@ impl From<EffectsSnapshot> for EffectsSnapshotDto {
             response_points: value.response_points,
             reference_response: value.reference_response,
             safe_preamp_db: value.safe_preamp_db,
+            snapshot_sequence: value.snapshot_sequence,
+            recovery_reason: value.recovery_reason,
         }
     }
 }
@@ -71,6 +77,8 @@ export interface EffectsSnapshotDto {
   readonly responsePoints: readonly EffectsResponsePoint[];
   readonly referenceResponse: boolean;
   readonly safePreampDb: number | null;
+  readonly snapshotSequence?: number;
+  readonly recoveryReason?: string;
 }
 
 "
@@ -111,5 +119,24 @@ mod tests {
             ..EqCurve::default()
         };
         assert!(curve.validate().is_err());
+    }
+
+    #[test]
+    fn runtime_projection_is_additive_and_not_persisted() {
+        let state = EffectsState {
+            snapshot_sequence: Some(42),
+            recovery_reason: Some("protected document".into()),
+            ..EffectsState::default()
+        };
+        let value = serde_json::to_value(EffectsSnapshotDto::from(state.snapshot())).unwrap();
+        assert_eq!(value["snapshotSequence"], 42);
+        assert_eq!(value["recoveryReason"], "protected document");
+        assert!(value["document"].get("snapshotSequence").is_none());
+        assert!(value["document"].get("recoveryReason").is_none());
+        let legacy =
+            serde_json::to_value(EffectsSnapshotDto::from(EffectsState::default().snapshot()))
+                .unwrap();
+        assert!(legacy.get("snapshotSequence").is_none());
+        assert!(legacy.get("recoveryReason").is_none());
     }
 }
