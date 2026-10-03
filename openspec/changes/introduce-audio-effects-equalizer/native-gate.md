@@ -60,6 +60,8 @@ shasum -a 256 /Applications/Echo.app/Contents/Frameworks/libavfilter.dylib
 | Windows | 有固定 vendor DLL；未获得候选安装包、参考机或捕获设备 | 未测 |
 | `/Applications/Echo.app` 已安装候选 | `evidence/macos-installed-app-probe.json`；app 内 libavfilter SHA-256 与 vendor manifest 一致 | app 内 libmpv 探针成功初始化、建立包含十段 EQ 和 limiter 的链、更新 EQ/preamp 命令并在 `loadfile` 后保持配置链；仅命令/快照证据，未证明目标参数的 PCM 响应。`gate_passed=false`。 |
 | `/Applications/Echo.app` CoreAudio 与 mono | `evidence/macos-installed-app-coreaudio-probe.json`、`evidence/macos-installed-app-mono-probe.json` | CoreAudio 协商 48 kHz / stereo / s32；EQ 与 preamp 命令均返回 rc=0，十段链和 loadfile 后配置链存活。Mono 输入输出仍为 mono，探针跳过空间链。定向命令 rc=0 与 `process_command` 检查只证明可调用，不冒充参数 PCM 响应或设备听感。 |
+| 2026-10-03 当前安装 app 复核 | `evidence/macos-installed-app-coreaudio-recheck-20261003.json` | 直接从 `/Applications/Echo.app/Contents/Frameworks/libmpv.dylib` 加载，CoreAudio 输出为 48 kHz / stereo / s32，mpv volume 为 1（mpv 百分制，即 1%）、mute=false；app 内 libmpv 与 vendor manifest SHA-256 一致。该探针仍是低音量合成音和配置/命令证据，不测输出响应或实际过渡时延。 |
+| 2026-10-03 PCM 多采样率响应/压力矩阵 | `evidence/macos-pcm-matrix-20261003/summary.json` 与同目录 24 份原始 JSON；使用当前安装 app 的 libmpv、CC0 fixture manifest、`ao=pcm` | MacBook Pro (Mac17,2, Apple M5，10核，32 GB，内置 SSD，macOS 27.0 arm64；满足参考机规格下限)。22.05/44.1/48/96 kHz 下分别捕获 mono 与 stereo 的 997 Hz/-60 dBFS 输入经单个 1 kHz/+6 dB EQ 的输出；四个 stereo 响应误差为 -0.00422 至 -0.00411 dB，mono 也保持输入布局。每个采样率还覆盖 stereo 的 -0.1 dBFS 噪声、扫频、脉冲和反相素材，经过单个 1 kHz/+12 dB EQ、-11.5 dB preamp 与 limiter；24/24 报告为 probe-only，输出均为有限 integer PCM，最大样本峰值 -0.99985 dBFS。噪声/脉冲峰值更低属于素材频谱及 limiter 时间响应的测量结果，不推断其响度。仅证明这些固定链的离线 PCM 点测；未覆盖全十段曲线、空间链、CoreAudio 环回、100 次实时过渡、underrun、进度偏移、CPU 或听感，`gate_passed=false`。 |
 | Linux | 当前仓库无 `vendor/libmpv/linux` 候选目录/安装包或参考机 | 未测 |
 
 ## Windows/Linux 开发侧复核（2026-10-03）
@@ -81,8 +83,10 @@ sysroot。`cargo check -p echo-desktop --target x86_64-unknown-linux-gnu` 因缺
 `x86_64-linux-gnu-gcc` 失败，因此不能据此宣称 Linux 编译或原生 Gate 通过。
 
 音频工具离线自测通过（10 项），macOS 本机 `cargo test -p echo-desktop` 通过
-（368 个单元测试及集成测试）。以上是共享实现、平台装载代码与实验工具的开发侧
-证据，不是 Windows/Linux 运行时滤镜链、PCM 响应或硬件验收；tasks 7.1–7.3
+（368 个单元测试及集成测试）。2026-10-03 又直接探测当前 `/Applications/Echo.app`
+并完成 24 项四采样率 PCM 响应/压力矩阵（明细见上表）；`ao=pcm` 不经过 CoreAudio，
+不能替代设备连续性、延迟、CPU 与听感验收。以上是共享实现、macOS 候选包装载与离线
+实验的证据，不是 Windows/Linux 运行时滤镜链、PCM 响应或硬件验收；tasks 7.1–7.3
 仍待候选 Linux 运行库及各平台机器/捕获设备完成后更新。
 
 CoreAudio 能力探针的输出协商与候选包哈希记录见其原始报告；PCM 报告另外证明了固定 +6 dB 1 kHz EQ 的一项真实处理响应，并在近满幅单音上测得 sample-peak `-0.99985 dBFS`。`/Applications/Echo.app` 已更新为 vendor manifest 对应的候选包，旧包保留在备份目录。报告的 `gate_passed` 有意保持 `false`：这些点测不等于完整滤镜/采样率/压力验收，也不证明运行时更新的实际响应、平滑、设备时延、CPU、underrun 或听感。
