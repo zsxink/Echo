@@ -12,6 +12,46 @@ export interface IpcErrorDto {
 
 export type IpcResult<T> = T | IpcErrorDto;
 
+export type EffectsSelection = { readonly kind: 'none' } | { readonly kind: 'preset'; readonly id: string } | { readonly kind: 'draft' };
+export interface EqCurve {
+  readonly gainsDb: readonly number[];
+  readonly preampMode: 'auto' | 'manual';
+  readonly requestedPreampDb: number;
+}
+
+export type EffectsPayload = ({ readonly kind: 'eq' } & EqCurve) | { readonly kind: 'spatial'; readonly width: number; readonly mix: number };
+export interface EffectsUserPreset { readonly id: string; readonly name: string; readonly curve: EqCurve; }
+export interface EffectsDocument {
+  readonly schemaVersion: number;
+  readonly registryVersion: number;
+  readonly userPresets: readonly EffectsUserPreset[];
+  readonly selection: EffectsSelection;
+  readonly retainedPayload: EffectsPayload;
+  readonly draft: EqCurve | null;
+  readonly requestedEnabled: boolean;
+}
+export interface EffectsRuntime {
+  readonly revision: number;
+  readonly playbackEpoch: number;
+  readonly persistenceStatus: 'saved' | 'unsaved' | 'failed';
+  readonly applied: 'bypassed' | 'pending' | 'applied' | 'failed' | 'unavailable';
+  readonly effectivePreampDb: number | null;
+  readonly activeBands: readonly boolean[];
+  readonly processingRate: number | null;
+  readonly channelLayout: 'mono' | 'stereo' | 'other' | null;
+  readonly reason: string | null;
+}
+export interface EffectsPreset { readonly id: string; readonly name: string; readonly description: string; readonly payload: EffectsPayload; readonly source: 'builtin' | 'user'; }
+export interface EffectsResponsePoint { readonly frequencyHz: number; readonly gainDb: number; }
+export interface EffectsSnapshotDto {
+  readonly document: EffectsDocument;
+  readonly runtime: EffectsRuntime;
+  readonly presets: readonly EffectsPreset[];
+  readonly responsePoints: readonly EffectsResponsePoint[];
+  readonly referenceResponse: boolean;
+  readonly safePreampDb: number | null;
+}
+
 export interface UiQueueEntry {
   readonly entryId: string;
   readonly songId: string | null;
@@ -42,6 +82,7 @@ export interface UiPlayerSnapshot {
   readonly currentLyrics?: SongLyricsDto | null;
   readonly currentCanImport: boolean;
   readonly queue: readonly UiQueueEntry[];
+  readonly effects?: EffectsSnapshotDto;
 }
 
 export interface BootstrapSnapshot {
@@ -188,6 +229,15 @@ export type CloseBehavior = 'exit' | 'background';
 
 /** Generated command name → successful return DTO contract. */
 export interface IpcCommandResultMap {
+  readonly get_audio_effects_snapshot: EffectsSnapshotDto;
+  readonly select_audio_effects_preset: EffectsSnapshotDto;
+  readonly edit_audio_equalizer: EffectsSnapshotDto;
+  readonly set_audio_effects_enabled: EffectsSnapshotDto;
+  readonly reset_audio_effects: EffectsSnapshotDto;
+  readonly save_audio_effects_preset: EffectsSnapshotDto;
+  readonly rename_audio_effects_preset: EffectsSnapshotDto;
+  readonly delete_audio_effects_preset: EffectsSnapshotDto;
+  readonly retry_audio_effects: EffectsSnapshotDto;
   readonly get_bootstrap_state: BootstrapSnapshot;
   readonly library_status: LibraryStatus;
   readonly all_songs: PagedSongs;

@@ -12,6 +12,7 @@ repository.workspace = true
 echo-core = { path = "../echo-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+uuid = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

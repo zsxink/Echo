@@ -1,0 +1,23 @@
+--- a/filters/f_lavfi.c
++++ b/filters/f_lavfi.c
+@@ -814,5 +814,18 @@ static bool lavfi_command(struct mp_filter *f, struct mp_filter_command *cmd)
+     switch (cmd->type) {
+     case MP_FILTER_COMMAND_TEXT: {
+-        return avfilter_graph_send_command(c->graph, "all", cmd->cmd, cmd->arg,
+-                                           &(char){0}, 0, 0) >= 0;
++        // A targeted command uses <filter-id>:<option>, e.g. eq5:gain.
++        // Keep mpv's original broadcast semantics when no target is present.
++        const char *target = "all";
++        const char *command = cmd->cmd;
++        char *target_buffer = NULL;
++        const char *separator = strchr(cmd->cmd, ':');
++        if (separator) {
++            target_buffer = talloc_strndup(NULL, cmd->cmd, separator - cmd->cmd);
++            target = target_buffer;
++            command = separator + 1;
++        }
++        int result = avfilter_graph_send_command(c->graph, target, command, cmd->arg,
++                                                 &(char){0}, 0, 0);
++        talloc_free(target_buffer);
++        return result >= 0;
+     }

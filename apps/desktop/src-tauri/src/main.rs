@@ -49,6 +49,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{Emitter, Manager, RunEvent};
 
 mod commands;
+mod commands_audio_effects;
 mod cover_protocol;
 mod dialogs;
 #[cfg(target_os = "macos")]
@@ -377,8 +378,17 @@ fn wire_composition(
     // Session persistence (task 8.9 落盘接线): the saver thread throttles
     // durable playback-session writes onto the atomic desktop-state store.
     let saver_persistence: Arc<dyn echo_desktop::player::session::SessionPersistence> = Arc::new(
-        echo_desktop::player::session::StateStoreSession::new(local_state),
+        echo_desktop::player::session::StateStoreSession::new(local_state.clone()),
     );
+    let effects = Arc::new(echo_desktop::effects_service::EffectsService::restore(
+        local_state,
+        Arc::new(
+            echo_desktop::effects_service::player_adapter::PlayerEffectsAdapter::new(
+                controller.port.clone(),
+            ),
+        ),
+    ));
+    app.manage(effects.clone());
     let player_handle = commands::PlayerHandle {
         coordinator: controller.coordinator.clone(),
         source: player_source.clone(),
@@ -422,7 +432,8 @@ fn wire_composition(
                 mode: coord.mode(),
             }
         });
-    let emit: player::SnapshotEmitter = Box::new(move |ui| {
+    let emit: player::SnapshotEmitter = Box::new(move |mut ui| {
+        ui.effects = Some(effects.snapshot().snapshot().into());
         let _ = handle.emit(PLAYER_SNAPSHOT_EVENT, ui);
     });
     // The queue-panel metadata resolver: maps library song ids to title /
@@ -601,6 +612,15 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            commands_audio_effects::get_audio_effects_snapshot,
+            commands_audio_effects::select_audio_effects_preset,
+            commands_audio_effects::edit_audio_equalizer,
+            commands_audio_effects::set_audio_effects_enabled,
+            commands_audio_effects::reset_audio_effects,
+            commands_audio_effects::save_audio_effects_preset,
+            commands_audio_effects::rename_audio_effects_preset,
+            commands_audio_effects::delete_audio_effects_preset,
+            commands_audio_effects::retry_audio_effects,
             commands::get_bootstrap_state,
             commands::library_status,
             commands::all_songs,
@@ -838,6 +858,7 @@ fn main() {
                 }
             }
             RunEvent::ExitRequested { .. } => {
+                commands_audio_effects::flush(app);
                 #[cfg(target_os = "macos")]
                 macos_now_playing::clear();
                 #[cfg(target_os = "macos")]

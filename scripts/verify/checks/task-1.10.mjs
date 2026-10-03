@@ -66,7 +66,8 @@ for (const [filename, expected] of Object.entries(manifest.files)) {
   const bundleInstallName = installName(bundled);
   if (vendorInstallName !== bundleInstallName) fail(`bundle install-name drift for ${filename}`);
   const info = run("lipo", ["-info", bundled]);
-  for (const architecture of manifest.architectures) {
+  const fileArchitectures = manifest.fileArchitectures?.[filename] ?? manifest.architectures;
+  for (const architecture of fileArchitectures) {
     if (!info.includes(architecture)) fail(`${filename} lacks ${architecture}`);
   }
 }

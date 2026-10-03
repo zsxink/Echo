@@ -7,6 +7,8 @@
 ### Requirement: 统一预设与一期范围
 系统 SHALL 在 macOS、Windows、Linux 提供 `pop`、`rock`、`classical`、`jazz`、`electronic`、`vocal`、`bass`、`warm`、`retro` 九个只读 EQ 预设，以及 ID 为 `surround`、名称为「空间感增强」的只读空间预设。内置与用户曲线 MUST 使用统一的类型化参数通路，同一时刻只启用一个预设或草稿，EQ 与空间处理不得叠加。P0 MUST 不提供可操作的导入导出、混响、响度归一化或设备绑定入口，不宣称恢复音质、环绕声、5.1 或对象音频能力。预设描述 MUST 与实际处理一致，不能将主观调音初值称为通用行业标准曲线，将高频 peaking 称为恢复高频延伸，或将整曲静态 EQ 称为动态去齿音。
 
+空间感预设 MUST 将 `extrastereo` width 作为滤镜安装期参数；不得依赖不支持的 `af-command spatial:m` 更新或将其报告为生效。当前固定初值为 1.25，不向用户提供 width 编辑。
+
 #### Scenario: 选择不同类型
 - **WHEN** 用户从 EQ 预设切换到空间感增强，再切回 EQ
 - **THEN** 每次整体替换处理类型及参数，确认后显示新预设名称，前一种处理被移除

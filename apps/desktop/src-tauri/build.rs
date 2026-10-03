@@ -68,6 +68,13 @@ fn stage_library_source(
             // Recreate the same relative/absolute link target next to the dest.
             stage_symlink(&cached, &dest);
         } else {
+            // `fs::copy` preserves the source file's permission bits. Some
+            // vendored dylibs are intentionally read-only, so a later build
+            // cannot truncate the staged copy in place. Removing the old file
+            // first keeps repeated dev/test builds idempotent.
+            if dest.exists() {
+                std::fs::remove_file(&dest).expect("remove previously staged libmpv dependency");
+            }
             std::fs::copy(&path, dest).expect("stage vendored libmpv dependency for development");
         }
     }
@@ -80,6 +87,9 @@ fn stage_library_source(
 // the `if is_symlink && preserve_links` branch type-check on every target.
 #[cfg(unix)]
 fn stage_symlink(cached: &std::path::Path, dest: &std::path::Path) {
+    if dest.exists() || std::fs::symlink_metadata(dest).is_ok() {
+        std::fs::remove_file(dest).expect("remove previously staged libmpv symlink");
+    }
     std::os::unix::fs::symlink(cached, dest).expect("recreate dev staging symlink");
 }
 

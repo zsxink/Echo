@@ -178,6 +178,7 @@ pub fn map_snapshot<S: BuildHasher>(
         current_cover_key,
         current_lyrics,
         current_can_import,
+        effects: None,
         queue,
     }
 }

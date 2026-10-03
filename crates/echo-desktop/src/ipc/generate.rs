@@ -6,6 +6,8 @@
 //! detected at build time. Output uses `readonly` throughout and camelCase
 //! field names to match the serde DTOs.
 
+use std::fmt::Write as _;
+
 /// The complete, deterministic TypeScript module for the IPC contract.
 #[must_use]
 #[allow(clippy::too_many_lines)] // Keeps the generated contract together; task 4 splits its helpers with the generator work.
@@ -24,6 +26,7 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly field?: string;\n");
     out.push_str("}\n\n");
     out.push_str("export type IpcResult<T> = T | IpcErrorDto;\n\n");
+    out.push_str(super::effects::typescript());
 
     // Player snapshots travel on the typed `player://snapshot` event rather
     // than a command response, but they are still a cross-process IPC DTO.
@@ -60,6 +63,7 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly currentLyrics?: SongLyricsDto | null;\n");
     out.push_str("  readonly currentCanImport: boolean;\n");
     out.push_str("  readonly queue: readonly UiQueueEntry[];\n");
+    out.push_str("  readonly effects?: EffectsSnapshotDto;\n");
     out.push_str("}\n\n");
 
     out.push_str("export interface BootstrapSnapshot {\n");
@@ -206,6 +210,19 @@ pub fn generated_typescript() -> String {
     out.push('\n');
     out.push_str("/** Generated command name → successful return DTO contract. */\n");
     out.push_str("export interface IpcCommandResultMap {\n");
+    for command in [
+        "get_audio_effects_snapshot",
+        "select_audio_effects_preset",
+        "edit_audio_equalizer",
+        "set_audio_effects_enabled",
+        "reset_audio_effects",
+        "save_audio_effects_preset",
+        "rename_audio_effects_preset",
+        "delete_audio_effects_preset",
+        "retry_audio_effects",
+    ] {
+        let _ = writeln!(out, "  readonly {command}: EffectsSnapshotDto;");
+    }
     out.push_str("  readonly get_bootstrap_state: BootstrapSnapshot;\n");
     out.push_str("  readonly library_status: LibraryStatus;\n");
     out.push_str("  readonly all_songs: PagedSongs;\n");

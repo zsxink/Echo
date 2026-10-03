@@ -32,6 +32,10 @@ use echo_core::domain::state::PlaybackState;
 use echo_core::error::Error;
 
 use super::ffi;
+#[path = "actor_effects.rs"]
+mod effects;
+#[path = "native_effects.rs"]
+mod native_effects;
 use super::port::{
     PlayMode, PlayerCommand, PlayerError, PlayerPort, PlayerSnapshot, VOLUME_EPSILON,
 };
@@ -149,6 +153,10 @@ const OBSERVED_PROPERTIES: &[(&str, i32)] = &[
     ("volume", ffi::format_::DOUBLE),
     ("mute", ffi::format_::FLAG),
     ("pause", ffi::format_::FLAG),
+    ("audio-params/samplerate", ffi::format_::DOUBLE),
+    ("audio-params/channel-count", ffi::format_::DOUBLE),
+    ("audio-out-params/samplerate", ffi::format_::DOUBLE),
+    ("audio-out-params/channel-count", ffi::format_::DOUBLE),
 ];
 
 /// A normalized event the actor loop consumes from any backend. The real mpv
@@ -157,6 +165,7 @@ const OBSERVED_PROPERTIES: &[(&str, i32)] = &[
 #[derive(Clone, Debug, PartialEq)]
 pub enum BackendEvent {
     FileLoaded,
+    AudioReconfigured,
     Ended,
     PropertyChanged { name: String, value: f64 },
     Shutdown,
@@ -204,6 +213,21 @@ trait Backend {
     /// actor rolls back to the last authoritative snapshot.
     fn write_property(&mut self, prop: BackendProperty) -> bool;
 
+    fn apply_effects(
+        &mut self,
+        _payload: &crate::effects::Payload,
+        _environment: crate::effects::ProcessingEnvironment,
+        _analysis: &crate::effects::math::EffectsAnalysis,
+    ) -> Result<bool, String> {
+        Err("native effects capability unavailable".to_owned())
+    }
+
+    fn bypass_effects(&mut self) -> Result<bool, String> {
+        Ok(true)
+    }
+
+    fn effects_reconfigured(&mut self) {}
+
     /// Terminate and release the backend (ordered teardown on the actor thread).
     fn terminate(&mut self);
 }
@@ -218,6 +242,7 @@ struct MpvBackend {
     handle: ffi::Handle,
     /// Path queued by [`Backend::queue_load`], issued as `loadfile` on pump.
     pending_load: Option<std::path::PathBuf>,
+    effects: native_effects::NativeEffects,
 }
 
 impl MpvBackend {
@@ -237,7 +262,22 @@ impl MpvBackend {
             sys,
             handle,
             pending_load: None,
+            effects: native_effects::NativeEffects::default(),
         })
+    }
+
+    /// Actor-thread-only wrapper. No native handle or pointer leaves this module.
+    fn effects_command(&self, args: &[String]) -> Result<(), String> {
+        let operation = args.join(" ");
+        let args: Result<Vec<_>, _> = args
+            .iter()
+            .map(|arg| std::ffi::CString::new(arg.as_str()))
+            .collect();
+        let args = args.map_err(|_| "invalid native effect argument".to_owned())?;
+        // SAFETY: the actor owns this initialized handle and all argument
+        // strings remain alive, NUL-terminated and immutable for the call.
+        unsafe { self.handle.command(&self.sys, &args) }
+            .map_err(|error| format!("native effect command `{operation}` rejected: {error}"))
     }
 
     /// Issue the queued `loadfile` (if any) and then read one event.
@@ -268,6 +308,8 @@ impl MpvBackend {
         match event_id {
             ffi::event_id::SHUTDOWN => Some(BackendEvent::Shutdown),
             ffi::event_id::FILE_LOADED => Some(BackendEvent::FileLoaded),
+            // MPV_EVENT_AUDIO_RECONFIG is stable event ID 18 in client.h.
+            18 => Some(BackendEvent::AudioReconfigured),
             ffi::event_id::END_FILE => {
                 // Only a natural end-of-file (or an error while playing) is a
                 // real "track ended". When a new file replaces the current one
@@ -406,6 +448,31 @@ impl Backend for MpvBackend {
             tracing::warn!(?prop, "mpv actor: runtime property write rejected");
         }
         ok
+    }
+
+    fn apply_effects(
+        &mut self,
+        payload: &crate::effects::Payload,
+        environment: crate::effects::ProcessingEnvironment,
+        analysis: &crate::effects::math::EffectsAnalysis,
+    ) -> Result<bool, String> {
+        let mut effects = std::mem::take(&mut self.effects);
+        let result = effects.apply(payload, environment, analysis, |args| {
+            self.effects_command(args)
+        });
+        self.effects = effects;
+        result
+    }
+
+    fn effects_reconfigured(&mut self) {
+        self.effects.reconfirm();
+    }
+
+    fn bypass_effects(&mut self) -> Result<bool, String> {
+        let mut effects = std::mem::take(&mut self.effects);
+        let result = effects.bypass(|args| self.effects_command(args));
+        self.effects = effects;
+        result
     }
 
     fn terminate(&mut self) {
@@ -568,6 +635,7 @@ pub struct PlayerActor {
     subscribers: Arc<Mutex<Vec<mpsc::SyncSender<PlayerSnapshot>>>>,
     stopped: Arc<AtomicBool>,
     join: Option<JoinHandle<()>>,
+    effects: effects::Shared,
 }
 
 impl PlayerActor {
@@ -629,6 +697,8 @@ impl PlayerActor {
         let snapshot_join = snapshot.clone();
         let subscribers = Arc::new(Mutex::new(Vec::new()));
         let subscribers_join = subscribers.clone();
+        let effects = effects::Shared::default();
+        let effects_join = effects.clone();
 
         let join = std::thread::Builder::new()
             .name("echo-mpv-actor".into())
@@ -637,16 +707,19 @@ impl PlayerActor {
                     Ok(b) => b,
                     Err(e) => {
                         tracing::error!(error = %e, "mpv actor: backend unavailable, disabled");
+                        effects_join.close();
                         drain_without_backend(rx, &snapshot_join, &stopped_join);
                         return;
                     }
                 };
                 let mut loop_state =
                     ActorLoop::new(backend, snapshot_join.clone(), subscribers_join);
+                loop_state.effects = effects::Engine::new(effects_join.clone());
                 loop_state.resolver = resolver;
                 loop_state.run(rx);
                 // Loop exits only on Shutdown / backend shutdown; ordered
                 // teardown happens here, on the actor thread, before joining.
+                effects_join.close();
                 loop_state.backend.terminate();
                 stopped_join.store(true, Ordering::Release);
             })
@@ -658,6 +731,7 @@ impl PlayerActor {
             subscribers,
             stopped,
             join: Some(join),
+            effects,
         })
     }
 
@@ -696,6 +770,21 @@ impl Drop for PlayerActor {
 }
 
 impl PlayerPort for PlayerActor {
+    fn effects_submit(
+        &self,
+        revision: u64,
+        enabled: bool,
+        payload: crate::effects::Payload,
+    ) -> Result<crate::effects::EffectsRuntime, PlayerError> {
+        self.effects.submit(revision, enabled, payload)
+    }
+    fn effects_runtime(&self) -> crate::effects::EffectsRuntime {
+        self.effects.runtime()
+    }
+    fn effects_bypass(&self, revision: u64) -> Result<crate::effects::EffectsRuntime, PlayerError> {
+        self.effects.bypass(revision)
+    }
+
     fn send(&self, cmd: PlayerCommand) -> Result<(), PlayerError> {
         self.tx.try_send(cmd).map_err(|_| {
             // A full or closed channel means the actor cannot accept work now.
@@ -737,6 +826,7 @@ pub enum FfiSpawnError {
 }
 
 /// The actor loop: owns the backend, processes commands, pumps events.
+#[allow(clippy::struct_excessive_bools)] // These are orthogonal actor snapshots/intent flags, not combinable modes.
 struct ActorLoop<B: Backend> {
     backend: B,
     generation: u64,
@@ -779,6 +869,8 @@ struct ActorLoop<B: Backend> {
     /// A seek received during asynchronous file loading. mpv resets its
     /// position as `loadfile` completes, so this is applied on `FileLoaded`.
     pending_seek: Option<f64>,
+    effects: effects::Engine,
+    effects_held: bool,
 }
 
 impl<B: Backend> ActorLoop<B> {
@@ -810,6 +902,8 @@ impl<B: Backend> ActorLoop<B> {
             // intent that can be true once a file actually loads.
             intended_paused: false,
             pending_seek: None,
+            effects: effects::Engine::new(effects::Shared::default()),
+            effects_held: false,
         }
     }
 
@@ -903,6 +997,7 @@ impl<B: Backend> ActorLoop<B> {
     }
 
     #[allow(clippy::needless_pass_by_value)] // The receiver is intentionally owned by the actor thread.
+    #[allow(clippy::too_many_lines)] // The actor loop keeps command, effects, and event ordering visible in one place.
     fn run(&mut self, rx: mpsc::Receiver<PlayerCommand>) {
         loop {
             // Drain bounded commands first.
@@ -910,6 +1005,18 @@ impl<B: Backend> ActorLoop<B> {
                 if !self.handle_command(cmd) {
                     return; // Shutdown
                 }
+            }
+            let playing = matches!(self.state, PlaybackState::Playing)
+                || (self.effects_held && !self.intended_paused);
+            let ready = self.effects.tick(&mut self.backend, playing, false);
+            if ready
+                && self.effects_held
+                && !self.intended_paused
+                && self.backend.write_property(BackendProperty::Pause(false))
+            {
+                self.effects_held = false;
+                self.state = PlaybackState::Playing;
+                self.publish(self.generation);
             }
             // Pump one backend event (or none → brief idle sleep).
             match self.backend.pump() {
@@ -928,9 +1035,13 @@ impl<B: Backend> ActorLoop<B> {
                     // `Playing`), while a play-intent load can inherit a stale
                     // ON flag. The load's intent — not the fact that a file
                     // loaded — is what mpv must end up respecting.
+                    let ready = self
+                        .effects
+                        .tick(&mut self.backend, !self.intended_paused, true);
+                    self.effects_held = !ready && !self.intended_paused;
                     let pause_applied = self
                         .backend
-                        .write_property(BackendProperty::Pause(self.intended_paused));
+                        .write_property(BackendProperty::Pause(self.intended_paused || !ready));
                     if !pause_applied {
                         tracing::warn!(
                             paused = self.intended_paused,
@@ -964,12 +1075,22 @@ impl<B: Backend> ActorLoop<B> {
                     };
                     self.publish(self.generation);
                 }
+                Some(BackendEvent::AudioReconfigured) => {
+                    self.effects.reconfigured(&mut self.backend);
+                    if self.effects.requested() && !self.intended_paused {
+                        self.effects_held = true;
+                        let _ = self.backend.write_property(BackendProperty::Pause(true));
+                    }
+                }
                 Some(BackendEvent::Ended) => {
                     self.state = PlaybackState::Ended;
                     self.position = None;
                     self.publish(self.generation);
                 }
                 Some(BackendEvent::PropertyChanged { name, value }) => {
+                    if self.effects.property(&name, value) {
+                        continue;
+                    }
                     // A discrete control change (transport / mute) must reach the
                     // UI at once; the continuous position/duration stream stays
                     // throttled so a 10-minute track does not push 10 Hz of
@@ -1002,6 +1123,9 @@ impl<B: Backend> ActorLoop<B> {
                             }
                         }
                         "pause" => {
+                            if self.effects_held {
+                                continue;
+                            }
                             // mpv's flag is the single source of truth for the
                             // transport. `intended_paused` is deliberately *not*
                             // touched here — that field is what the next load
@@ -1095,7 +1219,9 @@ impl<B: Backend> ActorLoop<B> {
                 // actor's own state flag, so 播放/暂停 changed the icon while the
                 // audio kept running.
                 self.intended_paused = false;
-                if self.backend.write_property(BackendProperty::Pause(false))
+                let ready = self.effects.tick(&mut self.backend, true, true);
+                self.effects_held = !ready;
+                if self.backend.write_property(BackendProperty::Pause(!ready))
                     && self.state.can_transition_to(PlaybackState::Playing)
                 {
                     self.state = PlaybackState::Playing;
@@ -1119,7 +1245,12 @@ impl<B: Backend> ActorLoop<B> {
                 };
                 if let Some(target) = target {
                     let pause = target == PlaybackState::Paused;
-                    if self.backend.write_property(BackendProperty::Pause(pause)) {
+                    let ready = pause || self.effects.tick(&mut self.backend, true, true);
+                    self.effects_held = !ready;
+                    if self
+                        .backend
+                        .write_property(BackendProperty::Pause(pause || !ready))
+                    {
                         // The user's latest transport choice is the intent a
                         // pending load must not override when it lands.
                         self.intended_paused = pause;
@@ -1259,6 +1390,8 @@ impl<B: Backend> ActorLoop<B> {
     /// this first, so a `Loading` or `Failed` snapshot never carries the
     /// `position`/`duration` left over from the previously loaded file.
     fn begin_load(&mut self) -> u64 {
+        self.effects.begin_load(&mut self.backend);
+        self.effects_held = self.effects.requested();
         self.generation += 1;
         self.pending_seek = None;
         self.position = None;

@@ -207,6 +207,42 @@ pub trait PlayerPort: Send + Sync {
     /// command was accepted but the backend rejected it.
     fn send(&self, cmd: PlayerCommand) -> Result<(), PlayerError>;
 
+    /// Submit a typed effect intent. Acceptance returns Pending; only the
+    /// actor's native confirmation may report Applied.
+    /// # Errors
+    /// Rejects invalid payloads, stale revisions, or an unavailable actor.
+    fn effects_submit(
+        &self,
+        _revision: u64,
+        _enabled: bool,
+        _payload: crate::effects::Payload,
+    ) -> Result<crate::effects::EffectsRuntime, PlayerError> {
+        Err(PlayerError::Backend {
+            message: "audio effects backend unavailable".to_owned(),
+        })
+    }
+
+    /// Read the latest revision and native application facts.
+    fn effects_runtime(&self) -> crate::effects::EffectsRuntime {
+        crate::effects::EffectsRuntime {
+            applied: crate::effects::AppliedState::Unavailable,
+            reason: Some("audio effects backend unavailable".to_owned()),
+            ..Default::default()
+        }
+    }
+
+    /// Wait for a safety bypass confirmation, used by deletion compensation.
+    /// # Errors
+    /// Returns an error if bypass fails, is superseded, or cannot be confirmed.
+    fn effects_bypass(
+        &self,
+        _revision: u64,
+    ) -> Result<crate::effects::EffectsRuntime, PlayerError> {
+        Err(PlayerError::Backend {
+            message: "audio effects backend unavailable".to_owned(),
+        })
+    }
+
     /// The current snapshot. The coordinator can poll this at any time; the
     /// actor also pushes snapshots after every meaningful state change.
     #[must_use]
@@ -225,6 +261,23 @@ pub trait PlayerPort: Send + Sync {
 /// PlayerPort>` where a concrete owned player is expected (e.g. the
 /// coordinator's generic `P: PlayerPort`).
 impl PlayerPort for std::sync::Arc<dyn PlayerPort> {
+    fn effects_submit(
+        &self,
+        revision: u64,
+        enabled: bool,
+        payload: crate::effects::Payload,
+    ) -> Result<crate::effects::EffectsRuntime, PlayerError> {
+        (**self).effects_submit(revision, enabled, payload)
+    }
+
+    fn effects_runtime(&self) -> crate::effects::EffectsRuntime {
+        (**self).effects_runtime()
+    }
+
+    fn effects_bypass(&self, revision: u64) -> Result<crate::effects::EffectsRuntime, PlayerError> {
+        (**self).effects_bypass(revision)
+    }
+
     fn send(&self, cmd: PlayerCommand) -> Result<(), PlayerError> {
         (**self).send(cmd)
     }

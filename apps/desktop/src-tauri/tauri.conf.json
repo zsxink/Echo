@@ -62,6 +62,16 @@
         "Frameworks/libmpv.dylib": "vendor/libmpv/macos/libmpv.dylib",
         "Frameworks/libswresample.dylib": "vendor/libmpv/macos/libswresample.dylib",
         "Frameworks/libswscale.dylib": "vendor/libmpv/macos/libswscale.dylib",
+        "Frameworks/libass.9.dylib": "vendor/libmpv/macos/libass.9.dylib",
+        "Frameworks/libfreetype.6.dylib": "vendor/libmpv/macos/libfreetype.6.dylib",
+        "Frameworks/libfribidi.0.dylib": "vendor/libmpv/macos/libfribidi.0.dylib",
+        "Frameworks/libglib-2.0.0.dylib": "vendor/libmpv/macos/libglib-2.0.0.dylib",
+        "Frameworks/libgraphite2.3.dylib": "vendor/libmpv/macos/libgraphite2.3.dylib",
+        "Frameworks/libharfbuzz.0.dylib": "vendor/libmpv/macos/libharfbuzz.0.dylib",
+        "Frameworks/libintl.8.dylib": "vendor/libmpv/macos/libintl.8.dylib",
+        "Frameworks/libpcre2-8.0.dylib": "vendor/libmpv/macos/libpcre2-8.0.dylib",
+        "Frameworks/libpng16.16.dylib": "vendor/libmpv/macos/libpng16.16.dylib",
+        "Frameworks/libunibreak.8.dylib": "vendor/libmpv/macos/libunibreak.8.dylib",
         "Resources/third-party/libmpv/NOTICE.md": "vendor/libmpv/macos/NOTICE.md"
       }
     },

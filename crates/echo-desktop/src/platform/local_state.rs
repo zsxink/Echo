@@ -43,6 +43,8 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
+mod effects;
+
 /// The three themes (spec `desktop-app-shell`: 珊瑚玫红默认 / 深钴蓝 / 松石绿).
 /// A theme only changes accent and primary action colors; it never changes the
 /// pure-white music workspace surface (the interface terminology is
@@ -230,6 +232,12 @@ struct RawDoc {
     window: Option<WindowState>,
     #[serde(skip_serializing_if = "Option::is_none")]
     playback_session: Option<PlaybackSessionValue>,
+    /// Opaque versioned payload; its validation belongs to the effects service.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effects: Option<serde_json::Value>,
+    /// Future desktop fields survive writes from older applications.
+    #[serde(flatten)]
+    unknown: serde_json::Map<String, serde_json::Value>,
 }
 
 /// The resolved, validated view of the store. `load` never fails on disk
@@ -434,6 +442,14 @@ impl DesktopStateStore {
         let Some(bytes) = self.read_bytes()? else {
             return Ok(RawDoc::default());
         };
+        // Preserve the original bytes before a legacy preference repairs a
+        // wholly corrupt document. Effects recovery can still inspect them.
+        if serde_json::from_slice::<serde_json::Value>(&bytes)
+            .ok()
+            .map_or(true, |value| !value.is_object())
+        {
+            self.preserve_original(&bytes)?;
+        }
         Ok(parse_doc(&bytes).into_raw())
     }
 
@@ -480,6 +496,9 @@ struct ParsedDoc {
     window: Option<WindowState>,
     playback_session: Option<PlaybackSessionValue>,
     corruption: bool,
+    effects: Option<serde_json::Value>,
+    unknown: serde_json::Map<String, serde_json::Value>,
+    version: u32,
 }
 
 impl ParsedDoc {
@@ -496,6 +515,27 @@ impl ParsedDoc {
     /// invalid degrades to its default and marks corruption.
     fn from_value(value: &serde_json::Value) -> Self {
         let mut doc = Self::default();
+        if let Some(object) = value.as_object() {
+            doc.unknown.clone_from(object);
+            for key in [
+                "version",
+                "theme",
+                "closeBehavior",
+                "window",
+                "playbackSession",
+                "effects",
+            ] {
+                doc.unknown.remove(key);
+            }
+        } else {
+            return Self::unparseable();
+        }
+        doc.effects = value.get("effects").cloned();
+        doc.version = value
+            .get("version")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|version| u32::try_from(version).ok())
+            .unwrap_or_default();
 
         match value.get("theme") {
             Some(serde_json::Value::String(s)) => match s.as_str() {
@@ -553,7 +593,9 @@ impl ParsedDoc {
             close_behavior: self.close_behavior.map(String::from),
             window: self.window,
             playback_session: self.playback_session,
-            version: 0,
+            version: self.version,
+            effects: self.effects,
+            unknown: self.unknown,
         }
     }
 }
@@ -675,5 +717,7 @@ pub enum StateError {
     #[error("desktop-state serialization error: {0}")]
     Serialize(String),
 }
+#[cfg(test)]
+mod effects_tests;
 #[cfg(test)]
 mod tests;

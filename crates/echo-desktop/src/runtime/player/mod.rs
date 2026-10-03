@@ -132,6 +132,9 @@ pub struct UiPlayerSnapshot {
     pub current_can_import: bool,
     /// The full queue the panel renders (current + pending, in play order).
     pub queue: Vec<UiQueueEntry>,
+    /// Optional additive projection; older clients ignore the new field.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effects: Option<crate::ipc::effects::EffectsSnapshotDto>,
 }
 
 /// A headless handle to the live playback subsystem: the coordinator (guarded

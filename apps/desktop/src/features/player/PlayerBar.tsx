@@ -44,6 +44,8 @@ import { useSongDetail } from "./useSongDetail";
 import { bumpLibraryCount, invalidateLibrary, publishSongUpdate } from "../library";
 import type { SongView } from "../../ipc/ipc-types.generated";
 
+import { EffectsTrigger } from "./EffectsTrigger";
+
 export function PlayerBar({
   queueTriggerRef,
 }: {
@@ -325,6 +327,7 @@ export function PlayerBar({
             }
           />
         </div>
+        <EffectsTrigger />
         <button
           type="button"
           className="control"

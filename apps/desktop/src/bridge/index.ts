@@ -16,7 +16,7 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-import type { IpcCommandResultMap, IpcErrorDto } from "../ipc/ipc-types.generated";
+import type { EqCurve, IpcCommandResultMap, IpcErrorDto } from "../ipc/ipc-types.generated";
 
 type EmptyArgs = [args?: Record<string, never>];
 
@@ -26,6 +26,15 @@ type EmptyArgs = [args?: Record<string, never>];
  * are projected from Rust's generated `IpcCommandResultMap` below.
  */
 interface BridgeCommandArguments {
+  get_audio_effects_snapshot: EmptyArgs;
+  select_audio_effects_preset: [args: { id: string }];
+  edit_audio_equalizer: [args: { curve: EqCurve }];
+  set_audio_effects_enabled: [args: { enabled: boolean }];
+  reset_audio_effects: EmptyArgs;
+  save_audio_effects_preset: [args: { name: string }];
+  rename_audio_effects_preset: [args: { id: string; name: string }];
+  delete_audio_effects_preset: [args: { id: string }];
+  retry_audio_effects: EmptyArgs;
   get_bootstrap_state: EmptyArgs;
   library_status: EmptyArgs;
   all_songs: [args: { sort: string; cursor?: string | null; limit: number }];

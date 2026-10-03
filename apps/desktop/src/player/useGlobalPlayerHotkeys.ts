@@ -40,7 +40,7 @@ function hasQueueDialogOpen(): boolean {
 /** Whether any overlay owns the arrow/letter navigation keys. */
 function hasOverlayOpen(): boolean {
   const ui = playerStore.getUi();
-  return ui.queueOpen || ui.immersiveOpen || ui.focusOpen;
+  return ui.queueOpen || ui.effectsOpen || ui.immersiveOpen || ui.focusOpen;
 }
 
 export function useGlobalPlayerHotkeys(): void {

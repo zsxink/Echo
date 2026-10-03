@@ -12,7 +12,7 @@
 //
 // Requires Node ≥22 (global WebSocket) and a Chromium at CHROME_PATH.
 
-import { existsSync, mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -647,6 +647,122 @@ async function main() {
     abort("A13", e);
   }
 
+  // ---------- Audio effects: popover, preset, EQ and typed commands ----------
+  await goto("medium");
+  try {
+    await cdp.call("Emulation.setDeviceMetricsOverride", {
+      width: 1100,
+      height: 900,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await evalJs(`document.querySelector('.effects-trigger')?.click()`);
+    await assert(
+      `!!document.querySelector('[data-testid="effects-panel"]')`,
+      "effects: player-bar trigger did not open the panel",
+    );
+    await assert(
+      `window.__echoE2E__.calls.includes('get_audio_effects_snapshot')`,
+      "effects: opening the panel did not request the shared snapshot",
+    );
+    await evalJs(`document.querySelector('#effects-tab-presets')?.click()`);
+    const rock = await waitFor(
+      `Array.from(document.querySelectorAll('.effects-preset')).some((button) => button.innerText.includes('摇滚'))`,
+    );
+    if (!rock) {
+      const selectedTab = await evalJs(
+        `document.querySelector('#effects-tab-presets')?.getAttribute('aria-selected')`,
+      );
+      const panelText = await evalJs(
+        `document.querySelector('[data-testid="effects-panel"]')?.innerText`,
+      );
+      fail(`effects: built-in preset list did not render (tab=${selectedTab}; panel=${panelText})`);
+    }
+    const presetsShot = await cdp.call("Page.captureScreenshot", {
+      format: "png",
+      captureBeyondViewport: false,
+    });
+    writeFileSync("/tmp/echo-audio-effects-presets.png", Buffer.from(presetsShot.data, "base64"));
+    await evalJs(
+      `Array.from(document.querySelectorAll('.effects-preset')).find((button) => button.innerText.includes('摇滚')).click()`,
+    );
+    await assert(
+      `window.__echoE2E__.calls.includes('select_audio_effects_preset')`,
+      "effects: selecting a preset did not issue the typed preset command",
+    );
+    await assert(
+      `!document.querySelector('.effect-toggle input')?.disabled`,
+      "effects: a selected preset did not enable the effects switch",
+    );
+    await evalJs(`document.querySelector('.effect-toggle input')?.click()`);
+    await assert(
+      `window.__echoE2E__.calls.includes('set_audio_effects_enabled') && document.querySelector('.effect-toggle input')?.checked`,
+      "effects: enabling did not send and retain the requested state",
+    );
+    await evalJs(
+      `document.querySelector('#effects-tab-presets')?.focus(); document.querySelector('#effects-tab-presets')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))`,
+    );
+    await assert(
+      `document.querySelector('#effects-tab-equalizer')?.getAttribute('aria-selected') === 'true'`,
+      "effects: ArrowRight did not move the selected tab",
+    );
+    await evalJs(
+      `(() => { const slider = document.querySelector('[aria-label="1000 Hz 增益"]'); slider?.focus(); slider?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })); })()`,
+    );
+    await assert(
+      `window.__echoE2E__.calls.includes('edit_audio_equalizer')`,
+      "effects: equalizer keyboard editing did not issue the typed edit command",
+    );
+    const equalizerShot = await cdp.call("Page.captureScreenshot", {
+      format: "png",
+      captureBeyondViewport: false,
+    });
+    writeFileSync(
+      "/tmp/echo-audio-effects-equalizer.png",
+      Buffer.from(equalizerShot.data, "base64"),
+    );
+    await cdp.call("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+    });
+    const narrowLayout = await evalJs(`(() => {
+      const panel = document.querySelector('[data-testid="effects-panel"]');
+      const scroll = panel?.querySelector('.effects-body');
+      const box = panel?.querySelector('.effects-panel')?.getBoundingClientRect();
+      const bands = panel?.querySelector('.eq-bands');
+      const bandControls = [...(bands?.querySelectorAll('input[type="range"]') ?? [])];
+      return { width: innerWidth, height: innerHeight, box: box && [box.left, box.top, box.right, box.bottom],
+        clientHeight: scroll?.clientHeight, scrollHeight: scroll?.scrollHeight,
+        bandsClientWidth: bands?.clientWidth, bandsScrollWidth: bands?.scrollWidth,
+        bandCount: bandControls.length,
+        controlsFit: Boolean(box) && bandControls.every((control) => { const r = control.getBoundingClientRect(); return r.left >= box.left && r.right <= box.right; }) };
+    })()`);
+    await assert(
+      `(() => { const p = document.querySelector('[data-testid="effects-panel"] .effects-panel')?.getBoundingClientRect(); const s = document.querySelector('.effects-body'); const b = document.querySelector('.eq-bands'); const controls = [...(b?.querySelectorAll('input[type="range"]') ?? [])]; return innerWidth === 390 && p && p.left >= 0 && p.right <= innerWidth && p.top >= 0 && p.bottom <= innerHeight && s?.scrollHeight >= s?.clientHeight && b?.scrollWidth <= b?.clientWidth && controls.length === 10 && controls.every((node) => { const r = node.getBoundingClientRect(); return r.left >= p.left && r.right <= p.right; }) && document.querySelectorAll('[data-testid="effects-panel"] input[type="range"]').length === 11; })()`,
+      `effects: panel overflows the narrow viewport or clips editor controls (${JSON.stringify(narrowLayout)})`,
+    );
+    const narrowShot = await cdp.call("Page.captureScreenshot", {
+      format: "png",
+      captureBeyondViewport: false,
+    });
+    writeFileSync("/tmp/echo-audio-effects-narrow.png", Buffer.from(narrowShot.data, "base64"));
+    await cdp.call("Emulation.clearDeviceMetricsOverride");
+    await evalJs(
+      `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`,
+    );
+    await assert(
+      `!document.querySelector('[data-testid="effects-panel"]')`,
+      "effects: Escape did not close only the effects panel",
+    );
+    pass(
+      "audio effects: player-bar entry, preset selection, enable, keyboard EQ editing, narrow viewport and Escape dismissal",
+    );
+  } catch (e) {
+    abort("audio effects UI", e);
+  }
+
   // ---------- A15: 沉浸式背景取自当前封面 ----------
   //
   // 封面取色 (`--player-tint` / `--player-background` / `--player-glow`) has no
@@ -853,7 +969,7 @@ async function main() {
     process.stderr.write(`FAIL 13.1: ${failures} acceptance check(s) failed\n`);
   } else {
     process.stdout.write(
-      "ok 13.1: mock-bridge browser E2E covers PRD A1/A6/A7/A8/A9/A13/A14 non-platform acceptance in real Chromium, plus A15 (app-only 沉浸式封面取色，无 PRD 条目)\n",
+      "ok 13.1: mock-bridge browser E2E covers PRD A1/A6/A7/A8/A9/A13/A14 non-platform acceptance and audio effects UI in real Chromium, plus A15 (app-only 沉浸式封面取色，无 PRD 条目)\n",
     );
   }
 }
