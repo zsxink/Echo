@@ -106,7 +106,9 @@ describe("audio effects shared player state", () => {
   it("shows the enabled selection while pending and marks it applied after confirmation", async () => {
     const effects = snapshot();
     openPanel(effects);
-    expect(screen.getByRole("button", { name: "隐藏音效，已启用，待应用：自定义" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "隐藏音效，已启用，待应用：自定义" }),
+    ).toBeInTheDocument();
     await act(async () =>
       playerStore.publishEffects({
         ...effects,

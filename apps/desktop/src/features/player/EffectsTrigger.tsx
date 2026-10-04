@@ -10,14 +10,13 @@ export function EffectsTrigger({ immersive = false }: { readonly immersive?: boo
   const enabled = effects?.document.requestedEnabled === true;
   const confirmed = effects?.runtime.applied === "applied";
   const selected = effects?.document.selection;
-  const name =
-    enabled
-      ? selected?.kind === "draft"
-        ? "自定义"
-        : selected?.kind === "preset"
-          ? effects?.presets.find((preset) => preset.id === selected.id)?.name
-          : undefined
-      : undefined;
+  const name = enabled
+    ? selected?.kind === "draft"
+      ? "自定义"
+      : selected?.kind === "preset"
+        ? effects?.presets.find((preset) => preset.id === selected.id)?.name
+        : undefined
+    : undefined;
   const effectStatus = confirmed ? "已生效" : "已启用，待应用";
   return (
     <button
