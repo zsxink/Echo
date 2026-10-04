@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-// Injection proofs for the normalize-os-file-open-paths boundary and the new
-// scenario-command governance gate.
+// Injection proofs for the normalize-os-file-open-paths boundary, the new
+// scenario-command governance gate, and the audio-effects evidence discipline
+// (its retraction of the withdrawn runtime-parameter conclusion).
 //
 // Kept out of `injection-suite.mjs` because that file sits right under the
 // 1000-line scale ceiling; the suite spreads this cluster into ENTRIES.
 //
-// Both violations are injected by rewriting exactly one repository file
+// Every violation is injected by rewriting exactly one repository file
 // (through the suite's `replaceIn`/`createProbe` helpers) and restored by hash.
 
 /**
@@ -63,6 +64,25 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
             'process.stdout.write("ok probe\\n");',
             "",
           ].join("\n"),
+        );
+        return {};
+      },
+    },
+    {
+      id: "audio-effects-evidence/withdrawn-claim-reinstated",
+      guard: "native-gate.md reinstating the withdrawn \"runtime parameter changes are categorically ineffective\" conclusion (its PCM experiment used the wrong mpv label)",
+      check: ["node", ["scripts/verify/checks/task-audio-effects-evidence.mjs"]],
+      expect: /native-gate\.md asserts runtime parameter changes are categorically ineffective/,
+      baseline: true,
+      inject() {
+        // Delete the retraction marker, leaving the claim on its own line — the
+        // exact edit that would resurrect the discredited conclusion. The row
+        // still carries AFX-9.5 and RUNTIME_PARAM, so only the retraction
+        // assertion can fire.
+        replaceIn(
+          join(ROOT, "openspec", "changes", "introduce-audio-effects-equalizer", "native-gate.md"),
+          "**也已撤回**：其判别实验使用了错误的 mpv label。",
+          "：其判别实验使用了错误的 mpv label。",
         );
         return {};
       },

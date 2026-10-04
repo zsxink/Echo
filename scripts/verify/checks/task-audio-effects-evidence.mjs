@@ -17,8 +17,11 @@
 //
 //   3. `af-command` returns rc=0 even when the parameter does not change, so any
 //      claim of the form "the runtime command succeeded, therefore the filter
-//      changed" is unproven. The measured reality on the packaged macOS library
-//      is that runtime parameter changes do NOT reach the audio at all.
+//      changed" is unproven. It does not follow that runtime parameter changes
+//      are ineffective: the earlier PCM experiment that concluded so used the
+//      wrong mpv label and has been retracted (AFX-9.7). Whether they reach the
+//      audio is still open (AFX-9.5), so the check asserts only the narrower
+//      claim — rc is not evidence either way.
 //
 // Checks performed:
 //   A. Report every audio-effects task number that collides with a manifest id.
