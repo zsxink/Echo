@@ -419,8 +419,7 @@
   width: auto;
   padding: 0 2px;
   overflow: hidden;
-  border-radius: 3px;
-  background: color-mix(in oklab, var(--surface) 92%, var(--accent));
+  background: transparent;
   color: var(--accent);
   font-size: 8px;
   line-height: 10px;
@@ -444,6 +443,9 @@
 }
 .effects-trigger-immersive:hover {
   background: color-mix(in oklab, var(--accent-on), transparent 90%);
+}
+body.player-mode-open .playerbar .effects-trigger-name {
+  color: currentColor;
 }
 @media (max-width: 760px) {
   .effects-panel {

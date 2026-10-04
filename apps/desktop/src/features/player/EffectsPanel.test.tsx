@@ -103,10 +103,10 @@ describe("audio effects shared player state", () => {
     expect(playerStore.getUi().effectsOpen).toBe(false);
     expect(playerStore.getEffects()?.document.draft).toEqual(effects.document.draft);
   });
-  it("names confirmed effects only and reflects unavailable and failed states", async () => {
+  it("shows the enabled selection while pending and marks it applied after confirmation", async () => {
     const effects = snapshot();
     openPanel(effects);
-    expect(screen.queryByRole("button", { name: /已生效/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "隐藏音效，已启用，待应用：自定义" })).toBeInTheDocument();
     await act(async () =>
       playerStore.publishEffects({
         ...effects,

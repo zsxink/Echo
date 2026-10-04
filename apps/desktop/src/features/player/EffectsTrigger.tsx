@@ -11,21 +11,22 @@ export function EffectsTrigger({ immersive = false }: { readonly immersive?: boo
   const confirmed = effects?.runtime.applied === "applied";
   const selected = effects?.document.selection;
   const name =
-    enabled && confirmed
+    enabled
       ? selected?.kind === "draft"
         ? "自定义"
         : selected?.kind === "preset"
           ? effects?.presets.find((preset) => preset.id === selected.id)?.name
           : undefined
       : undefined;
+  const effectStatus = confirmed ? "已生效" : "已启用，待应用";
   return (
     <button
       type="button"
       className={`effects-trigger ${immersive ? "effects-trigger-immersive" : "control"}${!immersive && name ? " has-name" : ""}${enabled ? " active" : ""}`}
-      aria-label={`${ui.effectsOpen ? "隐藏" : "显示"}音效${name ? `，已生效：${name}` : ""}`}
+      aria-label={`${ui.effectsOpen ? "隐藏" : "显示"}音效${name ? `，${effectStatus}：${name}` : ""}`}
       aria-expanded={ui.effectsOpen}
       aria-controls="audio-effects-panel"
-      title={name ? `音效：${name}` : "音效"}
+      title={name ? `音效：${name}${confirmed ? "" : "（待应用）"}` : "音效"}
       ref={ref}
       onClick={() => {
         effectsTriggerRef.current = ref.current;
