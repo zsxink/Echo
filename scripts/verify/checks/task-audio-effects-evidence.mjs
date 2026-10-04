@@ -110,6 +110,33 @@ if (!existsSync(resolve(ROOT, `${CHANGE}/native-gate.md`))) {
         "trimming the head and padding the tail (239 samples at 48 kHz/5 ms).",
     );
   }
+  // The 2026-10-03 conclusion "runtime parameter changes never take effect" was
+  // withdrawn on 2026-10-04: its PCM experiment used the wrong mpv label, so the
+  // whole discriminating chain was invalid. Catch a live assertion of it.
+  // Scope the retraction marker to the SAME markdown table row / bullet, since a
+  // wider window picks up unrelated retraction wording from a previous section.
+  const RETRACTED = /撤回|作废|已证伪|不再成立/;
+  let assertedIneffective = false;
+  for (const line of gate.split("\n")) {
+    if (!/运行时改参一律无效|运行时改参整体失效/.test(line)) continue;
+    if (!RETRACTED.test(line)) assertedIneffective = true;
+  }
+  if (assertedIneffective) {
+    failures.push(
+      "native-gate.md asserts runtime parameter changes are categorically " +
+        "ineffective. That conclusion was withdrawn on 2026-10-04 because the PCM " +
+        "experiment used the wrong mpv label (the `af` property reports the filter " +
+        "NAME, not the label). The defensible claim is narrower: rc is not " +
+        "evidence, and runtime updates are NOT YET PROVEN to work.",
+    );
+  }
+  if (!/AFX-9\.5|RUNTIME_PARAM/.test(gate)) {
+    failures.push(
+      "native-gate.md does not record the open root cause (AFX-9.5) or the " +
+        "RUNTIME_PARAM return-code signature, so the withdrawn claim may be " +
+        "reinstated by mistake.",
+    );
+  }
 }
 
 // --- D. the probe must still be able to prove a runtime change --------------

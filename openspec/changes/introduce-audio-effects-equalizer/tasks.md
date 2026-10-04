@@ -2,17 +2,17 @@
 
 > 2026-10-02 实施授权：用户在本轮开发中回复「我批准你通过」，允许先推进功能实现。第1组实测和第6组发布验收仍须补齐；此授权不代表任何平台测量已经通过，未取得证据的任务不得勾选。
 >
-> 2026-10-03 复核新增：见 `review-and-tuning.md`。R1（**运行时改参整体失效**，原归因「`extrastereo` 无回调」已被 PCM 实测证伪）、R2（`install_pending` 潜在死锁，任务 4.6）、R6（app 内原先是旧库，任务 4.7）为复核发现并已登记；听感优化见任务 4.8 与 2.5。已完成候选 app 更新和库一致性检查；完整音频 Gate 状态不变。
+> 2026-10-03 复核新增：见 `review-and-tuning.md`。R1（运行时改参**未证明生效**；原归因「`extrastereo` 无回调」已证伪，替代结论「一律失效」亦已于 10-04 撤回）、R2（`install_pending` 潜在死锁，任务 4.6）、R6（app 内原先是旧库，任务 4.7）为复核发现并已登记；听感优化见任务 4.8 与 2.5。已完成候选 app 更新和库一致性检查；完整音频 Gate 状态不变。
 >
-> 2026-10-03 修复轮实测结论（**优先于上述复核记录**）：本随包库上 `af-command` **对任何滤镜都不改变音频**（EQ 增益 / preamp / width，rc 均 0 而 PCM 输出不变），mpv 因 `f_lavfi.c` 只判 `result >= 0` 报假成功。**因此任务 4.1/4.2 赖以成立的「运行时原地改参」当前不可依赖**，须改为「重建链 + 实测确认」。详见 `native-gate.md` 的判别性测量表。
+> 2026-10-04 结论（**优先于上述所有记录**）：`af-command` 的返回值**不能**作为音频生效证据；它最多表明命令处理路径接受了请求。曾有一次「运行时改参一律失效」的实测结论，因**使用了错误的 mpv label** 而**已撤回**（`af` 属性显示的是滤镜名而非 label，见 AFX-9.8）。当前确定的是：AFX-4.1/4.2 赖以成立的「运行时原地改参」**尚未被证明可用**。当前实现仍依赖 `af-command`，尚未切换到重建链；在 AFX-9.5 定位根因并完成 PCM 判别前，不能验收 30 ms 过渡或宣称运行时修改已生效。
 
 ## 1. macOS 原生技术 Gate（用户授权先开发，macOS P0 发布前须通过）
 
 - [x] AFX-1.1 固定 macOS 候选 bundle 及 libmpv/FFmpeg 版本/哈希，补齐可重复 fixture、CoreAudio 探针和隔离 `ao=pcm` 捕获；运行时库哈希、协商采样率/声道和真实处理输出均写入 `native-gate.md` 与证据 JSON（T1/T5、V12/V18）。当时的 `/Applications/Echo.app` 旧包已在 4.7 更新并留备份。
 - [x] AFX-1.2 macOS 候选库已验证十段具名链、EQ/preamp 定向命令、空间链 `c=false`、limiter `level=false` 和 loadfile 后配置链存活；低电平 997 Hz 响应误差 `-0.0041 dB`，压力点 sample-peak `-0.99985 dBFS` 且 PCM 全有限；单声道输入保持 mono，空间链被跳过；滤镜 target/options 和 sample-peak/true-peak 未测口径已记入 native-gate。证据：`macos-installed-app-coreaudio-probe.json`、`macos-installed-app-mono-probe.json`、`macos-pcm-response-probe.json`、`macos-pcm-limiter-stress-probe.json`。这只是 1.2 指定的单点实验，不替代 1.3/1.4 矩阵或总体发布 Gate（T1/T2/T3/T5/T6、V2/V6/V7/V17）。
-      **⚠️ 2026-10-03 与 `native-gate.md:124` 的表述冲突已消除**：该处曾要求 1.2 保持未勾选，现统一为「1.2 = 已完成的单点实验，Gate 仍由 1.3/1.4/1.5 决定」。另：`-0.0041 dB` 来自**安装期写死 g=6 的静态链**，只证明静态响应；EQ/preamp 定向命令的 rc=0 **不构成**生效证据（实测不改变输出）。
+      **⚠️ 2026-10-03 与 `native-gate.md:124` 的表述冲突已消除**：该处曾要求 1.2 保持未勾选，现统一为「1.2 = 已完成的单点实验，Gate 仍由 1.3/1.4/1.5 决定」。另：`-0.0041 dB` 来自**安装期写死 g=6 的静态链**，只证明静态响应；EQ/preamp 定向命令的 rc=0 **不构成**生效证据。
 - [ ] AFX-1.3 在 macOS 捕获 30ms 平滑目标、开关/类型切换/输出重建/首样本屏障与 limiter 延迟补偿；验证：每类≥100次捕获 p95≤150ms、无新增爆音/断流/underrun，seek/EOF/歌词进度相对旁路无超过10ms新增偏移；volume/mute 不被覆盖（V10/V16–V18）。
-      **⚠️ 2026-10-03 阻塞前提**：30ms 平滑当前依赖逐帧 `af-command`，而该路径已实测**不改变音频**（见 `native-gate.md`）。本任务须先确定可生效的过渡机制（重建链或替代方案），并以 PCM 捕获证明中间增益状态真实出现，否则「无爆音/无断流」无从验证。另：`latency=true` 经实测**确实补偿**延迟（48 kHz/attack=5 ms 抵消 239 样本，与 `attack*Fs−1` 精确一致），故 limiter 自身的延迟补偿项已成立，本任务改为复核 CoreAudio 设备侧总偏移。
+      **⚠️ 2026-10-04 更新**：30 ms 平滑当前依赖逐帧 `af-command`，但运行时 PCM 行为尚未被可靠证明；早前“该路径不改变音频”的证据使用了错误 label，已撤回。先完成 AFX-9.5 的根因定位，再以 PCM 捕获证明中间增益状态真实出现；在此之前不能验收无爆音/无断流。另：`latency=true` 经实测**确实补偿**延迟（48 kHz/attack=5 ms 抵消 239 样本，与 `attack*Fs−1` 精确一致），故 limiter 自身的延迟补偿项已成立，本任务改为复核 CoreAudio 设备侧总偏移。
 - [ ] AFX-1.4 固定 macOS 参考机（至少4核/8GB/SSD）和最重预设，预热30秒采样5分钟，分别测稳定播放及面板开关；验证：CPU平均增量≤10个百分点，记录原始数据。对九个EQ及空间按BS.1770-5测量同片段、响度匹配≤0.5 LU 后做A/B和人声折叠审查，记录实测结果及调音迭代（V1/V3/V7/V12）。
       **⚠️ 2026-10-03**：`evidence/` 中**无任何 BS.1770 测量文件**，design 的 0.5 dB 自动补偿与 AFX-2.5 的曲线定稿都依赖本项，须优先补做。
 - [ ] AFX-1.5 汇总 macOS Gate 结论并更新 design 实测证据；验证：T1/T2/T3/T5/T6及上述门槛全通过。失败须先修订方案及受影响 PRD/spec，不可将空间或原地编辑禁用后标完成。T4、V9/V19留P1。
@@ -36,13 +36,13 @@
 ## 4. 播放后端与生命周期集成
 
 - [ ] AFX-4.1 基于Gate确定的API在MpvBackend实现命名链与运行时参数更新，固定浮点精度/preamp/空间/limiter配置，复用现有FFI隔离；验证：原生工具输出与第1组一致，压力/响应/空间折叠通过，运行`cargo test -p echo-desktop`；文档记录unsafe前提（若有）及精确链语法（V1/V2/V6/V7）。
-      **⚠️ 2026-10-03 阻塞前提**：`native-gate.md` 的 PCM 判别性测量显示本随包库上运行时 `af-command` 对任何滤镜都不改变输出（rc=0 是假成功）。本任务须先确定「重建链」还是「另寻可生效的运行时机制」，并以 PCM 前后测量判定，**不得**以 `af-command` 返回 0 作为生效证据。
+      **⚠️ 2026-10-04 阻塞前提**：运行时原地改参**尚未被证明生效**（rc=0 不可信；「一律失效」的旧结论因实验 label 错误已撤回，见 AFX-9.7）。本任务须先确定「重建链」还是「另寻可生效的运行时机制」，并以 PCM 前后测量判定，**不得**以 `af-command` 返回 0 作为生效证据。
 - [ ] AFX-4.2 actor在下一轮处理最新请求（不额外debounce）、保留30ms平滑、保护先后序和revision/epoch屏障；新链安装后等待libmpv重配置再更新具名参数。验证：fake故障测试及原生拖动后关闭/重置/切类型捕获均以最新状态收敛，失败回滚或旁路，过期步骤不能重新作用，切换首个音频参数更新无额外合并等待，运行`cargo test -p echo-desktop`（V5/V10/V16）。
-      **⚠️ 2026-10-03 阻塞前提**：`advance()` 的 30 ms 斜坡依赖逐帧 `af-command`，而该路径已实测不改变音频；`start()` 在 incompatible 分支还会于 `install()` 时直接写入最终 `preamp`、并在旁路末尾由 `protected_preamp` 阶跃到目标值。改造时须把 preamp 纳入斜坡并消除该阶跃，且以 PCM 实测证明中间增益状态真实出现。
+      **⚠️ 2026-10-04 阻塞前提**：`advance()` 的 30 ms 斜坡依赖逐帧 `af-command`，其实际 PCM 行为仍未验证；先完成 AFX-9.5，再以 PCM 实测证明中间增益状态真实出现。另，`start()` 在 incompatible 分支于 `install()` 时直接写入最终 `preamp`，旁路末尾也可能由 `protected_preamp` 阶跃到目标值；改造须把 preamp 纳入过渡并消除该阶跃。
 - [ ] AFX-4.3 接入实际处理环境、loadfile/输出重建、暂停/继续/无音轨首样本流程，支持mono/stereo EQ、只双声道空间；验证：22.05/44.1/48/96kHz及既有其他采样率、临时文件、换设备、seek/EOF、歌词/计数/volume/mute回归，通过原生工具与`cargo test -p echo-desktop`（V10/V13/V17/V18）。
 - [x] AFX-4.4 runtime统一装配、会话恢复与退出flush/后台关窗，不另建音效会话；验证：窗口隐藏后持续音效，显示后读取同快照、资料库切换和清队列保留曲线，运行`cargo test --workspace`，更新`docs/DESIGN.md`的桌面音效分层/依赖图（V11/V13/V14）。
-- [x] AFX-4.5 复核发现的空间宽度假成功（R1）：采用 review 推荐方案 A；`extrastereo` width 只在安装时设置，移除无效 `spatial:m` 运行时命令，并以负向回归断言确保不再发送。随包库结构检查及应用包探针已检查该命令路径；不选择重建链方案 B，因其需要尚未取得的连续性捕获证据（V6/V7）。
-      **⚠️ 2026-10-03 重新定性**：负向断言**保留**（仍不应发送 `spatial:m`），但**理由已变**——原依据「`extrastereo` 无 `process_command`」被证伪（该回调存在）；真实依据是「本随包库上运行时改参对所有滤镜都不生效」（PCM 实测：装 `m=1.25` 发 `spatial:m 1.4`，rc=0 而输出 Δ=+0.0000 dB，理论 +0.9844）。复核命令：`probe.py --capture-only --runtime-parameter-proof`。
+- [x] AFX-4.5 复核发现的空间宽度假成功（R1）：采用 review 推荐方案 A；`extrastereo` width 只在安装时设置，不向 UI 暴露编辑入口，并以负向回归断言确保不发送 `spatial:m`。随包库结构检查及应用包探针已检查命令路径；不选择重建链方案 B，因其需要尚未取得的连续性捕获证据（V6/V7）。
+      **⚠️ 2026-10-04 重新定性**：负向断言**保留**，但理由是运行时 width 修改尚未被证明可用，不是已证明无效或 `extrastereo` 缺少 `process_command`。早前 PCM 判别实验使用错误的 mpv label，结论已撤回；正确 label 的命令/PCM 观测仍有矛盾，见 AFX-9.5 和 `native-gate.md`。
 - [x] AFX-4.6 复核发现的 `install_pending` 潜在死锁（R2）：若 AUDIO_RECONFIG 未到达，超过一个 `TRANSITION` 后自动重新确认，避免后续 `apply`/`bypass` 永久静默早退；新增不调用手工 `reconfirm()` 的超时恢复单测，验证无事件时下一次 `apply` 下发 `af-command`（V5/V16）。
 - [x] AFX-4.7 复核发现的真机验证阻断（R6）：`/Applications/Echo.app` 原先的 libavfilter 为旧库；任务1.1 增加库一致性硬前置。已将签名有效的 macOS 候选 bundle 安装到 `/Applications/Echo.app`，保留旧包备份；`shasum -a 256` 确认 app 内库与 vendor manifest 均为 `2591332d9a3ccc0f6a7313b98fc2566ef4193dd40271a6908dec7243085df6bc`，结构检查确认四个必需滤镜可用（V12）。
       **⚠️ 2026-10-03**：该任务以手工 `shasum` + 手工结构检查替代了 V12 的原生/性能验收，属替代而非等价覆盖；且当时的结构检查用的是字段布局错误的脚本（见 `native-gate.md`）。哈希结论不受影响，但「四个滤镜可用」应改由修复后的 `inspect-filter-runtime.py`（会校验布局并在不通过时拒绝输出）复现。
@@ -80,8 +80,11 @@
 ## 9. 运行时改参失效（2026-10-03 实测发现，阻塞 P0）
 
 - [x] AFX-9.1 修正判据工具并给出可信结论：`inspect-filter-runtime.py` 按 FFmpeg 6.0 真实字段布局读取（`inputs`/`outputs` 在 `priv_class` 之前、pad 计数为 `uint8`、`priv_size` 在 offset 80），并用导出的 `avfilter_filter_pad_count()` 交叉校验，断言不通过即拒绝输出逐滤镜结论。**更正**：随包库 `equalizer`/`volume`/`alimiter`/`extrastereo` 均有 `process_command`，此前「`extrastereo` 无回调」为布局错位造成的假 False。
-- [x] AFX-9.2 建立判别性测量并纠正结论：`probe.py` 新增 `--runtime-parameter-proof`（命令值必须区别于安装值 + PCM 前后对比）与 `--runtime-capture-seconds`（固定捕获窗），并新增 `static_gain_reference` 自检。**实测结论**：本随包库上 EQ 增益 / preamp / width 的运行时改参**均不改变输出**（rc=0 而 Δ≈0.000 dB），而安装期静态增益实测 +5.9959 dB 正常。判定为**运行时改参整体失效**，非 ENOSYS 掩盖。证据与复现命令见 `native-gate.md`。
-- [x] AFX-9.3 同步规格与实现：spec「空间感预设」Requirement 改为「width 是安装期常量 + 不得以 rc=0 报告生效」并补第 4 个 Scenario；`design.md` 第 4 节与 `native-gate.md` 更正 `latency`/`process_command`/证据作用域表述；`native_effects.rs` 模块文档记录该限制与实测数据；任务 AFX-4.1/4.2/4.5/1.3 加阻塞或重新定性说明。`openspec validate --strict` 通过。
+- [x] AFX-9.2 建立运行时改参探针：`probe.py` 新增 `--runtime-parameter-proof`（PCM 前后对比）与 `--runtime-capture-seconds`（固定捕获窗），并新增 `static_gain_reference` 自检。**原结论已撤回**：该轮命令使用错误的 mpv label，不能判定运行时改参是否有效。探针仍可用于后续正确 label 的 PCM 判别；具体状态见 AFX-9.5、AFX-9.7 与 `native-gate.md`。
+- [x] AFX-9.3 同步规格与实现：spec「空间感预设」Requirement 改为「width 是安装期常量 + 不得以 rc=0 报告生效」并补第 4 个 Scenario；`design.md` 第 4 节与 `native-gate.md` 更正 `latency`/`process_command`/证据作用域表述；`native_effects.rs` 模块文档记录该限制与待验证状态；任务 AFX-4.1/4.2/4.5/1.3 加阻塞或重新定性说明。`openspec validate --strict` 通过。
 - [x] AFX-9.4 消除任务号撞名并加门禁：本 change 的 39 个任务号加 `AFX-` 前缀（原先 1.1/1.2/2.2/4.5/4.7/4.8/6.1/6.2 等与 `scripts/verify/manifest.json` 现有条目**撞名**，`pnpm verify:task -- 4.8` 会跑到 BLAKE3 测试并报 ok）；`validate-scenario-commands.mjs` 白名单接纳 `scripts/audio-effects/*.py`（路径锁定）；新增 `scripts/verify/checks/task-audio-effects-evidence.mjs` 并登记为 `AFX-1`，覆盖撞名、失效结论回流、探针能力退化。**判别力已验证**：去掉前缀即 rc=1。
-- [ ] AFX-9.5 定位运行时改参失效的根因（**未完成，阻塞 AFX-4.1/4.2**）。已排除：mpv 补丁不在（`otool` 确认 `strchr` 分割与 `"all"` 回退）、`command-list` 签名不符、目标名不匹配（`spatial`/`extrastereo`/`all` 与 `echo_*` 均试过）、命令早于滤镜实例化（loadfile 前后均试过）、limiter 饱和与位深误算。**待查**：`@label:lavfi=[...]` 语法下 `af` 里 label 全为 `lavfi`（裸滤镜名才给出各自 label），怀疑 mpv 的 `<target>:<option>` 补丁与该 label 语义交互异常。判据：`af-command <真实label> eq5:gain 6` 使 997 Hz 响应实测变化 ≥5.5 dB（`static_gain_reference` 同时保持 `harness_valid`）。
+- [ ] AFX-9.5 定位运行时改参未改变 PCM 捕获的根因（**未完成，阻塞 AFX-4.1/4.2**）。**已观察到**（2026-10-04）：使用正确 mpv label 后，部分 runtime 参数命令返回 0，非 runtime 参数返回 -12；该分布与 FFmpeg 选项查找路径一致，但不能证明请求作用于正在输出的滤镜实例。当前正确 label 的运行时捕获与基线逐字节相同；静态 g=0/+6 对照能测出 +0.0076/+5.9959 dB，说明捕获链能识别静态增益差异。`volume` 捕获也未观察到输出变化。mpv `lavfi_reset()`→`free_graph()` 是否在播放期间替换 `c->graph` 仍待证据确认。完成判据：正确 label 的 `eq5:gain 6` 使 997 Hz 响应变化 ≥5.5 dB，或据证据改用其他运行时机制并通过 PCM 验证。
+      **⚠️ 2026-10-04 更正本任务早前表述**：此前写作「命令到达滤镜但未生效」并归因于「运行时改参整体失效」。该实验当时使用了**错误 label**，结论不成立；现已撤回，见 AFX-9.7。
 - [ ] AFX-9.6 补做 design §3 承诺的 ≤0.25 dB 响应验收（**未完成**）。已加 `probe.py --sweep-response`，但窗包络法测的是窗内频率内容而非滤波器响应（误差随窗长从 +10.2 dB 单调收敛到安装增益 +5.949 dB），故显式输出 `usable_for_tolerance_verdict: false`。需改为逐频正弦扫频或窄于滤波器带宽的 FFT 分析。
+- [x] AFX-9.7 撤回 AFX-9.2 的「运行时改参整体失效」结论（2026-10-04）。该结论所依据的实验使用了**错误的 mpv label**（把 `af` 属性显示的滤镜名当成 label），因此整个判别链无效。撤回内容：`native-gate.md`「运行时改参一律无效」、`review-and-tuning.md` R1 的「实测不改变音频」表述、以及 `native_effects.rs` 模块文档中的实测数据表。**保留的事实**：随包库四个滤镜均有 `process_command`（结构层，判据已修正）；`af-command` 的 rc 不能作为生效证据；用 PCM 前后对比才是唯一可接受判据。根因仍未定位（见 AFX-9.5）。
+- [x] AFX-9.8 记录 mpv `af-command` 的 label 语义（2026-10-04，供后续排障复用）：`af add/set` 的 `@label:NAME` 中 `label` 是 `@` 与 `:` 之间那段，`NAME` 是滤镜名（`options/m_option.c:3177-3196`）；`af` 属性返回的 `name` 是**滤镜名而非 label**（因此 `@x:lavfi=[...]` 显示为 `lavfi` 属正常，**不能**据此推断 label 不可用——这是本轮踩过的坑）；`af-command <label> …` 经 `find_by_label()` 在 user_filters 中匹配（`filters/f_output_chain.c:421-451`），找不到即 rc=-12；`target=all` 走广播分支（`f_lavfi.c:439`），会无条件返回 true，属另一处假成功来源。

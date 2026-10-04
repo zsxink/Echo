@@ -27,6 +27,25 @@ Because of that, do not treat these as interchangeable:
 | Is the measurement itself trustworthy? | `probe.py` `static_gain_reference` | The harness detects a known install-time gain |
 | Does the chain match the design tolerance? | `probe.py --sweep-response` | **Not yet** — reports `usable_for_tolerance_verdict: false` |
 
+## mpv `af-command` label semantics (get this wrong and every result is invalid)
+
+This is the single easiest way to produce a confident, wrong conclusion here.
+
+- In `af add` / `af set`, `@label:NAME` splits at the colon: the text between `@`
+  and `:` is the **label**; `NAME` is the **filter name**
+  (mpv `options/m_option.c`, `@` handling around line 3177).
+- `af-command <label> <command> <argument>` resolves the label against mpv's
+  user-filter list (`filters/f_output_chain.c`, `find_by_label()`). A label that
+  does not exist returns rc = -12.
+- **The `af` property reports the filter NAME, not the label.** A chain installed
+  as `@echo_eq5:lavfi=[...]` therefore shows up as `lavfi`. That is expected and
+  says nothing about whether the label works. Do NOT infer "labels are unusable"
+  from this — that mistake invalidated a whole round of measurements here.
+- `target=all` takes mpv's broadcast branch, which returns true unconditionally.
+  Another way to get rc = 0 with no effect.
+
+Only a PCM measurement across the change is admissible evidence.
+
 ## Measurement traps
 
 Each of these produced a confidently wrong number during development:

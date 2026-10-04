@@ -53,7 +53,7 @@ int (*activate)(...);
 | `extrastereo` | 16 | 有 | ✅（**与原结论相反**） |
 | `aformat` | 56 | 无 | ❌ |
 
-**结构层结论不等于行为结论**：PCM 判别性实测（见 R1）显示三者运行时改参**均不改变音频**。故结构检查只能用作「存在性」，行为判据必须用 PCM 前后测量。
+**结构层结论不等于行为结论**：结构检查只能证明「存在性」，行为判据必须用 PCM 前后测量。2026-10-04 用正确 label 的实验（见 R1）显示命令能通过选项查找但音频未变，根因待查。
 
 上游依据：`af_biquads.c` 的 `process_command` 会 `av_opt_set` 后 `config_filter` 重算系数；`af_extrastereo.c` 赋 `.process_command = ff_filter_process_command`。mpv 侧补丁经 `otool` 反汇编确认存在。**故障点未定位。**
 
@@ -68,9 +68,12 @@ int (*activate)(...);
 
 ### R1 `extrastereo` 宽度调整是假成功
 
-> **⚠️ 2026-10-03 修复轮结论更正（详见 `native-gate.md`）**：本条原结论「`extrastereo` 没有 `process_command`」**已被证伪**——按 FFmpeg 6.0 真实字段布局复核，随包库的 `extrastereo` **确有**该回调（此前 `inspect-filter-runtime.py` 的字段序错误导致假 False）。但 PCM 判别性实测显示：**本随包库上任何 `af-command` 运行时改参都不改变音频**（EQ 增益 / preamp / width 三者一致，rc 均为 0 而输出不变），而 mpv 因 `f_lavfi.c` 只判 `result >= 0` 报假成功。故「width 只能安装期生效」的**结论成立，但理由是运行时改参整体失效**，而非 ENOSYS 掩盖。方案 A 仍适用，任务 4.5 的负向断言需按此重新定性。
+> **⚠️ 两次更正（详见 `native-gate.md` 与任务 AFX-9.7）**：
+> ① **2026-10-03**：本条原结论「`extrastereo` 没有 `process_command`」**已证伪**——按 FFmpeg 6.0 真实字段布局复核，随包库 `extrastereo` **确有**该回调（`inspect-filter-runtime.py` 字段序错误导致假 False）。
+> ② **2026-10-04**：替代结论「本随包库任何 `af-command` 都不改变音频」**也已撤回**——该次 PCM 实验**使用了错误的 mpv label**（把 `af` 属性显示的滤镜名当成 label），判别链无效。
+> **当前正确表述**：`width` 按安装期常量实现（方案 A 仍适用），理由是运行时改参**尚未被证明可用**（rc 不可信），**不是**「已证明不可用」。用正确 label 的观测是：命令**通过了选项查找**（仅 `RUNTIME_PARAM` 选项返回 0，其余返回 -12），但音频逐字节不变，根因仍未定位（AFX-9.5）。
 
-**现象**：`native_effects.rs` 的空间链用 `af-command echo_spatial spatial:m <v>` 调宽度，返回 rc=0。PCM 实测输出无变化。
+**现象**：`native_effects.rs` 的空间链用 `af-command echo_spatial spatial:m <v>` 调宽度，返回 rc=0。⚠️ 用该 label 的 PCM 实验无效（label 用错，见上）；用正确 label 重做后命令能通过选项查找但音频仍无变化，根因待查。
 
 **证据（2026-10-03 PCM 判别性测量）**：固定 12 s 素材 + 固定 4 s 捕获窗（同链重复 5 次极差 0.0000 dB）：
 
@@ -85,7 +88,7 @@ int (*activate)(...);
 
 **方案**：
 - **A（采用）**：承认 width 不可运行时调整，`Payload::Spatial` 保留 `width` 但仅在安装时生效；UI 不暴露宽度滑块。
-- **B**：宽度变更走 `af set`/`install` 重建整条链。因运行时改参已实测无效，**重建链是当前唯一被实测可改变音频的机制**，但需 native-gate 补充「重建期间无 underrun / 无爆音」的捕获证据。
+- **B**：宽度变更走 `af set`/`install` 重建整条链。当前 PCM 捕获尚未证明运行时改参能改变输出，也没有证明它必然无效；重建链是已有静态对照可改变响应的路径。仍需 native-gate 补充运行时改参和重建期间无 underrun / 无爆音的捕获证据。
 
 **任务落点**：任务 4.5 的负向断言保留（仍不应发送 `spatial:m`），但其**理由文本**须改为引用 PCM 实测，而非结构体检查。
 

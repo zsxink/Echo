@@ -61,7 +61,22 @@ shasum -a 256 /Applications/Echo.app/Contents/Frameworks/libavfilter.dylib
 | 安装期 `m=1.25` | `af-command <label> spatial:m 1.4`，**rc=0** | **+0.0000 dB**（理论 +0.9844） | **未生效** |
 | 安装期 `volume=1` | `af-command <label> preamp:volume 0.5012`，**rc=0** | **+0.0076 dB**（理论 −6） | **未生效** |
 
-⇒ 在本随包库上**运行时改参一律无效**，与滤镜种类无关；mpv 因 `f_lavfi.c` 只判 `result >= 0` 而**报假成功**。mpv 侧已排除：`otool` 反汇编确认 `<target>:<option>` 补丁在（`strchr(':')` 分割 + `"all"` 回退），`command-list` 报 3-arg；FFmpeg 侧 `equalizer.process_command` 会 `av_opt_set` 后 `config_filter` 重算系数。**故障点尚未定位**，但足以判定：任何依赖原地改参的设计（含 30 ms 斜坡）当前**不可依赖**，须走重建链并实测。
+⇒ **2026-10-04 撤回本节「运行时改参一律无效」的结论**：下表实验使用了**错误的 mpv label**（把 `af` 属性显示的滤镜名当成 label，见下方「label 语义」），因此整条判别链无效，不能作为能力结论。**保留的有效事实只有两条**：① harness 正确（静态 g=0/+6 稳定测得 +0.0076 / +5.9959 dB）；② `af-command` 的 rc 不能作为生效证据，必须用 PCM 前后对比。
+
+用**正确 label** 重做实验（2026-10-04）得到一个更精确、也更矛盾的观测：
+
+| 命令形式 | rc | 含义 |
+|---|---:|---|
+| `eq5:gain` / `eq5:frequency` / `eq5:width` / `equalizer:gain` | **0** | 仅有 `AV_OPT_FLAG_RUNTIME_PARAM` 的选项返回 0 |
+| `all:gain` / `eq5:mix` / `eq5:normalize` / `eq5:precision` / `eq5:bypass` | **-12** | 选项查找失败（`av_opt_find2` 找不到） |
+
+该返回码分布与 `ff_filter_process_command` 的 `av_opt_find2(..., AV_OPT_FLAG_RUNTIME_PARAM | ...)` 选项查找路径一致，但它本身不能证明参数随后影响了正在输出的实例。当前这组正确 label 的 PCM 捕获与基线逐字节相同（sha256 一致），分段幅度在命令前后亦相同；`volume` 的捕获也未见输出变化。**根因仍未定位**（任务 AFX-9.5）：mpv `f_lavfi.c` 的 `lavfi_reset()`→`free_graph()` 是否在播放期间替换 `c->graph` 仍待运行时日志或实例身份证据验证。
+
+⚠️ **mpv `af-command` 的 label 语义（2026-10-04 排障记录，本轮踩过的坑）**：
+- `af add/set` 的 `@label:NAME` 中，`label` 是 `@` 与 `:` 之间那段，`NAME` 是**滤镜名**（`options/m_option.c:3177-3196`）。
+- `af` 属性返回的 `name` 是**滤镜名而非 label**。因此 `@echo_x:lavfi=[…]` 在 `af` 里显示为 `lavfi` 属正常，**不能**据此推断 label 不可用。
+- `af-command <label> …` 经 `find_by_label()` 在 user_filters 中匹配（`filters/f_output_chain.c:421-451`），找不到即 rc=-12。
+- `target=all` 走广播分支（`f_lavfi.c:439`），**无条件返回 true**，是另一处假成功来源。
 
 复现命令（新增判据，`runtime_parameter_pcm_proof` 检查项）：
 
@@ -77,7 +92,9 @@ python3 scripts/audio-effects/probe.py \
   --output /tmp/afx.json --timeout 120
 ```
 
-通过阈值：`static_gain_reference_db`（安装期 g=6）≈ +6 dB 以验证 harness；`runtime_parameter_pcm_proof.runtime_m_confirmed` 为 `true` 才算运行时改参生效。当前实测 `static` +5.9959 dB（harness 正常）、`runtime_m_confirmed=false`（改参无效）。
+通过阈值：`static_gain_reference_db`（安装期 g=6）≈ +6 dB 以验证 harness；`runtime_parameter_pcm_proof.runtime_m_confirmed` 为 `true` 才算运行时改参生效。当前实测 `static` +5.9959 dB（harness 正常）、`runtime_m_confirmed=false`（这次捕获未观察到改参效果；根因未明）。
+
+⚠️ **上表实验的 label 有误，结论已撤回**（见下方「label 语义」与「2026-10-04 撤回」）。保留其 harness 自检价值：`static_gain_reference` 证明量具能测出静态 +5.9959 dB，因此「运行时无变化」不是量具问题——但由于 label 错误，该测量本身也不成立，须用正确 label 重做。
 
 ⚠️ **既有 +5.9959 dB 证据的作用域**：`macos-pcm-response-probe.json` 的链中 `eq5 g=6` 是**安装期写死**的静态链，该测量证明的是**静态链响应**（-54.0507 dBFS 峰值），**并未隔离出运行时命令的效果**。此前把它读作「运行时改参已验证」是过度解读。
 
@@ -154,17 +171,22 @@ CoreAudio 能力探针的输出协商与候选包哈希记录见其原始报告�
 
 | 命令 | rc | 实际能力 | 判据 |
 |---|---|---|---|
-| `af-command <label> eq5:gain` | 0 | ❌ **报假成功** | 结构上有回调，但 PCM 实测输出无变化（见上表） |
-| `af-command <label> preamp:volume` | 0 | ❌ **报假成功** | 同上，PCM 实测无变化 |
-| `af-command <label> spatial:m` | 0 | ❌ **报假成功** | 同上，PCM 实测无变化 |
+| `af-command <label> eq5:gain` | 0 | ⚠️ **rc 不可信** | 仅 `RUNTIME_PARAM` 选项返回 0（`mix`/`normalize` 等返回 -12），说明命令到达滤镜并通过选项查找；**但音频未变**，根因未定位（AFX-9.5） |
+| `af-command <label> preamp:volume` | 0 | ⚠️ **rc 不可信** | 同上；`volume` 的 `process_command` 无重配置步骤仍无效 |
+| `af-command <label> spatial:m` | 0 | ⚠️ **rc 不可信** | 同上 |
 
-**结论修正（2026-10-03）**：此前表述「`extrastereo` 没有 `process_command`，故 `spatial:m` 被 `AVERROR(ENOSYS)` 拒绝而 mpv 掩盖之」**双重错误**：① 回调**存在**（布局更正后已证实）；② 即便存在，命令也**不改变音频**，因此失败点并非 ENOSYS 掩盖，而是命令根本没有生效。**唯一正确的事实是：运行时改参无效，且 rc=0 不可信。**
+**结论修正（2026-10-04，替代 10-03 版本）**：
+① 10-03 的表述「`extrastereo` 没有 `process_command`，故被 `AVERROR(ENOSYS)` 拒绝而 mpv 掩盖之」**错误**：回调**存在**（布局更正后已证实）。
+② 10-03 的替代结论「运行时改参一律无效」**也已撤回**：其判别实验使用了错误的 mpv label。
+③ **当前唯一确定的事实**：`af-command` 的 rc 不能证明参数改变（mpv 只判 `result >= 0`，且 `target=all` 无条件返回 true）；判断是否生效必须用 PCM 前后对比。**根因仍未定位。**
 
-`macos-audio-app-bundle-probe.json` 中 `spatial:m` 命令 rc=0、`error=null`，且其后 26 条日志无任何错误或滤镜重配置记录（对比 `af set` 换链时有完整的 `Setting option 'graph'` 与 `lavfi (echo_spatial)` 重初始化序列）。**该「成功」是 mpv 包装层掩盖了 `AVERROR(ENOSYS)`，不构成生效证据。**
+**历史结论（2026-10-03，已于 10-04 撤回，保留供追溯）**：当时表述「`extrastereo` 没有 `process_command`，故 `spatial:m` 被 `AVERROR(ENOSYS)` 拒绝而 mpv 掩盖之」**双重错误**：① 回调**存在**（布局更正后已证实）；② 当时据以判断的 PCM 实验使用了错误的 mpv label，故「命令不改变音频」也未成立。
 
-因此：**空间感 `width` 目前只能在安装时生效，运行时调整无效。** 任务 4.5 采用方案 A：`native_effects.rs` 在安装参数中写入 width，不再发送 `spatial:m`，Rust 回归测试断言命令不会发出。设备空间/折叠听感仍须 Gate 评估。
+`macos-audio-app-bundle-probe.json` 中 `spatial:m` 命令 rc=0、`error=null`（原文称其后 26 条日志无错误，实际为 118 条 events）。**无论根因为何，rc=0 都不构成生效证据。**
 
-⚠️ **任务 4.5 的负向断言需要重新定性**：它当前只证明「实现不发送 `spatial:m`」，而**理由**（「该滤镜无回调」）已被证伪。结论（width 是安装期常量）**仍然成立**，但依据改为「运行时改参在本库上对所有滤镜都无效」。任务 4.5 应重写为引用 PCM 判别性测量，而非引用结构体检查；同时 `native_effects.rs` 顶部已记录该限制与实测数据，避免后续把 30 ms 原地斜坡当成已验证能力。
+因此：**空间感 `width` 目前按安装期常量实现**（`native_effects.rs` 在安装参数中写入 width，不发送 `spatial:m`，并有负向回归断言）。设备空间/折叠听感仍须 Gate 评估。
+
+⚠️ **任务 AFX-4.5 负向断言的定性**：断言本身（不发送 `spatial:m`）仍正确，但**理由已两次更换**：① 原写「该滤镜无 `process_command`」——已证伪；② 改写「运行时改参对所有滤镜都无效」——因实验 label 错误而撤回。**当前正确表述**：width 作为安装期常量实现，理由是运行时改参**尚未被证明可用**（rc 不可信），而非「已证明不可用」。待 AFX-9.5 定位根因后再定论。
 
 PCM 输出无需在 Python 侧自行搭 FFmpeg graph：随包 libmpv 的 `ao=pcm` 已能从候选包播放路径捕获滤镜后 WAVE。早期探针无法分析 WAVE_FORMAT_EXTENSIBLE，现已支持其 integer PCM 子格式并有回归测试；`capture-only` 将一个已知静态增益链独立捕获，避免与前序探针阶段混合。该捕获仍不能代替 CoreAudio 环回、underrun/延迟/CPU 或人工 A/B。任务 1.1 的可复现 PCM probe 已建立；1.3/1.4 的输出环境门槛继续待测。
 

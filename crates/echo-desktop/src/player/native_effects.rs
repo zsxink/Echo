@@ -1,31 +1,13 @@
 //! Typed libmpv filter construction. Strings originate only from validated
 //! numeric payloads; user text, preset names and paths never enter this syntax.
 //!
-//! # Runtime commands are not yet established to take effect
-//!
-//! `advance` expresses a 30 ms ramp by re-sending `af-command` for each labelled
-//! stage. A 2026-10-03 native measurement on the packaged macOS library found
-//! that NO runtime parameter change reached the audio, for any filter:
-//!
-//! | chain | commanded | measured |
-//! |---|---|---|
-//! | static `g=6` | install-time | **+5.9959 dB** (reproduces the recorded evidence) |
-//! | `g=0` installed | `af-command <label> eq5:gain 6`, rc=0 | **+0.0076 dB** (= baseline) |
-//! | `m=1.25` installed | `af-command <label> spatial:m 1.4`, rc=0 | **+0.0000 dB** (expected +0.9844) |
-//!
-//! `volume` behaved the same way, so this is not specific to one filter. The mpv
-//! compatibility patch IS present in the shipped dylib: `otool` shows both the
-//! colon-splitting lookup and the `"all"` fallback. Upstream, the biquad family
-//! re-runs its coefficient setup after a command, so the fault is not explained
-//! yet. Because mpv's `f_lavfi.c` only tests `result >= 0`, rc=0 is a FALSE
-//! SUCCESS here.
-//!
-//! Consequences for this module: the ramp below cannot be assumed to reach the
-//! output, and `af-command` return values prove nothing. Rebuilding the chain
-//! (`install`/`remove`) is the only mechanism measured to change the audio.
-//! Treat the in-place path as unproven until a native capture shows the
-//! intermediate gain states, and re-verify with
-//! `scripts/audio-effects/probe.py --capture-only --runtime-parameter-proof`.
+//! Runtime `af-command` updates are not yet validated by captured PCM. Earlier
+//! captures used the wrong mpv filter label and were withdrawn; the current
+//! correctly labelled capture still needs root-cause investigation. A command
+//! return code only describes command handling and is not proof of an audible
+//! change. The 30 ms ramp in `advance` therefore remains an unverified behavior
+//! until the native PCM gate confirms intermediate output states. See the
+//! change's `native-gate.md` for evidence and reproduction details.
 
 use crate::effects::{
     math::{intermediate_gain_bound_db, EffectsAnalysis, AUTO_HEADROOM_DB},
@@ -341,8 +323,9 @@ impl NativeEffects {
                     current.gains[index] = gain;
                 }
             }
-            // extrastereo has no process_command implementation in the
-            // shipped FFmpeg. Its width is fixed when the filter is installed.
+            // Runtime width changes are not enabled: the captured-PCM gate has
+            // not established that an `af-command` update reaches output. Keep
+            // the installed value in sync with the target until that is proven.
             Payload::Spatial(_) => current.width = ramp.target.width,
         }
         current.preamp = ramp.protected_preamp;
