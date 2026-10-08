@@ -16,10 +16,12 @@
   grid-template-rows: auto minmax(0, 1fr);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--bg);
+  background: color-mix(in oklab, var(--bg), transparent 24%);
   color: var(--fg);
   box-shadow: var(--elev-raised);
   pointer-events: auto;
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  backdrop-filter: blur(20px) saturate(140%);
 }
 .effects-head {
   min-height: 44px;
@@ -163,14 +165,14 @@
   gap: var(--space-2);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
-  background: var(--bg);
+  background: color-mix(in oklab, var(--bg), transparent 48%);
   color: var(--fg-2);
   text-align: left;
   cursor: pointer;
 }
 .effects-preset:hover {
   border-color: var(--border);
-  background: var(--surface);
+  background: color-mix(in oklab, var(--surface), transparent 34%);
   color: var(--fg);
 }
 .effects-preset-row.selected .effects-preset,
@@ -200,7 +202,7 @@
   padding: 3px;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
-  background: var(--bg);
+  background: color-mix(in oklab, var(--bg), transparent 22%);
   box-shadow: var(--elev-raised);
 }
 .effects-preset-row:focus-within .effects-preset-tools,
@@ -218,7 +220,7 @@
   cursor: pointer;
 }
 .effects-preset-tools button:hover {
-  background: var(--surface);
+  background: color-mix(in oklab, var(--surface), transparent 38%);
   color: var(--fg);
 }
 .custom-empty {
@@ -232,7 +234,7 @@
   margin: 0 0 var(--space-2);
   padding: var(--space-2) 56px var(--space-2) var(--space-2);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: color-mix(in oklab, var(--surface), transparent 38%);
   color: var(--fg-2);
   font-size: var(--text-xs);
 }
@@ -258,7 +260,7 @@
   padding: 8px;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-md);
-  background: var(--surface);
+  background: color-mix(in oklab, var(--surface), transparent 38%);
 }
 .effect-preview svg {
   display: block;
@@ -372,7 +374,7 @@
   padding: 0 var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--bg);
+  background: color-mix(in oklab, var(--bg), transparent 34%);
   color: var(--fg);
 }
 .save-preset button {
@@ -446,6 +448,9 @@
 }
 body.player-mode-open .playerbar .effects-trigger-name {
   color: currentColor;
+}
+body.player-mode-open .effects-panel {
+  background: color-mix(in oklab, var(--player-background), transparent 24%);
 }
 @media (max-width: 760px) {
   .effects-panel {
