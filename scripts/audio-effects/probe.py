@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 import struct
+import wave
 
 from mpv_client import Mpv, decode
 
@@ -144,8 +145,8 @@ def graph_text(mpv):
 
     mpv accepts a runtime command for a named filter and still reports rc=0 even
     when the filter has no `process_command`, because f_lavfi.c only tests
-    `result >= 0`. Reading the configured graph back is what distinguishes
-    acceptance from an actual parameter change.
+    `result >= 0`. The configured graph does not report runtime parameter state; only
+    captured PCM can establish an actual change.
     """
     entries = mpv.get('af')
     if not isinstance(entries, list):
@@ -172,7 +173,7 @@ def option_value(graph, key):
 
 
 def runtime_parameter_probe(mpv, argument_count, label, target, option, value):
-    """Send one runtime command and report whether the graph actually changed.
+    """Send one runtime command and record its configured graph, without a DSP verdict.
 
     The caller must pass a `value` that DIFFERS from the installed one, otherwise
     a no-op and a real change are indistinguishable. Returns a record carrying
@@ -245,80 +246,109 @@ def wait_audio(mpv, seconds):
     return False
 
 
-def spatial_width_capture(args, source, af_arg_count):
-    """Prove or disprove a runtime `extrastereo m` change by measuring PCM.
+def repeat_pcm_fixture(source, destination, minimum_seconds=600.0):
+    """Extend offline PCM bytes before playback; never loop/reload a live graph."""
+    channels, width, rate, frames, raw = read_pcm_wave(source)
+    if not frames:
+        raise ValueError('runtime proof requires nonempty PCM input')
+    repetitions = max(1, math.ceil(minimum_seconds * rate / frames))
+    with wave.open(str(destination), 'wb') as output:
+        output.setparams((channels, width, rate, 0, 'NONE', 'not compressed'))
+        for _ in range(repetitions):
+            output.writeframesraw(raw)
+    return frames * repetitions
 
-    Why PCM and not the `af` property: mpv reports the CONFIGURED filter
-    description there and never rewrites it when a runtime command changes a
-    parameter, so an unchanged string is expected either way and proves nothing.
-    rc is equally uninformative because mpv's f_lavfi.c only tests `result >= 0`
-    and therefore reports success for a rejected command.
 
-    Width is observable without any EQ: with `c=false` and a centre-free input,
-    L=M+m*S and R=M-m*S where M=(L+R)/2 and S=(L-R)/2, so raising m scales the
-    side difference by a measurable amount. A limiter-saturating fixture would
-    hide the change, so the caller must pass a low-level one.
+def runtime_pcm_capture(args, source, chain, command, expected_db):
+    """Measure two sample windows in ONE uninterrupted native playback.
 
-    Both captures share one chain definition; only the commanded width differs.
+    PCM AO decodes much faster than wall time. A short input can reach EOF
+    during wait_audio's first 50 ms pump; commands then cannot affect its
+    already-written samples. Extend input bytes before loading, issue the
+    command as soon as output exists, and analyse sample offsets after teardown.
+    No pause, seek, filter replacement, or loadfile is issued across the change.
     """
-    results = []
-    for commanded in (None, '1.4'):
-        chain = spatial_chain()
-        with tempfile.TemporaryDirectory() as workdir:
-            wav = Path(workdir) / 'out.wav'
-            handle = Mpv(args.libmpv, ao='pcm', ao_pcm_file=wav)
-            try:
-                handle.command('af', 'set', chain)
-                handle.command('loadfile', str(source))
-                wait_audio(handle, args.step_timeout)
-                if commanded is not None:
-                    command = af_command_args(af_arg_count, 'echo_spatial', 'spatial', 'm', commanded)
-                    if not command:
-                        return [{'error': 'unsupported af-command signature', 'commanded': commanded}]
-                    handle.command(*command)
-                    handle.pump(0.3)
-                # Capture a fixed window. Pumping to EOF instead makes the
-                # window depend on decode timing, which produced repeatable
-                # but mutually inconsistent results while testing.
-                handle.set('pause', 'no')
-                handle.pump(args.runtime_capture_seconds)
-                handle.set('pause', 'yes')
-            finally:
-                handle.close()
-            channels, width, out_rate, frames, raw = read_pcm_wave(wav)
-            step = channels * width
-            peak = float(1 << (8 * width - 1))
-            magnitude = [abs(int.from_bytes(raw[index:index + width], 'little', signed=True)) / peak
-                         for index in range(0, len(raw) - width + 1, step)]
-            results.append({'commanded_m': commanded, 'frames': frames, 'channels': channels,
-                            'sample_rate': out_rate, 'sample_width_bytes': width,
-                            'rms': (sum(value * value for value in magnitude) / len(magnitude)) ** 0.5
-                            if magnitude else None,
-                            'max_abs': max(magnitude) if magnitude else None})
-    baseline, changed = results[0], results[-1]
-    if baseline.get('rms') and changed.get('rms'):
-        rms_change_db = 20.0 * math.log10(changed['rms'] / baseline['rms'])
-    else:
-        rms_change_db = None
-    return [{'installed_baseline': baseline, 'after_command': changed,
-             'rms_change_db': rms_change_db,
-             'expected_rms_change_db': 20.0 * math.log10(1.4 / 1.25),
-             'runtime_m_confirmed': rms_change_db is not None and abs(rms_change_db) > 0.3,
-             'meaning': ('A measurable output-level change between the two captures is the only '
-                         'admissible evidence that the runtime width command took effect. rc=0 '
-                         'and an unchanged `af` string are not evidence either way.')}]
+    if not command:
+        return {'error': 'unsupported af-command signature', 'runtime_confirmed': False}
+    with tempfile.TemporaryDirectory(prefix='echo-runtime-pcm-') as workdir:
+        extended, output = Path(workdir) / 'input.wav', Path(workdir) / 'output.wav'
+        input_frames = repeat_pcm_fixture(source, extended)
+        handle = Mpv(args.libmpv, ao='pcm', ao_pcm_file=output)
+        try:
+            if handle.command('af', 'set', chain) < 0:
+                raise RuntimeError('runtime proof chain was rejected')
+            if handle.command('loadfile', str(extended)) < 0:
+                raise RuntimeError('runtime proof input was rejected')
+            deadline = time.monotonic() + args.step_timeout
+            params = None
+            while time.monotonic() < deadline:
+                handle.pump(0.001)
+                params = handle.get('audio-out-params')
+                if isinstance(params, dict) and output.exists():
+                    # PCM AO currently writes signed 16-bit samples. Verify
+                    # this assumption against the finalized WAVE below.
+                    if output.stat().st_size >= params['samplerate'] * params['channel-count'] * 2:
+                        break
+            else:
+                raise RuntimeError('runtime proof produced no baseline PCM')
+            eof_before = handle.get('eof-reached')
+            if eof_before:
+                raise RuntimeError('runtime command would run after EOF; measurement refused')
+            bytes_before = output.stat().st_size
+            position_before = handle.get('time-pos')
+            result = handle.command(*command)
+            bytes_after = output.stat().st_size
+            deadline = time.monotonic() + args.step_timeout
+            minimum_bytes = bytes_after + params['samplerate'] * params['channel-count'] * 2 * 3
+            while output.stat().st_size < minimum_bytes and not handle.get('eof-reached'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('runtime proof capture did not reach EOF within timeout')
+                handle.pump(0.001)
+            operations = handle.operations
+        finally:
+            handle.close()
+        channels, width, rate, frames, raw = read_pcm_wave(output)
+        if width != 2 or channels != params['channel-count']:
+            raise ValueError('PCM format changed; command offsets cannot be established')
+        stride = channels * width
+        # File byte counts include the header: these are conservative upper
+        # bounds on frames already written, not exact audible command timing.
+        command_frame_upper = math.ceil(bytes_after / stride)
+        if frames - command_frame_upper < rate * 2:
+            raise ValueError(f'no sufficiently long post-command PCM window: {frames=} {command_frame_upper=}')
+        before_start, before_end = int(rate * 0.1), int(rate * 0.6)
+        after_start, after_end = frames - rate, frames
+        before = raw[before_start * stride:before_end * stride]
+        after = raw[after_start * stride:after_end * stride]
+        measured = measure_sine_gain_db(before, after, 997.0, channels, width, width, rate)
+        return {'input': str(source), 'input_sha256': digest(source),
+                'extended_input_sha256': digest(extended), 'extended_input_frames': input_frames,
+                'output_sha256': digest(output), 'output_frames': frames,
+                'sample_rate': rate, 'channels': channels, 'sample_width_bytes': width,
+                'command': list(command), 'command_result': result, 'eof_before_command': eof_before,
+                'time_pos_before_command': position_before,
+                'file_bytes_before_command': bytes_before, 'file_bytes_after_command': bytes_after,
+                'command_frame_upper_bound': command_frame_upper,
+                'baseline_window_frames': [before_start, before_end],
+                'changed_window_frames': [after_start, after_end],
+                'measured_change_db': measured, 'expected_change_db': expected_db,
+                'error_db': measured - expected_db,
+                'runtime_confirmed': result >= 0 and abs(measured - expected_db) <= 0.25,
+                'operations': operations,
+                'meaning': 'One uninterrupted PCM capture; sample windows exclude initial and command transients. File offsets bound written samples, not real-time latency.'}
 
+
+def spatial_width_capture(args, source, af_arg_count):
+    return [runtime_pcm_capture(args, source, spatial_chain(),
+            af_command_args(af_arg_count, 'echo_spatial', 'spatial', 'm', '1'),
+            20.0 * math.log10(1.0 / 1.25))]
 
 
 def static_gain_reference_db(args):
-    """Measure a KNOWN install-time gain through the same capture path.
+    """Measure a known install-time gain as a tone-analysis self-check.
 
-    The runtime-parameter experiment reports "the command changed nothing". That
-    conclusion is only credible if this function can observe a change that was
-    baked into the chain at install time. Pumping to EOF instead of a fixed
-    window makes the analysed span depend on decode timing and produced
-    repeatable but mutually inconsistent numbers while developing this check, so
-    the window is fixed.
+    This is a static graph, so decoding to EOF is safe. The runtime verdict
+    instead uses uninterrupted before/after PCM windows and an EOF guard.
     """
     input_channels, input_width, input_rate, _, input_pcm = read_pcm_wave(args.input)
     gain = float(args.capture_gain_db)
@@ -521,6 +551,13 @@ def run_probe(args):
             # description and never rewrites it when a runtime command changes a
             # parameter, so the only admissible evidence is measured audio.
             if args.runtime_parameter_proof:
+                for parameter, label, target, option, value, expected in (
+                    ('equalizer', 'echo_eq5', 'eq5', 'gain', '6', 6.0),
+                    ('preamp', 'echo_preamp', 'preamp', 'volume', '0.501187233627272', -6.0),
+                ):
+                    report['checks'].append({'name': 'runtime_parameter_pcm_proof', 'parameter': parameter,
+                        **runtime_pcm_capture(args, args.input, individual_eq_chain(input_rate),
+                            af_command_args(af_arg_count, label, target, option, value), expected)})
                 # Width is observable only on a centre-free signal that does not
                 # saturate the limiter, so pick a LOW-level antiphase fixture at
                 # the input's own rate: with a centred or limiter-limited signal
@@ -532,7 +569,7 @@ def run_probe(args):
                 antiphase = preferred or same_rate or candidates
                 if antiphase:
                     report['checks'].append({'name': 'runtime_parameter_pcm_proof',
-                                             'input': antiphase[0].name,
+                                             'parameter': 'spatial_width', 'input': antiphase[0].name,
                                              'low_level': bool(preferred),
                                              **spatial_width_capture(args, antiphase[0], af_arg_count)[0]})
                 else:
@@ -662,7 +699,7 @@ def run_probe(args):
                             'preamp_db': float(capture_check.get('preamp_db', 0.0)),
                             'target_net_gain_db': target_db, 'measured_gain_db': measured_db,
                             'error_db': measured_db - target_db,
-                            'measurement': 'steady-state first-channel sinusoidal projection, 100 ms transient excluded; expected net includes runtime EQ and preamp commands',
+                            'measurement': 'steady-state first-channel sinusoidal projection, 100 ms transient excluded; expected net includes installed EQ and preamp' ,
                         }
             except (EOFError, ValueError, struct.error) as error:
                 report['capture']['analysis_error'] = f'{type(error).__name__}: {error}'
@@ -683,10 +720,10 @@ def run_probe(args):
                 else:
                     report['checks'].append({
                         'name': 'static_gain_reference',
-                        'expected_db': float(args.capture_gain_db),
+                        'expected_db': float(args.capture_gain_db) + float(args.capture_preamp_db),
                         'measured_db': reference,
-                        'error_db': reference - float(args.capture_gain_db),
-                        'harness_valid': abs(reference - float(args.capture_gain_db)) <= 0.25,
+                        'error_db': reference - float(args.capture_gain_db) - float(args.capture_preamp_db),
+                        'harness_valid': abs(reference - float(args.capture_gain_db) - float(args.capture_preamp_db)) <= 0.25,
                         'meaning': 'Install-time gain measured through the same harness. If this is '
                                    'not within 0.25 dB, a negative runtime result means the harness '
                                    'is broken, not that the command was ignored.',
@@ -706,12 +743,11 @@ def main():
     parser.add_argument('--pcm-output', type=Path, help='Required with --ao pcm; captures processed libmpv output.')
     parser.add_argument('--capture-only', action='store_true', help='Capture one isolated static EQ chain; requires --ao pcm.')
     parser.add_argument('--runtime-parameter-proof', action='store_true',
-                        help='With --capture-only, additionally capture the spatial chain twice with a '
-                             'different runtime extrastereo m to prove whether the command takes effect.')
+                        help='With --capture-only, measure EQ, preamp and spatial bypass commands '
+                             'during uninterrupted PCM playback; extends fixture bytes offline.')
     parser.add_argument('--runtime-capture-seconds', type=float, default=4.0,
-                        help='Seconds of PCM to capture per runtime-parameter run. Must stay well '
-                             'inside the fixture duration: pumping to EOF makes the analysed window '
-                             'depend on decode timing and yields inconsistent results.')
+                        help='Wall-clock pump duration for static captures; runtime parameter proofs '
+                             'use PCM sample windows and do not infer captured duration from wall time.')
     parser.add_argument('--sweep-response', action='store_true',
                         help='With --capture-only, also measure the installed chain response across '
                              'the logarithmic sweep fixture and compare it against the design tolerance.')
@@ -741,6 +777,8 @@ def main():
         parser.error('--pcm-output is required with --ao pcm')
     if args.ao != 'pcm' and args.pcm_output:
         parser.error('--pcm-output can only be used with --ao pcm')
+    if args.runtime_parameter_proof and not args.capture_only:
+        parser.error('--runtime-parameter-proof requires --capture-only')
     if args.capture_only and args.ao != 'pcm':
         parser.error('--capture-only requires --ao pcm')
     if args.ao == 'pcm' and not args.capture_only:

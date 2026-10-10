@@ -155,6 +155,8 @@ class PlayerStore {
             responsePoints: previousEffects.responsePoints,
             referenceResponse: previousEffects.referenceResponse,
             safePreampDb: previousEffects.safePreampDb,
+            editableBands: previousEffects.editableBands,
+            responseRate: previousEffects.responseRate,
           },
         };
       }

@@ -50,6 +50,8 @@ export interface EffectsSnapshotDto {
   readonly responsePoints: readonly EffectsResponsePoint[];
   readonly referenceResponse: boolean;
   readonly safePreampDb: number | null;
+  readonly editableBands?: readonly boolean[];
+  readonly responseRate?: number;
   readonly snapshotSequence?: number;
   readonly recoveryReason?: string;
 }

@@ -39,9 +39,10 @@ export function EffectsPanel() {
   const effects = useAudioEffects();
   const container = useRef<HTMLElement>(null);
   const [dialog, setDialog] = useState<EffectsDialogAction | null>(null);
-  const [error, setError] = useState<{ message: string; source: "read" | "operation" } | null>(
-    null,
-  );
+  const [error, setError] = useState<{
+    message: string;
+    source: "read" | "operation" | "edit";
+  } | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const [editing, setEditing] = useState<EqCurve | null>(null);
   const editSequence = useRef(0);
@@ -88,14 +89,17 @@ export function EffectsPanel() {
     return () => window.clearTimeout(timer);
   }, [status, effects?.runtime.revision]);
 
-  async function apply(request: Promise<EffectsSnapshotDto>) {
+  async function apply(
+    request: Promise<EffectsSnapshotDto>,
+    source: "operation" | "edit" = "operation",
+  ) {
     try {
       const snapshot = await request;
       playerStore.publishEffects(snapshot);
       setError(null);
       return snapshot;
     } catch (cause) {
-      setError({ message: "操作失败，请求和曲线已保留，请重试。", source: "operation" });
+      setError({ message: "操作失败，请求和曲线已保留，请重试。", source });
       throw cause;
     }
   }
@@ -105,7 +109,7 @@ export function EffectsPanel() {
   function edit(curve: EqCurve) {
     const sequence = ++editSequence.current;
     setEditing(curve);
-    void apply(bridge.call("edit_audio_equalizer", { curve }))
+    void apply(bridge.call("edit_audio_equalizer", { curve }), "edit")
       .then(() => {
         if (sequence === editSequence.current) setEditing(null);
       })
@@ -115,6 +119,25 @@ export function EffectsPanel() {
     ++editSequence.current;
     setEditing(null);
     command(request);
+  }
+  function retry() {
+    if (error?.source === "read") {
+      void retryReadSnapshot();
+    } else if (effects?.recoveryReason) {
+      const pendingEdit = error?.source === "edit" ? editing : null;
+      const sequence = editSequence.current;
+      void apply(bridge.call("retry_audio_effects"), pendingEdit === null ? "operation" : "edit")
+        .then(() => {
+          // A repair receipt acknowledges the old backend request. Resubmit the
+          // local curve only if no newer edit/replacement superseded it.
+          if (pendingEdit !== null && sequence === editSequence.current) edit(pendingEdit);
+        })
+        .catch(() => undefined);
+    } else if (error?.source === "edit" && editing !== null) {
+      edit(editing);
+    } else {
+      command(bridge.call("retry_audio_effects"));
+    }
   }
   if (!ui.effectsOpen) return null;
   const canEnable =
@@ -215,15 +238,7 @@ export function EffectsPanel() {
                 effects?.runtime.applied === "unavailable" ||
                 effects?.runtime.persistenceStatus === "failed" ||
                 effects?.recoveryReason ? (
-                  <button
-                    className="effects-retry"
-                    type="button"
-                    onClick={() =>
-                      error?.source === "read"
-                        ? void retryReadSnapshot()
-                        : command(bridge.call("retry_audio_effects"))
-                    }
-                  >
+                  <button className="effects-retry" type="button" onClick={retry}>
                     {effects?.recoveryReason && error?.source !== "read" ? "重试修复" : "重试"}
                   </button>
                 ) : null}
@@ -253,11 +268,12 @@ export function EffectsPanel() {
               >
                 <EqualizerEditor
                   curve={curve}
-                  activeBands={effects.runtime.activeBands}
+                  activeBands={effects.editableBands ?? effects.runtime.activeBands}
                   processingRate={effects.runtime.processingRate}
-                  points={effects.responsePoints}
-                  reference={effects.referenceResponse}
-                  actualPreamp={effects.runtime.effectivePreampDb}
+                  responseRate={effects.responseRate ?? effects.runtime.processingRate}
+                  points={editing === null ? effects.responsePoints : []}
+                  reference={effects.referenceResponse || editing !== null}
+                  actualPreamp={editing === null ? effects.runtime.effectivePreampDb : null}
                   spatial={Boolean(spatial) && editing === null}
                   onEdit={edit}
                   onSave={(name) =>

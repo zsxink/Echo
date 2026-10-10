@@ -200,3 +200,44 @@ fn invalid_document_selection_snapshot_is_rejected() {
         Err(EffectsError::InvalidDocument)
     );
 }
+
+#[test]
+fn target_editability_is_independent_of_installed_bands_and_payload() {
+    let mut state = EffectsState::default();
+    state.select(&PresetId::builtin("surround")).unwrap();
+    state
+        .environment_changed(Some(ProcessingEnvironment {
+            sample_rate: 22_050,
+            channel_layout: ChannelLayout::Stereo,
+        }))
+        .unwrap();
+    for status in [
+        AppliedState::Pending,
+        AppliedState::Bypassed,
+        AppliedState::Failed,
+        AppliedState::Applied,
+    ] {
+        state.runtime.applied = status;
+        let snapshot = state.snapshot();
+        assert_eq!(snapshot.runtime.active_bands, [false; 10]);
+        assert_eq!(
+            snapshot.editable_bands,
+            Some([true, true, true, true, true, true, true, true, true, false])
+        );
+        assert_eq!(snapshot.response_rate, Some(22_050));
+    }
+    state.environment_changed(None).unwrap();
+    assert_eq!(state.snapshot().editable_bands, Some([true; 10]));
+    assert_eq!(state.snapshot().response_rate, Some(48_000));
+}
+
+#[test]
+fn legacy_snapshot_without_additive_ui_fields_still_deserializes() {
+    let mut json = serde_json::to_value(EffectsState::default().snapshot()).unwrap();
+    let object = json.as_object_mut().unwrap();
+    object.remove("editableBands");
+    object.remove("responseRate");
+    let restored: EffectsSnapshot = serde_json::from_value(json).unwrap();
+    assert_eq!(restored.editable_bands, None);
+    assert_eq!(restored.response_rate, None);
+}

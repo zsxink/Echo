@@ -2150,6 +2150,86 @@
         {
           "desc": "no audio-effects task number collides with a manifest id; the discredited 'extrastereo has no process_command' claim stays out; probe.py can still prove a runtime parameter change",
           "cmd": "node scripts/verify/checks/task-audio-effects-evidence.mjs"
+        },
+        {
+          "desc": "evidence mutations fail for missing commands, inconsistent measurements, invalid sample windows, false full-Gate claims and task-id collisions",
+          "cmd": "node scripts/verify/checks/audio-effects-evidence-selftest.mjs"
+        },
+        {
+          "desc": "probe and stepped-sine tool projection, parameter validation and unusable-capture rejection regressions",
+          "cmd": "python3 -m unittest discover -s scripts/audio-effects -p 'test_*.py' -v"
+        }
+      ]
+    },
+    {
+      "id": "AFX-2",
+      "title": "Audio-effects DSP arithmetic: RBJ coefficients, cascade peak budget, band validity, limiter threshold and chain syntax",
+      "commands": [
+        {
+          "desc": "recompute the DSP maths independently: g=0 is exactly identity, analytic 997 Hz response matches the measured value, fc<=0.45*Fs band skipping, cascade peak for adjacent/all +12 dB, the 32769-point refined grid is compared with 1,048,577 uniform samples on 12 curves at four rates (a numerical regression, not a global bound), -3 dB bandwidth shrinks at higher gain, extrastereo's three input shapes, limit==-1 dBFS and the -0.99985 dBFS residue; the shipped chain keeps level=false/asc=false/latency=true/normalize=false/precision=f64/c=false; documents do not drift back to the discredited readings",
+          "cmd": "node scripts/verify/checks/audio-effects-dsp-math.mjs"
+        },
+        {
+          "desc": "false-claim mutations fail; cut/boost inverse widths, undefined thresholds and independent golden-section extrema are checked",
+          "cmd": "node scripts/verify/checks/audio-effects-dsp-selftest.mjs"
+        },
+        {
+          "desc": "execute shipped Rust DSP with independent off-center and composed four-rate numeric references",
+          "cmd": "cargo test -p echo-desktop effects::math"
+        }
+      ]
+    },
+    {
+      "id": "AFX-12.1",
+      "title": "Audio-effects install confirmation and first-sample pause barrier regressions",
+      "commands": [
+        {
+          "desc": "actor and native-effects fault regressions, including unconfigured graph and pause retry",
+          "cmd": "cargo test -p echo-desktop player::"
+        }
+      ]
+    },
+    {
+      "id": "AFX-12.2",
+      "title": "Audio-effects environment editing and requested/actual preamp compatibility",
+      "commands": [
+        {
+          "desc": "backend state, projection and generated IPC regressions",
+          "cmd": "cargo test -p echo-desktop effects::state"
+        },
+        {
+          "desc": "snapshot projection compatibility and generated IPC contract",
+          "cmd": "cargo test -p echo-desktop ipc::"
+        },
+        {
+          "desc": "real Rust snapshots stay synchronized with frontend fixtures",
+          "cmd": "cargo test -p echo-desktop --test effects_ui_fixtures"
+        },
+        {
+          "desc": "frontend TypeScript compatibility",
+          "cmd": "pnpm --dir apps/desktop typecheck"
+        },
+        {
+          "desc": "frontend EQ state and preamp interaction regressions",
+          "cmd": "pnpm --dir apps/desktop test"
+        }
+      ]
+    },
+    {
+      "id": "AFX-12.3",
+      "title": "Independent DSP numeric regressions across four processing rates",
+      "commands": [
+        {
+          "desc": "recompute the DSP maths independently: g=0 is exactly identity, analytic 997 Hz response matches the measured value, fc<=0.45*Fs band skipping, cascade peak for adjacent/all +12 dB, the 32769-point refined grid is compared with 1,048,577 uniform samples on 12 curves at four rates (a numerical regression, not a global bound), -3 dB bandwidth shrinks at higher gain, extrastereo's three input shapes, limit==-1 dBFS and the -0.99985 dBFS residue; the shipped chain keeps level=false/asc=false/latency=true/normalize=false/precision=f64/c=false; documents do not drift back to the discredited readings",
+          "cmd": "node scripts/verify/checks/audio-effects-dsp-math.mjs"
+        },
+        {
+          "desc": "false-claim mutations fail; cut/boost inverse widths, undefined thresholds and independent golden-section extrema are checked",
+          "cmd": "node scripts/verify/checks/audio-effects-dsp-selftest.mjs"
+        },
+        {
+          "desc": "execute shipped Rust DSP with independent off-center and composed four-rate numeric references",
+          "cmd": "cargo test -p echo-desktop effects::math"
         }
       ]
     }

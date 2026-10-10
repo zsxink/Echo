@@ -21,6 +21,9 @@ export function EffectsPresets({
               .filter((preset) => preset.source === source)
               .map((preset) => {
                 const selected = selection.kind === "preset" && selection.id === preset.id;
+                const monoSpatial =
+                  preset.payload.kind === "spatial" && effects.runtime.channelLayout === "mono";
+                const reasonId = `effects-preset-unavailable-${preset.id}`;
                 return (
                   <div
                     className={`effects-preset-row${selected ? " selected" : ""}`}
@@ -30,6 +33,8 @@ export function EffectsPresets({
                       className="effects-preset"
                       type="button"
                       aria-pressed={selected}
+                      disabled={monoSpatial}
+                      aria-describedby={monoSpatial ? reasonId : undefined}
                       onClick={() => onSelect(preset.id)}
                     >
                       <span className="effects-preset-name">{preset.name}</span>
@@ -37,6 +42,11 @@ export function EffectsPresets({
                         <small className="effects-custom-tag">自定义</small>
                       ) : null}
                     </button>
+                    {monoSpatial ? (
+                      <p id={reasonId} className="effects-note">
+                        单声道不可用，仅支持双声道
+                      </p>
+                    ) : null}
                     {source === "user" ? (
                       <div className="effects-preset-tools">
                         <button

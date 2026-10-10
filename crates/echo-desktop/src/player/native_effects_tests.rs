@@ -75,6 +75,7 @@ fn separate_target_runtime_updates_keep_equalizer_and_preamp_targets_isolated() 
         })
         .unwrap();
     native.reconfirm();
+    native.configured();
     native
         .apply(&payload, environment(), &analysis, |args| {
             commands.push(args.to_vec());
@@ -159,6 +160,7 @@ fn chain_is_typed_float_named_and_uses_three_argument_commands() {
         "wait for AUDIO_RECONFIG before node commands"
     );
     native.reconfirm();
+    native.configured();
     assert!(!native
         .apply(&payload, environment(), &analysis, |args| {
             commands.push(args.to_vec());
@@ -221,6 +223,7 @@ fn reconfiguration_reconfirms_once_and_does_not_restart_the_ramp_each_tick() {
         .apply(&payload, environment(), &analysis, &mut command)
         .unwrap());
     native.reconfirm();
+    native.configured();
     assert!(!native
         .apply(&payload, environment(), &analysis, &mut command)
         .unwrap());
@@ -230,6 +233,7 @@ fn reconfiguration_reconfirms_once_and_does_not_restart_the_ramp_each_tick() {
         .unwrap());
 
     native.reconfirm();
+    native.configured();
     assert!(!native
         .apply(&payload, environment(), &analysis, &mut command)
         .unwrap());
@@ -241,7 +245,7 @@ fn reconfiguration_reconfirms_once_and_does_not_restart_the_ramp_each_tick() {
 }
 
 #[test]
-fn missing_audio_reconfigured_event_recovers_after_transition_window() {
+fn absent_reconfiguration_cannot_be_replaced_by_the_transition_clock() {
     let mut native = NativeEffects::default();
     let payload = Payload::Eq(EqCurve::default());
     let analysis = crate::effects::math::analyze(&payload, environment()).unwrap();
@@ -252,22 +256,75 @@ fn missing_audio_reconfigured_event_recovers_after_transition_window() {
             Ok(())
         })
         .unwrap();
-    assert!(native.install_pending);
-
     native.installed_at = Some(Instant::now().checked_sub(TRANSITION).unwrap());
-    native
+    native.configured(); // A configured graph alone cannot replace reconfig.
+    assert!(!native
         .apply(&payload, environment(), &analysis, |args| {
             commands.push(args.to_vec());
             Ok(())
         })
-        .unwrap();
+        .unwrap());
+    assert!(native.install_pending);
+    assert_eq!(commands.len(), 1);
 
+    native.installed_at = Some(Instant::now().checked_sub(CONFIGURATION_TIMEOUT).unwrap());
+    let result = native.apply(&payload, environment(), &analysis, |args| {
+        commands.push(args.to_vec());
+        Ok(())
+    });
+    assert!(result.unwrap_err().contains("confirmation timed out"));
+    assert_eq!(commands.len(), 2);
+    assert_eq!(commands[1][..2], ["af", "remove"]);
+    assert!(native.current.is_none());
     assert!(!native.install_pending);
-    assert!(commands.iter().any(|args| args[0] == "af-command"));
 }
 
 #[test]
-fn spatial_width_is_fixed_at_install_and_never_sent_as_runtime_command() {
+fn reconfiguration_without_initialized_nodes_remains_pending() {
+    let mut native = NativeEffects::default();
+    let payload = Payload::Eq(EqCurve::default());
+    let analysis = crate::effects::math::analyze(&payload, environment()).unwrap();
+    native
+        .apply(&payload, environment(), &analysis, |_| Ok(()))
+        .unwrap();
+    native.reconfirm();
+    assert!(!native
+        .apply(&payload, environment(), &analysis, |_| {
+            panic!("unconfigured nodes cannot receive runtime commands")
+        })
+        .unwrap());
+    native.failed("native audio filter failed or was disabled");
+    let mut commands = Vec::new();
+    let result = native.apply(&payload, environment(), &analysis, |args| {
+        commands.push(args.to_vec());
+        Ok(())
+    });
+    assert!(result.unwrap_err().contains("failed or was disabled"));
+    assert_eq!(commands[0][..2], ["af", "remove"]);
+}
+
+#[test]
+fn disabling_an_unconfirmed_install_cleans_it_without_waiting_or_applying() {
+    let mut native = NativeEffects::default();
+    let payload = Payload::Eq(EqCurve::default());
+    let analysis = crate::effects::math::analyze(&payload, environment()).unwrap();
+    native
+        .apply(&payload, environment(), &analysis, |_| Ok(()))
+        .unwrap();
+    let mut commands = Vec::new();
+    assert!(native
+        .bypass(|args| {
+            commands.push(args.to_vec());
+            Ok(())
+        })
+        .unwrap());
+    assert_eq!(commands[0][..2], ["af", "remove"]);
+    assert_eq!(commands.len(), 1);
+    assert!(native.current.is_none());
+}
+
+#[test]
+fn fixed_spatial_payload_uses_internal_width_ramp_from_neutral() {
     let mut native = NativeEffects::default();
     let payload = Payload::Spatial(Spatial::default());
     let analysis = crate::effects::math::analyze(&payload, environment()).unwrap();
@@ -279,8 +336,9 @@ fn spatial_width_is_fixed_at_install_and_never_sent_as_runtime_command() {
         })
         .unwrap();
 
-    assert!(commands[0][2].contains("extrastereo@spatial=m=1.250000000000000:c=false"));
+    assert!(commands[0][2].contains("extrastereo@spatial=m=1:c=false"));
     native.reconfirm();
+    native.configured();
     native
         .apply(&payload, environment(), &analysis, |args| {
             commands.push(args.to_vec());
@@ -295,9 +353,9 @@ fn spatial_width_is_fixed_at_install_and_never_sent_as_runtime_command() {
         })
         .unwrap();
 
-    assert!(!commands
-        .iter()
-        .any(|args| args.iter().any(|arg| arg == "spatial:m")));
+    assert!(commands.iter().any(|args| args[0] == "af-command"
+        && args[2] == "spatial:m"
+        && args[3] == "1.250000000000000"));
 }
 
 #[test]
@@ -313,6 +371,7 @@ fn disabling_a_partial_edit_ramps_to_neutral_then_removes_owned_filters() {
         })
         .unwrap();
     native.reconfirm();
+    native.configured();
     native
         .apply(&payload, environment(), &analysis, |args| {
             commands.push(args.to_vec());
@@ -358,6 +417,7 @@ fn an_injected_command_failure_does_not_publish_a_success_or_reenable() {
         })
         .unwrap());
     native.reconfirm();
+    native.configured();
     assert!(!native
         .apply(&payload, environment(), &analysis, |args| {
             commands.push(args.to_vec());

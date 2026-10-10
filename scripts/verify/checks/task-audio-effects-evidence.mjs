@@ -20,8 +20,8 @@
 //      changed" is unproven. It does not follow that runtime parameter changes
 //      are ineffective: the earlier PCM experiment that concluded so used the
 //      wrong mpv label and has been retracted (AFX-9.7). Whether they reach the
-//      audio is still open (AFX-9.5), so the check asserts only the narrower
-//      claim — rc is not evidence either way.
+//      audio is now confirmed by uninterrupted PCM (AFX-9.5, 2026-10-08).
+//      Keep that evidence without interpreting it as the complete platform Gate.
 //
 // Checks performed:
 //   A. Report every audio-effects task number that collides with a manifest id.
@@ -36,6 +36,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runtimeEvidenceProblems, taskIdProblems } from "./audio-effects-evidence-rules.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const CHANGE = "openspec/changes/introduce-audio-effects-equalizer";
@@ -58,18 +59,11 @@ if (!existsSync(resolve(ROOT, `${CHANGE}/tasks.md`))) {
   if (!ids.length) {
     failures.push(`no task entries parsed from ${CHANGE}/tasks.md; the collision guard is blind`);
   }
-  const bare = [...new Set(ids)].filter((id) => manifestIds.has(id));
+  // Qualified AFX ids can deliberately map to this change's checks. Bare
+  // local IDs can resolve to unrelated shared tasks; duplicate IDs remain errors.
+  failures.push(...taskIdProblems(ids, manifestIds));
   const qualified = [...new Set(ids)].filter((id) => /^AFX-/.test(id));
-  if (bare.length) {
-    failures.push(
-      `audio-effects task numbers collide with scripts/verify/manifest.json: ` +
-        `${bare.join(", ")}. "pnpm verify:task -- <id>" would run the manifest's ` +
-        `unrelated task and report success, so those checked boxes are green ` +
-        `without verifying audio effects. Prefix them (e.g. AFX-4.8).`,
-    );
-  } else if (qualified.length) {
-    notes.push(`${qualified.length} qualified task ids, no manifest collision`);
-  }
+  if (qualified.length) notes.push(`${qualified.length} qualified task ids checked for collisions/duplicates`);
 
   // --- B. the discredited structural argument must not be the justification ---
   if (/随包库结构检查.{0,40}已证明.{0,20}process_command\s*为空/.test(tasks)) {
@@ -95,8 +89,8 @@ if (!existsSync(resolve(ROOT, `${CHANGE}/native-gate.md`))) {
   if (!/runtime_parameter_pcm_proof|runtime-parameter-proof/.test(gate)) {
     failures.push(
       "native-gate.md does not document the runtime-parameter PCM measurement, " +
-        "so the corrected finding (runtime commands return rc=0 but do not " +
-        "change the audio) is unrecorded and may be reverted by mistake.",
+        "so the corrected finding (sustained PCM confirms runtime changes) " +
+        "is unrecorded and may be reverted by mistake.",
     );
   }
   if (/spatial:m`[^|\n]*静默无效|`extrastereo`[^|\n]*\*\*没有\*\*\s*\|\s*❌/.test(gate)) {
@@ -130,15 +124,26 @@ if (!existsSync(resolve(ROOT, `${CHANGE}/native-gate.md`))) {
         "ineffective. That conclusion was withdrawn on 2026-10-04 because the PCM " +
         "experiment used the wrong mpv label (the `af` property reports the filter " +
         "NAME, not the label). The defensible claim is narrower: rc is not " +
-        "evidence, and runtime updates are NOT YET PROVEN to work.",
+        "evidence, and the 2026-10-08 sustained PCM proves updates on the measured macOS candidate.",
     );
   }
   if (!/AFX-9\.5|RUNTIME_PARAM/.test(gate)) {
     failures.push(
-      "native-gate.md does not record the open root cause (AFX-9.5) or the " +
+      "native-gate.md does not record the resolved root cause (AFX-9.5) or the " +
         "RUNTIME_PARAM return-code signature, so the withdrawn claim may be " +
         "reinstated by mistake.",
     );
+  }
+}
+
+// A completed runtime investigation must retain measured output evidence.
+const runtimeEvidence = `${CHANGE}/evidence/macos-runtime-parameter-recheck-20261008.json`;
+if (/^- \[x\] AFX-9\.5 /m.test(read(`${CHANGE}/tasks.md`))) {
+  if (!existsSync(resolve(ROOT, runtimeEvidence))) {
+    failures.push("completed AFX-9.5 is missing its uninterrupted PCM evidence");
+  } else {
+    const evidence = JSON.parse(read(runtimeEvidence));
+    failures.push(...runtimeEvidenceProblems(evidence));
   }
 }
 

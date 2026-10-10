@@ -27,8 +27,8 @@ function snapshot(): EffectsSnapshotDto {
       playbackEpoch: 1,
       persistenceStatus: "saved",
       applied: "pending",
-      effectivePreampDb: -2,
-      activeBands: [true, true, true, true, true, true, true, true, true, false],
+      effectivePreampDb: null,
+      activeBands: Array(10).fill(false),
       processingRate: 22050,
       channelLayout: "stereo",
       reason: null,
@@ -47,7 +47,9 @@ function snapshot(): EffectsSnapshotDto {
       { frequencyHz: 1000, gainDb: -2 },
       { frequencyHz: 10000, gainDb: -2 },
     ],
-    referenceResponse: false,
+    referenceResponse: true,
+    editableBands: [true, true, true, true, true, true, true, true, true, false],
+    responseRate: 22050,
     safePreampDb: -2,
   };
 }
@@ -211,6 +213,91 @@ describe("nonmodal effects overlay", () => {
 });
 
 describe("equalizer and management", () => {
+  it("retries a rejected EQ edit with the exact retained local curve", async () => {
+    const effects = snapshot();
+    openPanel(effects);
+    await waitFor(() => expect(call).toHaveBeenCalledWith("get_audio_effects_snapshot"));
+    await act(async () => undefined);
+    fireEvent.click(screen.getByRole("tab", { name: "均衡器" }));
+    call.mockRejectedValueOnce(new Error("edit transport rejected"));
+    fireEvent.keyDown(screen.getByRole("slider", { name: "1000 Hz 增益" }), {
+      key: "ArrowUp",
+    });
+    await waitFor(() => expect(screen.getByText(/操作失败，请求和曲线已保留/)).toBeInTheDocument());
+    const failedRequest = call.mock.calls.find(([name]) => name === "edit_audio_equalizer");
+    expect(failedRequest).toBeDefined();
+    expect(screen.getByRole("slider", { name: "1000 Hz 增益" })).toHaveValue("0.5");
+    if (effects.document.retainedPayload.kind !== "eq") throw new Error("Expected EQ fixture");
+    const curve = {
+      ...effects.document.retainedPayload,
+      gainsDb: [0, 0, 0, 0, 0, 0.5, 0, 0, 0, 0],
+    };
+    const receipt: EffectsSnapshotDto = {
+      ...effects,
+      document: { ...effects.document, retainedPayload: curve, draft: curve },
+      runtime: { ...effects.runtime, revision: ++revision },
+    };
+    call.mockResolvedValueOnce(receipt);
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    await waitFor(() =>
+      expect(screen.queryByText(/操作失败，请求和曲线已保留/)).not.toBeInTheDocument(),
+    );
+    const editRequests = call.mock.calls.filter(([name]) => name === "edit_audio_equalizer");
+    expect(editRequests).toHaveLength(2);
+    expect(editRequests[1]).toEqual(failedRequest);
+    expect(call).not.toHaveBeenCalledWith("retry_audio_effects");
+    expect(screen.getByRole("slider", { name: "1000 Hz 增益" })).toHaveValue("0.5");
+  });
+  it("repairs protected storage before resubmitting a rejected local EQ edit", async () => {
+    const effects: EffectsSnapshotDto = { ...snapshot(), recoveryReason: "protected document" };
+    openPanel(effects);
+    await act(async () => undefined);
+    fireEvent.click(screen.getByRole("tab", { name: "均衡器" }));
+    call.mockRejectedValueOnce(new Error("protected edit rejected"));
+    fireEvent.keyDown(screen.getByRole("slider", { name: "1000 Hz 增益" }), {
+      key: "ArrowUp",
+    });
+    await waitFor(() => expect(screen.getByText(/操作失败，请求和曲线已保留/)).toBeInTheDocument());
+    const failedRequest = call.mock.calls.find(([name]) => name === "edit_audio_equalizer");
+
+    call.mockRejectedValueOnce(new Error("repair rejected"));
+    fireEvent.click(screen.getByRole("button", { name: "重试修复" }));
+    await act(async () => undefined);
+    expect(call.mock.calls.filter(([name]) => name === "edit_audio_equalizer")).toHaveLength(1);
+    expect(screen.getByRole("slider", { name: "1000 Hz 增益" })).toHaveValue("0.5");
+
+    let acknowledgeRepair: ((receipt: EffectsSnapshotDto) => void) | undefined;
+    const repair = new Promise<EffectsSnapshotDto>((resolve) => {
+      acknowledgeRepair = resolve;
+    });
+    const repaired: EffectsSnapshotDto = {
+      ...effects,
+      runtime: { ...effects.runtime, revision: ++revision },
+      recoveryReason: undefined,
+    };
+    if (effects.document.retainedPayload.kind !== "eq") throw new Error("Expected EQ fixture");
+    const curve = {
+      ...effects.document.retainedPayload,
+      gainsDb: [0, 0, 0, 0, 0, 0.5, 0, 0, 0, 0],
+    };
+    const accepted: EffectsSnapshotDto = {
+      ...repaired,
+      runtime: { ...effects.runtime, revision: ++revision },
+      document: { ...effects.document, retainedPayload: curve, draft: curve },
+    };
+    call.mockReturnValueOnce(repair).mockResolvedValueOnce(accepted);
+    fireEvent.click(screen.getByRole("button", { name: "重试修复" }));
+    expect(call.mock.calls.filter(([name]) => name === "retry_audio_effects")).toHaveLength(2);
+    expect(call.mock.calls.filter(([name]) => name === "edit_audio_equalizer")).toHaveLength(1);
+    await act(async () => acknowledgeRepair?.(repaired));
+    await waitFor(() =>
+      expect(screen.queryByText(/操作失败，请求和曲线已保留/)).not.toBeInTheDocument(),
+    );
+    const editRequests = call.mock.calls.filter(([name]) => name === "edit_audio_equalizer");
+    expect(editRequests).toHaveLength(2);
+    expect(editRequests[1]).toEqual(failedRequest);
+    expect(screen.getByRole("slider", { name: "1000 Hz 增益" })).toHaveValue("0.5");
+  });
   it("keeps disabled bands and supports 0.5 dB arrows and limits", async () => {
     const effects = snapshot();
     openPanel(effects);
@@ -232,9 +319,9 @@ describe("equalizer and management", () => {
     await act(async () => undefined);
     expect(screen.getByRole("slider", { name: "前置增益" })).toHaveAttribute(
       "aria-valuetext",
-      "-2 dB，自动保护",
+      "0 dB，手动请求，调整后切换为手动",
     );
-    expect(screen.getByRole("img", { name: /含实际前置增益/ })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "参考均衡器响应" })).toBeInTheDocument();
   });
   it("suppresses spatial save and displays the replacement explanation", () => {
     const base = snapshot();

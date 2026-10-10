@@ -40,6 +40,7 @@ export function EqualizerEditor({
   curve,
   activeBands,
   processingRate,
+  responseRate,
   points,
   reference,
   actualPreamp,
@@ -53,6 +54,7 @@ export function EqualizerEditor({
   readonly curve: EqCurve;
   readonly activeBands: readonly boolean[];
   readonly processingRate: number | null;
+  readonly responseRate: number | null;
   readonly points: readonly ResponsePoint[];
   readonly reference: boolean;
   readonly actualPreamp: number | null;
@@ -84,9 +86,10 @@ export function EqualizerEditor({
     )
     .join(" ");
   const [presetName, setPresetName] = useState("");
+  const confirmedPreamp = reference || spatial ? null : actualPreamp;
   const protectedGain =
-    actualPreamp !== null &&
-    (displayCurve.preampMode === "auto" || actualPreamp < displayCurve.requestedPreampDb);
+    confirmedPreamp !== null && confirmedPreamp < displayCurve.requestedPreampDb;
+  const responseLabel = reference ? "参考均衡器响应" : "含实际前置增益的均衡器响应曲线";
   return (
     <div className="equalizer-editor">
       {spatial ? (
@@ -96,7 +99,7 @@ export function EqualizerEditor({
         {spatial ? (
           <p className="effects-note">空间处理不以均衡器频响表示。</p>
         ) : points.length ? (
-          <svg viewBox="0 0 520 100" role="img" aria-label="含实际前置增益的均衡器响应曲线">
+          <svg viewBox="0 0 520 100" role="img" aria-label={responseLabel}>
             <path d="M0 15H520M0 50H520M0 85H520" className="gridline" />
             <path d={path} className="response-line" />
           </svg>
@@ -111,9 +114,16 @@ export function EqualizerEditor({
           </div>
         ) : null}
       </figure>
+      {!spatial && points.length ? (
+        <p className="effects-note">
+          {reference ? "参考响应" : "实际响应"}
+          {responseRate ? ` · ${responseRate.toLocaleString("en-US")} Hz` : " · 采样率待确认"}
+          {reference ? " · 尚未确认生效" : ""}
+        </p>
+      ) : null}
       <div className="eq-bands" role="group" aria-label="十段均衡器">
         {FREQUENCIES.map((frequency, index) => {
-          const active = reference || activeBands[index];
+          const active = activeBands[index] === true;
           const disabledReason = processingRate
             ? `${frequency} Hz 超出当前处理采样率的有效范围，参数已保留`
             : "等待实际处理环境确认";
@@ -149,15 +159,24 @@ export function EqualizerEditor({
         })}
       </div>
       <fieldset className="eq-preamp">
+        <legend className="sr-only">前置增益设置</legend>
+        <div className="eq-preamp-modes" role="group" aria-label="前置增益模式">
+          {(["auto", "manual"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={displayCurve.preampMode === mode}
+              onClick={() => onEdit({ ...displayCurve, preampMode: mode })}
+            >
+              {mode === "auto" ? "自动" : "手动"}
+            </button>
+          ))}
+        </div>
         <label className="eq-preamp-label" htmlFor="eq-preamp">
-          前置增益
+          手动请求
         </label>
         <output className="eq-preamp-output" htmlFor="eq-preamp">
-          {(displayCurve.preampMode === "auto"
-            ? actualPreamp
-            : displayCurve.requestedPreampDb
-          )?.toFixed(1) ?? "—"}{" "}
-          dB
+          {displayCurve.requestedPreampDb.toFixed(1)} dB
         </output>
         <input
           id="eq-preamp"
@@ -165,13 +184,9 @@ export function EqualizerEditor({
           min={-12}
           max={0}
           step={0.5}
-          value={
-            displayCurve.preampMode === "auto"
-              ? (actualPreamp ?? 0)
-              : displayCurve.requestedPreampDb
-          }
+          value={displayCurve.requestedPreampDb}
           aria-label="前置增益"
-          aria-valuetext={`${displayCurve.preampMode === "auto" ? (actualPreamp ?? 0) : displayCurve.requestedPreampDb} dB${displayCurve.preampMode === "auto" ? "，自动保护" : "，手动"}`}
+          aria-valuetext={`${displayCurve.requestedPreampDb} dB，手动请求${displayCurve.preampMode === "auto" ? "，调整后切换为手动" : ""}`}
           onChange={(event) =>
             onEdit({
               ...displayCurve,
@@ -184,6 +199,15 @@ export function EqualizerEditor({
           重置
         </button>
       </fieldset>
+      <p className="effects-note" aria-live="polite">
+        已确认实际前置增益：
+        {confirmedPreamp === null ? "待确认" : `${confirmedPreamp.toFixed(3)} dB`}
+        {protectedGain
+          ? displayCurve.preampMode === "manual"
+            ? " · 峰值保护已限制手动请求，实际衰减可超出滑块范围。"
+            : " · 自动保护已为整条链保留峰值余量。"
+          : ""}
+      </p>
       <div className="save-preset">
         <input
           type="text"

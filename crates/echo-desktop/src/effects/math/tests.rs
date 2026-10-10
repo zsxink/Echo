@@ -147,7 +147,7 @@ fn environment_spatial_and_validation_boundaries() {
 }
 
 #[test]
-fn transition_bound_protects_mixed_sign_interpolation() {
+fn intermediate_peak_tracks_actual_mixed_sign_curves() {
     let left = Payload::Eq(EqCurve {
         gains_db: [12., -12., 12., -12., 12., -12., 12., -12., 12., -12.],
         ..EqCurve::default()
@@ -156,34 +156,94 @@ fn transition_bound_protects_mixed_sign_interpolation() {
         gains_db: [-12., 12., -12., 12., -12., 12., -12., 12., -12., 12.],
         ..EqCurve::default()
     });
-    let bound = transition_preamp_db(&left, &right, environment(48_000)).unwrap();
-    // All ten bands alternate sign, so every band's positive endpoint max is
-    // 12 dB and the intermediate bound is the full 120 dB. The transition shares
-    // AUTO_HEADROOM_DB with the steady-state preamp; it used to add a separate
-    // 1.0 dB, which made the transition and steady state disagree.
-    assert_eq!(bound, -(120.0 + AUTO_HEADROOM_DB));
-    assert_eq!(
-        transition_preamp_db(
-            &Payload::default(),
-            &Payload::default(),
-            environment(48_000)
-        )
-        .unwrap(),
-        0.0
-    );
-    for step in 0..=10 {
-        let proportion = f64::from(step) / 10.0;
-        // Sample valid 0.5 dB intermediate curves at quarter intervals.
-        let gain = if step % 5 == 0 {
-            12.0 * 2.0f64.mul_add(-proportion, 1.0)
-        } else {
-            0.0
+    for payload in [&left, &right, &Payload::default()] {
+        let Payload::Eq(curve) = payload else {
+            unreachable!()
         };
-        let intermediate = Payload::Eq(EqCurve {
-            gains_db: std::array::from_fn(|index| if index % 2 == 0 { gain } else { -gain }),
-            ..EqCurve::default()
+        let actual = intermediate_eq_peak_db(curve.gains_db, 48_000);
+        let expected = analyze(payload, environment(48_000)).unwrap().peak_gain_db;
+        assert!((actual - expected).abs() < 0.000_001);
+        assert!(
+            actual < 20.0,
+            "independent band maxima cannot replace composed response"
+        );
+    }
+}
+
+#[test]
+fn intermediate_peak_accepts_fractional_steps_and_ignores_inactive_bands() {
+    let mut gains = [0.0; 10];
+    gains[5] = 3.125;
+    assert!((intermediate_eq_peak_db(gains, 48_000) - 3.125).abs() < 0.000_001);
+    gains[9] = 12.0;
+    assert!((intermediate_eq_peak_db(gains, 22_050) - 3.125).abs() < 0.000_001);
+    gains[5] = 0.0;
+    assert_eq!(intermediate_eq_peak_db(gains, 22_050), 0.0);
+}
+
+#[test]
+fn off_center_response_matches_independent_rbj_reference() {
+    // Frozen independent RBJ evaluations, away from the center where an alpha,
+    // a2 or frequency-rate error could still pass the nominal-center test.
+    let cases = [
+        (1_000.0, 48_000, 6.0, 997.0, 5.999_528_772_998_522),
+        (1_000.0, 48_000, 12.0, 700.0, 5.833_519_889_402_339),
+        (16_000.0, 48_000, -12.0, 12_000.0, -3.576_101_666_973_781),
+        (31.25, 22_050, 12.0, 20.0, 4.638_324_941_949_091),
+        (4_000.0, 96_000, -6.0, 7_300.0, -1.399_389_518_910_484),
+    ];
+    for (center, rate, gain, frequency, expected) in cases {
+        let mut filters = [Biquad::IDENTITY; 10];
+        filters[0] = Biquad::peaking(center, rate, gain);
+        let actual = response_db(&filters, rate, frequency, 0.0);
+        assert!(
+            (actual - expected).abs() < 1e-7,
+            "{center}@{rate}: {actual} != {expected}"
+        );
+        filters[0] = Biquad::peaking(center, rate, -gain);
+        assert!((response_db(&filters, rate, frequency, 0.0) + expected).abs() < 1e-7);
+    }
+}
+
+#[test]
+fn composed_off_center_response_matches_four_rate_reference() {
+    let gains = [1., 2., 1., -1., -0.5, 0., 1., 2., 1., 0.];
+    for (rate, expected) in [
+        (22_050, 1.043_598_264_372_979),
+        (44_100, 1.105_245_881_414_781),
+        (48_000, 1.108_641_416_971_494),
+        (96_000, 1.122_604_102_382_467),
+    ] {
+        let filters = std::array::from_fn(|index| {
+            Biquad::peaking(BAND_FREQUENCIES[index], rate, gains[index])
         });
-        let analysis = analyze(&intermediate, environment(48_000)).unwrap();
-        assert!(analysis.peak_gain_db + bound <= -1.0);
+        assert!((response_db(&filters, rate, 1_750.0, -3.0) - (expected - 3.0)).abs() < 1e-7);
+    }
+}
+
+#[test]
+fn adjacent_and_all_boost_extrema_match_independent_peak_solution() {
+    for (gains_db, peak_hz, peak_db) in [
+        (
+            [0., 0., 0., 0., 0., 12., 12., 0., 0., 0.],
+            1_025.35,
+            14.564_616_258,
+        ),
+        ([12.; 10], 499.90, 18.402_800_135),
+    ] {
+        let result = analyze(
+            &Payload::Eq(EqCurve {
+                gains_db,
+                ..EqCurve::default()
+            }),
+            environment(48_000),
+        )
+        .unwrap();
+        assert!((result.peak_gain_db - peak_db).abs() < 1e-7);
+        let peak = response_db(&result.coefficients, 48_000, peak_hz, 0.0);
+        assert!((peak - peak_db).abs() < 1e-6);
+        for neighbor in [peak_hz - 0.25, peak_hz + 0.25] {
+            assert!(response_db(&result.coefficients, 48_000, neighbor, 0.0) < peak);
+        }
     }
 }

@@ -69,6 +69,39 @@ fn pending_is_not_applied_without_observed_environment_or_while_paused() {
 }
 
 #[test]
+fn configured_node_failure_is_visible_while_paused_and_does_not_repeat_installation() {
+    let shared = Shared::default();
+    let mut engine = Engine::new(shared.clone());
+    let mut driver = Driver::default();
+    shared.submit(1, true, Payload::default()).unwrap();
+    environment(&mut engine, 48_000.0, 2.0);
+    assert!(engine.tick(&mut driver, true, true));
+    driver.fail_apply = true;
+    engine.configuration_failed();
+    assert!(!engine.tick(&mut driver, false, false));
+    assert_eq!(shared.runtime().applied, AppliedState::Failed);
+    assert!(shared
+        .runtime()
+        .reason
+        .unwrap()
+        .contains("failed or was disabled"));
+    assert_eq!(
+        driver.applies.len(),
+        1,
+        "paused failure must not restore an enabled graph"
+    );
+
+    assert!(engine.tick(&mut driver, true, false));
+    let count = driver.applies.len();
+    // Multiple native errors from one configuration, possibly queued before
+    // cleanup, must not discard its completed failure receipt.
+    engine.configuration_failed();
+    assert!(engine.tick(&mut driver, true, false));
+    assert_eq!(driver.applies.len(), count);
+    assert_eq!(shared.runtime().applied, AppliedState::Failed);
+}
+
+#[test]
 fn actor_applies_the_latest_value_on_its_next_tick_and_disable_cancels_unsent_edits() {
     let shared = Shared::default();
     let mut engine = Engine::new(shared.clone());

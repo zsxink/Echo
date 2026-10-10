@@ -149,7 +149,7 @@ impl Engine {
         }
     }
 
-    pub(super) fn begin_load<B: Backend>(&mut self, backend: &mut B) {
+    pub(super) fn begin_load<B: Backend>(&mut self, backend: &mut B) -> bool {
         self.epoch = self.epoch.saturating_add(1);
         self.environment = None;
         self.sample_rate = None;
@@ -168,18 +168,38 @@ impl Engine {
         };
         if enabled {
             // Holding pause before load prevents an unconfigured first sample.
-            let _ = backend.write_property(BackendProperty::Pause(true));
+            return backend.write_property(BackendProperty::Pause(true));
         }
+        true
     }
 
-    pub(super) fn reconfigured<B: Backend>(&mut self, backend: &mut B) {
+    pub(super) fn reconfigured<B: Backend>(&mut self, backend: &mut B) -> bool {
+        if !backend.effects_reconfigured() {
+            return false;
+        }
         self.epoch = self.epoch.saturating_add(1);
         self.completed = None;
-        backend.effects_reconfigured();
         let mut mailbox = self.shared.0 .0.lock().expect("effect mailbox poisoned");
         mailbox.runtime.playback_epoch = self.epoch;
         if mailbox.target.as_ref().is_some_and(|target| target.enabled) {
             mailbox.runtime.applied = AppliedState::Pending;
+        }
+        true
+    }
+
+    pub(super) fn configuration_failed(&mut self) {
+        // A disabled node can fail after an earlier request completed. Revisit
+        // its backend receipt so cached Applied cannot conceal that failure.
+        let mut mailbox = self.shared.0 .0.lock().expect("effect mailbox poisoned");
+        if mailbox.runtime.applied != AppliedState::Failed {
+            self.epoch = self.epoch.saturating_add(1);
+            self.completed = None;
+            self.safe_to_play = false;
+            mailbox.runtime.applied = AppliedState::Failed;
+            mailbox.runtime.reason = Some("native audio filter failed or was disabled".to_owned());
+            mailbox.runtime.effective_preamp_db = None;
+            drop(mailbox);
+            self.shared.0 .1.notify_all();
         }
     }
 
@@ -257,7 +277,9 @@ impl Engine {
             return self.safe_to_play;
         }
         if target.enabled && (!playing || self.environment.is_none()) {
-            mailbox.runtime.applied = AppliedState::Pending;
+            if mailbox.runtime.applied != AppliedState::Failed {
+                mailbox.runtime.applied = AppliedState::Pending;
+            }
             return false;
         }
         if !target.enabled {

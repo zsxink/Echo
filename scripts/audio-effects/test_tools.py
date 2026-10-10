@@ -137,6 +137,56 @@ class ProbeTests(unittest.TestCase):
         measured = probe.measure_sine_gain_db(source, output, 997, channels, width, width, rate)
         self.assertAlmostEqual(measured, 6.0, places=3)
 
+    def test_repeated_runtime_fixture_preserves_frames_and_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, destination = root / 'input.wav', root / 'extended.wav'
+            with wave.open(str(source), 'wb') as output:
+                output.setparams((2, 2, 48000, 0, 'NONE', 'not compressed'))
+                output.writeframes(struct.pack('<hhhh', 123, -123, 456, -456))
+            frames = probe.repeat_pcm_fixture(source, destination, 6 / 48000)
+            channels, width, rate, repeated_frames, raw = probe.read_pcm_wave(destination)
+        self.assertEqual((channels, width, rate, frames, repeated_frames), (2, 2, 48000, 6, 6))
+        self.assertEqual(raw, struct.pack('<hhhh', 123, -123, 456, -456) * 3)
+
+    def test_runtime_capture_refuses_unknown_command_signature(self):
+        result = probe.runtime_pcm_capture(None, None, None, None, 6.0)
+        self.assertFalse(result['runtime_confirmed'])
+        self.assertIn('unsupported', result['error'])
+
+    def test_runtime_capture_refuses_command_after_eof(self):
+        class FinishedMpv:
+            def __init__(self, library, ao, ao_pcm_file):
+                ao_pcm_file.write_bytes(bytes(192100))
+                self.commands = []
+                self.closed = False
+
+            def command(self, *args):
+                self.commands.append(args)
+                return 0
+
+            def pump(self, _):
+                pass
+
+            def get(self, name):
+                return {'samplerate': 48000, 'channel-count': 2} if name == 'audio-out-params' else True
+
+            def close(self):
+                self.closed = True
+
+        native = None
+        def construct(*args, **kwargs):
+            nonlocal native
+            native = FinishedMpv(*args, **kwargs)
+            return native
+
+        args = type('Args', (), {'libmpv': Path('selected-library'), 'step_timeout': 0.1})()
+        with patch.object(probe, 'Mpv', side_effect=construct), patch.object(probe, 'repeat_pcm_fixture', return_value=480000):
+            with self.assertRaisesRegex(RuntimeError, 'after EOF'):
+                probe.runtime_pcm_capture(args, Path('source'), 'chain', ('af-command', 'eq', 'gain', '6'), 6.0)
+        self.assertTrue(native.closed)
+        self.assertFalse(any(command[0] == 'af-command' for command in native.commands))
+
     def test_loading_failure_preserves_selected_artifact(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'distributed.so'

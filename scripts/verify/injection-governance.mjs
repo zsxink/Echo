@@ -87,6 +87,51 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
         return {};
       },
     },
+    {
+      id: "audio-effects-dsp/normalization-enabled",
+      guard: "the installed EQ enabling numerator normalization while the response model assumes it is disabled",
+      check: ["node", ["scripts/verify/checks/audio-effects-dsp-math.mjs"]],
+      expect: /no longer contains "normalize=false"/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, "crates", "echo-desktop", "src", "player", "native_effects.rs"),
+          "mix=1:normalize=false:precision=f64",
+          "mix=1:normalize=true:precision=f64",
+        );
+        return {};
+      },
+    },
+    {
+      id: "audio-effects-dsp/undefined-width-returned-as-zero",
+      guard: "the independent bandwidth solver silently returning a finite width when the relative threshold has no edges",
+      check: ["node", ["scripts/verify/checks/audio-effects-dsp-selftest.mjs"]],
+      expect: /below-threshold width is undefined/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, "scripts", "verify", "checks", "audio-effects-dsp-reference.mjs"),
+          "if (Math.abs(gainDb) <= distanceDb || centerHz > 0.45 * sampleRate) return null;",
+          "if (Math.abs(gainDb) <= distanceDb || centerHz > 0.45 * sampleRate) return 0;",
+        );
+        return {};
+      },
+    },
+    {
+      id: "audio-effects-evidence/failed-command-labelled-confirmed",
+      guard: "a negative runtime command result labelled as a confirmed PCM change",
+      check: ["node", ["scripts/verify/checks/audio-effects-evidence-selftest.mjs"]],
+      expect: /AFX-9\.5 lacks consistent pre-EOF PCM measurements for equalizer/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, "openspec", "changes", "introduce-audio-effects-equalizer", "evidence", "macos-runtime-parameter-recheck-20261008.json"),
+          '"command_result": 0',
+          '"command_result": -12',
+        );
+        return {};
+      },
+    },
   ];
 }
 

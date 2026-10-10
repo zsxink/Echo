@@ -62,7 +62,7 @@ def decode(value):
 
 
 class Mpv:
-    def __init__(self, path, ao='null', ao_pcm_file=None):
+    def __init__(self, path, ao='null', ao_pcm_file=None, audio_format=None):
         self.loader = None
         self.native_library_handle = None
         if sys.platform != 'win32':
@@ -114,6 +114,10 @@ class Mpv:
                 if not ao_pcm_file:
                     raise ValueError('ao=pcm requires an explicit PCM/WAVE output path')
                 options.extend([('ao-pcm-file', os.fspath(ao_pcm_file)), ('ao-pcm-waveheader', 'yes')])
+            if audio_format is not None:
+                if audio_format not in ('s32', 'float'):
+                    raise ValueError('diagnostic audio_format must be s32 or float')
+                options.append(('audio-format', audio_format))
             for name, value in options:
                 result = self.lib.mpv_set_option_string(self.handle, name.encode(), value.encode())
                 self.record('option', [name, value], result)

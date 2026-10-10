@@ -2,6 +2,69 @@
 
 状态：**未通过 / 发布阻断**。用户已授权先实现功能，并同意补齐分发库能力；这不等于平台测量通过。这里记录可复现实验和已取得证据，缺失平台或硬件测量不能用 mock、静态版本号或 `ao=null` 替代。
 
+## 2026-10-09 DSP 专业复核（只读）：Gate 阻断点重排
+
+复核方式：以 FFmpeg **n6.0 上游源码**（`af_biquads.c` / `af_alimiter.c` / `af_extrastereo.c` / `af_volume.c` / `avfiltergraph.c`）+ `math.rs` 同式独立复算，不引用本仓库既有结论。HEAD `b8711fe`（含 10-08 未提交改动）。
+
+**能力面判断不变且已加强**：macOS 候选库的参数路径由 10-08 持续 PCM 复测证明可用。AFX-11.1 的静态响应采集已经完成并通过独立证据复核；limiter/首尾内容、实时过渡、设备性能及跨平台 Gate 仍不完整，细项状态见 `tasks.md`。本节所有运行报告仍保持 `gate_passed=false`。
+
+| 阻断点 | 现有证据为何不足 |
+|---|---|
+| ≤0.25 dB 响应验收 | 完成四率低电平 stepped-sine 共 52 份报告、7,774 个频点比较；最大原生与复合 RBJ 差 0.000006809483 dB，保守舍入界 0.000134970 dB。报告和哈希/聚合由主 Agent 独立核验；仅覆盖静态低电平链 |
+| `fc<=0.45*Fs` 用源率还是图实际率 | 四档采样率矩阵中 `audio-params` 与 `audio-out-params` 恒等，结构性无法暴露差异 |
+| `AUTO_HEADROOM_DB=0.5 dB` | `evidence/` 内无任何 BS.1770 / 响度 / LU 字段，纯推算 |
+| 脉冲/limiter 压力验收 | 四档脉冲首样本与无 limiter 线性模型相差 <0.00044 dB；既有整数 PCM 捕获不足以诊断 limiter 前后浮点行为，不能以输出峰值下限验收 |
+| `latency=true` 的首尾内容 | trim/pad 源码不足以推出节目首尾内容丢失；须捕获首尾内容、帧数、对齐和 seek/EOF 行为 |
+
+**本轮已修正的 DSP 与证据口径**（不改代码行为，只改错误的陈述）：
+1. `extrastereo` 的 `c` **是内部削波开关（默认开），不是 center coefficient**（`af_extrastereo.c:37`）。`c=false` 关闭削波是正确决策；此前把它当作中心系数是误读。
+2. `latency=true` 以 trim/pad 补偿 look-ahead：trim 裁切延迟输出，EOF 补入等量输入零样本以排空缓冲（`af_alimiter.c:303-317` / `:346-353`）。这一机制本身不能证明节目开头丢失或尾部被静音替换。
+3. 四率脉冲首样本峰值与无 limiter 线性模型差小于 0.00044 dB；低峰可由 `b0` 与 preamp 的线性衰减解释，不能据此断言 attack 不足。
+4. 「30 ms 连续过渡」实为**分轮参数插值**，不是逐样本包络；且 `config_filter(reset=0)` 保留 biquad 状态但仍非交叉淡化。
+5. 「`spatial:m` 更由结构体检查证实不受支持」与同文件 10-08 实测矛盾，已删除。
+6. `safe+0.5 dB` 的「未验证」限定原只写在第 4 节，现已在第 3 节表格处重复标注，防止被单独摘出引用。
+
+**本节初稿已更正**：RBJ 系数三处自洽；`G` 用 `product(H_i)` 正确覆盖级联。复算的相邻 1/2 kHz 两段 +12 峰值为 **+14.564616 dB @约1025.35 Hz**，全十段 +12 为 **+18.402800 dB @约499.90 Hz**；旧 +0.607 dB 是扫描范围错误。`level=false` 必需；`asc=false` 关闭 `auto_release` 自动释放控制，并不关闭 true-peak 检测；`attack=5`/`release=50` 确为 FFmpeg 默认；`-0.99985 dBFS` 与 `limit` 自洽；`extrastereo` 的 M/S 语义与实现一致且中央信号不下沉；`fc<=0.45*Fs` 退化清单（22050 → 仅 16 kHz）；R10/R11 已真正闭合。完整清单见 `tasks.md` 第 11、12 节。
+
+## 2026-10-09 逐频响应捕获（静态低电平范围已完成）
+
+证据汇总：[macos-stepped-sine-20261009/summary.json](evidence/macos-stepped-sine-20261009/summary.json)。独立脚本 `scripts/audio-effects/sine_sweep.py` 对 9 个内置曲线及 4 个压力曲线、四种处理率共生成 52 份报告和 7,774 个频点比较；每率频点数为 146/150/151/151。观测范围至 `0.499 Fs`（可表示时额外包含 20 kHz），0.45 Fs 仍是 EQ 中心频率有效性边界。最大原生与复合 RBJ 响应差为 0.000006809483 dB，最大保守舍入界为 0.000134970 dB。主 Agent 独立核对了报告数、工具哈希、比例与聚合；工具测试 23 项通过。
+
+此结果支持 macOS 静态低电平响应的 ≤0.25 dB 判据，不验证 limiter 高压力/浮点链、运行时过渡、设备端输出、听感或 Windows/Linux 能力；52 份报告均保持 `gate_passed=false`，其余发布 Gate 继续阻塞。
+
+## 2026-10-08 运行时改参复测：已确认 macOS 参数路径
+
+证据：[macos-runtime-parameter-recheck-20261008.json](evidence/macos-runtime-parameter-recheck-20261008.json)。主 Agent 独立重跑修复后的探针，并补测空间同相和单侧输入；libmpv SHA-256 为 `164430192f73da459916e384a405685697387fa5e333c19ffb1be4297a4852f3`，libavfilter 为 `2591332d9a3ccc0f6a7313b98fc2566ef4193dd40271a6908dec7243085df6bc`。
+
+**AFX-9.5 根因已定位到测量时序**：`ao=pcm` 非实时高速解码，旧短素材在 `wait_audio()` 的 50 ms pump 内已经到 EOF；命令发生在样本处理完之后。即使 label 正确，命令也不能改变已写出的 PCM。新探针先在磁盘离线重复素材至 600 秒，实际产生基线 PCM 后且 EOF 前发送命令；每项均为一次不中断播放，命令前后不 pause/seek/loadfile 或重建链。它记录文件字节位置、EOF 状态及前后样本窗口，拒绝 EOF 后命令或缺少后续窗口的测量。字节位置是已写样本上界，**不能用来声称实时更新延迟通过**。
+
+| 命令或对照 | 独立复测变化 dB | 理论 dB | 结论 |
+|---|---:|---:|---|
+| `af-command echo_eq5 eq5:gain 6` | +5.990866 | 约 +6 | EQ 运行时生效 |
+| `af-command echo_preamp preamp:volume 0.501187233627272` | −6.042937 | −6 | preamp 运行时生效 |
+| `af-command echo_spatial spatial:m 1`，反相 | −1.947385 | −1.938200 | 实际宽度由 1.25 回到 1 |
+| 同一宽度命令，同相 | +0.004099 | 0 | 中央信号不因宽度改变而放大 |
+| 同一宽度命令，单侧输入的第一声道 | −1.026806 | −1.023050 | 符合 M/S 矩阵 |
+| 安装期 +6 dB 静态参考 | +5.995869 | 约 +6 | harness 自检通过 |
+
+这些低电平 PCM16 测量与理论差均小于 0.25 dB，误差包括量化和窗口投影；不是整条频响在全部频率的误差验收。旧「全部运行时命令无效」结论不成立，旧正确 label 的不变捕获也不能证明改参失效。固定用户 width=1.25 不变，内部启用/旁路可使用已实证的 `spatial:m` 过渡。命令 rc=0 仍不单独构成证据。
+
+复现：
+
+```sh
+python3 scripts/audio-effects/generate_fixtures.py --output /tmp/echo-runtime-fix-fixtures --duration 10
+python3 scripts/audio-effects/probe.py \
+  --libmpv apps/desktop/src-tauri/vendor/libmpv/macos/libmpv.dylib \
+  --input /tmp/echo-runtime-fix-fixtures/tone997-48000-2ch-60db.wav \
+  --fixture-manifest /tmp/echo-runtime-fix-fixtures/manifest.json \
+  --manifest apps/desktop/src-tauri/vendor/libmpv/macos/manifest.json \
+  --output /tmp/echo-runtime-recheck.json \
+  --ao pcm --pcm-output /tmp/echo-runtime-static.wav --capture-only \
+  --runtime-parameter-proof --runtime-capture-seconds 1 --step-timeout 10 --timeout 60
+```
+
+报告保持 `gate_passed=false`。本节仅解除 macOS 参数机制的阻塞；30 ms 过渡的真实瞬态、CoreAudio 设备捕获、完整扫频、100 次时延、性能、听感以及 Windows/Linux 实测仍需原 Gate。以下 2026-10-03/04 内容作为历史实验记录保留，当前结论以本节为准。
+
 ## 实验素材与命令
 
 素材由 `scripts/audio-effects/generate_fixtures.py` 离线生成；仅含确定性合成音（997 Hz、扫频、固定种子噪声、脉冲及声道关系），CC0-1.0，不含第三方录音。生成的 `manifest.json` 为每段素材记录 PCM 布局、量化后 sample-peak、SHA-256 和生成器 SHA-256。重复性及素材矩阵由 `python3 -m unittest discover -s scripts/audio-effects -p 'test_*.py' -v` 检查。运行示例及滤镜候选、客户端命令和结果解释见 `scripts/audio-effects/README.md`。
@@ -127,15 +190,16 @@ python3 scripts/audio-effects/probe.py \
 | 平台/候选 | 版本与识别 | 结果 |
 | --- | --- | --- |
 | macOS 本机候选 vendor 包 | macOS 27.0 arm64；包内 libmpv SHA-256 记录于报告；mpv 0.36.0 + FFmpeg 6.0，FFmpeg 6.0 源码 SHA-256 `57be87c22d9b49c112b6d24bc67d42508660e6b718b3db89c44e47e289137082`；完整探针见 `evidence/macos-probe.json` | 五个所需 filters 均可用；十段 EQ、分段 EQ、双声道空间候选链建立成功；`eq5:gain`、`preamp:volume`、`spatial:m` 定向命令**被接受**。使用 `ao=coreaudio` 的音频输出为 48 kHz / 2ch stereo / s32。mpv 音量限制为 1%；没有 Loopback 捕获，故响应、峰值、真峰值和听感均未验证。⚠️ 该 JSON 的 `audio-device` 全程为 `auto`，原文「仅输出到 MacBook Pro Speakers」无证据支撑。Gate 未通过。 |
-| macOS 重新打包的 `Echo.app` | 候选 bundle 位于 `target/release/bundle/macos/Echo.app`；包内 libmpv SHA-256 `164430192f73da459916e384a405685697387fa5e333c19ffb1be4297a4852f3`；旧 app-bundle 探针见 `evidence/macos-audio-app-bundle-probe.json` | 探针实际加载 app 内 dylib，识别 mpv 0.36.0 / FFmpeg 6.0，映射的 libmpv/FFmpeg dylib 均来自 bundle；CoreAudio 协商 48 kHz / 2ch，候选链加载及 loadfile 后配置链保留成功。⚠️ 原文「ad-hoc 签名通过 `codesign --verify --deep --strict`」在该 JSON 中**无任何字段支撑**（全文不含 `codesign`/`signature`），须补记录或删除。⚠️ 原文称 `spatial:m` 命令后「26 条日志」，实际为 **118** 条 events（内容支持「无错误」，计数错误）。旧报告的 `af-command` rc=0 曾被误写作实际生效；现更正为：**结构有回调但运行时改参实测不生效**。此报告没有 PCM 响应、时延、underrun、CPU 或听感，`gate_passed=false`。 |
+| macOS 重新打包的 `Echo.app` | 候选 bundle 位于 `target/release/bundle/macos/Echo.app`；包内 libmpv SHA-256 `164430192f73da459916e384a405685697387fa5e333c19ffb1be4297a4852f3`；旧 app-bundle 探针见 `evidence/macos-audio-app-bundle-probe.json` | 探针实际加载 app 内 dylib，识别 mpv 0.36.0 / FFmpeg 6.0，映射的 libmpv/FFmpeg dylib 均来自 bundle；CoreAudio 协商 48 kHz / 2ch，候选链加载及 loadfile 后配置链保留成功。⚠️ 原文「ad-hoc 签名通过 `codesign --verify --deep --strict`」在该 JSON 中**无任何字段支撑**（全文不含 `codesign`/`signature`），须补记录或删除。⚠️ 原文称 `spatial:m` 命令后「26 条日志」，实际为 **118** 条 events（内容支持「无错误」，计数错误）。旧报告的 `af-command` rc=0 曾被误写作实际生效；历史短输入探针曾得出「结构有回调但运行时改参实测不生效」，该结论已撤回：输入在命令前已 EOF，不能验证参数变化；以 AFX-9.5 的持续 PCM 对照为准。此报告没有 PCM 响应、时延、underrun、CPU 或听感，`gate_passed=false`。 |
 | macOS 候选 bundle PCM | `target/release/bundle/macos/Echo.app`；probe report `evidence/macos-pcm-response-probe.json`；CC0 997 Hz / -60 dBFS / 48 kHz / stereo 输入 SHA-256 `81d179034a32a2bc4cfbd1c20e492d036828e1c34fb5c3d7ba51b772b567672a` | 通过候选 bundle `ao=pcm` 捕获 96,000 帧、48 kHz、2ch、s16 输出；**安装期即写死 `g=6` 的静态链**在 997 Hz 实测 `+5.9959 dB`，误差 `-0.0041 dB`；输出 sample-peak `-54.0507 dBFS`。⚠️ 该测量证明**静态链响应**，不证明运行时改参（后者实测无效，见上）。所有 bundle dylib 哈希匹配 vendor manifest，运行时映射均来自候选 bundle。此单点响应不代表整条频响曲线或压力素材门槛；true-peak 未测，`gate_passed=false`。 |
 | macOS 候选 bundle limiter 压力点 | `evidence/macos-pcm-limiter-stress-probe.json`；CC0 997 Hz / -0.1 dBFS / 48 kHz / stereo 输入 | 单段 1 kHz/+12 dB、Auto preamp -11.5 dB（对应 `G=12 dB`、`safe+0.5 dB`）经过候选包实际滤镜输出；捕获 sample-peak `-0.99985 dBFS`，s16 integer PCM。此单音压力点不能替代扫频、宽带、脉冲、双声道反相及不同采样率矩阵；true-peak/听感未测，`gate_passed=false`。 |
-| macOS 候选 bundle CoreAudio | probe report `evidence/macos-audio-candidate-coreaudio-probe.json`；同一个候选 bundle 与 -60 dBFS fixture | 真实 CoreAudio 协商 48 kHz / 2ch / s32；十段 EQ、空间链、loadfile 链保留均成功；运行时 `eq5:gain`、preamp 具名命令调用返回 rc=0。rc=0 只说明调用被接收，不证明音频参数产生可测变化；`spatial:m` 更由结构体检查证实不受支持。测试音 mpv 音量限制为1%；`gate_passed=false`。 |
+| macOS 候选 bundle CoreAudio | probe report `evidence/macos-audio-candidate-coreaudio-probe.json`；同一个候选 bundle 与 -60 dBFS fixture | 真实 CoreAudio 协商 48 kHz / 2ch / s32；十段 EQ、空间链、loadfile 链保留均成功；运行时 `eq5:gain`、preamp 具名命令调用返回 rc=0。rc=0 只说明调用被接收，不证明音频参数产生可测变化；`spatial:m` 的 `process_command` **存在**（结构层，`inspect-filter-runtime.py` 按真实字段布局判定），其行为已由 2026-10-08 持续 PCM 复测证明（反相 m1.25→1 变化 −1.947 dB）。⚠️ 原文「`spatial:m` 更由结构体检查证实不受支持」与同日实测直接矛盾，已删除；结构层与行为层必须分别表述。测试音 mpv 音量限制为1%；`gate_passed=false`。 |
 | Windows | 有固定 vendor DLL；未获得候选安装包、参考机或捕获设备 | 未测 |
 | `/Applications/Echo.app` 已安装候选 | `evidence/macos-installed-app-probe.json`；app 内 libavfilter SHA-256 与 vendor manifest 一致 | app 内 libmpv 探针成功初始化、建立包含十段 EQ 和 limiter 的链、更新 EQ/preamp 命令并在 `loadfile` 后保持配置链；仅命令/快照证据，未证明目标参数的 PCM 响应。`gate_passed=false`。 |
 | `/Applications/Echo.app` CoreAudio 与 mono | `evidence/macos-installed-app-coreaudio-probe.json`、`evidence/macos-installed-app-mono-probe.json` | CoreAudio 协商 48 kHz / stereo / s32；EQ 与 preamp 命令均返回 rc=0，十段链和 loadfile 后配置链存活。Mono 输入输出仍为 mono，探针跳过空间链。定向命令 rc=0 与 `process_command` 检查只证明可调用，不冒充参数 PCM 响应或设备听感。 |
 | 2026-10-03 当前安装 app 复核 | `evidence/macos-installed-app-coreaudio-recheck-20261003.json` | 直接从 `/Applications/Echo.app/Contents/Frameworks/libmpv.dylib` 加载，CoreAudio 输出为 48 kHz / stereo / s32，mpv volume 为 1（mpv 百分制，即 1%）、mute=false；app 内 libmpv 与 vendor manifest SHA-256 一致。该探针仍是低音量合成音和配置/命令证据，不测输出响应或实际过渡时延。 |
-| 2026-10-03 PCM 多采样率响应/压力矩阵 | `evidence/macos-pcm-matrix-20261003/summary.json` 与同目录 24 份原始 JSON；使用当前安装 app 的 libmpv、CC0 fixture manifest、`ao=pcm` | MacBook Pro (Mac17,2, Apple M5，10核，32 GB，内置 SSD，macOS 27.0 arm64)。22.05/44.1/48/96 kHz 下分别捕获 mono 与 stereo 的 997 Hz/-60 dBFS 输入经单个 1 kHz/+6 dB **静态** EQ 的输出；四个 stereo 响应误差为 -0.00422 至 -0.00411 dB（对 997 Hz 解析值 5.999529 而言真实误差约 -0.0037 dB，s16 量化贡献 <0.001 dB）。每个采样率还覆盖 stereo 的 -0.1 dBFS 噪声、扫频、脉冲和反相素材，经单个 1 kHz/+12 dB **静态** EQ、-11.5 dB preamp 与 limiter；24/24 报告为 probe-only，输出均为有限 integer PCM，最大样本峰值 -0.99985 dBFS（与 limit 自洽：差 0.489 LSB 的取整残差，非超限）。⚠️ **覆盖的是四种「解码」采样率**：`ao=pcm` 不重采样，各档 `audio-params` 与 `audio-out-params` **完全相等**，故该矩阵**结构性无法暴露源 Fs ≠ 输出 Fs**。另 22.05 kHz 下仅 16 kHz 段退化（0.45Fs=9922.5），44.1/48/96 kHz 下十段全部有效。噪声/脉冲峰值更低属素材频谱及 limiter 时间响应。⚠️ **反相素材本应是限幅最狠的用例**：L=−R 时 `M=0、S=L`，叠加十段 EQ 与 `extrastereo(m=1.25)` 后理论峰值放大最甚。当前仅记录其 sample-peak（与单音同为 −0.99985 dBFS），**未计算理论最坏放大比**，故无法确认余量是否在设计预算内；应补「离线计算反相输入的理论峰值 vs 实测」的对照。未覆盖全十段曲线、空间链、CoreAudio 环回、100 次实时过渡、underrun、进度偏移、CPU 或听感，`gate_passed=false`。 |
+| 2026-10-03 PCM 多采样率响应/压力矩阵 | `evidence/macos-pcm-matrix-20261003/summary.json` 与同目录 24 份原始 JSON；使用当前安装 app 的 libmpv、CC0 fixture manifest、`ao=pcm` | MacBook Pro (Mac17,2, Apple M5，10核，32 GB，内置 SSD，macOS 27.0 arm64)。22.05/44.1/48/96 kHz 下分别捕获 mono 与 stereo 的 997 Hz/-60 dBFS 输入经单个 1 kHz/+6 dB **静态** EQ 的输出；四个 stereo 响应误差为 -0.00422 至 -0.00411 dB（对 997 Hz 解析值 5.999529 而言真实误差约 -0.0037 dB；量化误差贡献未单独隔离）。每个采样率还覆盖 stereo 的 -0.1 dBFS 噪声、扫频、脉冲和反相素材，经单个 1 kHz/+12 dB **静态** EQ、-11.5 dB preamp 与 limiter；24/24 报告为 probe-only，输出均为有限 integer PCM，最大样本峰值 -0.99985 dBFS（与 limit 自洽：差 0.489 LSB 的取整残差，非超限）。⚠️ **覆盖的是四种「解码」采样率**：`ao=pcm` 不重采样，各档 `audio-params` 与 `audio-out-params` **完全相等**，故该矩阵**结构性无法暴露源 Fs ≠ 输出 Fs**。这直接削弱 `fc<=0.45*Fs` 边界的证据力：实现取 `audio-params/samplerate`（`actor_effects.rs:204`）并显式丢弃 `audio-out-params/samplerate`（:224），而 libmpv 的重采样可能发生在用户 `af` 链之前或之后——若滤镜图实际率等于输出率而判据用了解码率，22.05 kHz 源 + 48 kHz 设备这一组合会误弃 16 kHz 段。该项为**未验证的高风险**，须同时记录 `audio-params/samplerate`、`audio-out-params/samplerate` 与 `equalizer` 实例 link 的实际 `sample_rate`，模型 Fs 与 equalizer 实际 link Fs 相同才算通过；源率与 AO 率允许不同（AFX-11.2）。
+（2026-10-03 历史矩阵补充）另 22.05 kHz 下仅 16 kHz 段退化（0.45Fs=9922.5），44.1/48/96 kHz 下十段全部有效。该历史整数 PCM 压力矩阵不含 limiter 前后浮点捕获，不能据其中脉冲低峰归因 attack。2026-10-09 复核发现四档脉冲首样本峰值与无 limiter 线性模型差均小于 0.00044 dB，低峰可由 `b0` 与 preamp 的线性衰减解释；不得把“脉冲低约 9.5 dB”作为当前机制结论。空间反相最坏 M/S 放大与 EQ 压力应作为各自独立场景评估，不将互斥模式串接。未覆盖全十段曲线、空间链、CoreAudio 环回、100 次实时过渡、underrun、进度偏移、CPU 或听感，`gate_passed=false`。
 | Linux | 当前仓库无 `vendor/libmpv/linux` 候选目录/安装包或参考机 | 未测 |
 
 ## Windows/Linux 开发侧复核（2026-10-03）
@@ -178,15 +242,15 @@ CoreAudio 能力探针的输出协商与候选包哈希记录见其原始报告�
 **结论修正（2026-10-04，替代 10-03 版本）**：
 ① 10-03 的表述「`extrastereo` 没有 `process_command`，故被 `AVERROR(ENOSYS)` 拒绝而 mpv 掩盖之」**错误**：回调**存在**（布局更正后已证实）。
 ② 10-03 的替代结论「运行时改参一律无效」**也已撤回**：其判别实验使用了错误的 mpv label。
-③ **当前唯一确定的事实**：`af-command` 的 rc 不能证明参数改变（mpv 只判 `result >= 0`，且 `target=all` 无条件返回 true）；判断是否生效必须用 PCM 前后对比。**根因仍未定位。**
+③ **当前唯一确定的事实**：`af-command` 的 rc 不能证明参数改变（mpv 只判 `result >= 0`，且 `target=all` 无条件返回 true）；判断是否生效必须用 PCM 前后对比。**当时根因仍未定位；macOS 后由 AFX-9.5 确认为短素材在命令前到达 EOF。**
 
 **历史结论（2026-10-03，已于 10-04 撤回，保留供追溯）**：当时表述「`extrastereo` 没有 `process_command`，故 `spatial:m` 被 `AVERROR(ENOSYS)` 拒绝而 mpv 掩盖之」**双重错误**：① 回调**存在**（布局更正后已证实）；② 当时据以判断的 PCM 实验使用了错误的 mpv label，故「命令不改变音频」也未成立。
 
 `macos-audio-app-bundle-probe.json` 中 `spatial:m` 命令 rc=0、`error=null`（原文称其后 26 条日志无错误，实际为 118 条 events）。**无论根因为何，rc=0 都不构成生效证据。**
 
-因此：**空间感 `width` 目前按安装期常量实现**（`native_effects.rs` 在安装参数中写入 width，不发送 `spatial:m`，并有负向回归断言）。设备空间/折叠听感仍须 Gate 评估。
+（历史实现状态，已由 AFX-10.3 替代）旧版曾将空间感 `width` 按安装期常量实现并不发送 `spatial:m`。当前用户 width 固定 1.25，内部生命周期已使用实测有效的 `spatial:m` 在 1 与 1.25 间过渡；设备空间/折叠听感仍须 Gate 评估。
 
-⚠️ **任务 AFX-4.5 负向断言的定性**：断言本身（不发送 `spatial:m`）仍正确，但**理由已两次更换**：① 原写「该滤镜无 `process_command`」——已证伪；② 改写「运行时改参对所有滤镜都无效」——因实验 label 错误而撤回。**当前正确表述**：width 作为安装期常量实现，理由是运行时改参**尚未被证明可用**（rc 不可信），而非「已证明不可用」。待 AFX-9.5 定位根因后再定论。
+⚠️ **AFX-4.5 历史断言已撤回**：旧版“不发送 `spatial:m`”测试与安装期常量实现均已由 AFX-10.3 实际 PCM 过渡取代。macOS 已有空间参数运行时变化实测；其他平台仍须独立测量。旧 2026-10-03/04 对运行时失效的记录仅作为历史保留，不代表当前能力。
 
 PCM 输出无需在 Python 侧自行搭 FFmpeg graph：随包 libmpv 的 `ao=pcm` 已能从候选包播放路径捕获滤镜后 WAVE。早期探针无法分析 WAVE_FORMAT_EXTENSIBLE，现已支持其 integer PCM 子格式并有回归测试；`capture-only` 将一个已知静态增益链独立捕获，避免与前序探针阶段混合。该捕获仍不能代替 CoreAudio 环回、underrun/延迟/CPU 或人工 A/B。任务 1.1 的可复现 PCM probe 已建立；1.3/1.4 的输出环境门槛继续待测。
 

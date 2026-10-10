@@ -175,6 +175,10 @@
   background: color-mix(in oklab, var(--surface), transparent 34%);
   color: var(--fg);
 }
+.effects-preset:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
 .effects-preset-row.selected .effects-preset,
 .effects-preset[aria-pressed="true"] {
   border-color: var(--accent-strong);
@@ -336,10 +340,27 @@
   margin: 8px 0 0;
   padding: 8px 0 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
   border: 0;
   border-top: 1px solid var(--border-soft);
+}
+.eq-preamp-modes {
+  display: flex;
+  gap: var(--space-1);
+}
+.eq-preamp-modes button {
+  min-height: 32px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-2);
+}
+.eq-preamp-modes button[aria-pressed="true"] {
+  background: color-mix(in oklab, var(--accent-strong), transparent 92%);
+  color: var(--accent-strong);
 }
 .eq-preamp-label {
   flex: none;

@@ -163,6 +163,8 @@ describe("effects snapshot ordering", () => {
       referenceResponse: false,
       responsePoints: [{ frequencyHz: 1000, gainDb: -3 }],
       safePreampDb: -3,
+      editableBands: Array(10).fill(true),
+      responseRate: 48_000,
       runtime: {
         ...pending.runtime,
         applied: "applied",
@@ -190,6 +192,8 @@ describe("effects snapshot ordering", () => {
       referenceResponse: applied.referenceResponse,
       responsePoints: applied.responsePoints,
       safePreampDb: applied.safePreampDb,
+      editableBands: applied.editableBands,
+      responseRate: applied.responseRate,
     });
     playerStore.publishEffects({
       ...metadata,

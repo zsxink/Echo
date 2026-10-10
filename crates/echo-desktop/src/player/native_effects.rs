@@ -1,30 +1,32 @@
 //! Typed libmpv filter construction. Strings originate only from validated
 //! numeric payloads; user text, preset names and paths never enter this syntax.
 //!
-//! Runtime `af-command` updates are not yet validated by captured PCM. Earlier
-//! captures used the wrong mpv filter label and were withdrawn; the current
-//! correctly labelled capture still needs root-cause investigation. A command
-//! return code only describes command handling and is not proof of an audible
-//! change. The 30 ms ramp in `advance` therefore remains an unverified behavior
-//! until the native PCM gate confirms intermediate output states. See the
-//! change's `native-gate.md` for evidence and reproduction details.
+//! Continuous-input PCM capture confirms runtime EQ/preamp/width commands on
+//! the packaged macOS library. A command return code alone remains insufficient
+//! evidence; output smoothness and the other platform packages still require
+//! their native gates. See the change's `native-gate.md` for reproduction.
 
 use crate::effects::{
-    math::{intermediate_gain_bound_db, EffectsAnalysis, AUTO_HEADROOM_DB},
+    math::{intermediate_eq_peak_db, EffectsAnalysis, AUTO_HEADROOM_DB},
     Payload, ProcessingEnvironment, BAND_FREQUENCIES,
 };
 use std::time::{Duration, Instant};
 
 const TRANSITION: Duration = Duration::from_millis(30);
-// `latency=true` makes alimiter compensate its own lookahead delay: FFmpeg sets
-// `in_trim = out_pad = attack*Fs - 1`, so the output stays sample-aligned with
-// the input (measured: 239 samples at 48 kHz/5 ms, matching that formula). The
-// alternative `latency=false` leaves the full attack delay in the stream.
+const CONFIGURATION_TIMEOUT: Duration = Duration::from_secs(2);
+// `latency=true` compensates the look-ahead delay: trimmed initial output
+// belongs to the delay buffer, and zero input at EOF drains buffered program
+// audio. At 48 kHz / 5 ms the compensation is 239 samples. Native head/tail
+// content and timestamp alignment still require measurement.
 // `level=false` is required because auto-level defaults to ON and would
 // normalise the limited output back up to 0 dB, destroying the preamp budget.
 const LIMITER: &str = "alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true";
 
 type Command<'a> = dyn FnMut(&[String]) -> Result<(), String> + 'a;
+
+#[path = "native_effects_commands.rs"]
+mod commands;
+use commands::{preamp, reassert, strings, width};
 
 /// Upstream mpv added a separate lavfi target argument in 0.37. The pinned
 /// macOS 0.36 build instead carries our `<target>:<command>` compatibility patch.
@@ -78,12 +80,13 @@ struct Configuration {
     gains: [f64; 10],
     width: f64,
     preamp: f64,
+    peak_gain: f64,
+    headroom: f64,
 }
 
 struct Ramp {
     target: Configuration,
-    from_gains: [f64; 10],
-    protected_preamp: f64,
+    from: Configuration,
     started: Instant,
     bypass: bool,
 }
@@ -97,6 +100,8 @@ pub(super) struct NativeEffects {
     reconfirm: bool,
     install_pending: bool,
     installed_at: Option<Instant>,
+    reconfiguration_observed: bool,
+    failure: Option<String>,
 }
 
 impl NativeEffects {
@@ -104,26 +109,6 @@ impl NativeEffects {
         Self {
             command_syntax,
             ..Self::default()
-        }
-    }
-
-    pub(super) fn reconfirm(&mut self) {
-        self.reconfirm = true;
-        self.ramp = None;
-        self.install_pending = false;
-        self.installed_at = None;
-    }
-
-    fn recover_stale_install(&mut self) {
-        if self.install_pending
-            && self
-                .installed_at
-                .is_some_and(|installed_at| installed_at.elapsed() >= TRANSITION)
-        {
-            // AUDIO_RECONFIG is normally the confirmation barrier. If mpv
-            // coalesces or omits it, let the next actor tick reconcile instead
-            // of leaving every later request pending forever.
-            self.reconfirm();
         }
     }
 
@@ -137,7 +122,6 @@ impl NativeEffects {
         if self.command_syntax == AfCommandSyntax::Unavailable {
             return Err("native audio filter command capability unavailable".to_owned());
         }
-        self.recover_stale_install();
         let target = Configuration {
             payload: payload.clone(),
             environment,
@@ -150,6 +134,11 @@ impl NativeEffects {
                 Payload::Eq(_) => 1.0,
             },
             preamp: analysis.effective_preamp_db,
+            peak_gain: analysis.peak_gain_db,
+            // Manual settings keep their strict floor during interpolation;
+            // automatic compensation is released continuously with the curve.
+            headroom: (analysis.effective_preamp_db + analysis.peak_gain_db.max(0.0))
+                .clamp(0.0, AUTO_HEADROOM_DB),
         };
         let changed = self.reconfirm
             || self.ramp.as_ref().map_or_else(
@@ -165,6 +154,7 @@ impl NativeEffects {
                 },
             );
         let result = (|| {
+            self.check_confirmation()?;
             if self.install_pending {
                 return Ok(false);
             }
@@ -201,27 +191,46 @@ impl NativeEffects {
         &mut self,
         mut command: impl FnMut(&[String]) -> Result<(), String>,
     ) -> Result<bool, String> {
-        self.recover_stale_install();
-        if self.install_pending {
-            return Ok(false);
+        let result = self.start_bypass(&mut command);
+        if result.is_err() {
+            let cleanup = self.remove(&mut command);
+            self.ramp = None;
+            self.current = None;
+            if cleanup.is_err() {
+                return Err("native effects failed and bypass could not be confirmed".to_owned());
+            }
+        }
+        result
+    }
+
+    fn start_bypass(&mut self, command: &mut Command<'_>) -> Result<bool, String> {
+        if self.install_pending || self.failure.is_some() {
+            // A cancelled or failed installation has no audible target to ramp.
+            // Remove it immediately, including a request whose reconfig is absent.
+            return self.remove(command).map(|()| true);
         }
         let Some(current) = self.current.clone() else {
-            return self.remove(&mut command).map(|()| true);
+            return self.remove(command).map(|()| true);
         };
+        if self.reconfirm {
+            reassert(self.command_syntax, &current, &self.labels, command)?;
+            self.reconfirm = false;
+        }
         if !self.ramp.as_ref().is_some_and(|ramp| ramp.bypass) {
             let mut target = current.clone();
             target.gains = [0.0; 10];
             target.width = 1.0;
             target.preamp = 0.0;
+            target.peak_gain = 0.0;
+            target.headroom = 0.0;
             self.ramp = Some(Ramp {
                 target,
-                from_gains: current.gains,
-                protected_preamp: current.preamp,
+                from: current,
                 started: Instant::now(),
                 bypass: true,
             });
         }
-        self.advance(&mut command)
+        self.advance(command)
     }
 
     fn start(
@@ -235,8 +244,6 @@ impl NativeEffects {
             current.environment == target.environment
                 && std::mem::discriminant(&current.payload)
                     == std::mem::discriminant(&target.payload)
-                && (matches!(target.payload, Payload::Eq(_))
-                    || current.width.to_bits() == target.width.to_bits())
         });
         if !compatible {
             // Reconfiguration is restricted to type/environment changes. The
@@ -246,46 +253,29 @@ impl NativeEffects {
             self.install(&target, active, command)?;
             let mut neutral = target.clone();
             neutral.gains = [0.0; 10];
-            neutral.preamp = target.preamp;
-            self.current = Some(neutral);
+            neutral.width = 1.0;
+            neutral.preamp = 0.0;
+            neutral.peak_gain = 0.0;
+            neutral.headroom = 0.0;
+            self.current = Some(neutral.clone());
             self.ramp = Some(Ramp {
                 target,
-                from_gains: [0.0; 10],
-                protected_preamp: self
-                    .current
-                    .as_ref()
-                    .expect("installed configuration")
-                    .preamp,
+                from: neutral,
                 started: Instant::now(),
                 bypass,
             });
             return Ok(true);
         }
         let current = self.current.as_ref().expect("installed configuration");
-        // Sum of each peaking stage's positive gain is a conservative bound
-        // throughout an interpolation, including interior overlap maxima. It
-        // shares AUTO_HEADROOM_DB with the steady-state preamp so the two
-        // cannot drift apart.
-        let risk = match target.payload {
-            Payload::Eq(_) => intermediate_gain_bound_db(
-                current
-                    .gains
-                    .iter()
-                    .zip(target.gains)
-                    .map(|(old, new)| old.max(new)),
-            ),
-            Payload::Spatial(_) => 20.0 * current.width.max(target.width).max(1.0).log10(),
-        };
-        let protected = current.preamp.min(target.preamp).min(if risk == 0.0 {
-            0.0
-        } else {
-            -(risk + AUTO_HEADROOM_DB)
-        });
-        preamp(self.command_syntax, protected, command)?;
+        if self.reconfirm {
+            // A rebuilt lavfi graph starts at the installation arguments, not
+            // the last runtime values. Restore the protective preamp before
+            // reasserting EQ gains even when the logical state is unchanged.
+            reassert(self.command_syntax, current, &self.labels, command)?;
+        }
         self.ramp = Some(Ramp {
             target,
-            from_gains: current.gains,
-            protected_preamp: protected,
+            from: current.clone(),
             started: Instant::now(),
             bypass,
         });
@@ -301,42 +291,87 @@ impl NativeEffects {
             .current
             .as_mut()
             .expect("ramp requires installed chain");
-        match current.payload {
+        let gains = std::array::from_fn(|index| {
+            ramp.from.gains[index] + fraction * (ramp.target.gains[index] - ramp.from.gains[index])
+        });
+        let next_width = ramp.from.width + fraction * (ramp.target.width - ramp.from.width);
+        let peak = match current.payload {
             Payload::Eq(_) => {
-                for index in 0..10 {
-                    if !self
-                        .labels
-                        .iter()
-                        .any(|label| label == &format!("echo_eq{index}"))
-                    {
-                        continue;
-                    }
-                    let gain = ramp.from_gains[index]
-                        + fraction * (ramp.target.gains[index] - ramp.from_gains[index]);
-                    self.command_syntax.send(
-                        &format!("echo_eq{index}"),
-                        &format!("eq{index}"),
-                        "gain",
-                        &format!("{gain:.15}"),
-                        command,
-                    )?;
-                    current.gains[index] = gain;
+                if gains
+                    .iter()
+                    .zip(current.gains)
+                    .all(|(left, right)| left.to_bits() == right.to_bits())
+                {
+                    current.peak_gain
+                } else if fraction >= 1.0 {
+                    ramp.target.peak_gain
+                } else {
+                    intermediate_eq_peak_db(gains, current.environment.sample_rate)
                 }
             }
-            // Runtime width changes are not enabled: the captured-PCM gate has
-            // not established that an `af-command` update reaches output. Keep
-            // the installed value in sync with the target until that is proven.
-            Payload::Spatial(_) => current.width = ramp.target.width,
+            Payload::Spatial(_) => 20.0 * next_width.max(1.0).log10(),
+        };
+        let headroom = ramp.from.headroom + fraction * (ramp.target.headroom - ramp.from.headroom);
+        let requested = ramp.from.preamp + fraction * (ramp.target.preamp - ramp.from.preamp);
+        let next_preamp = requested.min(-peak.max(0.0) + headroom);
+        match current.payload {
+            Payload::Eq(_) => {
+                // A peaking stage's response is monotonic in gain at every
+                // frequency. Reduce all stages first, then tighten preamp,
+                // then increase stages: intermediate command states cannot
+                // exceed the larger old/new response budget. Release preamp
+                // only after the reduced-risk curve has reached the backend.
+                for increasing in [false, true] {
+                    if increasing && next_preamp < current.preamp {
+                        preamp(self.command_syntax, next_preamp, command)?;
+                        current.preamp = next_preamp;
+                    }
+                    for (index, gain) in gains.iter().copied().enumerate() {
+                        if !self
+                            .labels
+                            .iter()
+                            .any(|label| label == &format!("echo_eq{index}"))
+                        {
+                            continue;
+                        }
+                        if (gain > current.gains[index]) != increasing {
+                            continue;
+                        }
+                        self.command_syntax.send(
+                            &format!("echo_eq{index}"),
+                            &format!("eq{index}"),
+                            "gain",
+                            &format!("{gain:.15}"),
+                            command,
+                        )?;
+                        current.gains[index] = gain;
+                    }
+                }
+            }
+            Payload::Spatial(_) => {
+                if next_preamp < current.preamp {
+                    preamp(self.command_syntax, next_preamp, command)?;
+                    current.preamp = next_preamp;
+                }
+                if current.width.to_bits() != next_width.to_bits() {
+                    width(self.command_syntax, next_width, command)?;
+                }
+                current.width = next_width;
+            }
         }
-        current.preamp = ramp.protected_preamp;
+        if current.preamp.to_bits() != next_preamp.to_bits() {
+            preamp(self.command_syntax, next_preamp, command)?;
+        }
+        current.preamp = next_preamp;
+        current.peak_gain = peak;
+        current.headroom = headroom;
         if fraction < 1.0 {
             return Ok(false);
         }
         let target = ramp.target.clone();
         let bypass = ramp.bypass;
-        // Reduce effect risk first, then release the protective preamp. The
-        // limiter remains present until the complete bypass ramp has finished.
-        preamp(self.command_syntax, target.preamp, command)?;
+        // The final tick already reaches target preamp; no end-of-ramp jump.
+        // The limiter remains present until the complete bypass has finished.
         self.current = Some(target);
         self.ramp = None;
         if bypass {
@@ -353,10 +388,7 @@ impl NativeEffects {
     ) -> Result<(), String> {
         let mut filters = vec![
             "@echo_float:lavfi=[aformat=sample_fmts=dblp]".to_owned(),
-            format!(
-                "@echo_preamp:lavfi=[volume@preamp=volume={:.15}:precision=double]",
-                10.0_f64.powf(target.preamp / 20.0)
-            ),
+            "@echo_preamp:lavfi=[volume@preamp=volume=1:precision=double]".to_owned(),
         ];
         let mut labels = vec!["echo_float".to_owned(), "echo_preamp".to_owned()];
         match target.payload {
@@ -370,10 +402,9 @@ impl NativeEffects {
                 }
             }
             Payload::Spatial(_) => {
-                filters.push(format!(
-                    "@echo_spatial:lavfi=[extrastereo@spatial=m={:.15}:c=false]",
-                    target.width
-                ));
+                // Width is fixed in the user payload. The internal neutral
+                // value only supports protected enable/bypass transitions.
+                filters.push("@echo_spatial:lavfi=[extrastereo@spatial=m=1:c=false]".to_owned());
                 labels.push("echo_spatial".to_owned());
             }
         }
@@ -382,6 +413,7 @@ impl NativeEffects {
         command(&strings(&["af", "add", &filters.join(",")]))?;
         self.labels = labels;
         self.install_pending = true;
+        self.reconfiguration_observed = false;
         self.installed_at = Some(Instant::now());
         Ok(())
     }
@@ -401,23 +433,19 @@ impl NativeEffects {
         self.ramp = None;
         self.install_pending = false;
         self.installed_at = None;
+        self.reconfiguration_observed = false;
+        self.failure = None;
         Ok(())
     }
 }
 
-fn preamp(syntax: AfCommandSyntax, db: f64, command: &mut Command<'_>) -> Result<(), String> {
-    syntax.send(
-        "echo_preamp",
-        "preamp",
-        "volume",
-        &format!("{:.15}", 10.0_f64.powf(db / 20.0)),
-        command,
-    )
-}
-fn strings(values: &[&str]) -> Vec<String> {
-    values.iter().map(|value| (*value).to_owned()).collect()
-}
+#[path = "native_effects_confirmation.rs"]
+mod confirmation;
 
 #[cfg(test)]
 #[path = "native_effects_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "native_effects_transition_tests.rs"]
+mod transition_tests;

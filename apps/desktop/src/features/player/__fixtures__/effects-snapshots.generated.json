@@ -1,0 +1,6083 @@
+{
+  "appliedSpatial": {
+    "document": {
+      "schemaVersion": 1,
+      "registryVersion": 1,
+      "userPresets": [],
+      "selection": {
+        "kind": "preset",
+        "id": "builtin:surround"
+      },
+      "retainedPayload": {
+        "kind": "spatial",
+        "width": 1.25,
+        "mix": 1.0
+      },
+      "draft": null,
+      "requestedEnabled": true
+    },
+    "runtime": {
+      "revision": 1,
+      "playbackEpoch": 1,
+      "persistenceStatus": "unsaved",
+      "applied": "applied",
+      "effectivePreampDb": -1.4382002601611283,
+      "activeBands": [false, false, false, false, false, false, false, false, false, false],
+      "processingRate": 48000,
+      "channelLayout": "stereo",
+      "reason": null
+    },
+    "presets": [
+      {
+        "id": "builtin:pop",
+        "name": "流行",
+        "description": "轻度突出低频和明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 2.0, 1.0, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, 0.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:rock",
+        "name": "摇滚",
+        "description": "突出低频和乐器存在感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [3.0, 4.0, 2.0, 0.0, -1.5, -2.0, -0.5, 2.0, 3.0, 2.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:classical",
+        "name": "古典",
+        "description": "接近中性，局部轻度提亮",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:jazz",
+        "name": "爵士",
+        "description": "增加厚度与轻度明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 1.5, 2.0, 1.5, 0.5, 0.0, 0.5, 1.0, 1.5, 1.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:electronic",
+        "name": "电子",
+        "description": "加强节奏低频和明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [2.0, 3.0, 2.0, -1.0, -1.5, -1.0, 0.0, 1.5, 2.0, 1.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:vocal",
+        "name": "清澈人声",
+        "description": "调整整曲音色与存在感，也会影响乐器",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [-1.5, -1.5, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, -1.0, 0.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:bass",
+        "name": "超重低音",
+        "description": "突出低频厚度与力度",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.5, 4.0, 3.0, 0.5, 0.0, -0.5, -0.5, -0.5, -1.0, -1.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:warm",
+        "name": "温暖轻柔",
+        "description": "柔和高频并增加低频厚度",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 1.5, 1.0, 0.5, 0.0, 0.0, -0.5, -1.0, -2.0, -2.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:retro",
+        "name": "华丽复古",
+        "description": "强调中低频并减弱高频",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [0.0, 1.0, 2.5, 3.0, 2.0, 0.5, -0.5, -2.0, -3.5, -5.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:surround",
+        "name": "空间感增强",
+        "description": "拓宽双声道空间感；需要双声道输入",
+        "payload": {
+          "kind": "spatial",
+          "width": 1.25,
+          "mix": 1.0
+        },
+        "source": "builtin"
+      }
+    ],
+    "responsePoints": [],
+    "referenceResponse": false,
+    "safePreampDb": -1.9382002601611283,
+    "editableBands": [true, true, true, true, true, true, true, true, true, true],
+    "responseRate": 48000
+  },
+  "autoProtected": {
+    "document": {
+      "schemaVersion": 1,
+      "registryVersion": 1,
+      "userPresets": [],
+      "selection": {
+        "kind": "draft"
+      },
+      "retainedPayload": {
+        "kind": "eq",
+        "gainsDb": [12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0],
+        "preampMode": "auto",
+        "requestedPreampDb": 0.0
+      },
+      "draft": {
+        "gainsDb": [12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0],
+        "preampMode": "auto",
+        "requestedPreampDb": 0.0
+      },
+      "requestedEnabled": true
+    },
+    "runtime": {
+      "revision": 1,
+      "playbackEpoch": 1,
+      "persistenceStatus": "unsaved",
+      "applied": "applied",
+      "effectivePreampDb": -17.902800140131575,
+      "activeBands": [true, true, true, true, true, true, true, true, true, true],
+      "processingRate": 48000,
+      "channelLayout": "stereo",
+      "reason": null
+    },
+    "presets": [
+      {
+        "id": "builtin:pop",
+        "name": "流行",
+        "description": "轻度突出低频和明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 2.0, 1.0, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, 0.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:rock",
+        "name": "摇滚",
+        "description": "突出低频和乐器存在感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [3.0, 4.0, 2.0, 0.0, -1.5, -2.0, -0.5, 2.0, 3.0, 2.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:classical",
+        "name": "古典",
+        "description": "接近中性，局部轻度提亮",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:jazz",
+        "name": "爵士",
+        "description": "增加厚度与轻度明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 1.5, 2.0, 1.5, 0.5, 0.0, 0.5, 1.0, 1.5, 1.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:electronic",
+        "name": "电子",
+        "description": "加强节奏低频和明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [2.0, 3.0, 2.0, -1.0, -1.5, -1.0, 0.0, 1.5, 2.0, 1.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:vocal",
+        "name": "清澈人声",
+        "description": "调整整曲音色与存在感，也会影响乐器",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [-1.5, -1.5, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, -1.0, 0.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:bass",
+        "name": "超重低音",
+        "description": "突出低频厚度与力度",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.5, 4.0, 3.0, 0.5, 0.0, -0.5, -0.5, -0.5, -1.0, -1.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:warm",
+        "name": "温暖轻柔",
+        "description": "柔和高频并增加低频厚度",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 1.5, 1.0, 0.5, 0.0, 0.0, -0.5, -1.0, -2.0, -2.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:retro",
+        "name": "华丽复古",
+        "description": "强调中低频并减弱高频",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [0.0, 1.0, 2.5, 3.0, 2.0, 0.5, -0.5, -2.0, -3.5, -5.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:surround",
+        "name": "空间感增强",
+        "description": "拓宽双声道空间感；需要双声道输入",
+        "payload": {
+          "kind": "spatial",
+          "width": 1.25,
+          "mix": 1.0
+        },
+        "source": "builtin"
+      }
+    ],
+    "responsePoints": [
+      {
+        "frequencyHz": 20.0,
+        "gainDb": -12.072010833898348
+      },
+      {
+        "frequencyHz": 20.702843333586877,
+        "gainDb": -11.55004065798381
+      },
+      {
+        "frequencyHz": 21.430386104752127,
+        "gainDb": -10.977365061877755
+      },
+      {
+        "frequencyHz": 22.18349630524802,
+        "gainDb": -10.349684300238632
+      },
+      {
+        "frequencyHz": 22.963072429937657,
+        "gainDb": -9.663121351592519
+      },
+      {
+        "frequencyHz": 23.77004454874037,
+        "gainDb": -8.91492946989065
+      },
+      {
+        "frequencyHz": 24.605375416247632,
+        "gainDb": -8.104750772029996
+      },
+      {
+        "frequencyHz": 25.470061620333233,
+        "gainDb": -7.236785838043227
+      },
+      {
+        "frequencyHz": 26.36513477112814,
+        "gainDb": -6.323351912404787
+      },
+      {
+        "frequencyHz": 27.29166273177849,
+        "gainDb": -5.390185106943189
+      },
+      {
+        "frequencyHz": 28.250750892455088,
+        "gainDb": -4.482824623852194
+      },
+      {
+        "frequencyHz": 29.243543489134364,
+        "gainDb": -3.6703693426630473
+      },
+      {
+        "frequencyHz": 30.271224968724162,
+        "gainDb": -3.0380113733469596
+      },
+      {
+        "frequencyHz": 31.33502140216298,
+        "gainDb": -2.6599546677444277
+      },
+      {
+        "frequencyHz": 32.4362019471786,
+        "gainDb": -2.561730096219655
+      },
+      {
+        "frequencyHz": 33.57608036245121,
+        "gainDb": -2.7035621145928648
+      },
+      {
+        "frequencyHz": 34.75601657498751,
+        "gainDb": -3.002402129099691
+      },
+      {
+        "frequencyHz": 35.97741830257576,
+        "gainDb": -3.3696484999656295
+      },
+      {
+        "frequencyHz": 37.241742733257354,
+        "gainDb": -3.73501887789406
+      },
+      {
+        "frequencyHz": 38.55049826381872,
+        "gainDb": -4.051510408258084
+      },
+      {
+        "frequencyHz": 39.905246299377595,
+        "gainDb": -4.290775503038319
+      },
+      {
+        "frequencyHz": 41.307603116210586,
+        "gainDb": -4.436794111053262
+      },
+      {
+        "frequencyHz": 42.75924179004464,
+        "gainDb": -4.480926174414282
+      },
+      {
+        "frequencyHz": 44.261894192112756,
+        "gainDb": -4.418786295337815
+      },
+      {
+        "frequencyHz": 45.81735305535546,
+        "gainDb": -4.248606958035396
+      },
+      {
+        "frequencyHz": 47.4274741132331,
+        "gainDb": -3.970756922271809
+      },
+      {
+        "frequencyHz": 49.09417831370061,
+        "gainDb": -3.5882991318178856
+      },
+      {
+        "frequencyHz": 50.8194541109861,
+        "gainDb": -3.108725582598133
+      },
+      {
+        "frequencyHz": 52.60535983790764,
+        "gainDb": -2.547215754993527
+      },
+      {
+        "frequencyHz": 54.45402616155825,
+        "gainDb": -1.9317272264805805
+      },
+      {
+        "frequencyHz": 56.367658625289074,
+        "gainDb": -1.3093358146330054
+      },
+      {
+        "frequencyHz": 58.348540280023336,
+        "gainDb": -0.7503834602650699
+      },
+      {
+        "frequencyHz": 60.39903440804032,
+        "gainDb": -0.34213245354435173
+      },
+      {
+        "frequencyHz": 62.5215873424791,
+        "gainDb": -0.1630651252385391
+      },
+      {
+        "frequencyHz": 64.71873138592565,
+        "gainDb": -0.2450780666727681
+      },
+      {
+        "frequencyHz": 66.99308783156552,
+        "gainDb": -0.5544182294597277
+      },
+      {
+        "frequencyHz": 69.34737009050633,
+        "gainDb": -1.0114336433151756
+      },
+      {
+        "frequencyHz": 71.78438692900104,
+        "gainDb": -1.5283832325311906
+      },
+      {
+        "frequencyHz": 74.3070458194345,
+        "gainDb": -2.034728257235157
+      },
+      {
+        "frequencyHz": 76.91835640907071,
+        "gainDb": -2.4831575398418604
+      },
+      {
+        "frequencyHz": 79.62143411069945,
+        "gainDb": -2.8453248741396884
+      },
+      {
+        "frequencyHz": 82.41950381946603,
+        "gainDb": -3.1055073014138106
+      },
+      {
+        "frequencyHz": 85.31590376031852,
+        "gainDb": -3.2555435353147857
+      },
+      {
+        "frequencyHz": 88.3140894706625,
+        "gainDb": -3.2916020898286042
+      },
+      {
+        "frequencyHz": 91.41763792297502,
+        "gainDb": -3.2124642621718937
+      },
+      {
+        "frequencyHz": 94.63025179229611,
+        "gainDb": -3.01897814242556
+      },
+      {
+        "frequencyHz": 97.95576387368925,
+        "gainDb": -2.7145510332077336
+      },
+      {
+        "frequencyHz": 101.39814165494086,
+        "gainDb": -2.3068008273406413
+      },
+      {
+        "frequencyHz": 104.9614920499545,
+        "gainDb": -1.810702851189383
+      },
+      {
+        "frequencyHz": 108.65006629848664,
+        "gainDb": -1.2535608050443798
+      },
+      {
+        "frequencyHz": 112.46826503806983,
+        "gainDb": -0.6813296043164954
+      },
+      {
+        "frequencyHz": 116.42064355417429,
+        "gainDb": -0.16312747784056825
+      },
+      {
+        "frequencyHz": 120.51191721487156,
+        "gainDb": 0.21404146767406118
+      },
+      {
+        "frequencyHz": 124.74696709648386,
+        "gainDb": 0.36959172926268735
+      },
+      {
+        "frequencyHz": 129.13084580693112,
+        "gainDb": 0.2671415730103277
+      },
+      {
+        "frequencyHz": 133.66878351372296,
+        "gainDb": -0.06408259158107654
+      },
+      {
+        "frequencyHz": 138.36619418378731,
+        "gainDb": -0.5465824091277476
+      },
+      {
+        "frequencyHz": 143.22868204258037,
+        "gainDb": -1.0923142916910287
+      },
+      {
+        "frequencyHz": 148.26204826018346,
+        "gainDb": -1.6293611275786937
+      },
+      {
+        "frequencyHz": 153.47229787236378,
+        "gainDb": -2.1090576879159055
+      },
+      {
+        "frequencyHz": 158.86564694485628,
+        "gainDb": -2.502115173249612
+      },
+      {
+        "frequencyHz": 164.44852998941423,
+        "gainDb": -2.792267501818099
+      },
+      {
+        "frequencyHz": 170.2276076404753,
+        "gainDb": -2.9710863729282284
+      },
+      {
+        "frequencyHz": 176.20977460160282,
+        "gainDb": -3.0346313082471728
+      },
+      {
+        "frequencyHz": 182.40216787118197,
+        "gainDb": -2.9816420830763963
+      },
+      {
+        "frequencyHz": 188.8121752571847,
+        "gainDb": -2.8129200863258905
+      },
+      {
+        "frequencyHz": 195.44744419116216,
+        "gainDb": -2.5317490833218166
+      },
+      {
+        "frequencyHz": 202.31589085197976,
+        "gainDb": -2.1454588696315593
+      },
+      {
+        "frequencyHz": 209.42570961017995,
+        "gainDb": -1.6684574392657687
+      },
+      {
+        "frequencyHz": 216.78538280424067,
+        "gainDb": -1.1270772190847325
+      },
+      {
+        "frequencyHz": 224.40369086039266,
+        "gainDb": -0.5658652894339049
+      },
+      {
+        "frequencyHz": 232.28972276806854,
+        "gainDb": -0.052422150529597644
+      },
+      {
+        "frequencyHz": 240.45288692348254,
+        "gainDb": 0.3268571102838642
+      },
+      {
+        "frequencyHz": 248.902922354277,
+        "gainDb": 0.48967840599181756
+      },
+      {
+        "frequencyHz": 257.6499103386268,
+        "gainDb": 0.39547593486485155
+      },
+      {
+        "frequencyHz": 266.7042864326648,
+        "gainDb": 0.06905102181222844
+      },
+      {
+        "frequencyHz": 276.076852920577,
+        "gainDb": -0.41424894156592984
+      },
+      {
+        "frequencyHz": 285.7787917022206,
+        "gainDb": -0.9660236241942712
+      },
+      {
+        "frequencyHz": 295.8216776336415,
+        "gainDb": -1.5128466435732193
+      },
+      {
+        "frequencyHz": 306.21749233640605,
+        "gainDb": -2.0045385082092864
+      },
+      {
+        "frequencyHz": 316.97863849222273,
+        "gainDb": -2.4107149104582586
+      },
+      {
+        "frequencyHz": 328.1179546399079,
+        "gainDb": -2.714432738229144
+      },
+      {
+        "frequencyHz": 339.6487304923488,
+        "gainDb": -2.906881133676773
+      },
+      {
+        "frequencyHz": 351.5847227917385,
+        "gainDb": -2.983909800487357
+      },
+      {
+        "frequencyHz": 363.94017172199665,
+        "gainDb": -2.9441277017261704
+      },
+      {
+        "frequencyHz": 376.72981789796006,
+        "gainDb": -2.7882098534758057
+      },
+      {
+        "frequencyHz": 389.9689199516091,
+        "gainDb": -2.5192459038574224
+      },
+      {
+        "frequencyHz": 403.6732727363122,
+        "gainDb": -2.1442170457447034
+      },
+      {
+        "frequencyHz": 417.8592261708079,
+        "gainDb": -1.676915950126002
+      },
+      {
+        "frequencyHz": 432.54370474540406,
+        "gainDb": -1.1426707198265902
+      },
+      {
+        "frequencyHz": 447.74422771366795,
+        "gainDb": -0.5845992314381299
+      },
+      {
+        "frequencyHz": 463.4789299936958,
+        "gainDb": -0.06875496990528518
+      },
+      {
+        "frequencyHz": 479.76658380389813,
+        "gainDb": 0.3191479586857149
+      },
+      {
+        "frequencyHz": 496.62662105911414,
+        "gainDb": 0.4952213591861607
+      },
+      {
+        "frequencyHz": 514.0791565537727,
+        "gainDb": 0.4147848539272303
+      },
+      {
+        "frequencyHz": 532.1450119597619,
+        "gainDb": 0.09817047167342707
+      },
+      {
+        "frequencyHz": 550.8457406676332,
+        "gainDb": -0.3815029912160526
+      },
+      {
+        "frequencyHz": 570.2036535007818,
+        "gainDb": -0.9354862279119764
+      },
+      {
+        "frequencyHz": 590.2418453332771,
+        "gainDb": -1.4887848140527602
+      },
+      {
+        "frequencyHz": 610.9842226431026,
+        "gainDb": -1.9896302687201466
+      },
+      {
+        "frequencyHz": 632.4555320336758,
+        "gainDb": -2.406480994128726
+      },
+      {
+        "frequencyHz": 654.6813897576765,
+        "gainDb": -2.7216718714694093
+      },
+      {
+        "frequencyHz": 677.6883122784051,
+        "gainDb": -2.925975754820252
+      },
+      {
+        "frequencyHz": 701.5037479051362,
+        "gainDb": -3.0150038242033688
+      },
+      {
+        "frequencyHz": 726.1561095402028,
+        "gainDb": -2.9872059609352313
+      },
+      {
+        "frequencyHz": 751.6748085768884,
+        "gainDb": -2.843100047751749
+      },
+      {
+        "frequencyHz": 778.0902899885614,
+        "gainDb": -2.5855470466359147
+      },
+      {
+        "frequencyHz": 805.4340686509183,
+        "gainDb": -2.2211422313457003
+      },
+      {
+        "frequencyHz": 833.7387669406711,
+        "gainDb": -1.763028481919065
+      },
+      {
+        "frequencyHz": 863.0381536555307,
+        "gainDb": -1.235511787367539
+      },
+      {
+        "frequencyHz": 893.3671843019265,
+        "gainDb": -0.6803050891773843
+      },
+      {
+        "frequencyHz": 924.7620427985208,
+        "gainDb": -0.16201411247107345
+      },
+      {
+        "frequencyHz": 957.2601846452769,
+        "gainDb": 0.23413409289555887
+      },
+      {
+        "frequencyHz": 990.90038160958,
+        "gainDb": 0.4223947909999204
+      },
+      {
+        "frequencyHz": 1025.7227679827295,
+        "gainDb": 0.3537335137360742
+      },
+      {
+        "frequencyHz": 1061.7688884619765,
+        "gainDb": 0.04392902683024147
+      },
+      {
+        "frequencyHz": 1099.0817477152489,
+        "gainDb": -0.43599106296210977
+      },
+      {
+        "frequencyHz": 1137.7058616876825,
+        "gainDb": -0.9966613552599171
+      },
+      {
+        "frequencyHz": 1177.6873107111778,
+        "gainDb": -1.5612725243807013
+      },
+      {
+        "frequencyHz": 1219.0737944803382,
+        "gainDb": -2.0763119421248746
+      },
+      {
+        "frequencyHz": 1261.9146889603862,
+        "gainDb": -2.50900679400859
+      },
+      {
+        "frequencyHz": 1306.2611052949446,
+        "gainDb": -2.840940480718949
+      },
+      {
+        "frequencyHz": 1352.1659507839636,
+        "gainDb": -3.0624532592518907
+      },
+      {
+        "frequencyHz": 1399.6839920045468,
+        "gainDb": -3.1688942941357165
+      },
+      {
+        "frequencyHz": 1448.8719201499803,
+        "gainDb": -3.1585107335434905
+      },
+      {
+        "frequencyHz": 1499.7884186649117,
+        "gainDb": -3.031590247160622
+      },
+      {
+        "frequencyHz": 1552.4942332573835,
+        "gainDb": -2.790655909781483
+      },
+      {
+        "frequencyHz": 1607.0522443712346,
+        "gainDb": -2.4417705372151683
+      },
+      {
+        "frequencyHz": 1663.5275422053423,
+        "gainDb": -1.9972577031791712
+      },
+      {
+        "frequencyHz": 1721.9875043692016,
+        "gainDb": -1.4802615894278723
+      },
+      {
+        "frequencyHz": 1782.5018762674913,
+        "gainDb": -0.9311098515812155
+      },
+      {
+        "frequencyHz": 1845.1428543095267,
+        "gainDb": -0.4133742420611739
+      },
+      {
+        "frequencyHz": 1909.9851720428724,
+        "gainDb": -0.01285815511607069
+      },
+      {
+        "frequencyHz": 1977.106189313878,
+        "gainDb": 0.18118914807426734
+      },
+      {
+        "frequencyHz": 2046.585984561509,
+        "gainDb": 0.11390878829327633
+      },
+      {
+        "frequencyHz": 2118.5074503545784,
+        "gainDb": -0.20373516754630572
+      },
+      {
+        "frequencyHz": 2192.956392286371,
+        "gainDb": -0.7017270699940283
+      },
+      {
+        "frequencyHz": 2270.021631344631,
+        "gainDb": -1.2885574340975374
+      },
+      {
+        "frequencyHz": 2349.795109879058,
+        "gainDb": -1.884445990102325
+      },
+      {
+        "frequencyHz": 2432.372001292735,
+        "gainDb": -2.43354000486889
+      },
+      {
+        "frequencyHz": 2517.8508235883337,
+        "gainDb": -2.901623416484483
+      },
+      {
+        "frequencyHz": 2606.3335569045976,
+        "gainDb": -3.2694867019863665
+      },
+      {
+        "frequencyHz": 2697.9257651833063,
+        "gainDb": -3.5270242229595787
+      },
+      {
+        "frequencyHz": 2792.7367221118748,
+        "gainDb": -3.669257468606574
+      },
+      {
+        "frequencyHz": 2890.8795414918545,
+        "gainDb": -3.6940644393444266
+      },
+      {
+        "frequencyHz": 2992.4713121888662,
+        "gainDb": -3.6011986578173136
+      },
+      {
+        "frequencyHz": 3097.633237824962,
+        "gainDb": -3.3923714322757554
+      },
+      {
+        "frequencyHz": 3206.490781380083,
+        "gainDb": -3.0724501045665065
+      },
+      {
+        "frequencyHz": 3319.173814875121,
+        "gainDb": -2.652119132955276
+      },
+      {
+        "frequencyHz": 3435.816774315176,
+        "gainDb": -2.1525656079101356
+      },
+      {
+        "frequencyHz": 3556.5588200778457,
+        "gainDb": -1.612481644647783
+      },
+      {
+        "frequencyHz": 3681.544002937912,
+        "gainDb": -1.0957753491926283
+      },
+      {
+        "frequencyHz": 3810.9214359264943,
+        "gainDb": -0.6932181886843765
+      },
+      {
+        "frequencyHz": 3944.845472229708,
+        "gainDb": -0.5050933527598893
+      },
+      {
+        "frequencyHz": 4083.475889339059,
+        "gainDb": -0.5992629822883906
+      },
+      {
+        "frequencyHz": 4226.978079673294,
+        "gainDb": -0.9710221439477174
+      },
+      {
+        "frequencyHz": 4375.523247899106,
+        "gainDb": -1.546191136630437
+      },
+      {
+        "frequencyHz": 4529.28861518612,
+        "gainDb": -2.2238818992073277
+      },
+      {
+        "frequencyHz": 4688.457630639845,
+        "gainDb": -2.9161142708695618
+      },
+      {
+        "frequencyHz": 4853.220190164832,
+        "gainDb": -3.562205770168827
+      },
+      {
+        "frequencyHz": 5023.772863019161,
+        "gainDb": -4.125763164790476
+      },
+      {
+        "frequencyHz": 5200.319126330545,
+        "gainDb": -4.586771095126858
+      },
+      {
+        "frequencyHz": 5383.069607853833,
+        "gainDb": -4.934750343471617
+      },
+      {
+        "frequencyHz": 5572.242337259539,
+        "gainDb": -5.164215761561856
+      },
+      {
+        "frequencyHz": 5768.06300625321,
+        "gainDb": -5.272045771366635
+      },
+      {
+        "frequencyHz": 5970.765237835917,
+        "gainDb": -5.256207952277537
+      },
+      {
+        "frequencyHz": 6180.5908650271795,
+        "gainDb": -5.115537971679867
+      },
+      {
+        "frequencyHz": 6397.790219382795,
+        "gainDb": -4.850622672590315
+      },
+      {
+        "frequencyHz": 6622.62242965182,
+        "gainDb": -4.4662804888838235
+      },
+      {
+        "frequencyHz": 6855.355730929005,
+        "gainDb": -3.9767142808898654
+      },
+      {
+        "frequencyHz": 7096.267784671508,
+        "gainDb": -3.4149387935953293
+      },
+      {
+        "frequencyHz": 7345.6460099616925,
+        "gainDb": -2.847207744857787
+      },
+      {
+        "frequencyHz": 7603.787926411223,
+        "gainDb": -2.386622767206056
+      },
+      {
+        "frequencyHz": 7871.001509115549,
+        "gainDb": -2.183436102664686
+      },
+      {
+        "frequencyHz": 8147.605556082254,
+        "gainDb": -2.362574908959205
+      },
+      {
+        "frequencyHz": 8433.930068571646,
+        "gainDb": -2.937109631654657
+      },
+      {
+        "frequencyHz": 8730.316644803319,
+        "gainDb": -3.7976681808988104
+      },
+      {
+        "frequencyHz": 9037.118887498447,
+        "gainDb": -4.7923504301541335
+      },
+      {
+        "frequencyHz": 9354.702825743965,
+        "gainDb": -5.799054632111211
+      },
+      {
+        "frequencyHz": 9683.447351681987,
+        "gainDb": -6.743422410404703
+      },
+      {
+        "frequencyHz": 10023.744672545447,
+        "gainDb": -7.587164262414346
+      },
+      {
+        "frequencyHz": 10376.000778579222,
+        "gainDb": -8.312754505422205
+      },
+      {
+        "frequencyHz": 10740.635927405057,
+        "gainDb": -8.912680537701606
+      },
+      {
+        "frequencyHz": 11118.085145408075,
+        "gainDb": -9.383079469276222
+      },
+      {
+        "frequencyHz": 11508.798746743141,
+        "gainDb": -9.720050480491746
+      },
+      {
+        "frequencyHz": 11913.242870580214,
+        "gainDb": -9.917303959213664
+      },
+      {
+        "frequencyHz": 12331.900037229647,
+        "gainDb": -9.964331436535227
+      },
+      {
+        "frequencyHz": 12765.26972381098,
+        "gainDb": -9.844650573831462
+      },
+      {
+        "frequencyHz": 13213.868960151915,
+        "gainDb": -9.534026054831571
+      },
+      {
+        "frequencyHz": 13678.23294562858,
+        "gainDb": -8.999337445049935
+      },
+      {
+        "frequencyHz": 14158.915687682755,
+        "gainDb": -8.201470429985878
+      },
+      {
+        "frequencyHz": 14656.490662778078,
+        "gainDb": -7.115912899114637
+      },
+      {
+        "frequencyHz": 15171.551500583671,
+        "gainDb": -5.820892551249891
+      },
+      {
+        "frequencyHz": 15704.712692201432,
+        "gainDb": -4.764751819292341
+      },
+      {
+        "frequencyHz": 16256.610323281982,
+        "gainDb": -4.942029104560948
+      },
+      {
+        "frequencyHz": 16827.9028329039,
+        "gainDb": -6.6729366627565465
+      },
+      {
+        "frequencyHz": 17419.271799121612,
+        "gainDb": -8.987881363772601
+      },
+      {
+        "frequencyHz": 18031.422752119135,
+        "gainDb": -11.151963400955985
+      },
+      {
+        "frequencyHz": 18665.086015939818,
+        "gainDb": -12.960560562838651
+      },
+      {
+        "frequencyHz": 19321.017579796266,
+        "gainDb": -14.408942301826134
+      },
+      {
+        "frequencyHz": 20000.0,
+        "gainDb": -15.540564746586309
+      }
+    ],
+    "referenceResponse": false,
+    "safePreampDb": -18.402800140131575,
+    "editableBands": [true, true, true, true, true, true, true, true, true, true],
+    "responseRate": 48000
+  },
+  "bypassedLowRate": {
+    "document": {
+      "schemaVersion": 1,
+      "registryVersion": 1,
+      "userPresets": [],
+      "selection": {
+        "kind": "none"
+      },
+      "retainedPayload": {
+        "kind": "eq",
+        "gainsDb": [1.0, 2.0, 1.0, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, 0.0],
+        "preampMode": "auto",
+        "requestedPreampDb": 0.0
+      },
+      "draft": null,
+      "requestedEnabled": false
+    },
+    "runtime": {
+      "revision": 2,
+      "playbackEpoch": 1,
+      "persistenceStatus": "unsaved",
+      "applied": "pending",
+      "effectivePreampDb": null,
+      "activeBands": [true, true, true, true, true, true, true, true, true, false],
+      "processingRate": 22050,
+      "channelLayout": "stereo",
+      "reason": null
+    },
+    "presets": [
+      {
+        "id": "builtin:pop",
+        "name": "流行",
+        "description": "轻度突出低频和明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 2.0, 1.0, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, 0.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:rock",
+        "name": "摇滚",
+        "description": "突出低频和乐器存在感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [3.0, 4.0, 2.0, 0.0, -1.5, -2.0, -0.5, 2.0, 3.0, 2.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:classical",
+        "name": "古典",
+        "description": "接近中性，局部轻度提亮",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:jazz",
+        "name": "爵士",
+        "description": "增加厚度与轻度明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 1.5, 2.0, 1.5, 0.5, 0.0, 0.5, 1.0, 1.5, 1.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:electronic",
+        "name": "电子",
+        "description": "加强节奏低频和明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [2.0, 3.0, 2.0, -1.0, -1.5, -1.0, 0.0, 1.5, 2.0, 1.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:vocal",
+        "name": "清澈人声",
+        "description": "调整整曲音色与存在感，也会影响乐器",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [-1.5, -1.5, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, -1.0, 0.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:bass",
+        "name": "超重低音",
+        "description": "突出低频厚度与力度",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.5, 4.0, 3.0, 0.5, 0.0, -0.5, -0.5, -0.5, -1.0, -1.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:warm",
+        "name": "温暖轻柔",
+        "description": "柔和高频并增加低频厚度",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 1.5, 1.0, 0.5, 0.0, 0.0, -0.5, -1.0, -2.0, -2.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:retro",
+        "name": "华丽复古",
+        "description": "强调中低频并减弱高频",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [0.0, 1.0, 2.5, 3.0, 2.0, 0.5, -0.5, -2.0, -3.5, -5.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:surround",
+        "name": "空间感增强",
+        "description": "拓宽双声道空间感；需要双声道输入",
+        "payload": {
+          "kind": "spatial",
+          "width": 1.25,
+          "mix": 1.0
+        },
+        "source": "builtin"
+      }
+    ],
+    "responsePoints": [
+      {
+        "frequencyHz": 20.0,
+        "gainDb": -1.3260712404878756
+      },
+      {
+        "frequencyHz": 20.63041437888513,
+        "gainDb": -1.2801704201226183
+      },
+      {
+        "frequencyHz": 21.28069987222552,
+        "gainDb": -1.2298091751872327
+      },
+      {
+        "frequencyHz": 21.951482831835015,
+        "gainDb": -1.1747533305911233
+      },
+      {
+        "frequencyHz": 22.64340935258696,
+        "gainDb": -1.1148832177719774
+      },
+      {
+        "frequencyHz": 23.3571458947296,
+        "gainDb": -1.050261052315203
+      },
+      {
+        "frequencyHz": 24.09337992581737,
+        "gainDb": -0.981215800845468
+      },
+      {
+        "frequencyHz": 24.85282058287625,
+        "gainDb": -0.9084406811621774
+      },
+      {
+        "frequencyHz": 25.63619935544113,
+        "gainDb": -0.8330897727896905
+      },
+      {
+        "frequencyHz": 26.444270790122918,
+        "gainDb": -0.7568480161142968
+      },
+      {
+        "frequencyHz": 27.277813217384196,
+        "gainDb": -0.6819359440892963
+      },
+      {
+        "frequencyHz": 28.137629501223287,
+        "gainDb": -0.6110039557000579
+      },
+      {
+        "frequencyHz": 29.02454781248897,
+        "gainDb": -0.54688183870402
+      },
+      {
+        "frequencyHz": 29.939422426570573,
+        "gainDb": -0.49218690193501025
+      },
+      {
+        "frequencyHz": 30.883134546231872,
+        "gainDb": -0.4488548798801386
+      },
+      {
+        "frequencyHz": 31.856593150381304,
+        "gainDb": -0.41771611287330357
+      },
+      {
+        "frequencyHz": 32.860735869596006,
+        "gainDb": -0.39825548193942617
+      },
+      {
+        "frequencyHz": 33.89652988924299,
+        "gainDb": -0.38864339061676345
+      },
+      {
+        "frequencyHz": 34.96497288106741,
+        "gainDb": -0.3860255473427594
+      },
+      {
+        "frequencyHz": 36.06709396414509,
+        "gainDb": -0.38696719768635623
+      },
+      {
+        "frequencyHz": 37.203954696124995,
+        "gainDb": -0.3879127599307126
+      },
+      {
+        "frequencyHz": 38.3766500957164,
+        "gainDb": -0.3855518192461145
+      },
+      {
+        "frequencyHz": 39.586309697405554,
+        "gainDb": -0.3770455041101717
+      },
+      {
+        "frequencyHz": 40.834098639417775,
+        "gainDb": -0.3601249147440664
+      },
+      {
+        "frequencyHz": 42.12121878597291,
+        "gainDb": -0.33310526225288406
+      },
+      {
+        "frequencyHz": 43.4489098849151,
+        "gainDb": -0.2948661568565176
+      },
+      {
+        "frequencyHz": 44.81845076183184,
+        "gainDb": -0.24484025268683873
+      },
+      {
+        "frequencyHz": 46.23116055181255,
+        "gainDb": -0.1830388050192786
+      },
+      {
+        "frequencyHz": 47.68839997003303,
+        "gainDb": -0.11012828102054395
+      },
+      {
+        "frequencyHz": 49.19157262238972,
+        "gainDb": -0.027556975224012126
+      },
+      {
+        "frequencyHz": 50.742126357446054,
+        "gainDb": 0.06228794396508075
+      },
+      {
+        "frequencyHz": 52.34155466099307,
+        "gainDb": 0.15593670637318935
+      },
+      {
+        "frequencyHz": 53.99139809456767,
+        "gainDb": 0.2487785558592761
+      },
+      {
+        "frequencyHz": 55.69324577931401,
+        "gainDb": 0.3351833537917335
+      },
+      {
+        "frequencyHz": 57.448736926617165,
+        "gainDb": 0.40889441916722413
+      },
+      {
+        "frequencyHz": 59.25956241698359,
+        "gainDb": 0.46372949114780004
+      },
+      {
+        "frequencyHz": 61.12746642868896,
+        "gainDb": 0.4945123236687623
+      },
+      {
+        "frequencyHz": 63.05424811776214,
+        "gainDb": 0.4980176771455618
+      },
+      {
+        "frequencyHz": 65.04176335092355,
+        "gainDb": 0.47363011842720315
+      },
+      {
+        "frequencyHz": 67.09192649314686,
+        "gainDb": 0.42347295422160425
+      },
+      {
+        "frequencyHz": 69.20671225156606,
+        "gainDb": 0.35195668769074695
+      },
+      {
+        "frequencyHz": 71.38815757750369,
+        "gainDb": 0.26491994702894317
+      },
+      {
+        "frequencyHz": 73.6383636284525,
+        "gainDb": 0.1686578879862759
+      },
+      {
+        "frequencyHz": 75.9594977918999,
+        "gainDb": 0.0691035553123529
+      },
+      {
+        "frequencyHz": 78.35379577294526,
+        "gainDb": -0.0286991411019899
+      },
+      {
+        "frequencyHz": 80.82356374771996,
+        "gainDb": -0.12082499055380236
+      },
+      {
+        "frequencyHz": 83.37118058468504,
+        "gainDb": -0.2044748656906874
+      },
+      {
+        "frequencyHz": 85.99910013594574,
+        "gainDb": -0.27785881745143826
+      },
+      {
+        "frequencyHz": 88.70985360078987,
+        "gainDb": -0.3400383249976435
+      },
+      {
+        "frequencyHz": 91.5060519637265,
+        "gainDb": -0.3907834941464823
+      },
+      {
+        "frequencyHz": 94.39038850937365,
+        "gainDb": -0.43047448491828844
+      },
+      {
+        "frequencyHz": 97.36564141661681,
+        "gainDb": -0.4600556413659085
+      },
+      {
+        "frequencyHz": 100.43467643453725,
+        "gainDb": -0.48103453909680205
+      },
+      {
+        "frequencyHz": 103.60044964268765,
+        "gainDb": -0.49550361943426346
+      },
+      {
+        "frequencyHz": 106.86601029837341,
+        "gainDb": -0.5061478226906051
+      },
+      {
+        "frequencyHz": 110.23450377368248,
+        "gainDb": -0.5161901178174069
+      },
+      {
+        "frequencyHz": 113.70917458509231,
+        "gainDb": -0.5292257113978787
+      },
+      {
+        "frequencyHz": 117.29336951857236,
+        "gainDb": -0.5489158960379048
+      },
+      {
+        "frequencyHz": 120.99054085319212,
+        "gainDb": -0.5785601964325211
+      },
+      {
+        "frequencyHz": 124.80424968633918,
+        "gainDb": -0.6206302381094588
+      },
+      {
+        "frequencyHz": 128.7381693637511,
+        "gainDb": -0.6763981865943762
+      },
+      {
+        "frequencyHz": 132.796089017664,
+        "gainDb": -0.7457877578771492
+      },
+      {
+        "frequencyHz": 136.98191721648624,
+        "gainDb": -0.827504225624731
+      },
+      {
+        "frequencyHz": 141.29968572951253,
+        "gainDb": -0.9193955877208295
+      },
+      {
+        "frequencyHz": 145.75355341030428,
+        "gainDb": -1.018919577300041
+      },
+      {
+        "frequencyHz": 150.34781020247718,
+        "gainDb": -1.1235788429328992
+      },
+      {
+        "frequencyHz": 155.0868812717539,
+        "gainDb": -1.231231294755272
+      },
+      {
+        "frequencyHz": 159.97533126826212,
+        "gainDb": -1.3402464591169174
+      },
+      {
+        "frequencyHz": 165.01786872318337,
+        "gainDb": -1.4495275042990254
+      },
+      {
+        "frequencyHz": 170.219350583987,
+        "gainDb": -1.558439798203337
+      },
+      {
+        "frequencyHz": 175.58478689261872,
+        "gainDb": -1.6666858652723882
+      },
+      {
+        "frequencyHz": 181.11934561114816,
+        "gainDb": -1.7741550834279174
+      },
+      {
+        "frequencyHz": 186.82835759952482,
+        "gainDb": -1.8807640219822845
+      },
+      {
+        "frequencyHz": 192.71732175023652,
+        "gainDb": -1.9862952953867876
+      },
+      {
+        "frequencyHz": 198.79191028481557,
+        "gainDb": -2.0902412932772507
+      },
+      {
+        "frequencyHz": 205.0579742172951,
+        "gainDb": -2.191664452852322
+      },
+      {
+        "frequencyHz": 211.52154898987706,
+        "gainDb": -2.2890966976552996
+      },
+      {
+        "frequencyHz": 218.18886028624078,
+        "gainDb": -2.380513581311562
+      },
+      {
+        "frequencyHz": 225.06633002809104,
+        "gainDb": -2.46342579670654
+      },
+      {
+        "frequencyHz": 232.16058256072176,
+        "gainDb": -2.5351205985255203
+      },
+      {
+        "frequencyHz": 239.47845103355317,
+        "gainDb": -2.5930486973412634
+      },
+      {
+        "frequencyHz": 247.0269839817877,
+        "gainDb": -2.6352916660358012
+      },
+      {
+        "frequencyHz": 254.8134521155249,
+        "gainDb": -2.660986402882223
+      },
+      {
+        "frequencyHz": 262.8453553228742,
+        "gainDb": -2.6705668996134815
+      },
+      {
+        "frequencyHz": 271.1304298938097,
+        "gainDb": -2.6657347725443725
+      },
+      {
+        "frequencyHz": 279.676655971728,
+        "gainDb": -2.649170230677557
+      },
+      {
+        "frequencyHz": 288.49226523988233,
+        "gainDb": -2.624088374095786
+      },
+      {
+        "frequencyHz": 297.5857488501006,
+        "gainDb": -2.5937814240027413
+      },
+      {
+        "frequencyHz": 306.9658656014207,
+        "gainDb": -2.561258058692764
+      },
+      {
+        "frequencyHz": 316.64165037652356,
+        "gainDb": -2.5290282173590675
+      },
+      {
+        "frequencyHz": 326.6224228440875,
+        "gainDb": -2.4990243750997236
+      },
+      {
+        "frequencyHz": 336.9177964354481,
+        "gainDb": -2.4726188532241156
+      },
+      {
+        "frequencyHz": 347.53768760420814,
+        "gainDb": -2.4506907062947665
+      },
+      {
+        "frequencyHz": 358.4923253777172,
+        "gainDb": -2.4337045730446496
+      },
+      {
+        "frequencyHz": 369.7922612096211,
+        "gainDb": -2.4217773463971426
+      },
+      {
+        "frequencyHz": 381.4483791429706,
+        "gainDb": -2.4147209004093706
+      },
+      {
+        "frequencyHz": 393.47190629367844,
+        "gainDb": -2.412058911234176
+      },
+      {
+        "frequencyHz": 405.87442366442235,
+        "gainDb": -2.413023828123571
+      },
+      {
+        "frequencyHz": 418.66787729941075,
+        "gainDb": -2.416547527505654
+      },
+      {
+        "frequencyHz": 431.8645897907539,
+        "gainDb": -2.421266283084508
+      },
+      {
+        "frequencyHz": 445.4772721475249,
+        "gainDb": -2.425565332073118
+      },
+      {
+        "frequencyHz": 459.5190360389412,
+        "gainDb": -2.427685909482861
+      },
+      {
+        "frequencyHz": 474.0034064234603,
+        "gainDb": -2.4259029294137573
+      },
+      {
+        "frequencyHz": 488.9443345759545,
+        "gainDb": -2.41875359168462
+      },
+      {
+        "frequencyHz": 504.35621152550965,
+        "gainDb": -2.4052650968873954
+      },
+      {
+        "frequencyHz": 520.2538819167953,
+        "gainDb": -2.3851120102860355
+      },
+      {
+        "frequencyHz": 536.652658308353,
+        "gainDb": -2.3586474741838606
+      },
+      {
+        "frequencyHz": 553.5683359215788,
+        "gainDb": -2.326796283873412
+      },
+      {
+        "frequencyHz": 571.0172078546027,
+        "gainDb": -2.2908487200312195
+      },
+      {
+        "frequencyHz": 589.0160807757217,
+        "gainDb": -2.2522233725686265
+      },
+      {
+        "frequencyHz": 607.5822911115008,
+        "gainDb": -2.2122628796029953
+      },
+      {
+        "frequencyHz": 626.7337217451338,
+        "gainDb": -2.172098769026607
+      },
+      {
+        "frequencyHz": 646.4888192411502,
+        "gainDb": -2.1325903082396445
+      },
+      {
+        "frequencyHz": 666.8666116130543,
+        "gainDb": -2.0943215938784308
+      },
+      {
+        "frequencyHz": 687.886726651018,
+        "gainDb": -2.057634131957193
+      },
+      {
+        "frequencyHz": 709.5694108272694,
+        "gainDb": -2.022674693290916
+      },
+      {
+        "frequencyHz": 731.9355487973975,
+        "gainDb": -1.9894446176844458
+      },
+      {
+        "frequencyHz": 755.0066835163504,
+        "gainDb": -1.9578430777146965
+      },
+      {
+        "frequencyHz": 778.8050369885046,
+        "gainDb": -1.9277014412623068
+      },
+      {
+        "frequencyHz": 803.3535316717906,
+        "gainDb": -1.8988086144005947
+      },
+      {
+        "frequencyHz": 828.6758125564929,
+        "gainDb": -1.8709285502882291
+      },
+      {
+        "frequencyHz": 854.7962699399897,
+        "gainDb": -1.8438115204743877
+      },
+      {
+        "frequencyHz": 881.7400629193669,
+        "gainDb": -1.8172006905877256
+      },
+      {
+        "frequencyHz": 909.5331436245394,
+        "gainDb": -1.7908352961924034
+      },
+      {
+        "frequencyHz": 938.2022822152147,
+        "gainDb": -1.7644514269240912
+      },
+      {
+        "frequencyHz": 967.7750926657804,
+        "gainDb": -1.7377811687673312
+      },
+      {
+        "frequencyHz": 998.2800593629504,
+        "gainDb": -1.7105506523255385
+      },
+      {
+        "frequencyHz": 1029.7465645417858,
+        "gainDb": -1.682477415086085
+      },
+      {
+        "frequencyHz": 1062.2049165865212,
+        "gainDb": -1.653267406570678
+      },
+      {
+        "frequencyHz": 1095.6863792234524,
+        "gainDb": -1.6226119454848458
+      },
+      {
+        "frequencyHz": 1130.223201634005,
+        "gainDb": -1.5901849800556782
+      },
+      {
+        "frequencyHz": 1165.8486495169884,
+        "gainDb": -1.5556411151798342
+      },
+      {
+        "frequencyHz": 1202.5970371299543,
+        "gainDb": -1.5186150682540382
+      },
+      {
+        "frequencyHz": 1240.5037603405233,
+        "gainDb": -1.478723521676843
+      },
+      {
+        "frequencyHz": 1279.6053307195102,
+        "gainDb": -1.4355707795394332
+      },
+      {
+        "frequencyHz": 1319.9394107086925,
+        "gainDb": -1.3887602290328198
+      },
+      {
+        "frequencyHz": 1361.5448498970889,
+        "gainDb": -1.3379143474520008
+      },
+      {
+        "frequencyHz": 1404.4617224406948,
+        "gainDb": -1.282706809091958
+      },
+      {
+        "frequencyHz": 1448.7313656617134,
+        "gainDb": -1.222910914769101
+      },
+      {
+        "frequencyHz": 1494.3964198644655,
+        "gainDb": -1.1584686097346424
+      },
+      {
+        "frequencyHz": 1541.5008694063163,
+        "gainDb": -1.0895828823816929
+      },
+      {
+        "frequencyHz": 1590.0900850632001,
+        "gainDb": -1.0168319492812585
+      },
+      {
+        "frequencyHz": 1640.2108677305264,
+        "gainDb": -0.9412946120889361
+      },
+      {
+        "frequencyHz": 1691.9114935015753,
+        "gainDb": -0.8646613684224964
+      },
+      {
+        "frequencyHz": 1745.241760166796,
+        "gainDb": -0.7892867770247349
+      },
+      {
+        "frequencyHz": 1800.2530351787932,
+        "gainDb": -0.718122489384255
+      },
+      {
+        "frequencyHz": 1856.9983051292088,
+        "gainDb": -0.6544721764709034
+      },
+      {
+        "frequencyHz": 1915.5322267851475,
+        "gainDb": -0.6015472632546612
+      },
+      {
+        "frequencyHz": 1975.9111797343078,
+        "gainDb": -0.5618813302761076
+      },
+      {
+        "frequencyHz": 2038.1933206895274,
+        "gainDb": -0.5367539956645
+      },
+      {
+        "frequencyHz": 2102.4386395050433,
+        "gainDb": -0.5258218848745
+      },
+      {
+        "frequencyHz": 2168.7090169584267,
+        "gainDb": -0.5271023417681906
+      },
+      {
+        "frequencyHz": 2237.068284353848,
+        "gainDb": -0.5373163550534086
+      },
+      {
+        "frequencyHz": 2307.582285004076,
+        "gainDb": -0.55245320643033
+      },
+      {
+        "frequencyHz": 2380.318937650435,
+        "gainDb": -0.5683576733438007
+      },
+      {
+        "frequencyHz": 2455.3483018818056,
+        "gainDb": -0.5811812899726838
+      },
+      {
+        "frequencyHz": 2532.74264561568,
+        "gainDb": -0.5876332969359563
+      },
+      {
+        "frequencyHz": 2612.576514706264,
+        "gainDb": -0.5850516710478062
+      },
+      {
+        "frequencyHz": 2694.926804746686,
+        "gainDb": -0.5713585333926126
+      },
+      {
+        "frequencyHz": 2779.8728351344494,
+        "gainDb": -0.5449707649478921
+      },
+      {
+        "frequencyHz": 2867.496425471496,
+        "gainDb": -0.5047242989264302
+      },
+      {
+        "frequencyHz": 2957.881974372444,
+        "gainDb": -0.4498554282767777
+      },
+      {
+        "frequencyHz": 3051.11654075692,
+        "gainDb": -0.38007213274614493
+      },
+      {
+        "frequencyHz": 3147.2899277042893,
+        "gainDb": -0.2957425783879477
+      },
+      {
+        "frequencyHz": 3246.4947689515457,
+        "gainDb": -0.19822006695402306
+      },
+      {
+        "frequencyHz": 3348.8266181176664,
+        "gainDb": -0.09030144137155749
+      },
+      {
+        "frequencyHz": 3454.3840407403986,
+        "gainDb": 0.02323831411676691
+      },
+      {
+        "frequencyHz": 3563.2687092141023,
+        "gainDb": 0.1351944803507219
+      },
+      {
+        "frequencyHz": 3675.5855007201035,
+        "gainDb": 0.2358628612257716
+      },
+      {
+        "frequencyHz": 3791.4425982438866,
+        "gainDb": 0.31374986189964593
+      },
+      {
+        "frequencyHz": 3910.951594776414,
+        "gainDb": 0.3573501122399714
+      },
+      {
+        "frequencyHz": 4034.2276007999535,
+        "gainDb": 0.3578016489185507
+      },
+      {
+        "frequencyHz": 4161.389355161931,
+        "gainDb": 0.3115106906154921
+      },
+      {
+        "frequencyHz": 4292.559339443611,
+        "gainDb": 0.22145372662115248
+      },
+      {
+        "frequencyHz": 4427.863895933757,
+        "gainDb": 0.09638272968383887
+      },
+      {
+        "frequencyHz": 4567.433349320906,
+        "gainDb": -0.051659608664868406
+      },
+      {
+        "frequencyHz": 4711.402132221475,
+        "gainDb": -0.21025155515065497
+      },
+      {
+        "frequencyHz": 4859.908914664599,
+        "gainDb": -0.3687666984898563
+      },
+      {
+        "frequencyHz": 5013.0967376584285,
+        "gainDb": -0.5193656229859915
+      },
+      {
+        "frequencyHz": 5171.113150966529,
+        "gainDb": -0.6570028707992144
+      },
+      {
+        "frequencyHz": 5334.110355227094,
+        "gainDb": -0.77889007632166
+      },
+      {
+        "frequencyHz": 5502.245348551856,
+        "gainDb": -0.8837927413478085
+      },
+      {
+        "frequencyHz": 5675.680077745902,
+        "gainDb": -0.9713744585811531
+      },
+      {
+        "frequencyHz": 5854.581594294048,
+        "gainDb": -1.0416642808799665
+      },
+      {
+        "frequencyHz": 6039.1222152640075,
+        "gainDb": -1.0946430685745037
+      },
+      {
+        "frequencyHz": 6229.47968928136,
+        "gainDb": -1.1299120208929025
+      },
+      {
+        "frequencyHz": 6425.837367736153,
+        "gainDb": -1.1464054078798753
+      },
+      {
+        "frequencyHz": 6628.384381386066,
+        "gainDb": -1.1421400923936964
+      },
+      {
+        "frequencyHz": 6837.3158225262305,
+        "gainDb": -1.1140949699650555
+      },
+      {
+        "frequencyHz": 7052.8329329011995,
+        "gainDb": -1.0586087093863066
+      },
+      {
+        "frequencyHz": 7275.143297539975,
+        "gainDb": -0.9734629975034097
+      },
+      {
+        "frequencyHz": 7504.461044700924,
+        "gainDb": -0.8643404612949248
+      },
+      {
+        "frequencyHz": 7741.007052119063,
+        "gainDb": -0.7585618728441084
+      },
+      {
+        "frequencyHz": 7985.009159754417,
+        "gainDb": -0.7165877115075576
+      },
+      {
+        "frequencyHz": 8236.70238924635,
+        "gainDb": -0.8009078041189706
+      },
+      {
+        "frequencyHz": 8496.32917028527,
+        "gainDb": -1.0001636667958713
+      },
+      {
+        "frequencyHz": 8764.139574119721,
+        "gainDb": -1.2318834689942348
+      },
+      {
+        "frequencyHz": 9040.391554423784,
+        "gainDb": -1.429780990734234
+      },
+      {
+        "frequencyHz": 9325.351195756808,
+        "gainDb": -1.5756062116007452
+      },
+      {
+        "frequencyHz": 9619.292969854745,
+        "gainDb": -1.6763221843284264
+      },
+      {
+        "frequencyHz": 9922.5,
+        "gainDb": -1.7437567005201153
+      }
+    ],
+    "referenceResponse": true,
+    "safePreampDb": -2.326426639590615,
+    "editableBands": [true, true, true, true, true, true, true, true, true, false],
+    "responseRate": 22050
+  },
+  "failedLowRate": {
+    "document": {
+      "schemaVersion": 1,
+      "registryVersion": 1,
+      "userPresets": [],
+      "selection": {
+        "kind": "preset",
+        "id": "builtin:pop"
+      },
+      "retainedPayload": {
+        "kind": "eq",
+        "gainsDb": [1.0, 2.0, 1.0, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, 0.0],
+        "preampMode": "auto",
+        "requestedPreampDb": 0.0
+      },
+      "draft": null,
+      "requestedEnabled": true
+    },
+    "runtime": {
+      "revision": 1,
+      "playbackEpoch": 1,
+      "persistenceStatus": "unsaved",
+      "applied": "failed",
+      "effectivePreampDb": null,
+      "activeBands": [true, true, true, true, true, true, true, true, true, false],
+      "processingRate": 22050,
+      "channelLayout": "stereo",
+      "reason": "injected filter failure"
+    },
+    "presets": [
+      {
+        "id": "builtin:pop",
+        "name": "流行",
+        "description": "轻度突出低频和明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 2.0, 1.0, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, 0.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:rock",
+        "name": "摇滚",
+        "description": "突出低频和乐器存在感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [3.0, 4.0, 2.0, 0.0, -1.5, -2.0, -0.5, 2.0, 3.0, 2.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:classical",
+        "name": "古典",
+        "description": "接近中性，局部轻度提亮",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:jazz",
+        "name": "爵士",
+        "description": "增加厚度与轻度明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 1.5, 2.0, 1.5, 0.5, 0.0, 0.5, 1.0, 1.5, 1.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:electronic",
+        "name": "电子",
+        "description": "加强节奏低频和明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [2.0, 3.0, 2.0, -1.0, -1.5, -1.0, 0.0, 1.5, 2.0, 1.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:vocal",
+        "name": "清澈人声",
+        "description": "调整整曲音色与存在感，也会影响乐器",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [-1.5, -1.5, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, -1.0, 0.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:bass",
+        "name": "超重低音",
+        "description": "突出低频厚度与力度",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.5, 4.0, 3.0, 0.5, 0.0, -0.5, -0.5, -0.5, -1.0, -1.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:warm",
+        "name": "温暖轻柔",
+        "description": "柔和高频并增加低频厚度",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 1.5, 1.0, 0.5, 0.0, 0.0, -0.5, -1.0, -2.0, -2.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:retro",
+        "name": "华丽复古",
+        "description": "强调中低频并减弱高频",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [0.0, 1.0, 2.5, 3.0, 2.0, 0.5, -0.5, -2.0, -3.5, -5.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:surround",
+        "name": "空间感增强",
+        "description": "拓宽双声道空间感；需要双声道输入",
+        "payload": {
+          "kind": "spatial",
+          "width": 1.25,
+          "mix": 1.0
+        },
+        "source": "builtin"
+      }
+    ],
+    "responsePoints": [
+      {
+        "frequencyHz": 20.0,
+        "gainDb": -1.3260712404878756
+      },
+      {
+        "frequencyHz": 20.63041437888513,
+        "gainDb": -1.2801704201226183
+      },
+      {
+        "frequencyHz": 21.28069987222552,
+        "gainDb": -1.2298091751872327
+      },
+      {
+        "frequencyHz": 21.951482831835015,
+        "gainDb": -1.1747533305911233
+      },
+      {
+        "frequencyHz": 22.64340935258696,
+        "gainDb": -1.1148832177719774
+      },
+      {
+        "frequencyHz": 23.3571458947296,
+        "gainDb": -1.050261052315203
+      },
+      {
+        "frequencyHz": 24.09337992581737,
+        "gainDb": -0.981215800845468
+      },
+      {
+        "frequencyHz": 24.85282058287625,
+        "gainDb": -0.9084406811621774
+      },
+      {
+        "frequencyHz": 25.63619935544113,
+        "gainDb": -0.8330897727896905
+      },
+      {
+        "frequencyHz": 26.444270790122918,
+        "gainDb": -0.7568480161142968
+      },
+      {
+        "frequencyHz": 27.277813217384196,
+        "gainDb": -0.6819359440892963
+      },
+      {
+        "frequencyHz": 28.137629501223287,
+        "gainDb": -0.6110039557000579
+      },
+      {
+        "frequencyHz": 29.02454781248897,
+        "gainDb": -0.54688183870402
+      },
+      {
+        "frequencyHz": 29.939422426570573,
+        "gainDb": -0.49218690193501025
+      },
+      {
+        "frequencyHz": 30.883134546231872,
+        "gainDb": -0.4488548798801386
+      },
+      {
+        "frequencyHz": 31.856593150381304,
+        "gainDb": -0.41771611287330357
+      },
+      {
+        "frequencyHz": 32.860735869596006,
+        "gainDb": -0.39825548193942617
+      },
+      {
+        "frequencyHz": 33.89652988924299,
+        "gainDb": -0.38864339061676345
+      },
+      {
+        "frequencyHz": 34.96497288106741,
+        "gainDb": -0.3860255473427594
+      },
+      {
+        "frequencyHz": 36.06709396414509,
+        "gainDb": -0.38696719768635623
+      },
+      {
+        "frequencyHz": 37.203954696124995,
+        "gainDb": -0.3879127599307126
+      },
+      {
+        "frequencyHz": 38.3766500957164,
+        "gainDb": -0.3855518192461145
+      },
+      {
+        "frequencyHz": 39.586309697405554,
+        "gainDb": -0.3770455041101717
+      },
+      {
+        "frequencyHz": 40.834098639417775,
+        "gainDb": -0.3601249147440664
+      },
+      {
+        "frequencyHz": 42.12121878597291,
+        "gainDb": -0.33310526225288406
+      },
+      {
+        "frequencyHz": 43.4489098849151,
+        "gainDb": -0.2948661568565176
+      },
+      {
+        "frequencyHz": 44.81845076183184,
+        "gainDb": -0.24484025268683873
+      },
+      {
+        "frequencyHz": 46.23116055181255,
+        "gainDb": -0.1830388050192786
+      },
+      {
+        "frequencyHz": 47.68839997003303,
+        "gainDb": -0.11012828102054395
+      },
+      {
+        "frequencyHz": 49.19157262238972,
+        "gainDb": -0.027556975224012126
+      },
+      {
+        "frequencyHz": 50.742126357446054,
+        "gainDb": 0.06228794396508075
+      },
+      {
+        "frequencyHz": 52.34155466099307,
+        "gainDb": 0.15593670637318935
+      },
+      {
+        "frequencyHz": 53.99139809456767,
+        "gainDb": 0.2487785558592761
+      },
+      {
+        "frequencyHz": 55.69324577931401,
+        "gainDb": 0.3351833537917335
+      },
+      {
+        "frequencyHz": 57.448736926617165,
+        "gainDb": 0.40889441916722413
+      },
+      {
+        "frequencyHz": 59.25956241698359,
+        "gainDb": 0.46372949114780004
+      },
+      {
+        "frequencyHz": 61.12746642868896,
+        "gainDb": 0.4945123236687623
+      },
+      {
+        "frequencyHz": 63.05424811776214,
+        "gainDb": 0.4980176771455618
+      },
+      {
+        "frequencyHz": 65.04176335092355,
+        "gainDb": 0.47363011842720315
+      },
+      {
+        "frequencyHz": 67.09192649314686,
+        "gainDb": 0.42347295422160425
+      },
+      {
+        "frequencyHz": 69.20671225156606,
+        "gainDb": 0.35195668769074695
+      },
+      {
+        "frequencyHz": 71.38815757750369,
+        "gainDb": 0.26491994702894317
+      },
+      {
+        "frequencyHz": 73.6383636284525,
+        "gainDb": 0.1686578879862759
+      },
+      {
+        "frequencyHz": 75.9594977918999,
+        "gainDb": 0.0691035553123529
+      },
+      {
+        "frequencyHz": 78.35379577294526,
+        "gainDb": -0.0286991411019899
+      },
+      {
+        "frequencyHz": 80.82356374771996,
+        "gainDb": -0.12082499055380236
+      },
+      {
+        "frequencyHz": 83.37118058468504,
+        "gainDb": -0.2044748656906874
+      },
+      {
+        "frequencyHz": 85.99910013594574,
+        "gainDb": -0.27785881745143826
+      },
+      {
+        "frequencyHz": 88.70985360078987,
+        "gainDb": -0.3400383249976435
+      },
+      {
+        "frequencyHz": 91.5060519637265,
+        "gainDb": -0.3907834941464823
+      },
+      {
+        "frequencyHz": 94.39038850937365,
+        "gainDb": -0.43047448491828844
+      },
+      {
+        "frequencyHz": 97.36564141661681,
+        "gainDb": -0.4600556413659085
+      },
+      {
+        "frequencyHz": 100.43467643453725,
+        "gainDb": -0.48103453909680205
+      },
+      {
+        "frequencyHz": 103.60044964268765,
+        "gainDb": -0.49550361943426346
+      },
+      {
+        "frequencyHz": 106.86601029837341,
+        "gainDb": -0.5061478226906051
+      },
+      {
+        "frequencyHz": 110.23450377368248,
+        "gainDb": -0.5161901178174069
+      },
+      {
+        "frequencyHz": 113.70917458509231,
+        "gainDb": -0.5292257113978787
+      },
+      {
+        "frequencyHz": 117.29336951857236,
+        "gainDb": -0.5489158960379048
+      },
+      {
+        "frequencyHz": 120.99054085319212,
+        "gainDb": -0.5785601964325211
+      },
+      {
+        "frequencyHz": 124.80424968633918,
+        "gainDb": -0.6206302381094588
+      },
+      {
+        "frequencyHz": 128.7381693637511,
+        "gainDb": -0.6763981865943762
+      },
+      {
+        "frequencyHz": 132.796089017664,
+        "gainDb": -0.7457877578771492
+      },
+      {
+        "frequencyHz": 136.98191721648624,
+        "gainDb": -0.827504225624731
+      },
+      {
+        "frequencyHz": 141.29968572951253,
+        "gainDb": -0.9193955877208295
+      },
+      {
+        "frequencyHz": 145.75355341030428,
+        "gainDb": -1.018919577300041
+      },
+      {
+        "frequencyHz": 150.34781020247718,
+        "gainDb": -1.1235788429328992
+      },
+      {
+        "frequencyHz": 155.0868812717539,
+        "gainDb": -1.231231294755272
+      },
+      {
+        "frequencyHz": 159.97533126826212,
+        "gainDb": -1.3402464591169174
+      },
+      {
+        "frequencyHz": 165.01786872318337,
+        "gainDb": -1.4495275042990254
+      },
+      {
+        "frequencyHz": 170.219350583987,
+        "gainDb": -1.558439798203337
+      },
+      {
+        "frequencyHz": 175.58478689261872,
+        "gainDb": -1.6666858652723882
+      },
+      {
+        "frequencyHz": 181.11934561114816,
+        "gainDb": -1.7741550834279174
+      },
+      {
+        "frequencyHz": 186.82835759952482,
+        "gainDb": -1.8807640219822845
+      },
+      {
+        "frequencyHz": 192.71732175023652,
+        "gainDb": -1.9862952953867876
+      },
+      {
+        "frequencyHz": 198.79191028481557,
+        "gainDb": -2.0902412932772507
+      },
+      {
+        "frequencyHz": 205.0579742172951,
+        "gainDb": -2.191664452852322
+      },
+      {
+        "frequencyHz": 211.52154898987706,
+        "gainDb": -2.2890966976552996
+      },
+      {
+        "frequencyHz": 218.18886028624078,
+        "gainDb": -2.380513581311562
+      },
+      {
+        "frequencyHz": 225.06633002809104,
+        "gainDb": -2.46342579670654
+      },
+      {
+        "frequencyHz": 232.16058256072176,
+        "gainDb": -2.5351205985255203
+      },
+      {
+        "frequencyHz": 239.47845103355317,
+        "gainDb": -2.5930486973412634
+      },
+      {
+        "frequencyHz": 247.0269839817877,
+        "gainDb": -2.6352916660358012
+      },
+      {
+        "frequencyHz": 254.8134521155249,
+        "gainDb": -2.660986402882223
+      },
+      {
+        "frequencyHz": 262.8453553228742,
+        "gainDb": -2.6705668996134815
+      },
+      {
+        "frequencyHz": 271.1304298938097,
+        "gainDb": -2.6657347725443725
+      },
+      {
+        "frequencyHz": 279.676655971728,
+        "gainDb": -2.649170230677557
+      },
+      {
+        "frequencyHz": 288.49226523988233,
+        "gainDb": -2.624088374095786
+      },
+      {
+        "frequencyHz": 297.5857488501006,
+        "gainDb": -2.5937814240027413
+      },
+      {
+        "frequencyHz": 306.9658656014207,
+        "gainDb": -2.561258058692764
+      },
+      {
+        "frequencyHz": 316.64165037652356,
+        "gainDb": -2.5290282173590675
+      },
+      {
+        "frequencyHz": 326.6224228440875,
+        "gainDb": -2.4990243750997236
+      },
+      {
+        "frequencyHz": 336.9177964354481,
+        "gainDb": -2.4726188532241156
+      },
+      {
+        "frequencyHz": 347.53768760420814,
+        "gainDb": -2.4506907062947665
+      },
+      {
+        "frequencyHz": 358.4923253777172,
+        "gainDb": -2.4337045730446496
+      },
+      {
+        "frequencyHz": 369.7922612096211,
+        "gainDb": -2.4217773463971426
+      },
+      {
+        "frequencyHz": 381.4483791429706,
+        "gainDb": -2.4147209004093706
+      },
+      {
+        "frequencyHz": 393.47190629367844,
+        "gainDb": -2.412058911234176
+      },
+      {
+        "frequencyHz": 405.87442366442235,
+        "gainDb": -2.413023828123571
+      },
+      {
+        "frequencyHz": 418.66787729941075,
+        "gainDb": -2.416547527505654
+      },
+      {
+        "frequencyHz": 431.8645897907539,
+        "gainDb": -2.421266283084508
+      },
+      {
+        "frequencyHz": 445.4772721475249,
+        "gainDb": -2.425565332073118
+      },
+      {
+        "frequencyHz": 459.5190360389412,
+        "gainDb": -2.427685909482861
+      },
+      {
+        "frequencyHz": 474.0034064234603,
+        "gainDb": -2.4259029294137573
+      },
+      {
+        "frequencyHz": 488.9443345759545,
+        "gainDb": -2.41875359168462
+      },
+      {
+        "frequencyHz": 504.35621152550965,
+        "gainDb": -2.4052650968873954
+      },
+      {
+        "frequencyHz": 520.2538819167953,
+        "gainDb": -2.3851120102860355
+      },
+      {
+        "frequencyHz": 536.652658308353,
+        "gainDb": -2.3586474741838606
+      },
+      {
+        "frequencyHz": 553.5683359215788,
+        "gainDb": -2.326796283873412
+      },
+      {
+        "frequencyHz": 571.0172078546027,
+        "gainDb": -2.2908487200312195
+      },
+      {
+        "frequencyHz": 589.0160807757217,
+        "gainDb": -2.2522233725686265
+      },
+      {
+        "frequencyHz": 607.5822911115008,
+        "gainDb": -2.2122628796029953
+      },
+      {
+        "frequencyHz": 626.7337217451338,
+        "gainDb": -2.172098769026607
+      },
+      {
+        "frequencyHz": 646.4888192411502,
+        "gainDb": -2.1325903082396445
+      },
+      {
+        "frequencyHz": 666.8666116130543,
+        "gainDb": -2.0943215938784308
+      },
+      {
+        "frequencyHz": 687.886726651018,
+        "gainDb": -2.057634131957193
+      },
+      {
+        "frequencyHz": 709.5694108272694,
+        "gainDb": -2.022674693290916
+      },
+      {
+        "frequencyHz": 731.9355487973975,
+        "gainDb": -1.9894446176844458
+      },
+      {
+        "frequencyHz": 755.0066835163504,
+        "gainDb": -1.9578430777146965
+      },
+      {
+        "frequencyHz": 778.8050369885046,
+        "gainDb": -1.9277014412623068
+      },
+      {
+        "frequencyHz": 803.3535316717906,
+        "gainDb": -1.8988086144005947
+      },
+      {
+        "frequencyHz": 828.6758125564929,
+        "gainDb": -1.8709285502882291
+      },
+      {
+        "frequencyHz": 854.7962699399897,
+        "gainDb": -1.8438115204743877
+      },
+      {
+        "frequencyHz": 881.7400629193669,
+        "gainDb": -1.8172006905877256
+      },
+      {
+        "frequencyHz": 909.5331436245394,
+        "gainDb": -1.7908352961924034
+      },
+      {
+        "frequencyHz": 938.2022822152147,
+        "gainDb": -1.7644514269240912
+      },
+      {
+        "frequencyHz": 967.7750926657804,
+        "gainDb": -1.7377811687673312
+      },
+      {
+        "frequencyHz": 998.2800593629504,
+        "gainDb": -1.7105506523255385
+      },
+      {
+        "frequencyHz": 1029.7465645417858,
+        "gainDb": -1.682477415086085
+      },
+      {
+        "frequencyHz": 1062.2049165865212,
+        "gainDb": -1.653267406570678
+      },
+      {
+        "frequencyHz": 1095.6863792234524,
+        "gainDb": -1.6226119454848458
+      },
+      {
+        "frequencyHz": 1130.223201634005,
+        "gainDb": -1.5901849800556782
+      },
+      {
+        "frequencyHz": 1165.8486495169884,
+        "gainDb": -1.5556411151798342
+      },
+      {
+        "frequencyHz": 1202.5970371299543,
+        "gainDb": -1.5186150682540382
+      },
+      {
+        "frequencyHz": 1240.5037603405233,
+        "gainDb": -1.478723521676843
+      },
+      {
+        "frequencyHz": 1279.6053307195102,
+        "gainDb": -1.4355707795394332
+      },
+      {
+        "frequencyHz": 1319.9394107086925,
+        "gainDb": -1.3887602290328198
+      },
+      {
+        "frequencyHz": 1361.5448498970889,
+        "gainDb": -1.3379143474520008
+      },
+      {
+        "frequencyHz": 1404.4617224406948,
+        "gainDb": -1.282706809091958
+      },
+      {
+        "frequencyHz": 1448.7313656617134,
+        "gainDb": -1.222910914769101
+      },
+      {
+        "frequencyHz": 1494.3964198644655,
+        "gainDb": -1.1584686097346424
+      },
+      {
+        "frequencyHz": 1541.5008694063163,
+        "gainDb": -1.0895828823816929
+      },
+      {
+        "frequencyHz": 1590.0900850632001,
+        "gainDb": -1.0168319492812585
+      },
+      {
+        "frequencyHz": 1640.2108677305264,
+        "gainDb": -0.9412946120889361
+      },
+      {
+        "frequencyHz": 1691.9114935015753,
+        "gainDb": -0.8646613684224964
+      },
+      {
+        "frequencyHz": 1745.241760166796,
+        "gainDb": -0.7892867770247349
+      },
+      {
+        "frequencyHz": 1800.2530351787932,
+        "gainDb": -0.718122489384255
+      },
+      {
+        "frequencyHz": 1856.9983051292088,
+        "gainDb": -0.6544721764709034
+      },
+      {
+        "frequencyHz": 1915.5322267851475,
+        "gainDb": -0.6015472632546612
+      },
+      {
+        "frequencyHz": 1975.9111797343078,
+        "gainDb": -0.5618813302761076
+      },
+      {
+        "frequencyHz": 2038.1933206895274,
+        "gainDb": -0.5367539956645
+      },
+      {
+        "frequencyHz": 2102.4386395050433,
+        "gainDb": -0.5258218848745
+      },
+      {
+        "frequencyHz": 2168.7090169584267,
+        "gainDb": -0.5271023417681906
+      },
+      {
+        "frequencyHz": 2237.068284353848,
+        "gainDb": -0.5373163550534086
+      },
+      {
+        "frequencyHz": 2307.582285004076,
+        "gainDb": -0.55245320643033
+      },
+      {
+        "frequencyHz": 2380.318937650435,
+        "gainDb": -0.5683576733438007
+      },
+      {
+        "frequencyHz": 2455.3483018818056,
+        "gainDb": -0.5811812899726838
+      },
+      {
+        "frequencyHz": 2532.74264561568,
+        "gainDb": -0.5876332969359563
+      },
+      {
+        "frequencyHz": 2612.576514706264,
+        "gainDb": -0.5850516710478062
+      },
+      {
+        "frequencyHz": 2694.926804746686,
+        "gainDb": -0.5713585333926126
+      },
+      {
+        "frequencyHz": 2779.8728351344494,
+        "gainDb": -0.5449707649478921
+      },
+      {
+        "frequencyHz": 2867.496425471496,
+        "gainDb": -0.5047242989264302
+      },
+      {
+        "frequencyHz": 2957.881974372444,
+        "gainDb": -0.4498554282767777
+      },
+      {
+        "frequencyHz": 3051.11654075692,
+        "gainDb": -0.38007213274614493
+      },
+      {
+        "frequencyHz": 3147.2899277042893,
+        "gainDb": -0.2957425783879477
+      },
+      {
+        "frequencyHz": 3246.4947689515457,
+        "gainDb": -0.19822006695402306
+      },
+      {
+        "frequencyHz": 3348.8266181176664,
+        "gainDb": -0.09030144137155749
+      },
+      {
+        "frequencyHz": 3454.3840407403986,
+        "gainDb": 0.02323831411676691
+      },
+      {
+        "frequencyHz": 3563.2687092141023,
+        "gainDb": 0.1351944803507219
+      },
+      {
+        "frequencyHz": 3675.5855007201035,
+        "gainDb": 0.2358628612257716
+      },
+      {
+        "frequencyHz": 3791.4425982438866,
+        "gainDb": 0.31374986189964593
+      },
+      {
+        "frequencyHz": 3910.951594776414,
+        "gainDb": 0.3573501122399714
+      },
+      {
+        "frequencyHz": 4034.2276007999535,
+        "gainDb": 0.3578016489185507
+      },
+      {
+        "frequencyHz": 4161.389355161931,
+        "gainDb": 0.3115106906154921
+      },
+      {
+        "frequencyHz": 4292.559339443611,
+        "gainDb": 0.22145372662115248
+      },
+      {
+        "frequencyHz": 4427.863895933757,
+        "gainDb": 0.09638272968383887
+      },
+      {
+        "frequencyHz": 4567.433349320906,
+        "gainDb": -0.051659608664868406
+      },
+      {
+        "frequencyHz": 4711.402132221475,
+        "gainDb": -0.21025155515065497
+      },
+      {
+        "frequencyHz": 4859.908914664599,
+        "gainDb": -0.3687666984898563
+      },
+      {
+        "frequencyHz": 5013.0967376584285,
+        "gainDb": -0.5193656229859915
+      },
+      {
+        "frequencyHz": 5171.113150966529,
+        "gainDb": -0.6570028707992144
+      },
+      {
+        "frequencyHz": 5334.110355227094,
+        "gainDb": -0.77889007632166
+      },
+      {
+        "frequencyHz": 5502.245348551856,
+        "gainDb": -0.8837927413478085
+      },
+      {
+        "frequencyHz": 5675.680077745902,
+        "gainDb": -0.9713744585811531
+      },
+      {
+        "frequencyHz": 5854.581594294048,
+        "gainDb": -1.0416642808799665
+      },
+      {
+        "frequencyHz": 6039.1222152640075,
+        "gainDb": -1.0946430685745037
+      },
+      {
+        "frequencyHz": 6229.47968928136,
+        "gainDb": -1.1299120208929025
+      },
+      {
+        "frequencyHz": 6425.837367736153,
+        "gainDb": -1.1464054078798753
+      },
+      {
+        "frequencyHz": 6628.384381386066,
+        "gainDb": -1.1421400923936964
+      },
+      {
+        "frequencyHz": 6837.3158225262305,
+        "gainDb": -1.1140949699650555
+      },
+      {
+        "frequencyHz": 7052.8329329011995,
+        "gainDb": -1.0586087093863066
+      },
+      {
+        "frequencyHz": 7275.143297539975,
+        "gainDb": -0.9734629975034097
+      },
+      {
+        "frequencyHz": 7504.461044700924,
+        "gainDb": -0.8643404612949248
+      },
+      {
+        "frequencyHz": 7741.007052119063,
+        "gainDb": -0.7585618728441084
+      },
+      {
+        "frequencyHz": 7985.009159754417,
+        "gainDb": -0.7165877115075576
+      },
+      {
+        "frequencyHz": 8236.70238924635,
+        "gainDb": -0.8009078041189706
+      },
+      {
+        "frequencyHz": 8496.32917028527,
+        "gainDb": -1.0001636667958713
+      },
+      {
+        "frequencyHz": 8764.139574119721,
+        "gainDb": -1.2318834689942348
+      },
+      {
+        "frequencyHz": 9040.391554423784,
+        "gainDb": -1.429780990734234
+      },
+      {
+        "frequencyHz": 9325.351195756808,
+        "gainDb": -1.5756062116007452
+      },
+      {
+        "frequencyHz": 9619.292969854745,
+        "gainDb": -1.6763221843284264
+      },
+      {
+        "frequencyHz": 9922.5,
+        "gainDb": -1.7437567005201153
+      }
+    ],
+    "referenceResponse": true,
+    "safePreampDb": -2.326426639590615,
+    "editableBands": [true, true, true, true, true, true, true, true, true, false],
+    "responseRate": 22050
+  },
+  "manualProtected": {
+    "document": {
+      "schemaVersion": 1,
+      "registryVersion": 1,
+      "userPresets": [],
+      "selection": {
+        "kind": "draft"
+      },
+      "retainedPayload": {
+        "kind": "eq",
+        "gainsDb": [12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0],
+        "preampMode": "manual",
+        "requestedPreampDb": 0.0
+      },
+      "draft": {
+        "gainsDb": [12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0, 12.0],
+        "preampMode": "manual",
+        "requestedPreampDb": 0.0
+      },
+      "requestedEnabled": true
+    },
+    "runtime": {
+      "revision": 1,
+      "playbackEpoch": 1,
+      "persistenceStatus": "unsaved",
+      "applied": "applied",
+      "effectivePreampDb": -18.402800140131575,
+      "activeBands": [true, true, true, true, true, true, true, true, true, true],
+      "processingRate": 48000,
+      "channelLayout": "stereo",
+      "reason": null
+    },
+    "presets": [
+      {
+        "id": "builtin:pop",
+        "name": "流行",
+        "description": "轻度突出低频和明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 2.0, 1.0, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, 0.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:rock",
+        "name": "摇滚",
+        "description": "突出低频和乐器存在感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [3.0, 4.0, 2.0, 0.0, -1.5, -2.0, -0.5, 2.0, 3.0, 2.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:classical",
+        "name": "古典",
+        "description": "接近中性，局部轻度提亮",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:jazz",
+        "name": "爵士",
+        "description": "增加厚度与轻度明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 1.5, 2.0, 1.5, 0.5, 0.0, 0.5, 1.0, 1.5, 1.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:electronic",
+        "name": "电子",
+        "description": "加强节奏低频和明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [2.0, 3.0, 2.0, -1.0, -1.5, -1.0, 0.0, 1.5, 2.0, 1.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:vocal",
+        "name": "清澈人声",
+        "description": "调整整曲音色与存在感，也会影响乐器",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [-1.5, -1.5, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, -1.0, 0.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:bass",
+        "name": "超重低音",
+        "description": "突出低频厚度与力度",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.5, 4.0, 3.0, 0.5, 0.0, -0.5, -0.5, -0.5, -1.0, -1.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:warm",
+        "name": "温暖轻柔",
+        "description": "柔和高频并增加低频厚度",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 1.5, 1.0, 0.5, 0.0, 0.0, -0.5, -1.0, -2.0, -2.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:retro",
+        "name": "华丽复古",
+        "description": "强调中低频并减弱高频",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [0.0, 1.0, 2.5, 3.0, 2.0, 0.5, -0.5, -2.0, -3.5, -5.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:surround",
+        "name": "空间感增强",
+        "description": "拓宽双声道空间感；需要双声道输入",
+        "payload": {
+          "kind": "spatial",
+          "width": 1.25,
+          "mix": 1.0
+        },
+        "source": "builtin"
+      }
+    ],
+    "responsePoints": [
+      {
+        "frequencyHz": 20.0,
+        "gainDb": -12.572010833898348
+      },
+      {
+        "frequencyHz": 20.702843333586877,
+        "gainDb": -12.05004065798381
+      },
+      {
+        "frequencyHz": 21.430386104752127,
+        "gainDb": -11.477365061877755
+      },
+      {
+        "frequencyHz": 22.18349630524802,
+        "gainDb": -10.849684300238632
+      },
+      {
+        "frequencyHz": 22.963072429937657,
+        "gainDb": -10.163121351592519
+      },
+      {
+        "frequencyHz": 23.77004454874037,
+        "gainDb": -9.41492946989065
+      },
+      {
+        "frequencyHz": 24.605375416247632,
+        "gainDb": -8.604750772029996
+      },
+      {
+        "frequencyHz": 25.470061620333233,
+        "gainDb": -7.736785838043227
+      },
+      {
+        "frequencyHz": 26.36513477112814,
+        "gainDb": -6.823351912404787
+      },
+      {
+        "frequencyHz": 27.29166273177849,
+        "gainDb": -5.890185106943189
+      },
+      {
+        "frequencyHz": 28.250750892455088,
+        "gainDb": -4.982824623852194
+      },
+      {
+        "frequencyHz": 29.243543489134364,
+        "gainDb": -4.170369342663047
+      },
+      {
+        "frequencyHz": 30.271224968724162,
+        "gainDb": -3.5380113733469596
+      },
+      {
+        "frequencyHz": 31.33502140216298,
+        "gainDb": -3.1599546677444277
+      },
+      {
+        "frequencyHz": 32.4362019471786,
+        "gainDb": -3.061730096219655
+      },
+      {
+        "frequencyHz": 33.57608036245121,
+        "gainDb": -3.2035621145928648
+      },
+      {
+        "frequencyHz": 34.75601657498751,
+        "gainDb": -3.502402129099691
+      },
+      {
+        "frequencyHz": 35.97741830257576,
+        "gainDb": -3.8696484999656295
+      },
+      {
+        "frequencyHz": 37.241742733257354,
+        "gainDb": -4.23501887789406
+      },
+      {
+        "frequencyHz": 38.55049826381872,
+        "gainDb": -4.551510408258084
+      },
+      {
+        "frequencyHz": 39.905246299377595,
+        "gainDb": -4.790775503038319
+      },
+      {
+        "frequencyHz": 41.307603116210586,
+        "gainDb": -4.936794111053262
+      },
+      {
+        "frequencyHz": 42.75924179004464,
+        "gainDb": -4.980926174414282
+      },
+      {
+        "frequencyHz": 44.261894192112756,
+        "gainDb": -4.918786295337815
+      },
+      {
+        "frequencyHz": 45.81735305535546,
+        "gainDb": -4.748606958035396
+      },
+      {
+        "frequencyHz": 47.4274741132331,
+        "gainDb": -4.470756922271809
+      },
+      {
+        "frequencyHz": 49.09417831370061,
+        "gainDb": -4.088299131817886
+      },
+      {
+        "frequencyHz": 50.8194541109861,
+        "gainDb": -3.608725582598133
+      },
+      {
+        "frequencyHz": 52.60535983790764,
+        "gainDb": -3.047215754993527
+      },
+      {
+        "frequencyHz": 54.45402616155825,
+        "gainDb": -2.4317272264805805
+      },
+      {
+        "frequencyHz": 56.367658625289074,
+        "gainDb": -1.8093358146330054
+      },
+      {
+        "frequencyHz": 58.348540280023336,
+        "gainDb": -1.2503834602650699
+      },
+      {
+        "frequencyHz": 60.39903440804032,
+        "gainDb": -0.8421324535443517
+      },
+      {
+        "frequencyHz": 62.5215873424791,
+        "gainDb": -0.6630651252385391
+      },
+      {
+        "frequencyHz": 64.71873138592565,
+        "gainDb": -0.7450780666727681
+      },
+      {
+        "frequencyHz": 66.99308783156552,
+        "gainDb": -1.0544182294597277
+      },
+      {
+        "frequencyHz": 69.34737009050633,
+        "gainDb": -1.5114336433151756
+      },
+      {
+        "frequencyHz": 71.78438692900104,
+        "gainDb": -2.0283832325311906
+      },
+      {
+        "frequencyHz": 74.3070458194345,
+        "gainDb": -2.534728257235157
+      },
+      {
+        "frequencyHz": 76.91835640907071,
+        "gainDb": -2.9831575398418604
+      },
+      {
+        "frequencyHz": 79.62143411069945,
+        "gainDb": -3.3453248741396884
+      },
+      {
+        "frequencyHz": 82.41950381946603,
+        "gainDb": -3.6055073014138106
+      },
+      {
+        "frequencyHz": 85.31590376031852,
+        "gainDb": -3.7555435353147857
+      },
+      {
+        "frequencyHz": 88.3140894706625,
+        "gainDb": -3.7916020898286042
+      },
+      {
+        "frequencyHz": 91.41763792297502,
+        "gainDb": -3.7124642621718937
+      },
+      {
+        "frequencyHz": 94.63025179229611,
+        "gainDb": -3.51897814242556
+      },
+      {
+        "frequencyHz": 97.95576387368925,
+        "gainDb": -3.2145510332077336
+      },
+      {
+        "frequencyHz": 101.39814165494086,
+        "gainDb": -2.8068008273406413
+      },
+      {
+        "frequencyHz": 104.9614920499545,
+        "gainDb": -2.310702851189383
+      },
+      {
+        "frequencyHz": 108.65006629848664,
+        "gainDb": -1.7535608050443798
+      },
+      {
+        "frequencyHz": 112.46826503806983,
+        "gainDb": -1.1813296043164954
+      },
+      {
+        "frequencyHz": 116.42064355417429,
+        "gainDb": -0.6631274778405682
+      },
+      {
+        "frequencyHz": 120.51191721487156,
+        "gainDb": -0.2859585323259388
+      },
+      {
+        "frequencyHz": 124.74696709648386,
+        "gainDb": -0.13040827073731265
+      },
+      {
+        "frequencyHz": 129.13084580693112,
+        "gainDb": -0.2328584269896723
+      },
+      {
+        "frequencyHz": 133.66878351372296,
+        "gainDb": -0.5640825915810765
+      },
+      {
+        "frequencyHz": 138.36619418378731,
+        "gainDb": -1.0465824091277476
+      },
+      {
+        "frequencyHz": 143.22868204258037,
+        "gainDb": -1.5923142916910287
+      },
+      {
+        "frequencyHz": 148.26204826018346,
+        "gainDb": -2.1293611275786937
+      },
+      {
+        "frequencyHz": 153.47229787236378,
+        "gainDb": -2.6090576879159055
+      },
+      {
+        "frequencyHz": 158.86564694485628,
+        "gainDb": -3.002115173249612
+      },
+      {
+        "frequencyHz": 164.44852998941423,
+        "gainDb": -3.292267501818099
+      },
+      {
+        "frequencyHz": 170.2276076404753,
+        "gainDb": -3.4710863729282284
+      },
+      {
+        "frequencyHz": 176.20977460160282,
+        "gainDb": -3.5346313082471728
+      },
+      {
+        "frequencyHz": 182.40216787118197,
+        "gainDb": -3.4816420830763963
+      },
+      {
+        "frequencyHz": 188.8121752571847,
+        "gainDb": -3.3129200863258905
+      },
+      {
+        "frequencyHz": 195.44744419116216,
+        "gainDb": -3.0317490833218166
+      },
+      {
+        "frequencyHz": 202.31589085197976,
+        "gainDb": -2.6454588696315593
+      },
+      {
+        "frequencyHz": 209.42570961017995,
+        "gainDb": -2.1684574392657687
+      },
+      {
+        "frequencyHz": 216.78538280424067,
+        "gainDb": -1.6270772190847325
+      },
+      {
+        "frequencyHz": 224.40369086039266,
+        "gainDb": -1.065865289433905
+      },
+      {
+        "frequencyHz": 232.28972276806854,
+        "gainDb": -0.5524221505295976
+      },
+      {
+        "frequencyHz": 240.45288692348254,
+        "gainDb": -0.17314288971613578
+      },
+      {
+        "frequencyHz": 248.902922354277,
+        "gainDb": -0.010321594008182444
+      },
+      {
+        "frequencyHz": 257.6499103386268,
+        "gainDb": -0.10452406513514845
+      },
+      {
+        "frequencyHz": 266.7042864326648,
+        "gainDb": -0.43094897818777156
+      },
+      {
+        "frequencyHz": 276.076852920577,
+        "gainDb": -0.9142489415659298
+      },
+      {
+        "frequencyHz": 285.7787917022206,
+        "gainDb": -1.4660236241942712
+      },
+      {
+        "frequencyHz": 295.8216776336415,
+        "gainDb": -2.0128466435732193
+      },
+      {
+        "frequencyHz": 306.21749233640605,
+        "gainDb": -2.5045385082092864
+      },
+      {
+        "frequencyHz": 316.97863849222273,
+        "gainDb": -2.9107149104582586
+      },
+      {
+        "frequencyHz": 328.1179546399079,
+        "gainDb": -3.214432738229144
+      },
+      {
+        "frequencyHz": 339.6487304923488,
+        "gainDb": -3.406881133676773
+      },
+      {
+        "frequencyHz": 351.5847227917385,
+        "gainDb": -3.483909800487357
+      },
+      {
+        "frequencyHz": 363.94017172199665,
+        "gainDb": -3.4441277017261704
+      },
+      {
+        "frequencyHz": 376.72981789796006,
+        "gainDb": -3.2882098534758057
+      },
+      {
+        "frequencyHz": 389.9689199516091,
+        "gainDb": -3.0192459038574224
+      },
+      {
+        "frequencyHz": 403.6732727363122,
+        "gainDb": -2.6442170457447034
+      },
+      {
+        "frequencyHz": 417.8592261708079,
+        "gainDb": -2.176915950126002
+      },
+      {
+        "frequencyHz": 432.54370474540406,
+        "gainDb": -1.6426707198265902
+      },
+      {
+        "frequencyHz": 447.74422771366795,
+        "gainDb": -1.0845992314381299
+      },
+      {
+        "frequencyHz": 463.4789299936958,
+        "gainDb": -0.5687549699052852
+      },
+      {
+        "frequencyHz": 479.76658380389813,
+        "gainDb": -0.18085204131428512
+      },
+      {
+        "frequencyHz": 496.62662105911414,
+        "gainDb": -0.004778640813839274
+      },
+      {
+        "frequencyHz": 514.0791565537727,
+        "gainDb": -0.0852151460727697
+      },
+      {
+        "frequencyHz": 532.1450119597619,
+        "gainDb": -0.4018295283265729
+      },
+      {
+        "frequencyHz": 550.8457406676332,
+        "gainDb": -0.8815029912160526
+      },
+      {
+        "frequencyHz": 570.2036535007818,
+        "gainDb": -1.4354862279119764
+      },
+      {
+        "frequencyHz": 590.2418453332771,
+        "gainDb": -1.9887848140527602
+      },
+      {
+        "frequencyHz": 610.9842226431026,
+        "gainDb": -2.4896302687201466
+      },
+      {
+        "frequencyHz": 632.4555320336758,
+        "gainDb": -2.906480994128726
+      },
+      {
+        "frequencyHz": 654.6813897576765,
+        "gainDb": -3.2216718714694093
+      },
+      {
+        "frequencyHz": 677.6883122784051,
+        "gainDb": -3.425975754820252
+      },
+      {
+        "frequencyHz": 701.5037479051362,
+        "gainDb": -3.5150038242033688
+      },
+      {
+        "frequencyHz": 726.1561095402028,
+        "gainDb": -3.4872059609352313
+      },
+      {
+        "frequencyHz": 751.6748085768884,
+        "gainDb": -3.343100047751749
+      },
+      {
+        "frequencyHz": 778.0902899885614,
+        "gainDb": -3.0855470466359147
+      },
+      {
+        "frequencyHz": 805.4340686509183,
+        "gainDb": -2.7211422313457003
+      },
+      {
+        "frequencyHz": 833.7387669406711,
+        "gainDb": -2.263028481919065
+      },
+      {
+        "frequencyHz": 863.0381536555307,
+        "gainDb": -1.735511787367539
+      },
+      {
+        "frequencyHz": 893.3671843019265,
+        "gainDb": -1.1803050891773843
+      },
+      {
+        "frequencyHz": 924.7620427985208,
+        "gainDb": -0.6620141124710734
+      },
+      {
+        "frequencyHz": 957.2601846452769,
+        "gainDb": -0.26586590710444113
+      },
+      {
+        "frequencyHz": 990.90038160958,
+        "gainDb": -0.07760520900007961
+      },
+      {
+        "frequencyHz": 1025.7227679827295,
+        "gainDb": -0.1462664862639258
+      },
+      {
+        "frequencyHz": 1061.7688884619765,
+        "gainDb": -0.45607097316975853
+      },
+      {
+        "frequencyHz": 1099.0817477152489,
+        "gainDb": -0.9359910629621098
+      },
+      {
+        "frequencyHz": 1137.7058616876825,
+        "gainDb": -1.496661355259917
+      },
+      {
+        "frequencyHz": 1177.6873107111778,
+        "gainDb": -2.0612725243807013
+      },
+      {
+        "frequencyHz": 1219.0737944803382,
+        "gainDb": -2.5763119421248746
+      },
+      {
+        "frequencyHz": 1261.9146889603862,
+        "gainDb": -3.00900679400859
+      },
+      {
+        "frequencyHz": 1306.2611052949446,
+        "gainDb": -3.340940480718949
+      },
+      {
+        "frequencyHz": 1352.1659507839636,
+        "gainDb": -3.5624532592518907
+      },
+      {
+        "frequencyHz": 1399.6839920045468,
+        "gainDb": -3.6688942941357165
+      },
+      {
+        "frequencyHz": 1448.8719201499803,
+        "gainDb": -3.6585107335434905
+      },
+      {
+        "frequencyHz": 1499.7884186649117,
+        "gainDb": -3.531590247160622
+      },
+      {
+        "frequencyHz": 1552.4942332573835,
+        "gainDb": -3.290655909781483
+      },
+      {
+        "frequencyHz": 1607.0522443712346,
+        "gainDb": -2.9417705372151683
+      },
+      {
+        "frequencyHz": 1663.5275422053423,
+        "gainDb": -2.497257703179171
+      },
+      {
+        "frequencyHz": 1721.9875043692016,
+        "gainDb": -1.9802615894278723
+      },
+      {
+        "frequencyHz": 1782.5018762674913,
+        "gainDb": -1.4311098515812155
+      },
+      {
+        "frequencyHz": 1845.1428543095267,
+        "gainDb": -0.9133742420611739
+      },
+      {
+        "frequencyHz": 1909.9851720428724,
+        "gainDb": -0.5128581551160707
+      },
+      {
+        "frequencyHz": 1977.106189313878,
+        "gainDb": -0.31881085192573266
+      },
+      {
+        "frequencyHz": 2046.585984561509,
+        "gainDb": -0.38609121170672367
+      },
+      {
+        "frequencyHz": 2118.5074503545784,
+        "gainDb": -0.7037351675463057
+      },
+      {
+        "frequencyHz": 2192.956392286371,
+        "gainDb": -1.2017270699940283
+      },
+      {
+        "frequencyHz": 2270.021631344631,
+        "gainDb": -1.7885574340975374
+      },
+      {
+        "frequencyHz": 2349.795109879058,
+        "gainDb": -2.384445990102325
+      },
+      {
+        "frequencyHz": 2432.372001292735,
+        "gainDb": -2.93354000486889
+      },
+      {
+        "frequencyHz": 2517.8508235883337,
+        "gainDb": -3.401623416484483
+      },
+      {
+        "frequencyHz": 2606.3335569045976,
+        "gainDb": -3.7694867019863665
+      },
+      {
+        "frequencyHz": 2697.9257651833063,
+        "gainDb": -4.027024222959579
+      },
+      {
+        "frequencyHz": 2792.7367221118748,
+        "gainDb": -4.169257468606574
+      },
+      {
+        "frequencyHz": 2890.8795414918545,
+        "gainDb": -4.194064439344427
+      },
+      {
+        "frequencyHz": 2992.4713121888662,
+        "gainDb": -4.101198657817314
+      },
+      {
+        "frequencyHz": 3097.633237824962,
+        "gainDb": -3.8923714322757554
+      },
+      {
+        "frequencyHz": 3206.490781380083,
+        "gainDb": -3.5724501045665065
+      },
+      {
+        "frequencyHz": 3319.173814875121,
+        "gainDb": -3.152119132955276
+      },
+      {
+        "frequencyHz": 3435.816774315176,
+        "gainDb": -2.6525656079101356
+      },
+      {
+        "frequencyHz": 3556.5588200778457,
+        "gainDb": -2.112481644647783
+      },
+      {
+        "frequencyHz": 3681.544002937912,
+        "gainDb": -1.5957753491926283
+      },
+      {
+        "frequencyHz": 3810.9214359264943,
+        "gainDb": -1.1932181886843765
+      },
+      {
+        "frequencyHz": 3944.845472229708,
+        "gainDb": -1.0050933527598893
+      },
+      {
+        "frequencyHz": 4083.475889339059,
+        "gainDb": -1.0992629822883906
+      },
+      {
+        "frequencyHz": 4226.978079673294,
+        "gainDb": -1.4710221439477174
+      },
+      {
+        "frequencyHz": 4375.523247899106,
+        "gainDb": -2.046191136630437
+      },
+      {
+        "frequencyHz": 4529.28861518612,
+        "gainDb": -2.7238818992073277
+      },
+      {
+        "frequencyHz": 4688.457630639845,
+        "gainDb": -3.4161142708695618
+      },
+      {
+        "frequencyHz": 4853.220190164832,
+        "gainDb": -4.062205770168827
+      },
+      {
+        "frequencyHz": 5023.772863019161,
+        "gainDb": -4.625763164790476
+      },
+      {
+        "frequencyHz": 5200.319126330545,
+        "gainDb": -5.086771095126858
+      },
+      {
+        "frequencyHz": 5383.069607853833,
+        "gainDb": -5.434750343471617
+      },
+      {
+        "frequencyHz": 5572.242337259539,
+        "gainDb": -5.664215761561856
+      },
+      {
+        "frequencyHz": 5768.06300625321,
+        "gainDb": -5.772045771366635
+      },
+      {
+        "frequencyHz": 5970.765237835917,
+        "gainDb": -5.756207952277537
+      },
+      {
+        "frequencyHz": 6180.5908650271795,
+        "gainDb": -5.615537971679867
+      },
+      {
+        "frequencyHz": 6397.790219382795,
+        "gainDb": -5.350622672590315
+      },
+      {
+        "frequencyHz": 6622.62242965182,
+        "gainDb": -4.9662804888838235
+      },
+      {
+        "frequencyHz": 6855.355730929005,
+        "gainDb": -4.4767142808898654
+      },
+      {
+        "frequencyHz": 7096.267784671508,
+        "gainDb": -3.9149387935953293
+      },
+      {
+        "frequencyHz": 7345.6460099616925,
+        "gainDb": -3.347207744857787
+      },
+      {
+        "frequencyHz": 7603.787926411223,
+        "gainDb": -2.886622767206056
+      },
+      {
+        "frequencyHz": 7871.001509115549,
+        "gainDb": -2.683436102664686
+      },
+      {
+        "frequencyHz": 8147.605556082254,
+        "gainDb": -2.862574908959205
+      },
+      {
+        "frequencyHz": 8433.930068571646,
+        "gainDb": -3.437109631654657
+      },
+      {
+        "frequencyHz": 8730.316644803319,
+        "gainDb": -4.29766818089881
+      },
+      {
+        "frequencyHz": 9037.118887498447,
+        "gainDb": -5.2923504301541335
+      },
+      {
+        "frequencyHz": 9354.702825743965,
+        "gainDb": -6.299054632111211
+      },
+      {
+        "frequencyHz": 9683.447351681987,
+        "gainDb": -7.243422410404703
+      },
+      {
+        "frequencyHz": 10023.744672545447,
+        "gainDb": -8.087164262414346
+      },
+      {
+        "frequencyHz": 10376.000778579222,
+        "gainDb": -8.812754505422205
+      },
+      {
+        "frequencyHz": 10740.635927405057,
+        "gainDb": -9.412680537701606
+      },
+      {
+        "frequencyHz": 11118.085145408075,
+        "gainDb": -9.883079469276222
+      },
+      {
+        "frequencyHz": 11508.798746743141,
+        "gainDb": -10.220050480491746
+      },
+      {
+        "frequencyHz": 11913.242870580214,
+        "gainDb": -10.417303959213664
+      },
+      {
+        "frequencyHz": 12331.900037229647,
+        "gainDb": -10.464331436535227
+      },
+      {
+        "frequencyHz": 12765.26972381098,
+        "gainDb": -10.344650573831462
+      },
+      {
+        "frequencyHz": 13213.868960151915,
+        "gainDb": -10.034026054831571
+      },
+      {
+        "frequencyHz": 13678.23294562858,
+        "gainDb": -9.499337445049935
+      },
+      {
+        "frequencyHz": 14158.915687682755,
+        "gainDb": -8.701470429985878
+      },
+      {
+        "frequencyHz": 14656.490662778078,
+        "gainDb": -7.615912899114637
+      },
+      {
+        "frequencyHz": 15171.551500583671,
+        "gainDb": -6.320892551249891
+      },
+      {
+        "frequencyHz": 15704.712692201432,
+        "gainDb": -5.264751819292341
+      },
+      {
+        "frequencyHz": 16256.610323281982,
+        "gainDb": -5.442029104560948
+      },
+      {
+        "frequencyHz": 16827.9028329039,
+        "gainDb": -7.1729366627565465
+      },
+      {
+        "frequencyHz": 17419.271799121612,
+        "gainDb": -9.487881363772601
+      },
+      {
+        "frequencyHz": 18031.422752119135,
+        "gainDb": -11.651963400955985
+      },
+      {
+        "frequencyHz": 18665.086015939818,
+        "gainDb": -13.460560562838651
+      },
+      {
+        "frequencyHz": 19321.017579796266,
+        "gainDb": -14.908942301826134
+      },
+      {
+        "frequencyHz": 20000.0,
+        "gainDb": -16.04056474658631
+      }
+    ],
+    "referenceResponse": false,
+    "safePreampDb": -18.402800140131575,
+    "editableBands": [true, true, true, true, true, true, true, true, true, true],
+    "responseRate": 48000
+  },
+  "mono": {
+    "document": {
+      "schemaVersion": 1,
+      "registryVersion": 1,
+      "userPresets": [],
+      "selection": {
+        "kind": "preset",
+        "id": "builtin:surround"
+      },
+      "retainedPayload": {
+        "kind": "spatial",
+        "width": 1.25,
+        "mix": 1.0
+      },
+      "draft": null,
+      "requestedEnabled": true
+    },
+    "runtime": {
+      "revision": 1,
+      "playbackEpoch": 1,
+      "persistenceStatus": "unsaved",
+      "applied": "unavailable",
+      "effectivePreampDb": null,
+      "activeBands": [false, false, false, false, false, false, false, false, false, false],
+      "processingRate": 48000,
+      "channelLayout": "mono",
+      "reason": "effect is unavailable for the observed processing environment"
+    },
+    "presets": [
+      {
+        "id": "builtin:pop",
+        "name": "流行",
+        "description": "轻度突出低频和明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 2.0, 1.0, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, 0.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:rock",
+        "name": "摇滚",
+        "description": "突出低频和乐器存在感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [3.0, 4.0, 2.0, 0.0, -1.5, -2.0, -0.5, 2.0, 3.0, 2.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:classical",
+        "name": "古典",
+        "description": "接近中性，局部轻度提亮",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:jazz",
+        "name": "爵士",
+        "description": "增加厚度与轻度明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 1.5, 2.0, 1.5, 0.5, 0.0, 0.5, 1.0, 1.5, 1.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:electronic",
+        "name": "电子",
+        "description": "加强节奏低频和明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [2.0, 3.0, 2.0, -1.0, -1.5, -1.0, 0.0, 1.5, 2.0, 1.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:vocal",
+        "name": "清澈人声",
+        "description": "调整整曲音色与存在感，也会影响乐器",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [-1.5, -1.5, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, -1.0, 0.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:bass",
+        "name": "超重低音",
+        "description": "突出低频厚度与力度",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.5, 4.0, 3.0, 0.5, 0.0, -0.5, -0.5, -0.5, -1.0, -1.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:warm",
+        "name": "温暖轻柔",
+        "description": "柔和高频并增加低频厚度",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 1.5, 1.0, 0.5, 0.0, 0.0, -0.5, -1.0, -2.0, -2.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:retro",
+        "name": "华丽复古",
+        "description": "强调中低频并减弱高频",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [0.0, 1.0, 2.5, 3.0, 2.0, 0.5, -0.5, -2.0, -3.5, -5.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:surround",
+        "name": "空间感增强",
+        "description": "拓宽双声道空间感；需要双声道输入",
+        "payload": {
+          "kind": "spatial",
+          "width": 1.25,
+          "mix": 1.0
+        },
+        "source": "builtin"
+      }
+    ],
+    "responsePoints": [],
+    "referenceResponse": true,
+    "safePreampDb": null,
+    "editableBands": [true, true, true, true, true, true, true, true, true, true],
+    "responseRate": 48000
+  },
+  "noTrack": {
+    "document": {
+      "schemaVersion": 1,
+      "registryVersion": 1,
+      "userPresets": [],
+      "selection": {
+        "kind": "preset",
+        "id": "builtin:pop"
+      },
+      "retainedPayload": {
+        "kind": "eq",
+        "gainsDb": [1.0, 2.0, 1.0, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, 0.0],
+        "preampMode": "auto",
+        "requestedPreampDb": 0.0
+      },
+      "draft": null,
+      "requestedEnabled": true
+    },
+    "runtime": {
+      "revision": 1,
+      "playbackEpoch": 0,
+      "persistenceStatus": "unsaved",
+      "applied": "pending",
+      "effectivePreampDb": null,
+      "activeBands": [false, false, false, false, false, false, false, false, false, false],
+      "processingRate": null,
+      "channelLayout": null,
+      "reason": null
+    },
+    "presets": [
+      {
+        "id": "builtin:pop",
+        "name": "流行",
+        "description": "轻度突出低频和明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 2.0, 1.0, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, 0.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:rock",
+        "name": "摇滚",
+        "description": "突出低频和乐器存在感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [3.0, 4.0, 2.0, 0.0, -1.5, -2.0, -0.5, 2.0, 3.0, 2.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:classical",
+        "name": "古典",
+        "description": "接近中性，局部轻度提亮",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:jazz",
+        "name": "爵士",
+        "description": "增加厚度与轻度明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 1.5, 2.0, 1.5, 0.5, 0.0, 0.5, 1.0, 1.5, 1.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:electronic",
+        "name": "电子",
+        "description": "加强节奏低频和明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [2.0, 3.0, 2.0, -1.0, -1.5, -1.0, 0.0, 1.5, 2.0, 1.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:vocal",
+        "name": "清澈人声",
+        "description": "调整整曲音色与存在感，也会影响乐器",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [-1.5, -1.5, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, -1.0, 0.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:bass",
+        "name": "超重低音",
+        "description": "突出低频厚度与力度",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.5, 4.0, 3.0, 0.5, 0.0, -0.5, -0.5, -0.5, -1.0, -1.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:warm",
+        "name": "温暖轻柔",
+        "description": "柔和高频并增加低频厚度",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 1.5, 1.0, 0.5, 0.0, 0.0, -0.5, -1.0, -2.0, -2.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:retro",
+        "name": "华丽复古",
+        "description": "强调中低频并减弱高频",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [0.0, 1.0, 2.5, 3.0, 2.0, 0.5, -0.5, -2.0, -3.5, -5.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:surround",
+        "name": "空间感增强",
+        "description": "拓宽双声道空间感；需要双声道输入",
+        "payload": {
+          "kind": "spatial",
+          "width": 1.25,
+          "mix": 1.0
+        },
+        "source": "builtin"
+      }
+    ],
+    "responsePoints": [
+      {
+        "frequencyHz": 20.0,
+        "gainDb": -1.3261375415263035
+      },
+      {
+        "frequencyHz": 20.702843333586877,
+        "gainDb": -1.2747768411853992
+      },
+      {
+        "frequencyHz": 21.430386104752127,
+        "gainDb": -1.2178553122923474
+      },
+      {
+        "frequencyHz": 22.18349630524802,
+        "gainDb": -1.155073588681665
+      },
+      {
+        "frequencyHz": 22.963072429937657,
+        "gainDb": -1.0863300028707477
+      },
+      {
+        "frequencyHz": 23.77004454874037,
+        "gainDb": -1.011844237282255
+      },
+      {
+        "frequencyHz": 24.605375416247632,
+        "gainDb": -0.9323117738469825
+      },
+      {
+        "frequencyHz": 25.470061620333233,
+        "gainDb": -0.8490720407877442
+      },
+      {
+        "frequencyHz": 26.36513477112814,
+        "gainDb": -0.764248876396677
+      },
+      {
+        "frequencyHz": 27.29166273177849,
+        "gainDb": -0.6807917864562572
+      },
+      {
+        "frequencyHz": 28.250750892455088,
+        "gainDb": -0.6023256461784765
+      },
+      {
+        "frequencyHz": 29.243543489134364,
+        "gainDb": -0.5327333620476833
+      },
+      {
+        "frequencyHz": 30.271224968724162,
+        "gainDb": -0.47547800484929015
+      },
+      {
+        "frequencyHz": 31.33502140216298,
+        "gainDb": -0.4328096156902601
+      },
+      {
+        "frequencyHz": 32.4362019471786,
+        "gainDb": -0.40512379623321704
+      },
+      {
+        "frequencyHz": 33.57608036245121,
+        "gainDb": -0.39073737577276546
+      },
+      {
+        "frequencyHz": 34.75601657498751,
+        "gainDb": -0.3861814005801012
+      },
+      {
+        "frequencyHz": 35.97741830257576,
+        "gainDb": -0.38687902644691485
+      },
+      {
+        "frequencyHz": 37.241742733257354,
+        "gainDb": -0.3879340710522905
+      },
+      {
+        "frequencyHz": 38.55049826381872,
+        "gainDb": -0.38478028719964574
+      },
+      {
+        "frequencyHz": 39.905246299377595,
+        "gainDb": -0.37357470000237214
+      },
+      {
+        "frequencyHz": 41.307603116210586,
+        "gainDb": -0.3513533787558547
+      },
+      {
+        "frequencyHz": 42.75924179004464,
+        "gainDb": -0.31604146812294154
+      },
+      {
+        "frequencyHz": 44.261894192112756,
+        "gainDb": -0.26642055368466866
+      },
+      {
+        "frequencyHz": 45.81735305535546,
+        "gainDb": -0.20213362147622216
+      },
+      {
+        "frequencyHz": 47.4274741132331,
+        "gainDb": -0.12377495797726312
+      },
+      {
+        "frequencyHz": 49.09417831370061,
+        "gainDb": -0.03307771623413602
+      },
+      {
+        "frequencyHz": 50.8194541109861,
+        "gainDb": 0.06682827320935569
+      },
+      {
+        "frequencyHz": 52.60535983790764,
+        "gainDb": 0.1711687488335507
+      },
+      {
+        "frequencyHz": 54.45402616155825,
+        "gainDb": 0.27343198885732356
+      },
+      {
+        "frequencyHz": 56.367658625289074,
+        "gainDb": 0.36562666944821665
+      },
+      {
+        "frequencyHz": 58.348540280023336,
+        "gainDb": 0.4390692916862786
+      },
+      {
+        "frequencyHz": 60.39903440804032,
+        "gainDb": 0.4857274463599417
+      },
+      {
+        "frequencyHz": 62.5215873424791,
+        "gainDb": 0.49985529756533653
+      },
+      {
+        "frequencyHz": 64.71873138592565,
+        "gainDb": 0.4793722490243346
+      },
+      {
+        "frequencyHz": 66.99308783156552,
+        "gainDb": 0.4263992367712861
+      },
+      {
+        "frequencyHz": 69.34737009050633,
+        "gainDb": 0.3467010027979147
+      },
+      {
+        "frequencyHz": 71.78438692900104,
+        "gainDb": 0.24829553174309282
+      },
+      {
+        "frequencyHz": 74.3070458194345,
+        "gainDb": 0.1398191558725821
+      },
+      {
+        "frequencyHz": 76.91835640907071,
+        "gainDb": 0.029192293328518026
+      },
+      {
+        "frequencyHz": 79.62143411069945,
+        "gainDb": -0.07715704693132519
+      },
+      {
+        "frequencyHz": 82.41950381946603,
+        "gainDb": -0.17454285377377787
+      },
+      {
+        "frequencyHz": 85.31590376031852,
+        "gainDb": -0.2599239826159341
+      },
+      {
+        "frequencyHz": 88.3140894706625,
+        "gainDb": -0.3316559011580258
+      },
+      {
+        "frequencyHz": 91.41763792297502,
+        "gainDb": -0.38923471063779447
+      },
+      {
+        "frequencyHz": 94.63025179229611,
+        "gainDb": -0.4331125709187762
+      },
+      {
+        "frequencyHz": 97.95576387368925,
+        "gainDb": -0.4646110722225141
+      },
+      {
+        "frequencyHz": 101.39814165494086,
+        "gainDb": -0.4859191369422198
+      },
+      {
+        "frequencyHz": 104.9614920499545,
+        "gainDb": -0.5001274551538042
+      },
+      {
+        "frequencyHz": 108.65006629848664,
+        "gainDb": -0.5112186020449949
+      },
+      {
+        "frequencyHz": 112.46826503806983,
+        "gainDb": -0.5239095508407541
+      },
+      {
+        "frequencyHz": 116.42064355417429,
+        "gainDb": -0.5432555151062985
+      },
+      {
+        "frequencyHz": 120.51191721487156,
+        "gainDb": -0.5739988894315622
+      },
+      {
+        "frequencyHz": 124.74696709648386,
+        "gainDb": -0.6197828897250635
+      },
+      {
+        "frequencyHz": 129.13084580693112,
+        "gainDb": -0.6824816576013557
+      },
+      {
+        "frequencyHz": 133.66878351372296,
+        "gainDb": -0.7619197004531786
+      },
+      {
+        "frequencyHz": 138.36619418378731,
+        "gainDb": -0.8561085035915373
+      },
+      {
+        "frequencyHz": 143.22868204258037,
+        "gainDb": -0.9618949102760322
+      },
+      {
+        "frequencyHz": 148.26204826018346,
+        "gainDb": -1.07575311630821
+      },
+      {
+        "frequencyHz": 153.47229787236378,
+        "gainDb": -1.194452983500379
+      },
+      {
+        "frequencyHz": 158.86564694485628,
+        "gainDb": -1.3154599115273178
+      },
+      {
+        "frequencyHz": 164.44852998941423,
+        "gainDb": -1.4370585238339169
+      },
+      {
+        "frequencyHz": 170.2276076404753,
+        "gainDb": -1.5582717418047725
+      },
+      {
+        "frequencyHz": 176.20977460160282,
+        "gainDb": -1.6786613656374134
+      },
+      {
+        "frequencyHz": 182.40216787118197,
+        "gainDb": -1.7980744473440893
+      },
+      {
+        "frequencyHz": 188.8121752571847,
+        "gainDb": -1.9163710277597237
+      },
+      {
+        "frequencyHz": 195.44744419116216,
+        "gainDb": -2.0331503556854806
+      },
+      {
+        "frequencyHz": 202.31589085197976,
+        "gainDb": -2.147491044523167
+      },
+      {
+        "frequencyHz": 209.42570961017995,
+        "gainDb": -2.2577362127153897
+      },
+      {
+        "frequencyHz": 216.78538280424067,
+        "gainDb": -2.361382384708939
+      },
+      {
+        "frequencyHz": 224.40369086039266,
+        "gainDb": -2.4551560047161742
+      },
+      {
+        "frequencyHz": 232.28972276806854,
+        "gainDb": -2.5353562456549055
+      },
+      {
+        "frequencyHz": 240.45288692348254,
+        "gainDb": -2.598476670101378
+      },
+      {
+        "frequencyHz": 248.902922354277,
+        "gainDb": -2.6419885821514084
+      },
+      {
+        "frequencyHz": 257.6499103386268,
+        "gainDb": -2.665035455039313
+      },
+      {
+        "frequencyHz": 266.7042864326648,
+        "gainDb": -2.6687576437780676
+      },
+      {
+        "frequencyHz": 276.076852920577,
+        "gainDb": -2.6561021761181887
+      },
+      {
+        "frequencyHz": 285.7787917022206,
+        "gainDb": -2.63120518892158
+      },
+      {
+        "frequencyHz": 295.8216776336415,
+        "gainDb": -2.598606786943718
+      },
+      {
+        "frequencyHz": 306.21749233640605,
+        "gainDb": -2.562568066572168
+      },
+      {
+        "frequencyHz": 316.97863849222273,
+        "gainDb": -2.5266414360589193
+      },
+      {
+        "frequencyHz": 328.1179546399079,
+        "gainDb": -2.493504669148856
+      },
+      {
+        "frequencyHz": 339.6487304923488,
+        "gainDb": -2.4649830548190796
+      },
+      {
+        "frequencyHz": 351.5847227917385,
+        "gainDb": -2.4421638854468886
+      },
+      {
+        "frequencyHz": 363.94017172199665,
+        "gainDb": -2.425527003916416
+      },
+      {
+        "frequencyHz": 376.72981789796006,
+        "gainDb": -2.415045977227609
+      },
+      {
+        "frequencyHz": 389.9689199516091,
+        "gainDb": -2.4102418979717353
+      },
+      {
+        "frequencyHz": 403.6732727363122,
+        "gainDb": -2.4101931665543432
+      },
+      {
+        "frequencyHz": 417.8592261708079,
+        "gainDb": -2.4135226901809426
+      },
+      {
+        "frequencyHz": 432.54370474540406,
+        "gainDb": -2.4184008467067706
+      },
+      {
+        "frequencyHz": 447.74422771366795,
+        "gainDb": -2.422614903200244
+      },
+      {
+        "frequencyHz": 463.4789299936958,
+        "gainDb": -2.4237522901909316
+      },
+      {
+        "frequencyHz": 479.76658380389813,
+        "gainDb": -2.419512198298673
+      },
+      {
+        "frequencyHz": 496.62662105911414,
+        "gainDb": -2.408095621974679
+      },
+      {
+        "frequencyHz": 514.0791565537727,
+        "gainDb": -2.3885559846197335
+      },
+      {
+        "frequencyHz": 532.1450119597619,
+        "gainDb": -2.3609724846440794
+      },
+      {
+        "frequencyHz": 550.8457406676332,
+        "gainDb": -2.3263692343974647
+      },
+      {
+        "frequencyHz": 570.2036535007818,
+        "gainDb": -2.2864159899326504
+      },
+      {
+        "frequencyHz": 590.2418453332771,
+        "gainDb": -2.2430351546813423
+      },
+      {
+        "frequencyHz": 610.9842226431026,
+        "gainDb": -2.1980511835531624
+      },
+      {
+        "frequencyHz": 632.4555320336758,
+        "gainDb": -2.1529638276452783
+      },
+      {
+        "frequencyHz": 654.6813897576765,
+        "gainDb": -2.1088566612656257
+      },
+      {
+        "frequencyHz": 677.6883122784051,
+        "gainDb": -2.066407041142652
+      },
+      {
+        "frequencyHz": 701.5037479051362,
+        "gainDb": -2.0259513288223645
+      },
+      {
+        "frequencyHz": 726.1561095402028,
+        "gainDb": -1.9875677889070948
+      },
+      {
+        "frequencyHz": 751.6748085768884,
+        "gainDb": -1.9511544862404582
+      },
+      {
+        "frequencyHz": 778.0902899885614,
+        "gainDb": -1.9164922115626943
+      },
+      {
+        "frequencyHz": 805.4340686509183,
+        "gainDb": -1.8832904504932673
+      },
+      {
+        "frequencyHz": 833.7387669406711,
+        "gainDb": -1.8512183094058736
+      },
+      {
+        "frequencyHz": 863.0381536555307,
+        "gainDb": -1.8199236095854026
+      },
+      {
+        "frequencyHz": 893.3671843019265,
+        "gainDb": -1.7890433313182643
+      },
+      {
+        "frequencyHz": 924.7620427985208,
+        "gainDb": -1.7582080415822394
+      },
+      {
+        "frequencyHz": 957.2601846452769,
+        "gainDb": -1.727042297376788
+      },
+      {
+        "frequencyHz": 990.90038160958,
+        "gainDb": -1.695162466506577
+      },
+      {
+        "frequencyHz": 1025.7227679827295,
+        "gainDb": -1.662173010092124
+      },
+      {
+        "frequencyHz": 1061.7688884619765,
+        "gainDb": -1.627662035714601
+      },
+      {
+        "frequencyHz": 1099.0817477152489,
+        "gainDb": -1.5911968534780245
+      },
+      {
+        "frequencyHz": 1137.7058616876825,
+        "gainDb": -1.552320352178994
+      },
+      {
+        "frequencyHz": 1177.6873107111778,
+        "gainDb": -1.510549276653786
+      },
+      {
+        "frequencyHz": 1219.0737944803382,
+        "gainDb": -1.465375964145243
+      },
+      {
+        "frequencyHz": 1261.9146889603862,
+        "gainDb": -1.416275832010124
+      },
+      {
+        "frequencyHz": 1306.2611052949446,
+        "gainDb": -1.3627239375291098
+      },
+      {
+        "frequencyHz": 1352.1659507839636,
+        "gainDb": -1.3042252331373407
+      },
+      {
+        "frequencyHz": 1399.6839920045468,
+        "gainDb": -1.2403645412634798
+      },
+      {
+        "frequencyHz": 1448.8719201499803,
+        "gainDb": -1.1708832568325196
+      },
+      {
+        "frequencyHz": 1499.7884186649117,
+        "gainDb": -1.095789213159798
+      },
+      {
+        "frequencyHz": 1552.4942332573835,
+        "gainDb": -1.0155019368690794
+      },
+      {
+        "frequencyHz": 1607.0522443712346,
+        "gainDb": -0.9310245973777062
+      },
+      {
+        "frequencyHz": 1663.5275422053423,
+        "gainDb": -0.844113244188659
+      },
+      {
+        "frequencyHz": 1721.9875043692016,
+        "gainDb": -0.757383544619743
+      },
+      {
+        "frequencyHz": 1782.5018762674913,
+        "gainDb": -0.6742645551485533
+      },
+      {
+        "frequencyHz": 1845.1428543095267,
+        "gainDb": -0.5987024013986453
+      },
+      {
+        "frequencyHz": 1909.9851720428724,
+        "gainDb": -0.5345683394472398
+      },
+      {
+        "frequencyHz": 1977.106189313878,
+        "gainDb": -0.4848513466134332
+      },
+      {
+        "frequencyHz": 2046.585984561509,
+        "gainDb": -0.4508700482772159
+      },
+      {
+        "frequencyHz": 2118.5074503545784,
+        "gainDb": -0.43181175617248524
+      },
+      {
+        "frequencyHz": 2192.956392286371,
+        "gainDb": -0.4248042525159659
+      },
+      {
+        "frequencyHz": 2270.021631344631,
+        "gainDb": -0.4254856218919396
+      },
+      {
+        "frequencyHz": 2349.795109879058,
+        "gainDb": -0.42882198074141087
+      },
+      {
+        "frequencyHz": 2432.372001292735,
+        "gainDb": -0.42987227246329773
+      },
+      {
+        "frequencyHz": 2517.8508235883337,
+        "gainDb": -0.42430849475260013
+      },
+      {
+        "frequencyHz": 2606.3335569045976,
+        "gainDb": -0.4086581845185111
+      },
+      {
+        "frequencyHz": 2697.9257651833063,
+        "gainDb": -0.3803460697617709
+      },
+      {
+        "frequencyHz": 2792.7367221118748,
+        "gainDb": -0.3376479409783051
+      },
+      {
+        "frequencyHz": 2890.8795414918545,
+        "gainDb": -0.2796564784497608
+      },
+      {
+        "frequencyHz": 2992.4713121888662,
+        "gainDb": -0.2063276090666215
+      },
+      {
+        "frequencyHz": 3097.633237824962,
+        "gainDb": -0.11864317561954518
+      },
+      {
+        "frequencyHz": 3206.490781380083,
+        "gainDb": -0.018890512811443827
+      },
+      {
+        "frequencyHz": 3319.173814875121,
+        "gainDb": 0.08898871457435353
+      },
+      {
+        "frequencyHz": 3435.816774315176,
+        "gainDb": 0.19909936342911427
+      },
+      {
+        "frequencyHz": 3556.5588200778457,
+        "gainDb": 0.3035497246742165
+      },
+      {
+        "frequencyHz": 3681.544002937912,
+        "gainDb": 0.3929284827671702
+      },
+      {
+        "frequencyHz": 3810.9214359264943,
+        "gainDb": 0.4575009366374747
+      },
+      {
+        "frequencyHz": 3944.845472229708,
+        "gainDb": 0.48904999642277724
+      },
+      {
+        "frequencyHz": 4083.475889339059,
+        "gainDb": 0.48285727796489386
+      },
+      {
+        "frequencyHz": 4226.978079673294,
+        "gainDb": 0.4390169850343728
+      },
+      {
+        "frequencyHz": 4375.523247899106,
+        "gainDb": 0.3624410399802569
+      },
+      {
+        "frequencyHz": 4529.28861518612,
+        "gainDb": 0.26154721897266464
+      },
+      {
+        "frequencyHz": 4688.457630639845,
+        "gainDb": 0.1462648612661397
+      },
+      {
+        "frequencyHz": 4853.220190164832,
+        "gainDb": 0.026175389203095367
+      },
+      {
+        "frequencyHz": 5023.772863019161,
+        "gainDb": -0.09069177183731458
+      },
+      {
+        "frequencyHz": 5200.319126330545,
+        "gainDb": -0.19832494429291936
+      },
+      {
+        "frequencyHz": 5383.069607853833,
+        "gainDb": -0.2926591252871298
+      },
+      {
+        "frequencyHz": 5572.242337259539,
+        "gainDb": -0.3712406565224651
+      },
+      {
+        "frequencyHz": 5768.06300625321,
+        "gainDb": -0.43284460232712485
+      },
+      {
+        "frequencyHz": 5970.765237835917,
+        "gainDb": -0.47717606357290787
+      },
+      {
+        "frequencyHz": 6180.5908650271795,
+        "gainDb": -0.504719763590697
+      },
+      {
+        "frequencyHz": 6397.790219382795,
+        "gainDb": -0.5167610107576399
+      },
+      {
+        "frequencyHz": 6622.62242965182,
+        "gainDb": -0.5155702205582473
+      },
+      {
+        "frequencyHz": 6855.355730929005,
+        "gainDb": -0.5046987186370977
+      },
+      {
+        "frequencyHz": 7096.267784671508,
+        "gainDb": -0.4892544294013774
+      },
+      {
+        "frequencyHz": 7345.6460099616925,
+        "gainDb": -0.4759167946722136
+      },
+      {
+        "frequencyHz": 7603.787926411223,
+        "gainDb": -0.4723804644670324
+      },
+      {
+        "frequencyHz": 7871.001509115549,
+        "gainDb": -0.48603582958164626
+      },
+      {
+        "frequencyHz": 8147.605556082254,
+        "gainDb": -0.5221152311653809
+      },
+      {
+        "frequencyHz": 8433.930068571646,
+        "gainDb": -0.5820795797696112
+      },
+      {
+        "frequencyHz": 8730.316644803319,
+        "gainDb": -0.663164874491921
+      },
+      {
+        "frequencyHz": 9037.118887498447,
+        "gainDb": -0.7594081480467905
+      },
+      {
+        "frequencyHz": 9354.702825743965,
+        "gainDb": -0.8635631909577929
+      },
+      {
+        "frequencyHz": 9683.447351681987,
+        "gainDb": -0.968918266389899
+      },
+      {
+        "frequencyHz": 10023.744672545447,
+        "gainDb": -1.0703669540770888
+      },
+      {
+        "frequencyHz": 10376.000778579222,
+        "gainDb": -1.1646714984095117
+      },
+      {
+        "frequencyHz": 10740.635927405057,
+        "gainDb": -1.2502081926156543
+      },
+      {
+        "frequencyHz": 11118.085145408075,
+        "gainDb": -1.326519259150505
+      },
+      {
+        "frequencyHz": 11508.798746743141,
+        "gainDb": -1.3938786934615712
+      },
+      {
+        "frequencyHz": 11913.242870580214,
+        "gainDb": -1.4529570590372696
+      },
+      {
+        "frequencyHz": 12331.900037229647,
+        "gainDb": -1.5045955566960667
+      },
+      {
+        "frequencyHz": 12765.26972381098,
+        "gainDb": -1.549668747747456
+      },
+      {
+        "frequencyHz": 13213.868960151915,
+        "gainDb": -1.5890092649431118
+      },
+      {
+        "frequencyHz": 13678.23294562858,
+        "gainDb": -1.6233719345925495
+      },
+      {
+        "frequencyHz": 14158.915687682755,
+        "gainDb": -1.653421140481949
+      },
+      {
+        "frequencyHz": 14656.490662778078,
+        "gainDb": -1.679730892347558
+      },
+      {
+        "frequencyHz": 15171.551500583671,
+        "gainDb": -1.702791162047109
+      },
+      {
+        "frequencyHz": 15704.712692201432,
+        "gainDb": -1.7230167589682321
+      },
+      {
+        "frequencyHz": 16256.610323281982,
+        "gainDb": -1.7407566980658715
+      },
+      {
+        "frequencyHz": 16827.9028329039,
+        "gainDb": -1.7563030106143234
+      },
+      {
+        "frequencyHz": 17419.271799121612,
+        "gainDb": -1.7698985129019054
+      },
+      {
+        "frequencyHz": 18031.422752119135,
+        "gainDb": -1.7817433512862721
+      },
+      {
+        "frequencyHz": 18665.086015939818,
+        "gainDb": -1.7920002897868843
+      },
+      {
+        "frequencyHz": 19321.017579796266,
+        "gainDb": -1.800798762427933
+      },
+      {
+        "frequencyHz": 20000.0,
+        "gainDb": -1.8082377127632303
+      }
+    ],
+    "referenceResponse": true,
+    "safePreampDb": -2.3265085370598144,
+    "editableBands": [true, true, true, true, true, true, true, true, true, true],
+    "responseRate": 48000
+  },
+  "pendingLowRate": {
+    "document": {
+      "schemaVersion": 1,
+      "registryVersion": 1,
+      "userPresets": [],
+      "selection": {
+        "kind": "preset",
+        "id": "builtin:pop"
+      },
+      "retainedPayload": {
+        "kind": "eq",
+        "gainsDb": [1.0, 2.0, 1.0, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, 0.0],
+        "preampMode": "auto",
+        "requestedPreampDb": 0.0
+      },
+      "draft": null,
+      "requestedEnabled": true
+    },
+    "runtime": {
+      "revision": 1,
+      "playbackEpoch": 1,
+      "persistenceStatus": "unsaved",
+      "applied": "pending",
+      "effectivePreampDb": null,
+      "activeBands": [true, true, true, true, true, true, true, true, true, false],
+      "processingRate": 22050,
+      "channelLayout": "stereo",
+      "reason": null
+    },
+    "presets": [
+      {
+        "id": "builtin:pop",
+        "name": "流行",
+        "description": "轻度突出低频和明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 2.0, 1.0, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, 0.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:rock",
+        "name": "摇滚",
+        "description": "突出低频和乐器存在感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [3.0, 4.0, 2.0, 0.0, -1.5, -2.0, -0.5, 2.0, 3.0, 2.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:classical",
+        "name": "古典",
+        "description": "接近中性，局部轻度提亮",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:jazz",
+        "name": "爵士",
+        "description": "增加厚度与轻度明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 1.5, 2.0, 1.5, 0.5, 0.0, 0.5, 1.0, 1.5, 1.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:electronic",
+        "name": "电子",
+        "description": "加强节奏低频和明亮感",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [2.0, 3.0, 2.0, -1.0, -1.5, -1.0, 0.0, 1.5, 2.0, 1.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:vocal",
+        "name": "清澈人声",
+        "description": "调整整曲音色与存在感，也会影响乐器",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [-1.5, -1.5, -1.0, -0.5, 0.0, 1.0, 2.0, 1.0, -1.0, 0.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:bass",
+        "name": "超重低音",
+        "description": "突出低频厚度与力度",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.5, 4.0, 3.0, 0.5, 0.0, -0.5, -0.5, -0.5, -1.0, -1.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:warm",
+        "name": "温暖轻柔",
+        "description": "柔和高频并增加低频厚度",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [1.0, 1.5, 1.0, 0.5, 0.0, 0.0, -0.5, -1.0, -2.0, -2.5],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:retro",
+        "name": "华丽复古",
+        "description": "强调中低频并减弱高频",
+        "payload": {
+          "kind": "eq",
+          "gainsDb": [0.0, 1.0, 2.5, 3.0, 2.0, 0.5, -0.5, -2.0, -3.5, -5.0],
+          "preampMode": "auto",
+          "requestedPreampDb": 0.0
+        },
+        "source": "builtin"
+      },
+      {
+        "id": "builtin:surround",
+        "name": "空间感增强",
+        "description": "拓宽双声道空间感；需要双声道输入",
+        "payload": {
+          "kind": "spatial",
+          "width": 1.25,
+          "mix": 1.0
+        },
+        "source": "builtin"
+      }
+    ],
+    "responsePoints": [
+      {
+        "frequencyHz": 20.0,
+        "gainDb": -1.3260712404878756
+      },
+      {
+        "frequencyHz": 20.63041437888513,
+        "gainDb": -1.2801704201226183
+      },
+      {
+        "frequencyHz": 21.28069987222552,
+        "gainDb": -1.2298091751872327
+      },
+      {
+        "frequencyHz": 21.951482831835015,
+        "gainDb": -1.1747533305911233
+      },
+      {
+        "frequencyHz": 22.64340935258696,
+        "gainDb": -1.1148832177719774
+      },
+      {
+        "frequencyHz": 23.3571458947296,
+        "gainDb": -1.050261052315203
+      },
+      {
+        "frequencyHz": 24.09337992581737,
+        "gainDb": -0.981215800845468
+      },
+      {
+        "frequencyHz": 24.85282058287625,
+        "gainDb": -0.9084406811621774
+      },
+      {
+        "frequencyHz": 25.63619935544113,
+        "gainDb": -0.8330897727896905
+      },
+      {
+        "frequencyHz": 26.444270790122918,
+        "gainDb": -0.7568480161142968
+      },
+      {
+        "frequencyHz": 27.277813217384196,
+        "gainDb": -0.6819359440892963
+      },
+      {
+        "frequencyHz": 28.137629501223287,
+        "gainDb": -0.6110039557000579
+      },
+      {
+        "frequencyHz": 29.02454781248897,
+        "gainDb": -0.54688183870402
+      },
+      {
+        "frequencyHz": 29.939422426570573,
+        "gainDb": -0.49218690193501025
+      },
+      {
+        "frequencyHz": 30.883134546231872,
+        "gainDb": -0.4488548798801386
+      },
+      {
+        "frequencyHz": 31.856593150381304,
+        "gainDb": -0.41771611287330357
+      },
+      {
+        "frequencyHz": 32.860735869596006,
+        "gainDb": -0.39825548193942617
+      },
+      {
+        "frequencyHz": 33.89652988924299,
+        "gainDb": -0.38864339061676345
+      },
+      {
+        "frequencyHz": 34.96497288106741,
+        "gainDb": -0.3860255473427594
+      },
+      {
+        "frequencyHz": 36.06709396414509,
+        "gainDb": -0.38696719768635623
+      },
+      {
+        "frequencyHz": 37.203954696124995,
+        "gainDb": -0.3879127599307126
+      },
+      {
+        "frequencyHz": 38.3766500957164,
+        "gainDb": -0.3855518192461145
+      },
+      {
+        "frequencyHz": 39.586309697405554,
+        "gainDb": -0.3770455041101717
+      },
+      {
+        "frequencyHz": 40.834098639417775,
+        "gainDb": -0.3601249147440664
+      },
+      {
+        "frequencyHz": 42.12121878597291,
+        "gainDb": -0.33310526225288406
+      },
+      {
+        "frequencyHz": 43.4489098849151,
+        "gainDb": -0.2948661568565176
+      },
+      {
+        "frequencyHz": 44.81845076183184,
+        "gainDb": -0.24484025268683873
+      },
+      {
+        "frequencyHz": 46.23116055181255,
+        "gainDb": -0.1830388050192786
+      },
+      {
+        "frequencyHz": 47.68839997003303,
+        "gainDb": -0.11012828102054395
+      },
+      {
+        "frequencyHz": 49.19157262238972,
+        "gainDb": -0.027556975224012126
+      },
+      {
+        "frequencyHz": 50.742126357446054,
+        "gainDb": 0.06228794396508075
+      },
+      {
+        "frequencyHz": 52.34155466099307,
+        "gainDb": 0.15593670637318935
+      },
+      {
+        "frequencyHz": 53.99139809456767,
+        "gainDb": 0.2487785558592761
+      },
+      {
+        "frequencyHz": 55.69324577931401,
+        "gainDb": 0.3351833537917335
+      },
+      {
+        "frequencyHz": 57.448736926617165,
+        "gainDb": 0.40889441916722413
+      },
+      {
+        "frequencyHz": 59.25956241698359,
+        "gainDb": 0.46372949114780004
+      },
+      {
+        "frequencyHz": 61.12746642868896,
+        "gainDb": 0.4945123236687623
+      },
+      {
+        "frequencyHz": 63.05424811776214,
+        "gainDb": 0.4980176771455618
+      },
+      {
+        "frequencyHz": 65.04176335092355,
+        "gainDb": 0.47363011842720315
+      },
+      {
+        "frequencyHz": 67.09192649314686,
+        "gainDb": 0.42347295422160425
+      },
+      {
+        "frequencyHz": 69.20671225156606,
+        "gainDb": 0.35195668769074695
+      },
+      {
+        "frequencyHz": 71.38815757750369,
+        "gainDb": 0.26491994702894317
+      },
+      {
+        "frequencyHz": 73.6383636284525,
+        "gainDb": 0.1686578879862759
+      },
+      {
+        "frequencyHz": 75.9594977918999,
+        "gainDb": 0.0691035553123529
+      },
+      {
+        "frequencyHz": 78.35379577294526,
+        "gainDb": -0.0286991411019899
+      },
+      {
+        "frequencyHz": 80.82356374771996,
+        "gainDb": -0.12082499055380236
+      },
+      {
+        "frequencyHz": 83.37118058468504,
+        "gainDb": -0.2044748656906874
+      },
+      {
+        "frequencyHz": 85.99910013594574,
+        "gainDb": -0.27785881745143826
+      },
+      {
+        "frequencyHz": 88.70985360078987,
+        "gainDb": -0.3400383249976435
+      },
+      {
+        "frequencyHz": 91.5060519637265,
+        "gainDb": -0.3907834941464823
+      },
+      {
+        "frequencyHz": 94.39038850937365,
+        "gainDb": -0.43047448491828844
+      },
+      {
+        "frequencyHz": 97.36564141661681,
+        "gainDb": -0.4600556413659085
+      },
+      {
+        "frequencyHz": 100.43467643453725,
+        "gainDb": -0.48103453909680205
+      },
+      {
+        "frequencyHz": 103.60044964268765,
+        "gainDb": -0.49550361943426346
+      },
+      {
+        "frequencyHz": 106.86601029837341,
+        "gainDb": -0.5061478226906051
+      },
+      {
+        "frequencyHz": 110.23450377368248,
+        "gainDb": -0.5161901178174069
+      },
+      {
+        "frequencyHz": 113.70917458509231,
+        "gainDb": -0.5292257113978787
+      },
+      {
+        "frequencyHz": 117.29336951857236,
+        "gainDb": -0.5489158960379048
+      },
+      {
+        "frequencyHz": 120.99054085319212,
+        "gainDb": -0.5785601964325211
+      },
+      {
+        "frequencyHz": 124.80424968633918,
+        "gainDb": -0.6206302381094588
+      },
+      {
+        "frequencyHz": 128.7381693637511,
+        "gainDb": -0.6763981865943762
+      },
+      {
+        "frequencyHz": 132.796089017664,
+        "gainDb": -0.7457877578771492
+      },
+      {
+        "frequencyHz": 136.98191721648624,
+        "gainDb": -0.827504225624731
+      },
+      {
+        "frequencyHz": 141.29968572951253,
+        "gainDb": -0.9193955877208295
+      },
+      {
+        "frequencyHz": 145.75355341030428,
+        "gainDb": -1.018919577300041
+      },
+      {
+        "frequencyHz": 150.34781020247718,
+        "gainDb": -1.1235788429328992
+      },
+      {
+        "frequencyHz": 155.0868812717539,
+        "gainDb": -1.231231294755272
+      },
+      {
+        "frequencyHz": 159.97533126826212,
+        "gainDb": -1.3402464591169174
+      },
+      {
+        "frequencyHz": 165.01786872318337,
+        "gainDb": -1.4495275042990254
+      },
+      {
+        "frequencyHz": 170.219350583987,
+        "gainDb": -1.558439798203337
+      },
+      {
+        "frequencyHz": 175.58478689261872,
+        "gainDb": -1.6666858652723882
+      },
+      {
+        "frequencyHz": 181.11934561114816,
+        "gainDb": -1.7741550834279174
+      },
+      {
+        "frequencyHz": 186.82835759952482,
+        "gainDb": -1.8807640219822845
+      },
+      {
+        "frequencyHz": 192.71732175023652,
+        "gainDb": -1.9862952953867876
+      },
+      {
+        "frequencyHz": 198.79191028481557,
+        "gainDb": -2.0902412932772507
+      },
+      {
+        "frequencyHz": 205.0579742172951,
+        "gainDb": -2.191664452852322
+      },
+      {
+        "frequencyHz": 211.52154898987706,
+        "gainDb": -2.2890966976552996
+      },
+      {
+        "frequencyHz": 218.18886028624078,
+        "gainDb": -2.380513581311562
+      },
+      {
+        "frequencyHz": 225.06633002809104,
+        "gainDb": -2.46342579670654
+      },
+      {
+        "frequencyHz": 232.16058256072176,
+        "gainDb": -2.5351205985255203
+      },
+      {
+        "frequencyHz": 239.47845103355317,
+        "gainDb": -2.5930486973412634
+      },
+      {
+        "frequencyHz": 247.0269839817877,
+        "gainDb": -2.6352916660358012
+      },
+      {
+        "frequencyHz": 254.8134521155249,
+        "gainDb": -2.660986402882223
+      },
+      {
+        "frequencyHz": 262.8453553228742,
+        "gainDb": -2.6705668996134815
+      },
+      {
+        "frequencyHz": 271.1304298938097,
+        "gainDb": -2.6657347725443725
+      },
+      {
+        "frequencyHz": 279.676655971728,
+        "gainDb": -2.649170230677557
+      },
+      {
+        "frequencyHz": 288.49226523988233,
+        "gainDb": -2.624088374095786
+      },
+      {
+        "frequencyHz": 297.5857488501006,
+        "gainDb": -2.5937814240027413
+      },
+      {
+        "frequencyHz": 306.9658656014207,
+        "gainDb": -2.561258058692764
+      },
+      {
+        "frequencyHz": 316.64165037652356,
+        "gainDb": -2.5290282173590675
+      },
+      {
+        "frequencyHz": 326.6224228440875,
+        "gainDb": -2.4990243750997236
+      },
+      {
+        "frequencyHz": 336.9177964354481,
+        "gainDb": -2.4726188532241156
+      },
+      {
+        "frequencyHz": 347.53768760420814,
+        "gainDb": -2.4506907062947665
+      },
+      {
+        "frequencyHz": 358.4923253777172,
+        "gainDb": -2.4337045730446496
+      },
+      {
+        "frequencyHz": 369.7922612096211,
+        "gainDb": -2.4217773463971426
+      },
+      {
+        "frequencyHz": 381.4483791429706,
+        "gainDb": -2.4147209004093706
+      },
+      {
+        "frequencyHz": 393.47190629367844,
+        "gainDb": -2.412058911234176
+      },
+      {
+        "frequencyHz": 405.87442366442235,
+        "gainDb": -2.413023828123571
+      },
+      {
+        "frequencyHz": 418.66787729941075,
+        "gainDb": -2.416547527505654
+      },
+      {
+        "frequencyHz": 431.8645897907539,
+        "gainDb": -2.421266283084508
+      },
+      {
+        "frequencyHz": 445.4772721475249,
+        "gainDb": -2.425565332073118
+      },
+      {
+        "frequencyHz": 459.5190360389412,
+        "gainDb": -2.427685909482861
+      },
+      {
+        "frequencyHz": 474.0034064234603,
+        "gainDb": -2.4259029294137573
+      },
+      {
+        "frequencyHz": 488.9443345759545,
+        "gainDb": -2.41875359168462
+      },
+      {
+        "frequencyHz": 504.35621152550965,
+        "gainDb": -2.4052650968873954
+      },
+      {
+        "frequencyHz": 520.2538819167953,
+        "gainDb": -2.3851120102860355
+      },
+      {
+        "frequencyHz": 536.652658308353,
+        "gainDb": -2.3586474741838606
+      },
+      {
+        "frequencyHz": 553.5683359215788,
+        "gainDb": -2.326796283873412
+      },
+      {
+        "frequencyHz": 571.0172078546027,
+        "gainDb": -2.2908487200312195
+      },
+      {
+        "frequencyHz": 589.0160807757217,
+        "gainDb": -2.2522233725686265
+      },
+      {
+        "frequencyHz": 607.5822911115008,
+        "gainDb": -2.2122628796029953
+      },
+      {
+        "frequencyHz": 626.7337217451338,
+        "gainDb": -2.172098769026607
+      },
+      {
+        "frequencyHz": 646.4888192411502,
+        "gainDb": -2.1325903082396445
+      },
+      {
+        "frequencyHz": 666.8666116130543,
+        "gainDb": -2.0943215938784308
+      },
+      {
+        "frequencyHz": 687.886726651018,
+        "gainDb": -2.057634131957193
+      },
+      {
+        "frequencyHz": 709.5694108272694,
+        "gainDb": -2.022674693290916
+      },
+      {
+        "frequencyHz": 731.9355487973975,
+        "gainDb": -1.9894446176844458
+      },
+      {
+        "frequencyHz": 755.0066835163504,
+        "gainDb": -1.9578430777146965
+      },
+      {
+        "frequencyHz": 778.8050369885046,
+        "gainDb": -1.9277014412623068
+      },
+      {
+        "frequencyHz": 803.3535316717906,
+        "gainDb": -1.8988086144005947
+      },
+      {
+        "frequencyHz": 828.6758125564929,
+        "gainDb": -1.8709285502882291
+      },
+      {
+        "frequencyHz": 854.7962699399897,
+        "gainDb": -1.8438115204743877
+      },
+      {
+        "frequencyHz": 881.7400629193669,
+        "gainDb": -1.8172006905877256
+      },
+      {
+        "frequencyHz": 909.5331436245394,
+        "gainDb": -1.7908352961924034
+      },
+      {
+        "frequencyHz": 938.2022822152147,
+        "gainDb": -1.7644514269240912
+      },
+      {
+        "frequencyHz": 967.7750926657804,
+        "gainDb": -1.7377811687673312
+      },
+      {
+        "frequencyHz": 998.2800593629504,
+        "gainDb": -1.7105506523255385
+      },
+      {
+        "frequencyHz": 1029.7465645417858,
+        "gainDb": -1.682477415086085
+      },
+      {
+        "frequencyHz": 1062.2049165865212,
+        "gainDb": -1.653267406570678
+      },
+      {
+        "frequencyHz": 1095.6863792234524,
+        "gainDb": -1.6226119454848458
+      },
+      {
+        "frequencyHz": 1130.223201634005,
+        "gainDb": -1.5901849800556782
+      },
+      {
+        "frequencyHz": 1165.8486495169884,
+        "gainDb": -1.5556411151798342
+      },
+      {
+        "frequencyHz": 1202.5970371299543,
+        "gainDb": -1.5186150682540382
+      },
+      {
+        "frequencyHz": 1240.5037603405233,
+        "gainDb": -1.478723521676843
+      },
+      {
+        "frequencyHz": 1279.6053307195102,
+        "gainDb": -1.4355707795394332
+      },
+      {
+        "frequencyHz": 1319.9394107086925,
+        "gainDb": -1.3887602290328198
+      },
+      {
+        "frequencyHz": 1361.5448498970889,
+        "gainDb": -1.3379143474520008
+      },
+      {
+        "frequencyHz": 1404.4617224406948,
+        "gainDb": -1.282706809091958
+      },
+      {
+        "frequencyHz": 1448.7313656617134,
+        "gainDb": -1.222910914769101
+      },
+      {
+        "frequencyHz": 1494.3964198644655,
+        "gainDb": -1.1584686097346424
+      },
+      {
+        "frequencyHz": 1541.5008694063163,
+        "gainDb": -1.0895828823816929
+      },
+      {
+        "frequencyHz": 1590.0900850632001,
+        "gainDb": -1.0168319492812585
+      },
+      {
+        "frequencyHz": 1640.2108677305264,
+        "gainDb": -0.9412946120889361
+      },
+      {
+        "frequencyHz": 1691.9114935015753,
+        "gainDb": -0.8646613684224964
+      },
+      {
+        "frequencyHz": 1745.241760166796,
+        "gainDb": -0.7892867770247349
+      },
+      {
+        "frequencyHz": 1800.2530351787932,
+        "gainDb": -0.718122489384255
+      },
+      {
+        "frequencyHz": 1856.9983051292088,
+        "gainDb": -0.6544721764709034
+      },
+      {
+        "frequencyHz": 1915.5322267851475,
+        "gainDb": -0.6015472632546612
+      },
+      {
+        "frequencyHz": 1975.9111797343078,
+        "gainDb": -0.5618813302761076
+      },
+      {
+        "frequencyHz": 2038.1933206895274,
+        "gainDb": -0.5367539956645
+      },
+      {
+        "frequencyHz": 2102.4386395050433,
+        "gainDb": -0.5258218848745
+      },
+      {
+        "frequencyHz": 2168.7090169584267,
+        "gainDb": -0.5271023417681906
+      },
+      {
+        "frequencyHz": 2237.068284353848,
+        "gainDb": -0.5373163550534086
+      },
+      {
+        "frequencyHz": 2307.582285004076,
+        "gainDb": -0.55245320643033
+      },
+      {
+        "frequencyHz": 2380.318937650435,
+        "gainDb": -0.5683576733438007
+      },
+      {
+        "frequencyHz": 2455.3483018818056,
+        "gainDb": -0.5811812899726838
+      },
+      {
+        "frequencyHz": 2532.74264561568,
+        "gainDb": -0.5876332969359563
+      },
+      {
+        "frequencyHz": 2612.576514706264,
+        "gainDb": -0.5850516710478062
+      },
+      {
+        "frequencyHz": 2694.926804746686,
+        "gainDb": -0.5713585333926126
+      },
+      {
+        "frequencyHz": 2779.8728351344494,
+        "gainDb": -0.5449707649478921
+      },
+      {
+        "frequencyHz": 2867.496425471496,
+        "gainDb": -0.5047242989264302
+      },
+      {
+        "frequencyHz": 2957.881974372444,
+        "gainDb": -0.4498554282767777
+      },
+      {
+        "frequencyHz": 3051.11654075692,
+        "gainDb": -0.38007213274614493
+      },
+      {
+        "frequencyHz": 3147.2899277042893,
+        "gainDb": -0.2957425783879477
+      },
+      {
+        "frequencyHz": 3246.4947689515457,
+        "gainDb": -0.19822006695402306
+      },
+      {
+        "frequencyHz": 3348.8266181176664,
+        "gainDb": -0.09030144137155749
+      },
+      {
+        "frequencyHz": 3454.3840407403986,
+        "gainDb": 0.02323831411676691
+      },
+      {
+        "frequencyHz": 3563.2687092141023,
+        "gainDb": 0.1351944803507219
+      },
+      {
+        "frequencyHz": 3675.5855007201035,
+        "gainDb": 0.2358628612257716
+      },
+      {
+        "frequencyHz": 3791.4425982438866,
+        "gainDb": 0.31374986189964593
+      },
+      {
+        "frequencyHz": 3910.951594776414,
+        "gainDb": 0.3573501122399714
+      },
+      {
+        "frequencyHz": 4034.2276007999535,
+        "gainDb": 0.3578016489185507
+      },
+      {
+        "frequencyHz": 4161.389355161931,
+        "gainDb": 0.3115106906154921
+      },
+      {
+        "frequencyHz": 4292.559339443611,
+        "gainDb": 0.22145372662115248
+      },
+      {
+        "frequencyHz": 4427.863895933757,
+        "gainDb": 0.09638272968383887
+      },
+      {
+        "frequencyHz": 4567.433349320906,
+        "gainDb": -0.051659608664868406
+      },
+      {
+        "frequencyHz": 4711.402132221475,
+        "gainDb": -0.21025155515065497
+      },
+      {
+        "frequencyHz": 4859.908914664599,
+        "gainDb": -0.3687666984898563
+      },
+      {
+        "frequencyHz": 5013.0967376584285,
+        "gainDb": -0.5193656229859915
+      },
+      {
+        "frequencyHz": 5171.113150966529,
+        "gainDb": -0.6570028707992144
+      },
+      {
+        "frequencyHz": 5334.110355227094,
+        "gainDb": -0.77889007632166
+      },
+      {
+        "frequencyHz": 5502.245348551856,
+        "gainDb": -0.8837927413478085
+      },
+      {
+        "frequencyHz": 5675.680077745902,
+        "gainDb": -0.9713744585811531
+      },
+      {
+        "frequencyHz": 5854.581594294048,
+        "gainDb": -1.0416642808799665
+      },
+      {
+        "frequencyHz": 6039.1222152640075,
+        "gainDb": -1.0946430685745037
+      },
+      {
+        "frequencyHz": 6229.47968928136,
+        "gainDb": -1.1299120208929025
+      },
+      {
+        "frequencyHz": 6425.837367736153,
+        "gainDb": -1.1464054078798753
+      },
+      {
+        "frequencyHz": 6628.384381386066,
+        "gainDb": -1.1421400923936964
+      },
+      {
+        "frequencyHz": 6837.3158225262305,
+        "gainDb": -1.1140949699650555
+      },
+      {
+        "frequencyHz": 7052.8329329011995,
+        "gainDb": -1.0586087093863066
+      },
+      {
+        "frequencyHz": 7275.143297539975,
+        "gainDb": -0.9734629975034097
+      },
+      {
+        "frequencyHz": 7504.461044700924,
+        "gainDb": -0.8643404612949248
+      },
+      {
+        "frequencyHz": 7741.007052119063,
+        "gainDb": -0.7585618728441084
+      },
+      {
+        "frequencyHz": 7985.009159754417,
+        "gainDb": -0.7165877115075576
+      },
+      {
+        "frequencyHz": 8236.70238924635,
+        "gainDb": -0.8009078041189706
+      },
+      {
+        "frequencyHz": 8496.32917028527,
+        "gainDb": -1.0001636667958713
+      },
+      {
+        "frequencyHz": 8764.139574119721,
+        "gainDb": -1.2318834689942348
+      },
+      {
+        "frequencyHz": 9040.391554423784,
+        "gainDb": -1.429780990734234
+      },
+      {
+        "frequencyHz": 9325.351195756808,
+        "gainDb": -1.5756062116007452
+      },
+      {
+        "frequencyHz": 9619.292969854745,
+        "gainDb": -1.6763221843284264
+      },
+      {
+        "frequencyHz": 9922.5,
+        "gainDb": -1.7437567005201153
+      }
+    ],
+    "referenceResponse": true,
+    "safePreampDb": -2.326426639590615,
+    "editableBands": [true, true, true, true, true, true, true, true, true, false],
+    "responseRate": 22050
+  }
+}

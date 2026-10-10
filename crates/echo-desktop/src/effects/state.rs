@@ -29,6 +29,12 @@ pub struct EffectsSnapshot {
     pub response_points: Vec<ResponsePoint>,
     pub reference_response: bool,
     pub safe_preamp_db: Option<f64>,
+    /// Valid target EQ controls, independent of the installed payload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editable_bands: Option<[bool; 10]>,
+    /// Sample rate used to calculate this response, including reference curves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_rate: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snapshot_sequence: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -305,6 +311,11 @@ impl EffectsState {
             response_points,
             reference_response,
             safe_preamp_db: analysis.map(|value| value.safe_preamp_db),
+            editable_bands: Some(
+                super::BAND_FREQUENCIES
+                    .map(|frequency| frequency <= 0.45 * f64::from(environment.sample_rate)),
+            ),
+            response_rate: Some(environment.sample_rate),
             snapshot_sequence: self.snapshot_sequence,
             recovery_reason: self.recovery_reason.clone(),
         }

@@ -63,6 +63,7 @@ pub struct MpvSys {
     pub client_api_version: unsafe extern "C" fn() -> u64,
     get_property: unsafe extern "C" fn(*mut c_void, *const c_char, c_int, *mut c_void) -> c_int,
     free_node_contents: unsafe extern "C" fn(*mut MpvNode),
+    request_log_messages: unsafe extern "C" fn(*mut c_void, *const c_char) -> c_int,
 }
 
 // ABI layout from mpv/client.h. Read only command metadata; every returned node
@@ -136,8 +137,8 @@ unsafe impl Sync for MpvSys {}
 pub mod event_id {
     pub const NONE: i32 = 0;
     pub const SHUTDOWN: i32 = 1;
-    /// `MPV_EVENT_START_FILE = 6` (note: `LOG_MESSAGE` is 2, unused here —
-    /// log events fall through the catch-all arm).
+    pub const LOG_MESSAGE: i32 = 2;
+    /// `MPV_EVENT_START_FILE = 6`.
     pub const START_FILE: i32 = 6;
     pub const END_FILE: i32 = 7;
     pub const FILE_LOADED: i32 = 8;
@@ -213,6 +214,14 @@ pub struct mpv_event {
     pub reply_userdata: u64,
     /// `event_id == PROPERTY_CHANGE` → `*mut mpv_event_property`.
     pub data: *mut c_void,
+}
+
+/// Leading fields of `mpv_event_log_message`; valid until the next `wait_event`.
+#[repr(C)]
+pub(super) struct mpv_event_log_message {
+    pub prefix: *const c_char,
+    pub level: *const c_char,
+    pub text: *const c_char,
 }
 
 /// Payload of a `PROPERTY_CHANGE` event.
@@ -297,6 +306,10 @@ impl MpvSys {
             free_node_contents: sym!(
                 b"mpv_free_node_contents\0",
                 unsafe extern "C" fn(*mut MpvNode)
+            ),
+            request_log_messages: sym!(
+                b"mpv_request_log_messages\0",
+                unsafe extern "C" fn(*mut c_void, *const c_char) -> c_int
             ),
             _lib: lib,
         };
@@ -464,6 +477,51 @@ impl Handle {
             return Err(HandleError::Command(code));
         }
         Ok(())
+    }
+
+    /// Subscribe only to errors needed to detect runtime-disabled audio filters.
+    ///
+    /// # Safety
+    /// Must be called on the owning actor thread with a live handle.
+    pub(super) unsafe fn request_audio_errors(&self, sys: &MpvSys) -> Result<(), HandleError> {
+        // SAFETY: live handle; the constant level is NUL terminated.
+        let code = unsafe { (sys.request_log_messages)(self.raw, c"error".as_ptr()) };
+        if code == err_::SUCCESS {
+            Ok(())
+        } else {
+            Err(HandleError::Command(code))
+        }
+    }
+
+    /// `GET_META` succeeds only for an initialized lavfi graph, including an
+    /// empty metadata map. It does not infer configuration from command success
+    /// or the requested `af` options list.
+    ///
+    /// # Safety
+    /// Must be called on the owning actor thread with a live handle.
+    pub(super) unsafe fn audio_filter_configured(&self, sys: &MpvSys, label: &str) -> bool {
+        let Ok(name) = CString::new(format!("af-metadata/{label}")) else {
+            return false;
+        };
+        let mut root = MpvNode {
+            data: MpvNodeData { int64: 0 },
+            format: 0,
+        };
+        // SAFETY: NODE writes a correctly sized root; mpv owns its contents.
+        let code = unsafe {
+            (sys.get_property)(
+                self.raw,
+                name.as_ptr(),
+                6,
+                std::ptr::from_mut(&mut root).cast(),
+            )
+        };
+        if code != err_::SUCCESS {
+            return false;
+        }
+        // SAFETY: successful property allocation; no descendant escapes.
+        unsafe { (sys.free_node_contents)(&raw mut root) };
+        true
     }
 
     /// Inspect the loaded library's af-command signature without altering audio.

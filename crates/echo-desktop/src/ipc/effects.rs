@@ -17,6 +17,10 @@ pub struct EffectsSnapshotDto {
     pub reference_response: bool,
     pub safe_preamp_db: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub editable_bands: Option<[bool; 10]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_rate: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub snapshot_sequence: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recovery_reason: Option<String>,
@@ -31,6 +35,8 @@ impl From<EffectsSnapshot> for EffectsSnapshotDto {
             response_points: value.response_points,
             reference_response: value.reference_response,
             safe_preamp_db: value.safe_preamp_db,
+            editable_bands: value.editable_bands,
+            response_rate: value.response_rate,
             snapshot_sequence: value.snapshot_sequence,
             recovery_reason: value.recovery_reason,
         }
@@ -77,6 +83,8 @@ export interface EffectsSnapshotDto {
   readonly responsePoints: readonly EffectsResponsePoint[];
   readonly referenceResponse: boolean;
   readonly safePreampDb: number | null;
+  readonly editableBands?: readonly boolean[];
+  readonly responseRate?: number;
   readonly snapshotSequence?: number;
   readonly recoveryReason?: string;
 }

@@ -12,20 +12,40 @@ success, and the `af` property shows only the *configured* description, which
 mpv does not rewrite when a runtime command changes a parameter. The only
 admissible proof is a PCM measurement across the change.
 
-Measured on the packaged macOS library (2026-10-03): runtime parameter changes
-reach **no** filter — `equalizer`, `volume` and `extrastereo` all return `rc=0`
-while the captured output is bit-identical to the baseline. A static install-time
-gain is measured correctly by the same harness, so the null result is a real
-limitation rather than a broken tool. `native-gate.md` records the numbers.
+Rechecked on the packaged macOS library (2026-10-08): runtime EQ, volume and
+spatial-width commands **do change PCM**. The old negative result was invalid:
+PCM AO decoded the short fixture to EOF before the command was issued. The
+corrected probe extends fixture bytes offline before one continuous playback,
+records command-time file offsets, and compares baseline and post-command sample
+windows. It never pauses, seeks, reloads, or replaces the graph across a change.
+Measured changes were +5.9886 dB for EQ 0→+6 dB, −6.0382 dB for preamp 0→−6 dB,
+and −1.9474 dB for width 1.25→1 with its preamp held fixed (expected −1.9382 dB).
+This proves those commands on this package; it does not establish transition
+smoothness, real-time latency, or other-platform behavior.
 
 Because of that, do not treat these as interchangeable:
 
 | Question | Tool | What it proves |
 |---|---|---|
 | Does a filter expose a command callback? | `inspect-filter-runtime.py` | Structure only, and it refuses output if its layout cross-check fails |
-| Did a command change the audio? | `probe.py --runtime-parameter-proof` | Nothing changed, via PCM before/after |
+| Did a command change the audio? | `probe.py --runtime-parameter-proof` | Actual EQ/preamp/width change via uninterrupted PCM before/after |
 | Is the measurement itself trustworthy? | `probe.py` `static_gain_reference` | The harness detects a known install-time gain |
 | Does the chain match the design tolerance? | `probe.py --sweep-response` | **Not yet** — reports `usable_for_tolerance_verdict: false` |
+
+To repeat the silent runtime parameter measurement, generate the fixtures above,
+then run:
+
+```sh
+python3 scripts/audio-effects/probe.py \
+  --libmpv apps/desktop/src-tauri/vendor/libmpv/macos/libmpv.dylib \
+  --input /tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav \
+  --fixture-manifest /tmp/echo-audio-effects-fixtures/manifest.json \
+  --manifest apps/desktop/src-tauri/vendor/libmpv/macos/manifest.json \
+  --output /tmp/echo-runtime-recheck.json \
+  --ao pcm --pcm-output /tmp/echo-runtime-static.wav --capture-only \
+  --runtime-parameter-proof --runtime-capture-seconds 1 \
+  --step-timeout 10 --timeout 60
+```
 
 ## mpv `af-command` label semantics (get this wrong and every result is invalid)
 
@@ -50,15 +70,20 @@ Only a PCM measurement across the change is admissible evidence.
 
 Each of these produced a confidently wrong number during development:
 
-- **Pumping to EOF** makes the analysed window depend on decode timing; the same
-  chain measured +0.0076 dB and +1.6871 dB on two runs. Use a fixed window
-  (`--runtime-capture-seconds`).
+- **PCM AO is untimed.** A 50 ms wall-clock pump can decode an entire short
+  fixture. Commands issued afterward cannot change samples already captured.
+  The runtime probe pads PCM bytes to a long temporary input before playback,
+  requires baseline PCM and `eof-reached=false` before issuing the command, and
+  checks for a sufficiently long post-command sample window. Generated long
+  inputs and captures are temporary, not committed fixture-matrix additions.
+- **File offsets are not latency measurements.** WAVE buffering and native
+  pipeline queues make file byte counts conservative bounds on samples already
+  written. The probe analyses distant sample windows and does not use these
+  offsets to claim real-time smoothing or audible command latency.
 - **Bit depth differs**: fixtures are PCM32, `ao=pcm` emits PCM16. Normalize per
-  width, or the format change reads as about −96 dB of "response error".
-- **Limiter saturation hides changes.** Use a low-level fixture at the input's own
-  rate, otherwise both states clip to the same ceiling.
-- **Reproducing the recorded evidence** (`+5.9959 dB` at −54.0507 dBFS) requires
-  the 2 s fixture and `pump(duration + 0.25)`; longer fixtures give other numbers.
+  width, or the format change reads as about −96 dB of response error.
+- **Limiter saturation hides changes.** Use a low-level fixture at the input's
+  own rate, otherwise both states clip to the same ceiling.
 
 ## Generate offline inputs
 
@@ -96,7 +121,7 @@ Select the exact installed candidate's library; no `find_library`, executable
 from PATH, system libmpv or automatic missing-dependency substitution is used.
 On POSIX the tool calls native `dlopen` with `RTLD_LAZY | RTLD_LOCAL`, then wraps
 the same handle with ctypes. This matches Rust libloading; ctypes `CDLL(path)`
-alone forces eager resolution even if given `RTLD_LAZY`. The default is `ao=null`, which discards PCM. On macOS, `--ao coreaudio` can verify real CoreAudio negotiation and time-sensitive runtime commands while playing the synthetic -60 dBFS fixture at 1% mpv volume. `--ao pcm --capture-only` captures an isolated, static EQ chain before CoreAudio and measures integer PCM peak plus 997 Hz response; PCM AO is non-real-time, so the tool rejects runtime-command probes in that mode. It does not measure device latency or underruns. The tool rejects a missing library instead of choosing a fallback. Run this explicit macOS example from the repository root:
+alone forces eager resolution even if given `RTLD_LAZY`. The default is `ao=null`, which discards PCM. On macOS, `--ao coreaudio` can verify real CoreAudio negotiation and time-sensitive runtime commands while playing the synthetic -60 dBFS fixture at 1% mpv volume. `--ao pcm --capture-only` captures an isolated, static EQ chain before CoreAudio and measures integer PCM peak plus 997 Hz response; PCM AO is non-real-time; `--runtime-parameter-proof` uses sample windows from a continuous capture to verify runtime commands without sending sound to hardware. It does not measure device latency or underruns. The tool rejects a missing library instead of choosing a fallback. Run this explicit macOS example from the repository root:
 
 ```sh
 python3 scripts/audio-effects/probe.py \
@@ -127,12 +152,13 @@ Unavailable runtime versions stay null after a failed load; manifest versions ar
 only package declarations. Runtime dependency mapping uses dyld on macOS,
 `/proc/self/maps` on Linux and K32 module enumeration on Windows.
 
-`audio-params` describes decoder output. It supplies the **candidate** input rate
-for disabling centers above 0.45 Fs; it is not proof of intermediate filter
-negotiation. `audio-out-params` is the negotiated AO input. Debug logs are retained
-for inspecting format/rate/layout across filter links and rebuilds; no source
-metadata is relabeled as actual DSP processing. Native properties are retrieved
-as typed `MPV_FORMAT_NODE`, copied before release.
+`audio-params` describes decoder output and `audio-out-params` describes the
+negotiated AO input. Neither alone proves the sample rate at the `equalizer`
+link. The model rate used for the 0.45 Fs band-validity rule and response must
+match that link's actual `sample_rate`; source, decoder and AO rates may differ.
+Debug logs are retained for inspecting format/rate/layout across filter links and
+rebuilds; no source metadata is relabeled as actual DSP processing. Native
+properties are retrieved as typed `MPV_FORMAT_NODE`, copied before release.
 
 The experiments install/remove these explicit candidates:
 
@@ -179,6 +205,38 @@ experimental evidence.
 
 ## Verification and acceptance boundary
 
+### Low-level stepped-sine response
+
+Use the standalone `sine_sweep.py` tool for a response tolerance verdict; the
+older `probe.py --sweep-response` window-envelope output is diagnostic only and
+sets `usable_for_tolerance_verdict=false`. Example, for a 48 kHz all-bands +12 dB
+candidate:
+
+```sh
+python3 -B scripts/audio-effects/sine_sweep.py \
+  --libmpv apps/desktop/src-tauri/vendor/libmpv/macos/libmpv.dylib \
+  --manifest apps/desktop/src-tauri/vendor/libmpv/macos/manifest.json \
+  --rate 48000 \
+  --gains=12,12,12,12,12,12,12,12,12,12 \
+  --preamp-db=0 \
+  --output /tmp/afx-response.json
+```
+
+The tool measures independent sine captures through `0.499 Fs`, with 20 kHz included where representable;
+the EQ center-frequency eligibility cutoff remains `0.45 Fs`. Its report checks
+the actual rate, stereo channels, frame count and 32-bit PCM format, and compares
+measured windows with the composed RBJ response. These reports cover static
+low-level response only; they do not verify limiter high-pressure behavior,
+runtime transitions, listening quality or cross-platform release acceptance.
+
+The 2026-10-09 macOS capture set is under
+`openspec/changes/introduce-audio-effects-equalizer/evidence/macos-stepped-sine-20261009/`.
+It contains 52 rate/curve reports (9 built-in curves and 4 stress curves at four
+rates), 7,774 frequency comparisons, and records each command/hash. The maximum
+measured-versus-RBJ response difference was 0.000006809483 dB; the conservative
+rounding bound was 0.000134970 dB. The reports keep `gate_passed=false` and do not
+replace the remaining native output and limiter gates.
+
 ```sh
 python3 -m unittest discover -s scripts/audio-effects -p 'test_*.py' -v
 ```
@@ -189,8 +247,10 @@ node ownership, retained load failures and supervisor timeout. They contain no
 fake audio acceptance result.
 
 Every report sets `gate_passed=false`. `ao=null` is not a real output capture.
-The PCM mode records sample-peak and a one-tone response, but full sweep/pressure
-response, all-finite checks, true-peak diagnostics, hardware rebuild, loadfile
+The PCM mode records integer PCM sample-peak and a one-tone response; integer
+output alone cannot establish that an intermediate float chain had no non-finite
+values or clipping. Full sweep/pressure response, float-chain diagnostics,
+all-finite checks, tool-identified dBTP diagnostics, hardware rebuild, loadfile
 parameter-survival, first-sample barrier and timing acceptance remain outstanding.
 The Gate still needs 100 repetitions per transition with p95 ≤150 ms,
 ≤10 ms added progress/seek/EOF offset, underruns, five-minute CPU measurements,
