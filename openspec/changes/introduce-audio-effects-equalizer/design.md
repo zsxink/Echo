@@ -69,6 +69,8 @@ responseDb(f)=effectivePreampDb+20log10(abs(product(H_i(exp(j*2πf/Fs)))))
 
 使用 f64、非反向 IIR、固定系数规则；候选 FFmpeg `equalizer` 指定 `t=q,w=√2,mix=1,normalize=false,precision=f64`，通过具名 lavfi 的 gain 命令改参（2026-10-08 已用持续输入的 PCM 前后测量确认 macOS 候选库的运行时 gain 路径；旧短素材实验在命令发出前已解码至 EOF，不能判定改参失效，见 `native-gate.md`）。避免六个 biquad 系数逐条提交导致不一致。响应图复用后端计算结果，不在 UI 复制保护规则；在 20 Hz 到 min(20 kHz,0.45Fs) 的对数频点绘制合成 EQ 与实际 preamp，不包含空间/动态 limiter。共享数学测试误差≤0.1 dB，原生低电平扫频/脉冲响应与计算最大误差≤0.25 dB；保护不会触发的低电平样本用于此项。**⚠️ 该 ≤0.25 dB 验收标准尚未测量**：现有证据只做了 997 Hz 打 1 kHz 段的单点响应（误差 −0.0041 dB，对 997 Hz 解析值 5.999529 而言真实误差约 −0.0037 dB）。已用 `probe.py --sweep-response` 尝试，但窗包络法测得的是窗内频率内容而非滤波器响应（误差随窗长从 +10.2 dB 单调收敛到安装增益 +5.949 dB），**无法分辨 0.25 dB**，故该检查显式输出 `usable_for_tolerance_verdict: false`。兑现此标准需逐频正弦扫频或窄于滤波器带宽的 FFT 分析，仍待补做。
 
+运行时 `af-command` 的 lavfi target 使用滤镜类型名（`volume`、`equalizer`、`extrastereo`），不使用带 `@id` 的实例短名。每个 mpv `lavfi` 外层滤镜各自只含一个对应可命令节点，因此按类型定位不会广播到其它 EQ 段；同时兼容 FFmpeg graphparser 将 `volume@preamp` 的实例名解析成裸 `preamp`（FFmpeg 6.0）或完整 `volume@preamp`（Windows 随包新版本）的差异。Windows 日志中原 `preamp` target 返回 `MPV_ERROR_COMMAND`（-12）；软件修正后仍须在随包 DLL 上完成 AFX-7.2 原生验证，不能据参数命令返回成功宣称声音变化已测得。
+
 九个初始曲线（2026-10-02 专业资料复核后的试听候选；顺序为 31.25/62.5/125/250/500/1000/2000/4000/8000/16000 Hz，单位 dB；均 Auto/请求 0）：
 
 | ID | gainsDb |

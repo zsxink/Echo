@@ -9,7 +9,10 @@ pub(super) fn preamp(
 ) -> Result<(), String> {
     syntax.send(
         "echo_preamp",
-        "preamp",
+        // Target the filter type. FFmpeg versions differ on whether an
+        // instance's context name is `preamp` or `volume@preamp`; each mpv
+        // lavfi wrapper here contains only one volume node.
+        "volume",
         "volume",
         &format!("{:.15}", 10.0_f64.powf(db / 20.0)),
         command,
@@ -57,7 +60,8 @@ pub(super) fn width(
 ) -> Result<(), String> {
     syntax.send(
         "echo_spatial",
-        "spatial",
+        // This lavfi wrapper contains only the one extrastereo node.
+        "extrastereo",
         "m",
         &format!("{value:.15}"),
         command,

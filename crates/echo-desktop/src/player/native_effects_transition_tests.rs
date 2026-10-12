@@ -271,7 +271,7 @@ fn spatial_bypass_sends_intermediate_width_and_reaches_neutral_before_removal() 
     let current = native.current.as_ref().unwrap();
     assert!((current.width - 1.125).abs() < 0.001);
     assert!(current.preamp > -1.0 && current.preamp < 0.0);
-    assert!(commands.iter().any(|args| args[2] == "spatial:m"));
+    assert!(commands.iter().any(|args| args[2] == "extrastereo:m"));
     commands.clear();
     advance_to(&mut native, 1.0, &mut |args| {
         commands.push(args.to_vec());
@@ -280,13 +280,13 @@ fn spatial_bypass_sends_intermediate_width_and_reaches_neutral_before_removal() 
     let width = commands
         .iter()
         .position(|args| {
-            args[0] == "af-command" && args[2] == "spatial:m" && args[3] == "1.000000000000000"
+            args[0] == "af-command" && args[2] == "extrastereo:m" && args[3] == "1.000000000000000"
         })
         .unwrap();
     let preamp = commands
         .iter()
         .position(|args| {
-            args[0] == "af-command" && args[2] == "preamp:volume" && args[3] == "1.000000000000000"
+            args[0] == "af-command" && args[2] == "volume:volume" && args[3] == "1.000000000000000"
         })
         .unwrap();
     assert!(width < preamp && preamp < commands.len() - 1);

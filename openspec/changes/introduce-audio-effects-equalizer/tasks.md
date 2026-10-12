@@ -130,3 +130,7 @@
 - [x] AFX-12.2 修复 EQ 编辑器的环境有效段和状态呈现：基于目标 EQ 的 `editableBands` 判断编辑能力，不复用空间链 `activeBands`；分别呈现手动请求 preamp、确认实际值及限制原因；提供 Auto/Manual 切换且保留 EQ gains 与手动请求值；无音轨/参考图/空间预设/待应用环境分别验证。旧快照缺少新增可选字段时仍兼容。修复编辑提交失败后的重试：重新提交保留的曲线；恢复保护先修复后重提，读取失败仍只读取。最终前端 37 个测试文件、338 项测试及 typecheck/build/lint（0 errors）/format 通过，独立审查未发现剩余阻断项。
 - [x] AFX-12.3 增加独立 DSP 数学回归：真实遍历 2²⁰ 间隔密栅格，覆盖九条预设、全段 +12、相邻 +12、交替增益及四种处理率；对局部极值搜索做独立求解/左右邻点检查；校验相邻两段 +12 峰约 14.564616 dB、全段 +12 约 18.402800 dB。报告为 12 条曲线 × 四率、每组 1,048,577 个频点；最大观测高估 0.00000547 dB，未观察到低估。验证：math gate 与 mutation/extrema 自检覆盖 48 组通过；Rust `effects::math` 10 项数值测试通过。此对照不构成严格全局误差上界。
 - [ ] AFX-12.4 建立 limiter 与完整响应的原生诊断证据：低电平 stepped-sine 四率 52 份报告已完成，最大响应差 0.000006809483 dB、保守舍入界 0.000134970 dB（AFX-11.1）；证据仅覆盖静态低电平响应。limiter 前后浮点 PCM、增益变化及高压力链诊断尚未完成。后续以明确工具/算法记录 dBTP，覆盖空间与 EQ 互斥场景、噪声/脉冲/扫频、首尾内容及 seek/EOF 对齐，不设输出峰值下限。该任务由 AFX-11.1/11.5 与 AFX-1.3 的正式 Gate 共同验收，不能替代三平台验证。
+
+## 13. Windows 运行时滤镜 target 兼容修复
+
+- [x] AFX-13.1 修复 Windows FFmpeg 新版 graphparser 的具名 lavfi 参数命令：`af-command` 对每个独立 lavfi wrapper 按滤镜类型（`volume` / `equalizer` / `extrastereo`）定位，避免用裸 `@id` 与新版 `filter@id` 实例名比较失败。用户日志已复现 preamp `-12`；依 FFmpeg 固定版本源码，滤镜类型 target 在两种实例命名版本中均可匹配。单元测试覆盖 legacy patched 与 upstream separate-target 两种参数序列。该修复的实际 Windows DLL 音频输出验证仍由 AFX-7.2 完成。

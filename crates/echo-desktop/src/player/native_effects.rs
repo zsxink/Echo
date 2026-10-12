@@ -339,7 +339,10 @@ impl NativeEffects {
                         }
                         self.command_syntax.send(
                             &format!("echo_eq{index}"),
-                            &format!("eq{index}"),
+                            // Each EQ stage is a separate mpv lavfi wrapper,
+                            // so the filter type uniquely identifies the node
+                            // across FFmpeg parser versions.
+                            "equalizer",
                             "gain",
                             &format!("{gain:.15}"),
                             command,

@@ -24,26 +24,29 @@ fn af_command_syntax_tracks_the_loaded_library_signature() {
 }
 
 #[test]
-fn af_command_sends_filter_target_in_the_library_specific_position() {
+fn af_command_targets_filter_type_in_the_library_specific_position() {
     let mut legacy = Vec::new();
     AfCommandSyntax::LegacyPatched
-        .send("echo_eq4", "eq4", "gain", "3.5", &mut |args| {
+        .send("echo_eq4", "equalizer", "gain", "3.5", &mut |args| {
             legacy.push(args.to_vec());
             Ok(())
         })
         .unwrap();
-    assert_eq!(legacy, [vec!["af-command", "echo_eq4", "eq4:gain", "3.5"]]);
+    assert_eq!(
+        legacy,
+        [vec!["af-command", "echo_eq4", "equalizer:gain", "3.5"]]
+    );
 
     let mut modern = Vec::new();
     AfCommandSyntax::SeparateTarget
-        .send("echo_eq4", "eq4", "gain", "3.5", &mut |args| {
+        .send("echo_eq4", "equalizer", "gain", "3.5", &mut |args| {
             modern.push(args.to_vec());
             Ok(())
         })
         .unwrap();
     assert_eq!(
         modern,
-        [vec!["af-command", "echo_eq4", "gain", "3.5", "eq4"]]
+        [vec!["af-command", "echo_eq4", "gain", "3.5", "equalizer"]]
     );
 }
 
@@ -116,10 +119,10 @@ fn separate_target_runtime_updates_keep_equalizer_and_preamp_targets_isolated() 
     assert!(updates.iter().all(|args| args.len() == 5));
     assert!(updates
         .iter()
-        .any(|args| args[1] == "echo_eq4" && args[2] == "gain" && args[4] == "eq4"));
+        .any(|args| args[1] == "echo_eq4" && args[2] == "gain" && args[4] == "equalizer"));
     assert!(updates
         .iter()
-        .any(|args| args[1] == "echo_preamp" && args[2] == "volume" && args[4] == "preamp"));
+        .any(|args| args[1] == "echo_preamp" && args[2] == "volume" && args[4] == "volume"));
 }
 
 fn environment() -> ProcessingEnvironment {
@@ -354,7 +357,7 @@ fn fixed_spatial_payload_uses_internal_width_ramp_from_neutral() {
         .unwrap();
 
     assert!(commands.iter().any(|args| args[0] == "af-command"
-        && args[2] == "spatial:m"
+        && args[2] == "extrastereo:m"
         && args[3] == "1.250000000000000"));
 }
 
