@@ -125,6 +125,102 @@ fn separate_target_runtime_updates_keep_equalizer_and_preamp_targets_isolated() 
         .any(|args| args[1] == "echo_preamp" && args[2] == "volume" && args[4] == "volume"));
 }
 
+#[test]
+fn reconfiguration_reasserts_equalizer_filter_type_targets() {
+    for syntax in [
+        AfCommandSyntax::SeparateTarget,
+        AfCommandSyntax::LegacyPatched,
+    ] {
+        let mut native = NativeEffects::new(syntax);
+        let mut curve = EqCurve::default();
+        curve.gains_db[3] = -3.0;
+        curve.gains_db[4] = 2.0;
+        let payload = Payload::Eq(curve);
+        let analysis = crate::effects::math::analyze(&payload, environment()).unwrap();
+        let commands = std::cell::RefCell::new(Vec::new());
+        let mut accept_filter_type_targets = |args: &[String]| {
+            if args[0] == "af-command" {
+                let target = if syntax == AfCommandSyntax::SeparateTarget {
+                    args.get(4).map(String::as_str)
+                } else {
+                    args.get(2)
+                        .and_then(|arg| arg.split_once(':').map(|(target, _)| target))
+                };
+                assert!(matches!(target, Some("equalizer" | "volume")));
+            }
+            commands.borrow_mut().push(args.to_vec());
+            Ok(())
+        };
+
+        native
+            .apply(
+                &payload,
+                environment(),
+                &analysis,
+                &mut accept_filter_type_targets,
+            )
+            .unwrap();
+        native.reconfirm();
+        native.configured();
+        native
+            .apply(
+                &payload,
+                environment(),
+                &analysis,
+                &mut accept_filter_type_targets,
+            )
+            .unwrap();
+        complete(&mut native);
+        native
+            .apply(
+                &payload,
+                environment(),
+                &analysis,
+                &mut accept_filter_type_targets,
+            )
+            .unwrap();
+        commands.borrow_mut().clear();
+        native.reconfirm();
+        native.configured();
+        native
+            .apply(
+                &payload,
+                environment(),
+                &analysis,
+                &mut accept_filter_type_targets,
+            )
+            .unwrap();
+
+        assert!(commands.borrow().iter().any(|args| {
+            args[0] == "af-command"
+                && args[1] == "echo_eq3"
+                && if syntax == AfCommandSyntax::SeparateTarget {
+                    args[4] == "equalizer"
+                } else {
+                    args[2] == "equalizer:gain"
+                }
+        }));
+        assert!(commands.borrow().iter().any(|args| {
+            args[0] == "af-command"
+                && args[1] == "echo_eq3"
+                && if syntax == AfCommandSyntax::SeparateTarget {
+                    args[3] == "-3.000000000000000" && args[4] == "equalizer"
+                } else {
+                    args[2] == "equalizer:gain" && args[3] == "-3.000000000000000"
+                }
+        }));
+        assert!(commands.borrow().iter().any(|args| {
+            args[0] == "af-command"
+                && args[1] == "echo_eq4"
+                && if syntax == AfCommandSyntax::SeparateTarget {
+                    args[3] == "2.000000000000000" && args[4] == "equalizer"
+                } else {
+                    args[2] == "equalizer:gain" && args[3] == "2.000000000000000"
+                }
+        }));
+    }
+}
+
 fn environment() -> ProcessingEnvironment {
     ProcessingEnvironment {
         sample_rate: 48_000,

@@ -37,7 +37,7 @@ pub(super) fn reassert(
                     if (gain < 0.0) == negative && labels.contains(&label) {
                         syntax.send(
                             &label,
-                            &format!("eq{index}"),
+                            "equalizer",
                             "gain",
                             &format!("{gain:.15}"),
                             command,

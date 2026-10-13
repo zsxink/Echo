@@ -4,9 +4,23 @@ use super::*;
 use crate::effects::{ChannelLayout, Payload, ProcessingEnvironment};
 
 fn backend() -> Option<MpvBackend> {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../apps/desktop/src-tauri/vendor/libmpv/macos/libmpv.dylib");
-    if !cfg!(target_os = "macos") || !path.exists() {
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+    let vendor =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/desktop/src-tauri/vendor/libmpv");
+    #[cfg(target_os = "windows")]
+    let path = {
+        let path = vendor.join("windows/libmpv-2.dll");
+        assert!(path.exists(), "Windows CI requires the vendored libmpv DLL");
+        path
+    };
+    #[cfg(target_os = "linux")]
+    let path = vendor.join("linux/libmpv.so");
+    #[cfg(target_os = "macos")]
+    let path = vendor.join("macos/libmpv.dylib");
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+    return None;
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    if !path.exists() {
         return None;
     }
     // SAFETY: the test owns the pinned library and confines its handle here.
@@ -141,6 +155,83 @@ fn candidate_get_meta_requires_configured_nodes_and_rejects_a_failed_graph() {
     assert!(backend
         .apply_effects(&payload, environment, &analysis)
         .is_err());
+    backend.terminate();
+}
+
+#[test]
+fn candidate_nonzero_eq_survives_reconfiguration_reassert_then_bypasses() {
+    let Some(mut backend) = backend() else {
+        return;
+    };
+    // `ao=null` intentionally discards PCM. This regression checks native
+    // command acceptance and configured-node receipts, not audible DSP.
+    let (_directory, path) = fixture();
+    load_paused(&mut backend, &path);
+    let environment = ProcessingEnvironment {
+        sample_rate: 48_000,
+        channel_layout: ChannelLayout::Stereo,
+    };
+    let mut curve = crate::effects::EqCurve::default();
+    curve.gains_db[0] = 3.0;
+    let payload = Payload::Eq(curve);
+    let analysis = crate::effects::math::analyze(&payload, environment).unwrap();
+    let phase_deadline = || std::time::Instant::now() + std::time::Duration::from_secs(4);
+    let mut deadline = phase_deadline();
+    let mut applied = false;
+    while std::time::Instant::now() < deadline {
+        if backend.pump() == Some(BackendEvent::AudioReconfigured) {
+            backend.effects_reconfigured();
+        }
+        backend.confirm_effects_configuration();
+        if backend
+            .apply_effects(&payload, environment, &analysis)
+            .unwrap()
+        {
+            applied = true;
+            break;
+        }
+    }
+    assert!(applied, "non-zero EQ must reach configured state");
+
+    // Simulate mpv's AUDIO_RECONFIGURED notification. The test verifies native
+    // command acceptance and node receipts; ao=null cannot prove audible DSP.
+    assert!(backend.effects_reconfigured());
+    deadline = phase_deadline();
+    let mut restored = false;
+    while std::time::Instant::now() < deadline {
+        if backend.pump() == Some(BackendEvent::AudioReconfigured) {
+            backend.effects_reconfigured();
+        }
+        backend.confirm_effects_configuration();
+        if backend
+            .apply_effects(&payload, environment, &analysis)
+            .unwrap()
+        {
+            restored = true;
+            break;
+        }
+    }
+    assert!(
+        restored,
+        "reasserted EQ must be confirmed after reconfiguration"
+    );
+    for label in backend.effects.confirmation_labels() {
+        assert!(unsafe { backend.handle.audio_filter_configured(&backend.sys, label) });
+    }
+
+    let mut bypassed = false;
+    deadline = phase_deadline();
+    while std::time::Instant::now() < deadline {
+        if backend.pump() == Some(BackendEvent::AudioReconfigured) {
+            backend.effects_reconfigured();
+        }
+        backend.confirm_effects_configuration();
+        if backend.bypass_effects().unwrap() {
+            bypassed = true;
+            break;
+        }
+    }
+    assert!(bypassed, "bypass must complete after the reasserted EQ");
     backend.terminate();
 }
 
