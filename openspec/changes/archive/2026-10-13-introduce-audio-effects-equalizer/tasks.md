@@ -64,9 +64,9 @@
 
 ## 7. 最后执行：Windows/Linux 跨平台 Gate
 
-- [ ] AFX-7.1 为 Windows 与 Linux 各固定候选安装包、libmpv/FFmpeg 版本/哈希、参考机和捕获设备；按任务 1.1 建立同等工具记录。
-- [ ] AFX-7.2 在 Windows 与 Linux 候选库补跑任务 1.2 的滤镜链/原地命令/单声道/峰值/loadfile 实验，逐平台附带原始报告。
-- [ ] AFX-7.3 逐平台补跑任务 1.3 的 100 次延迟捕获及任务 1.4 的性能、underrun 和听感验收；随后回填跨平台差异与 6.1 的总 Gate 结论。未经这些证据不得宣称三平台完成。
+- [ ] AFX-7.1 为 Windows 与 Linux 各固定候选安装包、libmpv/FFmpeg 版本/哈希、参考机和捕获设备；按任务 1.1 建立同等工具记录。2026-10-13 用户确认无 Linux 音效测试设备，Linux 原生部分豁免且保持未测；豁免记录见 native-gate.md。
+- [ ] AFX-7.2 在 Windows 与 Linux 候选库补跑任务 1.2 的滤镜链/原地命令/单声道/峰值/loadfile 实验，逐平台附带原始报告。2026-10-13 用户确认 Windows 音效已实机验证；原始报告尚未提交。Linux 原生部分按用户决定豁免且未测，故本组合任务保持未完成。
+- [ ] AFX-7.3 逐平台补跑任务 1.3 的 100 次延迟捕获及任务 1.4 的性能、underrun 和听感验收；随后回填跨平台差异与 6.1 的总 Gate 结论。未经这些证据不得宣称三平台完成。Linux 原生部分按用户决定豁免且未测；豁免不构成 Linux 通过。
 
 ## 8. 实现复核修复（R7–R11；不替代原生 Gate）
 - [x] AFX-8.1 修复不支持环境中的旁路过渡提前完成和安全状态残留（R7）；验证多轮 Pending→Unavailable、旁路失败持续阻止播放、旧失败状态恢复以及 mono→stereo，运行 `cargo test -p echo-desktop player::actor_effects`。

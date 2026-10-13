@@ -2232,6 +2232,16 @@
           "cmd": "cargo test -p echo-desktop effects::math"
         }
       ]
+    },
+    {
+      "id": "AFX-13.1",
+      "title": "Windows FFmpeg graphparser filter-target compatibility",
+      "commands": [
+        {
+          "desc": "lavfi runtime parameter targets match filter type for both legacy patched and upstream separate-target command signatures",
+          "cmd": "cargo test -p echo-desktop player::native_effects::tests"
+        }
+      ]
     }
   ],
   "scenarios": [

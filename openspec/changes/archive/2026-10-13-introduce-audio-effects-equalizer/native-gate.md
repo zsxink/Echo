@@ -204,6 +204,21 @@ python3 scripts/audio-effects/probe.py \
 
 ## Windows/Linux 开发侧复核（2026-10-03）
 
+## Windows 运行时确认（2026-10-13）
+
+用户确认 Windows 音效已在 Windows 环境完成实际验证。该验证发生在 AFX-13.1
+按 `volume` / `equalizer` / `extrastereo` 类型定位 lavfi wrapper 的修复之后。
+本仓库当前尚无对应的原始探针 JSON、安装包哈希、Windows/音频设备信息或测试矩阵，
+因此此处只记录用户提供的验证结论，不将其扩写为逐项通过的 1.2/1.3/1.4 数值，
+也不将 Windows/Linux 合并任务标记完成。Linux 原生设备验证按用户 2026-10-13 的决定跳过，详见下节。
+
+## Linux 原生设备 Gate 豁免（2026-10-13）
+
+用户确认没有可用于 Linux 音效实测的设备，并要求跳过 Linux 原生 Gate。
+因此 AFX-7.1–7.3 的 Linux 设备测量记为 **waived / not tested**，不作为通过证据；
+本仓库不会据此声称 Linux 的输出响应、实时过渡、underrun、性能或听感已验收。
+可在现有主机执行的软件与供应链工作仍可继续，不能替代 Linux 音频设备验证。
+
 Windows 的发行库已固定为 shinchiro `20260814` 的 x86-64 `libmpv-2.dll`
 （mpv `20260814 git-7b8915bc1d`、ABI 2.5；SHA-256
 `f709c7ca8b183bec76b8158bf0c45c53018c63366750729352612f228ff7bdea`，与
