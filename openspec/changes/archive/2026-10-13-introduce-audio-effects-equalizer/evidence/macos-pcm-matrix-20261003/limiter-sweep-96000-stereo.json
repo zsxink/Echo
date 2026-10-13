@@ -1,0 +1,3698 @@
+{
+  "schema_version": 1,
+  "status": "probe-only",
+  "gate_passed": false,
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "architecture": "arm64",
+  "python_version": "3.9.6",
+  "cpu_count": 10,
+  "libmpv": {
+    "path": "/Applications/Echo.app/Contents/Frameworks/libmpv.dylib",
+    "sha256": "164430192f73da459916e384a405685697387fa5e333c19ffb1be4297a4852f3"
+  },
+  "input": {
+    "path": "/private/tmp/echo-audio-effects-fixtures/sweep-96000-2ch-0.1db.wav",
+    "sha256": "0b2fa6c750f3ced976d4a884567de7ef8601c03e1bf3ccf86682bfbe6c36efe3",
+    "fixture": {
+      "file": "sweep-96000-2ch-0.1db.wav",
+      "sha256": "0b2fa6c750f3ced976d4a884567de7ef8601c03e1bf3ccf86682bfbe6c36efe3",
+      "source": "Echo synthetic signal; no third-party recordings",
+      "license": "CC0-1.0",
+      "kind": "sweep",
+      "rate_hz": 96000,
+      "channels": 2,
+      "frames": 192000,
+      "duration_seconds": 2.0,
+      "requested_sample_peak_dbfs": -0.1,
+      "quantized_sample_peak_dbfs": -0.10000000390974116,
+      "sample_format": "signed PCM32 little-endian"
+    },
+    "generator_sha256": "27b9fbedf09f8f7755c5f457118943e77054934fb275ab5749decddb571b790b"
+  },
+  "command_line": [
+    "/Users/xian/Project/music/Echo/scripts/audio-effects/probe.py",
+    "--libmpv",
+    "/Applications/Echo.app/Contents/Frameworks/libmpv.dylib",
+    "--input",
+    "/tmp/echo-audio-effects-fixtures/sweep-96000-2ch-0.1db.wav",
+    "--fixture-manifest",
+    "/tmp/echo-audio-effects-fixtures/manifest.json",
+    "--manifest",
+    "/Users/xian/Project/music/Echo/apps/desktop/src-tauri/vendor/libmpv/macos/manifest.json",
+    "--output",
+    "/var/folders/rx/cwp1dm6536789l30qt9hf9rm0000gn/T/echo-mpv-probe-rig2jhys/report.json",
+    "--timeout",
+    "30",
+    "--ao",
+    "pcm",
+    "--pcm-output",
+    "/tmp/echo-limiter-sweep-96000-stereo.wav",
+    "--capture-only",
+    "--capture-gain-db",
+    "12.0",
+    "--capture-preamp-db",
+    "-11.5",
+    "--worker"
+  ],
+  "ao_requested": "pcm",
+  "native_loader": "ctypes native dlopen RTLD_LAZY | RTLD_LOCAL, matching Rust libloading; CDLL wraps the same handle",
+  "capture": {
+    "performed": true,
+    "sample_peak_dbfs": -0.9998544876801003,
+    "true_peak_dbtp": null,
+    "method": "libmpv ao=pcm WAVE output after the exact candidate filter chain",
+    "path": "/private/tmp/echo-limiter-sweep-96000-stereo.wav",
+    "reason": "PCM AO captures processed samples before CoreAudio; it does not establish device latency, underrun or listening acceptance.",
+    "sha256": "613752f6f1d190f918c8462238f5979950630db134aeca6012cc7bf775109c74",
+    "channels": 2,
+    "sample_rate": 96000,
+    "sample_width_bytes": 2,
+    "frames": 192000,
+    "sample_format": "integer PCM",
+    "all_finite": true
+  },
+  "limitations": [
+    "audio-params describes decoder output, not the intermediate filter environment.",
+    "audio-out-params describes negotiated AO input; debug logs may show filter links. No source metadata is treated as processing proof.",
+    "One host and package only; no hardware rebuild, first-sample barrier, loadfile parameter survival, latency, underrun, CPU budget or listening acceptance."
+  ],
+  "client_api": {
+    "raw": 131073,
+    "major": 2,
+    "minor": 1
+  },
+  "ffmpeg_exports": {
+    "av_version_info": "6.0",
+    "avfilter_version": 590692,
+    "avcodec_version": 3933028,
+    "avutil_version": 3801700
+  },
+  "runtime_libraries": [
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libavcodec.dylib",
+      "sha256": "aeb880b328b245a6023bd239268c92b5f91fbb4d5e73228e7bd8298285e9494a"
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libavfilter.dylib",
+      "sha256": "2591332d9a3ccc0f6a7313b98fc2566ef4193dd40271a6908dec7243085df6bc"
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libavformat.dylib",
+      "sha256": "0d56a6198e86482ff7550faa6105768bea232ec5d3764b6f48695fa935300258"
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libavutil.dylib",
+      "sha256": "66149814b422ae63f0d3970426106a91eda8f04e1c8a928901daf54c55067cfb"
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libmpv.dylib",
+      "sha256": "164430192f73da459916e384a405685697387fa5e333c19ffb1be4297a4852f3"
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libswresample.dylib",
+      "sha256": "57f215242edaa44101a720c4d295d112b1a7fc3101f1f7602be36d9a817cecfd"
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libswscale.dylib",
+      "sha256": "8c710003c88579691363a6a6281d80138678151e18b6dc5bf9b5db2a8abdd6f2"
+    }
+  ],
+  "operations": [
+    {
+      "elapsed_seconds": 1.0124999999999718e-05,
+      "kind": "option",
+      "args": [
+        "config",
+        "no"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 1.1666999999999927e-05,
+      "kind": "option",
+      "args": [
+        "load-scripts",
+        "no"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 1.2417000000000677e-05,
+      "kind": "option",
+      "args": [
+        "terminal",
+        "no"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 1.3333000000004258e-05,
+      "kind": "option",
+      "args": [
+        "vid",
+        "no"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 2.9208000000002787e-05,
+      "kind": "option",
+      "args": [
+        "vo",
+        "null"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 3.6083000000006193e-05,
+      "kind": "option",
+      "args": [
+        "idle",
+        "yes"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 3.74580000000041e-05,
+      "kind": "option",
+      "args": [
+        "keep-open",
+        "yes"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 4.3375000000005215e-05,
+      "kind": "option",
+      "args": [
+        "ao",
+        "pcm"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 4.495800000000466e-05,
+      "kind": "option",
+      "args": [
+        "audio-channels",
+        "auto"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 5.070800000000347e-05,
+      "kind": "option",
+      "args": [
+        "ao-pcm-file",
+        "/private/tmp/echo-limiter-sweep-96000-stereo.wav"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 5.66670000000033e-05,
+      "kind": "option",
+      "args": [
+        "ao-pcm-waveheader",
+        "yes"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 5.791700000000455e-05,
+      "kind": "request-log",
+      "args": [
+        "debug"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 0.0004415000000000044,
+      "kind": "initialize",
+      "args": [],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 0.01762500000000001,
+      "kind": "command",
+      "args": [
+        "af",
+        "set",
+        "@echo_preamp:lavfi=[aformat=sample_fmts=dblp,volume@preamp=volume=0.266072505979881:precision=double],@echo_eq0:lavfi=[equalizer@eq0=f=31.25:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq1:lavfi=[equalizer@eq1=f=62.5:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq2:lavfi=[equalizer@eq2=f=125:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq3:lavfi=[equalizer@eq3=f=250:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq4:lavfi=[equalizer@eq4=f=500:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq5:lavfi=[equalizer@eq5=f=1000:t=q:w=1.4142135623730951:g=12:mix=1:normalize=false:precision=f64],@echo_eq6:lavfi=[equalizer@eq6=f=2000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq7:lavfi=[equalizer@eq7=f=4000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq8:lavfi=[equalizer@eq8=f=8000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq9:lavfi=[equalizer@eq9=f=16000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_limiter:lavfi=[alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true]"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 0.01765737500000001,
+      "kind": "command",
+      "args": [
+        "loadfile",
+        "/private/tmp/echo-audio-effects-fixtures/sweep-96000-2ch-0.1db.wav"
+      ],
+      "result": 0,
+      "error": null
+    }
+  ],
+  "events": [
+    {
+      "elapsed_seconds": 0.01766183300000001,
+      "id": 11,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.017663041999999997,
+      "id": 6,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.017663958,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "mpv 0.36.0 Copyright \u00a9 2000-2023 mpv/MPlayer/mplayer2 projects\n"
+    },
+    {
+      "elapsed_seconds": 0.017675958,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": " built on UNKNOWN\n"
+    },
+    {
+      "elapsed_seconds": 0.01767812500000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "FFmpeg version: 6.0\n"
+    },
+    {
+      "elapsed_seconds": 0.01767975,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "FFmpeg library versions:\n"
+    },
+    {
+      "elapsed_seconds": 0.017681292000000008,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "   libavutil       58.2.100\n"
+    },
+    {
+      "elapsed_seconds": 0.01768279200000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "   libavcodec      60.3.100\n"
+    },
+    {
+      "elapsed_seconds": 0.01768437500000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "   libavformat     60.3.100\n"
+    },
+    {
+      "elapsed_seconds": 0.0176865,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "   libswscale      7.1.100\n"
+    },
+    {
+      "elapsed_seconds": 0.017688457999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "   libavfilter     9.3.100\n"
+    },
+    {
+      "elapsed_seconds": 0.017690292000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "   libswresample   4.10.100\n"
+    },
+    {
+      "elapsed_seconds": 0.017692167,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.017696917,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Configuration: -Dprefix=/tmp/echo-macos-audio-build/prefix -Dgpl=false -Dcplayer=false -Dlibmpv=true -Dbuild-date=false -Dtests=false -Dlibplacebo=disabled -Dlua=disabled -Djavascript=disabled -Dzlib=disabled -Dcoreaudio=enabled -Daudiounit=disabled -Dcocoa=enabled -Dmacos-cocoa-cb=disabled -Dmacos-media-player=disabled -Dmacos-touchbar=disabled -Dswift-build=disabled -Dvulkan=disabled -Duchardet=disabled -Dlibarchive=disabled -Dlibavdevice=disabled -Dlibbluray=disabled -Dlcms2=disabled -Drubberband=disabled -Dsdl2=disabled -Dzimg=disabled -Dvector=disabled -Djpeg=disabled\n"
+    },
+    {
+      "elapsed_seconds": 0.017699458000000008,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "List of enabled features: av-channel-layout avif_muxer bsd-fstatfs cocoa coreaudio cplugins darwin debug ffmpeg gl gl-cocoa glob glob-posix iconv jpegxl libass libdl libm osx-thread-name posix posix_shm stdatomic threads videotoolbox-gl\n"
+    },
+    {
+      "elapsed_seconds": 0.017701917000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "global",
+      "level": "debug",
+      "text": "home path: '' -> '-'\n"
+    },
+    {
+      "elapsed_seconds": 0.01770383300000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "global",
+      "level": "debug",
+      "text": "user path: '~~home/' -> ''\n"
+    },
+    {
+      "elapsed_seconds": 0.017705832999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "global",
+      "level": "debug",
+      "text": "user path: '~~old_home/' -> ''\n"
+    },
+    {
+      "elapsed_seconds": 0.017708124999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "osx",
+      "level": "debug",
+      "text": "Exiting...\n"
+    },
+    {
+      "elapsed_seconds": 0.017709958000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "debug",
+      "text": "Run command: af, flags=64, args=[operation=\"set\", value=\"@echo_preamp:lavfi=[aformat=sample_fmts=dblp,volume@preamp=volume=0.266072505979881:precision=double],@echo_eq0:lavfi=[equalizer@eq0=f=31.25:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq1:lavfi=[equalizer@eq1=f=62.5:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq2:lavfi=[equalizer@eq2=f=125:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq3:lavfi=[equalizer@eq3=f=250:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq4:lavfi=[equalizer@eq4=f=500:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq5:lavfi=[equalizer@eq5=f=1000:t=q:w=1.4142135623730951:g=12:mix=1:normalize=false:precision=f64],@echo_eq6:lavfi=[equalizer@eq6=f=2000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq7:lavfi=[equalizer@eq7=f=4000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq8:lavfi=[equalizer@eq8=f=8000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq9:lavfi=[equalizer@eq9=f=16000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_limiter:lavfi=[alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true]\"]\n"
+    },
+    {
+      "elapsed_seconds": 0.017712125000000002,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "debug",
+      "text": "Run command: loadfile, flags=64, args=[url=\"/private/tmp/echo-audio-effects-fixtures/sweep-96000-2ch-0.1db.wav\", flags=\"replace\", options=\"\"]\n"
+    },
+    {
+      "elapsed_seconds": 0.017714208000000002,
+      "id": 2,
+      "error": 0,
+      "prefix": "global",
+      "level": "debug",
+      "text": "state path: 'watch_later' -> '-'\n"
+    },
+    {
+      "elapsed_seconds": 0.01771625000000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "file",
+      "level": "v",
+      "text": "Opening /private/tmp/echo-audio-effects-fixtures/sweep-96000-2ch-0.1db.wav\n"
+    },
+    {
+      "elapsed_seconds": 0.017742833000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "file",
+      "level": "debug",
+      "text": "resize stream to 131072 bytes, drop 0 bytes\n"
+    },
+    {
+      "elapsed_seconds": 0.01774920800000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "file",
+      "level": "debug",
+      "text": "Stream opened successfully.\n"
+    },
+    {
+      "elapsed_seconds": 0.017751750000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "v",
+      "text": "Trying demuxers for level=normal.\n"
+    },
+    {
+      "elapsed_seconds": 0.017753750000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: disc (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.017755708000000002,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: edl (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.017757583,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: cue (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.017759458,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: rawaudio (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.017761167,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: rawvideo (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.017762875000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: mkv (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.017767791999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: lavf (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.018527250000000002,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavf",
+      "level": "v",
+      "text": "Found 'wav' at score=99 size=2048.\n"
+    },
+    {
+      "elapsed_seconds": 0.01857625000000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg/demuxer",
+      "level": "debug",
+      "text": "wav: parser not found for codec pcm_s32le, packets or times may be invalid.\n"
+    },
+    {
+      "elapsed_seconds": 0.018612750000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg/demuxer",
+      "level": "debug",
+      "text": "wav: parser not found for codec pcm_s32le, packets or times may be invalid.\n"
+    },
+    {
+      "elapsed_seconds": 0.01866083300000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavf",
+      "level": "v",
+      "text": "avformat_find_stream_info() finished after 229376 bytes.\n"
+    },
+    {
+      "elapsed_seconds": 0.01866341700000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "v",
+      "text": "Detected file format: wav (libavformat)\n"
+    },
+    {
+      "elapsed_seconds": 0.018665833,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Opening done: /private/tmp/echo-audio-effects-fixtures/sweep-96000-2ch-0.1db.wav\n"
+    },
+    {
+      "elapsed_seconds": 0.020184374999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "find_files",
+      "level": "v",
+      "text": "Loading external files in /private/tmp/echo-audio-effects-fixtures/\n"
+    },
+    {
+      "elapsed_seconds": 0.020280874999999997,
+      "id": 18,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.02028275000000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavf",
+      "level": "v",
+      "text": "select track 0\n"
+    },
+    {
+      "elapsed_seconds": 0.020285417000000007,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "info",
+      "text": " (+) Audio --aid=1 (pcm_s32le 2ch 96000Hz)\n"
+    },
+    {
+      "elapsed_seconds": 0.020353167,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Codec list:\n"
+    },
+    {
+      "elapsed_seconds": 0.020355583000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "    pcm_s32le - PCM signed 32-bit little-endian\n"
+    },
+    {
+      "elapsed_seconds": 0.02035725,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Opening decoder pcm_s32le\n"
+    },
+    {
+      "elapsed_seconds": 0.020376542000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Requesting 1 threads for decoding.\n"
+    },
+    {
+      "elapsed_seconds": 0.020379083,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Selected codec: pcm_s32le (PCM signed 32-bit little-endian)\n"
+    },
+    {
+      "elapsed_seconds": 0.020380749999999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "user_filter_wrapper",
+      "level": "v",
+      "text": "Setting option 'graph' = 'aformat=sample_fmts=dblp,volume@preamp=volume=0.266072505979881:precision=double' (flags = 0)\n"
+    },
+    {
+      "elapsed_seconds": 0.020480958,
+      "id": 2,
+      "error": 0,
+      "prefix": "user_filter_wrapper",
+      "level": "v",
+      "text": "Setting option 'graph' = 'equalizer@eq0=f=31.25:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64' (flags = 0)\n"
+    },
+    {
+      "elapsed_seconds": 0.020578500000000007,
+      "id": 2,
+      "error": 0,
+      "prefix": "user_filter_wrapper",
+      "level": "v",
+      "text": "Setting option 'graph' = 'equalizer@eq1=f=62.5:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64' (flags = 0)\n"
+    },
+    {
+      "elapsed_seconds": 0.02066450000000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "user_filter_wrapper",
+      "level": "v",
+      "text": "Setting option 'graph' = 'equalizer@eq2=f=125:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64' (flags = 0)\n"
+    },
+    {
+      "elapsed_seconds": 0.020747916999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "user_filter_wrapper",
+      "level": "v",
+      "text": "Setting option 'graph' = 'equalizer@eq3=f=250:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64' (flags = 0)\n"
+    },
+    {
+      "elapsed_seconds": 0.020819999999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "user_filter_wrapper",
+      "level": "v",
+      "text": "Setting option 'graph' = 'equalizer@eq4=f=500:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64' (flags = 0)\n"
+    },
+    {
+      "elapsed_seconds": 0.0208895,
+      "id": 2,
+      "error": 0,
+      "prefix": "user_filter_wrapper",
+      "level": "v",
+      "text": "Setting option 'graph' = 'equalizer@eq5=f=1000:t=q:w=1.4142135623730951:g=12:mix=1:normalize=false:precision=f64' (flags = 0)\n"
+    },
+    {
+      "elapsed_seconds": 0.021008541999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "user_filter_wrapper",
+      "level": "v",
+      "text": "Setting option 'graph' = 'equalizer@eq6=f=2000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64' (flags = 0)\n"
+    },
+    {
+      "elapsed_seconds": 0.021108583000000007,
+      "id": 2,
+      "error": 0,
+      "prefix": "user_filter_wrapper",
+      "level": "v",
+      "text": "Setting option 'graph' = 'equalizer@eq7=f=4000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64' (flags = 0)\n"
+    },
+    {
+      "elapsed_seconds": 0.021198917000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "user_filter_wrapper",
+      "level": "v",
+      "text": "Setting option 'graph' = 'equalizer@eq8=f=8000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64' (flags = 0)\n"
+    },
+    {
+      "elapsed_seconds": 0.021288916999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "user_filter_wrapper",
+      "level": "v",
+      "text": "Setting option 'graph' = 'equalizer@eq9=f=16000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64' (flags = 0)\n"
+    },
+    {
+      "elapsed_seconds": 0.021381167,
+      "id": 2,
+      "error": 0,
+      "prefix": "user_filter_wrapper",
+      "level": "v",
+      "text": "Setting option 'graph' = 'alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true' (flags = 0)\n"
+    },
+    {
+      "elapsed_seconds": 0.021465583000000003,
+      "id": 18,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.02146725,
+      "id": 8,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.021468416999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "User filter list:\n"
+    },
+    {
+      "elapsed_seconds": 0.021471333000000002,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "  lavfi (echo_preamp)\n"
+    },
+    {
+      "elapsed_seconds": 0.02147337500000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "  lavfi (echo_eq0)\n"
+    },
+    {
+      "elapsed_seconds": 0.021475583,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "  lavfi (echo_eq1)\n"
+    },
+    {
+      "elapsed_seconds": 0.021477583,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "  lavfi (echo_eq2)\n"
+    },
+    {
+      "elapsed_seconds": 0.021479375000000002,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "  lavfi (echo_eq3)\n"
+    },
+    {
+      "elapsed_seconds": 0.021481042,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "  lavfi (echo_eq4)\n"
+    },
+    {
+      "elapsed_seconds": 0.021482458000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "  lavfi (echo_eq5)\n"
+    },
+    {
+      "elapsed_seconds": 0.021483833,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "  lavfi (echo_eq6)\n"
+    },
+    {
+      "elapsed_seconds": 0.021485208,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "  lavfi (echo_eq7)\n"
+    },
+    {
+      "elapsed_seconds": 0.021486582999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "  lavfi (echo_eq8)\n"
+    },
+    {
+      "elapsed_seconds": 0.02148795800000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "  lavfi (echo_eq9)\n"
+    },
+    {
+      "elapsed_seconds": 0.021489374999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "  lavfi (echo_limiter)\n"
+    },
+    {
+      "elapsed_seconds": 0.021490917000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Starting playback...\n"
+    },
+    {
+      "elapsed_seconds": 0.021527291999999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[in] 96000Hz stereo 2ch s32\n"
+    },
+    {
+      "elapsed_seconds": 0.021531,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[lavfi] 96000Hz stereo 2ch s32\n"
+    },
+    {
+      "elapsed_seconds": 0.021533249999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "mpv_src_in0: tb:1/96000 samplefmt:s32 samplerate:96000 chlayout:stereo\n"
+    },
+    {
+      "elapsed_seconds": 0.021556417,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "Parsed_aformat_0: auto-inserting filter 'auto_aresample_0' between the filter 'mpv_src_in0' and the filter 'Parsed_aformat_0'\n"
+    },
+    {
+      "elapsed_seconds": 0.021570874999999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "auto_aresample_0: ch:2 chl:stereo fmt:s32 r:96000Hz -> ch:2 chl:stereo fmt:dblp r:96000Hz\n"
+    },
+    {
+      "elapsed_seconds": 0.021574125000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "Parsed_aformat_0: tb:0.000010 sample_rate:96000.000000 nb_channels:2.000000\n"
+    },
+    {
+      "elapsed_seconds": 0.021575917000000007,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "preamp: n:nan t:nan pts:nan precision:double volume:0.266073 volume_dB:-11.500000\n"
+    },
+    {
+      "elapsed_seconds": 0.021577500000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "Filter graph:\n"
+    },
+    {
+      "elapsed_seconds": 0.021592292000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                        +------------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021595333,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "auto_aresample_0:default--[96000Hz dblp:stereo]--default| Parsed_aformat_0 |default--[96000Hz dblp:stereo]--preamp:default\n"
+    },
+    {
+      "elapsed_seconds": 0.021597458000000007,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                        |    (aformat)     |\n"
+    },
+    {
+      "elapsed_seconds": 0.02159945800000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                        +------------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021601417000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021603625000000008,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                        +----------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021605624999999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "Parsed_aformat_0:default--[96000Hz dblp:stereo]--default|  preamp  |default--[96000Hz dblp:stereo]--mpv_sink_out0:default\n"
+    },
+    {
+      "elapsed_seconds": 0.021607542,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                        | (volume) |\n"
+    },
+    {
+      "elapsed_seconds": 0.021609542000000002,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                        +----------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021611750000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021613542000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                              +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021615333000000007,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "preamp:default--[96000Hz dblp:stereo]--default| mpv_sink_out0 |\n"
+    },
+    {
+      "elapsed_seconds": 0.021617500000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                              | (abuffersink) |\n"
+    },
+    {
+      "elapsed_seconds": 0.021619332999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                              +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021621124999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021622917,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021624791999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "| mpv_src_in0 |default--[96000Hz s32:stereo]--auto_aresample_0:default\n"
+    },
+    {
+      "elapsed_seconds": 0.021631500000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "|  (abuffer)  |\n"
+    },
+    {
+      "elapsed_seconds": 0.02163341700000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021635083000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021636542,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                  +------------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.02163808300000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "mpv_src_in0:default--[96000Hz s32:stereo]--default| auto_aresample_0 |default--[96000Hz dblp:stereo]--Parsed_aformat_0:default\n"
+    },
+    {
+      "elapsed_seconds": 0.021642375,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                  |   (aresample)    |\n"
+    },
+    {
+      "elapsed_seconds": 0.021644000000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                  +------------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021645792000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021648916999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021650416999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[lavfi] 96000Hz stereo 2ch doublep\n"
+    },
+    {
+      "elapsed_seconds": 0.021652125,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "mpv_src_in0: tb:1/96000 samplefmt:dblp samplerate:96000 chlayout:stereo\n"
+    },
+    {
+      "elapsed_seconds": 0.021653791999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "eq0: a=1.000723 -1.999996 0.999277:b=1.000723 -1.999996 0.999277\n"
+    },
+    {
+      "elapsed_seconds": 0.021655292,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "Filter graph:\n"
+    },
+    {
+      "elapsed_seconds": 0.021656792,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021658458,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "mpv_src_in0:default--[96000Hz dblp:stereo]--default|     eq0     |default--[96000Hz dblp:stereo]--mpv_sink_out0:default\n"
+    },
+    {
+      "elapsed_seconds": 0.021660000000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   | (equalizer) |\n"
+    },
+    {
+      "elapsed_seconds": 0.02166141700000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021663167000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021664667000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021666333000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "eq0:default--[96000Hz dblp:stereo]--default| mpv_sink_out0 |\n"
+    },
+    {
+      "elapsed_seconds": 0.021671125000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           | (abuffersink) |\n"
+    },
+    {
+      "elapsed_seconds": 0.021673041999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021675000000000007,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021676875000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.02167879200000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "| mpv_src_in0 |default--[96000Hz dblp:stereo]--eq0:default\n"
+    },
+    {
+      "elapsed_seconds": 0.021680582999999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "|  (abuffer)  |\n"
+    },
+    {
+      "elapsed_seconds": 0.021682542000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021684500000000002,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021686958,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021688708000000008,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[lavfi] 96000Hz stereo 2ch doublep\n"
+    },
+    {
+      "elapsed_seconds": 0.021690542,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "mpv_src_in0: tb:1/96000 samplefmt:dblp samplerate:96000 chlayout:stereo\n"
+    },
+    {
+      "elapsed_seconds": 0.021692167000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "eq1: a=1.001446 -1.999983 0.998554:b=1.001446 -1.999983 0.998554\n"
+    },
+    {
+      "elapsed_seconds": 0.021693542000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "Filter graph:\n"
+    },
+    {
+      "elapsed_seconds": 0.02169487500000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021696292,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "mpv_src_in0:default--[96000Hz dblp:stereo]--default|     eq1     |default--[96000Hz dblp:stereo]--mpv_sink_out0:default\n"
+    },
+    {
+      "elapsed_seconds": 0.021697875,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   | (equalizer) |\n"
+    },
+    {
+      "elapsed_seconds": 0.021699292000000002,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021700708000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021702041999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021703375000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "eq1:default--[96000Hz dblp:stereo]--default| mpv_sink_out0 |\n"
+    },
+    {
+      "elapsed_seconds": 0.021704833,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           | (abuffersink) |\n"
+    },
+    {
+      "elapsed_seconds": 0.021709125000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021711083,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021713167,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.02171512500000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "| mpv_src_in0 |default--[96000Hz dblp:stereo]--eq1:default\n"
+    },
+    {
+      "elapsed_seconds": 0.021717083000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "|  (abuffer)  |\n"
+    },
+    {
+      "elapsed_seconds": 0.021718958000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.02172316700000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021725374999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021727167,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[lavfi] 96000Hz stereo 2ch doublep\n"
+    },
+    {
+      "elapsed_seconds": 0.021729208000000007,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "mpv_src_in0: tb:1/96000 samplefmt:dblp samplerate:96000 chlayout:stereo\n"
+    },
+    {
+      "elapsed_seconds": 0.02173120800000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "eq2: a=1.002892 -1.999933 0.997108:b=1.002892 -1.999933 0.997108\n"
+    },
+    {
+      "elapsed_seconds": 0.021734708,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "Filter graph:\n"
+    },
+    {
+      "elapsed_seconds": 0.0217365,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021738333000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "mpv_src_in0:default--[96000Hz dblp:stereo]--default|     eq2     |default--[96000Hz dblp:stereo]--mpv_sink_out0:default\n"
+    },
+    {
+      "elapsed_seconds": 0.021740417000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   | (equalizer) |\n"
+    },
+    {
+      "elapsed_seconds": 0.021742249999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021744083000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021745916999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021752292,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "eq2:default--[96000Hz dblp:stereo]--default| mpv_sink_out0 |\n"
+    },
+    {
+      "elapsed_seconds": 0.021754625000000007,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           | (abuffersink) |\n"
+    },
+    {
+      "elapsed_seconds": 0.02175675,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021758624999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021760583000000007,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021762375000000007,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "| mpv_src_in0 |default--[96000Hz dblp:stereo]--eq2:default\n"
+    },
+    {
+      "elapsed_seconds": 0.021764333000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "|  (abuffer)  |\n"
+    },
+    {
+      "elapsed_seconds": 0.021766208000000002,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021768292,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021770083000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021772042,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[lavfi] 96000Hz stereo 2ch doublep\n"
+    },
+    {
+      "elapsed_seconds": 0.021773875000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "mpv_src_in0: tb:1/96000 samplefmt:dblp samplerate:96000 chlayout:stereo\n"
+    },
+    {
+      "elapsed_seconds": 0.02177579200000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "eq3: a=1.005785 -1.999732 0.994215:b=1.005785 -1.999732 0.994215\n"
+    },
+    {
+      "elapsed_seconds": 0.021777833000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "Filter graph:\n"
+    },
+    {
+      "elapsed_seconds": 0.021783625000000008,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021785875000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "mpv_src_in0:default--[96000Hz dblp:stereo]--default|     eq3     |default--[96000Hz dblp:stereo]--mpv_sink_out0:default\n"
+    },
+    {
+      "elapsed_seconds": 0.021787833,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   | (equalizer) |\n"
+    },
+    {
+      "elapsed_seconds": 0.021789707999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021791582999999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.0217935,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021795792,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "eq3:default--[96000Hz dblp:stereo]--default| mpv_sink_out0 |\n"
+    },
+    {
+      "elapsed_seconds": 0.021797541999999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           | (abuffersink) |\n"
+    },
+    {
+      "elapsed_seconds": 0.021799792000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021801667000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021803917,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021806,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "| mpv_src_in0 |default--[96000Hz dblp:stereo]--eq3:default\n"
+    },
+    {
+      "elapsed_seconds": 0.021807874999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "|  (abuffer)  |\n"
+    },
+    {
+      "elapsed_seconds": 0.021809666999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021811541999999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021817667000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.02181987500000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[lavfi] 96000Hz stereo 2ch doublep\n"
+    },
+    {
+      "elapsed_seconds": 0.0218215,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "mpv_src_in0: tb:1/96000 samplefmt:dblp samplerate:96000 chlayout:stereo\n"
+    },
+    {
+      "elapsed_seconds": 0.021823917000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "eq4: a=1.011568 -1.998929 0.988432:b=1.011568 -1.998929 0.988432\n"
+    },
+    {
+      "elapsed_seconds": 0.021825500000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "Filter graph:\n"
+    },
+    {
+      "elapsed_seconds": 0.02182725,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.02182875,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "mpv_src_in0:default--[96000Hz dblp:stereo]--default|     eq4     |default--[96000Hz dblp:stereo]--mpv_sink_out0:default\n"
+    },
+    {
+      "elapsed_seconds": 0.021830375000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   | (equalizer) |\n"
+    },
+    {
+      "elapsed_seconds": 0.021831917,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.0218335,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021835,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021836457999999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "eq4:default--[96000Hz dblp:stereo]--default| mpv_sink_out0 |\n"
+    },
+    {
+      "elapsed_seconds": 0.021838167,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           | (abuffersink) |\n"
+    },
+    {
+      "elapsed_seconds": 0.021840041999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.02184175,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021843625,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021845542000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "| mpv_src_in0 |default--[96000Hz dblp:stereo]--eq4:default\n"
+    },
+    {
+      "elapsed_seconds": 0.021847417,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "|  (abuffer)  |\n"
+    },
+    {
+      "elapsed_seconds": 0.0218495,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021851500000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021853375,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021855500000000007,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[lavfi] 96000Hz stereo 2ch doublep\n"
+    },
+    {
+      "elapsed_seconds": 0.021857333,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "mpv_src_in0: tb:1/96000 samplefmt:dblp samplerate:96000 chlayout:stereo\n"
+    },
+    {
+      "elapsed_seconds": 0.021859417,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "eq5: a=1.011589 -1.995718 0.988411:b=1.046137 -1.995718 0.953863\n"
+    },
+    {
+      "elapsed_seconds": 0.021861250000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "Filter graph:\n"
+    },
+    {
+      "elapsed_seconds": 0.021863042000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021864833000000007,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "mpv_src_in0:default--[96000Hz dblp:stereo]--default|     eq5     |default--[96000Hz dblp:stereo]--mpv_sink_out0:default\n"
+    },
+    {
+      "elapsed_seconds": 0.021871124999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   | (equalizer) |\n"
+    },
+    {
+      "elapsed_seconds": 0.021873542000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.0218755,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021877083,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021878625000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "eq5:default--[96000Hz dblp:stereo]--default| mpv_sink_out0 |\n"
+    },
+    {
+      "elapsed_seconds": 0.021880375,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           | (abuffersink) |\n"
+    },
+    {
+      "elapsed_seconds": 0.021881832999999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021884458000000002,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021888708,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.02189045800000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "| mpv_src_in0 |default--[96000Hz dblp:stereo]--eq5:default\n"
+    },
+    {
+      "elapsed_seconds": 0.021892042000000007,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "|  (abuffer)  |\n"
+    },
+    {
+      "elapsed_seconds": 0.021898416999999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021900625,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021902625000000002,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021904333000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[lavfi] 96000Hz stereo 2ch doublep\n"
+    },
+    {
+      "elapsed_seconds": 0.021906125000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "mpv_src_in0: tb:1/96000 samplefmt:dblp samplerate:96000 chlayout:stereo\n"
+    },
+    {
+      "elapsed_seconds": 0.021912083000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "eq6: a=1.046148 -1.982890 0.953852:b=1.046148 -1.982890 0.953852\n"
+    },
+    {
+      "elapsed_seconds": 0.021914667000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "Filter graph:\n"
+    },
+    {
+      "elapsed_seconds": 0.021916750000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.02191866700000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "mpv_src_in0:default--[96000Hz dblp:stereo]--default|     eq6     |default--[96000Hz dblp:stereo]--mpv_sink_out0:default\n"
+    },
+    {
+      "elapsed_seconds": 0.021920792,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   | (equalizer) |\n"
+    },
+    {
+      "elapsed_seconds": 0.021922749999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021924500000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.02192625,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021932583,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "eq6:default--[96000Hz dblp:stereo]--default| mpv_sink_out0 |\n"
+    },
+    {
+      "elapsed_seconds": 0.021934833000000008,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           | (abuffersink) |\n"
+    },
+    {
+      "elapsed_seconds": 0.021936708000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021938583000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021940375000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021942417,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "| mpv_src_in0 |default--[96000Hz dblp:stereo]--eq6:default\n"
+    },
+    {
+      "elapsed_seconds": 0.021944250000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "|  (abuffer)  |\n"
+    },
+    {
+      "elapsed_seconds": 0.021946417000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021948208000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.02194983300000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021951332999999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[lavfi] 96000Hz stereo 2ch doublep\n"
+    },
+    {
+      "elapsed_seconds": 0.02195275,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "mpv_src_in0: tb:1/96000 samplefmt:dblp samplerate:96000 chlayout:stereo\n"
+    },
+    {
+      "elapsed_seconds": 0.02195420800000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "eq7: a=1.091506 -1.931852 0.908494:b=1.091506 -1.931852 0.908494\n"
+    },
+    {
+      "elapsed_seconds": 0.021955750000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "Filter graph:\n"
+    },
+    {
+      "elapsed_seconds": 0.021957125,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021958458000000007,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "mpv_src_in0:default--[96000Hz dblp:stereo]--default|     eq7     |default--[96000Hz dblp:stereo]--mpv_sink_out0:default\n"
+    },
+    {
+      "elapsed_seconds": 0.02196,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   | (equalizer) |\n"
+    },
+    {
+      "elapsed_seconds": 0.021961333000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021962666999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021964041999999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021965417000000008,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "eq7:default--[96000Hz dblp:stereo]--default| mpv_sink_out0 |\n"
+    },
+    {
+      "elapsed_seconds": 0.021966792000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           | (abuffersink) |\n"
+    },
+    {
+      "elapsed_seconds": 0.021974125000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021977208000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.02197875,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.021980208000000008,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "| mpv_src_in0 |default--[96000Hz dblp:stereo]--eq7:default\n"
+    },
+    {
+      "elapsed_seconds": 0.021981833,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "|  (abuffer)  |\n"
+    },
+    {
+      "elapsed_seconds": 0.021983416999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.02198637500000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021988250000000008,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.021990125000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[lavfi] 96000Hz stereo 2ch doublep\n"
+    },
+    {
+      "elapsed_seconds": 0.021992083000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "mpv_src_in0: tb:1/96000 samplefmt:dblp samplerate:96000 chlayout:stereo\n"
+    },
+    {
+      "elapsed_seconds": 0.021994542,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "eq8: a=1.176777 -1.732051 0.823223:b=1.176777 -1.732051 0.823223\n"
+    },
+    {
+      "elapsed_seconds": 0.021996542,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "Filter graph:\n"
+    },
+    {
+      "elapsed_seconds": 0.021998458000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.022000625000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "mpv_src_in0:default--[96000Hz dblp:stereo]--default|     eq8     |default--[96000Hz dblp:stereo]--mpv_sink_out0:default\n"
+    },
+    {
+      "elapsed_seconds": 0.022002666999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   | (equalizer) |\n"
+    },
+    {
+      "elapsed_seconds": 0.022004500000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.02200633300000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.022008208000000008,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.022010042,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "eq8:default--[96000Hz dblp:stereo]--default| mpv_sink_out0 |\n"
+    },
+    {
+      "elapsed_seconds": 0.022011833,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           | (abuffersink) |\n"
+    },
+    {
+      "elapsed_seconds": 0.022013791999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.022015542000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.022017292,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.022019125000000007,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "| mpv_src_in0 |default--[96000Hz dblp:stereo]--eq8:default\n"
+    },
+    {
+      "elapsed_seconds": 0.022020875000000002,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "|  (abuffer)  |\n"
+    },
+    {
+      "elapsed_seconds": 0.022022667000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.02202450000000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.022026208,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.022028208,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[lavfi] 96000Hz stereo 2ch doublep\n"
+    },
+    {
+      "elapsed_seconds": 0.022029874999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "mpv_src_in0: tb:1/96000 samplefmt:dblp samplerate:96000 chlayout:stereo\n"
+    },
+    {
+      "elapsed_seconds": 0.022031500000000002,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "eq9: a=1.306186 -1.000000 0.693814:b=1.306186 -1.000000 0.693814\n"
+    },
+    {
+      "elapsed_seconds": 0.022032875,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "Filter graph:\n"
+    },
+    {
+      "elapsed_seconds": 0.022034167,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.022035458,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "mpv_src_in0:default--[96000Hz dblp:stereo]--default|     eq9     |default--[96000Hz dblp:stereo]--mpv_sink_out0:default\n"
+    },
+    {
+      "elapsed_seconds": 0.022036833,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   | (equalizer) |\n"
+    },
+    {
+      "elapsed_seconds": 0.022038207999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.022039499999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.022040791999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.02204216700000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "eq9:default--[96000Hz dblp:stereo]--default| mpv_sink_out0 |\n"
+    },
+    {
+      "elapsed_seconds": 0.022044374999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           | (abuffersink) |\n"
+    },
+    {
+      "elapsed_seconds": 0.022045792,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                           +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.022047125000000008,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.022048417000000008,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.02204975,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "| mpv_src_in0 |default--[96000Hz dblp:stereo]--eq9:default\n"
+    },
+    {
+      "elapsed_seconds": 0.022051083000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "|  (abuffer)  |\n"
+    },
+    {
+      "elapsed_seconds": 0.022052458000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.022053875000000008,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.022055542000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.022056833000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[lavfi] 96000Hz stereo 2ch doublep\n"
+    },
+    {
+      "elapsed_seconds": 0.022058166999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "mpv_src_in0: tb:1/96000 samplefmt:dblp samplerate:96000 chlayout:stereo\n"
+    },
+    {
+      "elapsed_seconds": 0.022059625000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "Parsed_alimiter_0: auto-inserting filter 'auto_aresample_0' between the filter 'mpv_src_in0' and the filter 'Parsed_alimiter_0'\n"
+    },
+    {
+      "elapsed_seconds": 0.02206104200000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "debug",
+      "text": "auto_aresample_0: ch:2 chl:stereo fmt:dblp r:96000Hz -> ch:2 chl:stereo fmt:dbl r:96000Hz\n"
+    },
+    {
+      "elapsed_seconds": 0.022062500000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "Filter graph:\n"
+    },
+    {
+      "elapsed_seconds": 0.022063832999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                    +-------------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.022065375000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "auto_aresample_0:default--[96000Hz dbl:stereo]--main| Parsed_alimiter_0 |default--[96000Hz dbl:stereo]--mpv_sink_out0:default\n"
+    },
+    {
+      "elapsed_seconds": 0.022066917,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                    |    (alimiter)     |\n"
+    },
+    {
+      "elapsed_seconds": 0.022068333000000002,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                    +-------------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.022069667000000008,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.022071,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                        +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.022072374999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "Parsed_alimiter_0:default--[96000Hz dbl:stereo]--default| mpv_sink_out0 |\n"
+    },
+    {
+      "elapsed_seconds": 0.022073792000000002,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                        | (abuffersink) |\n"
+    },
+    {
+      "elapsed_seconds": 0.022075167,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                        +---------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.022076541999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.022077832999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.02207920800000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "| mpv_src_in0 |default--[96000Hz dblp:stereo]--auto_aresample_0:default\n"
+    },
+    {
+      "elapsed_seconds": 0.022080583000000008,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "|  (abuffer)  |\n"
+    },
+    {
+      "elapsed_seconds": 0.022081958000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "+-------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.022087125000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.02208883300000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +------------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.02209025,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "mpv_src_in0:default--[96000Hz dblp:stereo]--default| auto_aresample_0 |default--[96000Hz dbl:stereo]--Parsed_alimiter_0:main\n"
+    },
+    {
+      "elapsed_seconds": 0.02209175,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   |   (aresample)    |\n"
+    },
+    {
+      "elapsed_seconds": 0.022093667000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "                                                   +------------------+\n"
+    },
+    {
+      "elapsed_seconds": 0.022095958000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.022097791999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "debug",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.022099708000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[userspeed] 96000Hz stereo 2ch double\n"
+    },
+    {
+      "elapsed_seconds": 0.022101792000000002,
+      "id": 18,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.022102749999999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[userspeed] (disabled)\n"
+    },
+    {
+      "elapsed_seconds": 0.022104792000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[convert] 96000Hz stereo 2ch double\n"
+    },
+    {
+      "elapsed_seconds": 0.02210700000000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao",
+      "level": "v",
+      "text": "Trying audio driver 'pcm'\n"
+    },
+    {
+      "elapsed_seconds": 0.022110542000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/pcm",
+      "level": "v",
+      "text": "requested format: 96000 Hz, stereo channels, double\n"
+    },
+    {
+      "elapsed_seconds": 0.022113208000000002,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/pcm",
+      "level": "v",
+      "text": "Channel layouts:\n"
+    },
+    {
+      "elapsed_seconds": 0.022115125000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/pcm",
+      "level": "v",
+      "text": " - waveext\n"
+    },
+    {
+      "elapsed_seconds": 0.022117000000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/pcm",
+      "level": "v",
+      "text": "result: stereo\n"
+    },
+    {
+      "elapsed_seconds": 0.022118875000000003,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/pcm",
+      "level": "info",
+      "text": "File: /private/tmp/echo-limiter-sweep-96000-stereo.wav (WAVE)\n"
+    },
+    {
+      "elapsed_seconds": 0.022124458000000007,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/pcm",
+      "level": "info",
+      "text": "PCM: Samplerate: 96000 Hz Channels: 2 Format: s16\n"
+    },
+    {
+      "elapsed_seconds": 0.022126750000000008,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/pcm",
+      "level": "v",
+      "text": "device buffer: 65536 samples.\n"
+    },
+    {
+      "elapsed_seconds": 0.022128833000000007,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/pcm",
+      "level": "v",
+      "text": "using soft-buffer of 65536 samples.\n"
+    },
+    {
+      "elapsed_seconds": 0.022130708000000006,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "info",
+      "text": "AO: [pcm] 96000Hz stereo 2ch s16\n"
+    },
+    {
+      "elapsed_seconds": 0.022132792000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "AO: Description: RAW PCM/WAVE file writer audio output\n"
+    },
+    {
+      "elapsed_seconds": 0.02213470800000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "autoconvert",
+      "level": "v",
+      "text": "inserting resampler\n"
+    },
+    {
+      "elapsed_seconds": 0.022136707999999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "swresample",
+      "level": "v",
+      "text": "format change, reinitializing resampler\n"
+    },
+    {
+      "elapsed_seconds": 0.022138833000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "swresample",
+      "level": "v",
+      "text": "96000Hz stereo double -> 96000Hz stereo s16\n"
+    },
+    {
+      "elapsed_seconds": 0.022140750000000008,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[out] 96000Hz stereo 2ch s16\n"
+    },
+    {
+      "elapsed_seconds": 0.03342575,
+      "id": 21,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.03342812500000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "audio ready\n"
+    },
+    {
+      "elapsed_seconds": 0.033431708,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "starting audio playback\n"
+    },
+    {
+      "elapsed_seconds": 0.033434042000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "playback restart complete @ 0.000000, audio=playing, video=eof\n"
+    },
+    {
+      "elapsed_seconds": 0.033523583,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/pcm",
+      "level": "v",
+      "text": "starting AO\n"
+    },
+    {
+      "elapsed_seconds": 0.038828375000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavf",
+      "level": "v",
+      "text": "EOF reached.\n"
+    },
+    {
+      "elapsed_seconds": 0.05512545800000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "filter input EOF\n"
+    },
+    {
+      "elapsed_seconds": 0.055150250000000005,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "filter output EOF\n"
+    },
+    {
+      "elapsed_seconds": 0.05515562500000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "audio filter EOF\n"
+    },
+    {
+      "elapsed_seconds": 0.055157832999999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/pcm",
+      "level": "v",
+      "text": "audio end or underrun\n"
+    },
+    {
+      "elapsed_seconds": 0.05515975,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "AO signaled EOF (while in state playing)\n"
+    }
+  ],
+  "snapshots": [
+    {
+      "label": "capture_chain_installed",
+      "properties": {
+        "mpv-version": "mpv 0.36.0",
+        "ffmpeg-version": "6.0",
+        "current-ao": "pcm",
+        "audio-device": "auto",
+        "audio-params": {
+          "samplerate": 96000,
+          "channel-count": 2,
+          "channels": "stereo",
+          "hr-channels": "stereo",
+          "format": "s32"
+        },
+        "audio-out-params": {
+          "samplerate": 96000,
+          "channel-count": 2,
+          "channels": "stereo",
+          "hr-channels": "stereo",
+          "format": "s16"
+        },
+        "af": [
+          {
+            "name": "lavfi",
+            "label": "echo_preamp",
+            "enabled": true,
+            "params": {
+              "graph": "aformat=sample_fmts=dblp,volume@preamp=volume=0.266072505979881:precision=double"
+            }
+          },
+          {
+            "name": "lavfi",
+            "label": "echo_eq0",
+            "enabled": true,
+            "params": {
+              "graph": "equalizer@eq0=f=31.25:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64"
+            }
+          },
+          {
+            "name": "lavfi",
+            "label": "echo_eq1",
+            "enabled": true,
+            "params": {
+              "graph": "equalizer@eq1=f=62.5:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64"
+            }
+          },
+          {
+            "name": "lavfi",
+            "label": "echo_eq2",
+            "enabled": true,
+            "params": {
+              "graph": "equalizer@eq2=f=125:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64"
+            }
+          },
+          {
+            "name": "lavfi",
+            "label": "echo_eq3",
+            "enabled": true,
+            "params": {
+              "graph": "equalizer@eq3=f=250:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64"
+            }
+          },
+          {
+            "name": "lavfi",
+            "label": "echo_eq4",
+            "enabled": true,
+            "params": {
+              "graph": "equalizer@eq4=f=500:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64"
+            }
+          },
+          {
+            "name": "lavfi",
+            "label": "echo_eq5",
+            "enabled": true,
+            "params": {
+              "graph": "equalizer@eq5=f=1000:t=q:w=1.4142135623730951:g=12:mix=1:normalize=false:precision=f64"
+            }
+          },
+          {
+            "name": "lavfi",
+            "label": "echo_eq6",
+            "enabled": true,
+            "params": {
+              "graph": "equalizer@eq6=f=2000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64"
+            }
+          },
+          {
+            "name": "lavfi",
+            "label": "echo_eq7",
+            "enabled": true,
+            "params": {
+              "graph": "equalizer@eq7=f=4000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64"
+            }
+          },
+          {
+            "name": "lavfi",
+            "label": "echo_eq8",
+            "enabled": true,
+            "params": {
+              "graph": "equalizer@eq8=f=8000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64"
+            }
+          },
+          {
+            "name": "lavfi",
+            "label": "echo_eq9",
+            "enabled": true,
+            "params": {
+              "graph": "equalizer@eq9=f=16000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64"
+            }
+          },
+          {
+            "name": "lavfi",
+            "label": "echo_limiter",
+            "enabled": true,
+            "params": {
+              "graph": "alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true"
+            }
+          }
+        ],
+        "volume": 100.0,
+        "mute": false,
+        "pause": true,
+        "time-pos": 2.0
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "processed_pcm_capture",
+      "chain_result": 0,
+      "audio_ready": true,
+      "duration_seconds": 2.0,
+      "gain_db": 12.0,
+      "preamp_db": -11.5,
+      "chain": "@echo_preamp:lavfi=[aformat=sample_fmts=dblp,volume@preamp=volume=0.266072505979881:precision=double],@echo_eq0:lavfi=[equalizer@eq0=f=31.25:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq1:lavfi=[equalizer@eq1=f=62.5:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq2:lavfi=[equalizer@eq2=f=125:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq3:lavfi=[equalizer@eq3=f=250:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq4:lavfi=[equalizer@eq4=f=500:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq5:lavfi=[equalizer@eq5=f=1000:t=q:w=1.4142135623730951:g=12:mix=1:normalize=false:precision=f64],@echo_eq6:lavfi=[equalizer@eq6=f=2000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq7:lavfi=[equalizer@eq7=f=4000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq8:lavfi=[equalizer@eq8=f=8000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_eq9:lavfi=[equalizer@eq9=f=16000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64],@echo_limiter:lavfi=[alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true]",
+      "meaning": "One isolated candidate chain was captured; this proves its processed PCM response only for this host/input/rate."
+    }
+  ],
+  "distribution_manifest": {
+    "path": "/Users/xian/Project/music/Echo/apps/desktop/src-tauri/vendor/libmpv/macos/manifest.json",
+    "sha256": "ab2ba589a8daebc795bbeefe9cc14e7c3470ed6b2e9a7df6270ca864de04679e",
+    "contents": {
+      "schemaVersion": 1,
+      "platform": "macos",
+      "kind": "custom-audio-effects-universal",
+      "publisher": "Echo local source build (FFmpeg + mpv)",
+      "release": "echo-audio-effects-0.1",
+      "asset": "FFmpeg 6.0 + mpv 0.36.0 source build",
+      "sourceUrl": "https://ffmpeg.org/releases/ffmpeg-6.0.tar.xz",
+      "assetSha256": "57be87c22d9b49c112b6d24bc67d42508660e6b718b3db89c44e47e289137082",
+      "additionalSources": [
+        {
+          "name": "mpv",
+          "url": "https://github.com/mpv-player/mpv/archive/refs/tags/v0.36.0.tar.gz",
+          "sha256": "29abc44f8ebee013bb2f9fe14d80b30db19b534c679056e4851ceadf5a5e8bf6"
+        },
+        {
+          "name": "mpv-lavfi-target-command.patch",
+          "path": "scripts/release/patches/mpv-lavfi-target-command.patch"
+        },
+        {
+          "name": "mpv-fix-missing-objc.patch",
+          "path": "scripts/release/patches/mpv-fix-missing-objc.patch"
+        }
+      ],
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "fileArchitectures": {
+        "libass.9.dylib": [
+          "arm64"
+        ],
+        "libavcodec.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libavfilter.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libavformat.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libavutil.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libfreetype.6.dylib": [
+          "arm64"
+        ],
+        "libfribidi.0.dylib": [
+          "arm64"
+        ],
+        "libglib-2.0.0.dylib": [
+          "arm64"
+        ],
+        "libgraphite2.3.dylib": [
+          "arm64"
+        ],
+        "libharfbuzz.0.dylib": [
+          "arm64"
+        ],
+        "libintl.8.dylib": [
+          "arm64"
+        ],
+        "libmbedcrypto.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libmbedtls.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libmbedx509.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libmpv.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libpcre2-8.0.dylib": [
+          "arm64"
+        ],
+        "libpng16.16.dylib": [
+          "arm64"
+        ],
+        "libswresample.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libswscale.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libunibreak.8.dylib": [
+          "arm64"
+        ]
+      },
+      "libmpvAbi": "2.0.0",
+      "mpvBuild": "mpv 0.36.0; Echo targeted libavfilter command patch",
+      "ffmpegBuild": "FFmpeg 6.0; LGPL-only; required filters aformat,alimiter,equalizer,extrastereo,volume",
+      "buildHost": "macOS 27.0 arm64; Homebrew dependency versions recorded in NOTICE.md",
+      "licenses": [
+        {
+          "component": "libmpv",
+          "license": "LGPL-2.1-or-later",
+          "source": "https://github.com/mpv-player/mpv"
+        },
+        {
+          "component": "FFmpeg",
+          "license": "LGPL-2.1-or-later; GPL and nonfree disabled",
+          "source": "https://ffmpeg.org/legal.html"
+        },
+        {
+          "component": "libass",
+          "license": "ISC",
+          "source": "https://github.com/libass/libass"
+        },
+        {
+          "component": "FreeType",
+          "license": "FTL",
+          "source": "https://freetype.org/license.html"
+        },
+        {
+          "component": "FriBidi",
+          "license": "LGPL-2.1-or-later",
+          "source": "https://github.com/fribidi/fribidi"
+        },
+        {
+          "component": "GLib",
+          "license": "LGPL-2.1-or-later",
+          "source": "https://gitlab.gnome.org/GNOME/glib"
+        },
+        {
+          "component": "Graphite2",
+          "license": "Apache-2.0",
+          "source": "https://github.com/silnrsi/graphite"
+        },
+        {
+          "component": "HarfBuzz",
+          "license": "MIT",
+          "source": "https://github.com/harfbuzz/harfbuzz"
+        },
+        {
+          "component": "GNU libintl",
+          "license": "LGPL-2.1-or-later",
+          "source": "https://www.gnu.org/software/gettext/"
+        },
+        {
+          "component": "PCRE2",
+          "license": "BSD-3-Clause",
+          "source": "https://github.com/PCRE2Project/pcre2"
+        },
+        {
+          "component": "libpng",
+          "license": "libpng License",
+          "source": "http://www.libpng.org/pub/png/src/libpng-LICENSE.txt"
+        },
+        {
+          "component": "libunibreak",
+          "license": "Zlib",
+          "source": "https://github.com/adah1972/libunibreak"
+        }
+      ],
+      "files": {
+        "libass.9.dylib": "ce12ed76f8fa568be8796db8f301048ae03319a4eee35154cd40f57b0d9e9dd1",
+        "libavcodec.dylib": "aeb880b328b245a6023bd239268c92b5f91fbb4d5e73228e7bd8298285e9494a",
+        "libavfilter.dylib": "2591332d9a3ccc0f6a7313b98fc2566ef4193dd40271a6908dec7243085df6bc",
+        "libavformat.dylib": "0d56a6198e86482ff7550faa6105768bea232ec5d3764b6f48695fa935300258",
+        "libavutil.dylib": "66149814b422ae63f0d3970426106a91eda8f04e1c8a928901daf54c55067cfb",
+        "libfreetype.6.dylib": "aa2951fd77181d0ebf7875d09ea2c906e3470f51181589d4764c9cbac9249e79",
+        "libfribidi.0.dylib": "c5726046801ee6604ae9b2fad9bc5d8e3784a0ae01e57c95151954b9cae5e48b",
+        "libglib-2.0.0.dylib": "359bb9c6d2276ef925b4255a09d589597a114f7536ab3002f985ee1a978eee30",
+        "libgraphite2.3.dylib": "bcc6ba81befad993037e8a658aa7c416e9e047105799492a844988438bf71045",
+        "libharfbuzz.0.dylib": "6df7af046780e227201dd99eac4f58fd21fc051df72c7b3048e8b520e4cb5e6e",
+        "libintl.8.dylib": "a1c0f8eac318459e00e707f6be965d289acdb8c07f024f8d693ce6180767932a",
+        "libmbedcrypto.dylib": "e0f2b5abbfd023f4e85a9b4e3babc0c716c744afae0354c8e97b11cb0d269d89",
+        "libmbedtls.dylib": "660e43c82bc5e2380d224b138210cad8d9b7d94bc1d1ef5f701935c7e12f0c50",
+        "libmbedx509.dylib": "0cee4da32632af2b4a888fa515d6c507716d847e3b24c6d4b566d212c139ec90",
+        "libmpv.dylib": "164430192f73da459916e384a405685697387fa5e333c19ffb1be4297a4852f3",
+        "libpcre2-8.0.dylib": "4c494053ae7324f5dda00472f12c9b3d6303dcf8ac2ca3baf7dcdd7d80f95021",
+        "libpng16.16.dylib": "ce2fd338e637a1173dd4c0e8a5040b40df206b06b86dffcc5f1a14815cd10fe4",
+        "libswresample.dylib": "57f215242edaa44101a720c4d295d112b1a7fc3101f1f7602be36d9a817cecfd",
+        "libswscale.dylib": "8c710003c88579691363a6a6281d80138678151e18b6dc5bf9b5db2a8abdd6f2",
+        "libunibreak.8.dylib": "61ff8eedc2b923b77f3018c2df177871e7de069d2e1a4d6222b1f7f6016e4883"
+      },
+      "buildProcedureStatus": "Source candidate built and probed on macOS arm64; a clean-room rebuild script and Intel rebuild remain pending."
+    }
+  },
+  "distribution_files": [
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libass.9.dylib",
+      "sha256": "ce12ed76f8fa568be8796db8f301048ae03319a4eee35154cd40f57b0d9e9dd1",
+      "expected_sha256": "ce12ed76f8fa568be8796db8f301048ae03319a4eee35154cd40f57b0d9e9dd1",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libavcodec.dylib",
+      "sha256": "aeb880b328b245a6023bd239268c92b5f91fbb4d5e73228e7bd8298285e9494a",
+      "expected_sha256": "aeb880b328b245a6023bd239268c92b5f91fbb4d5e73228e7bd8298285e9494a",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libavfilter.dylib",
+      "sha256": "2591332d9a3ccc0f6a7313b98fc2566ef4193dd40271a6908dec7243085df6bc",
+      "expected_sha256": "2591332d9a3ccc0f6a7313b98fc2566ef4193dd40271a6908dec7243085df6bc",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libavformat.dylib",
+      "sha256": "0d56a6198e86482ff7550faa6105768bea232ec5d3764b6f48695fa935300258",
+      "expected_sha256": "0d56a6198e86482ff7550faa6105768bea232ec5d3764b6f48695fa935300258",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libavutil.dylib",
+      "sha256": "66149814b422ae63f0d3970426106a91eda8f04e1c8a928901daf54c55067cfb",
+      "expected_sha256": "66149814b422ae63f0d3970426106a91eda8f04e1c8a928901daf54c55067cfb",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libfreetype.6.dylib",
+      "sha256": "aa2951fd77181d0ebf7875d09ea2c906e3470f51181589d4764c9cbac9249e79",
+      "expected_sha256": "aa2951fd77181d0ebf7875d09ea2c906e3470f51181589d4764c9cbac9249e79",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libfribidi.0.dylib",
+      "sha256": "c5726046801ee6604ae9b2fad9bc5d8e3784a0ae01e57c95151954b9cae5e48b",
+      "expected_sha256": "c5726046801ee6604ae9b2fad9bc5d8e3784a0ae01e57c95151954b9cae5e48b",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libglib-2.0.0.dylib",
+      "sha256": "359bb9c6d2276ef925b4255a09d589597a114f7536ab3002f985ee1a978eee30",
+      "expected_sha256": "359bb9c6d2276ef925b4255a09d589597a114f7536ab3002f985ee1a978eee30",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libgraphite2.3.dylib",
+      "sha256": "bcc6ba81befad993037e8a658aa7c416e9e047105799492a844988438bf71045",
+      "expected_sha256": "bcc6ba81befad993037e8a658aa7c416e9e047105799492a844988438bf71045",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libharfbuzz.0.dylib",
+      "sha256": "6df7af046780e227201dd99eac4f58fd21fc051df72c7b3048e8b520e4cb5e6e",
+      "expected_sha256": "6df7af046780e227201dd99eac4f58fd21fc051df72c7b3048e8b520e4cb5e6e",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libintl.8.dylib",
+      "sha256": "a1c0f8eac318459e00e707f6be965d289acdb8c07f024f8d693ce6180767932a",
+      "expected_sha256": "a1c0f8eac318459e00e707f6be965d289acdb8c07f024f8d693ce6180767932a",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libmbedcrypto.dylib",
+      "sha256": "e0f2b5abbfd023f4e85a9b4e3babc0c716c744afae0354c8e97b11cb0d269d89",
+      "expected_sha256": "e0f2b5abbfd023f4e85a9b4e3babc0c716c744afae0354c8e97b11cb0d269d89",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libmbedtls.dylib",
+      "sha256": "660e43c82bc5e2380d224b138210cad8d9b7d94bc1d1ef5f701935c7e12f0c50",
+      "expected_sha256": "660e43c82bc5e2380d224b138210cad8d9b7d94bc1d1ef5f701935c7e12f0c50",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libmbedx509.dylib",
+      "sha256": "0cee4da32632af2b4a888fa515d6c507716d847e3b24c6d4b566d212c139ec90",
+      "expected_sha256": "0cee4da32632af2b4a888fa515d6c507716d847e3b24c6d4b566d212c139ec90",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libmpv.dylib",
+      "sha256": "164430192f73da459916e384a405685697387fa5e333c19ffb1be4297a4852f3",
+      "expected_sha256": "164430192f73da459916e384a405685697387fa5e333c19ffb1be4297a4852f3",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libpcre2-8.0.dylib",
+      "sha256": "4c494053ae7324f5dda00472f12c9b3d6303dcf8ac2ca3baf7dcdd7d80f95021",
+      "expected_sha256": "4c494053ae7324f5dda00472f12c9b3d6303dcf8ac2ca3baf7dcdd7d80f95021",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libpng16.16.dylib",
+      "sha256": "ce2fd338e637a1173dd4c0e8a5040b40df206b06b86dffcc5f1a14815cd10fe4",
+      "expected_sha256": "ce2fd338e637a1173dd4c0e8a5040b40df206b06b86dffcc5f1a14815cd10fe4",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libswresample.dylib",
+      "sha256": "57f215242edaa44101a720c4d295d112b1a7fc3101f1f7602be36d9a817cecfd",
+      "expected_sha256": "57f215242edaa44101a720c4d295d112b1a7fc3101f1f7602be36d9a817cecfd",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libswscale.dylib",
+      "sha256": "8c710003c88579691363a6a6281d80138678151e18b6dc5bf9b5db2a8abdd6f2",
+      "expected_sha256": "8c710003c88579691363a6a6281d80138678151e18b6dc5bf9b5db2a8abdd6f2",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    },
+    {
+      "path": "/Applications/Echo.app/Contents/Frameworks/libunibreak.8.dylib",
+      "sha256": "61ff8eedc2b923b77f3018c2df177871e7de069d2e1a4d6222b1f7f6016e4883",
+      "expected_sha256": "61ff8eedc2b923b77f3018c2df177871e7de069d2e1a4d6222b1f7f6016e4883",
+      "hash_matches_manifest": true,
+      "meaning": "Neighboring distributed file hash; not proof it loaded."
+    }
+  ],
+  "af_command_signature": {
+    "argument_count": 3,
+    "syntax": "patched-target-prefix",
+    "meaning": "Read from the selected library command-list; unknown signatures are not guessed."
+  },
+  "filter_availability": {
+    "aformat": true,
+    "volume": true,
+    "equalizer": true,
+    "extrastereo": true,
+    "alimiter": true
+  },
+  "candidate_rate_basis": {
+    "rate": 96000,
+    "source": "input PCM WAVE format checked against negotiated decoder rate",
+    "input_channels": 2,
+    "input_sample_width_bytes": 4
+  },
+  "worker_exit_code": 0,
+  "worker_stderr": "",
+  "invocation": [
+    "/Library/Developer/CommandLineTools/usr/bin/python3",
+    "/Users/xian/Project/music/Echo/scripts/audio-effects/probe.py",
+    "--libmpv",
+    "/Applications/Echo.app/Contents/Frameworks/libmpv.dylib",
+    "--input",
+    "/tmp/echo-audio-effects-fixtures/sweep-96000-2ch-0.1db.wav",
+    "--fixture-manifest",
+    "/tmp/echo-audio-effects-fixtures/manifest.json",
+    "--manifest",
+    "/Users/xian/Project/music/Echo/apps/desktop/src-tauri/vendor/libmpv/macos/manifest.json",
+    "--output",
+    "/Users/xian/Project/music/Echo/openspec/changes/introduce-audio-effects-equalizer/evidence/macos-pcm-matrix-20261003/limiter-sweep-96000-stereo.json",
+    "--timeout",
+    "30",
+    "--ao",
+    "pcm",
+    "--pcm-output",
+    "/tmp/echo-limiter-sweep-96000-stereo.wav",
+    "--capture-only",
+    "--capture-gain-db",
+    "12.0",
+    "--capture-preamp-db",
+    "-11.5"
+  ]
+}

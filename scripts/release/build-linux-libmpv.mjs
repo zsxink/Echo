@@ -304,8 +304,10 @@ function writeOptionFiles(buildDir) {
   writeFileSync(join(buildDir, "mpv_options"), mpvOptions.join("\n") + "\n");
 
   // FFmpeg: curated component set covering exactly the smoke-gate formats
-  // (mp3, flac, m4a/AAC, ogg/Vorbis, opus, wav). --disable-everything strips
-  // programs/protocols/filters; the patched ffmpeg-config default adds
+  // (mp3, flac, m4a/AAC, ogg/Vorbis, opus, wav) plus the LGPL FFmpeg audio
+  // filters required by Echo's P0 chain. --disable-everything strips
+  // programs/protocols/filters; explicitly enabling this minimal set keeps
+  // unrelated codecs/filters out. The patched ffmpeg-config default adds
   // --disable-static --enable-shared --enable-pic. All decoders are FFmpeg's
   // native ones — no external codec libraries.
   const ffmpegOptions = [
@@ -317,6 +319,7 @@ function writeOptionFiles(buildDir) {
     "--enable-demuxer=flac,mov,mp3,ogg,wav",
     "--enable-decoder=flac,aac,aac_latm,mp3,mp3float,vorbis,opus,pcm_*",
     "--enable-parser=aac,flac,mpegaudio,vorbis,opus",
+    "--enable-filter=aformat,alimiter,equalizer,extrastereo,volume",
     "--enable-small",
   ];
   writeFileSync(join(buildDir, "ffmpeg_options"), ffmpegOptions.join("\n") + "\n");

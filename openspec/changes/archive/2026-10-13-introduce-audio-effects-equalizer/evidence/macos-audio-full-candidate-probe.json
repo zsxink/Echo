@@ -1,0 +1,2985 @@
+{
+  "schema_version": 1,
+  "status": "probe-only",
+  "gate_passed": false,
+  "platform": "macOS-27.0-arm64-arm-64bit",
+  "architecture": "arm64",
+  "python_version": "3.9.6",
+  "cpu_count": 10,
+  "libmpv": {
+    "path": "/private/tmp/echo-audio-full/libmpv-libs_v0.7.2_macos-universal-audio-full/libmpv.dylib",
+    "sha256": "80a3196178c7fd62a0fc02c4d6f5b5e534214b0de1cbea6cb5c9248b552ec874"
+  },
+  "input": {
+    "path": "/private/tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav",
+    "sha256": "81d179034a32a2bc4cfbd1c20e492d036828e1c34fb5c3d7ba51b772b567672a",
+    "fixture": {
+      "file": "tone997-48000-2ch-60db.wav",
+      "sha256": "81d179034a32a2bc4cfbd1c20e492d036828e1c34fb5c3d7ba51b772b567672a",
+      "source": "Echo synthetic signal; no third-party recordings",
+      "license": "CC0-1.0",
+      "kind": "tone997",
+      "rate_hz": 48000,
+      "channels": 2,
+      "frames": 96000,
+      "duration_seconds": 2.0,
+      "requested_sample_peak_dbfs": -60.0,
+      "quantized_sample_peak_dbfs": -59.999998576271864,
+      "sample_format": "signed PCM32 little-endian"
+    },
+    "generator_sha256": "27b9fbedf09f8f7755c5f457118943e77054934fb275ab5749decddb571b790b"
+  },
+  "command_line": [
+    "/Users/xian/Project/music/Echo/scripts/audio-effects/probe.py",
+    "--libmpv",
+    "/tmp/echo-audio-full/libmpv-libs_v0.7.2_macos-universal-audio-full/libmpv.dylib",
+    "--input",
+    "/tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav",
+    "--fixture-manifest",
+    "/tmp/echo-audio-effects-fixtures/manifest.json",
+    "--output",
+    "/var/folders/rx/cwp1dm6536789l30qt9hf9rm0000gn/T/echo-mpv-probe-c6unaewj/report.json",
+    "--timeout",
+    "30",
+    "--worker"
+  ],
+  "ao_requested": "null",
+  "native_loader": "ctypes native dlopen RTLD_LAZY | RTLD_LOCAL, matching Rust libloading; CDLL wraps the same handle",
+  "capture": {
+    "performed": false,
+    "sample_peak_dbfs": null,
+    "true_peak_dbtp": null,
+    "reason": "No output capture. ao=null discards PCM; properties and command results cannot establish response, peak, smoothing or timing acceptance."
+  },
+  "limitations": [
+    "audio-params describes decoder output, not the intermediate filter environment.",
+    "audio-out-params describes negotiated AO input; debug logs may show filter links. No source metadata is treated as processing proof.",
+    "One host and package only; no hardware rebuild, first-sample barrier, loadfile parameter survival, latency, underrun, CPU budget or listening acceptance."
+  ],
+  "client_api": {
+    "raw": 131073,
+    "major": 2,
+    "minor": 1
+  },
+  "ffmpeg_exports": {
+    "av_version_info": "6.0",
+    "avfilter_version": 590692,
+    "avcodec_version": 3933028,
+    "avutil_version": 3801700
+  },
+  "runtime_libraries": [
+    {
+      "path": "/private/tmp/echo-audio-full/libmpv-libs_v0.7.2_macos-universal-audio-full/libavcodec.dylib",
+      "sha256": "4838bd4d2a6a8e0a1991fb09cdf59a7ae53075dc5193981cadc6e7f62e1e1bc3"
+    },
+    {
+      "path": "/private/tmp/echo-audio-full/libmpv-libs_v0.7.2_macos-universal-audio-full/libavfilter.dylib",
+      "sha256": "3dac5d355adb4b4d226bb22a75ebce883eca352092bc38d64b7342bde70a6de7"
+    },
+    {
+      "path": "/private/tmp/echo-audio-full/libmpv-libs_v0.7.2_macos-universal-audio-full/libavformat.dylib",
+      "sha256": "fce915d3543356734a183f6853c268da8e76aa66a63aad7a5c2efc4ea610b975"
+    },
+    {
+      "path": "/private/tmp/echo-audio-full/libmpv-libs_v0.7.2_macos-universal-audio-full/libavutil.dylib",
+      "sha256": "4b11bd6b948d32145ae5b674b371dacde74f2852efa9a7df2bac927ba137c1e1"
+    },
+    {
+      "path": "/private/tmp/echo-audio-full/libmpv-libs_v0.7.2_macos-universal-audio-full/libmpv.dylib",
+      "sha256": "80a3196178c7fd62a0fc02c4d6f5b5e534214b0de1cbea6cb5c9248b552ec874"
+    },
+    {
+      "path": "/private/tmp/echo-audio-full/libmpv-libs_v0.7.2_macos-universal-audio-full/libswresample.dylib",
+      "sha256": "a466f3681ec404c969aa2120f965928e75c7f8879d5fec9a9fbf5e043e9fd317"
+    },
+    {
+      "path": "/private/tmp/echo-audio-full/libmpv-libs_v0.7.2_macos-universal-audio-full/libswscale.dylib",
+      "sha256": "2a769f2ae7d48b49c8df3f1cef925f0511b3e6b8a43e7633e9409bf7e759e671"
+    }
+  ],
+  "operations": [
+    {
+      "elapsed_seconds": 2.8874999999928264e-05,
+      "kind": "option",
+      "args": [
+        "config",
+        "no"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 5.1666999999255836e-05,
+      "kind": "option",
+      "args": [
+        "load-scripts",
+        "no"
+      ],
+      "result": -5,
+      "error": "option not found"
+    },
+    {
+      "elapsed_seconds": 6.516699999892239e-05,
+      "kind": "option",
+      "args": [
+        "terminal",
+        "no"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 6.787499999916236e-05,
+      "kind": "option",
+      "args": [
+        "vid",
+        "no"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 8.120899999930487e-05,
+      "kind": "option",
+      "args": [
+        "vo",
+        "null"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 8.658399999994515e-05,
+      "kind": "option",
+      "args": [
+        "idle",
+        "yes"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 9.312499999936108e-05,
+      "kind": "option",
+      "args": [
+        "keep-open",
+        "yes"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 0.00010345899999997243,
+      "kind": "option",
+      "args": [
+        "ao",
+        "null"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 0.000107166999999464,
+      "kind": "option",
+      "args": [
+        "audio-channels",
+        "auto"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 0.00011270899999971107,
+      "kind": "request-log",
+      "args": [
+        "debug"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 0.0010260419999994497,
+      "kind": "initialize",
+      "args": [],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 0.03510004199999983,
+      "kind": "command",
+      "args": [
+        "loadfile",
+        "/private/tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 0.08928637499999859,
+      "kind": "property",
+      "args": [
+        "pause",
+        "yes"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 0.08974545899999953,
+      "kind": "command",
+      "args": [
+        "af",
+        "set",
+        "@echo_eq:lavfi=[aformat=sample_fmts=dbl,volume@preamp=volume=0dB:precision=double,equalizer@eq0=f=31.25:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq1=f=62.5:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq2=f=125:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq3=f=250:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq4=f=500:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq5=f=1000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq6=f=2000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq7=f=4000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq8=f=8000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq9=f=16000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true]"
+      ],
+      "result": -12,
+      "error": "error running command"
+    },
+    {
+      "elapsed_seconds": 0.08976899999999866,
+      "kind": "property",
+      "args": [
+        "pause",
+        "no"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 0.24379562499999885,
+      "kind": "property",
+      "args": [
+        "pause",
+        "yes"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 0.2444775419999985,
+      "kind": "command",
+      "args": [
+        "af-command",
+        "echo_eq",
+        "gain",
+        "1",
+        "equalizer@eq5"
+      ],
+      "result": -4,
+      "error": "invalid parameter"
+    },
+    {
+      "elapsed_seconds": 0.3520464169999986,
+      "kind": "command",
+      "args": [
+        "af-command",
+        "echo_eq",
+        "volume",
+        "-6dB",
+        "volume@preamp"
+      ],
+      "result": -4,
+      "error": "invalid parameter"
+    },
+    {
+      "elapsed_seconds": 0.4545045419999987,
+      "kind": "command",
+      "args": [
+        "af-command",
+        "echo_eq",
+        "gain",
+        "1"
+      ],
+      "result": -12,
+      "error": "error running command"
+    },
+    {
+      "elapsed_seconds": 0.5639511249999991,
+      "kind": "command",
+      "args": [
+        "loadfile",
+        "/private/tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 0.5642112089999998,
+      "kind": "property",
+      "args": [
+        "pause",
+        "no"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 0.72469875,
+      "kind": "property",
+      "args": [
+        "pause",
+        "yes"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 0.725433292,
+      "kind": "command",
+      "args": [
+        "af",
+        "set",
+        "@echo_preamp:lavfi=[aformat=sample_fmts=dbl,volume=volume=0dB:precision=double],@echo_eq0:lavfi=[equalizer=f=31.25:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq1:lavfi=[equalizer=f=62.5:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq2:lavfi=[equalizer=f=125:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq3:lavfi=[equalizer=f=250:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq4:lavfi=[equalizer=f=500:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq5:lavfi=[equalizer=f=1000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq6:lavfi=[equalizer=f=2000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq7:lavfi=[equalizer=f=4000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq8:lavfi=[equalizer=f=8000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq9:lavfi=[equalizer=f=16000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_limiter:lavfi=[alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true]"
+      ],
+      "result": -12,
+      "error": "error running command"
+    },
+    {
+      "elapsed_seconds": 0.7254918339999996,
+      "kind": "property",
+      "args": [
+        "pause",
+        "no"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 0.8804877089999987,
+      "kind": "property",
+      "args": [
+        "pause",
+        "yes"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 0.8811158339999992,
+      "kind": "command",
+      "args": [
+        "af-command",
+        "echo_eq5",
+        "gain",
+        "1"
+      ],
+      "result": -12,
+      "error": "error running command"
+    },
+    {
+      "elapsed_seconds": 0.9878580419999992,
+      "kind": "command",
+      "args": [
+        "af-command",
+        "echo_preamp",
+        "volume",
+        "-6dB"
+      ],
+      "result": -12,
+      "error": "error running command"
+    },
+    {
+      "elapsed_seconds": 1.0932401249999995,
+      "kind": "command",
+      "args": [
+        "loadfile",
+        "/private/tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 1.093499916999999,
+      "kind": "property",
+      "args": [
+        "pause",
+        "no"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 1.2557854589999984,
+      "kind": "property",
+      "args": [
+        "pause",
+        "yes"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 1.2564798749999984,
+      "kind": "command",
+      "args": [
+        "af",
+        "set",
+        "@echo_spatial:lavfi=[aformat=sample_fmts=dbl,volume@preamp=volume=-2.938200260161128dB:precision=double,extrastereo=m=1.25:c=false,alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true]"
+      ],
+      "result": -12,
+      "error": "error running command"
+    },
+    {
+      "elapsed_seconds": 1.2565342919999996,
+      "kind": "property",
+      "args": [
+        "pause",
+        "no"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 1.409801709,
+      "kind": "property",
+      "args": [
+        "pause",
+        "yes"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 1.4102380839999995,
+      "kind": "command",
+      "args": [
+        "loadfile",
+        "/private/tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 1.4103659999999998,
+      "kind": "property",
+      "args": [
+        "pause",
+        "no"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 1.567503834,
+      "kind": "property",
+      "args": [
+        "pause",
+        "yes"
+      ],
+      "result": 0,
+      "error": null
+    },
+    {
+      "elapsed_seconds": 1.5681302089999996,
+      "kind": "command",
+      "args": [
+        "af",
+        "set",
+        ""
+      ],
+      "result": 0,
+      "error": null
+    }
+  ],
+  "events": [
+    {
+      "elapsed_seconds": 0.03512529200000003,
+      "id": 11,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.035131041999999724,
+      "id": 6,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.035133416999999056,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "mpv 0.36.0 Copyright \u00a9 2000-2023 mpv/MPlayer/mplayer2 projects\n"
+    },
+    {
+      "elapsed_seconds": 0.0351676249999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": " built on Tue Jan 01 12:00:00 1980\n"
+    },
+    {
+      "elapsed_seconds": 0.03517237499999837,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "FFmpeg version: 6.0\n"
+    },
+    {
+      "elapsed_seconds": 0.035176583999998456,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "FFmpeg library versions:\n"
+    },
+    {
+      "elapsed_seconds": 0.03518012499999834,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "   libavutil       58.2.100\n"
+    },
+    {
+      "elapsed_seconds": 0.03518324999999933,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "   libavcodec      60.3.100\n"
+    },
+    {
+      "elapsed_seconds": 0.03518637499999855,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "   libavformat     60.3.100\n"
+    },
+    {
+      "elapsed_seconds": 0.035189374999999856,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "   libswscale      7.1.100\n"
+    },
+    {
+      "elapsed_seconds": 0.035192958999999746,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "   libavfilter     9.3.100\n"
+    },
+    {
+      "elapsed_seconds": 0.0351961249999988,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "   libswresample   4.10.100\n"
+    },
+    {
+      "elapsed_seconds": 0.03519908399999849,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.03520704199999969,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Configuration: -Dgpl=false -Dcplayer=false -Dlibmpv=true -Dbuild-date=true -Dtests=false -Dta-leak-report=false -Dcdda=disabled -Dcplugins=disabled -Ddvbin=disabled -Ddvdnav=disabled -Diconv=enabled -Djavascript=disabled -Dlcms2=disabled -Dlibarchive=disabled -Dlibavdevice=disabled -Dlibbluray=disabled -Dlua=disabled -Dpthread-debug=disabled -Drubberband=disabled -Dsdl2=disabled -Dsdl2-gamepad=disabled -Dstdatomic=disabled -Duchardet=disabled -Duwp=disabled -Dvapoursynth=disabled -Dvector=disabled -Dwin32-internal-pthreads=disabled -Dzimg=disabled -Dzlib=disabled -Dalsa=disabled -Daudiounit=disabled -Dcoreaudio=enabled -Djack=disabled -Dopenal=disabled -Dopensles=disabled -Doss-audio=disabled -Dpipewire=disabled -Dpulse=disabled -Dsdl2-audio=disabled -Dsndio=disabled -Dwasapi=disabled -Dcaca=disabled -Dcocoa=enabled -Dd3d11=disabled -Ddirect3d=disabled -Ddrm=disabled -Degl=disabled -Degl-android=disabled -Degl-angle=disabled -Degl-angle-lib=disabled -Degl-angle-win32=disabled -Degl-drm=disabled -Degl-wayland=disabled -Degl-x11=disabled -Dgbm=disabled -Dgl=disabled -Dgl-cocoa=disabled -Dgl-dxinterop=disabled -Dgl-win32=disabled -Dgl-x11=disabled -Djpeg=disabled -Dlibplacebo=disabled -Drpi=disabled -Dsdl2-video=disabled -Dshaderc=disabled -Dsixel=disabled -Dspirv-cross=disabled -Dplain-gl=disabled -Dvdpau=disabled -Dvdpau-gl-x11=disabled -Dvaapi=disabled -Dvaapi-drm=disabled -Dvaapi-wayland=disabled -Dvaapi-x11=disabled -Dvaapi-x-egl=disabled -Dvulkan=disabled -Dwayland=disabled -Dx11=disabled -Dxv=disabled -Dandroid-media-ndk=disabled -Dcuda-hwaccel=disabled -Dcuda-interop=disabled -Dd3d-hwaccel=disabled -Dd3d9-hwaccel=disabled -Dgl-dxinterop-d3d9=disabled -Dios-gl=disabled -Drpi-mmal=disabled -Dvideotoolbox-gl=disabled -Dmacos-10-11-features=disabled -Dmacos-10-12-2-features=disabled -Dmacos-10-14-features=disabled -Dmacos-cocoa-cb=disabled -Dmacos-media-player=disabled -Dmacos-touchbar=disabled -Dswift-build=disabled -Dswift-flags= -Dhtml-build=disabled -Dmanpage-build=disabled -Dpdf-build=disabled -Dprefix=/nix/store/h12k1103vcwyfyal6713ljxqxziqgr6g-mk-pkg-mpv-macos-arm64-audio-0.36.0 --cross-file=/nix/store/xs9j07whpybsfxzfir4h2c5i1d5gv72l-mk-cross-file-macos-arm64.ini --native-file=/nix/store/xs9j07whpybsfxzfir4h2c5i1d5gv72l-mk-cross-file-macos-arm64.ini\n"
+    },
+    {
+      "elapsed_seconds": 0.03521166699999867,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "List of enabled features: av-channel-layout avif_muxer bsd-fstatfs build-date cocoa coreaudio darwin debug ffmpeg glob glob-posix iconv jpegxl libdl libm osx-thread-name posix posix_shm threads\n"
+    },
+    {
+      "elapsed_seconds": 0.035215624999999307,
+      "id": 2,
+      "error": 0,
+      "prefix": "global",
+      "level": "debug",
+      "text": "home path: '' -> '-'\n"
+    },
+    {
+      "elapsed_seconds": 0.03521870899999868,
+      "id": 2,
+      "error": 0,
+      "prefix": "global",
+      "level": "debug",
+      "text": "user path: '~~home/' -> ''\n"
+    },
+    {
+      "elapsed_seconds": 0.03522170899999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "global",
+      "level": "debug",
+      "text": "user path: '~~old_home/' -> ''\n"
+    },
+    {
+      "elapsed_seconds": 0.03522491699999897,
+      "id": 2,
+      "error": 0,
+      "prefix": "osx",
+      "level": "debug",
+      "text": "Exiting...\n"
+    },
+    {
+      "elapsed_seconds": 0.035227874999998576,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "debug",
+      "text": "Run command: loadfile, flags=64, args=[url=\"/private/tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav\", flags=\"replace\", options=\"\"]\n"
+    },
+    {
+      "elapsed_seconds": 0.035230874999999884,
+      "id": 2,
+      "error": 0,
+      "prefix": "global",
+      "level": "debug",
+      "text": "state path: 'watch_later' -> '-'\n"
+    },
+    {
+      "elapsed_seconds": 0.03530454199999866,
+      "id": 2,
+      "error": 0,
+      "prefix": "file",
+      "level": "v",
+      "text": "Opening /private/tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav\n"
+    },
+    {
+      "elapsed_seconds": 0.03535887500000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "file",
+      "level": "debug",
+      "text": "resize stream to 131072 bytes, drop 0 bytes\n"
+    },
+    {
+      "elapsed_seconds": 0.035364166999999114,
+      "id": 2,
+      "error": 0,
+      "prefix": "file",
+      "level": "debug",
+      "text": "Stream opened successfully.\n"
+    },
+    {
+      "elapsed_seconds": 0.0353675839999994,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "v",
+      "text": "Trying demuxers for level=normal.\n"
+    },
+    {
+      "elapsed_seconds": 0.03537899999999894,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: disc (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.03540587499999859,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: edl (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.03544129199999979,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: cue (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.03544604199999846,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: rawaudio (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.035478916999998944,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: rawvideo (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.035483624999999464,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: mkv (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.03551499999999841,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: lavf (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.03761124999999943,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavf",
+      "level": "v",
+      "text": "Found 'wav' at score=99 size=2048.\n"
+    },
+    {
+      "elapsed_seconds": 0.03791754199999886,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg/demuxer",
+      "level": "debug",
+      "text": "wav: parser not found for codec pcm_s32le, packets or times may be invalid.\n"
+    },
+    {
+      "elapsed_seconds": 0.038242125000000016,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg/demuxer",
+      "level": "debug",
+      "text": "wav: parser not found for codec pcm_s32le, packets or times may be invalid.\n"
+    },
+    {
+      "elapsed_seconds": 0.03838908399999852,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavf",
+      "level": "v",
+      "text": "avformat_find_stream_info() finished after 229376 bytes.\n"
+    },
+    {
+      "elapsed_seconds": 0.03840991699999918,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "v",
+      "text": "Detected file format: wav (libavformat)\n"
+    },
+    {
+      "elapsed_seconds": 0.038431916999998705,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Opening done: /private/tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav\n"
+    },
+    {
+      "elapsed_seconds": 0.0413194999999984,
+      "id": 2,
+      "error": 0,
+      "prefix": "find_files",
+      "level": "v",
+      "text": "Loading external files in /private/tmp/echo-audio-effects-fixtures/\n"
+    },
+    {
+      "elapsed_seconds": 0.04640583399999976,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavf",
+      "level": "v",
+      "text": "select track 0\n"
+    },
+    {
+      "elapsed_seconds": 0.04641558400000001,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "info",
+      "text": " (+) Audio --aid=1 (pcm_s32le 2ch 48000Hz)\n"
+    },
+    {
+      "elapsed_seconds": 0.046424124999999705,
+      "id": 18,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.046590124999999816,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Codec list:\n"
+    },
+    {
+      "elapsed_seconds": 0.046595958999999354,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "    pcm_s32le - (null)\n"
+    },
+    {
+      "elapsed_seconds": 0.0465994589999994,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Opening decoder pcm_s32le\n"
+    },
+    {
+      "elapsed_seconds": 0.046649916999999874,
+      "id": 18,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.046652249999999285,
+      "id": 8,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.04665374999999905,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Requesting 1 threads for decoding.\n"
+    },
+    {
+      "elapsed_seconds": 0.046661249999999654,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Selected codec: pcm_s32le ((null))\n"
+    },
+    {
+      "elapsed_seconds": 0.046664625000000015,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "User filter list:\n"
+    },
+    {
+      "elapsed_seconds": 0.04666779199999915,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "  (empty)\n"
+    },
+    {
+      "elapsed_seconds": 0.04667074999999876,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Starting playback...\n"
+    },
+    {
+      "elapsed_seconds": 0.04674979199999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[in] 48000Hz stereo 2ch s32\n"
+    },
+    {
+      "elapsed_seconds": 0.046755416999999966,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[userspeed] 48000Hz stereo 2ch s32\n"
+    },
+    {
+      "elapsed_seconds": 0.04675862499999894,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[userspeed] (disabled)\n"
+    },
+    {
+      "elapsed_seconds": 0.04676233399999852,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[convert] 48000Hz stereo 2ch s32\n"
+    },
+    {
+      "elapsed_seconds": 0.046765583999999194,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao",
+      "level": "v",
+      "text": "Trying audio driver 'null'\n"
+    },
+    {
+      "elapsed_seconds": 0.046781916999998785,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/null",
+      "level": "v",
+      "text": "requested format: 48000 Hz, stereo channels, s32\n"
+    },
+    {
+      "elapsed_seconds": 0.0467862919999984,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/null",
+      "level": "v",
+      "text": "Channel layouts:\n"
+    },
+    {
+      "elapsed_seconds": 0.04678945899999931,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/null",
+      "level": "v",
+      "text": " - anything\n"
+    },
+    {
+      "elapsed_seconds": 0.04679245899999884,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/null",
+      "level": "v",
+      "text": "result: stereo\n"
+    },
+    {
+      "elapsed_seconds": 0.04679529199999877,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/null",
+      "level": "v",
+      "text": "device buffer: 9472 samples.\n"
+    },
+    {
+      "elapsed_seconds": 0.04679854199999944,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/null",
+      "level": "v",
+      "text": "using soft-buffer of 9600 samples.\n"
+    },
+    {
+      "elapsed_seconds": 0.04680174999999842,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "info",
+      "text": "AO: [null] 48000Hz stereo 2ch s32\n"
+    },
+    {
+      "elapsed_seconds": 0.04680487499999941,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "AO: Description: Null audio output\n"
+    },
+    {
+      "elapsed_seconds": 0.0468382089999988,
+      "id": 18,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.046840541999999985,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[convert] (disabled)\n"
+    },
+    {
+      "elapsed_seconds": 0.04684533399999857,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[out] 48000Hz stereo 2ch s32\n"
+    },
+    {
+      "elapsed_seconds": 0.04696649999999991,
+      "id": 21,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.04697145899999988,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "audio ready\n"
+    },
+    {
+      "elapsed_seconds": 0.046975874999999334,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "starting audio playback\n"
+    },
+    {
+      "elapsed_seconds": 0.046979249999999695,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "playback restart complete @ -0.000000, audio=playing, video=eof\n"
+    },
+    {
+      "elapsed_seconds": 0.04700891699999943,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/null",
+      "level": "v",
+      "text": "starting AO\n"
+    },
+    {
+      "elapsed_seconds": 0.089772709,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Set property: pause=\"yes\" -> 1\n"
+    },
+    {
+      "elapsed_seconds": 0.08978212499999927,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "debug",
+      "text": "Run command: af, flags=64, args=[operation=\"set\", value=\"@echo_eq:lavfi=[aformat=sample_fmts=dbl,volume@preamp=volume=0dB:precision=double,equalizer@eq0=f=31.25:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq1=f=62.5:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq2=f=125:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq3=f=250:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq4=f=500:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq5=f=1000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq6=f=2000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq7=f=4000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq8=f=8000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq9=f=16000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true]\"]\n"
+    },
+    {
+      "elapsed_seconds": 0.08978670899999841,
+      "id": 2,
+      "error": 0,
+      "prefix": "user_filter_wrapper",
+      "level": "v",
+      "text": "Setting option 'graph' = 'aformat=sample_fmts=dbl,volume@preamp=volume=0dB:precision=double,equalizer@eq0=f=31.25:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq1=f=62.5:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq2=f=125:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq3=f=250:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq4=f=500:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq5=f=1000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq6=f=2000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq7=f=4000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq8=f=8000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq9=f=16000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true' (flags = 0)\n"
+    },
+    {
+      "elapsed_seconds": 0.08979074999999881,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "error",
+      "text": "AVFilterGraph: No such filter: 'aformat'\n"
+    },
+    {
+      "elapsed_seconds": 0.08979483399999921,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "error",
+      "text": "AVFilterGraph: Error creating filters\n"
+    },
+    {
+      "elapsed_seconds": 0.08979800000000004,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "fatal",
+      "text": "parsing the filter graph failed\n"
+    },
+    {
+      "elapsed_seconds": 0.0898012089999991,
+      "id": 2,
+      "error": 0,
+      "prefix": "user_filter_wrapper",
+      "level": "error",
+      "text": "Creating filter 'lavfi' failed.\n"
+    },
+    {
+      "elapsed_seconds": 0.08980474999999899,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "error",
+      "text": "Audio filter initialized failed!\n"
+    },
+    {
+      "elapsed_seconds": 0.08980779199999844,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Set property: pause=\"no\" -> 1\n"
+    },
+    {
+      "elapsed_seconds": 0.24449774999999896,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Set property: pause=\"yes\" -> 1\n"
+    },
+    {
+      "elapsed_seconds": 0.24452704199999964,
+      "id": 2,
+      "error": 0,
+      "prefix": "main",
+      "level": "error",
+      "text": "Command af-command: has only 3 arguments.\n"
+    },
+    {
+      "elapsed_seconds": 0.3520743339999992,
+      "id": 2,
+      "error": 0,
+      "prefix": "main",
+      "level": "error",
+      "text": "Command af-command: has only 3 arguments.\n"
+    },
+    {
+      "elapsed_seconds": 0.45453087499999967,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "debug",
+      "text": "Run command: af-command, flags=64, args=[label=\"echo_eq\", command=\"gain\", argument=\"1\"]\n"
+    },
+    {
+      "elapsed_seconds": 0.5642298339999989,
+      "id": 18,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.5642378749999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "debug",
+      "text": "Run command: loadfile, flags=64, args=[url=\"/private/tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav\", flags=\"replace\", options=\"\"]\n"
+    },
+    {
+      "elapsed_seconds": 0.5642772919999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "EOF code: 3  \n"
+    },
+    {
+      "elapsed_seconds": 0.5642918749999986,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "debug",
+      "text": "Uninit decoder.\n"
+    },
+    {
+      "elapsed_seconds": 0.5643065419999989,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "debug",
+      "text": "Terminating demuxers...\n"
+    },
+    {
+      "elapsed_seconds": 0.5643168339999995,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Set property: pause=\"no\" -> 1\n"
+    },
+    {
+      "elapsed_seconds": 0.5643281669999993,
+      "id": 7,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.5643352499999992,
+      "id": 6,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.5643397499999985,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "debug",
+      "text": "Done terminating demuxers.\n"
+    },
+    {
+      "elapsed_seconds": 0.5643512919999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "finished playback, success (reason 2)\n"
+    },
+    {
+      "elapsed_seconds": 0.5643625839999995,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "info",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 0.5643737499999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "global",
+      "level": "debug",
+      "text": "state path: 'watch_later' -> '-'\n"
+    },
+    {
+      "elapsed_seconds": 0.5645271249999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "file",
+      "level": "v",
+      "text": "Opening /private/tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav\n"
+    },
+    {
+      "elapsed_seconds": 0.5646658749999993,
+      "id": 2,
+      "error": 0,
+      "prefix": "file",
+      "level": "debug",
+      "text": "resize stream to 131072 bytes, drop 0 bytes\n"
+    },
+    {
+      "elapsed_seconds": 0.5646870839999991,
+      "id": 2,
+      "error": 0,
+      "prefix": "file",
+      "level": "debug",
+      "text": "Stream opened successfully.\n"
+    },
+    {
+      "elapsed_seconds": 0.5647002089999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "v",
+      "text": "Trying demuxers for level=normal.\n"
+    },
+    {
+      "elapsed_seconds": 0.564713459,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: disc (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.5647255419999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: edl (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.5647702499999987,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: cue (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.5647864169999988,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: rawaudio (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.5647982499999991,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: rawvideo (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.5648227089999995,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: mkv (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.5648348339999991,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: lavf (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 0.565447666999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavf",
+      "level": "v",
+      "text": "Found 'wav' at score=99 size=2048.\n"
+    },
+    {
+      "elapsed_seconds": 0.5656149169999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg/demuxer",
+      "level": "debug",
+      "text": "wav: parser not found for codec pcm_s32le, packets or times may be invalid.\n"
+    },
+    {
+      "elapsed_seconds": 0.5657063339999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg/demuxer",
+      "level": "debug",
+      "text": "wav: parser not found for codec pcm_s32le, packets or times may be invalid.\n"
+    },
+    {
+      "elapsed_seconds": 0.565907417,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavf",
+      "level": "v",
+      "text": "avformat_find_stream_info() finished after 229376 bytes.\n"
+    },
+    {
+      "elapsed_seconds": 0.5659473749999986,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "v",
+      "text": "Detected file format: wav (libavformat)\n"
+    },
+    {
+      "elapsed_seconds": 0.5659622089999985,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Opening done: /private/tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav\n"
+    },
+    {
+      "elapsed_seconds": 0.56616,
+      "id": 2,
+      "error": 0,
+      "prefix": "find_files",
+      "level": "v",
+      "text": "Loading external files in /private/tmp/echo-audio-effects-fixtures/\n"
+    },
+    {
+      "elapsed_seconds": 0.5667874589999986,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavf",
+      "level": "v",
+      "text": "select track 0\n"
+    },
+    {
+      "elapsed_seconds": 0.5668033749999992,
+      "id": 18,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.5668082919999993,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "info",
+      "text": " (+) Audio --aid=1 (pcm_s32le 2ch 48000Hz)\n"
+    },
+    {
+      "elapsed_seconds": 0.567059167,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Codec list:\n"
+    },
+    {
+      "elapsed_seconds": 0.5670773749999984,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "    pcm_s32le - (null)\n"
+    },
+    {
+      "elapsed_seconds": 0.5670909169999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Opening decoder pcm_s32le\n"
+    },
+    {
+      "elapsed_seconds": 0.5671673339999987,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Requesting 1 threads for decoding.\n"
+    },
+    {
+      "elapsed_seconds": 0.5671839999999992,
+      "id": 18,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.5671891249999987,
+      "id": 8,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.567193958999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Selected codec: pcm_s32le ((null))\n"
+    },
+    {
+      "elapsed_seconds": 0.5672064169999995,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "User filter list:\n"
+    },
+    {
+      "elapsed_seconds": 0.5672186249999989,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "  (empty)\n"
+    },
+    {
+      "elapsed_seconds": 0.5672312919999989,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Starting playback...\n"
+    },
+    {
+      "elapsed_seconds": 0.567282917,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[in] 48000Hz stereo 2ch s32\n"
+    },
+    {
+      "elapsed_seconds": 0.5673002919999988,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[userspeed] 48000Hz stereo 2ch s32\n"
+    },
+    {
+      "elapsed_seconds": 0.5673130419999985,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[userspeed] (disabled)\n"
+    },
+    {
+      "elapsed_seconds": 0.5673249169999988,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[convert] 48000Hz stereo 2ch s32\n"
+    },
+    {
+      "elapsed_seconds": 0.5673367089999992,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[convert] (disabled)\n"
+    },
+    {
+      "elapsed_seconds": 0.5673486249999993,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[out] 48000Hz stereo 2ch s32\n"
+    },
+    {
+      "elapsed_seconds": 0.5676117089999995,
+      "id": 21,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 0.5676177919999983,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "audio ready\n"
+    },
+    {
+      "elapsed_seconds": 0.5676392919999991,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "starting audio playback\n"
+    },
+    {
+      "elapsed_seconds": 0.5676581249999995,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "playback restart complete @ -0.000000, audio=playing, video=eof\n"
+    },
+    {
+      "elapsed_seconds": 0.5676669169999986,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/null",
+      "level": "v",
+      "text": "starting AO\n"
+    },
+    {
+      "elapsed_seconds": 0.567673375,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/null",
+      "level": "error",
+      "text": "illegal state: start() while paused\n"
+    },
+    {
+      "elapsed_seconds": 0.7255025419999992,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Set property: pause=\"yes\" -> 1\n"
+    },
+    {
+      "elapsed_seconds": 0.7255282919999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "debug",
+      "text": "Run command: af, flags=64, args=[operation=\"set\", value=\"@echo_preamp:lavfi=[aformat=sample_fmts=dbl,volume=volume=0dB:precision=double],@echo_eq0:lavfi=[equalizer=f=31.25:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq1:lavfi=[equalizer=f=62.5:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq2:lavfi=[equalizer=f=125:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq3:lavfi=[equalizer=f=250:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq4:lavfi=[equalizer=f=500:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq5:lavfi=[equalizer=f=1000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq6:lavfi=[equalizer=f=2000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq7:lavfi=[equalizer=f=4000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq8:lavfi=[equalizer=f=8000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq9:lavfi=[equalizer=f=16000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_limiter:lavfi=[alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true]\"]\n"
+    },
+    {
+      "elapsed_seconds": 0.725543458999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "user_filter_wrapper",
+      "level": "v",
+      "text": "Setting option 'graph' = 'aformat=sample_fmts=dbl,volume=volume=0dB:precision=double' (flags = 0)\n"
+    },
+    {
+      "elapsed_seconds": 0.7255558339999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "error",
+      "text": "AVFilterGraph: No such filter: 'aformat'\n"
+    },
+    {
+      "elapsed_seconds": 0.7255671249999995,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "error",
+      "text": "AVFilterGraph: Error creating filters\n"
+    },
+    {
+      "elapsed_seconds": 0.7255779999999987,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "fatal",
+      "text": "parsing the filter graph failed\n"
+    },
+    {
+      "elapsed_seconds": 0.7255886249999985,
+      "id": 2,
+      "error": 0,
+      "prefix": "user_filter_wrapper",
+      "level": "error",
+      "text": "Creating filter 'lavfi' failed.\n"
+    },
+    {
+      "elapsed_seconds": 0.7255994999999995,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "error",
+      "text": "Audio filter initialized failed!\n"
+    },
+    {
+      "elapsed_seconds": 0.7256122089999995,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Set property: pause=\"no\" -> 1\n"
+    },
+    {
+      "elapsed_seconds": 0.8811334999999989,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Set property: pause=\"yes\" -> 1\n"
+    },
+    {
+      "elapsed_seconds": 0.8811627919999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "debug",
+      "text": "Run command: af-command, flags=64, args=[label=\"echo_eq5\", command=\"gain\", argument=\"1\"]\n"
+    },
+    {
+      "elapsed_seconds": 0.9878669589999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "debug",
+      "text": "Run command: af-command, flags=64, args=[label=\"echo_preamp\", command=\"volume\", argument=\"-6dB\"]\n"
+    },
+    {
+      "elapsed_seconds": 1.0935252089999992,
+      "id": 18,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 1.0935343339999992,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "debug",
+      "text": "Run command: loadfile, flags=64, args=[url=\"/private/tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav\", flags=\"replace\", options=\"\"]\n"
+    },
+    {
+      "elapsed_seconds": 1.0935691669999983,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "EOF code: 3  \n"
+    },
+    {
+      "elapsed_seconds": 1.0935842499999993,
+      "id": 7,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 1.0935937499999984,
+      "id": 6,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 1.09359875,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "debug",
+      "text": "Uninit decoder.\n"
+    },
+    {
+      "elapsed_seconds": 1.093611083999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "debug",
+      "text": "Terminating demuxers...\n"
+    },
+    {
+      "elapsed_seconds": 1.0936218749999984,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Set property: pause=\"no\" -> 1\n"
+    },
+    {
+      "elapsed_seconds": 1.0936327919999993,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "debug",
+      "text": "Done terminating demuxers.\n"
+    },
+    {
+      "elapsed_seconds": 1.0936429589999985,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "finished playback, success (reason 2)\n"
+    },
+    {
+      "elapsed_seconds": 1.093653625,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "info",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 1.0936644169999994,
+      "id": 2,
+      "error": 0,
+      "prefix": "global",
+      "level": "debug",
+      "text": "state path: 'watch_later' -> '-'\n"
+    },
+    {
+      "elapsed_seconds": 1.0937677089999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "file",
+      "level": "v",
+      "text": "Opening /private/tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav\n"
+    },
+    {
+      "elapsed_seconds": 1.0938830839999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "file",
+      "level": "debug",
+      "text": "resize stream to 131072 bytes, drop 0 bytes\n"
+    },
+    {
+      "elapsed_seconds": 1.0939112089999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "file",
+      "level": "debug",
+      "text": "Stream opened successfully.\n"
+    },
+    {
+      "elapsed_seconds": 1.0939257499999986,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "v",
+      "text": "Trying demuxers for level=normal.\n"
+    },
+    {
+      "elapsed_seconds": 1.0939429169999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: disc (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 1.0939554169999983,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: edl (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 1.0939662499999994,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: cue (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 1.0939770839999987,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: rawaudio (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 1.0939907089999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: rawvideo (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 1.0940014589999993,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: mkv (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 1.0940123749999984,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: lavf (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 1.0945575419999987,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavf",
+      "level": "v",
+      "text": "Found 'wav' at score=99 size=2048.\n"
+    },
+    {
+      "elapsed_seconds": 1.0946932919999988,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg/demuxer",
+      "level": "debug",
+      "text": "wav: parser not found for codec pcm_s32le, packets or times may be invalid.\n"
+    },
+    {
+      "elapsed_seconds": 1.0947697499999993,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg/demuxer",
+      "level": "debug",
+      "text": "wav: parser not found for codec pcm_s32le, packets or times may be invalid.\n"
+    },
+    {
+      "elapsed_seconds": 1.0949782499999987,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavf",
+      "level": "v",
+      "text": "avformat_find_stream_info() finished after 229376 bytes.\n"
+    },
+    {
+      "elapsed_seconds": 1.0949941669999994,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "v",
+      "text": "Detected file format: wav (libavformat)\n"
+    },
+    {
+      "elapsed_seconds": 1.0950028749999987,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Opening done: /private/tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav\n"
+    },
+    {
+      "elapsed_seconds": 1.0951241669999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "find_files",
+      "level": "v",
+      "text": "Loading external files in /private/tmp/echo-audio-effects-fixtures/\n"
+    },
+    {
+      "elapsed_seconds": 1.0955013339999997,
+      "id": 18,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 1.0955095419999985,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavf",
+      "level": "v",
+      "text": "select track 0\n"
+    },
+    {
+      "elapsed_seconds": 1.095521291999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "info",
+      "text": " (+) Audio --aid=1 (pcm_s32le 2ch 48000Hz)\n"
+    },
+    {
+      "elapsed_seconds": 1.0956597499999994,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Codec list:\n"
+    },
+    {
+      "elapsed_seconds": 1.095682374999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "    pcm_s32le - (null)\n"
+    },
+    {
+      "elapsed_seconds": 1.095692291999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Opening decoder pcm_s32le\n"
+    },
+    {
+      "elapsed_seconds": 1.0957401669999989,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Requesting 1 threads for decoding.\n"
+    },
+    {
+      "elapsed_seconds": 1.0957589999999993,
+      "id": 18,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 1.0957621669999984,
+      "id": 8,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 1.0957651249999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Selected codec: pcm_s32le ((null))\n"
+    },
+    {
+      "elapsed_seconds": 1.0957733339999987,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "User filter list:\n"
+    },
+    {
+      "elapsed_seconds": 1.095786541999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "  (empty)\n"
+    },
+    {
+      "elapsed_seconds": 1.0957936249999989,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Starting playback...\n"
+    },
+    {
+      "elapsed_seconds": 1.0958249589999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[in] 48000Hz stereo 2ch s32\n"
+    },
+    {
+      "elapsed_seconds": 1.095833708999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[userspeed] 48000Hz stereo 2ch s32\n"
+    },
+    {
+      "elapsed_seconds": 1.0958403749999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[userspeed] (disabled)\n"
+    },
+    {
+      "elapsed_seconds": 1.0958468339999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[convert] 48000Hz stereo 2ch s32\n"
+    },
+    {
+      "elapsed_seconds": 1.095853416999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[convert] (disabled)\n"
+    },
+    {
+      "elapsed_seconds": 1.0958617499999992,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[out] 48000Hz stereo 2ch s32\n"
+    },
+    {
+      "elapsed_seconds": 1.0960832499999995,
+      "id": 21,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 1.0960901669999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "audio ready\n"
+    },
+    {
+      "elapsed_seconds": 1.0961011249999988,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "starting audio playback\n"
+    },
+    {
+      "elapsed_seconds": 1.0961097089999985,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "playback restart complete @ -0.000000, audio=playing, video=eof\n"
+    },
+    {
+      "elapsed_seconds": 1.0961173339999988,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/null",
+      "level": "v",
+      "text": "starting AO\n"
+    },
+    {
+      "elapsed_seconds": 1.0961243749999987,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/null",
+      "level": "error",
+      "text": "illegal state: start() while paused\n"
+    },
+    {
+      "elapsed_seconds": 1.2565452499999985,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Set property: pause=\"yes\" -> 1\n"
+    },
+    {
+      "elapsed_seconds": 1.25657775,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "debug",
+      "text": "Run command: af, flags=64, args=[operation=\"set\", value=\"@echo_spatial:lavfi=[aformat=sample_fmts=dbl,volume@preamp=volume=-2.938200260161128dB:precision=double,extrastereo=m=1.25:c=false,alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true]\"]\n"
+    },
+    {
+      "elapsed_seconds": 1.2565930419999987,
+      "id": 2,
+      "error": 0,
+      "prefix": "user_filter_wrapper",
+      "level": "v",
+      "text": "Setting option 'graph' = 'aformat=sample_fmts=dbl,volume@preamp=volume=-2.938200260161128dB:precision=double,extrastereo=m=1.25:c=false,alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true' (flags = 0)\n"
+    },
+    {
+      "elapsed_seconds": 1.2566063339999989,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "error",
+      "text": "AVFilterGraph: No such filter: 'aformat'\n"
+    },
+    {
+      "elapsed_seconds": 1.2566179999999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg",
+      "level": "error",
+      "text": "AVFilterGraph: Error creating filters\n"
+    },
+    {
+      "elapsed_seconds": 1.2566289169999987,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavfi",
+      "level": "fatal",
+      "text": "parsing the filter graph failed\n"
+    },
+    {
+      "elapsed_seconds": 1.2566397499999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "user_filter_wrapper",
+      "level": "error",
+      "text": "Creating filter 'lavfi' failed.\n"
+    },
+    {
+      "elapsed_seconds": 1.2566505419999991,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "error",
+      "text": "Audio filter initialized failed!\n"
+    },
+    {
+      "elapsed_seconds": 1.256662167,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Set property: pause=\"no\" -> 1\n"
+    },
+    {
+      "elapsed_seconds": 1.4103753749999992,
+      "id": 18,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 1.410379708999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Set property: pause=\"yes\" -> 1\n"
+    },
+    {
+      "elapsed_seconds": 1.410401792,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "debug",
+      "text": "Run command: loadfile, flags=64, args=[url=\"/private/tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav\", flags=\"replace\", options=\"\"]\n"
+    },
+    {
+      "elapsed_seconds": 1.4104079169999988,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "EOF code: 3  \n"
+    },
+    {
+      "elapsed_seconds": 1.4104127089999992,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "debug",
+      "text": "Uninit decoder.\n"
+    },
+    {
+      "elapsed_seconds": 1.4104174999999994,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "debug",
+      "text": "Terminating demuxers...\n"
+    },
+    {
+      "elapsed_seconds": 1.4104219999999987,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Set property: pause=\"no\" -> 1\n"
+    },
+    {
+      "elapsed_seconds": 1.4104494999999986,
+      "id": 7,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 1.4104539999999997,
+      "id": 6,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 1.410456667,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "debug",
+      "text": "Done terminating demuxers.\n"
+    },
+    {
+      "elapsed_seconds": 1.410465125,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "finished playback, success (reason 2)\n"
+    },
+    {
+      "elapsed_seconds": 1.4104709999999994,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "info",
+      "text": "\n"
+    },
+    {
+      "elapsed_seconds": 1.4104768749999987,
+      "id": 2,
+      "error": 0,
+      "prefix": "global",
+      "level": "debug",
+      "text": "state path: 'watch_later' -> '-'\n"
+    },
+    {
+      "elapsed_seconds": 1.4105468749999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "file",
+      "level": "v",
+      "text": "Opening /private/tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav\n"
+    },
+    {
+      "elapsed_seconds": 1.4106232499999987,
+      "id": 2,
+      "error": 0,
+      "prefix": "file",
+      "level": "debug",
+      "text": "resize stream to 131072 bytes, drop 0 bytes\n"
+    },
+    {
+      "elapsed_seconds": 1.4106305,
+      "id": 2,
+      "error": 0,
+      "prefix": "file",
+      "level": "debug",
+      "text": "Stream opened successfully.\n"
+    },
+    {
+      "elapsed_seconds": 1.4106382919999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "v",
+      "text": "Trying demuxers for level=normal.\n"
+    },
+    {
+      "elapsed_seconds": 1.410643583999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: disc (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 1.4106578749999983,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: edl (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 1.410663249999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: cue (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 1.4106680839999992,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: rawaudio (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 1.410673083999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: rawvideo (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 1.410677999999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: mkv (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 1.4106828749999991,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "debug",
+      "text": "Trying demuxer: lavf (force-level: normal)\n"
+    },
+    {
+      "elapsed_seconds": 1.4111629999999984,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavf",
+      "level": "v",
+      "text": "Found 'wav' at score=99 size=2048.\n"
+    },
+    {
+      "elapsed_seconds": 1.4112325839999986,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg/demuxer",
+      "level": "debug",
+      "text": "wav: parser not found for codec pcm_s32le, packets or times may be invalid.\n"
+    },
+    {
+      "elapsed_seconds": 1.4112891669999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "ffmpeg/demuxer",
+      "level": "debug",
+      "text": "wav: parser not found for codec pcm_s32le, packets or times may be invalid.\n"
+    },
+    {
+      "elapsed_seconds": 1.4114148749999984,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavf",
+      "level": "v",
+      "text": "avformat_find_stream_info() finished after 229376 bytes.\n"
+    },
+    {
+      "elapsed_seconds": 1.4114222499999993,
+      "id": 2,
+      "error": 0,
+      "prefix": "demux",
+      "level": "v",
+      "text": "Detected file format: wav (libavformat)\n"
+    },
+    {
+      "elapsed_seconds": 1.411428041999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Opening done: /private/tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav\n"
+    },
+    {
+      "elapsed_seconds": 1.411542334,
+      "id": 2,
+      "error": 0,
+      "prefix": "find_files",
+      "level": "v",
+      "text": "Loading external files in /private/tmp/echo-audio-effects-fixtures/\n"
+    },
+    {
+      "elapsed_seconds": 1.4118127089999994,
+      "id": 2,
+      "error": 0,
+      "prefix": "lavf",
+      "level": "v",
+      "text": "select track 0\n"
+    },
+    {
+      "elapsed_seconds": 1.4118196669999996,
+      "id": 18,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 1.411821667,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "info",
+      "text": " (+) Audio --aid=1 (pcm_s32le 2ch 48000Hz)\n"
+    },
+    {
+      "elapsed_seconds": 1.4119288749999992,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Codec list:\n"
+    },
+    {
+      "elapsed_seconds": 1.4119350839999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "    pcm_s32le - (null)\n"
+    },
+    {
+      "elapsed_seconds": 1.4119399169999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Opening decoder pcm_s32le\n"
+    },
+    {
+      "elapsed_seconds": 1.4119889169999986,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Requesting 1 threads for decoding.\n"
+    },
+    {
+      "elapsed_seconds": 1.4119963339999995,
+      "id": 18,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 1.4119983749999996,
+      "id": 8,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 1.4120004589999997,
+      "id": 2,
+      "error": 0,
+      "prefix": "ad",
+      "level": "v",
+      "text": "Selected codec: pcm_s32le ((null))\n"
+    },
+    {
+      "elapsed_seconds": 1.4120059169999983,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "User filter list:\n"
+    },
+    {
+      "elapsed_seconds": 1.4120108339999984,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "  (empty)\n"
+    },
+    {
+      "elapsed_seconds": 1.412015792,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Starting playback...\n"
+    },
+    {
+      "elapsed_seconds": 1.4120424169999986,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[in] 48000Hz stereo 2ch s32\n"
+    },
+    {
+      "elapsed_seconds": 1.4120490419999996,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[userspeed] 48000Hz stereo 2ch s32\n"
+    },
+    {
+      "elapsed_seconds": 1.4120602089999998,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[userspeed] (disabled)\n"
+    },
+    {
+      "elapsed_seconds": 1.4120733749999985,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[convert] 48000Hz stereo 2ch s32\n"
+    },
+    {
+      "elapsed_seconds": 1.4120790839999984,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[convert] (disabled)\n"
+    },
+    {
+      "elapsed_seconds": 1.4120839169999986,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "[out] 48000Hz stereo 2ch s32\n"
+    },
+    {
+      "elapsed_seconds": 1.4121916249999984,
+      "id": 21,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 1.412196333999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "audio ready\n"
+    },
+    {
+      "elapsed_seconds": 1.4122039589999993,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "starting audio playback\n"
+    },
+    {
+      "elapsed_seconds": 1.4122090839999988,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "playback restart complete @ -0.000000, audio=playing, video=eof\n"
+    },
+    {
+      "elapsed_seconds": 1.4122255,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/null",
+      "level": "v",
+      "text": "starting AO\n"
+    },
+    {
+      "elapsed_seconds": 1.4122344999999985,
+      "id": 2,
+      "error": 0,
+      "prefix": "ao/null",
+      "level": "error",
+      "text": "illegal state: start() while paused\n"
+    },
+    {
+      "elapsed_seconds": 1.5681424999999987,
+      "id": 18,
+      "error": 0
+    },
+    {
+      "elapsed_seconds": 1.5681494999999988,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "v",
+      "text": "Set property: pause=\"yes\" -> 1\n"
+    },
+    {
+      "elapsed_seconds": 1.5681809589999993,
+      "id": 2,
+      "error": 0,
+      "prefix": "cplayer",
+      "level": "debug",
+      "text": "Run command: af, flags=64, args=[operation=\"set\", value=\"\"]\n"
+    },
+    {
+      "elapsed_seconds": 1.5683791249999999,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "User filter list:\n"
+    },
+    {
+      "elapsed_seconds": 1.5683938339999983,
+      "id": 2,
+      "error": 0,
+      "prefix": "af",
+      "level": "v",
+      "text": "  (empty)\n"
+    }
+  ],
+  "snapshots": [
+    {
+      "label": "bypass",
+      "properties": {
+        "mpv-version": "mpv 0.36.0",
+        "ffmpeg-version": "6.0",
+        "current-ao": "null",
+        "audio-device": "auto",
+        "audio-params": {
+          "samplerate": 48000,
+          "channel-count": 2,
+          "channels": "stereo",
+          "hr-channels": "stereo",
+          "format": "s32"
+        },
+        "audio-out-params": {
+          "samplerate": 48000,
+          "channel-count": 2,
+          "channels": "stereo",
+          "hr-channels": "stereo",
+          "format": "s32"
+        },
+        "af": [],
+        "volume": 100.0,
+        "mute": false,
+        "pause": true,
+        "time-pos": 0.04230900065104154
+      }
+    },
+    {
+      "label": "eq_installed",
+      "properties": {
+        "mpv-version": "mpv 0.36.0",
+        "ffmpeg-version": "6.0",
+        "current-ao": "null",
+        "audio-device": "auto",
+        "audio-params": {
+          "samplerate": 48000,
+          "channel-count": 2,
+          "channels": "stereo",
+          "hr-channels": "stereo",
+          "format": "s32"
+        },
+        "audio-out-params": {
+          "samplerate": 48000,
+          "channel-count": 2,
+          "channels": "stereo",
+          "hr-channels": "stereo",
+          "format": "s32"
+        },
+        "af": [],
+        "volume": 100.0,
+        "mute": false,
+        "pause": true,
+        "time-pos": 0.19630699666341145
+      }
+    },
+    {
+      "label": "eq_after_loadfile",
+      "properties": {
+        "mpv-version": "mpv 0.36.0",
+        "ffmpeg-version": "6.0",
+        "current-ao": "null",
+        "audio-device": "auto",
+        "audio-params": {
+          "samplerate": 48000,
+          "channel-count": 2,
+          "channels": "stereo",
+          "hr-channels": "stereo",
+          "format": "s32"
+        },
+        "audio-out-params": {
+          "samplerate": 48000,
+          "channel-count": 2,
+          "channels": "stereo",
+          "hr-channels": "stereo",
+          "format": "s32"
+        },
+        "af": [],
+        "volume": 100.0,
+        "mute": false,
+        "pause": true,
+        "time-pos": 0.15702597045898414
+      }
+    },
+    {
+      "label": "eq_individual_installed",
+      "properties": {
+        "mpv-version": "mpv 0.36.0",
+        "ffmpeg-version": "6.0",
+        "current-ao": "null",
+        "audio-device": "auto",
+        "audio-params": {
+          "samplerate": 48000,
+          "channel-count": 2,
+          "channels": "stereo",
+          "hr-channels": "stereo",
+          "format": "s32"
+        },
+        "audio-out-params": {
+          "samplerate": 48000,
+          "channel-count": 2,
+          "channels": "stereo",
+          "hr-channels": "stereo",
+          "format": "s32"
+        },
+        "af": [],
+        "volume": 100.0,
+        "mute": false,
+        "pause": true,
+        "time-pos": 0.31201200358072967
+      }
+    },
+    {
+      "label": "eq_individual_after_loadfile",
+      "properties": {
+        "mpv-version": "mpv 0.36.0",
+        "ffmpeg-version": "6.0",
+        "current-ao": "null",
+        "audio-device": "auto",
+        "audio-params": {
+          "samplerate": 48000,
+          "channel-count": 2,
+          "channels": "stereo",
+          "hr-channels": "stereo",
+          "format": "s32"
+        },
+        "audio-out-params": {
+          "samplerate": 48000,
+          "channel-count": 2,
+          "channels": "stereo",
+          "hr-channels": "stereo",
+          "format": "s32"
+        },
+        "af": [],
+        "volume": 100.0,
+        "mute": false,
+        "pause": true,
+        "time-pos": 0.1596530151367186
+      }
+    },
+    {
+      "label": "spatial_installed",
+      "properties": {
+        "mpv-version": "mpv 0.36.0",
+        "ffmpeg-version": "6.0",
+        "current-ao": "null",
+        "audio-device": "auto",
+        "audio-params": {
+          "samplerate": 48000,
+          "channel-count": 2,
+          "channels": "stereo",
+          "hr-channels": "stereo",
+          "format": "s32"
+        },
+        "audio-out-params": {
+          "samplerate": 48000,
+          "channel-count": 2,
+          "channels": "stereo",
+          "hr-channels": "stereo",
+          "format": "s32"
+        },
+        "af": [],
+        "volume": 100.0,
+        "mute": false,
+        "pause": true,
+        "time-pos": 0.31291101074218797
+      }
+    },
+    {
+      "label": "spatial_after_loadfile",
+      "properties": {
+        "mpv-version": "mpv 0.36.0",
+        "ffmpeg-version": "6.0",
+        "current-ao": "null",
+        "audio-device": "auto",
+        "audio-params": {
+          "samplerate": 48000,
+          "channel-count": 2,
+          "channels": "stereo",
+          "hr-channels": "stereo",
+          "format": "s32"
+        },
+        "audio-out-params": {
+          "samplerate": 48000,
+          "channel-count": 2,
+          "channels": "stereo",
+          "hr-channels": "stereo",
+          "format": "s32"
+        },
+        "af": [],
+        "volume": 100.0,
+        "mute": false,
+        "pause": true,
+        "time-pos": 0.15525602213541645
+      }
+    },
+    {
+      "label": "removed",
+      "properties": {
+        "mpv-version": "mpv 0.36.0",
+        "ffmpeg-version": "6.0",
+        "current-ao": "null",
+        "audio-device": "auto",
+        "audio-params": {
+          "samplerate": 48000,
+          "channel-count": 2,
+          "channels": "stereo",
+          "hr-channels": "stereo",
+          "format": "s32"
+        },
+        "audio-out-params": {
+          "samplerate": 48000,
+          "channel-count": 2,
+          "channels": "stereo",
+          "hr-channels": "stereo",
+          "format": "s32"
+        },
+        "af": [],
+        "volume": 100.0,
+        "mute": false,
+        "pause": true,
+        "time-pos": 0.15525602213541645
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "initial_audio_ready",
+      "observed": true
+    },
+    {
+      "name": "eq_chain",
+      "chain": "@echo_eq:lavfi=[aformat=sample_fmts=dbl,volume@preamp=volume=0dB:precision=double,equalizer@eq0=f=31.25:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq1=f=62.5:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq2=f=125:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq3=f=250:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq4=f=500:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq5=f=1000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq6=f=2000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq7=f=4000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq8=f=8000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,equalizer@eq9=f=16000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0,alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true]",
+      "command_result": -12,
+      "meaning": "Command acceptance only; inspect logs and audio-out-params for initialization failures."
+    },
+    {
+      "name": "af_command_syntax",
+      "args": [
+        "af-command",
+        "echo_eq",
+        "gain",
+        "1",
+        "equalizer@eq5"
+      ],
+      "result": -4,
+      "meaning": "Acceptance does not prove parameter change, isolation, atomicity or smoothing."
+    },
+    {
+      "name": "af_command_syntax",
+      "args": [
+        "af-command",
+        "echo_eq",
+        "volume",
+        "-6dB",
+        "volume@preamp"
+      ],
+      "result": -4,
+      "meaning": "Acceptance does not prove parameter change, isolation, atomicity or smoothing."
+    },
+    {
+      "name": "af_command_syntax",
+      "args": [
+        "af-command",
+        "echo_eq",
+        "gain",
+        "1"
+      ],
+      "result": -12,
+      "meaning": "Acceptance does not prove parameter change, isolation, atomicity or smoothing."
+    },
+    {
+      "name": "eq_loadfile_chain_survival",
+      "audio_ready": true,
+      "before": [],
+      "after": [],
+      "configured_chain_equal": true,
+      "configured_chain_survived": false,
+      "meaning": "Equal empty chains cannot establish survival. Nonempty configured-chain survival still does not establish updated internal parameter survival without capture."
+    },
+    {
+      "name": "eq_individual_chain",
+      "chain": "@echo_preamp:lavfi=[aformat=sample_fmts=dbl,volume=volume=0dB:precision=double],@echo_eq0:lavfi=[equalizer=f=31.25:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq1:lavfi=[equalizer=f=62.5:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq2:lavfi=[equalizer=f=125:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq3:lavfi=[equalizer=f=250:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq4:lavfi=[equalizer=f=500:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq5:lavfi=[equalizer=f=1000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq6:lavfi=[equalizer=f=2000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq7:lavfi=[equalizer=f=4000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq8:lavfi=[equalizer=f=8000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_eq9:lavfi=[equalizer=f=16000:t=q:w=1.4142135623730951:g=0:mix=1:normalize=false:precision=f64:block_size=0],@echo_limiter:lavfi=[alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true]",
+      "command_result": -12,
+      "meaning": "Command acceptance only; inspect logs and audio-out-params for initialization failures."
+    },
+    {
+      "name": "af_command_syntax",
+      "args": [
+        "af-command",
+        "echo_eq5",
+        "gain",
+        "1"
+      ],
+      "result": -12,
+      "meaning": "Acceptance does not prove parameter change, isolation, atomicity or smoothing."
+    },
+    {
+      "name": "af_command_syntax",
+      "args": [
+        "af-command",
+        "echo_preamp",
+        "volume",
+        "-6dB"
+      ],
+      "result": -12,
+      "meaning": "Acceptance does not prove parameter change, isolation, atomicity or smoothing."
+    },
+    {
+      "name": "eq_individual_loadfile_chain_survival",
+      "audio_ready": true,
+      "before": [],
+      "after": [],
+      "configured_chain_equal": true,
+      "configured_chain_survived": false,
+      "meaning": "Equal empty chains cannot establish survival. Nonempty configured-chain survival still does not establish updated internal parameter survival without capture."
+    },
+    {
+      "name": "spatial_chain",
+      "chain": "@echo_spatial:lavfi=[aformat=sample_fmts=dbl,volume@preamp=volume=-2.938200260161128dB:precision=double,extrastereo=m=1.25:c=false,alimiter=limit=0.891250938:attack=5:release=50:level_in=1:level_out=1:asc=false:level=false:latency=true]",
+      "command_result": -12,
+      "meaning": "Command acceptance only; inspect logs and audio-out-params for initialization failures."
+    },
+    {
+      "name": "spatial_loadfile_chain_survival",
+      "audio_ready": true,
+      "before": [],
+      "after": [],
+      "configured_chain_equal": true,
+      "configured_chain_survived": false,
+      "meaning": "Equal empty chains cannot establish survival. Nonempty configured-chain survival still does not establish updated internal parameter survival without capture."
+    }
+  ],
+  "filter_availability": {
+    "aformat": false,
+    "volume": false,
+    "equalizer": true,
+    "extrastereo": false,
+    "alimiter": false
+  },
+  "candidate_rate_basis": {
+    "rate": 48000,
+    "source": "decoder audio-params; candidate input only, not processing confirmation"
+  },
+  "candidate_chains_accepted": false,
+  "worker_exit_code": 0,
+  "worker_stderr": "",
+  "invocation": [
+    "/Library/Developer/CommandLineTools/usr/bin/python3",
+    "/Users/xian/Project/music/Echo/scripts/audio-effects/probe.py",
+    "--libmpv",
+    "/tmp/echo-audio-full/libmpv-libs_v0.7.2_macos-universal-audio-full/libmpv.dylib",
+    "--input",
+    "/tmp/echo-audio-effects-fixtures/tone997-48000-2ch-60db.wav",
+    "--fixture-manifest",
+    "/tmp/echo-audio-effects-fixtures/manifest.json",
+    "--output",
+    "/tmp/echo-macos-audio-full-probe.json",
+    "--timeout",
+    "30"
+  ]
+}

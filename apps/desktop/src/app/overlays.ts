@@ -58,6 +58,8 @@ interface Registration {
   /** The control that opened this layer, when it sits outside the container. */
   readonly triggerRef?: RefObject<HTMLElement | null>;
   readonly dismissOnInteractOutside: boolean;
+  readonly preserveOutsideFocus: boolean;
+  preserveFocus: boolean;
   readonly seq: number;
 }
 
@@ -148,6 +150,7 @@ window.addEventListener(
     if (target && isInsideOverlay(registration.containerRef, registration.triggerRef, target)) {
       return;
     }
+    registration.preserveFocus = registration.preserveOutsideFocus;
     open.delete(id!);
     registration.closer();
   },
@@ -172,6 +175,8 @@ export interface OverlayOptions {
   /** Close when the user begins an interaction outside this layer. Menus do so
    * by default; dialogs and full-screen surfaces require an explicit choice. */
   readonly dismissOnInteractOutside?: boolean;
+  /** Nonmodal surfaces retain the target of outside clicks and focus changes. */
+  readonly nonModal?: boolean;
 }
 
 /**
@@ -186,6 +191,7 @@ export function useOverlay({
   triggerRef,
   enabled = true,
   dismissOnInteractOutside = tier === OverlayTier.Menu,
+  nonModal = false,
 }: OverlayOptions): void {
   const id = useRef(`o-${nextId++}`).current;
   const onCloseRef = useRef(onClose);
@@ -195,16 +201,20 @@ export function useOverlay({
 
   useEffect(() => {
     if (!enabled) return;
-    restoreFocus.current = (document.activeElement as HTMLElement | null) ?? null;
+    restoreFocus.current =
+      triggerRef?.current ?? (document.activeElement as HTMLElement | null) ?? null;
     seqCounter += 1;
-    open.set(id, {
+    const registration: Registration = {
       tier,
       closer: () => onCloseRef.current(),
       containerRef,
       triggerRef,
       dismissOnInteractOutside,
+      preserveOutsideFocus: nonModal,
+      preserveFocus: false,
       seq: seqCounter,
-    });
+    };
+    open.set(id, registration);
 
     // Move focus into the overlay (spec: 打开时焦点进入其内容). Prefer an
     // autofocus element, else the first focusable, else the container.
@@ -215,16 +225,32 @@ export function useOverlay({
       (autofocus ?? focusable?.[0] ?? el).focus();
     }
 
+    const onFocusOutside = (event: FocusEvent) => {
+      if (!nonModal || topId() !== id) return;
+      const target = event.target as Node | null;
+      if (!target || isInsideOverlay(containerRef, triggerRef, target)) return;
+      registration.preserveFocus = true;
+      open.delete(id);
+      onCloseRef.current();
+    };
+    if (nonModal) document.addEventListener("focusin", onFocusOutside);
+
     return () => {
+      document.removeEventListener("focusin", onFocusOutside);
       open.delete(id);
       // Restore focus to the trigger (spec: 关闭后焦点恢复到触发控件), only if it
       // is still in the document (not an element we unmounted this very call).
       const trigger = restoreFocus.current;
-      if (trigger && trigger.isConnected && document.contains(trigger)) {
+      if (
+        !registration.preserveFocus &&
+        trigger &&
+        trigger.isConnected &&
+        document.contains(trigger)
+      ) {
         trigger.focus();
       }
     };
-  }, [id, tier, enabled, containerRef, triggerRef, dismissOnInteractOutside]);
+  }, [id, tier, enabled, containerRef, triggerRef, dismissOnInteractOutside, nonModal]);
 }
 
 /** Trap Tab/Shift+Tab inside a container so focus cannot escape an overlay. */
@@ -235,6 +261,8 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>, enable
       if (event.key !== "Tab") return;
       const el = containerRef.current;
       if (!el) return;
+      const top = topId();
+      if (top !== null && open.get(top)?.containerRef.current !== el) return;
       const items = focusableIn(el);
       if (items.length === 0) {
         event.preventDefault();

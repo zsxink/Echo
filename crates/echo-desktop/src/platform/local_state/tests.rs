@@ -458,3 +458,31 @@ fn stale_temp_file_is_cleaned_before_the_next_write() {
     cleanup(&p);
     let _ = fs::remove_file(&stale);
 }
+
+#[test]
+fn effects_and_unknown_fields_survive_all_legacy_mutations() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("desktop-state.json");
+    let effects = serde_json::json!({"schemaVersion": 99, "futurePayload": [1,2,3]});
+    fs::write(
+        &path,
+        serde_json::to_vec(&serde_json::json!({
+            "version": 7, "effects": effects, "futureDesktop": {"opaque":true},
+            "playbackSession":{"queue":[42]},
+            "window":{"x":0,"y":0,"width":800,"height":600,"maximized":false}
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let store = DesktopStateStore::new(path.clone(), PlatformCloseDefault::Other);
+    store.set_theme(DesktopTheme::Cobalt).unwrap();
+    store.set_close_behavior(CloseBehavior::Background).unwrap();
+    store
+        .set_playback_session(Some(serde_json::json!({"queue":[17]})))
+        .unwrap();
+    let raw: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    assert_eq!(raw["effects"], effects);
+    assert_eq!(raw["futureDesktop"], serde_json::json!({"opaque":true}));
+    assert_eq!(raw["version"], 7);
+    assert_eq!(raw["window"]["width"], 800);
+}

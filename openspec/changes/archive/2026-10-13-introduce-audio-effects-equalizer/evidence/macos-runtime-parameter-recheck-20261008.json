@@ -1,0 +1,493 @@
+{
+  "schema_version": 1,
+  "status": "probe-only",
+  "gate_passed": false,
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "architecture": "arm64",
+  "python_version": "3.9.6",
+  "libmpv": {
+    "path": "/Users/xian/Project/music/Echo/apps/desktop/src-tauri/vendor/libmpv/macos/libmpv.dylib",
+    "sha256": "164430192f73da459916e384a405685697387fa5e333c19ffb1be4297a4852f3"
+  },
+  "input": {
+    "path": "/private/tmp/echo-runtime-fix-fixtures/tone997-48000-2ch-60db.wav",
+    "sha256": "dde26d8a80ef07c7254643cffeb63f9b97d340b9be55535bfab639673d769004",
+    "fixture": {
+      "file": "tone997-48000-2ch-60db.wav",
+      "sha256": "dde26d8a80ef07c7254643cffeb63f9b97d340b9be55535bfab639673d769004",
+      "source": "Echo synthetic signal; no third-party recordings",
+      "license": "CC0-1.0",
+      "kind": "tone997",
+      "rate_hz": 48000,
+      "channels": 2,
+      "frames": 480000,
+      "duration_seconds": 10.0,
+      "requested_sample_peak_dbfs": -60.0,
+      "quantized_sample_peak_dbfs": -59.999998576271864,
+      "sample_format": "signed PCM32 little-endian"
+    },
+    "generator_sha256": "27b9fbedf09f8f7755c5f457118943e77054934fb275ab5749decddb571b790b"
+  },
+  "runtime_libraries": [
+    {
+      "path": "/Users/xian/Project/music/Echo/apps/desktop/src-tauri/vendor/libmpv/macos/libavcodec.dylib",
+      "sha256": "aeb880b328b245a6023bd239268c92b5f91fbb4d5e73228e7bd8298285e9494a"
+    },
+    {
+      "path": "/Users/xian/Project/music/Echo/apps/desktop/src-tauri/vendor/libmpv/macos/libavfilter.dylib",
+      "sha256": "2591332d9a3ccc0f6a7313b98fc2566ef4193dd40271a6908dec7243085df6bc"
+    },
+    {
+      "path": "/Users/xian/Project/music/Echo/apps/desktop/src-tauri/vendor/libmpv/macos/libavformat.dylib",
+      "sha256": "0d56a6198e86482ff7550faa6105768bea232ec5d3764b6f48695fa935300258"
+    },
+    {
+      "path": "/Users/xian/Project/music/Echo/apps/desktop/src-tauri/vendor/libmpv/macos/libavutil.dylib",
+      "sha256": "66149814b422ae63f0d3970426106a91eda8f04e1c8a928901daf54c55067cfb"
+    },
+    {
+      "path": "/Users/xian/Project/music/Echo/apps/desktop/src-tauri/vendor/libmpv/macos/libmpv.dylib",
+      "sha256": "164430192f73da459916e384a405685697387fa5e333c19ffb1be4297a4852f3"
+    },
+    {
+      "path": "/Users/xian/Project/music/Echo/apps/desktop/src-tauri/vendor/libmpv/macos/libswresample.dylib",
+      "sha256": "57f215242edaa44101a720c4d295d112b1a7fc3101f1f7602be36d9a817cecfd"
+    },
+    {
+      "path": "/Users/xian/Project/music/Echo/apps/desktop/src-tauri/vendor/libmpv/macos/libswscale.dylib",
+      "sha256": "8c710003c88579691363a6a6281d80138678151e18b6dc5bf9b5db2a8abdd6f2"
+    }
+  ],
+  "client_api": {
+    "raw": 131073,
+    "major": 2,
+    "minor": 1
+  },
+  "invocation": [
+    "/Library/Developer/CommandLineTools/usr/bin/python3",
+    "/Users/xian/Project/music/Echo/scripts/audio-effects/probe.py",
+    "--libmpv",
+    "apps/desktop/src-tauri/vendor/libmpv/macos/libmpv.dylib",
+    "--input",
+    "/tmp/echo-runtime-fix-fixtures/tone997-48000-2ch-60db.wav",
+    "--manifest",
+    "apps/desktop/src-tauri/vendor/libmpv/macos/manifest.json",
+    "--fixture-manifest",
+    "/tmp/echo-runtime-fix-fixtures/manifest.json",
+    "--output",
+    "/tmp/echo-runtime-root-recheck.json",
+    "--ao",
+    "pcm",
+    "--pcm-output",
+    "/tmp/echo-runtime-root-static.wav",
+    "--capture-only",
+    "--runtime-parameter-proof",
+    "--runtime-capture-seconds",
+    "1",
+    "--step-timeout",
+    "10",
+    "--timeout",
+    "60"
+  ],
+  "distribution_manifest": {
+    "path": "/Users/xian/Project/music/Echo/apps/desktop/src-tauri/vendor/libmpv/macos/manifest.json",
+    "sha256": "ab2ba589a8daebc795bbeefe9cc14e7c3470ed6b2e9a7df6270ca864de04679e",
+    "contents": {
+      "schemaVersion": 1,
+      "platform": "macos",
+      "kind": "custom-audio-effects-universal",
+      "publisher": "Echo local source build (FFmpeg + mpv)",
+      "release": "echo-audio-effects-0.1",
+      "asset": "FFmpeg 6.0 + mpv 0.36.0 source build",
+      "sourceUrl": "https://ffmpeg.org/releases/ffmpeg-6.0.tar.xz",
+      "assetSha256": "57be87c22d9b49c112b6d24bc67d42508660e6b718b3db89c44e47e289137082",
+      "additionalSources": [
+        {
+          "name": "mpv",
+          "url": "https://github.com/mpv-player/mpv/archive/refs/tags/v0.36.0.tar.gz",
+          "sha256": "29abc44f8ebee013bb2f9fe14d80b30db19b534c679056e4851ceadf5a5e8bf6"
+        },
+        {
+          "name": "mpv-lavfi-target-command.patch",
+          "path": "scripts/release/patches/mpv-lavfi-target-command.patch"
+        },
+        {
+          "name": "mpv-fix-missing-objc.patch",
+          "path": "scripts/release/patches/mpv-fix-missing-objc.patch"
+        }
+      ],
+      "architectures": [
+        "arm64",
+        "x86_64"
+      ],
+      "fileArchitectures": {
+        "libass.9.dylib": [
+          "arm64"
+        ],
+        "libavcodec.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libavfilter.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libavformat.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libavutil.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libfreetype.6.dylib": [
+          "arm64"
+        ],
+        "libfribidi.0.dylib": [
+          "arm64"
+        ],
+        "libglib-2.0.0.dylib": [
+          "arm64"
+        ],
+        "libgraphite2.3.dylib": [
+          "arm64"
+        ],
+        "libharfbuzz.0.dylib": [
+          "arm64"
+        ],
+        "libintl.8.dylib": [
+          "arm64"
+        ],
+        "libmbedcrypto.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libmbedtls.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libmbedx509.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libmpv.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libpcre2-8.0.dylib": [
+          "arm64"
+        ],
+        "libpng16.16.dylib": [
+          "arm64"
+        ],
+        "libswresample.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libswscale.dylib": [
+          "arm64",
+          "x86_64"
+        ],
+        "libunibreak.8.dylib": [
+          "arm64"
+        ]
+      },
+      "libmpvAbi": "2.0.0",
+      "mpvBuild": "mpv 0.36.0; Echo targeted libavfilter command patch",
+      "ffmpegBuild": "FFmpeg 6.0; LGPL-only; required filters aformat,alimiter,equalizer,extrastereo,volume",
+      "buildHost": "macOS 27.0 arm64; Homebrew dependency versions recorded in NOTICE.md",
+      "licenses": [
+        {
+          "component": "libmpv",
+          "license": "LGPL-2.1-or-later",
+          "source": "https://github.com/mpv-player/mpv"
+        },
+        {
+          "component": "FFmpeg",
+          "license": "LGPL-2.1-or-later; GPL and nonfree disabled",
+          "source": "https://ffmpeg.org/legal.html"
+        },
+        {
+          "component": "libass",
+          "license": "ISC",
+          "source": "https://github.com/libass/libass"
+        },
+        {
+          "component": "FreeType",
+          "license": "FTL",
+          "source": "https://freetype.org/license.html"
+        },
+        {
+          "component": "FriBidi",
+          "license": "LGPL-2.1-or-later",
+          "source": "https://github.com/fribidi/fribidi"
+        },
+        {
+          "component": "GLib",
+          "license": "LGPL-2.1-or-later",
+          "source": "https://gitlab.gnome.org/GNOME/glib"
+        },
+        {
+          "component": "Graphite2",
+          "license": "Apache-2.0",
+          "source": "https://github.com/silnrsi/graphite"
+        },
+        {
+          "component": "HarfBuzz",
+          "license": "MIT",
+          "source": "https://github.com/harfbuzz/harfbuzz"
+        },
+        {
+          "component": "GNU libintl",
+          "license": "LGPL-2.1-or-later",
+          "source": "https://www.gnu.org/software/gettext/"
+        },
+        {
+          "component": "PCRE2",
+          "license": "BSD-3-Clause",
+          "source": "https://github.com/PCRE2Project/pcre2"
+        },
+        {
+          "component": "libpng",
+          "license": "libpng License",
+          "source": "http://www.libpng.org/pub/png/src/libpng-LICENSE.txt"
+        },
+        {
+          "component": "libunibreak",
+          "license": "Zlib",
+          "source": "https://github.com/adah1972/libunibreak"
+        }
+      ],
+      "files": {
+        "libass.9.dylib": "ce12ed76f8fa568be8796db8f301048ae03319a4eee35154cd40f57b0d9e9dd1",
+        "libavcodec.dylib": "aeb880b328b245a6023bd239268c92b5f91fbb4d5e73228e7bd8298285e9494a",
+        "libavfilter.dylib": "2591332d9a3ccc0f6a7313b98fc2566ef4193dd40271a6908dec7243085df6bc",
+        "libavformat.dylib": "0d56a6198e86482ff7550faa6105768bea232ec5d3764b6f48695fa935300258",
+        "libavutil.dylib": "66149814b422ae63f0d3970426106a91eda8f04e1c8a928901daf54c55067cfb",
+        "libfreetype.6.dylib": "aa2951fd77181d0ebf7875d09ea2c906e3470f51181589d4764c9cbac9249e79",
+        "libfribidi.0.dylib": "c5726046801ee6604ae9b2fad9bc5d8e3784a0ae01e57c95151954b9cae5e48b",
+        "libglib-2.0.0.dylib": "359bb9c6d2276ef925b4255a09d589597a114f7536ab3002f985ee1a978eee30",
+        "libgraphite2.3.dylib": "bcc6ba81befad993037e8a658aa7c416e9e047105799492a844988438bf71045",
+        "libharfbuzz.0.dylib": "6df7af046780e227201dd99eac4f58fd21fc051df72c7b3048e8b520e4cb5e6e",
+        "libintl.8.dylib": "a1c0f8eac318459e00e707f6be965d289acdb8c07f024f8d693ce6180767932a",
+        "libmbedcrypto.dylib": "e0f2b5abbfd023f4e85a9b4e3babc0c716c744afae0354c8e97b11cb0d269d89",
+        "libmbedtls.dylib": "660e43c82bc5e2380d224b138210cad8d9b7d94bc1d1ef5f701935c7e12f0c50",
+        "libmbedx509.dylib": "0cee4da32632af2b4a888fa515d6c507716d847e3b24c6d4b566d212c139ec90",
+        "libmpv.dylib": "164430192f73da459916e384a405685697387fa5e333c19ffb1be4297a4852f3",
+        "libpcre2-8.0.dylib": "4c494053ae7324f5dda00472f12c9b3d6303dcf8ac2ca3baf7dcdd7d80f95021",
+        "libpng16.16.dylib": "ce2fd338e637a1173dd4c0e8a5040b40df206b06b86dffcc5f1a14815cd10fe4",
+        "libswresample.dylib": "57f215242edaa44101a720c4d295d112b1a7fc3101f1f7602be36d9a817cecfd",
+        "libswscale.dylib": "8c710003c88579691363a6a6281d80138678151e18b6dc5bf9b5db2a8abdd6f2",
+        "libunibreak.8.dylib": "61ff8eedc2b923b77f3018c2df177871e7de069d2e1a4d6222b1f7f6016e4883"
+      },
+      "buildProcedureStatus": "Source candidate built and probed on macOS arm64; a clean-room rebuild script and Intel rebuild remain pending."
+    }
+  },
+  "date": "2026-10-08",
+  "method": "One uninterrupted ao=pcm playback per runtime command, fixture PCM repeated offline to 600 seconds. No pause, seek or reload across changes. Baseline and changed windows are PCM sample positions; file-byte upper bounds are not real-time latency measurements.",
+  "limitations": [
+    "One packaged macOS arm64 library only",
+    "Endpoint parameter changes only; no 30 ms transition/click, hardware, true-peak or three-platform Gate verdict."
+  ],
+  "checks": [
+    {
+      "name": "runtime_parameter_pcm_proof",
+      "parameter": "equalizer",
+      "input": "/tmp/echo-runtime-fix-fixtures/tone997-48000-2ch-60db.wav",
+      "input_sha256": "dde26d8a80ef07c7254643cffeb63f9b97d340b9be55535bfab639673d769004",
+      "extended_input_sha256": "762ac874b112857c1c3412c996f39ed037c8f92c155f74533a8a9da12f5c7a2a",
+      "extended_input_frames": 28800000,
+      "output_sha256": "60af71a4e8ed2cfe3da6f99fdcb14a43a5af39e472bbe7278b164367c4fdd88b",
+      "output_frames": 3395857,
+      "sample_rate": 48000,
+      "channels": 2,
+      "sample_width_bytes": 2,
+      "command": [
+        "af-command",
+        "echo_eq5",
+        "eq5:gain",
+        "6"
+      ],
+      "command_result": 0,
+      "eof_before_command": false,
+      "time_pos_before_command": 24.528354166666663,
+      "file_bytes_before_command": 4706304,
+      "file_bytes_after_command": 9150464,
+      "command_frame_upper_bound": 2287616,
+      "baseline_window_frames": [
+        4800,
+        28800
+      ],
+      "changed_window_frames": [
+        3347857,
+        3395857
+      ],
+      "measured_change_db": 5.990865916868552,
+      "expected_change_db": 6.0,
+      "error_db": -0.009134083131447923,
+      "runtime_confirmed": true,
+      "meaning": "One uninterrupted PCM capture; sample windows exclude initial and command transients. File offsets bound written samples, not real-time latency."
+    },
+    {
+      "name": "runtime_parameter_pcm_proof",
+      "parameter": "preamp",
+      "input": "/tmp/echo-runtime-fix-fixtures/tone997-48000-2ch-60db.wav",
+      "input_sha256": "dde26d8a80ef07c7254643cffeb63f9b97d340b9be55535bfab639673d769004",
+      "extended_input_sha256": "762ac874b112857c1c3412c996f39ed037c8f92c155f74533a8a9da12f5c7a2a",
+      "extended_input_frames": 28800000,
+      "output_sha256": "7b34f4286f97b2811a9cc7427cc2dc4ebf3cb6561c0e7c7829d9c7a1d45340c5",
+      "output_frames": 3380497,
+      "sample_rate": 48000,
+      "channels": 2,
+      "sample_width_bytes": 2,
+      "command": [
+        "af-command",
+        "echo_preamp",
+        "preamp:volume",
+        "0.501187233627272"
+      ],
+      "command_result": 0,
+      "eof_before_command": false,
+      "time_pos_before_command": 24.293687499999997,
+      "file_bytes_before_command": 4661248,
+      "file_bytes_after_command": 9093120,
+      "command_frame_upper_bound": 2273280,
+      "baseline_window_frames": [
+        4800,
+        28800
+      ],
+      "changed_window_frames": [
+        3332497,
+        3380497
+      ],
+      "measured_change_db": -6.042937159296546,
+      "expected_change_db": -6.0,
+      "error_db": -0.04293715929654596,
+      "runtime_confirmed": true,
+      "meaning": "One uninterrupted PCM capture; sample windows exclude initial and command transients. File offsets bound written samples, not real-time latency."
+    },
+    {
+      "name": "runtime_parameter_pcm_proof",
+      "parameter": "spatial_width",
+      "input": "/tmp/echo-runtime-fix-fixtures/antiphase-48000-2ch-60db.wav",
+      "low_level": true,
+      "input_sha256": "cee648f4528b6bd7eba54f221fb497bbe675e686858477b1c81d97b6cc124378",
+      "extended_input_sha256": "033d243d6cdaf75ec46c22ad34e76fa8a44a15a04a5cb7dc92e306be6fdeac77",
+      "extended_input_frames": 28800000,
+      "output_sha256": "0cf5ef373070c4ec20d2953d6ffd8a7e05c5ca736efd3d853dcbaefa795b543d",
+      "output_frames": 28800000,
+      "sample_rate": 48000,
+      "channels": 2,
+      "sample_width_bytes": 2,
+      "command": [
+        "af-command",
+        "echo_spatial",
+        "spatial:m",
+        "1"
+      ],
+      "command_result": 0,
+      "eof_before_command": false,
+      "time_pos_before_command": 203.4296875,
+      "file_bytes_before_command": 39059456,
+      "file_bytes_after_command": 78168064,
+      "command_frame_upper_bound": 19542016,
+      "baseline_window_frames": [
+        4800,
+        28800
+      ],
+      "changed_window_frames": [
+        28752000,
+        28800000
+      ],
+      "measured_change_db": -1.9473847128108834,
+      "expected_change_db": -1.938200260161128,
+      "error_db": -0.009184452649755537,
+      "runtime_confirmed": true,
+      "meaning": "One uninterrupted PCM capture; sample windows exclude initial and command transients. File offsets bound written samples, not real-time latency."
+    },
+    {
+      "name": "static_gain_reference",
+      "expected_db": 6.0,
+      "measured_db": 5.995869224558076,
+      "error_db": -0.004130775441923973,
+      "harness_valid": true,
+      "meaning": "Install-time gain measured through the same harness. If this is not within 0.25 dB, a negative runtime result means the harness is broken, not that the command was ignored."
+    },
+    {
+      "input": "/tmp/echo-runtime-fix-fixtures/tone997-48000-2ch-60db.wav",
+      "input_sha256": "dde26d8a80ef07c7254643cffeb63f9b97d340b9be55535bfab639673d769004",
+      "extended_input_sha256": "762ac874b112857c1c3412c996f39ed037c8f92c155f74533a8a9da12f5c7a2a",
+      "extended_input_frames": 28800000,
+      "output_sha256": "c3b570d4f4eb8110318566600f73d9d5b6b96f34d578647991be5b7c4a3b9721",
+      "output_frames": 28800000,
+      "sample_rate": 48000,
+      "channels": 2,
+      "sample_width_bytes": 2,
+      "command": [
+        "af-command",
+        "echo_spatial",
+        "spatial:m",
+        "1"
+      ],
+      "command_result": 0,
+      "eof_before_command": false,
+      "time_pos_before_command": 204.76302083333334,
+      "file_bytes_before_command": 39313408,
+      "file_bytes_after_command": 78573568,
+      "command_frame_upper_bound": 19643392,
+      "baseline_window_frames": [
+        4800,
+        28800
+      ],
+      "changed_window_frames": [
+        28752000,
+        28800000
+      ],
+      "measured_change_db": 0.00409931337918883,
+      "expected_change_db": 0.0,
+      "error_db": 0.00409931337918883,
+      "runtime_confirmed": true,
+      "meaning": "One uninterrupted PCM capture; sample windows exclude initial and command transients. File offsets bound written samples, not real-time latency.",
+      "name": "runtime_parameter_pcm_proof",
+      "parameter": "spatial_width_tone997"
+    },
+    {
+      "input": "/tmp/echo-runtime-fix-fixtures/left-only-48000-2ch-60db.wav",
+      "input_sha256": "0fef00afba8b8bd73f6ebfdc0fd6b63b086175c60934a21d3c82f2ae6d6c5c8f",
+      "extended_input_sha256": "c8f308b8ba848e247c9a60d255c1151f06ff2ace7dab768152127448715e89f9",
+      "extended_input_frames": 28800000,
+      "output_sha256": "25cfd0718bbed8524f9767816b41200faeceb3d83915ee68dc3df5237878750f",
+      "output_frames": 28800000,
+      "sample_rate": 48000,
+      "channels": 2,
+      "sample_width_bytes": 2,
+      "command": [
+        "af-command",
+        "echo_spatial",
+        "spatial:m",
+        "1"
+      ],
+      "command_result": 0,
+      "eof_before_command": false,
+      "time_pos_before_command": 205.16835416666666,
+      "file_bytes_before_command": 39391232,
+      "file_bytes_after_command": 78491648,
+      "command_frame_upper_bound": 19622912,
+      "baseline_window_frames": [
+        4800,
+        28800
+      ],
+      "changed_window_frames": [
+        28752000,
+        28800000
+      ],
+      "measured_change_db": -1.0268063986582423,
+      "expected_change_db": -1.0230504489476262,
+      "error_db": -0.003755949710616102,
+      "runtime_confirmed": true,
+      "meaning": "One uninterrupted PCM capture; sample windows exclude initial and command transients. File offsets bound written samples, not real-time latency.",
+      "name": "runtime_parameter_pcm_proof",
+      "parameter": "spatial_width_left-only"
+    }
+  ]
+}

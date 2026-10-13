@@ -105,6 +105,17 @@ mod gate {
         let mut handle = unsafe { ffi::Handle::create(&sys, &[], &[]) }
             .unwrap_or_else(|e| panic!("mpv handle create/initialize failed: {e}"));
 
+        // Audio effects need mpv's explicit lavfi target argument so updates
+        // stay isolated to one equalizer band/preamp filter. Windows and Linux
+        // ship upstream mpv >= 0.37; the older patched macOS build is covered
+        // by its separate playback probe.
+        let af_command_arguments = unsafe { handle.af_command_argument_count(&sys) };
+        assert_eq!(
+            af_command_arguments,
+            Some(4),
+            "vendored mpv must expose af-command's separate lavfi target argument"
+        );
+
         // ABI sanity: manifest major must equal the live library's client API
         // major.
         let expected = manifest_abi_major();

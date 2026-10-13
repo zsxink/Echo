@@ -20,7 +20,7 @@ import { useEffect, useState } from "react";
 
 import { subscribe } from "../bridge";
 import type { UnlistenFn } from "../bridge";
-import type { UiPlayerSnapshot } from "../ipc/ipc-types.generated";
+import type { UiPlayerSnapshot, EffectsSnapshotDto } from "../ipc/ipc-types.generated";
 import { ExternalStore, useExternalStore } from "../app/externalStore";
 
 // The event payload is an IPC DTO, so it belongs to the generated contract.
@@ -58,6 +58,8 @@ interface PlayerUiState {
   /** The queue panel is open or not (component-local, kept here for the
    *  overlay stack). */
   queueOpen: boolean;
+  effectsOpen: boolean;
+  effectsTab: "presets" | "equalizer";
   /** The immersive player is expanded or not (task 11.3, kept here so the
    *  overlay stack and the player bar share the same flag). */
   immersiveOpen: boolean;
@@ -69,6 +71,7 @@ interface PlayerUiState {
 
 interface PlayerStoreState {
   readonly snapshot: UiPlayerSnapshot;
+  readonly effects: EffectsSnapshotDto | null;
   readonly ui: PlayerUiState;
   readonly publishedAt: number;
 }
@@ -76,7 +79,15 @@ interface PlayerStoreState {
 class PlayerStore {
   private readonly state = new ExternalStore<PlayerStoreState>({
     snapshot: EMPTY_SNAPSHOT,
-    ui: { pending: null, queueOpen: false, immersiveOpen: false, focusOpen: false },
+    effects: null,
+    ui: {
+      pending: null,
+      queueOpen: false,
+      effectsOpen: false,
+      effectsTab: "presets",
+      immersiveOpen: false,
+      focusOpen: false,
+    },
     publishedAt: 0,
   });
 
@@ -90,11 +101,67 @@ class PlayerStore {
 
   /** Publish a snapshot received from the Desktop (via the bridge). */
   publish(snapshot: UiPlayerSnapshot): void {
+    if (snapshot.effects) this.publishEffects(snapshot.effects);
     this.state.update((current) => ({
       ...current,
       snapshot,
       publishedAt: performance.now(),
     }));
+  }
+
+  getEffects(): EffectsSnapshotDto | null {
+    return this.state.getSnapshot().effects;
+  }
+
+  /** Capture order protects metadata too; revisions/epochs support older desktops. */
+  publishEffects(effects: EffectsSnapshotDto): void {
+    this.state.update((current) => {
+      const previousEffects = current.effects;
+      const previous = previousEffects?.runtime;
+      const incoming = effects.runtime;
+      if (
+        previousEffects?.snapshotSequence !== undefined &&
+        effects.snapshotSequence !== undefined &&
+        effects.snapshotSequence <= previousEffects.snapshotSequence
+      )
+        return current;
+      if (
+        previous &&
+        (incoming.revision < previous.revision ||
+          (incoming.revision === previous.revision &&
+            incoming.playbackEpoch < previous.playbackEpoch))
+      )
+        return current;
+      // A command/query can finish after its application event. Accepted/Pending
+      // retains terminal audio facts for the same request, but its later saved
+      // metadata and persistence receipt must still reach the panel.
+      if (
+        previous &&
+        incoming.revision === previous.revision &&
+        incoming.playbackEpoch === previous.playbackEpoch &&
+        incoming.applied === "pending" &&
+        previous.applied !== "pending"
+      ) {
+        if (
+          previousEffects?.snapshotSequence === undefined ||
+          effects.snapshotSequence === undefined
+        )
+          return current;
+        return {
+          ...current,
+          effects: {
+            ...effects,
+            runtime: { ...previous, persistenceStatus: incoming.persistenceStatus },
+            responsePoints: previousEffects.responsePoints,
+            referenceResponse: previousEffects.referenceResponse,
+            safePreampDb: previousEffects.safePreampDb,
+            editableBands: previousEffects.editableBands,
+            responseRate: previousEffects.responseRate,
+          },
+        };
+      }
+      return { ...current, effects };
+    });
   }
 
   /** When the current snapshot arrived (for position interpolation). */
@@ -109,7 +176,15 @@ class PlayerStore {
   }
 
   setQueueOpen(open: boolean): void {
-    this.updateUi((ui) => ({ ...ui, queueOpen: open }));
+    this.updateUi((ui) => ({ ...ui, queueOpen: open, effectsOpen: open ? false : ui.effectsOpen }));
+  }
+
+  setEffectsOpen(open: boolean): void {
+    this.updateUi((ui) => ({ ...ui, effectsOpen: open, queueOpen: open ? false : ui.queueOpen }));
+  }
+
+  setEffectsTab(effectsTab: PlayerUiState["effectsTab"]): void {
+    this.updateUi((ui) => ({ ...ui, effectsTab }));
   }
 
   /** Open or close the immersive player (task 11.3). Closing it also drops
@@ -150,6 +225,10 @@ export function usePlayerSnapshot(): UiPlayerSnapshot {
 /** A hook for the UI-only player state (queue panel open, pending action). */
 export function usePlayerUi(): PlayerUiState {
   return useExternalStore(playerStore.stateForRender(), (state) => state.ui);
+}
+
+export function useAudioEffects(): EffectsSnapshotDto | null {
+  return useExternalStore(playerStore.stateForRender(), (state) => state.effects);
 }
 
 /** The event the Rust runtime publishes each snapshot (matches `PLAYER_SNAPSHOT_EVENT`). */

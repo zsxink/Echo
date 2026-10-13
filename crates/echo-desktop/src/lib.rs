@@ -12,6 +12,8 @@
 // store holds; keep the prose readable over chasing a 100-char first line.
 #![allow(clippy::too_long_first_doc_paragraph)]
 
+pub mod effects;
+pub mod effects_service;
 pub mod ipc;
 pub mod platform;
 pub mod player;

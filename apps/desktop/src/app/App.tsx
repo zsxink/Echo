@@ -54,6 +54,7 @@ import { ImmersivePlayer } from "../features/player/ImmersivePlayer";
 import { QueuePanel } from "../features/player/QueuePanel";
 import { Icon } from "./Icon";
 import { ShellNavProvider } from "./shell";
+import { EffectsPanel } from "../features/player";
 import { ToastView } from "./ToastView";
 import { useAppShell } from "./useAppShell";
 
@@ -350,6 +351,7 @@ export function App() {
         <ImmersivePlayer />
 
         <QueuePanel triggerRef={queueTriggerRef} />
+        <EffectsPanel />
 
         <PlayerBar queueTriggerRef={queueTriggerRef} />
 

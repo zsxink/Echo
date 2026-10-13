@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-// Injection proofs for the normalize-os-file-open-paths boundary and the new
-// scenario-command governance gate.
+// Injection proofs for the normalize-os-file-open-paths boundary, the new
+// scenario-command governance gate, and the audio-effects evidence discipline
+// (its retraction of the withdrawn runtime-parameter conclusion).
 //
 // Kept out of `injection-suite.mjs` because that file sits right under the
 // 1000-line scale ceiling; the suite spreads this cluster into ENTRIES.
 //
-// Both violations are injected by rewriting exactly one repository file
+// Every violation is injected by rewriting exactly one repository file
 // (through the suite's `replaceIn`/`createProbe` helpers) and restored by hash.
 
 /**
@@ -63,6 +64,70 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
             'process.stdout.write("ok probe\\n");',
             "",
           ].join("\n"),
+        );
+        return {};
+      },
+    },
+    {
+      id: "audio-effects-evidence/withdrawn-claim-reinstated",
+      guard: "native-gate.md reinstating the withdrawn \"runtime parameter changes are categorically ineffective\" conclusion (its PCM experiment used the wrong mpv label)",
+      check: ["node", ["scripts/verify/checks/task-audio-effects-evidence.mjs"]],
+      expect: /native-gate\.md asserts runtime parameter changes are categorically ineffective/,
+      baseline: true,
+      inject() {
+        // Delete the retraction marker, leaving the claim on its own line — the
+        // exact edit that would resurrect the discredited conclusion. The row
+        // still carries AFX-9.5 and RUNTIME_PARAM, so only the retraction
+        // assertion can fire.
+        replaceIn(
+          join(ROOT, "openspec", "changes", "introduce-audio-effects-equalizer", "native-gate.md"),
+          "**也已撤回**：其判别实验使用了错误的 mpv label。",
+          "：其判别实验使用了错误的 mpv label。",
+        );
+        return {};
+      },
+    },
+    {
+      id: "audio-effects-dsp/normalization-enabled",
+      guard: "the installed EQ enabling numerator normalization while the response model assumes it is disabled",
+      check: ["node", ["scripts/verify/checks/audio-effects-dsp-math.mjs"]],
+      expect: /no longer contains "normalize=false"/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, "crates", "echo-desktop", "src", "player", "native_effects.rs"),
+          "mix=1:normalize=false:precision=f64",
+          "mix=1:normalize=true:precision=f64",
+        );
+        return {};
+      },
+    },
+    {
+      id: "audio-effects-dsp/undefined-width-returned-as-zero",
+      guard: "the independent bandwidth solver silently returning a finite width when the relative threshold has no edges",
+      check: ["node", ["scripts/verify/checks/audio-effects-dsp-selftest.mjs"]],
+      expect: /below-threshold width is undefined/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, "scripts", "verify", "checks", "audio-effects-dsp-reference.mjs"),
+          "if (Math.abs(gainDb) <= distanceDb || centerHz > 0.45 * sampleRate) return null;",
+          "if (Math.abs(gainDb) <= distanceDb || centerHz > 0.45 * sampleRate) return 0;",
+        );
+        return {};
+      },
+    },
+    {
+      id: "audio-effects-evidence/failed-command-labelled-confirmed",
+      guard: "a negative runtime command result labelled as a confirmed PCM change",
+      check: ["node", ["scripts/verify/checks/audio-effects-evidence-selftest.mjs"]],
+      expect: /AFX-9\.5 lacks consistent pre-EOF PCM measurements for equalizer/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, "openspec", "changes", "introduce-audio-effects-equalizer", "evidence", "macos-runtime-parameter-recheck-20261008.json"),
+          '"command_result": 0',
+          '"command_result": -12',
         );
         return {};
       },

@@ -114,6 +114,25 @@ for (const { id, command } of scenarioCommands()) {
   m = command.match(/^node scripts\/verify\/checks\/check-native-attestation\.mjs/);
   if (m) continue;
 
+  // Native audio-effect tools. These are the only admissible way to claim a
+  // filter actually changed the audio, because `af-command` returns rc=0 even
+  // when the parameter does not move. The path is pinned to
+  // `scripts/audio-effects/` and must name one of the known entry points, so
+  // widening this cannot be used to execute an arbitrary script.
+  m = command.match(
+    /^python3 (scripts\/audio-effects\/(probe|inspect-filter-runtime|generate_fixtures)\.py)(?:\s|$)/,
+  );
+  if (m) {
+    const p = resolve(ROOT, m[1]);
+    if (m[1].includes("..")) fail(`${id}: audio-effects path escapes scripts/audio-effects: ${m[1]}`);
+    else if (!existsSync(p)) fail(`${id}: audio-effects tool missing ${p}`);
+    else if (!/^python3 /.test(command) || command.includes("--help")) {
+      // Keep the surface explicit: no shell chaining after the tool.
+      if (/[;&|]/.test(command)) fail(`${id}: audio-effects command must not chain shell operators`);
+    }
+    continue;
+  }
+
   fail(`${id}: unrecognized command '${command}'`);
 }
 
