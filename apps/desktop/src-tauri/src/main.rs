@@ -762,7 +762,12 @@ fn main() {
                         .item(&quit)
                         .build()?;
 
+                    // Embed the tray-sized PNG directly rather than depending on
+                    // Windows' default window icon/ICO resource selection.
+                    let tray_icon = tauri::include_image!("icons/32x32.png");
                     TrayIconBuilder::with_id("echo-gate")
+                        .icon(tray_icon)
+                        .tooltip("Echo")
                         .menu(&menu)
                         // A hidden main window needs a direct, discoverable way back:
                         // clicking the platform status item is equivalent to choosing
