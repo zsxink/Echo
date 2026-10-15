@@ -102,6 +102,10 @@ impl RemoteApplyPort for PreparedRemoteApply<'_> {
 }
 
 impl LocalSyncQueuePort for ScopedLocalQueue<'_> {
+    fn advance_rejected_local_mutations(&self) -> Result<usize, echo_core::error::Error> {
+        self.database.advance_rejected_local_mutations()
+    }
+
     fn pending_local_mutations(
         &self,
         limit: usize,

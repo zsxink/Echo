@@ -65,6 +65,58 @@ fn local_queue_is_ordered_and_terminal_rejection_does_not_block_later_edits() {
 }
 
 #[test]
+fn terminal_rejections_repair_a_legacy_local_origin_cursor_gap() {
+    use crate::application::ports::DeviceIdProvider;
+
+    let (_directory, database, root) = database();
+    let song_id = SongId::new();
+    let song = Song::new(
+        song_id,
+        root,
+        RelativeMediaPath::new("artist/song.flac").unwrap(),
+        Revision::INITIAL,
+    );
+    SongRepository::upsert(&database, &song).unwrap();
+    SongRepository::set_favorite(&database, song_id, true).unwrap();
+    SongRepository::set_favorite(&database, song_id, false).unwrap();
+    let queued = database.pending_local_mutations(10).unwrap();
+    let device = database.current_device_id().to_string();
+    let rejected_id = queued[0].mutation_id.as_uuid().to_string();
+    let expected_id = rejected_id.clone();
+
+    database
+        .writer
+        .run(move |connection| {
+            connection
+                .execute(
+                    "UPDATE sync_mutations SET status='rejected',outcome_json='{}' WHERE origin_device_id=?1 AND mutation_id=?2",
+                    rusqlite::params![device, rejected_id],
+                )
+                .map_err(crate::infrastructure::sqlite::support::storage)?;
+            Ok(())
+        })
+        .unwrap();
+
+    assert_eq!(database.advance_rejected_local_mutations().unwrap(), 1);
+    assert_eq!(database.advance_rejected_local_mutations().unwrap(), 0);
+    let cursor: (i64, String) = database
+        .writer
+        .run(|connection| {
+            connection
+                .query_row(
+                    "SELECT origin_seq,last_mutation_id FROM sync_origin_cursors",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .map_err(crate::infrastructure::sqlite::support::storage)
+        })
+        .unwrap();
+    assert_eq!(cursor.0, 1);
+    assert_eq!(cursor.1, expected_id);
+    assert_eq!(database.pending_local_mutations(10).unwrap().len(), 2);
+}
+
+#[test]
 fn replica_checkpoint_loads_the_persisted_host_cursor_and_genesis() {
     let (_directory, database, root) = database();
     let host = crate::domain::sync::DeviceId::new();

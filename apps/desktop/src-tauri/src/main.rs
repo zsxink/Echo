@@ -300,6 +300,7 @@ fn wire_composition(
         Ok(dir) => std::path::PathBuf::from(dir),
         Err(_) => app.path().app_data_dir()?,
     };
+    echo_desktop::platform::sync_security::configure_local_vault(app_data.join("lan-sync-vault"))?;
     let db_path = app_data.join("echo.sqlite");
     let cover_dir = app_data.join("covers");
     let routed =

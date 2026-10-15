@@ -197,6 +197,9 @@ impl NativeSyncProvisioner {
     }
 
     fn confirm_local(&self, binding: SyncBinding) -> Result<(), SyncRuntimeError> {
+        self.database
+            .advance_rejected_local_mutations()
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
         let configuration = self
             .database
             .current_sync_configuration()

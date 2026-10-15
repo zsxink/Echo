@@ -62,6 +62,13 @@ fn initial_baseline_preserves_chain_current_state_and_undoable_song() {
         stats["by_device"][database.current_device_id().to_string()],
         23
     );
+    assert_eq!(stats["song_uuid"], imported.id().to_string());
+    assert_eq!(
+        stats["updated_by_device_id"],
+        database.current_device_id().to_string()
+    );
+    assert_eq!(stats["revision"], 0);
+    assert_eq!(stats["hlc"]["wall_secs"], 0);
     let playlist_payload = &baseline[3].payload;
     assert_eq!(
         playlist_payload["members"][0]["song_uuid"],

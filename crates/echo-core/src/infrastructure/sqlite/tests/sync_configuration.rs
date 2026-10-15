@@ -65,6 +65,36 @@ fn replica_configuration_has_no_host_credentials_and_authorized_handles_revoke_c
 }
 
 #[test]
+fn explicit_sync_rebuild_clears_lan_lineage_but_keeps_library_and_device_state() {
+    let (_directory, database, root) = database();
+    let binding = sync_binding();
+    database.bind_sync_library(binding, true, root).unwrap();
+    let peer = DeviceId::new();
+    database
+        .authorize_sync_peer(binding, peer, "old peer".into(), "vault-old".into())
+        .unwrap();
+
+    database.reset_lan_sync_for_rebuild().unwrap();
+
+    assert!(database.current_sync_configuration().unwrap().is_none());
+    assert!(database.authorized_sync_peer_handles().unwrap().is_empty());
+    let root_uuid = root.to_string();
+    let root_still_exists: bool = database
+        .writer
+        .run(move |connection| {
+            connection
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM library_roots WHERE uuid=?1)",
+                    [root_uuid],
+                    |row| row.get(0),
+                )
+                .map_err(crate::infrastructure::sqlite::support::storage)
+        })
+        .unwrap();
+    assert!(root_still_exists);
+}
+
+#[test]
 fn invalid_configuration_role_is_rejected_instead_of_defaulting_to_a_role() {
     let (_directory, database, root) = database();
     database

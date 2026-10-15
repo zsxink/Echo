@@ -19,6 +19,66 @@ use super::SqliteDatabase;
 const MAX_BATCH: usize = 512;
 
 impl LocalSyncQueuePort for SqliteDatabase {
+    fn advance_rejected_local_mutations(&self) -> Result<usize, Error> {
+        self.writer.run(|connection| {
+            let tx = connection
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                .map_err(storage)?;
+            let local_device: String = tx
+                .query_row(
+                    "SELECT value FROM device_state WHERE key='device_id'",
+                    [],
+                    |row| row.get(0),
+                )
+                .map_err(storage)?;
+            let mut cursor: Option<(i64, Option<String>)> = tx
+                .query_row(
+                    "SELECT origin_seq,last_mutation_id FROM sync_origin_cursors WHERE origin_device_id=?1",
+                    params![local_device],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()
+                .map_err(storage)?;
+            let mut statement = tx
+                .prepare(
+                    "SELECT mutation_id,origin_seq,previous_mutation_id FROM sync_mutations WHERE origin_device_id=?1 AND status='rejected' ORDER BY origin_seq",
+                )
+                .map_err(storage)?;
+            let rejected = statement
+                .query_map(params![local_device], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                })
+                .map_err(storage)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(storage)?;
+            drop(statement);
+
+            let mut advanced = 0;
+            for (mutation_id, sequence, predecessor) in rejected {
+                let expected_sequence = cursor
+                    .as_ref()
+                    .map_or(1, |(sequence, _)| sequence.saturating_add(1));
+                let expected_predecessor = cursor.as_ref().and_then(|(_, id)| id.as_deref());
+                if sequence != expected_sequence || predecessor.as_deref() != expected_predecessor {
+                    continue;
+                }
+                tx.execute(
+                    "INSERT INTO sync_origin_cursors(origin_device_id,origin_seq,last_mutation_id) VALUES(?1,?2,?3) ON CONFLICT(origin_device_id) DO UPDATE SET origin_seq=excluded.origin_seq,last_mutation_id=excluded.last_mutation_id",
+                    params![local_device, sequence, mutation_id],
+                )
+                .map_err(storage)?;
+                cursor = Some((sequence, Some(mutation_id)));
+                advanced += 1;
+            }
+            tx.commit().map_err(storage)?;
+            Ok(advanced)
+        })
+    }
+
     fn pending_local_mutations(&self, limit: usize) -> Result<Vec<MutationCandidate>, Error> {
         if !(1..=MAX_BATCH).contains(&limit) {
             return Err(Error::validation(
@@ -129,21 +189,52 @@ impl LocalSyncQueuePort for SqliteDatabase {
             ));
         }
         self.writer.run(move |connection| {
-            let local_device: String = connection
+            let tx = connection
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                .map_err(storage)?;
+            let local_device: String = tx
                 .query_row(
                     "SELECT value FROM device_state WHERE key='device_id'",
                     [],
                     |row| row.get(0),
                 )
                 .map_err(storage)?;
-            let changed = connection
+            let (origin_seq, previous_mutation_id): (i64, Option<String>) = tx
+                .query_row(
+                    "SELECT origin_seq,previous_mutation_id FROM sync_mutations WHERE origin_device_id=?1 AND mutation_id=?2 AND status='pending'",
+                    params![local_device, mutation_id.as_uuid().to_string()],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .map_err(storage)?;
+            let changed = tx
                 .execute(
                     "UPDATE sync_mutations SET status='rejected', outcome_json=?3 WHERE origin_device_id=?1 AND mutation_id=?2 AND status='pending'",
                     params![local_device, mutation_id.as_uuid().to_string(), outcome_json],
                 )
                 .map_err(storage)?;
             if changed == 1 {
-                Ok(())
+                let cursor: Option<(i64, Option<String>)> = tx
+                    .query_row(
+                        "SELECT origin_seq,last_mutation_id FROM sync_origin_cursors WHERE origin_device_id=?1",
+                        params![local_device],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .optional()
+                    .map_err(storage)?;
+                let expected_sequence = cursor
+                    .as_ref()
+                    .map_or(1, |(sequence, _)| sequence.saturating_add(1));
+                if origin_seq == expected_sequence
+                    && previous_mutation_id.as_deref()
+                        == cursor.as_ref().and_then(|(_, id)| id.as_deref())
+                {
+                    tx.execute(
+                        "INSERT INTO sync_origin_cursors(origin_device_id,origin_seq,last_mutation_id) VALUES(?1,?2,?3) ON CONFLICT(origin_device_id) DO UPDATE SET origin_seq=excluded.origin_seq,last_mutation_id=excluded.last_mutation_id",
+                        params![local_device, origin_seq, mutation_id.as_uuid().to_string()],
+                    )
+                    .map_err(storage)?;
+                }
+                tx.commit().map_err(storage)
             } else {
                 Err(Error::conflict("local mutation is missing or already terminal"))
             }

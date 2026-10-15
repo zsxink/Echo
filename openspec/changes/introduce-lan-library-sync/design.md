@@ -138,7 +138,7 @@ mutation 封套包含 protocol_version、library_id、authority_id、epoch、mut
 
 不提供不验证身份的明文短码或通用 `accept invalid certs` 模式。手动地址也需邀请信任材料。首次握手与后续连接都验证 pin，证书变更失败并要求重新配对；IP 变化可更新地址但不能替换可信身份。
 
-首版使用独立 bearer 凭据 + TLS pin 而非 mTLS，以减少证书签发和移动端接入复杂度。密钥/凭据在平台安全存储（Keychain、Windows Credential Manager、Linux Secret Service）保存，Linux 安全存储不可用时明确拒绝持久配对；不退回明文配置。邀请仅临时内存、审批后失效；日志/WebView 状态不返回 bearer/私钥。
+首版使用独立 bearer 凭据 + TLS pin 而非 mTLS，以减少证书签发和移动端接入复杂度。密钥/凭据保存在 Echo 应用数据目录下的独立 vault；Unix 使用仅当前账户可读写的目录/文件权限，Windows 使用当前用户的应用数据目录 ACL。vault 与曲库数据库分离，不依赖 Apple 账号或系统钥匙串授权弹窗。邀请仅临时内存、审批后失效；日志/WebView 状态不返回 bearer/私钥。
 
 撤销设备立即取消该设备会话并拒绝未来请求；不会擦除其已经下载的本地副本。已授权从设备具备删除全库的业务能力，因此本地删除确认文案必须说明跨端传播；主设备对异常请求、超大批次、非法资源/路径和跨库访问进行边界验证。
 

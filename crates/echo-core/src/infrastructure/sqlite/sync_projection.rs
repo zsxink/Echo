@@ -6,6 +6,8 @@
 use rusqlite::{params, Connection};
 use serde_json::Value;
 
+use crate::domain::ids::Revision;
+use crate::domain::library::{DeviceId as LibraryDeviceId, HybridLogicalClock, PlayStatsRecord};
 use crate::domain::text::{normalized_key, playlist_name_key};
 use crate::error::Error;
 
@@ -288,7 +290,32 @@ pub(super) fn confirmed_play_stats_payload(
         .into_iter()
         .map(|(device, count)| (device, Value::from(u64::try_from(count).unwrap_or(0))))
         .collect();
-    Ok(serde_json::json!({"song_uuid":song_uuid,"by_device":by_device}))
+    let local_device: String = tx
+        .query_row(
+            "SELECT value FROM device_state WHERE key='device_id'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    let local_device = uuid::Uuid::parse_str(&local_device).map_err(storage)?;
+    let by_device = by_device
+        .into_iter()
+        .map(|(device, count)| {
+            let device = uuid::Uuid::parse_str(&device).map_err(storage)?;
+            let count = count.as_u64().ok_or_else(|| Error::InvariantViolation {
+                why: "play-count projection produced a non-integer bucket".to_owned(),
+            })?;
+            Ok((device, count))
+        })
+        .collect::<Result<_, Error>>()?;
+    serde_json::to_value(PlayStatsRecord {
+        song_uuid: uuid::Uuid::parse_str(song_uuid).map_err(storage)?,
+        revision: Revision::INITIAL,
+        updated_by_device_id: LibraryDeviceId::from_uuid(local_device),
+        hlc: HybridLogicalClock::new(0, 0),
+        by_device,
+    })
+    .map_err(storage)
 }
 
 fn project_song(
@@ -717,26 +744,33 @@ mod tests {
     #[test]
     fn play_stats_before_song_merge_into_a_durable_complete_confirmed_base() {
         let mut connection = connection();
+        let song = "00000000-0000-0000-0000-000000000010";
+        connection
+            .execute_batch(
+                "CREATE TABLE device_state(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+                 INSERT INTO device_state(key,value) VALUES('device_id','00000000-0000-0000-0000-000000000003');",
+            )
+            .expect("local device schema");
         let tx = connection.transaction().expect("transaction");
-        tx.execute("DELETE FROM songs WHERE uuid='song'", [])
+        tx.execute("DELETE FROM songs WHERE uuid=?1", [song])
             .expect("song not yet received");
         project_confirmed_song_state(
             &tx,
             "play-stats",
-            "song",
-            &serde_json::json!({"song_uuid":"song","by_device":{"00000000-0000-0000-0000-000000000001":2}}),
+            song,
+            &serde_json::json!({"song_uuid":song,"by_device":{"00000000-0000-0000-0000-000000000001":2}}),
             None,
         )
         .expect("first device bucket");
         project_confirmed_song_state(
             &tx,
             "play-stats",
-            "song",
-            &serde_json::json!({"song_uuid":"song","by_device":{"00000000-0000-0000-0000-000000000002":3}}),
+            song,
+            &serde_json::json!({"song_uuid":song,"by_device":{"00000000-0000-0000-0000-000000000002":3}}),
             None,
         )
         .expect("second device bucket");
-        let base = confirmed_play_stats_payload(&tx, "song").expect("merged base");
+        let base = confirmed_play_stats_payload(&tx, song).expect("merged base");
         assert_eq!(base["by_device"]["00000000-0000-0000-0000-000000000001"], 2);
         assert_eq!(base["by_device"]["00000000-0000-0000-0000-000000000002"], 3);
     }

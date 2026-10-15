@@ -19,6 +19,50 @@ use super::support::{now_ms, storage};
 use super::SqliteDatabase;
 
 impl SqliteDatabase {
+    /// Clear LAN sync lineage while preserving library rows and media metadata.
+    /// Intended only for an explicit local rebuild after secure credentials are
+    /// lost; the next host start creates a new authority and initial baseline.
+    pub fn reset_lan_sync_for_rebuild(&self) -> Result<(), Error> {
+        self.writer.run(|connection| {
+            let tx = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(storage)?;
+            for table in [
+                "sync_remote_resource_locations",
+                "sync_remote_publication_claims",
+                "sync_remote_publications",
+                "sync_snapshot_pages",
+                "sync_snapshot_resource_refs",
+                "sync_snapshot_records",
+                "sync_snapshot_sessions",
+                "sync_replica_snapshot_pages",
+                "sync_replica_snapshot_records",
+                "sync_replica_snapshot_sessions",
+                "sync_host_baselines",
+                "sync_local_delete_intents",
+                "sync_transfers",
+                "sync_peer_cursors",
+                "sync_conflicts",
+                "sync_member_aliases",
+                "sync_song_aliases",
+                "sync_object_versions",
+                "sync_commits",
+                "sync_inbox",
+                "sync_mutations",
+                "sync_outbox",
+                "sync_local_highwater",
+                "sync_local_origin_cursors",
+                "sync_origin_cursors",
+                "sync_peers",
+                "sync_binding",
+            ] {
+                tx.execute_batch(&format!("DELETE FROM {table};"))
+                    .map_err(storage)?;
+            }
+            tx.commit().map_err(storage)
+        })
+    }
+
     /// Establish the library identity and authority before enabling LAN sync.
     /// Rebinding an existing database to a different identity is rejected;
     /// explicit recovery must create a new epoch through a separate workflow.

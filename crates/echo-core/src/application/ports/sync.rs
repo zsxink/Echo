@@ -187,6 +187,10 @@ pub trait HostPeerAuthorizationPort: Send + Sync {
 /// terminal queue outcomes; they remain in history but no longer block the
 /// device's later origin-chain entries.
 pub trait LocalSyncQueuePort: Send + Sync {
+    /// Advance the local origin cursor over terminally rejected mutations whose
+    /// predecessor chain is otherwise contiguous.
+    fn advance_rejected_local_mutations(&self) -> Result<usize, Error>;
+
     fn pending_local_mutations(&self, limit: usize) -> Result<Vec<MutationCandidate>, Error>;
 
     fn reject_local_mutation(
