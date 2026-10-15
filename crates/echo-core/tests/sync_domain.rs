@@ -188,6 +188,30 @@ fn delete_intent_finalizes_once_and_retries_same_stable_event() {
 }
 
 #[test]
+fn reopened_delete_intent_keeps_its_original_deadline_and_final_event_identity() {
+    let object = ObjectKey::Song(SongId::new());
+    let intent = LocalDeleteIntent::begin(object, 40_000).unwrap();
+    let final_id = intent.final_mutation_id;
+    let encoded = serde_json::to_vec(&intent).unwrap();
+    let mut reopened: LocalDeleteIntent = serde_json::from_slice(&encoded).unwrap();
+
+    assert_eq!(
+        reopened.resolve(DeleteIntentAction::DeadlineReached, 49_999),
+        Ok(DeleteIntentOutcome::Pending)
+    );
+    let finalized = reopened
+        .resolve(DeleteIntentAction::DeadlineReached, 50_000)
+        .unwrap();
+    assert_eq!(
+        finalized,
+        DeleteIntentOutcome::EmitFinalTombstone {
+            mutation_id: final_id,
+            object,
+        }
+    );
+}
+
+#[test]
 fn remote_tombstone_supersedes_an_open_local_delete_intent() {
     let mut intent = LocalDeleteIntent::begin(ObjectKey::Song(SongId::new()), 50).unwrap();
     assert_eq!(
