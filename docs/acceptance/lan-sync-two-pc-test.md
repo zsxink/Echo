@@ -1,6 +1,6 @@
 # 两台电脑局域网同步冒烟验证
 
-本次双机验证使用 0.3.0。GitHub Actions 的 `Release` workflow 在 `workflow_dispatch` 时留空 `tag`，会构建三个平台但不会发布 GitHub Release。运行成功后，在 Actions 运行详情的 Artifacts 下载 `echo-windows` 和 `echo-macos`；Windows 安装包位于 `nsis/`，Mac 主机 DMG 位于 `dmg/`。构建提交必须包含本次同步实现和 0.3.0 版本号。
+本次双机验证使用 0.3.0。已由 [GitHub Actions Release run 38702819063](https://github.com/zsxink/Echo/actions/runs/38702819063) 从提交 `6a1bbe9` 构建成功；三个平台 job 均通过，`tag` 留空，因此没有发布 GitHub Release。到该 run 的 Artifacts 下载 `echo-windows` 和 `echo-macos`；Windows 安装包位于 `nsis/`，Mac 主机 DMG 位于 `dmg/`。Windows 安装器 SHA256：`3aca5f6178a875db50103f034526a0adc169c6d1ec9677e4b240b4139de53045`。Mac DMG SHA256：`5917ef0f01d75dfedcb91b71ef2ddcc2989b9fd0f6d16849ab0a2683032680be`。
 
 ## 构建并安装 Windows 从机
 

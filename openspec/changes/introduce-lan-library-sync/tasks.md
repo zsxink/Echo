@@ -4,7 +4,7 @@
 
 - [x] 1.1 将 PRODUCT/DESIGN/CODE_STANDARDS 的二期连接器条款统一到局域网优先，记录单主、全库、确认序LWW、非空目录与恢复边界；验证文档与 `lan-library-sync` 所有 Requirement 一致，执行 `openspec validate introduce-lan-library-sync --strict`。
 - [x] 1.2 盘点每种共享对象和资源的本地写入口、portable schema、outbox 与 journal 覆盖，包括播放统计/封面/侧车、成员追加顺序和删除/撤销；区分本机展示排序偏好与共享顺序，登记 PendingDelete 临时墓碑的迁移策略；输出证据清单与 fixture，验证“共享内容边界”“历史库启用同步”没有仅存于SQLite的遗漏。
-- [ ] 1.3 建立 echo-sync crate 和 client/server/discovery feature 边界，验证候选依赖 MSRV、许可证及三平台兼容；锁定依赖并执行 `cargo check --workspace --all-targets`、`cargo deny check`，记录具体版本与选型结果。RustSec 修复后 workspace MSRV 为 1.88。
+- [x] 1.3 建立 echo-sync crate 和 client/server/discovery feature 边界，验证候选依赖 MSRV、许可证及三平台兼容；锁定依赖并执行 `cargo check --workspace --all-targets`、`cargo deny check`，记录具体版本与选型结果。RustSec 修复后 workspace MSRV 为 1.88。macOS/Windows/Linux Release workflow 均从提交 `6a1bbe9` 构建成功，应用版本为 0.3.0。
 - [x] 1.4 固定 mutation/commit/snapshot/resource DTO、typed song/member alias、检查点/日志摘要规范编码、限制值、身份和协议版本，生成兼容fixture和协议文档；测试摘要跨端一致、未知可选字段、未知必需种类、超限载荷及不兼容拒写，执行 `cargo test -p echo-core`。
 
 ## 2. 领域裁决与状态机
@@ -61,7 +61,7 @@
 
 ## 8. 故障集成、审查与发布门槛
 
-- [ ] 8.1 建立并登记所有新/修改Scenario的验证映射及CI门禁，更新crate架构覆盖、模块规模/端口限制与IPC漂移检查；执行 `pnpm verify:self-test` 和 `pnpm verify:governance`，没有未登记或伪通过场景。
+- [x] 8.1 建立并登记所有新/修改Scenario的验证映射及CI门禁，更新crate架构覆盖、模块规模/端口限制与IPC漂移检查；执行 `pnpm verify:self-test` 和 `pnpm verify:governance`，没有未登记或伪通过场景。场景对账 428/428，门禁注入证明 31/31。
 - [ ] 8.2 执行 `cargo fmt --all --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings`、`cargo test --workspace`、`cargo build --workspace`、`cargo deny check` 与前端完整format/lint/typecheck/test/build；记录结果，独立审查事务、凭据、文件与公共API兼容边界。
 - [ ] 8.3 执行主+两从真实设备矩阵：双向导入/修改/收藏/歌单/统计、断网编辑、并发冲突、删除1秒撤销/窗口内重启/到期ACK丢失、重复成员去重后删除/重加、旧备份回退/摘要分叉、进程kill/journal恢复；检查UUID、最终对象/资源摘要与无回声，留存可重复步骤与证据。
 - [ ] 8.4 使用macOS/Windows/Linux实际安装包验证发现/手动连接/配对/撤销、局域网权限/防火墙、睡眠与网卡切换、大文件中断/磁盘满、占用文件和后台退出；测大库内存/响应与传输速度并记录，不以模拟测试替代原生证据。

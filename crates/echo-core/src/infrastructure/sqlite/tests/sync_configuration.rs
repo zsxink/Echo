@@ -85,3 +85,94 @@ fn invalid_configuration_role_is_rejected_instead_of_defaulting_to_a_role() {
         Err(Error::InvariantViolation { .. })
     ));
 }
+
+#[test]
+fn malformed_configuration_identity_root_and_published_digest_fail_closed() {
+    use crate::application::ports::HostCommitLedgerPort;
+
+    let (_directory, db, root) = database();
+    let binding = sync_binding();
+    db.bind_sync_library(binding, true, root).unwrap();
+    db
+        .writer
+        .run(|connection| {
+            connection
+                .execute_batch(
+                    "PRAGMA ignore_check_constraints=ON; UPDATE sync_binding SET library_id='invalid' WHERE singleton=1; PRAGMA ignore_check_constraints=OFF;",
+                )
+                .map_err(crate::infrastructure::sqlite::support::storage)
+        })
+        .unwrap();
+    assert!(matches!(
+        db.current_sync_configuration(),
+        Err(Error::InvariantViolation { .. })
+    ));
+
+    let (_directory, db, root) = database();
+    let binding = sync_binding();
+    db.bind_sync_library(binding, true, root).unwrap();
+    db.writer
+        .run(|connection| {
+            connection
+                .execute(
+                    "UPDATE sync_binding SET local_root_uuid=NULL WHERE singleton=1",
+                    [],
+                )
+                .map_err(crate::infrastructure::sqlite::support::storage)
+        })
+        .unwrap();
+    assert!(matches!(
+        db.current_sync_configuration(),
+        Err(Error::Conflict { .. })
+    ));
+
+    let (_directory, db, root) = database();
+    let binding = sync_binding();
+    db.bind_sync_library(binding, true, root).unwrap();
+    let song = crate::domain::ids::SongId::new();
+    let candidate = crate::domain::sync::MutationCandidate {
+        resource_refs: Vec::new(),
+        mutation_id: crate::domain::sync::MutationId::new(),
+        origin_device_id: DeviceId::from_uuid(db.current_device_id().as_uuid()),
+        origin_seq: 1,
+        previous_mutation_id: None,
+        object: crate::domain::sync::ObjectKey::Song(song),
+        base_object_version: None,
+        payload: serde_json::json!({
+            "song_uuid": song.to_string(),
+            "relative_path": "published.flac",
+            "title": "published",
+            "artist": null,
+            "album": null,
+            "blake3_hash": null,
+            "file_size": null,
+            "duration_ms": null,
+            "format": null,
+            "bitrate_bps": null,
+            "sample_rate_hz": null,
+            "channels": null,
+            "bits_per_sample": null,
+            "added_at": 1,
+        }),
+    };
+    let checkpoint = db
+        .stage_confirmation(binding, &candidate)
+        .unwrap()
+        .checkpoint
+        .unwrap();
+    db.mark_published(checkpoint).unwrap();
+    db
+        .writer
+        .run(|connection| {
+            connection
+                .execute_batch(
+                    "PRAGMA ignore_check_constraints=ON; UPDATE sync_commits SET commit_digest=x'01' WHERE publication_state='published'; PRAGMA ignore_check_constraints=OFF;",
+                )
+                .map_err(crate::infrastructure::sqlite::support::storage)
+        })
+        .unwrap();
+    assert!(matches!(
+        db.latest_published_sync_checkpoint(binding),
+        Err(Error::InvariantViolation { .. })
+    ));
+}

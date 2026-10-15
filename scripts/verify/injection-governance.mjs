@@ -80,7 +80,7 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
         // still carries AFX-9.5 and RUNTIME_PARAM, so only the retraction
         // assertion can fire.
         replaceIn(
-          join(ROOT, "openspec", "changes", "introduce-audio-effects-equalizer", "native-gate.md"),
+          join(ROOT, "openspec", "changes", "archive", "2026-10-13-introduce-audio-effects-equalizer", "native-gate.md"),
           "**也已撤回**：其判别实验使用了错误的 mpv label。",
           "：其判别实验使用了错误的 mpv label。",
         );
@@ -125,7 +125,7 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       baseline: true,
       inject() {
         replaceIn(
-          join(ROOT, "openspec", "changes", "introduce-audio-effects-equalizer", "evidence", "macos-runtime-parameter-recheck-20261008.json"),
+          join(ROOT, "openspec", "changes", "archive", "2026-10-13-introduce-audio-effects-equalizer", "evidence", "macos-runtime-parameter-recheck-20261008.json"),
           '"command_result": 0',
           '"command_result": -12',
         );

@@ -20,7 +20,7 @@
 | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | 通过 |
 | `cargo test --workspace --locked` | 通过，所有单元、集成、架构、协议和文档测试目标均无失败；Core 新增配置、资源发布、重新配对和空库注册覆盖 |
 | `cargo build --workspace` | 通过 |
-| `cargo llvm-cov -p echo-core --all-features --ignore-filename-regex application/testing --fail-under-lines 90` | **失败**：当前行覆盖率 87.63%，门槛 90%；`remote_resources.rs`、`sync_configuration.rs` 已有测试，仍需补齐 Core 其余薄弱模块 |
+| `cargo llvm-cov -p echo-core --all-features --ignore-filename-regex application/testing --fail-under-lines 90` | 通过：Core 行覆盖率 90.01%，达到 90% 门槛 |
 | `cargo deny check` | 通过：advisories、bans、licenses、sources 均通过。锁文件已升级 quick-xml 0.41.0 / plist 1.10.0 / time 0.3.47，workspace MSRV 明确提升到 Rust 1.88 |
 | `pnpm --filter @echo/desktop format:check` | 通过 |
 | `pnpm --filter @echo/desktop lint` | 通过，0 error、9 warnings |
@@ -28,16 +28,15 @@
 | `pnpm --filter @echo/desktop test` | 通过：37 files、341 tests |
 | `pnpm --filter @echo/desktop build` | 通过 |
 | `pnpm verify:self-test` | 通过 |
-| `pnpm verify:governance` | **未通过 coverage gate**。场景映射、scale、架构、命令验证、构建纯度及其余先行检查通过；失败原因为上述 Core 90% 覆盖率门槛。运行时文件已拆分，超过 1000 行的 scale 问题已修复 |
+| `pnpm verify:governance` | 通过：场景对账 428/428、验证清单 95 项、31/31 注入证明、Core 覆盖率 90.01%、scale/架构/IPC 漂移门禁通过。另修复音效归档后检查脚本仍引用旧 OpenSpec 路径的问题 |
 | `openspec validate introduce-lan-library-sync --strict` | 通过 |
 | `openspec validate --all --strict` | 通过：20 项 |
-| 两台电脑验证准备 | 历史 run [38677948966](https://github.com/zsxink/Echo/actions/runs/38677948966) 的 0.3.0 artifacts 来自旧提交，不能作为当前验证包。当前分支已推送至 `6a1bbe9`，对应的 Release workflow 正在运行；待三平台成功后再核对并记录最新 Windows 安装器与 Mac DMG 校验和。设备间网络验证仍待执行 |
+| 两台电脑验证准备 | Release run [38702819063](https://github.com/zsxink/Echo/actions/runs/38702819063) 从提交 `6a1bbe9` 为 0.3.0 构建成功；macOS/Windows/Linux jobs 均通过，tag 留空没有发布 Release。Windows 安装器 SHA256 `3aca5f6178a875db50103f034526a0adc169c6d1ec9677e4b240b4139de53045`、Mac DMG SHA256 `5917ef0f01d75dfedcb91b71ef2ddcc2989b9fd0f6d16849ab0a2683032680be` 与 Actions 清单一致。设备间网络验证仍待执行 |
 
 ## 尚未完成的验收
 
-1. Core 行覆盖率需达到 90%，当前为 87.63%；多个模块仍有未覆盖分支。
-2. 主设备加两从设备真实网络矩阵未在本机执行；包括双向变更、断网编辑、并发、删除撤销/到期、账本分叉、强制退出和恢复。
-3. 安装包尚未签名；局域网权限/防火墙、睡眠/网卡切换、磁盘满、占用文件替换及大库性能未完成跨平台验证。
-4. 仍有多个 OpenSpec 功能与场景任务未完成，需继续实现并作独立审查后，才可同步 delta specs 和归档 change。
+1. 主设备加两从设备真实网络矩阵未在本机执行；包括双向变更、断网编辑、并发、删除撤销/到期、账本分叉、强制退出和恢复。
+2. 安装包尚未签名；局域网权限/防火墙、睡眠/网卡切换、磁盘满、占用文件替换及大库性能未完成跨平台验证。
+3. 多个 OpenSpec 功能与场景任务仍未完成；需要继续实现并作独立审查后，才可同步 delta specs 和归档 change。
 
 因此，本记录不把本地自动测试通过等同于发布门槛完成；tasks.md 中未满足的任务保持未勾选。

@@ -39,7 +39,7 @@ import { fileURLToPath } from "node:url";
 import { runtimeEvidenceProblems, taskIdProblems } from "./audio-effects-evidence-rules.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const CHANGE = "openspec/changes/introduce-audio-effects-equalizer";
+const CHANGE = "openspec/changes/archive/2026-10-13-introduce-audio-effects-equalizer";
 const failures = [];
 const notes = [];
 

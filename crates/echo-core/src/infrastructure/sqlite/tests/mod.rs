@@ -21,6 +21,7 @@ include!("songs.rs");
 include!("performance.rs");
 mod sync_baseline;
 mod sync_configuration;
+mod sync_manifest_validation;
 mod sync_peer_lifecycle;
 mod sync_publication;
 mod sync_resource_publication;

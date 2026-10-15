@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runtimeEvidenceProblems, taskIdProblems } from "./audio-effects-evidence-rules.mjs";
 try {
-  const evidence = JSON.parse(readFileSync(new URL("../../../openspec/changes/introduce-audio-effects-equalizer/evidence/macos-runtime-parameter-recheck-20261008.json", import.meta.url), "utf8"));
+  const evidence = JSON.parse(readFileSync(new URL("../../../openspec/changes/archive/2026-10-13-introduce-audio-effects-equalizer/evidence/macos-runtime-parameter-recheck-20261008.json", import.meta.url), "utf8"));
   assert.deepEqual(runtimeEvidenceProblems(evidence), []);
   for (const mutation of [
     (copy) => { delete copy.checks[0].command_result; },
