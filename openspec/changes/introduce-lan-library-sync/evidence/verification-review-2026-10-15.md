@@ -31,14 +31,14 @@
 | `pnpm verify:governance` | **未通过 coverage gate**。场景映射、scale、架构、命令验证、构建纯度及其余先行检查通过；失败原因为上述 Core 90% 覆盖率门槛 |
 | `openspec validate introduce-lan-library-sync --strict` | 通过 |
 | `openspec validate --all --strict` | 通过：20 项 |
-| 两台电脑验证准备 | macOS arm64 DMG 构建并通过 `node scripts/release/style-dmg.mjs --verify`；Windows 本机构建源码 overlay 已生成。尚未获得 Windows 构建运行结果或双机网络实测 |
+| 两台电脑验证准备 | GitHub Actions run [38677948966](https://github.com/zsxink/Echo/actions/runs/38677948966) 在提交 `1f968dee149a2dbd9bac02862020adcb34ccc32f` 上三平台构建成功；Windows/macOS/Linux artifacts 已上传，Release 发布 job 因 tag 留空而跳过。Windows 0.3.0 安装器 SHA256 `1be7f1222ad34e88474febe41df75a3a9545c25b49bd5203a059e46c4a4948fd` 与 Actions 清单一致；Mac 0.3.0 DMG 已下载并通过布局校验。设备间网络验证仍待执行 |
 
 ## 尚未完成的验收
 
 1. Core 行覆盖率需达到 90%，当前为 85.94%。
 2. `cargo deny check` 的三个依赖安全公告需要在保持工作区 MSRV 要求的前提下解决或形成经审定的兼容升级方案。
 3. 主设备加两从设备真实网络矩阵未在本机执行；包括双向变更、断网编辑、并发、删除撤销/到期、账本分叉、强制退出和恢复。
-4. macOS/Windows/Linux 实际签名安装包、局域网权限/防火墙、睡眠/网卡切换、磁盘满、占用文件替换及大库性能未完成跨平台验证。
+4. 安装包尚未签名；局域网权限/防火墙、睡眠/网卡切换、磁盘满、占用文件替换及大库性能未完成跨平台验证。
 5. 需要完成最终独立审查和要求的场景/文档交付后，才可同步 delta specs 并归档 OpenSpec change。
 
 因此，本记录不把本地自动测试通过等同于发布门槛完成；tasks.md 中未满足的任务保持未勾选。
