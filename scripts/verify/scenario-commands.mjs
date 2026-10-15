@@ -99,10 +99,15 @@ export const COMMANDS = {
   "DAS-R08-S05": REACT("src/features/player/PlayerBar.test.tsx"), // 触发控件状态与可访问名称
   "DAS-R08-S06": REACT("src/app/overlays.test.tsx"), // 再次点击触发控件不触发外部动作
   "DAS-R08-S07": REACT("src/app/overlays.test.tsx"), // 仍可点击真正外部区域关闭
+  "DAS-R08-S08": REACT("src/features/player/EffectsPanel.test.tsx"), // 音效入口与队列互斥
+  "DAS-R08-S09": REACT("src/features/player/EffectsPanel.test.tsx"), // 音效标签尺寸一致
   "DAS-R09-S01": REACT("src/app/accessibility.test.tsx"), // （重编号自 DAS-R08-S01）
   "DAS-R09-S02": REACT("src/app/accessibility.test.tsx"), // （重编号自 DAS-R08-S02）
   "DAS-R09-S03": REACT("src/app/overlays.test.tsx"), // （重编号自 DAS-R08-S03）
   "DAS-R09-S04": REACT("src/app/overlays.test.tsx"), // 触发控件内部化不影响键盘路径
+  "DAS-R09-S05": REACT("src/features/player/EffectsPanel.test.tsx"), // 音效 Tab 离开
+  "DAS-R09-S06": REACT("src/features/player/EffectsPanel.test.tsx"), // 音效内模态对话框
+  "DAS-R09-S07": REACT("src/features/player/EffectsPanel.test.tsx"), // 外部点击关闭音效保留焦点
   "DAS-R10-S01": CHECK("13.8"), // offline/no-network, // （重编号自 DAS-R09-S01）
   "DAS-R10-S02": CHECK("13.8"),
   // wire-desktop-system-dialogs: real OS dialogs/reveal, WebView stays pathless., // （重编号自 DAS-R09-S02）

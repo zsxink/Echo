@@ -16,7 +16,12 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-import type { EqCurve, IpcCommandResultMap, IpcErrorDto } from "../ipc/ipc-types.generated";
+import type {
+  EqCurve,
+  IpcCommandResultMap,
+  IpcErrorDto,
+  SyncCommandArguments,
+} from "../ipc/ipc-types.generated";
 
 type EmptyArgs = [args?: Record<string, never>];
 
@@ -25,7 +30,7 @@ type EmptyArgs = [args?: Record<string, never>];
  * JavaScript/Tauri invocation shape. Return values deliberately do not: they
  * are projected from Rust's generated `IpcCommandResultMap` below.
  */
-interface BridgeCommandArguments {
+interface BridgeCommandArguments extends SyncCommandArguments {
   get_audio_effects_snapshot: EmptyArgs;
   select_audio_effects_preset: [args: { id: string }];
   edit_audio_equalizer: [args: { curve: EqCurve }];

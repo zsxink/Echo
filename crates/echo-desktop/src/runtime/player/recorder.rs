@@ -3,9 +3,11 @@
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use echo_core::application::portable_materialize::merge_play_stats;
-use echo_core::application::ports::{ControlPlanePort, DeviceIdProvider, LibraryRepository};
-use echo_core::domain::ids::PlaybackSessionId;
+use echo_core::application::portable_materialize::play_stats_record;
+use echo_core::application::ports::{
+    ControlPlanePort, DeviceIdProvider, LibraryRepository, SyncStateReader,
+};
+use echo_core::domain::ids::{PlaybackSessionId, Revision};
 use echo_core::domain::library::{HybridLogicalClock, PortableRecord, RecordKind};
 
 use super::PlaybackCoordinator;
@@ -71,11 +73,28 @@ impl CorePlaybackRecorder {
         let wall_secs = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |elapsed| elapsed.as_secs());
-        let record = PortableRecord::PlayStats(merge_play_stats(
-            existing_stats,
+        let mut by_device = self
+            .database
+            .device_play_counts(song)
+            .map_err(|error| error.to_string())?;
+        if let Some(existing) = existing_stats {
+            for (writer, count) in existing.by_device {
+                by_device
+                    .entry(writer)
+                    .and_modify(|stored| *stored = (*stored).max(count))
+                    .or_insert(count);
+            }
+        }
+        let revision = self
+            .database
+            .outbox_revision("play-stats", &song.to_string())
+            .map_err(|error| error.to_string())?;
+        let record = PortableRecord::PlayStats(play_stats_record(
             device,
             HybridLogicalClock::new(wall_secs, 0),
+            Revision::from_u64(revision.as_u64()),
             song,
+            by_device,
         ));
         self.control
             .write_record(root.id(), &record)

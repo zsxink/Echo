@@ -154,8 +154,8 @@ pub trait DeviceIdProvider: Send + Sync {
 /// stamped. Used by the materializers to build portable records that share the
 /// exact revision/HLC the `SQLite` row and outbox row carry.
 pub trait SyncStateReader: Send + Sync {
-    /// The object's current outbox revision (`MAX(revision)`), or `Revision(0)`
-    /// when nothing has been enqueued for it yet.
+    /// The object's durable local sync revision, or `Revision(0)` when it has
+    /// never changed. It remains available after outbox history is pruned.
     fn outbox_revision(&self, object_type: &str, object_uuid: &str) -> Result<Revision, Error>;
     /// The HLC last stamped into the object's canonical row (`songs`,
     /// `song_overrides`, `playlists`), or `None` before the first stamp.

@@ -56,6 +56,61 @@ export interface EffectsSnapshotDto {
   readonly recoveryReason?: string;
 }
 
+export type SyncRole = 'none' | 'host' | 'peer';
+export type SyncState = 'disabled' | 'hosting' | 'connected' | 'syncing' | 'paused' | 'failed';
+export interface SyncStatus {
+  readonly enabled: boolean;
+  readonly role: SyncRole;
+  readonly state: SyncState;
+  readonly sessionId: number;
+  readonly eventSequence: number;
+  readonly libraryId: string | null;
+  readonly address: string | null;
+  readonly lastError: string | null;
+}
+export interface DiscoveredHost {
+  readonly name: string;
+  readonly addresses: readonly string[];
+  readonly port: number;
+  readonly deviceId: string | null;
+  readonly protocolVersion: string | null;
+}
+export interface SyncInvitation {
+  /** Short-lived bearer invitation; held in component memory only. */
+  readonly invitation: string;
+  readonly expiresAtUnixMs: number;
+  readonly hostName: string;
+}
+export interface SyncPairingRequest {
+  readonly requestId: string;
+  readonly deviceName: string;
+  readonly deviceId: string;
+  readonly requestedAtUnixMs: number;
+}
+export interface SyncPairingReceipt {
+  readonly requestId: string;
+  /** One-time claim secret, held in component memory only. */
+  readonly receipt: string;
+  readonly expiresAtUnixMs: number;
+}
+export interface SyncCommandArguments {
+  readonly sync_status: [args?: Record<string, never>];
+  readonly host_start: [args: { address: string }];
+  readonly host_stop: [args?: Record<string, never>];
+  readonly sync_peer_start: [args?: Record<string, never>];
+  readonly sync_pause: [args?: Record<string, never>];
+  readonly sync_resume: [args?: Record<string, never>];
+  readonly sync_now: [args?: Record<string, never>];
+  readonly revoke_device: [args: { deviceId: string }];
+  readonly discover_hosts: [args?: Record<string, never>];
+  readonly create_sync_invitation: [args?: Record<string, never>];
+  readonly request_sync_pairing: [args: { invitation: string; deviceName: string }];
+  readonly list_sync_pairing_requests: [args?: Record<string, never>];
+  readonly approve_sync_pairing: [args: { requestId: string }];
+  readonly reject_sync_pairing: [args: { requestId: string }];
+  readonly claim_sync_pairing: [args: { requestId: string; receipt: string; invitation: string }];
+}
+
 export interface UiQueueEntry {
   readonly entryId: string;
   readonly songId: string | null;
@@ -233,6 +288,21 @@ export type CloseBehavior = 'exit' | 'background';
 
 /** Generated command name → successful return DTO contract. */
 export interface IpcCommandResultMap {
+  readonly sync_status: SyncStatus;
+  readonly host_start: SyncStatus;
+  readonly host_stop: SyncStatus;
+  readonly sync_peer_start: SyncStatus;
+  readonly sync_pause: SyncStatus;
+  readonly sync_resume: SyncStatus;
+  readonly sync_now: SyncStatus;
+  readonly revoke_device: void;
+  readonly discover_hosts: readonly DiscoveredHost[];
+  readonly create_sync_invitation: SyncInvitation;
+  readonly request_sync_pairing: SyncPairingReceipt;
+  readonly list_sync_pairing_requests: readonly SyncPairingRequest[];
+  readonly approve_sync_pairing: void;
+  readonly reject_sync_pairing: void;
+  readonly claim_sync_pairing: SyncStatus;
   readonly get_audio_effects_snapshot: EffectsSnapshotDto;
   readonly select_audio_effects_preset: EffectsSnapshotDto;
   readonly edit_audio_equalizer: EffectsSnapshotDto;

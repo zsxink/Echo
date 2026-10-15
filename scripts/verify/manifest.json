@@ -2546,6 +2546,18 @@
       "manifest": "tests/scenarios/DAS-R08-S07.yaml"
     },
     {
+      "id": "DAS-R08-S08",
+      "title": "音效入口与队列互斥",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/EffectsPanel.test.tsx",
+      "manifest": "tests/scenarios/DAS-R08-S08.yaml"
+    },
+    {
+      "id": "DAS-R08-S09",
+      "title": "音效标签尺寸一致",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/EffectsPanel.test.tsx",
+      "manifest": "tests/scenarios/DAS-R08-S09.yaml"
+    },
+    {
       "id": "DAS-R09-S01",
       "title": "键盘遍历应用壳",
       "command": "pnpm --filter @echo/desktop test -- --run src/app/accessibility.test.tsx",
@@ -2568,6 +2580,24 @@
       "title": "触发控件内部化不影响键盘路径",
       "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx",
       "manifest": "tests/scenarios/DAS-R09-S04.yaml"
+    },
+    {
+      "id": "DAS-R09-S05",
+      "title": "音效 Tab 离开",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/EffectsPanel.test.tsx",
+      "manifest": "tests/scenarios/DAS-R09-S05.yaml"
+    },
+    {
+      "id": "DAS-R09-S06",
+      "title": "音效内模态对话框",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/EffectsPanel.test.tsx",
+      "manifest": "tests/scenarios/DAS-R09-S06.yaml"
+    },
+    {
+      "id": "DAS-R09-S07",
+      "title": "外部点击关闭音效保留焦点",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/EffectsPanel.test.tsx",
+      "manifest": "tests/scenarios/DAS-R09-S07.yaml"
     },
     {
       "id": "DAS-R10-S01",

@@ -19,3 +19,7 @@ include!("repositories.rs");
 include!("operations.rs");
 include!("songs.rs");
 include!("performance.rs");
+mod sync_baseline;
+mod sync_publication;
+mod sync_snapshot;
+mod sync_snapshot_apply;

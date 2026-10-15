@@ -520,7 +520,7 @@ impl Handle {
             return false;
         }
         // SAFETY: successful property allocation; no descendant escapes.
-        unsafe { (sys.free_node_contents)(&raw mut root) };
+        unsafe { (sys.free_node_contents)(std::ptr::addr_of_mut!(root)) };
         true
     }
 
@@ -562,7 +562,7 @@ impl Handle {
             None
         })();
         // SAFETY: root was successfully allocated by mpv; no descendants escape.
-        unsafe { (sys.free_node_contents)(&raw mut root) };
+        unsafe { (sys.free_node_contents)(std::ptr::addr_of_mut!(root)) };
         count
     }
 

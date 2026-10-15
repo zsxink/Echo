@@ -14,11 +14,10 @@
 //!   - `override` — song_overrides revision (written by future override cases)
 //!   - `tombstone`— Echo-initiated durable deletion record
 //!
-//! The object's *sync revision* is derived from its outbox history (`MAX(
-//! outbox.revision)+1`), NOT from `songs.revision` — that column stays the
-//! optimistic-concurrency / event-ordering tag from the persistence layer and
-//! is intentionally not overloaded. `playlists`/`library_roots`/`song_overrides`
-//! mirror the outbox-derived value so a later-phase reader can trust the column.
+//! The object's local sync revision advances in `sync_local_highwater` inside
+//! the caller's transaction; pruning outbox rows can therefore never rewind a
+//! revision. `playlists`/`library_roots`/`song_overrides` mirror that durable
+//! high-water while their existing `songs.revision` remains independent.
 //!
 //! Payloads are the FULL object snapshot in JSON (never an incremental diff):
 //! the receiving side just overwrites on 最后写入者胜. Payloads carry only
@@ -50,6 +49,7 @@ pub(crate) const KIND_PLAYLIST: &str = "playlist";
 /// playlist and song so a removal can propagate without deleting either.
 pub(crate) const KIND_PLAYLIST_ITEM: &str = "playlist-item";
 pub(crate) const KIND_OVERRIDE: &str = "override";
+pub(crate) const KIND_PLAY_STATS: &str = "play-stats";
 // KIND_TOMBSTONE is used by 二期 routing and the tombstone tests; 0.1.0 keeps
 // song/playlist tombstones via `write_tombstone`'s kind argument.
 #[allow(dead_code)]
@@ -64,10 +64,9 @@ pub(crate) const OP_DELETE: &str = "delete";
 /// statements write paths so the canonical change and its sync fact commit
 /// atomically. `payload_json` is the full object snapshot (see module doc).
 ///
-/// Revision is the object's next monotone ordinal derived from its outbox
-/// history; the unique `(object_type, object_uuid, revision)` index makes a
-/// repeated write idempotent rather than a duplicate row (best-effort: a
-/// recovery replay that already enqueued the same ordinal becomes a no-op).
+/// Revision comes from a dedicated persistent high-water, never from outbox
+/// history. The caller's SQLite transaction makes the high-water increment
+/// atomic with the canonical object write and outbox append.
 pub(crate) fn enqueue_sync(
     connection: &Connection,
     kind: &str,
@@ -75,17 +74,103 @@ pub(crate) fn enqueue_sync(
     payload_json: &str,
     operation: &str,
 ) -> Result<i64, Error> {
+    enqueue_sync_with_id(connection, kind, object_uuid, payload_json, operation, None)
+}
+
+/// Enqueue a local fact under an identity allocated with the original delete
+/// intent when one exists. This lets crash recovery finalize the exact same
+/// delete mutation rather than allocating a fresh event ID.
+pub(crate) fn enqueue_sync_with_id(
+    connection: &Connection,
+    kind: &str,
+    object_uuid: &str,
+    payload_json: &str,
+    operation: &str,
+    stable_mutation_id: Option<&str>,
+) -> Result<i64, Error> {
+    connection
+        .execute(
+            "INSERT INTO sync_local_highwater (object_type, object_uuid, local_revision) VALUES (?1, ?2, 1) ON CONFLICT(object_type, object_uuid) DO UPDATE SET local_revision = local_revision + 1",
+            params![kind, object_uuid],
+        )
+        .map_err(storage)?;
     let next: i64 = connection
         .query_row(
-            "SELECT COALESCE(MAX(revision) + 1, 1) FROM sync_outbox WHERE object_type = ?1 AND object_uuid = ?2",
+            "SELECT local_revision FROM sync_local_highwater WHERE object_type = ?1 AND object_uuid = ?2",
             params![kind, object_uuid],
             |row| row.get(0),
         )
         .map_err(storage)?;
+    let origin_device_id: String = connection
+        .query_row(
+            "SELECT value FROM device_state WHERE key = 'device_id'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    let cursor: Option<(i64, String)> = connection
+        .query_row(
+            "SELECT origin_seq, last_mutation_id FROM sync_local_origin_cursors WHERE origin_device_id = ?1",
+            params![origin_device_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(storage)?;
+    let origin_seq = cursor.as_ref().map_or(Ok(1), |(seq, _)| {
+        seq.checked_add(1).ok_or_else(|| {
+            crate::error::Error::validation(
+                crate::error::Subject::Other,
+                "sync origin sequence",
+                "sequence exhausted",
+            )
+        })
+    })?;
+    let previous_mutation_id = cursor.map(|(_, mutation_id)| mutation_id);
+    let mutation_id =
+        stable_mutation_id.map_or_else(|| uuid::Uuid::new_v4().to_string(), str::to_owned);
+    let base_object_version: Option<i64> = connection
+        .query_row(
+            "SELECT object_version FROM sync_object_versions WHERE object_type = ?1 AND object_uuid = ?2 AND is_tombstone = 0",
+            params![kind, object_uuid],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(storage)?;
+    let resource_refs = if operation == "delete" || kind == "tombstone" {
+        Vec::new()
+    } else {
+        super::sync_manifests::load(connection, kind, object_uuid)?
+    };
+    let resource_refs_json = serde_json::to_string(&resource_refs).map_err(storage)?;
+    let mut digest = blake3::Hasher::new();
+    digest.update(kind.as_bytes());
+    digest.update(&[0]);
+    digest.update(object_uuid.as_bytes());
+    digest.update(&[0]);
+    digest.update(operation.as_bytes());
+    digest.update(&[0]);
+    digest.update(payload_json.as_bytes());
+    if !resource_refs.is_empty() {
+        digest.update(&[0]);
+        digest.update(resource_refs_json.as_bytes());
+    }
+    let payload_digest = digest.finalize().to_hex().to_string();
     connection
         .execute(
-            "INSERT INTO sync_outbox (object_type, object_uuid, revision, operation, payload_json, created_at, pushed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL) ON CONFLICT(object_type, object_uuid, revision) DO NOTHING",
-            params![kind, object_uuid, next, operation, payload_json, now_ms()],
+            "INSERT INTO sync_mutations (mutation_id, origin_device_id, origin_seq, previous_mutation_id, object_type, object_uuid, operation, local_revision, base_object_version, payload_json, payload_digest, status, created_at, resource_refs_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'pending', ?12, ?13)",
+            params![mutation_id, origin_device_id, origin_seq, previous_mutation_id, kind, object_uuid, operation, next, base_object_version, payload_json, payload_digest, now_ms(), resource_refs_json],
+        )
+        .map_err(storage)?;
+    connection
+        .execute(
+            "INSERT INTO sync_local_origin_cursors (origin_device_id, origin_seq, last_mutation_id) VALUES (?1, ?2, ?3) ON CONFLICT(origin_device_id) DO UPDATE SET origin_seq = excluded.origin_seq, last_mutation_id = excluded.last_mutation_id",
+            params![origin_device_id, origin_seq, mutation_id],
+        )
+        .map_err(storage)?;
+    connection
+        .execute(
+            "INSERT INTO sync_outbox (object_type, object_uuid, revision, operation, payload_json, created_at, pushed_at, mutation_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7) ON CONFLICT(object_type, object_uuid, revision) DO NOTHING",
+            params![kind, object_uuid, next, operation, payload_json, now_ms(), mutation_id],
         )
         .map_err(storage)?;
     Ok(next)
@@ -145,7 +230,8 @@ pub(crate) fn outbox_count(connection: &Connection, kind: &str) -> Result<i64, E
         .map_err(storage)
 }
 
-/// The object's current outbox ordinal (`MAX(revision)`) or 0 when untouched.
+/// The object's durable local sync revision, with outbox history as a
+/// defensive fallback for pre-ledger migration callers.
 pub(crate) fn current_outbox_revision(
     connection: &Connection,
     kind: &str,
@@ -153,7 +239,7 @@ pub(crate) fn current_outbox_revision(
 ) -> Result<i64, Error> {
     connection
         .query_row(
-            "SELECT COALESCE(MAX(revision), 0) FROM sync_outbox WHERE object_type = ?1 AND object_uuid = ?2",
+            "SELECT COALESCE((SELECT local_revision FROM sync_local_highwater WHERE object_type = ?1 AND object_uuid = ?2), (SELECT MAX(revision) FROM sync_outbox WHERE object_type = ?1 AND object_uuid = ?2), 0)",
             params![kind, object_uuid],
             |row| row.get(0),
         )

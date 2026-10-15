@@ -9,8 +9,10 @@
 pub(crate) mod filesystem;
 mod filesystem_capabilities;
 mod media;
+mod remote_resources;
 mod repository;
 mod state;
+mod sync;
 mod system;
 mod transaction;
 
@@ -20,8 +22,10 @@ pub use filesystem::{
 };
 pub use filesystem_capabilities::*;
 pub use media::*;
+pub use remote_resources::*;
 pub use repository::*;
 pub use state::*;
+pub use sync::*;
 pub use system::*;
 pub use transaction::*;
 

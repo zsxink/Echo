@@ -37,9 +37,11 @@ pub mod portable_materialize;
 pub mod ports;
 pub mod recover;
 pub mod relink;
+pub mod remote_resources;
 pub mod restore;
 pub mod root_switch;
 pub mod scan;
+pub mod sync;
 pub mod trash;
 pub mod watch;
 

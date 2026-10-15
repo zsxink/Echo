@@ -23,6 +23,7 @@
     clippy::uninlined_format_args
 )]
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Condvar, Mutex};
 
@@ -52,9 +53,18 @@ pub(crate) mod connection;
 pub(crate) mod conversion;
 pub(crate) mod device_state;
 pub(crate) mod query;
+mod remote_resources;
 pub(crate) mod statements;
 pub(crate) mod support;
 pub(crate) mod sync;
+pub(crate) mod sync_apply;
+mod sync_baseline;
+pub(crate) mod sync_configuration;
+pub(crate) mod sync_ledger;
+pub(crate) mod sync_manifests;
+pub(crate) mod sync_projection;
+pub(crate) mod sync_queue;
+mod sync_snapshot;
 #[cfg(test)]
 mod tests;
 
@@ -140,6 +150,30 @@ pub struct SqliteDatabase {
     device_id: crate::domain::library::DeviceId,
 }
 
+fn read_device_play_counts(
+    connection: &Connection,
+    song: SongId,
+) -> Result<BTreeMap<uuid::Uuid, u64>, Error> {
+    let mut statement = connection
+        .prepare("SELECT device_id, play_count FROM sync_device_play_counts WHERE song_uuid = ?1 ORDER BY device_id")
+        .map_err(storage)?;
+    let rows = statement
+        .query_map(params![song.to_string()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .map_err(storage)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(storage)?;
+    let mut counts = BTreeMap::new();
+    for (device, count) in rows {
+        let id = uuid::Uuid::parse_str(&device).map_err(|_| Error::InvariantViolation {
+            why: "invalid device UUID in play-count table".to_owned(),
+        })?;
+        counts.insert(id, u64::try_from(count).unwrap_or(0));
+    }
+    Ok(counts)
+}
+
 impl SqliteDatabase {
     /// Open (or create) a database, configure safety pragmas, apply migrations
     /// and verify its quick integrity check.
@@ -174,6 +208,7 @@ impl SqliteDatabase {
         // Load/mint the device identity on the writer connection before any
         // reader is handed out, so every portable record sees it.
         let device_id = device_state::load_or_create_device_id(&writer)?;
+        device_state::backfill_legacy_play_counts(&mut writer, device_id)?;
 
         let mut readers = Vec::with_capacity(reader_count());
         for _ in 0..reader_count() {
@@ -271,10 +306,41 @@ impl SqliteDatabase {
                     .execute("UPDATE songs SET play_count = play_count + 1, updated_at = ?2 WHERE uuid = ?1", params![song.to_string(), now_ms()])
                     .map_err(storage)?;
                 statements::touch_root_for_song(&transaction, song)?;
+                let device_id: String = transaction
+                    .query_row("SELECT value FROM device_state WHERE key = 'device_id'", [], |row| row.get(0))
+                    .map_err(storage)?;
+                transaction
+                    .execute(
+                        "INSERT INTO sync_device_play_counts (song_uuid, device_id, play_count) VALUES (?1, ?2, 1) ON CONFLICT(song_uuid, device_id) DO UPDATE SET play_count = play_count + 1",
+                        params![song.to_string(), device_id],
+                    )
+                    .map_err(storage)?;
+                let counts = read_device_play_counts(&transaction, song)?;
+                let payload = serde_json::json!({ "song_uuid": song.as_uuid(), "by_device": counts });
+                statements::enqueue_object_snapshot(
+                    &transaction,
+                    sync::KIND_PLAY_STATS,
+                    &song.to_string(),
+                    &payload,
+                    sync::OP_UPSERT,
+                )?;
+                let now_secs = u64::try_from(now_ms().max(0)).unwrap_or(0) / 1_000;
+                let _ = statements::advance_object_hlc(
+                    &transaction,
+                    sync::KIND_PLAY_STATS,
+                    &song.to_string(),
+                    now_secs,
+                )?;
             }
             transaction.commit().map_err(storage)?;
             Ok(inserted == 1)
         })
+    }
+
+    /// Return durable per-device play buckets for portable projection and
+    /// synchronization recovery.
+    pub fn device_play_counts(&self, song: SongId) -> Result<BTreeMap<uuid::Uuid, u64>, Error> {
+        self.with_reader(move |connection| read_device_play_counts(connection, song))
     }
 
     /// Search only the active root. Three or more Unicode scalar values use
@@ -1127,6 +1193,30 @@ impl TxOperationWriter for SqliteTx<'_> {
                 params![operation.to_string(), deadline_ms, now_ms()],
             )
             .map_err(storage)?;
+        let song_uuid: Option<String> = self
+            .transaction
+            .query_row(
+                "SELECT reserved_song_uuid FROM operation_journal WHERE operation_uuid = ?1",
+                params![operation.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(storage)?
+            .flatten();
+        if let Some(song_uuid) = song_uuid {
+            self.transaction
+                .execute(
+                    "INSERT OR IGNORE INTO sync_local_delete_intents (intent_id, final_mutation_id, object_type, object_uuid, created_at, undo_deadline, state) VALUES (?1, ?2, 'song', ?3, ?4, ?5, 'open')",
+                    params![
+                        operation.to_string(),
+                        uuid::Uuid::new_v4().to_string(),
+                        song_uuid,
+                        now_ms(),
+                        deadline_ms,
+                    ],
+                )
+                .map_err(storage)?;
+        }
         Ok(())
     }
 }

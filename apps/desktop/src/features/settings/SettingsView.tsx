@@ -27,6 +27,7 @@ import type { CloseBehavior } from "../../ipc/ipc-types.generated";
 import { invalidateLibrary } from "../library";
 import { useLibraryStatus } from "../workspace";
 import { useTheme, type Theme } from "./useTheme";
+import { LanSyncSettings } from "../sync/LanSyncSettings";
 
 /**
  * The prototype's three theme options. `swatch` is the prototype's own
@@ -239,6 +240,8 @@ export function SettingsView({ onClose }: { readonly onClose: () => void }) {
               ))}
             </div>
           </section>
+
+          <LanSyncSettings />
 
           <section className="settings-section">
             <header className="settings-section-head">

@@ -29,6 +29,21 @@ mod migrations {
     pub const PLAYLIST_COVERS: &str = include_str!("migrations/0007_playlist_covers.sql");
     pub const FAVORITE_ORDER: &str = include_str!("migrations/0008_favorite_order.sql");
     pub const ARTIST_COVERS: &str = include_str!("migrations/0009_artist_covers.sql");
+    pub const LAN_SYNC_LEDGER: &str = include_str!("migrations/0010_lan_sync_ledger.sql");
+    pub const SEPARATE_LOCAL_ORIGIN_CURSOR: &str =
+        include_str!("migrations/0011_separate_local_origin_cursor.sql");
+    pub const BIND_SYNC_LOCAL_ROOT: &str = include_str!("migrations/0012_bind_sync_local_root.sql");
+    pub const FIXED_HOST_SNAPSHOTS: &str = include_str!("migrations/0013_fixed_host_snapshots.sql");
+    pub const REPLICA_SNAPSHOT_STAGING: &str =
+        include_str!("migrations/0014_replica_snapshot_staging.sql");
+    pub const MUTATION_RESOURCE_REFS: &str =
+        include_str!("migrations/0016_mutation_resource_refs.sql");
+    pub const BUDGETED_SNAPSHOT_PAGES: &str =
+        include_str!("migrations/0015_budgeted_snapshot_pages.sql");
+    pub const HOST_INITIAL_BASELINE: &str =
+        include_str!("migrations/0017_host_initial_baseline.sql");
+    pub const REMOTE_RESOURCE_PUBLICATION: &str =
+        include_str!("migrations/0018_remote_resource_publication.sql");
 }
 
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -84,6 +99,15 @@ pub(crate) fn apply_migrations(connection: &mut Connection) -> Result<(), Error>
             (7, migrations::PLAYLIST_COVERS),
             (8, migrations::FAVORITE_ORDER),
             (9, migrations::ARTIST_COVERS),
+            (10, migrations::LAN_SYNC_LEDGER),
+            (11, migrations::SEPARATE_LOCAL_ORIGIN_CURSOR),
+            (12, migrations::BIND_SYNC_LOCAL_ROOT),
+            (13, migrations::FIXED_HOST_SNAPSHOTS),
+            (14, migrations::REPLICA_SNAPSHOT_STAGING),
+            (15, migrations::BUDGETED_SNAPSHOT_PAGES),
+            (16, migrations::MUTATION_RESOURCE_REFS),
+            (17, migrations::HOST_INITIAL_BASELINE),
+            (18, migrations::REMOTE_RESOURCE_PUBLICATION),
         ],
     )
 }

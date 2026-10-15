@@ -309,7 +309,7 @@ mod tests {
         mapper: impl FnOnce(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
     ) -> rusqlite::Result<T> {
         let connection = rusqlite::Connection::open_in_memory().expect("in-memory connection");
-        let placeholders: Vec<&str> = std::iter::repeat_n("?", values.len()).collect();
+        let placeholders: Vec<&str> = std::iter::repeat("?").take(values.len()).collect();
         let mut statement = connection
             .prepare(&format!("SELECT {}", placeholders.join(", ")))
             .expect("literal select");

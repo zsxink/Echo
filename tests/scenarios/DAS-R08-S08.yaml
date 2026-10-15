@@ -1,0 +1,10 @@
+# Echo scenario executable manifest
+# ----------------------------------------------------------------------
+scenario_id: DAS-R08-S08
+requirement: 窄屏布局与浮层关闭必须可预测
+scenario: 音效入口与队列互斥
+layer: automated
+command: "pnpm --filter @echo/desktop test -- --run src/features/player/EffectsPanel.test.tsx"
+fixtures: [tone-short.mp3, tone-short.flac, tone-short.m4a, cover-256.png]
+expected_result: command exits 0 (behavior proven by the targeted suite)
+automated_filter: the command above

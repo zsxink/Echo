@@ -1,0 +1,244 @@
+//! Durable immutable declarations shared by local queue, ledger and replica apply.
+
+#![allow(clippy::missing_errors_doc, clippy::redundant_pub_crate)]
+
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use serde::{Deserialize, Serialize};
+
+use crate::domain::sync::{ObjectKey, ResourceDigest, SharedResourceKind, SharedResourceManifest};
+use crate::error::{Error, Subject};
+
+use super::support::storage;
+use super::SqliteDatabase;
+
+/// Canonical resource wire shape, kept transport independent inside Core.
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct WireResource {
+    kind: SharedResourceKind,
+    content_hash: String,
+    length: u64,
+    media_type: String,
+    relative_path: String,
+}
+
+impl From<&SharedResourceManifest> for WireResource {
+    fn from(value: &SharedResourceManifest) -> Self {
+        Self {
+            kind: value.kind,
+            content_hash: value.digest.to_hex(),
+            length: value.length,
+            media_type: value.media_type.clone(),
+            relative_path: value.relative_path.as_str().to_owned(),
+        }
+    }
+}
+
+impl WireResource {
+    pub(crate) fn into_manifest(self) -> Result<SharedResourceManifest, Error> {
+        if self.content_hash.len() != 64
+            || !self
+                .content_hash
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        {
+            return Err(Error::validation(
+                Subject::Other,
+                "resource digest",
+                "invalid lowercase BLAKE3 digest",
+            ));
+        }
+        let mut digest = [0; 32];
+        for (index, byte) in digest.iter_mut().enumerate() {
+            *byte = u8::from_str_radix(&self.content_hash[index * 2..index * 2 + 2], 16)
+                .map_err(storage)?;
+        }
+        SharedResourceManifest::new(
+            self.kind,
+            ResourceDigest::from_bytes(digest),
+            self.length,
+            self.media_type,
+            &self.relative_path,
+        )
+    }
+}
+
+pub(crate) fn identity(object: ObjectKey) -> (&'static str, String) {
+    match object {
+        ObjectKey::Song(id) => ("song", id.to_string()),
+        ObjectKey::Playlist(id) => ("playlist", id.to_string()),
+        ObjectKey::PlaylistItem(id) => ("playlist-item", id.to_string()),
+        ObjectKey::LibraryRoot(id) => ("library-root", id.to_string()),
+        ObjectKey::Favorite(id) => ("favorite", id.to_string()),
+        ObjectKey::Override(id) => ("override", id.to_string()),
+        ObjectKey::PlayStats(id) => ("play-stats", id.to_string()),
+    }
+}
+
+pub(crate) fn validate(resources: &[SharedResourceManifest]) -> Result<(), Error> {
+    if resources.len() > 32 {
+        return Err(Error::validation(
+            Subject::Other,
+            "resource declarations",
+            "at most 32 resources are allowed per object",
+        ));
+    }
+    let wire = resources.iter().map(WireResource::from).collect::<Vec<_>>();
+    if serde_json::to_vec(&wire).map_err(storage)?.len() > 32 * 1024 {
+        return Err(Error::validation(
+            Subject::Other,
+            "resource declarations",
+            "encoded resource declarations exceed 32 KiB",
+        ));
+    }
+    let mut paths = std::collections::HashSet::new();
+    for resource in resources {
+        SharedResourceManifest::new(
+            resource.kind,
+            resource.digest,
+            resource.length,
+            resource.media_type.clone(),
+            resource.relative_path.as_str(),
+        )?;
+        i64::try_from(resource.length).map_err(storage)?;
+        if !paths.insert(resource.relative_path.as_str()) {
+            return Err(Error::conflict(
+                "resource declarations contain duplicate destination paths",
+            ));
+        }
+    }
+    Ok(())
+}
+
+impl SqliteDatabase {
+    /// Replace the local object's resource declarations before its next write.
+    /// The caller must hash and validate the files through the library file port.
+    /// Queue entries already persisted retain their original declarations.
+    pub fn set_local_sync_resources(
+        &self,
+        object: ObjectKey,
+        resources: Vec<SharedResourceManifest>,
+    ) -> Result<(), Error> {
+        validate(&resources)?;
+        self.writer.run(move |connection| {
+            let tx = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(storage)?;
+            let (kind, id) = identity(object);
+            replace(&tx, kind, &id, &resources)?;
+            tx.commit().map_err(storage)
+        })
+    }
+}
+
+pub(crate) fn load(
+    connection: &Connection,
+    kind: &str,
+    id: &str,
+) -> Result<Vec<SharedResourceManifest>, Error> {
+    let mut statement = connection.prepare("SELECT ref_kind,content_hash,byte_length,media_type,library_relative_path FROM sync_resource_manifests WHERE object_type=?1 AND object_uuid=?2 ORDER BY library_relative_path,ref_kind,content_hash").map_err(storage)?;
+    let rows = statement
+        .query_map(params![kind, id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Vec<u8>>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })
+        .map_err(storage)?;
+    rows.map(|row| {
+        let (kind, digest, length, media_type, path) = row.map_err(storage)?;
+        let kind = match kind.as_str() {
+            "audio" => SharedResourceKind::Audio,
+            "lyrics_sidecar" => SharedResourceKind::LyricsSidecar,
+            "user_cover" => SharedResourceKind::UserCover,
+            "playlist_cover" => SharedResourceKind::PlaylistCover,
+            _ => {
+                return Err(Error::InvariantViolation {
+                    why: "invalid resource kind in resource manifest".to_owned(),
+                })
+            }
+        };
+        SharedResourceManifest::new(
+            kind,
+            ResourceDigest::from_bytes(digest.try_into().map_err(|_| {
+                Error::InvariantViolation {
+                    why: "invalid resource digest length".to_owned(),
+                }
+            })?),
+            u64::try_from(length).map_err(storage)?,
+            media_type,
+            &path,
+        )
+    })
+    .collect()
+}
+
+pub(crate) fn replace(
+    connection: &Connection,
+    kind: &str,
+    id: &str,
+    resources: &[SharedResourceManifest],
+) -> Result<(), Error> {
+    validate(resources)?;
+    connection
+        .execute(
+            "DELETE FROM sync_resource_refs WHERE object_type=?1 AND object_uuid=?2",
+            params![kind, id],
+        )
+        .map_err(storage)?;
+    connection
+        .execute(
+            "DELETE FROM sync_resource_manifests WHERE object_type=?1 AND object_uuid=?2",
+            params![kind, id],
+        )
+        .map_err(storage)?;
+    for resource in resources {
+        let resource_kind = match resource.kind {
+            SharedResourceKind::Audio => "audio",
+            SharedResourceKind::LyricsSidecar => "lyrics_sidecar",
+            SharedResourceKind::UserCover => "user_cover",
+            SharedResourceKind::PlaylistCover => "playlist_cover",
+        };
+        let digest = resource.digest.as_bytes();
+        let saved: Option<(i64, String)> = connection
+            .query_row(
+                "SELECT byte_length,media_type FROM sync_resources WHERE content_hash=?1",
+                params![digest.as_slice()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(storage)?;
+        if let Some((length, media_type)) = saved {
+            if u64::try_from(length).map_err(storage)? != resource.length
+                || media_type != resource.media_type
+            {
+                return Err(Error::conflict(
+                    "conflicting metadata for one resource digest",
+                ));
+            }
+        } else {
+            connection.execute("INSERT INTO sync_resources(content_hash,resource_kind,byte_length,media_type,library_relative_path,local_state) VALUES(?1,?2,?3,?4,?5,'missing')", params![digest.as_slice(), resource_kind, i64::try_from(resource.length).map_err(storage)?, resource.media_type, resource.relative_path.as_str()]).map_err(storage)?;
+        }
+        connection.execute("INSERT OR IGNORE INTO sync_resource_refs(object_type,object_uuid,content_hash,ref_kind) VALUES(?1,?2,?3,?4)", params![kind,id,digest.as_slice(),resource_kind]).map_err(storage)?;
+        connection.execute("INSERT INTO sync_resource_manifests(object_type,object_uuid,content_hash,ref_kind,library_relative_path,byte_length,media_type) VALUES(?1,?2,?3,?4,?5,?6,?7)", params![kind,id,digest.as_slice(),resource_kind,resource.relative_path.as_str(),i64::try_from(resource.length).map_err(storage)?,resource.media_type]).map_err(storage)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn from_commit_json(canonical: &str) -> Result<Vec<SharedResourceManifest>, Error> {
+    #[derive(Deserialize)]
+    struct Resources {
+        #[serde(default)]
+        resource_refs: Vec<WireResource>,
+    }
+    let refs: Resources = serde_json::from_str(canonical).map_err(storage)?;
+    let resources = refs
+        .resource_refs
+        .into_iter()
+        .map(WireResource::into_manifest)
+        .collect::<Result<Vec<_>, _>>()?;
+    validate(&resources)?;
+    Ok(resources)
+}

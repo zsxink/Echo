@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use crate::domain::ids::LibraryRootId;
+use crate::domain::ids::{LibraryRootId, RelativeMediaPath};
 use crate::error::Error;
 
 /// Maps a [`LibraryRootId`] to its absolute directory on this machine.
@@ -62,6 +62,58 @@ impl RootRegistry {
             .get(&root)
             .cloned()
             .ok_or_else(|| Error::unavailable("library root", "root is not bound"))
+    }
+
+    /// Resolve a relative path without traversing symbolic links or Windows
+    /// reparse points, including links in intermediate directories. Missing
+    /// components are allowed for exclusive-create publication destinations.
+    ///
+    /// # Errors
+    /// Fails closed on an unbound root, symlink/reparse point, unreadable
+    /// ancestor, or an existing ancestor outside the canonical root.
+    pub fn resolve_relative(
+        &self,
+        root: LibraryRootId,
+        relative: &RelativeMediaPath,
+    ) -> Result<PathBuf, Error> {
+        let base = self.path_of(root)?;
+        let root_meta = std::fs::symlink_metadata(&base)
+            .map_err(|source| Error::io("inspect library root", source, &base))?;
+        if root_meta.file_type().is_symlink() || !root_meta.is_dir() {
+            return Err(Error::permission(
+                "resolve library root",
+                crate::error::PermKind::NotOwner,
+            ));
+        }
+        let canonical_root = base
+            .canonicalize()
+            .map_err(|source| Error::io("canonicalize library root", source, &base))?;
+        let mut path = base;
+        for component in relative.normalized().split('/') {
+            path.push(component);
+            match std::fs::symlink_metadata(&path) {
+                Ok(metadata) => {
+                    if metadata.file_type().is_symlink() {
+                        return Err(Error::permission(
+                            "resolve library path",
+                            crate::error::PermKind::NotOwner,
+                        ));
+                    }
+                    let canonical = path
+                        .canonicalize()
+                        .map_err(|source| Error::io("canonicalize library path", source, &path))?;
+                    if !canonical.starts_with(&canonical_root) {
+                        return Err(Error::permission(
+                            "library path containment",
+                            crate::error::PermKind::NotOwner,
+                        ));
+                    }
+                }
+                Err(source) if source.kind() == std::io::ErrorKind::NotFound => {}
+                Err(source) => return Err(Error::io("inspect library path", source, &path)),
+            }
+        }
+        Ok(path)
     }
 
     /// Every registered root (diagnostics / shutdown only).

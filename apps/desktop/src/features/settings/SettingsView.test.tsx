@@ -25,6 +25,7 @@ beforeEach(() => {
     cancelled: false,
     progress: { state: "completed" },
   });
+  mocks.setInvoke("sync_status", syncStatus());
 });
 
 describe("SettingsView close behavior", () => {
@@ -104,3 +105,66 @@ describe("SettingsView library rescan", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("资料库扫描失败");
   });
 });
+
+describe("SettingsView LAN sync preferences", () => {
+  it("reads the native disabled state and keeps the service opt-in", async () => {
+    render(<SettingsView onClose={() => undefined} />);
+
+    await screen.findByLabelText("退出应用");
+    expect(screen.getByTestId("lan-sync-state")).toHaveTextContent("已关闭");
+    expect(screen.queryByTestId("lan-sync-start")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: "主机" }));
+    fireEvent.change(screen.getByPlaceholderText("192.168.1.20"), {
+      target: { value: "192.168.1.20" },
+    });
+    expect(screen.getByTestId("lan-sync-start")).toBeEnabled();
+  });
+
+  it("shows the native provisioning failure without claiming a connection", async () => {
+    mocks.setInvoke("host_start", new Error("sync.unconfigured"));
+    render(<SettingsView onClose={() => undefined} />);
+
+    await screen.findByLabelText("退出应用");
+    fireEvent.click(screen.getByRole("radio", { name: "主机" }));
+    fireEvent.change(screen.getByPlaceholderText("192.168.1.20"), {
+      target: { value: "192.168.1.20" },
+    });
+    fireEvent.click(screen.getByTestId("lan-sync-start"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("同步服务尚未完成安全配置");
+    expect(screen.getByTestId("lan-sync-state")).toHaveTextContent("已关闭");
+    expect(invoke).toHaveBeenCalledWith("host_start", { address: "192.168.1.20" });
+  });
+
+  it("renders hosts returned by native LAN discovery", async () => {
+    mocks.setInvoke("discover_hosts", [
+      {
+        name: "Echo 主机",
+        addresses: ["192.168.1.10"],
+        port: 43000,
+        deviceId: "device-1",
+        protocolVersion: "1",
+      },
+    ]);
+    render(<SettingsView onClose={() => undefined} />);
+
+    await screen.findByLabelText("退出应用");
+    fireEvent.click(screen.getByRole("button", { name: "搜索局域网主机" }));
+
+    expect(await screen.findByTestId("lan-sync-hosts")).toHaveTextContent("Echo 主机");
+    expect(screen.getByTestId("lan-sync-hosts")).toHaveTextContent("192.168.1.10:43000");
+  });
+});
+
+function syncStatus() {
+  return {
+    enabled: false,
+    role: "none",
+    state: "disabled",
+    sessionId: 0,
+    eventSequence: 0,
+    libraryId: null,
+    address: null,
+    lastError: null,
+  };
+}

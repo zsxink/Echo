@@ -76,7 +76,7 @@ impl RootConstrainedFileSystem {
     }
 
     fn abs(&self, root: LibraryRootId, path: &RelativeMediaPath) -> Result<PathBuf, Error> {
-        Ok(self.registry.path_of(root)?.join(path.normalized()))
+        self.registry.resolve_relative(root, path)
     }
 
     /// The adapter-private staging slot of one operation resource:
@@ -780,7 +780,9 @@ mod tests {
             let error = fs
                 .path_exists(root, &RelativeMediaPath::new("child.flac").unwrap())
                 .expect_err("a root access failure must not be mistaken for absence");
-            assert_eq!(error.code(), "io");
+            // The registry rejects a non-directory root before the relative
+            // child probe, classifying this as an unsafe root boundary.
+            assert_eq!(error.code(), "permission");
         }
     }
 
@@ -874,7 +876,9 @@ mod tests {
         let third = StagedResource::new(OperationId::new(), "audio").unwrap();
         fs.stage_bytes(root, &third, b"symlink-victim").unwrap();
         let error = fs.publish(root, &third, &link_target).unwrap_err();
-        assert_eq!(error.code(), "conflict", "symlink at target is a conflict");
+        // Relative resolution rejects the final symlink before the exclusive
+        // create reaches the OS; the foreign target is still untouched.
+        assert_eq!(error.code(), "permission", "symlink at target is refused");
         assert_eq!(
             std::fs::read(outside.path().join("precious.txt")).unwrap(),
             b"precious",

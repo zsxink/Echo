@@ -59,6 +59,9 @@ mod macos_status_row;
 #[cfg(any(target_os = "macos", test))]
 mod macos_window_lifecycle;
 mod open_targets;
+mod sync_commands;
+mod sync_provisioner;
+mod sync_runtime;
 
 const MAIN_WINDOW: &str = "main";
 
@@ -345,6 +348,20 @@ fn wire_composition(
     app.manage(trash_worker);
     app.manage(routed.registry.clone());
     app.manage(routed.deps.clone());
+    // Constructing this boundary performs no discovery, listening or requests.
+    // Secure-store access and host provisioning start only after explicit opt-in.
+    app.manage(Arc::new(sync_runtime::SyncRuntime::new(
+        routed.database.clone(),
+        Some(Arc::new(sync_provisioner::NativeSyncProvisioner::new(
+            routed.database.clone(),
+            app_data.join("lan-resources"),
+            echo_core::application::remote_resources::RemoteResourcePublishDeps {
+                fs: routed.deps.fs.clone(),
+                hasher: routed.deps.hasher.clone(),
+                journal: routed.database.clone(),
+            },
+        ))),
+    )));
     // The `cover://` protocol resolves bytes by opaque asset key (design §16).
     // It looks the store up as the *dynamic* `CoverCache` type, so the cache has
     // to be registered under exactly that type — the same instance the scan
@@ -612,6 +629,21 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            sync_commands::sync_status,
+            sync_commands::host_start,
+            sync_commands::host_stop,
+            sync_commands::sync_peer_start,
+            sync_commands::sync_pause,
+            sync_commands::sync_resume,
+            sync_commands::sync_now,
+            sync_commands::revoke_device,
+            sync_commands::discover_hosts,
+            sync_commands::create_sync_invitation,
+            sync_commands::list_sync_pairing_requests,
+            sync_commands::approve_sync_pairing,
+            sync_commands::reject_sync_pairing,
+            sync_commands::request_sync_pairing,
+            sync_commands::claim_sync_pairing,
             commands_audio_effects::get_audio_effects_snapshot,
             commands_audio_effects::select_audio_effects_preset,
             commands_audio_effects::edit_audio_equalizer,
@@ -863,6 +895,9 @@ fn main() {
                 }
             }
             RunEvent::ExitRequested { .. } => {
+                if let Some(sync) = app.try_state::<Arc<sync_runtime::SyncRuntime>>() {
+                    let _ = sync.stop();
+                }
                 commands_audio_effects::flush(app);
                 #[cfg(target_os = "macos")]
                 macos_now_playing::clear();
@@ -944,49 +979,5 @@ fn main() {
 // Kept last: `clippy::items_after_test_module` requires a `#[cfg(test)]` module
 // to be the final item in the file, and `cover_media_type`/`main` below read
 #[cfg(test)]
-mod cover_canvas_tests {
-    #[test]
-    fn fullscreen_close_waits_for_appkit_completion() {
-        let pending = super::PendingFullscreenHide::default();
-
-        pending.begin();
-        pending.will_exit();
-        assert!(pending.is_exiting(), "native exit is still in progress");
-        assert!(pending.did_exit(), "native exit completes pending close");
-        assert!(!pending.is_exiting(), "native exit is complete");
-        pending.cancel();
-        assert!(!pending.did_exit(), "hide is completed only once");
-
-        pending.begin();
-        pending.cancel();
-        assert!(!pending.did_exit(), "failed fullscreen exit is cancelled");
-    }
-
-    #[test]
-    fn main_window_activation_restores_one_existing_window_without_creating_another() {
-        use tauri::Manager;
-
-        let app = tauri::test::mock_app();
-        let main = tauri::WebviewWindowBuilder::new(
-            &app,
-            super::MAIN_WINDOW,
-            tauri::WebviewUrl::default(),
-        )
-        .build()
-        .expect("mock main window");
-
-        main.hide().expect("hide mock window");
-        super::focus_main_window(app.handle());
-        assert!(main.is_visible().expect("read visible state"));
-
-        main.minimize().expect("minimize mock window");
-        super::focus_main_window(app.handle());
-        assert!(!main.is_minimized().expect("read minimized state"));
-
-        for _ in 0..4 {
-            super::focus_main_window(app.handle());
-        }
-        assert_eq!(app.webview_windows().len(), 1);
-        assert!(app.get_webview_window(super::MAIN_WINDOW).is_some());
-    }
-}
+#[path = "main_tests.rs"]
+mod cover_canvas_tests;

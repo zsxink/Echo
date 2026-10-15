@@ -20,6 +20,8 @@ tracing-subscriber = { workspace = true }
 # echo-desktop shell owns this platform bridge; echo-core never sees it.
 libloading = { workspace = true }
 trash = { workspace = true }
+keyring = { version = "=3.6.3", default-features = false, features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
+zeroize = "1.8"
 
 [dev-dependencies]
 echo-core = { path = "../echo-core", features = ["testkit"] }

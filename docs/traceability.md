@@ -66,10 +66,15 @@
 | DAS-R08-S05 | 窄屏布局与浮层关闭必须可预测 | 触发控件状态与可访问名称 | 10.4, 12.1, 12.3 | React | `tests/scenarios/DAS-R08-S05.yaml` | `pnpm verify:scenario -- DAS-R08-S05` |
 | DAS-R08-S06 | 窄屏布局与浮层关闭必须可预测 | 再次点击触发控件不触发外部动作 | 10.4, 12.1, 12.3 | React | `tests/scenarios/DAS-R08-S06.yaml` | `pnpm verify:scenario -- DAS-R08-S06` |
 | DAS-R08-S07 | 窄屏布局与浮层关闭必须可预测 | 仍可点击真正外部区域关闭 | 10.4, 12.1, 12.3 | React | `tests/scenarios/DAS-R08-S07.yaml` | `pnpm verify:scenario -- DAS-R08-S07` |
+| DAS-R08-S08 | 窄屏布局与浮层关闭必须可预测 | 音效入口与队列互斥 | 10.4, 12.1, 12.3 | React | `tests/scenarios/DAS-R08-S08.yaml` | `pnpm verify:scenario -- DAS-R08-S08` |
+| DAS-R08-S09 | 窄屏布局与浮层关闭必须可预测 | 音效标签尺寸一致 | 10.4, 12.1, 12.3 | React | `tests/scenarios/DAS-R08-S09.yaml` | `pnpm verify:scenario -- DAS-R08-S09` |
 | DAS-R09-S01 | 键盘焦点与 Escape 行为必须可访问 | 键盘遍历应用壳 | 11.8, 12.1, 12.2 | React/E2E | `tests/scenarios/DAS-R09-S01.yaml` | `pnpm verify:scenario -- DAS-R09-S01` |
 | DAS-R09-S02 | 键盘焦点与 Escape 行为必须可访问 | Escape 关闭最上层浮层 | 11.8, 12.1, 12.2 | React/E2E | `tests/scenarios/DAS-R09-S02.yaml` | `pnpm verify:scenario -- DAS-R09-S02` |
 | DAS-R09-S03 | 键盘焦点与 Escape 行为必须可访问 | 使用辅助技术 | 11.8, 12.1, 12.2 | React/E2E | `tests/scenarios/DAS-R09-S03.yaml` | `pnpm verify:scenario -- DAS-R09-S03` |
 | DAS-R09-S04 | 键盘焦点与 Escape 行为必须可访问 | 触发控件内部化不影响键盘路径 | 11.8, 12.1, 12.2 | React | `tests/scenarios/DAS-R09-S04.yaml` | `pnpm verify:scenario -- DAS-R09-S04` |
+| DAS-R09-S05 | 键盘焦点与 Escape 行为必须可访问 | 音效 Tab 离开 | 11.8, 12.1, 12.2 | React | `tests/scenarios/DAS-R09-S05.yaml` | `pnpm verify:scenario -- DAS-R09-S05` |
+| DAS-R09-S06 | 键盘焦点与 Escape 行为必须可访问 | 音效内模态对话框 | 11.8, 12.1, 12.2 | React | `tests/scenarios/DAS-R09-S06.yaml` | `pnpm verify:scenario -- DAS-R09-S06` |
+| DAS-R09-S07 | 键盘焦点与 Escape 行为必须可访问 | 外部点击关闭音效保留焦点 | 11.8, 12.1, 12.2 | React | `tests/scenarios/DAS-R09-S07.yaml` | `pnpm verify:scenario -- DAS-R09-S07` |
 | DAS-R10-S01 | 三平台壳行为必须可验证且不依赖网络 | 离线启动 | 1.5, 7.7, 9.8, 13.5, 13.7, 13.8 | Security/Native | `tests/native/DAS-R10-S01.md` | `pnpm verify:scenario -- DAS-R10-S01` |
 | DAS-R10-S02 | 三平台壳行为必须可验证且不依赖网络 | 跨平台验证 | 1.5, 7.7, 9.8, 13.5, 13.7, 13.8 | Security/Native | `tests/native/DAS-R10-S02.md` | `pnpm verify:scenario -- DAS-R10-S02` |
 | DAS-R11-S01 | 目录与导入文件选择必须由系统原生对话框提供 | 从欢迎界面打开原生目录选择器 | wire 1.1–1.8 | Desktop/Shell | `tests/scenarios/DAS-R11-S01.yaml` | `pnpm verify:scenario -- DAS-R11-S01` |

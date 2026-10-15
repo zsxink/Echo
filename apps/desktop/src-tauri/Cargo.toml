@@ -17,8 +17,14 @@ path = "src/main.rs"
 [dependencies]
 echo-desktop = { path = "../../../crates/echo-desktop" }
 echo-core = { path = "../../../crates/echo-core" }
+echo-sync = { path = "../../../crates/echo-sync", features = ["client", "server", "discovery"] }
+reqwest.workspace = true
+tokio = { workspace = true }
+rustls = { workspace = true }
+mdns-sd = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+rcgen = { version = "=0.13.2", default-features = false, features = ["ring", "zeroize"] }
 tracing = { workspace = true }
 tauri = { version = "2.11.5", features = ["tray-icon"] }
 tauri-plugin-dialog = "2.4.0"

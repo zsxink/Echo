@@ -17,51 +17,22 @@
 
 /** The subset of the generated DTOs the browser journey needs. */
 import type { BridgeCommandMap } from "../src/bridge";
+import { applySeed, defaultState, makeSong } from "./mock-bridge-state";
+import type { E2EState, MockSong } from "./mock-bridge-state";
+export type { MockSong } from "./mock-bridge-state";
 import type {
   EffectsSnapshotDto,
   EqCurve,
   IpcErrorDto,
   LibraryRootStatusDto,
+  SyncPairingRequest,
+  SyncRole,
+  SyncState,
+  SyncStatus,
   Theme,
 } from "../src/ipc/ipc-types.generated";
 
 type AnyRecord = Record<string, unknown>;
-
-/**
- * The mock's mutable backing song record. The IPC `SongView` is a *readonly*
- * DTO by contract (the UI must not mutate it); the backend owns mutation, so
- * the mock keeps a mutable shape and hands out fresh readonly readings.
- */
-export interface MockSong {
-  id: string;
-  title: string;
-  artist: string;
-  album: string;
-  durationS: number;
-  favorite: boolean;
-  playCount: number;
-  availability: "available" | "missing" | "pending-delete";
-  relativePath: string;
-  /**
-   * Simulates artwork embedded in the audio file (design §115 内置优先).
-   * `undefined` means the file carries none, which is the case the list must
-   * render with the prototype's palette placeholder.
-   */
-  coverKey?: string;
-}
-
-/** A fake standalone song library the scenarios drive against. */
-export interface E2EState {
-  configured: boolean;
-  readOnly: boolean;
-  activeRoot: string;
-  songs: MockSong[];
-  playlists: { id: string; name: string; memberCount: number }[];
-  theme: Theme;
-  closeBehavior: "exit" | "background";
-  importMode: "success" | "cancelled" | "mixed" | "failed";
-  nowPlaying: { songId: string; position: number; playing: boolean } | null;
-}
 
 /** Commands the app's bridge can invoke. */
 type Command =
@@ -117,7 +88,22 @@ type Command =
   | "save_audio_effects_preset"
   | "rename_audio_effects_preset"
   | "delete_audio_effects_preset"
-  | "retry_audio_effects";
+  | "retry_audio_effects"
+  | "sync_status"
+  | "host_start"
+  | "host_stop"
+  | "sync_peer_start"
+  | "sync_pause"
+  | "sync_resume"
+  | "sync_now"
+  | "revoke_device"
+  | "discover_hosts"
+  | "create_sync_invitation"
+  | "request_sync_pairing"
+  | "list_sync_pairing_requests"
+  | "approve_sync_pairing"
+  | "reject_sync_pairing"
+  | "claim_sync_pairing";
 
 /**
  * Commands the app can invoke but this mock deliberately does not model, so the
@@ -154,40 +140,6 @@ export const MOCK_NAMES_EVERY_COMMAND: [UnnamedCommands] extends [never] ? true 
 /** How an invoke result can be wired. */
 type Handler = (args: AnyRecord, state: E2EState) => unknown;
 
-export function defaultState(): E2EState {
-  return {
-    configured: false,
-    readOnly: false,
-    activeRoot: "",
-    songs: [],
-    playlists: [],
-    theme: "coral",
-    closeBehavior: "exit",
-    importMode: "success",
-    nowPlaying: null,
-  };
-}
-
-function makeSong(i: number, extra: Partial<MockSong> = {}): MockSong {
-  return {
-    id: `song-${i}`,
-    title: `歌曲 ${i}`,
-    artist: `艺人 ${i % 5}`,
-    album: "专辑",
-    durationS: 180 + (i % 200),
-    favorite: i % 3 === 0,
-    playCount: i,
-    availability: "available",
-    relativePath: `歌曲 ${i}.mp3`,
-    // Two out of three sample songs simulate embedded artwork so a scenario
-    // covers both the `.cover.has-image` path and the palette placeholder
-    // (design §115: a file with no embedded cover keeps the placeholder).
-    coverKey: i % 3 === 0 ? undefined : `cv1-mock${i}`,
-    ...extra,
-  };
-}
-
-/** A readonly `SongView` reading of a mock song (the IPC DTO the UI sees). */
 function toView(s: MockSong): import("../src/ipc/ipc-types.generated").SongView {
   return {
     id: s.id,
@@ -369,7 +321,138 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
     isLast: true,
   });
 
+  let syncStatus: SyncStatus = {
+    enabled: false,
+    role: "none" as SyncRole,
+    state: "disabled" as SyncState,
+    sessionId: 0,
+    eventSequence: 0,
+    libraryId: null as string | null,
+    address: null as string | null,
+    lastError: null as string | null,
+  };
+  let pairingInvitation: string | null = null;
+  let pairingCounter = 0;
+  const pairingRequests: (SyncPairingRequest & {
+    decision: "pending" | "approved" | "rejected";
+    receipt: string;
+    invitation: string;
+  })[] = [];
+  const syncError = (messageKey: string) => ({ code: "unavailable", messageKey, retryable: true });
+
   return {
+    sync_status: () => syncStatus,
+    host_start: ({ address }) => {
+      syncStatus = {
+        ...syncStatus,
+        enabled: true,
+        role: "host",
+        state: "hosting",
+        sessionId: syncStatus.sessionId + 1,
+        eventSequence: syncStatus.eventSequence + 1,
+        address: String(address),
+        libraryId: state.activeRoot || null,
+      };
+      return syncStatus;
+    },
+    host_stop: () => {
+      syncStatus = {
+        ...syncStatus,
+        enabled: false,
+        role: "none",
+        state: "disabled",
+        eventSequence: syncStatus.eventSequence + 1,
+        address: null,
+      };
+      pairingInvitation = null;
+      return syncStatus;
+    },
+    sync_peer_start: () => syncError("sync.unconfigured"),
+    sync_pause: () => {
+      syncStatus = { ...syncStatus, state: "paused", eventSequence: syncStatus.eventSequence + 1 };
+      return syncStatus;
+    },
+    sync_resume: () => {
+      syncStatus = {
+        ...syncStatus,
+        state: syncStatus.role === "host" ? "hosting" : "connected",
+        eventSequence: syncStatus.eventSequence + 1,
+      };
+      return syncStatus;
+    },
+    sync_now: () => {
+      syncStatus = { ...syncStatus, state: "syncing", eventSequence: syncStatus.eventSequence + 1 };
+      return syncStatus;
+    },
+    revoke_device: () => ({
+      code: "unavailable",
+      messageKey: "sync.unconfigured",
+      retryable: true,
+    }),
+    discover_hosts: () => [],
+    create_sync_invitation: () => {
+      if (!syncStatus.enabled || syncStatus.role !== "host") return syncError("sync.unconfigured");
+      pairingInvitation = `echo-mock-invitation-${++pairingCounter}`;
+      return {
+        invitation: pairingInvitation,
+        expiresAtUnixMs: Date.now() + 5 * 60_000,
+        hostName: "Echo Mock",
+      };
+    },
+    request_sync_pairing: ({ invitation, deviceName }) => {
+      if (!pairingInvitation || invitation !== pairingInvitation)
+        return syncError("sync.invitationInvalid");
+      const requestId = `pair-${++pairingCounter}`;
+      const receipt = `echo-mock-receipt-${requestId}`;
+      pairingRequests.push({
+        requestId,
+        deviceName: String(deviceName),
+        deviceId: `mock-device-${pairingCounter}`,
+        requestedAtUnixMs: Date.now(),
+        decision: "pending",
+        receipt,
+        invitation: String(invitation),
+      });
+      return { requestId, receipt, expiresAtUnixMs: Date.now() + 5 * 60_000 };
+    },
+    list_sync_pairing_requests: () =>
+      pairingRequests
+        .filter(({ decision }) => decision === "pending")
+        .map(({ decision: _decision, receipt: _receipt, ...request }) => request),
+    approve_sync_pairing: ({ requestId }) => {
+      const request = pairingRequests.find((item) => item.requestId === requestId);
+      if (!request) return syncError("sync.pairingRequestNotFound");
+      request.decision = "approved";
+      return null;
+    },
+    reject_sync_pairing: ({ requestId }) => {
+      const request = pairingRequests.find((item) => item.requestId === requestId);
+      if (!request) return syncError("sync.pairingRequestNotFound");
+      request.decision = "rejected";
+      return null;
+    },
+    claim_sync_pairing: ({ requestId, receipt, invitation }) => {
+      const request = pairingRequests.find((item) => item.requestId === requestId);
+      if (!request) return syncError("sync.pairingRequestNotFound");
+      if (request.decision === "pending") return syncError("sync.pairingPending");
+      if (
+        request.decision !== "approved" ||
+        request.receipt !== receipt ||
+        request.invitation !== invitation
+      )
+        return syncError("sync.pairingRejected");
+      syncStatus = {
+        ...syncStatus,
+        enabled: true,
+        role: "peer",
+        state: "connected",
+        sessionId: syncStatus.sessionId + 1,
+        eventSequence: syncStatus.eventSequence + 1,
+        address: "192.168.1.10:43000",
+      };
+      request.decision = "rejected";
+      return syncStatus;
+    },
     get_audio_effects_snapshot: () => effectsSnapshot,
     select_audio_effects_preset: ({ id }) => {
       const preset = effectsSnapshot.presets.find((item) => item.id === String(id));
@@ -855,40 +938,4 @@ export function installMockBridge(): MockBridge {
   };
   (window as unknown as Record<string, unknown>).__echoE2E__ = bridge;
   return bridge;
-}
-
-/** Apply a named seed onto the mock's initial library state. */
-function applySeed(state: E2EState, seed: string) {
-  switch (seed) {
-    case "empty": {
-      // A1: no configured root, no songs.
-      state.configured = false;
-      state.activeRoot = "";
-      state.songs = [];
-      break;
-    }
-    case "medium": {
-      // A2/A6/A7/A8: a configured medium library (a few dozen songs).
-      state.configured = true;
-      state.activeRoot = "/mock/library";
-      state.songs = Array.from({ length: 40 }, (_, i) => makeSong(i));
-      state.playlists = [{ id: "p1", name: "我的歌单", memberCount: 6 }];
-      break;
-    }
-    case "favorites": {
-      applySeed(state, "medium");
-      // A6: exactly one searchable favorite.
-      state.songs[3].favorite = true;
-      state.songs[3].title = "歌曲 3";
-      break;
-    }
-    case "playing": {
-      applySeed(state, "medium");
-      // A8/A13: a song is the now-playing item.
-      state.nowPlaying = { songId: "song-3", position: 0, playing: true };
-      break;
-    }
-    default:
-      break;
-  }
 }

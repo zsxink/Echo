@@ -27,6 +27,7 @@ pub fn generated_typescript() -> String {
     out.push_str("}\n\n");
     out.push_str("export type IpcResult<T> = T | IpcErrorDto;\n\n");
     out.push_str(super::effects::typescript());
+    out.push_str(super::sync::typescript());
 
     // Player snapshots travel on the typed `player://snapshot` event rather
     // than a command response, but they are still a cross-process IPC DTO.
@@ -210,6 +211,25 @@ pub fn generated_typescript() -> String {
     out.push('\n');
     out.push_str("/** Generated command name → successful return DTO contract. */\n");
     out.push_str("export interface IpcCommandResultMap {\n");
+    for command in [
+        "sync_status",
+        "host_start",
+        "host_stop",
+        "sync_peer_start",
+        "sync_pause",
+        "sync_resume",
+        "sync_now",
+    ] {
+        let _ = writeln!(out, "  readonly {command}: SyncStatus;");
+    }
+    out.push_str("  readonly revoke_device: void;\n");
+    out.push_str("  readonly discover_hosts: readonly DiscoveredHost[];\n");
+    out.push_str("  readonly create_sync_invitation: SyncInvitation;\n");
+    out.push_str("  readonly request_sync_pairing: SyncPairingReceipt;\n");
+    out.push_str("  readonly list_sync_pairing_requests: readonly SyncPairingRequest[];\n");
+    out.push_str("  readonly approve_sync_pairing: void;\n");
+    out.push_str("  readonly reject_sync_pairing: void;\n");
+    out.push_str("  readonly claim_sync_pairing: SyncStatus;\n");
     for command in [
         "get_audio_effects_snapshot",
         "select_audio_effects_preset",
