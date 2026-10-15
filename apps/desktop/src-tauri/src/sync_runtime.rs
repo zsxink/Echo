@@ -1,6 +1,5 @@
 //! Opt-in native LAN lifecycle. Provisioning never accepts keys from the `WebView`.
 
-use std::collections::BTreeMap;
 use std::net::{IpAddr, SocketAddr, TcpListener};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
@@ -16,6 +15,9 @@ use echo_sync::discovery::LanDiscovery;
 use echo_sync::pairing::{PairingError, PairingGrantDto, PairingInvitation, PendingPairingRequest};
 use echo_sync::server::{host_router, serve_tls, HostApiState};
 use tokio::sync::oneshot;
+
+mod discovery;
+pub use discovery::discover_hosts;
 
 pub type StatusNotifier = Arc<dyn Fn(SyncStatus) + Send + Sync>;
 
@@ -942,46 +944,6 @@ impl Drop for SyncRuntime {
     }
 }
 
-/// Discovery runs only for this user-requested bounded interval. Public mDNS
-/// metadata is never accepted as TLS identity or pairing authorization.
-pub fn discover_hosts() -> Result<Vec<DiscoveredHost>, SyncRuntimeError> {
-    let discovery = LanDiscovery::browse().map_err(|_| SyncRuntimeError::DiscoveryFailed)?;
-    let deadline = Instant::now() + Duration::from_secs(3);
-    let mut hosts = BTreeMap::new();
-    while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
-        let Ok(event) = discovery.events().recv_timeout(remaining) else {
-            break;
-        };
-        if let mdns_sd::ServiceEvent::ServiceResolved(info) = event {
-            let name = info.get_fullname().to_owned();
-            hosts.insert(
-                name.clone(),
-                DiscoveredHost {
-                    name,
-                    addresses: info
-                        .get_addresses()
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect(),
-                    port: info.get_port(),
-                    device_id: info
-                        .get_properties()
-                        .get_property_val_str("device")
-                        .map(str::to_owned),
-                    protocol_version: info
-                        .get_properties()
-                        .get_property_val_str("protocol")
-                        .map(str::to_owned),
-                },
-            );
-        }
-    }
-    discovery
-        .shutdown()
-        .map_err(|_| SyncRuntimeError::DiscoveryFailed)?;
-    Ok(hosts.into_values().collect())
-}
-
 fn selected_lan_address(address: &str) -> Result<IpAddr, SyncRuntimeError> {
     let address: IpAddr = address
         .parse()
@@ -998,101 +960,5 @@ fn selected_lan_address(address: &str) -> Result<IpAddr, SyncRuntimeError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn unconfigured_runtime_stays_offline_and_stop_is_idempotent() {
-        let directory = tempfile::tempdir().unwrap();
-        let database =
-            Arc::new(SqliteDatabase::open(directory.path().join("echo.sqlite")).unwrap());
-        let runtime = SyncRuntime::new(database, None);
-        assert_eq!(runtime.status().state, SyncState::Disabled);
-        assert_eq!(
-            runtime.host_start("192.168.1.2").unwrap_err(),
-            SyncRuntimeError::Unconfigured
-        );
-        assert_eq!(
-            runtime.peer_start().unwrap_err(),
-            SyncRuntimeError::Unconfigured
-        );
-        assert_eq!(
-            runtime.sync_now().unwrap_err(),
-            SyncRuntimeError::Unconfigured
-        );
-        assert!(!runtime.status().enabled);
-        assert_eq!(runtime.stop().unwrap().state, SyncState::Disabled);
-        assert_eq!(runtime.stop().unwrap().state, SyncState::Disabled);
-    }
-
-    #[test]
-    fn host_address_cannot_bind_wildcards_public_or_loopback_interfaces() {
-        for address in [
-            "0.0.0.0",
-            "127.0.0.1",
-            "8.8.8.8",
-            "224.0.0.1",
-            "::",
-            "::1",
-            "2001:4860:4860::8888",
-            "hostname",
-        ] {
-            assert_eq!(
-                selected_lan_address(address),
-                Err(SyncRuntimeError::InvalidAddress)
-            );
-        }
-        for address in [
-            "192.168.1.2",
-            "10.0.0.1",
-            "172.16.0.2",
-            "169.254.1.2",
-            "fd00::1",
-        ] {
-            assert!(selected_lan_address(address).is_ok());
-        }
-    }
-
-    #[test]
-    fn local_write_wakes_sync_while_retry_backoff_suppresses_it() {
-        let stop = AtomicBool::new(false);
-        let (wake, wakeups) = mpsc::channel();
-        wake.send(()).unwrap();
-        assert!(wait_for_sync_wakeup(
-            &wakeups,
-            Duration::from_secs(1),
-            false,
-            &stop
-        ));
-
-        let (wake, wakeups) = mpsc::channel();
-        let wake_sender = wake.clone();
-        let writer = thread::spawn(move || {
-            wake.send(()).unwrap();
-            thread::sleep(Duration::from_millis(15));
-        });
-        let started = Instant::now();
-        assert!(wait_for_sync_wakeup(
-            &wakeups,
-            Duration::from_millis(40),
-            true,
-            &stop
-        ));
-        writer.join().unwrap();
-        drop(wake_sender);
-        assert!(started.elapsed() >= Duration::from_millis(35));
-    }
-
-    #[test]
-    fn stopping_wakes_a_waiting_sync_loop_immediately() {
-        let (wake, wakeups) = mpsc::channel();
-        let stop = Arc::new(AtomicBool::new(false));
-        let worker_stop = Arc::clone(&stop);
-        let worker = thread::spawn(move || {
-            wait_for_sync_wakeup(&wakeups, Duration::from_secs(30), false, &worker_stop)
-        });
-        stop.store(true, Ordering::Release);
-        let _ = wake.send(());
-        assert!(!worker.join().unwrap());
-    }
-}
+#[path = "sync_runtime/tests.rs"]
+mod tests;
