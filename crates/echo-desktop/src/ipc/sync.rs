@@ -128,6 +128,7 @@ export interface SyncPairingReceipt {
 }
 export interface SyncCommandArguments {
   readonly sync_status: [args?: Record<string, never>];
+  readonly local_lan_addresses: [args?: Record<string, never>];
   readonly host_start: [args: { address: string }];
   readonly host_stop: [args?: Record<string, never>];
   readonly sync_peer_start: [args?: Record<string, never>];

@@ -12,6 +12,7 @@ export type LanSyncRole = "host" | "peer";
 export interface LanSyncAdapter {
   status(): Promise<SyncStatus>;
   subscribeStatus(handler: (status: SyncStatus) => void): Promise<() => void>;
+  localLanAddresses(): Promise<readonly string[]>;
   hostStart(address: string): Promise<SyncStatus>;
   hostStop(): Promise<SyncStatus>;
   peerStart(): Promise<SyncStatus>;
@@ -39,6 +40,7 @@ export interface LanSyncAdapter {
 export const lanSyncAdapter: LanSyncAdapter = {
   status: () => bridge.call("sync_status"),
   subscribeStatus: (handler) => bridge.subscribe("sync://status", handler),
+  localLanAddresses: () => bridge.call("local_lan_addresses"),
   hostStart: (address) => bridge.call("host_start", { address }),
   hostStop: () => bridge.call("host_stop"),
   peerStart: () => bridge.call("sync_peer_start"),

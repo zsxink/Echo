@@ -22,6 +22,7 @@ reqwest.workspace = true
 tokio = { workspace = true }
 rustls = { workspace = true }
 mdns-sd = { workspace = true }
+if-addrs = "=0.15.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
 rcgen = { version = "=0.13.2", default-features = false, features = ["ring", "zeroize"] }

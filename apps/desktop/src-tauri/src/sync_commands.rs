@@ -30,6 +30,37 @@ fn error(error: SyncRuntimeError) -> IpcErrorDto {
     )
 }
 
+fn available_local_lan_addresses() -> Vec<String> {
+    let Ok(interfaces) = if_addrs::get_if_addrs() else {
+        return Vec::new();
+    };
+    let mut addresses = interfaces
+        .into_iter()
+        .filter(|interface| {
+            interface.is_oper_up() && !interface.is_loopback() && !interface.is_link_local()
+        })
+        .map(|interface| interface.ip())
+        .filter(|address| match address {
+            IpAddr::V4(address) => address.is_private(),
+            IpAddr::V6(address) => (address.segments()[0] & 0xfe00) == 0xfc00,
+        })
+        .collect::<Vec<_>>();
+    addresses.sort_by_key(|address| match address {
+        IpAddr::V4(_) => 0,
+        IpAddr::V6(_) => 1,
+    });
+    addresses.dedup();
+    addresses
+        .into_iter()
+        .map(|address| address.to_string())
+        .collect()
+}
+
+#[tauri::command]
+pub fn local_lan_addresses() -> Vec<String> {
+    available_local_lan_addresses()
+}
+
 async fn transition(
     app: tauri::AppHandle,
     runtime: Arc<SyncRuntime>,

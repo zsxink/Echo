@@ -12,7 +12,7 @@ import { lanSyncAdapter, type LanSyncRole } from "./lanSyncAdapter";
 function describeStatus(status: SyncStatus | null, loading: boolean): string {
   if (loading) return "正在读取同步服务状态…";
   if (!status) return "无法读取同步服务状态";
-  if (status.lastError) return `同步服务错误：${status.lastError}`;
+  if (status.lastError) return `同步服务错误：${syncErrorText(status.lastError)}`;
   switch (status.state) {
     case "disabled":
       return "已关闭";
@@ -36,6 +36,7 @@ export function LanSyncSettings() {
   const [error, setError] = useState<string | null>(null);
   const [role, setRole] = useState<LanSyncRole>("peer");
   const [address, setAddress] = useState("");
+  const [localAddresses, setLocalAddresses] = useState<readonly string[] | null>(null);
   const [hosts, setHosts] = useState<readonly DiscoveredHost[]>([]);
   const [invitation, setInvitation] = useState<SyncInvitation | null>(null);
   const [pairingRequests, setPairingRequests] = useState<readonly SyncPairingRequest[]>([]);
@@ -82,6 +83,25 @@ export function LanSyncSettings() {
     return () => {
       current = false;
       unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let current = true;
+    void lanSyncAdapter
+      .localLanAddresses()
+      .then((found) => {
+        if (!current) return;
+        const addresses = Array.isArray(found) ? found : [];
+        setLocalAddresses(addresses);
+        setAddress((selected) => selected.trim() || addresses[0] || "");
+      })
+      .catch(() => {
+        if (!current) return;
+        setLocalAddresses([]);
+      });
+    return () => {
+      current = false;
     };
   }, []);
 
@@ -416,13 +436,26 @@ export function LanSyncSettings() {
               <label className="storage-value" htmlFor="lan-sync-address">
                 <strong>本机局域网 IP</strong>
                 <span className="setting-help">例如 192.168.1.20</span>
+                <span className="setting-help" aria-live="polite">
+                  {localAddresses === null
+                    ? "正在识别本机局域网地址…"
+                    : localAddresses.length > 0
+                      ? `已自动识别 ${localAddresses.length} 个地址；可从输入建议中切换。`
+                      : "未识别到局域网地址，请手动填写当前网络的 IP。"}
+                </span>
               </label>
               <input
                 id="lan-sync-address"
+                list="lan-sync-local-addresses"
                 value={address}
                 onChange={(event) => setAddress(event.currentTarget.value)}
                 placeholder="192.168.1.20"
               />
+              <datalist id="lan-sync-local-addresses">
+                {localAddresses?.map((candidate) => (
+                  <option key={candidate} value={candidate} />
+                ))}
+              </datalist>
             </div>
           ) : null}
           {role === "host" ? (
@@ -552,22 +585,34 @@ export function LanSyncSettings() {
 }
 
 function errorMessage(cause: unknown): string {
-  if (cause instanceof Error) {
-    const key = cause.message;
-    const messages: Record<string, string> = {
-      "sync.unconfigured": "同步服务尚未完成安全配置，未启动连接或传输数据。",
-      "sync.invalidAddress": "请输入有效的局域网 IP 地址。",
-      "sync.libraryUnavailable": "请先选择可用的音乐目录。",
-      "sync.busy": "同步服务正在处理其他操作。",
-      "sync.bindFailed": "无法监听该局域网地址。",
-      "sync.discoveryFailed": "局域网主机发现失败。",
-      "sync.workerFailed": "同步服务遇到错误。",
-      "sync.pairingPending": "主机尚未批准请求；领取凭据仍保留在本机当前配对步骤中。",
-      "sync.invitationExpired": "邀请已过期，请让主机重新生成邀请。",
-      "sync.pairingRejected": "主机拒绝了此设备的配对请求。",
-      "sync.receiptExpired": "领取凭据已过期，请重新提交主机邀请。",
-    };
-    return messages[key] ?? `同步操作失败：${key}`;
-  }
-  return "同步操作失败，未确认任何数据已传输。";
+  const key =
+    cause instanceof Error
+      ? cause.message
+      : typeof cause === "string"
+        ? cause
+        : typeof cause === "object" && cause !== null
+          ? "messageKey" in cause && typeof cause.messageKey === "string"
+            ? cause.messageKey
+            : "message_key" in cause && typeof cause.message_key === "string"
+              ? cause.message_key
+              : undefined
+          : undefined;
+  return key ? `同步操作失败：${syncErrorText(key)}` : "同步操作失败，未确认任何数据已传输。";
+}
+
+function syncErrorText(key: string): string {
+  const messages: Record<string, string> = {
+    "sync.unconfigured": "同步服务尚未完成安全配置。",
+    "sync.invalidAddress": "请输入有效的局域网 IP 地址。",
+    "sync.libraryUnavailable": "请先选择可用且可写的音乐目录，再启动同步。",
+    "sync.busy": "同步服务正在处理其他操作。",
+    "sync.bindFailed": "无法监听该局域网地址，请从自动识别的地址中选择当前网络地址。",
+    "sync.discoveryFailed": "局域网主机发现失败。",
+    "sync.workerFailed": "同步服务遇到错误。",
+    "sync.pairingPending": "主机尚未批准请求；领取凭据仍保留在本机当前配对步骤中。",
+    "sync.invitationExpired": "邀请已过期，请让主机重新生成邀请。",
+    "sync.pairingRejected": "主机拒绝了此设备的配对请求。",
+    "sync.receiptExpired": "领取凭据已过期，请重新提交主机邀请。",
+  };
+  return messages[key] ?? key;
 }

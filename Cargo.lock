@@ -1015,6 +1015,7 @@ dependencies = [
  "echo-core",
  "echo-desktop",
  "echo-sync",
+ "if-addrs",
  "mdns-sd",
  "objc2",
  "objc2-app-kit",

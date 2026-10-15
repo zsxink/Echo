@@ -222,6 +222,7 @@ pub fn generated_typescript() -> String {
     ] {
         let _ = writeln!(out, "  readonly {command}: SyncStatus;");
     }
+    out.push_str("  readonly local_lan_addresses: readonly string[];\n");
     out.push_str("  readonly revoke_device: void;\n");
     out.push_str("  readonly discover_hosts: readonly DiscoveredHost[];\n");
     out.push_str("  readonly create_sync_invitation: SyncInvitation;\n");

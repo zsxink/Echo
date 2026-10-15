@@ -90,6 +90,7 @@ type Command =
   | "delete_audio_effects_preset"
   | "retry_audio_effects"
   | "sync_status"
+  | "local_lan_addresses"
   | "host_start"
   | "host_stop"
   | "sync_peer_start"
@@ -342,6 +343,7 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
 
   return {
     sync_status: () => syncStatus,
+    local_lan_addresses: () => ["192.168.1.20"],
     host_start: ({ address }) => {
       syncStatus = {
         ...syncStatus,
