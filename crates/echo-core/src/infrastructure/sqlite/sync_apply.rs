@@ -152,6 +152,7 @@ fn apply_remote_commit(
         ));
     }
     super::sync_manifests::replace(tx, object_type, &object_uuid, &resources)?;
+    apply_commit_aliases(tx, &commit.canonical_json, sequence)?;
     tx.execute(
                     "INSERT INTO sync_commits(commit_seq, library_id, authority_id, epoch, origin_device_id, mutation_id, canonical_json, previous_digest, commit_digest, publication_state, created_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'published', ?10)",
                     params![sequence, expected_binding.0, expected_binding.1, expected_binding.2, commit.origin_device_id.as_uuid().to_string(), commit.mutation_id.as_uuid().to_string(), commit.canonical_json, commit.previous_digest.as_slice(), commit.digest.as_slice(), now_ms()],
@@ -178,10 +179,98 @@ fn apply_remote_commit(
             local_root_uuid,
         )?;
     }
+    project_song_aliases(tx, &commit.canonical_json)?;
     tx.execute(
                     "INSERT INTO sync_inbox(origin_device_id, mutation_id, payload_digest, outcome_json, commit_seq, received_at) VALUES(?1, ?2, ?3, '{\"applied\":true}', ?4, ?5)",
                     params![commit.origin_device_id.as_uuid().to_string(), commit.mutation_id.as_uuid().to_string(), blake3::hash(commit.canonical_json.as_bytes()).to_hex().to_string(), sequence, now_ms()],
                 ).map_err(storage)?;
+    Ok(())
+}
+
+fn apply_commit_aliases(
+    tx: &rusqlite::Transaction<'_>,
+    canonical_json: &str,
+    sequence: i64,
+) -> Result<(), Error> {
+    let body: serde_json::Value = serde_json::from_str(canonical_json).map_err(storage)?;
+    let Some(aliases) = body.get("aliases").and_then(serde_json::Value::as_array) else {
+        return Ok(());
+    };
+    for typed in aliases {
+        if typed.get("kind").and_then(serde_json::Value::as_str) == Some("song") {
+            let alias = typed
+                .pointer("/alias/alias")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| Error::conflict("invalid song alias"))?;
+            let canonical = typed
+                .pointer("/alias/canonical")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| Error::conflict("invalid canonical song identity"))?;
+            super::sync_song_aliases::persist(tx, alias, canonical, sequence)?;
+            continue;
+        }
+        if typed.get("kind").and_then(serde_json::Value::as_str) != Some("playlist_member") {
+            return Err(Error::conflict(
+                "remote commit contains an unsupported alias kind",
+            ));
+        }
+        let alias = typed
+            .get("alias")
+            .ok_or_else(|| Error::conflict("member alias is malformed"))?;
+        let playlist = alias
+            .get("playlist_id")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| Error::conflict("member alias is missing playlist identity"))?;
+        let member = alias
+            .get("alias")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| Error::conflict("member alias is missing alias identity"))?;
+        let canonical = alias
+            .get("canonical")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| Error::conflict("member alias is missing canonical identity"))?;
+        if member == canonical {
+            return Err(Error::conflict("member alias cannot target itself"));
+        }
+        let previous: Option<String> = tx.query_row(
+            "SELECT canonical_member_uuid FROM sync_member_aliases WHERE playlist_uuid=?1 AND alias_member_uuid=?2",
+            rusqlite::params![playlist, member],
+            |row| row.get(0),
+        ).optional().map_err(storage)?;
+        if previous.as_deref().is_some_and(|value| value != canonical) {
+            return Err(Error::conflict("member alias identity was remapped"));
+        }
+        tx.execute(
+            "INSERT OR IGNORE INTO sync_member_aliases(playlist_uuid,alias_member_uuid,canonical_member_uuid,commit_seq) VALUES(?1,?2,?3,?4)",
+            rusqlite::params![playlist, member, canonical, sequence],
+        ).map_err(storage)?;
+        tx.execute(
+            "UPDATE playlist_songs SET member_uuid=?3 WHERE playlist_uuid=?1 AND member_uuid=?2",
+            rusqlite::params![playlist, member, canonical],
+        )
+        .map_err(storage)?;
+    }
+    Ok(())
+}
+
+fn project_song_aliases(tx: &rusqlite::Transaction<'_>, canonical_json: &str) -> Result<(), Error> {
+    let body: serde_json::Value = serde_json::from_str(canonical_json).map_err(storage)?;
+    if let Some(aliases) = body.get("aliases").and_then(serde_json::Value::as_array) {
+        for typed in aliases {
+            if typed.get("kind").and_then(serde_json::Value::as_str) == Some("song") {
+                if let (Some(alias), Some(canonical)) = (
+                    typed
+                        .pointer("/alias/alias")
+                        .and_then(serde_json::Value::as_str),
+                    typed
+                        .pointer("/alias/canonical")
+                        .and_then(serde_json::Value::as_str),
+                ) {
+                    super::sync_song_aliases::project(tx, alias, canonical)?;
+                }
+            }
+        }
+    }
     Ok(())
 }
 

@@ -1,12 +1,15 @@
 use super::*;
 use crate::application::ports::{
-    RemoteResourceItem, RemoteResourceJournalPort, RemoteResourcePublication, RemoteResourceStage,
-    RemoteResourceTarget,
+    HostCommitLedgerPort, LocalSyncQueuePort, RemoteResourceItem, RemoteResourceJournalPort,
+    RemoteResourcePublication, RemoteResourceStage, RemoteResourceTarget,
 };
 use crate::domain::sync::{
-    AuthorityId, Epoch, LibraryId, ObjectKey, ResourceDigest, SharedResourceKind,
-    SharedResourceManifest, SyncBinding,
+    AuthorityId, DeviceId, Epoch, LibraryId, MutationCandidate, MutationId, ObjectKey,
+    ResourceDigest, SharedResourceKind, SharedResourceManifest, SyncBinding,
 };
+
+#[path = "sync_resource_publication_safety.rs"]
+mod safety;
 
 fn fixture() -> (
     tempfile::TempDir,
@@ -16,24 +19,43 @@ fn fixture() -> (
     SharedResourceManifest,
 ) {
     let (directory, database, root) = database();
-    let song = song(root, "media/track.flac", "Track", "Artist");
+    let manifest = manifest(b"initial audio", "media/track.flac");
+    let mut song = song(root, "media/track.flac", "Track", "Artist");
+    song.apply_scan_facts(
+        manifest.digest.to_hex(),
+        manifest.length,
+        1,
+        crate::domain::media::AudioFormat::Flac,
+    );
     SongRepository::upsert(&database, &song).expect("insert song");
     let object = ObjectKey::Song(song.id());
-    let manifest = manifest(b"initial audio", "media/track.flac");
     database
         .set_local_sync_resources(object, vec![manifest.clone()])
         .expect("declare current resource");
+    let binding = SyncBinding {
+        library_id: LibraryId::new(),
+        authority_id: AuthorityId::new(),
+        epoch: Epoch::from_u64(1),
+    };
     database
-        .bind_sync_library(
-            SyncBinding {
-                library_id: LibraryId::new(),
-                authority_id: AuthorityId::new(),
-                epoch: Epoch::from_u64(1),
-            },
-            false,
-            root,
-        )
-        .expect("bind replica");
+        .bind_sync_library(binding, true, root)
+        .expect("bind host");
+    database
+        .ensure_host_sync_baseline(binding, root)
+        .expect("publish initial host baseline");
+    let mut initial_song = database
+        .pending_local_mutations(32)
+        .unwrap()
+        .into_iter()
+        .find(|candidate| candidate.object == object)
+        .expect("baseline song mutation");
+    initial_song.resource_refs = vec![manifest.clone()];
+    let checkpoint = database
+        .stage_confirmation(binding, &initial_song)
+        .unwrap()
+        .checkpoint
+        .unwrap();
+    database.mark_published(checkpoint).unwrap();
     (directory, database, root, object, manifest)
 }
 
@@ -126,6 +148,91 @@ fn remote_resource_publication_is_durable_and_marks_media_ready_only_after_finis
     database
         .finish(&completed)
         .expect("finish retry is idempotent");
+}
+
+#[test]
+fn host_only_schedules_peer_authored_resources_for_publication() {
+    let (_directory, database, root) = database();
+    let binding = SyncBinding {
+        library_id: LibraryId::new(),
+        authority_id: AuthorityId::new(),
+        epoch: Epoch::from_u64(1),
+    };
+    database
+        .bind_sync_library(binding, true, root)
+        .expect("bind host");
+    let host_device = DeviceId::from_uuid(database.current_device_id().as_uuid());
+    let peer_device = DeviceId::new();
+    database
+        .authorize_sync_peer(
+            binding,
+            peer_device,
+            "Peer device".to_owned(),
+            "secure-store://peer".to_owned(),
+        )
+        .expect("authorize peer");
+    let host_song = song(root, "media/host.flac", "Host", "Artist");
+    SongRepository::upsert(&database, &host_song).expect("local song");
+    let host_resource = manifest(b"host bytes", "media/host.flac");
+    let host_candidate = MutationCandidate {
+        resource_refs: vec![host_resource],
+        mutation_id: MutationId::new(),
+        origin_device_id: host_device,
+        origin_seq: 1,
+        previous_mutation_id: None,
+        object: ObjectKey::Song(host_song.id()),
+        base_object_version: None,
+        payload: serde_json::json!({
+            "song_uuid": host_song.id(),
+            "relative_path": "media/host.flac",
+            "title": "Host",
+            "artist": "Artist",
+            "blake3_hash": manifest(b"host bytes", "media/host.flac").digest.to_hex(),
+            "added_at": 1
+        }),
+    };
+    let host_commit = database
+        .stage_confirmation(binding, &host_candidate)
+        .unwrap()
+        .checkpoint
+        .unwrap();
+    database.mark_published(host_commit).unwrap();
+
+    let peer_song = SongId::new();
+    let peer_resource = manifest(b"peer bytes", "media/peer.flac");
+    let peer_candidate = MutationCandidate {
+        resource_refs: vec![peer_resource],
+        mutation_id: MutationId::new(),
+        origin_device_id: peer_device,
+        origin_seq: 1,
+        previous_mutation_id: None,
+        object: ObjectKey::Song(peer_song),
+        base_object_version: None,
+        payload: serde_json::json!({
+            "song_uuid": peer_song,
+            "relative_path": "media/peer.flac",
+            "title": "Peer",
+            "artist": "Artist",
+            "blake3_hash": manifest(b"peer bytes", "media/peer.flac").digest.to_hex(),
+            "added_at": 2
+        }),
+    };
+    let peer_commit = database
+        .stage_confirmation(binding, &peer_candidate)
+        .unwrap()
+        .checkpoint
+        .unwrap();
+    database.mark_published(peer_commit).unwrap();
+
+    let all = database.pending_remote_resource_sets(root).unwrap();
+    assert_eq!(all.len(), 2);
+    let peer_pending = database.pending_peer_resource_sets(root).unwrap();
+    assert_eq!(peer_pending.len(), 1);
+    assert_eq!(peer_pending[0].0, ObjectKey::Song(peer_song));
+    assert_eq!(
+        peer_pending[0].1[0].manifest.relative_path.as_str(),
+        "media/peer.flac"
+    );
 }
 
 #[test]

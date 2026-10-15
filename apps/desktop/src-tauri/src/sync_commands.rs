@@ -1,6 +1,7 @@
 //! Typed Tauri boundary for native opt-in synchronization lifecycle.
 #![allow(clippy::needless_pass_by_value)]
 
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -246,11 +247,12 @@ pub async fn request_sync_pairing(
     runtime: State<'_, Arc<SyncRuntime>>,
     invitation: String,
     device_name: String,
+    host_address: Option<String>,
 ) -> Result<SyncPairingReceipt, IpcErrorDto> {
     let runtime = Arc::clone(&runtime);
     tauri::async_runtime::spawn_blocking(move || {
         let (endpoint, invitation) = parse_invitation(&invitation)?;
-        let endpoint = Url::parse(&endpoint).map_err(|_| SyncRuntimeError::InvalidAddress)?;
+        let endpoint = pairing_endpoint(&endpoint, host_address.as_deref())?;
         let device_id = runtime.local_sync_device_id();
         let client =
             LanClient::for_pairing(&invitation).map_err(|_| SyncRuntimeError::Unconfigured)?;
@@ -275,6 +277,7 @@ pub async fn claim_sync_pairing(
     request_id: String,
     receipt: String,
     invitation: String,
+    host_address: Option<String>,
 ) -> Result<SyncStatus, IpcErrorDto> {
     let runtime = Arc::clone(&runtime);
     let worker_runtime = Arc::clone(&runtime);
@@ -288,7 +291,7 @@ pub async fn claim_sync_pairing(
         {
             return Err(SyncRuntimeError::InvalidAddress);
         }
-        let endpoint = Url::parse(&endpoint).map_err(|_| SyncRuntimeError::InvalidAddress)?;
+        let endpoint = pairing_endpoint(&endpoint, host_address.as_deref())?;
         let client =
             LanClient::for_pairing(&invitation).map_err(|_| SyncRuntimeError::Unconfigured)?;
         let executor = tokio::runtime::Builder::new_current_thread()
@@ -311,5 +314,72 @@ pub async fn claim_sync_pairing(
             let _ = app.emit("sync://status", runtime.report_error(failure));
             Err(error(failure))
         }
+    }
+}
+
+/// Apply a user-selected LAN address to the invite endpoint while retaining
+/// the certificate pin carried by the invitation. Discovery supplies only an
+/// address hint; the invitation remains the trust anchor.
+fn pairing_endpoint(endpoint: &str, host_address: Option<&str>) -> Result<Url, SyncRuntimeError> {
+    let mut endpoint = Url::parse(endpoint).map_err(|_| SyncRuntimeError::InvalidAddress)?;
+    if endpoint.scheme() != "https" || endpoint.host().is_none() {
+        return Err(SyncRuntimeError::InvalidAddress);
+    }
+    let Some(host_address) = host_address
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(endpoint);
+    };
+
+    let (address, port) = match host_address.parse::<SocketAddr>() {
+        Ok(socket) => (socket.ip(), Some(socket.port())),
+        Err(_) => (
+            host_address
+                .parse::<IpAddr>()
+                .map_err(|_| SyncRuntimeError::InvalidAddress)?,
+            None,
+        ),
+    };
+    let address = crate::sync_runtime::selected_lan_address(&address.to_string())?;
+    let host = match address {
+        IpAddr::V4(_) => address.to_string(),
+        IpAddr::V6(_) => format!("[{address}]"),
+    };
+    endpoint
+        .set_host(Some(&host))
+        .map_err(|_| SyncRuntimeError::InvalidAddress)?;
+    if let Some(port) = port {
+        endpoint
+            .set_port(Some(port))
+            .map_err(|()| SyncRuntimeError::InvalidAddress)?;
+    }
+    Ok(endpoint)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pairing_endpoint_accepts_manual_lan_host_and_keeps_invite_port() {
+        let endpoint = pairing_endpoint("https://192.168.1.5:43000", Some("10.0.0.8"))
+            .expect("valid LAN override");
+        assert_eq!(endpoint.as_str(), "https://10.0.0.8:43000/");
+    }
+
+    #[test]
+    fn pairing_endpoint_uses_discovered_socket_and_rejects_non_lan_hosts() {
+        let endpoint = pairing_endpoint("https://192.168.1.5:43000", Some("[fd00::2]:44000"))
+            .expect("valid discovered socket");
+        assert_eq!(endpoint.as_str(), "https://[fd00::2]:44000/");
+        assert_eq!(
+            pairing_endpoint("https://192.168.1.5:43000", Some("8.8.8.8")),
+            Err(SyncRuntimeError::InvalidAddress)
+        );
+        assert_eq!(
+            pairing_endpoint("https://192.168.1.5:43000", Some("host.example")),
+            Err(SyncRuntimeError::InvalidAddress)
+        );
     }
 }

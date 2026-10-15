@@ -20,11 +20,20 @@ export interface LanSyncAdapter {
   syncNow(): Promise<SyncStatus>;
   discoverHosts(): Promise<readonly DiscoveredHost[]>;
   createInvitation(): Promise<SyncInvitation>;
-  requestPairing(invitation: string, deviceName: string): Promise<SyncPairingReceipt>;
+  requestPairing(
+    invitation: string,
+    deviceName: string,
+    hostAddress?: string,
+  ): Promise<SyncPairingReceipt>;
   listPairingRequests(): Promise<readonly SyncPairingRequest[]>;
   approvePairing(requestId: string): Promise<void>;
   rejectPairing(requestId: string): Promise<void>;
-  claimPairing(requestId: string, receipt: string, invitation: string): Promise<SyncStatus>;
+  claimPairing(
+    requestId: string,
+    receipt: string,
+    invitation: string,
+    hostAddress?: string,
+  ): Promise<SyncStatus>;
 }
 
 export const lanSyncAdapter: LanSyncAdapter = {
@@ -38,11 +47,11 @@ export const lanSyncAdapter: LanSyncAdapter = {
   syncNow: () => bridge.call("sync_now"),
   discoverHosts: () => bridge.call("discover_hosts"),
   createInvitation: () => bridge.call("create_sync_invitation"),
-  requestPairing: (invitation, deviceName) =>
-    bridge.call("request_sync_pairing", { invitation, deviceName }),
+  requestPairing: (invitation, deviceName, hostAddress) =>
+    bridge.call("request_sync_pairing", { invitation, deviceName, hostAddress }),
   listPairingRequests: () => bridge.call("list_sync_pairing_requests"),
   approvePairing: (requestId) => bridge.call("approve_sync_pairing", { requestId }),
   rejectPairing: (requestId) => bridge.call("reject_sync_pairing", { requestId }),
-  claimPairing: (requestId, receipt, invitation) =>
-    bridge.call("claim_sync_pairing", { requestId, receipt, invitation }),
+  claimPairing: (requestId, receipt, invitation, hostAddress) =>
+    bridge.call("claim_sync_pairing", { requestId, receipt, invitation, hostAddress }),
 };

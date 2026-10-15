@@ -481,21 +481,39 @@ impl PairingRegistry {
             drop(state);
             metadata
         };
-        let result = port.load_approved_grant(&metadata).and_then(|grant| {
-            validate_grant(&grant, &metadata)?;
-            Ok(grant)
-        });
+        let loaded = port.load_approved_grant(&metadata);
+        let transient_read_failure = matches!(&loaded, Err(PairingError::ProvisioningUnavailable));
+        let result = loaded.and_then(|grant| validate_grant(&grant, &metadata).map(|()| grant));
         let mut state = self.state.lock().map_err(|_| PairingError::Unavailable)?;
-        let expired = state
-            .requests
-            .remove(&dto.request_id)
-            .is_none_or(|request| request.expires <= Instant::now());
-        drop(state);
-        if expired {
+        let Some(request) = state.requests.get_mut(&dto.request_id) else {
+            // Cancellation owns compensation when it removed the request while
+            // the vault read was in flight.
+            return result.and(Err(PairingError::Unavailable));
+        };
+        if request.expires <= Instant::now() {
+            state.requests.remove(&dto.request_id);
+            drop(state);
             self.compensate(&metadata, port)?;
             return Err(PairingError::Unavailable);
         }
-        result
+        match result {
+            Ok(grant) => {
+                state.requests.remove(&dto.request_id);
+                Ok(grant)
+            }
+            Err(error) if transient_read_failure => {
+                // A vault/authorization-store read can fail transiently. Keep
+                // this exact approved generation retryable; no bearer escaped.
+                request.state = RequestState::Approved;
+                Err(error)
+            }
+            Err(error) => {
+                state.requests.remove(&dto.request_id);
+                drop(state);
+                self.compensate(&metadata, port)?;
+                Err(error)
+            }
+        }
     }
 }
 

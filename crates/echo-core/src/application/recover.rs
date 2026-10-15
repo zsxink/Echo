@@ -766,6 +766,9 @@ impl<'a> RecoverOperations<'a> {
                     .clone()
                     .map(|candidate| rewrap(&candidate, LyricsSource::Sidecar));
                 let cover = parsed.cover.clone();
+                let resources = crate::application::scan_resources::verified_song_resources(
+                    self.deps, root, &parsed, true,
+                )?;
                 let committed = OperationItem {
                     kind: OperationResourceKind::Audio,
                     state: OperationState::DatabaseCommitted,
@@ -783,6 +786,7 @@ impl<'a> RecoverOperations<'a> {
                     .uow
                     .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
                         let entity = song_from_parsed(song_id, root, &parsed.file, added_at);
+                        tx.set_song_file_resources(&entity, &resources)?;
                         tx.upsert_song(&entity)?;
                         match embedded {
                             Some(candidate) => tx.set_lyrics_candidate(song_id, &candidate)?,

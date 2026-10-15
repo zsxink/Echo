@@ -65,6 +65,7 @@ pub(crate) mod sync_manifests;
 pub(crate) mod sync_projection;
 pub(crate) mod sync_queue;
 mod sync_snapshot;
+mod sync_song_aliases;
 #[cfg(test)]
 mod tests;
 
@@ -1248,6 +1249,13 @@ impl TxLyricsWriter for SqliteTx<'_> {
 }
 
 impl TxStateWriter for SqliteTx<'_> {
+    fn set_song_file_resources(
+        &mut self,
+        song: &Song,
+        resources: &[crate::domain::sync::SharedResourceManifest],
+    ) -> Result<(), Error> {
+        sync_manifests::replace_song_files(self.transaction, song, resources)
+    }
     fn attach_cover(&mut self, song: SongId, cover: &CoverAssetRef) -> Result<(), Error> {
         attach_cover(self.transaction, song, cover)
     }

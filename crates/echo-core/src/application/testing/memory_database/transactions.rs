@@ -179,6 +179,16 @@ impl TxLyricsWriter for MemoryTx<'_> {
 }
 
 impl TxStateWriter for MemoryTx<'_> {
+    fn set_song_file_resources(
+        &mut self,
+        song: &Song,
+        resources: &[crate::domain::sync::SharedResourceManifest],
+    ) -> Result<(), Error> {
+        self.store
+            .song_resources
+            .insert(song.id(), resources.to_vec());
+        Ok(())
+    }
     fn attach_cover(&mut self, song: SongId, cover: &CoverAssetRef) -> Result<(), Error> {
         self.store.covers.insert(song, cover.clone());
         Ok(())

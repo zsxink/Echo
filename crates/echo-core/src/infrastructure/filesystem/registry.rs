@@ -109,7 +109,9 @@ impl RootRegistry {
                         ));
                     }
                 }
-                Err(source) if source.kind() == std::io::ErrorKind::NotFound => {}
+                Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
+                    reject_portable_collision(&path, component)?;
+                }
                 Err(source) => return Err(Error::io("inspect library path", source, &path)),
             }
         }
@@ -130,6 +132,35 @@ impl RootRegistry {
             .map(|(k, v)| (*k, v.clone()))
             .collect()
     }
+}
+
+/// A case-sensitive filesystem must not create two names that would address
+/// one file on Windows or macOS. Existing exact paths remain readable; a new
+/// spelling that aliases a foreign entry fails before exclusive creation.
+fn reject_portable_collision(path: &std::path::Path, component: &str) -> Result<(), Error> {
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    let entries = match std::fs::read_dir(parent) {
+        Ok(entries) => entries,
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(source) => return Err(Error::io("inspect destination names", source, parent)),
+    };
+    let identity = crate::domain::text::path_identity_key(component);
+    for entry in entries {
+        let entry =
+            entry.map_err(|source| Error::io("inspect destination name", source, parent))?;
+        if entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| crate::domain::text::path_identity_key(name) == identity)
+        {
+            return Err(Error::conflict(
+                "library path collides by case or Unicode normalization",
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

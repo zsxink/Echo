@@ -60,5 +60,12 @@ public key to match. TLS 1.3 CertificateVerify signatures are verified by the
 rustls ring provider. A renewed certificate with the same key is accepted;
 another key requires renewed trust. Certificate SAN and public CA chains do
 not establish this paired identity. System proxies and redirects are disabled.
-Pairing, secure-store provisioning and live device revocation remain pending
-implementation tasks; this client boundary alone does not implement them.
+
+Pairing uses a short-lived, one-time invitation and explicit host approval.
+Provisioned per-device credentials are stored through the platform secure-store
+adapter; failure to access that store is an error and does not fall back to
+plaintext. The host checks the authenticated device against its current library
+authorization on each request, so revocation takes effect for subsequent
+requests. These mechanisms are implemented in the transport and desktop
+provisioning code; their complete cross-platform and in-flight request
+acceptance matrix remains part of release verification.

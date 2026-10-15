@@ -158,6 +158,8 @@ struct ScanStack {
     root: LibraryRootId,
 }
 
+include!("sync_import_resources.rs");
+
 impl ScanStack {
     fn new() -> Self {
         let directory = tempfile::tempdir().expect("temporary database directory");

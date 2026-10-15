@@ -32,6 +32,27 @@ fn validate_current(
         ));
     }
     let (kind, id) = sync_manifests::identity(publication.object);
+    if let ObjectKey::Song(song) = publication.object {
+        let alias: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sync_song_aliases WHERE alias_song_uuid=?1)",
+                params![song.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        let tombstoned: bool = connection
+            .query_row(
+                "SELECT COALESCE((SELECT is_tombstone FROM sync_object_versions WHERE object_type='song' AND object_uuid=?1 ORDER BY commit_seq DESC LIMIT 1),0)",
+                params![song.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if alias || tombstoned {
+            return Err(Error::conflict(
+                "resource publication object is an alias or final tombstone",
+            ));
+        }
+    }
     let current = sync_manifests::load(connection, kind, &id)?;
     let expected = publication
         .items
@@ -207,10 +228,47 @@ impl SqliteDatabase {
         &self,
         root: LibraryRootId,
     ) -> Result<PendingRemoteResourceSets, Error> {
+        self.pending_resource_sets(root, false)
+    }
+
+    /// Resource sets whose current published object version was authored by a
+    /// remote device. A host uses this to publish bytes it received into its
+    /// own library without treating its already-local media as remote input.
+    pub fn pending_peer_resource_sets(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<PendingRemoteResourceSets, Error> {
+        self.pending_resource_sets(root, true)
+    }
+
+    fn pending_resource_sets(
+        &self,
+        root: LibraryRootId,
+        peer_authored_only: bool,
+    ) -> Result<PendingRemoteResourceSets, Error> {
         self.with_reader(|connection| {
             let bound: Option<String> = connection.query_row("SELECT local_root_uuid FROM sync_binding WHERE singleton=1",[],|row| row.get(0)).optional().map_err(storage)?.flatten();
             if bound.as_deref()!=Some(root.to_string().as_str()) { return Err(Error::conflict("remote resources root is not bound")); }
-            let mut statement=connection.prepare("SELECT DISTINCT object_type,object_uuid FROM sync_resource_manifests ORDER BY object_type,object_uuid").map_err(storage)?;
+            let query = if peer_authored_only {
+                "SELECT DISTINCT m.object_type,m.object_uuid FROM sync_resource_manifests m
+                 WHERE NOT (m.object_type='song' AND EXISTS (
+                   SELECT 1 FROM sync_song_aliases a WHERE a.alias_song_uuid=m.object_uuid))
+                   AND EXISTS (SELECT 1 FROM sync_object_versions v
+                   JOIN sync_commits c ON c.commit_seq=v.commit_seq
+                   WHERE v.object_type=m.object_type AND v.object_uuid=m.object_uuid
+                     AND v.is_tombstone=0 AND c.origin_device_id <>
+                       (SELECT value FROM device_state WHERE key='device_id'))
+                 ORDER BY m.object_type,m.object_uuid"
+            } else {
+                "SELECT DISTINCT m.object_type,m.object_uuid FROM sync_resource_manifests m
+                 WHERE NOT (m.object_type='song' AND EXISTS (
+                   SELECT 1 FROM sync_song_aliases a WHERE a.alias_song_uuid=m.object_uuid))
+                   AND EXISTS (SELECT 1 FROM sync_object_versions v
+                     WHERE v.object_type=m.object_type AND v.object_uuid=m.object_uuid
+                       AND v.is_tombstone=0)
+                 ORDER BY m.object_type,m.object_uuid"
+            };
+            let mut statement=connection.prepare(query).map_err(storage)?;
             let rows=statement.query_map([],|row| Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?))).map_err(storage)?;
             let mut pending=Vec::new();
             for row in rows {

@@ -137,11 +137,11 @@ export interface SyncCommandArguments {
   readonly revoke_device: [args: { deviceId: string }];
   readonly discover_hosts: [args?: Record<string, never>];
   readonly create_sync_invitation: [args?: Record<string, never>];
-  readonly request_sync_pairing: [args: { invitation: string; deviceName: string }];
+  readonly request_sync_pairing: [args: { invitation: string; deviceName: string; hostAddress?: string }];
   readonly list_sync_pairing_requests: [args?: Record<string, never>];
   readonly approve_sync_pairing: [args: { requestId: string }];
   readonly reject_sync_pairing: [args: { requestId: string }];
-  readonly claim_sync_pairing: [args: { requestId: string; receipt: string; invitation: string }];
+  readonly claim_sync_pairing: [args: { requestId: string; receipt: string; invitation: string; hostAddress?: string }];
 }
 
 "

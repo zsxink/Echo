@@ -154,6 +154,44 @@ describe("SettingsView LAN sync preferences", () => {
     expect(await screen.findByTestId("lan-sync-hosts")).toHaveTextContent("Echo 主机");
     expect(screen.getByTestId("lan-sync-hosts")).toHaveTextContent("192.168.1.10:43000");
   });
+
+  it("lets a peer use a discovered host address for the pinned invite flow", async () => {
+    mocks.setInvoke("discover_hosts", [
+      {
+        name: "Echo 主机",
+        addresses: ["192.168.1.10"],
+        port: 43000,
+        deviceId: "device-1",
+        protocolVersion: "1",
+      },
+    ]);
+    mocks.setInvoke("request_sync_pairing", {
+      requestId: "request-1",
+      receipt: "one-time-receipt",
+      expiresAtUnixMs: Date.now() + 300_000,
+    });
+    render(<SettingsView onClose={() => undefined} />);
+
+    await screen.findByLabelText("退出应用");
+    fireEvent.click(screen.getByRole("button", { name: "搜索局域网主机" }));
+    fireEvent.click(await screen.findByRole("button", { name: "使用主机 Echo 主机 的地址" }));
+    expect(screen.getByLabelText(/主机地址（可选）/)).toHaveValue("192.168.1.10:43000");
+
+    fireEvent.change(screen.getByLabelText(/粘贴主机邀请/), {
+      target: { value: "opaque-trusted-invitation" },
+    });
+    fireEvent.change(screen.getByLabelText("此设备名称"), {
+      target: { value: "Windows PC" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "请求加入" }));
+
+    await screen.findByLabelText("等待主机批准");
+    expect(invoke).toHaveBeenCalledWith("request_sync_pairing", {
+      invitation: "opaque-trusted-invitation",
+      deviceName: "Windows PC",
+      hostAddress: "192.168.1.10:43000",
+    });
+  });
 });
 
 function syncStatus() {

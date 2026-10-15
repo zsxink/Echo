@@ -40,6 +40,7 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["N
 block2 = "0.6.1"
 
 [dev-dependencies]
+blake3.workspace = true
 # TempDir for `dialogs` multi-file import unit tests; resolves only for tests.
 tempfile = { version = "3" }
 # Tauri's deterministic mock runtime proves the existing main-window lifecycle

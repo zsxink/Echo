@@ -41,6 +41,7 @@ pub mod remote_resources;
 pub mod restore;
 pub mod root_switch;
 pub mod scan;
+mod scan_resources;
 pub mod sync;
 pub mod trash;
 pub mod watch;

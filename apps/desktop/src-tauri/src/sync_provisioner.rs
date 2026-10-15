@@ -10,17 +10,14 @@ use echo_core::application::ports::{
     AppliedRemoteCursor, DeviceIdProvider, HostCommitLedgerPort, LibraryRepository,
     LocalSyncQueuePort, RemoteApplyPort, RemoteCommit, ReplicaSnapshotApplyPort,
 };
-use echo_core::application::remote_resources::{PublishRemoteResources, RemoteResourcePublishDeps};
-use echo_core::application::root_switch::derive_root_id;
+use echo_core::application::remote_resources::RemoteResourcePublishDeps;
 use echo_core::application::sync::ConfirmHostMutation;
 use echo_core::domain::entities::{LibraryRoot, RootAvailability};
-use echo_core::domain::ids::{LibraryRootId, OperationId};
+use echo_core::domain::ids::LibraryRootId;
 use echo_core::domain::sync::{
     AuthorityId, CommitCheckpoint, DeviceId, Epoch, LibraryId, MutationCandidate, MutationId,
     ObjectKey, SharedResourceKind, SharedResourceManifest, SyncBinding,
 };
-use echo_core::infrastructure::filesystem::staging::StagingMarker;
-use echo_core::infrastructure::filesystem::staging::MARKER_FORMAT_VERSION;
 use echo_core::infrastructure::sqlite::SqliteDatabase;
 use echo_desktop::platform::sync_security::{
     OsSecureStore, SecretBytes, SecretHandle, SecurePublicationCheckpoint,
@@ -45,6 +42,14 @@ use pairing_store::DurableHostPairing;
 mod remote_apply;
 #[allow(clippy::wildcard_imports)]
 use remote_apply::*;
+#[path = "sync_provisioner/enrollment.rs"]
+mod enrollment;
+use enrollment::prepare_empty_enrollment_root;
+#[cfg(test)]
+use enrollment::{is_empty_enrollment_root, EMPTY_LIBRARY_STAGING_MARKER};
+#[path = "sync_provisioner/resource_publication.rs"]
+mod resource_publication;
+use resource_publication::publish_remote_resource_set;
 #[cfg(test)]
 #[path = "sync_provisioner/tests.rs"]
 mod tests;
@@ -52,113 +57,6 @@ mod tests;
 use crate::sync_runtime::{
     ProvisionedHost, ProvisionedPeer, SyncProvisioner, SyncRole, SyncRuntimeError,
 };
-
-const EMPTY_LIBRARY_MANIFEST: &str = "manifest.json";
-const EMPTY_LIBRARY_STAGING_MARKER: &str = ".echo-ownership-marker";
-
-/// Selecting a fresh library root creates Echo's portable manifest and its
-/// owned staging marker before pairing. Those files are setup metadata, not
-/// user content; enrollment still rejects every other file or nonempty media
-/// directory. Symlinks are rejected at every level.
-fn is_empty_enrollment_root(root: &Path) -> bool {
-    fn visit_echo(
-        path: &Path,
-        relative: &Path,
-        library_root: &Path,
-        manifest: &mut bool,
-        marker: &mut bool,
-    ) -> bool {
-        let Ok(entries) = std::fs::read_dir(path) else {
-            return false;
-        };
-        for entry in entries {
-            let Ok(entry) = entry else { return false };
-            let child = entry.path();
-            let Ok(metadata) = std::fs::symlink_metadata(&child) else {
-                return false;
-            };
-            if metadata.file_type().is_symlink() {
-                return false;
-            }
-            let child_relative = relative.join(entry.file_name());
-            if metadata.is_dir() {
-                if !visit_echo(&child, &child_relative, library_root, manifest, marker) {
-                    return false;
-                }
-                continue;
-            }
-            if !metadata.is_file() {
-                return false;
-            }
-            if relative.as_os_str().is_empty()
-                && child_relative == Path::new(EMPTY_LIBRARY_MANIFEST)
-            {
-                *manifest = true;
-            } else if child_relative == Path::new("tmp").join(EMPTY_LIBRARY_STAGING_MARKER) {
-                let Ok(contents) = std::fs::read_to_string(&child) else {
-                    return false;
-                };
-                let Some(parsed) = StagingMarker::parse(&contents) else {
-                    return false;
-                };
-                if parsed.root != derive_root_id(library_root)
-                    || parsed.version != MARKER_FORMAT_VERSION
-                {
-                    return false;
-                }
-                *marker = true;
-            } else {
-                return false;
-            }
-        }
-        true
-    }
-
-    let Ok(canonical_root) = root.canonicalize() else {
-        return false;
-    };
-    let Ok(entries) = std::fs::read_dir(&canonical_root) else {
-        return false;
-    };
-    let mut saw_echo = false;
-    for entry in entries {
-        let Ok(entry) = entry else { return false };
-        let Ok(metadata) = std::fs::symlink_metadata(entry.path()) else {
-            return false;
-        };
-        if metadata.file_type().is_symlink() {
-            return false;
-        }
-        match entry.file_name().to_str() {
-            Some("echo") if metadata.is_dir() => {
-                saw_echo = true;
-                let mut manifest = false;
-                let mut marker = false;
-                if !visit_echo(
-                    &entry.path(),
-                    Path::new(""),
-                    &canonical_root,
-                    &mut manifest,
-                    &mut marker,
-                ) || !manifest
-                    || !marker
-                {
-                    return false;
-                }
-            }
-            Some("media") if metadata.is_dir() => {
-                let Ok(mut children) = std::fs::read_dir(entry.path()) else {
-                    return false;
-                };
-                if children.next().is_some() {
-                    return false;
-                }
-            }
-            _ => return false,
-        }
-    }
-    saw_echo
-}
 
 /// No construction side effects: credentials and listening are opt-in.
 pub struct NativeSyncProvisioner {
@@ -404,6 +302,7 @@ impl SyncProvisioner for NativeSyncProvisioner {
         // No mutation is advertised before all frozen audio references have
         // immutable, verified bytes available from the native resource store.
         self.confirm_local(identity.binding)?;
+        self.publish_cached_peer_resources(root, identity.binding, &resources)?;
         let api = HostApiState::new(
             identity.binding,
             credentials,
@@ -505,8 +404,13 @@ impl SyncProvisioner for NativeSyncProvisioner {
         if cancelled.load(Ordering::Acquire) {
             return Err(SyncRuntimeError::Busy);
         }
-        self.seed_local_resources(&library, configuration.binding)?;
-        self.confirm_local(configuration.binding)
+        let resources = self.seed_local_resources(&library, configuration.binding)?;
+        self.confirm_local(configuration.binding)?;
+        self.publish_cached_peer_resources(
+            configuration.local_root,
+            configuration.binding,
+            &resources,
+        )
     }
 
     fn revoke_device(&self, device_id: &str) -> Result<(), SyncRuntimeError> {
@@ -567,9 +471,7 @@ impl SyncProvisioner for NativeSyncProvisioner {
         }
         // First enrollment never adopts unrelated files or overwrites another
         // library. Registered recovery uses the existing binding and vault slot.
-        if !is_empty_enrollment_root(library.absolute_path()) {
-            return Err(SyncRuntimeError::LibraryUnavailable);
-        }
+        prepare_empty_enrollment_root(library.absolute_path(), root)?;
         LanClient::new(&invitation.host_certificate_der, grant.bearer_token.clone())
             .map_err(|_| SyncRuntimeError::Unconfigured)?;
         let identity = PeerIdentity {
@@ -664,8 +566,8 @@ impl NativeSyncProvisioner {
                     self.enroll_peer_snapshot(&peer, &endpoint, resources.clone()).await?;
                     self.upload_pending_resources(&peer, &endpoint, resources.as_ref(), root).await?;
                     let queue = ScopedLocalQueue { database: self.database.as_ref(), root };
-                    self.prepared_incremental_cycle(&peer, &endpoint, &queue, resources.clone()).await?;
-                    self.publish_remote_resources(&peer, &endpoint, root, resources.clone()).await?;
+                    self.prepared_incremental_cycle(&peer, &endpoint, &queue, &resources).await?;
+                self.publish_remote_resources(&peer, &endpoint, root, &resources).await?;
                     Ok(())
                 } => result,
             }
@@ -677,7 +579,7 @@ impl NativeSyncProvisioner {
         peer: &ProvisionedPeer,
         endpoint: &Url,
         queue: &ScopedLocalQueue<'_>,
-        resources: Arc<FileResourceStore>,
+        resources: &Arc<FileResourceStore>,
     ) -> Result<(), SyncRuntimeError> {
         // A push can append accepted commits after the first prefetch. Retry
         // that exact anchor with the idempotent queue, after preparing the new
@@ -745,12 +647,35 @@ impl NativeSyncProvisioner {
         Err(SyncRuntimeError::Busy)
     }
 
+    fn publish_cached_peer_resources(
+        &self,
+        root: LibraryRootId,
+        binding: SyncBinding,
+        resources: &Arc<FileResourceStore>,
+    ) -> Result<(), SyncRuntimeError> {
+        let sets = self
+            .database
+            .pending_peer_resource_sets(root)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        for (object, targets) in sets {
+            publish_remote_resource_set(
+                self.publication.clone(),
+                resources,
+                binding,
+                root,
+                object,
+                &targets,
+            )?;
+        }
+        Ok(())
+    }
+
     async fn publish_remote_resources(
         &self,
         peer: &ProvisionedPeer,
         endpoint: &Url,
         root: LibraryRootId,
-        resources: Arc<FileResourceStore>,
+        resources: &Arc<FileResourceStore>,
     ) -> Result<(), SyncRuntimeError> {
         let sets = self
             .database
@@ -773,60 +698,10 @@ impl NativeSyncProvisioner {
                     .map_err(|_| SyncRuntimeError::WorkerFailed)?;
             }
             let deps = self.publication.clone();
-            let store = resources.clone();
+            let store = Arc::clone(resources);
             let binding = peer.binding;
             tokio::task::spawn_blocking(move || {
-                let mut existing = None;
-                for operation in deps
-                    .journal
-                    .incomplete(root)
-                    .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
-                {
-                    let publication = deps
-                        .journal
-                        .load(root, operation)
-                        .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-                    if publication.object == object
-                        && publication.items.len() == targets.len()
-                        && publication
-                            .items
-                            .iter()
-                            .zip(&targets)
-                            .all(|(item, target)| item.target.manifest == target.manifest)
-                    {
-                        existing = Some(operation);
-                        break;
-                    }
-                }
-                let publisher = PublishRemoteResources::new(deps);
-                let operation = existing.unwrap_or_else(OperationId::new);
-                if existing.is_none() {
-                    publisher
-                        .prepare(root, operation, object, targets.clone())
-                        .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-                }
-                for (index, target) in targets.iter().enumerate() {
-                    store
-                        .verify_complete(binding, &ResourceRefDto::from(&target.manifest))
-                        .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-                    let mut reader = PrivateResourceReader {
-                        store: store.clone(),
-                        binding,
-                        hash: target.manifest.digest.to_hex(),
-                        length: target.manifest.length,
-                        offset: 0,
-                    };
-                    publisher
-                        .stage(root, operation, index, &mut reader)
-                        .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-                }
-                let outcome = publisher
-                    .resume(root, operation)
-                    .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-                if !outcome.media_ready {
-                    return Err(SyncRuntimeError::Busy);
-                }
-                Ok(())
+                publish_remote_resource_set(deps, &store, binding, root, object, &targets)
             })
             .await
             .map_err(|_| SyncRuntimeError::WorkerFailed)??;

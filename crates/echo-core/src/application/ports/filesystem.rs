@@ -3,7 +3,7 @@ use std::io::Read;
 use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath};
 use crate::error::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct FileMeta {
     pub size: u64,
     pub modified_ns: i64,

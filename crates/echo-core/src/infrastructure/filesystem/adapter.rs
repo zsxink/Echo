@@ -127,6 +127,13 @@ impl RootConstrainedFileSystem {
     ) -> Result<StagedCopy, Error> {
         let staging_dir = self.staging.ensure_dir(root)?;
         let slot = Self::slot(&staging_dir, staged);
+        let staged_path = RelativeMediaPath::new(&format!(
+            "{}/{}/{}",
+            crate::domain::library::STAGING_ROOT,
+            staged.operation().as_uuid().simple(),
+            staged.resource_key()
+        ))?;
+        self.registry.resolve_relative(root, &staged_path)?;
         std::fs::create_dir_all(&slot)
             .map_err(|source| Error::io("create staging slot", source, slot.clone()))?;
         let file = slot.join(staged.resource_key());
@@ -138,21 +145,7 @@ impl RootConstrainedFileSystem {
             .open(&part)
             .map_err(|source| Error::io("create staging file", source, part.clone()))?;
 
-        let mut hasher = blake3::Hasher::new();
-        let mut size: u64 = 0;
-        let mut buffer = vec![0u8; COPY_CHUNK_BYTES];
-        loop {
-            let read = content
-                .read(&mut buffer)
-                .map_err(|source| Error::io("copy import source", source, part.clone()))?;
-            if read == 0 {
-                break;
-            }
-            hasher.update(&buffer[..read]);
-            out.write_all(&buffer[..read])
-                .map_err(|source| Error::io("write staging copy", source, part.clone()))?;
-            size = size.saturating_add(u64::try_from(read).unwrap_or(u64::MAX));
-        }
+        let (size, blake3) = copy_staging_content(content, &mut out, &part)?;
         out.flush()
             .map_err(|source| Error::io("flush staging copy", source, part.clone()))?;
         // fsync: the staged copy is only "staged" once it survives a crash.
@@ -165,19 +158,13 @@ impl RootConstrainedFileSystem {
 
         // The journal wants the staged location relative to the root; for the
         // portable layout this is always `echo/tmp/<operation>/<resource>`.
-        let staged_path = RelativeMediaPath::new(&format!(
-            "{}/{}/{}",
-            crate::domain::library::STAGING_ROOT,
-            staged.operation().as_uuid().simple(),
-            staged.resource_key()
-        ))?;
         self.staged.lock().unwrap().insert(
             (root, staged.operation(), staged.resource_key().to_owned()),
             StagedLocation { staging_dir, file },
         );
         Ok(StagedCopy {
             size,
-            blake3: hasher.finalize().to_hex().to_string(),
+            blake3,
             staged_path,
         })
     }
@@ -206,6 +193,15 @@ impl RootConstrainedFileSystem {
                 PermKind::NotOwner,
             ));
         }
+        self.registry.resolve_relative(
+            root,
+            &RelativeMediaPath::new(&format!(
+                "{}/{}/{}",
+                crate::domain::library::STAGING_ROOT,
+                staged.operation().as_uuid().simple(),
+                staged.resource_key()
+            ))?,
+        )?;
         Ok(location)
     }
 }
@@ -333,7 +329,7 @@ impl crate::application::ports::filesystem::LegacyLibraryFileSystem for RootCons
         if let Some(location) = location {
             // Only remove inside a still marker-verified staging directory:
             // cleanup must never reach beyond Echo's own slot.
-            if self.staging.check(&location.staging_dir, root) == StagingCheck::Owned {
+            if self.resolve_verified(root, staged).is_ok() {
                 let _ = std::fs::remove_file(&location.file);
             }
             self.staged.lock().unwrap().remove(&key);
@@ -647,6 +643,28 @@ impl RootConstrainedFileSystem {
     }
 }
 
+fn copy_staging_content(
+    content: &mut dyn Read,
+    out: &mut dyn std::io::Write,
+    part: &Path,
+) -> Result<(u64, String), Error> {
+    let mut hasher = blake3::Hasher::new();
+    let mut size: u64 = 0;
+    let mut buffer = vec![0u8; COPY_CHUNK_BYTES];
+    loop {
+        let read = content
+            .read(&mut buffer)
+            .map_err(|source| Error::io("copy import source", source, part))?;
+        if read == 0 {
+            return Ok((size, hasher.finalize().to_hex().to_string()));
+        }
+        hasher.update(&buffer[..read]);
+        out.write_all(&buffer[..read])
+            .map_err(|source| Error::io("write staging copy", source, part))?;
+        size = size.saturating_add(u64::try_from(read).unwrap_or(u64::MAX));
+    }
+}
+
 /// Best-effort directory fsync (rename durability). Some platforms cannot
 /// open directories at all; the file-level fsyncs above carry the hard
 /// requirement, the directory flush is advisory and never fails a publish.
@@ -674,6 +692,89 @@ mod tests {
         let root = LibraryRootId::new();
         registry.register(root, dir.path());
         (dir, root, RootConstrainedFileSystem::new(registry))
+    }
+
+    #[test]
+    fn disk_full_or_permission_loss_aborts_staging_copy_before_publication() {
+        struct FailingDisk(std::io::ErrorKind);
+        impl std::io::Write for FailingDisk {
+            fn write(&mut self, _bytes: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::from(self.0))
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        for kind in [
+            std::io::ErrorKind::StorageFull,
+            std::io::ErrorKind::PermissionDenied,
+        ] {
+            let error = copy_staging_content(
+                &mut std::io::Cursor::new(b"downloaded audio"),
+                &mut FailingDisk(kind),
+                Path::new("private.part"),
+            )
+            .unwrap_err();
+            match error {
+                Error::Io {
+                    operation, source, ..
+                } => {
+                    assert_eq!(operation, "write staging copy");
+                    assert_eq!(source.kind(), kind);
+                }
+                other => panic!("expected destination write error: {other:?}"),
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn linked_staging_operation_slot_cannot_escape_root() {
+        let (directory, root, fs) = setup();
+        let outside = tempfile::tempdir().unwrap();
+        let staged = StagedResource::new(OperationId::new(), "audio").unwrap();
+        fs.establish_write_capability(root).unwrap();
+        let slot = directory
+            .path()
+            .join("echo/tmp")
+            .join(staged.operation().as_uuid().simple().to_string());
+        std::os::unix::fs::symlink(outside.path(), slot).unwrap();
+        assert_eq!(
+            fs.stage_bytes(root, &staged, b"audio").unwrap_err().code(),
+            "permission"
+        );
+        assert!(std::fs::read_dir(outside.path()).unwrap().next().is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn swapped_staging_slot_is_never_read_published_or_cleaned_outside_root() {
+        let (directory, root, fs) = setup();
+        let outside = tempfile::tempdir().unwrap();
+        let staged = StagedResource::new(OperationId::new(), "audio").unwrap();
+        fs.stage_bytes(root, &staged, b"original").unwrap();
+        let slot = directory
+            .path()
+            .join("echo/tmp")
+            .join(staged.operation().as_uuid().simple().to_string());
+        std::fs::rename(&slot, directory.path().join("retained-slot")).unwrap();
+        std::fs::write(outside.path().join("audio"), b"external content").unwrap();
+        std::os::unix::fs::symlink(outside.path(), &slot).unwrap();
+        assert_eq!(
+            fs.read_staged(root, &staged).unwrap_err().code(),
+            "permission"
+        );
+        let target = RelativeMediaPath::new("media/track.flac").unwrap();
+        assert_eq!(
+            fs.publish(root, &staged, &target).unwrap_err().code(),
+            "permission"
+        );
+        fs.discard_staged(root, &staged).unwrap();
+        assert_eq!(
+            std::fs::read(outside.path().join("audio")).unwrap(),
+            b"external content"
+        );
+        assert!(!directory.path().join("media/track.flac").exists());
     }
 
     #[test]

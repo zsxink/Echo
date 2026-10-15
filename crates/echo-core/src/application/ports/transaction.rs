@@ -108,6 +108,14 @@ pub trait TxLyricsWriter {
 /// Cover and runtime-state mutations that must participate in an existing
 /// transaction.
 pub trait TxStateWriter {
+    /// Replace verified audio/sidecar declarations before the song write queues
+    /// its immutable snapshot. Both changes must use this same transaction.
+    /// Cover declarations owned by separate editing flows are retained.
+    fn set_song_file_resources(
+        &mut self,
+        song: &Song,
+        resources: &[crate::domain::sync::SharedResourceManifest],
+    ) -> Result<(), Error>;
     /// Attach a cover asset to a song (and upsert the `cover_assets` row) in
     /// the same transaction as the song write, keeping the cache key and the
     /// database reference consistent (task 4.6).

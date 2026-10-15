@@ -327,29 +327,13 @@ impl HostCommitLedgerPort for SqliteDatabase {
 
             ensure_origin_authorized(&tx, &origin, &expected.0)?;
 
-            let prior: Option<(String, String, Option<i64>)> = tx.query_row(
-                "SELECT payload_digest, outcome_json, commit_seq FROM sync_inbox WHERE origin_device_id = ?1 AND mutation_id = ?2",
-                params![origin, candidate.mutation_id.as_uuid().to_string()],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-            ).optional().map_err(storage)?;
-            if let Some((digest, outcome, commit_seq)) = prior {
-                if digest != payload_digest {
-                    return Err(Error::conflict("mutation identity was reused with different content"));
-                }
-                let staged: StagedConfirmation = serde_json::from_str(&outcome).map_err(storage)?;
-                let retryable_predecessor_rejection = commit_seq.is_none()
-                    && staged.outcome_json.contains("OutOfOrderPredecessor");
-                if !retryable_predecessor_rejection {
-                    if let Some(sequence) = commit_seq {
-                        // Older ledgers may contain several pending commits.
-                        // Retrying a later one must not advance the independent
-                        // checkpoint before recovery publishes its predecessor.
-                        ensure_no_pending_predecessor(&tx, Some(sequence))?;
-                    }
-                    tx.commit().map_err(storage)?;
-                    return Ok(staged);
-                }
+            if let Some(staged) = prior_confirmation(&tx, &origin, &candidate, &payload_digest)? {
+                tx.commit().map_err(storage)?;
+                return Ok(staged);
             }
+            let candidate = normalize_member_alias_object(&tx, candidate)?;
+            let submitted_resources = candidate.resource_refs.clone();
+            let (candidate, song_alias) = super::sync_song_aliases::normalize(&tx, candidate)?;
 
 
             // The independent checkpoint is published outside this transaction.
@@ -360,10 +344,12 @@ impl HostCommitLedgerPort for SqliteDatabase {
 
             let (kind, object_uuid) = object_identity(candidate.object);
             let (current_is_tombstone, current) = load_confirmed_object(&tx, candidate.object)?;
+            let current = exclude_final_playlist_members(&tx, candidate.object, current)?;
             let cursor = load_origin_cursor(&tx, candidate.origin_device_id)?;
             let next: i64 = tx.query_row("SELECT COALESCE(MAX(commit_seq), 0) + 1 FROM sync_commits", [], |row| row.get(0)).map_err(storage)?;
             let sequence = CommitSeq::from_u64(u64::try_from(next).map_err(storage)?);
-            let decision = confirm_candidate(current.as_ref(), cursor, &candidate, sequence);
+            let canonical_candidate = exclude_historical_member_aliases(&tx, &candidate)?;
+            let decision = confirm_candidate(current.as_ref(), cursor, &canonical_candidate, sequence);
 
             if let Err(rejection) = decision {
                 let staged = StagedConfirmation { mutation_id: candidate.mutation_id, outcome_json: format!("{{\"accepted\":false,\"reason\":\"{rejection:?}\"}}"), checkpoint: None };
@@ -395,10 +381,27 @@ impl HostCommitLedgerPort for SqliteDatabase {
             let previous_digest: Vec<u8> = tx.query_row("SELECT commit_digest FROM sync_commits ORDER BY commit_seq DESC LIMIT 1", [], |row| row.get(0)).optional().map_err(storage)?.unwrap_or_else(|| vec![0; 32]);
             if previous_digest.len() != 32 { return Err(Error::InvariantViolation { why: "invalid previous LAN commit digest".to_owned() }); }
             let previous_digest: [u8; 32] = previous_digest.as_slice().try_into().map_err(|_| Error::InvariantViolation { why: "invalid previous LAN commit digest".to_owned() })?;
-            let (canonical_json, commit_digest) = encode_commit(binding, &candidate, sequence, previous_digest)?;
+            let (canonical_json, commit_digest) = encode_commit(
+                binding,
+                &candidate,
+                &confirmed.object.payload,
+                sequence,
+                previous_digest,
+                &confirmed.aliases,
+                song_alias.as_ref(),
+            )?;
             tx.execute("INSERT INTO sync_commits(commit_seq, library_id, authority_id, epoch, origin_device_id, mutation_id, canonical_json, previous_digest, commit_digest, publication_state, created_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending', ?10)", params![next, expected.0, expected.1, expected.2, origin, candidate.mutation_id.as_uuid().to_string(), canonical_json, previous_digest, commit_digest, now_ms()]).map_err(storage)?;
             super::sync_manifests::replace(&tx, kind, &object_uuid, &candidate.resource_refs)?;
+            if let Some((alias, canonical)) = &song_alias {
+                super::sync_song_aliases::persist(&tx, alias, canonical, next)?;
+                // Differing sidecars/covers remain durable held evidence under
+                // the original alias, even when the canonical song keeps its
+                // first-confirmed resource set.
+                super::sync_manifests::replace(&tx, "song", alias, &submitted_resources)?;
+            }
             persist_confirmed_object(&tx, &candidate, &confirmed.object, next, is_tombstone, configured.as_ref().and_then(|row| row.4.as_deref()))?;
+            persist_member_aliases(&tx, &confirmed.aliases, next)?;
+            if let Some((alias, canonical)) = &song_alias { super::sync_song_aliases::project(&tx, alias, canonical)?; }
             tx.execute("INSERT INTO sync_origin_cursors(origin_device_id, origin_seq, last_mutation_id) VALUES(?1, ?2, ?3) ON CONFLICT(origin_device_id) DO UPDATE SET origin_seq=excluded.origin_seq, last_mutation_id=excluded.last_mutation_id", params![origin, i64::try_from(confirmed.origin_cursor.origin_seq).map_err(storage)?, candidate.mutation_id.as_uuid().to_string()]).map_err(storage)?;
             if let Some(conflict) = confirmed.conflict {
                 tx.execute("INSERT INTO sync_conflicts(conflict_id, object_type, object_uuid, replaced_version, accepted_version, replaced_payload_json, accepted_payload_json, resolved_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)", params![uuid::Uuid::new_v4().to_string(), kind, object_uuid, i64::try_from(conflict.replaced_version.commit_seq().as_u64()).map_err(storage)?, next, serde_json::to_string(&conflict.replaced_payload).map_err(storage)?, serde_json::to_string(&conflict.accepted_payload).map_err(storage)?]).map_err(storage)?;
@@ -582,6 +585,74 @@ fn ensure_origin_authorized(
     }
 }
 
+fn persist_member_aliases(
+    tx: &rusqlite::Transaction<'_>,
+    aliases: &[crate::domain::sync::PlaylistMemberAlias],
+    sequence: i64,
+) -> Result<(), Error> {
+    for alias in aliases {
+        let playlist = alias.playlist_id.to_string();
+        let alias_id = alias.alias_member_id.to_string();
+        let canonical_id = alias.canonical_member_id.to_string();
+        let prior: Option<String> = tx.query_row(
+            "SELECT canonical_member_uuid FROM sync_member_aliases WHERE playlist_uuid=?1 AND alias_member_uuid=?2",
+            params![playlist, alias_id],
+            |row| row.get(0),
+        ).optional().map_err(storage)?;
+        if prior.as_deref().is_some_and(|value| value != canonical_id) {
+            return Err(Error::conflict(
+                "playlist member alias already has a different canonical identity",
+            ));
+        }
+        let aliases_target_alias: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sync_member_aliases WHERE playlist_uuid=?1 AND alias_member_uuid=?2)",
+            params![playlist, canonical_id],
+            |row| row.get(0),
+        ).map_err(storage)?;
+        if aliases_target_alias {
+            return Err(Error::conflict(
+                "playlist member alias target is not canonical",
+            ));
+        }
+        tx.execute(
+            "INSERT OR IGNORE INTO sync_member_aliases(playlist_uuid,alias_member_uuid,canonical_member_uuid,commit_seq) VALUES(?1,?2,?3,?4)",
+            params![playlist, alias_id, canonical_id, sequence],
+        ).map_err(storage)?;
+    }
+    Ok(())
+}
+
+fn prior_confirmation(
+    tx: &rusqlite::Transaction<'_>,
+    origin: &str,
+    candidate: &MutationCandidate,
+    payload_digest: &str,
+) -> Result<Option<StagedConfirmation>, Error> {
+    let prior: Option<(String, String, Option<i64>)> = tx.query_row(
+        "SELECT payload_digest, outcome_json, commit_seq FROM sync_inbox WHERE origin_device_id=?1 AND mutation_id=?2",
+        params![origin, candidate.mutation_id.as_uuid().to_string()],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    ).optional().map_err(storage)?;
+    let Some((digest, outcome, commit_seq)) = prior else {
+        return Ok(None);
+    };
+    if digest != payload_digest {
+        return Err(Error::conflict(
+            "mutation identity was reused with different content",
+        ));
+    }
+    let staged: StagedConfirmation = serde_json::from_str(&outcome).map_err(storage)?;
+    let retryable_predecessor_rejection =
+        commit_seq.is_none() && staged.outcome_json.contains("OutOfOrderPredecessor");
+    if retryable_predecessor_rejection {
+        return Ok(None);
+    }
+    if let Some(sequence) = commit_seq {
+        ensure_no_pending_predecessor(tx, Some(sequence))?;
+    }
+    Ok(Some(staged))
+}
+
 fn ensure_no_pending_predecessor(
     tx: &rusqlite::Transaction<'_>,
     before_sequence: Option<i64>,
@@ -654,9 +725,16 @@ fn persist_confirmed_object(
 fn encode_commit(
     binding: SyncBinding,
     candidate: &MutationCandidate,
+    confirmed_payload: &serde_json::Value,
     sequence: CommitSeq,
     previous_digest: [u8; 32],
+    aliases: &[crate::domain::sync::PlaylistMemberAlias],
+    song_alias: Option<&(String, String)>,
 ) -> Result<(String, Vec<u8>), Error> {
+    let mut confirmed_candidate = candidate.clone();
+    // The submitted mutation remains immutable in the sender's outbox. The
+    // host log records its deterministic canonical result for every replica.
+    confirmed_candidate.payload = confirmed_payload.clone();
     let commit_body = WireCommitBody {
         protocol_version: 1,
         binding,
@@ -671,14 +749,24 @@ fn encode_commit(
             previous_mutation_id: candidate.previous_mutation_id,
             object: candidate.object,
             base_object_version: candidate.base_object_version,
-            payload: candidate.payload.clone(),
+            payload: confirmed_candidate.payload,
             resource_refs: candidate
                 .resource_refs
                 .iter()
                 .map(super::sync_manifests::WireResource::from)
                 .collect(),
         },
-        aliases: Vec::new(),
+        aliases: aliases
+            .iter()
+            .map(|alias| {
+                serde_json::json!({"kind":"playlist_member","alias":{
+                    "playlist_id":alias.playlist_id,
+                    "alias":alias.alias_member_id,
+                    "canonical":alias.canonical_member_id
+                }})
+            })
+            .chain(song_alias.into_iter().map(|(alias, canonical)| serde_json::json!({"kind":"song","alias":{"alias":alias,"canonical":canonical}})))
+            .collect(),
         resource_refs: candidate
             .resource_refs
             .iter()
@@ -733,6 +821,124 @@ fn load_confirmed_object(
         )
         .transpose()?;
     Ok((current_is_tombstone, current))
+}
+
+fn exclude_final_playlist_members(
+    tx: &rusqlite::Transaction<'_>,
+    object: ObjectKey,
+    current: Option<ConfirmedObject>,
+) -> Result<Option<ConfirmedObject>, Error> {
+    let ObjectKey::Playlist(playlist_id) = object else {
+        return Ok(current);
+    };
+    let Some(mut current) = current else {
+        return Ok(None);
+    };
+    let Some(members) = current
+        .payload
+        .get_mut("members")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return Ok(Some(current));
+    };
+    let mut live = Vec::with_capacity(members.len());
+    for member in members.drain(..) {
+        let member_id = member
+            .get("member_uuid")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| Error::conflict("confirmed playlist member is missing its identity"))?;
+        let song_id = member
+            .get("song_uuid")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| Error::conflict("confirmed playlist member is missing its song"))?;
+        let deleted: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sync_object_versions WHERE object_type='playlist-item' AND object_uuid=?1 AND is_tombstone=1) OR EXISTS(SELECT 1 FROM sync_object_versions WHERE object_type='song' AND object_uuid=?2 AND is_tombstone=1)",
+                params![member_id, song_id],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        let is_historical_alias: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sync_member_aliases WHERE playlist_uuid=?1 AND alias_member_uuid=?2)",
+                params![playlist_id.to_string(), member_id],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if !deleted && !is_historical_alias {
+            live.push(member);
+        }
+    }
+    *members = live;
+    Ok(Some(current))
+}
+
+fn exclude_historical_member_aliases(
+    tx: &rusqlite::Transaction<'_>,
+    candidate: &MutationCandidate,
+) -> Result<MutationCandidate, Error> {
+    let ObjectKey::Playlist(playlist_id) = candidate.object else {
+        return Ok(candidate.clone());
+    };
+    let mut normalized = candidate.clone();
+    let Some(members) = normalized
+        .payload
+        .get_mut("members")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return Ok(normalized);
+    };
+    let mut live = Vec::with_capacity(members.len());
+    for member in members.drain(..) {
+        let member_id = member
+            .get("member_uuid")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| Error::conflict("playlist member is missing its identity"))?;
+        let is_historical_alias: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sync_member_aliases WHERE playlist_uuid=?1 AND alias_member_uuid=?2)",
+                params![playlist_id.to_string(), member_id],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if !is_historical_alias {
+            live.push(member);
+        }
+    }
+    *members = live;
+    Ok(normalized)
+}
+
+fn normalize_member_alias_object(
+    tx: &rusqlite::Transaction<'_>,
+    candidate: MutationCandidate,
+) -> Result<MutationCandidate, Error> {
+    let ObjectKey::PlaylistItem(member_id) = candidate.object else {
+        return Ok(candidate);
+    };
+    let mut statement = tx
+        .prepare("SELECT canonical_member_uuid FROM sync_member_aliases WHERE alias_member_uuid=?1")
+        .map_err(storage)?;
+    let targets = statement
+        .query_map(params![member_id.to_string()], |row| {
+            row.get::<_, String>(0)
+        })
+        .map_err(storage)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(storage)?;
+    if targets.len() > 1 {
+        return Err(Error::conflict(
+            "playlist member alias is ambiguous without a playlist identity",
+        ));
+    }
+    let Some(target) = targets.first() else {
+        return Ok(candidate);
+    };
+    let target = uuid::Uuid::parse_str(target).map_err(storage)?;
+    Ok(MutationCandidate {
+        object: ObjectKey::PlaylistItem(crate::domain::ids::PlaylistItemId::from_uuid(target)),
+        ..candidate
+    })
 }
 
 fn load_origin_cursor(

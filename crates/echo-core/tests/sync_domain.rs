@@ -1,6 +1,6 @@
 //! Cross-module contract tests for synchronization domain values.
 
-use echo_core::domain::ids::{PlaylistId, SongId};
+use echo_core::domain::ids::{PlaylistId, PlaylistItemId, SongId};
 use echo_core::domain::sync::*;
 
 fn binding() -> SyncBinding {
@@ -90,6 +90,54 @@ fn host_confirmation_uses_order_not_wall_clock_and_preserves_loser() {
     assert_eq!(
         confirmed_b.object.version.commit_seq(),
         CommitSeq::from_u64(2)
+    );
+}
+
+#[test]
+fn concurrent_playlist_appends_keep_first_member_and_emit_typed_alias() {
+    use serde_json::json;
+    let playlist_id = PlaylistId::new();
+    let playlist = ObjectKey::Playlist(playlist_id);
+    let song_a = SongId::new();
+    let song_b = SongId::new();
+    let canonical_member = PlaylistItemId::new();
+    let duplicate_member = PlaylistItemId::new();
+    let appended_member = PlaylistItemId::new();
+    let first_device = DeviceId::new();
+    let current = ConfirmedObject {
+        object: playlist,
+        version: ObjectVersion::from_commit_seq(CommitSeq::from_u64(1)),
+        origin_device_id: first_device,
+        payload: json!({"playlist_uuid":playlist_id,"display_name":"Mix","created_at":1,
+            "members":[{"song_uuid":song_a,"member_uuid":canonical_member,"position":0,"added_at":1}]}),
+    };
+    let candidate = MutationCandidate {
+        mutation_id: MutationId::new(),
+        origin_device_id: DeviceId::new(),
+        origin_seq: 1,
+        previous_mutation_id: None,
+        object: playlist,
+        base_object_version: Some(current.version),
+        payload: json!({"playlist_uuid":playlist_id,"display_name":"Mix","created_at":1,
+        "members":[
+            {"song_uuid":song_a,"member_uuid":duplicate_member,"position":0,"added_at":2},
+            {"song_uuid":song_b,"member_uuid":appended_member,"position":1,"added_at":2}
+        ]}),
+        resource_refs: Vec::new(),
+    };
+    let result =
+        confirm_candidate(Some(&current), None, &candidate, CommitSeq::from_u64(2)).unwrap();
+    let members = result.object.payload["members"].as_array().unwrap();
+    assert_eq!(members.len(), 2);
+    assert_eq!(members[0]["member_uuid"], json!(canonical_member));
+    assert_eq!(members[1]["member_uuid"], json!(appended_member));
+    assert_eq!(
+        result.aliases,
+        vec![PlaylistMemberAlias {
+            playlist_id,
+            alias_member_id: duplicate_member,
+            canonical_member_id: canonical_member,
+        }]
     );
 }
 

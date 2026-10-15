@@ -944,7 +944,7 @@ impl Drop for SyncRuntime {
     }
 }
 
-fn selected_lan_address(address: &str) -> Result<IpAddr, SyncRuntimeError> {
+pub fn selected_lan_address(address: &str) -> Result<IpAddr, SyncRuntimeError> {
     let address: IpAddr = address
         .parse()
         .map_err(|_| SyncRuntimeError::InvalidAddress)?;

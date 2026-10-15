@@ -40,7 +40,9 @@ export function LanSyncSettings() {
   const [invitation, setInvitation] = useState<SyncInvitation | null>(null);
   const [pairingRequests, setPairingRequests] = useState<readonly SyncPairingRequest[]>([]);
   const [pastedInvitation, setPastedInvitation] = useState("");
+  const [peerAddress, setPeerAddress] = useState("");
   const [pairingInvitationJson, setPairingInvitationJson] = useState<string | null>(null);
+  const [pairingHostAddress, setPairingHostAddress] = useState<string | undefined>();
   const [deviceName, setDeviceName] = useState("");
   const [pairingReceipt, setPairingReceipt] = useState<SyncPairingReceipt | null>(null);
   const [copied, setCopied] = useState(false);
@@ -149,9 +151,11 @@ export function LanSyncSettings() {
     const name = deviceName.trim();
     if (!token || !name) return;
     await runPairing(async () => {
-      const receipt = await lanSyncAdapter.requestPairing(token, name);
+      const selectedAddress = peerAddress.trim() || undefined;
+      const receipt = await lanSyncAdapter.requestPairing(token, name, selectedAddress);
       setPairingReceipt(receipt);
       setPairingInvitationJson(token);
+      setPairingHostAddress(selectedAddress);
       setPastedInvitation("");
     });
   }
@@ -163,6 +167,7 @@ export function LanSyncSettings() {
         pairingReceipt.requestId,
         pairingReceipt.receipt,
         pairingInvitationJson,
+        pairingHostAddress,
       );
       setStatus(next);
       setPairingReceipt(null);
@@ -185,7 +190,9 @@ export function LanSyncSettings() {
     setInvitation(null);
     setPairingReceipt(null);
     setPastedInvitation("");
+    setPeerAddress("");
     setPairingInvitationJson(null);
+    setPairingHostAddress(undefined);
     setCopied(false);
   }
 
@@ -356,7 +363,26 @@ export function LanSyncSettings() {
           ) : (
             hosts.map((host) => (
               <li key={`${host.name}-${host.port}`}>
-                {host.name} · {host.addresses.join(", ")}:{host.port}
+                {host.name} · {host.addresses.join(", ")}:{host.port}{" "}
+                {host.addresses[0] ? (
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={busy}
+                    aria-label={`使用主机 ${host.name} 的地址`}
+                    onClick={() => {
+                      const hostAddress = host.addresses[0];
+                      setPeerAddress(
+                        hostAddress.includes(":")
+                          ? `[${hostAddress}]:${host.port}`
+                          : `${hostAddress}:${host.port}`,
+                      );
+                      setRole("peer");
+                    }}
+                  >
+                    使用此主机地址
+                  </button>
+                ) : null}
               </li>
             ))
           )}
@@ -416,6 +442,20 @@ export function LanSyncSettings() {
             </div>
           ) : (
             <>
+              <div className="setting-row">
+                <label className="storage-value" htmlFor="lan-sync-peer-address">
+                  <strong>主机地址（可选）</strong>
+                  <span className="setting-help">
+                    发现失败时可手动填写 IP；仍需主机邀请进行 TLS 身份校验和配对。
+                  </span>
+                </label>
+                <input
+                  id="lan-sync-peer-address"
+                  value={peerAddress}
+                  onChange={(event) => setPeerAddress(event.currentTarget.value)}
+                  placeholder="192.168.1.20:43000"
+                />
+              </div>
               <div className="setting-row">
                 <label className="storage-value" htmlFor="lan-sync-invitation">
                   <strong>粘贴主机邀请</strong>

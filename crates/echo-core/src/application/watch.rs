@@ -400,9 +400,13 @@ impl WatchCoordinator {
             .clone()
             .map(|candidate| rewrap(&candidate, LyricsSource::Sidecar));
         let cover: Option<CoverAssetRef> = parsed.cover.clone();
+        let resources = crate::application::scan_resources::verified_song_resources(
+            &self.deps, root, parsed, true,
+        )?;
         self.deps
             .uow
             .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
+                tx.set_song_file_resources(&song, &resources)?;
                 tx.upsert_song(&song)?;
                 match embedded {
                     Some(candidate) => tx.set_lyrics_candidate(song.id(), &candidate)?,

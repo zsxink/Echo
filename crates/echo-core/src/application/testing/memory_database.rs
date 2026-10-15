@@ -38,6 +38,7 @@ struct Store {
     runs: BTreeMap<(LibraryRootId, u64), ScanRunRow>,
     issues: Vec<(LibraryRootId, u64, MediaDiagnostic)>,
     runtime_state: BTreeMap<String, String>,
+    song_resources: BTreeMap<SongId, Vec<crate::domain::sync::SharedResourceManifest>>,
     fail_root_isolation: bool,
     outbox_revisions: BTreeMap<(String, String), i64>,
     object_hlcs: BTreeMap<(String, String), HybridLogicalClock>,

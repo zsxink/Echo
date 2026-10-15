@@ -64,13 +64,15 @@ pub(super) fn project_confirmed_tombstone(
             )
             .map_err(storage)?;
             tx.execute(
-                "UPDATE sync_local_delete_intents SET state='remote_deleted', finalized_at=?2 WHERE object_type='song' AND object_uuid=?1 AND state='open'",
+                "UPDATE sync_local_delete_intents SET state='remote_deleted', finalized_at=?2 WHERE object_type='song' AND (object_uuid=?1 OR object_uuid IN (SELECT alias_song_uuid FROM sync_song_aliases WHERE canonical_song_uuid=?1)) AND state='open'",
                 params![object_uuid, now_ms()],
             ).map_err(storage)?;
             // Holding the journal prevents restart from forwarding these staged
-            // resources to system trash after the former undo deadline.
+            // resources to system trash after the former undo deadline. Aliases
+            // retain their original local journals, so the canonical deletion
+            // must hold those independent physical copies as well.
             tx.execute(
-                "UPDATE operation_items SET state='failed_recoverable', error_code='sync_remote_deleted' WHERE operation_uuid IN (SELECT operation_uuid FROM operation_journal WHERE kind='delete' AND reserved_song_uuid=?1) AND state NOT IN ('database_finalized','rolled_back','completed')",
+                "UPDATE operation_items SET state='failed_recoverable', error_code='sync_remote_deleted' WHERE operation_uuid IN (SELECT operation_uuid FROM operation_journal WHERE kind='delete' AND (reserved_song_uuid=?1 OR reserved_song_uuid IN (SELECT alias_song_uuid FROM sync_song_aliases WHERE canonical_song_uuid=?1))) AND state NOT IN ('database_finalized','rolled_back','completed')",
                 params![object_uuid],
             ).map_err(storage)?;
         }
@@ -129,7 +131,7 @@ pub(super) fn project_confirmed_song_state(
         false
     } else {
         tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM sync_mutations WHERE object_type=?1 AND object_uuid=?2 AND status='pending')",
+            "SELECT EXISTS(SELECT 1 FROM sync_mutations WHERE object_type=?1 AND (object_uuid=?2 OR object_uuid IN (SELECT alias_song_uuid FROM sync_song_aliases WHERE canonical_song_uuid=?2)) AND status='pending')",
             params![object_type, object_uuid],
             |row| row.get(0),
         )
@@ -612,6 +614,7 @@ mod tests {
         connection
             .execute_batch(
                 "CREATE TABLE songs(uuid TEXT PRIMARY KEY, is_favorite INTEGER NOT NULL DEFAULT 0, favorited_at INTEGER, play_count INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0);
+                 CREATE TABLE sync_song_aliases(alias_song_uuid TEXT PRIMARY KEY, canonical_song_uuid TEXT, commit_seq INTEGER);
                  CREATE TABLE sync_mutations(object_type TEXT, object_uuid TEXT, status TEXT);
                  CREATE TABLE sync_object_versions(object_type TEXT, object_uuid TEXT, payload_json TEXT, is_tombstone INTEGER);
                  CREATE TABLE sync_local_delete_intents(object_type TEXT, object_uuid TEXT, state TEXT);
@@ -755,6 +758,7 @@ mod tests {
                     created_at INTEGER, updated_at INTEGER,
                     UNIQUE(library_root_uuid, normalized_relative_path));
                  CREATE VIRTUAL TABLE song_search USING fts5(title, artist, album, song_uuid UNINDEXED);
+                 CREATE TABLE sync_song_aliases(alias_song_uuid TEXT PRIMARY KEY, canonical_song_uuid TEXT, commit_seq INTEGER);
                  CREATE TABLE sync_mutations(object_type TEXT, object_uuid TEXT, status TEXT);
                  CREATE TABLE sync_object_versions(object_type TEXT, object_uuid TEXT, payload_json TEXT, is_tombstone INTEGER);
                  CREATE TABLE sync_local_delete_intents(object_type TEXT, object_uuid TEXT, state TEXT);
@@ -884,7 +888,8 @@ mod tests {
         let mut connection = rusqlite::Connection::open_in_memory().expect("connection");
         connection
             .execute_batch(
-                "CREATE TABLE sync_mutations(object_type TEXT, object_uuid TEXT, status TEXT);
+                "CREATE TABLE sync_song_aliases(alias_song_uuid TEXT PRIMARY KEY, canonical_song_uuid TEXT, commit_seq INTEGER);
+                 CREATE TABLE sync_mutations(object_type TEXT, object_uuid TEXT, status TEXT);
                  CREATE TABLE sync_object_versions(object_type TEXT, object_uuid TEXT, payload_json TEXT, is_tombstone INTEGER);
                  CREATE TABLE songs(uuid TEXT PRIMARY KEY, library_root_uuid TEXT);
                  CREATE TABLE playlists(uuid TEXT PRIMARY KEY, library_root_uuid TEXT, display_name TEXT, normalized_name_key TEXT, created_at INTEGER, updated_at INTEGER, UNIQUE(library_root_uuid, normalized_name_key));

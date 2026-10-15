@@ -947,3 +947,7 @@ mod tests {
         assert_eq!(authenticated_device(&headers, &peers), None);
     }
 }
+
+#[cfg(test)]
+#[path = "server_tests.rs"]
+mod contract_tests;

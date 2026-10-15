@@ -144,6 +144,18 @@ impl PublishRemoteResources {
         let _guard = publication_lock()?;
         let mut publication = self.deps.journal.load(root, operation)?;
         if publication.completed {
+            for item in &publication.items {
+                if !self.matches(
+                    root,
+                    &RelativeMediaPath::new(&item.local_path)?,
+                    &item.target.manifest.digest.to_hex(),
+                    item.target.manifest.length,
+                )? {
+                    return Err(Error::conflict(
+                        "completed local resource changed externally",
+                    ));
+                }
+            }
             return Ok(RemotePublicationOutcome {
                 media_ready: true,
                 remaining_resources: 0,

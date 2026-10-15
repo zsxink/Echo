@@ -11,6 +11,8 @@ pub mod client;
 #[cfg(feature = "discovery")]
 pub mod discovery;
 pub mod pairing;
+#[cfg(test)]
+mod pairing_tests;
 pub mod protocol;
 #[cfg(feature = "client")]
 pub mod replica;

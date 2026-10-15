@@ -934,6 +934,35 @@ fn validate_components(
         if component.len() > max_component_bytes {
             return Err(err("component exceeds byte limit"));
         }
+        if component.chars().any(char::is_control)
+            || component
+                .chars()
+                .any(|character| matches!(character, '<' | '>' | ':' | '"' | '|' | '?' | '*'))
+        {
+            return Err(err(
+                "path component contains a character unsupported on Windows",
+            ));
+        }
+        if component.ends_with(['.', ' ']) {
+            return Err(err("path component cannot end in a dot or space"));
+        }
+        let device_name = component
+            .split_once('.')
+            .map_or(component, |(base, _)| base)
+            .trim_end_matches(['.', ' '])
+            .to_ascii_uppercase();
+        if matches!(device_name.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+            || ["COM", "LPT"].iter().any(|prefix| {
+                device_name.strip_prefix(prefix).is_some_and(|suffix| {
+                    matches!(
+                        suffix,
+                        "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                    )
+                })
+            })
+        {
+            return Err(err("path component uses a reserved Windows device name"));
+        }
     }
     Ok(())
 }
@@ -1027,6 +1056,23 @@ mod tests {
         assert!(LibraryRelativePath::new("/media/song.mp3").is_err());
         assert!(LibraryRelativePath::new("media/../etc/passwd").is_err());
         assert!(LibraryRelativePath::new("media/\0song").is_err());
+    }
+
+    #[test]
+    fn media_path_rejects_windows_reserved_and_unportable_components() {
+        for path in [
+            "media/CON/song.flac",
+            "media/aux.txt/song.flac",
+            "media/Lpt9/song.flac",
+            "media/COM¹/song.flac",
+            "media/artist./song.flac",
+            "media/artist /song.flac",
+            "media/a:b/song.flac",
+        ] {
+            assert!(LibraryRelativePath::new(path).is_err(), "accepted {path}");
+        }
+        assert!(LibraryRelativePath::new("media/CONCERT/song.flac").is_ok());
+        assert!(LibraryRelativePath::new("media/周杰伦/song.flac").is_ok());
     }
 
     #[test]

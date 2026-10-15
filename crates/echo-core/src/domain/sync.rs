@@ -285,6 +285,9 @@ pub struct Confirmation {
     pub object: ConfirmedObject,
     pub origin_cursor: OriginCursor,
     pub conflict: Option<ConflictCandidate>,
+    /// Immutable identity mappings created while confirming this event.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<PlaylistMemberAlias>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -296,6 +299,107 @@ pub enum ConfirmationError {
     OutOfOrderPredecessor,
     NonMonotoneHostSequence,
     HostSequenceExhausted,
+}
+
+fn merge_playlist_append(
+    current: Option<&ConfirmedObject>,
+    playlist_id: PlaylistId,
+    proposed: &[Value],
+) -> Result<(Value, Vec<PlaylistMemberAlias>), ConfirmationError> {
+    let mut combined = current
+        .and_then(|value| value.payload.get("members"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut songs = std::collections::BTreeMap::<String, String>::new();
+    for member in &combined {
+        let song = member
+            .get("song_uuid")
+            .and_then(Value::as_str)
+            .ok_or(ConfirmationError::WrongObject)?;
+        let id = member
+            .get("member_uuid")
+            .and_then(Value::as_str)
+            .ok_or(ConfirmationError::WrongObject)?;
+        songs
+            .entry(song.to_owned())
+            .or_insert_with(|| id.to_owned());
+    }
+    let mut aliases = Vec::new();
+    for member in proposed {
+        let song = member
+            .get("song_uuid")
+            .and_then(Value::as_str)
+            .ok_or(ConfirmationError::WrongObject)?;
+        let id = member
+            .get("member_uuid")
+            .and_then(Value::as_str)
+            .ok_or(ConfirmationError::WrongObject)?;
+        if let Some(canonical) = songs.get(song) {
+            if canonical != id {
+                aliases.push(PlaylistMemberAlias {
+                    playlist_id,
+                    alias_member_id: PlaylistItemId::from_uuid(
+                        Uuid::parse_str(id).map_err(|_| ConfirmationError::WrongObject)?,
+                    ),
+                    canonical_member_id: PlaylistItemId::from_uuid(
+                        Uuid::parse_str(canonical).map_err(|_| ConfirmationError::WrongObject)?,
+                    ),
+                });
+            }
+        } else {
+            songs.insert(song.to_owned(), id.to_owned());
+            combined.push(member.clone());
+        }
+    }
+    for (position, member) in combined.iter_mut().enumerate() {
+        let position =
+            u64::try_from(position).map_err(|_| ConfirmationError::HostSequenceExhausted)?;
+        member["position"] = Value::from(position);
+    }
+    Ok((Value::Array(combined), aliases))
+}
+
+fn merge_authorized_play_stats(
+    current: Option<&ConfirmedObject>,
+    candidate: &MutationCandidate,
+    song: SongId,
+) -> Result<Value, ConfirmationError> {
+    let proposed: super::library::PlayStatsRecord =
+        serde_json::from_value(candidate.payload.clone())
+            .map_err(|_| ConfirmationError::WrongObject)?;
+    if proposed.song_uuid != song.as_uuid()
+        || proposed.updated_by_device_id.as_uuid() != candidate.origin_device_id.as_uuid()
+    {
+        return Err(ConfirmationError::WrongOrigin);
+    }
+    let previous = current.and_then(|value| {
+        serde_json::from_value::<super::library::PlayStatsRecord>(value.payload.clone()).ok()
+    });
+    for (device, count) in &proposed.by_device {
+        if *device == candidate.origin_device_id.as_uuid() {
+            continue;
+        }
+        let confirmed = previous
+            .as_ref()
+            .and_then(|value| value.by_device.get(device))
+            .copied()
+            .unwrap_or(0);
+        if *count > confirmed {
+            return Err(ConfirmationError::UnauthorizedPlayStatsBucket);
+        }
+    }
+    let mut merged = previous
+        .as_ref()
+        .map(|value| value.by_device.clone())
+        .unwrap_or_default();
+    for (device, count) in proposed.by_device {
+        merged
+            .entry(device)
+            .and_modify(|confirmed| *confirmed = (*confirmed).max(count))
+            .or_insert(count);
+    }
+    serde_json::to_value(merged).map_err(|_| ConfirmationError::WrongObject)
 }
 
 /// Confirm one candidate in host order. A base mismatch from another device
@@ -336,47 +440,23 @@ pub fn confirm_candidate(
         return Err(ConfirmationError::OutOfOrderPredecessor);
     }
     let mut confirmed_payload = candidate.payload.clone();
+    let aliases = if candidate.payload == serde_json::json!({"tombstone": true}) {
+        Vec::new()
+    } else if let ObjectKey::Playlist(playlist_id) = candidate.object {
+        let proposed_members = confirmed_payload
+            .get("members")
+            .and_then(Value::as_array)
+            .cloned()
+            .ok_or(ConfirmationError::WrongObject)?;
+        let (members, member_aliases) =
+            merge_playlist_append(current, playlist_id, &proposed_members)?;
+        confirmed_payload["members"] = members;
+        member_aliases
+    } else {
+        Vec::new()
+    };
     if let ObjectKey::PlayStats(song) = candidate.object {
-        let proposed: super::library::PlayStatsRecord =
-            serde_json::from_value(candidate.payload.clone())
-                .map_err(|_| ConfirmationError::WrongObject)?;
-        if proposed.song_uuid != song.as_uuid()
-            || proposed.updated_by_device_id.as_uuid() != candidate.origin_device_id.as_uuid()
-        {
-            return Err(ConfirmationError::WrongOrigin);
-        }
-        // A peer may carry forward confirmed counters from other devices, but
-        // it cannot create or raise another device's bucket. This keeps the
-        // additive max merge author-owned even when the whole portable record
-        // is submitted as one mutation.
-        let previous = current.and_then(|value| {
-            serde_json::from_value::<super::library::PlayStatsRecord>(value.payload.clone()).ok()
-        });
-        for (device, count) in &proposed.by_device {
-            if *device == candidate.origin_device_id.as_uuid() {
-                continue;
-            }
-            let confirmed = previous
-                .as_ref()
-                .and_then(|value| value.by_device.get(device))
-                .copied()
-                .unwrap_or(0);
-            if *count > confirmed {
-                return Err(ConfirmationError::UnauthorizedPlayStatsBucket);
-            }
-        }
-        let mut merged = previous
-            .as_ref()
-            .map(|value| value.by_device.clone())
-            .unwrap_or_default();
-        for (device, count) in proposed.by_device {
-            merged
-                .entry(device)
-                .and_modify(|confirmed| *confirmed = (*confirmed).max(count))
-                .or_insert(count);
-        }
-        let buckets = serde_json::to_value(merged).map_err(|_| ConfirmationError::WrongObject)?;
-        confirmed_payload["by_device"] = buckets;
+        confirmed_payload["by_device"] = merge_authorized_play_stats(current, candidate, song)?;
     }
     let version = ObjectVersion::from_commit_seq(commit_seq);
     let conflict = current.and_then(|old| {
@@ -404,6 +484,7 @@ pub fn confirm_candidate(
             last_mutation_id: candidate.mutation_id,
         },
         conflict,
+        aliases,
     })
 }
 

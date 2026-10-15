@@ -54,6 +54,7 @@ struct MemoryTxState {
     lyrics: BTreeMap<(SongId, LyricsSource), LyricsCandidate>,
     covers: BTreeMap<SongId, CoverAssetRef>,
     runtime_state: BTreeMap<String, String>,
+    song_resources: BTreeMap<SongId, Vec<crate::domain::sync::SharedResourceManifest>>,
 }
 
 /// A Unit-of-Work fake with real commit/rollback semantics and a scriptable
@@ -220,6 +221,16 @@ impl TxLyricsWriter for MemoryTx<'_> {
 }
 
 impl TxStateWriter for MemoryTx<'_> {
+    fn set_song_file_resources(
+        &mut self,
+        song: &Song,
+        resources: &[crate::domain::sync::SharedResourceManifest],
+    ) -> Result<(), Error> {
+        self.state
+            .song_resources
+            .insert(song.id(), resources.to_vec());
+        Ok(())
+    }
     fn attach_cover(&mut self, song: SongId, cover: &CoverAssetRef) -> Result<(), Error> {
         self.state.covers.insert(song, cover.clone());
         Ok(())

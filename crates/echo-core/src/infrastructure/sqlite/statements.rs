@@ -252,13 +252,24 @@ pub(crate) fn set_song_availability(
     id: SongId,
     availability: SongAvailability,
 ) -> Result<(), Error> {
+    let canonical = super::sync_song_aliases::resolve(connection, &id.to_string())?;
+    let is_alias = canonical != id.to_string();
     if availability != SongAvailability::PendingDelete {
         super::sync_projection::ensure_song_live(connection, &id.to_string())?;
+        super::sync_projection::ensure_song_live(connection, &canonical)?;
     }
     connection
         .execute(
             "UPDATE songs SET availability = ?2, updated_at = ?3 WHERE uuid = ?1",
-            params![id.to_string(), availability_to_db(availability), now_ms()],
+            params![
+                id.to_string(),
+                availability_to_db(if is_alias {
+                    SongAvailability::PendingDelete
+                } else {
+                    availability
+                }),
+                now_ms()
+            ],
         )
         .map_err(storage)?;
     if availability == SongAvailability::Available {
@@ -268,6 +279,12 @@ pub(crate) fn set_song_availability(
                 params![id.to_string()],
             )
             .map_err(storage)?;
+        // Undo restores this operation's original physical files and cancels
+        // its local intent. An alias remains hidden: its placeholder path is
+        // retained only for immutable queued requests, never a catalog row.
+        if is_alias {
+            return touch_root_for_song(connection, id);
+        }
         let confirmed: Option<(Option<String>, bool)> = connection
             .query_row(
                 "SELECT v.payload_json, v.is_tombstone FROM sync_object_versions v WHERE v.object_type='song' AND v.object_uuid=?1",

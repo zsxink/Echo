@@ -205,6 +205,9 @@ pub(crate) fn upsert_operation_item(
     ) {
         if let Some(song) = item.song {
             super::super::sync_projection::ensure_song_live(connection, &song.to_string())?;
+            let canonical =
+                super::super::sync_song_aliases::resolve(connection, &song.to_string())?;
+            super::super::sync_projection::ensure_song_live(connection, &canonical)?;
         }
     }
     let root: String = connection

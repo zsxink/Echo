@@ -11,6 +11,15 @@
 - 拆分超过治理规模限制的 Rust/TypeScript 源文件；修正拆分后的显式 lint 例外，严格 Clippy 通过。
 - 修复新选空资料库无法加入的阻塞：Echo 初始化的 manifest/staging 所有权标记不再被误判为用户内容；仍拒绝额外文件、非空 `media/` 和符号链接。新增 Windows 路径分隔符无关的检查。
 
+## 后续实现进展
+
+- 补上 playlist 并发追加的主确认合并：主按确认顺序保留首个稳定成员身份、重排共享追加顺序，并将重复成员身份写入 typed alias、commit 日志和 SQLite。远端 apply 在同一事务恢复 alias；已删除规范成员不会阻挡新 UUID 重加，历史 alias 及其迟到删除不会指向新成员。
+- 新增领域裁决、主端账本、从端回放及删除/重加覆盖；新增 `concurrent_duplicate_playlist_append_persists_alias_in_log_and_snapshot_state` 集成测试。OpenSpec 3.3 已完成复核并勾选。2.4/3.4 仍未勾选，因为歌曲 alias 与其它成员生命周期边界尚未闭环。
+- 复核确认 3.2 的高水位、全部现有本地共享写入口事务捕获、删除意图与最终删除事件原子提交均已实现；对应覆盖包括 outbox 清理后 revision 单调、播放统计捕获、PendingDelete 撤销不产生同步墓碑及最终删除只生成一次，现标为完成。
+- 资源清单与资源传输确认 4.1/4.2 已实现；4.3 后续也已完成：覆盖外部改动/旧哈希冲突、只读与存储满故障、大小写/Unicode 路径碰撞、符号链接父级/操作目录逃逸及暂存发布恢复。详见 `task-4.3-resource-path-safety-2026-10-15.md`。
+- 5.1 HTTP 契约测试现已补齐并勾选：真实 Router 测试覆盖鉴权、实时撤销、提交重试、错误 anchor/日志链拒绝、payload 深度、限流、库隔离及有界 Range；真实 TLS 客户端测试覆盖重定向拒绝和丢 ACK 后续传。当前任务进度为 16/44。
+- 后续复核命令 `cargo test --workspace --locked` 通过（Core 560 passed、1 ignored；桌面与 echo-sync 测试通过），`cargo fmt --all --check`、workspace strict Clippy 和 `cargo check --workspace --all-targets --all-features --locked` 通过。
+
 ## 自动验证
 
 | 命令 | 结果 |

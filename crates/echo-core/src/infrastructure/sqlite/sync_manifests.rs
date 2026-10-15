@@ -175,6 +175,45 @@ pub(crate) fn load(
     .collect()
 }
 
+/// The file declarations and the metadata snapshot are committed together.
+/// Existing user-authored covers belong to their own editing flow.
+pub(crate) fn replace_song_files(
+    connection: &Connection,
+    song: &crate::domain::entities::Song,
+    resources: &[SharedResourceManifest],
+) -> Result<(), Error> {
+    validate(resources)?;
+    let audio = resources
+        .iter()
+        .filter(|resource| resource.kind == SharedResourceKind::Audio)
+        .collect::<Vec<_>>();
+    if audio.len() != 1
+        || audio[0].relative_path.as_str() != song.path().normalized()
+        || Some(audio[0].digest.to_hex().as_str()) != song.blake3_hash()
+        || Some(audio[0].length) != song.file_size()
+        || resources.iter().any(|resource| {
+            !matches!(
+                resource.kind,
+                SharedResourceKind::Audio | SharedResourceKind::LyricsSidecar
+            )
+        })
+    {
+        return Err(Error::conflict(
+            "verified song resources differ from the song scan facts",
+        ));
+    }
+    let id = song.id().to_string();
+    let mut manifests = load(connection, "song", &id)?;
+    manifests.retain(|resource| {
+        !matches!(
+            resource.kind,
+            SharedResourceKind::Audio | SharedResourceKind::LyricsSidecar
+        )
+    });
+    manifests.extend_from_slice(resources);
+    replace(connection, "song", &id, &manifests)
+}
+
 pub(crate) fn replace(
     connection: &Connection,
     kind: &str,
