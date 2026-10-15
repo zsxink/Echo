@@ -40,7 +40,7 @@
 | `pnpm verify:governance` | 通过：场景对账 428/428、验证清单 95 项、31/31 注入证明、Core 覆盖率 90.01%、scale/架构/IPC 漂移门禁通过。另修复音效归档后检查脚本仍引用旧 OpenSpec 路径的问题 |
 | `openspec validate introduce-lan-library-sync --strict` | 通过 |
 | `openspec validate --all --strict` | 通过：20 项 |
-| 两台电脑验证准备 | Release run [38702819063](https://github.com/zsxink/Echo/actions/runs/38702819063) 从提交 `6a1bbe9` 为 0.3.0 构建成功；macOS/Windows/Linux jobs 均通过，tag 留空没有发布 Release。Windows 安装器 SHA256 `3aca5f6178a875db50103f034526a0adc169c6d1ec9677e4b240b4139de53045`、Mac DMG SHA256 `5917ef0f01d75dfedcb91b71ef2ddcc2989b9fd0f6d16849ab0a2683032680be` 与 Actions 清单一致。设备间网络验证仍待执行 |
+| 两台电脑验证准备 | Release run [38739308043](https://github.com/zsxink/Echo/actions/runs/38739308043) 从提交 `41a63a9d5ef268e36d67cffd681e846aae99dee6` 为 0.3.0 构建成功；macOS/Windows/Linux jobs 均通过，tag 留空没有发布 Release。Windows 安装器 `Echo_0.3.0_x64-setup.exe` SHA256 `8fb7e4579e66316e975d1a992d2a04cf78eec6208b33d9546f9394c42ad2ce73` 与 Actions 清单一致，并已下载到本机 `/tmp/echo-windows-0.3.0/nsis/`。Mac DMG `Echo_0.3.0_aarch64.dmg` SHA256 `7b73d235197ee1f8a73b929b3fc5c883bc210b447a47d0b5852ee68d84e003b0`；镜像校验通过且挂载确认含 `Echo.app` 与 Applications 链接。双机步骤见 `two-machine-smoke-test.md`；设备间网络验证仍待执行 |
 
 ## 尚未完成的验收
 
