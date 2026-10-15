@@ -10,7 +10,7 @@ members = [
 [workspace.package]
 version = "0.3.0"
 edition = "2021"
-rust-version = "1.81"
+rust-version = "1.88"
 # Echo is licensed under a custom source-available license based on Business
 # Source License 1.1 (personal study/research use, no commercial use, no
 # redistribution — see LICENSE). Cargo's `license` field accepts the SPDX
@@ -40,12 +40,12 @@ unicode-normalization = "0.1"
 unicode-segmentation = "1"
 unicode-casefold = "0.2"
 # Newer releases pull edition-2024 transitive dependencies without declaring
-# the corresponding MSRV. Keep this compatible with Rust 1.81 explicitly.
+# the corresponding MSRV. Keep this compatible with Rust 1.88 explicitly.
 blake3 = "=1.8.2"
 rusqlite = { version = "0.32", features = ["backup", "bundled"] }
 
 # LAN sync adapters stay outside echo-core and are opt-in at the desktop
-# composition boundary. Keep this set compatible with the workspace MSRV 1.81.
+# composition boundary. Keep this set compatible with the workspace MSRV 1.88.
 tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "query", "tokio"] }
 hyper = { version = "1.11.0", default-features = false, features = ["http1", "server"] }

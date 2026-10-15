@@ -271,7 +271,7 @@ pub(crate) fn mark_outcome_unknown(
         })
         .collect();
     let available = !root_unavailable
-        && deps.roots.by_id(root)?.map_or(true, |record| {
+        && deps.roots.by_id(root)?.is_none_or(|record| {
             record.availability() == crate::domain::entities::RootAvailability::Available
         });
     deps.uow.with_tx(Box::new(move |tx: &mut dyn TxAccess| {

@@ -4,7 +4,7 @@
 
 - [x] 1.1 将 PRODUCT/DESIGN/CODE_STANDARDS 的二期连接器条款统一到局域网优先，记录单主、全库、确认序LWW、非空目录与恢复边界；验证文档与 `lan-library-sync` 所有 Requirement 一致，执行 `openspec validate introduce-lan-library-sync --strict`。
 - [x] 1.2 盘点每种共享对象和资源的本地写入口、portable schema、outbox 与 journal 覆盖，包括播放统计/封面/侧车、成员追加顺序和删除/撤销；区分本机展示排序偏好与共享顺序，登记 PendingDelete 临时墓碑的迁移策略；输出证据清单与 fixture，验证“共享内容边界”“历史库启用同步”没有仅存于SQLite的遗漏。
-- [ ] 1.3 建立 echo-sync crate 和 client/server/discovery feature 边界，验证候选依赖 Rust 1.81/MSRV、许可证及三平台兼容；锁定依赖并执行 `cargo check --workspace --all-targets`、`cargo deny check`，记录具体版本与选型结果。
+- [ ] 1.3 建立 echo-sync crate 和 client/server/discovery feature 边界，验证候选依赖 MSRV、许可证及三平台兼容；锁定依赖并执行 `cargo check --workspace --all-targets`、`cargo deny check`，记录具体版本与选型结果。RustSec 修复后 workspace MSRV 为 1.88。
 - [x] 1.4 固定 mutation/commit/snapshot/resource DTO、typed song/member alias、检查点/日志摘要规范编码、限制值、身份和协议版本，生成兼容fixture和协议文档；测试摘要跨端一致、未知可选字段、未知必需种类、超限载荷及不兼容拒写，执行 `cargo test -p echo-core`。
 
 ## 2. 领域裁决与状态机

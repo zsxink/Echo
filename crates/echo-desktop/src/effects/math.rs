@@ -191,7 +191,7 @@ fn refine_peak(evaluate: &impl Fn(f64) -> f64, mut low: f64, mut high: f64) -> f
             high = right;
         }
     }
-    evaluate((low + high) / 2.0)
+    evaluate(f64::midpoint(low, high))
 }
 
 #[must_use]

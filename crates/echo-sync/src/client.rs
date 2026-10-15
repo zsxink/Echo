@@ -754,7 +754,7 @@ fn validate_mutation_ack(ack: &MutationAck, mutation: &MutationDto) -> Result<()
     if confirmation.mutation_id != mutation.mutation_id
         || outcome.accepted != confirmation.checkpoint.is_some()
         || (outcome.accepted && outcome.reason.is_some())
-        || (!outcome.accepted && outcome.reason.as_ref().map_or(true, String::is_empty))
+        || (!outcome.accepted && outcome.reason.as_ref().is_none_or(String::is_empty))
         || confirmation.checkpoint.is_some_and(|checkpoint| {
             checkpoint.binding != mutation.binding || checkpoint.sequence.as_u64() == 0
         })

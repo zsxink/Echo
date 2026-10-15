@@ -269,10 +269,7 @@ impl ResourceTransferPort for FileResourceStore {
         let mut completed = false;
         for entry in fs::read_dir(&directory)? {
             let path = entry?.path();
-            if !path
-                .extension()
-                .is_some_and(|extension| extension == "json")
-            {
+            if path.extension().is_none_or(|extension| extension != "json") {
                 continue;
             }
             regular_file(&path).map_err(content_verification_error)?;

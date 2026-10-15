@@ -18,10 +18,10 @@
 | `cargo fmt --all --check` | 通过 |
 | `cargo check --workspace --all-targets --all-features` | 通过（本机当前工具链） |
 | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | 通过 |
-| `cargo test --workspace` | 通过，所有单元、集成、架构、协议和文档测试目标均无失败；Core 544 passed/1 ignored，Desktop 413 passed，Echo Sync 18 passed |
+| `cargo test --workspace --locked` | 通过，所有单元、集成、架构、协议和文档测试目标均无失败；Core 545 passed/1 ignored，Desktop 413 passed，Echo Sync 18 passed |
 | `cargo build --workspace` | 通过 |
-| `cargo llvm-cov -p echo-core --all-features --ignore-filename-regex application/testing --fail-under-lines 90` | **失败**：85.94% 行覆盖率，门槛 90%；`remote_resources.rs` 和 `sync_configuration.rs` 当前未被覆盖 |
-| `cargo deny check` | **失败**：quick-xml 0.38.4 命中 RUSTSEC-2026-0194/0195，time 0.3.44 命中 RUSTSEC-2026-0009；bans、licenses、sources 通过。可用修复版本要求 Rust 1.88，而项目工作区声明 MSRV 1.81；未以忽略规则隐藏告警或擅自提高 MSRV |
+| `cargo llvm-cov -p echo-core --all-features --ignore-filename-regex application/testing --fail-under-lines 90` | **失败**：85.95% 行覆盖率，门槛 90%；`remote_resources.rs` 和 `sync_configuration.rs` 当前未被覆盖 |
+| `cargo deny check` | 通过：advisories、bans、licenses、sources 均通过。锁文件已升级 quick-xml 0.41.0 / plist 1.10.0 / time 0.3.47，workspace MSRV 明确提升到 Rust 1.88 |
 | `pnpm --filter @echo/desktop format:check` | 通过 |
 | `pnpm --filter @echo/desktop lint` | 通过，0 error、9 warnings |
 | `pnpm --filter @echo/desktop typecheck` | 通过 |
@@ -35,10 +35,9 @@
 
 ## 尚未完成的验收
 
-1. Core 行覆盖率需达到 90%，当前为 85.94%。
-2. `cargo deny check` 的三个依赖安全公告需要在保持工作区 MSRV 要求的前提下解决或形成经审定的兼容升级方案。
-3. 主设备加两从设备真实网络矩阵未在本机执行；包括双向变更、断网编辑、并发、删除撤销/到期、账本分叉、强制退出和恢复。
-4. 安装包尚未签名；局域网权限/防火墙、睡眠/网卡切换、磁盘满、占用文件替换及大库性能未完成跨平台验证。
-5. 需要完成最终独立审查和要求的场景/文档交付后，才可同步 delta specs 并归档 OpenSpec change。
+1. Core 行覆盖率需达到 90%，当前为 85.95%；`remote_resources.rs`、`sync_configuration.rs` 仍无覆盖。
+2. 主设备加两从设备真实网络矩阵未在本机执行；包括双向变更、断网编辑、并发、删除撤销/到期、账本分叉、强制退出和恢复。
+3. 安装包尚未签名；局域网权限/防火墙、睡眠/网卡切换、磁盘满、占用文件替换及大库性能未完成跨平台验证。
+4. 仍有多个 OpenSpec 功能与场景任务未完成，需继续实现并作独立审查后，才可同步 delta specs 和归档 change。
 
 因此，本记录不把本地自动测试通过等同于发布门槛完成；tasks.md 中未满足的任务保持未勾选。

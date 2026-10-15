@@ -147,7 +147,11 @@ impl EventBroker {
     /// catalog revision a caller opts into (usually the current library
     /// revision).
     #[must_use]
-    pub fn emit(&mut self, event: IpcEvent, revision: Option<CatalogRevision>) -> VersionedEvent {
+    pub const fn emit(
+        &mut self,
+        event: IpcEvent,
+        revision: Option<CatalogRevision>,
+    ) -> VersionedEvent {
         let sequence = self.next;
         self.next = self.next.next();
         VersionedEvent {
@@ -209,7 +213,7 @@ impl EventWatermark {
 
     /// Record that `event` was applied, advancing the sequence watermark.
     pub fn applied(&mut self, event: &VersionedEvent) {
-        let replace = self.sequence.map_or(true, |seen| event.sequence > seen);
+        let replace = self.sequence.is_none_or(|seen| event.sequence > seen);
         if replace {
             self.sequence = Some(event.sequence);
         }
@@ -221,7 +225,7 @@ impl EventWatermark {
     /// Adopt a freshly-pulled snapshot: every event below `next` is now
     /// considered already-seen (so a backlog cannot overwrite the snapshot), and
     /// the catalog revision becomes `revision`.
-    pub fn rebase_from_snapshot(&mut self, next: EventSequence, revision: CatalogRevision) {
+    pub const fn rebase_from_snapshot(&mut self, next: EventSequence, revision: CatalogRevision) {
         let next_value = next.value();
         let advance = match self.sequence {
             // The snapshot is authoritative: we now know about everything before

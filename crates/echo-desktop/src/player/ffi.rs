@@ -704,7 +704,7 @@ pub enum FfiInputError {
 /// `data` must be null or a valid `*const c_double` matching the declared
 /// property format (the observer must not misreport the format).
 #[must_use]
-pub unsafe fn read_double(data: *const c_void) -> Option<f64> {
+pub const unsafe fn read_double(data: *const c_void) -> Option<f64> {
     if data.is_null() {
         return None;
     }

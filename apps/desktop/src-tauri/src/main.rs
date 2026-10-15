@@ -350,7 +350,7 @@ fn wire_composition(
     app.manage(routed.deps.clone());
     // Constructing this boundary performs no discovery, listening or requests.
     // Secure-store access and host provisioning start only after explicit opt-in.
-    app.manage(Arc::new(sync_runtime::SyncRuntime::new(
+    let sync_runtime = Arc::new(sync_runtime::SyncRuntime::new(
         routed.database.clone(),
         Some(Arc::new(sync_provisioner::NativeSyncProvisioner::new(
             routed.database.clone(),
@@ -361,7 +361,12 @@ fn wire_composition(
                 journal: routed.database.clone(),
             },
         ))),
-    )));
+    ));
+    let sync_app = app.handle().clone();
+    sync_runtime.set_status_notifier(Arc::new(move |status| {
+        let _ = sync_app.emit("sync://status", status);
+    }));
+    app.manage(sync_runtime);
     // The `cover://` protocol resolves bytes by opaque asset key (design §16).
     // It looks the store up as the *dynamic* `CoverCache` type, so the cache has
     // to be registered under exactly that type — the same instance the scan

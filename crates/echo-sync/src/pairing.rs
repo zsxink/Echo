@@ -429,7 +429,7 @@ impl PairingRegistry {
     pub fn deny(&self, request_id: &str) -> Result<(), PairingError> {
         let mut state = self.state.lock().map_err(|_| PairingError::Unavailable)?;
         prune(&mut state);
-        if state.requests.get(request_id).map_or(true, |request| {
+        if state.requests.get(request_id).is_none_or(|request| {
             !matches!(
                 request.state,
                 RequestState::Pending | RequestState::Approving
@@ -489,7 +489,7 @@ impl PairingRegistry {
         let expired = state
             .requests
             .remove(&dto.request_id)
-            .map_or(true, |request| request.expires <= Instant::now());
+            .is_none_or(|request| request.expires <= Instant::now());
         drop(state);
         if expired {
             self.compensate(&metadata, port)?;
@@ -549,7 +549,7 @@ fn secret_matches(secret: &str, hash: &[u8; 32]) -> bool {
 fn random_secret() -> String {
     // Three OS-random v4 UUIDs provide 366 bits of entropy before extraction.
     let mut entropy = [0; 48];
-    for chunk in entropy.chunks_exact_mut(16) {
+    for chunk in entropy.as_chunks_mut::<16>().0 {
         chunk.copy_from_slice(MutationId::new().as_uuid().as_bytes());
     }
     blake3::hash(&entropy).to_hex().to_string()

@@ -57,3 +57,23 @@ RUSTSEC-2026-0194 and RUSTSEC-2026-0195; time 0.3.44 triggers
 RUSTSEC-2026-0009. Bans, licenses and sources pass. The earlier all-green
 result must not be used as current delivery evidence. No advisory exception
 or lockfile change was introduced by this review.
+
+## RustSec remediation and MSRV update — 2026-10-15
+
+The current audit found `quick-xml 0.38.4` (RUSTSEC-2026-0194 and
+RUSTSEC-2026-0195) through `plist 1.8.0`, and `time 0.3.44`
+(RUSTSEC-2026-0009). RustSec marks `quick-xml >=0.41.0` and `time >=0.3.47`
+as patched. `quick-xml 0.41.0` requires Rust 1.79; the compatible `plist`
+release selected by Tauri is 1.10.0, whose declared MSRV is Rust 1.88.0.
+`time 0.3.47` also requires Rust 1.88.0. The workspace MSRV and dependency
+policy comments are therefore raised from 1.81 to 1.88 rather than retaining
+known vulnerable versions or adding advisory exceptions.
+
+The lockfile now selects `plist 1.10.0`, `quick-xml 0.41.0`, and `time
+0.3.47`. The locked workspace passed `cargo +1.88.0 check --workspace --all-targets
+--all-features --locked` on macOS arm64, establishing the declared MSRV for all
+workspace targets. `cargo deny check` passes all four gates (advisories, bans,
+licenses, sources). Strict clippy, full workspace tests, and frontend
+checks/build pass on the project toolchain after updating newly applicable
+MSRV-aware Clippy suggestions. Three-platform Actions builds remain the final
+compatibility check.

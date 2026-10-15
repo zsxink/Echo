@@ -160,12 +160,12 @@ impl MemoryDatabase {
             .filter(|song| {
                 let in_membership = in_playlist
                     .as_ref()
-                    .map_or(true, |members| members.contains(&song.id()));
+                    .is_none_or(|members| members.contains(&song.id()));
                 root.is_some_and(|r| song.root() == r)
                     && in_membership
                     && (playlist.is_some() || song.availability() == SongAvailability::Available)
                     && (!favorites || song.favorite())
-                    && normalized_query.as_deref().map_or(true, |needle| {
+                    && normalized_query.as_deref().is_none_or(|needle| {
                         let haystacks = [
                             song.title().unwrap_or(""),
                             song.artist().unwrap_or(""),

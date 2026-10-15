@@ -318,7 +318,7 @@ impl HostCommitLedgerPort for SqliteDatabase {
                 binding.authority_id.as_uuid().to_string(),
                 i64::try_from(binding.epoch.as_u64()).map_err(|_| Error::validation(crate::error::Subject::Other, "epoch", "out of range"))?,
             );
-            if configured.as_ref().map_or(true, |row| row.3 != "host" || row.4.is_none() || (row.0.as_str(), row.1.as_str(), row.2) != (expected.0.as_str(), expected.1.as_str(), expected.2)) {
+            if configured.as_ref().is_none_or(|row| row.3 != "host" || row.4.is_none() || (row.0.as_str(), row.1.as_str(), row.2) != (expected.0.as_str(), expected.1.as_str(), expected.2)) {
                 return Err(Error::conflict("host sync binding does not match this library"));
             }
             let payload = serde_json::to_vec(&candidate).map_err(storage)?;

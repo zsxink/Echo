@@ -2,7 +2,8 @@
 
 use std::collections::BTreeMap;
 use std::net::{IpAddr, SocketAddr, TcpListener};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -15,6 +16,8 @@ use echo_sync::discovery::LanDiscovery;
 use echo_sync::pairing::{PairingError, PairingGrantDto, PairingInvitation, PendingPairingRequest};
 use echo_sync::server::{host_router, serve_tls, HostApiState};
 use tokio::sync::oneshot;
+
+pub type StatusNotifier = Arc<dyn Fn(SyncStatus) + Send + Sync>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SyncRuntimeError {
@@ -67,6 +70,19 @@ pub trait SyncProvisioner: Send + Sync {
     fn host(&self, root: LibraryRootId) -> Result<ProvisionedHost, SyncRuntimeError>;
     fn peer(&self, root: LibraryRootId) -> Result<ProvisionedPeer, SyncRuntimeError>;
     fn sync_now(&self, role: SyncRole) -> Result<(), SyncRuntimeError>;
+    /// Cancel an in-flight background cycle when the user pauses or stops the
+    /// session. Provisioners with cancellable transports should override this;
+    /// the default preserves compatibility with simple adapters.
+    fn sync_now_cancellable(
+        &self,
+        role: SyncRole,
+        cancelled: Arc<AtomicBool>,
+    ) -> Result<(), SyncRuntimeError> {
+        if cancelled.load(Ordering::Acquire) {
+            return Err(SyncRuntimeError::Busy);
+        }
+        self.sync_now(role)
+    }
     fn revoke_device(&self, device_id: &str) -> Result<(), SyncRuntimeError>;
     fn complete_peer_pairing(
         &self,
@@ -81,6 +97,33 @@ struct HostWorker {
     stop: Option<oneshot::Sender<()>>,
     thread: Option<JoinHandle<()>>,
     _advertisement: LanDiscovery,
+}
+
+struct SyncLoopWorker {
+    stop: Arc<AtomicBool>,
+    wake: mpsc::Sender<()>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl SyncLoopWorker {
+    fn stop(mut self) -> Result<(), SyncRuntimeError> {
+        self.stop.store(true, Ordering::Release);
+        let _ = self.wake.send(());
+        if let Some(thread) = self.thread.take() {
+            thread.join().map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for SyncLoopWorker {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        let _ = self.wake.send(());
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
 }
 
 impl HostWorker {
@@ -110,6 +153,9 @@ impl Drop for HostWorker {
 struct Inner {
     status: SyncStatus,
     host: Option<HostWorker>,
+    sync_loop: Option<SyncLoopWorker>,
+    auto_sync: bool,
+    manual_cycle_cancel: Option<Arc<AtomicBool>>,
     root: Option<LibraryRootId>,
     host_address: Option<IpAddr>,
     pairing_api: Option<HostApiState>,
@@ -122,6 +168,8 @@ pub struct SyncRuntime {
     // Serialize transitions independently from status. Status never waits for
     // TLS shutdown, discovery, SQLite, or a remote round trip.
     transition: Mutex<()>,
+    cycle: Arc<Mutex<()>>,
+    status_notifier: Arc<Mutex<Option<StatusNotifier>>>,
     inner: Arc<Mutex<Inner>>,
 }
 
@@ -134,8 +182,17 @@ impl SyncRuntime {
             database,
             provisioner,
             transition: Mutex::new(()),
+            cycle: Arc::new(Mutex::new(())),
+            status_notifier: Arc::new(Mutex::new(None)),
             inner: Arc::new(Mutex::new(Inner::default())),
         }
+    }
+
+    pub fn set_status_notifier(&self, notifier: StatusNotifier) {
+        *self
+            .status_notifier
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(notifier);
     }
 
     pub fn status(&self) -> SyncStatus {
@@ -248,6 +305,10 @@ impl SyncRuntime {
         inner.pairing_api = Some(pairing_api);
         inner.host_certificate_der = Some(host_certificate_der);
         drop(inner);
+        if let Err(error) = self.start_sync_loop(SyncRole::Host) {
+            let _ = self.stop_inner();
+            return Err(error);
+        }
         Ok(self.status())
     }
 
@@ -302,6 +363,14 @@ impl SyncRuntime {
             return Err(SyncRuntimeError::LibraryUnavailable);
         }
         self.set_started(root, peer.binding, SyncRole::Peer, peer.address);
+        let auto_sync = self
+            .inner
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?
+            .auto_sync;
+        if auto_sync {
+            self.start_sync_loop(SyncRole::Peer)?;
+        }
         Ok(self.status())
     }
 
@@ -322,6 +391,20 @@ impl SyncRuntime {
         if !self.status().enabled {
             return Err(SyncRuntimeError::Unconfigured);
         }
+        if let Some(cancelled) = self
+            .inner
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?
+            .manual_cycle_cancel
+            .as_ref()
+        {
+            cancelled.store(true, Ordering::Release);
+        }
+        self.stop_sync_loop()?;
+        let _cycle = self
+            .cycle
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
         let host = self
             .inner
             .lock()
@@ -344,23 +427,27 @@ impl SyncRuntime {
         if status.state != SyncState::Paused {
             return Err(SyncRuntimeError::Busy);
         }
-        let (root, address) = {
+        let (root, address, role, resume_sync) = {
             let inner = self
                 .inner
                 .lock()
                 .map_err(|_| SyncRuntimeError::WorkerFailed)?;
-            (inner.root, inner.host_address)
+            (inner.root, inner.host_address, status.role, inner.auto_sync)
         };
         if Some(self.active_root()?) != root {
             self.stop_inner()?;
             return Err(SyncRuntimeError::LibraryUnavailable);
         }
         self.stop_inner()?;
-        if status.role == SyncRole::Host {
+        let result = if role == SyncRole::Host {
             self.start_host_locked(address.ok_or(SyncRuntimeError::InvalidAddress)?)
         } else {
             self.start_peer_locked()
+        };
+        if resume_sync && role == SyncRole::Peer {
+            self.start_sync_loop(SyncRole::Peer)?;
         }
+        result
     }
 
     pub fn report_error(&self, error: SyncRuntimeError) -> SyncStatus {
@@ -377,7 +464,7 @@ impl SyncRuntime {
     }
 
     pub fn sync_now(&self) -> Result<SyncStatus, SyncRuntimeError> {
-        let _transition = self
+        let transition_guard = self
             .transition
             .lock()
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
@@ -385,11 +472,16 @@ impl SyncRuntime {
         if !status.enabled || status.state == SyncState::Paused {
             return Err(SyncRuntimeError::Unconfigured);
         }
-        let root = self
+        let inner = self
             .inner
             .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?
-            .root;
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        if inner.manual_cycle_cancel.is_some() {
+            return Err(SyncRuntimeError::Busy);
+        }
+        let root = inner.root;
+        let session_id = inner.status.session_id;
+        drop(inner);
         if Some(self.active_root()?) != root {
             self.stop_inner()?;
             return Err(SyncRuntimeError::LibraryUnavailable);
@@ -398,8 +490,53 @@ impl SyncRuntime {
             .provisioner
             .as_ref()
             .ok_or(SyncRuntimeError::Unconfigured)?;
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        if inner.status.session_id != session_id
+            || !inner.status.enabled
+            || inner.manual_cycle_cancel.is_some()
+        {
+            return Err(SyncRuntimeError::Busy);
+        }
+        inner.manual_cycle_cancel = Some(Arc::clone(&cancelled));
+        drop(inner);
         self.change_state(SyncState::Syncing, None);
-        match provisioner.sync_now(status.role) {
+        drop(transition_guard);
+        let cycle = Arc::clone(&self.cycle);
+        let cycle_guard = cycle.lock().map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let result = provisioner.sync_now_cancellable(status.role, Arc::clone(&cancelled));
+        drop(cycle_guard);
+        let _transition = self
+            .transition
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        if inner
+            .manual_cycle_cancel
+            .as_ref()
+            .is_some_and(|active| Arc::ptr_eq(active, &cancelled))
+        {
+            inner.manual_cycle_cancel = None;
+        }
+        let still_active = inner.status.session_id == session_id
+            && inner.status.enabled
+            && inner.status.state != SyncState::Paused;
+        drop(inner);
+        if !still_active {
+            return Err(SyncRuntimeError::Busy);
+        }
+        let loop_result = self.start_sync_loop(status.role);
+        if let Err(error) = loop_result {
+            self.change_state(SyncState::Failed, Some(error.message_key().into()));
+            return Err(error);
+        }
+        match result {
             Ok(()) => self.change_state(
                 if status.role == SyncRole::Host {
                     SyncState::Hosting
@@ -533,7 +670,178 @@ impl SyncRuntime {
         inner.status.event_sequence += 1;
     }
 
+    #[allow(clippy::too_many_lines)]
+    fn start_sync_loop(&self, role: SyncRole) -> Result<(), SyncRuntimeError> {
+        let provisioner = self
+            .provisioner
+            .clone()
+            .ok_or(SyncRuntimeError::Unconfigured)?;
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        if inner.sync_loop.is_some() {
+            inner.auto_sync = true;
+            return Ok(());
+        }
+        if !inner.status.enabled || inner.status.role != role {
+            return Err(SyncRuntimeError::Unconfigured);
+        }
+        let session_id = inner.status.session_id;
+        let state = Arc::clone(&self.inner);
+        let notifier = Arc::clone(&self.status_notifier);
+        let cycle = Arc::clone(&self.cycle);
+        let (wake, wakeups) = mpsc::channel();
+        self.database.register_sync_waker(wake.clone());
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop);
+        let thread = thread::Builder::new()
+            .name("echo-lan-sync-loop".into())
+            .spawn(move || {
+                let poll_interval = Duration::from_secs(5);
+                let mut retry_delay = Duration::from_secs(5);
+                let mut retry_attempts = 0_u32;
+                let mut retrying = false;
+                loop {
+                    let delay = if retrying {
+                        jittered_retry_delay(retry_delay)
+                    } else {
+                        poll_interval
+                    };
+                    if !wait_for_sync_wakeup(&wakeups, delay, retrying, &worker_stop) {
+                        break;
+                    }
+                    let should_run = {
+                        let mut inner = state
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        if inner.status.session_id != session_id
+                            || !inner.status.enabled
+                            || inner.status.state == SyncState::Paused
+                        {
+                            false
+                        } else {
+                            inner.status.state = SyncState::Syncing;
+                            inner.status.last_error = None;
+                            inner.status.event_sequence += 1;
+                            true
+                        }
+                    };
+                    if !should_run {
+                        break;
+                    }
+                    let status_notifier = notifier
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clone();
+                    if let Some(notifier) = status_notifier {
+                        let status = state
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .status
+                            .clone();
+                        notifier(status);
+                    }
+                    if worker_stop.load(Ordering::Acquire) {
+                        break;
+                    }
+                    let result = {
+                        let Ok(_cycle) = cycle.lock() else {
+                            break;
+                        };
+                        if worker_stop.load(Ordering::Acquire) {
+                            break;
+                        }
+                        provisioner.sync_now_cancellable(role, Arc::clone(&worker_stop))
+                    };
+                    if worker_stop.load(Ordering::Acquire) {
+                        break;
+                    }
+                    {
+                        let mut inner = state
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        if inner.status.session_id != session_id || !inner.status.enabled {
+                            break;
+                        }
+                        inner.status.event_sequence += 1;
+                        match result {
+                            Ok(()) => {
+                                inner.status.state = if role == SyncRole::Host {
+                                    SyncState::Hosting
+                                } else {
+                                    SyncState::Connected
+                                };
+                                inner.status.last_error = None;
+                                retrying = false;
+                                retry_delay = poll_interval;
+                                retry_attempts = 0;
+                            }
+                            Err(error) => {
+                                inner.status.state = SyncState::Failed;
+                                inner.status.last_error = Some(error.message_key().into());
+                                retrying = true;
+                                if retry_attempts > 0 {
+                                    retry_delay = (retry_delay * 2).min(Duration::from_secs(60));
+                                }
+                                retry_attempts = retry_attempts.saturating_add(1);
+                            }
+                        }
+                        drop(inner);
+                    }
+                    let status_notifier = notifier
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clone();
+                    if let Some(notifier) = status_notifier {
+                        let status = state
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .status
+                            .clone();
+                        notifier(status);
+                    }
+                }
+            })
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        inner.auto_sync = true;
+        inner.sync_loop = Some(SyncLoopWorker {
+            stop,
+            wake,
+            thread: Some(thread),
+        });
+        drop(inner);
+        Ok(())
+    }
+
+    fn stop_sync_loop(&self) -> Result<(), SyncRuntimeError> {
+        let worker = self
+            .inner
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?
+            .sync_loop
+            .take();
+        if let Some(worker) = worker {
+            worker.stop()?;
+        }
+        Ok(())
+    }
+
     fn stop_inner(&self) -> Result<(), SyncRuntimeError> {
+        if let Some(cancelled) = self
+            .inner
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?
+            .manual_cycle_cancel
+            .as_ref()
+        {
+            cancelled.store(true, Ordering::Release);
+        }
+        self.stop_sync_loop()?;
+        let _cycle = self
+            .cycle
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
         let (host, pairing_api) = {
             let mut inner = self
                 .inner
@@ -564,8 +872,57 @@ impl SyncRuntime {
         inner.root = None;
         inner.host_address = None;
         inner.host_certificate_der = None;
+        inner.auto_sync = false;
+        inner.manual_cycle_cancel = None;
         drop(inner);
         pairing_result
+    }
+}
+
+fn jittered_retry_delay(base: Duration) -> Duration {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let jitter = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos()
+        % 400_001;
+    let factor_per_million = 800_000 + u64::from(jitter);
+    Duration::from_nanos(
+        u64::try_from(
+            (base.as_nanos() * u128::from(factor_per_million) / 1_000_000)
+                .min(u128::from(u64::MAX)),
+        )
+        .unwrap_or(u64::MAX),
+    )
+}
+
+fn wait_for_sync_wakeup(
+    wakeups: &mpsc::Receiver<()>,
+    delay: Duration,
+    suppress_early_retry: bool,
+    stop: &AtomicBool,
+) -> bool {
+    let deadline = Instant::now() + delay;
+    loop {
+        if stop.load(Ordering::Acquire) {
+            return false;
+        }
+        let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+            return true;
+        };
+        match wakeups.recv_timeout(remaining) {
+            Ok(()) => {
+                while wakeups.try_recv().is_ok() {}
+                if stop.load(Ordering::Acquire) {
+                    return false;
+                }
+                if !suppress_early_retry {
+                    return true;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => return true,
+            Err(mpsc::RecvTimeoutError::Disconnected) => return false,
+        }
     }
 }
 
@@ -694,5 +1051,48 @@ mod tests {
         ] {
             assert!(selected_lan_address(address).is_ok());
         }
+    }
+
+    #[test]
+    fn local_write_wakes_sync_while_retry_backoff_suppresses_it() {
+        let stop = AtomicBool::new(false);
+        let (wake, wakeups) = mpsc::channel();
+        wake.send(()).unwrap();
+        assert!(wait_for_sync_wakeup(
+            &wakeups,
+            Duration::from_secs(1),
+            false,
+            &stop
+        ));
+
+        let (wake, wakeups) = mpsc::channel();
+        let wake_sender = wake.clone();
+        let writer = thread::spawn(move || {
+            wake.send(()).unwrap();
+            thread::sleep(Duration::from_millis(15));
+        });
+        let started = Instant::now();
+        assert!(wait_for_sync_wakeup(
+            &wakeups,
+            Duration::from_millis(40),
+            true,
+            &stop
+        ));
+        writer.join().unwrap();
+        drop(wake_sender);
+        assert!(started.elapsed() >= Duration::from_millis(35));
+    }
+
+    #[test]
+    fn stopping_wakes_a_waiting_sync_loop_immediately() {
+        let (wake, wakeups) = mpsc::channel();
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop);
+        let worker = thread::spawn(move || {
+            wait_for_sync_wakeup(&wakeups, Duration::from_secs(30), false, &worker_stop)
+        });
+        stop.store(true, Ordering::Release);
+        let _ = wake.send(());
+        assert!(!worker.join().unwrap());
     }
 }

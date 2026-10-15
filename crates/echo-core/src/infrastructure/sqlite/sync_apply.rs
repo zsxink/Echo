@@ -44,7 +44,7 @@ impl RemoteApplyPort for SqliteDatabase {
                 binding.authority_id.as_uuid().to_string(),
                 i64::try_from(binding.epoch.as_u64()).map_err(storage)?,
             );
-            if configured.as_ref().map_or(true, |row| row.3 != "replica" || row.4.is_none() || (row.0.as_str(), row.1.as_str(), row.2) != (expected_binding.0.as_str(), expected_binding.1.as_str(), expected_binding.2)) {
+            if configured.as_ref().is_none_or(|row| row.3 != "replica" || row.4.is_none() || (row.0.as_str(), row.1.as_str(), row.2) != (expected_binding.0.as_str(), expected_binding.1.as_str(), expected_binding.2)) {
                 return Err(Error::conflict("remote apply requires the matching replica binding"));
             }
             let peer = peer_device_id.as_uuid().to_string();
@@ -96,7 +96,7 @@ impl RemoteApplyPort for SqliteDatabase {
                             params![sequence, expected_binding.0, expected_binding.1, expected_binding.2],
                             |row| Ok((row.get(0)?, row.get(1)?)),
                         ).optional().map_err(storage)?;
-                        if existing.as_ref().map_or(true, |(digest, body)| digest.as_slice() != commit.digest.as_slice() || body != &commit.canonical_json) {
+                        if existing.as_ref().is_none_or(|(digest, body)| digest.as_slice() != commit.digest.as_slice() || body != &commit.canonical_json) {
                             return Err(Error::conflict("replayed remote commit differs from the durable ledger"));
                         }
                     }

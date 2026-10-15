@@ -119,7 +119,7 @@ impl<R: PlaybackRecorder> PlaybackStatsRecorder<R> {
 
     /// Begin a new load session for a library song. Resets the accumulated
     /// clock and arms a fresh (single) record.
-    pub fn begin_library(
+    pub const fn begin_library(
         &mut self,
         session: echo_core::domain::ids::PlaybackSessionId,
         song: echo_core::domain::ids::SongId,
@@ -137,7 +137,7 @@ impl<R: PlaybackRecorder> PlaybackStatsRecorder<R> {
 
     /// Begin a new load session for a temporary (session-only) item. These are
     /// **never** recorded (spec: 临时播放项不计统计).
-    pub fn begin_temporary(&mut self, session: echo_core::domain::ids::PlaybackSessionId) {
+    pub const fn begin_temporary(&mut self, session: echo_core::domain::ids::PlaybackSessionId) {
         // Temporaries carry no song id → recording is skipped. Track enough to
         // discard any accumulated state.
         self.current = None;
@@ -148,7 +148,7 @@ impl<R: PlaybackRecorder> PlaybackStatsRecorder<R> {
 
     /// Supply the song's duration when known (drives the `50%` half of the
     /// threshold). Called when a library song's duration is observed.
-    pub fn set_duration(&mut self, seconds: f64) {
+    pub const fn set_duration(&mut self, seconds: f64) {
         if let Some(state) = &mut self.current {
             state.duration_seconds = Some(seconds);
         }

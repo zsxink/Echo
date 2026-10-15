@@ -317,7 +317,7 @@ impl Song {
     }
 
     /// Toggle favorite, bumping the revision.
-    pub fn set_favorite(&mut self, favorite: bool) {
+    pub const fn set_favorite(&mut self, favorite: bool) {
         if self.favorite != favorite {
             self.favorite = favorite;
             self.bump();
@@ -343,7 +343,7 @@ impl Song {
 
     /// Record one completed play (idempotence is enforced upstream by the
     /// `PlaybackSessionId`; the entity only increments).
-    pub fn record_play(&mut self) {
+    pub const fn record_play(&mut self) {
         self.play_count = PlayCount::from_u64(self.play_count.as_u64() + 1);
         self.bump();
     }
@@ -354,7 +354,7 @@ impl Song {
     /// library restored from `echo/records/play-stats/` never loses plays this
     /// device recorded but that another device had not yet merged. Repeated
     /// projections are therefore idempotent (same value, no double counting).
-    pub fn restore_play_count(&mut self, count: PlayCount) {
+    pub const fn restore_play_count(&mut self, count: PlayCount) {
         if count.as_u64() > self.play_count.as_u64() {
             self.play_count = count;
             self.bump();
@@ -411,7 +411,7 @@ impl Song {
     }
 
     /// Internal: advance the revision on any meaningful change.
-    fn bump(&mut self) {
+    const fn bump(&mut self) {
         self.version = self.version.wrapping_add(1);
         // Optimization: sorting/events use the version as a cheap change tag.
         // The revision proper is assigned by persistence.
@@ -522,18 +522,18 @@ impl LibraryRoot {
     }
 
     /// Set write capability (derived from permissions + ownership marker).
-    pub fn set_write_capable(&mut self, capable: bool) {
+    pub const fn set_write_capable(&mut self, capable: bool) {
         self.write_capable = capable;
     }
 
     /// Persist or clear the safety isolation independently from filesystem
     /// permission probing. Clearing this requires an explicit recovery path.
-    pub fn set_write_safety_locked(&mut self, locked: bool) {
+    pub const fn set_write_safety_locked(&mut self, locked: bool) {
         self.write_safety_locked = locked;
     }
 
     /// Mark the root available/unavailable, keeping records intact.
-    pub fn set_availability(&mut self, availability: RootAvailability) {
+    pub const fn set_availability(&mut self, availability: RootAvailability) {
         self.availability = availability;
     }
 }
@@ -617,7 +617,7 @@ impl PlaylistMember {
     }
 
     /// Mirror the song's availability (stale by at most one reconcile tick).
-    pub fn mirror_song(&mut self, availability: SongAvailability) {
+    pub const fn mirror_song(&mut self, availability: SongAvailability) {
         self.song_availability = availability;
     }
 }
@@ -759,7 +759,7 @@ impl LyricsCandidate {
 
     /// Mark this candidate as a deliberate empty override (user cleared the
     /// lyrics); blocks fallback.
-    pub fn mark_empty_override(&mut self) {
+    pub const fn mark_empty_override(&mut self) {
         self.empty_override = true;
     }
 

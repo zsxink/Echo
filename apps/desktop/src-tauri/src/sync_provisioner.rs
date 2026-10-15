@@ -2,7 +2,9 @@
 
 use std::fs::File;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use echo_core::application::ports::{
     AppliedRemoteCursor, DeviceIdProvider, HostCommitLedgerPort, LibraryRepository,
@@ -92,9 +94,7 @@ fn is_empty_enrollment_root(root: &Path) -> bool {
                 && child_relative == Path::new(EMPTY_LIBRARY_MANIFEST)
             {
                 *manifest = true;
-            } else if child_relative
-                == Path::new("tmp").join(EMPTY_LIBRARY_STAGING_MARKER)
-            {
+            } else if child_relative == Path::new("tmp").join(EMPTY_LIBRARY_STAGING_MARKER) {
                 let Ok(contents) = std::fs::read_to_string(&child) else {
                     return false;
                 };
@@ -471,6 +471,14 @@ impl SyncProvisioner for NativeSyncProvisioner {
     }
 
     fn sync_now(&self, role: SyncRole) -> Result<(), SyncRuntimeError> {
+        self.sync_now_cancellable(role, Arc::new(AtomicBool::new(false)))
+    }
+
+    fn sync_now_cancellable(
+        &self,
+        role: SyncRole,
+        cancelled: Arc<AtomicBool>,
+    ) -> Result<(), SyncRuntimeError> {
         let _guard = self
             .gate
             .lock()
@@ -481,7 +489,7 @@ impl SyncProvisioner for NativeSyncProvisioner {
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
             .ok_or(SyncRuntimeError::Unconfigured)?;
         if role == SyncRole::Peer && !configuration.host {
-            return self.synchronize_peer(configuration.local_root);
+            return self.synchronize_peer(configuration.local_root, &cancelled);
         }
         if role != SyncRole::Host || !configuration.host {
             return Err(SyncRuntimeError::LibraryUnavailable);
@@ -493,6 +501,9 @@ impl SyncProvisioner for NativeSyncProvisioner {
             .ok_or(SyncRuntimeError::LibraryUnavailable)?;
         if !library.is_active() || library.availability() != RootAvailability::Available {
             return Err(SyncRuntimeError::LibraryUnavailable);
+        }
+        if cancelled.load(Ordering::Acquire) {
+            return Err(SyncRuntimeError::Busy);
         }
         self.seed_local_resources(&library, configuration.binding)?;
         self.confirm_local(configuration.binding)
@@ -602,7 +613,11 @@ impl SyncProvisioner for NativeSyncProvisioner {
 }
 
 impl NativeSyncProvisioner {
-    fn synchronize_peer(&self, root: LibraryRootId) -> Result<(), SyncRuntimeError> {
+    fn synchronize_peer(
+        &self,
+        root: LibraryRootId,
+        cancelled: &Arc<AtomicBool>,
+    ) -> Result<(), SyncRuntimeError> {
         let configuration = self
             .database
             .current_sync_configuration()
@@ -642,19 +657,18 @@ impl NativeSyncProvisioner {
             .build()
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
         executor.block_on(async {
-            self.enroll_peer_snapshot(&peer, &endpoint, resources.clone())
-                .await?;
-            self.upload_pending_resources(&peer, &endpoint, resources.as_ref(), root)
-                .await?;
-            let queue = ScopedLocalQueue {
-                database: self.database.as_ref(),
-                root,
-            };
-            self.prepared_incremental_cycle(&peer, &endpoint, &queue, resources.clone())
-                .await?;
-            self.publish_remote_resources(&peer, &endpoint, root, resources.clone())
-                .await?;
-            Ok(())
+            tokio::select! {
+                biased;
+                () = wait_for_sync_cancel(Arc::clone(cancelled)) => Err(SyncRuntimeError::Busy),
+                result = async {
+                    self.enroll_peer_snapshot(&peer, &endpoint, resources.clone()).await?;
+                    self.upload_pending_resources(&peer, &endpoint, resources.as_ref(), root).await?;
+                    let queue = ScopedLocalQueue { database: self.database.as_ref(), root };
+                    self.prepared_incremental_cycle(&peer, &endpoint, &queue, resources.clone()).await?;
+                    self.publish_remote_resources(&peer, &endpoint, root, resources.clone()).await?;
+                    Ok(())
+                } => result,
+            }
         })
     }
 
@@ -962,5 +976,11 @@ impl NativeSyncProvisioner {
                 .map_err(|_| SyncRuntimeError::WorkerFailed)?;
         }
         Ok(())
+    }
+}
+
+async fn wait_for_sync_cancel(cancelled: Arc<AtomicBool>) {
+    while !cancelled.load(Ordering::Acquire) {
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
 }

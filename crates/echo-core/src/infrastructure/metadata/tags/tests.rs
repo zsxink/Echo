@@ -397,7 +397,7 @@ fn riff_info_wav() -> Vec<u8> {
             &[0],
         ]
         .concat();
-        if value.len() % 2 == 0 {
+        if value.len().is_multiple_of(2) {
             bytes.push(0);
         }
         bytes

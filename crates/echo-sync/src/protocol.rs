@@ -354,7 +354,7 @@ pub fn validate_resource_chunk(chunk: &ResourceChunkDto) -> Result<(), ProtocolE
     if validate_hash(&chunk.content_hash).is_err()
         || chunk.bytes.is_empty()
         || chunk.bytes.len() > MAX_RESOURCE_CHUNK_BYTES
-        || end.map_or(true, |end| end > chunk.total_length)
+        || end.is_none_or(|end| end > chunk.total_length)
     {
         return Err(ProtocolError::InvalidResourceChunk);
     }

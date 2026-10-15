@@ -25,7 +25,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Condvar, Mutex};
+use std::sync::{mpsc, Condvar, Mutex};
 
 use rusqlite::params;
 use rusqlite::{Connection, OptionalExtension, Transaction};
@@ -227,6 +227,19 @@ impl SqliteDatabase {
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Subscribe to successful SQLite writes as a sync scheduler wake-up hint.
+    /// Callers must coalesce notifications and re-read the durable queue; the
+    /// event carries no data and never crosses the IPC boundary.
+    pub fn subscribe_writes(&self) -> mpsc::Receiver<()> {
+        self.writer.subscribe()
+    }
+
+    /// Register an existing sync wake channel with the writer actor. Stop
+    /// signals may share the same channel so background workers wake promptly.
+    pub fn register_sync_waker(&self, sender: mpsc::Sender<()>) {
+        self.writer.register_listener(sender);
     }
 
     /// Create a consistent SQLite backup using the SQLite backup API.
@@ -1338,5 +1351,41 @@ impl RuntimeStateStore for SqliteDatabase {
     fn load(&self, key: &str) -> Result<Option<String>, Error> {
         let key = key.to_owned();
         self.with_reader(move |connection| load_runtime_state(connection, &key))
+    }
+}
+
+#[cfg(test)]
+mod write_wakeup_tests {
+    use super::SqliteDatabase;
+    use std::sync::mpsc::RecvTimeoutError;
+    use std::time::Duration;
+
+    #[test]
+    fn write_wakeup_only_follows_successful_writer_actions() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let database =
+            SqliteDatabase::open(directory.path().join("echo.sqlite")).expect("database");
+        let wakeups = database.subscribe_writes();
+
+        database
+            .writer
+            .run(|_| {
+                Err::<(), _>(crate::error::Error::validation(
+                    crate::error::Subject::Other,
+                    "test",
+                    "injected failure",
+                ))
+            })
+            .expect_err("failed action is reported");
+        assert!(matches!(
+            wakeups.recv_timeout(Duration::from_millis(20)),
+            Err(RecvTimeoutError::Timeout)
+        ));
+
+        database
+            .writer
+            .run(|_| Ok(()))
+            .expect("successful writer action");
+        assert!(wakeups.recv_timeout(Duration::from_secs(1)).is_ok());
     }
 }

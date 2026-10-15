@@ -31,7 +31,7 @@
 
 - Core domain/application 增加同步值对象、裁决器、会话状态机与事务端口；SQLite 增加顺序迁移，filesystem 复用控制面、BLAKE3、安全路径和 operation journal。不得直接复用产生本地 outbox 的写入路径应用远端对象。
 - 建议增加 `echo-sync` 基础设施 crate，封装 HTTPS 服务端/客户端和发现，依赖 Core 端口；桌面平台负责生命周期、密钥存储、网络权限和装配。React 仅经生成的类型化 IPC 操作。
-- 候选依赖为 Tokio、Axum、Reqwest、Rustls、mDNS-SD 和系统安全存储适配；实施前验证 Rust 1.81/MSRV、许可证与三平台构建兼容，锁定版本。
+- 候选依赖为 Tokio、Axum、Reqwest、Rustls、mDNS-SD 和系统安全存储适配；实施前验证 MSRV、许可证与三平台构建兼容，锁定版本。RustSec 修复后的依赖将 workspace MSRV 提升到 Rust 1.88。
 - 涉及 portable JSON 版本、设备绑定、日志/游标恢复和数据库升级；旧资料库保留 UUID 并完成基线引导，旧程序不能写入新同步格式。
 - 主备份恢复通过显式恢复入口强制更换 epoch；独立发布检查点与从设备保存的日志摘要用于检测回退/分叉。整机及所有检查点共同回退时不能承诺自动检测，必须按备份恢复流程重新建立信任。
 - PRODUCT/DESIGN/CODE_STANDARDS 中二期仍限定 S3/WebDAV 的条款需随实施统一到 ROADMAP 的局域网优先路线；更新界面术语/原型、一期无同步 scope guard、架构门禁及场景登记。遵守 CODE_STANDARDS §3–§9，保留既有播放器和离线能力回归验证。

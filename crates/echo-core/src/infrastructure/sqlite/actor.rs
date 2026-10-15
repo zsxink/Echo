@@ -12,7 +12,7 @@
 )]
 
 use std::any::Any;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 
 use rusqlite::Connection;
@@ -32,22 +32,46 @@ struct WriteRequest {
 #[derive(Clone)]
 pub(super) struct SqliteWriteActor {
     sender: mpsc::Sender<WriteRequest>,
+    listeners: Arc<Mutex<Vec<mpsc::Sender<()>>>>,
 }
 
 impl SqliteWriteActor {
     pub(super) fn spawn(connection: Connection) -> Self {
         let (sender, receiver) = mpsc::channel::<WriteRequest>();
+        let listeners = Arc::new(Mutex::new(Vec::<mpsc::Sender<()>>::new()));
+        let worker_listeners = Arc::clone(&listeners);
         thread::Builder::new()
             .name("echo-sqlite-writer".to_owned())
             .spawn(move || {
                 let mut connection = connection;
                 while let Ok(request) = receiver.recv() {
                     let result = (request.action)(&mut connection);
+                    if result.is_ok() {
+                        let mut listeners = worker_listeners
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        listeners.retain(|listener| listener.send(()).is_ok());
+                    }
                     let _ = request.reply.send(result);
                 }
             })
             .expect("creating the SQLite writer thread must succeed");
-        Self { sender }
+        Self { sender, listeners }
+    }
+
+    /// Subscribe to successful writer transactions. Subscribers use this only
+    /// as a coalescible wake-up hint and must re-read durable state after wake.
+    pub(super) fn subscribe(&self) -> mpsc::Receiver<()> {
+        let (sender, receiver) = mpsc::channel();
+        self.register_listener(sender);
+        receiver
+    }
+
+    pub(super) fn register_listener(&self, sender: mpsc::Sender<()>) {
+        self.listeners
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(sender);
     }
 
     pub(super) fn run<T: Send + 'static>(
