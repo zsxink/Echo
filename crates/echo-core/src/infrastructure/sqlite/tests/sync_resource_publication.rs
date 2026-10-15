@@ -150,7 +150,7 @@ fn remote_resource_replacement_requires_the_exact_previous_digest() {
     assert!(database.prepare(&rejected).is_err());
     assert!(database.incomplete(root).unwrap().is_empty());
 
-    let mut valid = publication(root, object, replacement.clone(), Some(initial.digest));
+    let mut valid = publication(root, object, replacement, Some(initial.digest));
     database.prepare(&valid).unwrap();
     valid = RemoteResourceJournalPort::load(&database, root, valid.operation).unwrap();
     assert_eq!(valid.items[0].old_path.as_deref(), Some("media/track.flac"));
@@ -163,7 +163,7 @@ fn remote_resource_replacement_requires_the_exact_previous_digest() {
 #[test]
 fn remote_resource_journal_rejects_stale_root_reused_identity_and_incomplete_finish() {
     let (_directory, database, root, object, initial) = fixture();
-    let incomplete = publication(root, object, initial.clone(), None);
+    let incomplete = publication(root, object, initial, None);
     database.prepare(&incomplete).unwrap();
     assert!(database.finish(&incomplete).is_err());
 
