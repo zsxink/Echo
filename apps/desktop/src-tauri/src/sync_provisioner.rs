@@ -326,10 +326,7 @@ impl SyncProvisioner for NativeSyncProvisioner {
             .by_id(root)
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
             .ok_or(SyncRuntimeError::LibraryUnavailable)?;
-        if !library.is_active()
-            || !library.write_capable()
-            || library.availability() != RootAvailability::Available
-        {
+        if !library.is_active() || library.availability() != RootAvailability::Available {
             return Err(SyncRuntimeError::LibraryUnavailable);
         }
         let identity = self.host_identity(root)?;
@@ -526,14 +523,10 @@ impl SyncProvisioner for NativeSyncProvisioner {
             .by_id(root)
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
             .ok_or(SyncRuntimeError::LibraryUnavailable)?;
-        if !library.is_active()
-            || !library.write_capable()
-            || library.availability() != RootAvailability::Available
-        {
+        if !library.is_active() || library.availability() != RootAvailability::Available {
             return Err(SyncRuntimeError::LibraryUnavailable);
         }
-        // Keep the local catalog until a complete host snapshot can replace it
-        // atomically. Existing media files remain on disk throughout enrollment.
+        // Keep the local catalog and media in place throughout enrollment.
         prepare_enrollment_root(library.absolute_path(), root)?;
         LanClient::new(&invitation.host_certificate_der, grant.bearer_token.clone())
             .map_err(|_| SyncRuntimeError::Unconfigured)?;
