@@ -75,23 +75,11 @@ export interface DiscoveredHost {
   readonly deviceId: string | null;
   readonly protocolVersion: string | null;
 }
-export interface SyncInvitation {
-  /** Short-lived bearer invitation; held in component memory only. */
-  readonly invitation: string;
+export interface SyncPairingCode {
+  /** Short-lived six-digit code; held in component memory only. */
+  readonly code: string;
   readonly expiresAtUnixMs: number;
   readonly hostName: string;
-}
-export interface SyncPairingRequest {
-  readonly requestId: string;
-  readonly deviceName: string;
-  readonly deviceId: string;
-  readonly requestedAtUnixMs: number;
-}
-export interface SyncPairingReceipt {
-  readonly requestId: string;
-  /** One-time claim secret, held in component memory only. */
-  readonly receipt: string;
-  readonly expiresAtUnixMs: number;
 }
 export interface SyncCommandArguments {
   readonly sync_status: [args?: Record<string, never>];
@@ -104,12 +92,8 @@ export interface SyncCommandArguments {
   readonly sync_now: [args?: Record<string, never>];
   readonly revoke_device: [args: { deviceId: string }];
   readonly discover_hosts: [args?: Record<string, never>];
-  readonly create_sync_invitation: [args?: Record<string, never>];
-  readonly request_sync_pairing: [args: { invitation: string; deviceName: string; hostAddress?: string }];
-  readonly list_sync_pairing_requests: [args?: Record<string, never>];
-  readonly approve_sync_pairing: [args: { requestId: string }];
-  readonly reject_sync_pairing: [args: { requestId: string }];
-  readonly claim_sync_pairing: [args: { requestId: string; receipt: string; invitation: string; hostAddress?: string }];
+  readonly create_sync_pairing_code: [args?: Record<string, never>];
+  readonly request_sync_pairing: [args: { code: string; hostAddress: string }];
 }
 
 export interface UiQueueEntry {
@@ -299,12 +283,8 @@ export interface IpcCommandResultMap {
   readonly local_lan_addresses: readonly string[];
   readonly revoke_device: void;
   readonly discover_hosts: readonly DiscoveredHost[];
-  readonly create_sync_invitation: SyncInvitation;
-  readonly request_sync_pairing: SyncPairingReceipt;
-  readonly list_sync_pairing_requests: readonly SyncPairingRequest[];
-  readonly approve_sync_pairing: void;
-  readonly reject_sync_pairing: void;
-  readonly claim_sync_pairing: SyncStatus;
+  readonly create_sync_pairing_code: SyncPairingCode;
+  readonly request_sync_pairing: SyncStatus;
   readonly get_audio_effects_snapshot: EffectsSnapshotDto;
   readonly select_audio_effects_preset: EffectsSnapshotDto;
   readonly edit_audio_equalizer: EffectsSnapshotDto;

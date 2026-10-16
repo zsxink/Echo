@@ -155,7 +155,7 @@ describe("SettingsView LAN sync preferences", () => {
     expect(screen.getByTestId("lan-sync-hosts")).toHaveTextContent("192.168.1.10:43000");
   });
 
-  it("lets a peer use a discovered host address for the pinned invite flow", async () => {
+  it("lets a peer join with a host IP and six-digit pairing code", async () => {
     mocks.setInvoke("discover_hosts", [
       {
         name: "Echo 主机",
@@ -166,30 +166,31 @@ describe("SettingsView LAN sync preferences", () => {
       },
     ]);
     mocks.setInvoke("request_sync_pairing", {
-      requestId: "request-1",
-      receipt: "one-time-receipt",
-      expiresAtUnixMs: Date.now() + 300_000,
+      enabled: true,
+      role: "peer",
+      state: "connected",
+      sessionId: 1,
+      eventSequence: 1,
+      libraryId: "library-1",
+      address: "https://192.168.1.10:50826",
+      lastError: null,
     });
     render(<SettingsView onClose={() => undefined} />);
 
     await screen.findByLabelText("退出应用");
     fireEvent.click(screen.getByRole("button", { name: "搜索局域网主机" }));
     fireEvent.click(await screen.findByRole("button", { name: "使用主机 Echo 主机 的地址" }));
-    expect(screen.getByLabelText(/主机地址（可选）/)).toHaveValue("192.168.1.10:43000");
+    expect(screen.getByLabelText("主机 IP")).toHaveValue("192.168.1.10");
 
-    fireEvent.change(screen.getByLabelText(/粘贴主机邀请/), {
-      target: { value: "opaque-trusted-invitation" },
+    fireEvent.change(screen.getByLabelText("六位验证码"), {
+      target: { value: "123456" },
     });
-    fireEvent.change(screen.getByLabelText("此设备名称"), {
-      target: { value: "Windows PC" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "请求加入" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入" }));
 
-    await screen.findByLabelText("等待主机批准");
+    await screen.findByText("已连接");
     expect(invoke).toHaveBeenCalledWith("request_sync_pairing", {
-      invitation: "opaque-trusted-invitation",
-      deviceName: "Windows PC",
-      hostAddress: "192.168.1.10:43000",
+      code: "123456",
+      hostAddress: "192.168.1.10",
     });
   });
 });

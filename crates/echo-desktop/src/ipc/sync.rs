@@ -59,33 +59,13 @@ pub struct DiscoveredHost {
     pub protocol_version: Option<String>,
 }
 
-/// Short-lived bearer material, returned only after the host explicitly
-/// creates an invitation. Never include this value in sync status/events.
+/// Six-digit code with a short lifetime. Never include it in sync status/events.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SyncInvitation {
-    pub invitation: String,
+pub struct SyncPairingCode {
+    pub code: String,
     pub expires_at_unix_ms: u64,
     pub host_name: String,
-}
-
-/// Public metadata for a peer waiting for host approval. Contains no secret.
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SyncPairingRequest {
-    pub request_id: String,
-    pub device_name: String,
-    pub device_id: String,
-    pub requested_at_unix_ms: u64,
-}
-
-/// One-time peer claim material. Keep it out of durable status and event DTOs.
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SyncPairingReceipt {
-    pub request_id: String,
-    pub receipt: String,
-    pub expires_at_unix_ms: u64,
 }
 
 pub(super) const fn typescript() -> &'static str {
@@ -108,23 +88,11 @@ export interface DiscoveredHost {
   readonly deviceId: string | null;
   readonly protocolVersion: string | null;
 }
-export interface SyncInvitation {
-  /** Short-lived bearer invitation; held in component memory only. */
-  readonly invitation: string;
+export interface SyncPairingCode {
+  /** Short-lived six-digit code; held in component memory only. */
+  readonly code: string;
   readonly expiresAtUnixMs: number;
   readonly hostName: string;
-}
-export interface SyncPairingRequest {
-  readonly requestId: string;
-  readonly deviceName: string;
-  readonly deviceId: string;
-  readonly requestedAtUnixMs: number;
-}
-export interface SyncPairingReceipt {
-  readonly requestId: string;
-  /** One-time claim secret, held in component memory only. */
-  readonly receipt: string;
-  readonly expiresAtUnixMs: number;
 }
 export interface SyncCommandArguments {
   readonly sync_status: [args?: Record<string, never>];
@@ -137,12 +105,8 @@ export interface SyncCommandArguments {
   readonly sync_now: [args?: Record<string, never>];
   readonly revoke_device: [args: { deviceId: string }];
   readonly discover_hosts: [args?: Record<string, never>];
-  readonly create_sync_invitation: [args?: Record<string, never>];
-  readonly request_sync_pairing: [args: { invitation: string; deviceName: string; hostAddress?: string }];
-  readonly list_sync_pairing_requests: [args?: Record<string, never>];
-  readonly approve_sync_pairing: [args: { requestId: string }];
-  readonly reject_sync_pairing: [args: { requestId: string }];
-  readonly claim_sync_pairing: [args: { requestId: string; receipt: string; invitation: string; hostAddress?: string }];
+  readonly create_sync_pairing_code: [args?: Record<string, never>];
+  readonly request_sync_pairing: [args: { code: string; hostAddress: string }];
 }
 
 "

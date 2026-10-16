@@ -1,4 +1,4 @@
-//! Short-lived invitations and explicit host approval for pinned LAN peers.
+//! Short-lived LAN pairing codes for pinned peers.
 //!
 //! The registry retains only hashes of invitation and receipt secrets. Approved
 //! credentials belong to the desktop's durable authorization and OS vault port.
@@ -11,7 +11,6 @@ use echo_core::domain::sync::{DeviceId, MutationId, SyncBinding};
 use serde::{Deserialize, Serialize};
 
 const MAX_PENDING: usize = 32;
-const MAX_INVITATIONS: usize = 8;
 const MAX_TTL: Duration = Duration::from_secs(300);
 
 /// Transfer this entire object through a trusted out-of-band channel. The DER
@@ -33,6 +32,19 @@ pub struct PairingRequestDto {
     pub invitation_secret: String,
     pub device_id: DeviceId,
     pub device_name: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct PairingCodeRequest {
+    pub code: String,
+    pub device_id: DeviceId,
+    pub device_name: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct PairingBootstrapResponse {
+    pub invitation: PairingInvitation,
+    pub grant: PairingGrantDto,
 }
 
 /// Possession of this receipt permits polling/claiming only this request.
@@ -115,6 +127,7 @@ impl std::error::Error for PairingError {}
 struct Invitation {
     host_device_id: DeviceId,
     secret_hash: [u8; 32],
+    certificate_der: Vec<u8>,
     expires: Instant,
 }
 
@@ -266,16 +279,22 @@ impl PairingRegistry {
         }
         let mut state = self.state.lock().map_err(|_| PairingError::Unavailable)?;
         prune(&mut state);
-        if state.invitations.len() >= MAX_INVITATIONS {
-            return Err(PairingError::Capacity);
-        }
+        state.invitations.clear();
         let invitation_id = random_secret();
-        let invitation_secret = random_secret();
+        let mut invitation_secret = random_pairing_code();
+        while state
+            .invitations
+            .values()
+            .any(|invite| secret_matches(&invitation_secret, &invite.secret_hash))
+        {
+            invitation_secret = random_pairing_code();
+        }
         state.invitations.insert(
             invitation_id.clone(),
             Invitation {
                 host_device_id,
                 secret_hash: *blake3::hash(invitation_secret.as_bytes()).as_bytes(),
+                certificate_der: certificate_der.clone(),
                 expires: Instant::now() + ttl,
             },
         );
@@ -290,6 +309,60 @@ impl PairingRegistry {
         })
     }
 
+    /// Resolve a short code to the host's temporary TLS pin, then create the
+    /// same one-use receipt used by the existing credential lifecycle.
+    pub fn request_with_code(
+        &self,
+        dto: &PairingCodeRequest,
+    ) -> Result<(PairingReceipt, PairingInvitation), PairingError> {
+        if dto.code.len() != 6
+            || !dto.code.bytes().all(|byte| byte.is_ascii_digit())
+            || !valid_name(&dto.device_name)
+        {
+            return Err(PairingError::InvalidRequest);
+        }
+        let (invitation_id, host_device_id, certificate_der, expires_in_secs) = {
+            let mut state = self.state.lock().map_err(|_| PairingError::Unavailable)?;
+            prune(&mut state);
+            let found = state
+                .invitations
+                .iter()
+                .find(|(_, invite)| secret_matches(&dto.code, &invite.secret_hash))
+                .map(|(id, invite)| {
+                    (
+                        id.clone(),
+                        invite.host_device_id,
+                        invite.certificate_der.clone(),
+                        invite
+                            .expires
+                            .saturating_duration_since(Instant::now())
+                            .as_secs(),
+                    )
+                })
+                .ok_or(PairingError::Unavailable)?;
+            found
+        };
+        let invitation_secret = dto.code.clone();
+        let receipt = self.request(&PairingRequestDto {
+            binding: self.binding,
+            invitation_id: invitation_id.clone(),
+            invitation_secret: invitation_secret.clone(),
+            device_id: dto.device_id,
+            device_name: dto.device_name.clone(),
+        })?;
+        Ok((
+            receipt,
+            PairingInvitation {
+                binding: self.binding,
+                host_device_id,
+                invitation_id,
+                invitation_secret,
+                host_certificate_der: certificate_der,
+                expires_in_secs,
+            },
+        ))
+    }
+
     /// Consume an invitation and create a request requiring explicit approval.
     ///
     /// # Errors
@@ -297,7 +370,7 @@ impl PairingRegistry {
     pub fn request(&self, dto: &PairingRequestDto) -> Result<PairingReceipt, PairingError> {
         if dto.binding != self.binding
             || !valid_secret(&dto.invitation_id)
-            || !valid_secret(&dto.invitation_secret)
+            || !valid_invitation_secret(&dto.invitation_secret)
             || !valid_name(&dto.device_name)
         {
             return Err(PairingError::InvalidRequest);
@@ -554,6 +627,10 @@ fn valid_secret(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }
 
+fn valid_invitation_secret(value: &str) -> bool {
+    (value.len() == 6 && value.bytes().all(|byte| byte.is_ascii_digit())) || valid_secret(value)
+}
+
 fn secret_matches(secret: &str, hash: &[u8; 32]) -> bool {
     let digest = blake3::hash(secret.as_bytes());
     digest
@@ -571,4 +648,9 @@ fn random_secret() -> String {
         chunk.copy_from_slice(MutationId::new().as_uuid().as_bytes());
     }
     blake3::hash(&entropy).to_hex().to_string()
+}
+
+fn random_pairing_code() -> String {
+    let random = MutationId::new().as_uuid().as_u128();
+    format!("{:06}", random % 1_000_000)
 }

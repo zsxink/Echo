@@ -25,7 +25,6 @@ import type {
   EqCurve,
   IpcErrorDto,
   LibraryRootStatusDto,
-  SyncPairingRequest,
   SyncRole,
   SyncState,
   SyncStatus,
@@ -99,12 +98,8 @@ type Command =
   | "sync_now"
   | "revoke_device"
   | "discover_hosts"
-  | "create_sync_invitation"
-  | "request_sync_pairing"
-  | "list_sync_pairing_requests"
-  | "approve_sync_pairing"
-  | "reject_sync_pairing"
-  | "claim_sync_pairing";
+  | "create_sync_pairing_code"
+  | "request_sync_pairing";
 
 /**
  * Commands the app can invoke but this mock deliberately does not model, so the
@@ -332,13 +327,8 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
     address: null as string | null,
     lastError: null as string | null,
   };
-  let pairingInvitation: string | null = null;
+  let pairingCode: string | null = null;
   let pairingCounter = 0;
-  const pairingRequests: (SyncPairingRequest & {
-    decision: "pending" | "approved" | "rejected";
-    receipt: string;
-    invitation: string;
-  })[] = [];
   const syncError = (messageKey: string) => ({ code: "unavailable", messageKey, retryable: true });
 
   return {
@@ -366,7 +356,7 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
         eventSequence: syncStatus.eventSequence + 1,
         address: null,
       };
-      pairingInvitation = null;
+      pairingCode = null;
       return syncStatus;
     },
     sync_peer_start: () => syncError("sync.unconfigured"),
@@ -392,57 +382,18 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
       retryable: true,
     }),
     discover_hosts: () => [],
-    create_sync_invitation: () => {
+    create_sync_pairing_code: () => {
       if (!syncStatus.enabled || syncStatus.role !== "host") return syncError("sync.unconfigured");
-      pairingInvitation = `echo-mock-invitation-${++pairingCounter}`;
+      pairingCode = String(++pairingCounter).padStart(6, "0");
       return {
-        invitation: pairingInvitation,
+        code: pairingCode,
         expiresAtUnixMs: Date.now() + 5 * 60_000,
         hostName: "Echo Mock",
       };
     },
-    request_sync_pairing: ({ invitation, deviceName }) => {
-      if (!pairingInvitation || invitation !== pairingInvitation)
-        return syncError("sync.invitationInvalid");
-      const requestId = `pair-${++pairingCounter}`;
-      const receipt = `echo-mock-receipt-${requestId}`;
-      pairingRequests.push({
-        requestId,
-        deviceName: String(deviceName),
-        deviceId: `mock-device-${pairingCounter}`,
-        requestedAtUnixMs: Date.now(),
-        decision: "pending",
-        receipt,
-        invitation: String(invitation),
-      });
-      return { requestId, receipt, expiresAtUnixMs: Date.now() + 5 * 60_000 };
-    },
-    list_sync_pairing_requests: () =>
-      pairingRequests
-        .filter(({ decision }) => decision === "pending")
-        .map(({ decision: _decision, receipt: _receipt, ...request }) => request),
-    approve_sync_pairing: ({ requestId }) => {
-      const request = pairingRequests.find((item) => item.requestId === requestId);
-      if (!request) return syncError("sync.pairingRequestNotFound");
-      request.decision = "approved";
-      return null;
-    },
-    reject_sync_pairing: ({ requestId }) => {
-      const request = pairingRequests.find((item) => item.requestId === requestId);
-      if (!request) return syncError("sync.pairingRequestNotFound");
-      request.decision = "rejected";
-      return null;
-    },
-    claim_sync_pairing: ({ requestId, receipt, invitation }) => {
-      const request = pairingRequests.find((item) => item.requestId === requestId);
-      if (!request) return syncError("sync.pairingRequestNotFound");
-      if (request.decision === "pending") return syncError("sync.pairingPending");
-      if (
-        request.decision !== "approved" ||
-        request.receipt !== receipt ||
-        request.invitation !== invitation
-      )
-        return syncError("sync.pairingRejected");
+    request_sync_pairing: ({ code, hostAddress }) => {
+      if (!pairingCode || code !== pairingCode) return syncError("sync.pairingCodeInvalid");
+      pairingCode = null;
       syncStatus = {
         ...syncStatus,
         enabled: true,
@@ -450,9 +401,8 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
         state: "connected",
         sessionId: syncStatus.sessionId + 1,
         eventSequence: syncStatus.eventSequence + 1,
-        address: "192.168.1.10:43000",
+        address: `https://${String(hostAddress)}:50826`,
       };
-      request.decision = "rejected";
       return syncStatus;
     },
     get_audio_effects_snapshot: () => effectsSnapshot,

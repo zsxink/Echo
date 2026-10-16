@@ -225,12 +225,8 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly local_lan_addresses: readonly string[];\n");
     out.push_str("  readonly revoke_device: void;\n");
     out.push_str("  readonly discover_hosts: readonly DiscoveredHost[];\n");
-    out.push_str("  readonly create_sync_invitation: SyncInvitation;\n");
-    out.push_str("  readonly request_sync_pairing: SyncPairingReceipt;\n");
-    out.push_str("  readonly list_sync_pairing_requests: readonly SyncPairingRequest[];\n");
-    out.push_str("  readonly approve_sync_pairing: void;\n");
-    out.push_str("  readonly reject_sync_pairing: void;\n");
-    out.push_str("  readonly claim_sync_pairing: SyncStatus;\n");
+    out.push_str("  readonly create_sync_pairing_code: SyncPairingCode;\n");
+    out.push_str("  readonly request_sync_pairing: SyncStatus;\n");
     for command in [
         "get_audio_effects_snapshot",
         "select_audio_effects_preset",

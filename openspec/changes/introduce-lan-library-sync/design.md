@@ -109,7 +109,7 @@ LWW 在这里明确是“主设备确认时间序”，不是“真实用户编�
 
 | 接口 | 含义 |
 | --- | --- |
-| `POST /v1/pair` | 邀请兑换与主设备审批，仅开放配对窗口可调用 |
+| `POST /v1/pairing/requests` | 使用六位短期验证码完成一次性配对并返回主机证书 pin 与独立设备凭据 |
 | `GET /v1/library` | 已认证的库身份、协议能力、epoch、发布水位与日志摘要 |
 | `POST /v1/snapshots`、`GET /v1/snapshots/{id}?page=…` | 建立固定快照及分页 |
 | `POST /v1/mutations` | 有界批量提交，逐条 durable outcome；部分成功可安全重试 |
@@ -132,13 +132,13 @@ mutation 封套包含 protocol_version、library_id、authority_id、epoch、mut
 
 ### 5. 安全与平台生命周期
 
-默认同步关闭，不发现、不监听、不发包。用户开启主服务时选择本机 LAN 接口；不自动监听所有网卡，不进行 UPnP、打洞、公网发布或系统防火墙全局修改。监听端口自动分配并在界面公布，绑定失败给出可操作错误。
+默认同步关闭，不发现、不监听、不发包。用户开启主服务时选择本机 LAN 接口；不自动监听所有网卡，不进行 UPnP、打洞、公网发布或系统防火墙全局修改。服务使用固定端口 50826，方便新设备只输入 IP；绑定失败给出可操作错误。地址候选排除点对点虚拟接口，优先显示常见 Wi-Fi/以太网 IPv4 地址，并允许手动填写本机私有地址。
 
-配对采用一次性高熵邀请文本（可复制，二维码仅为同内容的展示扩展），包含主地址、库身份、主证书公钥指纹、256-bit 随机邀请 secret、邀请 ID 与 5 分钟有效期。邀请通过用户可信渠道从主设备交给从设备，不从 mDNS 取得 secret/可信指纹。从设备依据邀请固定公钥建立 TLS 1.3，再兑换 secret，并在主设备显示待加入设备，只有主设备用户批准后签发该设备独立凭据；拒绝/成功/过期即失效，限速避免资源耗尽。
+配对采用主机显示的六位短期验证码，默认有效 5 分钟且单次使用。加入设备只输入主机 IP 和验证码；初次配对连接仅用于交换主机 TLS 证书和新设备独立凭据，连接成功后立即固定该证书，后续同步只接受匹配 pin 的 TLS 连接。验证码通过后主机自动登记设备，不再显示待审批列表或要求人工批准。配对接口限速，并在验证码错误、过期或重放时拒绝授权。
 
-不提供不验证身份的明文短码或通用 `accept invalid certs` 模式。手动地址也需邀请信任材料。首次握手与后续连接都验证 pin，证书变更失败并要求重新配对；IP 变化可更新地址但不能替换可信身份。
+初次验证码交换按用户授权在局域网 TLS 连接上引导证书信任；客户端仅在该一次性配对请求期间接受尚未固定的证书，收到主机证书后立即保存 pin。普通同步客户端始终验证 pin，证书变更失败并要求重新配对；IP 变化可更新地址但不能替换可信身份。配对码不是长期凭据，凭据泄露面由短时有效、单次使用和接口限速控制。
 
-首版使用独立 bearer 凭据 + TLS pin 而非 mTLS，以减少证书签发和移动端接入复杂度。密钥/凭据保存在 Echo 应用数据目录下的独立 vault；Unix 使用仅当前账户可读写的目录/文件权限，Windows 使用当前用户的应用数据目录 ACL。vault 与曲库数据库分离，不依赖 Apple 账号或系统钥匙串授权弹窗。邀请仅临时内存、审批后失效；日志/WebView 状态不返回 bearer/私钥。
+首版使用独立 bearer 凭据 + TLS pin 而非 mTLS，以减少证书签发和移动端接入复杂度。密钥/凭据保存在 Echo 应用数据目录下的独立 vault；Unix 使用仅当前账户可读写的目录/文件权限，Windows 使用当前用户的应用数据目录 ACL。vault 与曲库数据库分离，不依赖 Apple 账号或系统钥匙串授权弹窗。配对码仅临时内存，成功或过期后失效；日志/WebView 状态不返回 bearer/私钥。
 
 撤销设备立即取消该设备会话并拒绝未来请求；不会擦除其已经下载的本地副本。已授权从设备具备删除全库的业务能力，因此本地删除确认文案必须说明跨端传播；主设备对异常请求、超大批次、非法资源/路径和跨库访问进行边界验证。
 
@@ -161,7 +161,7 @@ React → generated IPC → echo-desktop runtime → Core application → Core d
 
 使用 Ports/Adapters 隔离传输，Repository/UoW 固定原子边界，Outbox/Inbox 支撑至少一次传输，State Machine 表达生命周期，operation journal 处理文件/数据库跨资源提交。网络 await 不持有 SQLite 事务/锁，哈希与标签解析用受控阻塞任务。
 
-建议 IPC 按需生成 host_start/stop、discover_hosts、create_invitation、pair/cancel、approve/revoke_device、join_library、sync_now/pause/resume、sync_status/conflicts、backup_host/restore_host_backup；输入有界，secret为临时敏感输入而非状态，目录及备份文件只传原生选择逻辑句柄。事件含会话 ID、递增事件序号、库 ID、阶段、已传字节/总字节、待确认数和结构化错误；UI过滤旧库/旧会话事件，取消订阅不取消已提交事实。
+建议 IPC 按需生成 host_start/stop、discover_hosts、create_pairing_code、pair_with_code、revoke_device、join_library、sync_now/pause/resume、sync_status/conflicts、backup_host/restore_host_backup；输入有界，配对码为临时敏感输入而非状态，目录及备份文件只传原生选择逻辑句柄。事件含会话 ID、递增事件序号、库 ID、阶段、已传字节/总字节、待确认数和结构化错误；UI过滤旧库/旧会话事件，取消订阅不取消已提交事实。
 
 ### 7. 持久化与恢复
 
@@ -196,7 +196,7 @@ React → generated IPC → echo-desktop runtime → Core application → Core d
 
 ### 8. 界面流程与状态
 
-设置 → 局域网同步：选择“作为主设备”或“加入主设备”；主页面显示服务状态、地址、资料库、配对邀请和设备列表；从页面显示主设备、连接状态、首次进度、待上传/下载和重试/暂停/解除绑定。
+设置 → 局域网同步：选择“作为主设备”或“加入主设备”；主页面显示服务状态、地址、资料库、六位配对验证码和设备列表；从页面输入主机 IP、验证码及本机设备名称后直接加入，并显示连接状态、首次进度、待上传/下载和重试/暂停/解除绑定。
 
 应用工具区新增轻量同步状态入口，不挤入品牌区的导入/设置按钮。状态至少覆盖关闭、待配对、首次建立、正在上传、正在下载、应用变更、已同步、主设备离线、已暂停、冲突记录、权限/空间/不兼容/资料库不可用错误。解除绑定停止会话并保留本地完整资料库，主上撤销与本地解除区分。
 
@@ -215,7 +215,7 @@ React → generated IPC → echo-desktop runtime → Core application → Core d
 参考资料（2026-10-13 检索；依赖版本仍须实施 spike 验证）：
 
 - [RFC 6762 mDNS](https://www.rfc-editor.org/info/rfc6762/) 与 [RFC 6763 DNS-SD](https://datatracker.ietf.org/doc/html/rfc6763)：发现协议与链路范围，不能作为认证机制。
-- [RFC 8446 TLS 1.3](https://www.rfc-editor.org/info/rfc8446/)：传输与身份验证基础；本方案另以邀请携带可信 pin。
+- [RFC 8446 TLS 1.3](https://www.rfc-editor.org/info/rfc8446/)：传输与身份验证基础；主机证书在一次性验证码配对连接中交换，之后固定 pin。
 - [Apple TN3179](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy)：局域网权限、Bonjour配置与 macOS 签名验证。
 - [mDNS-SD 官方 API](https://docs.rs/mdns-sd/latest/mdns_sd/) 与 [Axum 官方 TLS 示例](https://github.com/tokio-rs/axum/blob/main/examples/tls-rustls/src/main.rs)：候选实现依据，不直接采用 latest 版本。
 

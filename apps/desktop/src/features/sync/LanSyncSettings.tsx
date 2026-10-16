@@ -1,12 +1,6 @@
 import { useEffect, useState } from "react";
 
-import type {
-  DiscoveredHost,
-  SyncInvitation,
-  SyncPairingReceipt,
-  SyncPairingRequest,
-  SyncStatus,
-} from "../../ipc/ipc-types.generated";
+import type { DiscoveredHost, SyncPairingCode, SyncStatus } from "../../ipc/ipc-types.generated";
 import { lanSyncAdapter, type LanSyncRole } from "./lanSyncAdapter";
 
 function describeStatus(status: SyncStatus | null, loading: boolean): string {
@@ -38,14 +32,9 @@ export function LanSyncSettings() {
   const [address, setAddress] = useState("");
   const [localAddresses, setLocalAddresses] = useState<readonly string[] | null>(null);
   const [hosts, setHosts] = useState<readonly DiscoveredHost[]>([]);
-  const [invitation, setInvitation] = useState<SyncInvitation | null>(null);
-  const [pairingRequests, setPairingRequests] = useState<readonly SyncPairingRequest[]>([]);
-  const [pastedInvitation, setPastedInvitation] = useState("");
+  const [pairingCodeState, setPairingCodeState] = useState<SyncPairingCode | null>(null);
+  const [pairingCode, setPairingCode] = useState("");
   const [peerAddress, setPeerAddress] = useState("");
-  const [pairingInvitationJson, setPairingInvitationJson] = useState<string | null>(null);
-  const [pairingHostAddress, setPairingHostAddress] = useState<string | undefined>();
-  const [deviceName, setDeviceName] = useState("");
-  const [pairingReceipt, setPairingReceipt] = useState<SyncPairingReceipt | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -147,72 +136,38 @@ export function LanSyncSettings() {
     }
   }
 
-  async function refreshPairingRequests() {
-    await runPairing(async () => setPairingRequests(await lanSyncAdapter.listPairingRequests()));
-  }
-
-  async function createInvitation() {
+  async function createPairingCode() {
     setCopied(false);
-    await runPairing(async () => setInvitation(await lanSyncAdapter.createInvitation()));
+    await runPairing(async () => setPairingCodeState(await lanSyncAdapter.createPairingCode()));
   }
 
-  async function copyInvitation() {
-    if (!invitation) return;
+  async function copyPairingCode() {
+    if (!pairingCodeState) return;
     try {
-      await navigator.clipboard.writeText(invitation.invitation);
+      await navigator.clipboard.writeText(pairingCodeState.code);
       setCopied(true);
     } catch (cause) {
-      setError(`复制邀请失败：${errorMessage(cause)}`);
+      setError(`复制验证码失败：${errorMessage(cause)}`);
     }
   }
 
-  async function submitInvitation() {
-    const token = pastedInvitation.trim();
-    const name = deviceName.trim();
-    if (!token || !name) return;
+  async function submitPairingCode() {
+    const code = pairingCode.trim();
+    const host = peerAddress.trim();
+    if (!code || !host) return;
     await runPairing(async () => {
-      const selectedAddress = peerAddress.trim() || undefined;
-      const receipt = await lanSyncAdapter.requestPairing(token, name, selectedAddress);
-      setPairingReceipt(receipt);
-      setPairingInvitationJson(token);
-      setPairingHostAddress(selectedAddress);
-      setPastedInvitation("");
-    });
-  }
-
-  async function claimPairing() {
-    if (!pairingReceipt || !pairingInvitationJson) return;
-    await runPairing(async () => {
-      const next = await lanSyncAdapter.claimPairing(
-        pairingReceipt.requestId,
-        pairingReceipt.receipt,
-        pairingInvitationJson,
-        pairingHostAddress,
-      );
-      setStatus(next);
-      setPairingReceipt(null);
-      setPairingInvitationJson(null);
-    });
-  }
-
-  async function decidePairing(requestId: string, approve: boolean) {
-    await runPairing(async () => {
-      if (approve) await lanSyncAdapter.approvePairing(requestId);
-      else await lanSyncAdapter.rejectPairing(requestId);
-      setPairingRequests(await lanSyncAdapter.listPairingRequests());
+      setStatus(await lanSyncAdapter.requestPairing(code, host));
+      setPairingCode("");
+      setPeerAddress("");
     });
   }
 
   function selectRole(nextRole: LanSyncRole) {
     setRole(nextRole);
-    // Pairing bearer material lives only for the deliberate flow currently
-    // shown. Leaving the flow clears its local copy.
-    setInvitation(null);
-    setPairingReceipt(null);
-    setPastedInvitation("");
+    // Keep the temporary code only while this pairing flow is visible.
+    setPairingCodeState(null);
+    setPairingCode("");
     setPeerAddress("");
-    setPairingInvitationJson(null);
-    setPairingHostAddress(undefined);
     setCopied(false);
   }
 
@@ -221,10 +176,8 @@ export function LanSyncSettings() {
 
   useEffect(() => {
     if (!active) {
-      setInvitation(null);
-      setPairingReceipt(null);
-      setPastedInvitation("");
-      setPairingInvitationJson(null);
+      setPairingCodeState(null);
+      setPairingCode("");
       setCopied(false);
     }
   }, [active]);
@@ -270,91 +223,45 @@ export function LanSyncSettings() {
             <div className="storage-value">
               <strong>配对新设备</strong>
               <span className="setting-help">
-                邀请是短时凭据。仅在此处生成后展示，复制给要加入的设备。
+                生成一个 5 分钟有效的六位验证码，在加入设备上输入主机 IP 和验证码。
               </span>
             </div>
             <button
               type="button"
               className="btn btn-primary"
-              onClick={() => void createInvitation()}
+              onClick={() => void createPairingCode()}
               disabled={busy}
             >
-              生成主机邀请
+              生成验证码
             </button>
           </div>
-          {invitation ? (
-            <div className="setting-row" aria-label="主机邀请">
+          {pairingCodeState ? (
+            <div className="setting-row" aria-label="配对验证码">
               <div className="storage-value">
-                <strong>主机邀请</strong>
-                <textarea
-                  aria-label="主机邀请内容"
-                  readOnly
-                  value={invitation.invitation}
-                  rows={3}
-                />
+                <strong>本机配对验证码</strong>
+                <code aria-label="主机配对验证码" className="setting-code">
+                  {pairingCodeState.code}
+                </code>
                 <span className="setting-help">
-                  {invitation.hostName} · 有效至{" "}
-                  {new Date(invitation.expiresAtUnixMs).toLocaleString()}
+                  {pairingCodeState.hostName} · 有效至{" "}
+                  {new Date(pairingCodeState.expiresAtUnixMs).toLocaleString()}
                 </span>
               </div>
-              <button type="button" className="btn" onClick={() => void copyInvitation()}>
-                {copied ? "已复制" : "复制邀请"}
+              <button type="button" className="btn" onClick={() => void copyPairingCode()}>
+                {copied ? "已复制" : "复制验证码"}
               </button>
               <button
                 type="button"
                 className="btn"
                 onClick={() => {
-                  setInvitation(null);
+                  setPairingCodeState(null);
                   setCopied(false);
                 }}
               >
-                隐藏邀请
+                隐藏验证码
               </button>
             </div>
           ) : null}
-          <div className="setting-row">
-            <div className="storage-value">
-              <strong>待审批设备</strong>
-              <span className="setting-help">只有批准后，设备才能领取配对凭据并连接此主机。</span>
-            </div>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => void refreshPairingRequests()}
-              disabled={busy}
-            >
-              刷新请求
-            </button>
-          </div>
-          <ul aria-label="待审批设备">
-            {pairingRequests.length === 0 ? (
-              <li>没有待审批请求</li>
-            ) : (
-              pairingRequests.map((request) => (
-                <li key={request.requestId}>
-                  <span>
-                    {request.deviceName} · {request.deviceId}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={busy}
-                    onClick={() => void decidePairing(request.requestId, true)}
-                  >
-                    批准
-                  </button>
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={busy}
-                    onClick={() => void decidePairing(request.requestId, false)}
-                  >
-                    拒绝
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
         </>
       ) : null}
       {active && status?.role === "peer" ? (
@@ -375,7 +282,7 @@ export function LanSyncSettings() {
       <div className="setting-row">
         <div className="storage-value">
           <strong>已发现的主机</strong>
-          <span className="setting-help">发现设备不会自动配对或传输资料库数据。</span>
+          <span className="setting-help">搜索失败时，可直接输入主机 IP。</span>
         </div>
         <ul aria-label="已发现的主机" data-testid="lan-sync-hosts">
           {hosts.length === 0 ? (
@@ -391,12 +298,10 @@ export function LanSyncSettings() {
                     disabled={busy}
                     aria-label={`使用主机 ${host.name} 的地址`}
                     onClick={() => {
-                      const hostAddress = host.addresses[0];
-                      setPeerAddress(
-                        hostAddress.includes(":")
-                          ? `[${hostAddress}]:${host.port}`
-                          : `${hostAddress}:${host.port}`,
-                      );
+                      const hostAddress = [...host.addresses].sort(
+                        (left, right) => Number(left.includes(":")) - Number(right.includes(":")),
+                      )[0];
+                      setPeerAddress(hostAddress);
                       setRole("peer");
                     }}
                   >
@@ -414,7 +319,7 @@ export function LanSyncSettings() {
             <div className="storage-value">
               <strong>启动同步服务</strong>
               <span className="setting-help">
-                主机需要本机局域网 IP。加入设备需要原生端已配置可信配对。
+                主机监听所选局域网 IP 的 50826 端口，其他设备通过 IP 和验证码加入。
               </span>
             </div>
             <div className="setting-choices" role="radiogroup" aria-label="同步角色">
@@ -435,7 +340,7 @@ export function LanSyncSettings() {
             <div className="setting-row">
               <label className="storage-value" htmlFor="lan-sync-address">
                 <strong>本机局域网 IP</strong>
-                <span className="setting-help">例如 192.168.1.20</span>
+                <span className="setting-help">只需输入局域网 IP；服务使用端口 50826。</span>
                 <span className="setting-help" aria-live="polite">
                   {localAddresses === null
                     ? "正在识别本机局域网地址…"
@@ -461,7 +366,7 @@ export function LanSyncSettings() {
           {role === "host" ? (
             <div className="setting-row">
               <span className="storage-value">
-                <strong>启动后可创建邀请</strong>
+                <strong>启动后可生成配对验证码</strong>
               </span>
               <button
                 type="button"
@@ -477,75 +382,50 @@ export function LanSyncSettings() {
             <>
               <div className="setting-row">
                 <label className="storage-value" htmlFor="lan-sync-peer-address">
-                  <strong>主机地址（可选）</strong>
+                  <strong>主机 IP</strong>
                   <span className="setting-help">
-                    发现失败时可手动填写 IP；仍需主机邀请进行 TLS 身份校验和配对。
+                    输入主机显示的局域网 IP。连接成功后会交换并固定 TLS 身份材料。
                   </span>
                 </label>
                 <input
                   id="lan-sync-peer-address"
                   value={peerAddress}
                   onChange={(event) => setPeerAddress(event.currentTarget.value)}
-                  placeholder="192.168.1.20:43000"
+                  placeholder="192.168.1.20"
                 />
               </div>
               <div className="setting-row">
-                <label className="storage-value" htmlFor="lan-sync-invitation">
-                  <strong>粘贴主机邀请</strong>
+                <label className="storage-value" htmlFor="lan-sync-pairing-code">
+                  <strong>六位验证码</strong>
                   <span className="setting-help">
-                    邀请只在本次配对步骤中使用，不会保存在偏好设置。
+                    设备名称会自动读取系统名称，验证码通过后直接连接主机。
                   </span>
                 </label>
-                <textarea
-                  id="lan-sync-invitation"
-                  value={pastedInvitation}
-                  onChange={(event) => setPastedInvitation(event.currentTarget.value)}
-                  rows={3}
-                />
-              </div>
-              <div className="setting-row">
-                <label className="storage-value" htmlFor="lan-sync-device-name">
-                  <strong>此设备名称</strong>
-                </label>
                 <input
-                  id="lan-sync-device-name"
-                  value={deviceName}
-                  onChange={(event) => setDeviceName(event.currentTarget.value)}
-                  placeholder="例如：客厅电脑"
+                  id="lan-sync-pairing-code"
+                  value={pairingCode}
+                  onChange={(event) =>
+                    setPairingCode(event.currentTarget.value.replace(/\D/g, "").slice(0, 6))
+                  }
+                  inputMode="numeric"
+                  maxLength={6}
+                  autoComplete="one-time-code"
+                  placeholder="123456"
                 />
               </div>
               <div className="setting-row">
                 <span className="storage-value">
-                  <strong>发送配对请求</strong>
+                  <strong>加入主机</strong>
                 </span>
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={busy || !pastedInvitation.trim() || !deviceName.trim()}
-                  onClick={() => void submitInvitation()}
+                  disabled={busy || pairingCode.trim().length !== 6 || !peerAddress.trim()}
+                  onClick={() => void submitPairingCode()}
                 >
-                  {busy ? "正在发送…" : "请求加入"}
+                  {busy ? "正在配对…" : "加入"}
                 </button>
               </div>
-              {pairingReceipt ? (
-                <div className="setting-row" aria-label="等待主机批准">
-                  <div className="storage-value">
-                    <strong>等待主机批准</strong>
-                    <span className="setting-help">
-                      请求已提交。此设备暂存一次性领取凭据；批准后在此处领取连接。
-                    </span>
-                    <span className="setting-help">请求编号：{pairingReceipt.requestId}</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={busy}
-                    onClick={() => void claimPairing()}
-                  >
-                    {busy ? "正在检查…" : "检查并领取连接"}
-                  </button>
-                </div>
-              ) : null}
             </>
           )}
         </>
@@ -608,11 +488,10 @@ function syncErrorText(key: string): string {
     "sync.busy": "同步服务正在处理其他操作。",
     "sync.bindFailed": "无法监听该局域网地址，请从自动识别的地址中选择当前网络地址。",
     "sync.discoveryFailed": "局域网主机发现失败。",
+    "sync.pairingCodeInvalid":
+      "无法加入主机，请检查 IP 和六位验证码是否正确、是否过期，以及主机是否正在运行。",
     "sync.workerFailed": "同步服务遇到错误。",
-    "sync.pairingPending": "主机尚未批准请求；领取凭据仍保留在本机当前配对步骤中。",
-    "sync.invitationExpired": "邀请已过期，请让主机重新生成邀请。",
-    "sync.pairingRejected": "主机拒绝了此设备的配对请求。",
-    "sync.receiptExpired": "领取凭据已过期，请重新提交主机邀请。",
+    "sync.pairingPending": "配对正在处理中，请稍后重试。",
   };
   return messages[key] ?? key;
 }

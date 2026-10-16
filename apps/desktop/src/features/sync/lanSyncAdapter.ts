@@ -1,11 +1,5 @@
 import { bridge } from "../../bridge";
-import type {
-  DiscoveredHost,
-  SyncInvitation,
-  SyncPairingReceipt,
-  SyncPairingRequest,
-  SyncStatus,
-} from "../../ipc/ipc-types.generated";
+import type { DiscoveredHost, SyncPairingCode, SyncStatus } from "../../ipc/ipc-types.generated";
 
 export type LanSyncRole = "host" | "peer";
 
@@ -20,21 +14,8 @@ export interface LanSyncAdapter {
   resume(): Promise<SyncStatus>;
   syncNow(): Promise<SyncStatus>;
   discoverHosts(): Promise<readonly DiscoveredHost[]>;
-  createInvitation(): Promise<SyncInvitation>;
-  requestPairing(
-    invitation: string,
-    deviceName: string,
-    hostAddress?: string,
-  ): Promise<SyncPairingReceipt>;
-  listPairingRequests(): Promise<readonly SyncPairingRequest[]>;
-  approvePairing(requestId: string): Promise<void>;
-  rejectPairing(requestId: string): Promise<void>;
-  claimPairing(
-    requestId: string,
-    receipt: string,
-    invitation: string,
-    hostAddress?: string,
-  ): Promise<SyncStatus>;
+  createPairingCode(): Promise<SyncPairingCode>;
+  requestPairing(code: string, hostAddress: string): Promise<SyncStatus>;
 }
 
 export const lanSyncAdapter: LanSyncAdapter = {
@@ -48,12 +29,6 @@ export const lanSyncAdapter: LanSyncAdapter = {
   resume: () => bridge.call("sync_resume"),
   syncNow: () => bridge.call("sync_now"),
   discoverHosts: () => bridge.call("discover_hosts"),
-  createInvitation: () => bridge.call("create_sync_invitation"),
-  requestPairing: (invitation, deviceName, hostAddress) =>
-    bridge.call("request_sync_pairing", { invitation, deviceName, hostAddress }),
-  listPairingRequests: () => bridge.call("list_sync_pairing_requests"),
-  approvePairing: (requestId) => bridge.call("approve_sync_pairing", { requestId }),
-  rejectPairing: (requestId) => bridge.call("reject_sync_pairing", { requestId }),
-  claimPairing: (requestId, receipt, invitation, hostAddress) =>
-    bridge.call("claim_sync_pairing", { requestId, receipt, invitation, hostAddress }),
+  createPairingCode: () => bridge.call("create_sync_pairing_code"),
+  requestPairing: (code, hostAddress) => bridge.call("request_sync_pairing", { code, hostAddress }),
 };

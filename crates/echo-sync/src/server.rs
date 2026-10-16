@@ -29,8 +29,8 @@ mod resource_routes;
 use resource_routes::{complete_resource, download_resource, prepare_resource, upload_chunk};
 
 use crate::pairing::{
-    PairingClaimDto, PairingError, PairingInvitation, PairingPort, PairingRegistry,
-    PairingRequestDto, PendingPairingRequest,
+    PairingBootstrapResponse, PairingClaimDto, PairingCodeRequest, PairingError, PairingInvitation,
+    PairingPort, PairingRegistry, PendingPairingRequest,
 };
 
 use crate::protocol::{
@@ -122,7 +122,7 @@ impl HostApiState {
         self
     }
 
-    /// Enable one-use invitations backed by durable desktop approval.
+    /// Enable short-code pairing backed by durable peer provisioning.
     #[must_use]
     pub fn with_pairing(
         mut self,
@@ -149,6 +149,27 @@ impl HostApiState {
         let (registry, port) = self.pairing.as_ref().ok_or(PairingError::Unavailable)?;
         registry.cleanup_expired(port.as_ref())?;
         registry.create_invitation(host_device_id, certificate_der, ttl)
+    }
+
+    /// Validate the short code, provision the peer immediately, and return the
+    /// certificate pin and bearer together for the joining device to persist.
+    pub fn pair_with_code(
+        &self,
+        request: PairingCodeRequest,
+    ) -> Result<PairingBootstrapResponse, PairingError> {
+        let (registry, port) = self.pairing.as_ref().ok_or(PairingError::Unavailable)?;
+        let (receipt, invitation) = registry.request_with_code(&request)?;
+        self.approve_pairing_request(&receipt.request_id)?;
+        let grant = registry.claim(
+            &PairingClaimDto {
+                binding: receipt.binding,
+                request_id: receipt.request_id,
+                device_id: receipt.device_id,
+                claim_secret: receipt.claim_secret,
+            },
+            port.as_ref(),
+        )?;
+        Ok(PairingBootstrapResponse { invitation, grant })
     }
 
     /// Return metadata for requests awaiting explicit host approval.
@@ -334,10 +355,6 @@ pub fn host_router(state: HostApiState) -> Router {
             "/v1/pairing/requests",
             post(request_pairing).layer(DefaultBodyLimit::max(8 * 1024)),
         )
-        .route(
-            "/v1/pairing/claim",
-            post(claim_pairing).layer(DefaultBodyLimit::max(8 * 1024)),
-        )
         .route("/v1/mutations", post(submit_mutation))
         .route("/v1/commits", get(pull_commits))
         .route(
@@ -422,7 +439,7 @@ fn allow_pairing_request(state: &HostApiState) -> bool {
     if window.0.elapsed() >= Duration::from_secs(60) {
         *window = (Instant::now(), 0);
     }
-    if window.1 >= 120 {
+    if window.1 >= 12 {
         return false;
     }
     window.1 += 1;
@@ -431,60 +448,22 @@ fn allow_pairing_request(state: &HostApiState) -> bool {
 
 async fn request_pairing(
     State(state): State<HostApiState>,
-    Json(request): Json<PairingRequestDto>,
+    Json(request): Json<PairingCodeRequest>,
 ) -> Response<Body> {
     if !allow_pairing_request(&state) {
         return api_error(StatusCode::TOO_MANY_REQUESTS, "rate_limited");
     }
-    let Some((registry, port)) = &state.pairing else {
+    if state.pairing.is_none() {
         return api_error(StatusCode::NOT_FOUND, "pairing_unavailable");
-    };
-    let registry = Arc::clone(registry);
-    let port = Arc::clone(port);
-    let result = tokio::task::spawn_blocking(move || {
-        registry.cleanup_expired(port.as_ref())?;
-        registry.request(&request)
-    })
-    .await;
+    }
+    let result = tokio::task::spawn_blocking(move || state.pair_with_code(request)).await;
     match result {
-        Ok(Ok(receipt)) => (
-            StatusCode::ACCEPTED,
+        Ok(Ok(pairing)) => (
+            StatusCode::OK,
             [(axum::http::header::CACHE_CONTROL, "no-store")],
-            Json(receipt),
+            Json(pairing),
         )
             .into_response(),
-        Ok(Err(error)) => pairing_error(error),
-        Err(_) => api_error(StatusCode::SERVICE_UNAVAILABLE, "pairing_unavailable"),
-    }
-}
-
-async fn claim_pairing(
-    State(state): State<HostApiState>,
-    Json(request): Json<PairingClaimDto>,
-) -> Response<Body> {
-    if !allow_pairing_request(&state) {
-        return api_error(StatusCode::TOO_MANY_REQUESTS, "rate_limited");
-    }
-    let Some((registry, port)) = &state.pairing else {
-        return api_error(StatusCode::NOT_FOUND, "pairing_unavailable");
-    };
-    // Pending requests cannot have authorization yet. The port independently
-    // checks live authorization when loading an approved grant.
-    let registry = Arc::clone(registry);
-    let port = Arc::clone(port);
-    let device = request.device_id;
-    match tokio::task::spawn_blocking(move || registry.claim(&request, port.as_ref())).await {
-        Ok(Ok(grant)) => {
-            if !peer_is_currently_authorized(&state, device).await {
-                return api_error(StatusCode::UNAUTHORIZED, "unauthorized");
-            }
-            (
-                StatusCode::OK,
-                [(axum::http::header::CACHE_CONTROL, "no-store")],
-                Json(grant),
-            )
-                .into_response()
-        }
         Ok(Err(error)) => pairing_error(error),
         Err(_) => api_error(StatusCode::SERVICE_UNAVAILABLE, "pairing_unavailable"),
     }

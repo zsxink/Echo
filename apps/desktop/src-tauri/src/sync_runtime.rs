@@ -16,6 +16,8 @@ use echo_sync::pairing::{PairingError, PairingGrantDto, PairingInvitation, Pendi
 use echo_sync::server::{host_router, serve_tls, HostApiState};
 use tokio::sync::oneshot;
 
+pub const SYNC_PORT: u16 = 50826;
+
 mod discovery;
 pub use discovery::discover_hosts;
 
@@ -29,6 +31,7 @@ pub enum SyncRuntimeError {
     Busy,
     BindFailed,
     DiscoveryFailed,
+    PairingFailed,
     WorkerFailed,
 }
 
@@ -41,6 +44,7 @@ impl SyncRuntimeError {
             Self::Busy => "sync.busy",
             Self::BindFailed => "sync.bindFailed",
             Self::DiscoveryFailed => "sync.discoveryFailed",
+            Self::PairingFailed => "sync.pairingCodeInvalid",
             Self::WorkerFailed => "sync.workerFailed",
         }
     }
@@ -237,7 +241,7 @@ impl SyncRuntime {
         if self.active_root()? != root {
             return Err(SyncRuntimeError::LibraryUnavailable);
         }
-        let listener = TcpListener::bind(SocketAddr::new(address, 0))
+        let listener = TcpListener::bind(SocketAddr::new(address, SYNC_PORT))
             .map_err(|_| SyncRuntimeError::BindFailed)?;
         listener
             .set_nonblocking(true)

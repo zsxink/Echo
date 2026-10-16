@@ -5,12 +5,8 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use echo_desktop::ipc::{
-    sync::{SyncInvitation, SyncPairingReceipt, SyncPairingRequest},
-    IpcErrorDto,
-};
+use echo_desktop::ipc::{sync::SyncPairingCode, IpcErrorDto};
 use echo_sync::client::LanClient;
-use echo_sync::pairing::{PairingGrantDto, PairingInvitation, PairingReceipt};
 use reqwest::Url;
 use tauri::{Emitter, State};
 
@@ -37,7 +33,10 @@ fn available_local_lan_addresses() -> Vec<String> {
     let mut addresses = interfaces
         .into_iter()
         .filter(|interface| {
-            interface.is_oper_up() && !interface.is_loopback() && !interface.is_link_local()
+            interface.is_oper_up()
+                && !interface.is_loopback()
+                && !interface.is_link_local()
+                && !interface.is_p2p()
         })
         .map(|interface| interface.ip())
         .filter(|address| match address {
@@ -46,8 +45,15 @@ fn available_local_lan_addresses() -> Vec<String> {
         })
         .collect::<Vec<_>>();
     addresses.sort_by_key(|address| match address {
-        IpAddr::V4(_) => 0,
-        IpAddr::V6(_) => 1,
+        IpAddr::V4(address) if address.octets()[0] == 192 && address.octets()[1] == 168 => 0,
+        IpAddr::V4(address) if address.octets()[0] == 10 => 1,
+        IpAddr::V4(address)
+            if address.octets()[0] == 172 && (16..=31).contains(&address.octets()[1]) =>
+        {
+            2
+        }
+        IpAddr::V4(_) => 3,
+        IpAddr::V6(_) => 4,
     });
     addresses.dedup();
     addresses
@@ -158,12 +164,6 @@ pub async fn discover_hosts() -> Result<Vec<DiscoveredHost>, IpcErrorDto> {
         .map_err(error)
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
-struct InvitationEnvelope {
-    endpoint: String,
-    pairing: PairingInvitation,
-}
-
 fn unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -172,22 +172,43 @@ fn unix_ms() -> u64 {
         })
 }
 
+fn local_device_name() -> String {
+    ["COMPUTERNAME", "HOSTNAME"]
+        .iter()
+        .find_map(|key| {
+            std::env::var(key)
+                .ok()
+                .filter(|name| !name.trim().is_empty())
+        })
+        .map(|name| {
+            let mut safe_name = String::new();
+            for character in name
+                .trim()
+                .chars()
+                .filter(|character| !character.is_control())
+            {
+                if safe_name.len() + character.len_utf8() > 128 {
+                    break;
+                }
+                safe_name.push(character);
+            }
+            safe_name
+        })
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "Echo 设备".to_owned())
+}
+
 #[tauri::command]
-pub async fn create_sync_invitation(
+pub async fn create_sync_pairing_code(
     runtime: State<'_, Arc<SyncRuntime>>,
-) -> Result<SyncInvitation, IpcErrorDto> {
+) -> Result<SyncPairingCode, IpcErrorDto> {
     let runtime = Arc::clone(&runtime);
     tauri::async_runtime::spawn_blocking(move || {
         let pairing = runtime.create_pairing_invitation()?;
         let status = runtime.status();
         let endpoint = status.address.ok_or(SyncRuntimeError::Unconfigured)?;
-        let invitation = serde_json::to_string(&InvitationEnvelope {
-            endpoint: endpoint.clone(),
-            pairing,
-        })
-        .map_err(|_| SyncRuntimeError::WorkerFailed)?;
-        Ok(SyncInvitation {
-            invitation,
+        Ok(SyncPairingCode {
+            code: pairing.invitation_secret,
             expires_at_unix_ms: unix_ms().saturating_add(300_000),
             host_name: endpoint,
         })
@@ -198,141 +219,39 @@ pub async fn create_sync_invitation(
 }
 
 #[tauri::command]
-pub async fn list_sync_pairing_requests(
-    runtime: State<'_, Arc<SyncRuntime>>,
-) -> Result<Vec<SyncPairingRequest>, IpcErrorDto> {
-    let runtime = Arc::clone(&runtime);
-    tauri::async_runtime::spawn_blocking(move || {
-        let now = unix_ms();
-        runtime.pending_pairing_requests().map(|requests| {
-            requests
-                .into_iter()
-                .map(|request| SyncPairingRequest {
-                    request_id: request.request_id,
-                    device_name: request.device_name,
-                    device_id: request.device_id.as_uuid().to_string(),
-                    requested_at_unix_ms: now.saturating_sub(
-                        300_u64
-                            .saturating_sub(request.expires_in_secs)
-                            .saturating_mul(1000),
-                    ),
-                })
-                .collect()
-        })
-    })
-    .await
-    .map_err(|_| error(SyncRuntimeError::WorkerFailed))?
-    .map_err(error)
-}
-
-#[tauri::command]
-pub async fn approve_sync_pairing(
-    runtime: State<'_, Arc<SyncRuntime>>,
-    request_id: String,
-) -> Result<(), IpcErrorDto> {
-    let runtime = Arc::clone(&runtime);
-    tauri::async_runtime::spawn_blocking(move || runtime.approve_pairing_request(&request_id))
-        .await
-        .map_err(|_| error(SyncRuntimeError::WorkerFailed))?
-        .map_err(error)
-}
-
-#[tauri::command]
-pub async fn reject_sync_pairing(
-    runtime: State<'_, Arc<SyncRuntime>>,
-    request_id: String,
-) -> Result<(), IpcErrorDto> {
-    let runtime = Arc::clone(&runtime);
-    tauri::async_runtime::spawn_blocking(move || runtime.deny_pairing_request(&request_id))
-        .await
-        .map_err(|_| error(SyncRuntimeError::WorkerFailed))?
-        .map_err(error)
-}
-
-fn parse_invitation(value: &str) -> Result<(String, PairingInvitation), SyncRuntimeError> {
-    let envelope: InvitationEnvelope =
-        serde_json::from_str(value).map_err(|_| SyncRuntimeError::InvalidAddress)?;
-    if !envelope.endpoint.starts_with("https://")
-        || envelope.pairing.invitation_secret.len() != 64
-        || envelope.pairing.invitation_id.len() != 64
-        || envelope.pairing.expires_in_secs > 300
-    {
-        return Err(SyncRuntimeError::InvalidAddress);
-    }
-    Ok((envelope.endpoint, envelope.pairing))
-}
-
-fn encode_receipt(receipt: PairingReceipt) -> Result<SyncPairingReceipt, SyncRuntimeError> {
-    let request_id = receipt.request_id.clone();
-    let expires_at_unix_ms = unix_ms().saturating_add(receipt.expires_in_secs.saturating_mul(1000));
-    let receipt = serde_json::to_string(&receipt).map_err(|_| SyncRuntimeError::WorkerFailed)?;
-    Ok(SyncPairingReceipt {
-        request_id,
-        receipt,
-        expires_at_unix_ms,
-    })
-}
-
-#[tauri::command]
 pub async fn request_sync_pairing(
-    runtime: State<'_, Arc<SyncRuntime>>,
-    invitation: String,
-    device_name: String,
-    host_address: Option<String>,
-) -> Result<SyncPairingReceipt, IpcErrorDto> {
-    let runtime = Arc::clone(&runtime);
-    tauri::async_runtime::spawn_blocking(move || {
-        let (endpoint, invitation) = parse_invitation(&invitation)?;
-        let endpoint = pairing_endpoint(&endpoint, host_address.as_deref())?;
-        let device_id = runtime.local_sync_device_id();
-        let client =
-            LanClient::for_pairing(&invitation).map_err(|_| SyncRuntimeError::Unconfigured)?;
-        let executor = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
-        let receipt = executor
-            .block_on(client.request_pairing(&endpoint, &invitation, device_id, device_name))
-            .map_err(|_| SyncRuntimeError::Unconfigured)?;
-        encode_receipt(receipt)
-    })
-    .await
-    .map_err(|_| error(SyncRuntimeError::WorkerFailed))?
-    .map_err(error)
-}
-
-#[tauri::command]
-pub async fn claim_sync_pairing(
     app: tauri::AppHandle,
     runtime: State<'_, Arc<SyncRuntime>>,
-    request_id: String,
-    receipt: String,
-    invitation: String,
-    host_address: Option<String>,
+    code: String,
+    host_address: String,
 ) -> Result<SyncStatus, IpcErrorDto> {
     let runtime = Arc::clone(&runtime);
     let worker_runtime = Arc::clone(&runtime);
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let (endpoint, invitation) = parse_invitation(&invitation)?;
-        let receipt: PairingReceipt =
-            serde_json::from_str(&receipt).map_err(|_| SyncRuntimeError::InvalidAddress)?;
-        if receipt.request_id != request_id
-            || receipt.binding != invitation.binding
-            || receipt.device_id != worker_runtime.local_sync_device_id()
-        {
-            return Err(SyncRuntimeError::InvalidAddress);
-        }
-        let endpoint = pairing_endpoint(&endpoint, host_address.as_deref())?;
-        let client =
-            LanClient::for_pairing(&invitation).map_err(|_| SyncRuntimeError::Unconfigured)?;
+        let address = host_address.trim();
+        let formatted = if address.contains(':') && !address.starts_with('[') {
+            format!("[{address}]")
+        } else {
+            address.to_owned()
+        };
+        let endpoint = pairing_endpoint(
+            &format!("https://{formatted}:{}", crate::sync_runtime::SYNC_PORT),
+            None,
+        )?;
+        let device_id = worker_runtime.local_sync_device_id();
         let executor = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
-        let grant: PairingGrantDto = executor
-            .block_on(client.claim_pairing(&endpoint, &receipt))
-            .map_err(|_| SyncRuntimeError::Unconfigured)?;
-        worker_runtime.complete_peer_pairing(&invitation, endpoint.as_str(), &grant)
+        let pairing = executor
+            .block_on(LanClient::pair_with_code(
+                &endpoint,
+                &code,
+                device_id,
+                local_device_name(),
+            ))
+            .map_err(|_| SyncRuntimeError::PairingFailed)?;
+        worker_runtime.complete_peer_pairing(&pairing.invitation, endpoint.as_str(), &pairing.grant)
     })
     .await
     .map_err(|_| error(SyncRuntimeError::WorkerFailed))?;
@@ -348,9 +267,7 @@ pub async fn claim_sync_pairing(
     }
 }
 
-/// Apply a user-selected LAN address to the invite endpoint while retaining
-/// the certificate pin carried by the invitation. Discovery supplies only an
-/// address hint; the invitation remains the trust anchor.
+/// Apply a user-selected local network address to the pairing endpoint.
 fn pairing_endpoint(endpoint: &str, host_address: Option<&str>) -> Result<Url, SyncRuntimeError> {
     let mut endpoint = Url::parse(endpoint).map_err(|_| SyncRuntimeError::InvalidAddress)?;
     if endpoint.scheme() != "https" || endpoint.host().is_none() {

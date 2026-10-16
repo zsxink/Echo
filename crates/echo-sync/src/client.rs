@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use crate::pairing::{
-    PairingClaimDto, PairingGrantDto, PairingInvitation, PairingReceipt, PairingRequestDto,
+    PairingBootstrapResponse, PairingCodeRequest, PairingGrantDto, PairingInvitation,
 };
 
 use crate::protocol::{
@@ -75,6 +75,60 @@ impl std::fmt::Display for ClientError {
 impl std::error::Error for ClientError {}
 
 impl LanClient {
+    /// Exchange a local six-digit pairing code before the first certificate
+    /// pin exists. The returned certificate is pinned for all later traffic.
+    /// This bootstrap is deliberately limited to the one pairing request.
+    pub async fn pair_with_code(
+        endpoint: &Url,
+        code: &str,
+        device_id: DeviceId,
+        device_name: String,
+    ) -> Result<PairingBootstrapResponse, ClientError> {
+        if endpoint.scheme() != "https"
+            || code.len() != 6
+            || !code.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return Err(ClientError::InvalidEndpoint);
+        }
+        let http = Client::builder()
+            .https_only(true)
+            .danger_accept_invalid_certs(true)
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(10))
+            .connect_timeout(Duration::from_secs(5))
+            .no_proxy()
+            .build()
+            .map_err(ClientError::Transport)?;
+        let url = pairing_url(endpoint, "/v1/pairing/requests")?;
+        let response = http
+            .post(url)
+            .json(&PairingCodeRequest {
+                code: code.to_owned(),
+                device_id,
+                device_name,
+            })
+            .send()
+            .await
+            .map_err(ClientError::Transport)?;
+        if !response.status().is_success() {
+            return Err(ClientError::HostRejected(response.status()));
+        }
+        let pairing: PairingBootstrapResponse = read_bounded_json(response).await?;
+        let invitation = &pairing.invitation;
+        if invitation.invitation_secret != code
+            || invitation.host_certificate_der.is_empty()
+            || invitation.host_certificate_der.len() > 16 * 1024
+            || invitation.expires_in_secs > 300
+            || pairing.grant.binding != invitation.binding
+            || pairing.grant.device_id != device_id
+            || pairing.grant.bearer_token.len() < 32
+            || pairing.grant.bearer_token.len() > 256
+        {
+            return Err(ClientError::InvalidResponseBody);
+        }
+        Ok(pairing)
+    }
+
     /// Build a TLS 1.3 client pinned to the provisioned certificate's SPKI.
     /// The peer proves ownership of that key through the TLS handshake; DNS,
     /// public CAs, and system proxies cannot replace the paired identity. A
@@ -101,102 +155,6 @@ impl LanClient {
             bearer_token,
             certificate_hash: *blake3::hash(pinned_certificate_der).as_bytes(),
         })
-    }
-
-    /// Construct an enrollment client from pin material received out of band.
-    ///
-    /// # Errors
-    /// Rejects invalid public certificate material or HTTP client configuration.
-    pub fn for_pairing(invitation: &PairingInvitation) -> Result<Self, ClientError> {
-        if invitation.host_certificate_der.len() > 16 * 1024 || invitation.expires_in_secs > 300 {
-            return Err(ClientError::InvalidResponseBody);
-        }
-        Self::new(&invitation.host_certificate_der, String::new())
-    }
-
-    /// Consume a one-use invite only after the pinned TLS handshake succeeds.
-    /// This response is pending metadata; it grants no sync authorization.
-    ///
-    /// # Errors
-    /// Rejects unsafe endpoints, failed pins, rejected invitations, and bad receipts.
-    pub async fn request_pairing(
-        &self,
-        endpoint: &Url,
-        invitation: &PairingInvitation,
-        device_id: DeviceId,
-        device_name: String,
-    ) -> Result<PairingReceipt, ClientError> {
-        if self.certificate_hash != *blake3::hash(&invitation.host_certificate_der).as_bytes() {
-            return Err(ClientError::InvalidResponseBody);
-        }
-        let url = pairing_url(endpoint, "/v1/pairing/requests")?;
-        let response = self
-            .http
-            .post(url)
-            .json(&PairingRequestDto {
-                binding: invitation.binding,
-                invitation_id: invitation.invitation_id.clone(),
-                invitation_secret: invitation.invitation_secret.clone(),
-                device_id,
-                device_name,
-            })
-            .send()
-            .await
-            .map_err(ClientError::Transport)?;
-        if response.status() != StatusCode::ACCEPTED {
-            return Err(ClientError::HostRejected(response.status()));
-        }
-        let receipt: PairingReceipt = read_bounded_json(response).await?;
-        if receipt.binding != invitation.binding
-            || receipt.device_id != device_id
-            || receipt.request_id.len() != 64
-            || receipt.claim_secret.len() != 64
-            || receipt.expires_in_secs > 300
-        {
-            return Err(ClientError::InvalidResponseBody);
-        }
-        Ok(receipt)
-    }
-
-    /// Claim the explicit host approval once. Never retry this call automatically:
-    /// a lost success response requires revoking that approval and pairing again.
-    ///
-    /// # Errors
-    /// Returns host rejection while approval is pending/expired or already claimed.
-    pub async fn claim_pairing(
-        &self,
-        endpoint: &Url,
-        receipt: &PairingReceipt,
-    ) -> Result<PairingGrantDto, ClientError> {
-        let url = pairing_url(endpoint, "/v1/pairing/claim")?;
-        let response = self
-            .http
-            .post(url)
-            .json(&PairingClaimDto {
-                binding: receipt.binding,
-                request_id: receipt.request_id.clone(),
-                device_id: receipt.device_id,
-                claim_secret: receipt.claim_secret.clone(),
-            })
-            .send()
-            .await
-            .map_err(ClientError::Transport)?;
-        if !response.status().is_success() {
-            return Err(ClientError::HostRejected(response.status()));
-        }
-        let grant: PairingGrantDto = read_bounded_json(response).await?;
-        if grant.binding != receipt.binding
-            || grant.device_id != receipt.device_id
-            || grant.bearer_token.len() < 32
-            || grant.bearer_token.len() > 256
-            || !grant
-                .bearer_token
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric())
-        {
-            return Err(ClientError::InvalidResponseBody);
-        }
-        Ok(grant)
     }
 
     /// Submit a validated mutation to the HTTPS host endpoint.

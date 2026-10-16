@@ -61,10 +61,12 @@ rustls ring provider. A renewed certificate with the same key is accepted;
 another key requires renewed trust. Certificate SAN and public CA chains do
 not establish this paired identity. System proxies and redirects are disabled.
 
-Pairing uses a short-lived, one-time invitation and explicit host approval.
-Provisioned per-device credentials are stored through the platform secure-store
-adapter; failure to access that store is an error and does not fall back to
-plaintext. The host checks the authenticated device against its current library
+Pairing uses a six-digit, short-lived, one-time code. The initial pairing
+connection exchanges the host certificate and provisions a per-device bearer;
+the joining device pins that certificate before normal synchronization.
+Provisioned credentials are stored through the platform secure-store adapter;
+failure to access that store is an error and does not fall back to plaintext.
+The host checks the authenticated device against its current library
 authorization on each request, so revocation takes effect for subsequent
 requests. These mechanisms are implemented in the transport and desktop
 provisioning code; their complete cross-platform and in-flight request
