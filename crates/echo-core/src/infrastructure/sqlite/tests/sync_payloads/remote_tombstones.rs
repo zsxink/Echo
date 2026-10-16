@@ -29,6 +29,15 @@ fn remote_tombstones_hide_objects_and_preserve_held_delete_resources() {
         .create(playlist, replica_root, "Deleted playlist")
         .unwrap();
     replica.add_member(playlist, song.id(), 0).unwrap();
+    // These deletions concern already shared identities. A first-seen host
+    // tombstone must preserve independently populated local catalog objects.
+    let song_uuid = song.id().to_string();
+    replica.writer.run(move |connection| {
+        for (kind, id) in [("song", song_uuid), ("playlist", playlist.to_string())] {
+            connection.execute("INSERT INTO sync_object_versions(object_type,object_uuid,object_version,commit_seq,payload_json,is_tombstone) VALUES(?1,?2,1,1,'{}',0)",params![kind,id]).map_err(super::support::storage)?;
+        }
+        Ok(())
+    }).unwrap();
     let operation = OperationId::new();
     replica
         .ensure_operation(operation, replica_root, "delete", Some(song.id()))

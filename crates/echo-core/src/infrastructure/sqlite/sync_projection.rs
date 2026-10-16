@@ -5,6 +5,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::domain::ids::Revision;
 use crate::domain::library::{DeviceId as LibraryDeviceId, HybridLogicalClock, PlayStatsRecord};
@@ -355,7 +356,7 @@ fn project_song(
         .get("relative_path")
         .and_then(Value::as_str)
         .ok_or_else(|| Error::conflict("confirmed song is missing its relative path"))?;
-    let path = crate::domain::ids::RelativeMediaPath::new(relative_path)
+    let mut path = crate::domain::ids::RelativeMediaPath::new(relative_path)
         .map_err(|_| Error::conflict("confirmed song has an invalid relative path"))?;
     let title = optional_string(payload, "title")?;
     let artist = optional_string(payload, "artist")?;
@@ -378,15 +379,15 @@ fn project_song(
         return Err(Error::conflict("confirmed song has an invalid BLAKE3 hash"));
     }
     let format = optional_string(payload, "format")?;
-    let local_song: Option<(String, Option<String>)> = tx
+    let local_song: Option<(String, Option<String>, String)> = tx
         .query_row(
-            "SELECT normalized_relative_path, blake3_hash FROM songs WHERE uuid=?1 AND library_root_uuid=?2",
+            "SELECT normalized_relative_path, blake3_hash, availability FROM songs WHERE uuid=?1 AND library_root_uuid=?2",
             params![song_uuid, root_uuid],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
         .map_err(storage)?;
-    if let Some((local_path, local_hash)) = local_song {
+    if let Some((local_path, local_hash, availability)) = local_song {
         let has_pending_local_change: bool = tx
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM sync_mutations WHERE object_type='song' AND object_uuid=?1 AND local_root_uuid=?2 AND status='pending')",
@@ -400,7 +401,10 @@ fn project_song(
         // this device. Preserve the local projection until the conflict is
         // resolved; matching path/hash records can still receive shared
         // metadata updates below.
-        if has_pending_local_change || local_path != path.identity_key() || local_hash != hash {
+        if has_pending_local_change
+            || (availability != "missing"
+                && (local_path != path.identity_key() || local_hash != hash))
+        {
             return Ok(());
         }
     }
@@ -411,10 +415,27 @@ fn project_song(
             |row| row.get(0),
         )
         .map_err(storage)?;
-    // A same-path local file may be a different import. Keep the confirmed
-    // object in the ledger until alias/conflict resolution can decide identity.
+    // Independently populated libraries can contain different audio at the
+    // same relative path. Reserve a distinct missing row for the host object;
+    // resource publication later associates its verified immutable local file.
+    // Skipping the row here would leave downloaded audio outside the catalog.
     if path_owner {
-        return Ok(());
+        let mut suffix = 0_u64;
+        loop {
+            path = crate::domain::ids::RelativeMediaPath::new(&format!(
+                "echo/media/pending/{song_uuid}-{suffix}"
+            ))?;
+            let occupied: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM songs WHERE library_root_uuid=?1 AND normalized_relative_path=?2 AND uuid<>?3)",
+                params![root_uuid, path.identity_key(), song_uuid], |row| row.get(0),
+            ).map_err(storage)?;
+            if !occupied {
+                break;
+            }
+            suffix = suffix
+                .checked_add(1)
+                .ok_or_else(|| Error::conflict("no vacant local song projection path"))?;
+        }
     }
     let title_sort = normalized_key(title.as_deref().unwrap_or(""));
     let artist_sort = normalized_key(artist.as_deref().unwrap_or(""));
@@ -566,17 +587,8 @@ fn project_playlist(
             live_members.push(member);
         }
     }
-    let name_key = playlist_name_key(display_name);
-    let name_taken: bool = tx
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM playlists WHERE library_root_uuid=?1 AND normalized_name_key=?2 AND uuid<>?3)",
-            params![root_uuid, name_key, object_uuid],
-            |row| row.get(0),
-        )
-        .map_err(storage)?;
-    if name_taken {
-        return Ok(());
-    }
+    let display_name = available_playlist_name(tx, root_uuid, object_uuid, display_name)?;
+    let name_key = playlist_name_key(&display_name);
     tx.execute(
         "INSERT INTO playlists(uuid, library_root_uuid, display_name, normalized_name_key, created_at, updated_at)
          VALUES(?1, ?2, ?3, ?4, ?5, ?6)
@@ -597,6 +609,43 @@ fn project_playlist(
         .map_err(super::support::map_constraint)?;
     }
     Ok(())
+}
+
+fn available_playlist_name(
+    tx: &Connection,
+    root: &str,
+    id: &str,
+    requested: &str,
+) -> Result<String, Error> {
+    let mut name = requested.to_owned();
+    let short_id: String = id.chars().take(8).collect();
+    let mut attempt = 1_u64;
+    loop {
+        let occupied: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM playlists WHERE library_root_uuid=?1 AND normalized_name_key=?2 AND uuid<>?3)",
+            params![root, playlist_name_key(&name), id], |row| row.get(0),
+        ).map_err(storage)?;
+        if !occupied {
+            return Ok(name);
+        }
+        // Different UUIDs are different lists even when their names normalize
+        // equally. Keep the local owner and give the incoming list a stable,
+        // readable suffix while respecting the 40-grapheme editing limit.
+        let suffix = if attempt == 1 {
+            format!(" ({short_id})")
+        } else {
+            format!(" ({short_id}-{attempt})")
+        };
+        let stem: String = requested
+            .trim()
+            .graphemes(true)
+            .take(40 - suffix.len())
+            .collect();
+        name = format!("{}{suffix}", stem.trim_end());
+        attempt = attempt
+            .checked_add(1)
+            .ok_or_else(|| Error::conflict("no vacant playlist display name"))?;
+    }
 }
 
 type ProjectedPlaylistMember = (String, String, i64, i64);
@@ -823,7 +872,7 @@ mod tests {
                     UNIQUE(library_root_uuid, normalized_relative_path));
                  CREATE VIRTUAL TABLE song_search USING fts5(title, artist, album, song_uuid UNINDEXED);
                  CREATE TABLE sync_song_aliases(alias_song_uuid TEXT PRIMARY KEY, canonical_song_uuid TEXT, commit_seq INTEGER);
-                 CREATE TABLE sync_mutations(object_type TEXT, object_uuid TEXT, status TEXT);
+                 CREATE TABLE sync_mutations(object_type TEXT, object_uuid TEXT, status TEXT, local_root_uuid TEXT);
                  CREATE TABLE sync_object_versions(object_type TEXT, object_uuid TEXT, payload_json TEXT, is_tombstone INTEGER);
                  CREATE TABLE sync_local_delete_intents(object_type TEXT, object_uuid TEXT, state TEXT);
                  INSERT INTO songs(uuid, library_root_uuid, relative_path, normalized_relative_path, title_sort, artist_sort, album_sort, added_at, availability, created_at, updated_at)
@@ -895,7 +944,7 @@ mod tests {
             .expect("search index");
         assert_eq!(indexed, 1);
         tx.execute(
-            "INSERT INTO sync_mutations VALUES('song','song','pending')",
+            "INSERT INTO sync_mutations VALUES('song','song','pending','local-root')",
             [],
         )
         .expect("pending local edit");

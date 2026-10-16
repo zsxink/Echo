@@ -206,16 +206,21 @@ fn cancel_of_unknown_pairing_generation_preserves_previous_authorization() {
     };
     let pairing = DurableHostPairing::new(database.clone());
     assert_eq!(pairing.cancel_approval(&request), Ok(()));
-    assert!(database
-        .sync_peer_has_credential(binding, device_id, "prior-generation".to_owned())
-        .unwrap());
+    assert!(
+        database
+            .sync_peer_has_credential(binding, device_id, "prior-generation".to_owned())
+            .unwrap()
+    );
+    // The fake prior-generation handle has no OS credential to recover.
     assert!(matches!(
         pairing.approve(&request),
-        Err(PairingError::Unavailable)
+        Err(PairingError::ProvisioningUnavailable)
     ));
-    assert!(database
-        .sync_peer_has_credential(binding, device_id, "prior-generation".to_owned())
-        .unwrap());
+    assert!(
+        database
+            .sync_peer_has_credential(binding, device_id, "prior-generation".to_owned())
+            .unwrap()
+    );
 }
 
 fn publish_test_song(
@@ -359,9 +364,11 @@ fn host_publishes_peer_uploaded_audio_into_its_library_before_reporting_ready() 
         std::fs::read(root_path.join(published.normalized())).unwrap(),
         bytes
     );
-    assert!(database
-        .remote_resource_media_ready(root, ObjectKey::Song(song))
-        .unwrap());
+    assert!(
+        database
+            .remote_resource_media_ready(root, ObjectKey::Song(song))
+            .unwrap()
+    );
     assert!(
         RemoteResourceJournalPort::incomplete(database.as_ref(), root)
             .unwrap()
@@ -535,5 +542,456 @@ fn enrollment_snapshot_is_frozen_and_incremental_pull_after_h_converges_once() {
             .unwrap()
             .sequence,
         cursor.sequence
+    );
+}
+
+/// A host publication checkpoint that observes the replica at the first upload.
+/// This catches push-before-pull even when the final catalogs would converge.
+struct ObservePullBeforePush {
+    replica: Arc<SqliteDatabase>,
+    host_song: echo_core::domain::ids::SongId,
+    observed: AtomicBool,
+}
+
+impl echo_core::application::ports::PublicationCheckpointPort for ObservePullBeforePush {
+    fn advance(&self, _checkpoint: CommitCheckpoint) -> Result<(), echo_core::error::Error> {
+        assert!(
+            SongRepository::by_id(self.replica.as_ref(), self.host_song)?.is_some(),
+            "host song must already be merged before the peer publishes local additions"
+        );
+        self.observed.store(true, Ordering::Relaxed);
+        Ok(())
+    }
+}
+
+struct LanMergeFixture {
+    directory: tempfile::TempDir,
+    host: Arc<SqliteDatabase>,
+    replica: Arc<SqliteDatabase>,
+    root: LibraryRootId,
+    host_root: LibraryRootId,
+    host_song: echo_core::domain::ids::SongId,
+    host_mutation: MutationId,
+    provisioner: NativeSyncProvisioner,
+    peer: ProvisionedPeer,
+    endpoint: Url,
+    resources: Arc<FileResourceStore>,
+    checkpoint: Arc<ObservePullBeforePush>,
+    server: tokio::task::JoinHandle<std::io::Result<()>>,
+}
+
+impl Drop for LanMergeFixture {
+    fn drop(&mut self) {
+        self.server.abort();
+    }
+}
+
+impl LanMergeFixture {
+    #[allow(clippy::too_many_lines)]
+    async fn new() -> Self {
+        use echo_core::infrastructure::filesystem::{
+            Blake3ContentHasher, RootConstrainedFileSystem, RootRegistry,
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let host = Arc::new(SqliteDatabase::open(directory.path().join("host.sqlite")).unwrap());
+        let replica =
+            Arc::new(SqliteDatabase::open(directory.path().join("replica.sqlite")).unwrap());
+        let binding = SyncBinding {
+            library_id: LibraryId::new(),
+            authority_id: AuthorityId::new(),
+            epoch: Epoch::INITIAL,
+        };
+        let mut roots = Vec::new();
+        for (database, name, is_host) in [(&host, "host", true), (&replica, "peer", false)] {
+            let path = directory.path().join(name);
+            std::fs::create_dir_all(path.join("media")).unwrap();
+            prepared_empty_library(&path);
+            let root = derive_root_id(&path.canonicalize().unwrap());
+            LibraryRepository::upsert(database.as_ref(), &LibraryRoot::new(root, path, true, true))
+                .unwrap();
+            if is_host {
+                database.bind_sync_library(binding, true, root).unwrap();
+            } else {
+                database
+                    .bind_sync_replica_for_enrollment(binding, root)
+                    .unwrap();
+            }
+            roots.push(root);
+        }
+        let host_root = roots[0];
+        let root = roots[1];
+        let host_song = echo_core::domain::ids::SongId::new();
+        let (_, host_mutation) = publish_test_song(&host, binding, host_song, 1, None, vec![]);
+        let checkpoint = Arc::new(ObservePullBeforePush {
+            replica: replica.clone(),
+            host_song,
+            observed: AtomicBool::new(false),
+        });
+        let peer_device = DeviceId::from_uuid(replica.current_device_id().as_uuid());
+        host.authorize_sync_peer(binding, peer_device, "Test peer".into(), "test-only".into())
+            .unwrap();
+        let token = "temporary-loopback-test-token-123456789";
+        let api = HostApiState::new(
+            binding,
+            vec![PeerCredential {
+                device_id: peer_device,
+                bearer_token: token.as_bytes().to_vec(),
+            }],
+            host.clone(),
+            checkpoint.clone(),
+        )
+        .unwrap()
+        .with_authorization(host.clone())
+        .with_snapshots(host.clone())
+        .with_resources(Arc::new(
+            FileResourceStore::new(
+                directory
+                    .path()
+                    .canonicalize()
+                    .unwrap()
+                    .join("host-resources"),
+            )
+            .unwrap(),
+        ));
+        let certificate = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+        let certificate_der = certificate.cert.der().to_vec();
+        let tls = tls13_server_config(
+            vec![CertificateDer::from(certificate_der.clone())],
+            PrivatePkcs8KeyDer::from(certificate.key_pair.serialize_der()).into(),
+        )
+        .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = Url::parse(&format!("https://{}/", listener.local_addr().unwrap())).unwrap();
+        let server = tokio::spawn(echo_sync::server::serve_tls(
+            listener,
+            tls,
+            echo_sync::server::host_router(api),
+        ));
+        let peer = ProvisionedPeer {
+            binding,
+            address: endpoint.to_string(),
+            client: LanClient::new(&certificate_der, token.into()).unwrap(),
+            host_device_id: DeviceId::from_uuid(host.current_device_id().as_uuid()),
+        };
+        let registry = RootRegistry::new();
+        registry.register(root, directory.path().join("peer"));
+        let publication = RemoteResourcePublishDeps {
+            fs: Arc::new(RootConstrainedFileSystem::new(registry.clone())),
+            hasher: Arc::new(Blake3ContentHasher::new(registry)),
+            journal: replica.clone(),
+        };
+        let provisioner = NativeSyncProvisioner::new(
+            replica.clone(),
+            directory.path().join("private"),
+            publication,
+        );
+        let resources = Arc::new(
+            FileResourceStore::new(directory.path().canonicalize().unwrap().join("resources"))
+                .unwrap(),
+        );
+        Self {
+            directory,
+            host,
+            replica,
+            root,
+            host_root,
+            host_song,
+            host_mutation,
+            provisioner,
+            peer,
+            endpoint,
+            resources,
+            checkpoint,
+            server,
+        }
+    }
+}
+
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn native_merge_pulls_host_before_uploading_and_preserves_local_song() {
+    use echo_core::domain::entities::Song;
+    use echo_core::domain::ids::{RelativeMediaPath, Revision, SongId};
+    let fixture = LanMergeFixture::new().await;
+    let local_song = SongId::new();
+    let mut song = Song::new(
+        local_song,
+        fixture.root,
+        RelativeMediaPath::new("media/local.flac").unwrap(),
+        Revision::INITIAL,
+    );
+    let bytes = b"keep local audio";
+    song.apply_scan_facts(
+        blake3::hash(bytes).to_hex().to_string(),
+        bytes.len() as u64,
+        1,
+        echo_core::domain::media::AudioFormat::Flac,
+    );
+    SongRepository::upsert(fixture.replica.as_ref(), &song).unwrap();
+    let sentinel = fixture.directory.path().join("peer/media/local.flac");
+    std::fs::write(&sentinel, b"keep local audio").unwrap();
+
+    fixture
+        .replica
+        .ensure_replica_sync_baseline(fixture.peer.binding, fixture.root)
+        .unwrap();
+    for manifest in fixture
+        .replica
+        .local_sync_resource_manifests(fixture.root)
+        .unwrap()
+    {
+        fixture
+            .resources
+            .import_reader(
+                DeviceId::from_uuid(fixture.replica.current_device_id().as_uuid()),
+                &PrepareResource {
+                    binding: fixture.peer.binding,
+                    resource: ResourceRefDto::from(&manifest),
+                },
+                &mut std::io::Cursor::new(bytes),
+            )
+            .unwrap();
+    }
+    fixture
+        .provisioner
+        .merge_peer_library(
+            &fixture.peer,
+            &fixture.endpoint,
+            &fixture.resources,
+            fixture.root,
+        )
+        .await
+        .unwrap();
+
+    assert!(fixture.checkpoint.observed.load(Ordering::Relaxed));
+    for (database, root) in [
+        (&fixture.host, fixture.host_root),
+        (&fixture.replica, fixture.root),
+    ] {
+        let ids = database
+            .all_in_root(root)
+            .unwrap()
+            .iter()
+            .map(echo_core::domain::entities::Song::id)
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(
+            ids,
+            std::collections::HashSet::from([fixture.host_song, local_song])
+        );
+    }
+    assert!(
+        fixture
+            .replica
+            .pending_local_mutations(512)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(std::fs::read(&sentinel).unwrap(), b"keep local audio");
+    let host_resources = FileResourceStore::new(
+        fixture
+            .directory
+            .path()
+            .canonicalize()
+            .unwrap()
+            .join("host-resources"),
+    )
+    .unwrap();
+    assert_eq!(
+        host_resources
+            .download(
+                fixture.peer.binding,
+                blake3::hash(bytes).to_hex().as_ref(),
+                0,
+                bytes.len()
+            )
+            .unwrap()
+            .bytes,
+        bytes
+    );
+    fixture
+        .provisioner
+        .merge_peer_library(
+            &fixture.peer,
+            &fixture.endpoint,
+            &fixture.resources,
+            fixture.root,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        fixture.host.all_in_root(fixture.host_root).unwrap().len(),
+        2
+    );
+    assert_eq!(std::fs::read(sentinel).unwrap(), b"keep local audio");
+}
+
+#[tokio::test]
+async fn native_pull_drains_more_than_one_commit_page_without_losing_local_work() {
+    use echo_core::domain::entities::Song;
+    use echo_core::domain::ids::{RelativeMediaPath, Revision, SongId};
+    let fixture = LanMergeFixture::new().await;
+    let local_song = SongId::new();
+    SongRepository::upsert(
+        fixture.replica.as_ref(),
+        &Song::new(
+            local_song,
+            fixture.root,
+            RelativeMediaPath::new("media/local.flac").unwrap(),
+            Revision::INITIAL,
+        ),
+    )
+    .unwrap();
+    let queued = fixture.replica.pending_local_mutations(512).unwrap();
+    let mut previous = fixture.host_mutation;
+    let mut last = None;
+    for sequence in 2..=513 {
+        let (checkpoint, mutation) = publish_test_song(
+            &fixture.host,
+            fixture.peer.binding,
+            SongId::new(),
+            sequence,
+            Some(previous),
+            vec![],
+        );
+        previous = mutation;
+        last = Some(checkpoint);
+    }
+    let queue = ScopedLocalQueue {
+        database: fixture.replica.as_ref(),
+        root: fixture.root,
+    };
+    fixture
+        .provisioner
+        .pull_host_changes(&fixture.peer, &fixture.endpoint, &queue, &fixture.resources)
+        .await
+        .unwrap();
+    assert_eq!(
+        queue
+            .replica_checkpoint(fixture.peer.host_device_id)
+            .unwrap(),
+        last.unwrap()
+    );
+    assert_eq!(
+        fixture.replica.all_in_root(fixture.root).unwrap().len(),
+        514
+    );
+    assert_eq!(
+        fixture.replica.pending_local_mutations(512).unwrap(),
+        queued
+    );
+}
+
+#[tokio::test]
+#[ignore = "real LAN host rate limit makes 513 uploads take several minutes"]
+async fn native_merge_drains_more_than_512_local_additions() {
+    use echo_core::application::ports::PlaylistRepository;
+    use echo_core::domain::ids::PlaylistId;
+    let fixture = LanMergeFixture::new().await;
+    // Pair an empty replica first, then add more than one upload page locally.
+    fixture
+        .replica
+        .ensure_replica_sync_baseline(fixture.peer.binding, fixture.root)
+        .unwrap();
+    for index in 0..513 {
+        PlaylistRepository::create(
+            fixture.replica.as_ref(),
+            PlaylistId::new(),
+            fixture.root,
+            &format!("Local playlist {index}"),
+        )
+        .unwrap();
+    }
+    fixture
+        .replica
+        .ensure_replica_sync_baseline(fixture.peer.binding, fixture.root)
+        .unwrap();
+    assert_eq!(
+        fixture.replica.pending_local_mutations(512).unwrap().len(),
+        512
+    );
+    fixture
+        .provisioner
+        .merge_peer_library(
+            &fixture.peer,
+            &fixture.endpoint,
+            &fixture.resources,
+            fixture.root,
+        )
+        .await
+        .unwrap();
+    assert!(
+        fixture
+            .replica
+            .pending_local_mutations(512)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        fixture.host.all_in_root(fixture.host_root).unwrap().len(),
+        1
+    );
+    assert!(fixture.checkpoint.observed.load(Ordering::Relaxed));
+    assert_eq!(
+        PlaylistRepository::list(fixture.host.as_ref(), fixture.host_root)
+            .unwrap()
+            .len(),
+        513
+    );
+    assert_eq!(
+        PlaylistRepository::list(fixture.replica.as_ref(), fixture.root)
+            .unwrap()
+            .len(),
+        513
+    );
+}
+
+#[tokio::test]
+async fn native_enrollment_persists_host_manifests_before_downloading_audio() {
+    use echo_core::domain::ids::SongId;
+    let fixture = LanMergeFixture::new().await;
+    let song = SongId::new();
+    let manifest = SharedResourceManifest::new(
+        SharedResourceKind::Audio,
+        ResourceDigest::from_bytes(*blake3::hash(b"not seeded on host").as_bytes()),
+        18,
+        "audio/flac".into(),
+        &format!("media/{song}.flac"),
+    )
+    .unwrap();
+    publish_test_song(
+        &fixture.host,
+        fixture.peer.binding,
+        song,
+        2,
+        Some(fixture.host_mutation),
+        vec![manifest.clone()],
+    );
+
+    // The host resource store deliberately lacks these bytes. Catalog enrollment
+    // must finish first so a later media transfer can resume from durable state.
+    fixture
+        .provisioner
+        .enroll_peer_snapshot(&fixture.peer, &fixture.endpoint)
+        .await
+        .unwrap();
+
+    assert!(
+        fixture
+            .replica
+            .replica_enrollment_complete(fixture.peer.host_device_id)
+            .unwrap()
+    );
+    let sets = fixture
+        .replica
+        .pending_remote_resource_sets(fixture.root)
+        .unwrap();
+    assert_eq!(sets.len(), 1);
+    assert_eq!(sets[0].0, ObjectKey::Song(song));
+    assert_eq!(sets[0].1[0].manifest, manifest);
+    assert!(
+        fixture
+            .resources
+            .verify_complete(fixture.peer.binding, &ResourceRefDto::from(&manifest))
+            .is_err()
     );
 }

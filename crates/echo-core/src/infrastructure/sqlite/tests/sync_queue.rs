@@ -213,3 +213,36 @@ fn conflicting_resource_metadata_rolls_back_the_previous_object_declarations() {
         vec![resource]
     );
 }
+
+#[test]
+fn queued_request_body_stays_identical_when_local_audio_goes_missing() {
+    use crate::domain::entities::SongAvailability;
+    use crate::domain::sync::{ResourceDigest, SharedResourceKind, SharedResourceManifest};
+
+    let (_directory, database, root) = database();
+    let id = SongId::new();
+    let resource = SharedResourceManifest::new(
+        SharedResourceKind::Audio,
+        ResourceDigest::from_bytes([7; 32]),
+        17,
+        "audio/flac".into(),
+        "song.flac",
+    )
+    .unwrap();
+    database
+        .set_local_sync_resources(ObjectKey::Song(id), vec![resource])
+        .unwrap();
+    let song = Song::new(
+        id,
+        root,
+        RelativeMediaPath::new("song.flac").unwrap(),
+        Revision::INITIAL,
+    );
+    SongRepository::upsert(&database, &song).unwrap();
+    let before = serde_json::to_string(&database.pending_local_mutations(100).unwrap()).unwrap();
+    SongRepository::set_availability(&database, id, SongAvailability::Missing).unwrap();
+    assert_eq!(
+        serde_json::to_string(&database.pending_local_mutations(100).unwrap()).unwrap(),
+        before
+    );
+}

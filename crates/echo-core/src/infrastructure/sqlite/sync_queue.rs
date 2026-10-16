@@ -9,7 +9,7 @@ use crate::application::ports::LocalSyncQueuePort;
 use crate::domain::ids::{PlaylistId, PlaylistItemId, SongId};
 use crate::domain::sync::{
     CommitCheckpoint, CommitSeq, DeviceId, MutationCandidate, MutationId, ObjectKey, ObjectVersion,
-    SharedResourceKind, SyncBinding,
+    SyncBinding,
 };
 use crate::error::{Error, Subject};
 
@@ -97,7 +97,7 @@ impl LocalSyncQueuePort for SqliteDatabase {
                 .map_err(storage)?;
             let mut statement = connection
                 .prepare(
-                    "SELECT m.mutation_id, m.origin_seq, m.previous_mutation_id, m.object_type, m.object_uuid, m.base_object_version, m.payload_json, m.resource_refs_json, (SELECT s.availability FROM songs s WHERE s.uuid=m.object_uuid AND s.library_root_uuid=m.local_root_uuid AND m.object_type='song') FROM sync_mutations m WHERE m.origin_device_id=?1 AND m.local_root_uuid=(SELECT local_root_uuid FROM sync_active_context WHERE singleton=1) AND m.status='pending' ORDER BY m.origin_seq LIMIT ?2",
+                    "SELECT m.mutation_id, m.origin_seq, m.previous_mutation_id, m.object_type, m.object_uuid, m.base_object_version, m.payload_json, m.resource_refs_json FROM sync_mutations m WHERE m.origin_device_id=?1 AND m.local_root_uuid=(SELECT local_root_uuid FROM sync_active_context WHERE singleton=1) AND m.status='pending' ORDER BY m.origin_seq LIMIT ?2",
                 )
                 .map_err(storage)?;
             let rows = statement
@@ -111,7 +111,6 @@ impl LocalSyncQueuePort for SqliteDatabase {
                         row.get::<_, Option<i64>>(5)?,
                         row.get::<_, String>(6)?,
                         row.get::<_, String>(7)?,
-                        row.get::<_, Option<String>>(8)?,
                     ))
                 })
                 .map_err(storage)?;
@@ -125,7 +124,6 @@ impl LocalSyncQueuePort for SqliteDatabase {
                     base,
                     payload,
                     resources,
-                    song_availability,
                 ) = row.map_err(storage)?;
                 let parse_uuid = |value: &str, field: &'static str| {
                     Uuid::parse_str(value).map_err(|_| {
@@ -164,14 +162,11 @@ impl LocalSyncQueuePort for SqliteDatabase {
                             .map_err(storage)
                     })
                     .transpose()?;
-                let mut resource_refs: Vec<crate::domain::sync::SharedResourceManifest> =
+                let resource_refs: Vec<crate::domain::sync::SharedResourceManifest> =
                     serde_json::from_str(&resources).map_err(storage)?;
-                if kind == "song" && song_availability.as_deref() != Some("available") {
-                    // A song with missing local bytes is still a valid catalog
-                    // fact. Keep its metadata/path/hash, but don't advertise an
-                    // audio resource that this device cannot actually provide.
-                    resource_refs.retain(|resource| resource.kind != SharedResourceKind::Audio);
-                }
+                // These declarations are part of the mutation's immutable
+                // body. Availability may change after a request or ACK loss;
+                // retrying must still submit the exact original resource set.
                 Ok(MutationCandidate {
                     resource_refs,
                     mutation_id: MutationId::from_uuid(parse_uuid(

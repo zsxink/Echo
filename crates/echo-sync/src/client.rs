@@ -5,12 +5,12 @@ use std::time::Duration;
 use crate::pairing::{PairingBootstrapResponse, PairingCodeRequest};
 
 use crate::protocol::{
-    commit_digest, validate_mutation, validate_resource, validate_snapshot_page, CommitPageDto,
-    MutationAck, MutationDto, ProtocolError, SnapshotPageDto, MAX_COMMIT_BYTES, MAX_PAGE_SIZE,
-    MAX_SYNC_PAGE_BYTES,
+    CommitPageDto, MAX_COMMIT_BYTES, MAX_PAGE_SIZE, MAX_SYNC_PAGE_BYTES, MutationAck, MutationDto,
+    ProtocolError, SnapshotPageDto, commit_digest, validate_mutation, validate_resource,
+    validate_snapshot_page,
 };
 use crate::resource_transfer::{
-    PrepareResource, ResourceTransferPort, TransferProgress, MAX_RESOURCE_BYTES,
+    MAX_RESOURCE_BYTES, PrepareResource, ResourceTransferPort, TransferProgress,
 };
 use echo_core::application::ports::{
     AppliedRemoteCursor, AppliedSnapshotPage, HostSnapshotRecord, RemoteApplyPort, RemoteCommit,
@@ -177,14 +177,13 @@ impl LanClient {
         url.set_path(&path);
         url.set_query(None);
         url.set_fragment(None);
-        let response = self
-            .http
-            .post(url)
-            .bearer_auth(&self.bearer_token)
-            .json(mutation)
-            .send()
-            .await
-            .map_err(ClientError::Transport)?;
+        let response = send_sync_request(
+            self.http
+                .post(url)
+                .bearer_auth(&self.bearer_token)
+                .json(mutation),
+        )
+        .await?;
         if !response.status().is_success() {
             return Err(ClientError::HostRejected(response.status()));
         }
@@ -222,13 +221,8 @@ impl LanClient {
             .append_pair("after", &after.to_string())
             .append_pair("previous_digest", &hex_digest(&previous_digest))
             .append_pair("limit", &limit.to_string());
-        let response = self
-            .http
-            .get(url)
-            .bearer_auth(&self.bearer_token)
-            .send()
-            .await
-            .map_err(ClientError::Transport)?;
+        let response =
+            send_sync_request(self.http.get(url).bearer_auth(&self.bearer_token)).await?;
         if !response.status().is_success() {
             return Err(ClientError::HostRejected(response.status()));
         }
@@ -259,13 +253,8 @@ impl LanClient {
         url.set_fragment(None);
         url.query_pairs_mut()
             .append_pair("limit", &page_size.to_string());
-        let response = self
-            .http
-            .post(url)
-            .bearer_auth(&self.bearer_token)
-            .send()
-            .await
-            .map_err(ClientError::Transport)?;
+        let response =
+            send_sync_request(self.http.post(url).bearer_auth(&self.bearer_token)).await?;
         if !response.status().is_success() {
             return Err(ClientError::HostRejected(response.status()));
         }
@@ -303,13 +292,8 @@ impl LanClient {
         url.query_pairs_mut()
             .append_pair("token", snapshot_token)
             .append_pair("page", &page_index.to_string());
-        let response = self
-            .http
-            .get(url)
-            .bearer_auth(&self.bearer_token)
-            .send()
-            .await
-            .map_err(ClientError::Transport)?;
+        let response =
+            send_sync_request(self.http.get(url).bearer_auth(&self.bearer_token)).await?;
         if !response.status().is_success() {
             return Err(ClientError::HostRejected(response.status()));
         }
@@ -335,15 +319,14 @@ impl LanClient {
             return Err(ClientError::InvalidResponseBody);
         }
         let url = resource_url(endpoint, "/v1/resources/prepare")?;
-        let response = self
-            .http
-            .post(url)
-            .bearer_auth(&self.bearer_token)
-            .header("x-echo-binding", binding_header(request.binding)?)
-            .json(request)
-            .send()
-            .await
-            .map_err(ClientError::Transport)?;
+        let response = send_sync_request(
+            self.http
+                .post(url)
+                .bearer_auth(&self.bearer_token)
+                .header("x-echo-binding", binding_header(request.binding)?)
+                .json(request),
+        )
+        .await?;
         let progress = resource_progress(response).await?;
         validate_transfer_progress(&progress, &request.resource)?;
         Ok(progress)
@@ -377,16 +360,15 @@ impl LanClient {
             endpoint,
             &format!("/v1/resources/{}/chunks/{index}", progress.upload_id),
         )?;
-        let response = self
-            .http
-            .put(url)
-            .bearer_auth(&self.bearer_token)
-            .header("x-echo-binding", binding_header(binding)?)
-            .header("x-echo-chunk-hash", hash)
-            .body(bytes)
-            .send()
-            .await
-            .map_err(ClientError::Transport)?;
+        let response = send_sync_request(
+            self.http
+                .put(url)
+                .bearer_auth(&self.bearer_token)
+                .header("x-echo-binding", binding_header(binding)?)
+                .header("x-echo-chunk-hash", hash)
+                .body(bytes),
+        )
+        .await?;
         let updated = resource_progress(response).await?;
         validate_transfer_progress(&updated, &progress.resource)?;
         if updated.upload_id != progress.upload_id
@@ -412,14 +394,13 @@ impl LanClient {
             endpoint,
             &format!("/v1/resources/{}/complete", progress.upload_id),
         )?;
-        let response = self
-            .http
-            .post(url)
-            .bearer_auth(&self.bearer_token)
-            .header("x-echo-binding", binding_header(binding)?)
-            .send()
-            .await
-            .map_err(ClientError::Transport)?;
+        let response = send_sync_request(
+            self.http
+                .post(url)
+                .bearer_auth(&self.bearer_token)
+                .header("x-echo-binding", binding_header(binding)?),
+        )
+        .await?;
         let updated = resource_progress(response).await?;
         validate_transfer_progress(&updated, &progress.resource)?;
         if updated.upload_id != progress.upload_id || !updated.complete {
@@ -455,16 +436,15 @@ impl LanClient {
             endpoint,
             &format!("/v1/resources/{}", resource.content_hash),
         )?;
-        let mut response = self
-            .http
-            .get(url)
-            .bearer_auth(&self.bearer_token)
-            .header("x-echo-binding", binding_header(binding)?)
-            .header("if-match", format!("\"{}\"", resource.content_hash))
-            .header("range", format!("bytes={offset}-{}", offset + length - 1))
-            .send()
-            .await
-            .map_err(ClientError::Transport)?;
+        let mut response = send_sync_request(
+            self.http
+                .get(url)
+                .bearer_auth(&self.bearer_token)
+                .header("x-echo-binding", binding_header(binding)?)
+                .header("if-match", format!("\"{}\"", resource.content_hash))
+                .header("range", format!("bytes={offset}-{}", offset + length - 1)),
+        )
+        .await?;
         if response.status() != StatusCode::PARTIAL_CONTENT {
             return Err(ClientError::HostRejected(response.status()));
         }
@@ -660,6 +640,89 @@ fn resource_url(endpoint: &Url, path: &str) -> Result<Url, ClientError> {
 
 fn binding_header(binding: echo_core::domain::sync::SyncBinding) -> Result<String, ClientError> {
     serde_json::to_string(&binding).map_err(|_| ClientError::InvalidResponseBody)
+}
+
+// Sync operations carry stable mutation IDs, snapshot tokens or chunk identities.
+// Retry explicit throttling only; pairing and transport failures are not replayed.
+async fn send_sync_request(
+    request: reqwest::RequestBuilder,
+) -> Result<reqwest::Response, ClientError> {
+    send_sync_request_with_delay(request, Duration::from_secs(60)).await
+}
+
+async fn send_sync_request_with_delay(
+    request: reqwest::RequestBuilder,
+    delay: Duration,
+) -> Result<reqwest::Response, ClientError> {
+    for attempt in 0..=2 {
+        let next = request
+            .try_clone()
+            .ok_or(ClientError::InvalidResponseBody)?;
+        let response = next.send().await.map_err(ClientError::Transport)?;
+        if response.status() != reqwest::StatusCode::TOO_MANY_REQUESTS || attempt == 2 {
+            return Ok(response);
+        }
+        // The host uses a fixed 60-second device window. Dropping the enclosing
+        // sync future on pause/stop also cancels this asynchronous wait.
+        drop(response);
+        tokio::time::sleep(delay).await;
+    }
+    unreachable!("bounded request retries always return a response")
+}
+
+#[cfg(all(test, feature = "server"))]
+mod throttling_tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    #[tokio::test]
+    async fn throttled_sync_replays_identical_body_and_bounds_retries() {
+        for (failures, failure_status, expected_attempts, final_status) in [
+            (1, StatusCode::TOO_MANY_REQUESTS, 2, StatusCode::OK),
+            (
+                5,
+                StatusCode::TOO_MANY_REQUESTS,
+                3,
+                StatusCode::TOO_MANY_REQUESTS,
+            ),
+            (1, StatusCode::FORBIDDEN, 1, StatusCode::FORBIDDEN),
+        ] {
+            let bodies = Arc::new(Mutex::new(Vec::new()));
+            let received = Arc::clone(&bodies);
+            let app = axum::Router::new().route(
+                "/",
+                axum::routing::post(move |body: String| {
+                    let received = Arc::clone(&received);
+                    async move {
+                        let mut bodies = received.lock().unwrap();
+                        bodies.push(body);
+                        if bodies.len() <= failures {
+                            failure_status
+                        } else {
+                            StatusCode::OK
+                        }
+                    }
+                }),
+            );
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+            let response = send_sync_request_with_delay(
+                Client::new()
+                    .post(format!("http://{address}/"))
+                    .body("frozen-mutation-and-chunk"),
+                Duration::from_millis(1),
+            )
+            .await
+            .unwrap();
+            assert_eq!(response.status(), final_status);
+            assert_eq!(
+                *bodies.lock().unwrap(),
+                vec!["frozen-mutation-and-chunk"; expected_attempts]
+            );
+            server.abort();
+        }
+    }
 }
 
 async fn resource_progress(response: reqwest::Response) -> Result<TransferProgress, ClientError> {

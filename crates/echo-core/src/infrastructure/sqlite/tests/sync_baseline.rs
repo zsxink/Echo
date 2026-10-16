@@ -236,3 +236,50 @@ fn baseline_keeps_pending_tombstones_and_excludes_another_root() {
         .unwrap()
         .is_empty());
 }
+
+#[test]
+fn host_baseline_confirmation_preserves_the_existing_playable_catalog() {
+    use crate::application::ports::HostCommitLedgerPort;
+
+    let (_directory, database, root) = database();
+    let mut originals = Vec::new();
+    for (path, hash) in [("local/one.flac", 'a'), ("local/two.flac", 'b')] {
+        let mut imported = song(root, path, "Title", "Artist");
+        imported.apply_scan_facts(
+            hash.to_string().repeat(64),
+            17,
+            123,
+            crate::domain::media::AudioFormat::Flac,
+        );
+        SongRepository::upsert(&database, &imported).unwrap();
+        SongRepository::set_favorite(&database, imported.id(), true).unwrap();
+        originals.push(imported);
+    }
+    let binding = binding();
+    database.bind_sync_library(binding, true, root).unwrap();
+    database.ensure_host_sync_baseline(binding, root).unwrap();
+    for mutation in database.pending_local_mutations(100).unwrap() {
+        let staged = database.stage_confirmation(binding, &mutation).unwrap();
+        database
+            .mark_published(staged.checkpoint.expect("local mutation accepted"))
+            .unwrap();
+    }
+    assert!(database.pending_local_mutations(100).unwrap().is_empty());
+    assert_eq!(
+        database
+            .query_active_songs("", SongSort::default(), None, 100)
+            .unwrap()
+            .items
+            .len(),
+        originals.len()
+    );
+    for original in originals {
+        let actual = SongRepository::by_id(&database, original.id())
+            .unwrap()
+            .unwrap();
+        assert_eq!(actual.availability(), SongAvailability::Available);
+        assert_eq!(actual.path(), original.path());
+        assert_eq!(actual.file_mtime_ns(), Some(123));
+        assert!(actual.favorite());
+    }
+}

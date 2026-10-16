@@ -28,7 +28,7 @@ use echo_sync::pairing::{
     PendingPairingRequest,
 };
 use echo_sync::protocol::ResourceRefDto;
-use echo_sync::protocol::{CommitPageDto, MAX_RESOURCE_CHUNK_BYTES, SnapshotPageDto};
+use echo_sync::protocol::{CommitPageDto, MAX_RESOURCE_CHUNK_BYTES};
 use echo_sync::resource_transfer::{FileResourceStore, PrepareResource, ResourceTransferPort};
 use echo_sync::server::{HostApiState, PeerCredential, tls13_server_config};
 use reqwest::Url;
@@ -44,14 +44,16 @@ mod remote_apply;
 use remote_apply::*;
 #[path = "sync_provisioner/enrollment.rs"]
 mod enrollment;
+use enrollment::prepare_enrollment_root;
 #[cfg(test)]
 use enrollment::{
     EMPTY_LIBRARY_STAGING_MARKER, is_empty_enrollment_root, prepare_empty_enrollment_root,
 };
-use enrollment::prepare_enrollment_root;
 #[path = "sync_provisioner/resource_publication.rs"]
 mod resource_publication;
 use resource_publication::publish_remote_resource_set;
+#[path = "sync_provisioner/lazy_host_resources.rs"]
+mod lazy_host_resources;
 #[cfg(test)]
 #[path = "sync_provisioner/tests.rs"]
 mod tests;
@@ -291,13 +293,7 @@ impl NativeSyncProvisioner {
         library: &LibraryRoot,
         binding: SyncBinding,
     ) -> Result<Arc<FileResourceStore>, SyncRuntimeError> {
-        let directory = self
-            .private_resources
-            .join(binding.library_id.as_uuid().to_string());
-        std::fs::create_dir_all(&directory).map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-        let resources = Arc::new(
-            FileResourceStore::new(directory).map_err(|_| SyncRuntimeError::LibraryUnavailable)?,
-        );
+        let resources = self.local_resource_store(binding)?;
         // Existing local resources are part of the enrollment baseline. Keep
         // seeding them so the first snapshot cannot silently discard local work.
         let manifests = self
@@ -312,6 +308,19 @@ impl NativeSyncProvisioner {
             &manifests,
         )?;
         Ok(resources)
+    }
+
+    fn local_resource_store(
+        &self,
+        binding: SyncBinding,
+    ) -> Result<Arc<FileResourceStore>, SyncRuntimeError> {
+        let directory = self
+            .private_resources
+            .join(binding.library_id.as_uuid().to_string());
+        std::fs::create_dir_all(&directory).map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        FileResourceStore::new(directory)
+            .map(Arc::new)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)
     }
 }
 
@@ -349,11 +358,17 @@ impl SyncProvisioner for NativeSyncProvisioner {
                 bearer_token: token.expose().to_vec(),
             });
         }
-        let resources = self.seed_local_resources(&library, identity.binding)?;
-        // No mutation is advertised before all frozen audio references have
-        // immutable, verified bytes available from the native resource store.
+        // Open the private cache without reading every local audio file.
+        // Resources are materialized and hash-verified on their first read.
+        let resources = self.local_resource_store(identity.binding)?;
         self.confirm_local(identity.binding)?;
         self.publish_cached_peer_resources(root, identity.binding, &resources)?;
+        let host_resources = Arc::new(lazy_host_resources::LazyHostResources::new(
+            Arc::clone(&self.database),
+            library.clone(),
+            identity.binding,
+            Arc::clone(&resources),
+        ));
         let api = HostApiState::new(
             identity.binding,
             credentials,
@@ -363,7 +378,7 @@ impl SyncProvisioner for NativeSyncProvisioner {
         .map_err(|_| SyncRuntimeError::Unconfigured)?
         .with_authorization(self.database.clone())
         .with_snapshots(self.database.clone())
-        .with_resources(resources)
+        .with_resources(host_resources)
         .with_pairing(
             Arc::new(PairingRegistry::new(identity.binding)),
             Arc::new(DurableHostPairing::new(self.database.clone())),
@@ -458,7 +473,7 @@ impl SyncProvisioner for NativeSyncProvisioner {
         if cancelled.load(Ordering::Acquire) {
             return Err(SyncRuntimeError::Busy);
         }
-        let resources = self.seed_local_resources(&library, configuration.binding)?;
+        let resources = self.local_resource_store(configuration.binding)?;
         self.confirm_local(configuration.binding)?;
         self.publish_cached_peer_resources(
             configuration.local_root,
@@ -672,28 +687,68 @@ impl NativeSyncProvisioner {
                 biased;
                 () = wait_for_sync_cancel(Arc::clone(cancelled)) => Err(SyncRuntimeError::Busy),
                 result = async {
-                    self.enroll_peer_snapshot(&peer, &endpoint, resources.clone()).await?;
-                    self.upload_pending_resources(&peer, &endpoint, resources.as_ref(), root).await?;
-                    let queue = ScopedLocalQueue { database: self.database.as_ref(), root };
-                    self.prepared_incremental_cycle(&peer, &endpoint, &queue, &resources).await?;
-                self.publish_remote_resources(&peer, &endpoint, root, &resources).await?;
-                    Ok(())
+                    self.merge_peer_library(&peer, &endpoint, &resources, root).await
                 } => result,
             }
         })
     }
 
-    async fn prepared_incremental_cycle(
+    async fn merge_peer_library(
+        &self,
+        peer: &ProvisionedPeer,
+        endpoint: &Url,
+        resources: &Arc<FileResourceStore>,
+        root: LibraryRootId,
+    ) -> Result<(), SyncRuntimeError> {
+        self.enroll_peer_snapshot(peer, endpoint).await?;
+        let queue = ScopedLocalQueue {
+            database: self.database.as_ref(),
+            root,
+        };
+        loop {
+            // Merge the complete host history before publishing local additions.
+            self.pull_host_changes(peer, endpoint, &queue, resources)
+                .await?;
+            self.publish_remote_resources(peer, endpoint, root, resources)
+                .await?;
+            self.upload_pending_resources(peer, endpoint, resources.as_ref(), root)
+                .await?;
+            let before = queue
+                .replica_checkpoint(peer.host_device_id)
+                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+            self.prepared_incremental_cycle(peer, endpoint, &queue, resources)
+                .await?;
+            self.publish_remote_resources(peer, endpoint, root, resources)
+                .await?;
+            if queue
+                .pending_local_mutations(1)
+                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+                .is_empty()
+            {
+                self.pull_host_changes(peer, endpoint, &queue, resources)
+                    .await?;
+                self.publish_remote_resources(peer, endpoint, root, resources)
+                    .await?;
+                break;
+            }
+            let after = queue
+                .replica_checkpoint(peer.host_device_id)
+                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+            if after == before {
+                return Err(SyncRuntimeError::Busy);
+            }
+        }
+        Ok(())
+    }
+
+    async fn pull_host_changes(
         &self,
         peer: &ProvisionedPeer,
         endpoint: &Url,
         queue: &ScopedLocalQueue<'_>,
         resources: &Arc<FileResourceStore>,
     ) -> Result<(), SyncRuntimeError> {
-        // A push can append accepted commits after the first prefetch. Retry
-        // that exact anchor with the idempotent queue, after preparing the new
-        // complete page; never apply a different unprepared range.
-        for _ in 0..3 {
+        loop {
             let checkpoint = queue
                 .replica_checkpoint(peer.host_device_id)
                 .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
@@ -710,6 +765,7 @@ impl NativeSyncProvisioner {
             if page.binding != peer.binding {
                 return Err(SyncRuntimeError::LibraryUnavailable);
             }
+            let finished = page.entries.is_empty();
             let owner = DeviceId::from_uuid(self.database.current_device_id().as_uuid());
             for resource in page
                 .entries
@@ -734,35 +790,93 @@ impl NativeSyncProvisioner {
                 host: peer.host_device_id,
                 page,
                 resources: resources.as_ref(),
-                changed: std::sync::atomic::AtomicBool::new(false),
+                changed: AtomicBool::new(false),
             };
-            let result = echo_sync::replica::synchronize_once(
-                &peer.client,
-                endpoint,
-                peer.binding,
-                peer.host_device_id,
-                queue,
-                &prepared,
-                512,
-            )
-            .await;
-            if let Err(error) = result {
-                if !prepared.changed.load(std::sync::atomic::Ordering::Relaxed) {
-                    return Err(match error {
-                        echo_sync::replica::ReplicaSyncError::Client(error) => {
-                            map_sync_client_error(error)
-                        }
-                        echo_sync::replica::ReplicaSyncError::Core(_) => {
-                            SyncRuntimeError::LibraryUnavailable
-                        }
-                        _ => SyncRuntimeError::SyncProtocolFailed,
-                    });
-                }
-            } else {
+            LanClient::apply_commit_page(&prepared.page, peer.host_device_id, &prepared)
+                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+            if finished {
                 return Ok(());
             }
         }
-        Err(SyncRuntimeError::Busy)
+    }
+
+    async fn prepared_incremental_cycle(
+        &self,
+        peer: &ProvisionedPeer,
+        endpoint: &Url,
+        queue: &ScopedLocalQueue<'_>,
+        resources: &Arc<FileResourceStore>,
+    ) -> Result<(), SyncRuntimeError> {
+        // A push can append commits after prefetch. Prepare the changed page
+        // before applying it, then acknowledge accepted local queue entries.
+        let checkpoint = queue
+            .replica_checkpoint(peer.host_device_id)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        let page = peer
+            .client
+            .pull_commits(
+                endpoint,
+                checkpoint.sequence.as_u64(),
+                checkpoint.digest,
+                512,
+            )
+            .await
+            .map_err(map_sync_client_error)?;
+        if page.binding != peer.binding {
+            return Err(SyncRuntimeError::LibraryUnavailable);
+        }
+        let owner = DeviceId::from_uuid(self.database.current_device_id().as_uuid());
+        for resource in page
+            .entries
+            .iter()
+            .flat_map(|entry| &entry.commit.resource_refs)
+        {
+            peer.client
+                .download_resource(
+                    endpoint,
+                    owner,
+                    &PrepareResource {
+                        binding: peer.binding,
+                        resource: resource.clone(),
+                    },
+                    resources.clone(),
+                )
+                .await
+                .map_err(map_sync_client_error)?;
+        }
+        let prepared = PreparedRemoteApply {
+            database: self.database.as_ref(),
+            host: peer.host_device_id,
+            page,
+            resources: resources.as_ref(),
+            changed: std::sync::atomic::AtomicBool::new(false),
+        };
+        let result = echo_sync::replica::synchronize_once(
+            &peer.client,
+            endpoint,
+            peer.binding,
+            peer.host_device_id,
+            queue,
+            &prepared,
+            512,
+        )
+        .await;
+        match result {
+            Ok(_) => Ok(()),
+            Err(_) if prepared.changed.load(Ordering::Relaxed) => {
+                // Apply newly accepted commits before selecting another push
+                // batch, so accepted local mutations are not uploaded twice.
+                self.pull_host_changes(peer, endpoint, queue, resources)
+                    .await
+            }
+            Err(error) => Err(match error {
+                echo_sync::replica::ReplicaSyncError::Client(error) => map_sync_client_error(error),
+                echo_sync::replica::ReplicaSyncError::Core(_) => {
+                    SyncRuntimeError::LibraryUnavailable
+                }
+                _ => SyncRuntimeError::SyncProtocolFailed,
+            }),
+        }
     }
 
     fn publish_cached_peer_resources(
@@ -813,7 +927,7 @@ impl NativeSyncProvisioner {
                         resources.clone(),
                     )
                     .await
-                    .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+                    .map_err(map_sync_client_error)?;
             }
             let deps = self.publication.clone();
             let store = Arc::clone(resources);
@@ -831,7 +945,6 @@ impl NativeSyncProvisioner {
         &self,
         peer: &ProvisionedPeer,
         endpoint: &Url,
-        resources: Arc<FileResourceStore>,
     ) -> Result<(), SyncRuntimeError> {
         self.clear_legacy_replica_media_archive_intent()?;
         if self
@@ -851,7 +964,10 @@ impl NativeSyncProvisioner {
                 .pull_snapshot_page(endpoint, &token, index)
                 .await
             {
-                Err(ClientError::HostRejected(reqwest::StatusCode::CONFLICT)) => {
+                Err(ClientError::HostRejected(status))
+                    if status == reqwest::StatusCode::CONFLICT
+                        || status == reqwest::StatusCode::GONE =>
+                {
                     // The host no longer retains this frozen session. Drop
                     // only its incomplete local staging; confirmed state and
                     // durable local edits are never reset by enrollment retry.
@@ -870,8 +986,9 @@ impl NativeSyncProvisioner {
             if page.checkpoint.binding != peer.binding {
                 return Err(SyncRuntimeError::LibraryUnavailable);
             }
-            self.cache_snapshot_resources(peer, endpoint, &page, resources.clone())
-                .await?;
+            // Stage catalog pages before downloading audio: the frozen host
+            // snapshot expires after 15 minutes, while media transfer can take
+            // longer. Publication downloads from the durable merged manifests.
             let applied =
                 LanClient::apply_snapshot_page(&page, peer.host_device_id, self.database.as_ref())
                     .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
@@ -912,27 +1029,6 @@ impl NativeSyncProvisioner {
         self.database
             .complete_replica_media_archive(root, token)
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)
-    }
-
-    async fn cache_snapshot_resources(
-        &self,
-        peer: &ProvisionedPeer,
-        endpoint: &Url,
-        page: &SnapshotPageDto,
-        resources: Arc<FileResourceStore>,
-    ) -> Result<(), SyncRuntimeError> {
-        let owner = DeviceId::from_uuid(self.database.current_device_id().as_uuid());
-        for resource in page.objects.iter().flat_map(|object| &object.resources) {
-            let request = PrepareResource {
-                binding: peer.binding,
-                resource: resource.clone(),
-            };
-            peer.client
-                .download_resource(endpoint, owner, &request, resources.clone())
-                .await
-                .map_err(map_sync_client_error)?;
-        }
-        Ok(())
     }
 
     async fn upload_pending_resources(

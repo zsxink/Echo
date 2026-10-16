@@ -260,7 +260,7 @@ fn rejects_nonempty_pending_wrong_role_version_and_oversized_pages() {
     )];
     assert!(db.apply_snapshot_page(peer, &value).is_err());
     let connection = Connection::open(db.path()).unwrap();
-    connection.execute("INSERT INTO sync_outbox(object_type,object_uuid,revision,operation,payload_json,created_at) VALUES('song','local',1,'upsert','{}',1)",[]).unwrap();
+    connection.execute("INSERT INTO sync_outbox(object_type,object_uuid,revision,operation,payload_json,created_at,local_root_uuid) VALUES('song','local',1,'upsert','{}',1,?1)",params![db.current_sync_configuration().unwrap().unwrap().local_root.to_string()]).unwrap();
     assert!(db.apply_snapshot_page(peer, &page(binding)).is_err());
     assert_eq!(count(&db, "sync_replica_snapshot_sessions"), 0);
 }
@@ -373,4 +373,247 @@ fn final_deleted_song_excludes_cross_page_playlist_member() {
         Ok(())
     })
     .unwrap();
+}
+
+#[test]
+fn initial_snapshot_merges_local_only_songs_and_keeps_deduplicated_audio_playable() {
+    use crate::application::ports::LocalSyncQueuePort;
+
+    let (_directory, db, root) = database();
+    let binding = SyncBinding {
+        library_id: LibraryId::new(),
+        authority_id: AuthorityId::new(),
+        epoch: Epoch::INITIAL,
+    };
+    let mut local = song(root, "local/shared.flac", "Shared", "Artist");
+    local.apply_scan_facts(
+        "a".repeat(64),
+        17,
+        123,
+        crate::domain::media::AudioFormat::Flac,
+    );
+    SongRepository::upsert(&db, &local).unwrap();
+    SongRepository::set_favorite(&db, local.id(), true).unwrap();
+    let mut local_only = song(root, "local/only.flac", "Only", "Artist");
+    local_only.apply_scan_facts(
+        "b".repeat(64),
+        18,
+        124,
+        crate::domain::media::AudioFormat::Flac,
+    );
+    SongRepository::upsert(&db, &local_only).unwrap();
+    let local_only_before = SongRepository::by_id(&db, local_only.id())
+        .unwrap()
+        .unwrap();
+    db.bind_sync_replica_for_enrollment(binding, root).unwrap();
+    db.ensure_replica_sync_baseline(binding, root).unwrap();
+    let before = serde_json::to_string(&db.pending_local_mutations(100).unwrap()).unwrap();
+    let canonical = SongId::new();
+    let host_only = SongId::new();
+    let mut snapshot = page(binding);
+    snapshot.records = vec![
+        object(
+            ObjectKey::Song(canonical),
+            serde_json::json!({"song_uuid":canonical,"relative_path":"host/shared.flac","blake3_hash":"a".repeat(64),"file_size":17,"format":"flac","title":"Host shared","added_at":77}),
+        ),
+        song_record(host_only),
+        HostSnapshotRecord::SongAlias {
+            alias: local.id(),
+            canonical,
+        },
+    ];
+    db.apply_snapshot_page(DeviceId::new(), &snapshot).unwrap();
+    let actual = SongRepository::by_id(&db, canonical).unwrap().unwrap();
+    assert_eq!(actual.availability(), SongAvailability::Available);
+    assert_eq!(actual.path(), local.path());
+    assert!(actual.favorite());
+    assert_eq!(
+        SongRepository::by_id(&db, local_only.id())
+            .unwrap()
+            .unwrap(),
+        local_only_before
+    );
+    assert_eq!(
+        db.query_active_songs("", SongSort::default(), None, 100)
+            .unwrap()
+            .items
+            .len(),
+        2
+    );
+    assert_eq!(
+        SongRepository::by_id(&db, host_only)
+            .unwrap()
+            .unwrap()
+            .availability(),
+        SongAvailability::Missing
+    );
+    assert_eq!(
+        serde_json::to_string(&db.pending_local_mutations(100).unwrap()).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn initial_snapshot_keeps_different_audio_at_the_same_path_and_publishes_both() {
+    use crate::application::remote_resources::{PublishRemoteResources, RemoteResourcePublishDeps};
+    use crate::infrastructure::filesystem::{
+        Blake3ContentHasher, RootConstrainedFileSystem, RootRegistry,
+    };
+
+    let (directory, db, root) = database();
+    let library_path = directory.path().join("library");
+    std::fs::create_dir_all(library_path.join("media")).unwrap();
+    std::fs::write(library_path.join("media/song.flac"), b"peer bytes").unwrap();
+    let mut local = song(root, "media/song.flac", "Peer", "Artist");
+    local.apply_scan_facts(
+        blake3::hash(b"peer bytes").to_hex().to_string(),
+        10,
+        123,
+        crate::domain::media::AudioFormat::Flac,
+    );
+    SongRepository::upsert(&db, &local).unwrap();
+    let binding = SyncBinding {
+        library_id: LibraryId::new(),
+        authority_id: AuthorityId::new(),
+        epoch: Epoch::INITIAL,
+    };
+    db.bind_sync_replica_for_enrollment(binding, root).unwrap();
+    db.ensure_replica_sync_baseline(binding, root).unwrap();
+    let host_song = SongId::new();
+    let manifest = SharedResourceManifest::new(
+        SharedResourceKind::Audio,
+        ResourceDigest::from_bytes(*blake3::hash(b"host bytes").as_bytes()),
+        10,
+        "audio/flac".into(),
+        "media/song.flac",
+    )
+    .unwrap();
+    let mut record = object(
+        ObjectKey::Song(host_song),
+        serde_json::json!({"song_uuid":host_song,"relative_path":"media/song.flac","blake3_hash":manifest.digest.to_hex(),"file_size":10,"format":"flac","title":"Host","added_at":77}),
+    );
+    if let HostSnapshotRecord::Object {
+        candidate,
+        resources,
+        ..
+    } = &mut record
+    {
+        candidate.resource_refs.push(manifest.clone());
+        resources.push(manifest.clone());
+    }
+    let mut snapshot = page(binding);
+    snapshot.records.push(record);
+    db.apply_snapshot_page(DeviceId::new(), &snapshot).unwrap();
+    assert!(SongRepository::by_id(&db, host_song).unwrap().is_some());
+    let db = Arc::new(db);
+    let registry = RootRegistry::new();
+    registry.register(root, &library_path);
+    let publisher = PublishRemoteResources::new(RemoteResourcePublishDeps {
+        fs: Arc::new(RootConstrainedFileSystem::new(registry.clone())),
+        hasher: Arc::new(Blake3ContentHasher::new(registry)),
+        journal: db.clone(),
+    });
+    let targets = db
+        .pending_remote_resource_sets(root)
+        .unwrap()
+        .into_iter()
+        .find(|(object, _)| *object == ObjectKey::Song(host_song))
+        .unwrap()
+        .1;
+    let operation = OperationId::new();
+    publisher
+        .prepare(root, operation, ObjectKey::Song(host_song), targets)
+        .unwrap();
+    publisher
+        .stage(root, operation, 0, &mut std::io::Cursor::new(b"host bytes"))
+        .unwrap();
+    assert!(publisher.resume(root, operation).unwrap().media_ready);
+    let host_local = SongRepository::by_id(db.as_ref(), host_song)
+        .unwrap()
+        .unwrap();
+    assert_eq!(host_local.availability(), SongAvailability::Available);
+    assert_eq!(
+        std::fs::read(library_path.join(host_local.path().normalized())).unwrap(),
+        b"host bytes"
+    );
+    assert_eq!(
+        std::fs::read(library_path.join("media/song.flac")).unwrap(),
+        b"peer bytes"
+    );
+    assert_eq!(
+        SongRepository::by_id(db.as_ref(), local.id())
+            .unwrap()
+            .unwrap()
+            .path(),
+        local.path()
+    );
+    assert_eq!(
+        db.query_active_songs("", SongSort::default(), None, 100)
+            .unwrap()
+            .items
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn snapshot_keeps_same_name_distinct_playlists_and_their_own_members() {
+    let (_directory, db, root) = database();
+    let local_song = song(root, "local.flac", "Local", "Artist");
+    SongRepository::upsert(&db, &local_song).unwrap();
+    let local_playlist = PlaylistId::new();
+    let local_name = "Ａ".repeat(40);
+    db.create(local_playlist, root, &local_name).unwrap();
+    db.add_member(local_playlist, local_song.id(), 0).unwrap();
+    let local_members = db.members(local_playlist).unwrap();
+    let binding = SyncBinding {
+        library_id: LibraryId::new(),
+        authority_id: AuthorityId::new(),
+        epoch: Epoch::INITIAL,
+    };
+    db.bind_sync_replica_for_enrollment(binding, root).unwrap();
+    let imported_song = SongId::new();
+    let imported_playlist = PlaylistId::new();
+    let imported_member = PlaylistItemId::new();
+    let mut snapshot = page(binding);
+    snapshot.records = vec![
+        song_record(imported_song),
+        object(
+            ObjectKey::Playlist(imported_playlist),
+            serde_json::json!({"playlist_uuid":imported_playlist,"display_name":"a".repeat(40),"created_at":77,"members":[{"song_uuid":imported_song,"member_uuid":imported_member,"position":0,"added_at":78}]}),
+        ),
+    ];
+    db.apply_snapshot_page(DeviceId::new(), &snapshot).unwrap();
+    assert_eq!(db.list(root).unwrap().len(), 2);
+    assert_eq!(
+        db.name(local_playlist).unwrap().as_deref(),
+        Some(local_name.as_str())
+    );
+    assert_eq!(db.members(local_playlist).unwrap(), local_members);
+    let imported_name = db.name(imported_playlist).unwrap().unwrap();
+    assert_ne!(
+        crate::domain::text::playlist_name_key(&imported_name),
+        crate::domain::text::playlist_name_key(&local_name)
+    );
+    crate::domain::text::validate_playlist_name(&imported_name).unwrap();
+    assert!(imported_name.ends_with(&format!(" ({})", &imported_playlist.to_string()[..8])));
+    let imported_members = db.members(imported_playlist).unwrap();
+    assert_eq!(imported_members.len(), 1);
+    assert_eq!(imported_members[0].song(), imported_song);
+    assert_eq!(imported_members[0].id(), imported_member);
+    // Replaying the confirmed base keeps the same suffix and membership IDs.
+    let imported_payload = serde_json::json!({"playlist_uuid":imported_playlist,"display_name":"a".repeat(40),"created_at":77,"members":[{"song_uuid":imported_song,"member_uuid":imported_member,"position":0,"added_at":78}]});
+    db.writer
+        .run(move |connection| {
+            super::super::sync_projection::project_confirmed_song_state(
+                connection,
+                "playlist",
+                &imported_playlist.to_string(),
+                &imported_payload,
+                Some(&root.to_string()),
+            )
+        })
+        .unwrap();
+    assert_eq!(db.name(imported_playlist).unwrap(), Some(imported_name));
+    assert_eq!(db.members(imported_playlist).unwrap(), imported_members);
 }

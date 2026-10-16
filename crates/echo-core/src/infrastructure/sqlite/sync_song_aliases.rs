@@ -122,13 +122,56 @@ pub(super) fn persist(
             "finally deleted song cannot become an alias",
         ));
     }
+    // Capture the physical location before releasing the alias's path. The
+    // canonical host path can be completely different on this device.
+    let local_audio: Option<(String, String)> = connection.query_row(
+        "SELECT s.relative_path,s.normalized_relative_path FROM songs s JOIN sync_object_versions v ON v.object_type='song' AND v.object_uuid=?2 AND v.is_tombstone=0 WHERE s.uuid=?1 AND s.availability='available' AND s.blake3_hash IS NOT NULL AND s.blake3_hash=json_extract(v.payload_json,'$.blake3_hash') AND NOT EXISTS(SELECT 1 FROM sync_local_delete_intents i WHERE i.object_type='song' AND i.object_uuid=s.uuid AND i.state='open')",
+        params![alias, canonical], |row| Ok((row.get(0)?,row.get(1)?)),
+    ).optional().map_err(storage)?;
     connection.execute("INSERT OR IGNORE INTO sync_song_aliases(alias_song_uuid,canonical_song_uuid,commit_seq) VALUES(?1,?2,?3)",params![alias,canonical,sequence]).map_err(storage)?;
     // Keep the old row for immutable queued requests and operation/resource
     // recovery, but remove it from catalog views and release its path identity.
     connection.execute("UPDATE songs SET availability='pending_delete',relative_path=?2,normalized_relative_path=?2 WHERE uuid=?1",params![alias,format!(".echo-sync-alias/{alias}")]).map_err(storage)?;
+    if let Some((path, normalized_path)) = local_audio {
+        preserve_local_audio(connection, alias, canonical, &path, &normalized_path)?;
+    }
     connection
         .execute("DELETE FROM song_search WHERE song_uuid=?1", params![alias])
         .map_err(storage)?;
+    Ok(())
+}
+
+fn preserve_local_audio(
+    connection: &Connection,
+    alias: &str,
+    canonical: &str,
+    path: &str,
+    normalized_path: &str,
+) -> Result<(), Error> {
+    // Only the read model changes identity: immutable host payloads, manifests,
+    // queued requests and the alias row remain available for recovery. A local
+    // playable canonical or an undoable deletion always keeps its own state.
+    connection.execute(
+        "INSERT INTO songs(uuid,library_root_uuid,relative_path,normalized_relative_path,blake3_hash,file_size,file_mtime_ns,format,title,artist,album,title_sort,artist_sort,album_sort,duration_ms,is_favorite,play_count,added_at,availability,revision,parse_error,created_at,updated_at,cover_hash,bitrate_bps,sample_rate_hz,channels,bits_per_sample,hlc_wall_secs,hlc_counter,favorited_at)
+         SELECT ?2,library_root_uuid,?3,?4,blake3_hash,file_size,file_mtime_ns,format,title,artist,album,title_sort,artist_sort,album_sort,duration_ms,is_favorite,play_count,added_at,'available',revision,parse_error,created_at,updated_at,cover_hash,bitrate_bps,sample_rate_hz,channels,bits_per_sample,hlc_wall_secs,hlc_counter,favorited_at FROM songs WHERE uuid=?1
+         ON CONFLICT(uuid) DO UPDATE SET relative_path=excluded.relative_path,normalized_relative_path=excluded.normalized_relative_path,file_size=excluded.file_size,file_mtime_ns=excluded.file_mtime_ns,format=excluded.format,availability='available',cover_hash=COALESCE(songs.cover_hash,excluded.cover_hash),bitrate_bps=excluded.bitrate_bps,sample_rate_hz=excluded.sample_rate_hz,channels=excluded.channels,bits_per_sample=excluded.bits_per_sample
+         WHERE songs.library_root_uuid=excluded.library_root_uuid AND songs.availability='missing' AND songs.blake3_hash=excluded.blake3_hash AND NOT EXISTS(SELECT 1 FROM sync_local_delete_intents WHERE object_type='song' AND object_uuid=?2 AND state='open')",
+        params![alias, canonical, path, normalized_path],
+    ).map_err(storage)?;
+    connection.execute(
+        "INSERT OR IGNORE INTO song_lyrics(song_uuid,source,text_kind,raw_text,timed_lines_json,source_mtime_ns,parse_error,updated_at) SELECT ?2,source,text_kind,raw_text,timed_lines_json,source_mtime_ns,parse_error,updated_at FROM song_lyrics WHERE song_uuid=?1",
+        params![alias, canonical],
+    ).map_err(storage)?;
+    // The canonical may have been created from the local row while its song
+    // mutation is still pending. Index it here because pending overlays can
+    // intentionally defer the regular confirmed-song projector.
+    connection
+        .execute(
+            "DELETE FROM song_search WHERE song_uuid=?1",
+            params![canonical],
+        )
+        .map_err(storage)?;
+    connection.execute("INSERT INTO song_search(title,artist,album,song_uuid) SELECT COALESCE(title,''),COALESCE(artist,''),COALESCE(album,''),uuid FROM songs WHERE uuid=?1",params![canonical]).map_err(storage)?;
     Ok(())
 }
 

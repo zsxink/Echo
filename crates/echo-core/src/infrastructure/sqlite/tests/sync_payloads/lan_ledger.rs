@@ -624,6 +624,10 @@ fn local_revision_highwater_survives_outbox_cleanup() {
     let directory = tempfile::tempdir().expect("temp dir");
     let mut direct = open_writer(&directory.path().join("highwater.db")).expect("connection");
     apply_migrations(&mut direct).expect("migrations");
+    direct.execute_batch(
+        "INSERT INTO library_roots(uuid,absolute_path,normalized_path_key,created_at,updated_at) VALUES('root-1','/tmp/highwater-library','/tmp/highwater-library',1,1);
+         INSERT INTO songs(uuid,library_root_uuid,relative_path,normalized_relative_path,added_at,created_at,updated_at) VALUES('song-1','root-1','song.flac','song.flac',1,1,1);",
+    ).expect("local object ownership");
     let first = super::sync::enqueue_sync(&direct, "song", "song-1", "{}", "upsert").unwrap();
     let second =
         super::sync::enqueue_sync(&direct, "song", "song-1", "{\"v\":2}", "upsert").unwrap();

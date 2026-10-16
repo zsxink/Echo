@@ -323,6 +323,67 @@ fn alias_confirmation_preserves_pending_queue_bytes_and_effective_favorite() {
 }
 
 #[test]
+fn alias_confirmation_keeps_the_replicas_available_local_audio() {
+    let (_host_directory, host, root) = database();
+    let (_replica_directory, replica, replica_root) = database();
+    let binding = SyncBinding {
+        library_id: LibraryId::new(),
+        authority_id: AuthorityId::new(),
+        epoch: Epoch::INITIAL,
+    };
+    host.bind_sync_library(binding, true, root).unwrap();
+    replica
+        .bind_sync_library(binding, false, replica_root)
+        .unwrap();
+    let host_device = DeviceId::from_uuid(host.current_device_id().as_uuid());
+    let replica_device = DeviceId::from_uuid(replica.current_device_id().as_uuid());
+    authorize_peer(&host, binding, replica_device);
+    let canonical = SongId::new();
+    let first = candidate(host_device, canonical, "Host");
+    confirm(&host, binding, &first);
+
+    let mut local = song(replica_root, "local/audio.flac", "Local", "Artist");
+    local.apply_scan_facts(
+        "a".repeat(64),
+        17,
+        123,
+        crate::domain::media::AudioFormat::Flac,
+    );
+    SongRepository::upsert(&replica, &local).unwrap();
+    SongRepository::set_favorite(&replica, local.id(), true).unwrap();
+    let pending = replica.pending_local_mutations(100).unwrap();
+    confirm(&host, binding, &pending[0]);
+    let queued_favorite = serde_json::to_string(&pending[1]).unwrap();
+    apply_all(&host, &replica, binding);
+
+    let merged = SongRepository::by_id(&replica, canonical).unwrap().unwrap();
+    assert_eq!(merged.availability(), SongAvailability::Available);
+    assert_eq!(merged.path().display(), "local/audio.flac");
+    assert_eq!(merged.file_mtime_ns(), Some(123));
+    assert!(merged.favorite());
+    assert_eq!(
+        replica
+            .query_active_songs("", SongSort::default(), None, 100)
+            .unwrap()
+            .items
+            .len(),
+        1
+    );
+    assert_eq!(
+        serde_json::to_string(&replica.pending_local_mutations(100).unwrap()[0]).unwrap(),
+        queued_favorite
+    );
+    assert_eq!(
+        SongRepository::by_id(&host, canonical)
+            .unwrap()
+            .unwrap()
+            .path()
+            .display(),
+        "Host.flac"
+    );
+}
+
+#[test]
 fn duplicate_audio_keeps_differing_sidecars_as_durable_alias_evidence() {
     use crate::domain::sync::{ResourceDigest, SharedResourceKind, SharedResourceManifest};
     let (_directory, host, root) = database();

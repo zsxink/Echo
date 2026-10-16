@@ -494,6 +494,19 @@ fn finish_snapshot(
         Ok(())
     })?;
     validate_aliases(connection)?;
+    // Resolve existing local aliases before song projection, so deduplication
+    // can retain their playable media and release any colliding local path.
+    visit_records(connection, &page.snapshot_token, |record| {
+        if let HostSnapshotRecord::SongAlias { alias, canonical } = record {
+            super::super::sync_song_aliases::persist(
+                connection,
+                &alias.to_string(),
+                &canonical.to_string(),
+                i64::try_from(page.checkpoint.sequence.as_u64()).map_err(storage)?,
+            )?;
+        }
+        Ok(())
+    })?;
     // Song projection replays waiting playlist/favorite/stat bases. Because all
     // versions already exist, deleted songs/members are excluded consistently.
     visit_records(connection, &page.snapshot_token, |record| {
@@ -520,6 +533,16 @@ fn finish_snapshot(
                     Some(root),
                 )?;
             }
+        }
+        Ok(())
+    })?;
+    visit_records(connection, &page.snapshot_token, |record| {
+        if let HostSnapshotRecord::SongAlias { alias, canonical } = record {
+            super::super::sync_song_aliases::project(
+                connection,
+                &alias.to_string(),
+                &canonical.to_string(),
+            )?;
         }
         Ok(())
     })
