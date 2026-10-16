@@ -134,6 +134,26 @@ fn apply_remote_commit(
     sequence: i64,
 ) -> Result<(), Error> {
     let (object_type, object_uuid) = object_identity(commit.object);
+    let previously_shared: bool = tx
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sync_object_versions WHERE object_type=?1 AND object_uuid=?2)",
+            params![object_type, object_uuid],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    let local_object_exists = if commit.is_tombstone {
+        local_root_uuid
+            .map(|root| local_projection_exists(tx, object_type, &object_uuid, root))
+            .transpose()?
+            .unwrap_or(false)
+    } else {
+        false
+    };
+    // A remote delete must not erase an independent local object that has
+    // never been part of this replica's confirmed history. Keep the tombstone
+    // in the sync ledger and advance the cursor, but leave the local-first
+    // projection available for conflict resolution.
+    let preserve_local_object = commit.is_tombstone && local_object_exists && !previously_shared;
     if !commit.is_tombstone && super::sync_projection::is_tombstoned(tx, object_type, &object_uuid)?
     {
         return Err(Error::conflict(
@@ -167,7 +187,9 @@ fn apply_remote_commit(
                 )
                 .map_err(storage)?;
     if commit.is_tombstone {
-        super::sync_projection::project_confirmed_tombstone(tx, object_type, &object_uuid)?;
+        if !preserve_local_object {
+            super::sync_projection::project_confirmed_tombstone(tx, object_type, &object_uuid)?;
+        }
     } else {
         let projection: serde_json::Value =
             serde_json::from_str(&commit.payload_json).map_err(storage)?;
@@ -185,6 +207,30 @@ fn apply_remote_commit(
                     params![commit.origin_device_id.as_uuid().to_string(), commit.mutation_id.as_uuid().to_string(), blake3::hash(commit.canonical_json.as_bytes()).to_hex().to_string(), sequence, now_ms()],
                 ).map_err(storage)?;
     Ok(())
+}
+
+fn local_projection_exists(
+    tx: &rusqlite::Transaction<'_>,
+    object_type: &str,
+    object_uuid: &str,
+    local_root_uuid: &str,
+) -> Result<bool, Error> {
+    let query = match object_type {
+        "song" | "favorite" | "override" | "play-stats" => {
+            "SELECT EXISTS(SELECT 1 FROM songs WHERE uuid=?1 AND library_root_uuid=?2)"
+        }
+        "playlist" => {
+            "SELECT EXISTS(SELECT 1 FROM playlists WHERE uuid=?1 AND library_root_uuid=?2)"
+        }
+        "playlist-item" => {
+            "SELECT EXISTS(SELECT 1 FROM playlist_songs m JOIN playlists p ON p.uuid=m.playlist_uuid WHERE m.member_uuid=?1 AND p.library_root_uuid=?2)"
+        }
+        _ => return Ok(false),
+    };
+    tx.query_row(query, params![object_uuid, local_root_uuid], |row| {
+        row.get(0)
+    })
+    .map_err(storage)
 }
 
 fn apply_commit_aliases(
