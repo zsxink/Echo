@@ -2,19 +2,22 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use std::collections::HashMap;
 
 /// Two-store enrollment preserves each request's credential generation. The
 /// OS slot is durable before authorization; failed SQL never grants access.
 pub(super) struct DurableHostPairing {
     database: Arc<SqliteDatabase>,
     gate: Mutex<()>,
+    reused_credentials: Mutex<HashMap<String, String>>,
 }
 
 impl DurableHostPairing {
-    pub(super) const fn new(database: Arc<SqliteDatabase>) -> Self {
+    pub(super) fn new(database: Arc<SqliteDatabase>) -> Self {
         Self {
             database,
             gate: Mutex::new(()),
+            reused_credentials: Mutex::new(HashMap::new()),
         }
     }
 
@@ -77,8 +80,22 @@ impl PairingPort for DurableHostPairing {
             .database
             .authorized_sync_peer_handles()
             .map_err(|_| provisioning_failure("authorized_peers_read"))?;
-        if peers.iter().any(|(device, _)| *device == request.device_id) {
-            return Err(PairingError::Unavailable);
+        if let Some((_, handle)) = peers
+            .iter()
+            .find(|(device, _)| *device == request.device_id)
+        {
+            // A previous pairing response may have been lost after the host
+            // committed authorization. Reuse that device's existing grant so
+            // retrying the valid one-use invitation does not strand the peer
+            // or rotate credentials underneath an already connected client.
+            let existing_handle = SecretHandle::new(handle.clone())
+                .map_err(|_| provisioning_failure("credential_handle"))?;
+            let grant = self.load(request, &existing_handle)?;
+            self.reused_credentials
+                .lock()
+                .map_err(|_| provisioning_failure("pairing_store_lock"))?
+                .insert(request.request_id.clone(), handle.clone());
+            return Ok(grant);
         }
         if peers.len() >= 32 {
             return Err(PairingError::Capacity);
@@ -121,6 +138,17 @@ impl PairingPort for DurableHostPairing {
             .gate
             .lock()
             .map_err(|_| provisioning_failure("pairing_store_lock"))?;
+        if self
+            .reused_credentials
+            .lock()
+            .map_err(|_| provisioning_failure("pairing_store_lock"))?
+            .remove(&request.request_id)
+            .is_some()
+        {
+            // This request borrowed an existing credential; compensation must
+            // never revoke or delete the prior authorization.
+            return Ok(());
+        }
         let handle = pairing_handle(request)?;
         let revoked = self
             .database
@@ -146,7 +174,27 @@ impl PairingPort for DurableHostPairing {
             .gate
             .lock()
             .map_err(|_| provisioning_failure("pairing_store_lock"))?;
-        self.load(request, &pairing_handle(request)?)
+        let reused = self
+            .reused_credentials
+            .lock()
+            .map_err(|_| provisioning_failure("pairing_store_lock"))?
+            .get(&request.request_id)
+            .cloned();
+        let was_reused = reused.is_some();
+        let handle = match reused {
+            Some(handle) => {
+                SecretHandle::new(handle).map_err(|_| provisioning_failure("credential_handle"))?
+            }
+            None => pairing_handle(request)?,
+        };
+        let grant = self.load(request, &handle);
+        if grant.is_ok() && was_reused {
+            self.reused_credentials
+                .lock()
+                .map_err(|_| provisioning_failure("pairing_store_lock"))?
+                .remove(&request.request_id);
+        }
+        grant
     }
 }
 

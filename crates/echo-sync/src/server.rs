@@ -224,21 +224,19 @@ impl HostApiState {
             .into_iter()
             .find(|request| request.request_id == request_id)
             .ok_or(PairingError::Unavailable)?;
-        {
+        let had_active_credential = {
             let credentials = self
                 .peer_credentials
                 .lock()
                 .map_err(|_| PairingError::Unavailable)?;
-            if credentials.len() >= 32 {
+            let device_already_active = credentials
+                .iter()
+                .any(|(device, _)| *device == request.device_id);
+            if !device_already_active && credentials.len() >= 32 {
                 return Err(PairingError::Capacity);
             }
-            if credentials
-                .iter()
-                .any(|(device, _)| *device == request.device_id)
-            {
-                return Err(pairing_provisioning_failure("duplicate_active_device"));
-            }
-        }
+            device_already_active
+        };
         let result = registry.approve(request_id, port.as_ref(), |grant| {
             if !self.active.load(Ordering::Acquire) {
                 return Err(PairingError::Unavailable);
@@ -259,10 +257,18 @@ impl HostApiState {
                 .peer_credentials
                 .lock()
                 .map_err(|_| PairingError::Unavailable)?;
-            if credentials
+            if let Some((_, active_hash)) = credentials
                 .iter()
-                .any(|(device, token)| *device == grant.device_id || *token == hash)
+                .find(|(device, _)| *device == grant.device_id)
             {
+                if *active_hash == hash {
+                    // Retried pairing reuses the same durable grant and is
+                    // idempotent for the live authentication set.
+                    return Ok(());
+                }
+                return Err(pairing_provisioning_failure("duplicate_active_credential"));
+            }
+            if credentials.iter().any(|(_, token)| *token == hash) {
                 return Err(pairing_provisioning_failure("duplicate_active_credential"));
             }
             if credentials.len() >= 32 {
@@ -272,7 +278,7 @@ impl HostApiState {
             drop(credentials);
             Ok(())
         });
-        if result.is_err() {
+        if result.is_err() && !had_active_credential {
             self.peer_credentials
                 .lock()
                 .map_err(|_| PairingError::Unavailable)?

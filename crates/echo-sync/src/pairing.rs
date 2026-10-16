@@ -85,10 +85,11 @@ pub struct PairingGrantDto {
 /// Desktop implementation must durably provision the OS vault credential and
 /// SQLite authorization before returning success; no default approval exists.
 pub trait PairingPort: Send + Sync {
-    /// Explicitly approve the named request and return its newly provisioned credential.
+    /// Approve the named request and return its provisioned or safely reused credential.
     ///
     /// # Errors
-    /// Fails closed when either durable store is unavailable or the peer already exists.
+    /// Fails closed when either durable store is unavailable. A valid retry for
+    /// an already-authorized device may return that device's existing grant.
     fn approve(&self, request: &PendingPairingRequest) -> Result<PairingGrantDto, PairingError>;
 
     /// Compensate only this request's newly provisioned credential generation.
