@@ -247,7 +247,7 @@ pub async fn request_sync_pairing(
                 device_id,
                 local_device_name(),
             ))
-            .map_err(|_| SyncRuntimeError::PairingFailed)?;
+            .map_err(map_pairing_client_error)?;
         worker_runtime.complete_peer_pairing(&pairing.invitation, endpoint.as_str(), &pairing.grant)
     })
     .await
@@ -261,6 +261,33 @@ pub async fn request_sync_pairing(
             let _ = app.emit("sync://status", runtime.report_error(failure));
             Err(error(failure))
         }
+    }
+}
+
+fn map_pairing_client_error(error: echo_sync::client::ClientError) -> SyncRuntimeError {
+    use echo_sync::client::ClientError;
+    use reqwest::StatusCode;
+
+    match error {
+        ClientError::HostRejected(StatusCode::NOT_FOUND) => SyncRuntimeError::PairingFailed,
+        ClientError::HostRejected(StatusCode::TOO_MANY_REQUESTS) => {
+            SyncRuntimeError::PairingRateLimited
+        }
+        ClientError::HostRejected(StatusCode::SERVICE_UNAVAILABLE) => {
+            SyncRuntimeError::PairingHostUnavailable
+        }
+        ClientError::HostRejected(_) => SyncRuntimeError::PairingRequestRejected,
+        ClientError::Transport(_) => SyncRuntimeError::PairingConnectionFailed,
+        ClientError::InvalidResponse(_) | ClientError::InvalidResponseBody => {
+            SyncRuntimeError::PairingProtocolFailed
+        }
+        ClientError::InvalidEndpoint | ClientError::InvalidTlsConfiguration(_) => {
+            SyncRuntimeError::PairingProtocolFailed
+        }
+        ClientError::InvalidMutation(_)
+        | ClientError::InvalidSnapshot(_)
+        | ClientError::InvalidCommitChain
+        | ClientError::RemoteApply(_) => SyncRuntimeError::PairingProtocolFailed,
     }
 }
 

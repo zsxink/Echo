@@ -32,6 +32,11 @@ pub enum SyncRuntimeError {
     BindFailed,
     DiscoveryFailed,
     PairingFailed,
+    PairingRequestRejected,
+    PairingRateLimited,
+    PairingHostUnavailable,
+    PairingConnectionFailed,
+    PairingProtocolFailed,
     WorkerFailed,
 }
 
@@ -45,6 +50,11 @@ impl SyncRuntimeError {
             Self::BindFailed => "sync.bindFailed",
             Self::DiscoveryFailed => "sync.discoveryFailed",
             Self::PairingFailed => "sync.pairingCodeInvalid",
+            Self::PairingRequestRejected => "sync.pairingRequestRejected",
+            Self::PairingRateLimited => "sync.pairingRateLimited",
+            Self::PairingHostUnavailable => "sync.pairingHostUnavailable",
+            Self::PairingConnectionFailed => "sync.pairingConnectionFailed",
+            Self::PairingProtocolFailed => "sync.pairingProtocolFailed",
             Self::WorkerFailed => "sync.workerFailed",
         }
     }

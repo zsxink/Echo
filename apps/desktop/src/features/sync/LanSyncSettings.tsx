@@ -452,6 +452,11 @@ function syncErrorText(key: string): string {
     "sync.discoveryFailed": "局域网主机发现失败。",
     "sync.pairingCodeInvalid":
       "无法加入主机，请检查 IP 和六位验证码是否正确、是否过期，以及主机是否正在运行。",
+    "sync.pairingRequestRejected": "主机拒绝了配对请求，请确认两端 Echo 构建兼容。",
+    "sync.pairingRateLimited": "主机暂时限制了配对请求，请稍后再试。",
+    "sync.pairingHostUnavailable": "主机当前无法完成配对，请检查主机同步服务和安全存储。",
+    "sync.pairingConnectionFailed": "配对期间与主机的网络或 TLS 连接失败。",
+    "sync.pairingProtocolFailed": "主机返回了无法识别的配对响应，请确认两端 Echo 构建兼容。",
     "sync.workerFailed": "同步服务遇到错误。",
     "sync.pairingPending": "配对正在处理中，请稍后重试。",
   };
