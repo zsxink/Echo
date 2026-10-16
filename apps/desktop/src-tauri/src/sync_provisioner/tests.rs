@@ -121,7 +121,7 @@ fn startup_refuses_restored_or_forked_history_before_repair() {
 }
 
 #[test]
-fn audio_seed_refuses_missing_or_replaced_frozen_bytes() {
+fn audio_seed_skips_missing_but_refuses_replaced_frozen_bytes() {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().join("library");
     std::fs::create_dir(&root).unwrap();
@@ -147,7 +147,7 @@ fn audio_seed_refuses_missing_or_replaced_frozen_bytes() {
             device,
             std::slice::from_ref(&resource)
         ),
-        Err(SyncRuntimeError::LibraryUnavailable)
+        Ok(())
     );
     std::fs::write(root.join("media/track.flac"), b"changed").unwrap();
     assert_eq!(

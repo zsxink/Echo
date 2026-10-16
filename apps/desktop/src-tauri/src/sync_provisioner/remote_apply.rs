@@ -240,8 +240,18 @@ pub(super) fn seed_audio_resources(
             // current library. Their previously verified cache is authoritative.
             continue;
         }
-        let path = authorized_source(library.absolute_path(), manifest.relative_path.as_str())?;
-        let mut source = File::open(path).map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        let Some(path) =
+            authorized_source(library.absolute_path(), manifest.relative_path.as_str())?
+        else {
+            // Missing local media does not make the library or its metadata
+            // unavailable. The song record can still sync without its bytes.
+            continue;
+        };
+        let mut source = match File::open(path) {
+            Ok(source) => source,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => return Err(SyncRuntimeError::LibraryUnavailable),
+        };
         let metadata = source
             .metadata()
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
@@ -255,7 +265,10 @@ pub(super) fn seed_audio_resources(
     Ok(())
 }
 
-pub(super) fn authorized_source(root: &Path, relative: &str) -> Result<PathBuf, SyncRuntimeError> {
+pub(super) fn authorized_source(
+    root: &Path,
+    relative: &str,
+) -> Result<Option<PathBuf>, SyncRuntimeError> {
     let root = root
         .canonicalize()
         .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
@@ -265,19 +278,24 @@ pub(super) fn authorized_source(root: &Path, relative: &str) -> Result<PathBuf, 
             return Err(SyncRuntimeError::LibraryUnavailable);
         };
         source.push(component);
-        let metadata =
-            std::fs::symlink_metadata(&source).map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        let metadata = match std::fs::symlink_metadata(&source) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(_) => return Err(SyncRuntimeError::LibraryUnavailable),
+        };
         if metadata.file_type().is_symlink() {
             return Err(SyncRuntimeError::LibraryUnavailable);
         }
     }
-    let source = source
-        .canonicalize()
-        .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+    let source = match source.canonicalize() {
+        Ok(source) => source,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(SyncRuntimeError::LibraryUnavailable),
+    };
     if source == root || !source.starts_with(&root) {
         return Err(SyncRuntimeError::LibraryUnavailable);
     }
-    Ok(source)
+    Ok(Some(source))
 }
 
 pub(super) fn validate_startup_head(
