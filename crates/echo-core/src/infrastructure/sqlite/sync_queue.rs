@@ -41,7 +41,7 @@ impl LocalSyncQueuePort for SqliteDatabase {
                 .map_err(storage)?;
             let mut statement = tx
                 .prepare(
-                    "SELECT mutation_id,origin_seq,previous_mutation_id FROM sync_mutations WHERE origin_device_id=?1 AND status='rejected' ORDER BY origin_seq",
+                    "SELECT mutation_id,origin_seq,previous_mutation_id FROM sync_mutations WHERE origin_device_id=?1 AND local_root_uuid=(SELECT local_root_uuid FROM sync_active_context WHERE singleton=1) AND status='rejected' ORDER BY origin_seq",
                 )
                 .map_err(storage)?;
             let rejected = statement
@@ -97,7 +97,7 @@ impl LocalSyncQueuePort for SqliteDatabase {
                 .map_err(storage)?;
             let mut statement = connection
                 .prepare(
-                    "SELECT mutation_id, origin_seq, previous_mutation_id, object_type, object_uuid, base_object_version, payload_json, resource_refs_json FROM sync_mutations WHERE origin_device_id=?1 AND status='pending' ORDER BY origin_seq LIMIT ?2",
+                    "SELECT mutation_id, origin_seq, previous_mutation_id, object_type, object_uuid, base_object_version, payload_json, resource_refs_json FROM sync_mutations WHERE origin_device_id=?1 AND local_root_uuid=(SELECT local_root_uuid FROM sync_active_context WHERE singleton=1) AND status='pending' ORDER BY origin_seq LIMIT ?2",
                 )
                 .map_err(storage)?;
             let rows = statement
@@ -201,14 +201,14 @@ impl LocalSyncQueuePort for SqliteDatabase {
                 .map_err(storage)?;
             let (origin_seq, previous_mutation_id): (i64, Option<String>) = tx
                 .query_row(
-                    "SELECT origin_seq,previous_mutation_id FROM sync_mutations WHERE origin_device_id=?1 AND mutation_id=?2 AND status='pending'",
+                    "SELECT origin_seq,previous_mutation_id FROM sync_mutations WHERE origin_device_id=?1 AND mutation_id=?2 AND local_root_uuid=(SELECT local_root_uuid FROM sync_active_context WHERE singleton=1) AND status='pending'",
                     params![local_device, mutation_id.as_uuid().to_string()],
                     |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .map_err(storage)?;
             let changed = tx
                 .execute(
-                    "UPDATE sync_mutations SET status='rejected', outcome_json=?3 WHERE origin_device_id=?1 AND mutation_id=?2 AND status='pending'",
+                    "UPDATE sync_mutations SET status='rejected', outcome_json=?3 WHERE origin_device_id=?1 AND mutation_id=?2 AND local_root_uuid=(SELECT local_root_uuid FROM sync_active_context WHERE singleton=1) AND status='pending'",
                     params![local_device, mutation_id.as_uuid().to_string(), outcome_json],
                 )
                 .map_err(storage)?;

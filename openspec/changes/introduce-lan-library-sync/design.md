@@ -184,6 +184,10 @@ React → generated IPC → echo-desktop runtime → Core application → Core d
 
 资料库 `echo/` 为持久对象真相源；SQLite 提供一致性运行视图和日志索引。主日志/inbox等协议账本在应用私有状态中持久化并有一致性备份。若只剩 portable 控制面可恢复库数据但丢失协议账本，不伪造连续游标：创建新的 epoch，重新配对并要求从设备完整对账，保留各端 pending 和冲突副本。首版不自动接纳旧 epoch 修改，导出/保留待恢复变更供后续显式处理，不承诺无账本恢复后透明续传。
 
+#### 7.2 同一应用内切换资料库
+
+应用 SQLite 可以同时管理多个本地资料库，因此同步上下文按本地 `library_root_uuid` 隔离；远端 `library_id` 仍表示同一份跨设备共享资料库。主机/从机绑定、设备、inbox、commit 序列/摘要链、对象版本、alias/conflict、peer cursor、快照和发布检查点作为当前权威账本，在 root 激活事务中归档旧 root 并恢复新 root；不存在历史上下文时初始化空账本。mutation/outbox 与 origin 序号及前驱链直接记录本地 root，写入事务通过当前活动 root 路由，队列和 enrollment 空库检查按 root 过滤。本地对象 UUID 假定全局唯一的 highwater、播放统计、删除意图与资源 manifest 保持全局。根切换先停止旧 root 会话，再在 SQLite 事务里提交活动 root 与账本切换，之后重启新 root 会话。迁移把现有单一账本及其未确认队列整体归属到原 `sync_binding.local_root_uuid`，不重编号既有事件、不重放历史 outbox、不清空队列，也不推断其它 root 的历史归属。
+
 #### 7.1 旧备份回退与日志分叉检测
 
 区分正常崩溃恢复与备份恢复。显式“恢复主库备份”入口停止会话、保留原库和各端候选，不论备份账本是否完整都创建新 epoch，并重新配对/建立基线；不提供把旧备份当普通启动的恢复操作说明。正常进程重启可以沿用 epoch，但必须在开放服务前校验库、账本与独立发布检查点。

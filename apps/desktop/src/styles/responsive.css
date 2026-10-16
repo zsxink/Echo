@@ -45,6 +45,11 @@
   .row-action::after { inset: -4px; }
 }
 @media (max-width: 760px) { .settings-dialog { align-items: end; padding: var(--space-4); } .settings-panel { width: 100%; max-height: min(740px, calc(100dvh - 32px)); } .settings-dialog-head { padding: calc(var(--space-5) * .8) calc(var(--space-4) * .8) calc(var(--space-4) * .8); } .settings-scroll { padding: calc(var(--space-4) * .8); } .settings-intro { margin-bottom: var(--space-5); } .settings-section { padding: calc(var(--space-5) * .8) calc(var(--space-4) * .8); } .setting-row { grid-template-columns: 1fr; align-items: stretch; gap: var(--space-4); } .setting-row .btn { width: 100%; } .storage-path { max-width: 100%; } .theme-choices { grid-template-columns: 1fr; } .setting-theme-option { min-height: 76px; flex-direction: row; align-items: center; } }
+
+@media (max-width: 520px) {
+  .lan-sync-host { grid-template-columns: minmax(0, 1fr); }
+  .lan-sync-host .btn { grid-column: 1; grid-row: auto; }
+}
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 1ms !important; animation-duration: 1ms !important; animation-iteration-count: 1 !important; } }
 /* Artwork colors inherit through the keyed track surface and the persistent
  * playback bar. Registered colors interpolate on their stable body ancestor. */

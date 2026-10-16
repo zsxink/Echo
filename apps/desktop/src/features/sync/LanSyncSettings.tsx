@@ -143,6 +143,22 @@ export function LanSyncSettings() {
 
   const active = status?.enabled === true;
   const paused = status?.state === "paused";
+  const hostMode = active ? status?.role === "host" : role === "host";
+  const ownHostAddress = (() => {
+    if (!hostMode || !status?.address) return null;
+    try {
+      const endpoint = new URL(status.address);
+      return { address: endpoint.hostname, port: Number(endpoint.port || 50826) };
+    } catch {
+      return null;
+    }
+  })();
+  const visibleHosts = hosts.filter(
+    (host) =>
+      !ownHostAddress ||
+      host.port !== ownHostAddress.port ||
+      !host.addresses.some((candidate) => candidate === ownHostAddress.address),
+  );
 
   useEffect(() => {
     let stopped = false;
@@ -199,9 +215,11 @@ export function LanSyncSettings() {
           ) : null}
         </div>
         <div className="setting-choices">
-          <button type="button" className="btn" onClick={() => void discover()} disabled={busy}>
-            搜索局域网主机
-          </button>
+          {!hostMode ? (
+            <button type="button" className="btn" onClick={() => void discover()} disabled={busy}>
+              搜索局域网主机
+            </button>
+          ) : null}
           {active ? (
             <button
               type="button"
@@ -241,40 +259,45 @@ export function LanSyncSettings() {
           </button>
         </div>
       ) : null}
-      <div className="setting-row">
-        <div className="storage-value">
-          <strong>已发现的主机</strong>
-          <span className="setting-help">搜索失败时，可直接输入主机 IP。</span>
+      {!hostMode ? (
+        <div className="setting-row lan-sync-discovered-row">
+          <div className="storage-value">
+            <strong>已发现的主机</strong>
+            <span className="setting-help">搜索失败时，可直接输入主机 IP。</span>
+          </div>
+          <ul aria-label="已发现的主机" data-testid="lan-sync-hosts" className="lan-sync-hosts">
+            {visibleHosts.length === 0 ? (
+              <li className="lan-sync-host-empty">尚未发现其他主机</li>
+            ) : (
+              visibleHosts.map((host) => (
+                <li className="lan-sync-host" key={`${host.name}-${host.port}`}>
+                  <span className="lan-sync-host-name">{host.name}</span>
+                  <span className="lan-sync-host-address">
+                    {host.addresses.join(", ")}:{host.port}
+                  </span>
+                  {host.addresses[0] ? (
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={busy}
+                      aria-label={`使用主机 ${host.name} 的地址`}
+                      onClick={() => {
+                        const hostAddress = [...host.addresses].sort(
+                          (left, right) => Number(left.includes(":")) - Number(right.includes(":")),
+                        )[0];
+                        setPeerAddress(hostAddress);
+                        setRole("peer");
+                      }}
+                    >
+                      使用此主机地址
+                    </button>
+                  ) : null}
+                </li>
+              ))
+            )}
+          </ul>
         </div>
-        <ul aria-label="已发现的主机" data-testid="lan-sync-hosts">
-          {hosts.length === 0 ? (
-            <li>尚未发现主机</li>
-          ) : (
-            hosts.map((host) => (
-              <li key={`${host.name}-${host.port}`}>
-                {host.name} · {host.addresses.join(", ")}:{host.port}{" "}
-                {host.addresses[0] ? (
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={busy}
-                    aria-label={`使用主机 ${host.name} 的地址`}
-                    onClick={() => {
-                      const hostAddress = [...host.addresses].sort(
-                        (left, right) => Number(left.includes(":")) - Number(right.includes(":")),
-                      )[0];
-                      setPeerAddress(hostAddress);
-                      setRole("peer");
-                    }}
-                  >
-                    使用此主机地址
-                  </button>
-                ) : null}
-              </li>
-            ))
-          )}
-        </ul>
-      </div>
+      ) : null}
       {!active ? (
         <>
           <div className="setting-row">

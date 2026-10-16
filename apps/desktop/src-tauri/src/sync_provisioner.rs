@@ -103,6 +103,9 @@ impl NativeSyncProvisioner {
     }
 
     fn host_identity(&self, root: LibraryRootId) -> Result<HostIdentity, SyncRuntimeError> {
+        self.database
+            .select_sync_context(root)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
         let configuration = self
             .database
             .current_sync_configuration()
@@ -217,6 +220,9 @@ impl NativeSyncProvisioner {
                 .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
             let batch_size = mutations.len();
             for mutation in mutations {
+                self.database
+                    .advance_rejected_local_mutations()
+                    .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
                 ensure_candidate_root(self.database.as_ref(), configuration.local_root, &mutation)?;
                 let outcome = confirm
                     .execute(binding, &mutation)
@@ -342,6 +348,9 @@ impl SyncProvisioner for NativeSyncProvisioner {
             .gate
             .lock()
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        self.database
+            .select_sync_context(root)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
         let configuration = self
             .database
             .current_sync_configuration()

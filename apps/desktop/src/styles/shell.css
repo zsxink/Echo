@@ -110,6 +110,13 @@
 .setting-choice { display: flex; align-items: center; gap: var(--space-2); color: var(--fg-2); font-size: var(--text-xs); cursor: pointer; }
 .setting-choice input { accent-color: var(--accent-strong); }
 .storage-value { min-width: 0; }
+.lan-sync-discovered-row { grid-template-columns: minmax(0, 1fr); align-items: start; }
+.lan-sync-hosts { display: grid; gap: var(--space-2); min-width: 0; margin: 0; padding: 0; list-style: none; }
+.lan-sync-host { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-2) var(--space-4); padding: var(--space-3); border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface); }
+.lan-sync-host-name { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.lan-sync-host-address { min-width: 0; color: var(--fg-2); font: 500 var(--text-xs)/1.4 var(--font-mono); overflow-wrap: anywhere; }
+.lan-sync-host-empty { padding: var(--space-3); color: var(--muted); border: 1px dashed var(--border); border-radius: var(--radius-md); }
+.lan-sync-host .btn { grid-column: 2; grid-row: 1 / span 2; white-space: nowrap; }
 .storage-path { max-width: 430px; overflow: hidden; color: var(--fg-2); font: 500 var(--text-xs)/1.45 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .storage-path.is-empty { color: var(--muted); font-family: var(--font-body); }
 .setting-note { display: flex; align-items: flex-start; gap: var(--space-2); margin: var(--space-4) 0 0; padding: calc(var(--space-2) * .8) calc(var(--space-3) * .8); border-radius: var(--radius-sm); background: var(--surface); color: var(--fg-2); font-size: var(--text-xs); }

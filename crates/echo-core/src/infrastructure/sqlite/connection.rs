@@ -42,6 +42,7 @@ mod migrations {
         include_str!("migrations/0015_budgeted_snapshot_pages.sql");
     pub const HOST_INITIAL_BASELINE: &str =
         include_str!("migrations/0017_host_initial_baseline.sql");
+    pub const ROOT_SYNC_CONTEXTS: &str = include_str!("migrations/0020_root_sync_contexts.sql");
     pub const REMOTE_RESOURCE_PUBLICATION: &str =
         include_str!("migrations/0018_remote_resource_publication.sql");
 }
@@ -108,6 +109,7 @@ pub(crate) fn apply_migrations(connection: &mut Connection) -> Result<(), Error>
             (16, migrations::MUTATION_RESOURCE_REFS),
             (17, migrations::HOST_INITIAL_BASELINE),
             (18, migrations::REMOTE_RESOURCE_PUBLICATION),
+            (20, migrations::ROOT_SYNC_CONTEXTS),
         ],
     )
 }
@@ -138,7 +140,11 @@ pub(crate) fn apply_migration_set(
             None => {}
         }
         let transaction = connection.transaction().map_err(storage)?;
-        transaction.execute_batch(script).map_err(storage)?;
+        if *version == 20 && *script == migrations::ROOT_SYNC_CONTEXTS {
+            apply_root_sync_contexts(&transaction, script)?;
+        } else {
+            transaction.execute_batch(script).map_err(storage)?;
+        }
         transaction
             .execute(
                 "INSERT INTO schema_migrations (version, checksum, applied_at) VALUES (?1, ?2, ?3)",
@@ -146,6 +152,87 @@ pub(crate) fn apply_migration_set(
             )
             .map_err(storage)?;
         transaction.commit().map_err(storage)?;
+    }
+    Ok(())
+}
+
+// Development databases already contain version 19's root-scoped local
+// queues. Preserve them byte for byte; version 18 needs the queue conversion.
+// The checksum remains that of the complete immutable version 20 script.
+fn apply_root_sync_contexts(connection: &Connection, script: &str) -> Result<(), Error> {
+    let legacy: Option<String> = connection
+        .query_row(
+            "SELECT checksum FROM schema_migrations WHERE version=19",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(storage)?;
+    if legacy.as_deref().is_some_and(|checksum| {
+        checksum != "60de0539e8220bb0ff740079b772a7853597bd68f540c711ef9fae3e3633f5c9"
+    }) {
+        return Err(Error::InvariantViolation {
+            why: "unrecognized historical migration 0019 checksum".to_owned(),
+        });
+    }
+    let (prefix, remainder) = script
+        .split_once("-- BEGIN ROOT QUEUE UPGRADE\n")
+        .ok_or_else(|| Error::InvariantViolation {
+            why: "missing root queue migration boundary".to_owned(),
+        })?;
+    let (queues, suffix) = remainder
+        .split_once("-- END ROOT QUEUE UPGRADE\n")
+        .ok_or_else(|| Error::InvariantViolation {
+            why: "missing root queue migration boundary".to_owned(),
+        })?;
+    connection.execute_batch(prefix).map_err(storage)?;
+    let mut statement = connection
+        .prepare("PRAGMA table_info(sync_mutations)")
+        .map_err(storage)?;
+    let scoped = statement
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(storage)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(storage)?
+        .iter()
+        .any(|column| column == "local_root_uuid");
+    drop(statement);
+    if !scoped {
+        connection.execute_batch(queues).map_err(storage)?;
+    }
+    connection.execute_batch(suffix).map_err(storage)?;
+    // The old singleton binding is the only reliable owner of its ledger.
+    // A UI marker from an earlier implementation may already name another
+    // root; archive by the binding before selecting the active library.
+    let binding_root: Option<Option<String>> = connection
+        .query_row(
+            "SELECT local_root_uuid FROM sync_binding WHERE singleton=1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(storage)?;
+    if let Some(Some(root)) = &binding_root {
+        connection
+            .execute(
+                "UPDATE sync_active_context SET local_root_uuid=?1 WHERE singleton=1",
+                params![root],
+            )
+            .map_err(storage)?;
+    }
+    // An unrooted historical binding must remain untouched for explicit repair.
+    if binding_root != Some(None) {
+        let active: Option<String> = connection
+            .query_row(
+                "SELECT uuid FROM library_roots WHERE is_active=1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(storage)?;
+        if let Some(root) = active {
+            super::sync_context::select(connection, &root)?;
+        }
     }
     Ok(())
 }

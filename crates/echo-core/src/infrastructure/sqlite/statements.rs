@@ -45,6 +45,9 @@ pub(crate) fn upsert_root(connection: &Connection, root: &LibraryRoot) -> Result
             .map_err(storage)?;
     }
     connection.execute("INSERT INTO library_roots (uuid, absolute_path, normalized_path_key, is_active, write_capable, write_safety_locked, availability, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8) ON CONFLICT(uuid) DO UPDATE SET absolute_path = excluded.absolute_path, normalized_path_key = excluded.normalized_path_key, is_active = excluded.is_active, write_capable = excluded.write_capable, write_safety_locked = library_roots.write_safety_locked OR excluded.write_safety_locked, availability = excluded.availability, updated_at = excluded.updated_at", params![root.id().to_string(), path, key, i64::from(root.is_active()), i64::from(root.observed_write_capable()), i64::from(root.write_safety_locked()), if root.availability() == RootAvailability::Available { "available" } else { "unavailable" }, now]).map_err(map_constraint)?;
+    if root.is_active() {
+        super::sync_context::select(connection, &root.id().to_string())?;
+    }
     Ok(())
 }
 

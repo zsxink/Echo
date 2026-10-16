@@ -88,6 +88,7 @@ pub(crate) fn enqueue_sync_with_id(
     operation: &str,
     stable_mutation_id: Option<&str>,
 ) -> Result<i64, Error> {
+    let local_root = super::sync_context::object_root(connection, kind, object_uuid, payload_json)?;
     connection
         .execute(
             "INSERT INTO sync_local_highwater (object_type, object_uuid, local_revision) VALUES (?1, ?2, 1) ON CONFLICT(object_type, object_uuid) DO UPDATE SET local_revision = local_revision + 1",
@@ -110,8 +111,8 @@ pub(crate) fn enqueue_sync_with_id(
         .map_err(storage)?;
     let cursor: Option<(i64, String)> = connection
         .query_row(
-            "SELECT origin_seq, last_mutation_id FROM sync_local_origin_cursors WHERE origin_device_id = ?1",
-            params![origin_device_id],
+            "SELECT origin_seq, last_mutation_id FROM sync_local_origin_cursors WHERE origin_device_id = ?1 AND local_root_uuid = ?2",
+            params![origin_device_id, local_root],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
@@ -130,8 +131,8 @@ pub(crate) fn enqueue_sync_with_id(
         stable_mutation_id.map_or_else(|| uuid::Uuid::new_v4().to_string(), str::to_owned);
     let base_object_version: Option<i64> = connection
         .query_row(
-            "SELECT object_version FROM sync_object_versions WHERE object_type = ?1 AND object_uuid = ?2 AND is_tombstone = 0",
-            params![kind, object_uuid],
+            "SELECT object_version FROM sync_object_versions WHERE object_type = ?1 AND object_uuid = ?2 AND is_tombstone = 0 UNION ALL SELECT object_version FROM archived_sync_object_versions WHERE context_root = ?3 AND object_type = ?1 AND object_uuid = ?2 AND is_tombstone = 0 LIMIT 1",
+            params![kind, object_uuid, local_root],
             |row| row.get(0),
         )
         .optional()
@@ -157,20 +158,20 @@ pub(crate) fn enqueue_sync_with_id(
     let payload_digest = digest.finalize().to_hex().to_string();
     connection
         .execute(
-            "INSERT INTO sync_mutations (mutation_id, origin_device_id, origin_seq, previous_mutation_id, object_type, object_uuid, operation, local_revision, base_object_version, payload_json, payload_digest, status, created_at, resource_refs_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'pending', ?12, ?13)",
-            params![mutation_id, origin_device_id, origin_seq, previous_mutation_id, kind, object_uuid, operation, next, base_object_version, payload_json, payload_digest, now_ms(), resource_refs_json],
+            "INSERT INTO sync_mutations (mutation_id, origin_device_id, origin_seq, previous_mutation_id, object_type, object_uuid, operation, local_revision, base_object_version, payload_json, payload_digest, status, created_at, resource_refs_json, local_root_uuid) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'pending', ?12, ?13, ?14)",
+            params![mutation_id, origin_device_id, origin_seq, previous_mutation_id, kind, object_uuid, operation, next, base_object_version, payload_json, payload_digest, now_ms(), resource_refs_json, local_root],
         )
         .map_err(storage)?;
     connection
         .execute(
-            "INSERT INTO sync_local_origin_cursors (origin_device_id, origin_seq, last_mutation_id) VALUES (?1, ?2, ?3) ON CONFLICT(origin_device_id) DO UPDATE SET origin_seq = excluded.origin_seq, last_mutation_id = excluded.last_mutation_id",
-            params![origin_device_id, origin_seq, mutation_id],
+            "INSERT INTO sync_local_origin_cursors (origin_device_id, origin_seq, last_mutation_id, local_root_uuid) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(local_root_uuid,origin_device_id) DO UPDATE SET origin_seq = excluded.origin_seq, last_mutation_id = excluded.last_mutation_id",
+            params![origin_device_id, origin_seq, mutation_id, local_root],
         )
         .map_err(storage)?;
     connection
         .execute(
-            "INSERT INTO sync_outbox (object_type, object_uuid, revision, operation, payload_json, created_at, pushed_at, mutation_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7) ON CONFLICT(object_type, object_uuid, revision) DO NOTHING",
-            params![kind, object_uuid, next, operation, payload_json, now_ms(), mutation_id],
+            "INSERT INTO sync_outbox (object_type, object_uuid, revision, operation, payload_json, created_at, pushed_at, mutation_id, local_root_uuid) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, ?8) ON CONFLICT(object_type, object_uuid, revision) DO NOTHING",
+            params![kind, object_uuid, next, operation, payload_json, now_ms(), mutation_id, local_root],
         )
         .map_err(storage)?;
     Ok(next)

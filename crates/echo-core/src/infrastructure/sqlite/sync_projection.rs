@@ -16,7 +16,11 @@ use super::support::{now_ms, storage};
 /// A confirmed deletion ends this identity even if a stale scanner or undo
 /// operation still holds a copy of the old row.
 pub(super) fn ensure_song_live(tx: &Connection, object_uuid: &str) -> Result<(), Error> {
-    if is_tombstoned(tx, "song", object_uuid)? {
+    let archived: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM archived_sync_object_versions WHERE object_type='song' AND object_uuid=?1 AND is_tombstone=1)",
+        params![object_uuid], |row| row.get(0),
+    ).map_err(storage)?;
+    if archived || is_tombstoned(tx, "song", object_uuid)? {
         return Err(Error::conflict(
             "song was finally deleted; recovery requires a new UUID",
         ));

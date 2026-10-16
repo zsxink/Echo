@@ -28,9 +28,6 @@ impl SqliteDatabase {
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(storage)?;
             for table in [
-                "sync_remote_resource_locations",
-                "sync_remote_publication_claims",
-                "sync_remote_publications",
                 "sync_snapshot_pages",
                 "sync_snapshot_resource_refs",
                 "sync_snapshot_records",
@@ -39,7 +36,6 @@ impl SqliteDatabase {
                 "sync_replica_snapshot_records",
                 "sync_replica_snapshot_sessions",
                 "sync_host_baselines",
-                "sync_local_delete_intents",
                 "sync_transfers",
                 "sync_peer_cursors",
                 "sync_conflicts",
@@ -48,16 +44,18 @@ impl SqliteDatabase {
                 "sync_object_versions",
                 "sync_commits",
                 "sync_inbox",
-                "sync_mutations",
-                "sync_outbox",
-                "sync_local_highwater",
-                "sync_local_origin_cursors",
                 "sync_origin_cursors",
                 "sync_peers",
                 "sync_binding",
             ] {
                 tx.execute_batch(&format!("DELETE FROM {table};"))
                     .map_err(storage)?;
+            }
+            for table in ["sync_remote_resource_locations", "sync_remote_publication_claims", "sync_remote_publications"] {
+                tx.execute(&format!("DELETE FROM {table} WHERE local_root_uuid=(SELECT local_root_uuid FROM sync_active_context WHERE singleton=1)"), []).map_err(storage)?;
+            }
+            for table in ["sync_mutations", "sync_outbox", "sync_local_origin_cursors"] {
+                tx.execute(&format!("DELETE FROM {table} WHERE local_root_uuid=(SELECT local_root_uuid FROM sync_active_context WHERE singleton=1)"), []).map_err(storage)?;
             }
             tx.commit().map_err(storage)
         })
@@ -75,6 +73,7 @@ impl SqliteDatabase {
         self.writer.run(move |connection| {
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
             let local_root_uuid = local_root.to_string();
+            super::sync_context::select(&tx, &local_root_uuid)?;
             let root_exists: bool = tx.query_row(
                 "SELECT EXISTS(SELECT 1 FROM library_roots WHERE uuid=?1)",
                 params![local_root_uuid],
@@ -83,6 +82,7 @@ impl SqliteDatabase {
             if !root_exists {
                 return Err(Error::conflict("sync binding requires an existing local library root"));
             }
+            tx.execute("INSERT OR IGNORE INTO sync_root_contexts(local_root_uuid) VALUES(?1)", params![local_root_uuid]).map_err(storage)?;
             let current: Option<(String, String, i64, String, Option<String>)> = tx.query_row(
                 "SELECT library_id, authority_id, epoch, role, local_root_uuid FROM sync_binding WHERE singleton = 1",
                 [],
@@ -128,6 +128,7 @@ impl SqliteDatabase {
         self.writer.run(move |connection| {
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
             let root = local_root.to_string();
+            super::sync_context::select(&tx, &root)?;
             let exists: bool = tx.query_row(
                 "SELECT EXISTS(SELECT 1 FROM library_roots WHERE uuid=?1)",
                 params![root],
@@ -136,6 +137,7 @@ impl SqliteDatabase {
             if !exists {
                 return Err(Error::conflict("replica enrollment requires an existing local root"));
             }
+            tx.execute("INSERT OR IGNORE INTO sync_root_contexts(local_root_uuid) VALUES(?1)", params![root]).map_err(storage)?;
             let current: Option<(String, String, i64, String, Option<String>)> = tx.query_row(
                 "SELECT library_id, authority_id, epoch, role, local_root_uuid FROM sync_binding WHERE singleton=1",
                 [],
@@ -154,7 +156,7 @@ impl SqliteDatabase {
                 return Err(Error::conflict("library is already bound to another sync identity"));
             }
             let nonempty: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM songs WHERE library_root_uuid=?1) OR EXISTS(SELECT 1 FROM playlists WHERE library_root_uuid=?1) OR EXISTS(SELECT 1 FROM sync_mutations WHERE status='pending')",
+                "SELECT EXISTS(SELECT 1 FROM songs WHERE library_root_uuid=?1) OR EXISTS(SELECT 1 FROM playlists WHERE library_root_uuid=?1) OR EXISTS(SELECT 1 FROM sync_mutations WHERE status='pending' AND local_root_uuid=?1)",
                 params![root],
                 |row| row.get(0),
             ).map_err(storage)?;
