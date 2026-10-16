@@ -190,7 +190,7 @@ jobs:
       # Exercise candidate-library confirmation on Windows too; without this
       # explicit filter the native unit tests can be overlooked as macOS-only.
       - name: Run native libmpv confirmation regression tests
-        run: cargo test -p echo-desktop --lib native_confirmation_tests::
+        run: "cargo test -p echo-desktop --lib native_confirmation_tests::"
 
       # task-9.8 builds and runs the libmpv_platform probe against the vendored
       # libmpv-2.dll (build.rs stages it to target/debug); no frontend or
