@@ -16,9 +16,9 @@
 //! ```
 //!
 //! [`ControlPath`] validates paths *within* the `echo/` control surface.
-//! [`LibraryRelativePath`] validates paths within the library root (starts with
-//! `media/`).  Neither type carries an absolute path, `..`, or a path that
-//! would escape the root.
+//! [`LibraryRelativePath`] validates safe paths within the library root,
+//! including legacy paths outside the canonical `media/` tree. Neither type
+//! carries an absolute path, `..`, or a path that would escape the root.
 //!
 //! [`PortableRecord`] is the top-level serializable object stored in
 //! `echo/records/<kind>/<uuid-prefix>/<uuid>.json`.  Each variant holds a
@@ -140,12 +140,11 @@ impl std::str::FromStr for ControlPath {
     }
 }
 
-/// A validated path within the library root that starts with `media/`.
+/// A validated media path within the library root.
 ///
-/// This is the portable media-relative form: `media/歌手/歌手 - 晴天.flac`.
-/// Unlike [`super::ids::RelativeMediaPath`] (which accepts *any* relative
-/// path under the root), `LibraryRelativePath` enforces the portable `media/`
-/// prefix — the only tree Echo manages for portable media.
+/// New Echo imports use the canonical `media/` tree, while existing libraries
+/// may contain media elsewhere under the root. This type accepts both forms
+/// but reserves the `echo/` control surface and rejects unsafe paths.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct LibraryRelativePath {
     normalized: String,
@@ -161,9 +160,9 @@ impl LibraryRelativePath {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Validation`] when the value is not under `media/`,
-    /// is absolute, escapes with `..`, contains NUL/control characters, or has
-    /// empty/redundant components.
+    /// Returns [`Error::Validation`] when the value is empty, uses the `echo/`
+    /// control surface, is absolute, escapes with `..`, contains
+    /// NUL/control characters, or has empty/redundant components.
     pub fn new(value: &str) -> Result<Self, Error> {
         Self::validate(value)?;
         Ok(Self {
@@ -182,12 +181,16 @@ impl LibraryRelativePath {
         if normalized.is_empty() {
             return Err(err("path is empty"));
         }
-        if !normalized.starts_with("media/") {
-            return Err(err("media path must start with 'media/'"));
-        }
-        // Reject bare "media" — must be "media/..." with content inside.
-        if normalized == "media" {
-            return Err(err("media path must include content under 'media/'"));
+        // `echo/` contains manifests and sync records. Never let a song path
+        // address that control surface, including on case-insensitive disks.
+        if normalized
+            .split('/')
+            .next()
+            .is_some_and(|root| root.eq_ignore_ascii_case("echo"))
+        {
+            return Err(err(
+                "media path must not use the reserved 'echo/' directory",
+            ));
         }
         validate_components(&normalized, Self::MAX_COMPONENTS, Self::MAX_COMPONENT_BYTES)?;
         Ok(())
@@ -673,8 +676,8 @@ impl PortableRecord {
 ///
 /// Stored at `echo/records/songs/<uuid-prefix>/<song-uuid>.json`.
 ///
-/// The `media_path` is always a [`LibraryRelativePath`] starting with `media/`,
-/// and the `content_hash` is the full-file BLAKE3 hex digest.  Neither an
+/// The `media_path` is a safe path relative to the library root (new imports
+/// use `media/`), and the `content_hash` is the full-file BLAKE3 hex digest. Neither an
 /// absolute path, `SQLite` database path, credential, nor playback state is ever
 /// carried in this record (design §3, portable-library-layout spec).
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1040,15 +1043,15 @@ mod tests {
     }
 
     #[test]
-    fn media_path_rejects_non_media_starts() {
-        assert!(LibraryRelativePath::new("echo/manifest.json").is_err());
-        assert!(LibraryRelativePath::new("artwork/cover.jpg").is_err());
-        assert!(LibraryRelativePath::new("tmp/file").is_err());
+    fn media_path_accepts_legacy_root_relative_paths() {
+        assert!(LibraryRelativePath::new("artwork/cover.jpg").is_ok());
+        assert!(LibraryRelativePath::new("tmp/file").is_ok());
     }
 
     #[test]
-    fn media_path_rejects_bare_media() {
-        assert!(LibraryRelativePath::new("media").is_err());
+    fn media_path_rejects_control_surface() {
+        assert!(LibraryRelativePath::new("echo/manifest.json").is_err());
+        assert!(LibraryRelativePath::new("ECHO/records/song.json").is_err());
     }
 
     #[test]
