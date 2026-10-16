@@ -4,44 +4,101 @@ use std::path::Path;
 
 use echo_core::application::root_switch::derive_root_id;
 use echo_core::domain::ids::LibraryRootId;
-use echo_core::infrastructure::filesystem::staging::{MARKER_FORMAT_VERSION, StagingMarker};
+use echo_core::infrastructure::filesystem::staging::{StagingMarker, MARKER_FORMAT_VERSION};
 
 use crate::sync_runtime::SyncRuntimeError;
 
 pub(super) const EMPTY_LIBRARY_MANIFEST: &str = "manifest.json";
 pub(super) const EMPTY_LIBRARY_STAGING_MARKER: &str = ".echo-ownership-marker";
 
-/// Adopt the selected Echo library without touching its existing media. Its
-/// catalog is merged only after the complete host snapshot is validated.
+/// Adopt the selected library without touching its existing files. A normal
+/// music directory does not need to be empty before it can join a host; only
+/// Echo's own control files are created or updated here. Its catalog is merged
+/// only after the complete host snapshot is validated.
 pub(super) fn prepare_enrollment_root(
     root: &Path,
     root_id: LibraryRootId,
 ) -> Result<(), SyncRuntimeError> {
+    let root_metadata =
+        std::fs::symlink_metadata(root).map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+    if !root_metadata.is_dir() || root_metadata.file_type().is_symlink() {
+        return Err(SyncRuntimeError::LibraryUnavailable);
+    }
+
     let echo = root.join("echo");
-    if !echo.exists() {
-        return prepare_empty_enrollment_root(root, root_id);
-    }
-    for directory in [root.to_path_buf(), echo.clone(), echo.join("tmp")] {
-        let metadata = std::fs::symlink_metadata(directory)
-            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-        if !metadata.is_dir() || metadata.file_type().is_symlink() {
-            return Err(SyncRuntimeError::LibraryUnavailable);
+    match std::fs::symlink_metadata(&echo) {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+        Ok(_) => return Err(SyncRuntimeError::LibraryUnavailable),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::create_dir(&echo).map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
         }
+        Err(_) => return Err(SyncRuntimeError::LibraryUnavailable),
     }
-    let manifest = std::fs::symlink_metadata(echo.join(EMPTY_LIBRARY_MANIFEST))
-        .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-    if !manifest.is_file() || manifest.file_type().is_symlink() {
-        return Err(SyncRuntimeError::LibraryUnavailable);
+
+    let temporary = echo.join("tmp");
+    match std::fs::symlink_metadata(&temporary) {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+        Ok(_) => return Err(SyncRuntimeError::LibraryUnavailable),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::create_dir(&temporary).map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        }
+        Err(_) => return Err(SyncRuntimeError::LibraryUnavailable),
     }
-    let marker = echo.join("tmp").join(EMPTY_LIBRARY_STAGING_MARKER);
-    let metadata =
-        std::fs::symlink_metadata(&marker).map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-    let contents =
-        std::fs::read_to_string(marker).map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-    let valid = StagingMarker::parse(&contents)
-        .is_some_and(|marker| marker.root == root_id && marker.version == MARKER_FORMAT_VERSION);
-    if !metadata.is_file() || metadata.file_type().is_symlink() || !valid {
-        return Err(SyncRuntimeError::LibraryUnavailable);
+
+    let manifest_path = echo.join(EMPTY_LIBRARY_MANIFEST);
+    match std::fs::symlink_metadata(&manifest_path) {
+        Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {}
+        Ok(_) => return Err(SyncRuntimeError::LibraryUnavailable),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&manifest_path)
+                .and_then(|mut file| {
+                    use std::io::Write as _;
+                    file.write_all(b"{}")?;
+                    file.sync_all()
+                })
+                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        }
+        Err(_) => return Err(SyncRuntimeError::LibraryUnavailable),
+    }
+
+    let marker_path = temporary.join(EMPTY_LIBRARY_STAGING_MARKER);
+    match std::fs::symlink_metadata(&marker_path) {
+        Ok(metadata) => {
+            if !metadata.is_file() || metadata.file_type().is_symlink() {
+                return Err(SyncRuntimeError::LibraryUnavailable);
+            }
+            let contents = std::fs::read_to_string(&marker_path)
+                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+            let Some(marker) = StagingMarker::parse(&contents) else {
+                return Err(SyncRuntimeError::LibraryUnavailable);
+            };
+            if marker.version != MARKER_FORMAT_VERSION {
+                return Err(SyncRuntimeError::LibraryUnavailable);
+            }
+            // A valid marker can travel with a copied library. Rebind this
+            // Echo-owned staging area to the path-derived identity on this
+            // machine; media and catalog files remain untouched.
+            if marker.root != root_id {
+                std::fs::write(&marker_path, StagingMarker::new(root_id).body())
+                    .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&marker_path)
+                .and_then(|mut file| {
+                    use std::io::Write as _;
+                    file.write_all(StagingMarker::new(root_id).body().as_bytes())?;
+                    file.sync_all()
+                })
+                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        }
+        Err(_) => return Err(SyncRuntimeError::LibraryUnavailable),
     }
     Ok(())
 }
