@@ -500,6 +500,16 @@ fn finish_snapshot(
         if let HostSnapshotRecord::Object { candidate, .. } = record {
             let (kind, id) = super::object_identity(candidate.object);
             if candidate.payload == serde_json::json!({"tombstone":true}) {
+                // A first snapshot is a merge with the replica's existing
+                // catalog. A host tombstone may refer to an object that was
+                // created independently on this device (or retained locally
+                // after a previous pairing); do not hide that local object
+                // before its queued local baseline has had a chance to reach
+                // the host. Tombstones for objects absent locally still
+                // advance the confirmed ledger without creating a local row.
+                if local_object_exists(connection, kind, &id, root)? {
+                    return Ok(());
+                }
                 super::super::sync_projection::project_confirmed_tombstone(connection, kind, &id)?;
             } else {
                 super::super::sync_projection::project_confirmed_song_state(
@@ -513,6 +523,29 @@ fn finish_snapshot(
         }
         Ok(())
     })
+}
+
+fn local_object_exists(
+    connection: &Connection,
+    kind: &str,
+    id: &str,
+    root: &str,
+) -> Result<bool, Error> {
+    let query = match kind {
+        "song" | "favorite" | "override" | "play-stats" => {
+            "SELECT EXISTS(SELECT 1 FROM songs WHERE uuid=?1 AND library_root_uuid=?2)"
+        }
+        "playlist" => {
+            "SELECT EXISTS(SELECT 1 FROM playlists WHERE uuid=?1 AND library_root_uuid=?2)"
+        }
+        "playlist-item" => {
+            "SELECT EXISTS(SELECT 1 FROM playlist_songs m JOIN playlists p ON p.uuid=m.playlist_uuid WHERE m.member_uuid=?1 AND p.library_root_uuid=?2)"
+        }
+        _ => return Ok(false),
+    };
+    connection
+        .query_row(query, params![id, root], |row| row.get(0))
+        .map_err(storage)
 }
 
 fn persist_resource(
