@@ -294,7 +294,7 @@ impl PairingRegistry {
             Invitation {
                 host_device_id,
                 secret_hash: *blake3::hash(invitation_secret.as_bytes()).as_bytes(),
-                certificate_der: certificate_der.clone(),
+                certificate_der: host_certificate_der.clone(),
                 expires: Instant::now() + ttl,
             },
         );

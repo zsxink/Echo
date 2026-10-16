@@ -2,9 +2,7 @@
 
 use std::time::Duration;
 
-use crate::pairing::{
-    PairingBootstrapResponse, PairingCodeRequest, PairingGrantDto, PairingInvitation,
-};
+use crate::pairing::{PairingBootstrapResponse, PairingCodeRequest};
 
 use crate::protocol::{
     commit_digest, validate_mutation, validate_resource, validate_snapshot_page, CommitPageDto,
