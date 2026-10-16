@@ -3,7 +3,7 @@
 
 #![allow(clippy::doc_markdown, clippy::missing_errors_doc)]
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 
 use crate::domain::ids::Revision;
@@ -378,6 +378,32 @@ fn project_song(
         return Err(Error::conflict("confirmed song has an invalid BLAKE3 hash"));
     }
     let format = optional_string(payload, "format")?;
+    let local_song: Option<(String, Option<String>)> = tx
+        .query_row(
+            "SELECT normalized_relative_path, blake3_hash FROM songs WHERE uuid=?1 AND library_root_uuid=?2",
+            params![song_uuid, root_uuid],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(storage)?;
+    if let Some((local_path, local_hash)) = local_song {
+        let has_pending_local_change: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sync_mutations WHERE object_type='song' AND object_uuid=?1 AND local_root_uuid=?2 AND status='pending')",
+                params![song_uuid, root_uuid],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        // Relative paths are device-local facts when two independently
+        // populated libraries are merged. Replacing a local path with the
+        // peer's path makes a perfectly valid local file appear missing on
+        // this device. Preserve the local projection until the conflict is
+        // resolved; matching path/hash records can still receive shared
+        // metadata updates below.
+        if has_pending_local_change || local_path != path.identity_key() || local_hash != hash {
+            return Ok(());
+        }
+    }
     let path_owner: bool = tx
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM songs WHERE library_root_uuid=?1 AND normalized_relative_path=?2 AND uuid<>?3)",
