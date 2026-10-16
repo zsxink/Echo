@@ -90,6 +90,30 @@ struct PeerIdentity {
     bearer_token: String,
 }
 
+fn map_sync_client_error(error: ClientError) -> SyncRuntimeError {
+    match error {
+        ClientError::Transport(_) => SyncRuntimeError::SyncConnectionFailed,
+        ClientError::HostRejected(status) if status == reqwest::StatusCode::SERVICE_UNAVAILABLE => {
+            SyncRuntimeError::SyncHostUnavailable
+        }
+        ClientError::HostRejected(status)
+            if status == reqwest::StatusCode::UNAUTHORIZED
+                || status == reqwest::StatusCode::FORBIDDEN =>
+        {
+            SyncRuntimeError::SyncAuthorizationFailed
+        }
+        ClientError::HostRejected(_) => SyncRuntimeError::SyncHostRejected,
+        ClientError::InvalidEndpoint => SyncRuntimeError::InvalidAddress,
+        ClientError::InvalidTlsConfiguration(_)
+        | ClientError::InvalidMutation(_)
+        | ClientError::InvalidSnapshot(_)
+        | ClientError::InvalidResponse(_)
+        | ClientError::InvalidResponseBody
+        | ClientError::InvalidCommitChain => SyncRuntimeError::SyncProtocolFailed,
+        ClientError::RemoteApply(_) => SyncRuntimeError::LibraryUnavailable,
+    }
+}
+
 fn remove_peer_identity_if_generation(
     handle: &SecretHandle,
     identity: &PeerIdentity,
@@ -694,7 +718,7 @@ impl NativeSyncProvisioner {
                     512,
                 )
                 .await
-                .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+                .map_err(map_sync_client_error)?;
             if page.binding != peer.binding {
                 return Err(SyncRuntimeError::LibraryUnavailable);
             }
@@ -715,7 +739,7 @@ impl NativeSyncProvisioner {
                         resources.clone(),
                     )
                     .await
-                    .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+                    .map_err(map_sync_client_error)?;
             }
             let prepared = PreparedRemoteApply {
                 database: self.database.as_ref(),
@@ -734,11 +758,20 @@ impl NativeSyncProvisioner {
                 512,
             )
             .await;
-            if result.is_ok() {
+            if let Err(error) = result {
+                if !prepared.changed.load(std::sync::atomic::Ordering::Relaxed) {
+                    return Err(match error {
+                        echo_sync::replica::ReplicaSyncError::Client(error) => {
+                            map_sync_client_error(error)
+                        }
+                        echo_sync::replica::ReplicaSyncError::Core(_) => {
+                            SyncRuntimeError::LibraryUnavailable
+                        }
+                        _ => SyncRuntimeError::SyncProtocolFailed,
+                    });
+                }
+            } else {
                 return Ok(());
-            }
-            if !prepared.changed.load(std::sync::atomic::Ordering::Relaxed) {
-                return Err(SyncRuntimeError::WorkerFailed);
             }
         }
         Err(SyncRuntimeError::Busy)
@@ -844,7 +877,7 @@ impl NativeSyncProvisioner {
         } else {
             peer.client.begin_snapshot(endpoint, 128).await
         }
-        .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        .map_err(map_sync_client_error)?;
         loop {
             if page.checkpoint.binding != peer.binding {
                 return Err(SyncRuntimeError::LibraryUnavailable);
@@ -861,7 +894,7 @@ impl NativeSyncProvisioner {
                 .client
                 .pull_snapshot_page(endpoint, &page.snapshot_token, index)
                 .await
-                .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+                .map_err(map_sync_client_error)?;
         }
         // Private cache is not library publication. Catalog media remains
         // unavailable until the safe file publication journal completes.
@@ -916,7 +949,7 @@ impl NativeSyncProvisioner {
             peer.client
                 .download_resource(endpoint, owner, &request, resources.clone())
                 .await
-                .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+                .map_err(map_sync_client_error)?;
         }
         Ok(())
     }
@@ -950,7 +983,7 @@ impl NativeSyncProvisioner {
                 .client
                 .prepare_resource(endpoint, &request)
                 .await
-                .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+                .map_err(map_sync_client_error)?;
             if progress.complete {
                 continue;
             }
@@ -973,12 +1006,12 @@ impl NativeSyncProvisioner {
                     .client
                     .upload_resource_chunk(endpoint, peer.binding, &progress, index, chunk.bytes)
                     .await
-                    .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+                    .map_err(map_sync_client_error)?;
             }
             peer.client
                 .complete_resource(endpoint, peer.binding, &progress)
                 .await
-                .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+                .map_err(map_sync_client_error)?;
         }
         Ok(())
     }

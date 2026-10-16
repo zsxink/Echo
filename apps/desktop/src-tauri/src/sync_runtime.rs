@@ -37,6 +37,11 @@ pub enum SyncRuntimeError {
     PairingHostUnavailable,
     PairingConnectionFailed,
     PairingProtocolFailed,
+    SyncConnectionFailed,
+    SyncHostUnavailable,
+    SyncAuthorizationFailed,
+    SyncHostRejected,
+    SyncProtocolFailed,
     WorkerFailed,
 }
 
@@ -55,6 +60,11 @@ impl SyncRuntimeError {
             Self::PairingHostUnavailable => "sync.pairingHostUnavailable",
             Self::PairingConnectionFailed => "sync.pairingConnectionFailed",
             Self::PairingProtocolFailed => "sync.pairingProtocolFailed",
+            Self::SyncConnectionFailed => "sync.connectionFailed",
+            Self::SyncHostUnavailable => "sync.hostUnavailable",
+            Self::SyncAuthorizationFailed => "sync.authorizationFailed",
+            Self::SyncHostRejected => "sync.hostRejected",
+            Self::SyncProtocolFailed => "sync.protocolFailed",
             Self::WorkerFailed => "sync.workerFailed",
         }
     }

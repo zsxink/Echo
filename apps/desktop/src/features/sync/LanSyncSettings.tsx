@@ -493,6 +493,11 @@ function syncErrorText(key: string): string {
     "sync.pairingHostUnavailable": "主机未能登记设备凭据，请检查主机本地授权数据和凭据库。",
     "sync.pairingConnectionFailed": "配对期间与主机的网络或 TLS 连接失败。",
     "sync.pairingProtocolFailed": "主机返回了无法识别的配对响应，请确认两端 Echo 构建兼容。",
+    "sync.connectionFailed": "连接同步主机失败，请确认主机仍在运行且两台设备在同一局域网。",
+    "sync.hostUnavailable": "同步主机当前不可用，请检查主机同步服务和安全存储。",
+    "sync.authorizationFailed": "同步主机拒绝了设备授权，请重新加入主机。",
+    "sync.hostRejected": "同步主机拒绝了同步请求，请检查主机状态和配对关系。",
+    "sync.protocolFailed": "同步主机返回了不兼容或无效数据，请确认两端 Echo 版本一致。",
     "sync.workerFailed": "同步服务遇到错误。",
     "sync.pairingPending": "配对正在处理中，请稍后重试。",
   };
