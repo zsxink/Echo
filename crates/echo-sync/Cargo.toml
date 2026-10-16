@@ -12,7 +12,7 @@ repository.workspace = true
 default = []
 client = ["dep:reqwest", "dep:tokio", "dep:rustls"]
 server = ["dep:axum", "dep:hyper", "dep:hyper-util", "dep:tokio", "dep:rustls", "dep:tokio-rustls", "dep:tracing"]
-discovery = ["dep:mdns-sd"]
+discovery = ["dep:mdns-sd", "dep:tracing"]
 
 [dependencies]
 echo-core = { path = "../echo-core" }

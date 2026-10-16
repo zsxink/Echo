@@ -1,13 +1,25 @@
 //! Opt-in mDNS advertisement and discovery for local Echo hosts.
 
-use mdns_sd::{Receiver as MdnsReceiver, ServiceDaemon, ServiceEvent, ServiceInfo};
+use mdns_sd::{
+    DaemonEvent, DaemonStatus, Receiver as MdnsReceiver, ServiceDaemon, ServiceEvent, ServiceInfo,
+};
 use std::net::IpAddr;
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 pub const SERVICE_TYPE: &str = "_echo-sync._tcp.local.";
 
+/// Upper bound for waiting on the daemon thread to exit after a shutdown
+/// request. A daemon that cannot confirm in time still holds its multicast
+/// sockets, so callers learn about it instead of assuming a clean teardown.
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+
 pub struct LanDiscovery {
     daemon: ServiceDaemon,
-    events: MdnsReceiver<ServiceEvent>,
+    /// Service events of a [`LanDiscovery::browse`] session. An
+    /// [`LanDiscovery::advertise`] session deliberately never browses, so it
+    /// carries no receiver.
+    events: Option<MdnsReceiver<ServiceEvent>>,
 }
 
 impl LanDiscovery {
@@ -19,15 +31,26 @@ impl LanDiscovery {
     pub fn browse() -> Result<Self, mdns_sd::Error> {
         let daemon = ServiceDaemon::new()?;
         let events = daemon.browse(SERVICE_TYPE)?;
-        Ok(Self { daemon, events })
+        Ok(Self {
+            daemon,
+            events: Some(events),
+        })
     }
 
     /// Advertise one host endpoint on the selected LAN address. Only public
     /// connection metadata is placed in the TXT record; credentials and
     /// library paths are never announced.
     ///
+    /// The daemon answers queries from its registry and never browses:
+    /// registration itself announces the service twice, which is all a
+    /// responder needs. Browsing here would fill a bounded event channel that
+    /// no caller drains; `mdns-sd` blocks its daemon thread once that channel
+    /// is full, silencing the host on the network while it still appears to be
+    /// running.
+    ///
     /// # Errors
-    /// Propagates invalid service metadata and daemon browse or register failures.
+    /// Propagates invalid service metadata, daemon monitor or register
+    /// failures, and failures spawning the diagnostics thread.
     pub fn advertise(
         name: &str,
         host_name: &str,
@@ -47,29 +70,103 @@ impl LanDiscovery {
             port,
             &properties[..],
         )?;
-        let events = daemon.browse(SERVICE_TYPE)?;
+        // Subscribe before registering so the first announcements are observed.
+        let diagnostics = daemon.monitor()?;
         daemon.register(info)?;
-        Ok(Self { daemon, events })
+        spawn_diagnostics(diagnostics, name)?;
+        Ok(Self {
+            daemon,
+            events: None,
+        })
     }
 
+    /// Service events of a browse session, or `None` for an advertisement.
     #[must_use]
-    pub const fn events(&self) -> &MdnsReceiver<ServiceEvent> {
-        &self.events
+    pub const fn events(&self) -> Option<&MdnsReceiver<ServiceEvent>> {
+        self.events.as_ref()
     }
 
-    /// Request shutdown of the discovery daemon.
+    /// Request shutdown of the discovery daemon and wait for its thread to
+    /// exit.
+    ///
+    /// Waiting matters: a shutdown request that is never confirmed leaves the
+    /// daemon thread and its multicast sockets alive for the rest of the
+    /// process.
     ///
     /// # Errors
-    /// Propagates failures sending the daemon shutdown request.
+    /// Propagates failures sending the shutdown request, and reports
+    /// [`mdns_sd::Error::Again`] when the daemon thread does not exit within
+    /// [`SHUTDOWN_TIMEOUT`].
     pub fn shutdown(self) -> Result<(), mdns_sd::Error> {
-        self.daemon.shutdown()?;
-        Ok(())
+        let status = self.daemon.shutdown()?;
+        match status.recv_timeout(SHUTDOWN_TIMEOUT) {
+            Ok(DaemonStatus::Shutdown) => Ok(()),
+            // Any other outcome means the thread is gone without confirming or
+            // never exited; both leave the caller's assumption of a clean
+            // teardown broken.
+            _ => Err(mdns_sd::Error::Again),
+        }
     }
 }
 
 impl Drop for LanDiscovery {
     fn drop(&mut self) {
-        let _ = self.daemon.shutdown();
+        // Best effort: the diagnostics thread ends when the daemon's senders
+        // drop, and the OS releases the sockets with the process.
+        if let Ok(status) = self.daemon.shutdown() {
+            let _ = status.recv_timeout(SHUTDOWN_TIMEOUT);
+        }
+    }
+}
+
+/// Logs daemon diagnostics until the daemon exits.
+///
+/// `mdns-sd` delivers these on a bounded channel and silently discards the
+/// overflow, so without this drain a host that never announces — or a daemon
+/// that failed to open its sockets — is indistinguishable from a healthy one.
+fn spawn_diagnostics(
+    events: MdnsReceiver<DaemonEvent>,
+    service: &str,
+) -> Result<JoinHandle<()>, mdns_sd::Error> {
+    let service = service.to_owned();
+    thread::Builder::new()
+        .name("echo-lan-mdns-diag".into())
+        .spawn(move || {
+            while let Ok(event) = events.recv() {
+                log_daemon_event(&service, &event);
+            }
+        })
+        .map_err(|error| mdns_sd::Error::Msg(format!("spawn diagnostics thread: {error}")))
+}
+
+fn log_daemon_event(service: &str, event: &DaemonEvent) {
+    match event {
+        DaemonEvent::Announce(name, interfaces) => {
+            tracing::debug!(
+                target: "echo_sync::discovery",
+                service,
+                name = %name,
+                interfaces = %interfaces,
+                "mDNS daemon announced the host service"
+            );
+        }
+        DaemonEvent::Error(error) => {
+            tracing::warn!(
+                target: "echo_sync::discovery",
+                service,
+                error = %error,
+                "mDNS daemon reported an error"
+            );
+        }
+        DaemonEvent::NameChange(change) => {
+            tracing::warn!(
+                target: "echo_sync::discovery",
+                service,
+                original = %change.original,
+                "mDNS daemon renamed the host service after a name conflict"
+            );
+        }
+        _ => {}
     }
 }
 
