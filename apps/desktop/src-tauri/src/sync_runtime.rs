@@ -593,7 +593,7 @@ impl SyncRuntime {
         let host_device = echo_core::domain::sync::DeviceId::from_uuid(
             self.database.current_device_id().as_uuid(),
         );
-        api.create_pairing_invitation(host_device, certificate, Duration::from_secs(300))
+        api.create_pairing_invitation(host_device, certificate, Duration::from_secs(600))
             .map_err(map_pairing_error)
     }
 

@@ -79,7 +79,6 @@ export interface SyncPairingCode {
   /** Short-lived six-digit code; held in component memory only. */
   readonly code: string;
   readonly expiresAtUnixMs: number;
-  readonly hostName: string;
 }
 export interface SyncCommandArguments {
   readonly sync_status: [args?: Record<string, never>];

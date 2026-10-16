@@ -35,7 +35,6 @@ export function LanSyncSettings() {
   const [pairingCodeState, setPairingCodeState] = useState<SyncPairingCode | null>(null);
   const [pairingCode, setPairingCode] = useState("");
   const [peerAddress, setPeerAddress] = useState("");
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let current = true;
@@ -122,43 +121,15 @@ export function LanSyncSettings() {
     }
   }
 
-  async function runPairing(action: () => Promise<unknown>, afterSuccess?: () => void) {
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await action();
-      afterSuccess?.();
-    } catch (cause) {
-      setError(errorMessage(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function createPairingCode() {
-    setCopied(false);
-    await runPairing(async () => setPairingCodeState(await lanSyncAdapter.createPairingCode()));
-  }
-
-  async function copyPairingCode() {
-    if (!pairingCodeState) return;
-    try {
-      await navigator.clipboard.writeText(pairingCodeState.code);
-      setCopied(true);
-    } catch (cause) {
-      setError(`复制验证码失败：${errorMessage(cause)}`);
-    }
-  }
-
   async function submitPairingCode() {
     const code = pairingCode.trim();
     const host = peerAddress.trim();
     if (!code || !host) return;
-    await runPairing(async () => {
-      setStatus(await lanSyncAdapter.requestPairing(code, host));
+    await run(async () => {
+      const nextStatus = await lanSyncAdapter.requestPairing(code, host);
       setPairingCode("");
       setPeerAddress("");
+      return nextStatus;
     });
   }
 
@@ -168,19 +139,45 @@ export function LanSyncSettings() {
     setPairingCodeState(null);
     setPairingCode("");
     setPeerAddress("");
-    setCopied(false);
   }
 
   const active = status?.enabled === true;
   const paused = status?.state === "paused";
 
   useEffect(() => {
-    if (!active) {
+    let stopped = false;
+    let refreshTimer: number | undefined;
+
+    async function refreshPairingCode() {
+      try {
+        const nextCode = await lanSyncAdapter.createPairingCode();
+        if (stopped) return;
+        setPairingCodeState(nextCode);
+        refreshTimer = window.setTimeout(
+          () => void refreshPairingCode(),
+          Math.max(0, nextCode.expiresAtUnixMs - Date.now()),
+        );
+      } catch (cause) {
+        if (stopped) return;
+        setError(`验证码刷新失败：${errorMessage(cause)}`);
+        refreshTimer = window.setTimeout(() => void refreshPairingCode(), 10_000);
+      }
+    }
+
+    if (active && status?.role === "host") {
+      setPairingCodeState(null);
+      void refreshPairingCode();
+    } else {
       setPairingCodeState(null);
       setPairingCode("");
-      setCopied(false);
+      setPeerAddress("");
     }
-  }, [active]);
+
+    return () => {
+      stopped = true;
+      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+    };
+  }, [active, status?.role]);
 
   return (
     <section className="settings-section" aria-labelledby="lan-sync-heading">
@@ -218,51 +215,16 @@ export function LanSyncSettings() {
         </div>
       </div>
       {active && status?.role === "host" ? (
-        <>
-          <div className="setting-row">
-            <div className="storage-value">
-              <strong>配对新设备</strong>
-              <span className="setting-help">
-                生成一个 5 分钟有效的六位验证码，在加入设备上输入主机 IP 和验证码。
-              </span>
-            </div>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => void createPairingCode()}
-              disabled={busy}
-            >
-              生成验证码
-            </button>
+        <div className="setting-row" aria-label="配对验证码">
+          <div className="storage-value">
+            <strong>配对新设备</strong>
+            <span className="setting-help">其他设备输入主机 IP 和验证码即可加入。</span>
+            <span className="setting-help">验证码每 10 分钟自动刷新。</span>
           </div>
-          {pairingCodeState ? (
-            <div className="setting-row" aria-label="配对验证码">
-              <div className="storage-value">
-                <strong>本机配对验证码</strong>
-                <code aria-label="主机配对验证码" className="setting-code">
-                  {pairingCodeState.code}
-                </code>
-                <span className="setting-help">
-                  {pairingCodeState.hostName} · 有效至{" "}
-                  {new Date(pairingCodeState.expiresAtUnixMs).toLocaleString()}
-                </span>
-              </div>
-              <button type="button" className="btn" onClick={() => void copyPairingCode()}>
-                {copied ? "已复制" : "复制验证码"}
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  setPairingCodeState(null);
-                  setCopied(false);
-                }}
-              >
-                隐藏验证码
-              </button>
-            </div>
-          ) : null}
-        </>
+          <code aria-label="主机配对验证码" className="setting-code">
+            {pairingCodeState?.code ?? "······"}
+          </code>
+        </div>
       ) : null}
       {active && status?.role === "peer" ? (
         <div className="setting-row">
@@ -366,7 +328,7 @@ export function LanSyncSettings() {
           {role === "host" ? (
             <div className="setting-row">
               <span className="storage-value">
-                <strong>启动后可生成配对验证码</strong>
+                <strong>启动后自动显示配对验证码，每 10 分钟刷新</strong>
               </span>
               <button
                 type="button"

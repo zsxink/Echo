@@ -11,7 +11,7 @@ use echo_core::domain::sync::{DeviceId, MutationId, SyncBinding};
 use serde::{Deserialize, Serialize};
 
 const MAX_PENDING: usize = 32;
-const MAX_TTL: Duration = Duration::from_secs(300);
+const MAX_TTL: Duration = Duration::from_secs(600);
 
 /// Transfer this entire object through a trusted out-of-band channel. The DER
 /// certificate is public pin material; discovery never supplies its trust.
@@ -260,7 +260,7 @@ impl PairingRegistry {
         Ok(())
     }
 
-    /// Mint a single-use invitation with a maximum lifetime of five minutes.
+    /// Mint a single-use invitation with a maximum lifetime of ten minutes.
     ///
     /// # Errors
     /// Rejects invalid lifetimes/certificates and a full invitation registry.

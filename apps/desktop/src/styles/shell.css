@@ -105,6 +105,7 @@
 .setting-row strong, .setting-row span { display: block; }
 .setting-row strong { font-size: var(--text-sm); }
 .setting-row .setting-help { margin-top: var(--space-1); color: var(--muted); font-size: var(--text-xs); }
+.setting-code { color: var(--fg); font: 700 var(--text-lg)/1 var(--font-mono); letter-spacing: .08em; }
 .setting-choices { display: grid; gap: var(--space-2); }
 .setting-choice { display: flex; align-items: center; gap: var(--space-2); color: var(--fg-2); font-size: var(--text-xs); cursor: pointer; }
 .setting-choice input { accent-color: var(--accent-strong); }

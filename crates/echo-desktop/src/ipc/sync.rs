@@ -65,7 +65,6 @@ pub struct DiscoveredHost {
 pub struct SyncPairingCode {
     pub code: String,
     pub expires_at_unix_ms: u64,
-    pub host_name: String,
 }
 
 pub(super) const fn typescript() -> &'static str {
@@ -92,7 +91,6 @@ export interface SyncPairingCode {
   /** Short-lived six-digit code; held in component memory only. */
   readonly code: string;
   readonly expiresAtUnixMs: number;
-  readonly hostName: string;
 }
 export interface SyncCommandArguments {
   readonly sync_status: [args?: Record<string, never>];

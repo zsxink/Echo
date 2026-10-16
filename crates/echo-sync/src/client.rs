@@ -116,7 +116,7 @@ impl LanClient {
         if invitation.invitation_secret != code
             || invitation.host_certificate_der.is_empty()
             || invitation.host_certificate_der.len() > 16 * 1024
-            || invitation.expires_in_secs > 300
+            || invitation.expires_in_secs > 600
             || pairing.grant.binding != invitation.binding
             || pairing.grant.device_id != device_id
             || pairing.grant.bearer_token.len() < 32

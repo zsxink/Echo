@@ -205,12 +205,9 @@ pub async fn create_sync_pairing_code(
     let runtime = Arc::clone(&runtime);
     tauri::async_runtime::spawn_blocking(move || {
         let pairing = runtime.create_pairing_invitation()?;
-        let status = runtime.status();
-        let endpoint = status.address.ok_or(SyncRuntimeError::Unconfigured)?;
         Ok(SyncPairingCode {
             code: pairing.invitation_secret,
-            expires_at_unix_ms: unix_ms().saturating_add(300_000),
-            host_name: endpoint,
+            expires_at_unix_ms: unix_ms().saturating_add(600_000),
         })
     })
     .await
