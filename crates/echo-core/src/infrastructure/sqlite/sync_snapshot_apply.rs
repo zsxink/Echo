@@ -14,9 +14,9 @@ use super::super::SqliteDatabase;
 const MAX_PAGE_BYTES: usize = 16 * 1024 * 1024;
 
 impl SqliteDatabase {
-    /// Whether this exact binding will replace the selected root's local
-    /// catalog. Its superseded resources must not be required for enrollment.
-    pub fn replica_catalog_replacement_pending(
+    /// Whether this exact binding is enrolling the selected root. The marker
+    /// permits a non-empty local catalog to merge with the host snapshot.
+    pub fn replica_catalog_enrollment_pending(
         &self,
         root: crate::domain::ids::LibraryRootId,
         binding: SyncBinding,
@@ -46,8 +46,7 @@ impl SqliteDatabase {
         })
     }
 
-    /// The completed snapshot's pending preservation step. Until it is cleared,
-    /// the desktop must archive previous media before scanning or publishing.
+    /// A legacy archive marker left by an older destructive enrollment flow.
     pub fn pending_replica_media_archive(
         &self,
         root: crate::domain::ids::LibraryRootId,
@@ -164,9 +163,8 @@ impl ReplicaSnapshotApplyPort for SqliteDatabase {
                     params![peer,page.snapshot_token,page.checkpoint.binding.library_id.as_uuid().to_string(),page.checkpoint.binding.authority_id.as_uuid().to_string(),i64::try_from(page.checkpoint.binding.epoch.as_u64()).map_err(storage)?,i64::try_from(page.checkpoint.sequence.as_u64()).map_err(storage)?,page.checkpoint.digest.as_slice()],
                 ).map_err(storage)?;
             }
-            // Empty-target callers retain their original no-overwrite contract.
-            // Explicit host-authoritative enrollment keeps local rows visible
-            // while staging and replaces them only in the final transaction.
+            // Enrollment is local-first: the snapshot projects into the existing
+            // catalog after its current state has been queued for the host.
             ensure_enrollment_target(&tx, &root, page.checkpoint.binding)?;
             tx.execute(
                 "INSERT INTO sync_replica_snapshot_pages(token,page_index,body_digest,body_json) VALUES(?1,?2,?3,?4)",
@@ -182,13 +180,6 @@ impl ReplicaSnapshotApplyPort for SqliteDatabase {
             }
             if page.next_page_index.is_none() {
                 ensure_snapshot_root_ownership(&tx, &page.snapshot_token, &root)?;
-                if replacement_requested(&tx, &root, page.checkpoint.binding)? {
-                    replace_local_catalog(&tx, &root)?;
-                    tx.execute(
-                        "INSERT OR REPLACE INTO sync_state(key,value) VALUES(?1,?2)",
-                        params![format!("replica_enrollment_archive:{root}"), page.snapshot_token],
-                    ).map_err(storage)?;
-                }
                 finish_snapshot(&tx, &page, &root)?;
                 tx.execute(
                     "INSERT INTO sync_peer_cursors(peer_device_id,applied_commit_seq,applied_digest,resource_bytes_complete,updated_at) VALUES(?1,?2,?3,0,?4)",
@@ -400,93 +391,6 @@ fn ensure_enrollment_target(
     } else {
         ensure_empty_replica(connection, root)
     }
-}
-
-/// Called only inside the final page transaction. If any host object fails
-/// validation/projection, SQLite rolls this entire replacement back, retaining
-/// the original library and its pending edits for a retry. No filesystem work
-/// occurs here: existing audio and user files are retained.
-fn replace_local_catalog(connection: &Connection, root: &str) -> Result<(), Error> {
-    // Resolve all ownership before deleting the read model, including objects
-    // already removed locally that still have queued mutations or tombstones.
-    const OWNED_IDS: &str = "SELECT uuid FROM songs WHERE library_root_uuid=?1 UNION SELECT uuid FROM playlists WHERE library_root_uuid=?1 UNION SELECT m.member_uuid FROM playlist_songs m JOIN playlists p ON p.uuid=m.playlist_uuid WHERE p.library_root_uuid=?1 UNION SELECT object_uuid FROM sync_mutations WHERE local_root_uuid=?1 UNION SELECT object_uuid FROM sync_outbox WHERE local_root_uuid=?1";
-    for table in [
-        "sync_resource_refs",
-        "sync_resource_manifests",
-        "sync_local_delete_intents",
-        "tombstones",
-    ] {
-        connection
-            .execute(
-                &format!("DELETE FROM {table} WHERE object_uuid IN ({OWNED_IDS})"),
-                params![root],
-            )
-            .map_err(storage)?;
-    }
-    connection.execute(
-        "DELETE FROM sync_device_play_counts WHERE song_uuid IN (SELECT uuid FROM songs WHERE library_root_uuid=?1)",
-        params![root],
-    ).map_err(storage)?;
-    // Retain journal evidence but prevent old delete/import recovery from
-    // applying file operations to identities superseded by the host catalog.
-    connection.execute(
-        "UPDATE operation_items SET state='rolled_back',error_code='sync_library_replaced',claim_active=0 WHERE library_root_uuid=?1 AND state NOT IN ('database_finalized','rolled_back','completed')",
-        params![root],
-    ).map_err(storage)?;
-    connection.execute(
-        "UPDATE operation_journal SET state='rolled_back',error_code='sync_library_replaced',updated_at=?2 WHERE library_root_uuid=?1 AND state NOT IN ('database_finalized','rolled_back','completed')",
-        params![root, now_ms()],
-    ).map_err(storage)?;
-    for table in [
-        "sync_remote_resource_locations",
-        "sync_remote_publication_claims",
-        "sync_remote_publications",
-        "sync_mutations",
-        "sync_outbox",
-        "sync_local_origin_cursors",
-    ] {
-        connection
-            .execute(
-                &format!("DELETE FROM {table} WHERE local_root_uuid=?1"),
-                params![root],
-            )
-            .map_err(storage)?;
-    }
-    // These tables hold only the selected root's protocol context. Other
-    // libraries' contexts remain in their archived_sync_* tables.
-    for table in [
-        "sync_host_baselines",
-        "sync_transfers",
-        "sync_peer_cursors",
-        "sync_conflicts",
-        "sync_member_aliases",
-        "sync_song_aliases",
-        "sync_object_versions",
-        "sync_commits",
-        "sync_inbox",
-        "sync_origin_cursors",
-    ] {
-        connection
-            .execute(&format!("DELETE FROM {table}"), [])
-            .map_err(storage)?;
-    }
-    connection.execute(
-        "DELETE FROM song_search WHERE song_uuid IN (SELECT uuid FROM songs WHERE library_root_uuid=?1)",
-        params![root],
-    ).map_err(storage)?;
-    connection
-        .execute(
-            "DELETE FROM playlists WHERE library_root_uuid=?1",
-            params![root],
-        )
-        .map_err(storage)?;
-    connection
-        .execute(
-            "DELETE FROM songs WHERE library_root_uuid=?1",
-            params![root],
-        )
-        .map_err(storage)?;
-    Ok(())
 }
 
 fn record_identity(record: &HostSnapshotRecord) -> String {

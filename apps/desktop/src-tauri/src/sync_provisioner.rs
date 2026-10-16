@@ -48,7 +48,7 @@ mod enrollment;
 use enrollment::{
     EMPTY_LIBRARY_STAGING_MARKER, is_empty_enrollment_root, prepare_empty_enrollment_root,
 };
-use enrollment::{archive_previous_media, prepare_enrollment_root};
+use enrollment::prepare_enrollment_root;
 #[path = "sync_provisioner/resource_publication.rs"]
 mod resource_publication;
 use resource_publication::publish_remote_resource_set;
@@ -298,16 +298,8 @@ impl NativeSyncProvisioner {
         let resources = Arc::new(
             FileResourceStore::new(directory).map_err(|_| SyncRuntimeError::LibraryUnavailable)?,
         );
-        // The host snapshot supersedes this catalog. Missing or modified old
-        // media must not block fetching that snapshot into the private cache.
-        // Established peers and hosts continue to seed their local resources.
-        if self
-            .database
-            .replica_catalog_replacement_pending(library.id(), binding)
-            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
-        {
-            return Ok(resources);
-        }
+        // Existing local resources are part of the enrollment baseline. Keep
+        // seeding them so the first snapshot cannot silently discard local work.
         let manifests = self
             .database
             .local_sync_resource_manifests(library.id())
@@ -579,6 +571,9 @@ impl SyncProvisioner for NativeSyncProvisioner {
             remove_peer_identity_if_generation(&handle, &identity)?;
             return Err(SyncRuntimeError::LibraryUnavailable);
         }
+        self.database
+            .ensure_replica_sync_baseline(invitation.binding, root)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
         Ok(())
     }
 }
@@ -845,7 +840,7 @@ impl NativeSyncProvisioner {
         endpoint: &Url,
         resources: Arc<FileResourceStore>,
     ) -> Result<(), SyncRuntimeError> {
-        self.finish_replica_media_archive()?;
+        self.clear_legacy_replica_media_archive_intent()?;
         if self
             .database
             .replica_enrollment_complete(peer.host_device_id)
@@ -898,11 +893,11 @@ impl NativeSyncProvisioner {
         }
         // Private cache is not library publication. Catalog media remains
         // unavailable until the safe file publication journal completes.
-        self.finish_replica_media_archive()?;
+        self.clear_legacy_replica_media_archive_intent()?;
         Ok(())
     }
 
-    fn finish_replica_media_archive(&self) -> Result<(), SyncRuntimeError> {
+    fn clear_legacy_replica_media_archive_intent(&self) -> Result<(), SyncRuntimeError> {
         let _activity = echo_core::application::sync::exclusive_local_activity()
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
         let configuration = self
@@ -918,16 +913,9 @@ impl NativeSyncProvisioner {
         else {
             return Ok(());
         };
-        let library = self
-            .database
-            .by_id(root)
-            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
-            .ok_or(SyncRuntimeError::LibraryUnavailable)?;
-        archive_previous_media(
-            library.absolute_path(),
-            &token,
-            configuration.binding.library_id,
-        )?;
+        // Previous releases used this intent to move local files out of the
+        // scanner's media tree during enrollment. Consume the stale intent
+        // without moving anything; local files always stay in place.
         self.database
             .complete_replica_media_archive(root, token)
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)

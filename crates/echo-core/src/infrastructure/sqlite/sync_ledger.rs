@@ -191,8 +191,8 @@ impl SqliteDatabase {
         self.bind_replica_for_enrollment(binding, local_root, false)
     }
 
-    /// Enroll the selected local library using the host as its catalog authority.
-    /// Existing rows remain intact until the complete snapshot is committed.
+    /// Enroll the selected local library while preserving its local-first state.
+    /// Existing rows remain intact as the complete host snapshot is merged.
     pub fn bind_sync_replica_for_enrollment(
         &self,
         binding: SyncBinding,
@@ -205,7 +205,7 @@ impl SqliteDatabase {
         &self,
         binding: SyncBinding,
         local_root: LibraryRootId,
-        replace_catalog: bool,
+        allow_nonempty_catalog: bool,
     ) -> Result<(), Error> {
         self.writer.run(move |connection| {
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
@@ -242,14 +242,14 @@ impl SqliteDatabase {
                 params![root],
                 |row| row.get(0),
             ).map_err(storage)?;
-            if nonempty && !replace_catalog {
+            if nonempty && !allow_nonempty_catalog {
                 return Err(Error::conflict("replica enrollment target is not empty"));
             }
             tx.execute(
                 "INSERT INTO sync_binding(singleton, library_id, authority_id, epoch, role, protocol_version, updated_at, local_root_uuid) VALUES(1, ?1, ?2, ?3, 'replica', 1, ?4, ?5)",
                 params![binding.library_id.as_uuid().to_string(), binding.authority_id.as_uuid().to_string(), i64::try_from(binding.epoch.as_u64()).map_err(storage)?, now_ms(), root],
             ).map_err(crate::infrastructure::sqlite::support::map_constraint)?;
-            if replace_catalog {
+            if allow_nonempty_catalog {
                 tx.execute(
                     "INSERT OR REPLACE INTO sync_state(key,value) VALUES(?1,?2)",
                     params![format!("replica_enrollment_replace:{root}"), serde_json::to_string(&binding).map_err(storage)?],

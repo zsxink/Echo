@@ -64,7 +64,8 @@ pub struct AppliedSnapshotPage {
 
 /// Stage consecutive pages durably. The final page atomically projects all
 /// records and advances the host cursor, without creating local mutations.
-/// Enrollment requires a matching, empty replica without local pending edits.
+/// Enrollment binds the matching replica while preserving and queuing its local
+/// catalog before the host snapshot is projected.
 pub trait ReplicaSnapshotApplyPort: Send + Sync {
     fn apply_snapshot_page(
         &self,

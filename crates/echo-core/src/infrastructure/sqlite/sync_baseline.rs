@@ -10,6 +10,65 @@ use super::support::{now_ms, parse_id, storage};
 use super::{statements, sync, sync_manifests, sync_projection, SqliteDatabase};
 
 impl SqliteDatabase {
+    /// Seed a replica's existing local catalog into its durable outbox before
+    /// the host snapshot is projected. This makes pending-local overlays win
+    /// over the initial remote state without replacing the local catalog.
+    pub fn ensure_replica_sync_baseline(
+        &self,
+        binding: SyncBinding,
+        root: LibraryRootId,
+    ) -> Result<usize, Error> {
+        self.writer.run(move |connection| {
+            let tx = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(storage)?;
+            let root_uuid = root.to_string();
+            super::sync_context::select(&tx, &root_uuid)?;
+            let authorized: bool = tx
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sync_binding WHERE singleton=1 AND role='replica' AND library_id=?1 AND authority_id=?2 AND epoch=?3 AND local_root_uuid=?4)",
+                    params![
+                        binding.library_id.as_uuid().to_string(),
+                        binding.authority_id.as_uuid().to_string(),
+                        i64::try_from(binding.epoch.as_u64()).map_err(storage)?,
+                        root_uuid,
+                    ],
+                    |row| row.get(0),
+                )
+                .map_err(storage)?;
+            if !authorized {
+                return Err(Error::conflict(
+                    "replica baseline requires the current host binding and local root",
+                ));
+            }
+            let marker = format!(
+                "replica_enrollment_baseline:{root_uuid}:{}:{}:{}",
+                binding.library_id.as_uuid(),
+                binding.authority_id.as_uuid(),
+                binding.epoch.as_u64(),
+            );
+            let completed: bool = tx
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sync_state WHERE key=?1)",
+                    params![marker],
+                    |row| row.get(0),
+                )
+                .map_err(storage)?;
+            if completed {
+                tx.commit().map_err(storage)?;
+                return Ok(0);
+            }
+            let count = enqueue_current(&tx, &root_uuid)?;
+            tx.execute(
+                "INSERT INTO sync_state(key,value) VALUES(?1,?2)",
+                params![marker, count.to_string()],
+            )
+            .map_err(storage)?;
+            tx.commit().map_err(storage)?;
+            Ok(count)
+        })
+    }
+
     /// Append current shared facts once, after any already queued local edits.
     /// The durable marker and every snapshot commit atomically. Local missing
     /// files and undoable deletes remain live shared objects until finalization.
