@@ -538,7 +538,7 @@ impl SyncProvisioner for NativeSyncProvisioner {
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
             .is_some()
         {
-            return Err(SyncRuntimeError::LibraryUnavailable);
+            return Err(SyncRuntimeError::LibraryAlreadyBound);
         }
         let library = self
             .database
