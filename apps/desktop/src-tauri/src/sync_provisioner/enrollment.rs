@@ -2,9 +2,10 @@
 
 use std::path::Path;
 
+#[cfg(test)]
 use echo_core::application::root_switch::derive_root_id;
 use echo_core::domain::ids::LibraryRootId;
-use echo_core::infrastructure::filesystem::staging::{StagingMarker, MARKER_FORMAT_VERSION};
+use echo_core::infrastructure::filesystem::staging::{MARKER_FORMAT_VERSION, StagingMarker};
 
 use crate::sync_runtime::SyncRuntimeError;
 
@@ -26,21 +27,13 @@ pub(super) fn prepare_enrollment_root(
     }
 
     let echo = root.join("echo");
+    let mut created_echo = false;
     match std::fs::symlink_metadata(&echo) {
         Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
         Ok(_) => return Err(SyncRuntimeError::LibraryUnavailable),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             std::fs::create_dir(&echo).map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-        }
-        Err(_) => return Err(SyncRuntimeError::LibraryUnavailable),
-    }
-
-    let temporary = echo.join("tmp");
-    match std::fs::symlink_metadata(&temporary) {
-        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
-        Ok(_) => return Err(SyncRuntimeError::LibraryUnavailable),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            std::fs::create_dir(&temporary).map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+            created_echo = true;
         }
         Err(_) => return Err(SyncRuntimeError::LibraryUnavailable),
     }
@@ -61,6 +54,20 @@ pub(super) fn prepare_enrollment_root(
                 })
                 .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
         }
+        Err(_) => return Err(SyncRuntimeError::LibraryUnavailable),
+    }
+
+    // Existing Echo catalogs remain joinable when their local staging area
+    // was never created or is read-only. New directories still get the
+    // staging marker needed by Echo's normal import and scan flows.
+    let temporary = echo.join("tmp");
+    match std::fs::symlink_metadata(&temporary) {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+        Ok(_) => return Err(SyncRuntimeError::LibraryUnavailable),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && created_echo => {
+            std::fs::create_dir(&temporary).map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(_) => return Err(SyncRuntimeError::LibraryUnavailable),
     }
 
@@ -86,7 +93,7 @@ pub(super) fn prepare_enrollment_root(
                     .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
             }
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && created_echo => {
             std::fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -98,12 +105,14 @@ pub(super) fn prepare_enrollment_root(
                 })
                 .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
         }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(_) => return Err(SyncRuntimeError::LibraryUnavailable),
     }
     Ok(())
 }
 
 /// Only Echo's setup files and an empty media directory may be enrolled.
+#[cfg(test)]
 pub(super) fn is_empty_enrollment_root(root: &Path) -> bool {
     fn visit_echo(
         path: &Path,
@@ -205,6 +214,7 @@ pub(super) fn is_empty_enrollment_root(root: &Path) -> bool {
 }
 
 /// Initialize only a truly empty, selected library directory for enrollment.
+#[cfg(test)]
 pub(super) fn prepare_empty_enrollment_root(
     root: &Path,
     root_id: LibraryRootId,
