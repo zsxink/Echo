@@ -28,7 +28,6 @@ export function LanSyncSettings() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [bindingConflict, setBindingConflict] = useState(false);
   const [role, setRole] = useState<LanSyncRole>("peer");
   const [address, setAddress] = useState("");
   const [localAddresses, setLocalAddresses] = useState<readonly string[] | null>(null);
@@ -98,12 +97,10 @@ export function LanSyncSettings() {
     if (busy) return;
     setBusy(true);
     setError(null);
-    setBindingConflict(false);
     try {
       setStatus(await action());
     } catch (cause) {
       setError(errorMessage(cause));
-      setBindingConflict(errorKey(cause) === "sync.libraryAlreadyBound");
       // Read back native state because a failed command may still report a
       // terminal state transition through sync://status.
       void lanSyncAdapter
@@ -458,17 +455,7 @@ export function LanSyncSettings() {
       )}
       {error ? (
         <div className="settings-note" role="alert">
-          <p>{error}</p>
-          {bindingConflict ? (
-            <button
-              type="button"
-              className="btn"
-              disabled={busy}
-              onClick={() => void run(lanSyncAdapter.leaveSync)}
-            >
-              解除原同步绑定（保留音乐）
-            </button>
-          ) : null}
+          {error}
         </div>
       ) : null}
     </section>
@@ -476,22 +463,19 @@ export function LanSyncSettings() {
 }
 
 function errorMessage(cause: unknown): string {
-  const key = errorKey(cause);
+  const key =
+    cause instanceof Error
+      ? cause.message
+      : typeof cause === "string"
+        ? cause
+        : typeof cause === "object" && cause !== null
+          ? "messageKey" in cause && typeof cause.messageKey === "string"
+            ? cause.messageKey
+            : "message_key" in cause && typeof cause.message_key === "string"
+              ? cause.message_key
+              : undefined
+          : undefined;
   return key ? `同步操作失败：${syncErrorText(key)}` : "同步操作失败，未确认任何数据已传输。";
-}
-
-function errorKey(cause: unknown): string | undefined {
-  return cause instanceof Error
-    ? cause.message
-    : typeof cause === "string"
-      ? cause
-      : typeof cause === "object" && cause !== null
-        ? "messageKey" in cause && typeof cause.messageKey === "string"
-          ? cause.messageKey
-          : "message_key" in cause && typeof cause.message_key === "string"
-            ? cause.message_key
-            : undefined
-        : undefined;
 }
 
 function syncErrorText(key: string): string {
@@ -499,8 +483,6 @@ function syncErrorText(key: string): string {
     "sync.unconfigured": "同步服务尚未完成安全配置。",
     "sync.invalidAddress": "请输入有效的局域网 IP 地址。",
     "sync.libraryUnavailable": "请先选择可用且可写的音乐目录，再启动同步。",
-    "sync.libraryAlreadyBound":
-      "当前音乐库已绑定其他同步身份。解除原绑定后才能加入此主机；本地音乐会保留。",
     "sync.busy": "同步服务正在处理其他操作。",
     "sync.bindFailed": "无法监听该局域网地址，请从自动识别的地址中选择当前网络地址。",
     "sync.discoveryFailed": "局域网主机发现失败。",

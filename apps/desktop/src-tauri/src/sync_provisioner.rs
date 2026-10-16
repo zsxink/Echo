@@ -90,6 +90,23 @@ struct PeerIdentity {
     bearer_token: String,
 }
 
+fn remove_peer_identity_if_generation(
+    handle: &SecretHandle,
+    identity: &PeerIdentity,
+) -> Result<(), SyncRuntimeError> {
+    let current = OsSecureStore
+        .get(handle)
+        .map_err(|_| SyncRuntimeError::Unconfigured)?;
+    let current: PeerIdentity =
+        serde_json::from_slice(current.expose()).map_err(|_| SyncRuntimeError::Unconfigured)?;
+    if current.generation == identity.generation {
+        OsSecureStore
+            .delete(handle)
+            .map_err(|_| SyncRuntimeError::Unconfigured)?;
+    }
+    Ok(())
+}
+
 impl NativeSyncProvisioner {
     pub const fn new(
         database: Arc<SqliteDatabase>,
@@ -455,6 +472,95 @@ impl SyncProvisioner for NativeSyncProvisioner {
             .gate
             .lock()
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        self.leave_sync_locked(root)
+    }
+
+    fn complete_peer_pairing(
+        &self,
+        root: LibraryRootId,
+        invitation: &PairingInvitation,
+        endpoint: &str,
+        grant: &PairingGrantDto,
+    ) -> Result<(), SyncRuntimeError> {
+        let _guard = self
+            .gate
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let _activity = echo_core::application::sync::exclusive_local_activity()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        validate_peer_endpoint(endpoint)?;
+        let local_device = DeviceId::from_uuid(self.database.current_device_id().as_uuid());
+        if grant.binding != invitation.binding
+            || grant.device_id != local_device
+            || invitation.host_device_id == local_device
+            || !(32..=256).contains(&grant.bearer_token.len())
+            || !grant
+                .bearer_token
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric())
+        {
+            return Err(SyncRuntimeError::Unconfigured);
+        }
+        let current_configuration = self
+            .database
+            .current_sync_configuration()
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        let library = self
+            .database
+            .by_id(root)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+            .ok_or(SyncRuntimeError::LibraryUnavailable)?;
+        if !library.is_active()
+            || !library.write_capable()
+            || library.availability() != RootAvailability::Available
+        {
+            return Err(SyncRuntimeError::LibraryUnavailable);
+        }
+        // Keep the local catalog until a complete host snapshot can replace it
+        // atomically. Existing media files remain on disk throughout enrollment.
+        prepare_enrollment_root(library.absolute_path(), root)?;
+        LanClient::new(&invitation.host_certificate_der, grant.bearer_token.clone())
+            .map_err(|_| SyncRuntimeError::Unconfigured)?;
+        let identity = PeerIdentity {
+            binding: invitation.binding,
+            local_root: root,
+            local_device,
+            host_device: invitation.host_device_id,
+            generation: invitation.invitation_id.clone(),
+            endpoint: endpoint.to_owned(),
+            host_certificate_der: invitation.host_certificate_der.clone(),
+            bearer_token: grant.bearer_token.clone(),
+        };
+        let handle = peer_identity_handle(invitation.binding, root)?;
+        let secret = SecretBytes::new(
+            serde_json::to_vec(&identity).map_err(|_| SyncRuntimeError::Unconfigured)?,
+        );
+        OsSecureStore
+            .set(&handle, &secret)
+            .map_err(|_| SyncRuntimeError::Unconfigured)?;
+        let already_bound_to_this_host = current_configuration.as_ref().is_some_and(|current| {
+            !current.host && current.binding == invitation.binding && current.local_root == root
+        });
+        if current_configuration.is_some() && !already_bound_to_this_host {
+            if let Err(error) = self.leave_sync_locked(root) {
+                remove_peer_identity_if_generation(&handle, &identity)?;
+                return Err(error);
+            }
+        }
+        if self
+            .database
+            .bind_sync_replica_for_enrollment(invitation.binding, root)
+            .is_err()
+        {
+            remove_peer_identity_if_generation(&handle, &identity)?;
+            return Err(SyncRuntimeError::LibraryUnavailable);
+        }
+        Ok(())
+    }
+}
+
+impl NativeSyncProvisioner {
+    fn leave_sync_locked(&self, root: LibraryRootId) -> Result<(), SyncRuntimeError> {
         self.database
             .select_sync_context(root)
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
@@ -506,97 +612,6 @@ impl SyncProvisioner for NativeSyncProvisioner {
         Ok(())
     }
 
-    fn complete_peer_pairing(
-        &self,
-        root: LibraryRootId,
-        invitation: &PairingInvitation,
-        endpoint: &str,
-        grant: &PairingGrantDto,
-    ) -> Result<(), SyncRuntimeError> {
-        let _guard = self
-            .gate
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
-        let _activity = echo_core::application::sync::exclusive_local_activity()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
-        validate_peer_endpoint(endpoint)?;
-        let local_device = DeviceId::from_uuid(self.database.current_device_id().as_uuid());
-        if grant.binding != invitation.binding
-            || grant.device_id != local_device
-            || invitation.host_device_id == local_device
-            || !(32..=256).contains(&grant.bearer_token.len())
-            || !grant
-                .bearer_token
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric())
-        {
-            return Err(SyncRuntimeError::Unconfigured);
-        }
-        if self
-            .database
-            .current_sync_configuration()
-            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
-            .is_some()
-        {
-            return Err(SyncRuntimeError::LibraryAlreadyBound);
-        }
-        let library = self
-            .database
-            .by_id(root)
-            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
-            .ok_or(SyncRuntimeError::LibraryUnavailable)?;
-        if !library.is_active()
-            || !library.write_capable()
-            || library.availability() != RootAvailability::Available
-        {
-            return Err(SyncRuntimeError::LibraryUnavailable);
-        }
-        // Keep the local catalog until a complete host snapshot can replace it
-        // atomically. Existing media files remain on disk throughout enrollment.
-        prepare_enrollment_root(library.absolute_path(), root)?;
-        LanClient::new(&invitation.host_certificate_der, grant.bearer_token.clone())
-            .map_err(|_| SyncRuntimeError::Unconfigured)?;
-        let identity = PeerIdentity {
-            binding: invitation.binding,
-            local_root: root,
-            local_device,
-            host_device: invitation.host_device_id,
-            generation: invitation.invitation_id.clone(),
-            endpoint: endpoint.to_owned(),
-            host_certificate_der: invitation.host_certificate_der.clone(),
-            bearer_token: grant.bearer_token.clone(),
-        };
-        let handle = peer_identity_handle(invitation.binding, root)?;
-        let secret = SecretBytes::new(
-            serde_json::to_vec(&identity).map_err(|_| SyncRuntimeError::Unconfigured)?,
-        );
-        OsSecureStore
-            .set(&handle, &secret)
-            .map_err(|_| SyncRuntimeError::Unconfigured)?;
-        if self
-            .database
-            .bind_sync_replica_for_enrollment(invitation.binding, root)
-            .is_err()
-        {
-            // This adapter serializes local pairing. Compare the generation
-            // before cleanup so a different successful enrollment is retained.
-            let current = OsSecureStore
-                .get(&handle)
-                .map_err(|_| SyncRuntimeError::Unconfigured)?;
-            let current: PeerIdentity = serde_json::from_slice(current.expose())
-                .map_err(|_| SyncRuntimeError::Unconfigured)?;
-            if current.generation == identity.generation {
-                OsSecureStore
-                    .delete(&handle)
-                    .map_err(|_| SyncRuntimeError::Unconfigured)?;
-            }
-            return Err(SyncRuntimeError::LibraryUnavailable);
-        }
-        Ok(())
-    }
-}
-
-impl NativeSyncProvisioner {
     fn synchronize_peer(
         &self,
         root: LibraryRootId,
