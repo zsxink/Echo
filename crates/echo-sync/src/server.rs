@@ -201,7 +201,7 @@ impl HostApiState {
         let authorization = self
             .authorization
             .as_ref()
-            .ok_or(PairingError::ProvisioningUnavailable)?;
+            .ok_or_else(|| pairing_provisioning_failure("authorization_port_missing"))?;
         registry.cleanup_expired(port.as_ref())?;
         {
             let mut credentials = self
@@ -212,7 +212,7 @@ impl HostApiState {
             for credential in credentials.iter().copied() {
                 if authorization
                     .peer_is_authorized(self.binding, credential.0)
-                    .map_err(|_| PairingError::ProvisioningUnavailable)?
+                    .map_err(|_| pairing_provisioning_failure("authorization_lookup"))?
                 {
                     active.push(credential);
                 }
@@ -236,7 +236,7 @@ impl HostApiState {
                 .iter()
                 .any(|(device, _)| *device == request.device_id)
             {
-                return Err(PairingError::ProvisioningUnavailable);
+                return Err(pairing_provisioning_failure("duplicate_active_device"));
             }
         }
         let result = registry.approve(request_id, port.as_ref(), |grant| {
@@ -248,9 +248,11 @@ impl HostApiState {
             }
             if !authorization
                 .peer_is_authorized(self.binding, grant.device_id)
-                .map_err(|_| PairingError::ProvisioningUnavailable)?
+                .map_err(|_| pairing_provisioning_failure("authorization_activation_lookup"))?
             {
-                return Err(PairingError::ProvisioningUnavailable);
+                return Err(pairing_provisioning_failure(
+                    "authorization_activation_rejected",
+                ));
             }
             let hash = *blake3::hash(grant.bearer_token.as_bytes()).as_bytes();
             let mut credentials = self
@@ -261,7 +263,7 @@ impl HostApiState {
                 .iter()
                 .any(|(device, token)| *device == grant.device_id || *token == hash)
             {
-                return Err(PairingError::ProvisioningUnavailable);
+                return Err(pairing_provisioning_failure("duplicate_active_credential"));
             }
             if credentials.len() >= 32 {
                 return Err(PairingError::Capacity);
@@ -320,6 +322,11 @@ impl HostApiState {
         self.resources = Some(resources);
         self
     }
+}
+
+fn pairing_provisioning_failure(stage: &'static str) -> PairingError {
+    tracing::warn!(target: "echo_sync::pairing", stage, "LAN pairing provisioning failed");
+    PairingError::ProvisioningUnavailable
 }
 
 pub struct PeerCredential {

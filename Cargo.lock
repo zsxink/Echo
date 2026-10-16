@@ -1024,6 +1024,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-rustls",
+ "tracing",
 ]
 
 [[package]]
