@@ -49,6 +49,11 @@ mod migrations {
 
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const READER_COUNT: usize = 3;
+// A development build briefly published version 20 with `IF NOT EXISTS` on
+// the archive tables. Its schema is equivalent to the released migration,
+// but databases created by that build carry this checksum.
+const LEGACY_ROOT_SYNC_CONTEXTS_CHECKSUM: &str =
+    "d73256ef23345b827007dcf425894a11bdd25e4c545a984b29ba0dd133bd6f7a";
 
 /// Maximum size of the read-only connection pool.
 pub(crate) const fn reader_count() -> usize {
@@ -129,7 +134,12 @@ pub(crate) fn apply_migration_set(
             .optional()
             .map_err(storage)?;
         match current {
-            Some(applied) if applied == checksum => continue,
+            Some(applied)
+                if applied == checksum
+                    || (*version == 20 && applied == LEGACY_ROOT_SYNC_CONTEXTS_CHECKSUM) =>
+            {
+                continue;
+            }
             Some(_) => {
                 return Err(Error::InvariantViolation {
                     why: format!(
