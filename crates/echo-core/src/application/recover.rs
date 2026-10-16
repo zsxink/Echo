@@ -123,6 +123,12 @@ impl<'a> RecoverOperations<'a> {
     /// the filesystem; per-item conflicts are reported in the result, not
     /// raised here.
     pub fn run(&self, root: LibraryRootId) -> Result<RecoveryReport, Error> {
+        let _activity = super::sync::local_activity()?;
+        if self.deps.roots.replica_enrollment_pending(root)? {
+            return Ok(RecoveryReport {
+                touched: Vec::new(),
+            });
+        }
         let items = self.deps.journal.incomplete_items(root)?;
         // Group per-operation, keeping only the kinds this task implements:
         // imports (design §8) and Echo's own deletes/restores (design §9).

@@ -185,7 +185,15 @@ impl<'a> PrepareLibraryCandidate<'a> {
         root_id: LibraryRootId,
         write_capable: bool,
     ) -> (Option<ContinuationReport>, bool) {
-        if !write_capable {
+        let Ok(_activity) = super::sync::local_activity() else {
+            return (None, true);
+        };
+        if !write_capable
+            || self
+                .roots
+                .replica_enrollment_pending(root_id)
+                .unwrap_or(true)
+        {
             return (None, false);
         }
         match ContinueFromRecords::new(

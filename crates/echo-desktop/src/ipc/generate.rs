@@ -215,6 +215,7 @@ pub fn generated_typescript() -> String {
         "sync_status",
         "host_start",
         "host_stop",
+        "sync_leave",
         "sync_peer_start",
         "sync_pause",
         "sync_resume",

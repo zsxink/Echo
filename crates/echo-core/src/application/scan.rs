@@ -224,6 +224,17 @@ impl<'a> StartScan<'a> {
     /// Root-level failures propagate; the run is persisted as `Failed` first
     /// and nothing is marked missing.
     pub fn run(&self, root: LibraryRootId) -> Result<ScanSummary, Error> {
+        let _activity = super::sync::local_activity()?;
+        if self.deps.roots.replica_enrollment_pending(root)? {
+            return Ok(ScanSummary {
+                generation: self.deps.runs.latest_generation(root)?.unwrap_or(0),
+                cancelled: true,
+                progress: ScanProgress {
+                    state: ScanState::Cancelled,
+                    ..ScanProgress::default()
+                },
+            });
+        }
         let generation = self.deps.runs.latest_generation(root)?.unwrap_or(0) + 1;
         let token = ScanCancelToken::new();
         self.supervisor.register(root, token.clone())?;

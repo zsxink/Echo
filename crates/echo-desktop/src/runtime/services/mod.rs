@@ -373,9 +373,18 @@ impl AppServices {
 
     /// Reject a destructive op before it reaches core when the gate forbids
     /// writes (no active root, or a read-only journal outcome).
-    fn guard_writes(&self) -> Result<(), Error> {
+    fn guard_writes(&self) -> Result<std::sync::RwLockReadGuard<'static, ()>, Error> {
+        let activity = echo_core::application::sync::local_activity()?;
+        if let Some(root) = self.deps.roots.active_root()? {
+            if self.deps.roots.replica_enrollment_pending(root.id())? {
+                return Err(Error::unavailable(
+                    "library",
+                    "host library enrollment is in progress",
+                ));
+            }
+        }
         if self.startup.writes_allowed() {
-            Ok(())
+            Ok(activity)
         } else {
             Err(Error::unavailable(
                 "library",

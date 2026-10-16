@@ -55,6 +55,10 @@ impl<'a> FinalizeExpiredDeletes<'a> {
     /// Returns an infrastructure or journal error while persisting a known
     /// transition. A later startup recovery can safely retry such failures.
     pub fn run(&self, root: LibraryRootId) -> Result<TrashFinalizationReport, Error> {
+        let _activity = super::sync::local_activity()?;
+        if self.deps.roots.replica_enrollment_pending(root)? {
+            return Ok(TrashFinalizationReport::default());
+        }
         let mut deletes: BTreeMap<OperationId, Vec<OperationItem>> = BTreeMap::new();
         for (operation, kind, item) in self.deps.journal.incomplete_items(root)? {
             if kind == DELETE_OPERATION {

@@ -14,6 +14,74 @@ use super::super::SqliteDatabase;
 const MAX_PAGE_BYTES: usize = 16 * 1024 * 1024;
 
 impl SqliteDatabase {
+    /// Whether this exact binding will replace the selected root's local
+    /// catalog. Its superseded resources must not be required for enrollment.
+    pub fn replica_catalog_replacement_pending(
+        &self,
+        root: crate::domain::ids::LibraryRootId,
+        binding: SyncBinding,
+    ) -> Result<bool, Error> {
+        self.with_reader(move |connection| {
+            replacement_requested(connection, &root.to_string(), binding)
+        })
+    }
+
+    /// Whether normal local scan/import recovery must wait for host enrollment
+    /// or its durable media preservation step to finish for this root.
+    pub fn replica_enrollment_pending(
+        &self,
+        root: crate::domain::ids::LibraryRootId,
+    ) -> Result<bool, Error> {
+        self.with_reader(move |connection| {
+            connection
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sync_state WHERE key IN (?1,?2))",
+                    params![
+                        format!("replica_enrollment_replace:{root}"),
+                        format!("replica_enrollment_archive:{root}")
+                    ],
+                    |row| row.get(0),
+                )
+                .map_err(storage)
+        })
+    }
+
+    /// The completed snapshot's pending preservation step. Until it is cleared,
+    /// the desktop must archive previous media before scanning or publishing.
+    pub fn pending_replica_media_archive(
+        &self,
+        root: crate::domain::ids::LibraryRootId,
+    ) -> Result<Option<String>, Error> {
+        self.with_reader(move |connection| {
+            connection
+                .query_row(
+                    "SELECT value FROM sync_state WHERE key=?1",
+                    params![format!("replica_enrollment_archive:{root}")],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(storage)
+        })
+    }
+
+    /// Finish exactly the archive intent observed by the desktop. A newer
+    /// enrollment cannot accidentally be acknowledged by an older worker.
+    pub fn complete_replica_media_archive(
+        &self,
+        root: crate::domain::ids::LibraryRootId,
+        token: String,
+    ) -> Result<(), Error> {
+        self.writer.run(move |connection| {
+            connection
+                .execute(
+                    "DELETE FROM sync_state WHERE key=?1 AND value=?2",
+                    params![format!("replica_enrollment_archive:{root}"), token],
+                )
+                .map_err(storage)?;
+            Ok(())
+        })
+    }
+
     /// Whether this host identity has a durable replica cursor. A zero cursor
     /// is valid for a successfully completed empty-host snapshot.
     pub fn replica_enrollment_complete(&self, host: DeviceId) -> Result<bool, Error> {
@@ -86,7 +154,7 @@ impl ReplicaSnapshotApplyPort for SqliteDatabase {
                 if page.page_index != 0 {
                     return Err(Error::conflict("snapshot enrollment must start at page zero"));
                 }
-                ensure_empty_replica(&tx, &root)?;
+                ensure_enrollment_target(&tx, &root, page.checkpoint.binding)?;
                 let enrolling: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM sync_replica_snapshot_sessions)", [], |row| row.get(0)).map_err(storage)?;
                 if enrolling {
                     return Err(Error::conflict("replica already has a snapshot enrollment"));
@@ -96,9 +164,10 @@ impl ReplicaSnapshotApplyPort for SqliteDatabase {
                     params![peer,page.snapshot_token,page.checkpoint.binding.library_id.as_uuid().to_string(),page.checkpoint.binding.authority_id.as_uuid().to_string(),i64::try_from(page.checkpoint.binding.epoch.as_u64()).map_err(storage)?,i64::try_from(page.checkpoint.sequence.as_u64()).map_err(storage)?,page.checkpoint.digest.as_slice()],
                 ).map_err(storage)?;
             }
-            // Check again on every page: local writes racing enrollment must
-            // never be overwritten by the final snapshot transaction.
-            ensure_empty_replica(&tx, &root)?;
+            // Empty-target callers retain their original no-overwrite contract.
+            // Explicit host-authoritative enrollment keeps local rows visible
+            // while staging and replaces them only in the final transaction.
+            ensure_enrollment_target(&tx, &root, page.checkpoint.binding)?;
             tx.execute(
                 "INSERT INTO sync_replica_snapshot_pages(token,page_index,body_digest,body_json) VALUES(?1,?2,?3,?4)",
                 params![page.snapshot_token,page.page_index,blake3::hash(body.as_bytes()).as_bytes().as_slice(),body],
@@ -112,6 +181,14 @@ impl ReplicaSnapshotApplyPort for SqliteDatabase {
                 tx.execute("INSERT INTO sync_replica_snapshot_records(token,identity,record_json) VALUES(?1,?2,?3)", params![page.snapshot_token,identity,serde_json::to_string(record).map_err(storage)?]).map_err(storage)?;
             }
             if page.next_page_index.is_none() {
+                ensure_snapshot_root_ownership(&tx, &page.snapshot_token, &root)?;
+                if replacement_requested(&tx, &root, page.checkpoint.binding)? {
+                    replace_local_catalog(&tx, &root)?;
+                    tx.execute(
+                        "INSERT OR REPLACE INTO sync_state(key,value) VALUES(?1,?2)",
+                        params![format!("replica_enrollment_archive:{root}"), page.snapshot_token],
+                    ).map_err(storage)?;
+                }
                 finish_snapshot(&tx, &page, &root)?;
                 tx.execute(
                     "INSERT INTO sync_peer_cursors(peer_device_id,applied_commit_seq,applied_digest,resource_bytes_complete,updated_at) VALUES(?1,?2,?3,0,?4)",
@@ -119,6 +196,7 @@ impl ReplicaSnapshotApplyPort for SqliteDatabase {
                 ).map_err(storage)?;
                 tx.execute("UPDATE sync_replica_snapshot_sessions SET completed=1 WHERE token=?1",params![page.snapshot_token]).map_err(storage)?;
                 tx.execute("DELETE FROM sync_replica_snapshot_records WHERE token=?1",params![page.snapshot_token]).map_err(storage)?;
+                tx.execute("DELETE FROM sync_state WHERE key=?1", params![replacement_key(&root)]).map_err(storage)?;
             } else {
                 tx.execute("UPDATE sync_replica_snapshot_sessions SET next_page_index=?2 WHERE token=?1",params![page.snapshot_token,page.next_page_index]).map_err(storage)?;
             }
@@ -285,6 +363,132 @@ fn ensure_empty_replica(connection: &Connection, root: &str) -> Result<(), Error
     }
 }
 
+fn replacement_key(root: &str) -> String {
+    format!("replica_enrollment_replace:{root}")
+}
+
+fn replacement_requested(
+    connection: &Connection,
+    root: &str,
+    binding: SyncBinding,
+) -> Result<bool, Error> {
+    let saved: Option<String> = connection
+        .query_row(
+            "SELECT value FROM sync_state WHERE key=?1",
+            params![replacement_key(root)],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(storage)?;
+    saved
+        .map(|value| {
+            serde_json::from_str::<SyncBinding>(&value)
+                .map(|saved| saved == binding)
+                .map_err(storage)
+        })
+        .transpose()
+        .map(|requested| requested.unwrap_or(false))
+}
+
+fn ensure_enrollment_target(
+    connection: &Connection,
+    root: &str,
+    binding: SyncBinding,
+) -> Result<(), Error> {
+    if replacement_requested(connection, root, binding)? {
+        Ok(())
+    } else {
+        ensure_empty_replica(connection, root)
+    }
+}
+
+/// Called only inside the final page transaction. If any host object fails
+/// validation/projection, SQLite rolls this entire replacement back, retaining
+/// the original library and its pending edits for a retry. No filesystem work
+/// occurs here: existing audio and user files are retained.
+fn replace_local_catalog(connection: &Connection, root: &str) -> Result<(), Error> {
+    // Resolve all ownership before deleting the read model, including objects
+    // already removed locally that still have queued mutations or tombstones.
+    const OWNED_IDS: &str = "SELECT uuid FROM songs WHERE library_root_uuid=?1 UNION SELECT uuid FROM playlists WHERE library_root_uuid=?1 UNION SELECT m.member_uuid FROM playlist_songs m JOIN playlists p ON p.uuid=m.playlist_uuid WHERE p.library_root_uuid=?1 UNION SELECT object_uuid FROM sync_mutations WHERE local_root_uuid=?1 UNION SELECT object_uuid FROM sync_outbox WHERE local_root_uuid=?1";
+    for table in [
+        "sync_resource_refs",
+        "sync_resource_manifests",
+        "sync_local_delete_intents",
+        "tombstones",
+    ] {
+        connection
+            .execute(
+                &format!("DELETE FROM {table} WHERE object_uuid IN ({OWNED_IDS})"),
+                params![root],
+            )
+            .map_err(storage)?;
+    }
+    connection.execute(
+        "DELETE FROM sync_device_play_counts WHERE song_uuid IN (SELECT uuid FROM songs WHERE library_root_uuid=?1)",
+        params![root],
+    ).map_err(storage)?;
+    // Retain journal evidence but prevent old delete/import recovery from
+    // applying file operations to identities superseded by the host catalog.
+    connection.execute(
+        "UPDATE operation_items SET state='rolled_back',error_code='sync_library_replaced',claim_active=0 WHERE library_root_uuid=?1 AND state NOT IN ('database_finalized','rolled_back','completed')",
+        params![root],
+    ).map_err(storage)?;
+    connection.execute(
+        "UPDATE operation_journal SET state='rolled_back',error_code='sync_library_replaced',updated_at=?2 WHERE library_root_uuid=?1 AND state NOT IN ('database_finalized','rolled_back','completed')",
+        params![root, now_ms()],
+    ).map_err(storage)?;
+    for table in [
+        "sync_remote_resource_locations",
+        "sync_remote_publication_claims",
+        "sync_remote_publications",
+        "sync_mutations",
+        "sync_outbox",
+        "sync_local_origin_cursors",
+    ] {
+        connection
+            .execute(
+                &format!("DELETE FROM {table} WHERE local_root_uuid=?1"),
+                params![root],
+            )
+            .map_err(storage)?;
+    }
+    // These tables hold only the selected root's protocol context. Other
+    // libraries' contexts remain in their archived_sync_* tables.
+    for table in [
+        "sync_host_baselines",
+        "sync_transfers",
+        "sync_peer_cursors",
+        "sync_conflicts",
+        "sync_member_aliases",
+        "sync_song_aliases",
+        "sync_object_versions",
+        "sync_commits",
+        "sync_inbox",
+        "sync_origin_cursors",
+    ] {
+        connection
+            .execute(&format!("DELETE FROM {table}"), [])
+            .map_err(storage)?;
+    }
+    connection.execute(
+        "DELETE FROM song_search WHERE song_uuid IN (SELECT uuid FROM songs WHERE library_root_uuid=?1)",
+        params![root],
+    ).map_err(storage)?;
+    connection
+        .execute(
+            "DELETE FROM playlists WHERE library_root_uuid=?1",
+            params![root],
+        )
+        .map_err(storage)?;
+    connection
+        .execute(
+            "DELETE FROM songs WHERE library_root_uuid=?1",
+            params![root],
+        )
+        .map_err(storage)?;
+    Ok(())
+}
+
 fn record_identity(record: &HostSnapshotRecord) -> String {
     match record {
         HostSnapshotRecord::Object { candidate, .. } => {
@@ -297,6 +501,45 @@ fn record_identity(record: &HostSnapshotRecord) -> String {
             alias.playlist_id, alias.alias_member_id
         ),
     }
+}
+
+fn ensure_snapshot_root_ownership(
+    connection: &Connection,
+    token: &str,
+    root: &str,
+) -> Result<(), Error> {
+    visit_records(connection, token, |record| {
+        let objects = match record {
+            HostSnapshotRecord::Object { candidate, .. } => {
+                vec![super::object_identity(candidate.object)]
+            }
+            HostSnapshotRecord::SongAlias { alias, canonical } => {
+                vec![("song", alias.to_string()), ("song", canonical.to_string())]
+            }
+            HostSnapshotRecord::PlaylistMemberAlias(alias) => vec![
+                ("playlist", alias.playlist_id.to_string()),
+                ("playlist-item", alias.alias_member_id.to_string()),
+                ("playlist-item", alias.canonical_member_id.to_string()),
+            ],
+        };
+        for (kind, id) in objects {
+            let query = match kind {
+                "song" | "favorite" | "override" | "play-stats" | "tombstone" => "SELECT EXISTS(SELECT 1 FROM songs WHERE uuid=?1 AND library_root_uuid<>?2)",
+                "playlist" => "SELECT EXISTS(SELECT 1 FROM playlists WHERE uuid=?1 AND library_root_uuid<>?2)",
+                "playlist-item" => "SELECT EXISTS(SELECT 1 FROM playlist_songs m JOIN playlists p ON p.uuid=m.playlist_uuid WHERE m.member_uuid=?1 AND p.library_root_uuid<>?2)",
+                _ => continue,
+            };
+            let other_root: bool = connection
+                .query_row(query, params![id, root], |row| row.get(0))
+                .map_err(storage)?;
+            if other_root {
+                return Err(Error::conflict(
+                    "snapshot object identity belongs to another local root",
+                ));
+            }
+        }
+        Ok(())
+    })
 }
 
 fn visit_records(

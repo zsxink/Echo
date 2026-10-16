@@ -30,7 +30,7 @@ impl super::AppServices {
     /// result, including an unavailable root, so the UI can render one
     /// consistent failure surface.
     pub fn choose_and_import_files(&self) -> Result<Option<ImportBatchDto>, Error> {
-        self.guard_writes()?;
+        let _activity = self.guard_writes()?;
         let Some(picked) = self.dialogs.pick_audio_files()? else {
             // Cancelled: not an error, not a success — a genuine no-op.
             return Ok(None);
@@ -122,7 +122,7 @@ impl super::AppServices {
         absolute_path: &std::path::Path,
         display_name: &str,
     ) -> Result<ImportResultDto, Error> {
-        self.guard_writes()?;
+        let _activity = self.guard_writes()?;
         let root_id = self
             .deps
             .roots

@@ -145,6 +145,9 @@ impl WatchCoordinator {
     /// Persistence failures propagate; event *semantics* never fail (a bad
     /// file is a diagnostic, exactly as in the scan pipeline).
     pub fn handle_event(&self, event: FileEvent) -> Result<EventOutcome, Error> {
+        if self.deps.roots.replica_enrollment_pending(event.root)? {
+            return Ok(EventOutcome::Ignored);
+        }
         if event.kind == FileEventKind::RescanNeeded {
             let reason = if event.path.normalized() == crate::application::ports::RESCAN_SENTINEL {
                 RescanReason::WatcherOverflow
@@ -153,6 +156,10 @@ impl WatchCoordinator {
             };
             (self.callbacks.request_rescan)(reason);
             return Ok(EventOutcome::RescanRequested(reason));
+        }
+        let _activity = super::sync::local_activity()?;
+        if self.deps.roots.replica_enrollment_pending(event.root)? {
+            return Ok(EventOutcome::Ignored);
         }
         // A running scan owns the whole tree: buffer instead of guessing.
         if self.supervisor.is_scanning(event.root) {

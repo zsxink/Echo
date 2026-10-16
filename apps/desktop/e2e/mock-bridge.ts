@@ -92,6 +92,7 @@ type Command =
   | "local_lan_addresses"
   | "host_start"
   | "host_stop"
+  | "sync_leave"
   | "sync_peer_start"
   | "sync_pause"
   | "sync_resume"
@@ -355,6 +356,19 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
         state: "disabled",
         eventSequence: syncStatus.eventSequence + 1,
         address: null,
+      };
+      pairingCode = null;
+      return syncStatus;
+    },
+    sync_leave: () => {
+      syncStatus = {
+        ...syncStatus,
+        enabled: false,
+        role: "none",
+        state: "disabled",
+        eventSequence: syncStatus.eventSequence + 1,
+        address: null,
+        libraryId: null,
       };
       pairingCode = null;
       return syncStatus;

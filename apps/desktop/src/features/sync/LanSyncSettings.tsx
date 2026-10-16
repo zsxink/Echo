@@ -144,20 +144,21 @@ export function LanSyncSettings() {
   const active = status?.enabled === true;
   const paused = status?.state === "paused";
   const hostMode = active ? status?.role === "host" : role === "host";
-  const ownHostAddress = (() => {
-    if (!hostMode || !status?.address) return null;
+  const ownHostAddresses = (() => {
+    const currentAddress = status?.role === "host" ? status.address : hostMode ? address : "";
+    if (!currentAddress) return localAddresses ?? [];
     try {
-      const endpoint = new URL(status.address);
-      return { address: endpoint.hostname, port: Number(endpoint.port || 50826) };
+      const endpoint = new URL(
+        currentAddress.includes("://") ? currentAddress : `https://${currentAddress}:50826`,
+      );
+      return [endpoint.hostname, ...(localAddresses ?? [])];
     } catch {
-      return null;
+      return localAddresses ?? [];
     }
   })();
   const visibleHosts = hosts.filter(
     (host) =>
-      !ownHostAddress ||
-      host.port !== ownHostAddress.port ||
-      !host.addresses.some((candidate) => candidate === ownHostAddress.address),
+      host.port !== 50826 || !host.addresses.some((candidate) => ownHostAddresses.includes(candidate)),
   );
 
   useEffect(() => {
@@ -227,35 +228,47 @@ export function LanSyncSettings() {
               disabled={busy}
               onClick={() => void run(lanSyncAdapter.hostStop)}
             >
-              {busy ? "正在处理…" : "停止同步"}
+              {busy ? "正在处理…" : status?.role === "host" ? "停止主机服务" : "停止同步"}
             </button>
           ) : null}
         </div>
       </div>
       {active && status?.role === "host" ? (
-        <div className="setting-row" aria-label="配对验证码">
-          <div className="storage-value">
-            <strong>配对新设备</strong>
-            <span className="setting-help">其他设备输入主机 IP 和验证码即可加入。</span>
-            <span className="setting-help">验证码每 10 分钟自动刷新。</span>
+        <>
+          <div className="setting-row" aria-label="配对验证码">
+            <div className="storage-value">
+              <strong>配对新设备</strong>
+              <span className="setting-help">其他设备输入主机 IP 和验证码即可加入。</span>
+              <span className="setting-help">验证码每 10 分钟自动刷新。</span>
+            </div>
+            <code aria-label="主机配对验证码" className="setting-code">
+              {pairingCodeState?.code ?? "······"}
+            </code>
           </div>
-          <code aria-label="主机配对验证码" className="setting-code">
-            {pairingCodeState?.code ?? "······"}
-          </code>
-        </div>
+          <div className="setting-row">
+            <div className="storage-value">
+              <strong>解除本库的主机身份</strong>
+              <span className="setting-help">保留本地音乐库，停止服务并清除本库的同步关系。</span>
+            </div>
+            <button type="button" className="btn" disabled={busy} onClick={() => void run(lanSyncAdapter.leaveSync)}>
+              解除绑定
+            </button>
+          </div>
+        </>
       ) : null}
       {active && status?.role === "peer" ? (
         <div className="setting-row">
           <div className="storage-value">
-            <strong>从当前主机解绑</strong>
+            <strong>退出当前主机</strong>
+            <span className="setting-help">保留本地音乐库，清除本库的主机绑定和访问凭据。</span>
           </div>
           <button
             type="button"
             className="btn"
             disabled={busy}
-            onClick={() => void run(lanSyncAdapter.hostStop)}
+            onClick={() => void run(lanSyncAdapter.leaveSync)}
           >
-            断开
+            退出并解绑
           </button>
         </div>
       ) : null}

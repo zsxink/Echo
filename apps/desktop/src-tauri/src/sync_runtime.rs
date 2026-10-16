@@ -2,7 +2,7 @@
 
 use std::net::{IpAddr, SocketAddr, TcpListener};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -13,7 +13,7 @@ use echo_core::infrastructure::sqlite::SqliteDatabase;
 pub use echo_desktop::ipc::sync::{DiscoveredHost, SyncRole, SyncState, SyncStatus};
 use echo_sync::discovery::LanDiscovery;
 use echo_sync::pairing::{PairingError, PairingGrantDto, PairingInvitation, PendingPairingRequest};
-use echo_sync::server::{host_router, serve_tls, HostApiState};
+use echo_sync::server::{HostApiState, host_router, serve_tls};
 use tokio::sync::oneshot;
 
 pub const SYNC_PORT: u16 = 50826;
@@ -100,6 +100,7 @@ pub trait SyncProvisioner: Send + Sync {
         self.sync_now(role)
     }
     fn revoke_device(&self, device_id: &str) -> Result<(), SyncRuntimeError>;
+    fn leave_sync(&self, root: LibraryRootId) -> Result<(), SyncRuntimeError>;
     fn complete_peer_pairing(
         &self,
         root: LibraryRootId,
@@ -334,6 +335,24 @@ impl SyncRuntime {
             .lock()
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
         self.start_peer_locked()
+    }
+
+    /// Stop the current LAN session and remove this library's pairing while
+    /// retaining its local catalog and media.
+    pub fn leave_sync(&self) -> Result<SyncStatus, SyncRuntimeError> {
+        let _transition = self
+            .transition
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        if self.status().enabled {
+            self.stop_inner()?;
+        }
+        let root = self.active_root()?;
+        self.provisioner
+            .as_ref()
+            .ok_or(SyncRuntimeError::Unconfigured)?
+            .leave_sync(root)?;
+        Ok(self.status())
     }
 
     pub fn local_sync_device_id(&self) -> echo_core::domain::sync::DeviceId {

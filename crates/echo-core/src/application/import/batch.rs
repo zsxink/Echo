@@ -32,11 +32,12 @@ impl<'a> PlanImport<'a> {
     ) -> Result<ImportBatchReport, Error> {
         // Refuse the whole batch before any copy when the root cannot take
         // writes (spec: 资料库根目录不可用时在开始复制前拒绝整批导入).
-        if self
-            .deps
-            .roots
-            .by_id(root)?
-            .is_some_and(|record| !record.write_capable())
+        if self.deps.roots.replica_enrollment_pending(root)?
+            || self
+                .deps
+                .roots
+                .by_id(root)?
+                .is_some_and(|record| !record.write_capable())
             || !self.deps.fs.write_capable(root)?
         {
             return Ok(ImportBatchReport {

@@ -12,7 +12,7 @@ impl super::AppServices {
     /// `Validation`/`Conflict` for an unknown or non-deletable song; `Unavailable`
     /// when writes are disabled or the root is read-only; storage errors propagate.
     pub fn delete_song(&self, root: LibraryRootId, song: SongId) -> Result<String, Error> {
-        self.guard_writes()?;
+        let _activity = self.guard_writes()?;
         Ok(DeleteSongs::new(self.deps.as_ref())
             .delete(root, song)?
             .operation
@@ -31,7 +31,7 @@ impl super::AppServices {
         root: LibraryRootId,
         operation: OperationId,
     ) -> Result<String, Error> {
-        self.guard_writes()?;
+        let _activity = self.guard_writes()?;
         Ok(RestoreDeletedOperation::new(self.deps.as_ref())
             .restore(root, operation)?
             .to_string())

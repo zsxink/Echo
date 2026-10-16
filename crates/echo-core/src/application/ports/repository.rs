@@ -4,6 +4,11 @@ use crate::domain::ids::{LibraryRootId, OperationId, PlaylistId, RelativeMediaPa
 use crate::error::Error;
 
 pub trait LibraryRepository: Send + Sync {
+    /// Local work must defer while a host snapshot or its media archive is
+    /// pending. Repositories without LAN enrollment need no special gate.
+    fn replica_enrollment_pending(&self, _root: LibraryRootId) -> Result<bool, Error> {
+        Ok(false)
+    }
     /// The single active root, if any.
     fn active_root(&self) -> Result<Option<LibraryRoot>, Error>;
     /// A root by id.

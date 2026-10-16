@@ -28,9 +28,9 @@ use echo_sync::pairing::{
     PendingPairingRequest,
 };
 use echo_sync::protocol::ResourceRefDto;
-use echo_sync::protocol::{CommitPageDto, SnapshotPageDto, MAX_RESOURCE_CHUNK_BYTES};
+use echo_sync::protocol::{CommitPageDto, MAX_RESOURCE_CHUNK_BYTES, SnapshotPageDto};
 use echo_sync::resource_transfer::{FileResourceStore, PrepareResource, ResourceTransferPort};
-use echo_sync::server::{tls13_server_config, HostApiState, PeerCredential};
+use echo_sync::server::{HostApiState, PeerCredential, tls13_server_config};
 use reqwest::Url;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use serde::{Deserialize, Serialize};
@@ -44,9 +44,11 @@ mod remote_apply;
 use remote_apply::*;
 #[path = "sync_provisioner/enrollment.rs"]
 mod enrollment;
-use enrollment::prepare_empty_enrollment_root;
 #[cfg(test)]
-use enrollment::{is_empty_enrollment_root, EMPTY_LIBRARY_STAGING_MARKER};
+use enrollment::{
+    EMPTY_LIBRARY_STAGING_MARKER, is_empty_enrollment_root, prepare_empty_enrollment_root,
+};
+use enrollment::{archive_previous_media, prepare_enrollment_root};
 #[path = "sync_provisioner/resource_publication.rs"]
 mod resource_publication;
 use resource_publication::publish_remote_resource_set;
@@ -255,6 +257,16 @@ impl NativeSyncProvisioner {
         let resources = Arc::new(
             FileResourceStore::new(directory).map_err(|_| SyncRuntimeError::LibraryUnavailable)?,
         );
+        // The host snapshot supersedes this catalog. Missing or modified old
+        // media must not block fetching that snapshot into the private cache.
+        // Established peers and hosts continue to seed their local resources.
+        if self
+            .database
+            .replica_catalog_replacement_pending(library.id(), binding)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+        {
+            return Ok(resources);
+        }
         let manifests = self
             .database
             .local_sync_resource_manifests(library.id())
@@ -438,6 +450,62 @@ impl SyncProvisioner for NativeSyncProvisioner {
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)
     }
 
+    fn leave_sync(&self, root: LibraryRootId) -> Result<(), SyncRuntimeError> {
+        let _guard = self
+            .gate
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        self.database
+            .select_sync_context(root)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        let configuration = self
+            .database
+            .current_sync_configuration()
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        let mut credentials = Vec::new();
+        if let Some(configuration) = configuration {
+            if configuration.host {
+                for (_, handle) in self
+                    .database
+                    .authorized_sync_peer_handles()
+                    .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+                {
+                    credentials.push(
+                        SecretHandle::new(handle).map_err(|_| SyncRuntimeError::Unconfigured)?,
+                    );
+                }
+                credentials.push(identity_handle(configuration.binding)?);
+                credentials.push(
+                    SecretHandle::new(format!(
+                        "checkpoint-{}-{}-{}",
+                        configuration.binding.library_id.as_uuid(),
+                        configuration.binding.authority_id.as_uuid(),
+                        configuration.binding.epoch.as_u64()
+                    ))
+                    .map_err(|_| SyncRuntimeError::Unconfigured)?,
+                );
+            } else {
+                credentials.push(peer_identity_handle(configuration.binding, root)?);
+            }
+        }
+        // Revoke database authorization before deleting credentials. If secure
+        // cleanup fails, stale credentials still cannot authenticate.
+        self.database
+            .detach_lan_sync_context(root)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        for handle in credentials {
+            match OsSecureStore.delete(&handle) {
+                Ok(()) => {}
+                // The vault delete API reports missing and unreadable alike;
+                // the binding is already detached, so leave remains safe.
+                Err(_) => {
+                    tracing::warn!(target: "echo_desktop::sync", "stale sync credential cleanup failed")
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn complete_peer_pairing(
         &self,
         root: LibraryRootId,
@@ -448,6 +516,8 @@ impl SyncProvisioner for NativeSyncProvisioner {
         let _guard = self
             .gate
             .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let _activity = echo_core::application::sync::exclusive_local_activity()
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
         validate_peer_endpoint(endpoint)?;
         let local_device = DeviceId::from_uuid(self.database.current_device_id().as_uuid());
@@ -481,9 +551,9 @@ impl SyncProvisioner for NativeSyncProvisioner {
         {
             return Err(SyncRuntimeError::LibraryUnavailable);
         }
-        // First enrollment never adopts unrelated files or overwrites another
-        // library. Registered recovery uses the existing binding and vault slot.
-        prepare_empty_enrollment_root(library.absolute_path(), root)?;
+        // Keep the local catalog until a complete host snapshot can replace it
+        // atomically. Existing media files remain on disk throughout enrollment.
+        prepare_enrollment_root(library.absolute_path(), root)?;
         LanClient::new(&invitation.host_certificate_der, grant.bearer_token.clone())
             .map_err(|_| SyncRuntimeError::Unconfigured)?;
         let identity = PeerIdentity {
@@ -505,7 +575,7 @@ impl SyncProvisioner for NativeSyncProvisioner {
             .map_err(|_| SyncRuntimeError::Unconfigured)?;
         if self
             .database
-            .bind_empty_sync_replica(invitation.binding, root)
+            .bind_sync_replica_for_enrollment(invitation.binding, root)
             .is_err()
         {
             // This adapter serializes local pairing. Compare the generation
@@ -727,6 +797,7 @@ impl NativeSyncProvisioner {
         endpoint: &Url,
         resources: Arc<FileResourceStore>,
     ) -> Result<(), SyncRuntimeError> {
+        self.finish_replica_media_archive()?;
         if self
             .database
             .replica_enrollment_complete(peer.host_device_id)
@@ -779,7 +850,39 @@ impl NativeSyncProvisioner {
         }
         // Private cache is not library publication. Catalog media remains
         // unavailable until the safe file publication journal completes.
+        self.finish_replica_media_archive()?;
         Ok(())
+    }
+
+    fn finish_replica_media_archive(&self) -> Result<(), SyncRuntimeError> {
+        let _activity = echo_core::application::sync::exclusive_local_activity()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let configuration = self
+            .database
+            .current_sync_configuration()
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+            .ok_or(SyncRuntimeError::Unconfigured)?;
+        let root = configuration.local_root;
+        let Some(token) = self
+            .database
+            .pending_replica_media_archive(root)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+        else {
+            return Ok(());
+        };
+        let library = self
+            .database
+            .by_id(root)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+            .ok_or(SyncRuntimeError::LibraryUnavailable)?;
+        archive_previous_media(
+            library.absolute_path(),
+            &token,
+            configuration.binding.library_id,
+        )?;
+        self.database
+            .complete_replica_media_archive(root, token)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)
     }
 
     async fn cache_snapshot_resources(

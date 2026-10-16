@@ -2,7 +2,7 @@
 
 #![allow(clippy::doc_markdown, clippy::missing_errors_doc)]
 
-use rusqlite::{params, OptionalExtension, TransactionBehavior};
+use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use serde::Serialize;
 
 use crate::application::ports::{
@@ -10,15 +10,78 @@ use crate::application::ports::{
 };
 use crate::domain::ids::LibraryRootId;
 use crate::domain::sync::{
-    confirm_candidate, CommitCheckpoint, CommitSeq, ConfirmedObject, DeviceId, MutationCandidate,
-    MutationId, ObjectKey, ObjectVersion, OriginCursor, SyncBinding,
+    CommitCheckpoint, CommitSeq, ConfirmedObject, DeviceId, MutationCandidate, MutationId,
+    ObjectKey, ObjectVersion, OriginCursor, SyncBinding, confirm_candidate,
 };
 use crate::error::Error;
 
-use super::support::{now_ms, storage};
 use super::SqliteDatabase;
+use super::support::{now_ms, storage};
 
 impl SqliteDatabase {
+    /// Detach one local library from LAN sync while preserving its library rows.
+    /// Protocol state for the selected and archived copies of this root is
+    /// removed so selecting the root later cannot silently restore the old peer
+    /// or host binding.
+    pub fn detach_lan_sync_context(&self, local_root: LibraryRootId) -> Result<(), Error> {
+        self.writer.run(move |connection| {
+            let tx = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(storage)?;
+            let root = local_root.to_string();
+            super::sync_context::select(&tx, &root)?;
+            for table in [
+                "sync_snapshot_pages",
+                "sync_snapshot_resource_refs",
+                "sync_snapshot_records",
+                "sync_snapshot_sessions",
+                "sync_replica_snapshot_pages",
+                "sync_replica_snapshot_records",
+                "sync_replica_snapshot_sessions",
+                "sync_host_baselines",
+                "sync_transfers",
+                "sync_peer_cursors",
+                "sync_conflicts",
+                "sync_member_aliases",
+                "sync_song_aliases",
+                "sync_object_versions",
+                "sync_commits",
+                "sync_inbox",
+                "sync_origin_cursors",
+                "sync_peers",
+                "sync_binding",
+            ] {
+                tx.execute_batch(&format!("DELETE FROM {table};"))
+                    .map_err(storage)?;
+                tx.execute(
+                    &format!("DELETE FROM archived_{table} WHERE context_root=?1"),
+                    params![root],
+                )
+                .map_err(storage)?;
+            }
+            for table in [
+                "sync_remote_resource_locations",
+                "sync_remote_publication_claims",
+                "sync_remote_publications",
+                "sync_mutations",
+                "sync_outbox",
+                "sync_local_origin_cursors",
+            ] {
+                tx.execute(
+                    &format!("DELETE FROM {table} WHERE local_root_uuid=?1"),
+                    params![root],
+                )
+                .map_err(storage)?;
+            }
+            tx.execute(
+                "DELETE FROM sync_state WHERE key LIKE ?1",
+                params![format!("%{root}%")],
+            )
+            .map_err(storage)?;
+            tx.commit().map_err(storage)
+        })
+    }
+
     /// Clear LAN sync lineage while preserving library rows and media metadata.
     /// Intended only for an explicit local rebuild after secure credentials are
     /// lost; the next host start creates a new authority and initial baseline.
@@ -125,6 +188,25 @@ impl SqliteDatabase {
         binding: SyncBinding,
         local_root: LibraryRootId,
     ) -> Result<(), Error> {
+        self.bind_replica_for_enrollment(binding, local_root, false)
+    }
+
+    /// Enroll the selected local library using the host as its catalog authority.
+    /// Existing rows remain intact until the complete snapshot is committed.
+    pub fn bind_sync_replica_for_enrollment(
+        &self,
+        binding: SyncBinding,
+        local_root: LibraryRootId,
+    ) -> Result<(), Error> {
+        self.bind_replica_for_enrollment(binding, local_root, true)
+    }
+
+    fn bind_replica_for_enrollment(
+        &self,
+        binding: SyncBinding,
+        local_root: LibraryRootId,
+        replace_catalog: bool,
+    ) -> Result<(), Error> {
         self.writer.run(move |connection| {
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
             let root = local_root.to_string();
@@ -160,13 +242,19 @@ impl SqliteDatabase {
                 params![root],
                 |row| row.get(0),
             ).map_err(storage)?;
-            if nonempty {
+            if nonempty && !replace_catalog {
                 return Err(Error::conflict("replica enrollment target is not empty"));
             }
             tx.execute(
                 "INSERT INTO sync_binding(singleton, library_id, authority_id, epoch, role, protocol_version, updated_at, local_root_uuid) VALUES(1, ?1, ?2, ?3, 'replica', 1, ?4, ?5)",
                 params![binding.library_id.as_uuid().to_string(), binding.authority_id.as_uuid().to_string(), i64::try_from(binding.epoch.as_u64()).map_err(storage)?, now_ms(), root],
             ).map_err(crate::infrastructure::sqlite::support::map_constraint)?;
+            if replace_catalog {
+                tx.execute(
+                    "INSERT OR REPLACE INTO sync_state(key,value) VALUES(?1,?2)",
+                    params![format!("replica_enrollment_replace:{root}"), serde_json::to_string(&binding).map_err(storage)?],
+                ).map_err(storage)?;
+            }
             tx.commit().map_err(storage)
         })
     }

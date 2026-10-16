@@ -110,7 +110,8 @@
 .setting-choice { display: flex; align-items: center; gap: var(--space-2); color: var(--fg-2); font-size: var(--text-xs); cursor: pointer; }
 .setting-choice input { accent-color: var(--accent-strong); }
 .storage-value { min-width: 0; }
-.lan-sync-discovered-row { grid-template-columns: minmax(0, 1fr); align-items: start; }
+.setting-row.lan-sync-discovered-row { grid-template-columns: minmax(0, 1fr); align-items: start; }
+.lan-sync-discovered-row > .storage-value, .lan-sync-discovered-row > .lan-sync-hosts { width: 100%; min-width: 0; }
 .lan-sync-hosts { display: grid; gap: var(--space-2); min-width: 0; margin: 0; padding: 0; list-style: none; }
 .lan-sync-host { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-2) var(--space-4); padding: var(--space-3); border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface); }
 .lan-sync-host-name { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }

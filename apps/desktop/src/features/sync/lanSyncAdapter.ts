@@ -9,6 +9,7 @@ export interface LanSyncAdapter {
   localLanAddresses(): Promise<readonly string[]>;
   hostStart(address: string): Promise<SyncStatus>;
   hostStop(): Promise<SyncStatus>;
+  leaveSync(): Promise<SyncStatus>;
   peerStart(): Promise<SyncStatus>;
   pause(): Promise<SyncStatus>;
   resume(): Promise<SyncStatus>;
@@ -24,6 +25,7 @@ export const lanSyncAdapter: LanSyncAdapter = {
   localLanAddresses: () => bridge.call("local_lan_addresses"),
   hostStart: (address) => bridge.call("host_start", { address }),
   hostStop: () => bridge.call("host_stop"),
+  leaveSync: () => bridge.call("sync_leave"),
   peerStart: () => bridge.call("sync_peer_start"),
   pause: () => bridge.call("sync_pause"),
   resume: () => bridge.call("sync_resume"),

@@ -22,6 +22,11 @@ impl super::AppServices {
     /// Storage errors propagate.
     pub fn library_status(&self) -> Result<LibraryStatus, Error> {
         let root = self.deps.roots.active_root()?;
+        let enrollment_pending = root
+            .as_ref()
+            .map(|root| self.deps.roots.replica_enrollment_pending(root.id()))
+            .transpose()?
+            .unwrap_or(false);
         let scanning = root
             .as_ref()
             .is_some_and(|root| self.supervisor.is_scanning(root.id()));
@@ -32,7 +37,8 @@ impl super::AppServices {
             // durable read-only gate even when the directory itself is
             // writable; expose the effective capability so the UI does not
             // offer actions that every command will reject as unavailable.
-            read_only: !self.startup.writes_allowed()
+            read_only: enrollment_pending
+                || !self.startup.writes_allowed()
                 || root.as_ref().is_some_and(|root| !root.write_capable()),
             unavailable: root.as_ref().is_some_and(|root| {
                 !matches!(

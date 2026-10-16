@@ -41,7 +41,7 @@ use echo_desktop::player::port::{PlayerCommand, PlayerError, PlayerPort};
 use echo_desktop::runtime::app::assemble;
 use echo_desktop::runtime::player;
 use echo_desktop::runtime::services::AppServices;
-use echo_desktop::runtime::{trash_worker::TrashFinalizationWorker, StartupSupervisor};
+use echo_desktop::runtime::{StartupSupervisor, trash_worker::TrashFinalizationWorker};
 #[cfg(not(target_os = "macos"))]
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 #[cfg(not(target_os = "macos"))]
@@ -639,6 +639,7 @@ fn main() {
             sync_commands::local_lan_addresses,
             sync_commands::host_start,
             sync_commands::host_stop,
+            sync_commands::sync_leave,
             sync_commands::sync_peer_start,
             sync_commands::sync_pause,
             sync_commands::sync_resume,

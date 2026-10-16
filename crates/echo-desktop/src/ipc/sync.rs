@@ -97,6 +97,7 @@ export interface SyncCommandArguments {
   readonly local_lan_addresses: [args?: Record<string, never>];
   readonly host_start: [args: { address: string }];
   readonly host_stop: [args?: Record<string, never>];
+  readonly sync_leave: [args?: Record<string, never>];
   readonly sync_peer_start: [args?: Record<string, never>];
   readonly sync_pause: [args?: Record<string, never>];
   readonly sync_resume: [args?: Record<string, never>];

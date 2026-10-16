@@ -5,7 +5,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use echo_desktop::ipc::{sync::SyncPairingCode, IpcErrorDto};
+use echo_desktop::ipc::{IpcErrorDto, sync::SyncPairingCode};
 use echo_sync::client::LanClient;
 use reqwest::Url;
 use tauri::{Emitter, State};
@@ -110,6 +110,14 @@ pub async fn host_stop(
     runtime: State<'_, Arc<SyncRuntime>>,
 ) -> Result<SyncStatus, IpcErrorDto> {
     transition(app, Arc::clone(&runtime), SyncRuntime::stop).await
+}
+
+#[tauri::command]
+pub async fn sync_leave(
+    app: tauri::AppHandle,
+    runtime: State<'_, Arc<SyncRuntime>>,
+) -> Result<SyncStatus, IpcErrorDto> {
+    transition(app, Arc::clone(&runtime), SyncRuntime::leave_sync).await
 }
 
 #[tauri::command]

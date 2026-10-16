@@ -85,6 +85,7 @@ export interface SyncCommandArguments {
   readonly local_lan_addresses: [args?: Record<string, never>];
   readonly host_start: [args: { address: string }];
   readonly host_stop: [args?: Record<string, never>];
+  readonly sync_leave: [args?: Record<string, never>];
   readonly sync_peer_start: [args?: Record<string, never>];
   readonly sync_pause: [args?: Record<string, never>];
   readonly sync_resume: [args?: Record<string, never>];
@@ -275,6 +276,7 @@ export interface IpcCommandResultMap {
   readonly sync_status: SyncStatus;
   readonly host_start: SyncStatus;
   readonly host_stop: SyncStatus;
+  readonly sync_leave: SyncStatus;
   readonly sync_peer_start: SyncStatus;
   readonly sync_pause: SyncStatus;
   readonly sync_resume: SyncStatus;
