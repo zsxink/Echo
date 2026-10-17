@@ -10,7 +10,7 @@ use echo_sync::client::LanClient;
 use reqwest::Url;
 use tauri::{Emitter, State};
 
-use crate::sync_runtime::{self, DiscoveredHost, SyncRuntime, SyncRuntimeError, SyncStatus};
+use crate::sync_runtime::{self, DiscoveredHost, SyncPeer, SyncRuntime, SyncRuntimeError, SyncStatus};
 
 fn error(error: SyncRuntimeError) -> IpcErrorDto {
     IpcErrorDto::new(
@@ -90,6 +90,17 @@ async fn transition(
 #[tauri::command]
 pub fn sync_status(runtime: State<'_, Arc<SyncRuntime>>) -> SyncStatus {
     runtime.status()
+}
+
+#[tauri::command]
+pub async fn sync_authorized_peers(
+    runtime: State<'_, Arc<SyncRuntime>>,
+) -> Result<Vec<SyncPeer>, IpcErrorDto> {
+    let runtime = Arc::clone(&runtime);
+    tauri::async_runtime::spawn_blocking(move || runtime.authorized_sync_peers())
+        .await
+        .map_err(|_| error(SyncRuntimeError::WorkerFailed))?
+        .map_err(error)
 }
 
 #[tauri::command]

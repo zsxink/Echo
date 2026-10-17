@@ -91,6 +91,37 @@ impl SqliteDatabase {
         })
     }
 
+    /// Return display names and identities for currently authorized peers.
+    pub fn authorized_sync_peers(&self) -> Result<Vec<(DeviceId, String)>, Error> {
+        self.with_reader(|connection| {
+            let library: Option<String> = connection
+                .query_row(
+                    "SELECT library_id FROM sync_binding WHERE singleton=1 AND role='host'",
+                    [],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(storage)?;
+            let Some(library) = library else {
+                return Ok(Vec::new());
+            };
+            let mut statement = connection
+                .prepare("SELECT device_id,display_name FROM sync_peers WHERE library_id=?1 AND revoked_at IS NULL ORDER BY authorized_at,device_id")
+                .map_err(storage)?;
+            let rows = statement
+                .query_map(params![library], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(storage)?;
+            rows.map(|row| {
+                let (device, name) = row.map_err(storage)?;
+                let device = Uuid::parse_str(&device).map_err(storage)?;
+                Ok((DeviceId::from_uuid(device), name))
+            })
+            .collect()
+        })
+    }
+
     /// Read the newest published log checkpoint for this exact host binding.
     /// Pending commits are intentionally excluded; startup recovery repairs
     /// them before the host starts serving.

@@ -67,6 +67,13 @@ pub struct SyncPairingCode {
     pub expires_at_unix_ms: u64,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncPeer {
+    pub device_id: String,
+    pub display_name: String,
+}
+
 pub(super) const fn typescript() -> &'static str {
     r"export type SyncRole = 'none' | 'host' | 'peer';
 export type SyncState = 'disabled' | 'hosting' | 'connected' | 'syncing' | 'paused' | 'failed';
@@ -92,6 +99,10 @@ export interface SyncPairingCode {
   readonly code: string;
   readonly expiresAtUnixMs: number;
 }
+export interface SyncPeer {
+  readonly deviceId: string;
+  readonly displayName: string;
+}
 export interface SyncCommandArguments {
   readonly sync_status: [args?: Record<string, never>];
   readonly local_lan_addresses: [args?: Record<string, never>];
@@ -102,6 +113,7 @@ export interface SyncCommandArguments {
   readonly sync_pause: [args?: Record<string, never>];
   readonly sync_resume: [args?: Record<string, never>];
   readonly sync_now: [args?: Record<string, never>];
+  readonly sync_authorized_peers: [args?: Record<string, never>];
   readonly revoke_device: [args: { deviceId: string }];
   readonly discover_hosts: [args?: Record<string, never>];
   readonly create_sync_pairing_code: [args?: Record<string, never>];

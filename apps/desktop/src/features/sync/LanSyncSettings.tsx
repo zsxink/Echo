@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 
-import type { DiscoveredHost, SyncPairingCode, SyncStatus } from "../../ipc/ipc-types.generated";
+import type {
+  DiscoveredHost,
+  SyncPairingCode,
+  SyncPeer,
+  SyncStatus,
+} from "../../ipc/ipc-types.generated";
 import { lanSyncAdapter, type LanSyncRole } from "./lanSyncAdapter";
 
 function describeStatus(status: SyncStatus | null, loading: boolean): string {
@@ -32,6 +37,7 @@ export function LanSyncSettings() {
   const [address, setAddress] = useState("");
   const [localAddresses, setLocalAddresses] = useState<readonly string[] | null>(null);
   const [hosts, setHosts] = useState<readonly DiscoveredHost[]>([]);
+  const [authorizedPeers, setAuthorizedPeers] = useState<readonly SyncPeer[]>([]);
   const [pairingCodeState, setPairingCodeState] = useState<SyncPairingCode | null>(null);
   const [pairingCode, setPairingCode] = useState("");
   const [peerAddress, setPeerAddress] = useState("");
@@ -158,7 +164,8 @@ export function LanSyncSettings() {
   })();
   const visibleHosts = hosts.filter(
     (host) =>
-      host.port !== 50826 || !host.addresses.some((candidate) => ownHostAddresses.includes(candidate)),
+      host.port !== 50826 ||
+      !host.addresses.some((candidate) => ownHostAddresses.includes(candidate)),
   );
 
   useEffect(() => {
@@ -193,6 +200,28 @@ export function LanSyncSettings() {
     return () => {
       stopped = true;
       if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+    };
+  }, [active, status?.role]);
+
+  useEffect(() => {
+    if (!active || status?.role !== "host") {
+      setAuthorizedPeers([]);
+      return;
+    }
+    let current = true;
+    const refresh = () => {
+      void lanSyncAdapter
+        .authorizedPeers()
+        .then((peers) => {
+          if (current) setAuthorizedPeers(peers);
+        })
+        .catch(() => undefined);
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 5_000);
+    return () => {
+      current = false;
+      window.clearInterval(timer);
     };
   }, [active, status?.role]);
 
@@ -245,12 +274,35 @@ export function LanSyncSettings() {
               {pairingCodeState?.code ?? "······"}
             </code>
           </div>
+          <div className="setting-row lan-sync-peers-row">
+            <div className="storage-value">
+              <strong>已加入的设备（{authorizedPeers.length}）</strong>
+              <span className="setting-help">设备列表每 5 秒刷新。</span>
+            </div>
+            <ul className="lan-sync-peers" aria-label="已加入的设备" data-testid="lan-sync-peers">
+              {authorizedPeers.length === 0 ? (
+                <li className="lan-sync-host-empty">还没有设备加入</li>
+              ) : (
+                authorizedPeers.map((peer) => (
+                  <li className="lan-sync-peer" key={peer.deviceId}>
+                    <span className="lan-sync-host-name">{peer.displayName}</span>
+                    <span className="lan-sync-host-address">设备 ID：{peer.deviceId}</span>
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>
           <div className="setting-row">
             <div className="storage-value">
               <strong>解除本库的主机身份</strong>
               <span className="setting-help">保留本地音乐库，停止服务并清除本库的同步关系。</span>
             </div>
-            <button type="button" className="btn" disabled={busy} onClick={() => void run(lanSyncAdapter.leaveSync)}>
+            <button
+              type="button"
+              className="btn"
+              disabled={busy}
+              onClick={() => void run(lanSyncAdapter.leaveSync)}
+            >
               解除绑定
             </button>
           </div>

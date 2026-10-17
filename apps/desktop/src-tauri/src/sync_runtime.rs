@@ -10,7 +10,7 @@ use echo_core::application::ports::{DeviceIdProvider, LibraryRepository};
 use echo_core::domain::ids::LibraryRootId;
 use echo_core::domain::sync::SyncBinding;
 use echo_core::infrastructure::sqlite::SqliteDatabase;
-pub use echo_desktop::ipc::sync::{DiscoveredHost, SyncRole, SyncState, SyncStatus};
+pub use echo_desktop::ipc::sync::{DiscoveredHost, SyncPeer, SyncRole, SyncState, SyncStatus};
 use echo_sync::discovery::LanDiscovery;
 use echo_sync::pairing::{PairingError, PairingGrantDto, PairingInvitation, PendingPairingRequest};
 use echo_sync::server::{HostApiState, host_router, serve_tls};
@@ -367,6 +367,24 @@ impl SyncRuntime {
 
     pub fn local_sync_device_id(&self) -> echo_core::domain::sync::DeviceId {
         echo_core::domain::sync::DeviceId::from_uuid(self.database.current_device_id().as_uuid())
+    }
+
+    pub fn authorized_sync_peers(&self) -> Result<Vec<SyncPeer>, SyncRuntimeError> {
+        if self.status().role != SyncRole::Host {
+            return Err(SyncRuntimeError::Unconfigured);
+        }
+        self.database
+            .authorized_sync_peers()
+            .map(|peers| {
+                peers
+                    .into_iter()
+                    .map(|(device_id, display_name)| SyncPeer {
+                        device_id: device_id.as_uuid().to_string(),
+                        display_name,
+                    })
+                    .collect()
+            })
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)
     }
 
     pub fn complete_peer_pairing(

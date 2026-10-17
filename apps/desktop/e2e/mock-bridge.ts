@@ -97,6 +97,7 @@ type Command =
   | "sync_pause"
   | "sync_resume"
   | "sync_now"
+  | "sync_authorized_peers"
   | "revoke_device"
   | "discover_hosts"
   | "create_sync_pairing_code"
@@ -334,6 +335,7 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
 
   return {
     sync_status: () => syncStatus,
+    sync_authorized_peers: () => [],
     local_lan_addresses: () => ["192.168.1.20"],
     host_start: ({ address }) => {
       syncStatus = {

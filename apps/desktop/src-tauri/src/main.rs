@@ -636,6 +636,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             sync_commands::sync_status,
+            sync_commands::sync_authorized_peers,
             sync_commands::local_lan_addresses,
             sync_commands::host_start,
             sync_commands::host_stop,

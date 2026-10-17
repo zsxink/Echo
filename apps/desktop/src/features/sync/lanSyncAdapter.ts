@@ -1,10 +1,16 @@
 import { bridge } from "../../bridge";
-import type { DiscoveredHost, SyncPairingCode, SyncStatus } from "../../ipc/ipc-types.generated";
+import type {
+  DiscoveredHost,
+  SyncPairingCode,
+  SyncPeer,
+  SyncStatus,
+} from "../../ipc/ipc-types.generated";
 
 export type LanSyncRole = "host" | "peer";
 
 export interface LanSyncAdapter {
   status(): Promise<SyncStatus>;
+  authorizedPeers(): Promise<readonly SyncPeer[]>;
   subscribeStatus(handler: (status: SyncStatus) => void): Promise<() => void>;
   localLanAddresses(): Promise<readonly string[]>;
   hostStart(address: string): Promise<SyncStatus>;
@@ -21,6 +27,7 @@ export interface LanSyncAdapter {
 
 export const lanSyncAdapter: LanSyncAdapter = {
   status: () => bridge.call("sync_status"),
+  authorizedPeers: () => bridge.call("sync_authorized_peers"),
   subscribeStatus: (handler) => bridge.subscribe("sync://status", handler),
   localLanAddresses: () => bridge.call("local_lan_addresses"),
   hostStart: (address) => bridge.call("host_start", { address }),

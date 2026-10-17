@@ -118,6 +118,10 @@
 .lan-sync-host-address { min-width: 0; color: var(--fg-2); font: 500 var(--text-xs)/1.4 var(--font-mono); overflow-wrap: anywhere; }
 .lan-sync-host-empty { padding: var(--space-3); color: var(--muted); border: 1px dashed var(--border); border-radius: var(--radius-md); }
 .lan-sync-host .btn { grid-column: 2; grid-row: 1 / span 2; white-space: nowrap; }
+.setting-row.lan-sync-peers-row { grid-template-columns: minmax(0, 1fr); align-items: start; }
+.lan-sync-peers-row > .storage-value, .lan-sync-peers-row > .lan-sync-peers { width: 100%; min-width: 0; }
+.lan-sync-peers { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.lan-sync-peer { display: grid; gap: var(--space-1); padding: var(--space-3); border: 1px solid var(--border-soft); border-radius: var(--radius-md); background: var(--surface); }
 .storage-path { max-width: 430px; overflow: hidden; color: var(--fg-2); font: 500 var(--text-xs)/1.45 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .storage-path.is-empty { color: var(--muted); font-family: var(--font-body); }
 .setting-note { display: flex; align-items: flex-start; gap: var(--space-2); margin: var(--space-4) 0 0; padding: calc(var(--space-2) * .8) calc(var(--space-3) * .8); border-radius: var(--radius-sm); background: var(--surface); color: var(--fg-2); font-size: var(--text-xs); }
