@@ -16,7 +16,7 @@
 import { useEffect, useState } from "react";
 
 import { bridge } from "../../bridge";
-import { subscribeSongUpdates } from "../library";
+import { subscribeLibraryInvalidations, subscribeSongUpdates } from "../library";
 
 /** Mirrors the IPC `SongDetailView` (`crates/echo-desktop/src/ipc/dto.rs`). */
 export interface SongDetail {
@@ -35,6 +35,12 @@ export interface SongDetail {
 
 export function useSongDetail(songId: string | null): SongDetail | null {
   const [detail, setDetail] = useState<SongDetail | null>(null);
+  const [catalogRevision, setCatalogRevision] = useState(0);
+
+  useEffect(
+    () => subscribeLibraryInvalidations(() => setCatalogRevision((revision) => revision + 1)),
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -51,7 +57,7 @@ export function useSongDetail(songId: string | null): SongDetail | null {
     return () => {
       cancelled = true;
     };
-  }, [songId]);
+  }, [catalogRevision, songId]);
 
   // Adopt committed mutations broadcast by any surface (the row's heart, the
   // player bar's own 收藏): without this a toggle elsewhere would leave this

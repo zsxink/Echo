@@ -36,6 +36,7 @@ import {
   bumpLibraryCount,
   invalidateLibraryCounts,
   publishSongUpdate,
+  subscribeLibraryInvalidations,
   ConfirmationDialog,
   SongMenu,
   type MenuAnchor,
@@ -80,6 +81,7 @@ export function PlaylistsView({
   onLibraryChanged,
 }: PlaylistsViewProps) {
   const [members, setMembers] = useState<readonly SongView[]>([]);
+  const [catalogRevision, setCatalogRevision] = useState(0);
   const [sort, setSort] = useStoredSongSort(`playlist:${playlistId}`);
   const [name, setName] = useState(title);
   const [searchText, setSearchText] = useState("");
@@ -188,7 +190,11 @@ export function PlaylistsView({
       });
   }, [clearSelection, playlistId]);
 
-  useEffect(loadMembers, [loadMembers]);
+  useEffect(
+    () => subscribeLibraryInvalidations(() => setCatalogRevision((value) => value + 1)),
+    [],
+  );
+  useEffect(loadMembers, [catalogRevision, loadMembers]);
 
   // 歌单内搜索：非空词走后端 `search`（限定当前歌单），空词清空搜索结果
   // 让视图回退到全量成员。相同 playlistId + 排序下改变搜索词才重新请求。
@@ -254,7 +260,7 @@ export function PlaylistsView({
     // 条件（搜索词/排序/歌单）变化 → 丢弃旧游标，重新取首屏。
     searchCursor.current = undefined;
     playlistsMemberSearch(searchText);
-  }, [playlistsMemberSearch, searchText]);
+  }, [catalogRevision, playlistsMemberSearch, searchText]);
 
   // 歌曲列表触底续页（fix-playlist-search-pagination）。成员列表走
   // `playlist_members` 全量返回、不分页，其 `isLast` 恒为 true，SongList 不会
