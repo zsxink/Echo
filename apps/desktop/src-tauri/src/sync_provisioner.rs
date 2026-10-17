@@ -71,6 +71,10 @@ pub struct NativeSyncProvisioner {
     scan_deps: Arc<ScanDeps>,
     scan_supervisor: ScanSupervisor,
     gate: Mutex<()>,
+    // Retain applied work across a failed/cancelled cycle until a successful
+    // completion can notify the UI. Empty polls leave this flag unset.
+    pending_catalog_changed: Arc<AtomicBool>,
+    host_seen_checkpoint: Mutex<Option<CommitCheckpoint>>,
 }
 
 // This document is stored only inside the operating system credential store.
@@ -137,7 +141,7 @@ fn remove_peer_identity_if_generation(
 }
 
 impl NativeSyncProvisioner {
-    pub const fn new(
+    pub fn new(
         database: Arc<SqliteDatabase>,
         private_resources: PathBuf,
         publication: RemoteResourcePublishDeps,
@@ -151,6 +155,8 @@ impl NativeSyncProvisioner {
             scan_deps,
             scan_supervisor,
             gate: Mutex::new(()),
+            pending_catalog_changed: Arc::new(AtomicBool::new(false)),
+            host_seen_checkpoint: Mutex::new(None),
         }
     }
 
@@ -397,6 +403,14 @@ impl SyncProvisioner for NativeSyncProvisioner {
         )
         .map_err(|_| SyncRuntimeError::Unconfigured)?;
         let device_id = self.database.current_device_id().as_uuid().to_string();
+        *self
+            .host_seen_checkpoint
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)? = Some(
+            self.database
+                .latest_published_sync_checkpoint(identity.binding)
+                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?,
+        );
         Ok(ProvisionedHost {
             binding: identity.binding,
             api,
@@ -445,7 +459,7 @@ impl SyncProvisioner for NativeSyncProvisioner {
         })
     }
 
-    fn sync_now(&self, role: SyncRole) -> Result<(), SyncRuntimeError> {
+    fn sync_now(&self, role: SyncRole) -> Result<bool, SyncRuntimeError> {
         self.sync_now_cancellable(role, Arc::new(AtomicBool::new(false)))
     }
 
@@ -453,7 +467,7 @@ impl SyncProvisioner for NativeSyncProvisioner {
         &self,
         role: SyncRole,
         cancelled: Arc<AtomicBool>,
-    ) -> Result<(), SyncRuntimeError> {
+    ) -> Result<bool, SyncRuntimeError> {
         let _guard = self
             .gate
             .lock()
@@ -466,7 +480,7 @@ impl SyncProvisioner for NativeSyncProvisioner {
         if role == SyncRole::Peer && !configuration.host {
             self.synchronize_peer(configuration.local_root, &cancelled)?;
             self.refresh_published_metadata(configuration.local_root);
-            return Ok(());
+            return Ok(self.pending_catalog_changed.swap(false, Ordering::AcqRel));
         }
         if role != SyncRole::Host || !configuration.host {
             return Err(SyncRuntimeError::LibraryUnavailable);
@@ -490,7 +504,22 @@ impl SyncProvisioner for NativeSyncProvisioner {
             &resources,
         )?;
         self.refresh_published_metadata(configuration.local_root);
-        Ok(())
+        let checkpoint = self
+            .database
+            .latest_published_sync_checkpoint(configuration.binding)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        let mut seen = self
+            .host_seen_checkpoint
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        if seen
+            .as_ref()
+            .is_some_and(|previous| *previous != checkpoint)
+        {
+            self.pending_catalog_changed.store(true, Ordering::Release);
+        }
+        *seen = Some(checkpoint);
+        Ok(self.pending_catalog_changed.swap(false, Ordering::AcqRel))
     }
 
     fn revoke_device(&self, device_id: &str) -> Result<(), SyncRuntimeError> {
@@ -622,6 +651,8 @@ impl NativeSyncProvisioner {
                     error = %error,
                     "published song metadata indexing will retry next cycle"
                 );
+            } else {
+                self.pending_catalog_changed.store(true, Ordering::Release);
             }
         }
     }
@@ -830,6 +861,7 @@ impl NativeSyncProvisioner {
                 page,
                 resources: resources.as_ref(),
                 changed: AtomicBool::new(false),
+                catalog_changed: &self.pending_catalog_changed,
             };
             LanClient::apply_commit_page(&prepared.page, peer.host_device_id, &prepared)
                 .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
@@ -889,6 +921,7 @@ impl NativeSyncProvisioner {
             page,
             resources: resources.as_ref(),
             changed: std::sync::atomic::AtomicBool::new(false),
+            catalog_changed: &self.pending_catalog_changed,
         };
         let result = echo_sync::replica::synchronize_once(
             &peer.client,
@@ -937,6 +970,7 @@ impl NativeSyncProvisioner {
                 object,
                 &targets,
             )?;
+            self.pending_catalog_changed.store(true, Ordering::Release);
         }
         Ok(())
     }
@@ -971,8 +1005,13 @@ impl NativeSyncProvisioner {
             let deps = self.publication.clone();
             let store = Arc::clone(resources);
             let binding = peer.binding;
+            let catalog_changed = Arc::clone(&self.pending_catalog_changed);
             tokio::task::spawn_blocking(move || {
-                publish_remote_resource_set(deps, &store, binding, root, object, &targets)
+                publish_remote_resource_set(deps, &store, binding, root, object, &targets)?;
+                // Blocking publication may complete after the cancellable
+                // transport future has been dropped. Retain that work too.
+                catalog_changed.store(true, Ordering::Release);
+                Ok::<(), SyncRuntimeError>(())
             })
             .await
             .map_err(|_| SyncRuntimeError::WorkerFailed)??;
@@ -1048,6 +1087,7 @@ impl NativeSyncProvisioner {
                         }
                     })?;
             let Some(index) = applied.next_page_index else {
+                self.pending_catalog_changed.store(true, Ordering::Release);
                 break;
             };
             page = peer

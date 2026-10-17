@@ -29,6 +29,8 @@ pub struct SyncStatus {
     pub state: SyncState,
     pub session_id: u64,
     pub event_sequence: u64,
+    /// True only when the completed cycle changed local catalog projections.
+    pub catalog_changed: bool,
     pub library_id: Option<String>,
     pub address: Option<String>,
     pub last_error: Option<String>,
@@ -42,6 +44,7 @@ impl Default for SyncStatus {
             state: SyncState::Disabled,
             session_id: 0,
             event_sequence: 0,
+            catalog_changed: false,
             library_id: None,
             address: None,
             last_error: None,
@@ -83,6 +86,7 @@ export interface SyncStatus {
   readonly state: SyncState;
   readonly sessionId: number;
   readonly eventSequence: number;
+  readonly catalogChanged: boolean;
   readonly libraryId: string | null;
   readonly address: string | null;
   readonly lastError: string | null;

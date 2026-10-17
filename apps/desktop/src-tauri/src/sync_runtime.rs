@@ -97,7 +97,8 @@ pub struct ProvisionedPeer {
 pub trait SyncProvisioner: Send + Sync {
     fn host(&self, root: LibraryRootId) -> Result<ProvisionedHost, SyncRuntimeError>;
     fn peer(&self, root: LibraryRootId) -> Result<ProvisionedPeer, SyncRuntimeError>;
-    fn sync_now(&self, role: SyncRole) -> Result<(), SyncRuntimeError>;
+    /// Return whether this successful cycle changed local catalog projections.
+    fn sync_now(&self, role: SyncRole) -> Result<bool, SyncRuntimeError>;
     /// Cancel an in-flight background cycle when the user pauses or stops the
     /// session. Provisioners with cancellable transports should override this;
     /// the default preserves compatibility with simple adapters.
@@ -105,7 +106,7 @@ pub trait SyncProvisioner: Send + Sync {
         &self,
         role: SyncRole,
         cancelled: Arc<AtomicBool>,
-    ) -> Result<(), SyncRuntimeError> {
+    ) -> Result<bool, SyncRuntimeError> {
         if cancelled.load(Ordering::Acquire) {
             return Err(SyncRuntimeError::Busy);
         }
@@ -236,6 +237,7 @@ impl SyncRuntime {
             && inner.status.state != SyncState::Failed
         {
             inner.status.state = SyncState::Failed;
+            inner.status.catalog_changed = false;
             inner.status.last_error = Some(SyncRuntimeError::WorkerFailed.message_key().into());
             inner.status.event_sequence += 1;
         }
@@ -305,6 +307,7 @@ impl SyncRuntime {
                         if result.is_err() {
                             let mut inner = state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                             inner.status.state = SyncState::Failed;
+                            inner.status.catalog_changed = false;
                             inner.status.last_error = Some(SyncRuntimeError::WorkerFailed.message_key().into());
                             inner.status.event_sequence += 1;
                         }
@@ -519,6 +522,7 @@ impl SyncRuntime {
         if !inner.status.enabled {
             inner.status.state = SyncState::Failed;
         }
+        inner.status.catalog_changed = false;
         inner.status.last_error = Some(error.message_key().into());
         inner.status.event_sequence += 1;
         inner.status.clone()
@@ -598,13 +602,13 @@ impl SyncRuntime {
             return Err(error);
         }
         match result {
-            Ok(()) => self.change_state(
+            Ok(catalog_changed) => self.complete_cycle(
                 if status.role == SyncRole::Host {
                     SyncState::Hosting
                 } else {
                     SyncState::Connected
                 },
-                None,
+                catalog_changed,
             ),
             Err(error) => {
                 self.change_state(SyncState::Failed, Some(error.message_key().into()));
@@ -718,6 +722,7 @@ impl SyncRuntime {
         inner.status.library_id = Some(binding.library_id.as_uuid().to_string());
         inner.status.address = Some(address);
         inner.status.last_error = None;
+        inner.status.catalog_changed = false;
         inner.root = Some(root);
     }
 
@@ -728,6 +733,18 @@ impl SyncRuntime {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         inner.status.state = state;
         inner.status.last_error = error;
+        inner.status.catalog_changed = false;
+        inner.status.event_sequence += 1;
+    }
+
+    fn complete_cycle(&self, state: SyncState, catalog_changed: bool) {
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        inner.status.state = state;
+        inner.status.last_error = None;
+        inner.status.catalog_changed = catalog_changed;
         inner.status.event_sequence += 1;
     }
 
@@ -783,6 +800,7 @@ impl SyncRuntime {
                             false
                         } else {
                             inner.status.state = SyncState::Syncing;
+                            inner.status.catalog_changed = false;
                             inner.status.last_error = None;
                             inner.status.event_sequence += 1;
                             true
@@ -827,7 +845,8 @@ impl SyncRuntime {
                         }
                         inner.status.event_sequence += 1;
                         match result {
-                            Ok(()) => {
+                            Ok(catalog_changed) => {
+                                inner.status.catalog_changed = catalog_changed;
                                 inner.status.state = if role == SyncRole::Host {
                                     SyncState::Hosting
                                 } else {
@@ -840,6 +859,7 @@ impl SyncRuntime {
                             }
                             Err(error) => {
                                 inner.status.state = SyncState::Failed;
+                                inner.status.catalog_changed = false;
                                 inner.status.last_error = Some(error.message_key().into());
                                 retrying = true;
                                 if retry_attempts > 0 {

@@ -120,7 +120,6 @@ export function useAppShell(): AppShell {
 function useSyncCatalogRefresh(): void {
   useEffect(() => {
     let disposed = false;
-    let syncInProgress = false;
     let latestSequence = -1;
     let unlisten: (() => void) | undefined;
     let refreshes = Promise.resolve();
@@ -152,10 +151,10 @@ function useSyncCatalogRefresh(): void {
     const onSyncStatus = (next: SyncStatus) => {
       if (next.eventSequence < latestSequence) return;
       latestSequence = next.eventSequence;
-      if (next.state === "syncing") {
-        syncInProgress = true;
-      } else if (syncInProgress && (next.state === "connected" || next.state === "hosting")) {
-        syncInProgress = false;
+      if (
+        next.catalogChanged &&
+        (next.state === "connected" || next.state === "hosting")
+      ) {
         refreshAfterSync();
       }
     };
@@ -169,11 +168,12 @@ function useSyncCatalogRefresh(): void {
       .then((current) => {
         if (current.eventSequence < latestSequence) return;
         latestSequence = current.eventSequence;
-        if (current.state === "syncing") {
-          syncInProgress = true;
-        } else if (current.state === "connected" || current.state === "hosting") {
-          // The app may have mounted after a short sync cycle completed and
-          // missed its event. Reconcile UI projections from current native state.
+        if (
+          (current.state === "connected" || current.state === "hosting") &&
+          current.catalogChanged
+        ) {
+          // The app may have mounted after a short, changed sync cycle and
+          // missed its event. Reconcile only when native reported real changes.
           refreshAfterSync();
         }
       })

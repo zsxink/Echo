@@ -48,6 +48,7 @@ pub(super) struct PreparedRemoteApply<'a> {
     pub(super) page: CommitPageDto,
     pub(super) resources: &'a FileResourceStore,
     pub(super) changed: std::sync::atomic::AtomicBool,
+    pub(super) catalog_changed: &'a AtomicBool,
 }
 
 impl RemoteApplyPort for PreparedRemoteApply<'_> {
@@ -96,8 +97,13 @@ impl RemoteApplyPort for PreparedRemoteApply<'_> {
                     )
                 })?;
         }
-        self.database
-            .apply_remote_batch(binding, peer_device_id, anchor, commits)
+        let cursor = self
+            .database
+            .apply_remote_batch(binding, peer_device_id, anchor, commits)?;
+        if cursor.applied > 0 {
+            self.catalog_changed.store(true, Ordering::Release);
+        }
+        Ok(cursor)
     }
 }
 

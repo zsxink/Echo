@@ -64,6 +64,7 @@ export interface SyncStatus {
   readonly state: SyncState;
   readonly sessionId: number;
   readonly eventSequence: number;
+  readonly catalogChanged: boolean;
   readonly libraryId: string | null;
   readonly address: string | null;
   readonly lastError: string | null;
