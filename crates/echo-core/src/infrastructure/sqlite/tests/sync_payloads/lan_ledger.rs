@@ -570,6 +570,69 @@ fn rejected_missing_predecessor_can_be_retried_after_predecessor_is_confirmed() 
 }
 
 #[test]
+fn terminally_rejected_mutation_advances_host_origin_cursor() {
+    use crate::application::ports::HostCommitLedgerPort;
+    use crate::domain::sync::{
+        AuthorityId, DeviceId, Epoch, LibraryId, MutationCandidate, MutationId, ObjectKey,
+        SyncBinding,
+    };
+
+    let (_directory, database, root) = database();
+    let binding = SyncBinding {
+        library_id: LibraryId::new(),
+        authority_id: AuthorityId::new(),
+        epoch: Epoch::INITIAL,
+    };
+    database.bind_sync_library(binding, true, root).unwrap();
+    let origin = DeviceId::from_uuid(database.current_device_id().as_uuid());
+    let rejected_id = MutationId::new();
+    let playlist = crate::domain::ids::PlaylistId::new();
+    let rejected = MutationCandidate {
+        resource_refs: Vec::new(),
+        mutation_id: rejected_id,
+        origin_device_id: origin,
+        origin_seq: 1,
+        previous_mutation_id: None,
+        object: ObjectKey::Playlist(playlist),
+        base_object_version: None,
+        payload: serde_json::json!({"title": "invalid playlist payload"}),
+    };
+
+    let outcome = database.stage_confirmation(binding, &rejected).unwrap();
+    assert!(outcome.checkpoint.is_none());
+    assert!(outcome.outcome_json.contains("WrongObject"));
+    // Simulate an existing inbox rejection written by an older release that
+    // did not advance the host origin cursor.
+    database
+        .writer
+        .run(move |connection| {
+            connection
+                .execute(
+                    "DELETE FROM sync_origin_cursors WHERE origin_device_id=?1",
+                    [origin.as_uuid().to_string()],
+                )
+                .map_err(crate::infrastructure::sqlite::support::storage)?;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(database.stage_confirmation(binding, &rejected).unwrap(), outcome);
+
+    let song = SongId::new();
+    let following = MutationCandidate {
+        resource_refs: Vec::new(),
+        mutation_id: MutationId::new(),
+        origin_device_id: origin,
+        origin_seq: 2,
+        previous_mutation_id: Some(rejected_id),
+        object: ObjectKey::Song(song),
+        base_object_version: None,
+        payload: sync_song_payload(song, "following mutation"),
+    };
+    let accepted = database.stage_confirmation(binding, &following).unwrap();
+    assert!(accepted.checkpoint.is_some());
+}
+
+#[test]
 fn host_peer_authorization_and_revocation_gate_mutation_ingress() {
     use crate::application::ports::HostCommitLedgerPort;
     use crate::domain::sync::{

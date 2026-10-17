@@ -2,7 +2,7 @@
 
 #![allow(clippy::doc_markdown, clippy::missing_errors_doc)]
 
-use rusqlite::{OptionalExtension, TransactionBehavior, params};
+use rusqlite::{params, OptionalExtension, TransactionBehavior};
 use serde::Serialize;
 
 use crate::application::ports::{
@@ -10,13 +10,13 @@ use crate::application::ports::{
 };
 use crate::domain::ids::LibraryRootId;
 use crate::domain::sync::{
-    CommitCheckpoint, CommitSeq, ConfirmedObject, DeviceId, MutationCandidate, MutationId,
-    ObjectKey, ObjectVersion, OriginCursor, SyncBinding, confirm_candidate,
+    confirm_candidate, CommitCheckpoint, CommitSeq, ConfirmationError, ConfirmedObject, DeviceId,
+    MutationCandidate, MutationId, ObjectKey, ObjectVersion, OriginCursor, SyncBinding,
 };
 use crate::error::Error;
 
-use super::SqliteDatabase;
 use super::support::{now_ms, storage};
+use super::SqliteDatabase;
 
 impl SqliteDatabase {
     /// Detach one local library from LAN sync while preserving its library rows.
@@ -487,6 +487,15 @@ impl HostCommitLedgerPort for SqliteDatabase {
 
             if let Err(rejection) = decision {
                 let staged = StagedConfirmation { mutation_id: candidate.mutation_id, outcome_json: format!("{{\"accepted\":false,\"reason\":\"{rejection:?}\"}}"), checkpoint: None };
+                // A permanent rejection still consumes a correctly chained
+                // origin event. The replica advances its local cursor when it
+                // records this outcome; keep the host cursor in lockstep so
+                // later events do not remain blocked behind the rejected ID.
+                if terminal_rejection_consumes_origin(rejection) {
+                    advance_origin_cursor_for_terminal_rejection(
+                        &tx, &origin, &candidate, cursor,
+                    )?;
+                }
                 let serialized = serde_json::to_string(&staged).map_err(storage)?;
                 tx.execute("INSERT INTO sync_inbox(origin_device_id, mutation_id, payload_digest, outcome_json, commit_seq, received_at) VALUES(?1, ?2, ?3, ?4, NULL, ?5) ON CONFLICT(origin_device_id, mutation_id) DO UPDATE SET outcome_json=excluded.outcome_json, commit_seq=NULL, received_at=excluded.received_at", params![origin, candidate.mutation_id.as_uuid().to_string(), payload_digest, serialized, now_ms()]).map_err(storage)?;
                 tx.commit().map_err(storage)?;
@@ -781,10 +790,55 @@ fn prior_confirmation(
     if retryable_predecessor_rejection {
         return Ok(None);
     }
+    if commit_seq.is_none() && terminal_rejection_consumes_origin_json(&staged.outcome_json) {
+        let candidate = normalize_member_alias_object(tx, candidate.clone())?;
+        let cursor = load_origin_cursor(tx, candidate.origin_device_id)?;
+        advance_origin_cursor_for_terminal_rejection(tx, origin, &candidate, cursor)?;
+    }
     if let Some(sequence) = commit_seq {
         ensure_no_pending_predecessor(tx, Some(sequence))?;
     }
     Ok(Some(staged))
+}
+
+fn terminal_rejection_consumes_origin(rejection: ConfirmationError) -> bool {
+    matches!(
+        rejection,
+        ConfirmationError::WrongObject
+            | ConfirmationError::WrongOrigin
+            | ConfirmationError::UnauthorizedPlayStatsBucket
+    )
+}
+
+fn terminal_rejection_consumes_origin_json(outcome_json: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(outcome_json)
+        .ok()
+        .and_then(|value| value.get("reason")?.as_str().map(str::to_owned))
+        .is_some_and(|reason| {
+            matches!(
+                reason.as_str(),
+                "WrongObject" | "WrongOrigin" | "UnauthorizedPlayStatsBucket"
+            )
+        })
+}
+
+fn advance_origin_cursor_for_terminal_rejection(
+    tx: &rusqlite::Transaction<'_>,
+    origin: &str,
+    candidate: &MutationCandidate,
+    cursor: Option<OriginCursor>,
+) -> Result<(), Error> {
+    let expected_seq = cursor.map_or(1, |value| value.origin_seq.saturating_add(1));
+    let expected_previous = cursor.map(|value| value.last_mutation_id);
+    if candidate.origin_seq == expected_seq && candidate.previous_mutation_id == expected_previous
+    {
+        tx.execute(
+            "INSERT INTO sync_origin_cursors(origin_device_id, origin_seq, last_mutation_id) VALUES(?1, ?2, ?3) ON CONFLICT(origin_device_id) DO UPDATE SET origin_seq=excluded.origin_seq, last_mutation_id=excluded.last_mutation_id",
+            params![origin, i64::try_from(candidate.origin_seq).map_err(storage)?, candidate.mutation_id.as_uuid().to_string()],
+        )
+        .map_err(storage)?;
+    }
+    Ok(())
 }
 
 fn ensure_no_pending_predecessor(
