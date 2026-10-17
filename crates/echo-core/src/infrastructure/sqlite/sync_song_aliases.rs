@@ -1,6 +1,6 @@
 //! Immutable song identities and canonicalization at the host transaction boundary.
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 
 use super::support::storage;
@@ -92,9 +92,6 @@ pub(super) fn normalize(
         && candidate.payload != serde_json::json!({"tombstone":true})
     {
         preserve_import_time(connection, &mut candidate)?;
-        if alias.is_none() {
-            avoid_path_collision(connection, &mut candidate)?;
-        }
     }
     remap_payload(connection, &mut candidate.payload)?;
     Ok((candidate, alias))
@@ -222,73 +219,6 @@ fn preserve_import_time(
         }
         if let Some(added_at) = original.get("added_at") {
             candidate.payload["added_at"] = added_at.clone();
-        }
-    }
-    Ok(())
-}
-
-fn avoid_path_collision(
-    connection: &Connection,
-    candidate: &mut MutationCandidate,
-) -> Result<(), Error> {
-    let (_, id) = super::sync_manifests::identity(candidate.object);
-    let Some(original) = candidate
-        .payload
-        .get("relative_path")
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-    else {
-        return Ok(());
-    };
-    let path = crate::domain::ids::RelativeMediaPath::new(&original)?;
-    let taken: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM songs WHERE normalized_relative_path=?1 AND uuid<>?2 AND NOT EXISTS(SELECT 1 FROM sync_song_aliases a WHERE a.alias_song_uuid=songs.uuid))",params![path.identity_key(),id],|row|row.get(0)).map_err(storage)?;
-    if !taken {
-        return Ok(());
-    }
-    let (stem, extension) = original
-        .rsplit_once('.')
-        .map_or((original.as_str(), ""), |(stem, extension)| {
-            (stem, extension)
-        });
-    let suffix = if extension.is_empty() {
-        String::new()
-    } else {
-        format!(".{extension}")
-    };
-    let new_path = format!("{stem} ({id}){suffix}");
-    let new_path = crate::domain::ids::RelativeMediaPath::new(&new_path)?;
-    let collision: bool = connection
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM songs WHERE normalized_relative_path=?1 AND uuid<>?2)",
-            params![new_path.identity_key(), id],
-            |row| row.get(0),
-        )
-        .map_err(storage)?;
-    if collision {
-        return Err(Error::conflict(
-            "canonical import conflict path is already occupied",
-        ));
-    }
-    candidate.payload["relative_path"] = Value::String(new_path.display().to_owned());
-    for resource in &mut candidate.resource_refs {
-        let resource_path = resource.relative_path.as_str();
-        let renamed = if resource_path == original {
-            Some(new_path.display().to_owned())
-        } else {
-            resource_path
-                .strip_prefix(stem)
-                .and_then(|tail| tail.strip_prefix('.'))
-                .filter(|extension| !extension.contains('/'))
-                .map(|extension| format!("{stem} ({id}).{extension}"))
-        };
-        if let Some(renamed) = renamed {
-            *resource = crate::domain::sync::SharedResourceManifest::new(
-                resource.kind,
-                resource.digest,
-                resource.length,
-                resource.media_type.clone(),
-                &renamed,
-            )?;
         }
     }
     Ok(())

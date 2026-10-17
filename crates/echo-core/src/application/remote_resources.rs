@@ -81,7 +81,25 @@ impl PublishRemoteResources {
                     crate::domain::library::STAGING_ROOT,
                     operation.as_uuid().simple()
                 );
-                let local_path = format!("echo/media/{kind}/{id}/{group}/{}", path.normalized());
+                // A first download into an empty library should retain the
+                // host's logical path. Once a path already contains different
+                // bytes (or this object already has a published version), keep
+                // the immutable Echo version path so we never overwrite local
+                // music or an earlier synchronized version.
+                let local_path = if matches!(object, ObjectKey::Song(_))
+                    && target.manifest.kind == crate::domain::sync::SharedResourceKind::Audio
+                    && target.expected_old_digest.is_none()
+                    && (!self.deps.fs.path_exists(root, &path)?
+                        || self.matches(
+                            root,
+                            &path,
+                            &target.manifest.digest.to_hex(),
+                            target.manifest.length,
+                        )?) {
+                    path.normalized().to_owned()
+                } else {
+                    format!("echo/media/{kind}/{id}/{group}/{}", path.normalized())
+                };
                 RelativeMediaPath::new(&local_path)?;
                 Ok(RemoteResourceItem {
                     target,

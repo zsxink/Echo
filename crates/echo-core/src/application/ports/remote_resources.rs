@@ -28,7 +28,8 @@ pub struct RemoteResourceItem {
     pub stage: RemoteResourceStage,
     /// Root-relative, marker-verified Echo staging location.
     pub staging_path: String,
-    /// Immutable local version path. Shared manifests retain logical paths.
+    /// Root-relative published path; first downloads may use the manifest's
+    /// logical path, while conflicting or replaced content uses an Echo version path.
     pub local_path: String,
     /// Retained previous local version, verified before association changes.
     pub old_path: Option<String>,
