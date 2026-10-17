@@ -12,15 +12,13 @@
  *    list must not issue a command per row;
  *  - ids already asked about (or in flight) are dropped from a request, so a
  *    re-render or a scroll that repeats a window costs no extra round trip;
- *  - the published snapshot changes **only when artwork is actually found**, so
- *    a library whose files carry no artwork never wakes a subscriber up.
+ *  - unchanged keys do not republish the snapshot, so routine refreshes keep
+ *    decoded images stable and a library without artwork stays quiet.
  *
- * Nothing is persisted: artwork is a property of the library, so a rescan or a
- * root switch invalidates it ([`invalidateCovers`]) rather than trusting a key
- * that may now point at different bytes. Invalidation bumps a *generation*, and
- * `useCoverKeys` re-asks when either the rendered window or that generation
- * changes — otherwise a rescan would leave every visible row on the placeholder
- * until the user happened to scroll.
+ * Nothing is persisted: artwork is a property of the library. A root switch or
+ * explicit rescan clears keys ([`invalidateCovers`]); a sync refresh rechecks
+ * keys while keeping current images visible ([`refreshCovers`]). Both bump a
+ * *generation*, so `useCoverKeys` re-asks without waiting for a scroll.
  */
 
 import { useEffect, useRef } from "react";
@@ -38,30 +36,38 @@ interface CoverSnapshot {
 const coverStore = new ExternalStore<CoverSnapshot>({ generation: 0, covers: new Map() });
 /** Ids already asked about — with or without artwork — so we never re-ask. */
 const asked = new Set<string>();
-/** Ids with a request in flight, so a re-render cannot duplicate one. */
-const inFlight = new Set<string>();
+/** Request generation per id; stale requests cannot suppress or overwrite a refresh. */
+const inFlight = new Map<string, number>();
 /** Ask the desktop for any of `songIds` whose artwork is not resolved yet. */
 export function requestCovers(songIds: readonly string[]): void {
-  const wanted = songIds.filter((id) => !asked.has(id) && !inFlight.has(id));
+  const generation = coverStore.getSnapshot().generation;
+  const wanted = songIds.filter((id) => !asked.has(id) && inFlight.get(id) !== generation);
   if (wanted.length === 0) return;
-  for (const id of wanted) inFlight.add(id);
+  for (const id of wanted) inFlight.set(id, generation);
 
   void bridge
     .call("song_cover_keys", { songIds: wanted })
     .then((found) => {
+      const snapshot = coverStore.getSnapshot();
+      if (snapshot.generation !== generation) return;
       // A shell that cannot answer the command (an older build, a test double
       // with no handler) resolves to a non-object: every song is then
       // artwork-less, which is the same end state as a file with no embedded
       // cover — never a thrown request that loses the whole batch.
       const answer = found ?? {};
-      const snapshot = coverStore.getSnapshot();
       const next = new Map(snapshot.covers);
       let changed = false;
       for (const id of wanted) {
         asked.add(id);
         const key = answer[id];
         if (typeof key === "string" && key.length > 0) {
-          next.set(id, key);
+          if (next.get(id) !== key) {
+            next.set(id, key);
+            changed = true;
+          }
+        } else if (next.delete(id)) {
+          // A refreshed lookup can confirm that previously indexed artwork
+          // was removed. Keep it visible until this authoritative answer lands.
           changed = true;
         }
       }
@@ -74,10 +80,13 @@ export function requestCovers(songIds: readonly string[]): void {
       // A failed lookup must not become a retry loop on every render: record the
       // ids as asked so the placeholder stands. A rescan (or a root switch)
       // clears them again.
+      if (coverStore.getSnapshot().generation !== generation) return;
       for (const id of wanted) asked.add(id);
     })
     .finally(() => {
-      for (const id of wanted) inFlight.delete(id);
+      for (const id of wanted) {
+        if (inFlight.get(id) === generation) inFlight.delete(id);
+      }
     });
 }
 
@@ -90,6 +99,13 @@ export function invalidateCovers(): void {
   inFlight.clear();
   const snapshot = coverStore.getSnapshot();
   coverStore.setSnapshot({ generation: snapshot.generation + 1, covers: new Map() });
+}
+
+/** Recheck visible artwork after sync without blanking covers already on screen. */
+export function refreshCovers(): void {
+  asked.clear();
+  const snapshot = coverStore.getSnapshot();
+  coverStore.setSnapshot({ generation: snapshot.generation + 1, covers: snapshot.covers });
 }
 
 /**

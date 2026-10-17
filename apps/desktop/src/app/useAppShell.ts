@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
 import { bridge, subscribe } from "../bridge";
-import { invalidateCovers } from "./coverArt";
+import { refreshCovers } from "./coverArt";
 import { useLibraryPlaylists } from "../features/playlists/useLibraryPlaylists";
 import { useLibraryStatus } from "../features/workspace/useLibraryStatus";
 import type { LibraryViewKind } from "../features/library/types";
@@ -140,7 +140,7 @@ function useSyncCatalogRefresh(): void {
             artists: counts.artists,
             albums: counts.albums,
           });
-          invalidateCovers();
+          refreshCovers();
           invalidateLibrary();
         })
         .catch(() => {
