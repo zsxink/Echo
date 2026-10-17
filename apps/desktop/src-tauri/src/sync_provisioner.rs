@@ -991,7 +991,23 @@ impl NativeSyncProvisioner {
             // longer. Publication downloads from the durable merged manifests.
             let applied =
                 LanClient::apply_snapshot_page(&page, peer.host_device_id, self.database.as_ref())
-                    .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+                    .map_err(|error| match error {
+                        ClientError::RemoteApply(echo_core::error::Error::Conflict {
+                            what,
+                            ..
+                        }) if what == "snapshot object identity belongs to another local root" => {
+                            SyncRuntimeError::LibraryConflict
+                        }
+                        error => {
+                            tracing::error!(
+                                target: "echo_desktop::sync",
+                                page_index = page.page_index,
+                                error = %error,
+                                "failed to apply remote library snapshot page"
+                            );
+                            SyncRuntimeError::LibraryUnavailable
+                        }
+                    })?;
             let Some(index) = applied.next_page_index else {
                 break;
             };

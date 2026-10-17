@@ -483,6 +483,8 @@ function syncErrorText(key: string): string {
     "sync.unconfigured": "同步服务尚未完成安全配置。",
     "sync.invalidAddress": "请输入有效的局域网 IP 地址。",
     "sync.libraryUnavailable": "当前音乐目录不可用。请确认目录仍可访问后重试同步。",
+    "sync.libraryConflict":
+      "主机中的部分歌曲已属于另一份本地音乐目录。请在设置中切回之前同步使用的目录，再重新加入主机。",
     "sync.busy": "同步服务正在处理其他操作。",
     "sync.bindFailed": "无法监听该局域网地址，请从自动识别的地址中选择当前网络地址。",
     "sync.discoveryFailed": "局域网主机发现失败。",
