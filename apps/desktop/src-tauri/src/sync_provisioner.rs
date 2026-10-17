@@ -786,20 +786,30 @@ impl NativeSyncProvisioner {
             let before = queue
                 .replica_checkpoint(peer.host_device_id)
                 .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+            let pending_before = queue
+                .pending_local_mutations(1)
+                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+                .first()
+                .map(|mutation| mutation.mutation_id);
             self.prepared_incremental_cycle(peer, endpoint, &queue, resources)
                 .await?;
             self.publish_remote_resources(peer, endpoint, root, resources)
                 .await?;
-            if queue
+            let pending_after = queue
                 .pending_local_mutations(1)
-                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
-                .is_empty()
-            {
+                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+            if pending_after.is_empty() {
                 self.pull_host_changes(peer, endpoint, &queue, resources)
                     .await?;
                 self.publish_remote_resources(peer, endpoint, root, resources)
                     .await?;
                 break;
+            }
+            // A terminally rejected mutation is removed from the pending queue
+            // even when the host commit checkpoint does not change. Treat that
+            // as progress so the next mutation can continue its origin chain.
+            if pending_before != pending_after.first().map(|mutation| mutation.mutation_id) {
+                continue;
             }
             let after = queue
                 .replica_checkpoint(peer.host_device_id)
