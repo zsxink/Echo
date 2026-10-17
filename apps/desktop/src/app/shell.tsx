@@ -21,7 +21,7 @@ const ShellNavContext = createContext<ShellNav | null>(null);
 
 export const ShellNavProvider = ShellNavContext.Provider;
 
-export function useShellNav(): ShellNav {
+function useShellNav(): ShellNav {
   const nav = useContext(ShellNavContext);
   if (!nav) {
     throw new Error("useShellNav must be used inside the app shell");

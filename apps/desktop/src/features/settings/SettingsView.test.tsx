@@ -180,9 +180,10 @@ describe("SettingsView LAN sync preferences", () => {
     await screen.findByLabelText("退出应用");
     fireEvent.click(screen.getByRole("button", { name: "搜索局域网主机" }));
     fireEvent.click(await screen.findByRole("button", { name: "使用主机 Echo 主机 的地址" }));
-    expect(screen.getByLabelText("主机 IP")).toHaveValue("192.168.1.10");
+    // The label also carries the help text, so match by substring.
+    expect(screen.getByLabelText(/主机 IP/)).toHaveValue("192.168.1.10");
 
-    fireEvent.change(screen.getByLabelText("六位验证码"), {
+    fireEvent.change(screen.getByLabelText(/六位验证码/), {
       target: { value: "123456" },
     });
     fireEvent.click(screen.getByRole("button", { name: "加入" }));

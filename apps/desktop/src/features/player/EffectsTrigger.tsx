@@ -1,7 +1,6 @@
 import { useRef } from "react";
 import { playerStore, useAudioEffects, usePlayerUi } from "../../player/playerStore";
-
-export const effectsTriggerRef = { current: null as HTMLElement | null };
+import { effectsTriggerRef } from "./effectsTriggerRef";
 
 export function EffectsTrigger({ immersive = false }: { readonly immersive?: boolean }) {
   const ref = useRef<HTMLButtonElement>(null);

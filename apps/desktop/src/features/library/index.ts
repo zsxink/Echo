@@ -5,7 +5,7 @@ import { resetLibraryInvalidations as resetInvalidations } from "./libraryInvali
 
 export { LibraryWorkspace } from "./LibraryWorkspace";
 export { SongList } from "./SongList";
-export { formatDuration } from "./SongRow";
+export { formatDuration } from "./duration";
 export { SongMenu } from "./SongMenu";
 export { BatchSongMenu, SelectionModeButton } from "./BatchSongActions";
 export type { BatchSongActionHandlers, BatchSongActionOptions } from "./BatchSongActions";
@@ -17,7 +17,8 @@ export { SORT_FIELDS } from "./types";
 export { useStoredSongSort } from "./useStoredSongSort";
 export { useSongSelection } from "./useSongSelection";
 export type { SongSelection } from "./useSongSelection";
-export { useLocateSong, LocateButton } from "./useLocateSong";
+export { useLocateSong } from "./useLocateSong";
+export { LocateButton } from "./LocateButton";
 export type { LocateSongController } from "./useLocateSong";
 export {
   runAddToPlaylistsBatch,

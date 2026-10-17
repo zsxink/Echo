@@ -294,7 +294,7 @@ export function PlaylistCreateDialog({
 }
 
 /** Count user-perceived characters (grapheme clusters) without a dependency. */
-export function countGraphemes(value: string): number {
+function countGraphemes(value: string): number {
   // Intl.Segmenter gives grapheme clusters on all modern engines; fall back to
   // Array.from (code points) where unavailable.
   if (typeof Intl !== "undefined" && "Segmenter" in Intl) {

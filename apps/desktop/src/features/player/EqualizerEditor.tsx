@@ -1,13 +1,9 @@
 import { useState, type KeyboardEvent } from "react";
 import type { EqCurve } from "../../ipc/ipc-types.generated";
+import { NEUTRAL_CURVE } from "./eqCurve";
 
 const FREQUENCIES = [31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 const LABELS = ["31.25", "62.5", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
-export const NEUTRAL_CURVE: EqCurve = {
-  gainsDb: Array(10).fill(0),
-  preampMode: "auto",
-  requestedPreampDb: 0,
-};
 
 export interface ResponsePoint {
   readonly frequencyHz: number;
