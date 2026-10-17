@@ -776,7 +776,11 @@ impl SyncRuntime {
         let thread = thread::Builder::new()
             .name("echo-lan-sync-loop".into())
             .spawn(move || {
-                let poll_interval = Duration::from_secs(5);
+                // Local SQLite writes wake the loop immediately. Keep a slow
+                // fallback poll for changes made by another device so an idle
+                // session does not repeatedly scan/query the library every few
+                // seconds.
+                let poll_interval = Duration::from_secs(60);
                 let mut retry_delay = Duration::from_secs(5);
                 let mut retry_attempts = 0_u32;
                 let mut retrying = false;
