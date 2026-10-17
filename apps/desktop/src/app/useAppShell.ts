@@ -18,7 +18,6 @@ import { useLibraryPlaylists } from "../features/playlists/useLibraryPlaylists";
 import { useLibraryStatus } from "../features/workspace/useLibraryStatus";
 import type { LibraryViewKind } from "../features/library/types";
 import {
-  getLibraryCountsSnapshot,
   setLibraryCounts,
   useLibraryCountSync,
 } from "../features/library/libraryCounts";
@@ -117,69 +116,47 @@ export function useAppShell(): AppShell {
   };
 }
 
-/**
- * A completed LAN cycle can add a song without going through local UI
- * mutations. Refresh counts then re-scan only when the catalog count changed;
- * the scan indexes embedded covers and adjacent lyrics for newly downloaded
- * files without rescanning the whole library on every five-second poll.
- */
+/** Refresh UI projections after native sync has applied and indexed a cycle. */
 function useSyncCatalogRefresh(): void {
-  const lastSongCount = useRef(getLibraryCountsSnapshot().all);
-
   useEffect(() => {
     let disposed = false;
     let syncInProgress = false;
-    let refreshing = false;
+    let latestSequence = -1;
     let unlisten: (() => void) | undefined;
+    let refreshes = Promise.resolve();
 
-    const refreshAfterSync = async () => {
-      if (refreshing) return;
-      refreshing = true;
-      try {
-        const counts = await bridge.call("library_counts");
-        if (disposed) return;
-        const previousCount = lastSongCount.current;
-        lastSongCount.current = counts.all;
-        setLibraryCounts({
-          all: counts.all,
-          favorites: counts.favorites,
-          recent: counts.recent,
-          artists: counts.artists,
-          albums: counts.albums,
+    const refreshAfterSync = () => {
+      // The native sync cycle owns publication and tag indexing. The UI only
+      // rereads its projections; inferring whether to scan from a count delta
+      // misses resource-only updates and can permanently swallow a scan race.
+      refreshes = refreshes
+        .then(async () => {
+          const counts = await bridge.call("library_counts");
+          if (disposed) return;
+          setLibraryCounts({
+            all: counts.all,
+            favorites: counts.favorites,
+            recent: counts.recent,
+            artists: counts.artists,
+            albums: counts.albums,
+          });
+          invalidateCovers();
+          invalidateLibrary();
+        })
+        .catch(() => {
+          // Sync status remains authoritative; library views can retry through
+          // their normal invalidation and rescan paths.
         });
-
-        if (previousCount !== null && previousCount === counts.all) return;
-        invalidateLibrary();
-        const library = await bridge.call("library_status");
-        if (disposed || !library.activeRoot || library.scanning) return;
-        await bridge.call("start_scan", { root: library.activeRoot });
-        if (disposed) return;
-        invalidateCovers();
-        invalidateLibrary();
-        const refreshed = await bridge.call("library_counts");
-        if (disposed) return;
-        lastSongCount.current = refreshed.all;
-        setLibraryCounts({
-          all: refreshed.all,
-          favorites: refreshed.favorites,
-          recent: refreshed.recent,
-          artists: refreshed.artists,
-          albums: refreshed.albums,
-        });
-      } catch {
-        // Sync status remains authoritative; normal library retry/rescan stays
-        // available if this best-effort catalog refresh cannot run.
-      } finally {
-        refreshing = false;
-      }
     };
 
     const onSyncStatus = (next: SyncStatus) => {
+      if (next.eventSequence < latestSequence) return;
+      latestSequence = next.eventSequence;
       if (next.state === "syncing") {
         syncInProgress = true;
       } else if (syncInProgress && (next.state === "connected" || next.state === "hosting")) {
         syncInProgress = false;
-        void refreshAfterSync();
+        refreshAfterSync();
       }
     };
 
@@ -190,7 +167,15 @@ function useSyncCatalogRefresh(): void {
     void bridge
       .call("sync_status")
       .then((current) => {
-        if (current.state === "syncing") syncInProgress = true;
+        if (current.eventSequence < latestSequence) return;
+        latestSequence = current.eventSequence;
+        if (current.state === "syncing") {
+          syncInProgress = true;
+        } else if (current.state === "connected" || current.state === "hosting") {
+          // The app may have mounted after a short sync cycle completed and
+          // missed its event. Reconcile UI projections from current native state.
+          refreshAfterSync();
+        }
       })
       .catch(() => undefined);
 

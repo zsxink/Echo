@@ -1131,6 +1131,9 @@ impl TxSongWriter for SqliteTx<'_> {
     fn upsert_song(&mut self, song: &Song) -> Result<(), Error> {
         upsert_song(self.transaction, song)
     }
+    fn refresh_song_file_index(&mut self, song: &Song) -> Result<(), Error> {
+        statements::refresh_song_file_index(self.transaction, song)
+    }
     fn delete_song(&mut self, id: SongId) -> Result<(), Error> {
         delete_song(self.transaction, id)
     }

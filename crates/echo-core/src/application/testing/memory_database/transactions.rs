@@ -24,6 +24,13 @@ impl MemoryTx<'_> {
 }
 
 impl TxSongWriter for MemoryTx<'_> {
+    fn refresh_song_file_index(&mut self, song: &Song) -> Result<(), Error> {
+        let Some(existing) = self.store.songs.get_mut(&song.id()) else {
+            return Err(Error::conflict("published song no longer exists"));
+        };
+        super::super::song_upsert::refresh_file_index(existing, song)
+    }
+
     fn upsert_song(&mut self, song: &Song) -> Result<(), Error> {
         self.bump_song_revision(song.id());
         // Same contract as the SQL upsert (see `testing::song_upsert`): user

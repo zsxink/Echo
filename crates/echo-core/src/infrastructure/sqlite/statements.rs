@@ -134,6 +134,42 @@ pub(crate) fn upsert_song(connection: &Connection, song: &Song) -> Result<(), Er
     Ok(())
 }
 
+/// Only local file facts change after parsing an already-authorized sync file.
+/// Guard the association so a concurrent delete/replacement cannot receive
+/// artwork or lyrics parsed from its previous bytes.
+pub(crate) fn refresh_song_file_index(connection: &Connection, song: &Song) -> Result<(), Error> {
+    let parameters = song.audio_parameters();
+    let changed = connection
+        .execute(
+            "UPDATE songs SET file_mtime_ns=?1, format=?2, bitrate_bps=?3,
+           sample_rate_hz=?4, channels=?5, bits_per_sample=?6
+         WHERE uuid=?7 AND library_root_uuid=?8 AND normalized_relative_path=?9
+           AND blake3_hash=?10 AND file_size=?11 AND availability='available'",
+            params![
+                song.file_mtime_ns(),
+                song.format().map(super::conversion::audio_format_to_db),
+                parameters
+                    .bitrate_bps
+                    .and_then(|value| i64::try_from(value).ok()),
+                parameters.sample_rate_hz.map(i64::from),
+                parameters.channels.map(i64::from),
+                parameters.bits_per_sample.map(i64::from),
+                song.id().to_string(),
+                song.root().to_string(),
+                song.path().identity_key(),
+                song.blake3_hash(),
+                song.file_size().and_then(|value| i64::try_from(value).ok()),
+            ],
+        )
+        .map_err(storage)?;
+    if changed != 1 {
+        return Err(Error::conflict(
+            "published song association changed during metadata indexing",
+        ));
+    }
+    Ok(())
+}
+
 /// Append an outbox row from a full JSON snapshot of `kind`/uuid, deriving the
 /// object's monotone revision from its outbox history and mirroring the ordinal
 /// onto the canonical column (`playlists`/`library_roots`/`song_overrides`).

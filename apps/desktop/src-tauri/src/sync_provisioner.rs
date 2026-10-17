@@ -11,6 +11,7 @@ use echo_core::application::ports::{
     LocalSyncQueuePort, RemoteApplyPort, RemoteCommit, ReplicaSnapshotApplyPort,
 };
 use echo_core::application::remote_resources::RemoteResourcePublishDeps;
+use echo_core::application::scan::{ScanDeps, ScanSupervisor, StartScan};
 use echo_core::application::sync::ConfirmHostMutation;
 use echo_core::domain::entities::{LibraryRoot, RootAvailability};
 use echo_core::domain::ids::LibraryRootId;
@@ -67,6 +68,8 @@ pub struct NativeSyncProvisioner {
     database: Arc<SqliteDatabase>,
     private_resources: PathBuf,
     publication: RemoteResourcePublishDeps,
+    scan_deps: Arc<ScanDeps>,
+    scan_supervisor: ScanSupervisor,
     gate: Mutex<()>,
 }
 
@@ -138,11 +141,15 @@ impl NativeSyncProvisioner {
         database: Arc<SqliteDatabase>,
         private_resources: PathBuf,
         publication: RemoteResourcePublishDeps,
+        scan_deps: Arc<ScanDeps>,
+        scan_supervisor: ScanSupervisor,
     ) -> Self {
         Self {
             database,
             private_resources,
             publication,
+            scan_deps,
+            scan_supervisor,
             gate: Mutex::new(()),
         }
     }
@@ -457,7 +464,9 @@ impl SyncProvisioner for NativeSyncProvisioner {
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
             .ok_or(SyncRuntimeError::Unconfigured)?;
         if role == SyncRole::Peer && !configuration.host {
-            return self.synchronize_peer(configuration.local_root, &cancelled);
+            self.synchronize_peer(configuration.local_root, &cancelled)?;
+            self.refresh_published_metadata(configuration.local_root);
+            return Ok(());
         }
         if role != SyncRole::Host || !configuration.host {
             return Err(SyncRuntimeError::LibraryUnavailable);
@@ -479,7 +488,9 @@ impl SyncProvisioner for NativeSyncProvisioner {
             configuration.local_root,
             configuration.binding,
             &resources,
-        )
+        )?;
+        self.refresh_published_metadata(configuration.local_root);
+        Ok(())
     }
 
     fn revoke_device(&self, device_id: &str) -> Result<(), SyncRuntimeError> {
@@ -587,6 +598,34 @@ impl SyncProvisioner for NativeSyncProvisioner {
 }
 
 impl NativeSyncProvisioner {
+    fn refresh_published_metadata(&self, root: LibraryRootId) {
+        let songs = match self.database.pending_remote_song_metadata(root) {
+            Ok(songs) => songs,
+            Err(error) => {
+                tracing::warn!(
+                    target: "echo_desktop::sync",
+                    error = %error,
+                    "published song metadata indexing will retry next cycle"
+                );
+                return;
+            }
+        };
+        let indexer = StartScan::new(&self.scan_deps, &self.scan_supervisor);
+        for song in songs {
+            if let Err(error) = indexer.refresh_published_song(root, song) {
+                // File transfer has already committed. Keep the NULL scan
+                // stamp and retry next cycle, without reporting a transport
+                // failure or blocking other songs on one bad metadata read.
+                tracing::warn!(
+                    target: "echo_desktop::sync",
+                    song = %song,
+                    error = %error,
+                    "published song metadata indexing will retry next cycle"
+                );
+            }
+        }
+    }
+
     fn leave_sync_locked(&self, root: LibraryRootId) -> Result<(), SyncRuntimeError> {
         self.database
             .select_sync_context(root)

@@ -338,7 +338,7 @@ fn wire_composition(
         };
     let services = AppServices::with_runtime(
         routed.deps.clone(),
-        scan_supervisor,
+        scan_supervisor.clone(),
         supervisor,
         gate_dialogs,
         routed.registry.clone(),
@@ -361,6 +361,8 @@ fn wire_composition(
                 hasher: routed.deps.hasher.clone(),
                 journal: routed.database.clone(),
             },
+            routed.deps.clone(),
+            scan_supervisor,
         ))),
     ));
     let sync_app = app.handle().clone();

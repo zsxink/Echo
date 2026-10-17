@@ -151,13 +151,11 @@ impl ScanSupervisor {
         root: LibraryRootId,
         token: ScanCancelToken,
     ) -> Result<(), Error> {
-        {
-            let active = self.lock();
-            if active.contains_key(&root) {
-                return Err(Error::conflict("a scan is already running for this root"));
-            }
+        let mut active = self.lock();
+        if active.contains_key(&root) {
+            return Err(Error::conflict("a scan is already running for this root"));
         }
-        self.lock().insert(root, token);
+        active.insert(root, token);
         Ok(())
     }
 
@@ -241,6 +239,65 @@ impl<'a> StartScan<'a> {
         let result = self.run_guarded(root, generation, &token);
         self.supervisor.unregister(root);
         result
+    }
+
+    /// Index the tags and embedded assets of one already-published sync song.
+    /// The publication owns its identity and path. This deliberately skips
+    /// enumeration and the missing pass, including for isolated resource paths
+    /// outside the normal media tree.
+    ///
+    /// # Errors
+    /// Returns a retryable error while enrollment or another scan owns the
+    /// root. Parse and persistence failures leave the publication unindexed.
+    pub fn refresh_published_song(&self, root: LibraryRootId, id: SongId) -> Result<(), Error> {
+        let _activity = super::sync::local_activity()?;
+        if self.deps.roots.replica_enrollment_pending(root)? {
+            return Err(Error::unavailable(
+                "library",
+                "replica enrollment is pending",
+            ));
+        }
+        self.supervisor.register(root, ScanCancelToken::new())?;
+        let result = self.refresh_published_song_guarded(root, id);
+        self.supervisor.unregister(root);
+        result
+    }
+
+    fn refresh_published_song_guarded(&self, root: LibraryRootId, id: SongId) -> Result<(), Error> {
+        let Some(mut song) = self.deps.songs.by_id(id)? else {
+            return Ok(());
+        };
+        if song.root() != root || song.availability() != SongAvailability::Available {
+            return Err(Error::conflict(
+                "published song is no longer available in this root",
+            ));
+        }
+        let parsed = match parse_single_file(self.deps, root, song.path()) {
+            FileOutcome::Parsed(parsed) => parsed,
+            FileOutcome::FastSkip { .. } => return Ok(()),
+            FileOutcome::Diagnostic(diagnostic) => {
+                return Err(Error::unavailable(
+                    "published song metadata",
+                    diagnostic.code(),
+                ));
+            }
+        };
+        if song.blake3_hash() != Some(parsed.file.hash.as_str()) {
+            return Err(Error::conflict(
+                "published song changed before metadata indexing",
+            ));
+        }
+        song.apply_scan_facts_with_params(
+            parsed.file.hash.clone(),
+            parsed.file.size,
+            parsed.file.mtime_ns,
+            parsed.file.meta.format,
+            parsed.file.meta.parameters,
+        );
+        // Check that the file stayed stable throughout extraction, but retain
+        // the host's logical resource declarations and shared metadata.
+        super::scan_resources::verified_song_resources(self.deps, root, &parsed, false)?;
+        self.persist_parsed_index(song, &parsed, None)
     }
 
     fn run_guarded(
@@ -457,6 +514,17 @@ impl<'a> StartScan<'a> {
                 self.wall_clock_ms(),
             )
         });
+        let resources =
+            super::scan_resources::verified_song_resources(self.deps, root, parsed, true)?;
+        self.persist_parsed_index(song, parsed, Some(resources))
+    }
+
+    fn persist_parsed_index(
+        &self,
+        song: Song,
+        parsed: &ParsedOutcome,
+        resources: Option<Vec<crate::domain::sync::SharedResourceManifest>>,
+    ) -> Result<(), Error> {
         // Lyrics candidates: embedded + sidecar. Absent sources are cleared —
         // a rescan must not leave stale text behind. Override rows are never
         // touched by scans (no override candidate is ever constructed here).
@@ -469,13 +537,15 @@ impl<'a> StartScan<'a> {
             .clone()
             .map(|candidate| rewrap(&candidate, LyricsSource::Sidecar));
         let cover = parsed.cover.clone();
-        let resources =
-            super::scan_resources::verified_song_resources(self.deps, root, parsed, true)?;
         self.deps
             .uow
             .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
-                tx.set_song_file_resources(&song, &resources)?;
-                tx.upsert_song(&song)?;
+                if let Some(resources) = resources {
+                    tx.set_song_file_resources(&song, &resources)?;
+                    tx.upsert_song(&song)?;
+                } else {
+                    tx.refresh_song_file_index(&song)?;
+                }
                 match embedded {
                     Some(candidate) => tx.set_lyrics_candidate(song.id(), &candidate)?,
                     None => tx.clear_lyrics_candidate(song.id(), LyricsSource::Embedded)?,

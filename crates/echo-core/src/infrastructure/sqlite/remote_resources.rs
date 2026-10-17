@@ -7,7 +7,7 @@ use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use crate::application::ports::{
     RemoteResourceJournalPort, RemoteResourcePublication, RemoteResourceStage, RemoteResourceTarget,
 };
-use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath};
+use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath, SongId};
 use crate::domain::sync::{ObjectKey, ResourceDigest, SharedResourceKind, SharedResourceManifest};
 use crate::error::Error;
 
@@ -182,6 +182,12 @@ impl RemoteResourceJournalPort for SqliteDatabase {
                     tx.execute("UPDATE songs SET relative_path=?2,normalized_relative_path=?3,blake3_hash=?4,file_size=?5,availability=CASE WHEN availability='pending_delete' THEN availability ELSE 'available' END WHERE uuid=?1 AND library_root_uuid=?6",params![song.to_string(),path.normalized(),path.identity_key(),resource.digest.to_hex(),i64::try_from(resource.length).map_err(storage)?,publication.root.to_string()]).map_err(storage)?;
                 }
             }
+            if let ObjectKey::Song(song) = publication.object {
+                // A complete file association is not a parsed local index.
+                // Clearing the scan stamp durably queues embedded artwork and
+                // lyrics extraction, also for sidecar-only replacements.
+                tx.execute("UPDATE songs SET file_mtime_ns=NULL WHERE uuid=?1 AND library_root_uuid=?2",params![song.to_string(),publication.root.to_string()]).map_err(storage)?;
+            }
             for item in &mut publication.items { item.stage=RemoteResourceStage::Completed; }
             publication.completed=true;
             tx.execute("UPDATE sync_remote_publications SET publication_json=?2,completed=1 WHERE operation_uuid=?1",params![publication.operation.to_string(),serde_json::to_string(&publication).map_err(storage)?]).map_err(storage)?;
@@ -200,6 +206,32 @@ impl RemoteResourceJournalPort for SqliteDatabase {
 }
 
 impl SqliteDatabase {
+    /// Published audio still missing its local tag/asset index. The scan stamp
+    /// is committed with publication, survives restart and also repairs songs
+    /// downloaded by versions which never scheduled metadata extraction.
+    pub fn pending_remote_song_metadata(&self, root: LibraryRootId) -> Result<Vec<SongId>, Error> {
+        self.with_reader(|connection| {
+            let mut statement = connection
+                .prepare(
+                    "SELECT s.uuid FROM songs s
+                 WHERE s.library_root_uuid=?1 AND s.availability='available'
+                   AND s.file_mtime_ns IS NULL
+                   AND EXISTS (SELECT 1 FROM sync_remote_resource_locations l
+                     JOIN sync_remote_publications p ON p.operation_uuid=l.operation_uuid
+                     WHERE l.local_root_uuid=s.library_root_uuid AND l.object_type='song'
+                       AND l.object_uuid=s.uuid AND lower(hex(l.content_hash))=s.blake3_hash
+                       AND p.completed=1)
+                 ORDER BY s.uuid",
+                )
+                .map_err(storage)?;
+            let rows = statement
+                .query_map(params![root.to_string()], |row| row.get::<_, String>(0))
+                .map_err(storage)?;
+            rows.map(|row| row.map_err(storage)?.parse().map_err(storage))
+                .collect()
+        })
+    }
+
     /// True only if every current declaration has a completed durable local
     /// association. The caller should still handle files removed externally.
     pub fn remote_resource_media_ready(

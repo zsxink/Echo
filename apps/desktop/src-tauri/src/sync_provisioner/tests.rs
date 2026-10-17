@@ -594,8 +594,12 @@ impl LanMergeFixture {
         };
         let directory = tempfile::tempdir().unwrap();
         let host = Arc::new(SqliteDatabase::open(directory.path().join("host.sqlite")).unwrap());
-        let replica =
-            Arc::new(SqliteDatabase::open(directory.path().join("replica.sqlite")).unwrap());
+        let replica_runtime = echo_desktop::runtime::app::assemble(
+            &directory.path().join("replica.sqlite"),
+            &directory.path().join("covers"),
+        )
+        .unwrap();
+        let replica = replica_runtime.database.clone();
         let binding = SyncBinding {
             library_id: LibraryId::new(),
             authority_id: AuthorityId::new(),
@@ -675,6 +679,9 @@ impl LanMergeFixture {
         };
         let registry = RootRegistry::new();
         registry.register(root, directory.path().join("peer"));
+        replica_runtime
+            .registry
+            .register(root, directory.path().join("peer"));
         let publication = RemoteResourcePublishDeps {
             fs: Arc::new(RootConstrainedFileSystem::new(registry.clone())),
             hasher: Arc::new(Blake3ContentHasher::new(registry)),
@@ -684,6 +691,8 @@ impl LanMergeFixture {
             replica.clone(),
             directory.path().join("private"),
             publication,
+            replica_runtime.deps,
+            ScanSupervisor::new(),
         );
         let resources = Arc::new(
             FileResourceStore::new(directory.path().canonicalize().unwrap().join("resources"))

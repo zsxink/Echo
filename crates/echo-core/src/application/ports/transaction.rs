@@ -28,6 +28,10 @@ pub type TxWork = Box<dyn FnOnce(&mut dyn TxAccess) -> Result<(), Error> + Send 
 pub trait TxSongWriter {
     /// Insert/update a song within the open transaction.
     fn upsert_song(&mut self, song: &Song) -> Result<(), Error>;
+    /// Refresh device-local scan facts of an existing published song, without
+    /// changing its shared metadata, identity, resource declarations or outbox.
+    /// Reject a stale path/hash/root or a song no longer available.
+    fn refresh_song_file_index(&mut self, song: &Song) -> Result<(), Error>;
     /// Permanently remove a song after the platform has durably accepted its
     /// staged files. Foreign-key cascades remove its lyrics, overrides, play
     /// sessions and playlist memberships in this same authority snapshot.
