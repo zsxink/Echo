@@ -408,14 +408,10 @@ impl SyncRuntime {
             return Err(SyncRuntimeError::LibraryUnavailable);
         }
         self.set_started(root, peer.binding, SyncRole::Peer, peer.address);
-        let auto_sync = self
-            .inner
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?
-            .auto_sync;
-        if auto_sync {
-            self.start_sync_loop(SyncRole::Peer)?;
-        }
+        // A successful pairing must begin synchronization immediately. The
+        // previous auto_sync gate defaulted to false for a fresh runtime, so a
+        // newly paired peer could remain "connected" without ever syncing.
+        self.start_sync_loop(SyncRole::Peer)?;
         Ok(self.status())
     }
 
@@ -852,9 +848,11 @@ impl SyncRuntime {
         inner.auto_sync = true;
         inner.sync_loop = Some(SyncLoopWorker {
             stop,
-            wake,
+            wake: wake.clone(),
             thread: Some(thread),
         });
+        // Run the first cycle now instead of waiting for the periodic poll.
+        let _ = wake.send(());
         drop(inner);
         Ok(())
     }
