@@ -7,6 +7,7 @@ use echo_core::domain::sync::{CommitSeq, DeviceId, MutationCandidate, SyncBindin
 use echo_core::error::Error;
 use reqwest::Url;
 use serde::Deserialize;
+use std::time::Duration;
 
 use crate::client::{ClientError, LanClient};
 use crate::protocol::{MutationDto, PROTOCOL_VERSION};
@@ -114,6 +115,7 @@ pub async fn synchronize_once(
             checkpoint.sequence.as_u64(),
             checkpoint.digest,
             limit,
+            Duration::ZERO,
         )
         .await?;
     if page.binding != binding {

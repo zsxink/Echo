@@ -41,7 +41,7 @@ use echo_desktop::player::port::{PlayerCommand, PlayerError, PlayerPort};
 use echo_desktop::runtime::app::assemble;
 use echo_desktop::runtime::player;
 use echo_desktop::runtime::services::AppServices;
-use echo_desktop::runtime::{StartupSupervisor, trash_worker::TrashFinalizationWorker};
+use echo_desktop::runtime::{trash_worker::TrashFinalizationWorker, StartupSupervisor};
 #[cfg(not(target_os = "macos"))]
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 #[cfg(not(target_os = "macos"))]
@@ -412,7 +412,10 @@ fn wire_composition(
         let _ = sync_app.emit("sync://status", status);
     }));
     if let Err(error) = sync_runtime.restore_saved_session() {
-        tracing::warn!(error = error.message_key(), "failed to restore saved LAN sync session");
+        tracing::warn!(
+            error = error.message_key(),
+            "failed to restore saved LAN sync session"
+        );
         let status = sync_runtime.report_error(error);
         let _ = app.emit("sync://status", &status);
         retry_saved_sync_restore(&sync_runtime, app.handle().clone(), status.event_sequence);

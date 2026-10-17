@@ -37,7 +37,8 @@ use crate::protocol::{
     commit_digest, validate_mutation, validate_resource, validate_snapshot_page, CheckpointDto,
     CommitDto, CommitPageDto, CommittedEntryDto, MemberAliasDto, MutationAck, MutationDto,
     ProtocolError, ResourceRefDto, SnapshotObjectDto, SnapshotPageDto, SongAliasDto, TypedAliasDto,
-    MAX_COMMIT_BYTES, MAX_MUTATION_BYTES, MAX_PAGE_SIZE, MAX_SYNC_PAGE_BYTES, PROTOCOL_VERSION,
+    MAX_COMMIT_BYTES, MAX_COMMIT_WAIT_MS, MAX_MUTATION_BYTES, MAX_PAGE_SIZE, MAX_SYNC_PAGE_BYTES,
+    PROTOCOL_VERSION,
 };
 use crate::resource_transfer::{
     PrepareResource, ResourceTransferPort, TransferError, MAX_RESOURCE_BYTES,
@@ -589,7 +590,16 @@ struct CommitQuery {
     after: u64,
     previous_digest: String,
     limit: usize,
+    /// Optional bounded long-poll: hold an empty page open until the host
+    /// publishes or the budget elapses. Omitted or zero keeps the immediate
+    /// response; the bound is `MAX_COMMIT_WAIT_MS`.
+    wait_ms: Option<u32>,
 }
+
+/// Internal cadence for re-reading the published watermark while a commit page
+/// is held open. Each recheck is a rowid seek on `sync_commits`, so a slow
+/// cadence keeps idle cost near zero without adding visible latency.
+const COMMIT_RECHECK_INTERVAL: Duration = Duration::from_millis(500);
 
 async fn pull_commits(
     State(state): State<HostApiState>,
@@ -608,16 +618,61 @@ async fn pull_commits(
     if query.limit == 0 || query.limit > MAX_PAGE_SIZE {
         return api_error(StatusCode::BAD_REQUEST, "invalid_page_size");
     }
+    let wait = match query.wait_ms {
+        Some(ms) if ms > MAX_COMMIT_WAIT_MS => {
+            return api_error(StatusCode::BAD_REQUEST, "invalid_wait");
+        }
+        Some(ms) => Duration::from_millis(u64::from(ms)),
+        None => Duration::ZERO,
+    };
     let Ok(anchor_digest) = parse_digest(&query.previous_digest) else {
         return api_error(StatusCode::BAD_REQUEST, "invalid_anchor_digest");
     };
+    let mut page = match read_commit_page(&state, query.after, anchor_digest, query.limit).await {
+        Ok(page) => page,
+        Err((status, message)) => return api_error(status, message),
+    };
+    // Holding an empty page open is the peer's only timely way to learn about
+    // commits published by another device: the host cannot push to a
+    // listening-less peer. The held request already consumed its rate-limit
+    // slot, and stopping the host ends the hold on the next recheck.
+    if page.entries.is_empty() && !wait.is_zero() {
+        let deadline = Instant::now() + wait;
+        while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
+            if !state.active.load(Ordering::Acquire) {
+                break;
+            }
+            tokio::time::sleep(remaining.min(COMMIT_RECHECK_INTERVAL)).await;
+            if !state.active.load(Ordering::Acquire) {
+                break;
+            }
+            page = match read_commit_page(&state, query.after, anchor_digest, query.limit).await {
+                Ok(page) => page,
+                Err((status, message)) => return api_error(status, message),
+            };
+            if !page.entries.is_empty() {
+                break;
+            }
+        }
+    }
+    (StatusCode::OK, Json(page)).into_response()
+}
+
+/// Read one bounded commit page after the peer's checkpoint. The page build
+/// runs on the blocking pool because the ledger port blocks on the writer
+/// actor. Errors map to the same host responses as the handler's first read.
+async fn read_commit_page(
+    state: &HostApiState,
+    after: u64,
+    anchor_digest: [u8; 32],
+    limit: usize,
+) -> Result<CommitPageDto, (StatusCode, &'static str)> {
     let ledger = Arc::clone(&state.ledger);
     let binding = state.binding;
-    let after = query.after;
     match tokio::task::spawn_blocking(move || {
         let after = echo_core::domain::sync::CommitSeq::from_u64(after);
         let commits = ledger
-            .published_commits_after(binding, after, anchor_digest, query.limit)
+            .published_commits_after(binding, after, anchor_digest, limit)
             .map_err(|_| ())?;
         let mut page = CommitPageDto {
             binding,
@@ -663,9 +718,9 @@ async fn pull_commits(
     })
     .await
     {
-        Ok(Ok(page)) => (StatusCode::OK, Json(page)).into_response(),
-        Ok(Err(())) => api_error(StatusCode::CONFLICT, "commit_anchor_or_log_mismatch"),
-        Err(_) => api_error(StatusCode::SERVICE_UNAVAILABLE, "host_unavailable"),
+        Ok(Ok(page)) => Ok(page),
+        Ok(Err(())) => Err((StatusCode::CONFLICT, "commit_anchor_or_log_mismatch")),
+        Err(_) => Err((StatusCode::SERVICE_UNAVAILABLE, "host_unavailable")),
     }
 }
 

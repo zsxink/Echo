@@ -5,12 +5,12 @@ use std::time::Duration;
 use crate::pairing::{PairingBootstrapResponse, PairingCodeRequest};
 
 use crate::protocol::{
-    CommitPageDto, MAX_COMMIT_BYTES, MAX_PAGE_SIZE, MAX_SYNC_PAGE_BYTES, MutationAck, MutationDto,
-    ProtocolError, SnapshotPageDto, commit_digest, validate_mutation, validate_resource,
-    validate_snapshot_page,
+    commit_digest, validate_mutation, validate_resource, validate_snapshot_page, CommitPageDto,
+    MutationAck, MutationDto, ProtocolError, SnapshotPageDto, MAX_COMMIT_BYTES, MAX_COMMIT_WAIT_MS,
+    MAX_PAGE_SIZE, MAX_SYNC_PAGE_BYTES,
 };
 use crate::resource_transfer::{
-    MAX_RESOURCE_BYTES, PrepareResource, ResourceTransferPort, TransferProgress,
+    PrepareResource, ResourceTransferPort, TransferProgress, MAX_RESOURCE_BYTES,
 };
 use echo_core::application::ports::{
     AppliedRemoteCursor, AppliedSnapshotPage, HostSnapshotRecord, RemoteApplyPort, RemoteCommit,
@@ -147,10 +147,7 @@ impl LanClient {
             .use_preconfigured_tls(tls)
             .build()
             .map_err(ClientError::Transport)?;
-        Ok(Self {
-            http,
-            bearer_token,
-        })
+        Ok(Self { http, bearer_token })
     }
 
     /// Submit a validated mutation to the HTTPS host endpoint.
@@ -192,6 +189,11 @@ impl LanClient {
 
     /// Fetch and validate a page following the supplied commit checkpoint.
     ///
+    /// `wait` asks the host to hold an empty page open until it publishes or
+    /// the budget elapses; `Duration::ZERO` keeps the immediate response. The
+    /// request timeout is extended past the wait so a held page is never cut
+    /// off by the client default.
+    ///
     /// # Errors
     /// Rejects invalid endpoints, limits, or commit chains and reports
     /// transport, host rejection, and response decoding failures.
@@ -201,12 +203,14 @@ impl LanClient {
         after: u64,
         previous_digest: [u8; 32],
         limit: usize,
+        wait: Duration,
     ) -> Result<CommitPageDto, ClientError> {
         if endpoint.scheme() != "https"
             || endpoint.username() != ""
             || endpoint.password().is_some()
             || limit == 0
             || limit > MAX_PAGE_SIZE
+            || wait > Duration::from_millis(u64::from(MAX_COMMIT_WAIT_MS))
         {
             return Err(ClientError::InvalidCommitChain);
         }
@@ -219,8 +223,17 @@ impl LanClient {
             .append_pair("after", &after.to_string())
             .append_pair("previous_digest", &hex_digest(&previous_digest))
             .append_pair("limit", &limit.to_string());
-        let response =
-            send_sync_request(self.http.get(url).bearer_auth(&self.bearer_token)).await?;
+        if !wait.is_zero() {
+            url.query_pairs_mut()
+                .append_pair("wait_ms", &wait.as_millis().to_string());
+        }
+        let mut request = self.http.get(url).bearer_auth(&self.bearer_token);
+        if !wait.is_zero() {
+            // A held page outlives the client's default request timeout; the
+            // margin covers the host's final recheck and response encoding.
+            request = request.timeout(wait + Duration::from_secs(5));
+        }
+        let response = send_sync_request(request).await?;
         if !response.status().is_success() {
             return Err(ClientError::HostRejected(response.status()));
         }

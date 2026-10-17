@@ -1,6 +1,6 @@
 //! Immutable song identities and canonicalization at the host transaction boundary.
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 
 use super::support::storage;

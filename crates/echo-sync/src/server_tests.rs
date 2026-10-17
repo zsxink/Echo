@@ -1,6 +1,7 @@
 //! HTTP boundary contracts using ports rather than a database or real library.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 use axum::http::Request;
 use echo_core::application::ports::StagedConfirmation;
@@ -198,6 +199,171 @@ fn commits_uri(after: u64, digest: u8, limit: usize) -> String {
         "/v1/commits?after={after}&previous_digest={}&limit={limit}",
         format!("{digest:02x}").repeat(32)
     )
+}
+
+/// One valid published commit following the fixture's `(3, [3;32])` anchor.
+fn published_commit(mutation: &MutationDto) -> PublishedCommit {
+    let commit = CommitDto {
+        protocol_version: PROTOCOL_VERSION,
+        binding: mutation.binding,
+        commit_seq: CommitSeq::from_u64(4),
+        previous_digest: [3; 32],
+        mutation: mutation.clone(),
+        aliases: Vec::new(),
+        resource_refs: Vec::new(),
+    };
+    let digest = commit_digest(&commit).unwrap();
+    PublishedCommit {
+        sequence: CommitSeq::from_u64(4),
+        previous_digest: [3; 32],
+        digest,
+        canonical_json: serde_json::to_string(&commit).unwrap(),
+    }
+}
+
+async fn commit_page_body(response: Response) -> CommitPageDto {
+    let bytes = axum::body::to_bytes(response.into_body(), MAX_SYNC_PAGE_BYTES)
+        .await
+        .unwrap();
+    serde_json::from_slice(&bytes).unwrap()
+}
+
+#[tokio::test]
+async fn held_commit_page_returns_as_soon_as_the_host_publishes() {
+    let fixture = Fixture::new();
+    let ledger = Arc::clone(&fixture.ledger);
+    let commit = published_commit(&fixture.mutation);
+    // The host publishes while the peer's page is being held open.
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        ledger.commits.lock().unwrap().push(commit);
+    });
+    let started = Instant::now();
+    let response = fixture
+        .request(
+            "GET",
+            &format!("{}&wait_ms=8000", commits_uri(3, 3, 10)),
+            Some(TOKEN),
+            String::new(),
+        )
+        .await;
+    let elapsed = started.elapsed();
+    assert_eq!(response.status(), StatusCode::OK);
+    let page = commit_page_body(response).await;
+    assert_eq!(
+        page.entries.len(),
+        1,
+        "a held page must deliver a commit published during the hold"
+    );
+    assert!(
+        elapsed < Duration::from_secs(4),
+        "the hold must end when the host publishes, not when the budget elapses: {elapsed:?}"
+    );
+    assert!(
+        fixture.ledger.reads.load(Ordering::Relaxed) >= 2,
+        "the hold must re-read the published watermark instead of returning at once"
+    );
+}
+
+#[tokio::test]
+async fn held_commit_page_returns_empty_after_the_wait_budget() {
+    let fixture = Fixture::new();
+    let started = Instant::now();
+    let response = fixture
+        .request(
+            "GET",
+            &format!("{}&wait_ms=700", commits_uri(3, 3, 10)),
+            Some(TOKEN),
+            String::new(),
+        )
+        .await;
+    let elapsed = started.elapsed();
+    assert_eq!(response.status(), StatusCode::OK);
+    let page = commit_page_body(response).await;
+    assert!(page.entries.is_empty());
+    assert!(
+        elapsed >= Duration::from_millis(650),
+        "the requested wait budget must be honored before an empty page returns: {elapsed:?}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(3),
+        "unexpected overrun: {elapsed:?}"
+    );
+    assert!(
+        fixture.ledger.reads.load(Ordering::Relaxed) >= 2,
+        "an idle hold must still recheck the watermark"
+    );
+}
+
+#[tokio::test]
+async fn held_commit_page_rejects_a_wait_above_the_bound_but_keeps_zero_immediate() {
+    let fixture = Fixture::new();
+    assert_error(
+        fixture
+            .request(
+                "GET",
+                &format!(
+                    "{}&wait_ms={}",
+                    commits_uri(3, 3, 10),
+                    MAX_COMMIT_WAIT_MS + 1
+                ),
+                Some(TOKEN),
+                String::new(),
+            )
+            .await,
+        StatusCode::BAD_REQUEST,
+        "invalid_wait",
+    )
+    .await;
+    assert_eq!(
+        fixture.ledger.reads.load(Ordering::Relaxed),
+        0,
+        "a rejected wait must not touch the ledger"
+    );
+    let started = Instant::now();
+    let response = fixture
+        .request(
+            "GET",
+            &format!("{}&wait_ms=0", commits_uri(3, 3, 10)),
+            Some(TOKEN),
+            String::new(),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(commit_page_body(response).await.entries.is_empty());
+    assert!(
+        started.elapsed() < Duration::from_millis(500),
+        "wait_ms=0 must keep the immediate response"
+    );
+}
+
+#[tokio::test]
+async fn stopping_the_host_ends_a_held_commit_page() {
+    let fixture = Fixture::new();
+    let state = fixture.state.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        state.active.store(false, Ordering::Release);
+    });
+    let started = Instant::now();
+    let response = fixture
+        .request(
+            "GET",
+            &format!("{}&wait_ms=8000", commits_uri(3, 3, 10)),
+            Some(TOKEN),
+            String::new(),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        started.elapsed() >= Duration::from_millis(400),
+        "the request must actually be held before the stop ends it"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "stopping the host must end the hold instead of serving the full budget"
+    );
+    assert!(commit_page_body(response).await.entries.is_empty());
 }
 
 async fn assert_error(response: Response, status: StatusCode, error: &str) {

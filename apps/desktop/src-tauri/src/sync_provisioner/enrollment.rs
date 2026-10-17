@@ -5,7 +5,7 @@ use std::path::Path;
 #[cfg(test)]
 use echo_core::application::root_switch::derive_root_id;
 use echo_core::domain::ids::LibraryRootId;
-use echo_core::infrastructure::filesystem::staging::{MARKER_FORMAT_VERSION, StagingMarker};
+use echo_core::infrastructure::filesystem::staging::{StagingMarker, MARKER_FORMAT_VERSION};
 
 use crate::sync_runtime::SyncRuntimeError;
 

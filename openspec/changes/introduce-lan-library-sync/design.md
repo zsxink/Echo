@@ -235,6 +235,67 @@ React → generated IPC → echo-desktop runtime → Core application → Core d
 
 工程规范适用 §3 分层/端口/模式、§4 并发、§5 数据与恢复、§6 IPC、§8–§9 验收/兼容。验证使用 `cargo fmt --all --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings`、`cargo test --workspace`，前端 format/lint/typecheck/test/build 和 openspec strict validate；新增架构与协议契约测试、IPC漂移及两/三设备原生故障矩阵。详细命令与任务见 tasks.md。
 
+### 10. 在线传播加速：长轮询 watch
+
+背景：从设备发现主机已确认变更原本只靠固定周期轮询（曾因空闲成本调到 60 秒），叠加瞬断后的指数退避，在线传播延迟劣化到分钟级。主机无法反向推送（从设备不监听端口、也不持有可被主机反向认证的通道），「轮询周期」于是成了空闲成本与传播延迟之间唯一的旋钮。以下决策把在线传播延迟压到约 1 秒而不恢复高频轮询。
+
+#### 决策 1：长轮询，而不是推送
+
+主机无法主动推向从设备：从设备不监听端口，配对也是单向的（主机给从设备签发证书 pin 与 bearer，主机不持有从设备任何可反向认证的凭证）。要让主机推得动，就得把每个从设备也变成 server——配对、keychain、撤销整套信任机制镜像翻倍，且笔记本监听端口在切网/睡眠后可达性不可靠，最终仍要回退拉取。延迟目标（约 1 秒）用长轮询即可达成，不值得用安全面换。
+
+UDP 组播/mDNS 唤醒只作为将来的可选加速层保留可能性：它们不保证送达（组播丢包、AP 客户端隔离、跨网段不路由），且未认证 hint 会引入伪造唤醒风暴（→拉取风暴→限流 429→睡眠 60 秒，反而更慢）。本变更不实现。
+
+#### 决策 2：保持中的请求靠主机侧低频复查，而不是跨组件信号
+
+主机账本追加有两条路径：peer 经 `/v1/mutations` 推送、主机本地 `confirm_local` 发布。后者发生在桌面进程的同步循环里，与 HTTP server 是不同组件。用 `Notify` 广播要跨组件传递句柄且要处理「登记前/后」竞态；改为 server 在保持期间每 500ms 直接复查 `published_commits_after`：
+
+- 该查询是 `sync_commits`（`commit_seq INTEGER PRIMARY KEY`）上的 rowid 范围 seek + `sync_binding` EXISTS + anchor 摘要点查，空闲返回 0 行，微秒级；
+- 两条账本追加路径都被自动覆盖，无信号丢失窗口；
+- 每从设备每秒 2 次 writer actor 访问，与既有写入无争抢；
+- 限流不变：一次保持只计一次请求（约 2 次/分钟/从设备，远低于 120/60s）。
+
+#### 决策 3：watch 是「变化探测器」，不自己应用页
+
+从设备循环结构保持「等待 → 全轮次」：watch 只回答「主机是否有新提交」，返回非空后由下一轮 `merge_peer_library` 正式拉取并应用。好处：
+
+- 复用既有 apply/资源下载/投影刷新机制，watch 不落库、不加锁；
+- 每轮 watch 结束（无论是检测到变化还是预算耗尽）都紧跟一个全轮次，其首次 catch-up 拉取会无条件重取 checkpoint 之后的提交——「账本在最后一次复查与响应之间追加」的竞态由该轮次兜底，无遗漏；
+- watch 请求本身不持有 `cycle`/`gate` 锁，手动「立即同步」可与 watch 并发。
+
+#### 决策 4：本地唤醒用 provisioner 自注册监听，不桥接 channel
+
+writer actor 的 `sync_listeners` 是 `Vec`（`actor.rs`），天然支持多监听者。`NativeSyncProvisioner` 在首次 watch 时自注册一个 `mpsc` 通道；watch 的 select 里用 250ms ticker `try_recv` 该通道。这样：
+
+- 不动 echo-core 的 `register_sync_waker` 公共 API（运行时循环继续持有自己的唤醒通道，语义不变）；
+- 本地写在 watch 保持期间 ≤250ms 被发现，立即转入推送轮次；
+- 取消/停止同样在 tick 上检查，暂停响应 ≤250ms。
+
+循环在收到「本地写入」结果后清空自己通道里积压的同类信号（轮次会处理全部待推工作），避免通道无限堆积。循环顶部先消费本通道待处理唤醒（含 loop 启动时发出的初始 wake），防止保持中的 watch 吞掉首轮触发。
+
+#### 决策 5：能力探测降级，防止旧主机把 watch 变成忙循环
+
+若主机忽略 `wait_ms`（旧版本）立即返回空页，而循环又立刻重新 watch，就会退化成紧密轮询。watch 测量耗时：空页且在 `wait/2` 之前返回 ⇒ 判定主机不保持 ⇒ 返回「不支持」，循环退回原有 `wait_for_sync_wakeup` 轮询路径。非空页永远判定为「已进展」，不受该探测影响。
+
+#### 数据流（从设备，在线空闲）
+
+```
+[循环] watch_host_commits(25s)
+   ├─ 本地 outbox 提交 → 自注册监听通道 → ≤250ms → LocalWrite → 全轮次(推送)
+   ├─ 主机确认新提交 → server 500ms 内复查命中 → Advanced → 全轮次(拉取+应用)
+   ├─ 25s 预算耗尽 → 全轮次(安全追赶) → 重新 watch
+   ├─ 主机旧版本不保持 → 空页快返 → Unsupported → 回归轮询等待
+   └─ 取消/停止 → ≤250ms → Busy → 循环退出
+```
+
+主机角色不走 watch：从设备推送即唤醒主机循环（`mark_published` 的 explicit wake），主机保持原有唤醒 + 兜底轮询。
+
+#### 兼容性与边界
+
+- `wait_ms` 可选；>30s 返回 400（`invalid_wait`）；`wait_ms=0` 或缺省 = 原有立即返回语义。
+- 客户端对 watch 请求按 `wait + 5s` 覆盖超时（`reqwest` 按请求超时优先于客户端默认 15s）。
+- 保持期间主机 `active=false`（停止/暂停）时下一 tick 退出保持并返回空页。
+- `serve_tls` 既有 300s 连接上限与 64 连接信号量对保持连接无影响（≤32 从设备）。
+
 ## Risks / Trade-offs
 
 - [主机离线] → 从设备照常本地使用并排队，界面明确等待主设备；首版不自动切换主。
@@ -249,6 +310,7 @@ React → generated IPC → echo-desktop runtime → Core application → Core d
 - [删除与撤销竞争] → 本机意图与最终墓碑分离，单写入事务确定唯一终态；快照期间保留最后确认资源。
 - [重复成员旧身份迟到] → typed member alias 随日志/快照保存，历史映射不指向重新添加的成员。
 - [整机与所有检查点共同回退] → 无独立证据时无法自动检测，备份恢复必须显式创建新 epoch，不承诺透明恢复。
+- [在线传播延迟与空闲成本的矛盾] → 从设备轮次间以有界长轮询（≤30s，实际预算 25s）等待主机新提交，主机 500ms 低频复查已发布水位；旧主机立即应答空页被能力探测识别并退回轮询，避免紧密循环；主机角色不保持请求，行为不变。
 
 ## Migration Plan
 

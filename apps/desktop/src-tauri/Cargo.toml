@@ -42,6 +42,9 @@ block2 = "0.6.1"
 
 [dev-dependencies]
 blake3.workspace = true
+# The watch tests serve a minimal host that answers commit pages immediately,
+# exactly like an older Echo without the bounded long-poll.
+axum = { workspace = true }
 # TempDir for `dialogs` multi-file import unit tests; resolves only for tests.
 tempfile = { version = "3" }
 # Tauri's deterministic mock runtime proves the existing main-window lifecycle

@@ -2,7 +2,7 @@
 
 use std::net::{IpAddr, SocketAddr, TcpListener};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -13,15 +13,34 @@ use echo_core::infrastructure::sqlite::SqliteDatabase;
 pub use echo_desktop::ipc::sync::{DiscoveredHost, SyncPeer, SyncRole, SyncState, SyncStatus};
 use echo_sync::discovery::LanDiscovery;
 use echo_sync::pairing::{PairingError, PairingGrantDto, PairingInvitation};
-use echo_sync::server::{HostApiState, host_router, serve_tls};
+use echo_sync::server::{host_router, serve_tls, HostApiState};
 use tokio::sync::oneshot;
 
 pub const SYNC_PORT: u16 = 50826;
+
+/// How long a healthy peer holds one long-poll against the host between
+/// cycles. The host answers as soon as it publishes, so this budget is only a
+/// safety cadence: each expiry is followed by a full catch-up cycle, and a
+/// local write ends the wait immediately.
+const PEER_WATCH_BUDGET: Duration = Duration::from_secs(25);
 
 mod discovery;
 pub use discovery::discover_hosts;
 
 pub type StatusNotifier = Arc<dyn Fn(SyncStatus) + Send + Sync>;
+
+/// Why a peer's wait for host changes ended.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WatchOutcome {
+    /// The host published at least one new commit.
+    Advanced,
+    /// A local write queued work for the next cycle.
+    LocalWrite,
+    /// The wait budget elapsed without remote or local work.
+    BudgetElapsed,
+    /// This provisioner or host cannot watch; the caller keeps plain polling.
+    Unsupported,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SyncRuntimeError {
@@ -103,6 +122,19 @@ pub trait SyncProvisioner: Send + Sync {
     fn peer(&self, root: LibraryRootId) -> Result<ProvisionedPeer, SyncRuntimeError>;
     /// Return whether this successful cycle changed local catalog projections.
     fn sync_now(&self, role: SyncRole) -> Result<bool, SyncRuntimeError>;
+    /// Block until the paired host may have new commits, a local write queued
+    /// work, the budget elapsed, or cancellation was requested. Peer-only:
+    /// provisioners without a watch channel return
+    /// [`WatchOutcome::Unsupported`] and the caller keeps waiting on the local
+    /// waker alone. The default never blocks so simple adapters and tests keep
+    /// their existing scheduling.
+    fn watch_host_commits(
+        &self,
+        _cancelled: Arc<AtomicBool>,
+        _wait: Duration,
+    ) -> Result<WatchOutcome, SyncRuntimeError> {
+        Ok(WatchOutcome::Unsupported)
+    }
     /// Cancel an in-flight background cycle when the user pauses or stops the
     /// session. Provisioners with cancellable transports should override this;
     /// the default preserves compatibility with simple adapters.
@@ -770,27 +802,120 @@ impl SyncRuntime {
         let cycle = Arc::clone(&self.cycle);
         let (wake, wakeups) = mpsc::channel();
         self.database.register_sync_waker(wake.clone());
+        // Queue the first cycle before the worker starts so its initial drain
+        // always sees it: sending after the spawn would race the worker's
+        // first check, and a peer that went straight into a held watch would
+        // then sit on this hint until the watch ended.
+        let _ = wake.send(());
         let stop = Arc::new(AtomicBool::new(false));
         let worker_stop = Arc::clone(&stop);
         let thread = thread::Builder::new()
             .name("echo-lan-sync-loop".into())
             .spawn(move || {
-                // Local SQLite writes wake the loop immediately. Keep a slow
-                // fallback poll for changes made by another device so an idle
-                // session does not repeatedly scan/query the library every few
-                // seconds.
-                let poll_interval = Duration::from_secs(60);
+                // Local SQLite writes wake the loop immediately. Between
+                // cycles a healthy peer holds one long-poll against the host,
+                // which answers as soon as it publishes; the plain waker wait
+                // remains for hosts, retrying peers, and hosts without the
+                // wait capability. Its interval also bounds how often a
+                // fallback cycle runs, and stays well under the host's
+                // 120-requests-per-60s per-device limit.
+                let poll_interval = Duration::from_secs(5);
                 let mut retry_delay = Duration::from_secs(5);
                 let mut retry_attempts = 0_u32;
                 let mut retrying = false;
                 loop {
-                    let delay = if retrying {
-                        jittered_retry_delay(retry_delay)
-                    } else {
-                        poll_interval
-                    };
-                    if !wait_for_sync_wakeup(&wakeups, delay, retrying, &worker_stop) {
-                        break;
+                    // A pending local wakeup — including the initial one sent
+                    // when the loop starts — is work right now. A retrying peer
+                    // still lets its backoff run first, matching the plain
+                    // waker's suppression of early retries.
+                    let mut woke_locally = false;
+                    if !retrying {
+                        while wakeups.try_recv().is_ok() {
+                            woke_locally = true;
+                        }
+                    }
+                    if !woke_locally {
+                        // Wait for work. Only a healthy peer watches: a host
+                        // has nothing remote to discover, and a retrying peer
+                        // must let its backoff run instead of holding a dead
+                        // connection.
+                        if role == SyncRole::Peer && !retrying {
+                            match provisioner
+                                .watch_host_commits(Arc::clone(&worker_stop), PEER_WATCH_BUDGET)
+                            {
+                                Ok(WatchOutcome::Unsupported) => {
+                                    let delay = poll_interval;
+                                    if !wait_for_sync_wakeup(
+                                        &wakeups,
+                                        delay,
+                                        retrying,
+                                        &worker_stop,
+                                    ) {
+                                        break;
+                                    }
+                                }
+                                Ok(WatchOutcome::LocalWrite) => {
+                                    // The watch drained its own channel; clear
+                                    // the loop's too so a later plain wait
+                                    // cannot replay stale hints as extra cycles.
+                                    while wakeups.try_recv().is_ok() {}
+                                }
+                                Ok(WatchOutcome::Advanced | WatchOutcome::BudgetElapsed) => {}
+                                Err(SyncRuntimeError::Busy) => break,
+                                Err(error) => {
+                                    // The host was unreachable: record it like a
+                                    // failed cycle and let the retry cadence run.
+                                    let keep_waiting = {
+                                        let mut inner = state
+                                            .lock()
+                                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                                        if inner.status.session_id != session_id
+                                            || !inner.status.enabled
+                                        {
+                                            false
+                                        } else {
+                                            inner.status.state = SyncState::Failed;
+                                            inner.status.catalog_changed = false;
+                                            inner.status.last_error =
+                                                Some(error.message_key().into());
+                                            inner.status.event_sequence += 1;
+                                            true
+                                        }
+                                    };
+                                    if !keep_waiting {
+                                        break;
+                                    }
+                                    let status_notifier = notifier
+                                        .lock()
+                                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                        .clone();
+                                    if let Some(notifier) = status_notifier {
+                                        let status = state
+                                            .lock()
+                                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                            .status
+                                            .clone();
+                                        notifier(status);
+                                    }
+                                    retrying = true;
+                                    if retry_attempts > 0 {
+                                        retry_delay =
+                                            (retry_delay * 2).min(Duration::from_secs(60));
+                                    }
+                                    retry_attempts = retry_attempts.saturating_add(1);
+                                    continue;
+                                }
+                            }
+                        } else {
+                            let delay = if retrying {
+                                jittered_retry_delay(retry_delay)
+                            } else {
+                                poll_interval
+                            };
+                            if !wait_for_sync_wakeup(&wakeups, delay, retrying, &worker_stop) {
+                                break;
+                            }
+                        }
                     }
                     let should_run = {
                         let mut inner = state
@@ -891,11 +1016,9 @@ impl SyncRuntime {
         inner.auto_sync = true;
         inner.sync_loop = Some(SyncLoopWorker {
             stop,
-            wake: wake.clone(),
+            wake,
             thread: Some(thread),
         });
-        // Run the first cycle now instead of waiting for the periodic poll.
-        let _ = wake.send(());
         drop(inner);
         Ok(())
     }

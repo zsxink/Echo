@@ -5,12 +5,14 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use echo_desktop::ipc::{IpcErrorDto, sync::SyncPairingCode};
+use echo_desktop::ipc::{sync::SyncPairingCode, IpcErrorDto};
 use echo_sync::client::LanClient;
 use reqwest::Url;
 use tauri::{Emitter, State};
 
-use crate::sync_runtime::{self, DiscoveredHost, SyncPeer, SyncRuntime, SyncRuntimeError, SyncStatus};
+use crate::sync_runtime::{
+    self, DiscoveredHost, SyncPeer, SyncRuntime, SyncRuntimeError, SyncStatus,
+};
 
 fn error(error: SyncRuntimeError) -> IpcErrorDto {
     IpcErrorDto::new(

@@ -3,8 +3,9 @@
 use std::fs::File;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use echo_core::application::ports::{
     AppliedRemoteCursor, DeviceIdProvider, HostCommitLedgerPort, LibraryRepository,
@@ -31,7 +32,7 @@ use echo_sync::pairing::{
 use echo_sync::protocol::ResourceRefDto;
 use echo_sync::protocol::{CommitPageDto, MAX_RESOURCE_CHUNK_BYTES};
 use echo_sync::resource_transfer::{FileResourceStore, PrepareResource, ResourceTransferPort};
-use echo_sync::server::{HostApiState, PeerCredential, tls13_server_config};
+use echo_sync::server::{tls13_server_config, HostApiState, PeerCredential};
 use reqwest::Url;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use serde::{Deserialize, Serialize};
@@ -48,7 +49,7 @@ mod enrollment;
 use enrollment::prepare_enrollment_root;
 #[cfg(test)]
 use enrollment::{
-    EMPTY_LIBRARY_STAGING_MARKER, is_empty_enrollment_root, prepare_empty_enrollment_root,
+    is_empty_enrollment_root, prepare_empty_enrollment_root, EMPTY_LIBRARY_STAGING_MARKER,
 };
 #[path = "sync_provisioner/resource_publication.rs"]
 mod resource_publication;
@@ -60,7 +61,7 @@ mod lazy_host_resources;
 mod tests;
 
 use crate::sync_runtime::{
-    ProvisionedHost, ProvisionedPeer, SyncProvisioner, SyncRole, SyncRuntimeError,
+    ProvisionedHost, ProvisionedPeer, SyncProvisioner, SyncRole, SyncRuntimeError, WatchOutcome,
 };
 
 /// No construction side effects: credentials and listening are opt-in.
@@ -75,6 +76,28 @@ pub struct NativeSyncProvisioner {
     // completion can notify the UI. Empty polls leave this flag unset.
     pending_catalog_changed: Arc<AtomicBool>,
     host_seen_checkpoint: Mutex<Option<CommitCheckpoint>>,
+    // The watch's own wake-up channel. The writer actor fans sync wakeups out
+    // to every registered listener, so this channel is independent of the
+    // runtime loop's: watching never steals the loop's local-write hints.
+    local_wakes: Mutex<Option<LocalWakeChannel>>,
+}
+
+/// A registered sync wake-up channel kept alive for the watch. Dropping the
+/// sender would disconnect the listener and let the writer actor prune it.
+struct LocalWakeChannel {
+    _sender: mpsc::Sender<()>,
+    receiver: mpsc::Receiver<()>,
+}
+
+impl LocalWakeChannel {
+    /// Drain queued wakeups; `true` when at least one was pending.
+    fn drain_pending(&self) -> bool {
+        let mut woke = false;
+        while self.receiver.try_recv().is_ok() {
+            woke = true;
+        }
+        woke
+    }
 }
 
 // This document is stored only inside the operating system credential store.
@@ -157,6 +180,7 @@ impl NativeSyncProvisioner {
             gate: Mutex::new(()),
             pending_catalog_changed: Arc::new(AtomicBool::new(false)),
             host_seen_checkpoint: Mutex::new(None),
+            local_wakes: Mutex::new(None),
         }
     }
 
@@ -522,6 +546,33 @@ impl SyncProvisioner for NativeSyncProvisioner {
         Ok(self.pending_catalog_changed.swap(false, Ordering::AcqRel))
     }
 
+    /// Hold one long-poll against the paired host until it publishes new
+    /// commits, a local write queues work, the budget elapses, or cancellation
+    /// is requested. This is a change detector only: the caller runs a full
+    /// cycle afterwards, whose catch-up pull applies whatever the host
+    /// published. Peer-only — a host has nothing remote to discover because
+    /// peers push their own work to it.
+    fn watch_host_commits(
+        &self,
+        cancelled: Arc<AtomicBool>,
+        wait: Duration,
+    ) -> Result<WatchOutcome, SyncRuntimeError> {
+        let configuration = self
+            .database
+            .current_sync_configuration()
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+            .ok_or(SyncRuntimeError::Unconfigured)?;
+        if configuration.host {
+            return Ok(WatchOutcome::Unsupported);
+        }
+        let peer = self.peer(configuration.local_root)?;
+        let executor = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        executor.block_on(self.watch_peer_commits(&peer, configuration.local_root, cancelled, wait))
+    }
+
     fn revoke_device(&self, device_id: &str) -> Result<(), SyncRuntimeError> {
         let _guard = self
             .gate
@@ -763,6 +814,27 @@ impl NativeSyncProvisioner {
         })
     }
 
+    /// Register this provisioner's own sync wake-up channel on first use and
+    /// drain whatever queued. The writer actor fans wakeups out to every
+    /// listener, so this never consumes the runtime loop's hints.
+    fn take_local_wake(&self) -> bool {
+        let mut channel = self
+            .local_wakes
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if channel.is_none() {
+            let (sender, receiver) = mpsc::channel();
+            self.database.register_sync_waker(sender.clone());
+            *channel = Some(LocalWakeChannel {
+                _sender: sender,
+                receiver,
+            });
+        }
+        channel
+            .as_ref()
+            .is_some_and(LocalWakeChannel::drain_pending)
+    }
+
     async fn merge_peer_library(
         &self,
         peer: &ProvisionedPeer,
@@ -850,6 +922,7 @@ impl NativeSyncProvisioner {
                     checkpoint.sequence.as_u64(),
                     checkpoint.digest,
                     512,
+                    Duration::ZERO,
                 )
                 .await
                 .map_err(map_sync_client_error)?;
@@ -892,6 +965,74 @@ impl NativeSyncProvisioner {
         }
     }
 
+    /// Hold one long-poll against an already provisioned host until it
+    /// publishes, a local write queues work, the budget elapses, or
+    /// cancellation is requested. Only the peer role watches: a host has
+    /// nothing remote to discover. The page is a change detector — the next
+    /// cycle's catch-up pull applies what the host published.
+    async fn watch_peer_commits(
+        &self,
+        peer: &ProvisionedPeer,
+        root: LibraryRootId,
+        cancelled: Arc<AtomicBool>,
+        wait: Duration,
+    ) -> Result<WatchOutcome, SyncRuntimeError> {
+        let queue = ScopedLocalQueue {
+            database: self.database.as_ref(),
+            root,
+        };
+        let checkpoint = queue
+            .replica_checkpoint(peer.host_device_id)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        if checkpoint.binding != peer.binding {
+            return Err(SyncRuntimeError::LibraryUnavailable);
+        }
+        // A local write that committed before the watch started is work too:
+        // consume it now instead of holding the connection for the budget.
+        if self.take_local_wake() {
+            return Ok(WatchOutcome::LocalWrite);
+        }
+        let endpoint = Url::parse(&peer.address).map_err(|_| SyncRuntimeError::InvalidAddress)?;
+        let mut watch = Box::pin(peer.client.pull_commits(
+            &endpoint,
+            checkpoint.sequence.as_u64(),
+            checkpoint.digest,
+            1,
+            wait,
+        ));
+        let started = Instant::now();
+        let mut ticker = tokio::time::interval(Duration::from_millis(250));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tokio::select! {
+                biased;
+                () = wait_for_sync_cancel(Arc::clone(&cancelled)) => {
+                    return Err(SyncRuntimeError::Busy);
+                }
+                _ = ticker.tick() => {
+                    if self.take_local_wake() {
+                        return Ok(WatchOutcome::LocalWrite);
+                    }
+                }
+                page = &mut watch => {
+                    let page = page.map_err(map_sync_client_error)?;
+                    if page.entries.is_empty() && started.elapsed() < wait / 2 {
+                        // The host answered long before the budget: it does not
+                        // hold the page. Report the missing capability so the
+                        // caller returns to plain polling instead of
+                        // re-issuing immediately.
+                        return Ok(WatchOutcome::Unsupported);
+                    }
+                    return Ok(if page.entries.is_empty() {
+                        WatchOutcome::BudgetElapsed
+                    } else {
+                        WatchOutcome::Advanced
+                    });
+                }
+            }
+        }
+    }
+
     async fn prepared_incremental_cycle(
         &self,
         peer: &ProvisionedPeer,
@@ -911,6 +1052,7 @@ impl NativeSyncProvisioner {
                 checkpoint.sequence.as_u64(),
                 checkpoint.digest,
                 512,
+                Duration::ZERO,
             )
             .await
             .map_err(map_sync_client_error)?;

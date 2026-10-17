@@ -21,6 +21,9 @@ pub const MAX_SYNC_PAGE_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_RESOURCE_CHUNK_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_PAGE_SIZE: usize = 512;
 pub const MAX_JSON_DEPTH: usize = 64;
+/// Longest hold a peer may ask `/v1/commits` to keep an empty page open while
+/// waiting for the host to publish. One held request costs one rate-limit slot.
+pub const MAX_COMMIT_WAIT_MS: u32 = 30_000;
 const DIGEST_DOMAIN: &[u8] = b"echo.lan.commit.v1\0";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

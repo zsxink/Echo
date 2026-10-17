@@ -2,7 +2,9 @@
 
 use super::{decode_hex, mutation, CertificateResolver, CERTIFICATE, PRIVATE_KEY};
 use crate::client::{ClientError, LanClient};
-use crate::protocol::{ResourceRefDto, MAX_RESOURCE_CHUNK_BYTES};
+use crate::protocol::{
+    CommitPageDto, ResourceRefDto, MAX_COMMIT_WAIT_MS, MAX_RESOURCE_CHUNK_BYTES,
+};
 use crate::resource_transfer::{PrepareResource, TransferProgress};
 use echo_core::domain::sync::SharedResourceKind;
 use reqwest::{StatusCode, Url};
@@ -141,6 +143,78 @@ async fn redirect_response_is_rejected_without_contacting_destination() {
             .is_err(),
         "redirect destination must receive neither a connection nor credentials"
     );
+}
+
+#[tokio::test]
+async fn held_pull_carries_the_wait_parameter_and_rejects_a_wait_above_the_bound() {
+    use echo_core::domain::sync::CommitSeq;
+
+    let client = LanClient::new(&decode_hex(CERTIFICATE), "paired-test-token".to_owned()).unwrap();
+    // Above the protocol bound the client must refuse before any traffic.
+    assert!(matches!(
+        client
+            .pull_commits(
+                &Url::parse("https://127.0.0.1:1/").unwrap(),
+                3,
+                [3; 32],
+                1,
+                Duration::from_millis(u64::from(MAX_COMMIT_WAIT_MS) + 1),
+            )
+            .await,
+        Err(ClientError::InvalidCommitChain)
+    ));
+    // A wait within the bound travels as one extra query parameter, and the
+    // page validation still runs on the held response.
+    let page = CommitPageDto {
+        binding: mutation().binding,
+        anchor_sequence: CommitSeq::from_u64(3),
+        anchor_digest: [3; 32],
+        entries: Vec::new(),
+    };
+    let (endpoint, worker) = scripted_host(vec![Exchange {
+        method_path: format!(
+            "GET /v1/commits?after=3&previous_digest={}&limit=1&wait_ms=1500",
+            "03".repeat(32)
+        ),
+        binding: None,
+        body: Vec::new(),
+        response: Some(json_response(&page)),
+    }]);
+    let pulled = client
+        .pull_commits(&endpoint, 3, [3; 32], 1, Duration::from_millis(1500))
+        .await
+        .unwrap();
+    assert!(pulled.entries.is_empty());
+    assert_eq!(pulled.anchor_sequence, CommitSeq::from_u64(3));
+    worker.join().unwrap();
+}
+
+#[tokio::test]
+async fn immediate_pull_omits_the_wait_parameter() {
+    use echo_core::domain::sync::CommitSeq;
+
+    let page = CommitPageDto {
+        binding: mutation().binding,
+        anchor_sequence: CommitSeq::from_u64(3),
+        anchor_digest: [3; 32],
+        entries: Vec::new(),
+    };
+    let (endpoint, worker) = scripted_host(vec![Exchange {
+        method_path: format!(
+            "GET /v1/commits?after=3&previous_digest={}&limit=1",
+            "03".repeat(32)
+        ),
+        binding: None,
+        body: Vec::new(),
+        response: Some(json_response(&page)),
+    }]);
+    let client = LanClient::new(&decode_hex(CERTIFICATE), "paired-test-token".to_owned()).unwrap();
+    let pulled = client
+        .pull_commits(&endpoint, 3, [3; 32], 1, Duration::ZERO)
+        .await
+        .unwrap();
+    assert!(pulled.entries.is_empty());
+    worker.join().unwrap();
 }
 
 fn upload_exchanges(request: &PrepareResource, first: &[u8], last: &[u8]) -> Vec<Exchange> {

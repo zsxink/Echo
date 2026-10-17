@@ -206,21 +206,17 @@ fn cancel_of_unknown_pairing_generation_preserves_previous_authorization() {
     };
     let pairing = DurableHostPairing::new(database.clone());
     assert_eq!(pairing.cancel_approval(&request), Ok(()));
-    assert!(
-        database
-            .sync_peer_has_credential(binding, device_id, "prior-generation".to_owned())
-            .unwrap()
-    );
+    assert!(database
+        .sync_peer_has_credential(binding, device_id, "prior-generation".to_owned())
+        .unwrap());
     // The fake prior-generation handle has no OS credential to recover.
     assert!(matches!(
         pairing.approve(&request),
         Err(PairingError::ProvisioningUnavailable)
     ));
-    assert!(
-        database
-            .sync_peer_has_credential(binding, device_id, "prior-generation".to_owned())
-            .unwrap()
-    );
+    assert!(database
+        .sync_peer_has_credential(binding, device_id, "prior-generation".to_owned())
+        .unwrap());
 }
 
 fn publish_test_song(
@@ -364,11 +360,9 @@ fn host_publishes_peer_uploaded_audio_into_its_library_before_reporting_ready() 
         std::fs::read(root_path.join(published.normalized())).unwrap(),
         bytes
     );
-    assert!(
-        database
-            .remote_resource_media_ready(root, ObjectKey::Song(song))
-            .unwrap()
-    );
+    assert!(database
+        .remote_resource_media_ready(root, ObjectKey::Song(song))
+        .unwrap());
     assert!(
         RemoteResourceJournalPort::incomplete(database.as_ref(), root)
             .unwrap()
@@ -788,13 +782,11 @@ async fn native_merge_pulls_host_before_uploading_and_preserves_local_song() {
             std::collections::HashSet::from([fixture.host_song, local_song])
         );
     }
-    assert!(
-        fixture
-            .replica
-            .pending_local_mutations(512)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(fixture
+        .replica
+        .pending_local_mutations(512)
+        .unwrap()
+        .is_empty());
     assert_eq!(std::fs::read(&sentinel).unwrap(), b"keep local audio");
     let host_resources = FileResourceStore::new(
         fixture
@@ -928,13 +920,11 @@ async fn native_merge_drains_more_than_512_local_additions() {
         )
         .await
         .unwrap();
-    assert!(
-        fixture
-            .replica
-            .pending_local_mutations(512)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(fixture
+        .replica
+        .pending_local_mutations(512)
+        .unwrap()
+        .is_empty());
     assert_eq!(
         fixture.host.all_in_root(fixture.host_root).unwrap().len(),
         1
@@ -984,12 +974,10 @@ async fn native_enrollment_persists_host_manifests_before_downloading_audio() {
         .await
         .unwrap();
 
-    assert!(
-        fixture
-            .replica
-            .replica_enrollment_complete(fixture.peer.host_device_id)
-            .unwrap()
-    );
+    assert!(fixture
+        .replica
+        .replica_enrollment_complete(fixture.peer.host_device_id)
+        .unwrap());
     let sets = fixture
         .replica
         .pending_remote_resource_sets(fixture.root)
@@ -997,10 +985,191 @@ async fn native_enrollment_persists_host_manifests_before_downloading_audio() {
     assert_eq!(sets.len(), 1);
     assert_eq!(sets[0].0, ObjectKey::Song(song));
     assert_eq!(sets[0].1[0].manifest, manifest);
+    assert!(fixture
+        .resources
+        .verify_complete(fixture.peer.binding, &ResourceRefDto::from(&manifest))
+        .is_err());
+}
+
+/// Pull until the replica sits at the host's head, so the next commit page is
+/// empty and the host holds it open for the watch under test.
+async fn pull_replica_to_host_head(fixture: &LanMergeFixture) {
+    let queue = ScopedLocalQueue {
+        database: fixture.replica.as_ref(),
+        root: fixture.root,
+    };
+    fixture
+        .provisioner
+        .pull_host_changes(&fixture.peer, &fixture.endpoint, &queue, &fixture.resources)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn a_host_publication_ends_a_held_watch() {
+    use echo_core::domain::ids::SongId;
+    let fixture = LanMergeFixture::new().await;
+    pull_replica_to_host_head(&fixture).await;
+
+    let cancelled = Arc::new(AtomicBool::new(false));
+    // Records when the host's publication committed, so the assertion below
+    // measures propagation latency rather than the test's own settle delay.
+    let published_at = Arc::new(Mutex::new(None::<Instant>));
+    let joined = tokio::time::timeout(Duration::from_secs(5), async {
+        let published_at = Arc::clone(&published_at);
+        tokio::join!(
+            async {
+                // Let the watch settle into the held page before publishing.
+                tokio::time::sleep(Duration::from_millis(300)).await;
+                let committed = Instant::now();
+                publish_test_song(
+                    &fixture.host,
+                    fixture.peer.binding,
+                    SongId::new(),
+                    2,
+                    Some(fixture.host_mutation),
+                    vec![],
+                );
+                *published_at
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(committed);
+            },
+            fixture.provisioner.watch_peer_commits(
+                &fixture.peer,
+                fixture.root,
+                cancelled,
+                Duration::from_secs(30),
+            ),
+        )
+    })
+    .await;
+    let ((), outcome) = joined.expect("a held watch must end when the host publishes");
+    assert_eq!(outcome.unwrap(), WatchOutcome::Advanced);
+    // The host rechecks the held page every 500 ms, so the peer learns about a
+    // publication in about one second — the plain-poll floor was five.
+    let latency = published_at
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .expect("the publication committed")
+        .elapsed();
     assert!(
-        fixture
-            .resources
-            .verify_complete(fixture.peer.binding, &ResourceRefDto::from(&manifest))
-            .is_err()
+        latency < Duration::from_secs(2),
+        "the held watch took {latency:?} to notice the publication"
+    );
+}
+
+#[tokio::test]
+async fn a_local_write_ends_a_held_watch() {
+    use echo_core::application::ports::PlaylistRepository;
+    use echo_core::domain::ids::PlaylistId;
+    let fixture = LanMergeFixture::new().await;
+    pull_replica_to_host_head(&fixture).await;
+
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let joined = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::join!(
+            async {
+                tokio::time::sleep(Duration::from_millis(300)).await;
+                // A local write wakes every sync listener, including the
+                // channel this provisioner registered for its watch.
+                PlaylistRepository::create(
+                    fixture.replica.as_ref(),
+                    PlaylistId::new(),
+                    fixture.root,
+                    "Local edit",
+                )
+                .unwrap();
+            },
+            fixture.provisioner.watch_peer_commits(
+                &fixture.peer,
+                fixture.root,
+                cancelled,
+                Duration::from_secs(30),
+            ),
+        )
+    })
+    .await;
+    let ((), outcome) = joined.expect("a held watch must end on a local write");
+    assert_eq!(outcome.unwrap(), WatchOutcome::LocalWrite);
+}
+
+#[derive(serde::Deserialize)]
+struct ImmediateCommitQuery {
+    after: u64,
+    previous_digest: String,
+}
+
+/// A host from before the bounded long-poll: it answers an empty page at once
+/// and ignores `wait_ms` entirely.
+async fn immediate_commit_page(
+    axum::extract::Query(query): axum::extract::Query<ImmediateCommitQuery>,
+) -> axum::Json<CommitPageDto> {
+    let mut digest = [0_u8; 32];
+    for (index, byte) in digest.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&query.previous_digest[index * 2..index * 2 + 2], 16).unwrap();
+    }
+    axum::Json(CommitPageDto {
+        binding: SyncBinding {
+            library_id: LibraryId::new(),
+            authority_id: AuthorityId::new(),
+            epoch: Epoch::INITIAL,
+        },
+        anchor_sequence: CommitSeq::from_u64(query.after),
+        anchor_digest: digest,
+        entries: Vec::new(),
+    })
+}
+
+/// Serve an immediate-answer host over TLS and return its endpoint, pinned
+/// certificate, and server handle.
+async fn spawn_immediate_commit_host(
+) -> (Url, Vec<u8>, tokio::task::JoinHandle<std::io::Result<()>>) {
+    let certificate = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+    let certificate_der = certificate.cert.der().to_vec();
+    let tls = tls13_server_config(
+        vec![CertificateDer::from(certificate_der.clone())],
+        PrivatePkcs8KeyDer::from(certificate.key_pair.serialize_der()).into(),
+    )
+    .unwrap();
+    let router =
+        axum::Router::new().route("/v1/commits", axum::routing::get(immediate_commit_page));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = Url::parse(&format!("https://{}/", listener.local_addr().unwrap())).unwrap();
+    let server = tokio::spawn(echo_sync::server::serve_tls(listener, tls, router));
+    (endpoint, certificate_der, server)
+}
+
+#[tokio::test]
+async fn a_host_that_answers_before_the_budget_is_reported_as_unsupported() {
+    let fixture = LanMergeFixture::new().await;
+    let (endpoint, certificate_der, server) = spawn_immediate_commit_host().await;
+    let peer = ProvisionedPeer {
+        binding: fixture.peer.binding,
+        address: endpoint.to_string(),
+        client: LanClient::new(
+            &certificate_der,
+            "temporary-loopback-test-token-123456789".into(),
+        )
+        .unwrap(),
+        host_device_id: DeviceId::new(),
+    };
+
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let outcome = tokio::time::timeout(
+        Duration::from_secs(5),
+        fixture.provisioner.watch_peer_commits(
+            &peer,
+            fixture.root,
+            cancelled,
+            Duration::from_secs(30),
+        ),
+    )
+    .await;
+    server.abort();
+    let outcome = outcome.expect("an immediate host must end the watch at once");
+    assert_eq!(
+        outcome.unwrap(),
+        WatchOutcome::Unsupported,
+        "an early empty page means the host cannot hold; the caller must poll instead"
     );
 }
