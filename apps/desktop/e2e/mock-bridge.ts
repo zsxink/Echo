@@ -325,6 +325,7 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
     state: "disabled" as SyncState,
     sessionId: 0,
     eventSequence: 0,
+    catalogChanged: false,
     libraryId: null as string | null,
     address: null as string | null,
     lastError: null as string | null,

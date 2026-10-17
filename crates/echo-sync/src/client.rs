@@ -33,7 +33,6 @@ mod tls;
 pub struct LanClient {
     http: Client,
     bearer_token: String,
-    certificate_hash: [u8; 32],
 }
 
 #[derive(Debug)]
@@ -151,7 +150,6 @@ impl LanClient {
         Ok(Self {
             http,
             bearer_token,
-            certificate_hash: *blake3::hash(pinned_certificate_der).as_bytes(),
         })
     }
 

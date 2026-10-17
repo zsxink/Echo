@@ -12,7 +12,7 @@ use echo_core::domain::sync::SyncBinding;
 use echo_core::infrastructure::sqlite::SqliteDatabase;
 pub use echo_desktop::ipc::sync::{DiscoveredHost, SyncPeer, SyncRole, SyncState, SyncStatus};
 use echo_sync::discovery::LanDiscovery;
-use echo_sync::pairing::{PairingError, PairingGrantDto, PairingInvitation, PendingPairingRequest};
+use echo_sync::pairing::{PairingError, PairingGrantDto, PairingInvitation};
 use echo_sync::server::{HostApiState, host_router, serve_tls};
 use tokio::sync::oneshot;
 
@@ -683,41 +683,6 @@ impl SyncRuntime {
             self.database.current_device_id().as_uuid(),
         );
         api.create_pairing_invitation(host_device, certificate, Duration::from_secs(600))
-            .map_err(map_pairing_error)
-    }
-
-    pub fn pending_pairing_requests(&self) -> Result<Vec<PendingPairingRequest>, SyncRuntimeError> {
-        let api = self
-            .inner
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?
-            .pairing_api
-            .clone()
-            .ok_or(SyncRuntimeError::Unconfigured)?;
-        api.pending_pairing_requests().map_err(map_pairing_error)
-    }
-
-    pub fn approve_pairing_request(&self, request_id: &str) -> Result<(), SyncRuntimeError> {
-        let api = self
-            .inner
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?
-            .pairing_api
-            .clone()
-            .ok_or(SyncRuntimeError::Unconfigured)?;
-        api.approve_pairing_request(request_id)
-            .map_err(map_pairing_error)
-    }
-
-    pub fn deny_pairing_request(&self, request_id: &str) -> Result<(), SyncRuntimeError> {
-        let api = self
-            .inner
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?
-            .pairing_api
-            .clone()
-            .ok_or(SyncRuntimeError::Unconfigured)?;
-        api.deny_pairing_request(request_id)
             .map_err(map_pairing_error)
     }
 
