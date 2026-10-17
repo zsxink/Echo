@@ -815,7 +815,18 @@ impl NativeSyncProvisioner {
                 .replica_checkpoint(peer.host_device_id)
                 .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
             if after == before {
-                return Err(SyncRuntimeError::Busy);
+                if let Some(mutation) = pending_after.first() {
+                    tracing::warn!(
+                        target: "echo_desktop::sync",
+                        mutation_id = ?mutation.mutation_id,
+                        origin_device_id = ?mutation.origin_device_id,
+                        origin_seq = mutation.origin_seq,
+                        previous_mutation_id = ?mutation.previous_mutation_id,
+                        host_checkpoint = after.sequence.as_u64(),
+                        "peer sync made no progress; host did not accept the pending mutation"
+                    );
+                }
+                return Err(SyncRuntimeError::SyncPredecessorPending);
             }
         }
         Ok(())

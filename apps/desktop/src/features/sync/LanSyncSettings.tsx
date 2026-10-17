@@ -538,6 +538,10 @@ function syncErrorText(key: string): string {
     "sync.libraryConflict":
       "主机中的部分歌曲已属于另一份本地音乐目录。请在设置中切回之前同步使用的目录，再重新加入主机。",
     "sync.busy": "同步服务正在处理其他操作。",
+    "sync.predecessorPending":
+      "主机没有确认本机的下一条同步变更，来源事件前驱可能缺失或两端账本不一致。请先更新主机和本机到同一版本后重试；若仍失败，请提供两端同步日志。",
+    "sync.resourcePublicationPending":
+      "同步记录已收到，但媒体资源尚未完成发布。请检查两端磁盘空间和媒体目录权限后重试。",
     "sync.bindFailed": "无法监听该局域网地址，请从自动识别的地址中选择当前网络地址。",
     "sync.discoveryFailed": "局域网主机发现失败。",
     "sync.pairingCodeInvalid":

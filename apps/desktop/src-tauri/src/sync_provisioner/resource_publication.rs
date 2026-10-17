@@ -68,7 +68,7 @@ pub(super) fn publish_remote_resource_set(
         .resume(root, operation)
         .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
     if !outcome.media_ready {
-        return Err(SyncRuntimeError::Busy);
+        return Err(SyncRuntimeError::ResourcePublicationPending);
     }
     Ok(())
 }

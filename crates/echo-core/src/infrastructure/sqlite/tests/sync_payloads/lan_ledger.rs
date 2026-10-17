@@ -586,6 +586,21 @@ fn legacy_terminal_rejection_does_not_block_its_immediate_successor() {
     database.bind_sync_library(binding, true, root).unwrap();
     let origin = DeviceId::from_uuid(database.current_device_id().as_uuid());
     let rejected_id = MutationId::new();
+    let song = SongId::new();
+    let following = MutationCandidate {
+        resource_refs: Vec::new(),
+        mutation_id: MutationId::new(),
+        origin_device_id: origin,
+        origin_seq: 2,
+        previous_mutation_id: Some(rejected_id),
+        object: ObjectKey::Song(song),
+        base_object_version: None,
+        payload: sync_song_payload(song, "following mutation"),
+    };
+    let out_of_order = database.stage_confirmation(binding, &following).unwrap();
+    assert!(out_of_order.checkpoint.is_none());
+    assert!(out_of_order.outcome_json.contains("OutOfOrderPredecessor"));
+
     let playlist = crate::domain::ids::PlaylistId::new();
     let rejected = MutationCandidate {
         resource_refs: Vec::new(),
@@ -601,31 +616,23 @@ fn legacy_terminal_rejection_does_not_block_its_immediate_successor() {
     let outcome = database.stage_confirmation(binding, &rejected).unwrap();
     assert!(outcome.checkpoint.is_none());
     assert!(outcome.outcome_json.contains("WrongObject"));
-    // Simulate an existing inbox rejection written by an older release that
-    // did not advance the host origin cursor.
+    // The old host may already have durably cached the retryable rejection for
+    // this exact successor before the rejected predecessor was recorded.
+    // Simulate its missing cursor update, then ensure retry re-evaluates the
+    // cached out-of-order result and recovers from the immediate predecessor.
+    let origin_for_delete = origin;
     database
         .writer
         .run(move |connection| {
             connection
                 .execute(
                     "DELETE FROM sync_origin_cursors WHERE origin_device_id=?1",
-                    [origin.as_uuid().to_string()],
+                    [origin_for_delete.as_uuid().to_string()],
                 )
                 .map_err(crate::infrastructure::sqlite::support::storage)?;
             Ok(())
         })
         .unwrap();
-    let song = SongId::new();
-    let following = MutationCandidate {
-        resource_refs: Vec::new(),
-        mutation_id: MutationId::new(),
-        origin_device_id: origin,
-        origin_seq: 2,
-        previous_mutation_id: Some(rejected_id),
-        object: ObjectKey::Song(song),
-        base_object_version: None,
-        payload: sync_song_payload(song, "following mutation"),
-    };
     let accepted = database.stage_confirmation(binding, &following).unwrap();
     assert!(accepted.checkpoint.is_some());
 }
