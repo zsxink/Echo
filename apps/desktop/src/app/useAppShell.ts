@@ -10,12 +10,20 @@
  * readable/testable (CODE_STANDARDS §6).
  */
 
-import { useCallback, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
+import { bridge, subscribe } from "../bridge";
+import { invalidateCovers } from "./coverArt";
 import { useLibraryPlaylists } from "../features/playlists/useLibraryPlaylists";
 import { useLibraryStatus } from "../features/workspace/useLibraryStatus";
 import type { LibraryViewKind } from "../features/library/types";
-import { useLibraryCountSync } from "../features/library/libraryCounts";
+import {
+  getLibraryCountsSnapshot,
+  setLibraryCounts,
+  useLibraryCountSync,
+} from "../features/library/libraryCounts";
+import { invalidateLibrary } from "../features/library/libraryInvalidation";
+import type { SyncStatus } from "../ipc/ipc-types.generated";
 import { useTheme } from "../features/settings/useTheme";
 import { useGlobalPlayerHotkeys } from "../player/useGlobalPlayerHotkeys";
 import { OverlayTier, useFocusTrap, useOverlay } from "./overlays";
@@ -62,6 +70,7 @@ export function useAppShell(): AppShell {
   // anything could have changed a total, so "喜欢的音乐" shows its size before
   // the user ever opens it.
   useLibraryCountSync(status.configured && !status.unavailable);
+  useSyncCatalogRefresh();
 
   // Global playback shortcuts (Space toggle, arrows step/volume, M mute,
   // ,/. prev/next) — task 11.8. Ignored while focus is in an input/overlay.
@@ -106,4 +115,88 @@ export function useAppShell(): AppShell {
     settingsOpen,
     setSettingsOpen,
   };
+}
+
+/**
+ * A completed LAN cycle can add a song without going through local UI
+ * mutations. Refresh counts then re-scan only when the catalog count changed;
+ * the scan indexes embedded covers and adjacent lyrics for newly downloaded
+ * files without rescanning the whole library on every five-second poll.
+ */
+function useSyncCatalogRefresh(): void {
+  const lastSongCount = useRef(getLibraryCountsSnapshot().all);
+
+  useEffect(() => {
+    let disposed = false;
+    let syncInProgress = false;
+    let refreshing = false;
+    let unlisten: (() => void) | undefined;
+
+    const refreshAfterSync = async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const counts = await bridge.call("library_counts");
+        if (disposed) return;
+        const previousCount = lastSongCount.current;
+        lastSongCount.current = counts.all;
+        setLibraryCounts({
+          all: counts.all,
+          favorites: counts.favorites,
+          recent: counts.recent,
+          artists: counts.artists,
+          albums: counts.albums,
+        });
+
+        if (previousCount !== null && previousCount === counts.all) return;
+        invalidateLibrary();
+        const library = await bridge.call("library_status");
+        if (disposed || !library.activeRoot || library.scanning) return;
+        await bridge.call("start_scan", { root: library.activeRoot });
+        if (disposed) return;
+        invalidateCovers();
+        invalidateLibrary();
+        const refreshed = await bridge.call("library_counts");
+        if (disposed) return;
+        lastSongCount.current = refreshed.all;
+        setLibraryCounts({
+          all: refreshed.all,
+          favorites: refreshed.favorites,
+          recent: refreshed.recent,
+          artists: refreshed.artists,
+          albums: refreshed.albums,
+        });
+      } catch {
+        // Sync status remains authoritative; normal library retry/rescan stays
+        // available if this best-effort catalog refresh cannot run.
+      } finally {
+        refreshing = false;
+      }
+    };
+
+    const onSyncStatus = (next: SyncStatus) => {
+      if (next.state === "syncing") {
+        syncInProgress = true;
+      } else if (syncInProgress && (next.state === "connected" || next.state === "hosting")) {
+        syncInProgress = false;
+        void refreshAfterSync();
+      }
+    };
+
+    void subscribe("sync://status", onSyncStatus).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    });
+    void bridge
+      .call("sync_status")
+      .then((current) => {
+        if (current.state === "syncing") syncInProgress = true;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 }

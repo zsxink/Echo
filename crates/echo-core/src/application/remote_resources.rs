@@ -82,12 +82,16 @@ impl PublishRemoteResources {
                     operation.as_uuid().simple()
                 );
                 // A first download into an empty library should retain the
-                // host's logical path. Once a path already contains different
-                // bytes (or this object already has a published version), keep
-                // the immutable Echo version path so we never overwrite local
-                // music or an earlier synchronized version.
+                // host's logical path for audio and its sidecar lyrics. This
+                // lets the normal scanner index embedded covers and nearby
+                // `.lrc` files after synchronization. Conflicting or replaced
+                // content stays in an isolated Echo version path.
                 let local_path = if matches!(object, ObjectKey::Song(_))
-                    && target.manifest.kind == crate::domain::sync::SharedResourceKind::Audio
+                    && matches!(
+                        target.manifest.kind,
+                        crate::domain::sync::SharedResourceKind::Audio
+                            | crate::domain::sync::SharedResourceKind::LyricsSidecar
+                    )
                     && target.expected_old_digest.is_none()
                     && (!self.deps.fs.path_exists(root, &path)?
                         || self.matches(
