@@ -165,7 +165,7 @@ React → generated IPC → echo-desktop runtime → Core application → Core d
 
 使用 Ports/Adapters 隔离传输，Repository/UoW 固定原子边界，Outbox/Inbox 支撑至少一次传输，State Machine 表达生命周期，operation journal 处理文件/数据库跨资源提交。网络 await 不持有 SQLite 事务/锁，哈希与标签解析用受控阻塞任务。
 
-来源设备的 mutation 链按 `origin_seq` 和 `previous_mutation_id` 串行推进。主端对顺序正确但因对象结构或作者授权校验失败的终态拒绝，必须在同一 SQLite 事务中持久化拒绝结果并推进来源游标；缺失前驱属于可重试拒绝，不推进游标。这样从端终结该 mutation 后，后续事件不会永久卡在主端旧游标上。
+来源设备的 mutation 链按 `origin_seq` 和 `previous_mutation_id` 串行推进。主端对顺序正确但因对象结构或作者授权校验失败的终态拒绝，必须在同一 SQLite 事务中持久化拒绝结果并推进来源游标；缺失前驱属于可重试拒绝，不推进游标。兼容旧版本遗留的单步游标缺口时，主仅在当前候选的直接前驱 ID 对应同设备已持久化的终态拒绝、且新候选序号恰为紧邻的下一序号时补推进。这样既能接续旧状态，又不会跳过普通缺失事件。
 
 建议 IPC 按需生成 host_start/stop、discover_hosts、create_pairing_code、pair_with_code、revoke_device、join_library、sync_now/pause/resume、sync_status/conflicts、backup_host/restore_host_backup；输入有界，配对码为临时敏感输入而非状态，目录及备份文件只传原生选择逻辑句柄。事件含会话 ID、递增事件序号、库 ID、阶段、已传字节/总字节、待确认数和结构化错误；UI过滤旧库/旧会话事件，取消订阅不取消已提交事实。
 

@@ -570,7 +570,7 @@ fn rejected_missing_predecessor_can_be_retried_after_predecessor_is_confirmed() 
 }
 
 #[test]
-fn terminally_rejected_mutation_advances_host_origin_cursor() {
+fn legacy_terminal_rejection_does_not_block_its_immediate_successor() {
     use crate::application::ports::HostCommitLedgerPort;
     use crate::domain::sync::{
         AuthorityId, DeviceId, Epoch, LibraryId, MutationCandidate, MutationId, ObjectKey,
@@ -615,8 +615,6 @@ fn terminally_rejected_mutation_advances_host_origin_cursor() {
             Ok(())
         })
         .unwrap();
-    assert_eq!(database.stage_confirmation(binding, &rejected).unwrap(), outcome);
-
     let song = SongId::new();
     let following = MutationCandidate {
         resource_refs: Vec::new(),

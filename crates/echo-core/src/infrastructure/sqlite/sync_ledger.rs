@@ -480,6 +480,12 @@ impl HostCommitLedgerPort for SqliteDatabase {
             let (current_is_tombstone, current) = load_confirmed_object(&tx, candidate.object)?;
             let current = exclude_final_playlist_members(&tx, candidate.object, current)?;
             let cursor = load_origin_cursor(&tx, candidate.origin_device_id)?;
+            let cursor = recover_adjacent_terminal_predecessor(
+                &tx,
+                &origin,
+                &candidate,
+                cursor,
+            )?;
             let next: i64 = tx.query_row("SELECT COALESCE(MAX(commit_seq), 0) + 1 FROM sync_commits", [], |row| row.get(0)).map_err(storage)?;
             let sequence = CommitSeq::from_u64(u64::try_from(next).map_err(storage)?);
             let canonical_candidate = exclude_historical_member_aliases(&tx, &candidate)?;
@@ -820,6 +826,60 @@ fn terminal_rejection_consumes_origin_json(outcome_json: &str) -> bool {
                 "WrongObject" | "WrongOrigin" | "UnauthorizedPlayStatsBucket"
             )
         })
+}
+
+/// Repair the one-event cursor gap left by older releases that acknowledged a
+/// terminal rejection locally but did not advance the host cursor. The current
+/// candidate must name that exact rejected inbox event as its immediate
+/// predecessor; out-of-order and accepted inbox rows are never consumed here.
+fn recover_adjacent_terminal_predecessor(
+    tx: &rusqlite::Transaction<'_>,
+    origin: &str,
+    candidate: &MutationCandidate,
+    cursor: Option<OriginCursor>,
+) -> Result<Option<OriginCursor>, Error> {
+    let expected = match cursor {
+        Some(value) => match value.origin_seq.checked_add(1) {
+            Some(expected) => expected,
+            None => return Ok(cursor),
+        },
+        None => 1,
+    };
+    let Some(successor_sequence) = expected.checked_add(1) else {
+        return Ok(cursor);
+    };
+    if candidate.origin_seq != successor_sequence {
+        return Ok(cursor);
+    }
+    let Some(predecessor) = candidate.previous_mutation_id else {
+        return Ok(cursor);
+    };
+    let prior: Option<(String, Option<i64>)> = tx
+        .query_row(
+            "SELECT outcome_json, commit_seq FROM sync_inbox WHERE origin_device_id=?1 AND mutation_id=?2",
+            params![origin, predecessor.as_uuid().to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(storage)?;
+    let Some((outcome_json, commit_seq)) = prior else {
+        return Ok(cursor);
+    };
+    let prior: StagedConfirmation = serde_json::from_str(&outcome_json).map_err(storage)?;
+    if commit_seq.is_some() || !terminal_rejection_consumes_origin_json(&prior.outcome_json) {
+        return Ok(cursor);
+    }
+
+    tx.execute(
+        "INSERT INTO sync_origin_cursors(origin_device_id, origin_seq, last_mutation_id) VALUES(?1, ?2, ?3) ON CONFLICT(origin_device_id) DO UPDATE SET origin_seq=excluded.origin_seq, last_mutation_id=excluded.last_mutation_id",
+        params![origin, i64::try_from(expected).map_err(storage)?, predecessor.as_uuid().to_string()],
+    )
+    .map_err(storage)?;
+    Ok(Some(OriginCursor {
+        origin_device_id: candidate.origin_device_id,
+        origin_seq: expected,
+        last_mutation_id: predecessor,
+    }))
 }
 
 fn advance_origin_cursor_for_terminal_rejection(
