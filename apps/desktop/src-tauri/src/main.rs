@@ -277,7 +277,48 @@ fn spawn_macos_now_playing_refresh(
     });
 }
 
-/// build `AppServices`, and register the playback coordinator + actor + theme
+/// Retry restoring a saved sync role while the application remains untouched.
+fn retry_saved_sync_restore(
+    runtime: &Arc<sync_runtime::SyncRuntime>,
+    app: tauri::AppHandle,
+    starting_sequence: u64,
+) {
+    let runtime = Arc::downgrade(runtime);
+    let spawn = thread::Builder::new()
+        .name("echo-sync-startup-retry".into())
+        .spawn(move || {
+            let mut delay = Duration::from_secs(5);
+            let mut observed_sequence = starting_sequence;
+            loop {
+                thread::sleep(delay);
+                let Some(runtime) = runtime.upgrade() else {
+                    break;
+                };
+                let current = runtime.status();
+                if current.enabled || current.event_sequence != observed_sequence {
+                    break;
+                }
+                match runtime.restore_saved_session() {
+                    Ok(Some(status)) => {
+                        let _ = app.emit("sync://status", status);
+                        break;
+                    }
+                    Ok(None) => break,
+                    Err(error) => {
+                        let status = runtime.report_error(error);
+                        let _ = app.emit("sync://status", &status);
+                        observed_sequence = status.event_sequence;
+                        delay = (delay * 2).min(Duration::from_secs(60));
+                    }
+                }
+            }
+        });
+    if let Err(error) = spawn {
+        tracing::warn!(%error, "failed to start saved LAN sync retry worker");
+    }
+}
+
+/// Build `AppServices`, and register the playback coordinator + actor + theme
 /// store as managed state, plus the snapshot→frontend forwarder.
 ///
 /// Failure here is fatal (the app cannot serve commands without its runtime).
@@ -350,7 +391,8 @@ fn wire_composition(
     app.manage(routed.registry.clone());
     app.manage(routed.deps.clone());
     // Constructing this boundary performs no discovery, listening or requests.
-    // Secure-store access and host provisioning start only after explicit opt-in.
+    // A previously saved host/peer role is restored below after the status
+    // notifier is installed, so startup can report progress to the UI.
     let sync_runtime = Arc::new(sync_runtime::SyncRuntime::new(
         routed.database.clone(),
         Some(Arc::new(sync_provisioner::NativeSyncProvisioner::new(
@@ -369,7 +411,13 @@ fn wire_composition(
     sync_runtime.set_status_notifier(Arc::new(move |status| {
         let _ = sync_app.emit("sync://status", status);
     }));
-    app.manage(sync_runtime);
+    if let Err(error) = sync_runtime.restore_saved_session() {
+        tracing::warn!(error = error.message_key(), "failed to restore saved LAN sync session");
+        let status = sync_runtime.report_error(error);
+        let _ = app.emit("sync://status", &status);
+        retry_saved_sync_restore(&sync_runtime, app.handle().clone(), status.event_sequence);
+    }
+    app.manage(Arc::clone(&sync_runtime));
     // The `cover://` protocol resolves bytes by opaque asset key (design §16).
     // It looks the store up as the *dynamic* `CoverCache` type, so the cache has
     // to be registered under exactly that type — the same instance the scan

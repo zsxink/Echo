@@ -352,6 +352,36 @@ impl SyncRuntime {
         self.start_peer_locked()
     }
 
+    /// Restore the persisted LAN role after application startup. Peer sessions
+    /// start their normal retrying sync loop, so an unavailable host is retried
+    /// without blocking the application. Host mode binds the best available
+    /// private LAN address.
+    pub fn restore_saved_session(&self) -> Result<Option<SyncStatus>, SyncRuntimeError> {
+        let Some(configuration) = self
+            .database
+            .current_sync_configuration()
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+        else {
+            return Ok(None);
+        };
+        if self.active_root()? != configuration.local_root {
+            return Ok(None);
+        }
+
+        if configuration.host {
+            let mut last_error = SyncRuntimeError::DiscoveryFailed;
+            for address in available_local_lan_addresses() {
+                match self.host_start(&address.to_string()) {
+                    Ok(status) => return Ok(Some(status)),
+                    Err(error) => last_error = error,
+                }
+            }
+            Err(last_error)
+        } else {
+            self.peer_start().map(Some)
+        }
+    }
+
     /// Stop the current LAN session and remove this library's pairing while
     /// retaining its local catalog and media.
     pub fn leave_sync(&self) -> Result<SyncStatus, SyncRuntimeError> {
@@ -1042,6 +1072,39 @@ pub fn selected_lan_address(address: &str) -> Result<IpAddr, SyncRuntimeError> {
     } else {
         Err(SyncRuntimeError::InvalidAddress)
     }
+}
+
+pub fn available_local_lan_addresses() -> Vec<IpAddr> {
+    let Ok(interfaces) = if_addrs::get_if_addrs() else {
+        return Vec::new();
+    };
+    let mut addresses = interfaces
+        .into_iter()
+        .filter(|interface| {
+            interface.is_oper_up()
+                && !interface.is_loopback()
+                && !interface.is_link_local()
+                && !interface.is_p2p()
+        })
+        .map(|interface| interface.ip())
+        .filter(|address| match address {
+            IpAddr::V4(address) => address.is_private(),
+            IpAddr::V6(address) => (address.segments()[0] & 0xfe00) == 0xfc00,
+        })
+        .collect::<Vec<_>>();
+    addresses.sort_by_key(|address| match address {
+        IpAddr::V4(address) if address.octets()[0] == 192 && address.octets()[1] == 168 => 0,
+        IpAddr::V4(address) if address.octets()[0] == 10 => 1,
+        IpAddr::V4(address)
+            if address.octets()[0] == 172 && (16..=31).contains(&address.octets()[1]) =>
+        {
+            2
+        }
+        IpAddr::V4(_) => 3,
+        IpAddr::V6(_) => 4,
+    });
+    addresses.dedup();
+    addresses
 }
 
 #[cfg(test)]
