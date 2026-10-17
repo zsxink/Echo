@@ -1,5 +1,8 @@
 use super::*;
 
+#[path = "tests/idle.rs"]
+mod idle;
+
 #[test]
 fn unconfigured_runtime_stays_offline_and_stop_is_idempotent() {
     let directory = tempfile::tempdir().unwrap();

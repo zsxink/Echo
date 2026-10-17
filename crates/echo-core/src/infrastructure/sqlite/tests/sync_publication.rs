@@ -1,6 +1,7 @@
 use super::*;
 use crate::application::ports::{
-    HostCommitLedgerPort, HostPeerAuthorizationPort, PublicationCheckpointPort, StagedConfirmation,
+    HostCommitLedgerPort, HostPeerAuthorizationPort, HostSnapshotPort, PublicationCheckpointPort,
+    StagedConfirmation,
 };
 use crate::application::sync::ConfirmHostMutation;
 use crate::domain::sync::{
@@ -420,4 +421,63 @@ fn genesis_pull_requires_matching_host_binding_even_with_an_empty_log() {
     assert!(replica
         .published_commits_after(binding, CommitSeq::GENESIS, [0; 32], 10)
         .is_err());
+}
+
+#[test]
+fn sync_wakeup_only_follows_first_remote_publication() {
+    let (_directory, database, binding) = host();
+    let peer = DeviceId::new();
+    database
+        .authorize_sync_peer(binding, peer, "peer".into(), "vault-peer".into())
+        .unwrap();
+    let (wake, wakeups) = std::sync::mpsc::channel();
+    database.register_sync_waker(wake);
+
+    let local = local_candidate(&database);
+    let local_checkpoint = database
+        .stage_confirmation(binding, &local)
+        .unwrap()
+        .checkpoint
+        .unwrap();
+    database.mark_published(local_checkpoint).unwrap();
+    assert!(
+        wakeups.try_recv().is_err(),
+        "host confirmation does not schedule another cycle"
+    );
+
+    let remote = candidate(peer);
+    let remote_checkpoint = database
+        .stage_confirmation(binding, &remote)
+        .unwrap()
+        .checkpoint
+        .unwrap();
+    assert!(
+        wakeups.try_recv().is_err(),
+        "staged but unpublished resources are not ready"
+    );
+    let mut invalid = remote_checkpoint;
+    invalid.digest[0] ^= 1;
+    database
+        .mark_published(invalid)
+        .expect_err("invalid checkpoint must fail");
+    assert!(
+        wakeups.try_recv().is_err(),
+        "failed publication cannot wake sync"
+    );
+    database.mark_published(remote_checkpoint).unwrap();
+    wakeups
+        .try_recv()
+        .expect("newly published peer work wakes the host");
+    assert!(wakeups.try_recv().is_err());
+    database.mark_published(remote_checkpoint).unwrap();
+    assert!(
+        wakeups.try_recv().is_err(),
+        "publication retries cannot self-wake"
+    );
+
+    database.create_host_snapshot(binding, 32, 60_000).unwrap();
+    assert!(
+        wakeups.try_recv().is_err(),
+        "snapshot session writes cannot self-wake"
+    );
 }

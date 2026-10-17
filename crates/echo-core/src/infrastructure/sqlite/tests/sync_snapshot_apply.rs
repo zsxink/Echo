@@ -617,3 +617,32 @@ fn snapshot_keeps_same_name_distinct_playlists_and_their_own_members() {
     assert_eq!(db.name(imported_playlist).unwrap(), Some(imported_name));
     assert_eq!(db.members(imported_playlist).unwrap(), imported_members);
 }
+
+#[test]
+fn sync_wakeup_ignores_empty_replica_cursor_updates() {
+    let (_directory, database, binding, peer) = replica();
+    let (wake, wakeups) = std::sync::mpsc::channel();
+    database.register_sync_waker(wake);
+    let writes = database.subscribe_writes();
+    let anchor = CommitCheckpoint {
+        binding,
+        sequence: CommitSeq::GENESIS,
+        digest: [0; 32],
+    };
+    for _ in 0..2 {
+        let applied = database
+            .apply_remote_batch(binding, peer, anchor, &[])
+            .unwrap();
+        assert_eq!(applied.applied, 0);
+        assert_eq!(applied.sequence, anchor.sequence);
+        assert_eq!(applied.digest, anchor.digest);
+        assert!(
+            wakeups.try_recv().is_err(),
+            "empty peer apply must not schedule another sync cycle"
+        );
+        writes
+            .try_recv()
+            .expect("ordinary subscribers still see the successful cursor write");
+    }
+    assert_eq!(count(&database, "sync_peer_cursors"), 1);
+}

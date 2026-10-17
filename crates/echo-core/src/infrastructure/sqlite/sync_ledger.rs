@@ -565,18 +565,18 @@ impl HostCommitLedgerPort for SqliteDatabase {
     }
 
     fn mark_published(&self, checkpoint: CommitCheckpoint) -> Result<(), Error> {
-        self.writer.run(move |connection| {
+        self.writer.run_with_sync_wake(move |connection| {
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
             let sequence = i64::try_from(checkpoint.sequence.as_u64()).map_err(storage)?;
             let library = checkpoint.binding.library_id.as_uuid().to_string();
             let authority = checkpoint.binding.authority_id.as_uuid().to_string();
             let epoch = i64::try_from(checkpoint.binding.epoch.as_u64()).map_err(storage)?;
-            let previous_digest: Option<Vec<u8>> = tx.query_row(
-                "SELECT previous_digest FROM sync_commits WHERE commit_seq=?1 AND commit_digest=?2 AND library_id=?3 AND authority_id=?4 AND epoch=?5",
+            let publication: Option<(Vec<u8>, String, String)> = tx.query_row(
+                "SELECT previous_digest, publication_state, origin_device_id FROM sync_commits WHERE commit_seq=?1 AND commit_digest=?2 AND library_id=?3 AND authority_id=?4 AND epoch=?5",
                 params![sequence, checkpoint.digest.as_slice(), library, authority, epoch],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             ).optional().map_err(storage)?;
-            let Some(previous_digest) = previous_digest else {
+            let Some((previous_digest, publication_state, origin_device)) = publication else {
                 return Err(Error::conflict("publication checkpoint does not match a staged commit"));
             };
             // Validate and update in the same writer transaction, including on
@@ -598,8 +598,13 @@ impl HostCommitLedgerPort for SqliteDatabase {
             if previous_digest != expected_previous {
                 return Err(Error::conflict("publication predecessor digest mismatch"));
             }
-            tx.execute("UPDATE sync_commits SET publication_state='published' WHERE commit_seq=?1", params![sequence]).map_err(storage)?;
-            tx.commit().map_err(storage)
+            let local_device: String = tx.query_row(
+                "SELECT value FROM device_state WHERE key='device_id'", [], |row| row.get(0),
+            ).map_err(storage)?;
+            let sync_work = publication_state != "published" && origin_device != local_device;
+            tx.execute("UPDATE sync_commits SET publication_state='published' WHERE commit_seq=?1 AND publication_state!='published'", params![sequence]).map_err(storage)?;
+            tx.commit().map_err(storage)?;
+            Ok(((), sync_work))
         })
     }
 
@@ -890,8 +895,7 @@ fn advance_origin_cursor_for_terminal_rejection(
 ) -> Result<(), Error> {
     let expected_seq = cursor.map_or(1, |value| value.origin_seq.saturating_add(1));
     let expected_previous = cursor.map(|value| value.last_mutation_id);
-    if candidate.origin_seq == expected_seq && candidate.previous_mutation_id == expected_previous
-    {
+    if candidate.origin_seq == expected_seq && candidate.previous_mutation_id == expected_previous {
         tx.execute(
             "INSERT INTO sync_origin_cursors(origin_device_id, origin_seq, last_mutation_id) VALUES(?1, ?2, ?3) ON CONFLICT(origin_device_id) DO UPDATE SET origin_seq=excluded.origin_seq, last_mutation_id=excluded.last_mutation_id",
             params![origin, i64::try_from(candidate.origin_seq).map_err(storage)?, candidate.mutation_id.as_uuid().to_string()],

@@ -238,10 +238,11 @@ impl SqliteDatabase {
         self.writer.subscribe()
     }
 
-    /// Register an existing sync wake channel with the writer actor. Stop
+    /// Register a channel for newly queued local mutations and newly published
+    /// peer work. Sync's own bookkeeping does not wake another sync cycle. Stop
     /// signals may share the same channel so background workers wake promptly.
     pub fn register_sync_waker(&self, sender: mpsc::Sender<()>) {
-        self.writer.register_listener(sender);
+        self.writer.register_sync_listener(sender);
     }
 
     /// Create a consistent SQLite backup using the SQLite backup API.
@@ -1370,37 +1371,4 @@ impl RuntimeStateStore for SqliteDatabase {
 }
 
 #[cfg(test)]
-mod write_wakeup_tests {
-    use super::SqliteDatabase;
-    use std::sync::mpsc::RecvTimeoutError;
-    use std::time::Duration;
-
-    #[test]
-    fn write_wakeup_only_follows_successful_writer_actions() {
-        let directory = tempfile::tempdir().expect("temporary directory");
-        let database =
-            SqliteDatabase::open(directory.path().join("echo.sqlite")).expect("database");
-        let wakeups = database.subscribe_writes();
-
-        database
-            .writer
-            .run(|_| {
-                Err::<(), _>(crate::error::Error::validation(
-                    crate::error::Subject::Other,
-                    "test",
-                    "injected failure",
-                ))
-            })
-            .expect_err("failed action is reported");
-        assert!(matches!(
-            wakeups.recv_timeout(Duration::from_millis(20)),
-            Err(RecvTimeoutError::Timeout)
-        ));
-
-        database
-            .writer
-            .run(|_| Ok(()))
-            .expect("successful writer action");
-        assert!(wakeups.recv_timeout(Duration::from_secs(1)).is_ok());
-    }
-}
+mod write_wakeup_tests;
