@@ -31,29 +31,42 @@ impl LazyHostResources {
     fn materialize(&self, hash: &str) -> Result<(), echo_sync::resource_transfer::TransferError> {
         let manifests = self
             .database
-            .local_sync_resource_manifests(self.library.id())
-            .map_err(|_| storage_error("read local resource manifests"))?;
+            .local_library_resource_manifests(self.library.id())
+            .map_err(|_| storage_error("read active library resource manifests"))?;
         let manifest = manifests
             .into_iter()
             .find(|manifest| manifest.digest.to_hex() == hash)
             .ok_or(echo_sync::resource_transfer::TransferError::Unknown)?;
-        let source = super::authorized_source(
-            self.library.absolute_path(),
-            manifest.relative_path.as_str(),
-        )
-        .map_err(|_| echo_sync::resource_transfer::TransferError::Invalid)?
-        .ok_or(echo_sync::resource_transfer::TransferError::Unknown)?;
-        let mut file = File::open(source)?;
-        let metadata = file.metadata()?;
-        if !metadata.is_file() || metadata.len() != manifest.length {
-            return Err(echo_sync::resource_transfer::TransferError::Conflict);
-        }
         let request = PrepareResource {
             binding: self.binding,
             resource: ResourceRefDto::from(&manifest),
         };
-        self.cache.import_reader(self.owner, &request, &mut file)?;
-        Ok(())
+        if let Some(source) = super::authorized_source(
+            self.library.absolute_path(),
+            manifest.relative_path.as_str(),
+        )
+        .map_err(|_| echo_sync::resource_transfer::TransferError::Invalid)?
+        {
+            match File::open(source) {
+                Ok(mut file) => {
+                    let metadata = file.metadata()?;
+                    if metadata.is_file() && metadata.len() == manifest.length {
+                        match self.cache.import_reader(self.owner, &request, &mut file) {
+                            Ok(_) => return Ok(()),
+                            Err(echo_sync::resource_transfer::TransferError::Conflict) => {}
+                            Err(error) => return Err(error),
+                        }
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        if self.cache.import_cached_blob(self.owner, &request)? {
+            Ok(())
+        } else {
+            Err(echo_sync::resource_transfer::TransferError::Unknown)
+        }
     }
 }
 

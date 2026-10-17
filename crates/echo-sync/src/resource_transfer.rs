@@ -196,6 +196,56 @@ impl FileResourceStore {
         self.complete(request.binding, owner, &progress.upload_id)
     }
 
+    /// Copy a byte-identical blob from another local binding partition into
+    /// this binding's partition. The requested digest and length are verified
+    /// before import; callers must first authorize the manifest for this binding.
+    ///
+    /// # Errors
+    /// Rejects invalid resource declarations, unsafe cache entries, and storage
+    /// failures. Returns `false` when no verified matching blob exists.
+    pub fn import_cached_blob(
+        &self,
+        owner: DeviceId,
+        request: &PrepareResource,
+    ) -> Result<bool, TransferError> {
+        validate_resource(&request.resource).map_err(|_| TransferError::Invalid)?;
+        if request.resource.length > MAX_RESOURCE_BYTES {
+            return Err(TransferError::Capacity);
+        }
+        let active = self.directory(request.binding)?;
+        for entry in fs::read_dir(&self.root)? {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            if !file_type.is_dir() {
+                continue;
+            }
+            let partition_name = entry.file_name();
+            let Some(partition_name) = partition_name.to_str() else {
+                continue;
+            };
+            if validate_hash(partition_name).is_err() || entry.path() == active {
+                continue;
+            }
+            let partition = entry.path();
+            if existing_directory(&partition).is_err() {
+                continue;
+            }
+            let blob = partition.join(format!("{}.blob", request.resource.content_hash));
+            match verify_file(&blob, &request.resource) {
+                Ok(()) => {
+                    let mut source = File::open(blob)?;
+                    self.import_reader(owner, request, &mut source)?;
+                    return Ok(true);
+                }
+                Err(TransferError::Unknown | TransferError::Invalid | TransferError::Conflict) => {
+                    continue;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(false)
+    }
+
     fn directory(&self, binding: SyncBinding) -> Result<PathBuf, TransferError> {
         let encoded = serde_json::to_vec(&binding).map_err(|_| TransferError::Invalid)?;
         let path = self.root.join(blake3::hash(&encoded).to_hex().as_str());

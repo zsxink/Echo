@@ -120,6 +120,8 @@ LWW 在这里明确是“主设备确认时间序”，不是“真实用户编�
 | `GET /v1/resources/{hash}` | 下载支持 Range 与内容版本；返回当前库授权资源 |
 | `POST /v1/ack` | 逐设备已应用日志水位/摘要和完整媒体水位；不匹配时停止会话 |
 
+主机按当前活动 root 的同步资源 manifest 定位资源；找不到当前 binding 分区的缓存时，可从本机其他 binding 分区复用同哈希 blob，但前提是当前 root 的对象确实声明该 manifest，且完整校验长度与 BLAKE3。复用后先写入当前 binding 分区再响应；不查询或传输其他 root 的目录/对象。
+
 mutation 封套包含 protocol_version、library_id、authority_id、epoch、mutation_id、origin_device_id、origin_seq、kind、uuid、base_object_version、previous_mutation_id、operation、payload、resource_refs。响应返回 confirmed/rejected/conflicted、commit_seq、canonical payload、alias 和冲突引用。主日志包含同样的身份与结果，重复回放不生成本地新 mutation。
 
 日志只确认依赖资源已在主设备完整落盘的对象；从导入先上传资源再提交对象。从设备可以先应用已确认对象并推进对象游标，但媒体完成水位与对象水位分开；“已同步”要求追到本次水位且该水位存活资源全部就绪、没有待确认修改/未解决错误。持续编辑时显示“仍有待同步”，避免宣称全局静止。

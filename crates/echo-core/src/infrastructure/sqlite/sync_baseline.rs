@@ -146,6 +146,43 @@ impl SqliteDatabase {
             Ok(manifests)
         })
     }
+
+    /// Return resource declarations owned by objects in one local library root.
+    /// Unlike `local_sync_resource_manifests`, this includes confirmed objects;
+    /// the host needs their declarations to serve resources from its snapshot.
+    pub fn local_library_resource_manifests(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<Vec<SharedResourceManifest>, Error> {
+        self.with_reader(|connection| {
+            let mut statement = connection
+                .prepare(
+                    "SELECT DISTINCT m.object_type,m.object_uuid FROM sync_resource_manifests m
+                     WHERE (m.object_type IN ('song','favorite','play-stats','override') AND EXISTS (
+                       SELECT 1 FROM songs s WHERE s.uuid=m.object_uuid AND s.library_root_uuid=?1))
+                       OR (m.object_type IN ('playlist','playlist-item') AND EXISTS (
+                       SELECT 1 FROM playlists p WHERE p.uuid=m.object_uuid AND p.library_root_uuid=?1))
+                     ORDER BY m.object_type,m.object_uuid",
+                )
+                .map_err(storage)?;
+            let objects = statement
+                .query_map(params![root.to_string()], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(storage)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(storage)?;
+            let mut manifests = Vec::new();
+            for (kind, id) in objects {
+                for manifest in sync_manifests::load(connection, &kind, &id)? {
+                    if !manifests.contains(&manifest) {
+                        manifests.push(manifest);
+                    }
+                }
+            }
+            Ok(manifests)
+        })
+    }
 }
 
 fn enqueue_current(connection: &Connection, root: &str) -> Result<usize, Error> {
