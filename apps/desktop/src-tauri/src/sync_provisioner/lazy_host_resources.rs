@@ -41,12 +41,26 @@ impl LazyHostResources {
             binding: self.binding,
             resource: ResourceRefDto::from(&manifest),
         };
-        if let Some(source) = super::authorized_source(
-            self.library.absolute_path(),
-            manifest.relative_path.as_str(),
-        )
-        .map_err(|_| echo_sync::resource_transfer::TransferError::Invalid)?
-        {
+        let catalog_path = if manifest.kind == SharedResourceKind::Audio {
+            self.database
+                .local_library_audio_path_for_resource(
+                    self.library.id(),
+                    &manifest.digest.to_hex(),
+                    manifest.length,
+                )
+                .map_err(|_| storage_error("resolve audio resource in active library"))?
+        } else {
+            None
+        };
+        let source_paths = std::iter::once(manifest.relative_path.as_str())
+            .chain(catalog_path.iter().map(String::as_str));
+        for relative_path in source_paths {
+            let Some(source) =
+                super::authorized_source(self.library.absolute_path(), relative_path)
+                    .map_err(|_| echo_sync::resource_transfer::TransferError::Invalid)?
+            else {
+                continue;
+            };
             match File::open(source) {
                 Ok(mut file) => {
                     let metadata = file.metadata()?;

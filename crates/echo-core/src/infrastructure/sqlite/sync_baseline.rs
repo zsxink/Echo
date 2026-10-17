@@ -183,6 +183,28 @@ impl SqliteDatabase {
             Ok(manifests)
         })
     }
+
+    /// Resolve an audio resource to the catalog path that belongs to one local
+    /// library root. Sync manifests can retain a publication path that differs
+    /// from the current catalog path after a library move or a local rename.
+    pub fn local_library_audio_path_for_resource(
+        &self,
+        root: LibraryRootId,
+        content_hash: &str,
+        length: u64,
+    ) -> Result<Option<String>, Error> {
+        let length = i64::try_from(length).map_err(storage)?;
+        self.with_reader(|connection| {
+            connection
+                .query_row(
+                    "SELECT relative_path FROM songs WHERE library_root_uuid=?1 AND blake3_hash=?2 AND file_size=?3 ORDER BY uuid LIMIT 1",
+                    params![root.to_string(), content_hash, length],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(storage)
+        })
+    }
 }
 
 fn enqueue_current(connection: &Connection, root: &str) -> Result<usize, Error> {
