@@ -42,11 +42,19 @@ impl std::io::Read for PrivateResourceReader {
     }
 }
 
+/// Host-authenticated apply boundary for incremental commit pages.
+///
+/// Media completeness is deliberately **not** a precondition. Core materializes
+/// a confirmed remote song as unavailable and records the shared manifests, so
+/// the catalog is readable as soon as the objects arrive; publication then
+/// attaches the verified bytes from those durable manifests and restores
+/// availability. This is the same order snapshot enrollment uses, and the
+/// reverse (bytes before objects) parks every change behind a file transfer.
 pub(super) struct PreparedRemoteApply<'a> {
     pub(super) database: &'a SqliteDatabase,
     pub(super) host: DeviceId,
-    pub(super) page: CommitPageDto,
-    pub(super) resources: &'a FileResourceStore,
+    /// Set when the page no longer matches the authenticated host, so the
+    /// caller re-pulls instead of treating it as a durable conflict.
     pub(super) changed: std::sync::atomic::AtomicBool,
     pub(super) catalog_changed: &'a AtomicBool,
 }
@@ -59,43 +67,14 @@ impl RemoteApplyPort for PreparedRemoteApply<'_> {
         anchor: CommitCheckpoint,
         commits: &[RemoteCommit],
     ) -> Result<AppliedRemoteCursor, echo_core::error::Error> {
-        let matching = peer_device_id == self.host
-            && binding == self.page.binding
-            && anchor.binding == binding
-            && anchor.sequence == self.page.anchor_sequence
-            && anchor.digest == self.page.anchor_digest
-            && commits.len() == self.page.entries.len()
-            && commits
-                .iter()
-                .zip(&self.page.entries)
-                .all(|(commit, prepared)| {
-                    commit.sequence == prepared.commit.commit_seq
-                        && commit.digest == prepared.digest
-                        && commit.previous_digest == prepared.commit.previous_digest
-                        && commit.mutation_id == prepared.commit.mutation.mutation_id
-                        && serde_json::to_string(&prepared.commit)
-                            .is_ok_and(|canonical| canonical == commit.canonical_json)
-                });
-        if !matching {
+        // Only the provisioned host may advance this replica's cursor; Core
+        // separately proves the anchor and the commit chain.
+        if peer_device_id != self.host || anchor.binding != binding {
             self.changed
                 .store(true, std::sync::atomic::Ordering::Relaxed);
             return Err(echo_core::error::Error::conflict(
-                "remote page changed after resource preparation",
+                "remote apply does not match the authenticated host",
             ));
-        }
-        for resource in self
-            .page
-            .entries
-            .iter()
-            .flat_map(|entry| &entry.commit.resource_refs)
-        {
-            self.resources
-                .verify_complete(binding, resource)
-                .map_err(|_| {
-                    echo_core::error::Error::conflict(
-                        "remote resource preparation is no longer complete",
-                    )
-                })?;
         }
         let cursor = self
             .database

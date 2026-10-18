@@ -1,5 +1,6 @@
 //! Trusted native composition for opt-in library synchronization.
 
+use std::collections::HashSet;
 use std::fs::File;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -9,7 +10,8 @@ use std::time::{Duration, Instant};
 
 use echo_core::application::ports::{
     AppliedRemoteCursor, DeviceIdProvider, HostCommitLedgerPort, LibraryRepository,
-    LocalSyncQueuePort, RemoteApplyPort, RemoteCommit, ReplicaSnapshotApplyPort,
+    LocalSyncQueuePort, RemoteApplyPort, RemoteCommit, RemoteResourceTarget,
+    ReplicaSnapshotApplyPort,
 };
 use echo_core::application::remote_resources::RemoteResourcePublishDeps;
 use echo_core::application::scan::{ScanDeps, ScanSupervisor, StartScan};
@@ -29,8 +31,10 @@ use echo_sync::pairing::{
     PairingError, PairingGrantDto, PairingInvitation, PairingPort, PairingRegistry,
     PendingPairingRequest,
 };
+#[cfg(test)]
+use echo_sync::protocol::CommitPageDto;
 use echo_sync::protocol::ResourceRefDto;
-use echo_sync::protocol::{CommitPageDto, MAX_RESOURCE_CHUNK_BYTES};
+use echo_sync::protocol::MAX_RESOURCE_CHUNK_BYTES;
 use echo_sync::resource_transfer::{FileResourceStore, PrepareResource, ResourceTransferPort};
 use echo_sync::server::{tls13_server_config, HostApiState, PeerCredential};
 use reqwest::Url;
@@ -80,6 +84,13 @@ pub struct NativeSyncProvisioner {
     // to every registered listener, so this channel is independent of the
     // runtime loop's: watching never steals the loop's local-write hints.
     local_wakes: Mutex<Option<LocalWakeChannel>>,
+    // Resources this process has verified locally and that the peer has already
+    // acknowledged: `prepare` reported the transfer complete, or
+    // `complete_resource` succeeded. Every pending mutation re-declares its
+    // resources on every cycle, so without this cache a 512-deep backlog
+    // re-sends `prepare` for the whole queue each round (a guaranteed 429) and
+    // re-reads each blob twice to re-derive BLAKE3.
+    uploaded_resources: Mutex<HashSet<(SyncBinding, String)>>,
 }
 
 /// A registered sync wake-up channel kept alive for the watch. Dropping the
@@ -122,6 +133,9 @@ struct PeerIdentity {
     bearer_token: String,
 }
 
+// The mapper only inspects the variant; taking the error by reference would
+// force every `map_err` call site into a closure for no gain.
+#[allow(clippy::needless_pass_by_value)]
 fn map_sync_client_error(error: ClientError) -> SyncRuntimeError {
     match error {
         ClientError::Transport(_) => SyncRuntimeError::SyncConnectionFailed,
@@ -181,7 +195,25 @@ impl NativeSyncProvisioner {
             pending_catalog_changed: Arc::new(AtomicBool::new(false)),
             host_seen_checkpoint: Mutex::new(None),
             local_wakes: Mutex::new(None),
+            uploaded_resources: Mutex::new(HashSet::new()),
         }
+    }
+
+    /// Mark a resource as uploaded for this session. A poisoned lock only means
+    /// some other thread panicked; the cache is an optimization, so recovering
+    /// the inner value is correct here.
+    fn remember_uploaded(&self, binding: SyncBinding, content_hash: &str) {
+        self.uploaded_resources
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert((binding, content_hash.to_owned()));
+    }
+
+    fn is_uploaded(&self, binding: SyncBinding, content_hash: &str) -> bool {
+        self.uploaded_resources
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains(&(binding, content_hash.to_owned()))
     }
 
     fn host_identity(&self, root: LibraryRootId) -> Result<HostIdentity, SyncRuntimeError> {
@@ -402,7 +434,7 @@ impl SyncProvisioner for NativeSyncProvisioner {
         self.publish_cached_peer_resources(root, identity.binding, &resources)?;
         let host_resources = Arc::new(lazy_host_resources::LazyHostResources::new(
             Arc::clone(&self.database),
-            library.clone(),
+            library,
             identity.binding,
             Arc::clone(&resources),
         ));
@@ -532,17 +564,19 @@ impl SyncProvisioner for NativeSyncProvisioner {
             .database
             .latest_published_sync_checkpoint(configuration.binding)
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-        let mut seen = self
-            .host_seen_checkpoint
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
-        if seen
-            .as_ref()
-            .is_some_and(|previous| *previous != checkpoint)
         {
-            self.pending_catalog_changed.store(true, Ordering::Release);
+            let mut seen = self
+                .host_seen_checkpoint
+                .lock()
+                .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+            if seen
+                .as_ref()
+                .is_some_and(|previous| *previous != checkpoint)
+            {
+                self.pending_catalog_changed.store(true, Ordering::Release);
+            }
+            *seen = Some(checkpoint);
         }
-        *seen = Some(checkpoint);
         Ok(self.pending_catalog_changed.swap(false, Ordering::AcqRel))
     }
 
@@ -753,7 +787,7 @@ impl NativeSyncProvisioner {
                 // The vault delete API reports missing and unreadable alike;
                 // the binding is already detached, so leave remains safe.
                 Err(_) => {
-                    tracing::warn!(target: "echo_desktop::sync", "stale sync credential cleanup failed")
+                    tracing::warn!(target: "echo_desktop::sync", "stale sync credential cleanup failed");
                 }
             }
         }
@@ -848,22 +882,29 @@ impl NativeSyncProvisioner {
             root,
         };
         loop {
-            // Merge the complete host history before publishing local additions.
-            self.pull_host_changes(peer, endpoint, &queue, resources)
-                .await?;
-            self.publish_remote_resources(peer, endpoint, root, resources)
-                .await?;
-            self.upload_pending_resources(peer, endpoint, resources.as_ref(), root)
-                .await?;
-            let before = queue
-                .replica_checkpoint(peer.host_device_id)
-                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
             let pending_before = queue
                 .pending_local_mutations(1)
                 .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
                 .first()
                 .map(|mutation| mutation.mutation_id);
-            self.prepared_incremental_cycle(peer, endpoint, &queue, resources)
+            // Merge the complete host history before publishing local
+            // additions. With nothing local to publish the ordering cannot
+            // matter, and this pull is the redundant half of an idle cycle:
+            // `synchronize_once` pulls after pushing, and the closing pull
+            // covers anything that landed after it. Skipping it drops a steady
+            // idle cycle from three pulls to one.
+            if pending_before.is_some() {
+                self.pull_host_changes(peer, endpoint, &queue).await?;
+            }
+            self.publish_remote_resources(peer, endpoint, root, resources)
+                .await?;
+            self.upload_pending_resources(peer, endpoint, resources, root)
+                .await?;
+            let before = queue
+                .replica_checkpoint(peer.host_device_id)
+                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+            let pushed = self
+                .prepared_incremental_cycle(peer, endpoint, &queue)
                 .await?;
             self.publish_remote_resources(peer, endpoint, root, resources)
                 .await?;
@@ -871,10 +912,14 @@ impl NativeSyncProvisioner {
                 .pending_local_mutations(1)
                 .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
             if pending_after.is_empty() {
-                self.pull_host_changes(peer, endpoint, &queue, resources)
-                    .await?;
-                self.publish_remote_resources(peer, endpoint, root, resources)
-                    .await?;
+                // A cycle that pushed nothing already applied the post-push
+                // head, which is what the closing pull would re-read. A
+                // saturated page or a dropped ACK is what still needs it.
+                if pushed {
+                    self.pull_host_changes(peer, endpoint, &queue).await?;
+                    self.publish_remote_resources(peer, endpoint, root, resources)
+                        .await?;
+                }
                 break;
             }
             // A terminally rejected mutation is removed from the pending queue
@@ -904,12 +949,18 @@ impl NativeSyncProvisioner {
         Ok(())
     }
 
+    /// Apply every published host page. Catalog pages are staged immediately:
+    /// Core persists the objects, their shared manifests and the cursor in one
+    /// transaction, and materializes confirmed songs as unavailable. Media is
+    /// attached afterwards from those durable manifests
+    /// (`publish_remote_resources`), so a slow or stalled transfer can never
+    /// park an object update behind it — the guarantee the "对象先于媒体到达"
+    /// scenario requires, and the order snapshot enrollment already uses.
     async fn pull_host_changes(
         &self,
         peer: &ProvisionedPeer,
         endpoint: &Url,
         queue: &ScopedLocalQueue<'_>,
-        resources: &Arc<FileResourceStore>,
     ) -> Result<(), SyncRuntimeError> {
         loop {
             let checkpoint = queue
@@ -930,34 +981,13 @@ impl NativeSyncProvisioner {
                 return Err(SyncRuntimeError::LibraryUnavailable);
             }
             let finished = page.entries.is_empty();
-            let owner = DeviceId::from_uuid(self.database.current_device_id().as_uuid());
-            for resource in page
-                .entries
-                .iter()
-                .flat_map(|entry| &entry.commit.resource_refs)
-            {
-                peer.client
-                    .download_resource(
-                        endpoint,
-                        owner,
-                        &PrepareResource {
-                            binding: peer.binding,
-                            resource: resource.clone(),
-                        },
-                        resources.clone(),
-                    )
-                    .await
-                    .map_err(map_sync_client_error)?;
-            }
             let prepared = PreparedRemoteApply {
                 database: self.database.as_ref(),
                 host: peer.host_device_id,
-                page,
-                resources: resources.as_ref(),
                 changed: AtomicBool::new(false),
                 catalog_changed: &self.pending_catalog_changed,
             };
-            LanClient::apply_commit_page(&prepared.page, peer.host_device_id, &prepared)
+            LanClient::apply_commit_page(&page, peer.host_device_id, &prepared)
                 .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
             if finished {
                 return Ok(());
@@ -1033,56 +1063,24 @@ impl NativeSyncProvisioner {
         }
     }
 
+    /// Run one push/pull cycle whose pull page is applied by `PreparedRemoteApply`.
+    ///
+    /// Returns whether the cycle submitted anything to the host — an accepted or
+    /// rejected mutation grows the host log under our own ACK, and a saturated
+    /// page leaves more to read — which is what tells the caller a closing pull
+    /// is still required.
     async fn prepared_incremental_cycle(
         &self,
         peer: &ProvisionedPeer,
         endpoint: &Url,
         queue: &ScopedLocalQueue<'_>,
-        resources: &Arc<FileResourceStore>,
-    ) -> Result<(), SyncRuntimeError> {
-        // A push can append commits after prefetch. Prepare the changed page
-        // before applying it, then acknowledge accepted local queue entries.
-        let checkpoint = queue
-            .replica_checkpoint(peer.host_device_id)
-            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-        let page = peer
-            .client
-            .pull_commits(
-                endpoint,
-                checkpoint.sequence.as_u64(),
-                checkpoint.digest,
-                512,
-                Duration::ZERO,
-            )
-            .await
-            .map_err(map_sync_client_error)?;
-        if page.binding != peer.binding {
-            return Err(SyncRuntimeError::LibraryUnavailable);
-        }
-        let owner = DeviceId::from_uuid(self.database.current_device_id().as_uuid());
-        for resource in page
-            .entries
-            .iter()
-            .flat_map(|entry| &entry.commit.resource_refs)
-        {
-            peer.client
-                .download_resource(
-                    endpoint,
-                    owner,
-                    &PrepareResource {
-                        binding: peer.binding,
-                        resource: resource.clone(),
-                    },
-                    resources.clone(),
-                )
-                .await
-                .map_err(map_sync_client_error)?;
-        }
+    ) -> Result<bool, SyncRuntimeError> {
+        // A push can append commits while the batch uploads. `synchronize_once`
+        // pulls and applies the resulting page itself, so no second prefetch is
+        // needed to stage it.
         let prepared = PreparedRemoteApply {
             database: self.database.as_ref(),
             host: peer.host_device_id,
-            page,
-            resources: resources.as_ref(),
             changed: std::sync::atomic::AtomicBool::new(false),
             catalog_changed: &self.pending_catalog_changed,
         };
@@ -1097,12 +1095,14 @@ impl NativeSyncProvisioner {
         )
         .await;
         match result {
-            Ok(_) => Ok(()),
+            Ok(report) => Ok(report.mutations_confirmed > 0
+                || report.mutations_rejected > 0
+                || report.pull_may_continue),
             Err(_) if prepared.changed.load(Ordering::Relaxed) => {
                 // Apply newly accepted commits before selecting another push
                 // batch, so accepted local mutations are not uploaded twice.
-                self.pull_host_changes(peer, endpoint, queue, resources)
-                    .await
+                self.pull_host_changes(peer, endpoint, queue).await?;
+                Ok(true)
             }
             Err(error) => Err(match error {
                 echo_sync::replica::ReplicaSyncError::Client(error) => map_sync_client_error(error),
@@ -1150,21 +1150,29 @@ impl NativeSyncProvisioner {
             .pending_remote_resource_sets(root)
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
         let owner = DeviceId::from_uuid(self.database.current_device_id().as_uuid());
-        for (object, targets) in sets {
-            for target in &targets {
-                peer.client
-                    .download_resource(
-                        endpoint,
-                        owner,
-                        &PrepareResource {
-                            binding: peer.binding,
-                            resource: ResourceRefDto::from(&target.manifest),
-                        },
-                        resources.clone(),
-                    )
-                    .await
-                    .map_err(map_sync_client_error)?;
+        // Stage the whole page before publishing any of it, two resources at a
+        // time: the design's "two resource streams per session". Downloading
+        // one resource per object and publishing between them made a page of
+        // small songs cost one round trip plus one journal append each, which
+        // is what pushed media-bearing changes well past the one-second
+        // discovery promise. Publication stays in page order because the
+        // journal appends one operation per object. A staging failure leaves
+        // the page unpublished for the next cycle, which is idempotent: the
+        // blobs that did arrive come back as `prepare`-complete.
+        let mut window = sets.iter().flat_map(|(_object, targets)| targets.iter());
+        while let Some(first) = window.next() {
+            if let Some(second) = window.next() {
+                let (first, second) = tokio::join!(
+                    stage_remote_resource(peer, endpoint, owner, first, resources),
+                    stage_remote_resource(peer, endpoint, owner, second, resources),
+                );
+                first?;
+                second?;
+            } else {
+                stage_remote_resource(peer, endpoint, owner, first, resources).await?;
             }
+        }
+        for (object, targets) in sets {
             let deps = self.publication.clone();
             let store = Arc::clone(resources);
             let binding = peer.binding;
@@ -1293,7 +1301,7 @@ impl NativeSyncProvisioner {
         &self,
         peer: &ProvisionedPeer,
         endpoint: &Url,
-        resources: &FileResourceStore,
+        resources: &Arc<FileResourceStore>,
         root: LibraryRootId,
     ) -> Result<(), SyncRuntimeError> {
         let queue = ScopedLocalQueue {
@@ -1303,53 +1311,127 @@ impl NativeSyncProvisioner {
         let mutations = queue
             .pending_local_mutations(512)
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-        for resource in mutations
+        // Two upload streams per session, mirroring the download side. Each
+        // resource keeps its own ordered chunk sequence; only distinct
+        // resources overlap. Resources staged earlier in this session are
+        // dropped before they can cost another chunk.
+        let pending: Vec<&SharedResourceManifest> = mutations
             .iter()
             .flat_map(|mutation| &mutation.resource_refs)
-        {
-            let request = PrepareResource {
-                binding: peer.binding,
-                resource: ResourceRefDto::from(resource),
-            };
-            resources
-                .verify_complete(peer.binding, &request.resource)
-                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-            let mut progress = peer
-                .client
-                .prepare_resource(endpoint, &request)
-                .await
-                .map_err(map_sync_client_error)?;
-            if progress.complete {
-                continue;
+            .filter(|resource| !self.is_uploaded(peer.binding, &resource.digest.to_hex()))
+            .collect();
+        let mut window = pending.into_iter();
+        while let Some(first) = window.next() {
+            if let Some(second) = window.next() {
+                let (first, second) = tokio::join!(
+                    self.upload_one_resource(peer, endpoint, resources, first),
+                    self.upload_one_resource(peer, endpoint, resources, second),
+                );
+                first?;
+                second?;
+            } else {
+                self.upload_one_resource(peer, endpoint, resources, first)
+                    .await?;
             }
-            let chunks = resource.length.div_ceil(MAX_RESOURCE_CHUNK_BYTES as u64);
-            for index in 0..chunks {
-                let index =
-                    u32::try_from(index).map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-                if progress.confirmed_chunks.contains(&index) {
-                    continue;
-                }
-                let offset = u64::from(index) * MAX_RESOURCE_CHUNK_BYTES as u64;
-                let length = usize::try_from(
-                    (resource.length - offset).min(MAX_RESOURCE_CHUNK_BYTES as u64),
-                )
-                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-                let chunk = resources
-                    .download(peer.binding, &resource.digest.to_hex(), offset, length)
-                    .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-                progress = peer
-                    .client
-                    .upload_resource_chunk(endpoint, peer.binding, &progress, index, chunk.bytes)
-                    .await
-                    .map_err(map_sync_client_error)?;
-            }
-            peer.client
-                .complete_resource(endpoint, peer.binding, &progress)
-                .await
-                .map_err(map_sync_client_error)?;
         }
         Ok(())
     }
+
+    async fn upload_one_resource(
+        &self,
+        peer: &ProvisionedPeer,
+        endpoint: &Url,
+        resources: &Arc<FileResourceStore>,
+        resource: &SharedResourceManifest,
+    ) -> Result<(), SyncRuntimeError> {
+        let content_hash = resource.digest.to_hex();
+        let request = PrepareResource {
+            binding: peer.binding,
+            resource: ResourceRefDto::from(resource),
+        };
+        // `verify_complete` re-reads the whole blob to prove its digest: tens of
+        // milliseconds of hashing for a lossless track, and it used to run
+        // inline on the runtime thread. It runs only on resources this session
+        // has not already uploaded, and a missing or unreadable local blob
+        // skips that one resource instead of failing the cycle, so the rest of
+        // the queue can still drain and the stuck mutation stays visible as a
+        // no-progress predecessor.
+        let verified = {
+            let store = Arc::clone(resources);
+            let binding = peer.binding;
+            let resource = request.resource.clone();
+            tokio::task::spawn_blocking(move || store.verify_complete(binding, &resource))
+                .await
+                .map_err(|_| SyncRuntimeError::WorkerFailed)?
+        };
+        if verified.is_err() {
+            tracing::warn!(
+                target: "echo_desktop::sync",
+                content_hash = %content_hash,
+                "local resource is not complete; upload deferred"
+            );
+            return Ok(());
+        }
+        let mut progress = peer
+            .client
+            .prepare_resource(endpoint, &request)
+            .await
+            .map_err(map_sync_client_error)?;
+        if progress.complete {
+            self.remember_uploaded(peer.binding, &content_hash);
+            return Ok(());
+        }
+        let chunks = resource.length.div_ceil(MAX_RESOURCE_CHUNK_BYTES as u64);
+        for index in 0..chunks {
+            let index = u32::try_from(index).map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+            if progress.confirmed_chunks.contains(&index) {
+                continue;
+            }
+            let offset = u64::from(index) * MAX_RESOURCE_CHUNK_BYTES as u64;
+            let length =
+                usize::try_from((resource.length - offset).min(MAX_RESOURCE_CHUNK_BYTES as u64))
+                    .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+            let chunk = resources
+                .download(peer.binding, &content_hash, offset, length)
+                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+            progress = peer
+                .client
+                .upload_resource_chunk(endpoint, peer.binding, &progress, index, chunk.bytes)
+                .await
+                .map_err(map_sync_client_error)?;
+        }
+        peer.client
+            .complete_resource(endpoint, peer.binding, &progress)
+            .await
+            .map_err(map_sync_client_error)?;
+        self.remember_uploaded(peer.binding, &content_hash);
+        Ok(())
+    }
+}
+
+/// Stage one remote resource into the local cache. Two of these run at once per
+/// session (`publish_remote_resources`), so the host sees two interleaved chunk
+/// streams; the chunks of a single file stay ordered.
+async fn stage_remote_resource(
+    peer: &ProvisionedPeer,
+    endpoint: &Url,
+    owner: DeviceId,
+    target: &RemoteResourceTarget,
+    resources: &Arc<FileResourceStore>,
+) -> Result<(), SyncRuntimeError> {
+    peer.client
+        .download_resource(
+            endpoint,
+            owner,
+            &PrepareResource {
+                binding: peer.binding,
+                resource: ResourceRefDto::from(&target.manifest),
+            },
+            resources.clone() as Arc<dyn ResourceTransferPort>,
+        )
+        .await
+        .map_err(map_sync_client_error)?;
+    Ok(())
 }
 
 async fn wait_for_sync_cancel(cancelled: Arc<AtomicBool>) {

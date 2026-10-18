@@ -24,6 +24,15 @@ pub const SYNC_PORT: u16 = 50826;
 /// local write ends the wait immediately.
 const PEER_WATCH_BUDGET: Duration = Duration::from_secs(25);
 
+/// Idle cadence for a host that cannot hold a commit page open, and the wait
+/// between cycles for the host role. A steady cycle now costs one pull plus one
+/// watch request, so 10 s keeps discovery within about 12 requests per minute
+/// while a fallback host's changes still surface in seconds.
+const FALLBACK_POLL_INTERVAL: Duration = Duration::from_secs(10);
+
+/// First backoff step after a failed cycle; doubles up to a minute.
+const RETRY_BASE_DELAY: Duration = Duration::from_secs(5);
+
 mod discovery;
 pub use discovery::discover_hosts;
 
@@ -816,13 +825,15 @@ impl SyncRuntime {
                 // cycles a healthy peer holds one long-poll against the host,
                 // which answers as soon as it publishes; the plain waker wait
                 // remains for hosts, retrying peers, and hosts without the
-                // wait capability. Its interval also bounds how often a
-                // fallback cycle runs, and stays well under the host's
-                // 120-requests-per-60s per-device limit.
-                let poll_interval = Duration::from_secs(5);
-                let mut retry_delay = Duration::from_secs(5);
+                // wait capability.
+                let mut retry_delay = RETRY_BASE_DELAY;
                 let mut retry_attempts = 0_u32;
                 let mut retrying = false;
+                // A recycled keep-alive connection and an unreachable host are
+                // one failed attempt each; only the second consecutive failure
+                // is evidence of the latter, so the first one is retried
+                // silently instead of being published as a sync failure.
+                let mut watch_failures = 0_u32;
                 loop {
                     // A pending local wakeup — including the initial one sent
                     // when the loop starts — is work right now. A retrying peer
@@ -844,7 +855,8 @@ impl SyncRuntime {
                                 .watch_host_commits(Arc::clone(&worker_stop), PEER_WATCH_BUDGET)
                             {
                                 Ok(WatchOutcome::Unsupported) => {
-                                    let delay = poll_interval;
+                                    watch_failures = 0;
+                                    let delay = FALLBACK_POLL_INTERVAL;
                                     if !wait_for_sync_wakeup(
                                         &wakeups,
                                         delay,
@@ -855,14 +867,32 @@ impl SyncRuntime {
                                     }
                                 }
                                 Ok(WatchOutcome::LocalWrite) => {
+                                    watch_failures = 0;
                                     // The watch drained its own channel; clear
                                     // the loop's too so a later plain wait
                                     // cannot replay stale hints as extra cycles.
                                     while wakeups.try_recv().is_ok() {}
                                 }
-                                Ok(WatchOutcome::Advanced | WatchOutcome::BudgetElapsed) => {}
+                                Ok(WatchOutcome::Advanced | WatchOutcome::BudgetElapsed) => {
+                                    watch_failures = 0;
+                                }
                                 Err(SyncRuntimeError::Busy) => break,
                                 Err(error) => {
+                                    // Retry once without publishing: the host's
+                                    // connection lifetime recycles idle
+                                    // keep-alive sockets, which surfaces as a
+                                    // transport error even though the peer is
+                                    // healthy. A second consecutive failure is a
+                                    // real outage and keeps the retry cadence.
+                                    if watch_failures == 0 {
+                                        watch_failures = 1;
+                                        tracing::debug!(
+                                            target: "echo_desktop::sync",
+                                            error = ?error,
+                                            "peer watch failed once; retrying before reporting"
+                                        );
+                                        continue;
+                                    }
                                     // The host was unreachable: record it like a
                                     // failed cycle and let the retry cadence run.
                                     let keep_waiting = {
@@ -910,7 +940,7 @@ impl SyncRuntime {
                             let delay = if retrying {
                                 jittered_retry_delay(retry_delay)
                             } else {
-                                poll_interval
+                                FALLBACK_POLL_INTERVAL
                             };
                             if !wait_for_sync_wakeup(&wakeups, delay, retrying, &worker_stop) {
                                 break;
@@ -982,7 +1012,7 @@ impl SyncRuntime {
                                 };
                                 inner.status.last_error = None;
                                 retrying = false;
-                                retry_delay = poll_interval;
+                                retry_delay = RETRY_BASE_DELAY;
                                 retry_attempts = 0;
                             }
                             Err(error) => {

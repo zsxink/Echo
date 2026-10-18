@@ -21,6 +21,8 @@ struct WatchingProvisioner {
     script: Mutex<WatchScript>,
     release: Mutex<mpsc::Receiver<()>>,
     release_sender: mpsc::Sender<()>,
+    /// Watches that must fail before the scripted outcome is served.
+    failures: Mutex<usize>,
 }
 
 impl WatchingProvisioner {
@@ -41,8 +43,14 @@ impl WatchingProvisioner {
             }),
             release: Mutex::new(release),
             release_sender,
+            failures: Mutex::new(0),
         });
         (provisioner, completed)
+    }
+
+    /// Fail this many watches before serving the scripted outcome.
+    fn fail_watches(&self, count: usize) {
+        *self.failures.lock().unwrap_or_else(PoisonError::into_inner) = count;
     }
 
     fn watch_calls(&self) -> usize {
@@ -85,6 +93,16 @@ impl SyncProvisioner for WatchingProvisioner {
             script.calls += 1;
             (script.outcomes[index], script.hold)
         };
+        {
+            let mut failures = self.failures.lock().unwrap_or_else(PoisonError::into_inner);
+            if *failures > 0 {
+                *failures -= 1;
+                drop(failures);
+                // A recycled keep-alive connection looks exactly like this: the
+                // request dies without a response even though the host is up.
+                return Err(SyncRuntimeError::SyncConnectionFailed);
+            }
+        }
         if hold {
             // Stand in for the held HTTP request: end on cancellation or
             // release, never on a timer, so the test controls the cadence. The
@@ -189,6 +207,28 @@ fn a_watch_outcome_alone_drives_the_next_cycle() {
         .recv_timeout(Duration::from_secs(2))
         .expect("a watch outcome must schedule a cycle on its own");
     assert!(provisioner.watch_calls() >= 1);
+    runtime.0.stop().unwrap();
+}
+
+#[test]
+fn a_single_watch_transport_failure_is_retried_before_it_is_reported() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = Arc::new(SqliteDatabase::open(directory.path().join("echo.sqlite")).unwrap());
+    let (provisioner, cycles) =
+        WatchingProvisioner::new(database, vec![WatchOutcome::Advanced], true);
+    provisioner.fail_watches(1);
+    let runtime = peer_runtime(Arc::clone(&provisioner));
+    runtime.0.start_sync_loop(SyncRole::Peer).unwrap();
+
+    // The initial wake runs a cycle; the next watch then fails the way a
+    // recycled keep-alive connection does, with no response at all.
+    cycles.recv_timeout(Duration::from_secs(2)).unwrap();
+    wait_for_watch(&provisioner, 2);
+    assert_ne!(
+        runtime.0.inner.lock().unwrap().status.state,
+        SyncState::Failed,
+        "one dropped connection must not be published as a sync failure"
+    );
     runtime.0.stop().unwrap();
 }
 

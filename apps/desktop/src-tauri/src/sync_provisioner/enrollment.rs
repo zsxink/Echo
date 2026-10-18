@@ -30,18 +30,18 @@ pub(super) fn prepare_enrollment_root(
     let mut created_echo = false;
     match std::fs::symlink_metadata(&echo) {
         Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
-        Ok(_) => return Err(SyncRuntimeError::LibraryUnavailable),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             std::fs::create_dir(&echo).map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
             created_echo = true;
         }
-        Err(_) => return Err(SyncRuntimeError::LibraryUnavailable),
+        // Anything else — a file, a symlink, or an unreadable entry — cannot
+        // hold Echo's own catalog directory.
+        _ => return Err(SyncRuntimeError::LibraryUnavailable),
     }
 
     let manifest_path = echo.join(EMPTY_LIBRARY_MANIFEST);
     match std::fs::symlink_metadata(&manifest_path) {
         Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {}
-        Ok(_) => return Err(SyncRuntimeError::LibraryUnavailable),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             std::fs::OpenOptions::new()
                 .write(true)
@@ -54,7 +54,7 @@ pub(super) fn prepare_enrollment_root(
                 })
                 .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
         }
-        Err(_) => return Err(SyncRuntimeError::LibraryUnavailable),
+        _ => return Err(SyncRuntimeError::LibraryUnavailable),
     }
 
     // Existing Echo catalogs remain joinable when their local staging area
@@ -63,12 +63,11 @@ pub(super) fn prepare_enrollment_root(
     let temporary = echo.join("tmp");
     match std::fs::symlink_metadata(&temporary) {
         Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
-        Ok(_) => return Err(SyncRuntimeError::LibraryUnavailable),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound && created_echo => {
             std::fs::create_dir(&temporary).map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(_) => return Err(SyncRuntimeError::LibraryUnavailable),
+        _ => return Err(SyncRuntimeError::LibraryUnavailable),
     }
 
     let marker_path = temporary.join(EMPTY_LIBRARY_STAGING_MARKER);

@@ -265,14 +265,19 @@ fn map_pairing_client_error(error: echo_sync::client::ClientError) -> SyncRuntim
             SyncRuntimeError::PairingHostUnavailable
         }
         ClientError::HostRejected(_) => SyncRuntimeError::PairingRequestRejected,
-        ClientError::Transport(_) => SyncRuntimeError::PairingConnectionFailed,
-        ClientError::InvalidResponse(_) | ClientError::InvalidResponseBody => {
-            SyncRuntimeError::PairingProtocolFailed
+        ClientError::Transport(transport) => {
+            // Keep the user-facing error stable, but retain the reqwest source
+            // chain in the local diagnostic log. Without this, TCP refusal,
+            // Local Network privacy denial, timeout, and TLS handshake errors
+            // all collapse into the same message and cannot be distinguished.
+            tracing::warn!(error = ?transport, "LAN pairing transport failed");
+            SyncRuntimeError::PairingConnectionFailed
         }
-        ClientError::InvalidEndpoint | ClientError::InvalidTlsConfiguration(_) => {
-            SyncRuntimeError::PairingProtocolFailed
-        }
-        ClientError::InvalidMutation(_)
+        ClientError::InvalidResponse(_)
+        | ClientError::InvalidResponseBody
+        | ClientError::InvalidEndpoint
+        | ClientError::InvalidTlsConfiguration(_)
+        | ClientError::InvalidMutation(_)
         | ClientError::InvalidSnapshot(_)
         | ClientError::InvalidCommitChain
         | ClientError::RemoteApply(_) => SyncRuntimeError::PairingProtocolFailed,

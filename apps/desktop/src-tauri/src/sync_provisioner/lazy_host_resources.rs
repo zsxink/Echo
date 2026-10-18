@@ -1,5 +1,6 @@
 //! Materialize host-local shared resources only when a peer requests their bytes.
 
+#[allow(clippy::wildcard_imports)]
 use super::*;
 use std::fs::File;
 

@@ -9,6 +9,7 @@ use echo_core::domain::sync::{
     MutationId, ObjectKey, ResourceDigest, SharedResourceKind, SharedResourceManifest, SyncBinding,
 };
 use echo_core::infrastructure::filesystem::staging::StagingMarker;
+use echo_sync::resource_transfer::{DownloadChunk, TransferError, TransferProgress};
 
 fn prepared_empty_library(root: &Path) {
     std::fs::create_dir_all(root.join("echo/tmp")).unwrap();
@@ -558,6 +559,105 @@ impl echo_core::application::ports::PublicationCheckpointPort for ObservePullBef
     }
 }
 
+/// Counts host-side `prepare` requests, so a test can prove the replica stops
+/// re-declaring resources whose bytes the host already confirmed.
+struct CountingResources {
+    inner: FileResourceStore,
+    prepares: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl ResourceTransferPort for CountingResources {
+    fn prepare(
+        &self,
+        owner: DeviceId,
+        request: &PrepareResource,
+    ) -> Result<TransferProgress, TransferError> {
+        self.prepares.fetch_add(1, Ordering::Relaxed);
+        self.inner.prepare(owner, request)
+    }
+
+    fn write_chunk(
+        &self,
+        binding: SyncBinding,
+        owner: DeviceId,
+        upload: &str,
+        index: u32,
+        hash: &str,
+        bytes: &[u8],
+    ) -> Result<TransferProgress, TransferError> {
+        self.inner
+            .write_chunk(binding, owner, upload, index, hash, bytes)
+    }
+
+    fn complete(
+        &self,
+        binding: SyncBinding,
+        owner: DeviceId,
+        upload: &str,
+    ) -> Result<TransferProgress, TransferError> {
+        self.inner.complete(binding, owner, upload)
+    }
+
+    fn verify_complete(
+        &self,
+        binding: SyncBinding,
+        resource: &ResourceRefDto,
+    ) -> Result<(), TransferError> {
+        self.inner.verify_complete(binding, resource)
+    }
+
+    fn download(
+        &self,
+        binding: SyncBinding,
+        hash: &str,
+        offset: u64,
+        length: usize,
+    ) -> Result<DownloadChunk, TransferError> {
+        self.inner.download(binding, hash, offset, length)
+    }
+}
+
+/// Counts host-side commit-page reads so a test can bound what one idle cycle
+/// costs the host's request budget.
+struct CountingLedger {
+    inner: Arc<SqliteDatabase>,
+    pulls: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl HostCommitLedgerPort for CountingLedger {
+    fn stage_confirmation(
+        &self,
+        binding: SyncBinding,
+        candidate: &MutationCandidate,
+    ) -> Result<echo_core::application::ports::StagedConfirmation, echo_core::error::Error> {
+        self.inner.stage_confirmation(binding, candidate)
+    }
+
+    fn mark_published(&self, checkpoint: CommitCheckpoint) -> Result<(), echo_core::error::Error> {
+        self.inner.mark_published(checkpoint)
+    }
+
+    fn pending_publications(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<echo_core::application::ports::StagedConfirmation>, echo_core::error::Error>
+    {
+        self.inner.pending_publications(limit)
+    }
+
+    fn published_commits_after(
+        &self,
+        binding: SyncBinding,
+        after: CommitSeq,
+        expected_digest: [u8; 32],
+        limit: usize,
+    ) -> Result<Vec<echo_core::application::ports::PublishedCommit>, echo_core::error::Error> {
+        self.pulls.fetch_add(1, Ordering::Relaxed);
+        self.inner
+            .published_commits_after(binding, after, expected_digest, limit)
+    }
+}
+
 struct LanMergeFixture {
     directory: tempfile::TempDir,
     host: Arc<SqliteDatabase>,
@@ -570,6 +670,8 @@ struct LanMergeFixture {
     peer: ProvisionedPeer,
     endpoint: Url,
     resources: Arc<FileResourceStore>,
+    host_prepares: Arc<std::sync::atomic::AtomicUsize>,
+    host_pulls: Arc<std::sync::atomic::AtomicUsize>,
     checkpoint: Arc<ObservePullBeforePush>,
     server: tokio::task::JoinHandle<std::io::Result<()>>,
 }
@@ -629,20 +731,25 @@ impl LanMergeFixture {
         host.authorize_sync_peer(binding, peer_device, "Test peer".into(), "test-only".into())
             .unwrap();
         let token = "temporary-loopback-test-token-123456789";
+        let host_prepares = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let host_pulls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let api = HostApiState::new(
             binding,
             vec![PeerCredential {
                 device_id: peer_device,
                 bearer_token: token.as_bytes().to_vec(),
             }],
-            host.clone(),
+            Arc::new(CountingLedger {
+                inner: Arc::clone(&host),
+                pulls: Arc::clone(&host_pulls),
+            }),
             checkpoint.clone(),
         )
         .unwrap()
         .with_authorization(host.clone())
         .with_snapshots(host.clone())
-        .with_resources(Arc::new(
-            FileResourceStore::new(
+        .with_resources(Arc::new(CountingResources {
+            inner: FileResourceStore::new(
                 directory
                     .path()
                     .canonicalize()
@@ -650,7 +757,8 @@ impl LanMergeFixture {
                     .join("host-resources"),
             )
             .unwrap(),
-        ));
+            prepares: Arc::clone(&host_prepares),
+        }));
         let certificate = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
         let certificate_der = certificate.cert.der().to_vec();
         let tls = tls13_server_config(
@@ -704,6 +812,8 @@ impl LanMergeFixture {
             peer,
             endpoint,
             resources,
+            host_prepares,
+            host_pulls,
             checkpoint,
             server,
         }
@@ -827,6 +937,48 @@ async fn native_merge_pulls_host_before_uploading_and_preserves_local_song() {
 }
 
 #[tokio::test]
+/// A steady idle cycle must reach the host once, not three times. The catch-up
+/// pull that used to open every cycle was redundant with the pull inside
+/// `synchronize_once`, and the closing pull only exists for cycles that pushed
+/// something. Empty pages are free individually and expensive in aggregate:
+/// this is the per-cycle tax a fallback (5 s) peer paid 12 times a minute.
+async fn an_idle_cycle_reaches_the_host_exactly_once() {
+    let fixture = LanMergeFixture::new().await;
+    fixture
+        .provisioner
+        .merge_peer_library(
+            &fixture.peer,
+            &fixture.endpoint,
+            &fixture.resources,
+            fixture.root,
+        )
+        .await
+        .unwrap();
+    assert!(
+        SongRepository::by_id(fixture.replica.as_ref(), fixture.host_song)
+            .unwrap()
+            .is_some(),
+        "dropping the opening pull must not drop the host's commits"
+    );
+    let after_warmup = fixture.host_pulls.load(Ordering::Relaxed);
+    fixture
+        .provisioner
+        .merge_peer_library(
+            &fixture.peer,
+            &fixture.endpoint,
+            &fixture.resources,
+            fixture.root,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        fixture.host_pulls.load(Ordering::Relaxed) - after_warmup,
+        1,
+        "a caught-up cycle reads one commit page, not one per phase"
+    );
+}
+
+#[tokio::test]
 async fn native_pull_drains_more_than_one_commit_page_without_losing_local_work() {
     use echo_core::domain::entities::Song;
     use echo_core::domain::ids::{RelativeMediaPath, Revision, SongId};
@@ -863,7 +1015,7 @@ async fn native_pull_drains_more_than_one_commit_page_without_losing_local_work(
     };
     fixture
         .provisioner
-        .pull_host_changes(&fixture.peer, &fixture.endpoint, &queue, &fixture.resources)
+        .pull_host_changes(&fixture.peer, &fixture.endpoint, &queue)
         .await
         .unwrap();
     assert_eq!(
@@ -991,6 +1143,165 @@ async fn native_enrollment_persists_host_manifests_before_downloading_audio() {
         .is_err());
 }
 
+/// An incremental commit page must land its catalog objects even when the host
+/// cannot serve the referenced bytes yet. Media is attached afterwards from the
+/// durable manifests, exactly like snapshot enrollment, so a stalled transfer
+/// cannot park song and playlist updates behind it.
+#[tokio::test]
+async fn native_incremental_applies_objects_before_audio_arrives() {
+    use echo_core::domain::ids::SongId;
+    let fixture = LanMergeFixture::new().await;
+    let song = SongId::new();
+    let manifest = SharedResourceManifest::new(
+        SharedResourceKind::Audio,
+        ResourceDigest::from_bytes(*blake3::hash(b"incremental bytes not on host").as_bytes()),
+        18,
+        "audio/flac".into(),
+        &format!("media/{song}.flac"),
+    )
+    .unwrap();
+    publish_test_song(
+        &fixture.host,
+        fixture.peer.binding,
+        song,
+        2,
+        Some(fixture.host_mutation),
+        vec![manifest.clone()],
+    );
+
+    let queue = ScopedLocalQueue {
+        database: fixture.replica.as_ref(),
+        root: fixture.root,
+    };
+    let pulled = tokio::time::timeout(
+        Duration::from_secs(5),
+        fixture
+            .provisioner
+            .pull_host_changes(&fixture.peer, &fixture.endpoint, &queue),
+    )
+    .await
+    .expect("object application must not wait for the media transfer");
+    pulled.unwrap();
+
+    // The object exists, is explicitly unavailable rather than absent, and its
+    // verified bytes are still outstanding for publication to attach later.
+    let projected = SongRepository::by_id(fixture.replica.as_ref(), song)
+        .unwrap()
+        .expect("incremental page must materialize the song without its bytes");
+    assert!(
+        !projected.availability().is_playable(),
+        "a confirmed remote song without its bytes must stay unavailable"
+    );
+    let sets = fixture
+        .replica
+        .pending_remote_resource_sets(fixture.root)
+        .unwrap();
+    assert_eq!(sets.len(), 1);
+    assert_eq!(sets[0].0, ObjectKey::Song(song));
+    assert_eq!(sets[0].1[0].manifest, manifest);
+    assert!(fixture
+        .resources
+        .verify_complete(fixture.peer.binding, &ResourceRefDto::from(&manifest))
+        .is_err());
+}
+
+/// A resource is prepared once per session. The unacked mutation keeps
+/// declaring it every cycle, so without the session cache a 512-deep backlog
+/// re-sends `prepare` for the whole queue each round and re-reads each blob
+/// twice to re-derive BLAKE3.
+#[tokio::test]
+async fn native_upload_prepares_a_resource_once_until_the_host_acks_it() {
+    use echo_core::domain::entities::Song;
+    use echo_core::domain::ids::{RelativeMediaPath, Revision, SongId};
+    let fixture = LanMergeFixture::new().await;
+    let song = Song::new(
+        SongId::new(),
+        fixture.root,
+        RelativeMediaPath::new("media/upload.flac").unwrap(),
+        Revision::INITIAL,
+    );
+    let bytes = b"uploadable audio bytes";
+    let mut song = song;
+    song.apply_scan_facts(
+        blake3::hash(bytes).to_hex().to_string(),
+        bytes.len() as u64,
+        1,
+        echo_core::domain::media::AudioFormat::Flac,
+    );
+    SongRepository::upsert(fixture.replica.as_ref(), &song).unwrap();
+    std::fs::write(
+        fixture.directory.path().join("peer/media/upload.flac"),
+        bytes,
+    )
+    .unwrap();
+    fixture
+        .replica
+        .ensure_replica_sync_baseline(fixture.peer.binding, fixture.root)
+        .unwrap();
+    let device = DeviceId::from_uuid(fixture.replica.current_device_id().as_uuid());
+    for manifest in fixture
+        .replica
+        .local_sync_resource_manifests(fixture.root)
+        .unwrap()
+    {
+        fixture
+            .resources
+            .import_reader(
+                device,
+                &PrepareResource {
+                    binding: fixture.peer.binding,
+                    resource: ResourceRefDto::from(&manifest),
+                },
+                &mut std::io::Cursor::new(bytes),
+            )
+            .unwrap();
+    }
+    let pending = fixture.replica.pending_local_mutations(512).unwrap();
+    assert!(!pending.is_empty());
+    assert!(pending
+        .iter()
+        .flat_map(|mutation| &mutation.resource_refs)
+        .any(|resource| resource.kind == SharedResourceKind::Audio));
+    // The baseline enqueues one mutation per local projection, so several of
+    // them re-declare the same audio resource. Each distinct resource is
+    // prepared exactly once.
+    let distinct: std::collections::HashSet<_> = pending
+        .iter()
+        .flat_map(|mutation| &mutation.resource_refs)
+        .map(|resource| resource.digest.to_hex())
+        .collect();
+    assert!(!distinct.is_empty());
+
+    fixture
+        .provisioner
+        .upload_pending_resources(
+            &fixture.peer,
+            &fixture.endpoint,
+            &fixture.resources,
+            fixture.root,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        fixture.host_prepares.load(Ordering::Relaxed),
+        distinct.len()
+    );
+
+    // The host has not acknowledged the mutation, so the next cycle selects the
+    // same resource again; it must not cost another request or another hash.
+    fixture
+        .provisioner
+        .upload_pending_resources(
+            &fixture.peer,
+            &fixture.endpoint,
+            &fixture.resources,
+            fixture.root,
+        )
+        .await
+        .unwrap();
+    assert_eq!(fixture.host_prepares.load(Ordering::Relaxed), 1);
+}
+
 /// Pull until the replica sits at the host's head, so the next commit page is
 /// empty and the host holds it open for the watch under test.
 async fn pull_replica_to_host_head(fixture: &LanMergeFixture) {
@@ -1000,7 +1311,7 @@ async fn pull_replica_to_host_head(fixture: &LanMergeFixture) {
     };
     fixture
         .provisioner
-        .pull_host_changes(&fixture.peer, &fixture.endpoint, &queue, &fixture.resources)
+        .pull_host_changes(&fixture.peer, &fixture.endpoint, &queue)
         .await
         .unwrap();
 }
