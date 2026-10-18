@@ -11,6 +11,46 @@ use uuid::Uuid;
 use super::ids::{PlaylistId, PlaylistItemId, Revision, SongId};
 pub use super::sync_binding::{CommitCheckpoint, SyncBinding};
 
+/// Audio properties are probed from the file and can be missing on one
+/// device even when both devices have the exact same media bytes. They are
+/// useful metadata, but do not represent competing user edits.
+const SONG_DERIVED_AUDIO_FIELDS: [&str; 4] = [
+    "bitrate_bps",
+    "sample_rate_hz",
+    "channels",
+    "bits_per_sample",
+];
+
+fn merge_song_derived_audio_facts(winner: &mut Value, other: &Value) {
+    let (Some(winner), Some(other)) = (winner.as_object_mut(), other.as_object()) else {
+        return;
+    };
+    for field in SONG_DERIVED_AUDIO_FIELDS {
+        let missing = winner.get(field).is_none_or(Value::is_null);
+        if missing {
+            if let Some(value) = other.get(field).filter(|value| !value.is_null()) {
+                winner.insert(field.to_owned(), value.clone());
+            }
+        }
+    }
+}
+
+fn same_song_user_data(left: &Value, right: &Value) -> bool {
+    let mut left = left.clone();
+    let mut right = right.clone();
+    if let Some(object) = left.as_object_mut() {
+        for field in SONG_DERIVED_AUDIO_FIELDS {
+            object.remove(field);
+        }
+    }
+    if let Some(object) = right.as_object_mut() {
+        for field in SONG_DERIVED_AUDIO_FIELDS {
+            object.remove(field);
+        }
+    }
+    left == right
+}
+
 macro_rules! uuid_identity {
     ($name:ident) => {
         #[derive(
@@ -574,6 +614,16 @@ pub fn confirm_candidate_at(
         Some(existing) if !candidate_wins => existing.payload.clone(),
         _ => candidate.payload.clone(),
     };
+    if matches!(candidate.object, ObjectKey::Song(_)) {
+        if let Some(existing) = current {
+            let other_payload = if candidate_wins {
+                &existing.payload
+            } else {
+                &candidate.payload
+            };
+            merge_song_derived_audio_facts(&mut confirmed_payload, other_payload);
+        }
+    }
     let aliases = if is_tombstone {
         Vec::new()
     } else if let ObjectKey::Playlist(playlist_id) = candidate.object {
@@ -615,6 +665,7 @@ pub fn confirm_candidate_at(
             ObjectKey::PlayStats(_) => {
                 losing_payload.get("by_device") != confirmed_payload.get("by_device")
             }
+            ObjectKey::Song(_) => !same_song_user_data(losing_payload, &confirmed_payload),
             _ => losing_payload != &confirmed_payload,
         };
         ((stale_base || !candidate_wins)

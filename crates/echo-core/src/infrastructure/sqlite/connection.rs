@@ -21,6 +21,8 @@ use super::support::{now_ms, storage};
 mod migrations {
     pub const RESOURCE_RETENTION: &str = include_str!("migrations/0023_resource_retention.sql");
     pub const OBJECT_CHANGE_TIME: &str = include_str!("migrations/0024_object_change_time.sql");
+    pub const IGNORE_DERIVED_SONG_AUDIO_CONFLICTS: &str =
+        include_str!("migrations/0025_ignore_derived_song_audio_conflicts.sql");
     pub const INITIAL: &str = include_str!("migrations/0001_initial.sql");
     pub const LIBRARY_ASSETS: &str = include_str!("migrations/0002_library_assets.sql");
     pub const ROOT_WRITE_SAFETY: &str = include_str!("migrations/0003_root_write_safety.sql");
@@ -121,6 +123,7 @@ pub(crate) fn apply_migrations(connection: &mut Connection) -> Result<(), Error>
             (21, migrations::HOST_RECOVERY),
             (23, migrations::RESOURCE_RETENTION),
             (24, migrations::OBJECT_CHANGE_TIME),
+            (25, migrations::IGNORE_DERIVED_SONG_AUDIO_CONFLICTS),
         ],
     )
 }
