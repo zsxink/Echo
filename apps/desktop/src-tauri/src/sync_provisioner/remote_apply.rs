@@ -127,6 +127,17 @@ pub(super) fn ensure_candidate_root(
     mutation: &MutationCandidate,
 ) -> Result<(), SyncRuntimeError> {
     use echo_core::application::ports::{PlaylistRepository, SongRepository};
+    // A typed deletion removes its object row on purpose, so a live lookup can
+    // never answer whether it belongs here: `SongRepository::by_id` and the
+    // playlist list are both already empty by the time it is pushed. Candidate
+    // selection scopes every mutation by the root recorded at enqueue time
+    // (`sync_mutations.local_root_uuid`), and this function is only ever called
+    // on rows that selection returned, so a deletion is authorized by its own
+    // durable queue entry instead of by a vanished object. Rejecting it here
+    // would wedge the whole push loop on the first delete.
+    if mutation.payload == serde_json::json!({"tombstone": true}) {
+        return Ok(());
+    }
     let belongs = match mutation.object {
         ObjectKey::Song(id)
         | ObjectKey::Favorite(id)

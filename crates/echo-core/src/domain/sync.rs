@@ -360,40 +360,83 @@ fn merge_playlist_append(
     Ok((Value::Array(combined), aliases))
 }
 
+/// One decoded play-stats payload. `claimant` is `None` for a payload written
+/// before the record shape was complete: that shape could not attest
+/// `updated_by_device_id`, so only the authenticated origin speaks for it.
+struct DecodedPlayStats {
+    declared_song: Option<Uuid>,
+    claimant: Option<Uuid>,
+    buckets: std::collections::BTreeMap<Uuid, u64>,
+}
+
+/// Decode one play-stats payload.
+///
+/// A payload written after the current release carries the full
+/// [`super::library::PlayStatsRecord`]; one written by an earlier release (or
+/// queued before the upgrade) only carried `{song_uuid, by_device}`. Both are
+/// accepted so an existing library is not permanently poisoned, but the strict
+/// shape is preferred: only it can attest `updated_by_device_id`.
+fn decode_play_stats(payload: &Value) -> Result<DecodedPlayStats, ConfirmationError> {
+    if let Ok(record) = serde_json::from_value::<super::library::PlayStatsRecord>(payload.clone()) {
+        return Ok(DecodedPlayStats {
+            declared_song: Some(record.song_uuid),
+            claimant: Some(record.updated_by_device_id.as_uuid()),
+            buckets: record.by_device,
+        });
+    }
+    let declared_song = payload
+        .get("song_uuid")
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok());
+    let buckets = payload
+        .get("by_device")
+        .and_then(|value| {
+            serde_json::from_value::<std::collections::BTreeMap<Uuid, u64>>(value.clone()).ok()
+        })
+        .ok_or(ConfirmationError::WrongObject)?;
+    Ok(DecodedPlayStats {
+        declared_song,
+        claimant: None,
+        buckets,
+    })
+}
+
 fn merge_authorized_play_stats(
     current: Option<&ConfirmedObject>,
     candidate: &MutationCandidate,
     song: SongId,
 ) -> Result<Value, ConfirmationError> {
-    let proposed: super::library::PlayStatsRecord =
-        serde_json::from_value(candidate.payload.clone())
-            .map_err(|_| ConfirmationError::WrongObject)?;
-    if proposed.song_uuid != song.as_uuid()
-        || proposed.updated_by_device_id.as_uuid() != candidate.origin_device_id.as_uuid()
+    let proposed = decode_play_stats(&candidate.payload)?;
+    if proposed
+        .declared_song
+        .is_some_and(|declared| declared != song.as_uuid())
+    {
+        return Err(ConfirmationError::WrongObject);
+    }
+    if proposed
+        .claimant
+        .is_some_and(|declared| declared != candidate.origin_device_id.as_uuid())
     {
         return Err(ConfirmationError::WrongOrigin);
     }
-    let previous = current.and_then(|value| {
-        serde_json::from_value::<super::library::PlayStatsRecord>(value.payload.clone()).ok()
-    });
-    for (device, count) in &proposed.by_device {
+    // A confirmed row written by an earlier release only recorded buckets; it
+    // still authorizes exactly the buckets it recorded, and nothing else.
+    let previous = current.and_then(|value| decode_play_stats(&value.payload).ok());
+    for (device, count) in &proposed.buckets {
         if *device == candidate.origin_device_id.as_uuid() {
             continue;
         }
         let confirmed = previous
             .as_ref()
-            .and_then(|value| value.by_device.get(device))
+            .and_then(|decoded| decoded.buckets.get(device))
             .copied()
             .unwrap_or(0);
         if *count > confirmed {
             return Err(ConfirmationError::UnauthorizedPlayStatsBucket);
         }
     }
-    let mut merged = previous
-        .as_ref()
-        .map(|value| value.by_device.clone())
-        .unwrap_or_default();
-    for (device, count) in proposed.by_device {
+    let mut merged = previous.map(|decoded| decoded.buckets).unwrap_or_default();
+    for (device, count) in proposed.buckets {
         merged
             .entry(device)
             .and_modify(|confirmed| *confirmed = (*confirmed).max(count))
@@ -467,7 +510,11 @@ pub fn confirm_candidate(
                 replaced_version: old.version,
                 replaced_payload: old.payload.clone(),
                 accepted_mutation_id: candidate.mutation_id,
-                accepted_payload: candidate.payload.clone(),
+                // The accepted value is the merged canonical object, not the
+                // submitted sketch: a playlist append is merged against the
+                // confirmed membership, and a recovery UI that echoed the raw
+                // candidate would silently drop every member it never saw.
+                accepted_payload: confirmed_payload.clone(),
             }
         })
     });

@@ -382,6 +382,7 @@ impl NativeSyncProvisioner {
             .map(Arc::new)
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
         stores.insert(binding, Arc::downgrade(&store));
+        drop(stores);
         Ok(store)
     }
 }
@@ -790,16 +791,19 @@ impl NativeSyncProvisioner {
             .detach_lan_sync_context(root)
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
         if let Some(binding) = detached_binding {
-            match self.local_resource_store(binding).and_then(|store| {
-                store
-                    .clear_binding(binding)
-                    .map_err(|_| SyncRuntimeError::LibraryUnavailable)
-            }) {
-                Ok(()) => {}
-                Err(_) => tracing::warn!(
+            if self
+                .local_resource_store(binding)
+                .and_then(|store| {
+                    store
+                        .clear_binding(binding)
+                        .map_err(|_| SyncRuntimeError::LibraryUnavailable)
+                })
+                .is_err()
+            {
+                tracing::warn!(
                     target: "echo_desktop::sync",
                     "detached sync resource cache cleanup failed"
-                ),
+                );
             }
         }
         for handle in credentials {
@@ -1610,11 +1614,11 @@ fn local_resource_candidates(
 }
 
 fn verified_local_resource(
-    mut candidates: Vec<File>,
+    candidates: Vec<File>,
     expected_hash: &str,
     expected_length: u64,
 ) -> Result<Option<File>, SyncRuntimeError> {
-    for mut file in candidates.drain(..) {
+    for mut file in candidates {
         if verify_local_resource(&mut file, expected_hash, expected_length)? {
             return Ok(Some(file));
         }

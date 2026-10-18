@@ -10,9 +10,9 @@ use crate::application::ports::{
 };
 use crate::domain::ids::LibraryRootId;
 use crate::domain::sync::{
-    confirm_candidate, CommitCheckpoint, CommitSeq, Confirmation, ConfirmationError,
-    ConfirmedObject, DeviceId, MutationCandidate, MutationId, ObjectKey, ObjectVersion,
-    OriginCursor, SyncBinding,
+    check_candidate_against_tombstone, confirm_candidate, CommitCheckpoint, CommitSeq,
+    Confirmation, ConfirmationError, ConfirmedObject, DeviceId, FinalTombstone, MutationCandidate,
+    MutationId, ObjectKey, ObjectVersion, OriginCursor, SyncBinding, TombstoneDecisionError,
 };
 use crate::error::Error;
 
@@ -432,14 +432,7 @@ impl HostCommitLedgerPort for SqliteDatabase {
         binding: SyncBinding,
         candidate: &MutationCandidate,
     ) -> Result<StagedConfirmation, Error> {
-        super::sync_manifests::validate(&candidate.resource_refs)?;
-        if candidate.payload == serde_json::json!({"tombstone": true})
-            && !candidate.resource_refs.is_empty()
-        {
-            return Err(Error::conflict(
-                "deleted objects cannot declare resource references",
-            ));
-        }
+        validate_candidate_payload(candidate)?;
         let candidate = candidate.clone();
         self.writer.run(move |connection| {
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
@@ -478,7 +471,7 @@ impl HostCommitLedgerPort for SqliteDatabase {
             ensure_no_pending_predecessor(&tx, None)?;
 
             let (kind, object_uuid) = object_identity(candidate.object);
-            let (current_is_tombstone, current) = load_confirmed_object(&tx, candidate.object)?;
+            let (already_deleted, current) = load_confirmed_object(&tx, &candidate)?;
             let current = exclude_final_playlist_members(&tx, candidate.object, current)?;
             let cursor = load_origin_cursor(&tx, candidate.origin_device_id)?;
             let cursor = recover_adjacent_terminal_predecessor(
@@ -508,7 +501,7 @@ impl HostCommitLedgerPort for SqliteDatabase {
                 return Ok(staged);
             }
             let confirmed = decision.map_err(|error| Error::conflict(format!("mutation rejected: {error:?}")))?;
-            if current_is_tombstone {
+            if already_deleted {
                 let staged =
                     stage_already_deleted(&tx, &origin, &candidate, &payload_digest, &confirmed)?;
                 tx.commit().map_err(storage)?;
@@ -806,6 +799,20 @@ fn prior_confirmation(
     Ok(Some(staged))
 }
 
+/// Reject malformed event shapes before any identity work: shared resources are
+/// only meaningful for a live object, never for a typed deletion.
+fn validate_candidate_payload(candidate: &MutationCandidate) -> Result<(), Error> {
+    super::sync_manifests::validate(&candidate.resource_refs)?;
+    if candidate.payload == serde_json::json!({"tombstone": true})
+        && !candidate.resource_refs.is_empty()
+    {
+        return Err(Error::conflict(
+            "deleted objects cannot declare resource references",
+        ));
+    }
+    Ok(())
+}
+
 /// A confirmed object that is already tombstoned can never be resurrected, so
 /// the acceptance is downgraded to a final rejection. It still consumes a
 /// correctly chained origin event: otherwise every later event from that device
@@ -1078,26 +1085,53 @@ fn encode_commit(
     Ok((canonical_json, commit_digest))
 }
 
+/// Read the confirmed state for the candidate's typed identity.
+///
+/// The tombstone question is answered by the domain predicate rather than by a
+/// local boolean, so the ledger cannot drift from the deletion contract. The
+/// tombstone and the live object are mutually exclusive, so one read serves
+/// both answers.
 fn load_confirmed_object(
     tx: &rusqlite::Transaction<'_>,
-    object: ObjectKey,
+    candidate: &MutationCandidate,
 ) -> Result<(bool, Option<ConfirmedObject>), Error> {
+    let object = candidate.object;
     let (kind, object_uuid) = object_identity(object);
-    let current_row: Option<(i64, i64, Option<String>, String, bool)> = tx.query_row(
-                "SELECT v.object_version, v.commit_seq, v.payload_json, c.origin_device_id, v.is_tombstone FROM sync_object_versions v JOIN sync_commits c ON c.commit_seq=v.commit_seq WHERE v.object_type = ?1 AND v.object_uuid = ?2",
+    let current_row: Option<(i64, i64, Option<String>, String, bool, String)> = tx.query_row(
+                "SELECT v.object_version, v.commit_seq, v.payload_json, c.origin_device_id, v.is_tombstone, c.mutation_id FROM sync_object_versions v JOIN sync_commits c ON c.commit_seq=v.commit_seq WHERE v.object_type = ?1 AND v.object_uuid = ?2",
                 params![kind, object_uuid],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
             ).optional().map_err(storage)?;
-    let current_is_tombstone = current_row.as_ref().is_some_and(|row| row.4);
+    let commit_version = |version: i64| -> Result<ObjectVersion, Error> {
+        u64::try_from(version)
+            .map(CommitSeq::from_u64)
+            .map(ObjectVersion::from_commit_seq)
+            .map_err(storage)
+    };
+    // The tombstone is the typed identity, not a boolean budget: the pure
+    // decision function below owns "may this event still touch this object".
+    let tombstone = current_row
+        .as_ref()
+        .filter(|row| row.4)
+        .map(
+            |(version, _sequence, _payload, _author, _tombstone, mutation_id)| -> Result<FinalTombstone, Error> {
+                Ok(FinalTombstone {
+                    object,
+                    version: commit_version(*version)?,
+                    mutation_id: MutationId::from_uuid(
+                        uuid::Uuid::parse_str(mutation_id).map_err(storage)?,
+                    ),
+                })
+            },
+        )
+        .transpose()?;
     let current = current_row
         .filter(|row| !row.4)
         .map(
-            |(version, _sequence, payload, author, _tombstone)| -> Result<ConfirmedObject, Error> {
+            |(version, _sequence, payload, author, _tombstone, _mutation)| -> Result<ConfirmedObject, Error> {
                 Ok(ConfirmedObject {
                     object,
-                    version: ObjectVersion::from_commit_seq(CommitSeq::from_u64(
-                        u64::try_from(version).map_err(storage)?,
-                    )),
+                    version: commit_version(version)?,
                     origin_device_id: DeviceId::from_uuid(
                         uuid::Uuid::parse_str(&author).map_err(storage)?,
                     ),
@@ -1111,7 +1145,11 @@ fn load_confirmed_object(
             },
         )
         .transpose()?;
-    Ok((current_is_tombstone, current))
+    let already_deleted = matches!(
+        check_candidate_against_tombstone(candidate, tombstone.as_ref()),
+        Err(TombstoneDecisionError::ObjectAlreadyDeleted)
+    );
+    Ok((already_deleted, current))
 }
 
 fn exclude_final_playlist_members(

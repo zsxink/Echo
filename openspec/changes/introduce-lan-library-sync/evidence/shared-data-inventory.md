@@ -41,3 +41,27 @@ track final delete intent. Remaining implementation is tracked in tasks 3.3–4.
 portable recovery, artwork/sidecar resource manifests and transfer lifecycle,
 plus atomic membership and alias handling. These baseline rows must not be read
 as proof that the remaining resources already synchronize.
+
+## Corrections measured against the baseline (2026-10-18)
+
+The table above is a pre-implementation baseline, so three of its rows no longer
+describe `main`. Each correction below is reproducible from the cited lines.
+
+- **Per-device play counts.** `record_playback` does enqueue a play-stats
+  mutation (`infrastructure/sqlite/mod.rs`, the `KIND_PLAY_STATS` snapshot in the
+  same transaction as the count), and the payload now carries the complete
+  `PlayStatsRecord` — `revision`, `updated_by_device_id`, `hlc`, `song_uuid`,
+  `by_device`. Host merge is `domain/sync.rs::merge_authorized_play_stats`, which
+  accepts the legacy `{song_uuid, by_device}` shape for rows written by earlier
+  releases, so an existing library is not permanently rejected.
+  `sqlite/tests/sync_payloads/deletion_and_stats.rs:87` asserts the producer
+  shape and drains the queue through the host port.
+- **Playlist membership.** `SqliteDatabase::remove_member` enqueues a typed
+  `playlist-item` delete before erasing the row, which is what lets the host's
+  `exclude_final_playlist_members` filter the member out of the append-only
+  union.   `deletion_and_stats.rs:118` asserts one tombstone, `:205` covers a delete
+  queued before its add is acknowledged, and `:234` covers retrying the old
+  delete after the member was re-added.
+- **Playlist deletion.** `PlaylistRepository::delete` enqueues a typed
+  `playlist` delete (guarded by `EXISTS` so a replay stays idempotent) instead of
+  only writing the local tombstone table.

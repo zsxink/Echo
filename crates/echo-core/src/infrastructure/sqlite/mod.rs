@@ -332,20 +332,51 @@ impl SqliteDatabase {
                     )
                     .map_err(storage)?;
                 let counts = read_device_play_counts(&transaction, song)?;
-                let payload = serde_json::json!({ "song_uuid": song.as_uuid(), "by_device": counts });
+                // The host merge deserializes this payload as a complete
+                // `PlayStatsRecord` (design §3 播放次数). A `{song_uuid,
+                // by_device}` sketch is not decodable there and is rejected as
+                // `WrongObject`, so the record shape is built once, here, from
+                // the same helpers the portable record uses.
+                let device_uuid = uuid::Uuid::parse_str(&device_id).map_err(|_| {
+                    crate::error::Error::validation(
+                        crate::error::Subject::Other,
+                        "device id",
+                        "device id is not a UUID",
+                    )
+                })?;
+                let now_secs = u64::try_from(now_ms().max(0)).unwrap_or(0) / 1_000;
+                let hlc = statements::advance_object_hlc(
+                    &transaction,
+                    sync::KIND_PLAY_STATS,
+                    &song.to_string(),
+                    now_secs,
+                )?;
+                // `enqueue_object_snapshot` assigns the next local revision, so
+                // stamp the same ordinal the outbox row will carry.
+                let next_revision = sync::current_outbox_revision(
+                    &transaction,
+                    sync::KIND_PLAY_STATS,
+                    &song.to_string(),
+                )?
+                .saturating_add(1);
+                let payload = serde_json::to_value(
+                    crate::application::portable_materialize::play_stats_record(
+                        crate::domain::library::DeviceId::from_uuid(device_uuid),
+                        hlc,
+                        crate::domain::ids::Revision::from_u64(
+                            u64::try_from(next_revision).unwrap_or(0),
+                        ),
+                        song,
+                        counts,
+                    ),
+                )
+                .map_err(storage)?;
                 statements::enqueue_object_snapshot(
                     &transaction,
                     sync::KIND_PLAY_STATS,
                     &song.to_string(),
                     &payload,
                     sync::OP_UPSERT,
-                )?;
-                let now_secs = u64::try_from(now_ms().max(0)).unwrap_or(0) / 1_000;
-                let _ = statements::advance_object_hlc(
-                    &transaction,
-                    sync::KIND_PLAY_STATS,
-                    &song.to_string(),
-                    now_secs,
                 )?;
             }
             transaction.commit().map_err(storage)?;
@@ -831,17 +862,34 @@ impl PlaylistRepository for SqliteDatabase {
 
     fn delete(&self, id: PlaylistId) -> Result<(), Error> {
         self.writer.run(move |connection| {
-            let revision =
-                sync::current_outbox_revision(connection, sync::KIND_PLAYLIST, &id.to_string())?;
-            // A user-initiated playlist delete is a durable, syncable tombstone
-            // (the deletion itself must propagate cross-device). Replayed deletes
-            // of an already-tombstoned playlist are idempotent.
-            sync::write_tombstone(
-                connection,
-                sync::KIND_PLAYLIST,
-                &id.to_string(),
-                revision.saturating_add(1),
-            )?;
+            // A user-initiated playlist delete is a durable, syncable tombstone:
+            // the deletion itself must propagate cross-device, so it has to
+            // enter the mutation stream and not just the local tombstone table.
+            // The row is still present here, which is what lets the enqueue
+            // resolve the object's owning library root.
+            let payload = serde_json::json!({ "tombstone": true });
+            let exists: bool = connection
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM playlists WHERE uuid = ?1)",
+                    params![id.to_string()],
+                    |row| row.get(0),
+                )
+                .map_err(storage)?;
+            let revision = if exists {
+                sync::enqueue_sync(
+                    connection,
+                    sync::KIND_PLAYLIST,
+                    &id.to_string(),
+                    &serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_owned()),
+                    sync::OP_DELETE,
+                )?
+            } else {
+                sync::current_outbox_revision(connection, sync::KIND_PLAYLIST, &id.to_string())?
+                    .saturating_add(1)
+            };
+            // Replayed deletes of an already-tombstoned playlist stay
+            // idempotent: no second mutation, only the durable local tombstone.
+            sync::write_tombstone(connection, sync::KIND_PLAYLIST, &id.to_string(), revision)?;
             connection
                 .execute(
                     "DELETE FROM playlists WHERE uuid = ?1",
@@ -922,25 +970,36 @@ impl PlaylistRepository for SqliteDatabase {
                 )
                 .optional()
                 .map_err(storage)?;
+            if let Some(member_uuid) = member_uuid {
+                // The membership identity dies here, so this is a typed
+                // playlist-item tombstone rather than a plain playlist edit.
+                // The host only drops a removed member from a concurrent
+                // playlist merge when the member itself is tombstoned
+                // (`sync_ledger::exclude_final_playlist_members`), so the
+                // delete has to reach the ledger. Enqueue before the row is
+                // erased: the object resolves its owning library root through
+                // `playlist_songs`.
+                let payload = serde_json::json!({ "tombstone": true });
+                let revision = sync::enqueue_sync(
+                    connection,
+                    sync::KIND_PLAYLIST_ITEM,
+                    &member_uuid,
+                    &serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_owned()),
+                    sync::OP_DELETE,
+                )?;
+                sync::write_tombstone(
+                    connection,
+                    sync::KIND_PLAYLIST_ITEM,
+                    &member_uuid,
+                    revision,
+                )?;
+            }
             connection
                 .execute(
                     "DELETE FROM playlist_songs WHERE playlist_uuid = ?1 AND song_uuid = ?2",
                     params![playlist.to_string(), song.to_string()],
                 )
                 .map_err(storage)?;
-            if let Some(member_uuid) = member_uuid {
-                let revision = sync::current_outbox_revision(
-                    connection,
-                    sync::KIND_PLAYLIST_ITEM,
-                    &member_uuid,
-                )?;
-                sync::write_tombstone(
-                    connection,
-                    sync::KIND_PLAYLIST_ITEM,
-                    &member_uuid,
-                    revision.saturating_add(1),
-                )?;
-            }
             // Membership removal is a playlist logic change.
             let members_json = statements::playlist_members_excerpt(connection, playlist)?;
             let payload = serde_json::json!({ "members": members_json });

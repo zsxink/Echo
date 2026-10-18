@@ -157,6 +157,9 @@ impl FileResourceStore {
         })
     }
 
+    /// # Errors
+    /// Reports unsafe storage, an unusable transfer directory, or two
+    /// conflicting writers for the same resource.
     /// Reclaim resources from completed transfers after the caller has safely
     /// consumed them. Incomplete uploads are retained for restart recovery.
     /// A blob shared with an incomplete transfer is retained as well.
@@ -164,6 +167,9 @@ impl FileResourceStore {
         self.cleanup_completed_resources(binding, None, None)
     }
 
+    /// # Errors
+    /// Reports unsafe storage, an unusable transfer directory, or two
+    /// conflicting writers for the same resource.
     /// Reclaim selected completed resources after they have been published
     /// into the authoritative library. Other completed transfers are untouched.
     pub fn cleanup_resources(
@@ -174,6 +180,9 @@ impl FileResourceStore {
         self.cleanup_completed_resources(binding, Some(hashes), None)
     }
 
+    /// # Errors
+    /// Reports unsafe storage, an unusable transfer directory, or two
+    /// conflicting writers for the same resource.
     /// Reclaim stale transfers not referenced by any durable library
     /// declaration. Recent uploads are retained because a peer uploads bytes
     /// just before submitting the mutation that declares them.
@@ -237,6 +246,9 @@ impl FileResourceStore {
         Ok(())
     }
 
+    /// # Errors
+    /// Reports unsafe storage, an unusable transfer directory, or two
+    /// conflicting writers for the same resource.
     /// Reclaim completed resources created by one owner, used for host-local
     /// materializations once the serving session has stopped.
     pub fn cleanup_owner(
@@ -247,6 +259,9 @@ impl FileResourceStore {
         self.cleanup_completed_resources(binding, None, Some(owner))
     }
 
+    /// # Errors
+    /// Reports unsafe storage, an unusable transfer directory, or two
+    /// conflicting writers for the same resource.
     /// Remove every resource owned by a binding which has been detached.
     pub fn clear_binding(&self, binding: SyncBinding) -> Result<(), TransferError> {
         let _lock = self.lock.lock().map_err(|_| TransferError::Conflict)?;

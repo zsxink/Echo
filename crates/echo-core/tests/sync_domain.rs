@@ -445,3 +445,178 @@ fn shared_resource_manifest_accepts_only_safe_library_relative_metadata() {
     )
     .is_err());
 }
+
+fn play_stats_buckets(entries: &[(uuid::Uuid, u64)]) -> serde_json::Value {
+    serde_json::to_value(
+        entries
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeMap<_, _>>(),
+    )
+    .expect("bucket map")
+}
+
+/// A confirmed play-stats row written by an earlier release only carried
+/// `{song_uuid, by_device}` — it could not attest `revision` /
+/// `updated_by_device_id` / `hlc`. Such a row must still authorize exactly the
+/// buckets it recorded: otherwise every later merge treats every other device's
+/// confirmed count as an unauthorized raise and rejects the mutation forever.
+#[test]
+fn legacy_play_stats_payload_still_authorizes_the_buckets_it_recorded() {
+    use serde_json::json;
+    let song = SongId::new();
+    let origin = DeviceId::new();
+    let other = DeviceId::new();
+    let current = ConfirmedObject {
+        object: ObjectKey::PlayStats(song),
+        version: ObjectVersion::from_commit_seq(CommitSeq::from_u64(1)),
+        origin_device_id: other,
+        payload: json!({
+            "song_uuid": song.as_uuid(),
+            "by_device": play_stats_buckets(&[(other.as_uuid(), 5)]),
+        }),
+    };
+    let candidate = MutationCandidate {
+        mutation_id: MutationId::new(),
+        origin_device_id: origin,
+        origin_seq: 1,
+        previous_mutation_id: None,
+        object: ObjectKey::PlayStats(song),
+        base_object_version: Some(current.version),
+        payload: json!({
+            "song_uuid": song.as_uuid(),
+            "by_device": play_stats_buckets(&[(origin.as_uuid(), 2), (other.as_uuid(), 5)]),
+        }),
+        resource_refs: Vec::new(),
+    };
+    let confirmed =
+        confirm_candidate(Some(&current), None, &candidate, CommitSeq::from_u64(2)).unwrap();
+    let merged = &confirmed.object.payload["by_device"];
+    assert_eq!(merged[origin.as_uuid().to_string()], json!(2));
+    assert_eq!(merged[other.as_uuid().to_string()], json!(5));
+
+    // Raising another device's bucket stays unauthorized.
+    let mut raising = candidate;
+    raising.mutation_id = MutationId::new();
+    raising.payload = json!({
+        "song_uuid": song.as_uuid(),
+        "by_device": play_stats_buckets(&[(origin.as_uuid(), 9), (other.as_uuid(), 6)]),
+    });
+    assert_eq!(
+        confirm_candidate(Some(&current), None, &raising, CommitSeq::from_u64(3)),
+        Err(ConfirmationError::UnauthorizedPlayStatsBucket)
+    );
+}
+
+/// A conflict record is the input to the user's recovery UI. It must carry the
+/// accepted (merged) object, because a recovery action echoes it back verbatim;
+/// storing the submitted sketch would drop every member the losing device never
+/// saw and turn "recover" into a second data loss.
+#[test]
+fn conflict_records_the_merged_payload_not_the_submitted_sketch() {
+    use serde_json::json;
+    let playlist_id = PlaylistId::new();
+    let playlist = ObjectKey::Playlist(playlist_id);
+    let songs = [SongId::new(), SongId::new(), SongId::new()];
+    let winners = [
+        PlaylistItemId::new(),
+        PlaylistItemId::new(),
+        PlaylistItemId::new(),
+    ];
+    let members: Vec<serde_json::Value> = songs
+        .iter()
+        .zip(winners)
+        .enumerate()
+        .map(|(position, (song, member))| {
+            json!({"song_uuid": song, "member_uuid": member, "position": position, "added_at": 1})
+        })
+        .collect();
+    let current = ConfirmedObject {
+        object: playlist,
+        version: ObjectVersion::from_commit_seq(CommitSeq::from_u64(3)),
+        origin_device_id: DeviceId::new(),
+        payload: json!({"playlist_uuid": playlist_id, "display_name": "Mix", "created_at": 1,
+            "members": members}),
+    };
+    // A device that never saw members 2 and 3 renames the playlist. Its stale
+    // base loses on LWW, but the stored conflict must still show all three.
+    let candidate = MutationCandidate {
+        mutation_id: MutationId::new(),
+        origin_device_id: DeviceId::new(),
+        origin_seq: 1,
+        previous_mutation_id: None,
+        object: playlist,
+        base_object_version: Some(ObjectVersion::from_commit_seq(CommitSeq::from_u64(1))),
+        payload: json!({"playlist_uuid": playlist_id, "display_name": "Mix renamed", "created_at": 1,
+            "members": [members[0].clone()]}),
+        resource_refs: Vec::new(),
+    };
+    let confirmed =
+        confirm_candidate(Some(&current), None, &candidate, CommitSeq::from_u64(4)).unwrap();
+    let conflict = confirmed.conflict.expect("stale base from another device");
+    assert_eq!(
+        conflict.replaced_payload["members"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    assert_eq!(
+        conflict.accepted_payload["members"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3,
+        "the accepted value is the merged playlist, not the one-member sketch"
+    );
+    assert_eq!(conflict.accepted_payload, confirmed.object.payload);
+}
+
+/// Positions come from the merged order, never from either side's numbering. A
+/// device that removed a member earlier leaves a gap in its own positions, so
+/// copying them across would let two devices record different `position` values
+/// for the same playlist and make every later ordering comparison ambiguous.
+#[test]
+fn playlist_append_renumbers_positions_from_the_merged_order() {
+    use serde_json::json;
+    let playlist_id = PlaylistId::new();
+    let playlist = ObjectKey::Playlist(playlist_id);
+    let existing_song = SongId::new();
+    let new_song = SongId::new();
+    let existing_member = PlaylistItemId::new();
+    let new_member = PlaylistItemId::new();
+    let current = ConfirmedObject {
+        object: playlist,
+        version: ObjectVersion::from_commit_seq(CommitSeq::from_u64(1)),
+        origin_device_id: DeviceId::new(),
+        payload: json!({"playlist_uuid":playlist_id,"display_name":"Mix","created_at":1,
+            "members":[{"song_uuid":existing_song,"member_uuid":existing_member,"position":7,"added_at":1}]}),
+    };
+    let candidate = MutationCandidate {
+        mutation_id: MutationId::new(),
+        origin_device_id: DeviceId::new(),
+        origin_seq: 1,
+        previous_mutation_id: None,
+        object: playlist,
+        base_object_version: Some(current.version),
+        payload: json!({"playlist_uuid":playlist_id,"display_name":"Mix","created_at":1,
+        "members":[
+            {"song_uuid":existing_song,"member_uuid":existing_member,"position":7,"added_at":1},
+            {"song_uuid":new_song,"member_uuid":new_member,"position":8,"added_at":2}
+        ]}),
+        resource_refs: Vec::new(),
+    };
+    let merged =
+        confirm_candidate(Some(&current), None, &candidate, CommitSeq::from_u64(2)).unwrap();
+    let positions: Vec<u64> = merged.object.payload["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|member| member["position"].as_u64().unwrap())
+        .collect();
+    assert_eq!(positions, vec![0, 1], "positions must be renumbered 0..n");
+    assert_eq!(
+        merged.object.payload["members"][0]["member_uuid"],
+        json!(existing_member)
+    );
+}

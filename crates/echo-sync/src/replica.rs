@@ -76,7 +76,7 @@ pub async fn synchronize_once(
     if !(1..=512).contains(&limit) {
         return Err(ReplicaSyncError::InvalidOutcome);
     }
-    let candidates = queue.pending_local_mutations(limit)?;
+    let candidates = next_push_batch(queue, limit)?;
     let push_may_continue = candidates.len() == limit;
     let mut mutations_confirmed = 0;
     let mut mutations_rejected = 0;
@@ -135,6 +135,25 @@ pub async fn synchronize_once(
     })
 }
 
+/// Select the next push batch, repairing any cursor gap first.
+///
+/// A terminal rejection recorded while its predecessor was still outstanding
+/// leaves the local origin cursor behind: `reject_local_mutation` only advances
+/// it when the rejected event is exactly the next one in the chain, and a later
+/// repair has to move it across the older event. The host validates
+/// `previous_mutation_id` against that same cursor, so an un-advanced gap makes
+/// every subsequent pending event look out of order — the push then stops on
+/// `OutOfOrderPredecessor` at the identical place on every cycle and never
+/// reaches the events behind it. Repair before reading the batch, which is what
+/// the host-side confirmation loop does for its own ledger.
+fn next_push_batch(
+    queue: &dyn LocalSyncQueuePort,
+    limit: usize,
+) -> Result<Vec<MutationCandidate>, Error> {
+    queue.advance_rejected_local_mutations()?;
+    queue.pending_local_mutations(limit)
+}
+
 fn mutation_dto(binding: SyncBinding, candidate: &MutationCandidate) -> MutationDto {
     MutationDto {
         resource_refs: candidate
@@ -159,3 +178,7 @@ struct MutationOutcome {
     accepted: bool,
     reason: Option<String>,
 }
+
+#[cfg(test)]
+#[path = "replica_tests.rs"]
+mod tests;

@@ -72,6 +72,7 @@ impl LazyHostResources {
                         .lock()
                         .map_err(|_| echo_sync::resource_transfer::TransferError::Conflict)?;
                     let metadata = file.metadata()?;
+                    drop(file);
                     metadata.len() == expected_length
                         && metadata.len() == resource.length
                         && metadata.modified().ok() == Some(expected_modified)
@@ -139,6 +140,7 @@ impl LazyHostResources {
                     last_used: tick,
                 },
             );
+            drop(cache);
             Ok(Some(true))
         } else {
             Ok(Some(false))
@@ -256,6 +258,7 @@ impl ResourceTransferPort for LazyHostResources {
         file.seek(SeekFrom::Start(offset))?;
         let mut bytes = vec![0; length];
         file.read_exact(&mut bytes)?;
+        drop(file);
         Ok(echo_sync::resource_transfer::DownloadChunk {
             chunk_hash: blake3::hash(&bytes).to_hex().to_string(),
             bytes,

@@ -1483,3 +1483,55 @@ async fn a_host_that_answers_before_the_budget_is_reported_as_unsupported() {
         "an early empty page means the host cannot hold; the caller must poll instead"
     );
 }
+
+/// A typed deletion removes its object row before it is pushed, so the root
+/// guard can no longer resolve it from live state. Rejecting it there would
+/// abort the entire push loop on the first delete — the host returns
+/// `LibraryUnavailable` and the replica turns it into a scoped-queue conflict —
+/// leaving every later mutation permanently stuck behind it.
+#[test]
+fn typed_deletion_is_authorized_by_its_queue_entry_not_by_a_live_row() {
+    use echo_core::application::ports::PlaylistRepository;
+    use echo_core::domain::ids::PlaylistId;
+    use serde_json::json;
+
+    let directory = tempfile::tempdir().unwrap();
+    let database = SqliteDatabase::open(directory.path().join("echo.db")).unwrap();
+    let root = LibraryRootId::new();
+    LibraryRepository::upsert(
+        &database,
+        &LibraryRoot::new(root, directory.path().join("library"), true, true),
+    )
+    .unwrap();
+    let playlist = PlaylistId::new();
+    database.create(playlist, root, "Mix").unwrap();
+    PlaylistRepository::delete(&database, playlist).unwrap();
+
+    let pending = database.pending_local_mutations(50).unwrap();
+    let deletion = pending
+        .iter()
+        .find(|candidate| {
+            candidate.object == ObjectKey::Playlist(playlist)
+                && candidate.payload == json!({"tombstone": true})
+        })
+        .expect("the delete must reach the queue");
+    assert!(
+        ensure_candidate_root(&database, root, deletion).is_ok(),
+        "a delete's row is gone by design; its own queue entry is the durable \
+         root record"
+    );
+
+    // The guard still rejects a live-object event whose object does not exist,
+    // so this is a scoped exemption for deletions, not a blanket disable.
+    let stranger = MutationCandidate {
+        mutation_id: MutationId::new(),
+        origin_device_id: DeviceId::new(),
+        origin_seq: 1,
+        previous_mutation_id: None,
+        object: ObjectKey::Song(echo_core::domain::ids::SongId::new()),
+        base_object_version: None,
+        payload: json!({"title": "ghost"}),
+        resource_refs: Vec::new(),
+    };
+    assert!(ensure_candidate_root(&database, root, &stranger).is_err());
+}
