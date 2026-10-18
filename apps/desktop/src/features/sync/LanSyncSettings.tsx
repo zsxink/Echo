@@ -38,6 +38,7 @@ export function LanSyncSettings({ libraryRoot }: { readonly libraryRoot?: string
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [discoveryFailed, setDiscoveryFailed] = useState(false);
   const [role, setRole] = useState<LanSyncRole>("peer");
   const [address, setAddress] = useState("");
   const [localAddresses, setLocalAddresses] = useState<readonly string[] | null>(null);
@@ -132,9 +133,12 @@ export function LanSyncSettings({ libraryRoot }: { readonly libraryRoot?: string
 
   async function discover() {
     setError(null);
+    setDiscoveryFailed(false);
     try {
       setHosts(await lanSyncAdapter.discoverHosts());
     } catch (cause) {
+      setHosts([]);
+      setDiscoveryFailed(true);
       setError(errorMessage(cause));
     }
   }
@@ -200,6 +204,7 @@ export function LanSyncSettings({ libraryRoot }: { readonly libraryRoot?: string
   const active = status?.enabled === true;
   const paused = status?.state === "paused";
   const hostMode = active ? status?.role === "host" : role === "host";
+  const canDiscoverHosts = !loading && !active && role === "peer";
   const ownHostAddresses = (() => {
     const currentAddress = status?.role === "host" ? status.address : hostMode ? address : "";
     if (!currentAddress) return localAddresses ?? [];
@@ -295,7 +300,7 @@ export function LanSyncSettings({ libraryRoot }: { readonly libraryRoot?: string
           ) : null}
         </div>
         <div className="setting-choices">
-          {!hostMode ? (
+          {canDiscoverHosts ? (
             <button type="button" className="btn" onClick={() => void discover()} disabled={busy}>
               搜索局域网主机
             </button>
@@ -385,7 +390,7 @@ export function LanSyncSettings({ libraryRoot }: { readonly libraryRoot?: string
           </button>
         </div>
       ) : null}
-      {!hostMode ? (
+      {canDiscoverHosts ? (
         <div className="setting-row lan-sync-discovered-row">
           <div className="storage-value">
             <strong>已发现的主机</strong>
@@ -393,7 +398,11 @@ export function LanSyncSettings({ libraryRoot }: { readonly libraryRoot?: string
           </div>
           <ul aria-label="已发现的主机" data-testid="lan-sync-hosts" className="lan-sync-hosts">
             {visibleHosts.length === 0 ? (
-              <li className="lan-sync-host-empty">尚未发现其他主机</li>
+              <li className="lan-sync-host-empty">
+                {discoveryFailed
+                  ? "搜索失败，请在下方输入主机 IP 和验证码加入。"
+                  : "尚未发现其他主机"}
+              </li>
             ) : (
               visibleHosts.map((host) => (
                 <li className="lan-sync-host" key={`${host.name}-${host.port}`}>
