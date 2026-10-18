@@ -59,9 +59,8 @@ pub(super) async fn prepare_resource(
     {
         return api_error(StatusCode::BAD_REQUEST, "invalid_resource");
     }
-    transfer_response(
-        tokio::task::spawn_blocking(move || resources.prepare(device, &request)).await,
-    )
+    let result = tokio::task::spawn_blocking(move || resources.prepare(device, &request)).await;
+    authorized_response(&state, device, transfer_response(result)).await
 }
 
 pub(super) async fn upload_chunk(
@@ -82,12 +81,11 @@ pub(super) async fn upload_chunk(
         return api_error(StatusCode::BAD_REQUEST, "invalid_chunk_hash");
     };
     let binding = state.binding;
-    transfer_response(
-        tokio::task::spawn_blocking(move || {
-            resources.write_chunk(binding, device, &upload, index, &hash, &bytes)
-        })
-        .await,
-    )
+    let result = tokio::task::spawn_blocking(move || {
+        resources.write_chunk(binding, device, &upload, index, &hash, &bytes)
+    })
+    .await;
+    authorized_response(&state, device, transfer_response(result)).await
 }
 
 pub(super) async fn complete_resource(
@@ -100,9 +98,9 @@ pub(super) async fn complete_resource(
         Err(error) => return *error,
     };
     let binding = state.binding;
-    transfer_response(
-        tokio::task::spawn_blocking(move || resources.complete(binding, device, &upload)).await,
-    )
+    let result =
+        tokio::task::spawn_blocking(move || resources.complete(binding, device, &upload)).await;
+    authorized_response(&state, device, transfer_response(result)).await
 }
 
 pub(super) async fn download_resource(
@@ -110,7 +108,7 @@ pub(super) async fn download_resource(
     headers: HeaderMap,
     Path(hash): Path<String>,
 ) -> Response<Body> {
-    let (resources, _) = match resource_access(&state, &headers).await {
+    let (resources, device) = match resource_access(&state, &headers).await {
         Ok(access) => access,
         Err(error) => return *error,
     };
@@ -148,6 +146,9 @@ pub(super) async fn download_resource(
         .await
     {
         Ok(Ok(chunk)) => {
+            if !peer_is_currently_authorized(&state, device).await {
+                return api_error(StatusCode::UNAUTHORIZED, "unauthorized");
+            }
             let range = if chunk.bytes.is_empty() {
                 "bytes */0".to_owned()
             } else {

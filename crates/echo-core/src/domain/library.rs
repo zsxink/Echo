@@ -20,9 +20,9 @@
 //! including legacy paths outside the canonical `media/` tree. Neither type
 //! carries an absolute path, `..`, or a path that would escape the root.
 //!
-//! [`PortableRecord`] is the top-level serializable object stored in
-//! `echo/records/<kind>/<uuid-prefix>/<uuid>.json`.  Each variant holds a
-//! [`RecordKind`] discriminator.
+//! [`PortableRecordDocument`] reads the historical flat [`PortableRecord`] and
+//! the v2 [`PortableRecordEnvelope`] stored in
+//! `echo/records/<kind>/<uuid-prefix>/<uuid>.json`.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -31,7 +31,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Subject};
 
-use super::ids::Revision;
+use super::ids::{PlaylistId, PlaylistItemId, Revision, SongId};
+use super::sync::{ObjectKey, ObjectVersion, SyncBinding};
 
 // ── Layout constants ────────────────────────────────────────────────────────
 
@@ -51,7 +52,7 @@ pub const RECORDS_ROOT: &str = "echo/records";
 pub const STAGING_ROOT: &str = "echo/tmp";
 
 /// Current format version for [`LibraryManifest`].
-pub const CURRENT_FORMAT_VERSION: u64 = 1;
+pub const CURRENT_FORMAT_VERSION: u64 = 2;
 
 /// Maximum depth for object record paths inside `echo/records/<kind>/` to
 /// prevent pathological directory nesting.  The real layout is at most
@@ -289,7 +290,7 @@ impl LibraryManifest {
     /// application.
     #[must_use]
     pub const fn is_compatible(&self) -> bool {
-        self.format_version == CURRENT_FORMAT_VERSION
+        self.format_version >= 1 && self.format_version <= CURRENT_FORMAT_VERSION
     }
 }
 
@@ -565,7 +566,246 @@ pub enum PortableRecord {
     Tombstone(TombstoneRecord),
 }
 
+/// Historical identity mappings retained with the canonical portable object,
+/// including after its deletion. Song and member identities never share an
+/// alias namespace, even when their UUID bytes happen to be equal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PortableAlias {
+    Song {
+        alias_uuid: uuid::Uuid,
+        canonical_uuid: uuid::Uuid,
+    },
+    PlaylistItem {
+        playlist_uuid: uuid::Uuid,
+        alias_uuid: uuid::Uuid,
+        canonical_uuid: uuid::Uuid,
+    },
+}
+
+impl PortableAlias {
+    /// The typed historical identity being redirected.
+    #[must_use]
+    pub const fn alias_key(self) -> ObjectKey {
+        match self {
+            Self::Song { alias_uuid, .. } => ObjectKey::Song(SongId::from_uuid(alias_uuid)),
+            Self::PlaylistItem { alias_uuid, .. } => {
+                ObjectKey::PlaylistItem(PlaylistItemId::from_uuid(alias_uuid))
+            }
+        }
+    }
+
+    /// The typed canonical identity. Its kind is fixed by the alias variant.
+    #[must_use]
+    pub const fn canonical_key(self) -> ObjectKey {
+        match self {
+            Self::Song { canonical_uuid, .. } => ObjectKey::Song(SongId::from_uuid(canonical_uuid)),
+            Self::PlaylistItem { canonical_uuid, .. } => {
+                ObjectKey::PlaylistItem(PlaylistItemId::from_uuid(canonical_uuid))
+            }
+        }
+    }
+}
+
+/// A genuinely confirmed baseline. Absence of this structure means that an
+/// object is local portable state, with no claimed authority or host version.
+/// In particular, upgrading v1 never invents a default binding or version.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PortableSyncMetadata {
+    pub binding: SyncBinding,
+    pub object_version: ObjectVersion,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<PortableAlias>,
+}
+
+/// The v2 on-disk envelope, distinct from a transport mutation. The inner v1
+/// payload stays source compatible with existing record constructors.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "PortableRecordEnvelopeWire")]
+pub struct PortableRecordEnvelope {
+    format_version: u64,
+    record: PortableRecord,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sync: Option<PortableSyncMetadata>,
+}
+
+#[derive(Deserialize)]
+struct PortableRecordEnvelopeWire {
+    format_version: u64,
+    record: PortableRecord,
+    #[serde(default)]
+    sync: Option<PortableSyncMetadata>,
+}
+
+impl TryFrom<PortableRecordEnvelopeWire> for PortableRecordEnvelope {
+    type Error = Error;
+
+    fn try_from(value: PortableRecordEnvelopeWire) -> Result<Self, Self::Error> {
+        let envelope = Self {
+            format_version: value.format_version,
+            record: value.record,
+            sync: value.sync,
+        };
+        envelope.validate()?;
+        Ok(envelope)
+    }
+}
+
+impl PortableRecordEnvelope {
+    /// Create a v2 local object or a confirmed object with explicit metadata.
+    ///
+    /// # Errors
+    /// Rejects invalid typed tombstones and inconsistent alias mappings.
+    pub fn new(record: PortableRecord, sync: Option<PortableSyncMetadata>) -> Result<Self, Error> {
+        let envelope = Self {
+            format_version: CURRENT_FORMAT_VERSION,
+            record,
+            sync,
+        };
+        envelope.validate()?;
+        Ok(envelope)
+    }
+
+    /// Validate the version and the identity relationships in the envelope.
+    ///
+    /// # Errors
+    /// Rejects unknown versions, non-object tombstones, self aliases, conflicting
+    /// alias targets, and aliases attached to another type or canonical object.
+    pub fn validate(&self) -> Result<(), Error> {
+        if self.format_version != 2 {
+            return Err(err("portable record envelope must use format version 2"));
+        }
+        let object = self.record.object_key()?;
+        let Some(sync) = &self.sync else {
+            return Ok(());
+        };
+        if sync.binding.epoch.as_u64() == 0 {
+            return Err(err("confirmed portable record epoch must be positive"));
+        }
+        let mut aliases = Vec::new();
+        for alias in &sync.aliases {
+            if alias.alias_key() == alias.canonical_key() {
+                return Err(err("portable alias must not point to itself"));
+            }
+            if alias.canonical_key() != object {
+                return Err(err(
+                    "portable alias must target this typed canonical object",
+                ));
+            }
+            if let (
+                PortableAlias::PlaylistItem { playlist_uuid, .. },
+                PortableRecord::PlaylistItem(member),
+            ) = (alias, &self.record)
+            {
+                if *playlist_uuid != member.playlist_uuid {
+                    return Err(err("portable member alias belongs to another playlist"));
+                }
+            }
+            if aliases.contains(&alias.alias_key()) {
+                return Err(err("portable alias identity is duplicated"));
+            }
+            aliases.push(alias.alias_key());
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub const fn format_version(&self) -> u64 {
+        self.format_version
+    }
+
+    #[must_use]
+    pub const fn record(&self) -> &PortableRecord {
+        &self.record
+    }
+
+    #[must_use]
+    pub const fn sync_metadata(&self) -> Option<&PortableSyncMetadata> {
+        self.sync.as_ref()
+    }
+
+    #[must_use]
+    pub fn into_record(self) -> PortableRecord {
+        self.record
+    }
+}
+
+/// Explicitly reads both historical flat v1 JSON and current v2 envelopes.
+/// Writers choose `V2` only after their recoverable upgrade has completed.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum PortableRecordDocument {
+    V1(PortableRecord),
+    V2(PortableRecordEnvelope),
+}
+
+impl<'de> Deserialize<'de> for PortableRecordDocument {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        // A claimed version must never fall back to the legacy decoder, even
+        // if the document also supplies fields that look like a v1 record.
+        if value.get("format_version").is_some() {
+            serde_json::from_value(value)
+                .map(Self::V2)
+                .map_err(serde::de::Error::custom)
+        } else {
+            serde_json::from_value(value)
+                .map(Self::V1)
+                .map_err(serde::de::Error::custom)
+        }
+    }
+}
+
+impl PortableRecordDocument {
+    #[must_use]
+    pub const fn record(&self) -> &PortableRecord {
+        match self {
+            Self::V1(record) => record,
+            Self::V2(envelope) => envelope.record(),
+        }
+    }
+
+    #[must_use]
+    pub const fn sync_metadata(&self) -> Option<&PortableSyncMetadata> {
+        match self {
+            Self::V1(_) => None,
+            Self::V2(envelope) => envelope.sync_metadata(),
+        }
+    }
+
+    #[must_use]
+    pub fn into_record(self) -> PortableRecord {
+        match self {
+            Self::V1(record) => record,
+            Self::V2(envelope) => envelope.into_record(),
+        }
+    }
+}
+
 impl PortableRecord {
+    /// Typed identity used for confirmation and tombstone lookup. Tombstones
+    /// retain the deleted kind, so a favorite never suppresses the song sharing
+    /// its UUID.
+    ///
+    /// # Errors
+    /// Rejects a tombstone claiming to delete another tombstone.
+    pub fn object_key(&self) -> Result<ObjectKey, Error> {
+        let kind = match self {
+            Self::Tombstone(record) => record.deleted_kind,
+            _ => self.kind(),
+        };
+        let id = self.object_uuid();
+        Ok(match kind {
+            RecordKind::Song => ObjectKey::Song(SongId::from_uuid(id)),
+            RecordKind::Favorite => ObjectKey::Favorite(SongId::from_uuid(id)),
+            RecordKind::Playlist => ObjectKey::Playlist(PlaylistId::from_uuid(id)),
+            RecordKind::PlaylistItem => ObjectKey::PlaylistItem(PlaylistItemId::from_uuid(id)),
+            RecordKind::Override => ObjectKey::Override(SongId::from_uuid(id)),
+            RecordKind::PlayStats => ObjectKey::PlayStats(SongId::from_uuid(id)),
+            RecordKind::Tombstone => return Err(err("tombstone must delete a typed live object")),
+        })
+    }
+
     /// The record kind discriminator.
     #[must_use]
     pub const fn kind(&self) -> RecordKind {
@@ -1526,6 +1766,168 @@ mod tests {
     }
 
     // ── Library manifest path constant ──────────────────────────────────
+
+    const V1_FAVORITE_FIXTURE: &str = r#"{
+        "type":"favorite",
+        "song_uuid":"00000000-0000-0000-0000-000000000001",
+        "revision":7,
+        "updated_by_device_id":"00000000-0000-0000-0000-000000000002",
+        "hlc":{"wall_secs":1700000000,"counter":2},
+        "is_favorite":true
+    }"#;
+
+    const V2_TOMBSTONE_FIXTURE: &str = r#"{
+        "format_version":2,
+        "record":{
+            "type":"tombstone",
+            "object_uuid":"00000000-0000-0000-0000-000000000001",
+            "deleted_kind":"song",
+            "revision":8,
+            "updated_by_device_id":"00000000-0000-0000-0000-000000000002",
+            "hlc":{"wall_secs":1700000001,"counter":0}
+        },
+        "sync":{
+            "binding":{
+                "library_id":"00000000-0000-0000-0000-000000000003",
+                "authority_id":"00000000-0000-0000-0000-000000000004",
+                "epoch":3
+            },
+            "object_version":42,
+            "aliases":[{
+                "kind":"song",
+                "alias_uuid":"00000000-0000-0000-0000-000000000005",
+                "canonical_uuid":"00000000-0000-0000-0000-000000000001"
+            }]
+        }
+    }"#;
+
+    #[test]
+    fn portable_v1_fixture_upgrades_without_fabricating_a_confirmation() {
+        let legacy: PortableRecordDocument = serde_json::from_str(V1_FAVORITE_FIXTURE).unwrap();
+        assert!(matches!(legacy, PortableRecordDocument::V1(_)));
+        assert!(legacy.sync_metadata().is_none());
+        let upgraded = PortableRecordDocument::V2(
+            PortableRecordEnvelope::new(legacy.into_record(), None).unwrap(),
+        );
+        let json = upgraded.to_canonical_json().unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["format_version"], 2);
+        assert!(value.get("sync").is_none());
+        assert_eq!(
+            value["record"],
+            serde_json::from_str::<serde_json::Value>(V1_FAVORITE_FIXTURE).unwrap()
+        );
+        assert_eq!(
+            serde_json::from_str::<PortableRecordDocument>(&json).unwrap(),
+            upgraded
+        );
+    }
+
+    #[test]
+    fn portable_v2_fixture_retains_authority_typed_tombstone_and_historical_alias() {
+        let document: PortableRecordDocument = serde_json::from_str(V2_TOMBSTONE_FIXTURE).unwrap();
+        let metadata = document.sync_metadata().unwrap();
+        assert_eq!(metadata.binding.epoch.as_u64(), 3);
+        assert_eq!(metadata.object_version.commit_seq().as_u64(), 42);
+        assert_eq!(
+            document.record().object_key().unwrap(),
+            metadata.aliases[0].canonical_key()
+        );
+        assert!(document.record().is_tombstone());
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&document.to_canonical_json().unwrap())
+                .unwrap(),
+            serde_json::from_str::<serde_json::Value>(V2_TOMBSTONE_FIXTURE).unwrap()
+        );
+        // A favorite sharing the exact song UUID has a different typed key.
+        let favorite: PortableRecord = serde_json::from_str(V1_FAVORITE_FIXTURE).unwrap();
+        assert_ne!(
+            favorite.object_key().unwrap(),
+            document.record().object_key().unwrap()
+        );
+    }
+
+    #[test]
+    fn portable_v2_decoder_rejects_unknown_versions_and_invalid_typed_identities() {
+        let fixture: serde_json::Value = serde_json::from_str(V2_TOMBSTONE_FIXTURE).unwrap();
+        let invalid_changes = [
+            ("/format_version", serde_json::json!(3)),
+            ("/format_version", serde_json::json!(1)),
+            ("/record/deleted_kind", serde_json::json!("tombstone")),
+            ("/sync/binding/epoch", serde_json::json!(0)),
+            ("/sync/aliases/0/kind", serde_json::json!("favorite")),
+            ("/sync/aliases/0/kind", serde_json::json!("playlist_item")),
+            (
+                "/sync/aliases/0/canonical_uuid",
+                serde_json::json!("00000000-0000-0000-0000-000000000006"),
+            ),
+            (
+                "/sync/aliases/0/alias_uuid",
+                serde_json::json!("00000000-0000-0000-0000-000000000001"),
+            ),
+        ];
+        for (pointer, invalid_value) in invalid_changes {
+            let mut invalid = fixture.clone();
+            *invalid.pointer_mut(pointer).unwrap() = invalid_value;
+            assert!(
+                serde_json::from_value::<PortableRecordDocument>(invalid).is_err(),
+                "accepted invalid {pointer}"
+            );
+        }
+        // Even v1-shaped extra fields cannot bypass a claimed future version.
+        let mut future: serde_json::Value = serde_json::from_str(V1_FAVORITE_FIXTURE).unwrap();
+        future["format_version"] = serde_json::json!(3);
+        assert!(serde_json::from_value::<PortableRecordDocument>(future).is_err());
+    }
+
+    #[test]
+    fn portable_v2_member_alias_is_scoped_to_the_canonical_members_playlist() {
+        let id = uuid::Uuid::from_u128;
+        let record = PortableRecord::PlaylistItem(PlaylistItemRecord {
+            item_uuid: id(1),
+            revision: Revision::INITIAL,
+            updated_by_device_id: DeviceId::from_uuid(id(2)),
+            hlc: HybridLogicalClock::default(),
+            playlist_uuid: id(3),
+            song_uuid: id(4),
+            position: 5,
+        });
+        let confirmed: PortableRecordDocument = serde_json::from_str(V2_TOMBSTONE_FIXTURE).unwrap();
+        let mut metadata = confirmed.sync_metadata().unwrap().clone();
+        metadata.aliases = vec![PortableAlias::PlaylistItem {
+            playlist_uuid: id(3),
+            alias_uuid: id(6),
+            canonical_uuid: id(1),
+        }];
+        let envelope = PortableRecordEnvelope::new(record.clone(), Some(metadata.clone())).unwrap();
+        assert_eq!(
+            serde_json::from_str::<PortableRecordEnvelope>(&envelope.to_canonical_json().unwrap())
+                .unwrap(),
+            envelope
+        );
+        metadata.aliases.push(metadata.aliases[0]);
+        assert!(PortableRecordEnvelope::new(record.clone(), Some(metadata.clone())).is_err());
+        metadata.aliases = vec![PortableAlias::PlaylistItem {
+            playlist_uuid: id(7),
+            alias_uuid: id(6),
+            canonical_uuid: id(1),
+        }];
+        assert!(PortableRecordEnvelope::new(record, Some(metadata)).is_err());
+    }
+
+    #[test]
+    fn manifest_v2_explicitly_reads_v1_but_refuses_invalid_and_future_versions() {
+        let mut manifest =
+            LibraryManifest::new(LibraryId::from_uuid(uuid::Uuid::from_u128(1)), "test");
+        assert_eq!(manifest.format_version, 2);
+        assert!(manifest.is_compatible());
+        manifest.format_version = 1;
+        assert!(manifest.is_compatible());
+        for unsupported in [0, 3, u64::MAX] {
+            manifest.format_version = unsupported;
+            assert!(!manifest.is_compatible());
+        }
+    }
 
     #[test]
     fn manifest_path_is_valid_control_path() {

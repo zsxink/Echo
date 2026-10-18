@@ -190,6 +190,16 @@ impl WatchCoordinator {
         if self.deps.fs.file_meta(root, path).is_err() {
             return Ok(EventOutcome::Ignored);
         }
+        // Only a persisted completed publication with exactly these bytes may
+        // suppress an echo. External edits at the same path still reconcile.
+        let digest = self.deps.hasher.hash(root, path)?;
+        if self
+            .deps
+            .sync
+            .remote_publication_matches(root, path, &digest)?
+        {
+            return Ok(EventOutcome::Ignored);
+        }
         // Target-claim arbitration: an import owns this path right now.
         for operation in (self.callbacks.active_operations)() {
             if let Some(item) = self.claim_for(operation, path)? {

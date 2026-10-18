@@ -58,3 +58,5 @@ pub mod testkit;
 /// compatibility break for existing desktop and Core tests.
 #[cfg(any(test, feature = "testkit"))]
 pub use testkit as testing;
+
+pub mod remote_delete;

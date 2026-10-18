@@ -28,7 +28,7 @@
 
 #### Scenario: 可撤销意图不成为同步墓碑
 - **WHEN** 历史库升级/启用同步时存在 PendingDelete 和临时 portable 墓碑，或用户在窗口内撤销删除
-- **THEN** 先按 journal 恢复本机意图，未终结意图不进入最终墓碑/可提交 outbox/历史删除基线；撤销保留原 UUID 和关联，终结仅产生一次稳定删除事件
+- **THEN** 先按可验证的 operation journal 恢复本机意图，未终结意图不进入最终墓碑/可提交 outbox/历史删除基线；撤销保留原 UUID 和关联，终结仅产生一次稳定删除事件；缺少足以区分临时墓碑与最终删除的 journal 时，迁移必须保留原始文件并拒绝启用同步，不得猜测或丢弃
 
 ## ADDED Requirements
 

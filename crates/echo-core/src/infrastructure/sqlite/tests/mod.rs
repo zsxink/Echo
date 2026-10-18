@@ -25,5 +25,8 @@ mod sync_manifest_validation;
 mod sync_peer_lifecycle;
 mod sync_publication;
 mod sync_resource_publication;
+mod sync_root_contexts;
 mod sync_snapshot;
 mod sync_snapshot_apply;
+
+mod resource_retention;

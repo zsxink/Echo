@@ -29,7 +29,9 @@
 pub mod adapter;
 pub mod control_plane;
 pub mod hasher;
+mod portable_migration;
 pub mod registry;
+pub(crate) mod retained;
 pub mod staging;
 pub mod walker;
 pub mod watcher;

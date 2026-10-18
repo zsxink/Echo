@@ -107,7 +107,8 @@ impl SqliteDatabase {
                 }
                 return Ok(0);
             }
-            let count = enqueue_current(&tx, &root_uuid)?;
+            let count = enqueue_current(&tx, &root_uuid)?
+                + super::sync_recovery::enqueue_recovered_tombstones(&tx, &root_uuid)?;
             tx.execute(
                 "INSERT INTO sync_host_baselines(library_id,authority_id,epoch,local_root_uuid,object_count,completed_at) VALUES(?1,?2,?3,?4,?5,?6)",
                 params![library,authority,epoch,root_uuid,i64::try_from(count).map_err(storage)?,now_ms()],
@@ -130,7 +131,7 @@ impl SqliteDatabase {
     ) -> Result<Vec<SharedResourceManifest>, Error> {
         self.with_reader(|connection| {
             let mut statement = connection.prepare(
-                "SELECT m.resource_refs_json FROM sync_mutations m JOIN device_state d ON d.key='device_id' AND d.value=m.origin_device_id WHERE m.status='pending' AND (EXISTS(SELECT 1 FROM songs s WHERE s.uuid=m.object_uuid AND s.library_root_uuid=?1 AND m.object_type IN ('song','favorite','play-stats','override')) OR EXISTS(SELECT 1 FROM playlists p WHERE p.uuid=m.object_uuid AND p.library_root_uuid=?1 AND m.object_type='playlist')) ORDER BY m.origin_seq",
+                "SELECT m.resource_refs_json FROM sync_mutations m JOIN device_state d ON d.key='device_id' AND d.value=m.origin_device_id WHERE m.status='pending' AND m.local_root_uuid=?1 ORDER BY m.origin_seq",
             ).map_err(storage)?;
             let rows = statement.query_map(params![root.to_string()], |row| row.get::<_,String>(0)).map_err(storage)?;
             let mut manifests = Vec::new();

@@ -1,179 +1,207 @@
-//! The portable `echo/` control-surface adapter (task 2.1).
-//!
-//! Implements [`ControlPlanePort`] on top of the root-constrained file system.
-//! The adapter owns the concrete layout of the portable surface:
-//!
-//! ```text
-//! <library-root>/
-//! ├── media/…
-//! └── echo/
-//!     ├── manifest.json
-//!     └── records/<kind>/<uuid-prefix>/<uuid>.json
-//! ```
-//!
-//! Design rules implemented here:
-//!
-//! - **Atomic writes.** Every file is written to a same-directory temporary
-//!   file, flushed, then `rename`d onto the final name. A filesystem-synced
-//!   copy (e.g. Dropbox) can therefore only ever observe the complete JSON, not
-//!   a half-written record. The caller of a failed write sees an [`Error`] and
-//!   may retry; the attempt leaves no corrupt target.
-//! - **Temporary ignore.** A same-dir `*.tmp-*` file next to a record is not a
-//!   record: [`read_record`]/[`list_records`] treat it as absent. Incomplete or
-//!   version-unsupported records are likewise ignored (reported absent), so the
-//!   next successful write replaces them.
-//! - **Kind/prefix sharding.** Records for one kind are split into
-//!   prefix-directories by the first two hex digits of the object UUID, keeping
-//!   single directories small under a large library.
-//! - **Path safety.** All paths are [`ControlPath`]-validated and stay inside
-//!   `echo/` and outside `echo/tmp/`. No absolute path, `..` or control path
-//!   reaches the file system.
-//!
-//! The adapter holds a [`RootRegistry`] to resolve the root's absolute path;
-//! use cases never see a path.
+//! Portable control-plane filesystem adapter with bounded, root-constrained
+//! record IO and recovery before every public access.
 
-use std::io::Write as _;
-use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard};
 
+use super::portable_migration as migration;
+use super::registry::RootRegistry;
 use crate::application::ports::{ControlPlanePort, ManifestState};
 use crate::domain::ids::LibraryRootId;
 use crate::domain::library::{
-    LibraryManifest, PortableRecord, PortableSerialize, RecordKind, CONTROL_ROOT,
+    LibraryManifest, PortableRecord, PortableRecordDocument, PortableRecordEnvelope, RecordKind,
+    CURRENT_FORMAT_VERSION,
 };
 use crate::error::Error;
-
-use super::registry::RootRegistry;
-
-/// The constant name of the manifest under `echo/`.
-const MANIFEST_NAME: &str = "manifest.json";
-/// The records tree under `echo/`.
-const RECORDS_DIR: &str = "records";
-/// In-progress temp suffix (same-directory atomic write helper).
-const TMP_SUFFIX: &str = ".tmp-";
-/// The length of the UUID prefix-directory (first two hex digits).
-const PREFIX_LEN: usize = 2;
-/// Current manifest format (mirrors the domain constant, kept here for quick
-/// parse-time compatibility checks without touching the domain).
-const MANIFEST_FORMAT: u64 = 1;
 
 /// Filesystem adapter for the portable `echo/` control surface.
 #[derive(Clone, Debug)]
 pub struct RootControlPlane {
     registry: RootRegistry,
+    access: Arc<Mutex<()>>,
 }
 
 impl RootControlPlane {
-    /// Construct from the root registry the adapter resolves roots against.
     #[must_use]
-    pub const fn new(registry: RootRegistry) -> Self {
-        Self { registry }
+    pub fn new(registry: RootRegistry) -> Self {
+        Self {
+            registry,
+            access: Arc::new(Mutex::new(())),
+        }
     }
 
-    /// The root's absolute path.
-    fn root_path(&self, root: LibraryRootId) -> Result<PathBuf, Error> {
-        self.registry.path_of(root)
+    fn prepare(
+        &self,
+        root: LibraryRootId,
+        allow_incompatible: bool,
+    ) -> Result<MutexGuard<'_, ()>, Error> {
+        let guard = self
+            .access
+            .lock()
+            .map_err(|_| Error::unavailable("portable control plane", "access lock poisoned"))?;
+        migration::recover(&self.registry, root)?;
+        if !allow_incompatible {
+            let manifest = self.manifest_unlocked(root)?;
+            if let Some(manifest) = manifest {
+                if !manifest.is_compatible() {
+                    return Err(Error::UnsupportedMedia {
+                        operation: "access portable library".to_owned(),
+                        reason: format!("unsupported portable format {}", manifest.format_version),
+                    });
+                }
+            }
+        }
+        Ok(guard)
     }
 
-    /// The absolute path of the `echo/` control directory.
-    fn echo_dir(&self, root: LibraryRootId) -> Result<PathBuf, Error> {
-        Ok(self.root_path(root)?.join(CONTROL_ROOT))
+    fn manifest_unlocked(&self, root: LibraryRootId) -> Result<Option<LibraryManifest>, Error> {
+        migration::read(
+            &self.registry,
+            root,
+            "echo/manifest.json",
+            migration::MAX_RECORD_BYTES,
+        )?
+        .map(|raw| {
+            serde_json::from_str(&raw).map_err(|error| Error::Storage {
+                what: "manifest parse".to_owned(),
+                source: Box::new(error),
+            })
+        })
+        .transpose()
     }
 
-    /// The absolute path of one record file.
-    fn record_path(
+    fn document_unlocked(
+        &self,
+        root: LibraryRootId,
+        relative: &str,
+    ) -> Result<Option<PortableRecordDocument>, Error> {
+        let Some(raw) =
+            migration::read(&self.registry, root, relative, migration::MAX_RECORD_BYTES)?
+        else {
+            return Ok(None);
+        };
+        Ok(serde_json::from_str(&raw).ok())
+    }
+
+    fn matching_paths(
         &self,
         root: LibraryRootId,
         kind: RecordKind,
         object_uuid: &str,
-    ) -> Result<PathBuf, Error> {
-        let prefix = &object_uuid[..object_uuid.len().min(PREFIX_LEN)];
-        Ok(self
-            .echo_dir(root)?
-            .join(RECORDS_DIR)
-            .join(kind.dir_name())
-            .join(prefix)
-            .join(format!("{object_uuid}.json")))
-    }
-
-    /// Write bytes atomically to `target`: write to a same-dir temp, flush,
-    /// then rename. A partial write never becomes the published file.
-    fn write_atomic(target: &Path, content: &str) -> Result<(), Error> {
-        let directory = target
-            .parent()
-            .ok_or_else(|| Error::validation(crate::error::Subject::Path, "record", "no parent"))?;
-        std::fs::create_dir_all(directory)
-            .map_err(|source| Error::io("create control directory", source, directory))?;
-        let temp = directory.join(format!(
-            "{}{TMP_SUFFIX}{}",
-            target
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or("record"),
-            uuid::Uuid::new_v4()
-        ));
-        // Write the temp fully, fsync it, then rename onto the target. On any
-        // failure remove the leftover temp so the directory stays clean.
-        let result = (|| -> Result<(), Error> {
-            let mut file = std::fs::File::create(&temp)
-                .map_err(|source| Error::io("create temp record", source, &temp))?;
-            file.write_all(content.as_bytes())
-                .map_err(|source| Error::io("write temp record", source, &temp))?;
-            file.sync_all()
-                .map_err(|source| Error::io("sync temp record", source, &temp))?;
-            std::fs::rename(&temp, target)
-                .map_err(|source| Error::io("publish record", source, target))?;
-            // fsync the parent dir so the rename is durable across a crash.
-            if let Ok(dir) = std::fs::File::open(directory) {
-                let _ = dir.sync_all();
+    ) -> Result<Vec<String>, Error> {
+        let uuid = uuid::Uuid::parse_str(object_uuid)
+            .map_err(|_| Error::conflict("invalid portable object UUID"))?;
+        if kind != RecordKind::Tombstone {
+            return Ok(vec![migration::original_relative(kind, uuid, None)]);
+        }
+        let mut result = Vec::new();
+        for relative in migration::record_files(&self.registry, root, kind)? {
+            if self
+                .document_unlocked(root, &relative)?
+                .is_some_and(|document| {
+                    document.record().kind() == kind && document.record().object_uuid() == uuid
+                })
+            {
+                result.push(relative);
             }
-            Ok(())
-        })();
-        // The temp file may remain from a prior failed write; remove it on
-        // both paths so the directory stays clean.
-        let _ = std::fs::remove_file(&temp);
-        result
+        }
+        if result.len() > 1 {
+            return Err(Error::conflict(
+                "portable tombstone UUID is ambiguous; specify its deleted kind",
+            ));
+        }
+        Ok(result)
     }
 
-    /// Whether a file name is a temporary of ours (ignored by reads).
-    fn is_temp_name(name: &str) -> bool {
-        name.contains(TMP_SUFFIX)
+    fn read_unlocked(
+        &self,
+        root: LibraryRootId,
+        kind: RecordKind,
+        object_uuid: &str,
+    ) -> Result<Option<PortableRecordDocument>, Error> {
+        for relative in self.matching_paths(root, kind, object_uuid)? {
+            if let Some(document) = self.document_unlocked(root, &relative)? {
+                if document.record().kind() == kind
+                    && document.record().object_uuid().to_string() == object_uuid
+                {
+                    return Ok(Some(document));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    fn list_unlocked(&self, root: LibraryRootId, kind: RecordKind) -> Result<Vec<String>, Error> {
+        let mut result = Vec::new();
+        for relative in migration::record_files(&self.registry, root, kind)? {
+            let Some(raw) =
+                migration::read(&self.registry, root, &relative, migration::MAX_RECORD_BYTES)?
+            else {
+                continue;
+            };
+            if serde_json::from_str::<PortableRecordDocument>(&raw)
+                .is_ok_and(|document| document.record().kind() == kind)
+            {
+                result.push(raw);
+            }
+        }
+        result.sort();
+        Ok(result)
+    }
+
+    fn write_json<T: serde::Serialize>(
+        &self,
+        root: LibraryRootId,
+        relative: &str,
+        value: &T,
+    ) -> Result<(), Error> {
+        let bytes = migration::encode(value, migration::MAX_RECORD_BYTES)?;
+        migration::write(&self.registry, root, relative, &bytes)
     }
 }
 
 impl ControlPlanePort for RootControlPlane {
     fn write_manifest(&self, root: LibraryRootId, manifest: &LibraryManifest) -> Result<(), Error> {
-        let manifest_path = self.echo_dir(root)?.join(MANIFEST_NAME);
-        let json = serde_json::to_string_pretty(manifest).map_err(|e| Error::Storage {
-            what: "manifest serialization".to_owned(),
-            source: Box::new(e),
-        })?;
-        Self::write_atomic(&manifest_path, &json)
+        let _guard = self.prepare(root, false)?;
+        if !manifest.is_compatible() {
+            return Err(Error::conflict("cannot write unsupported portable format"));
+        }
+        if let Some(current) = self.manifest_unlocked(root)? {
+            if current.format_version != manifest.format_version {
+                return Err(Error::conflict(
+                    "portable format changes require the recoverable migration",
+                ));
+            }
+        }
+        self.write_json(root, "echo/manifest.json", manifest)
     }
 
     fn read_manifest(&self, root: LibraryRootId) -> Result<Option<LibraryManifest>, Error> {
-        let manifest_path = self.echo_dir(root)?.join(MANIFEST_NAME);
-        if !manifest_path.is_file() {
-            return Ok(None);
-        }
-        let bytes = std::fs::read(&manifest_path)
-            .map_err(|source| Error::io("read manifest", source, &manifest_path))?;
-        let manifest: LibraryManifest =
-            serde_json::from_slice(&bytes).map_err(|e| Error::Storage {
-                what: "manifest parse".to_owned(),
-                source: Box::new(e),
-            })?;
-        // A manifest from a future format version is not compatible — report
-        // absent so the caller does not trust it.
-        if manifest.format_version > MANIFEST_FORMAT {
-            return Ok(None);
-        }
-        Ok(Some(manifest))
+        let _guard = self.prepare(root, true)?;
+        Ok(self
+            .manifest_unlocked(root)?
+            .filter(LibraryManifest::is_compatible))
     }
 
     fn write_record(&self, root: LibraryRootId, record: &PortableRecord) -> Result<(), Error> {
-        let target = self.record_path(root, record.kind(), &record.object_uuid().to_string())?;
-        let json = record.to_canonical_json()?;
-        Self::write_atomic(&target, &json)
+        let _guard = self.prepare(root, false)?;
+        record.object_key()?;
+        if self
+            .manifest_unlocked(root)?
+            .is_some_and(|manifest| manifest.format_version == 2)
+        {
+            let relative = migration::record_relative(record)?;
+            let sync = self
+                .document_unlocked(root, &relative)?
+                .and_then(|document| document.sync_metadata().cloned());
+            self.write_json(
+                root,
+                &relative,
+                &PortableRecordEnvelope::new(record.clone(), sync)?,
+            )
+        } else {
+            let relative = migration::original_relative(record.kind(), record.object_uuid(), None);
+            self.write_json(root, &relative, record)
+        }
     }
 
     fn read_record(
@@ -182,8 +210,10 @@ impl ControlPlanePort for RootControlPlane {
         kind: RecordKind,
         object_uuid: &str,
     ) -> Result<Option<PortableRecord>, Error> {
-        let target = self.record_path(root, kind, object_uuid)?;
-        Self::read_record_file(&target)
+        let _guard = self.prepare(root, false)?;
+        Ok(self
+            .read_unlocked(root, kind, object_uuid)?
+            .map(PortableRecordDocument::into_record))
     }
 
     fn delete_record(
@@ -192,64 +222,33 @@ impl ControlPlanePort for RootControlPlane {
         kind: RecordKind,
         object_uuid: &str,
     ) -> Result<(), Error> {
-        let target = self.record_path(root, kind, object_uuid)?;
-        match std::fs::remove_file(&target) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(source) => Err(Error::io("remove record", source, &target)),
+        let _guard = self.prepare(root, false)?;
+        for relative in self.matching_paths(root, kind, object_uuid)? {
+            migration::remove(&self.registry, root, &relative)?;
         }
+        Ok(())
     }
 
     fn list_records(&self, root: LibraryRootId, kind: RecordKind) -> Result<Vec<String>, Error> {
-        let kind_dir = self.echo_dir(root)?.join(RECORDS_DIR).join(kind.dir_name());
-        if !kind_dir.is_dir() {
-            return Ok(Vec::new());
-        }
-        let mut records = Vec::new();
-        for prefix_entry in std::fs::read_dir(&kind_dir)
-            .map_err(|source| Error::io("list records", source, &kind_dir))?
-            .flatten()
-        {
-            let prefix_path = prefix_entry.path();
-            if !prefix_path.is_dir() {
-                continue;
-            }
-            for record_entry in std::fs::read_dir(&prefix_path)
-                .map_err(|source| Error::io("list records", source, &prefix_path))?
-                .flatten()
-            {
-                let name = record_entry.file_name();
-                let name = name.to_string_lossy();
-                // Ignore temporaries and non-JSON files.
-                if Self::is_temp_name(&name) || !name.ends_with(".json") {
-                    continue;
-                }
-                let raw = std::fs::read_to_string(record_entry.path())
-                    .map_err(|source| Error::io("read record", source, record_entry.path()))?;
-                // Ignore malformed or unsupported records — the restore caller
-                // only needs valid portable JSON.
-                if serde_json::from_str::<PortableRecord>(&raw).is_ok() {
-                    records.push(raw);
-                }
-            }
-        }
-        records.sort();
-        Ok(records)
+        let _guard = self.prepare(root, false)?;
+        self.list_unlocked(root, kind)
     }
 
     fn manifest_state(&self, root: LibraryRootId) -> Result<ManifestState, Error> {
-        let manifest_path = self.echo_dir(root)?.join(MANIFEST_NAME);
-        if !manifest_path.is_file() {
+        let _guard = self.prepare(root, true)?;
+        let Some(raw) = migration::read(
+            &self.registry,
+            root,
+            "echo/manifest.json",
+            migration::MAX_RECORD_BYTES,
+        )?
+        else {
             return Ok(ManifestState::Absent);
-        }
-        let bytes = std::fs::read(&manifest_path)
-            .map_err(|source| Error::io("read manifest", source, &manifest_path))?;
-        // A file we cannot parse is a refusal, never a self-heal trigger: the
-        // self-heal path must not clobber a control-plane file it cannot read.
-        let Ok(manifest) = serde_json::from_slice::<LibraryManifest>(&bytes) else {
+        };
+        let Ok(manifest) = serde_json::from_str::<LibraryManifest>(&raw) else {
             return Ok(ManifestState::Malformed);
         };
-        if manifest.format_version > MANIFEST_FORMAT {
+        if !manifest.is_compatible() {
             return Ok(ManifestState::Incompatible {
                 format_version: manifest.format_version,
             });
@@ -258,80 +257,135 @@ impl ControlPlanePort for RootControlPlane {
     }
 
     fn records_present(&self, root: LibraryRootId) -> Result<bool, Error> {
-        let records_dir = self.echo_dir(root)?.join(RECORDS_DIR);
-        if !records_dir.is_dir() {
-            return Ok(false);
-        }
-        for kind in RecordKind::ALL {
-            let kind_dir = records_dir.join(kind.dir_name());
-            if !kind_dir.is_dir() {
-                continue;
-            }
-            for prefix_entry in std::fs::read_dir(&kind_dir)
-                .map_err(|source| Error::io("scan records", source, &kind_dir))?
-                .flatten()
-            {
-                let prefix_path = prefix_entry.path();
-                if !prefix_path.is_dir() {
-                    continue;
-                }
-                for record_entry in std::fs::read_dir(&prefix_path)
-                    .map_err(|source| Error::io("scan records", source, &prefix_path))?
-                    .flatten()
-                {
-                    let name = record_entry.file_name().to_string_lossy().to_string();
-                    let is_json = std::path::Path::new(&name)
-                        .extension()
-                        .is_some_and(|ext| ext.eq_ignore_ascii_case("json"));
-                    if is_json && !Self::is_temp_name(&name) {
-                        return Ok(true);
-                    }
-                }
+        let _guard = self.prepare(root, false)?;
+        for &kind in RecordKind::ALL {
+            if !migration::record_files(&self.registry, root, kind)?.is_empty() {
+                return Ok(true);
             }
         }
         Ok(false)
     }
 
     fn control_plane_usable(&self, root: LibraryRootId) -> Result<bool, Error> {
-        let echo = self.echo_dir(root)?;
-        // The control plane is usable when `echo/` can be created/updated. A
-        // pre-existing directory that is not actually writable reports false,
-        // so the caller does not enable sync/logic changes against a dead plane.
-        std::fs::create_dir_all(&echo)
-            .map_err(|source| Error::io("prepare control surface", source, &echo))?;
-        let probe = echo.join(format!(".probe-{}", uuid::Uuid::new_v4()));
-        let writable = std::fs::File::create(&probe)
-            .and_then(|mut file| {
-                file.write_all(b"e")?;
-                file.sync_all()
-            })
-            .is_ok();
-        let _ = std::fs::remove_file(&probe);
+        let _guard = self.prepare(root, true)?;
+        let relative = format!("echo/.probe-{}", uuid::Uuid::new_v4());
+        let writable = migration::write(&self.registry, root, &relative, b"e").is_ok();
+        let _ = migration::remove(&self.registry, root, &relative);
         Ok(writable)
     }
-}
 
-impl RootControlPlane {
-    /// Read one record file, ignoring temporaries/malformed/unsupported files.
-    fn read_record_file(target: &Path) -> Result<Option<PortableRecord>, Error> {
-        if !target.is_file() {
-            return Ok(None);
-        }
-        let name = target
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("record");
-        if Self::is_temp_name(name) {
-            return Ok(None);
-        }
-        let bytes =
-            std::fs::read(target).map_err(|source| Error::io("read record", source, target))?;
-        // Malformed or unsupported records are ignored (reported absent) — the
-        // next successful write replaces them.
-        let Ok(record) = serde_json::from_slice::<PortableRecord>(&bytes) else {
-            return Ok(None);
+    fn write_record_envelope(
+        &self,
+        root: LibraryRootId,
+        record: &PortableRecordEnvelope,
+    ) -> Result<(), Error> {
+        let _guard = self.prepare(root, false)?;
+        let manifest = self.manifest_unlocked(root)?;
+        let Some(manifest) =
+            manifest.filter(|value| value.format_version == CURRENT_FORMAT_VERSION)
+        else {
+            return Err(Error::conflict(
+                "portable v2 writes require a completed format upgrade",
+            ));
         };
-        Ok(Some(record))
+        record.validate()?;
+        if record
+            .sync_metadata()
+            .is_some_and(|sync| sync.binding.library_id.as_uuid() != manifest.library_id.as_uuid())
+        {
+            return Err(Error::conflict(
+                "portable record belongs to a different library",
+            ));
+        }
+        self.write_json(root, &migration::record_relative(record.record())?, record)
+    }
+
+    fn read_record_document(
+        &self,
+        root: LibraryRootId,
+        kind: RecordKind,
+        object_uuid: &str,
+    ) -> Result<Option<PortableRecordDocument>, Error> {
+        let _guard = self.prepare(root, false)?;
+        self.read_unlocked(root, kind, object_uuid)
+    }
+
+    fn list_record_documents(
+        &self,
+        root: LibraryRootId,
+        kind: RecordKind,
+    ) -> Result<Vec<PortableRecordDocument>, Error> {
+        let _guard = self.prepare(root, false)?;
+        self.list_unlocked(root, kind)?
+            .into_iter()
+            .map(|raw| {
+                serde_json::from_str(&raw).map_err(|error| Error::Storage {
+                    what: "portable record parse".to_owned(),
+                    source: Box::new(error),
+                })
+            })
+            .collect()
+    }
+
+    fn read_tombstone_document(
+        &self,
+        root: LibraryRootId,
+        deleted_kind: RecordKind,
+        object_uuid: &str,
+    ) -> Result<Option<PortableRecordDocument>, Error> {
+        let _guard = self.prepare(root, false)?;
+        if deleted_kind == RecordKind::Tombstone {
+            return Err(Error::conflict("invalid deleted kind"));
+        }
+        let uuid =
+            uuid::Uuid::parse_str(object_uuid).map_err(|_| Error::conflict("invalid UUID"))?;
+        for typed in [Some(deleted_kind), None] {
+            let relative = migration::original_relative(RecordKind::Tombstone, uuid, typed);
+            if let Some(document) = self.document_unlocked(root, &relative)? {
+                if matches!(document.record(), PortableRecord::Tombstone(record) if record.deleted_kind == deleted_kind && record.object_uuid == uuid)
+                {
+                    return Ok(Some(document));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    fn delete_tombstone(
+        &self,
+        root: LibraryRootId,
+        deleted_kind: RecordKind,
+        object_uuid: &str,
+    ) -> Result<(), Error> {
+        let _guard = self.prepare(root, false)?;
+        if deleted_kind == RecordKind::Tombstone {
+            return Err(Error::conflict("invalid deleted kind"));
+        }
+        let uuid =
+            uuid::Uuid::parse_str(object_uuid).map_err(|_| Error::conflict("invalid UUID"))?;
+        migration::remove(
+            &self.registry,
+            root,
+            &migration::original_relative(RecordKind::Tombstone, uuid, Some(deleted_kind)),
+        )?;
+        let legacy = migration::original_relative(RecordKind::Tombstone, uuid, None);
+        if self.document_unlocked(root, &legacy)?.is_some_and(|document| matches!(document.record(), PortableRecord::Tombstone(record) if record.deleted_kind == deleted_kind)) {
+            migration::remove(&self.registry, root, &legacy)?;
+        }
+        Ok(())
+    }
+
+    fn apply_portable_upgrade(
+        &self,
+        root: LibraryRootId,
+        updates: &[PortableRecordEnvelope],
+        manifest: &LibraryManifest,
+    ) -> Result<(), Error> {
+        let _guard = self
+            .access
+            .lock()
+            .map_err(|_| Error::unavailable("portable migration", "access lock poisoned"))?;
+        migration::apply(&self.registry, root, updates, manifest)
     }
 }
 

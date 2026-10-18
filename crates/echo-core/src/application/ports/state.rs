@@ -155,7 +155,7 @@ pub trait DeviceIdProvider: Send + Sync {
 /// outbox-derived monotone revision and the HLC the object's last write
 /// stamped. Used by the materializers to build portable records that share the
 /// exact revision/HLC the `SQLite` row and outbox row carry.
-pub trait SyncStateReader: Send + Sync {
+pub trait SyncStateReader: super::ResourceRetentionPort {
     /// The object's durable local sync revision, or `Revision(0)` when it has
     /// never changed. It remains available after outbox history is pruned.
     fn outbox_revision(&self, object_type: &str, object_uuid: &str) -> Result<Revision, Error>;

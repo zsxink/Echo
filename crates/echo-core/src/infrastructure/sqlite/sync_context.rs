@@ -67,6 +67,24 @@ pub(super) fn select(connection: &Connection, root: &str) -> Result<(), Error> {
             |row| row.get(0),
         )
         .map_err(storage)?;
+    let binding_root: Option<Option<String>> = connection
+        .query_row(
+            "SELECT local_root_uuid FROM sync_binding WHERE singleton=1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(storage)?;
+    // A missing owner is recovery evidence, not permission to attach an old
+    // authority to whichever library happens to be selected in the UI.
+    if binding_root
+        .as_ref()
+        .is_some_and(|owner| owner.as_deref() != Some(previous.as_str()))
+    {
+        return Err(Error::conflict(
+            "sync context ownership requires explicit repair",
+        ));
+    }
     if previous == root {
         return Ok(());
     }

@@ -207,6 +207,15 @@ impl RootConstrainedFileSystem {
 }
 
 impl crate::application::ports::filesystem::LegacyLibraryFileSystem for RootConstrainedFileSystem {
+    fn retain_trash_resource(
+        &self,
+        root: LibraryRootId,
+        path: &RelativeMediaPath,
+        expected_hash: &str,
+    ) -> Result<crate::application::ports::RetainedResource, Error> {
+        self.verify_trash_path(root, path)?;
+        super::retained::copy(&self.registry, root, path, expected_hash)
+    }
     fn enumerate(&self, root: LibraryRootId) -> Result<Vec<RelativeMediaPath>, Error> {
         // Reject an enumeration when the root itself is unreadable; per-entry
         // failures are skipped inside the walker.

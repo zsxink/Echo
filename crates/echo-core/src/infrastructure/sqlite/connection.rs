@@ -19,6 +19,7 @@ use crate::error::Error;
 use super::support::{now_ms, storage};
 
 mod migrations {
+    pub const RESOURCE_RETENTION: &str = include_str!("migrations/0023_resource_retention.sql");
     pub const INITIAL: &str = include_str!("migrations/0001_initial.sql");
     pub const LIBRARY_ASSETS: &str = include_str!("migrations/0002_library_assets.sql");
     pub const ROOT_WRITE_SAFETY: &str = include_str!("migrations/0003_root_write_safety.sql");
@@ -42,6 +43,7 @@ mod migrations {
         include_str!("migrations/0015_budgeted_snapshot_pages.sql");
     pub const HOST_INITIAL_BASELINE: &str =
         include_str!("migrations/0017_host_initial_baseline.sql");
+    pub const HOST_RECOVERY: &str = include_str!("migrations/0021_host_recovery.sql");
     pub const ROOT_SYNC_CONTEXTS: &str = include_str!("migrations/0020_root_sync_contexts.sql");
     pub const REMOTE_RESOURCE_PUBLICATION: &str =
         include_str!("migrations/0018_remote_resource_publication.sql");
@@ -115,6 +117,8 @@ pub(crate) fn apply_migrations(connection: &mut Connection) -> Result<(), Error>
             (17, migrations::HOST_INITIAL_BASELINE),
             (18, migrations::REMOTE_RESOURCE_PUBLICATION),
             (20, migrations::ROOT_SYNC_CONTEXTS),
+            (21, migrations::HOST_RECOVERY),
+            (23, migrations::RESOURCE_RETENTION),
         ],
     )
 }
@@ -170,6 +174,18 @@ pub(crate) fn apply_migration_set(
 // queues. Preserve them byte for byte; version 18 needs the queue conversion.
 // The checksum remains that of the complete immutable version 20 script.
 fn apply_root_sync_contexts(connection: &Connection, script: &str) -> Result<(), Error> {
+    let unrooted_binding: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sync_binding WHERE local_root_uuid IS NULL)",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if unrooted_binding {
+        return Err(Error::conflict(
+            "historical sync ledger has no local root; explicit repair is required",
+        ));
+    }
     let legacy: Option<String> = connection
         .query_row(
             "SELECT checksum FROM schema_migrations WHERE version=19",

@@ -380,7 +380,7 @@ async fn stopping_the_host_ends_a_held_commit_page() {
             String::new(),
         )
         .await;
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert!(
         started.elapsed() >= Duration::from_millis(400),
         "the request must actually be held before the stop ends it"
@@ -389,11 +389,14 @@ async fn stopping_the_host_ends_a_held_commit_page() {
         started.elapsed() < Duration::from_secs(2),
         "stopping the host must end the hold instead of serving the full budget"
     );
-    assert!(commit_page_body(response).await.entries.is_empty());
+    assert_error(response, StatusCode::UNAUTHORIZED, "unauthorized").await;
 }
 
 async fn assert_error(response: Response, status: StatusCode, error: &str) {
     assert_eq!(response.status(), status);
+    if status == StatusCode::UNAUTHORIZED {
+        assert_eq!(response.headers()[axum::http::header::CONNECTION], "close");
+    }
     let bytes = axum::body::to_bytes(response.into_body(), 4096)
         .await
         .unwrap();
@@ -765,3 +768,6 @@ async fn resource_range_requires_matching_library_and_bounded_explicit_offsets()
     );
     assert_eq!(resources.calls.load(Ordering::Relaxed), 1);
 }
+
+#[path = "server_security_tests.rs"]
+mod security;

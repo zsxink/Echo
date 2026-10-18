@@ -345,3 +345,85 @@ fn deny_during_approval_compensates_the_late_grant() {
     assert_eq!(port.cancelled.lock().unwrap().len(), 1);
     assert!(registry.pending_requests().unwrap().is_empty());
 }
+
+#[test]
+fn short_code_rejects_wrong_expired_consumed_and_rotated_codes() {
+    let registry = PairingRegistry::new(binding());
+    let invitation = invite(&registry, DeviceId::new());
+    assert_eq!(invitation.invitation_secret.len(), 6);
+    assert!(invitation
+        .invitation_secret
+        .bytes()
+        .all(|byte| byte.is_ascii_digit()));
+    let mut request = PairingCodeRequest {
+        code: invitation.invitation_secret.clone(),
+        device_id: DeviceId::new(),
+        device_name: "Joining device".into(),
+    };
+    request.code = if request.code == "000000" {
+        "111111"
+    } else {
+        "000000"
+    }
+    .into();
+    assert_eq!(
+        registry.request_with_code(&request).err(),
+        Some(PairingError::Unavailable)
+    );
+    request.code = "12x456".into();
+    assert_eq!(
+        registry.request_with_code(&request).err(),
+        Some(PairingError::InvalidRequest)
+    );
+    request.code = invitation.invitation_secret;
+    let (receipt, pin) = registry.request_with_code(&request).unwrap();
+    assert_eq!(receipt.binding, pin.binding);
+    assert_eq!(pin.host_certificate_der, vec![1, 2, 3]);
+    assert_eq!(
+        registry.request_with_code(&request).err(),
+        Some(PairingError::Unavailable)
+    );
+
+    let expired = registry
+        .create_invitation(DeviceId::new(), vec![1], Duration::from_nanos(1))
+        .unwrap();
+    thread::sleep(Duration::from_millis(1));
+    request.code = expired.invitation_secret;
+    assert_eq!(
+        registry.request_with_code(&request).err(),
+        Some(PairingError::Unavailable)
+    );
+
+    let rotated = invite(&registry, DeviceId::new());
+    let current = invite(&registry, DeviceId::new());
+    // Rotation must invalidate an outstanding invitation immediately, even if
+    // an extremely unlikely six-digit collision reuses its displayed code.
+    assert_eq!(
+        registry
+            .request(&request_dto(&rotated, DeviceId::new()))
+            .err(),
+        Some(PairingError::Unavailable)
+    );
+    request.code = current.invitation_secret;
+    assert!(registry.request_with_code(&request).is_ok());
+}
+
+#[test]
+fn short_code_lifetime_is_bounded_to_ten_minutes() {
+    let registry = PairingRegistry::new(binding());
+    for ttl in [Duration::ZERO, Duration::from_secs(601)] {
+        assert_eq!(
+            registry
+                .create_invitation(DeviceId::new(), vec![1], ttl)
+                .err(),
+            Some(PairingError::InvalidRequest)
+        );
+    }
+    assert_eq!(
+        registry
+            .create_invitation(DeviceId::new(), vec![1], Duration::from_secs(600))
+            .unwrap()
+            .expires_in_secs,
+        600
+    );
+}

@@ -11,8 +11,10 @@ mod filesystem_capabilities;
 mod media;
 mod remote_resources;
 mod repository;
+mod resource_retention;
 mod state;
 mod sync;
+mod sync_recovery;
 mod system;
 mod transaction;
 
@@ -24,8 +26,10 @@ pub use filesystem_capabilities::*;
 pub use media::*;
 pub use remote_resources::*;
 pub use repository::*;
+pub use resource_retention::*;
 pub use state::*;
 pub use sync::*;
+pub use sync_recovery::*;
 pub use system::*;
 pub use transaction::*;
 

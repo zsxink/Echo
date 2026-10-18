@@ -89,6 +89,28 @@ pub(crate) fn enqueue_sync_with_id(
     stable_mutation_id: Option<&str>,
 ) -> Result<i64, Error> {
     let local_root = super::sync_context::object_root(connection, kind, object_uuid, payload_json)?;
+    enqueue_sync_in_root(
+        connection,
+        &local_root,
+        kind,
+        object_uuid,
+        payload_json,
+        operation,
+        stable_mutation_id,
+    )
+}
+
+/// Recovery may enqueue a final tombstone after its canonical row has already
+/// been removed. Its root comes from the archived authority, never UI selection.
+pub(super) fn enqueue_sync_in_root(
+    connection: &Connection,
+    local_root: &str,
+    kind: &str,
+    object_uuid: &str,
+    payload_json: &str,
+    operation: &str,
+    stable_mutation_id: Option<&str>,
+) -> Result<i64, Error> {
     connection
         .execute(
             "INSERT INTO sync_local_highwater (object_type, object_uuid, local_revision) VALUES (?1, ?2, 1) ON CONFLICT(object_type, object_uuid) DO UPDATE SET local_revision = local_revision + 1",

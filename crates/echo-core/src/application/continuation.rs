@@ -28,7 +28,7 @@
 //! and the restore path cannot drift apart — the bug being fixed here was
 //! precisely "the use case exists but nothing calls it".
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use crate::application::portable::{ControlPlaneStatus, EnsureControlPlane};
 use crate::application::ports::{ControlPlanePort, PlaylistRepository, SongRepository, UnitOfWork};
@@ -37,6 +37,7 @@ use crate::domain::ids::{
     LibraryRootId, PlaylistId, PlaylistItemId, RelativeMediaPath, Revision, SongId,
 };
 use crate::domain::library::{HybridLogicalClock, PortableRecord, RecordKind, TombstoneRecord};
+use crate::domain::sync::ObjectKey;
 use crate::error::Error;
 
 /// What one projection adopted, suppressed and could not place.
@@ -90,8 +91,9 @@ pub struct ContinuationReport {
     pub projection: ProjectionReport,
 }
 
-/// A tombstone index: object UUID → the newest deletion record.
-type Tombstones = BTreeMap<uuid::Uuid, TombstoneRecord>;
+/// A tombstone index keyed by typed identity: a song delete must not suppress
+/// a favorite or playlist member which happens to reuse the same UUID.
+type Tombstones = HashMap<ObjectKey, TombstoneRecord>;
 
 /// Continue a library's local state from its portable object records.
 pub struct ContinueFromRecords<'a> {
@@ -160,7 +162,7 @@ impl<'a> ContinueFromRecords<'a> {
         Ok(report)
     }
 
-    /// Read every tombstone, keyed by the deleted object's UUID. When the same
+    /// Read every tombstone, keyed by the deleted object's typed identity. When the same
     /// object was tombstoned more than once the newest wins.
     fn tombstones(&self, root: LibraryRootId) -> Result<Tombstones, Error> {
         let mut index = Tombstones::new();
@@ -171,7 +173,7 @@ impl<'a> ContinueFromRecords<'a> {
                 continue;
             };
             index
-                .entry(tombstone.object_uuid)
+                .entry(PortableRecord::Tombstone(tombstone.clone()).object_key()?)
                 .and_modify(|current| {
                     if version_of(tombstone.hlc, tombstone.revision)
                         > version_of(current.hlc, current.revision)
@@ -199,7 +201,7 @@ impl<'a> ContinueFromRecords<'a> {
             };
             if suppressed(
                 tombstones,
-                &song_record.song_uuid,
+                ObjectKey::Song(SongId::from_uuid(song_record.song_uuid)),
                 song_record.hlc,
                 song_record.revision,
             ) {
@@ -268,7 +270,12 @@ impl<'a> ContinueFromRecords<'a> {
             let id = SongId::from_uuid(favorite.song_uuid);
             if suppressed(
                 tombstones,
-                &favorite.song_uuid,
+                ObjectKey::Favorite(SongId::from_uuid(favorite.song_uuid)),
+                favorite.hlc,
+                favorite.revision,
+            ) || suppressed_song_state(
+                tombstones,
+                SongId::from_uuid(favorite.song_uuid),
                 favorite.hlc,
                 favorite.revision,
             ) {
@@ -307,7 +314,7 @@ impl<'a> ContinueFromRecords<'a> {
             let id = PlaylistId::from_uuid(playlist.playlist_uuid);
             if suppressed(
                 tombstones,
-                &playlist.playlist_uuid,
+                ObjectKey::Playlist(PlaylistId::from_uuid(playlist.playlist_uuid)),
                 playlist.hlc,
                 playlist.revision,
             ) {
@@ -369,7 +376,17 @@ impl<'a> ContinueFromRecords<'a> {
         for item in items {
             let playlist = PlaylistId::from_uuid(item.playlist_uuid);
             let song = SongId::from_uuid(item.song_uuid);
-            if suppressed(tombstones, &item.item_uuid, item.hlc, item.revision) {
+            if suppressed(
+                tombstones,
+                ObjectKey::PlaylistItem(PlaylistItemId::from_uuid(item.item_uuid)),
+                item.hlc,
+                item.revision,
+            ) || suppressed_song_state(
+                tombstones,
+                SongId::from_uuid(item.song_uuid),
+                item.hlc,
+                item.revision,
+            ) {
                 report.tombstoned += 1;
                 if self.playlists.by_id(playlist)?.is_some() && known.contains(&song) {
                     self.playlists.remove_member(playlist, song)?;
@@ -414,7 +431,17 @@ impl<'a> ContinueFromRecords<'a> {
                 continue;
             };
             let id = SongId::from_uuid(stats.song_uuid);
-            if suppressed(tombstones, &stats.song_uuid, stats.hlc, stats.revision) {
+            if suppressed(
+                tombstones,
+                ObjectKey::PlayStats(SongId::from_uuid(stats.song_uuid)),
+                stats.hlc,
+                stats.revision,
+            ) || suppressed_song_state(
+                tombstones,
+                SongId::from_uuid(stats.song_uuid),
+                stats.hlc,
+                stats.revision,
+            ) {
                 report.tombstoned += 1;
                 continue;
             }
@@ -446,7 +473,12 @@ impl<'a> ContinueFromRecords<'a> {
             };
             if suppressed(
                 tombstones,
-                &override_record.song_uuid,
+                ObjectKey::Override(SongId::from_uuid(override_record.song_uuid)),
+                override_record.hlc,
+                override_record.revision,
+            ) || suppressed_song_state(
+                tombstones,
+                SongId::from_uuid(override_record.song_uuid),
                 override_record.hlc,
                 override_record.revision,
             ) {
@@ -479,13 +511,24 @@ impl<'a> ContinueFromRecords<'a> {
 /// last fact written for that object.
 fn suppressed(
     tombstones: &Tombstones,
-    object_uuid: &uuid::Uuid,
+    object_key: ObjectKey,
     hlc: HybridLogicalClock,
     revision: Revision,
 ) -> bool {
-    tombstones.get(object_uuid).is_some_and(|tombstone| {
+    tombstones.get(&object_key).is_some_and(|tombstone| {
         version_of(hlc, revision) <= version_of(tombstone.hlc, tombstone.revision)
     })
+}
+
+/// Song deletion cascades to its dependent favorite, statistics, override and
+/// playlist-member records, while tombstones for those kinds remain distinct.
+fn suppressed_song_state(
+    tombstones: &Tombstones,
+    song_id: SongId,
+    hlc: HybridLogicalClock,
+    revision: Revision,
+) -> bool {
+    suppressed(tombstones, ObjectKey::Song(song_id), hlc, revision)
 }
 
 /// Strict ordering of two versions: HLC first, revision as the tie-break.

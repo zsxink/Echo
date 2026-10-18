@@ -169,8 +169,10 @@ impl SqliteDatabase {
                         "UPDATE sync_binding SET local_root_uuid=?1, updated_at=?2 WHERE singleton=1 AND local_root_uuid IS NULL",
                         params![local_root_uuid, now_ms()],
                     ).map_err(storage)?;
-                    tx.commit().map_err(storage)?;
                 }
+                // Selecting an already-bound archived root still changes the
+                // live context and must commit even when binding is unchanged.
+                tx.commit().map_err(storage)?;
                 return Ok(());
             }
             tx.execute(

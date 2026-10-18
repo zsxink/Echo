@@ -1,3 +1,4 @@
+use super::pairing::validate_pairing_bootstrap;
 use super::*;
 use echo_core::application::ports::StagedConfirmation;
 use echo_core::domain::ids::SongId;
@@ -282,3 +283,46 @@ const RENEWED_CERTIFICATE: &str = "308201653082010aa003020102020900f012247227fd8
 
 #[path = "client_http_tests.rs"]
 mod http_contracts;
+
+#[test]
+fn bootstrap_rejects_unusable_pins_and_mismatched_identity_before_persistence() {
+    use crate::pairing::{PairingGrantDto, PairingInvitation};
+    let candidate = mutation();
+    let device = candidate.origin_device_id;
+    let mut response = PairingBootstrapResponse {
+        invitation: PairingInvitation {
+            binding: candidate.binding,
+            host_device_id: DeviceId::new(),
+            invitation_id: "a".repeat(64),
+            invitation_secret: "123456".into(),
+            host_certificate_der: decode_hex(CERTIFICATE),
+            expires_in_secs: 600,
+        },
+        grant: PairingGrantDto {
+            binding: candidate.binding,
+            device_id: device,
+            bearer_token: "b".repeat(64),
+        },
+    };
+    assert!(validate_pairing_bootstrap(&response, "123456", device).is_ok());
+    response.invitation.host_certificate_der = vec![1, 2, 3];
+    assert!(matches!(
+        validate_pairing_bootstrap(&response, "123456", device),
+        Err(ClientError::InvalidResponseBody)
+    ));
+    response.invitation.host_certificate_der = decode_hex(CERTIFICATE);
+    assert!(matches!(
+        validate_pairing_bootstrap(&response, "654321", device),
+        Err(ClientError::InvalidResponseBody)
+    ));
+    response.grant.binding.library_id = LibraryId::new();
+    assert!(matches!(
+        validate_pairing_bootstrap(&response, "123456", device),
+        Err(ClientError::InvalidResponseBody)
+    ));
+    response.grant.binding = candidate.binding;
+    assert!(matches!(
+        validate_pairing_bootstrap(&response, "123456", DeviceId::new()),
+        Err(ClientError::InvalidResponseBody)
+    ));
+}

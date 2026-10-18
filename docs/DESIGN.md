@@ -158,6 +158,8 @@ apps/desktop/
 - **用户资料库目录**：`media/` 保存实际音频与 `.lrc`；`echo/manifest.json` 与 `echo/records/` 保存版本化对象资料；`echo/tmp/` 仅用于本机恢复，绝不作为同步资料。
 - **局域网 JSON 变更记录（二期）**：经认证的主设备传输已确认对象资料及媒体文件；记录包含类型化对象身份、稳定事件身份、主确认序列和载荷。设备应用到自己的 SQLite，并以文件校验完成媒体关联。
 
+`echo/manifest.json` 的格式版本从 1 升级到 2。v1 对象是扁平 portable record；v2 对象包在 `{ "format_version": 2, "record": ..., "sync": ... }` envelope 中。`sync` 仅在已有真实确认信息时包含 authority/epoch、主确认 object version 和 typed alias；升级旧 v1 记录不得推造这些值。v1→v2 使用持久迁移 journal 和原始文件备份，先发布旧版本不兼容的临时 manifest 围栏，再逐条升级，校验并刷盘后才发布正式 v2 manifest。新版本打开控制面前先恢复 journal；无法证明的旧 PendingDelete/临时墓碑保持原样并阻止迁移，不将其猜成最终删除。旧程序重新打开被围栏的库时必须拒绝接续。墓碑路径按被删除对象的类型隔离，歌曲与收藏等共享 UUID 的墓碑不得互相覆盖。
+
 同步 JSON 是网络协议格式，而不是本地数据库。变更经主设备逐对象确认，不会因为直接覆盖 SQLite 文件而丢失另一台设备的修改。
 
 例如，歌曲路径或元数据发生变更时，`sync_outbox` 可生成如下远端同步载荷：

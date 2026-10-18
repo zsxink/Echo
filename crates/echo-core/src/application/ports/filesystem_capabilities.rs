@@ -159,6 +159,12 @@ impl<T: LegacyLibraryFileSystem> LibraryFileRecovery for T {
 
 /// Moves files through Echo's controlled per-operation trash area.
 pub trait LibraryTrashFileSystem: Send + Sync {
+    fn retain_trash_resource(
+        &self,
+        root: LibraryRootId,
+        path: &RelativeMediaPath,
+        expected_hash: &str,
+    ) -> Result<super::RetainedResource, Error>;
     fn trash_path(
         &self,
         root: LibraryRootId,
@@ -181,6 +187,14 @@ pub trait LibraryTrashFileSystem: Send + Sync {
 }
 
 impl<T: LegacyLibraryFileSystem> LibraryTrashFileSystem for T {
+    fn retain_trash_resource(
+        &self,
+        root: LibraryRootId,
+        path: &RelativeMediaPath,
+        expected_hash: &str,
+    ) -> Result<super::RetainedResource, Error> {
+        LegacyLibraryFileSystem::retain_trash_resource(self, root, path, expected_hash)
+    }
     fn trash_path(
         &self,
         root: LibraryRootId,

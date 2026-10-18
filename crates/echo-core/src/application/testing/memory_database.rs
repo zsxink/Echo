@@ -24,6 +24,8 @@ use crate::error::Error;
 /// The shared transactional store.
 #[derive(Clone, Debug, Default)]
 struct Store {
+    retained_resources:
+        BTreeMap<(LibraryRootId, crate::domain::sync::ResourceDigest), RetainedResource>,
     songs: BTreeMap<SongId, Song>,
     roots: BTreeMap<LibraryRootId, LibraryRoot>,
     playlists: BTreeMap<PlaylistId, (LibraryRootId, String, Option<String>)>,

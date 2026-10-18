@@ -54,6 +54,7 @@ pub(crate) mod conversion;
 pub(crate) mod device_state;
 pub(crate) mod query;
 mod remote_resources;
+mod resource_retention;
 pub(crate) mod statements;
 pub(crate) mod support;
 pub(crate) mod sync;
@@ -65,6 +66,7 @@ pub(crate) mod sync_ledger;
 pub(crate) mod sync_manifests;
 pub(crate) mod sync_projection;
 pub(crate) mod sync_queue;
+mod sync_recovery;
 mod sync_snapshot;
 mod sync_song_aliases;
 #[cfg(test)]

@@ -49,6 +49,7 @@ pub(super) fn project_confirmed_tombstone(
 ) -> Result<(), Error> {
     match object_type {
         "song" => {
+            super::resource_retention::plan_remote_delete(tx, object_uuid)?;
             // Retain the local row and journal evidence for explicit recovery.
             // PendingDelete already hides it from every catalog/queue view.
             tx.execute(

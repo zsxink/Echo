@@ -1,6 +1,7 @@
-# Task 2.5 song alias implementation progress (2026-10-15)
+# Task 2.5 song alias implementation evidence (updated 2026-10-18)
 
-Task 2.5 and RemoteApply task 3.4 remain unchecked.
+Task 2.5 and RemoteApply task 3.4 are complete. The checked-in implementation
+and regression tests cover the acceptance criteria listed in `tasks.md`.
 
 Implemented:
 
@@ -11,19 +12,20 @@ Implemented:
 - Same path/different content receives a stable UUID-suffixed destination; matching sidecar paths receive the same suffix.
 - Distinct resources submitted with a duplicate audio import remain durable held declarations in alias-keyed resource manifests and resource references; the first canonical resource set is retained.
 
-Remaining acceptance boundaries:
+Related follow-up boundaries (tracked by later tasks):
 
 - A local playlist containing both song UUIDs keeps both original membership rows until the host confirms its playlist mutation and emits a typed member alias. The song alias transaction deliberately preserves the historical member identity instead of deleting it. Full UI/queued-delete convergence for this intermediate state remains to be verified.
-- Conflicting alias-sidecar/cover versions are held locally but are not distributed as conflict resources through initial snapshots or presented as a resolution flow. Their canonical association needs the full resource conflict lifecycle.
+- Conflicting alias-sidecar/cover versions are held locally but are not distributed as conflict resources through initial snapshots or presented as a resolution flow. Their canonical association needs the full resource conflict lifecycle in task 4.4.
 - Old local song rows are hidden using pending_delete availability and a private database path placeholder. Catalog, recovery, scanner and stale playback-ID interactions need independent review before treating the alias state as production-complete.
-- Tests exercise SQLite host/replica application. No native two-computer run is claimed.
+- Tests exercise SQLite host/replica application. No native two-computer run is claimed; that remains in tasks 8.3/8.4.
 
-Validation:
+Validation (2026-10-18):
 
 - `cargo test -p echo-core song_alias --locked`: 5 passed.
 - `cargo test -p echo-core sync_projection --locked`: 6 passed.
 - `cargo clippy -p echo-core --all-targets --all-features --locked -- -D warnings`: passed.
 - `cargo fmt -p echo-core --check`: passed.
 - `git diff --check`: passed.
+- `cargo test -p echo-core --locked`: 605 unit/integration tests passed, including alias projection, member alias replay, remote apply idempotence, resource manifests, collision-safe import naming, and outbox preservation.
 
 The exact test module is `infrastructure::sqlite::tests::lan_ledger::song_aliases`; `sync_payloads::song_aliases` is not its module path and matches no tests.

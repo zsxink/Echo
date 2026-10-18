@@ -132,6 +132,22 @@ impl<'a> FinalizeExpiredDeletes<'a> {
             }
         }
 
+        // Retain before crossing the OS boundary. Copies are deliberately kept
+        // even without a current hold: this release does not garbage collect
+        // shared history, and a catalog row is not evidence of sole ownership.
+        self.deps.sync.rebuild_resource_holds(root)?;
+        for item in &items {
+            let path = item
+                .staging_path
+                .as_ref()
+                .ok_or_else(|| Error::conflict("delete resource has no staged path"))?;
+            let retained = self
+                .deps
+                .fs
+                .retain_trash_resource(root, path, &item.expected_hash)?;
+            self.deps.sync.record_retained_resource(root, retained)?;
+        }
+
         // The irreversible boundary. A return of Ok is the platform adapter's
         // explicit success receipt; no filesystem absence is consulted after it.
         if self.trash.send_to_trash(root, operation).is_err() {

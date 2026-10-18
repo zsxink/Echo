@@ -1,5 +1,8 @@
 use crate::domain::ids::{LibraryRootId, OperationId};
-use crate::domain::library::{LibraryManifest, PortableRecord, RecordKind, CURRENT_FORMAT_VERSION};
+use crate::domain::library::{
+    LibraryManifest, PortableRecord, PortableRecordDocument, PortableRecordEnvelope, RecordKind,
+    CURRENT_FORMAT_VERSION,
+};
 use crate::error::Error;
 
 /// The observable state of `echo/manifest.json` (design D3).
@@ -81,6 +84,123 @@ pub trait ControlPlanePort: Send + Sync {
     /// any kind. Cheap (directory scan, no file reads): it decides whether a
     /// manifest-less directory is a brand-new root or a self-heal candidate.
     fn records_present(&self, root: LibraryRootId) -> Result<bool, Error>;
+
+    /// Write a v2 envelope. Implementations that do not support the recoverable
+    /// format upgrade fail closed instead of silently dropping sync metadata.
+    fn write_record_envelope(
+        &self,
+        _root: LibraryRootId,
+        _record: &PortableRecordEnvelope,
+    ) -> Result<(), Error> {
+        Err(Error::unavailable(
+            "portable v2 records",
+            "this control plane does not support v2 writes",
+        ))
+    }
+
+    /// Read one v1 or v2 document. The default adapts older test/control-plane
+    /// implementations; filesystem implementations should override it to read
+    /// v2 paths and run journal recovery first.
+    fn read_record_document(
+        &self,
+        root: LibraryRootId,
+        kind: RecordKind,
+        object_uuid: &str,
+    ) -> Result<Option<PortableRecordDocument>, Error> {
+        Ok(self
+            .read_record(root, kind, object_uuid)?
+            .map(PortableRecordDocument::V1))
+    }
+
+    /// Enumerate typed v1/v2 documents in stable order.
+    fn list_record_documents(
+        &self,
+        root: LibraryRootId,
+        kind: RecordKind,
+    ) -> Result<Vec<PortableRecordDocument>, Error> {
+        self.list_records(root, kind)?
+            .into_iter()
+            .map(|raw| {
+                serde_json::from_str(&raw).map_err(|error| {
+                    Error::unavailable_with_source(
+                        "portable record",
+                        "a record could not be decoded",
+                        error,
+                    )
+                })
+            })
+            .collect()
+    }
+
+    /// Read a tombstone for its deleted object kind. Legacy adapters can only
+    /// provide an untyped tombstone lookup, so verify the discriminator.
+    fn read_tombstone_document(
+        &self,
+        root: LibraryRootId,
+        deleted_kind: RecordKind,
+        object_uuid: &str,
+    ) -> Result<Option<PortableRecordDocument>, Error> {
+        let mut matching = self
+            .list_record_documents(root, RecordKind::Tombstone)?
+            .into_iter()
+            .filter(|document| {
+                matches!(document.record(), PortableRecord::Tombstone(tombstone)
+                    if tombstone.object_uuid.to_string() == object_uuid
+                        && tombstone.deleted_kind == deleted_kind)
+            });
+        let Some(document) = matching.next() else {
+            return Ok(None);
+        };
+        if matching.next().is_some() {
+            return Err(Error::conflict("typed portable tombstone is ambiguous"));
+        }
+        Ok(Some(document))
+    }
+
+    /// Delete only the tombstone for the requested typed object. The default
+    /// refuses if a legacy adapter cannot prove the UUID is unambiguous.
+    fn delete_tombstone(
+        &self,
+        root: LibraryRootId,
+        deleted_kind: RecordKind,
+        object_uuid: &str,
+    ) -> Result<(), Error> {
+        let tombstones = self.list_record_documents(root, RecordKind::Tombstone)?;
+        let same_uuid_count = tombstones
+            .iter()
+            .filter(|document| {
+                matches!(document.record(), PortableRecord::Tombstone(tombstone)
+                    if tombstone.object_uuid.to_string() == object_uuid)
+            })
+            .count();
+        if same_uuid_count > 1 {
+            return Err(Error::conflict("typed portable tombstone is ambiguous"));
+        }
+        let has_requested_kind = tombstones.iter().any(|document| {
+            matches!(document.record(), PortableRecord::Tombstone(tombstone)
+                if tombstone.object_uuid.to_string() == object_uuid
+                    && tombstone.deleted_kind == deleted_kind)
+        });
+        if has_requested_kind {
+            self.delete_record(root, RecordKind::Tombstone, object_uuid)?;
+        }
+        Ok(())
+    }
+
+    /// Atomically upgrade all supplied records and publish the final manifest.
+    /// The filesystem adapter journals originals and publishes a temporary
+    /// incompatible-format fence before replacing any record.
+    fn apply_portable_upgrade(
+        &self,
+        _root: LibraryRootId,
+        _updates: &[PortableRecordEnvelope],
+        _manifest: &LibraryManifest,
+    ) -> Result<(), Error> {
+        Err(Error::unavailable(
+            "portable migration",
+            "this control plane does not support recoverable upgrades",
+        ))
+    }
 }
 
 // ---------------------------------------------------------------------------

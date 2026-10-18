@@ -42,6 +42,8 @@ use reqwest::Url;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use serde::{Deserialize, Serialize};
 
+#[path = "sync_provisioner/host_recovery.rs"]
+mod host_recovery;
 #[path = "sync_provisioner/pairing_store.rs"]
 mod pairing_store;
 use pairing_store::DurableHostPairing;
