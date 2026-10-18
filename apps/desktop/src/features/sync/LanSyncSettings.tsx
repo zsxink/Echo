@@ -8,7 +8,6 @@ import type {
 } from "../../ipc/ipc-types.generated";
 import { lanSyncAdapter, type LanSyncRole } from "./lanSyncAdapter";
 import { SyncConflictsPanel } from "./SyncConflictsPanel";
-import { SyncStorageHint } from "./SyncStorageHint";
 import { acceptsSyncStatus } from "./syncStatusOrder";
 
 function describeStatus(status: SyncStatus | null, loading: boolean): string {
@@ -282,7 +281,6 @@ export function LanSyncSettings({ libraryRoot }: { readonly libraryRoot?: string
         <h2 id="lan-sync-heading">局域网资料库同步</h2>
         <p>同步服务默认关闭。主机、发现和同步操作通过桌面端原生服务执行。</p>
       </header>
-      {!hostMode ? <SyncStorageHint libraryRoot={libraryRoot} status={status} /> : null}
       <div className="setting-row">
         <div className="storage-value">
           <strong>同步状态</strong>

@@ -251,11 +251,7 @@ describe("Sync opt-in guard", () => {
     expect(await screen.findByTestId("workspace")).toBeInTheDocument();
 
     expect(screen.queryByTestId("sidebar")).toBeInTheDocument();
-    expect(screen.getByTestId("sync-button")).toHaveTextContent("同步已关闭");
-    fireEvent.click(screen.getByTestId("sync-button"));
-    expect(
-      screen.getByText("在设置中选择“作为主设备”或“加入主设备”以启用同步。"),
-    ).toBeInTheDocument();
+    expect(screen.queryByTestId("sync-button")).not.toBeInTheDocument();
   });
 });
 

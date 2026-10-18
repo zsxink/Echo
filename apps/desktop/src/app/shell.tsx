@@ -11,7 +11,6 @@
 import { createContext, useContext, type ReactNode } from "react";
 
 import { Icon } from "./Icon";
-import { SyncToolbar } from "./SyncToolbar";
 
 export interface ShellNav {
   readonly sidebarOpen: boolean;
@@ -72,7 +71,6 @@ export function Topbar(props: { readonly title: string; readonly children?: Reac
         <strong>资料库</strong> / <span>{props.title}</span>
       </div>
       {props.children}
-      {nav ? <SyncToolbar /> : null}
     </header>
   );
 }
