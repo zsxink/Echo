@@ -129,3 +129,55 @@ fn rejection_without_a_host_position_never_re_anchors() {
     let other = outcome(false, "WrongObject", Some(3), Some(MutationId::new()));
     assert_eq!(reanchor_target(&candidate(9, None), &other), None);
 }
+
+/// The re-anchor position crosses a crate boundary as JSON: `echo-core` writes
+/// the rejection body and this adapter parses it. Every other test here builds
+/// the struct directly, so a renamed field or a UUID that does not round-trip
+/// would silently degrade to "the host named no position" — the replica would
+/// keep retrying a chain the host can never accept, which is the exact stall
+/// this repair exists to end.
+#[test]
+fn host_rejection_body_parses_into_a_re_anchor_position() {
+    let host_last = MutationId::new();
+    let body = format!(
+        r#"{{"accepted":false,"reason":"OutOfOrderPredecessor","origin_seq":57,"last_mutation_id":"{}"}}"#,
+        host_last.as_uuid()
+    );
+    let parsed: MutationOutcome = serde_json::from_str(&body).expect("host rejection body");
+    assert_eq!(parsed.origin_seq, Some(57));
+    assert_eq!(
+        parsed.last_mutation_id,
+        Some(host_last),
+        "the predecessor UUID must survive the wire encoding"
+    );
+    assert_eq!(
+        reanchor_target(&candidate(1, None), &parsed),
+        Some(OriginAnchor {
+            origin_seq: 57,
+            last_mutation_id: Some(host_last),
+        })
+    );
+
+    // A body from an older host names no position. It must still decode: that
+    // is the "no repair is possible from this rejection" branch, not a decode
+    // error that would replace the real diagnosis with a transport failure.
+    let legacy: MutationOutcome =
+        serde_json::from_str(r#"{"accepted":false,"reason":"OutOfOrderPredecessor"}"#)
+            .expect("legacy body still decodes");
+    assert_eq!(legacy.origin_seq, None);
+    assert_eq!(reanchor_target(&candidate(1, None), &legacy), None);
+
+    // Field-name drift is precisely what this test guards against. A camelCase
+    // key is what a serialization-level rename produces, and it must not be
+    // mistaken for the host naming genesis (which would renumber the chain).
+    let drifted: MutationOutcome = serde_json::from_str(&format!(
+        r#"{{"accepted":false,"reason":"OutOfOrderPredecessor","originSeq":57,"lastMutationId":"{}"}}"#,
+        host_last.as_uuid()
+    ))
+    .expect("unknown keys are ignored");
+    assert_eq!(
+        drifted.origin_seq, None,
+        "the adapter must read the key `echo-core` actually writes"
+    );
+    assert_eq!(reanchor_target(&candidate(1, None), &drifted), None);
+}
