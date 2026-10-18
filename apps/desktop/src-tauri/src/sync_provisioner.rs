@@ -167,7 +167,18 @@ fn map_sync_client_error(error: ClientError) -> SyncRuntimeError {
         | ClientError::InvalidResponse(_)
         | ClientError::InvalidResponseBody
         | ClientError::InvalidCommitChain => SyncRuntimeError::SyncProtocolFailed,
-        ClientError::RemoteApply(_) => SyncRuntimeError::LibraryUnavailable,
+        ClientError::RemoteApply(error) => {
+            // Applying host commits is a local write against the catalog. It
+            // says nothing about whether the music root is reachable, so
+            // reporting "library unavailable" here sends the user to the wrong
+            // place and drops the only evidence of what actually failed.
+            tracing::warn!(
+                target: "echo_desktop::sync",
+                %error,
+                "host commits could not be applied to the local catalog"
+            );
+            SyncRuntimeError::SyncRemoteApplyFailed
+        }
     }
 }
 
@@ -1309,10 +1320,26 @@ impl NativeSyncProvisioner {
             }
             Err(error) => Err(match error {
                 echo_sync::replica::ReplicaSyncError::Client(error) => map_sync_client_error(error),
-                echo_sync::replica::ReplicaSyncError::Core(_) => {
-                    SyncRuntimeError::LibraryUnavailable
+                echo_sync::replica::ReplicaSyncError::Core(error) => {
+                    // A local ledger failure is not a missing music directory.
+                    // Collapsing it into `LibraryUnavailable` used to leave the
+                    // user with a wrong instruction and no log line at all, so
+                    // the actual cause was unrecoverable after the fact.
+                    tracing::warn!(
+                        target: "echo_desktop::sync",
+                        %error,
+                        "local sync ledger failed during a peer cycle"
+                    );
+                    SyncRuntimeError::SyncLocalStateFailed
                 }
-                _ => SyncRuntimeError::SyncProtocolFailed,
+                other => {
+                    tracing::warn!(
+                        target: "echo_desktop::sync",
+                        error = %other,
+                        "peer sync cycle failed"
+                    );
+                    SyncRuntimeError::SyncProtocolFailed
+                }
             }),
         }
     }

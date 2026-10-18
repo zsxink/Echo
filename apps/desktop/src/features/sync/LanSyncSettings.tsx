@@ -631,6 +631,10 @@ function syncErrorText(key: string): string {
     "sync.libraryUnavailable": "当前音乐目录不可用。请确认目录仍可访问后重试同步。",
     "sync.libraryConflict":
       "主机中的部分歌曲已属于另一份本地音乐目录。请在设置中切回之前同步使用的目录，再重新加入主机。",
+    "sync.remoteApplyFailed":
+      "主机发来的变更无法写入本机资料库。请重试一次；若仍失败，请重启两端 Echo 后再次同步。",
+    "sync.localStateFailed":
+      "本机同步账本读写失败，与音乐目录是否可访问无关。请重启 Echo 后重试同步。",
     "sync.busy": "同步服务正在处理其他操作。",
     "sync.predecessorPending":
       "主机仍未接受本机的一条待发变更，自动对齐两端同步顺序后依旧失败。请确认两端都已更新到当前版本再重试；若仍失败，请提供两端同步日志。",

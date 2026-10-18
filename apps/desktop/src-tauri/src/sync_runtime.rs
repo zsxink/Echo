@@ -85,6 +85,10 @@ pub enum SyncRuntimeError {
     InvalidAddress,
     LibraryUnavailable,
     LibraryConflict,
+    /// Host commits could not be applied to the local catalog.
+    SyncRemoteApplyFailed,
+    /// The local sync ledger itself failed to read or write.
+    SyncLocalStateFailed,
     Busy,
     SyncPredecessorPending,
     ResourcePublicationPending,
@@ -111,6 +115,8 @@ impl SyncRuntimeError {
             Self::InvalidAddress => "sync.invalidAddress",
             Self::LibraryUnavailable => "sync.libraryUnavailable",
             Self::LibraryConflict => "sync.libraryConflict",
+            Self::SyncRemoteApplyFailed => "sync.remoteApplyFailed",
+            Self::SyncLocalStateFailed => "sync.localStateFailed",
             Self::Busy => "sync.busy",
             Self::SyncPredecessorPending => "sync.predecessorPending",
             Self::ResourcePublicationPending => "sync.resourcePublicationPending",

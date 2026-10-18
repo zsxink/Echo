@@ -1535,3 +1535,81 @@ fn typed_deletion_is_authorized_by_its_queue_entry_not_by_a_live_row() {
     };
     assert!(ensure_candidate_root(&database, root, &stranger).is_err());
 }
+
+/// The peer cycle is handed this scoped wrapper, never the database itself.
+///
+/// A port method the wrapper forgets to forward falls back to the trait
+/// default, and neither default is harmless here: re-anchoring fails with
+/// "adapter cannot re-anchor a pending origin chain" — which the caller folds
+/// into a generic library error, so the user is told to check a music
+/// directory that was never the problem — and the edit time silently
+/// disappears, degrading change-time arbitration to "the host always wins" on
+/// exactly the replica path. Both have to reach the database.
+#[test]
+fn scoped_queue_forwards_re_anchoring_and_the_local_change_time() {
+    use echo_core::domain::entities::Song;
+    use echo_core::domain::ids::{RelativeMediaPath, Revision, SongId};
+    use echo_core::domain::sync::OriginAnchor;
+
+    let directory = tempfile::tempdir().unwrap();
+    let database = SqliteDatabase::open(directory.path().join("scoped.sqlite")).unwrap();
+    let path = directory.path().join("library");
+    std::fs::create_dir_all(path.join("media")).unwrap();
+    prepared_empty_library(&path);
+    let root = derive_root_id(&path.canonicalize().unwrap());
+    LibraryRepository::upsert(&database, &LibraryRoot::new(root, path, true, true)).unwrap();
+    let binding = SyncBinding {
+        library_id: LibraryId::new(),
+        authority_id: AuthorityId::new(),
+        epoch: Epoch::INITIAL,
+    };
+    database.bind_sync_library(binding, false, root).unwrap();
+
+    let song = SongId::new();
+    SongRepository::upsert(
+        &database,
+        &Song::new(
+            song,
+            root,
+            RelativeMediaPath::new("media/scoped.flac").unwrap(),
+            Revision::INITIAL,
+        ),
+    )
+    .unwrap();
+    SongRepository::set_favorite(&database, song, true).unwrap();
+    SongRepository::set_favorite(&database, song, false).unwrap();
+
+    let queue = ScopedLocalQueue {
+        database: &database,
+        root,
+    };
+    let queued = queue.pending_local_mutations(512).unwrap();
+    assert!(!queued.is_empty(), "the wrapper must see the pending chain");
+
+    let changed_at = queue
+        .local_mutation_changed_at_ms(queued[0].mutation_id)
+        .unwrap();
+    assert_eq!(
+        changed_at,
+        database
+            .local_mutation_changed_at_ms(queued[0].mutation_id)
+            .unwrap(),
+        "the edit time must reach the host through the wrapper"
+    );
+    assert!(
+        changed_at.is_some(),
+        "a queued mutation always froze its change time"
+    );
+
+    let anchor = OriginAnchor {
+        origin_seq: 57,
+        last_mutation_id: Some(MutationId::new()),
+    };
+    assert_eq!(queue.rebase_local_chain(anchor).unwrap(), queued.len());
+    let rebased = queue.pending_local_mutations(512).unwrap();
+    assert_eq!(rebased[0].origin_seq, 58);
+    assert_eq!(
+        rebased[0].previous_mutation_id, anchor.last_mutation_id,
+        "the re-anchored chain must continue the host position"
+    );
+}

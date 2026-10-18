@@ -119,6 +119,41 @@ impl LocalSyncQueuePort for ScopedLocalQueue<'_> {
     ) -> Result<CommitCheckpoint, echo_core::error::Error> {
         self.database.replica_checkpoint(host_device_id)
     }
+
+    /// Forwarded explicitly: the trait default refuses, and the caller folds
+    /// that refusal into a library-unavailable error. The peer cycle reaches
+    /// this method on every attempt once the host reports a position this
+    /// chain does not continue, so a missing forward turns the one repair that
+    /// could end the stall into a wrong instruction about a music directory.
+    fn rebase_local_chain(
+        &self,
+        anchor: echo_core::domain::sync::OriginAnchor,
+    ) -> Result<usize, echo_core::error::Error> {
+        // The queue is scoped to one root; rebasing another root's chain would
+        // renumber events this cycle never sends.
+        if self
+            .database
+            .current_sync_configuration()?
+            .is_some_and(|configuration| configuration.local_root != self.root)
+        {
+            return Err(echo_core::error::Error::conflict(
+                "sync queue is scoped to a different library root",
+            ));
+        }
+        self.database.rebase_local_chain(anchor)
+    }
+
+    /// Forwarded explicitly: the trait default returns `None`, which is
+    /// indistinguishable from "this adapter keeps no edit time". The host then
+    /// falls back to the payload's legacy HLC and every replica edit compares
+    /// as zero, so the newest edit loses to the host's current value on every
+    /// push — a silent rollback rather than an error.
+    fn local_mutation_changed_at_ms(
+        &self,
+        mutation_id: MutationId,
+    ) -> Result<Option<u64>, echo_core::error::Error> {
+        self.database.local_mutation_changed_at_ms(mutation_id)
+    }
 }
 
 pub(super) fn ensure_candidate_root(
