@@ -27,6 +27,7 @@ fn maximum_size_mutation_remains_transportable_after_confirmation() {
     verify_ledger_protocol(true);
 }
 
+#[allow(clippy::too_many_lines)]
 fn verify_ledger_protocol(maximum_payload: bool) {
     let directory = tempfile::tempdir().unwrap();
     let database = SqliteDatabase::open(directory.path().join("library.db")).unwrap();
@@ -99,6 +100,7 @@ fn verify_ledger_protocol(maximum_payload: bool) {
                 previous_mutation_id: None,
                 object: mutation.object,
                 base_object_version: None,
+                changed_at_ms: None,
                 payload: mutation.payload,
             },
             aliases: vec![],
@@ -190,6 +192,7 @@ fn pad_to_mutation_limit(binding: SyncBinding, mutation: &mut MutationCandidate)
         previous_mutation_id: mutation.previous_mutation_id,
         object: mutation.object,
         base_object_version: mutation.base_object_version,
+        changed_at_ms: None,
         payload: mutation.payload.clone(),
     };
     let overhead = serde_json::to_vec(&dto).unwrap().len();

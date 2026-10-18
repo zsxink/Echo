@@ -479,7 +479,7 @@ fn finish_snapshot(
                 let deleted = candidate.payload == serde_json::json!({"tombstone":true});
                 let payload = (!deleted).then(|| candidate.payload.to_string());
                 let sequence = i64::try_from(version.commit_seq().as_u64()).map_err(storage)?;
-                connection.execute("INSERT INTO sync_object_versions(object_type,object_uuid,object_version,commit_seq,payload_json,is_tombstone) VALUES(?1,?2,?3,?3,?4,?5)",params![kind,id,sequence,payload,i64::from(deleted)]).map_err(storage)?;
+                connection.execute("INSERT INTO sync_object_versions(object_type,object_uuid,object_version,commit_seq,payload_json,is_tombstone,changed_at_ms) VALUES(?1,?2,?3,?3,?4,?5,0) ON CONFLICT(object_type,object_uuid) DO UPDATE SET object_version=excluded.object_version,commit_seq=excluded.commit_seq,payload_json=excluded.payload_json,is_tombstone=excluded.is_tombstone",params![kind,id,sequence,payload,i64::from(deleted)]).map_err(storage)?;
                 for resource in resources {
                     persist_resource(connection, kind, &id, &resource)?;
                 }

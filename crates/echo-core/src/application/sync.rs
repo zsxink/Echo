@@ -62,7 +62,22 @@ impl<'a> ConfirmHostMutation<'a> {
         binding: SyncBinding,
         candidate: &MutationCandidate,
     ) -> Result<StagedConfirmation, Error> {
-        let staged = self.ledger.stage_confirmation(binding, candidate)?;
+        self.execute_at(binding, candidate, None)
+    }
+
+    /// Confirm a mutation while retaining its immutable local edit timestamp.
+    ///
+    /// # Errors
+    /// Propagates ledger validation, storage, and publication failures.
+    pub fn execute_at(
+        &self,
+        binding: SyncBinding,
+        candidate: &MutationCandidate,
+        changed_at_ms: Option<u64>,
+    ) -> Result<StagedConfirmation, Error> {
+        let staged = self
+            .ledger
+            .stage_confirmation_at(binding, candidate, changed_at_ms)?;
         self.finish_publication(&staged)?;
         Ok(staged)
     }

@@ -1047,7 +1047,7 @@ pub(super) fn seed_import_source(
     );
     stack.metadata.set(published, tags(artist, title));
 }
-fn sync_song_payload(id: SongId, title: &str) -> serde_json::Value {
+pub(super) fn sync_song_payload(id: SongId, title: &str) -> serde_json::Value {
     serde_json::json!({
         "song_uuid": id.to_string(),
         "relative_path": format!("{title}.flac"),
@@ -1065,4 +1065,3 @@ fn sync_song_payload(id: SongId, title: &str) -> serde_json::Value {
         "added_at": 1,
     })
 }
-

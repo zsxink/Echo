@@ -329,7 +329,10 @@ fn apply_remote_commit(
                     params![sequence, expected_binding.0, expected_binding.1, expected_binding.2, commit.origin_device_id.as_uuid().to_string(), commit.mutation_id.as_uuid().to_string(), commit.canonical_json, commit.previous_digest.as_slice(), commit.digest.as_slice(), now_ms()],
                 ).map_err(storage)?;
     tx.execute(
-                    "INSERT INTO sync_object_versions(object_type, object_uuid, object_version, commit_seq, payload_json, is_tombstone) VALUES(?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(object_type, object_uuid) DO UPDATE SET object_version=excluded.object_version, commit_seq=excluded.commit_seq, payload_json=excluded.payload_json, is_tombstone=excluded.is_tombstone",
+                    // The confirmed change time is host-side arbitration state and is not part
+    // of the published commit body; a replica records the confirmed object, not
+    // the comparison input.
+    "INSERT INTO sync_object_versions(object_type, object_uuid, object_version, commit_seq, payload_json, is_tombstone, changed_at_ms) VALUES(?1, ?2, ?3, ?4, ?5, ?6, 0) ON CONFLICT(object_type, object_uuid) DO UPDATE SET object_version=excluded.object_version, commit_seq=excluded.commit_seq, payload_json=excluded.payload_json, is_tombstone=excluded.is_tombstone, changed_at_ms=0",
                     params![object_type, object_uuid, sequence, sequence, payload, i64::from(commit.is_tombstone)],
                 ).map_err(storage)?;
     tx.execute(

@@ -309,3 +309,63 @@ fn queue_summary_deduplicates_immutable_resource_content() {
     assert_eq!(count, 2);
     assert_eq!(resources, vec![resource]);
 }
+
+/// A local sequence space can never be authoritative: the host's confirmed
+/// cursor is. Re-anchoring renumbers the pending chain onto it without touching
+/// a single library row or event identity.
+#[test]
+fn rebase_reanchors_the_pending_chain_onto_the_host_cursor() {
+    use crate::domain::sync::{MutationId, OriginAnchor};
+
+    let (_directory, database, root) = database();
+    let song_id = SongId::new();
+    let mut song = Song::new(
+        song_id,
+        root,
+        RelativeMediaPath::new("artist/song.flac").unwrap(),
+        Revision::INITIAL,
+    );
+    song.apply_metadata(Some("Song".to_owned()), None, None, None);
+    SongRepository::upsert(&database, &song).unwrap();
+    SongRepository::set_favorite(&database, song_id, true).unwrap();
+    SongRepository::set_favorite(&database, song_id, false).unwrap();
+    let queued = database.pending_local_mutations(10).unwrap();
+    assert_eq!(queued.len(), 3);
+
+    // The host already confirmed 57 events this database never saw, e.g. because
+    // its ledger was rebuilt or the library root was re-bound.
+    let host_last = MutationId::new();
+    let anchor = OriginAnchor {
+        origin_seq: 57,
+        last_mutation_id: Some(host_last),
+    };
+    assert_eq!(database.rebase_local_chain(anchor).unwrap(), 3);
+
+    let pending = database.pending_local_mutations(10).unwrap();
+    assert_eq!(pending.len(), 3);
+    assert_eq!(pending[0].origin_seq, 58);
+    assert_eq!(pending[0].previous_mutation_id, Some(host_last));
+    assert_eq!(pending[1].origin_seq, 59);
+    assert_eq!(
+        pending[1].previous_mutation_id,
+        Some(pending[0].mutation_id)
+    );
+    assert_eq!(pending[2].origin_seq, 60);
+    assert_eq!(
+        pending[2].previous_mutation_id,
+        Some(pending[1].mutation_id)
+    );
+    assert_eq!(pending[0].mutation_id, queued[0].mutation_id);
+    assert_eq!(pending[0].payload, queued[0].payload);
+
+    // Later local writes continue the re-anchored chain instead of restarting
+    // the old, unreachable one.
+    SongRepository::set_favorite(&database, song_id, true).unwrap();
+    let continued = database.pending_local_mutations(10).unwrap();
+    assert_eq!(continued.len(), 4);
+    assert_eq!(continued[3].origin_seq, 61);
+    assert_eq!(
+        continued[3].previous_mutation_id,
+        Some(pending[2].mutation_id)
+    );
+}

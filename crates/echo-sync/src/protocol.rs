@@ -51,6 +51,9 @@ pub struct MutationDto {
     pub object: ObjectKey,
     #[serde(default)]
     pub base_object_version: Option<ObjectVersion>,
+    /// Original local edit time in milliseconds; absent on legacy clients.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changed_at_ms: Option<u64>,
     pub payload: Value,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub resource_refs: Vec<ResourceRefDto>,
@@ -453,6 +456,7 @@ mod tests {
             previous_mutation_id: None,
             object: ObjectKey::Song(echo_core::domain::ids::SongId::new()),
             base_object_version: None,
+            changed_at_ms: None,
             payload: json!({"value": 1}),
         }
     }

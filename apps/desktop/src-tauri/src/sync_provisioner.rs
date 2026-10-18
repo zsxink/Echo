@@ -349,28 +349,53 @@ impl NativeSyncProvisioner {
         }
         let checkpoint = self.recover_checkpoint(binding)?;
         let confirm = ConfirmHostMutation::new(self.database.as_ref(), checkpoint.as_ref());
+        let mut reanchored = false;
         loop {
             let mutations = self
                 .database
                 .pending_local_mutations(512)
                 .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
             let batch_size = mutations.len();
+            let mut rebase = false;
             for mutation in mutations {
                 self.database
                     .advance_rejected_local_mutations()
                     .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
                 ensure_candidate_root(self.database.as_ref(), configuration.local_root, &mutation)?;
+                let changed_at_ms = self
+                    .database
+                    .local_mutation_changed_at_ms(mutation.mutation_id)
+                    .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
                 let outcome = confirm
-                    .execute(binding, &mutation)
+                    .execute_at(binding, &mutation, changed_at_ms)
                     .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
                 if outcome.checkpoint.is_none() {
                     if outcome.outcome_json.contains("OutOfOrderPredecessor") {
-                        return Err(SyncRuntimeError::LibraryUnavailable);
+                        // The host owns this sequence space: its confirmed
+                        // cursor is the authority, so the pending chain is
+                        // re-anchored onto it instead of blocking the library's
+                        // own writes forever.
+                        if reanchored {
+                            return Err(SyncRuntimeError::SyncPredecessorPending);
+                        }
+                        let anchor = self
+                            .database
+                            .local_origin_anchor()
+                            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+                        self.database
+                            .rebase_local_chain(anchor)
+                            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+                        reanchored = true;
+                        rebase = true;
+                        break;
                     }
                     self.database
                         .reject_local_mutation(mutation.mutation_id, outcome.outcome_json)
                         .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
                 }
+            }
+            if rebase {
+                continue;
             }
             if batch_size < 512 {
                 break;

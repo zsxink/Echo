@@ -9,7 +9,7 @@ use crate::application::ports::LocalSyncQueuePort;
 use crate::domain::ids::{PlaylistId, PlaylistItemId, SongId};
 use crate::domain::sync::{
     CommitCheckpoint, CommitSeq, DeviceId, MutationCandidate, MutationId, ObjectKey, ObjectVersion,
-    SyncBinding,
+    OriginAnchor, SyncBinding,
 };
 use crate::error::{Error, Subject};
 
@@ -45,9 +45,68 @@ impl SqliteDatabase {
             Ok((count, resources.into_values().collect()))
         })
     }
+
+    /// This device's confirmed position in its own origin chain.
+    ///
+    /// The host confirms its own edits through the same ledger a peer's edits
+    /// go through, so this is the authority its local queue must line up with.
+    ///
+    /// # Errors
+    /// Reports unavailable storage or a malformed persisted cursor.
+    pub fn local_origin_anchor(&self) -> Result<OriginAnchor, Error> {
+        self.with_reader(|connection| {
+            let device: String = connection
+                .query_row(
+                    "SELECT value FROM device_state WHERE key='device_id'",
+                    [],
+                    |row| row.get(0),
+                )
+                .map_err(storage)?;
+            let cursor: Option<(i64, Option<String>)> = connection
+                .query_row(
+                    "SELECT origin_seq, last_mutation_id FROM sync_origin_cursors WHERE origin_device_id=?1",
+                    params![device],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()
+                .map_err(storage)?;
+            let Some((sequence, last)) = cursor else {
+                return Ok(OriginAnchor::GENESIS);
+            };
+            Ok(OriginAnchor {
+                origin_seq: u64::try_from(sequence).map_err(storage)?,
+                last_mutation_id: last
+                    .map(|id| {
+                        Uuid::parse_str(&id)
+                            .map(MutationId::from_uuid)
+                            .map_err(storage)
+                    })
+                    .transpose()?,
+            })
+        })
+    }
 }
 
 impl LocalSyncQueuePort for SqliteDatabase {
+    fn local_mutation_changed_at_ms(
+        &self,
+        mutation_id: crate::domain::sync::MutationId,
+    ) -> Result<Option<u64>, Error> {
+        self.with_reader(|connection| {
+            let changed_at: Option<i64> = connection
+                .query_row(
+                    "SELECT created_at FROM sync_mutations WHERE mutation_id=?1 AND local_root_uuid=(SELECT local_root_uuid FROM sync_active_context WHERE singleton=1)",
+                    params![mutation_id.as_uuid().to_string()],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(storage)?;
+            changed_at
+                .map(|value| u64::try_from(value).map_err(storage))
+                .transpose()
+        })
+    }
+
     fn advance_rejected_local_mutations(&self) -> Result<usize, Error> {
         self.writer.run(|connection| {
             let tx = connection
@@ -213,6 +272,83 @@ impl LocalSyncQueuePort for SqliteDatabase {
             } else {
                 Err(Error::conflict("local mutation is missing or already terminal"))
             }
+        })
+    }
+
+    fn rebase_local_chain(&self, anchor: OriginAnchor) -> Result<usize, Error> {
+        self.writer.run(move |connection| {
+            let tx = connection
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                .map_err(storage)?;
+            let local_device: String = tx
+                .query_row(
+                    "SELECT value FROM device_state WHERE key='device_id'",
+                    [],
+                    |row| row.get(0),
+                )
+                .map_err(storage)?;
+            let root: String = tx
+                .query_row(
+                    "SELECT local_root_uuid FROM sync_active_context WHERE singleton=1",
+                    [],
+                    |row| row.get(0),
+                )
+                .map_err(storage)?;
+            let mut statement = tx
+                .prepare(
+                    "SELECT mutation_id FROM sync_mutations WHERE origin_device_id=?1 AND local_root_uuid=?2 AND status='pending' ORDER BY origin_seq, created_at, mutation_id",
+                )
+                .map_err(storage)?;
+            let pending = statement
+                .query_map(params![local_device, root], |row| row.get::<_, String>(0))
+                .map_err(storage)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(storage)?;
+            drop(statement);
+
+            let mut sequence = anchor.origin_seq;
+            let mut previous = anchor.last_mutation_id;
+            let mut rebased = 0;
+            for mutation_id in &pending {
+                sequence = sequence.checked_add(1).ok_or_else(|| {
+                    Error::validation(
+                        Subject::Other,
+                        "sync origin sequence",
+                        "sequence exhausted",
+                    )
+                })?;
+                tx.execute(
+                    "UPDATE sync_mutations SET origin_seq=?2, previous_mutation_id=?3 WHERE origin_device_id=?4 AND mutation_id=?1",
+                    params![
+                        mutation_id,
+                        i64::try_from(sequence).map_err(storage)?,
+                        previous.map(|id| id.as_uuid().to_string()),
+                        local_device,
+                    ],
+                )
+                .map_err(storage)?;
+                previous = Some(
+                    MutationId::from_uuid(Uuid::parse_str(mutation_id).map_err(storage)?),
+                );
+                rebased += 1;
+            }
+            // Both cursor tables follow the same position: the local allocator
+            // so later writes continue this chain, and the host-confirmed mirror
+            // so the host role reads the same authority it just accepted.
+            let last = previous.map(|id| id.as_uuid().to_string());
+            let sequence = i64::try_from(sequence).map_err(storage)?;
+            tx.execute(
+                "INSERT INTO sync_local_origin_cursors(origin_device_id, origin_seq, last_mutation_id, local_root_uuid) VALUES(?1, ?2, ?3, ?4) ON CONFLICT(local_root_uuid,origin_device_id) DO UPDATE SET origin_seq=excluded.origin_seq, last_mutation_id=excluded.last_mutation_id",
+                params![local_device, sequence, last, root],
+            )
+            .map_err(storage)?;
+            tx.execute(
+                "INSERT INTO sync_origin_cursors(origin_device_id, origin_seq, last_mutation_id) VALUES(?1, ?2, ?3) ON CONFLICT(origin_device_id) DO UPDATE SET origin_seq=excluded.origin_seq, last_mutation_id=excluded.last_mutation_id",
+                params![local_device, sequence, last],
+            )
+            .map_err(storage)?;
+            tx.commit().map_err(storage)?;
+            Ok(rebased)
         })
     }
 

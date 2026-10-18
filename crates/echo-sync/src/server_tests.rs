@@ -137,6 +137,7 @@ impl Fixture {
             previous_mutation_id: None,
             object: ObjectKey::Favorite(SongId::new()),
             base_object_version: None,
+            changed_at_ms: None,
             payload: serde_json::json!({"favorite": true}),
             resource_refs: Vec::new(),
         };

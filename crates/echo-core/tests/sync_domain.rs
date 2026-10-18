@@ -50,7 +50,7 @@ fn sequence_overflow_does_not_wrap() {
 }
 
 #[test]
-fn host_confirmation_uses_order_not_wall_clock_and_preserves_loser() {
+fn host_confirmation_resolves_by_change_time_and_preserves_loser() {
     use serde_json::json;
     let song = ObjectKey::Song(SongId::new());
     let device_a = DeviceId::new();
@@ -65,7 +65,11 @@ fn host_confirmation_uses_order_not_wall_clock_and_preserves_loser() {
         base_object_version: None,
         payload: json!({"title": "A"}),
     };
-    let confirmed_a = confirm_candidate(None, None, &first, CommitSeq::from_u64(1)).unwrap();
+    let confirmed_a =
+        confirm_candidate_at(None, None, &first, CommitSeq::from_u64(1), 1_000, 0).unwrap();
+
+    // The newer library value wins even though the host received it later in
+    // its own order, and the replaced value stays available for recovery.
     let second = MutationCandidate {
         resource_refs: Vec::new(),
         mutation_id: MutationId::new(),
@@ -76,13 +80,17 @@ fn host_confirmation_uses_order_not_wall_clock_and_preserves_loser() {
         base_object_version: None,
         payload: json!({"title": "B"}),
     };
-    let confirmed_b = confirm_candidate(
+    let confirmed_b = confirm_candidate_at(
         Some(&confirmed_a.object),
         None,
         &second,
         CommitSeq::from_u64(2),
+        2_000,
+        1_000,
     )
     .unwrap();
+    assert!(confirmed_b.candidate_wins);
+    assert_eq!(confirmed_b.changed_at_ms, 2_000);
     assert_eq!(confirmed_b.object.payload, json!({"title": "B"}));
     let conflict = confirmed_b.conflict.unwrap();
     assert_eq!(conflict.replaced_payload, json!({"title": "A"}));
@@ -91,6 +99,47 @@ fn host_confirmation_uses_order_not_wall_clock_and_preserves_loser() {
         confirmed_b.object.version.commit_seq(),
         CommitSeq::from_u64(2)
     );
+
+    // An older edit never overwrites the newer library value, but it still
+    // consumes its origin order and receives a canonical commit so every
+    // replica can drop the optimistic value it had shown.
+    let older = MutationCandidate {
+        resource_refs: Vec::new(),
+        origin_device_id: DeviceId::new(),
+        payload: json!({"title": "C"}),
+        ..second
+    };
+    let confirmed_c = confirm_candidate_at(
+        Some(&confirmed_b.object),
+        None,
+        &older,
+        CommitSeq::from_u64(3),
+        1_500,
+        2_000,
+    )
+    .unwrap();
+    assert!(!confirmed_c.candidate_wins);
+    assert_eq!(confirmed_c.changed_at_ms, 2_000);
+    assert_eq!(confirmed_c.object.payload, json!({"title": "B"}));
+
+    // The same change time is the host's tie-break: its current value stands.
+    let tie = MutationCandidate {
+        resource_refs: Vec::new(),
+        origin_device_id: DeviceId::new(),
+        payload: json!({"title": "D"}),
+        ..older
+    };
+    let confirmed_d = confirm_candidate_at(
+        Some(&confirmed_c.object),
+        None,
+        &tie,
+        CommitSeq::from_u64(4),
+        2_000,
+        2_000,
+    )
+    .unwrap();
+    assert!(!confirmed_d.candidate_wins);
+    assert_eq!(confirmed_d.object.payload, json!({"title": "B"}));
 }
 
 #[test]
@@ -509,6 +558,7 @@ fn legacy_play_stats_payload_still_authorizes_the_buckets_it_recorded() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn stale_base_without_favorite_or_play_stats_value_change_is_not_a_conflict() {
     use serde_json::json;
 
@@ -534,11 +584,13 @@ fn stale_base_without_favorite_or_play_stats_value_change_is_not_a_conflict() {
         payload: json!({"is_favorite": true, "revision": 1}),
         resource_refs: Vec::new(),
     };
-    let result = confirm_candidate(
+    let result = confirm_candidate_at(
         Some(&favorite),
         None,
         &same_favorite,
         CommitSeq::from_u64(3),
+        2_000,
+        1_000,
     )
     .unwrap();
     assert!(result.conflict.is_none());
@@ -547,11 +599,13 @@ fn stale_base_without_favorite_or_play_stats_value_change_is_not_a_conflict() {
         payload: json!({"is_favorite": false, "revision": 1}),
         ..same_favorite
     };
-    let result = confirm_candidate(
+    let result = confirm_candidate_at(
         Some(&favorite),
         None,
         &changed_favorite,
         CommitSeq::from_u64(3),
+        2_000,
+        1_000,
     )
     .unwrap();
     assert!(
@@ -581,11 +635,13 @@ fn stale_base_without_favorite_or_play_stats_value_change_is_not_a_conflict() {
         }}),
         resource_refs: Vec::new(),
     };
-    let result = confirm_candidate(
+    let result = confirm_candidate_at(
         Some(&play_stats),
         None,
         &same_play_stats,
         CommitSeq::from_u64(3),
+        2_000,
+        1_000,
     )
     .unwrap();
     assert!(result.conflict.is_none());
@@ -597,11 +653,13 @@ fn stale_base_without_favorite_or_play_stats_value_change_is_not_a_conflict() {
         }}),
         ..same_play_stats
     };
-    let result = confirm_candidate(
+    let result = confirm_candidate_at(
         Some(&play_stats),
         None,
         &changed_play_stats,
         CommitSeq::from_u64(3),
+        2_000,
+        1_000,
     )
     .unwrap();
     assert!(
@@ -653,8 +711,15 @@ fn conflict_records_the_merged_payload_not_the_submitted_sketch() {
             "members": [members[0].clone()]}),
         resource_refs: Vec::new(),
     };
-    let confirmed =
-        confirm_candidate(Some(&current), None, &candidate, CommitSeq::from_u64(4)).unwrap();
+    let confirmed = confirm_candidate_at(
+        Some(&current),
+        None,
+        &candidate,
+        CommitSeq::from_u64(4),
+        2_000,
+        1_000,
+    )
+    .unwrap();
     let conflict = confirmed.conflict.expect("stale base from another device");
     assert_eq!(
         conflict.replaced_payload["members"]

@@ -604,8 +604,13 @@ async fn submit_mutation(
     let ledger = Arc::clone(&state.ledger);
     let checkpoint = Arc::clone(&state.checkpoint);
     let binding = state.binding;
+    let changed_at_ms = mutation.changed_at_ms;
     match tokio::task::spawn_blocking(move || {
-        ConfirmHostMutation::new(ledger.as_ref(), checkpoint.as_ref()).execute(binding, &candidate)
+        ConfirmHostMutation::new(ledger.as_ref(), checkpoint.as_ref()).execute_at(
+            binding,
+            &candidate,
+            changed_at_ms,
+        )
     })
     .await
     {
@@ -766,6 +771,7 @@ async fn snapshot_page_response(
                                 previous_mutation_id: candidate.previous_mutation_id,
                                 object: candidate.object,
                                 base_object_version: candidate.base_object_version,
+                                changed_at_ms: None,
                                 payload: candidate.payload,
                             },
                             version,

@@ -1,7 +1,7 @@
 //! Durable ledger and independent checkpoint capabilities for host sync.
 
 use crate::domain::sync::{
-    CommitCheckpoint, CommitSeq, DeviceId, MutationCandidate, MutationId, SyncBinding,
+    CommitCheckpoint, CommitSeq, DeviceId, MutationCandidate, MutationId, OriginAnchor, SyncBinding,
 };
 use crate::error::Error;
 use serde::{Deserialize, Serialize};
@@ -160,6 +160,17 @@ pub trait HostCommitLedgerPort: Send + Sync {
         candidate: &MutationCandidate,
     ) -> Result<StagedConfirmation, Error>;
 
+    /// Stage a mutation together with its immutable local edit time. Adapters
+    /// that predate edit-time arbitration may keep the legacy behavior.
+    fn stage_confirmation_at(
+        &self,
+        binding: SyncBinding,
+        candidate: &MutationCandidate,
+        _changed_at_ms: Option<u64>,
+    ) -> Result<StagedConfirmation, Error> {
+        self.stage_confirmation(binding, candidate)
+    }
+
     fn mark_published(&self, checkpoint: CommitCheckpoint) -> Result<(), Error>;
 
     fn pending_publications(&self, limit: usize) -> Result<Vec<StagedConfirmation>, Error>;
@@ -193,6 +204,30 @@ pub trait LocalSyncQueuePort: Send + Sync {
     fn advance_rejected_local_mutations(&self) -> Result<usize, Error>;
 
     fn pending_local_mutations(&self, limit: usize) -> Result<Vec<MutationCandidate>, Error>;
+
+    /// Re-anchor the pending origin chain of the active library root onto the
+    /// host's authoritative position.
+    ///
+    /// Every pending event keeps its immutable identity and payload, but the
+    /// sequence and predecessor chain restart from `anchor`. A replica never
+    /// invents sequence space: a rebuilt database, a rebound library root or a
+    /// migration that terminally retired local events all leave the local
+    /// counter ahead of the host, and the host then rejects every later event
+    /// as out of order forever. Re-anchoring is the repair, and it never
+    /// touches a library row.
+    ///
+    /// Returns the number of re-sequenced events.
+    fn rebase_local_chain(&self, _anchor: OriginAnchor) -> Result<usize, Error> {
+        Err(Error::unavailable(
+            "sync origin chain",
+            "adapter cannot re-anchor a pending origin chain",
+        ))
+    }
+
+    /// Original edit time frozen with the local mutation, if the adapter stores it.
+    fn local_mutation_changed_at_ms(&self, _mutation_id: MutationId) -> Result<Option<u64>, Error> {
+        Ok(None)
+    }
 
     fn reject_local_mutation(
         &self,

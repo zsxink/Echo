@@ -39,6 +39,7 @@ fn mutation() -> MutationDto {
         previous_mutation_id: None,
         object: ObjectKey::Song(SongId::new()),
         base_object_version: None,
+        changed_at_ms: None,
         payload: serde_json::json!({"title": "song"}),
     }
 }

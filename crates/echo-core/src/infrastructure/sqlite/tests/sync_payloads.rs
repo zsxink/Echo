@@ -359,6 +359,10 @@ fn migration_0011_separates_pending_local_sequence_from_host_confirmed_cursor() 
 
 #[path = "sync_payloads/lan_ledger.rs"]
 mod lan_ledger;
+
+/// Change-time arbitration and the host cursor a predecessor rejection reports.
+#[path = "sync_payloads/change_time.rs"]
+mod change_time;
 use lan_ledger::{claim_item, seed_import_source};
 
 #[path = "sync_payloads/deletion_and_stats.rs"]

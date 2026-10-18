@@ -156,6 +156,41 @@ pub struct OriginCursor {
     pub last_mutation_id: MutationId,
 }
 
+/// A position in one device's origin chain, without asserting that a local
+/// cursor row exists. A replica re-anchors its pending events onto the host's
+/// position: the confirmed ledger is the only authority for that sequence
+/// space, so a local database that was rebuilt, rebound to another library
+/// root, or trimmed by a migration can never invent a chain the host cannot
+/// follow.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OriginAnchor {
+    pub origin_seq: u64,
+    pub last_mutation_id: Option<MutationId>,
+}
+
+impl OriginAnchor {
+    /// The anchor of an origin whose chain has not started yet.
+    pub const GENESIS: Self = Self {
+        origin_seq: 0,
+        last_mutation_id: None,
+    };
+
+    #[must_use]
+    pub const fn from_cursor(cursor: OriginCursor) -> Self {
+        Self {
+            origin_seq: cursor.origin_seq,
+            last_mutation_id: Some(cursor.last_mutation_id),
+        }
+    }
+
+    /// Whether `candidate` continues this anchor's chain immediately.
+    #[must_use]
+    pub fn is_next(self, candidate: &MutationCandidate) -> bool {
+        candidate.origin_seq == self.origin_seq.saturating_add(1)
+            && candidate.previous_mutation_id == self.last_mutation_id
+    }
+}
+
 /// A final, typed deletion is permanent for this object identity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FinalTombstone {
@@ -288,6 +323,12 @@ pub struct Confirmation {
     /// Immutable identity mappings created while confirming this event.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub aliases: Vec<PlaylistMemberAlias>,
+    /// Change time of the winning ordinary fields, never the host receive time.
+    #[serde(default)]
+    pub changed_at_ms: u64,
+    /// Resources and ordinary fields follow the same winning library value.
+    #[serde(default)]
+    pub candidate_wins: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -445,9 +486,20 @@ fn merge_authorized_play_stats(
     serde_json::to_value(merged).map_err(|_| ConfirmationError::WrongObject)
 }
 
-/// Confirm one candidate in host order. A base mismatch from another device
-/// is accepted by LWW and returns the replaced value as a durable conflict
-/// candidate. Clock timestamps are intentionally absent from this decision.
+/// Extract the wall-clock change time from a legacy portable record. Its HLC
+/// counter orders edits on one device and is not a cross-device time tie-break.
+#[must_use]
+pub fn payload_changed_at_ms(payload: &Value) -> Option<u64> {
+    payload
+        .get("hlc")?
+        .get("wall_secs")?
+        .as_u64()?
+        .checked_mul(1000)
+}
+
+/// Confirm a legacy portable record using its persisted change time.
+/// New protocol callers pass the immutable millisecond event time explicitly
+/// through [`confirm_candidate_at`]. Missing legacy times compare as zero.
 ///
 /// # Errors
 /// Rejects mismatched objects or origins, invalid predecessor order, and
@@ -457,6 +509,36 @@ pub fn confirm_candidate(
     cursor: Option<OriginCursor>,
     candidate: &MutationCandidate,
     commit_seq: CommitSeq,
+) -> Result<Confirmation, ConfirmationError> {
+    confirm_candidate_at(
+        current,
+        cursor,
+        candidate,
+        commit_seq,
+        payload_changed_at_ms(&candidate.payload).unwrap_or(0),
+        current
+            .and_then(|value| payload_changed_at_ms(&value.payload))
+            .unwrap_or(0),
+    )
+}
+
+/// Confirm an event while resolving ordinary library fields by change time.
+/// A timestamp tie retains the host's current value. Accepted events always
+/// consume the origin chain and receive a canonical commit, including losers;
+/// this lets every replica replace its optimistic value with the same winner.
+/// Playlist appends and per-device counters keep their independent merge rules.
+///
+/// # Errors
+/// Rejects mismatched objects or origins, invalid predecessor order, and
+/// exhausted or nonmonotone sequences.
+#[allow(clippy::too_many_lines)]
+pub fn confirm_candidate_at(
+    current: Option<&ConfirmedObject>,
+    cursor: Option<OriginCursor>,
+    candidate: &MutationCandidate,
+    commit_seq: CommitSeq,
+    changed_at_ms: u64,
+    current_changed_at_ms: u64,
 ) -> Result<Confirmation, ConfirmationError> {
     if current.is_some_and(|value| value.object != candidate.object) {
         return Err(ConfirmationError::WrongObject);
@@ -482,11 +564,21 @@ pub fn confirm_candidate(
     if candidate.origin_seq != expected.0 || candidate.previous_mutation_id != expected.1 {
         return Err(ConfirmationError::OutOfOrderPredecessor);
     }
-    let mut confirmed_payload = candidate.payload.clone();
-    let aliases = if candidate.payload == serde_json::json!({"tombstone": true}) {
+    let is_tombstone = candidate.payload == serde_json::json!({"tombstone": true});
+    // A typed deletion is not a field-level value that a newer clock could
+    // outvote: it terminates the object identity. Resurrection is already
+    // answered by `check_candidate_against_tombstone`, so arbitration here only
+    // decides ordinary fields, where a tie keeps the host's current value.
+    let candidate_wins = is_tombstone || current.is_none() || changed_at_ms > current_changed_at_ms;
+    let mut confirmed_payload = match current {
+        Some(existing) if !candidate_wins => existing.payload.clone(),
+        _ => candidate.payload.clone(),
+    };
+    let aliases = if is_tombstone {
         Vec::new()
     } else if let ObjectKey::Playlist(playlist_id) = candidate.object {
-        let proposed_members = confirmed_payload
+        let proposed_members = candidate
+            .payload
             .get("members")
             .and_then(Value::as_array)
             .cloned()
@@ -498,32 +590,41 @@ pub fn confirm_candidate(
     } else {
         Vec::new()
     };
-    if let ObjectKey::PlayStats(song) = candidate.object {
-        confirmed_payload["by_device"] = merge_authorized_play_stats(current, candidate, song)?;
+    if !is_tombstone {
+        if let ObjectKey::PlayStats(song) = candidate.object {
+            confirmed_payload["by_device"] = merge_authorized_play_stats(current, candidate, song)?;
+        }
     }
     let version = ObjectVersion::from_commit_seq(commit_seq);
     let conflict = current.and_then(|old| {
         let stale_base = candidate.base_object_version != Some(old.version);
+        let losing_payload = if candidate_wins {
+            &old.payload
+        } else {
+            &candidate.payload
+        };
         let changed_value = match candidate.object {
             // Revisions and HLCs advance as events are confirmed. They do not
             // make a user-visible favorite conflict when both devices chose
             // the same value.
             ObjectKey::Favorite(_) => {
-                old.payload.get("is_favorite") != confirmed_payload.get("is_favorite")
+                losing_payload.get("is_favorite") != confirmed_payload.get("is_favorite")
             }
             // Play statistics are merged by device. Compare the merged
             // counters, not the stale submitted snapshot or record metadata.
             ObjectKey::PlayStats(_) => {
-                old.payload.get("by_device") != confirmed_payload.get("by_device")
+                losing_payload.get("by_device") != confirmed_payload.get("by_device")
             }
-            _ => true,
+            _ => losing_payload != &confirmed_payload,
         };
-        (stale_base && old.origin_device_id != candidate.origin_device_id && changed_value).then(
-            || {
+        ((stale_base || !candidate_wins)
+            && old.origin_device_id != candidate.origin_device_id
+            && changed_value)
+            .then(|| {
                 ConflictCandidate {
                     object: old.object,
                     replaced_version: old.version,
-                    replaced_payload: old.payload.clone(),
+                    replaced_payload: losing_payload.clone(),
                     accepted_mutation_id: candidate.mutation_id,
                     // The accepted value is the merged canonical object, not the
                     // submitted sketch: a playlist append is merged against the
@@ -531,14 +632,18 @@ pub fn confirm_candidate(
                     // candidate would silently drop every member it never saw.
                     accepted_payload: confirmed_payload.clone(),
                 }
-            },
-        )
+            })
     });
     Ok(Confirmation {
         object: ConfirmedObject {
             object: candidate.object,
             version,
-            origin_device_id: candidate.origin_device_id,
+            // A losing candidate keeps the confirmed author that already owns
+            // the surviving value; only a winning candidate re-authors it.
+            origin_device_id: match current {
+                Some(existing) if !candidate_wins => existing.origin_device_id,
+                _ => candidate.origin_device_id,
+            },
             payload: confirmed_payload,
         },
         origin_cursor: OriginCursor {
@@ -548,6 +653,12 @@ pub fn confirm_candidate(
         },
         conflict,
         aliases,
+        changed_at_ms: if candidate_wins {
+            changed_at_ms
+        } else {
+            current_changed_at_ms
+        },
+        candidate_wins,
     })
 }
 

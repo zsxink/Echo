@@ -3,7 +3,9 @@
 #![allow(clippy::missing_errors_doc)]
 
 use echo_core::application::ports::{LocalSyncQueuePort, RemoteApplyPort};
-use echo_core::domain::sync::{CommitSeq, DeviceId, MutationCandidate, SyncBinding};
+use echo_core::domain::sync::{
+    CommitSeq, DeviceId, MutationCandidate, MutationId, OriginAnchor, SyncBinding,
+};
 use echo_core::error::Error;
 use reqwest::Url;
 use serde::Deserialize;
@@ -62,8 +64,11 @@ impl From<Error> for ReplicaSyncError {
 /// page. Local event identities and payloads remain fixed across retries.
 ///
 /// A predecessor rejection that the host explicitly marks retryable stops the
-/// push at that point; later events are never submitted out of order. The
-/// caller schedules another bounded cycle after backoff or predecessor repair.
+/// push at that point; later events are never submitted out of order. When the
+/// rejection also names a host position this device's head does not continue,
+/// the two ledgers have diverged and the pending chain is re-anchored onto the
+/// host before the batch is offered again — the host owns that sequence space,
+/// so retrying a locally invented one could never succeed.
 pub async fn synchronize_once(
     client: &LanClient,
     endpoint: &Url,
@@ -76,33 +81,59 @@ pub async fn synchronize_once(
     if !(1..=512).contains(&limit) {
         return Err(ReplicaSyncError::InvalidOutcome);
     }
-    let candidates = next_push_batch(queue, limit)?;
-    let push_may_continue = candidates.len() == limit;
     let mut mutations_confirmed = 0;
     let mut mutations_rejected = 0;
-    for candidate in &candidates {
-        let mutation = mutation_dto(binding, candidate);
-        let ack = client.submit_mutation(endpoint, &mutation).await?;
-        if ack.confirmation.mutation_id != candidate.mutation_id {
-            return Err(ReplicaSyncError::WrongMutationAck);
-        }
-        let outcome: MutationOutcome = serde_json::from_str(&ack.confirmation.outcome_json)
-            .map_err(|_| ReplicaSyncError::InvalidOutcome)?;
-        if outcome.accepted {
-            if ack.confirmation.checkpoint.is_none() {
-                return Err(ReplicaSyncError::InvalidOutcome);
+    let mut push_may_continue;
+    // At most one re-anchor per cycle: the host's position is read from its own
+    // rejection, the pending events are re-sequenced onto it, and the same batch
+    // is offered again. A second divergence in one cycle would mean the host is
+    // not the authority it claims to be, so it surfaces instead of looping.
+    let mut reanchored = false;
+    loop {
+        let candidates = next_push_batch(queue, limit)?;
+        push_may_continue = candidates.len() == limit;
+        let mut anchor = None;
+        for candidate in &candidates {
+            let mutation = mutation_dto(
+                binding,
+                candidate,
+                queue.local_mutation_changed_at_ms(candidate.mutation_id)?,
+            );
+            let ack = client.submit_mutation(endpoint, &mutation).await?;
+            if ack.confirmation.mutation_id != candidate.mutation_id {
+                return Err(ReplicaSyncError::WrongMutationAck);
             }
-            mutations_confirmed += 1;
-        } else {
+            let outcome: MutationOutcome = serde_json::from_str(&ack.confirmation.outcome_json)
+                .map_err(|_| ReplicaSyncError::InvalidOutcome)?;
+            if outcome.accepted {
+                if ack.confirmation.checkpoint.is_none() {
+                    return Err(ReplicaSyncError::InvalidOutcome);
+                }
+                mutations_confirmed += 1;
+                continue;
+            }
             if ack.confirmation.checkpoint.is_some() {
                 return Err(ReplicaSyncError::InvalidOutcome);
             }
             if outcome.reason.as_deref() == Some("OutOfOrderPredecessor") {
+                // The host names the last event it confirmed. When our head does
+                // not continue that position, the chain itself is broken (a
+                // rebuilt database, a rebound library root, a migration that
+                // retired older events) and no amount of retrying fixes it.
+                anchor = reanchor_target(candidate, &outcome);
                 break;
             }
             queue.reject_local_mutation(candidate.mutation_id, ack.confirmation.outcome_json)?;
             mutations_rejected += 1;
         }
+        let Some(anchor) = anchor else {
+            break;
+        };
+        if reanchored {
+            break;
+        }
+        queue.rebase_local_chain(anchor)?;
+        reanchored = true;
     }
 
     let checkpoint = queue.replica_checkpoint(host_device_id)?;
@@ -154,7 +185,11 @@ fn next_push_batch(
     queue.pending_local_mutations(limit)
 }
 
-fn mutation_dto(binding: SyncBinding, candidate: &MutationCandidate) -> MutationDto {
+fn mutation_dto(
+    binding: SyncBinding,
+    candidate: &MutationCandidate,
+    changed_at_ms: Option<u64>,
+) -> MutationDto {
     MutationDto {
         resource_refs: candidate
             .resource_refs
@@ -169,6 +204,7 @@ fn mutation_dto(binding: SyncBinding, candidate: &MutationCandidate) -> Mutation
         previous_mutation_id: candidate.previous_mutation_id,
         object: candidate.object,
         base_object_version: candidate.base_object_version,
+        changed_at_ms,
         payload: candidate.payload.clone(),
     }
 }
@@ -177,6 +213,39 @@ fn mutation_dto(binding: SyncBinding, candidate: &MutationCandidate) -> Mutation
 struct MutationOutcome {
     accepted: bool,
     reason: Option<String>,
+    /// The host's confirmed position in this origin chain. Present only on a
+    /// retryable predecessor rejection, which is the one rejection that says
+    /// "your chain does not fit mine" rather than "this event is invalid".
+    #[serde(default)]
+    origin_seq: Option<u64>,
+    #[serde(default)]
+    last_mutation_id: Option<MutationId>,
+}
+
+impl MutationOutcome {
+    fn anchor(&self) -> Option<OriginAnchor> {
+        Some(OriginAnchor {
+            origin_seq: self.origin_seq?,
+            last_mutation_id: self.last_mutation_id,
+        })
+    }
+}
+
+/// The host position this event must be re-anchored onto, if any.
+///
+/// Only a predecessor rejection that names a position the event does not
+/// already continue is a broken chain. A host that is merely waiting for an
+/// event we have not sent yet names exactly our predecessor, and re-anchoring
+/// there would renumber the queue for no reason.
+fn reanchor_target(
+    candidate: &MutationCandidate,
+    outcome: &MutationOutcome,
+) -> Option<OriginAnchor> {
+    if outcome.reason.as_deref() != Some("OutOfOrderPredecessor") {
+        return None;
+    }
+    let anchor = outcome.anchor()?;
+    (!anchor.is_next(candidate)).then_some(anchor)
 }
 
 #[cfg(test)]

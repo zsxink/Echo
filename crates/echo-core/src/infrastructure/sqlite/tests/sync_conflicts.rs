@@ -205,7 +205,7 @@ fn override_recovery_uses_new_local_provenance_and_cannot_restore_deleted_song()
     db.writer.run(move |connection| {
         connection.execute("UPDATE sync_mutations SET status='confirmed'", []).map_err(storage)?;
         super::super::sync_projection::project_confirmed_song_state(connection, "override", &song.to_string(), &current, Some(&root.to_string()))?;
-        connection.execute("INSERT INTO sync_object_versions VALUES('override',?1,2,2,?2,0)", params![song.to_string(), current.to_string()]).map_err(storage)?;
+        connection.execute("INSERT INTO sync_object_versions VALUES('override',?1,2,2,?2,0,0)", params![song.to_string(), current.to_string()]).map_err(storage)?;
         connection.execute("INSERT INTO sync_conflicts VALUES(?1,'override',?2,1,2,?3,?4,NULL)", params![conflict.to_string(), song.to_string(), r#"{"title":"Recovered","artist":null,"album":null,"lyrics_text":"Lyrics","song_uuid":"foreign-id","revision":99999}"#, current.to_string()]).map_err(storage)?;
         Ok(())
     }).unwrap();

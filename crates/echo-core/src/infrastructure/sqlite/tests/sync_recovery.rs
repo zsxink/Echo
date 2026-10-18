@@ -184,7 +184,7 @@ fn recovered_tombstones_are_new_epoch_baseline_events_and_aliases_survive() {
         .run(move |connection| {
             connection
                 .execute(
-                    "INSERT INTO sync_object_versions VALUES('song',?1,6,6,NULL,1)",
+                    "INSERT INTO sync_object_versions VALUES('song',?1,6,6,NULL,1,0)",
                     params![deleted.to_string()],
                 )
                 .map_err(storage)?;

@@ -10,9 +10,10 @@ use crate::application::ports::{
 };
 use crate::domain::ids::LibraryRootId;
 use crate::domain::sync::{
-    check_candidate_against_tombstone, confirm_candidate, CommitCheckpoint, CommitSeq,
-    Confirmation, ConfirmationError, ConfirmedObject, DeviceId, FinalTombstone, MutationCandidate,
-    MutationId, ObjectKey, ObjectVersion, OriginCursor, SyncBinding, TombstoneDecisionError,
+    check_candidate_against_tombstone, confirm_candidate_at, payload_changed_at_ms,
+    CommitCheckpoint, CommitSeq, Confirmation, ConfirmationError, ConfirmedObject, DeviceId,
+    FinalTombstone, MutationCandidate, MutationId, ObjectKey, ObjectVersion, OriginAnchor,
+    OriginCursor, SyncBinding, TombstoneDecisionError,
 };
 use crate::error::Error;
 
@@ -434,6 +435,21 @@ impl HostCommitLedgerPort for SqliteDatabase {
         binding: SyncBinding,
         candidate: &MutationCandidate,
     ) -> Result<StagedConfirmation, Error> {
+        self.stage_confirmation_at(binding, candidate, None)
+    }
+
+    /// Confirm a mutation using the edit time frozen on the sender's queue.
+    ///
+    /// The wire timestamp is the arbitration input: every device edits the same
+    /// object, so the newest edit has to win. Falling back to the payload's
+    /// legacy HLC only serves records written by an earlier release.
+    #[allow(clippy::too_many_lines)]
+    fn stage_confirmation_at(
+        &self,
+        binding: SyncBinding,
+        candidate: &MutationCandidate,
+        changed_at_ms: Option<u64>,
+    ) -> Result<StagedConfirmation, Error> {
         validate_candidate_payload(candidate)?;
         let candidate = candidate.clone();
         self.writer.run(move |connection| {
@@ -473,7 +489,8 @@ impl HostCommitLedgerPort for SqliteDatabase {
             ensure_no_pending_predecessor(&tx, None)?;
 
             let (kind, object_uuid) = object_identity(candidate.object);
-            let (already_deleted, current) = load_confirmed_object(&tx, &candidate)?;
+            let (already_deleted, current, current_changed_at_ms) =
+                load_confirmed_object(&tx, &candidate)?;
             let current = exclude_final_playlist_members(&tx, candidate.object, current)?;
             let cursor = load_origin_cursor(&tx, candidate.origin_device_id)?;
             let cursor = recover_adjacent_terminal_predecessor(
@@ -485,10 +502,22 @@ impl HostCommitLedgerPort for SqliteDatabase {
             let next: i64 = tx.query_row("SELECT COALESCE(MAX(commit_seq), 0) + 1 FROM sync_commits", [], |row| row.get(0)).map_err(storage)?;
             let sequence = CommitSeq::from_u64(u64::try_from(next).map_err(storage)?);
             let canonical_candidate = exclude_historical_member_aliases(&tx, &candidate)?;
-            let decision = confirm_candidate(current.as_ref(), cursor, &canonical_candidate, sequence);
+            // Arbitration input: the time frozen when the edit was queued. A
+            // payload-embedded HLC only exists on records written by an earlier
+            // release, so it is a fallback, never the primary source.
+            let candidate_changed_at_ms =
+                changed_at_ms.unwrap_or_else(|| payload_changed_at_ms(&candidate.payload).unwrap_or(0));
+            let decision = confirm_candidate_at(
+                current.as_ref(),
+                cursor,
+                &canonical_candidate,
+                sequence,
+                candidate_changed_at_ms,
+                current_changed_at_ms,
+            );
 
             if let Err(rejection) = decision {
-                let staged = StagedConfirmation { mutation_id: candidate.mutation_id, outcome_json: format!("{{\"accepted\":false,\"reason\":\"{rejection:?}\"}}"), checkpoint: None };
+                let staged = StagedConfirmation { mutation_id: candidate.mutation_id, outcome_json: rejection_outcome_json(rejection, cursor), checkpoint: None };
                 // A permanent rejection still consumes a correctly chained
                 // origin event. The replica advances its local cursor when it
                 // records this outcome; keep the host cursor in lockstep so
@@ -531,7 +560,7 @@ impl HostCommitLedgerPort for SqliteDatabase {
                 // first-confirmed resource set.
                 super::sync_manifests::replace(&tx, "song", alias, &submitted_resources)?;
             }
-            persist_confirmed_object(&tx, &candidate, &confirmed.object, next, is_tombstone, configured.as_ref().and_then(|row| row.4.as_deref()))?;
+            persist_confirmed_object(&tx, &candidate, &confirmed.object, next, is_tombstone, configured.as_ref().and_then(|row| row.4.as_deref()), confirmed.changed_at_ms)?;
             persist_member_aliases(&tx, &confirmed.aliases, next)?;
             if let Some((alias, canonical)) = &song_alias { super::sync_song_aliases::project(&tx, alias, canonical)?; }
             tx.execute("INSERT INTO sync_origin_cursors(origin_device_id, origin_seq, last_mutation_id) VALUES(?1, ?2, ?3) ON CONFLICT(origin_device_id) DO UPDATE SET origin_seq=excluded.origin_seq, last_mutation_id=excluded.last_mutation_id", params![origin, i64::try_from(confirmed.origin_cursor.origin_seq).map_err(storage)?, candidate.mutation_id.as_uuid().to_string()]).map_err(storage)?;
@@ -728,6 +757,10 @@ fn ensure_origin_authorized(
     }
 }
 
+/// One confirmed-object row: version, commit sequence, payload, author, the
+/// tombstone flag, the confirming mutation, and the winning change time.
+type ConfirmedObjectRow = (i64, i64, Option<String>, String, bool, String, i64);
+
 fn persist_member_aliases(
     tx: &rusqlite::Transaction<'_>,
     aliases: &[crate::domain::sync::PlaylistMemberAlias],
@@ -779,16 +812,22 @@ fn prior_confirmation(
     let Some((digest, outcome, commit_seq)) = prior else {
         return Ok(None);
     };
-    if digest != payload_digest {
-        return Err(Error::conflict(
-            "mutation identity was reused with different content",
-        ));
-    }
     let staged: StagedConfirmation = serde_json::from_str(&outcome).map_err(storage)?;
+    // A predecessor rejection is not an outcome: the event never entered the
+    // ledger. The sender re-anchors its chain onto this host's cursor, which
+    // changes the envelope (`origin_seq`/`previous_mutation_id`) but never the
+    // event payload, so identity reuse must be decided only for events the
+    // ledger actually recorded. Checking the digest first would reject the
+    // repair as "same identity, different content".
     let retryable_predecessor_rejection =
         commit_seq.is_none() && staged.outcome_json.contains("OutOfOrderPredecessor");
     if retryable_predecessor_rejection {
         return Ok(None);
+    }
+    if digest != payload_digest {
+        return Err(Error::conflict(
+            "mutation identity was reused with different content",
+        ));
     }
     if commit_seq.is_none() && terminal_rejection_consumes_origin_json(&staged.outcome_json) {
         let candidate = normalize_member_alias_object(tx, candidate.clone())?;
@@ -858,6 +897,26 @@ fn record_inbox_outcome(
     )
     .map_err(storage)?;
     Ok(())
+}
+
+/// The outcome body one rejection carries back to the replica.
+///
+/// A predecessor rejection is the only retryable one, and it is the only place
+/// a replica can learn why its chain stopped fitting the host's ledger. Naming
+/// the host's current position lets the sender re-anchor instead of retrying a
+/// sequence the host will never accept.
+fn rejection_outcome_json(rejection: ConfirmationError, cursor: Option<OriginCursor>) -> String {
+    if rejection != ConfirmationError::OutOfOrderPredecessor {
+        return format!("{{\"accepted\":false,\"reason\":\"{rejection:?}\"}}");
+    }
+    let anchor = cursor.map_or(OriginAnchor::GENESIS, OriginAnchor::from_cursor);
+    serde_json::json!({
+        "accepted": false,
+        "reason": "OutOfOrderPredecessor",
+        "origin_seq": anchor.origin_seq,
+        "last_mutation_id": anchor.last_mutation_id,
+    })
+    .to_string()
 }
 
 const fn terminal_rejection_consumes_origin(rejection: ConfirmationError) -> bool {
@@ -998,11 +1057,13 @@ fn persist_confirmed_object(
     next: i64,
     is_tombstone: bool,
     local_root_uuid: Option<&str>,
+    changed_at_ms: u64,
 ) -> Result<(), Error> {
     let origin = candidate.origin_device_id.as_uuid().to_string();
     let (kind, object_uuid) = object_identity(object.object);
     let version = i64::try_from(object.version.commit_seq().as_u64()).map_err(storage)?;
-    tx.execute("INSERT INTO sync_object_versions(object_type, object_uuid, object_version, commit_seq, payload_json, is_tombstone) VALUES(?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(object_type, object_uuid) DO UPDATE SET object_version=excluded.object_version, commit_seq=excluded.commit_seq, payload_json=excluded.payload_json, is_tombstone=excluded.is_tombstone", params![kind, object_uuid, version, next, if is_tombstone { None } else { Some(serde_json::to_string(&object.payload).map_err(storage)?) }, i64::from(is_tombstone)]).map_err(storage)?;
+    let changed_at = i64::try_from(changed_at_ms).unwrap_or(i64::MAX);
+    tx.execute("INSERT INTO sync_object_versions(object_type, object_uuid, object_version, commit_seq, payload_json, is_tombstone, changed_at_ms) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(object_type, object_uuid) DO UPDATE SET object_version=excluded.object_version, commit_seq=excluded.commit_seq, payload_json=excluded.payload_json, is_tombstone=excluded.is_tombstone, changed_at_ms=excluded.changed_at_ms", params![kind, object_uuid, version, next, if is_tombstone { None } else { Some(serde_json::to_string(&object.payload).map_err(storage)?) }, i64::from(is_tombstone), changed_at]).map_err(storage)?;
     tx.execute(
                 "UPDATE sync_mutations SET status='confirmed', outcome_json=?3 WHERE origin_device_id=?1 AND mutation_id=?2 AND status='pending'",
                 params![origin, candidate.mutation_id.as_uuid().to_string(), "{\"accepted\":true}"],
@@ -1096,14 +1157,17 @@ fn encode_commit(
 fn load_confirmed_object(
     tx: &rusqlite::Transaction<'_>,
     candidate: &MutationCandidate,
-) -> Result<(bool, Option<ConfirmedObject>), Error> {
+) -> Result<(bool, Option<ConfirmedObject>, u64), Error> {
     let object = candidate.object;
     let (kind, object_uuid) = object_identity(object);
-    let current_row: Option<(i64, i64, Option<String>, String, bool, String)> = tx.query_row(
-                "SELECT v.object_version, v.commit_seq, v.payload_json, c.origin_device_id, v.is_tombstone, c.mutation_id FROM sync_object_versions v JOIN sync_commits c ON c.commit_seq=v.commit_seq WHERE v.object_type = ?1 AND v.object_uuid = ?2",
+    let current_row: Option<ConfirmedObjectRow> = tx.query_row(
+                "SELECT v.object_version, v.commit_seq, v.payload_json, c.origin_device_id, v.is_tombstone, c.mutation_id, v.changed_at_ms FROM sync_object_versions v JOIN sync_commits c ON c.commit_seq=v.commit_seq WHERE v.object_type = ?1 AND v.object_uuid = ?2",
                 params![kind, object_uuid],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?)),
             ).optional().map_err(storage)?;
+    let current_changed_at_ms = current_row
+        .as_ref()
+        .map_or(0, |row| u64::try_from(row.6).unwrap_or(0));
     let commit_version = |version: i64| -> Result<ObjectVersion, Error> {
         u64::try_from(version)
             .map(CommitSeq::from_u64)
@@ -1116,7 +1180,7 @@ fn load_confirmed_object(
         .as_ref()
         .filter(|row| row.4)
         .map(
-            |(version, _sequence, _payload, _author, _tombstone, mutation_id)| -> Result<FinalTombstone, Error> {
+            |(version, _sequence, _payload, _author, _tombstone, mutation_id, _changed_at)| -> Result<FinalTombstone, Error> {
                 Ok(FinalTombstone {
                     object,
                     version: commit_version(*version)?,
@@ -1130,7 +1194,7 @@ fn load_confirmed_object(
     let current = current_row
         .filter(|row| !row.4)
         .map(
-            |(version, _sequence, payload, author, _tombstone, _mutation)| -> Result<ConfirmedObject, Error> {
+            |(version, _sequence, payload, author, _tombstone, _mutation, _changed_at)| -> Result<ConfirmedObject, Error> {
                 Ok(ConfirmedObject {
                     object,
                     version: commit_version(version)?,
@@ -1151,7 +1215,7 @@ fn load_confirmed_object(
         check_candidate_against_tombstone(candidate, tombstone.as_ref()),
         Err(TombstoneDecisionError::ObjectAlreadyDeleted)
     );
-    Ok((already_deleted, current))
+    Ok((already_deleted, current, current_changed_at_ms))
 }
 
 fn exclude_final_playlist_members(
