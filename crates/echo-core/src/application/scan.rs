@@ -153,9 +153,11 @@ impl ScanSupervisor {
     ) -> Result<(), Error> {
         let mut active = self.lock();
         if active.contains_key(&root) {
+            drop(active);
             return Err(Error::conflict("a scan is already running for this root"));
         }
         active.insert(root, token);
+        drop(active);
         Ok(())
     }
 

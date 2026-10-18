@@ -254,14 +254,33 @@ fn different_hash_same_path_gets_a_stable_safe_destination() {
             .query_row("SELECT COUNT(*) FROM songs", [], |row| row.get(0))
             .map_err(super::super::super::support::storage)?;
         assert_eq!(count, 2);
+        let identity = super::super::super::sync_manifests::identity(second.object).1;
         let path: String = connection
             .query_row(
                 "SELECT relative_path FROM songs WHERE uuid=?1",
-                params![super::super::super::sync_manifests::identity(second.object).1],
+                params![identity],
                 |row| row.get(0),
             )
             .map_err(super::super::super::support::storage)?;
-        assert!(path.starts_with("Same (") && path.ends_with(").flac"));
+        // Relative paths are device-local facts. `Same.flac` already belongs to
+        // the local song, so the peer's object cannot take it: the projection
+        // reserves a deterministic pending destination that resource
+        // publication later fills with this object's verified bytes. The
+        // reservation is derived from the object identity, so replaying the
+        // same commit lands on the same row instead of accumulating names.
+        assert_eq!(
+            path,
+            format!("echo/media/pending/{identity}-0"),
+            "conflicting remote object must keep its reserved destination"
+        );
+        let local: String = connection
+            .query_row(
+                "SELECT relative_path FROM songs WHERE uuid=?1",
+                params![super::super::super::sync_manifests::identity(first.object).1],
+                |row| row.get(0),
+            )
+            .map_err(super::super::super::support::storage)?;
+        assert_eq!(local, "Same.flac", "the local path keeps its owner");
         Ok(())
     })
     .unwrap();

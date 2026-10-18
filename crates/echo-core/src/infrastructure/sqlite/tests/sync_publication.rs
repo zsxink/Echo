@@ -91,6 +91,28 @@ impl PublicationCheckpointPort for Checkpoint {
 }
 
 #[test]
+fn a_held_poll_recheck_reads_without_taking_the_writer() {
+    let (_directory, database, binding) = host();
+    let first = local_candidate(&database);
+    ConfirmHostMutation::new(&database, &Checkpoint::default())
+        .execute(binding, &first)
+        .unwrap();
+    let writes = database.subscribe_writes();
+    while writes.try_recv().is_ok() {}
+    // A held long-poll re-reads its page every 500 ms for each watching peer.
+    // On the writer actor those reads queue behind confirmations, whose fsync
+    // and checkpoint advance are exactly what the peer is waiting on.
+    let page = database
+        .published_commits_after(binding, CommitSeq::GENESIS, [0; 32], 10)
+        .unwrap();
+    assert_eq!(page.len(), 1);
+    assert!(
+        writes.try_recv().is_err(),
+        "a recheck must not occupy the single writer actor"
+    );
+}
+
+#[test]
 fn checkpoint_failure_blocks_later_ack_until_pending_predecessor_is_recovered() {
     let (directory, database, binding) = host();
     let first = local_candidate(&database);

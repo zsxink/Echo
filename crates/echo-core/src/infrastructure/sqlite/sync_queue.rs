@@ -115,74 +115,7 @@ impl LocalSyncQueuePort for SqliteDatabase {
                 })
                 .map_err(storage)?;
             rows.map(|row| {
-                let (
-                    mutation_id,
-                    origin_seq,
-                    previous,
-                    kind,
-                    id,
-                    base,
-                    payload,
-                    resources,
-                ) = row.map_err(storage)?;
-                let parse_uuid = |value: &str, field: &'static str| {
-                    Uuid::parse_str(value).map_err(|_| {
-                        Error::InvariantViolation {
-                            why: format!("invalid {field} in local sync queue"),
-                        }
-                    })
-                };
-                let object_uuid = parse_uuid(&id, "object UUID")?;
-                let object = match kind.as_str() {
-                    "song" | "tombstone" => ObjectKey::Song(SongId::from_uuid(object_uuid)),
-                    "favorite" => ObjectKey::Favorite(SongId::from_uuid(object_uuid)),
-                    "override" => ObjectKey::Override(SongId::from_uuid(object_uuid)),
-                    "play-stats" => ObjectKey::PlayStats(SongId::from_uuid(object_uuid)),
-                    "playlist" => ObjectKey::Playlist(PlaylistId::from_uuid(object_uuid)),
-                    "playlist-item" => {
-                        ObjectKey::PlaylistItem(PlaylistItemId::from_uuid(object_uuid))
-                    }
-                    "library-root" => ObjectKey::LibraryRoot(object_uuid),
-                    _ => {
-                        return Err(Error::InvariantViolation {
-                            why: "unknown object kind in local sync queue".to_owned(),
-                        })
-                    }
-                };
-                let previous_mutation_id = previous
-                    .as_deref()
-                    .map(|value| parse_uuid(value, "previous mutation UUID"))
-                    .transpose()?
-                    .map(MutationId::from_uuid);
-                let base_object_version = base
-                    .map(|value| {
-                        u64::try_from(value)
-                            .map(CommitSeq::from_u64)
-                            .map(ObjectVersion::from_commit_seq)
-                            .map_err(storage)
-                    })
-                    .transpose()?;
-                let resource_refs: Vec<crate::domain::sync::SharedResourceManifest> =
-                    serde_json::from_str(&resources).map_err(storage)?;
-                // These declarations are part of the mutation's immutable
-                // body. Availability may change after a request or ACK loss;
-                // retrying must still submit the exact original resource set.
-                Ok(MutationCandidate {
-                    resource_refs,
-                    mutation_id: MutationId::from_uuid(parse_uuid(
-                        &mutation_id,
-                        "mutation UUID",
-                    )?),
-                    origin_device_id: DeviceId::from_uuid(parse_uuid(
-                        &local_device,
-                        "origin device UUID",
-                    )?),
-                    origin_seq: u64::try_from(origin_seq).map_err(storage)?,
-                    previous_mutation_id,
-                    object,
-                    base_object_version,
-                    payload: serde_json::from_str(&payload).map_err(storage)?,
-                })
+                decode_pending_mutation(row.map_err(storage)?, &local_device)
             })
             .collect()
         })
@@ -307,3 +240,68 @@ impl LocalSyncQueuePort for SqliteDatabase {
 #[cfg(test)]
 #[path = "tests/sync_queue.rs"]
 mod tests;
+
+/// One `sync_mutations` row in [`pending_local_mutations`] column order.
+type PendingMutationRow = (
+    String,
+    i64,
+    Option<String>,
+    String,
+    String,
+    Option<i64>,
+    String,
+    String,
+);
+
+/// Decode one queued mutation. The declared resource set is part of the
+/// mutation's immutable body: availability may change after a request or ACK
+/// loss, and a retry must still submit the exact original declarations.
+fn decode_pending_mutation(
+    row: PendingMutationRow,
+    local_device: &str,
+) -> Result<MutationCandidate, Error> {
+    let (mutation_id, origin_seq, previous, kind, id, base, payload, resources) = row;
+    let parse_uuid = |value: &str, field: &'static str| {
+        Uuid::parse_str(value).map_err(|_| Error::InvariantViolation {
+            why: format!("invalid {field} in local sync queue"),
+        })
+    };
+    let object_uuid = parse_uuid(&id, "object UUID")?;
+    let object = match kind.as_str() {
+        "song" | "tombstone" => ObjectKey::Song(SongId::from_uuid(object_uuid)),
+        "favorite" => ObjectKey::Favorite(SongId::from_uuid(object_uuid)),
+        "override" => ObjectKey::Override(SongId::from_uuid(object_uuid)),
+        "play-stats" => ObjectKey::PlayStats(SongId::from_uuid(object_uuid)),
+        "playlist" => ObjectKey::Playlist(PlaylistId::from_uuid(object_uuid)),
+        "playlist-item" => ObjectKey::PlaylistItem(PlaylistItemId::from_uuid(object_uuid)),
+        "library-root" => ObjectKey::LibraryRoot(object_uuid),
+        _ => {
+            return Err(Error::InvariantViolation {
+                why: "unknown object kind in local sync queue".to_owned(),
+            })
+        }
+    };
+    let previous_mutation_id = previous
+        .as_deref()
+        .map(|value| parse_uuid(value, "previous mutation UUID"))
+        .transpose()?
+        .map(MutationId::from_uuid);
+    let base_object_version = base
+        .map(|value| {
+            u64::try_from(value)
+                .map(CommitSeq::from_u64)
+                .map(ObjectVersion::from_commit_seq)
+                .map_err(storage)
+        })
+        .transpose()?;
+    Ok(MutationCandidate {
+        resource_refs: serde_json::from_str(&resources).map_err(storage)?,
+        mutation_id: MutationId::from_uuid(parse_uuid(&mutation_id, "mutation UUID")?),
+        origin_device_id: DeviceId::from_uuid(parse_uuid(local_device, "origin device UUID")?),
+        origin_seq: u64::try_from(origin_seq).map_err(storage)?,
+        previous_mutation_id,
+        object,
+        base_object_version,
+        payload: serde_json::from_str(&payload).map_err(storage)?,
+    })
+}

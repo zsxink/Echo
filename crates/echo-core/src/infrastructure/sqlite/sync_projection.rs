@@ -379,34 +379,8 @@ fn project_song(
         return Err(Error::conflict("confirmed song has an invalid BLAKE3 hash"));
     }
     let format = optional_string(payload, "format")?;
-    let local_song: Option<(String, Option<String>, String)> = tx
-        .query_row(
-            "SELECT normalized_relative_path, blake3_hash, availability FROM songs WHERE uuid=?1 AND library_root_uuid=?2",
-            params![song_uuid, root_uuid],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .optional()
-        .map_err(storage)?;
-    if let Some((local_path, local_hash, availability)) = local_song {
-        let has_pending_local_change: bool = tx
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM sync_mutations WHERE object_type='song' AND object_uuid=?1 AND local_root_uuid=?2 AND status='pending')",
-                params![song_uuid, root_uuid],
-                |row| row.get(0),
-            )
-            .map_err(storage)?;
-        // Relative paths are device-local facts when two independently
-        // populated libraries are merged. Replacing a local path with the
-        // peer's path makes a perfectly valid local file appear missing on
-        // this device. Preserve the local projection until the conflict is
-        // resolved; matching path/hash records can still receive shared
-        // metadata updates below.
-        if has_pending_local_change
-            || (availability != "missing"
-                && (local_path != path.identity_key() || local_hash != hash))
-        {
-            return Ok(());
-        }
+    if local_projection_conflicts(tx, root_uuid, song_uuid, &path, hash.as_deref())? {
+        return Ok(());
     }
     let path_owner: bool = tx
         .query_row(
@@ -420,22 +394,7 @@ fn project_song(
     // resource publication later associates its verified immutable local file.
     // Skipping the row here would leave downloaded audio outside the catalog.
     if path_owner {
-        let mut suffix = 0_u64;
-        loop {
-            path = crate::domain::ids::RelativeMediaPath::new(&format!(
-                "echo/media/pending/{song_uuid}-{suffix}"
-            ))?;
-            let occupied: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM songs WHERE library_root_uuid=?1 AND normalized_relative_path=?2 AND uuid<>?3)",
-                params![root_uuid, path.identity_key(), song_uuid], |row| row.get(0),
-            ).map_err(storage)?;
-            if !occupied {
-                break;
-            }
-            suffix = suffix
-                .checked_add(1)
-                .ok_or_else(|| Error::conflict("no vacant local song projection path"))?;
-        }
+        path = reserve_pending_projection_path(tx, root_uuid, song_uuid)?;
     }
     let title_sort = normalized_key(title.as_deref().unwrap_or(""));
     let artist_sort = normalized_key(artist.as_deref().unwrap_or(""));
@@ -709,6 +668,72 @@ fn optional_nonnegative(payload: &Value, key: &str) -> Result<Option<i64>, Error
             .map(|number| Some(i64::try_from(number).unwrap_or(i64::MAX)))
             .ok_or_else(|| Error::conflict(format!("confirmed song field {key} is invalid"))),
     }
+}
+
+/// Reserve a destination for a remote object whose own relative path is already
+/// owned by a different local song. The name is derived from the object
+/// identity, so replaying the same commit lands on the same row instead of
+/// accumulating names, and it stays outside the media tree so the scanner never
+/// treats it as a local file.
+fn reserve_pending_projection_path(
+    tx: &Connection,
+    root_uuid: &str,
+    song_uuid: &str,
+) -> Result<crate::domain::ids::RelativeMediaPath, Error> {
+    let mut suffix = 0_u64;
+    loop {
+        let candidate = crate::domain::ids::RelativeMediaPath::new(&format!(
+            "echo/media/pending/{song_uuid}-{suffix}"
+        ))?;
+        let occupied: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM songs WHERE library_root_uuid=?1 AND normalized_relative_path=?2 AND uuid<>?3)",
+                params![root_uuid, candidate.identity_key(), song_uuid],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if !occupied {
+            return Ok(candidate);
+        }
+        suffix = suffix
+            .checked_add(1)
+            .ok_or_else(|| Error::conflict("no vacant local song projection path"))?;
+    }
+}
+
+/// Whether this device already holds a projection of the object that the
+/// incoming one must not overwrite. Relative paths are device-local facts when
+/// two independently populated libraries are merged: replacing a local path
+/// with the peer's path makes a perfectly valid local file appear missing on
+/// this device. Matching path/hash records still receive the shared metadata.
+fn local_projection_conflicts(
+    tx: &Connection,
+    root_uuid: &str,
+    song_uuid: &str,
+    path: &crate::domain::ids::RelativeMediaPath,
+    hash: Option<&str>,
+) -> Result<bool, Error> {
+    let local_song: Option<(String, Option<String>, String)> = tx
+        .query_row(
+            "SELECT normalized_relative_path, blake3_hash, availability FROM songs WHERE uuid=?1 AND library_root_uuid=?2",
+            params![song_uuid, root_uuid],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(storage)?;
+    let Some((local_path, local_hash, availability)) = local_song else {
+        return Ok(false);
+    };
+    let has_pending_local_change: bool = tx
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sync_mutations WHERE object_type='song' AND object_uuid=?1 AND local_root_uuid=?2 AND status='pending')",
+            params![song_uuid, root_uuid],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    Ok(has_pending_local_change
+        || (availability != "missing"
+            && (local_path != path.identity_key() || local_hash.as_deref() != hash)))
 }
 
 #[cfg(test)]

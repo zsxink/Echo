@@ -2,7 +2,7 @@
 
 #![allow(clippy::doc_markdown, clippy::missing_errors_doc)]
 
-use rusqlite::{params, OptionalExtension, TransactionBehavior};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::Serialize;
 
 use crate::application::ports::{
@@ -10,8 +10,9 @@ use crate::application::ports::{
 };
 use crate::domain::ids::LibraryRootId;
 use crate::domain::sync::{
-    confirm_candidate, CommitCheckpoint, CommitSeq, ConfirmationError, ConfirmedObject, DeviceId,
-    MutationCandidate, MutationId, ObjectKey, ObjectVersion, OriginCursor, SyncBinding,
+    confirm_candidate, CommitCheckpoint, CommitSeq, Confirmation, ConfirmationError,
+    ConfirmedObject, DeviceId, MutationCandidate, MutationId, ObjectKey, ObjectVersion,
+    OriginCursor, SyncBinding,
 };
 use crate::error::Error;
 
@@ -502,27 +503,14 @@ impl HostCommitLedgerPort for SqliteDatabase {
                         &tx, &origin, &candidate, cursor,
                     )?;
                 }
-                let serialized = serde_json::to_string(&staged).map_err(storage)?;
-                tx.execute("INSERT INTO sync_inbox(origin_device_id, mutation_id, payload_digest, outcome_json, commit_seq, received_at) VALUES(?1, ?2, ?3, ?4, NULL, ?5) ON CONFLICT(origin_device_id, mutation_id) DO UPDATE SET outcome_json=excluded.outcome_json, commit_seq=NULL, received_at=excluded.received_at", params![origin, candidate.mutation_id.as_uuid().to_string(), payload_digest, serialized, now_ms()]).map_err(storage)?;
+                record_inbox_outcome(&tx, &origin, &candidate, &payload_digest, &staged, None)?;
                 tx.commit().map_err(storage)?;
                 return Ok(staged);
             }
             let confirmed = decision.map_err(|error| Error::conflict(format!("mutation rejected: {error:?}")))?;
             if current_is_tombstone {
-                // A final rejection consumes a correctly chained origin event.
-                // Otherwise every later event from that device would wait
-                // forever behind an object that can never be resurrected.
-                let staged = StagedConfirmation {
-                    mutation_id: candidate.mutation_id,
-                    outcome_json: "{\"accepted\":false,\"reason\":\"object_already_deleted\"}".to_owned(),
-                    checkpoint: None,
-                };
-                tx.execute(
-                    "INSERT INTO sync_origin_cursors(origin_device_id, origin_seq, last_mutation_id) VALUES(?1, ?2, ?3) ON CONFLICT(origin_device_id) DO UPDATE SET origin_seq=excluded.origin_seq, last_mutation_id=excluded.last_mutation_id",
-                    params![origin, i64::try_from(confirmed.origin_cursor.origin_seq).map_err(storage)?, candidate.mutation_id.as_uuid().to_string()],
-                ).map_err(storage)?;
-                let serialized = serde_json::to_string(&staged).map_err(storage)?;
-                tx.execute("INSERT INTO sync_inbox(origin_device_id, mutation_id, payload_digest, outcome_json, commit_seq, received_at) VALUES(?1, ?2, ?3, ?4, NULL, ?5) ON CONFLICT(origin_device_id, mutation_id) DO UPDATE SET outcome_json=excluded.outcome_json, commit_seq=NULL, received_at=excluded.received_at", params![origin, candidate.mutation_id.as_uuid().to_string(), payload_digest, serialized, now_ms()]).map_err(storage)?;
+                let staged =
+                    stage_already_deleted(&tx, &origin, &candidate, &payload_digest, &confirmed)?;
                 tx.commit().map_err(storage)?;
                 return Ok(staged);
             }
@@ -557,8 +545,7 @@ impl HostCommitLedgerPort for SqliteDatabase {
             }
             let checkpoint = CommitCheckpoint { binding, sequence, digest: commit_digest.as_slice().try_into().map_err(|_| Error::InvariantViolation { why: "invalid LAN commit digest length".to_owned() })? };
             let staged = StagedConfirmation { mutation_id: candidate.mutation_id, outcome_json: "{\"accepted\":true}".to_owned(), checkpoint: Some(checkpoint) };
-            let serialized = serde_json::to_string(&staged).map_err(storage)?;
-            tx.execute("INSERT INTO sync_inbox(origin_device_id, mutation_id, payload_digest, outcome_json, commit_seq, received_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(origin_device_id, mutation_id) DO UPDATE SET outcome_json=excluded.outcome_json, commit_seq=excluded.commit_seq, received_at=excluded.received_at", params![origin, candidate.mutation_id.as_uuid().to_string(), payload_digest, serialized, next, now_ms()]).map_err(storage)?;
+            record_inbox_outcome(&tx, &origin, &candidate, &payload_digest, &staged, Some(next))?;
             tx.commit().map_err(storage)?;
             Ok(staged)
         })
@@ -631,8 +618,15 @@ impl HostCommitLedgerPort for SqliteDatabase {
                 "must be between 1 and 512",
             ));
         }
-        self.writer.run(move |connection| {
-            let tx = connection.transaction().map_err(storage)?;
+        // A held long-poll re-reads this page every 500ms per peer. It must not
+        // queue behind the single writer actor: a confirmation transaction
+        // (fsync + checkpoint advance) would otherwise delay every watching
+        // peer's recheck, and the rechecks themselves would interleave with the
+        // publisher's own writes. The read is satisfied from WAL by a pooled
+        // read-only connection, so it neither takes the writer lock nor blocks
+        // the actor.
+        self.with_reader(move |connection| {
+            let tx = connection.unchecked_transaction().map_err(storage)?;
             // Genesis has no log row from which to infer its binding. Validate
             // the configured host even for an empty log or an empty response.
             let matching_host: bool = tx.query_row(
@@ -812,7 +806,52 @@ fn prior_confirmation(
     Ok(Some(staged))
 }
 
-fn terminal_rejection_consumes_origin(rejection: ConfirmationError) -> bool {
+/// A confirmed object that is already tombstoned can never be resurrected, so
+/// the acceptance is downgraded to a final rejection. It still consumes a
+/// correctly chained origin event: otherwise every later event from that device
+/// waits forever behind an object that will never come back.
+fn stage_already_deleted(
+    tx: &Connection,
+    origin: &str,
+    candidate: &MutationCandidate,
+    payload_digest: &str,
+    confirmed: &Confirmation,
+) -> Result<StagedConfirmation, Error> {
+    let staged = StagedConfirmation {
+        mutation_id: candidate.mutation_id,
+        outcome_json: "{\"accepted\":false,\"reason\":\"object_already_deleted\"}".to_owned(),
+        checkpoint: None,
+    };
+    tx.execute(
+        "INSERT INTO sync_origin_cursors(origin_device_id, origin_seq, last_mutation_id) VALUES(?1, ?2, ?3) ON CONFLICT(origin_device_id) DO UPDATE SET origin_seq=excluded.origin_seq, last_mutation_id=excluded.last_mutation_id",
+        params![origin, i64::try_from(confirmed.origin_cursor.origin_seq).map_err(storage)?, candidate.mutation_id.as_uuid().to_string()],
+    )
+    .map_err(storage)?;
+    record_inbox_outcome(tx, origin, candidate, payload_digest, &staged, None)?;
+    Ok(staged)
+}
+
+/// Record the durable outcome for one mutation. Rejections keep `commit_seq`
+/// NULL: they are remembered so retries stay idempotent but never become a
+/// published commit.
+fn record_inbox_outcome(
+    tx: &Connection,
+    origin: &str,
+    candidate: &MutationCandidate,
+    payload_digest: &str,
+    staged: &StagedConfirmation,
+    commit_seq: Option<i64>,
+) -> Result<(), Error> {
+    let serialized = serde_json::to_string(staged).map_err(storage)?;
+    tx.execute(
+        "INSERT INTO sync_inbox(origin_device_id, mutation_id, payload_digest, outcome_json, commit_seq, received_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(origin_device_id, mutation_id) DO UPDATE SET outcome_json=excluded.outcome_json, commit_seq=excluded.commit_seq, received_at=excluded.received_at",
+        params![origin, candidate.mutation_id.as_uuid().to_string(), payload_digest, serialized, commit_seq, now_ms()],
+    )
+    .map_err(storage)?;
+    Ok(())
+}
+
+const fn terminal_rejection_consumes_origin(rejection: ConfirmationError) -> bool {
     matches!(
         rejection,
         ConfirmationError::WrongObject

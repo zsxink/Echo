@@ -526,7 +526,7 @@ impl SqliteDatabase {
 
 impl LibraryRepository for SqliteDatabase {
     fn replica_enrollment_pending(&self, root: LibraryRootId) -> Result<bool, Error> {
-        SqliteDatabase::replica_enrollment_pending(self, root)
+        Self::replica_enrollment_pending(self, root)
     }
     fn active_root(&self) -> Result<Option<LibraryRoot>, Error> {
         self.with_reader(|connection| {

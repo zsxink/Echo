@@ -499,7 +499,7 @@ fn initial_snapshot_keeps_different_audio_at_the_same_path_and_publishes_both() 
     } = &mut record
     {
         candidate.resource_refs.push(manifest.clone());
-        resources.push(manifest.clone());
+        resources.push(manifest);
     }
     let mut snapshot = page(binding);
     snapshot.records.push(record);
@@ -619,7 +619,7 @@ fn snapshot_keeps_same_name_distinct_playlists_and_their_own_members() {
 }
 
 #[test]
-fn sync_wakeup_ignores_empty_replica_cursor_updates() {
+fn empty_replica_apply_persists_nothing() {
     let (_directory, database, binding, peer) = replica();
     let (wake, wakeups) = std::sync::mpsc::channel();
     database.register_sync_waker(wake);
@@ -640,9 +640,12 @@ fn sync_wakeup_ignores_empty_replica_cursor_updates() {
             wakeups.try_recv().is_err(),
             "empty peer apply must not schedule another sync cycle"
         );
-        writes
-            .try_recv()
-            .expect("ordinary subscribers still see the successful cursor write");
+        assert!(
+            writes.try_recv().is_err(),
+            "an idle apply must not commit a cursor row"
+        );
     }
-    assert_eq!(count(&database, "sync_peer_cursors"), 1);
+    // The second apply above already re-read the cursor as the anchor default,
+    // which is the same value the durable row would have carried.
+    assert_eq!(count(&database, "sync_peer_cursors"), 0);
 }
