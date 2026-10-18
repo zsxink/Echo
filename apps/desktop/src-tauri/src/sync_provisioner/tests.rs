@@ -1616,3 +1616,6 @@ fn scoped_queue_forwards_re_anchoring_and_the_local_change_time() {
 
 #[path = "tests/embedded_resources.rs"]
 mod embedded_resources;
+
+#[path = "tests/host_publication.rs"]
+mod host_publication;

@@ -685,6 +685,17 @@ impl SyncProvisioner for NativeSyncProvisioner {
             progress.total_download_bytes = Some(total_download);
             progress.downloaded_bytes = Some(downloaded);
         }
+        if role == SyncRole::Host && configuration.host {
+            // This is the host's own media readiness. Accepted peer commits
+            // can still be awaiting local publication even after their upload
+            // and ledger confirmation have completed.
+            progress.media_ready = Some(
+                self.database
+                    .pending_peer_resource_sets(configuration.local_root)
+                    .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+                    .is_empty(),
+            );
+        }
         // A host cannot know which resources its peers still need. Host HTTP
         // traffic is not interpreted as a complete peer download inventory.
         Ok(progress)
@@ -1436,7 +1447,7 @@ impl NativeSyncProvisioner {
         }
         for (object, targets) in sets {
             let database = Arc::clone(&self.database);
-            publish_remote_resource_set(
+            if let Err(error) = publish_remote_resource_set(
                 self.publication.clone(),
                 database.as_ref(),
                 resources,
@@ -1444,7 +1455,19 @@ impl NativeSyncProvisioner {
                 root,
                 object,
                 &targets,
-            )?;
+            ) {
+                // Each object has its own durable publication journal. An old
+                // missing upload or a conflicting local path must not block
+                // every later accepted song, nor prevent their metadata/UI
+                // refresh. Keep this declaration pending for the next pass.
+                tracing::warn!(
+                    target: "echo_desktop::sync",
+                    ?object,
+                    ?error,
+                    "peer resource publication deferred; continuing other objects"
+                );
+                continue;
+            }
             let mut published_hashes = Vec::new();
             for target in &targets {
                 let hash = target.manifest.digest.to_hex();
