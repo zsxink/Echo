@@ -24,7 +24,8 @@ use std::sync::{Arc, Mutex};
 use crate::application::ports::{CoverAssetRef, FileEvent, FileEventKind, OperationItem, TxAccess};
 use crate::application::relink::{song_from_parsed, RelinkPlanner, Resolution};
 use crate::application::scan::{
-    parse_single_file, rewrap, FileOutcome, ParsedOutcome, ScanDeps, ScanSupervisor,
+    parse_file_event, parse_single_file, rewrap, FileOutcome, ParsedOutcome, ScanDeps,
+    ScanSupervisor,
 };
 use crate::domain::entities::{LyricsSource, SongAvailability as Availability};
 use crate::domain::entities::{MediaDiagnostic, Song, SongAvailability};
@@ -239,8 +240,26 @@ impl WatchCoordinator {
             }
         }
         // No claim: reconcile exactly like the scan pipeline does.
-        match parse_single_file(&self.deps, root, path) {
+        let existing = self.deps.songs.by_path(root, path)?;
+        match parse_file_event(&self.deps, root, path) {
             FileOutcome::Parsed(parsed) => {
+                if let Some(song) =
+                    existing.filter(|song| song.blake3_hash() == Some(parsed.file.hash.as_str()))
+                {
+                    if song.availability() == SongAvailability::Missing {
+                        self.deps
+                            .songs
+                            .set_availability(song.id(), SongAvailability::Available)?;
+                        return Ok(EventOutcome::Applied {
+                            song: song.id(),
+                            created: false,
+                        });
+                    }
+                    // The event may only reflect a timestamp or filesystem
+                    // notification change. Do not enqueue a duplicate mutation
+                    // when the file bytes are identical.
+                    return Ok(EventOutcome::Ignored);
+                }
                 let mut planner = RelinkPlanner::new(self.deps.songs.all_in_root(root)?);
                 match planner.resolve(&parsed.file) {
                     Resolution::Keep { song } | Resolution::Relink { song } => {

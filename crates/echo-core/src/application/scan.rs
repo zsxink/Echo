@@ -718,23 +718,45 @@ pub(crate) fn parse_single_file(
     root: LibraryRootId,
     path: &RelativeMediaPath,
 ) -> FileOutcome {
+    parse_single_file_with_content_check(deps, root, path, false)
+}
+
+/// Parse a file event without trusting its size/mtime pair as a content
+/// fingerprint. External tag editors can preserve both while changing the
+/// embedded artwork or lyrics, so watcher events must still hash the bytes.
+pub(crate) fn parse_file_event(
+    deps: &ScanDeps,
+    root: LibraryRootId,
+    path: &RelativeMediaPath,
+) -> FileOutcome {
+    parse_single_file_with_content_check(deps, root, path, true)
+}
+
+fn parse_single_file_with_content_check(
+    deps: &ScanDeps,
+    root: LibraryRootId,
+    path: &RelativeMediaPath,
+    force_content_check: bool,
+) -> FileOutcome {
     let file_meta: FileMeta = match deps.fs.file_meta(root, path) {
         Ok(meta) => meta,
         Err(error) => return FileOutcome::Diagnostic(diagnostic_of(path, &error)),
     };
-    if let Ok(Some(existing)) = deps.songs.by_path(root, path) {
-        let unchanged = existing.blake3_hash().is_some()
-            && existing.file_size() == Some(file_meta.size)
-            && existing.file_mtime_ns() == Some(file_meta.modified_ns);
-        if unchanged {
-            let restore =
-                (existing.availability() == SongAvailability::Missing).then_some(existing.id());
-            // `PendingDelete` rows stay as they are: Echo's own delete flow
-            // owns them; file presence does not resurrect a pending delete.
-            return FileOutcome::FastSkip {
-                path: path.clone(),
-                restore,
-            };
+    if !force_content_check {
+        if let Ok(Some(existing)) = deps.songs.by_path(root, path) {
+            let unchanged = existing.blake3_hash().is_some()
+                && existing.file_size() == Some(file_meta.size)
+                && existing.file_mtime_ns() == Some(file_meta.modified_ns);
+            if unchanged {
+                let restore =
+                    (existing.availability() == SongAvailability::Missing).then_some(existing.id());
+                // `PendingDelete` rows stay as they are: Echo's own delete flow
+                // owns them; file presence does not resurrect a pending delete.
+                return FileOutcome::FastSkip {
+                    path: path.clone(),
+                    restore,
+                };
+            }
         }
     }
 
