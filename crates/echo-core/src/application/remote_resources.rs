@@ -81,19 +81,19 @@ impl PublishRemoteResources {
                     crate::domain::library::STAGING_ROOT,
                     operation.as_uuid().simple()
                 );
-                // A first download into an empty library should retain the
-                // host's logical path for audio and its sidecar lyrics. This
-                // lets the normal scanner index embedded covers and nearby
-                // `.lrc` files after synchronization. Conflicting or replaced
-                // content stays in an isolated Echo version path.
+                // Retain the logical audio/lyrics path on first download, or
+                // adopt it when it already contains this exact version after
+                // a local tag edit. This keeps a rescan from importing the
+                // same edited file as a second song. Conflicting content stays
+                // in an isolated Echo version path.
                 let local_path = if matches!(object, ObjectKey::Song(_))
                     && matches!(
                         target.manifest.kind,
                         crate::domain::sync::SharedResourceKind::Audio
                             | crate::domain::sync::SharedResourceKind::LyricsSidecar
                     )
-                    && target.expected_old_digest.is_none()
-                    && (!self.deps.fs.path_exists(root, &path)?
+                    && ((target.expected_old_digest.is_none()
+                        && !self.deps.fs.path_exists(root, &path)?)
                         || self.matches(
                             root,
                             &path,
@@ -215,11 +215,18 @@ impl PublishRemoteResources {
                 if let (Some(previous), Some(expected)) =
                     (&item.old_path, item.target.expected_old_digest)
                 {
-                    if self
-                        .deps
-                        .hasher
-                        .hash(root, &RelativeMediaPath::new(previous)?)?
-                        != expected.to_hex()
+                    let previous = RelativeMediaPath::new(previous)?;
+                    if self.deps.hasher.hash(root, &previous)? != expected.to_hex()
+                        // A local tag edit can already have transformed the
+                        // previous file into exactly this declared version.
+                        // Accept only full verified target content; arbitrary
+                        // external changes still keep the association blocked.
+                        && !self.matches(
+                            root,
+                            &previous,
+                            &resource.digest.to_hex(),
+                            resource.length,
+                        )?
                     {
                         return Err(Error::conflict(
                             "previous local resource changed externally",

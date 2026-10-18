@@ -21,6 +21,12 @@ If Echo cannot read the checkpoint or portable authority evidence, leave sync di
 
 Remote media is staged and verified before it is atomically published. If the destination file is locked (for example, by a player on Windows), metadata may be present while that media remains unavailable; the status must not claim that all media is ready. Close the player or release the file handle, then resume sync. A restart resumes from the durable publication journal. Cleanup only removes redundant staging data whose journal and content hash/length prove that it belongs to a completed publication; staging with unknown provenance is left untouched for diagnosis.
 
+## 附属机写回内嵌信息后同步失败
+
+修改歌曲文件中的封面、歌词或专辑会改变全文件哈希。旧实现可能在上传前向主机下载这个仅存在于附属机的新版本，日志返回 `resource_not_found`，界面却显示检查主机状态和配对关系。修复后的版本会先完整校验并复用本机文件，再上传并等待主机确认；资源缺失单独显示媒体资源不可用。
+
+在两端更新 Echo 后保留原资料库与配对，重试同步。不要清空待同步队列、删除歌曲或重新导入来绕过这个错误。如果仍提示资源不可用，确认两端媒体目录可访问，并保留两端同步日志用于定位缺失资源。
+
 ## What cannot be detected
 
 If the entire machine state, library root, and independently stored checkpoint are all rolled back together to the same older point, local evidence cannot prove that newer commits once existed. Use a backup inventory or another peer's observed checkpoint to identify that case. When in doubt, recover into a new host epoch and re-pair; never resume the old epoch from a potentially stale backup.

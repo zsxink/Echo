@@ -359,7 +359,6 @@ fn map_pairing_client_error(error: echo_sync::client::ClientError) -> SyncRuntim
         ClientError::HostRejected(StatusCode::SERVICE_UNAVAILABLE) => {
             SyncRuntimeError::PairingHostUnavailable
         }
-        ClientError::HostRejected(_) => SyncRuntimeError::PairingRequestRejected,
         ClientError::HostRejectedCode(status, _) if status == StatusCode::NOT_FOUND => {
             SyncRuntimeError::PairingFailed
         }
@@ -369,7 +368,9 @@ fn map_pairing_client_error(error: echo_sync::client::ClientError) -> SyncRuntim
         ClientError::HostRejectedCode(status, _) if status == StatusCode::SERVICE_UNAVAILABLE => {
             SyncRuntimeError::PairingHostUnavailable
         }
-        ClientError::HostRejectedCode(_, _) => SyncRuntimeError::PairingRequestRejected,
+        ClientError::HostRejected(_) | ClientError::HostRejectedCode(_, _) => {
+            SyncRuntimeError::PairingRequestRejected
+        }
         ClientError::Transport(transport) => {
             // Keep the user-facing error stable, but retain the reqwest source
             // chain in the local diagnostic log. Without this, TCP refusal,

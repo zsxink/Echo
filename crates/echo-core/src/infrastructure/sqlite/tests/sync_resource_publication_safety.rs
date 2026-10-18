@@ -124,6 +124,49 @@ fn external_old_file_changes_isolate_replacement_without_overwrite_or_associatio
 }
 
 #[test]
+fn already_edited_old_file_is_adopted_only_when_it_matches_the_exact_target() {
+    let fixture = Fixture::new();
+    let (_, old_path) = fixture.publish_initial();
+    let bytes = b"replacement with embedded tag edits";
+    let replacement = manifest(bytes, "media/track.flac");
+    fixture
+        .database
+        .set_local_sync_resources(fixture.object, vec![replacement.clone()])
+        .unwrap();
+    std::fs::write(&old_path, bytes).unwrap();
+    let operation = fixture.prepare(&replacement);
+    fixture
+        .publisher
+        .stage(fixture.root, operation, 0, &mut Cursor::new(bytes))
+        .unwrap();
+    assert!(
+        fixture
+            .publisher
+            .resume(fixture.root, operation)
+            .unwrap()
+            .media_ready
+    );
+    assert!(
+        fixture
+            .publisher
+            .resume(fixture.root, operation)
+            .unwrap()
+            .media_ready
+    );
+    assert_eq!(std::fs::read(old_path).unwrap(), bytes);
+    let path = fixture
+        .database
+        .local_remote_resource_path(fixture.root, fixture.object, &replacement)
+        .unwrap()
+        .unwrap();
+    assert_eq!(path.normalized(), "media/track.flac");
+    assert_eq!(
+        std::fs::read(fixture.root_path.join(path.normalized())).unwrap(),
+        bytes
+    );
+}
+
+#[test]
 fn foreign_destination_and_failed_full_hash_keep_existing_bytes_and_retryable_intent() {
     let fixture = Fixture::new();
     let operation = fixture.prepare(&fixture.initial);

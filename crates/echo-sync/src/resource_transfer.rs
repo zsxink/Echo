@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::protocol::{validate_resource, ResourceRefDto, MAX_RESOURCE_CHUNK_BYTES};
 
+mod local_import;
+
 /// The upper resource size limit also bounds checkpoint metadata (4,096 chunks).
 pub const MAX_RESOURCE_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 const MAX_ACTIVE_UPLOADS: usize = 32;
@@ -194,6 +196,7 @@ impl FileResourceStore {
     ) -> Result<(), TransferError> {
         let _lock = self.lock.lock().map_err(|_| TransferError::Conflict)?;
         let directory = self.directory(binding)?;
+        local_import::cleanup_stale_snapshots(&directory, max_age)?;
         let referenced: std::collections::HashSet<&str> =
             referenced_hashes.iter().map(String::as_str).collect();
         let now = SystemTime::now();
@@ -302,13 +305,21 @@ impl FileResourceStore {
                     .is_none_or(|selected| selected.contains(hash.as_str()))
                 && selected_owner.is_none_or(|owner| checkpoint.owner == owner)
             {
-                completed.push((path, hash));
+                completed.push((path, hash, checkpoint.progress.upload_id));
             } else {
                 retained_hashes.insert(hash);
             }
         }
 
-        for (checkpoint, hash) in completed {
+        for (checkpoint, hash, upload_id) in completed {
+            // An atomic local import may finish before its old network part
+            // was removed. Keep the checkpoint until both files are reclaimed.
+            validate_hash(&upload_id)?;
+            let part = directory.join(format!("{upload_id}.part"));
+            if part.exists() {
+                regular_file(&part)?;
+                fs::remove_file(part)?;
+            }
             if !retained_hashes.contains(&hash) {
                 let blob = directory.join(format!("{hash}.blob"));
                 if blob.exists() {

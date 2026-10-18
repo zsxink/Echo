@@ -70,6 +70,10 @@ use progress::{observe_transfer, TrackedDownloadStore, TransferTelemetry};
 #[path = "sync_provisioner/tests.rs"]
 mod tests;
 
+#[cfg(test)]
+#[path = "sync_provisioner/error_tests.rs"]
+mod error_tests;
+
 use crate::sync_runtime::{
     ProgressNotifier, ProvisionedHost, ProvisionedPeer, SyncProgress, SyncProvisioner, SyncRole,
     SyncRuntimeError, WatchOutcome,
@@ -176,6 +180,10 @@ fn map_sync_client_error(error: ClientError) -> SyncRuntimeError {
             tracing::warn!(target: "echo_desktop::sync", %code, "sync host rejected a mismatched library binding");
             SyncRuntimeError::SyncBindingMismatch
         }
+        ClientError::HostRejectedCode(_, code) if code == "resource_not_found" => {
+            tracing::warn!(target: "echo_desktop::sync", %code, "sync media resource is unavailable");
+            SyncRuntimeError::SyncResourceUnavailable
+        }
         ClientError::HostRejectedCode(_, code) if code == "resource_content_mismatch" => {
             tracing::warn!(target: "echo_desktop::sync", %code, "sync resource content does not match the host declaration");
             SyncRuntimeError::SyncResourceMismatch
@@ -183,7 +191,9 @@ fn map_sync_client_error(error: ClientError) -> SyncRuntimeError {
         ClientError::HostRejectedCode(_, code)
             if matches!(
                 code.as_str(),
-                "resource_not_complete" | "invalid_resource_reference" | "resource_version_mismatch"
+                "resource_not_complete"
+                    | "invalid_resource_reference"
+                    | "resource_version_mismatch"
             ) =>
         {
             tracing::warn!(target: "echo_desktop::sync", %code, "sync host could not verify the referenced media resource");
@@ -1495,18 +1505,11 @@ impl NativeSyncProvisioner {
             .database
             .pending_remote_resource_sets(root)
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-        observe_transfer(&self.telemetry(), |telemetry| {
-            for (_, targets) in &sets {
-                for target in targets {
-                    telemetry.declare_download(&ResourceRefDto::from(&target.manifest));
-                }
-            }
-        });
-        let tracked: Arc<dyn ResourceTransferPort> = Arc::new(TrackedDownloadStore {
-            store: Arc::clone(resources),
-            telemetry: self.telemetry(),
-        });
-        let owner = DeviceId::from_uuid(self.database.current_device_id().as_uuid());
+        let library = self
+            .database
+            .by_id(root)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+            .ok_or(SyncRuntimeError::LibraryUnavailable)?;
         // Stage the whole page before publishing any of it, two resources at a
         // time: the design's "two resource streams per session". Downloading
         // one resource per object and publishing between them made a page of
@@ -1520,13 +1523,14 @@ impl NativeSyncProvisioner {
         while let Some(first) = window.next() {
             if let Some(second) = window.next() {
                 let (first, second) = tokio::join!(
-                    stage_remote_resource(peer, endpoint, owner, first, &tracked),
-                    stage_remote_resource(peer, endpoint, owner, second, &tracked),
+                    self.stage_remote_resource(peer, endpoint, &library, first, resources),
+                    self.stage_remote_resource(peer, endpoint, &library, second, resources),
                 );
                 first?;
                 second?;
             } else {
-                stage_remote_resource(peer, endpoint, owner, first, &tracked).await?;
+                self.stage_remote_resource(peer, endpoint, &library, first, resources)
+                    .await?;
             }
         }
         for (object, targets) in sets {
@@ -1553,6 +1557,71 @@ impl NativeSyncProvisioner {
             .await
             .map_err(|_| SyncRuntimeError::WorkerFailed)??;
         }
+        Ok(())
+    }
+
+    /// A current declaration can come from a local tag edit whose bytes have
+    /// not reached the host yet. Reuse only full length/hash verified local
+    /// content; caching it never acknowledges its pending mutation or upload.
+    async fn stage_remote_resource(
+        &self,
+        peer: &ProvisionedPeer,
+        endpoint: &Url,
+        library: &LibraryRoot,
+        target: &RemoteResourceTarget,
+        resources: &Arc<FileResourceStore>,
+    ) -> Result<(), SyncRuntimeError> {
+        let owner = DeviceId::from_uuid(self.database.current_device_id().as_uuid());
+        let binding = peer.binding;
+        let database = Arc::clone(&self.database);
+        let library = library.clone();
+        let manifest = target.manifest.clone();
+        let store = Arc::clone(resources);
+        let reused = tokio::task::spawn_blocking(move || {
+            let request = PrepareResource {
+                binding,
+                resource: ResourceRefDto::from(&manifest),
+            };
+            if store.verify_complete(binding, &request.resource).is_ok() {
+                return Ok(true);
+            }
+            let sources = local_resource_candidates(database.as_ref(), &library, &manifest)?;
+            let Some(mut source) =
+                verified_local_resource(sources, &manifest.digest.to_hex(), manifest.length)?
+            else {
+                return Ok(false);
+            };
+            // Snapshot mutable library bytes before publishing a completion;
+            // source changes must not poison resumable network checkpoints.
+            store
+                .import_local_reader(owner, &request, &mut source)
+                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+            Ok::<bool, SyncRuntimeError>(true)
+        })
+        .await
+        .map_err(|_| SyncRuntimeError::WorkerFailed)??;
+        if reused {
+            return Ok(());
+        }
+        observe_transfer(&self.telemetry(), |telemetry| {
+            telemetry.declare_download(&ResourceRefDto::from(&target.manifest));
+        });
+        let tracked: Arc<dyn ResourceTransferPort> = Arc::new(TrackedDownloadStore {
+            store: Arc::clone(resources),
+            telemetry: self.telemetry(),
+        });
+        peer.client
+            .download_resource(
+                endpoint,
+                owner,
+                &PrepareResource {
+                    binding,
+                    resource: ResourceRefDto::from(&target.manifest),
+                },
+                tracked,
+            )
+            .await
+            .map_err(map_sync_client_error)?;
         Ok(())
     }
 
@@ -1791,31 +1860,6 @@ impl NativeSyncProvisioner {
         self.remember_uploaded(peer.binding, &content_hash);
         Ok(())
     }
-}
-
-/// Stage one remote resource into the local cache. Two of these run at once per
-/// session (`publish_remote_resources`), so the host sees two interleaved chunk
-/// streams; the chunks of a single file stay ordered.
-async fn stage_remote_resource(
-    peer: &ProvisionedPeer,
-    endpoint: &Url,
-    owner: DeviceId,
-    target: &RemoteResourceTarget,
-    resources: &Arc<dyn ResourceTransferPort>,
-) -> Result<(), SyncRuntimeError> {
-    peer.client
-        .download_resource(
-            endpoint,
-            owner,
-            &PrepareResource {
-                binding: peer.binding,
-                resource: ResourceRefDto::from(&target.manifest),
-            },
-            Arc::clone(resources),
-        )
-        .await
-        .map_err(map_sync_client_error)?;
-    Ok(())
 }
 
 fn local_resource_candidates(

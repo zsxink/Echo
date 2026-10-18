@@ -1613,3 +1613,6 @@ fn scoped_queue_forwards_re_anchoring_and_the_local_change_time() {
         "the re-anchored chain must continue the host position"
     );
 }
+
+#[path = "tests/embedded_resources.rs"]
+mod embedded_resources;
