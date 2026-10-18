@@ -69,7 +69,7 @@ impl LanClient {
             .await
             .map_err(ClientError::Transport)?;
         if !response.status().is_success() {
-            return Err(ClientError::HostRejected(response.status()));
+            return Err(host_rejected(response).await);
         }
         let pairing: PairingBootstrapResponse = read_bounded_json(response).await?;
         validate_pairing_bootstrap(&pairing, code, device_id)?;

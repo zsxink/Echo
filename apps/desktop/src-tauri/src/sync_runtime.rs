@@ -104,6 +104,9 @@ pub enum SyncRuntimeError {
     SyncHostUnavailable,
     SyncAuthorizationFailed,
     SyncHostRejected,
+    SyncBindingMismatch,
+    SyncResourceMismatch,
+    SyncMutationRejected,
     SyncProtocolFailed,
     WorkerFailed,
 }
@@ -132,6 +135,9 @@ impl SyncRuntimeError {
             Self::SyncHostUnavailable => "sync.hostUnavailable",
             Self::SyncAuthorizationFailed => "sync.authorizationFailed",
             Self::SyncHostRejected => "sync.hostRejected",
+            Self::SyncBindingMismatch => "sync.bindingMismatch",
+            Self::SyncResourceMismatch => "sync.resourceMismatch",
+            Self::SyncMutationRejected => "sync.mutationRejected",
             Self::SyncProtocolFailed => "sync.protocolFailed",
             Self::WorkerFailed => "sync.workerFailed",
         }

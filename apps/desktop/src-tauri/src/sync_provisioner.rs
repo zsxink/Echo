@@ -153,13 +153,42 @@ fn map_sync_client_error(error: ClientError) -> SyncRuntimeError {
         ClientError::HostRejected(status) if status == reqwest::StatusCode::SERVICE_UNAVAILABLE => {
             SyncRuntimeError::SyncHostUnavailable
         }
+        ClientError::HostRejectedCode(status, code)
+            if status == reqwest::StatusCode::SERVICE_UNAVAILABLE =>
+        {
+            tracing::warn!(target: "echo_desktop::sync", %status, %code, "sync host unavailable");
+            SyncRuntimeError::SyncHostUnavailable
+        }
         ClientError::HostRejected(status)
             if status == reqwest::StatusCode::UNAUTHORIZED
                 || status == reqwest::StatusCode::FORBIDDEN =>
         {
             SyncRuntimeError::SyncAuthorizationFailed
         }
+        ClientError::HostRejectedCode(status, code)
+            if status == reqwest::StatusCode::UNAUTHORIZED
+                || status == reqwest::StatusCode::FORBIDDEN =>
+        {
+            tracing::warn!(target: "echo_desktop::sync", %status, %code, "sync host authorization rejected");
+            SyncRuntimeError::SyncAuthorizationFailed
+        }
+        ClientError::HostRejectedCode(_, code) if code == "library_binding_mismatch" => {
+            tracing::warn!(target: "echo_desktop::sync", %code, "sync host rejected a mismatched library binding");
+            SyncRuntimeError::SyncBindingMismatch
+        }
+        ClientError::HostRejectedCode(_, code) if code == "resource_content_mismatch" => {
+            tracing::warn!(target: "echo_desktop::sync", %code, "sync resource content does not match the host declaration");
+            SyncRuntimeError::SyncResourceMismatch
+        }
+        ClientError::HostRejectedCode(_, code) if code == "mutation_rejected" => {
+            tracing::warn!(target: "echo_desktop::sync", %code, "sync host rejected the submitted mutation");
+            SyncRuntimeError::SyncMutationRejected
+        }
         ClientError::HostRejected(_) => SyncRuntimeError::SyncHostRejected,
+        ClientError::HostRejectedCode(_, code) => {
+            tracing::warn!(target: "echo_desktop::sync", %code, "sync host rejected request");
+            SyncRuntimeError::SyncHostRejected
+        }
         ClientError::InvalidEndpoint => SyncRuntimeError::InvalidAddress,
         ClientError::InvalidTlsConfiguration(_)
         | ClientError::InvalidMutation(_)

@@ -45,6 +45,8 @@ pub enum ClientError {
     InvalidSnapshot(ProtocolError),
     Transport(reqwest::Error),
     HostRejected(StatusCode),
+    /// A host rejection with its bounded, structured API error code.
+    HostRejectedCode(StatusCode, String),
     InvalidResponse(reqwest::Error),
     InvalidResponseBody,
     InvalidCommitChain,
@@ -60,6 +62,9 @@ impl std::fmt::Display for ClientError {
             Self::InvalidSnapshot(error) => write!(f, "invalid sync snapshot page: {error}"),
             Self::Transport(_) => f.write_str("sync host is unavailable"),
             Self::HostRejected(status) => write!(f, "sync host rejected request ({status})"),
+            Self::HostRejectedCode(status, code) => {
+                write!(f, "sync host rejected request ({status}: {code})")
+            }
             Self::InvalidResponse(_) => f.write_str("sync host returned an invalid response"),
             Self::InvalidResponseBody => {
                 f.write_str("sync host returned an invalid or oversized response body")
@@ -128,7 +133,7 @@ impl LanClient {
         )
         .await?;
         if !response.status().is_success() {
-            return Err(ClientError::HostRejected(response.status()));
+            return Err(host_rejected(response).await);
         }
         let ack: MutationAck = read_bounded_json(response).await?;
         validate_mutation_ack(&ack, mutation)?;
@@ -183,7 +188,7 @@ impl LanClient {
         }
         let response = send_sync_request(request).await?;
         if !response.status().is_success() {
-            return Err(ClientError::HostRejected(response.status()));
+            return Err(host_rejected(response).await);
         }
         let page: CommitPageDto = read_bounded_json(response).await?;
         validate_commit_page(&page, after, previous_digest)?;
@@ -215,7 +220,7 @@ impl LanClient {
         let response =
             send_sync_request(self.http.post(url).bearer_auth(&self.bearer_token)).await?;
         if !response.status().is_success() {
-            return Err(ClientError::HostRejected(response.status()));
+            return Err(host_rejected(response).await);
         }
         let page: SnapshotPageDto = read_bounded_json(response).await?;
         validate_snapshot_page(&page).map_err(ClientError::InvalidSnapshot)?;
@@ -254,7 +259,7 @@ impl LanClient {
         let response =
             send_sync_request(self.http.get(url).bearer_auth(&self.bearer_token)).await?;
         if !response.status().is_success() {
-            return Err(ClientError::HostRejected(response.status()));
+            return Err(host_rejected(response).await);
         }
         let page: SnapshotPageDto = read_bounded_json(response).await?;
         validate_snapshot_page(&page).map_err(ClientError::InvalidSnapshot)?;
@@ -405,7 +410,7 @@ impl LanClient {
         )
         .await?;
         if response.status() != StatusCode::PARTIAL_CONTENT {
-            return Err(ClientError::HostRejected(response.status()));
+            return Err(host_rejected(response).await);
         }
         let expected_range = format!("bytes {offset}-{}/{}", offset + length - 1, resource.length);
         let expected_etag = format!("\"{}\"", resource.content_hash);
@@ -686,9 +691,29 @@ mod throttling_tests {
 
 async fn resource_progress(response: reqwest::Response) -> Result<TransferProgress, ClientError> {
     if !response.status().is_success() {
-        return Err(ClientError::HostRejected(response.status()));
+        return Err(host_rejected(response).await);
     }
     read_bounded_json(response).await
+}
+
+pub(super) async fn host_rejected(response: reqwest::Response) -> ClientError {
+    let status = response.status();
+    #[derive(Deserialize)]
+    struct ErrorBody {
+        error: String,
+    }
+    match read_bounded_json::<ErrorBody>(response).await {
+        Ok(body)
+            if !body.error.is_empty()
+                && body.error.len() <= 96
+                && body.error.bytes().all(|byte| {
+                    byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'
+                }) =>
+        {
+            ClientError::HostRejectedCode(status, body.error)
+        }
+        _ => ClientError::HostRejected(status),
+    }
 }
 
 fn validate_transfer_progress(
