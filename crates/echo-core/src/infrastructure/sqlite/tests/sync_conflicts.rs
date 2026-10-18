@@ -3,6 +3,34 @@ use crate::application::ports::{LibraryRepository, LocalSyncQueuePort, PlaylistR
 use crate::domain::entities::LibraryRoot;
 use crate::domain::sync::{AuthorityId, Epoch, LibraryId};
 
+#[test]
+fn favorite_and_play_stats_conflicts_compare_visible_values() {
+    assert!(!super::has_user_value_change(
+        "favorite",
+        &serde_json::json!({"is_favorite": true, "revision": 1}),
+        &serde_json::json!({"is_favorite": true, "revision": 2}),
+    ));
+    assert!(super::has_user_value_change(
+        "favorite",
+        &serde_json::json!({"is_favorite": true}),
+        &serde_json::json!({"is_favorite": false}),
+    ));
+    assert!(!super::has_user_value_change(
+        "play-stats",
+        &serde_json::json!({"by_device": {"device-a": 2}}),
+        &serde_json::json!({"by_device": {"device-a": 2}}),
+    ));
+    assert!(super::has_user_value_change(
+        "play-stats",
+        &serde_json::json!({"by_device": {"device-a": 2}}),
+        &serde_json::json!({"by_device": {"device-a": 3}}),
+    ));
+    assert_eq!(
+        super::fields("favorite", &serde_json::json!({"is_favorite": true})),
+        serde_json::json!({"is_favorite": true})
+    );
+}
+
 fn fixture() -> (
     tempfile::TempDir,
     SqliteDatabase,

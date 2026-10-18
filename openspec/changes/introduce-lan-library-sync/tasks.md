@@ -97,3 +97,4 @@
   - **兜底轮询 5s → 10s**：`FALLBACK_POLL_INTERVAL` / `RETRY_BASE_DELAY` 拆成两个常量（原来重试基数与轮询间隔共用 5s）。旧主机 fallback 从 ≈48 req/min 降到 ≈12 req/min。
   - **工作树转绿**：修掉 `different_hash_same_path_gets_a_stable_safe_destination`（断言的是旧的 `Same (n).flac` 命名；现契约是 `echo/media/pending/<uuid>-<n>` 预留位，本地路径仍归本地歌曲）；`cargo clippy --workspace --all-targets --all-features -- -D warnings` 从「echo-core 6 + echo-sync 6 + echo-desktop 2 + echo-app 10」降到 0（超长函数按职责拆分，`stage_confirmation` 的重复 inbox 写入与墓碑拒绝分支各提一个函数）。
   - 验证：`cargo fmt --all -- --check` 干净；`cargo test --workspace --all-features` 全绿（echo-core 599 / echo-desktop 413 / echo-app 54 / echo-sync 43，各 1 个既有 ignored）；clippy 严格档 0 告警。
+- [x] 9.9 修复收藏/播放统计的无变化冲突：过期基线的确认仍推进主版本，但仅当收藏布尔值或合并后统计桶变化时创建冲突；过滤旧历史中的无变化记录，并显示这两类冲突的真实业务值。验证：`cargo fmt --all --check`、`cargo test -p echo-core --test sync_domain`、`cargo test -p echo-core sync_conflicts`。

@@ -35,6 +35,8 @@ fn fields(kind: &str, payload: &Value) -> Value {
     let names: &[&str] = match kind {
         "playlist" => &["display_name"],
         "override" => &["title", "artist", "album", "lyrics_text"],
+        "favorite" => &["is_favorite"],
+        "play-stats" => &["by_device"],
         _ => &[],
     };
     Value::Object(
@@ -47,6 +49,14 @@ fn fields(kind: &str, payload: &Value) -> Value {
             })
             .collect::<Map<_, _>>(),
     )
+}
+
+fn has_user_value_change(kind: &str, replaced: &Value, accepted: &Value) -> bool {
+    match kind {
+        "favorite" => replaced.get("is_favorite") != accepted.get("is_favorite"),
+        "play-stats" => replaced.get("by_device") != accepted.get("by_device"),
+        _ => true,
+    }
 }
 
 fn recovery(
@@ -100,17 +110,29 @@ impl HostSyncConflictPort for SqliteDatabase {
             // on one snapshot while another writer activates a different root.
             let tx = connection.unchecked_transaction().map_err(storage)?;
             require_host(&tx, root, expected)?;
-            let mut statement = tx.prepare("SELECT conflict_id,object_type,object_uuid,replaced_version,accepted_version,replaced_payload_json,accepted_payload_json FROM sync_conflicts WHERE resolved_at IS NULL ORDER BY accepted_version DESC,conflict_id LIMIT ?1").map_err(storage)?;
-            let rows = statement.query_map([i64::try_from(limit.clamp(1, 200)).map_err(storage)?], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, i64>(3)?, row.get::<_, i64>(4)?, row.get::<_, String>(5)?, row.get::<_, String>(6)?))).map_err(storage)?;
-            rows.map(|row| {
+            let mut statement = tx.prepare("SELECT conflict_id,object_type,object_uuid,replaced_version,accepted_version,replaced_payload_json,accepted_payload_json FROM sync_conflicts WHERE resolved_at IS NULL ORDER BY accepted_version DESC,conflict_id").map_err(storage)?;
+            let rows = statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, i64>(3)?, row.get::<_, i64>(4)?, row.get::<_, String>(5)?, row.get::<_, String>(6)?))).map_err(storage)?;
+            let mut conflicts = Vec::new();
+            for row in rows {
+                if conflicts.len() == limit.clamp(1, 200) {
+                    break;
+                }
                 let (id, kind, object, replaced_version, accepted_version, replaced, accepted) = row.map_err(storage)?;
-                Ok(SyncConflictView {
+                let replaced: Value = serde_json::from_str(&replaced).map_err(storage)?;
+                let accepted: Value = serde_json::from_str(&accepted).map_err(storage)?;
+                // Filter no-op conflicts already persisted by older versions;
+                // metadata-only revision changes are not user-facing conflicts.
+                if !has_user_value_change(&kind, &replaced, &accepted) {
+                    continue;
+                }
+                conflicts.push(SyncConflictView {
                     conflict_id: Uuid::parse_str(&id).map_err(storage)?, object_uuid: Uuid::parse_str(&object).map_err(storage)?,
                     replaced_version: u64::try_from(replaced_version).map_err(storage)?, accepted_version: u64::try_from(accepted_version).map_err(storage)?,
-                    replaced_fields: fields(&kind, &serde_json::from_str(&replaced).map_err(storage)?), accepted_fields: fields(&kind, &serde_json::from_str(&accepted).map_err(storage)?),
+                    replaced_fields: fields(&kind, &replaced), accepted_fields: fields(&kind, &accepted),
                     recovery: recovery(&tx, root, &kind, &object)?, object_type: kind,
-                })
-            }).collect()
+                });
+            }
+            Ok(conflicts)
         })
     }
 

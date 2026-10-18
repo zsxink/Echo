@@ -508,6 +508,108 @@ fn legacy_play_stats_payload_still_authorizes_the_buckets_it_recorded() {
     );
 }
 
+#[test]
+fn stale_base_without_favorite_or_play_stats_value_change_is_not_a_conflict() {
+    use serde_json::json;
+
+    let song = SongId::new();
+    let first_device = DeviceId::new();
+    let second_device = DeviceId::new();
+    let stale_base = Some(ObjectVersion::from_commit_seq(CommitSeq::from_u64(1)));
+    let current_version = ObjectVersion::from_commit_seq(CommitSeq::from_u64(2));
+
+    let favorite = ConfirmedObject {
+        object: ObjectKey::Favorite(song),
+        version: current_version,
+        origin_device_id: first_device,
+        payload: json!({"is_favorite": true, "revision": 2}),
+    };
+    let same_favorite = MutationCandidate {
+        mutation_id: MutationId::new(),
+        origin_device_id: second_device,
+        origin_seq: 1,
+        previous_mutation_id: None,
+        object: ObjectKey::Favorite(song),
+        base_object_version: stale_base,
+        payload: json!({"is_favorite": true, "revision": 1}),
+        resource_refs: Vec::new(),
+    };
+    let result = confirm_candidate(
+        Some(&favorite),
+        None,
+        &same_favorite,
+        CommitSeq::from_u64(3),
+    )
+    .unwrap();
+    assert!(result.conflict.is_none());
+
+    let changed_favorite = MutationCandidate {
+        payload: json!({"is_favorite": false, "revision": 1}),
+        ..same_favorite
+    };
+    let result = confirm_candidate(
+        Some(&favorite),
+        None,
+        &changed_favorite,
+        CommitSeq::from_u64(3),
+    )
+    .unwrap();
+    assert!(
+        result.conflict.is_some(),
+        "a real favorite change remains visible"
+    );
+
+    let play_stats = ConfirmedObject {
+        object: ObjectKey::PlayStats(song),
+        version: current_version,
+        origin_device_id: first_device,
+        payload: json!({"by_device": {
+            first_device.as_uuid().to_string(): 2,
+            second_device.as_uuid().to_string(): 1,
+        }}),
+    };
+    let same_play_stats = MutationCandidate {
+        mutation_id: MutationId::new(),
+        origin_device_id: second_device,
+        origin_seq: 1,
+        previous_mutation_id: None,
+        object: ObjectKey::PlayStats(song),
+        base_object_version: stale_base,
+        payload: json!({"song_uuid": song.as_uuid(), "by_device": {
+            first_device.as_uuid().to_string(): 2,
+            second_device.as_uuid().to_string(): 1,
+        }}),
+        resource_refs: Vec::new(),
+    };
+    let result = confirm_candidate(
+        Some(&play_stats),
+        None,
+        &same_play_stats,
+        CommitSeq::from_u64(3),
+    )
+    .unwrap();
+    assert!(result.conflict.is_none());
+
+    let changed_play_stats = MutationCandidate {
+        payload: json!({"song_uuid": song.as_uuid(), "by_device": {
+            first_device.as_uuid().to_string(): 2,
+            second_device.as_uuid().to_string(): 3,
+        }}),
+        ..same_play_stats
+    };
+    let result = confirm_candidate(
+        Some(&play_stats),
+        None,
+        &changed_play_stats,
+        CommitSeq::from_u64(3),
+    )
+    .unwrap();
+    assert!(
+        result.conflict.is_some(),
+        "a real counter change remains visible"
+    );
+}
+
 /// A conflict record is the input to the user's recovery UI. It must carry the
 /// accepted (merged) object, because a recovery action echoes it back verbatim;
 /// storing the submitted sketch would drop every member the losing device never

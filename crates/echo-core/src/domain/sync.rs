@@ -504,19 +504,35 @@ pub fn confirm_candidate(
     let version = ObjectVersion::from_commit_seq(commit_seq);
     let conflict = current.and_then(|old| {
         let stale_base = candidate.base_object_version != Some(old.version);
-        (stale_base && old.origin_device_id != candidate.origin_device_id).then(|| {
-            ConflictCandidate {
-                object: old.object,
-                replaced_version: old.version,
-                replaced_payload: old.payload.clone(),
-                accepted_mutation_id: candidate.mutation_id,
-                // The accepted value is the merged canonical object, not the
-                // submitted sketch: a playlist append is merged against the
-                // confirmed membership, and a recovery UI that echoed the raw
-                // candidate would silently drop every member it never saw.
-                accepted_payload: confirmed_payload.clone(),
+        let changed_value = match candidate.object {
+            // Revisions and HLCs advance as events are confirmed. They do not
+            // make a user-visible favorite conflict when both devices chose
+            // the same value.
+            ObjectKey::Favorite(_) => {
+                old.payload.get("is_favorite") != confirmed_payload.get("is_favorite")
             }
-        })
+            // Play statistics are merged by device. Compare the merged
+            // counters, not the stale submitted snapshot or record metadata.
+            ObjectKey::PlayStats(_) => {
+                old.payload.get("by_device") != confirmed_payload.get("by_device")
+            }
+            _ => true,
+        };
+        (stale_base && old.origin_device_id != candidate.origin_device_id && changed_value).then(
+            || {
+                ConflictCandidate {
+                    object: old.object,
+                    replaced_version: old.version,
+                    replaced_payload: old.payload.clone(),
+                    accepted_mutation_id: candidate.mutation_id,
+                    // The accepted value is the merged canonical object, not the
+                    // submitted sketch: a playlist append is merged against the
+                    // confirmed membership, and a recovery UI that echoed the raw
+                    // candidate would silently drop every member it never saw.
+                    accepted_payload: confirmed_payload.clone(),
+                }
+            },
+        )
     });
     Ok(Confirmation {
         object: ConfirmedObject {
