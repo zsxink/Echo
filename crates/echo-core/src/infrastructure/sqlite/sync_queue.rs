@@ -233,13 +233,23 @@ impl LocalSyncQueuePort for SqliteDatabase {
                     |row| row.get(0),
                 )
                 .map_err(storage)?;
-            let (origin_seq, previous_mutation_id): (i64, Option<String>) = tx
+            let pending: Option<(i64, Option<String>)> = tx
                 .query_row(
                     "SELECT origin_seq,previous_mutation_id FROM sync_mutations WHERE origin_device_id=?1 AND mutation_id=?2 AND local_root_uuid=(SELECT local_root_uuid FROM sync_active_context WHERE singleton=1) AND status='pending'",
                     params![local_device, mutation_id.as_uuid().to_string()],
                     |row| Ok((row.get(0)?, row.get(1)?)),
                 )
+                .optional()
                 .map_err(storage)?;
+            // Already confirmed or rejected — by an earlier cycle, a retried
+            // acknowledgement, or a concurrent drain. There is nothing left to
+            // record, and this is not a ledger failure: mapping the absent row
+            // to a storage error told the user the local ledger was unreadable
+            // and sent every later diagnostic down the wrong path.
+            let Some((origin_seq, previous_mutation_id)) = pending else {
+                tx.commit().map_err(storage)?;
+                return Ok(());
+            };
             let changed = tx
                 .execute(
                     "UPDATE sync_mutations SET status='rejected', outcome_json=?3 WHERE origin_device_id=?1 AND mutation_id=?2 AND local_root_uuid=(SELECT local_root_uuid FROM sync_active_context WHERE singleton=1) AND status='pending'",
@@ -309,6 +319,47 @@ impl LocalSyncQueuePort for SqliteDatabase {
             let mut sequence = anchor.origin_seq;
             let mut previous = anchor.last_mutation_id;
             let mut rebased = 0;
+            if !pending.is_empty() {
+                // `sync_mutations` is UNIQUE(local_root_uuid, origin_device_id,
+                // origin_seq) for *every* status, so renumbering cannot happen
+                // in place: assigning `anchor + 1` to the row that already holds
+                // that number — or to the one after it, when the target range
+                // overlaps the current one — aborts the whole repair with
+                // `UNIQUE constraint failed`. Lift the colliding rows above
+                // every number this device holds, then write the final values
+                // into slots that are now empty. Every step stays an UPDATE, so
+                // no audit row is lost and relative order is preserved.
+                let occupied: i64 = tx
+                    .query_row(
+                        "SELECT COALESCE(MAX(origin_seq), 0) FROM sync_mutations WHERE origin_device_id=?1 AND local_root_uuid=?2",
+                        params![local_device, root],
+                        |row| row.get(0),
+                    )
+                    .map_err(storage)?;
+                let count = i64::try_from(pending.len()).map_err(storage)?;
+                let target_end = i64::try_from(anchor.origin_seq)
+                    .map_err(storage)?
+                    .saturating_add(count);
+                let staging = occupied
+                    .max(target_end)
+                    .saturating_add(count)
+                    .saturating_add(1);
+                // Only the rows that can collide move: every pending row (they
+                // are the ones being reassigned) and any terminal row sitting
+                // inside the target range. A retired event outside that range
+                // keeps the number it was audited under.
+                tx.execute(
+                    "UPDATE sync_mutations SET origin_seq = origin_seq + ?5 WHERE origin_device_id=?1 AND local_root_uuid=?2 AND (status='pending' OR origin_seq BETWEEN ?3 AND ?4)",
+                    params![
+                        local_device,
+                        root,
+                        i64::try_from(anchor.origin_seq).map_err(storage)?.saturating_add(1),
+                        target_end,
+                        staging,
+                    ],
+                )
+                .map_err(storage)?;
+            }
             for mutation_id in &pending {
                 sequence = sequence.checked_add(1).ok_or_else(|| {
                     Error::validation(

@@ -14,6 +14,24 @@ use std::time::Duration;
 use crate::client::{ClientError, LanClient};
 use crate::protocol::{MutationDto, PROTOCOL_VERSION};
 
+/// Name the ledger step that failed, then hand the error on unchanged.
+///
+/// Callers only know that "the local ledger failed", which is true of six very
+/// different operations. Without the step, a failure inside the repair path
+/// looked identical to a failure while merely reading the batch, and the next
+/// investigation had to re-derive it from the database by hand.
+fn ledger_step<T>(step: &'static str, result: Result<T, Error>) -> Result<T, ReplicaSyncError> {
+    result.map_err(|error| {
+        tracing::warn!(
+            target: "echo_sync::replica",
+            step,
+            %error,
+            "local sync ledger step failed"
+        );
+        ReplicaSyncError::Core(error)
+    })
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ReplicaSyncReport {
     pub mutations_confirmed: usize,
@@ -90,14 +108,17 @@ pub async fn synchronize_once(
     // not the authority it claims to be, so it surfaces instead of looping.
     let mut reanchored = false;
     loop {
-        let candidates = next_push_batch(queue, limit)?;
+        let candidates = ledger_step("pending_batch", next_push_batch(queue, limit))?;
         push_may_continue = candidates.len() == limit;
         let mut anchor = None;
         for candidate in &candidates {
             let mutation = mutation_dto(
                 binding,
                 candidate,
-                queue.local_mutation_changed_at_ms(candidate.mutation_id)?,
+                ledger_step(
+                    "change_time",
+                    queue.local_mutation_changed_at_ms(candidate.mutation_id),
+                )?,
             );
             let ack = client.submit_mutation(endpoint, &mutation).await?;
             if ack.confirmation.mutation_id != candidate.mutation_id {
@@ -123,7 +144,10 @@ pub async fn synchronize_once(
                 anchor = reanchor_target(candidate, &outcome);
                 break;
             }
-            queue.reject_local_mutation(candidate.mutation_id, ack.confirmation.outcome_json)?;
+            ledger_step(
+                "reject",
+                queue.reject_local_mutation(candidate.mutation_id, ack.confirmation.outcome_json),
+            )?;
             mutations_rejected += 1;
         }
         let Some(anchor) = anchor else {
@@ -132,11 +156,11 @@ pub async fn synchronize_once(
         if reanchored {
             break;
         }
-        queue.rebase_local_chain(anchor)?;
+        ledger_step("reanchor", queue.rebase_local_chain(anchor))?;
         reanchored = true;
     }
 
-    let checkpoint = queue.replica_checkpoint(host_device_id)?;
+    let checkpoint = ledger_step("checkpoint", queue.replica_checkpoint(host_device_id))?;
     if checkpoint.binding != binding {
         return Err(ReplicaSyncError::WrongBinding);
     }

@@ -241,3 +241,36 @@ fn display_of_permission_and_unsupported_media_scrub_paths() {
     );
     assert!(!unavailable.to_string().contains(ABS_PATH));
 }
+
+/// A storage failure must say *what* failed.
+///
+/// Every SQLite fault used to render as the bare classifier `storage error:
+/// sqlite`, because the classifier lived in `Display` while the actual cause was
+/// only reachable through `source`. A unique-constraint violation inside the
+/// sync repair path then read exactly like a locked file, and the one string
+/// that identified it was the one string nobody printed.
+#[test]
+fn storage_display_names_the_underlying_cause_without_leaking_paths() {
+    let err = Error::Storage {
+        what: "sqlite".to_owned(),
+        source: Box::new(std::io::Error::other(
+            "UNIQUE constraint failed: sync_mutations.origin_seq",
+        )),
+    };
+    let text = err.to_string();
+    assert!(
+        text.contains("UNIQUE constraint failed: sync_mutations.origin_seq"),
+        "the cause must survive Display: {text}"
+    );
+    assert!(text.contains("sqlite"), "the classifier stays: {text}");
+    assert_eq!(err.code(), "storage");
+
+    // The scrubbing rule is unchanged: only path spans are replaced.
+    let with_path = Error::Storage {
+        what: "sqlite".to_owned(),
+        source: Box::new(std::io::Error::other(format!("cannot open {ABS_PATH}"))),
+    };
+    let text = with_path.to_string();
+    assert!(!text.contains(ABS_PATH), "path leaked in Display: {text}");
+    assert!(text.contains("a.mp3"), "file name stays visible: {text}");
+}

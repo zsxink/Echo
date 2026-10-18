@@ -159,7 +159,15 @@ pub enum Error {
     },
 
     /// Database/storage-layer failure (migration, corruption, disk).
-    #[error("storage error: {}", redact_display(what))]
+    ///
+    /// The underlying cause is part of `Display`, not only of `source`. Every
+    /// SQLite failure used to render as the bare classifier `storage error:
+    /// sqlite`, so a unique-constraint violation inside a repair path, a locked
+    /// file and a missing table were indistinguishable in logs and in the UI
+    /// path that forwards this text — the message that identified the fault was
+    /// kept in `source` but never read. Only absolute-path spans are scrubbed,
+    /// so the reason stays readable without leaking a filesystem layout.
+    #[error("storage error: {}{}", redact_display(what), storage_detail(source))]
     Storage {
         /// Short classifier (e.g. `migration`, `integrity`).
         what: String,
@@ -393,6 +401,7 @@ mod privacy_tests;
 
 pub(crate) use privacy::{
     aspect, json_field, log_one, log_two, redact_display, scrub_operation, scrub_text,
+    storage_detail,
 };
 pub use privacy::{PermKind, Subject};
 

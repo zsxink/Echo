@@ -56,12 +56,26 @@ fn local_queue_is_ordered_and_terminal_rejection_does_not_block_later_edits() {
     assert_eq!(retryable.len(), 2);
     assert_eq!(retryable[0].origin_seq, 2);
     assert_eq!(retryable[1].origin_seq, 3);
-    assert!(database
+    // A second acknowledgement for the same event is what a retried peer cycle
+    // looks like. It must be a no-op — the terminal row stays terminal and keeps
+    // the outcome it was retired under — instead of surfacing a failure the
+    // caller reports as "the local ledger could not be read", which is what
+    // mapping the absent `status='pending'` row to `Storage` used to do.
+    database
         .reject_local_mutation(
             queued[0].mutation_id,
             r#"{"accepted":false,"reason":"duplicate terminal"}"#.to_owned(),
         )
-        .is_err());
+        .expect("a repeated acknowledgement is idempotent");
+    let after = database.pending_local_mutations(10).unwrap();
+    assert_eq!(after.len(), 2, "later edits are still queued for push");
+    assert!(
+        after
+            .iter()
+            .all(|event| event.mutation_id != queued[0].mutation_id),
+        "a retired event never re-enters the pending chain"
+    );
+    assert_eq!(after[0].mutation_id, retryable[0].mutation_id);
 }
 
 #[test]
@@ -368,4 +382,106 @@ fn rebase_reanchors_the_pending_chain_onto_the_host_cursor() {
         continued[3].previous_mutation_id,
         Some(pending[2].mutation_id)
     );
+}
+
+/// Re-anchoring must survive a target range that overlaps the current one.
+///
+/// `sync_mutations` is UNIQUE(local_root_uuid, origin_device_id, origin_seq)
+/// across every status, so the naive "walk the pending rows and assign
+/// `anchor + n`" renumbering collides the moment a target number is still held
+/// by another row — exactly what happens when the host cursor is behind the
+/// local chain, or when a rejected row sits inside the target range. The repair
+/// then aborted with `UNIQUE constraint failed`, which is the worst possible
+/// failure here: it is the code path that exists to end the stall.
+#[test]
+fn rebase_survives_a_target_range_that_overlaps_existing_sequences() {
+    use crate::domain::sync::{MutationId, OriginAnchor};
+
+    let (_directory, database, root) = database();
+    let song_id = SongId::new();
+    let mut song = Song::new(
+        song_id,
+        root,
+        RelativeMediaPath::new("artist/overlap.flac").unwrap(),
+        Revision::INITIAL,
+    );
+    song.apply_metadata(Some("Overlap".to_owned()), None, None, None);
+    SongRepository::upsert(&database, &song).unwrap();
+    SongRepository::set_favorite(&database, song_id, true).unwrap();
+    SongRepository::set_favorite(&database, song_id, false).unwrap();
+    let queued = database.pending_local_mutations(10).unwrap();
+    assert_eq!(queued.len(), 3);
+
+    // Retire the middle event so a terminal row sits inside the target range.
+    database
+        .reject_local_mutation(
+            queued[1].mutation_id,
+            serde_json::json!({"accepted": false, "reason": "Superseded"}).to_string(),
+        )
+        .unwrap();
+
+    // The host is behind this chain: seq 1 is its head, so the two surviving
+    // events must become 2 and 3 — both of which are already taken.
+    let host_last = MutationId::new();
+    let anchor = OriginAnchor {
+        origin_seq: 1,
+        last_mutation_id: Some(host_last),
+    };
+    assert_eq!(database.rebase_local_chain(anchor).unwrap(), 2);
+
+    let pending = database.pending_local_mutations(10).unwrap();
+    assert_eq!(pending.len(), 2);
+    assert_eq!(pending[0].origin_seq, 2);
+    assert_eq!(pending[0].previous_mutation_id, Some(host_last));
+    assert_eq!(pending[1].origin_seq, 3);
+    assert_eq!(
+        pending[1].previous_mutation_id,
+        Some(pending[0].mutation_id)
+    );
+    // Identity and content survive the renumbering; only the envelope moved.
+    assert_eq!(pending[0].mutation_id, queued[0].mutation_id);
+    assert_eq!(pending[0].payload, queued[0].payload);
+    assert_eq!(pending[1].mutation_id, queued[2].mutation_id);
+    assert_eq!(pending[1].payload, queued[2].payload);
+    assert!(pending
+        .iter()
+        .all(|event| event.mutation_id != queued[1].mutation_id));
+}
+
+/// Re-recording a terminal event is a no-op, not a ledger failure.
+///
+/// The host can acknowledge the same mutation twice (a retried cycle, a
+/// duplicate response). Looking up the row with `status='pending'` then finds
+/// nothing, and mapping that absence to the storage variant told the user the
+/// local ledger could not be read — while nothing was wrong at all.
+#[test]
+fn rejecting_an_already_terminal_mutation_is_idempotent() {
+    let (_directory, database, root) = database();
+    let song_id = SongId::new();
+    let mut song = Song::new(
+        song_id,
+        root,
+        RelativeMediaPath::new("artist/idempotent.flac").unwrap(),
+        Revision::INITIAL,
+    );
+    song.apply_metadata(Some("Idempotent".to_owned()), None, None, None);
+    SongRepository::upsert(&database, &song).unwrap();
+    SongRepository::set_favorite(&database, song_id, true).unwrap();
+    let queued = database.pending_local_mutations(10).unwrap();
+    assert!(!queued.is_empty());
+    let outcome = serde_json::json!({"accepted": false, "reason": "Superseded"}).to_string();
+
+    database
+        .reject_local_mutation(queued[0].mutation_id, outcome.clone())
+        .unwrap();
+    let remaining = database.pending_local_mutations(10).unwrap().len();
+    // Second acknowledgement: must succeed and change nothing.
+    database
+        .reject_local_mutation(queued[0].mutation_id, outcome)
+        .unwrap();
+    let after = database.pending_local_mutations(10).unwrap();
+    assert_eq!(after.len(), remaining);
+    assert!(after
+        .iter()
+        .all(|event| event.mutation_id != queued[0].mutation_id));
 }
