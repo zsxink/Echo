@@ -17,6 +17,9 @@ static TEMP_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU6
 
 /// Configure the app-private directory used for LAN sync credentials.
 /// Must be called by desktop composition before sync can be started.
+///
+/// # Errors
+/// Fails when the vault root was already configured by an earlier call.
 pub fn configure_local_vault(path: PathBuf) -> Result<(), Error> {
     VAULT_ROOT
         .set(path)

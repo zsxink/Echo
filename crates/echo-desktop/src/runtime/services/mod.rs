@@ -375,7 +375,8 @@ impl AppServices {
     /// writes (no active root, or a read-only journal outcome).
     fn guard_writes(&self) -> Result<std::sync::RwLockReadGuard<'static, ()>, Error> {
         let activity = echo_core::application::sync::local_activity()?;
-        if let Some(root) = self.deps.roots.active_root()? {
+        let active_root = self.deps.roots.active_root()?;
+        if let Some(root) = active_root {
             if self.deps.roots.replica_enrollment_pending(root.id())? {
                 return Err(Error::unavailable(
                     "library",
