@@ -26,9 +26,16 @@
 
 系统 MUST 默认关闭发现、监听和同步通信；用户明确启用后才可发现或手动连接局域网主设备。发现结果 MUST NOT 授予信任。配对 MUST 允许从设备输入主机局域网 IP 和主机直接显示的六位短期验证码；验证码有效后，设备通过一次性配对连接交换主机 TLS 证书和按资料库隔离的独立设备凭据，并固定该证书用于后续加密连接。验证码 MUST 单次使用、有效十分钟并由主机自动刷新；主机 MUST 在验证码验证成功后自动完成授权，不要求主机逐台审批。主设备 MUST 能立即撤销设备访问。
 
+macOS 发布包 MUST 对最终 `.app` bundle 生成代码签名，签名标识 MUST 与 `CFBundleIdentifier` 一致；bundle MUST 保留 `NSLocalNetworkUsageDescription` 与所需 `NSBonjourServices` 声明，使本地网络权限归属于发布应用。
+macOS ad-hoc 发布包 MUST 禁用 hardened runtime，确保系统可加载包内随应用分发的 ad-hoc `libmpv.dylib`。
+
 #### Scenario: 同步关闭时离线运行
 - **WHEN** 用户未启用局域网同步而启动 Echo 或编辑本地音乐库
 - **THEN** 没有发现/监听/连接流量，全部本地能力正常工作，变更可保存在本机等待未来启用
+
+#### Scenario: macOS 发布包的局域网权限身份
+- **WHEN** 用户从 macOS DMG 安装并运行 Echo
+- **THEN** 安装包中的 `.app` 具有与 `CFBundleIdentifier` 一致的 bundle 签名标识，并包含局域网用途说明和 Echo Bonjour 服务声明；本地网络权限适用于该发布应用
 
 #### Scenario: 手动输入地址和验证码加入
 - **WHEN** 新设备输入主机可达的局域网 IP 和仍有效的六位验证码

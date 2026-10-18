@@ -150,7 +150,7 @@ mutation 封套包含 protocol_version、library_id、authority_id、epoch、mut
 
 撤销设备立即取消该设备会话并拒绝未来请求；不会擦除其已经下载的本地副本。已授权从设备具备删除全库的业务能力，因此本地删除确认文案必须说明跨端传播；主设备对异常请求、超大批次、非法资源/路径和跨库访问进行边界验证。
 
-macOS 增加 local-network usage 说明和 Bonjour 声明并用正式签名安装包验证权限；Windows/Linux 验证实际监听、防火墙阻断、网卡切换。系统权限拒绝只影响同步，不影响本地播放器。主服务停止/库切换先阻止新提交，收敛在途事务和 journal，再取消任务；睡眠恢复重新发现并校验身份，游标不重置。
+macOS 增加 local-network usage 说明和 Bonjour 声明。Tauri release 明确对最终 `.app` bundle 签名，使签名 identifier 与配置的 Bundle ID 一致；在没有 Apple Developer 证书的构建中使用 Tauri 的 ad-hoc identity `-`，不把链接器对单一 Mach-O 的临时签名误当作已签名 app bundle。ad-hoc 构建关闭 hardened runtime，否则 macOS 会因库校验拒绝加载内置的 ad-hoc `libmpv.dylib`，导致应用启动崩溃。验证需检查最终 bundle 的代码签名、签名 identifier、Info.plist 权限项，并从实际 DMG 启动应用验证播放器依赖。Windows/Linux 验证实际监听、防火墙阻断、网卡切换。系统权限拒绝只影响同步，不影响本地播放器。主服务停止/库切换先阻止新提交，收敛在途事务和 journal，再取消任务；睡眠恢复重新发现并校验身份，游标不重置。
 
 ### 6. 模块、抽象和事务
 

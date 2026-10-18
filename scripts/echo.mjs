@@ -72,10 +72,25 @@ recipe.steps.forEach((step, index) => {
 // and normalize the icon layout (.DS_Store 直接改字节) so that "Finder 忽略了
 // 图标坐标" 这类问题不会再从 release 产物里溜出去。
 if (subcommand === "release" && process.platform === "darwin") {
-  const result = spawnSync(process.execPath, ["scripts/release/style-dmg.mjs"], {
-    stdio: "inherit",
-    shell: USE_SHELL,
-  });
+  const signature = spawnSync(
+    process.execPath,
+    ["scripts/release/verify-macos-app-signature.mjs", ...passthrough],
+    { stdio: "inherit", shell: USE_SHELL },
+  );
+  if (signature.error) {
+    console.error(`macOS App 签名校验失败: ${signature.error.message}`);
+    process.exit(1);
+  }
+  if (signature.status !== 0) process.exit(signature.status ?? 1);
+
+  const result = spawnSync(
+    process.execPath,
+    ["scripts/release/style-dmg.mjs"],
+    {
+      stdio: "inherit",
+      shell: USE_SHELL,
+    },
+  );
   if (result.error) {
     console.error(`DMG 收尾失败: ${result.error.message}`);
     process.exit(1);

@@ -74,9 +74,38 @@ for (const [filename, expected] of Object.entries(manifest.files)) {
 
 const appBundle = resolve(BUNDLE, "..");
 const main = resolve(BUNDLE, "MacOS", "echo");
+const infoPlist = resolve(BUNDLE, "Info.plist");
 run("codesign", ["--verify", "--deep", "--strict", appBundle]);
 const signature = run("codesign", ["-dv", "--verbose=4", main]);
 if (!/Signature=adhoc|Authority=/.test(signature)) fail("Echo executable is unsigned");
+const bundleSignature = run("codesign", ["-dv", "--verbose=4", appBundle]);
+const codeDirectoryFlags = bundleSignature.match(/flags=[^\s]*\(([^)]*)\)/)?.[1] ?? "";
+if (codeDirectoryFlags.split(",").includes("runtime")) {
+  fail("ad-hoc app bundle enables hardened runtime and blocks bundled libmpv loading");
+}
+const bundleIdentifier = run("plutil", [
+  "-extract", "CFBundleIdentifier", "raw", "-o", "-", infoPlist,
+]).trim();
+if (!bundleIdentifier || !bundleSignature.includes(`Identifier=${bundleIdentifier}`)) {
+  fail(
+    `app bundle signature identifier does not match CFBundleIdentifier (${bundleIdentifier || "missing"})`,
+  );
+}
+if (bundleSignature.includes("Info.plist=not bound")) {
+  fail("app bundle signature does not bind Info.plist");
+}
+const localNetworkUsage = run("plutil", [
+  "-extract", "NSLocalNetworkUsageDescription", "raw", "-o", "-", infoPlist,
+]).trim();
+if (!localNetworkUsage) {
+  fail("app bundle is missing NSLocalNetworkUsageDescription");
+}
+const bonjourServices = run("plutil", [
+  "-extract", "NSBonjourServices", "json", "-o", "-", infoPlist,
+]);
+if (!bonjourServices.includes("_echo-sync._tcp")) {
+  fail("app bundle is missing the Echo Bonjour service declaration");
+}
 
 const rpaths = run("otool", ["-l", main]);
 if (!rpaths.includes("@executable_path/../Frameworks")) fail("Echo rpath does not include bundled Frameworks");
