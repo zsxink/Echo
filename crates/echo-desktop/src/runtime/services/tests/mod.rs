@@ -21,6 +21,44 @@ pub(super) fn services(fixture: &ScanFixture) -> AppServices {
     services_with_dialogs(fixture, TestDialogs::cancelling())
 }
 
+#[test]
+fn sync_storage_space_is_scoped_to_the_active_logical_root() {
+    let fixture = ScanFixture::new();
+    let app = services(&fixture);
+    let dir = tempfile::tempdir().expect("volume fixture");
+    LibraryRepository::upsert(
+        &fixture.database,
+        &LibraryRoot::new(fixture.root, dir.path().to_path_buf(), true, true),
+    )
+    .expect("bind real volume");
+    let hint = app.sync_storage_space(fixture.root).expect("capacity hint");
+    assert_eq!(hint.library_root, fixture.root.to_string());
+    assert!(hint.available_bytes.is_some());
+    let json = serde_json::to_string(&hint).expect("serializable capacity");
+    assert!(!json.contains(&dir.path().to_string_lossy().to_string()));
+    assert!(app
+        .sync_storage_space(echo_core::domain::ids::LibraryRootId::new())
+        .is_err());
+}
+
+#[test]
+fn sync_storage_space_keeps_unreachable_volumes_unknown() {
+    let fixture = ScanFixture::new();
+    let app = services(&fixture);
+    let dir = tempfile::tempdir().expect("volume fixture");
+    LibraryRepository::upsert(
+        &fixture.database,
+        &LibraryRoot::new(fixture.root, dir.path().join("missing-volume"), true, true),
+    )
+    .expect("bind unreachable volume");
+    assert_eq!(
+        app.sync_storage_space(fixture.root)
+            .expect("unknown capacity")
+            .available_bytes,
+        None
+    );
+}
+
 /// Like [`services`](self::services) but with an explicit dialogs port.
 fn services_with_dialogs(fixture: &ScanFixture, dialogs: TestDialogs) -> AppServices {
     LibraryRepository::upsert(

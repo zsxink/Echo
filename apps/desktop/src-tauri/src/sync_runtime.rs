@@ -37,6 +37,34 @@ mod discovery;
 pub use discovery::discover_hosts;
 
 pub type StatusNotifier = Arc<dyn Fn(SyncStatus) + Send + Sync>;
+/// The snapshot sequence starts at one and increases within a single cycle.
+pub type ProgressNotifier = Arc<dyn Fn(u64, SyncProgress) + Send + Sync>;
+
+/// Only values proven by the native queue and transfer checkpoints are present.
+#[derive(Clone, Debug, Default)]
+pub struct SyncProgress {
+    pub pending_changes: Option<u64>,
+    pub pending_uploads: Option<u64>,
+    pub pending_downloads: Option<u64>,
+    pub uploaded_bytes: Option<u64>,
+    pub total_upload_bytes: Option<u64>,
+    pub downloaded_bytes: Option<u64>,
+    pub total_download_bytes: Option<u64>,
+    pub media_ready: Option<bool>,
+}
+
+impl SyncProgress {
+    const fn apply(self, status: &mut SyncStatus) {
+        status.pending_changes = self.pending_changes;
+        status.pending_uploads = self.pending_uploads;
+        status.pending_downloads = self.pending_downloads;
+        status.uploaded_bytes = self.uploaded_bytes;
+        status.total_upload_bytes = self.total_upload_bytes;
+        status.downloaded_bytes = self.downloaded_bytes;
+        status.total_download_bytes = self.total_download_bytes;
+        status.media_ready = self.media_ready;
+    }
+}
 
 /// Why a peer's wait for host changes ended.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -131,6 +159,10 @@ pub trait SyncProvisioner: Send + Sync {
     fn peer(&self, root: LibraryRootId) -> Result<ProvisionedPeer, SyncRuntimeError>;
     /// Return whether this successful cycle changed local catalog projections.
     fn sync_now(&self, role: SyncRole) -> Result<bool, SyncRuntimeError>;
+    /// Read durable queue state after a cycle. Unknown telemetry stays absent.
+    fn sync_progress(&self, _role: SyncRole) -> Result<SyncProgress, SyncRuntimeError> {
+        Ok(SyncProgress::default())
+    }
     /// Block until the paired host may have new commits, a local write queued
     /// work, the budget elapsed, or cancellation was requested. Peer-only:
     /// provisioners without a watch channel return
@@ -157,8 +189,24 @@ pub trait SyncProvisioner: Send + Sync {
         }
         self.sync_now(role)
     }
+    /// Checkpoint updates belong only to this call; the runtime fences the
+    /// observer when the cycle ends or its session is cancelled.
+    fn sync_now_with_progress(
+        &self,
+        role: SyncRole,
+        cancelled: Arc<AtomicBool>,
+        _progress: Option<ProgressNotifier>,
+    ) -> Result<bool, SyncRuntimeError> {
+        self.sync_now_cancellable(role, cancelled)
+    }
     fn revoke_device(&self, device_id: &str) -> Result<(), SyncRuntimeError>;
     fn leave_sync(&self, root: LibraryRootId) -> Result<(), SyncRuntimeError>;
+    fn recover_restored_host(
+        &self,
+        _root: LibraryRootId,
+    ) -> Result<echo_core::application::ports::HostRecoveryArchive, SyncRuntimeError> {
+        Err(SyncRuntimeError::Unconfigured)
+    }
     fn complete_peer_pairing(
         &self,
         root: LibraryRootId,
@@ -235,6 +283,90 @@ struct Inner {
     host_address: Option<IpAddr>,
     pairing_api: Option<HostApiState>,
     host_certificate_der: Option<Vec<u8>>,
+}
+
+/// A callback can outlive a cancelled transport's blocking store write. Its
+/// active token is private to one cycle and is revoked before final status is
+/// read, so late checkpoints cannot overwrite completion or a later cycle.
+struct CycleProgressObserver {
+    notify: ProgressNotifier,
+    active: Arc<AtomicBool>,
+}
+
+impl CycleProgressObserver {
+    fn new(
+        state: Arc<Mutex<Inner>>,
+        notifier: Arc<Mutex<Option<StatusNotifier>>>,
+        session_id: u64,
+        cancelled: Arc<AtomicBool>,
+    ) -> Self {
+        let active = Arc::new(AtomicBool::new(true));
+        let cycle_active = Arc::clone(&active);
+        let accepted_sequence = Mutex::new(0);
+        let notify = Arc::new(move |sequence, progress: SyncProgress| {
+            let mut accepted_sequence = accepted_sequence
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if sequence <= *accepted_sequence {
+                return;
+            }
+            let status = {
+                let mut inner = state
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if !cycle_active.load(Ordering::Acquire)
+                    || cancelled.load(Ordering::Acquire)
+                    || inner.status.session_id != session_id
+                    || !inner.status.enabled
+                    || inner.status.state == SyncState::Paused
+                {
+                    return;
+                }
+                *accepted_sequence = sequence;
+                inner.status.state = SyncState::Syncing;
+                inner.status.uploaded_bytes = progress.uploaded_bytes;
+                inner.status.total_upload_bytes = progress.total_upload_bytes;
+                inner.status.downloaded_bytes = progress.downloaded_bytes;
+                inner.status.total_download_bytes = progress.total_download_bytes;
+                // Complete bytes are still awaiting publication into the library.
+                inner.status.media_ready = Some(false);
+                inner.status.catalog_changed = false;
+                inner.status.event_sequence += 1;
+                inner.status.clone()
+            };
+            drop(accepted_sequence);
+            let notifier = notifier
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
+            if let Some(notifier) = notifier {
+                notifier(status);
+            }
+        });
+        Self { notify, active }
+    }
+}
+
+fn run_observed_cycle(
+    provisioner: &dyn SyncProvisioner,
+    role: SyncRole,
+    cancelled: Arc<AtomicBool>,
+    session_id: u64,
+    state: Arc<Mutex<Inner>>,
+    notifier: Arc<Mutex<Option<StatusNotifier>>>,
+) -> (Result<bool, SyncRuntimeError>, SyncProgress) {
+    let observer = CycleProgressObserver::new(state, notifier, session_id, Arc::clone(&cancelled));
+    let result =
+        provisioner.sync_now_with_progress(role, cancelled, Some(Arc::clone(&observer.notify)));
+    drop(observer);
+    let progress = provisioner.sync_progress(role).unwrap_or_default();
+    (result, progress)
+}
+
+impl Drop for CycleProgressObserver {
+    fn drop(&mut self) {
+        self.active.store(false, Ordering::Release);
+    }
 }
 
 pub struct SyncRuntime {
@@ -445,6 +577,37 @@ impl SyncRuntime {
         Ok(self.status())
     }
 
+    /// Explicitly fence a restored host backup by creating a new authority and
+    /// epoch. The host listener is stopped before any durable recovery writes.
+    pub fn recover_restored_host(
+        &self,
+    ) -> Result<echo_core::application::ports::HostRecoveryArchive, SyncRuntimeError> {
+        let _transition = self
+            .transition
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let configuration = self
+            .database
+            .current_sync_configuration()
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+            .filter(|configuration| configuration.host)
+            .ok_or(SyncRuntimeError::Unconfigured)?;
+        let root = configuration.local_root;
+        if self.status().enabled {
+            if self.status().role != SyncRole::Host {
+                return Err(SyncRuntimeError::Busy);
+            }
+            if self.active_root()? != root {
+                return Err(SyncRuntimeError::LibraryUnavailable);
+            }
+            self.stop_inner()?;
+        }
+        self.provisioner
+            .as_ref()
+            .ok_or(SyncRuntimeError::Unconfigured)?
+            .recover_restored_host(root)
+    }
+
     pub fn local_sync_device_id(&self) -> echo_core::domain::sync::DeviceId {
         echo_core::domain::sync::DeviceId::from_uuid(self.database.current_device_id().as_uuid())
     }
@@ -647,7 +810,14 @@ impl SyncRuntime {
         drop(transition_guard);
         let cycle = Arc::clone(&self.cycle);
         let cycle_guard = cycle.lock().map_err(|_| SyncRuntimeError::WorkerFailed)?;
-        let result = provisioner.sync_now_cancellable(status.role, Arc::clone(&cancelled));
+        let (result, progress) = run_observed_cycle(
+            provisioner.as_ref(),
+            status.role,
+            Arc::clone(&cancelled),
+            session_id,
+            Arc::clone(&self.inner),
+            Arc::clone(&self.status_notifier),
+        );
         drop(cycle_guard);
         let _transition = self
             .transition
@@ -671,8 +841,14 @@ impl SyncRuntime {
         if !still_active {
             return Err(SyncRuntimeError::Busy);
         }
-        let loop_result = self.start_sync_loop(status.role);
-        if let Err(error) = loop_result {
+        progress.apply(
+            &mut self
+                .inner
+                .lock()
+                .map_err(|_| SyncRuntimeError::WorkerFailed)?
+                .status,
+        );
+        if let Err(error) = self.start_sync_loop(status.role) {
             self.change_state(SyncState::Failed, Some(error.message_key().into()));
             return Err(error);
         }
@@ -760,9 +936,11 @@ impl SyncRuntime {
             SyncState::Connected
         };
         inner.status.library_id = Some(binding.library_id.as_uuid().to_string());
+        inner.status.local_root = Some(root.as_uuid().to_string());
         inner.status.address = Some(address);
         inner.status.last_error = None;
         inner.status.catalog_changed = false;
+        SyncProgress::default().apply(&mut inner.status);
         inner.root = Some(root);
     }
 
@@ -982,14 +1160,21 @@ impl SyncRuntime {
                     if worker_stop.load(Ordering::Acquire) {
                         break;
                     }
-                    let result = {
+                    let (result, progress) = {
                         let Ok(_cycle) = cycle.lock() else {
                             break;
                         };
                         if worker_stop.load(Ordering::Acquire) {
                             break;
                         }
-                        provisioner.sync_now_cancellable(role, Arc::clone(&worker_stop))
+                        run_observed_cycle(
+                            provisioner.as_ref(),
+                            role,
+                            Arc::clone(&worker_stop),
+                            session_id,
+                            Arc::clone(&state),
+                            Arc::clone(&notifier),
+                        )
                     };
                     if worker_stop.load(Ordering::Acquire) {
                         break;
@@ -1002,6 +1187,7 @@ impl SyncRuntime {
                             break;
                         }
                         inner.status.event_sequence += 1;
+                        progress.apply(&mut inner.status);
                         match result {
                             Ok(catalog_changed) => {
                                 inner.status.catalog_changed = catalog_changed;

@@ -40,6 +40,11 @@ impl<T: LegacyLibraryFileSystem> LibraryFileReader for T {
 
 /// Publishes already-owned staging content without replacing foreign files.
 pub trait LibraryFilePublisher: Send + Sync {
+    /// Classify a temporary native file lock without treating ordinary
+    /// permissions or permanent I/O failures as deferred publication.
+    fn is_publication_blocked(&self, _error: &Error) -> bool {
+        false
+    }
     fn publish(
         &self,
         root: LibraryRootId,
@@ -49,6 +54,9 @@ pub trait LibraryFilePublisher: Send + Sync {
 }
 
 impl<T: LegacyLibraryFileSystem> LibraryFilePublisher for T {
+    fn is_publication_blocked(&self, error: &Error) -> bool {
+        LegacyLibraryFileSystem::is_publication_blocked(self, error)
+    }
     fn publish(
         &self,
         root: LibraryRootId,

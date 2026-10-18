@@ -61,6 +61,7 @@ pub(crate) mod sync;
 pub(crate) mod sync_apply;
 mod sync_baseline;
 pub(crate) mod sync_configuration;
+mod sync_conflicts;
 mod sync_context;
 pub(crate) mod sync_ledger;
 pub(crate) mod sync_manifests;

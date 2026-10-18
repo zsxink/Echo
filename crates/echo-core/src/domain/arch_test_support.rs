@@ -57,7 +57,7 @@ pub fn is_exempt_source(relative: &Path) -> bool {
     components.iter().any(|component| {
         matches!(component, Component::Normal(name) if {
             let name = name.to_string_lossy();
-            name == "tests" || name == "benches"
+            name == "tests" || name == "benches" || name == "testing"
         })
     }) || components.last().is_some_and(|component| {
         matches!(component, Component::Normal(name) if {

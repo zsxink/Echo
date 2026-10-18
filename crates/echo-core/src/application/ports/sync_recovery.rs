@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 /// Durable recovery receipt. It contains no credentials or local file paths.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HostRecoveryArchive {
     pub recovery_id: Uuid,
     pub local_root: LibraryRootId,

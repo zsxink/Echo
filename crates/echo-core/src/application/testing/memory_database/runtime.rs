@@ -44,15 +44,27 @@ impl crate::application::ports::SyncStateReader for MemoryDatabase {
 impl ResourceRetentionPort for MemoryDatabase {
     fn remote_delete_isolations(
         &self,
-        _root: LibraryRootId,
+        root: LibraryRootId,
     ) -> Result<Vec<RemoteDeleteIsolation>, Error> {
-        Ok(Vec::new())
+        let store = self.lock();
+        Ok(store
+            .remote_delete_isolations
+            .iter()
+            .filter(|((candidate, operation), _)| {
+                *candidate == root
+                    && !store
+                        .finished_isolations
+                        .contains(&(*candidate, *operation))
+            })
+            .map(|(_, intent)| intent.clone())
+            .collect())
     }
     fn finish_remote_delete_isolation(
         &self,
-        _root: LibraryRootId,
-        _operation: OperationId,
+        root: LibraryRootId,
+        operation: OperationId,
     ) -> Result<(), Error> {
+        self.lock().finished_isolations.insert((root, operation));
         Ok(())
     }
     fn remote_publication_matches(

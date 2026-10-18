@@ -23,6 +23,7 @@ fn add_root(database: &SqliteDatabase, directory: &std::path::Path) -> LibraryRo
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn root_switching_preserves_pending_peers_and_independent_commit_chains() {
     let (directory, database, a) = database();
     let b = add_root(&database, &directory.path().join("b"));

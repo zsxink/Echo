@@ -7,7 +7,7 @@ use crate::domain::sync::ResourceDigest;
 use crate::error::Error;
 use std::io::{Read, Write};
 
-pub(crate) fn copy(
+pub fn copy(
     registry: &RootRegistry,
     root: LibraryRootId,
     source: &RelativeMediaPath,
@@ -59,7 +59,7 @@ pub(crate) fn copy(
             .open(&part)
             .map_err(|error| Error::io("create retained copy", error, part.clone()))?;
         let mut hasher = blake3::Hasher::new();
-        let mut buffer = [0u8; 128 * 1024];
+        let mut buffer = vec![0u8; 128 * 1024];
         let mut length = 0u64;
         loop {
             let read = input
@@ -116,7 +116,7 @@ fn verify(path: &std::path::Path) -> Result<(ResourceDigest, u64), Error> {
     let mut input =
         std::fs::File::open(path).map_err(|error| Error::io("open retained copy", error, path))?;
     let mut hasher = blake3::Hasher::new();
-    let mut buffer = [0; 128 * 1024];
+    let mut buffer = vec![0; 128 * 1024];
     let mut length = 0;
     loop {
         let read = input

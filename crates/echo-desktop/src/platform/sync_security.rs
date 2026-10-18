@@ -1,14 +1,17 @@
 //! Local app-data secrets and publication checkpoints for LAN synchronization.
 
 use std::fmt;
-use std::fs::{self, OpenOptions};
-use std::io::Write;
-use std::path::PathBuf;
+use std::fs::{self, File, OpenOptions};
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+
+#[cfg(windows)]
+mod windows;
 
 use echo_core::application::ports::PublicationCheckpointPort;
 use echo_core::domain::sync::{CommitCheckpoint, SyncBinding};
 use echo_core::error::{Error, Subject};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 static CHECKPOINT_GATE: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
 static VAULT_GATE: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
@@ -26,7 +29,7 @@ pub fn configure_local_vault(path: PathBuf) -> Result<(), Error> {
         .map_err(|_| unavailable("local sync vault was already configured"))
 }
 
-/// Opaque OS credential-store locator. The handle contains no secret bytes.
+/// Opaque app-data vault locator. The handle contains no secret bytes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SecretHandle(String);
 
@@ -97,78 +100,113 @@ impl OsSecureStore {
     /// Store a secret in Echo's local app-data vault.
     ///
     /// # Errors
-    /// Returns an unavailable error if the native secure store cannot persist it.
+    /// Returns an unavailable error if the private vault cannot persist it.
     pub fn set(&self, handle: &SecretHandle, secret: &SecretBytes) -> Result<(), Error> {
         let _guard = vault_gate()
             .lock()
             .map_err(|_| unavailable("vault lock failed"))?;
-        let root = vault_root()?;
-        ensure_private_dir(&root)?;
-        let path = credential_path(&root, handle);
-        let sequence = TEMP_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let temp = root.join(format!(
-            ".{}.{}-{sequence}.tmp",
-            handle.as_str(),
-            std::process::id()
-        ));
-        let mut encoded = encode_hex(secret.expose());
-        let result = (|| {
-            let mut options = OpenOptions::new();
-            options.write(true).create_new(true);
-            set_private_file_mode(&mut options);
-            let mut file = options
-                .open(&temp)
-                .map_err(|_| unavailable("local sync vault could not create a credential"))?;
-            file.write_all(encoded.as_bytes())
-                .map_err(|_| unavailable("local sync vault could not write a credential"))?;
-            file.sync_all()
-                .map_err(|_| unavailable("local sync vault could not flush a credential"))?;
-            #[cfg(windows)]
-            if path.exists() {
-                fs::remove_file(&path)
-                    .map_err(|_| unavailable("local sync vault could not replace a credential"))?;
-            }
-            fs::rename(&temp, &path)
-                .map_err(|_| unavailable("local sync vault could not publish a credential"))?;
-            Ok(())
-        })();
-        encoded.zeroize();
-        if result.is_err() {
-            let _ = fs::remove_file(temp);
-        }
-        result
+        set_at(&vault_root()?, handle, secret)
     }
 
-    /// Load a secret from the operating system credential manager.
+    /// Load a secret from Echo's private app-data vault.
     ///
     /// # Errors
-    /// Returns unavailable for a missing or unreadable credential and rejects
-    /// corrupt stored encodings.
+    /// Rejects missing, unreadable, unsafe, or corrupt credential files.
     pub fn get(&self, handle: &SecretHandle) -> Result<SecretBytes, Error> {
         let _guard = vault_gate()
             .lock()
             .map_err(|_| unavailable("vault lock failed"))?;
-        let mut stored = fs::read_to_string(credential_path(&vault_root()?, handle))
-            .map_err(|_| unavailable("local sync vault credential is unavailable"))?;
-        let bytes = decode_hex(&stored).ok_or_else(|| Error::InvariantViolation {
-            why: "local sync vault credential encoding is corrupt".to_owned(),
-        });
-        stored.zeroize();
-        let bytes = bytes?;
-        Ok(SecretBytes::new(bytes))
+        get_at(&vault_root()?, handle)
     }
 
     /// Remove a credential after revocation or local unpairing.
     ///
     /// # Errors
-    /// Returns unavailable if the secure store cannot remove it.
+    /// Returns unavailable if the private vault cannot remove it durably.
     pub fn delete(&self, handle: &SecretHandle) -> Result<(), Error> {
         let _guard = vault_gate()
             .lock()
             .map_err(|_| unavailable("vault lock failed"))?;
-        fs::remove_file(credential_path(&vault_root()?, handle))
-            .map_err(|_| unavailable("local sync vault could not remove the credential"))
+        let root = vault_root()?;
+        validate_private_dir(&root)?;
+        let path = credential_path(&root, handle);
+        validate_private_file(&path)?;
+        fs::remove_file(path)
+            .map_err(|_| unavailable("local sync vault could not remove the credential"))?;
+        sync_directory(&root)
     }
+}
+
+fn set_at(root: &Path, handle: &SecretHandle, secret: &SecretBytes) -> Result<(), Error> {
+    set_at_with(root, handle, secret, publish_credential)
+}
+
+fn set_at_with(
+    root: &Path,
+    handle: &SecretHandle,
+    secret: &SecretBytes,
+    publish: impl FnOnce(&Path, &Path) -> Result<(), Error>,
+) -> Result<(), Error> {
+    if secret.expose().len() > 1024 * 1024 {
+        return Err(unavailable("local sync vault credential is oversized"));
+    }
+    ensure_private_dir(root)?;
+    let path = credential_path(root, handle);
+    if credential_exists(&path)? {
+        validate_private_file(&path)?;
+    }
+    let sequence = TEMP_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let temp = root.join(format!(
+        ".{}.{}-{sequence}.tmp",
+        handle.as_str(),
+        std::process::id()
+    ));
+    let mut encoded = Zeroizing::new(encode_hex(secret.expose()));
+    let result = (|| {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        set_private_file_mode(&mut options);
+        let mut file = options
+            .open(&temp)
+            .map_err(|_| unavailable("local sync vault could not create a credential"))?;
+        restrict_private_file(&temp)?;
+        file.write_all(encoded.as_bytes())
+            .map_err(|_| unavailable("local sync vault could not write a credential"))?;
+        file.sync_all()
+            .map_err(|_| unavailable("local sync vault could not flush a credential"))?;
+        publish(&temp, &path)?;
+        sync_directory(root)?;
+        Ok(())
+    })();
+    encoded.zeroize();
+    if result.is_err() {
+        let _ = fs::remove_file(temp);
+    }
+    result
+}
+
+fn get_at(root: &Path, handle: &SecretHandle) -> Result<SecretBytes, Error> {
+    validate_private_dir(root)?;
+    let path = credential_path(root, handle);
+    validate_private_file(&path)?;
+    let file =
+        File::open(path).map_err(|_| unavailable("local sync vault credential is unavailable"))?;
+    let mut stored = Zeroizing::new(String::new());
+    file.take(2 * 1024 * 1024 + 1)
+        .read_to_string(&mut stored)
+        .map_err(|_| unavailable("local sync vault credential is unavailable"))?;
+    let bytes = if stored.len() > 2 * 1024 * 1024 {
+        None
+    } else {
+        decode_hex(&stored)
+    };
+    stored.zeroize();
+    bytes
+        .map(SecretBytes::new)
+        .ok_or_else(|| Error::InvariantViolation {
+            why: "local sync vault credential encoding is corrupt".to_owned(),
+        })
 }
 
 /// Independent checkpoint slot tied to one library authority and epoch.
@@ -190,7 +228,9 @@ impl SecurePublicationCheckpoint {
         let _guard = checkpoint_gate()
             .lock()
             .map_err(|_| unavailable("checkpoint lock failed"))?;
-        if credential_path(&vault_root()?, &checkpoint.handle).exists() {
+        let root = vault_root()?;
+        ensure_private_dir(&root)?;
+        if credential_exists(&credential_path(&root, &checkpoint.handle))? {
             return Err(Error::conflict(
                 "publication checkpoint already exists; explicit recovery is required",
             ));
@@ -300,26 +340,110 @@ fn credential_path(root: &std::path::Path, handle: &SecretHandle) -> PathBuf {
     root.join(format!("{}.secret", handle.as_str()))
 }
 
-fn ensure_private_dir(root: &std::path::Path) -> Result<(), Error> {
-    fs::create_dir_all(root)
-        .map_err(|_| unavailable("local sync vault directory is unavailable"))?;
+fn ensure_private_dir(root: &Path) -> Result<(), Error> {
+    let missing = !credential_exists(root)?;
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(root, fs::Permissions::from_mode(0o700))
-            .map_err(|_| unavailable("local sync vault permissions could not be set"))?;
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder
+        .create(root)
+        .map_err(|_| unavailable("local sync vault directory is unavailable"))?;
+    validate_private_dir(root)?;
+    if missing {
+        // Make the new vault entry durable in the existing app-data directory.
+        if let Some(parent) = root.parent() {
+            sync_directory(parent)?;
+        }
     }
     Ok(())
 }
 
-fn set_private_file_mode(options: &mut OpenOptions) {
+// Only NotFound means absence. Permission errors and symlink slots must never
+// cause a checkpoint to be silently initialized over unknown existing history.
+fn credential_exists(path: &Path) -> Result<bool, Error> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(_) => Err(unavailable("local sync vault credential is unavailable")),
+    }
+}
+
+fn validate_private_dir(path: &Path) -> Result<(), Error> {
+    validate_private_path(path, true)
+}
+
+fn validate_private_file(path: &Path) -> Result<(), Error> {
+    validate_private_path(path, false)
+}
+
+fn validate_private_path(path: &Path, directory: bool) -> Result<(), Error> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|_| unavailable("local sync vault path is unavailable"))?;
+    if metadata.file_type().is_symlink()
+        || (directory && !metadata.is_dir())
+        || (!directory && !metadata.is_file())
+    {
+        return Err(unavailable("local sync vault path is unsafe"));
+    }
     #[cfg(unix)]
     {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
+        use std::os::unix::fs::MetadataExt;
+        let expected = if directory { 0o700 } else { 0o600 };
+        if metadata.uid() != rustix::process::geteuid().as_raw()
+            || metadata.mode() & 0o777 != expected
+            || (!directory && metadata.nlink() != 1)
+        {
+            return Err(unavailable("local sync vault permissions are unsafe"));
+        }
     }
-    #[cfg(not(unix))]
-    let _ = options;
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err(unavailable("local sync vault reparse point is unsafe"));
+        }
+        windows::restrict_to_current_user(path, directory)?;
+    }
+    Ok(())
+}
+
+fn restrict_private_file(path: &Path) -> Result<(), Error> {
+    #[cfg(windows)]
+    windows::restrict_to_current_user(path, false)?;
+    validate_private_file(path)
+}
+
+fn publish_credential(temp: &Path, path: &Path) -> Result<(), Error> {
+    #[cfg(windows)]
+    return windows::replace(temp, path);
+    #[cfg(not(windows))]
+    fs::rename(temp, path)
+        .map_err(|_| unavailable("local sync vault could not publish a credential"))
+}
+
+#[cfg(unix)]
+fn sync_directory(root: &Path) -> Result<(), Error> {
+    File::open(root)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|_| unavailable("local sync vault could not flush its directory"))
+}
+
+// Windows has no std directory-fsync operation. The file is flushed before
+// the safe Windows adapter atomically replaces the directory entry.
+#[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
+const fn sync_directory(_root: &Path) -> Result<(), Error> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_private_file_mode(options: &mut OpenOptions) {
+    use std::os::unix::fs::OpenOptionsExt;
+    options.mode(0o600);
 }
 
 fn checkpoint_gate() -> &'static std::sync::Mutex<()> {
@@ -348,15 +472,157 @@ fn decode_hex(value: &str) -> Option<Vec<u8>> {
     if !value.len().is_multiple_of(2) {
         return None;
     }
-    value
-        .as_bytes()
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|pair| {
-            let high = (pair[0] as char).to_digit(16)?;
-            let low = (pair[1] as char).to_digit(16)?;
-            u8::try_from((high << 4) | low).ok()
-        })
-        .collect()
+    // A malformed suffix must also erase the already-decoded secret prefix.
+    let mut output = Zeroizing::new(Vec::with_capacity(value.len() / 2));
+    for pair in value.as_bytes().as_chunks::<2>().0 {
+        let high = (pair[0] as char).to_digit(16)?;
+        let low = (pair[1] as char).to_digit(16)?;
+        output.push(u8::try_from((high << 4) | low).ok()?);
+    }
+    Some(std::mem::take(&mut *output))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use echo_core::domain::sync::{AuthorityId, CommitSeq, Epoch, LibraryId};
+
+    fn binding() -> SyncBinding {
+        SyncBinding {
+            library_id: LibraryId::new(),
+            authority_id: AuthorityId::new(),
+            epoch: Epoch::INITIAL,
+        }
+    }
+
+    #[test]
+    fn vault_round_trip_atomic_replace_and_failed_publish_keep_prior_secret() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("vault");
+        let handle = SecretHandle::new("test-secret").unwrap();
+        let previous = SecretBytes::new(b"original bearer credential".to_vec());
+        set_at(&root, &handle, &previous).unwrap();
+        assert_eq!(get_at(&root, &handle).unwrap().expose(), previous.expose());
+        let next = SecretBytes::new(b"replacement bearer credential".to_vec());
+        let failure = set_at_with(&root, &handle, &next, |_, _| {
+            Err(unavailable("injected publication failure"))
+        });
+        assert!(failure.is_err());
+        assert_eq!(get_at(&root, &handle).unwrap().expose(), previous.expose());
+        assert_eq!(
+            fs::read_dir(&root).unwrap().count(),
+            1,
+            "failed staging is removed"
+        );
+        set_at(&root, &handle, &next).unwrap();
+        assert_eq!(get_at(&root, &handle).unwrap().expose(), next.expose());
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn unavailable_vault_has_no_fallback_and_diagnostics_redact_secrets() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("not-a-directory");
+        fs::write(&root, "occupied").unwrap();
+        let handle = SecretHandle::new("test-secret").unwrap();
+        let secret = SecretBytes::new(b"never-log-this-bearer".to_vec());
+        let error = set_at(&root, &handle, &secret).unwrap_err();
+        let diagnostics = format!("{secret:?} {error:?}");
+        assert!(!diagnostics.contains("never-log-this-bearer"));
+        assert!(diagnostics.contains("REDACTED"));
+        assert_eq!(fs::read(&root).unwrap(), b"occupied");
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
+        assert!(get_at(&root, &handle).is_err());
+    }
+
+    #[test]
+    fn corrupt_and_oversized_vault_values_fail_closed() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("vault");
+        let handle = SecretHandle::new("test-secret").unwrap();
+        set_at(&root, &handle, &SecretBytes::new(vec![1])).unwrap();
+        let path = credential_path(&root, &handle);
+        fs::write(&path, "not-valid-hex").unwrap();
+        assert!(get_at(&root, &handle).is_err());
+        fs::write(&path, vec![b'0'; 2 * 1024 * 1024 + 1]).unwrap();
+        assert!(get_at(&root, &handle).is_err());
+        assert!(set_at(&root, &handle, &SecretBytes::new(vec![0; 1024 * 1024 + 1])).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unsafe_permissions_symlinks_and_hardlinks_cannot_expose_or_replace_secrets() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("vault");
+        let handle = SecretHandle::new("test-secret").unwrap();
+        let secret = SecretBytes::new(b"private".to_vec());
+        set_at(&root, &handle, &secret).unwrap();
+        let path = credential_path(&root, &handle);
+        assert_eq!(
+            fs::metadata(&root).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(get_at(&root, &handle).is_err());
+        assert!(set_at(&root, &handle, &secret).is_err());
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        let outside = directory.path().join("outside");
+        fs::hard_link(&path, &outside).unwrap();
+        assert!(get_at(&root, &handle).is_err());
+        fs::remove_file(&path).unwrap();
+        symlink(&outside, &path).unwrap();
+        assert!(get_at(&root, &handle).is_err());
+        assert!(set_at(&root, &handle, &secret).is_err());
+        let alias = directory.path().join("alias");
+        symlink(&root, &alias).unwrap();
+        assert!(set_at(&alias, &handle, &secret).is_err());
+        assert_eq!(
+            fs::read(&outside).unwrap(),
+            encode_hex(secret.expose()).as_bytes()
+        );
+    }
+
+    #[test]
+    fn independent_checkpoint_reopens_monotonically_and_never_resets_missing_history() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("independent-vault");
+        configure_local_vault(root.clone()).unwrap();
+        let binding = binding();
+        let checkpoint = SecurePublicationCheckpoint::initialize_new(binding).unwrap();
+        let committed = CommitCheckpoint {
+            binding,
+            sequence: CommitSeq::from_u64(3),
+            digest: [7; 32],
+        };
+        checkpoint.advance(committed).unwrap();
+        drop(checkpoint);
+        let reopened = SecurePublicationCheckpoint::open_existing(binding).unwrap();
+        assert_eq!(reopened.read().unwrap(), committed);
+        let stale = CommitCheckpoint {
+            sequence: CommitSeq::from_u64(2),
+            ..committed
+        };
+        reopened.advance(stale).unwrap();
+        assert_eq!(reopened.read().unwrap(), committed);
+        assert!(reopened
+            .advance(CommitCheckpoint {
+                digest: [8; 32],
+                ..committed
+            })
+            .is_err());
+        assert!(SecurePublicationCheckpoint::initialize_new(binding).is_err());
+        let path = credential_path(&root, &reopened.handle);
+        fs::write(&path, "corrupt").unwrap();
+        assert!(SecurePublicationCheckpoint::open_existing(binding).is_err());
+        assert!(SecurePublicationCheckpoint::initialize_new(binding).is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "corrupt");
+        fs::remove_file(path).unwrap();
+        assert!(SecurePublicationCheckpoint::open_existing(binding).is_err());
+        assert!(reopened.advance(committed).is_err());
+    }
 }

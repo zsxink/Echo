@@ -207,6 +207,12 @@ impl RootConstrainedFileSystem {
 }
 
 impl crate::application::ports::filesystem::LegacyLibraryFileSystem for RootConstrainedFileSystem {
+    fn is_publication_blocked(&self, error: &Error) -> bool {
+        // These native codes mean sharing/lock violations only on Windows.
+        // The same numbers describe unrelated errors on Unix platforms.
+        std::env::consts::OS == "windows"
+            && matches!(error, Error::Io { source, .. } if matches!(source.raw_os_error(), Some(32 | 33)))
+    }
     fn retain_trash_resource(
         &self,
         root: LibraryRootId,

@@ -66,8 +66,46 @@ export interface SyncStatus {
   readonly eventSequence: number;
   readonly catalogChanged: boolean;
   readonly libraryId: string | null;
+  readonly localRoot: string | null;
   readonly address: string | null;
   readonly lastError: string | null;
+  readonly pendingChanges: number | null;
+  readonly pendingUploads: number | null;
+  readonly pendingDownloads: number | null;
+  readonly uploadedBytes: number | null;
+  readonly totalUploadBytes: number | null;
+  readonly downloadedBytes: number | null;
+  readonly totalDownloadBytes: number | null;
+  readonly mediaReady: boolean | null;
+}
+export interface SyncStorageSpace {
+  readonly libraryRoot: string;
+  readonly availableBytes: number | null;
+}
+export type SyncConflictRecovery = 'available' | 'pending_edit' | 'final_deleted' | 'unsupported' | 'unavailable';
+export type SyncConflictResolution = 'recovered' | 'dismissed' | 'already_resolved' | 'final_deleted' | 'pending_edit' | 'unsupported' | 'unavailable';
+export interface SyncConflictView {
+  readonly conflictId: string;
+  readonly objectType: string;
+  readonly objectUuid: string;
+  readonly replacedVersion: number;
+  readonly acceptedVersion: number;
+  readonly replacedFields: unknown;
+  readonly acceptedFields: unknown;
+  readonly recovery: SyncConflictRecovery;
+}
+export interface HostRecoveryArchive {
+  readonly recoveryId: string;
+  readonly localRoot: string;
+  readonly previousBinding: SyncBinding;
+  readonly replacementBinding: SyncBinding;
+  readonly pendingCount: number;
+  readonly conflictCount: number;
+}
+export interface SyncBinding {
+  readonly libraryId: string;
+  readonly authorityId: string;
+  readonly epoch: number;
 }
 export interface DiscoveredHost {
   readonly name: string;
@@ -87,6 +125,10 @@ export interface SyncPeer {
 }
 export interface SyncCommandArguments {
   readonly sync_status: [args?: Record<string, never>];
+  readonly sync_storage_space: [args: { libraryRoot: string }];
+  readonly sync_conflicts: [args: { libraryRoot: string; limit?: number }];
+  readonly resolve_sync_conflict: [args: { libraryRoot: string; conflictId: string; recoverReplaced: boolean }];
+  readonly recover_restored_host: [args?: Record<string, never>];
   readonly local_lan_addresses: [args?: Record<string, never>];
   readonly host_start: [args: { address: string }];
   readonly host_stop: [args?: Record<string, never>];
@@ -287,6 +329,10 @@ export interface IpcCommandResultMap {
   readonly sync_pause: SyncStatus;
   readonly sync_resume: SyncStatus;
   readonly sync_now: SyncStatus;
+  readonly recover_restored_host: HostRecoveryArchive;
+  readonly sync_storage_space: SyncStorageSpace;
+  readonly sync_conflicts: readonly SyncConflictView[];
+  readonly resolve_sync_conflict: SyncConflictResolution;
   readonly local_lan_addresses: readonly string[];
   readonly sync_authorized_peers: readonly SyncPeer[];
   readonly revoke_device: void;

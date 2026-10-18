@@ -17,10 +17,7 @@ import { refreshCovers } from "./coverArt";
 import { useLibraryPlaylists } from "../features/playlists/useLibraryPlaylists";
 import { useLibraryStatus } from "../features/workspace/useLibraryStatus";
 import type { LibraryViewKind } from "../features/library/types";
-import {
-  setLibraryCounts,
-  useLibraryCountSync,
-} from "../features/library/libraryCounts";
+import { setLibraryCounts, useLibraryCountSync } from "../features/library/libraryCounts";
 import { invalidateLibrary } from "../features/library/libraryInvalidation";
 import type { SyncStatus } from "../ipc/ipc-types.generated";
 import { useTheme } from "../features/settings/useTheme";
@@ -151,10 +148,7 @@ function useSyncCatalogRefresh(): void {
     const onSyncStatus = (next: SyncStatus) => {
       if (next.eventSequence < latestSequence) return;
       latestSequence = next.eventSequence;
-      if (
-        next.catalogChanged &&
-        (next.state === "connected" || next.state === "hosting")
-      ) {
+      if (next.catalogChanged && (next.state === "connected" || next.state === "hosting")) {
         refreshAfterSync();
       }
     };

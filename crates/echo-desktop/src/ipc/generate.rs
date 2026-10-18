@@ -223,6 +223,10 @@ pub fn generated_typescript() -> String {
     ] {
         let _ = writeln!(out, "  readonly {command}: SyncStatus;");
     }
+    out.push_str("  readonly recover_restored_host: HostRecoveryArchive;\n");
+    out.push_str("  readonly sync_storage_space: SyncStorageSpace;\n");
+    out.push_str("  readonly sync_conflicts: readonly SyncConflictView[];\n");
+    out.push_str("  readonly resolve_sync_conflict: SyncConflictResolution;\n");
     out.push_str("  readonly local_lan_addresses: readonly string[];\n");
     out.push_str("  readonly sync_authorized_peers: readonly SyncPeer[];\n");
     out.push_str("  readonly revoke_device: void;\n");
@@ -328,8 +332,13 @@ mod tests {
             ts.contains("export interface IpcCommandResultMap"),
             "command return contract present"
         );
+        let command_results = ts
+            .split_once("export interface IpcCommandResultMap {\n")
+            .and_then(|(_, rest)| rest.split_once("\n}"))
+            .map(|(body, _)| body)
+            .expect("command result map has a body");
         assert!(
-            !ts.contains(": unknown;"),
+            !command_results.contains(": unknown;"),
             "command return contracts must never fall back to unknown"
         );
         // Determinism: run twice -> identical.

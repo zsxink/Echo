@@ -300,3 +300,6 @@ fn readonly_staging_root_fails_and_preserves_completed_audio() {
             .media_ready
     );
 }
+
+#[path = "sync_resource_publication_recovery.rs"]
+mod recovery;

@@ -241,7 +241,7 @@ export function SettingsView({ onClose }: { readonly onClose: () => void }) {
             </div>
           </section>
 
-          <LanSyncSettings />
+          <LanSyncSettings libraryRoot={status.activeRoot} />
 
           <section className="settings-section">
             <header className="settings-section-head">

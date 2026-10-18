@@ -1,15 +1,27 @@
 import { bridge } from "../../bridge";
 import type {
   DiscoveredHost,
+  HostRecoveryArchive,
   SyncPairingCode,
   SyncPeer,
+  SyncConflictResolution,
+  SyncConflictView,
   SyncStatus,
+  SyncStorageSpace,
 } from "../../ipc/ipc-types.generated";
 
 export type LanSyncRole = "host" | "peer";
 
 export interface LanSyncAdapter {
   status(): Promise<SyncStatus>;
+  storageSpace(libraryRoot: string): Promise<SyncStorageSpace>;
+  syncConflicts(libraryRoot: string, limit?: number): Promise<readonly SyncConflictView[]>;
+  resolveSyncConflict(
+    libraryRoot: string,
+    conflictId: string,
+    recoverReplaced: boolean,
+  ): Promise<SyncConflictResolution>;
+  recoverRestoredHost(): Promise<HostRecoveryArchive>;
   authorizedPeers(): Promise<readonly SyncPeer[]>;
   subscribeStatus(handler: (status: SyncStatus) => void): Promise<() => void>;
   localLanAddresses(): Promise<readonly string[]>;
@@ -28,6 +40,11 @@ export interface LanSyncAdapter {
 
 export const lanSyncAdapter: LanSyncAdapter = {
   status: () => bridge.call("sync_status"),
+  storageSpace: (libraryRoot) => bridge.call("sync_storage_space", { libraryRoot }),
+  syncConflicts: (libraryRoot, limit) => bridge.call("sync_conflicts", { libraryRoot, limit }),
+  resolveSyncConflict: (libraryRoot, conflictId, recoverReplaced) =>
+    bridge.call("resolve_sync_conflict", { libraryRoot, conflictId, recoverReplaced }),
+  recoverRestoredHost: () => bridge.call("recover_restored_host"),
   authorizedPeers: () => bridge.call("sync_authorized_peers"),
   subscribeStatus: (handler) => bridge.subscribe("sync://status", handler),
   localLanAddresses: () => bridge.call("local_lan_addresses"),

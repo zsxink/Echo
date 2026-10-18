@@ -13,6 +13,34 @@ use echo_core::error::Error;
 use crate::ipc::dto::{LibraryRootStatusDto, LibraryStatus, ScanSnapshot};
 
 impl super::AppServices {
+    /// Probe available space on the selected library volume, without granting
+    /// the frontend a path-based filesystem query capability.
+    ///
+    /// # Errors
+    ///
+    /// Rejects stale logical roots. An unavailable capacity probe is represented
+    /// as unknown rather than claiming zero or sufficient disk space.
+    pub fn sync_storage_space(
+        &self,
+        expected_root: LibraryRootId,
+    ) -> Result<crate::ipc::sync::SyncStorageSpace, Error> {
+        let root = self
+            .deps
+            .roots
+            .active_root()?
+            .filter(|root| root.id() == expected_root)
+            .ok_or_else(|| Error::conflict("selected library changed"))?;
+        let available_bytes = fs2::available_space(root.absolute_path()).ok();
+        // A root switch may finish while the volume query is running.
+        if self.deps.roots.active_root()?.map(|root| root.id()) != Some(expected_root) {
+            return Err(Error::conflict("selected library changed"));
+        }
+        Ok(crate::ipc::sync::SyncStorageSpace {
+            library_root: expected_root.to_string(),
+            available_bytes,
+        })
+    }
+
     /// A read-only snapshot of the library's availability + write capability.
     /// This never mutates; it answers "is the library usable, and can I write?"
     /// without exposing any absolute path.

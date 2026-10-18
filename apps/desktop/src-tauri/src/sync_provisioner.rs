@@ -63,12 +63,16 @@ mod resource_publication;
 use resource_publication::publish_remote_resource_set;
 #[path = "sync_provisioner/lazy_host_resources.rs"]
 mod lazy_host_resources;
+#[path = "sync_provisioner/progress.rs"]
+mod progress;
+use progress::{observe_transfer, TrackedDownloadStore, TransferTelemetry};
 #[cfg(test)]
 #[path = "sync_provisioner/tests.rs"]
 mod tests;
 
 use crate::sync_runtime::{
-    ProvisionedHost, ProvisionedPeer, SyncProvisioner, SyncRole, SyncRuntimeError, WatchOutcome,
+    ProgressNotifier, ProvisionedHost, ProvisionedPeer, SyncProgress, SyncProvisioner, SyncRole,
+    SyncRuntimeError, WatchOutcome,
 };
 
 /// No construction side effects: credentials and listening are opt-in.
@@ -97,6 +101,7 @@ pub struct NativeSyncProvisioner {
     // The HTTP host and the sync worker must share one store instance: its
     // mutex serializes cleanup against in-flight prepare/write/complete calls.
     resource_stores: Mutex<HashMap<SyncBinding, Weak<FileResourceStore>>>,
+    transfer_telemetry: Mutex<Arc<Mutex<TransferTelemetry>>>,
 }
 
 /// A registered sync wake-up channel kept alive for the watch. Dropping the
@@ -202,8 +207,18 @@ impl NativeSyncProvisioner {
             host_seen_checkpoint: Mutex::new(None),
             local_wakes: Mutex::new(None),
             uploaded_resources: Mutex::new(HashSet::new()),
+            transfer_telemetry: Mutex::new(Arc::new(Mutex::new(TransferTelemetry::default()))),
             resource_stores: Mutex::new(HashMap::new()),
         }
+    }
+
+    fn telemetry(&self) -> Arc<Mutex<TransferTelemetry>> {
+        Arc::clone(
+            &self
+                .transfer_telemetry
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
     }
 
     /// Mark a resource as uploaded for this session. A poisoned lock only means
@@ -515,15 +530,100 @@ impl SyncProvisioner for NativeSyncProvisioner {
         self.sync_now_cancellable(role, Arc::new(AtomicBool::new(false)))
     }
 
+    fn sync_progress(&self, role: SyncRole) -> Result<SyncProgress, SyncRuntimeError> {
+        let configuration = self
+            .database
+            .current_sync_configuration()
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+            .ok_or(SyncRuntimeError::Unconfigured)?;
+        let (pending_changes, resources) = self
+            .database
+            .pending_local_sync_summary()
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        let mut progress = SyncProgress {
+            pending_changes: Some(pending_changes),
+            ..SyncProgress::default()
+        };
+        if role == SyncRole::Peer && !configuration.host {
+            progress.pending_uploads = Some(
+                resources
+                    .iter()
+                    .filter(|resource| {
+                        !self.is_uploaded(configuration.binding, &resource.digest.to_hex())
+                    })
+                    .count() as u64,
+            );
+            // Enrollment has to finish before a local manifest inventory can
+            // prove completeness. While pages remain unknown, leave both
+            // download count and media readiness absent.
+            let peer = self.peer(configuration.local_root)?;
+            if self
+                .database
+                .replica_enrollment_complete(peer.host_device_id)
+                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+            {
+                let sets = self
+                    .database
+                    .pending_remote_resource_sets(configuration.local_root)
+                    .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+                progress.media_ready = Some(sets.is_empty());
+                let store = self.local_resource_store(configuration.binding)?;
+                let pending: HashSet<_> = sets
+                    .iter()
+                    .flat_map(|(_, targets)| targets)
+                    .filter(|target| {
+                        store
+                            .verify_complete(
+                                configuration.binding,
+                                &ResourceRefDto::from(&target.manifest),
+                            )
+                            .is_err()
+                    })
+                    .map(|target| target.manifest.digest.to_hex())
+                    .collect();
+                progress.pending_downloads = Some(pending.len() as u64);
+            }
+            let (total_upload, uploaded, total_download, downloaded) = self
+                .telemetry()
+                .lock()
+                .map_err(|_| SyncRuntimeError::WorkerFailed)?
+                .byte_totals();
+            progress.total_upload_bytes = Some(total_upload);
+            progress.uploaded_bytes = Some(uploaded);
+            progress.total_download_bytes = Some(total_download);
+            progress.downloaded_bytes = Some(downloaded);
+        }
+        // A host cannot know which resources its peers still need. Host HTTP
+        // traffic is not interpreted as a complete peer download inventory.
+        Ok(progress)
+    }
+
     fn sync_now_cancellable(
         &self,
         role: SyncRole,
         cancelled: Arc<AtomicBool>,
     ) -> Result<bool, SyncRuntimeError> {
+        self.sync_now_with_progress(role, cancelled, None)
+    }
+
+    fn sync_now_with_progress(
+        &self,
+        role: SyncRole,
+        cancelled: Arc<AtomicBool>,
+        progress: Option<ProgressNotifier>,
+    ) -> Result<bool, SyncRuntimeError> {
         let _guard = self
             .gate
             .lock()
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        // A cancelled download may still finish its blocking store write.
+        // Give every cycle a separate collector so a late checkpoint cannot
+        // contaminate a subsequent cycle or a different library root.
+        *self
+            .transfer_telemetry
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)? =
+            Arc::new(Mutex::new(TransferTelemetry::new(progress)));
         let configuration = self
             .database
             .current_sync_configuration()
@@ -531,6 +631,7 @@ impl SyncProvisioner for NativeSyncProvisioner {
             .ok_or(SyncRuntimeError::Unconfigured)?;
         if role == SyncRole::Peer && !configuration.host {
             self.synchronize_peer(configuration.local_root, &cancelled)?;
+            self.reconcile_remote_delete_isolations(configuration.local_root);
             self.refresh_published_metadata(configuration.local_root);
             return Ok(self.pending_catalog_changed.swap(false, Ordering::AcqRel));
         }
@@ -565,6 +666,7 @@ impl SyncProvisioner for NativeSyncProvisioner {
                 configuration.binding,
                 &resources,
             )?;
+            self.reconcile_remote_delete_isolations(configuration.local_root);
             self.refresh_published_metadata(configuration.local_root);
             let checkpoint = self
                 .database
@@ -634,6 +736,13 @@ impl SyncProvisioner for NativeSyncProvisioner {
             .lock()
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
         self.leave_sync_locked(root)
+    }
+
+    fn recover_restored_host(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<echo_core::application::ports::HostRecoveryArchive, SyncRuntimeError> {
+        self.recover_restored_host(root)
     }
 
     fn complete_peer_pairing(
@@ -720,6 +829,26 @@ impl SyncProvisioner for NativeSyncProvisioner {
 }
 
 impl NativeSyncProvisioner {
+    /// Finish the LAN-sync remote-delete isolation retry pass (task 4.5).
+    /// Tolerant per intent: one violated/missing intent stays pending with a
+    /// warning and never fails the sync cycle that ran this pass.
+    fn reconcile_remote_delete_isolations(&self, root: LibraryRootId) {
+        if let Ok(results) =
+            echo_core::application::remote_delete::recover_remote_deletes(&self.scan_deps, root)
+        {
+            for (operation, result) in results {
+                if let Err(error) = result {
+                    tracing::warn!(
+                        target: "echo_desktop::sync",
+                        %operation,
+                        error = %error,
+                        "remote-delete isolation retry kept pending"
+                    );
+                }
+            }
+        }
+    }
+
     fn refresh_published_metadata(&self, root: LibraryRootId) {
         let songs = match self.database.pending_remote_song_metadata(root) {
             Ok(songs) => songs,
@@ -994,6 +1123,7 @@ impl NativeSyncProvisioner {
                 "completed transfer resource cleanup failed"
             );
         }
+        self.reconcile_remote_delete_isolations(root);
         Ok(())
     }
 
@@ -1267,6 +1397,17 @@ impl NativeSyncProvisioner {
             .database
             .pending_remote_resource_sets(root)
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        observe_transfer(&self.telemetry(), |telemetry| {
+            for (_, targets) in &sets {
+                for target in targets {
+                    telemetry.declare_download(&ResourceRefDto::from(&target.manifest));
+                }
+            }
+        });
+        let tracked: Arc<dyn ResourceTransferPort> = Arc::new(TrackedDownloadStore {
+            store: Arc::clone(resources),
+            telemetry: self.telemetry(),
+        });
         let owner = DeviceId::from_uuid(self.database.current_device_id().as_uuid());
         // Stage the whole page before publishing any of it, two resources at a
         // time: the design's "two resource streams per session". Downloading
@@ -1281,13 +1422,13 @@ impl NativeSyncProvisioner {
         while let Some(first) = window.next() {
             if let Some(second) = window.next() {
                 let (first, second) = tokio::join!(
-                    stage_remote_resource(peer, endpoint, owner, first, resources),
-                    stage_remote_resource(peer, endpoint, owner, second, resources),
+                    stage_remote_resource(peer, endpoint, owner, first, &tracked),
+                    stage_remote_resource(peer, endpoint, owner, second, &tracked),
                 );
                 first?;
                 second?;
             } else {
-                stage_remote_resource(peer, endpoint, owner, first, resources).await?;
+                stage_remote_resource(peer, endpoint, owner, first, &tracked).await?;
             }
         }
         for (object, targets) in sets {
@@ -1450,6 +1591,11 @@ impl NativeSyncProvisioner {
             .flat_map(|mutation| &mutation.resource_refs)
             .filter(|resource| !self.is_uploaded(peer.binding, &resource.digest.to_hex()))
             .collect();
+        observe_transfer(&self.telemetry(), |telemetry| {
+            for resource in &pending {
+                telemetry.declare_upload(&ResourceRefDto::from(*resource));
+            }
+        });
         let mut window = pending.into_iter();
         while let Some(first) = window.next() {
             if let Some(second) = window.next() {
@@ -1508,6 +1654,7 @@ impl NativeSyncProvisioner {
             .prepare_resource(endpoint, &request)
             .await
             .map_err(map_sync_client_error)?;
+        observe_transfer(&self.telemetry(), |telemetry| telemetry.upload(&progress));
         if progress.complete {
             self.remember_uploaded(peer.binding, &content_hash);
             return Ok(());
@@ -1535,11 +1682,14 @@ impl NativeSyncProvisioner {
                 .upload_resource_chunk(endpoint, peer.binding, &progress, index, bytes)
                 .await
                 .map_err(map_sync_client_error)?;
+            observe_transfer(&self.telemetry(), |telemetry| telemetry.upload(&progress));
         }
-        peer.client
+        let progress = peer
+            .client
             .complete_resource(endpoint, peer.binding, &progress)
             .await
             .map_err(map_sync_client_error)?;
+        observe_transfer(&self.telemetry(), |telemetry| telemetry.upload(&progress));
         self.remember_uploaded(peer.binding, &content_hash);
         Ok(())
     }
@@ -1553,7 +1703,7 @@ async fn stage_remote_resource(
     endpoint: &Url,
     owner: DeviceId,
     target: &RemoteResourceTarget,
-    resources: &Arc<FileResourceStore>,
+    resources: &Arc<dyn ResourceTransferPort>,
 ) -> Result<(), SyncRuntimeError> {
     peer.client
         .download_resource(
@@ -1563,7 +1713,7 @@ async fn stage_remote_resource(
                 binding: peer.binding,
                 resource: ResourceRefDto::from(&target.manifest),
             },
-            resources.clone() as Arc<dyn ResourceTransferPort>,
+            Arc::clone(resources),
         )
         .await
         .map_err(map_sync_client_error)?;

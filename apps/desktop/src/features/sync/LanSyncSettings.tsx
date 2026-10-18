@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
   DiscoveredHost,
@@ -7,6 +7,9 @@ import type {
   SyncStatus,
 } from "../../ipc/ipc-types.generated";
 import { lanSyncAdapter, type LanSyncRole } from "./lanSyncAdapter";
+import { SyncConflictsPanel } from "./SyncConflictsPanel";
+import { SyncStorageHint } from "./SyncStorageHint";
+import { acceptsSyncStatus } from "./syncStatusOrder";
 
 function describeStatus(status: SyncStatus | null, loading: boolean): string {
   if (loading) return "正在读取同步服务状态…";
@@ -28,8 +31,11 @@ function describeStatus(status: SyncStatus | null, loading: boolean): string {
   }
 }
 
-export function LanSyncSettings() {
+export function LanSyncSettings({ libraryRoot }: { readonly libraryRoot?: string }) {
   const [status, setStatus] = useState<SyncStatus | null>(null);
+  const latestStatus = useRef<SyncStatus | null>(null);
+  const selectedRoot = useRef(libraryRoot);
+  selectedRoot.current = libraryRoot;
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,16 +47,24 @@ export function LanSyncSettings() {
   const [pairingCodeState, setPairingCodeState] = useState<SyncPairingCode | null>(null);
   const [pairingCode, setPairingCode] = useState("");
   const [peerAddress, setPeerAddress] = useState("");
+  const [recoveryReceipt, setRecoveryReceipt] = useState<string | null>(null);
+
+  const acceptStatus = useCallback((next: SyncStatus) => {
+    if (next.enabled && selectedRoot.current && next.localRoot !== selectedRoot.current) return;
+    if (!acceptsSyncStatus(latestStatus.current, next)) return;
+    latestStatus.current = next;
+    setStatus(next);
+  }, []);
 
   useEffect(() => {
     let current = true;
-    let latestSequence = -1;
+    setStatus(null);
+    setLoading(true);
     let unlisten: (() => void) | undefined;
     void lanSyncAdapter
       .subscribeStatus((next) => {
-        if (!current || next.eventSequence < latestSequence) return;
-        latestSequence = next.eventSequence;
-        setStatus(next);
+        if (!current) return;
+        acceptStatus(next);
         setLoading(false);
       })
       .then((stop) => {
@@ -63,9 +77,8 @@ export function LanSyncSettings() {
     void lanSyncAdapter
       .status()
       .then((next) => {
-        if (!current || next.eventSequence < latestSequence) return;
-        latestSequence = next.eventSequence;
-        setStatus(next);
+        if (!current) return;
+        acceptStatus(next);
         setLoading(false);
       })
       .catch((cause: unknown) => {
@@ -78,7 +91,7 @@ export function LanSyncSettings() {
       current = false;
       unlisten?.();
     };
-  }, []);
+  }, [libraryRoot, acceptStatus]);
 
   useEffect(() => {
     let current = true;
@@ -104,14 +117,14 @@ export function LanSyncSettings() {
     setBusy(true);
     setError(null);
     try {
-      setStatus(await action());
+      acceptStatus(await action());
     } catch (cause) {
       setError(errorMessage(cause));
       // Read back native state because a failed command may still report a
       // terminal state transition through sync://status.
       void lanSyncAdapter
         .status()
-        .then(setStatus)
+        .then(acceptStatus)
         .catch(() => undefined);
     } finally {
       setBusy(false);
@@ -137,6 +150,28 @@ export function LanSyncSettings() {
       setPeerAddress("");
       return nextStatus;
     });
+  }
+
+  async function recoverRestoredHost() {
+    if (busy) return;
+    const confirmed = window.confirm(
+      "这会停止当前主机会话、归档待处理修改和冲突，并为恢复后的资料库创建新同步纪元。其他设备需要重新配对。请确认已选中正确的资料库。",
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    setError(null);
+    setRecoveryReceipt(null);
+    try {
+      const archive = await lanSyncAdapter.recoverRestoredHost();
+      setRecoveryReceipt(
+        `恢复完成：保留 ${archive.pendingCount} 项待处理修改和 ${archive.conflictCount} 项冲突。请使用新验证码重新配对设备。`,
+      );
+      acceptStatus(await lanSyncAdapter.status());
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
   }
 
   // 撤销返回 void 而非 SyncStatus：凭据删除不改变同步状态，但主机设备会话在
@@ -247,6 +282,7 @@ export function LanSyncSettings() {
         <h2 id="lan-sync-heading">局域网资料库同步</h2>
         <p>同步服务默认关闭。主机、发现和同步操作通过桌面端原生服务执行。</p>
       </header>
+      {!hostMode ? <SyncStorageHint libraryRoot={libraryRoot} status={status} /> : null}
       <div className="setting-row">
         <div className="storage-value">
           <strong>同步状态</strong>
@@ -334,6 +370,7 @@ export function LanSyncSettings() {
           </div>
         </>
       ) : null}
+      {hostMode && libraryRoot ? <SyncConflictsPanel libraryRoot={libraryRoot} /> : null}
       {active && status?.role === "peer" ? (
         <div className="setting-row">
           <div className="storage-value">
@@ -441,6 +478,25 @@ export function LanSyncSettings() {
           ) : null}
           {role === "host" ? (
             <div className="setting-row">
+              <div className="storage-value">
+                <strong>从备份恢复主机</strong>
+                <span className="setting-help">
+                  仅在主机资料库从旧备份恢复后使用。该操作会创建新同步纪元并要求所有设备重新配对。
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn"
+                disabled={busy}
+                onClick={() => void recoverRestoredHost()}
+                data-testid="lan-sync-recover-host"
+              >
+                恢复主机备份
+              </button>
+            </div>
+          ) : null}
+          {role === "host" ? (
+            <div className="setting-row">
               <span className="storage-value">
                 <strong>启动后自动显示配对验证码，每 10 分钟刷新</strong>
               </span>
@@ -536,6 +592,11 @@ export function LanSyncSettings() {
           {error}
         </div>
       ) : null}
+      {recoveryReceipt ? (
+        <div className="settings-note" role="status" data-testid="lan-sync-recovery-receipt">
+          {recoveryReceipt}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -584,6 +645,8 @@ function syncErrorText(key: string): string {
     "sync.protocolFailed": "同步主机返回了不兼容或无效数据，请确认两端 Echo 版本一致。",
     "sync.workerFailed": "同步服务遇到错误。",
     "sync.pairingPending": "配对正在处理中，请稍后重试。",
+    "sync.hostConflictsUnavailable": "只有当前资料库的同步主机可以查看冲突记录。",
+    "sync.conflictUnavailable": "这条冲突记录已不可用，请刷新冲突列表后重试。",
   };
   return messages[key] ?? key;
 }

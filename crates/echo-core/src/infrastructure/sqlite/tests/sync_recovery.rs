@@ -116,8 +116,8 @@ fn explicit_recovery_preserves_pending_conflicts_and_fences_old_authorization() 
     drop(database);
     let database = SqliteDatabase::open(directory.path().join("echo.db")).unwrap();
     assert_eq!(
-        database.host_recovery_archives(root).unwrap(),
-        [archive.clone()]
+        database.host_recovery_archives(root).unwrap().as_slice(),
+        std::slice::from_ref(&archive)
     );
     assert_eq!(
         database

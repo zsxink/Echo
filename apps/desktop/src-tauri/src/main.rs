@@ -387,6 +387,7 @@ fn wire_composition(
         echo_core::application::root_switch::Blockers::new(),
     );
     app.manage(services);
+    app.manage(routed.database.clone());
     app.manage(trash_worker);
     app.manage(routed.registry.clone());
     app.manage(routed.deps.clone());
@@ -689,6 +690,10 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             sync_commands::sync_status,
+            sync_commands::sync_storage_space,
+            sync_commands::sync_conflicts,
+            sync_commands::resolve_sync_conflict,
+            sync_commands::recover_restored_host,
             sync_commands::sync_authorized_peers,
             sync_commands::local_lan_addresses,
             sync_commands::host_start,

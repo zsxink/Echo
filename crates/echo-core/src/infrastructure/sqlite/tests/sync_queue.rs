@@ -246,3 +246,66 @@ fn queued_request_body_stays_identical_when_local_audio_goes_missing() {
         before
     );
 }
+
+#[test]
+fn queue_summary_counts_the_entire_backlog_and_excludes_terminal_mutations() {
+    let (_directory, database, root) = database();
+    let id = SongId::new();
+    let song = Song::new(
+        id,
+        root,
+        RelativeMediaPath::new("song.flac").unwrap(),
+        Revision::INITIAL,
+    );
+    SongRepository::upsert(&database, &song).unwrap();
+    for index in 0..514 {
+        SongRepository::set_favorite(&database, id, index % 2 == 0).unwrap();
+    }
+    assert_eq!(database.pending_local_mutations(512).unwrap().len(), 512);
+    assert_eq!(database.pending_local_sync_summary().unwrap().0, 515);
+    let first = database.pending_local_mutations(1).unwrap()[0].mutation_id;
+    database
+        .reject_local_mutation(first, r#"{"accepted":false}"#.to_owned())
+        .unwrap();
+    assert_eq!(database.pending_local_sync_summary().unwrap().0, 514);
+    let other = LibraryRootId::new();
+    LibraryRepository::upsert(
+        &database,
+        &LibraryRoot::new(other, std::path::PathBuf::from("/other"), true, true),
+    )
+    .unwrap();
+    database.select_sync_context(other).unwrap();
+    assert_eq!(database.pending_local_sync_summary().unwrap().0, 0);
+    database.select_sync_context(root).unwrap();
+    assert_eq!(database.pending_local_sync_summary().unwrap().0, 514);
+}
+
+#[test]
+fn queue_summary_deduplicates_immutable_resource_content() {
+    use crate::domain::sync::{ResourceDigest, SharedResourceKind, SharedResourceManifest};
+    let (_directory, database, root) = database();
+    let id = SongId::new();
+    let resource = SharedResourceManifest::new(
+        SharedResourceKind::Audio,
+        ResourceDigest::from_bytes([9; 32]),
+        17,
+        "audio/flac".into(),
+        "song.flac",
+    )
+    .unwrap();
+    database
+        .set_local_sync_resources(ObjectKey::Song(id), vec![resource.clone()])
+        .unwrap();
+    let mut song = Song::new(
+        id,
+        root,
+        RelativeMediaPath::new("song.flac").unwrap(),
+        Revision::INITIAL,
+    );
+    SongRepository::upsert(&database, &song).unwrap();
+    song.apply_metadata(Some("updated".into()), None, None, None);
+    SongRepository::upsert(&database, &song).unwrap();
+    let (count, resources) = database.pending_local_sync_summary().unwrap();
+    assert_eq!(count, 2);
+    assert_eq!(resources, vec![resource]);
+}

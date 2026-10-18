@@ -166,6 +166,11 @@ impl StagedResource {
 /// is the one that keeps both the API surface and the scale rule honest.
 #[allow(clippy::redundant_pub_crate)] // Public would trip the ≤6 public-trait-method gate.
 pub(crate) trait LegacyLibraryFileSystem: Send + Sync {
+    /// Whether a failed publication is blocked by a temporary file lock.
+    /// Adapters classify native errors; unrelated permissions stay errors.
+    fn is_publication_blocked(&self, _error: &Error) -> bool {
+        false
+    }
     fn retain_trash_resource(
         &self,
         _root: LibraryRootId,

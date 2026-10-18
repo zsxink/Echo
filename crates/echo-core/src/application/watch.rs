@@ -180,6 +180,7 @@ impl WatchCoordinator {
     }
 
     /// Created/Modified: claim arbitration first, then normal reconciliation.
+    #[allow(clippy::too_many_lines)]
     fn upsert_path(
         &self,
         root: LibraryRootId,

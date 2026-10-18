@@ -202,18 +202,33 @@ describe("File-open playback", () => {
     });
   });
 });
-describe("Phase-one scope guard", () => {
+describe("Sync opt-in guard", () => {
   const mocks = (
     globalThis as unknown as {
       __echoTest: { setInvoke: (command: string, value: unknown) => void };
     }
   ).__echoTest;
 
-  // Task 10.4 / 13.8 and `docs/ROADMAP.md` phase one exclude sync entirely. A
-  // sidebar control reading 同步/资料库已同步 used to be rendered here; it was
-  // removed because it was both out of scope and a fabricated state (there is
-  // nothing to have "already synced"). This is the regression test.
-  it("renders no sync entry anywhere in the activated shell", async () => {
+  it("shows sync as disabled until the user enables it in settings", async () => {
+    mocks.setInvoke("sync_status", {
+      enabled: false,
+      role: "none",
+      state: "disabled",
+      sessionId: 0,
+      eventSequence: 0,
+      catalogChanged: false,
+      libraryId: null,
+      address: null,
+      lastError: null,
+      pendingChanges: 0,
+      pendingUploads: 0,
+      pendingDownloads: 0,
+      uploadedBytes: 0,
+      totalUploadBytes: 0,
+      downloadedBytes: 0,
+      totalDownloadBytes: 0,
+      mediaReady: false,
+    });
     await act(async () => {
       render(<App />);
     });
@@ -236,9 +251,11 @@ describe("Phase-one scope guard", () => {
     expect(await screen.findByTestId("workspace")).toBeInTheDocument();
 
     expect(screen.queryByTestId("sidebar")).toBeInTheDocument();
-    expect(screen.queryByTestId("sync-button")).not.toBeInTheDocument();
-    expect(document.querySelector(".sync-button")).toBeNull();
-    expect(document.body.textContent ?? "").not.toMatch(/同步|sync/i);
+    expect(screen.getByTestId("sync-button")).toHaveTextContent("同步已关闭");
+    fireEvent.click(screen.getByTestId("sync-button"));
+    expect(
+      screen.getByText("在设置中选择“作为主设备”或“加入主设备”以启用同步。"),
+    ).toBeInTheDocument();
   });
 });
 

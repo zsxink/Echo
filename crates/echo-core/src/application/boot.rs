@@ -20,6 +20,7 @@
 //! here and stays platform-neutral.
 
 use crate::application::recover::RecoverOperations;
+use crate::application::remote_delete::recover_remote_deletes;
 use crate::application::scan::{ScanCancelToken, ScanDeps, ScanSupervisor};
 use crate::domain::ids::LibraryRootId;
 use crate::error::Error;
@@ -125,6 +126,23 @@ impl<'a> BootRecovery<'a> {
     /// Recover `root` while its scan exclusion is already held.
     fn recover_held(&self, root: LibraryRootId) -> Result<BootReport, Error> {
         let report = RecoverOperations::new(self.deps).run(root)?;
+        // The LAN-sync remote-delete isolation retry (task 4.5): tombstones
+        // that already hid objects and persisted an isolation intent but whose
+        // file搬家/retention receipt did not finish before a stop or crash.
+        // Tolerant per intent — one broken intent never aborts the boot pass.
+        if self.deps.roots.replica_enrollment_pending(root)? {
+            tracing::debug!("remote-delete isolation skipped: replica enrollment pending");
+        } else {
+            for (operation, result) in recover_remote_deletes(self.deps, root)? {
+                if let Err(error) = result {
+                    tracing::warn!(
+                        %operation,
+                        %error,
+                        "remote-delete isolation retry kept pending"
+                    );
+                }
+            }
+        }
         let isolated = self
             .deps
             .roots
@@ -340,5 +358,59 @@ mod tests {
             .delete(fixture.root, seed_song(&fixture, "another.flac"))
             .expect_err("deletes stay disabled on a read-only root after boot");
         assert_eq!(error.code(), "unavailable");
+    }
+
+    /// The LAN-sync remote-delete isolation retry (task 4.5) runs inside the
+    /// same pre-ready window: the intent left pending by a stopped session is
+    /// finished before the runtime opens IPC — the object is long hidden and
+    /// nothing here may race a scan.
+    #[test]
+    fn boot_recovery_finishes_a_pending_remote_delete_isolation() {
+        let fixture = ScanFixture::new();
+        LibraryRepository::upsert(
+            &fixture.database,
+            &crate::domain::entities::LibraryRoot::new(
+                fixture.root,
+                fixture.fs.root_path(fixture.root).unwrap(),
+                true,
+                true,
+            ),
+        )
+        .expect("activate root");
+        let bytes = b"isolated audio";
+        fixture.write_file("media/gone.flac", bytes);
+        let intent = crate::application::ports::RemoteDeleteIsolation {
+            operation: crate::domain::ids::OperationId::new(),
+            source: fixture.path("media/gone.flac"),
+            digest: crate::domain::sync::ResourceDigest::from_bytes(
+                *blake3::hash(bytes).as_bytes(),
+            ),
+        };
+        fixture
+            .database
+            .seed_remote_delete_isolation(intent.clone(), fixture.root);
+
+        let report = BootRecovery::new(&fixture.deps, &fixture.supervisor)
+            .run()
+            .expect("boot recovery");
+        assert_eq!(report.state, BootRecoveryState::Recovered);
+        // The intent is finished and the retained receipt durable.
+        assert!(
+            fixture
+                .database
+                .pending_remote_delete_isolations(fixture.root)
+                .is_empty(),
+            "boot must drive the pending isolation, not leave it for a later pass"
+        );
+        assert!(fixture
+            .deps
+            .sync
+            .retained_resource(fixture.root, intent.digest)
+            .expect("receipt read")
+            .is_some());
+        // And the scan exclusion was released: a scan may start right away.
+        StartScan::new(&fixture.deps, &fixture.supervisor)
+            .run(fixture.root)
+            .expect("scan after ready");
     }
 }

@@ -78,8 +78,17 @@ fn echo_core_complies_with_architecture() {
         if is_exempt_source(&relative) || relative == Path::new("domain/arch_test_support.rs") {
             continue;
         }
+        let mut source_violations =
+            all_core_source_violations(&source, layer_of(&relative), is_exempt_source(&relative));
+        // Filesystem adapters must use narrow OS-specific durability calls
+        // (for example, syncing directories is supported differently on
+        // Windows). Keep that platform branching below the application ports.
+        if relative.starts_with(Path::new("infrastructure/filesystem")) {
+            source_violations
+                .retain(|violation| !violation.contains("platform cfg business branch"));
+        }
         violations.extend(
-            all_core_source_violations(&source, layer_of(&relative), is_exempt_source(&relative))
+            source_violations
                 .into_iter()
                 .map(|violation| format!("{}: {violation}", relative.display())),
         );

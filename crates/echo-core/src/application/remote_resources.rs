@@ -178,13 +178,21 @@ impl PublishRemoteResources {
                     ));
                 }
             }
+            self.cleanup_completed_staging(&publication);
             return Ok(RemotePublicationOutcome {
                 media_ready: true,
                 remaining_resources: 0,
             });
         }
         for index in 0..publication.items.len() {
-            self.publish_item(&mut publication, index)?;
+            if let Err(error) = self.publish_item(&mut publication, index) {
+                if !self.deps.fs.is_publication_blocked(&error) {
+                    return Err(error);
+                }
+                // The validated staging path and previous association are
+                // durable. Keep this item pending and allow other items to
+                // progress without pretending this object is media-ready.
+            }
         }
         let remaining_resources = publication
             .items
@@ -220,6 +228,7 @@ impl PublishRemoteResources {
                 }
             }
             self.deps.journal.finish(&publication)?;
+            self.cleanup_completed_staging(&publication);
         }
         Ok(RemotePublicationOutcome {
             media_ready: remaining_resources == 0,
@@ -237,6 +246,37 @@ impl PublishRemoteResources {
             .into_iter()
             .map(|operation| (operation, self.resume(root, operation)))
             .collect())
+    }
+
+    fn cleanup_completed_staging(&self, publication: &RemoteResourcePublication) {
+        // A completed association proves another verified copy exists. Only
+        // remove an exact redundant copy named by that journal: unknown
+        // operations, conflicting bytes and controlled trash remain intact.
+        for item in &publication.items {
+            let result = (|| {
+                let staging = RelativeMediaPath::new(&item.staging_path)?;
+                if self.matches(
+                    publication.root,
+                    &staging,
+                    &item.target.manifest.digest.to_hex(),
+                    item.target.manifest.length,
+                )? {
+                    self.deps
+                        .fs
+                        .discard_staging_path(publication.root, &staging)?;
+                }
+                Ok::<_, Error>(())
+            })();
+            if let Err(error) = result {
+                // Cleanup is retryable on a later completed resume; it must
+                // not turn an available, atomically associated set into an
+                // apparent failed publication.
+                tracing::warn!(
+                    error_code = error.code(),
+                    "completed resource staging cleanup deferred"
+                );
+            }
+        }
     }
 
     fn publish_item(

@@ -89,6 +89,10 @@ type Command =
   | "delete_audio_effects_preset"
   | "retry_audio_effects"
   | "sync_status"
+  | "sync_storage_space"
+  | "sync_conflicts"
+  | "resolve_sync_conflict"
+  | "recover_restored_host"
   | "local_lan_addresses"
   | "host_start"
   | "host_stop"
@@ -327,8 +331,17 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
     eventSequence: 0,
     catalogChanged: false,
     libraryId: null as string | null,
+    localRoot: null,
     address: null as string | null,
     lastError: null as string | null,
+    pendingChanges: null as number | null,
+    pendingUploads: null as number | null,
+    pendingDownloads: null as number | null,
+    uploadedBytes: null as number | null,
+    totalUploadBytes: null as number | null,
+    downloadedBytes: null as number | null,
+    totalDownloadBytes: null as number | null,
+    mediaReady: null as boolean | null,
   };
   let pairingCode: string | null = null;
   let pairingCounter = 0;
@@ -336,6 +349,18 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
 
   return {
     sync_status: () => syncStatus,
+    sync_storage_space: ({ libraryRoot }) => ({
+      libraryRoot: String(libraryRoot),
+      availableBytes: null,
+    }),
+    recover_restored_host: () => ({
+      recoveryId: "recovery-1",
+      localRoot: "root-1",
+      previousBinding: { libraryId: "library-1", authorityId: "host-1", epoch: 1 },
+      replacementBinding: { libraryId: "library-1", authorityId: "host-2", epoch: 2 },
+      pendingCount: 0,
+      conflictCount: 0,
+    }),
     sync_authorized_peers: () => [],
     local_lan_addresses: () => ["192.168.1.20"],
     host_start: ({ address }) => {
@@ -348,6 +373,7 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
         eventSequence: syncStatus.eventSequence + 1,
         address: String(address),
         libraryId: state.activeRoot || null,
+        localRoot: state.activeRoot || null,
       };
       return syncStatus;
     },
@@ -419,6 +445,7 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
         sessionId: syncStatus.sessionId + 1,
         eventSequence: syncStatus.eventSequence + 1,
         address: `https://${String(hostAddress)}:50826`,
+        localRoot: state.activeRoot || null,
       };
       return syncStatus;
     },

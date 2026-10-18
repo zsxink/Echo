@@ -5,7 +5,15 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use echo_desktop::ipc::{sync::SyncPairingCode, IpcErrorDto};
+use echo_core::application::ports::{
+    HostSyncConflictPort, SyncConflictResolution, SyncConflictView,
+};
+use echo_core::domain::ids::LibraryRootId;
+use echo_core::infrastructure::sqlite::SqliteDatabase;
+use echo_desktop::ipc::{
+    sync::{SyncConflictResolution as IpcSyncConflictResolution, SyncPairingCode},
+    IpcErrorDto,
+};
 use echo_sync::client::LanClient;
 use reqwest::Url;
 use tauri::{Emitter, State};
@@ -59,6 +67,93 @@ async fn transition(
 #[tauri::command]
 pub fn sync_status(runtime: State<'_, Arc<SyncRuntime>>) -> SyncStatus {
     runtime.status()
+}
+
+#[tauri::command]
+pub fn sync_storage_space(
+    services: State<'_, echo_desktop::runtime::services::AppServices>,
+    library_root: String,
+) -> Result<echo_desktop::ipc::sync::SyncStorageSpace, IpcErrorDto> {
+    let root = library_root.parse().map_err(|_| {
+        IpcErrorDto::new("validation", "sync.libraryUnavailable", false, None, None)
+    })?;
+    services.sync_storage_space(root).map_err(IpcErrorDto::from)
+}
+
+fn host_conflict_scope(
+    database: &SqliteDatabase,
+    library_root: &str,
+) -> Result<(LibraryRootId, echo_core::domain::sync::SyncBinding), IpcErrorDto> {
+    let root = library_root.parse::<LibraryRootId>().map_err(|_| {
+        IpcErrorDto::new("validation", "sync.libraryUnavailable", false, None, None)
+    })?;
+    let configuration = database
+        .current_sync_configuration()
+        .map_err(IpcErrorDto::from)?
+        .filter(|configuration| configuration.local_root == root && configuration.host)
+        .ok_or_else(|| {
+            IpcErrorDto::new(
+                "validation",
+                "sync.hostConflictsUnavailable",
+                false,
+                None,
+                None,
+            )
+        })?;
+    Ok((root, configuration.binding))
+}
+
+#[tauri::command]
+pub fn sync_conflicts(
+    database: State<'_, Arc<SqliteDatabase>>,
+    library_root: String,
+    limit: Option<usize>,
+) -> Result<Vec<SyncConflictView>, IpcErrorDto> {
+    let (root, binding) = host_conflict_scope(&database, &library_root)?;
+    database
+        .host_sync_conflicts(root, binding, limit.unwrap_or(100))
+        .map_err(IpcErrorDto::from)
+}
+
+#[tauri::command]
+pub fn resolve_sync_conflict(
+    database: State<'_, Arc<SqliteDatabase>>,
+    library_root: String,
+    conflict_id: String,
+    recover_replaced: bool,
+) -> Result<IpcSyncConflictResolution, IpcErrorDto> {
+    let (root, binding) = host_conflict_scope(&database, &library_root)?;
+    let conflict = uuid::Uuid::parse_str(&conflict_id).map_err(|_| {
+        IpcErrorDto::new("validation", "sync.conflictUnavailable", false, None, None)
+    })?;
+    let resolution: SyncConflictResolution = database
+        .resolve_host_sync_conflict(root, binding, conflict, recover_replaced)
+        .map_err(IpcErrorDto::from)?;
+    Ok(resolution)
+}
+
+/// Explicitly archives a restored host ledger and starts a new authority epoch.
+#[tauri::command]
+pub async fn recover_restored_host(
+    app: tauri::AppHandle,
+    runtime: State<'_, Arc<SyncRuntime>>,
+) -> Result<echo_core::application::ports::HostRecoveryArchive, IpcErrorDto> {
+    let runtime = Arc::clone(&runtime);
+    let worker_runtime = Arc::clone(&runtime);
+    let outcome =
+        tauri::async_runtime::spawn_blocking(move || worker_runtime.recover_restored_host())
+            .await
+            .unwrap_or(Err(SyncRuntimeError::WorkerFailed));
+    match outcome {
+        Ok(archive) => {
+            let _ = app.emit("sync://status", runtime.status());
+            Ok(archive)
+        }
+        Err(failure) => {
+            let _ = app.emit("sync://status", runtime.report_error(failure));
+            Err(error(failure))
+        }
+    }
 }
 
 #[tauri::command]

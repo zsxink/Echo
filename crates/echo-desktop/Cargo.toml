@@ -21,6 +21,14 @@ tracing-subscriber = { workspace = true }
 libloading = { workspace = true }
 trash = { workspace = true }
 zeroize = "1.8"
+fs2 = "=0.4.3"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["process"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-permissions = "=0.2.4"
+tempfile = "3"
 
 [dev-dependencies]
 echo-core = { path = "../echo-core", features = ["testkit"] }

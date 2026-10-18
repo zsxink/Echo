@@ -2,6 +2,18 @@
 
 use serde::Serialize;
 
+pub use echo_core::application::ports::{
+    SyncConflictRecovery, SyncConflictResolution, SyncConflictView,
+};
+
+/// A capacity hint scoped to a logical root; absolute paths remain native.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncStorageSpace {
+    pub library_root: String,
+    pub available_bytes: Option<u64>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SyncRole {
@@ -32,8 +44,20 @@ pub struct SyncStatus {
     /// True only when the completed cycle changed local catalog projections.
     pub catalog_changed: bool,
     pub library_id: Option<String>,
+    /// Logical root selected on this device, used to reject stale UI events.
+    pub local_root: Option<String>,
     pub address: Option<String>,
     pub last_error: Option<String>,
+    /// Queue and transfer counters are absent when native transport telemetry
+    /// cannot prove an exact value; the UI must never render estimates as fact.
+    pub pending_changes: Option<u64>,
+    pub pending_uploads: Option<u64>,
+    pub pending_downloads: Option<u64>,
+    pub uploaded_bytes: Option<u64>,
+    pub total_upload_bytes: Option<u64>,
+    pub downloaded_bytes: Option<u64>,
+    pub total_download_bytes: Option<u64>,
+    pub media_ready: Option<bool>,
 }
 
 impl Default for SyncStatus {
@@ -46,8 +70,17 @@ impl Default for SyncStatus {
             event_sequence: 0,
             catalog_changed: false,
             library_id: None,
+            local_root: None,
             address: None,
             last_error: None,
+            pending_changes: None,
+            pending_uploads: None,
+            pending_downloads: None,
+            uploaded_bytes: None,
+            total_upload_bytes: None,
+            downloaded_bytes: None,
+            total_download_bytes: None,
+            media_ready: None,
         }
     }
 }
@@ -88,8 +121,46 @@ export interface SyncStatus {
   readonly eventSequence: number;
   readonly catalogChanged: boolean;
   readonly libraryId: string | null;
+  readonly localRoot: string | null;
   readonly address: string | null;
   readonly lastError: string | null;
+  readonly pendingChanges: number | null;
+  readonly pendingUploads: number | null;
+  readonly pendingDownloads: number | null;
+  readonly uploadedBytes: number | null;
+  readonly totalUploadBytes: number | null;
+  readonly downloadedBytes: number | null;
+  readonly totalDownloadBytes: number | null;
+  readonly mediaReady: boolean | null;
+}
+export interface SyncStorageSpace {
+  readonly libraryRoot: string;
+  readonly availableBytes: number | null;
+}
+export type SyncConflictRecovery = 'available' | 'pending_edit' | 'final_deleted' | 'unsupported' | 'unavailable';
+export type SyncConflictResolution = 'recovered' | 'dismissed' | 'already_resolved' | 'final_deleted' | 'pending_edit' | 'unsupported' | 'unavailable';
+export interface SyncConflictView {
+  readonly conflictId: string;
+  readonly objectType: string;
+  readonly objectUuid: string;
+  readonly replacedVersion: number;
+  readonly acceptedVersion: number;
+  readonly replacedFields: unknown;
+  readonly acceptedFields: unknown;
+  readonly recovery: SyncConflictRecovery;
+}
+export interface HostRecoveryArchive {
+  readonly recoveryId: string;
+  readonly localRoot: string;
+  readonly previousBinding: SyncBinding;
+  readonly replacementBinding: SyncBinding;
+  readonly pendingCount: number;
+  readonly conflictCount: number;
+}
+export interface SyncBinding {
+  readonly libraryId: string;
+  readonly authorityId: string;
+  readonly epoch: number;
 }
 export interface DiscoveredHost {
   readonly name: string;
@@ -109,6 +180,10 @@ export interface SyncPeer {
 }
 export interface SyncCommandArguments {
   readonly sync_status: [args?: Record<string, never>];
+  readonly sync_storage_space: [args: { libraryRoot: string }];
+  readonly sync_conflicts: [args: { libraryRoot: string; limit?: number }];
+  readonly resolve_sync_conflict: [args: { libraryRoot: string; conflictId: string; recoverReplaced: boolean }];
+  readonly recover_restored_host: [args?: Record<string, never>];
   readonly local_lan_addresses: [args?: Record<string, never>];
   readonly host_start: [args: { address: string }];
   readonly host_stop: [args?: Record<string, never>];

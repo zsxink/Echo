@@ -92,73 +92,46 @@ for (const file of otherMigrations) {
 }
 process.stdout.write("  ok: sync-foundation tables exist in 0005 and only there (0001 and others clean)\n");
 
-// 2. Command/event surface: no sync/account/telemetry/remote command.
+// 2. Command/event surface: LAN sync is allowed; cloud account/telemetry and
+//    generic remote-service commands remain out of scope.
 const bridge = readFileSync(resolve(APP, "src", "bridge", "index.ts"), "utf8");
-for (const banned of ["sync", "account", "telemetry", "remote_", "login", "upload", "download"]) {
+for (const banned of ["account", "telemetry", "remote_", "login"]) {
   // Ignore comments/documentation lines; command names are the interesting bits.
   if (new RegExp(`\\b${banned}`, "i").test(bridge.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, ""))) {
     fail(`bridge surface mentions a sync/account/telemetry command '${banned}'`);
   }
 }
-process.stdout.write("  ok: command/event surface exposes no sync/account/telemetry\n");
+process.stdout.write("  ok: command/event surface has no cloud account/telemetry commands\n");
 
-// 3. No network client deps in the workspace.
+// 3. LAN client dependencies are permitted; public cloud/object-store clients
+//    are not part of this feature.
 const cargoToml = readFileSync(resolve(ROOT, "Cargo.toml"), "utf8");
-for (const dep of ["reqwest", "hyper", "rust-s3", "aws-sdk", "webdav-client"]) {
+for (const dep of ["rust-s3", "aws-sdk", "webdav-client"]) {
   if (cargoToml.includes(dep)) fail(`workspace wires network client dependency '${dep}'`);
 }
-process.stdout.write("  ok: no business network client dependency in Cargo workspace\n");
+process.stdout.write("  ok: no cloud object-store client dependency in Cargo workspace\n");
 
 // 4. Desktop security suite still asserts offline/no-network.
 run("cargo", ["test", "-p", "echo-desktop", "--all-features", "platform::security::tests::csp_never_opens_a_remote_or_network_source"]);
-process.stdout.write("  ok: desktop CSP still denies remote/network connect\n");
+process.stdout.write("  ok: desktop CSP still denies remote/network sources\n");
 
-// 5. UI scope guard (A14): no sync / select-all / manual playlist sort / song
-//    edit entry. Two independent proofs, because either alone was how this gate
-//    previously lied:
-//
-//    (a) Source truth — the shell must not *contain* a sync entry at all. Phase
-//        one has no sync (`docs/ROADMAP.md` "不包含：资料库同步与可操作的同步
-//        入口"), and neither does the prototype (grep
-//        `docs/prototype/echo-desktop-player.html` for 同步/sync: zero hits). A
-//        disabled control reading 同步/资料库已同步 used to be rendered and was
-//        reported as "present but inert"; that fabricated a state the app cannot
-//        know. Absence is the assertion now.
-//    (b) Executed proof — the shell component suite must actually assert it, by
-//        name, so deleting the assertion fails this gate.
-const SYNC_PATTERN = /同步|\bsync\b/i;
-const scannedSources = [
-  ["src/app/App.tsx", readFileSync(resolve(APP, "src", "app", "App.tsx"), "utf8")],
-  [
-    "src/features/settings/SettingsView.tsx",
-    readFileSync(resolve(APP, "src", "features", "settings", "SettingsView.tsx"), "utf8"),
-  ],
-  [
-    "src/features/library/SongMenu.tsx",
-    readFileSync(resolve(APP, "src", "features", "library", "SongMenu.tsx"), "utf8"),
-  ],
-  [
-    "src/styles/shell.css",
-    readFileSync(resolve(APP, "src", "styles", "shell.css"), "utf8"),
-  ],
-];
-for (const [name, source] of scannedSources) {
-  const withoutDocComments = source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
-    .join("\n");
-  if (SYNC_PATTERN.test(withoutDocComments)) {
-    fail(`${name} still renders or styles a sync entry — phase one ships no sync`);
-  }
+// 5. Sync remains explicitly opt-in and the WebView cannot make network calls
+//    directly. Native LAN networking is owned by Tauri commands.
+const syncDto = readFileSync(resolve(ROOT, "crates/echo-desktop/src/ipc/sync.rs"), "utf8");
+if (!/enabled:\s*false[\s\S]*?state:\s*SyncState::Disabled/.test(syncDto)) {
+  fail("SyncStatus must default to disabled");
 }
-process.stdout.write("  ok: no sync string survives in the shell, settings, song menu or shell CSS\n");
+const csp = readFileSync(resolve(ROOT, "crates/echo-desktop/src/platform/security.rs"), "utf8");
+if (!/connect-src 'self'/.test(csp) || /connect-src[^;]*(?:https?:|wss?:|\*)/i.test(csp)) {
+  fail("WebView CSP must restrict network connections to the application origin");
+}
+process.stdout.write("  ok: sync defaults to disabled and WebView has no remote network source\n");
 
 const appTest = readFileSync(resolve(APP, "src", "app", "App.test.tsx"), "utf8");
-if (!appTest.includes("renders no sync entry anywhere in the activated shell")) {
-  fail("App.test.tsx lost the named 同步 scope-guard test; the UI proof below would be hollow");
+if (!appTest.includes("shows sync as disabled until the user enables it in settings")) {
+  fail("App.test.tsx lost the sync opt-in guard regression test");
 }
-process.stdout.write("  ok: App.test.tsx carries the named sync scope-guard assertion\n");
+process.stdout.write("  ok: App.test.tsx carries the sync opt-in guard assertion\n");
 
 run("pnpm", ["--filter", "@echo/desktop", "typecheck"], APP);
 // NOTE: `"test": "vitest run"` already includes `run`. Passing an extra
@@ -179,8 +152,6 @@ function runDesktopTest(filter) {
 runDesktopTest("src/app/App.test.tsx");
 runDesktopTest("src/features/library/SongList.test.tsx");
 runDesktopTest("src/features/playlists/PlaylistsView.test.tsx");
-process.stdout.write(
-  "  ok: UI scope-guard (no sync / select-all / manual playlist sort / song edit) asserted by App + component suites\n",
-);
+process.stdout.write("  ok: UI scope-guard for sync opt-in / select-all / manual playlist sort / song edit asserted by component suites\n");
 
-process.stdout.write("ok 13.8: runtime is offline-only; no account/telemetry/sync/network; UI has no operable excluded entries\n");
+process.stdout.write("ok 13.8: opt-in sync, no account/telemetry, no WebView remote network, excluded entries remain absent\n");

@@ -104,6 +104,52 @@
   flex-wrap: wrap;
   gap: var(--space-3);
 }
+.sync-conflicts {
+  display: grid;
+  gap: var(--space-3);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-4);
+}
+.sync-conflicts-heading,
+.sync-conflict-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-3);
+}
+.sync-conflicts-heading {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.sync-conflicts-heading h3,
+.sync-conflicts-list h4 {
+  margin: 0;
+}
+.sync-conflicts-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sync-conflicts-list > li {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.sync-conflict-values pre {
+  max-height: 12rem;
+  overflow: auto;
+  margin: var(--space-1) 0 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--text-xs);
+}
 .setting-choice {
   display: inline-flex;
   align-items: center;

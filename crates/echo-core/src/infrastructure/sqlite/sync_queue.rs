@@ -18,6 +18,35 @@ use super::SqliteDatabase;
 
 const MAX_BATCH: usize = 512;
 
+impl SqliteDatabase {
+    /// Exact pending queue size and unique immutable resource declarations for
+    /// the selected root. Unlike a transport batch, this query is not capped.
+    ///
+    /// # Errors
+    /// Reports unavailable storage or malformed persisted resource declarations.
+    pub fn pending_local_sync_summary(
+        &self,
+    ) -> Result<(u64, Vec<crate::domain::sync::SharedResourceManifest>), Error> {
+        self.with_reader(|connection| {
+            let mut statement = connection.prepare(
+                "SELECT resource_refs_json FROM sync_mutations WHERE origin_device_id=(SELECT value FROM device_state WHERE key='device_id') AND local_root_uuid=(SELECT local_root_uuid FROM sync_active_context WHERE singleton=1) AND status='pending'",
+            ).map_err(storage)?;
+            let rows = statement.query_map([], |row| row.get::<_, String>(0)).map_err(storage)?;
+            let mut count = 0;
+            let mut resources = std::collections::BTreeMap::new();
+            for row in rows {
+                count += 1;
+                let declarations: Vec<crate::domain::sync::SharedResourceManifest> =
+                    serde_json::from_str(&row.map_err(storage)?).map_err(storage)?;
+                for resource in declarations {
+                    resources.entry(resource.digest.to_hex()).or_insert(resource);
+                }
+            }
+            Ok((count, resources.into_values().collect()))
+        })
+    }
+}
+
 impl LocalSyncQueuePort for SqliteDatabase {
     fn advance_rejected_local_mutations(&self) -> Result<usize, Error> {
         self.writer.run(|connection| {
