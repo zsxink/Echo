@@ -698,7 +698,7 @@ async fn resource_progress(response: reqwest::Response) -> Result<TransferProgre
 
 pub(super) async fn host_rejected(response: reqwest::Response) -> ClientError {
     let status = response.status();
-    #[derive(Deserialize)]
+    #[derive(serde::Deserialize)]
     struct ErrorBody {
         error: String,
     }
