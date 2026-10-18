@@ -194,6 +194,55 @@ describe("SettingsView LAN sync preferences", () => {
       hostAddress: "192.168.1.10",
     });
   });
+
+  it("revokes an enrolled device from the host list without erasing the local library", async () => {
+    mocks.setInvoke("sync_status", {
+      ...syncStatus(),
+      enabled: true,
+      role: "host",
+      state: "hosting",
+      sessionId: 1,
+      eventSequence: 1,
+      libraryId: "library-1",
+      address: "https://192.168.1.5:50826",
+    });
+    mocks.setInvoke("sync_authorized_peers", [
+      { deviceId: "device-b", displayName: "客厅笔记本" },
+    ]);
+    mocks.setInvoke("revoke_device", null);
+    render(<SettingsView onClose={() => undefined} />);
+
+    await screen.findByTestId("lan-sync-peers");
+    expect(await screen.findByTestId("lan-sync-revoke-device-b")).toBeEnabled();
+
+    fireEvent.click(screen.getByTestId("lan-sync-revoke-device-b"));
+    expect(await screen.findByTestId("lan-sync-peers")).toHaveTextContent("还没有设备加入");
+    expect(await screen.findByTestId("lan-sync-state")).toHaveTextContent("主机");
+    expect(invoke).toHaveBeenCalledWith("revoke_device", { deviceId: "device-b" });
+  });
+
+  it("reports a revoke failure without removing the peer from the list", async () => {
+    mocks.setInvoke("sync_status", {
+      ...syncStatus(),
+      enabled: true,
+      role: "host",
+      state: "hosting",
+      sessionId: 1,
+      eventSequence: 1,
+      libraryId: "library-1",
+      address: "https://192.168.1.5:50826",
+    });
+    mocks.setInvoke("sync_authorized_peers", [
+      { deviceId: "device-b", displayName: "客厅笔记本" },
+    ]);
+    mocks.setInvoke("revoke_device", new Error("sync.busy"));
+    render(<SettingsView onClose={() => undefined} />);
+
+    fireEvent.click(await screen.findByTestId("lan-sync-revoke-device-b"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("撤销设备「客厅笔记本」失败");
+    expect(screen.getByTestId("lan-sync-peers")).toHaveTextContent("客厅笔记本");
+  });
 });
 
 function syncStatus() {

@@ -23,6 +23,7 @@ export interface LanSyncAdapter {
   discoverHosts(): Promise<readonly DiscoveredHost[]>;
   createPairingCode(): Promise<SyncPairingCode>;
   requestPairing(code: string, hostAddress: string): Promise<SyncStatus>;
+  revokeDevice(deviceId: string): Promise<void>;
 }
 
 export const lanSyncAdapter: LanSyncAdapter = {
@@ -40,4 +41,5 @@ export const lanSyncAdapter: LanSyncAdapter = {
   discoverHosts: () => bridge.call("discover_hosts"),
   createPairingCode: () => bridge.call("create_sync_pairing_code"),
   requestPairing: (code, hostAddress) => bridge.call("request_sync_pairing", { code, hostAddress }),
+  revokeDevice: (deviceId) => bridge.call("revoke_device", { deviceId }),
 };

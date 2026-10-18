@@ -139,6 +139,22 @@ export function LanSyncSettings() {
     });
   }
 
+  // 撤销返回 void 而非 SyncStatus：凭据删除不改变同步状态，但主机设备会话在
+  // 途时由原生侧实时拒绝。失败仅提示，状态列表靠 5 秒轮询自行收敛。
+  async function revokePeer(deviceId: string, displayName: string) {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await lanSyncAdapter.revokeDevice(deviceId);
+      setAuthorizedPeers((peers) => peers.filter((peer) => peer.deviceId !== deviceId));
+    } catch (cause) {
+      setError(`撤销设备「${displayName}」失败：${errorMessage(cause)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function selectRole(nextRole: LanSyncRole) {
     setRole(nextRole);
     // Keep the temporary code only while this pairing flow is visible.
@@ -287,6 +303,16 @@ export function LanSyncSettings() {
                   <li className="lan-sync-peer" key={peer.deviceId}>
                     <span className="lan-sync-host-name">{peer.displayName}</span>
                     <span className="lan-sync-host-address">设备 ID：{peer.deviceId}</span>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={busy}
+                      aria-label={`撤销设备 ${peer.displayName}`}
+                      data-testid={`lan-sync-revoke-${peer.deviceId}`}
+                      onClick={() => void revokePeer(peer.deviceId, peer.displayName)}
+                    >
+                      撤销设备
+                    </button>
                   </li>
                 ))
               )}
