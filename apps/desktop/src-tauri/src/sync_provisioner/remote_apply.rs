@@ -202,6 +202,7 @@ pub(super) fn identity_handle(binding: SyncBinding) -> Result<SecretHandle, Sync
     .map_err(|_| SyncRuntimeError::Unconfigured)
 }
 
+#[cfg(test)]
 pub(super) fn seed_audio_resources(
     store: &FileResourceStore,
     library: &LibraryRoot,

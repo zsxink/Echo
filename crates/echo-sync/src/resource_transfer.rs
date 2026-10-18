@@ -4,6 +4,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::{Duration, SystemTime};
 
 use echo_core::domain::sync::{DeviceId, SyncBinding};
 use serde::{Deserialize, Serialize};
@@ -136,8 +137,8 @@ struct Checkpoint {
 /// App-private immutable content store.
 ///
 /// Only digest-derived filenames are used. User-controlled relative paths are
-/// metadata for later Core publication. Completed blobs and upload checkpoints
-/// survive application restart.
+/// metadata for later Core publication. Transfer checkpoints survive restart
+/// for recovery; completed resources are explicitly reclaimed after use.
 pub struct FileResourceStore {
     root: PathBuf,
     lock: Mutex<()>,
@@ -154,6 +155,159 @@ impl FileResourceStore {
             root: fs::canonicalize(root)?,
             lock: Mutex::new(()),
         })
+    }
+
+    /// Reclaim resources from completed transfers after the caller has safely
+    /// consumed them. Incomplete uploads are retained for restart recovery.
+    /// A blob shared with an incomplete transfer is retained as well.
+    pub fn cleanup_completed(&self, binding: SyncBinding) -> Result<(), TransferError> {
+        self.cleanup_completed_resources(binding, None, None)
+    }
+
+    /// Reclaim selected completed resources after they have been published
+    /// into the authoritative library. Other completed transfers are untouched.
+    pub fn cleanup_resources(
+        &self,
+        binding: SyncBinding,
+        hashes: &[String],
+    ) -> Result<(), TransferError> {
+        self.cleanup_completed_resources(binding, Some(hashes), None)
+    }
+
+    /// Reclaim stale transfers not referenced by any durable library
+    /// declaration. Recent uploads are retained because a peer uploads bytes
+    /// just before submitting the mutation that declares them.
+    pub fn cleanup_stale(
+        &self,
+        binding: SyncBinding,
+        referenced_hashes: &[String],
+        max_age: Duration,
+    ) -> Result<(), TransferError> {
+        let _lock = self.lock.lock().map_err(|_| TransferError::Conflict)?;
+        let directory = self.directory(binding)?;
+        let referenced: std::collections::HashSet<&str> =
+            referenced_hashes.iter().map(String::as_str).collect();
+        let now = SystemTime::now();
+        let mut stale = Vec::new();
+        let mut retained_hashes = std::collections::HashSet::new();
+        for entry in fs::read_dir(&directory)? {
+            let path = entry?.path();
+            if path.extension().is_none_or(|extension| extension != "json") {
+                continue;
+            }
+            regular_file(&path)?;
+            let file = File::open(&path)?;
+            let checkpoint: Checkpoint = serde_json::from_reader(file.take(2 * 1024 * 1024))
+                .map_err(|_| TransferError::Conflict)?;
+            if checkpoint.binding != binding {
+                return Err(TransferError::Conflict);
+            }
+            let hash = checkpoint.progress.resource.content_hash;
+            let age = fs::metadata(&path)?
+                .modified()
+                .ok()
+                .and_then(|time| now.duration_since(time).ok());
+            if !referenced.contains(hash.as_str()) && age.is_some_and(|age| age >= max_age) {
+                stale.push((
+                    path,
+                    hash,
+                    checkpoint.progress.upload_id,
+                    checkpoint.progress.complete,
+                ));
+            } else {
+                retained_hashes.insert(hash);
+            }
+        }
+        for (checkpoint, hash, upload_id, complete) in stale {
+            if !retained_hashes.contains(&hash) && complete {
+                let blob = directory.join(format!("{hash}.blob"));
+                if blob.exists() {
+                    regular_file(&blob)?;
+                    fs::remove_file(blob)?;
+                }
+            }
+            let part = directory.join(format!("{upload_id}.part"));
+            if part.exists() {
+                regular_file(&part)?;
+                fs::remove_file(part)?;
+            }
+            fs::remove_file(checkpoint)?;
+        }
+        sync_directory(&directory)?;
+        Ok(())
+    }
+
+    /// Reclaim completed resources created by one owner, used for host-local
+    /// materializations once the serving session has stopped.
+    pub fn cleanup_owner(
+        &self,
+        binding: SyncBinding,
+        owner: DeviceId,
+    ) -> Result<(), TransferError> {
+        self.cleanup_completed_resources(binding, None, Some(owner))
+    }
+
+    /// Remove every resource owned by a binding which has been detached.
+    pub fn clear_binding(&self, binding: SyncBinding) -> Result<(), TransferError> {
+        let _lock = self.lock.lock().map_err(|_| TransferError::Conflict)?;
+        let directory = self.directory(binding)?;
+        fs::remove_dir_all(&directory)?;
+        sync_directory(&self.root)?;
+        Ok(())
+    }
+
+    fn cleanup_completed_resources(
+        &self,
+        binding: SyncBinding,
+        selected_hashes: Option<&[String]>,
+        selected_owner: Option<DeviceId>,
+    ) -> Result<(), TransferError> {
+        let _lock = self.lock.lock().map_err(|_| TransferError::Conflict)?;
+        let directory = self.directory(binding)?;
+        let mut completed = Vec::new();
+        let mut retained_hashes = std::collections::HashSet::new();
+        let selected_hashes: Option<std::collections::HashSet<&str>> =
+            selected_hashes.map(|hashes| hashes.iter().map(String::as_str).collect());
+        for entry in fs::read_dir(&directory)? {
+            let path = entry?.path();
+            if path.extension().is_none_or(|extension| extension != "json") {
+                continue;
+            }
+            regular_file(&path)?;
+            let file = File::open(&path)?;
+            let checkpoint: Checkpoint = serde_json::from_reader(file.take(2 * 1024 * 1024))
+                .map_err(|_| TransferError::Conflict)?;
+            if checkpoint.binding != binding {
+                return Err(TransferError::Conflict);
+            }
+            let hash = checkpoint.progress.resource.content_hash;
+            if checkpoint.progress.complete
+                && selected_hashes
+                    .as_ref()
+                    .is_none_or(|selected| selected.contains(hash.as_str()))
+                && selected_owner.is_none_or(|owner| checkpoint.owner == owner)
+            {
+                completed.push((path, hash));
+            } else {
+                retained_hashes.insert(hash);
+            }
+        }
+
+        for (checkpoint, hash) in completed {
+            if !retained_hashes.contains(&hash) {
+                let blob = directory.join(format!("{hash}.blob"));
+                if blob.exists() {
+                    regular_file(&blob)?;
+                    fs::remove_file(blob)?;
+                }
+            }
+            // Keep the checkpoint as the recovery marker until its blob has
+            // been removed successfully. A crash or unlink error can then be
+            // retried by the next cleanup pass.
+            fs::remove_file(checkpoint)?;
+        }
+        sync_directory(&directory)?;
+        Ok(())
     }
 
     /// Import a library-authorized local reader into immutable storage.
@@ -853,6 +1007,82 @@ mod tests {
                 .complete(request.binding, owner, &progress.upload_id)
                 .unwrap()
                 .complete
+        );
+    }
+
+    #[test]
+    fn cleanup_completed_reclaims_consumed_blobs_but_keeps_incomplete_uploads() {
+        let temporary = tempfile::tempdir().unwrap();
+        let store = FileResourceStore::new(temporary.path().canonicalize().unwrap()).unwrap();
+        let owner = DeviceId::new();
+        let binding = fresh_binding();
+        let completed = request(binding, b"published");
+        let mut reader = &b"published"[..];
+        store.import_reader(owner, &completed, &mut reader).unwrap();
+        let incomplete = request(binding, b"still uploading");
+        store.prepare(owner, &incomplete).unwrap();
+
+        store.cleanup_completed(binding).unwrap();
+
+        assert!(matches!(
+            store.download(binding, &completed.resource.content_hash, 0, 1),
+            Err(TransferError::Unknown)
+        ));
+        assert!(store
+            .prepare(owner, &incomplete)
+            .unwrap()
+            .confirmed_chunks
+            .is_empty());
+    }
+
+    #[test]
+    fn owner_cleanup_and_detached_binding_cleanup_are_scoped() {
+        let temporary = tempfile::tempdir().unwrap();
+        let store = FileResourceStore::new(temporary.path().canonicalize().unwrap()).unwrap();
+        let binding = fresh_binding();
+        let other_binding = fresh_binding();
+        let owner = DeviceId::new();
+        let other_owner = DeviceId::new();
+        let local = request(binding, b"local materialization");
+        let mut local_reader = &b"local materialization"[..];
+        store
+            .import_reader(owner, &local, &mut local_reader)
+            .unwrap();
+        let remote = request(binding, b"received from peer");
+        let mut remote_reader = &b"received from peer"[..];
+        store
+            .import_reader(other_owner, &remote, &mut remote_reader)
+            .unwrap();
+        let unrelated = request(other_binding, b"other binding");
+        let mut unrelated_reader = &b"other binding"[..];
+        store
+            .import_reader(owner, &unrelated, &mut unrelated_reader)
+            .unwrap();
+
+        store.cleanup_owner(binding, owner).unwrap();
+        assert!(matches!(
+            store.download(binding, &local.resource.content_hash, 0, 1),
+            Err(TransferError::Unknown)
+        ));
+        assert_eq!(
+            store
+                .download(binding, &remote.resource.content_hash, 0, 1)
+                .unwrap()
+                .bytes,
+            b"r"
+        );
+
+        store.clear_binding(binding).unwrap();
+        assert!(matches!(
+            store.download(binding, &remote.resource.content_hash, 0, 1),
+            Err(TransferError::Unknown)
+        ));
+        assert_eq!(
+            store
+                .download(other_binding, &unrelated.resource.content_hash, 0, 1)
+                .unwrap()
+                .bytes,
+            b"o"
         );
     }
 

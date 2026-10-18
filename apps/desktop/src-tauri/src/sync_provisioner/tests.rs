@@ -351,7 +351,16 @@ fn host_publishes_peer_uploaded_audio_into_its_library_before_reporting_ready() 
     };
     let sets = database.pending_peer_resource_sets(root).unwrap();
     assert_eq!(sets.len(), 1);
-    publish_remote_resource_set(publication, &store, binding, root, sets[0].0, &sets[0].1).unwrap();
+    publish_remote_resource_set(
+        publication,
+        &database,
+        &store,
+        binding,
+        root,
+        sets[0].0,
+        &sets[0].1,
+    )
+    .unwrap();
 
     let published = database
         .local_remote_resource_path(root, ObjectKey::Song(song), &manifest)
@@ -1274,12 +1283,7 @@ async fn native_upload_prepares_a_resource_once_until_the_host_acks_it() {
 
     fixture
         .provisioner
-        .upload_pending_resources(
-            &fixture.peer,
-            &fixture.endpoint,
-            &fixture.resources,
-            fixture.root,
-        )
+        .upload_pending_resources(&fixture.peer, &fixture.endpoint, fixture.root)
         .await
         .unwrap();
     assert_eq!(
@@ -1291,12 +1295,7 @@ async fn native_upload_prepares_a_resource_once_until_the_host_acks_it() {
     // same resource again; it must not cost another request or another hash.
     fixture
         .provisioner
-        .upload_pending_resources(
-            &fixture.peer,
-            &fixture.endpoint,
-            &fixture.resources,
-            fixture.root,
-        )
+        .upload_pending_resources(&fixture.peer, &fixture.endpoint, fixture.root)
         .await
         .unwrap();
     assert_eq!(fixture.host_prepares.load(Ordering::Relaxed), 1);

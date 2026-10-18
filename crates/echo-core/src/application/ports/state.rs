@@ -37,6 +37,8 @@ pub trait CoverRepository: Send + Sync {
     /// Every asset key still referenced by any song of the root — the GC
     /// keep-set (`CoverCache::gc` must never delete a referenced asset).
     fn referenced_asset_keys(&self, root: LibraryRootId) -> Result<Vec<String>, Error>;
+    /// Every key referenced by any library, for a process-wide disk cache GC.
+    fn all_referenced_asset_keys(&self) -> Result<Vec<String>, Error>;
 }
 
 /// Persistence of one scan generation's progress, summary and per-file

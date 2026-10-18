@@ -2,10 +2,11 @@
 
 use std::sync::Arc;
 
-use echo_core::application::ports::RemoteResourceTarget;
+use echo_core::application::ports::{LibraryRepository, RemoteResourceTarget};
 use echo_core::application::remote_resources::{PublishRemoteResources, RemoteResourcePublishDeps};
 use echo_core::domain::ids::{LibraryRootId, OperationId};
 use echo_core::domain::sync::{ObjectKey, SyncBinding};
+use echo_core::infrastructure::sqlite::SqliteDatabase;
 use echo_sync::protocol::ResourceRefDto;
 use echo_sync::resource_transfer::{FileResourceStore, ResourceTransferPort};
 
@@ -14,6 +15,7 @@ use crate::sync_runtime::SyncRuntimeError;
 
 pub(super) fn publish_remote_resource_set(
     deps: RemoteResourcePublishDeps,
+    database: &SqliteDatabase,
     store: &Arc<FileResourceStore>,
     binding: SyncBinding,
     root: LibraryRootId,
@@ -49,19 +51,34 @@ pub(super) fn publish_remote_resource_set(
             .prepare(root, operation, object, targets.to_vec())
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
     }
+    let library = database
+        .by_id(root)
+        .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+        .ok_or(SyncRuntimeError::LibraryUnavailable)?;
     for (index, target) in targets.iter().enumerate() {
-        store
-            .verify_complete(binding, &ResourceRefDto::from(&target.manifest))
-            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-        let mut reader = PrivateResourceReader {
-            store: store.clone(),
-            binding,
-            hash: target.manifest.digest.to_hex(),
-            length: target.manifest.length,
-            offset: 0,
-        };
+        let resource = ResourceRefDto::from(&target.manifest);
+        let mut reader: Box<dyn std::io::Read> =
+            if store.verify_complete(binding, &resource).is_ok() {
+                Box::new(PrivateResourceReader {
+                    store: store.clone(),
+                    binding,
+                    hash: target.manifest.digest.to_hex(),
+                    length: target.manifest.length,
+                    offset: 0,
+                })
+            } else {
+                let candidates =
+                    super::local_resource_candidates(database, &library, &target.manifest)?;
+                let file = super::verified_local_resource(
+                    candidates,
+                    &target.manifest.digest.to_hex(),
+                    target.manifest.length,
+                )?
+                .ok_or(SyncRuntimeError::LibraryUnavailable)?;
+                Box::new(file)
+            };
         publisher
-            .stage(root, operation, index, &mut reader)
+            .stage(root, operation, index, reader.as_mut())
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
     }
     let outcome = publisher

@@ -82,13 +82,13 @@ use conversion::{
 };
 use query::{active_root_id, catalog_counts, playlist_songs_query, query_active, SONG_SELECT};
 use statements::{
-    add_member, all_songs_in_root, attach_cover, begin_scan_run, clear_lyrics_candidate,
-    cover_of_song, create_playlist, delete_song, ensure_operation_journal, finish_scan_run,
-    incomplete_operation_items, increment_play_count, latest_scan_generation, load_runtime_state,
-    lyrics_candidates, operation_item, record_scan_issue, referenced_asset_keys,
-    release_operation_claims, set_lyrics_candidate, set_play_count, set_song_availability,
-    set_song_favorite, store_runtime_state, update_scan_progress, upsert_member,
-    upsert_operation_item, upsert_root, upsert_song,
+    add_member, all_referenced_asset_keys, all_songs_in_root, attach_cover, begin_scan_run,
+    clear_lyrics_candidate, cover_of_song, create_playlist, delete_song, ensure_operation_journal,
+    finish_scan_run, incomplete_operation_items, increment_play_count, latest_scan_generation,
+    load_runtime_state, lyrics_candidates, operation_item, record_scan_issue,
+    referenced_asset_keys, release_operation_claims, set_lyrics_candidate, set_play_count,
+    set_song_availability, set_song_favorite, store_runtime_state, update_scan_progress,
+    upsert_member, upsert_operation_item, upsert_root, upsert_song,
 };
 use support::{map_constraint, now_ms, parse_id, storage, to_sql_error};
 
@@ -1319,6 +1319,10 @@ impl CoverRepository for SqliteDatabase {
     }
     fn referenced_asset_keys(&self, root: LibraryRootId) -> Result<Vec<String>, Error> {
         self.with_reader(move |connection| referenced_asset_keys(connection, root))
+    }
+
+    fn all_referenced_asset_keys(&self) -> Result<Vec<String>, Error> {
+        self.with_reader(all_referenced_asset_keys)
     }
 }
 

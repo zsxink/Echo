@@ -205,6 +205,27 @@ impl SqliteDatabase {
                 .map_err(storage)
         })
     }
+
+    /// Resolve the published local path for a shared declaration, regardless
+    /// of resource kind or owning object. The bytes are content addressed, so
+    /// any completed publication for this exact logical declaration is a
+    /// valid source for serving it to another peer.
+    pub fn local_library_resource_path_for_manifest(
+        &self,
+        root: LibraryRootId,
+        manifest: &SharedResourceManifest,
+    ) -> Result<Option<String>, Error> {
+        self.with_reader(|connection| {
+            connection
+                .query_row(
+                    "SELECT l.local_relative_path FROM sync_remote_resource_locations l JOIN sync_remote_publications p ON p.operation_uuid=l.operation_uuid WHERE l.local_root_uuid=?1 AND l.library_relative_path=?2 AND l.content_hash=?3 AND p.completed=1 ORDER BY l.object_type,l.object_uuid LIMIT 1",
+                    params![root.to_string(), manifest.relative_path.as_str(), manifest.digest.as_bytes().as_slice()],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(storage)
+        })
+    }
 }
 
 fn enqueue_current(connection: &Connection, root: &str) -> Result<usize, Error> {

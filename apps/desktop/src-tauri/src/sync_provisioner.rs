@@ -1,11 +1,12 @@
 //! Trusted native composition for opt-in library synchronization.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 use echo_core::application::ports::{
@@ -91,6 +92,9 @@ pub struct NativeSyncProvisioner {
     // re-sends `prepare` for the whole queue each round (a guaranteed 429) and
     // re-reads each blob twice to re-derive BLAKE3.
     uploaded_resources: Mutex<HashSet<(SyncBinding, String)>>,
+    // The HTTP host and the sync worker must share one store instance: its
+    // mutex serializes cleanup against in-flight prepare/write/complete calls.
+    resource_stores: Mutex<HashMap<SyncBinding, Weak<FileResourceStore>>>,
 }
 
 /// A registered sync wake-up channel kept alive for the watch. Dropping the
@@ -196,6 +200,7 @@ impl NativeSyncProvisioner {
             host_seen_checkpoint: Mutex::new(None),
             local_wakes: Mutex::new(None),
             uploaded_resources: Mutex::new(HashSet::new()),
+            resource_stores: Mutex::new(HashMap::new()),
         }
     }
 
@@ -357,39 +362,27 @@ impl NativeSyncProvisioner {
         Ok(())
     }
 
-    fn seed_local_resources(
-        &self,
-        library: &LibraryRoot,
-        binding: SyncBinding,
-    ) -> Result<Arc<FileResourceStore>, SyncRuntimeError> {
-        let resources = self.local_resource_store(binding)?;
-        // Existing local resources are part of the enrollment baseline. Keep
-        // seeding them so the first snapshot cannot silently discard local work.
-        let manifests = self
-            .database
-            .local_sync_resource_manifests(library.id())
-            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-        seed_audio_resources(
-            resources.as_ref(),
-            library,
-            binding,
-            DeviceId::from_uuid(self.database.current_device_id().as_uuid()),
-            &manifests,
-        )?;
-        Ok(resources)
-    }
-
     fn local_resource_store(
         &self,
         binding: SyncBinding,
     ) -> Result<Arc<FileResourceStore>, SyncRuntimeError> {
+        let mut stores = self
+            .resource_stores
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        stores.retain(|_, store| store.strong_count() > 0);
+        if let Some(store) = stores.get(&binding).and_then(Weak::upgrade) {
+            return Ok(store);
+        }
         let directory = self
             .private_resources
             .join(binding.library_id.as_uuid().to_string());
         std::fs::create_dir_all(&directory).map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-        FileResourceStore::new(directory)
+        let store = FileResourceStore::new(directory)
             .map(Arc::new)
-            .map_err(|_| SyncRuntimeError::LibraryUnavailable)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        stores.insert(binding, Arc::downgrade(&store));
+        Ok(store)
     }
 }
 
@@ -550,34 +543,46 @@ impl SyncProvisioner for NativeSyncProvisioner {
             return Err(SyncRuntimeError::LibraryUnavailable);
         }
         if cancelled.load(Ordering::Acquire) {
+            if let Ok(resources) = self.local_resource_store(configuration.binding) {
+                if let Err(error) = resources.clear_binding(configuration.binding) {
+                    tracing::warn!(
+                        target: "echo_desktop::sync",
+                        %error,
+                        "cancelled host sync transfer cache cleanup failed"
+                    );
+                }
+            }
             return Err(SyncRuntimeError::Busy);
         }
         let resources = self.local_resource_store(configuration.binding)?;
-        self.confirm_local(configuration.binding)?;
-        self.publish_cached_peer_resources(
-            configuration.local_root,
-            configuration.binding,
-            &resources,
-        )?;
-        self.refresh_published_metadata(configuration.local_root);
-        let checkpoint = self
-            .database
-            .latest_published_sync_checkpoint(configuration.binding)
-            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-        {
-            let mut seen = self
-                .host_seen_checkpoint
-                .lock()
-                .map_err(|_| SyncRuntimeError::WorkerFailed)?;
-            if seen
-                .as_ref()
-                .is_some_and(|previous| *previous != checkpoint)
+        let result = (|| {
+            self.confirm_local(configuration.binding)?;
+            self.publish_cached_peer_resources(
+                configuration.local_root,
+                configuration.binding,
+                &resources,
+            )?;
+            self.refresh_published_metadata(configuration.local_root);
+            let checkpoint = self
+                .database
+                .latest_published_sync_checkpoint(configuration.binding)
+                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
             {
-                self.pending_catalog_changed.store(true, Ordering::Release);
+                let mut seen = self
+                    .host_seen_checkpoint
+                    .lock()
+                    .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+                if seen
+                    .as_ref()
+                    .is_some_and(|previous| *previous != checkpoint)
+                {
+                    self.pending_catalog_changed.store(true, Ordering::Release);
+                }
+                *seen = Some(checkpoint);
             }
-            *seen = Some(checkpoint);
-        }
-        Ok(self.pending_catalog_changed.swap(false, Ordering::AcqRel))
+            Ok(self.pending_catalog_changed.swap(false, Ordering::AcqRel))
+        })();
+        result
     }
 
     /// Hold one long-poll against the paired host until it publishes new
@@ -750,8 +755,11 @@ impl NativeSyncProvisioner {
             .database
             .current_sync_configuration()
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        let detached_binding = configuration
+            .as_ref()
+            .map(|configuration| configuration.binding);
         let mut credentials = Vec::new();
-        if let Some(configuration) = configuration {
+        if let Some(configuration) = configuration.as_ref() {
             if configuration.host {
                 for (_, handle) in self
                     .database
@@ -781,6 +789,19 @@ impl NativeSyncProvisioner {
         self.database
             .detach_lan_sync_context(root)
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        if let Some(binding) = detached_binding {
+            match self.local_resource_store(binding).and_then(|store| {
+                store
+                    .clear_binding(binding)
+                    .map_err(|_| SyncRuntimeError::LibraryUnavailable)
+            }) {
+                Ok(()) => {}
+                Err(_) => tracing::warn!(
+                    target: "echo_desktop::sync",
+                    "detached sync resource cache cleanup failed"
+                ),
+            }
+        }
         for handle in credentials {
             match OsSecureStore.delete(&handle) {
                 Ok(()) => {}
@@ -831,13 +852,16 @@ impl NativeSyncProvisioner {
         if !library.is_active() || library.availability() != RootAvailability::Available {
             return Err(SyncRuntimeError::LibraryUnavailable);
         }
-        let resources = self.seed_local_resources(&library, peer.binding)?;
+        // The cache is for received resources only. Local media remains in its
+        // authoritative library and is opened directly when upload chunks are
+        // requested.
+        let resources = self.local_resource_store(peer.binding)?;
         let endpoint = Url::parse(&peer.address).map_err(|_| SyncRuntimeError::InvalidAddress)?;
         let executor = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
-        executor.block_on(async {
+        let result = executor.block_on(async {
             tokio::select! {
                 biased;
                 () = wait_for_sync_cancel(Arc::clone(cancelled)) => Err(SyncRuntimeError::Busy),
@@ -845,7 +869,19 @@ impl NativeSyncProvisioner {
                     self.merge_peer_library(&peer, &endpoint, &resources, root).await
                 } => result,
             }
-        })
+        });
+        if let Err(error) = resources.clear_binding(peer.binding) {
+            tracing::warn!(
+                target: "echo_desktop::sync",
+                %error,
+                "peer sync transfer cache cleanup failed"
+            );
+        }
+        self.uploaded_resources
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .retain(|(binding, _)| *binding != peer.binding);
+        result
     }
 
     /// Register this provisioner's own sync wake-up channel on first use and
@@ -898,8 +934,7 @@ impl NativeSyncProvisioner {
             }
             self.publish_remote_resources(peer, endpoint, root, resources)
                 .await?;
-            self.upload_pending_resources(peer, endpoint, resources, root)
-                .await?;
+            self.upload_pending_resources(peer, endpoint, root).await?;
             let before = queue
                 .replica_checkpoint(peer.host_device_id)
                 .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
@@ -945,6 +980,13 @@ impl NativeSyncProvisioner {
                 }
                 return Err(SyncRuntimeError::SyncPredecessorPending);
             }
+        }
+        if let Err(error) = resources.cleanup_completed(peer.binding) {
+            tracing::warn!(
+                target: "echo_desktop::sync",
+                %error,
+                "completed transfer resource cleanup failed"
+            );
         }
         Ok(())
     }
@@ -1124,16 +1166,86 @@ impl NativeSyncProvisioner {
             .database
             .pending_peer_resource_sets(root)
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        // Recover cache cleanup left behind by an earlier partial failure.
+        // Keep hashes still awaiting publication; every other resource already
+        // declared in the library has an authoritative local copy.
+        let mut pending_hashes = HashMap::<String, usize>::new();
+        for target in sets.iter().flat_map(|(_, targets)| targets.iter()) {
+            *pending_hashes
+                .entry(target.manifest.digest.to_hex())
+                .or_default() += 1;
+        }
+        let published_hashes: Vec<String> = self
+            .database
+            .local_library_resource_manifests(root)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+            .into_iter()
+            .map(|manifest| manifest.digest.to_hex())
+            .filter(|hash| !pending_hashes.contains_key(hash))
+            .collect();
+        if let Err(error) = resources.cleanup_resources(binding, &published_hashes) {
+            tracing::warn!(
+                target: "echo_desktop::sync",
+                %error,
+                "previously published transfer resource cleanup failed"
+            );
+        }
         for (object, targets) in sets {
+            let database = Arc::clone(&self.database);
             publish_remote_resource_set(
                 self.publication.clone(),
+                database.as_ref(),
                 resources,
                 binding,
                 root,
                 object,
                 &targets,
             )?;
+            let mut published_hashes = Vec::new();
+            for target in &targets {
+                let hash = target.manifest.digest.to_hex();
+                if let Some(remaining) = pending_hashes.get_mut(&hash) {
+                    *remaining -= 1;
+                    if *remaining == 0 {
+                        pending_hashes.remove(&hash);
+                        published_hashes.push(hash);
+                    }
+                }
+            }
+            if let Err(error) = resources.cleanup_resources(binding, &published_hashes) {
+                tracing::warn!(
+                    target: "echo_desktop::sync",
+                    %error,
+                    "published transfer resource cleanup failed"
+                );
+            }
             self.pending_catalog_changed.store(true, Ordering::Release);
+        }
+        let local_owner = DeviceId::from_uuid(self.database.current_device_id().as_uuid());
+        if let Err(error) = resources.cleanup_owner(binding, local_owner) {
+            tracing::warn!(
+                target: "echo_desktop::sync",
+                %error,
+                "host-local transfer cache cleanup failed"
+            );
+        }
+        let referenced_hashes: Vec<String> = self
+            .database
+            .local_library_resource_manifests(root)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+            .into_iter()
+            .map(|manifest| manifest.digest.to_hex())
+            .collect();
+        if let Err(error) = resources.cleanup_stale(
+            binding,
+            &referenced_hashes,
+            Duration::from_secs(24 * 60 * 60),
+        ) {
+            tracing::warn!(
+                target: "echo_desktop::sync",
+                %error,
+                "stale unreferenced transfer cache cleanup failed"
+            );
         }
         Ok(())
     }
@@ -1174,11 +1286,20 @@ impl NativeSyncProvisioner {
         }
         for (object, targets) in sets {
             let deps = self.publication.clone();
+            let database = Arc::clone(&self.database);
             let store = Arc::clone(resources);
             let binding = peer.binding;
             let catalog_changed = Arc::clone(&self.pending_catalog_changed);
             tokio::task::spawn_blocking(move || {
-                publish_remote_resource_set(deps, &store, binding, root, object, &targets)?;
+                publish_remote_resource_set(
+                    deps,
+                    database.as_ref(),
+                    &store,
+                    binding,
+                    root,
+                    object,
+                    &targets,
+                )?;
                 // Blocking publication may complete after the cancellable
                 // transport future has been dropped. Retain that work too.
                 catalog_changed.store(true, Ordering::Release);
@@ -1301,20 +1422,23 @@ impl NativeSyncProvisioner {
         &self,
         peer: &ProvisionedPeer,
         endpoint: &Url,
-        resources: &Arc<FileResourceStore>,
         root: LibraryRootId,
     ) -> Result<(), SyncRuntimeError> {
         let queue = ScopedLocalQueue {
             database: self.database.as_ref(),
             root,
         };
+        let library = self
+            .database
+            .by_id(root)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+            .ok_or(SyncRuntimeError::LibraryUnavailable)?;
         let mutations = queue
             .pending_local_mutations(512)
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
         // Two upload streams per session, mirroring the download side. Each
-        // resource keeps its own ordered chunk sequence; only distinct
-        // resources overlap. Resources staged earlier in this session are
-        // dropped before they can cost another chunk.
+        // resource is read directly from the library and keeps its own ordered
+        // chunk sequence; only distinct resources overlap.
         let pending: Vec<&SharedResourceManifest> = mutations
             .iter()
             .flat_map(|mutation| &mutation.resource_refs)
@@ -1324,13 +1448,13 @@ impl NativeSyncProvisioner {
         while let Some(first) = window.next() {
             if let Some(second) = window.next() {
                 let (first, second) = tokio::join!(
-                    self.upload_one_resource(peer, endpoint, resources, first),
-                    self.upload_one_resource(peer, endpoint, resources, second),
+                    self.upload_one_resource(peer, endpoint, &library, first),
+                    self.upload_one_resource(peer, endpoint, &library, second),
                 );
                 first?;
                 second?;
             } else {
-                self.upload_one_resource(peer, endpoint, resources, first)
+                self.upload_one_resource(peer, endpoint, &library, first)
                     .await?;
             }
         }
@@ -1341,7 +1465,7 @@ impl NativeSyncProvisioner {
         &self,
         peer: &ProvisionedPeer,
         endpoint: &Url,
-        resources: &Arc<FileResourceStore>,
+        library: &LibraryRoot,
         resource: &SharedResourceManifest,
     ) -> Result<(), SyncRuntimeError> {
         let content_hash = resource.digest.to_hex();
@@ -1349,29 +1473,30 @@ impl NativeSyncProvisioner {
             binding: peer.binding,
             resource: ResourceRefDto::from(resource),
         };
-        // `verify_complete` re-reads the whole blob to prove its digest: tens of
-        // milliseconds of hashing for a lossless track, and it used to run
-        // inline on the runtime thread. It runs only on resources this session
-        // has not already uploaded, and a missing or unreadable local blob
-        // skips that one resource instead of failing the cycle, so the rest of
-        // the queue can still drain and the stuck mutation stays visible as a
-        // no-progress predecessor.
-        let verified = {
-            let store = Arc::clone(resources);
-            let binding = peer.binding;
-            let resource = request.resource.clone();
-            tokio::task::spawn_blocking(move || store.verify_complete(binding, &resource))
-                .await
-                .map_err(|_| SyncRuntimeError::WorkerFailed)?
-        };
-        if verified.is_err() {
+        let sources = local_resource_candidates(self.database.as_ref(), library, resource)?;
+        if sources.is_empty() {
             tracing::warn!(
                 target: "echo_desktop::sync",
                 content_hash = %content_hash,
-                "local resource is not complete; upload deferred"
+                "local resource is unavailable; upload deferred"
             );
             return Ok(());
         }
+        let expected_hash = content_hash.clone();
+        let expected_length = resource.length;
+        let source = tokio::task::spawn_blocking(move || {
+            verified_local_resource(sources, &expected_hash, expected_length)
+        })
+        .await
+        .map_err(|_| SyncRuntimeError::WorkerFailed)??;
+        let Some(mut source) = source else {
+            tracing::warn!(
+                target: "echo_desktop::sync",
+                content_hash = %content_hash,
+                "local resource changed since indexing; upload deferred"
+            );
+            return Ok(());
+        };
         let mut progress = peer
             .client
             .prepare_resource(endpoint, &request)
@@ -1391,12 +1516,17 @@ impl NativeSyncProvisioner {
             let length =
                 usize::try_from((resource.length - offset).min(MAX_RESOURCE_CHUNK_BYTES as u64))
                     .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-            let chunk = resources
-                .download(peer.binding, &content_hash, offset, length)
+            let bytes = source
+                .seek(SeekFrom::Start(offset))
+                .and_then(|_| {
+                    let mut bytes = vec![0; length];
+                    source.read_exact(&mut bytes)?;
+                    Ok(bytes)
+                })
                 .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
             progress = peer
                 .client
-                .upload_resource_chunk(endpoint, peer.binding, &progress, index, chunk.bytes)
+                .upload_resource_chunk(endpoint, peer.binding, &progress, index, bytes)
                 .await
                 .map_err(map_sync_client_error)?;
         }
@@ -1432,6 +1562,89 @@ async fn stage_remote_resource(
         .await
         .map_err(map_sync_client_error)?;
     Ok(())
+}
+
+fn local_resource_candidates(
+    database: &SqliteDatabase,
+    library: &LibraryRoot,
+    resource: &SharedResourceManifest,
+) -> Result<Vec<File>, SyncRuntimeError> {
+    let catalog_path = if resource.kind == SharedResourceKind::Audio {
+        database
+            .local_library_audio_path_for_resource(
+                library.id(),
+                &resource.digest.to_hex(),
+                resource.length,
+            )
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+    } else {
+        None
+    };
+    let published_path = database
+        .local_library_resource_path_for_manifest(library.id(), resource)
+        .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+    let paths = catalog_path
+        .iter()
+        .chain(published_path.iter())
+        .map(String::as_str)
+        .chain(std::iter::once(resource.relative_path.as_str()));
+    let mut files = Vec::new();
+    for relative_path in paths {
+        let Some(path) = authorized_source(library.absolute_path(), relative_path)? else {
+            continue;
+        };
+        match File::open(path) {
+            Ok(file) => {
+                let metadata = file
+                    .metadata()
+                    .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+                if metadata.is_file() && metadata.len() == resource.length {
+                    files.push(file);
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(SyncRuntimeError::LibraryUnavailable),
+        }
+    }
+    Ok(files)
+}
+
+fn verified_local_resource(
+    mut candidates: Vec<File>,
+    expected_hash: &str,
+    expected_length: u64,
+) -> Result<Option<File>, SyncRuntimeError> {
+    for mut file in candidates.drain(..) {
+        if verify_local_resource(&mut file, expected_hash, expected_length)? {
+            return Ok(Some(file));
+        }
+    }
+    Ok(None)
+}
+
+fn verify_local_resource(
+    file: &mut File,
+    expected_hash: &str,
+    expected_length: u64,
+) -> Result<bool, SyncRuntimeError> {
+    let mut hasher = blake3::Hasher::new();
+    let mut buffer = vec![0; MAX_RESOURCE_CHUNK_BYTES];
+    let mut total = 0_u64;
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        if read == 0 {
+            break;
+        }
+        total = total
+            .checked_add(read as u64)
+            .ok_or(SyncRuntimeError::LibraryUnavailable)?;
+        hasher.update(&buffer[..read]);
+    }
+    file.seek(SeekFrom::Start(0))
+        .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+    Ok(total == expected_length && hasher.finalize().to_hex().as_str() == expected_hash)
 }
 
 async fn wait_for_sync_cancel(cancelled: Arc<AtomicBool>) {

@@ -526,6 +526,17 @@ impl CoverRepository for MemoryCoverRepository {
             )
             .collect())
     }
+
+    fn all_referenced_asset_keys(&self) -> Result<Vec<String>, Error> {
+        Ok(self
+            .covers
+            .lock()
+            .unwrap()
+            .values()
+            .map(|cover| cover.asset_key.clone())
+            .chain(self.artist_covers.lock().unwrap().values().cloned())
+            .collect())
+    }
 }
 
 /// In-memory scan-run progress/issue store (task 4.10).

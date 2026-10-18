@@ -18,6 +18,7 @@ path = "src/main.rs"
 echo-desktop = { path = "../../../crates/echo-desktop" }
 echo-core = { path = "../../../crates/echo-core" }
 echo-sync = { path = "../../../crates/echo-sync", features = ["client", "server", "discovery"] }
+blake3.workspace = true
 reqwest.workspace = true
 tokio = { workspace = true }
 rustls = { workspace = true }
@@ -41,7 +42,6 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["N
 block2 = "0.6.1"
 
 [dev-dependencies]
-blake3.workspace = true
 # The watch tests serve a minimal host that answers commit pages immediately,
 # exactly like an older Echo without the bounded long-poll.
 axum = { workspace = true }

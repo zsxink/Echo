@@ -482,6 +482,22 @@ pub(crate) fn referenced_asset_keys(
     Ok(keys)
 }
 
+/// Every cover key retained by any library; the cache directory is shared by
+/// the whole application, so its GC keep-set must not be root-local.
+pub(crate) fn all_referenced_asset_keys(connection: &Connection) -> Result<Vec<String>, Error> {
+    let mut statement = connection
+        .prepare(
+            "SELECT ca.asset_key FROM songs s JOIN cover_assets ca ON ca.content_hash = s.cover_hash UNION SELECT cover_asset_key FROM playlists WHERE cover_asset_key IS NOT NULL UNION SELECT cover_asset_key FROM artist_covers",
+        )
+        .map_err(storage)?;
+    let keys = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(storage)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(storage)?;
+    Ok(keys)
+}
+
 /// Open a `scan_runs` row for `(root, generation)`.
 pub(crate) fn begin_scan_run(
     connection: &Connection,
