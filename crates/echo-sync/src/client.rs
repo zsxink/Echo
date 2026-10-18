@@ -75,6 +75,10 @@ impl LanClient {
     /// Exchange a local six-digit pairing code before the first certificate
     /// pin exists. The returned certificate is pinned for all later traffic.
     /// This bootstrap is deliberately limited to the one pairing request.
+    ///
+    /// # Errors
+    /// Rejects a non-TLS endpoint or malformed code, an unreachable host, a
+    /// host-side rejection, and a malformed or unpinnable response.
     pub async fn pair_with_code(
         endpoint: &Url,
         code: &str,

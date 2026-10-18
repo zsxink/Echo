@@ -18,6 +18,7 @@ use echo_core::application::ports::{
 use echo_core::application::sync::ConfirmHostMutation;
 use echo_core::domain::sync::{DeviceId, MutationCandidate, SyncBinding};
 use hyper_util::rt::TokioIo;
+use hyper_util::rt::TokioTimer;
 use hyper_util::service::TowerToHyperService;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use serde::{Deserialize, Serialize};
@@ -55,6 +56,11 @@ pub struct HostApiState {
     pairing_window: Arc<Mutex<(Instant, u16)>>,
     pairing_approvals: Arc<Mutex<()>>,
     request_windows: Arc<Mutex<HashMap<DeviceId, (Instant, u16)>>>,
+    /// Resource chunks are sized in bytes, not requests, so they are budgeted
+    /// apart from the control traffic. Sharing one window meant a bulk upload
+    /// could spend the whole allowance and answer the peer's long-poll with
+    /// 429 for the rest of the minute.
+    resource_windows: Arc<Mutex<HashMap<DeviceId, (Instant, u16)>>>,
     ledger: Arc<dyn HostCommitLedgerPort>,
     checkpoint: Arc<dyn PublicationCheckpointPort>,
     authorization: Option<Arc<dyn HostPeerAuthorizationPort>>,
@@ -107,6 +113,7 @@ impl HostApiState {
             pairing_window: Arc::new(Mutex::new((Instant::now(), 0))),
             pairing_approvals: Arc::new(Mutex::new(())),
             request_windows: Arc::new(Mutex::new(HashMap::new())),
+            resource_windows: Arc::new(Mutex::new(HashMap::new())),
             ledger,
             checkpoint,
             authorization: None,
@@ -154,12 +161,16 @@ impl HostApiState {
 
     /// Validate the short code, provision the peer immediately, and return the
     /// certificate pin and bearer together for the joining device to persist.
+    ///
+    /// # Errors
+    /// Rejects unavailable pairing, an expired or already-claimed code, the peer
+    /// credential capacity limit, and any provisioning failure.
     pub fn pair_with_code(
         &self,
-        request: PairingCodeRequest,
+        request: &PairingCodeRequest,
     ) -> Result<PairingBootstrapResponse, PairingError> {
         let (registry, port) = self.pairing.as_ref().ok_or(PairingError::Unavailable)?;
-        let (receipt, invitation) = registry.request_with_code(&request)?;
+        let (receipt, invitation) = registry.request_with_code(request)?;
         self.approve_pairing_request(&receipt.request_id)?;
         let grant = registry.claim(
             &PairingClaimDto {
@@ -236,6 +247,7 @@ impl HostApiState {
             if !device_already_active && credentials.len() >= 32 {
                 return Err(PairingError::Capacity);
             }
+            drop(credentials);
             device_already_active
         };
         let result = registry.approve(request_id, port.as_ref(), |grant| {
@@ -404,6 +416,21 @@ pub fn tls13_server_config(
     Ok(config)
 }
 
+/// Upper bound on one TCP connection's whole lifetime.
+///
+/// This is a guard against leaked half-open sockets, **not** a request
+/// deadline. HTTP/1.1 keep-alive lets a healthy replica reuse a single
+/// connection across many sync rounds (watch, pull, ack, chunk transfer), so a
+/// short value here disconnects an idle-but-healthy peer and surfaces to it as
+/// a transport failure. Every individual request is bounded by its handler
+/// (a watch is at most 30s, a resource chunk is at most 4 MiB), and slow or
+/// silent peers are bounded by [`HEADER_READ_TIMEOUT`] instead.
+const CONNECTION_LIFETIME: Duration = Duration::from_secs(3_300);
+
+/// Reap peers that complete the TLS handshake and then stop sending request
+/// bytes. This, not the connection lifetime, is the slowloris bound.
+const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(15);
+
 /// Serve the router over TLS 1.3. At most 64 TLS connections can be active;
 /// excess sockets are dropped before a handshake allocates connection state.
 ///
@@ -433,8 +460,10 @@ pub async fn serve_tls(
             };
             let service = TowerToHyperService::new(router);
             let connection = hyper::server::conn::http1::Builder::new()
+                .header_read_timeout(HEADER_READ_TIMEOUT)
+                .timer(TokioTimer::new())
                 .serve_connection(TokioIo::new(stream), service);
-            let _ = tokio::time::timeout(Duration::from_secs(300), connection).await;
+            let _ = tokio::time::timeout(CONNECTION_LIFETIME, connection).await;
         });
     }
 }
@@ -470,7 +499,7 @@ async fn request_pairing(
     if state.pairing.is_none() {
         return api_error(StatusCode::NOT_FOUND, "pairing_unavailable");
     }
-    let result = tokio::task::spawn_blocking(move || state.pair_with_code(request)).await;
+    let result = tokio::task::spawn_blocking(move || state.pair_with_code(&request)).await;
     match result {
         Ok(Ok(pairing)) => (
             StatusCode::OK,
@@ -659,8 +688,10 @@ async fn pull_commits(
 }
 
 /// Read one bounded commit page after the peer's checkpoint. The page build
-/// runs on the blocking pool because the ledger port blocks on the writer
-/// actor. Errors map to the same host responses as the handler's first read.
+/// runs on the blocking pool: the ledger port takes a pooled read connection,
+/// which may queue behind a UI query, and a held long-poll rechecks this every
+/// [`COMMIT_RECHECK_INTERVAL`] on the async runtime. Errors map to the same
+/// host responses as the handler's first read.
 async fn read_commit_page(
     state: &HostApiState,
     after: u64,
@@ -936,17 +967,46 @@ fn authenticated_device(headers: &HeaderMap, peers: &[(DeviceId, [u8; 32])]) -> 
     })
 }
 
+/// Per-device request budgets, one window each for the two traffic classes.
+///
+/// Control traffic is timing-sensitive: a peer holds a long-poll and re-issues
+/// it every budget (~25 s), so a minute of `429` there reads as an outage and
+/// stops change discovery entirely. Resource traffic is throughput-bound: one
+/// chunk carries `MAX_RESOURCE_CHUNK_BYTES`, so a request-counted allowance is
+/// really a bandwidth cap and belongs in its own window.
+const CONTROL_REQUESTS_PER_WINDOW: u16 = 120;
+/// `900 * 4 MiB / 60 s` ≈ 60 MiB/s, above what the Wi-Fi links this feature
+/// targets sustain, so the transport — not the limiter — is the constraint.
+const RESOURCE_REQUESTS_PER_WINDOW: u16 = 900;
+const REQUEST_WINDOW: Duration = Duration::from_secs(60);
+
 fn allow_request(state: &HostApiState, device: DeviceId) -> bool {
+    allow_request_in(&state.request_windows, device, CONTROL_REQUESTS_PER_WINDOW)
+}
+
+fn allow_resource_request(state: &HostApiState, device: DeviceId) -> bool {
+    allow_request_in(
+        &state.resource_windows,
+        device,
+        RESOURCE_REQUESTS_PER_WINDOW,
+    )
+}
+
+fn allow_request_in(
+    windows: &Mutex<HashMap<DeviceId, (Instant, u16)>>,
+    device: DeviceId,
+    budget: u16,
+) -> bool {
     let now = Instant::now();
-    let Ok(mut windows) = state.request_windows.lock() else {
+    let Ok(mut windows) = windows.lock() else {
         return false;
     };
     let (started, count) = windows.entry(device).or_insert((now, 0));
-    if now.duration_since(*started) >= Duration::from_secs(60) {
+    if now.duration_since(*started) >= REQUEST_WINDOW {
         *started = now;
         *count = 0;
     }
-    if *count >= 120 {
+    if *count >= budget {
         return false;
     }
     *count += 1;

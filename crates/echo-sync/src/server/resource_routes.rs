@@ -19,7 +19,7 @@ async fn resource_access(
             "unauthorized",
         )));
     }
-    if !allow_request(state, device) {
+    if !allow_resource_request(state, device) {
         return Err(Box::new(api_error(
             StatusCode::TOO_MANY_REQUESTS,
             "rate_limited",

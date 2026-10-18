@@ -237,9 +237,7 @@ impl FileResourceStore {
                     self.import_reader(owner, request, &mut source)?;
                     return Ok(true);
                 }
-                Err(TransferError::Unknown | TransferError::Invalid | TransferError::Conflict) => {
-                    continue;
-                }
+                Err(TransferError::Unknown | TransferError::Invalid | TransferError::Conflict) => {}
                 Err(error) => return Err(error),
             }
         }

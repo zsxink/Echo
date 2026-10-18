@@ -312,6 +312,10 @@ impl PairingRegistry {
 
     /// Resolve a short code to the host's temporary TLS pin, then create the
     /// same one-use receipt used by the existing credential lifecycle.
+    ///
+    /// # Errors
+    /// Rejects a malformed or expired code, a code already claimed by another
+    /// request, and registry or provisioning failures.
     pub fn request_with_code(
         &self,
         dto: &PairingCodeRequest,

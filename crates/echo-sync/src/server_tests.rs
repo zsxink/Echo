@@ -99,6 +99,7 @@ impl HostPeerAuthorizationPort for Authorization {
 
 struct Fixture {
     state: HostApiState,
+    device: DeviceId,
     ledger: Arc<Ledger>,
     checkpoint: Arc<Checkpoint>,
     authorization: Arc<Authorization>,
@@ -141,6 +142,7 @@ impl Fixture {
         };
         Self {
             state,
+            device,
             ledger,
             checkpoint,
             authorization,
@@ -226,6 +228,30 @@ async fn commit_page_body(response: Response) -> CommitPageDto {
         .await
         .unwrap();
     serde_json::from_slice(&bytes).unwrap()
+}
+
+#[test]
+fn resource_chunks_do_not_spend_the_control_budget() {
+    let fixture = Fixture::new();
+    // A bulk upload is sized in chunks, not in requests: one chunk is 4 MiB, so
+    // spending the long-poll's allowance on transfers stops change discovery
+    // for the rest of the window. The two classes must not share a counter.
+    for _ in 0..CONTROL_REQUESTS_PER_WINDOW {
+        assert!(allow_request(&fixture.state, fixture.device));
+    }
+    assert!(!allow_request(&fixture.state, fixture.device));
+    assert!(
+        allow_resource_request(&fixture.state, fixture.device),
+        "a saturated control window must not throttle resource chunks"
+    );
+    for _ in 1..RESOURCE_REQUESTS_PER_WINDOW {
+        assert!(allow_resource_request(&fixture.state, fixture.device));
+    }
+    assert!(!allow_resource_request(&fixture.state, fixture.device));
+    assert!(
+        !allow_request(&fixture.state, fixture.device),
+        "resource pressure must not reopen the control window"
+    );
 }
 
 #[tokio::test]
