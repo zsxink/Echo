@@ -180,9 +180,26 @@ fn map_sync_client_error(error: ClientError) -> SyncRuntimeError {
             tracing::warn!(target: "echo_desktop::sync", %code, "sync resource content does not match the host declaration");
             SyncRuntimeError::SyncResourceMismatch
         }
+        ClientError::HostRejectedCode(_, code)
+            if matches!(
+                code.as_str(),
+                "resource_not_complete" | "invalid_resource_reference" | "resource_version_mismatch"
+            ) =>
+        {
+            tracing::warn!(target: "echo_desktop::sync", %code, "sync host could not verify the referenced media resource");
+            SyncRuntimeError::SyncResourceMismatch
+        }
         ClientError::HostRejectedCode(_, code) if code == "mutation_rejected" => {
             tracing::warn!(target: "echo_desktop::sync", %code, "sync host rejected the submitted mutation");
             SyncRuntimeError::SyncMutationRejected
+        }
+        ClientError::HostRejectedCode(_, code) if code == "rate_limited" => {
+            tracing::warn!(target: "echo_desktop::sync", %code, "sync host rate limited this device");
+            SyncRuntimeError::SyncRateLimited
+        }
+        ClientError::HostRejectedCode(_, code) if code == "commit_anchor_or_log_mismatch" => {
+            tracing::warn!(target: "echo_desktop::sync", %code, "peer and host sync checkpoints do not match");
+            SyncRuntimeError::SyncCheckpointMismatch
         }
         ClientError::HostRejected(_) => SyncRuntimeError::SyncHostRejected,
         ClientError::HostRejectedCode(_, code) => {

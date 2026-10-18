@@ -107,6 +107,8 @@ pub enum SyncRuntimeError {
     SyncBindingMismatch,
     SyncResourceMismatch,
     SyncMutationRejected,
+    SyncRateLimited,
+    SyncCheckpointMismatch,
     SyncProtocolFailed,
     WorkerFailed,
 }
@@ -138,6 +140,8 @@ impl SyncRuntimeError {
             Self::SyncBindingMismatch => "sync.bindingMismatch",
             Self::SyncResourceMismatch => "sync.resourceMismatch",
             Self::SyncMutationRejected => "sync.mutationRejected",
+            Self::SyncRateLimited => "sync.rateLimited",
+            Self::SyncCheckpointMismatch => "sync.checkpointMismatch",
             Self::SyncProtocolFailed => "sync.protocolFailed",
             Self::WorkerFailed => "sync.workerFailed",
         }

@@ -656,6 +656,8 @@ function syncErrorText(key: string): string {
     "sync.bindingMismatch": "两端当前同步的资料库或同步纪元不一致，请确认已加入同一主机资料库。",
     "sync.resourceMismatch": "歌曲文件内容与同步记录不一致。请先在附属机重新扫描该歌曲，再重试同步；如果仍失败，请重新配对并检查主机存储状态。",
     "sync.mutationRejected": "主机未接受这条歌曲变更，可能是本机同步历史与主机不一致。请更新两端 Echo 后重试。",
+    "sync.rateLimited": "主机暂时限制了本机同步请求，请稍后重试。",
+    "sync.checkpointMismatch": "Mac 与 Windows 主机记录的同步进度不一致。请确认两端 Echo 版本一致；若持续出现，请提供两端同步日志。",
     "sync.protocolFailed": "同步主机返回了不兼容或无效数据，请确认两端 Echo 版本一致。",
     "sync.workerFailed": "同步服务遇到错误。",
     "sync.pairingPending": "配对正在处理中，请稍后重试。",
