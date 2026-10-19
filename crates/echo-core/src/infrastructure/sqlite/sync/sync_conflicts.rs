@@ -4,8 +4,8 @@ use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
-use super::support::{now_ms, storage};
-use super::SqliteDatabase;
+use super::super::support::{now_ms, storage};
+use super::super::SqliteDatabase;
 use crate::application::ports::{
     HostSyncConflictPort, SyncConflictRecovery, SyncConflictResolution, SyncConflictView,
 };
@@ -159,7 +159,7 @@ impl HostSyncConflictPort for SqliteDatabase {
                 }
                 let replaced: Value = serde_json::from_str(&replaced).map_err(storage)?;
                 let mut payload = if kind == "playlist" {
-                    super::statements::playlist_full_snapshot_payload(&tx, PlaylistId::from_uuid(Uuid::parse_str(&object).map_err(storage)?))?
+                    super::super::statements::playlist_full_snapshot_payload(&tx, PlaylistId::from_uuid(Uuid::parse_str(&object).map_err(storage)?))?
                 } else {
                     let json: Option<String> = tx.query_row("SELECT payload_json FROM sync_object_versions WHERE object_type='override' AND object_uuid=?1 AND is_tombstone=0", [&object], |row| row.get(0)).optional().map_err(storage)?.flatten();
                     let Some(json) = json else { return Ok(SyncConflictResolution::Unavailable); };
@@ -172,15 +172,15 @@ impl HostSyncConflictPort for SqliteDatabase {
                     payload[name] = value.clone();
                 }
                 if kind == "override" {
-                    let revision = super::sync::current_outbox_revision(&tx, &kind, &object)?.checked_add(1).ok_or_else(|| Error::conflict("local revision exhausted"))?;
+                    let revision = super::enqueue::current_outbox_revision(&tx, &kind, &object)?.checked_add(1).ok_or_else(|| Error::conflict("local revision exhausted"))?;
                     let device: String = tx.query_row("SELECT value FROM device_state WHERE key='device_id'", [], |row| row.get(0)).map_err(storage)?;
-                    let clock = super::statements::advance_object_hlc(&tx, &kind, &object, u64::try_from(now_ms().max(0)).map_err(storage)? / 1000)?;
+                    let clock = super::super::statements::advance_object_hlc(&tx, &kind, &object, u64::try_from(now_ms().max(0)).map_err(storage)? / 1000)?;
                     payload["revision"] = serde_json::json!(revision);
                     payload["updated_by_device_id"] = Value::String(device);
                     payload["hlc"] = serde_json::to_value(clock).map_err(storage)?;
                 }
-                super::sync_projection::project_confirmed_song_state(&tx, &kind, &object, &payload, Some(&root.to_string()))?;
-                super::statements::enqueue_object_snapshot(&tx, &kind, &object, &payload, super::sync::OP_UPSERT)?;
+                super::projection::project_confirmed_song_state(&tx, &kind, &object, &payload, Some(&root.to_string()))?;
+                super::super::statements::enqueue_object_snapshot(&tx, &kind, &object, &payload, super::enqueue::OP_UPSERT)?;
             }
             tx.execute("UPDATE sync_conflicts SET resolved_at=?2 WHERE conflict_id=?1 AND resolved_at IS NULL", params![conflict.to_string(), now_ms()]).map_err(storage)?;
             tx.commit().map_err(storage)?;
@@ -190,5 +190,5 @@ impl HostSyncConflictPort for SqliteDatabase {
 }
 
 #[cfg(test)]
-#[path = "tests/sync_conflicts.rs"]
+#[path = "../tests/sync_conflicts.rs"]
 mod tests;

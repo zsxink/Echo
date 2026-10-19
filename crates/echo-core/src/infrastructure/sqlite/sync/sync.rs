@@ -37,7 +37,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use crate::domain::ids::{PlaylistId, SongId};
 use crate::error::Error;
 
-use super::support::{now_ms, storage};
+use super::super::support::{now_ms, storage};
 
 /// Outbox object kinds (二期 payload routing keys).
 pub(crate) const KIND_SONG: &str = "song";
@@ -88,7 +88,7 @@ pub(crate) fn enqueue_sync_with_id(
     operation: &str,
     stable_mutation_id: Option<&str>,
 ) -> Result<i64, Error> {
-    let local_root = super::sync_context::object_root(connection, kind, object_uuid, payload_json)?;
+    let local_root = super::context::object_root(connection, kind, object_uuid, payload_json)?;
     enqueue_sync_in_root(
         connection,
         &local_root,
@@ -114,7 +114,7 @@ pub(super) fn enqueue_sync_in_root(
     let resources = if operation == "delete" || kind == "tombstone" {
         Vec::new()
     } else {
-        super::sync_manifests::load(connection, kind, object_uuid)?
+        super::manifests::load(connection, kind, object_uuid)?
     };
     enqueue_sync_in_root_with_resources(
         connection,
@@ -141,7 +141,7 @@ pub(super) fn enqueue_sync_in_root_with_resources(
     stable_mutation_id: Option<&str>,
     resource_refs: &[crate::domain::sync::SharedResourceManifest],
 ) -> Result<i64, Error> {
-    super::sync_manifests::validate(resource_refs)?;
+    super::manifests::validate(resource_refs)?;
     connection
         .execute(
             "INSERT INTO sync_local_highwater (object_type, object_uuid, local_revision) VALUES (?1, ?2, 1) ON CONFLICT(object_type, object_uuid) DO UPDATE SET local_revision = local_revision + 1",

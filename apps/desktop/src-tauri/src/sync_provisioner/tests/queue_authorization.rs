@@ -54,14 +54,14 @@ async fn spawn_immediate_commit_host(
 async fn a_host_that_answers_before_the_budget_is_reported_as_unsupported() {
     let fixture = LanMergeFixture::new().await;
     let (endpoint, certificate_der, server) = spawn_immediate_commit_host().await;
+    let client = LanClient::new(
+        &certificate_der,
+        "temporary-loopback-test-token-123456789".into(),
+    )
+    .unwrap();
     let peer = ProvisionedPeer {
         binding: fixture.peer.binding,
         address: endpoint.to_string(),
-        client: LanClient::new(
-            &certificate_der,
-            "temporary-loopback-test-token-123456789".into(),
-        )
-        .unwrap(),
         host_device_id: DeviceId::new(),
     };
 
@@ -69,6 +69,7 @@ async fn a_host_that_answers_before_the_budget_is_reported_as_unsupported() {
     let outcome = tokio::time::timeout(
         Duration::from_secs(5),
         fixture.provisioner.watch_peer_commits(
+            &client,
             &peer,
             fixture.root,
             cancelled,

@@ -11,8 +11,8 @@ use crate::domain::sync::{
 };
 use crate::error::Error;
 
-use super::support::storage;
-use super::SqliteDatabase;
+use super::super::support::storage;
+use super::super::SqliteDatabase;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SyncConfiguration {

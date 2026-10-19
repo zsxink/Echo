@@ -394,19 +394,23 @@ fn wire_composition(
     // Constructing this boundary performs no discovery, listening or requests.
     // A previously saved host/peer role is restored below after the status
     // notifier is installed, so startup can report progress to the UI.
+    let native_sync_provisioner = Arc::new(sync_provisioner::NativeSyncProvisioner::new(
+        routed.database.clone(),
+        app_data.join("lan-resources"),
+        echo_core::application::remote_resources::RemoteResourcePublishDeps {
+            fs: routed.deps.fs.clone(),
+            hasher: routed.deps.hasher.clone(),
+            journal: routed.database.clone(),
+        },
+        routed.deps.clone(),
+        scan_supervisor,
+    ));
+    let provisioner: Arc<dyn sync_runtime::SyncProvisioner> = native_sync_provisioner.clone();
+    let cycle_port: Arc<dyn sync_runtime::SyncCyclePort> = native_sync_provisioner;
     let sync_runtime = Arc::new(sync_runtime::SyncRuntime::new(
         routed.database.clone(),
-        Some(Arc::new(sync_provisioner::NativeSyncProvisioner::new(
-            routed.database.clone(),
-            app_data.join("lan-resources"),
-            echo_core::application::remote_resources::RemoteResourcePublishDeps {
-                fs: routed.deps.fs.clone(),
-                hasher: routed.deps.hasher.clone(),
-                journal: routed.database.clone(),
-            },
-            routed.deps.clone(),
-            scan_supervisor,
-        ))),
+        Some(provisioner),
+        Some(cycle_port),
     ));
     let sync_app = app.handle().clone();
     sync_runtime.set_status_notifier(Arc::new(move |status| {

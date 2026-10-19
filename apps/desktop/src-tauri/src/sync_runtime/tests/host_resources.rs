@@ -285,7 +285,11 @@ mod cases {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = Url::parse(&format!("https://{}/", listener.local_addr().unwrap())).unwrap();
         let server = tokio::spawn(serve_tls(listener, host.tls, host_router(host.api)));
-        let runtime = SyncRuntime::new(database.clone(), Some(provisioner));
+        let runtime = SyncRuntime::new(
+            database.clone(),
+            Some(provisioner.clone()),
+            Some(provisioner),
+        );
         runtime.set_started(root, binding, SyncRole::Host, endpoint.to_string());
         let (notifier, notifications) = mpsc::channel();
         runtime.set_status_notifier(Arc::new(move |status| {

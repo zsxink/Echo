@@ -42,8 +42,6 @@ impl SyncProvisioner for MaintenanceProvisioner {
 
 impl SyncCyclePort for MaintenanceProvisioner {
     fn sync_now(&self, _: SyncRole) -> Result<bool, SyncRuntimeError> {
-        // Production Host performs this maintenance on every cycle, including
-        // an empty library. Previously its Ok(0) woke this same worker again.
         self.database
             .advance_rejected_local_mutations()
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
@@ -66,7 +64,6 @@ struct RunningSync(SyncRuntime);
 
 impl Drop for RunningSync {
     fn drop(&mut self) {
-        // Also join the worker if a regression assertion fails.
         let _ = self.0.stop();
     }
 }
@@ -92,6 +89,7 @@ fn idle_sync_blocks_after_maintenance_and_retains_edits_during_a_cycle() {
     let runtime = RunningSync(SyncRuntime::new(
         Arc::clone(&database),
         Some(provisioner.clone()),
+        Some(provisioner.clone()),
     ));
     {
         let mut inner = runtime.0.inner.lock().unwrap();
@@ -104,13 +102,11 @@ fn idle_sync_blocks_after_maintenance_and_retains_edits_during_a_cycle() {
     assert_eq!(
         completed.recv_timeout(Duration::from_millis(150)),
         Err(mpsc::RecvTimeoutError::Timeout),
-        "empty maintenance must not immediately schedule itself again"
     );
 
     provisioner.hold_next.store(true, Ordering::Release);
     PlaylistRepository::create(database.as_ref(), PlaylistId::new(), root, "First edit").unwrap();
     completed.recv_timeout(Duration::from_secs(2)).unwrap();
-    // The second cycle is still running when a concurrent edit commits.
     PlaylistRepository::create(
         database.as_ref(),
         PlaylistId::new(),
@@ -123,7 +119,6 @@ fn idle_sync_blocks_after_maintenance_and_retains_edits_during_a_cycle() {
     assert_eq!(
         completed.recv_timeout(Duration::from_millis(150)),
         Err(mpsc::RecvTimeoutError::Timeout),
-        "after processing the concurrent edit the scheduler must return to waiting"
     );
     runtime.0.stop().unwrap();
 }

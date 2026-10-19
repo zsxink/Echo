@@ -1,0 +1,4 @@
+schema: spec-driven
+
+# This change is a behavior-preserving internal refactor and intentionally adds no spec delta.
+skip_specs: true

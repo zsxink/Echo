@@ -11,7 +11,8 @@ use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath, SongId};
 use crate::domain::sync::{ObjectKey, ResourceDigest, SharedResourceKind, SharedResourceManifest};
 use crate::error::Error;
 
-use super::{support::storage, sync_manifests, SqliteDatabase};
+use super::super::{support::storage, SqliteDatabase};
+use super::sync_manifests;
 
 fn validate_current(
     connection: &Connection,
@@ -242,7 +243,7 @@ impl SqliteDatabase {
                 rows
             };
             for (song,payload) in &rows {
-                super::sync_projection::repair_confirmed_song_tags(
+                super::projection::repair_confirmed_song_tags(
                     &tx, song, &serde_json::from_str(payload).map_err(storage)?, &root,
                 )?;
             }

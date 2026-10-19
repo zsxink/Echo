@@ -676,6 +676,7 @@ struct LanMergeFixture {
     host_song: echo_core::domain::ids::SongId,
     host_mutation: MutationId,
     provisioner: NativeSyncProvisioner,
+    client: LanClient,
     peer: ProvisionedPeer,
     endpoint: Url,
     resources: Arc<FileResourceStore>,
@@ -785,7 +786,6 @@ impl LanMergeFixture {
         let peer = ProvisionedPeer {
             binding,
             address: endpoint.to_string(),
-            client: LanClient::new(&certificate_der, token.into()).unwrap(),
             host_device_id: DeviceId::from_uuid(host.current_device_id().as_uuid()),
         };
         let registry = RootRegistry::new();
@@ -818,6 +818,7 @@ impl LanMergeFixture {
             host_song,
             host_mutation,
             provisioner,
+            client: LanClient::new(&certificate_der, token.into()).unwrap(),
             peer,
             endpoint,
             resources,

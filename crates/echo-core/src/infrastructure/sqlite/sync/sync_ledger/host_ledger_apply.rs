@@ -115,7 +115,7 @@ pub(super) fn prior_confirmation(
 /// Reject malformed event shapes before any identity work: shared resources are
 /// only meaningful for a live object, never for a typed deletion.
 pub(super) fn validate_candidate_payload(candidate: &MutationCandidate) -> Result<(), Error> {
-    super::super::sync_manifests::validate(&candidate.resource_refs)?;
+    super::super::manifests::validate(&candidate.resource_refs)?;
     if candidate.payload == serde_json::json!({"tombstone": true})
         && !candidate.resource_refs.is_empty()
     {
@@ -345,9 +345,9 @@ pub(super) fn persist_confirmed_object(
             )
             .map_err(storage)?;
     if is_tombstone {
-        super::super::sync_projection::project_confirmed_tombstone(tx, kind, &object_uuid)?;
+        super::super::projection::project_confirmed_tombstone(tx, kind, &object_uuid)?;
     } else {
-        super::super::sync_projection::project_confirmed_song_state(
+        super::super::projection::project_confirmed_song_state(
             tx,
             kind,
             &object_uuid,
@@ -389,7 +389,7 @@ pub(super) fn encode_commit(
             resource_refs: candidate
                 .resource_refs
                 .iter()
-                .map(super::super::sync_manifests::WireResource::from)
+                .map(super::super::manifests::WireResource::from)
                 .collect(),
         },
         aliases: aliases
@@ -406,7 +406,7 @@ pub(super) fn encode_commit(
         resource_refs: candidate
             .resource_refs
             .iter()
-            .map(super::super::sync_manifests::WireResource::from)
+            .map(super::super::manifests::WireResource::from)
             .collect(),
     };
     let body = serde_json::to_vec(&commit_body).map_err(storage)?;
@@ -646,7 +646,7 @@ struct WireMutationBody {
     base_object_version: Option<ObjectVersion>,
     payload: serde_json::Value,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    resource_refs: Vec<super::super::sync_manifests::WireResource>,
+    resource_refs: Vec<super::super::manifests::WireResource>,
 }
 
 #[derive(Serialize)]
@@ -657,5 +657,5 @@ struct WireCommitBody {
     previous_digest: [u8; 32],
     mutation: WireMutationBody,
     aliases: Vec<serde_json::Value>,
-    resource_refs: Vec<super::super::sync_manifests::WireResource>,
+    resource_refs: Vec<super::super::manifests::WireResource>,
 }

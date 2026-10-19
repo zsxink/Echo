@@ -17,10 +17,12 @@ use crate::domain::sync::{
 };
 use crate::error::Error;
 
-use super::support::{now_ms, storage};
-use super::SqliteDatabase;
+use super::super::support::{now_ms, storage};
+use super::super::SqliteDatabase;
 
+#[path = "sync_ledger/host_ledger.rs"]
 mod host_ledger;
+#[path = "sync_ledger/host_ledger_apply.rs"]
 mod host_ledger_apply;
 
 impl SqliteDatabase {
@@ -34,7 +36,7 @@ impl SqliteDatabase {
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(storage)?;
             let root = local_root.to_string();
-            super::sync_context::select(&tx, &root)?;
+            super::context::select(&tx, &root)?;
             for table in [
                 "sync_snapshot_pages",
                 "sync_snapshot_resource_refs",
@@ -141,7 +143,7 @@ impl SqliteDatabase {
         self.writer.run(move |connection| {
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
             let local_root_uuid = local_root.to_string();
-            super::sync_context::select(&tx, &local_root_uuid)?;
+            super::context::select(&tx, &local_root_uuid)?;
             let root_exists: bool = tx.query_row(
                 "SELECT EXISTS(SELECT 1 FROM library_roots WHERE uuid=?1)",
                 params![local_root_uuid],
@@ -217,7 +219,7 @@ impl SqliteDatabase {
         self.writer.run(move |connection| {
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
             let root = local_root.to_string();
-            super::sync_context::select(&tx, &root)?;
+            super::context::select(&tx, &root)?;
             let exists: bool = tx.query_row(
                 "SELECT EXISTS(SELECT 1 FROM library_roots WHERE uuid=?1)",
                 params![root],

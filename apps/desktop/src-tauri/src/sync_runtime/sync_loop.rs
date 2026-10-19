@@ -8,8 +8,8 @@ use super::control::{jittered_retry_delay, wait_for_sync_wakeup};
 #[allow(clippy::too_many_lines)]
 impl SyncRuntime {
     pub(super) fn start_sync_loop(&self, role: SyncRole) -> Result<(), SyncRuntimeError> {
-        let provisioner = self
-            .provisioner
+        let cycle_port = self
+            .cycle_port
             .clone()
             .ok_or(SyncRuntimeError::Unconfigured)?;
         let mut inner = self
@@ -69,7 +69,7 @@ impl SyncRuntime {
                         // must let its backoff run instead of holding a dead
                         // connection.
                         if role == SyncRole::Peer && !retrying {
-                            match provisioner
+                            match cycle_port
                                 .watch_host_commits(Arc::clone(&worker_stop), PEER_WATCH_BUDGET)
                             {
                                 Ok(WatchOutcome::Unsupported) => {
@@ -208,7 +208,7 @@ impl SyncRuntime {
                             break;
                         }
                         run_observed_cycle(
-                            provisioner.as_ref(),
+                            cycle_port.as_ref(),
                             role,
                             Arc::clone(&worker_stop),
                             session_id,

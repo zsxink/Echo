@@ -116,12 +116,9 @@ impl SyncProvisioner for NativeSyncProvisioner {
             return Err(SyncRuntimeError::Unconfigured);
         }
         validate_peer_endpoint(&identity.endpoint)?;
-        let client = LanClient::new(&identity.host_certificate_der, identity.bearer_token)
-            .map_err(|_| SyncRuntimeError::Unconfigured)?;
         Ok(ProvisionedPeer {
             binding: identity.binding,
             address: identity.endpoint,
-            client,
             host_device_id: identity.host_device,
         })
     }
@@ -475,10 +472,26 @@ impl SyncCyclePort for NativeSyncProvisioner {
             return Ok(WatchOutcome::Unsupported);
         }
         let peer = self.peer(configuration.local_root)?;
+        let stored = OsSecureStore
+            .get(&peer_identity_handle(
+                configuration.binding,
+                configuration.local_root,
+            )?)
+            .map_err(|_| SyncRuntimeError::Unconfigured)?;
+        let identity: PeerIdentity =
+            serde_json::from_slice(stored.expose()).map_err(|_| SyncRuntimeError::Unconfigured)?;
         let executor = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
-        executor.block_on(self.watch_peer_commits(&peer, configuration.local_root, cancelled, wait))
+        let client = LanClient::new(&identity.host_certificate_der, identity.bearer_token)
+            .map_err(|_| SyncRuntimeError::Unconfigured)?;
+        executor.block_on(self.watch_peer_commits(
+            &client,
+            &peer,
+            configuration.local_root,
+            cancelled,
+            wait,
+        ))
     }
 }

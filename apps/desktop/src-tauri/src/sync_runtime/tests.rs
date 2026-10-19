@@ -16,7 +16,7 @@ mod host_resources;
 fn unconfigured_runtime_stays_offline_and_stop_is_idempotent() {
     let directory = tempfile::tempdir().unwrap();
     let database = Arc::new(SqliteDatabase::open(directory.path().join("echo.sqlite")).unwrap());
-    let runtime = SyncRuntime::new(database, None);
+    let runtime = SyncRuntime::new(database, None, None);
     assert_eq!(runtime.status().state, SyncState::Disabled);
     assert_eq!(
         runtime.host_start("192.168.1.2").unwrap_err(),

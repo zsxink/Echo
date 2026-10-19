@@ -7,34 +7,6 @@ struct ProgressProvisioner {
     release: Mutex<mpsc::Receiver<()>>,
 }
 
-impl SyncProvisioner for ProgressProvisioner {
-    fn host(&self, _: LibraryRootId) -> Result<ProvisionedHost, SyncRuntimeError> {
-        Err(SyncRuntimeError::Unconfigured)
-    }
-
-    fn peer(&self, _: LibraryRootId) -> Result<ProvisionedPeer, SyncRuntimeError> {
-        Err(SyncRuntimeError::Unconfigured)
-    }
-
-    fn revoke_device(&self, _: &str) -> Result<(), SyncRuntimeError> {
-        Ok(())
-    }
-
-    fn leave_sync(&self, _: LibraryRootId) -> Result<(), SyncRuntimeError> {
-        Ok(())
-    }
-
-    fn complete_peer_pairing(
-        &self,
-        _: LibraryRootId,
-        _: &PairingInvitation,
-        _: &str,
-        _: &PairingGrantDto,
-    ) -> Result<(), SyncRuntimeError> {
-        Err(SyncRuntimeError::Unconfigured)
-    }
-}
-
 impl SyncCyclePort for ProgressProvisioner {
     fn sync_now(&self, _: SyncRole) -> Result<bool, SyncRuntimeError> {
         Err(SyncRuntimeError::Unconfigured)
@@ -109,7 +81,7 @@ fn live_checkpoints_notify_before_cycle_completion_and_final_refresh() {
         started,
         release: Mutex::new(gate),
     });
-    let runtime = SyncRuntime::new(database, Some(provisioner));
+    let runtime = SyncRuntime::new(database, None, Some(provisioner));
     {
         let mut inner = runtime.inner.lock().unwrap();
         inner.status.enabled = true;
@@ -153,7 +125,7 @@ fn paused_cycle_rejects_late_checkpoint_after_resume_in_same_session() {
         started,
         release: Mutex::new(gate),
     });
-    let runtime = SyncRuntime::new(database, Some(provisioner));
+    let runtime = SyncRuntime::new(database, None, Some(provisioner));
     {
         let mut inner = runtime.inner.lock().unwrap();
         inner.status.enabled = true;
@@ -215,7 +187,7 @@ fn status_follows_local_root_and_clears_it_when_stopped() {
 
     let directory = tempfile::tempdir().unwrap();
     let database = Arc::new(SqliteDatabase::open(directory.path().join("echo.sqlite")).unwrap());
-    let runtime = SyncRuntime::new(database, None);
+    let runtime = SyncRuntime::new(database, None, None);
     let binding = SyncBinding {
         library_id: LibraryId::new(),
         authority_id: AuthorityId::new(),
@@ -271,7 +243,7 @@ fn manual_cycle_publishes_checkpoints_and_pause_cancels_its_observer() {
         started,
         release: Mutex::new(gate),
     });
-    let runtime = Arc::new(SyncRuntime::new(database, Some(provisioner)));
+    let runtime = Arc::new(SyncRuntime::new(database, None, Some(provisioner)));
     runtime.set_started(
         root,
         SyncBinding {

@@ -42,28 +42,28 @@
 
 ### 2.1 技术选型
 
-| 范围 | 选型 | 责任与理由 |
-|---|---|---|
-| 桌面应用壳 | Tauri 2 | 打包 macOS、Windows、Linux，并以 Rust 直接调用 Core。 |
-| 桌面 UI | React + TypeScript + Vite | 构建曲库表格、虚拟列表、搜索、播放状态和浮层等高交互界面。 |
-| 共享业务核心 | Rust workspace | 承担 SQLite 资料库、扫描、索引、同步和冲突裁决；不依赖 UI 或播放器。 |
-| 桌面播放 | mpv / libmpv | 由桌面适配层管理播放、队列和事件，不进入共享 Core。 |
-| 移动应用 | Flutter + media_kit | 后续实现 Android 与 iOS 的原生体验及后台播放。 |
-| Flutter 与 Rust 通信 | flutter_rust_bridge | 直接生成 Dart ↔ Rust 桥接；不把 Pigeon 作为 Rust Core 的主 Binding。 |
-| 原生 Kotlin / Swift Binding（如需要） | UniFFI | 仅在未来需要直接提供 Android 或 iOS 原生接口时生成。 |
+| 范围                                  | 选型                      | 责任与理由                                                           |
+| ------------------------------------- | ------------------------- | -------------------------------------------------------------------- |
+| 桌面应用壳                            | Tauri 2                   | 打包 macOS、Windows、Linux，并以 Rust 直接调用 Core。                |
+| 桌面 UI                               | React + TypeScript + Vite | 构建曲库表格、虚拟列表、搜索、播放状态和浮层等高交互界面。           |
+| 共享业务核心                          | Rust workspace            | 承担 SQLite 资料库、扫描、索引、同步和冲突裁决；不依赖 UI 或播放器。 |
+| 桌面播放                              | mpv / libmpv              | 由桌面适配层管理播放、队列和事件，不进入共享 Core。                  |
+| 移动应用                              | Flutter + media_kit       | 后续实现 Android 与 iOS 的原生体验及后台播放。                       |
+| Flutter 与 Rust 通信                  | flutter_rust_bridge       | 直接生成 Dart ↔ Rust 桥接；不把 Pigeon 作为 Rust Core 的主 Binding。 |
+| 原生 Kotlin / Swift Binding（如需要） | UniFFI                    | 仅在未来需要直接提供 Android 或 iOS 原生接口时生成。                 |
 
 ### 2.2 Rust Core 的依赖边界
 
-| 能力 | 推荐依赖 |
-|---|---|
-| 异步、局域网 HTTPS（仅二期） | `tokio`、`reqwest`、`rustls` |
-| 音乐标签与封面解析 | `lofty` |
-| 内容哈希 | `blake3` |
-| 数据模型与 JSON | `serde`、`serde_json` |
-| 本地资料库 | `rusqlite` + SQLite（启用 FTS5） |
-| UUID 与时间 | `uuid`、`time` |
-| 临时文件与原子写入 | `tempfile` |
-| 错误分层 | `thiserror`（库边界）、`anyhow`（应用边界） |
+| 能力                         | 推荐依赖                                    |
+| ---------------------------- | ------------------------------------------- |
+| 异步、局域网 HTTPS（仅二期） | `tokio`、`reqwest`、`rustls`                |
+| 音乐标签与封面解析           | `lofty`                                     |
+| 内容哈希                     | `blake3`                                    |
+| 数据模型与 JSON              | `serde`、`serde_json`                       |
+| 本地资料库                   | `rusqlite` + SQLite（启用 FTS5）            |
+| UUID 与时间                  | `uuid`、`time`                              |
+| 临时文件与原子写入           | `tempfile`                                  |
+| 错误分层                     | `thiserror`（库边界）、`anyhow`（应用边界） |
 
 Core 不引入 Tauri、mpv、Flutter、HTTP 或发现协议依赖。一期不装配同步网络客户端；二期桌面端由 `echo-sync` 提供 LAN HTTPS、发现与客户端/服务端适配，并经 Core 端口访问同步用例。S3/WebDAV 不属于二期范围。
 
@@ -74,13 +74,16 @@ apps/
   desktop/        # Tauri 2 + React + TypeScript UI
   mobile/         # Flutter（第三、四期）
 crates/
-  echo-core/      # 模型、SQLite 资料库、扫描、同步、冲突裁决
+  echo-core/      # 模型、用例端口、SQLite 资料库与同步持久化适配器
+  echo-sync/      # LAN 协议、发现/配对、客户端/服务端与资源传输
   echo-desktop/   # Tauri 命令、事件与 mpv 适配
 
 apps/desktop/
   src/             # React/TypeScript presentation and feature modules
   src-tauri/       # Tauri application shell, permissions, packaging and native assets
 ```
+
+`echo-sync` 承担局域网协议边界：LAN HTTPS、发现与配对、客户端/服务端、同步传输及资源传输；它通过 `echo-core` 定义的 application ports 访问用例，不拥有 Core 的 SQLite schema 或事务。`echo-core` 的 SQLite 同步适配器位于 `infrastructure/sqlite/sync/`，由 `SqliteDatabase`、writer actor 与事务协调器统一承载。桌面壳层负责装配 `echo-sync` adapter 与 Core ports，不把传输表示暴露给 React 或 Core domain。
 
 `apps/desktop/src-tauri` 属于桌面平台壳层：它负责 Tauri 装配、权限与原生资源，
 不得承载 Core 领域规则；这些规则仍由 `crates/echo-core` 提供。
@@ -140,15 +143,15 @@ apps/desktop/
 
 `echo.db` 的核心表如下：
 
-| 表 | 主要内容 |
-|---|---|
-| `library_roots` | 资料库逻辑 ID、本机绝对路径与扫描状态；同步时只使用逻辑 ID，绝不上传本机绝对路径。 |
-| `songs` | `uuid`、根目录 ID、相对路径、BLAKE3、音乐键、解析出的标签、封面/歌词引用、收藏和播放统计。 |
-| `song_overrides` | 用户编辑但未写回音频文件的标题、封面、歌词等覆盖值。 |
-| `playlists` / `playlist_songs` | 歌单与歌曲 UUID 引用；`playlist_songs` 按追加顺序保存。 |
-| `tombstones` | 已删除逻辑对象的版本化墓碑。 |
-| `sync_state` / `sync_outbox` | 本地同步游标及待确认的逻辑变更；凭据由平台安全存储管理。 |
-| `operation_journal` | 导入、写回和移动等跨文件系统与 SQLite 的可恢复操作步骤。 |
+| 表                             | 主要内容                                                                                   |
+| ------------------------------ | ------------------------------------------------------------------------------------------ |
+| `library_roots`                | 资料库逻辑 ID、本机绝对路径与扫描状态；同步时只使用逻辑 ID，绝不上传本机绝对路径。         |
+| `songs`                        | `uuid`、根目录 ID、相对路径、BLAKE3、音乐键、解析出的标签、封面/歌词引用、收藏和播放统计。 |
+| `song_overrides`               | 用户编辑但未写回音频文件的标题、封面、歌词等覆盖值。                                       |
+| `playlists` / `playlist_songs` | 歌单与歌曲 UUID 引用；`playlist_songs` 按追加顺序保存。                                    |
+| `tombstones`                   | 已删除逻辑对象的版本化墓碑。                                                               |
+| `sync_state` / `sync_outbox`   | 本地同步游标及待确认的逻辑变更；凭据由平台安全存储管理。                                   |
+| `operation_journal`            | 导入、写回和移动等跨文件系统与 SQLite 的可恢复操作步骤。                                   |
 
 `songs` 对 `(library_root_id, relative_path)` 建唯一索引，对 `blake3_hash`、艺人、专辑和添加时间建立查询索引；歌曲名、艺人、专辑等文本检索使用 SQLite FTS5。SQLite 内的关联记录在单个事务中提交；涉及文件系统的导入、写回和移动由 `operation_journal` 协调恢复，避免文件路径与 UUID 索引不一致。
 
@@ -278,12 +281,12 @@ Echo 只更新该 UUID 的 `relative_path`；所有歌单、收藏和播放队�
 
 ## 6. 排序模型（第 12 项决定）
 
-| 对象 | 排序方式 | 存储 / 同步 |
-|---|---|---|
-| 歌单列表（歌单之间） | 当前原型未定义手动排序 | 暂不实现排序交互 |
-| 歌单内歌曲 | 追加到队尾 | 稳定成员 UUID + 追加顺序键；删除保留成员墓碑 |
-| 所有歌曲视图 | 最近添加、歌曲名称、歌手、专辑、播放次数 | 本机偏好按视图保存 |
-| 歌手与专辑目录 | 各自按名称或歌曲数量升序/降序 | 本机偏好按目录分别保存，不同步 |
+| 对象                 | 排序方式                                 | 存储 / 同步                                  |
+| -------------------- | ---------------------------------------- | -------------------------------------------- |
+| 歌单列表（歌单之间） | 当前原型未定义手动排序                   | 暂不实现排序交互                             |
+| 歌单内歌曲           | 追加到队尾                               | 稳定成员 UUID + 追加顺序键；删除保留成员墓碑 |
+| 所有歌曲视图         | 最近添加、歌曲名称、歌手、专辑、播放次数 | 本机偏好按视图保存                           |
+| 歌手与专辑目录       | 各自按名称或歌曲数量升序/降序            | 本机偏好按目录分别保存，不同步               |
 
 歌单手动排序若后续立项，采用原子 UUID 数组 + 版本号；在当前原型范围内不作为功能实现。
 
@@ -292,12 +295,14 @@ Echo 只更新该 UUID 的 `relative_path`；所有歌单、收藏和播放队�
 ## 7. 构建路线图（用户 + AI 结对）
 
 **Phase 0 — 地基（1–2 周）**
+
 - 建立 Rust workspace，创建 `echo-core` 与 `echo-desktop` crate
 - SQLite schema、迁移与记录模型（songs/playlists/playlist_songs/song_overrides/tombstones/sync_outbox/operation_journal）
 - 资料库根目录扫描、文件监听、相对路径定位、blake3 哈希 + 标签解析（`lofty`：MP3/FLAC/MP4 封面、歌词）
 - 单元测试 ≥ 90% —— 这是 AI 可无限量产、且是后面所有层的信任锚
 
 **Phase 1 — 桌面端能听歌（3–4 周）**
+
 - Tauri 2 + React + TypeScript + Vite UI 骨架，Rust Core 进进程
 - mpv 绑定、资料库根目录选择与扫描、本地曲库浏览 + 搜索
 - 导入按钮：按默认 `media/歌手/歌手 - 歌曲名.扩展名` 格式复制新歌曲及其同名 `.lrc`
@@ -307,18 +312,21 @@ Echo 只更新该 UUID 的 `relative_path`；所有歌单、收藏和播放队�
 - 里程碑：Mac/Win/Linux 扫描或导入资料库、系统双击直接播放、搜索、排序、播放、建歌单 —— **不碰同步，且不实现全选批量逻辑**
 
 **Phase 2 — 同步引擎（4–6 周）**
+
 - 基于 `sync_outbox` 的 LAN JSON 增量、完整首次同步、墓碑与主确认序裁决
 - 扫描或导入时计算 blake3；使用 hash 对媒体文件 diff 与去重
 - 实现同步按钮及同步状态反馈；实现全选后的批量操作（具体操作另行定义）
 - 里程碑：主设备和至少一台桌面从设备，本地修改经主设备确认后在另一端可见
 
 **Phase 3 — Android（4 周起）**
+
 - Flutter + media_kit；使用 flutter_rust_bridge 调用 Rust Core
 - 如未来需要直接暴露 Kotlin / Swift API，再用 UniFFI 生成 Binding
 - Android：media_kit + 通知栏/锁屏/后台播放
 - 里程碑：Android 可连接既有资料库，完成同步、浏览和本地播放
 
 **Phase 4 — iOS（Android 验收后）**
+
 - Flutter + media_kit，复用同一 Rust Core 与同步协议
 - 适配 iOS 媒体权限、后台播放、锁屏控制与系统音频会话
 - 里程碑：iOS 与桌面、Android 可稳定共享同一资料库

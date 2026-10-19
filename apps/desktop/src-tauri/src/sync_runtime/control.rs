@@ -185,8 +185,8 @@ impl SyncRuntime {
             self.stop_inner()?;
             return Err(SyncRuntimeError::LibraryUnavailable);
         }
-        let provisioner = self
-            .provisioner
+        let cycle_port = self
+            .cycle_port
             .as_ref()
             .ok_or(SyncRuntimeError::Unconfigured)?;
         let cancelled = Arc::new(AtomicBool::new(false));
@@ -207,7 +207,7 @@ impl SyncRuntime {
         let cycle = Arc::clone(&self.cycle);
         let cycle_guard = cycle.lock().map_err(|_| SyncRuntimeError::WorkerFailed)?;
         let (result, progress) = run_observed_cycle(
-            provisioner.as_ref(),
+            cycle_port.as_ref(),
             status.role,
             Arc::clone(&cancelled),
             session_id,

@@ -61,6 +61,7 @@ async fn embedded_tag_edit_scenario(refuse_host: bool) {
     fixture
         .provisioner
         .merge_peer_library(
+            &fixture.client,
             &fixture.peer,
             &fixture.endpoint,
             &fixture.resources,
@@ -122,6 +123,7 @@ async fn embedded_tag_edit_scenario(refuse_host: bool) {
         fixture
             .provisioner
             .merge_peer_library(
+                &fixture.client,
                 &fixture.peer,
                 &fixture.endpoint,
                 &fixture.resources,
@@ -141,6 +143,7 @@ async fn embedded_tag_edit_scenario(refuse_host: bool) {
         fixture
             .provisioner
             .publish_remote_resources(
+                &fixture.client,
                 &fixture.peer,
                 &fixture.endpoint,
                 fixture.root,
@@ -160,6 +163,7 @@ async fn embedded_tag_edit_scenario(refuse_host: bool) {
     fixture
         .provisioner
         .publish_remote_resources(
+            &fixture.client,
             &fixture.peer,
             &fixture.endpoint,
             fixture.root,
@@ -192,6 +196,7 @@ async fn embedded_tag_edit_scenario(refuse_host: bool) {
             fixture
                 .provisioner
                 .merge_peer_library(
+                    &fixture.client,
                     &fixture.peer,
                     &fixture.endpoint,
                     &fixture.resources,
@@ -219,6 +224,7 @@ async fn embedded_tag_edit_scenario(refuse_host: bool) {
     fixture
         .provisioner
         .merge_peer_library(
+            &fixture.client,
             &fixture.peer,
             &fixture.endpoint,
             &fixture.resources,

@@ -99,6 +99,7 @@ mod cases {
         fixture
             .provisioner
             .merge_peer_library(
+                &fixture.client,
                 &fixture.peer,
                 &fixture.endpoint,
                 &fixture.resources,
@@ -280,6 +281,7 @@ mod cases {
         fixture
             .provisioner
             .merge_peer_library(
+                &fixture.client,
                 &fixture.peer,
                 &fixture.endpoint,
                 &fixture.resources,

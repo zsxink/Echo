@@ -4,8 +4,8 @@
 
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
-use super::support::storage;
-use super::SqliteDatabase;
+use super::super::support::storage;
+use super::super::SqliteDatabase;
 use crate::domain::ids::LibraryRootId;
 use crate::error::Error;
 
@@ -47,7 +47,7 @@ impl SqliteDatabase {
     }
 }
 
-pub(super) fn select(connection: &Connection, root: &str) -> Result<(), Error> {
+pub fn select(connection: &Connection, root: &str) -> Result<(), Error> {
     let exists: bool = connection
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM library_roots WHERE uuid=?1)",

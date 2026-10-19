@@ -13,8 +13,8 @@ use crate::domain::sync::{
 };
 use crate::error::{Error, Subject};
 
-use super::support::storage;
-use super::SqliteDatabase;
+use super::super::support::storage;
+use super::super::SqliteDatabase;
 
 const MAX_BATCH: usize = 512;
 
@@ -454,7 +454,7 @@ impl LocalSyncQueuePort for SqliteDatabase {
 }
 
 #[cfg(test)]
-#[path = "tests/sync_queue.rs"]
+#[path = "../tests/sync_queue.rs"]
 mod tests;
 
 /// One `sync_mutations` row in [`pending_local_mutations`] column order.

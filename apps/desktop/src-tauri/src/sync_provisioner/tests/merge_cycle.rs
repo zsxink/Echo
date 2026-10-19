@@ -53,6 +53,7 @@ async fn native_merge_pulls_host_before_uploading_and_preserves_local_song() {
     fixture
         .provisioner
         .merge_peer_library(
+            &fixture.client,
             &fixture.peer,
             &fixture.endpoint,
             &fixture.resources,
@@ -107,6 +108,7 @@ async fn native_merge_pulls_host_before_uploading_and_preserves_local_song() {
     fixture
         .provisioner
         .merge_peer_library(
+            &fixture.client,
             &fixture.peer,
             &fixture.endpoint,
             &fixture.resources,
@@ -132,6 +134,7 @@ async fn an_idle_cycle_reaches_the_host_exactly_once() {
     fixture
         .provisioner
         .merge_peer_library(
+            &fixture.client,
             &fixture.peer,
             &fixture.endpoint,
             &fixture.resources,
@@ -149,6 +152,7 @@ async fn an_idle_cycle_reaches_the_host_exactly_once() {
     fixture
         .provisioner
         .merge_peer_library(
+            &fixture.client,
             &fixture.peer,
             &fixture.endpoint,
             &fixture.resources,
@@ -200,7 +204,7 @@ async fn native_pull_drains_more_than_one_commit_page_without_losing_local_work(
     };
     fixture
         .provisioner
-        .pull_host_changes(&fixture.peer, &fixture.endpoint, &queue)
+        .pull_host_changes(&fixture.client, &fixture.peer, &fixture.endpoint, &queue)
         .await
         .unwrap();
     assert_eq!(
@@ -250,6 +254,7 @@ async fn native_merge_drains_more_than_512_local_additions() {
     fixture
         .provisioner
         .merge_peer_library(
+            &fixture.client,
             &fixture.peer,
             &fixture.endpoint,
             &fixture.resources,
@@ -307,7 +312,7 @@ async fn native_enrollment_persists_host_manifests_before_downloading_audio() {
     // must finish first so a later media transfer can resume from durable state.
     fixture
         .provisioner
-        .enroll_peer_snapshot(&fixture.peer, &fixture.endpoint)
+        .enroll_peer_snapshot(&fixture.client, &fixture.peer, &fixture.endpoint)
         .await
         .unwrap();
 
@@ -360,9 +365,12 @@ async fn native_incremental_applies_objects_before_audio_arrives() {
     };
     let pulled = tokio::time::timeout(
         Duration::from_secs(5),
-        fixture
-            .provisioner
-            .pull_host_changes(&fixture.peer, &fixture.endpoint, &queue),
+        fixture.provisioner.pull_host_changes(
+            &fixture.client,
+            &fixture.peer,
+            &fixture.endpoint,
+            &queue,
+        ),
     )
     .await
     .expect("object application must not wait for the media transfer");
@@ -459,7 +467,12 @@ async fn native_upload_prepares_a_resource_once_until_the_host_acks_it() {
 
     fixture
         .provisioner
-        .upload_pending_resources(&fixture.peer, &fixture.endpoint, fixture.root)
+        .upload_pending_resources(
+            &fixture.client,
+            &fixture.peer,
+            &fixture.endpoint,
+            fixture.root,
+        )
         .await
         .unwrap();
     assert_eq!(
@@ -471,7 +484,12 @@ async fn native_upload_prepares_a_resource_once_until_the_host_acks_it() {
     // same resource again; it must not cost another request or another hash.
     fixture
         .provisioner
-        .upload_pending_resources(&fixture.peer, &fixture.endpoint, fixture.root)
+        .upload_pending_resources(
+            &fixture.client,
+            &fixture.peer,
+            &fixture.endpoint,
+            fixture.root,
+        )
         .await
         .unwrap();
     assert_eq!(fixture.host_prepares.load(Ordering::Relaxed), 1);
@@ -486,7 +504,7 @@ async fn pull_replica_to_host_head(fixture: &LanMergeFixture) {
     };
     fixture
         .provisioner
-        .pull_host_changes(&fixture.peer, &fixture.endpoint, &queue)
+        .pull_host_changes(&fixture.client, &fixture.peer, &fixture.endpoint, &queue)
         .await
         .unwrap();
 }
@@ -521,6 +539,7 @@ async fn a_host_publication_ends_a_held_watch() {
                     .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(committed);
             },
             fixture.provisioner.watch_peer_commits(
+                &fixture.client,
                 &fixture.peer,
                 fixture.root,
                 cancelled,
@@ -567,6 +586,7 @@ async fn a_local_write_ends_a_held_watch() {
                 .unwrap();
             },
             fixture.provisioner.watch_peer_commits(
+                &fixture.client,
                 &fixture.peer,
                 fixture.root,
                 cancelled,

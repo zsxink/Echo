@@ -12,11 +12,11 @@ use crate::domain::library::{DeviceId as LibraryDeviceId, HybridLogicalClock, Pl
 use crate::domain::text::{normalized_key, playlist_name_key};
 use crate::error::Error;
 
-use super::support::{now_ms, storage};
+use super::super::support::{now_ms, storage};
 
 /// A confirmed deletion ends this identity even if a stale scanner or undo
 /// operation still holds a copy of the old row.
-pub(super) fn ensure_song_live(tx: &Connection, object_uuid: &str) -> Result<(), Error> {
+pub fn ensure_song_live(tx: &Connection, object_uuid: &str) -> Result<(), Error> {
     let archived: bool = tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM archived_sync_object_versions WHERE object_type='song' AND object_uuid=?1 AND is_tombstone=1)",
         params![object_uuid], |row| row.get(0),
@@ -29,11 +29,7 @@ pub(super) fn ensure_song_live(tx: &Connection, object_uuid: &str) -> Result<(),
     Ok(())
 }
 
-pub(super) fn is_tombstoned(
-    tx: &Connection,
-    object_type: &str,
-    object_uuid: &str,
-) -> Result<bool, Error> {
+pub fn is_tombstoned(tx: &Connection, object_type: &str, object_uuid: &str) -> Result<bool, Error> {
     tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM sync_object_versions WHERE object_type=?1 AND object_uuid=?2 AND is_tombstone=1)",
         params![object_type, object_uuid],
@@ -116,7 +112,7 @@ pub(super) fn project_confirmed_tombstone(
     Ok(())
 }
 
-pub(super) fn project_confirmed_song_state(
+pub fn project_confirmed_song_state(
     tx: &Connection,
     object_type: &str,
     object_uuid: &str,
@@ -133,7 +129,7 @@ pub(super) fn project_confirmed_song_state(
     )
 }
 
-pub(super) fn repair_confirmed_song_tags(
+pub fn repair_confirmed_song_tags(
     tx: &Connection,
     song_uuid: &str,
     payload: &Value,
@@ -454,7 +450,7 @@ fn project_song(
          ON CONFLICT(uuid) DO UPDATE SET library_root_uuid=excluded.library_root_uuid, relative_path=excluded.relative_path, normalized_relative_path=excluded.normalized_relative_path, blake3_hash=excluded.blake3_hash, file_size=excluded.file_size, format=excluded.format, title=excluded.title, artist=excluded.artist, album=excluded.album, title_sort=excluded.title_sort, artist_sort=excluded.artist_sort, album_sort=excluded.album_sort, duration_ms=excluded.duration_ms, added_at=excluded.added_at, bitrate_bps=excluded.bitrate_bps, sample_rate_hz=excluded.sample_rate_hz, channels=excluded.channels, bits_per_sample=excluded.bits_per_sample, availability=CASE WHEN songs.availability='pending_delete' THEN 'pending_delete' WHEN songs.availability='available' AND songs.blake3_hash IS excluded.blake3_hash AND songs.relative_path=excluded.relative_path THEN 'available' ELSE 'missing' END, updated_at=excluded.updated_at",
         params![song_uuid, root_uuid, path.display(), path.identity_key(), hash, file_size, format, title, artist, album, title_sort, artist_sort, album_sort, duration_ms, i64::try_from(added_at).unwrap_or(i64::MAX), bitrate_bps, sample_rate_hz, channels, bits_per_sample, now],
     )
-    .map_err(super::support::map_constraint)?;
+    .map_err(super::super::support::map_constraint)?;
     replace_song_search(tx, song_uuid, title, artist, album)?;
     project_waiting_song_state(tx, root_uuid, song_uuid)?;
     Ok(())
@@ -613,7 +609,7 @@ fn project_playlist(
          ON CONFLICT(uuid) DO UPDATE SET library_root_uuid=excluded.library_root_uuid, display_name=excluded.display_name, normalized_name_key=excluded.normalized_name_key, created_at=excluded.created_at, updated_at=excluded.updated_at",
         params![object_uuid, root_uuid, display_name, name_key, created_at, now_ms()],
     )
-    .map_err(super::support::map_constraint)?;
+    .map_err(super::super::support::map_constraint)?;
     tx.execute(
         "DELETE FROM playlist_songs WHERE playlist_uuid=?1",
         params![object_uuid],
@@ -624,7 +620,7 @@ fn project_playlist(
             "INSERT INTO playlist_songs(playlist_uuid, song_uuid, position, added_at, member_uuid) VALUES(?1, ?2, ?3, ?4, ?5)",
             params![object_uuid, song_uuid, position, added_at, member_uuid],
         )
-        .map_err(super::support::map_constraint)?;
+        .map_err(super::super::support::map_constraint)?;
     }
     Ok(())
 }
@@ -796,4 +792,5 @@ fn local_projection_conflicts(
 }
 
 #[cfg(test)]
+#[path = "sync_projection/tests.rs"]
 mod tests;

@@ -8,11 +8,8 @@ use crate::application::ports::{AppliedRemoteCursor, RemoteApplyPort, RemoteComm
 use crate::domain::sync::{CommitCheckpoint, CommitSeq, DeviceId, ObjectKey, SyncBinding};
 use crate::error::Error;
 
-use super::support::{now_ms, storage};
-use super::SqliteDatabase;
-
-#[path = "sync_snapshot_apply.rs"]
-mod snapshot;
+use super::super::support::{now_ms, storage};
+use super::super::SqliteDatabase;
 
 impl RemoteApplyPort for SqliteDatabase {
     fn apply_remote_batch(
@@ -305,8 +302,7 @@ fn apply_remote_commit(
     // in the sync ledger and advance the cursor, but leave the local-first
     // projection available for conflict resolution.
     let preserve_local_object = commit.is_tombstone && local_object_exists && !previously_shared;
-    if !commit.is_tombstone && super::sync_projection::is_tombstoned(tx, object_type, &object_uuid)?
-    {
+    if !commit.is_tombstone && super::projection::is_tombstoned(tx, object_type, &object_uuid)? {
         return Err(Error::conflict(
             "remote commit attempts to revive a finally deleted object",
         ));
@@ -316,13 +312,13 @@ fn apply_remote_commit(
     } else {
         Some(commit.payload_json.as_str())
     };
-    let resources = super::sync_manifests::from_commit_json(&commit.canonical_json)?;
+    let resources = super::manifests::from_commit_json(&commit.canonical_json)?;
     if commit.is_tombstone && !resources.is_empty() {
         return Err(Error::conflict(
             "deleted objects cannot declare resource references",
         ));
     }
-    super::sync_manifests::replace(tx, object_type, &object_uuid, &resources)?;
+    super::manifests::replace(tx, object_type, &object_uuid, &resources)?;
     apply_commit_aliases(tx, &commit.canonical_json, sequence)?;
     tx.execute(
                     "INSERT INTO sync_commits(commit_seq, library_id, authority_id, epoch, origin_device_id, mutation_id, canonical_json, previous_digest, commit_digest, publication_state, created_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'published', ?10)",
@@ -342,12 +338,12 @@ fn apply_remote_commit(
                 .map_err(storage)?;
     if commit.is_tombstone {
         if !preserve_local_object {
-            super::sync_projection::project_confirmed_tombstone(tx, object_type, &object_uuid)?;
+            super::projection::project_confirmed_tombstone(tx, object_type, &object_uuid)?;
         }
     } else {
         let projection: serde_json::Value =
             serde_json::from_str(&commit.payload_json).map_err(storage)?;
-        super::sync_projection::project_confirmed_song_state(
+        super::projection::project_confirmed_song_state(
             tx,
             object_type,
             &object_uuid,
@@ -406,7 +402,7 @@ fn apply_commit_aliases(
                 .pointer("/alias/canonical")
                 .and_then(serde_json::Value::as_str)
                 .ok_or_else(|| Error::conflict("invalid canonical song identity"))?;
-            super::sync_song_aliases::persist(tx, alias, canonical, sequence)?;
+            super::song_aliases::persist(tx, alias, canonical, sequence)?;
             continue;
         }
         if typed.get("kind").and_then(serde_json::Value::as_str) != Some("playlist_member") {
@@ -466,7 +462,7 @@ fn project_song_aliases(tx: &rusqlite::Transaction<'_>, canonical_json: &str) ->
                         .pointer("/alias/canonical")
                         .and_then(serde_json::Value::as_str),
                 ) {
-                    super::sync_song_aliases::project(tx, alias, canonical)?;
+                    super::song_aliases::project(tx, alias, canonical)?;
                 }
             }
         }
@@ -514,7 +510,7 @@ fn verify_remote_commit(binding: SyncBinding, commit: &RemoteCommit) -> Result<(
     Ok(())
 }
 
-fn object_identity(object: ObjectKey) -> (&'static str, String) {
+pub(crate) fn object_identity(object: ObjectKey) -> (&'static str, String) {
     match object {
         ObjectKey::Song(id) => ("song", id.to_string()),
         ObjectKey::Playlist(id) => ("playlist", id.to_string()),

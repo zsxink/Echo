@@ -8,7 +8,7 @@ use crate::error::{Error, Subject};
 use super::storage;
 
 const MAX_PAGE_ITEMS: usize = 512;
-const MAX_PAGE_BYTES: usize = 16 * 1024 * 1024;
+pub const MAX_PAGE_BYTES: usize = 16 * 1024 * 1024;
 // The replica envelope and wire envelope contain only fixed-size identities,
 // digest and numeric cursors. Reserve for their longest legal representations.
 const ENVELOPE_BYTES: usize = 1024;

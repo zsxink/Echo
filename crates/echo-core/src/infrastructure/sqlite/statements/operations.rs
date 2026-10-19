@@ -55,15 +55,15 @@ pub(crate) fn create_playlist(
     });
     enqueue_object_snapshot(
         connection,
-        super::super::sync::KIND_PLAYLIST,
+        super::super::sync::enqueue::KIND_PLAYLIST,
         &id.to_string(),
         &payload,
-        super::super::sync::OP_UPSERT,
+        super::super::sync::enqueue::OP_UPSERT,
     )?;
     let now_secs = u64::try_from(now_ms().max(0)).unwrap_or(0) / 1_000;
     let _ = advance_object_hlc(
         connection,
-        super::super::sync::KIND_PLAYLIST,
+        super::super::sync::enqueue::KIND_PLAYLIST,
         &id.to_string(),
         now_secs,
     )?;
@@ -106,10 +106,10 @@ pub(crate) fn add_member(
     });
     enqueue_object_snapshot(
         connection,
-        super::super::sync::KIND_PLAYLIST,
+        super::super::sync::enqueue::KIND_PLAYLIST,
         &playlist.to_string(),
         &payload,
-        super::super::sync::OP_UPSERT,
+        super::super::sync::enqueue::OP_UPSERT,
     )?;
     Ok(())
 }

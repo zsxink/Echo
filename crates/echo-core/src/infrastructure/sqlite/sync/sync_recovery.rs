@@ -10,8 +10,8 @@ use crate::domain::ids::LibraryRootId;
 use crate::domain::sync::SyncBinding;
 use crate::error::Error;
 
-use super::support::{now_ms, storage};
-use super::SqliteDatabase;
+use super::super::support::{now_ms, storage};
+use super::super::SqliteDatabase;
 
 // Children precede parents. Recovery copies the exact SQL values into tables
 // without foreign keys before clearing the selected authority's live lineage.
@@ -241,7 +241,7 @@ pub(super) fn enqueue_recovered_tombstones(
         .collect::<Result<Vec<_>, _>>()
         .map_err(storage)?;
     for (kind, id) in &rows {
-        super::sync::enqueue_sync_in_root(
+        super::enqueue::enqueue_sync_in_root(
             connection,
             root,
             kind,
@@ -255,7 +255,7 @@ pub(super) fn enqueue_recovered_tombstones(
 }
 
 #[cfg(test)]
-#[path = "tests/sync_recovery.rs"]
+#[path = "../tests/sync_recovery.rs"]
 mod tests;
 
 impl SqliteDatabase {
@@ -278,7 +278,7 @@ impl SqliteDatabase {
         self.writer.run(move |connection| {
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
             let root_string = root.to_string();
-            super::sync_context::select(&tx, &root_string)?;
+            super::context::select(&tx, &root_string)?;
             if unbound_facts.is_some() {
                 let bound: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM sync_binding)", [], |row| row.get(0)).map_err(storage)?;
                 if bound { return Err(Error::conflict("portable-only recovery cannot replace an existing sync binding")); }

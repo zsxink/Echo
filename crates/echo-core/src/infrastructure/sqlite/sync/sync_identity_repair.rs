@@ -9,8 +9,9 @@ use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::Serialize;
 use serde_json::Value;
 
-use super::support::storage;
-use super::{sync_configuration::SyncConfiguration, sync_manifests, SqliteDatabase};
+use super::super::support::storage;
+use super::super::SqliteDatabase;
+use super::{configuration::SyncConfiguration, sync_manifests};
 use crate::domain::ids::SongId;
 use crate::domain::sync::{SharedResourceKind, SharedResourceManifest};
 use crate::error::Error;
@@ -143,7 +144,7 @@ impl SqliteDatabase {
             }
             let mut payload = plan.canonical.payload;
             payload["song_uuid"] = serde_json::to_value(plan.old.id).map_err(storage)?;
-            let revision = super::sync::enqueue_sync_in_root_with_resources(
+            let revision = super::enqueue::enqueue_sync_in_root_with_resources(
                 &tx,
                 &plan.configuration.root.to_string(),
                 "song",
@@ -239,7 +240,7 @@ fn confirmed(
         "SELECT EXISTS(SELECT 1 FROM sync_mutations WHERE local_root_uuid=?2 AND status='pending') OR EXISTS(SELECT 1 FROM sync_local_delete_intents WHERE object_uuid=?1 AND state='open') OR EXISTS(SELECT 1 FROM sync_song_aliases WHERE alias_song_uuid=?1 OR canonical_song_uuid=?1)",
         params![id.to_string(),config.root.to_string()], |r|r.get(0)
     ).map_err(storage)?;
-    if blocked || super::sync_projection::is_tombstoned(c, "song", &id.to_string())? {
+    if blocked || super::projection::is_tombstoned(c, "song", &id.to_string())? {
         return Err(Error::conflict(
             "repair blocked by pending work, deletion or existing alias",
         ));

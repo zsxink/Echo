@@ -28,11 +28,11 @@ impl NativeSyncProvisioner {
             return Err(SyncRuntimeError::Unconfigured);
         }
         validate_peer_endpoint(&identity.endpoint)?;
+        let client = LanClient::new(&identity.host_certificate_der, identity.bearer_token)
+            .map_err(|_| SyncRuntimeError::Unconfigured)?;
         let peer = ProvisionedPeer {
             binding: identity.binding,
             address: identity.endpoint,
-            client: LanClient::new(&identity.host_certificate_der, identity.bearer_token)
-                .map_err(|_| SyncRuntimeError::Unconfigured)?,
             host_device_id: identity.host_device,
         };
         let library = self
@@ -57,7 +57,7 @@ impl NativeSyncProvisioner {
                 biased;
                 () = wait_for_sync_cancel(Arc::clone(cancelled)) => Err(SyncRuntimeError::Busy),
                 result = async {
-                    self.merge_peer_library(&peer, &endpoint, &resources, root).await
+                    self.merge_peer_library(&client, &peer, &endpoint, &resources, root).await
                 } => result,
             }
         });
@@ -98,12 +98,13 @@ impl NativeSyncProvisioner {
 
     pub(super) async fn merge_peer_library(
         &self,
+        client: &LanClient,
         peer: &ProvisionedPeer,
         endpoint: &Url,
         resources: &Arc<FileResourceStore>,
         root: LibraryRootId,
     ) -> Result<(), SyncRuntimeError> {
-        self.enroll_peer_snapshot(peer, endpoint).await?;
+        self.enroll_peer_snapshot(client, peer, endpoint).await?;
         let queue = ScopedLocalQueue {
             database: self.database.as_ref(),
             root,
@@ -121,18 +122,20 @@ impl NativeSyncProvisioner {
             // covers anything that landed after it. Skipping it drops a steady
             // idle cycle from three pulls to one.
             if pending_before.is_some() {
-                self.pull_host_changes(peer, endpoint, &queue).await?;
+                self.pull_host_changes(client, peer, endpoint, &queue)
+                    .await?;
             }
-            self.publish_remote_resources(peer, endpoint, root, resources)
+            self.publish_remote_resources(client, peer, endpoint, root, resources)
                 .await?;
-            self.upload_pending_resources(peer, endpoint, root).await?;
+            self.upload_pending_resources(client, peer, endpoint, root)
+                .await?;
             let before = queue
                 .replica_checkpoint(peer.host_device_id)
                 .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
             let pushed = self
-                .prepared_incremental_cycle(peer, endpoint, &queue)
+                .prepared_incremental_cycle(client, peer, endpoint, &queue)
                 .await?;
-            self.publish_remote_resources(peer, endpoint, root, resources)
+            self.publish_remote_resources(client, peer, endpoint, root, resources)
                 .await?;
             let pending_after = queue
                 .pending_local_mutations(1)
@@ -142,8 +145,9 @@ impl NativeSyncProvisioner {
                 // head, which is what the closing pull would re-read. A
                 // saturated page or a dropped ACK is what still needs it.
                 if pushed {
-                    self.pull_host_changes(peer, endpoint, &queue).await?;
-                    self.publish_remote_resources(peer, endpoint, root, resources)
+                    self.pull_host_changes(client, peer, endpoint, &queue)
+                        .await?;
+                    self.publish_remote_resources(client, peer, endpoint, root, resources)
                         .await?;
                 }
                 break;
@@ -192,6 +196,7 @@ impl NativeSyncProvisioner {
     /// scenario requires, and the order snapshot enrollment already uses.
     pub(super) async fn pull_host_changes(
         &self,
+        client: &LanClient,
         peer: &ProvisionedPeer,
         endpoint: &Url,
         queue: &ScopedLocalQueue<'_>,
@@ -200,8 +205,7 @@ impl NativeSyncProvisioner {
             let checkpoint = queue
                 .replica_checkpoint(peer.host_device_id)
                 .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-            let page = peer
-                .client
+            let page = client
                 .pull_commits(
                     endpoint,
                     checkpoint.sequence.as_u64(),
@@ -236,6 +240,7 @@ impl NativeSyncProvisioner {
     /// cycle's catch-up pull applies what the host published.
     pub(super) async fn watch_peer_commits(
         &self,
+        client: &LanClient,
         peer: &ProvisionedPeer,
         root: LibraryRootId,
         cancelled: Arc<AtomicBool>,
@@ -257,7 +262,7 @@ impl NativeSyncProvisioner {
             return Ok(WatchOutcome::LocalWrite);
         }
         let endpoint = Url::parse(&peer.address).map_err(|_| SyncRuntimeError::InvalidAddress)?;
-        let mut watch = Box::pin(peer.client.pull_commits(
+        let mut watch = Box::pin(client.pull_commits(
             &endpoint,
             checkpoint.sequence.as_u64(),
             checkpoint.digest,
@@ -305,6 +310,7 @@ impl NativeSyncProvisioner {
     /// is still required.
     async fn prepared_incremental_cycle(
         &self,
+        client: &LanClient,
         peer: &ProvisionedPeer,
         endpoint: &Url,
         queue: &ScopedLocalQueue<'_>,
@@ -319,7 +325,7 @@ impl NativeSyncProvisioner {
             catalog_changed: &self.pending_catalog_changed,
         };
         let result = echo_sync::replica::synchronize_once(
-            &peer.client,
+            client,
             endpoint,
             peer.binding,
             peer.host_device_id,
@@ -335,7 +341,8 @@ impl NativeSyncProvisioner {
             Err(_) if prepared.changed.load(Ordering::Relaxed) => {
                 // Apply newly accepted commits before selecting another push
                 // batch, so accepted local mutations are not uploaded twice.
-                self.pull_host_changes(peer, endpoint, queue).await?;
+                self.pull_host_changes(client, peer, endpoint, queue)
+                    .await?;
                 Ok(true)
             }
             Err(error) => Err(match error {

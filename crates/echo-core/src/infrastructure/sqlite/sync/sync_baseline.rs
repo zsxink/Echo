@@ -6,8 +6,9 @@ use crate::domain::ids::{LibraryRootId, PlaylistId, SongId};
 use crate::domain::sync::{SharedResourceKind, SharedResourceManifest, SyncBinding};
 use crate::error::Error;
 
-use super::support::{now_ms, parse_id, storage};
-use super::{statements, sync, sync_manifests, sync_projection, SqliteDatabase};
+use super::super::support::{now_ms, parse_id, storage};
+use super::super::{read_device_play_counts, statements, SqliteDatabase};
+use super::{enqueue as sync, sync_manifests, sync_projection};
 
 impl SqliteDatabase {
     /// Seed a replica's existing local catalog into its durable outbox before
@@ -23,7 +24,7 @@ impl SqliteDatabase {
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(storage)?;
             let root_uuid = root.to_string();
-            super::sync_context::select(&tx, &root_uuid)?;
+            super::context::select(&tx, &root_uuid)?;
             let authorized: bool = tx
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM sync_binding WHERE singleton=1 AND role='replica' AND library_id=?1 AND authority_id=?2 AND epoch=?3 AND local_root_uuid=?4)",
@@ -108,7 +109,7 @@ impl SqliteDatabase {
                 return Ok(0);
             }
             let count = enqueue_current(&tx, &root_uuid)?
-                + super::sync_recovery::enqueue_recovered_tombstones(&tx, &root_uuid)?;
+                + super::recovery::enqueue_recovered_tombstones(&tx, &root_uuid)?;
             tx.execute(
                 "INSERT INTO sync_host_baselines(library_id,authority_id,epoch,local_root_uuid,object_count,completed_at) VALUES(?1,?2,?3,?4,?5,?6)",
                 params![library,authority,epoch,root_uuid,i64::try_from(count).map_err(storage)?,now_ms()],
@@ -298,7 +299,7 @@ fn capture_legacy_plays(connection: &Connection, song: SongId) -> Result<(), Err
             |row| row.get(0),
         )
         .map_err(storage)?;
-    let counts = super::read_device_play_counts(connection, song)?;
+    let counts = read_device_play_counts(connection, song)?;
     let assigned = counts.values().copied().fold(0_u64, u64::saturating_add);
     if total > assigned {
         let device: String = connection

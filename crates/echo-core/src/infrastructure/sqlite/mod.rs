@@ -53,24 +53,10 @@ pub(crate) mod connection;
 pub(crate) mod conversion;
 pub(crate) mod device_state;
 pub(crate) mod query;
-mod remote_resources;
-mod resource_retention;
 pub(crate) mod statements;
 pub(crate) mod support;
 pub(crate) mod sync;
-pub(crate) mod sync_apply;
-mod sync_baseline;
-pub(crate) mod sync_configuration;
-mod sync_conflicts;
-mod sync_context;
-pub mod sync_identity_repair;
-pub(crate) mod sync_ledger;
-pub(crate) mod sync_manifests;
-pub(crate) mod sync_projection;
-pub(crate) mod sync_queue;
-mod sync_recovery;
-mod sync_snapshot;
-mod sync_song_aliases;
+pub(crate) use sync::{sync_context, sync_manifests, sync_projection, sync_song_aliases};
 #[cfg(test)]
 mod tests;
 

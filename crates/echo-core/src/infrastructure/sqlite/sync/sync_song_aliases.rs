@@ -3,12 +3,12 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 
-use super::support::storage;
+use super::super::support::storage;
 use crate::domain::ids::SongId;
 use crate::domain::sync::{MutationCandidate, ObjectKey};
 use crate::error::Error;
 
-pub(super) fn resolve(connection: &Connection, id: &str) -> Result<String, Error> {
+pub fn resolve(connection: &Connection, id: &str) -> Result<String, Error> {
     Ok(connection
         .query_row(
             "SELECT canonical_song_uuid FROM sync_song_aliases WHERE alias_song_uuid=?1",
@@ -65,13 +65,13 @@ pub(super) fn normalize(
                 if let Some(first) = first {
                     // A UUID which was finally deleted cannot become an alias
                     // to a later reimport with the same bytes.
-                    if !super::sync_projection::is_tombstoned(connection, "song", &original)? {
+                    if !super::projection::is_tombstoned(connection, "song", &original)? {
                         canonical = first;
                         alias = Some((original, canonical.clone()));
                         let payload: String = connection.query_row("SELECT payload_json FROM sync_object_versions WHERE object_type='song' AND object_uuid=?1",params![canonical],|row|row.get(0)).map_err(storage)?;
                         candidate.payload = serde_json::from_str(&payload).map_err(storage)?;
                         candidate.resource_refs =
-                            super::sync_manifests::load(connection, "song", &canonical)?;
+                            super::manifests::load(connection, "song", &canonical)?;
                     }
                 }
             }
@@ -97,7 +97,7 @@ pub(super) fn normalize(
     Ok((candidate, alias))
 }
 
-pub(super) fn persist(
+pub fn persist(
     connection: &Connection,
     alias: &str,
     canonical: &str,
@@ -114,7 +114,7 @@ pub(super) fn persist(
     if previous != alias && previous != canonical {
         return Err(Error::conflict("song alias identity was remapped"));
     }
-    if super::sync_projection::is_tombstoned(connection, "song", alias)? {
+    if super::projection::is_tombstoned(connection, "song", alias)? {
         return Err(Error::conflict(
             "finally deleted song cannot become an alias",
         ));
@@ -172,7 +172,7 @@ fn preserve_local_audio(
     Ok(())
 }
 
-pub(super) fn project(connection: &Connection, alias: &str, canonical: &str) -> Result<(), Error> {
+pub fn project(connection: &Connection, alias: &str, canonical: &str) -> Result<(), Error> {
     let exists: bool = connection
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM songs WHERE uuid=?1)",
@@ -205,7 +205,7 @@ fn preserve_import_time(
     connection: &Connection,
     candidate: &mut MutationCandidate,
 ) -> Result<(), Error> {
-    let (_, id) = super::sync_manifests::identity(candidate.object);
+    let (_, id) = super::manifests::identity(candidate.object);
     let original: Option<String> = connection.query_row("SELECT payload_json FROM sync_object_versions WHERE object_type='song' AND object_uuid=?1 AND is_tombstone=0",params![id],|row|row.get(0)).optional().map_err(storage)?;
     if let Some(original) = original {
         let original: Value = serde_json::from_str(&original).map_err(storage)?;

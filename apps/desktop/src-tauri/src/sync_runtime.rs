@@ -165,7 +165,6 @@ pub struct ProvisionedHost {
 pub struct ProvisionedPeer {
     pub binding: SyncBinding,
     pub address: String,
-    pub client: echo_sync::client::LanClient,
     pub host_device_id: echo_core::domain::sync::DeviceId,
 }
 
@@ -195,11 +194,9 @@ pub trait SyncProvisioner: Send + Sync {
     ) -> Result<(), SyncRuntimeError>;
 }
 
-/// One synchronization cycle against the paired host. Every provisioner p that
-/// can drive a cycle implements this as well (`SyncCyclePort for NativeSyncProvisioner`,
-/// the scripted test adapters); the runtime stores the cycle port and reaches
-/// the lifecycle methods through the supertrait.
-pub trait SyncCyclePort: SyncProvisioner {
+/// One synchronization cycle against the paired host. The runtime owns this
+/// capability independently from provisioning and lifecycle operations.
+pub trait SyncCyclePort: Send + Sync {
     /// Return whether this successful cycle changed local catalog projections.
     fn sync_now(&self, role: SyncRole) -> Result<bool, SyncRuntimeError>;
     /// Read durable queue state after a cycle. Unknown telemetry stays absent.
@@ -376,7 +373,7 @@ impl CycleProgressObserver {
 }
 
 fn run_observed_cycle(
-    provisioner: &dyn SyncCyclePort,
+    cycle_port: &dyn SyncCyclePort,
     role: SyncRole,
     cancelled: Arc<AtomicBool>,
     session_id: u64,
@@ -385,9 +382,9 @@ fn run_observed_cycle(
 ) -> (Result<bool, SyncRuntimeError>, SyncProgress) {
     let observer = CycleProgressObserver::new(state, notifier, session_id, Arc::clone(&cancelled));
     let result =
-        provisioner.sync_now_with_progress(role, cancelled, Some(Arc::clone(&observer.notify)));
+        cycle_port.sync_now_with_progress(role, cancelled, Some(Arc::clone(&observer.notify)));
     drop(observer);
-    let progress = provisioner.sync_progress(role).unwrap_or_default();
+    let progress = cycle_port.sync_progress(role).unwrap_or_default();
     (result, progress)
 }
 
@@ -399,9 +396,10 @@ impl Drop for CycleProgressObserver {
 
 pub struct SyncRuntime {
     database: Arc<SqliteDatabase>,
-    /// The cycle driver; the provisioning lifecycle is reached through the
-    /// `SyncProvisioner` supertrait.
-    provisioner: Option<Arc<dyn SyncCyclePort>>,
+    /// Session lifecycle and provisioning collaborator.
+    provisioner: Option<Arc<dyn SyncProvisioner>>,
+    /// Cycle execution collaborator.
+    cycle_port: Option<Arc<dyn SyncCyclePort>>,
     // Serialize transitions independently from status. Status never waits for
     // TLS shutdown, discovery, SQLite, or a remote round trip.
     transition: Mutex<()>,
@@ -416,10 +414,15 @@ mod session;
 mod sync_loop;
 
 impl SyncRuntime {
-    pub fn new(database: Arc<SqliteDatabase>, provisioner: Option<Arc<dyn SyncCyclePort>>) -> Self {
+    pub fn new(
+        database: Arc<SqliteDatabase>,
+        provisioner: Option<Arc<dyn SyncProvisioner>>,
+        cycle_port: Option<Arc<dyn SyncCyclePort>>,
+    ) -> Self {
         Self {
             database,
             provisioner,
+            cycle_port,
             transition: Mutex::new(()),
             cycle: Arc::new(Mutex::new(())),
             status_notifier: Arc::new(Mutex::new(None)),

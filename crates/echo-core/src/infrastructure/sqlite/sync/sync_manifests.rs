@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::domain::sync::{ObjectKey, ResourceDigest, SharedResourceKind, SharedResourceManifest};
 use crate::error::{Error, Subject};
 
-use super::support::storage;
-use super::SqliteDatabase;
+use super::super::support::storage;
+use super::super::SqliteDatabase;
 
 /// Canonical resource wire shape, kept transport independent inside Core.
 #[derive(Clone, Serialize, Deserialize)]

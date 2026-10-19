@@ -8,10 +8,12 @@ use crate::application::ports::{
 use crate::domain::sync::{DeviceId, SharedResourceKind, SharedResourceManifest, SyncBinding};
 use crate::error::Error;
 
-use super::super::support::{now_ms, storage};
-use super::super::SqliteDatabase;
-
-const MAX_PAGE_BYTES: usize = 16 * 1024 * 1024;
+use super::super::{
+    support::{now_ms, storage},
+    SqliteDatabase,
+};
+use super::apply::object_identity;
+use super::snapshot::MAX_PAGE_BYTES;
 
 impl SqliteDatabase {
     /// Whether this exact binding is enrolling the selected root. The marker
@@ -396,7 +398,7 @@ fn ensure_enrollment_target(
 fn record_identity(record: &HostSnapshotRecord) -> String {
     match record {
         HostSnapshotRecord::Object { candidate, .. } => {
-            let (kind, id) = super::object_identity(candidate.object);
+            let (kind, id) = object_identity(candidate.object);
             format!("object:{kind}:{id}")
         }
         HostSnapshotRecord::SongAlias { alias, .. } => format!("song-alias:{alias}"),
@@ -415,7 +417,7 @@ fn ensure_snapshot_root_ownership(
     visit_records(connection, token, |record| {
         let objects = match record {
             HostSnapshotRecord::Object { candidate, .. } => {
-                vec![super::object_identity(candidate.object)]
+                vec![object_identity(candidate.object)]
             }
             HostSnapshotRecord::SongAlias { alias, canonical } => {
                 vec![("song", alias.to_string()), ("song", canonical.to_string())]
@@ -475,7 +477,7 @@ fn finish_snapshot(
                 version,
                 resources,
             } => {
-                let (kind, id) = super::object_identity(candidate.object);
+                let (kind, id) = object_identity(candidate.object);
                 let deleted = candidate.payload == serde_json::json!({"tombstone":true});
                 let payload = (!deleted).then(|| candidate.payload.to_string());
                 let sequence = i64::try_from(version.commit_seq().as_u64()).map_err(storage)?;
@@ -498,7 +500,7 @@ fn finish_snapshot(
     // can retain their playable media and release any colliding local path.
     visit_records(connection, &page.snapshot_token, |record| {
         if let HostSnapshotRecord::SongAlias { alias, canonical } = record {
-            super::super::sync_song_aliases::persist(
+            super::song_aliases::persist(
                 connection,
                 &alias.to_string(),
                 &canonical.to_string(),
@@ -511,7 +513,7 @@ fn finish_snapshot(
     // versions already exist, deleted songs/members are excluded consistently.
     visit_records(connection, &page.snapshot_token, |record| {
         if let HostSnapshotRecord::Object { candidate, .. } = record {
-            let (kind, id) = super::object_identity(candidate.object);
+            let (kind, id) = object_identity(candidate.object);
             if candidate.payload == serde_json::json!({"tombstone":true}) {
                 // A first snapshot is a merge with the replica's existing
                 // catalog. A host tombstone may refer to an object that was
@@ -523,9 +525,9 @@ fn finish_snapshot(
                 if local_object_exists(connection, kind, &id, root)? {
                     return Ok(());
                 }
-                super::super::sync_projection::project_confirmed_tombstone(connection, kind, &id)?;
+                super::projection::project_confirmed_tombstone(connection, kind, &id)?;
             } else {
-                super::super::sync_projection::project_confirmed_song_state(
+                super::projection::project_confirmed_song_state(
                     connection,
                     kind,
                     &id,
@@ -538,11 +540,7 @@ fn finish_snapshot(
     })?;
     visit_records(connection, &page.snapshot_token, |record| {
         if let HostSnapshotRecord::SongAlias { alias, canonical } = record {
-            super::super::sync_song_aliases::project(
-                connection,
-                &alias.to_string(),
-                &canonical.to_string(),
-            )?;
+            super::song_aliases::project(connection, &alias.to_string(), &canonical.to_string())?;
         }
         Ok(())
     })

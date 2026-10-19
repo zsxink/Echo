@@ -114,6 +114,7 @@ impl NativeSyncProvisioner {
 
     pub(super) async fn publish_remote_resources(
         &self,
+        client: &LanClient,
         peer: &ProvisionedPeer,
         endpoint: &Url,
         root: LibraryRootId,
@@ -141,13 +142,13 @@ impl NativeSyncProvisioner {
         while let Some(first) = window.next() {
             if let Some(second) = window.next() {
                 let (first, second) = tokio::join!(
-                    self.stage_remote_resource(peer, endpoint, &library, first, resources),
-                    self.stage_remote_resource(peer, endpoint, &library, second, resources),
+                    self.stage_remote_resource(client, peer, endpoint, &library, first, resources),
+                    self.stage_remote_resource(client, peer, endpoint, &library, second, resources),
                 );
                 first?;
                 second?;
             } else {
-                self.stage_remote_resource(peer, endpoint, &library, first, resources)
+                self.stage_remote_resource(client, peer, endpoint, &library, first, resources)
                     .await?;
             }
         }
@@ -183,6 +184,7 @@ impl NativeSyncProvisioner {
     /// content; caching it never acknowledges its pending mutation or upload.
     pub(super) async fn stage_remote_resource(
         &self,
+        client: &LanClient,
         peer: &ProvisionedPeer,
         endpoint: &Url,
         library: &LibraryRoot,
@@ -228,7 +230,7 @@ impl NativeSyncProvisioner {
             store: Arc::clone(resources),
             telemetry: self.telemetry(),
         });
-        peer.client
+        client
             .download_resource(
                 endpoint,
                 owner,
@@ -245,6 +247,7 @@ impl NativeSyncProvisioner {
 
     pub(super) async fn enroll_peer_snapshot(
         &self,
+        client: &LanClient,
         peer: &ProvisionedPeer,
         endpoint: &Url,
     ) -> Result<(), SyncRuntimeError> {
@@ -261,11 +264,7 @@ impl NativeSyncProvisioner {
             .replica_snapshot_progress(peer.host_device_id)
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
         let mut page = if let Some((token, index)) = progress {
-            match peer
-                .client
-                .pull_snapshot_page(endpoint, &token, index)
-                .await
-            {
+            match client.pull_snapshot_page(endpoint, &token, index).await {
                 Err(ClientError::HostRejected(status))
                     if status == reqwest::StatusCode::CONFLICT
                         || status == reqwest::StatusCode::GONE =>
@@ -276,12 +275,12 @@ impl NativeSyncProvisioner {
                     self.database
                         .discard_snapshot(peer.host_device_id, &token)
                         .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-                    peer.client.begin_snapshot(endpoint, 128).await
+                    client.begin_snapshot(endpoint, 128).await
                 }
                 result => result,
             }
         } else {
-            peer.client.begin_snapshot(endpoint, 128).await
+            client.begin_snapshot(endpoint, 128).await
         }
         .map_err(map_sync_client_error)?;
         loop {
@@ -314,8 +313,7 @@ impl NativeSyncProvisioner {
                 self.pending_catalog_changed.store(true, Ordering::Release);
                 break;
             };
-            page = peer
-                .client
+            page = client
                 .pull_snapshot_page(endpoint, &page.snapshot_token, index)
                 .await
                 .map_err(map_sync_client_error)?;
@@ -352,6 +350,7 @@ impl NativeSyncProvisioner {
 
     pub(super) async fn upload_pending_resources(
         &self,
+        client: &LanClient,
         peer: &ProvisionedPeer,
         endpoint: &Url,
         root: LibraryRootId,
@@ -385,13 +384,13 @@ impl NativeSyncProvisioner {
         while let Some(first) = window.next() {
             if let Some(second) = window.next() {
                 let (first, second) = tokio::join!(
-                    self.upload_one_resource(peer, endpoint, &library, first),
-                    self.upload_one_resource(peer, endpoint, &library, second),
+                    self.upload_one_resource(client, peer, endpoint, &library, first),
+                    self.upload_one_resource(client, peer, endpoint, &library, second),
                 );
                 first?;
                 second?;
             } else {
-                self.upload_one_resource(peer, endpoint, &library, first)
+                self.upload_one_resource(client, peer, endpoint, &library, first)
                     .await?;
             }
         }
@@ -400,6 +399,7 @@ impl NativeSyncProvisioner {
 
     pub(super) async fn upload_one_resource(
         &self,
+        client: &LanClient,
         peer: &ProvisionedPeer,
         endpoint: &Url,
         library: &LibraryRoot,
@@ -434,8 +434,7 @@ impl NativeSyncProvisioner {
             );
             return Ok(());
         };
-        let mut progress = peer
-            .client
+        let mut progress = client
             .prepare_resource(endpoint, &request)
             .await
             .map_err(map_sync_client_error)?;
@@ -462,15 +461,13 @@ impl NativeSyncProvisioner {
                     Ok(bytes)
                 })
                 .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-            progress = peer
-                .client
+            progress = client
                 .upload_resource_chunk(endpoint, peer.binding, &progress, index, bytes)
                 .await
                 .map_err(map_sync_client_error)?;
             observe_transfer(&self.telemetry(), |telemetry| telemetry.upload(&progress));
         }
-        let progress = peer
-            .client
+        let progress = client
             .complete_resource(endpoint, peer.binding, &progress)
             .await
             .map_err(map_sync_client_error)?;

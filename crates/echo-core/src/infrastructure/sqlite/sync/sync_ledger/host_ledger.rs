@@ -56,7 +56,7 @@ impl HostCommitLedgerPort for SqliteDatabase {
             }
             let candidate = normalize_member_alias_object(&tx, candidate)?;
             let submitted_resources = candidate.resource_refs.clone();
-            let (candidate, song_alias) = super::super::sync_song_aliases::normalize(&tx, candidate)?;
+            let (candidate, song_alias) = super::super::song_aliases::normalize(&tx, candidate)?;
 
 
             // The independent checkpoint is published outside this transaction.
@@ -129,17 +129,17 @@ impl HostCommitLedgerPort for SqliteDatabase {
                 song_alias.as_ref(),
             )?;
             tx.execute("INSERT INTO sync_commits(commit_seq, library_id, authority_id, epoch, origin_device_id, mutation_id, canonical_json, previous_digest, commit_digest, publication_state, created_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending', ?10)", params![next, expected.0, expected.1, expected.2, origin, candidate.mutation_id.as_uuid().to_string(), canonical_json, previous_digest, commit_digest, now_ms()]).map_err(storage)?;
-            super::super::sync_manifests::replace(&tx, kind, &object_uuid, &candidate.resource_refs)?;
+            super::super::manifests::replace(&tx, kind, &object_uuid, &candidate.resource_refs)?;
             if let Some((alias, canonical)) = &song_alias {
-                super::super::sync_song_aliases::persist(&tx, alias, canonical, next)?;
+                super::super::song_aliases::persist(&tx, alias, canonical, next)?;
                 // Differing sidecars/covers remain durable held evidence under
                 // the original alias, even when the canonical song keeps its
                 // first-confirmed resource set.
-                super::super::sync_manifests::replace(&tx, "song", alias, &submitted_resources)?;
+                super::super::manifests::replace(&tx, "song", alias, &submitted_resources)?;
             }
             persist_confirmed_object(&tx, &candidate, &confirmed.object, next, is_tombstone, configured.as_ref().and_then(|row| row.4.as_deref()), confirmed.changed_at_ms)?;
             persist_member_aliases(&tx, &confirmed.aliases, next)?;
-            if let Some((alias, canonical)) = &song_alias { super::super::sync_song_aliases::project(&tx, alias, canonical)?; }
+            if let Some((alias, canonical)) = &song_alias { super::super::song_aliases::project(&tx, alias, canonical)?; }
             tx.execute("INSERT INTO sync_origin_cursors(origin_device_id, origin_seq, last_mutation_id) VALUES(?1, ?2, ?3) ON CONFLICT(origin_device_id) DO UPDATE SET origin_seq=excluded.origin_seq, last_mutation_id=excluded.last_mutation_id", params![origin, i64::try_from(confirmed.origin_cursor.origin_seq).map_err(storage)?, candidate.mutation_id.as_uuid().to_string()]).map_err(storage)?;
             if let Some(conflict) = confirmed.conflict {
                 tx.execute("INSERT INTO sync_conflicts(conflict_id, object_type, object_uuid, replaced_version, accepted_version, replaced_payload_json, accepted_payload_json, resolved_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)", params![uuid::Uuid::new_v4().to_string(), kind, object_uuid, i64::try_from(conflict.replaced_version.commit_seq().as_u64()).map_err(storage)?, next, serde_json::to_string(&conflict.replaced_payload).map_err(storage)?, serde_json::to_string(&conflict.accepted_payload).map_err(storage)?]).map_err(storage)?;

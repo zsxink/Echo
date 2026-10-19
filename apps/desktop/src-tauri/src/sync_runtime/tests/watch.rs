@@ -66,34 +66,6 @@ impl WatchingProvisioner {
     }
 }
 
-impl SyncProvisioner for WatchingProvisioner {
-    fn host(&self, _: LibraryRootId) -> Result<ProvisionedHost, SyncRuntimeError> {
-        Err(SyncRuntimeError::Unconfigured)
-    }
-
-    fn peer(&self, _: LibraryRootId) -> Result<ProvisionedPeer, SyncRuntimeError> {
-        Err(SyncRuntimeError::Unconfigured)
-    }
-
-    fn revoke_device(&self, _: &str) -> Result<(), SyncRuntimeError> {
-        Ok(())
-    }
-
-    fn leave_sync(&self, _: LibraryRootId) -> Result<(), SyncRuntimeError> {
-        Ok(())
-    }
-
-    fn complete_peer_pairing(
-        &self,
-        _: LibraryRootId,
-        _: &PairingInvitation,
-        _: &str,
-        _: &PairingGrantDto,
-    ) -> Result<(), SyncRuntimeError> {
-        Err(SyncRuntimeError::Unconfigured)
-    }
-}
-
 impl SyncCyclePort for WatchingProvisioner {
     fn sync_now(&self, _: SyncRole) -> Result<bool, SyncRuntimeError> {
         self.cycles
@@ -159,6 +131,7 @@ impl Drop for RunningSync {
 fn peer_runtime(provisioner: Arc<WatchingProvisioner>) -> RunningSync {
     let runtime = RunningSync(SyncRuntime::new(
         Arc::clone(&provisioner.database),
+        None,
         Some(provisioner),
     ));
     {
@@ -308,6 +281,7 @@ fn a_host_never_opens_a_watch() {
     let dyn_provisioner: Arc<dyn SyncCyclePort> = provisioner.clone();
     let runtime = RunningSync(SyncRuntime::new(
         Arc::clone(&database),
+        None,
         Some(dyn_provisioner),
     ));
     {

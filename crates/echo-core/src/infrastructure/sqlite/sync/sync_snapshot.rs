@@ -15,15 +15,17 @@ use crate::domain::sync::{
 };
 use crate::error::{Error, Subject};
 
-use super::support::{now_ms, storage};
-use super::SqliteDatabase;
+use super::super::support::{now_ms, storage};
+use super::super::SqliteDatabase;
 
 const MAX_LIFETIME_MS: u64 = 86_400_000;
 
+#[path = "sync_snapshot/pagination.rs"]
 mod pagination;
+pub(super) use pagination::MAX_PAGE_BYTES;
 
 #[cfg(test)]
-#[path = "tests/sync_snapshot_budget.rs"]
+#[path = "../tests/sync_snapshot_budget.rs"]
 mod budget_tests;
 
 impl HostSnapshotPort for SqliteDatabase {
