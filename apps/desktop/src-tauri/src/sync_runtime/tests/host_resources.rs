@@ -30,7 +30,7 @@ mod cases {
     use reqwest::Url;
 
     /// The credential vault root is a process-wide `OnceLock`, so every test in
-    /// this binary must share one live path: a per-test TempDir would be deleted
+    /// this binary must share one live path: a per-test `TempDir` would be deleted
     /// while a parallel test still writes identity and checkpoint files.
     fn configure_test_vault() {
         static VAULT: std::sync::Once = std::sync::Once::new();

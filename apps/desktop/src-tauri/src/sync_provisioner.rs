@@ -858,6 +858,7 @@ impl SyncProvisioner for NativeSyncProvisioner {
         self.recover_restored_host(root)
     }
 
+    #[allow(clippy::too_many_lines)]
     fn complete_peer_pairing(
         &self,
         root: LibraryRootId,
@@ -920,23 +921,64 @@ impl SyncProvisioner for NativeSyncProvisioner {
         let already_bound_to_this_host = current_configuration.as_ref().is_some_and(|current| {
             !current.host && current.binding == invitation.binding && current.local_root == root
         });
-        if current_configuration.is_some() && !already_bound_to_this_host {
+        let replaced_existing_binding =
+            current_configuration.is_some() && !already_bound_to_this_host;
+        if replaced_existing_binding {
             if let Err(error) = self.leave_sync_locked(root) {
-                remove_peer_identity_if_generation(&handle, &identity)?;
+                if let Err(cleanup_error) = remove_peer_identity_if_generation(&handle, &identity) {
+                    tracing::error!(
+                        target: "echo_desktop::sync",
+                        ?cleanup_error,
+                        generation = %identity.generation,
+                        "failed to compensate peer identity after replacing the sync binding failed"
+                    );
+                }
                 return Err(error);
             }
         }
-        if self
+        if let Err(error) = self
             .database
             .bind_sync_replica_for_enrollment(invitation.binding, root)
-            .is_err()
         {
-            remove_peer_identity_if_generation(&handle, &identity)?;
+            if let Err(cleanup_error) = remove_peer_identity_if_generation(&handle, &identity) {
+                tracing::error!(
+                    target: "echo_desktop::sync",
+                    ?cleanup_error,
+                    generation = %identity.generation,
+                    "failed to compensate peer identity after binding the sync replica failed"
+                );
+            }
+            tracing::error!(
+                target: "echo_desktop::sync",
+                code = error.code(),
+                root = %root,
+                "binding the sync replica failed"
+            );
             return Err(SyncRuntimeError::LibraryUnavailable);
         }
-        self.database
+        if let Err(error) = self
+            .database
             .ensure_replica_sync_baseline(invitation.binding, root)
-            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        {
+            // The identity is usable only after the local baseline transaction
+            // succeeds. Keep the exact database binding so a retry can resume
+            // without deleting local outbox rows or media.
+            if let Err(cleanup_error) = remove_peer_identity_if_generation(&handle, &identity) {
+                tracing::error!(
+                    target: "echo_desktop::sync",
+                    ?cleanup_error,
+                    generation = %identity.generation,
+                    "failed to compensate peer identity after baseline initialization failed"
+                );
+            }
+            tracing::error!(
+                target: "echo_desktop::sync",
+                ?error,
+                generation = %identity.generation,
+                "replica baseline initialization failed"
+            );
+            return Err(SyncRuntimeError::LibraryUnavailable);
+        }
         Ok(())
     }
 }
