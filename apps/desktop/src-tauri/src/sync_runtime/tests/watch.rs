@@ -75,13 +75,32 @@ impl SyncProvisioner for WatchingProvisioner {
         Err(SyncRuntimeError::Unconfigured)
     }
 
+    fn revoke_device(&self, _: &str) -> Result<(), SyncRuntimeError> {
+        Ok(())
+    }
+
+    fn leave_sync(&self, _: LibraryRootId) -> Result<(), SyncRuntimeError> {
+        Ok(())
+    }
+
+    fn complete_peer_pairing(
+        &self,
+        _: LibraryRootId,
+        _: &PairingInvitation,
+        _: &str,
+        _: &PairingGrantDto,
+    ) -> Result<(), SyncRuntimeError> {
+        Err(SyncRuntimeError::Unconfigured)
+    }
+}
+
+impl SyncCyclePort for WatchingProvisioner {
     fn sync_now(&self, _: SyncRole) -> Result<bool, SyncRuntimeError> {
         self.cycles
             .send(())
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
         Ok(false)
     }
-
     fn watch_host_commits(
         &self,
         cancelled: Arc<AtomicBool>,
@@ -125,24 +144,6 @@ impl SyncProvisioner for WatchingProvisioner {
             }
         }
         Ok(outcome)
-    }
-
-    fn revoke_device(&self, _: &str) -> Result<(), SyncRuntimeError> {
-        Ok(())
-    }
-
-    fn leave_sync(&self, _: LibraryRootId) -> Result<(), SyncRuntimeError> {
-        Ok(())
-    }
-
-    fn complete_peer_pairing(
-        &self,
-        _: LibraryRootId,
-        _: &PairingInvitation,
-        _: &str,
-        _: &PairingGrantDto,
-    ) -> Result<(), SyncRuntimeError> {
-        Err(SyncRuntimeError::Unconfigured)
     }
 }
 
@@ -304,7 +305,7 @@ fn a_host_never_opens_a_watch() {
     let database = Arc::new(SqliteDatabase::open(directory.path().join("echo.sqlite")).unwrap());
     let (provisioner, cycles) =
         WatchingProvisioner::new(Arc::clone(&database), vec![WatchOutcome::Advanced], true);
-    let dyn_provisioner: Arc<dyn SyncProvisioner> = provisioner.clone();
+    let dyn_provisioner: Arc<dyn SyncCyclePort> = provisioner.clone();
     let runtime = RunningSync(SyncRuntime::new(
         Arc::clone(&database),
         Some(dyn_provisioner),

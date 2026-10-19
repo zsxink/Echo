@@ -32,9 +32,9 @@ use rusqlite::{Connection, OptionalExtension, Transaction};
 
 use crate::application::ports::{
     CatalogQueryRepository, CoverAssetRef, CoverRepository, LibraryRepository, LyricsRepository,
-    OperationItem, OperationJournalRepository, PlaylistRepository, RuntimeStateStore,
-    ScanRunRepository, SongRepository, TxLyricsWriter, TxOperationWriter, TxPlaylistWriter,
-    TxRootWriter, TxSongWriter, TxStateWriter, TxWork, UnitOfWork,
+    OperationItem, OperationJournalRepository, PlaylistRepository, RootWriteRepository,
+    RuntimeStateStore, ScanRunRepository, SongRepository, TxLyricsWriter, TxOperationWriter,
+    TxPlaylistWriter, TxRootWriter, TxSongWriter, TxStateWriter, TxWork, UnitOfWork,
 };
 use crate::domain::catalog::{CatalogCounts, OpaqueCursor, Paged, SongSort, RECENT_VIEW_LIMIT};
 use crate::domain::entities::{

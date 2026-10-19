@@ -21,6 +21,26 @@ impl SyncProvisioner for MaintenanceProvisioner {
         Err(SyncRuntimeError::Unconfigured)
     }
 
+    fn revoke_device(&self, _: &str) -> Result<(), SyncRuntimeError> {
+        Ok(())
+    }
+
+    fn leave_sync(&self, _: LibraryRootId) -> Result<(), SyncRuntimeError> {
+        Ok(())
+    }
+
+    fn complete_peer_pairing(
+        &self,
+        _: LibraryRootId,
+        _: &PairingInvitation,
+        _: &str,
+        _: &PairingGrantDto,
+    ) -> Result<(), SyncRuntimeError> {
+        Err(SyncRuntimeError::Unconfigured)
+    }
+}
+
+impl SyncCyclePort for MaintenanceProvisioner {
     fn sync_now(&self, _: SyncRole) -> Result<bool, SyncRuntimeError> {
         // Production Host performs this maintenance on every cycle, including
         // an empty library. Previously its Ok(0) woke this same worker again.
@@ -39,24 +59,6 @@ impl SyncProvisioner for MaintenanceProvisioner {
                 .map_err(|_| SyncRuntimeError::WorkerFailed)?;
         }
         Ok(false)
-    }
-
-    fn revoke_device(&self, _: &str) -> Result<(), SyncRuntimeError> {
-        Ok(())
-    }
-
-    fn leave_sync(&self, _: LibraryRootId) -> Result<(), SyncRuntimeError> {
-        Ok(())
-    }
-
-    fn complete_peer_pairing(
-        &self,
-        _: LibraryRootId,
-        _: &PairingInvitation,
-        _: &str,
-        _: &PairingGrantDto,
-    ) -> Result<(), SyncRuntimeError> {
-        Err(SyncRuntimeError::Unconfigured)
     }
 }
 

@@ -466,7 +466,9 @@ impl LibraryRepository for SqliteDatabase {
             Ok(())
         })
     }
+}
 
+impl RootWriteRepository for SqliteDatabase {
     fn set_write_and_availability(
         &self,
         id: LibraryRootId,

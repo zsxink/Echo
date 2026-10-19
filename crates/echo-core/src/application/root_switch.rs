@@ -31,7 +31,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use crate::application::continuation::{ContinuationReport, ContinueFromRecords};
-use crate::application::ports::{LibraryRepository, RuntimeStateStore, TxAccess};
+use crate::application::ports::{
+    LibraryRepository, RootWriteRepository, RuntimeStateStore, TxAccess,
+};
 use crate::application::scan::{ScanDeps, ScanSummary, ScanSupervisor, StartScan};
 use crate::domain::entities::{LibraryRoot, RootAvailability};
 use crate::domain::ids::LibraryRootId;
@@ -86,7 +88,7 @@ impl PreparedCandidate {
 /// Prepares a candidate root: record, full enumeration, candidate scan.
 pub struct PrepareLibraryCandidate<'a> {
     deps: &'a ScanDeps,
-    roots: &'a dyn LibraryRepository,
+    roots: &'a dyn RootWriteRepository,
     supervisor: &'a ScanSupervisor,
 }
 
@@ -94,7 +96,7 @@ impl<'a> PrepareLibraryCandidate<'a> {
     #[must_use]
     pub const fn new(
         deps: &'a ScanDeps,
-        roots: &'a dyn LibraryRepository,
+        roots: &'a dyn RootWriteRepository,
         supervisor: &'a ScanSupervisor,
     ) -> Self {
         Self {

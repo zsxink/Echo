@@ -2,7 +2,7 @@
 
 #[allow(clippy::wildcard_imports, unused_imports)]
 use super::*;
-use crate::sync_runtime::SyncProvisioner;
+use crate::sync_runtime::{SyncCyclePort, SyncProvisioner};
 
 impl SyncProvisioner for NativeSyncProvisioner {
     fn host(&self, root: LibraryRootId) -> Result<ProvisionedHost, SyncRuntimeError> {
@@ -126,6 +126,160 @@ impl SyncProvisioner for NativeSyncProvisioner {
         })
     }
 
+    fn revoke_device(&self, device_id: &str) -> Result<(), SyncRuntimeError> {
+        let _guard = self
+            .gate
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let device_id: DeviceId =
+            serde_json::from_value(serde_json::Value::String(device_id.to_owned()))
+                .map_err(|_| SyncRuntimeError::Unconfigured)?;
+        self.database
+            .revoke_sync_peer(device_id)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)
+    }
+
+    fn leave_sync(&self, root: LibraryRootId) -> Result<(), SyncRuntimeError> {
+        let _guard = self
+            .gate
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        self.leave_sync_locked(root)
+    }
+
+    fn recover_restored_host(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<echo_core::application::ports::HostRecoveryArchive, SyncRuntimeError> {
+        self.recover_restored_host(root)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn complete_peer_pairing(
+        &self,
+        root: LibraryRootId,
+        invitation: &PairingInvitation,
+        endpoint: &str,
+        grant: &PairingGrantDto,
+    ) -> Result<(), SyncRuntimeError> {
+        let _guard = self
+            .gate
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let _activity = echo_core::application::sync::exclusive_local_activity()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        validate_peer_endpoint(endpoint)?;
+        let local_device = DeviceId::from_uuid(self.database.current_device_id().as_uuid());
+        if grant.binding != invitation.binding
+            || grant.device_id != local_device
+            || invitation.host_device_id == local_device
+            || !(32..=256).contains(&grant.bearer_token.len())
+            || !grant
+                .bearer_token
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric())
+        {
+            return Err(SyncRuntimeError::Unconfigured);
+        }
+        let current_configuration = self
+            .database
+            .current_sync_configuration()
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        let library = self
+            .database
+            .by_id(root)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+            .ok_or(SyncRuntimeError::LibraryUnavailable)?;
+        if !library.is_active() || library.availability() != RootAvailability::Available {
+            return Err(SyncRuntimeError::LibraryUnavailable);
+        }
+        // Keep the local catalog and media in place throughout enrollment.
+        prepare_enrollment_root(library.absolute_path(), root)?;
+        LanClient::new(&invitation.host_certificate_der, grant.bearer_token.clone())
+            .map_err(|_| SyncRuntimeError::Unconfigured)?;
+        let identity = PeerIdentity {
+            binding: invitation.binding,
+            local_root: root,
+            local_device,
+            host_device: invitation.host_device_id,
+            generation: invitation.invitation_id.clone(),
+            endpoint: endpoint.to_owned(),
+            host_certificate_der: invitation.host_certificate_der.clone(),
+            bearer_token: grant.bearer_token.clone(),
+        };
+        let handle = peer_identity_handle(invitation.binding, root)?;
+        let secret = SecretBytes::new(
+            serde_json::to_vec(&identity).map_err(|_| SyncRuntimeError::Unconfigured)?,
+        );
+        OsSecureStore
+            .set(&handle, &secret)
+            .map_err(|_| SyncRuntimeError::Unconfigured)?;
+        let already_bound_to_this_host = current_configuration.as_ref().is_some_and(|current| {
+            !current.host && current.binding == invitation.binding && current.local_root == root
+        });
+        let replaced_existing_binding =
+            current_configuration.is_some() && !already_bound_to_this_host;
+        if replaced_existing_binding {
+            if let Err(error) = self.leave_sync_locked(root) {
+                if let Err(cleanup_error) = remove_peer_identity_if_generation(&handle, &identity) {
+                    tracing::error!(
+                        target: "echo_desktop::sync",
+                        ?cleanup_error,
+                        generation = %identity.generation,
+                        "failed to compensate peer identity after replacing the sync binding failed"
+                    );
+                }
+                return Err(error);
+            }
+        }
+        if let Err(error) = self
+            .database
+            .bind_sync_replica_for_enrollment(invitation.binding, root)
+        {
+            if let Err(cleanup_error) = remove_peer_identity_if_generation(&handle, &identity) {
+                tracing::error!(
+                    target: "echo_desktop::sync",
+                    ?cleanup_error,
+                    generation = %identity.generation,
+                    "failed to compensate peer identity after binding the sync replica failed"
+                );
+            }
+            tracing::error!(
+                target: "echo_desktop::sync",
+                code = error.code(),
+                root = %root,
+                "binding the sync replica failed"
+            );
+            return Err(SyncRuntimeError::LibraryUnavailable);
+        }
+        if let Err(error) = self
+            .database
+            .ensure_replica_sync_baseline(invitation.binding, root)
+        {
+            // The identity is usable only after the local baseline transaction
+            // succeeds. Keep the exact database binding so a retry can resume
+            // without deleting local outbox rows or media.
+            if let Err(cleanup_error) = remove_peer_identity_if_generation(&handle, &identity) {
+                tracing::error!(
+                    target: "echo_desktop::sync",
+                    ?cleanup_error,
+                    generation = %identity.generation,
+                    "failed to compensate peer identity after baseline initialization failed"
+                );
+            }
+            tracing::error!(
+                target: "echo_desktop::sync",
+                ?error,
+                generation = %identity.generation,
+                "replica baseline initialization failed"
+            );
+            return Err(SyncRuntimeError::LibraryUnavailable);
+        }
+        Ok(())
+    }
+}
+
+impl SyncCyclePort for NativeSyncProvisioner {
     fn sync_now(&self, role: SyncRole) -> Result<bool, SyncRuntimeError> {
         self.sync_now_cancellable(role, Arc::new(AtomicBool::new(false)))
     }
@@ -326,157 +480,5 @@ impl SyncProvisioner for NativeSyncProvisioner {
             .build()
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
         executor.block_on(self.watch_peer_commits(&peer, configuration.local_root, cancelled, wait))
-    }
-
-    fn revoke_device(&self, device_id: &str) -> Result<(), SyncRuntimeError> {
-        let _guard = self
-            .gate
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
-        let device_id: DeviceId =
-            serde_json::from_value(serde_json::Value::String(device_id.to_owned()))
-                .map_err(|_| SyncRuntimeError::Unconfigured)?;
-        self.database
-            .revoke_sync_peer(device_id)
-            .map_err(|_| SyncRuntimeError::LibraryUnavailable)
-    }
-
-    fn leave_sync(&self, root: LibraryRootId) -> Result<(), SyncRuntimeError> {
-        let _guard = self
-            .gate
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
-        self.leave_sync_locked(root)
-    }
-
-    fn recover_restored_host(
-        &self,
-        root: LibraryRootId,
-    ) -> Result<echo_core::application::ports::HostRecoveryArchive, SyncRuntimeError> {
-        self.recover_restored_host(root)
-    }
-
-    #[allow(clippy::too_many_lines)]
-    fn complete_peer_pairing(
-        &self,
-        root: LibraryRootId,
-        invitation: &PairingInvitation,
-        endpoint: &str,
-        grant: &PairingGrantDto,
-    ) -> Result<(), SyncRuntimeError> {
-        let _guard = self
-            .gate
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
-        let _activity = echo_core::application::sync::exclusive_local_activity()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
-        validate_peer_endpoint(endpoint)?;
-        let local_device = DeviceId::from_uuid(self.database.current_device_id().as_uuid());
-        if grant.binding != invitation.binding
-            || grant.device_id != local_device
-            || invitation.host_device_id == local_device
-            || !(32..=256).contains(&grant.bearer_token.len())
-            || !grant
-                .bearer_token
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric())
-        {
-            return Err(SyncRuntimeError::Unconfigured);
-        }
-        let current_configuration = self
-            .database
-            .current_sync_configuration()
-            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
-        let library = self
-            .database
-            .by_id(root)
-            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
-            .ok_or(SyncRuntimeError::LibraryUnavailable)?;
-        if !library.is_active() || library.availability() != RootAvailability::Available {
-            return Err(SyncRuntimeError::LibraryUnavailable);
-        }
-        // Keep the local catalog and media in place throughout enrollment.
-        prepare_enrollment_root(library.absolute_path(), root)?;
-        LanClient::new(&invitation.host_certificate_der, grant.bearer_token.clone())
-            .map_err(|_| SyncRuntimeError::Unconfigured)?;
-        let identity = PeerIdentity {
-            binding: invitation.binding,
-            local_root: root,
-            local_device,
-            host_device: invitation.host_device_id,
-            generation: invitation.invitation_id.clone(),
-            endpoint: endpoint.to_owned(),
-            host_certificate_der: invitation.host_certificate_der.clone(),
-            bearer_token: grant.bearer_token.clone(),
-        };
-        let handle = peer_identity_handle(invitation.binding, root)?;
-        let secret = SecretBytes::new(
-            serde_json::to_vec(&identity).map_err(|_| SyncRuntimeError::Unconfigured)?,
-        );
-        OsSecureStore
-            .set(&handle, &secret)
-            .map_err(|_| SyncRuntimeError::Unconfigured)?;
-        let already_bound_to_this_host = current_configuration.as_ref().is_some_and(|current| {
-            !current.host && current.binding == invitation.binding && current.local_root == root
-        });
-        let replaced_existing_binding =
-            current_configuration.is_some() && !already_bound_to_this_host;
-        if replaced_existing_binding {
-            if let Err(error) = self.leave_sync_locked(root) {
-                if let Err(cleanup_error) = remove_peer_identity_if_generation(&handle, &identity) {
-                    tracing::error!(
-                        target: "echo_desktop::sync",
-                        ?cleanup_error,
-                        generation = %identity.generation,
-                        "failed to compensate peer identity after replacing the sync binding failed"
-                    );
-                }
-                return Err(error);
-            }
-        }
-        if let Err(error) = self
-            .database
-            .bind_sync_replica_for_enrollment(invitation.binding, root)
-        {
-            if let Err(cleanup_error) = remove_peer_identity_if_generation(&handle, &identity) {
-                tracing::error!(
-                    target: "echo_desktop::sync",
-                    ?cleanup_error,
-                    generation = %identity.generation,
-                    "failed to compensate peer identity after binding the sync replica failed"
-                );
-            }
-            tracing::error!(
-                target: "echo_desktop::sync",
-                code = error.code(),
-                root = %root,
-                "binding the sync replica failed"
-            );
-            return Err(SyncRuntimeError::LibraryUnavailable);
-        }
-        if let Err(error) = self
-            .database
-            .ensure_replica_sync_baseline(invitation.binding, root)
-        {
-            // The identity is usable only after the local baseline transaction
-            // succeeds. Keep the exact database binding so a retry can resume
-            // without deleting local outbox rows or media.
-            if let Err(cleanup_error) = remove_peer_identity_if_generation(&handle, &identity) {
-                tracing::error!(
-                    target: "echo_desktop::sync",
-                    ?cleanup_error,
-                    generation = %identity.generation,
-                    "failed to compensate peer identity after baseline initialization failed"
-                );
-            }
-            tracing::error!(
-                target: "echo_desktop::sync",
-                ?error,
-                generation = %identity.generation,
-                "replica baseline initialization failed"
-            );
-            return Err(SyncRuntimeError::LibraryUnavailable);
-        }
-        Ok(())
     }
 }

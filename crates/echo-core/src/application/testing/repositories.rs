@@ -170,6 +170,9 @@ impl LibraryRepository for MemoryLibraryRepository {
         }
         Ok(())
     }
+}
+
+impl RootWriteRepository for MemoryLibraryRepository {
     fn set_write_and_availability(
         &self,
         id: LibraryRootId,

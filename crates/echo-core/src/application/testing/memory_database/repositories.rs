@@ -45,6 +45,9 @@ impl LibraryRepository for MemoryDatabase {
         }
         Ok(())
     }
+}
+
+impl RootWriteRepository for MemoryDatabase {
     fn set_write_and_availability(
         &self,
         id: LibraryRootId,

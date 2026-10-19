@@ -110,7 +110,7 @@ fn import_target_claims_are_conditionally_unique_until_release() {
 
 use crate::application::ports::{
     CoverRepository, LibraryFileSystem as LibraryFileSystemPort, LyricsRepository, OperationItem,
-    OperationJournalRepository, RuntimeStateStore, ScanRunRepository, TxWork,
+    OperationJournalRepository, RootWriteRepository, RuntimeStateStore, ScanRunRepository, TxWork,
 };
 use crate::application::root_switch::{
     ActivateLibrary, Blockers, PrepareLibraryCandidate, ROOT_EPOCH_KEY,
@@ -192,7 +192,7 @@ impl ScanStack {
     fn deps(&self) -> ScanDeps {
         // One `Arc<SqliteDatabase>` coerced into every port view.
         let db: Arc<SqliteDatabase> = Arc::clone(&self.database);
-        let db_root: Arc<dyn LibraryRepository> = db.clone();
+        let db_root: Arc<dyn RootWriteRepository> = db.clone();
         let db_songs: Arc<dyn SongRepository> = db.clone();
         let db_catalog: Arc<dyn CatalogQueryRepository> = db.clone();
         let db_playlists: Arc<dyn PlaylistRepository> = db.clone();

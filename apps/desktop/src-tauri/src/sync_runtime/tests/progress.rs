@@ -16,10 +16,29 @@ impl SyncProvisioner for ProgressProvisioner {
         Err(SyncRuntimeError::Unconfigured)
     }
 
+    fn revoke_device(&self, _: &str) -> Result<(), SyncRuntimeError> {
+        Ok(())
+    }
+
+    fn leave_sync(&self, _: LibraryRootId) -> Result<(), SyncRuntimeError> {
+        Ok(())
+    }
+
+    fn complete_peer_pairing(
+        &self,
+        _: LibraryRootId,
+        _: &PairingInvitation,
+        _: &str,
+        _: &PairingGrantDto,
+    ) -> Result<(), SyncRuntimeError> {
+        Err(SyncRuntimeError::Unconfigured)
+    }
+}
+
+impl SyncCyclePort for ProgressProvisioner {
     fn sync_now(&self, _: SyncRole) -> Result<bool, SyncRuntimeError> {
         Err(SyncRuntimeError::Unconfigured)
     }
-
     fn sync_now_with_progress(
         &self,
         _: SyncRole,
@@ -44,7 +63,6 @@ impl SyncProvisioner for ProgressProvisioner {
             }
         }
     }
-
     fn sync_progress(&self, _: SyncRole) -> Result<SyncProgress, SyncRuntimeError> {
         Ok(SyncProgress {
             pending_changes: Some(0),
@@ -56,24 +74,6 @@ impl SyncProvisioner for ProgressProvisioner {
             total_download_bytes: Some(10),
             media_ready: Some(true),
         })
-    }
-
-    fn revoke_device(&self, _: &str) -> Result<(), SyncRuntimeError> {
-        Ok(())
-    }
-
-    fn leave_sync(&self, _: LibraryRootId) -> Result<(), SyncRuntimeError> {
-        Ok(())
-    }
-
-    fn complete_peer_pairing(
-        &self,
-        _: LibraryRootId,
-        _: &PairingInvitation,
-        _: &str,
-        _: &PairingGrantDto,
-    ) -> Result<(), SyncRuntimeError> {
-        Err(SyncRuntimeError::Unconfigured)
     }
 }
 

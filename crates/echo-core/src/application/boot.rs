@@ -169,7 +169,7 @@ impl<'a> BootRecovery<'a> {
 mod tests {
     use super::*;
     use crate::application::delete::DeleteSongs;
-    use crate::application::ports::{LibraryRepository, SongRepository};
+    use crate::application::ports::{LibraryRepository, RootWriteRepository, SongRepository};
     use crate::application::scan::StartScan;
     use crate::application::testing::{scan_fixture::song_by_path, ScanFixture};
     use crate::domain::entities::{Song, SongAvailability};
@@ -230,7 +230,7 @@ mod tests {
             ),
         )
         .expect("activate root");
-        crate::application::ports::LibraryRepository::set_write_and_availability(
+        crate::application::ports::RootWriteRepository::set_write_and_availability(
             &fixture.database,
             fixture.root,
             true,
@@ -344,7 +344,7 @@ mod tests {
 
         // A durable TrashOutcomeUnknown safety isolation (task 5.8) must
         // surface as a read-only gate and keep destructive ops disabled.
-        LibraryRepository::set_write_safety_locked(&fixture.database, fixture.root, true)
+        RootWriteRepository::set_write_safety_locked(&fixture.database, fixture.root, true)
             .expect("lock root");
 
         let report = BootRecovery::new(&fixture.deps, &fixture.supervisor)

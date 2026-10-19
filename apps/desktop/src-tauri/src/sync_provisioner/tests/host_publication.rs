@@ -1,4 +1,4 @@
-use crate::sync_runtime::SyncProvisioner;
+use crate::sync_runtime::SyncCyclePort;
 
 use super::*;
 use echo_core::application::ports::{LibraryRepository, RemoteResourceJournalPort};

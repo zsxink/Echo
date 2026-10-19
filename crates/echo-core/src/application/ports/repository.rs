@@ -17,6 +17,12 @@ pub trait LibraryRepository: Send + Sync {
     fn upsert(&self, root: &LibraryRoot) -> Result<(), Error>;
     /// Deactivate the active root record (kept, not deleted).
     fn deactivate(&self, id: LibraryRootId) -> Result<(), Error>;
+}
+
+/// Write-capability and availability transitions for library roots. Split from
+/// [`LibraryRepository`] so the read path stays narrow; every store backing
+/// library roots implements both.
+pub trait RootWriteRepository: LibraryRepository {
     /// Set the write capability and availability of a root.
     fn set_write_and_availability(
         &self,

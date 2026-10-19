@@ -171,28 +171,40 @@ pub struct ProvisionedPeer {
 
 /// Native composition owns pairing, secure credentials and Core orchestration.
 /// An absent adapter is explicitly unavailable; no memory-only credentials or
-/// plaintext fallback are substituted for durable platform provisioning.
+/// plaintext fallback are substituted for durable platform provisioning. The
+/// provisioning surface (this trait) and the cycle driver it serves
+/// ([`SyncCyclePort`]) are separate so adapters can differ: a session manager
+/// only needs the lifecycle methods, the sync loop only the cycle methods.
 pub trait SyncProvisioner: Send + Sync {
     fn host(&self, root: LibraryRootId) -> Result<ProvisionedHost, SyncRuntimeError>;
     fn peer(&self, root: LibraryRootId) -> Result<ProvisionedPeer, SyncRuntimeError>;
+    fn revoke_device(&self, device_id: &str) -> Result<(), SyncRuntimeError>;
+    fn leave_sync(&self, root: LibraryRootId) -> Result<(), SyncRuntimeError>;
+    fn recover_restored_host(
+        &self,
+        _root: LibraryRootId,
+    ) -> Result<echo_core::application::ports::HostRecoveryArchive, SyncRuntimeError> {
+        Err(SyncRuntimeError::Unconfigured)
+    }
+    fn complete_peer_pairing(
+        &self,
+        root: LibraryRootId,
+        invitation: &PairingInvitation,
+        endpoint: &str,
+        grant: &PairingGrantDto,
+    ) -> Result<(), SyncRuntimeError>;
+}
+
+/// One synchronization cycle against the paired host. Every provisioner p that
+/// can drive a cycle implements this as well (`SyncCyclePort for NativeSyncProvisioner`,
+/// the scripted test adapters); the runtime stores the cycle port and reaches
+/// the lifecycle methods through the supertrait.
+pub trait SyncCyclePort: SyncProvisioner {
     /// Return whether this successful cycle changed local catalog projections.
     fn sync_now(&self, role: SyncRole) -> Result<bool, SyncRuntimeError>;
     /// Read durable queue state after a cycle. Unknown telemetry stays absent.
     fn sync_progress(&self, _role: SyncRole) -> Result<SyncProgress, SyncRuntimeError> {
         Ok(SyncProgress::default())
-    }
-    /// Block until the paired host may have new commits, a local write queued
-    /// work, the budget elapsed, or cancellation was requested. Peer-only:
-    /// provisioners without a watch channel return
-    /// [`WatchOutcome::Unsupported`] and the caller keeps waiting on the local
-    /// waker alone. The default never blocks so simple adapters and tests keep
-    /// their existing scheduling.
-    fn watch_host_commits(
-        &self,
-        _cancelled: Arc<AtomicBool>,
-        _wait: Duration,
-    ) -> Result<WatchOutcome, SyncRuntimeError> {
-        Ok(WatchOutcome::Unsupported)
     }
     /// Cancel an in-flight background cycle when the user pauses or stops the
     /// session. Provisioners with cancellable transports should override this;
@@ -217,21 +229,19 @@ pub trait SyncProvisioner: Send + Sync {
     ) -> Result<bool, SyncRuntimeError> {
         self.sync_now_cancellable(role, cancelled)
     }
-    fn revoke_device(&self, device_id: &str) -> Result<(), SyncRuntimeError>;
-    fn leave_sync(&self, root: LibraryRootId) -> Result<(), SyncRuntimeError>;
-    fn recover_restored_host(
+    /// Block until the paired host may have new commits, a local write queued
+    /// work, the budget elapsed, or cancellation was requested. Peer-only:
+    /// provisioners without a watch channel return
+    /// [`WatchOutcome::Unsupported`] and the caller keeps waiting on the local
+    /// waker alone. The default never blocks so simple adapters and tests keep
+    /// their existing scheduling.
+    fn watch_host_commits(
         &self,
-        _root: LibraryRootId,
-    ) -> Result<echo_core::application::ports::HostRecoveryArchive, SyncRuntimeError> {
-        Err(SyncRuntimeError::Unconfigured)
+        _cancelled: Arc<AtomicBool>,
+        _wait: Duration,
+    ) -> Result<WatchOutcome, SyncRuntimeError> {
+        Ok(WatchOutcome::Unsupported)
     }
-    fn complete_peer_pairing(
-        &self,
-        root: LibraryRootId,
-        invitation: &PairingInvitation,
-        endpoint: &str,
-        grant: &PairingGrantDto,
-    ) -> Result<(), SyncRuntimeError>;
 }
 
 struct HostWorker {
@@ -366,7 +376,7 @@ impl CycleProgressObserver {
 }
 
 fn run_observed_cycle(
-    provisioner: &dyn SyncProvisioner,
+    provisioner: &dyn SyncCyclePort,
     role: SyncRole,
     cancelled: Arc<AtomicBool>,
     session_id: u64,
@@ -389,7 +399,9 @@ impl Drop for CycleProgressObserver {
 
 pub struct SyncRuntime {
     database: Arc<SqliteDatabase>,
-    provisioner: Option<Arc<dyn SyncProvisioner>>,
+    /// The cycle driver; the provisioning lifecycle is reached through the
+    /// `SyncProvisioner` supertrait.
+    provisioner: Option<Arc<dyn SyncCyclePort>>,
     // Serialize transitions independently from status. Status never waits for
     // TLS shutdown, discovery, SQLite, or a remote round trip.
     transition: Mutex<()>,
@@ -404,10 +416,7 @@ mod session;
 mod sync_loop;
 
 impl SyncRuntime {
-    pub fn new(
-        database: Arc<SqliteDatabase>,
-        provisioner: Option<Arc<dyn SyncProvisioner>>,
-    ) -> Self {
+    pub fn new(database: Arc<SqliteDatabase>, provisioner: Option<Arc<dyn SyncCyclePort>>) -> Self {
         Self {
             database,
             provisioner,
