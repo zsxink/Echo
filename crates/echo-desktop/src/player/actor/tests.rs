@@ -838,8 +838,7 @@ fn effects_pending_file_loaded_publishes_paused_until_the_first_sample_is_releas
 
 #[test]
 fn rejected_file_loaded_pause_is_retried_before_effects_can_release() {
-    let mut actor =
-        pending_effects_loop(vec![BackendEvent::FileLoaded, BackendEvent::Shutdown]);
+    let mut actor = pending_effects_loop(vec![BackendEvent::FileLoaded, BackendEvent::Shutdown]);
     actor.state = PlaybackState::Loading;
     actor.backend.fail_next_property = true;
     actor.backend.ready_after_pause_rejection = true;
@@ -1200,8 +1199,7 @@ fn file_loaded_subscribes_to_the_continuous_properties() {
     // received no `PROPERTY_CHANGE` at all — `position`/`duration` stayed
     // `None`, freezing 播放进度条 and the synced-lyrics highlight while the
     // song played. The load path is where the subscription must happen.
-    let (mut actor, snapshot, observations) =
-        spawn_test_observed(vec![BackendEvent::FileLoaded]);
+    let (mut actor, snapshot, observations) = spawn_test_observed(vec![BackendEvent::FileLoaded]);
     assert_eq!(
         observations.load(std::sync::atomic::Ordering::SeqCst),
         0,
@@ -1520,10 +1518,9 @@ fn hardened_options_are_audio_only_and_least_privilege() {
     // The strictly-required set must stay minimal and genuinely loadable on
     // every libmpv build, while config/video/vo are true hard boundaries.
     assert!(
-        HARDENED_REQUIRED.iter().all(|(n, _)| *n == "config"
-            || *n == "video"
-            || *n == "vo"
-            || *n == "audio-display"),
+        HARDENED_REQUIRED
+            .iter()
+            .all(|(n, _)| *n == "config" || *n == "video" || *n == "vo" || *n == "audio-display"),
         "required options are exactly the audio-only hard boundaries"
     );
 }

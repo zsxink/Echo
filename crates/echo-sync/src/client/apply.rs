@@ -32,7 +32,10 @@ pub(super) fn validate_transfer_progress(
     Ok(())
 }
 
-pub(super) fn validate_mutation_ack(ack: &MutationAck, mutation: &MutationDto) -> Result<(), ClientError> {
+pub(super) fn validate_mutation_ack(
+    ack: &MutationAck,
+    mutation: &MutationDto,
+) -> Result<(), ClientError> {
     #[derive(serde::Deserialize)]
     struct Outcome {
         accepted: bool,

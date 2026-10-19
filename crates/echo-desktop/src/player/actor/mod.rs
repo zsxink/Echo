@@ -55,10 +55,10 @@ mod mpv_backend;
 #[cfg(test)]
 mod test_backend;
 
-pub use backend::{BackendEvent, BackendProperty};
 use backend::Backend;
 #[cfg(test)]
 use backend::OBSERVED_PROPERTIES;
+pub use backend::{BackendEvent, BackendProperty};
 #[cfg(test)]
 use harden_options::{HARDENED_OPTIONAL, HARDENED_REQUIRED};
 use mpv_backend::MpvBackend;
@@ -957,4 +957,3 @@ mod tests;
 #[cfg(test)]
 #[path = "native_confirmation_tests.rs"]
 mod native_confirmation_tests;
-

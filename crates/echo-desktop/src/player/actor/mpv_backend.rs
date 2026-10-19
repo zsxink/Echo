@@ -3,9 +3,9 @@
 use std::path::Path;
 
 use super::super::ffi;
-use super::native_effects;
 use super::backend::{Backend, BackendEvent, BackendProperty, OBSERVED_PROPERTIES};
 use super::harden_options::{extra_options, HARDENED_REQUIRED};
+use super::native_effects;
 
 /// The real backend wrapping libmpv via [`ffi::MpvSys`] and [`ffi::Handle`].
 pub(super) struct MpvBackend {

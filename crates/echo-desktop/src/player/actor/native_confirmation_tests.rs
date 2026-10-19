@@ -1,8 +1,8 @@
 //! Candidate-library checks for configured graph receipts and deferred loading.
 
+use super::mpv_backend;
 use super::*;
 use crate::effects::{ChannelLayout, Payload, ProcessingEnvironment};
-use super::mpv_backend;
 
 fn backend() -> Option<MpvBackend> {
     #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
