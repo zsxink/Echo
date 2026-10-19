@@ -27,6 +27,8 @@ mod apply;
 #[path = "client_pairing.rs"]
 mod pairing;
 
+pub use apply::{apply_commit_page, apply_snapshot_page};
+
 #[allow(unused_imports, clippy::wildcard_imports)]
 use apply::*;
 #[cfg(test)]
