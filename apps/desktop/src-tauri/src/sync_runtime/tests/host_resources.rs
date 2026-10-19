@@ -15,7 +15,10 @@ mod cases {
     use echo_core::domain::entities::LibraryRoot;
     use echo_core::domain::ids::RelativeMediaPath;
     use echo_core::domain::ids::SongId;
-    use echo_core::domain::sync::{DeviceId, MutationId, ObjectKey, SharedResourceKind};
+    use echo_core::domain::sync::{
+        AuthorityId, DeviceId, Epoch, LibraryId, MutationId, ObjectKey, SharedResourceKind,
+        SyncBinding,
+    };
     use echo_core::infrastructure::filesystem::staging::StagingMarker;
     use echo_core::infrastructure::filesystem::{Blake3ContentHasher, RootConstrainedFileSystem};
     use echo_desktop::platform::sync_security::{
@@ -25,6 +28,18 @@ mod cases {
     use echo_sync::protocol::{MutationDto, ResourceRefDto, PROTOCOL_VERSION};
     use echo_sync::resource_transfer::{FileResourceStore, PrepareResource, ResourceTransferPort};
     use reqwest::Url;
+
+    /// The credential vault root is a process-wide `OnceLock`, so every test in
+    /// this binary must share one live path: a per-test TempDir would be deleted
+    /// while a parallel test still writes identity and checkpoint files.
+    fn configure_test_vault() {
+        static VAULT: std::sync::Once = std::sync::Once::new();
+        VAULT.call_once(|| {
+            let root =
+                std::env::temp_dir().join(format!("echo-sync-test-vault-{}", std::process::id()));
+            configure_local_vault(root).unwrap();
+        });
+    }
 
     struct RunningHost {
         runtime: SyncRuntime,
@@ -131,13 +146,78 @@ mod cases {
         }
     }
 
+    /// Role switch: a library that joined another machine's host (replica
+    /// binding) must become host again without a manual unbind. This used to
+    /// fail with `LibraryUnavailable` — "当前音乐目录不可用" — for a library
+    /// whose directory was never the problem.
+    #[test]
+    fn a_replica_bound_library_can_become_host_without_a_manual_unbind() {
+        let directory = tempfile::tempdir().unwrap();
+        configure_test_vault();
+        let app = echo_desktop::runtime::app::assemble(
+            &directory.path().join("switch.sqlite"),
+            &directory.path().join("covers"),
+        )
+        .unwrap();
+        let database = app.database.clone();
+        let root_path = directory.path().join("library");
+        std::fs::create_dir_all(root_path.join("echo/tmp")).unwrap();
+        std::fs::create_dir_all(root_path.join("media")).unwrap();
+        let root = derive_root_id(&root_path.canonicalize().unwrap());
+        std::fs::write(
+            root_path.join("echo/tmp/.echo-ownership-marker"),
+            StagingMarker::new(root).body(),
+        )
+        .unwrap();
+        app.registry.register(root, &root_path);
+        LibraryRepository::upsert(
+            database.as_ref(),
+            &LibraryRoot::new(root, root_path, true, true),
+        )
+        .unwrap();
+        let replica_binding = SyncBinding {
+            library_id: LibraryId::new(),
+            authority_id: AuthorityId::new(),
+            epoch: Epoch::INITIAL,
+        };
+        database
+            .bind_sync_library(replica_binding, false, root)
+            .unwrap();
+
+        let provisioner = NativeSyncProvisioner::new(
+            database.clone(),
+            directory.path().canonicalize().unwrap().join("resources"),
+            RemoteResourcePublishDeps {
+                fs: Arc::new(RootConstrainedFileSystem::new(app.registry.clone())),
+                hasher: Arc::new(Blake3ContentHasher::new(app.registry)),
+                journal: database.clone(),
+            },
+            app.deps,
+            ScanSupervisor::new(),
+        );
+        let host = provisioner
+            .host(root)
+            .expect("a replica-bound library must switch to host without a manual unbind");
+        assert_ne!(
+            host.binding, replica_binding,
+            "the role switch creates a fresh host identity"
+        );
+        let configuration = database.current_sync_configuration().unwrap().unwrap();
+        assert!(
+            configuration.host,
+            "the library must be bound as host after the switch"
+        );
+        assert_eq!(configuration.binding, host.binding);
+    }
+
     #[tokio::test]
     #[allow(clippy::too_many_lines)]
     async fn http_peer_tag_update_is_published_by_the_host_loop_without_manual_sync() {
         let directory = tempfile::tempdir().unwrap();
-        // The app normally configures this before constructing sync. All identity,
-        // authorization and checkpoint files in this test remain under TempDir.
-        configure_local_vault(directory.path().join("vault")).unwrap();
+        // The app normally configures this before constructing sync. The shared
+        // test vault keeps every identity, authorization and checkpoint file
+        // under one process-local path instead of this TempDir.
+        configure_test_vault();
         let app = echo_desktop::runtime::app::assemble(
             &directory.path().join("host.sqlite"),
             &directory.path().join("covers"),

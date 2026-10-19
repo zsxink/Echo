@@ -441,6 +441,9 @@ export function LanSyncSettings({ libraryRoot }: { readonly libraryRoot?: string
               <span className="setting-help">
                 主机监听所选局域网 IP 的 50826 端口，其他设备通过 IP 和验证码加入。
               </span>
+              <span className="setting-help">
+                主机与加入设备可直接互切：切换时会自动解除原同步关系，本地音乐库保留。
+              </span>
             </div>
             <div className="setting-choices" role="radiogroup" aria-label="同步角色">
               {(["host", "peer"] as const).map((nextRole) => (

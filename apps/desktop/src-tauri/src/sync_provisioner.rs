@@ -314,18 +314,28 @@ impl NativeSyncProvisioner {
             .current_sync_configuration()
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
         if let Some(configuration) = configuration {
-            if !configuration.host || configuration.local_root != root {
+            if configuration.local_root != root {
                 return Err(SyncRuntimeError::LibraryUnavailable);
             }
-            let stored = OsSecureStore
-                .get(&identity_handle(configuration.binding)?)
-                .map_err(|_| SyncRuntimeError::Unconfigured)?;
-            let identity: HostIdentity = serde_json::from_slice(stored.expose())
-                .map_err(|_| SyncRuntimeError::Unconfigured)?;
-            if identity.binding != configuration.binding || identity.local_root != root {
-                return Err(SyncRuntimeError::Unconfigured);
+            if configuration.host {
+                let stored = OsSecureStore
+                    .get(&identity_handle(configuration.binding)?)
+                    .map_err(|_| SyncRuntimeError::Unconfigured)?;
+                let identity: HostIdentity = serde_json::from_slice(stored.expose())
+                    .map_err(|_| SyncRuntimeError::Unconfigured)?;
+                if identity.binding != configuration.binding || identity.local_root != root {
+                    return Err(SyncRuntimeError::Unconfigured);
+                }
+                return Ok(identity);
             }
-            return Ok(identity);
+            // Role switch: a replica-bound library becoming host mirrors the
+            // automatic re-enrollment `complete_peer_pairing` performs when a
+            // bound library joins another host. The old peer identity is
+            // detached first — local catalog and media are kept — so switching
+            // between host and replica roles needs no manual unbind. Without
+            // this the switch failed with `LibraryUnavailable`, telling the
+            // user to check a music directory that was never the problem.
+            self.leave_sync_locked(root)?;
         }
 
         let binding = SyncBinding {
