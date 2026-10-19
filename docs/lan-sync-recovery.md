@@ -27,6 +27,14 @@ Remote media is staged and verified before it is atomically published. If the de
 
 在两端更新 Echo 后保留原资料库与配对，重试同步。不要清空待同步队列、删除歌曲或重新导入来绕过这个错误。如果仍提示资源不可用，确认两端媒体目录可访问，并保留两端同步日志用于定位缺失资源。
 
+## 主机新导入的歌曲未同步到附属机
+
+现象：主机导入新歌后本机可正常播放，附属机始终收不到；此前已同步的歌曲不受影响。2026-10-19 复现记录：媒体文件完好（BLAKE3 与导入记录一致），曲目记录和索引均已写入，但同步资源行停留在 `local_state='missing'`，且没有生成对端发布记录，主机因此不会把内容通告给附属机；健康歌曲该值均为 `available`。
+
+相关联的两个已知问题：一是删除歌曲后媒体路径可能落进保留目录 `echo/media/song/`，发布索引每隔约 10 秒重试并报 `media path must not use the reserved 'echo' directory`，发布管线会持续被该条目阻塞；二是重新绑定同步（开关局域网同步、从备份恢复主机等）会重建 library/authority 并清空 `sync_peers`，附属机随即失去配对。
+
+临时处置：重新绑定后先在附属机重新配对，再删除并重新导入卡住的歌曲（或触发一次媒体库扫描），让资源重新登记为可用。仅重启不会修复该状态。修复方向：导入完成后按库内路径复核资源并落发布记录；删除流程不得把媒体路径留在 `echo/` 保留目录内。
+
 ## What cannot be detected
 
 If the entire machine state, library root, and independently stored checkpoint are all rolled back together to the same older point, local evidence cannot prove that newer commits once existed. Use a backup inventory or another peer's observed checkpoint to identify that case. When in doubt, recover into a new host epoch and re-pair; never resume the old epoch from a potentially stale backup.
