@@ -25,11 +25,7 @@ struct CountingProbe {
 }
 
 impl MediaProbe for CountingProbe {
-    fn probe(
-        &self,
-        root: LibraryRootId,
-        path: &RelativeMediaPath,
-    ) -> Result<ProbeOutcome, Error> {
+    fn probe(&self, root: LibraryRootId, path: &RelativeMediaPath) -> Result<ProbeOutcome, Error> {
         let now = self
             .current
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
@@ -44,11 +40,7 @@ impl MediaProbe for CountingProbe {
         outcome
     }
 
-    fn probe_bytes(
-        &self,
-        content: &[u8],
-        extension: Option<&str>,
-    ) -> Result<ProbeOutcome, Error> {
+    fn probe_bytes(&self, content: &[u8], extension: Option<&str>) -> Result<ProbeOutcome, Error> {
         self.inner.probe_bytes(content, extension)
     }
 }
@@ -737,8 +729,7 @@ fn stress_scan_bounded_hashes_and_cancels_without_corrupting_songs() {
 
     // Bounded pool: 4 workers (or fewer on a small machine) must never let
     // more than the configured bound run concurrently even at N=120.
-    let pool =
-        4.min(std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get));
+    let pool = 4.min(std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get));
     let current = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let max_seen = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let deps = ScanDeps {
@@ -865,10 +856,9 @@ fn cover_cache_key_and_db_reference_stay_consistent() {
     );
     start_scan(&fixture).run(fixture.root).expect("scan");
     let song = fixture.all_songs().into_iter().next().expect("song");
-    let cover =
-        crate::application::ports::CoverRepository::cover_of(&fixture.database, song.id())
-            .expect("cover ref")
-            .expect("cover attached");
+    let cover = crate::application::ports::CoverRepository::cover_of(&fixture.database, song.id())
+        .expect("cover ref")
+        .expect("cover attached");
     // The asset key round-trips through the cache: opaque, content keyed.
     assert_eq!(
         fixture

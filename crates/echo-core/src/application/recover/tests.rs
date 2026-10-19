@@ -94,11 +94,7 @@ impl crate::application::ports::filesystem::LegacyLibraryFileSystem for CrashFs 
     fn enumerate(&self, root: LibraryRootId) -> Result<Vec<RelativeMediaPath>, Error> {
         self.inner.enumerate(root)
     }
-    fn file_meta(
-        &self,
-        root: LibraryRootId,
-        path: &RelativeMediaPath,
-    ) -> Result<FileMeta, Error> {
+    fn file_meta(&self, root: LibraryRootId, path: &RelativeMediaPath) -> Result<FileMeta, Error> {
         self.inner.file_meta(root, path)
     }
     fn read_head(
@@ -153,11 +149,7 @@ impl crate::application::ports::filesystem::LegacyLibraryFileSystem for CrashFs 
     ) -> Result<(), Error> {
         self.inner.discard_staged(root, staged)
     }
-    fn path_exists(
-        &self,
-        root: LibraryRootId,
-        path: &RelativeMediaPath,
-    ) -> Result<bool, Error> {
+    fn path_exists(&self, root: LibraryRootId, path: &RelativeMediaPath) -> Result<bool, Error> {
         self.inner.path_exists(root, path)
     }
     fn publish_from_staging_path(
@@ -396,10 +388,7 @@ impl crate::application::ports::ControlPlanePort for CrashControlPlane {
 /// The crash-wired deps for one import run: the same shared fakes as the
 /// fixture, so after the injected crash the fixture's own (unwrapped) deps
 /// see the durable journal/fs state for recovery.
-fn crash_deps(
-    fixture: &ScanFixture,
-    ctrl: &Arc<Controller>,
-) -> crate::application::scan::ScanDeps {
+fn crash_deps(fixture: &ScanFixture, ctrl: &Arc<Controller>) -> crate::application::scan::ScanDeps {
     let fs: Arc<dyn crate::application::ports::LibraryFileSystem> = Arc::new(CrashFs {
         inner: Arc::new(fixture.fs.clone()),
         ctrl: ctrl.clone(),
@@ -951,12 +940,7 @@ fn lrc_sibling(audio: &RelativeMediaPath) -> RelativeMediaPath {
 
 /// Seed one library song (favorite + play stats, optional `.lrc` sidecar)
 /// so undo-recovery can assert the preserved relationships (design §9).
-fn seed_delete_song(
-    fixture: &ScanFixture,
-    path: &str,
-    audio: &[u8],
-    lrc: Option<&[u8]>,
-) -> SongId {
+fn seed_delete_song(fixture: &ScanFixture, path: &str, audio: &[u8], lrc: Option<&[u8]>) -> SongId {
     fixture.write_file(path, audio);
     fixture.set_audio(path, "晴天", 269_000);
     let audio_path = fixture.path(path);
