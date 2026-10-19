@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::effects::{ChannelLayout, Payload, ProcessingEnvironment};
+use super::mpv_backend;
 
 fn backend() -> Option<MpvBackend> {
     #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
@@ -261,19 +262,19 @@ fn disabled_new_load_clears_a_previous_rejected_hold_in_the_native_adapter() {
 
 #[test]
 fn native_error_classification_uses_the_candidate_messages() {
-    assert!(native_audio_filter_error(
+    assert!(mpv_backend::native_audio_filter_error(
         "lavfi",
         "failed to configure the filter graph\n"
     ));
-    assert!(native_audio_filter_error(
+    assert!(mpv_backend::native_audio_filter_error(
         "af",
         "Disabling filter echo_limiter because it has failed.\n"
     ));
-    assert!(!native_audio_filter_error(
+    assert!(!mpv_backend::native_audio_filter_error(
         "af",
         "Disabling filter user_custom because it has failed.\n"
     ));
-    assert!(!native_audio_filter_error(
+    assert!(!mpv_backend::native_audio_filter_error(
         "ao/coreaudio",
         "device failed\n"
     ));
