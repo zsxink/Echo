@@ -299,3 +299,50 @@ fn remote_resource_journal_rejects_stale_root_reused_identity_and_incomplete_fin
     assert!(database.prepare(&stale_root).is_err());
     assert_eq!(database.incomplete(root).unwrap(), [incomplete.operation]);
 }
+
+#[test]
+fn maintenance_repairs_previously_acked_tags_without_new_commits_or_file_changes() {
+    for indexed in [false, true] {
+        let (_directory, database, root, object, manifest) = fixture();
+        let ObjectKey::Song(id) = object else {
+            unreachable!()
+        };
+        let mut publication = publication(root, object, manifest, None);
+        database.prepare(&publication).unwrap();
+        publication.items[0].stage = RemoteResourceStage::Published;
+        database.save(&publication).unwrap();
+        database.finish(&publication).unwrap();
+        database.writer.run(move |connection| {
+            connection.execute("UPDATE sync_mutations SET status='confirmed'", []).map_err(storage)?;
+            connection.execute(
+                "UPDATE sync_object_versions SET payload_json=json_set(payload_json,'$.album','New album','$.duration_ms',json('18446744073709551615'),'$.added_at',json('18446744073709551615')) WHERE object_type='song' AND object_uuid=?1",
+                params![id.to_string()],
+            ).map_err(storage)?;
+            connection.execute(
+                "UPDATE songs SET album='Old album',file_mtime_ns=?2 WHERE uuid=?1",
+                params![id.to_string(), indexed.then_some(123_i64)],
+            ).map_err(storage)?;
+            Ok(())
+        }).unwrap();
+        let before = SongRepository::by_id(&database, id).unwrap().unwrap();
+        let queue = database.pending_local_mutations(32).unwrap();
+        assert_eq!(
+            database
+                .repair_published_song_projections(LibraryRootId::new())
+                .unwrap(),
+            0
+        );
+        assert_eq!(database.repair_published_song_projections(root).unwrap(), 1);
+        let after = SongRepository::by_id(&database, id).unwrap().unwrap();
+        assert_eq!(after.album(), Some("New album"));
+        assert_eq!(after.path(), before.path());
+        assert_eq!(after.blake3_hash(), before.blake3_hash());
+        assert_eq!(after.file_mtime_ns(), before.file_mtime_ns());
+        assert_eq!(after.availability(), before.availability());
+        assert_eq!(
+            database.pending_local_mutations(32).unwrap().len(),
+            queue.len()
+        );
+        assert_eq!(database.repair_published_song_projections(root).unwrap(), 0);
+    }
+}

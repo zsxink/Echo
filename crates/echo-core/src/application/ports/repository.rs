@@ -39,6 +39,24 @@ pub trait SongRepository: Send + Sync {
     /// and the final missing pass. Bounded by the library size, never by a
     /// page limit: scans need the whole picture.
     fn all_in_root(&self, root: LibraryRootId) -> Result<Vec<Song>, Error>;
+    /// Completed sync resources whose local storage differs from their shared
+    /// library path. Scans visit current local audio and keep retained logical
+    /// originals out of discovery; arbitrary Echo control files stay excluded.
+    fn published_file_paths(
+        &self,
+        _root: LibraryRootId,
+    ) -> Result<Vec<(RelativeMediaPath, RelativeMediaPath)>, Error> {
+        Ok(Vec::new())
+    }
+
+    /// Shared audio path for one currently associated local song file.
+    fn published_logical_path(
+        &self,
+        _root: LibraryRootId,
+        _local: &RelativeMediaPath,
+    ) -> Result<Option<RelativeMediaPath>, Error> {
+        Ok(None)
+    }
     fn upsert(&self, song: &Song) -> Result<(), Error>;
     fn set_availability(&self, id: SongId, availability: SongAvailability) -> Result<(), Error>;
     fn set_favorite(&self, id: SongId, favorite: bool) -> Result<(), Error>;

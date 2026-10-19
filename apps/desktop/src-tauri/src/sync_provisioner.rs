@@ -953,6 +953,14 @@ impl NativeSyncProvisioner {
     }
 
     fn refresh_published_metadata(&self, root: LibraryRootId) {
+        match self.database.repair_published_song_projections(root) {
+            Ok(count) if count > 0 => self.pending_catalog_changed.store(true, Ordering::Release),
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(target: "echo_desktop::sync", %error, "confirmed song tags will retry next cycle");
+                return;
+            }
+        }
         let songs = match self.database.pending_remote_song_metadata(root) {
             Ok(songs) => songs,
             Err(error) => {

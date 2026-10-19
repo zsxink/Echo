@@ -298,7 +298,7 @@ impl<'a> StartScan<'a> {
         );
         // Check that the file stayed stable throughout extraction, but retain
         // the host's logical resource declarations and shared metadata.
-        super::scan_resources::verified_song_resources(self.deps, root, &parsed, false)?;
+        super::scan_resources::verify_parsed_audio(self.deps, root, &parsed)?;
         self.persist_parsed_index(song, &parsed, None)
     }
 
@@ -318,7 +318,7 @@ impl<'a> StartScan<'a> {
         // ---- Enumerating ----
         transition(&mut progress, ScanState::Enumerating)?;
         emitter.emit(&progress, true)?;
-        let candidates = match self.deps.fs.enumerate(root) {
+        let candidates = match self.scan_candidates(root) {
             Ok(files) => files,
             Err(error) => {
                 // Root-level failure: the run fails; no identity is touched.
@@ -373,6 +373,38 @@ impl<'a> StartScan<'a> {
             cancelled: false,
             progress,
         })
+    }
+
+    fn scan_candidates(&self, root: LibraryRootId) -> Result<Vec<RelativeMediaPath>, Error> {
+        let mut candidates = self.deps.fs.enumerate(root)?;
+        let locations = self.deps.songs.published_file_paths(root)?;
+        let owned: HashSet<_> = self
+            .deps
+            .songs
+            .all_in_root(root)?
+            .iter()
+            .map(|song| song.path().identity_key().to_owned())
+            .collect();
+        let retained: HashSet<_> = locations
+            .iter()
+            .filter(|(local, logical)| local != logical && !owned.contains(logical.identity_key()))
+            .map(|(_, logical)| logical.identity_key().to_owned())
+            .collect();
+        candidates.retain(|path| !retained.contains(path.identity_key()));
+        let mut known: HashSet<_> = candidates
+            .iter()
+            .map(|path| path.identity_key().to_owned())
+            .collect();
+        for (local, _) in locations {
+            // A missing current version must still enter the final missing
+            // pass. Never discover unrelated historical Echo control files.
+            if self.deps.fs.path_exists(root, &local)?
+                && known.insert(local.identity_key().to_owned())
+            {
+                candidates.push(local);
+            }
+        }
+        Ok(candidates)
     }
 
     /// Reconcile one parsed batch. Song writes go through the unit of work in

@@ -192,7 +192,9 @@ pub fn platform_playback_violations(source: &str) -> Vec<String> {
         ("playlist playback order reversal", "songs.reverse()"),
         ("playback availability verdict", "SongAvailability::"),
     ];
-    source
+    // Integration fixtures assert Core's verdicts; only production code must
+    // delegate those verdicts instead of reconstructing them.
+    without_test_modules(source)
         .lines()
         .filter_map(|line| {
             let code = code_before_comment(line);

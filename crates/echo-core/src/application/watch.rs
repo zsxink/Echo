@@ -158,6 +158,17 @@ impl WatchCoordinator {
             (self.callbacks.request_rescan)(reason);
             return Ok(EventOutcome::RescanRequested(reason));
         }
+        if event.path.normalized().starts_with("echo/")
+            && self
+                .deps
+                .songs
+                .published_logical_path(event.root, &event.path)?
+                .is_none()
+        {
+            // Candidate events can mention historical versions or arbitrary
+            // files under echo/media. Only an associated active song is editable.
+            return Ok(EventOutcome::Ignored);
+        }
         let _activity = super::sync::local_activity()?;
         if self.deps.roots.replica_enrollment_pending(event.root)? {
             return Ok(EventOutcome::Ignored);
@@ -187,6 +198,18 @@ impl WatchCoordinator {
         root: LibraryRootId,
         path: &RelativeMediaPath,
     ) -> Result<EventOutcome, Error> {
+        if self.deps.songs.by_path(root, path)?.is_none()
+            && self
+                .deps
+                .songs
+                .published_file_paths(root)?
+                .iter()
+                .any(|(local, logical)| local != logical && logical == path)
+        {
+            // Publication preserves the old logical file as a recovery copy.
+            // It must not be rediscovered as a new song after an event.
+            return Ok(EventOutcome::Ignored);
+        }
         // The file vanished between the event and reconciliation (a Remove
         // will follow): nothing to do.
         if self.deps.fs.file_meta(root, path).is_err() {

@@ -14,18 +14,10 @@ pub(super) fn verified_song_resources(
     include_sidecar: bool,
 ) -> Result<Vec<SharedResourceManifest>, Error> {
     let file = &parsed.file;
-    let before = deps.fs.file_meta(root, &file.path)?;
-    let hash = deps.hasher.hash(root, &file.path)?;
-    let after = deps.fs.file_meta(root, &file.path)?;
-    let expected = super::ports::FileMeta {
-        size: file.size,
-        modified_ns: file.mtime_ns,
-    };
-    if before != after || after != expected || hash != file.hash {
-        return Err(Error::conflict(
-            "audio changed before its resource declaration was committed",
-        ));
-    }
+    let after = verify_parsed_audio(deps, root, parsed)?;
+    let hash = &file.hash;
+    let logical = deps.songs.published_logical_path(root, &file.path)?;
+    let logical = logical.as_ref().unwrap_or(&file.path);
     let media_type = match file.meta.format {
         AudioFormat::Mpeg => "audio/mpeg",
         AudioFormat::Flac => "audio/flac",
@@ -39,10 +31,10 @@ pub(super) fn verified_song_resources(
     };
     let mut resources = vec![SharedResourceManifest::new(
         SharedResourceKind::Audio,
-        digest(&hash)?,
+        digest(hash)?,
         after.size,
         media_type.to_owned(),
-        file.path.normalized(),
+        logical.normalized(),
     )?];
     if let Some(candidate) = parsed.sidecar_lyrics.as_ref().filter(|_| include_sidecar) {
         let stem = file
@@ -69,15 +61,46 @@ pub(super) fn verified_song_resources(
                 "lyrics sidecar changed before its resource declaration was committed",
             ));
         }
+        let logical_sidecar = format!(
+            "{}.lrc",
+            logical
+                .normalized()
+                .rsplit_once('.')
+                .ok_or_else(|| Error::conflict("audio has no extension"))?
+                .0
+        );
         resources.push(SharedResourceManifest::new(
             SharedResourceKind::LyricsSidecar,
             digest(&deps.hasher.hash_of_bytes(&bytes))?,
             after.size,
             "text/plain".to_owned(),
-            sidecar.normalized(),
+            &logical_sidecar,
         )?);
     }
     Ok(resources)
+}
+
+/// Verify parsed local bytes without declaring their device-local path as a
+/// shared resource. Sync versions may live in the reserved Echo control tree.
+pub(super) fn verify_parsed_audio(
+    deps: &ScanDeps,
+    root: LibraryRootId,
+    parsed: &ParsedOutcome,
+) -> Result<super::ports::FileMeta, Error> {
+    let file = &parsed.file;
+    let before = deps.fs.file_meta(root, &file.path)?;
+    let hash = deps.hasher.hash(root, &file.path)?;
+    let after = deps.fs.file_meta(root, &file.path)?;
+    let expected = super::ports::FileMeta {
+        size: file.size,
+        modified_ns: file.mtime_ns,
+    };
+    if before != after || after != expected || hash != file.hash {
+        return Err(Error::conflict(
+            "audio changed before its resource declaration was committed",
+        ));
+    }
+    Ok(after)
 }
 
 fn digest(hash: &str) -> Result<ResourceDigest, Error> {

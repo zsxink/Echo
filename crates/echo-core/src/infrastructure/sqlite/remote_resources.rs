@@ -206,6 +206,51 @@ impl RemoteResourceJournalPort for SqliteDatabase {
 }
 
 impl SqliteDatabase {
+    /// Repair shared tags skipped by older projectors, including songs whose
+    /// local asset index already completed. File facts and local overlays stay
+    /// under their existing publication and mutation guards.
+    pub fn repair_published_song_projections(&self, root: LibraryRootId) -> Result<usize, Error> {
+        self.writer.run(move |connection| {
+            let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
+            let root = root.to_string();
+            let rows = {
+                let mut statement = tx.prepare(
+                    "SELECT s.uuid,v.payload_json FROM songs s
+                     JOIN sync_object_versions v ON v.object_type='song' AND v.object_uuid=s.uuid
+                     JOIN sync_binding b ON b.local_root_uuid=s.library_root_uuid AND b.singleton=1
+                     WHERE s.library_root_uuid=?1 AND s.availability='available' AND v.is_tombstone=0
+                       AND v.payload_json IS NOT NULL
+                       AND NOT EXISTS(SELECT 1 FROM sync_song_aliases a WHERE a.alias_song_uuid=s.uuid)
+                       AND NOT EXISTS(SELECT 1 FROM sync_mutations m WHERE m.object_type='song'
+                         AND (m.object_uuid=s.uuid OR m.object_uuid IN
+                           (SELECT a.alias_song_uuid FROM sync_song_aliases a WHERE a.canonical_song_uuid=s.uuid))
+                         AND m.status='pending')
+                       AND NOT EXISTS(SELECT 1 FROM sync_local_delete_intents d
+                         WHERE d.object_type='song' AND d.object_uuid=s.uuid AND d.state='open')
+                       AND EXISTS(SELECT 1 FROM sync_remote_resource_locations l
+                         JOIN sync_remote_publications p ON p.operation_uuid=l.operation_uuid
+                         WHERE l.local_root_uuid=s.library_root_uuid AND l.object_type='song'
+                           AND l.object_uuid=s.uuid AND p.completed=1)
+                       AND (s.title IS NOT json_extract(v.payload_json,'$.title')
+                         OR s.artist IS NOT json_extract(v.payload_json,'$.artist')
+                         OR s.album IS NOT json_extract(v.payload_json,'$.album')
+                         OR s.duration_ms IS NOT CAST(json_extract(v.payload_json,'$.duration_ms') AS INTEGER)
+                         OR s.added_at IS NOT CAST(json_extract(v.payload_json,'$.added_at') AS INTEGER))",
+                ).map_err(storage)?;
+                let rows = statement.query_map(params![root], |row| Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?)))
+                    .map_err(storage)?.collect::<Result<Vec<_>,_>>().map_err(storage)?;
+                rows
+            };
+            for (song,payload) in &rows {
+                super::sync_projection::repair_confirmed_song_tags(
+                    &tx, song, &serde_json::from_str(payload).map_err(storage)?, &root,
+                )?;
+            }
+            tx.commit().map_err(storage)?;
+            Ok(rows.len())
+        })
+    }
+
     /// Published audio still missing its local tag/asset index. The scan stamp
     /// is committed with publication, survives restart and also repairs songs
     /// downloaded by versions which never scheduled metadata extraction.
@@ -263,9 +308,9 @@ impl SqliteDatabase {
         self.pending_resource_sets(root, false)
     }
 
-    /// Resource sets whose current published object version was authored by a
-    /// remote device. A host uses this to publish bytes it received into its
-    /// own library without treating its already-local media as remote input.
+    /// Peer-authored resources and previously published resources edited
+    /// locally. A host advances existing version associations through the same
+    /// journal without treating newly imported local media as remote input.
     pub fn pending_peer_resource_sets(
         &self,
         root: LibraryRootId,
@@ -288,8 +333,15 @@ impl SqliteDatabase {
                    AND EXISTS (SELECT 1 FROM sync_object_versions v
                    JOIN sync_commits c ON c.commit_seq=v.commit_seq
                    WHERE v.object_type=m.object_type AND v.object_uuid=m.object_uuid
-                     AND v.is_tombstone=0 AND c.origin_device_id <>
-                       (SELECT value FROM device_state WHERE key='device_id'))
+                     AND v.is_tombstone=0 AND (
+                       c.origin_device_id <> (SELECT value FROM device_state WHERE key='device_id')
+                       OR EXISTS(SELECT 1 FROM sync_remote_resource_locations l
+                         JOIN sync_remote_publications p ON p.operation_uuid=l.operation_uuid
+                         WHERE l.local_root_uuid=?1 AND l.object_type=m.object_type
+                           AND l.object_uuid=m.object_uuid AND p.completed=1)))
+                   AND NOT EXISTS(SELECT 1 FROM sync_mutations local
+                     WHERE local.object_type=m.object_type AND local.object_uuid=m.object_uuid
+                       AND local.status='pending')
                  ORDER BY m.object_type,m.object_uuid"
             } else {
                 "SELECT DISTINCT m.object_type,m.object_uuid FROM sync_resource_manifests m
@@ -301,10 +353,15 @@ impl SqliteDatabase {
                  ORDER BY m.object_type,m.object_uuid"
             };
             let mut statement=connection.prepare(query).map_err(storage)?;
-            let rows=statement.query_map([],|row| Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?))).map_err(storage)?;
+            let mut rows = if peer_authored_only {
+                statement.query(params![root.to_string()])
+            } else {
+                statement.query([])
+            }.map_err(storage)?;
             let mut pending=Vec::new();
-            for row in rows {
-                let (kind,id)=row.map_err(storage)?;
+            while let Some(row) = rows.next().map_err(storage)? {
+                let kind: String = row.get(0).map_err(storage)?;
+                let id: String = row.get(1).map_err(storage)?;
                 let object=parse_object(&kind,&id)?;
                 let resources=sync_manifests::load(connection,&kind,&id)?;
                 let mut ready=true;

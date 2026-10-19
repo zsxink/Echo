@@ -61,7 +61,13 @@ pub(crate) fn song_full_snapshot_payload(
 ) -> Result<serde_json::Value, Error> {
     connection
         .query_row(
-            "SELECT relative_path, title, artist, album, blake3_hash, file_size, duration_ms, format, bitrate_bps, sample_rate_hz, channels, bits_per_sample, added_at FROM songs WHERE uuid = ?1",
+            "SELECT COALESCE((SELECT l.library_relative_path FROM sync_remote_resource_locations l
+                JOIN sync_remote_publications p ON p.operation_uuid=l.operation_uuid
+                WHERE l.local_root_uuid=songs.library_root_uuid AND l.object_type='song'
+                  AND l.object_uuid=songs.uuid AND l.local_relative_path=songs.relative_path
+                  AND p.completed=1 LIMIT 1),relative_path),
+                title, artist, album, blake3_hash, file_size, duration_ms, format, bitrate_bps,
+                sample_rate_hz, channels, bits_per_sample, added_at FROM songs WHERE uuid = ?1",
             params![id.to_string()],
             |row| {
                 let relative_path: String = row.get(0)?;

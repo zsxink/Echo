@@ -85,15 +85,11 @@ impl Coalescer {
         }
     }
 
-    /// Echo's managed media tree is exactly `media/` (portable layout §5).
-    /// Any path outside it — the `echo/` control surface (`echo/tmp/`
-    /// staging, manifest, records), a legacy `.echo-staging-*` dir, or
-    /// old-layout root-level artist folders/loose files — is never a library
-    /// event and is dropped from the stream. Publishing *out* of staging
-    /// surfaces as the destination's Created event (the destination is under
-    /// `media/`), which is the part reconciliation cares about.
+    /// Normal media and isolated sync versions may produce candidate events.
+    /// The application accepts Echo version events only for a durable current
+    /// song association; staging, records and all other control files stay out.
     fn not_under_media(relative: &RelativeMediaPath) -> bool {
-        !Self::media_root_component(relative)
+        !Self::media_root_component(relative) && !relative.normalized().starts_with("echo/media/")
     }
 
     /// Whether the path's first component is exactly `media` — the managed
@@ -564,6 +560,24 @@ mod tests {
         coalescer.flush_ready(&mut |event| emitted.push(event));
         assert_eq!(emitted.len(), 1, "stable file emits after confirmation");
         assert_eq!(emitted[0].path.display(), "media/growing.mp3");
+    }
+
+    #[test]
+    fn coalescer_emits_sync_version_edits_but_excludes_other_control_files() {
+        let (dir, _, mut coalescer) = setup();
+        let version = "echo/media/song/id/digest/media/song.flac";
+        std::fs::create_dir_all(dir.path().join("echo/media/song/id/digest/media")).unwrap();
+        std::fs::write(dir.path().join(version), b"changed tags").unwrap();
+        coalescer.absorb(&modified(dir.path(), version));
+        coalescer.absorb(&modified(dir.path(), "echo/tmp/song.flac"));
+        coalescer.absorb(&modified(dir.path(), "echo/records/song.flac"));
+        std::thread::sleep(timings().debounce + Duration::from_millis(10));
+        coalescer.flush_ready(&mut |_| panic!("first stability sample only"));
+        std::thread::sleep(timings().sample_delay + Duration::from_millis(10));
+        let mut emitted = Vec::new();
+        coalescer.flush_ready(&mut |event| emitted.push(event));
+        assert_eq!(emitted.len(), 1);
+        assert_eq!(emitted[0].path.normalized(), version);
     }
 
     #[test]

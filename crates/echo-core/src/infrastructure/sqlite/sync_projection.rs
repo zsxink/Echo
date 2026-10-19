@@ -123,6 +123,33 @@ pub(super) fn project_confirmed_song_state(
     payload: &Value,
     local_root_uuid: Option<&str>,
 ) -> Result<(), Error> {
+    project_confirmed_state(
+        tx,
+        object_type,
+        object_uuid,
+        payload,
+        local_root_uuid,
+        false,
+    )
+}
+
+pub(super) fn repair_confirmed_song_tags(
+    tx: &Connection,
+    song_uuid: &str,
+    payload: &Value,
+    root_uuid: &str,
+) -> Result<(), Error> {
+    project_confirmed_state(tx, "song", song_uuid, payload, Some(root_uuid), true)
+}
+
+fn project_confirmed_state(
+    tx: &Connection,
+    object_type: &str,
+    object_uuid: &str,
+    payload: &Value,
+    local_root_uuid: Option<&str>,
+    preserve_file_facts: bool,
+) -> Result<(), Error> {
     if !matches!(
         object_type,
         "song" | "favorite" | "override" | "play-stats" | "playlist"
@@ -149,7 +176,13 @@ pub(super) fn project_confirmed_song_state(
         return Ok(());
     }
     if object_type == "song" {
-        return project_song(tx, object_uuid, payload, local_root_uuid);
+        return project_song(
+            tx,
+            object_uuid,
+            payload,
+            local_root_uuid,
+            preserve_file_facts,
+        );
     }
     if object_type == "playlist" {
         return project_playlist(tx, object_uuid, payload, local_root_uuid);
@@ -329,6 +362,7 @@ fn project_song(
     object_uuid: &str,
     payload: &Value,
     local_root_uuid: Option<&str>,
+    preserve_file_facts: bool,
 ) -> Result<(), Error> {
     let open_delete_intent: bool = tx
         .query_row(
@@ -380,8 +414,21 @@ fn project_song(
         return Err(Error::conflict("confirmed song has an invalid BLAKE3 hash"));
     }
     let format = optional_string(payload, "format")?;
-    if local_projection_conflicts(tx, root_uuid, song_uuid, &path, hash.as_deref())? {
-        return Ok(());
+    if preserve_file_facts
+        || local_projection_conflicts(tx, root_uuid, song_uuid, &path, hash.as_deref())?
+    {
+        // The current bytes remain usable until immutable resource publication
+        // verifies and associates their replacement. That device-local safety
+        // rule must not discard already-confirmed shared tags: publication only
+        // changes file facts, so skipping these tags would leave them stale
+        // forever even after the new audio arrives. Pending local mutations and
+        // delete intents were excluded before reaching this branch.
+        tx.execute(
+            "UPDATE songs SET title=?2,artist=?3,album=?4,title_sort=?5,artist_sort=?6,album_sort=?7,duration_ms=?8,added_at=?9,updated_at=?10 WHERE uuid=?1 AND library_root_uuid=?11",
+            params![song_uuid,title,artist,album,normalized_key(title.as_deref().unwrap_or("")),normalized_key(artist.as_deref().unwrap_or("")),normalized_key(album.as_deref().unwrap_or("")),duration_ms,i64::try_from(added_at).unwrap_or(i64::MAX),now_ms(),root_uuid],
+        ).map_err(storage)?;
+        replace_song_search(tx, song_uuid, title, artist, album)?;
+        return project_waiting_song_state(tx, root_uuid, song_uuid);
     }
     let path_owner: bool = tx
         .query_row(
@@ -408,6 +455,18 @@ fn project_song(
         params![song_uuid, root_uuid, path.display(), path.identity_key(), hash, file_size, format, title, artist, album, title_sort, artist_sort, album_sort, duration_ms, i64::try_from(added_at).unwrap_or(i64::MAX), bitrate_bps, sample_rate_hz, channels, bits_per_sample, now],
     )
     .map_err(super::support::map_constraint)?;
+    replace_song_search(tx, song_uuid, title, artist, album)?;
+    project_waiting_song_state(tx, root_uuid, song_uuid)?;
+    Ok(())
+}
+
+fn replace_song_search(
+    tx: &Connection,
+    song_uuid: &str,
+    title: Option<String>,
+    artist: Option<String>,
+    album: Option<String>,
+) -> Result<(), Error> {
     tx.execute(
         "DELETE FROM song_search WHERE song_uuid=?1",
         params![song_uuid],
@@ -423,7 +482,6 @@ fn project_song(
         ],
     )
     .map_err(storage)?;
-    project_waiting_song_state(tx, root_uuid, song_uuid)?;
     Ok(())
 }
 
@@ -702,11 +760,11 @@ fn reserve_pending_projection_path(
     }
 }
 
-/// Whether this device already holds a projection of the object that the
+/// Whether this device already holds file facts of the object that the
 /// incoming one must not overwrite. Relative paths are device-local facts when
 /// two independently populated libraries are merged: replacing a local path
 /// with the peer's path makes a perfectly valid local file appear missing on
-/// this device. Matching path/hash records still receive the shared metadata.
+/// this device. Confirmed shared metadata is independent of these file facts.
 fn local_projection_conflicts(
     tx: &Connection,
     root_uuid: &str,

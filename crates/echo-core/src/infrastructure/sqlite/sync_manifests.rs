@@ -175,6 +175,63 @@ pub(crate) fn load(
     .collect()
 }
 
+/// Only explicitly associated current song resources may enter the scan from
+/// Echo's control tree. The location is durable even when an external editor
+/// has changed its bytes since publication.
+pub(crate) fn published_file_paths(
+    connection: &Connection,
+    root: crate::domain::ids::LibraryRootId,
+) -> Result<
+    Vec<(
+        crate::domain::ids::RelativeMediaPath,
+        crate::domain::ids::RelativeMediaPath,
+    )>,
+    Error,
+> {
+    let mut statement = connection.prepare(
+        "SELECT l.local_relative_path,l.library_relative_path
+         FROM sync_remote_resource_locations l
+         JOIN sync_remote_publications p ON p.operation_uuid=l.operation_uuid
+         JOIN songs s ON s.uuid=l.object_uuid AND s.library_root_uuid=l.local_root_uuid
+         JOIN sync_resource_manifests m ON m.object_type=l.object_type AND m.object_uuid=l.object_uuid
+           AND m.library_relative_path=l.library_relative_path
+         WHERE l.local_root_uuid=?1 AND l.object_type='song' AND p.completed=1
+           AND m.ref_kind='audio' AND l.local_relative_path=s.relative_path
+         ORDER BY l.local_relative_path",
+    ).map_err(storage)?;
+    let rows = statement
+        .query_map(params![root.to_string()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(storage)?;
+    rows.map(|row| {
+        let (local, logical) = row.map_err(storage)?;
+        Ok((
+            crate::domain::ids::RelativeMediaPath::new(&local)?,
+            crate::domain::ids::RelativeMediaPath::new(&logical)?,
+        ))
+    })
+    .collect()
+}
+
+pub(crate) fn published_logical_path(
+    connection: &Connection,
+    root: crate::domain::ids::LibraryRootId,
+    local: &crate::domain::ids::RelativeMediaPath,
+) -> Result<Option<crate::domain::ids::RelativeMediaPath>, Error> {
+    let logical: Option<String> = connection.query_row(
+        "SELECT l.library_relative_path FROM songs s
+         JOIN sync_remote_resource_locations l ON l.local_root_uuid=s.library_root_uuid
+           AND l.object_type='song' AND l.object_uuid=s.uuid AND l.local_relative_path=s.relative_path
+         JOIN sync_remote_publications p ON p.operation_uuid=l.operation_uuid
+         WHERE s.library_root_uuid=?1 AND s.normalized_relative_path=?2 AND p.completed=1",
+        params![root.to_string(),local.identity_key()], |row| row.get(0),
+    ).optional().map_err(storage)?;
+    logical
+        .map(|path| crate::domain::ids::RelativeMediaPath::new(&path))
+        .transpose()
+}
+
 /// The file declarations and the metadata snapshot are committed together.
 /// Existing user-authored covers belong to their own editing flow.
 pub(crate) fn replace_song_files(
@@ -187,8 +244,26 @@ pub(crate) fn replace_song_files(
         .iter()
         .filter(|resource| resource.kind == SharedResourceKind::Audio)
         .collect::<Vec<_>>();
+    let mapped_path: Option<String> = connection
+        .query_row(
+            "SELECT l.library_relative_path FROM sync_remote_resource_locations l
+         JOIN sync_remote_publications p ON p.operation_uuid=l.operation_uuid
+         WHERE l.local_root_uuid=?1 AND l.object_type='song' AND l.object_uuid=?2
+           AND l.local_relative_path=?3 AND p.completed=1",
+            params![
+                song.root().to_string(),
+                song.id().to_string(),
+                song.path().normalized()
+            ],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(storage)?;
     if audio.len() != 1
-        || audio[0].relative_path.as_str() != song.path().normalized()
+        || audio[0].relative_path.as_str()
+            != mapped_path
+                .as_deref()
+                .unwrap_or_else(|| song.path().normalized())
         || Some(audio[0].digest.to_hex().as_str()) != song.blake3_hash()
         || Some(audio[0].length) != song.file_size()
         || resources.iter().any(|resource| {

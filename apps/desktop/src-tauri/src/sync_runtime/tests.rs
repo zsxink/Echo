@@ -9,6 +9,9 @@ mod watch;
 #[path = "tests/progress.rs"]
 mod progress;
 
+#[path = "tests/host_resources.rs"]
+mod host_resources;
+
 #[test]
 fn unconfigured_runtime_stays_offline_and_stop_is_idempotent() {
     let directory = tempfile::tempdir().unwrap();

@@ -662,6 +662,23 @@ impl SongRepository for SqliteDatabase {
         self.with_reader(move |connection| all_songs_in_root(connection, root))
     }
 
+    fn published_file_paths(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<Vec<(RelativeMediaPath, RelativeMediaPath)>, Error> {
+        self.with_reader(|connection| sync_manifests::published_file_paths(connection, root))
+    }
+
+    fn published_logical_path(
+        &self,
+        root: LibraryRootId,
+        local: &RelativeMediaPath,
+    ) -> Result<Option<RelativeMediaPath>, Error> {
+        self.with_reader(|connection| {
+            sync_manifests::published_logical_path(connection, root, local)
+        })
+    }
+
     fn upsert(&self, song: &Song) -> Result<(), Error> {
         let song = song.clone();
         self.writer.run(move |connection| {
