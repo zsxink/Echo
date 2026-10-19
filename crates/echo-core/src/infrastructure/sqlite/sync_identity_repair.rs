@@ -216,13 +216,17 @@ fn snapshot(
     Ok((root, old, canonical))
 }
 
+/// (object_version, payload_json, relative_path, blake3_hash, file_size,
+/// availability, revision, is_favorite, play_count)
+type ConfirmedSongRow = (i64, String, String, String, i64, String, i64, bool, i64);
+
 fn confirmed(
     c: &Connection,
     config: &RepairConfiguration,
     id: SongId,
     version: u64,
 ) -> Result<ConfirmedSong, Error> {
-    let row: Option<(i64,String,String,String,i64,String,i64,bool,i64)> = c.query_row(
+    let row: Option<ConfirmedSongRow> = c.query_row(
         "SELECT v.object_version,v.payload_json,s.relative_path,s.blake3_hash,s.file_size,s.availability,s.revision,s.is_favorite,s.play_count FROM sync_object_versions v JOIN songs s ON s.uuid=v.object_uuid WHERE v.object_type='song' AND v.object_uuid=?1 AND v.is_tombstone=0 AND s.library_root_uuid=?2 AND s.availability IN ('available','missing')",
         params![id.to_string(),config.root.to_string()], |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?))
     ).optional().map_err(storage)?;
