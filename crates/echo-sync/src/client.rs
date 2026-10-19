@@ -23,9 +23,12 @@ use echo_core::domain::sync::{
 use reqwest::{Client, StatusCode, Url};
 use serde::de::DeserializeOwned;
 
-#[path = "client_pairing.rs"]
 mod apply;
+#[path = "client_pairing.rs"]
 mod pairing;
+
+#[allow(unused_imports, clippy::wildcard_imports)]
+use apply::*;
 #[cfg(test)]
 #[path = "client_tests.rs"]
 mod tests;

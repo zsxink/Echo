@@ -61,14 +61,14 @@ use enrollment::{
 #[path = "sync_provisioner/resource_publication.rs"]
 mod resource_publication;
 use resource_publication::publish_remote_resource_set;
-#[path = "sync_provisioner/lazy_host_resources.rs"]
-mod lazy_host_resources;
 #[path = "sync_provisioner/host_lifecycle.rs"]
 mod host_lifecycle;
-#[path = "sync_provisioner/peer_sync.rs"]
-mod peer_sync;
+#[path = "sync_provisioner/lazy_host_resources.rs"]
+mod lazy_host_resources;
 #[path = "sync_provisioner/peer_publication.rs"]
 mod peer_publication;
+#[path = "sync_provisioner/peer_sync.rs"]
+mod peer_sync;
 #[path = "sync_provisioner/progress.rs"]
 mod progress;
 use progress::{observe_transfer, TrackedDownloadStore, TransferTelemetry};

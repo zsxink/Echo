@@ -54,11 +54,11 @@ pub(super) fn validate_mutation_ack(ack: &MutationAck, mutation: &MutationDto) -
     Ok(())
 }
 
-fn valid_endpoint(endpoint: &Url) -> bool {
+pub(super) fn valid_endpoint(endpoint: &Url) -> bool {
     endpoint.scheme() == "https" && endpoint.username().is_empty() && endpoint.password().is_none()
 }
 
-async fn read_bounded_json<T: DeserializeOwned>(
+pub(super) async fn read_bounded_json<T: DeserializeOwned>(
     mut response: reqwest::Response,
 ) -> Result<T, ClientError> {
     if response
@@ -203,7 +203,7 @@ pub fn apply_snapshot_page(
         .map_err(ClientError::RemoteApply)
 }
 
-fn parse_digest(value: &str) -> Option<[u8; 32]> {
+pub(super) fn parse_digest(value: &str) -> Option<[u8; 32]> {
     if value.len() != 64
         || !value
             .bytes()
@@ -218,7 +218,7 @@ fn parse_digest(value: &str) -> Option<[u8; 32]> {
     Some(digest)
 }
 
-fn validate_commit_page(
+pub(super) fn validate_commit_page(
     page: &CommitPageDto,
     after: u64,
     previous_digest: [u8; 32],
@@ -264,7 +264,7 @@ fn validate_commit_page(
     Ok(())
 }
 
-fn hex_digest(digest: &[u8; 32]) -> String {
+pub(super) fn hex_digest(digest: &[u8; 32]) -> String {
     let mut encoded = String::with_capacity(64);
     for byte in digest {
         use std::fmt::Write as _;
@@ -273,7 +273,7 @@ fn hex_digest(digest: &[u8; 32]) -> String {
     encoded
 }
 
-fn pairing_url(endpoint: &Url, suffix: &str) -> Result<Url, ClientError> {
+pub(super) fn pairing_url(endpoint: &Url, suffix: &str) -> Result<Url, ClientError> {
     if endpoint.scheme() != "https" || endpoint.username() != "" || endpoint.password().is_some() {
         return Err(ClientError::InvalidEndpoint);
     }
@@ -284,3 +284,5 @@ fn pairing_url(endpoint: &Url, suffix: &str) -> Result<Url, ClientError> {
     ));
     url.set_query(None);
     url.set_fragment(None);
+    Ok(url)
+}
