@@ -111,6 +111,37 @@ pub(super) fn enqueue_sync_in_root(
     operation: &str,
     stable_mutation_id: Option<&str>,
 ) -> Result<i64, Error> {
+    let resources = if operation == "delete" || kind == "tombstone" {
+        Vec::new()
+    } else {
+        super::sync_manifests::load(connection, kind, object_uuid)?
+    };
+    enqueue_sync_in_root_with_resources(
+        connection,
+        local_root,
+        kind,
+        object_uuid,
+        payload_json,
+        operation,
+        stable_mutation_id,
+        &resources,
+    )
+}
+
+/// Explicit immutable resources for a repair intent; does not replace the
+/// confirmed manifest or local song facts.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn enqueue_sync_in_root_with_resources(
+    connection: &Connection,
+    local_root: &str,
+    kind: &str,
+    object_uuid: &str,
+    payload_json: &str,
+    operation: &str,
+    stable_mutation_id: Option<&str>,
+    resource_refs: &[crate::domain::sync::SharedResourceManifest],
+) -> Result<i64, Error> {
+    super::sync_manifests::validate(resource_refs)?;
     connection
         .execute(
             "INSERT INTO sync_local_highwater (object_type, object_uuid, local_revision) VALUES (?1, ?2, 1) ON CONFLICT(object_type, object_uuid) DO UPDATE SET local_revision = local_revision + 1",
@@ -159,11 +190,6 @@ pub(super) fn enqueue_sync_in_root(
         )
         .optional()
         .map_err(storage)?;
-    let resource_refs = if operation == "delete" || kind == "tombstone" {
-        Vec::new()
-    } else {
-        super::sync_manifests::load(connection, kind, object_uuid)?
-    };
     let resource_refs_json = serde_json::to_string(&resource_refs).map_err(storage)?;
     let mut digest = blake3::Hasher::new();
     digest.update(kind.as_bytes());

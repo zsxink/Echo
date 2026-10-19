@@ -253,19 +253,34 @@ impl SqliteDatabase {
 
     /// Published audio still missing its local tag/asset index. The scan stamp
     /// is committed with publication, survives restart and also repairs songs
-    /// downloaded by versions which never scheduled metadata extraction.
+    /// downloaded by versions which never scheduled metadata extraction. Missing
+    /// rows with a current completed association are also checked: older scans
+    /// omitted Echo version paths and could incorrectly mark them missing.
     pub fn pending_remote_song_metadata(&self, root: LibraryRootId) -> Result<Vec<SongId>, Error> {
         self.with_reader(|connection| {
             let mut statement = connection
                 .prepare(
                     "SELECT s.uuid FROM songs s
-                 WHERE s.library_root_uuid=?1 AND s.availability='available'
-                   AND s.file_mtime_ns IS NULL
+                 WHERE s.library_root_uuid=?1
+                   AND ((s.availability='available' AND s.file_mtime_ns IS NULL)
+                     OR s.availability='missing')
+                   AND EXISTS(SELECT 1 FROM sync_binding b WHERE b.singleton=1
+                     AND b.local_root_uuid=s.library_root_uuid)
+                   AND NOT EXISTS(SELECT 1 FROM sync_song_aliases a WHERE a.alias_song_uuid=s.uuid)
+                   AND NOT EXISTS(SELECT 1 FROM sync_object_versions v
+                     WHERE v.object_type='song' AND v.object_uuid=s.uuid AND v.is_tombstone=1)
+                   AND NOT EXISTS(SELECT 1 FROM sync_local_delete_intents d
+                     WHERE d.object_type='song' AND d.object_uuid=s.uuid AND d.state='open')
+                   AND NOT EXISTS(SELECT 1 FROM sync_mutations m
+                     WHERE m.object_type='song' AND m.object_uuid=s.uuid AND m.status='pending')
                    AND EXISTS (SELECT 1 FROM sync_remote_resource_locations l
                      JOIN sync_remote_publications p ON p.operation_uuid=l.operation_uuid
+                     JOIN sync_resource_manifests m ON m.object_type=l.object_type
+                       AND m.object_uuid=l.object_uuid AND m.library_relative_path=l.library_relative_path
+                       AND m.content_hash=l.content_hash AND m.ref_kind='audio'
                      WHERE l.local_root_uuid=s.library_root_uuid AND l.object_type='song'
                        AND l.object_uuid=s.uuid AND lower(hex(l.content_hash))=s.blake3_hash
-                       AND p.completed=1)
+                       AND l.local_relative_path=s.relative_path AND p.completed=1)
                  ORDER BY s.uuid",
                 )
                 .map_err(storage)?;

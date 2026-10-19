@@ -147,10 +147,28 @@ pub(crate) fn refresh_song_file_index(connection: &Connection, song: &Song) -> R
     let parameters = song.audio_parameters();
     let changed = connection
         .execute(
-            "UPDATE songs SET file_mtime_ns=?1, format=?2, bitrate_bps=?3,
+            "UPDATE songs SET file_mtime_ns=?1, format=?2, bitrate_bps=?3, availability='available',
            sample_rate_hz=?4, channels=?5, bits_per_sample=?6
          WHERE uuid=?7 AND library_root_uuid=?8 AND normalized_relative_path=?9
-           AND blake3_hash=?10 AND file_size=?11 AND availability='available'",
+           AND blake3_hash=?10 AND file_size=?11
+           AND NOT EXISTS(SELECT 1 FROM sync_song_aliases a WHERE a.alias_song_uuid=songs.uuid)
+           AND NOT EXISTS(SELECT 1 FROM sync_object_versions v
+             WHERE v.object_type='song' AND v.object_uuid=songs.uuid AND v.is_tombstone=1)
+           AND NOT EXISTS(SELECT 1 FROM sync_local_delete_intents d
+             WHERE d.object_type='song' AND d.object_uuid=songs.uuid AND d.state='open')
+           AND (availability='available' OR (availability='missing'
+             AND EXISTS(SELECT 1 FROM sync_binding b WHERE b.singleton=1
+               AND b.local_root_uuid=songs.library_root_uuid)
+             AND NOT EXISTS(SELECT 1 FROM sync_mutations m
+               WHERE m.object_type='song' AND m.object_uuid=songs.uuid AND m.status='pending')
+             AND EXISTS(SELECT 1 FROM sync_remote_resource_locations l
+               JOIN sync_remote_publications p ON p.operation_uuid=l.operation_uuid
+               JOIN sync_resource_manifests m ON m.object_type=l.object_type
+                 AND m.object_uuid=l.object_uuid AND m.library_relative_path=l.library_relative_path
+                 AND m.content_hash=l.content_hash AND m.ref_kind='audio'
+               WHERE l.local_root_uuid=songs.library_root_uuid AND l.object_type='song'
+                 AND l.object_uuid=songs.uuid AND lower(hex(l.content_hash))=songs.blake3_hash
+                 AND l.local_relative_path=songs.relative_path AND p.completed=1)))",
             params![
                 song.file_mtime_ns(),
                 song.format().map(super::conversion::audio_format_to_db),
@@ -172,6 +190,20 @@ pub(crate) fn refresh_song_file_index(connection: &Connection, song: &Song) -> R
         return Err(Error::conflict(
             "published song association changed during metadata indexing",
         ));
+    }
+    if song.availability() == SongAvailability::Missing {
+        // Recovery changes only this device's read model. Keep the confirmed
+        // shared tags in the same transaction as availability and parsed assets.
+        if let Some(payload) = connection.query_row(
+            "SELECT payload_json FROM sync_object_versions WHERE object_type='song' AND object_uuid=?1 AND is_tombstone=0",
+            params![song.id().to_string()], |row| row.get::<_, String>(0),
+        ).optional().map_err(storage)? {
+            super::sync_projection::repair_confirmed_song_tags(
+                connection, &song.id().to_string(), &serde_json::from_str(&payload).map_err(storage)?,
+                &song.root().to_string(),
+            )?;
+        }
+        touch_root(connection, song.root())?;
     }
     Ok(())
 }

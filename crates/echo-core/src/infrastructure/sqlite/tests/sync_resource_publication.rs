@@ -346,3 +346,133 @@ fn maintenance_repairs_previously_acked_tags_without_new_commits_or_file_changes
         assert_eq!(database.repair_published_song_projections(root).unwrap(), 0);
     }
 }
+
+fn completed_missing_song() -> (tempfile::TempDir, SqliteDatabase, LibraryRootId, SongId) {
+    let (directory, database, root, object, manifest) = fixture();
+    let ObjectKey::Song(id) = object else {
+        unreachable!()
+    };
+    let mut publication = publication(root, object, manifest, None);
+    database.prepare(&publication).unwrap();
+    publication.items[0].stage = RemoteResourceStage::Published;
+    database.save(&publication).unwrap();
+    database.finish(&publication).unwrap();
+    database.writer.run(move |connection| {
+        connection.execute("UPDATE sync_mutations SET status='confirmed'", []).map_err(storage)?;
+        connection.execute("UPDATE songs SET availability='missing',file_mtime_ns=123,album='Old album' WHERE uuid=?1", params![id.to_string()]).map_err(storage)?;
+        Ok(())
+    }).unwrap();
+    (directory, database, root, id)
+}
+
+#[test]
+fn completed_missing_song_is_queued_and_restored_without_a_shared_mutation() {
+    let (_directory, database, root, id) = completed_missing_song();
+    assert_eq!(database.pending_remote_song_metadata(root).unwrap(), [id]);
+    assert!(database
+        .pending_remote_resource_sets(root)
+        .unwrap()
+        .is_empty());
+    let before = SongRepository::by_id(&database, id).unwrap().unwrap();
+    assert_eq!(before.file_mtime_ns(), Some(123));
+    let queue = database.pending_local_mutations(512).unwrap();
+    let revision = database
+        .with_reader(|connection| {
+            connection
+                .query_row(
+                    "SELECT updated_at FROM library_roots WHERE uuid=?1",
+                    params![root.to_string()],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(storage)
+        })
+        .unwrap();
+    let mut indexed = before.clone();
+    indexed.apply_scan_facts(
+        before.blake3_hash().unwrap().to_owned(),
+        before.file_size().unwrap(),
+        456,
+        crate::domain::media::AudioFormat::Flac,
+    );
+    database
+        .with_tx(Box::new(move |tx| tx.refresh_song_file_index(&indexed)))
+        .unwrap();
+    let after = SongRepository::by_id(&database, id).unwrap().unwrap();
+    assert_eq!(after.availability(), SongAvailability::Available);
+    assert_eq!(after.album(), Some("专辑"));
+    assert_eq!(after.path(), before.path());
+    assert_eq!(after.blake3_hash(), before.blake3_hash());
+    assert_eq!(after.file_mtime_ns(), Some(456));
+    assert!(
+        database
+            .with_reader(|connection| connection
+                .query_row(
+                    "SELECT updated_at FROM library_roots WHERE uuid=?1",
+                    params![root.to_string()],
+                    |row| row.get::<_, i64>(0)
+                )
+                .map_err(storage))
+            .unwrap()
+            > revision
+    );
+    assert_eq!(database.pending_local_mutations(512).unwrap(), queue);
+    assert!(database
+        .pending_remote_song_metadata(root)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn completed_missing_song_recovery_rechecks_current_association_and_delete_guards() {
+    for change in [
+        "path",
+        "manifest",
+        "publication",
+        "pending_delete",
+        "tombstone",
+        "alias",
+        "pending_edit",
+        "delete_intent",
+        "binding",
+    ] {
+        let (_directory, database, root, id) = completed_missing_song();
+        let before = SongRepository::by_id(&database, id).unwrap().unwrap();
+        database.writer.run(move |connection| {
+            let statement = match change {
+                "path" => "UPDATE songs SET relative_path='media/changed.flac',normalized_relative_path='media/changed.flac'",
+                "manifest" => "UPDATE sync_resource_manifests SET content_hash=zeroblob(32)",
+                "publication" => "UPDATE sync_remote_publications SET completed=0",
+                "pending_delete" => "UPDATE songs SET availability='pending_delete'",
+                "tombstone" => "UPDATE sync_object_versions SET is_tombstone=1",
+                "alias" => "INSERT INTO sync_song_aliases(alias_song_uuid,canonical_song_uuid,commit_seq) SELECT uuid,'00000000-0000-0000-0000-000000000001',1 FROM songs",
+                "pending_edit" => "UPDATE sync_mutations SET status='pending'",
+                "delete_intent" => "INSERT INTO sync_local_delete_intents(intent_id,final_mutation_id,object_type,object_uuid,created_at,undo_deadline,state) SELECT 'intent','mutation','song',uuid,1,2,'open' FROM songs",
+                "binding" => "UPDATE sync_binding SET local_root_uuid=NULL",
+                _ => unreachable!(),
+            };
+            connection.execute(statement, []).map_err(storage)?;
+            Ok(())
+        }).unwrap();
+        assert!(
+            database
+                .pending_remote_song_metadata(root)
+                .unwrap()
+                .is_empty(),
+            "{change}"
+        );
+        assert!(
+            database
+                .with_tx(Box::new(move |tx| tx.refresh_song_file_index(&before)))
+                .is_err(),
+            "{change}"
+        );
+        assert_ne!(
+            SongRepository::by_id(&database, id)
+                .unwrap()
+                .unwrap()
+                .availability(),
+            SongAvailability::Available,
+            "{change}"
+        );
+    }
+}

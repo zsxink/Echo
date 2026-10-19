@@ -1619,3 +1619,6 @@ mod embedded_resources;
 
 #[path = "tests/host_publication.rs"]
 mod host_publication;
+
+#[path = "tests/missing_publications.rs"]
+mod missing_publications;

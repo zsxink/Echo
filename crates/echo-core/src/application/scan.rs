@@ -269,12 +269,24 @@ impl<'a> StartScan<'a> {
         let Some(mut song) = self.deps.songs.by_id(id)? else {
             return Ok(());
         };
-        if song.root() != root || song.availability() != SongAvailability::Available {
+        if song.root() != root
+            || !matches!(
+                song.availability(),
+                SongAvailability::Available | SongAvailability::Missing
+            )
+        {
             return Err(Error::conflict(
                 "published song is no longer available in this root",
             ));
         }
-        let parsed = match parse_single_file(self.deps, root, song.path()) {
+        // A historical missing row can retain its old size/mtime stamp. Only
+        // a fresh full digest can authorize restoring the completed association.
+        let parsed = match parse_single_file_with_content_check(
+            self.deps,
+            root,
+            song.path(),
+            song.availability() == SongAvailability::Missing,
+        ) {
             FileOutcome::Parsed(parsed) => parsed,
             FileOutcome::FastSkip { .. } => return Ok(()),
             FileOutcome::Diagnostic(diagnostic) => {
@@ -284,7 +296,9 @@ impl<'a> StartScan<'a> {
                 ));
             }
         };
-        if song.blake3_hash() != Some(parsed.file.hash.as_str()) {
+        if song.blake3_hash() != Some(parsed.file.hash.as_str())
+            || song.file_size() != Some(parsed.file.size)
+        {
             return Err(Error::conflict(
                 "published song changed before metadata indexing",
             ));

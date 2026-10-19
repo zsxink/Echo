@@ -63,6 +63,7 @@ mod sync_baseline;
 pub(crate) mod sync_configuration;
 mod sync_conflicts;
 mod sync_context;
+pub mod sync_identity_repair;
 pub(crate) mod sync_ledger;
 pub(crate) mod sync_manifests;
 pub(crate) mod sync_projection;
