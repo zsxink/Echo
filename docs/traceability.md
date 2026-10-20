@@ -42,6 +42,11 @@
 | DAS-R02-S08 | 应用框架必须提供稳定的目录入口 | 键盘访问品牌操作 | 4.1, 7.1, 10.3, 13.2 | Core/React/E2E | `tests/scenarios/DAS-R02-S08.yaml` | `pnpm verify:scenario -- DAS-R02-S08` |
 | DAS-R02-S09 | 应用框架必须提供稳定的目录入口 | 便于点击品牌操作 | 4.1, 7.1, 10.3, 13.2 | Native/Gate | `tests/native/DAS-R02-S09.md` | `pnpm verify:scenario -- DAS-R02-S09` |
 | DAS-R02-S10 | 应用框架必须提供稳定的目录入口 | 保持搜索框外观 | 4.1, 7.1, 10.3, 13.2 | Native/Gate | `tests/native/DAS-R02-S10.md` | `pnpm verify:scenario -- DAS-R02-S10` |
+| DAS-R02-S11 | 应用框架必须提供稳定的目录入口 | 在同步设置中找到主要控制 | 3.10, 3.14 | React | `tests/scenarios/DAS-R02-S11.yaml` | `pnpm verify:scenario -- DAS-R02-S11` |
+| DAS-R02-S12 | 应用框架必须提供稳定的目录入口 | 设置按主题模块浏览 | 3.10 | React | `tests/scenarios/DAS-R02-S12.yaml` | `pnpm verify:scenario -- DAS-R02-S12` |
+| DAS-R02-S13 | 应用框架必须提供稳定的目录入口 | 设置显示音乐库完整本地路径 | 3.13 | React | `tests/scenarios/DAS-R02-S13.yaml` | `pnpm verify:scenario -- DAS-R02-S13` |
+| DAS-R02-S14 | 应用框架必须提供稳定的目录入口 | 查看当前播放快捷键 | — | React | `tests/scenarios/DAS-R02-S14.yaml` | `pnpm verify:scenario -- DAS-R02-S14` |
+| DAS-R02-S15 | 应用框架必须提供稳定的目录入口 | 关于页展示品牌 | — | React | `tests/scenarios/DAS-R02-S15.yaml` | `pnpm verify:scenario -- DAS-R02-S15` |
 | DAS-R03-S01 | 品牌区导入入口所有视图可用 | 歌单视图导入可用 | 5.1, 5.2 | React | `tests/scenarios/DAS-R03-S01.yaml` | `pnpm verify:scenario -- DAS-R03-S01` |
 | DAS-R03-S02 | 品牌区导入入口所有视图可用 | 歌手/专辑视图导入可用 | 5.1, 5.2 | React | `tests/scenarios/DAS-R03-S02.yaml` | `pnpm verify:scenario -- DAS-R03-S02` |
 | DAS-R03-S03 | 品牌区导入入口所有视图可用 | 只读资目录禁用导入 | 5.2 | React | `tests/scenarios/DAS-R03-S03.yaml` | `pnpm verify:scenario -- DAS-R03-S03` |
@@ -487,8 +492,12 @@
 | SYN-R01-S02 | 同步基础数据形状（schema 骨架） | 对象级 revision 单调递增 | 3.11 | Core | `tests/scenarios/SYN-R01-S02.yaml` | `pnpm verify:scenario -- SYN-R01-S02` |
 | SYN-R02-S01 | 本地变更预写 outbox | 导入与收藏变更是 outbox 条目 | 3.11 | Core | `tests/scenarios/SYN-R02-S01.yaml` | `pnpm verify:scenario -- SYN-R02-S01` |
 | SYN-R02-S02 | 本地变更预写 outbox | 预写不产生可操作同步 | 3.14, 13.8 | Core/Gate | `tests/scenarios/SYN-R02-S02.yaml` | `pnpm verify:scenario -- SYN-R02-S02` |
+| SYN-R02-S03 | 本地变更预写 outbox | 可撤销意图不成为同步墓碑 | 3.11 | Core | `tests/scenarios/SYN-R02-S03.yaml` | `pnpm verify:scenario -- SYN-R02-S03` |
 | SYN-R03-S01 | 墓碑 | 删除产生墓碑 | 3.12 | Core | `tests/scenarios/SYN-R03-S01.yaml` | `pnpm verify:scenario -- SYN-R03-S01` |
 | SYN-R04-S01 | 可同步载荷不含本机路径 | 本机绝对路径不进入可同步载荷 | 3.13 | Core | `tests/scenarios/SYN-R04-S01.yaml` | `pnpm verify:scenario -- SYN-R04-S01` |
+| SYN-R05-S01 | 同步事件可重试且按类型识别 | 网络重复提交 | 3.11 | Core | `tests/scenarios/SYN-R05-S01.yaml` | `pnpm verify:scenario -- SYN-R05-S01` |
+| SYN-R05-S02 | 同步事件可重试且按类型识别 | 远端应用及游标恢复 | 3.11 | Core | `tests/scenarios/SYN-R05-S02.yaml` | `pnpm verify:scenario -- SYN-R05-S02` |
+| SYN-R05-S03 | 同步事件可重试且按类型识别 | 迁移与架构验证 | 3.10, 3.11, 13.9 | Core/Gate | `tests/scenarios/SYN-R05-S03.yaml` | `pnpm verify:scenario -- SYN-R05-S03` |
 
 ## 发布审计
 

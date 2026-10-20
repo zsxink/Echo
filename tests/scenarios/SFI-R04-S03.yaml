@@ -4,7 +4,7 @@ scenario_id: SFI-R04-S03
 requirement: BLAKE3 去重与重名编号
 scenario: 不可用记录不占用旧目标路径
 layer: automated
-command: "cargo test -p echo-core --all-features recover::tests::nothing_recoverable_rolls_back_and_releases_cleanly"
+command: "cargo test -p echo-core --all-features application::recover::tests::imports::nothing_recoverable_rolls_back_and_releases_cleanly"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

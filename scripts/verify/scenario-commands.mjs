@@ -72,6 +72,11 @@ export const COMMANDS = {
   "DAS-R02-S08": REACT("src/app/accessibility.test.tsx"), // keyboard order reaches brand actions,
   "DAS-R02-S09": ATTEST("DAS-R02-S09"),
   "DAS-R02-S10": ATTEST("DAS-R02-S10"),
+  "DAS-R02-S11": REACT("src/features/settings/SettingsView.test.tsx"),
+  "DAS-R02-S12": REACT("src/features/settings/SettingsView.test.tsx"),
+  "DAS-R02-S13": REACT("src/features/settings/SettingsView.test.tsx"),
+  "DAS-R02-S14": REACT("src/features/settings/SettingsView.test.tsx"),
+  "DAS-R02-S15": REACT("src/features/settings/SettingsView.test.tsx"),
   "DAS-R03-S01": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import button in the brand area under the playlist view\"", // 新增: 品牌区导入入口所有视图可用
   "DAS-R03-S02": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import button in the brand area under the artist directory\"", // 新增: 品牌区导入入口所有视图可用
   "DAS-R03-S03": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"hides the import button for a read-only library\"", // 新增: 品牌区导入入口所有视图可用
@@ -298,7 +303,7 @@ export const COMMANDS = {
   "LE-R06-S01": REACT("src/features/library/SongList.test.tsx"),
   "LE-R06-S02": REACT("src/features/library/SongList.test.tsx"),
   "LE-R06-S03": REACT("src/features/library/SongList.test.tsx"),
-  "LE-R06-S04": COREC("scan::tests::enumerate_failure_marks_run_failed_without_missing"),
+  "LE-R06-S04": COREC("application::scan::tests::relink::enumerate_failure_marks_run_failed_without_missing"),
   // R06-S05..S06 (打开本地目录 / 删除歌曲) belong to the song-operations UI in
   // SongMenu; S05 由 task-9.5 的 reveal-by-SongId adapter 证明。S07–S10 是删除
   // 的回收站边界: 不重启最终化 / 暂败重试 / 结果无法证明 / 路径边界保护 —— 由
@@ -410,9 +415,9 @@ export const COMMANDS = {
   // Re-selecting a managed directory after the local database was wiped: the
   // identities come from `echo/records/`, the media tree is untouched.,
   "LL-R01-S04": COREC("root_switch::tests::prepare_reuses_record_identities_and_leaves_media_untouched"),
-  "LL-R02-S01": COREC("scan::tests::manual_rescan_is_repeatable_and_converges"),
+  "LL-R02-S01": COREC("application::scan::tests::relink::manual_rescan_is_repeatable_and_converges"),
   "LL-R02-S02": COREC("watch::tests::watch_events_converge_under_out_of_order_and_duplicate_delivery"),
-  "LL-R02-S03": COREC("scan::tests::progress_persisted_throttled_and_terminal_state_kept"),
+  "LL-R02-S03": COREC("application::scan::tests::relink::progress_persisted_throttled_and_terminal_state_kept"),
   // R02-S04/R02-S05 were never registered. S04's THEN clause is "refuse the old
   // layout, do not scan or migrate it" — proven by the manifest version check.
   // S05's is "update records once watcher events settle" — proven by the
@@ -433,9 +438,9 @@ export const COMMANDS = {
   // S04 (m4a 内嵌标签) 与 S05 (wav 无标签兜底): 由 metadata tags 系列证明。,
   "LL-R03-S04": COREC("infrastructure::metadata::tags::tests::m4a_tags_parse_from_in_memory_import_source_bytes"),
   "LL-R03-S05": COREC("tagless_wav_reads_as_ok_with_empty_fields"),
-  "LL-R04-S01": COREC("scan::tests::fast_skip_unchanged_files_and_relink_on_move"),
-  "LL-R04-S02": COREC("scan::tests::external_missing_relinks_on_same_hash_path_keeping_relationships"),
-  "LL-R04-S03": COREC("scan::tests::duplicate_hash_paths_get_deterministic_primary"),
+  "LL-R04-S01": COREC("application::scan::tests::relink::fast_skip_unchanged_files_and_relink_on_move"),
+  "LL-R04-S02": COREC("application::scan::tests::pipeline::external_missing_relinks_on_same_hash_path_keeping_relationships"),
+  "LL-R04-S03": COREC("application::scan::tests::relink::duplicate_hash_paths_get_deterministic_primary"),
   "LL-R04-S04": COREC("relink::tests::relink_plans_cover_path_hash_and_music_key_rules"),
   "LL-R05-S01": COREC("infrastructure::sqlite::tests::fts_and_short_like_search"),
   "LL-R05-S02": COREC("infrastructure::sqlite::tests::keyset_pages_are_deterministic"),
@@ -443,9 +448,9 @@ export const COMMANDS = {
   "LL-R06-S02": COREC("lyrics"),
   "LL-R07-S01": COREC("trash::tests::persisted_trash_applied_is_the_only_automatic_database_finalization_proof"), // P0,
   "LL-R07-S02": COREC("trash::tests::external_staging_cleanup_becomes_unknown_and_preserves_relationships"),
-  "LL-R07-S03": COREC("scan::tests::external_deletion_is_missing_not_pending_delete_and_keeps_relationships"),
+  "LL-R07-S03": COREC("application::scan::tests::pipeline::external_deletion_is_missing_not_pending_delete_and_keeps_relationships"),
   // S04 (文件恢复: 原路径恢复或同 BLAKE3 重扫恢复可用状态): 由外部缺失恢复测试证明。,
-  "LL-R07-S04": COREC("scan::tests::external_missing_recovers_on_original_path_restoring_everything"), // P0,
+  "LL-R07-S04": COREC("application::scan::tests::pipeline::external_missing_recovers_on_original_path_restoring_everything"), // P0,
   "LL-R08-S01": CHECK("12.7"), // P0 path/security automated,
   "LL-R08-S02": CHECK("12.6"), // P0 perf/stress automated,
   "LL-R08-S03": COREC("permission"), // privacy/offline automated
@@ -599,15 +604,15 @@ export const COMMANDS = {
   // R04: BLAKE3 去重与重名编号.,
   "SFI-R04-S01": COREC("dedup"),
   "SFI-R04-S02": COREC("import"),
-  "SFI-R04-S03": COREC("recover::tests::nothing_recoverable_rolls_back_and_releases_cleanly"), // P0: 不可用记录不占用目标,
+  "SFI-R04-S03": COREC("application::recover::tests::imports::nothing_recoverable_rolls_back_and_releases_cleanly"), // P0: 不可用记录不占用目标,
   "SFI-R04-S04": COREC("dedup"),
   // R05: 暂存、校验、原子移动与操作日志. S03/S04/S05 由 recover 与侧车失败测试证明;
   // S05 保持 P0 自动化(发布后 watcher 抢占 -> 唯一 UUID).,
   "SFI-R05-S01": COREC("import"),
   "SFI-R05-S02": COREC("import"),
-  "SFI-R05-S03": COREC("recover::tests::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"), // P0,
+  "SFI-R05-S03": COREC("application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"), // P0,
   "SFI-R05-S04": COREC("sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent"),
-  "SFI-R05-S05": COREC("recover::tests::recovery_never_creates_a_duplicate_when_a_watcher_preempts"), // P0
+  "SFI-R05-S05": COREC("application::recover::tests::imports::recovery_never_creates_a_duplicate_when_a_watcher_preempts"), // P0
   // R06: 逐文件结果与资料库不可用反馈.,
   "SFI-R06-S01": COREC("import"),
   "SFI-R06-S02": COREC("import"),
@@ -651,8 +656,12 @@ export const COMMANDS = {
   "SYN-R01-S02": COREC("infrastructure::sqlite::tests::sync_foundation"),
   "SYN-R02-S01": COREC("infrastructure::sqlite::tests::sync_foundation"),
   "SYN-R02-S02": CHECK("3.14"), // outbox prewritten, no operable sync entry,
+  "SYN-R02-S03": COREC("infrastructure::sqlite::tests::sync_foundation"),
   "SYN-R03-S01": COREC("infrastructure::sqlite::tests::sync_foundation"),
   "SYN-R04-S01": COREC("infrastructure::sqlite::tests::sync_payloads_carry_no_absolute_paths"),
+  "SYN-R05-S01": COREC("infrastructure::sqlite::tests::sync_foundation"),
+  "SYN-R05-S02": COREC("infrastructure::sqlite::tests::sync_foundation"),
+  "SYN-R05-S03": CHECK("3.10"),
 
   // ===== ci-release-pipeline (CRP) =====
   // The release-domain behaviors are executed by .github/workflows/release.yml

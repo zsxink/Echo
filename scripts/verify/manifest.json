@@ -2402,6 +2402,36 @@
       "manifest": "tests/native/DAS-R02-S10.md"
     },
     {
+      "id": "DAS-R02-S11",
+      "title": "在同步设置中找到主要控制",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/settings/SettingsView.test.tsx",
+      "manifest": "tests/scenarios/DAS-R02-S11.yaml"
+    },
+    {
+      "id": "DAS-R02-S12",
+      "title": "设置按主题模块浏览",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/settings/SettingsView.test.tsx",
+      "manifest": "tests/scenarios/DAS-R02-S12.yaml"
+    },
+    {
+      "id": "DAS-R02-S13",
+      "title": "设置显示音乐库完整本地路径",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/settings/SettingsView.test.tsx",
+      "manifest": "tests/scenarios/DAS-R02-S13.yaml"
+    },
+    {
+      "id": "DAS-R02-S14",
+      "title": "查看当前播放快捷键",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/settings/SettingsView.test.tsx",
+      "manifest": "tests/scenarios/DAS-R02-S14.yaml"
+    },
+    {
+      "id": "DAS-R02-S15",
+      "title": "关于页展示品牌",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/settings/SettingsView.test.tsx",
+      "manifest": "tests/scenarios/DAS-R02-S15.yaml"
+    },
+    {
       "id": "DAS-R03-S01",
       "title": "歌单视图导入可用",
       "command": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import button in the brand area under the playlist view\"",
@@ -3418,7 +3448,7 @@
     {
       "id": "LE-R06-S04",
       "title": "删除当前播放歌曲",
-      "command": "cargo test -p echo-core --all-features scan::tests::enumerate_failure_marks_run_failed_without_missing",
+      "command": "cargo test -p echo-core --all-features application::scan::tests::relink::enumerate_failure_marks_run_failed_without_missing",
       "manifest": "tests/scenarios/LE-R06-S04.yaml"
     },
     {
@@ -3922,7 +3952,7 @@
     {
       "id": "LL-R02-S01",
       "title": "首次扫描发现支持文件",
-      "command": "cargo test -p echo-core --all-features scan::tests::manual_rescan_is_repeatable_and_converges",
+      "command": "cargo test -p echo-core --all-features application::scan::tests::relink::manual_rescan_is_repeatable_and_converges",
       "manifest": "tests/scenarios/LL-R02-S01.yaml"
     },
     {
@@ -3934,7 +3964,7 @@
     {
       "id": "LL-R02-S03",
       "title": "忽略控制面目录",
-      "command": "cargo test -p echo-core --all-features scan::tests::progress_persisted_throttled_and_terminal_state_kept",
+      "command": "cargo test -p echo-core --all-features application::scan::tests::relink::progress_persisted_throttled_and_terminal_state_kept",
       "manifest": "tests/scenarios/LL-R02-S03.yaml"
     },
     {
@@ -3994,19 +4024,19 @@
     {
       "id": "LL-R04-S01",
       "title": "原地重扫保持身份",
-      "command": "cargo test -p echo-core --all-features scan::tests::fast_skip_unchanged_files_and_relink_on_move",
+      "command": "cargo test -p echo-core --all-features application::scan::tests::relink::fast_skip_unchanged_files_and_relink_on_move",
       "manifest": "tests/scenarios/LL-R04-S01.yaml"
     },
     {
       "id": "LL-R04-S02",
       "title": "移动或改名后重关联",
-      "command": "cargo test -p echo-core --all-features scan::tests::external_missing_relinks_on_same_hash_path_keeping_relationships",
+      "command": "cargo test -p echo-core --all-features application::scan::tests::pipeline::external_missing_relinks_on_same_hash_path_keeping_relationships",
       "manifest": "tests/scenarios/LL-R04-S02.yaml"
     },
     {
       "id": "LL-R04-S03",
       "title": "相同内容出现在两个路径",
-      "command": "cargo test -p echo-core --all-features scan::tests::duplicate_hash_paths_get_deterministic_primary",
+      "command": "cargo test -p echo-core --all-features application::scan::tests::relink::duplicate_hash_paths_get_deterministic_primary",
       "manifest": "tests/scenarios/LL-R04-S03.yaml"
     },
     {
@@ -4054,13 +4084,13 @@
     {
       "id": "LL-R07-S03",
       "title": "删除歌曲后可重新导入",
-      "command": "cargo test -p echo-core --all-features scan::tests::external_deletion_is_missing_not_pending_delete_and_keeps_relationships",
+      "command": "cargo test -p echo-core --all-features application::scan::tests::pipeline::external_deletion_is_missing_not_pending_delete_and_keeps_relationships",
       "manifest": "tests/native/LL-R07-S03.md"
     },
     {
       "id": "LL-R07-S04",
       "title": "文件恢复",
-      "command": "cargo test -p echo-core --all-features scan::tests::external_missing_recovers_on_original_path_restoring_everything",
+      "command": "cargo test -p echo-core --all-features application::scan::tests::pipeline::external_missing_recovers_on_original_path_restoring_everything",
       "manifest": "tests/native/LL-R07-S04.md"
     },
     {
@@ -4612,7 +4642,7 @@
     {
       "id": "SFI-R04-S03",
       "title": "不可用记录不占用旧目标路径",
-      "command": "cargo test -p echo-core --all-features recover::tests::nothing_recoverable_rolls_back_and_releases_cleanly",
+      "command": "cargo test -p echo-core --all-features application::recover::tests::imports::nothing_recoverable_rolls_back_and_releases_cleanly",
       "manifest": "tests/scenarios/SFI-R04-S03.yaml"
     },
     {
@@ -4636,7 +4666,7 @@
     {
       "id": "SFI-R05-S03",
       "title": "崩溃后恢复",
-      "command": "cargo test -p echo-core --all-features recover::tests::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice",
+      "command": "cargo test -p echo-core --all-features application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice",
       "manifest": "tests/scenarios/SFI-R05-S03.yaml"
     },
     {
@@ -4648,7 +4678,7 @@
     {
       "id": "SFI-R05-S05",
       "title": "发布后 watcher 抢先观察",
-      "command": "cargo test -p echo-core --all-features recover::tests::recovery_never_creates_a_duplicate_when_a_watcher_preempts",
+      "command": "cargo test -p echo-core --all-features application::recover::tests::imports::recovery_never_creates_a_duplicate_when_a_watcher_preempts",
       "manifest": "tests/scenarios/SFI-R05-S05.yaml"
     },
     {
@@ -4802,6 +4832,12 @@
       "manifest": "tests/scenarios/SYN-R02-S02.yaml"
     },
     {
+      "id": "SYN-R02-S03",
+      "title": "可撤销意图不成为同步墓碑",
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_foundation",
+      "manifest": "tests/scenarios/SYN-R02-S03.yaml"
+    },
+    {
       "id": "SYN-R03-S01",
       "title": "删除产生墓碑",
       "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_foundation",
@@ -4812,6 +4848,24 @@
       "title": "本机绝对路径不进入可同步载荷",
       "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_payloads_carry_no_absolute_paths",
       "manifest": "tests/scenarios/SYN-R04-S01.yaml"
+    },
+    {
+      "id": "SYN-R05-S01",
+      "title": "网络重复提交",
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_foundation",
+      "manifest": "tests/scenarios/SYN-R05-S01.yaml"
+    },
+    {
+      "id": "SYN-R05-S02",
+      "title": "远端应用及游标恢复",
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_foundation",
+      "manifest": "tests/scenarios/SYN-R05-S02.yaml"
+    },
+    {
+      "id": "SYN-R05-S03",
+      "title": "迁移与架构验证",
+      "command": "node scripts/verify/checks/task-3.10.mjs",
+      "manifest": "tests/scenarios/SYN-R05-S03.yaml"
     }
   ]
 }

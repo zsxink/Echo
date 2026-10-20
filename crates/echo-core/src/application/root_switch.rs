@@ -392,7 +392,6 @@ impl<'a> ActivateLibrary<'a> {
 }
 
 fn to_invariant(error: &crate::domain::state::TransitionError) -> Error {
-    // `TransitionError` carries only diagnostic text; borrow it so the domain
     // error type stays boundary-internal.
     Error::InvariantViolation {
         why: error.to_string(),

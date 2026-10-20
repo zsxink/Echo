@@ -147,6 +147,10 @@ pub(super) fn write(
     result
 }
 
+#[cfg_attr(
+    windows,
+    allow(clippy::missing_const_for_fn, clippy::unnecessary_wraps)
+)]
 fn sync_directory(directory: &std::path::Path) -> Result<(), Error> {
     #[cfg(not(windows))]
     {

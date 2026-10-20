@@ -4,7 +4,7 @@ scenario_id: SFI-R05-S03
 requirement: 暂存、校验、原子移动与操作日志
 scenario: 崩溃后恢复
 layer: automated
-command: "cargo test -p echo-core --all-features recover::tests::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"
+command: "cargo test -p echo-core --all-features application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

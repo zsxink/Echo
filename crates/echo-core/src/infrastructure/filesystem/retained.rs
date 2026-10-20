@@ -141,6 +141,7 @@ fn sync_directory(path: &std::path::Path) -> Result<(), Error> {
         .map_err(|error| Error::io("sync retention directory", error, path))
 }
 #[cfg(not(unix))]
+#[allow(clippy::missing_const_for_fn, clippy::unnecessary_wraps)]
 fn sync_directory(_path: &std::path::Path) -> Result<(), Error> {
     Ok(())
 }
