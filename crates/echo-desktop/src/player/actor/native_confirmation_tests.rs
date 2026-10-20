@@ -4,6 +4,7 @@ use super::mpv_backend;
 use super::*;
 use crate::effects::{ChannelLayout, Payload, ProcessingEnvironment};
 
+#[cfg_attr(windows, allow(clippy::unnecessary_wraps))]
 fn backend() -> Option<MpvBackend> {
     #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
     let vendor =
