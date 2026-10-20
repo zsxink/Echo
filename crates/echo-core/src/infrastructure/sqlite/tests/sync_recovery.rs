@@ -251,3 +251,71 @@ fn online_backup_contains_matching_catalog_pending_and_ledger_without_independen
     // this snapshot. Startup must compare the external newer head before serve.
     restored.quick_check().unwrap();
 }
+
+#[test]
+fn portable_only_recovery_restores_typed_deletions_and_aliases_once() {
+    use crate::application::ports::RecoveredAuthorityFacts;
+    use crate::domain::ids::{PlaylistId, PlaylistItemId};
+    use crate::domain::library::PortableAlias;
+    use crate::domain::sync::ObjectKey;
+    let (_directory, database, root, previous) = host();
+    let next = replacement(previous);
+    let song = SongId::new();
+    let playlist = PlaylistId::new();
+    let member = PlaylistItemId::new();
+    let facts = RecoveredAuthorityFacts {
+        tombstones: vec![
+            ObjectKey::Song(song),
+            ObjectKey::Playlist(playlist),
+            ObjectKey::PlaylistItem(member),
+            ObjectKey::Favorite(song),
+            ObjectKey::Override(song),
+            ObjectKey::PlayStats(song),
+            ObjectKey::LibraryRoot(root.as_uuid()),
+        ],
+        aliases: vec![
+            PortableAlias::Song {
+                alias_uuid: Uuid::new_v4(),
+                canonical_uuid: Uuid::new_v4(),
+            },
+            PortableAlias::PlaylistItem {
+                playlist_uuid: playlist.as_uuid(),
+                alias_uuid: Uuid::new_v4(),
+                canonical_uuid: Uuid::new_v4(),
+            },
+        ],
+    };
+    assert!(database
+        .recover_unbound_host(root, previous, next, facts.clone())
+        .is_err());
+    database.detach_lan_sync_context(root).unwrap();
+    let receipt = database
+        .recover_unbound_host(root, previous, next, facts)
+        .unwrap();
+    assert_eq!(receipt.pending_count, 0);
+    assert_eq!(
+        database.host_recovery_archives(root).unwrap(),
+        vec![receipt.clone()]
+    );
+    assert!(database
+        .host_recovery_candidates(receipt.recovery_id)
+        .unwrap()
+        .is_empty());
+    assert_eq!(database.ensure_host_sync_baseline(next, root).unwrap(), 7);
+    let pending = database.pending_local_mutations(20).unwrap();
+    assert_eq!(pending.len(), 7);
+    assert!(pending
+        .iter()
+        .all(|event| event.payload["tombstone"] == true));
+    assert_eq!(database.ensure_host_sync_baseline(next, root).unwrap(), 0);
+    assert_eq!(
+        database
+            .current_sync_configuration()
+            .unwrap()
+            .unwrap()
+            .binding,
+        next
+    );
+    let aliases: (i64,i64) = database.with_reader(|c| c.query_row("SELECT (SELECT COUNT(*) FROM sync_song_aliases),(SELECT COUNT(*) FROM sync_member_aliases)", [], |r| Ok((r.get(0)?,r.get(1)?))).map_err(storage)).unwrap();
+    assert_eq!(aliases, (1, 1));
+}

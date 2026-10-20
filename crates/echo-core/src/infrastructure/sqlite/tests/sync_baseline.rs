@@ -283,3 +283,131 @@ fn host_baseline_confirmation_preserves_the_existing_playable_catalog() {
         assert!(actual.favorite());
     }
 }
+
+#[test]
+fn replica_enrollment_baseline_is_authorized_atomic_and_restart_idempotent() {
+    let (directory, database, root) = database();
+    let mut imported = song(root, "local.flac", "Local", "Artist");
+    imported.apply_scan_facts(
+        "c".repeat(64),
+        20,
+        1,
+        crate::domain::media::AudioFormat::Flac,
+    );
+    SongRepository::upsert(&database, &imported).unwrap();
+    let binding = binding();
+    assert!(database
+        .ensure_replica_sync_baseline(binding, root)
+        .is_err());
+    database
+        .bind_sync_replica_for_enrollment(binding, root)
+        .unwrap();
+    assert!(database
+        .ensure_replica_sync_baseline(
+            SyncBinding {
+                authority_id: AuthorityId::new(),
+                ..binding
+            },
+            root
+        )
+        .is_err());
+    let before = database.pending_local_mutations(20).unwrap();
+    database.writer.run(|c| c.execute_batch("CREATE TRIGGER fail_replica_baseline BEFORE INSERT ON sync_mutations WHEN NEW.object_type='play-stats' BEGIN SELECT RAISE(ABORT,'baseline failure'); END;").map_err(storage)).unwrap();
+    assert!(database
+        .ensure_replica_sync_baseline(binding, root)
+        .is_err());
+    assert_eq!(database.pending_local_mutations(20).unwrap(), before);
+    database
+        .writer
+        .run(|c| {
+            c.execute_batch("DROP TRIGGER fail_replica_baseline")
+                .map_err(storage)
+        })
+        .unwrap();
+    assert_eq!(
+        database
+            .ensure_replica_sync_baseline(binding, root)
+            .unwrap(),
+        3
+    );
+    let expected = database.pending_local_mutations(20).unwrap();
+    drop(database);
+    let reopened = SqliteDatabase::open(directory.path().join("echo.db")).unwrap();
+    assert_eq!(
+        reopened
+            .ensure_replica_sync_baseline(binding, root)
+            .unwrap(),
+        0
+    );
+    assert_eq!(reopened.pending_local_mutations(20).unwrap(), expected);
+}
+
+#[test]
+fn library_manifests_include_confirmed_content_deduplicate_and_resolve_catalog_audio() {
+    use crate::domain::sync::{ResourceDigest, SharedResourceKind, SharedResourceManifest};
+    let (_directory, database, root) = database();
+    let mut first = song(root, "renamed.flac", "One", "Artist");
+    first.apply_scan_facts(
+        "d".repeat(64),
+        31,
+        1,
+        crate::domain::media::AudioFormat::Flac,
+    );
+    SongRepository::upsert(&database, &first).unwrap();
+    let second = song(root, "two.flac", "Two", "Artist");
+    SongRepository::upsert(&database, &second).unwrap();
+    let manifest = SharedResourceManifest::new(
+        SharedResourceKind::Audio,
+        ResourceDigest::from_bytes([0xdd; 32]),
+        31,
+        "audio/flac".into(),
+        "published.flac",
+    )
+    .unwrap();
+    for id in [first.id(), second.id()] {
+        database
+            .set_local_sync_resources(ObjectKey::Song(id), vec![manifest.clone()])
+            .unwrap();
+    }
+    database
+        .writer
+        .run(|c| {
+            c.execute("UPDATE sync_mutations SET status='confirmed'", [])
+                .map_err(storage)?;
+            Ok(())
+        })
+        .unwrap();
+    assert!(database
+        .local_sync_resource_manifests(root)
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        database.local_library_resource_manifests(root).unwrap(),
+        vec![manifest.clone()]
+    );
+    assert!(database
+        .local_library_resource_manifests(LibraryRootId::new())
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        database
+            .local_library_audio_path_for_resource(root, &"d".repeat(64), 31)
+            .unwrap(),
+        Some("renamed.flac".into())
+    );
+    assert_eq!(
+        database
+            .local_library_audio_path_for_resource(root, &"d".repeat(64), 32)
+            .unwrap(),
+        None
+    );
+    assert!(database
+        .local_library_audio_path_for_resource(root, &"d".repeat(64), u64::MAX)
+        .is_err());
+    assert_eq!(
+        database
+            .local_library_resource_path_for_manifest(root, &manifest)
+            .unwrap(),
+        None
+    );
+}

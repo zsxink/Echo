@@ -206,3 +206,80 @@ fn malformed_configuration_identity_root_and_published_digest_fail_closed() {
         Err(Error::InvariantViolation { .. })
     ));
 }
+
+#[test]
+fn authorized_peer_names_are_filtered_by_binding_and_revocation() {
+    let (_directory, db, root) = database();
+    assert!(db.authorized_sync_peers().unwrap().is_empty());
+    let binding = sync_binding();
+    db.bind_sync_library(binding, true, root).unwrap();
+    let active = DeviceId::new();
+    let revoked = DeviceId::new();
+    db.authorize_sync_peer(binding, active, "Laptop".into(), "active-handle".into())
+        .unwrap();
+    db.authorize_sync_peer(binding, revoked, "Old desktop".into(), "old-handle".into())
+        .unwrap();
+    db.revoke_sync_peer(revoked).unwrap();
+    assert_eq!(
+        db.authorized_sync_peers().unwrap(),
+        vec![(active, "Laptop".into())]
+    );
+    db.writer
+        .run(|c| {
+            c.execute(
+                "UPDATE sync_peers SET device_id='invalid' WHERE revoked_at IS NULL",
+                [],
+            )
+            .map_err(storage)?;
+            Ok(())
+        })
+        .unwrap();
+    assert!(db.authorized_sync_peers().is_err());
+    assert!(db.authorized_sync_peer_handles().is_err());
+}
+
+#[test]
+fn detach_removes_selected_and_archived_lineage_without_losing_local_catalog() {
+    use crate::application::ports::LocalSyncQueuePort;
+    let (directory, db, root) = database();
+    let first = sync_binding();
+    db.bind_sync_library(first, true, root).unwrap();
+    let peer = DeviceId::new();
+    db.authorize_sync_peer(first, peer, "First peer".into(), "first-handle".into())
+        .unwrap();
+    let local = song(root, "local.flac", "Local", "Artist");
+    SongRepository::upsert(&db, &local).unwrap();
+    let other = LibraryRootId::new();
+    LibraryRepository::upsert(
+        &db,
+        &LibraryRoot::new(other, directory.path().join("other"), false, true),
+    )
+    .unwrap();
+    let second = sync_binding();
+    db.bind_sync_library(second, true, other).unwrap();
+    let other_peer = DeviceId::new();
+    db.authorize_sync_peer(
+        second,
+        other_peer,
+        "Second peer".into(),
+        "second-handle".into(),
+    )
+    .unwrap();
+    db.detach_lan_sync_context(root).unwrap();
+    assert!(db.current_sync_configuration().unwrap().is_none());
+    assert!(db.pending_local_mutations(20).unwrap().is_empty());
+    assert!(SongRepository::by_id(&db, local.id()).unwrap().is_some());
+    db.select_sync_context(other).unwrap();
+    assert_eq!(
+        db.current_sync_configuration().unwrap().unwrap().binding,
+        second
+    );
+    assert_eq!(
+        db.authorized_sync_peers().unwrap(),
+        vec![(other_peer, "Second peer".into())]
+    );
+    db.select_sync_context(root).unwrap();
+    assert!(db.current_sync_configuration().unwrap().is_none());
+    assert!(db.authorized_sync_peers().unwrap().is_empty());
+    db.detach_lan_sync_context(root).unwrap();
+}
