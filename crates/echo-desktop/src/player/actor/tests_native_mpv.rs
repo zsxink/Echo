@@ -9,7 +9,7 @@ fn file_loaded_subscribes_to_the_continuous_properties() {
     // received no `PROPERTY_CHANGE` at all — `position`/`duration` stayed
     // `None`, freezing 播放进度条 and the synced-lyrics highlight while the
     // song played. The load path is where the subscription must happen.
-    let (mut actor, snapshot, observations) = spawn_test_observed(vec![BackendEvent::FileLoaded]);
+    let (mut actor, snapshot, observations) = spawn_test_observed();
     assert_eq!(
         observations.load(std::sync::atomic::Ordering::SeqCst),
         0,

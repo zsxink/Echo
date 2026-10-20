@@ -46,9 +46,7 @@ fn spawn_test(
 /// subscribe to the continuous properties — the request the real backend
 /// turns into `mpv_observe_property`. Without it the actor receives no
 /// `time-pos`/`duration` events and every live surface freezes.
-fn spawn_test_observed(
-    events: Vec<BackendEvent>,
-) -> (
+fn spawn_test_observed() -> (
     PlayerActor,
     Arc<RwLock<PlayerSnapshot>>,
     Arc<std::sync::atomic::AtomicUsize>,
@@ -58,8 +56,9 @@ fn spawn_test_observed(
     let observations_join = observations.clone();
     let actor = PlayerActor::spawn_with(
         move || -> Result<TestBackend, ffi::HandleError> {
-            let mut b = TestBackend::new(events);
+            let mut b = TestBackend::new(vec![]);
             b.observations = observations_join;
+            b.file_loaded_on_load = true;
             Ok(b)
         },
         snapshot.clone(),
