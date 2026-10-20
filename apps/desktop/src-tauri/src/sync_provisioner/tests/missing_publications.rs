@@ -168,7 +168,9 @@ mod cases {
                 let mut changed = bytes.clone();
                 *changed.last_mut().unwrap() ^= 1;
                 std::fs::write(&path, changed).unwrap();
-                std::fs::File::open(&path)
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(&path)
                     .unwrap()
                     .set_modified(modified)
                     .unwrap();
