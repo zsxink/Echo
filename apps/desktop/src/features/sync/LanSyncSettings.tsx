@@ -30,7 +30,13 @@ function describeStatus(status: SyncStatus | null, loading: boolean): string {
   }
 }
 
-export function LanSyncSettings({ libraryRoot }: { readonly libraryRoot?: string }) {
+export function LanSyncSettings({
+  libraryRoot,
+  libraryRootPath,
+}: {
+  readonly libraryRoot?: string;
+  readonly libraryRootPath?: string;
+}) {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const latestStatus = useRef<SyncStatus | null>(null);
   const selectedRoot = useRef(libraryRoot);
@@ -131,6 +137,19 @@ export function LanSyncSettings({ libraryRoot }: { readonly libraryRoot?: string
     }
   }
 
+  function leaveCurrentSync() {
+    if (busy) return;
+    const impact =
+      status?.role === "host"
+        ? "本机会退出主机服务、解除设备配对并清除访问凭据；其他设备将无法继续与这份音乐库同步。"
+        : "本机会清除当前主机绑定和访问凭据，之后不再与这份音乐库同步。";
+    const confirmed = window.confirm(
+      `${impact} 本地音乐库、音乐和歌单都会保留，本机可继续作为普通本地音乐库使用。确定解除同步吗？`,
+    );
+    if (!confirmed) return;
+    void run(lanSyncAdapter.leaveSync);
+  }
+
   async function discover() {
     setError(null);
     setDiscoveryFailed(false);
@@ -158,7 +177,7 @@ export function LanSyncSettings({ libraryRoot }: { readonly libraryRoot?: string
   async function recoverRestoredHost() {
     if (busy) return;
     const confirmed = window.confirm(
-      "这会停止当前主机会话、归档待处理修改和冲突，并为恢复后的资料库创建新同步纪元。其他设备需要重新配对。请确认已选中正确的资料库。",
+      "这会停止当前主机会话、归档待处理修改和冲突，并为恢复后的音乐库创建新同步纪元。其他设备需要重新配对。请确认已选中正确的音乐库。",
     );
     if (!confirmed) return;
     setBusy(true);
@@ -283,37 +302,86 @@ export function LanSyncSettings({ libraryRoot }: { readonly libraryRoot?: string
   return (
     <section className="settings-section" aria-labelledby="lan-sync-heading">
       <header className="settings-section-head">
-        <h2 id="lan-sync-heading">局域网资料库同步</h2>
-        <p>同步服务默认关闭。主机、发现和同步操作通过桌面端原生服务执行。</p>
+        <h2 id="lan-sync-heading">局域网音乐库同步</h2>
+        <p className="setting-help lan-sync-intro">
+          音乐库目录：
+          <span className="lan-sync-library-path" title={libraryRootPath}>
+            {libraryRootPath || "尚未选择音乐目录"}
+          </span>
+        </p>
       </header>
-      <div className="setting-row">
+      {active && status?.role === "host" ? (
+        <div className="setting-row lan-sync-host-service-row">
+          <div className="storage-value">
+            <strong>主机服务</strong>
+            <span className="setting-help">
+              停止服务会保留配对关系；重新启动后，其他设备即可再次连接。
+            </span>
+          </div>
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            onClick={() => void run(lanSyncAdapter.hostStop)}
+          >
+            停止主机服务
+          </button>
+        </div>
+      ) : null}
+      {active ? (
+        <div className="setting-row lan-sync-unlink-row">
+          <div className="storage-value">
+            <strong>解除同步</strong>
+            <span className="setting-help">
+              清除本机的同步绑定和设备凭据；本地音乐库、音乐和歌单会保留，可继续独立使用。
+            </span>
+          </div>
+          <button
+            type="button"
+            className="btn lan-sync-unlink"
+            disabled={busy}
+            onClick={leaveCurrentSync}
+          >
+            解除同步…
+          </button>
+        </div>
+      ) : null}
+      <div className={`setting-row lan-sync-status-row${active ? " is-active" : ""}`}>
         <div className="storage-value">
           <strong>同步状态</strong>
           <span className="setting-help" data-testid="lan-sync-state" aria-live="polite">
             {describeStatus(status, loading)}
           </span>
           {status?.address ? (
-            <span className="setting-help">连接地址：{status.address}</span>
-          ) : null}
-          {status?.libraryId ? (
-            <span className="setting-help">资料库：{status.libraryId}</span>
+            <span className="setting-help lan-sync-address">连接地址：{status.address}</span>
           ) : null}
         </div>
-        <div className="setting-choices">
+        <div className="lan-sync-controls">
           {canDiscoverHosts ? (
             <button type="button" className="btn" onClick={() => void discover()} disabled={busy}>
               搜索局域网主机
             </button>
           ) : null}
           {active ? (
-            <button
-              type="button"
-              className="btn"
-              disabled={busy}
-              onClick={() => void run(lanSyncAdapter.hostStop)}
-            >
-              {busy ? "正在处理…" : status?.role === "host" ? "停止主机服务" : "停止同步"}
-            </button>
+            <>
+              <button
+                type="button"
+                className="btn lan-sync-pause"
+                disabled={busy}
+                onClick={() => void run(paused ? lanSyncAdapter.resume : lanSyncAdapter.pause)}
+              >
+                {busy ? "正在处理…" : paused ? "继续同步" : "暂停同步"}
+              </button>
+              <button
+                type="button"
+                className="lan-sync-manual-action"
+                disabled={busy || paused}
+                onClick={() => void run(lanSyncAdapter.syncNow)}
+                data-testid="lan-sync-now"
+              >
+                {busy ? "正在同步…" : "立即同步"}
+              </button>
+            </>
           ) : null}
         </div>
       </div>
@@ -357,39 +425,9 @@ export function LanSyncSettings({ libraryRoot }: { readonly libraryRoot?: string
               )}
             </ul>
           </div>
-          <div className="setting-row">
-            <div className="storage-value">
-              <strong>解除本库的主机身份</strong>
-              <span className="setting-help">保留本地音乐库，停止服务并清除本库的同步关系。</span>
-            </div>
-            <button
-              type="button"
-              className="btn"
-              disabled={busy}
-              onClick={() => void run(lanSyncAdapter.leaveSync)}
-            >
-              解除绑定
-            </button>
-          </div>
         </>
       ) : null}
       {hostMode && libraryRoot ? <SyncConflictsPanel libraryRoot={libraryRoot} /> : null}
-      {active && status?.role === "peer" ? (
-        <div className="setting-row">
-          <div className="storage-value">
-            <strong>退出当前主机</strong>
-            <span className="setting-help">保留本地音乐库，清除本库的主机绑定和访问凭据。</span>
-          </div>
-          <button
-            type="button"
-            className="btn"
-            disabled={busy}
-            onClick={() => void run(lanSyncAdapter.leaveSync)}
-          >
-            退出并解绑
-          </button>
-        </div>
-      ) : null}
       {canDiscoverHosts ? (
         <div className="setting-row lan-sync-discovered-row">
           <div className="storage-value">
@@ -491,7 +529,7 @@ export function LanSyncSettings({ libraryRoot }: { readonly libraryRoot?: string
               <div className="storage-value">
                 <strong>从备份恢复主机</strong>
                 <span className="setting-help">
-                  仅在主机资料库从旧备份恢复后使用。该操作会创建新同步纪元并要求所有设备重新配对。
+                  仅在主机音乐库从旧备份恢复后使用。该操作会创建新同步纪元并要求所有设备重新配对。
                 </span>
               </div>
               <button
@@ -571,32 +609,7 @@ export function LanSyncSettings({ libraryRoot }: { readonly libraryRoot?: string
             </>
           )}
         </>
-      ) : (
-        <div className="setting-row">
-          <div className="storage-value">
-            <strong>同步控制</strong>
-          </div>
-          <div className="setting-choices">
-            <button
-              type="button"
-              className="btn"
-              disabled={busy}
-              onClick={() => void run(paused ? lanSyncAdapter.resume : lanSyncAdapter.pause)}
-            >
-              {paused ? "继续同步" : "暂停同步"}
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={busy || paused}
-              onClick={() => void run(lanSyncAdapter.syncNow)}
-              data-testid="lan-sync-now"
-            >
-              {busy ? "正在同步…" : "立即同步"}
-            </button>
-          </div>
-        </div>
-      )}
+      ) : null}
       {error ? (
         <div className="settings-note" role="alert">
           {error}
@@ -635,7 +648,7 @@ function syncErrorText(key: string): string {
     "sync.libraryConflict":
       "主机中的部分歌曲已属于另一份本地音乐目录。请在设置中切回之前同步使用的目录，再重新加入主机。",
     "sync.remoteApplyFailed":
-      "主机发来的变更无法写入本机资料库。请重试一次；若仍失败，请重启两端 Echo 后再次同步。",
+      "主机发来的变更无法写入本机音乐库。请重试一次；若仍失败，请重启两端 Echo 后再次同步。",
     "sync.localStateFailed":
       "本机同步账本读写失败，与音乐目录是否可访问无关。请重启 Echo 后重试同步。",
     "sync.busy": "同步服务正在处理其他操作。",
@@ -656,7 +669,7 @@ function syncErrorText(key: string): string {
     "sync.hostUnavailable": "同步主机当前不可用，请检查主机同步服务和安全存储。",
     "sync.authorizationFailed": "同步主机拒绝了设备授权，请重新加入主机。",
     "sync.hostRejected": "同步主机拒绝了同步请求，请检查主机状态和配对关系。",
-    "sync.bindingMismatch": "两端当前同步的资料库或同步纪元不一致，请确认已加入同一主机资料库。",
+    "sync.bindingMismatch": "两端当前同步的音乐库或同步纪元不一致，请确认已加入同一主机音乐库。",
     "sync.resourceUnavailable":
       "同步所需的媒体资源暂不可用，本机待同步修改已保留。请确认主机歌曲文件可访问，并在两端更新 Echo 后重试同步。",
     "sync.resourceMismatch":
@@ -669,7 +682,7 @@ function syncErrorText(key: string): string {
     "sync.protocolFailed": "同步主机返回了不兼容或无效数据，请确认两端 Echo 版本一致。",
     "sync.workerFailed": "同步服务遇到错误。",
     "sync.pairingPending": "配对正在处理中，请稍后重试。",
-    "sync.hostConflictsUnavailable": "只有当前资料库的同步主机可以查看冲突记录。",
+    "sync.hostConflictsUnavailable": "只有当前音乐库的同步主机可以查看冲突记录。",
     "sync.conflictUnavailable": "这条冲突记录已不可用，请刷新冲突列表后重试。",
   };
   return messages[key] ?? key;

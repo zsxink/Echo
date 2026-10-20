@@ -40,7 +40,7 @@ describe("SettingsView close behavior", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("退出应用")).toBeChecked();
     });
-    expect(screen.getByLabelText("保持在后台运行")).not.toBeChecked();
+    expect(screen.getByLabelText("最小化到托盘")).not.toBeChecked();
   });
 });
 
@@ -58,7 +58,7 @@ describe("SettingsView library rescan", () => {
       ([command]) => command === "start_scan",
     );
     expect(scanCall).toEqual(["start_scan", { root: "root-1" }]);
-    expect(screen.getByRole("status")).toHaveTextContent("资料库已重新扫描");
+    expect(screen.getByRole("status")).toHaveTextContent("音乐库已重新扫描");
   });
 
   it("disables rescan when no library root is configured", async () => {
@@ -107,7 +107,7 @@ describe("SettingsView library rescan", () => {
 
     fireEvent.click(await screen.findByTestId("rescan-library-button"));
 
-    expect(await screen.findByRole("status")).toHaveTextContent("资料库扫描失败");
+    expect(await screen.findByRole("status")).toHaveTextContent("音乐库扫描失败");
   });
 });
 
@@ -124,7 +124,7 @@ describe("SettingsView LAN sync preferences", () => {
       localRoot: "root-1",
     };
     mocks.setInvoke("sync_status", connected);
-    render(<SettingsView onClose={() => undefined} />);
+    renderSyncSettings();
     await screen.findByText("已连接");
     act(() =>
       mocks.emit("sync://status", {
@@ -157,9 +157,9 @@ describe("SettingsView LAN sync preferences", () => {
   });
 
   it("reads the native disabled state and keeps the service opt-in", async () => {
-    render(<SettingsView onClose={() => undefined} />);
+    renderSyncSettings();
 
-    await screen.findByLabelText("退出应用");
+    await screen.findByTestId("lan-sync-state");
     expect(screen.getByTestId("lan-sync-state")).toHaveTextContent("已关闭");
     expect(screen.queryByTestId("lan-sync-start")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("radio", { name: "主机" }));
@@ -179,7 +179,7 @@ describe("SettingsView LAN sync preferences", () => {
       pendingCount: 3,
       conflictCount: 1,
     });
-    render(<SettingsView onClose={() => undefined} />);
+    renderSyncSettings();
 
     fireEvent.click(screen.getByRole("radio", { name: "主机" }));
     fireEvent.click(await screen.findByTestId("lan-sync-recover-host"));
@@ -196,7 +196,7 @@ describe("SettingsView LAN sync preferences", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const invocationSpy = invoke as unknown as { mock: { calls: unknown[][] } };
     const previousCalls = invocationSpy.mock.calls.length;
-    render(<SettingsView onClose={() => undefined} />);
+    renderSyncSettings();
 
     fireEvent.click(screen.getByRole("radio", { name: "主机" }));
     fireEvent.click(await screen.findByTestId("lan-sync-recover-host"));
@@ -212,9 +212,9 @@ describe("SettingsView LAN sync preferences", () => {
 
   it("shows the native provisioning failure without claiming a connection", async () => {
     mocks.setInvoke("host_start", new Error("sync.unconfigured"));
-    render(<SettingsView onClose={() => undefined} />);
+    renderSyncSettings();
 
-    await screen.findByLabelText("退出应用");
+    await screen.findByTestId("lan-sync-state");
     fireEvent.click(screen.getByRole("radio", { name: "主机" }));
     fireEvent.change(screen.getByPlaceholderText("192.168.1.20"), {
       target: { value: "192.168.1.20" },
@@ -236,9 +236,9 @@ describe("SettingsView LAN sync preferences", () => {
         protocolVersion: "1",
       },
     ]);
-    render(<SettingsView onClose={() => undefined} />);
+    renderSyncSettings();
 
-    await screen.findByLabelText("退出应用");
+    await screen.findByTestId("lan-sync-state");
     fireEvent.click(screen.getByRole("button", { name: "搜索局域网主机" }));
 
     expect(await screen.findByTestId("lan-sync-hosts")).toHaveTextContent("Echo 主机");
@@ -266,9 +266,9 @@ describe("SettingsView LAN sync preferences", () => {
       address: "https://192.168.1.10:50826",
       lastError: null,
     });
-    render(<SettingsView onClose={() => undefined} />);
+    renderSyncSettings();
 
-    await screen.findByLabelText("退出应用");
+    await screen.findByTestId("lan-sync-state");
     fireEvent.click(screen.getByRole("button", { name: "搜索局域网主机" }));
     fireEvent.click(await screen.findByRole("button", { name: "使用主机 Echo 主机 的地址" }));
     // The label also carries the help text, so match by substring.
@@ -292,9 +292,9 @@ describe("SettingsView LAN sync preferences", () => {
     ["sync.pairingProtocolFailed", "两端 Echo 构建兼容"],
   ])("reports pairing failure %s without claiming a successful join", async (errorKey, message) => {
     mocks.setInvoke("request_sync_pairing", new Error(errorKey));
-    render(<SettingsView onClose={() => undefined} />);
+    renderSyncSettings();
 
-    await screen.findByLabelText("退出应用");
+    await screen.findByTestId("lan-sync-state");
     fireEvent.change(screen.getByLabelText(/主机 IP/), {
       target: { value: "192.168.1.10" },
     });
@@ -310,9 +310,9 @@ describe("SettingsView LAN sync preferences", () => {
 
   it("reports a LAN bind permission failure without claiming the host started", async () => {
     mocks.setInvoke("host_start", new Error("sync.bindFailed"));
-    render(<SettingsView onClose={() => undefined} />);
+    renderSyncSettings();
 
-    await screen.findByLabelText("退出应用");
+    await screen.findByTestId("lan-sync-state");
     fireEvent.click(screen.getByRole("radio", { name: "主机" }));
     fireEvent.change(screen.getByPlaceholderText("192.168.1.20"), {
       target: { value: "192.168.1.20" },
@@ -327,9 +327,9 @@ describe("SettingsView LAN sync preferences", () => {
 
   it("reports an offline host without clearing the entered pairing details", async () => {
     mocks.setInvoke("request_sync_pairing", new Error("sync.pairingHostUnavailable"));
-    render(<SettingsView onClose={() => undefined} />);
+    renderSyncSettings();
 
-    await screen.findByLabelText("退出应用");
+    await screen.findByTestId("lan-sync-state");
     fireEvent.change(screen.getByLabelText(/主机 IP/), {
       target: { value: "192.168.1.10" },
     });
@@ -346,9 +346,9 @@ describe("SettingsView LAN sync preferences", () => {
   it("cancels an unfinished pairing flow when switching away from the peer role", async () => {
     const invocationSpy = invoke as unknown as { mock: { calls: unknown[][] } };
     const previousCalls = invocationSpy.mock.calls.length;
-    render(<SettingsView onClose={() => undefined} />);
+    renderSyncSettings();
 
-    await screen.findByLabelText("退出应用");
+    await screen.findByTestId("lan-sync-state");
     fireEvent.change(screen.getByLabelText(/主机 IP/), {
       target: { value: "192.168.1.10" },
     });
@@ -380,7 +380,7 @@ describe("SettingsView LAN sync preferences", () => {
     });
     mocks.setInvoke("sync_authorized_peers", [{ deviceId: "device-b", displayName: "客厅笔记本" }]);
     mocks.setInvoke("revoke_device", null);
-    render(<SettingsView onClose={() => undefined} />);
+    renderSyncSettings();
 
     await screen.findByTestId("lan-sync-peers");
     expect(await screen.findByTestId("lan-sync-revoke-device-b")).toBeEnabled();
@@ -405,7 +405,7 @@ describe("SettingsView LAN sync preferences", () => {
     });
     mocks.setInvoke("sync_authorized_peers", [{ deviceId: "device-b", displayName: "客厅笔记本" }]);
     mocks.setInvoke("revoke_device", new Error("sync.busy"));
-    render(<SettingsView onClose={() => undefined} />);
+    renderSyncSettings();
 
     fireEvent.click(await screen.findByTestId("lan-sync-revoke-device-b"));
 
@@ -413,6 +413,11 @@ describe("SettingsView LAN sync preferences", () => {
     expect(screen.getByTestId("lan-sync-peers")).toHaveTextContent("客厅笔记本");
   });
 });
+
+function renderSyncSettings() {
+  render(<SettingsView onClose={() => undefined} />);
+  fireEvent.click(screen.getByRole("tab", { name: "同步" }));
+}
 
 function syncStatus() {
   return {

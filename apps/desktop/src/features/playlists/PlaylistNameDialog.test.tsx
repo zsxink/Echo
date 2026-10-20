@@ -59,7 +59,7 @@ describe("PlaylistNameDialog (task 10.9)", () => {
     renderCreate();
     fireEvent.change(screen.getByLabelText("新歌单名称"), { target: { value: "通勤" } });
     fireEvent.click(screen.getByText("创建歌单"));
-    expect(await screen.findByText("当前资料库不可用，请恢复后重试")).toBeInTheDocument();
+    expect(await screen.findByText("当前音乐库不可用，请恢复后重试")).toBeInTheDocument();
     expect(call).not.toHaveBeenCalled();
   });
 
@@ -128,6 +128,6 @@ describe("PlaylistNameDialog (task 10.9)", () => {
 
     fireEvent.click(screen.getByText("保存"));
 
-    expect(await screen.findByText("当前资料库没有写入权限，请检查目录权限。")).toBeInTheDocument();
+    expect(await screen.findByText("当前音乐库没有写入权限，请检查目录权限。")).toBeInTheDocument();
   });
 });

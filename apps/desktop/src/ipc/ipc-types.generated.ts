@@ -256,6 +256,7 @@ export interface LibraryStatus {
   readonly unavailable: boolean;
   readonly scanning: boolean;
   readonly activeRoot?: string;
+  readonly activeRootPath?: string;
 }
 
 export interface ScanSnapshot {

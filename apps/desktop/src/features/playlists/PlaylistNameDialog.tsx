@@ -100,7 +100,7 @@ export function PlaylistNameDialog({
       if (creating) {
         const activeRoot = root?.trim();
         if (!activeRoot) {
-          setError("当前资料库不可用，请恢复后重试");
+          setError("当前音乐库不可用，请恢复后重试");
           return;
         }
         const createdId = await bridge.call("create_playlist", { root: activeRoot, name });
@@ -316,14 +316,14 @@ function saveErrorMessage(err: unknown, creating: boolean): string {
     case "conflict":
       return "已存在同名歌单，请换一个名称。";
     case "permission":
-      return "当前资料库没有写入权限，请检查目录权限。";
+      return "当前音乐库没有写入权限，请检查目录权限。";
     case "unavailable":
-      return "当前资料库不可用或已切换，请刷新后重试。";
+      return "当前音乐库不可用或已切换，请刷新后重试。";
     case "validation":
       return "歌单信息无效，请检查名称或封面。";
     case "io":
     case "storage":
-      return "资料库保存失败，请检查磁盘空间后重试。";
+      return "音乐库保存失败，请检查磁盘空间后重试。";
     default:
       return creating ? "创建歌单失败，请重试" : "保存歌单失败，请重试";
   }

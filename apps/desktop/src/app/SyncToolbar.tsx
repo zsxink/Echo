@@ -29,7 +29,7 @@ function errorLabel(key: string): string {
   const messages: Record<string, string> = {
     "sync.connectionFailed": "无法连接主设备，请确认主设备在线且处于同一局域网。",
     "sync.resourcePublicationPending": "媒体尚未就绪，请检查磁盘空间和媒体目录权限后重试。",
-    "sync.libraryUnavailable": "资料库不可用，请确认音乐目录仍可访问。",
+    "sync.libraryUnavailable": "音乐库不可用，请确认音乐目录仍可访问。",
     "sync.authorizationFailed": "设备授权已失效，请在设置中重新加入主设备。",
     "sync.protocolFailed": "同步数据不兼容，请确认两端 Echo 版本一致。",
     "sync.hostUnavailable": "主设备暂时不可用，请检查主设备的同步服务。",
@@ -167,8 +167,8 @@ export function SyncToolbar() {
         data-testid="sync-button"
         aria-expanded={open}
         aria-controls={panelId}
-        aria-label={`资料库同步：${label}`}
-        title={`资料库同步：${label}`}
+        aria-label={`音乐库同步：${label}`}
+        title={`音乐库同步：${label}`}
         onClick={() => setOpen((value) => !value)}
       >
         <Icon name={label === "已同步" ? "check" : "recent"} />
@@ -185,7 +185,7 @@ export function SyncToolbar() {
           aria-labelledby={headingId}
           tabIndex={-1}
         >
-          <strong id={headingId}>资料库同步</strong>
+          <strong id={headingId}>音乐库同步</strong>
           <p>{label}</p>
           {status?.enabled ? (
             <>

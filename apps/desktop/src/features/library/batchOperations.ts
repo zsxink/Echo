@@ -190,7 +190,7 @@ function codeOf(error: unknown): string | null {
 
 function batchErrorMessage(error: unknown): string {
   const code = codeOf(error);
-  if (code === "unavailable") return "资料库暂不可用";
+  if (code === "unavailable") return "音乐库暂不可用";
   if (code === "permission") return "没有操作权限";
   if (code === "conflict") return "当前状态冲突";
   return "操作失败，请重试";

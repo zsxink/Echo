@@ -266,7 +266,7 @@ export function AddToPlaylistDialog({
               type="button"
               className="playlist-picker-new"
               disabled={readOnly}
-              title={readOnly ? "当前资料库为只读状态" : undefined}
+              title={readOnly ? "当前音乐库为只读状态" : undefined}
               onClick={() => setCreating(true)}
               data-testid="playlist-picker-new"
             >

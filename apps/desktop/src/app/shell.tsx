@@ -68,7 +68,7 @@ export function Topbar(props: { readonly title: string; readonly children?: Reac
     <header className="topbar" data-od-id="workspace-topbar">
       {nav ? <SidebarToggle /> : null}
       <div className="crumb">
-        <strong>资料库</strong> / <span>{props.title}</span>
+        <strong>音乐库</strong> / <span>{props.title}</span>
       </div>
       {props.children}
     </header>

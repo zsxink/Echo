@@ -39,7 +39,7 @@ export function ChooseRootView({ onActivated }: { onActivated: () => Promise<voi
       await bridge.call("restore_playback_session", {}).catch(() => undefined);
       await onActivated();
     } catch (err) {
-      const message = err instanceof BridgeError ? err.message : "选择资料库时出错";
+      const message = err instanceof BridgeError ? err.message : "选择音乐库时出错";
       setError(message);
     } finally {
       setBusy(false);
@@ -48,11 +48,11 @@ export function ChooseRootView({ onActivated }: { onActivated: () => Promise<voi
 
   return (
     <div className="workspace-empty" data-testid="choose-root" role="main">
-      <p className="eyebrow">本地资料库</p>
-      <h1>选择本地资料库</h1>
+      <p className="eyebrow">本地音乐库</p>
+      <h1>选择本地音乐库</h1>
       <p>
         选择一个文件夹开始使用，也可以打开之前使用的 Echo
-        资料库。文件夹可以为空；已有歌曲会自动扫描。
+        音乐库。文件夹可以为空；已有歌曲会自动扫描。
       </p>
       <button
         type="button"
@@ -60,7 +60,7 @@ export function ChooseRootView({ onActivated }: { onActivated: () => Promise<voi
         onClick={() => void chooseRoot()}
         disabled={busy}
       >
-        {busy ? "正在处理…" : "选择资料库目录"}
+        {busy ? "正在处理…" : "选择音乐库目录"}
       </button>
       {error ? (
         <p className="status-error" role="alert">

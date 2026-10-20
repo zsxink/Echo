@@ -62,7 +62,7 @@ export function useAppShell(): AppShell {
     status.activeRoot,
   );
 
-  // 资料库导航计数 (tasks.md 4.2): fetched up front and re-fetched whenever
+  // 音乐库导航计数 (tasks.md 4.2): fetched up front and re-fetched whenever
   // anything could have changed a total, so "喜欢的音乐" shows its size before
   // the user ever opens it.
   useLibraryCountSync(status.configured && !status.unavailable);

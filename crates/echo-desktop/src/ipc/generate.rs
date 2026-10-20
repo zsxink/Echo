@@ -144,6 +144,7 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly unavailable: boolean;\n");
     out.push_str("  readonly scanning: boolean;\n");
     out.push_str("  readonly activeRoot?: string;\n");
+    out.push_str("  readonly activeRootPath?: string;\n");
     out.push_str("}\n\n");
 
     out.push_str("export interface ScanSnapshot {\n");

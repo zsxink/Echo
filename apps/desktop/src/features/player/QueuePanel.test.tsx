@@ -216,7 +216,7 @@ describe("QueuePanel (task 11.2)", () => {
       }),
     );
     render(<QueuePanel />);
-    expect(screen.getByText("暂时不可用，可在资料库恢复后重试")).toBeInTheDocument();
+    expect(screen.getByText("暂时不可用，可在音乐库恢复后重试")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "播放 未知歌曲" })).toBeDisabled();
   });
 

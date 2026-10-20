@@ -354,13 +354,13 @@ export function PlayerBar({
 function importResultText(kind: string): string {
   switch (kind) {
     case "imported":
-      return "已导入到资料库";
+      return "已导入到音乐库";
     case "duplicate":
-      return "资料库已有相同歌曲";
+      return "音乐库已有相同歌曲";
     case "skipped":
       return "不支持的格式，未导入";
     case "libraryUnavailable":
-      return "资料库不可用";
+      return "音乐库不可用";
     default:
       return "导入失败";
   }

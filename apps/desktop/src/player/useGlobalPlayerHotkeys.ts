@@ -32,6 +32,11 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return tag === "input" || tag === "textarea" || tag === "select";
 }
 
+/** Settings owns arrow and letter navigation while its dialog has focus. */
+function isSettingsTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[data-testid="settings"]') !== null;
+}
+
 /** Whether a dialog-like overlay (queue panel) is open that owns Space. */
 function hasQueueDialogOpen(): boolean {
   return playerStore.getUi().queueOpen;
@@ -50,7 +55,7 @@ export function useGlobalPlayerHotkeys(): void {
       if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
       // Typing in an editor or inside an overlay's focused input must not
       // trigger playback (task 11.8: Space in inputs/dialogs must not play).
-      if (isEditableTarget(event.target)) return;
+      if (isEditableTarget(event.target) || isSettingsTarget(event.target)) return;
 
       // Space toggles play/pause — but only when a song is current, never in an
       // editable surface, and never while a dialog-like overlay (the queue

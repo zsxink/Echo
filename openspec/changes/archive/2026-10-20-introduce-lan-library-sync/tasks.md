@@ -62,6 +62,8 @@
 - [x] 7.5 验证键盘焦点/Escape/窄屏、导航和播放不被同步打断、品牌导入保持；将一期禁止同步字符串门禁改为默认关闭/无WebView直连断言，覆盖 desktop-app-shell 修改及全部本地回归场景。工具栏焦点/Escape、设置 UI 和本地回归见前端测试；门禁见 `task-13.8.mjs`。
 - [ ] 7.6 完成本组静态验证：`pnpm --filter @echo/desktop format:check`、`lint`、`typecheck`、`test`、`build`；新增macOS权限配置、确保最终 `.app` bundle 签名 identifier 与 Bundle ID 一致，并通过实际签名安装包验证权限；Windows/Linux错误文案与本地流程同步可用。macOS 签名/权限门禁、DMG 中的播放器启动和安装后 LaunchServices 启动已验证；同步发现/配对仍待真机复测，其他静态验证未完成。
 
+- [x] 7.7（Issue #53）按通用、快捷键、同步、关于四个主题重组原型与 React 设置页；通用集中音乐库目录、主题和应用行为，快捷键展示当前已支持的播放操作，桌面采用侧边模块导航，窄屏采用可横向浏览导航，支持键盘切换并隐藏非当前模块的焦点目标。通用设置使用轻量分区，不套重复卡片；关于页居中显示 Echo 图标与“专注于本地音乐体验”，并左对齐展示产品介绍。同步模块聚合主机服务、解除同步、状态、暂停/恢复和手动同步；主机停止与解除同步在第一层清楚呈现，解除前说明本地音乐库保留并要求确认；本机设置显示完整音乐库路径，路径不进入同步载荷；同步 prototype CSS 到桌面样式。验证：`pnpm --filter @echo/desktop format:check`、`lint`、`typecheck`、`test`、`build` 均通过（40 个测试文件、367 项通过）；设置 UI 覆盖模块导航及同步控制。
+
 ## 8. 故障集成、审查与发布门槛
 
 - [x] 8.1 建立并登记所有新/修改Scenario的验证映射及CI门禁，更新crate架构覆盖、模块规模/端口限制与IPC漂移检查；执行 `pnpm verify:self-test` 和 `pnpm verify:governance`，没有未登记或伪通过场景。场景对账 428/428，门禁注入证明 31/31。
@@ -109,5 +111,6 @@
 
 - [x] 11.1 复现主机导入→附属机同步→附属机修改内嵌信息后新哈希被错误作为远端资源下载的问题，完整校验并复用本机资源，允许旧关联路径恰好已是新目标版本的幂等发布，不清空待发队列、不降低哈希/完整性校验；覆盖写回、远端更新、重复同步及持久化恢复。执行 `cargo test -p echo-core`、`cargo test -p echo-app --bins sync_provisioner`、`cargo test -p echo-sync --all-features`。
 - [x] 11.2 将 `resource_not_found` 映射为媒体资源不可用提示，避免误导用户重新配对；覆盖错误分类，运行前端 typecheck、lint、build、相关测试与 `cargo fmt --all --check`、workspace Clippy，记录真实验证范围并执行 `openspec validate introduce-lan-library-sync --strict`。
+- [x] 11.3 在本机 `LibraryStatus` 增加仅供设置展示的活动音乐库绝对路径；通用与同步设置显示完整路径并支持换行，保留业务用 root ID，确保绝对路径不进入同步 DTO/远端载荷；同步 OpenSpec 的本地展示与共享边界说明。
 
 验证记录：`evidence/task-11-embedded-tag-roundtrip-2026-10-18.md`。本次修复自动化验证与独立审查完成；原有真机验收、规模门禁和归档任务未冒记完成。

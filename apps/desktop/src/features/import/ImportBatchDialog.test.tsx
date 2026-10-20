@@ -29,6 +29,6 @@ describe("ImportFailureDialog", () => {
     render(
       <ImportFailureDialog onClose={() => undefined} results={[{ kind: "libraryUnavailable" }]} />,
     );
-    expect(screen.getByText("资料库不可用，未开始导入。")).toBeInTheDocument();
+    expect(screen.getByText("音乐库不可用，未开始导入。")).toBeInTheDocument();
   });
 });

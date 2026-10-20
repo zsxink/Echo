@@ -241,7 +241,7 @@ export function PlaylistsView({
           if (id !== searchRequest.current) return;
           setSearching(false);
           if (cursor !== undefined && err instanceof BridgeError && err.code === "conflict") {
-            // 游标过期：资料库在两页之间被改动（导入/扫描/收藏都推进
+            // 游标过期：音乐库在两页之间被改动（导入/扫描/收藏都推进
             // library_roots.updated_at），后端以 "catalog changed; restart
             // pagination" 拒绝旧游标。**必须**丢弃它——留着的话每次滚动触底都会
             // 拿同一个已被拒绝的游标再失败一次，永远翻不下去。改从当前搜索词的
@@ -725,7 +725,7 @@ export function PlaylistsView({
       {confirmDelete ? (
         <ConfirmationDialog
           title={`删除歌单「${name}」？`}
-          description="只会删除歌单本身，资料库中的歌曲文件不会被删除。"
+          description="只会删除歌单本身，音乐库中的歌曲文件不会被删除。"
           confirmLabel="确认删除歌单"
           onConfirm={() => void deletePlaylist()}
           onCancel={() => setConfirmDelete(false)}

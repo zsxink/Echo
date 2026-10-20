@@ -1,5 +1,5 @@
 /**
- * Library workspace: 工作区顶栏 + 资料库工具栏 + 歌曲列表 (task 10.4 / 10.5 / 10.6).
+ * Library workspace: 工作区顶栏 + 音乐库工具栏 + 歌曲列表 (task 10.4 / 10.5 / 10.6).
  *
  * Reproduces the prototype's `.workspace` (topbar → content → library-view):
  *   topbar      面包屑 · 搜索 · 导入

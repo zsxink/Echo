@@ -91,7 +91,7 @@ beforeEach(() => {
   });
 });
 
-describe("导入完成后的资料库刷新（壳层入口）", () => {
+describe("导入完成后的音乐库刷新（壳层入口）", () => {
   it.each([
     ["all" as const, "all_songs"],
     ["recent" as const, "recent"],

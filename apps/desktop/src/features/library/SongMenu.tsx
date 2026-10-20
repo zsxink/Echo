@@ -146,7 +146,7 @@ export function SongMenu({
       if (!result.revealed) {
         // Soft failure — show the relative path instead; never an absolute one.
         notify({
-          message: `已在资料库中找到：${result.relativePath}（无法打开文件管理器）`,
+          message: `已在音乐库中找到：${result.relativePath}（无法打开文件管理器）`,
         });
         onClose();
         return;

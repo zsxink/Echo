@@ -228,7 +228,7 @@ async function main() {
     // Poll until the choose-library entry is stable (hydration can briefly
     // drop text during first paint / StrictMode double-render).
     await assert(
-      `document.body.innerText.includes('选择') || document.body.innerText.includes('资料库')`,
+      `document.body.innerText.includes('选择') || document.body.innerText.includes('音乐库')`,
       "A1: unconfigured first launch must offer a choose-library entry",
     );
     pass("A1: empty first launch renders the choose-library entry (no network/account)");

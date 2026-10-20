@@ -33,7 +33,7 @@ function resolutionLabel(result: SyncConflictResolution): string {
     case "unsupported":
       return "此类冲突不能安全恢复，只能保留当前值。";
     case "unavailable":
-      return "冲突已不可用，资料库内容未改变。";
+      return "冲突已不可用，音乐库内容未改变。";
   }
 }
 
@@ -56,7 +56,7 @@ export function SyncConflictsPanel({ libraryRoot }: { readonly libraryRoot: stri
     try {
       setConflicts(await lanSyncAdapter.syncConflicts(libraryRoot, 100));
     } catch {
-      setError("无法读取当前资料库的同步冲突。");
+      setError("无法读取当前音乐库的同步冲突。");
     } finally {
       setLoading(false);
     }
@@ -80,7 +80,7 @@ export function SyncConflictsPanel({ libraryRoot }: { readonly libraryRoot: stri
       setNotice(resolutionLabel(result));
       await refresh();
     } catch {
-      setError("处理冲突失败；资料库未被强制覆盖，请刷新后重试。");
+      setError("处理冲突失败；音乐库未被强制覆盖，请刷新后重试。");
     } finally {
       setBusyConflict(null);
     }
@@ -107,7 +107,7 @@ export function SyncConflictsPanel({ libraryRoot }: { readonly libraryRoot: stri
       {notice ? <p role="status">{notice}</p> : null}
       {loading ? <p className="setting-help">正在读取冲突…</p> : null}
       {!loading && !error && conflicts.length === 0 ? (
-        <p className="setting-help">当前资料库没有待处理的同步冲突。</p>
+        <p className="setting-help">当前音乐库没有待处理的同步冲突。</p>
       ) : null}
       <ul className="sync-conflicts-list">
         {conflicts.map((conflict) => {

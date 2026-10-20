@@ -75,7 +75,8 @@ impl super::AppServices {
                 )
             }),
             scanning,
-            active_root: root.map(|root| root.id().to_string()),
+            active_root: root.as_ref().map(|root| root.id().to_string()),
+            active_root_path: root.map(|root| root.absolute_path().to_string_lossy().into_owned()),
         })
     }
 
