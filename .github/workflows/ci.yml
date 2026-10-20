@@ -289,4 +289,9 @@ jobs:
           # reuse it for its matching scenario instead of running coverage and
           # injection proofs a second time in the release scenario suite.
           ECHO_GOVERNANCE_GATE_ALREADY_PASSED: "1"
+          # This runner's release gate contains many isolated, focused test
+          # commands. Keep enough of them in flight to avoid paying the test
+          # process startup cost serially; task scripts remain ordered by the
+          # scenario runner.
+          ECHO_VERIFY_TEST_CONCURRENCY: "8"
         run: node scripts/verify/checks/task-13.9.mjs
