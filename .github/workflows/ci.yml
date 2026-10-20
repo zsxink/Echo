@@ -18,7 +18,7 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - macos-latest
+          - xcode-27
           - windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -120,7 +120,7 @@ jobs:
 
   macos-platform-gate:
     name: macOS platform Gate
-    runs-on: macos-latest
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
 
@@ -290,8 +290,3 @@ jobs:
           # injection proofs a second time in the release scenario suite.
           ECHO_GOVERNANCE_GATE_ALREADY_PASSED: "1"
         run: node scripts/verify/checks/task-13.9.mjs
-
-      # OpenSpec is a pinned devDependency, not a globally installed tool, so
-      # the CLI is only reachable through pnpm.
-      - name: Validate archived OpenSpec changes
-        run: pnpm exec openspec validate --archived

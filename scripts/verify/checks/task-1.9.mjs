@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// macOS Tauri packaging Gate. It builds the .app, checks that the supported
-// audio associations and universal libmpv framework are bundled, then proves
+// macOS Tauri packaging Gate. It builds the arm64 .app, checks that the supported
+// audio associations and arm64 libmpv framework are bundled, then proves
 // cold/hot single-instance delivery and explicit exit using only Gate-only
 // environment variables (no frontend privilege is added).
 
-import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -13,7 +13,6 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
 const APP = resolve(ROOT, "apps", "desktop");
 const ARM_BUNDLE = resolve(ROOT, "target", "aarch64-apple-darwin", "release", "bundle", "macos", "Echo.app");
-const X64_BUNDLE = resolve(ROOT, "target", "x86_64-apple-darwin", "release", "bundle", "macos", "Echo.app");
 const BUNDLE = ARM_BUNDLE;
 const MACOS = join(BUNDLE, "Contents", "MacOS");
 const FRAMEWORKS = join(BUNDLE, "Contents", "Frameworks");
@@ -46,16 +45,8 @@ if (process.platform !== "darwin") {
   fail("the current Stage 1 Gate is intentionally macOS-local; run it on macOS");
 }
 
-for (const target of ["aarch64-apple-darwin", "x86_64-apple-darwin"]) {
-  run("rustup", ["target", "add", target]);
-  run("pnpm", ["--filter", "@echo/desktop", "tauri", "build", "--bundles", "app", "--target", target]);
-}
-
-const armExecutable = join(ARM_BUNDLE, "Contents", "MacOS", "echo");
-const x64Executable = join(X64_BUNDLE, "Contents", "MacOS", "echo");
-const mergedExecutable = join(MACOS, "echo.universal");
-run("lipo", ["-create", armExecutable, x64Executable, "-output", mergedExecutable]);
-renameSync(mergedExecutable, armExecutable);
+run("rustup", ["target", "add", "aarch64-apple-darwin"]);
+run("pnpm", ["--filter", "@echo/desktop", "tauri", "build", "--bundles", "app", "--target", "aarch64-apple-darwin"]);
 run("codesign", ["--force", "--deep", "--sign", "-", BUNDLE]);
 
 if (!existsSync(EXECUTABLE)) fail(`missing bundled executable: ${EXECUTABLE}`);
@@ -74,7 +65,7 @@ for (const filename of Object.keys(manifest.files)) {
   if (!existsSync(framework)) fail(`missing bundled framework: ${framework}`);
   const architectures = run("lipo", ["-info", framework]);
   for (const arch of manifest.architectures) {
-    if (!architectures.includes(arch)) fail(`${filename} is not universal (${arch} missing)`);
+    if (!architectures.includes(arch)) fail(`${filename} is missing required architecture ${arch}`);
   }
 }
 
@@ -86,7 +77,7 @@ if (!rpaths.includes("@executable_path/../Frameworks")) {
 const executableArchitectures = run("lipo", ["-info", EXECUTABLE]);
 for (const architecture of manifest.architectures) {
   if (!executableArchitectures.includes(architecture)) {
-    fail(`Echo executable is not universal (${architecture} missing)`);
+    fail(`Echo executable is missing required architecture ${architecture}`);
   }
 }
 
