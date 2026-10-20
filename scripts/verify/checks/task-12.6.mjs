@@ -65,7 +65,7 @@ const meta = fs.readFileSync("crates/echo-core/src/infrastructure/metadata/mod.r
 if (!meta.includes("tag_field: 4 * 1024")) process.exit(1);
 if (!meta.includes("lyrics: 2 * 1024 * 1024")) process.exit(1);
 if (!meta.includes("cover: 20 * 1024 * 1024")) process.exit(1);
-const scan = fs.readFileSync("crates/echo-core/src/application/scan.rs", "utf8");
+const scan = fs.readFileSync("crates/echo-core/src/application/scan/mod.rs", "utf8");
 if (!/.worker_threads: std::thread::available_parallelism/.test(scan)) process.exit(1);
 const cover = fs.readFileSync("crates/echo-core/src/infrastructure/metadata/cover.rs", "utf8");
 if (!cover.includes("max_capacity: 256 * 1024 * 1024")) process.exit(1);

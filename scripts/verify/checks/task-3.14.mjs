@@ -1,11 +1,8 @@
 #!/usr/bin/env node
-// Task 3.14 check: the sync-foundation *shape* does not create *operable* sync.
-//   (schema has tombstones/sync_outbox/sync_state; 0.1.0 still has no sync
-//    command/event/entry, no network client, no push — offline boundary holds).
-//
-// This is a complement to 13.8: 13.8 proves the runtime surface has no sync
-// at all; 3.14 proves the newly-added *schema tables* stay inert (only local
-// sync-outbox rows are ever written, never uploaded).
+// The original sync-foundation acceptance asserted that sync had no operable
+// entry. The LAN sync change supersedes that boundary. Keep this archived
+// scenario useful by checking that the now-operable IPC surface stays typed,
+// generated from Rust, and covered by the sync runtime tests.
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -13,51 +10,44 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
-const APP = resolve(ROOT, "apps", "desktop");
 
-function fail(msg) {
-  process.stderr.write(`FAIL 3.14: ${msg}\n`);
+function fail(message) {
+  process.stderr.write(`FAIL 3.14: ${message}\n`);
   process.exit(1);
 }
-function run(command, args, cwd = ROOT) {
-  const r = spawnSync(command, args, { cwd, encoding: "utf8" });
-  if (r.status !== 0) {
-    process.stderr.write(`FAIL 3.14: '${command} ${args.join(" ")}' exited ${r.status}\n${r.stderr || r.stdout}\n`);
-    process.exit(1);
-  }
-  return `${r.stdout || ""}${r.stderr || ""}`;
-}
 
-// 1. No sync command on the IPC surface (comments/documentation stripped).
-const bridge = readFileSync(resolve(APP, "src", "bridge", "index.ts"), "utf8");
-for (const banned of ["sync", "upload", "download", "remote_", "login"]) {
-  const code = bridge.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-  if (new RegExp(`\\b${banned}`, "i").test(code)) {
-    fail(`bridge surface mentions a sync command '${banned}'`);
+function run(args, expectedTest) {
+  const result = spawnSync("cargo", args, { cwd: ROOT, encoding: "utf8" });
+  if (result.status !== 0) {
+    fail(`${args.join(" ")} exited ${result.status}\n${result.stderr || result.stdout}`);
+  }
+  const output = `${result.stdout || ""}${result.stderr || ""}`;
+  if (expectedTest && !output.includes(`${expectedTest} ... ok`)) {
+    fail(`expected test '${expectedTest}' did not run successfully`);
   }
 }
-process.stdout.write("  ok: bridge surface has no sync/upload/download command\n");
 
-// 2. No network client dependency wired into the workspace.
-const cargoToml = readFileSync(resolve(ROOT, "Cargo.toml"), "utf8");
-for (const dep of ["reqwest", "hyper", "rust-s3", "aws-sdk", "webdav-client"]) {
-  if (cargoToml.includes(dep)) fail(`workspace wires network client dependency '${dep}'`);
+const bridgePath = resolve(ROOT, "apps", "desktop", "src", "bridge", "index.ts");
+const generatedPath = resolve(ROOT, "apps", "desktop", "src", "ipc", "ipc-types.generated.ts");
+const bridge = readFileSync(bridgePath, "utf8");
+const generated = readFileSync(generatedPath, "utf8");
+if (!bridge.includes("SyncCommandArguments") || !bridge.includes("extends SyncCommandArguments")) {
+  fail("desktop bridge no longer uses the generated sync-command argument contract");
 }
-process.stdout.write("  ok: no network client dependency in Cargo workspace\n");
-
-// 3. The sync-outbox schema rows are local-only: no SQLite-side trigger/
-//    virtual-table that could silently upload. 0005 only creates pure tables.
-const mig = readFileSync(
-  resolve(ROOT, "crates/echo-core/src/infrastructure/sqlite/migrations/0005_sync_foundation.sql"),
-  "utf8",
-);
-if (mig.toLowerCase().includes("create virtual table")) {
-  fail("0005 must contain only pure local tables, no virtual/network table");
+for (const command of ["sync_status", "host_start", "sync_now", "request_sync_pairing"]) {
+  if (!generated.includes(`readonly ${command}:`)) {
+    fail(`generated sync IPC contract is missing '${command}'`);
+  }
 }
-process.stdout.write("  ok: 0005 defines pure local tables only\n");
 
-// 4. Desktop security still denies remote/network (offline guarantee intact).
-run("cargo", ["test", "-p", "echo-desktop", "--all-features", "platform::security::tests::csp_never_opens_a_remote_or_network_source"]);
-process.stdout.write("  ok: desktop CSP still denies remote/network connect\n");
+run([
+  "test",
+  "-p",
+  "echo-desktop",
+  "--all-features",
+  "ipc::generate::tests::committed_generated_file_is_in_sync_with_the_generator",
+], "committed_generated_file_is_in_sync_with_the_generator");
+run(["test", "-p", "echo-desktop", "--all-features", "sync_runtime::"]);
+run(["test", "-p", "echo-core", "--all-features", "sync_payloads_carry_no_absolute_paths"]);
 
-process.stdout.write("ok 3.14: sync-foundation shape adds no operable sync; offline boundary intact\n");
+process.stdout.write("ok 3.14: LAN sync IPC stays generated, typed, and covered by runtime/privacy tests\n");
