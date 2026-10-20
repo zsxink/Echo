@@ -26,6 +26,10 @@
 3. 同步状态必须清楚且不打断聆听。
 4. 封面与歌曲信息服务于辨识，不替代高效检索。
 
+## 相关工具
+
+[MusicTag](https://github.com/zsxink/MusicTag) 可逐首编辑本地音乐文件的标签、封面与歌词，并将修改写回文件；Echo 用于扫描、管理和播放本地曲库。两者定位互补，可搭配整理与聆听音乐。可在 [MusicTag 仓库](https://github.com/zsxink/MusicTag) 了解项目，或前往 [发行版页面](https://github.com/zsxink/MusicTag/releases) 下载。
+
 ## 现状与路线
 
 当前处于一期（完整桌面版播放器）。0.1.0 已封版：GitHub Actions 三平台构建并发布 macOS、Windows、Linux 安装包与 `SHA256SUMS` 校验（见 [Releases](https://github.com/zsxink/Echo/releases)）；macOS 单平台的运行、原生 E2E 与故障恢复矩阵验证已完成，Windows/Linux 的原生 E2E 与恢复矩阵正在扩展。资料库同步、批量操作与移动端在后续阶段立项。
