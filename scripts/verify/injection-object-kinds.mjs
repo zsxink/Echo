@@ -23,14 +23,14 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 function recordKindFixture(fixture, name, mutate) {
   const dir = fixture(name);
   const specPath = join(ROOT, "openspec", "specs", "portable-library-layout", "spec.md");
-  const srcPath = join(ROOT, "crates", "echo-core", "src", "domain", "library.rs");
+  const srcPath = join(ROOT, "crates", "echo-core", "src", "domain", "library", "portable.rs");
   const mutated = mutate(readFileSync(specPath, "utf8"), readFileSync(srcPath, "utf8"));
   const specOut = join(dir, "openspec", "specs", "portable-library-layout");
-  const srcOut = join(dir, "crates", "echo-core", "src", "domain");
+  const srcOut = join(dir, "crates", "echo-core", "src", "domain", "library");
   mkdirSync(specOut, { recursive: true });
   mkdirSync(srcOut, { recursive: true });
   writeFileSync(join(specOut, "spec.md"), mutated.spec);
-  writeFileSync(join(srcOut, "library.rs"), mutated.src);
+  writeFileSync(join(srcOut, "portable.rs"), mutated.src);
   return { env: { ECHO_RECORD_KIND_CHECK_ROOT: dir } };
 }
 

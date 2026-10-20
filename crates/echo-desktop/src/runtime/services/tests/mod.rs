@@ -45,10 +45,24 @@ fn sync_storage_space_is_scoped_to_the_active_logical_root() {
 fn sync_storage_space_keeps_unreachable_volumes_unknown() {
     let fixture = ScanFixture::new();
     let app = services(&fixture);
-    let dir = tempfile::tempdir().expect("volume fixture");
+    #[cfg(windows)]
+    let unreachable_path = {
+        use std::path::{Path, PathBuf};
+
+        let drive = ('A'..='Z')
+            .map(|letter| format!("{letter}:\\"))
+            .find(|root| !Path::new(root).exists())
+            .expect("Windows CI has an unused drive letter");
+        PathBuf::from(drive).join("Echo").join("missing-volume")
+    };
+    #[cfg(not(windows))]
+    let unreachable_path = tempfile::tempdir()
+        .expect("volume fixture")
+        .path()
+        .join("missing-volume");
     LibraryRepository::upsert(
         &fixture.database,
-        &LibraryRoot::new(fixture.root, dir.path().join("missing-volume"), true, true),
+        &LibraryRoot::new(fixture.root, unreachable_path, true, true),
     )
     .expect("bind unreachable volume");
     assert_eq!(

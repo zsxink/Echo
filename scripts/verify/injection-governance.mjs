@@ -29,7 +29,7 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
         // (non-macOS exempts the dead-code lint on `open_targets`, so clippy
         // alone cannot prove the violation off-macOS).
         replaceIn(
-          join(ROOT, "apps", "desktop", "src-tauri", "src", "main.rs"),
+          join(ROOT, "apps", "desktop", "src-tauri", "src", "bootstrap.rs"),
           "for path in open_targets::open_targets(&urls) {",
           "for path in urls.iter().map(|url| url.to_string()).map(std::path::PathBuf::from) {",
         );

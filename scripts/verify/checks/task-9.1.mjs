@@ -85,26 +85,38 @@ if (
 // 3. Structural guard: the shell routes both OS open paths through the
 //    supervisor's FIFO instead of emitting directly.
 const main = readFileSync(resolve(ROOT, "apps", "desktop", "src-tauri", "src", "main.rs"), "utf8");
+const bootstrap = readFileSync(
+  resolve(ROOT, "apps", "desktop", "src-tauri", "src", "bootstrap.rs"),
+  "utf8",
+);
+const fileOpenGate = readFileSync(
+  resolve(ROOT, "apps", "desktop", "src-tauri", "src", "file_open_gate.rs"),
+  "utf8",
+);
+const shell = `${main}\n${bootstrap}\n${fileOpenGate}`;
 const required = [
   "StartupSupervisor",
-  "receive_file_open",
   "on_ready",
   "deliver_file_open",
   "drain_pending_opens",
-  "app://file-open-request",
 ];
 for (const token of required) {
-  if (!main.includes(token)) {
-    fail(`main.rs no longer routes through '${token}'`);
+  if (!shell.includes(token)) {
+    fail(`desktop shell no longer routes through '${token}'`);
+  }
+}
+for (const token of ["receive_file_open", "app://file-open-request"]) {
+  if (!fileOpenGate.includes(token)) {
+    fail(`file_open_gate.rs no longer routes through '${token}'`);
   }
 }
 // A regression where the single-instance callback bypasses the FIFO and emits
 // directly would leave an unguarded `app.emit(FILE_OPEN_REQUEST, ...)` on the
 // argv path. Both open paths must go through `deliver_file_open`, so the only
 // direct emits to that event live in `deliver_file_open`/`drain_pending_opens`.
-const directEmits = (main.match(/app\.emit\(FILE_OPEN_REQUEST/g) || []).length;
+const directEmits = (fileOpenGate.match(/app\.emit\(FILE_OPEN_REQUEST/g) || []).length;
 if (directEmits > 2) {
-  fail(`unexpected direct file-open emits in shell: ${directEmits}`);
+  fail(`unexpected direct file-open emits in gate helper: ${directEmits}`);
 }
 
 // 4. Behavior guard for the OS-boundary normalization
@@ -126,12 +138,12 @@ for (const name of [
     fail(`open_targets test not green: ${name}`);
   }
 }
-if (main.includes("url.to_string()")) {
+if (bootstrap.includes("url.to_string()")) {
   fail(
     "main.rs stringifies a URL again (url.to_string()): the Opened payload must be normalized through open_targets, never handed downstream as a URL string",
   );
 }
-if (!main.includes("open_targets::open_targets(&urls)")) {
+if (!bootstrap.includes("open_targets::open_targets(&urls)")) {
   fail("the RunEvent::Opened branch no longer normalizes payloads via open_targets");
 }
 
@@ -158,17 +170,17 @@ function functionBody(src, fnName) {
   }
   return src.slice(open, i);
 }
-if (!main.includes("mark_frontend_ready")) {
+if (!shell.includes("mark_frontend_ready")) {
   fail("main.rs no longer references the frontend-ready gate (mark_frontend_ready)");
 }
-if (!main.includes("file_open_frontend_ready")) {
+if (!shell.includes("file_open_frontend_ready")) {
   fail("main.rs no longer registers the frontend-ready command (file_open_frontend_ready)");
 }
 // The drain must go through `mark_frontend_ready`, never `on_ready`: `on_ready`
 // runs at shell-setup end when the WebView has not loaded, so draining there
 // would emit into silence — resurrecting the exact cold-start drop this change
 // exists to prove against.
-const drainBody = functionBody(main, "drain_pending_opens");
+const drainBody = functionBody(fileOpenGate, "drain_pending_opens");
 if (!drainBody.includes("mark_frontend_ready")) {
   fail("drain_pending_opens no longer drains via mark_frontend_ready");
 }
@@ -191,11 +203,11 @@ if (!appTsx.includes("file_open_frontend_ready")) {
 //    on macOS: RunEvent::Opened -> deliver_file_open -> "setup".
 //    The gate above (5) is unreachable while that holds, so this is the
 //    precondition the whole change rests on and it must be pinned structurally.
-const createdIdx = main.indexOf("Arc::new(StartupSupervisor::new())");
+const createdIdx = bootstrap.indexOf("Arc::new(StartupSupervisor::new())");
 if (createdIdx === -1) {
   fail("main.rs no longer creates the process-wide StartupSupervisor");
 }
-const builderIdx = main.indexOf("tauri::Builder::default()");
+const builderIdx = bootstrap.indexOf("tauri::Builder::default()");
 if (builderIdx === -1) {
   fail("main.rs no longer builds the Tauri application");
 }
@@ -207,7 +219,7 @@ if (createdIdx > builderIdx) {
 // The pre-fix shape looked the supervisor up through managed state, which is
 // `None` at cold-start odoc time — exactly the drop. No shell code may fall
 // back to that lookup for open delivery again.
-if (/try_state::<Arc<StartupSupervisor>>/.test(main)) {
+if (/try_state::<Arc<StartupSupervisor>>/.test(shell)) {
   fail(
     "main.rs looks the supervisor up via `try_state::<Arc<StartupSupervisor>>` again (D6): at cold-start odoc time the state is not registered yet, so the path is dropped and the double-click only launches the app",
   );
@@ -215,7 +227,7 @@ if (/try_state::<Arc<StartupSupervisor>>/.test(main)) {
 // Both OS open paths must *pass* the instance created before the Builder, so a
 // solution that keeps the captured-arg signature but hands it a fresh
 // supervisor still fails here.
-const capturedCalls = (main.match(/deliver_file_open\(app, &startup/g) || []).length;
+const capturedCalls = (bootstrap.match(/deliver_file_open\(app, &startup/g) || []).length;
 if (capturedCalls < 2) {
   fail(
     `only ${capturedCalls} open path(s) pass the captured supervisor into deliver_file_open (expected the RunEvent::Opened and single-instance paths)`,
