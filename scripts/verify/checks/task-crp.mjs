@@ -63,7 +63,7 @@ if (!/tauri\.conf\.json/.test(yml)) fail("release.yml no longer checks the versi
 if (!/"version"\s*:\s*"[0-9]+\.[0-9]+\.[0-9]+"/.test(conf)) fail("tauri.conf.json has no semver version (R01)");
 
 // R02 — three-platform matrix + bundle targets (CRP-R02-S01/02/03).
-for (const token of ['macos-latest', 'windows-latest', 'ubuntu-latest']) {
+for (const token of ['xcode-27', 'windows-latest', 'ubuntu-latest']) {
   if (!yml.includes(token)) fail(`release.yml build matrix misses ${token} (R02)`);
 }
 const targets = conf.match(/"targets"\s*:\s*\[([^\]]*)\]/)?.[1] ?? "";
