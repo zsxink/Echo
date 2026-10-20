@@ -14,6 +14,40 @@
 //! writes through [`metadata_upsert`] so the divergence cannot come back.
 
 use crate::domain::entities::{Song, SongAvailability};
+use crate::error::Error;
+
+/// Mirror the guarded local-only file-index write without generating a shared
+/// mutation or carrying a stale user-state snapshot into the stored song.
+pub fn refresh_file_index(stored: &mut Song, incoming: &Song) -> Result<(), Error> {
+    if stored.root() != incoming.root()
+        || stored.path().identity_key() != incoming.path().identity_key()
+        || stored.blake3_hash() != incoming.blake3_hash()
+        || stored.file_size() != incoming.file_size()
+        || stored.availability() != SongAvailability::Available
+    {
+        return Err(Error::conflict(
+            "published song association changed during metadata indexing",
+        ));
+    }
+    let (Some(hash), Some(size), Some(mtime), Some(format)) = (
+        incoming.blake3_hash(),
+        incoming.file_size(),
+        incoming.file_mtime_ns(),
+        incoming.format(),
+    ) else {
+        return Err(Error::conflict(
+            "published song index has incomplete file facts",
+        ));
+    };
+    stored.apply_scan_facts_with_params(
+        hash.to_owned(),
+        size,
+        mtime,
+        format,
+        incoming.audio_parameters(),
+    );
+    Ok(())
+}
 
 /// Fold `incoming` onto the stored row (if any) exactly the way the SQL
 /// upsert does: new rows take the incoming state as written, existing rows

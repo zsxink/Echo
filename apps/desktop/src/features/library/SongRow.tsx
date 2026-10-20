@@ -28,6 +28,7 @@ import { useState, type KeyboardEvent, type MouseEvent } from "react";
 
 import type { SongView } from "../../ipc/ipc-types.generated";
 import { assetUrl } from "../../bridge";
+import { formatTrackDuration } from "./duration";
 import { Icon } from "../../app/Icon";
 import type { MenuAnchor } from "./SongMenu";
 import { coverClass } from "./coverClass";
@@ -72,22 +73,6 @@ export interface SongRowProps {
    * dismisses it.
    */
   readonly onOpenMenu: (anchor: MenuAnchor) => void;
-}
-
-/** Format a duration in seconds as m:ss (player bar, chapters). */
-export function formatDuration(seconds?: number | null): string {
-  if (seconds === undefined || seconds === null || !Number.isFinite(seconds)) return "--:--";
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
-/** The table's `04:17` form — minutes zero-padded, as the prototype shows. */
-export function formatTrackDuration(seconds?: number | null): string {
-  if (seconds === undefined || seconds === null || !Number.isFinite(seconds)) return "--:--";
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
 /**

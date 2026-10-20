@@ -450,6 +450,27 @@ impl crate::application::ports::filesystem::LegacyLibraryFileSystem for FakeLibr
         Ok(())
     }
 
+    fn retain_trash_resource(
+        &self,
+        root: LibraryRootId,
+        path: &RelativeMediaPath,
+        expected_hash: &str,
+    ) -> Result<crate::application::ports::RetainedResource, Error> {
+        if let Some(error) = self.fault_error() {
+            return Err(error);
+        }
+        let registry = crate::infrastructure::filesystem::RootRegistry::new();
+        let base = self
+            .roots
+            .lock()
+            .unwrap()
+            .get(&root)
+            .cloned()
+            .ok_or_else(|| Error::unavailable("test root", "unknown root"))?;
+        registry.register(root, base);
+        crate::infrastructure::filesystem::retained::copy(&registry, root, path, expected_hash)
+    }
+
     fn trash_path(
         &self,
         root: LibraryRootId,

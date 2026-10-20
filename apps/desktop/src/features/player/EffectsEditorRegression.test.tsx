@@ -2,7 +2,8 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { EffectsSnapshotDto, EqCurve } from "../../ipc/ipc-types.generated";
 import fixtureSource from "./__fixtures__/effects-snapshots.generated.json?raw";
-import { EqualizerEditor, NEUTRAL_CURVE } from "./EqualizerEditor";
+import { EqualizerEditor } from "./EqualizerEditor";
+import { NEUTRAL_CURVE } from "./eqCurve";
 import { EffectsPresets } from "./EffectsPresets";
 
 // These snapshots are emitted by the Rust IPC fixture generator. Installed

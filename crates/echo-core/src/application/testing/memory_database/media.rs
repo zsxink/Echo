@@ -54,6 +54,23 @@ impl CoverRepository for MemoryDatabase {
             )
             .collect())
     }
+
+    fn all_referenced_asset_keys(&self) -> Result<Vec<String>, Error> {
+        let store = self.lock();
+        Ok(store
+            .songs
+            .keys()
+            .filter_map(|song| store.covers.get(song))
+            .map(|cover| cover.asset_key.clone())
+            .chain(store.artist_covers.values().cloned())
+            .chain(
+                store
+                    .playlists
+                    .values()
+                    .filter_map(|(_, _, key)| key.clone()),
+            )
+            .collect())
+    }
 }
 
 impl ScanRunRepository for MemoryDatabase {

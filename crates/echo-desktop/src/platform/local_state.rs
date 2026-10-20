@@ -446,7 +446,7 @@ impl DesktopStateStore {
         // wholly corrupt document. Effects recovery can still inspect them.
         if serde_json::from_slice::<serde_json::Value>(&bytes)
             .ok()
-            .map_or(true, |value| !value.is_object())
+            .is_none_or(|value| !value.is_object())
         {
             self.preserve_original(&bytes)?;
         }

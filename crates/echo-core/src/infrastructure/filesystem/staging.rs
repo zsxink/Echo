@@ -88,12 +88,19 @@ impl StagingManager {
     /// Echo never stages into, takes over, or cleans up a foreign control
     /// surface.
     pub fn ensure_dir(&self, root: LibraryRootId) -> Result<PathBuf, Error> {
-        if let Some((path, StagingCheck::Owned)) = self.existing_dir(root) {
-            return Ok(path);
-        }
         let base = self.registry.path_of(root)?;
         std::fs::create_dir_all(&base)
             .map_err(|source| Error::io("prepare root", source, &base))?;
+        // Validate the root and every existing ancestor before touching the
+        // control surface. A forged marker below a linked `echo/` is never
+        // evidence that Echo owns the redirected directory.
+        self.registry.resolve_relative(
+            root,
+            &crate::domain::ids::RelativeMediaPath::new(STAGING_ROOT)?,
+        )?;
+        if let Some((path, StagingCheck::Owned)) = self.existing_dir(root) {
+            return Ok(path);
+        }
         // Ensure the parent `echo/` exists before trying exclusive-create on
         // `echo/tmp`; `create_dir_all` is idempotent when `echo/` is already
         // present (our own marker-owned dir or an already-existing parent).
@@ -124,8 +131,13 @@ impl StagingManager {
     /// directory whose marker fully matches. A foreign/corrupt/symlinked
     /// `echo/tmp` is never adopted.
     fn existing_dir(&self, root: LibraryRootId) -> Option<(PathBuf, StagingCheck)> {
-        let base = self.registry.path_of(root).ok()?;
-        let path = base.join(STAGING_ROOT);
+        let path = self
+            .registry
+            .resolve_relative(
+                root,
+                &crate::domain::ids::RelativeMediaPath::new(STAGING_ROOT).ok()?,
+            )
+            .ok()?;
         if self.check(&path, root) == StagingCheck::Owned {
             Some((path, StagingCheck::Owned))
         } else {
@@ -139,9 +151,14 @@ impl StagingManager {
         if !path.exists() {
             return StagingCheck::Missing;
         }
+        let expected = crate::domain::ids::RelativeMediaPath::new(STAGING_ROOT)
+            .and_then(|relative| self.registry.resolve_relative(root, &relative));
+        if !expected.is_ok_and(|expected| expected == path) {
+            return StagingCheck::NotOurs;
+        }
         // A symlinked directory is never ours regardless of marker content:
         // following it would hand Echo's writes to whoever owns the target.
-        if path.is_symlink() {
+        if std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
             return StagingCheck::NotOurs;
         }
         let is_owned = std::fs::read(path.join(MARKER_FILE_NAME))
@@ -394,5 +411,29 @@ mod tests {
         assert_eq!(StagingMarker::parse(&marker.body()), Some(marker));
         assert!(StagingMarker::parse("garbage").is_none());
         assert!(StagingMarker::parse("Echo controlled staging directory\nnope\n1\n").is_none());
+    }
+    #[test]
+    fn linked_control_parent_with_valid_marker_never_grants_write_capability() {
+        let directory = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let registry = RootRegistry::new();
+        let root = LibraryRootId::new();
+        registry.register(root, directory.path());
+        let manager = StagingManager::new(registry);
+        let staging = manager.ensure_dir(root).unwrap();
+        std::fs::rename(directory.path().join("echo"), outside.path().join("echo")).unwrap();
+        let Some(()) = create_symlink(&outside.path().join("echo"), &directory.path().join("echo"))
+        else {
+            return;
+        };
+        assert_eq!(manager.check(&staging, root), StagingCheck::NotOurs);
+        assert!(!manager.write_capable(root).unwrap());
+        assert_eq!(manager.ensure_dir(root).unwrap_err().code(), "permission");
+        assert_eq!(
+            std::fs::read_dir(outside.path().join("echo/tmp"))
+                .unwrap()
+                .count(),
+            1
+        );
     }
 }

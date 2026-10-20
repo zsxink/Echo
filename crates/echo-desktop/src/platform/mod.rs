@@ -29,6 +29,8 @@ pub mod security;
 /// macOS menu-bar / Windows-Linux tray adapter logic: summary lines, play/pause
 /// label and command mapping (task 9.3).
 pub mod status_menu;
+/// OS secure credentials and independent monotone publication checkpoints.
+pub mod sync_security;
 /// System-trash boundary: Windows file-lock retry policy and the
 /// irreversibility contract over an injected OS backend (task 9.5).
 pub mod trash;

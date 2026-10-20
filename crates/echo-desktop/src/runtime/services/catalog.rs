@@ -164,7 +164,7 @@ impl super::AppServices {
         bytes: Option<Vec<u8>>,
         mime: Option<&str>,
     ) -> Result<(), Error> {
-        self.guard_writes()?;
+        let _activity = self.guard_writes()?;
         let root = self
             .deps
             .roots

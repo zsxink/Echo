@@ -3,8 +3,8 @@
  *
  * Reads `library_status` (a read-only snapshot: configured / read-only /
  * unavailable / scanning / active root) and subscribes to invalidation so the
- * workspace re-renders when the root switches or availability changes. No
- * absolute path ever crosses this boundary — only the opaque active-root id.
+ * workspace re-renders when the root switches or availability changes. The
+ * optional absolute path is display-only local state and never enters sync data.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -19,6 +19,7 @@ export interface LibraryStatus {
   readonly unavailable: boolean;
   readonly scanning: boolean;
   readonly activeRoot?: string;
+  readonly activeRootPath?: string;
 }
 
 const INITIAL: LibraryStatus = {

@@ -520,7 +520,7 @@ impl Handle {
             return false;
         }
         // SAFETY: successful property allocation; no descendant escapes.
-        unsafe { (sys.free_node_contents)(&raw mut root) };
+        unsafe { (sys.free_node_contents)(std::ptr::addr_of_mut!(root)) };
         true
     }
 
@@ -562,7 +562,7 @@ impl Handle {
             None
         })();
         // SAFETY: root was successfully allocated by mpv; no descendants escape.
-        unsafe { (sys.free_node_contents)(&raw mut root) };
+        unsafe { (sys.free_node_contents)(std::ptr::addr_of_mut!(root)) };
         count
     }
 
@@ -704,7 +704,7 @@ pub enum FfiInputError {
 /// `data` must be null or a valid `*const c_double` matching the declared
 /// property format (the observer must not misreport the format).
 #[must_use]
-pub unsafe fn read_double(data: *const c_void) -> Option<f64> {
+pub const unsafe fn read_double(data: *const c_void) -> Option<f64> {
     if data.is_null() {
         return None;
     }

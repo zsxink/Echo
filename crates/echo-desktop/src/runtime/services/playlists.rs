@@ -29,7 +29,7 @@ impl super::AppServices {
     /// `Unavailable` when writes are disabled or the control surface is not
     /// writable; storage errors propagate.
     pub fn create_playlist(&self, root: LibraryRootId, name: &str) -> Result<String, Error> {
-        self.guard_writes()?;
+        let _activity = self.guard_writes()?;
         // The command's root comes from the shell status snapshot.  Recheck it
         // at the mutation boundary: a status event can race a root switch, and
         // creating in an old/forged root would make the new playlist invisible
@@ -56,7 +56,7 @@ impl super::AppServices {
     /// for an unknown playlist, disabled writes, or an unwritable control
     /// surface; storage errors propagate.
     pub fn rename_playlist(&self, id: PlaylistId, name: &str) -> Result<(), Error> {
-        self.guard_writes()?;
+        let _activity = self.guard_writes()?;
         let root = self.active_root_id()?;
         ensure_control_plane_writable(self.deps.control.as_ref(), root)?;
         let trimmed = name.trim();
@@ -79,7 +79,7 @@ impl super::AppServices {
         bytes: Option<Vec<u8>>,
         mime: Option<&str>,
     ) -> Result<(), Error> {
-        self.guard_writes()?;
+        let _activity = self.guard_writes()?;
         if PlaylistRepository::by_id(self.deps.playlists.as_ref(), id)?.is_none() {
             return Err(Error::unavailable("playlist", "not found"));
         }
@@ -117,7 +117,7 @@ impl super::AppServices {
     ///
     /// `Unavailable` when writes are disabled; storage errors propagate.
     pub fn delete_playlist(&self, id: PlaylistId) -> Result<(), Error> {
-        self.guard_writes()?;
+        let _activity = self.guard_writes()?;
         let root = self.active_root_id()?;
         ensure_control_plane_writable(self.deps.control.as_ref(), root)?;
         let device = self.deps.device_id.current_device_id();
@@ -150,7 +150,7 @@ impl super::AppServices {
     /// `Unavailable` when writes are disabled or a target playlist does not
     /// exist; storage errors propagate.
     pub fn add_to_playlists(&self, song: SongId, targets: &[PlaylistId]) -> Result<(), Error> {
-        self.guard_writes()?;
+        let _activity = self.guard_writes()?;
         let root = self.active_root_id()?;
         ensure_control_plane_writable(self.deps.control.as_ref(), root)?;
         AddToPlaylists::new(
@@ -170,7 +170,7 @@ impl super::AppServices {
     ///
     /// `Unavailable` when writes are disabled; storage errors propagate.
     pub fn remove_playlist_song(&self, playlist: PlaylistId, song: SongId) -> Result<(), Error> {
-        self.guard_writes()?;
+        let _activity = self.guard_writes()?;
         let root = self.active_root_id()?;
         ensure_control_plane_writable(self.deps.control.as_ref(), root)?;
         let device = self.deps.device_id.current_device_id();

@@ -2,8 +2,9 @@
 //!
 //! These are the camelCase read models the frontend consumes. Core domain
 //! entities are mapped *here*; entities never derive Tauri/TypeScript traits
-//! directly. `RelativeMediaPath` is the only path form that crosses the
-//! boundary — never an absolute path.
+//! directly. Song/media paths cross this boundary only as `RelativeMediaPath`.
+//! The local settings status may expose the active root's absolute path for
+//! display; it is never part of sync DTOs or remote payloads.
 
 use serde::{Deserialize, Serialize};
 
@@ -252,7 +253,8 @@ impl LibraryRootStatusDto {
 
 /// The library's read-only availability + write capability (task 7.3
 /// `library_status`). It surfaces whether reads/writes are safe and whether a
-/// scan is in flight, without ever carrying an absolute path.
+/// scan is in flight. The active root's absolute path is a local, display-only
+/// field and is never included in sync protocol data.
 ///
 /// The four booleans are independent availability flags — collapsing them
 /// would obscure which capability is missing, so the natural shape wins.
@@ -271,6 +273,9 @@ pub struct LibraryStatus {
     /// The active root id, if configured.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_root: Option<String>,
+    /// The active root's absolute filesystem path, for display in local settings only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_root_path: Option<String>,
 }
 
 /// The terminal summary of one scan run (task 7.3 `start_scan`).

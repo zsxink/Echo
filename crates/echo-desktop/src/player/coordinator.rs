@@ -140,7 +140,7 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
     /// which snapshots/removes entries under the same lock the command layer
     /// already holds. Every other mutation goes through coordinator methods.
     #[must_use]
-    pub fn queue_mut(&mut self) -> &mut Queue {
+    pub const fn queue_mut(&mut self) -> &mut Queue {
         &mut self.queue
     }
 

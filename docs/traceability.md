@@ -42,6 +42,11 @@
 | DAS-R02-S08 | 应用框架必须提供稳定的目录入口 | 键盘访问品牌操作 | 4.1, 7.1, 10.3, 13.2 | Core/React/E2E | `tests/scenarios/DAS-R02-S08.yaml` | `pnpm verify:scenario -- DAS-R02-S08` |
 | DAS-R02-S09 | 应用框架必须提供稳定的目录入口 | 便于点击品牌操作 | 4.1, 7.1, 10.3, 13.2 | Native/Gate | `tests/native/DAS-R02-S09.md` | `pnpm verify:scenario -- DAS-R02-S09` |
 | DAS-R02-S10 | 应用框架必须提供稳定的目录入口 | 保持搜索框外观 | 4.1, 7.1, 10.3, 13.2 | Native/Gate | `tests/native/DAS-R02-S10.md` | `pnpm verify:scenario -- DAS-R02-S10` |
+| DAS-R02-S11 | 应用框架必须提供稳定的目录入口 | 在同步设置中找到主要控制 | 3.10, 3.14 | React | `tests/scenarios/DAS-R02-S11.yaml` | `pnpm verify:scenario -- DAS-R02-S11` |
+| DAS-R02-S12 | 应用框架必须提供稳定的目录入口 | 设置按主题模块浏览 | 3.10 | React | `tests/scenarios/DAS-R02-S12.yaml` | `pnpm verify:scenario -- DAS-R02-S12` |
+| DAS-R02-S13 | 应用框架必须提供稳定的目录入口 | 设置显示音乐库完整本地路径 | 3.13 | React | `tests/scenarios/DAS-R02-S13.yaml` | `pnpm verify:scenario -- DAS-R02-S13` |
+| DAS-R02-S14 | 应用框架必须提供稳定的目录入口 | 查看当前播放快捷键 | — | React | `tests/scenarios/DAS-R02-S14.yaml` | `pnpm verify:scenario -- DAS-R02-S14` |
+| DAS-R02-S15 | 应用框架必须提供稳定的目录入口 | 关于页展示品牌 | — | React | `tests/scenarios/DAS-R02-S15.yaml` | `pnpm verify:scenario -- DAS-R02-S15` |
 | DAS-R03-S01 | 品牌区导入入口所有视图可用 | 歌单视图导入可用 | 5.1, 5.2 | React | `tests/scenarios/DAS-R03-S01.yaml` | `pnpm verify:scenario -- DAS-R03-S01` |
 | DAS-R03-S02 | 品牌区导入入口所有视图可用 | 歌手/专辑视图导入可用 | 5.1, 5.2 | React | `tests/scenarios/DAS-R03-S02.yaml` | `pnpm verify:scenario -- DAS-R03-S02` |
 | DAS-R03-S03 | 品牌区导入入口所有视图可用 | 只读资目录禁用导入 | 5.2 | React | `tests/scenarios/DAS-R03-S03.yaml` | `pnpm verify:scenario -- DAS-R03-S03` |
@@ -66,10 +71,15 @@
 | DAS-R08-S05 | 窄屏布局与浮层关闭必须可预测 | 触发控件状态与可访问名称 | 10.4, 12.1, 12.3 | React | `tests/scenarios/DAS-R08-S05.yaml` | `pnpm verify:scenario -- DAS-R08-S05` |
 | DAS-R08-S06 | 窄屏布局与浮层关闭必须可预测 | 再次点击触发控件不触发外部动作 | 10.4, 12.1, 12.3 | React | `tests/scenarios/DAS-R08-S06.yaml` | `pnpm verify:scenario -- DAS-R08-S06` |
 | DAS-R08-S07 | 窄屏布局与浮层关闭必须可预测 | 仍可点击真正外部区域关闭 | 10.4, 12.1, 12.3 | React | `tests/scenarios/DAS-R08-S07.yaml` | `pnpm verify:scenario -- DAS-R08-S07` |
+| DAS-R08-S08 | 窄屏布局与浮层关闭必须可预测 | 音效入口与队列互斥 | 10.4, 12.1, 12.3 | React | `tests/scenarios/DAS-R08-S08.yaml` | `pnpm verify:scenario -- DAS-R08-S08` |
+| DAS-R08-S09 | 窄屏布局与浮层关闭必须可预测 | 音效标签尺寸一致 | 10.4, 12.1, 12.3 | React | `tests/scenarios/DAS-R08-S09.yaml` | `pnpm verify:scenario -- DAS-R08-S09` |
 | DAS-R09-S01 | 键盘焦点与 Escape 行为必须可访问 | 键盘遍历应用壳 | 11.8, 12.1, 12.2 | React/E2E | `tests/scenarios/DAS-R09-S01.yaml` | `pnpm verify:scenario -- DAS-R09-S01` |
 | DAS-R09-S02 | 键盘焦点与 Escape 行为必须可访问 | Escape 关闭最上层浮层 | 11.8, 12.1, 12.2 | React/E2E | `tests/scenarios/DAS-R09-S02.yaml` | `pnpm verify:scenario -- DAS-R09-S02` |
 | DAS-R09-S03 | 键盘焦点与 Escape 行为必须可访问 | 使用辅助技术 | 11.8, 12.1, 12.2 | React/E2E | `tests/scenarios/DAS-R09-S03.yaml` | `pnpm verify:scenario -- DAS-R09-S03` |
 | DAS-R09-S04 | 键盘焦点与 Escape 行为必须可访问 | 触发控件内部化不影响键盘路径 | 11.8, 12.1, 12.2 | React | `tests/scenarios/DAS-R09-S04.yaml` | `pnpm verify:scenario -- DAS-R09-S04` |
+| DAS-R09-S05 | 键盘焦点与 Escape 行为必须可访问 | 音效 Tab 离开 | 11.8, 12.1, 12.2 | React | `tests/scenarios/DAS-R09-S05.yaml` | `pnpm verify:scenario -- DAS-R09-S05` |
+| DAS-R09-S06 | 键盘焦点与 Escape 行为必须可访问 | 音效内模态对话框 | 11.8, 12.1, 12.2 | React | `tests/scenarios/DAS-R09-S06.yaml` | `pnpm verify:scenario -- DAS-R09-S06` |
+| DAS-R09-S07 | 键盘焦点与 Escape 行为必须可访问 | 外部点击关闭音效保留焦点 | 11.8, 12.1, 12.2 | React | `tests/scenarios/DAS-R09-S07.yaml` | `pnpm verify:scenario -- DAS-R09-S07` |
 | DAS-R10-S01 | 三平台壳行为必须可验证且不依赖网络 | 离线启动 | 1.5, 7.7, 9.8, 13.5, 13.7, 13.8 | Security/Native | `tests/native/DAS-R10-S01.md` | `pnpm verify:scenario -- DAS-R10-S01` |
 | DAS-R10-S02 | 三平台壳行为必须可验证且不依赖网络 | 跨平台验证 | 1.5, 7.7, 9.8, 13.5, 13.7, 13.8 | Security/Native | `tests/native/DAS-R10-S02.md` | `pnpm verify:scenario -- DAS-R10-S02` |
 | DAS-R11-S01 | 目录与导入文件选择必须由系统原生对话框提供 | 从欢迎界面打开原生目录选择器 | wire 1.1–1.8 | Desktop/Shell | `tests/scenarios/DAS-R11-S01.yaml` | `pnpm verify:scenario -- DAS-R11-S01` |
@@ -482,8 +492,12 @@
 | SYN-R01-S02 | 同步基础数据形状（schema 骨架） | 对象级 revision 单调递增 | 3.11 | Core | `tests/scenarios/SYN-R01-S02.yaml` | `pnpm verify:scenario -- SYN-R01-S02` |
 | SYN-R02-S01 | 本地变更预写 outbox | 导入与收藏变更是 outbox 条目 | 3.11 | Core | `tests/scenarios/SYN-R02-S01.yaml` | `pnpm verify:scenario -- SYN-R02-S01` |
 | SYN-R02-S02 | 本地变更预写 outbox | 预写不产生可操作同步 | 3.14, 13.8 | Core/Gate | `tests/scenarios/SYN-R02-S02.yaml` | `pnpm verify:scenario -- SYN-R02-S02` |
+| SYN-R02-S03 | 本地变更预写 outbox | 可撤销意图不成为同步墓碑 | 3.11 | Core | `tests/scenarios/SYN-R02-S03.yaml` | `pnpm verify:scenario -- SYN-R02-S03` |
 | SYN-R03-S01 | 墓碑 | 删除产生墓碑 | 3.12 | Core | `tests/scenarios/SYN-R03-S01.yaml` | `pnpm verify:scenario -- SYN-R03-S01` |
 | SYN-R04-S01 | 可同步载荷不含本机路径 | 本机绝对路径不进入可同步载荷 | 3.13 | Core | `tests/scenarios/SYN-R04-S01.yaml` | `pnpm verify:scenario -- SYN-R04-S01` |
+| SYN-R05-S01 | 同步事件可重试且按类型识别 | 网络重复提交 | 3.11 | Core | `tests/scenarios/SYN-R05-S01.yaml` | `pnpm verify:scenario -- SYN-R05-S01` |
+| SYN-R05-S02 | 同步事件可重试且按类型识别 | 远端应用及游标恢复 | 3.11 | Core | `tests/scenarios/SYN-R05-S02.yaml` | `pnpm verify:scenario -- SYN-R05-S02` |
+| SYN-R05-S03 | 同步事件可重试且按类型识别 | 迁移与架构验证 | 3.10, 3.11, 13.9 | Core/Gate | `tests/scenarios/SYN-R05-S03.yaml` | `pnpm verify:scenario -- SYN-R05-S03` |
 
 ## 发布审计
 

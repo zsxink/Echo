@@ -6,7 +6,7 @@
 //! commit is visible through every repository view. `MemoryDatabase` clones
 //! share one store (like `SqliteDatabase` handles share one file).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
 use crate::application::ports::*;
@@ -24,6 +24,8 @@ use crate::error::Error;
 /// The shared transactional store.
 #[derive(Clone, Debug, Default)]
 struct Store {
+    retained_resources:
+        BTreeMap<(LibraryRootId, crate::domain::sync::ResourceDigest), RetainedResource>,
     songs: BTreeMap<SongId, Song>,
     roots: BTreeMap<LibraryRootId, LibraryRoot>,
     playlists: BTreeMap<PlaylistId, (LibraryRootId, String, Option<String>)>,
@@ -38,6 +40,9 @@ struct Store {
     runs: BTreeMap<(LibraryRootId, u64), ScanRunRow>,
     issues: Vec<(LibraryRootId, u64, MediaDiagnostic)>,
     runtime_state: BTreeMap<String, String>,
+    song_resources: BTreeMap<SongId, Vec<crate::domain::sync::SharedResourceManifest>>,
+    remote_delete_isolations: BTreeMap<(LibraryRootId, OperationId), RemoteDeleteIsolation>,
+    finished_isolations: BTreeSet<(LibraryRootId, OperationId)>,
     fail_root_isolation: bool,
     outbox_revisions: BTreeMap<(String, String), i64>,
     object_hlcs: BTreeMap<(String, String), HybridLogicalClock>,
@@ -176,6 +181,35 @@ impl MemoryDatabase {
             .iter()
             .filter(|((kind, uuid), _)| kind == object_type && uuid == object_uuid)
             .map(|(_, revision)| *revision)
+            .collect()
+    }
+
+    /// Seed one pending remote-delete isolation (test setup for the recovery
+    /// retry pass).
+    pub fn seed_remote_delete_isolation(
+        &self,
+        isolation: RemoteDeleteIsolation,
+        root: LibraryRootId,
+    ) {
+        self.lock()
+            .remote_delete_isolations
+            .insert((root, isolation.operation), isolation);
+    }
+
+    /// The pending (unfinished) remote-delete isolations of one root (assertion helper).
+    #[must_use]
+    pub fn pending_remote_delete_isolations(&self, root: LibraryRootId) -> Vec<OperationId> {
+        let store = self.lock();
+        store
+            .remote_delete_isolations
+            .iter()
+            .filter(|((candidate, operation), _)| {
+                *candidate == root
+                    && !store
+                        .finished_isolations
+                        .contains(&(*candidate, *operation))
+            })
+            .map(|((_, operation), _)| *operation)
             .collect()
     }
 }

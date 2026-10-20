@@ -520,7 +520,7 @@ fn catalog_repository_gate_no_active_root_is_unavailable() {
 fn catalog_repository_gate_read_only_root_still_serves_reads() {
     let (_directory, database, root) = database();
     // Lock writes via the safety isolation.
-    LibraryRepository::set_write_safety_locked(&database, root, true).expect("lock");
+    RootWriteRepository::set_write_safety_locked(&database, root, true).expect("lock");
     let song_rec = song(root, "r.flac", "R", "甲");
     SongRepository::upsert(&database, &song_rec).expect("song");
 
@@ -575,7 +575,7 @@ fn playlists_repository_gate_covers_normal_empty_error_and_root_states() {
         .is_none());
 
     // Read-only root still allows reads and membership lookup.
-    LibraryRepository::set_write_safety_locked(&database, root, true).expect("lock");
+    RootWriteRepository::set_write_safety_locked(&database, root, true).expect("lock");
     let song_rec = song(root, "s.flac", "S", "丙");
     SongRepository::upsert(&database, &song_rec).expect("song");
     database

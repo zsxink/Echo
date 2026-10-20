@@ -19,3 +19,16 @@ include!("repositories.rs");
 include!("operations.rs");
 include!("songs.rs");
 include!("performance.rs");
+mod sync_baseline;
+mod sync_configuration;
+mod sync_identity_repair;
+mod sync_manifest_validation;
+mod sync_peer_lifecycle;
+mod sync_publication;
+mod sync_resource_publication;
+mod sync_root_contexts;
+mod sync_snapshot;
+mod sync_snapshot_apply;
+mod sync_song_projection;
+
+mod resource_retention;

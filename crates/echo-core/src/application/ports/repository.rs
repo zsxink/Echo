@@ -4,6 +4,11 @@ use crate::domain::ids::{LibraryRootId, OperationId, PlaylistId, RelativeMediaPa
 use crate::error::Error;
 
 pub trait LibraryRepository: Send + Sync {
+    /// Local work must defer while a host snapshot or its media archive is
+    /// pending. Repositories without LAN enrollment need no special gate.
+    fn replica_enrollment_pending(&self, _root: LibraryRootId) -> Result<bool, Error> {
+        Ok(false)
+    }
     /// The single active root, if any.
     fn active_root(&self) -> Result<Option<LibraryRoot>, Error>;
     /// A root by id.
@@ -12,6 +17,12 @@ pub trait LibraryRepository: Send + Sync {
     fn upsert(&self, root: &LibraryRoot) -> Result<(), Error>;
     /// Deactivate the active root record (kept, not deleted).
     fn deactivate(&self, id: LibraryRootId) -> Result<(), Error>;
+}
+
+/// Write-capability and availability transitions for library roots. Split from
+/// [`LibraryRepository`] so the read path stays narrow; every store backing
+/// library roots implements both.
+pub trait RootWriteRepository: LibraryRepository {
     /// Set the write capability and availability of a root.
     fn set_write_and_availability(
         &self,
@@ -34,6 +45,24 @@ pub trait SongRepository: Send + Sync {
     /// and the final missing pass. Bounded by the library size, never by a
     /// page limit: scans need the whole picture.
     fn all_in_root(&self, root: LibraryRootId) -> Result<Vec<Song>, Error>;
+    /// Completed sync resources whose local storage differs from their shared
+    /// library path. Scans visit current local audio and keep retained logical
+    /// originals out of discovery; arbitrary Echo control files stay excluded.
+    fn published_file_paths(
+        &self,
+        _root: LibraryRootId,
+    ) -> Result<Vec<(RelativeMediaPath, RelativeMediaPath)>, Error> {
+        Ok(Vec::new())
+    }
+
+    /// Shared audio path for one currently associated local song file.
+    fn published_logical_path(
+        &self,
+        _root: LibraryRootId,
+        _local: &RelativeMediaPath,
+    ) -> Result<Option<RelativeMediaPath>, Error> {
+        Ok(None)
+    }
     fn upsert(&self, song: &Song) -> Result<(), Error>;
     fn set_availability(&self, id: SongId, availability: SongAvailability) -> Result<(), Error>;
     fn set_favorite(&self, id: SongId, favorite: bool) -> Result<(), Error>;

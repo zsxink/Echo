@@ -4,7 +4,7 @@ scenario_id: LE-R06-S04
 requirement: 歌曲操作与详情
 scenario: 删除当前播放歌曲
 layer: automated
-command: "cargo test -p echo-core --all-features scan::tests::enumerate_failure_marks_run_failed_without_missing"
+command: "cargo test -p echo-core --all-features application::scan::tests::relink::enumerate_failure_marks_run_failed_without_missing"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

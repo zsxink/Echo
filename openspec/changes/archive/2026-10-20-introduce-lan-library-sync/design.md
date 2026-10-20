@@ -1,0 +1,344 @@
+# Design
+
+## Context
+
+动机与范围见 proposal.md。用户确认：整个音乐库双向同步，一台主设备，其他设备作为从设备加入。主从描述连接与裁决职责，不限制从设备的编辑能力。
+
+当前已具备 Rust Core、SQLite 单写入执行器、稳定歌曲/歌单/成员 UUID、BLAKE3、portable records、设备身份、outbox、墓碑和 operation journal，但没有网络同步引擎。
+
+研究证据：
+
+| 当前实现 | 可复用点与缺口 |
+| --- | --- |
+| `crates/echo-core/src/domain/library.rs` | manifest、记录类型和安全相对路径；需要新增网络协议封套，不能把本机根路径当库身份 |
+| `infrastructure/sqlite/sync.rs` | 本地事务内预写完整快照；revision 由对象 outbox MAX+1 生成，不能比较不同设备，不能清空后再从 1 开始 |
+| migrations `0005` / `0006` | sync_state/outbox/tombstone/device_state 基础；没有网络 inbox、主日志或逐设备确认 |
+| `application/continuation.rs`、`portable.rs` | 资料库接续与恢复；不是已证明可用于实时远端冲突应用的入口 |
+| `runtime/player/recorder.rs` | 按设备计数材料化播放统计；需补充事务内变更通知/同步捕获，不能假定所有数据已完整进入 outbox |
+| `application/delete.rs` | 已有 10 秒撤销窗口，并在 PendingDelete 时写 portable 墓碑；该临时事实不能直接当作主确认的最终删除 |
+| `scripts/verify/checks/task-13.8.mjs`、App scope guard | 仍禁止网络与同步入口；需将断言改成默认关闭和 WebView 无网络直连 |
+
+ROADMAP 已明确局域网优先；PRODUCT、DESIGN、CODE_STANDARDS 的部分二期条款仍写 S3/WebDAV，实施第一步统一相关条款。本方案保留其本地优先、稳定 UUID、控制面可恢复、Core 与播放器分离的约束。
+
+## Goals / Non-Goals
+
+**Goals:** 一个主库与多个完整本地副本最终一致；离线修改可恢复；传输不依赖 UI；网络和进程中断不丢失已确认变更；多从设备互相传播；同步不阻塞已落盘歌曲的播放。
+
+**Non-Goals:** 多主、自动选主、从设备直连互传、后台系统守护进程、不同库的自动合并、流式播放、远端连接器和新增编辑能力。首版默认每个应用实例仅为活动资料库运行一个同步角色；其他库停止会话但保留绑定。主设备停机时不选新主，其他设备继续离线使用。
+
+## Decisions
+
+### 1. 星形拓扑与权限
+
+```mermaid
+flowchart LR
+  S1[从设备 A：本地库 + 待确认变更] <-->|对象与文件| M[主设备：裁决 + 全库 + 确认日志]
+  S2[从设备 B：本地库 + 待确认变更] <-->|对象与文件| M
+  S3[从设备 C：本地库 + 待确认变更] <-->|对象与文件| M
+```
+
+每份资料库只有一个主绑定，标识为 `(library_id, authority_id, epoch)`，与 IP、目录和设备名称无关。主设备自身修改也经过同一确认管道。各设备的 SQLite、路径映射、登录凭据、播放队列与偏好各自独立。
+
+主设备持有设备授权列表：从设备默认可同步全库及提交编辑，但只有主设备可配对/撤销设备、开关服务。授权始终限定到一个 library_id，不能凭某个文件哈希读取其他库内容。
+
+选择中心汇聚是因为用户明确主从拓扑，可避免 P2P 向量游标与多主协调；代价是主设备必须在线才能跨设备交换。保留后台运行已有行为：隐藏窗口可继续同步，显式退出关闭监听并持久化进度；不擅自改变 Windows/Linux 默认退出偏好。
+
+### 2. 全库范围与首次加入
+
+共享：音频、同名 `.lrc`、覆盖封面/歌词及歌单封面等用户资源；song/favorite/playlist/playlist-item/override/play-stats/tombstone；入库时刻、收藏时间、成员次序和原 UUID。缩略图、搜索索引等可重建缓存在本机生成。
+
+不共享：SQLite、绝对路径、device_state 本机身份配置、私钥/凭据、endpoint、主题/EQ/音量/关闭习惯、当前队列/播放进度/回退会话、临时播放项、`echo/tmp/`。记录中的作者设备逻辑 ID 和统计桶 ID 是协议必需事实，区别于本机身份配置文件。
+
+首次加入流程：
+
+1. 从设备选主设备并配对，再选定本机 Echo 资料库。加入时先将本地已有对象及资源登记为待同步变更，然后把主机快照合并进本地目录；不清空本地歌曲、歌单、收藏、播放统计、portable 记录或媒体文件。冲突交给对象身份及现有冲突解决流程处理；主机资源发布继续执行现有哈希与冲突保护。退出或重新加入不自动清理本地数据。
+2. 本机根目录映射主库 library_id，不根据新目录派生另一份库 ID。读取兼容 manifest，建立 enrollment journal 和 snapshot 会话。
+3. 主设备在一致性视图的日志高水位 `H` 生成分页对象快照和资源清单；快照在会话期固定，后续变更写入 `H+1` 以后的日志。超时失效后从新快照恢复，不能混用不同 H 的分页。
+4. 先投影对象资料到本机（缺媒体时标记不可用），下载所有当前存活记录依赖的资源，完整校验后关联原 UUID；重放 `>H` 日志并再次补齐资源。
+5. 正在首次构建的库可浏览、播放已就绪媒体，但暂不允许修改；追平本次目标水位且资源就绪后启用编辑与正常增量模式。已登记恢复目录重入不能重置未确认本地修改。
+
+快照不是拷贝活动 SQLite；恢复只使用版本化对象资料。媒体先后到达不会生成第二个 SongId。不同资料库合并需要 UUID、收藏与歌单引用重写，首版显式不做。
+
+### 3. 主确认序列与冲突
+
+区分三种数值：`local_revision` 为单设备对象版本；`commit_seq` 为主库日志序列；`object_version` 为该对象最近一次确认的 commit_seq。每条对象变更必须在入队时冻结变更时间戳（`sync_mutations.created_at`，Unix 毫秒，随 wire `changed_at_ms` 传输并落库到 `sync_object_versions.changed_at_ms`）。对象冲突先比较该变更时间戳，较新者胜出；相同则主机当前对象值胜出。主确认序仍用于日志完整性、幂等与对象版本，不替代变更时间。裁决输入必须是 mutation 的创建时间，**不是** `payload.hlc`：现代 payload 已不再携带 `hlc`，据此比较容易静默退化成「主机旧值永远胜」。
+
+每个本地变更具有持久化 `mutation_id` 和 `origin_seq`，在本地提交时固定，任何重试不变。提交携带该对象最后确认的 `base_object_version`；同对象多个离线变更按 origin_seq 顺序提交，并通过 `previous_mutation_id` 表达本机未确认链。主端等待前驱达到 durable outcome，不允许乱序重试改变同设备写入顺序。前驱拒绝也是持久化终态：普通拒绝后候选按当前规范基线重新校验，删除/权限/epoch导致拒绝则终结该链并显式保存后续候选，不永久等待一个不会确认的前驱。
+
+主设备串行处理单库确认，在一个 SQLite 事务中完成身份校验后的 inbox 去重、领域裁决、对象/墓碑投影、commit_seq 分配和主日志追加。新事务先标记 pending-publication，控制面/文件 journal 达到可恢复发布点且独立发布检查点持久化后，才标记 published 并推进连续可见水位、返回 durable ACK（完整顺序见 §7.1）。snapshot、changes 和重复提交的结果读取均只暴露 published 状态，不得从已提交但未发布的 inbox 提前确认；发布失败由恢复任务补齐，主设备不跳过序列缺口。相同 mutation_id 和相同内容返回原结果；同 ID 不同内容拒绝。
+
+| 情况 | 规则 |
+| --- | --- |
+| 不同对象 | 独立确认，不互相覆盖 |
+| 同一存活对象并发普通修改 | 采用主确认顺序 LWW，后确认值胜出；base 不符记录冲突并保留被替代值，界面提示可查看和恢复 |
+| 收藏与歌曲标签同时变更 | favorite 独立对象，不允许 song 全快照夹带旧收藏或统计覆盖独立对象 |
+| 播放次数 | 各设备桶取最大累计值再求和，只有对应设备可增加自身桶；重试不会重复计数 |
+| 删除与陈旧编辑 | 本机可撤销删除与最终删除分离；主确认最终墓碑后同 UUID 终结，拒绝陈旧更新。此后恢复采用显式重新导入/新 UUID |
+| 歌单成员并发追加 | 成员 UUID 独立；主确认时分配追加次序，相同 `(playlist_uuid, canonical_song_uuid)` 的存活成员保留首次确认身份，并持久化其他成员 UUID 到该身份的 typed alias |
+| 同哈希不同 SongId 并发导入 | 主按首次确认的 UUID 建立唯一 canonical song，显式回传别名映射，并事务内重映射收藏、成员、覆盖层和统计引用；本机不同 UUID 不得被静默覆盖 |
+| 同路径不同内容 | 主分配安全编号后缀并回传规范路径；接收端大小写/Unicode冲突用本机资源映射隔离，不覆写无关文件 |
+| 同一音频版本并发改动 | 同普通对象裁决，但保留输掉版本的资源与冲突记录；歌曲路径/音频/侧车/标签快照作为完整资源版本提交 |
+
+冲突裁决以 mutation 创建时冻结的变更时间戳为准，避免网络到达顺序覆盖较新的本地资料库变更。主机现值是同时间戳的权威值；主机当前值较旧时可接受时间戳较新的从端值。base 不一致仍保留输家和胜者副本供审计/恢复，不引入 CRDT 或逐字段自动合并。用户恢复普通冲突副本会产生新 mutation，不篡改既有日志。
+
+对象键必须是 `(kind, uuid)`；favorite/override/play-stats 和 song 可能共用 UUID，不能仅凭 UUID 查墓碑。歌曲删除清理可见成员并保留级联删除事实；不会删除歌单本体。失效引用隐藏/挂起，不能让延迟到达的成员复活歌曲。外部文件暂时缺失只改变该设备本机 availability，不变成墓碑，也不让其他已持有完整文件的设备不可播放。
+
+别名规范化在主裁决前应用于后续更新、依赖、成员与墓碑；下行同时携带映射，使从端原子重映射已确认记录和本地pending的逻辑引用，已发送mutation正文不修改，由主按映射处理。别名进入快照和可恢复控制面，不能只保存在运行时数据库。别名保留历史，但只对存活canonical进行内容去重；已删除canonical不吸收显式重导入的新UUID，旧别名更新仍被墓碑拒绝，不绕过删除。重基只改变未发送候选；已发送mutation的payload/base/引用固定，确需更改时以新mutation_id和明确替代关系提交。
+
+#### 3.1 可撤销删除与最终墓碑
+
+沿用现有 10 秒撤销窗口。`PendingDelete`、undo_deadline 和暂存媒体属于本机 operation intent，不是对外终结事实：窗口内隐藏本机歌曲，保留原 UUID、收藏、统计与成员，暂不生成可提交的 delete mutation，也不传播 availability 的隐藏状态。撤销与终结由单写入事务竞争同一 operation 状态；撤销成功则取消意图，不生成删除/复活事件。若终结已提交，原 UUID 不再允许撤销，界面提供新 UUID 重新导入。
+
+窗口结束后，在同一事务提交逻辑终结状态、稳定 delete mutation、最终 typed 墓碑及级联事实；移至系统废纸篓等物理清理由 journal 重试，不以清理成功作为逻辑终结条件。已终结 mutation 的重试不能换身份或移除墓碑。重启先恢复删除 journal，再开放编辑、基线建立与网络服务；未到期意图仍可撤销，已到期未终结意图按状态机只终结一次。
+
+物理清理还受资源引用约束：本机所有未确认/已发送 mutation、活跃快照、未解决冲突及保留日志所引用的资源，在引用解除前必须保留可通过受控句柄读取的不可变副本。可删除播放路径，但不能将唯一副本送入不可保证读取的系统废纸篓；先保留或迁入受 journal 管理的资源存储，再清理无引用文件。离线“导入 m1 → 最终删除 m2”不折叠已经固定的事件：保留 m1 的资源直到其达到 durable outcome，再按前驱链确认 m2；即使导入 ACK 丢失也不能提前释放资源。引用更新与终态同事务记录，重启重建引用后才运行清理。
+
+现有 PendingDelete 时写出的 portable 墓碑须改为与最终墓碑可区分的本机意图，升级遇到旧意图时先对照 journal 恢复，不能按普通墓碑导出。主快照、增量和历史基线使用最后已确认状态，窗口内保持其资源可读取（通过受控暂存句柄），不能因本机隐藏/文件暂存漏歌或返回缺失媒体。从端收到远端变更时更新确认基线但保留本机删除意图；已收到主最终墓碑则保留暂存资料供新 UUID 恢复，不能以本机撤销复活原 UUID。
+
+#### 3.2 成员去重后的编辑与删除
+
+别名键为 `(kind, alias_uuid)`，目标为同 kind 的 canonical UUID，歌曲与 playlist-item 分开保存。重复追加的 durable outcome 和日志包含规范成员及 alias；因歌曲去重而造成的成员碰撞也必须在同一事务裁决。接收端原子替换可见成员、确认版本、alias 和未发送 pending 引用；已经发出的正文保持不变，由主规范化处理。去重结果不能仅作为“添加成功”而丢失身份映射。
+
+通过任何旧成员 alias 提交的删除均指向对应规范成员；该成员被删除后，历史 alias 保持指向其墓碑，不重定向到后来重新添加的成员。重新添加同歌采用新 item UUID 和新的追加次序，旧 alias 的迟到删除不影响新成员。覆盖“并发添加 → 去重 → 立即删除”“未等添加 ACK 就删除”“删除后重新添加 → 旧删除重试”三类顺序，保持 pending 链和幂等 outcome 一致。
+
+### 4. 增量协议与资源传输
+
+采用 HTTPS + JSON 分页控制面 + 二进制文件流；从设备主动请求，主设备不反向连接从设备。空闲增量轮询间隔为 60 秒，新本地可同步变更立即唤醒，失败指数退避加抖动，最多 60 秒；无需 WebSocket。发现使用 mDNS/DNS-SD `_echo-sync._tcp.local.`，同时支持手动 LAN IP/主机名与端口。发现仅用于找地址，不建立信任。
+
+同步调度的唤醒与普通 SQLite 写入完成通知分离（Issue #52 CPU 修复）：单写入 actor 仅在成功请求新增本地 outbox 时通知同步订阅者；以主键索引读取请求前后 `MAX(outbox_id)`，不遍历曲库，不将空事务、游标/快照维护或回滚当作新工作。主机首次发布其他设备的 commit 时显式通知，保证 peer 资源发布及元数据索引及时推进；重复发布与本机确认不再唤醒自己。保留同步期间并发本地编辑的通知，禁止在周期末尾清空通知来隐藏自唤醒问题。
+
+修复位于 Core SQLite Infrastructure 的通知适配和桌面同步调度边界，复用单写入 actor 与 Command/Event 模式，遵守 CODE_STANDARDS §3–§5、§8–§9。不改变网络 DTO、数据库 schema、事务提交顺序或普通写订阅 API；`register_sync_waker` 的语义收紧为新同步工作。验证真实 SQLite 空事务、空页游标更新、失败/回滚、本地 outbox、远端首次/重复发布及实际后台循环收敛。macOS 本机在固定播放/UI 状态下对比同步开关各 60 秒的进程 CPU 时间增量，目标为空闲同步额外平均 CPU 低于单核 1%；传输/哈希期间单独记录。
+
+接口草案（最终 DTO 由 IPC/协议生成和契约测试固定）：
+
+| 接口 | 含义 |
+| --- | --- |
+| `POST /v1/pairing/requests` | 使用六位短期验证码完成一次性配对并返回主机证书 pin 与独立设备凭据 |
+| `GET /v1/library` | 已认证的库身份、协议能力、epoch、发布水位与日志摘要 |
+| `POST /v1/snapshots`、`GET /v1/snapshots/{id}?page=…` | 建立固定快照及分页 |
+| `POST /v1/mutations` | 有界批量提交，逐条 durable outcome；部分成功可安全重试 |
+| `GET /v1/changes?after=…&after_digest=…&limit=…` | 校验续传检查点，拉取包含规范结果、origin、墓碑、别名及摘要链的连续主日志 |
+| `POST /v1/resources/prepare` | 声明哈希、长度、类型，返回已有或 resumable upload ID |
+| `PUT /v1/resources/{upload}/chunks/{index}` | 固定 4 MiB 分块，记录校验和与确认块；同块重试幂等 |
+| `POST /v1/resources/{upload}/complete` | 校验全文件 BLAKE3/长度后发布不可变资源 |
+| `GET /v1/resources/{hash}` | 下载支持 Range 与内容版本；返回当前库授权资源 |
+| `POST /v1/ack` | 逐设备已应用日志水位/摘要和完整媒体水位；不匹配时停止会话 |
+
+主机按当前活动 root 的同步资源 manifest 定位资源；找不到当前 binding 分区的缓存时，可从本机其他 binding 分区复用同哈希 blob，但前提是当前 root 的对象确实声明该 manifest，且完整校验长度与 BLAKE3。复用后先写入当前 binding 分区再响应；不查询或传输其他 root 的目录/对象。
+
+mutation 封套包含 protocol_version、library_id、authority_id、epoch、mutation_id、origin_device_id、origin_seq、kind、uuid、base_object_version、previous_mutation_id、operation、payload、resource_refs。响应返回 confirmed/rejected/conflicted、commit_seq、canonical payload、alias 和冲突引用。主日志包含同样的身份与结果，重复回放不生成本地新 mutation。
+
+日志只确认依赖资源已在主设备完整落盘的对象；从导入先上传资源再提交对象。从设备可以先应用已确认对象并推进对象游标，但媒体完成水位与对象水位分开；“已同步”要求追到本次水位且该水位存活资源全部就绪、没有待确认修改/未解决错误。持续编辑时显示“仍有待同步”，避免宣称全局静止。
+
+下载至 `echo/tmp/<operation-id>/`，校验全文件 BLAKE3、长度和资源类型后由 journal 原子发布。替换前验证实际目标仍等于预期旧哈希；外部程序已修改则隔离候选并登记冲突，不覆写新内容。既有无关不同内容、符号链接、目录逃逸拒绝；远端不能传任意绝对路径，下载 URL不能重定向到其他地址。监听器与扫描识别应用来源和 operation_id，不把同步落盘当成新导入或制造回环。Windows 正在播放的文件无法替换时推迟发布，不中断当前播放、不提前显示资源可用。远端删除先隐藏逻辑对象，媒体转入本机可恢复隔离区并登记 journal；不在接收墓碑时直接永久销毁文件。
+
+首版建议每会话两条资源并发流、每批最多 100 个对象、JSON 请求最多 8 MiB、资源单文件最多 16 GiB、元数据资源最多 32 MiB；错误显式反馈，限制值在协议握手公布。传输中源文件变化则取消该资源版本、重新哈希，不发布旧哈希与新字节混合的文件。
+
+拒绝事件不占对象日志但保留 inbox outcome；已确认来源事件回拉也应用主规范结果再关闭本地 pending，不能因为 origin 是自己就跳过路径重命名/别名裁决。从设备合并远端结果时保留更晚的本地 pending overlay；pull 不覆盖尚未确认的本地编辑，ack 后重基后续队列。ACK 和 changes 走同一单调应用规则：较旧ACK仅关闭匹配pending，不把已应用的较新object_version/墓碑/游标回退。下载游标只由连续日志完整应用推进，单个ACK不得跳过尚未拉取的其他设备提交。
+
+### 5. 安全与平台生命周期
+
+默认同步关闭，不发现、不监听、不发包。用户开启主服务时选择本机 LAN 接口；不自动监听所有网卡，不进行 UPnP、打洞、公网发布或系统防火墙全局修改。服务使用固定端口 50826，方便新设备只输入 IP；绑定失败给出可操作错误。地址候选排除点对点虚拟接口，优先显示常见 Wi-Fi/以太网 IPv4 地址，并允许手动填写本机私有地址。
+
+配对采用主机直接显示的六位短期验证码，默认有效 10 分钟并自动刷新。加入设备只输入主机 IP 和验证码；初次配对连接仅用于交换主机 TLS 证书和新设备独立凭据，连接成功后立即固定该证书，后续同步只接受匹配 pin 的 TLS 连接。验证码通过后主机自动登记设备，不再显示待审批列表或要求人工批准。配对接口限速，并在验证码错误、过期或重放时拒绝授权。客户端应按主机 HTTP 拒绝、限流、主机服务/本地凭据登记不可用、网络/TLS 传输失败及响应格式错误分类反馈；主机结构化日志只记录静态失败阶段，不记录配对码、设备名、bearer 凭据或私钥。只有主机返回配对不可用时才显示验证码/主机不可用提示，避免把所有异常都归因为验证码。
+
+若主机已提交某设备的授权，但首次配对响应在客户端持久化前丢失，后续有效验证码可由同一设备身份重试。主机应从该设备当前授权句柄读取并重发原凭据，不创建第二个凭据代次，也不让失败请求的补偿撤销原授权；内存认证表对同一设备与同一凭据的激活必须幂等。有效新验证码仍是重试授权前提。
+
+初次验证码交换按用户授权在局域网 TLS 连接上引导证书信任；客户端仅在该一次性配对请求期间接受尚未固定的证书，收到主机证书后立即保存 pin。普通同步客户端始终验证 pin，证书变更失败并要求重新配对；IP 变化可更新地址但不能替换可信身份。配对码不是长期凭据，凭据泄露面由短时有效、单次使用和接口限速控制。
+
+首版使用独立 bearer 凭据 + TLS pin 而非 mTLS，以减少证书签发和移动端接入复杂度。密钥/凭据保存在 Echo 应用数据目录下的独立 vault；Unix 使用仅当前账户可读写的目录/文件权限，Windows 使用当前用户的应用数据目录 ACL。vault 与曲库数据库分离，不依赖 Apple 账号或系统钥匙串授权弹窗。配对码仅临时内存，成功或过期后失效；日志/WebView 状态不返回 bearer/私钥。
+
+撤销设备立即取消该设备会话并拒绝未来请求；不会擦除其已经下载的本地副本。已授权从设备具备删除全库的业务能力，因此本地删除确认文案必须说明跨端传播；主设备对异常请求、超大批次、非法资源/路径和跨库访问进行边界验证。
+
+macOS 增加 local-network usage 说明和 Bonjour 声明。Tauri release 明确对最终 `.app` bundle 签名，使签名 identifier 与配置的 Bundle ID 一致；在没有 Apple Developer 证书的构建中使用 Tauri 的 ad-hoc identity `-`，不把链接器对单一 Mach-O 的临时签名误当作已签名 app bundle。ad-hoc 构建关闭 hardened runtime，否则 macOS 会因库校验拒绝加载内置的 ad-hoc `libmpv.dylib`，导致应用启动崩溃。验证需检查最终 bundle 的代码签名、签名 identifier、Info.plist 权限项，并从实际 DMG 启动应用验证播放器依赖。Windows/Linux 验证实际监听、防火墙阻断、网卡切换。系统权限拒绝只影响同步，不影响本地播放器。主服务停止/库切换先阻止新提交，收敛在途事务和 journal，再取消任务；睡眠恢复重新发现并校验身份，游标不重置。
+
+### 6. 模块、抽象和事务
+
+```text
+React → generated IPC → echo-desktop runtime → Core application → Core domain
+                                    ↓ composition
+                          echo-sync adapters → Core ports
+                          SQLite / filesystem → Core ports
+```
+
+- Core domain：SyncIdentity、Mutation、Commit、ConflictOutcome、资源声明与裁决规则，不引用 SQL/HTTP/TLS。
+- Core application：EnrollReplica、ConfirmMutation、ApplyCommit、PlanTransfer、同步状态机；按调用能力拆小的 repository/transaction/resource/transport ports，每 trait ≤6 方法。
+- Core infrastructure：SQLite repository/UoW、filesystem journal 和控制面材料化。接收入口有 `RemoteApply` 来源，与 `LocalMutation` 路径分离，继承共享领域校验，不能调用既有“更新即写 outbox”的方法替代。
+- 新 `crates/echo-sync`：HTTPS client/server、mDNS 和协议 DTO 验证/转换，实现 Core ports；依赖 echo-core，Core不反向依赖它。这样 Android 将来只装配 client，不被桌面 listener/发现实现绑定。
+- echo-desktop/platform：安全存储、权限、服务生命周期、命令和事件；不实现冲突规则。UI 通过逻辑句柄选目录，HTTP 留 Rust，不放宽 WebView CSP connect-src。
+
+使用 Ports/Adapters 隔离传输，Repository/UoW 固定原子边界，Outbox/Inbox 支撑至少一次传输，State Machine 表达生命周期，operation journal 处理文件/数据库跨资源提交。网络 await 不持有 SQLite 事务/锁，哈希与标签解析用受控阻塞任务。
+
+来源设备的 mutation 链按 `origin_seq` 和 `previous_mutation_id` 串行推进。主端对顺序正确但因对象结构或作者授权校验失败的终态拒绝，必须在同一 SQLite 事务中持久化拒绝结果并推进来源游标；缺失前驱属于可重试拒绝，不推进游标。兼容旧版本遗留的单步游标缺口时，主仅在当前候选的直接前驱 ID 对应同设备已持久化的终态拒绝、且新候选序号恰为紧邻的下一序号时补推进。这样既能接续旧状态，又不会跳过普通缺失事件。
+
+建议 IPC 按需生成 host_start/stop、discover_hosts、create_pairing_code、pair_with_code、revoke_device、join_library、sync_now/pause/resume、sync_status/conflicts、backup_host/restore_host_backup；输入有界，配对码为临时敏感输入而非状态，目录及备份文件只传原生选择逻辑句柄。事件含会话 ID、递增事件序号、库 ID、阶段、已传字节/总字节、待确认数和结构化错误；UI过滤旧库/旧会话事件，取消订阅不取消已提交事实。
+
+### 7. 持久化与恢复
+
+新增迁移，不改已发布 SQL：
+
+| 数据 | 职责 |
+| --- | --- |
+| bindings / peers | 本机角色、authority/epoch、设备授权与凭据句柄（无明文 secret） |
+| mutation identity + pending | mutation_id、origin_seq、base、前驱、结果、资源引用和本地 revision 高水位 |
+| inbox | 主端按 `(library, origin, mutation_id)` 唯一保存摘要与 durable outcome |
+| commit log | 库内 commit_seq 唯一、canonical payload、previous_digest/commit_digest，独立于 outbox pushed_at |
+| object versions / aliases / conflicts | `(kind, uuid)` 确认版本、UUID重映射、可恢复输家副本 |
+| peer cursors / transfer state | 对象游标、媒体水位、分块校验、已完成资源和 journal |
+| local delete intents | 可撤销状态、undo_deadline、原记录/资源引用与最终 mutation 关联；不作为共享对象导出 |
+| publication checkpoint | 平台安全存储中独立保存 authority/epoch、已对外可见序列及摘要；不随资料库/账本备份回退 |
+
+主确认后的 portable records 必须携带足够的 authority/epoch/object_version 和墓碑信息重建确认基线；网络 envelope 不等于旧 portable payload。升级 portable 格式到 v2，并为历史 v1 提供显式读取/升级；当前 is_compatible 仅相等，不能仅加可选字段就声称旧程序可安全写入。设备认证身份绑定 origin_device_id，不能信任请求自报作者；从独立安装备份克隆到另一设备必须重新生成本机身份和配对，不能共享统计桶或上传序列。
+
+资料库 `echo/` 为持久对象真相源；SQLite 提供一致性运行视图和日志索引。主日志/inbox等协议账本在应用私有状态中持久化并有一致性备份。若只剩 portable 控制面可恢复库数据但丢失协议账本，不伪造连续游标：创建新的 epoch，重新配对并要求从设备完整对账，保留各端 pending 和冲突副本。首版不自动接纳旧 epoch 修改，导出/保留待恢复变更供后续显式处理，不承诺无账本恢复后透明续传。
+
+#### 7.2 同一应用内切换资料库
+
+应用 SQLite 可以同时管理多个本地资料库，因此同步上下文按本地 `library_root_uuid` 隔离；远端 `library_id` 仍表示同一份跨设备共享资料库。主机/从机绑定、设备、inbox、commit 序列/摘要链、对象版本、alias/conflict、peer cursor、快照和发布检查点作为当前权威账本，在 root 激活事务中归档旧 root 并恢复新 root；不存在历史上下文时初始化空账本。mutation/outbox 与 origin 序号及前驱链直接记录本地 root，写入事务通过当前活动 root 路由，队列和 enrollment 空库检查按 root 过滤。本地对象 UUID 假定全局唯一的 highwater、播放统计、删除意图与资源 manifest 保持全局。根切换先停止旧 root 会话，再在 SQLite 事务里提交活动 root 与账本切换，之后重启新 root 会话。迁移把现有单一账本及其未确认队列整体归属到原 `sync_binding.local_root_uuid`，不重编号既有事件、不重放历史 outbox、不清空队列，也不推断其它 root 的历史归属。
+
+#### 7.1 旧备份回退与日志分叉检测
+
+区分正常崩溃恢复与备份恢复。显式“恢复主库备份”入口停止会话、保留原库和各端候选，不论备份账本是否完整都创建新 epoch，并重新配对/建立基线；不提供把旧备份当普通启动的恢复操作说明。正常进程重启可以沿用 epoch，但必须在开放服务前校验库、账本与独立发布检查点。
+
+日志从绑定 library/authority/epoch 的 genesis digest 起，以固定协议版本、带域分隔和长度边界的规范编码计算 `BLAKE3(previous_digest || commit_seq || canonical_commit)`；canonical_commit 包括身份、规范对象结果、alias、墓碑与资源引用，不包括自身摘要和本机 published 状态。编码与摘要 fixtures 随协议固定。快照携带 `(H, digest_H)`；从端将已应用 `(seq, digest)` 与对象投影同事务保存，拉取必须校验摘要链。每次重连先提交本机已见检查点并完成主端校验，再允许该会话上传 mutation。主端收到续传/ACK 时校验该序列存在且摘要相同；高于主水位或同序列不同摘要均属于回退/分叉，禁止返回空增量或继续该会话写入，要求新 epoch 恢复。认证失败与检查点不一致分别报告；不因某设备自报不一致自动重置全库，先停止该会话并核对主检查点/账本，交由显式恢复入口处理。
+
+独立检查点通过平台端口存于安全存储，不进入 portable 目录或应用的账本备份包；首次建立新 authority/epoch 时先可恢复地保存 genesis 检查点，已绑定主不能将缺失检查点当成首次初始化。发布顺序为“SQLite pending-publication 提交 → 控制面/journal 可恢复发布 → 独立检查点持久化 → SQLite published/连续可见水位 → 对外 ACK/快照/增量”。批次 checkpoint 覆盖连续前缀，已越过检查点的更晚记录不能提前可见。写检查点失败则暂停发布，不能提前 ACK；检查点已写但 published 尚未写时，恢复核对相同日志摘要并补齐 published，不能仅因该正常崩溃窗口换 epoch。检查点比可恢复账本领先、同序列摘要不符、缺失或安全存储不可读时，先阻止服务；不能用当前账本覆盖旧检查点来消除不一致。安全存储恢复正常且检查一致可继续，否则按新 epoch 流程处理。
+
+该机制可识别资料库或账本备份回退，以及从设备已见历史与主历史不一致。未经显式恢复入口的整机镜像若连安全存储和全部从设备检查点一起回退，没有独立证据可自动识别；首版不承诺透明续传，恢复说明必须要求新 epoch。若仅主整机回退，从端仍以保存的摘要拒绝分叉，但不能承诺在从端首次重连前检测主回退。
+
+首版不自动 GC 主日志、inbox、墓碑或未解决冲突资源；永久离线设备不会使删除事实消失。只清理明确孤立且过期的未完成传输暂存；保留引用计数避免误删共享哈希资源。后续可设计 snapshot + retention floor + forced rebase，当前不假定一个 pushed_at 代表所有从设备已确认。
+
+### 8. 界面流程与状态
+
+设置 → 局域网同步：选择“作为主设备”或“加入主设备”；主机启动后在配对新设备行直接显示六位验证码，每 10 分钟自动刷新；加入设备只输入主机 IP 和验证码后直接连接，并显示连接状态、首次进度、待上传/下载和重试/暂停/解除绑定。
+
+同步设置视觉修订（GitHub Issue #53）沿用 Echo prototype 的主题 token 与设置行，不改变 IPC 或同步状态机。启用后将状态、暂停/继续和手动同步聚合为同一控制区；暂停/继续为主要状态操作，手动同步降为轻量次级操作。主机停止服务及解除同步身份收进原生 `details/summary` 更多操作入口，前者说明保留主机绑定，后者用确认文案说明本地资料库保留、当前设备配对凭据/关系清除。复用 `LanSyncSettings` 现有 typed adapter，不引入新的跨层抽象。原型 HTML 仍是 CSS 视觉源，由 `scripts/extract-prototype-css.mjs` 同步到桌面样式。
+
+设置整体按通用、快捷键、同步、关于四个主题分模块呈现。通用聚合本地资料库、外观和应用行为；快捷键列表与桌面端当前已支持的播放控制键保持一致。桌面设置面板采用窄侧边导航和独立滚动内容区；窄屏把导航变为横向可滚动的触控目标。模块切换使用可访问的 tab 语义、方向键与 Home/End 键盘操作，隐藏模块从焦点顺序和可访问树中移除；所有模块保留在 React 树中，避免切换时丢失已有表单状态。打开设置时播放器全局快捷键暂停响应，避免方向键导航误调音量。通用设置采用轻量分隔而非重复卡片；关于页去掉标题和介绍卡片，居中显示 Echo 品牌图标与“专注于本地音乐体验”。原型与桌面设置组件保持相同模块顺序和布局。
+
+应用工具区新增轻量同步状态入口，不挤入品牌区的导入/设置按钮。状态至少覆盖关闭、待配对、首次建立、正在上传、正在下载、应用变更、已同步、主设备离线、已暂停、冲突记录、权限/空间/不兼容/资料库不可用错误。解除绑定停止会话并保留本地完整资料库，主上撤销与本地解除区分。
+
+同步时允许原有浏览和播放；普通运行可继续编辑。用户暂停只停网络/传输调度，已提交本地修改仍排队。冲突提示可查看双方修改及确认次序；普通冲突可显式恢复为新修改，删除的恢复遵循新 UUID 规则。所有对话框按现有浮层栈与焦点规范实现。
+
+### 9. 选型比较与验证依据
+
+| 选择 | 考虑过的替代 | 取舍 |
+| --- | --- | --- |
+| 主汇聚 + 确认日志 | P2P/CRDT/文件目录镜像 | 符合主从要求，删除/UUID引用可裁决；依赖主在线 |
+| JSON + HTTPS 分块 | WebSocket/gRPC/QUIC | 便于调试、分页和移动复用，首版无需长连接/额外IDL |
+| mDNS + 手动地址 | UDP自定义广播/固定IP | 标准发现加兜底；不承诺跨VLAN自动发现 |
+| 全量首次 + 哈希增量 | 每次整库复制/直接同步SQLite | 保留逻辑身份并减少后续传输，媒体不边播边传 |
+| 主确认 LWW + 冲突副本 | 墙钟LWW/自动逐字段合并 | 顺序可证明、实现可测试，保留离线输家供用户恢复 |
+
+参考资料（2026-10-13 检索；依赖版本仍须实施 spike 验证）：
+
+- [RFC 6762 mDNS](https://www.rfc-editor.org/info/rfc6762/) 与 [RFC 6763 DNS-SD](https://datatracker.ietf.org/doc/html/rfc6763)：发现协议与链路范围，不能作为认证机制。
+- [RFC 8446 TLS 1.3](https://www.rfc-editor.org/info/rfc8446/)：传输与身份验证基础；主机证书在一次性验证码配对连接中交换，之后固定 pin。
+- [Apple TN3179](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy)：局域网权限、Bonjour配置与 macOS 签名验证。
+- [mDNS-SD 官方 API](https://docs.rs/mdns-sd/latest/mdns_sd/) 与 [Axum 官方 TLS 示例](https://github.com/tokio-rs/axum/blob/main/examples/tls-rustls/src/main.rs)：候选实现依据，不直接采用 latest 版本。
+
+工程规范适用 §3 分层/端口/模式、§4 并发、§5 数据与恢复、§6 IPC、§8–§9 验收/兼容。验证使用 `cargo fmt --all --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings`、`cargo test --workspace`，前端 format/lint/typecheck/test/build 和 openspec strict validate；新增架构与协议契约测试、IPC漂移及两/三设备原生故障矩阵。详细命令与任务见 tasks.md。
+
+### 10. 在线传播加速：长轮询 watch
+
+背景：从设备发现主机已确认变更原本只靠固定周期轮询（曾因空闲成本调到 60 秒），叠加瞬断后的指数退避，在线传播延迟劣化到分钟级。主机无法反向推送（从设备不监听端口、也不持有可被主机反向认证的通道），「轮询周期」于是成了空闲成本与传播延迟之间唯一的旋钮。以下决策把在线传播延迟压到约 1 秒而不恢复高频轮询。
+
+#### 决策 1：长轮询，而不是推送
+
+主机无法主动推向从设备：从设备不监听端口，配对也是单向的（主机给从设备签发证书 pin 与 bearer，主机不持有从设备任何可反向认证的凭证）。要让主机推得动，就得把每个从设备也变成 server——配对、keychain、撤销整套信任机制镜像翻倍，且笔记本监听端口在切网/睡眠后可达性不可靠，最终仍要回退拉取。延迟目标（约 1 秒）用长轮询即可达成，不值得用安全面换。
+
+UDP 组播/mDNS 唤醒只作为将来的可选加速层保留可能性：它们不保证送达（组播丢包、AP 客户端隔离、跨网段不路由），且未认证 hint 会引入伪造唤醒风暴（→拉取风暴→限流 429→睡眠 60 秒，反而更慢）。本变更不实现。
+
+#### 决策 2：保持中的请求靠主机侧低频复查，而不是跨组件信号
+
+主机账本追加有两条路径：peer 经 `/v1/mutations` 推送、主机本地 `confirm_local` 发布。后者发生在桌面进程的同步循环里，与 HTTP server 是不同组件。用 `Notify` 广播要跨组件传递句柄且要处理「登记前/后」竞态；改为 server 在保持期间每 500ms 直接复查 `published_commits_after`：
+
+- 该查询是 `sync_commits`（`commit_seq INTEGER PRIMARY KEY`）上的 rowid 范围 seek + `sync_binding` EXISTS + anchor 摘要点查，空闲返回 0 行，微秒级；
+- 两条账本追加路径都被自动覆盖，无信号丢失窗口；
+- 每从设备每秒 2 次 writer actor 访问，与既有写入无争抢；
+- 限流不变：一次保持只计一次请求（约 2 次/分钟/从设备，远低于 120/60s）。
+
+#### 决策 3：watch 是「变化探测器」，不自己应用页
+
+从设备循环结构保持「等待 → 全轮次」：watch 只回答「主机是否有新提交」，返回非空后由下一轮 `merge_peer_library` 正式拉取并应用。好处：
+
+- 复用既有 apply/资源下载/投影刷新机制，watch 不落库、不加锁；
+- 每轮 watch 结束（无论是检测到变化还是预算耗尽）都紧跟一个全轮次，其首次 catch-up 拉取会无条件重取 checkpoint 之后的提交——「账本在最后一次复查与响应之间追加」的竞态由该轮次兜底，无遗漏；
+- watch 请求本身不持有 `cycle`/`gate` 锁，手动「立即同步」可与 watch 并发。
+
+#### 决策 4：本地唤醒用 provisioner 自注册监听，不桥接 channel
+
+writer actor 的 `sync_listeners` 是 `Vec`（`actor.rs`），天然支持多监听者。`NativeSyncProvisioner` 在首次 watch 时自注册一个 `mpsc` 通道；watch 的 select 里用 250ms ticker `try_recv` 该通道。这样：
+
+- 不动 echo-core 的 `register_sync_waker` 公共 API（运行时循环继续持有自己的唤醒通道，语义不变）；
+- 本地写在 watch 保持期间 ≤250ms 被发现，立即转入推送轮次；
+- 取消/停止同样在 tick 上检查，暂停响应 ≤250ms。
+
+循环在收到「本地写入」结果后清空自己通道里积压的同类信号（轮次会处理全部待推工作），避免通道无限堆积。循环顶部先消费本通道待处理唤醒（含 loop 启动时发出的初始 wake），防止保持中的 watch 吞掉首轮触发。
+
+#### 决策 5：能力探测降级，防止旧主机把 watch 变成忙循环
+
+若主机忽略 `wait_ms`（旧版本）立即返回空页，而循环又立刻重新 watch，就会退化成紧密轮询。watch 测量耗时：空页且在 `wait/2` 之前返回 ⇒ 判定主机不保持 ⇒ 返回「不支持」，循环退回原有 `wait_for_sync_wakeup` 轮询路径。非空页永远判定为「已进展」，不受该探测影响。
+
+#### 数据流（从设备，在线空闲）
+
+```
+[循环] watch_host_commits(25s)
+   ├─ 本地 outbox 提交 → 自注册监听通道 → ≤250ms → LocalWrite → 全轮次(推送)
+   ├─ 主机确认新提交 → server 500ms 内复查命中 → Advanced → 全轮次(拉取+应用)
+   ├─ 25s 预算耗尽 → 全轮次(安全追赶) → 重新 watch
+   ├─ 主机旧版本不保持 → 空页快返 → Unsupported → 回归轮询等待
+   └─ 取消/停止 → ≤250ms → Busy → 循环退出
+```
+
+主机角色不走 watch：从设备推送即唤醒主机循环（`mark_published` 的 explicit wake），主机保持原有唤醒 + 兜底轮询。
+
+### 11. 本地音乐库路径展示
+
+设置界面需要显示活动音乐库的完整绝对路径。`LibraryStatus` 仅为本机设置提供独立的只读 `activeRootPath` 字段，原有 `activeRoot` 仍是业务逻辑使用的稳定 root ID。路径仅通过本机 Tauri IPC 到达设置界面，不进入 Core 同步模型、同步 DTO、资源映射或远端载荷；界面仅用于展示，不把它用于对象身份或路径拼接。
+
+#### 兼容性与边界
+
+- `wait_ms` 可选；>30s 返回 400（`invalid_wait`）；`wait_ms=0` 或缺省 = 原有立即返回语义。
+- 客户端对 watch 请求按 `wait + 5s` 覆盖超时（`reqwest` 按请求超时优先于客户端默认 15s）。
+- 保持期间主机 `active=false`（停止/暂停）时下一 tick 退出保持并返回空页。
+- `serve_tls` 既有 300s 连接上限与 64 连接信号量对保持连接无影响（≤32 从设备）。
+
+## Risks / Trade-offs
+
+### 内嵌标签写回的资源归属（Issue #52）
+
+附属机写回封面、歌词、专辑后，全文件哈希会改变。现有待发布查询会看到当前本机声明，而主机尚未持有这个版本。资源下载前优先从当前资料库的受控候选中完整校验长度与 BLAKE3，将匹配内容放入接收缓存并复用正常 journal 发布；本机没有完整匹配内容时仍从主机下载，不吞掉 404。缓存复用只说明本机有字节，不确认 mutation、不标记已上传；主机 ACK 仍是待发链终结的唯一依据。
+
+旧资源映射仍指向被写回的同一路径时，仅当该路径完整匹配新目标的哈希与长度，才将其作为已经到达目标的幂等状态；其他第三方内容仍拒绝替换。保持稳定歌曲 UUID、pending 队列与确认顺序，远端真实更新仍须完整校验并经 journal 发布。按远端确认声明重建独立资源视图需要扩大 schema/overlay 改动，当前修复选择复用已有安全文件发布抽象。
+
+音频和歌词的逻辑路径若完整匹配目标内容，直接关联该路径，避免把本机已编辑文件复制成第二个扫描候选。本地缓存导入使用独立临时副本，完整校验后才发布不可变 blob 与完成检查点；失败只清理本次临时副本，不污染网络续传的已确认分块。该能力是 `FileResourceStore` 的内部适配器 API，无网络 DTO 或 Core port 兼容变化。
+
+修复位于 Core SQLite 资源声明/待发布查询与桌面错误适配，复用 Repository、Outbox/Inbox 和 operation journal，遵守 CODE_STANDARDS §3–§5、§8–§9。优先复用已有持久化来源与版本信息，不新增协议字段、凭据或数据库迁移。`resource_not_found` 单独呈现资源不可用，保留认证错误的独立分类。验证本机写回的新哈希不会提前下载、上传确认后回拉不回声、远端更新不丢失及持久化恢复。
+
+- [主机离线] → 从设备照常本地使用并排队，界面明确等待主设备；首版不自动切换主。
+- [离线旧编辑晚确认覆盖新值] → base 冲突检测、持久化双方值与资源、显式恢复；不宣称保留所有字段的自动合并。
+- [现有 outbox 覆盖不完整/格式异构] → 先盘点每类实际写入口，历史基线从完整 portable 记录构建；不能直接上传所有旧 payload。
+- [portable 恢复对墓碑只用UUID或直接upsert] → 网络应用独立 typed key 与事务入口，补删除/重复应用/回环测试后才复用基础逻辑。
+- [主日志增长和完整副本占空间] → 界面预估空间、配额与可恢复失败；首版保留账本，不以错误 GC 换空间。
+- [依赖 MSRV/许可证变化] → 先验证 workspace MSRV 与 deny 清单，选择兼容锁定版本；必要工具链升级单独明确记录。RustSec 修复 quick-xml/time 需要 Rust 1.88，已将 workspace 最低版本升级到 1.88 并记录在依赖审查证据中。
+- [网络环境隔离/系统防火墙] → 手动地址兜底、区分权限和不可达，三平台真实安装包验证。
+- [设备身份或主账本丢失] → 不复用游标伪造连续性，重新配对/epoch；保留未确认修改，明确手工恢复边界。
+- [已绑定资料库加入另一主机] → 仅在新主机授权成功后自动撤销旧身份并绑定新主机；先保留本地目录数据，直到新快照通过验证。
+- [删除与撤销竞争] → 本机意图与最终墓碑分离，单写入事务确定唯一终态；快照期间保留最后确认资源。
+- [重复成员旧身份迟到] → typed member alias 随日志/快照保存，历史映射不指向重新添加的成员。
+- [整机与所有检查点共同回退] → 无独立证据时无法自动检测，备份恢复必须显式创建新 epoch，不承诺透明恢复。
+- [在线传播延迟与空闲成本的矛盾] → 从设备轮次间以有界长轮询（≤30s，实际预算 25s）等待主机新提交，主机 500ms 低频复查已发布水位；旧主机立即应答空页被能力探测识别并退回轮询，避免紧密循环；主机角色不保持请求，行为不变。
+
+## Migration Plan
+
+1. 更新项目阶段文档和 scope guards；盘点全部共享对象、资源引用及本地写入口，确定兼容协议 fixtures。
+2. 新顺序迁移新增同步账本与独立 revision 高水位，备份当前 SQLite/控制面；保留所有原 UUID，不改本机偏好。
+3. 首次开启主服务前，恢复未完成 journal（包括旧 PendingDelete/撤销意图），冻结短暂逻辑写入以从 portable 记录建立初始一致性快照；未终结删除保留最后有效对象与资源，将历史本地 outbox 归入基线，不作为多年旧变更逐条重播，release冻结后新写入进入新队列。缺失/不兼容对象不静默丢弃，拒绝开启并给出诊断；已绑定主正常启动先校验独立发布检查点。
+4. 以可恢复迁移 journal 将 v1 portable 记录升级到 v2。先持久化 journal 与原始文件备份，再发布一个旧版本不兼容的临时 manifest 围栏，然后升级记录并刷盘，最后原子发布 manifest v2 并清除 journal。新版每次打开或写控制面前先检查并恢复未完成 journal；若恢复证据不足则拒绝写入并保留原始备份。旧程序重启后因围栏不兼容而拒绝继续；围栏不承诺阻止围栏发布前已打开的旧进程。迁移完成后关闭同步不会降格式。
+5. 首批两台桌面试验，再用主+两从验证传播与并发，再三平台安装包冒烟；所有故障注入、规格对账和独立审查通过才发布。
+6. 回退应用版本前必须停止所有会话并备份库；已产生 v2/已确认同步内容不能直接降级。可从启用前备份恢复一份独立库用于旧版本；会丢弃备份后的修改，原 v2库保留。功能关闭只停止通信，不回滚或擦除库数据。
+
+## Open Questions
+
+仅保留不改变行为合同的实施参数：具体依赖版本、进度刷新节流值、原生双机传输基准与批量限制微调。这些在实施 spike 中记录；主从模式、全库范围、主机权威首次加入、确认顺序及删除规则已在本方案确定。

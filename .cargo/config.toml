@@ -1,0 +1,4 @@
+[resolver]
+# Cargo 1.84+ honors the workspace MSRV when refreshing Cargo.lock.
+# Older Cargo versions continue using the checked-in compatible lockfile.
+incompatible-rust-versions = "fallback"

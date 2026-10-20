@@ -230,6 +230,9 @@ pub(crate) fn scale_to(bytes: &[u8], max_px: u32) -> Result<Vec<u8>, Error> {
     } else {
         image
     };
+    // JPEG has no alpha channel. Convert explicitly because newer image crate
+    // releases reject RGBA input instead of silently dropping transparency.
+    let scaled = image::DynamicImage::ImageRgb8(scaled.to_rgb8());
     let mut out = std::io::Cursor::new(Vec::new());
     scaled
         .write_to(&mut out, ImageFormat::Jpeg)

@@ -54,6 +54,7 @@ struct MemoryTxState {
     lyrics: BTreeMap<(SongId, LyricsSource), LyricsCandidate>,
     covers: BTreeMap<SongId, CoverAssetRef>,
     runtime_state: BTreeMap<String, String>,
+    song_resources: BTreeMap<SongId, Vec<crate::domain::sync::SharedResourceManifest>>,
 }
 
 /// A Unit-of-Work fake with real commit/rollback semantics and a scriptable
@@ -89,6 +90,13 @@ struct MemoryTx<'a> {
 }
 
 impl TxSongWriter for MemoryTx<'_> {
+    fn refresh_song_file_index(&mut self, song: &Song) -> Result<(), Error> {
+        let Some(existing) = self.state.songs.get_mut(&song.id()) else {
+            return Err(Error::conflict("published song no longer exists"));
+        };
+        super::song_upsert::refresh_file_index(existing, song)
+    }
+
     fn upsert_song(&mut self, song: &Song) -> Result<(), Error> {
         // Same contract as the SQL upsert (see `testing::song_upsert`): user
         // state on an existing row is never carried by a metadata write.
@@ -220,6 +228,16 @@ impl TxLyricsWriter for MemoryTx<'_> {
 }
 
 impl TxStateWriter for MemoryTx<'_> {
+    fn set_song_file_resources(
+        &mut self,
+        song: &Song,
+        resources: &[crate::domain::sync::SharedResourceManifest],
+    ) -> Result<(), Error> {
+        self.state
+            .song_resources
+            .insert(song.id(), resources.to_vec());
+        Ok(())
+    }
     fn attach_cover(&mut self, song: SongId, cover: &CoverAssetRef) -> Result<(), Error> {
         self.state.covers.insert(song, cover.clone());
         Ok(())

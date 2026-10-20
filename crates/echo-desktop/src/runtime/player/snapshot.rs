@@ -18,7 +18,7 @@ use super::{
 /// seconds are intentional loss (the UI only shows seconds) and negatives are
 /// clamped away first, so both clippy casts are deliberate.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn duration_seconds(seconds: f64) -> u64 {
+const fn duration_seconds(seconds: f64) -> u64 {
     seconds.max(0.0) as u64
 }
 

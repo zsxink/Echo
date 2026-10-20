@@ -17,6 +17,10 @@ fn rejects_synthetic_platform_domain_rule_violations() {
             .is_empty()
     );
     assert!(!platform_playback_violations("songs.reverse();\n").is_empty());
+    assert!(platform_playback_violations(
+        "#[cfg(test)]\nmod fixtures {\nassert_eq!(state, SongAvailability::Available);\n}\n"
+    )
+    .is_empty());
 }
 
 #[test]

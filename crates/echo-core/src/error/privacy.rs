@@ -35,6 +35,21 @@ pub fn redact_display(text: &str) -> String {
     redact_path_spans(text)
 }
 
+/// Render the kept-but-previously-unread cause behind a storage failure.
+///
+/// `what` is a classifier (`sqlite`, `migration`, …) and on its own made every
+/// database failure read identically. The source text is what names the actual
+/// fault — SQLite reports `UNIQUE constraint failed: <table>.<cols>`, `no such
+/// column: <name>`, `database is locked`, and so on — so it belongs in the
+/// message, scrubbed by the same path-span rule as every other `Display` text.
+pub fn storage_detail(source: &BoxedSource) -> String {
+    let text = source.to_string();
+    if text.is_empty() {
+        return String::new();
+    }
+    format!(": {}", redact_path_spans(&text))
+}
+
 /// Display form of a [`PermKind`].
 pub const fn aspect(kind: PermKind) -> &'static str {
     match kind {

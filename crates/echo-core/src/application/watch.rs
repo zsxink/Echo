@@ -24,7 +24,8 @@ use std::sync::{Arc, Mutex};
 use crate::application::ports::{CoverAssetRef, FileEvent, FileEventKind, OperationItem, TxAccess};
 use crate::application::relink::{song_from_parsed, RelinkPlanner, Resolution};
 use crate::application::scan::{
-    parse_single_file, rewrap, FileOutcome, ParsedOutcome, ScanDeps, ScanSupervisor,
+    parse_file_event, parse_single_file, rewrap, FileOutcome, ParsedOutcome, ScanDeps,
+    ScanSupervisor,
 };
 use crate::domain::entities::{LyricsSource, SongAvailability as Availability};
 use crate::domain::entities::{MediaDiagnostic, Song, SongAvailability};
@@ -145,6 +146,9 @@ impl WatchCoordinator {
     /// Persistence failures propagate; event *semantics* never fail (a bad
     /// file is a diagnostic, exactly as in the scan pipeline).
     pub fn handle_event(&self, event: FileEvent) -> Result<EventOutcome, Error> {
+        if self.deps.roots.replica_enrollment_pending(event.root)? {
+            return Ok(EventOutcome::Ignored);
+        }
         if event.kind == FileEventKind::RescanNeeded {
             let reason = if event.path.normalized() == crate::application::ports::RESCAN_SENTINEL {
                 RescanReason::WatcherOverflow
@@ -153,6 +157,21 @@ impl WatchCoordinator {
             };
             (self.callbacks.request_rescan)(reason);
             return Ok(EventOutcome::RescanRequested(reason));
+        }
+        if event.path.normalized().starts_with("echo/")
+            && self
+                .deps
+                .songs
+                .published_logical_path(event.root, &event.path)?
+                .is_none()
+        {
+            // Candidate events can mention historical versions or arbitrary
+            // files under echo/media. Only an associated active song is editable.
+            return Ok(EventOutcome::Ignored);
+        }
+        let _activity = super::sync::local_activity()?;
+        if self.deps.roots.replica_enrollment_pending(event.root)? {
+            return Ok(EventOutcome::Ignored);
         }
         // A running scan owns the whole tree: buffer instead of guessing.
         if self.supervisor.is_scanning(event.root) {
@@ -173,14 +192,37 @@ impl WatchCoordinator {
     }
 
     /// Created/Modified: claim arbitration first, then normal reconciliation.
+    #[allow(clippy::too_many_lines)]
     fn upsert_path(
         &self,
         root: LibraryRootId,
         path: &RelativeMediaPath,
     ) -> Result<EventOutcome, Error> {
+        if self.deps.songs.by_path(root, path)?.is_none()
+            && self
+                .deps
+                .songs
+                .published_file_paths(root)?
+                .iter()
+                .any(|(local, logical)| local != logical && logical == path)
+        {
+            // Publication preserves the old logical file as a recovery copy.
+            // It must not be rediscovered as a new song after an event.
+            return Ok(EventOutcome::Ignored);
+        }
         // The file vanished between the event and reconciliation (a Remove
         // will follow): nothing to do.
         if self.deps.fs.file_meta(root, path).is_err() {
+            return Ok(EventOutcome::Ignored);
+        }
+        // Only a persisted completed publication with exactly these bytes may
+        // suppress an echo. External edits at the same path still reconcile.
+        let digest = self.deps.hasher.hash(root, path)?;
+        if self
+            .deps
+            .sync
+            .remote_publication_matches(root, path, &digest)?
+        {
             return Ok(EventOutcome::Ignored);
         }
         // Target-claim arbitration: an import owns this path right now.
@@ -221,8 +263,26 @@ impl WatchCoordinator {
             }
         }
         // No claim: reconcile exactly like the scan pipeline does.
-        match parse_single_file(&self.deps, root, path) {
+        let existing = self.deps.songs.by_path(root, path)?;
+        match parse_file_event(&self.deps, root, path) {
             FileOutcome::Parsed(parsed) => {
+                if let Some(song) =
+                    existing.filter(|song| song.blake3_hash() == Some(parsed.file.hash.as_str()))
+                {
+                    if song.availability() == SongAvailability::Missing {
+                        self.deps
+                            .songs
+                            .set_availability(song.id(), SongAvailability::Available)?;
+                        return Ok(EventOutcome::Applied {
+                            song: song.id(),
+                            created: false,
+                        });
+                    }
+                    // The event may only reflect a timestamp or filesystem
+                    // notification change. Do not enqueue a duplicate mutation
+                    // when the file bytes are identical.
+                    return Ok(EventOutcome::Ignored);
+                }
                 let mut planner = RelinkPlanner::new(self.deps.songs.all_in_root(root)?);
                 match planner.resolve(&parsed.file) {
                     Resolution::Keep { song } | Resolution::Relink { song } => {
@@ -400,9 +460,13 @@ impl WatchCoordinator {
             .clone()
             .map(|candidate| rewrap(&candidate, LyricsSource::Sidecar));
         let cover: Option<CoverAssetRef> = parsed.cover.clone();
+        let resources = crate::application::scan_resources::verified_song_resources(
+            &self.deps, root, parsed, true,
+        )?;
         self.deps
             .uow
             .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
+                tx.set_song_file_resources(&song, &resources)?;
                 tx.upsert_song(&song)?;
                 match embedded {
                     Some(candidate) => tx.set_lyrics_candidate(song.id(), &candidate)?,

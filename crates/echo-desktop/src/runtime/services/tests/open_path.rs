@@ -113,7 +113,7 @@ fn the_composition_root_shares_the_shells_startup_supervisor() {
     );
 
     assert!(
-        std::ptr::eq(app.startup(), &*shell),
+        std::ptr::eq(app.startup(), &raw const *shell),
         "the composition root must expose the shell's supervisor, not a copy"
     );
 

@@ -3,7 +3,7 @@ use std::io::Read;
 use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath};
 use crate::error::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct FileMeta {
     pub size: u64,
     pub modified_ns: i64,
@@ -166,6 +166,22 @@ impl StagedResource {
 /// is the one that keeps both the API surface and the scale rule honest.
 #[allow(clippy::redundant_pub_crate)] // Public would trip the ≤6 public-trait-method gate.
 pub(crate) trait LegacyLibraryFileSystem: Send + Sync {
+    /// Whether a failed publication is blocked by a temporary file lock.
+    /// Adapters classify native errors; unrelated permissions stay errors.
+    fn is_publication_blocked(&self, _error: &Error) -> bool {
+        false
+    }
+    fn retain_trash_resource(
+        &self,
+        _root: LibraryRootId,
+        _path: &RelativeMediaPath,
+        _expected_hash: &str,
+    ) -> Result<super::RetainedResource, Error> {
+        Err(Error::unavailable(
+            "resource retention",
+            "filesystem does not provide durable retention",
+        ))
+    }
     /// Enumerate supported files under `root`. Follows no symlinks (leaks out
     /// of the root are rejected by the adapter).
     fn enumerate(&self, root: LibraryRootId) -> Result<Vec<RelativeMediaPath>, Error>;

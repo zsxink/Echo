@@ -36,6 +36,7 @@ import {
   bumpLibraryCount,
   invalidateLibraryCounts,
   publishSongUpdate,
+  subscribeLibraryInvalidations,
   ConfirmationDialog,
   SongMenu,
   type MenuAnchor,
@@ -80,6 +81,7 @@ export function PlaylistsView({
   onLibraryChanged,
 }: PlaylistsViewProps) {
   const [members, setMembers] = useState<readonly SongView[]>([]);
+  const [catalogRevision, setCatalogRevision] = useState(0);
   const [sort, setSort] = useStoredSongSort(`playlist:${playlistId}`);
   const [name, setName] = useState(title);
   const [searchText, setSearchText] = useState("");
@@ -188,7 +190,11 @@ export function PlaylistsView({
       });
   }, [clearSelection, playlistId]);
 
-  useEffect(loadMembers, [loadMembers]);
+  useEffect(
+    () => subscribeLibraryInvalidations(() => setCatalogRevision((value) => value + 1)),
+    [],
+  );
+  useEffect(loadMembers, [catalogRevision, loadMembers]);
 
   // 歌单内搜索：非空词走后端 `search`（限定当前歌单），空词清空搜索结果
   // 让视图回退到全量成员。相同 playlistId + 排序下改变搜索词才重新请求。
@@ -235,7 +241,7 @@ export function PlaylistsView({
           if (id !== searchRequest.current) return;
           setSearching(false);
           if (cursor !== undefined && err instanceof BridgeError && err.code === "conflict") {
-            // 游标过期：资料库在两页之间被改动（导入/扫描/收藏都推进
+            // 游标过期：音乐库在两页之间被改动（导入/扫描/收藏都推进
             // library_roots.updated_at），后端以 "catalog changed; restart
             // pagination" 拒绝旧游标。**必须**丢弃它——留着的话每次滚动触底都会
             // 拿同一个已被拒绝的游标再失败一次，永远翻不下去。改从当前搜索词的
@@ -254,7 +260,7 @@ export function PlaylistsView({
     // 条件（搜索词/排序/歌单）变化 → 丢弃旧游标，重新取首屏。
     searchCursor.current = undefined;
     playlistsMemberSearch(searchText);
-  }, [playlistsMemberSearch, searchText]);
+  }, [catalogRevision, playlistsMemberSearch, searchText]);
 
   // 歌曲列表触底续页（fix-playlist-search-pagination）。成员列表走
   // `playlist_members` 全量返回、不分页，其 `isLast` 恒为 true，SongList 不会
@@ -719,7 +725,7 @@ export function PlaylistsView({
       {confirmDelete ? (
         <ConfirmationDialog
           title={`删除歌单「${name}」？`}
-          description="只会删除歌单本身，资料库中的歌曲文件不会被删除。"
+          description="只会删除歌单本身，音乐库中的歌曲文件不会被删除。"
           confirmLabel="确认删除歌单"
           onConfirm={() => void deletePlaylist()}
           onCancel={() => setConfirmDelete(false)}

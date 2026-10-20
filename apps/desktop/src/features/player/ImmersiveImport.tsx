@@ -49,9 +49,9 @@ export function ImmersiveImport() {
 function importResultText(kind: string): string {
   switch (kind) {
     case "imported":
-      return "已导入到资料库";
+      return "已导入到音乐库";
     case "duplicate":
-      return "资料库已有相同歌曲";
+      return "音乐库已有相同歌曲";
     case "skipped":
       return "不支持的格式，未导入";
     case "failed":

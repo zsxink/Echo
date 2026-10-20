@@ -11,4 +11,8 @@ pub mod library;
 pub mod media;
 pub mod playback_restore;
 pub mod state;
+pub mod sync;
+pub mod sync_binding;
+pub mod sync_members;
+pub mod sync_resources;
 pub mod text;

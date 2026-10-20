@@ -34,7 +34,7 @@ export function SongDetail({
           <dd>{song.artist ?? "未知艺人"}</dd>
           <dt>专辑</dt>
           <dd>{song.album ?? "—"}</dd>
-          <dt>资料库相对路径</dt>
+          <dt>音乐库相对路径</dt>
           <dd data-testid="detail-relative-path">{song.relativePath}</dd>
           <dt>播放次数</dt>
           <dd>{song.playCount}</dd>

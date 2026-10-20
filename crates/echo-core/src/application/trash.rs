@@ -8,10 +8,14 @@
 use std::collections::BTreeMap;
 
 use crate::application::delete::DELETE_OPERATION;
+use crate::application::portable_materialize::{
+    committed_version, tombstone_record, write_record_guarded, SONG_OBJECT_TYPE,
+};
 use crate::application::ports::{OperationItem, SystemTrashPort, TxAccess};
 use crate::application::scan::ScanDeps;
 use crate::domain::entities::SongAvailability;
-use crate::domain::ids::{LibraryRootId, OperationId, SongId};
+use crate::domain::ids::{LibraryRootId, OperationId, Revision, SongId};
+use crate::domain::library::{PortableRecord, RecordKind};
 use crate::domain::state::OperationState;
 use crate::error::Error;
 
@@ -51,6 +55,10 @@ impl<'a> FinalizeExpiredDeletes<'a> {
     /// Returns an infrastructure or journal error while persisting a known
     /// transition. A later startup recovery can safely retry such failures.
     pub fn run(&self, root: LibraryRootId) -> Result<TrashFinalizationReport, Error> {
+        let _activity = super::sync::local_activity()?;
+        if self.deps.roots.replica_enrollment_pending(root)? {
+            return Ok(TrashFinalizationReport::default());
+        }
         let mut deletes: BTreeMap<OperationId, Vec<OperationItem>> = BTreeMap::new();
         for (operation, kind, item) in self.deps.journal.incomplete_items(root)? {
             if kind == DELETE_OPERATION {
@@ -122,6 +130,22 @@ impl<'a> FinalizeExpiredDeletes<'a> {
             StagingEvidence::RootUnavailable => {
                 return mark_outcome_unknown(self.deps, root, operation, &items, true);
             }
+        }
+
+        // Retain before crossing the OS boundary. Copies are deliberately kept
+        // even without a current hold: this release does not garbage collect
+        // shared history, and a catalog row is not evidence of sole ownership.
+        self.deps.sync.rebuild_resource_holds(root)?;
+        for item in &items {
+            let path = item
+                .staging_path
+                .as_ref()
+                .ok_or_else(|| Error::conflict("delete resource has no staged path"))?;
+            let retained = self
+                .deps
+                .fs
+                .retain_trash_resource(root, path, &item.expected_hash)?;
+            self.deps.sync.record_retained_resource(root, retained)?;
         }
 
         // The irreversible boundary. A return of Ok is the platform adapter's
@@ -267,7 +291,7 @@ pub(crate) fn mark_outcome_unknown(
         })
         .collect();
     let available = !root_unavailable
-        && deps.roots.by_id(root)?.map_or(true, |record| {
+        && deps.roots.by_id(root)?.is_none_or(|record| {
             record.availability() == crate::domain::entities::RootAvailability::Available
         });
     deps.uow.with_tx(Box::new(move |tx: &mut dyn TxAccess| {
@@ -301,6 +325,7 @@ pub(crate) fn finalize_persisted_trash(
         .ok_or_else(|| Error::InvariantViolation {
             why: "trash-applied delete has no song record to finalize".to_owned(),
         })?;
+    let root = stored.root();
     if stored.availability() != SongAvailability::PendingDelete {
         return Err(Error::InvariantViolation {
             why: "trash-applied delete song is not pending delete".to_owned(),
@@ -319,7 +344,26 @@ pub(crate) fn finalize_persisted_trash(
         }
         tx.delete_song(song)?;
         tx.release_operation_claims(operation)
-    }))
+    }))?;
+
+    // Publish the shared deletion only after the irreversible SQLite
+    // transaction has committed. The outbox snapshot is the repair source if
+    // this best-effort portable projection cannot be written.
+    let device = deps.device_id.current_device_id();
+    let (revision, hlc) = committed_version(
+        deps.sync.as_ref(),
+        SONG_OBJECT_TYPE,
+        &song.to_string(),
+        device,
+    )?;
+    let record = PortableRecord::Tombstone(tombstone_record(
+        device,
+        hlc,
+        Revision::from_u64(revision.as_u64()),
+        song.as_uuid(),
+        RecordKind::Song,
+    ));
+    write_record_guarded(deps.control.as_ref(), root, &record)
 }
 
 fn subject_song(items: &[OperationItem]) -> Result<SongId, Error> {
@@ -344,13 +388,14 @@ mod tests {
     use super::*;
     use crate::application::delete::DeleteSongs;
     use crate::application::ports::{
-        LibraryRepository, OperationJournalRepository, PlaylistRepository, SongRepository,
-        SystemTrashPort,
+        ControlPlanePort, LibraryRepository, OperationJournalRepository, PlaylistRepository,
+        SongRepository, SystemTrashPort,
     };
     use crate::application::recover::RecoverOperations;
     use crate::application::testing::{FakeLibraryFileSystem, FakeTrash, ScanFixture};
     use crate::domain::entities::{LibraryRoot, Song};
     use crate::domain::ids::{PlaylistId, RelativeMediaPath, Revision, SongId};
+    use crate::domain::library::{PortableRecord, RecordKind};
     use crate::domain::media::AudioFormat;
 
     fn seed_delete(fixture: &ScanFixture) -> (SongId, PlaylistId) {
@@ -493,6 +538,14 @@ mod tests {
             .unwrap()
             .is_none());
         assert!(fixture.database.members(playlist).unwrap().is_empty());
+        let tombstone = fixture
+            .control
+            .read_record(fixture.root, RecordKind::Tombstone, &song.to_string())
+            .unwrap()
+            .expect("finalization publishes the shared tombstone");
+        assert!(
+            matches!(tombstone, PortableRecord::Tombstone(record) if record.deleted_kind == RecordKind::Song)
+        );
         assert!(fixture
             .database
             .items(operation)

@@ -40,6 +40,11 @@ impl<T: LegacyLibraryFileSystem> LibraryFileReader for T {
 
 /// Publishes already-owned staging content without replacing foreign files.
 pub trait LibraryFilePublisher: Send + Sync {
+    /// Classify a temporary native file lock without treating ordinary
+    /// permissions or permanent I/O failures as deferred publication.
+    fn is_publication_blocked(&self, _error: &Error) -> bool {
+        false
+    }
     fn publish(
         &self,
         root: LibraryRootId,
@@ -49,6 +54,9 @@ pub trait LibraryFilePublisher: Send + Sync {
 }
 
 impl<T: LegacyLibraryFileSystem> LibraryFilePublisher for T {
+    fn is_publication_blocked(&self, error: &Error) -> bool {
+        LegacyLibraryFileSystem::is_publication_blocked(self, error)
+    }
     fn publish(
         &self,
         root: LibraryRootId,
@@ -159,6 +167,12 @@ impl<T: LegacyLibraryFileSystem> LibraryFileRecovery for T {
 
 /// Moves files through Echo's controlled per-operation trash area.
 pub trait LibraryTrashFileSystem: Send + Sync {
+    fn retain_trash_resource(
+        &self,
+        root: LibraryRootId,
+        path: &RelativeMediaPath,
+        expected_hash: &str,
+    ) -> Result<super::RetainedResource, Error>;
     fn trash_path(
         &self,
         root: LibraryRootId,
@@ -181,6 +195,14 @@ pub trait LibraryTrashFileSystem: Send + Sync {
 }
 
 impl<T: LegacyLibraryFileSystem> LibraryTrashFileSystem for T {
+    fn retain_trash_resource(
+        &self,
+        root: LibraryRootId,
+        path: &RelativeMediaPath,
+        expected_hash: &str,
+    ) -> Result<super::RetainedResource, Error> {
+        LegacyLibraryFileSystem::retain_trash_resource(self, root, path, expected_hash)
+    }
     fn trash_path(
         &self,
         root: LibraryRootId,

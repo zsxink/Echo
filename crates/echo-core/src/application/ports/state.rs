@@ -37,6 +37,8 @@ pub trait CoverRepository: Send + Sync {
     /// Every asset key still referenced by any song of the root — the GC
     /// keep-set (`CoverCache::gc` must never delete a referenced asset).
     fn referenced_asset_keys(&self, root: LibraryRootId) -> Result<Vec<String>, Error>;
+    /// Every key referenced by any library, for a process-wide disk cache GC.
+    fn all_referenced_asset_keys(&self) -> Result<Vec<String>, Error>;
 }
 
 /// Persistence of one scan generation's progress, summary and per-file
@@ -153,9 +155,9 @@ pub trait DeviceIdProvider: Send + Sync {
 /// outbox-derived monotone revision and the HLC the object's last write
 /// stamped. Used by the materializers to build portable records that share the
 /// exact revision/HLC the `SQLite` row and outbox row carry.
-pub trait SyncStateReader: Send + Sync {
-    /// The object's current outbox revision (`MAX(revision)`), or `Revision(0)`
-    /// when nothing has been enqueued for it yet.
+pub trait SyncStateReader: super::ResourceRetentionPort {
+    /// The object's durable local sync revision, or `Revision(0)` when it has
+    /// never changed. It remains available after outbox history is pruned.
     fn outbox_revision(&self, object_type: &str, object_uuid: &str) -> Result<Revision, Error>;
     /// The HLC last stamped into the object's canonical row (`songs`,
     /// `song_overrides`, `playlists`), or `None` before the first stamp.

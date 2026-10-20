@@ -306,6 +306,12 @@ impl PlanImport<'_> {
             .flatten()
             .map(|candidate| rewrap(&candidate, LyricsSource::Sidecar));
         let cover = parsed.cover.clone();
+        let resources = crate::application::scan_resources::verified_song_resources(
+            self.deps,
+            planned.root,
+            parsed,
+            lrc_published,
+        )?;
         // Built before the transaction body: the closure owns the item.
         let committed = journal_item(OperationState::DatabaseCommitted, planned);
         let song_id = planned.reserved;
@@ -313,6 +319,7 @@ impl PlanImport<'_> {
         self.deps
             .uow
             .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
+                tx.set_song_file_resources(&entity, &resources)?;
                 tx.upsert_song(&entity)?;
                 match embedded {
                     Some(candidate) => tx.set_lyrics_candidate(song_id, &candidate)?,

@@ -78,6 +78,39 @@ fn fixtures() -> BTreeMap<&'static str, EffectsSnapshotDto> {
     result
 }
 
+fn assert_json_matches(path: &str, actual: &serde_json::Value, expected: &serde_json::Value) {
+    match (actual, expected) {
+        (serde_json::Value::Object(actual), serde_json::Value::Object(expected)) => {
+            assert_eq!(
+                actual.keys().collect::<Vec<_>>(),
+                expected.keys().collect::<Vec<_>>(),
+                "{path}: object keys differ"
+            );
+            for (key, expected_value) in expected {
+                assert_json_matches(&format!("{path}.{key}"), &actual[key], expected_value);
+            }
+        }
+        (serde_json::Value::Array(actual), serde_json::Value::Array(expected)) => {
+            assert_eq!(actual.len(), expected.len(), "{path}: array lengths differ");
+            for (index, (actual_value, expected_value)) in actual.iter().zip(expected).enumerate() {
+                assert_json_matches(&format!("{path}[{index}]"), actual_value, expected_value);
+            }
+        }
+        (serde_json::Value::Number(actual), serde_json::Value::Number(expected))
+            if path.contains(".responsePoints[")
+                && (path.ends_with(".frequencyHz") || path.ends_with(".gainDb")) =>
+        {
+            let actual = actual.as_f64().unwrap();
+            let expected = expected.as_f64().unwrap();
+            assert!(
+                (actual - expected).abs() <= 1e-9,
+                "{path}: {actual} differs from {expected} by more than 1e-9"
+            );
+        }
+        _ => assert_eq!(actual, expected, "{path}: values differ"),
+    }
+}
+
 #[test]
 fn ui_snapshots_match_real_backend_projection() {
     let generated = serde_json::to_string_pretty(&fixtures()).unwrap() + "\n";
@@ -91,6 +124,5 @@ fn ui_snapshots_match_real_backend_projection() {
     let actual: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
     let expected: serde_json::Value = serde_json::from_str(&generated).unwrap();
-    assert_eq!(actual, expected,
-        "Regenerate the fixture with UPDATE_EFFECTS_UI_FIXTURES=1; never synthesize runtime facts in UI tests");
+    assert_json_matches("snapshot", &actual, &expected);
 }

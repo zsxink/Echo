@@ -128,7 +128,7 @@ describe("PlayerBar (task 11.7) — temporary item label", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "导入" }));
     expect(capturedInvoke).toHaveBeenCalledWith("import_current_temporary_file", {});
-    expect(await screen.findByTestId("player-import-result")).toHaveTextContent("已导入到资料库");
+    expect(await screen.findByTestId("player-import-result")).toHaveTextContent("已导入到音乐库");
   });
 
   it("shows 导入中 and ignores repeated clicks until the request completes", async () => {
@@ -155,7 +155,7 @@ describe("PlayerBar (task 11.7) — temporary item label", () => {
       existingSongId: "song-existing",
     });
     expect(await screen.findByTestId("player-import-result")).toHaveTextContent(
-      "资料库已有相同歌曲",
+      "音乐库已有相同歌曲",
     );
   });
 

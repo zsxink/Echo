@@ -148,7 +148,7 @@ export function QueuePanel({
                   <b>{entry.title ?? "未知歌曲"}</b>
                   <span>
                     {entry.blocked
-                      ? "暂时不可用，可在资料库恢复后重试"
+                      ? "暂时不可用，可在音乐库恢复后重试"
                       : entry.failed
                         ? "加载失败"
                         : (entry.artist ?? "未知艺人")}

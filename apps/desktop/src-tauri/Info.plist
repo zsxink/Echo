@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Echo 需要访问局域网来发现并连接其他 Echo 主机，以便在设备之间同步音乐库。</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_echo-sync._tcp</string>
+	</array>
+</dict>
+</plist>

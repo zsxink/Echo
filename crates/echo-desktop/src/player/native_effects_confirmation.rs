@@ -24,7 +24,7 @@ impl NativeEffects {
 
     /// Called only after `GET_META` succeeds for every installed lavfi node.
     /// mpv rejects `GET_META` until that node's graph has actually initialized.
-    pub(in crate::player::actor) fn configured(&mut self) {
+    pub(in crate::player::actor) const fn configured(&mut self) {
         if self.needs_confirmation() {
             self.install_pending = false;
             self.installed_at = None;

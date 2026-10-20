@@ -69,7 +69,7 @@ describe("Keyboard path (task 12.2)", () => {
     renderConfiguredShell();
     const searchInput = await screen.findByTestId("search-input");
     // A nav item's accessible name carries its count once the view has loaded
-    // completely (资料库导航计数), so match on the label prefix.
+    // completely (音乐库导航计数), so match on the label prefix.
     const navAll = screen.getByRole("button", { name: /^全部歌曲/ });
 
     // Focus lands on the first nav button; Tab walks to the next nav item.

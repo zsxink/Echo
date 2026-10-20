@@ -45,37 +45,59 @@ pub(crate) fn upsert_root(connection: &Connection, root: &LibraryRoot) -> Result
             .map_err(storage)?;
     }
     connection.execute("INSERT INTO library_roots (uuid, absolute_path, normalized_path_key, is_active, write_capable, write_safety_locked, availability, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8) ON CONFLICT(uuid) DO UPDATE SET absolute_path = excluded.absolute_path, normalized_path_key = excluded.normalized_path_key, is_active = excluded.is_active, write_capable = excluded.write_capable, write_safety_locked = library_roots.write_safety_locked OR excluded.write_safety_locked, availability = excluded.availability, updated_at = excluded.updated_at", params![root.id().to_string(), path, key, i64::from(root.is_active()), i64::from(root.observed_write_capable()), i64::from(root.write_safety_locked()), if root.availability() == RootAvailability::Available { "available" } else { "unavailable" }, now]).map_err(map_constraint)?;
+    if root.is_active() {
+        super::sync_context::select(connection, &root.id().to_string())?;
+    }
     Ok(())
 }
 
-/// Build a full object snapshot payload for the current state of a song.
-/// This reads the post-mutation state from the connection (valid inside the
-/// calling transaction) and produces the complete outbox payload that the sync
-/// engine expects for cross-device conflict resolution (task 1.3: complete
-/// object payloads for all syncable objects).
+/// Read shared song facts from the post-mutation state in the caller's
+/// transaction. Favorite and play counts have independent object identities;
+/// availability, mtime and directory mapping belong to this device only.
+/// Resource manifests and bytes are captured by the resource pipeline.
 pub(crate) fn song_full_snapshot_payload(
     connection: &Connection,
     id: SongId,
 ) -> Result<serde_json::Value, Error> {
     connection
         .query_row(
-            "SELECT relative_path, title, artist, album, is_favorite, availability FROM songs WHERE uuid = ?1",
+            "SELECT COALESCE((SELECT l.library_relative_path FROM sync_remote_resource_locations l
+                JOIN sync_remote_publications p ON p.operation_uuid=l.operation_uuid
+                WHERE l.local_root_uuid=songs.library_root_uuid AND l.object_type='song'
+                  AND l.object_uuid=songs.uuid AND l.local_relative_path=songs.relative_path
+                  AND p.completed=1 LIMIT 1),relative_path),
+                title, artist, album, blake3_hash, file_size, duration_ms, format, bitrate_bps,
+                sample_rate_hz, channels, bits_per_sample, added_at FROM songs WHERE uuid = ?1",
             params![id.to_string()],
             |row| {
                 let relative_path: String = row.get(0)?;
                 let title: Option<String> = row.get(1)?;
                 let artist: Option<String> = row.get(2)?;
                 let album: Option<String> = row.get(3)?;
-                let is_favorite: bool = row.get::<_, i64>(4)? != 0;
-                let availability: String = row.get(5)?;
+                let blake3_hash: Option<String> = row.get(4)?;
+                let file_size: Option<i64> = row.get(5)?;
+                let duration_ms: Option<i64> = row.get(6)?;
+                let format: Option<String> = row.get(7)?;
+                let bitrate_bps: Option<i64> = row.get(8)?;
+                let sample_rate_hz: Option<i64> = row.get(9)?;
+                let channels: Option<i64> = row.get(10)?;
+                let bits_per_sample: Option<i64> = row.get(11)?;
+                let added_at: i64 = row.get(12)?;
                 Ok(serde_json::json!({
                     "song_uuid": id.to_string(),
                     "relative_path": relative_path,
                     "title": title,
                     "artist": artist,
                     "album": album,
-                    "is_favorite": is_favorite,
-                    "availability": availability,
+                    "blake3_hash": blake3_hash,
+                    "file_size": file_size,
+                    "duration_ms": duration_ms,
+                    "format": format,
+                    "bitrate_bps": bitrate_bps,
+                    "sample_rate_hz": sample_rate_hz,
+                    "channels": channels,
+                    "bits_per_sample": bits_per_sample,
+                    "added_at": added_at,
                 }))
             },
         )
@@ -84,6 +106,7 @@ pub(crate) fn song_full_snapshot_payload(
 
 #[allow(clippy::too_many_lines)]
 pub(crate) fn upsert_song(connection: &Connection, song: &Song) -> Result<(), Error> {
+    super::sync_projection::ensure_song_live(connection, &song.id().to_string())?;
     let now = now_ms();
     let title = song.title().map(ToOwned::to_owned);
     let artist = song.artist().map(ToOwned::to_owned);
@@ -117,6 +140,74 @@ pub(crate) fn upsert_song(connection: &Connection, song: &Song) -> Result<(), Er
     Ok(())
 }
 
+/// Only local file facts change after parsing an already-authorized sync file.
+/// Guard the association so a concurrent delete/replacement cannot receive
+/// artwork or lyrics parsed from its previous bytes.
+pub(crate) fn refresh_song_file_index(connection: &Connection, song: &Song) -> Result<(), Error> {
+    let parameters = song.audio_parameters();
+    let changed = connection
+        .execute(
+            "UPDATE songs SET file_mtime_ns=?1, format=?2, bitrate_bps=?3, availability='available',
+           sample_rate_hz=?4, channels=?5, bits_per_sample=?6
+         WHERE uuid=?7 AND library_root_uuid=?8 AND normalized_relative_path=?9
+           AND blake3_hash=?10 AND file_size=?11
+           AND NOT EXISTS(SELECT 1 FROM sync_song_aliases a WHERE a.alias_song_uuid=songs.uuid)
+           AND NOT EXISTS(SELECT 1 FROM sync_object_versions v
+             WHERE v.object_type='song' AND v.object_uuid=songs.uuid AND v.is_tombstone=1)
+           AND NOT EXISTS(SELECT 1 FROM sync_local_delete_intents d
+             WHERE d.object_type='song' AND d.object_uuid=songs.uuid AND d.state='open')
+           AND (availability='available' OR (availability='missing'
+             AND EXISTS(SELECT 1 FROM sync_binding b WHERE b.singleton=1
+               AND b.local_root_uuid=songs.library_root_uuid)
+             AND NOT EXISTS(SELECT 1 FROM sync_mutations m
+               WHERE m.object_type='song' AND m.object_uuid=songs.uuid AND m.status='pending')
+             AND EXISTS(SELECT 1 FROM sync_remote_resource_locations l
+               JOIN sync_remote_publications p ON p.operation_uuid=l.operation_uuid
+               JOIN sync_resource_manifests m ON m.object_type=l.object_type
+                 AND m.object_uuid=l.object_uuid AND m.library_relative_path=l.library_relative_path
+                 AND m.content_hash=l.content_hash AND m.ref_kind='audio'
+               WHERE l.local_root_uuid=songs.library_root_uuid AND l.object_type='song'
+                 AND l.object_uuid=songs.uuid AND lower(hex(l.content_hash))=songs.blake3_hash
+                 AND l.local_relative_path=songs.relative_path AND p.completed=1)))",
+            params![
+                song.file_mtime_ns(),
+                song.format().map(super::conversion::audio_format_to_db),
+                parameters
+                    .bitrate_bps
+                    .and_then(|value| i64::try_from(value).ok()),
+                parameters.sample_rate_hz.map(i64::from),
+                parameters.channels.map(i64::from),
+                parameters.bits_per_sample.map(i64::from),
+                song.id().to_string(),
+                song.root().to_string(),
+                song.path().identity_key(),
+                song.blake3_hash(),
+                song.file_size().and_then(|value| i64::try_from(value).ok()),
+            ],
+        )
+        .map_err(storage)?;
+    if changed != 1 {
+        return Err(Error::conflict(
+            "published song association changed during metadata indexing",
+        ));
+    }
+    if song.availability() == SongAvailability::Missing {
+        // Recovery changes only this device's read model. Keep the confirmed
+        // shared tags in the same transaction as availability and parsed assets.
+        if let Some(payload) = connection.query_row(
+            "SELECT payload_json FROM sync_object_versions WHERE object_type='song' AND object_uuid=?1 AND is_tombstone=0",
+            params![song.id().to_string()], |row| row.get::<_, String>(0),
+        ).optional().map_err(storage)? {
+            super::sync_projection::repair_confirmed_song_tags(
+                connection, &song.id().to_string(), &serde_json::from_str(&payload).map_err(storage)?,
+                &song.root().to_string(),
+            )?;
+        }
+        touch_root(connection, song.root())?;
+    }
+    Ok(())
+}
+
 /// Append an outbox row from a full JSON snapshot of `kind`/uuid, deriving the
 /// object's monotone revision from its outbox history and mirroring the ordinal
 /// onto the canonical column (`playlists`/`library_roots`/`song_overrides`).
@@ -133,6 +224,19 @@ pub(crate) fn enqueue_object_snapshot(
     payload: &serde_json::Value,
     operation: &str,
 ) -> Result<i64, Error> {
+    // Every playlist write must capture the same complete post-write view.
+    // Rename/member callers historically supplied different partial payloads,
+    // which could erase membership or the name when replayed as an object.
+    let playlist_payload;
+    let payload = if kind == super::sync::KIND_PLAYLIST && operation == super::sync::OP_UPSERT {
+        playlist_payload = playlist_full_snapshot_payload(
+            connection,
+            parse_id::<PlaylistId>(object_uuid, "PlaylistId")?,
+        )?;
+        &playlist_payload
+    } else {
+        payload
+    };
     let json = serde_json::to_string(payload).unwrap_or_else(|_| "{}".to_owned());
     let revision = super::sync::enqueue_sync(connection, kind, object_uuid, &json, operation)?;
     // Mirror onto canonical columns (idempotent; only present after 0005).
@@ -225,56 +329,105 @@ pub(crate) fn set_song_availability(
     id: SongId,
     availability: SongAvailability,
 ) -> Result<(), Error> {
+    let canonical = super::sync_song_aliases::resolve(connection, &id.to_string())?;
+    let is_alias = canonical != id.to_string();
+    if availability != SongAvailability::PendingDelete {
+        super::sync_projection::ensure_song_live(connection, &id.to_string())?;
+        super::sync_projection::ensure_song_live(connection, &canonical)?;
+    }
     connection
         .execute(
             "UPDATE songs SET availability = ?2, updated_at = ?3 WHERE uuid = ?1",
-            params![id.to_string(), availability_to_db(availability), now_ms()],
+            params![
+                id.to_string(),
+                availability_to_db(if is_alias {
+                    SongAvailability::PendingDelete
+                } else {
+                    availability
+                }),
+                now_ms()
+            ],
         )
         .map_err(storage)?;
+    if availability == SongAvailability::Available {
+        connection
+            .execute(
+                "UPDATE sync_local_delete_intents SET state = 'cancelled' WHERE object_type = 'song' AND object_uuid = ?1 AND state = 'open'",
+                params![id.to_string()],
+            )
+            .map_err(storage)?;
+        // Undo restores this operation's original physical files and cancels
+        // its local intent. An alias remains hidden: its placeholder path is
+        // retained only for immutable queued requests, never a catalog row.
+        if is_alias {
+            return touch_root_for_song(connection, id);
+        }
+        let confirmed: Option<(Option<String>, bool)> = connection
+            .query_row(
+                "SELECT v.payload_json, v.is_tombstone FROM sync_object_versions v WHERE v.object_type='song' AND v.object_uuid=?1",
+                params![id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(storage)?;
+        let local_root: Option<String> = connection
+            .query_row(
+                "SELECT local_root_uuid FROM sync_binding WHERE singleton=1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(storage)?
+            .flatten();
+        if let (Some((Some(payload), false)), Some(local_root)) = (confirmed, local_root) {
+            let payload: serde_json::Value = serde_json::from_str(&payload).map_err(storage)?;
+            super::sync_projection::project_confirmed_song_state(
+                connection,
+                super::sync::KIND_SONG,
+                &id.to_string(),
+                &payload,
+                Some(&local_root),
+            )?;
+        }
+    }
     touch_root_for_song(connection, id)?;
-    // Availability is a syncable field (task 1.3): write a full object
-    // snapshot to the outbox in the same transaction so the sync engine
-    // always sees the post-mutation state.
-    let payload = song_full_snapshot_payload(connection, id)?;
-    enqueue_object_snapshot(
-        connection,
-        super::sync::KIND_SONG,
-        &id.to_string(),
-        &payload,
-        super::sync::OP_UPSERT,
-    )?;
-    let now_secs = u64::try_from(now_ms().max(0)).unwrap_or(0) / 1_000;
-    let _ = advance_object_hlc(
-        connection,
-        super::sync::KIND_SONG,
-        &id.to_string(),
-        now_secs,
-    )?;
+    // Availability describes this device's media mount and undo workflow. It
+    // is intentionally local-only; only irreversible delete finalization
+    // writes a shared typed tombstone.
     Ok(())
 }
 
 pub(crate) fn delete_song(connection: &Connection, id: SongId) -> Result<(), Error> {
+    super::sync_projection::ensure_song_live(connection, &id.to_string())?;
     // `delete_song` is reached only through an Echo-initiated delete finalization
     // (never an external missing — that keeps `availability = missing` and its
     // associations). So a delete here IS a syncable tombstone + delete-outbox
     // row; together they let the deletion propagate cross-device (task 3.12).
     let id_str = id.to_string();
-    let revision =
-        super::sync::current_outbox_revision(connection, super::sync::KIND_SONG, &id_str)?;
-    super::sync::write_tombstone(
-        connection,
-        super::sync::KIND_SONG,
-        &id_str,
-        revision.saturating_add(1),
-    )?;
+    let stable_mutation_id: Option<String> = connection
+        .query_row(
+            "SELECT final_mutation_id FROM sync_local_delete_intents WHERE object_type = 'song' AND object_uuid = ?1 AND state = 'open' ORDER BY created_at DESC LIMIT 1",
+            params![id_str],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(storage)?;
     let payload = serde_json::json!({ "tombstone": true });
-    super::sync::enqueue_sync(
+    let revision = super::sync::enqueue_sync_with_id(
         connection,
         super::sync::KIND_SONG,
         &id_str,
         &serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_owned()),
         super::sync::OP_DELETE,
+        stable_mutation_id.as_deref(),
     )?;
+    super::sync::write_tombstone(connection, super::sync::KIND_SONG, &id_str, revision)?;
+    connection
+        .execute(
+            "UPDATE sync_local_delete_intents SET state = 'finalized', finalized_at = ?2 WHERE object_type = 'song' AND object_uuid = ?1 AND state = 'open'",
+            params![id_str, now_ms()],
+        )
+        .map_err(storage)?;
     // FTS external-content tables are not necessarily cleaned by a foreign
     // key cascade. Remove the searchable row in the same finalization
     // transaction before deleting the canonical song record.
@@ -313,9 +466,17 @@ pub(crate) fn set_song_favorite(
     // separate from the song snapshot so a favorite-only mutation cannot
     // overwrite media metadata on another device. The canonical row and this
     // complete favorite payload still commit in the same transaction.
+    let favorited_at: Option<i64> = connection
+        .query_row(
+            "SELECT favorited_at FROM songs WHERE uuid = ?1",
+            params![id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
     let payload = serde_json::json!({
         "song_uuid": id.to_string(),
         "is_favorite": favorite,
+        "favorited_at": favorited_at,
     });
     enqueue_object_snapshot(
         connection,
@@ -355,616 +516,9 @@ pub(crate) fn set_play_count(connection: &Connection, id: SongId, count: u64) ->
 /// continuation path reuses the identity carried by the portable
 /// `playlist-items` record; a fresh UUID per open would drift from the very
 /// records being replayed (and from their tombstones).
-pub(crate) fn upsert_member(connection: &Connection, member: &PlaylistMember) -> Result<(), Error> {
-    connection
-        .execute(
-            "INSERT INTO playlist_songs (playlist_uuid, song_uuid, position, added_at, member_uuid)
-             VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(playlist_uuid, song_uuid)
-             DO UPDATE SET position = excluded.position, member_uuid = excluded.member_uuid",
-            params![
-                member.playlist().to_string(),
-                member.song().to_string(),
-                i64::try_from(member.position()).unwrap_or(i64::MAX),
-                now_ms(),
-                member.id().to_string()
-            ],
-        )
-        .map_err(map_constraint)?;
-    Ok(())
-}
+mod operations;
+pub(crate) use operations::*;
 
-pub(crate) fn increment_play_count(connection: &Connection, id: SongId) -> Result<(), Error> {
-    connection
-        .execute(
-            "UPDATE songs SET play_count = play_count + 1, updated_at = ?2 WHERE uuid = ?1",
-            params![id.to_string(), now_ms()],
-        )
-        .map_err(storage)?;
-    touch_root_for_song(connection, id)
-}
-fn touch_root(connection: &Connection, root: LibraryRootId) -> Result<(), Error> {
-    connection.execute("UPDATE library_roots SET updated_at = CASE WHEN updated_at >= ?2 THEN updated_at + 1 ELSE ?2 END WHERE uuid = ?1", params![root.to_string(), now_ms()]).map_err(storage)?;
-    Ok(())
-}
-pub(crate) fn touch_root_for_song(connection: &Connection, song: SongId) -> Result<(), Error> {
-    connection.execute("UPDATE library_roots SET updated_at = CASE WHEN updated_at >= ?2 THEN updated_at + 1 ELSE ?2 END WHERE uuid = (SELECT library_root_uuid FROM songs WHERE uuid = ?1)", params![song.to_string(), now_ms()]).map_err(storage)?;
-    Ok(())
-}
-
-pub(crate) fn create_playlist(
-    connection: &Connection,
-    id: PlaylistId,
-    root: LibraryRootId,
-    name: &str,
-) -> Result<(), Error> {
-    let now = now_ms();
-    connection.execute("INSERT INTO playlists (uuid, library_root_uuid, display_name, normalized_name_key, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?5)", params![id.to_string(), root.to_string(), name, playlist_name_key(name), now]).map_err(map_constraint)?;
-    // Playlist creation is a syncable fact.
-    let payload = serde_json::json!({
-        "display_name": name,
-        "members": [],
-    });
-    enqueue_object_snapshot(
-        connection,
-        super::sync::KIND_PLAYLIST,
-        &id.to_string(),
-        &payload,
-        super::sync::OP_UPSERT,
-    )?;
-    let now_secs = u64::try_from(now_ms().max(0)).unwrap_or(0) / 1_000;
-    let _ = advance_object_hlc(
-        connection,
-        super::sync::KIND_PLAYLIST,
-        &id.to_string(),
-        now_secs,
-    )?;
-    Ok(())
-}
-pub(crate) fn add_member(
-    connection: &Connection,
-    playlist: PlaylistId,
-    song: SongId,
-    position: u64,
-    member_uuid: crate::domain::ids::PlaylistItemId,
-) -> Result<(), Error> {
-    // Appending (u64::MAX) takes the next free position. Re-adding a song that
-    // is already a member is idempotent (same position, no duplicate row). A
-    // *position* clash with a different member is a real conflict and must
-    // surface as an error — never silently swallowed (no INSERT OR IGNORE).
-    let position = if position == u64::MAX {
-        connection.query_row("SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_songs WHERE playlist_uuid = ?1", params![playlist.to_string()], |row| row.get::<_, u64>(0)).map_err(storage)?
-    } else {
-        position
-    };
-    let existing: Option<i64> = connection
-        .query_row(
-            "SELECT position FROM playlist_songs WHERE playlist_uuid = ?1 AND song_uuid = ?2",
-            params![playlist.to_string(), song.to_string()],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(storage)?;
-    if existing.is_some() {
-        return Ok(());
-    }
-    connection.execute("INSERT INTO playlist_songs (playlist_uuid, song_uuid, position, added_at, member_uuid) VALUES (?1, ?2, ?3, ?4, ?5)", params![playlist.to_string(), song.to_string(), i64::try_from(position).unwrap_or(i64::MAX), now_ms(), member_uuid.to_string()]).map_err(map_constraint)?;
-    // Membership add is a playlist logic change — enqueue a playlist snapshot
-    // whose payload records the new member set (position appended) so 二期 has
-    // the authoritative member list for this revision.
-    let members_json = playlist_members_excerpt(connection, playlist)?;
-    let payload = serde_json::json!({
-        "members": members_json,
-    });
-    enqueue_object_snapshot(
-        connection,
-        super::sync::KIND_PLAYLIST,
-        &playlist.to_string(),
-        &payload,
-        super::sync::OP_UPSERT,
-    )?;
-    Ok(())
-}
-
-/// Read the current member set of a playlist as a JSON array of `{song_uuid,
-/// position, member_uuid}`, for use inside a playlist outbox payload. The
-/// excerpt is root-relative only (UUID + position + member UUID), never an
-/// absolute path.
-pub(crate) fn playlist_members_excerpt(
-    connection: &Connection,
-    playlist: PlaylistId,
-) -> Result<serde_json::Value, Error> {
-    let mut statement = connection
-        .prepare(
-            "SELECT song_uuid, position, member_uuid FROM playlist_songs WHERE playlist_uuid = ?1 ORDER BY position, song_uuid",
-        )
-        .map_err(storage)?;
-    let rows = statement
-        .query_map(params![playlist.to_string()], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, i64>(1)?,
-                row.get::<_, String>(2)?,
-            ))
-        })
-        .map_err(storage)?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(storage)?;
-    let members: Vec<serde_json::Value> = rows
-        .into_iter()
-        .map(|(song_uuid, position, member_uuid)| {
-            serde_json::json!({ "song_uuid": song_uuid, "position": position, "member_uuid": member_uuid })
-        })
-        .collect();
-    Ok(serde_json::Value::Array(members))
-}
-
-pub(crate) fn operation_item(
-    connection: &Connection,
-    operation: OperationId,
-    item: &str,
-) -> Result<Option<OperationItem>, Error> {
-    connection.query_row("SELECT i.kind, i.state, COALESCE(i.song_uuid, j.reserved_song_uuid), i.target_relative_path, i.expected_hash, i.item_key, i.normalized_target_path, i.source_locator, i.staging_relative_path FROM operation_items i JOIN operation_journal j ON j.operation_uuid = i.operation_uuid WHERE i.operation_uuid = ?1 AND i.item_key = ?2", params![operation.to_string(), item], super::conversion::operation_item_from_row).optional().map_err(storage)
-}
-/// Idempotently create the operation envelope (the journal's total-state row
-/// every per-resource item attaches to; design §8). Repeats are no-ops so
-/// recovery can re-run freely.
-pub(crate) fn ensure_operation_journal(
-    connection: &Connection,
-    operation: OperationId,
-    root: LibraryRootId,
-    kind: &str,
-    reserved_song: Option<SongId>,
-) -> Result<(), Error> {
-    connection
-        .execute(
-            "INSERT INTO operation_journal (operation_uuid, library_root_uuid, kind, state, reserved_song_uuid, created_at, updated_at) VALUES (?1, ?2, ?3, 'planned', ?4, ?5, ?5) ON CONFLICT(operation_uuid) DO NOTHING",
-            params![operation.to_string(), root.to_string(), kind, reserved_song.map(|id| id.to_string()), now_ms()],
-        )
-        .map_err(map_constraint)?;
-    Ok(())
-}
-pub(crate) fn upsert_operation_item(
-    connection: &Connection,
-    operation: OperationId,
-    item: OperationItem,
-) -> Result<(), Error> {
-    let root: String = connection
-        .query_row(
-            "SELECT library_root_uuid FROM operation_journal WHERE operation_uuid = ?1",
-            params![operation.to_string()],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(storage)?
-        .ok_or_else(|| Error::InvariantViolation {
-            why: "operation item requires a persisted journal envelope".to_owned(),
-        })?;
-    // The item's `song_uuid` column carries a foreign key into `songs`. An
-    // import's *reserved* SongId has no songs row until DatabaseCommitted, so
-    // the reservation lives in the envelope's `reserved_song_uuid` (no FK)
-    // and the item column is only populated once it can be satisfied; reads
-    // COALESCE the two, so the port always reports the reserved identity.
-    let song_uuid: Option<String> = match item.song {
-        Some(id) => {
-            let id = id.to_string();
-            let stored: i64 = connection
-                .query_row(
-                    "SELECT COUNT(*) FROM songs WHERE uuid = ?1",
-                    params![id],
-                    |row| row.get(0),
-                )
-                .map_err(storage)?;
-            (stored > 0).then_some(id)
-        }
-        None => None,
-    };
-    connection.execute("INSERT INTO operation_items (operation_uuid, item_key, library_root_uuid, kind, state, song_uuid, source_locator, staging_relative_path, target_relative_path, normalized_target_path, expected_hash, claim_active) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1) ON CONFLICT(operation_uuid, item_key) DO UPDATE SET state = excluded.state, song_uuid = excluded.song_uuid, source_locator = excluded.source_locator, staging_relative_path = excluded.staging_relative_path, target_relative_path = excluded.target_relative_path, normalized_target_path = excluded.normalized_target_path, expected_hash = excluded.expected_hash", params![operation.to_string(), item.item_key, root, if item.kind == OperationResourceKind::Audio { "audio" } else { "lyrics" }, operation_state_to_db(item.state), song_uuid, item.source, item.staging_path.map(|path| path.display().to_owned()), item.target_path.display(), item.claim_key, item.expected_hash]).map_err(map_constraint)?;
-    Ok(())
-}
-
-/// Release every active target claim of an operation. Called when the
-/// operation reaches a terminal state (completed, rolled back, delete
-/// finalized or explicitly abandoned): until then the conditional unique index
-/// keeps the target path reserved for the same reserved `SongId`.
-pub(crate) fn release_operation_claims(
-    connection: &Connection,
-    operation: OperationId,
-) -> Result<(), Error> {
-    connection
-        .execute(
-            "UPDATE operation_items SET claim_active = 0 WHERE operation_uuid = ?1 AND claim_active = 1",
-            params![operation.to_string()],
-        )
-        .map_err(storage)?;
-    Ok(())
-}
-
-/// Every journal item of `root` that has not reached a terminal state — the
-/// recovery-input set (tasks 5.5 / 5.10). Terminal states (`Completed`,
-/// `RolledBack`, `DatabaseFinalized`, `Restored`) are excluded; everything
-/// else still has durable work to do (or a conflict to surface).
-pub(crate) fn incomplete_operation_items(
-    connection: &Connection,
-    root: LibraryRootId,
-) -> Result<Vec<(OperationId, String, OperationItem)>, Error> {
-    // The item columns (0–7) match `operation_item_from_row`; the operation
-    // uuid and envelope kind are read off the trailing columns.
-    let mut statement = connection
-        .prepare(
-            "SELECT i.kind, i.state, COALESCE(i.song_uuid, j.reserved_song_uuid), i.target_relative_path, i.expected_hash, i.item_key, i.normalized_target_path, i.source_locator, i.staging_relative_path, i.operation_uuid, j.kind FROM operation_items i JOIN operation_journal j ON j.operation_uuid = i.operation_uuid WHERE i.library_root_uuid = ?1 AND i.state NOT IN ('completed', 'rolled_back', 'database_finalized', 'restored') ORDER BY i.operation_uuid, i.item_key",
-        )
-        .map_err(storage)?;
-    let rows = statement
-        .query_map(params![root.to_string()], |row| {
-            let item = super::conversion::operation_item_from_row(row)?;
-            let operation = row.get::<_, String>(9)?;
-            let kind = row.get::<_, String>(10)?;
-            Ok((operation, kind, item))
-        })
-        .map_err(storage)?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(storage)?;
-    rows.into_iter()
-        .map(|(operation, kind, item)| {
-            let operation = parse_id(&operation, "OperationId")?;
-            Ok((operation, kind, item))
-        })
-        .collect()
-}
-
-// ---------------------------------------------------------------------------
-// Phase 4: lyrics candidates, cover references, scan runs
-// ---------------------------------------------------------------------------
-
-/// All songs of one root (the scan identity snapshot). No LIMIT: scans need
-/// the whole picture; per-row conversion keeps the memory shape domain-side.
-pub(crate) fn all_songs_in_root(
-    connection: &Connection,
-    root: LibraryRootId,
-) -> Result<Vec<Song>, Error> {
-    let mut statement = connection
-        .prepare(&format!(
-            "{} WHERE s.library_root_uuid = ?1 ORDER BY s.uuid",
-            super::query::SONG_SELECT
-        ))
-        .map_err(storage)?;
-    let songs = statement
-        .query_map(params![root.to_string()], super::conversion::song_from_row)
-        .map_err(storage)?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(storage)?;
-    Ok(songs)
-}
-
-/// Upsert one `(song, source)` lyrics candidate row, keyed by the candidate's
-/// own source. Override rows are written only by override use cases — a scan
-/// never constructs an override candidate.
-pub(crate) fn set_lyrics_candidate(
-    connection: &Connection,
-    song: SongId,
-    candidate: &LyricsCandidate,
-) -> Result<(), Error> {
-    connection.execute(
-        "INSERT INTO song_lyrics (song_uuid, source, text_kind, raw_text, timed_lines_json, parse_error, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(song_uuid, source) DO UPDATE SET text_kind = excluded.text_kind, raw_text = excluded.raw_text, timed_lines_json = excluded.timed_lines_json, parse_error = excluded.parse_error, updated_at = excluded.updated_at",
-        params![
-            song.to_string(),
-            lyrics_source_to_db(candidate.source()),
-            super::conversion::text_kind_to_db(candidate),
-            if candidate.raw_text().is_empty() { None } else { Some(candidate.raw_text()) },
-            super::conversion::timed_lines_to_json(candidate),
-            candidate.parse_error(),
-            now_ms(),
-        ],
-    ).map_err(map_constraint)?;
-    Ok(())
-}
-
-/// Remove one source's candidate row (stale embedded/sidecar text).
-pub(crate) fn clear_lyrics_candidate(
-    connection: &Connection,
-    song: SongId,
-    source: LyricsSource,
-) -> Result<(), Error> {
-    connection
-        .execute(
-            "DELETE FROM song_lyrics WHERE song_uuid = ?1 AND source = ?2",
-            params![song.to_string(), lyrics_source_to_db(source)],
-        )
-        .map_err(storage)?;
-    Ok(())
-}
-
-/// Every stored candidate of one song, all sources.
-pub(crate) fn lyrics_candidates(
-    connection: &Connection,
-    song: SongId,
-) -> Result<Vec<LyricsCandidate>, Error> {
-    let mut statement = connection
-        .prepare(
-            "SELECT source, text_kind, raw_text, timed_lines_json, parse_error FROM song_lyrics WHERE song_uuid = ?1",
-        )
-        .map_err(storage)?;
-    let rows = statement
-        .query_map(params![song.to_string()], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, Option<String>>(2)?,
-                row.get::<_, Option<String>>(3)?,
-                row.get::<_, Option<String>>(4)?,
-            ))
-        })
-        .map_err(storage)?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(storage)?;
-    rows.into_iter()
-        .map(|(source, kind, raw, timed, parse_error)| {
-            let source = super::conversion::lyrics_source_from_db(&source).map_err(to_sql_error)?;
-            let lines = timed
-                .as_deref()
-                .map(super::conversion::timed_lines_from_json)
-                .transpose()
-                .map_err(to_sql_error)?
-                .unwrap_or_default();
-            // `plain` rows keep their readable text in raw_text; `empty` rows
-            // are user clearings whose block-fallback semantics must survive
-            // the round-trip.
-            let plain_text = (kind == "plain").then(|| raw.clone().unwrap_or_default());
-            let mut candidate = LyricsCandidate::with_raw_text(
-                source,
-                raw.unwrap_or_default(),
-                lines,
-                plain_text,
-                parse_error,
-            );
-            if kind == "empty" {
-                candidate.mark_empty_override();
-            }
-            Ok(candidate)
-        })
-        .collect::<rusqlite::Result<Vec<LyricsCandidate>>>()
-        .map_err(storage)
-}
-
-const fn lyrics_source_to_db(source: LyricsSource) -> &'static str {
-    match source {
-        LyricsSource::Override => "override",
-        LyricsSource::Embedded => "embedded",
-        LyricsSource::Sidecar => "sidecar",
-    }
-}
-
-/// Upsert the `cover_assets` row and point the song at it, in the caller's
-/// transaction (task 4.6: cache key and database reference stay consistent).
-pub(crate) fn attach_cover(
-    connection: &Connection,
-    song: SongId,
-    cover: &CoverAssetRef,
-) -> Result<(), Error> {
-    connection
-        .execute(
-            "INSERT INTO cover_assets (content_hash, mime_type, asset_key, created_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(content_hash) DO UPDATE SET mime_type = excluded.mime_type, asset_key = excluded.asset_key",
-            params![cover.content_hash, cover.mime, cover.asset_key, now_ms()],
-        )
-        .map_err(map_constraint)?;
-    connection
-        .execute(
-            "UPDATE songs SET cover_hash = ?2, updated_at = ?3 WHERE uuid = ?1",
-            params![song.to_string(), cover.content_hash, now_ms()],
-        )
-        .map_err(storage)?;
-    Ok(())
-}
-
-/// The cover reference of one song, if any.
-pub(crate) fn cover_of_song(
-    connection: &Connection,
-    song: SongId,
-) -> Result<Option<CoverAssetRef>, Error> {
-    connection
-        .query_row(
-            "SELECT ca.content_hash, ca.mime_type, ca.asset_key FROM songs s JOIN cover_assets ca ON ca.content_hash = s.cover_hash WHERE s.uuid = ?1",
-            params![song.to_string()],
-            |row| {
-                Ok(CoverAssetRef {
-                    content_hash: row.get(0)?,
-                    mime: row.get(1)?,
-                    asset_key: row.get(2)?,
-                })
-            },
-        )
-        .optional()
-        .map_err(storage)
-}
-
-/// Every asset key referenced by a song or a user-selected playlist cover of
-/// the root — the GC keep-set.
-pub(crate) fn referenced_asset_keys(
-    connection: &Connection,
-    root: LibraryRootId,
-) -> Result<Vec<String>, Error> {
-    let mut statement = connection
-        .prepare(
-            "SELECT ca.asset_key FROM songs s JOIN cover_assets ca ON ca.content_hash = s.cover_hash WHERE s.library_root_uuid = ?1 UNION SELECT cover_asset_key FROM playlists WHERE library_root_uuid = ?1 AND cover_asset_key IS NOT NULL UNION SELECT cover_asset_key FROM artist_covers WHERE library_root_uuid = ?1",
-        )
-        .map_err(storage)?;
-    let keys = statement
-        .query_map(params![root.to_string()], |row| row.get::<_, String>(0))
-        .map_err(storage)?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(storage)?;
-    Ok(keys)
-}
-
-/// Open a `scan_runs` row for `(root, generation)`.
-pub(crate) fn begin_scan_run(
-    connection: &Connection,
-    root: LibraryRootId,
-    generation: u64,
-) -> Result<(), Error> {
-    connection
-        .execute(
-            "INSERT INTO scan_runs (uuid, library_root_uuid, generation, state, started_at) VALUES (?1, ?2, ?3, 'queued', ?4)",
-            params![
-                scan_run_key(root, generation),
-                root.to_string(),
-                i64::try_from(generation).unwrap_or(i64::MAX),
-                now_ms(),
-            ],
-        )
-        .map_err(map_constraint)?;
-    Ok(())
-}
-
-/// Persist a throttled progress snapshot.
-pub(crate) fn update_scan_progress(
-    connection: &Connection,
-    root: LibraryRootId,
-    generation: u64,
-    progress: &ScanProgress,
-) -> Result<(), Error> {
-    let updated = connection
-        .execute(
-            "UPDATE scan_runs SET state = ?2, discovered_count = ?3, processed_count = ?4, created_count = ?5, updated_count = ?6, missing_count = ?7, skipped_count = ?8, failed_count = ?9 WHERE uuid = ?1",
-            params![
-                scan_run_key(root, generation),
-                scan_state_to_db(progress.state),
-                i64::try_from(progress.discovered).unwrap_or(i64::MAX),
-                i64::try_from(progress.processed).unwrap_or(i64::MAX),
-                i64::try_from(progress.created).unwrap_or(i64::MAX),
-                i64::try_from(progress.updated).unwrap_or(i64::MAX),
-                i64::try_from(progress.missing).unwrap_or(i64::MAX),
-                i64::try_from(progress.skipped).unwrap_or(i64::MAX),
-                i64::try_from(progress.failed).unwrap_or(i64::MAX),
-            ],
-        )
-        .map_err(storage)?;
-    if updated == 0 {
-        return Err(Error::InvariantViolation {
-            why: "progress update for an unknown scan run".to_owned(),
-        });
-    }
-    Ok(())
-}
-
-/// Record one per-file issue.
-pub(crate) fn record_scan_issue(
-    connection: &Connection,
-    root: LibraryRootId,
-    generation: u64,
-    issue: &crate::domain::entities::MediaDiagnostic,
-) -> Result<(), Error> {
-    connection
-        .execute(
-            "INSERT INTO scan_issues (scan_run_uuid, relative_path, code, detail, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                scan_run_key(root, generation),
-                issue.path().display(),
-                issue.code(),
-                issue.reason(),
-                now_ms(),
-            ],
-        )
-        .map_err(storage)?;
-    Ok(())
-}
-
-/// Persist the terminal state and final summary snapshot.
-pub(crate) fn finish_scan_run(
-    connection: &Connection,
-    root: LibraryRootId,
-    generation: u64,
-    state: crate::domain::state::scan::ScanState,
-    progress: &ScanProgress,
-) -> Result<(), Error> {
-    let updated = connection
-        .execute(
-            "UPDATE scan_runs SET state = ?2, discovered_count = ?3, processed_count = ?4, created_count = ?5, updated_count = ?6, missing_count = ?7, skipped_count = ?8, failed_count = ?9, finished_at = ?10 WHERE uuid = ?1",
-            params![
-                scan_run_key(root, generation),
-                scan_state_to_db(state),
-                i64::try_from(progress.discovered).unwrap_or(i64::MAX),
-                i64::try_from(progress.processed).unwrap_or(i64::MAX),
-                i64::try_from(progress.created).unwrap_or(i64::MAX),
-                i64::try_from(progress.updated).unwrap_or(i64::MAX),
-                i64::try_from(progress.missing).unwrap_or(i64::MAX),
-                i64::try_from(progress.skipped).unwrap_or(i64::MAX),
-                i64::try_from(progress.failed).unwrap_or(i64::MAX),
-                now_ms(),
-            ],
-        )
-        .map_err(storage)?;
-    if updated == 0 {
-        return Err(Error::InvariantViolation {
-            why: "finish for an unknown scan run".to_owned(),
-        });
-    }
-    Ok(())
-}
-
-/// The newest generation recorded for the root.
-pub(crate) fn latest_scan_generation(
-    connection: &Connection,
-    root: LibraryRootId,
-) -> Result<Option<u64>, Error> {
-    let value: Option<i64> = connection
-        .query_row(
-            "SELECT MAX(generation) FROM scan_runs WHERE library_root_uuid = ?1",
-            params![root.to_string()],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(storage)?
-        .flatten();
-    Ok(value.and_then(|value| u64::try_from(value).ok()))
-}
-
-/// Runtime key/value read (`runtime_state` table; `root_epoch` today).
-pub(crate) fn load_runtime_state(
-    connection: &Connection,
-    key: &str,
-) -> Result<Option<String>, Error> {
-    connection
-        .query_row(
-            "SELECT value FROM runtime_state WHERE key = ?1",
-            params![key],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(storage)
-}
-
-/// Runtime key/value write.
-pub(crate) fn store_runtime_state(
-    connection: &Connection,
-    key: &str,
-    value: &str,
-) -> Result<(), Error> {
-    connection
-        .execute(
-            "INSERT INTO runtime_state (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            params![key, value],
-        )
-        .map_err(storage)?;
-    Ok(())
-}
-
-/// The durable row key of a `(root, generation)` run. Runs are rooted at the
-/// unique `(library_root_uuid, generation)` index; the primary key is a
-/// derived, stable text key so no extra identity type is needed.
-fn scan_run_key(root: LibraryRootId, generation: u64) -> String {
-    format!("{root}:{generation}")
-}
-
-const fn scan_state_to_db(state: crate::domain::state::scan::ScanState) -> &'static str {
-    match state {
-        crate::domain::state::scan::ScanState::Queued => "queued",
-        crate::domain::state::scan::ScanState::Enumerating => "enumerating",
-        crate::domain::state::scan::ScanState::Parsing => "parsing",
-        crate::domain::state::scan::ScanState::Reconciling => "reconciling",
-        crate::domain::state::scan::ScanState::Completed => "completed",
-        crate::domain::state::scan::ScanState::Cancelled => "cancelled",
-        crate::domain::state::scan::ScanState::Failed => "failed",
-    }
-}
+#[cfg(test)]
+#[path = "tests/sync_payload_completeness.rs"]
+mod sync_payload_completeness;

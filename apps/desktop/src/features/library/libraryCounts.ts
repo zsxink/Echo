@@ -47,6 +47,11 @@ export function setLibraryCounts(next: LibraryCounts): void {
   libraryCountsStore.setSnapshot(next);
 }
 
+/** Current cached totals for app-shell coordinators that compare external changes. */
+export function getLibraryCountsSnapshot(): LibraryCounts {
+  return libraryCountsStore.getSnapshot();
+}
+
 /** Optimistically replace one cached total when the UI has committed a fact. */
 export function publishLibraryCount(view: LibraryCountView, total: number): void {
   const current = libraryCountsStore.getSnapshot();

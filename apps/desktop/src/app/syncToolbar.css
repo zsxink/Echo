@@ -1,0 +1,92 @@
+.sync-toolbar {
+  position: relative;
+  flex: none;
+}
+
+.sync-status-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  color: var(--muted);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sync-status-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.sync-status-button:hover,
+.sync-status-button[aria-expanded="true"] {
+  color: var(--fg);
+  background: var(--surface-warm);
+}
+
+.sync-status-panel {
+  position: absolute;
+  z-index: 12;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  width: min(320px, calc(100vw - 32px));
+  max-height: calc(100dvh - 160px);
+  overflow: auto;
+  padding: var(--space-4);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--elev-raised);
+  font-size: 13px;
+}
+
+.sync-status-panel p {
+  margin: var(--space-2) 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.sync-transfer {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-3) 0;
+}
+
+.sync-transfer progress {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--accent);
+}
+
+.sync-transfer-bytes {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sync-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+@media (max-width: 760px) {
+  .sync-status-button {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+
+  .sync-status-label {
+    display: none;
+  }
+
+  .sync-status-actions .btn {
+    min-height: 44px;
+  }
+}

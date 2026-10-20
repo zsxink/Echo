@@ -465,11 +465,17 @@ pub fn undo_delete(
 #[tauri::command]
 pub async fn choose_library_root(
     services: State<'_, AppServices>,
+    sync: State<'_, Arc<crate::sync_runtime::SyncRuntime>>,
 ) -> Result<Option<LibraryRootStatusDto>, IpcErrorDto> {
     // Tauri executes synchronous commands on the event-loop thread. The real
     // dialog adapter deliberately uses the plugin's blocking picker, which
     // requires a worker thread while the native event loop continues pumping
     // dialog events. Making this command async gives it that worker context.
+    let sync = Arc::clone(&sync);
+    tauri::async_runtime::spawn_blocking(move || sync.stop())
+        .await
+        .map_err(|_| IpcErrorDto::new("unavailable", "sync.workerFailed", true, None, None))?
+        .map_err(|error| IpcErrorDto::new("unavailable", error.message_key(), true, None, None))?;
     services.choose_library_root().map_err(IpcErrorDto::from)
 }
 

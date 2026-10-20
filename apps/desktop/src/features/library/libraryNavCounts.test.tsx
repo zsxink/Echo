@@ -1,5 +1,5 @@
 /**
- * 资料库导航计数 (regression).
+ * 音乐库导航计数 (regression).
  *
  * Bug: the sidebar only printed a count *after* the user opened a view and
  * paged it to the end — `publishLibraryCount` fired from the view that owned
@@ -63,7 +63,7 @@ const countOf = (view: string) => screen.getByTestId(`nav-count-${view}`);
 
 beforeEach(configuredLibrary);
 
-describe("资料库导航计数", () => {
+describe("音乐库导航计数", () => {
   it("shows 喜欢的音乐's count without the user ever opening that view", async () => {
     await act(async () => {
       render(<App />);
@@ -74,7 +74,7 @@ describe("资料库导航计数", () => {
     expect(screen.getByRole("heading", { name: "全部歌曲" })).toBeInTheDocument();
   });
 
-  it("counts every 资料库 view, including 最近添加", async () => {
+  it("counts every 音乐库 view, including 最近添加", async () => {
     await act(async () => {
       render(<App />);
     });

@@ -10,7 +10,7 @@
 
 一个**本地优先**（local-first）的多平台音乐播放器，自用软件、无账号体系。
 
-- 核心价值：本地曲库 + 内置封面/歌词展示 + 歌单；S3 / WebDAV 多端同步属于二期。
+- 核心价值：本地曲库 + 内置封面/歌词展示 + 歌单；局域网主设备多端同步属于二期。
 - 平台矩阵（按优先级）：
   1. 桌面：macOS / Windows / Linux（Tauri 2 + React + TypeScript + Vite）
   2. 移动：Android / iOS（Flutter + Rust Binding），**iOS 最后做**
@@ -42,31 +42,30 @@
 
 ### 2.1 技术选型
 
-| 范围 | 选型 | 责任与理由 |
-|---|---|---|
-| 桌面应用壳 | Tauri 2 | 打包 macOS、Windows、Linux，并以 Rust 直接调用 Core。 |
-| 桌面 UI | React + TypeScript + Vite | 构建曲库表格、虚拟列表、搜索、播放状态和浮层等高交互界面。 |
-| 共享业务核心 | Rust workspace | 承担 SQLite 资料库、扫描、索引、同步和冲突裁决；不依赖 UI 或播放器。 |
-| 桌面播放 | mpv / libmpv | 由桌面适配层管理播放、队列和事件，不进入共享 Core。 |
-| 移动应用 | Flutter + media_kit | 后续实现 Android 与 iOS 的原生体验及后台播放。 |
-| Flutter 与 Rust 通信 | flutter_rust_bridge | 直接生成 Dart ↔ Rust 桥接；不把 Pigeon 作为 Rust Core 的主 Binding。 |
-| 原生 Kotlin / Swift Binding（如需要） | UniFFI | 仅在未来需要直接提供 Android 或 iOS 原生接口时生成。 |
+| 范围                                  | 选型                      | 责任与理由                                                           |
+| ------------------------------------- | ------------------------- | -------------------------------------------------------------------- |
+| 桌面应用壳                            | Tauri 2                   | 打包 macOS、Windows、Linux，并以 Rust 直接调用 Core。                |
+| 桌面 UI                               | React + TypeScript + Vite | 构建曲库表格、虚拟列表、搜索、播放状态和浮层等高交互界面。           |
+| 共享业务核心                          | Rust workspace            | 承担 SQLite 资料库、扫描、索引、同步和冲突裁决；不依赖 UI 或播放器。 |
+| 桌面播放                              | mpv / libmpv              | 由桌面适配层管理播放、队列和事件，不进入共享 Core。                  |
+| 移动应用                              | Flutter + media_kit       | 后续实现 Android 与 iOS 的原生体验及后台播放。                       |
+| Flutter 与 Rust 通信                  | flutter_rust_bridge       | 直接生成 Dart ↔ Rust 桥接；不把 Pigeon 作为 Rust Core 的主 Binding。 |
+| 原生 Kotlin / Swift Binding（如需要） | UniFFI                    | 仅在未来需要直接提供 Android 或 iOS 原生接口时生成。                 |
 
 ### 2.2 Rust Core 的依赖边界
 
-| 能力 | 推荐依赖 |
-|---|---|
-| 异步、HTTP（仅二期） | `tokio`、`reqwest` |
-| 音乐标签与封面解析 | `lofty` |
-| 内容哈希 | `blake3` |
-| 数据模型与 JSON | `serde`、`serde_json` |
-| 本地资料库 | `rusqlite` + SQLite（启用 FTS5） |
-| UUID 与时间 | `uuid`、`time` |
-| S3（仅二期） | `aws-sdk-s3` |
-| 临时文件与原子写入 | `tempfile` |
-| 错误分层 | `thiserror`（库边界）、`anyhow`（应用边界） |
+| 能力                         | 推荐依赖                                    |
+| ---------------------------- | ------------------------------------------- |
+| 异步、局域网 HTTPS（仅二期） | `tokio`、`reqwest`、`rustls`                |
+| 音乐标签与封面解析           | `lofty`                                     |
+| 内容哈希                     | `blake3`                                    |
+| 数据模型与 JSON              | `serde`、`serde_json`                       |
+| 本地资料库                   | `rusqlite` + SQLite（启用 FTS5）            |
+| UUID 与时间                  | `uuid`、`time`                              |
+| 临时文件与原子写入           | `tempfile`                                  |
+| 错误分层                     | `thiserror`（库边界）、`anyhow`（应用边界） |
 
-Core 不引入 Tauri、mpv、Flutter 或任何 UI 依赖。一期不装配 `RemoteConnector` 或网络客户端；二期的 S3 与 WebDAV 将实现可替换的 `RemoteConnector`。
+Core 不引入 Tauri、mpv、Flutter、HTTP 或发现协议依赖。一期不装配同步网络客户端；二期桌面端由 `echo-sync` 提供 LAN HTTPS、发现与客户端/服务端适配，并经 Core 端口访问同步用例。S3/WebDAV 不属于二期范围。
 
 ### 2.3 仓库结构
 
@@ -75,13 +74,16 @@ apps/
   desktop/        # Tauri 2 + React + TypeScript UI
   mobile/         # Flutter（第三、四期）
 crates/
-  echo-core/      # 模型、SQLite 资料库、扫描、同步、冲突裁决
+  echo-core/      # 模型、用例端口、SQLite 资料库与同步持久化适配器
+  echo-sync/      # LAN 协议、发现/配对、客户端/服务端与资源传输
   echo-desktop/   # Tauri 命令、事件与 mpv 适配
 
 apps/desktop/
   src/             # React/TypeScript presentation and feature modules
   src-tauri/       # Tauri application shell, permissions, packaging and native assets
 ```
+
+`echo-sync` 承担局域网协议边界：LAN HTTPS、发现与配对、客户端/服务端、同步传输及资源传输；它通过 `echo-core` 定义的 application ports 访问用例，不拥有 Core 的 SQLite schema 或事务。`echo-core` 的 SQLite 同步适配器位于 `infrastructure/sqlite/sync/`，由 `SqliteDatabase`、writer actor 与事务协调器统一承载。桌面壳层负责装配 `echo-sync` adapter 与 Core ports，不把传输表示暴露给 React 或 Core domain。
 
 `apps/desktop/src-tauri` 属于桌面平台壳层：它负责 Tauri 装配、权限与原生资源，
 不得承载 Core 领域规则；这些规则仍由 `crates/echo-core` 提供。
@@ -91,17 +93,17 @@ apps/desktop/
 ## 3. 同步基础与二期模型（无账号体系）
 
 - **本地优先**：任何设备本地可独立读写。一期仅将逻辑变更预写入离线 outbox，不建立连接或上传；二期才增量传输。
-- **本地数据库与远端格式分离**：每台设备用 SQLite 保存其本地资料库；远端 S3 / WebDAV 只保存媒体文件与版本化 JSON 变更记录，绝不直接上传或合并 `echo.db`。
-- **单一远端汇聚**：一份曲库绑定一个远端（S3 **或** WebDAV，二者为可互换的连接器，不同时双写）。换后端 = 一次性全量上传/下载。
+- **本地数据库与同步协议分离**：每台设备用 SQLite 保存其本地资料库；主设备通过经认证的 LAN HTTPS 提供媒体与版本化 JSON 变更记录，绝不直接上传或合并 `echo.db`。
+- **单主汇聚**：一份曲库绑定一个 `(library_id, authority_id, epoch)`；一个主设备服务多个从设备，不自动选主或故障转移。
 - **传输策略（二期）**：先全量下载再播。队列指向本地文件，播放前"保证文件在盘上"（缺失则下载）。**不做流式。**
-- **首次同步（二期）**：先恢复版本化对象资料，再扫描 `media/` 并以 BLAKE3 关联；媒体稍后到达时保留原 UUID 并标记为不可用。**不做流式按需拉取。**
-- **统一池子（二期）**：不区分曲目来源，远端拉下来的文件同样参与 diff 再上传（接受"移动端拉完又推回一遍"的流量成本）。未来若需省流量，此处置为改动切入点。
+- **首次同步（二期）**：绑定主库 `library_id`，从固定日志水位快照恢复版本化对象资料，再校验并关联媒体、追平快照后的增量；缺失媒体保留原 UUID 并标记为不可用。目标目录必须为空或属于已登记恢复会话。**不做流式按需拉取。**
+- **完整双向副本（二期）**：从设备可离线编辑，恢复连接后向主设备提交；主设备按确认序裁决并向其他从设备传播。各端不上传或下载 SQLite 文件。
 
 ### 冲突与删除
 
 - **删除**：墓碑（tombstone），墓碑本身也同步，删除才能跨端传播。
-- **冲突裁决**：最后写入者胜。
-- **时钟**：单调递增整体版本号为主，本地时间戳兜底。**不依赖墙钟裁决。**
+- **冲突裁决**：同一存活对象按主设备 durable commit 序采用最后确认者胜；base 不一致时保留冲突副本。
+- **时钟**：每条 mutation 在入队时冻结变更时间戳（Unix 毫秒，`sync_mutations.created_at` → wire `changed_at_ms`）；同对象较新时间戳胜出，时间戳相同则保留主机当前值。`commit_seq` 与 `object_version` 负责主日志完整性、幂等和基线追踪。
 
 ### 身份与去重
 
@@ -141,15 +143,15 @@ apps/desktop/
 
 `echo.db` 的核心表如下：
 
-| 表 | 主要内容 |
-|---|---|
-| `library_roots` | 资料库逻辑 ID、本机绝对路径与扫描状态；同步时只使用逻辑 ID，绝不上传本机绝对路径。 |
-| `songs` | `uuid`、根目录 ID、相对路径、BLAKE3、音乐键、解析出的标签、封面/歌词引用、收藏和播放统计。 |
-| `song_overrides` | 用户编辑但未写回音频文件的标题、封面、歌词等覆盖值。 |
-| `playlists` / `playlist_songs` | 歌单与歌曲 UUID 引用；`playlist_songs` 按追加顺序保存。 |
-| `tombstones` | 已删除逻辑对象的版本化墓碑。 |
-| `sync_state` / `sync_outbox` | 远端连接配置、同步游标及待上传的逻辑变更。 |
-| `operation_journal` | 导入、写回和移动等跨文件系统与 SQLite 的可恢复操作步骤。 |
+| 表                             | 主要内容                                                                                   |
+| ------------------------------ | ------------------------------------------------------------------------------------------ |
+| `library_roots`                | 资料库逻辑 ID、本机绝对路径与扫描状态；同步时只使用逻辑 ID，绝不上传本机绝对路径。         |
+| `songs`                        | `uuid`、根目录 ID、相对路径、BLAKE3、音乐键、解析出的标签、封面/歌词引用、收藏和播放统计。 |
+| `song_overrides`               | 用户编辑但未写回音频文件的标题、封面、歌词等覆盖值。                                       |
+| `playlists` / `playlist_songs` | 歌单与歌曲 UUID 引用；`playlist_songs` 按追加顺序保存。                                    |
+| `tombstones`                   | 已删除逻辑对象的版本化墓碑。                                                               |
+| `sync_state` / `sync_outbox`   | 本地同步游标及待确认的逻辑变更；凭据由平台安全存储管理。                                   |
+| `operation_journal`            | 导入、写回和移动等跨文件系统与 SQLite 的可恢复操作步骤。                                   |
 
 `songs` 对 `(library_root_id, relative_path)` 建唯一索引，对 `blake3_hash`、艺人、专辑和添加时间建立查询索引；歌曲名、艺人、专辑等文本检索使用 SQLite FTS5。SQLite 内的关联记录在单个事务中提交；涉及文件系统的导入、写回和移动由 `operation_journal` 协调恢复，避免文件路径与 UUID 索引不一致。
 
@@ -157,9 +159,11 @@ apps/desktop/
 
 - **本机 SQLite**：仅本机读写，不作为同步文件上传。
 - **用户资料库目录**：`media/` 保存实际音频与 `.lrc`；`echo/manifest.json` 与 `echo/records/` 保存版本化对象资料；`echo/tmp/` 仅用于本机恢复，绝不作为同步资料。
-- **远端 JSON 变更记录（二期）**：传输上述已完成对象资料及媒体文件；每条记录包含对象 UUID、版本和载荷。设备下载后先投影自己的 SQLite，再扫描 `media/` 并以文件状态完成关联。
+- **局域网 JSON 变更记录（二期）**：经认证的主设备传输已确认对象资料及媒体文件；记录包含类型化对象身份、稳定事件身份、主确认序列和载荷。设备应用到自己的 SQLite，并以文件校验完成媒体关联。
 
-远端 JSON 是同步协议格式，而不是本地数据库。这样多设备可逐对象合并变更，不会因为直接覆盖一个 SQLite 文件而丢失另一台设备的修改。
+`echo/manifest.json` 的格式版本从 1 升级到 2。v1 对象是扁平 portable record；v2 对象包在 `{ "format_version": 2, "record": ..., "sync": ... }` envelope 中。`sync` 仅在已有真实确认信息时包含 authority/epoch、主确认 object version 和 typed alias；升级旧 v1 记录不得推造这些值。v1→v2 使用持久迁移 journal 和原始文件备份，先发布旧版本不兼容的临时 manifest 围栏，再逐条升级，校验并刷盘后才发布正式 v2 manifest。新版本打开控制面前先恢复 journal；无法证明的旧 PendingDelete/临时墓碑保持原样并阻止迁移，不将其猜成最终删除。旧程序重新打开被围栏的库时必须拒绝接续。墓碑路径按被删除对象的类型隔离，歌曲与收藏等共享 UUID 的墓碑不得互相覆盖。
+
+同步 JSON 是网络协议格式，而不是本地数据库。变更经主设备逐对象确认，不会因为直接覆盖 SQLite 文件而丢失另一台设备的修改。
 
 例如，歌曲路径或元数据发生变更时，`sync_outbox` 可生成如下远端同步载荷：
 
@@ -168,7 +172,7 @@ apps/desktop/
   "object_type": "song",
   "operation": "upsert",
   "uuid": "550e8400-e29b-41d4-a716-446655440000",
-  "version": 42,
+  "local_revision": 42,
   "payload": {
     "relative_path": "media/周杰伦/周杰伦 - 晴天.flac",
     "blake3_hash": "7a3fa9...c91",
@@ -277,12 +281,12 @@ Echo 只更新该 UUID 的 `relative_path`；所有歌单、收藏和播放队�
 
 ## 6. 排序模型（第 12 项决定）
 
-| 对象 | 排序方式 | 存储 / 同步 |
-|---|---|---|
-| 歌单列表（歌单之间） | 当前原型未定义手动排序 | 暂不实现排序交互 |
-| 歌单内歌曲 | 追加到队尾 | 稳定成员 UUID + 追加顺序键；删除保留成员墓碑 |
-| 所有歌曲视图 | 最近添加、歌曲名称、歌手、专辑、播放次数 | 本机偏好按视图保存 |
-| 歌手与专辑目录 | 各自按名称或歌曲数量升序/降序 | 本机偏好按目录分别保存，不同步 |
+| 对象                 | 排序方式                                 | 存储 / 同步                                  |
+| -------------------- | ---------------------------------------- | -------------------------------------------- |
+| 歌单列表（歌单之间） | 当前原型未定义手动排序                   | 暂不实现排序交互                             |
+| 歌单内歌曲           | 追加到队尾                               | 稳定成员 UUID + 追加顺序键；删除保留成员墓碑 |
+| 所有歌曲视图         | 最近添加、歌曲名称、歌手、专辑、播放次数 | 本机偏好按视图保存                           |
+| 歌手与专辑目录       | 各自按名称或歌曲数量升序/降序            | 本机偏好按目录分别保存，不同步               |
 
 歌单手动排序若后续立项，采用原子 UUID 数组 + 版本号；在当前原型范围内不作为功能实现。
 
@@ -291,12 +295,14 @@ Echo 只更新该 UUID 的 `relative_path`；所有歌单、收藏和播放队�
 ## 7. 构建路线图（用户 + AI 结对）
 
 **Phase 0 — 地基（1–2 周）**
+
 - 建立 Rust workspace，创建 `echo-core` 与 `echo-desktop` crate
 - SQLite schema、迁移与记录模型（songs/playlists/playlist_songs/song_overrides/tombstones/sync_outbox/operation_journal）
 - 资料库根目录扫描、文件监听、相对路径定位、blake3 哈希 + 标签解析（`lofty`：MP3/FLAC/MP4 封面、歌词）
 - 单元测试 ≥ 90% —— 这是 AI 可无限量产、且是后面所有层的信任锚
 
 **Phase 1 — 桌面端能听歌（3–4 周）**
+
 - Tauri 2 + React + TypeScript + Vite UI 骨架，Rust Core 进进程
 - mpv 绑定、资料库根目录选择与扫描、本地曲库浏览 + 搜索
 - 导入按钮：按默认 `media/歌手/歌手 - 歌曲名.扩展名` 格式复制新歌曲及其同名 `.lrc`
@@ -306,18 +312,21 @@ Echo 只更新该 UUID 的 `relative_path`；所有歌单、收藏和播放队�
 - 里程碑：Mac/Win/Linux 扫描或导入资料库、系统双击直接播放、搜索、排序、播放、建歌单 —— **不碰同步，且不实现全选批量逻辑**
 
 **Phase 2 — 同步引擎（4–6 周）**
-- 基于 `sync_outbox` 的 JSON 增量、全量初始化、墓碑与版本裁决，及 S3 + WebDAV 两个连接器
+
+- 基于 `sync_outbox` 的 LAN JSON 增量、完整首次同步、墓碑与主确认序裁决
 - 扫描或导入时计算 blake3；使用 hash 对媒体文件 diff 与去重
 - 实现同步按钮及同步状态反馈；实现全选后的批量操作（具体操作另行定义）
-- 里程碑：两台桌面端，本地改、远端汇聚、另一端可见
+- 里程碑：主设备和至少一台桌面从设备，本地修改经主设备确认后在另一端可见
 
 **Phase 3 — Android（4 周起）**
+
 - Flutter + media_kit；使用 flutter_rust_bridge 调用 Rust Core
 - 如未来需要直接暴露 Kotlin / Swift API，再用 UniFFI 生成 Binding
 - Android：media_kit + 通知栏/锁屏/后台播放
 - 里程碑：Android 可连接既有资料库，完成同步、浏览和本地播放
 
 **Phase 4 — iOS（Android 验收后）**
+
 - Flutter + media_kit，复用同一 Rust Core 与同步协议
 - 适配 iOS 媒体权限、后台播放、锁屏控制与系统音频会话
 - 里程碑：iOS 与桌面、Android 可稳定共享同一资料库
@@ -330,14 +339,14 @@ Echo 只更新该 UUID 的 `relative_path`；所有歌单、收藏和播放队�
 
 1. 平台矩阵：桌面 Tauri 2 + React + TypeScript + Vite 先行，移动 Flutter 押后，iOS 最后
 2. Rust Core 纯逻辑、全平台通用；音频播放永不进 Core（桌面 mpv / 移动 media_kit）
-3. 无账号体系；本地优先；单远端汇聚；S3/WebDAV 为可互换连接器
+3. 无账号体系；本地优先；单主局域网汇聚；二期不提供 S3/WebDAV
 4. 用户选择外部音乐资料库根目录，Echo 扫描文件但不复制或移动；歌曲以 UUID 作为内部引用，并以根目录加相对路径定位实际文件
 5. 身份 = 本地 UUID 为业务引用；根目录 + 相对路径定位文件；blake3 用于去重、同步及识别移动后的文件，音乐键兜底
 6. 元数据修改 = 覆盖层单独存，Echo 不改文件；外部文件变更由扫描重新解析，导出写回标签以后做
-7. 删除 = 墓碑；冲突 = 最后写入者胜；裁决 = 版本号 + 时间戳兜底
+7. 删除 = 主确认后的类型化墓碑；冲突 = 变更时间戳 LWW、同时间戳主机胜出并保留冲突副本
 8. 传输 = 先全量下载再播；播放前保证文件在盘上
 9. 首次同步 = 全量；之后增量 diff
-10. 统一池子，远端拉下来的也参与再上传（接受流量成本）
+10. 各端保有完整本地副本；从端对象经主设备确认后传播，不把 SQLite 文件作为载荷
 11. 构建顺序：Core + 桌面先行，移动押后
 12. 排序：全部歌曲支持最近添加、歌曲名称、歌手、专辑、播放次数；歌手和专辑目录分别支持按名称或歌曲数量排序；全选批量操作放二期，歌单手动排序暂不实现
 

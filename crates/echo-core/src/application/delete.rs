@@ -21,13 +21,10 @@
 //! task 5.8 and deliberately NOT implemented here; the recovery path hands an
 //! expired hidden operation to 5.8 by advancing its items to `TrashPending`.
 
-use crate::application::portable_materialize::{
-    committed_version, delete_record_guarded, tombstone_record, write_record_guarded,
-    SONG_OBJECT_TYPE,
-};
+use crate::application::portable_materialize::delete_record_guarded;
 use crate::application::ports::{OperationItem, OperationResourceKind, TxAccess};
 use crate::application::scan::ScanDeps;
-use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath, Revision, SongId};
+use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath, SongId};
 use crate::domain::library::{PortableRecord, RecordKind};
 use crate::domain::state::OperationState;
 use crate::error::Error;
@@ -170,29 +167,6 @@ impl<'a> DeleteSongs<'a> {
                 Ok(())
             }))?;
 
-        // A delete is a durable, cross-device fact: leave a **tombstone** so
-        // reopening the library — or another device rebuilding from `echo/` —
-        // does not resurrect the song from its still-present song record
-        // (design D5 rule 1). Best-effort on purpose: the files are already in
-        // the trash and the row is committed, so a control-plane failure must
-        // not turn a successful delete into an error (module docs, delete
-        // fan-out).
-        let device = self.deps.device_id.current_device_id();
-        let (revision, hlc) = committed_version(
-            self.deps.sync.as_ref(),
-            SONG_OBJECT_TYPE,
-            &song.to_string(),
-            device,
-        )?;
-        let record = PortableRecord::Tombstone(tombstone_record(
-            device,
-            hlc,
-            Revision::from_u64(revision.as_u64().saturating_add(1)),
-            song.as_uuid(),
-            RecordKind::Song,
-        ));
-        write_record_guarded(self.deps.control.as_ref(), root, &record)?;
-
         Ok(DeleteOutcome {
             operation,
             staged_lyrics,
@@ -302,6 +276,24 @@ impl<'a> RestoreDeletedOperation<'a> {
         }
         let subject = Self::subject_song(&items)?;
 
+        // A remote final tombstone holds these resources for explicit recovery
+        // under a new identity. Check before any filesystem move. SQLite also
+        // checks each RestorePending transition and the final visibility write
+        // against the confirmed base to close concurrent tombstone races.
+        if items.iter().any(|item| {
+            !matches!(
+                item.state,
+                OperationState::HiddenInDatabase
+                    | OperationState::RestorePending
+                    | OperationState::RestoreApplied
+                    | OperationState::Restored
+            )
+        }) {
+            return Err(Error::conflict(
+                "delete operation is held; recovery requires a new UUID",
+            ));
+        }
+
         for item in &items {
             self.restore_resource(root, operation, item)?;
         }
@@ -317,17 +309,36 @@ impl<'a> RestoreDeletedOperation<'a> {
                 Ok(())
             }))?;
         self.deps.journal.release_claims(operation)?;
-        // Undo revokes the delete, so the tombstone `delete` wrote must go with
-        // it: a surviving tombstone would keep suppressing the song on the next
-        // continuation even though the user restored it (D5 rule 1 compares the
-        // tombstone against the still-present song record). Missing tombstones
-        // are a no-op, so an undo of a pre-tombstone delete stays valid.
-        delete_record_guarded(
-            self.deps.control.as_ref(),
-            root,
-            RecordKind::Tombstone,
-            &subject.to_string(),
-        )?;
+        // New intents never write a portable tombstone. Remove only the
+        // recognizable v1 temporary tombstone left by older builds: same
+        // local author and exactly one revision newer than its song record.
+        let device = self.deps.device_id.current_device_id();
+        let tombstone =
+            self.deps
+                .control
+                .read_record(root, RecordKind::Tombstone, &subject.to_string())?;
+        let song_record =
+            self.deps
+                .control
+                .read_record(root, RecordKind::Song, &subject.to_string())?;
+        if let (
+            Some(PortableRecord::Tombstone(tombstone)),
+            Some(PortableRecord::Song(song_record)),
+        ) = (tombstone, song_record)
+        {
+            let legacy_temporary = tombstone.deleted_kind == RecordKind::Song
+                && tombstone.updated_by_device_id == device
+                && song_record.updated_by_device_id == device
+                && tombstone.revision.as_u64() == song_record.revision.as_u64().saturating_add(1);
+            if legacy_temporary {
+                delete_record_guarded(
+                    self.deps.control.as_ref(),
+                    root,
+                    RecordKind::Tombstone,
+                    &subject.to_string(),
+                )?;
+            }
+        }
         Ok(subject)
     }
 
@@ -519,418 +530,5 @@ impl From<DeleteResourceKind> for OperationResourceKind {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::application::ports::{
-        OperationJournalRepository, PlaylistRepository, SongRepository,
-    };
-    use crate::application::testing::ScanFixture;
-    use crate::domain::entities::{PlaylistMember, SongAvailability};
-
-    /// Seed one library song at `path` with the given bytes and (optionally) a
-    /// same-basename `.lrc` beside it, plus favorite/play-count/playlist state.
-    fn seed_song(fixture: &ScanFixture, path: &str, audio: &[u8], lrc: Option<&[u8]>) -> SongId {
-        fixture.write_file(path, audio);
-        fixture.set_audio(path, "晴天", 269_000);
-        let audio_path = fixture.path(path);
-        let mut song = crate::domain::entities::Song::new(
-            crate::domain::ids::SongId::new(),
-            fixture.root,
-            audio_path.clone(),
-            crate::domain::ids::Revision::INITIAL,
-        );
-        song.apply_scan_facts(
-            fixture.deps.hasher.hash_of_bytes(audio),
-            audio.len() as u64,
-            1,
-            crate::domain::media::AudioFormat::Flac,
-        );
-        song.set_favorite(true);
-        song.record_play();
-        song.record_play();
-        SongRepository::upsert(&fixture.database, &song).unwrap();
-        if let Some(lrc_bytes) = lrc {
-            fixture.write_file(derive_lrc_path(&audio_path).display(), lrc_bytes);
-            // A persisted sidecar lyrics candidate, like an import would leave.
-            let subject = song.id();
-            let candidate = crate::domain::entities::LyricsCandidate::new(
-                crate::domain::entities::LyricsSource::Sidecar,
-                vec![],
-                true,
-            );
-            fixture
-                .deps
-                .uow
-                .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
-                    tx.set_lyrics_candidate(subject, &candidate)
-                }))
-                .unwrap();
-        }
-        song.id()
-    }
-
-    fn playlist_position(fixture: &ScanFixture, playlist: crate::domain::ids::PlaylistId) -> u64 {
-        fixture
-            .database
-            .members(playlist)
-            .unwrap()
-            .first()
-            .map_or(u64::MAX, PlaylistMember::position)
-    }
-
-    #[test]
-    fn delete_stages_audio_and_lrc_into_trash_and_hides_the_song() {
-        let fixture = ScanFixture::new();
-        let song = seed_song(
-            &fixture,
-            "media/歌手/周杰伦 - 晴天.flac",
-            b"audio-bytes",
-            Some(b"lrc-bytes"),
-        );
-        let audio_path = fixture.path("歌手/周杰伦 - 晴天.flac");
-        let lrc_path = derive_lrc_path(&audio_path);
-
-        let outcome = DeleteSongs::new(&fixture.deps)
-            .delete(fixture.root, song)
-            .unwrap();
-        assert!(outcome.staged_lyrics);
-
-        // Both files moved into the owned trash slot under the operation.
-        let base = fixture.fs.root_path(fixture.root).expect("root");
-        assert!(
-            !base.join("歌手/周杰伦 - 晴天.flac").exists(),
-            "audio left the library"
-        );
-        assert!(
-            !base.join("歌手/周杰伦 - 晴天.lrc").exists(),
-            "lyrics left the library"
-        );
-        let trash_dir = base
-            .join(crate::domain::library::STAGING_ROOT)
-            .join("trash")
-            .join(outcome.operation.as_uuid().simple().to_string());
-        assert_eq!(
-            std::fs::read(trash_dir.join("周杰伦 - 晴天.flac")).unwrap(),
-            b"audio-bytes"
-        );
-        assert_eq!(
-            std::fs::read(trash_dir.join("周杰伦 - 晴天.lrc")).unwrap(),
-            b"lrc-bytes"
-        );
-
-        // The song is hidden (pending-delete) but every relationship survives.
-        let after = SongRepository::by_id(&fixture.database, song)
-            .unwrap()
-            .unwrap();
-        assert_eq!(after.availability(), SongAvailability::PendingDelete);
-        assert_eq!(after.id(), song, "UUID preserved");
-        assert!(after.favorite(), "favorite preserved");
-        assert_eq!(after.play_count().as_u64(), 2, "play stats preserved");
-        let lrc = fixture.database.lyrics_of(song);
-        assert_eq!(lrc.len(), 1, "lyrics candidate preserved");
-
-        // The undo deadline was persisted atomically with the hide.
-        let deadline = fixture
-            .database
-            .undo_deadline(outcome.operation)
-            .unwrap()
-            .unwrap();
-        assert_eq!(deadline, wall_ms(&fixture.clock).unwrap() + UNDO_WINDOW_MS);
-        let items = fixture.database.items(outcome.operation).unwrap();
-        assert_eq!(items.len(), 2);
-        assert!(items
-            .iter()
-            .all(|item| item.state == OperationState::HiddenInDatabase));
-        let _ = lrc_path;
-    }
-
-    #[test]
-    fn restore_undo_preserves_uuid_favorite_stats_and_playlist_position() {
-        let fixture = ScanFixture::new();
-        let song = seed_song(
-            &fixture,
-            "歌手/周杰伦 - 晴天.flac",
-            b"audio-bytes",
-            Some(b"lrc-bytes"),
-        );
-        let playlist = crate::domain::ids::PlaylistId::new();
-        fixture
-            .database
-            .create(playlist, fixture.root, "最爱")
-            .unwrap();
-        fixture.database.add_member(playlist, song, 7).unwrap();
-
-        let outcome = DeleteSongs::new(&fixture.deps)
-            .delete(fixture.root, song)
-            .unwrap();
-        assert_eq!(
-            playlist_position(&fixture, playlist),
-            7,
-            "member kept during pending-delete"
-        );
-
-        let restored = RestoreDeletedOperation::new(&fixture.deps)
-            .restore(fixture.root, outcome.operation)
-            .unwrap();
-        assert_eq!(restored, song, "undo restores the same UUID");
-
-        // Files back at their original paths with the exact bytes.
-        let base = fixture.fs.root_path(fixture.root).expect("root");
-        assert_eq!(
-            std::fs::read(base.join("media/歌手/周杰伦 - 晴天.flac")).unwrap(),
-            b"audio-bytes"
-        );
-        assert_eq!(
-            std::fs::read(base.join("media/歌手/周杰伦 - 晴天.lrc")).unwrap(),
-            b"lrc-bytes"
-        );
-
-        // The song is available again; favorite/stats/playlist position kept.
-        let after = SongRepository::by_id(&fixture.database, song)
-            .unwrap()
-            .unwrap();
-        assert_eq!(after.availability(), SongAvailability::Available);
-        assert!(after.favorite());
-        assert_eq!(after.play_count().as_u64(), 2);
-        assert_eq!(playlist_position(&fixture, playlist), 7);
-        let items = fixture.database.items(outcome.operation).unwrap();
-        assert!(items
-            .iter()
-            .all(|item| item.state == OperationState::Restored));
-        assert!(fixture
-            .database
-            .released_claims()
-            .contains(&outcome.operation));
-    }
-
-    #[test]
-    fn restore_to_safe_numbered_path_when_original_is_occupied() {
-        let fixture = ScanFixture::new();
-        let song = seed_song(
-            &fixture,
-            "media/歌手/周杰伦 - 晴天.flac",
-            b"audio-bytes",
-            Some(b"lrc-bytes"),
-        );
-        let outcome = DeleteSongs::new(&fixture.deps)
-            .delete(fixture.root, song)
-            .unwrap();
-
-        // Foreign content occupies the original paths before the undo.
-        fixture.write_file("media/歌手/周杰伦 - 晴天.flac", b"foreign-audio");
-        fixture.write_file("media/歌手/周杰伦 - 晴天.lrc", b"foreign-lrc");
-
-        RestoreDeletedOperation::new(&fixture.deps)
-            .restore(fixture.root, outcome.operation)
-            .unwrap();
-
-        let base = fixture.fs.root_path(fixture.root).expect("root");
-        // The foreign files are untouched; our files land at numbered paths.
-        assert_eq!(
-            std::fs::read(base.join("media/歌手/周杰伦 - 晴天.flac")).unwrap(),
-            b"foreign-audio"
-        );
-        assert_eq!(
-            std::fs::read(base.join("media/歌手/周杰伦 - 晴天.lrc")).unwrap(),
-            b"foreign-lrc"
-        );
-        assert_eq!(
-            std::fs::read(base.join("media/歌手/周杰伦 - 晴天 (1).flac")).unwrap(),
-            b"audio-bytes",
-            "audio restored to the safe numbered path"
-        );
-        assert_eq!(
-            std::fs::read(base.join("media/歌手/周杰伦 - 晴天 (1).lrc")).unwrap(),
-            b"lrc-bytes",
-            "lyrics restored to the safe numbered path"
-        );
-        // The song keeps its identity (and the record path stays the original:
-        // relinking to the numbered path happens on a later scan).
-        let after = SongRepository::by_id(&fixture.database, song)
-            .unwrap()
-            .unwrap();
-        assert_eq!(after.availability(), SongAvailability::Available);
-        assert_eq!(after.id(), song);
-    }
-
-    #[test]
-    fn restore_is_refused_after_the_undo_window_expires() {
-        let fixture = ScanFixture::new();
-        let song = seed_song(&fixture, "歌手/周杰伦 - 晴天.flac", b"audio-bytes", None);
-        let outcome = DeleteSongs::new(&fixture.deps)
-            .delete(fixture.root, song)
-            .unwrap();
-
-        fixture.clock.advance_ms(20_000);
-        let error = RestoreDeletedOperation::new(&fixture.deps)
-            .restore(fixture.root, outcome.operation)
-            .unwrap_err();
-        assert_eq!(error.code(), "conflict", "expired undo is refused");
-        // Nothing moved: the audio remains staged in the trash slot.
-        let base = fixture.fs.root_path(fixture.root).expect("root");
-        assert!(!base.join("歌手/周杰伦 - 晴天.flac").exists());
-        let staged_audio = fixture
-            .database
-            .items(outcome.operation)
-            .unwrap()
-            .into_iter()
-            .find(|item| item.item_key == "audio")
-            .and_then(|item| item.staging_path)
-            .expect("audio staging path");
-        assert!(base.join(staged_audio.normalized()).exists());
-    }
-
-    #[test]
-    fn read_only_root_refuses_the_delete_entry() {
-        let fixture = ScanFixture::new();
-        let song = seed_song(&fixture, "歌手/周杰伦 - 晴天.flac", b"audio-bytes", None);
-        fixture.fs.set_write_capable(false);
-        let error = DeleteSongs::new(&fixture.deps)
-            .delete(fixture.root, song)
-            .unwrap_err();
-        assert_eq!(
-            error.code(),
-            "unavailable",
-            "read-only root has no delete entry"
-        );
-        // Nothing changed.
-        let after = SongRepository::by_id(&fixture.database, song)
-            .unwrap()
-            .unwrap();
-        assert_eq!(after.availability(), SongAvailability::Available);
-    }
-
-    #[test]
-    fn delete_without_a_sidecar_stages_only_the_audio() {
-        let fixture = ScanFixture::new();
-        let song = seed_song(&fixture, "歌手/周杰伦 - 晴天.flac", b"audio-bytes", None);
-        let outcome = DeleteSongs::new(&fixture.deps)
-            .delete(fixture.root, song)
-            .unwrap();
-        assert!(!outcome.staged_lyrics);
-        let items = fixture.database.items(outcome.operation).unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].kind, OperationResourceKind::Audio);
-    }
-
-    /// A delete is a durable cross-device fact: it must leave a **tombstone**
-    /// so reopening the directory (or another device rebuilding from `echo/`)
-    /// cannot resurrect the song from its still-present song record — the
-    /// delete-path half of design D5 rule 1.
-    #[test]
-    fn a_delete_leaves_a_tombstone_that_continuation_honours() {
-        use crate::application::continuation::ContinueFromRecords;
-        use crate::application::portable_materialize::song_record;
-        use crate::application::ports::ControlPlanePort;
-        use crate::domain::library::HybridLogicalClock;
-
-        let fixture = ScanFixture::new();
-        let song = seed_song(
-            &fixture,
-            "media/歌手/周杰伦 - 晴天.flac",
-            b"audio-bytes",
-            None,
-        );
-        // A committed import would have left this song record behind.
-        let entity = SongRepository::by_id(&fixture.database, song)
-            .unwrap()
-            .unwrap();
-        let device = fixture.deps.device_id.current_device_id();
-        fixture
-            .control
-            .write_record(
-                fixture.root,
-                &PortableRecord::Song(
-                    song_record(
-                        device,
-                        HybridLogicalClock::default(),
-                        Revision::INITIAL,
-                        &entity,
-                    )
-                    .unwrap(),
-                ),
-            )
-            .unwrap();
-
-        DeleteSongs::new(&fixture.deps)
-            .delete(fixture.root, song)
-            .unwrap();
-
-        let tombstone = fixture
-            .control
-            .read_record(fixture.root, RecordKind::Tombstone, &song.to_string())
-            .unwrap()
-            .expect("a delete writes a tombstone");
-        assert!(
-            matches!(
-                &tombstone,
-                PortableRecord::Tombstone(record) if record.deleted_kind == RecordKind::Song
-            ),
-            "the tombstone names the deleted song kind"
-        );
-        assert_eq!(tombstone.object_uuid(), song.as_uuid());
-        assert!(
-            tombstone.revision().as_u64() > Revision::INITIAL.as_u64(),
-            "the tombstone outranks the record it suppresses"
-        );
-
-        // Continuation therefore keeps the song out of the effective view.
-        let report = ContinueFromRecords::new(
-            &fixture.control,
-            fixture.deps.songs.as_ref(),
-            fixture.deps.playlists.as_ref(),
-            fixture.deps.uow.as_ref(),
-        )
-        .run(fixture.root)
-        .unwrap();
-        assert_eq!(
-            report.projection.songs, 0,
-            "a deleted song is never adopted back"
-        );
-        assert!(report.projection.tombstoned >= 1);
-    }
-
-    /// Undo revokes the delete, so its tombstone must go with it — a surviving
-    /// tombstone would keep suppressing the restored song on the next
-    /// continuation.
-    #[test]
-    fn undoing_a_delete_removes_the_tombstone() {
-        use crate::application::ports::ControlPlanePort;
-
-        let fixture = ScanFixture::new();
-        let song = seed_song(
-            &fixture,
-            "media/歌手/周杰伦 - 晴天.flac",
-            b"audio-bytes",
-            None,
-        );
-        let outcome = DeleteSongs::new(&fixture.deps)
-            .delete(fixture.root, song)
-            .unwrap();
-        assert!(
-            fixture
-                .control
-                .read_record(fixture.root, RecordKind::Tombstone, &song.to_string())
-                .unwrap()
-                .is_some(),
-            "the delete wrote a tombstone"
-        );
-
-        RestoreDeletedOperation::new(&fixture.deps)
-            .restore(fixture.root, outcome.operation)
-            .unwrap();
-
-        assert!(
-            fixture
-                .control
-                .read_record(fixture.root, RecordKind::Tombstone, &song.to_string())
-                .unwrap()
-                .is_none(),
-            "undo must revoke the tombstone together with the delete"
-        );
-        let after = SongRepository::by_id(&fixture.database, song)
-            .unwrap()
-            .unwrap();
-        assert_eq!(after.availability(), SongAvailability::Available);
-    }
-}
+#[path = "delete/tests.rs"]
+mod tests;

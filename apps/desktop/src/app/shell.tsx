@@ -21,7 +21,7 @@ const ShellNavContext = createContext<ShellNav | null>(null);
 
 export const ShellNavProvider = ShellNavContext.Provider;
 
-export function useShellNav(): ShellNav {
+function useShellNav(): ShellNav {
   const nav = useContext(ShellNavContext);
   if (!nav) {
     throw new Error("useShellNav must be used inside the app shell");
@@ -68,7 +68,7 @@ export function Topbar(props: { readonly title: string; readonly children?: Reac
     <header className="topbar" data-od-id="workspace-topbar">
       {nav ? <SidebarToggle /> : null}
       <div className="crumb">
-        <strong>资料库</strong> / <span>{props.title}</span>
+        <strong>音乐库</strong> / <span>{props.title}</span>
       </div>
       {props.children}
     </header>

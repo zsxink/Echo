@@ -1,5 +1,5 @@
 /**
- * Library workspace: 工作区顶栏 + 资料库工具栏 + 歌曲列表 (task 10.4 / 10.5 / 10.6).
+ * Library workspace: 工作区顶栏 + 音乐库工具栏 + 歌曲列表 (task 10.4 / 10.5 / 10.6).
  *
  * Reproduces the prototype's `.workspace` (topbar → content → library-view):
  *   topbar      面包屑 · 搜索 · 导入
@@ -38,7 +38,8 @@ import { ConfirmationDialog } from "./ConfirmationDialog";
 import { AddToPlaylistDialog } from "../playlists";
 import { SongSortControl } from "./SongSortControl";
 import { useStoredSongSort } from "./useStoredSongSort";
-import { useLocateSong, LocateButton } from "./useLocateSong";
+import { useLocateSong } from "./useLocateSong";
+import { LocateButton } from "./LocateButton";
 import { Icon } from "../../app/Icon";
 import { notify } from "../../app/toast";
 import { Topbar } from "../../app/shell";

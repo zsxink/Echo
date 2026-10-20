@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "platform": "macos",
-  "kind": "custom-audio-effects-universal",
+  "kind": "custom-audio-effects-arm64",
   "publisher": "Echo local source build (FFmpeg + mpv)",
   "release": "echo-audio-effects-0.1",
   "asset": "FFmpeg 6.0 + mpv 0.36.0 source build",
@@ -23,8 +23,7 @@
     }
   ],
   "architectures": [
-    "arm64",
-    "x86_64"
+    "arm64"
   ],
   "fileArchitectures": {
     "libass.9.dylib": [
@@ -186,5 +185,5 @@
     "libswscale.dylib": "8c710003c88579691363a6a6281d80138678151e18b6dc5bf9b5db2a8abdd6f2",
     "libunibreak.8.dylib": "61ff8eedc2b923b77f3018c2df177871e7de069d2e1a4d6222b1f7f6016e4883"
   },
-  "buildProcedureStatus": "Source candidate built and probed on macOS arm64; a clean-room rebuild script and Intel rebuild remain pending."
+  "buildProcedureStatus": "Source candidate built and probed on macOS arm64; clean-room rebuild remains pending. Intel/universal packaging is outside the current release target."
 }

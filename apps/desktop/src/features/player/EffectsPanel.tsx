@@ -12,11 +12,12 @@ import { playerStore, useAudioEffects, usePlayerUi } from "../../player/playerSt
 import type { EffectsSnapshotDto, EqCurve } from "../../ipc/ipc-types.generated";
 import { EffectsDialog, type EffectsDialogAction } from "./EffectsDialog";
 import { EffectsPresets } from "./EffectsPresets";
-import { EqualizerEditor, NEUTRAL_CURVE } from "./EqualizerEditor";
-import { effectsTriggerRef } from "./EffectsTrigger";
+import { EqualizerEditor } from "./EqualizerEditor";
+import { NEUTRAL_CURVE } from "./eqCurve";
+import { effectsTriggerRef } from "./effectsTriggerRef";
 import "../../styles/effects.css";
 
-export function effectsStatus(effects: EffectsSnapshotDto): string {
+function effectsStatus(effects: EffectsSnapshotDto): string {
   const { runtime, document } = effects;
   if (runtime.applied === "applied" && document.requestedEnabled) {
     const selection = document.selection;

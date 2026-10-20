@@ -3,9 +3,11 @@
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use echo_core::application::portable_materialize::merge_play_stats;
-use echo_core::application::ports::{ControlPlanePort, DeviceIdProvider, LibraryRepository};
-use echo_core::domain::ids::PlaybackSessionId;
+use echo_core::application::portable_materialize::play_stats_record;
+use echo_core::application::ports::{
+    ControlPlanePort, DeviceIdProvider, LibraryRepository, SongRepository, SyncStateReader,
+};
+use echo_core::domain::ids::{LibraryRootId, PlaybackSessionId, Revision};
 use echo_core::domain::library::{HybridLogicalClock, PortableRecord, RecordKind};
 
 use super::PlaybackCoordinator;
@@ -53,16 +55,11 @@ impl CorePlaybackRecorder {
     /// The record is written **after** the local counter commits and merges
     /// into the record already on disk, so a replayed write never doubles the
     /// count and two devices sum instead of overwriting (design D4).
-    fn record_play_stats(&self, song: super::SongId) -> Result<(), String> {
-        let root = self
-            .roots
-            .active_root()
-            .map_err(|error| error.to_string())?
-            .ok_or_else(|| "no active library root".to_owned())?;
+    fn record_play_stats(&self, root: LibraryRootId, song: super::SongId) -> Result<(), String> {
         let device = self.device_id.current_device_id();
         let existing = self
             .control
-            .read_record(root.id(), RecordKind::PlayStats, &song.to_string())
+            .read_record(root, RecordKind::PlayStats, &song.to_string())
             .map_err(|error| error.to_string())?;
         let existing_stats = match existing {
             Some(PortableRecord::PlayStats(stats)) => Some(stats),
@@ -71,20 +68,55 @@ impl CorePlaybackRecorder {
         let wall_secs = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |elapsed| elapsed.as_secs());
-        let record = PortableRecord::PlayStats(merge_play_stats(
-            existing_stats,
+        let mut by_device = self
+            .database
+            .device_play_counts(song)
+            .map_err(|error| error.to_string())?;
+        if let Some(existing) = existing_stats {
+            for (writer, count) in existing.by_device {
+                by_device
+                    .entry(writer)
+                    .and_modify(|stored| *stored = (*stored).max(count))
+                    .or_insert(count);
+            }
+        }
+        let revision = self
+            .database
+            .outbox_revision("play-stats", &song.to_string())
+            .map_err(|error| error.to_string())?;
+        let record = PortableRecord::PlayStats(play_stats_record(
             device,
             HybridLogicalClock::new(wall_secs, 0),
+            Revision::from_u64(revision.as_u64()),
             song,
+            by_device,
         ));
         self.control
-            .write_record(root.id(), &record)
+            .write_record(root, &record)
             .map_err(|error| error.to_string())
     }
 }
 
 impl PlaybackRecorder for CorePlaybackRecorder {
     fn record(&self, session: PlaybackSessionId, song: super::SongId) -> Result<bool, String> {
+        // Keep the counter and its portable record on the same side of the
+        // enrollment barrier. Listening to the superseded local catalog does
+        // not create edits that could escape into the host's initial baseline.
+        let _activity =
+            echo_core::application::sync::local_activity().map_err(|error| error.to_string())?;
+        let Some(local_song) = SongRepository::by_id(self.database.as_ref(), song)
+            .map_err(|error| error.to_string())?
+        else {
+            return Ok(false);
+        };
+        let root = local_song.root();
+        if self
+            .roots
+            .replica_enrollment_pending(root)
+            .map_err(|error| error.to_string())?
+        {
+            return Ok(false);
+        }
         let recorded = self
             .database
             .record_playback(session, song)
@@ -92,7 +124,7 @@ impl PlaybackRecorder for CorePlaybackRecorder {
         // Only a *new* listen is materialized: the idempotence guard already
         // told us this session was counted.
         if recorded {
-            self.record_play_stats(song)?;
+            self.record_play_stats(root, song)?;
         }
         Ok(recorded)
     }

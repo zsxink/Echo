@@ -5,7 +5,7 @@
  * element for element:
  *
  *   div.app
- *     aside.sidebar  品牌区 / 资料库导航 / 歌单导航 / 应用工具区
+ *     aside.sidebar  品牌区 / 音乐库导航 / 歌单导航 / 应用工具区
  *     button.sidebar-scrim
  *     section.workspace        ← the routed view renders `header.topbar` +
  *                                `main.content` into this column
@@ -187,7 +187,7 @@ export function App() {
               id="app-sidebar"
               className="sidebar"
               data-testid="sidebar"
-              aria-label="资料库导航"
+              aria-label="音乐库导航"
               ref={sidebarRef}
             >
               <div className="brand-area" data-testid="brand-area">
@@ -227,7 +227,7 @@ export function App() {
               </div>
 
               <nav className="nav-group" aria-label="主导航">
-                <span className="nav-label">资料库</span>
+                <span className="nav-label">音乐库</span>
                 {navItem("all", "全部歌曲", "library", "all")}
                 {navItem("recent", "最近添加", "recent", "recent")}
                 {navItem("favorites", "喜欢的音乐", "heart", "favorites")}
@@ -375,7 +375,7 @@ export function App() {
 }
 
 /**
- * 资料库导航计数. The prototype prints sample counts; Echo prints only a number
+ * 音乐库导航计数. The prototype prints sample counts; Echo prints only a number
  * the backend has actually counted, and never blanks a known number while a
  * re-count is in flight (`docs/interface-terminology.md`: 原型模拟业务状态不作为实现).
  */

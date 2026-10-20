@@ -56,6 +56,94 @@ export interface EffectsSnapshotDto {
   readonly recoveryReason?: string;
 }
 
+export type SyncRole = 'none' | 'host' | 'peer';
+export type SyncState = 'disabled' | 'hosting' | 'connected' | 'syncing' | 'paused' | 'failed';
+export interface SyncStatus {
+  readonly enabled: boolean;
+  readonly role: SyncRole;
+  readonly state: SyncState;
+  readonly sessionId: number;
+  readonly eventSequence: number;
+  readonly catalogChanged: boolean;
+  readonly libraryId: string | null;
+  readonly localRoot: string | null;
+  readonly address: string | null;
+  readonly lastError: string | null;
+  readonly pendingChanges: number | null;
+  readonly pendingUploads: number | null;
+  readonly pendingDownloads: number | null;
+  readonly uploadedBytes: number | null;
+  readonly totalUploadBytes: number | null;
+  readonly downloadedBytes: number | null;
+  readonly totalDownloadBytes: number | null;
+  readonly mediaReady: boolean | null;
+}
+export interface SyncStorageSpace {
+  readonly libraryRoot: string;
+  readonly availableBytes: number | null;
+}
+export type SyncConflictRecovery = 'available' | 'pending_edit' | 'final_deleted' | 'unsupported' | 'unavailable';
+export type SyncConflictResolution = 'recovered' | 'dismissed' | 'already_resolved' | 'final_deleted' | 'pending_edit' | 'unsupported' | 'unavailable';
+export interface SyncConflictView {
+  readonly conflictId: string;
+  readonly objectType: string;
+  readonly objectUuid: string;
+  readonly replacedVersion: number;
+  readonly acceptedVersion: number;
+  readonly replacedFields: unknown;
+  readonly acceptedFields: unknown;
+  readonly recovery: SyncConflictRecovery;
+}
+export interface HostRecoveryArchive {
+  readonly recoveryId: string;
+  readonly localRoot: string;
+  readonly previousBinding: SyncBinding;
+  readonly replacementBinding: SyncBinding;
+  readonly pendingCount: number;
+  readonly conflictCount: number;
+}
+export interface SyncBinding {
+  readonly libraryId: string;
+  readonly authorityId: string;
+  readonly epoch: number;
+}
+export interface DiscoveredHost {
+  readonly name: string;
+  readonly addresses: readonly string[];
+  readonly port: number;
+  readonly deviceId: string | null;
+  readonly protocolVersion: string | null;
+}
+export interface SyncPairingCode {
+  /** Short-lived six-digit code; held in component memory only. */
+  readonly code: string;
+  readonly expiresAtUnixMs: number;
+}
+export interface SyncPeer {
+  readonly deviceId: string;
+  readonly displayName: string;
+}
+export interface SyncCommandArguments {
+  readonly sync_status: [args?: Record<string, never>];
+  readonly sync_storage_space: [args: { libraryRoot: string }];
+  readonly sync_conflicts: [args: { libraryRoot: string; limit?: number }];
+  readonly resolve_sync_conflict: [args: { libraryRoot: string; conflictId: string; recoverReplaced: boolean }];
+  readonly recover_restored_host: [args?: Record<string, never>];
+  readonly local_lan_addresses: [args?: Record<string, never>];
+  readonly host_start: [args: { address: string }];
+  readonly host_stop: [args?: Record<string, never>];
+  readonly sync_leave: [args?: Record<string, never>];
+  readonly sync_peer_start: [args?: Record<string, never>];
+  readonly sync_pause: [args?: Record<string, never>];
+  readonly sync_resume: [args?: Record<string, never>];
+  readonly sync_now: [args?: Record<string, never>];
+  readonly sync_authorized_peers: [args?: Record<string, never>];
+  readonly revoke_device: [args: { deviceId: string }];
+  readonly discover_hosts: [args?: Record<string, never>];
+  readonly create_sync_pairing_code: [args?: Record<string, never>];
+  readonly request_sync_pairing: [args: { code: string; hostAddress: string }];
+}
+
 export interface UiQueueEntry {
   readonly entryId: string;
   readonly songId: string | null;
@@ -168,6 +256,7 @@ export interface LibraryStatus {
   readonly unavailable: boolean;
   readonly scanning: boolean;
   readonly activeRoot?: string;
+  readonly activeRootPath?: string;
 }
 
 export interface ScanSnapshot {
@@ -233,6 +322,24 @@ export type CloseBehavior = 'exit' | 'background';
 
 /** Generated command name → successful return DTO contract. */
 export interface IpcCommandResultMap {
+  readonly sync_status: SyncStatus;
+  readonly host_start: SyncStatus;
+  readonly host_stop: SyncStatus;
+  readonly sync_leave: SyncStatus;
+  readonly sync_peer_start: SyncStatus;
+  readonly sync_pause: SyncStatus;
+  readonly sync_resume: SyncStatus;
+  readonly sync_now: SyncStatus;
+  readonly recover_restored_host: HostRecoveryArchive;
+  readonly sync_storage_space: SyncStorageSpace;
+  readonly sync_conflicts: readonly SyncConflictView[];
+  readonly resolve_sync_conflict: SyncConflictResolution;
+  readonly local_lan_addresses: readonly string[];
+  readonly sync_authorized_peers: readonly SyncPeer[];
+  readonly revoke_device: void;
+  readonly discover_hosts: readonly DiscoveredHost[];
+  readonly create_sync_pairing_code: SyncPairingCode;
+  readonly request_sync_pairing: SyncStatus;
   readonly get_audio_effects_snapshot: EffectsSnapshotDto;
   readonly select_audio_effects_preset: EffectsSnapshotDto;
   readonly edit_audio_equalizer: EffectsSnapshotDto;

@@ -49,7 +49,7 @@ function ResultLine({ result }: { result: ImportResultDto }) {
   if (result.kind === "libraryUnavailable") {
     return (
       <li className="is-fail" data-testid="import-line">
-        资料库不可用，未开始导入。
+        音乐库不可用，未开始导入。
       </li>
     );
   }

@@ -17,8 +17,17 @@ path = "src/main.rs"
 [dependencies]
 echo-desktop = { path = "../../../crates/echo-desktop" }
 echo-core = { path = "../../../crates/echo-core" }
+echo-sync = { path = "../../../crates/echo-sync", features = ["client", "server", "discovery"] }
+blake3.workspace = true
+reqwest.workspace = true
+tokio = { workspace = true }
+rustls = { workspace = true }
+mdns-sd = { workspace = true }
+if-addrs = "=0.15.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
+uuid = { workspace = true }
+rcgen = { version = "=0.13.2", default-features = false, features = ["ring", "zeroize"] }
 tracing = { workspace = true }
 tauri = { version = "2.11.5", features = ["tray-icon"] }
 tauri-plugin-dialog = "2.4.0"
@@ -34,6 +43,9 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["N
 block2 = "0.6.1"
 
 [dev-dependencies]
+# The watch tests serve a minimal host that answers commit pages immediately,
+# exactly like an older Echo without the bounded long-poll.
+axum = { workspace = true }
 # TempDir for `dialogs` multi-file import unit tests; resolves only for tests.
 tempfile = { version = "3" }
 # Tauri's deterministic mock runtime proves the existing main-window lifecycle

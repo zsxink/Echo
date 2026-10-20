@@ -30,7 +30,7 @@ impl Blake3ContentHasher {
     }
 
     fn abs(&self, root: LibraryRootId, path: &RelativeMediaPath) -> Result<PathBuf, Error> {
-        Ok(self.registry.path_of(root)?.join(path.normalized()))
+        self.registry.resolve_relative(root, path)
     }
 }
 

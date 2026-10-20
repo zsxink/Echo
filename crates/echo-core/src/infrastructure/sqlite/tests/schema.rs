@@ -326,11 +326,10 @@ fn sync_object_revisions_are_monotone_and_payloads_are_full() {
     );
 }
 
-/// Task 1.3: availability changes are syncable facts carrying the full object
-/// snapshot, with a monotone revision (a scan marking a song missing must not
-/// produce a duplicate/regressed revision).
+/// Local media availability never changes shared state. A scan or temporarily
+/// unavailable volume cannot make another device hide or delete its copy.
 #[test]
-fn sync_availability_change_is_a_full_outbox_fact() {
+fn local_availability_change_does_not_create_a_sync_fact() {
     let (_directory, database, root) = database();
     let imported = song(root, "歌手/歌 - 甲.flac", "歌", "歌手");
     SongRepository::upsert(&database, &imported).expect("upsert");
@@ -339,13 +338,9 @@ fn sync_availability_change_is_a_full_outbox_fact() {
     SongRepository::set_availability(&database, imported.id(), SongAvailability::Missing)
         .expect("mark missing");
     let revisions = outbox_revisions(&database, super::sync::KIND_SONG, &id);
-    assert_eq!(
-        revisions,
-        vec![1, 2],
-        "availability is a second monotone fact"
-    );
+    assert_eq!(revisions, vec![1], "only shared metadata is synchronized");
     let payload = outbox_latest_payload(&database, super::sync::KIND_SONG, &id);
-    assert!(payload.contains("miss"), "payload reflects missing state");
+    assert!(!payload.contains("availability"), "device-local state is excluded");
     assert!(payload.contains("relative_path"), "full payload present");
 }
 

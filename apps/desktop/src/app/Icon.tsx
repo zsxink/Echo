@@ -78,6 +78,39 @@ const GLYPHS: Record<string, Glyph> = {
       </>
     ),
   },
+  sliders: {
+    nodes: (
+      <>
+        <path d="M4 7h9m4 0h3M4 17h3m4 0h9" />
+        <circle cx="15" cy="7" r="2" />
+        <circle cx="9" cy="17" r="2" />
+      </>
+    ),
+  },
+  sync: {
+    nodes: (
+      <>
+        <path d="M20 7v5h-5M4 17v-5h5" />
+        <path d="M5.6 9A7 7 0 0 1 18 6l2 6M4 12l2 6a7 7 0 0 0 12.4-3" />
+      </>
+    ),
+  },
+  keyboard: {
+    nodes: (
+      <>
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M7 9h.01M11 9h.01M15 9h.01M7 13h.01M11 13h.01M15 13h.01M8 16h8" />
+      </>
+    ),
+  },
+  info: {
+    nodes: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 11v5M12 8h.01" />
+      </>
+    ),
+  },
   upload: { nodes: <path d="M12 15V3m-4 4 4-4 4 4M4 15v5h16v-5" /> },
 
   // --- topbar / toolbar ----------------------------------------------------
@@ -238,14 +271,6 @@ const GLYPHS: Record<string, Glyph> = {
       <>
         <path d="M4 6h11M4 12h11M4 18h8" />
         <path d="m17 16 3 2-3 2v-4Z" />
-      </>
-    ),
-  },
-  info: {
-    nodes: (
-      <>
-        <circle cx="12" cy="12" r="8" />
-        <path d="M12 10v6M12 7h.01" />
       </>
     ),
   },

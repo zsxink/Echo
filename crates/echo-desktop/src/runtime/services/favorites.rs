@@ -18,7 +18,7 @@ impl super::AppServices {
     /// `Unavailable` when writes are disabled or the song is not toggleable;
     /// storage errors propagate.
     pub fn set_favorite(&self, song: SongId, favorite: bool) -> Result<SongView, Error> {
-        self.guard_writes()?;
+        let _activity = self.guard_writes()?;
         let root = self
             .deps
             .roots

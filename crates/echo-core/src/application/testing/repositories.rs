@@ -170,6 +170,9 @@ impl LibraryRepository for MemoryLibraryRepository {
         }
         Ok(())
     }
+}
+
+impl RootWriteRepository for MemoryLibraryRepository {
     fn set_write_and_availability(
         &self,
         id: LibraryRootId,
@@ -524,6 +527,17 @@ impl CoverRepository for MemoryCoverRepository {
                     .filter(|((r, _), _)| *r == root)
                     .map(|(_, key)| key.clone()),
             )
+            .collect())
+    }
+
+    fn all_referenced_asset_keys(&self) -> Result<Vec<String>, Error> {
+        Ok(self
+            .covers
+            .lock()
+            .unwrap()
+            .values()
+            .map(|cover| cover.asset_key.clone())
+            .chain(self.artist_covers.lock().unwrap().values().cloned())
             .collect())
     }
 }

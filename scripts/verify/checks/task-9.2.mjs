@@ -42,18 +42,21 @@ if (!testOut.includes("tauri_conf_file_associations_cover_the_guaranteed_formats
 }
 
 // 2. Both OS open paths converge on the FIFO via `deliver_file_open`.
-const main = readFileSync(resolve(ROOT, "apps", "desktop", "src-tauri", "src", "main.rs"), "utf8");
+const shellRoot = resolve(ROOT, "apps", "desktop", "src-tauri", "src");
+const main = readFileSync(resolve(shellRoot, "main.rs"), "utf8");
+const bootstrap = readFileSync(resolve(shellRoot, "bootstrap.rs"), "utf8");
+const fileOpenGate = readFileSync(resolve(shellRoot, "file_open_gate.rs"), "utf8");
 // The single-instance callback and RunEvent::Opened must both call the FIFO
 // router, never emit directly. The router takes the process-wide supervisor
 // plus the raw OS payload (`PathBuf` from argv, decoded path from `open_targets`).
-if (!/for path in args\.into_iter\(\)\.skip\(1\) \{\s*deliver_file_open\(app, &startup, PathBuf::from\(path\)\);/.test(main)) {
+if (!/for path in args\.into_iter\(\)\.skip\(1\) \{\s*deliver_file_open\(app, &startup, PathBuf::from\(path\)\);/.test(bootstrap)) {
   fail("single-instance argv path does not route through deliver_file_open");
 }
-if (!/for path in open_targets::open_targets\(&urls\) \{\s*deliver_file_open\(app, &startup, path\);/.test(main)) {
+if (!/for path in open_targets::open_targets\(&urls\) \{\s*deliver_file_open\(app, &startup, path\);/.test(bootstrap)) {
   fail("RunEvent::Opened path does not route through deliver_file_open");
 }
-if (!main.includes("RunEvent::Opened") || !main.includes("FILE_OPEN_REQUEST")) {
-  fail("main.rs missing the macOS open-event / file-open-event wiring");
+if (!bootstrap.includes("RunEvent::Opened") || !fileOpenGate.includes("FILE_OPEN_REQUEST")) {
+  fail("desktop shell missing the macOS open-event / file-open-event wiring");
 }
 
 process.stdout.write("ok 9.2: guaranteed-format file association + open-path unification\n");

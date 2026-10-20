@@ -4,7 +4,7 @@ scenario_id: LL-R04-S03
 requirement: 稳定身份、哈希与路径重关联
 scenario: 相同内容出现在两个路径
 layer: automated
-command: "cargo test -p echo-core --all-features scan::tests::duplicate_hash_paths_get_deterministic_primary"
+command: "cargo test -p echo-core --all-features application::scan::tests::relink::duplicate_hash_paths_get_deterministic_primary"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

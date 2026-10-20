@@ -123,6 +123,9 @@ export function useSongs(query: SongQuery): {
   // Load the first page whenever the query key changes (debounced search).
   useEffect(() => {
     const trimmed = query.search.trim();
+    // The effect's own handle on the in-flight request registry: cleanup reads
+    // this local, not `requests.current`, which may have moved on by then.
+    const pending = requests.current;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const run = async () => {
       const reqId = Date.now() + Math.random();
@@ -159,7 +162,7 @@ export function useSongs(query: SongQuery): {
     retryRef.current = run;
     return () => {
       if (timer) clearTimeout(timer);
-      requests.current.delete(key);
+      pending.delete(key);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, refreshEpoch]);
@@ -244,7 +247,7 @@ function messageOf(err: unknown): string {
   if (err instanceof Error) {
     if ("code" in err) {
       const code = (err as unknown as { code?: string }).code;
-      if (code === "unavailable") return "资料库暂不可用，请重试";
+      if (code === "unavailable") return "音乐库暂不可用，请重试";
       if (code === "conflict") return "查询已过期，请重试";
     }
     return "加载歌曲失败，请重试";

@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { bridge } from "../../bridge";
 import type { PlaylistView } from "../../ipc/ipc-types.generated";
+import { subscribeLibraryInvalidations } from "../library";
 
 export interface LibraryPlaylists {
   readonly playlists: readonly PlaylistView[];
@@ -29,6 +30,9 @@ export function useLibraryPlaylists(enabled = true, activeRoot?: string): Librar
   const [playlists, setPlaylists] = useState<readonly PlaylistView[]>([]);
   const [revision, setRevision] = useState(0);
   const rootRef = useRef<string | undefined>(activeRoot);
+  const reload = useCallback(() => setRevision((value) => value + 1), []);
+
+  useEffect(() => subscribeLibraryInvalidations(reload), [reload]);
 
   useEffect(() => {
     if (!enabled) {
@@ -55,8 +59,6 @@ export function useLibraryPlaylists(enabled = true, activeRoot?: string): Librar
     // itself resolves the active root on desktop.  It resets the stale sidebar
     // immediately and makes a delayed previous-root result harmless.
   }, [revision, enabled, activeRoot]);
-
-  const reload = useCallback(() => setRevision((value) => value + 1), []);
 
   return { playlists, reload };
 }

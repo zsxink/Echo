@@ -54,19 +54,30 @@ process.stdout.write("  ok: cargo llvm-cov line coverage ≥ 90% (--fail-under-l
 // The recovery + delete failure code is compiled in (no cfg-gating out), and
 // the recovery/trash/delete tests exercise it. Assert the modules exist and
 // carry the tests that prove the gate includes those branches.
-const recovery = readFileSync(
-  resolve(ROOT, "crates/echo-core/src/application/recover.rs"),
+const recoveryMatrix = readFileSync(
+  resolve(ROOT, "crates/echo-core/src/application/recover/tests_imports.rs"),
   "utf8",
 );
-if (!recovery.includes("crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice")) {
+const deleteRecovery = readFileSync(
+  resolve(ROOT, "crates/echo-core/src/application/recover/tests_delete_restore.rs"),
+  "utf8",
+);
+if (!recoveryMatrix.includes("crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice")) {
   fail("recovery fault-path test missing from coverage measurement");
 }
-if (!recovery.includes("contradictory_stage_evidence_holds_and_deletes_nothing")) {
+if (!deleteRecovery.includes("contradictory_stage_evidence_holds_and_deletes_nothing")) {
   fail("delete failure-path test missing from coverage measurement");
 }
-const scan = readFileSync(resolve(ROOT, "crates/echo-core/src/application/scan.rs"), "utf8");
-if (!scan.includes("cancel_mid_scan_never_marks_missing") ||
-    !scan.includes("enumerate_failure_marks_run_failed_without_missing")) {
+const scanPipeline = readFileSync(
+  resolve(ROOT, "crates/echo-core/src/application/scan/tests_pipeline.rs"),
+  "utf8",
+);
+const scanRelink = readFileSync(
+  resolve(ROOT, "crates/echo-core/src/application/scan/tests_relink.rs"),
+  "utf8",
+);
+if (!scanPipeline.includes("cancel_mid_scan_never_marks_missing") ||
+    !scanRelink.includes("enumerate_failure_marks_run_failed_without_missing")) {
   fail("scan failure/cancel path tests missing from coverage measurement");
 }
 const trash = readFileSync(resolve(ROOT, "crates/echo-core/src/application/trash.rs"), "utf8");

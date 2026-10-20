@@ -42,7 +42,8 @@ import { ConfirmationDialog } from "./ConfirmationDialog";
 import { AddToPlaylistDialog } from "../playlists";
 import { SortMenu } from "./SortMenu";
 import { useStoredDirectorySort } from "./useStoredDirectorySort";
-import { useLocateSong, LocateButton } from "./useLocateSong";
+import { useLocateSong } from "./useLocateSong";
+import { LocateButton } from "./LocateButton";
 
 export interface CollectionDirectoryProps {
   readonly kind: "artist" | "album";

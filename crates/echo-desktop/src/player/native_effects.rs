@@ -143,7 +143,7 @@ impl NativeEffects {
         let changed = self.reconfirm
             || self.ramp.as_ref().map_or_else(
                 || {
-                    self.current.as_ref().map_or(true, |current| {
+                    self.current.as_ref().is_none_or(|current| {
                         current.payload != *payload || current.environment != environment
                     })
                 },

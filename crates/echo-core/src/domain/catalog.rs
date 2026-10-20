@@ -314,7 +314,7 @@ pub struct Paged<T> {
 
 impl<T> Paged<T> {
     #[must_use]
-    pub fn new(items: Vec<T>, next_cursor: Option<OpaqueCursor>, is_last: bool) -> Self {
+    pub const fn new(items: Vec<T>, next_cursor: Option<OpaqueCursor>, is_last: bool) -> Self {
         Self {
             total_count: items.len(),
             items,

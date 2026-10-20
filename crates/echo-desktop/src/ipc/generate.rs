@@ -27,6 +27,7 @@ pub fn generated_typescript() -> String {
     out.push_str("}\n\n");
     out.push_str("export type IpcResult<T> = T | IpcErrorDto;\n\n");
     out.push_str(super::effects::typescript());
+    out.push_str(super::sync::typescript());
 
     // Player snapshots travel on the typed `player://snapshot` event rather
     // than a command response, but they are still a cross-process IPC DTO.
@@ -143,6 +144,7 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly unavailable: boolean;\n");
     out.push_str("  readonly scanning: boolean;\n");
     out.push_str("  readonly activeRoot?: string;\n");
+    out.push_str("  readonly activeRootPath?: string;\n");
     out.push_str("}\n\n");
 
     out.push_str("export interface ScanSnapshot {\n");
@@ -210,6 +212,28 @@ pub fn generated_typescript() -> String {
     out.push('\n');
     out.push_str("/** Generated command name → successful return DTO contract. */\n");
     out.push_str("export interface IpcCommandResultMap {\n");
+    for command in [
+        "sync_status",
+        "host_start",
+        "host_stop",
+        "sync_leave",
+        "sync_peer_start",
+        "sync_pause",
+        "sync_resume",
+        "sync_now",
+    ] {
+        let _ = writeln!(out, "  readonly {command}: SyncStatus;");
+    }
+    out.push_str("  readonly recover_restored_host: HostRecoveryArchive;\n");
+    out.push_str("  readonly sync_storage_space: SyncStorageSpace;\n");
+    out.push_str("  readonly sync_conflicts: readonly SyncConflictView[];\n");
+    out.push_str("  readonly resolve_sync_conflict: SyncConflictResolution;\n");
+    out.push_str("  readonly local_lan_addresses: readonly string[];\n");
+    out.push_str("  readonly sync_authorized_peers: readonly SyncPeer[];\n");
+    out.push_str("  readonly revoke_device: void;\n");
+    out.push_str("  readonly discover_hosts: readonly DiscoveredHost[];\n");
+    out.push_str("  readonly create_sync_pairing_code: SyncPairingCode;\n");
+    out.push_str("  readonly request_sync_pairing: SyncStatus;\n");
     for command in [
         "get_audio_effects_snapshot",
         "select_audio_effects_preset",
@@ -309,8 +333,13 @@ mod tests {
             ts.contains("export interface IpcCommandResultMap"),
             "command return contract present"
         );
+        let command_results = ts
+            .split_once("export interface IpcCommandResultMap {\n")
+            .and_then(|(_, rest)| rest.split_once("\n}"))
+            .map(|(body, _)| body)
+            .expect("command result map has a body");
         assert!(
-            !ts.contains(": unknown;"),
+            !command_results.contains(": unknown;"),
             "command return contracts must never fall back to unknown"
         );
         // Determinism: run twice -> identical.

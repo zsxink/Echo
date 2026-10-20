@@ -71,16 +71,6 @@ yanked = "deny"
 # all vulnerability advisories continue to block the build.
 ignore = [
   "RUSTSEC-2024-0370",
-  "RUSTSEC-2024-0411",
-  "RUSTSEC-2024-0412",
-  "RUSTSEC-2024-0413",
-  "RUSTSEC-2024-0414",
-  "RUSTSEC-2024-0415",
-  "RUSTSEC-2024-0416",
-  "RUSTSEC-2024-0417",
-  "RUSTSEC-2024-0418",
-  "RUSTSEC-2024-0419",
-  "RUSTSEC-2024-0420",
   "RUSTSEC-2025-0075",
   "RUSTSEC-2025-0080",
   "RUSTSEC-2025-0081",
@@ -90,6 +80,12 @@ ignore = [
   # a compile-time proc-macro helper with no runtime surface and no safe
   # replacement upstream yet. Unmaintained, not a vulnerability.
   "RUSTSEC-2024-0436",
+  # The Linux desktop backend currently depends on zbus 5, which still uses
+  # these crates. RustSec marks them unmaintained; there is no safe compatible
+  # upgrade until the upstream Tauri dependency adopts zbus 6.
+  "RUSTSEC-2026-0370",
+  "RUSTSEC-2026-0371",
+  "RUSTSEC-2026-0372",
 ]
 # Advisory DB fetching needs network on the first run; scripts/verify/checks/
 # task-1.7.mjs reports "offline" gracefully if the fetch cannot complete, and

@@ -35,14 +35,14 @@ React UI ── Tauri command/event ── echo-desktop ── echo-core
 Flutter UI ── flutter_rust_bridge ──────────────── echo-core
 
 平台播放器：desktop → mpv；mobile → media_kit
-同步连接器：S3/WebDAV → RemoteConnector 抽象
+局域网同步：echo-sync adapter → Core sync ports（HTTP 与发现留在 Infrastructure）
 ```
 
 - `echo-core` 只包含模型、资料库、扫描、索引、导入、同步和冲突裁决，不依赖 Tauri、mpv、Flutter 或 UI 类型。
 - 播放器实例、播放队列和设备播放状态属于平台层，不得进入 Core。
 - `echo-desktop` 负责 Tauri command/event、系统集成和 mpv 适配；UI 不直接访问 SQLite、文件系统或播放器原生接口。
 - Flutter 通过 `flutter_rust_bridge` 使用 Core；不得在 Dart 中复制同步、去重或冲突裁决规则。
-- S3 与 WebDAV 必须实现统一的 `RemoteConnector` 契约；业务逻辑不得依赖具体连接器。
+- 局域网同步传输由 Infrastructure adapter 实现；业务规则依赖 Core sync ports，不依赖 HTTP、TLS、mDNS 或桌面框架。二期不实现 S3/WebDAV。
 - 跨边界 DTO 与领域模型分离。IPC、Binding 或远端协议变化必须在 OpenSpec design 中说明兼容影响。
 
 ### 3.1 分层规则
@@ -61,7 +61,7 @@ Infrastructure（通过 Port 接入）
 
 - **Domain**：实体、值对象、领域规则和领域服务；不得依赖数据库、文件系统、网络、UI 或具体框架。
 - **Application**：组织用例、权限与流程、事务边界及 Port；不得包含视图逻辑或具体基础设施实现。
-- **Infrastructure**：实现 SQLite、文件系统、标签解析、S3/WebDAV 等 Adapter；不得反向定义业务规则。
+- **Infrastructure**：实现 SQLite、文件系统、标签解析、局域网 HTTPS/发现等 Adapter；不得反向定义业务规则。
 - **Presentation / Platform**：React、Flutter、Tauri command/event 和播放器适配；只负责输入输出、状态呈现与平台能力。
 - 上层通过明确接口调用下层，不得跨层直接访问实现。例如 UI 不得直接执行 SQL，连接器不得直接操作视图状态。
 - 数据跨层时应显式转换；数据库记录、远端 DTO、IPC DTO 与领域模型不得混为同一类型。
@@ -70,7 +70,7 @@ Infrastructure（通过 Port 接入）
 ### 3.2 抽象原则
 
 - 遵循 SOLID、依赖倒置和组合优于继承；高层业务依赖 Port/trait，而不是依赖具体数据库、协议或框架。
-- 抽象应围绕稳定的业务边界或真实变化点建立，例如 `RemoteConnector`、资料库 Repository、文件操作 Port、播放器 Adapter。
+- 抽象应围绕稳定的业务边界或真实变化点建立，例如同步 Port、资料库 Repository、文件操作 Port、播放器 Adapter。
 - 接口保持小而聚焦，按调用方能力拆分；不得创建包含大量无关方法的万能 Service、Manager 或 Repository。
 - 依赖通过构造参数或明确装配层注入；不得使用隐藏依赖的全局可变状态、Service Locator 或随处可取的单例。
 - 公共抽象至少应有两个合理实现、测试替身需求或明确的架构边界；不要只为包裹一次函数调用而增加一层接口。
@@ -82,7 +82,7 @@ Infrastructure（通过 Port 接入）
 
 - **Ports and Adapters / Hexagonal Architecture**：隔离 Core 与 UI、数据库、文件系统、远端协议及播放器。
 - **Repository**：封装领域对象的 SQLite 持久化与查询，避免 SQL 泄漏到用例和 UI。
-- **Strategy + Adapter**：统一 S3/WebDAV `RemoteConnector`，以及桌面与移动播放器的不同实现。
+- **Ports and Adapters**：隔离 LAN 网络传输和 Core 同步用例，以及桌面与移动播放器的不同实现。
 - **Command / Event**：用于 Tauri 边界和跨层通知；command 表达请求，event 表达已经发生的状态变化。
 - **State Machine**：用于同步、扫描、导入恢复和播放器等具有明确状态与转换约束的流程，禁止用散落布尔值组合隐式状态。
 - **Unit of Work / Transaction Script**：协调单个用例内的 SQLite 原子提交；跨文件系统操作配合 `operation_journal`，不得伪装成单一事务。
@@ -103,7 +103,7 @@ Infrastructure（通过 Port 接入）
 - 库和领域边界使用 `thiserror` 定义可匹配的错误类型；应用装配层可用 `anyhow` 附加上下文。
 - 运行时业务路径不得使用 `unwrap()` 或无说明的 `expect()`；测试和已由类型证明不可能失败的位置除外。
 - 公共类型和函数应表达领域含义，避免布尔参数堆叠；必要时使用 enum、新类型或配置结构体。
-- Core 对外接口不得暴露 Tauri、mpv、Flutter、S3 或 WebDAV 的具体类型。
+- Core 对外接口不得暴露 Tauri、mpv、Flutter、HTTP、TLS 或发现协议的具体类型。
 
 ### 4.3 异步、阻塞与并发
 
@@ -119,10 +119,10 @@ Infrastructure（通过 Port 接入）
 - 数据库结构通过顺序迁移演进；已发布迁移不得直接改写。schema 变化必须包含升级、失败恢复和兼容测试。
 - 业务关联使用稳定 UUID；本机绝对路径不得进入远端协议，歌单和队列不得以文件路径作为身份。
 - 远端只保存版本化 JSON 变更记录和媒体文件，不上传或合并 SQLite 数据库。
-- 一份资料库只绑定 S3 或 WebDAV 中的一个远端；更换连接器按一次性全量迁移处理，不同时双写。
+- 一份资料库只绑定一个 `(library_id, authority_id, epoch)` 主设备；主设备离线时不自动选主。LAN 同步默认关闭，首次加入只接受空目录或同绑定登记的恢复目录。
 - 同步首次全量、之后增量，播放前保证媒体已落盘，不实现边播边传的流式读取。
 - 远端协议字段必须可序列化、可版本化并有兼容策略；未知字段应尽可能向前兼容。
-- 冲突采用最后写入者胜，以单调递增版本号为主、本地时间戳兜底，不以墙钟直接裁决。
+- 同对象冲突按主设备确认序采用最后确认者胜；base 不一致时保留冲突副本。墙钟不参与跨设备胜负裁决。
 - 墓碑、版本裁决、outbox 与连接器行为必须支持重复执行；连接器实现应通过相同的契约测试。
 - 导入和写回不得覆盖已有文件；临时写入完成解析与校验后再原子替换或移动。
 
@@ -148,7 +148,7 @@ Infrastructure（通过 Port 接入）
 - Rust Core 单元测试覆盖率目标不低于 90%；领域规则修复必须包含能复现问题的测试。
 - Core 重点覆盖：扫描与去重、路径与 UUID 稳定性、SQLite 事务和迁移、operation journal 恢复、同步幂等、版本冲突与墓碑。
 - 文件测试使用临时目录和固定样本，不依赖开发机绝对路径、真实音乐库或真实远端账户。
-- S3/WebDAV 通过共享连接器契约测试；网络失败、超时、重复请求和部分成功必须有测试。
+- LAN 协议 adapter 通过契约测试；网络失败、超时、重复请求、认证撤销和部分成功必须有测试。
 - Tauri command、Rust Binding 和远端 JSON 属于边界接口，应包含序列化与集成测试。
 - React/Flutter 至少覆盖关键状态与用户路径；核心流程按 change 的验收场景补充端到端验证。
 - 涉及路径、文件监听或媒体解析的变更，应考虑 macOS、Windows、Linux 的路径分隔符、大小写、Unicode 和权限差异。

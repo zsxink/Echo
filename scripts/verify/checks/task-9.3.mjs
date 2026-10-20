@@ -47,7 +47,14 @@ if (!testOut.includes("test result: ok.")) {
 run("cargo", ["clippy", "-p", "echo-app", "--", "-D", "warnings"], "echo-app clippy clean");
 
 // 3. The shell builds the full entry + dispatches through the sink.
-const main = readFileSync(resolve(ROOT, "apps", "desktop", "src-tauri", "src", "main.rs"), "utf8");
+const src = resolve(ROOT, "apps", "desktop", "src-tauri", "src");
+const main = readFileSync(resolve(src, "main.rs"), "utf8");
+const bootstrap = readFileSync(resolve(src, "bootstrap.rs"), "utf8");
+const statusMenu = readFileSync(
+  resolve(ROOT, "crates", "echo-desktop", "src", "platform", "status_menu.rs"),
+  "utf8",
+);
+const shell = `${main}\n${bootstrap}\n${statusMenu}`;
 for (const token of [
   "status_menu::MENU_PLAY_PAUSE",
   "status_menu::MENU_PREVIOUS",
@@ -58,8 +65,8 @@ for (const token of [
   "NoopSink",
   "play_pause_label",
 ]) {
-  if (!main.includes(token)) {
-    fail(`main.rs missing '${token}'`);
+  if (!shell.includes(token)) {
+    fail(`desktop shell/status-menu module missing '${token}'`);
   }
 }
 

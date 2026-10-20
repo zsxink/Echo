@@ -144,7 +144,7 @@ mod native {
     // These are exported NSString *constants, not their symbol names. Passing
     // `NSString::from_str("MPMediaItemPropertyTitle")` creates an unrelated
     // dictionary key which MediaPlayer deliberately ignores.
-    unsafe extern "C" {
+    extern "C" {
         static MPMediaItemPropertyTitle: *const NSString;
         static MPMediaItemPropertyArtist: *const NSString;
         static MPMediaItemPropertyAlbumTitle: *const NSString;

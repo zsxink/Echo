@@ -19,7 +19,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use echo_core::application::ports::LibraryRepository;
+use echo_core::application::ports::{CoverCache, CoverRepository, LibraryRepository};
 use echo_core::application::scan::{ScanConfig, ScanDeps};
 use echo_core::error::Error;
 use echo_core::infrastructure::core::{UuidV4Generator, WallClock};
@@ -71,6 +71,14 @@ pub fn assemble(db_path: &Path, cover_cache_dir: &Path) -> Result<RoutedRuntime,
 
     // The disk cover cache needs its own directory and a real capacity.
     let cover_cache = Arc::new(DiskCoverCache::new(cover_cache_dir)?);
+    match database.all_referenced_asset_keys() {
+        Ok(keys) => {
+            if let Err(error) = cover_cache.gc(&keys) {
+                tracing::warn!(%error, "cover cache cleanup failed at startup");
+            }
+        }
+        Err(error) => tracing::warn!(%error, "cover references unavailable at startup"),
+    }
 
     let deps = Arc::new(ScanDeps {
         roots: database.clone(),

@@ -253,11 +253,11 @@ impl EffectsState {
         }
         if receipt.applied == AppliedState::Applied
             && (!self.document.requested_enabled
-                || receipt.processing_rate.map_or(true, |rate| rate == 0)
+                || receipt.processing_rate.is_none_or(|rate| rate == 0)
                 || receipt.channel_layout.is_none()
                 || receipt
                     .effective_preamp_db
-                    .map_or(true, |value| !value.is_finite()))
+                    .is_none_or(|value| !value.is_finite()))
         {
             return false;
         }

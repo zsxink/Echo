@@ -34,7 +34,7 @@ const ROOT = process.env.ECHO_RECORD_KIND_CHECK_ROOT
   : REPO_ROOT;
 
 const SPEC = join(ROOT, "openspec", "specs", "portable-library-layout", "spec.md");
-const KINDS = join(ROOT, "crates", "echo-core", "src", "domain", "library.rs");
+const KINDS = join(ROOT, "crates", "echo-core", "src", "domain", "library", "portable.rs");
 
 function fail(msg) {
   process.stderr.write(`FAIL 15.1: ${msg}\n`);

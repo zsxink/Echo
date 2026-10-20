@@ -261,13 +261,13 @@ impl Queue {
     /// The number of entries (current + pending; history entries that were
     /// removed are not counted).
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// Whether the queue is empty (no current and no pending).
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 

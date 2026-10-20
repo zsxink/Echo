@@ -15,10 +15,10 @@ import type { LibraryStatus } from "./useLibraryStatus";
 
 export function LibraryStatusView({ status }: { status: LibraryStatus }) {
   const reason = status.unavailable
-    ? "资料库暂时不可用"
+    ? "音乐库暂时不可用"
     : status.readOnly
-      ? "资料库为只读（可浏览和播放，但导入与删除已禁用）"
-      : "资料库尚未就绪";
+      ? "音乐库为只读（可浏览和播放，但导入与删除已禁用）"
+      : "音乐库尚未就绪";
 
   async function retry() {
     // A retry re-reads status; if a root is present we also offer a scan. A
@@ -36,9 +36,9 @@ export function LibraryStatusView({ status }: { status: LibraryStatus }) {
 
   return (
     <div className="workspace-empty" data-testid="library-status" role="main">
-      <p className="eyebrow">资料库状态</p>
+      <p className="eyebrow">音乐库状态</p>
       <h1>{reason}</h1>
-      <p>已保存的歌曲仍在磁盘上；重新连接后 Echo 会继续使用同一份资料库，不会新建或覆盖。</p>
+      <p>已保存的歌曲仍在磁盘上；重新连接后 Echo 会继续使用同一份音乐库，不会新建或覆盖。</p>
       <button type="button" className="btn" onClick={() => void retry()}>
         重新连接
       </button>

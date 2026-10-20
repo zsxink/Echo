@@ -80,7 +80,7 @@ describe("Library activation without a status event", () => {
       kind === "existing" ? [{ id: "saved-list", name: "原有歌单", memberCount: 1 }] : [],
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "选择资料库目录" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择音乐库目录" }));
     expect(await screen.findByTestId("workspace")).toBeInTheDocument();
     expect(invoke).toHaveBeenCalledWith("restore_playback_session", {});
     expect(screen.queryByTestId("choose-root")).not.toBeInTheDocument();
@@ -95,9 +95,9 @@ describe("Library activation without a status event", () => {
       render(<App />);
     });
     mocks.setInvoke("choose_library_root", null);
-    fireEvent.click(screen.getByRole("button", { name: "选择资料库目录" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择音乐库目录" }));
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "选择资料库目录" })).toBeEnabled(),
+      expect(screen.getByRole("button", { name: "选择音乐库目录" })).toBeEnabled(),
     );
     expect(screen.queryByTestId("workspace")).not.toBeInTheDocument();
   });
@@ -116,9 +116,9 @@ describe("Library activation without a status event", () => {
     call.mockResolvedValueOnce({ configured: true, readOnly: false, activeRoot: "root-1" });
     call.mockResolvedValueOnce("empty");
     call.mockRejectedValueOnce(new Error("status unavailable"));
-    fireEvent.click(screen.getByRole("button", { name: "选择资料库目录" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择音乐库目录" }));
     expect(await screen.findByRole("alert")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "选择资料库目录" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "选择音乐库目录" })).toBeEnabled();
   });
 });
 
@@ -202,18 +202,33 @@ describe("File-open playback", () => {
     });
   });
 });
-describe("Phase-one scope guard", () => {
+describe("Sync opt-in guard", () => {
   const mocks = (
     globalThis as unknown as {
       __echoTest: { setInvoke: (command: string, value: unknown) => void };
     }
   ).__echoTest;
 
-  // Task 10.4 / 13.8 and `docs/ROADMAP.md` phase one exclude sync entirely. A
-  // sidebar control reading 同步/资料库已同步 used to be rendered here; it was
-  // removed because it was both out of scope and a fabricated state (there is
-  // nothing to have "already synced"). This is the regression test.
-  it("renders no sync entry anywhere in the activated shell", async () => {
+  it("shows sync as disabled until the user enables it in settings", async () => {
+    mocks.setInvoke("sync_status", {
+      enabled: false,
+      role: "none",
+      state: "disabled",
+      sessionId: 0,
+      eventSequence: 0,
+      catalogChanged: false,
+      libraryId: null,
+      address: null,
+      lastError: null,
+      pendingChanges: 0,
+      pendingUploads: 0,
+      pendingDownloads: 0,
+      uploadedBytes: 0,
+      totalUploadBytes: 0,
+      downloadedBytes: 0,
+      totalDownloadBytes: 0,
+      mediaReady: false,
+    });
     await act(async () => {
       render(<App />);
     });
@@ -232,13 +247,11 @@ describe("Phase-one scope guard", () => {
     mocks.setInvoke("all_songs", { items: [], isLast: true, nextCursor: null });
     mocks.setInvoke("playlists", []);
 
-    fireEvent.click(screen.getByRole("button", { name: "选择资料库目录" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择音乐库目录" }));
     expect(await screen.findByTestId("workspace")).toBeInTheDocument();
 
     expect(screen.queryByTestId("sidebar")).toBeInTheDocument();
     expect(screen.queryByTestId("sync-button")).not.toBeInTheDocument();
-    expect(document.querySelector(".sync-button")).toBeNull();
-    expect(document.body.textContent ?? "").not.toMatch(/同步|sync/i);
   });
 });
 
@@ -304,7 +317,7 @@ describe("Library directory views", () => {
     // between the two views instead of being keyed by the requested kind.
     mocks.setInvoke("catalog_collections", () => entries);
 
-    fireEvent.click(screen.getByRole("button", { name: "选择资料库目录" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择音乐库目录" }));
     await screen.findByTestId("workspace");
 
     fireEvent.click(screen.getByRole("button", { name: /^歌手/ }));
@@ -385,7 +398,7 @@ describe("品牌区导入入口所有视图可用 (SHELL-IMP)", () => {
     mocks.setInvoke("catalog_collections", [ARTIST]);
     mocks.setInvoke("catalog_collection_songs", [SONG]);
     mocks.setInvoke("playlist_members", [SONG]);
-    fireEvent.click(screen.getByRole("button", { name: "选择资料库目录" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择音乐库目录" }));
     await screen.findByTestId("workspace");
   }
 

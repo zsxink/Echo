@@ -1,0 +1,27 @@
+{
+  "protocol_version": 1,
+  "binding": {
+    "library_id": "11111111-1111-4111-8111-111111111111",
+    "authority_id": "22222222-2222-4222-8222-222222222222",
+    "epoch": 1
+  },
+  "commit_seq": 1,
+  "previous_digest": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  "mutation": {
+    "protocol_version": 1,
+    "binding": {
+      "library_id": "11111111-1111-4111-8111-111111111111",
+      "authority_id": "22222222-2222-4222-8222-222222222222",
+      "epoch": 1
+    },
+    "origin_device_id": "33333333-3333-4333-8333-333333333333",
+    "mutation_id": "44444444-4444-4444-8444-444444444444",
+    "origin_seq": 1,
+    "previous_mutation_id": null,
+    "object": {"kind": "song", "id": "55555555-5555-4555-8555-555555555555"},
+    "base_object_version": null,
+    "payload": {"title": "Fixture song"}
+  },
+  "aliases": [],
+  "resource_refs": []
+}

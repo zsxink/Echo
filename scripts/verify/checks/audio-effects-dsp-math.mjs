@@ -403,7 +403,7 @@ for (const item of invariants) {
 // is deliberately distinctive ("不是", "更正", "retracted"). A live assertion of
 // the wrong claim does not read like an apology, so the two cannot be confused —
 // verified in both directions below.
-const CHANGE = "openspec/changes/introduce-audio-effects-equalizer";
+const CHANGE = "openspec/changes/archive/2026-10-13-introduce-audio-effects-equalizer";
 for (const file of ["design.md", "native-gate.md", "review-and-tuning.md", "review-and-fixes.md", "tasks.md"]) {
   const path = resolve(ROOT, `${CHANGE}/${file}`);
   if (!existsSync(path)) { failures.push(`missing ${CHANGE}/${file}`); continue; }

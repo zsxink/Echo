@@ -206,7 +206,7 @@ fn root_state_mutations_flip_active_write_capability_and_safety_lock() {
         &LibraryRoot::new(other, directory.path().join("other"), true, true),
     )
     .expect("reactivate second root");
-    LibraryRepository::set_write_and_availability(&database, other, false, false).expect("flip");
+    RootWriteRepository::set_write_and_availability(&database, other, false, false).expect("flip");
     let flipped = LibraryRepository::by_id(&database, other)
         .expect("query")
         .expect("present");
@@ -220,8 +220,8 @@ fn root_state_mutations_flip_active_write_capability_and_safety_lock() {
     );
 
     // The safety lock can be toggled independently.
-    LibraryRepository::set_write_safety_locked(&database, other, true).expect("lock on");
-    LibraryRepository::set_write_safety_locked(&database, other, false).expect("lock off");
+    RootWriteRepository::set_write_safety_locked(&database, other, true).expect("lock on");
+    RootWriteRepository::set_write_safety_locked(&database, other, false).expect("lock off");
     assert!(!LibraryRepository::by_id(&database, other)
         .expect("query")
         .expect("present")

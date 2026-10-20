@@ -4,7 +4,7 @@ scenario_id: LL-R02-S03
 requirement: 扫描、监听与手动重扫
 scenario: 忽略控制面目录
 layer: automated
-command: "cargo test -p echo-core --all-features scan::tests::progress_persisted_throttled_and_terminal_state_kept"
+command: "cargo test -p echo-core --all-features application::scan::tests::relink::progress_persisted_throttled_and_terminal_state_kept"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

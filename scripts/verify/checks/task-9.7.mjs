@@ -22,7 +22,7 @@
 //   3. build.rs contains the @executable_path/../Frameworks rpath arg.
 //   4. CI workflow includes the macOS Gate verification step (no regression).
 //   5. If a formal build artifact exists, runs the same rpath, signing, ABI
-//      and universal-architecture checks as the 1.10 Gate, plus a
+//      and target-architecture checks as the 1.10 Gate, plus a
 //      cross-platform purity check: the macOS bundle's Resources/ must not
 //      carry another platform's playback backend.
 //   6. (Windows only) formal Windows wiring checks above.
@@ -74,7 +74,7 @@ const CI_WORKFLOW = resolve(ROOT, ".github", "workflows", "ci.yml");
 // `target/release/bundle/...` instead and is skipped there — the triple path
 // stays the single source of truth so this check verifies the same artifact
 // CI does. In the macOS CI job task 1.9 runs first and leaves exactly this
-// bundle behind (it also universalises and re-signs it), so the assertions
+// bundle behind (it also signs it), so the assertions
 // below do execute on every macOS build; see the 9.7 step in ci.yml.
 const BUNDLE = resolve(
   ROOT,
@@ -226,14 +226,15 @@ if (process.platform !== "darwin") {
   }
   pass("rpath @executable_path/../Frameworks present in formal build");
 
-  // Universal architecture verification
+  // The current macOS release target is arm64; Intel/universal packaging is
+  // explicitly outside the release-pipeline contract.
   const executableInfo = run("lipo", ["-info", main]);
   for (const arch of manifest.architectures) {
     if (!executableInfo.includes(arch)) {
       fail(`formal build echo binary missing architecture ${arch}`);
     }
   }
-  pass(`universal architectures verified (${manifest.architectures.join(", ")})`);
+  pass(`release architectures verified (${manifest.architectures.join(", ")})`);
 
   // ABI compatibility verification
   const libmpv = resolve(BUNDLE, "Frameworks", "libmpv.dylib");
@@ -247,7 +248,7 @@ if (process.platform !== "darwin") {
     pass(`libmpv ABI ${manifest.libmpvAbi} verified in formal build`);
   }
 
-  // Framework dylib universal verification
+  // Framework dylib release-architecture verification
   for (const filename of Object.keys(manifest.files)) {
     const dylib = resolve(BUNDLE, "Frameworks", filename);
     if (existsSync(dylib)) {
@@ -259,7 +260,7 @@ if (process.platform !== "darwin") {
       }
     }
   }
-  pass("all framework dylibs are universal");
+  pass(`all framework dylibs include ${manifest.architectures.join(", ")}`);
 }
 
 // --- 6. Windows platform wiring (formal) ---

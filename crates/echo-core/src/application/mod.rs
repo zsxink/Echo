@@ -37,9 +37,12 @@ pub mod portable_materialize;
 pub mod ports;
 pub mod recover;
 pub mod relink;
+pub mod remote_resources;
 pub mod restore;
 pub mod root_switch;
 pub mod scan;
+mod scan_resources;
+pub mod sync;
 pub mod trash;
 pub mod watch;
 
@@ -55,3 +58,5 @@ pub mod testkit;
 /// compatibility break for existing desktop and Core tests.
 #[cfg(any(test, feature = "testkit"))]
 pub use testkit as testing;
+
+pub mod remote_delete;
