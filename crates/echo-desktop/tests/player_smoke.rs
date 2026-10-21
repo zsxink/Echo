@@ -426,3 +426,173 @@ fn consecutive_loads_then_clean_exit() {
     actor.shutdown();
     assert!(actor.is_stopped(), "actor thread joined and marked stopped");
 }
+
+fn restore_native_session_paused(
+    controller: &echo_desktop::runtime::player::PlayerController,
+    context: &echo_desktop::player::queue::ViewContext,
+    mode: echo_desktop::player::port::PlayMode,
+    label: &str,
+) {
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+
+    use echo_core::domain::state::PlaybackState;
+    use echo_desktop::player::session::{
+        snapshot_queue, PlaybackSession, RestoreDisposition, RestoreVerdict, SessionPersistence,
+    };
+    use echo_desktop::runtime::player::restore_or_prime_playback;
+
+    struct MemorySession(Mutex<Option<PlaybackSession>>);
+    impl SessionPersistence for MemorySession {
+        fn save(&self, session: Option<&PlaybackSession>) -> Result<(), String> {
+            *self.0.lock().unwrap() = session.cloned();
+            Ok(())
+        }
+
+        fn load(&self) -> Result<Option<PlaybackSession>, String> {
+            Ok(self.0.lock().unwrap().clone())
+        }
+    }
+
+    let persistence = MemorySession(Mutex::new(None));
+    persistence
+        .save(Some(&snapshot_queue(
+            &context.build_queue(),
+            mode,
+            0.8,
+            false,
+            Some(0.2),
+            Some("allSongs"),
+        )))
+        .unwrap();
+    assert_eq!(
+        restore_or_prime_playback(
+            &controller.coordinator,
+            &persistence,
+            |_| context
+                .songs
+                .iter()
+                .map(|song_id| RestoreVerdict {
+                    song_id: *song_id,
+                    disposition: RestoreDisposition::Restore,
+                })
+                .collect(),
+            || panic!("a valid restored queue must not fall back to priming"),
+        ),
+        "restored"
+    );
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while controller.port.snapshot().state != PlaybackState::Paused && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        controller.port.snapshot().state,
+        PlaybackState::Paused,
+        "restored song must load paused [{label}]"
+    );
+    assert_eq!(
+        controller.port.snapshot().mode,
+        mode,
+        "restored mode must reach the player snapshot [{label}]"
+    );
+}
+
+/// Exercise the issue #57 startup path against native mpv, including a real
+/// persisted position and natural EOF. Session identity also distinguishes a
+/// one-song replay from a player that merely remains at the end of the file.
+#[test]
+fn cold_restored_playback_advances_after_natural_eof_with_real_libmpv() {
+    use std::time::{Duration, Instant};
+
+    use echo_core::domain::ids::SongId;
+    use echo_core::domain::state::PlaybackState;
+    use echo_desktop::player::actor::SongResolver;
+    use echo_desktop::player::port::PlayMode;
+    use echo_desktop::player::queue::ViewContext;
+    use echo_desktop::runtime::player::{spawn_auto_advance, PlayerController};
+
+    set_null_audio_output();
+    let Some(libmpv) = vendored_libmpv() else {
+        eprintln!("libmpv not vendored; skipping restored natural-EOF smoke.");
+        return;
+    };
+    if !preflight_or_none(&libmpv) {
+        return;
+    }
+    let root = fixtures_root().expect("audio fixtures missing");
+    let fixture = root.join("tone-short.flac").canonicalize().unwrap();
+    let mut failures = Vec::new();
+
+    for (song_count, mode) in [
+        (2, PlayMode::Sequential),
+        (1, PlayMode::Sequential),
+        (1, PlayMode::RepeatOne),
+        (1, PlayMode::Shuffle),
+    ] {
+        for restored in [false, true] {
+            let label = format!("restored={restored} songs={song_count} mode={mode:?}");
+            let tone_path = fixture.clone();
+            let resolver: SongResolver = Arc::new(move |_| Ok(tone_path.clone()));
+            let controller = PlayerController::spawn_mpv(&libmpv, resolver)
+                .expect("preflight passed so spawn_mpv succeeds");
+            spawn_auto_advance(controller.port.clone(), controller.coordinator.clone());
+            let context = ViewContext {
+                songs: (0..song_count).map(|_| SongId::new()).collect(),
+                selected_index: 0,
+            };
+            if restored {
+                restore_native_session_paused(&controller, &context, mode, &label);
+            } else {
+                let mut coord = controller.coordinator.lock().unwrap();
+                coord.set_mode(mode);
+                coord.play_context(&context);
+            }
+            let initial_session = controller.coordinator.lock().unwrap().active_load_session();
+            if restored {
+                controller
+                    .port
+                    .send(PlayerCommand::TogglePlayPause)
+                    .unwrap();
+            }
+
+            // No injected Ended snapshot or seek-to-end: let the real 1 s file
+            // finish, then require the next load's clock to actually advance.
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let expected_song = context.songs[usize::from(song_count > 1)];
+            let mut advanced = false;
+            while Instant::now() < deadline {
+                let coord = controller.coordinator.lock().unwrap();
+                let snapshot = controller.port.snapshot();
+                if coord.active_load_session() != initial_session
+                    && coord.current().and_then(|entry| entry.item.song_id()) == Some(expected_song)
+                    && snapshot.state == PlaybackState::Playing
+                    && snapshot.position.unwrap_or_default() > 0.02
+                {
+                    advanced = true;
+                    break;
+                }
+                drop(coord);
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            let coord = controller.coordinator.lock().unwrap();
+            let evidence = format!(
+                "[{label}] initial_session={initial_session:?} final_session={:?} current={:?} snapshot={:?}",
+                coord.active_load_session(),
+                coord.current().and_then(|entry| entry.item.song_id()),
+                controller.port.snapshot(),
+            );
+            eprintln!("advanced={advanced} {evidence}");
+            if !advanced {
+                failures.push(evidence);
+            }
+            drop(coord);
+            controller.port.send(PlayerCommand::Shutdown).unwrap();
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "natural EOF did not continue playback:\n{}",
+        failures.join("\n")
+    );
+}

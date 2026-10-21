@@ -233,6 +233,7 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
         self.queue = queue;
         self.mode = mode;
         self.failed_round.clear();
+        self.player.send(PlayerCommand::SetMode(mode)).ok();
         self.player.send(PlayerCommand::SetVolume(volume)).ok();
         // `SetMute`, not `ToggleMute`: the session records the state the user
         // left behind, so restoring must reproduce it. A relative toggle is
@@ -459,7 +460,18 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
             NavigationEvent::ManualPrevious => {
                 return self.previous_from_mode();
             }
-            NavigationEvent::NaturalEnd if self.mode == PlayMode::RepeatOne => {
+            // A one-entry shuffle queue has no other pending entry to seed a
+            // new round. Natural EOF still loops that entry, just as list-loop
+            // and repeat-one do; error skip must retain its stop behavior.
+            NavigationEvent::NaturalEnd
+                if self.mode == PlayMode::RepeatOne
+                    || (self.mode == PlayMode::Shuffle
+                        && self.queue.len() == 1
+                        && self
+                            .queue
+                            .current_id()
+                            .is_some_and(|id| !self.queue.is_blocked(id))) =>
+            {
                 let id = self.queue.current_id()?;
                 let song = self.queue.get(id).and_then(|entry| entry.item.song_id())?;
                 self.load_entry(id, song);

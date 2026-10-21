@@ -1,7 +1,8 @@
 //! Auto-advance watcher (task 8.x): turns natural-EOF / load-failure
 //! snapshots into coordinator advances.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc::RecvTimeoutError, Arc, Mutex};
+use std::time::Duration;
 
 use super::PlaybackCoordinator;
 use super::PlaybackState;
@@ -24,6 +25,9 @@ use super::PlayerPort;
 ///
 /// The transition guard (only firing when the *previous* snapshot was in a
 /// different state) keeps a duplicate `Ended` publish from double-advancing.
+/// The actor's bounded subscription may drop the final notification when a
+/// previous snapshot occupies the mailbox. Reconcile with its authoritative
+/// snapshot on idle ticks so a lost EOF/error cannot stall the queue forever.
 ///
 /// # Panics
 ///
@@ -40,7 +44,12 @@ pub fn spawn_auto_advance(
         .name("echo-auto-advance".into())
         .spawn(move || {
             let mut last = PlaybackState::Stopped;
-            while let Ok(snap) = rx.recv() {
+            loop {
+                let snap = match rx.recv_timeout(Duration::from_millis(100)) {
+                    Ok(snap) => snap,
+                    Err(RecvTimeoutError::Timeout) => port.snapshot(),
+                    Err(RecvTimeoutError::Disconnected) => break,
+                };
                 let state = snap.state;
                 if state != last {
                     match state {
