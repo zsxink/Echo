@@ -81,12 +81,19 @@ const scenarioFixture = resolve(dir, "scenario-manifest.json");
 const fakeBin = resolve(dir, "bin");
 mkdirSync(fakeBin);
 const fakeCargo = resolve(fakeBin, "cargo");
+const fakePnpm = resolve(fakeBin, "pnpm");
 writeFileSync(
   fakeCargo,
   "#!/bin/sh\ncase \"$*\" in\n  *one-filter*) name=one ;;\n  *two-filter*) name=two ;;\n  *) name=other ;;\nesac\nif [ -n \"$ECHO_FAKE_CARGO_MARKERS\" ] && [ \"$name\" != other ]; then\n  touch \"$ECHO_FAKE_CARGO_MARKERS/$name.started\"\n  other=one; [ \"$name\" = one ] && other=two\n  i=0\n  while [ ! -e \"$ECHO_FAKE_CARGO_MARKERS/$other.started\" ] && [ $i -lt 40 ]; do sleep 0.05; i=$((i + 1)); done\n  [ -e \"$ECHO_FAKE_CARGO_MARKERS/$other.started\" ] || exit 9\nfi\nif [ \"$name\" = other ]; then\n  printf 'test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\\n'\nelse\n  printf 'test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\\n'\nfi\n",
   "utf8",
 );
 chmodSync(fakeCargo, 0o755);
+writeFileSync(
+  fakePnpm,
+  "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$ECHO_FAKE_PNPM_MARKERS\"\nprintf 'Tests 2 passed\\n'\n",
+  "utf8",
+);
+chmodSync(fakePnpm, 0o755);
 writeFileSync(
   scenarioFixture,
   JSON.stringify({
@@ -112,6 +119,26 @@ writeFileSync(
         id: "two-test",
         title: "parallel selected test",
         command: "cargo test -- two-filter",
+      },
+      {
+        id: "rust-reused-test",
+        title: "Rust test already covered by the governance workspace suite",
+        command: "cargo test -p echo-core --all-features regular-filter",
+      },
+      {
+        id: "rust-ignored-test",
+        title: "ignored performance test must still execute",
+        command: "cargo test -p echo-core --all-features ignored-filter -- --ignored",
+      },
+      {
+        id: "ui-one-test",
+        title: "one focused UI test",
+        command: "pnpm --filter @echo/desktop test -- --run src/example.test.tsx -t \"first case\"",
+      },
+      {
+        id: "ui-two-test",
+        title: "another focused UI test in the same file",
+        command: "pnpm --filter @echo/desktop test -- --run src/example.test.tsx -t \"second case\"",
       },
     ],
   }),
@@ -162,6 +189,29 @@ assert(
   parallelScenarios.status === 0
     && /scenario batches: 2 commands for 2 scenarios/.test(parallelScenarios.stdout),
   "independent test commands can execute concurrently",
+);
+const pnpmMarkers = resolve(dir, "pnpm-commands.txt");
+const groupedReactScenarios = runScenarioRunner(
+  scenarioFixture,
+  ["ui-one-test", "ui-two-test"],
+  { ...scenarioEnv, ECHO_FAKE_PNPM_MARKERS: pnpmMarkers },
+);
+assert(
+  groupedReactScenarios.status === 0
+    && /scenario batches: 1 commands for 2 scenarios/.test(groupedReactScenarios.stdout)
+    && readFileSync(pnpmMarkers, "utf8").trim().split("\n").length === 1,
+  "focused UI scenarios reuse one complete frontend test-suite execution",
+);
+const reusedRustScenarios = runScenarioRunner(
+  scenarioFixture,
+  ["rust-reused-test", "rust-ignored-test"],
+  { ...scenarioEnv, ECHO_GOVERNANCE_GATE_IN_PARALLEL_JOB: "1" },
+);
+assert(
+  reusedRustScenarios.status !== 0
+    && reusedRustScenarios.stdout.includes("ok: scenario rust-reused-test")
+    && reusedRustScenarios.stderr.includes("rust-ignored-test"),
+  "parallel governance coverage skips normal Rust tests but retains ignored performance tests",
 );
 
 // Lockfiles must be unchanged after a run.

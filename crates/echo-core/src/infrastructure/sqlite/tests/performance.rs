@@ -18,27 +18,61 @@ fn bench_50k_search_and_first_screen_p95_meet_prd_budgets() {
 
     const N: u64 = 50_000;
     let (_directory, database, root) = database();
-    // Seed exactly 50,000 songs. Every 5th carries the search token "合成" so
-    // the trigram search is meaningful; titles/artists are varied for index
-    // pressure.
+    // Seed only the catalog projection and FTS rows needed by these queries.
+    // This acceptance measures read latency, not ingest/outbox throughput.
     let now = Instant::now();
-    for index in 0..N {
-        let shared = index % 5 == 0;
-        let title = if shared {
-            format!("合成歌曲{index:05}")
-        } else {
-            format!("普通歌曲{index:05}")
-        };
-        let artist = format!("艺人{}", index % 97);
-        let mut rec = song(root, &format!("audio/{index:05}.flac"), &title, &artist);
-        rec.apply_metadata(
-            Some(title.clone()),
-            Some(artist),
-            Some("合成专辑".to_owned()),
-            Some(Duration::from_secs(200)),
-        );
-        SongRepository::upsert(&database, &rec).expect("seed");
-    }
+    database
+        .writer
+        .run(move |connection| {
+            let transaction = connection.transaction().map_err(storage)?;
+            let mut song_insert = transaction
+                .prepare_cached(
+                    "INSERT INTO songs (uuid, library_root_uuid, relative_path, normalized_relative_path, title, artist, album, title_sort, artist_sort, album_sort, duration_ms, added_at, created_at, updated_at) VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 200000, ?10, ?10, ?10)",
+                )
+                .map_err(storage)?;
+            let mut search_insert = transaction
+                .prepare_cached(
+                    "INSERT INTO song_search (title, artist, album, song_uuid) VALUES (?1, ?2, ?3, ?4)",
+                )
+                .map_err(storage)?;
+            let root_id = root.to_string();
+            for index in 0..N {
+                let shared = index % 5 == 0;
+                let title = if shared {
+                    format!("合成歌曲{index:05}")
+                } else {
+                    format!("普通歌曲{index:05}")
+                };
+                let artist = format!("艺人{}", index % 97);
+                let album = "合成专辑";
+                let uuid = format!("{:032x}", index + 1);
+                let path = format!("audio/{index:05}.flac");
+                let sort_title = normalized_key(&title);
+                let sort_artist = normalized_key(&artist);
+                let sort_album = normalized_key(album);
+                song_insert
+                    .execute(params![
+                        uuid,
+                        root_id,
+                        path,
+                        title,
+                        artist,
+                        album,
+                        sort_title,
+                        sort_artist,
+                        sort_album,
+                        i64::try_from(index).unwrap_or(i64::MAX),
+                    ])
+                    .map_err(storage)?;
+                search_insert
+                    .execute(params![sort_title, sort_artist, sort_album, uuid])
+                    .map_err(storage)?;
+            }
+            drop(song_insert);
+            drop(search_insert);
+            transaction.commit().map_err(storage)
+        })
+        .expect("seed benchmark catalog rows in one transaction");
     let seed_secs = now.elapsed().as_secs_f64();
 
     let query = CatalogQuery::new(&database);
@@ -55,7 +89,8 @@ fn bench_50k_search_and_first_screen_p95_meet_prd_budgets() {
             .search("合成歌曲", false, None, added, None, 50)
             .expect("search");
         search_samples.push(t.elapsed().as_secs_f64() * 1000.0);
-        assert!(!page.items.is_empty(), "search must hit the seeded token");
+        assert_eq!(page.total_count, 10_000, "search must hit every fifth seeded song");
+        assert_eq!(page.items.len(), 50, "search returns one viewport page");
     }
     let search_p95 = p95(&mut search_samples);
     assert!(

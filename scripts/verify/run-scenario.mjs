@@ -43,6 +43,19 @@ function parallelizableTestCommand(command) {
     || /^\s*pnpm\s+--filter\s+@echo\/desktop\s+test\s+--\s+--run\b/.test(command);
 }
 
+// Scenario mappings can select different files and test names from Vitest.
+// Run the complete frontend suite once: the command validator separately
+// proves every mapped file/name exists, and the full suite exercises them.
+function groupedTestCommand(command) {
+  if (/^pnpm --filter @echo\/desktop test -- --run(?:\s|$)/.test(command)) {
+    // The frontend matrix runs this exact complete suite. Within the scenario
+    // gate, run it once and let each statically validated file/name mapping
+    // reuse that full-suite result instead of starting Vitest per scenario.
+    return "pnpm --filter @echo/desktop test -- --run";
+  }
+  return command;
+}
+
 function scenarioCommand(id) {
   const scenario = scenarios.find((entry) => entry.id === id);
   if (!scenario) {
@@ -125,11 +138,16 @@ async function executeScenarios(requested) {
   const resultByCommand = new Map();
   const commands = [];
   const seenCommands = new Set();
+  const executionByCommand = new Map();
   for (const id of requested) {
     const command = scenarioCommand(id);
-    if (command && !seenCommands.has(command)) {
-      commands.push(command);
-      seenCommands.add(command);
+    if (command) {
+      const executionCommand = groupedTestCommand(command);
+      executionByCommand.set(command, executionCommand);
+      if (!seenCommands.has(executionCommand)) {
+        commands.push(executionCommand);
+        seenCommands.add(executionCommand);
+      }
     }
   }
 
@@ -137,14 +155,21 @@ async function executeScenarios(requested) {
   const concurrency = Number.isFinite(rawConcurrency) && rawConcurrency > 0 ? rawConcurrency : 2;
   const total = commands.length;
   let completed = 0;
-  const reuseGovernance = process.env.ECHO_GOVERNANCE_GATE_ALREADY_PASSED === "1";
+  const governanceRunsInParallel = process.env.ECHO_GOVERNANCE_GATE_IN_PARALLEL_JOB === "1";
 
   for (let index = 0; index < commands.length;) {
     const command = commands[index];
-    if (reuseGovernance && command === "node scripts/verify/ci-governance.mjs") {
-      resultByCommand.set(command, { status: 0, output: "reused successful Run governance gates step" });
+    if (governanceRunsInParallel && (
+      command === "node scripts/verify/ci-governance.mjs"
+      || (/^\s*cargo\s+test\b/.test(command) && !/\s--\s.*--ignored\b/.test(command))
+    )) {
+      resultByCommand.set(command, {
+        status: 0,
+        count: 1,
+        output: "reused workspace tests covered by the parallel CI governance job",
+      });
       completed++;
-      process.stdout.write(`[${completed}/${total}] reused prior CI governance result\n`);
+      process.stdout.write(`[${completed}/${total}] covered by parallel CI governance job\n`);
       index++;
       continue;
     }
@@ -164,6 +189,9 @@ async function executeScenarios(requested) {
         completed++;
         const state = outcome.status === 0 ? "ok" : "FAIL";
         process.stdout.write(`[${completed}/${total}] ${state} ${Math.ceil(outcome.durationMs / 1000)}s ${commandLabel(entry)}\n`);
+        if (outcome.status !== 0 && outcome.output.trim()) {
+          process.stderr.write(`${outcome.output.slice(-8_000)}\n`);
+        }
       }
       continue;
     }
@@ -173,12 +201,19 @@ async function executeScenarios(requested) {
     completed++;
     const state = outcome.status === 0 ? "ok" : "FAIL";
     process.stdout.write(`[${completed}/${total}] ${state} ${Math.ceil(outcome.durationMs / 1000)}s ${commandLabel(command)}\n`);
+    if (outcome.status !== 0 && outcome.output.trim()) {
+      process.stderr.write(`${outcome.output.slice(-8_000)}\n`);
+    }
     index++;
+  }
+
+  for (const [command, executionCommand] of executionByCommand) {
+    resultByCommand.set(command, resultByCommand.get(executionCommand));
   }
 
   let ok = true;
   for (const id of requested) if (!runScenario(id, resultByCommand)) ok = false;
-  process.stdout.write(`scenario batches: ${resultByCommand.size} commands for ${requested.length} scenarios\n`);
+  process.stdout.write(`scenario batches: ${commands.length} commands for ${requested.length} scenarios\n`);
   return ok;
 }
 

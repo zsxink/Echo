@@ -23,8 +23,14 @@ const checks = [
   // Listed after the workspace build so that, when a binary exists, it embeds a
   // dist the frontend step already produced rather than an absent one.
   ["embedded frontend freshness", "node", ["scripts/verify/checks/check-embedded-frontend.mjs"]],
-  ["gate injection proofs", "node", ["scripts/verify/injection-suite.mjs"]],
 ];
+
+// CI runs the mutation-based injection proofs in a separate job so they can
+// overlap with the slower cargo and release gates. Local governance still
+// includes them by default.
+if (!process.argv.includes("--without-injection")) {
+  checks.push(["gate injection proofs", "node", ["scripts/verify/injection-suite.mjs"]]);
+}
 
 // An injection proof that could not be evaluated is not a proof. The suite
 // names a skip when its violation needs an artifact this machine lacks; here
