@@ -163,7 +163,6 @@ function ImmersiveBody(props: {
   const artwork: string | null =
     coverKey && failedCoverId !== (songId ?? coverKey) ? assetUrl(coverKey) : null;
   useArtworkTint(coverKey, artwork, !!coverKey && failedCoverId !== (songId ?? coverKey));
-  const position = useSmoothPosition() ?? 0;
   const duration = snapshot.duration ?? detail?.durationS ?? 0;
 
   // Everything that changes the *rendered height* of the metadata block: the
@@ -263,11 +262,10 @@ function ImmersiveBody(props: {
             </p>
           </div>
 
-          <LyricsColumn
+          <SmoothLyricsColumn
             lyrics={lyrics}
             focusOpen={ui.focusOpen}
             autoScroll={autoScroll}
-            currentPosition={position}
             onResume={resumeFollow}
             onToggleFocus={() => playerStore.setFocusOpen(!ui.focusOpen)}
           />
@@ -280,4 +278,16 @@ function ImmersiveBody(props: {
             up here duplicated the bar and ate the lyrics column. */}
     </div>
   );
+}
+
+/** Keep frame-rate lyric synchronization out of the immersive surface render. */
+function SmoothLyricsColumn(props: {
+  readonly lyrics: Parameters<typeof LyricsColumn>[0]["lyrics"];
+  readonly focusOpen: boolean;
+  readonly autoScroll: boolean;
+  readonly onResume: () => void;
+  readonly onToggleFocus: () => void;
+}) {
+  const currentPosition = useSmoothPosition() ?? 0;
+  return <LyricsColumn {...props} currentPosition={currentPosition} />;
 }

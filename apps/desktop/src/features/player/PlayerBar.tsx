@@ -24,19 +24,14 @@
  *
  * The seek range accepts fractional seconds so its thumb follows every frame;
  * arrow keys still seek by 5 seconds, and volume uses `step=0.05` (task 11.8).
- * the *visual* fill is driven by the prototype's own `--progress` / `--volume`
- * custom properties on `.progress-line` / `.volume-line`.
+ * the visual progress fill is isolated in PlayerProgress and transformed from
+ * the same interpolated position as the native seek thumb.
  */
 
 import { useEffect, useState, type CSSProperties, type RefObject } from "react";
 
 import { assetUrl, bridge } from "../../bridge";
-import {
-  usePlayerSnapshot,
-  usePlayerUi,
-  useSmoothPosition,
-  playerStore,
-} from "../../player/playerStore";
+import { usePlayerSnapshot, usePlayerUi, playerStore } from "../../player/playerStore";
 import { useCoverKeys } from "../../app/coverArt";
 import { Icon } from "../../app/Icon";
 import { formatDuration } from "../library";
@@ -45,6 +40,7 @@ import { bumpLibraryCount, invalidateLibrary, publishSongUpdate } from "../libra
 import type { SongView } from "../../ipc/ipc-types.generated";
 
 import { EffectsTrigger } from "./EffectsTrigger";
+import { PlayerProgress } from "./PlayerProgress";
 
 export function PlayerBar({
   queueTriggerRef,
@@ -86,13 +82,11 @@ export function PlayerBar({
   const artwork = coverKey && failedCoverId !== (songId ?? coverKey) ? assetUrl(coverKey) : null;
 
   // rAF-interpolated so the bar/滑块 glide instead of stepping per snapshot.
-  const position = useSmoothPosition() ?? 0;
   // mpv can report duration after its paused restore snapshot. The library
   // detail is already authoritative metadata for this song, so use it as a
   // temporary range fallback: restored progress is immediately visible and
   // seekable without waiting for the user to press Play.
   const duration = snapshot.duration ?? detail?.durationS ?? 0;
-  const progress = duration > 0 ? Math.min(100, (position / duration) * 100) : 0;
   // The real title/artist once `song_detail` answers; a temporary item carries
   // its own display name in the snapshot and has no library detail at all.
   const title = isTemporary ? snapshot.currentTitle : (detail?.title ?? snapshot.currentTitle);
@@ -134,47 +128,7 @@ export function PlayerBar({
       // player for the stylesheet (muted placeholder slot, disabled transport).
       data-empty={hasCurrent ? undefined : "true"}
     >
-      <div
-        className="progress-line"
-        id="progress-line"
-        style={{ "--progress": `${progress}%` } as CSSProperties}
-      >
-        <input
-          className="progress"
-          id="progress"
-          type="range"
-          role="slider"
-          aria-label="播放进度"
-          aria-valuetext={`${formatDuration(position)} / ${formatDuration(duration)}`}
-          min={0}
-          max={duration || 0}
-          step="any"
-          value={position}
-          disabled={!hasCurrent || duration <= 0}
-          onKeyDown={(event) => {
-            const delta =
-              event.key === "ArrowRight" || event.key === "ArrowUp"
-                ? 5
-                : event.key === "ArrowLeft" || event.key === "ArrowDown"
-                  ? -5
-                  : null;
-            const target =
-              event.key === "Home"
-                ? 0
-                : event.key === "End"
-                  ? duration
-                  : delta !== null
-                    ? Math.max(0, Math.min(duration, position + delta))
-                    : null;
-            if (target === null) return;
-            event.preventDefault();
-            bridge.fireAndForget("seek", { position: target });
-          }}
-          onChange={(event) =>
-            bridge.fireAndForget("seek", { position: Number(event.target.value) })
-          }
-        />
-      </div>
+      <PlayerProgress duration={duration} disabled={!hasCurrent} />
 
       <div className="player-track">
         <button

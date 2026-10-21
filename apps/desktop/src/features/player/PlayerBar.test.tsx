@@ -14,6 +14,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
 
 import { PlayerBar } from "./PlayerBar";
+import { PlayerProgress } from "./PlayerProgress";
 import { playerStore } from "../../player/playerStore";
 import type { UiPlayerSnapshot } from "../../player/playerStore";
 import { invalidateCovers } from "../../app/coverArt";
@@ -326,6 +327,66 @@ describe("PlayerBar (task 11.8) — range keyboard stepping", () => {
     expect(seek).toHaveValue("32.125");
     expect(seek).toHaveAttribute("min", "0");
     expect(seek).toHaveAttribute("max", "120");
+  });
+
+  it("renders the fill from the same position as the native seek thumb", () => {
+    const { container } = renderWithSnapshot({ state: "paused", position: 30 });
+    const seek = screen.getByRole("slider", { name: "播放进度" });
+    const fill = container.querySelector<HTMLElement>(".progress-fill");
+
+    expect(seek).toHaveValue("30");
+    expect(fill).toHaveStyle({ transform: "scaleX(0.25)" });
+  });
+
+  it("keeps sibling player content out of frame-rate position renders", () => {
+    const frames: FrameRequestCallback[] = [];
+    let clock = 100;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((callback: FrameRequestCallback) => {
+        frames.push(callback);
+        return frames.length;
+      }),
+    );
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    playerStore.publish({
+      state: "playing",
+      position: 30,
+      duration: 120,
+      volume: 1,
+      muted: false,
+      currentQueueEntryId: "entry-1",
+      currentSongId: null,
+      queueLen: 1,
+      mode: "sequential",
+      currentTitle: "晴天.mp3",
+      currentCanImport: true,
+      queue: [],
+    });
+
+    let siblingRenders = 0;
+    function PlayerContent() {
+      siblingRenders += 1;
+      return <span data-testid="stable-player-content">标题</span>;
+    }
+
+    const view = render(
+      <>
+        <PlayerProgress duration={120} disabled={false} />
+        <PlayerContent />
+      </>,
+    );
+
+    expect(frames).toHaveLength(1);
+    clock = 500;
+    act(() => frames[0](500));
+
+    expect(screen.getByRole("slider", { name: "播放进度" })).toHaveValue("30.4");
+    expect(siblingRenders).toBe(1);
+    view.unmount();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("uses the library duration so a paused restored track is seekable immediately", async () => {
