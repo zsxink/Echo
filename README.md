@@ -1,15 +1,17 @@
 # <img src="docs/prototype/echo-icon.svg" width="28" height="28" alt="" /> Echo
 
-本地优先的跨平台音乐播放器：扫描并管理你自己的音乐资料库，展示封面与歌词，维护播放列表和歌单。不依赖账号或流媒体曲库；音乐始终属于你，远端只承担个人设备间的可替换同步。
+[English](README.en.md)
 
-> **最新发布**：[v0.1.0](https://github.com/zsxink/Echo/releases/tag/v0.1.0) — macOS · Windows · Linux 安装包（DMG / EXE / deb / AppImage）
+本地优先的跨平台音乐播放器：扫描并管理自己的音乐资料库，展示封面与歌词，维护播放列表和歌单。不依赖账号或流媒体曲库；目前可在桌面设备间通过局域网同步资料库。
+
+> **最新发布**：[v0.3.0](https://github.com/zsxink/Echo/releases/tag/v0.3.0) — macOS · Windows · Linux 安装包（DMG / EXE / deb / AppImage）
 
 ## 产品定位
 
 - **本地优先**：选择本地音乐资料库根目录后，Echo 扫描其中的音乐文件；播放、管理、搜索都不需要网络。
-- **无账号体系**：没有账号、没有推荐流；资料库是你的数据中心，同步（二期）只在一份资料库与一个远端（S3 / WebDAV）之间进行。
+- **无账号体系**：没有账号或推荐流；资料库保存在本地，当前同步通过局域网主机在设备间传输变更与媒体文件。
 - **完整日常体验**：导入新歌曲、搜索与浏览、排序、收藏、歌单、稳定的播放队列，以及沉浸式黑胶播放和跟随播放进度的歌词。
-- **四平台演进**：一期面向 macOS、Windows、Linux 桌面；二期接入资料库同步，三期、四期扩展 Android 与 iOS。
+- **跨平台路线**：桌面版支持 macOS、Windows、Linux；局域网同步已实现。Android、MinIO / S3 远端存储和 iOS 仍属于后续规划。
 
 ## 核心特性（一期）
 
@@ -32,14 +34,18 @@
 
 ## 现状与路线
 
-当前处于一期（完整桌面版播放器）。0.1.0 已封版：GitHub Actions 三平台构建并发布 macOS、Windows、Linux 安装包与 `SHA256SUMS` 校验（见 [Releases](https://github.com/zsxink/Echo/releases)）；macOS 单平台的运行、原生 E2E 与故障恢复矩阵验证已完成，Windows/Linux 的原生 E2E 与恢复矩阵正在扩展。资料库同步、批量操作与移动端在后续阶段立项。
+当前最新版本为 v0.3.0。GitHub Actions 提供 macOS、Windows、Linux 安装包与 `SHA256SUMS`（见 [Releases](https://github.com/zsxink/Echo/releases)）。macOS 单平台的运行、原生 E2E 与故障恢复矩阵已验证；Windows/Linux 的原生 E2E 与恢复矩阵仍在扩展。
 
-| 阶段 | 主题 | 主要交付 | 完成标志 |
-|---|---|---|---|
-| 一期 | 完整桌面版播放器 | macOS、Windows、Linux 上可日常使用的本地音乐播放器 | 可稳定导入、管理、搜索和播放本地曲库 |
-| 二期 | 资料库同步 | S3 兼容的多设备资料库同步能力 | 两台桌面设备可可靠同步同一资料库 |
-| 三期 | Android | Android 原生体验与既有资料库同步 | Android 可完整管理、播放并同步资料库 |
-| 四期 | iOS | iOS 原生体验与既有资料库同步 | iOS 可完整管理、播放并同步资料库 |
+局域网同步功能已实现并归档；设备矩阵、真机传播时延和并发规模验收仍未完成。0.2.0 音效与均衡器 P0 已有实现，三平台原生音频发布验收仍是门槛。详见 [`docs/ROADMAP.md`](docs/ROADMAP.md)。
+
+| 阶段 | 主题 | 状态 |
+|---|---|---|
+| 一期 | 完整桌面版播放器 | v0.3.0 已发布；部分跨平台验收继续扩展 |
+| 二期 | 局域网同步 | 功能已实现；真机与规模验收待完成 |
+| 三期 | Android（局域网连接） | 规划中 |
+| 四期 | MinIO / S3 远端存储同步 | 规划中 |
+| 五期 | iOS | 规划中 |
+| 0.2.0 | 音效与均衡器 P0 | 实现已交付；三平台原生发布验收待完成 |
 
 > 详细规划见 [`docs/ROADMAP.md`](docs/ROADMAP.md)，产品定位见 [`docs/PRODUCT.md`](docs/PRODUCT.md)，设计约束见 [`docs/DESIGN.md`](docs/DESIGN.md)，界面交互见 [`docs/interface-terminology.md`](docs/interface-terminology.md)。
 
@@ -49,7 +55,7 @@
 
 ## 技术概览
 
-Rust Core（资料库、导入、标签解析、同步与冲突裁决）保持与 UI 和播放器无关；桌面 UI 采用 Tauri 2 + React + TypeScript，播放使用 mpv/libmpv，播放能力按平台适配（移动端后续为 Flutter + media_kit）。
+Rust Core（资料库、导入、标签解析与同步规则）保持与 UI 和播放器无关；桌面 UI 采用 Tauri 2 + React + TypeScript，播放使用 mpv/libmpv，播放能力按平台适配（移动端规划使用 Flutter + media_kit）。
 
 ## 开发与验证
 
@@ -64,9 +70,9 @@ apps/
     src/            React 壳（bridge / features / player / styles）
     src-tauri/      Tauri 壳（命令层、对话框、安全 capability、macOS Now Playing/菜单栏行）
     e2e/            native E2E（真实壳 + Gate 注入）
-openspec/           规格与变更管理（add-macos-now-playing-menu 为当前变更）
+openspec/           规格与变更管理（当前活动变更见 openspec/changes/）
 tests/
-  scenarios/        场景级可执行 manifest（218 个）
+  scenarios/        场景级可执行 manifest
   native/           多平台人工场景 manifest
 scripts/
   verify/           统一验证执行器（manifest.json 登记全部任务/场景命令）
@@ -79,7 +85,7 @@ fixtures/           音频/封面/字幕 fixtures
 
 | 依赖 | 版本 | 说明 |
 |---|---|---|
-| Node.js | ≥ 20（见 `.nvmrc`） | 前端与脚本 |
+| Node.js | ≥ 22（见 `.nvmrc`） | 前端与脚本 |
 | pnpm | 11（`packageManager` 固定为 `pnpm@11.18.0`） | 可 `corepack enable` 自动启用 |
 | Rust | 1.98.1（`rust-toolchain.toml` 自动安装） | 含 `rustfmt`/`clippy`，首次编译较慢 |
 | libmpv | 已随仓库 vendored（`apps/desktop/src-tauri/vendor/libmpv/macos`） | macOS 开箱可用；Windows/Linux 需按平台提供 |
@@ -115,7 +121,7 @@ pnpm echo help          # 查看全部命令
 ```sh
 node scripts/verify/run-task.mjs -- <task-id>…      # 按任务运行（如 8.10 13.8）
 pnpm verify:scenario -- <SCENARIO-ID>               # 按场景运行
-pnpm verify:scenario -- --all                       # 全量场景（218）
+pnpm verify:scenario -- --all                       # 全量场景
 node scripts/verify/reconcile-scenarios.mjs         # specs↔traceability↔manifest 三方对账
 ```
 
@@ -127,9 +133,9 @@ node scripts/verify/reconcile-scenarios.mjs         # specs↔traceability↔man
 - 场景 ID：由 `scripts/verify/spec-scenarios.mjs` 按标题顺序确定性派生（`<AREA>-R<NN>-S<NN>`），`docs/traceability.md` 为命名权威
 - 变更验证：任务勾选必须以登记并通过的 check 脚本为证据；`openspec validate` 校验变更结构
 
-### 一期边界（重要）
+### 一期边界与当前同步状态
 
-离线、无账号、无网络：UI 不渲染同步入口，bridge 无 sync/upload/download 命令，Cargo workspace 无网络客户端依赖，CSP 拒绝远程连接。同步仅以"基础数据形状"存在（`0005_sync_foundation.sql` 的 revision/outbox/tombstone），二期才接入引擎（见 `sync-foundation` 规格）。
+以上“不包含同步入口”是一期的历史范围，不代表当前产品限制。桌面局域网同步已在二期实现：同步主机汇聚设备变更，客户端保留自己的 SQLite 投影；数据库文件本身不会通过网络传输。同步功能与验收状态见 [`docs/ROADMAP.md`](docs/ROADMAP.md)。
 
 ### 许可证
 
