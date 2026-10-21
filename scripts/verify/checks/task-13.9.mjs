@@ -105,7 +105,7 @@ try {
   const scenarioResult = await runStreaming(
     "node",
     ["scripts/verify/run-scenario.mjs", "--", "--automated"],
-    { ECHO_GOVERNANCE_GATE_ALREADY_PASSED: process.env.ECHO_GOVERNANCE_GATE_ALREADY_PASSED || "0" },
+    { ECHO_GOVERNANCE_GATE_IN_PARALLEL_JOB: process.env.ECHO_GOVERNANCE_GATE_IN_PARALLEL_JOB || "0" },
   );
   if (scenarioResult.status !== 0) {
     fail(`'node scripts/verify/run-scenario.mjs -- --automated' exited ${scenarioResult.status}`);

@@ -205,13 +205,13 @@ assert(
 const reusedRustScenarios = runScenarioRunner(
   scenarioFixture,
   ["rust-reused-test", "rust-ignored-test"],
-  { ...scenarioEnv, ECHO_GOVERNANCE_GATE_ALREADY_PASSED: "1" },
+  { ...scenarioEnv, ECHO_GOVERNANCE_GATE_IN_PARALLEL_JOB: "1" },
 );
 assert(
   reusedRustScenarios.status !== 0
     && reusedRustScenarios.stdout.includes("ok: scenario rust-reused-test")
     && reusedRustScenarios.stderr.includes("rust-ignored-test"),
-  "governance reuse skips normal Rust tests but retains ignored performance tests",
+  "parallel governance coverage skips normal Rust tests but retains ignored performance tests",
 );
 
 // Lockfiles must be unchanged after a run.

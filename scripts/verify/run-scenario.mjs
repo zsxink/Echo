@@ -155,21 +155,21 @@ async function executeScenarios(requested) {
   const concurrency = Number.isFinite(rawConcurrency) && rawConcurrency > 0 ? rawConcurrency : 2;
   const total = commands.length;
   let completed = 0;
-  const reuseGovernance = process.env.ECHO_GOVERNANCE_GATE_ALREADY_PASSED === "1";
+  const governanceRunsInParallel = process.env.ECHO_GOVERNANCE_GATE_IN_PARALLEL_JOB === "1";
 
   for (let index = 0; index < commands.length;) {
     const command = commands[index];
-    if (reuseGovernance && (
+    if (governanceRunsInParallel && (
       command === "node scripts/verify/ci-governance.mjs"
       || (/^\s*cargo\s+test\b/.test(command) && !/\s--\s.*--ignored\b/.test(command))
     )) {
       resultByCommand.set(command, {
         status: 0,
         count: 1,
-        output: "reused successful Run governance gates step (workspace all-targets tests passed)",
+        output: "reused workspace tests covered by the parallel CI governance job",
       });
       completed++;
-      process.stdout.write(`[${completed}/${total}] reused prior CI governance result\n`);
+      process.stdout.write(`[${completed}/${total}] covered by parallel CI governance job\n`);
       index++;
       continue;
     }
