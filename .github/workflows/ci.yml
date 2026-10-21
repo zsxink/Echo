@@ -43,6 +43,9 @@ jobs:
           toolchain: 1.98.1
           components: rustfmt, clippy
 
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
       - name: Install Linux webview dependencies
         if: runner.os == 'Linux'
         run: >-
@@ -129,6 +132,9 @@ jobs:
         with:
           toolchain: 1.98.1
 
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -175,6 +181,9 @@ jobs:
         with:
           toolchain: 1.98.1
 
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -209,6 +218,9 @@ jobs:
         with:
           toolchain: 1.98.1
 
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -238,6 +250,9 @@ jobs:
         with:
           toolchain: 1.98.1
           components: rustfmt, clippy
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
 
       # The governance gates run `cargo test --workspace --all-targets
       # --all-features`, which builds the echo-app Tauri shell. Without these
