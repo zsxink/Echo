@@ -6,8 +6,8 @@
 //  - Color tokens in the three themes (coral / cobalt / turquoise) meet WCAG AA
 //    contrast for text (≥4.5:1) and for the semantic status colors used on the
 //    artwork (icons/large text/UI ≥3:1 on the surfaces they appear on).
-//  - prefers-reduced-motion stops the record spin and smooth lyric scrolling,
-//    while the current line, focus and playing state remain visible.
+//  - prefers-reduced-motion keeps the playing record spinning while reducing
+//    other motion and smooth lyric scrolling; pause/stop still halts the record.
 //
 // What this verifies:
 //   1. Parses the real token definitions in src/styles/tokens.css (the same
@@ -227,12 +227,14 @@ if (!/transition-duration:\s*1ms/.test(universalMotion)) fail("reduced-motion do
 if (!/scroll-behavior:\s*auto/.test(universalMotion)) fail("reduced-motion does not force instant scroll-behavior");
 pass("reduced-motion blocks clamp animation/transition/scroll for every element");
 
-// The record-spin keyframes exist, are actually consumed by the playing record,
-// and are therefore the animation the universal clamp above disables. The
-// prototype names it `record-spin`; the app ships that name verbatim.
+// The vinyl is an intentional exception to the universal reduced-motion clamp:
+// only a playing cover restores its infinite 12-second spin. The playing class
+// remains the state authority, so paused/stopped covers do not match this rule.
 if (!/@keyframes record-spin/.test(sheet)) fail("@keyframes record-spin missing");
-if (!/animation:\s*record-spin/.test(sheet)) fail("nothing applies the record-spin animation");
-pass("record-spin keyframes present and applied (disabled under reduced-motion)");
+if (!/\.playing-cover\.is-playing\s+\.ring\s*\{[^}]*animation:\s*record-spin\s+12s\s+linear\s+infinite\s*!important/s.test(sheet)) {
+  fail("reduced-motion does not preserve the 12-second infinite spin for a playing vinyl");
+}
+pass("reduced-motion preserves vinyl spin only while playback is active");
 
 // --- 4. Run the related test suites that assert state is still visible ---
 function run(command, args, cwd) {
@@ -255,5 +257,5 @@ run("pnpm", ["--filter", "@echo/desktop", "test", "--", "--run", "src/features/p
 run("cargo", ["clippy", "-p", "echo-app", "--", "-D", "warnings"], ROOT);
 
 process.stdout.write(
-  "ok 12.4: three-theme WCAG 2.2 AA contrast verified; reduced-motion verified (current line, focus and playing state stay visible)\n",
+  "ok 12.4: three-theme WCAG 2.2 AA contrast verified; reduced-motion and playing-vinyl exception verified\n",
 );
