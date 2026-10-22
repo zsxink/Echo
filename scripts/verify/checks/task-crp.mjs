@@ -25,6 +25,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertPlatformMatrix, assertPlatformName, matrixEntries, parseWorkflow } from "../workflow-matrix.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
 const RELEASE_YML = resolve(ROOT, ".github", "workflows", "release.yml");
@@ -63,8 +64,25 @@ if (!/tauri\.conf\.json/.test(yml)) fail("release.yml no longer checks the versi
 if (!/"version"\s*:\s*"[0-9]+\.[0-9]+\.[0-9]+"/.test(conf)) fail("tauri.conf.json has no semver version (R01)");
 
 // R02 — three-platform matrix + bundle targets (CRP-R02-S01/02/03).
-for (const token of ['xcode-27', 'windows-latest', 'ubuntu-latest']) {
-  if (!yml.includes(token)) fail(`release.yml build matrix misses ${token} (R02)`);
+let workflow;
+try {
+  workflow = parseWorkflow(yml, "release.yml");
+  assertPlatformMatrix(
+    matrixEntries(workflow, "build", "release.yml"),
+    {
+      macos: { os: "xcode-27", arch: "aarch64", artifacts: "dmg/*.dmg" },
+      windows: { os: "windows-latest", arch: "x64", artifacts: "nsis/*.exe" },
+      linux: { os: "ubuntu-latest", arch: "x64", artifacts: "deb/*.deb;appimage/*.AppImage" },
+    },
+    "release.yml build",
+  );
+  assertPlatformName(
+    workflow.jobs.build.name,
+    "Build (${{ matrix.platform == 'macos' && 'macOS' || matrix.platform == 'windows' && 'Windows' || 'Linux' }})",
+    "release.yml build name",
+  );
+} catch (error) {
+  fail(error.message);
 }
 const targets = conf.match(/"targets"\s*:\s*\[([^\]]*)\]/)?.[1] ?? "";
 for (const t of ['dmg', 'nsis', 'appimage', 'deb']) {

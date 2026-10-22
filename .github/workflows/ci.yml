@@ -11,15 +11,18 @@ concurrency:
 
 jobs:
   rust:
-    name: Rust (${{ matrix.os }})
+    name: Rust (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - xcode-27
-          - windows-latest
+        include:
+          - platform: Linux
+            os: ubuntu-latest
+          - platform: macOS
+            os: xcode-27
+          - platform: Windows
+            os: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -82,15 +85,18 @@ jobs:
         run: cargo test --workspace --all-features
 
   frontend:
-    name: Frontend (${{ matrix.os }})
+    name: Frontend (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
+        include:
+          - platform: Linux
+            os: ubuntu-latest
+          - platform: macOS
+            os: xcode-27
+          - platform: Windows
+            os: windows-latest
     steps:
       - uses: actions/checkout@v4
 

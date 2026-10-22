@@ -17,6 +17,7 @@
     "default-player": "node scripts/macos-default-player.mjs"
   },
   "devDependencies": {
-    "@fission-ai/openspec": "1.13.0"
+    "@fission-ai/openspec": "1.13.0",
+    "js-yaml": "4.3.2"
   }
 }
