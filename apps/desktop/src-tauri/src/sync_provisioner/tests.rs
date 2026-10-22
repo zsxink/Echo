@@ -842,3 +842,6 @@ mod host_publication;
 
 #[path = "tests/missing_publications.rs"]
 mod missing_publications;
+
+#[path = "tests/cache_cleanup.rs"]
+mod cache_cleanup;

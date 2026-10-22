@@ -16,7 +16,22 @@ impl SyncRuntime {
     /// start their normal retrying sync loop, so an unavailable host is retried
     /// without blocking the application. Host mode binds the best available
     /// private LAN address.
+    ///
+    /// Only a valid binding, a matching active root and an `enabled` intent may
+    /// start a session: the binding alone never grants permission to listen or
+    /// connect again.
     pub fn restore_saved_session(&self) -> Result<Option<SyncStatus>, SyncRuntimeError> {
+        let _transition = self
+            .transition
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        self.restore_locked()
+    }
+
+    /// Restoration that the caller already serialized against lifecycle
+    /// transitions. Used by the root handoff after activation committed and by
+    /// the automatic retry worker, so neither re-acquires the transition lock.
+    pub(super) fn restore_locked(&self) -> Result<Option<SyncStatus>, SyncRuntimeError> {
         let Some(configuration) = self
             .database
             .current_sync_configuration()
@@ -24,21 +39,27 @@ impl SyncRuntime {
         else {
             return Ok(None);
         };
-        if self.active_root()? != configuration.local_root {
+        if configuration.session_intent != SyncSessionIntent::Enabled
+            || self.active_root()? != configuration.local_root
+        {
             return Ok(None);
+        }
+        if self.status().enabled {
+            // Already running (for example a concurrent successful start).
+            return Ok(Some(self.status()));
         }
 
         if configuration.host {
             let mut last_error = SyncRuntimeError::DiscoveryFailed;
             for address in available_local_lan_addresses() {
-                match self.host_start(&address.to_string()) {
+                match self.start_host_locked(address) {
                     Ok(status) => return Ok(Some(status)),
                     Err(error) => last_error = error,
                 }
             }
             Err(last_error)
         } else {
-            self.peer_start().map(Some)
+            self.start_peer_locked().map(Some)
         }
     }
 
@@ -49,10 +70,12 @@ impl SyncRuntime {
             .transition
             .lock()
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let root = self.active_root()?;
+        self.cancel_restore_retry();
+        self.persist_session_intent(SyncSessionIntent::Stopped)?;
         if self.status().enabled {
             self.stop_inner()?;
         }
-        let root = self.active_root()?;
         self.provisioner
             .as_ref()
             .ok_or(SyncRuntimeError::Unconfigured)?

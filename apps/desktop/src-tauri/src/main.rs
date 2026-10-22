@@ -59,7 +59,9 @@ mod macos_status_row;
 #[cfg(any(target_os = "macos", test))]
 mod macos_window_lifecycle;
 mod open_targets;
+mod restore_retry;
 mod sync_commands;
+mod sync_library_selection;
 mod sync_provisioner;
 mod sync_runtime;
 
@@ -277,44 +279,12 @@ fn spawn_macos_now_playing_refresh(
     });
 }
 
-/// Retry restoring a saved sync role while the application remains untouched.
-fn retry_saved_sync_restore(
-    runtime: &Arc<sync_runtime::SyncRuntime>,
-    app: tauri::AppHandle,
-    starting_sequence: u64,
-) {
-    let runtime = Arc::downgrade(runtime);
-    let spawn = thread::Builder::new()
-        .name("echo-sync-startup-retry".into())
-        .spawn(move || {
-            let mut delay = Duration::from_secs(5);
-            let mut observed_sequence = starting_sequence;
-            loop {
-                thread::sleep(delay);
-                let Some(runtime) = runtime.upgrade() else {
-                    break;
-                };
-                let current = runtime.status();
-                if current.enabled || current.event_sequence != observed_sequence {
-                    break;
-                }
-                match runtime.restore_saved_session() {
-                    Ok(Some(status)) => {
-                        let _ = app.emit("sync://status", status);
-                        break;
-                    }
-                    Ok(None) => break,
-                    Err(error) => {
-                        let status = runtime.report_error(error);
-                        let _ = app.emit("sync://status", &status);
-                        observed_sequence = status.event_sequence;
-                        delay = (delay * 2).min(Duration::from_secs(60));
-                    }
-                }
-            }
-        });
-    if let Err(error) = spawn {
-        tracing::warn!(%error, "failed to start saved LAN sync retry worker");
+fn retry_saved_sync_restore(runtime: &Arc<sync_runtime::SyncRuntime>) {
+    if let Err(error) = runtime.start_restore_retry() {
+        tracing::warn!(
+            error = error.message_key(),
+            "failed to start saved LAN sync retry worker"
+        );
     }
 }
 
@@ -423,7 +393,7 @@ fn wire_composition(
         );
         let status = sync_runtime.report_error(error);
         let _ = app.emit("sync://status", &status);
-        retry_saved_sync_restore(&sync_runtime, app.handle().clone(), status.event_sequence);
+        retry_saved_sync_restore(&sync_runtime);
     }
     app.manage(Arc::clone(&sync_runtime));
     // The `cover://` protocol resolves bytes by opaque asset key (design §16).

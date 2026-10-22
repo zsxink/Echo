@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::domain::ids::LibraryRootId;
 use crate::domain::sync::{
     AuthorityId, CommitCheckpoint, CommitSeq, DeviceId, Epoch, LibraryId, SyncBinding,
+    SyncSessionIntent,
 };
 use crate::error::Error;
 
@@ -20,21 +21,23 @@ pub struct SyncConfiguration {
     pub host: bool,
     pub local_root: LibraryRootId,
     pub local_device: DeviceId,
+    pub session_intent: SyncSessionIntent,
 }
 
 impl SqliteDatabase {
     /// Read the current library binding and stable local device identity.
     pub fn current_sync_configuration(&self) -> Result<Option<SyncConfiguration>, Error> {
         self.with_reader(|connection| {
-            let row: Option<(String, String, i64, String, Option<String>, String)> = connection
+            type ConfigurationRow = (String, String, i64, String, Option<String>, String, String);
+            let row: Option<ConfigurationRow> = connection
                 .query_row(
-                    "SELECT b.library_id,b.authority_id,b.epoch,b.role,b.local_root_uuid,d.value FROM sync_binding b JOIN device_state d ON d.key='device_id' WHERE b.singleton=1",
+                    "SELECT b.library_id,b.authority_id,b.epoch,b.role,b.local_root_uuid,d.value,b.session_intent FROM sync_binding b JOIN device_state d ON d.key='device_id' WHERE b.singleton=1",
                     [],
-                    |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?)),
+                    |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?)),
                 )
                 .optional()
                 .map_err(storage)?;
-            row.map(|(library, authority, epoch, role, root, device)| {
+            row.map(|(library, authority, epoch, role, root, device, intent)| {
                 let parse = |value: &str, field: &str| {
                     Uuid::parse_str(value).map_err(|_| Error::InvariantViolation {
                         why: format!("invalid {field} in sync configuration"),
@@ -54,13 +57,33 @@ impl SqliteDatabase {
                     },
                     local_root: LibraryRootId::from_uuid(parse(&root, "local root id")?),
                     local_device: DeviceId::from_uuid(parse(&device, "device id")?),
+                    session_intent: SyncSessionIntent::parse(&intent).ok_or_else(|| Error::InvariantViolation {
+                        why: "invalid sync session intent".to_owned(),
+                    })?,
                 })
             })
             .transpose()
         })
     }
 
-    /// Return active peer identities and opaque secure-store handles for a host.
+    /// Persist an explicit user lifecycle transition for the selected root.
+    pub fn set_sync_session_intent(&self, intent: SyncSessionIntent) -> Result<(), Error> {
+        self.writer.run(move |connection| {
+            let changed = connection
+                .execute(
+                    "UPDATE sync_binding SET session_intent=?1, updated_at=?2 WHERE singleton=1",
+                    rusqlite::params![intent.as_str(), super::super::support::now_ms()],
+                )
+                .map_err(storage)?;
+            if changed == 0 {
+                return Err(Error::conflict(
+                    "sync session intent requires an active binding",
+                ));
+            }
+            Ok(())
+        })
+    }
+
     pub fn authorized_sync_peer_handles(&self) -> Result<Vec<(DeviceId, String)>, Error> {
         self.with_reader(|connection| {
             let binding: Option<String> = connection

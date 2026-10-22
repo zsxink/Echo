@@ -24,8 +24,28 @@ fn sync_configuration_is_absent_until_bound_then_reports_stable_identity_and_gen
     assert!(configuration.host);
     assert_eq!(configuration.local_root, root);
     assert_eq!(
+        configuration.session_intent,
+        crate::domain::sync::SyncSessionIntent::Stopped
+    );
+    assert_eq!(
         configuration.local_device,
         DeviceId::from_uuid(database.current_device_id().as_uuid())
+    );
+
+    assert_eq!(
+        configuration.session_intent,
+        crate::domain::sync::SyncSessionIntent::Stopped
+    );
+    database
+        .set_sync_session_intent(crate::domain::sync::SyncSessionIntent::Enabled)
+        .unwrap();
+    assert_eq!(
+        database
+            .current_sync_configuration()
+            .unwrap()
+            .unwrap()
+            .session_intent,
+        crate::domain::sync::SyncSessionIntent::Enabled
     );
 
     let checkpoint = database

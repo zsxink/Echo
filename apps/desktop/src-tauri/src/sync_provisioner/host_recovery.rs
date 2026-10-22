@@ -46,6 +46,13 @@ impl NativeSyncProvisioner {
         OsSecureStore
             .set(&identity_handle(replacement)?, &secret)
             .map_err(|_| SyncRuntimeError::Unconfigured)?;
+        // An epoch change retires the previous binding's cache. Record the
+        // cleanup intent before the rotation discards that identity, so a
+        // failed removal stays retryable; the new epoch never reuses those
+        // bytes without a full declaration and verification.
+        self.database
+            .record_sync_cache_cleanup(previous.binding)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
         let receipt = self
             .database
             .rotate_host_epoch(root, previous.binding, replacement)
@@ -58,6 +65,18 @@ impl NativeSyncProvisioner {
             .lock()
             .map_err(|_| SyncRuntimeError::WorkerFailed)?
             .clear();
+        // Best effort now; the durable marker keeps it retryable.
+        if self
+            .local_resource_store(previous.binding)
+            .and_then(|store| {
+                store
+                    .clear_binding(previous.binding)
+                    .map_err(|_| SyncRuntimeError::LibraryUnavailable)
+            })
+            .is_ok()
+        {
+            let _ = self.database.complete_sync_cache_cleanup(previous.binding);
+        }
         Ok(receipt)
     }
 }

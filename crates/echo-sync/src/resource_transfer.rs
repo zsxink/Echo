@@ -431,6 +431,53 @@ impl FileResourceStore {
         Ok(path)
     }
 
+    /// True only when the immutable blob for this declaration exists and its
+    /// length and BLAKE3 digest still match.
+    fn blob_matches(directory: &Path, resource: &ResourceRefDto) -> bool {
+        validate_hash(&resource.content_hash).is_ok()
+            && verify_file(
+                &directory.join(format!("{}.blob", resource.content_hash)),
+                resource,
+            )
+            .is_ok()
+    }
+
+    /// Remove cache state that can no longer describe the declared resource.
+    ///
+    /// A truncated/unparsable checkpoint, a mismatched declaration, or a blob
+    /// whose bytes no longer match the authoritative hash must never block a
+    /// later transfer: the declaration is authoritative, so the invalid local
+    /// cache entry is dropped and the resource is fetched again. Only the blob
+    /// that fails verification for *this* declaration is removed, so another
+    /// transfer sharing the same digest keeps its valid bytes.
+    fn discard_corrupt_state(
+        directory: &Path,
+        resource: &ResourceRefDto,
+        upload: &str,
+    ) -> Result<(), TransferError> {
+        if validate_hash(upload).is_ok() {
+            for suffix in ["json", "json.tmp", "part"] {
+                let path = directory.join(format!("{upload}.{suffix}"));
+                match fs::remove_file(&path) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error.into()),
+                }
+            }
+        }
+        if validate_hash(&resource.content_hash).is_ok() {
+            let blob = directory.join(format!("{}.blob", resource.content_hash));
+            if blob.exists() && verify_file(&blob, resource).is_err() {
+                match fs::remove_file(&blob) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error.into()),
+                }
+            }
+        }
+        sync_directory(directory)
+    }
+
     fn load(
         directory: &Path,
         binding: SyncBinding,
@@ -490,7 +537,13 @@ impl ResourceTransferPort for FileResourceStore {
         let directory = self.root.join(blake3::hash(&encoded).to_hex().as_str());
         existing_directory(&directory)?;
         let blob = directory.join(format!("{}.blob", resource.content_hash));
-        regular_file(&blob).map_err(content_verification_error)?;
+        if regular_file(&blob).is_err() || verify_file(&blob, resource).is_err() {
+            // Cache state that contradicts the authoritative declaration is
+            // invalid cache, not a permanent binding conflict. Drop it so the
+            // resource is transferred again instead of blocking forever.
+            Self::discard_corrupt_state(&directory, resource, "")?;
+            return Err(content_verification_error(TransferError::Unknown));
+        }
 
         // Upload identities include the owner and the complete declaration. A
         // blob alone cannot prove that a durable completion checkpoint exists.
@@ -559,13 +612,23 @@ impl ResourceTransferPort for FileResourceStore {
         let directory = self.directory(request.binding)?;
         let encoded = serde_json::to_vec(&(owner, request)).map_err(|_| TransferError::Invalid)?;
         let upload = blake3::hash(&encoded).to_hex().to_string();
-        if directory.join(format!("{upload}.json")).exists() {
-            return Ok(Self::load(&directory, request.binding, owner, &upload)?.progress);
+        if let Ok(checkpoint) = Self::load(&directory, request.binding, owner, &upload) {
+            if checkpoint.progress.resource == request.resource
+                && (!checkpoint.progress.complete
+                    || Self::blob_matches(&directory, &request.resource))
+            {
+                return Ok(checkpoint.progress);
+            }
         }
+        // A damaged checkpoint, a partially written `.part`, or a "complete"
+        // checkpoint whose blob no longer matches the declaration cannot be
+        // resumed. The declaration is authoritative, so discard that state and
+        // start the transfer over instead of blocking this resource forever.
+        Self::discard_corrupt_state(&directory, &request.resource, &upload)?;
         let blob = directory.join(format!("{}.blob", request.resource.content_hash));
-        let complete = blob.exists();
-        if complete {
-            verify_file(&blob, &request.resource)?;
+        let complete = blob.exists() && Self::blob_matches(&directory, &request.resource);
+        if !complete && blob.exists() {
+            Self::discard_corrupt_state(&directory, &request.resource, "")?;
         }
         let mut active = 0;
         for entry in fs::read_dir(&directory)? {
@@ -680,7 +743,8 @@ impl ResourceTransferPort for FileResourceStore {
     ) -> Result<TransferProgress, TransferError> {
         let _lock = self.lock.lock().map_err(|_| TransferError::Conflict)?;
         let directory = self.directory(binding)?;
-        let mut checkpoint = Self::load(&directory, binding, owner, upload)?;
+        let checkpoint = Self::load(&directory, binding, owner, upload)?;
+        let mut checkpoint = checkpoint;
         if checkpoint.progress.complete {
             return Ok(checkpoint.progress);
         }

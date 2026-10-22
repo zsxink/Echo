@@ -25,6 +25,7 @@ impl SyncRuntime {
             .as_ref()
             .ok_or(SyncRuntimeError::Unconfigured)?;
         let root = self.active_root()?;
+        self.persist_session_intent(SyncSessionIntent::Enabled)?;
         let host = provisioner.host(root)?;
         if self.active_root()? != root {
             return Err(SyncRuntimeError::LibraryUnavailable);

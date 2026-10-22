@@ -1,5 +1,8 @@
 use super::*;
 
+#[path = "tests/session_intent.rs"]
+mod session_intent;
+
 #[path = "tests/idle.rs"]
 mod idle;
 

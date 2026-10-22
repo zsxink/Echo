@@ -9,7 +9,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use super::ids::{PlaylistId, PlaylistItemId, Revision, SongId};
-pub use super::sync_binding::{CommitCheckpoint, SyncBinding};
+pub use super::sync_binding::{CommitCheckpoint, SyncBinding, SyncSessionIntent};
 
 /// Audio properties are probed from the file and can be missing on one
 /// device even when both devices have the exact same media bytes. They are
