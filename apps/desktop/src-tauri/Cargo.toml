@@ -48,6 +48,7 @@ block2 = "0.6.1"
 axum = { workspace = true }
 # TempDir for `dialogs` multi-file import unit tests; resolves only for tests.
 tempfile = { version = "3" }
+rusqlite = { workspace = true }
 # Tauri's deterministic mock runtime proves the existing main-window lifecycle
 # without creating a real WebView during unit tests.
 tauri = { version = "2.11.5", features = ["test"] }

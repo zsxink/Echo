@@ -4,10 +4,10 @@
 // pass on the current machine.
 //
 // Fails (nonzero) unless `.github/workflows/ci.yml` structurally contains the
-// three runners (`ubuntu-latest`, `macos-latest`, `windows-latest`), the `rust`
-// job steps (fmt, clippy `-D warnings`, test) and the `frontend` job steps
-// (`pnpm install --frozen-lockfile`, format/lint/typecheck/test/build), and
-// every one of those commands succeeds locally.
+// three platform/runner pairs, platform-based names, the `rust` job steps (fmt,
+// clippy `-D warnings`, test) and the `frontend` job steps (`pnpm install
+// --frozen-lockfile`, format/lint/typecheck/test/build), and every one of those
+// commands succeeds locally.
 //
 // Note: the Windows/Linux pipeline runs execute in GitHub-hosted runners and
 // cannot run on this macOS machine; the local run below verifies the same
@@ -16,6 +16,7 @@
 
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { assertPlatformMatrix, assertPlatformName, matrixEntries, parseWorkflow } from "../workflow-matrix.mjs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -28,9 +29,8 @@ function fail(msg) {
 }
 
 // ---------------------------------------------------------------------------
-// Structural check: the workflow file must contain the matrix runners and the
-// exact quality commands CI runs. Read it as a flat document; the strings we
-// assert on are what the YAML parses to, independent of formatting.
+// Structural check: parse the workflow and verify each platform-to-runner pair,
+// display-name expression, and exact quality commands CI runs.
 // ---------------------------------------------------------------------------
 const ciPath = resolve(ROOT, ".github", "workflows", "ci.yml");
 let ci;
@@ -40,10 +40,26 @@ try {
   fail(`cannot read ${ciPath}`);
 }
 
+let workflow;
+try {
+  workflow = parseWorkflow(ci, "ci.yml");
+  assertPlatformMatrix(
+    matrixEntries(workflow, "rust", "ci.yml"),
+    { Linux: { os: "ubuntu-latest" }, macOS: { os: "xcode-27" }, Windows: { os: "windows-latest" } },
+    "ci.yml rust",
+  );
+  assertPlatformMatrix(
+    matrixEntries(workflow, "frontend", "ci.yml"),
+    { Linux: { os: "ubuntu-latest" }, macOS: { os: "xcode-27" }, Windows: { os: "windows-latest" } },
+    "ci.yml frontend",
+  );
+  assertPlatformName(workflow.jobs.rust.name, "Rust (${{ matrix.platform }})", "ci.yml rust name");
+  assertPlatformName(workflow.jobs.frontend.name, "Frontend (${{ matrix.platform }})", "ci.yml frontend name");
+} catch (error) {
+  fail(error.message);
+}
+
 const REQUIRED = [
-  "ubuntu-latest",
-  "macos-latest",
-  "windows-latest",
   "cargo fmt --all -- --check",
   "cargo clippy --workspace --all-targets --all-features -- -D warnings",
   "cargo test --workspace --all-features",

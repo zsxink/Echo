@@ -35,6 +35,9 @@ function status(overrides: Partial<SyncStatus> = {}): SyncStatus {
     downloadedBytes: 0,
     totalDownloadBytes: 0,
     mediaReady: true,
+    sessionIntent: "enabled",
+    restoreAttempts: null,
+    restoreExhausted: false,
     ...overrides,
   };
 }

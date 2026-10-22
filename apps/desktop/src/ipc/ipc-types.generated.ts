@@ -58,10 +58,17 @@ export interface EffectsSnapshotDto {
 
 export type SyncRole = 'none' | 'host' | 'peer';
 export type SyncState = 'disabled' | 'hosting' | 'connected' | 'syncing' | 'paused' | 'failed';
+export type SyncSessionIntent = 'enabled' | 'stopped' | 'paused';
 export interface SyncStatus {
   readonly enabled: boolean;
   readonly role: SyncRole;
   readonly state: SyncState;
+  /** The user's persisted lifecycle choice; distinguishes stop from pause. */
+  readonly sessionIntent: SyncSessionIntent;
+  /** Restore attempts already spent for this library, when a restore is running. */
+  readonly restoreAttempts: number | null;
+  /** True once bounded startup restoration gave up; requires explicit retry. */
+  readonly restoreExhausted: boolean;
   readonly sessionId: number;
   readonly eventSequence: number;
   readonly catalogChanged: boolean;
@@ -142,6 +149,7 @@ export interface SyncCommandArguments {
   readonly discover_hosts: [args?: Record<string, never>];
   readonly create_sync_pairing_code: [args?: Record<string, never>];
   readonly request_sync_pairing: [args: { code: string; hostAddress: string }];
+  readonly sync_restore_retry: [args?: Record<string, never>];
 }
 
 export interface UiQueueEntry {
@@ -330,6 +338,7 @@ export interface IpcCommandResultMap {
   readonly sync_pause: SyncStatus;
   readonly sync_resume: SyncStatus;
   readonly sync_now: SyncStatus;
+  readonly sync_restore_retry: SyncStatus;
   readonly recover_restored_host: HostRecoveryArchive;
   readonly sync_storage_space: SyncStorageSpace;
   readonly sync_conflicts: readonly SyncConflictView[];

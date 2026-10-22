@@ -11,6 +11,9 @@ importers:
       '@fission-ai/openspec':
         specifier: 1.13.0
         version: 1.13.0(@types/node@26.4.0)
+      js-yaml:
+        specifier: 4.3.2
+        version: 4.3.2
 
   apps/desktop:
     dependencies:

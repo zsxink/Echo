@@ -226,6 +226,84 @@ describe("SettingsView LAN sync preferences", () => {
     expect(invoke).toHaveBeenCalledWith("host_start", { address: "192.168.1.20" });
   });
 
+  it("distinguishes a deliberate stop from a paused library", async () => {
+    mocks.setInvoke("sync_status", {
+      ...syncStatus(),
+      sessionIntent: "stopped",
+      libraryId: "library-1",
+      localRoot: "root-1",
+    });
+    renderSyncSettings();
+
+    await screen.findByTestId("lan-sync-state");
+    expect(screen.getByTestId("lan-sync-state")).toHaveTextContent("已停止（配对关系保留）");
+    expect(screen.getByTestId("lan-sync-stopped-hint")).toHaveTextContent("重新启动即可继续");
+    act(() =>
+      mocks.emit("sync://status", {
+        ...syncStatus(),
+        sessionIntent: "paused",
+        state: "paused",
+        sessionId: 1,
+        eventSequence: 2,
+        libraryId: "library-1",
+        localRoot: "root-1",
+      }),
+    );
+    expect(screen.getByTestId("lan-sync-state")).toHaveTextContent(
+      "已暂停（配对关系保留，可继续）",
+    );
+  });
+
+  it("surfaces exhausted startup restoration with an explicit retry", async () => {
+    mocks.setInvoke("sync_status", {
+      ...syncStatus(),
+      sessionIntent: "enabled",
+      restoreExhausted: true,
+      state: "failed",
+      libraryId: "library-1",
+      localRoot: "root-1",
+    });
+    mocks.setInvoke("sync_restore_retry", {
+      ...syncStatus(),
+      sessionIntent: "enabled",
+      state: "connected",
+      enabled: true,
+      // A newer session is required: exhaustion belongs to the fenced session
+      // that gave up, so only a new session may replace it.
+      sessionId: 1,
+      eventSequence: 1,
+      libraryId: "library-1",
+      localRoot: "root-1",
+    });
+    renderSyncSettings();
+
+    expect(await screen.findByTestId("lan-sync-state")).toHaveTextContent(
+      "自动恢复已停止尝试；可手动重试恢复",
+    );
+    fireEvent.click(screen.getByTestId("lan-sync-restore-retry"));
+
+    expect(invoke).toHaveBeenCalledWith("sync_restore_retry", {});
+    await waitFor(() => expect(screen.getByTestId("lan-sync-state")).toHaveTextContent("已连接"));
+  });
+
+  it("explains that stopping a host keeps pairing and cache, unlike leaving", async () => {
+    mocks.setInvoke("sync_status", {
+      ...syncStatus(),
+      enabled: true,
+      role: "host",
+      state: "hosting",
+      sessionId: 2,
+      eventSequence: 3,
+      libraryId: "library-1",
+      localRoot: "root-1",
+    });
+    renderSyncSettings();
+
+    expect(await screen.findByText(/停止服务会保留配对关系与已下载媒体缓存/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "解除同步…" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "停止主机服务" })).toBeEnabled();
+  });
+
   it("renders hosts returned by native LAN discovery", async () => {
     mocks.setInvoke("discover_hosts", [
       {
@@ -426,9 +504,21 @@ function syncStatus() {
     state: "disabled",
     sessionId: 0,
     eventSequence: 0,
+    catalogChanged: false,
     libraryId: null,
     localRoot: null,
     address: null,
     lastError: null,
+    pendingChanges: null,
+    pendingUploads: null,
+    pendingDownloads: null,
+    uploadedBytes: null,
+    totalUploadBytes: null,
+    downloadedBytes: null,
+    totalDownloadBytes: null,
+    mediaReady: null,
+    sessionIntent: "stopped",
+    restoreAttempts: null,
+    restoreExhausted: false,
   };
 }

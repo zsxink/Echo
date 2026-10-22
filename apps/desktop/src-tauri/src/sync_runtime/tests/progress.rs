@@ -117,8 +117,29 @@ fn live_checkpoints_notify_before_cycle_completion_and_final_refresh() {
 
 #[test]
 fn paused_cycle_rejects_late_checkpoint_after_resume_in_same_session() {
+    use echo_core::application::ports::LibraryRepository;
+    use echo_core::domain::entities::LibraryRoot;
+    use echo_core::domain::sync::{AuthorityId, Epoch, LibraryId, SyncBinding};
+
     let directory = tempfile::tempdir().unwrap();
     let database = Arc::new(SqliteDatabase::open(directory.path().join("echo.sqlite")).unwrap());
+    let root = LibraryRootId::new();
+    LibraryRepository::upsert(
+        database.as_ref(),
+        &LibraryRoot::new(root, directory.path().join("library"), true, true),
+    )
+    .unwrap();
+    database
+        .bind_sync_library(
+            SyncBinding {
+                library_id: LibraryId::new(),
+                authority_id: AuthorityId::new(),
+                epoch: Epoch::INITIAL,
+            },
+            true,
+            root,
+        )
+        .unwrap();
     let (started, cycles) = mpsc::channel();
     let (_release, gate) = mpsc::channel();
     let provisioner = Arc::new(ProgressProvisioner {
@@ -226,8 +247,9 @@ fn status_follows_local_root_and_clears_it_when_stopped() {
 
 #[test]
 fn manual_cycle_publishes_checkpoints_and_pause_cancels_its_observer() {
+    use echo_core::application::ports::LibraryRepository;
     use echo_core::domain::entities::LibraryRoot;
-    use echo_core::domain::sync::{AuthorityId, Epoch, LibraryId};
+    use echo_core::domain::sync::{AuthorityId, Epoch, LibraryId, SyncBinding};
 
     let directory = tempfile::tempdir().unwrap();
     let database = Arc::new(SqliteDatabase::open(directory.path().join("echo.sqlite")).unwrap());
@@ -237,6 +259,17 @@ fn manual_cycle_publishes_checkpoints_and_pause_cancels_its_observer() {
         &LibraryRoot::new(root, directory.path().join("library"), true, true),
     )
     .unwrap();
+    database
+        .bind_sync_library(
+            SyncBinding {
+                library_id: LibraryId::new(),
+                authority_id: AuthorityId::new(),
+                epoch: Epoch::INITIAL,
+            },
+            true,
+            root,
+        )
+        .unwrap();
     let (started, cycles) = mpsc::channel();
     let (_release, gate) = mpsc::channel();
     let provisioner = Arc::new(ProgressProvisioner {

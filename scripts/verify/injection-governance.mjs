@@ -16,6 +16,36 @@
 export function governanceEntries({ replaceIn, createProbe, ROOT }) {
   return [
     {
+      id: "ci-platform-matrix/missing-linux-entry",
+      guard: "the CI Rust platform matrix losing its Linux platform-to-runner mapping",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: ci\.yml rust matrix is missing platform 'Linux'/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "          - platform: Linux\n            os: ubuntu-latest\n",
+          "",
+        );
+        return {};
+      },
+    },
+    {
+      id: "release-platform-matrix/corrupt-linux-runner",
+      guard: "the release Build matrix mapping Linux to a non-Linux runner",
+      check: ["node", ["scripts/verify/checks/task-crp.mjs"]],
+      expect: /FAIL CRP: release\.yml build platform 'linux' maps os to 'windows-latest', expected 'ubuntu-latest'/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "release.yml"),
+          "          - os: ubuntu-latest\n            arch: x64\n            platform: linux\n",
+          "          - os: windows-latest\n            arch: x64\n            platform: linux\n",
+        );
+        return {};
+      },
+    },
+    {
       id: "file-open-normalization/raw-url-payload",
       guard: "the macOS file-open payload being handed downstream as a URL string instead of a decoded filesystem path",
       check: ["node", ["scripts/verify/checks/task-9.1.mjs"]],

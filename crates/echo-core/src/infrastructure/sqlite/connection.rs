@@ -23,6 +23,8 @@ mod migrations {
     pub const OBJECT_CHANGE_TIME: &str = include_str!("migrations/0024_object_change_time.sql");
     pub const IGNORE_DERIVED_SONG_AUDIO_CONFLICTS: &str =
         include_str!("migrations/0025_ignore_derived_song_audio_conflicts.sql");
+    pub const SYNC_SESSION_INTENT: &str = include_str!("migrations/0026_sync_session_intent.sql");
+    pub const SYNC_CACHE_CLEANUP: &str = include_str!("migrations/0027_sync_cache_cleanup.sql");
     pub const INITIAL: &str = include_str!("migrations/0001_initial.sql");
     pub const LIBRARY_ASSETS: &str = include_str!("migrations/0002_library_assets.sql");
     pub const ROOT_WRITE_SAFETY: &str = include_str!("migrations/0003_root_write_safety.sql");
@@ -124,6 +126,8 @@ pub(crate) fn apply_migrations(connection: &mut Connection) -> Result<(), Error>
             (23, migrations::RESOURCE_RETENTION),
             (24, migrations::OBJECT_CHANGE_TIME),
             (25, migrations::IGNORE_DERIVED_SONG_AUDIO_CONFLICTS),
+            (26, migrations::SYNC_SESSION_INTENT),
+            (27, migrations::SYNC_CACHE_CLEANUP),
         ],
     )
 }

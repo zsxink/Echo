@@ -227,6 +227,37 @@ pub async fn sync_now(
     transition(app, Arc::clone(&runtime), SyncRuntime::sync_now).await
 }
 
+/// Explicitly retry a startup restoration that already gave up. Automatic
+/// restoration is finite, so the terminal failure state must have a user path.
+#[tauri::command]
+pub async fn sync_restore_retry(
+    app: tauri::AppHandle,
+    runtime: State<'_, Arc<SyncRuntime>>,
+) -> Result<SyncStatus, IpcErrorDto> {
+    let runtime = Arc::clone(&runtime);
+    let worker_runtime = Arc::clone(&runtime);
+    let outcome = tauri::async_runtime::spawn_blocking(move || worker_runtime.retry_restore())
+        .await
+        .unwrap_or(Err(SyncRuntimeError::WorkerFailed));
+    let status = match outcome {
+        Ok(status) => status,
+        Err(failure) => {
+            let _ = app.emit("sync://status", runtime.report_error(failure));
+            return Err(error(failure));
+        }
+    };
+    let _ = app.emit("sync://status", &status);
+    // Restart the bounded worker only while the persisted intent still allows
+    // it; a stopped or paused library stays stopped.
+    if let Err(failure) = runtime.start_restore_retry() {
+        if failure != SyncRuntimeError::Unconfigured {
+            let _ = app.emit("sync://status", runtime.report_error(failure));
+            return Err(error(failure));
+        }
+    }
+    Ok(runtime.status())
+}
+
 #[tauri::command]
 pub async fn revoke_device(
     runtime: State<'_, Arc<SyncRuntime>>,

@@ -6,6 +6,58 @@
 use super::*;
 
 impl NativeSyncProvisioner {
+    /// Retry cache partitions whose binding was already discarded.
+    ///
+    /// Deferred removals are recorded durably at detach time, so an
+    /// interrupted or failed cleanup converges on any later session without
+    /// re-reading a binding that no longer exists. Local music, publication
+    /// journals and security checkpoints are never part of this pass.
+    pub(super) fn retry_retired_cache_cleanups(&self) {
+        let pending = match self.database.pending_sync_cache_cleanups() {
+            Ok(pending) => pending,
+            Err(error) => {
+                tracing::warn!(
+                    target: "echo_desktop::sync",
+                    %error,
+                    "retired sync cache cleanup retry could not be read"
+                );
+                return;
+            }
+        };
+        for binding in pending {
+            if self
+                .database
+                .current_sync_configuration()
+                .ok()
+                .flatten()
+                .is_some_and(|configuration| configuration.binding == binding)
+            {
+                // A live binding is not retired; keep its cache and its marker
+                // is stale (for example a rolled-back detach).
+                let _ = self.database.complete_sync_cache_cleanup(binding);
+                continue;
+            }
+            let cleared = self.local_resource_store(binding).and_then(|store| {
+                store
+                    .clear_binding(binding)
+                    .map_err(|_| SyncRuntimeError::LibraryUnavailable)
+            });
+            if cleared.is_ok() {
+                let _ = self.database.complete_sync_cache_cleanup(binding);
+            } else {
+                let attempts = self
+                    .database
+                    .retry_sync_cache_cleanup(binding)
+                    .unwrap_or_default();
+                tracing::warn!(
+                    target: "echo_desktop::sync",
+                    attempts,
+                    "retired sync cache cleanup still failing; will retry"
+                );
+            }
+        }
+    }
+
     /// Finish the LAN-sync remote-delete isolation retry pass (task 4.5).
     /// Tolerant per intent: one violated/missing intent stays pending with a
     /// warning and never fails the sync cycle that ran this pass.
@@ -101,24 +153,37 @@ impl NativeSyncProvisioner {
                 credentials.push(peer_identity_handle(configuration.binding, root)?);
             }
         }
+        // Record the durable cleanup intent *before* the binding identity is
+        // discarded. The partition removal cannot share the SQLite transaction,
+        // so this marker is what makes a failed removal retryable later instead
+        // of leaking orphan bytes. Publication journals and security
+        // checkpoints are deliberately untouched: ordinary teardown never
+        // reclaims recovery state.
+        if let Some(binding) = detached_binding {
+            if self.database.record_sync_cache_cleanup(binding).is_err() {
+                // Do not discard the binding when its cache intent could not be
+                // recorded; the caller keeps a recoverable, retryable state.
+                return Err(SyncRuntimeError::LibraryUnavailable);
+            }
+        }
         // Revoke database authorization before deleting credentials. If secure
         // cleanup fails, stale credentials still cannot authenticate.
         self.database
             .detach_lan_sync_context(root)
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
         if let Some(binding) = detached_binding {
-            if self
-                .local_resource_store(binding)
-                .and_then(|store| {
-                    store
-                        .clear_binding(binding)
-                        .map_err(|_| SyncRuntimeError::LibraryUnavailable)
-                })
-                .is_err()
-            {
+            let cleared = self.local_resource_store(binding).and_then(|store| {
+                store
+                    .clear_binding(binding)
+                    .map_err(|_| SyncRuntimeError::LibraryUnavailable)
+            });
+            if cleared.is_ok() {
+                let _ = self.database.complete_sync_cache_cleanup(binding);
+            } else {
+                let _ = self.database.retry_sync_cache_cleanup(binding);
                 tracing::warn!(
                     target: "echo_desktop::sync",
-                    "detached sync resource cache cleanup failed"
+                    "detached sync resource cache cleanup deferred to a durable retry"
                 );
             }
         }

@@ -26,6 +26,7 @@ import type {
   IpcErrorDto,
   LibraryRootStatusDto,
   SyncRole,
+  SyncSessionIntent,
   SyncState,
   SyncStatus,
   Theme,
@@ -101,6 +102,7 @@ type Command =
   | "sync_pause"
   | "sync_resume"
   | "sync_now"
+  | "sync_restore_retry"
   | "sync_authorized_peers"
   | "revoke_device"
   | "discover_hosts"
@@ -342,6 +344,9 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
     downloadedBytes: null as number | null,
     totalDownloadBytes: null as number | null,
     mediaReady: null as boolean | null,
+    sessionIntent: "stopped" as SyncSessionIntent,
+    restoreAttempts: null as number | null,
+    restoreExhausted: false,
   };
   let pairingCode: string | null = null;
   let pairingCounter = 0;
@@ -417,6 +422,16 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
     },
     sync_now: () => {
       syncStatus = { ...syncStatus, state: "syncing", eventSequence: syncStatus.eventSequence + 1 };
+      return syncStatus;
+    },
+    sync_restore_retry: () => {
+      syncStatus = {
+        ...syncStatus,
+        restoreAttempts: null,
+        restoreExhausted: false,
+        state: syncStatus.enabled ? syncStatus.state : "disabled",
+        eventSequence: syncStatus.eventSequence + 1,
+      };
       return syncStatus;
     },
     revoke_device: () => ({

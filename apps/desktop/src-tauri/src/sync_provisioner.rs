@@ -509,9 +509,14 @@ impl NativeSyncProvisioner {
         if let Some(store) = stores.get(&binding).and_then(Weak::upgrade) {
             return Ok(store);
         }
-        let directory = self
-            .private_resources
-            .join(binding.library_id.as_uuid().to_string());
+        // Resolve the private root once: the store rejects symlinked path
+        // components, and a canonical base keeps every binding partition
+        // comparable no matter how the app data path was spelled.
+        std::fs::create_dir_all(&self.private_resources)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        let base = std::fs::canonicalize(&self.private_resources)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        let directory = base.join(binding.library_id.as_uuid().to_string());
         std::fs::create_dir_all(&directory).map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
         let store = FileResourceStore::new(directory)
             .map(Arc::new)
