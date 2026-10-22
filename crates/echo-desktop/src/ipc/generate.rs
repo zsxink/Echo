@@ -221,6 +221,7 @@ pub fn generated_typescript() -> String {
         "sync_pause",
         "sync_resume",
         "sync_now",
+        "sync_restore_retry",
     ] {
         let _ = writeln!(out, "  readonly {command}: SyncStatus;");
     }

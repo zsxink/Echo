@@ -33,12 +33,44 @@ pub enum SyncState {
     Failed,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SyncSessionIntent {
+    /// The user enabled sync and it may be restored after a normal exit.
+    Enabled,
+    /// The user stopped sync while retaining its pairing.
+    Stopped,
+    /// The user paused sync while retaining its pairing.
+    Paused,
+}
+
+impl SyncSessionIntent {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Enabled => "enabled",
+            Self::Stopped => "stopped",
+            Self::Paused => "paused",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncStatus {
     pub enabled: bool,
     pub role: SyncRole,
     pub state: SyncState,
+    /// The user's persisted lifecycle choice for the selected library. Unlike
+    /// `enabled`, this survives restart and distinguishes a deliberate stop from
+    /// a pause without implying a live network session.
+    pub session_intent: SyncSessionIntent,
+    /// Automatic restore retries already spent for this library. Absent while
+    /// no restore attempt is running or after a successful start.
+    pub restore_attempts: Option<u32>,
+    /// True once bounded startup restoration gave up. The UI must offer an
+    /// explicit retry instead of implying an unreported background attempt.
+    pub restore_exhausted: bool,
     pub session_id: u64,
     pub event_sequence: u64,
     /// True only when the completed cycle changed local catalog projections.
@@ -66,6 +98,9 @@ impl Default for SyncStatus {
             enabled: false,
             role: SyncRole::None,
             state: SyncState::Disabled,
+            session_intent: SyncSessionIntent::Stopped,
+            restore_attempts: None,
+            restore_exhausted: false,
             session_id: 0,
             event_sequence: 0,
             catalog_changed: false,
@@ -113,10 +148,17 @@ pub struct SyncPeer {
 pub(super) const fn typescript() -> &'static str {
     r"export type SyncRole = 'none' | 'host' | 'peer';
 export type SyncState = 'disabled' | 'hosting' | 'connected' | 'syncing' | 'paused' | 'failed';
+export type SyncSessionIntent = 'enabled' | 'stopped' | 'paused';
 export interface SyncStatus {
   readonly enabled: boolean;
   readonly role: SyncRole;
   readonly state: SyncState;
+  /** The user's persisted lifecycle choice; distinguishes stop from pause. */
+  readonly sessionIntent: SyncSessionIntent;
+  /** Restore attempts already spent for this library, when a restore is running. */
+  readonly restoreAttempts: number | null;
+  /** True once bounded startup restoration gave up; requires explicit retry. */
+  readonly restoreExhausted: boolean;
   readonly sessionId: number;
   readonly eventSequence: number;
   readonly catalogChanged: boolean;
@@ -197,6 +239,7 @@ export interface SyncCommandArguments {
   readonly discover_hosts: [args?: Record<string, never>];
   readonly create_sync_pairing_code: [args?: Record<string, never>];
   readonly request_sync_pairing: [args: { code: string; hostAddress: string }];
+  readonly sync_restore_retry: [args?: Record<string, never>];
 }
 
 "

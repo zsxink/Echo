@@ -4,7 +4,7 @@
 //! the UI receives only a path-free outcome.
 
 use echo_core::application::root_switch::{
-    derive_root_id, ActivateLibrary, PrepareLibraryCandidate,
+    derive_root_id, ActivateLibrary, PrepareLibraryCandidate, PreparedCandidate,
 };
 use echo_core::application::scan::{CancelScan, ScanSummary, StartScan};
 use echo_core::domain::ids::LibraryRootId;
@@ -97,6 +97,29 @@ impl super::AppServices {
     ///   the desktop's real stack always provides it.
     /// - Storage errors propagate.
     pub fn choose_library_root(&self) -> Result<Option<LibraryRootStatusDto>, Error> {
+        self.choose_library_root_with_hooks(&mut |_| Ok(()))
+            .map(|outcome| outcome.map(|(status, _)| status))
+    }
+
+    /// Root switch with an explicit session handoff boundary.
+    ///
+    /// `before_activation` runs after the candidate scan succeeded but before
+    /// the activation transaction commits; it is the only place a caller may
+    /// fence the running sync session. The returned [`PreparedCandidate`] lets
+    /// that caller restore the newly activated root's own session *after* the
+    /// commit. A cancelled picker and a failed candidate preparation never
+    /// reach the hook, which is what makes cancellation a genuine no-op for
+    /// sync, retries and caches.
+    ///
+    /// # Errors
+    ///
+    /// Same contract as [`Self::choose_library_root`], plus whatever the hook
+    /// reports. A hook error is raised before the commit, so the previous root
+    /// and its activation stay untouched.
+    pub fn choose_library_root_with_hooks(
+        &self,
+        before_activation: &mut dyn FnMut(&PreparedCandidate) -> Result<(), Error>,
+    ) -> Result<Option<(LibraryRootStatusDto, PreparedCandidate)>, Error> {
         let Some(absolute) = self.dialogs.pick_library_directory()? else {
             // Cancelled: not an error, not a success — a genuine no-op.
             return Ok(None);
@@ -126,6 +149,7 @@ impl super::AppServices {
                 "library is not in a switchable state",
             ));
         }
+        before_activation(&prepare)?;
         let _outcome = ActivateLibrary::new(
             &self.deps,
             self.deps.roots.as_ref(),
@@ -153,7 +177,7 @@ impl super::AppServices {
             status.unusable_records =
                 continuation.projection.invalid + continuation.projection.superseded;
         }
-        Ok(Some(status))
+        Ok(Some((status, prepare)))
     }
 
     /// Start a full scan of `root`. Blocking: the Tauri layer calls this on a

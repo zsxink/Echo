@@ -10,13 +10,25 @@ import { lanSyncAdapter, type LanSyncRole } from "./lanSyncAdapter";
 import { SyncConflictsPanel } from "./SyncConflictsPanel";
 import { acceptsSyncStatus } from "./syncStatusOrder";
 
+/**
+ * A closed session is not the same as a never-configured one: the persisted
+ * intent separates a deliberate stop (pairing kept) from a pause (resumable)
+ * and from a library that has no pairing at all.
+ */
 function describeStatus(status: SyncStatus | null, loading: boolean): string {
   if (loading) return "正在读取同步服务状态…";
   if (!status) return "无法读取同步服务状态";
+  if (status.restoreExhausted) {
+    return "自动恢复已停止尝试；可手动重试恢复";
+  }
   if (status.lastError) return `同步服务错误：${syncErrorText(status.lastError)}`;
   switch (status.state) {
     case "disabled":
-      return "已关闭";
+      // "Stopped" only means a deliberate stop when this library actually has
+      // a pairing; an unconfigured library is simply closed.
+      return status.sessionIntent === "stopped" && status.libraryId
+        ? "已停止（配对关系保留）"
+        : "已关闭";
     case "hosting":
       return "正在作为主机运行";
     case "connected":
@@ -24,9 +36,9 @@ function describeStatus(status: SyncStatus | null, loading: boolean): string {
     case "syncing":
       return "正在同步";
     case "paused":
-      return "已暂停";
+      return "已暂停（配对关系保留，可继续）";
     case "failed":
-      return "同步服务失败";
+      return status.sessionIntent === "stopped" ? "同步服务已停止" : "同步服务失败";
   }
 }
 
@@ -315,7 +327,10 @@ export function LanSyncSettings({
           <div className="storage-value">
             <strong>主机服务</strong>
             <span className="setting-help">
-              停止服务会保留配对关系；重新启动后，其他设备即可再次连接。
+              停止服务会保留配对关系与已下载媒体缓存；重新启动后，其他设备即可再次连接。
+            </span>
+            <span className="setting-help">
+              想要彻底退出局域网同步，请使用下方“解除同步”；两者影响范围不同。
             </span>
           </div>
           <button
@@ -328,12 +343,41 @@ export function LanSyncSettings({
           </button>
         </div>
       ) : null}
+      {!active && status?.sessionIntent === "stopped" && status?.libraryId ? (
+        <div className="setting-row" data-testid="lan-sync-stopped-hint">
+          <div className="storage-value">
+            <strong>同步已停止</strong>
+            <span className="setting-help">
+              配对关系与已下载媒体缓存已保留；重新启动即可继续，不会重新传输已有内容。
+            </span>
+          </div>
+        </div>
+      ) : null}
+      {status?.restoreExhausted ? (
+        <div className="setting-row" data-testid="lan-sync-restore-exhausted">
+          <div className="storage-value">
+            <strong>自动恢复未成功</strong>
+            <span className="setting-help">
+              已停止自动重试。请确认主机在线且处于同一局域网，然后手动重试。
+            </span>
+          </div>
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            onClick={() => void run(lanSyncAdapter.restoreRetry)}
+            data-testid="lan-sync-restore-retry"
+          >
+            重试恢复
+          </button>
+        </div>
+      ) : null}
       {active ? (
         <div className="setting-row lan-sync-unlink-row">
           <div className="storage-value">
             <strong>解除同步</strong>
             <span className="setting-help">
-              清除本机的同步绑定和设备凭据；本地音乐库、音乐和歌单会保留，可继续独立使用。
+              清除本机的同步绑定、设备凭据和该绑定的传输缓存；本地音乐库、音乐和歌单会保留，可继续独立使用。
             </span>
           </div>
           <button

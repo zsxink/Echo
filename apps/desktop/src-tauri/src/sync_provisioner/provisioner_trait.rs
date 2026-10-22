@@ -392,6 +392,7 @@ impl SyncCyclePort for NativeSyncProvisioner {
             .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
             .ok_or(SyncRuntimeError::Unconfigured)?;
         if role == SyncRole::Peer && !configuration.host {
+            self.retry_retired_cache_cleanups();
             self.synchronize_peer(configuration.local_root, &cancelled)?;
             self.reconcile_remote_delete_isolations(configuration.local_root);
             self.refresh_published_metadata(configuration.local_root);
@@ -422,6 +423,9 @@ impl SyncCyclePort for NativeSyncProvisioner {
         }
         let resources = self.local_resource_store(configuration.binding)?;
         let result = (|| {
+            // Converge any cache partition whose binding was already retired
+            // by an earlier detach, including one from a previous process.
+            self.retry_retired_cache_cleanups();
             self.confirm_local(configuration.binding)?;
             self.publish_cached_peer_resources(
                 configuration.local_root,

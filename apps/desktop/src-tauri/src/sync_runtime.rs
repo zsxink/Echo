@@ -1,16 +1,19 @@
 //! Opt-in native LAN lifecycle. Provisioning never accepts keys from the `WebView`.
 
 use std::net::{IpAddr, SocketAddr, TcpListener};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use echo_core::application::ports::{DeviceIdProvider, LibraryRepository};
 use echo_core::domain::ids::LibraryRootId;
-use echo_core::domain::sync::SyncBinding;
+use echo_core::domain::sync::{SyncBinding, SyncSessionIntent};
 use echo_core::infrastructure::sqlite::SqliteDatabase;
-pub use echo_desktop::ipc::sync::{DiscoveredHost, SyncPeer, SyncRole, SyncState, SyncStatus};
+pub use echo_desktop::ipc::sync::{
+    DiscoveredHost, SyncPeer, SyncRole, SyncSessionIntent as IpcSyncSessionIntent, SyncState,
+    SyncStatus,
+};
 use echo_sync::discovery::LanDiscovery;
 use echo_sync::pairing::{PairingError, PairingGrantDto, PairingInvitation};
 use echo_sync::server::{host_router, serve_tls, HostApiState};
@@ -310,6 +313,17 @@ struct Inner {
     host_certificate_der: Option<Vec<u8>>,
 }
 
+/// Project the Core lifecycle intent onto the typed IPC enum. The two are kept
+/// separate so a wire change never silently alters persistence semantics.
+#[allow(clippy::redundant_pub_crate)] // shared by the `handoff`/test submodules
+pub(super) const fn ipc_session_intent(intent: SyncSessionIntent) -> IpcSyncSessionIntent {
+    match intent {
+        SyncSessionIntent::Enabled => IpcSyncSessionIntent::Enabled,
+        SyncSessionIntent::Stopped => IpcSyncSessionIntent::Stopped,
+        SyncSessionIntent::Paused => IpcSyncSessionIntent::Paused,
+    }
+}
+
 /// A callback can outlive a cancelled transport's blocking store write. Its
 /// active token is private to one cycle and is revoked before final status is
 /// read, so late checkpoints cannot overwrite completion or a later cycle.
@@ -406,14 +420,268 @@ pub struct SyncRuntime {
     cycle: Arc<Mutex<()>>,
     status_notifier: Arc<Mutex<Option<StatusNotifier>>>,
     inner: Arc<Mutex<Inner>>,
+    restore_retry: Mutex<RestoreRetryState>,
+}
+
+struct RestoreRetryState {
+    generation: Arc<AtomicU64>,
+    worker: Option<RestoreRetryWorker>,
+    /// Attempts already spent by the running or last-finished automatic
+    /// restoration. Visible through [`SyncStatus::restore_attempts`].
+    attempts: u32,
+}
+
+struct RestoreRetryWorker {
+    wake: crate::restore_retry::RestoreRetryWake,
+    thread: JoinHandle<()>,
 }
 
 mod control;
+pub use handoff::RootHandoff;
+
+mod handoff;
 mod pairing;
 mod session;
 mod sync_loop;
 
 impl SyncRuntime {
+    /// Begin the bounded automatic restoration of the selected library.
+    pub(super) fn start_restore_retry(self: &Arc<Self>) -> Result<(), SyncRuntimeError> {
+        self.start_restore_retry_with_delays(
+            crate::restore_retry::MAX_ATTEMPTS,
+            crate::restore_retry::BASE_DELAY,
+            crate::restore_retry::MAX_DELAY,
+        )
+    }
+
+    /// Retry a restoration that already gave up. This is an explicit user
+    /// action, so it always starts a fresh bounded attempt series instead of
+    /// silently resuming behind the user's back.
+    pub fn retry_restore(&self) -> Result<SyncStatus, SyncRuntimeError> {
+        let _transition = self
+            .transition
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        if self.status().enabled {
+            return Err(SyncRuntimeError::Busy);
+        }
+        {
+            let mut inner = self
+                .inner
+                .lock()
+                .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+            inner.status.restore_exhausted = false;
+            inner.status.restore_attempts = None;
+            inner.status.state = SyncState::Disabled;
+            inner.status.last_error = None;
+            inner.status.event_sequence += 1;
+        }
+        Ok(self.status())
+    }
+
+    fn start_restore_retry_with_delays(
+        self: &Arc<Self>,
+        max_attempts: u32,
+        base_delay: Duration,
+        max_delay: Duration,
+    ) -> Result<(), SyncRuntimeError> {
+        let root = self.active_root()?;
+        self.database
+            .current_sync_configuration()
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+            .filter(|configuration| {
+                configuration.local_root == root
+                    && configuration.session_intent == SyncSessionIntent::Enabled
+            })
+            .ok_or(SyncRuntimeError::Unconfigured)?;
+        let mut retry = self
+            .restore_retry
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        if retry
+            .worker
+            .as_ref()
+            .is_some_and(|worker| !worker.thread.is_finished())
+        {
+            return Ok(());
+        }
+        if let Some(worker) = retry.worker.take() {
+            worker
+                .thread
+                .join()
+                .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        }
+        let generation = retry.generation.fetch_add(1, Ordering::AcqRel) + 1;
+        retry.attempts = 0;
+        let (wake, wakeups) = crate::restore_retry::RestoreRetryWake::new();
+        // Release the retry-state lock before the worker starts: the worker
+        // reads the same generation and attempts, so holding it here would
+        // serialize the first attempt behind its own spawn.
+        drop(retry);
+        let runtime = Arc::downgrade(self);
+        let thread = thread::Builder::new()
+            .name("echo-sync-startup-retry".into())
+            .spawn(move || {
+                let mut delay = base_delay;
+                for attempt in 1..=max_attempts {
+                    if crate::restore_retry::wait_for_restore_retry(&wakeups, delay) {
+                        // Interrupted by a user transition or producer drop.
+                        return;
+                    }
+                    let Some(runtime) = runtime.upgrade() else {
+                        return;
+                    };
+                    if !runtime.restore_retry_is_current(generation, root) {
+                        // Superseded: a user transition or root change owns the
+                        // session now. Never publish a stale failure.
+                        return;
+                    }
+                    runtime.record_restore_attempt(attempt);
+                    match runtime.restore_saved_session() {
+                        Ok(Some(_)) => {
+                            // A successful start owns the session; clear the
+                            // retry accounting so status stops advertising it.
+                            runtime.clear_restore_retry_state();
+                            return;
+                        }
+                        Ok(None) => {
+                            runtime.clear_restore_retry_state();
+                            return;
+                        }
+                        Err(error) => {
+                            let status =
+                                runtime.report_restore_failure(error, attempt, max_attempts);
+                            runtime.notify_status(status);
+                            if attempt == max_attempts {
+                                runtime.mark_restore_exhausted();
+                                return;
+                            }
+                            delay = crate::restore_retry::next_delay(delay).min(max_delay);
+                        }
+                    }
+                }
+            })
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        self.restore_retry
+            .lock()
+            .map_err(|_| SyncRuntimeError::WorkerFailed)?
+            .worker = Some(RestoreRetryWorker { wake, thread });
+        Ok(())
+    }
+
+    /// Whether one restoration attempt still belongs to the current library and
+    /// user intent. Kept as a method so the worker never holds the retry lock
+    /// across its own decisions.
+    fn restore_retry_is_current(&self, generation: u64, root: LibraryRootId) -> bool {
+        let current_generation = self
+            .restore_retry
+            .lock()
+            .map_or(u64::MAX, |retry| retry.generation.load(Ordering::Acquire));
+        let intent_enabled = self
+            .database
+            .current_sync_configuration()
+            .ok()
+            .flatten()
+            .is_some_and(|configuration| {
+                configuration.local_root == root
+                    && configuration.session_intent == SyncSessionIntent::Enabled
+            });
+        crate::restore_retry::retry_allowed(
+            generation,
+            current_generation,
+            self.active_root().ok() == Some(root),
+            intent_enabled,
+        )
+    }
+
+    fn record_restore_attempt(&self, attempt: u32) {
+        if let Ok(mut retry) = self.restore_retry.lock() {
+            retry.attempts = attempt;
+        }
+    }
+
+    /// Stop and join any restore worker, advancing its generation so a delayed
+    /// attempt can never act on a superseded root or user intent.
+    pub(super) fn cancel_restore_retry(&self) {
+        let worker = {
+            let Ok(mut retry) = self.restore_retry.lock() else {
+                return;
+            };
+            retry.generation.fetch_add(1, Ordering::AcqRel);
+            retry.attempts = 0;
+            retry.worker.take()
+        };
+        if let Some(mut worker) = worker {
+            worker.wake.cancel();
+            let _ = worker.thread.join();
+        }
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.status.restore_attempts = None;
+            inner.status.restore_exhausted = false;
+        }
+    }
+
+    fn clear_restore_retry_state(&self) {
+        if let Ok(mut retry) = self.restore_retry.lock() {
+            retry.attempts = 0;
+        }
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.status.restore_attempts = None;
+            inner.status.restore_exhausted = false;
+        }
+    }
+
+    fn report_restore_failure(
+        &self,
+        error: SyncRuntimeError,
+        attempt: u32,
+        max_attempts: u32,
+    ) -> SyncStatus {
+        let status = self.report_error(error);
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        inner.status.restore_attempts = Some(attempt.min(max_attempts));
+        drop(inner);
+        status
+    }
+
+    fn mark_restore_exhausted(&self) {
+        {
+            let mut inner = self
+                .inner
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            inner.status.restore_exhausted = true;
+            inner.status.restore_attempts = None;
+            inner.status.state = SyncState::Failed;
+            inner.status.last_error = Some(
+                SyncRuntimeError::SyncHostUnavailable
+                    .message_key()
+                    .to_owned(),
+            );
+            inner.status.event_sequence += 1;
+        }
+        // Allow a later app restart to try again only while the persisted
+        // intent stays enabled; exhaustion itself is not persisted.
+        self.notify_status(self.status());
+        if let Ok(mut retry) = self.restore_retry.lock() {
+            retry.worker = None;
+        }
+    }
+
+    fn notify_status(&self, status: SyncStatus) {
+        if let Some(notifier) = self
+            .status_notifier
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+        {
+            notifier(status);
+        }
+    }
+
     pub fn new(
         database: Arc<SqliteDatabase>,
         provisioner: Option<Arc<dyn SyncProvisioner>>,
@@ -427,6 +695,11 @@ impl SyncRuntime {
             cycle: Arc::new(Mutex::new(())),
             status_notifier: Arc::new(Mutex::new(None)),
             inner: Arc::new(Mutex::new(Inner::default())),
+            restore_retry: Mutex::new(RestoreRetryState {
+                generation: Arc::new(AtomicU64::new(0)),
+                worker: None,
+                attempts: 0,
+            }),
         }
     }
 
@@ -453,11 +726,30 @@ impl SyncRuntime {
             inner.status.last_error = Some(SyncRuntimeError::WorkerFailed.message_key().into());
             inner.status.event_sequence += 1;
         }
+        // Intent is persisted per root and survives restart, so it can never be
+        // inferred from a live session. A session's own root owns the intent
+        // while it runs; otherwise the selected root's persisted choice does.
+        if inner.root.is_none() {
+            if let Ok(Some(configuration)) = self.database.current_sync_configuration() {
+                if Some(configuration.local_root) == self.active_root().ok() {
+                    inner.status.session_intent = ipc_session_intent(configuration.session_intent);
+                }
+            }
+        }
         inner.status.clone()
     }
 }
 
 impl SyncRuntime {
+    pub(super) fn persist_session_intent(
+        &self,
+        intent: echo_core::domain::sync::SyncSessionIntent,
+    ) -> Result<(), SyncRuntimeError> {
+        self.database
+            .set_sync_session_intent(intent)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)
+    }
+
     fn stop_sync_loop(&self) -> Result<(), SyncRuntimeError> {
         let worker = self
             .inner
@@ -472,6 +764,7 @@ impl SyncRuntime {
     }
 
     fn stop_inner(&self) -> Result<(), SyncRuntimeError> {
+        self.cancel_restore_retry();
         if let Some(cancelled) = self
             .inner
             .lock()

@@ -2,7 +2,9 @@
 
 use super::*;
 use crate::application::ports::{HostCommitLedgerPort, LocalSyncQueuePort};
-use crate::domain::sync::{AuthorityId, DeviceId, Epoch, LibraryId, SyncBinding};
+use crate::domain::sync::{
+    AuthorityId, DeviceId, Epoch, LibraryId, SyncBinding, SyncSessionIntent,
+};
 
 fn binding() -> SyncBinding {
     SyncBinding {
@@ -44,11 +46,25 @@ fn root_switching_preserves_pending_peers_and_independent_commit_chains() {
     database
         .authorize_sync_peer(a_binding, peer, "A peer".into(), "vault-a".into())
         .unwrap();
+    database
+        .set_sync_session_intent(SyncSessionIntent::Enabled)
+        .unwrap();
 
     // Capturing an inactive root never exchanges the current authority ledger.
     SongRepository::upsert(&database, &b_song).unwrap();
     assert!(database.pending_local_mutations(32).unwrap().is_empty());
     database.bind_sync_library(b_binding, true, b).unwrap();
+    assert_eq!(
+        database
+            .current_sync_configuration()
+            .unwrap()
+            .unwrap()
+            .session_intent,
+        SyncSessionIntent::Stopped
+    );
+    database
+        .set_sync_session_intent(SyncSessionIntent::Paused)
+        .unwrap();
     assert!(database.authorized_sync_peer_handles().unwrap().is_empty());
     assert_eq!(
         database
@@ -70,6 +86,9 @@ fn root_switching_preserves_pending_peers_and_independent_commit_chains() {
     database
         .authorize_sync_peer(b_binding, peer, "B peer".into(), "vault-b".into())
         .unwrap();
+    database
+        .set_sync_session_intent(SyncSessionIntent::Paused)
+        .unwrap();
     SongRepository::set_favorite(&database, a_song.id(), true).unwrap();
     assert!(database.pending_local_mutations(32).unwrap().is_empty());
 
@@ -80,8 +99,8 @@ fn root_switching_preserves_pending_peers_and_independent_commit_chains() {
             .current_sync_configuration()
             .unwrap()
             .unwrap()
-            .local_root,
-        a
+            .session_intent,
+        SyncSessionIntent::Enabled
     );
     assert_eq!(
         database.authorized_sync_peer_handles().unwrap(),
@@ -112,6 +131,22 @@ fn root_switching_preserves_pending_peers_and_independent_commit_chains() {
         &LibraryRoot::new(b, directory.path().join("b"), true, true),
     )
     .unwrap();
+    assert_eq!(
+        database
+            .current_sync_configuration()
+            .unwrap()
+            .unwrap()
+            .session_intent,
+        SyncSessionIntent::Paused
+    );
+    assert_eq!(
+        database
+            .current_sync_configuration()
+            .unwrap()
+            .unwrap()
+            .session_intent,
+        SyncSessionIntent::Paused
+    );
     assert_eq!(
         database.authorized_sync_peer_handles().unwrap(),
         [(peer, "vault-b".into())]
@@ -365,6 +400,14 @@ fn migration_assigns_single_ledger_to_binding_root_before_selecting_ui_root() {
         )
         .unwrap();
     assert_eq!(owner, "root-a");
+    let archived_intent: String = connection
+        .query_row(
+            "SELECT session_intent FROM archived_sync_binding WHERE context_root='root-a'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(archived_intent, "stopped");
     let queue_owner: String = connection
         .query_row(
             "SELECT local_root_uuid FROM sync_mutations WHERE mutation_id='mutation-a'",

@@ -28,9 +28,8 @@ use std::sync::{Arc, Mutex};
 use echo_core::domain::catalog::{OpaqueCursor, SongSort, SongSortField, SortDirection};
 use echo_core::domain::ids::{LibraryRootId, OperationId, PlaylistId, SongId};
 use echo_desktop::ipc::dto::{
-    BootstrapSnapshot, ImportBatchDto, ImportResultDto, LibraryCountsDto, LibraryRootStatusDto,
-    LibraryStatus, PagedSongs, PlaylistView, RevealResultDto, ScanSnapshot, SongDetailView,
-    SongView,
+    BootstrapSnapshot, ImportBatchDto, ImportResultDto, LibraryCountsDto, LibraryStatus,
+    PagedSongs, PlaylistView, RevealResultDto, ScanSnapshot, SongDetailView, SongView,
 };
 use echo_desktop::ipc::IpcErrorDto;
 use echo_desktop::player::coordinator::PlaybackCoordinator;
@@ -460,23 +459,6 @@ pub fn undo_delete(
     services
         .undo_delete(root, operation)
         .map_err(IpcErrorDto::from)
-}
-
-#[tauri::command]
-pub async fn choose_library_root(
-    services: State<'_, AppServices>,
-    sync: State<'_, Arc<crate::sync_runtime::SyncRuntime>>,
-) -> Result<Option<LibraryRootStatusDto>, IpcErrorDto> {
-    // Tauri executes synchronous commands on the event-loop thread. The real
-    // dialog adapter deliberately uses the plugin's blocking picker, which
-    // requires a worker thread while the native event loop continues pumping
-    // dialog events. Making this command async gives it that worker context.
-    let sync = Arc::clone(&sync);
-    tauri::async_runtime::spawn_blocking(move || sync.stop())
-        .await
-        .map_err(|_| IpcErrorDto::new("unavailable", "sync.workerFailed", true, None, None))?
-        .map_err(|error| IpcErrorDto::new("unavailable", error.message_key(), true, None, None))?;
-    services.choose_library_root().map_err(IpcErrorDto::from)
 }
 
 #[tauri::command]

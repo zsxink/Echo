@@ -60,6 +60,7 @@ impl SyncRuntime {
             .as_ref()
             .ok_or(SyncRuntimeError::Unconfigured)?;
         let root = self.active_root()?;
+        self.persist_session_intent(SyncSessionIntent::Enabled)?;
         let peer = provisioner.peer(root)?;
         if self.active_root()? != root {
             return Err(SyncRuntimeError::LibraryUnavailable);
@@ -77,7 +78,18 @@ impl SyncRuntime {
             .transition
             .lock()
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
-        self.stop_inner()?;
+        self.cancel_restore_retry();
+        if self
+            .database
+            .current_sync_configuration()
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+            .is_some()
+        {
+            self.persist_session_intent(SyncSessionIntent::Stopped)?;
+        }
+        if self.status().enabled {
+            self.stop_inner()?;
+        }
         Ok(self.status())
     }
 
@@ -89,6 +101,8 @@ impl SyncRuntime {
         if !self.status().enabled {
             return Err(SyncRuntimeError::Unconfigured);
         }
+        self.cancel_restore_retry();
+        self.persist_session_intent(SyncSessionIntent::Paused)?;
         if let Some(cancelled) = self
             .inner
             .lock()
@@ -138,7 +152,9 @@ impl SyncRuntime {
         }
         self.stop_inner()?;
         let result = if role == SyncRole::Host {
-            self.start_host_locked(address.ok_or(SyncRuntimeError::InvalidAddress)?)
+            let address = address.ok_or(SyncRuntimeError::InvalidAddress)?;
+            self.persist_session_intent(SyncSessionIntent::Enabled)?;
+            self.start_host_locked(address)
         } else {
             self.start_peer_locked()
         };

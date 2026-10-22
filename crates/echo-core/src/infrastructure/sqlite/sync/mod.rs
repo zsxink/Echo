@@ -26,6 +26,8 @@ pub(crate) use sync_song_aliases as song_aliases;
 pub(crate) mod apply;
 #[path = "sync_baseline.rs"]
 mod baseline;
+#[path = "cache_cleanup.rs"]
+mod cache_cleanup;
 #[path = "sync_configuration.rs"]
 pub(crate) mod configuration;
 #[path = "sync_conflicts.rs"]
