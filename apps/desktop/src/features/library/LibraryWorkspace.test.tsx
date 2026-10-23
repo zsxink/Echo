@@ -237,3 +237,56 @@ describe("触发控件 toggle（fix-queue-trigger-toggle）", () => {
     );
   });
 });
+
+/**
+ * fix-view-switch-search-carryover — the search term belongs to the view being
+ * left (issue #47). 全部歌曲 / 最近添加 / 喜欢的音乐 are the same workspace
+ * instance in `App`, so the reset is what keeps 喜欢的音乐 from opening as
+ * “在喜欢的音乐里搜旧词”.
+ */
+describe("切换资料库视图清空搜索（fix-view-switch-search-carryover）", () => {
+  afterEach(() => {
+    // @ts-expect-error test hook
+    globalThis.__echoTest?.reset();
+  });
+
+  it("clears the search when switching between library views", async () => {
+    // @ts-expect-error test hook
+    globalThis.__echoTest.setInvoke("library_status", CONFIGURED);
+    // @ts-expect-error test hook
+    globalThis.__echoTest.setInvoke("all_songs", {
+      items: [makeSong("song-1", "Lacquer Love"), makeSong("song-2", "Velvet Night")],
+      isLast: true,
+      nextCursor: null,
+    });
+    // A non-empty term routes the query through `search`; the empty term after
+    // the switch routes it back to the plain per-view command.
+    // @ts-expect-error test hook
+    globalThis.__echoTest.setInvoke("search", {
+      items: [makeSong("song-1", "Lacquer Love")],
+      isLast: true,
+      nextCursor: null,
+    });
+    // @ts-expect-error test hook
+    globalThis.__echoTest.setInvoke("favorites", {
+      items: [makeSong("song-2", "Velvet Night")],
+      isLast: true,
+      nextCursor: null,
+    });
+    // @ts-expect-error test hook
+    globalThis.__echoTest.setInvoke("set_volume", { ok: true });
+    render(<App />);
+    await screen.findByTestId("song-row-song-2");
+
+    fireEvent.change(screen.getByTestId("search-input"), { target: { value: "Lacquer" } });
+    await waitFor(() => expect(screen.queryByTestId("song-row-song-2")).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "喜欢的音乐" }));
+
+    // The box is empty again and the view is the plain favorites list — not
+    // “favorites filtered by Lacquer”.
+    await waitFor(() => expect(screen.getByTestId("search-input")).toHaveValue(""));
+    await waitFor(() => screen.findByTestId("song-row-song-2"));
+    expect(screen.queryByTestId("song-row-song-1")).not.toBeInTheDocument();
+  });
+});

@@ -74,11 +74,15 @@ describe("Narrow-screen sidebar (task 12.3)", () => {
 
   it("preserves search text, the current view and playback across a sidebar toggle", async () => {
     renderConfiguredShell();
-    // Enter text in search and switch to the favorites view.
-    const searchInput = (await screen.findByTestId("search-input")) as HTMLInputElement;
-    fireEvent.change(searchInput, { target: { value: "lacquer" } });
-    const favorites = screen.getByRole("button", { name: "喜欢的音乐" });
+    // Switch to the favorites view first, then enter text in that view's
+    // search. The order matters as of fix-view-switch-search-carryover: a
+    // view switch clears the search term (LE 资料库视图), so typing before
+    // switching would legitimately lose the text — what must survive here is
+    // the sidebar toggle, not the switch.
+    const favorites = await screen.findByRole("button", { name: "喜欢的音乐" });
     fireEvent.click(favorites);
+    const searchInput = screen.getByTestId("search-input") as HTMLInputElement;
+    fireEvent.change(searchInput, { target: { value: "lacquer" } });
 
     // Toggle the sidebar open, then closed.
     const toggle = screen.getByTestId("sidebar-toggle");

@@ -159,8 +159,13 @@ export function PlaylistsView({
   }, [selection]);
   useEffect(() => {
     // A different playlist is a different selection context; leave multi-
-    // select before showing its members.
+    // select before showing its members. The search term belongs to the
+    // playlist being left too — this instance survives an A → B switch, so
+    // without this reset B would open filtered by A's query. The derived
+    // search state (searched/searching/cursor) resets through the search
+    // effect's empty-query branch, exactly as a manual clear does.
     clearSelection();
+    setSearchText("");
     setBatchMenuFor(null);
     setBatchDeleteFor(null);
     setSelectionMode(false);
