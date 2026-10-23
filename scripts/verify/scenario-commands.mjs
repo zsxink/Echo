@@ -274,6 +274,20 @@ export const COMMANDS = {
   "IL-R09-S01": CHECK("12.4"),
   "IL-R09-S02": CHECK("12.4"),
   "IL-R09-S03": CHECK("12.4"),
+  // fix-lyrics-start-offset-remeasure: 切歌重挂载重建观测 / 高度事后变化重算 / 缩放重算;
+  // 真实几何(切歌路径与高度注入判别步)由 task-13.1 的浏览器门禁 A9 断言。
+  "IL-R10-S01": REACT_T(
+    "src/features/player/useLyricsStartOffset.test.tsx",
+    "re-observes when the signature changes",
+  ),
+  "IL-R10-S02": REACT_T(
+    "src/features/player/useLyricsStartOffset.test.tsx",
+    "re-measures when the info block resizes (ResizeObserver)",
+  ),
+  "IL-R10-S03": REACT_T(
+    "src/features/player/useLyricsStartOffset.test.tsx",
+    "re-measures on window resize",
+  ),
 
   // ===== library-experience (LE) =====,
 

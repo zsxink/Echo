@@ -18,6 +18,8 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:http";
 
+import { assertLyricsOffsetAfterTrackChange } from "./a9-lyrics-offset.mjs";
+
 // This file lives at `apps/desktop/e2e/run-e2e.mjs`, so the app root is the
 // e2e directory's parent — one level up, not two. `vite.config.ts` builds to
 // `outDir: "dist"` relative to `apps/desktop`, which is what gets served.
@@ -624,6 +626,12 @@ async function main() {
       `!!document.querySelector('[data-testid="immersive"]')`,
       "A9: Escape closed the immersive player as well (focus must unwind first)",
     );
+
+    // Track change + late height change (issue #75): the offset must survive
+    // the remount a queue entry forces and re-derive from the info block's
+    // rendered height — the assertions live in their own module to keep this
+    // harness under the 1000-line scale gate.
+    await assertLyricsOffsetAfterTrackChange({ evalJs, sleep, fail, firstSongTitle: playing });
     pass(
       "A9: 歌词专注阅读 rearranges the immersive surface; lyrics clear the song title; Escape unwinds it first",
     );

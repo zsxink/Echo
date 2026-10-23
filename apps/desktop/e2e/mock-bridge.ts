@@ -205,6 +205,11 @@ function snapshotOf(state: E2EState): Record<string, unknown> {
     queueLen: state.songs.length,
     mode: "sequential",
     currentTitle: song ? song.title : null,
+    // The real runtime snapshot carries the meta too, so a remounting surface
+    // (immersive player, player bar) paints the real artist on its first frame
+    // instead of 未知艺人 until `song_detail` answers.
+    currentArtist: song ? song.artist : null,
+    currentAlbum: song ? song.album : null,
     currentCanImport: false,
     queue: state.songs.map((s) => ({
       entryId: `entry-${s.id}`,
@@ -756,10 +761,21 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
       const cur = st.nowPlaying;
       if (cur) {
         if (action === "toggle") cur.playing = !cur.playing;
-        if (action === "next") cur.position = Math.max(0, cur.position + 10);
-        if (action === "prev") cur.position = Math.max(0, cur.position - 10);
+        // next/prev are track changes, like the runtime's auto-advance: the
+        // queue entry id changes, the position restarts and the snapshot is
+        // republished (PLAYER_COMMANDS below) so the UI remounts per-track
+        // surfaces (issue #75's e2e path). The old `position ± 10` placeholder
+        // never left the song, so nothing could assert what a track change
+        // does to the immersive layout.
+        if ((action === "next" || action === "prev") && st.songs.length > 0) {
+          const step = action === "next" ? 1 : -1;
+          const index = st.songs.findIndex((s) => s.id === cur.songId);
+          const nextIndex = (index + step + st.songs.length) % st.songs.length;
+          const nextSong = st.songs[nextIndex] ?? st.songs[0];
+          st.nowPlaying = { songId: nextSong.id, position: 0, playing: cur.playing };
+        }
       }
-      return cur;
+      return st.nowPlaying;
     },
     queue_command: () => ({ ok: true }),
     set_volume: () => ({ volume: 1.0 }),
