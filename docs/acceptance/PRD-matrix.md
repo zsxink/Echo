@@ -12,11 +12,11 @@
 | **A6** | 搜索/排序/收藏 | 137 | `node scripts/verify/checks/task-10.5.mjs` |
 | **A7** | 歌单 CRUD | 47 | `node scripts/verify/checks/task-10.9.mjs` |
 | **A8** | 播放与队列 | 68 | `node scripts/verify/checks/task-11.2.mjs && cargo test -p echo-desktop --lib runtime::player && cargo test -p echo-desktop --lib player::actor::tests::subscribe_snapshots` |
-| **A9** | 歌词与沉浸模式 | 28 | `node scripts/verify/checks/task-11.4.mjs && node scripts/verify/checks/task-11.5.mjs && node scripts/verify/checks/task-11.6.mjs` |
+| **A9** | 歌词与沉浸模式 | 31 | `node scripts/verify/checks/task-11.4.mjs && node scripts/verify/checks/task-11.5.mjs && node scripts/verify/checks/task-11.6.mjs` |
 | **A10** | 系统双击文件 | 36 | `cargo test -p echo-core --all-features watch:: && node scripts/verify/checks/task-9.2.mjs` |
 | **A11** | 删除与撤销 | 36 | `cargo test -p echo-core --all-features recover::` |
 | **A12** | 关窗与托盘 | 72 | `node scripts/verify/checks/task-9.6.mjs && node scripts/verify/checks/task-9.3.mjs` |
-| **A13** | 无障碍与窄屏 | 203 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
+| **A13** | 无障碍与窄屏 | 206 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
 | **A14** | 范围保护 | 175 | `node scripts/verify/checks/task-13.8.mjs` |
 
 ## 逐场景归属
@@ -373,6 +373,9 @@
 | A13 | `IL-R09-S01` | 沉浸式歌词体验必须适配减少动画与三平台 |
 | A13 | `IL-R09-S02` | 沉浸式歌词体验必须适配减少动画与三平台 |
 | A13 | `IL-R09-S03` | 沉浸式歌词体验必须适配减少动画与三平台 |
+| A13 | `IL-R10-S01` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |
+| A13 | `IL-R10-S02` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |
+| A13 | `IL-R10-S03` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |
 | A13 | `LE-R01-S01` | 资料库视图 |
 | A13 | `LE-R01-S02` | 资料库视图 |
 | A13 | `LE-R01-S03` | 资料库视图 |
@@ -1069,3 +1072,6 @@
 | A9 | `IL-R09-S01` | 沉浸式歌词体验必须适配减少动画与三平台 |
 | A9 | `IL-R09-S02` | 沉浸式歌词体验必须适配减少动画与三平台 |
 | A9 | `IL-R09-S03` | 沉浸式歌词体验必须适配减少动画与三平台 |
+| A9 | `IL-R10-S01` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |
+| A9 | `IL-R10-S02` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |
+| A9 | `IL-R10-S03` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |

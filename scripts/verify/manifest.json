@@ -3326,6 +3326,24 @@
       "manifest": "tests/scenarios/IL-R09-S03.yaml"
     },
     {
+      "id": "IL-R10-S01",
+      "title": "切歌后歌词起点重新对齐",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/useLyricsStartOffset.test.tsx -t \"re-observes when the signature changes\"",
+      "manifest": "tests/scenarios/IL-R10-S01.yaml"
+    },
+    {
+      "id": "IL-R10-S02",
+      "title": "信息块高度事后变化时重算偏移",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/useLyricsStartOffset.test.tsx -t \"re-measures when the info block resizes (ResizeObserver)\"",
+      "manifest": "tests/scenarios/IL-R10-S02.yaml"
+    },
+    {
+      "id": "IL-R10-S03",
+      "title": "窗口缩放后重算偏移",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/useLyricsStartOffset.test.tsx -t \"re-measures on window resize\"",
+      "manifest": "tests/scenarios/IL-R10-S03.yaml"
+    },
+    {
       "id": "LE-R01-S01",
       "title": "切换全部歌曲",
       "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_all_songs_view",
