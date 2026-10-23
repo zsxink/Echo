@@ -206,6 +206,9 @@
 | IL-R09-S01 | 沉浸式歌词体验必须适配减少动画与三平台 | 减少动画偏好 | 11.3, 12.3, 12.4 | React | `tests/scenarios/IL-R09-S01.yaml` | `pnpm verify:scenario -- IL-R09-S01` |
 | IL-R09-S02 | 沉浸式歌词体验必须适配减少动画与三平台 | 跨平台离线歌词播放 | 11.3, 12.3, 12.4, 13.5 | React/Native | `tests/native/IL-R09-S02.md` | `pnpm verify:scenario -- IL-R09-S02` |
 | IL-R09-S03 | 沉浸式歌词体验必须适配减少动画与三平台 | 暂停时停止旋转 | 11.3, 12.4 | React/CSS | `tests/scenarios/IL-R09-S03.yaml` | `pnpm verify:scenario -- IL-R09-S03` |
+| IL-R10-S01 | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 | 切歌后歌词起点重新对齐 | fix-lyrics-start-offset-remeasure 1.1, 2.1 | React/E2E | `tests/scenarios/IL-R10-S01.yaml` | `pnpm verify:scenario -- IL-R10-S01` |
+| IL-R10-S02 | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 | 信息块高度事后变化时重算偏移 | fix-lyrics-start-offset-remeasure 1.1, 2.1 | React/E2E | `tests/scenarios/IL-R10-S02.yaml` | `pnpm verify:scenario -- IL-R10-S02` |
+| IL-R10-S03 | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 | 窗口缩放后重算偏移 | fix-lyrics-start-offset-remeasure 1.1, 2.1 | React/E2E | `tests/scenarios/IL-R10-S03.yaml` | `pnpm verify:scenario -- IL-R10-S03` |
 
 ## library-experience
 
@@ -215,6 +218,8 @@
 | LE-R01-S02 | 资料库视图 | 切换最近添加 | 6.1, 10.5 | Core/React | `tests/scenarios/LE-R01-S02.yaml` | `pnpm verify:scenario -- LE-R01-S02` |
 | LE-R01-S03 | 资料库视图 | 切换喜欢的音乐 | 6.1, 10.5 | Core/React | `tests/scenarios/LE-R01-S03.yaml` | `pnpm verify:scenario -- LE-R01-S03` |
 | LE-R01-S04 | 资料库视图 | 切换歌手或专辑目录 | 6.1, 10.5 | Core/React | `tests/scenarios/LE-R01-S04.yaml` | `pnpm verify:scenario -- LE-R01-S04` |
+| LE-R01-S05 | 资料库视图 | 切换视图清空搜索 | fix-view-switch-search-carryover 2.2 | React | `tests/scenarios/LE-R01-S05.yaml` | `pnpm verify:scenario -- LE-R01-S05` |
+| LE-R01-S06 | 资料库视图 | 切换歌手或专辑目录清空搜索 | fix-view-switch-search-carryover 2.3 | React | `tests/scenarios/LE-R01-S06.yaml` | `pnpm verify:scenario -- LE-R01-S06` |
 | LE-R02-S01 | 资料库搜索 | 搜索多个字段 | 3.6, 3.7, 6.2, 10.5 | Core/React/Perf | `tests/scenarios/LE-R02-S01.yaml` | `pnpm verify:scenario -- LE-R02-S01` |
 | LE-R02-S02 | 资料库搜索 | 搜索聚合目录 | 3.6, 3.7, 6.2, 10.5 | Core/React/Perf | `tests/scenarios/LE-R02-S02.yaml` | `pnpm verify:scenario -- LE-R02-S02` |
 | LE-R02-S03 | 资料库搜索 | 搜索词为空 | 3.6, 3.7, 6.2, 10.5 | Core/React/Perf | `tests/scenarios/LE-R02-S03.yaml` | `pnpm verify:scenario -- LE-R02-S03` |
@@ -403,6 +408,7 @@
 | PM-R09-S02 | 歌单详情搜索 | 歌单详情清空搜索 | 1.x, 2.x, 3.x | React | `tests/scenarios/PM-R09-S02.yaml` | `pnpm verify:scenario -- PM-R09-S02` |
 | PM-R09-S03 | 歌单详情搜索 | 歌单详情搜索结果可续页 | fix-playlist-search-pagination 1.1–1.3, 2.1 | React | `tests/scenarios/PM-R09-S03.yaml` | `pnpm verify:scenario -- PM-R09-S03` |
 | PM-R09-S04 | 歌单详情搜索 | 歌单详情搜索末页不再续页 | fix-playlist-search-pagination 1.2, 2.2 | React | `tests/scenarios/PM-R09-S04.yaml` | `pnpm verify:scenario -- PM-R09-S04` |
+| PM-R09-S05 | 歌单详情搜索 | 歌单切换清空搜索 | fix-view-switch-search-carryover 2.1 | React | `tests/scenarios/PM-R09-S05.yaml` | `pnpm verify:scenario -- PM-R09-S05` |
 | PM-R10-S01 | 歌单内定位当前播放歌曲 | 定位歌单中正在播放的歌曲 | 4.x | React | `tests/scenarios/PM-R10-S01.yaml` | `pnpm verify:scenario -- PM-R10-S01` |
 | PM-R10-S02 | 歌单内定位当前播放歌曲 | 歌单无正在播放歌曲 | 4.x | React | `tests/scenarios/PM-R10-S02.yaml` | `pnpm verify:scenario -- PM-R10-S02` |
 | PM-R11-S01 | 歌单选择器反映单曲归属 | 单曲预选已有歌单 | 3.3 | React | `tests/scenarios/PM-R11-S01.yaml` | `pnpm verify:scenario -- PM-R11-S01` |

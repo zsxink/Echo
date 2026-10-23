@@ -3326,6 +3326,24 @@
       "manifest": "tests/scenarios/IL-R09-S03.yaml"
     },
     {
+      "id": "IL-R10-S01",
+      "title": "切歌后歌词起点重新对齐",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/useLyricsStartOffset.test.tsx -t \"re-observes when the signature changes\"",
+      "manifest": "tests/scenarios/IL-R10-S01.yaml"
+    },
+    {
+      "id": "IL-R10-S02",
+      "title": "信息块高度事后变化时重算偏移",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/useLyricsStartOffset.test.tsx -t \"re-measures when the info block resizes (ResizeObserver)\"",
+      "manifest": "tests/scenarios/IL-R10-S02.yaml"
+    },
+    {
+      "id": "IL-R10-S03",
+      "title": "窗口缩放后重算偏移",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/useLyricsStartOffset.test.tsx -t \"re-measures on window resize\"",
+      "manifest": "tests/scenarios/IL-R10-S03.yaml"
+    },
+    {
       "id": "LE-R01-S01",
       "title": "切换全部歌曲",
       "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_all_songs_view",
@@ -3348,6 +3366,18 @@
       "title": "切换歌手或专辑目录",
       "command": "pnpm --filter @echo/desktop test -- --run src/features/library/CollectionDirectory.test.tsx",
       "manifest": "tests/scenarios/LE-R01-S04.yaml"
+    },
+    {
+      "id": "LE-R01-S05",
+      "title": "切换视图清空搜索",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/LibraryWorkspace.test.tsx -t \"clears the search when switching between library views\"",
+      "manifest": "tests/scenarios/LE-R01-S05.yaml"
+    },
+    {
+      "id": "LE-R01-S06",
+      "title": "切换歌手或专辑目录清空搜索",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/CollectionDirectory.test.tsx -t \"clears the search when switching between artist and album directories\"",
+      "manifest": "tests/scenarios/LE-R01-S06.yaml"
     },
     {
       "id": "LE-R02-S01",
@@ -4386,6 +4416,12 @@
       "title": "歌单详情搜索末页不再续页",
       "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"stops requesting pages once the playlist search reaches the last page\"",
       "manifest": "tests/scenarios/PM-R09-S04.yaml"
+    },
+    {
+      "id": "PM-R09-S05",
+      "title": "歌单切换清空搜索",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"clears the search when switching to another playlist\"",
+      "manifest": "tests/scenarios/PM-R09-S05.yaml"
     },
     {
       "id": "PM-R10-S01",

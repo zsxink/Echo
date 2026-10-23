@@ -274,6 +274,20 @@ export const COMMANDS = {
   "IL-R09-S01": CHECK("12.4"),
   "IL-R09-S02": CHECK("12.4"),
   "IL-R09-S03": CHECK("12.4"),
+  // fix-lyrics-start-offset-remeasure: 切歌重挂载重建观测 / 高度事后变化重算 / 缩放重算;
+  // 真实几何(切歌路径与高度注入判别步)由 task-13.1 的浏览器门禁 A9 断言。
+  "IL-R10-S01": REACT_T(
+    "src/features/player/useLyricsStartOffset.test.tsx",
+    "re-observes when the signature changes",
+  ),
+  "IL-R10-S02": REACT_T(
+    "src/features/player/useLyricsStartOffset.test.tsx",
+    "re-measures when the info block resizes (ResizeObserver)",
+  ),
+  "IL-R10-S03": REACT_T(
+    "src/features/player/useLyricsStartOffset.test.tsx",
+    "re-measures on window resize",
+  ),
 
   // ===== library-experience (LE) =====,
 
@@ -282,6 +296,8 @@ export const COMMANDS = {
   "LE-R01-S02": COREC("infrastructure::sqlite::tests::catalog_search_no_results"),
   "LE-R01-S03": COREC("infrastructure::sqlite::tests::catalog_repository_gate_empty"),
   "LE-R01-S04": REACT("src/features/library/CollectionDirectory.test.tsx"), // 切换歌手或专辑目录,
+  "LE-R01-S05": REACT_T("src/features/library/LibraryWorkspace.test.tsx", "clears the search when switching between library views"), // fix-view-switch-search-carryover: 切换视图清空搜索
+  "LE-R01-S06": REACT_T("src/features/library/CollectionDirectory.test.tsx", "clears the search when switching between artist and album directories"), // fix-view-switch-search-carryover: 目录互切清空搜索
   "LE-R02-S01": COREC("infrastructure::sqlite::tests::catalog_search_matches_full_query"),
   "LE-R02-S02": COREC("infrastructure::sqlite::tests::catalog_search_empty_query"),
   "LE-R02-S03": REACT("src/features/library/SongList.test.tsx"),
@@ -530,6 +546,7 @@ export const COMMANDS = {
   "PM-R09-S02": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"restores the full member list when the search is cleared\"", // 新增: 歌单详情搜索
   "PM-R09-S03": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "appends the next page when the playlist search spills past one page"), // 新增: 歌单详情搜索分页
   "PM-R09-S04": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "stops requesting pages once the playlist search reaches the last page"), // 新增: 歌单详情搜索分页
+  "PM-R09-S05": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "clears the search when switching to another playlist"), // fix-view-switch-search-carryover: 歌单切换清空搜索
   // See the LE-R18-S04 note above: the `&& pnpm ... -t "locate"` tail in
   // manifest.json is not mirrored here, for the same regex-anchoring reason.
   "PM-R10-S01": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"rolls to a playing member of the playlist without a toast\"", // 新增: 歌单内定位当前播放歌曲

@@ -9,9 +9,10 @@
 //     and missing/duplicate mapping, missing actual command/evidence, or any
 //     P0 failure blocks 0.1.0;
 //   - every scenario command resolves to a real test (no silent 0-test pass);
-//   - execute PRD A1–A14 (prd-matrix.mjs emits the authoritative mapping and
-//     the macOS-runnable command for each A path; the native/manual remainder
-//     is the platform-Gate handoff).
+//   - execute PRD A1–A14 (docs/acceptance/PRD-matrix.md is the hand-maintained
+//     authoritative mapping and names the macOS-runnable command per A path;
+//     prd-matrix.mjs validates it against the live scenario set without
+//     writing, and the native/manual remainder is the platform-Gate handoff).
 //
 // On macOS this runs the fully-automatable subset and asserts a per-scenario
 // result log + the set-equal reconciliation. Rows whose behavior
@@ -120,11 +121,9 @@ if (okLines !== expectedAutomatedCount) {
   fail(`expected ${expectedAutomatedCount} automated scenario results, got ${okLines} (see ${report})`);
 }
 
-// 4. PRD A1–A14 mapping exists and is written.
-run("node", ["scripts/verify/prd-matrix.mjs", "--write"]);
-const prd = readFileSync(resolve(ROOT, "docs", "acceptance", "PRD-matrix.md"), "utf8");
-if (!prd.includes(`**A1**`) || !prd.includes(`**A14**`)) {
-  fail("PRD-matrix.md missing A1–A14 rows");
-}
+// 4. PRD A1–A14 mapping: docs/acceptance/PRD-matrix.md is hand-maintained and
+//    committed — the check validates it in place and never writes, so the
+//    gate cannot dirty the worktree and a stale matrix fails loudly.
+run("node", ["scripts/verify/prd-matrix.mjs"]);
 
-process.stdout.write(`ok 13.9: specs == traceability == manifest (${expectedScenarioCount} scenarios); automated scenario suite ${okLines}/${expectedAutomatedCount}; PRD A1–A14 mapped\n`);
+process.stdout.write(`ok 13.9: specs == traceability == manifest (${expectedScenarioCount} scenarios); automated scenario suite ${okLines}/${expectedAutomatedCount}; PRD A1–A14 matrix verified\n`);

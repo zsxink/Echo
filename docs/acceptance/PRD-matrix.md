@@ -1,6 +1,6 @@
-# PRD A1–A14 → scenario mapping (0.1.0)
+# PRD A1–A14 → scenario mapping
 
-由 `scripts/verify/prd-matrix.mjs` 生成；`traceability.md` 是场景 ID 与命名权威。每一 A# 为一验收路径，列出其证明场景（按 traceability 领域前缀）。macOS 可自动执行的命令给出该路径可运行部分的证据；跨平台/人工其余部分见 `docs/acceptance/platform-gate-handoff.md`。
+本表为手工维护文档（不生成）：`traceability.md` 是场景 ID 与命名权威，每一 A# 为一验收路径，列出其证明场景（按 traceability 领域前缀）。macOS 可自动执行的命令给出该路径可运行部分的证据；跨平台/人工其余部分见 `docs/acceptance/platform-gate-handoff.md`。`scripts/verify/prd-matrix.mjs`（task 13.9 门禁）会校验本表与当前场景集一致——规格变更后请同步更新本表并提交。
 
 | 编号 | 验收路径 | 证明场景数 | macOS 可运行命令 |
 |---|---|---|---|
@@ -9,15 +9,15 @@
 | **A3** | 外部改名/移动 | 34 | `cargo test -p echo-core --all-features relink` |
 | **A4** | 多文件安全导入 | 36 | `cargo test -p echo-core --all-features recover::` |
 | **A5** | 资料库失联/恢复 | 34 | `node scripts/verify/checks/task-5.8.mjs 2>/dev/null \|\| cargo test -p echo-core --all-features trash::` |
-| **A6** | 搜索/排序/收藏 | 137 | `node scripts/verify/checks/task-10.5.mjs` |
-| **A7** | 歌单 CRUD | 47 | `node scripts/verify/checks/task-10.9.mjs` |
+| **A6** | 搜索/排序/收藏 | 139 | `node scripts/verify/checks/task-10.5.mjs` |
+| **A7** | 歌单 CRUD | 48 | `node scripts/verify/checks/task-10.9.mjs` |
 | **A8** | 播放与队列 | 68 | `node scripts/verify/checks/task-11.2.mjs && cargo test -p echo-desktop --lib runtime::player && cargo test -p echo-desktop --lib player::actor::tests::subscribe_snapshots` |
-| **A9** | 歌词与沉浸模式 | 28 | `node scripts/verify/checks/task-11.4.mjs && node scripts/verify/checks/task-11.5.mjs && node scripts/verify/checks/task-11.6.mjs` |
+| **A9** | 歌词与沉浸模式 | 31 | `node scripts/verify/checks/task-11.4.mjs && node scripts/verify/checks/task-11.5.mjs && node scripts/verify/checks/task-11.6.mjs` |
 | **A10** | 系统双击文件 | 36 | `cargo test -p echo-core --all-features watch:: && node scripts/verify/checks/task-9.2.mjs` |
 | **A11** | 删除与撤销 | 36 | `cargo test -p echo-core --all-features recover::` |
 | **A12** | 关窗与托盘 | 72 | `node scripts/verify/checks/task-9.6.mjs && node scripts/verify/checks/task-9.3.mjs` |
-| **A13** | 无障碍与窄屏 | 203 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
-| **A14** | 范围保护 | 175 | `node scripts/verify/checks/task-13.8.mjs` |
+| **A13** | 无障碍与窄屏 | 208 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
+| **A14** | 范围保护 | 177 | `node scripts/verify/checks/task-13.8.mjs` |
 
 ## 逐场景归属
 
@@ -373,10 +373,15 @@
 | A13 | `IL-R09-S01` | 沉浸式歌词体验必须适配减少动画与三平台 |
 | A13 | `IL-R09-S02` | 沉浸式歌词体验必须适配减少动画与三平台 |
 | A13 | `IL-R09-S03` | 沉浸式歌词体验必须适配减少动画与三平台 |
+| A13 | `IL-R10-S01` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |
+| A13 | `IL-R10-S02` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |
+| A13 | `IL-R10-S03` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |
 | A13 | `LE-R01-S01` | 资料库视图 |
 | A13 | `LE-R01-S02` | 资料库视图 |
 | A13 | `LE-R01-S03` | 资料库视图 |
 | A13 | `LE-R01-S04` | 资料库视图 |
+| A13 | `LE-R01-S05` | 资料库视图 |
+| A13 | `LE-R01-S06` | 资料库视图 |
 | A13 | `LE-R02-S01` | 资料库搜索 |
 | A13 | `LE-R02-S02` | 资料库搜索 |
 | A13 | `LE-R02-S03` | 资料库搜索 |
@@ -552,6 +557,8 @@
 | A14 | `LE-R01-S02` | 资料库视图 |
 | A14 | `LE-R01-S03` | 资料库视图 |
 | A14 | `LE-R01-S04` | 资料库视图 |
+| A14 | `LE-R01-S05` | 资料库视图 |
+| A14 | `LE-R01-S06` | 资料库视图 |
 | A14 | `LE-R02-S01` | 资料库搜索 |
 | A14 | `LE-R02-S02` | 资料库搜索 |
 | A14 | `LE-R02-S03` | 资料库搜索 |
@@ -793,6 +800,8 @@
 | A6 | `LE-R01-S02` | 资料库视图 |
 | A6 | `LE-R01-S03` | 资料库视图 |
 | A6 | `LE-R01-S04` | 资料库视图 |
+| A6 | `LE-R01-S05` | 资料库视图 |
+| A6 | `LE-R01-S06` | 资料库视图 |
 | A6 | `LE-R02-S01` | 资料库搜索 |
 | A6 | `LE-R02-S02` | 资料库搜索 |
 | A6 | `LE-R02-S03` | 资料库搜索 |
@@ -964,6 +973,7 @@
 | A7 | `PM-R09-S02` | 歌单详情搜索 |
 | A7 | `PM-R09-S03` | 歌单详情搜索 |
 | A7 | `PM-R09-S04` | 歌单详情搜索 |
+| A7 | `PM-R09-S05` | 歌单详情搜索 |
 | A7 | `PM-R10-S01` | 歌单内定位当前播放歌曲 |
 | A7 | `PM-R10-S02` | 歌单内定位当前播放歌曲 |
 | A7 | `PM-R11-S01` | 歌单选择器反映单曲归属 |
@@ -1069,3 +1079,6 @@
 | A9 | `IL-R09-S01` | 沉浸式歌词体验必须适配减少动画与三平台 |
 | A9 | `IL-R09-S02` | 沉浸式歌词体验必须适配减少动画与三平台 |
 | A9 | `IL-R09-S03` | 沉浸式歌词体验必须适配减少动画与三平台 |
+| A9 | `IL-R10-S01` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |
+| A9 | `IL-R10-S02` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |
+| A9 | `IL-R10-S03` | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 |

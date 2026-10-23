@@ -143,8 +143,11 @@ export function LibraryWorkspace({
   }, [selection]);
   useEffect(() => {
     // Navigation between library views must not carry a prior view's bulk
-    // mode or selection into the newly opened list.
+    // mode, selection, or search term into the newly opened list — the query
+    // belongs to the view being left, and `useSongs`' reqId drops the one
+    // transient old-term request the switch itself issues.
     clearSelection();
+    setSearch("");
     setBatchMenuFor(null);
     setBatchDeleteFor(null);
     setSelectionMode(false);
