@@ -16,6 +16,50 @@ use crate::domain::library::{
 use crate::infrastructure::filesystem::RootControlPlane;
 use std::sync::Arc;
 
+// These protocol fault tests intentionally exercise cold intrinsic validation.
+fn chain(registry: &RootRegistry, root: LibraryRootId) -> Result<LibraryReplay, Error> {
+    super::chain(registry, &ValidationCache::default(), root)
+}
+fn recover(registry: &RootRegistry, root: LibraryRootId) -> Result<LibraryReplay, Error> {
+    super::recover(registry, &ValidationCache::default(), root)
+}
+fn recover_with_hook(
+    registry: &RootRegistry,
+    root: LibraryRootId,
+    hook: &mut Hook<'_>,
+) -> Result<LibraryReplay, Error> {
+    super::recover_with_hook(registry, &ValidationCache::default(), root, hook)
+}
+fn commit(
+    registry: &RootRegistry,
+    root: LibraryRootId,
+    batch: &LibraryBatch,
+) -> Result<CommitOutcome, Error> {
+    super::commit(registry, &ValidationCache::default(), root, batch)
+}
+fn commit_with_hook(
+    registry: &RootRegistry,
+    root: LibraryRootId,
+    batch: &LibraryBatch,
+    hook: &mut Hook<'_>,
+) -> Result<CommitOutcome, Error> {
+    super::commit_with_hook(registry, &ValidationCache::default(), root, batch, hook)
+}
+fn read_operation(
+    registry: &RootRegistry,
+    root: LibraryRootId,
+    id: uuid::Uuid,
+) -> Result<Option<LibraryCommit>, Error> {
+    super::read_operation(registry, &ValidationCache::default(), root, id)
+}
+fn operation_status(
+    registry: &RootRegistry,
+    root: LibraryRootId,
+    id: uuid::Uuid,
+) -> Result<Option<CommitOutcome>, Error> {
+    super::operation_status(registry, &ValidationCache::default(), root, id)
+}
+
 fn fixture() -> (
     tempfile::TempDir,
     RootRegistry,
@@ -86,7 +130,7 @@ fn library_durability_fs_commit_retry_and_payload_identity() {
         LibraryDurabilityPort::commit(&plane, root, &batch).unwrap(),
         first
     );
-    let mut different = batch.clone();
+    let mut different = batch;
     different.origin = ChangeOrigin::Import;
     assert!(LibraryDurabilityPort::commit(&plane, root, &different).is_err());
     assert_eq!(chain(&registry, root).unwrap().commits.len(), 1);
@@ -107,7 +151,7 @@ fn library_durability_every_native_commit_boundary_recovers_same_operation() {
     assert!(trace.iter().any(|(p, _)| p == "checkpoint:rename"));
     assert!(trace.iter().any(|(p, _)| p == "resource:file_sync"));
     assert!(trace.iter().any(|(p, _)| p == "state:rename"));
-    for stop in 0..trace.len() {
+    for (stop, boundary) in trace.iter().enumerate() {
         let (dir, registry, root, library, plane) = fixture();
         let mut batch = batch(library, uuid::Uuid::new_v4(), "故障");
         resource_and_state(&registry, root, &mut batch);
@@ -121,13 +165,12 @@ fn library_durability_every_native_commit_boundary_recovers_same_operation() {
                 Ok(())
             }
         });
-        assert!(result.is_err(), "boundary {stop}: {:?}", trace[stop]);
+        assert!(result.is_err(), "boundary {stop}: {boundary:?}");
         let committed = marker_present(dir.path(), batch.operation_id);
         assert_eq!(
             result.unwrap_err().code() == "library_saved_pending_recovery",
             committed,
-            "boundary {stop}: {:?}",
-            trace[stop]
+            "boundary {stop}: {boundary:?}"
         );
         let status = operation_status(&registry, root, batch.operation_id).unwrap();
         if let Some(status) = status {
@@ -289,7 +332,7 @@ fn library_durability_compaction_bounds_active_chain_and_preserves_old_retries()
     }
     let replay = recover(&registry, root).unwrap();
     assert!(replay.commits.len() < WINDOW);
-    assert!(replay.checkpoint.as_ref().unwrap().records.len() == 1);
+    assert_eq!(replay.checkpoint.as_ref().unwrap().records.len(), 1);
     assert!(
         std::fs::read_dir(dir.path().join("echo/transactions"))
             .unwrap()
@@ -341,7 +384,13 @@ fn library_durability_broken_chain_and_corrupt_checkpoint_fail_closed_preserve_b
     .unwrap();
     assert!(recover(&registry, root).is_err());
     let broken = std::fs::read(&prepared).unwrap();
-    assert!(super::commit(&registry, root, &batch(library, uuid::Uuid::new_v4(), "3")).is_err());
+    assert!(super::commit(
+        &registry,
+        &ValidationCache::default(),
+        root,
+        &batch(library, uuid::Uuid::new_v4(), "3")
+    )
+    .is_err());
     assert_eq!(std::fs::read(&prepared).unwrap(), broken);
     std::fs::write(dir.path().join(CHECKPOINT), b"{corrupt evidence}").unwrap();
     assert!(recover(&registry, root).is_err());
@@ -401,3 +450,13 @@ fn library_durability_empty_and_old_sqlite_watermarks_rebuild_after_compaction()
 }
 
 mod faults;
+mod identity;
+
+mod playback_privacy;
+mod publication;
+
+mod validation_cache;
+
+mod fences;
+
+mod scoped_state;

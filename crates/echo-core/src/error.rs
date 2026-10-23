@@ -195,7 +195,7 @@ pub enum Error {
         stage: LibraryPersistenceStage,
         /// The original failure remains available for diagnostics, not the UI.
         #[source]
-        source: Box<Error>,
+        source: Box<Self>,
     },
 
     /// The operation was cancelled before completion. Distinct from `Conflict`

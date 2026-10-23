@@ -10,6 +10,53 @@ pub struct RetryLibraryOperation<'a> {
     projection: &'a dyn LibraryHistoryPort,
 }
 
+impl<'a> RetryLibraryOperation<'a> {
+    #[must_use]
+    pub const fn new(
+        control: &'a dyn ControlPlanePort,
+        projection: &'a dyn LibraryHistoryPort,
+    ) -> Self {
+        Self {
+            control,
+            projection,
+        }
+    }
+
+    /// Recover the committed operation's library and catch the projection up in order.
+    ///
+    /// # Errors
+    /// Rejects an unknown operation, missing adapter or failed recovery/projection.
+    pub fn execute(&self, root: LibraryRootId, operation: OperationId) -> Result<(), Error> {
+        let durable = self.control.durability().ok_or_else(|| {
+            Error::unavailable("library recovery", "directory adapter is not configured")
+        })?;
+        let status = durable.operation_status(root, operation.as_uuid())?;
+        if status.is_none_or(|saved| saved.status == CommitStatus::NotSaved) {
+            return Err(Error::conflict(
+                "no saved operation exists in the selected library",
+            ));
+        }
+        let replay = durable
+            .recover(root)
+            .map_err(|error| Error::saved_pending_recovery(operation, error))?;
+        self.projection
+            .project_library_commits(root, &replay)
+            .map_err(|error| Error::saved_pending_projection(operation, error))
+    }
+
+    /// Catch up the existing saved prefix without creating a user mutation.
+    /// Also works when a saved operation lives in a compacted coverage image.
+    /// # Errors
+    /// Reports unreadable directory evidence or a failed local projection.
+    pub fn catch_up(&self, root: LibraryRootId) -> Result<(), Error> {
+        let durable = self.control.durability().ok_or_else(|| {
+            Error::unavailable("library recovery", "directory adapter is not configured")
+        })?;
+        self.projection
+            .project_library_commits(root, &durable.recover(root)?)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -30,13 +77,13 @@ mod tests {
             &self,
             _: LibraryRootId,
         ) -> Result<crate::domain::library::durability::LibraryProjectionStatus, Error> {
-            Ok(Default::default())
+            Ok(crate::domain::library::durability::LibraryProjectionStatus::default())
         }
         fn read_recovery_records(
             &self,
             _: LibraryRootId,
         ) -> Result<crate::domain::library::durability::LibraryRecoveryRecords, Error> {
-            Ok(Default::default())
+            Ok(crate::domain::library::durability::LibraryRecoveryRecords::default())
         }
         fn capture_library_history(
             &self,
@@ -125,52 +172,5 @@ mod tests {
             matches!(error, Error::LibrarySavedPending { operation: saved, stage: crate::error::LibraryPersistenceStage::Projection, .. } if saved == operation)
         );
         assert_eq!(control.recover(root).unwrap().commits.len(), 1);
-    }
-}
-
-impl<'a> RetryLibraryOperation<'a> {
-    #[must_use]
-    pub const fn new(
-        control: &'a dyn ControlPlanePort,
-        projection: &'a dyn LibraryHistoryPort,
-    ) -> Self {
-        Self {
-            control,
-            projection,
-        }
-    }
-
-    /// Recover the committed operation's library and catch the projection up in order.
-    ///
-    /// # Errors
-    /// Rejects an unknown operation, missing adapter or failed recovery/projection.
-    pub fn execute(&self, root: LibraryRootId, operation: OperationId) -> Result<(), Error> {
-        let durable = self.control.durability().ok_or_else(|| {
-            Error::unavailable("library recovery", "directory adapter is not configured")
-        })?;
-        let status = durable.operation_status(root, operation.as_uuid())?;
-        if status.is_none_or(|saved| saved.status == CommitStatus::NotSaved) {
-            return Err(Error::conflict(
-                "no saved operation exists in the selected library",
-            ));
-        }
-        let replay = durable
-            .recover(root)
-            .map_err(|error| Error::saved_pending_recovery(operation, error))?;
-        self.projection
-            .project_library_commits(root, &replay)
-            .map_err(|error| Error::saved_pending_projection(operation, error))
-    }
-
-    /// Catch up the existing saved prefix without creating a user mutation.
-    /// Also works when a saved operation lives in a compacted coverage image.
-    /// # Errors
-    /// Reports unreadable directory evidence or a failed local projection.
-    pub fn catch_up(&self, root: LibraryRootId) -> Result<(), Error> {
-        let durable = self.control.durability().ok_or_else(|| {
-            Error::unavailable("library recovery", "directory adapter is not configured")
-        })?;
-        self.projection
-            .project_library_commits(root, &durable.recover(root)?)
     }
 }

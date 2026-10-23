@@ -1,4 +1,118 @@
-# 2026-10-23 收尾检查点
+# 2026-10-24 继续实施检查点（进行中）
+
+用户要求继续剩余任务，sub-agent 严格串行；本节优先于下面历史记录。仍在
+`codex/issue-72-library-first-durability`，未提交、未归档、未创建 PR。
+
+## 本轮已验证并勾选
+
+- 2.5：共享播放桶与目录私有事件分开；实际私有文件、producer/host 共享 payload
+  及 round-trip 验证见 [播放隐私证据](playback-state-privacy.md)。
+- 3.2 / 3.3：独立 review 找到并修复两个既有 P1：marker 和 coverage/receipt
+  在 rename 后父目录未 sync 的连续故障窗口。所有未证明 fence 先 flush 才物化，
+  全部 GC 证明先 flush 才开始删除，7 项连续故障测试及复查通过。
+  见 [刷盘与 GC 证据](retry-fences.md)。
+- 3.6：恢复文档新增 POSIX/Windows 文件/目录 sync、替换和不支持时的失败语义；
+  Windows/Linux 原生验证仍未完成。
+- 9.3 / 9.4：当前界面完整备份/重新配对/不完整恢复文案核对，前端五项命令及
+  Chromium mock-bridge e2e 通过，见 [前端证据](frontend-validation-20261024.md)。
+
+当前合计 13/67 完成。4.5 不能勾：虽然 typed key、完整读回和缺父补齐已实现，
+confirmed/pending 仍仅保留为 RequiresStateRecovery，生产重试消费方尚未实现。
+
+## 性能与当前验证
+
+已实现 A0：RootControlPlane 持有固定 128 条成功 intrinsic 校验证书缓存，key
+包含注册 root UUID、document kind 和完整实际 raw bytes 的 BLAKE3。每次仍约束
+读取/解析并实时校验归属与链；锁不可用/逐出走完整校验。10 项对抗测试与独立
+review 通过。1 MiB 8 次读观察为 warm 138.302ms / cold 332.729ms，不能当作 10k
+或 3.7/10.4 验收；见 [缓存证据](validation-cache.md)。
+
+- 主 Agent 在最终 fence/隐私补测树上跑 `cargo test -p echo-core library_durability --lib`：
+  **60 passed、0 failed**，29.04 秒。
+- producer/host 播放 payload 专项：1 passed，0.07 秒。
+- `cargo test -p echo-core migration --lib`：**20 passed**，1.20 秒；新测试实际升级
+  released v27 schema，注入 v28 中途 SQL 失败并确认表/迁移记录回滚，重跑/重开保留
+  原迁移 checksum、根时间和 typed 证据。4.1 待独立复查后再勾。
+- Core 最终本次 lint：`cargo clippy -p echo-core --lib --tests -- -D warnings` 通过。
+- 新 fence/隐私补测之前全 Core：726 passed、1 ignored，33.08 秒；不能替代之后
+  最终树全量验证。
+- 前端 format/lint/typecheck/test/build：全部通过（42 文件、385 测试）；e2e 通过。
+- scale、diff whitespace、OpenSpec change strict：通过。
+
+**仍在执行，不能记通过：**
+
+- 原样 513：`cargo test -p echo-app --bin Echo native_pull_drains_more_than_one_commit_page_without_losing_local_work -- --nocapture`，
+  日志 `/tmp/echo-library-first-20261024-native-513.log`。其编译树含 A0、尚无后续 P1
+  修复；保持运行以得到原场景实际结果。约 17m41 时主机准备到 301/513；尚未分页。
+- `pnpm verify:governance`：日志 `/tmp/echo-library-first-20261024-governance.log`；
+  已过静态场景/build-purity 等检查，正在完整 workspace/all-targets/all-features 的
+  echo-app 513 测试，不能将此前 440 场景对账当作本 change 新场景已登记。
+
+## 4.2 实施依赖（已完成只读设计分析）
+
+最小安全路线是 actor 内一个写请求：目录恢复与水位追赶 → 业务 SQL **回滚规划**
+并冻结真实写集 → 回滚 → 目录提交 → 唯一纯投影按水位追赶 → 返回普通成功。
+不再 commit 原规划 tx；不能在 actor 内调用 writer.run（会自锁），不能将 raw SQL
+纳入 Domain 协议，也不能仅按 mutation.object 筛全量导出。
+
+顺序依赖为：typed binding 命名空间/冻结事实 → 当前可信会话的纯 sync-state projector
+（离线仅保留证据，不能授权网络）→ 显式 FrozenWriteSet collector → Application 协调器
+与本地入口 → LAN 全入口（含 queue reject/advance/rebase）→ 清理/差异完整性/性能验证。
+同 kind/id 不同 binding 的证据必须共存，原 mutation 正文与终结分开；legacy journal
+摘要不能改写，无法证明 scope 的旧 state 保留证据。新 binding adoption 7.7 独立。
+
+当前正在串行实现第一项依赖；尚未完成 2.1/4.2，不得勾选。之后先审查命名空间与
+迁移测试，再继续 projector/collector/coordinator。完整 tasks、平台矩阵和归档/PR
+顺序仍按后面的历史约束执行。
+
+---
+
+# 2026-10-23 最新收尾检查点（历史）
+
+用户本轮要求“快没有额度了，先收尾”：先验收 macOS，Windows 后续由用户手动验证，Linux 当前无资源。已停止新增实现；所有 sub-agent 均串行执行并已结束。代码保留在 `codex/issue-72-library-first-durability`，未提交、未归档、未创建 PR，不宣称整个 change 或 issue #72 已完成。
+
+**以下最新记录优先于后面的历史检查点。**
+
+## 本轮新增修复
+
+- 原生 LAN fixture 使用真实 runtime/control-plane 装配并注册目录；生产 enrollment 的两处 `{}` manifest 改为合法 `LibraryManifest`，重复初始化保留原身份和媒体。
+- 区分本地 `domain::library::LibraryId` 与主机 `domain::sync::LibraryId`：移除错误的 UUID 相等和通用 JSON 字段递归比较；目录 manifest/batch/chain/checkpoint/SQLite watermark 归属与实时完整 binding 检查仍保留。旧 binding 资料仅作为恢复证据，不授权联网。
+- 扫描和 SQLite typed 导出从 completed publication 的当前关联取歌曲逻辑路径，避免把实际 `echo/media/` 版本位置写入逻辑 `SongRecord`。相同已发布字节的重扫只刷新派生索引，保留原 UUID、共享标题、envelope 和候选。
+- Commit 继续持有线程/跨进程写锁、migration 和格式检查，消除一次重复前置恢复。已持久 checkpoint 证明且当前受约束读取内容相同的材料化文件可跳过重复发布；缺失、篡改、符号链接仍拒绝，rename 后尚未完成同步的字节仍重新发布/刷盘。
+- 清理全 workspace Clippy，包括 Errors 文档、私有导入规划错误装箱、逻辑导出 helper、tests 顺序和 FS 内部 transaction 模块拆分；未扩大规模白名单或公开 crate 外 API。
+- 两轮独立 reviewer 审查上述身份/路径、IO 优化及 Clippy 清理，未发现新增可操作缺陷；不代表完整 change 的事务/迁移/权限审查已完成。
+
+详见 [身份与已发布路径修复](identity-and-published-path-fix.md)、[目录发布 IO 测量](durable-publication-io.md)。
+
+## 主 Agent 最终实际验证（macOS）
+
+| 命令 | 结果 |
+| --- | --- |
+| `cargo test -p echo-core --lib` | 715 通过、0 失败、1 忽略，32.48 秒 |
+| `cargo test -p echo-desktop --lib` | 422 通过、0 失败，2.39 秒 |
+| `cargo test -p echo-app --bin Echo -- --skip native_pull_drains_more_than_one_commit_page_without_losing_local_work` | 106 通过、0 失败、1 忽略、1 条明确过滤，13.59 秒；不是完整原生套件通过 |
+| `cargo test -p echo-core library_durability --lib` | 独立复核 41 通过、0 失败，22.04 秒 |
+| `cargo test -p echo-app --bin Echo sync_runtime::tests::host_resources` | 独立复核 2 通过、0 失败，6.25 秒 |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | 通过 |
+| `cargo check -p echo-core -p echo-desktop -p echo-app` | 通过 |
+| `cargo fmt --all --check`、`node scripts/verify/check-scale.mjs`、`git diff --check` | 通过，白名单未增加 |
+| `openspec validate enforce-library-first-durability --strict` | 通过 |
+
+原生完整套件和独立 513 条分页测试均已真实尝试但因性能退化停止，不能计通过。优化前 77/513 主机提交准备耗时 8 分 47 秒；优化后仍在 3 分 20 秒仅准备到 101/513，尚未执行拉取分页断言。没有减少 fixture 数量、添加 ignore 或放宽生产 directory-first 要求。最终选择明确过滤该单项以检查其余原生回归；后续必须原样完成它。
+
+受控 128 次提交 IO 基准从 106.569 秒降至 14.694 秒，file sync 从 8900 降至 645；prepared/marker/checkpoint/receipt/coverage/GC 的必要同步计数保持。此结果不是 10k 验收，任务 3.7 / 10.4 未完成。
+
+`pnpm verify:governance` 本轮未重跑，仍不能报告通过；完整 workspace/all-features 测试、前端/e2e 及三平台原生矩阵未在本轮完成。前端和 IPC 本轮没有修改，其上一次实际结果保留于历史记录，不能充当新入口验收。
+
+## 下一次继续顺序
+
+1. **先解除 513 分页测试的 CPU 瓶颈。** 原生 sample 热点是完整 SQL after-images 造成的 `chain → LibraryCommit::validate/calculate_digest → canonical JSON` 重复工作。已形成 A0 最小分析方案，但按用户收尾要求没有任何缓存代码落盘：由 `RootControlPlane` 显式持有固定容量成功校验证书缓存，key 为 document kind/root UUID/完整真实 raw bytes 的 BLAKE3；每次仍受约束读取、解析，并实时核对 manifest/marker/operation ID/前驱与水位；仅可跳过已证明正文的 intrinsic 校验。不得缓存整份 replay、恢复成功、错误，或只信 mtime/长度。缓存为空/逐出/不可用走完整校验。实施前补冷/热读、等长篡改、换根、改 manifest/marker、删除、第二 adapter 写入与容量逐出测试，再实测原 513 场景。A0 是待实施建议，效果未知。
+2. 完成完整 `echo-app` 和 governance 后，接任务 4.2 的统一顺序协调器与真实冻结 pending/前驱捕获。当前 per-operation 闭包仍直接投影；A0 不会解决该语义缺口。严格 delta 应来自有完整依赖/终结事实的冻结写集，不能仅按当前 mutation object 筛全量导出。
+3. 继续下方原检查点列出的 typed state、私有历史有界归档/引用图 GC、v3 升级围栏与一致救援、独立临时 SQLite 验证/替换、全部本地/LAN/播放/删除/写回入口、UI 和场景登记等任务。历史 state `(kind,id)` 仍可能覆盖不同 binding 的证据，adoption 未实现，不勾 2.1/3.5/4.2/7.7。
+4. macOS 本轮是自动化与原生临时目录验证，不是磁盘满、真实断卷、系统重装或所有权限场景的完整认证。Windows 待用户人工验证，Linux 无资源，10.3 保持未完成；不得把交付范围悄悄改成三平台已通过。
+5. 所有规定验证与任务完成后才同步/归档并创建关联 #72 PR。继续遵守一个 sub-agent 完成后再派下一个。
+
+## 上一次检查点（历史记录）
 
 用户要求串行 sub-agent，随后因额度不足要求收尾。目录协议 agent 已完成交接；投影 agent 触及额度上限后由主 Agent 接手，修复未完成的 trait 实现、迭代器可变性与界面回归。此检查点未完成整个 change，不归档、不创建 PR，也不宣称 issue #72 已全面修复。
 

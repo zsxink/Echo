@@ -33,30 +33,42 @@ fn seed() -> (
 fn library_durability_every_compaction_boundary_keeps_snapshot_and_unique_resources() {
     let (_dir, registry, root, _, replay, _) = seed();
     let mut trace = Vec::new();
-    checkpoint::compact(&registry, root, &replay, &mut |phase, index| {
-        trace.push((phase.to_owned(), index));
-        Ok(())
-    })
+    checkpoint::compact(
+        &registry,
+        &ValidationCache::default(),
+        root,
+        &replay,
+        &mut |phase, index| {
+            trace.push((phase.to_owned(), index));
+            Ok(())
+        },
+    )
     .unwrap();
     assert!(trace
         .iter()
         .any(|(phase, _)| phase == "coverage:directory_sync"));
     assert!(trace.iter().any(|(phase, _)| phase == "gc:remove"));
-    for stop in 0..trace.len() {
+    for (stop, boundary) in trace.iter().enumerate() {
         let (dir, registry, root, _, replay, hash) = seed();
         let mut counter = 0;
-        assert!(checkpoint::compact(&registry, root, &replay, &mut |_, _| {
-            let fail_here = counter == stop;
-            counter += 1;
-            if fail_here {
-                Err(fail())
-            } else {
-                Ok(())
+        assert!(checkpoint::compact(
+            &registry,
+            &ValidationCache::default(),
+            root,
+            &replay,
+            &mut |_, _| {
+                let fail_here = counter == stop;
+                counter += 1;
+                if fail_here {
+                    Err(fail())
+                } else {
+                    Ok(())
+                }
             }
-        })
+        )
         .is_err());
         let restored = recover(&registry, root)
-            .unwrap_or_else(|e| panic!("boundary {stop} {:?}: {e}", trace[stop]));
+            .unwrap_or_else(|e| panic!("boundary {stop} {boundary:?}: {e}"));
         assert_eq!(restored.head().unwrap().0, 3);
         let states: std::collections::BTreeSet<_> = restored.states().map(|s| s.id).collect();
         assert_eq!(states.len(), 3, "pending original bodies survive GC {stop}");
@@ -78,7 +90,14 @@ fn library_durability_every_compaction_boundary_keeps_snapshot_and_unique_resour
 #[test]
 fn library_durability_corrupt_coverage_anchor_is_preserved_and_blocks_writes() {
     let (dir, registry, root, library, replay, _) = seed();
-    checkpoint::compact(&registry, root, &replay, &mut |_, _| Ok(())).unwrap();
+    checkpoint::compact(
+        &registry,
+        &ValidationCache::default(),
+        root,
+        &replay,
+        &mut |_, _| Ok(()),
+    )
+    .unwrap();
     let path = dir.path().join(ANCHOR);
     let mut value: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
@@ -237,19 +256,12 @@ fn library_durability_cross_process_child() {
 }
 
 #[test]
-fn library_durability_domain_rejects_unsafe_cross_library_and_duplicate_typed_targets() {
+fn library_durability_domain_rejects_unsafe_resources_and_duplicate_typed_targets() {
     let library = LibraryId::from_uuid(uuid::Uuid::new_v4());
     let valid = batch(library, uuid::Uuid::new_v4(), "validation");
     let mut duplicate = valid.clone();
     duplicate.records.push(duplicate.records[0].clone());
     assert!(duplicate.validate().is_err());
-    let mut cross = valid.clone();
-    cross.state.push(DurableStateChange::new(
-        StateKind::Pending,
-        uuid::Uuid::new_v4(),
-        serde_json::json!({"binding":{"library_id": uuid::Uuid::new_v4()}}),
-    ));
-    assert!(cross.validate().is_err());
     for path in [
         "../escape",
         "/absolute",
@@ -276,7 +288,7 @@ fn library_durability_domain_rejects_unsafe_cross_library_and_duplicate_typed_ta
         2
     ];
     assert!(duplicates.validate().is_err());
-    let mut ambiguous = valid.clone();
+    let mut ambiguous = valid;
     ambiguous
         .expected
         .push(crate::domain::library::durability::ExpectedRecord {
@@ -302,7 +314,7 @@ fn library_durability_compact_typed_tombstones_allow_reused_playlist_name() {
         &LibraryRoot::new(root, dir.path().to_owned(), true, true),
     )
     .unwrap();
-    old.configure_library_control(Arc::new(plane.clone()));
+    old.configure_library_control(Arc::new(plane));
     old.project_library_commits(root, &recover(&registry, root).unwrap())
         .unwrap();
     let deleted = PortableRecordEnvelope::new(
@@ -325,7 +337,14 @@ fn library_durability_compact_typed_tombstones_allow_reused_playlist_name() {
     commit(&registry, root, &deletion).unwrap();
     commit(&registry, root, &batch(library, new_id, "reused name")).unwrap();
     let replay = recover(&registry, root).unwrap();
-    checkpoint::compact(&registry, root, &replay, &mut |_, _| Ok(())).unwrap();
+    checkpoint::compact(
+        &registry,
+        &ValidationCache::default(),
+        root,
+        &replay,
+        &mut |_, _| Ok(()),
+    )
+    .unwrap();
     let compacted = recover(&registry, root).unwrap();
     assert_eq!(compacted.checkpoint.as_ref().unwrap().records.len(), 2);
     old.project_library_commits(root, &compacted).unwrap();

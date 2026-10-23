@@ -84,11 +84,14 @@ fn put(
     Ok(())
 }
 fn state_key(state: &DurableStateChange) -> Result<String, Error> {
-    serde_json::to_string(&ProjectionTarget::State {
-        state_kind: state.kind,
-        id: state.id,
-    })
-    .map_err(storage)
+    let target = state.key.as_ref().map_or_else(
+        || ProjectionTarget::State {
+            state_kind: state.kind,
+            id: state.id,
+        },
+        |key| ProjectionTarget::ScopedState { key: key.clone() },
+    );
+    serde_json::to_string(&target).map_err(storage)
 }
 fn reason(
     c: &Connection,

@@ -1,11 +1,17 @@
 //! Library-local durable transaction protocol. These values never contain paths
 //! outside the library, credentials, database handles, or transport clients.
 
+mod frozen;
 pub mod projection;
+mod state;
+#[cfg(test)]
+mod tests;
+pub use frozen::{FrozenMutation, MutationDisposition, MutationOperation, MutationStatus};
 pub use projection::{
     LibraryProjectionStatus, LibraryRecoveryRecords, ProjectionTarget, ProjectionUnresolvedReason,
     UnresolvedProjectionRecord,
 };
+pub use state::{StateKey, StateNamespace, StateTarget};
 
 use super::{LibraryId, PortableRecordEnvelope, PortableSerialize};
 use crate::error::Error;
@@ -31,6 +37,7 @@ pub enum ChangeOrigin {
 pub enum StateKind {
     Confirmed,
     Pending,
+    PendingDisposition,
     Receipt,
     Alias,
     Tombstone,
@@ -50,6 +57,7 @@ impl StateKind {
         match self {
             Self::Confirmed => "confirmed",
             Self::Pending => "pending",
+            Self::PendingDisposition => "pending-dispositions",
             Self::Receipt => "receipts",
             Self::Alias => "aliases",
             Self::Tombstone => "tombstones",
@@ -71,11 +79,89 @@ pub struct DurableStateChange {
     pub kind: StateKind,
     pub id: uuid::Uuid,
     pub payload: serde_json::Value,
+    /// Absence denotes the original unscoped evidence format. Omission on
+    /// serialization is essential: old committed canonical digests stay valid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<StateKey>,
 }
 impl DurableStateChange {
     #[must_use]
     pub const fn new(kind: StateKind, id: uuid::Uuid, payload: serde_json::Value) -> Self {
-        Self { kind, id, payload }
+        Self {
+            kind,
+            id,
+            payload,
+            key: None,
+        }
+    }
+    /// Construct a new scoped fact without changing its protocol event identity.
+    ///
+    /// # Errors
+    /// Rejects invalid keys, non-object payloads, and mismatched typed bodies.
+    pub fn scoped(key: StateKey, mut payload: serde_json::Value) -> Result<Self, Error> {
+        let id = key.storage_id()?;
+        payload
+            .as_object_mut()
+            .ok_or_else(|| Error::conflict("scoped state payload is not an object"))?
+            .insert(
+                "state_key".to_owned(),
+                serde_json::to_value(&key).map_err(state::encode)?,
+            );
+        let result = Self {
+            kind: key.target.kind(),
+            id,
+            payload,
+            key: Some(key),
+        };
+        result.validate()?;
+        Ok(result)
+    }
+    /// # Errors
+    /// Rejects mismatched storage identity, payload key, or frozen event body.
+    pub fn validate(&self) -> Result<(), Error> {
+        if self.id.is_nil() {
+            return Err(Error::conflict("nil durable state identity"));
+        }
+        let Some(key) = &self.key else {
+            return Ok(());
+        };
+        if self.id != key.storage_id()?
+            || self.kind != key.target.kind()
+            || self.payload.get("state_key")
+                != Some(&serde_json::to_value(key).map_err(state::encode)?)
+        {
+            return Err(Error::conflict("durable state key/id/payload mismatch"));
+        }
+        match key.target {
+            StateTarget::Mutation { .. } => serde_json::from_value::<FrozenMutation>(
+                self.payload
+                    .get("frozen")
+                    .cloned()
+                    .ok_or_else(|| Error::conflict("missing frozen mutation body"))?,
+            )
+            .map_err(state::encode)?
+            .validate(key)?,
+            StateTarget::MutationDisposition { .. } => {
+                serde_json::from_value::<MutationDisposition>(
+                    self.payload
+                        .get("disposition")
+                        .cloned()
+                        .ok_or_else(|| Error::conflict("missing mutation disposition"))?,
+                )
+                .map_err(state::encode)?
+                .validate(key)?;
+            }
+            _ => state::validate_payload(key, &self.payload)?,
+        }
+        Ok(())
+    }
+    /// # Errors
+    /// Reports canonical key serialization failure. Legacy keys are unchanged.
+    pub fn storage_key(&self) -> Result<String, Error> {
+        self.key.as_ref().map_or_else(
+            || serde_json::to_string(&(self.kind, self.id)).map_err(state::encode),
+            StateKey::canonical,
+        )
     }
 }
 
@@ -112,6 +198,8 @@ pub struct ExpectedRecord {
 #[serde(deny_unknown_fields)]
 pub struct LibraryBatch {
     pub operation_id: LibraryOperationId,
+    /// The local directory identity from `LibraryManifest`, independent of any
+    /// authority-owned sync library identity retained in records or state.
     pub library_id: LibraryId,
     pub origin: ChangeOrigin,
     pub records: Vec<PortableRecordEnvelope>,
@@ -140,25 +228,26 @@ impl LibraryBatch {
             expected: Vec::new(),
         }
     }
+    /// Validate typed targets, identities, preconditions and resource paths.
+    ///
+    /// # Errors
+    /// Rejects invalid or duplicate identities, unsafe resources and malformed
+    /// portable envelopes. Directory ownership is checked by the adapter.
     pub fn validate(&self) -> Result<(), Error> {
         if self.operation_id.is_nil() || self.library_id.as_uuid().is_nil() {
             return Err(Error::conflict("durable operation identity is nil"));
         }
+        // Sync metadata describes an authority-owned identity, not this local
+        // directory owner. Preserving it does not authorize a live sync session.
         let mut targets = BTreeSet::new();
         for envelope in &self.records {
             envelope.validate()?;
-            if envelope
-                .sync_metadata()
-                .is_some_and(|s| s.binding.library_id.as_uuid() != self.library_id.as_uuid())
-            {
-                return Err(Error::conflict("durable record belongs to another library"));
-            }
             if envelope.record().object_uuid().is_nil() {
                 return Err(Error::conflict("durable record identity is nil"));
             }
             match envelope.record() {
                 super::PortableRecord::Song(song) => {
-                    super::LibraryRelativePath::validate(song.media_path.as_str())?
+                    super::LibraryRelativePath::validate(song.media_path.as_str())?;
                 }
                 super::PortableRecord::PlaylistItem(item)
                     if item.song_uuid.is_nil() || item.playlist_uuid.is_nil() =>
@@ -182,10 +271,20 @@ impl LibraryBatch {
                 return Err(Error::conflict("duplicate typed durable record target"));
             }
         }
+        // Historical state may name several bindings. Its specialized recovery
+        // use case validates trust; JSON field names cannot establish ownership.
         let mut states = BTreeSet::new();
         for state in &self.state {
-            validate_state_library(&state.payload, self.library_id)?;
-            if state.id.is_nil() || !states.insert((state.kind, state.id)) {
+            state.validate()?;
+            if state.key.as_ref().is_some_and(|key| {
+                matches!(key.namespace,
+                StateNamespace::LocalUnbound { library_id, .. } if library_id != self.library_id)
+            }) {
+                return Err(Error::conflict(
+                    "unbound state belongs to another local library",
+                ));
+            }
+            if !states.insert(state.storage_key()?) {
                 return Err(Error::conflict("duplicate durable state target"));
             }
         }
@@ -229,6 +328,10 @@ impl LibraryBatch {
         }
         Ok(())
     }
+    /// Hash the canonical batch payload.
+    ///
+    /// # Errors
+    /// Reports a payload serialization failure.
     pub fn digest(&self) -> Result<String, Error> {
         self.content_hash()
     }
@@ -243,6 +346,10 @@ pub struct LibraryCommit {
     pub digest: String,
 }
 impl LibraryCommit {
+    /// Bind an immutable payload to its local sequence and predecessor.
+    ///
+    /// # Errors
+    /// Reports a payload serialization failure.
     pub fn calculate_digest(
         batch: &LibraryBatch,
         seq: u64,
@@ -250,6 +357,10 @@ impl LibraryCommit {
     ) -> Result<String, Error> {
         (batch, seq, predecessor).content_hash()
     }
+    /// Verify the batch and its sequence-bound digest.
+    ///
+    /// # Errors
+    /// Rejects invalid batches, zero sequences or a mismatched digest.
     pub fn validate(&self) -> Result<(), Error> {
         self.batch.validate()?;
         if self.library_commit_seq == 0
@@ -301,12 +412,42 @@ pub struct LibraryReplay {
     pub commits: Vec<LibraryCommit>,
 }
 impl LibraryReplay {
+    /// Verify that a typed frozen body never changes across local commits.
+    /// Dispositions have their own keys and may advance independently.
+    ///
+    /// # Errors
+    /// Rejects a different body under the same complete frozen event key.
+    pub fn validate_state_history(&self) -> Result<(), Error> {
+        self.validate_state_extension(&[])
+    }
+    /// # Errors
+    /// Rejects rewriting any previously frozen, scoped event body.
+    pub fn validate_state_extension(&self, extension: &[DurableStateChange]) -> Result<(), Error> {
+        let mut frozen = std::collections::BTreeMap::new();
+        for state in self.states().chain(extension) {
+            if state
+                .key
+                .as_ref()
+                .is_some_and(|key| matches!(key.target, StateTarget::Mutation { .. }))
+            {
+                let key = state.storage_key()?;
+                if frozen
+                    .insert(key, state)
+                    .is_some_and(|previous| previous != state)
+                {
+                    return Err(Error::conflict("immutable frozen mutation body changed"));
+                }
+            }
+        }
+        Ok(())
+    }
     pub fn states(&self) -> impl Iterator<Item = &DurableStateChange> {
         self.checkpoint
             .iter()
             .flat_map(|c| &c.state)
             .chain(self.commits.iter().flat_map(|c| &c.batch.state))
     }
+    #[must_use]
     pub fn head(&self) -> Option<(u64, &str)> {
         self.commits
             .last()
@@ -324,30 +465,4 @@ pub(crate) fn valid_digest(hash: &str) -> bool {
         && hash
             .bytes()
             .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-}
-
-fn validate_state_library(value: &serde_json::Value, library: LibraryId) -> Result<(), Error> {
-    match value {
-        serde_json::Value::Object(fields) => {
-            for (key, value) in fields {
-                if matches!(key.as_str(), "library_id" | "library") {
-                    if let Some(raw) = value.as_str() {
-                        if raw.parse::<uuid::Uuid>().ok() != Some(library.as_uuid()) {
-                            return Err(Error::conflict(
-                                "durable state belongs to another library",
-                            ));
-                        }
-                    }
-                }
-                validate_state_library(value, library)?;
-            }
-        }
-        serde_json::Value::Array(values) => {
-            for value in values {
-                validate_state_library(value, library)?;
-            }
-        }
-        _ => {}
-    }
-    Ok(())
 }

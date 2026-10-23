@@ -5,6 +5,7 @@ use std::path::Path;
 #[cfg(test)]
 use echo_core::application::root_switch::derive_root_id;
 use echo_core::domain::ids::LibraryRootId;
+use echo_core::domain::library::{LibraryId, LibraryManifest};
 use echo_core::infrastructure::filesystem::staging::{StagingMarker, MARKER_FORMAT_VERSION};
 
 use crate::sync_runtime::SyncRuntimeError;
@@ -48,8 +49,11 @@ pub(super) fn prepare_enrollment_root(
                 .create_new(true)
                 .open(&manifest_path)
                 .and_then(|mut file| {
-                    use std::io::Write as _;
-                    file.write_all(b"{}")?;
+                    let manifest = LibraryManifest::new(
+                        LibraryId::from_uuid(uuid::Uuid::new_v4()),
+                        env!("CARGO_PKG_VERSION"),
+                    );
+                    serde_json::to_writer(&mut file, &manifest)?;
                     file.sync_all()
                 })
                 .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
@@ -240,8 +244,11 @@ pub(super) fn prepare_empty_enrollment_root(
         .create_new(true)
         .open(echo.join(EMPTY_LIBRARY_MANIFEST))
         .and_then(|mut file| {
-            use std::io::Write as _;
-            file.write_all(b"{}")?;
+            let manifest = LibraryManifest::new(
+                LibraryId::from_uuid(uuid::Uuid::new_v4()),
+                env!("CARGO_PKG_VERSION"),
+            );
+            serde_json::to_writer(&mut file, &manifest)?;
             file.sync_all()
         })
         .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;

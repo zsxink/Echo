@@ -1,6 +1,10 @@
 //! Root-scoped recovery facts for LAN writes. No credential or endpoint tables
 //! are exported. Confirmed payloads and immutable local events are kept apart.
 
+mod facts;
+#[cfg(test)]
+mod tests;
+
 use rusqlite::{params, Connection, Transaction};
 use serde_json::Value;
 use std::sync::Arc;
@@ -10,7 +14,8 @@ use super::super::support::storage;
 use crate::application::ports::ControlPlanePort;
 use crate::domain::ids::{LibraryRootId, OperationId};
 use crate::domain::library::durability::{
-    ChangeOrigin, CommitStatus, DurableStateChange, LibraryBatch, StateKind,
+    ChangeOrigin, CommitStatus, DurableStateChange, LibraryBatch, StateKey, StateKind,
+    StateNamespace, StateTarget,
 };
 use crate::error::Error;
 
@@ -44,9 +49,10 @@ pub(crate) fn export_sync_state(
     let mut state = super::super::durability_backfill::export_playback_events(connection, root)?;
     // Every mutation keeps its exact original body, author, predecessor, frozen
     // time and revision, including terminal outcomes. A new author cannot send it.
-    for payload in values(connection, "SELECT json_object('schema','echo.sync.mutation.v1','mutation_id',mutation_id,'author',origin_device_id,'sequence',origin_seq,'predecessor',previous_mutation_id,'object_type',object_type,'object_uuid',object_uuid,'operation',operation,'revision',local_revision,'base_version',base_object_version,'payload',json(payload_json),'payload_digest',payload_digest,'status',status,'outcome',CASE WHEN outcome_json IS NULL THEN NULL ELSE json(outcome_json) END,'changed_at_ms',created_at,'resources',json(resource_refs_json)) FROM sync_mutations WHERE local_root_uuid=?1 ORDER BY origin_device_id,origin_seq,mutation_id", &root_string)? {
-        let id = parse_uuid(&payload, "mutation_id")?;
-        state.push(DurableStateChange::new(StateKind::Pending, id, payload));
+    for payload in values(connection, "SELECT json_object('schema','echo.sync.mutation.v1','mutation_id',mutation_id,'author',origin_device_id,'sequence',origin_seq,'predecessor',previous_mutation_id,'object_type',object_type,'object_uuid',object_uuid,'operation',operation,'revision',local_revision,'base_version',base_object_version,'payload',json(payload_json),'payload_digest',payload_digest,'original_body',payload_json,'original_resources_body',resource_refs_json,'status',status,'outcome',CASE WHEN outcome_json IS NULL THEN NULL ELSE json(outcome_json) END,'changed_at_ms',created_at,'resources',json(resource_refs_json)) FROM sync_mutations WHERE local_root_uuid=?1 ORDER BY origin_device_id,origin_seq,mutation_id", &root_string)? {
+        // These historical rows have no freeze-time binding column. Never
+        // infer one from today's selected context or credentials.
+        state.extend(facts::mutation(&payload, StateNamespace::LegacyEvidence { source_root: root })?);
     }
     let active: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM sync_active_context WHERE singleton=1 AND local_root_uuid=?1)", params![root_string], |row| row.get(0)).map_err(storage)?;
     // These tables are already scoped by the selected binding. Never export
@@ -57,6 +63,7 @@ pub(crate) fn export_sync_state(
     } else {
         "context_root=?1"
     };
+    let context_namespace = facts::context_namespace(connection, &root_string, active)?;
     let queries = [
         (StateKind::Confirmed, "object", format!("SELECT json_object('schema','echo.sync.confirmed.v1','object_type',object_type,'object_uuid',object_uuid,'version',object_version,'sequence',commit_seq,'payload',CASE WHEN payload_json IS NULL THEN NULL ELSE json(payload_json) END,'tombstone',json(CASE WHEN is_tombstone=1 THEN 'true' ELSE 'false' END),'changed_at_ms',changed_at_ms) FROM {prefix}sync_object_versions WHERE {scope} ORDER BY object_type,object_uuid")),
         (StateKind::Alias, "song-alias", format!("SELECT json_object('schema','echo.sync.song-alias.v1','alias',alias_song_uuid,'canonical',canonical_song_uuid,'sequence',commit_seq) FROM {prefix}sync_song_aliases WHERE {scope} ORDER BY alias_song_uuid")),
@@ -69,42 +76,37 @@ pub(crate) fn export_sync_state(
     ];
     for (kind, namespace, query) in queries {
         for payload in values(connection, &query, &root_string)? {
-            let key = match namespace {
-                "object" => format!(
-                    "{}:{}",
-                    text(&payload, "object_type")?,
-                    text(&payload, "object_uuid")?
-                ),
-                "song-alias" => text(&payload, "alias")?.to_owned(),
-                "member-alias" => format!(
-                    "{}:{}",
-                    text(&payload, "playlist")?,
-                    text(&payload, "alias")?
-                ),
-                "commit" | "receipt" => format!(
-                    "{}:{}",
-                    text(&payload, "author")?,
-                    text(&payload, "mutation_id")?
-                ),
-                "origin" => text(&payload, "author")?.to_owned(),
-                "peer" => text(&payload, "peer")?.to_owned(),
-                "conflict" => text(&payload, "id")?.to_owned(),
-                _ => unreachable!(),
+            let namespace_scope = if namespace == "commit" {
+                StateNamespace::Bound {
+                    binding: facts::binding(&payload)?,
+                }
+            } else {
+                context_namespace
+                    .clone()
+                    .unwrap_or(StateNamespace::LegacyEvidence { source_root: root })
             };
-            state.push(DurableStateChange::new(
-                kind,
-                identity(namespace, &key),
+            let target = facts::target(namespace, &payload)?;
+            debug_assert_eq!(kind, target.kind());
+            state.push(DurableStateChange::scoped(
+                StateKey {
+                    namespace: namespace_scope,
+                    target,
+                },
                 payload,
-            ));
+            )?);
         }
     }
     // Physical associations only become ready after verified publication. The
     // full publication also preserves pending claims and their retained bytes.
     for payload in values(connection, "SELECT json_object('schema','echo.sync.resource-publication.v1','operation',operation_uuid,'publication',json(publication_json),'completed',json(CASE WHEN completed=1 THEN 'true' ELSE 'false' END)) FROM sync_remote_publications WHERE local_root_uuid=?1 ORDER BY operation_uuid", &root_string)? {
-        state.push(DurableStateChange::new(StateKind::ResourceLocation, parse_uuid(&payload,"operation")?, payload));
+        // Publication rows predate binding capture as well; root provenance
+        // retains their exact operation without asserting a historical binding.
+        let target = StateTarget::Publication { operation_id: parse_uuid(&payload,"operation")? };
+        state.push(DurableStateChange::scoped(StateKey { namespace: StateNamespace::LegacyEvidence { source_root: root }, target }, payload)?);
     }
     for payload in values(connection, "SELECT json_object('schema','echo.sync.local-origin.v1','author',origin_device_id,'sequence',origin_seq,'mutation_id',last_mutation_id) FROM sync_local_origin_cursors WHERE local_root_uuid=?1 ORDER BY origin_device_id", &root_string)? {
-        state.push(DurableStateChange::new(StateKind::Cursor, identity("local-origin",text(&payload,"author")?), payload));
+        let target = StateTarget::LocalOriginCursor { author: crate::domain::sync::DeviceId::from_uuid(parse_uuid(&payload,"author")?) };
+        state.push(DurableStateChange::scoped(StateKey { namespace: StateNamespace::LegacyEvidence { source_root: root }, target }, payload)?);
     }
     Ok(state)
 }

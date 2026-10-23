@@ -14,6 +14,7 @@ pub(super) fn validate(
     root: LibraryRootId,
     replay: &LibraryReplay,
 ) -> Result<Option<Watermark>, Error> {
+    replay.validate_state_history()?;
     let exists: bool = c
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM library_roots WHERE uuid=?1)",
@@ -40,8 +41,8 @@ pub(super) fn validate(
             ChangeOrigin::Recovery,
             image.records.clone(),
         );
-        batch.state = image.state.clone();
-        batch.resources = image.resources.clone();
+        batch.state.clone_from(&image.state);
+        batch.resources.clone_from(&image.resources);
         batch.validate()?;
         seq = image.library_commit_seq;
         predecessor = Some(image.head_digest.clone());

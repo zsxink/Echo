@@ -19,6 +19,9 @@ use crate::error::Error;
 /// An absolute projection, never an increment after a portable commit.
 pub trait PlaybackProjection: Send + Sync {
     /// Apply a saved event and its monotone buckets atomically and idempotently.
+    ///
+    /// # Errors
+    /// Reports storage failures without discarding the saved playback event.
     fn project_playback(
         &self,
         session: PlaybackSessionId,

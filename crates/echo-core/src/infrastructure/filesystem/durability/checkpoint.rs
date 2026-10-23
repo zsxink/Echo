@@ -21,6 +21,7 @@ struct Coverage {
 
 pub(super) fn load(
     registry: &RootRegistry,
+    cache: &super::ValidationCache,
     root: LibraryRootId,
 ) -> Result<Option<LibraryCheckpoint>, Error> {
     let Some(raw) = portable::read(registry, root, ANCHOR, LIMIT)? else {
@@ -28,23 +29,28 @@ pub(super) fn load(
     };
     let coverage: Coverage = decode(&raw)?;
     let image = coverage.image;
-    if coverage.version != 1
-        || image.library_commit_seq == 0
-        || !crate::domain::library::durability::valid_digest(&image.head_digest)
-        || image.content_hash()? != coverage.digest
-        || image.library_id != manifest(registry, root)?.library_id
-    {
+    // Ownership is contextual and must never be certified by a body cache.
+    if image.library_id != manifest(registry, root)?.library_id {
         return Err(invalid("coverage checkpoint identity or checksum mismatch"));
     }
-    let mut validation = LibraryBatch::new(
-        uuid::Uuid::from_u128(1),
-        image.library_id,
-        crate::domain::library::durability::ChangeOrigin::Recovery,
-        image.records.clone(),
-    );
-    validation.state = image.state.clone();
-    validation.resources = image.resources.clone();
-    validation.validate()?;
+    cache.validate(super::DocumentKind::Coverage, root, &raw, || {
+        if coverage.version != 1
+            || image.library_commit_seq == 0
+            || !crate::domain::library::durability::valid_digest(&image.head_digest)
+            || image.content_hash()? != coverage.digest
+        {
+            return Err(invalid("coverage checkpoint identity or checksum mismatch"));
+        }
+        let mut validation = LibraryBatch::new(
+            uuid::Uuid::from_u128(1),
+            image.library_id,
+            crate::domain::library::durability::ChangeOrigin::Recovery,
+            image.records.clone(),
+        );
+        validation.state.clone_from(&image.state);
+        validation.resources.clone_from(&image.resources);
+        validation.validate()
+    })?;
     Ok(Some(image))
 }
 
@@ -85,21 +91,48 @@ pub(super) fn materialize(
         hook("record", index)?;
         let path = portable::record_relative(record.record())?;
         let bytes = portable::encode(record, portable::MAX_RECORD_BYTES)?;
-        io::publish(registry, root, &path, &bytes, false, "record", hook)?;
-        files.insert(path, blake3::hash(&bytes).to_hex().to_string());
+        materialize_file(registry, root, path, &bytes, files, "record", hook)?;
     }
     for (index, state) in state.iter().enumerate() {
         hook("state", index)?;
         let path = state_path(state);
         let bytes = portable::encode(state, LIMIT)?;
-        io::publish(registry, root, &path, &bytes, false, "state", hook)?;
-        files.insert(path, blake3::hash(&bytes).to_hex().to_string());
+        materialize_file(registry, root, path, &bytes, files, "state", hook)?;
+    }
+    Ok(())
+}
+
+// files contains only the previous durable checkpoint plus publications that
+// completed all native sync boundaries in this recovery. Equal bytes on disk
+// alone do not prove durability: a failed rename/directory-sync must be redone.
+fn materialize_file(
+    registry: &RootRegistry,
+    root: LibraryRootId,
+    path: String,
+    bytes: &[u8],
+    files: &mut BTreeMap<String, String>,
+    label: &str,
+    hook: &mut Hook<'_>,
+) -> Result<(), Error> {
+    let digest = blake3::hash(bytes).to_hex().to_string();
+    if files.get(&path) == Some(&digest) {
+        // Constrained reading also rechecks the path for symlinks. A durable
+        // checkpoint is evidence to verify, never permission to repair tampering.
+        let raw = portable::read(registry, root, &path, LIMIT)?
+            .ok_or_else(|| invalid("checkpoint file missing"))?;
+        if raw.as_bytes() != bytes {
+            return Err(invalid("checkpoint file digest mismatch"));
+        }
+    } else {
+        io::publish(registry, root, &path, bytes, false, label, hook)?;
+        files.insert(path, digest);
     }
     Ok(())
 }
 
 pub(super) fn compact(
     registry: &RootRegistry,
+    cache: &super::ValidationCache,
     root: LibraryRootId,
     replay: &LibraryReplay,
     hook: &mut Hook<'_>,
@@ -120,7 +153,7 @@ pub(super) fn compact(
             );
         }
         for state in &image.state {
-            states.insert((state.kind, state.id), state.clone());
+            states.insert(state.storage_key()?, state.clone());
         }
         for resource in &image.resources {
             resources.insert(resource.relative_path.clone(), resource.clone());
@@ -136,7 +169,7 @@ pub(super) fn compact(
             );
         }
         for state in &commit.batch.state {
-            states.insert((state.kind, state.id), state.clone());
+            states.insert(state.storage_key()?, state.clone());
         }
         for resource in &commit.batch.resources {
             resources.insert(resource.relative_path.clone(), resource.clone());
@@ -147,6 +180,7 @@ pub(super) fn compact(
             if raw.as_bytes() != bytes {
                 return Err(invalid("immutable operation receipt collision"));
             }
+            io::flush_existing(registry, root, &path, "receipt_retry", hook)?;
         } else {
             io::publish(registry, root, &path, &bytes, true, "receipt", hook)?;
         }
@@ -176,11 +210,12 @@ pub(super) fn compact(
     )?;
     // No journal is removed until the full image, anchor and original-operation
     // receipts have each crossed their file and ancestor-directory sync boundary.
-    cleanup_covered(registry, root, seq, hook)
+    cleanup_covered(registry, cache, root, seq, hook)
 }
 
 pub(super) fn cleanup_covered(
     registry: &RootRegistry,
+    cache: &super::ValidationCache,
     root: LibraryRootId,
     seq: u64,
     hook: &mut Hook<'_>,
@@ -191,6 +226,8 @@ pub(super) fn cleanup_covered(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(e) => return Err(Error::io("list covered transactions", e, &directory)),
     };
+    let mut anchor_flushed = false;
+    let mut covered = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|e| Error::io("read covered transaction", e, &directory))?;
         let id = entry
@@ -198,7 +235,7 @@ pub(super) fn cleanup_covered(
             .to_str()
             .and_then(|raw| raw.parse::<uuid::Uuid>().ok())
             .ok_or_else(|| invalid("invalid covered transaction directory"))?;
-        let Some(original) = super::read_operation(registry, root, id)? else {
+        let Some(original) = super::read_operation(registry, cache, root, id)? else {
             continue;
         };
         if original.library_commit_seq > seq {
@@ -207,6 +244,24 @@ pub(super) fn cleanup_covered(
         if portable::read(registry, root, &receipt(id), LIMIT)?.is_none() {
             return Err(invalid("cannot collect transaction without receipt"));
         }
+        // Recovery can observe an anchor or receipt whose rename completed but
+        // whose ancestor sync failed. Before destroying its redo alternative,
+        // establish both durable copies anew; no in-memory success is retained.
+        if !anchor_flushed {
+            if load(registry, cache, root)?.is_none_or(|image| image.library_commit_seq != seq) {
+                return Err(invalid(
+                    "cannot collect without matching coverage checkpoint",
+                ));
+            }
+            io::flush_existing(registry, root, ANCHOR, "coverage_gc", hook)?;
+            anchor_flushed = true;
+        }
+        io::flush_existing(registry, root, &receipt(id), "receipt_gc", hook)?;
+        covered.push(id);
+    }
+    // Finish all proof syncs before the first destructive step. A subsequent
+    // receipt failure therefore leaves the entire redo suffix untouched.
+    for id in covered {
         for name in ["prepared.json", "committed.json"] {
             let path = portable::path(registry, root, &relative(id, name))?;
             match std::fs::remove_file(&path) {

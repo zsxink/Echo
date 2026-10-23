@@ -7,7 +7,18 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 struct AccessGuard<'a> {
     _thread: MutexGuard<'a, ()>,
-    _process: std::fs::File,
+    process: std::fs::File,
+}
+
+impl Drop for AccessGuard<'_> {
+    fn drop(&mut self) {
+        // Release the permit while the adapter mutex is still held. Closing
+        // just this handle can leave flock alive in a concurrently spawned
+        // child's inherited file description until its close-on-exec runs.
+        // Drop cannot report cleanup errors; closing the file remains the
+        // fallback and a failed unlock can only keep future writers excluded.
+        let _ = fs2::FileExt::unlock(&self.process);
+    }
 }
 
 use super::portable_migration as migration;
@@ -25,6 +36,7 @@ use crate::error::Error;
 pub struct RootControlPlane {
     registry: RootRegistry,
     access: Arc<Mutex<()>>,
+    pub(super) validation_cache: Arc<super::durability::ValidationCache>,
 }
 
 impl RootControlPlane {
@@ -33,10 +45,25 @@ impl RootControlPlane {
         Self {
             registry,
             access: Arc::new(Mutex::new(())),
+            validation_cache: Arc::default(),
         }
     }
 
     fn prepare(
+        &self,
+        root: LibraryRootId,
+        allow_incompatible: bool,
+    ) -> Result<AccessGuard<'_>, Error> {
+        let guard = self.prepare_write(root, allow_incompatible)?;
+        if !allow_incompatible {
+            super::durability::recover(&self.registry, &self.validation_cache, root)?;
+        }
+        Ok(guard)
+    }
+
+    // Commits perform their own recovery under this guard. Legacy writes use
+    // prepare(), which also recovers before modifying any materialized files.
+    fn prepare_write(
         &self,
         root: LibraryRootId,
         allow_incompatible: bool,
@@ -73,12 +100,9 @@ impl RootControlPlane {
                 }
             }
         }
-        if !allow_incompatible {
-            super::durability::recover(&self.registry, root)?;
-        }
         Ok(AccessGuard {
             _thread: guard,
-            _process: file,
+            process: file,
         })
     }
 
@@ -132,7 +156,7 @@ impl RootControlPlane {
         root: LibraryRootId,
         relative: &str,
     ) -> Result<Option<PortableRecordDocument>, Error> {
-        let replay = super::durability::chain(&self.registry, root)?;
+        let replay = super::durability::chain(&self.registry, &self.validation_cache, root)?;
         let records = replay
             .checkpoint
             .iter()
@@ -217,7 +241,7 @@ impl RootControlPlane {
                 result.insert(relative, raw);
             }
         }
-        let replay = super::durability::chain(&self.registry, root)?;
+        let replay = super::durability::chain(&self.registry, &self.validation_cache, root)?;
         for record in replay
             .checkpoint
             .iter()
@@ -463,6 +487,69 @@ impl ControlPlanePort for RootControlPlane {
     }
 }
 
+impl crate::application::ports::LibraryDurabilityPort for RootControlPlane {
+    fn write_asset(&self, root: LibraryRootId, bytes: &[u8]) -> Result<String, Error> {
+        let _guard = self.prepare(root, false)?;
+        super::durability::write_asset(&self.registry, root, bytes)
+    }
+    fn read_asset(&self, root: LibraryRootId, hash: &str) -> Result<Option<Vec<u8>>, Error> {
+        self.prepare_read(root, false)?;
+        super::durability::read_asset(&self.registry, root, hash)
+    }
+    fn commit(
+        &self,
+        root: LibraryRootId,
+        batch: &crate::domain::library::durability::LibraryBatch,
+    ) -> Result<crate::domain::library::durability::CommitOutcome, Error> {
+        let _guard = self.prepare_write(root, false)?;
+        super::durability::commit(&self.registry, &self.validation_cache, root, batch)
+    }
+    fn recover(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<crate::domain::library::durability::LibraryReplay, Error> {
+        let _guard = self.prepare(root, true)?;
+        super::durability::recover(&self.registry, &self.validation_cache, root)
+    }
+    fn read_operation(
+        &self,
+        root: LibraryRootId,
+        id: uuid::Uuid,
+    ) -> Result<Option<crate::domain::library::durability::LibraryCommit>, Error> {
+        self.prepare_read(root, false)?;
+        super::durability::read_operation(&self.registry, &self.validation_cache, root, id)
+    }
+    fn operation_status(
+        &self,
+        root: LibraryRootId,
+        id: uuid::Uuid,
+    ) -> Result<Option<crate::domain::library::durability::CommitOutcome>, Error> {
+        self.prepare_read(root, false)?;
+        super::durability::operation_status(&self.registry, &self.validation_cache, root, id)
+    }
+}
+
+impl crate::application::ports::ControlPlaneInventoryPort for RootControlPlane {
+    fn records_present(&self, root: LibraryRootId) -> Result<bool, Error> {
+        self.prepare_read(root, false)?;
+        let replay = super::durability::chain(&self.registry, &self.validation_cache, root)?;
+        if replay
+            .checkpoint
+            .as_ref()
+            .is_some_and(|c| !c.records.is_empty())
+            || replay.commits.iter().any(|c| !c.batch.records.is_empty())
+        {
+            return Ok(true);
+        }
+        for &kind in RecordKind::ALL {
+            if !migration::record_files(&self.registry, root, kind)?.is_empty() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,6 +571,20 @@ mod tests {
         registry.register(root, dir.path());
         let plane = RootControlPlane::new(registry.clone());
         (dir, registry, root, plane)
+    }
+
+    #[test]
+    fn library_durability_writer_permit_releases_lock_with_a_duplicated_handle_alive() {
+        let (_dir, registry, root, plane) = setup();
+        let guard = plane.prepare_write(root, true).unwrap();
+        // A concurrent process spawn can temporarily inherit an open file
+        // description before close-on-exec. Its lifetime is not a write permit.
+        let inherited = guard.process.try_clone().unwrap();
+        drop(guard);
+        let next = RootControlPlane::new(registry);
+        let permit = next.prepare_write(root, true).unwrap();
+        drop(permit);
+        drop(inherited);
     }
 
     fn sample_record(root_uuid: uuid::Uuid) -> PortableRecord {
@@ -764,68 +865,5 @@ mod tests {
                 .len(),
             1
         );
-    }
-}
-
-impl crate::application::ports::LibraryDurabilityPort for RootControlPlane {
-    fn write_asset(&self, root: LibraryRootId, bytes: &[u8]) -> Result<String, Error> {
-        let _guard = self.prepare(root, false)?;
-        super::durability::write_asset(&self.registry, root, bytes)
-    }
-    fn read_asset(&self, root: LibraryRootId, hash: &str) -> Result<Option<Vec<u8>>, Error> {
-        self.prepare_read(root, false)?;
-        super::durability::read_asset(&self.registry, root, hash)
-    }
-    fn commit(
-        &self,
-        root: LibraryRootId,
-        batch: &crate::domain::library::durability::LibraryBatch,
-    ) -> Result<crate::domain::library::durability::CommitOutcome, Error> {
-        let _guard = self.prepare(root, false)?;
-        super::durability::commit(&self.registry, root, batch)
-    }
-    fn recover(
-        &self,
-        root: LibraryRootId,
-    ) -> Result<crate::domain::library::durability::LibraryReplay, Error> {
-        let _guard = self.prepare(root, true)?;
-        super::durability::recover(&self.registry, root)
-    }
-    fn read_operation(
-        &self,
-        root: LibraryRootId,
-        id: uuid::Uuid,
-    ) -> Result<Option<crate::domain::library::durability::LibraryCommit>, Error> {
-        self.prepare_read(root, false)?;
-        super::durability::read_operation(&self.registry, root, id)
-    }
-    fn operation_status(
-        &self,
-        root: LibraryRootId,
-        id: uuid::Uuid,
-    ) -> Result<Option<crate::domain::library::durability::CommitOutcome>, Error> {
-        self.prepare_read(root, false)?;
-        super::durability::operation_status(&self.registry, root, id)
-    }
-}
-
-impl crate::application::ports::ControlPlaneInventoryPort for RootControlPlane {
-    fn records_present(&self, root: LibraryRootId) -> Result<bool, Error> {
-        self.prepare_read(root, false)?;
-        let replay = super::durability::chain(&self.registry, root)?;
-        if replay
-            .checkpoint
-            .as_ref()
-            .is_some_and(|c| !c.records.is_empty())
-            || replay.commits.iter().any(|c| !c.batch.records.is_empty())
-        {
-            return Ok(true);
-        }
-        for &kind in RecordKind::ALL {
-            if !migration::record_files(&self.registry, root, kind)?.is_empty() {
-                return Ok(true);
-            }
-        }
-        Ok(false)
     }
 }

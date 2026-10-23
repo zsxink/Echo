@@ -104,7 +104,7 @@ impl LibraryHistoryPort for SqliteDatabase {
 /// Export from one connection/transaction so caller-controlled writer
 /// serialization establishes a consistent capture. No SQL/configuration is
 /// copied and no confirmation metadata is inferred from an effective value.
-pub(crate) fn export_library_records(
+pub fn export_library_records(
     connection: &Connection,
     root: LibraryRootId,
 ) -> Result<Vec<PortableRecordEnvelope>, Error> {
@@ -117,46 +117,7 @@ pub(crate) fn export_library_records(
         .map_err(storage)?;
     let device = DeviceId::from_uuid(uuid::Uuid::parse_str(&raw_device).map_err(storage)?);
     let mut records = Vec::new();
-    for song in super::all_songs_in_root(connection, root)? {
-        let (wall, counter): (u64, u32) = connection
-            .query_row(
-                "SELECT hlc_wall_secs,hlc_counter FROM songs WHERE uuid=?1",
-                [song.id().to_string()],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .map_err(storage)?;
-        let hlc = HybridLogicalClock::new(wall, counter);
-        push(
-            &mut records,
-            PortableRecord::Song(crate::application::portable_materialize::song_record(
-                device,
-                hlc,
-                song.revision(),
-                &song,
-            )?),
-        )?;
-        push(
-            &mut records,
-            PortableRecord::Favorite(FavoriteRecord {
-                song_uuid: song.id().as_uuid(),
-                revision: song.revision(),
-                updated_by_device_id: device,
-                hlc,
-                is_favorite: song.favorite(),
-            }),
-        )?;
-        let by_device = super::read_device_play_counts(connection, song.id())?;
-        push(
-            &mut records,
-            PortableRecord::PlayStats(PlayStatsRecord {
-                song_uuid: song.id().as_uuid(),
-                revision: song.revision(),
-                updated_by_device_id: device,
-                hlc,
-                by_device,
-            }),
-        )?;
-    }
+    export_songs(connection, root, device, &mut records)?;
     let mut statement=connection.prepare("SELECT uuid,display_name,created_at,revision,hlc_wall_secs,hlc_counter FROM playlists WHERE library_root_uuid=?1 ORDER BY uuid").map_err(storage)?;
     let rows = statement
         .query_map([root.to_string()], |row| {
@@ -220,6 +181,62 @@ pub(crate) fn export_library_records(
     Ok(records)
 }
 
+fn export_songs(
+    connection: &Connection,
+    root: LibraryRootId,
+    device: DeviceId,
+    records: &mut Vec<PortableRecordEnvelope>,
+) -> Result<(), Error> {
+    for mut song in super::all_songs_in_root(connection, root)? {
+        // Rescue and sync confirmation export portable logical paths, while
+        // completed publication declarations retain their local version path.
+        if let Some(logical) =
+            super::sync_manifests::published_logical_path(connection, root, song.path())?
+        {
+            song.relink(logical);
+        }
+        let (wall, counter): (u64, u32) = connection
+            .query_row(
+                "SELECT hlc_wall_secs,hlc_counter FROM songs WHERE uuid=?1",
+                [song.id().to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(storage)?;
+        let hlc = HybridLogicalClock::new(wall, counter);
+        push(
+            records,
+            PortableRecord::Song(crate::application::portable_materialize::song_record(
+                device,
+                hlc,
+                song.revision(),
+                &song,
+            )?),
+        )?;
+        push(
+            records,
+            PortableRecord::Favorite(FavoriteRecord {
+                song_uuid: song.id().as_uuid(),
+                revision: song.revision(),
+                updated_by_device_id: device,
+                hlc,
+                is_favorite: song.favorite(),
+            }),
+        )?;
+        let by_device = super::read_device_play_counts(connection, song.id())?;
+        push(
+            records,
+            PortableRecord::PlayStats(PlayStatsRecord {
+                song_uuid: song.id().as_uuid(),
+                revision: song.revision(),
+                updated_by_device_id: device,
+                hlc,
+                by_device,
+            }),
+        )?;
+    }
+    Ok(())
+}
+
 fn export_overrides(
     connection: &Connection,
     root: LibraryRootId,
@@ -266,7 +283,7 @@ fn push(records: &mut Vec<PortableRecordEnvelope>, record: PortableRecord) -> Re
 }
 
 /// Local playback event identities are recovery state, never shared statistics.
-pub(crate) fn export_playback_events(
+pub fn export_playback_events(
     connection: &Connection,
     root: LibraryRootId,
 ) -> Result<Vec<crate::domain::library::durability::DurableStateChange>, Error> {

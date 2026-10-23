@@ -567,6 +567,9 @@ impl<'a> StartScan<'a> {
                 self.wall_clock_ms(),
             )
         });
+        if let Some(original) = durable::published_index_refresh(self.deps, &song, parsed)? {
+            return self.persist_parsed_index(original, parsed, None);
+        }
         let resources =
             super::scan_resources::verified_song_resources(self.deps, root, parsed, true)?;
         self.persist_parsed_index(song, parsed, Some(resources))

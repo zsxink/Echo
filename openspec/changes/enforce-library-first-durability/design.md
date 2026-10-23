@@ -97,6 +97,10 @@ SQLite 中 `applied_library_operations` / 库投影水位通过**新增顺序迁
 
 **批量提交与链压缩。** 首次扫描与批量导入 MUST 把同一逻辑集合合并为有界数量的提交（例如按扫描批次分组），而不是每首歌一次提交；单次编辑不得触发三次以上全链扫描。目录链 MUST 有明确的压缩策略：当材料化检查点已覆盖某段历史且不再被候选、快照、冲突、删除意图或未完成发布引用时，先刷盘带链头摘要的覆盖清单，再移除已被覆盖的 journal，使链长度与活跃窗口而非总历史成正比。超过安全上限时必须拒绝写入并报告，不得静默降级或丢弃未投影提交。
 
+**本地目录与同步身份。** `domain::library::LibraryId` 是 `manifest.json`、`LibraryBatch`、覆盖检查点和 SQLite 投影水位共同使用的本地目录身份；`domain::sync::LibraryId` 是 `SyncBinding` 内的主机同步库身份，须与 authority、epoch 一起比较。两者独立生成，不能比较 UUID 相等，也不能改写既有 manifest 或历史记录来强制相同。目录提交/重放仍验证本地 manifest、batch、检查点、链和 SQLite watermark 的归属；实时网络入口仍须验证完整当前 `SyncBinding`。envelope 与 state 内的旧 binding、原 mutation 和新 binding 映射是历史证据，按原文保存；其中私有 state 保留为 `RequiresStateRecovery`，不会授权联网。通用 JSON 的 `library` / `library_id` 字段名不能作为跨身份域的递归归属判据。
+
+当前 state 仍是按 `(StateKind, id)` 覆盖的未类型化 payload；完整 typed state 契约（任务 2.1）和显式 adoption（任务 7.7）尚未完成。后续必须定义含完整 binding/事件身份的不可变历史命名空间和有类型校验，避免不同 binding 的同 kind/id 历史相互覆盖；取消错误的 ID 相等检查不等于已经解决这些历史保留与授权问题。
+
 ### D3. 用例层统一协调，目录与 SQLite 分别适配
 
 ```text
@@ -143,7 +147,7 @@ Ports and Adapters 隔离技术；State Machine 表达崩溃恢复；Unit of Wor
 
 接收端元数据提交可早于媒体下载：先存本地对象及所需资源清单，SQLite 只能投影为 missing；全文件校验、安全发布与资源完成标记持久化之后才可用。单调游标不得早于对应本地提交与 SQLite 投影，恢复可根据目录 receipt 重放，绝不能跳过尚未持久的对象。
 
-现有资源发布可能选用 `echo/media/<kind>/<id>/<group>/...` 不可变版本路径（`application/remote_resources.rs:105`），普通 `media/` 扫描无法恢复其本地位置。把“逻辑歌曲相对路径”和“已校验本机资源位置”区分：后者以库内相对路径、资源哈希/长度和 owner/version 存于目录 state，重装后只关联有声明且校验通过的受管版本，不递归扫描 `echo/`，也不放宽任意控制面路径作为歌曲逻辑路径。完整目录备份包含被引用的 `echo/media/`；网络仍按资源声明传字节，不传本机物理布局。
+现有资源发布可能选用 `echo/media/<kind>/<id>/<group>/...` 不可变版本路径（`application/remote_resources.rs:105`），普通 `media/` 扫描无法恢复其本地位置。把“逻辑歌曲相对路径”和“已校验本机资源位置”区分：后者以库内相对路径、资源哈希/长度和 owner/version 存于目录 state，重装后只关联有声明且校验通过的受管版本，不递归扫描 `echo/`，也不放宽任意控制面路径作为歌曲逻辑路径。完整目录备份包含被引用的 `echo/media/`；网络仍按资源声明传字节，不传本机物理布局。 扫描与 typed 导出仅从已完成 publication 的现有歌曲关联取得逻辑路径，不能放宽 `LibraryRelativePath` 或把未声明控制面文件加入枚举；已发布字节的 hash/length 未变时重解析只刷新派生索引，不用嵌入标签覆盖共享值、confirmed envelope 或制造上传候选。真正改变字节仍按现有声明、同一 UUID 与本地编辑规则保存逻辑 after-image，校验和 SQLite 文件位置继续使用实际本机路径。
 
 主机现行“DB 确认事务 → publication”改为“规划确认结果/预留序列 → 本地权威提交 → SQLite 账本投影 → 控制面/所需资源发布与独立安全检查点 → published → ACK/快照/增量可见”。主机的确认序列、幂等 receipt 与连续 published 水位必须与目录提交绑定；DB-only 预留允许作为可丢弃临时状态，不允许成为唯一已确认结果。相同 mutation 不同内容拒绝；相同重试返回相同结果。网络发布仍遵守现有安全检查点，不绕过认证/限流/epoch。
 

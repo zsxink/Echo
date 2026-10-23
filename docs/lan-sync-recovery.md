@@ -48,3 +48,18 @@ Sync is opt-in and stays disabled until a user starts hosting or pairs a peer. I
 本地目录协议先刷盘 prepared 正文，再发布带序列/前驱摘要的 committed 标记，最后材料化对象与本机 state。只有 prepared 的操作仍是未保存；标记已经发布后的故障必须保留原 operation ID，并以“已保存、待恢复”继续同一操作。读取不创建或获取 `write.lock`，也不在只读浏览时执行格式迁移；已提交但尚未材料化的对象通过经过校验的提交载荷读取。
 
 当前实现每 32 个活跃提交发布一次完整覆盖快照及真实链头，再回收已覆盖事务文件。原操作正文保留在按 ID 分片的 `echo/state/operations/`，用于同 ID 幂等重试；私有历史 state 和资源暂时保守保留，完整历史归档及资源回收尚未完成。备份必须包含整个 `echo/`，不能只复制 records 或媒体。协议字段、失败测试、平台限制和未完成部分见 [目录协议实施证据](../openspec/changes/enforce-library-first-durability/evidence/directory-protocol.md)。当前原生验证限于 macOS，不能据此承诺 Windows/Linux 或硬件断电下的相同行为。
+
+### 文件系统适配与失败语义
+
+目录提交适配器要求同一文件系统内的临时文件发布：先以 exclusive-create 创建临时文件，写全并 `sync_all`，prepared/marker 通过 hard link 独占发布，材料化记录和检查点通过 rename 替换。随后逐级同步父目录直到注册资料库根；任何必需同步失败均返回错误。此处只描述 Core 的目录提交适配器，其他历史媒体暂存或应用配置 helper 的能力不能替代它。
+
+| 平台 | 目录同步与替换实现 | 已有证据与限制 |
+| --- | --- | --- |
+| macOS / Linux（POSIX） | 打开目录句柄并要求 `sync_all` 成功；同文件系统 hard link / rename；不先删除已提交目标 | macOS 临时目录和实际文件边界故障注入已有测试；Linux 尚未原生执行。挂载方式、文件系统或介质不支持时返回 IO 错误，不降级为普通保存成功 |
+| Windows | 以 `FILE_FLAG_BACKUP_SEMANTICS` 打开目录并要求 `sync_all` 成功；使用相同 hard link / rename 发布规则 | 尚待原生验证。目录句柄权限、文件系统 hard link 支持、目标文件占用或替换限制均可能导致明确失败；不能仅凭文件已可见就跳过父目录同步 |
+
+提交标记之前失败不会授权 SQLite 保存新的用户事实。提交标记已发布后，若目录同步或材料化失败，操作可能已经保存，必须保留原身份并查询/恢复，返回“已保存，待恢复”；若目录恢复完成而 SQLite 失败，返回“已保存，等待更新”。不要再次创建相同歌曲/歌单，也不要删除事务以消除提示。无法读取或证明原提交时保留证据并停止相关写入。
+
+恢复顺序是验证当前 manifest 和库身份、覆盖快照及提交链，再从持久材料化水位按序补齐对象和私有 state；SQLite 的投影水位不能授权回收目录事务。坏摘要、断链、跨库资料或已提交文件缺失会停止恢复。受约束读路径检查相对路径、符号链接与实际内容；只读浏览不会创建写锁或执行迁移。未来格式拒绝写入，旧格式升级仍受专门迁移任务约束。
+
+开发者可用 `cargo test -p echo-core library_durability --lib` 重复自动化验证，测试覆盖文件同步、发布、各级目录同步、材料化、覆盖快照和 GC 的强制失败。该测试不能代替磁盘满、真实拔盘、硬件断电和三平台原生验收。完整 v3 升级、所有入口的统一顺序投影与历史资源回收仍在开发；本节不表示整个 library-first change 已交付。

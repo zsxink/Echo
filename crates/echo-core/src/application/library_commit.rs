@@ -6,6 +6,11 @@ use crate::domain::library::durability::{
 };
 use crate::error::Error;
 
+/// Commit the immutable library operation before invoking its projection.
+///
+/// # Errors
+/// Reports validation or directory failures, preserving the operation identity
+/// when committed materialization or the subsequent projection remains pending.
 pub fn commit_then_project<T>(
     control: &dyn ControlPlanePort,
     root: LibraryRootId,

@@ -128,3 +128,6 @@ fn library_durability_projection_rejects_bad_suffix_before_any_database_write() 
     );
     assert!(db.read_recovery_records(root).unwrap().records.is_empty());
 }
+
+mod identity;
+mod retained_evidence;

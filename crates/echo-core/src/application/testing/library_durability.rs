@@ -65,7 +65,7 @@ impl CanonicalLibraryState {
         }
         for fact in state {
             self.state.insert(
-                format!("{}:{}", fact.kind.directory(), fact.id),
+                fact.storage_key().expect("typed fixture state key"),
                 fact.clone(),
             );
         }

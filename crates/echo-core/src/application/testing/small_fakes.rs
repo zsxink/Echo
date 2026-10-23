@@ -807,6 +807,17 @@ impl crate::application::ports::LibraryDurabilityPort for MemoryControlPlane {
     }
 }
 
+impl crate::application::ports::ControlPlaneInventoryPort for MemoryControlPlane {
+    fn records_present(&self, root: LibraryRootId) -> Result<bool, Error> {
+        Ok(self
+            .records
+            .lock()
+            .unwrap()
+            .keys()
+            .any(|(r, _, _)| *r == root))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -921,16 +932,5 @@ mod tests {
             cache.get(&key).unwrap().is_none(),
             "GC removed unreferenced asset"
         );
-    }
-}
-
-impl crate::application::ports::ControlPlaneInventoryPort for MemoryControlPlane {
-    fn records_present(&self, root: LibraryRootId) -> Result<bool, Error> {
-        Ok(self
-            .records
-            .lock()
-            .unwrap()
-            .keys()
-            .any(|(r, _, _)| *r == root))
     }
 }

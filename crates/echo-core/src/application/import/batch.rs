@@ -107,7 +107,7 @@ impl<'a> PlanImport<'a> {
         };
         let planned = match self.stage_and_plan(root, source, &info, &ext, state) {
             Ok(planned) => planned,
-            Err(outcome) => return outcome,
+            Err(outcome) => return *outcome,
         };
         // Persist the intent (reserved SongId + per-resource source/staging/
         // target/hash + the conditional unique target claim) before the first

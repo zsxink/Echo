@@ -11,6 +11,9 @@ use crate::domain::sync::{
 #[path = "sync_resource_publication_safety.rs"]
 mod safety;
 
+#[path = "sync_resource_publication_durability.rs"]
+mod durability;
+
 fn fixture() -> (
     tempfile::TempDir,
     SqliteDatabase,

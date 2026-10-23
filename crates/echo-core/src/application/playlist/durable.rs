@@ -81,7 +81,7 @@ impl DurableLibraryEdits<'_> {
             next_hlc(
                 existing
                     .as_ref()
-                    .map_or(HybridLogicalClock::default(), PortableRecord::hlc),
+                    .map_or_else(HybridLogicalClock::default, PortableRecord::hlc),
                 now_ms() / 1000,
             ),
         ))
@@ -217,7 +217,7 @@ impl DurableLibraryEdits<'_> {
         let name = name.trim();
         self.validate_name(root, Some(id), name)?;
         let mut record = self.playlist_record(root, id)?;
-        record.display_name = name.to_owned();
+        name.clone_into(&mut record.display_name);
         self.save(root, vec![PortableRecord::Playlist(record)], || {
             self.playlists.rename(id, name)
         })

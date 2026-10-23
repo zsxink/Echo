@@ -95,7 +95,7 @@ pub(super) fn project_record(
                 )
                 .map_err(storage)?;
             }
-            _ => {}
+            crate::domain::library::RecordKind::Tombstone => {}
         },
     }
     Ok(())

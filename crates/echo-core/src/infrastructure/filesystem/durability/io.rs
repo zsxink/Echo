@@ -49,6 +49,44 @@ pub(super) fn publish(
     result
 }
 
+/// Re-establish durability of an already visible publication. Equal bytes or a
+/// completed rename do not prove its file and ancestor directories were synced.
+pub(super) fn flush_existing(
+    registry: &RootRegistry,
+    root: LibraryRootId,
+    relative: &str,
+    label: &str,
+    hook: &mut Hook<'_>,
+) -> Result<(), Error> {
+    let path = portable::path(registry, root, relative)?;
+    // Windows FlushFileBuffers needs a writable handle. Unix can flush the
+    // immutable publication through a read-only handle.
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(cfg!(windows))
+        .open(&path)
+        .map_err(|e| Error::io("open existing durable file", e, &path))?;
+    if !file
+        .metadata()
+        .map_err(|e| Error::io("inspect durable file", e, &path))?
+        .is_file()
+    {
+        return Err(invalid("durable publication is not a regular file"));
+    }
+    file.sync_all()
+        .map_err(|e| Error::io("flush existing durable file", e, &path))?;
+    hook(&format!("{label}:file_sync"), 0)?;
+    let path = portable::path(registry, root, relative)?;
+    sync_ancestors(
+        registry,
+        root,
+        path.parent()
+            .ok_or_else(|| invalid("missing publication parent"))?,
+        label,
+        hook,
+    )
+}
+
 pub(super) fn sync_ancestors(
     registry: &RootRegistry,
     root: LibraryRootId,

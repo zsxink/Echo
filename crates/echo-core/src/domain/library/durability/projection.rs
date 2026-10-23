@@ -1,5 +1,5 @@
 //! Typed recovery evidence and a path-free status for replaceable projections.
-use super::{DurableResource, DurableStateChange, StateKind};
+use super::{DurableResource, DurableStateChange, StateKey, StateKind};
 use crate::domain::{library::PortableRecordEnvelope, sync::ObjectKey};
 use serde::{Deserialize, Serialize};
 
@@ -8,6 +8,9 @@ use serde::{Deserialize, Serialize};
 pub enum ProjectionTarget {
     Record {
         object: ObjectKey,
+    },
+    ScopedState {
+        key: StateKey,
     },
     State {
         state_kind: StateKind,

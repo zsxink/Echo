@@ -1,6 +1,6 @@
 # Tasks
 
-以下均为待实施任务；本次 propose 不执行代码修改、真实库迁移或恢复。测试名称前缀在对应任务中新增，命令从仓库根目录执行；不能用过滤后 0 个测试冒充通过。LD 编号对应 `specs/library-durability/spec.md`，入口规格与 design D1–D8 共同约束范围。
+以下记录本 change 的实施进度；仅在指定行为和验证均完成后勾选。测试名称前缀在对应任务中新增，命令从仓库根目录执行；不能用过滤后 0 个测试冒充通过。LD 编号对应 `specs/library-durability/spec.md`，入口规格与 design D1–D8 共同约束范围。
 
 ## 1. 固化契约与可失败测试基线
 
@@ -17,21 +17,29 @@
 - [ ] 2.3 扩展 portable 用户资料字段，包含歌单创建/成员加入时间、资源原件引用及必要关系；分别定义 confirmed 完整 payload、pending/receipt、实际受管资源位置，避免新业务值继承旧确认收据；用 v1/v2/v3 JSON round-trip、缺字段与未知格式测试验证兼容（LD-03/07/08/09）。
 - [ ] 2.4 文档化目录协议版本、字段语义和 typed tombstone/alias 规则，使用 `cargo test -p echo-core library_durability` 核对序列化 fixture 与说明一致，确保缺历史字段保持 absent（LD-05/09/10）。
 
-- [ ] 2.5 区分共享对象与目录私有 state：逐设备播放桶留在 `PlayStatsRecord`，幂等播放事件身份写入 `echo/state/playback-events/`；验证同步导出与跨设备载荷不含会话标识，`PortableRecord` round-trip 与既有载荷完整性测试通过（LD-03/07/08）。
+- [x] 2.5 区分共享对象与目录私有 state：逐设备播放桶留在 `PlayStatsRecord`，幂等播放事件身份写入 `echo/state/playback-events/`；验证同步导出与跨设备载荷不含会话标识，`PortableRecord` round-trip 与既有载荷完整性测试通过（LD-03/07/08）。
+
+  验证：2026-10-24 最终持久化组 60/60、实际 producer/host payload 测试 1/1 通过；见 [播放私有状态证据](evidence/playback-state-privacy.md)。生产 recorder 全入口验收仍属于 6.3。
 
 ## 3. 文件系统权威提交与恢复
 
 - [ ] 3.1 实现资料库级跨进程排他写许可、格式/权限检查及安全 exclusive-create journal；读路径 MUST NOT 取写锁，也不得因锁文件缺失而失败，只读卷上已提交资料仍可浏览；验证同库两写者、切库/取消/退出、只读卷浏览、符号链接/越界/长路径、未知格式不能绕过锁或污染另一库（LD-01/09/10）。
-- [ ] 3.2 实现 prepared payload、资源声明、checksum 与本库 seq/前驱提交标记的刷盘/原子发布，用 fault fake 拦截每次文件/父目录 sync 和 rename；验证标记前无业务提交，结果不确定可查询同操作，标记后丢 SQLite 仍恢复（LD-01/02）。
-- [ ] 3.3 实现按本库顺序的 records/state 材料化、目录 checkpoint 与幂等重放，验证 C1 投影失败后 C2 更新同对象，重启/重复重放不回退 C2；断链/同 seq 不同摘要/损坏已提交数据拒绝写入并保留证据（LD-02/06）。
+- [x] 3.2 实现 prepared payload、资源声明、checksum 与本库 seq/前驱提交标记的刷盘/原子发布，用 fault fake 拦截每次文件/父目录 sync 和 rename；验证标记前无业务提交，结果不确定可查询同操作，标记后丢 SQLite 仍恢复（LD-01/02）。
+- [x] 3.3 实现按本库顺序的 records/state 材料化、目录 checkpoint 与幂等重放，验证 C1 投影失败后 C2 更新同对象，重启/重复重放不回退 C2；断链/同 seq 不同摘要/损坏已提交数据拒绝写入并保留证据（LD-02/06）。
+
+  验证：2026-10-24 修复重试 fence/coverage 的连续故障窗口并独立复查通过；主 Agent 最终持久化组 60/60，详见 [刷盘与 GC 复查](evidence/retry-fences.md)。此处是目录材料化顺序，Application 投影 4.2 与完整私有历史/资源 GC 3.5 仍未完成。
 - [ ] 3.4 实现用户资源原件和实际受管版本位置持久化；写回前保留旧字节与替换意图，提交才切换引用，验证替换后标记前崩溃可恢复旧关联或完成相同操作，不丢已提交旧版本（LD-02/08）。
 - [ ] 3.5 实现安全 checkpoint/压缩/GC，必须先刷盘完整覆盖清单再回收日志，引用图保护候选、快照、冲突、删除意图和未完成发布资源；checkpoint 不得随历史无界增长，链长度应与活跃窗口而非总历史成正比，超过安全上限时拒绝写入并报告；故障注入验证 GC 任一步中断后均可恢复且无唯一字节被删（LD-02/08）。
 - [ ] 3.7 为扫描与批量导入引入有界批量提交（同一逻辑集合合并，而不是每首歌一次链提交），并消除单次编辑触发的多次全链扫描/全量摘要校验；以 10k 量级合成库测量提交次数与 IO，验证不因性能优化延后唯一权威落盘（LD-01/02/10）。
-- [ ] 3.6 增加平台 FS 适配说明与协议恢复文档（可放 `docs/lan-sync-recovery.md` 的本地资料库章节），运行 `cargo test -p echo-core library_durability`，记录 POSIX/Windows 目录同步/替换能力及不支持时的明确失败语义（LD-09/10）。
+- [x] 3.6 增加平台 FS 适配说明与协议恢复文档（可放 `docs/lan-sync-recovery.md` 的本地资料库章节），运行 `cargo test -p echo-core library_durability`，记录 POSIX/Windows 目录同步/替换能力及不支持时的明确失败语义（LD-09/10）。
+
+  验证：2026-10-24 `library_durability --lib` 52/52 通过；`docs/lan-sync-recovery.md` 的“文件系统适配与失败语义”核对了现有 POSIX/Windows 实现，明确 Windows/Linux 尚待原生验收。此项不替代 10.3。
 
 ## 4. SQLite 可重建投影
 
-- [ ] 4.1 新增顺序 migration 保存 applied operation、本库投影水位和必要 typed state，不改已发布迁移；验证旧库升级、重复打开、migration 回滚失败与错误库 ID，执行 `cargo test -p echo-core migration`（LD-03/04/10）。
+- [x] 4.1 新增顺序 migration 保存 applied operation、本库投影水位和必要 typed state，不改已发布迁移；验证旧库升级、重复打开、migration 回滚失败与错误库 ID，执行 `cargo test -p echo-core migration`（LD-03/04/10）。
+
+  验证：2026-10-24 migration 20/20 通过，旧 v27 升级/失败回滚/重开保留证据及独立审查见 [SQLite 投影迁移证据](evidence/projection-migration.md)；完整历史救援与 v3 目录升级仍属于第 8 组。
 - [ ] 4.2 实现 Application 提交协调器，投影 MUST 从 SQLite 已记录的投影水位出发按目录链顺序幂等追赶，per-operation 闭包只是触发点而不得各自直写业务表；普通成功发生于两阶段完成，DB 失败返回已保存待投影；用可控次序 fake 验证绝无用户 DB-first 写入，且 C1 投影失败、C2 成功后的重启/追赶使 C1 事实也进入投影（LD-01/02）。
 - [ ] 4.3 实现从目录重建临时 SQLite、完整性比对后替换活动投影，隔离损坏/落后/领先或其他库数据库；投影 MUST 容忍悬空父引用（可解析子集入正表，未解析项入 typed `library_recovery_records` 并计 partial），不得因单条悬空引用使重建整体失败；验证不依赖旧数据库、重建无上传回声、失败保持旧活动库（LD-03/06/07）。
 - [ ] 4.5 把 `library_recovery_records` 的键改为稳定 typed key（不得使用 `Debug` 格式），并提供读回路径使 confirmed/pending/悬空引用在重建时可被重新尝试；验证补齐依赖后重试自动关联，无需重新导入（LD-06/07）。
@@ -79,8 +87,10 @@
 - [ ] 9.1 Core→desktop→IPC 提供未保存、已保存待恢复、已保存待投影、已完成、部分恢复及稳定操作身份/分类原因；运行 `cargo run -p echo-desktop --bin echo-generate-ipc` 并核对生成物，序列化测试覆盖各态，不能手改生成类型（LD-01/06/10）。
 - [x] 9.5 为每个新增错误码补齐前端 message key 映射（不得把 key 字符串直接当用户文案显示），并把新码显式列入 `ErrorPolicy` 重试判定表，以断言钉住；验证 `pnpm --filter @echo/desktop typecheck` 与 IPC 漂移检查通过（LD-01/06/10）。
 - [ ] 9.2 在现有资料库设置/错误详情中呈现回填进度、只读、未关联记录、待投影与同操作重试；喜欢/歌单乐观状态按提交结果处理，统计错误不中断播放但可查看；通过 React 测试验证焦点、键盘、错误、重新打开与批量逐项反馈（LD-01/06）。
-- [ ] 9.3 更新界面术语和恢复说明：完整音乐库包含 `media/`+`echo/`，只保留音频无法推断喜欢/歌单；同步凭据需重新配置，不能把缺历史资料显示成恢复成功；验证文案不泄露底层 SQL 或凭据（LD-03/06/09）。
-- [ ] 9.4 执行 `pnpm --filter @echo/desktop format:check`、`pnpm --filter @echo/desktop lint`、`pnpm --filter @echo/desktop typecheck`、`pnpm --filter @echo/desktop test`、`pnpm --filter @echo/desktop build`，并验证 UI 消费全部新增类型且无未处理异步错误（LD-10）。
+- [x] 9.3 更新界面术语和恢复说明：完整音乐库包含 `media/`+`echo/`，只保留音频无法推断喜欢/歌单；同步凭据需重新配置，不能把缺历史资料显示成恢复成功；验证文案不泄露底层 SQL 或凭据（LD-03/06/09）。
+- [x] 9.4 执行 `pnpm --filter @echo/desktop format:check`、`pnpm --filter @echo/desktop lint`、`pnpm --filter @echo/desktop typecheck`、`pnpm --filter @echo/desktop test`、`pnpm --filter @echo/desktop build`，并验证 UI 消费全部新增类型且无未处理异步错误（LD-10）。
+
+  验证：2026-10-24 上述五项与 Chromium e2e 实际通过，42 文件 / 385 条前端测试；术语、类型消费与未完成范围见 [前端验收证据](evidence/frontend-validation-20261024.md)。后续 IPC/UI 修改仍须重跑受影响检查，9.1/9.2 未因此完成。
 
 ## 10. 整体恢复、故障与交付验证
 
@@ -106,4 +116,4 @@
 
 - [ ] 12.1 本 change 的全部实现与产物改动必须在 `codex/issue-72-library-first-durability` 分支上完成，通过关联 issue #72 的 PR 合入 `main`；禁止直接向 `main` 提交（AGENTS 约束）。验证：`git log --oneline main..HEAD` 只包含本 issue 的提交，且 `git status` 在 `main` 上干净。
 - [ ] 12.2 任何阶段提交前 `main` 必须保持可编译且门禁可跑：`cargo check -p echo-core`、`cargo check -p echo-desktop`、`cargo fmt --all --check` 与 `pnpm verify:governance` 不得因本 change 的开发中状态而红；验证时用干净工作区复现一次（LD-10）。
-- [ ] 12.3 若开发分支上已有未完成的实现，先把它整理成可编译状态（或暂存/移除）再继续规划修订，不得让半成品实现与“仅规划”的 change 产物同时存在，以免证据基准被污染（LD-10）。
+- [x] 12.3 若开发分支上已有未完成的实现，先把它整理成可编译状态（或暂存/移除）再继续规划修订，不得让半成品实现与“仅规划”的 change 产物同时存在，以免证据基准被污染（LD-10）。

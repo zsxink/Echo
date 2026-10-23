@@ -21,7 +21,7 @@ pub(super) fn validate_resource(
         return Err(invalid("durable resource length mismatch"));
     }
     let mut hash = blake3::Hasher::new();
-    let mut buffer = [0u8; 65536];
+    let mut buffer = vec![0u8; 65536].into_boxed_slice();
     loop {
         let read = file
             .read(&mut buffer)

@@ -14,7 +14,7 @@ use crate::domain::library::durability::{
 use crate::error::Error;
 use rusqlite::{params, Connection};
 
-pub(crate) fn project_commits(
+pub fn project_commits(
     connection: &mut Connection,
     root: LibraryRootId,
     replay: &LibraryReplay,
@@ -81,12 +81,9 @@ fn watermark(
     Ok(())
 }
 
-pub(crate) fn status(
-    c: &Connection,
-    root: LibraryRootId,
-) -> Result<LibraryProjectionStatus, Error> {
+pub fn status(c: &Connection, root: LibraryRootId) -> Result<LibraryProjectionStatus, Error> {
     retained::status(c, root)
 }
-pub(crate) fn read(c: &Connection, root: LibraryRootId) -> Result<LibraryRecoveryRecords, Error> {
+pub fn read(c: &Connection, root: LibraryRootId) -> Result<LibraryRecoveryRecords, Error> {
     retained::read(c, root)
 }

@@ -1,6 +1,6 @@
 //! Shared ingestion boundary: the library owns identity before the index does.
 
-use super::ScanDeps;
+use super::{ParsedOutcome, ScanDeps};
 use crate::application::library_commit::commit_then_project;
 use crate::application::portable::EnsureControlPlane;
 use crate::domain::entities::Song;
@@ -15,7 +15,7 @@ use crate::domain::media::AudioFormat;
 use crate::error::Error;
 use std::time::UNIX_EPOCH;
 
-pub(crate) fn library_id(
+pub fn library_id(
     deps: &ScanDeps,
     root: LibraryRootId,
 ) -> Result<crate::domain::library::LibraryId, Error> {
@@ -27,7 +27,7 @@ pub(crate) fn library_id(
 
 /// Restore identities saved by a previous invocation whose SQLite projection
 /// failed. A fresh scan must never allocate a replacement identity for them.
-pub(crate) fn song_snapshot(deps: &ScanDeps, root: LibraryRootId) -> Result<Vec<Song>, Error> {
+pub fn song_snapshot(deps: &ScanDeps, root: LibraryRootId) -> Result<Vec<Song>, Error> {
     let commits = deps
         .control
         .durability()
@@ -112,10 +112,46 @@ pub(crate) fn song_snapshot(deps: &ScanDeps, root: LibraryRootId) -> Result<Vec<
     Ok(songs)
 }
 
+/// Re-parsing unchanged published bytes only refreshes local derived facts.
+/// The planner has already folded embedded tags into its snapshot, so use the
+/// original row to preserve the host's shared values and current local path.
+pub(super) fn published_index_refresh(
+    deps: &ScanDeps,
+    song: &Song,
+    parsed: &ParsedOutcome,
+) -> Result<Option<Song>, Error> {
+    if deps
+        .songs
+        .published_logical_path(song.root(), song.path())?
+        .is_none()
+    {
+        return Ok(None);
+    }
+    let Some(mut original) = deps.songs.by_id(song.id())? else {
+        return Ok(None);
+    };
+    if original.root() != song.root()
+        || original.path() != song.path()
+        || original.blake3_hash() != Some(parsed.file.hash.as_str())
+        || original.file_size() != Some(parsed.file.size)
+    {
+        return Ok(None);
+    }
+    crate::application::scan_resources::verify_parsed_audio(deps, song.root(), parsed)?;
+    original.apply_scan_facts_with_params(
+        parsed.file.hash.clone(),
+        parsed.file.size,
+        parsed.file.mtime_ns,
+        parsed.file.meta.format,
+        parsed.file.meta.parameters,
+    );
+    Ok(Some(original))
+}
+
 /// Persist a complete song after-image and verified resource declarations,
 /// then run its SQLite projection. A failed projection returns a typed saved
 /// result whose operation remains recoverable from the directory journal.
-pub(crate) fn commit_song(
+pub fn commit_song(
     deps: &ScanDeps,
     song: &Song,
     operation: OperationId,
@@ -141,7 +177,7 @@ pub(crate) fn commit_song(
     let hlc = next_hlc(
         previous
             .as_ref()
-            .map_or(HybridLogicalClock::default(), |r| r.hlc),
+            .map_or_else(HybridLogicalClock::default, |r| r.hlc),
         now.as_secs(),
     );
     let prior_revision = previous
@@ -157,11 +193,18 @@ pub(crate) fn commit_song(
             .checked_add(1)
             .ok_or_else(|| Error::conflict("song revision exhausted"))?,
     );
+    // A completed publication associates the physical version with its shared
+    // media path. Only the portable after-image uses that logical path; resource
+    // verification and the SQLite projection keep the actual local location.
+    let mut portable_song = song.clone();
+    if let Some(logical) = deps.songs.published_logical_path(root, song.path())? {
+        portable_song.relink(logical);
+    }
     let record = crate::application::portable_materialize::song_record(
         deps.device_id.current_device_id(),
         hlc,
         revision,
-        song,
+        &portable_song,
     )?;
     // Repeated watcher notifications and timestamp-only rescans do not create
     // another intent. File availability and parse caches remain local facts.

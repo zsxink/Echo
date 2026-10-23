@@ -2,8 +2,12 @@
 //! creates locks or mutates files. Historical operation evidence is ID-addressed.
 mod assets;
 mod checkpoint;
-use assets::validate_resource;
+mod validation_cache;
+use validation_cache::DocumentKind;
+pub(super) use validation_cache::ValidationCache;
+mod transaction;
 pub(super) use assets::{read_asset, write_asset};
+use transaction::commit_with_hook;
 mod io;
 #[cfg(test)]
 mod tests;
@@ -56,7 +60,7 @@ fn receipt(id: uuid::Uuid) -> String {
     let id = id.to_string();
     format!("echo/state/operations/{}/{id}.json", &id[..2])
 }
-fn outcome(c: &LibraryCommit, status: CommitStatus) -> CommitOutcome {
+const fn outcome(c: &LibraryCommit, status: CommitStatus) -> CommitOutcome {
     CommitOutcome {
         operation_id: c.batch.operation_id,
         library_commit_seq: c.library_commit_seq,
@@ -78,6 +82,7 @@ fn manifest(registry: &RootRegistry, root: LibraryRootId) -> Result<LibraryManif
 
 pub(super) fn read_operation(
     registry: &RootRegistry,
+    cache: &ValidationCache,
     root: LibraryRootId,
     id: uuid::Uuid,
 ) -> Result<Option<LibraryCommit>, Error> {
@@ -93,7 +98,7 @@ pub(super) fn read_operation(
         return Ok(None);
     };
     let commit: LibraryCommit = decode(&raw)?;
-    commit.validate()?;
+    cache.validate(DocumentKind::Commit, root, &raw, || commit.validate())?;
     if commit.batch.operation_id != id
         || commit.batch.library_id != manifest(registry, root)?.library_id
     {
@@ -107,8 +112,8 @@ pub(super) fn read_operation(
         {
             return Err(invalid("operation marker disagrees with receipt"));
         }
-    } else if !checkpoint::load(registry, root)?
-        .is_some_and(|c| c.library_commit_seq >= commit.library_commit_seq)
+    } else if checkpoint::load(registry, cache, root)?
+        .is_none_or(|c| c.library_commit_seq < commit.library_commit_seq)
     {
         return Err(invalid(
             "operation receipt is not covered by a durable anchor",
@@ -119,8 +124,12 @@ pub(super) fn read_operation(
 
 /// Verify the fixed active suffix against the independently durable anchor.
 /// Covered leftovers are checked against their immutable receipt after GC crashes.
-pub(super) fn chain(registry: &RootRegistry, root: LibraryRootId) -> Result<LibraryReplay, Error> {
-    let checkpoint = checkpoint::load(registry, root)?;
+pub(super) fn chain(
+    registry: &RootRegistry,
+    cache: &ValidationCache,
+    root: LibraryRootId,
+) -> Result<LibraryReplay, Error> {
+    let checkpoint = checkpoint::load(registry, cache, root)?;
     let anchor_seq = checkpoint.as_ref().map_or(0, |c| c.library_commit_seq);
     let mut previous = checkpoint.as_ref().map(|c| c.head_digest.clone());
     let folder = portable::path(registry, root, "echo/transactions")?;
@@ -159,7 +168,7 @@ pub(super) fn chain(registry: &RootRegistry, root: LibraryRootId) -> Result<Libr
             .or(portable::read(registry, root, &receipt(id), LIMIT)?)
             .ok_or_else(|| invalid("committed transaction has no redo payload"))?;
         let commit: LibraryCommit = decode(&raw)?;
-        commit.validate()?;
+        cache.validate(DocumentKind::Commit, root, &raw, || commit.validate())?;
         if commit.batch.operation_id != id
             || marker.digest != commit.digest
             || marker.seq != commit.library_commit_seq
@@ -167,7 +176,7 @@ pub(super) fn chain(registry: &RootRegistry, root: LibraryRootId) -> Result<Libr
             return Err(invalid("commit marker disagrees with redo payload"));
         }
         if commit.library_commit_seq <= anchor_seq {
-            if read_operation(registry, root, id)?.as_ref() != Some(&commit) {
+            if read_operation(registry, cache, root, id)?.as_ref() != Some(&commit) {
                 return Err(invalid("covered journal differs from receipt"));
             }
             continue;
@@ -192,24 +201,40 @@ pub(super) fn chain(registry: &RootRegistry, root: LibraryRootId) -> Result<Libr
         }
         previous = Some(commit.digest.clone());
     }
-    Ok(LibraryReplay {
+    let replay = LibraryReplay {
         checkpoint,
         commits: commits.into_values().collect(),
-    })
+    };
+    replay.validate_state_history()?;
+    Ok(replay)
 }
 
 pub(super) fn recover(
     registry: &RootRegistry,
+    cache: &ValidationCache,
     root: LibraryRootId,
 ) -> Result<LibraryReplay, Error> {
-    recover_with_hook(registry, root, &mut |_, _| Ok(()))
+    recover_with_hook(registry, cache, root, &mut |_, _| Ok(()))
 }
 fn recover_with_hook(
     registry: &RootRegistry,
+    cache: &ValidationCache,
     root: LibraryRootId,
     hook: &mut Hook<'_>,
 ) -> Result<LibraryReplay, Error> {
-    let replay = chain(registry, root)?;
+    recover_with_proven_fence(registry, cache, root, None, hook)
+}
+
+// The optional proof belongs only to the current writer call, after both redo
+// and marker publication completed every sync. It never survives a retry.
+fn recover_with_proven_fence(
+    registry: &RootRegistry,
+    cache: &ValidationCache,
+    root: LibraryRootId,
+    proven_operation: Option<uuid::Uuid>,
+    hook: &mut Hook<'_>,
+) -> Result<LibraryReplay, Error> {
+    let replay = chain(registry, cache, root)?;
     let checkpoint = portable::read(registry, root, CHECKPOINT, LIMIT)?
         .map(|raw| decode::<Checkpoint>(&raw))
         .transpose()?
@@ -251,6 +276,7 @@ fn recover_with_hook(
     // interrupted before publishing its progress marker.
     if checkpoint.seq < anchor_seq {
         if let Some(image) = &replay.checkpoint {
+            io::flush_existing(registry, root, ANCHOR, "coverage_recovery", hook)?;
             checkpoint::materialize(
                 registry,
                 root,
@@ -274,6 +300,23 @@ fn recover_with_hook(
         .iter()
         .filter(|c| c.library_commit_seq > checkpoint.seq.max(anchor_seq))
     {
+        // A materialization checkpoint can only have been published after its
+        // commit fence completed. Beyond that watermark, visibility alone is
+        // insufficient: a prior marker rename may have failed directory sync.
+        if Some(commit.batch.operation_id) != proven_operation {
+            for (name, label) in [
+                ("prepared.json", "prepared_recovery"),
+                ("committed.json", "marker_recovery"),
+            ] {
+                io::flush_existing(
+                    registry,
+                    root,
+                    &relative(commit.batch.operation_id, name),
+                    label,
+                    hook,
+                )?;
+            }
+        }
         checkpoint::materialize(
             registry,
             root,
@@ -292,7 +335,7 @@ fn recover_with_hook(
         )?;
     }
     if anchor_seq > 0 {
-        checkpoint::cleanup_covered(registry, root, anchor_seq, hook)?;
+        checkpoint::cleanup_covered(registry, cache, root, anchor_seq, hook)?;
     }
     Ok(replay)
 }
@@ -324,144 +367,29 @@ fn write_checkpoint(
 
 pub(super) fn commit(
     registry: &RootRegistry,
+    cache: &ValidationCache,
     root: LibraryRootId,
     batch: &LibraryBatch,
 ) -> Result<CommitOutcome, Error> {
-    commit_with_hook(registry, root, batch, &mut |_, _| Ok(()))
+    commit_with_hook(registry, cache, root, batch, &mut |_, _| Ok(()))
 }
-fn commit_with_hook(
-    registry: &RootRegistry,
-    root: LibraryRootId,
-    batch: &LibraryBatch,
-    hook: &mut Hook<'_>,
-) -> Result<CommitOutcome, Error> {
-    batch.validate()?;
-    let replay = recover_with_hook(registry, root, hook)?;
-    let current_manifest = manifest(registry, root)?;
-    if !current_manifest.is_compatible() || current_manifest.library_id != batch.library_id {
-        return Err(invalid("unsupported format or incorrect library identity"));
-    }
-    if let Some(existing) = read_operation(registry, root, batch.operation_id)? {
-        if existing.batch != *batch {
-            return Err(invalid(
-                "operation identity reused with a different payload",
-            ));
-        }
-        return Ok(outcome(&existing, CommitStatus::SavedPendingProjection));
-    }
-    if replay.commits.len() >= MAX_ACTIVE {
-        return Err(invalid("active journal requires compaction"));
-    }
-    for expected in &batch.expected {
-        let path = portable::original_relative(expected.kind, expected.object_uuid, None);
-        let actual = portable::read(registry, root, &path, portable::MAX_RECORD_BYTES)?;
-        if actual.map(|raw| blake3::hash(raw.as_bytes()).to_hex().to_string())
-            != expected.content_hash
-        {
-            return Err(invalid("record precondition changed during preparation"));
-        }
-    }
-    for resource in &batch.resources {
-        validate_resource(registry, root, resource, hook)?;
-    }
-    let (seq, predecessor_digest) = replay.head().map_or((1, None), |(seq, digest)| {
-        (seq + 1, Some(digest.to_owned()))
-    });
-    let digest = LibraryCommit::calculate_digest(batch, seq, predecessor_digest.as_deref())?;
-    let commit = LibraryCommit {
-        batch: batch.clone(),
-        library_commit_seq: seq,
-        predecessor_digest,
-        digest,
-    };
-    let prepared = relative(batch.operation_id, "prepared.json");
-    // An interrupted preparation freezes business payload, but does not reserve
-    // a sequence: another completed operation may have advanced the head.
-    if let Some(raw) = portable::read(registry, root, &prepared, LIMIT)? {
-        let old: LibraryCommit = decode(&raw)?;
-        old.validate()?;
-        if old.batch != *batch {
-            return Err(invalid("prepared operation has another payload"));
-        }
-        if old != commit {
-            io::publish(
-                registry,
-                root,
-                &prepared,
-                &portable::encode(&commit, LIMIT)?,
-                false,
-                "prepared",
-                hook,
-            )?;
-        }
-    } else {
-        io::publish(
-            registry,
-            root,
-            &prepared,
-            &portable::encode(&commit, LIMIT)?,
-            true,
-            "prepared",
-            hook,
-        )?;
-    }
-    hook("prepared", 0)?;
-    let marker = Marker {
-        version: 1,
-        digest: commit.digest.clone(),
-        seq,
-    };
-    let publish = io::publish(
-        registry,
-        root,
-        &relative(batch.operation_id, "committed.json"),
-        &portable::encode(&marker, 4096)?,
-        true,
-        "marker",
-        hook,
-    );
-    if let Err(error) = publish {
-        if !matches!(
-            portable::read(
-                registry,
-                root,
-                &relative(batch.operation_id, "committed.json"),
-                4096,
-            ),
-            Ok(None)
-        ) {
-            return Err(saved_error(batch.operation_id, error));
-        }
-        return Err(error);
-    }
-    if let Err(error) = (|| {
-        hook("committed", 0)?;
-        // Finish materialization before publishing a complete coverage image.
-        let replay = recover_with_hook(registry, root, hook)?;
-        if replay.commits.len() >= WINDOW {
-            checkpoint::compact(registry, root, &replay, hook)?;
-        }
-        Ok(())
-    })() {
-        return Err(saved_error(batch.operation_id, error));
-    }
-    Ok(outcome(&commit, CommitStatus::SavedPendingProjection))
-}
-fn saved_error(id: uuid::Uuid, error: Error) -> Error {
-    Error::saved_pending_recovery(crate::domain::ids::OperationId::from_uuid(id), error)
-}
-
 pub(super) fn operation_status(
     registry: &RootRegistry,
+    cache: &ValidationCache,
     root: LibraryRootId,
     id: uuid::Uuid,
 ) -> Result<Option<CommitOutcome>, Error> {
-    let replay = chain(registry, root)?;
-    let Some(commit) = read_operation(registry, root, id)? else {
+    let replay = chain(registry, cache, root)?;
+    let Some(commit) = read_operation(registry, cache, root, id)? else {
         return portable::read(registry, root, &relative(id, "prepared.json"), LIMIT)?
             .map(|raw| {
                 let c: LibraryCommit = decode(&raw)?;
-                c.validate()?;
+                cache.validate(DocumentKind::Commit, root, &raw, || c.validate())?;
+                if c.batch.operation_id != id
+                    || c.batch.library_id != manifest(registry, root)?.library_id
+                {
+                    return Err(invalid("prepared operation identity mismatch"));
+                }
                 Ok(outcome(&c, CommitStatus::NotSaved))
             })
             .transpose();

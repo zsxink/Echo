@@ -170,6 +170,9 @@ mod cases {
         )
         .unwrap();
         app.registry.register(root, &root_path);
+        echo_core::application::portable::EnsureControlPlane::new(app.deps.control.as_ref())
+            .run(root)
+            .unwrap();
         LibraryRepository::upsert(
             database.as_ref(),
             &LibraryRoot::new(root, root_path, true, true),
@@ -234,6 +237,9 @@ mod cases {
         )
         .unwrap();
         app.registry.register(root, &root_path);
+        echo_core::application::portable::EnsureControlPlane::new(app.deps.control.as_ref())
+            .run(root)
+            .unwrap();
         LibraryRepository::upsert(
             database.as_ref(),
             &LibraryRoot::new(root, root_path.clone(), true, true),
@@ -356,7 +362,7 @@ mod cases {
                 payload: serde_json::json!({
                     "song_uuid": song,
                     "relative_path": resource.relative_path,
-                    "title": format!("{album} title"),
+                    "title": "Host canonical title",
                     "artist": format!("{album} artist"),
                     "album": album,
                     "blake3_hash": resource.content_hash,
@@ -390,7 +396,7 @@ mod cases {
             assert_eq!(canonical.commit.mutation.payload["album"], album);
             assert_eq!(
                 canonical.commit.mutation.payload["title"],
-                format!("{album} title")
+                "Host canonical title"
             );
             assert_eq!(
                 canonical.commit.mutation.payload["artist"],
@@ -439,10 +445,7 @@ mod cases {
             let updated_song = SongRepository::by_id(database.as_ref(), song)
                 .unwrap()
                 .unwrap();
-            assert_eq!(
-                updated_song.title(),
-                Some(format!("{album} title").as_str())
-            );
+            assert_eq!(updated_song.title(), Some("Host canonical title"));
             assert_eq!(
                 updated_song.artist(),
                 Some(format!("{album} artist").as_str())
@@ -466,9 +469,48 @@ mod cases {
                 "new embedded cover is indexed after automatic publication"
             );
         }
-        StartScan::new(scan_deps.as_ref(), &ScanSupervisor::new())
+        host.runtime.stop().unwrap();
+        let published = SongRepository::by_id(database.as_ref(), song)
+            .unwrap()
+            .unwrap();
+        let original_envelope = scan_deps
+            .control
+            .read_record_document(
+                root,
+                echo_core::domain::library::RecordKind::Song,
+                &song.to_string(),
+            )
+            .unwrap();
+        let original_pending = database.pending_local_mutations(64).unwrap();
+        // Force a reparse of identical published bytes whose embedded title is
+        // different from the accepted shared title. This is only index refresh.
+        let published_path = root_path.join(published.path().normalized());
+        let published_bytes = std::fs::read(&published_path).unwrap();
+        std::fs::write(&published_path, published_bytes).unwrap();
+        let refreshed = StartScan::new(scan_deps.as_ref(), &ScanSupervisor::new())
             .run(root)
             .unwrap();
+        assert_eq!(refreshed.progress.updated, 1, "same bytes were reparsed");
+        let indexed = SongRepository::by_id(database.as_ref(), song)
+            .unwrap()
+            .unwrap();
+        assert_eq!(indexed.path(), published.path());
+        assert_eq!(indexed.title(), Some("Host canonical title"));
+        assert_eq!(
+            database.pending_local_mutations(64).unwrap(),
+            original_pending
+        );
+        assert_eq!(
+            scan_deps
+                .control
+                .read_record_document(
+                    root,
+                    echo_core::domain::library::RecordKind::Song,
+                    &song.to_string(),
+                )
+                .unwrap(),
+            original_envelope
+        );
         assert_eq!(
             SongRepository::by_id(database.as_ref(), song)
                 .unwrap()
