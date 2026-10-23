@@ -34,6 +34,8 @@ use crate::domain::ids::{LibraryRootId, RelativeMediaPath, Revision, SongId};
 use crate::domain::state::scan::{ScanProgress, ScanState};
 use crate::error::Error;
 
+pub(crate) mod durable;
+
 /// The cheap extension filter (design §6.2): enumeration returns every
 /// regular file; the scan probes only these. Everything else is a skip. The
 /// import pipeline applies the same matrix to user-selected sources (task 5.1).
@@ -72,6 +74,8 @@ impl Default for ScanConfig {
 /// (`SQLite` repositories + real adapters); tests assemble fakes.
 #[derive(Clone)]
 pub struct ScanDeps {
+    /// Optional historical rescue and ordered projection capability.
+    pub history: Option<Arc<dyn crate::application::ports::LibraryHistoryPort>>,
     pub roots: Arc<dyn RootWriteRepository>,
     pub songs: Arc<dyn SongRepository>,
     /// The paginated catalog read-model (`AllSongs`/`Favorites`/search/recents)
@@ -350,7 +354,8 @@ impl<'a> StartScan<'a> {
         // ---- Parsing / hashing with batched reconcile ----
         transition(&mut progress, ScanState::Parsing)?;
         emitter.emit(&progress, true)?;
-        let planner = Mutex::new(RelinkPlanner::new(self.deps.songs.all_in_root(root)?));
+        durable::library_id(self.deps, root)?;
+        let planner = Mutex::new(RelinkPlanner::new(durable::song_snapshot(self.deps, root)?));
         let seen: HashSet<String> = audio
             .iter()
             .map(|path| path.identity_key().to_owned())
@@ -585,28 +590,52 @@ impl<'a> StartScan<'a> {
             .clone()
             .map(|candidate| rewrap(&candidate, LyricsSource::Sidecar));
         let cover = parsed.cover.clone();
-        self.deps
-            .uow
-            .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
-                if let Some(resources) = resources {
-                    tx.set_song_file_resources(&song, &resources)?;
-                    tx.upsert_song(&song)?;
-                } else {
-                    tx.refresh_song_file_index(&song)?;
-                }
-                match embedded {
-                    Some(candidate) => tx.set_lyrics_candidate(song.id(), &candidate)?,
-                    None => tx.clear_lyrics_candidate(song.id(), LyricsSource::Embedded)?,
-                }
-                match sidecar {
-                    Some(candidate) => tx.set_lyrics_candidate(song.id(), &candidate)?,
-                    None => tx.clear_lyrics_candidate(song.id(), LyricsSource::Sidecar)?,
-                }
-                if let Some(cover) = cover {
-                    tx.attach_cover(song.id(), &cover)?;
-                }
-                Ok(())
-            }))
+        let durable_resources = resources.as_ref().map_or_else(Vec::new, |_| {
+            vec![crate::domain::library::durability::DurableResource {
+                relative_path: song.path().display().to_owned(),
+                content_hash: parsed.file.hash.clone(),
+                byte_length: parsed.file.size,
+            }]
+        });
+        let entity = song.clone();
+        let project = || {
+            self.deps
+                .uow
+                .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
+                    if let Some(resources) = resources {
+                        tx.set_song_file_resources(&song, &resources)?;
+                        tx.upsert_song(&song)?;
+                    } else {
+                        tx.refresh_song_file_index(&song)?;
+                    }
+                    match embedded {
+                        Some(candidate) => tx.set_lyrics_candidate(song.id(), &candidate)?,
+                        None => tx.clear_lyrics_candidate(song.id(), LyricsSource::Embedded)?,
+                    }
+                    match sidecar {
+                        Some(candidate) => tx.set_lyrics_candidate(song.id(), &candidate)?,
+                        None => tx.clear_lyrics_candidate(song.id(), LyricsSource::Sidecar)?,
+                    }
+                    if let Some(cover) = cover {
+                        tx.attach_cover(song.id(), &cover)?;
+                    }
+                    Ok(())
+                }))
+        };
+        // Published remote metadata is already authoritative; refreshing its
+        // derived index must not create a local mutation or rewrite its path.
+        if durable_resources.is_empty() {
+            project()
+        } else {
+            durable::commit_song(
+                self.deps,
+                &entity,
+                self.deps.ids.new_operation_id(),
+                crate::domain::library::durability::ChangeOrigin::Scan,
+                durable_resources,
+                project,
+            )
+        }
     }
 
     /// A new song's event fact is read from the injected backend clock at the

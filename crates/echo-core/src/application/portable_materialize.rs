@@ -192,6 +192,8 @@ pub fn playlist_record(
         updated_by_device_id: device,
         hlc,
         display_name: display_name.to_owned(),
+        created_at: None,
+        cover_asset: None,
     }
 }
 
@@ -214,6 +216,7 @@ pub const fn playlist_item_record(
         playlist_uuid: playlist.as_uuid(),
         song_uuid: song.as_uuid(),
         position,
+        added_at: None,
     }
 }
 

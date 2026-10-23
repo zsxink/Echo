@@ -56,6 +56,7 @@
 
 pub mod clock;
 pub mod filesystem;
+pub mod library_durability;
 pub mod memory_database;
 pub mod repositories;
 pub mod scan_fixture;

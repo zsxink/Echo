@@ -40,6 +40,7 @@ import { bumpLibraryCount, invalidateLibrary, publishSongUpdate } from "../libra
 import type { SongView } from "../../ipc/ipc-types.generated";
 
 import { EffectsTrigger } from "./EffectsTrigger";
+import { savedLibraryOperation } from "../../bridge/libraryPersistence";
 import { PlayerProgress } from "./PlayerProgress";
 
 export function PlayerBar({
@@ -107,11 +108,15 @@ export function PlayerBar({
     try {
       const result = await bridge.call("import_current_temporary_file");
       setImportResult(importResultText(result.kind));
-      if (result.kind === "imported" || result.kind === "duplicate") {
+      if (
+        result.kind === "imported" ||
+        result.kind === "duplicate" ||
+        result.kind === "savedPending"
+      ) {
         invalidateLibrary();
       }
-    } catch {
-      setImportResult("导入失败");
+    } catch (error) {
+      setImportResult(savedLibraryOperation(error)?.message ?? "导入失败");
     } finally {
       setImporting(false);
     }
@@ -309,6 +314,8 @@ function importResultText(kind: string): string {
   switch (kind) {
     case "imported":
       return "已导入到音乐库";
+    case "savedPending":
+      return "音乐已保存，等待恢复；无需重新导入";
     case "duplicate":
       return "音乐库已有相同歌曲";
     case "skipped":

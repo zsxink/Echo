@@ -296,6 +296,7 @@ impl LibraryManifest {
 // - [`identity`] — `LibraryId`, `DeviceId`, `HybridLogicalClock`.
 // - [`portable`] — `RecordKind` … `PortableSerialize` and the record JSON IO.
 
+pub mod durability;
 mod identity;
 mod portable;
 

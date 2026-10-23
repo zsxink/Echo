@@ -17,13 +17,47 @@ import { useRef } from "react";
 
 import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
 import type { ImportResultDto } from "../../ipc/ipc-types.generated";
+import { libraryPersistenceMessage } from "../../bridge/libraryPersistence";
 
 export interface ImportFailureDialogProps {
   readonly results: readonly ImportResultDto[];
   readonly onClose: () => void;
+  readonly hasPending?: boolean;
+  readonly onRecover?: (operationId: string) => void;
+  readonly recoveringOperation?: string;
+  readonly recoveryError?: string;
 }
 
-function ResultLine({ result }: { result: ImportResultDto }) {
+function ResultLine({
+  result,
+  onRecover,
+  recoveringOperation,
+}: {
+  result: ImportResultDto;
+  onRecover?: (operationId: string) => void;
+  recoveringOperation?: string;
+}) {
+  if (result.kind === "savedPending") {
+    return (
+      <li data-testid="import-line">
+        <p>已保存：{result.relativePath}</p>
+        <p>
+          {libraryPersistenceMessage(result.code) ?? "已保存到音乐库，等待更新。无需重新导入。"}
+        </p>
+        <small>恢复操作：{result.operationId}</small>
+        {onRecover ? (
+          <button
+            type="button"
+            className="btn"
+            disabled={recoveringOperation !== undefined}
+            onClick={() => onRecover(result.operationId)}
+          >
+            {recoveringOperation === result.operationId ? "正在恢复…" : "恢复此项"}
+          </button>
+        ) : null}
+      </li>
+    );
+  }
   if (result.kind === "imported") {
     return (
       <li className="is-ok" data-testid="import-line">
@@ -63,7 +97,14 @@ function ResultLine({ result }: { result: ImportResultDto }) {
   return null;
 }
 
-export function ImportFailureDialog({ results, onClose }: ImportFailureDialogProps) {
+export function ImportFailureDialog({
+  results,
+  onClose,
+  hasPending = false,
+  onRecover,
+  recoveringOperation,
+  recoveryError,
+}: ImportFailureDialogProps) {
   const dialogRef = useRef<HTMLElement>(null);
   // A `BlockingDialog`-tier modal: Escape closes it last on the single stack,
   // focus is trapped and restored on close.
@@ -80,13 +121,23 @@ export function ImportFailureDialog({ results, onClose }: ImportFailureDialogPro
       ref={dialogRef}
     >
       <div className="confirmation-panel">
-        <h2 id="import-title">导入失败</h2>
-        <p className="dialog-summary">以下项目需要处理；已完成的导入不会受影响。</p>
+        <h2 id="import-title">{hasPending ? "导入结果" : "导入失败"}</h2>
+        <p className="dialog-summary">
+          {hasPending
+            ? "已保存的音乐等待更新，无需重新导入。未保存的项目会单独显示失败原因。"
+            : "以下项目需要处理；已完成的导入不会受影响。"}
+        </p>
         <ul className="dialog-results">
           {results.map((result, index) => (
-            <ResultLine key={index} result={result} />
+            <ResultLine
+              key={index}
+              result={result}
+              onRecover={onRecover}
+              recoveringOperation={recoveringOperation}
+            />
           ))}
         </ul>
+        {recoveryError ? <p role="alert">{recoveryError}</p> : null}
         <div className="confirmation-actions">
           <button type="button" className="btn" onClick={onClose} data-testid="import-close">
             关闭

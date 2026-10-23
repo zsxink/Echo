@@ -48,3 +48,5 @@ mod resource_retention;
 mod snapshot;
 #[path = "sync_snapshot_apply.rs"]
 mod snapshot_apply;
+
+pub(crate) mod durability;

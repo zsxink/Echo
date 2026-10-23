@@ -101,6 +101,15 @@ impl PlanImport<'_> {
             target,
             operation,
             reserved,
+            added_at: self
+                .deps
+                .clock
+                .now_wall()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+                .try_into()
+                .unwrap_or(u64::MAX),
             renamed,
             source: Some(source.key().to_owned()),
             staged,

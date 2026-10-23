@@ -344,6 +344,8 @@ fn portable_record_kind_and_uuid_for_playlist() {
         updated_by_device_id: DeviceId::new(),
         hlc: HybridLogicalClock::default(),
         display_name: "通勤路上".to_owned(),
+        created_at: None,
+        cover_asset: None,
     });
     assert_eq!(rec.kind(), RecordKind::Playlist);
     assert_eq!(rec.object_uuid(), pl_uuid);
@@ -393,6 +395,7 @@ fn portable_record_playlist_item_references_song_and_playlist() {
         playlist_uuid: pl_uuid,
         song_uuid,
         position: 0,
+        added_at: None,
     });
     assert_eq!(rec.kind(), RecordKind::PlaylistItem);
     assert_eq!(rec.object_uuid(), item_uuid);
@@ -667,6 +670,7 @@ fn portable_v2_member_alias_is_scoped_to_the_canonical_members_playlist() {
         playlist_uuid: id(3),
         song_uuid: id(4),
         position: 5,
+        added_at: None,
     });
     let confirmed: PortableRecordDocument = serde_json::from_str(V2_TOMBSTONE_FIXTURE).unwrap();
     let mut metadata = confirmed.sync_metadata().unwrap().clone();

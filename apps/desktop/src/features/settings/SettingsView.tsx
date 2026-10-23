@@ -21,6 +21,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { bridge } from "../../bridge";
 import { invalidateCovers } from "../../app/coverArt";
 import { Icon } from "../../app/Icon";
+import { LibraryRecoveryStatus } from "./LibraryRecoveryStatus";
 import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
 import type { CloseBehavior } from "../../ipc/ipc-types.generated";
 import { invalidateLibrary } from "../library";
@@ -286,6 +287,10 @@ export function SettingsView({ onClose }: { readonly onClose: () => void }) {
                     <Icon name="info" />
                     <span>更改目录不会移动或删除现有音乐；Echo 会在下次扫描时更新音乐库。</span>
                   </p>
+                  <p className="setting-help">
+                    备份请保留完整音乐库，包括 media/ 和 echo/。只保留音频文件无法还原喜欢和歌单；
+                    重装后同步设备需要重新配对。历史缺失的资料会单独报告。
+                  </p>
                   <div className="setting-row">
                     <div className="storage-value">
                       <strong>重新扫描音乐库</strong>
@@ -303,6 +308,7 @@ export function SettingsView({ onClose }: { readonly onClose: () => void }) {
                       {status.scanning || rescanning ? "正在扫描…" : "重新扫描"}
                     </button>
                   </div>
+                  <LibraryRecoveryStatus root={status.activeRoot} scanning={status.scanning || rescanning} />
                 </section>
                 <section className="settings-section">
                   <header className="settings-section-head">

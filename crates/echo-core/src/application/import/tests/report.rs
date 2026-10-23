@@ -273,6 +273,7 @@ fn real_fs_deps(
     database: &MemoryDatabase,
 ) -> ScanDeps {
     ScanDeps {
+        history: None,
         roots: Arc::new(database.clone()),
         songs: Arc::new(database.clone()),
         catalog: Arc::new(database.clone()),

@@ -15,6 +15,7 @@
 
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { libraryPersistenceMessage } from "./libraryPersistence";
 
 import type {
   EqCurve,
@@ -42,6 +43,9 @@ interface BridgeCommandArguments extends SyncCommandArguments {
   retry_audio_effects: EmptyArgs;
   get_bootstrap_state: EmptyArgs;
   library_status: EmptyArgs;
+  retry_library_operation: [args: { root: string; operation: string }];
+  library_recovery_status: [args: { root: string }];
+  retry_library_projection: [args: { root: string }];
   all_songs: [args: { sort: string; cursor?: string | null; limit: number }];
   search: [
     args: {
@@ -137,13 +141,15 @@ export type BridgeCommandMap = {
 
 /** An unwrapper that treats the error envelope as a thrown value. */
 export class BridgeError extends Error {
+  readonly messageKey: string;
   readonly code: string;
   readonly retryable: boolean;
   readonly operationId?: string;
   readonly field?: string;
 
   constructor(dto: IpcErrorDto) {
-    super(dto.messageKey);
+    super(libraryPersistenceMessage(dto.messageKey) ?? dto.messageKey);
+    this.messageKey = dto.messageKey;
     this.code = dto.code;
     this.retryable = dto.retryable;
     this.operationId = dto.operationId;

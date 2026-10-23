@@ -416,6 +416,7 @@ mod favorites;
 mod import;
 mod library;
 mod playlists;
+mod recovery;
 mod reveal;
 
 #[cfg(test)]

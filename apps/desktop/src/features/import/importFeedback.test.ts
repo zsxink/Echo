@@ -44,4 +44,26 @@ describe("classifyImportResults (任务 4.2 单一结果分类器)", () => {
     expect(feedback.failures).toHaveLength(0);
     expect(feedback.summary).toBe("导入完成：已导入 0 首，重复 0 首");
   });
+
+  it("keeps saved-pending imports separate from failures and complete results", () => {
+    const pending = {
+      kind: "savedPending" as const,
+      operationId: "same-operation",
+      songId: "same-song",
+      relativePath: "media/歌曲.flac",
+      renamed: false,
+      code: "library_saved_pending_projection",
+      message: "internal detail must not become a failure",
+    };
+    const feedback = classifyImportResults([
+      pending,
+      { kind: "duplicate", existingSongId: "existing" },
+      { kind: "failed", code: "io", message: "未保存" },
+    ]);
+    expect(feedback.pending).toEqual([pending]);
+    expect(feedback.nonFailures).toHaveLength(2);
+    expect(feedback.failures).toEqual([{ kind: "failed", code: "io", message: "未保存" }]);
+    expect(feedback.summary).toContain("1 首等待更新");
+    expect(feedback.summary).not.toContain("导入完成");
+  });
 });

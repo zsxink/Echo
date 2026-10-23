@@ -92,6 +92,8 @@ fn start_scan(fixture: &ScanFixture) -> StartScan<'_> {
 
 #[path = "tests_convergence.rs"]
 mod convergence;
+#[path = "tests_durability.rs"]
+mod durability;
 #[path = "tests_pipeline.rs"]
 mod pipeline;
 #[path = "tests_relink.rs"]

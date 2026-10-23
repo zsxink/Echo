@@ -44,6 +44,11 @@ impl<'a> PlanImport<'a> {
                 results: vec![ImportOutcome::LibraryUnavailable; sources.len()],
             });
         }
+        if crate::application::scan::durable::library_id(self.deps, root).is_err() {
+            return Ok(ImportBatchReport {
+                results: vec![ImportOutcome::LibraryUnavailable; sources.len()],
+            });
+        }
         let mut state = self.batch_state(root)?;
         let mut results = Vec::with_capacity(sources.len());
         for source in sources {
@@ -58,13 +63,17 @@ impl<'a> PlanImport<'a> {
     /// until the target truly does not exist (绝不覆盖既有文件).
     fn batch_state(&self, root: LibraryRootId) -> Result<BatchState, Error> {
         let mut conflicts = ImportConflictIndex::default();
-        for song in self.deps.songs.all_in_root(root)? {
+        for song in crate::application::scan::durable::song_snapshot(self.deps, root)? {
             // Missing and Echo-pending-delete records remain in the repository
             // for UUID/recovery semantics, but they no longer represent a
             // playable catalogue holder or a logical target claimed by the
             // current import. Actual files on disk are still reserved below.
             if song.availability() != SongAvailability::Available {
-                continue;
+                // An authoritative identity may be waiting for its SQLite
+                // projection. Only matching, present bytes own import content.
+                if self.deps.hasher.hash(root, song.path()).ok().as_deref() != song.blake3_hash() {
+                    continue;
+                }
             }
             if let Some(hash) = song.blake3_hash() {
                 conflicts.record_content(hash, song.id());
@@ -146,6 +155,9 @@ impl<'a> PlanImport<'a> {
             state.conflicts.occupy_target(lrc.target.identity_key());
         }
 
+        if let Err(error) = self.persist_reservation(&planned) {
+            return self.recover_execution_failure(root, &planned, ExecuteError::PrePublish(error));
+        }
         match self.execute(&planned) {
             Ok(lyrics) => {
                 state
@@ -157,6 +169,20 @@ impl<'a> PlanImport<'a> {
                     target: planned.target.clone(),
                     renamed: planned.renamed,
                     lyrics: Box::new(lyrics),
+                }
+            }
+            Err(ExecuteError::SavedPending { error, lyrics }) => {
+                state
+                    .conflicts
+                    .record_import(planned.hash.clone(), planned.reserved);
+                ImportOutcome::SavedPending {
+                    operation: planned.operation,
+                    song: planned.reserved,
+                    target: planned.target.clone(),
+                    renamed: planned.renamed,
+                    lyrics: Box::new(lyrics),
+                    code: error.code(),
+                    message: error.to_string(),
                 }
             }
             Err(error) => self.recover_execution_failure(root, &planned, error),
@@ -177,6 +203,15 @@ impl<'a> PlanImport<'a> {
         error: ExecuteError,
     ) -> ImportOutcome {
         match error {
+            ExecuteError::SavedPending { error, lyrics } => ImportOutcome::SavedPending {
+                operation: planned.operation,
+                song: planned.reserved,
+                target: planned.target.clone(),
+                renamed: planned.renamed,
+                lyrics: Box::new(lyrics),
+                code: error.code(),
+                message: error.to_string(),
+            },
             ExecuteError::PrePublish(error) => {
                 // Nothing published: the terminal state releases this input's
                 // claims; committed inputs and the remaining batch are

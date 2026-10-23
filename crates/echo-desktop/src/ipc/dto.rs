@@ -433,6 +433,15 @@ impl
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum ImportResultDto {
+    /// Saved in the library; recovery continues under the original operation.
+    SavedPending {
+        operation_id: String,
+        song_id: String,
+        relative_path: String,
+        renamed: bool,
+        code: String,
+        message: String,
+    },
     /// Copied, verified, published and committed under the reserved identity.
     Imported {
         operation_id: String,
@@ -457,6 +466,22 @@ impl From<echo_core::application::import::ImportOutcome> for ImportResultDto {
     fn from(outcome: echo_core::application::import::ImportOutcome) -> Self {
         use echo_core::application::import::ImportOutcome as O;
         match outcome {
+            O::SavedPending {
+                operation,
+                song,
+                target,
+                renamed,
+                code,
+                message,
+                ..
+            } => Self::SavedPending {
+                operation_id: operation.to_string(),
+                song_id: song.to_string(),
+                relative_path: target.to_string(),
+                renamed,
+                code: code.to_owned(),
+                message,
+            },
             O::Imported {
                 operation,
                 song,

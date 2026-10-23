@@ -329,6 +329,9 @@ struct CrashControlPlane {
 }
 
 impl crate::application::ports::ControlPlanePort for CrashControlPlane {
+    fn durability(&self) -> Option<&dyn crate::application::ports::LibraryDurabilityPort> {
+        Some(self)
+    }
     fn write_manifest(
         &self,
         root: LibraryRootId,
@@ -380,8 +383,51 @@ impl crate::application::ports::ControlPlanePort for CrashControlPlane {
     ) -> Result<crate::application::ports::ManifestState, Error> {
         self.inner.manifest_state(root)
     }
-    fn records_present(&self, root: LibraryRootId) -> Result<bool, Error> {
-        self.inner.records_present(root)
+}
+
+impl crate::application::ports::LibraryDurabilityPort for CrashControlPlane {
+    fn write_asset(&self, root: LibraryRootId, bytes: &[u8]) -> Result<String, Error> {
+        self.inner.write_asset(root, bytes)
+    }
+    fn read_asset(&self, root: LibraryRootId, hash: &str) -> Result<Option<Vec<u8>>, Error> {
+        self.inner.read_asset(root, hash)
+    }
+    fn commit(
+        &self,
+        root: LibraryRootId,
+        batch: &crate::domain::library::durability::LibraryBatch,
+    ) -> Result<crate::domain::library::durability::CommitOutcome, Error> {
+        // The old per-record materialization site is now the authoritative
+        // commit boundary. Claim reservations contain no records and must not
+        // masquerade as the song being committed.
+        if !batch.records.is_empty() {
+            self.ctrl.crash(&Site::RecordWrite, Phase::Before);
+        }
+        let result = self.inner.commit(root, batch);
+        if !batch.records.is_empty() {
+            self.ctrl.crash(&Site::RecordWrite, Phase::After);
+        }
+        result
+    }
+    fn recover(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<crate::domain::library::durability::LibraryReplay, Error> {
+        self.inner.recover(root)
+    }
+    fn read_operation(
+        &self,
+        root: LibraryRootId,
+        id: uuid::Uuid,
+    ) -> Result<Option<crate::domain::library::durability::LibraryCommit>, Error> {
+        self.inner.read_operation(root, id)
+    }
+    fn operation_status(
+        &self,
+        root: LibraryRootId,
+        id: uuid::Uuid,
+    ) -> Result<Option<crate::domain::library::durability::CommitOutcome>, Error> {
+        self.inner.operation_status(root, id)
     }
 }
 
@@ -543,3 +589,9 @@ fn assert_unique_terminal(fixture: &ScanFixture, operation: OperationId, reserve
 mod delete_restore;
 #[path = "tests_imports.rs"]
 mod imports;
+
+impl crate::application::ports::ControlPlaneInventoryPort for CrashControlPlane {
+    fn records_present(&self, root: LibraryRootId) -> Result<bool, Error> {
+        self.inner.records_present(root)
+    }
+}

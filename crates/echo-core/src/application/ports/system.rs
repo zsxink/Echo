@@ -46,7 +46,20 @@ impl ManifestState {
 /// The format version this build writes (re-exported for adapters).
 pub const SUPPORTED_FORMAT_VERSION: u64 = CURRENT_FORMAT_VERSION;
 
-pub trait ControlPlanePort: Send + Sync {
+/// Cheap legacy-root evidence inventory, independent from logical mutation IO.
+pub trait ControlPlaneInventoryPort: Send + Sync {
+    /// Whether `echo/records/` already carries at least one object record of
+    /// any kind. Cheap (directory scan, no file reads): it decides whether a
+    /// manifest-less directory is a brand-new root or a self-heal candidate.
+    fn records_present(&self, root: LibraryRootId) -> Result<bool, Error>;
+}
+
+pub trait ControlPlanePort: ControlPlaneInventoryPort {
+    /// The optional focused durability capability. Legacy adapters fail closed.
+    fn durability(&self) -> Option<&dyn super::LibraryDurabilityPort> {
+        None
+    }
+
     /// Write (create or replace) the manifest at `echo/manifest.json`.
     fn write_manifest(&self, root: LibraryRootId, manifest: &LibraryManifest) -> Result<(), Error>;
     /// Read the manifest. `Ok(None)` when `echo/manifest.json` is absent or
@@ -80,10 +93,6 @@ pub trait ControlPlanePort: Send + Sync {
     /// The state of `echo/manifest.json`, distinguishing "no file" from "a
     /// file this build must not touch" (design D3).
     fn manifest_state(&self, root: LibraryRootId) -> Result<ManifestState, Error>;
-    /// Whether `echo/records/` already carries at least one object record of
-    /// any kind. Cheap (directory scan, no file reads): it decides whether a
-    /// manifest-less directory is a brand-new root or a self-heal candidate.
-    fn records_present(&self, root: LibraryRootId) -> Result<bool, Error>;
 
     /// Write a v2 envelope. Implementations that do not support the recoverable
     /// format upgrade fail closed instead of silently dropping sync metadata.

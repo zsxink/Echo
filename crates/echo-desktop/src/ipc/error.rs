@@ -61,6 +61,8 @@ impl From<&CoreError> for IpcErrorDto {
             "corrupt_media" => "error.corruptMedia",
             "io" => "error.io",
             "storage" => "error.storage",
+            "library_saved_pending_recovery" => "library.savedPendingRecovery",
+            "library_saved_pending_projection" => "library.savedPendingProjection",
             "cancelled" => "error.cancelled",
             "invariant_violation" => "error.internal",
             _ => "error.unknown",
@@ -70,7 +72,11 @@ impl From<&CoreError> for IpcErrorDto {
             CoreError::Validation { field, .. } => Some(field.clone()),
             _ => None,
         };
-        Self::new(code, message_key, retryable, None, field)
+        let operation_id = match error {
+            CoreError::LibrarySavedPending { operation, .. } => Some(operation.to_string()),
+            _ => None,
+        };
+        Self::new(code, message_key, retryable, operation_id, field)
     }
 }
 
@@ -101,7 +107,25 @@ impl ErrorPolicy {
     ///   aborted, so a blind retry cannot help.
     #[must_use]
     pub fn retryable(code: &str) -> bool {
-        matches!(code, "unavailable" | "io" | "storage")
+        const POLICY: &[(&str, bool)] = &[
+            ("unavailable", true),
+            ("io", true),
+            ("storage", true),
+            // Recovery uses operation_id; a blind create/edit retry could duplicate intent.
+            ("library_saved_pending_recovery", false),
+            ("library_saved_pending_projection", false),
+            ("validation", false),
+            ("permission", false),
+            ("conflict", false),
+            ("unsupported_media", false),
+            ("corrupt_media", false),
+            ("cancelled", false),
+            ("invariant_violation", false),
+        ];
+        POLICY
+            .iter()
+            .find(|(known, _)| *known == code)
+            .is_some_and(|(_, retryable)| *retryable)
     }
 }
 
@@ -152,6 +176,8 @@ mod tests {
         assert!(!ErrorPolicy::retryable("cancelled"));
         assert!(!ErrorPolicy::retryable("invariant_violation"));
         assert!(!ErrorPolicy::retryable("not_a_real_code"));
+        assert!(!ErrorPolicy::retryable("library_saved_pending_recovery"));
+        assert!(!ErrorPolicy::retryable("library_saved_pending_projection"));
     }
 
     #[test]
@@ -166,5 +192,39 @@ mod tests {
             json, r#"{"code":"unavailable","messageKey":"error.unavailable","retryable":true}"#,
             "camelCase DTO, absolute paths omitted"
         );
+    }
+
+    #[test]
+    fn saved_library_operation_is_not_retried_as_a_new_command() {
+        use echo_core::domain::ids::OperationId;
+
+        let operation = OperationId::new();
+        for (failure, expected) in [
+            (
+                CoreError::saved_pending_recovery(
+                    operation,
+                    CoreError::unavailable("records", "materialization failed"),
+                ),
+                "library_saved_pending_recovery",
+            ),
+            (
+                CoreError::saved_pending_projection(
+                    operation,
+                    CoreError::unavailable("database", "projection failed"),
+                ),
+                "library_saved_pending_projection",
+            ),
+        ] {
+            let dto = IpcErrorDto::from(&failure);
+            assert_eq!(dto.code, expected);
+            assert_eq!(dto.operation_id, Some(operation.to_string()));
+            assert!(
+                !dto.retryable,
+                "a blind edit/create retry would duplicate intent"
+            );
+            let encoded = serde_json::to_string(&dto).unwrap();
+            assert!(!encoded.contains("materialization failed"));
+            assert!(!encoded.contains("projection failed"));
+        }
     }
 }

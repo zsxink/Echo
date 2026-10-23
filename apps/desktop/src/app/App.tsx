@@ -80,6 +80,7 @@ export function App() {
   // rendered into the sidebar brand area, so the action stays available under
   // every library view — 歌单, 歌手/专辑目录 and their details included.
   const { importing, runImport, renderImportDialog } = useImport({
+    libraryRoot: status.activeRoot,
     onImportCommitted: reloadPlaylists,
   });
   // The queue popover and its trigger are siblings, so the panel cannot reach the

@@ -975,6 +975,7 @@ name = "echo-core"
 version = "0.3.1"
 dependencies = [
  "blake3",
+ "fs2",
  "image",
  "lofty",
  "notify",

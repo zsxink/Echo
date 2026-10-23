@@ -14,6 +14,8 @@
 //!    database as soon as possible, enabling playlist restoration and the
 //!    "media-not-yet-available" path.
 
+#[cfg(test)]
+use crate::application::ports::ControlPlaneInventoryPort as _;
 use crate::application::ports::SongRepository;
 use crate::application::ports::{ControlPlanePort, ManifestState};
 use crate::domain::entities::Song;

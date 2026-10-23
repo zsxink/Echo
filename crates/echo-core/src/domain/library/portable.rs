@@ -515,6 +515,20 @@ pub struct PlaylistRecord {
     pub hlc: HybridLogicalClock,
     /// The user-visible playlist name (display string, not a key).
     pub display_name: String,
+    /// Original creation time, absent when historical evidence has no value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<u64>,
+    /// Recoverable original image, independent of application caches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_asset: Option<PortableAssetReference>,
+}
+
+/// Content-addressed original under `echo/assets/<content_hash>`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PortableAssetReference {
+    pub content_hash: String,
+    pub byte_len: u64,
+    pub mime: String,
 }
 
 /// A playlist member record: one song in a playlist.
@@ -535,6 +549,9 @@ pub struct PlaylistItemRecord {
     pub song_uuid: uuid::Uuid,
     /// Append-order key (monotonically increasing within the playlist).
     pub position: u64,
+    /// Original membership time; older records deliberately retain absence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub added_at: Option<u64>,
 }
 
 /// An override record: user-edited metadata or lyrics that take priority over

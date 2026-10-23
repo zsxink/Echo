@@ -553,6 +553,9 @@ impl MediaProbe for SlowProbe {
 /// use cases in one test.
 #[derive(Clone, Debug, Default)]
 pub struct MemoryControlPlane {
+    durable:
+        Shared<BTreeMap<LibraryRootId, Vec<crate::domain::library::durability::LibraryCommit>>>,
+    assets: Shared<BTreeMap<String, Vec<u8>>>,
     manifest: Shared<BTreeMap<LibraryRootId, LibraryManifest>>,
     records: Shared<BTreeMap<(LibraryRootId, RecordKind, String), PortableRecord>>,
     usable: Arc<Mutex<bool>>,
@@ -601,6 +604,10 @@ impl MemoryControlPlane {
 }
 
 impl ControlPlanePort for MemoryControlPlane {
+    fn durability(&self) -> Option<&dyn crate::application::ports::LibraryDurabilityPort> {
+        Some(self)
+    }
+
     fn write_manifest(&self, root: LibraryRootId, manifest: &LibraryManifest) -> Result<(), Error> {
         self.manifest.lock().unwrap().insert(root, manifest.clone());
         Ok(())
@@ -676,14 +683,127 @@ impl ControlPlanePort for MemoryControlPlane {
             Some(manifest) => ManifestState::Compatible(manifest),
         })
     }
+}
 
-    fn records_present(&self, root: LibraryRootId) -> Result<bool, Error> {
-        Ok(self
-            .records
+impl crate::application::ports::LibraryDurabilityPort for MemoryControlPlane {
+    fn write_asset(&self, _root: LibraryRootId, bytes: &[u8]) -> Result<String, Error> {
+        if !*self.usable.lock().unwrap() {
+            return Err(Error::unavailable(
+                "library asset",
+                "read only control plane",
+            ));
+        }
+        let hash = blake3::hash(bytes).to_hex().to_string();
+        self.assets
             .lock()
             .unwrap()
-            .keys()
-            .any(|(r, _, _)| *r == root))
+            .insert(hash.clone(), bytes.to_vec());
+        Ok(hash)
+    }
+    fn read_asset(&self, _root: LibraryRootId, hash: &str) -> Result<Option<Vec<u8>>, Error> {
+        Ok(self.assets.lock().unwrap().get(hash).cloned())
+    }
+    fn commit(
+        &self,
+        root: LibraryRootId,
+        batch: &crate::domain::library::durability::LibraryBatch,
+    ) -> Result<crate::domain::library::durability::CommitOutcome, Error> {
+        use crate::domain::library::durability::{CommitOutcome, CommitStatus, LibraryCommit};
+        batch.validate()?;
+        if !*self.usable.lock().unwrap() {
+            return Err(Error::unavailable(
+                "library durability",
+                "read only control plane",
+            ));
+        }
+        if self
+            .manifest_of(root)
+            .is_some_and(|m| m.library_id != batch.library_id || !m.is_compatible())
+        {
+            return Err(Error::conflict("wrong durable library"));
+        }
+        let mut all = self.durable.lock().unwrap();
+        let chain = all.entry(root).or_default();
+        if let Some(commit) = chain
+            .iter()
+            .find(|c| c.batch.operation_id == batch.operation_id)
+        {
+            if commit.batch != *batch {
+                return Err(Error::conflict(
+                    "operation identity reused with another payload",
+                ));
+            }
+            return Ok(CommitOutcome {
+                operation_id: batch.operation_id,
+                library_commit_seq: commit.library_commit_seq,
+                status: CommitStatus::SavedPendingProjection,
+                reason: None,
+            });
+        }
+        let seq = chain.last().map_or(1, |c| c.library_commit_seq + 1);
+        let predecessor_digest = chain.last().map(|c| c.digest.clone());
+        let digest = LibraryCommit::calculate_digest(batch, seq, predecessor_digest.as_deref())?;
+        chain.push(LibraryCommit {
+            batch: batch.clone(),
+            library_commit_seq: seq,
+            predecessor_digest,
+            digest,
+        });
+        for envelope in &batch.records {
+            self.write_record(root, envelope.record())?;
+        }
+        Ok(CommitOutcome {
+            operation_id: batch.operation_id,
+            library_commit_seq: seq,
+            status: CommitStatus::SavedPendingProjection,
+            reason: None,
+        })
+    }
+    fn recover(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<crate::domain::library::durability::LibraryReplay, Error> {
+        Ok(crate::domain::library::durability::LibraryReplay {
+            checkpoint: None,
+            commits: self
+                .durable
+                .lock()
+                .unwrap()
+                .get(&root)
+                .cloned()
+                .unwrap_or_default(),
+        })
+    }
+    fn read_operation(
+        &self,
+        root: LibraryRootId,
+        id: uuid::Uuid,
+    ) -> Result<Option<crate::domain::library::durability::LibraryCommit>, Error> {
+        Ok(self
+            .durable
+            .lock()
+            .unwrap()
+            .get(&root)
+            .and_then(|chain| chain.iter().find(|c| c.batch.operation_id == id))
+            .cloned())
+    }
+    fn operation_status(
+        &self,
+        root: LibraryRootId,
+        id: uuid::Uuid,
+    ) -> Result<Option<crate::domain::library::durability::CommitOutcome>, Error> {
+        Ok(self
+            .durable
+            .lock()
+            .unwrap()
+            .get(&root)
+            .and_then(|chain| chain.iter().find(|c| c.batch.operation_id == id))
+            .map(|c| crate::domain::library::durability::CommitOutcome {
+                operation_id: id,
+                library_commit_seq: c.library_commit_seq,
+                status: crate::domain::library::durability::CommitStatus::SavedPendingProjection,
+                reason: None,
+            }))
     }
 }
 
@@ -801,5 +921,16 @@ mod tests {
             cache.get(&key).unwrap().is_none(),
             "GC removed unreferenced asset"
         );
+    }
+}
+
+impl crate::application::ports::ControlPlaneInventoryPort for MemoryControlPlane {
+    fn records_present(&self, root: LibraryRootId) -> Result<bool, Error> {
+        Ok(self
+            .records
+            .lock()
+            .unwrap()
+            .keys()
+            .any(|(r, _, _)| *r == root))
     }
 }

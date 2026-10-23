@@ -32,6 +32,7 @@ use echo_desktop::ipc::dto::{
     PagedSongs, PlaylistView, RevealResultDto, ScanSnapshot, SongDetailView, SongView,
 };
 use echo_desktop::ipc::IpcErrorDto;
+use echo_desktop::ipc::library_recovery::LibraryRecoveryStatusDto;
 use echo_desktop::player::coordinator::PlaybackCoordinator;
 use echo_desktop::player::port::{PlayerCommand, PlayerPort};
 use echo_desktop::player::queue::{QueueEntry, QueueItem, ViewContext};
@@ -165,6 +166,27 @@ pub fn get_bootstrap_state(
 #[tauri::command]
 pub fn library_status(services: State<'_, AppServices>) -> Result<LibraryStatus, IpcErrorDto> {
     services.library_status().map_err(IpcErrorDto::from)
+}
+
+#[tauri::command]
+pub fn retry_library_operation(
+    services: State<'_, AppServices>,
+    root: String,
+    operation: String,
+) -> Result<(), IpcErrorDto> {
+    services
+        .retry_library_operation(parse_id(&root, "root")?, parse_id(&operation, "operation")?)
+        .map_err(IpcErrorDto::from)
+}
+
+#[tauri::command]
+pub fn library_recovery_status(services: State<'_, AppServices>, root: String) -> Result<LibraryRecoveryStatusDto, IpcErrorDto> {
+    services.library_recovery_status(parse_id(&root, "root")?).map_err(IpcErrorDto::from)
+}
+
+#[tauri::command]
+pub fn retry_library_projection(services: State<'_, AppServices>, root: String) -> Result<(), IpcErrorDto> {
+    services.retry_library_projection(parse_id(&root, "root")?).map_err(IpcErrorDto::from)
 }
 
 #[tauri::command]

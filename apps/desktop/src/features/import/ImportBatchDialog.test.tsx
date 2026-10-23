@@ -31,4 +31,32 @@ describe("ImportFailureDialog", () => {
     );
     expect(screen.getByText("音乐库不可用，未开始导入。")).toBeInTheDocument();
   });
+
+  it("shows saved-pending as saved and preserves the recovery identity", () => {
+    render(
+      <ImportFailureDialog
+        hasPending
+        onClose={() => undefined}
+        results={[
+          {
+            kind: "savedPending",
+            operationId: "original-operation",
+            songId: "original-song",
+            relativePath: "media/歌曲.flac",
+            renamed: false,
+            code: "library_saved_pending_projection",
+            message: "library.savedPendingProjection",
+          },
+          { kind: "failed", code: "io", message: "另一个文件未保存" },
+        ]}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "导入结果" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "导入失败" })).not.toBeInTheDocument();
+    expect(screen.getByText("已保存：media/歌曲.flac")).toBeInTheDocument();
+    expect(screen.getByText(/无需再次提交/)).toBeInTheDocument();
+    expect(screen.getByText("恢复操作：original-operation")).toBeInTheDocument();
+    expect(screen.getByText("失败：另一个文件未保存")).toBeInTheDocument();
+    expect(screen.queryByText("library.savedPendingProjection")).not.toBeInTheDocument();
+  });
 });

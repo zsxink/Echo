@@ -1,12 +1,12 @@
 use crate::application::ports::TxAccess;
 use crate::application::relink::song_from_parsed;
-use crate::application::scan::{parse_single_file, rewrap, FileOutcome, ParsedOutcome};
+use crate::application::scan::{
+    parse_single_file_with_content_check, rewrap, FileOutcome, ParsedOutcome,
+};
 use crate::domain::entities::{LyricsSource, SongAvailability};
 use crate::domain::ids::{LibraryRootId, SongId};
-use crate::domain::library::PortableRecord;
 use crate::domain::state::OperationState;
 use crate::error::Error;
-use std::time::UNIX_EPOCH;
 
 use super::report::{journal_item, journal_lrc_item};
 use super::{
@@ -15,6 +15,40 @@ use super::{
 };
 
 impl PlanImport<'_> {
+    /// The directory reservation survives losing the entire application data
+    /// directory between publication and the song commit.
+    pub(super) fn persist_reservation(&self, planned: &PlannedInput) -> Result<(), Error> {
+        use crate::domain::library::durability::{
+            ChangeOrigin, CommitStatus, DurableStateChange, LibraryBatch, StateKind,
+        };
+        let library = crate::application::scan::durable::library_id(self.deps, planned.root)?;
+        let operation = self.deps.ids.new_operation_id();
+        let mut batch =
+            LibraryBatch::new(operation.as_uuid(), library, ChangeOrigin::Import, vec![]);
+        batch.state.push(DurableStateChange::new(StateKind::Claim, planned.operation.as_uuid(), serde_json::json!({
+            "version": 1, "kind": "ingestion", "active": true,
+            "song_uuid": planned.reserved.as_uuid(), "target": planned.target.display(),
+            "content_hash": planned.hash, "byte_length": planned.size, "added_at": planned.added_at,
+        })));
+        let outcome = self
+            .deps
+            .control
+            .durability()
+            .ok_or_else(|| {
+                Error::unavailable(
+                    "library durability",
+                    "directory commit adapter is not configured",
+                )
+            })?
+            .commit(planned.root, &batch)?;
+        if outcome.status == CommitStatus::SavedPendingRecovery {
+            return Err(Error::saved_pending_recovery(
+                operation,
+                Error::unavailable("import reservation", "directory reservation needs recovery"),
+            ));
+        }
+        Ok(())
+    }
     fn write_state(&self, planned: &PlannedInput, state: OperationState) -> Result<(), Error> {
         self.deps
             .journal
@@ -57,7 +91,7 @@ impl PlanImport<'_> {
         published_hash: &str,
         reserved: SongId,
     ) -> Result<Option<SongId>, Error> {
-        for song in self.deps.songs.all_in_root(root)? {
+        for song in crate::application::scan::durable::song_snapshot(self.deps, root)? {
             // A pending-delete or externally-missing row is retained for
             // recovery/relinking, but it is not a live content holder. The
             // final check must apply the same availability rule as planning,
@@ -151,14 +185,7 @@ impl PlanImport<'_> {
         // and valid, and failing the import here would orphan it.
         if let Some(existing) = self
             .pre_commit_duplicate(planned.root, &published_hash, planned.reserved)
-            .unwrap_or_else(|error| {
-                tracing::warn!(
-                    operation = %planned.operation,
-                    %error,
-                    "pre-commit dedup re-check could not read the library; continuing"
-                );
-                None
-            })
+            .map_err(ExecuteError::PostPublish)?
         {
             return Err(ExecuteError::Duplicate { existing });
         }
@@ -202,10 +229,18 @@ impl PlanImport<'_> {
         let lrc_published = matches!(&lrc_result, LyricsImportResult::Imported { .. });
         // Parse the published file with the shared scan pipeline (probe, tags,
         // sidecar, cover) and commit the record under the RESERVED identity.
-        match parse_single_file(self.deps, planned.root, &planned.target) {
+        match parse_single_file_with_content_check(self.deps, planned.root, &planned.target, true) {
             FileOutcome::Parsed(parsed) => {
-                self.commit(planned, &parsed, lrc_published)
-                    .map_err(ExecuteError::PostPublish)?;
+                if let Err(error) = self.commit(planned, &parsed, lrc_published) {
+                    return Err(if matches!(error, Error::LibrarySavedPending { .. }) {
+                        ExecuteError::SavedPending {
+                            error,
+                            lyrics: lrc_result,
+                        }
+                    } else {
+                        ExecuteError::PostPublish(error)
+                    });
+                }
                 Ok(lrc_result)
             }
             FileOutcome::Diagnostic(diagnostic) => {
@@ -286,16 +321,12 @@ impl PlanImport<'_> {
         parsed: &ParsedOutcome,
         lrc_published: bool,
     ) -> Result<(), Error> {
-        let added_at = self
-            .deps
-            .clock
-            .now_wall()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-            .try_into()
-            .unwrap_or(u64::MAX);
-        let entity = song_from_parsed(planned.reserved, planned.root, &parsed.file, added_at);
+        let entity = song_from_parsed(
+            planned.reserved,
+            planned.root,
+            &parsed.file,
+            planned.added_at,
+        );
         let entity_for_record = entity.clone();
         let embedded = parsed
             .embedded_lyrics
@@ -316,52 +347,40 @@ impl PlanImport<'_> {
         let committed = journal_item(OperationState::DatabaseCommitted, planned);
         let song_id = planned.reserved;
         let operation = planned.operation;
-        self.deps
-            .uow
-            .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
-                tx.set_song_file_resources(&entity, &resources)?;
-                tx.upsert_song(&entity)?;
-                match embedded {
-                    Some(candidate) => tx.set_lyrics_candidate(song_id, &candidate)?,
-                    None => tx.clear_lyrics_candidate(song_id, LyricsSource::Embedded)?,
-                }
-                match sidecar {
-                    Some(candidate) => tx.set_lyrics_candidate(song_id, &candidate)?,
-                    None => tx.clear_lyrics_candidate(song_id, LyricsSource::Sidecar)?,
-                }
-                if let Some(cover) = cover {
-                    tx.attach_cover(song_id, &cover)?;
-                }
-                // The record and the journal's DatabaseCommitted state land in
-                // one transaction: a song is never visible without its journal.
-                tx.upsert_operation_item(operation, committed)?;
-                Ok(())
-            }))?;
-        // Materialize the portable song record once the row is durably
-        // committed (design §2: the record is the durable form of the outbox
-        // payload, sharing the exact revision/HLC the row holds). The gate
-        // makes the "控制面不可写" scenario an explicit refusal of the import;
-        // recovery re-drives idempotently if we crash here.
-        crate::application::portable_materialize::ensure_control_plane_writable(
-            self.deps.control.as_ref(),
-            planned.root,
-        )?;
-        let device = self.deps.device_id.current_device_id();
-        let (revision, hlc) = crate::application::portable_materialize::committed_version(
-            self.deps.sync.as_ref(),
-            crate::application::portable_materialize::SONG_OBJECT_TYPE,
-            &planned.reserved.to_string(),
-            device,
-        )?;
-        let record = crate::application::portable_materialize::song_record(
-            device,
-            hlc,
-            revision,
+        crate::application::scan::durable::commit_song(
+            self.deps,
             &entity_for_record,
+            operation,
+            crate::domain::library::durability::ChangeOrigin::Import,
+            vec![crate::domain::library::durability::DurableResource {
+                relative_path: planned.target.display().to_owned(),
+                content_hash: planned.hash.clone(),
+                byte_length: planned.size,
+            }],
+            || {
+                self.deps
+                    .uow
+                    .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
+                        tx.set_song_file_resources(&entity, &resources)?;
+                        tx.upsert_song(&entity)?;
+                        match embedded {
+                            Some(candidate) => tx.set_lyrics_candidate(song_id, &candidate)?,
+                            None => tx.clear_lyrics_candidate(song_id, LyricsSource::Embedded)?,
+                        }
+                        match sidecar {
+                            Some(candidate) => tx.set_lyrics_candidate(song_id, &candidate)?,
+                            None => tx.clear_lyrics_candidate(song_id, LyricsSource::Sidecar)?,
+                        }
+                        if let Some(cover) = cover {
+                            tx.attach_cover(song_id, &cover)?;
+                        }
+                        // The record and the journal's DatabaseCommitted state land in
+                        // one transaction: a song is never visible without its journal.
+                        tx.upsert_operation_item(operation, committed)?;
+                        Ok(())
+                    }))
+            },
         )?;
-        self.deps
-            .control
-            .write_record(planned.root, &PortableRecord::Song(record))?;
         // Terminal state releases the target claim (port contract) so retries
         // and other operations can claim the same path again.
         self.deps.journal.upsert_item(

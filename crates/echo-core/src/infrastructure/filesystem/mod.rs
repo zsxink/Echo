@@ -28,6 +28,7 @@
 
 pub mod adapter;
 pub mod control_plane;
+mod durability;
 pub mod hasher;
 mod portable_migration;
 pub mod registry;

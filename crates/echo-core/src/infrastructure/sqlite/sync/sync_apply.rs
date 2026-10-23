@@ -25,6 +25,7 @@ impl RemoteApplyPort for SqliteDatabase {
             ));
         }
         let commits = commits.to_vec();
+        let control = self.library_control();
         // An empty page is the idle steady state of a caught-up replica, and it
         // is polled every few seconds. It stays on a reader connection: the
         // writer queue is single-threaded and notifies every listener after any
@@ -33,11 +34,25 @@ impl RemoteApplyPort for SqliteDatabase {
         // durable change at all.
         if commits.is_empty() {
             return self.with_reader(|connection| {
-                apply_remote_page(connection, binding, peer_device_id, anchor, &commits)
+                apply_remote_page(
+                    connection,
+                    binding,
+                    peer_device_id,
+                    anchor,
+                    &commits,
+                    control.clone(),
+                )
             });
         }
         self.writer.run(move |connection| {
-            apply_remote_page(connection, binding, peer_device_id, anchor, &commits)
+            apply_remote_page(
+                connection,
+                binding,
+                peer_device_id,
+                anchor,
+                &commits,
+                control.clone(),
+            )
         })
     }
 }
@@ -50,6 +65,7 @@ fn apply_remote_page(
     peer_device_id: DeviceId,
     anchor: CommitCheckpoint,
     commits: &[RemoteCommit],
+    control: Option<std::sync::Arc<dyn crate::application::ports::ControlPlanePort>>,
 ) -> Result<AppliedRemoteCursor, Error> {
     let idle = commits.is_empty();
     let behavior = if idle {
@@ -113,7 +129,27 @@ fn apply_remote_page(
         params![target.peer, sequence, digest.as_slice(), now_ms()],
     )
     .map_err(storage)?;
-    tx.commit().map_err(storage)?;
+    let root = target
+        .local_root_uuid
+        .as_deref()
+        .ok_or_else(|| Error::conflict("replica root is absent"))?;
+    let root =
+        crate::domain::ids::LibraryRootId::from_uuid(uuid::Uuid::parse_str(root).map_err(storage)?);
+    let operation = super::durability::identity(
+        "remote-page",
+        &format!(
+            "{}:{}",
+            binding.library_id.as_uuid(),
+            commits.last().expect("nonempty page").mutation_id.as_uuid()
+        ),
+    );
+    super::durability::commit_projection(
+        control,
+        tx,
+        root,
+        crate::domain::library::durability::ChangeOrigin::Remote,
+        operation,
+    )?;
     Ok(AppliedRemoteCursor {
         sequence: CommitSeq::from_u64(u64::try_from(sequence).map_err(storage)?),
         digest,

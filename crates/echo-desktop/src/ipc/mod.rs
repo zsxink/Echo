@@ -13,6 +13,7 @@ pub mod effects;
 pub mod error;
 pub mod events;
 pub mod generate;
+pub mod library_recovery;
 pub mod sync;
 
 pub use dto::*;

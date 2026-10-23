@@ -1,7 +1,14 @@
 //! Portable control-plane filesystem adapter with bounded, root-constrained
-//! record IO and recovery before every public access.
+//! record IO. Read access never creates or acquires a write lock.
 
+#[cfg(test)]
+use crate::application::ports::ControlPlaneInventoryPort as _;
 use std::sync::{Arc, Mutex, MutexGuard};
+
+struct AccessGuard<'a> {
+    _thread: MutexGuard<'a, ()>,
+    _process: std::fs::File,
+}
 
 use super::portable_migration as migration;
 use super::registry::RootRegistry;
@@ -33,11 +40,27 @@ impl RootControlPlane {
         &self,
         root: LibraryRootId,
         allow_incompatible: bool,
-    ) -> Result<MutexGuard<'_, ()>, Error> {
+    ) -> Result<AccessGuard<'_>, Error> {
         let guard = self
             .access
             .lock()
             .map_err(|_| Error::unavailable("portable control plane", "access lock poisoned"))?;
+        let lock_path = migration::path(&self.registry, root, "echo/write.lock")?;
+        let parent = lock_path
+            .parent()
+            .ok_or_else(|| Error::conflict("missing library lock parent"))?;
+        std::fs::create_dir_all(parent)
+            .map_err(|e| Error::io("create library lock directory", e, parent))?;
+        let lock_path = migration::path(&self.registry, root, "echo/write.lock")?;
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .map_err(|e| Error::io("open library write lock", e, &lock_path))?;
+        fs2::FileExt::try_lock_exclusive(&file)
+            .map_err(|e| Error::io("acquire library write lock", e, &lock_path))?;
         migration::recover(&self.registry, root)?;
         if !allow_incompatible {
             let manifest = self.manifest_unlocked(root)?;
@@ -50,7 +73,42 @@ impl RootControlPlane {
                 }
             }
         }
-        Ok(guard)
+        if !allow_incompatible {
+            super::durability::recover(&self.registry, root)?;
+        }
+        Ok(AccessGuard {
+            _thread: guard,
+            _process: file,
+        })
+    }
+
+    fn prepare_read(&self, root: LibraryRootId, allow_incompatible: bool) -> Result<(), Error> {
+        // A read-only mount need not contain write.lock. Recovery is an explicit
+        // writer capability; readers overlay verified committed after-images.
+        if !allow_incompatible
+            && self
+                .manifest_unlocked(root)?
+                .is_some_and(|m| !m.is_compatible())
+        {
+            return Err(Error::UnsupportedMedia {
+                operation: "read portable library".to_owned(),
+                reason: "unsupported portable format".to_owned(),
+            });
+        }
+        if migration::read(
+            &self.registry,
+            root,
+            "echo/migrations/v1-v2-journal.json",
+            1024,
+        )?
+        .is_some()
+        {
+            return Err(Error::unavailable(
+                "portable migration",
+                "pending format migration requires writable recovery",
+            ));
+        }
+        Ok(())
     }
 
     fn manifest_unlocked(&self, root: LibraryRootId) -> Result<Option<LibraryManifest>, Error> {
@@ -74,6 +132,21 @@ impl RootControlPlane {
         root: LibraryRootId,
         relative: &str,
     ) -> Result<Option<PortableRecordDocument>, Error> {
+        let replay = super::durability::chain(&self.registry, root)?;
+        let records = replay
+            .checkpoint
+            .iter()
+            .flat_map(|c| &c.records)
+            .chain(replay.commits.iter().flat_map(|c| &c.batch.records));
+        let mut latest = None;
+        for record in records {
+            if migration::record_relative(record.record())? == relative {
+                latest = Some(PortableRecordDocument::V2(record.clone()));
+            }
+        }
+        if latest.is_some() {
+            return Ok(latest);
+        }
         let Some(raw) =
             migration::read(&self.registry, root, relative, migration::MAX_RECORD_BYTES)?
         else {
@@ -131,7 +204,7 @@ impl RootControlPlane {
     }
 
     fn list_unlocked(&self, root: LibraryRootId, kind: RecordKind) -> Result<Vec<String>, Error> {
-        let mut result = Vec::new();
+        let mut result = std::collections::BTreeMap::new();
         for relative in migration::record_files(&self.registry, root, kind)? {
             let Some(raw) =
                 migration::read(&self.registry, root, &relative, migration::MAX_RECORD_BYTES)?
@@ -139,13 +212,24 @@ impl RootControlPlane {
                 continue;
             };
             if serde_json::from_str::<PortableRecordDocument>(&raw)
-                .is_ok_and(|document| document.record().kind() == kind)
+                .is_ok_and(|d| d.record().kind() == kind)
             {
-                result.push(raw);
+                result.insert(relative, raw);
             }
         }
-        result.sort();
-        Ok(result)
+        let replay = super::durability::chain(&self.registry, root)?;
+        for record in replay
+            .checkpoint
+            .iter()
+            .flat_map(|c| &c.records)
+            .chain(replay.commits.iter().flat_map(|c| &c.batch.records))
+            .filter(|r| r.record().kind() == kind)
+        {
+            let raw = String::from_utf8(migration::encode(record, migration::MAX_RECORD_BYTES)?)
+                .map_err(|_| Error::conflict("portable encoding is not UTF-8"))?;
+            result.insert(migration::record_relative(record.record())?, raw);
+        }
+        Ok(result.into_values().collect())
     }
 
     fn write_json<T: serde::Serialize>(
@@ -160,6 +244,9 @@ impl RootControlPlane {
 }
 
 impl ControlPlanePort for RootControlPlane {
+    fn durability(&self) -> Option<&dyn crate::application::ports::LibraryDurabilityPort> {
+        Some(self)
+    }
     fn write_manifest(&self, root: LibraryRootId, manifest: &LibraryManifest) -> Result<(), Error> {
         let _guard = self.prepare(root, false)?;
         if !manifest.is_compatible() {
@@ -176,7 +263,7 @@ impl ControlPlanePort for RootControlPlane {
     }
 
     fn read_manifest(&self, root: LibraryRootId) -> Result<Option<LibraryManifest>, Error> {
-        let _guard = self.prepare(root, true)?;
+        self.prepare_read(root, true)?;
         Ok(self
             .manifest_unlocked(root)?
             .filter(LibraryManifest::is_compatible))
@@ -210,7 +297,7 @@ impl ControlPlanePort for RootControlPlane {
         kind: RecordKind,
         object_uuid: &str,
     ) -> Result<Option<PortableRecord>, Error> {
-        let _guard = self.prepare(root, false)?;
+        self.prepare_read(root, false)?;
         Ok(self
             .read_unlocked(root, kind, object_uuid)?
             .map(PortableRecordDocument::into_record))
@@ -230,12 +317,12 @@ impl ControlPlanePort for RootControlPlane {
     }
 
     fn list_records(&self, root: LibraryRootId, kind: RecordKind) -> Result<Vec<String>, Error> {
-        let _guard = self.prepare(root, false)?;
+        self.prepare_read(root, false)?;
         self.list_unlocked(root, kind)
     }
 
     fn manifest_state(&self, root: LibraryRootId) -> Result<ManifestState, Error> {
-        let _guard = self.prepare(root, true)?;
+        self.prepare_read(root, true)?;
         let Some(raw) = migration::read(
             &self.registry,
             root,
@@ -254,16 +341,6 @@ impl ControlPlanePort for RootControlPlane {
             });
         }
         Ok(ManifestState::Compatible(manifest))
-    }
-
-    fn records_present(&self, root: LibraryRootId) -> Result<bool, Error> {
-        let _guard = self.prepare(root, false)?;
-        for &kind in RecordKind::ALL {
-            if !migration::record_files(&self.registry, root, kind)?.is_empty() {
-                return Ok(true);
-            }
-        }
-        Ok(false)
     }
 
     fn control_plane_usable(&self, root: LibraryRootId) -> Result<bool, Error> {
@@ -306,7 +383,7 @@ impl ControlPlanePort for RootControlPlane {
         kind: RecordKind,
         object_uuid: &str,
     ) -> Result<Option<PortableRecordDocument>, Error> {
-        let _guard = self.prepare(root, false)?;
+        self.prepare_read(root, false)?;
         self.read_unlocked(root, kind, object_uuid)
     }
 
@@ -315,7 +392,7 @@ impl ControlPlanePort for RootControlPlane {
         root: LibraryRootId,
         kind: RecordKind,
     ) -> Result<Vec<PortableRecordDocument>, Error> {
-        let _guard = self.prepare(root, false)?;
+        self.prepare_read(root, false)?;
         self.list_unlocked(root, kind)?
             .into_iter()
             .map(|raw| {
@@ -333,7 +410,7 @@ impl ControlPlanePort for RootControlPlane {
         deleted_kind: RecordKind,
         object_uuid: &str,
     ) -> Result<Option<PortableRecordDocument>, Error> {
-        let _guard = self.prepare(root, false)?;
+        self.prepare_read(root, false)?;
         if deleted_kind == RecordKind::Tombstone {
             return Err(Error::conflict("invalid deleted kind"));
         }
@@ -381,10 +458,7 @@ impl ControlPlanePort for RootControlPlane {
         updates: &[PortableRecordEnvelope],
         manifest: &LibraryManifest,
     ) -> Result<(), Error> {
-        let _guard = self
-            .access
-            .lock()
-            .map_err(|_| Error::unavailable("portable migration", "access lock poisoned"))?;
+        let _guard = self.prepare(root, true)?;
         migration::apply(&self.registry, root, updates, manifest)
     }
 }
@@ -690,5 +764,68 @@ mod tests {
                 .len(),
             1
         );
+    }
+}
+
+impl crate::application::ports::LibraryDurabilityPort for RootControlPlane {
+    fn write_asset(&self, root: LibraryRootId, bytes: &[u8]) -> Result<String, Error> {
+        let _guard = self.prepare(root, false)?;
+        super::durability::write_asset(&self.registry, root, bytes)
+    }
+    fn read_asset(&self, root: LibraryRootId, hash: &str) -> Result<Option<Vec<u8>>, Error> {
+        self.prepare_read(root, false)?;
+        super::durability::read_asset(&self.registry, root, hash)
+    }
+    fn commit(
+        &self,
+        root: LibraryRootId,
+        batch: &crate::domain::library::durability::LibraryBatch,
+    ) -> Result<crate::domain::library::durability::CommitOutcome, Error> {
+        let _guard = self.prepare(root, false)?;
+        super::durability::commit(&self.registry, root, batch)
+    }
+    fn recover(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<crate::domain::library::durability::LibraryReplay, Error> {
+        let _guard = self.prepare(root, true)?;
+        super::durability::recover(&self.registry, root)
+    }
+    fn read_operation(
+        &self,
+        root: LibraryRootId,
+        id: uuid::Uuid,
+    ) -> Result<Option<crate::domain::library::durability::LibraryCommit>, Error> {
+        self.prepare_read(root, false)?;
+        super::durability::read_operation(&self.registry, root, id)
+    }
+    fn operation_status(
+        &self,
+        root: LibraryRootId,
+        id: uuid::Uuid,
+    ) -> Result<Option<crate::domain::library::durability::CommitOutcome>, Error> {
+        self.prepare_read(root, false)?;
+        super::durability::operation_status(&self.registry, root, id)
+    }
+}
+
+impl crate::application::ports::ControlPlaneInventoryPort for RootControlPlane {
+    fn records_present(&self, root: LibraryRootId) -> Result<bool, Error> {
+        self.prepare_read(root, false)?;
+        let replay = super::durability::chain(&self.registry, root)?;
+        if replay
+            .checkpoint
+            .as_ref()
+            .is_some_and(|c| !c.records.is_empty())
+            || replay.commits.iter().any(|c| !c.batch.records.is_empty())
+        {
+            return Ok(true);
+        }
+        for &kind in RecordKind::ALL {
+            if !migration::record_files(&self.registry, root, kind)?.is_empty() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }

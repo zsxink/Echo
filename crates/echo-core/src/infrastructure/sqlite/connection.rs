@@ -19,6 +19,7 @@ use crate::error::Error;
 use super::support::{now_ms, storage};
 
 mod migrations {
+    pub const LIBRARY_DURABILITY: &str = include_str!("migrations/0028_library_durability.sql");
     pub const RESOURCE_RETENTION: &str = include_str!("migrations/0023_resource_retention.sql");
     pub const OBJECT_CHANGE_TIME: &str = include_str!("migrations/0024_object_change_time.sql");
     pub const IGNORE_DERIVED_SONG_AUDIO_CONFLICTS: &str =
@@ -128,6 +129,7 @@ pub(crate) fn apply_migrations(connection: &mut Connection) -> Result<(), Error>
             (25, migrations::IGNORE_DERIVED_SONG_AUDIO_CONFLICTS),
             (26, migrations::SYNC_SESSION_INTENT),
             (27, migrations::SYNC_CACHE_CLEANUP),
+            (28, migrations::LIBRARY_DURABILITY),
         ],
     )
 }

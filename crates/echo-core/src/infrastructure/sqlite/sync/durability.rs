@@ -1,0 +1,235 @@
+//! Root-scoped recovery facts for LAN writes. No credential or endpoint tables
+//! are exported. Confirmed payloads and immutable local events are kept apart.
+
+use rusqlite::{params, Connection, Transaction};
+use serde_json::Value;
+use std::sync::Arc;
+use uuid::Uuid;
+
+use super::super::support::storage;
+use crate::application::ports::ControlPlanePort;
+use crate::domain::ids::{LibraryRootId, OperationId};
+use crate::domain::library::durability::{
+    ChangeOrigin, CommitStatus, DurableStateChange, LibraryBatch, StateKind,
+};
+use crate::error::Error;
+
+/// Stable, namespace-separated local fact identity; it is not a LAN mutation.
+pub(crate) fn identity(namespace: &str, identity: &str) -> Uuid {
+    let mut hash = blake3::Hasher::new();
+    hash.update(namespace.as_bytes());
+    hash.update(&[0]);
+    hash.update(identity.as_bytes());
+    let mut bytes = [0; 16];
+    bytes.copy_from_slice(&hash.finalize().as_bytes()[..16]);
+    Uuid::from_bytes(bytes)
+}
+
+fn values(connection: &Connection, sql: &str, root: &str) -> Result<Vec<Value>, Error> {
+    let mut statement = connection.prepare(sql).map_err(storage)?;
+    let rows = statement
+        .query_map(params![root], |row| row.get::<_, String>(0))
+        .map_err(storage)?;
+    rows.map(|row| serde_json::from_str(&row.map_err(storage)?).map_err(storage))
+        .collect()
+}
+
+/// Portable sync facts, scoped to one local library. The active protocol context
+/// and archived contexts share a layout, but trust is intentionally not restored.
+pub(crate) fn export_sync_state(
+    connection: &Connection,
+    root: LibraryRootId,
+) -> Result<Vec<DurableStateChange>, Error> {
+    let root_string = root.to_string();
+    let mut state = super::super::durability_backfill::export_playback_events(connection, root)?;
+    // Every mutation keeps its exact original body, author, predecessor, frozen
+    // time and revision, including terminal outcomes. A new author cannot send it.
+    for payload in values(connection, "SELECT json_object('schema','echo.sync.mutation.v1','mutation_id',mutation_id,'author',origin_device_id,'sequence',origin_seq,'predecessor',previous_mutation_id,'object_type',object_type,'object_uuid',object_uuid,'operation',operation,'revision',local_revision,'base_version',base_object_version,'payload',json(payload_json),'payload_digest',payload_digest,'status',status,'outcome',CASE WHEN outcome_json IS NULL THEN NULL ELSE json(outcome_json) END,'changed_at_ms',created_at,'resources',json(resource_refs_json)) FROM sync_mutations WHERE local_root_uuid=?1 ORDER BY origin_device_id,origin_seq,mutation_id", &root_string)? {
+        let id = parse_uuid(&payload, "mutation_id")?;
+        state.push(DurableStateChange::new(StateKind::Pending, id, payload));
+    }
+    let active: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM sync_active_context WHERE singleton=1 AND local_root_uuid=?1)", params![root_string], |row| row.get(0)).map_err(storage)?;
+    // These tables are already scoped by the selected binding. Never export
+    // another root's active ledger while backing up an inactive local library.
+    let prefix = if active { "" } else { "archived_" };
+    let scope = if active {
+        "?1 IS NOT NULL"
+    } else {
+        "context_root=?1"
+    };
+    let queries = [
+        (StateKind::Confirmed, "object", format!("SELECT json_object('schema','echo.sync.confirmed.v1','object_type',object_type,'object_uuid',object_uuid,'version',object_version,'sequence',commit_seq,'payload',CASE WHEN payload_json IS NULL THEN NULL ELSE json(payload_json) END,'tombstone',json(CASE WHEN is_tombstone=1 THEN 'true' ELSE 'false' END),'changed_at_ms',changed_at_ms) FROM {prefix}sync_object_versions WHERE {scope} ORDER BY object_type,object_uuid")),
+        (StateKind::Alias, "song-alias", format!("SELECT json_object('schema','echo.sync.song-alias.v1','alias',alias_song_uuid,'canonical',canonical_song_uuid,'sequence',commit_seq) FROM {prefix}sync_song_aliases WHERE {scope} ORDER BY alias_song_uuid")),
+        (StateKind::Alias, "member-alias", format!("SELECT json_object('schema','echo.sync.member-alias.v1','playlist',playlist_uuid,'alias',alias_member_uuid,'canonical',canonical_member_uuid,'sequence',commit_seq) FROM {prefix}sync_member_aliases WHERE {scope} ORDER BY playlist_uuid,alias_member_uuid")),
+        (StateKind::SyncLedger, "commit", format!("SELECT json_object('schema','echo.sync.commit.v1','sequence',commit_seq,'library',library_id,'authority',authority_id,'epoch',epoch,'author',origin_device_id,'mutation_id',mutation_id,'body',json(canonical_json),'previous_digest',lower(hex(previous_digest)),'digest',lower(hex(commit_digest)),'publication',publication_state) FROM {prefix}sync_commits WHERE {scope} ORDER BY commit_seq")),
+        (StateKind::Receipt, "receipt", format!("SELECT json_object('schema','echo.sync.receipt.v1','author',origin_device_id,'mutation_id',mutation_id,'payload_digest',payload_digest,'outcome',json(outcome_json),'sequence',commit_seq) FROM {prefix}sync_inbox WHERE {scope} ORDER BY origin_device_id,mutation_id")),
+        (StateKind::Cursor, "origin", format!("SELECT json_object('schema','echo.sync.origin-cursor.v1','author',origin_device_id,'sequence',origin_seq,'mutation_id',last_mutation_id) FROM {prefix}sync_origin_cursors WHERE {scope} ORDER BY origin_device_id")),
+        (StateKind::Cursor, "peer", format!("SELECT json_object('schema','echo.sync.peer-cursor.v1','peer',peer_device_id,'sequence',applied_commit_seq,'digest',lower(hex(applied_digest))) FROM {prefix}sync_peer_cursors WHERE {scope} ORDER BY peer_device_id")),
+        (StateKind::Conflict, "conflict", format!("SELECT json_object('schema','echo.sync.conflict.v1','id',conflict_id,'object_type',object_type,'object_uuid',object_uuid,'replaced_version',replaced_version,'accepted_version',accepted_version,'replaced',json(replaced_payload_json),'accepted',json(accepted_payload_json),'resolved_at',resolved_at) FROM {prefix}sync_conflicts WHERE {scope} ORDER BY conflict_id")),
+    ];
+    for (kind, namespace, query) in queries {
+        for payload in values(connection, &query, &root_string)? {
+            let key = match namespace {
+                "object" => format!(
+                    "{}:{}",
+                    text(&payload, "object_type")?,
+                    text(&payload, "object_uuid")?
+                ),
+                "song-alias" => text(&payload, "alias")?.to_owned(),
+                "member-alias" => format!(
+                    "{}:{}",
+                    text(&payload, "playlist")?,
+                    text(&payload, "alias")?
+                ),
+                "commit" | "receipt" => format!(
+                    "{}:{}",
+                    text(&payload, "author")?,
+                    text(&payload, "mutation_id")?
+                ),
+                "origin" => text(&payload, "author")?.to_owned(),
+                "peer" => text(&payload, "peer")?.to_owned(),
+                "conflict" => text(&payload, "id")?.to_owned(),
+                _ => unreachable!(),
+            };
+            state.push(DurableStateChange::new(
+                kind,
+                identity(namespace, &key),
+                payload,
+            ));
+        }
+    }
+    // Physical associations only become ready after verified publication. The
+    // full publication also preserves pending claims and their retained bytes.
+    for payload in values(connection, "SELECT json_object('schema','echo.sync.resource-publication.v1','operation',operation_uuid,'publication',json(publication_json),'completed',json(CASE WHEN completed=1 THEN 'true' ELSE 'false' END)) FROM sync_remote_publications WHERE local_root_uuid=?1 ORDER BY operation_uuid", &root_string)? {
+        state.push(DurableStateChange::new(StateKind::ResourceLocation, parse_uuid(&payload,"operation")?, payload));
+    }
+    for payload in values(connection, "SELECT json_object('schema','echo.sync.local-origin.v1','author',origin_device_id,'sequence',origin_seq,'mutation_id',last_mutation_id) FROM sync_local_origin_cursors WHERE local_root_uuid=?1 ORDER BY origin_device_id", &root_string)? {
+        state.push(DurableStateChange::new(StateKind::Cursor, identity("local-origin",text(&payload,"author")?), payload));
+    }
+    Ok(state)
+}
+
+/// The SQL transaction has only planned a result. Its durable commit is inside
+/// the Application coordinator's projection closure, after the directory commit.
+pub(crate) fn commit_projection(
+    control: Option<Arc<dyn ControlPlanePort>>,
+    tx: Transaction<'_>,
+    root: LibraryRootId,
+    origin: ChangeOrigin,
+    operation: Uuid,
+) -> Result<(), Error> {
+    let Some(control) = control else {
+        // Unconfigured adapters are used by isolated repository contracts only.
+        // Production assembly installs the control plane before opening a root.
+        #[cfg(test)]
+        return tx.commit().map_err(storage);
+        #[cfg(not(test))]
+        return Err(Error::unavailable(
+            "library durability",
+            "directory commit adapter is not configured",
+        ));
+    };
+    let manifest = control
+        .read_manifest(root)?
+        .ok_or_else(|| Error::conflict("LAN write requires a portable library manifest"))?;
+    let mut batch = LibraryBatch::new(
+        operation,
+        manifest.library_id,
+        origin,
+        super::super::durability_backfill::export_library_records(&tx, root)?,
+    );
+    enrich_recovery_batch(&tx, root, &mut batch)?;
+    // An uncertain earlier commit is retried under its immutable operation, not
+    // reconstructed with new wall-clock values or fresh conflict identities.
+    if control
+        .durability()
+        .ok_or_else(|| {
+            Error::unavailable(
+                "library durability",
+                "directory commit adapter is not configured",
+            )
+        })?
+        .operation_status(root, operation)?
+        .is_some()
+    {
+        batch = control
+            .durability()
+            .ok_or_else(|| {
+                Error::unavailable(
+                    "library durability",
+                    "directory commit adapter is not configured",
+                )
+            })?
+            .read_operation(root, operation)?
+            .ok_or_else(|| {
+                Error::conflict("saved LAN operation is absent from the verified directory chain")
+            })?
+            .batch;
+    }
+    let (outcome, projected) = crate::application::library_commit::commit_then_project(
+        control.as_ref(),
+        root,
+        &batch,
+        move |_| tx.commit().map_err(storage),
+    )?;
+    if projected.is_none() {
+        let operation = OperationId::from_uuid(operation);
+        let reason = Error::unavailable(
+            "LAN projection",
+            outcome
+                .reason
+                .unwrap_or_else(|| "saved directory operation requires recovery".to_owned()),
+        );
+        return Err(if outcome.status == CommitStatus::SavedPendingRecovery {
+            Error::saved_pending_recovery(operation, reason)
+        } else {
+            Error::saved_pending_projection(operation, reason)
+        });
+    }
+    Ok(())
+}
+
+pub(crate) fn active_root(connection: &Connection) -> Result<LibraryRootId, Error> {
+    let root: String = connection
+        .query_row(
+            "SELECT local_root_uuid FROM sync_active_context WHERE singleton=1",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    Uuid::parse_str(&root)
+        .map(LibraryRootId::from_uuid)
+        .map_err(storage)
+}
+fn text<'a>(payload: &'a Value, name: &str) -> Result<&'a str, Error> {
+    payload
+        .get(name)
+        .and_then(Value::as_str)
+        .ok_or_else(|| Error::conflict(format!("invalid sync recovery {name}")))
+}
+fn parse_uuid(payload: &Value, name: &str) -> Result<Uuid, Error> {
+    Uuid::parse_str(text(payload, name)?).map_err(storage)
+}
+
+/// Capture the actual events allocated by a planned SQL projection. This
+/// runs before the directory commit; reconstructing candidates later would lose
+/// original IDs, predecessors, base versions, edit times and immutable bodies.
+pub(crate) fn enrich_recovery_batch(
+    connection: &Connection,
+    root: LibraryRootId,
+    batch: &mut LibraryBatch,
+) -> Result<(), Error> {
+    let exact = export_sync_state(connection, root)?;
+    for fact in exact {
+        if let Some(existing) = batch
+            .state
+            .iter_mut()
+            .find(|item| item.kind == fact.kind && item.id == fact.id)
+        {
+            *existing = fact;
+        } else {
+            batch.state.push(fact);
+        }
+    }
+    Ok(())
+}

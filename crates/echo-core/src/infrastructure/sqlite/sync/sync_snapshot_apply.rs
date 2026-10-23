@@ -123,6 +123,7 @@ impl ReplicaSnapshotApplyPort for SqliteDatabase {
     ) -> Result<AppliedSnapshotPage, Error> {
         let body = validate_page(page)?;
         let page = page.clone();
+        let control = self.library_control();
         self.writer.run(move |connection| {
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
             let root = replica_root(&tx, page.checkpoint.binding)?;
@@ -193,7 +194,15 @@ impl ReplicaSnapshotApplyPort for SqliteDatabase {
             } else {
                 tx.execute("UPDATE sync_replica_snapshot_sessions SET next_page_index=?2 WHERE token=?1",params![page.snapshot_token,page.next_page_index]).map_err(storage)?;
             }
-            tx.commit().map_err(storage)?;
+            if page.next_page_index.is_none() {
+                let root_id = crate::domain::ids::LibraryRootId::from_uuid(uuid::Uuid::parse_str(&root).map_err(storage)?);
+                let operation = super::durability::identity("snapshot", &format!("{}:{}",page.checkpoint.binding.library_id.as_uuid(),page.snapshot_token));
+                super::durability::commit_projection(control,tx,root_id,crate::domain::library::durability::ChangeOrigin::Remote,operation)?;
+            } else {
+                // Unverified pages remain private staging; no business object or
+                // applied cursor is published until the complete root commits.
+                tx.commit().map_err(storage)?;
+            }
             Ok(AppliedSnapshotPage {
                 next_page_index: page.next_page_index,
                 checkpoint: page.next_page_index.is_none().then_some(page.checkpoint),

@@ -147,6 +147,19 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly activeRootPath?: string;\n");
     out.push_str("}\n\n");
 
+    out.push_str("export type RecoveryIssueReasonDto = 'missingSong' | 'missingPlaylist' | 'identityConflict' | 'tombstonedDependency' | 'requiresStateRecovery';\n\n");
+    out.push_str("export interface LibraryRecoveryIssueDto {\n");
+    out.push_str("  readonly target: string;\n");
+    out.push_str("  readonly reason: RecoveryIssueReasonDto;\n");
+    out.push_str("}\n\n");
+    out.push_str("export interface LibraryRecoveryStatusDto {\n");
+    out.push_str("  readonly root: string;\n");
+    out.push_str("  readonly directoryHeadSeq: number;\n");
+    out.push_str("  readonly projectedSeq: number;\n");
+    out.push_str("  readonly needsProjection: boolean;\n");
+    out.push_str("  readonly legacyUnverified: boolean;\n");
+    out.push_str("  readonly issues: readonly LibraryRecoveryIssueDto[];\n");
+    out.push_str("}\n\n");
     out.push_str("export interface ScanSnapshot {\n");
     out.push_str("  readonly generation: number;\n");
     out.push_str("  readonly cancelled: boolean;\n");
@@ -176,6 +189,7 @@ pub fn generated_typescript() -> String {
     out.push_str("}\n\n");
 
     out.push_str("export type ImportResultDto =\n");
+    out.push_str("  | { readonly kind: 'savedPending'; readonly operationId: string; readonly songId: string; readonly relativePath: string; readonly renamed: boolean; readonly code: string; readonly message: string }\n");
     out.push_str("  | { readonly kind: 'imported'; readonly operationId: string; readonly songId: string; readonly relativePath: string; readonly renamed: boolean }\n");
     out.push_str("  | { readonly kind: 'duplicate'; readonly existingSongId: string }\n");
     out.push_str("  | { readonly kind: 'skipped' }\n");
@@ -250,6 +264,9 @@ pub fn generated_typescript() -> String {
     }
     out.push_str("  readonly get_bootstrap_state: BootstrapSnapshot;\n");
     out.push_str("  readonly library_status: LibraryStatus;\n");
+    out.push_str("  readonly retry_library_operation: void;\n");
+    out.push_str("  readonly library_recovery_status: LibraryRecoveryStatusDto;\n");
+    out.push_str("  readonly retry_library_projection: void;\n");
     out.push_str("  readonly all_songs: PagedSongs;\n");
     out.push_str("  readonly search: PagedSongs;\n");
     out.push_str("  readonly favorites: PagedSongs;\n");

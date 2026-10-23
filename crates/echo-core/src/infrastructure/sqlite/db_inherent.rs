@@ -44,6 +44,7 @@ impl SqliteDatabase {
             readers.push(open_reader(&path)?);
         }
         Ok(Self {
+            library_control: Mutex::new(None),
             path,
             writer: SqliteWriteActor::spawn(writer),
             readers: ReaderPool::new(readers),

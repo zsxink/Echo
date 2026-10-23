@@ -124,10 +124,13 @@ fn sync_import_rollback_leaves_no_song_resource_or_queued_snapshot_and_recovers(
             &[crate::application::ports::ImportSource::new("recover").unwrap()],
         )
         .unwrap();
-    assert!(matches!(
-        report.results[0],
-        crate::application::import::ImportOutcome::Failed { .. }
-    ));
+    let crate::application::import::ImportOutcome::SavedPending { operation, song: reserved, code, .. } = &report.results[0] else {
+        panic!("the directory owns the saved import even though SQLite rolled back");
+    };
+    assert_eq!(*code, "library_saved_pending_projection");
+    let durable = deps.control.durability().unwrap();
+    let saved = durable.read_operation(stack.root, operation.as_uuid()).unwrap().unwrap();
+    assert!(saved.batch.records.iter().any(|record| matches!(record.record(), crate::domain::library::PortableRecord::Song(song) if song.song_uuid == reserved.as_uuid())));
     assert!(stack.database.all_in_root(stack.root).unwrap().is_empty());
     assert_eq!(
         stack.database.pending_local_mutations(32).unwrap().len(),
@@ -155,11 +158,15 @@ fn sync_import_rollback_leaves_no_song_resource_or_queued_snapshot_and_recovers(
         .library_dir
         .join("media/Artist/Artist - Recover.flac")
         .is_file());
-    crate::application::recover::RecoverOperations::new(&stack.deps())
+    deps.uow = stack.database.clone();
+    crate::application::recover::RecoverOperations::new(&deps)
         .run(stack.root)
         .unwrap();
     let songs = stack.database.all_in_root(stack.root).unwrap();
     assert_eq!(songs.len(), 1);
+    assert_eq!(songs[0].id(), *reserved, "recovery reuses the saved identity");
+    assert_eq!(durable.read_operation(stack.root, operation.as_uuid()).unwrap().unwrap(), saved,
+        "recovery preserves the frozen directory operation");
     let queue = stack.database.pending_local_mutations(32).unwrap();
     let mutation = queue
         .iter()

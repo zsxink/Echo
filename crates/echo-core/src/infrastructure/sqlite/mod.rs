@@ -25,7 +25,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Condvar, Mutex};
+use std::sync::{mpsc, Arc, Condvar, Mutex};
 
 use rusqlite::params;
 use rusqlite::{Connection, OptionalExtension, Transaction};
@@ -52,6 +52,8 @@ pub(crate) mod actor;
 pub(crate) mod connection;
 pub(crate) mod conversion;
 pub(crate) mod device_state;
+pub(crate) mod durability_backfill;
+pub(crate) mod durability_projection;
 pub(crate) mod query;
 pub(crate) mod statements;
 pub(crate) mod support;
@@ -134,6 +136,7 @@ impl ReaderPool {
 /// write connection plus three read-only WAL connections. The type exposes no
 /// `rusqlite` connection to application callers.
 pub struct SqliteDatabase {
+    library_control: Mutex<Option<Arc<dyn crate::application::ports::ControlPlanePort>>>,
     path: PathBuf,
     writer: SqliteWriteActor,
     readers: ReaderPool,

@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { bridge } from "../../bridge";
+import { savedLibraryOperation } from "../../bridge/libraryPersistence";
 
 /**
  * "导入" inside the immersive surface when the current entry is a
@@ -18,8 +19,8 @@ export function ImmersiveImport() {
     try {
       const res = await bridge.call("import_current_temporary_file");
       setResult(importResultText(res.kind));
-    } catch {
-      setResult("导入失败");
+    } catch (error) {
+      setResult(savedLibraryOperation(error)?.message ?? "导入失败");
     } finally {
       setImporting(false);
     }
@@ -50,6 +51,8 @@ function importResultText(kind: string): string {
   switch (kind) {
     case "imported":
       return "已导入到音乐库";
+    case "savedPending":
+      return "音乐已保存，等待恢复；无需重新导入";
     case "duplicate":
       return "音乐库已有相同歌曲";
     case "skipped":

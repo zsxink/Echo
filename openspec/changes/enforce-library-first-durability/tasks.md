@@ -4,11 +4,11 @@
 
 ## 1. 固化契约与可失败测试基线
 
-- [ ] 1.1 按 design 证据重新用 CodeGraph 核对所有本地/同步写入口，交付“入口→资料库提交→投影→成功”清单，覆盖 CRUD、成员、喜欢、统计、封面、写回、删除/撤销、快照、增量、ACK 和主确认；验证每个入口有归属层与当前失败窗口（LD-01/10）。
-- [ ] 1.2 新增合成 issue #72 fixture（15 songs、2 portable songs、11 favorites、3 members、无 portable playlist），分别提供可证明 DB/alias 与不可证明孤立引用版本；验证 fixture 无真实用户路径、无真实资源、能稳定复现旧恢复丢关系（LD-04/05/06）。
-- [ ] 1.3 新增统一规范用户状态比较器及 `library_durability` 测试组，比较 UUID、路径/哈希/added_at、喜欢 false/true、空歌单、成员 UUID/顺序/时间、资源、覆盖、设备桶、typed tombstone/alias、pending；以 `cargo test -p echo-core library_durability` 验证失败定位，不能只比计数（LD-03）。
-- [ ] 1.4 更新 `docs/DESIGN.md`、`docs/PRODUCT.md`、`docs/ROADMAP.md` 与 `openspec/CODE_STANDARDS.md` §5 的 source-of-truth、完整目录备份和重装恢复原则，核对旧空目录加入描述与现行 LAN 本地合并一致（`CODE_STANDARDS.md` 现仍写“首次加入只接受空目录”）；交付文档 diff 与规格对照，不能把规划写成已验收（LD-09/10）。
-- [ ] 1.5 以 `main` 已发布实现为唯一现状基线复核 design 的证据表：修正不存在或已移动的路径（`infrastructure/filesystem/migration` → `portable_migration.rs`；`sync_provisioner/remote_resources.rs` → `resource_publication.rs` / `resource_candidates.rs`），并声明行号只作导航；验证每条证据都能在干净检出上打开（LD-10）。
+- [x] 1.1 按 design 证据重新用 CodeGraph 核对所有本地/同步写入口，交付“入口→资料库提交→投影→成功”清单，覆盖 CRUD、成员、喜欢、统计、封面、写回、删除/撤销、快照、增量、ACK 和主确认；验证每个入口有归属层与当前失败窗口（LD-01/10）。
+- [x] 1.2 新增合成 issue #72 fixture（15 songs、2 portable songs、11 favorites、3 members、无 portable playlist），分别提供可证明 DB/alias 与不可证明孤立引用版本；验证 fixture 无真实用户路径、无真实资源、能稳定复现旧恢复丢关系（LD-04/05/06）。
+- [x] 1.3 新增统一规范用户状态比较器及 `library_durability` 测试组，比较 UUID、路径/哈希/added_at、喜欢 false/true、空歌单、成员 UUID/顺序/时间、资源、覆盖、设备桶、typed tombstone/alias、pending；以 `cargo test -p echo-core library_durability` 验证失败定位，不能只比计数（LD-03）。
+- [x] 1.4 更新 `docs/DESIGN.md`、`docs/PRODUCT.md`、`docs/ROADMAP.md` 与 `openspec/CODE_STANDARDS.md` §5 的 source-of-truth、完整目录备份和重装恢复原则，核对旧空目录加入描述与现行 LAN 本地合并一致（`CODE_STANDARDS.md` 现仍写“首次加入只接受空目录”）；交付文档 diff 与规格对照，不能把规划写成已验收（LD-09/10）。
+- [x] 1.5 以 `main` 已发布实现为唯一现状基线复核 design 的证据表：修正不存在或已移动的路径（`infrastructure/filesystem/migration` → `portable_migration.rs`；`sync_provisioner/remote_resources.rs` → `resource_publication.rs` / `resource_candidates.rs`），并声明行号只作导航；验证每条证据都能在干净检出上打开（LD-10）。
 
 ## 2. 领域提交模型与端口
 
@@ -77,7 +77,7 @@
 ## 9. 类型化 IPC 与用户可见恢复状态
 
 - [ ] 9.1 Core→desktop→IPC 提供未保存、已保存待恢复、已保存待投影、已完成、部分恢复及稳定操作身份/分类原因；运行 `cargo run -p echo-desktop --bin echo-generate-ipc` 并核对生成物，序列化测试覆盖各态，不能手改生成类型（LD-01/06/10）。
-- [ ] 9.5 为每个新增错误码补齐前端 message key 映射（不得把 key 字符串直接当用户文案显示），并把新码显式列入 `ErrorPolicy` 重试判定表，以断言钉住；验证 `pnpm --filter @echo/desktop typecheck` 与 IPC 漂移检查通过（LD-01/06/10）。
+- [x] 9.5 为每个新增错误码补齐前端 message key 映射（不得把 key 字符串直接当用户文案显示），并把新码显式列入 `ErrorPolicy` 重试判定表，以断言钉住；验证 `pnpm --filter @echo/desktop typecheck` 与 IPC 漂移检查通过（LD-01/06/10）。
 - [ ] 9.2 在现有资料库设置/错误详情中呈现回填进度、只读、未关联记录、待投影与同操作重试；喜欢/歌单乐观状态按提交结果处理，统计错误不中断播放但可查看；通过 React 测试验证焦点、键盘、错误、重新打开与批量逐项反馈（LD-01/06）。
 - [ ] 9.3 更新界面术语和恢复说明：完整音乐库包含 `media/`+`echo/`，只保留音频无法推断喜欢/歌单；同步凭据需重新配置，不能把缺历史资料显示成恢复成功；验证文案不泄露底层 SQL 或凭据（LD-03/06/09）。
 - [ ] 9.4 执行 `pnpm --filter @echo/desktop format:check`、`pnpm --filter @echo/desktop lint`、`pnpm --filter @echo/desktop typecheck`、`pnpm --filter @echo/desktop test`、`pnpm --filter @echo/desktop build`，并验证 UI 消费全部新增类型且无未处理异步错误（LD-10）。

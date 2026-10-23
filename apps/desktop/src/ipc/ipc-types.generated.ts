@@ -296,6 +296,7 @@ export interface SongDetailView {
 }
 
 export type ImportResultDto =
+  | { readonly kind: 'savedPending'; readonly operationId: string; readonly songId: string; readonly relativePath: string; readonly renamed: boolean; readonly code: string; readonly message: string }
   | { readonly kind: 'imported'; readonly operationId: string; readonly songId: string; readonly relativePath: string; readonly renamed: boolean }
   | { readonly kind: 'duplicate'; readonly existingSongId: string }
   | { readonly kind: 'skipped' }
@@ -360,6 +361,7 @@ export interface IpcCommandResultMap {
   readonly retry_audio_effects: EffectsSnapshotDto;
   readonly get_bootstrap_state: BootstrapSnapshot;
   readonly library_status: LibraryStatus;
+  readonly retry_library_operation: void;
   readonly all_songs: PagedSongs;
   readonly search: PagedSongs;
   readonly favorites: PagedSongs;
