@@ -940,7 +940,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "echo-app"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "axum",
  "blake3",
@@ -972,7 +972,7 @@ dependencies = [
 
 [[package]]
 name = "echo-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "blake3",
  "image",
@@ -995,7 +995,7 @@ dependencies = [
 
 [[package]]
 name = "echo-desktop"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "echo-core",
  "fs2",
@@ -1015,7 +1015,7 @@ dependencies = [
 
 [[package]]
 name = "echo-sync"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "axum",
  "blake3",
