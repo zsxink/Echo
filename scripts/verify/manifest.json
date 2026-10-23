@@ -3350,6 +3350,18 @@
       "manifest": "tests/scenarios/LE-R01-S04.yaml"
     },
     {
+      "id": "LE-R01-S05",
+      "title": "切换视图清空搜索",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/LibraryWorkspace.test.tsx -t \"clears the search when switching between library views\"",
+      "manifest": "tests/scenarios/LE-R01-S05.yaml"
+    },
+    {
+      "id": "LE-R01-S06",
+      "title": "切换歌手或专辑目录清空搜索",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/CollectionDirectory.test.tsx -t \"clears the search when switching between artist and album directories\"",
+      "manifest": "tests/scenarios/LE-R01-S06.yaml"
+    },
+    {
       "id": "LE-R02-S01",
       "title": "搜索多个字段",
       "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_search_matches_full_query",
@@ -4386,6 +4398,12 @@
       "title": "歌单详情搜索末页不再续页",
       "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"stops requesting pages once the playlist search reaches the last page\"",
       "manifest": "tests/scenarios/PM-R09-S04.yaml"
+    },
+    {
+      "id": "PM-R09-S05",
+      "title": "歌单切换清空搜索",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"clears the search when switching to another playlist\"",
+      "manifest": "tests/scenarios/PM-R09-S05.yaml"
     },
     {
       "id": "PM-R10-S01",
