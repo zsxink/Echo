@@ -308,7 +308,10 @@ export function SettingsView({ onClose }: { readonly onClose: () => void }) {
                       {status.scanning || rescanning ? "正在扫描…" : "重新扫描"}
                     </button>
                   </div>
-                  <LibraryRecoveryStatus root={status.activeRoot} scanning={status.scanning || rescanning} />
+                  <LibraryRecoveryStatus
+                    root={status.activeRoot}
+                    scanning={status.scanning || rescanning}
+                  />
                 </section>
                 <section className="settings-section">
                   <header className="settings-section-head">

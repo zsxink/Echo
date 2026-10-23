@@ -19,7 +19,13 @@ pub trait LibraryHistoryPort: Send + Sync {
         commits: &LibraryReplay,
     ) -> Result<(), Error>;
     /// Read the applied directory watermark and typed retained recovery gaps.
-    fn projection_status(&self, root: LibraryRootId) -> Result<crate::domain::library::durability::LibraryProjectionStatus, Error>;
+    fn projection_status(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<crate::domain::library::durability::LibraryProjectionStatus, Error>;
     /// Read complete after-images for dependency retry and recovery inspection.
-    fn read_recovery_records(&self, root: LibraryRootId) -> Result<crate::domain::library::durability::LibraryRecoveryRecords, Error>;
+    fn read_recovery_records(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<crate::domain::library::durability::LibraryRecoveryRecords, Error>;
 }

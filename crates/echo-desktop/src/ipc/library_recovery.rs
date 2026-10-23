@@ -45,13 +45,27 @@ pub struct LibraryRecoveryStatusDto {
 }
 
 impl LibraryRecoveryStatusDto {
-    pub(crate) fn from_projection(root: String, head: u64, status: LibraryProjectionStatus) -> Result<Self, echo_core::error::Error> {
-        let issues = status.unresolved.into_iter().map(|issue| {
-            Ok(LibraryRecoveryIssueDto {
-                target: serde_json::to_string(&issue.target).map_err(|source| echo_core::error::Error::unavailable_with_source("recovery status", "cannot encode typed identity", source))?,
-                reason: issue.reason.into(),
+    pub(crate) fn from_projection(
+        root: String,
+        head: u64,
+        status: LibraryProjectionStatus,
+    ) -> Result<Self, echo_core::error::Error> {
+        let issues = status
+            .unresolved
+            .into_iter()
+            .map(|issue| {
+                Ok(LibraryRecoveryIssueDto {
+                    target: serde_json::to_string(&issue.target).map_err(|source| {
+                        echo_core::error::Error::unavailable_with_source(
+                            "recovery status",
+                            "cannot encode typed identity",
+                            source,
+                        )
+                    })?,
+                    reason: issue.reason.into(),
+                })
             })
-        }).collect::<Result<_, echo_core::error::Error>>()?;
+            .collect::<Result<_, echo_core::error::Error>>()?;
         Ok(Self {
             root,
             directory_head_seq: head,

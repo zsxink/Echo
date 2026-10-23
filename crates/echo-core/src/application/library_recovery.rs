@@ -26,6 +26,18 @@ mod tests {
     }
 
     impl LibraryHistoryPort for Projection {
+        fn projection_status(
+            &self,
+            _: LibraryRootId,
+        ) -> Result<crate::domain::library::durability::LibraryProjectionStatus, Error> {
+            Ok(Default::default())
+        }
+        fn read_recovery_records(
+            &self,
+            _: LibraryRootId,
+        ) -> Result<crate::domain::library::durability::LibraryRecoveryRecords, Error> {
+            Ok(Default::default())
+        }
         fn capture_library_history(
             &self,
             _: LibraryRootId,
@@ -158,6 +170,7 @@ impl<'a> RetryLibraryOperation<'a> {
         let durable = self.control.durability().ok_or_else(|| {
             Error::unavailable("library recovery", "directory adapter is not configured")
         })?;
-        self.projection.project_library_commits(root, &durable.recover(root)?)
+        self.projection
+            .project_library_commits(root, &durable.recover(root)?)
     }
 }

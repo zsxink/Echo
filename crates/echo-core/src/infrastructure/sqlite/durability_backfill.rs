@@ -30,10 +30,16 @@ impl SqliteDatabase {
 }
 
 impl LibraryHistoryPort for SqliteDatabase {
-    fn projection_status(&self, root: LibraryRootId) -> Result<crate::domain::library::durability::LibraryProjectionStatus, Error> {
+    fn projection_status(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<crate::domain::library::durability::LibraryProjectionStatus, Error> {
         self.with_reader(move |connection| super::durability_projection::status(connection, root))
     }
-    fn read_recovery_records(&self, root: LibraryRootId) -> Result<crate::domain::library::durability::LibraryRecoveryRecords, Error> {
+    fn read_recovery_records(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<crate::domain::library::durability::LibraryRecoveryRecords, Error> {
         self.with_reader(move |connection| super::durability_projection::read(connection, root))
     }
     fn capture_library_history(

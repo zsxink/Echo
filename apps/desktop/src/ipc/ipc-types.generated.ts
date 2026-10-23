@@ -267,6 +267,22 @@ export interface LibraryStatus {
   readonly activeRootPath?: string;
 }
 
+export type RecoveryIssueReasonDto = 'missingSong' | 'missingPlaylist' | 'identityConflict' | 'tombstonedDependency' | 'requiresStateRecovery';
+
+export interface LibraryRecoveryIssueDto {
+  readonly target: string;
+  readonly reason: RecoveryIssueReasonDto;
+}
+
+export interface LibraryRecoveryStatusDto {
+  readonly root: string;
+  readonly directoryHeadSeq: number;
+  readonly projectedSeq: number;
+  readonly needsProjection: boolean;
+  readonly legacyUnverified: boolean;
+  readonly issues: readonly LibraryRecoveryIssueDto[];
+}
+
 export interface ScanSnapshot {
   readonly generation: number;
   readonly cancelled: boolean;
@@ -362,6 +378,8 @@ export interface IpcCommandResultMap {
   readonly get_bootstrap_state: BootstrapSnapshot;
   readonly library_status: LibraryStatus;
   readonly retry_library_operation: void;
+  readonly library_recovery_status: LibraryRecoveryStatusDto;
+  readonly retry_library_projection: void;
   readonly all_songs: PagedSongs;
   readonly search: PagedSongs;
   readonly favorites: PagedSongs;

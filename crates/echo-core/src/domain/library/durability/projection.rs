@@ -6,8 +6,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProjectionTarget {
-    Record { object: ObjectKey },
-    State { state_kind: StateKind, id: uuid::Uuid },
+    Record {
+        object: ObjectKey,
+    },
+    State {
+        state_kind: StateKind,
+        id: uuid::Uuid,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

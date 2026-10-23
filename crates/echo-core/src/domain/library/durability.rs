@@ -2,7 +2,10 @@
 //! outside the library, credentials, database handles, or transport clients.
 
 pub mod projection;
-pub use projection::{LibraryProjectionStatus, LibraryRecoveryRecords, ProjectionTarget, ProjectionUnresolvedReason, UnresolvedProjectionRecord};
+pub use projection::{
+    LibraryProjectionStatus, LibraryRecoveryRecords, ProjectionTarget, ProjectionUnresolvedReason,
+    UnresolvedProjectionRecord,
+};
 
 use super::{LibraryId, PortableRecordEnvelope, PortableSerialize};
 use crate::error::Error;

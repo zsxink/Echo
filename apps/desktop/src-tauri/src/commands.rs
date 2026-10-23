@@ -31,8 +31,8 @@ use echo_desktop::ipc::dto::{
     BootstrapSnapshot, ImportBatchDto, ImportResultDto, LibraryCountsDto, LibraryStatus,
     PagedSongs, PlaylistView, RevealResultDto, ScanSnapshot, SongDetailView, SongView,
 };
-use echo_desktop::ipc::IpcErrorDto;
 use echo_desktop::ipc::library_recovery::LibraryRecoveryStatusDto;
+use echo_desktop::ipc::IpcErrorDto;
 use echo_desktop::player::coordinator::PlaybackCoordinator;
 use echo_desktop::player::port::{PlayerCommand, PlayerPort};
 use echo_desktop::player::queue::{QueueEntry, QueueItem, ViewContext};
@@ -180,13 +180,23 @@ pub fn retry_library_operation(
 }
 
 #[tauri::command]
-pub fn library_recovery_status(services: State<'_, AppServices>, root: String) -> Result<LibraryRecoveryStatusDto, IpcErrorDto> {
-    services.library_recovery_status(parse_id(&root, "root")?).map_err(IpcErrorDto::from)
+pub fn library_recovery_status(
+    services: State<'_, AppServices>,
+    root: String,
+) -> Result<LibraryRecoveryStatusDto, IpcErrorDto> {
+    services
+        .library_recovery_status(parse_id(&root, "root")?)
+        .map_err(IpcErrorDto::from)
 }
 
 #[tauri::command]
-pub fn retry_library_projection(services: State<'_, AppServices>, root: String) -> Result<(), IpcErrorDto> {
-    services.retry_library_projection(parse_id(&root, "root")?).map_err(IpcErrorDto::from)
+pub fn retry_library_projection(
+    services: State<'_, AppServices>,
+    root: String,
+) -> Result<(), IpcErrorDto> {
+    services
+        .retry_library_projection(parse_id(&root, "root")?)
+        .map_err(IpcErrorDto::from)
 }
 
 #[tauri::command]

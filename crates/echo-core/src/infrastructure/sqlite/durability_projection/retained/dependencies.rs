@@ -1,26 +1,75 @@
 //! Resolve only explicit root-scoped parents and identities; never invent them.
-use super::{Reason, storage};
-use crate::domain::{ids::LibraryRootId, library::{PortableRecord, PortableRecordEnvelope, RecordKind}};
+use super::{storage, Reason};
+use crate::domain::{
+    ids::LibraryRootId,
+    library::{PortableRecord, PortableRecordEnvelope, RecordKind},
+};
 use crate::error::Error;
 use rusqlite::{params, Connection, OptionalExtension};
 
 fn tombstoned(records: &[PortableRecordEnvelope], kind: RecordKind, id: uuid::Uuid) -> bool {
     records.iter().any(|e| matches!(e.record(), PortableRecord::Tombstone(t) if t.deleted_kind==kind && t.object_uuid==id))
 }
-fn parent(c: &Connection, root: LibraryRootId, id: uuid::Uuid, playlist: bool, records: &[PortableRecordEnvelope]) -> Result<Option<Reason>,Error> {
-    let kind = if playlist { RecordKind::Playlist } else { RecordKind::Song };
-    if tombstoned(records,kind,id) { return Ok(Some(Reason::TombstonedDependency)); }
-    let sql = if playlist { "SELECT library_root_uuid FROM playlists WHERE uuid=?1" } else { "SELECT library_root_uuid FROM songs WHERE uuid=?1 AND availability<>'pending_delete'" };
-    let owner: Option<String> = c.query_row(sql,[id.to_string()], |r|r.get(0)).optional().map_err(storage)?;
-    Ok(match owner { None => Some(if playlist {Reason::MissingPlaylist} else {Reason::MissingSong}), Some(owner) if owner!=root.to_string() => Some(Reason::IdentityConflict), _ => None })
+fn parent(
+    c: &Connection,
+    root: LibraryRootId,
+    id: uuid::Uuid,
+    playlist: bool,
+    records: &[PortableRecordEnvelope],
+) -> Result<Option<Reason>, Error> {
+    let kind = if playlist {
+        RecordKind::Playlist
+    } else {
+        RecordKind::Song
+    };
+    if tombstoned(records, kind, id) {
+        return Ok(Some(Reason::TombstonedDependency));
+    }
+    let sql = if playlist {
+        "SELECT library_root_uuid FROM playlists WHERE uuid=?1"
+    } else {
+        "SELECT library_root_uuid FROM songs WHERE uuid=?1 AND availability<>'pending_delete'"
+    };
+    let owner: Option<String> = c
+        .query_row(sql, [id.to_string()], |r| r.get(0))
+        .optional()
+        .map_err(storage)?;
+    Ok(match owner {
+        None => Some(if playlist {
+            Reason::MissingPlaylist
+        } else {
+            Reason::MissingSong
+        }),
+        Some(owner) if owner != root.to_string() => Some(Reason::IdentityConflict),
+        _ => None,
+    })
 }
-pub(super) fn song(c: &Connection, root: LibraryRootId, id: uuid::Uuid, records: &[PortableRecordEnvelope]) -> Result<Option<Reason>,Error> { parent(c,root,id,false,records) }
-fn conflict(c: &Connection, sql: &str, parameters: impl rusqlite::Params) -> Result<Option<Reason>, Error> {
-    let exists: bool = c.query_row(sql,parameters,|r|r.get(0)).map_err(storage)?;
+pub(super) fn song(
+    c: &Connection,
+    root: LibraryRootId,
+    id: uuid::Uuid,
+    records: &[PortableRecordEnvelope],
+) -> Result<Option<Reason>, Error> {
+    parent(c, root, id, false, records)
+}
+fn conflict(
+    c: &Connection,
+    sql: &str,
+    parameters: impl rusqlite::Params,
+) -> Result<Option<Reason>, Error> {
+    let exists: bool = c
+        .query_row(sql, parameters, |r| r.get(0))
+        .map_err(storage)?;
     Ok(exists.then_some(Reason::IdentityConflict))
 }
-pub(super) fn unresolved(c: &Connection, root: LibraryRootId, envelope: &PortableRecordEnvelope, records: &[PortableRecordEnvelope]) -> Result<Option<Reason>, Error> {
-    let root_text=root.to_string(); let id=envelope.record().object_uuid().to_string();
+pub(super) fn unresolved(
+    c: &Connection,
+    root: LibraryRootId,
+    envelope: &PortableRecordEnvelope,
+    records: &[PortableRecordEnvelope],
+) -> Result<Option<Reason>, Error> {
+    let root_text = root.to_string();
+    let id = envelope.record().object_uuid().to_string();
     match envelope.record() {
         PortableRecord::Song(s) => {
             let path=crate::domain::ids::RelativeMediaPath::new(s.media_path.as_str())?;

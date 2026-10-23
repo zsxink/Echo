@@ -84,8 +84,16 @@ pub(super) fn project_record(
                     .map_err(storage)?;
             }
             crate::domain::library::RecordKind::PlayStats => {
-                c.execute("DELETE FROM sync_device_play_counts WHERE song_uuid=?1", [&id]).map_err(storage)?;
-                c.execute("UPDATE songs SET play_count=0 WHERE uuid=?1 AND library_root_uuid=?2", params![id,root.to_string()]).map_err(storage)?;
+                c.execute(
+                    "DELETE FROM sync_device_play_counts WHERE song_uuid=?1",
+                    [&id],
+                )
+                .map_err(storage)?;
+                c.execute(
+                    "UPDATE songs SET play_count=0 WHERE uuid=?1 AND library_root_uuid=?2",
+                    params![id, root.to_string()],
+                )
+                .map_err(storage)?;
             }
             _ => {}
         },
@@ -94,7 +102,13 @@ pub(super) fn project_record(
 }
 
 fn total_count(c: &Connection, id: &str) -> Result<i64, Error> {
-    let mut statement = c.prepare("SELECT play_count FROM sync_device_play_counts WHERE song_uuid=?1").map_err(storage)?;
-    let values = statement.query_map([id], |r| r.get::<_, i64>(0)).map_err(storage)?;
-    values.try_fold(0i64, |total, value| Ok(total.saturating_add(value.map_err(storage)?)))
+    let mut statement = c
+        .prepare("SELECT play_count FROM sync_device_play_counts WHERE song_uuid=?1")
+        .map_err(storage)?;
+    let mut values = statement
+        .query_map([id], |r| r.get::<_, i64>(0))
+        .map_err(storage)?;
+    values.try_fold(0i64, |total, value| {
+        Ok(total.saturating_add(value.map_err(storage)?))
+    })
 }
