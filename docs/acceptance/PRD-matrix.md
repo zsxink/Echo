@@ -1,6 +1,6 @@
-# PRD A1–A14 → scenario mapping (0.1.0)
+# PRD A1–A14 → scenario mapping
 
-由 `scripts/verify/prd-matrix.mjs` 生成；`traceability.md` 是场景 ID 与命名权威。每一 A# 为一验收路径，列出其证明场景（按 traceability 领域前缀）。macOS 可自动执行的命令给出该路径可运行部分的证据；跨平台/人工其余部分见 `docs/acceptance/platform-gate-handoff.md`。
+本表为手工维护文档（不生成）：`traceability.md` 是场景 ID 与命名权威，每一 A# 为一验收路径，列出其证明场景（按 traceability 领域前缀）。macOS 可自动执行的命令给出该路径可运行部分的证据；跨平台/人工其余部分见 `docs/acceptance/platform-gate-handoff.md`。`scripts/verify/prd-matrix.mjs`（task 13.9 门禁）会校验本表与当前场景集一致——规格变更后请同步更新本表并提交。
 
 | 编号 | 验收路径 | 证明场景数 | macOS 可运行命令 |
 |---|---|---|---|
