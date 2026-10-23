@@ -184,7 +184,10 @@ export function CollectionDirectory({
     // The directory entries must go with them: this instance survives a
     // 歌手 ↔ 专辑 switch (same tree position in App), so leftover artist
     // cards would otherwise paint under album chrome until the refetch lands
-    // — or forever, if the refetch fails.
+    // — or forever, if the refetch fails. The search term belongs to the
+    // directory being left; the request counters below drop its one transient
+    // carry-over request.
+    setSearch("");
     setEntries([]);
     setSongs([]);
     setSelectionMode(false);

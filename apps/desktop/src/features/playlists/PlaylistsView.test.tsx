@@ -654,6 +654,49 @@ describe("PlaylistsView — 歌单内搜索 (PLA-SRCH)", () => {
     expect(screen.getByText("2 首")).toBeInTheDocument();
   });
 
+  it("clears the search when switching to another playlist", async () => {
+    // The term belongs to the playlist being left: this instance survives an
+    // A → B switch, so without a reset B would open showing “在 B 里搜旧词”
+    // and read as if B only had those songs (issue #47).
+    mockBridge({
+      playlist_members: MEMBERS,
+      search: {
+        items: [MEMBERS[0]],
+        totalCount: 1,
+        isLast: true,
+        nextCursor: null,
+      },
+    });
+    const { rerender } = renderView();
+    await screen.findByTestId("song-row-song-1");
+
+    const searchInput = within(screen.getByTestId("playlist-search-field")).getByRole("searchbox");
+    fireEvent.change(searchInput, { target: { value: "晴天" } });
+    await waitFor(() => expect(screen.queryByTestId("song-row-song-2")).not.toBeInTheDocument());
+    expect(searchInput).toHaveValue("晴天");
+
+    rerender(
+      <PlaylistsView
+        playlistId="pl-2"
+        title="通勤"
+        root=""
+        existingNames={["深夜", "通勤"]}
+        readOnly={false}
+      />,
+    );
+
+    // 通勤 opens with an empty search box and its full member list — the
+    // transient “pl-2 + 晴天” request the switch itself issues is dropped by
+    // the search request counter, so only the empty-query state commits.
+    const switchedInput = within(screen.getByTestId("playlist-search-field")).getByRole(
+      "searchbox",
+    );
+    await waitFor(() => expect(switchedInput).toHaveValue(""));
+    await waitFor(() => screen.findByTestId("song-row-song-2"));
+    expect(screen.getByTestId("song-row-song-1")).toBeInTheDocument();
+    expect(screen.getByText("2 首")).toBeInTheDocument();
+  });
+
   it("shows the playlist search empty state with a clear action on no hit", async () => {
     mockBridge({
       playlist_members: MEMBERS,

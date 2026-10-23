@@ -1,9 +1,20 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
 
 import { CollectionDirectory } from "./CollectionDirectory";
 import { playerStore } from "../../player/playerStore";
 import { ToastView } from "../../app/ToastView";
+
+/** The last `catalog_collections` request the directory issued. The fixed
+ * return-value mock cannot emulate filtering, so “未被旧词过滤” is asserted on
+ * the query itself. */
+const lastCollectionQuery = () => {
+  const calls = vi
+    .mocked(invoke)
+    .mock.calls.filter(([command]) => command === "catalog_collections");
+  return calls.at(-1)?.[1] as { kind: string; search: string };
+};
 
 function mockCommand(command: string, value: unknown) {
   // The shared jsdom setup exposes a small Tauri-command test hook.
@@ -185,6 +196,60 @@ describe("CollectionDirectory", () => {
     expect(screen.queryByRole("button", { name: /打开.*Alice/ })).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText("搜索专辑或歌手")).toBeInTheDocument();
     await screen.findByRole("button", { name: /打开.*First album/ });
+  });
+
+  it("clears the search when switching between artist and album directories", async () => {
+    mockCommand("catalog_collections", [
+      {
+        kind: "artist",
+        artistKey: "alice",
+        artist: "Alice",
+        name: "Alice",
+        songCount: 2,
+      },
+      {
+        kind: "artist",
+        artistKey: "beta",
+        artist: "Beta",
+        name: "Beta",
+        songCount: 1,
+      },
+    ]);
+    const { rerender } = render(<CollectionDirectory kind="artist" root="root-1" />);
+    await screen.findByRole("button", { name: /打开歌手 Alice/ });
+
+    fireEvent.change(screen.getByPlaceholderText("搜索歌手"), { target: { value: "Alice" } });
+    await waitFor(() =>
+      expect(lastCollectionQuery()).toMatchObject({ kind: "artist", search: "Alice" }),
+    );
+
+    mockCommand("catalog_collections", [
+      {
+        kind: "album",
+        artistKey: "alice",
+        albumKey: "first album",
+        artist: "Alice",
+        name: "First album",
+        songCount: 2,
+      },
+      {
+        kind: "album",
+        artistKey: "beta",
+        albumKey: "beta album",
+        artist: "Beta",
+        name: "Beta album",
+        songCount: 1,
+      },
+    ]);
+    rerender(<CollectionDirectory kind="album" root="root-1" />);
+
+    // The term belongs to the directory being left: the album directory opens
+    // with an empty box, and its query carries no leftover artist term (the
+    // transient “album + Alice” request of the switch is superseded).
+    await waitFor(() => expect(screen.getByPlaceholderText("搜索专辑或歌手")).toHaveValue(""));
+    await waitFor(() => expect(lastCollectionQuery()).toMatchObject({ kind: "album", search: "" }));
+    await screen.findByRole("button", { name: /打开专辑 Beta album/ });
+    expect(screen.getByRole("button", { name: /打开专辑 First album/ })).toBeInTheDocument();
   });
 
   it("loads the album directory when the switch happens from inside an open artist", async () => {
