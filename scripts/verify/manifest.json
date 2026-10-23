@@ -3146,6 +3146,18 @@
       "manifest": "tests/native/DP-R17-S01.md"
     },
     {
+      "id": "DP-R18-S01",
+      "title": "播放期间进度同步",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx",
+      "manifest": "tests/scenarios/DP-R18-S01.yaml"
+    },
+    {
+      "id": "DP-R18-S02",
+      "title": "暂停、恢复与 seek",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx",
+      "manifest": "tests/scenarios/DP-R18-S02.yaml"
+    },
+    {
       "id": "IL-R01-S01",
       "title": "开始播放歌曲",
       "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx",
@@ -3306,6 +3318,12 @@
       "title": "跨平台离线歌词播放",
       "command": "node scripts/verify/checks/task-12.4.mjs",
       "manifest": "tests/native/IL-R09-S02.md"
+    },
+    {
+      "id": "IL-R09-S03",
+      "title": "暂停时停止旋转",
+      "command": "node scripts/verify/checks/task-12.4.mjs",
+      "manifest": "tests/scenarios/IL-R09-S03.yaml"
     },
     {
       "id": "LE-R01-S01",

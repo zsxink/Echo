@@ -242,6 +242,8 @@ export const COMMANDS = {
   "DP-R16-S03": "cargo test -p echo-desktop --all-features restore_or_prime_yields_an_empty_bar_for_an_empty_library", // 新增命令: 资料库为空
   "DP-R16-S04": "cargo test -p echo-desktop --all-features restore_session_recovers_queue_mode_and_settings_paused", // 新增命令: 有效播放会话优先恢复
   "DP-R17-S01": "cargo test -p echo-desktop --all-features prime_context_paused_preserves_settings_without_playing", // 新增命令: 兜底选择保持用户播放设置
+  "DP-R18-S01": REACT("src/features/player/PlayerBar.test.tsx"),
+  "DP-R18-S02": REACT("src/features/player/PlayerBar.test.tsx"),
 
   // ===== immersive-lyrics =====
   "IL-R01-S01": REACT("src/features/player/PlayerBar.test.tsx"),
@@ -271,6 +273,7 @@ export const COMMANDS = {
   "IL-R08-S03": REACT("src/app/overlays.test.tsx"),
   "IL-R09-S01": CHECK("12.4"),
   "IL-R09-S02": CHECK("12.4"),
+  "IL-R09-S03": CHECK("12.4"),
 
   // ===== library-experience (LE) =====,
 

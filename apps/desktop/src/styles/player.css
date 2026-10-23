@@ -92,10 +92,10 @@
 .control-play { width: 44px; height: 44px; color: var(--accent); background: transparent; }
 .control-play svg { width: 30px; height: 30px; }
 .control-play:hover { color: var(--accent-hover); background: transparent; }
-.progress-line { --progress: 37%; --slider-track-height: 4px; position: absolute; z-index: 3; inset: -4px 0 auto; width: 100%; height: 8px; }
-.progress-line::before, .progress-line::after { content: ""; position: absolute; top: calc((8px - var(--slider-track-height)) / 2); height: var(--slider-track-height); border-radius: var(--radius-pill); pointer-events: none; }
+.progress-line { --slider-track-height: 4px; position: absolute; z-index: 3; inset: -4px 0 auto; width: 100%; height: 8px; }
+.progress-line::before, .progress-fill { content: ""; position: absolute; top: calc((8px - var(--slider-track-height)) / 2); height: var(--slider-track-height); border-radius: var(--radius-pill); pointer-events: none; }
 .progress-line::before { right: 0; left: 0; background: color-mix(in oklab, var(--fg), transparent 78%); }
-.progress-line::after { left: 0; width: var(--progress); background: var(--accent); }
+.progress-fill { left: 0; width: 100%; background: var(--accent); transform: scaleX(0); transform-origin: left center; }
 .progress { position: relative; z-index: 1; display: block; width: 100%; height: 8px; margin: 0; appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer; }
 .progress::-webkit-slider-runnable-track { height: 8px; background: transparent; }
 .progress::-webkit-slider-thumb { width: 12px; height: 12px; margin-top: -2px; appearance: none; -webkit-appearance: none; border: 2px solid var(--bg); border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent), var(--border) 62%); transition: transform var(--motion-fast) var(--ease-standard); }
@@ -213,7 +213,7 @@ body.player-mode-open .playerbar .control:hover, body.player-mode-open .playerba
 body.player-mode-open .playerbar .control-play { color: var(--accent-on); background: transparent; }
 body.player-mode-open .playerbar .control-play:hover { color: var(--accent-on); background: color-mix(in oklab, var(--accent-on), transparent 90%); }
 body.player-mode-open .playerbar .progress-line::before, body.player-mode-open .playerbar .volume-line::before { background: color-mix(in oklab, var(--accent-on), transparent 76%); }
-body.player-mode-open .playerbar .progress-line::after, body.player-mode-open .playerbar .volume-line::after { background: var(--accent-strong); }
+body.player-mode-open .playerbar .progress-fill, body.player-mode-open .playerbar .volume-line::after { background: var(--accent-strong); }
 body.player-mode-open .playerbar .progress::-webkit-slider-thumb { border-color: var(--bg); background: var(--accent-strong); }
 body.player-mode-open .playerbar .progress::-moz-range-thumb { border-color: var(--bg); background: var(--accent-strong); }
 body.player-mode-open .playerbar .volume::-webkit-slider-thumb { border-color: var(--bg); background: var(--accent-strong); }

@@ -171,6 +171,8 @@
 | DP-R16-S03 | 无有效当前歌曲时选择初始待播放项 | 资料库为空 | — | Gate | `tests/native/DP-R16-S03.md` | `pnpm verify:scenario -- DP-R16-S03` |
 | DP-R16-S04 | 无有效当前歌曲时选择初始待播放项 | 有效播放会话优先恢复 | — | Gate | `tests/native/DP-R16-S04.md` | `pnpm verify:scenario -- DP-R16-S04` |
 | DP-R17-S01 | 初始待播放项不得改变播放设置 | 兜底选择保持用户播放设置 | — | Gate | `tests/native/DP-R17-S01.md` | `pnpm verify:scenario -- DP-R17-S01` |
+| DP-R18-S01 | 播放进度视觉同步 | 播放期间进度同步 | 11.8 | React | `tests/scenarios/DP-R18-S01.yaml` | `pnpm verify:scenario -- DP-R18-S01` |
+| DP-R18-S02 | 播放进度视觉同步 | 暂停、恢复与 seek | 11.8 | React | `tests/scenarios/DP-R18-S02.yaml` | `pnpm verify:scenario -- DP-R18-S02` |
 
 ## immersive-lyrics
 
@@ -203,6 +205,7 @@
 | IL-R08-S03 | 歌词滚动、浮层与焦点不得互相遮挡 | 播放队列浮层覆盖 | 11.6, 12.1 | React/E2E | `tests/scenarios/IL-R08-S03.yaml` | `pnpm verify:scenario -- IL-R08-S03` |
 | IL-R09-S01 | 沉浸式歌词体验必须适配减少动画与三平台 | 减少动画偏好 | 11.3, 12.3, 12.4 | React | `tests/scenarios/IL-R09-S01.yaml` | `pnpm verify:scenario -- IL-R09-S01` |
 | IL-R09-S02 | 沉浸式歌词体验必须适配减少动画与三平台 | 跨平台离线歌词播放 | 11.3, 12.3, 12.4, 13.5 | React/Native | `tests/native/IL-R09-S02.md` | `pnpm verify:scenario -- IL-R09-S02` |
+| IL-R09-S03 | 沉浸式歌词体验必须适配减少动画与三平台 | 暂停时停止旋转 | 11.3, 12.4 | React/CSS | `tests/scenarios/IL-R09-S03.yaml` | `pnpm verify:scenario -- IL-R09-S03` |
 
 ## library-experience
 
