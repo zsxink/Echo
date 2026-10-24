@@ -400,11 +400,12 @@ button.lyric-line {
  * `tauri.conf.json` sets `titleBarStyle: "Overlay"` + `hiddenTitle: true` on
  * macOS: the native white titlebar disappears and the web content extends to
  * the window top, but the traffic lights keep floating over the top-left
- * corner. `main.tsx` flips `--titlebar-inset` inside the Tauri WebView —
- * 28px on macOS (the standard overlay-titlebar height for the traffic
- * lights), 18px on Windows — so a plain browser preview
- * of the frontend stays prototype-identical. Rules that reach the window's
- * top edge offset themselves with this variable instead of a fixed 28px.
+ * corner (≈8–20px from the top). `main.tsx` flips `--titlebar-inset` inside
+ * the Tauri WebView — 18px on both desktop platforms (issue #83: Echo 图标/
+ * 搜索框与 Windows 同高，macOS 侧由 `.sidebar` 自己的 8px 顶距躲避交通灯) —
+ * so a plain browser preview of the frontend stays prototype-identical. Rules
+ * that reach the window's top edge offset themselves with this variable
+ * instead of a fixed value.
  *
  * Lives here, not in tokens.css: it is app-only state, and the extracted
  * prototype layer must stay re-generable from the prototype HTML.
@@ -418,10 +419,10 @@ button.lyric-line {
   padding-top: var(--titlebar-inset);
 }
 
-/* 上边空白 = 安全区条 + 内容内边距：Windows 把条压到 18px（main.tsx）后
- * 内容零内边距贴条，品牌行/搜索行离窗口上缘较原 44px 砍半到 18px；macOS
- * 要给交通灯留完整 28px 条，维持一档缓冲。浏览器预览 inset 为 0，保持原型
- * 间距不动。 */
+/* 上边空白 = 安全区条 + 内容内边距：两平台内容内边距一致为 18px（main.tsx，
+ * issue #83）。Windows 零侧边栏顶距、内容贴条；macOS 的交通灯浮在左上角
+ * （底缘约 20px），侧边栏留 8px 顶距让品牌行落在灯下方 8px，搜索行与
+ * Windows 完全对齐。浏览器预览 inset 为 0，保持原型间距不动。 */
 :root[data-platform="windows"] .sidebar {
   padding-top: 0;
 }
@@ -435,7 +436,7 @@ button.lyric-line {
 }
 
 :root[data-platform="macos"] .topbar {
-  min-height: 56px;
+  min-height: 48px;
 }
 
 /* Initialize/status screens occupy the same workspace grid column as the library. */
@@ -446,10 +447,11 @@ button.lyric-line {
 /* Window drag handle. With `hiddenTitle: true` there is no native titlebar to
  * drag the window by, so the inset strip above the shell is the handle — its
  * height *is* `--titlebar-inset`, so it collapses to nothing in a plain
- * browser preview (0px) and covers exactly the strip each platform reserves
- * (28px macOS / 18px Windows) in the WebView. Rendered as the first child of
- * `.app` so it sits above the shell
- * grid without participating in it.
+ * browser preview (0px) and covers the native-chrome band in the WebView
+ * (18px Windows). macOS overrides to 22px below: the traffic lights reach
+ * down to ≈20px, past the shared 18px inset, and the band right of them stays
+ * drag surface. Rendered as the first child of `.app` so it sits above the
+ * shell grid without participating in it.
  *
  * Higher than every overlay (the tallest today is 32, `.playlist-picker-
  * dialog`) so the window stays movable while a sheet is open — every sheet is
@@ -464,10 +466,13 @@ button.lyric-line {
   user-select: none;
 }
 
-/* Brand-row gap to the traffic lights: the 28px inset + the sidebar's own
- * 16px padding leave ~26px of air below the lights; that reads as too much,
- * so no extra nudge is added here — the icon sits 44px from the window top
- * (~16px below the lights). */
+:root[data-platform="macos"] .titlebar-drag {
+  height: 22px;
+}
+
+/* Brand-row gap to the traffic lights: the sidebar's 8px top padding puts the
+ * Echo 图标 top at 28px — ≈8px below the lights' bottom edge (20px), as close
+ * as the lights allow while the 搜索行 sits at the same 22px as Windows. */
 
 /* Sidebar hugs the window edge: left padding halves 16px → 8px. */
 .sidebar {
@@ -491,9 +496,9 @@ button.lyric-line {
  * rendered by `.window-controls` (WindowControls.tsx, Windows platform only)
  * and floating fixed to the top-right of the window — the corner macOS
  * reserves for its traffic lights. The buttons are fixed 28×28 squares and do
- * NOT stretch with `--titlebar-inset` (Windows pads content by only 18px, so
- * their lower half overlays the topbar's empty right padding; macOS pads the
- * full 28px). 0px inset in browser previews, where the component never renders.
+ * NOT stretch with `--titlebar-inset` (both platforms pad content by only
+ * 18px, so their lower half overlays the topbar's empty right padding).
+ * 0px inset in browser previews, where the component never renders.
  *
  * Sits above `.titlebar-drag` (z-index 40) so clicks reach the buttons; the
  * buttons are clickable elements, so Tauri's drag-region handler exempts them
@@ -504,8 +509,9 @@ button.lyric-line {
 :root {
   /* 标题栏按钮的统一档位：caption 三键、标题栏 导入/设置、沉浸模式的收起
    * 按钮共用同一宽度（等宽等距，视觉统一的要求来源）。按钮固定 28×28 方块、
-   * 不随 --titlebar-inset 伸缩（Windows 的 inset 只有 18px，macOS 28px）：
-   * 悬停背景铺满整键（8px 圆角），相邻键紧贴、背景首尾相连。 */
+   * 不随 --titlebar-inset 伸缩（两平台 inset 均为 18px，按钮下缘盖过顶栏的
+   * 空白右内边距）：悬停背景铺满整键（8px 圆角），相邻键紧贴、背景首尾
+   * 相连。 */
   --caption-button-width: 28px;
   /* macOS 交通灯的右边界：20px 边距 + 3×12px 灯 + 2×8px 间距（系统默认
    * 摆放，tauri.conf.json 未自定义 trafficLightPosition）。 */
