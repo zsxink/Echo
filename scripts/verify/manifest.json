@@ -2804,6 +2804,36 @@
       "manifest": "tests/scenarios/DAS-R18-S09.yaml"
     },
     {
+      "id": "DAS-R19-S01",
+      "title": "Windows 无原生标题栏且内容从顶边开始",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R19-S01",
+      "manifest": "tests/native/DAS-R19-S01.md"
+    },
+    {
+      "id": "DAS-R19-S02",
+      "title": "自绘窗口控件三键可用且图标随状态切换",
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/WindowControls.test.tsx",
+      "manifest": "tests/scenarios/DAS-R19-S02.yaml"
+    },
+    {
+      "id": "DAS-R19-S03",
+      "title": "双击拖拽区最大化与还原",
+      "command": "cargo test -p echo-desktop --all-features platform::security",
+      "manifest": "tests/scenarios/DAS-R19-S03.yaml"
+    },
+    {
+      "id": "DAS-R19-S04",
+      "title": "非 Windows 不渲染自绘控件",
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/WindowControls.test.tsx -t \"renders nothing outside the Windows platform\"",
+      "manifest": "tests/scenarios/DAS-R19-S04.yaml"
+    },
+    {
+      "id": "DAS-R19-S05",
+      "title": "窗口命令权限最小且配置不漂移",
+      "command": "cargo test -p echo-desktop --all-features platform::security",
+      "manifest": "tests/scenarios/DAS-R19-S05.yaml"
+    },
+    {
       "id": "DP-R01-S01",
       "title": "播放资料库歌曲",
       "command": "cargo test -p echo-desktop --all-features --test player_smoke",

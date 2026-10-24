@@ -55,7 +55,10 @@ const allowedFiles = new Set(allowlist.files || []);
 const allowedTraits = new Set(allowlist.traits || []);
 
 for (const path of walk(ROOT)) {
-  const rel = relative(ROOT, path);
+  // Normalize to forward slashes so the allowlist keys match on every platform
+  // (on Windows `relative()` yields backslashes and no allowlisted file or
+  // trait ever matched, red-ing machines CI keeps green).
+  const rel = relative(ROOT, path).replaceAll("\\", "/");
   const ext = rel.slice(rel.lastIndexOf("."));
   if (!SOURCE_EXTENSIONS.has(ext) || /(^|\/)(generated|gen)(\/|\.)|\.generated\./.test(rel)) continue;
   const source = readFileSync(path, "utf8");

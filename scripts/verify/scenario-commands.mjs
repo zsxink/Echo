@@ -152,6 +152,18 @@ export const COMMANDS = {
   "DAS-R18-S08": ATTEST("DAS-R18-S08"),
   "DAS-R18-S09": "cargo test -p echo-app --all-features app_menu",
 
+  // DAS-R19: Windows 无边框窗口与自绘窗口控件（issue #76）。S01 无原生标题栏
+  // 是真机视觉验收（装饰、缩放边、Snap 均由系统窗口管理器提供）；S02/S04 由
+  // WindowControls 组件套件证明（含平台门两分支与窗口态图标跟随）；S03 的双
+  // 击最大化由 Tauri 注入的 drag-region 处理器承担，`internal_toggle_maximize`
+  // 权限含于 core:window:default，用 security 套件锁定该契约；S05 是配置与
+  // 权限一致性漂移门禁（Windows 配置不漂移 + capability 最小集）。
+  "DAS-R19-S01": ATTEST("DAS-R19-S01"),
+  "DAS-R19-S02": REACT("src/app/WindowControls.test.tsx"),
+  "DAS-R19-S03": "cargo test -p echo-desktop --all-features platform::security",
+  "DAS-R19-S04": REACT_T("src/app/WindowControls.test.tsx", "renders nothing outside the Windows platform"),
+  "DAS-R19-S05": "cargo test -p echo-desktop --all-features platform::security",
+
   // ===== desktop-playback (DP) =====, // （重编号自 DAS-R15-S01）
 
   // ===== desktop-playback =====

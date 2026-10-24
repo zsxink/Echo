@@ -55,6 +55,7 @@ import { ImmersivePlayer } from "../features/player/ImmersivePlayer";
 import { QueuePanel } from "../features/player/QueuePanel";
 import { Icon } from "./Icon";
 import { ShellNavProvider } from "./shell";
+import { WindowControls } from "./WindowControls";
 import { EffectsPanel } from "../features/player";
 import { ToastView } from "./ToastView";
 import { useAppShell } from "./useAppShell";
@@ -270,6 +271,11 @@ export function App() {
             top `--titlebar-inset` strip (28px in the WebView, 0px in a plain
             browser preview) must declare itself draggable instead. */}
         <div className="titlebar-drag" data-tauri-drag-region aria-hidden="true" />
+
+        {/* Windows caption buttons (issue #76): `decorations: false` leaves no
+            native — □ ×, so the shell draws them in the top-right safe-area
+            strip. Renders nothing on macOS/Linux/web. */}
+        <WindowControls />
 
         {status.configured ? (
           <>

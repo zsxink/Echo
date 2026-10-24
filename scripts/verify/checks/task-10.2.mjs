@@ -40,7 +40,10 @@ function walk(dir) {
 //    detection, e.g. main.tsx's mac gate) is not an IPC call and is allowed.
 const violations = [];
 for (const file of walk(SRC)) {
-  const rel = file.slice(SRC.length + 1);
+  // Normalize to forward slashes so the boundary checks below match on every
+  // platform (on Windows `resolve()` yields backslashes and `bridge/index.ts`
+  // never matched, red-ing every machine while CI stayed green).
+  const rel = file.slice(SRC.length + 1).replaceAll("\\", "/");
   const src = readFileSync(file, "utf8");
   if (rel.startsWith("bridge/")) {
     continue; // the designated boundary
@@ -65,20 +68,30 @@ if (!readFileSync(resolve(SRC, "bridge", "index.ts"), "utf8").includes("invoke")
 
 // 2. Regression suites.
 function runDesktopTest(filter) {
+  // `shell: true` so Windows resolves the `pnpm` shim (pnpm.cmd); POSIX keeps
+  // the same semantics through the shell.
   const r = spawnSync("pnpm", ["--filter", "@echo/desktop", "test", filter], {
     cwd: APP,
     encoding: "utf8",
+    shell: true,
   });
   const out = `${r.stdout || ""}${r.stderr || ""}`;
   if (r.status !== 0) fail("vitest", out);
-  const files = Number((out.match(/Test Files\s+(\d+)/) ?? [])[1] ?? 0);
+  // Strip ANSI styling first: pnpm keeps colour codes on Windows even without
+  // a TTY, and `Test Files <esc>[22m 1` breaks the count regex below.
+  const clean = out.replace(/\x1b\[[0-9;]*m/g, "");
+  const files = Number((clean.match(/Test Files\s+(\d+)/) ?? [])[1] ?? 0);
   if (files !== 1) fail("vitest", `'${filter}' matched ${files} test files (expected exactly 1)`);
 }
 runDesktopTest("src/player/playerStore.test.ts");
 runDesktopTest("src/app/coverArt.test.ts");
 
 // 3. typecheck.
-const t = spawnSync("pnpm", ["--filter", "@echo/desktop", "typecheck"], { cwd: APP, encoding: "utf8" });
+const t = spawnSync("pnpm", ["--filter", "@echo/desktop", "typecheck"], {
+  cwd: APP,
+  encoding: "utf8",
+  shell: true,
+});
 if (t.status !== 0) fail("typecheck", `${t.stdout}\n${t.stderr}`);
 
 process.stdout.write("ok 10.2: bridge is the only invoke boundary; state layers keep their regressions green\n");

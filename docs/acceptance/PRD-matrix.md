@@ -4,7 +4,7 @@
 
 | 编号 | 验收路径 | 证明场景数 | macOS 可运行命令 |
 |---|---|---|---|
-| **A1** | 空库首次启动 | 115 | `cargo test -p echo-desktop --lib runtime::startup_supervisor && cargo test -p echo-core --all-features root_switch::` |
+| **A1** | 空库首次启动 | 120 | `cargo test -p echo-desktop --lib runtime::startup_supervisor && cargo test -p echo-core --all-features root_switch::` |
 | **A2** | 10,000 首混合曲库扫描 | 34 | `node scripts/verify/checks/task-12.5.mjs && cargo test -p echo-core --all-features scan::` |
 | **A3** | 外部改名/移动 | 34 | `cargo test -p echo-core --all-features relink` |
 | **A4** | 多文件安全导入 | 36 | `cargo test -p echo-core --all-features recover::` |
@@ -104,6 +104,11 @@
 | A1 | `DAS-R18-S07` | macOS 原生应用菜单与状态项右键菜单 |
 | A1 | `DAS-R18-S08` | macOS 原生应用菜单与状态项右键菜单 |
 | A1 | `DAS-R18-S09` | macOS 原生应用菜单与状态项右键菜单 |
+| A1 | `DAS-R19-S01` | Windows 无边框窗口与自绘窗口控件 |
+| A1 | `DAS-R19-S02` | Windows 无边框窗口与自绘窗口控件 |
+| A1 | `DAS-R19-S03` | Windows 无边框窗口与自绘窗口控件 |
+| A1 | `DAS-R19-S04` | Windows 无边框窗口与自绘窗口控件 |
+| A1 | `DAS-R19-S05` | Windows 无边框窗口与自绘窗口控件 |
 | A1 | `LL-R01-S01` | 单一资料库根目录与本地持久化 |
 | A1 | `LL-R01-S02` | 单一资料库根目录与本地持久化 |
 | A1 | `LL-R01-S03` | 单一资料库根目录与本地持久化 |

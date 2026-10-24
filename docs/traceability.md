@@ -109,6 +109,11 @@
 | DAS-R18-S07 | macOS 原生应用菜单与状态项右键菜单 | 菜单退出保存播放会话 | — | Desktop/Native | `tests/native/DAS-R18-S07.md` | `pnpm verify:scenario -- DAS-R18-S07` |
 | DAS-R18-S08 | macOS 原生应用菜单与状态项右键菜单 | 状态项右键菜单补齐 | — | Desktop/Native | `tests/native/DAS-R18-S08.md` | `pnpm verify:scenario -- DAS-R18-S08` |
 | DAS-R18-S09 | macOS 原生应用菜单与状态项右键菜单 | 菜单动作映射可验证且不影响其他平台 | — | Rust | `tests/scenarios/DAS-R18-S09.yaml` | `pnpm verify:scenario -- DAS-R18-S09` |
+| DAS-R19-S01 | Windows 无边框窗口与自绘窗口控件 | Windows 无原生标题栏且内容从顶边开始 | — | Desktop/Native | `tests/native/DAS-R19-S01.md` | `pnpm verify:scenario -- DAS-R19-S01` |
+| DAS-R19-S02 | Windows 无边框窗口与自绘窗口控件 | 自绘窗口控件三键可用且图标随状态切换 | — | React | `tests/scenarios/DAS-R19-S02.yaml` | `pnpm verify:scenario -- DAS-R19-S02` |
+| DAS-R19-S03 | Windows 无边框窗口与自绘窗口控件 | 双击拖拽区最大化与还原 | — | Rust | `tests/scenarios/DAS-R19-S03.yaml` | `pnpm verify:scenario -- DAS-R19-S03` |
+| DAS-R19-S04 | Windows 无边框窗口与自绘窗口控件 | 非 Windows 不渲染自绘控件 | — | React | `tests/scenarios/DAS-R19-S04.yaml` | `pnpm verify:scenario -- DAS-R19-S04` |
+| DAS-R19-S05 | Windows 无边框窗口与自绘窗口控件 | 窗口命令权限最小且配置不漂移 | — | Rust | `tests/scenarios/DAS-R19-S05.yaml` | `pnpm verify:scenario -- DAS-R19-S05` |
 
 ## desktop-playback
 

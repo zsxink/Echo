@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "node:http";
 
 import { assertLyricsOffsetAfterTrackChange } from "./a9-lyrics-offset.mjs";
+import { assertWindowControlsScenarios } from "./a76-window-controls.mjs";
 
 // This file lives at `apps/desktop/e2e/run-e2e.mjs`, so the app root is the
 // e2e directory's parent — one level up, not two. `vite.config.ts` builds to
@@ -947,6 +948,15 @@ async function main() {
   }
   await cdp.call("Emulation.clearDeviceMetricsOverride");
 
+  // ---------- Issue #76: Windows caption buttons ----------
+  // Both branches of the platform gate, forced via `?platform=` (the
+  // assertions live in a76-window-controls.mjs, extracted for the scale gate).
+  try {
+    await assertWindowControlsScenarios({ goto, assert, evalJs, pass });
+  } catch (e) {
+    abort("#76 window controls", e);
+  }
+
   // Cleanup.
   //
   // `kill` only sends the signal: Chrome keeps flushing its profile for a
@@ -977,7 +987,7 @@ async function main() {
     process.stderr.write(`FAIL 13.1: ${failures} acceptance check(s) failed\n`);
   } else {
     process.stdout.write(
-      "ok 13.1: mock-bridge browser E2E covers PRD A1/A6/A7/A8/A9/A13/A14 non-platform acceptance and audio effects UI in real Chromium, plus A15 (app-only 沉浸式封面取色，无 PRD 条目)\n",
+      "ok 13.1: mock-bridge browser E2E covers PRD A1/A6/A7/A8/A9/A13/A14 non-platform acceptance and audio effects UI in real Chromium, plus A15 (app-only 沉浸式封面取色，无 PRD 条目) and #76 Windows caption buttons (windows/web branches)\n",
     );
   }
 }

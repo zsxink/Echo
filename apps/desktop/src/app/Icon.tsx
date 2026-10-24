@@ -161,6 +161,19 @@ const GLYPHS: Record<string, Glyph> = {
   sidebar: { nodes: <path d="M6 5v14M12 5v14M18 5v14" /> },
   menu: { nodes: <path d="M4 6h16M4 12h16M4 18h16" /> },
   close: { nodes: <path d="m6 6 12 12M18 6 6 18" /> },
+  // Windows 自绘窗口控件（issue #76）：原生 caption 按钮的线型复刻，仍走
+  // 1.8px 规范。restore 是 maximize 的双框变体——前框偏移 2.5，与 Windows
+  // 原生还原按钮的双矩形叠法一致。
+  winMinimize: { nodes: <path d="M5 12h14" /> },
+  winMaximize: { nodes: <rect x="6" y="6" width="12" height="12" rx="1.2" /> },
+  winRestore: {
+    nodes: (
+      <>
+        <rect x="8.5" y="4.5" width="11" height="11" rx="1.2" />
+        <path d="M15.5 15.5v2.8a1.2 1.2 0 0 1-1.2 1.2H6.7a1.2 1.2 0 0 1-1.2-1.2V9.7a1.2 1.2 0 0 1 1.2-1.2h2.8" />
+      </>
+    ),
+  },
   chevronDown: { strokeWidth: 2, nodes: <path d="m6 9 6 6 6-6" /> },
   chevronLeft: { strokeWidth: 2, nodes: <path d="m14 6-6 6 6 6" /> },
   chevronRight: { strokeWidth: 2, nodes: <path d="m10 6 6 6-6 6" /> },
