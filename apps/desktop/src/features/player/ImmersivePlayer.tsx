@@ -196,8 +196,11 @@ function ImmersiveBody(props: {
 
   // Everything that changes the *rendered height* of the metadata block: the
   // lyrics column is offset below it by measurement, not by the stylesheet.
+  // 歌词专注阅读 is part of the same geometry question — that layout gives the
+  // lyrics the whole surface and owns their margin itself, so the measurement
+  // has to be told to stand down and re-run on the way back.
   const infoSignature = `${title}|${artist ?? ""}|${album ?? ""}|${duration}`;
-  useLyricsStartOffset(shellRef, infoSignature);
+  useLyricsStartOffset(shellRef, infoSignature, ui.focusOpen);
 
   // Leaving 歌词专注阅读 through 收起 returns focus to the lyrics area — the
   // prototype does the same (`lyricsCard.focus()`,

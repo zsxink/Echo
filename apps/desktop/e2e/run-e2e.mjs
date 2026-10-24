@@ -18,7 +18,8 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:http";
 
-import { assertLyricsOffsetAfterTrackChange } from "./a9-lyrics-offset.mjs";
+import { assertLyricsFocusRoundTrip } from "./a9-lyrics-focus.mjs";
+import { assertLyricsGapSettles, assertLyricsOffsetAfterTrackChange } from "./a9-lyrics-offset.mjs";
 import { assertWindowControlsScenarios } from "./a76-window-controls.mjs";
 
 // This file lives at `apps/desktop/e2e/run-e2e.mjs`, so the app root is the
@@ -430,8 +431,8 @@ async function main() {
       "A9: no 展开播放器 entry in the player bar",
     );
     // A9 needs the *wide* layout: only at ≥981px do the metadata and the lyrics
-    // share one grid area, which is where the measured `--lyrics-start-offset`
-    // is the sole thing keeping the lyrics out from under the song title.
+    // share one grid area, which is where the measured inline `margin-top` is
+    // the sole thing keeping the lyrics out from under the song title.
     // Headless Chromium's default window is 800px wide (the 761–980px stack),
     // so pin a desktop viewport before opening the surface.
     await cdp.call("Emulation.setDeviceMetricsOverride", {
@@ -457,15 +458,11 @@ async function main() {
     // and the surface must not repeat the player bar's transport, nor let the
     // faded lyric lines paint underneath the song title (the wide layout puts
     // the metadata and the lyrics in one grid area, and only the runtime
-    // measurement of `--lyrics-start-offset` keeps them apart).
+    // measurement of the lyrics' inline margin keeps them apart).
     const geometry = await evalJs(`(() => {
-      const info = document.querySelector('[data-testid="immersive"] .now-playing-info');
       const lyrics = document.querySelector('[data-testid="immersive"] .lyrics');
-      if (!info || !lyrics) return null;
+      if (!lyrics) return null;
       return {
-        lyricsTop: Math.round(lyrics.getBoundingClientRect().top),
-        infoBottom: Math.round(info.getBoundingClientRect().bottom),
-        startOffset: getComputedStyle(lyrics).marginTop,
         controls: !!document.querySelector('[data-testid="immersive"] .controls'),
         headerRow: !!document.querySelector(
           '[data-testid="immersive"] .lyrics-label, [data-testid="immersive"] .lyrics-actions',
@@ -483,10 +480,9 @@ async function main() {
     // 回到当前行 belongs to the paused-follow state only; a freshly opened
     // surface that shows it means a row is being reserved for it again.
     if (geometry.resumeEntry) fail("A9: 回到当前行 is painted before auto-follow was ever paused");
-    if (geometry.lyricsTop < geometry.infoBottom)
-      fail(
-        `A9: the lyrics start at ${geometry.lyricsTop}px but the metadata runs to ${geometry.infoBottom}px — the lyrics paint semi-transparent under the song title (--lyrics-start-offset: ${geometry.startOffset})`,
-      );
+    // The gap, not merely "no overlap": a margin that ate the gap is a collapsed
+    // measurement even when the title stays legible (issue #90).
+    await assertLyricsGapSettles("opening the surface", { evalJs, waitFor, sleep, fail });
 
     // 手动滚动暂停跟随 → 回到当前行. The mock now ships enough lines to overflow
     // the column, which is the only way this path is reachable at all: with the
@@ -553,89 +549,24 @@ async function main() {
       "A9: activating 回到当前行 flipped the reading mode",
     );
 
-    const entered = await waitFor(`(() => {
-      const block = document.querySelector('[data-testid="immersive"] .lyrics');
-      if (!block) return null;
-      if (!(block.getAttribute('aria-label') || '').includes('展开歌词专注阅读')) return null;
-      block.click();
-      return true;
-    })()`);
-    if (!entered) fail("A9: the lyrics area is not an activatable 歌词专注阅读 entry");
-
-    const layout = await evalJs(`(() => {
-      const shown = (sel) => {
-        const el = document.querySelector(sel);
-        if (!el) return false;
-        const cs = getComputedStyle(el);
-        return cs.display !== 'none' && el.getBoundingClientRect().height > 0;
-      };
-      const popover = document.querySelector('[data-testid="immersive"]');
-      const lyrics = document.querySelector('[data-testid="immersive"] .lyrics');
-      const cs = popover ? getComputedStyle(popover) : null;
-      // What the lyrics can actually occupy: the surface minus the padding that
-      // reserves room for the 常驻播放栏 below it.
-      const contentHeight =
-        popover && cs
-          ? Math.round(
-              popover.getBoundingClientRect().height -
-                parseFloat(cs.paddingTop) -
-                parseFloat(cs.paddingBottom),
-            )
-          : 0;
-      return {
-        focusOpen: document.body.classList.contains('lyrics-focus-open'),
-        coverShown: shown('[data-testid="immersive"] .playing-cover'),
-        infoShown: shown('[data-testid="immersive"] .now-playing-info'),
-        labelShown: shown('[data-testid="immersive"] .lyrics-label'),
-        lyricsHeight: lyrics ? Math.round(lyrics.getBoundingClientRect().height) : 0,
-        contentHeight,
-        bottomPadding: cs ? Math.round(parseFloat(cs.paddingBottom)) : 0,
-        legacySurface: !!document.querySelector('.lyrics-focus'),
-        currentLine:
-          document.querySelector('[data-testid="immersive"] .lyric-line.is-current')
-            ?.textContent ?? '',
-      };
-    })()`);
-    if (!layout.focusOpen) fail("A9: entering focus did not set body.lyrics-focus-open");
-    if (layout.coverShown) fail("A9: the vinyl cover is still painted in focus mode");
-    if (layout.infoShown) fail("A9: the song metadata is still painted in focus mode");
-    if (layout.headerRow)
-      fail("A9: the lyrics header row still shows; the lyrics must take the whole area");
-    if (layout.legacySurface)
-      fail("A9: a second `.lyrics-focus` surface still renders (focus must be a state)");
-    // The lyrics must fill the area the surface actually gives them.
-    if (layout.contentHeight <= 0 || layout.lyricsHeight < layout.contentHeight * 0.9)
-      fail(
-        `A9: the lyrics do not take the surface (lyrics ${layout.lyricsHeight}px of ${layout.contentHeight}px usable)`,
-      );
-    // …and the surface must have kept room for the 常驻播放栏, which is what
-    // supplies playback controls in focus mode.
-    if (layout.bottomPadding < 100)
-      fail(
-        `A9: focus mode left only ${layout.bottomPadding}px at the bottom; the 常驻播放栏 must stay reachable`,
-      );
-    if (!layout.currentLine.includes(playing))
-      fail(`A9: focus shows "${layout.currentLine}", not the playing song's lyrics ("${playing}")`);
-
-    await evalJs(
-      `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`,
-    );
-    await assert(
-      `!document.body.classList.contains('lyrics-focus-open')`,
-      "A9: Escape did not leave 歌词专注阅读",
-    );
-    await assert(
-      `!!document.querySelector('[data-testid="immersive"]')`,
-      "A9: Escape closed the immersive player as well (focus must unwind first)",
-    );
+    // 歌词专注阅读 round trip, including the post-exit geometry re-check that
+    // issue #90 needs (the metadata block loses its box entirely in focus
+    // mode). Lives in its own module to keep this harness under the scale gate.
+    await assertLyricsFocusRoundTrip({ evalJs, waitFor, assert, sleep, fail, playing });
 
     // Track change + late height change (issue #75): the offset must survive
     // the remount a queue entry forces and re-derive from the info block's
     // rendered height — the assertions live in their own module to keep this
     // harness under the 1000-line scale gate.
-    await assertLyricsOffsetAfterTrackChange({ evalJs, sleep, fail, firstSongTitle: playing });
+    await assertLyricsOffsetAfterTrackChange({
+      evalJs,
+      waitFor,
+      sleep,
+      fail,
+      firstSongTitle: playing,
+    });
     pass(
-      "A9: 歌词专注阅读 rearranges the immersive surface; lyrics clear the song title; Escape unwinds it first",
+      "A9: 歌词专注阅读 rearranges the immersive surface; lyrics keep the gap over the song title before and after it; Escape unwinds it first",
     );
   } catch (e) {
     abort("A9", e);
@@ -692,7 +623,10 @@ async function main() {
       format: "png",
       captureBeyondViewport: false,
     });
-    writeFileSync("/tmp/echo-audio-effects-presets.png", Buffer.from(presetsShot.data, "base64"));
+    writeFileSync(
+      join(tmpdir(), "echo-audio-effects-presets.png"),
+      Buffer.from(presetsShot.data, "base64"),
+    );
     await evalJs(
       `Array.from(document.querySelectorAll('.effects-preset')).find((button) => button.innerText.includes('摇滚')).click()`,
     );
@@ -728,7 +662,7 @@ async function main() {
       captureBeyondViewport: false,
     });
     writeFileSync(
-      "/tmp/echo-audio-effects-equalizer.png",
+      join(tmpdir(), "echo-audio-effects-equalizer.png"),
       Buffer.from(equalizerShot.data, "base64"),
     );
     await cdp.call("Emulation.setDeviceMetricsOverride", {
@@ -757,7 +691,10 @@ async function main() {
       format: "png",
       captureBeyondViewport: false,
     });
-    writeFileSync("/tmp/echo-audio-effects-narrow.png", Buffer.from(narrowShot.data, "base64"));
+    writeFileSync(
+      join(tmpdir(), "echo-audio-effects-narrow.png"),
+      Buffer.from(narrowShot.data, "base64"),
+    );
     await cdp.call("Emulation.clearDeviceMetricsOverride");
     await evalJs(
       `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`,
