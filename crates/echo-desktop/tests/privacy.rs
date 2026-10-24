@@ -16,11 +16,12 @@
 //!   retryable, everything else is not, and the serialized DTO never carries an
 //!   absolute path or a Rust debug string.
 //! - **production 日志隐私** — a line written through the installed global
-//!   `tracing` subscriber into `echo.log` keeps only safe fields (file name,
-//!   short hash, operation/error code): no `ABS_PATH`, no parent dir, no lyric
-//!   / tag / content text.
-//! - **panic hook stays local** — a crash diagnostic is appended to `crash.log`
-//!   in the diagnostics directory and never leaves it.
+//!   `tracing` subscriber into the dated run log (`echo-YYYY-MM-DD.log`)
+//!   keeps only safe fields (file name, short hash, operation/error code): no
+//!   `ABS_PATH`, no parent dir, no lyric / tag / content text.
+//! - **panic hook stays local** — a crash diagnostic is appended to the dated
+//!   crash log (`crash-YYYY-MM-DD.log`) in the diagnostics directory and never
+//!   leaves it.
 
 use std::fs;
 use std::io::Write;
@@ -121,7 +122,6 @@ fn structured_logging_never_leaks_path_lyric_tag_or_content() {
     let dir = diag_dir("log");
     cleanup(&dir);
     let diag = install_once(dir.clone());
-    let log_path = diag.log_path();
 
     // The production privacy path is `Error::to_log`, which redacts an absolute
     // path and scrubs lyric/tag/content `key=` values into opaque hashes. The
@@ -140,10 +140,19 @@ fn structured_logging_never_leaks_path_lyric_tag_or_content() {
     // The process-global subscriber may already belong to the test harness.
     // Exercise the same production rolling writer directly here; installer
     // idempotency is covered by the platform unit test.
-    let mut writer = RollingLog::new(diag.log_path(), 1024 * 1024, 1, 2 * 1024 * 1024);
+    let mut writer = RollingLog::new(
+        diag.logs_dir().to_path_buf(),
+        "echo",
+        1024 * 1024,
+        1,
+        2 * 1024 * 1024,
+        7,
+    );
     writeln!(writer, "operation=metadata_read {safe_line}").expect("write redacted event");
     writer.flush().expect("flush redacted event");
-    let text = fs::read_to_string(&log_path).unwrap_or_default();
+    // Read back through the writer's own active path so a midnight crossing
+    // between construction and read cannot mismatch the date.
+    let text = fs::read_to_string(writer.path()).unwrap_or_default();
 
     // Safe fields survive (error code + redacted file name).
     assert!(text.contains("error.code=io"), "error code missing: {text}");
@@ -194,8 +203,25 @@ fn panic_hook_writes_a_locally_isolated_crash_diagnostic() {
         text.contains("privacy-crash"),
         "thread name recorded: {text}"
     );
-    // The crash diagnostic stays in the private directory and is bounded to it.
-    assert_eq!(crash_path.file_name().unwrap(), "crash.log");
+    // The crash diagnostic stays in the private directory, under the dated
+    // name `crash-YYYY-MM-DD.log` (issue #38). chrono is not visible to
+    // integration tests, so the date shape is checked positionally.
+    let name = crash_path.file_name().unwrap().to_str().unwrap();
+    let date = name
+        .strip_prefix("crash-")
+        .and_then(|rest| rest.strip_suffix(".log"))
+        .expect("crash-<date>.log shape");
+    let bytes = date.as_bytes();
+    assert!(
+        bytes.len() == 10
+            && bytes[4] == b'-'
+            && bytes[7] == b'-'
+            && bytes
+                .iter()
+                .enumerate()
+                .all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit()),
+        "zero-padded ISO local date in the crash file name: {name}"
+    );
     assert!(
         crash_path.starts_with(&dir),
         "crash stays in diagnostics dir"
