@@ -1,4 +1,176 @@
-# 2026-10-24 本次继续实施（更新中，优先于后文）
+# 2026-10-24 收尾交接：confirmed.v2 与墓碑回归已闭环（最新，优先于后文）
+
+## 当前状态
+
+- 分支 `codex/issue-72-library-first-durability`；`tasks.md` 仍为 **17/67**，2.3 未勾选。本次提交只把已验证的 confirmed/receipt 接线与墓碑修复落盘，不归档、不创建 PR。
+- 后续仍遵守子代理严格串行、主线程编辑、完成整项并验证后才勾选。
+
+## 本轮已闭环的墓碑回归
+
+上一轮记录的失败只是 fixture 装配错误（未授权随机作者 + origin 链冲突）。本次改为授权 peer 作为 origin，并补上 exporter 不声明、但投影必需的合成 pending 状态后，**先观察到了真实的 RED**：恢复后的 SQL baseline 是 `payload_json=Some("{\"tombstone\":true}")`，而 host 实际契约是 `payload_json=NULL`。
+
+- 生产修复：`durability_projection/sync_state/objects.rs::confirmed` 对 typed tombstone 写入 SQL NULL（与 `host_ledger_apply` / `sync_snapshot_apply` 的既有契约一致），同版本幂等比较改为按原始 SQL 字符串比对，避免 tombstone 与普通正文被误判相等。
+- 修复后该测试连续两次重试均断言 `(is_tombstone=true, payload_json=NULL, changed_at_ms=222)` 且无 live playlist。
+
+## 当前工作树的实际验证
+
+| 检查 | 结果 |
+| --- | --- |
+| `cargo test -p echo-core library_durability --lib` | 112 通过 / 0 失败 |
+| `cargo test -p echo-core --lib` | 787 通过 / 0 失败 / 1 忽略（46.88 秒） |
+| `cargo clippy -p echo-core --all-targets -- -D warnings` | 通过（期间修复新增测试触发的 `too_many_lines`） |
+| `cargo test -p echo-desktop --lib` | 423 通过 / 0 失败 |
+| `cargo fmt --all --check` | 通过 |
+| `pnpm --filter @echo/desktop typecheck` | 通过 |
+
+仍未运行：完整 workspace/all-features Clippy、`pnpm verify:governance`、原样 513 长测、三平台原生验收。这些不得视为已通过，2.3 与第 4 组仍未完成。
+
+
+## 本轮 confirmed 子步骤
+
+- 新增 `crates/echo-core/src/domain/library/durability/confirmed.rs`，通过 `state.rs` 分派校验 `echo.sync.confirmed.v2`：必须保留 author、mutation_id、version/sequence、payload/tombstone、changed_at_ms、原始 LAN commit 字符串及前后 digest；检查原始 binding、对象身份、协议版本与 commit digest。不据此授予联网权限。
+- `sqlite/sync/durability.rs::complete_confirmations` 按完整 namespace + sequence 匹配本次导出的真实 ledger，只有完整正文通过校验才将导出候选升级为 v2；缺失或冲突保留 v1，不从当前身份、资源或时钟补造，不改写已提交的旧目录事实。
+- `durability_projection/sync_state/objects.rs::confirmed` 接受 v2，并与独立验证 ledger 的 exact original_body/digest 对账；同版本幂等比较补上 changed_at_ms，不再忽略历史时间冲突。仍保留 pending 有效资源保护。
+- 以下专项均已先观察预期失败再修复通过（历史跑次，不是当前树全量验证）：
+  - `library_durability_trusted_sync_retry_rejects_same_version_with_changed_timestamp`：1/1。
+  - `library_durability_trusted_sync_retry_restores_exact_baseline_and_pending_without_echo`：1/1，真实 exporter 产出 confirmed.v2，baseline A 与有效值/pending B 分离。
+  - `library_durability_confirmed_v2_rejects_mismatched_original_confirmation`：1/1，缺字段/篡改正文身份等拒绝。
+- 上述接线后跑过 `cargo fmt --all`；最后新增的墓碑测试尚未重新 fmt。完整 Core **784 passed / 1 ignored** 是此前 receipt 阶段结果，不能冒充 confirmed 修改后的全量结果。当前 confirmed 新模块尚未跑最终 Clippy/完整 Core。
+
+## 最后失败：已修复（保留历史记录）
+
+新增测试位于 `crates/echo-core/src/infrastructure/sqlite/durability_projection/sync_state/tests.rs`：
+`library_durability_confirmed_tombstone_restores_sql_null_and_retries`。
+
+- 意图：从真实 host 删除确认导出完整 tombstone，提交目录，恢复至新 SQLite，再重复重试；断言 SQL baseline 为 `(is_tombstone=true, payload_json=NULL, changed_at_ms=222)` 且无 live playlist。
+- 最后执行：`cargo test -p echo-core --lib library_durability_confirmed_tombstone_restores_sql_null_and_retries`。
+- 结果 **exit 101，0 passed / 1 failed / 787 filtered out**。失败发生在 `stage_confirmation_at(...).unwrap()`，错误为 `origin device is not authorized for this library`（当时 tests.rs:634）。测试用了新的随机 `DeviceId::new()`，不是已授权作者；这是 fixture 装配错误，**不是已观察到生产墓碑缺陷的有效 RED**。
+- 测试改动已保留，未为交接继续修。下一步可沿用 source 已授权作者：删除候选 origin_seq=2、previous_mutation_id=原 seq1 mutation；同时避开 fixture 中 pending B 的 seq2 占位（将 pending frozen 改成 seq3 并指向删除 mutation），或另建隔离 fixture。不要直接把新随机作者改成当前作者而仍用 seq1，造成 origin 链冲突。
+- 待正确装配并观察预期 RED 后，再修表示转换：真实 host 在 SQL 存 tombstone `payload_json=NULL`，commit 正文是 `{"tombstone":true}`；当前恢复比较、插入与同版本幂等仍未完整处理该差异。v1 null 兼容及 v2 marker → SQL NULL 均需明确测试，不能为了通过改变现有 host SQL 契约。
+
+## 长验证状态纠正
+
+下文“原样 513 正在执行”已过时：该测试与 workspace/all-features 长测被另一会话 SIGTERM，均 **exit 143**，没有最终通过结果；governance 跑次 **exit 1**，本线程尚未展开最终失败日志。三组均不得计为通过或描述为仍在运行。
+
+- 跨会话报告三组长测持续高 CPU 后终止；暂不重启三组并发长测。尚无性能采样证明根因。
+- 全量 records/state 导出、batch 解码/哈希、`enrich_recovery_batch` 逐条线性查找仅是候选热点，不能当成已证实根因；后续先做阶段进度/计时及采样，再单项有界验证。
+- 原样 513 的完整验收仍欠缺，短 suite 不替代。相关旧日志路径保留在下文。
+
+## 继续顺序与验收边界
+
+1. 修墓碑测试的授权作者/origin 链装配，得到有效 RED，再实现 SQL NULL/领域 marker 转换并验证重复重试。
+2. 补 confirmed 非空资源、aliases、base/predecessor、缺 ledger 保留 v1、active/archived 同 seq 不串 scope、旧/未知格式兼容覆盖。
+3. 继续 2.3 的实际受管资源 publication 严格契约及 portable 字段/关系兼容矩阵；目前不能勾选 2.3。
+4. 串行独立审查，跑受影响专项、fmt、Core Clippy/完整测试及规模检查，再更新协议/证据；长测按上述性能约束另行定位，不静默跳过最终验收。
+5. 4.2 真实 FrozenWriteSet / 规划回滚 → 目录提交 → 唯一纯投影、4.5 生产 retained retry 等仍未完成。现有 `commit_projection` 仍提交原规划 SQL 事务，不能用此轮 confirmed 接线代替。
+
+本次收尾仅核对分支、任务计数、工作树并更新交接；`git diff --check` 当次无输出。未重新运行测试，不宣称当前工作树全部通过。
+
+---
+
+# 2026-10-24 本轮继续实施（历史记录，最新状态以上文为准）
+
+- 2.1 完成时 `tasks.md` 为 **16/67**（2.2 完成后的最新计数见下一条）：2.1 已完成并勾选；目录 change set 增加 typed 预期版本、完整依赖及资源原件校验，保留无关历史悬空证据。主线程 `library_durability --lib` **96/96**、Core Clippy、fmt 通过；代理全 Core 为 **771 passed / 1 ignored**，集成测试通过。生产协调器接入仍属于 4.2，不据此勾选。
+- 2.2 已完成并勾选，当前 **17/67**。保留 `ControlPlanePort::durability()` 能力访问器，仅禁止其余五个重复转发方法；聚焦 `LibraryProjectionPort` 与历史救援声明分开，新增目录边界故障 fake、投影 sink 和 UoW 仅投影契约回归。独立复查无可操作缺陷；目录端口 6 方法、投影端口 3 方法、ControlPlane 15 方法不高于既有基线，规模白名单未增长。代理严格串行。
+- 2.2 后主线程完整 Core **774 passed / 1 ignored**，架构 **8/8**，集成测试均通过；Desktop Clippy、fmt、diff 检查通过。原生短套件 **119 passed / 1 ignored / 1 明确过滤**，不替代仍在执行的原样 513 测试。`commands.rs` 原样拆出四个解析 helper 至 `commands/parsing.rs` 后 scale、App check/Clippy 通过；未扩大白名单或改变解析语义。
+- 已核实下文资源审查窗口并补三类精准回归：缺 frozen、缺 disposition、版本不匹配均不得让 confirmed 覆盖有效 pending 资源；pending 终结后原子重选引用，覆盖跨 root、重复重试与 SQL 回滚。
+- Desktop 原 E0004 已修复；随后实际生成 IPC 暴露生成器仍硬编码旧恢复原因，前端 typecheck 报 TS2353。新增真实生成输出/serde 契约回归，先观察 `missing missingSyncDependency` 失败，再修 generator 并实际重新生成，未以手改生成物代替。
+- 修复后主线程验证：Desktop **423/423**；前端 **44 文件 / 402 测试**，typecheck、format:check、lint、build 均通过。测试仍输出 React act 和部分 mock 告警，不声称输出无告警。以上不等于 9.1/9.2 整项完成。
+- 当前树 workspace all-targets/all-features Clippy 与 Chromium mock-bridge e2e 已通过；e2e 不替代原生或三平台验收。
+- 原样 513 条原生分页测试已重新启动，日志 `/tmp/echo-library-first-20261024-native-513-current.log`；尚无最终结果，不计通过。完整 governance、workspace/all-features 和三平台原生验收仍未完成。
+- 2.3 继续实施，尚未勾选：控制面替换前严格解析已有原件，坏 JSON/未知格式拒写且保留原字节；legacy 写入不得把旧确认继承给不同用户值；本地 manifest 与 sync library 身份独立。四类回归均先观察失败，控制面组 **17/17** 通过。
+- 原件引用新增 MIME token 与小写 BLAKE3 校验；大写摘要回归先观察失败后复用既有 digest 校验修复，change-set 组 **7/7** 通过。旧 JSON 解码未被无差别收紧。
+- 修复测试 redundant clone 后，Core all-targets/all-features Clippy、持久化组 **104/104**、fmt、diff 检查通过；该轮早于随后新增的小写摘要回归，不冒充最后树完整验证。严格 confirmed/receipt/publication 新正文与历史 v1 兼容接线仍在实施。
+- 2.3 的 receipt.v2 已接真实 exporter 与可信恢复 projector：完整 host outcome 经严格校验后标为 v2；无 schema 的 SQL 历史/replica applied outcome 不补造 checkpoint，保留 v1 和原始字符串。既有已提交 v1 不改写。sequence/checkpoint 必须显式存在（允许拒绝态 null），缺字段回归均观察到红后修复；accepted binding/sequence/identity 及 round-trip、旧 Bound v1 保留测试通过。
+- receipt 接线后持久化组 **108/108** 通过；随后新增 replica 原文保留测试，export 组 **3/3**、receipt 组 **3/3**、Core all-targets/all-features Clippy、diff 检查通过。随后完整 Core exit 0：单元 **784 passed / 1 ignored**、架构 **8/8**、其余集成 **7+1+2+19** 均通过，日志 `/tmp/echo-library-first-core-receipt-v2.log`；其后仅加强真实恢复测试对 digest/original_outcome/sequence/received_at 原样恢复的断言，该专项 **1/1** 通过。不据此勾选 2.3，confirmed/publication 完整契约仍待实施。
+- 本轮工作树有未提交改动；未提交、未推送、未归档、未创建 PR。
+
+---
+
+# 2026-10-24 Codex 后续会话交接补记（历史记录）
+
+本节根据 Codex 会话
+`~/.codex/sessions/2026/10/24/rollout-2026-10-24T07-01-03-01a16aff-0fa3-7b81-9876-a5fbe499341a.jsonl`
+补齐原检查点之后的进展。会话最后因 `usage_limit_exceeded` 中断，未正常完成收尾；
+不能继续把下面的 `trusted_sync_projector` 视为仍在执行。此次仅整理交接文档，
+未重新运行代码验证，也未继续实现。
+
+本次继续已闭环两项阻塞：
+
+- Desktop/App 的 exit 101 根因是 `ProjectionUnresolvedReason` 新增三个枚举项后，
+  `echo-desktop` IPC 转换未穷尽匹配（E0004）。已补 Rust DTO 映射、IPC 类型和恢复界面文案；
+  `cargo check -p echo-desktop --lib` 通过。该修复不等于 9.1 完成，完整生成/序列化/端到端验收仍待执行。
+- confirmed 基线推进覆盖 pending 资源的风险已用缺失 frozen、缺失 disposition、版本不匹配
+  三类回归复现并修复。confirmed 更新在同 root/对象仍有 pending 时保留有效资源；pending
+  终结后在同一事务内重新选择剩余 pending 或 confirmed 资源；跨 root、重复重试及 SQL
+  回滚均有回归。专项 `cargo test -p echo-core durability_projection` 22/22、
+  `cargo fmt --all -- --check`、Core clippy、`sync_domain` 19/19 通过。该修复尚未使
+  7.2/7.5 整项完成。
+
+当前 `tasks.md` 仍为 **15/67**；**3.1 / 4.2 / 4.5 未勾选**。
+
+本次随后修复了 Core 集成测试装配：`sync_cursor_enrollment` 的 host/replica/fork fixture
+此前未配置 directory commit adapter，导致两个测试在生产 directory-first 约束处正确拒绝。
+测试现在为各 fixture 注册真实 `RootControlPlane`、manifest，并在重启后从数据库恢复 active
+root 再装配；生产代码未改。`cargo test -p echo-core --test sync_cursor_enrollment` 为 2/2
+通过。该修复不代表 12.2 或 governance 全量门禁完成。
+本次核对分支为 `codex/issue-72-library-first-durability`，更新本文前工作树干净，
+HEAD 为 `4310156`。旧会话中的“未提交”是当时状态，不作为当前提交状态断言；
+change 仍位于活动目录，未完成归档，不能宣称整个 change 已验收。
+
+## 后续已落盘的子步骤与边界
+
+- 可信当前会话内的 sync-state 纯 SQL projector 及 Core 显式重试入口已落盘，
+  不再只是正在实施的计划。调用链为
+  `RetryLibraryOperation::catch_up_sync` → 普通目录 `catch_up` →
+  `LibrarySyncRecoveryPort::retry_library_sync_state` → SQLite writer 单事务投影。
+  详见 [可信同步状态投影证据](trusted-sync-state-projection.md)。
+- Context 显式携带 root、本地 LibraryId、author、role、完整 binding 和已验证的独立
+  checkpoint；投影事务再次核对身份与水位。离线恢复只保留证据，不据便携 binding
+  恢复联网信任，不生成新 mutation 身份或 outbox 回声。
+- **尚无 native runtime 调用方**，真实 freeze scope / active-version 捕获、显式
+  `FrozenWriteSet` collector 和统一提交协调器仍未完成。现有
+  `sync/durability::commit_projection` 仍提交原规划事务，尚未替换成
+  “规划回滚 → 目录提交 → 按水位唯一纯投影”；不能因此勾选 4.2 / 4.5。
+
+## 最后审查与验证：不可遗漏的未解决项
+
+1. **资源引用审查问题尚未闭环。** 会话末尾独立审查指出：恢复新的 confirmed 基线
+   可能覆盖 SQLite 中仍待确认候选的资源引用。尽管子步证据已描述“已有精确 pending
+   资源保持”并报告相关测试，最后审查仍提出遗漏；会话仅承诺修复与精准回归，
+   没有后续修复及验证完成证据。继续前须核实该具体窗口，不能按已有 13 项专项通过
+   认定风险已消除。
+2. **最终 Desktop / App 跑次均退出 101。** 会话未展开具体错误，不能断言是测试断言、
+   编译还是其他环境问题；优先检查以下日志，日志不可用时原样复跑取得错误：
+   - `/tmp/echo-library-first-20261024-wrap-desktop.log`
+   - `/tmp/echo-library-first-20261024-wrap-app.log`
+   App 跑次明确跳过 513 条长测；之前短 native 的 108 passed 不能替代最终失败跑次。
+3. 最后 Core 收尾跑次记录 **exit 0**，但未捕获最终测试数量；日志为
+   `/tmp/echo-library-first-20261024-wrap-core.log`。不能把前一轮的
+   **749 passed / 0 failed / 1 ignored** 数量套用到这一跑次。
+4. 可信投影资源收紧后的专项记录 **13 passed / 0 failed**，Core Clippy、fmt、scale、
+   diff 检查通过；资源收紧前的 durability 组为 **86 passed / 0 failed**、arch 为
+   **7 passed / 0 failed**。这些是历史会话结果，且均不代表最后审查问题已解决、
+   完整 workspace 或治理门禁通过。
+5. 修复后的原样 513 条长测按收尾要求停止，仍未执行完分页断言；既不计通过，
+   也不能据此断言修复失败。保留日志
+   `/tmp/echo-library-first-20261024-native-513-fixed.log`，下次仍须原样完成：
+   `cargo test -p echo-app --bin Echo native_pull_drains_more_than_one_commit_page_without_losing_local_work -- --nocapture`。
+
+## 下一次继续顺序
+
+1. 先核实并闭环 confirmed / pending 资源引用审查问题，补精准回归和独立复查；
+   同时查明最终 Desktop / App 的 exit 101，修复后重跑受影响验证。
+2. 完整原样重跑 513 条分页场景，再完成缺失的治理及全量验证；不得减少 fixture、
+   放宽 directory-first 约束或用过滤后的短套件冒充完整通过。
+3. 按依赖推进真实冻结写集捕获、actor 内统一顺序协调器、可信 runtime 接线及全部
+   本地/LAN 入口；继续保持 3.1 / 4.2 / 4.5 未完成，直至整项行为与验收均满足。
+4. 后续 sub-agent 仍严格串行。剩余迁移、资源/私有历史 GC、UI、场景登记与三平台
+   证据仍按 tasks 执行；完成规定验证后才同步规格、归档并创建关联 #72 的 PR。
+
+---
+
+# 2026-10-24 本次继续实施（历史检查点）
 
 继续遵守 sub-agent 严格串行。任务 **2.4 已完成并勾选，当前 15/67**。
 
@@ -24,9 +196,9 @@
   74/74、随后新增 absent 回归 1/1、portable v1/v2 fixture 4/4、Core Clippy/fmt/
   scale/strict 通过；独立审查通过。见 [协议契约证据](protocol-contract.md)。
 
-当前唯一活动子代理 `trusted_sync_projector` 正实现可信当前会话内的纯 SQL
-sync-state projector 与显式 Core 重试入口；尚未最终验证/独立审查，不勾
-4.2/4.5。其后仍需真实 freeze scope/active-version 捕获、显式 FrozenWriteSet、
+本历史检查点写入时，唯一活动子代理 `trusted_sync_projector` 正实现可信当前会话内的纯 SQL
+sync-state projector 与显式 Core 重试入口；该子步后续已落盘，最终审查与失败验证见本文顶部，
+不再表示代理仍活动，4.2/4.5 仍不勾选。其后仍需真实 freeze scope/active-version 捕获、显式 FrozenWriteSet、
 actor 内 rollback 规划→目录提交→按水位纯投影，以及剩余本地/LAN/迁移/UI/验收。
 未归档、未创建 PR；三平台和完整治理门禁仍未通过。
 
