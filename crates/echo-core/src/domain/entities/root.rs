@@ -13,8 +13,9 @@ use super::song::Song;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LibraryRoot {
     id: LibraryRootId,
-    /// Absolute path on this machine — kept in the entity as a raw field but
-    /// **never** logged or serialized outward. Cross-team contracts use
+    /// Absolute path on this machine in the plain, user-visible spelling
+    /// (never the Windows verbatim `\\?\` form — see [`crate::domain::paths`]).
+    /// **Never** logged or serialized outward; cross-team contracts use
     /// `RelativeMediaPath` only.
     absolute_path: std::path::PathBuf,
     is_active: bool,
@@ -38,7 +39,7 @@ pub enum RootAvailability {
 
 impl LibraryRoot {
     #[must_use]
-    pub const fn new(
+    pub fn new(
         id: LibraryRootId,
         absolute_path: std::path::PathBuf,
         is_active: bool,
@@ -46,7 +47,10 @@ impl LibraryRoot {
     ) -> Self {
         Self {
             id,
-            absolute_path,
+            // Every construction site (candidate preparation, legacy rows read
+            // from storage, test doubles) converges on the plain spelling; the
+            // root id is derived from the raw canonical form separately.
+            absolute_path: crate::domain::paths::plain_absolute(absolute_path),
             is_active,
             write_capable,
             write_safety_locked: false,

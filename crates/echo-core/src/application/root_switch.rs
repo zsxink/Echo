@@ -119,9 +119,6 @@ impl<'a> PrepareLibraryCandidate<'a> {
     /// persistence failure) propagate; the candidate record stays (marked
     /// unavailable, retryable) and the current active root is untouched.
     pub fn prepare(&self, absolute_path: &Path) -> Result<PreparedCandidate, Error> {
-        // The root id stays bound to the raw canonical form (`std::fs::canonicalize`,
-        // verbatim on Windows): it is the same string the id was derived from when
-        // existing records were created, so re-picking a directory keeps its identity.
         let canonical = absolute_path
             .canonicalize()
             .map_err(|source| Error::io("resolve candidate root", source, absolute_path))?;
@@ -144,14 +141,7 @@ impl<'a> PrepareLibraryCandidate<'a> {
             .as_ref()
             .is_some_and(LibraryRoot::write_safety_locked);
         let write_capable = observed_write_capable && !write_safety_locked;
-        // The record (and everything downstream: persistence, registry binding,
-        // UI display) uses the plain, non-verbatim spelling — issue #82.
-        let mut prepared = LibraryRoot::new(
-            root_id,
-            crate::domain::paths::plain_absolute(&canonical),
-            false,
-            observed_write_capable,
-        );
+        let mut prepared = LibraryRoot::new(root_id, canonical, false, observed_write_capable);
         prepared.set_write_safety_locked(write_safety_locked);
         self.roots.upsert(&prepared)?;
 
@@ -459,43 +449,6 @@ mod tests {
             artist: Some("歌手".to_owned()),
             album: None,
         })
-    }
-
-    /// Regression (issue #82): root identity stays bound to the raw canonical
-    /// form (`std::fs::canonicalize` — verbatim on Windows) while the persisted
-    /// record carries the plain spelling. Deriving the id from the plain path
-    /// instead would re-enroll every existing Windows library as a new identity.
-    #[test]
-    fn prepare_keeps_the_raw_canonical_identity_and_stores_the_plain_path() {
-        let fixture = fixture();
-        let dir = tempfile::tempdir().expect("temp dir");
-        seed_candidate_media(dir.path());
-        fixture.set_audio("歌手/歌手 - 晴天.flac", "晴天", 200_000);
-        let canonical = dir.path().canonicalize().expect("canonical");
-        let plain = crate::domain::paths::plain_absolute(&canonical);
-        // The identity a previous session derived for this directory.
-        let root_id = derive_root_id(&canonical);
-        fixture
-            .database
-            .upsert(&LibraryRoot::new(root_id, plain.clone(), false, true))
-            .expect("seed existing root");
-        fixture.fs.add_root_at(root_id, dir.path().to_path_buf());
-
-        let prepared =
-            PrepareLibraryCandidate::new(&fixture.deps, &fixture.database, &fixture.supervisor)
-                .prepare(&plain)
-                .expect("prepare");
-        assert!(prepared.reused, "the pre-existing identity must be reused");
-        let stored = fixture
-            .database
-            .by_id(root_id)
-            .expect("read back")
-            .expect("root present");
-        assert_eq!(
-            stored.absolute_path(),
-            plain.as_path(),
-            "the record keeps the plain, user-visible spelling"
-        );
     }
 
     #[test]

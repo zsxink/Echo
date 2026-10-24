@@ -5,11 +5,11 @@
 //! `dunce` for.
 
 use echo_core::domain::paths::plain_absolute;
-use std::path::PathBuf;
 
 #[cfg(windows)]
 #[test]
 fn verbatim_drive_paths_are_stripped() {
+    use std::path::PathBuf;
     assert_eq!(
         plain_absolute(PathBuf::from(r"\\?\C:\Users\xian\Music")),
         PathBuf::from(r"C:\Users\xian\Music")
@@ -19,6 +19,7 @@ fn verbatim_drive_paths_are_stripped() {
 #[cfg(windows)]
 #[test]
 fn verbatim_unc_paths_stay_verbatim() {
+    use std::path::PathBuf;
     // dunce is conservative about UNC: a verbatim UNC path stays verbatim
     // because the plain `\\server\share` spelling cannot address every
     // directory a verbatim one can. Library roots on mapped drives (the

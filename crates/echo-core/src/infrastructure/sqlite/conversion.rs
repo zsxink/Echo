@@ -29,13 +29,12 @@ pub(crate) fn root_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Library
     let id = parse_id(&row.get::<_, String>(0)?, "LibraryRootId").map_err(to_sql_error)?;
     let active = row.get::<_, i64>(2)? != 0;
     let write_capable = row.get::<_, i64>(3)? != 0;
-    // Legacy Windows rows may hold the verbatim (`\\?\C:\...`) spelling that
-    // `std::fs::canonicalize` produced before issue #82; normalize on read so
-    // display and path handling see the plain form. The row itself is rewritten
-    // in the plain form on the next root upsert.
-    let absolute_path =
-        crate::domain::paths::plain_absolute(PathBuf::from(row.get::<_, String>(1)?));
-    let mut root = LibraryRoot::new(id, absolute_path, active, write_capable);
+    let mut root = LibraryRoot::new(
+        id,
+        PathBuf::from(row.get::<_, String>(1)?),
+        active,
+        write_capable,
+    );
     root.set_availability(if row.get::<_, String>(4)? == "available" {
         RootAvailability::Available
     } else {
