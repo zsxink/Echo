@@ -2750,6 +2750,60 @@
       "manifest": "tests/native/DAS-R17-S03.md"
     },
     {
+      "id": "DAS-R18-S01",
+      "title": "中文菜单替换默认英文菜单",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S01",
+      "manifest": "tests/native/DAS-R18-S01.md"
+    },
+    {
+      "id": "DAS-R18-S02",
+      "title": "从菜单导入音乐文件",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S02",
+      "manifest": "tests/native/DAS-R18-S02.md"
+    },
+    {
+      "id": "DAS-R18-S03",
+      "title": "从菜单选择资料库目录与重新扫描",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S03",
+      "manifest": "tests/native/DAS-R18-S03.md"
+    },
+    {
+      "id": "DAS-R18-S04",
+      "title": "菜单播放控制三处一致",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S04",
+      "manifest": "tests/native/DAS-R18-S04.md"
+    },
+    {
+      "id": "DAS-R18-S05",
+      "title": "菜单播放模式勾选态一致",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S05",
+      "manifest": "tests/native/DAS-R18-S05.md"
+    },
+    {
+      "id": "DAS-R18-S06",
+      "title": "菜单视图切换与搜索聚焦",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S06",
+      "manifest": "tests/native/DAS-R18-S06.md"
+    },
+    {
+      "id": "DAS-R18-S07",
+      "title": "菜单退出保存播放会话",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S07",
+      "manifest": "tests/native/DAS-R18-S07.md"
+    },
+    {
+      "id": "DAS-R18-S08",
+      "title": "状态项右键菜单补齐",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S08",
+      "manifest": "tests/native/DAS-R18-S08.md"
+    },
+    {
+      "id": "DAS-R18-S09",
+      "title": "菜单动作映射可验证且不影响其他平台",
+      "command": "cargo test -p echo-app --all-features app_menu",
+      "manifest": "tests/scenarios/DAS-R18-S09.yaml"
+    },
+    {
       "id": "DP-R01-S01",
       "title": "播放资料库歌曲",
       "command": "cargo test -p echo-desktop --all-features --test player_smoke",

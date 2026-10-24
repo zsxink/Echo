@@ -79,6 +79,13 @@ export function useAppShell(): AppShell {
     setSidebarOpen(false);
   }, []);
 
+  // The macOS application menu mirrors the active view as its 视图 check state
+  // (issue #73). Reporting on every change — the first render included — keeps
+  // the menu in sync without any shell-side view state. No-ops elsewhere.
+  useEffect(() => {
+    bridge.fireAndForget("report_library_view", { view: libraryView });
+  }, [libraryView]);
+
   // The open narrow-screen sidebar is the `Sidebar`-tier layer: it closes last
   // on the single Escape stack, and focus returns to the topbar button.
   useOverlay({

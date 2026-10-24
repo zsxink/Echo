@@ -44,6 +44,7 @@ import { SortMenu } from "./SortMenu";
 import { useStoredDirectorySort } from "./useStoredDirectorySort";
 import { useLocateSong } from "./useLocateSong";
 import { LocateButton } from "./LocateButton";
+import { subscribeSearchFocus } from "../../app/searchFocus";
 
 export interface CollectionDirectoryProps {
   readonly kind: "artist" | "album";
@@ -61,6 +62,9 @@ export function CollectionDirectory({
   onLibraryChanged,
 }: CollectionDirectoryProps) {
   const [search, setSearch] = useState("");
+  // 视图 → 搜索（Cmd+F，issue #73）聚焦当前目录视图自己的搜索框。
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => subscribeSearchFocus(() => searchInputRef.current?.focus()), []);
   const [entries, setEntries] = useState<readonly CatalogCollectionView[]>([]);
   const [selected, setSelected] = useState<CatalogCollectionView | null>(null);
   const [songs, setSongs] = useState<readonly SongView[]>([]);
@@ -460,6 +464,7 @@ export function CollectionDirectory({
         <label className="search" data-testid="collection-search-field">
           <Icon name="search" />
           <input
+            ref={searchInputRef}
             type="search"
             placeholder={kind === "artist" ? "搜索歌手" : "搜索专辑或歌手"}
             aria-label={kind === "artist" ? "搜索歌手" : "搜索专辑"}

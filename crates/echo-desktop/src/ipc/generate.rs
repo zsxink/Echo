@@ -308,6 +308,7 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly set_volume: void;\n");
     out.push_str("  readonly toggle_mute: void;\n");
     out.push_str("  readonly seek: void;\n");
+    out.push_str("  readonly report_library_view: void;\n");
     out.push_str("  readonly get_lyrics: SongLyricsDto;\n");
     out.push_str("}\n");
     out

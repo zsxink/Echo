@@ -139,6 +139,19 @@ export const COMMANDS = {
   "DAS-R17-S02": ATTEST("DAS-R17-S02"), // 全屏后台关闭后重新打开窗口
   "DAS-R17-S03": ATTEST("DAS-R17-S03"), // 窗口模式下关闭仍立即隐藏
 
+  // DAS-R18: macOS 原生应用菜单（issue #73）。S01–S08 是真实点击菜单项的
+  // 人工原生验收；S09 的 id→动作映射是跨平台编译的纯决策层，cargo 单测
+  // 即可证明（Windows/Linux 同样跑这组测试 = 决策层行为不受平台影响）。
+  "DAS-R18-S01": ATTEST("DAS-R18-S01"),
+  "DAS-R18-S02": ATTEST("DAS-R18-S02"),
+  "DAS-R18-S03": ATTEST("DAS-R18-S03"),
+  "DAS-R18-S04": ATTEST("DAS-R18-S04"),
+  "DAS-R18-S05": ATTEST("DAS-R18-S05"),
+  "DAS-R18-S06": ATTEST("DAS-R18-S06"),
+  "DAS-R18-S07": ATTEST("DAS-R18-S07"),
+  "DAS-R18-S08": ATTEST("DAS-R18-S08"),
+  "DAS-R18-S09": "cargo test -p echo-app --all-features app_menu",
+
   // ===== desktop-playback (DP) =====, // （重编号自 DAS-R15-S01）
 
   // ===== desktop-playback =====

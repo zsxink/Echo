@@ -61,6 +61,23 @@ const SHORTCUTS = [
   { action: "下一首", keys: ["."] },
 ] as const;
 
+/**
+ * macOS 应用菜单加速键（issue #73）。加速键只修饰键组合，不占用上表的
+ * 裸键；Windows/Linux 没有应用菜单，这一组只在 macOS 渲染。读取放在
+ * 函数里而不是模块常量，测试才能按平台分别断言。
+ */
+function isMacPlatform(): boolean {
+  return typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
+}
+const MENU_ACCELERATORS = [
+  { action: "导入音乐文件", keys: ["⌘", "O"] },
+  { action: "设置", keys: ["⌘", ","] },
+  { action: "搜索", keys: ["⌘", "F"] },
+  { action: "切换视图", keys: ["⌘", "1–6"] },
+  { action: "关闭窗口", keys: ["⌘", "W"] },
+  { action: "退出 Echo", keys: ["⌘", "Q"] },
+] as const;
+
 export function SettingsView({ onClose }: { readonly onClose: () => void }) {
   const { theme, setTheme } = useTheme();
   const status = useLibraryStatus();
@@ -405,8 +422,31 @@ export function SettingsView({ onClose }: { readonly onClose: () => void }) {
                     </div>
                   ))}
                 </div>
+                {isMacPlatform() ? (
+                  <div
+                    className="shortcut-list"
+                    aria-label="应用菜单加速键"
+                    data-testid="menu-shortcut-list"
+                  >
+                    {MENU_ACCELERATORS.map((shortcut) => (
+                      <div className="shortcut-row" key={shortcut.action}>
+                        <span>{shortcut.action}</span>
+                        <span className="shortcut-keys">
+                          {shortcut.keys.map((key) => (
+                            <kbd className="shortcut-key" key={key}>
+                              {key}
+                            </kbd>
+                          ))}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 <p className="shortcut-note">
                   在输入框中输入时快捷键不会触发；打开播放队列或音效面板时，方向键和字母键由当前界面处理。
+                  {isMacPlatform()
+                    ? "带 ⌘ 的组合来自菜单栏应用菜单，可直接按下，无需先打开菜单。"
+                    : ""}
                 </p>
               </section>
 

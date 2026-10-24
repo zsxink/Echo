@@ -42,6 +42,7 @@ import { ChooseRootView } from "../features/workspace/ChooseRootView";
 import { LibraryStatusView } from "../features/workspace/LibraryStatusView";
 import type { LibraryCountView } from "../features/library/libraryCounts";
 import { useLibraryCounts } from "../features/library/libraryCounts";
+import { invalidateLibrary } from "../features/library/libraryInvalidation";
 import type { LibraryViewKind } from "../features/library/types";
 import { coverClass } from "../features/library/coverClass";
 import { LibraryWorkspace } from "../features/library/LibraryWorkspace";
@@ -57,6 +58,24 @@ import { ShellNavProvider } from "./shell";
 import { EffectsPanel } from "../features/player";
 import { ToastView } from "./ToastView";
 import { useAppShell } from "./useAppShell";
+import { invalidateCovers } from "./coverArt";
+import { requestSearchFocus } from "./searchFocus";
+import { error as logError } from "../logging/log";
+
+/** The view kinds the shell's `selectView` accepts (kept in sync with
+ * `features/library/types.ts`); menu `view:*` payloads are filtered by it. */
+const LIBRARY_VIEW_KINDS: readonly string[] = [
+  "all",
+  "recent",
+  "favorites",
+  "artists",
+  "albums",
+  "playlist",
+];
+
+function isLibraryViewKind(view: string): view is LibraryViewKind {
+  return LIBRARY_VIEW_KINDS.includes(view);
+}
 
 export function App() {
   const {
@@ -76,6 +95,9 @@ export function App() {
     settingsOpen,
     setSettingsOpen,
   } = useAppShell();
+  // 菜单动作处理器只需要这三个状态切片（原始值 + 稳定的 refresh），避免
+  // 整个 status 对象身份变化导致订阅反复重建。
+  const { activeRoot, scanning, refresh: statusRefresh } = status;
   // The import entry is shell-owned (playlist-search-locate-import 5.2): it is
   // rendered into the sidebar brand area, so the action stays available under
   // every library view — 歌单, 歌手/专辑目录 and their details included.
@@ -134,6 +156,74 @@ export function App() {
       });
     return () => unlisten?.();
   }, []);
+
+  // macOS 应用菜单（issue #73）通过 `menu://action` 下发的前端动作。播放类
+  // 菜单命令由壳层直接进入播放权威通道（与托盘/状态项同一条），不经这里；
+  // 这里只承接需要 React 状态或既有流程的动作，全部转调既有入口。
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    // 选择资料库目录…：与设置页同一"已配置后切换目录"语义，另加封面失效——
+    // 新根可能把相同 SongId 指向不同文件，缓存封面不得跨根存活。
+    const runChooseRoot = async () => {
+      try {
+        const result = await bridge.call("choose_library_root");
+        if (result === null) return; // 取消选择器是无操作，不解释为成功
+        invalidateCovers();
+        await statusRefresh();
+      } catch (error: unknown) {
+        reportBridgeFailure("choose_library_root", error);
+      }
+    };
+    // 重新扫描资料库：与设置页「重新扫描」同一序列。
+    const runRescan = async () => {
+      if (!activeRoot || scanning) return;
+      try {
+        await bridge.call("start_scan", { root: activeRoot });
+        invalidateCovers();
+        invalidateLibrary();
+        await statusRefresh();
+      } catch (error: unknown) {
+        reportBridgeFailure("start_scan", error);
+      }
+    };
+    void bridge
+      .subscribe<{ action: string }>("menu://action", ({ action }) => {
+        if (action.startsWith("view:")) {
+          const view = action.slice("view:".length);
+          if (isLibraryViewKind(view)) selectView(view);
+          return;
+        }
+        switch (action) {
+          case "import":
+            void runImport();
+            break;
+          case "settings":
+            setSettingsOpen(true);
+            break;
+          case "search":
+            // 设置浮层是模态焦点陷阱；打开时不把焦点抢回其背后的搜索框。
+            if (!settingsOpen) requestSearchFocus();
+            break;
+          case "choose_library_root":
+            void runChooseRoot();
+            break;
+          case "rescan":
+            void runRescan();
+            break;
+          default:
+            break;
+        }
+      })
+      .then((dispose) => {
+        unlisten = dispose;
+      })
+      .catch(() => {
+        // 事件通道名不是命令名，无法走 `reportBridgeFailure`；按渲染端日志
+        // 约定保底记录（不含载荷）。
+        logError("菜单事件订阅失败", "menu-action");
+      });
+    return () => unlisten?.();
+  }, [selectView, runImport, setSettingsOpen, settingsOpen, activeRoot, scanning, statusRefresh]);
 
   const activePlaylist = playlists.find((playlist) => playlist.id === activePlaylistId) ?? null;
   const viewTitle =

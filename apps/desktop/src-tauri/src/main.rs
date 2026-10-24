@@ -48,6 +48,8 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager, RunEvent};
 
+#[cfg(any(target_os = "macos", test))]
+mod app_menu;
 mod commands;
 mod commands_audio_effects;
 mod cover_protocol;
@@ -90,6 +92,10 @@ impl RuntimeStatusMenuSink {
 }
 
 impl StatusMenuSink for RuntimeStatusMenuSink {
+    // Mutations span the whole match, so the coordinator guard is held to the
+    // end of the command body on purpose — the same intent `commands.rs`
+    // documents for its `significant_drop_tightening` allow.
+    #[allow(clippy::significant_drop_tightening)]
     fn on_command(&self, command: PlayerCommand) -> Result<(), PlayerError> {
         let coordinator = {
             let slot = self.coordinator.lock().map_err(|_| PlayerError::Backend {
@@ -124,6 +130,25 @@ impl StatusMenuSink for RuntimeStatusMenuSink {
                     .ok_or_else(|| PlayerError::Backend {
                         message: "no next track".to_owned(),
                     })
+            }
+            // App-menu additions (issue #73): the same coordinator semantics
+            // the IPC command layer applies for seek/volume/mute/mode, so the
+            // menu, the tray and the playback bar cannot drift apart.
+            PlayerCommand::Seek(position) => {
+                coordinator.seek(position.max(0.0));
+                Ok(())
+            }
+            PlayerCommand::SetVolume(volume) => {
+                coordinator.set_volume(volume.clamp(0.0, 1.0));
+                Ok(())
+            }
+            PlayerCommand::ToggleMute => {
+                coordinator.toggle_mute();
+                Ok(())
+            }
+            PlayerCommand::SetMode(mode) => {
+                coordinator.set_mode(mode);
+                Ok(())
             }
             _ => Err(PlayerError::Backend {
                 message: "unsupported system playback command".to_owned(),
@@ -194,22 +219,42 @@ fn focus_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     }
 }
 
-/// Feed the macOS status row from the player port's authoritative snapshot
-/// stream. `AppKit` is main-thread-only, so each state update is scheduled onto
-/// Tauri's main thread; a closed player is normal during process shutdown.
+/// Feed the macOS status row **and the application menu** from the player
+/// port's authoritative snapshot stream — one stream, two surfaces, so the
+/// compact row icons and the 播放/暂停 label + 播放模式 check states can never
+/// disagree. `AppKit` and the menu are main-thread-only, so each update is
+/// scheduled onto Tauri's main thread; a closed player is normal during
+/// process shutdown. The playback mode lives on the coordinator (queue-owned
+/// state), hence the second handle.
 #[cfg(target_os = "macos")]
-fn spawn_macos_status_row_snapshot_refresh(app: tauri::AppHandle, port: &Arc<dyn PlayerPort>) {
+fn spawn_macos_status_row_snapshot_refresh(
+    app: tauri::AppHandle,
+    port: &Arc<dyn PlayerPort>,
+    coordinator: SharedPlaybackCoordinator,
+) {
     let initial = port.snapshot().state;
+    let initial_mode = coordinator
+        .lock()
+        .map_or(echo_desktop::player::port::PlayMode::Sequential, |coord| {
+            coord.mode()
+        });
     let initial_app = app.clone();
     let _ = initial_app.run_on_main_thread(move || {
         macos_status_row::refresh_play_pause(initial);
+        app_menu::refresh_playback_state(initial, initial_mode);
     });
     let snapshots = port.subscribe_snapshots();
     thread::spawn(move || {
         while let Ok(snapshot) = snapshots.recv() {
             let state = snapshot.state;
+            let mode = coordinator
+                .lock()
+                .map_or(echo_desktop::player::port::PlayMode::Sequential, |coord| {
+                    coord.mode()
+                });
             let _ = app.run_on_main_thread(move || {
                 macos_status_row::refresh_play_pause(state);
+                app_menu::refresh_playback_state(state, mode);
             });
         }
     });
@@ -451,7 +496,11 @@ fn wire_composition(
     }
 
     #[cfg(target_os = "macos")]
-    spawn_macos_status_row_snapshot_refresh(app.handle().clone(), &controller.port);
+    spawn_macos_status_row_snapshot_refresh(
+        app.handle().clone(),
+        &controller.port,
+        controller.coordinator.clone(),
+    );
 
     player::spawn_session_saver(
         controller.port.clone(),
