@@ -2,7 +2,7 @@
 # ----------------------------------------------------------------------
 scenario_id: DAS-R02-S08
 requirement: 应用框架必须提供稳定的目录入口
-scenario: 键盘访问品牌操作
+scenario: 键盘访问标题栏操作
 layer: automated
 command: "pnpm --filter @echo/desktop test -- --run src/app/accessibility.test.tsx"
 

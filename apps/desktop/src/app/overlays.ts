@@ -253,8 +253,20 @@ export function useOverlay({
   }, [id, tier, enabled, containerRef, triggerRef, dismissOnInteractOutside, nonModal]);
 }
 
-/** Trap Tab/Shift+Tab inside a container so focus cannot escape an overlay. */
-export function useFocusTrap(containerRef: RefObject<HTMLElement | null>, enabled = true): void {
+/**
+ * Trap Tab/Shift+Tab inside a container so focus cannot escape an overlay.
+ *
+ * `extraRef` names an *additional* region that counts as part of the same
+ * layer — used when a layer's control is portaled outside the container DOM
+ * (the immersive 收起 button portals to body so it can sit in the titlebar
+ * chrome above the drag strip). Read per keypress, so a slot that mounts after
+ * the trap is picked up without re-binding.
+ */
+export function useFocusTrap(
+  containerRef: RefObject<HTMLElement | null>,
+  enabled = true,
+  extraRef?: RefObject<HTMLElement | null>,
+): void {
   useEffect(() => {
     if (!enabled) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -263,7 +275,8 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>, enable
       if (!el) return;
       const top = topId();
       if (top !== null && open.get(top)?.containerRef.current !== el) return;
-      const items = focusableIn(el);
+      const extra = extraRef?.current ?? null;
+      const items = extra ? [...focusableIn(el), ...focusableIn(extra)] : focusableIn(el);
       if (items.length === 0) {
         event.preventDefault();
         return;
@@ -271,7 +284,7 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>, enable
       const first = items[0];
       const last = items[items.length - 1];
       const active = document.activeElement as Node | null;
-      const inside = active !== null && el.contains(active);
+      const inside = active !== null && (el.contains(active) || extra?.contains(active) === true);
       if (event.shiftKey) {
         if (active === first || !inside) {
           event.preventDefault();
@@ -284,7 +297,7 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>, enable
     };
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [containerRef, enabled]);
+  }, [containerRef, enabled, extraRef]);
 }
 
 /** Select the focusable elements inside a container, in DOM order. */

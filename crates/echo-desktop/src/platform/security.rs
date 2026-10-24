@@ -171,15 +171,17 @@ const PRIVILEGED_PREFIXES: &[&str] = &[
 ];
 
 /// The minimal permission set for the main window: the core default (window
-/// introspection getters) plus the single command the window actually asks
-/// for. New commands get explicit `allow-<command>` entries when their tasks
-/// wire them; never a broad family.
+/// introspection getters, incl. `allow-internal-toggle-maximize` for the
+/// injected drag-region double-click) plus the explicit commands the window
+/// actually asks for. New commands get explicit `allow-<command>` entries when
+/// their tasks wire them; never a broad family.
 ///
-/// `core:window:allow-start-dragging` is the one such entry. The window runs
-/// with `titleBarStyle: Overlay` + `hiddenTitle: true` on macOS, so the native
-/// titlebar that would otherwise drag it does not exist, and the frontend's
-/// drag strip (`.titlebar-drag`, driven by `data-tauri-drag-region`) asks the
-/// window to drag itself. It grants a single window command — no path, no
+/// `core:window:allow-start-dragging` serves the overlay titlebar on macOS;
+/// the minimize / toggle-maximize / close triple serves the Windows custom
+/// window controls (issue #76: `decorations: false` removes the native
+/// caption, so the frontend draws its own buttons). `close` is the same
+/// `CloseRequested → CloseBehavior` path the native caption takes — no
+/// separate exit channel. All four grant single window commands — no path, no
 /// filesystem, no process, no network surface — so task 7.7's requirement (no
 /// network connect, no arbitrary file read, no arbitrary opener/shell/SQL)
 /// still holds.
@@ -187,6 +189,9 @@ pub const MAIN_WINDOW_PERMISSIONS: &[&str] = &[
     "core:default",
     "core:window:default",
     "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
 ];
 
 /// Validates a capability's granted-permission list.
@@ -405,6 +410,64 @@ mod tests {
             .parent()
             .expect("workspace root")
             .join("apps/desktop/src-tauri/capabilities/main.json")
+    }
+
+    /// Path to the Windows platform overlay config (merged over
+    /// `tauri.conf.json` by JSON Merge Patch when building for Windows).
+    fn windows_conf() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("echo-desktop crate dir")
+            .parent()
+            .expect("workspace root")
+            .join("apps/desktop/src-tauri/tauri.windows.conf.json")
+    }
+
+    fn read_json(path: &std::path::Path) -> serde_json::Value {
+        let text = std::fs::read_to_string(path)
+            .unwrap_or_else(|error| panic!("{} readable: {error}", path.display()));
+        serde_json::from_str(&text)
+            .unwrap_or_else(|error| panic!("{} valid JSON: {error}", path.display()))
+    }
+
+    /// Issue #76: on Windows the main window must run without the native
+    /// caption (`decorations: false`), with the frontend drawing its own
+    /// window controls. Tauri merges the platform config by JSON Merge Patch,
+    /// which replaces arrays wholesale — so the Windows config must restate
+    /// the *complete* window definition, not just the new field. This drift
+    /// guard pins that relationship: the Windows window object equals the base
+    /// one field-for-field, plus `decorations == false` and nothing else. A
+    /// base-config window edit that forgets the Windows twin (or vice versa)
+    /// fails here instead of shipping two different windows.
+    #[test]
+    fn windows_conf_disables_native_decorations_without_drifting() {
+        let base = read_json(&src_tauri_conf());
+        let windows = read_json(&windows_conf());
+
+        let base_window = base["app"]["windows"]
+            .as_array()
+            .and_then(|windows| windows.first())
+            .expect("base config defines the main window");
+        let windows_window = windows["app"]["windows"]
+            .as_array()
+            .and_then(|windows| windows.first())
+            .expect("windows config redefines the main window");
+
+        assert_eq!(
+            windows_window["decorations"], false,
+            "windows config must disable the native caption (issue #76)"
+        );
+
+        let mut expected = base_window.clone();
+        expected
+            .as_object_mut()
+            .expect("base window is an object")
+            .insert("decorations".into(), serde_json::Value::Bool(false));
+        assert_eq!(
+            windows_window, &expected,
+            "windows window definition drifted from the base config (merge patch replaces the \
+             array wholesale — copy every field, then set decorations)"
+        );
     }
 
     #[test]

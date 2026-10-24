@@ -1,6 +1,9 @@
 /** Deterministic library states shared by browser E2E scenarios. */
 import type { Theme } from "../src/ipc/ipc-types.generated";
 
+/** Window-plugin actions the scenarios can assert against (issue #76). */
+export type WindowAction = "minimize" | "toggle_maximize" | "close";
+
 /** Mutable backing record owned by the fake desktop library. */
 export interface MockSong {
   id: string;
@@ -26,6 +29,10 @@ export interface E2EState {
   closeBehavior: "exit" | "background";
   importMode: "success" | "cancelled" | "mixed" | "failed";
   nowPlaying: { songId: string; position: number; playing: boolean } | null;
+  /** Current maximized phase behind `plugin:window|is_maximized` (issue #76). */
+  windowMaximized: boolean;
+  /** Window-plugin actions recorded in invocation order. */
+  windowActions: WindowAction[];
 }
 
 export function defaultState(): E2EState {
@@ -39,6 +46,8 @@ export function defaultState(): E2EState {
     closeBehavior: "exit",
     importMode: "success",
     nowPlaying: null,
+    windowMaximized: false,
+    windowActions: [],
   };
 }
 

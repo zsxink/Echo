@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "node:http";
 
 import { assertLyricsOffsetAfterTrackChange } from "./a9-lyrics-offset.mjs";
+import { assertWindowControlsScenarios } from "./a76-window-controls.mjs";
 
 // This file lives at `apps/desktop/e2e/run-e2e.mjs`, so the app root is the
 // e2e directory's parent — one level up, not two. `vite.config.ts` builds to
@@ -200,8 +201,9 @@ async function main() {
       await sleep(150);
     }
   };
-  const goto = async (seed) => {
-    await cdp.call("Page.navigate", { url: `${BASE}/e2e/index.html?seed=${seed}` });
+  const goto = async (seed, platform) => {
+    const url = `${BASE}/e2e/index.html?seed=${seed}${platform ? `&platform=${platform}` : ""}`;
+    await cdp.call("Page.navigate", { url });
     await waitFor(`!!window.__echoE2E__`, 15000);
     await sleep(500);
   };
@@ -324,21 +326,21 @@ async function main() {
   }
 
   // ---------- Import state and failure feedback ----------
-  await goto("medium");
+  await goto("medium", "windows");
   try {
     await assert(
-      `!!document.querySelector('[data-testid="import-button"]')`,
+      `!!document.querySelector('[data-testid="titlebar-import"]')`,
       "import: import button is missing",
     );
     const before = await evalJs(
-      `document.querySelector('[data-testid="import-button"]')?.getAttribute('aria-label')`,
+      `document.querySelector('[data-testid="titlebar-import"]')?.getAttribute('aria-label')`,
     );
     if (before !== "导入") fail("import: button is not idle before picking");
 
     await evalJs(`window.__echoE2E__.state.importMode = 'mixed'`);
-    await evalJs(`document.querySelector('[data-testid="import-button"]').click()`);
+    await evalJs(`document.querySelector('[data-testid="titlebar-import"]').click()`);
     await assert(
-      `document.querySelector('[data-testid="import-button"]')?.getAttribute('aria-label') === '导入'`,
+      `document.querySelector('[data-testid="titlebar-import"]')?.getAttribute('aria-label') === '导入'`,
       "import: button did not return to idle after completion",
     );
     await assert(
@@ -349,7 +351,7 @@ async function main() {
 
     await evalJs(`document.querySelector('[data-testid="import-close"]')?.click()`);
     await evalJs(`window.__echoE2E__.state.importMode = 'failed'`);
-    await evalJs(`document.querySelector('[data-testid="import-button"]').click()`);
+    await evalJs(`document.querySelector('[data-testid="titlebar-import"]').click()`);
     await assert(
       `!!document.querySelector('[data-testid="import-dialog"]')`,
       "import: all-failure batch did not show a dialog",
@@ -947,6 +949,15 @@ async function main() {
   }
   await cdp.call("Emulation.clearDeviceMetricsOverride");
 
+  // ---------- Issue #76: Windows caption buttons ----------
+  // Both branches of the platform gate, forced via `?platform=` (the
+  // assertions live in a76-window-controls.mjs, extracted for the scale gate).
+  try {
+    await assertWindowControlsScenarios({ goto, assert, evalJs, pass });
+  } catch (e) {
+    abort("#76 window controls", e);
+  }
+
   // Cleanup.
   //
   // `kill` only sends the signal: Chrome keeps flushing its profile for a
@@ -977,7 +988,7 @@ async function main() {
     process.stderr.write(`FAIL 13.1: ${failures} acceptance check(s) failed\n`);
   } else {
     process.stdout.write(
-      "ok 13.1: mock-bridge browser E2E covers PRD A1/A6/A7/A8/A9/A13/A14 non-platform acceptance and audio effects UI in real Chromium, plus A15 (app-only 沉浸式封面取色，无 PRD 条目)\n",
+      "ok 13.1: mock-bridge browser E2E covers PRD A1/A6/A7/A8/A9/A13/A14 non-platform acceptance and audio effects UI in real Chromium, plus A15 (app-only 沉浸式封面取色，无 PRD 条目) and #76 Windows caption buttons (windows/web branches)\n",
     );
   }
 }

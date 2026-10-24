@@ -1,4 +1,4 @@
-# DAS-R02-S07 — 指针离开品牌区域
+# DAS-R02-S07 — 指针悬停标题栏操作
 
 > Requirement: 应用框架必须提供稳定的目录入口
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）

@@ -2373,25 +2373,25 @@
     },
     {
       "id": "DAS-R02-S06",
-      "title": "悬停 Echo 品牌区域",
+      "title": "标题栏条承载设置与导入",
       "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R02-S06",
       "manifest": "tests/native/DAS-R02-S06.md"
     },
     {
       "id": "DAS-R02-S07",
-      "title": "指针离开品牌区域",
+      "title": "指针悬停标题栏操作",
       "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R02-S07",
       "manifest": "tests/native/DAS-R02-S07.md"
     },
     {
       "id": "DAS-R02-S08",
-      "title": "键盘访问品牌操作",
+      "title": "键盘访问标题栏操作",
       "command": "pnpm --filter @echo/desktop test -- --run src/app/accessibility.test.tsx",
       "manifest": "tests/scenarios/DAS-R02-S08.yaml"
     },
     {
       "id": "DAS-R02-S09",
-      "title": "便于点击品牌操作",
+      "title": "便于点击标题栏操作",
       "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R02-S09",
       "manifest": "tests/native/DAS-R02-S09.md"
     },
@@ -2434,19 +2434,19 @@
     {
       "id": "DAS-R03-S01",
       "title": "歌单视图导入可用",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import button in the brand area under the playlist view\"",
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import entry in the titlebar strip under the playlist view\"",
       "manifest": "tests/scenarios/DAS-R03-S01.yaml"
     },
     {
       "id": "DAS-R03-S02",
       "title": "歌手/专辑视图导入可用",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import button in the brand area under the artist directory\"",
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import entry in the titlebar strip under the artist directory\"",
       "manifest": "tests/scenarios/DAS-R03-S02.yaml"
     },
     {
       "id": "DAS-R03-S03",
       "title": "只读资目录禁用导入",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"hides the import button for a read-only library\"",
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"hides the import entry for a read-only library\"",
       "manifest": "tests/scenarios/DAS-R03-S03.yaml"
     },
     {
@@ -2802,6 +2802,36 @@
       "title": "菜单动作映射可验证且不影响其他平台",
       "command": "cargo test -p echo-app --all-features app_menu",
       "manifest": "tests/scenarios/DAS-R18-S09.yaml"
+    },
+    {
+      "id": "DAS-R19-S01",
+      "title": "Windows 无原生标题栏且内容从顶边开始",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R19-S01",
+      "manifest": "tests/native/DAS-R19-S01.md"
+    },
+    {
+      "id": "DAS-R19-S02",
+      "title": "自绘窗口控件三键可用且图标随状态切换",
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/WindowControls.test.tsx",
+      "manifest": "tests/scenarios/DAS-R19-S02.yaml"
+    },
+    {
+      "id": "DAS-R19-S03",
+      "title": "双击拖拽区最大化与还原",
+      "command": "cargo test -p echo-desktop --all-features platform::security",
+      "manifest": "tests/scenarios/DAS-R19-S03.yaml"
+    },
+    {
+      "id": "DAS-R19-S04",
+      "title": "非 Windows 不渲染自绘控件",
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/WindowControls.test.tsx -t \"renders nothing outside the Windows platform\"",
+      "manifest": "tests/scenarios/DAS-R19-S04.yaml"
+    },
+    {
+      "id": "DAS-R19-S05",
+      "title": "窗口命令权限最小且配置不漂移",
+      "command": "cargo test -p echo-desktop --all-features platform::security",
+      "manifest": "tests/scenarios/DAS-R19-S05.yaml"
     },
     {
       "id": "DP-R01-S01",

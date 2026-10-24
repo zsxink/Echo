@@ -1,7 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Echo main window — minimal-viable permissions. No shell, fs, sql, opener, dialog, process or network permission: the WebView communicates only via explicit Tauri commands/events, cover:// for cover art, and core window introspection getters. `core:window:allow-start-dragging` is the one exception: macOS runs this window with `titleBarStyle: Overlay` + `hiddenTitle`, so no native titlebar drags it and the top inset strip must ask the window to drag itself.",
+  "description": "Echo main window — minimal-viable permissions. No shell, fs, sql, opener, dialog, process or network permission: the WebView communicates only via explicit Tauri commands/events, cover:// for cover art, and core window introspection getters. `core:window:allow-start-dragging` is one exception: macOS runs this window with `titleBarStyle: Overlay` + `hiddenTitle`, so no native titlebar drags it and the top inset strip must ask the window to drag itself. `core:window:allow-minimize` / `allow-toggle-maximize` / `allow-close` are the Windows counterpart (issue #76): the window runs with `decorations: false` there, so the frontend-drawn caption buttons ask the window to minimize / toggle-maximize / close — `close` being the same CloseRequested → CloseBehavior path the native caption took.",
   "windows": ["main"],
-  "permissions": ["core:default", "core:window:default", "core:window:allow-start-dragging"]
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close"
+  ]
 }

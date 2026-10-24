@@ -77,9 +77,9 @@ export const COMMANDS = {
   "DAS-R02-S13": REACT("src/features/settings/SettingsView.test.tsx"),
   "DAS-R02-S14": REACT("src/features/settings/SettingsView.test.tsx"),
   "DAS-R02-S15": REACT("src/features/settings/SettingsView.test.tsx"),
-  "DAS-R03-S01": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import button in the brand area under the playlist view\"", // 新增: 品牌区导入入口所有视图可用
-  "DAS-R03-S02": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import button in the brand area under the artist directory\"", // 新增: 品牌区导入入口所有视图可用
-  "DAS-R03-S03": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"hides the import button for a read-only library\"", // 新增: 品牌区导入入口所有视图可用
+  "DAS-R03-S01": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import entry in the titlebar strip under the playlist view\"", // 新增: 标题栏导入入口所有视图可用
+  "DAS-R03-S02": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import entry in the titlebar strip under the artist directory\"", // 新增: 标题栏导入入口所有视图可用
+  "DAS-R03-S03": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"hides the import entry for a read-only library\"", // 新增: 标题栏导入入口所有视图可用
   "DAS-R04-S01": DESK("platform::local_state"), // （重编号自 DAS-R03-S01）
   "DAS-R04-S02": DESK("platform::local_state"), // （重编号自 DAS-R03-S02）
   "DAS-R04-S03": DESK("platform::local_state"), // （重编号自 DAS-R03-S03）
@@ -151,6 +151,18 @@ export const COMMANDS = {
   "DAS-R18-S07": ATTEST("DAS-R18-S07"),
   "DAS-R18-S08": ATTEST("DAS-R18-S08"),
   "DAS-R18-S09": "cargo test -p echo-app --all-features app_menu",
+
+  // DAS-R19: Windows 无边框窗口与自绘窗口控件（issue #76）。S01 无原生标题栏
+  // 是真机视觉验收（装饰、缩放边、Snap 均由系统窗口管理器提供）；S02/S04 由
+  // WindowControls 组件套件证明（含平台门两分支与窗口态图标跟随）；S03 的双
+  // 击最大化由 Tauri 注入的 drag-region 处理器承担，`internal_toggle_maximize`
+  // 权限含于 core:window:default，用 security 套件锁定该契约；S05 是配置与
+  // 权限一致性漂移门禁（Windows 配置不漂移 + capability 最小集）。
+  "DAS-R19-S01": ATTEST("DAS-R19-S01"),
+  "DAS-R19-S02": REACT("src/app/WindowControls.test.tsx"),
+  "DAS-R19-S03": "cargo test -p echo-desktop --all-features platform::security",
+  "DAS-R19-S04": REACT_T("src/app/WindowControls.test.tsx", "renders nothing outside the Windows platform"),
+  "DAS-R19-S05": "cargo test -p echo-desktop --all-features platform::security",
 
   // ===== desktop-playback (DP) =====, // （重编号自 DAS-R15-S01）
 
