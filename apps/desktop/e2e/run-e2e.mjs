@@ -201,8 +201,12 @@ async function main() {
       await sleep(150);
     }
   };
-  const goto = async (seed) => {
-    await cdp.call("Page.navigate", { url: `${BASE}/e2e/index.html?seed=${seed}` });
+  const goto = async (seed, platform) => {
+    // `platform` pre-sets `documentElement.dataset.platform` via the mock
+    // bridge (mock-bridge.ts), forcing the platform-gated chrome branch —
+    // needed by scenarios that exercise the titlebar strip entries.
+    const platformQuery = platform ? `&platform=${platform}` : "";
+    await cdp.call("Page.navigate", { url: `${BASE}/e2e/index.html?seed=${seed}${platformQuery}` });
     await waitFor(`!!window.__echoE2E__`, 15000);
     await sleep(500);
   };
@@ -325,21 +329,22 @@ async function main() {
   }
 
   // ---------- Import state and failure feedback ----------
-  await goto("medium");
+  // 导入入口住在标题栏条（TitlebarActions），平台门强制 windows 分支渲染。
+  await goto("medium", "windows");
   try {
     await assert(
-      `!!document.querySelector('[data-testid="import-button"]')`,
+      `!!document.querySelector('[data-testid="titlebar-import"]')`,
       "import: import button is missing",
     );
     const before = await evalJs(
-      `document.querySelector('[data-testid="import-button"]')?.getAttribute('aria-label')`,
+      `document.querySelector('[data-testid="titlebar-import"]')?.getAttribute('aria-label')`,
     );
     if (before !== "导入") fail("import: button is not idle before picking");
 
     await evalJs(`window.__echoE2E__.state.importMode = 'mixed'`);
-    await evalJs(`document.querySelector('[data-testid="import-button"]').click()`);
+    await evalJs(`document.querySelector('[data-testid="titlebar-import"]').click()`);
     await assert(
-      `document.querySelector('[data-testid="import-button"]')?.getAttribute('aria-label') === '导入'`,
+      `document.querySelector('[data-testid="titlebar-import"]')?.getAttribute('aria-label') === '导入'`,
       "import: button did not return to idle after completion",
     );
     await assert(
@@ -350,7 +355,7 @@ async function main() {
 
     await evalJs(`document.querySelector('[data-testid="import-close"]')?.click()`);
     await evalJs(`window.__echoE2E__.state.importMode = 'failed'`);
-    await evalJs(`document.querySelector('[data-testid="import-button"]').click()`);
+    await evalJs(`document.querySelector('[data-testid="titlebar-import"]').click()`);
     await assert(
       `!!document.querySelector('[data-testid="import-dialog"]')`,
       "import: all-failure batch did not show a dialog",

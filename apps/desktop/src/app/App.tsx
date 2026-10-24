@@ -56,6 +56,7 @@ import { QueuePanel } from "../features/player/QueuePanel";
 import { Icon } from "./Icon";
 import { ShellNavProvider } from "./shell";
 import { WindowControls } from "./WindowControls";
+import { TitlebarActions } from "./TitlebarActions";
 import { EffectsPanel } from "../features/player";
 import { ToastView } from "./ToastView";
 import { useAppShell } from "./useAppShell";
@@ -277,6 +278,18 @@ export function App() {
             strip. Renders nothing on macOS/Linux/web. */}
         <WindowControls />
 
+        {/* 标题栏导入/设置：Windows 在窗口控件左侧，macOS 在右上角安全区条。
+            未配置资料库前入口无意义（设置浮层只在工作区渲染），随侧边栏一起
+            出现；导入在只读库同样隐藏。 */}
+        {status.configured ? (
+          <TitlebarActions
+            importing={importing}
+            showImport={!status.readOnly}
+            onImport={() => void runImport()}
+            onSettings={() => setSettingsOpen(true)}
+          />
+        ) : null}
+
         {status.configured ? (
           <>
             <aside
@@ -292,33 +305,6 @@ export function App() {
                     <Icon name="note" />
                   </span>
                   <span className="brand-name">Echo</span>
-                </div>
-                <div className="brand-actions">
-                  <button
-                    type="button"
-                    className="brand-action"
-                    aria-label="设置"
-                    title="设置"
-                    onClick={() => setSettingsOpen(true)}
-                    data-testid="settings-button"
-                  >
-                    <Icon name="settings" />
-                  </button>
-                  {!status.readOnly ? (
-                    <button
-                      type="button"
-                      className="brand-action"
-                      id="import-button"
-                      aria-label={importing ? "正在导入" : "导入"}
-                      title={importing ? "正在导入" : "导入"}
-                      aria-busy={importing}
-                      disabled={importing}
-                      onClick={() => void runImport()}
-                      data-testid="import-button"
-                    >
-                      <Icon name="upload" />
-                    </button>
-                  ) : null}
                 </div>
               </div>
 

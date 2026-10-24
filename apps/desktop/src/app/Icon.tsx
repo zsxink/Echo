@@ -112,6 +112,25 @@ const GLYPHS: Record<string, Glyph> = {
     ),
   },
   upload: { nodes: <path d="M12 15V3m-4 4 4-4 4 4M4 15v5h16v-5" /> },
+  // 标题栏导入入口：箭头穿入右侧门形（参考图样式），与 1.8px 线型规范一致。
+  import: {
+    nodes: (
+      <>
+        <path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" />
+        <path d="M3 12h11" />
+        <path d="m10.5 8.5 3.5 3.5-3.5 3.5" />
+      </>
+    ),
+  },
+  // 标题栏设置入口：螺母形六角 + 中心圆（参考图样式）；侧边栏仍用齿轮 settings。
+  settingsNut: {
+    nodes: (
+      <>
+        <path d="M12 3l7.79 4.5v9L12 21l-7.79-4.5v-9L12 3Z" />
+        <circle cx="12" cy="12" r="3" />
+      </>
+    ),
+  },
 
   // --- topbar / toolbar ----------------------------------------------------
   search: {

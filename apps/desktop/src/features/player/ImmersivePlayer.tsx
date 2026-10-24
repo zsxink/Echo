@@ -34,7 +34,15 @@
  * overlay/body-effect orchestration and the surface layout (CODE_STANDARDS §6).
  */
 
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type RefObject,
+} from "react";
+import { createPortal } from "react-dom";
 
 import { assetUrl } from "../../bridge";
 import { useCoverKeys } from "../../app/coverArt";
@@ -82,9 +90,13 @@ export function ImmersivePlayer() {
     tier: OverlayTier.LyricsFocus,
     onClose: () => playerStore.setFocusOpen(false),
     containerRef: shellRef,
-    enabled: ui.immersiveOpen && ui.focusOpen,
+    enabled: ui.immersiveOpen,
   });
-  useFocusTrap(shellRef, ui.immersiveOpen);
+  // 收起按钮 portal 到 body（桌面平台要与窗口控件同排，必须跳出沉浸层的
+  // stacking context，见 ImmersiveBody 内注释）——陷阱把这一额外区域一并圈住，
+  // Tab 仍能到达它。
+  const dismissSlotRef = useRef<HTMLDivElement | null>(null);
+  useFocusTrap(shellRef, ui.immersiveOpen, dismissSlotRef);
 
   // Two body-level switches, both taken verbatim from the prototype:
   //  - `player-mode-open` paints the dark immersion surface and turns the
@@ -110,6 +122,7 @@ export function ImmersivePlayer() {
       key={snapshot.currentQueueEntryId ?? "empty"}
       snapshot={snapshot}
       shellRef={shellRef}
+      dismissSlotRef={dismissSlotRef}
       onClose={() => playerStore.setImmersiveOpen(false)}
     />
   );
@@ -122,11 +135,27 @@ export function ImmersivePlayer() {
 function ImmersiveBody(props: {
   snapshot: ReturnType<typeof usePlayerSnapshot>;
   shellRef: RefObject<HTMLDivElement>;
+  dismissSlotRef: MutableRefObject<HTMLDivElement | null>;
   onClose: () => void;
 }) {
-  const { snapshot, onClose, shellRef } = props;
+  const { snapshot, onClose, shellRef, dismissSlotRef } = props;
   const ui = usePlayerUi();
   const hasCurrent = snapshot.currentQueueEntryId !== null;
+
+  // 收起按钮的 portal 槽。沉浸表面（.now-playing-popover）是 z-index: 8 的
+  // 独立 stacking context，而窗口拖拽条（.titlebar-drag，z-index 40）和窗口
+  // 控件（45）都在它之上——桌面平台上收起按钮要落进那条 28px 标题栏带、与
+  // 窗口控件同排，留在表面内部就永远压不过拖拽条。portal 到 body 后它成为
+  // 顶层 chrome（45），同时把槽交给焦点陷阱，Tab 仍能到达。
+  const [dismissSlot] = useState(() => document.createElement("div"));
+  useLayoutEffect(() => {
+    document.body.appendChild(dismissSlot);
+    dismissSlotRef.current = dismissSlot;
+    return () => {
+      dismissSlot.remove();
+      if (dismissSlotRef.current === dismissSlot) dismissSlotRef.current = null;
+    };
+  }, [dismissSlot, dismissSlotRef]);
 
   // Metadata for the current library song. The `key` remounts this body with
   // the new currentSongId, so a track change always re-reads the detail.
@@ -195,18 +224,21 @@ function ImmersiveBody(props: {
       onWheelCapture={onReaderScroll}
       onTouchMoveCapture={onReaderScroll}
     >
-      <button
-        type="button"
-        className="mode-dismiss"
-        // The prototype's 收起 button doubles as the way out of 歌词专注阅读
-        // (`setLyricsFocus` rewrites its label, `modeDismiss` closes the focus
-        // state first — echo-desktop-player.html:1787/1790).
-        aria-label={ui.focusOpen ? "退出歌词专注阅读" : "收起播放器"}
-        onClick={ui.focusOpen ? exitFocus : onClose}
-        data-testid="close-player-mode"
-      >
-        <Icon name="chevronDown" />
-      </button>
+      {createPortal(
+        <button
+          type="button"
+          className="mode-dismiss"
+          // The prototype's 收起 button doubles as the way out of 歌词专注阅读
+          // (`setLyricsFocus` rewrites its label, `modeDismiss` closes the focus
+          // state first — echo-desktop-player.html:1787/1790).
+          aria-label={ui.focusOpen ? "退出歌词专注阅读" : "收起播放器"}
+          onClick={ui.focusOpen ? exitFocus : onClose}
+          data-testid="close-player-mode"
+        >
+          <Icon name="chevronDown" />
+        </button>,
+        dismissSlot,
+      )}
 
       {!hasCurrent ? (
         <p className="now-playing-empty">未在播放</p>

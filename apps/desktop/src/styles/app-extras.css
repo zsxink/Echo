@@ -400,8 +400,9 @@ button.lyric-line {
  * `tauri.conf.json` sets `titleBarStyle: "Overlay"` + `hiddenTitle: true` on
  * macOS: the native white titlebar disappears and the web content extends to
  * the window top, but the traffic lights keep floating over the top-left
- * corner. `main.tsx` flips `--titlebar-inset` to 28px (the standard macOS
- * titlebar height) only inside the Tauri WebView, so a plain browser preview
+ * corner. `main.tsx` flips `--titlebar-inset` inside the Tauri WebView —
+ * 28px on macOS (the standard overlay-titlebar height for the traffic
+ * lights), 18px on Windows — so a plain browser preview
  * of the frontend stays prototype-identical. Rules that reach the window's
  * top edge offset themselves with this variable instead of a fixed 28px.
  *
@@ -417,6 +418,26 @@ button.lyric-line {
   padding-top: var(--titlebar-inset);
 }
 
+/* 上边空白 = 安全区条 + 内容内边距：Windows 把条压到 18px（main.tsx）后
+ * 内容零内边距贴条，品牌行/搜索行离窗口上缘较原 44px 砍半到 18px；macOS
+ * 要给交通灯留完整 28px 条，维持一档缓冲。浏览器预览 inset 为 0，保持原型
+ * 间距不动。 */
+:root[data-platform="windows"] .sidebar {
+  padding-top: 0;
+}
+
+:root[data-platform="windows"] .topbar {
+  min-height: 48px;
+}
+
+:root[data-platform="macos"] .sidebar {
+  padding-top: var(--space-2);
+}
+
+:root[data-platform="macos"] .topbar {
+  min-height: 56px;
+}
+
 /* Initialize/status screens occupy the same workspace grid column as the library. */
 .workspace-empty {
   grid-area: workspace;
@@ -425,8 +446,9 @@ button.lyric-line {
 /* Window drag handle. With `hiddenTitle: true` there is no native titlebar to
  * drag the window by, so the inset strip above the shell is the handle — its
  * height *is* `--titlebar-inset`, so it collapses to nothing in a plain
- * browser preview (0px) and covers exactly the 28px macOS reserves in the
- * WebView. Rendered as the first child of `.app` so it sits above the shell
+ * browser preview (0px) and covers exactly the strip each platform reserves
+ * (28px macOS / 18px Windows) in the WebView. Rendered as the first child of
+ * `.app` so it sits above the shell
  * grid without participating in it.
  *
  * Higher than every overlay (the tallest today is 32, `.playlist-picker-
@@ -458,22 +480,20 @@ button.lyric-line {
 }
 
 /* The immersive surface is position:fixed, so .app padding does not reach it.
- * The 收起 button sits top-left — exactly where the traffic lights are — so it
- * must clear them vertically. */
-.mode-dismiss {
-  top: calc(var(--space-6) + var(--titlebar-inset));
-}
+ * The 收起 button's desktop placement lives in the chrome section below
+ * (titlebar strip); the prototype's top-left look (player.css) stays for the
+ * plain browser preview. */
 
 /* --- Windows caption buttons (issue #76) ----------------------------------
  *
  * Windows runs the main window with `decorations: false`: no native — □ ×,
  * content starts at the window top. These are the self-drawn replacements,
  * rendered by `.window-controls` (WindowControls.tsx, Windows platform only)
- * and floating over the top-right of the `--titlebar-inset` safe-area strip —
- * the same strip macOS reserves for its traffic lights. One button above the
- * inset height would overlap real workspace chrome, so the inset *is* the
- * strip (28px on Windows — the same height as macOS —, set in main.tsx; 0px
- * in browser previews, where the component also never renders).
+ * and floating fixed to the top-right of the window — the corner macOS
+ * reserves for its traffic lights. The buttons are fixed 28×28 squares and do
+ * NOT stretch with `--titlebar-inset` (Windows pads content by only 18px, so
+ * their lower half overlays the topbar's empty right padding; macOS pads the
+ * full 28px). 0px inset in browser previews, where the component never renders.
  *
  * Sits above `.titlebar-drag` (z-index 40) so clicks reach the buttons; the
  * buttons are clickable elements, so Tauri's drag-region handler exempts them
@@ -481,29 +501,40 @@ button.lyric-line {
  * theme-driven via the shared fg/surface tokens; the close hover is the one
  * red semantic Windows' own caption carries.
  */
+:root {
+  /* 标题栏按钮的统一档位：caption 三键、标题栏 导入/设置、沉浸模式的收起
+   * 按钮共用同一宽度（等宽等距，视觉统一的要求来源）。按钮固定 28×28 方块、
+   * 不随 --titlebar-inset 伸缩（Windows 的 inset 只有 18px，macOS 28px）：
+   * 悬停背景铺满整键（8px 圆角），相邻键紧贴、背景首尾相连。 */
+  --caption-button-width: 28px;
+  /* macOS 交通灯的右边界：20px 边距 + 3×12px 灯 + 2×8px 间距（系统默认
+   * 摆放，tauri.conf.json 未自定义 trafficLightPosition）。 */
+  --macos-traffic-end: 72px;
+}
 .window-controls {
   position: fixed;
   top: 0;
   right: 0;
   z-index: 45;
-  height: var(--titlebar-inset);
   display: flex;
-  align-items: stretch;
   user-select: none;
 }
 
 .window-control {
-  width: 46px;
+  width: var(--caption-button-width);
+  height: 28px;
   padding: 0;
   border: 0;
+  border-radius: 8px;
   display: grid;
   place-items: center;
   background: transparent;
   color: var(--fg-2);
   cursor: default;
+  /* 悬停反馈近乎即时：40ms，明显快于全局 --motion-fast（140ms）。 */
   transition:
-    background var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard);
+    background 40ms var(--ease-standard),
+    color 40ms var(--ease-standard);
 }
 
 .window-control svg {
@@ -513,7 +544,9 @@ button.lyric-line {
 
 .window-control:hover,
 .window-control:focus-visible {
-  background: var(--surface);
+  /* --surface 对纯白 --bg 只深约 3%，悬停块几乎不可见，红键因此显得更大；
+   * 改用 10% 前景调出的中性灰，与 --danger 同级可见，三键观感一致。 */
+  background: color-mix(in oklab, var(--fg), transparent 90%);
   color: var(--fg);
 }
 
@@ -521,4 +554,145 @@ button.lyric-line {
 .window-control-close:focus-visible {
   background: var(--danger);
   color: #fff;
+}
+
+/* --- 标题栏 导入 / 设置（Windows / macOS）----------------------------------
+ *
+ * 与窗口控件同一条安全区带、同一层（z-index 45）：Windows 排在 caption 三键
+ * 的左侧（导入 设置 — □ ×），macOS 右上角没有原生控件，直接贴右缘。组件
+ * （TitlebarActions.tsx）只在 windows / macos 渲染。
+ *
+ * 与 caption 三键完全同款：固定 28×28、8px 圆角，悬浮/聚焦亮起与最小化键
+ * 相同的中性底（--fg 10% 混色），40ms 即时反馈。沉浸表面打开时
+ * （body.player-mode-open）盖过整条窗口，导入/设置随标题栏带一起隐藏，
+ * 只留 caption 三键与收起按钮。
+ */
+.titlebar-actions {
+  position: fixed;
+  top: 0;
+  right: calc(var(--caption-button-width) * 3);
+  z-index: 45;
+  display: flex;
+  user-select: none;
+}
+
+:root[data-platform="macos"] .titlebar-actions {
+  right: 0;
+}
+
+.titlebar-action {
+  width: var(--caption-button-width);
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--fg-2);
+  cursor: default;
+  /* 与 .window-control 同节奏：40ms，明显快于全局 --motion-fast（140ms）。 */
+  transition:
+    background 40ms var(--ease-standard),
+    color 40ms var(--ease-standard);
+}
+
+.titlebar-action svg {
+  width: 16px;
+  height: 16px;
+}
+
+.titlebar-action:hover:not(:disabled),
+.titlebar-action:focus-visible {
+  background: color-mix(in oklab, var(--fg), transparent 90%);
+  color: var(--fg);
+}
+
+.titlebar-action:disabled {
+  color: var(--muted);
+}
+
+/* 沉浸模式：导入/设置随标题栏带一起隐藏，右上角只留 caption 三键；
+ * 收起按钮（.mode-dismiss）落位在最小化键左侧。 */
+body.player-mode-open .titlebar-actions {
+  display: none;
+}
+
+:root[data-platform="macos"] body.player-mode-open .titlebar-actions {
+  right: 0;
+}
+
+body.player-mode-open .window-control {
+  color: color-mix(in oklab, var(--player-on), transparent 30%);
+}
+
+body.player-mode-open .window-control:hover,
+body.player-mode-open .window-control:focus-visible {
+  background: color-mix(in oklab, var(--player-on), transparent 90%);
+  color: var(--player-on);
+}
+
+body.player-mode-open .window-control-close:hover,
+body.player-mode-open .window-control-close:focus-visible {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* --- 沉浸模式 收起 按钮（桌面平台 chrome 化）--------------------------------
+ *
+ * 按钮本体由 ImmersivePlayer portal 到 body：沉浸表面是 z-index 8 的独立
+ * stacking context，按钮留在表面内部就永远压不过 .titlebar-drag（40），进
+ * 不了标题栏带。portal 后它升到与窗口控件相同的 45 层，这里按平台落位：
+ *  - Windows：右上角，紧挨最小化键左侧（导入/设置在沉浸模式已隐藏）；
+ *  - macOS：左上角，紧挨交通灯右侧。
+ *
+ * 尺寸与窗口控件完全同款：固定 28×28、8px 圆角、16px 图标；悬浮亮起最小化
+ * 键同款的底色——沉浸表面上以 --player-on 调 10% 混色（随封面自适应），与
+ * body.player-mode-open .window-control:hover 一致。选择器特异性
+ * （:root[data-platform] + 类）高于 artwork.css 的 body.player-mode-open
+ * 圆形底色规则，与文件引入顺序无关。非桌面平台（浏览器预览、Linux）不匹配
+ * 这些规则，保持原型的左上角圆形按钮外观。 */
+/* portal 对所有平台生效：按钮脱离了沉浸表面的 stacking context，需要明确
+ * 层级才不会被表面（z-index 8）或拖拽条（40）盖住——包括保持原型外观的
+ * 浏览器预览。 */
+.mode-dismiss {
+  z-index: 45;
+}
+:root[data-platform="windows"] .mode-dismiss,
+:root[data-platform="macos"] .mode-dismiss {
+  position: fixed;
+  top: 0;
+  left: auto;
+  right: auto;
+  z-index: 45;
+  width: var(--caption-button-width);
+  height: 28px;
+  border-radius: 8px;
+  background: transparent;
+  color: color-mix(in oklab, var(--player-on), transparent 30%);
+  transition:
+    background 40ms var(--ease-standard),
+    color 40ms var(--ease-standard);
+}
+
+:root[data-platform="windows"] .mode-dismiss {
+  right: calc(var(--caption-button-width) * 3);
+}
+
+:root[data-platform="macos"] .mode-dismiss {
+  left: var(--macos-traffic-end);
+}
+
+:root[data-platform="windows"] .mode-dismiss:hover,
+:root[data-platform="windows"] .mode-dismiss:focus-visible,
+:root[data-platform="macos"] .mode-dismiss:hover,
+:root[data-platform="macos"] .mode-dismiss:focus-visible {
+  background: color-mix(in oklab, var(--player-on), transparent 90%);
+  color: var(--player-on);
+}
+
+:root[data-platform="windows"] .mode-dismiss svg,
+:root[data-platform="macos"] .mode-dismiss svg {
+  width: 16px;
+  height: 16px;
 }
