@@ -89,6 +89,8 @@ interface BridgeCommandArguments extends SyncCommandArguments {
   reveal_song: [args: { songId: string }];
   start_scan: [args: { root: string }];
   cancel_scan: [args: { root: string }];
+  /** Shell bookkeeping: the macOS app menu mirrors the active view's check state. */
+  report_library_view: [args: { view: string }];
   set_theme: [args: { theme: string }];
   set_close_behavior: [args: { behavior: string }];
   get_close_behavior: EmptyArgs;

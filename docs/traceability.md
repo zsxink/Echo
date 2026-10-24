@@ -5,7 +5,7 @@
 - 本表逐项覆盖 specs 中的全部 Scenario；稳定 ID 不得复用，标题调整时保留原 ID。
 - 任务 1.3 建立测试 manifest 与执行器。每行指定的 manifest 必须包含正常路径、关键失败路径、fixture、预期结果和自动测试过滤器；Native 行还必须包含平台版本、人工步骤、操作者和证据路径。
 - 每行给出实际验收命令。`pnpm verify:scenario -- --all` 必须比较 specs、此表和测试 manifest 的 ID 集合完全相等，并逐项执行；缺失、重复、无命令、无证据或失败均返回非零。
-- 当前基线：102 个 Requirement，394 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
+- 当前基线：103 个 Requirement，455 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
 
 ## ci-release-pipeline
 
@@ -100,6 +100,15 @@
 | DAS-R17-S01 | Background close exits macOS native fullscreen before hiding the main window | Close the main window from native fullscreen | — | Native/Gate | `tests/native/DAS-R17-S01.md` | `pnpm verify:scenario -- DAS-R17-S01` |
 | DAS-R17-S02 | Background close exits macOS native fullscreen before hiding the main window | Reopen after closing from native fullscreen | — | Native/Gate | `tests/native/DAS-R17-S02.md` | `pnpm verify:scenario -- DAS-R17-S02` |
 | DAS-R17-S03 | Background close exits macOS native fullscreen before hiding the main window | Background close while windowed | — | Native/Gate | `tests/native/DAS-R17-S03.md` | `pnpm verify:scenario -- DAS-R17-S03` |
+| DAS-R18-S01 | macOS 原生应用菜单与状态项右键菜单 | 中文菜单替换默认英文菜单 | — | Desktop/Native | `tests/native/DAS-R18-S01.md` | `pnpm verify:scenario -- DAS-R18-S01` |
+| DAS-R18-S02 | macOS 原生应用菜单与状态项右键菜单 | 从菜单导入音乐文件 | — | Desktop/Native | `tests/native/DAS-R18-S02.md` | `pnpm verify:scenario -- DAS-R18-S02` |
+| DAS-R18-S03 | macOS 原生应用菜单与状态项右键菜单 | 从菜单选择资料库目录与重新扫描 | — | Desktop/Native | `tests/native/DAS-R18-S03.md` | `pnpm verify:scenario -- DAS-R18-S03` |
+| DAS-R18-S04 | macOS 原生应用菜单与状态项右键菜单 | 菜单播放控制三处一致 | — | Desktop/Native | `tests/native/DAS-R18-S04.md` | `pnpm verify:scenario -- DAS-R18-S04` |
+| DAS-R18-S05 | macOS 原生应用菜单与状态项右键菜单 | 菜单播放模式勾选态一致 | — | Desktop/Native | `tests/native/DAS-R18-S05.md` | `pnpm verify:scenario -- DAS-R18-S05` |
+| DAS-R18-S06 | macOS 原生应用菜单与状态项右键菜单 | 菜单视图切换与搜索聚焦 | — | Desktop/Native | `tests/native/DAS-R18-S06.md` | `pnpm verify:scenario -- DAS-R18-S06` |
+| DAS-R18-S07 | macOS 原生应用菜单与状态项右键菜单 | 菜单退出保存播放会话 | — | Desktop/Native | `tests/native/DAS-R18-S07.md` | `pnpm verify:scenario -- DAS-R18-S07` |
+| DAS-R18-S08 | macOS 原生应用菜单与状态项右键菜单 | 状态项右键菜单补齐 | — | Desktop/Native | `tests/native/DAS-R18-S08.md` | `pnpm verify:scenario -- DAS-R18-S08` |
+| DAS-R18-S09 | macOS 原生应用菜单与状态项右键菜单 | 菜单动作映射可验证且不影响其他平台 | — | Rust | `tests/scenarios/DAS-R18-S09.yaml` | `pnpm verify:scenario -- DAS-R18-S09` |
 
 ## desktop-playback
 

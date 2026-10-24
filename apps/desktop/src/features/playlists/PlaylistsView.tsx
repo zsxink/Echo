@@ -50,6 +50,7 @@ import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
 import { Icon } from "../../app/Icon";
 import { Topbar } from "../../app/shell";
 import { notify } from "../../app/toast";
+import { subscribeSearchFocus } from "../../app/searchFocus";
 
 export interface PlaylistsViewProps {
   readonly playlistId: string;
@@ -85,6 +86,9 @@ export function PlaylistsView({
   const [sort, setSort] = useStoredSongSort(`playlist:${playlistId}`);
   const [name, setName] = useState(title);
   const [searchText, setSearchText] = useState("");
+  // 视图 → 搜索（Cmd+F，issue #73）聚焦歌单详情自己的搜索框。
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => subscribeSearchFocus(() => searchInputRef.current?.focus()), []);
   const [searching, setSearching] = useState(false);
   // 歌单内搜索（playlist-search-locate-import）：非空搜索词由后端 `search`
   // 命令在“当前歌单”范围内分页返回；空词时 `searched` 为 null，视图回退到
@@ -527,6 +531,7 @@ export function PlaylistsView({
         <label className="search" data-testid="playlist-search-field">
           <Icon name="search" />
           <input
+            ref={searchInputRef}
             type="search"
             placeholder="搜索歌曲、艺人或专辑"
             value={searchText}

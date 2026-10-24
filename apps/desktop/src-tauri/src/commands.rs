@@ -958,3 +958,17 @@ pub fn seek(state: State<'_, PlayerHandle>, position: f64) -> Result<(), IpcErro
     coord.seek(position.max(0.0));
     Ok(())
 }
+
+/// The frontend reports the active library view so the macOS application menu
+/// can mirror its 视图 check state. Pure shell bookkeeping: no state is read,
+/// and on platforms without an app menu this is a no-op by construction (the
+/// cfg'd call target does not exist there).
+#[tauri::command]
+pub fn report_library_view(app: AppHandle, view: String) {
+    #[cfg(target_os = "macos")]
+    crate::app_menu::set_current_view(&app, &view);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, view);
+    }
+}

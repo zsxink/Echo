@@ -20,7 +20,7 @@ pub(super) fn bootstrap_main() {
     // an open request has nowhere to be queued.
     let startup = Arc::new(StartupSupervisor::new());
 
-    let app = match tauri::Builder::default()
+    let builder = tauri::Builder::default()
         // The single-instance plugin is registered first, as required by the
         // plugin, so a later platform adapter cannot create a second process.
         .register_uri_scheme_protocol("cover", cover_protocol::cover_protocol_handler)
@@ -117,7 +117,20 @@ pub(super) fn bootstrap_main() {
             commands::set_volume,
             commands::toggle_mute,
             commands::seek,
-        ])
+            commands::report_library_view,
+        ]);
+
+    // The Chinese application menu replaces the Tauri default *before* the
+    // first window appears, so no English default menu ever flashes. macOS
+    // only — Windows/Linux keep their tray-only entry unchanged.
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .menu(app_menu::build_app_menu)
+        .on_menu_event(|app, event| {
+            app_menu::handle_menu_event(app, &event);
+        });
+
+    let app = match builder
         .setup({
             let startup = Arc::clone(&startup);
             move |app| {
@@ -164,6 +177,7 @@ pub(super) fn bootstrap_main() {
                 {
                     let show_handle = app.handle().clone();
                     let quit_handle = app.handle().clone();
+                    let menu_handle = app.handle().clone();
                     macos_status_row::install(
                         status_sink,
                         Arc::new(move || focus_main_window(&show_handle)),
@@ -174,6 +188,10 @@ pub(super) fn bootstrap_main() {
                             }
                             quit_handle.exit(0);
                         }),
+                        // Right-click 导入/设置 reuse the app-menu decision
+                        // layer, so the context menu and the menu bar can never
+                        // diverge into two code paths.
+                        Arc::new(move |action| app_menu::dispatch_by_id(&menu_handle, action)),
                     )?;
                 }
 
