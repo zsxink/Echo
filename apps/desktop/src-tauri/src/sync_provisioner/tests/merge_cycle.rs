@@ -171,7 +171,9 @@ async fn an_idle_cycle_reaches_the_host_exactly_once() {
 async fn native_pull_drains_more_than_one_commit_page_without_losing_local_work() {
     use echo_core::domain::entities::Song;
     use echo_core::domain::ids::{RelativeMediaPath, Revision, SongId};
+    let started = Instant::now();
     let fixture = LanMergeFixture::new().await;
+    eprintln!("native 513: fixture ready after {:?}", started.elapsed());
     let local_song = SongId::new();
     SongRepository::upsert(
         fixture.replica.as_ref(),
@@ -186,6 +188,7 @@ async fn native_pull_drains_more_than_one_commit_page_without_losing_local_work(
     let queued = fixture.replica.pending_local_mutations(512).unwrap();
     let mut previous = fixture.host_mutation;
     let mut last = None;
+    let publishing = Instant::now();
     for sequence in 2..=513 {
         let (checkpoint, mutation) = publish_test_song(
             &fixture.host,
@@ -197,16 +200,28 @@ async fn native_pull_drains_more_than_one_commit_page_without_losing_local_work(
         );
         previous = mutation;
         last = Some(checkpoint);
+        if sequence % 32 == 0 || sequence == 513 {
+            eprintln!(
+                "native 513: host sequence {sequence}/513 after {:?}",
+                publishing.elapsed()
+            );
+        }
     }
     let queue = ScopedLocalQueue {
         database: fixture.replica.as_ref(),
         root: fixture.root,
     };
+    let pulling = Instant::now();
     fixture
         .provisioner
         .pull_host_changes(&fixture.client, &fixture.peer, &fixture.endpoint, &queue)
         .await
         .unwrap();
+    eprintln!(
+        "native 513: pull finished after {:?}, total {:?}",
+        pulling.elapsed(),
+        started.elapsed()
+    );
     assert_eq!(
         queue
             .replica_checkpoint(fixture.peer.host_device_id)

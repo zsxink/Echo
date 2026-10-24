@@ -1,6 +1,7 @@
 //! Export context provenance without borrowing the globally selected binding.
 use super::*;
 use crate::application::ports::{LibraryRepository, LocalSyncQueuePort};
+use crate::domain::library::durability::ChangeOrigin;
 use crate::domain::{
     entities::LibraryRoot,
     library::durability::StateTarget,
@@ -8,6 +9,7 @@ use crate::domain::{
 };
 use crate::infrastructure::sqlite::SqliteDatabase;
 use serde_json::json;
+use std::sync::Arc;
 
 struct Fixture {
     directory: tempfile::TempDir,
@@ -235,6 +237,7 @@ fn library_durability_sync_export_preserves_incomplete_replica_receipts() {
 }
 
 mod confirmations;
+mod publication;
 mod resources;
 
 #[test]

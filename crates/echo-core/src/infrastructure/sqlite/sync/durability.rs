@@ -1,21 +1,20 @@
 //! Root-scoped recovery facts for LAN writes. No credential or endpoint tables
 //! are exported. Confirmed payloads and immutable local events are kept apart.
 
+mod commit;
 mod facts;
+mod publication;
 #[cfg(test)]
 mod tests;
 
-use rusqlite::{params, Connection, Transaction};
+use rusqlite::{params, Connection};
 use serde_json::Value;
-use std::sync::Arc;
 use uuid::Uuid;
 
 use super::super::support::storage;
-use crate::application::ports::ControlPlanePort;
-use crate::domain::ids::{LibraryRootId, OperationId};
+use crate::domain::ids::LibraryRootId;
 use crate::domain::library::durability::{
-    ChangeOrigin, CommitStatus, DurableStateChange, LibraryBatch, StateKey, StateKind,
-    StateNamespace, StateTarget,
+    DurableStateChange, LibraryBatch, StateKey, StateKind, StateNamespace, StateTarget,
 };
 use crate::error::Error;
 
@@ -68,7 +67,7 @@ pub(crate) fn export_sync_state(
         (StateKind::Confirmed, "object", format!("SELECT json_object('schema','echo.sync.confirmed.v1','object_type',object_type,'object_uuid',object_uuid,'version',object_version,'sequence',commit_seq,'payload',CASE WHEN payload_json IS NULL THEN NULL ELSE json(payload_json) END,'tombstone',json(CASE WHEN is_tombstone=1 THEN 'true' ELSE 'false' END),'changed_at_ms',changed_at_ms) FROM {prefix}sync_object_versions WHERE {scope} ORDER BY object_type,object_uuid")),
         (StateKind::Alias, "song-alias", format!("SELECT json_object('schema','echo.sync.song-alias.v1','alias',alias_song_uuid,'canonical',canonical_song_uuid,'sequence',commit_seq) FROM {prefix}sync_song_aliases WHERE {scope} ORDER BY alias_song_uuid")),
         (StateKind::Alias, "member-alias", format!("SELECT json_object('schema','echo.sync.member-alias.v1','playlist',playlist_uuid,'alias',alias_member_uuid,'canonical',canonical_member_uuid,'sequence',commit_seq) FROM {prefix}sync_member_aliases WHERE {scope} ORDER BY playlist_uuid,alias_member_uuid")),
-        (StateKind::SyncLedger, "commit", format!("SELECT json_object('schema','echo.sync.commit.v1','sequence',commit_seq,'library',library_id,'authority',authority_id,'epoch',epoch,'author',origin_device_id,'mutation_id',mutation_id,'body',json(canonical_json),'original_body',canonical_json,'created_at',created_at,'previous_digest',lower(hex(previous_digest)),'digest',lower(hex(commit_digest)),'publication',publication_state) FROM {prefix}sync_commits WHERE {scope} ORDER BY commit_seq")),
+        (StateKind::SyncLedger, "commit", format!("SELECT {} FROM {prefix}sync_commits WHERE {scope} ORDER BY commit_seq", publication::LEDGER_PAYLOAD)),
         (StateKind::Receipt, "receipt", format!("SELECT json_object('schema','echo.sync.receipt.v1','author',origin_device_id,'mutation_id',mutation_id,'payload_digest',payload_digest,'outcome',json(outcome_json),'original_outcome',outcome_json,'received_at',received_at,'sequence',commit_seq) FROM {prefix}sync_inbox WHERE {scope} ORDER BY origin_device_id,mutation_id")),
         (StateKind::Cursor, "origin", format!("SELECT json_object('schema','echo.sync.origin-cursor.v1','author',origin_device_id,'sequence',origin_seq,'mutation_id',last_mutation_id) FROM {prefix}sync_origin_cursors WHERE {scope} ORDER BY origin_device_id")),
         (StateKind::Cursor, "peer", format!("SELECT json_object('schema','echo.sync.peer-cursor.v1','peer',peer_device_id,'sequence',applied_commit_seq,'digest',lower(hex(applied_digest))) FROM {prefix}sync_peer_cursors WHERE {scope} ORDER BY peer_device_id")),
@@ -179,85 +178,7 @@ fn complete_confirmations(states: &mut [DurableStateChange]) -> Result<(), Error
     Ok(())
 }
 
-/// The SQL transaction has only planned a result. Its durable commit is inside
-/// the Application coordinator's projection closure, after the directory commit.
-pub(crate) fn commit_projection(
-    control: Option<Arc<dyn ControlPlanePort>>,
-    tx: Transaction<'_>,
-    root: LibraryRootId,
-    origin: ChangeOrigin,
-    operation: Uuid,
-) -> Result<(), Error> {
-    let Some(control) = control else {
-        // Unconfigured adapters are used by isolated repository contracts only.
-        // Production assembly installs the control plane before opening a root.
-        #[cfg(test)]
-        return tx.commit().map_err(storage);
-        #[cfg(not(test))]
-        return Err(Error::unavailable(
-            "library durability",
-            "directory commit adapter is not configured",
-        ));
-    };
-    let manifest = control
-        .read_manifest(root)?
-        .ok_or_else(|| Error::conflict("LAN write requires a portable library manifest"))?;
-    let mut batch = LibraryBatch::new(
-        operation,
-        manifest.library_id,
-        origin,
-        super::super::durability_backfill::export_library_records(&tx, root)?,
-    );
-    enrich_recovery_batch(&tx, root, &mut batch)?;
-    // An uncertain earlier commit is retried under its immutable operation, not
-    // reconstructed with new wall-clock values or fresh conflict identities.
-    if control
-        .durability()
-        .ok_or_else(|| {
-            Error::unavailable(
-                "library durability",
-                "directory commit adapter is not configured",
-            )
-        })?
-        .operation_status(root, operation)?
-        .is_some()
-    {
-        batch = control
-            .durability()
-            .ok_or_else(|| {
-                Error::unavailable(
-                    "library durability",
-                    "directory commit adapter is not configured",
-                )
-            })?
-            .read_operation(root, operation)?
-            .ok_or_else(|| {
-                Error::conflict("saved LAN operation is absent from the verified directory chain")
-            })?
-            .batch;
-    }
-    let (outcome, projected) = crate::application::library_commit::commit_then_project(
-        control.as_ref(),
-        root,
-        &batch,
-        move |_| tx.commit().map_err(storage),
-    )?;
-    if projected.is_none() {
-        let operation = OperationId::from_uuid(operation);
-        let reason = Error::unavailable(
-            "LAN projection",
-            outcome
-                .reason
-                .unwrap_or_else(|| "saved directory operation requires recovery".to_owned()),
-        );
-        return Err(if outcome.status == CommitStatus::SavedPendingRecovery {
-            Error::saved_pending_recovery(operation, reason)
-        } else {
-            Error::saved_pending_projection(operation, reason)
-        });
-    }
-    Ok(())
-}
+pub(crate) use commit::{commit_projection, commit_publication_projection};
 
 pub(crate) fn active_root(connection: &Connection) -> Result<LibraryRootId, Error> {
     let root: String = connection

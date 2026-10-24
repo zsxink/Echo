@@ -203,7 +203,7 @@ impl HostCommitLedgerPort for SqliteDatabase {
             tx.execute("UPDATE sync_commits SET publication_state='published' WHERE commit_seq=?1 AND publication_state!='published'", params![sequence]).map_err(storage)?;
             let root = super::super::durability::active_root(&tx)?;
             let operation = super::super::durability::identity("host-published",&format!("{}:{}",checkpoint.binding.library_id.as_uuid(),checkpoint.sequence.as_u64()));
-            super::super::durability::commit_projection(control,tx,root,crate::domain::library::durability::ChangeOrigin::HostConfirmation,operation)?;
+            super::super::durability::commit_publication_projection(control,tx,root,operation,checkpoint)?;
             Ok(((), sync_work))
         })
     }
