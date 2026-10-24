@@ -16,7 +16,7 @@ Windows 主窗口当前带原生标题栏（`decorations` 缺省为 `true`）；
 ### D2 自绘控件：固定右上角悬浮，复用 `--titlebar-inset` 安全区
 
 - 布局沿用 macOS 的既有机制：`.app { padding-top: var(--titlebar-inset) }` 已把内容压到安全区之下，控件 `position: fixed; top: 0; right: 0` 悬浮在安全区内，不与任何工作区交互元素重叠，不需要改 shell 网格。
-- Windows 的 `--titlebar-inset` 由 `platform.ts` 初始化为 `36px`（控件高，接近 Win11 原生 caption 32px 并留出 4px 呼吸）；macOS 维持 28px；浏览器预览维持 0px（控件也不渲染）。
+- Windows 的 `--titlebar-inset` 由 `platform.ts` 初始化为 `28px`（与 macOS 同高；初版 36px 经真机评审偏高，按 operator 反馈收窄）；macOS 维持 28px；浏览器预览维持 0px（控件也不渲染）。
 - 控件区与 `.titlebar-drag`（z-index 40）分离，z-index 45 保证悬浮其上；按钮为 `BUTTON` 元素，Tauri drag.js 对 clickable 元素自动豁免拖拽，控件下方条带仍是拖拽区。
 - 双击最大化/还原：Tauri 注入的 drag.js 在 `mousedown detail===2` 时调用 `plugin:window|internal_toggle_maximize`，权限已含于 `core:window:default`，`.titlebar-drag` 行为零新增。
 

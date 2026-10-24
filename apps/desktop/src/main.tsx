@@ -42,9 +42,11 @@ void (async () => {
 // The top safe-area inset matches each platform's reserved strip: macOS keeps
 // the 28px overlay-titlebar inset for the floating traffic lights; Windows
 // removes the native caption entirely (`decorations: false`, tauri.windows.
-// conf.json), so its 36px inset reserves room for the self-drawn window
-// controls instead. No-op outside the Tauri WebView (jsdom tests, plain
-// `vite` browser preview) — the inset stays 0px there and no chrome renders.
+// conf.json), so its 28px inset reserves room for the self-drawn window
+// controls at the same height as macOS — a slimmer strip read better than the
+// initial 36px (operator feedback on the smoke run). No-op outside the Tauri
+// WebView (jsdom tests, plain `vite` browser preview) — the inset stays 0px
+// there and no chrome renders.
 declare global {
   interface Window {
     // Tauri v2 injects this on every IPC-capable WebView.
@@ -56,7 +58,7 @@ if (window.__TAURI_INTERNALS__) {
   if (platform === "macos") {
     document.documentElement.style.setProperty("--titlebar-inset", "28px");
   } else if (platform === "windows") {
-    document.documentElement.style.setProperty("--titlebar-inset", "36px");
+    document.documentElement.style.setProperty("--titlebar-inset", "28px");
   }
 }
 

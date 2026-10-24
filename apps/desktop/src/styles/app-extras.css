@@ -472,8 +472,8 @@ button.lyric-line {
  * and floating over the top-right of the `--titlebar-inset` safe-area strip —
  * the same strip macOS reserves for its traffic lights. One button above the
  * inset height would overlap real workspace chrome, so the inset *is* the
- * strip (36px on Windows, set in main.tsx; 0px in browser previews, where the
- * component also never renders).
+ * strip (28px on Windows — the same height as macOS —, set in main.tsx; 0px
+ * in browser previews, where the component also never renders).
  *
  * Sits above `.titlebar-drag` (z-index 40) so clicks reach the buttons; the
  * buttons are clickable elements, so Tauri's drag-region handler exempts them
