@@ -15,6 +15,8 @@
 
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+
 import { libraryPersistenceMessage } from "./libraryPersistence";
 
 import type {
@@ -243,12 +245,54 @@ export async function subscribe<T>(
   return listen<T>(event, (eventPayload) => handler(eventPayload.payload));
 }
 
+// Window-control facade (issue #76). Windows runs the main window with
+// `decorations: false`, so the frontend draws its own caption buttons — and
+// those buttons must reach the window plugin through this boundary like every
+// other Tauri call (task 10.2). `getCurrentWindow()` is resolved lazily: the
+// constructor reads `__TAURI_INTERNALS__.metadata`, which only exists inside
+// the real WebView, so a module-level call would throw at import time in
+// jsdom and the plain browser preview.
+//
+// `requestWindowClose` uses the window plugin's `close`, which routes through
+// the shell's CloseRequested handler (tao posts WM_CLOSE on Windows) — the
+// exact path the native caption took, so CloseBehavior decides identically.
+
+/** Minimize the main window (Windows caption button). */
+export function minimizeWindow(): Promise<void> {
+  return getCurrentWindow().minimize();
+}
+
+/** Toggle maximize/restore (Windows caption button). */
+export function toggleMaximizeWindow(): Promise<void> {
+  return getCurrentWindow().toggleMaximize();
+}
+
+/** Request close through the CloseRequested → CloseBehavior native path. */
+export function requestWindowClose(): Promise<void> {
+  return getCurrentWindow().close();
+}
+
+/** Whether the window is currently maximized (drives the caption glyph). */
+export function isWindowMaximized(): Promise<boolean> {
+  return getCurrentWindow().isMaximized();
+}
+
+/** Subscribe to window resize events; resolves the de-registration handle. */
+export function onWindowResized(handler: () => void): Promise<UnlistenFn> {
+  return getCurrentWindow().listen("tauri://resize", handler);
+}
+
 /** A tiny typed facade used by the app's store layer. */
 export const bridge = {
   call: bridgeCall,
   fireAndForget,
   subscribe,
   assetUrl,
+  minimizeWindow,
+  toggleMaximizeWindow,
+  requestWindowClose,
+  isWindowMaximized,
+  onWindowResized,
 };
 
 export type { UnlistenFn };

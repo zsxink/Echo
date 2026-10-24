@@ -1,4 +1,20 @@
 {
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Echo",
+        "width": 1180,
+        "height": 760,
+        "minWidth": 760,
+        "minHeight": 560,
+        "resizable": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "decorations": false
+      }
+    ]
+  },
   "bundle": {
     "resources": {
       "vendor/libmpv/windows/libmpv-2.dll": "libmpv-2.dll",

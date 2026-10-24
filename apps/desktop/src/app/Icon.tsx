@@ -112,6 +112,25 @@ const GLYPHS: Record<string, Glyph> = {
     ),
   },
   upload: { nodes: <path d="M12 15V3m-4 4 4-4 4 4M4 15v5h16v-5" /> },
+  // 标题栏导入入口：箭头穿入右侧门形（参考图样式），与 1.8px 线型规范一致。
+  import: {
+    nodes: (
+      <>
+        <path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" />
+        <path d="M3 12h11" />
+        <path d="m10.5 8.5 3.5 3.5-3.5 3.5" />
+      </>
+    ),
+  },
+  // 标题栏设置入口：螺母形六角 + 中心圆（参考图样式）；侧边栏仍用齿轮 settings。
+  settingsNut: {
+    nodes: (
+      <>
+        <path d="M12 3l7.79 4.5v9L12 21l-7.79-4.5v-9L12 3Z" />
+        <circle cx="12" cy="12" r="3" />
+      </>
+    ),
+  },
 
   // --- topbar / toolbar ----------------------------------------------------
   search: {
@@ -161,6 +180,19 @@ const GLYPHS: Record<string, Glyph> = {
   sidebar: { nodes: <path d="M6 5v14M12 5v14M18 5v14" /> },
   menu: { nodes: <path d="M4 6h16M4 12h16M4 18h16" /> },
   close: { nodes: <path d="m6 6 12 12M18 6 6 18" /> },
+  // Windows 自绘窗口控件（issue #76）：原生 caption 按钮的线型复刻，仍走
+  // 1.8px 规范。restore 是 maximize 的双框变体——前框偏移 2.5，与 Windows
+  // 原生还原按钮的双矩形叠法一致。
+  winMinimize: { nodes: <path d="M5 12h14" /> },
+  winMaximize: { nodes: <rect x="6" y="6" width="12" height="12" rx="1.2" /> },
+  winRestore: {
+    nodes: (
+      <>
+        <rect x="8.5" y="4.5" width="11" height="11" rx="1.2" />
+        <path d="M15.5 15.5v2.8a1.2 1.2 0 0 1-1.2 1.2H6.7a1.2 1.2 0 0 1-1.2-1.2V9.7a1.2 1.2 0 0 1 1.2-1.2h2.8" />
+      </>
+    ),
+  },
   chevronDown: { strokeWidth: 2, nodes: <path d="m6 9 6 6 6-6" /> },
   chevronLeft: { strokeWidth: 2, nodes: <path d="m14 6-6 6 6 6" /> },
   chevronRight: { strokeWidth: 2, nodes: <path d="m10 6 6 6-6 6" /> },

@@ -1,9 +1,10 @@
 /**
  * Import completion refreshes the view (playlist-search-locate-import 5.2).
  *
- * The import entry moved from `LibraryWorkspace` up to the App shell's brand
- * area, so these tests drive the *shell-owned* control (the `useImport` hook +
- * the `.brand-action` import button) next to the workspace, instead of an
+ * The import entry moved from `LibraryWorkspace` up to the App shell's
+ * titlebar strip (TitlebarActions), so these tests drive the *shell-owned*
+ * control (the `useImport` hook + the strip's import button) next to the
+ * workspace, instead of an
  * inline button only 全部歌曲/最近添加 render. `reset()` used to empty the
  * local page only; since the query inputs did not change, `useSongs` never
  * issued another request and both views stayed stale until navigation. The
@@ -45,9 +46,9 @@ const afterImport = {
   relativePath: "after.flac",
 };
 
-/** The shell-side import surface: the button `App` renders into `.brand-actions`
- *  plus the workspace that owns the list. `onImportCommitted` mirrors the
- *  shell's playlist reload (which in turn re-reads the current view). */
+/** The shell-side import surface: the button `TitlebarActions` renders into
+ *  `.titlebar-actions` plus the workspace that owns the list. `onImportCommitted`
+ *  mirrors the shell's playlist reload (which in turn re-reads the current view). */
 function ImportShell({ view, root = "root-1" }: { view: LibraryViewKind; root?: string }) {
   const { importing, runImport, renderImportDialog } = useImport({
     libraryRoot: root,
@@ -57,13 +58,12 @@ function ImportShell({ view, root = "root-1" }: { view: LibraryViewKind; root?: 
     <>
       <button
         type="button"
-        className="brand-action"
-        id="import-button"
+        className="titlebar-action"
         aria-label={importing ? "正在导入" : "导入"}
         aria-busy={importing}
         disabled={importing}
         onClick={() => void runImport()}
-        data-testid="import-button"
+        data-testid="titlebar-import"
       >
         {importing ? "正在导入" : "导入"}
       </button>
@@ -122,7 +122,7 @@ describe("导入完成后的音乐库刷新（壳层入口）", () => {
             nextCursor: null,
           },
     );
-    fireEvent.click(screen.getByTestId("import-button"));
+    fireEvent.click(screen.getByTestId("titlebar-import"));
 
     expect(await screen.findByText(afterImport.title)).toBeInTheDocument();
     if (command === "all") expect(await screen.findByText("275 首")).toBeInTheDocument();
@@ -147,16 +147,16 @@ describe("导入完成后的音乐库刷新（壳层入口）", () => {
     render(<ImportShell view="all" />);
     await screen.findByText(beforeImport.title);
 
-    fireEvent.click(screen.getByTestId("import-button"));
-    expect(screen.getByTestId("import-button")).toBeDisabled();
-    expect(screen.getByTestId("import-button")).toHaveTextContent("正在导入");
+    fireEvent.click(screen.getByTestId("titlebar-import"));
+    expect(screen.getByTestId("titlebar-import")).toBeDisabled();
+    expect(screen.getByTestId("titlebar-import")).toHaveTextContent("正在导入");
 
     await act(async () => {
       resolvePicker(null);
     });
 
-    await waitFor(() => expect(screen.getByTestId("import-button")).toBeEnabled());
-    expect(screen.getByTestId("import-button")).toHaveTextContent("导入");
+    await waitFor(() => expect(screen.getByTestId("titlebar-import")).toBeEnabled());
+    expect(screen.getByTestId("titlebar-import")).toHaveTextContent("导入");
   });
 
   it("shows a failure dialog when the import command is rejected", async () => {
@@ -165,7 +165,7 @@ describe("导入完成后的音乐库刷新（壳层入口）", () => {
 
     render(<ImportShell view="all" />);
     await screen.findByText(beforeImport.title);
-    fireEvent.click(screen.getByTestId("import-button"));
+    fireEvent.click(screen.getByTestId("titlebar-import"));
 
     await waitFor(() => expect(screen.getByTestId("import-dialog")).toBeInTheDocument());
     expect(screen.getByTestId("import-dialog")).toHaveTextContent("导入失败");
@@ -188,7 +188,7 @@ describe("导入完成后的音乐库刷新（壳层入口）", () => {
     });
     mocks.setInvoke("retry_library_operation", null);
     const { rerender } = render(<ImportShell view="all" />);
-    fireEvent.click(screen.getByTestId("import-button"));
+    fireEvent.click(screen.getByTestId("titlebar-import"));
     await screen.findByRole("button", { name: "恢复此项" });
     const callsBeforeRecovery = (
       invoke as unknown as { mock: { calls: unknown[][] } }
@@ -224,7 +224,7 @@ describe("导入完成后的音乐库刷新（壳层入口）", () => {
     });
     mocks.setInvoke("retry_library_operation", new Error("volume unavailable"));
     render(<ImportShell view="all" />);
-    fireEvent.click(screen.getByTestId("import-button"));
+    fireEvent.click(screen.getByTestId("titlebar-import"));
     fireEvent.click(await screen.findByRole("button", { name: "恢复此项" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("仍保存在原音乐库中");
     expect(screen.getByText("恢复操作：saved-operation")).toBeInTheDocument();

@@ -1,7 +1,17 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+
+// SHELL-IMP 用例预设 platform=windows 让标题栏条渲染，WindowControls 会随之
+// 挂载并经 bridge 查询窗口最大化状态；jsdom 没有 Tauri 内部对象，与
+// WindowControls.test.tsx 同法在模块边界 mock 掉 window API。
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    isMaximized: async () => false,
+    listen: async () => () => undefined,
+  }),
+}));
 
 describe("App shell", () => {
   it("renders the echo shell and shows the first-launch choose-root view when no library is configured", () => {
@@ -341,12 +351,21 @@ describe("Library directory views", () => {
  * so it must stay rendered under 歌单/歌手/专辑 views — never vanish with the
  * routed view — and stay disabled/hidden for a read-only library.
  */
-describe("品牌区导入入口所有视图可用 (SHELL-IMP)", () => {
+describe("标题栏导入/设置入口所有视图可用 (SHELL-IMP)", () => {
   const mocks = (
     globalThis as unknown as {
       __echoTest: { setInvoke: (command: string, value: unknown) => void };
     }
   ).__echoTest;
+
+  // 导入/设置入口现在只住在标题栏条（TitlebarActions），它带 windows/macos
+  // 平台门；jsdom 里预设 platform 数据集让壳层渲染这条带，结束即清除。
+  beforeEach(() => {
+    document.documentElement.dataset.platform = "windows";
+  });
+  afterEach(() => {
+    delete document.documentElement.dataset.platform;
+  });
 
   const SONG = {
     id: "saved-song",
@@ -402,10 +421,10 @@ describe("品牌区导入入口所有视图可用 (SHELL-IMP)", () => {
     await screen.findByTestId("workspace");
   }
 
-  it("keeps the import button in the brand area under the playlist view", async () => {
+  it("keeps the import entry in the titlebar strip under the playlist view", async () => {
     await activateLibrary();
     await screen.findByText("已有歌曲");
-    expect(screen.getByTestId("import-button")).toBeInTheDocument();
+    expect(screen.getByTestId("titlebar-import")).toBeInTheDocument();
 
     // The sidebar's playlist items carry `role="listitem"` (they live in a
     // `role="list"`); they are not queryable by button role, so click through
@@ -413,23 +432,23 @@ describe("品牌区导入入口所有视图可用 (SHELL-IMP)", () => {
     const playlistName = await screen.findByText("通勤");
     fireEvent.click(playlistName.closest("button")!);
     await screen.findByTestId("playlist-view");
-    expect(screen.getByTestId("import-button")).toBeInTheDocument();
+    expect(screen.getByTestId("titlebar-import")).toBeInTheDocument();
   });
 
-  it("keeps the import button in the brand area under the artist directory", async () => {
+  it("keeps the import entry in the titlebar strip under the artist directory", async () => {
     await activateLibrary();
     await screen.findByText("已有歌曲");
-    expect(screen.getByTestId("import-button")).toBeInTheDocument();
+    expect(screen.getByTestId("titlebar-import")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^歌手/ }));
     await screen.findByRole("button", { name: "打开歌手 Alice" });
-    expect(screen.getByTestId("import-button")).toBeInTheDocument();
+    expect(screen.getByTestId("titlebar-import")).toBeInTheDocument();
   });
 
-  it("hides the import button for a read-only library", async () => {
+  it("hides the import entry for a read-only library", async () => {
     await activateLibrary(true);
     await screen.findByText("已有歌曲");
-    expect(screen.getByTestId("settings-button")).toBeInTheDocument();
-    expect(screen.queryByTestId("import-button")).not.toBeInTheDocument();
+    expect(screen.getByTestId("titlebar-settings")).toBeInTheDocument();
+    expect(screen.queryByTestId("titlebar-import")).not.toBeInTheDocument();
   });
 });

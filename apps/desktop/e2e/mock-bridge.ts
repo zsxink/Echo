@@ -917,6 +917,28 @@ export class MockBridge {
     if (cmd === "plugin:event|unlisten") {
       return null;
     }
+    // Window-plugin commands (issue #76): the Windows caption buttons go
+    // through `getCurrentWindow()`, which invokes these names. Modeled
+    // statefully so the e2e can assert the toggle's two phases.
+    if (cmd === "plugin:window|is_maximized") {
+      return this.state.windowMaximized;
+    }
+    if (cmd === "plugin:window|minimize") {
+      this.state.windowActions.push("minimize");
+      return null;
+    }
+    if (cmd === "plugin:window|toggle_maximize") {
+      this.state.windowMaximized = !this.state.windowMaximized;
+      this.state.windowActions.push("toggle_maximize");
+      // The real runtime fires `tauri://resize` on every state change; the
+      // caption glyph listens to it, so the mock must too.
+      this.emit("tauri://resize", null);
+      return null;
+    }
+    if (cmd === "plugin:window|close") {
+      this.state.windowActions.push("close");
+      return null;
+    }
     const handler = this.handlers[cmd as Command];
     if (!handler) {
       // Either the app invokes a command this double has never heard of, or it
@@ -957,7 +979,15 @@ export function installMockBridge(): MockBridge {
   const params = new URLSearchParams(window.location.search);
   const seed = params.get("seed");
   if (seed) applySeed(bridge.state, seed);
+  // Platform forcing (issue #76): a scenario pins the platform-gated chrome
+  // branch by pre-setting the same `documentElement.dataset.platform` value
+  // `applyPlatform()` publishes; production never pre-sets it, so an unset
+  // parameter leaves the sniffing path untouched (`web` in the browser).
+  const platform = params.get("platform");
+  if (platform) document.documentElement.dataset.platform = platform;
   (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {
+    // `getCurrentWindow()` (the window-control facade) reads this label.
+    metadata: { currentWindow: { label: "main" } },
     invoke: (cmd: string, args: unknown, _options?: unknown) => bridge.invoke(cmd, args),
     transformCallback: (cb: (event: unknown) => void) => bridge.transformCallback(cb),
     convertFileSrc: (path: string, protocol = "asset") =>

@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./app/App";
+import { applyPlatform } from "./app/platform";
 import { bridge } from "./bridge";
 import { startPlayerEvents } from "./player/playerStore";
 // Visual layer: the extracted prototype stylesheet (see scripts/extract-prototype-css.mjs).
@@ -32,19 +33,34 @@ void (async () => {
   }
 })();
 
-// macOS overlay titlebar (tauri.conf.json `titleBarStyle: "Overlay"`): the
-// native titlebar is hidden but the traffic lights keep floating over the
-// web content's top-left corner, so the app reserves the standard 28px
-// titlebar height as a safe-area inset. No-op outside the Tauri WebView
-// (jsdom tests, plain `vite` browser preview) — the inset stays 0px there.
+// Platform detection (issue #76): `applyPlatform()` decides once whether this
+// is the macOS / Windows / Linux WebView or a plain browser preview and
+// publishes the result on `documentElement.dataset.platform` — the single
+// source of truth for platform-gated chrome (the `WindowControls` caption
+// buttons render on Windows only).
+//
+// The top safe-area inset matches each platform's reserved strip: macOS keeps
+// the 28px overlay-titlebar inset for the floating traffic lights; Windows
+// removes the native caption entirely (`decorations: false`, tauri.windows.
+// conf.json) and floats its self-drawn 28×28 controls fixed to the top-right,
+// so the inset only pads the content below them — 18px, half the previous
+// 36px top gap (operator feedback: the blank above 品牌行/搜索行 was too
+// tall). No-op outside the Tauri
+// WebView (jsdom tests, plain `vite` browser preview) — the inset stays 0px
+// there and no chrome renders.
 declare global {
   interface Window {
     // Tauri v2 injects this on every IPC-capable WebView.
     readonly __TAURI_INTERNALS__?: Record<string, unknown>;
   }
 }
-if (window.__TAURI_INTERNALS__ && /Macintosh/.test(navigator.userAgent)) {
-  document.documentElement.style.setProperty("--titlebar-inset", "28px");
+const platform = applyPlatform();
+if (window.__TAURI_INTERNALS__) {
+  if (platform === "macos") {
+    document.documentElement.style.setProperty("--titlebar-inset", "28px");
+  } else if (platform === "windows") {
+    document.documentElement.style.setProperty("--titlebar-inset", "18px");
+  }
 }
 
 ReactDOM.createRoot(root).render(
