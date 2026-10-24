@@ -1,6 +1,6 @@
 //! Upgrade a real released schema, preserving evidence across a failed migration.
 use super::*;
-use crate::application::ports::LibraryHistoryPort;
+use crate::application::ports::LibraryProjectionPort;
 use crate::domain::library::durability::{DurableStateChange, ProjectionTarget, StateKind};
 
 fn through_v27(connection: &mut rusqlite::Connection) {

@@ -87,15 +87,24 @@ pub(crate) fn export_sync_state(
             };
             let target = facts::target(namespace, &payload)?;
             debug_assert_eq!(kind, target.kind());
-            state.push(DurableStateChange::scoped(
-                StateKey {
-                    namespace: namespace_scope,
-                    target,
-                },
-                payload,
-            )?);
+            let key = StateKey {
+                namespace: namespace_scope,
+                target,
+            };
+            if namespace == "receipt" {
+                // SQL inbox rows have no schema marker: host confirmations may
+                // be complete, while replica/legacy outcomes are evidence only.
+                let mut complete = payload.clone();
+                complete["schema"] = Value::from("echo.sync.receipt.v2");
+                if let Ok(receipt) = DurableStateChange::scoped(key.clone(), complete) {
+                    state.push(receipt);
+                    continue;
+                }
+            }
+            state.push(DurableStateChange::scoped(key, payload)?);
         }
     }
+    complete_confirmations(&mut state)?;
     // Physical associations only become ready after verified publication. The
     // full publication also preserves pending claims and their retained bytes.
     for payload in values(connection, "SELECT json_object('schema','echo.sync.resource-publication.v1','operation',operation_uuid,'publication',json(publication_json),'completed',json(CASE WHEN completed=1 THEN 'true' ELSE 'false' END)) FROM sync_remote_publications WHERE local_root_uuid=?1 ORDER BY operation_uuid", &root_string)? {
@@ -109,6 +118,55 @@ pub(crate) fn export_sync_state(
         state.push(DurableStateChange::scoped(StateKey { namespace: StateNamespace::LegacyEvidence { source_root: root }, target }, payload)?);
     }
     Ok(state)
+}
+
+fn complete_confirmations(states: &mut [DurableStateChange]) -> Result<(), Error> {
+    let ledgers: std::collections::BTreeMap<_, _> = states
+        .iter()
+        .filter(|state| state.kind == StateKind::SyncLedger)
+        .map(|state| {
+            Ok((
+                (
+                    serde_json::to_string(&state.key.as_ref().map(|key| &key.namespace))
+                        .map_err(storage)?,
+                    state.payload["sequence"].as_u64(),
+                ),
+                state.payload.clone(),
+            ))
+        })
+        .collect::<Result<_, Error>>()?;
+    for state in states
+        .iter_mut()
+        .filter(|state| state.kind == StateKind::Confirmed)
+    {
+        let Some(key) = state.key.clone() else {
+            continue;
+        };
+        let namespace = serde_json::to_string(&Some(&key.namespace)).map_err(storage)?;
+        let Some(ledger) = ledgers.get(&(namespace, state.payload["sequence"].as_u64())) else {
+            continue;
+        };
+        let mut payload = state.payload.clone();
+        payload["schema"] = Value::from("echo.sync.confirmed.v2");
+        if payload["tombstone"] == Value::Bool(true) && payload["payload"].is_null() {
+            payload["payload"] = serde_json::json!({"tombstone":true});
+        }
+        for field in [
+            "author",
+            "mutation_id",
+            "original_body",
+            "previous_digest",
+            "digest",
+        ] {
+            payload[field] = ledger[field].clone();
+        }
+        // Incomplete or conflicting historical evidence stays v1, never gains
+        // a guessed event body or today's identity. Already committed v1 stays intact.
+        if let Ok(complete) = DurableStateChange::scoped(key, payload) {
+            *state = complete;
+        }
+    }
+    Ok(())
 }
 
 /// The SQL transaction has only planned a result. Its durable commit is inside

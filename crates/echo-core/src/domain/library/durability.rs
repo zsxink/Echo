@@ -1,8 +1,11 @@
 //! Library-local durable transaction protocol. These values never contain paths
 //! outside the library, credentials, database handles, or transport clients.
 
+mod change_set;
+mod confirmed;
 mod frozen;
 pub mod projection;
+mod receipt;
 mod session;
 mod state;
 #[cfg(test)]
@@ -256,13 +259,10 @@ impl LibraryBatch {
                 {
                     return Err(Error::conflict("durable member has no parent identity"));
                 }
-                super::PortableRecord::Playlist(playlist)
-                    if playlist
-                        .cover_asset
-                        .as_ref()
-                        .is_some_and(|asset| !valid_digest(&asset.content_hash)) =>
-                {
-                    return Err(Error::conflict("playlist original has an invalid digest"));
+                super::PortableRecord::Playlist(playlist) => {
+                    if let Some(asset) = &playlist.cover_asset {
+                        asset.validate()?;
+                    }
                 }
                 _ => {}
             }
@@ -366,6 +366,12 @@ impl LibraryCommit {
     pub fn validate(&self) -> Result<(), Error> {
         self.batch.validate()?;
         if self.library_commit_seq == 0
+            || self
+                .predecessor_digest
+                .as_deref()
+                .map_or(self.library_commit_seq != 1, |hash| {
+                    self.library_commit_seq == 1 || !valid_digest(hash)
+                })
             || Self::calculate_digest(
                 &self.batch,
                 self.library_commit_seq,

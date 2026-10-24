@@ -150,6 +150,11 @@ fn finish(
                 &candidate.resource_refs,
             )?;
         }
+    } else if old.0 == "pending" && disposition_status != "pending" {
+        // Confirmed projection ran while this queue entry was still effective.
+        // Re-select after the terminal transition, including any remaining
+        // pending entry in this root, in the same recovery transaction.
+        super::objects::restore_resources(c, context, kind, &object)?;
     }
     c.execute("INSERT INTO sync_local_highwater(object_type,object_uuid,local_revision) VALUES(?1,?2,?3) ON CONFLICT(object_type,object_uuid) DO UPDATE SET local_revision=MAX(local_revision,excluded.local_revision)",params![kind,object,frozen.local_revision.as_u64()]).map_err(storage)?;
     c.execute("INSERT INTO sync_local_origin_cursors(local_root_uuid,origin_device_id,origin_seq,last_mutation_id) VALUES(?1,?2,?3,?4) ON CONFLICT(local_root_uuid,origin_device_id) DO UPDATE SET origin_seq=excluded.origin_seq,last_mutation_id=excluded.last_mutation_id WHERE origin_seq<excluded.origin_seq",params![context.root.to_string(),author.as_uuid().to_string(),candidate.origin_seq,id.as_uuid().to_string()]).map_err(storage)?;

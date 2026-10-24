@@ -44,7 +44,7 @@ fn receipt(
     };
     let p = &state.payload;
 
-    if !schema(state, "echo.sync.receipt.v1") {
+    if !schema(state, "echo.sync.receipt.v1") && !schema(state, "echo.sync.receipt.v2") {
         return Ok(Some(Reason::InvalidStateFact));
     }
     let Some(seq) = p.get("sequence").and_then(Value::as_u64) else {

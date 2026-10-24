@@ -55,6 +55,7 @@
 )]
 
 pub mod clock;
+pub mod durability_ports;
 pub mod filesystem;
 pub mod library_durability;
 pub mod memory_database;

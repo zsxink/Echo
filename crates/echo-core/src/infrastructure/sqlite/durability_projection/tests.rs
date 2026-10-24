@@ -1,6 +1,6 @@
 use super::*;
 use crate::application::ports::{
-    LibraryHistoryPort, LibraryRepository, PlaylistRepository, SongRepository,
+    LibraryProjectionPort, LibraryRepository, PlaylistRepository, SongRepository,
 };
 use crate::application::testkit::library_durability::{CanonicalLibraryState, Issue72Fixture};
 use crate::domain::entities::LibraryRoot;

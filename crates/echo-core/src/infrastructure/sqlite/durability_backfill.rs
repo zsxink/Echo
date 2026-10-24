@@ -29,7 +29,7 @@ impl SqliteDatabase {
     }
 }
 
-impl LibraryHistoryPort for SqliteDatabase {
+impl crate::application::ports::LibraryProjectionPort for SqliteDatabase {
     fn projection_status(
         &self,
         root: LibraryRootId,
@@ -42,6 +42,36 @@ impl LibraryHistoryPort for SqliteDatabase {
     ) -> Result<crate::domain::library::durability::LibraryRecoveryRecords, Error> {
         self.with_reader(move |connection| super::durability_projection::read(connection, root))
     }
+    fn project_library_commits(
+        &self,
+        root: LibraryRootId,
+        commits: &crate::domain::library::durability::LibraryReplay,
+    ) -> Result<(), Error> {
+        let commits = commits.clone();
+        let control = self.library_control();
+        self.writer.run(move |connection| {
+            if let Some(image) = &commits.checkpoint {
+                let current: Option<(u64, Option<String>)> = connection.query_row(
+                    "SELECT commit_seq,commit_digest FROM library_projection_watermarks WHERE library_root_uuid=?1",
+                    [root.to_string()], |row| Ok((row.get(0)?, row.get(1)?))).optional().map_err(storage)?;
+                if let Some((seq, digest)) = current.filter(|(seq, _)| *seq < image.library_commit_seq) {
+                    let operation: String = connection.query_row(
+                        "SELECT operation_uuid FROM library_applied_operations WHERE library_root_uuid=?1 AND commit_seq=?2",
+                        params![root.to_string(),seq], |row| row.get(0)).map_err(storage)?;
+                    let durable = control.as_ref().and_then(|c| c.durability()).ok_or_else(|| Error::conflict("covered watermark requires directory operation proof"))?;
+                    let original = durable.read_operation(root, uuid::Uuid::parse_str(&operation).map_err(storage)?)?
+                        .ok_or_else(|| Error::conflict("covered database watermark has no operation receipt"))?;
+                    if original.library_commit_seq != seq || Some(original.digest) != digest {
+                        return Err(Error::conflict("covered database watermark differs from operation receipt"));
+                    }
+                }
+            }
+            super::durability_projection::project_commits(connection, root, &commits)
+        })
+    }
+}
+
+impl LibraryHistoryPort for SqliteDatabase {
     fn capture_library_history(
         &self,
         root: LibraryRootId,
@@ -69,34 +99,6 @@ impl LibraryHistoryPort for SqliteDatabase {
             let records = export_library_records(&transaction, root)?;
             transaction.commit().map_err(storage)?;
             Ok(records)
-        })
-    }
-
-    fn project_library_commits(
-        &self,
-        root: LibraryRootId,
-        commits: &crate::domain::library::durability::LibraryReplay,
-    ) -> Result<(), Error> {
-        let commits = commits.clone();
-        let control = self.library_control();
-        self.writer.run(move |connection| {
-            if let Some(image) = &commits.checkpoint {
-                let current: Option<(u64, Option<String>)> = connection.query_row(
-                    "SELECT commit_seq,commit_digest FROM library_projection_watermarks WHERE library_root_uuid=?1",
-                    [root.to_string()], |row| Ok((row.get(0)?, row.get(1)?))).optional().map_err(storage)?;
-                if let Some((seq, digest)) = current.filter(|(seq, _)| *seq < image.library_commit_seq) {
-                    let operation: String = connection.query_row(
-                        "SELECT operation_uuid FROM library_applied_operations WHERE library_root_uuid=?1 AND commit_seq=?2",
-                        params![root.to_string(),seq], |row| row.get(0)).map_err(storage)?;
-                    let durable = control.as_ref().and_then(|c| c.durability()).ok_or_else(|| Error::conflict("covered watermark requires directory operation proof"))?;
-                    let original = durable.read_operation(root, uuid::Uuid::parse_str(&operation).map_err(storage)?)?
-                        .ok_or_else(|| Error::conflict("covered database watermark has no operation receipt"))?;
-                    if original.library_commit_seq != seq || Some(original.digest) != digest {
-                        return Err(Error::conflict("covered database watermark differs from operation receipt"));
-                    }
-                }
-            }
-            super::durability_projection::project_commits(connection, root, &commits)
         })
     }
 }

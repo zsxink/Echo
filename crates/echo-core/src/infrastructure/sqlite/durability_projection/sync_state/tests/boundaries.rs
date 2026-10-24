@@ -189,6 +189,192 @@ fn library_durability_trusted_sync_retry_retains_resource_candidate_until_upload
 }
 
 #[test]
+fn library_durability_confirmed_preserves_pending_resources_without_consumable_frozen_pair() {
+    use crate::domain::sync::{ResourceDigest, SharedResourceKind, SharedResourceManifest};
+    for missing in ["frozen", "disposition", "exact_version"] {
+        let f = fixture();
+        retry(&f);
+        let resources = vec![SharedResourceManifest::new(
+            SharedResourceKind::PlaylistCover,
+            ResourceDigest::from_bytes([4; 32]),
+            13,
+            "image/png".into(),
+            "covers/local.png",
+        )
+        .unwrap()];
+        f.db.set_local_sync_resources(ObjectKey::Playlist(f.playlist), resources.clone())
+            .unwrap();
+        let mutation = f.frozen.candidate.mutation_id;
+        let raw = serde_json::to_string(&resources).unwrap();
+        f.db.writer.run(move |c| {
+            c.execute("UPDATE sync_mutations SET resource_refs_json=?2 WHERE mutation_id=?1", params![mutation.as_uuid().to_string(),raw]).map_err(storage)?;
+            c.execute("DELETE FROM sync_object_versions", []).map_err(storage)?;
+            match missing {
+                "frozen" => c.execute("DELETE FROM library_recovery_records WHERE row_kind='state' AND json_extract(envelope_json,'$.kind')='pending'", []),
+                "disposition" => c.execute("DELETE FROM library_recovery_records WHERE row_kind='state' AND json_extract(envelope_json,'$.kind')='pending_disposition'", []),
+                _ => Ok(0),
+            }.map_err(storage)?;
+            Ok(())
+        }).unwrap();
+        for _ in 0..2 {
+            // Retry only retained facts: a directory catch-up would restore the
+            // deliberately missing half of the frozen/disposition pair.
+            let report = f.db.retry_library_sync_state(f.context).unwrap();
+            assert!(!report.unresolved.is_empty(), "{missing}");
+            f.db.with_reader(|c| {
+                assert_eq!(crate::infrastructure::sqlite::sync::manifests::load(c, "playlist", &f.playlist.to_string())?, resources, "{missing}");
+                let refs: u64 = c.query_row("SELECT COUNT(*) FROM sync_resource_refs WHERE object_type='playlist' AND object_uuid=?1", [f.playlist.to_string()], |r| r.get(0)).map_err(storage)?;
+                assert_eq!(refs, 1, "{missing}");
+                Ok(())
+            }).unwrap();
+        }
+    }
+}
+
+#[test]
+fn library_durability_terminal_pending_restores_confirmed_resources_atomically() {
+    use crate::domain::sync::{ResourceDigest, SharedResourceKind, SharedResourceManifest};
+    for (status, remaining) in [
+        (MutationStatus::Confirmed, false),
+        (MutationStatus::Rejected, false),
+        (MutationStatus::Rejected, true),
+    ] {
+        let f = fixture();
+        retry(&f);
+        let mut frozen = f.frozen.clone();
+        frozen.candidate.resource_refs = vec![SharedResourceManifest::new(
+            SharedResourceKind::PlaylistCover,
+            ResourceDigest::from_bytes([5; 32]),
+            14,
+            "image/png".into(),
+            "covers/pending.png",
+        )
+        .unwrap()];
+        frozen.original_resources_body =
+            serde_json::to_string(&frozen.candidate.resource_refs).unwrap();
+        f.db.set_local_sync_resources(
+            frozen.candidate.object,
+            frozen.candidate.resource_refs.clone(),
+        )
+        .unwrap();
+        let raw = frozen.original_resources_body.clone();
+        let mutation = frozen.candidate.mutation_id;
+        let root = f.context.root;
+        let states = frozen_states(
+            StateNamespace::Bound {
+                binding: f.context.verified_checkpoint.binding,
+            },
+            &frozen,
+            status,
+        );
+        f.db.writer.run(move |c| {
+            c.execute("UPDATE sync_mutations SET resource_refs_json=?2 WHERE mutation_id=?1",params![mutation.as_uuid().to_string(),raw]).map_err(storage)?;
+            c.execute("DELETE FROM library_recovery_records WHERE row_kind='state' AND json_extract(envelope_json,'$.kind') IN ('pending','pending_disposition')",[]).map_err(storage)?;
+            retained::save(c,root,&[],&states,&[])?;
+            if remaining {
+                c.execute("INSERT INTO sync_mutations(mutation_id,origin_device_id,origin_seq,previous_mutation_id,object_type,object_uuid,operation,local_revision,base_object_version,payload_json,payload_digest,status,outcome_json,created_at,resource_refs_json,local_root_uuid) SELECT ?2,origin_device_id,origin_seq+1,mutation_id,object_type,object_uuid,operation,local_revision+1,base_object_version,payload_json,payload_digest,'pending',NULL,created_at,resource_refs_json,local_root_uuid FROM sync_mutations WHERE mutation_id=?1",params![mutation.as_uuid().to_string(),MutationId::new().as_uuid().to_string()]).map_err(storage)?;
+            }
+            c.execute_batch("CREATE TRIGGER fail_resource_fallback BEFORE DELETE ON sync_resource_refs BEGIN SELECT RAISE(ABORT,'injected resource fallback failure'); END;").map_err(storage)
+        }).unwrap();
+        assert!(f.db.retry_library_sync_state(f.context).is_err());
+        f.db.with_reader(|c| {
+            let queue_status: String = c
+                .query_row(
+                    "SELECT status FROM sync_mutations WHERE mutation_id=?1",
+                    [mutation.as_uuid().to_string()],
+                    |r| r.get(0),
+                )
+                .map_err(storage)?;
+            assert_eq!(queue_status, "pending");
+            assert_eq!(
+                crate::infrastructure::sqlite::sync::manifests::load(
+                    c,
+                    "playlist",
+                    &f.playlist.to_string()
+                )?,
+                frozen.candidate.resource_refs
+            );
+            Ok(())
+        })
+        .unwrap();
+        f.db.writer
+            .run(|c| {
+                c.execute_batch("DROP TRIGGER fail_resource_fallback")
+                    .map_err(storage)
+            })
+            .unwrap();
+        for _ in 0..2 {
+            assert!(f
+                .db
+                .retry_library_sync_state(f.context)
+                .unwrap()
+                .unresolved
+                .is_empty());
+            f.db.with_reader(|c| {
+                let actual = crate::infrastructure::sqlite::sync::manifests::load(c,"playlist",&f.playlist.to_string())?;
+                if remaining {
+                    assert_eq!(actual, frozen.candidate.resource_refs);
+                } else {
+                    assert!(actual.is_empty());
+                }
+                let refs: u64 = c.query_row("SELECT COUNT(*) FROM sync_resource_refs WHERE object_type='playlist' AND object_uuid=?1",[f.playlist.to_string()],|r|r.get(0)).map_err(storage)?;
+                assert_eq!(refs,u64::from(remaining));
+                Ok(())
+            }).unwrap();
+            assert_eq!(
+                f.db.pending_local_mutations(10).unwrap().len(),
+                usize::from(remaining)
+            );
+        }
+    }
+}
+
+#[test]
+fn library_durability_confirmed_resources_ignore_pending_from_another_root() {
+    use crate::domain::sync::{ResourceDigest, SharedResourceKind, SharedResourceManifest};
+    let f = fixture();
+    retry(&f);
+    f.db.set_local_sync_resources(
+        ObjectKey::Playlist(f.playlist),
+        vec![SharedResourceManifest::new(
+            SharedResourceKind::PlaylistCover,
+            ResourceDigest::from_bytes([6; 32]),
+            15,
+            "image/png".into(),
+            "covers/other-root.png",
+        )
+        .unwrap()],
+    )
+    .unwrap();
+    let other = LibraryRootId::new();
+    f.db.writer
+        .run(move |c| {
+            c.execute(
+                "UPDATE sync_mutations SET local_root_uuid=?1",
+                [other.to_string()],
+            )
+            .map_err(storage)?;
+            c.execute("DELETE FROM sync_object_versions", [])
+                .map_err(storage)?;
+            Ok(())
+        })
+        .unwrap();
+    for _ in 0..2 {
+        f.db.retry_library_sync_state(f.context).unwrap();
+        f.db.with_reader(|c| {
+            assert!(crate::infrastructure::sqlite::sync::manifests::load(
+                c,
+                "playlist",
+                &f.playlist.to_string()
+            )?
+            .is_empty());
+            Ok(())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 fn library_durability_trusted_sync_retry_keeps_existing_pending_resources_effective() {
     use crate::domain::sync::{ResourceDigest, SharedResourceKind, SharedResourceManifest};
     let f = fixture();

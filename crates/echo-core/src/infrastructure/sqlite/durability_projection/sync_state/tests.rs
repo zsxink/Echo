@@ -3,7 +3,7 @@ use super::*;
 use crate::application::library_recovery::RetryLibraryOperation;
 use crate::application::ports::{
     ControlPlanePort, DeviceIdProvider, HostCommitLedgerPort, LibraryDurabilityPort,
-    LibraryHistoryPort, LibraryRepository, LocalSyncQueuePort, PlaylistRepository,
+    LibraryProjectionPort, LibraryRepository, LocalSyncQueuePort, PlaylistRepository,
 };
 use crate::domain::{
     entities::LibraryRoot,
@@ -213,10 +213,41 @@ fn retry(f: &Fixture) -> LibraryProjectionStatus {
         .catch_up_sync(f.context, &f.db)
         .unwrap()
 }
+/// The directory must carry exactly one complete receipt, matching the row
+/// SQL still holds after projection.
+fn complete_receipt(state: &[DurableStateChange]) -> &DurableStateChange {
+    let receipts: Vec<_> = state
+        .iter()
+        .filter(|state| {
+            matches!(
+                state.key.as_ref().map(|key| &key.target),
+                Some(StateTarget::Receipt { .. })
+            )
+        })
+        .collect();
+    assert_eq!(receipts.len(), 1);
+    assert_eq!(receipts[0].payload["schema"], "echo.sync.receipt.v2");
+    receipts[0].validate().unwrap();
+    receipts[0]
+}
 
 #[test]
 fn library_durability_trusted_sync_retry_restores_exact_baseline_and_pending_without_echo() {
     let f = fixture();
+    let confirmed = f
+        .batch
+        .state
+        .iter()
+        .find(|state| {
+            matches!(
+                state.key.as_ref().map(|key| &key.target),
+                Some(StateTarget::Confirmed { .. })
+            )
+        })
+        .unwrap();
+    assert_eq!(confirmed.payload["schema"], "echo.sync.confirmed.v2");
+    confirmed.validate().unwrap();
+    let exported_receipt = complete_receipt(&f.batch.state);
     let retry_api = RetryLibraryOperation::new(f.control.as_ref(), &f.db);
     retry_api.catch_up(f.context.root).unwrap();
     assert_eq!(
@@ -251,6 +282,18 @@ fn library_durability_trusted_sync_retry_restores_exact_baseline_and_pending_wit
             serde_json::from_str::<Value>(&baseline).unwrap()["display_name"],
             "A"
         );
+        let receipt: (String, String, u64, u64) = c
+            .query_row(
+                "SELECT payload_digest,outcome_json,commit_seq,received_at FROM sync_inbox",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .map_err(storage)?;
+        let exported = &exported_receipt.payload;
+        assert_eq!(receipt.0, exported["payload_digest"].as_str().unwrap());
+        assert_eq!(receipt.1, exported["original_outcome"].as_str().unwrap());
+        assert_eq!(receipt.2, exported["sequence"].as_u64().unwrap());
+        assert_eq!(receipt.3, exported["received_at"].as_u64().unwrap());
         let pending: (String, String, u64, String) = c
             .query_row(
                 "SELECT payload_json,resource_refs_json,created_at,mutation_id FROM sync_mutations",
@@ -487,6 +530,181 @@ fn library_durability_trusted_sync_retry_late_old_disposition_does_not_terminate
         vec![newer.candidate]
     );
     assert_eq!(counts(&f), (1, 0, 1));
+}
+
+#[test]
+fn library_durability_trusted_sync_retry_rejects_same_version_with_changed_timestamp() {
+    let f = fixture();
+    assert!(retry(&f).unresolved.is_empty());
+    f.db.writer
+        .run(|c| {
+            c.execute(
+                "UPDATE sync_object_versions SET changed_at_ms=changed_at_ms+1",
+                [],
+            )
+            .map_err(storage)?;
+            Ok(())
+        })
+        .unwrap();
+    let report = retry(&f);
+    assert!(report
+        .unresolved
+        .iter()
+        .any(|item| item.reason == Reason::IdentityConflict));
+    assert_eq!(counts(&f), (1, 0, 1));
+}
+
+#[test]
+fn library_durability_confirmed_v2_rejects_mismatched_original_confirmation() {
+    let f = fixture();
+    let baseline = f
+        .batch
+        .state
+        .iter()
+        .find(|s| s.kind == crate::domain::library::durability::StateKind::Confirmed)
+        .unwrap();
+    let ledger = f
+        .batch
+        .state
+        .iter()
+        .find(|s| s.kind == crate::domain::library::durability::StateKind::SyncLedger)
+        .unwrap();
+    let mut payload = baseline.payload.clone();
+    payload["schema"] = json!("echo.sync.confirmed.v2");
+    for field in [
+        "author",
+        "mutation_id",
+        "original_body",
+        "previous_digest",
+        "digest",
+    ] {
+        payload[field] = ledger.payload[field].clone();
+    }
+    let key = baseline.key.clone().unwrap();
+    DurableStateChange::scoped(key.clone(), payload.clone()).unwrap();
+    for field in [
+        "author",
+        "mutation_id",
+        "original_body",
+        "previous_digest",
+        "digest",
+        "changed_at_ms",
+        "version",
+        "sequence",
+        "payload",
+        "tombstone",
+    ] {
+        let mut invalid = payload.clone();
+        invalid.as_object_mut().unwrap().remove(field);
+        assert!(
+            DurableStateChange::scoped(key.clone(), invalid).is_err(),
+            "accepted missing {field}"
+        );
+    }
+    for (field, value) in [
+        ("author", json!(DeviceId::new())),
+        ("mutation_id", json!(MutationId::new())),
+        ("digest", json!("b".repeat(64))),
+        ("payload", json!({"display_name":"forged"})),
+        ("sequence", json!(2)),
+        ("tombstone", json!(true)),
+    ] {
+        let mut invalid = payload.clone();
+        invalid[field] = value;
+        assert!(
+            DurableStateChange::scoped(key.clone(), invalid).is_err(),
+            "accepted changed {field}"
+        );
+    }
+}
+
+#[test]
+fn library_durability_confirmed_tombstone_restores_sql_null_and_retries() {
+    let mut f = fixture();
+    let source = SqliteDatabase::open(f.directory.path().join("source.sqlite")).unwrap();
+    let deleted = PlaylistId::new();
+    // A peer deletion keeps this scenario independent of the local author's
+    // pending fixture event; the origin still has to be an authorized device.
+    let peer = DeviceId::new();
+    source
+        .authorize_sync_peer(
+            f.context.verified_checkpoint.binding,
+            peer,
+            "peer".into(),
+            "test-only-secure-handle".into(),
+        )
+        .unwrap();
+    let deletion = MutationCandidate {
+        mutation_id: MutationId::new(),
+        origin_device_id: peer,
+        origin_seq: 1,
+        previous_mutation_id: None,
+        object: ObjectKey::Playlist(deleted),
+        base_object_version: None,
+        payload: json!({"tombstone":true}),
+        resource_refs: vec![],
+    };
+    let checkpoint = source
+        .stage_confirmation_at(f.context.verified_checkpoint.binding, &deletion, Some(222))
+        .unwrap()
+        .checkpoint
+        .unwrap();
+    source.mark_published(checkpoint).unwrap();
+    let mut state = source
+        .with_reader(|c| {
+            crate::infrastructure::sqlite::sync::durability::export_sync_state(c, f.context.root)
+        })
+        .unwrap();
+    let tombstone = state
+        .iter()
+        .find(|state| {
+            state.key.as_ref().is_some_and(|key| {
+                key.target
+                    == StateTarget::Confirmed {
+                        object: ObjectKey::Playlist(deleted),
+                    }
+            })
+        })
+        .unwrap();
+    assert_eq!(tombstone.payload["schema"], "echo.sync.confirmed.v2");
+    assert_eq!(tombstone.payload["payload"], json!({"tombstone":true}));
+    // The exporter deliberately does not claim the freeze-time pending scope,
+    // so the projection fixture supplies that synthetic pending state.
+    for frozen_state in &f.batch.state {
+        if !state
+            .iter()
+            .any(|exported| exported.key == frozen_state.key)
+        {
+            state.push(frozen_state.clone());
+        }
+    }
+    let mut batch = LibraryBatch::new(
+        uuid::Uuid::new_v4(),
+        f.context.local_library_id,
+        ChangeOrigin::Recovery,
+        vec![],
+    );
+    batch.state = state;
+    f.control.commit(f.context.root, &batch).unwrap();
+    f.context.verified_checkpoint = checkpoint;
+    for _ in 0..2 {
+        let report = retry(&f);
+        assert!(report.unresolved.is_empty(), "{report:?}");
+        f.db
+            .with_reader(|c| {
+                let baseline: (bool, Option<String>, u64) = c
+                    .query_row(
+                        "SELECT is_tombstone,payload_json,changed_at_ms FROM sync_object_versions WHERE object_type='playlist' AND object_uuid=?1",
+                        [deleted.as_uuid().to_string()],
+                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                    )
+                    .map_err(storage)?;
+                assert_eq!(baseline, (true, None, 222));
+                Ok(())
+            })
+            .unwrap();
+        assert!(PlaylistRepository::by_id(&f.db, deleted).unwrap().is_none());
+    }
 }
 
 mod boundaries;

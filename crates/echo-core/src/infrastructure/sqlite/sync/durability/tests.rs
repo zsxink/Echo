@@ -208,4 +208,30 @@ fn insert_confirmed(db: &SqliteDatabase, object: Uuid, title: &str) {
     }).unwrap();
 }
 
+#[test]
+fn library_durability_sync_export_preserves_incomplete_replica_receipts() {
+    let fixture = fixture();
+    let author = Uuid::new_v4();
+    let mutation = Uuid::new_v4();
+    let raw = "{ \"applied\" : true }";
+    fixture.db.writer.run(move |c| {
+        c.execute("INSERT INTO sync_inbox(origin_device_id,mutation_id,payload_digest,outcome_json,commit_seq,received_at) VALUES(?1,?2,?3,?4,1,42)",params![author.to_string(),mutation.to_string(),"a".repeat(64),raw]).map_err(storage)?;
+        Ok(())
+    }).unwrap();
+    let states = fixture
+        .db
+        .with_reader(|c| export_sync_state(c, fixture.b))
+        .unwrap();
+    let receipt = states
+        .iter()
+        .find(|state| state.kind == StateKind::Receipt)
+        .unwrap();
+    assert_eq!(receipt.payload["schema"], "echo.sync.receipt.v1");
+    assert_eq!(receipt.payload["original_outcome"], raw);
+    assert_eq!(receipt.payload["outcome"], json!({"applied":true}));
+    assert_eq!(receipt.payload["received_at"], 42);
+    assert_eq!(receipt.payload["sequence"], 1);
+    receipt.validate().unwrap();
+}
+
 mod resources;

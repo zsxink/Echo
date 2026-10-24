@@ -531,6 +531,30 @@ pub struct PortableAssetReference {
     pub mime: String,
 }
 
+impl PortableAssetReference {
+    /// Validate a content-addressed original independently of cache metadata.
+    ///
+    /// # Errors
+    /// Rejects invalid BLAKE3 hashes and malformed MIME type tokens.
+    pub fn validate(&self) -> Result<(), Error> {
+        let token = |part: &str| {
+            !part.is_empty()
+                && part
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte))
+        };
+        if !super::durability::valid_digest(&self.content_hash)
+            || !self
+                .mime
+                .split_once('/')
+                .is_some_and(|(kind, subtype)| token(kind) && token(subtype))
+        {
+            return Err(err("invalid original asset hash or MIME type"));
+        }
+        Ok(())
+    }
+}
+
 /// A playlist member record: one song in a playlist.
 ///
 /// Stored at `echo/records/playlist-items/<uuid-prefix>/<item-uuid>.json`.

@@ -6,6 +6,10 @@ use crate::error::Error;
 
 use super::repository::{CoverAssetRef, OperationItem};
 
+/// Atomic SQLite projection work, not a user-data durability boundary.
+/// User facts must already be committed through `LibraryDurabilityPort` before
+/// they are projected here. A successful transaction alone never proves that
+/// the library directory contains recoverable user data.
 pub trait UnitOfWork: Send + Sync {
     /// Run `f` inside one `SQLite` transaction, committing on success and
     /// rolling back on error. The transaction never crosses an `.await`:

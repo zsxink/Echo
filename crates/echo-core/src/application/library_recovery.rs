@@ -1,20 +1,20 @@
 //! Explicit recovery of an existing directory operation, never a new user edit.
 
-use crate::application::ports::{ControlPlanePort, LibraryHistoryPort};
+use crate::application::ports::{ControlPlanePort, LibraryProjectionPort};
 use crate::domain::ids::{LibraryRootId, OperationId};
 use crate::domain::library::durability::CommitStatus;
 use crate::error::Error;
 
 pub struct RetryLibraryOperation<'a> {
     control: &'a dyn ControlPlanePort,
-    projection: &'a dyn LibraryHistoryPort,
+    projection: &'a dyn LibraryProjectionPort,
 }
 
 impl<'a> RetryLibraryOperation<'a> {
     #[must_use]
     pub const fn new(
         control: &'a dyn ControlPlanePort,
-        projection: &'a dyn LibraryHistoryPort,
+        projection: &'a dyn LibraryProjectionPort,
     ) -> Self {
         Self {
             control,
@@ -76,7 +76,7 @@ mod tests {
     use crate::application::ports::LibraryDurabilityPort;
     use crate::application::testing::small_fakes::MemoryControlPlane;
     use crate::domain::library::durability::{ChangeOrigin, LibraryBatch, LibraryReplay};
-    use crate::domain::library::{LibraryId, PortableRecordEnvelope};
+    use crate::domain::library::LibraryId;
     use std::sync::Mutex;
 
     #[derive(Default)]
@@ -85,7 +85,7 @@ mod tests {
         fail: bool,
     }
 
-    impl LibraryHistoryPort for Projection {
+    impl LibraryProjectionPort for Projection {
         fn projection_status(
             &self,
             _: LibraryRootId,
@@ -97,12 +97,6 @@ mod tests {
             _: LibraryRootId,
         ) -> Result<crate::domain::library::durability::LibraryRecoveryRecords, Error> {
             Ok(crate::domain::library::durability::LibraryRecoveryRecords::default())
-        }
-        fn capture_library_history(
-            &self,
-            _: LibraryRootId,
-        ) -> Result<Vec<PortableRecordEnvelope>, Error> {
-            panic!("retry must replay directory facts, not rescue the current database")
         }
         fn project_library_commits(
             &self,

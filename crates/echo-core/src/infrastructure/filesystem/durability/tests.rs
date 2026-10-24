@@ -1,7 +1,7 @@
 //! Native temporary-directory tests for the library directory protocol.
 use super::*;
 use crate::application::ports::{
-    ControlPlanePort, LibraryDurabilityPort, LibraryHistoryPort, LibraryRepository,
+    ControlPlanePort, LibraryDurabilityPort, LibraryProjectionPort, LibraryRepository,
     PlaylistRepository,
 };
 use crate::domain::entities::LibraryRoot;

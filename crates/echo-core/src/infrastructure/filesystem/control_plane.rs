@@ -274,6 +274,23 @@ impl RootControlPlane {
         Ok(result.into_values().collect())
     }
 
+    fn existing_record_for_write(
+        &self,
+        root: LibraryRootId,
+        relative: &str,
+    ) -> Result<Option<PortableRecordDocument>, Error> {
+        migration::read(&self.registry, root, relative, migration::MAX_RECORD_BYTES)?
+            .map(|raw| {
+                serde_json::from_str::<PortableRecordDocument>(&raw).map_err(|error| {
+                    Error::Storage {
+                        what: "validate existing portable record before replacement".to_owned(),
+                        source: Box::new(error),
+                    }
+                })
+            })
+            .transpose()
+    }
+
     fn write_json<T: serde::Serialize>(
         &self,
         root: LibraryRootId,
@@ -314,6 +331,15 @@ impl ControlPlanePort for RootControlPlane {
     fn write_record(&self, root: LibraryRootId, record: &PortableRecord) -> Result<(), Error> {
         let _guard = self.prepare(root, false)?;
         record.object_key()?;
+        let relative = migration::record_relative(record)?;
+        let existing = self.existing_record_for_write(root, &relative)?;
+        if existing.as_ref().is_some_and(|document| {
+            document.sync_metadata().is_some() && document.record() != record
+        }) {
+            return Err(Error::conflict(
+                "changing a confirmed record requires a durable batch preserving its baseline",
+            ));
+        }
         if self
             .manifest_unlocked(root)?
             .is_some_and(|manifest| manifest.format_version == 2)
@@ -400,23 +426,19 @@ impl ControlPlanePort for RootControlPlane {
     ) -> Result<(), Error> {
         let _guard = self.prepare(root, false)?;
         let manifest = self.manifest_unlocked(root)?;
-        let Some(manifest) =
-            manifest.filter(|value| value.format_version == CURRENT_FORMAT_VERSION)
+        let Some(_) = manifest.filter(|value| value.format_version == CURRENT_FORMAT_VERSION)
         else {
             return Err(Error::conflict(
                 "portable v2 writes require a completed format upgrade",
             ));
         };
         record.validate()?;
-        if record
-            .sync_metadata()
-            .is_some_and(|sync| sync.binding.library_id.as_uuid() != manifest.library_id.as_uuid())
-        {
-            return Err(Error::conflict(
-                "portable record belongs to a different library",
-            ));
-        }
-        self.write_json(root, &migration::record_relative(record.record())?, record)
+        // The local directory identity and the host's sync library identity
+        // are independent. Envelope validation checks the binding itself;
+        // trusted-session authorization belongs to the sync application layer.
+        let relative = migration::record_relative(record.record())?;
+        self.existing_record_for_write(root, &relative)?;
+        self.write_json(root, &relative, record)
     }
 
     fn read_record_document(
@@ -631,6 +653,8 @@ mod tests {
             drop(inherited);
         }
     }
+
+    mod write_boundaries;
 
     fn sample_record(root_uuid: uuid::Uuid) -> PortableRecord {
         PortableRecord::Song(SongRecord {

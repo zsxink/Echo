@@ -94,6 +94,10 @@ typed 资源，以及 operation、local revision、冻结毫秒、原 payload/re
 
 confirmed 的完整 payload/版本、pending 正文、receipt 必须分别解释。当前
 `records/` 用户值携带旧 sync metadata 不能单独证明这个新值已经主确认。
+旧 `write_record` 入口仅允许幂等重写已确认的相同用户值；改变该值必须走保留
+confirmed baseline 的 durable batch，不能复制旧确认到新值。旧入口与 envelope
+入口在替换已有文件前均须成功解析原件；坏 JSON 或未知格式保留原字节并拒写。
+本地 manifest ID 与 envelope 的同步库 ID 独立，不能靠 UUID 相等判断同步授权。
 旧正文、缺 key 证据及不同绑定资料保留待核对；可信会话 projector、完整冻结写集
 及显式新 binding adoption 仍在实施，离线恢复不创建凭据、监听或主权限。
 

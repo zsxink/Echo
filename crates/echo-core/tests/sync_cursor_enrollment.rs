@@ -1,8 +1,10 @@
 //! Exact incremental retries use the durable completed snapshot checkpoint.
 
+use std::sync::Arc;
+
 use echo_core::application::ports::{
-    DeviceIdProvider, HostCommitLedgerPort, LibraryRepository, PublishedCommit, RemoteApplyPort,
-    RemoteCommit, ReplicaSnapshotApplyPort, ReplicaSnapshotPage,
+    ControlPlanePort, DeviceIdProvider, HostCommitLedgerPort, LibraryRepository, PublishedCommit,
+    RemoteApplyPort, RemoteCommit, ReplicaSnapshotApplyPort, ReplicaSnapshotPage,
 };
 use echo_core::domain::entities::LibraryRoot;
 use echo_core::domain::ids::{LibraryRootId, SongId};
@@ -10,6 +12,7 @@ use echo_core::domain::sync::{
     AuthorityId, CommitCheckpoint, CommitSeq, DeviceId, Epoch, LibraryId, MutationCandidate,
     MutationId, ObjectKey, SyncBinding,
 };
+use echo_core::infrastructure::filesystem::{RootControlPlane, RootRegistry};
 use echo_core::infrastructure::sqlite::SqliteDatabase;
 use serde::Deserialize;
 
@@ -21,13 +24,30 @@ fn database(
 ) -> SqliteDatabase {
     let database = SqliteDatabase::open(directory.join(format!("{name}.db"))).unwrap();
     let root = LibraryRootId::new();
-    LibraryRepository::upsert(
-        &database,
-        &LibraryRoot::new(root, directory.join(name), true, true),
-    )
-    .unwrap();
+    let library = LibraryRoot::new(root, directory.join(name), true, true);
+    configure_directory(&database, &library);
+    LibraryRepository::upsert(&database, &library).unwrap();
     database.bind_sync_library(binding, host, root).unwrap();
     database
+}
+
+fn configure_directory(database: &SqliteDatabase, root: &LibraryRoot) {
+    std::fs::create_dir_all(root.absolute_path()).unwrap();
+    let registry = RootRegistry::new();
+    registry.register(root.id(), root.absolute_path());
+    let control = Arc::new(RootControlPlane::new(registry));
+    if control.read_manifest(root.id()).unwrap().is_none() {
+        control
+            .write_manifest(
+                root.id(),
+                &echo_core::domain::library::LibraryManifest::new(
+                    echo_core::domain::library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+                    "cursor-enrollment-test",
+                ),
+            )
+            .unwrap();
+    }
+    database.configure_library_control(control);
 }
 
 #[derive(Deserialize)]
@@ -158,6 +178,8 @@ fn exact_post_enrollment_incremental_retry_is_noop_after_restart() {
     );
     drop(enrollment.replica);
     let replica = SqliteDatabase::open(enrollment.directory.path().join("replica.db")).unwrap();
+    let root = LibraryRepository::active_root(&replica).unwrap().unwrap();
+    configure_directory(&replica, &root);
     let retry = replica
         .apply_remote_batch(
             enrollment.binding,
