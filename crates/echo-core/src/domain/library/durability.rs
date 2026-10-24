@@ -3,6 +3,7 @@
 
 mod frozen;
 pub mod projection;
+mod session;
 mod state;
 #[cfg(test)]
 mod tests;
@@ -11,6 +12,7 @@ pub use projection::{
     LibraryProjectionStatus, LibraryRecoveryRecords, ProjectionTarget, ProjectionUnresolvedReason,
     UnresolvedProjectionRecord,
 };
+pub use session::{RecoverySessionRole, SyncRecoveryContext};
 pub use state::{StateKey, StateNamespace, StateTarget};
 
 use super::{LibraryId, PortableRecordEnvelope, PortableSerialize};

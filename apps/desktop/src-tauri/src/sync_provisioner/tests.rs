@@ -891,6 +891,8 @@ impl LanMergeFixture {
     }
 }
 
+#[path = "tests/blocking_apply.rs"]
+mod blocking_apply;
 #[path = "tests/embedded_resources.rs"]
 mod embedded_resources;
 #[path = "tests/merge_cycle.rs"]

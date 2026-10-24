@@ -187,6 +187,62 @@ fn library_durability_legacy_committed_canonical_digest_is_unchanged() {
     };
     commit.validate().unwrap();
 }
+
+#[test]
+fn library_durability_protocol_keeps_unknown_historical_times_and_confirmation_absent() {
+    use crate::domain::library::{PortableRecord, PortableRecordDocument};
+
+    let common = json!({
+        "revision": 1,
+        "updated_by_device_id": "00000000-0000-0000-0000-000000000002",
+        "hlc": {"wall_secs": 1_700_000_000_u64, "counter": 0}
+    });
+    let mut records = Vec::new();
+    for (kind, fields, absent) in [
+        (
+            "playlist",
+            json!({"playlist_uuid": "00000000-0000-0000-0000-000000000003", "display_name": "Historical"}),
+            vec!["created_at", "cover_asset"],
+        ),
+        (
+            "playlist_item",
+            json!({"item_uuid": "00000000-0000-0000-0000-000000000004", "playlist_uuid": "00000000-0000-0000-0000-000000000003", "song_uuid": "00000000-0000-0000-0000-000000000005", "position": 7}),
+            vec!["added_at"],
+        ),
+    ] {
+        let mut raw = common.clone();
+        raw["type"] = json!(kind);
+        raw.as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().unwrap().clone());
+        let document: PortableRecordDocument = serde_json::from_value(raw).unwrap();
+        assert!(matches!(document, PortableRecordDocument::V1(_)));
+        let envelope = PortableRecordEnvelope::new(document.into_record(), None).unwrap();
+        let encoded = serde_json::to_value(&envelope).unwrap();
+        for field in absent {
+            assert!(encoded["record"].get(field).is_none(), "fabricated {field}");
+        }
+        assert!(encoded.get("sync").is_none());
+        records.push(envelope);
+    }
+    assert!(matches!(records[0].record(), PortableRecord::Playlist(_)));
+    let batch = LibraryBatch::new(
+        uuid::Uuid::from_u128(10),
+        LibraryId::from_uuid(uuid::Uuid::from_u128(11)),
+        ChangeOrigin::Recovery,
+        records,
+    );
+    let commit = LibraryCommit {
+        digest: LibraryCommit::calculate_digest(&batch, 1, None).unwrap(),
+        batch,
+        library_commit_seq: 1,
+        predecessor_digest: None,
+    };
+    let round_trip: LibraryCommit =
+        serde_json::from_str(&commit.to_canonical_json().unwrap()).unwrap();
+    round_trip.validate().unwrap();
+    assert_eq!(round_trip, commit);
+}
 #[test]
 fn library_durability_legacy_scope_is_explicit_and_local_unbound_never_invents_binding() {
     let first = frozen(StateNamespace::LegacyEvidence {

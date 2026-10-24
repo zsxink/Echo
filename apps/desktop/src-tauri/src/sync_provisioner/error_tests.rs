@@ -32,3 +32,28 @@ fn authentication_and_other_resource_errors_keep_their_classification() {
         SyncRuntimeError::SyncResourceMismatch,
     );
 }
+
+#[tokio::test]
+async fn transport_timeout_keeps_the_public_connection_error() {
+    // Hold an actual socket open without serving HTTP: no external network or
+    // endpoint text needs to enter the diagnostic classification.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_millis(100))
+        .build()
+        .unwrap();
+    let error = client
+        .get(format!(
+            "http://{}/private?token=test",
+            listener.local_addr().unwrap()
+        ))
+        .send()
+        .await
+        .unwrap_err();
+    assert!(error.is_timeout());
+    assert_eq!(
+        map_sync_client_error(ClientError::Transport(error)),
+        SyncRuntimeError::SyncConnectionFailed
+    );
+}

@@ -23,6 +23,9 @@ pub enum ProjectionTarget {
 pub enum ProjectionUnresolvedReason {
     MissingSong,
     MissingPlaylist,
+    MissingSyncDependency,
+    AmbiguousMutationVersion,
+    InvalidStateFact,
     IdentityConflict,
     TombstonedDependency,
     /// Original state remains retained; a specialized recovery use case must

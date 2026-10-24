@@ -44,6 +44,19 @@ impl<'a> RetryLibraryOperation<'a> {
             .map_err(|error| Error::saved_pending_projection(operation, error))
     }
 
+    /// Explicit live-session retry, after its owner has verified credentials and
+    /// an independent checkpoint. Ordinary recovery deliberately stays offline.
+    /// # Errors
+    /// Reports directory failures, stale sessions or failed atomic projection.
+    pub fn catch_up_sync(
+        &self,
+        context: crate::domain::library::durability::SyncRecoveryContext,
+        sync: &dyn crate::application::ports::LibrarySyncRecoveryPort,
+    ) -> Result<crate::domain::library::durability::LibraryProjectionStatus, Error> {
+        self.catch_up(context.root)?;
+        sync.retry_library_sync_state(context)
+    }
+
     /// Catch up the existing saved prefix without creating a user mutation.
     /// Also works when a saved operation lives in a compacted coverage image.
     /// # Errors

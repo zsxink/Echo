@@ -1,4 +1,38 @@
-# 2026-10-24 继续实施检查点（进行中）
+# 2026-10-24 本次继续实施（更新中，优先于后文）
+
+继续遵守 sub-agent 严格串行。任务 **2.4 已完成并勾选，当前 15/67**。
+
+- write permit 在取得 OS 锁后立即进入 guard，修复 migration/manifest 失败早退
+  未显式 unlock 的窗口；文件先于线程 mutex 析构。成功与两类失败路径均保留重复
+  文件句柄验证释放，独立审查通过。完整 Core **749 passed / 0 failed / 1 ignored**
+  （47.10 秒）；`sync_cursor` 真实目录装配后 1/1 通过。主 Agent 独立复跑锁失败路径
+  与 `sync_cursor` 均通过。见 [检查点修复证据](checkpoint-validation.md)。3.1 仍缺
+  真实 permit 持有期间的取消/切库/退出及长路径专项，未整项勾选。
+- 513 连接失败找到短复现：同一 current-thread runtime 第一次 pull 成功后同步阻塞
+  16 秒，第二次 pull 发生 request 类 transport failure；并非客户端 timeout。
+  `pull_host_changes` 改为逐页等待 owned `spawn_blocking` 投影，不改 timeout 或
+  fixture。慢目录心跳回归修前失败、修后通过；短 native **108 passed / 1 ignored /
+  1 明确过滤**，app Clippy 通过；独立审查及主 Agent 0.65 秒专项复跑通过。
+  见 [原生分页诊断](native-513.md)。用户随后要求当前子任务完成后收尾，主 Agent
+  已停止原样 513 fixed 跑次（约 14 分钟仍在 host 准备；cargo PID 37657、Echo PID
+  37819 均已确认退出），没有分页断言的最终结果，不能记通过或断言失败。
+  日志 `/tmp/echo-library-first-20261024-native-513-fixed.log`。此前旧 governance 和
+  中间诊断跑次也已停止，均不计通过。下次仍须完整原样重跑。
+- 2.4 新增 [协议字段说明](../../../../docs/library-durability-protocol.md)，明确
+  当前 manifest/envelope 2、marker/checkpoint 1 与未完成目标 manifest 3，typed
+  tombstone/alias/scoped state/frozen/disposition 和历史缺省规则。主 Agent 协议组
+  74/74、随后新增 absent 回归 1/1、portable v1/v2 fixture 4/4、Core Clippy/fmt/
+  scale/strict 通过；独立审查通过。见 [协议契约证据](protocol-contract.md)。
+
+当前唯一活动子代理 `trusted_sync_projector` 正实现可信当前会话内的纯 SQL
+sync-state projector 与显式 Core 重试入口；尚未最终验证/独立审查，不勾
+4.2/4.5。其后仍需真实 freeze scope/active-version 捕获、显式 FrozenWriteSet、
+actor 内 rollback 规划→目录提交→按水位纯投影，以及剩余本地/LAN/迁移/UI/验收。
+未归档、未创建 PR；三平台和完整治理门禁仍未通过。
+
+---
+
+# 2026-10-24 继续实施检查点（上一轮）
 
 用户要求继续剩余任务，sub-agent 严格串行；本节优先于下面历史记录。仍在
 `codex/issue-72-library-first-durability`，未提交、未归档、未创建 PR。
@@ -16,8 +50,17 @@
 - 9.3 / 9.4：当前界面完整备份/重新配对/不完整恢复文案核对，前端五项命令及
   Chromium mock-bridge e2e 通过，见 [前端证据](frontend-validation-20261024.md)。
 
-当前合计 13/67 完成。4.5 不能勾：虽然 typed key、完整读回和缺父补齐已实现，
+当前合计 14/67 完成。4.5 不能勾：虽然 typed key、完整读回和缺父补齐已实现，
 confirmed/pending 仍仅保留为 RequiresStateRecovery，生产重试消费方尚未实现。
+
+- 4.1 已于 2026-10-24 独立复查后勾选；released v27→v28 migration、事务回滚、
+  重开与 typed state 持久化验证见 [迁移证据](projection-migration.md)。
+- scoped namespace / FrozenMutation 子步已完成并记录于
+  [scoped state 证据](scoped-frozen-state-contract.md)，但只提供后续 4.2 的部分依赖；
+  2.1/4.2/4.5/7.7 仍未完成，不能把子步等同于整项任务。
+
+当前 tasks.md 复选框合计 **14/67**。本轮没有活动 sub-agent；后续如派代理，继续
+严格串行，完成并审阅一个后才派下一个。
 
 ## 性能与当前验证
 
@@ -27,26 +70,38 @@ confirmed/pending 仍仅保留为 RequiresStateRecovery，生产重试消费方�
 review 通过。1 MiB 8 次读观察为 warm 138.302ms / cold 332.729ms，不能当作 10k
 或 3.7/10.4 验收；见 [缓存证据](validation-cache.md)。
 
-- 主 Agent 在最终 fence/隐私补测树上跑 `cargo test -p echo-core library_durability --lib`：
-  **60 passed、0 failed**，29.04 秒。
+- 主 Agent 在 fence/隐私补测树上跑 `cargo test -p echo-core library_durability --lib`：
+  **60 passed、0 failed**，29.04 秒（在 scoped-state/resource 修复之前）。
 - producer/host 播放 payload 专项：1 passed，0.07 秒。
 - `cargo test -p echo-core migration --lib`：**20 passed**，1.20 秒；新测试实际升级
   released v27 schema，注入 v28 中途 SQL 失败并确认表/迁移记录回滚，重跑/重开保留
-  原迁移 checksum、根时间和 typed 证据。4.1 待独立复查后再勾。
-- Core 最终本次 lint：`cargo clippy -p echo-core --lib --tests -- -D warnings` 通过。
+  原迁移 checksum、根时间和 typed 证据。独立审查通过，4.1 已勾选。
+- scoped-state 子步最终 `cargo clippy -p echo-core --all-targets --all-features -- -D warnings`
+  与 `cargo fmt --all --check` 通过，见其证据文件；这不等于全 workspace 最终验证。
+- 后续全 Core 跑次结果 **744 passed、1 failed、1 ignored**（56.11 秒）。唯一失败为
+  `typed_tombstones_with_the_same_uuid_coexist_and_delete_independently` 第二次连续写入
+  取得 `write.lock` 时 WouldBlock；隔离重跑曾通过。主 Agent 增加显式 unlock 与“重复
+  文件句柄仍存活时 permit 必须释放锁”回归，修后该回归用例通过。**尚未在此修复后
+  重跑完整 Core**，所以下一次先复查 Drop/unlock 生命周期并跑相关用例与全 Core。
 - 新 fence/隐私补测之前全 Core：726 passed、1 ignored，33.08 秒；不能替代之后
   最终树全量验证。
 - 前端 format/lint/typecheck/test/build：全部通过（42 文件、385 测试）；e2e 通过。
 - scale、diff whitespace、OpenSpec change strict：通过。
 
-**仍在执行，不能记通过：**
+**已结束但失败，不能记通过：**
 
 - 原样 513：`cargo test -p echo-app --bin Echo native_pull_drains_more_than_one_commit_page_without_losing_local_work -- --nocapture`，
-  日志 `/tmp/echo-library-first-20261024-native-513.log`。其编译树含 A0、尚无后续 P1
-  修复；保持运行以得到原场景实际结果。约 17m41 时主机准备到 301/513；尚未分页。
+  日志 `/tmp/echo-library-first-20261024-native-513.log`。完整 513 条 fixture 未缩减；
+  运行 3090.61 秒后在 `merge_cycle.rs:209` 以 `SyncConnectionFailed` 失败，未证明分页
+  恢复验收。该构建包含 A0，但早于后续 fence/scoped-state/lock 修改。下一会话需定位
+  连接失败阶段与慢路径，修复后仍原样重跑该用例。
 - `pnpm verify:governance`：日志 `/tmp/echo-library-first-20261024-governance.log`；
-  已过静态场景/build-purity 等检查，正在完整 workspace/all-targets/all-features 的
-  echo-app 513 测试，不能将此前 440 场景对账当作本 change 新场景已登记。
+  静态场景/build-purity 检查通过；全量 app binary 测试 107 passed、1 ignored，Core
+  lib 733 passed、1 ignored，其他多个集成组通过；最终在 `cargo test -p echo-core --test
+  sync_cursor` 的 `empty_response_cannot_hide_a_fork_or_roll_back_the_anchor` 失败，原因是
+  测试装配未配置 directory commit adapter。governance 退出 101。先修测试装配使用真实或
+  合适 fake adapter，不得放松生产 directory-first 约束，再重跑 governance。440/440/440
+  只是已登记场景对账，不代表本 change 新场景已经登记。
 
 ## 4.2 实施依赖（已完成只读设计分析）
 
@@ -61,9 +116,11 @@ review 通过。1 MiB 8 次读观察为 warm 138.302ms / cold 332.729ms，不能
 同 kind/id 不同 binding 的证据必须共存，原 mutation 正文与终结分开；legacy journal
 摘要不能改写，无法证明 scope 的旧 state 保留证据。新 binding adoption 7.7 独立。
 
-当前正在串行实现第一项依赖；尚未完成 2.1/4.2，不得勾选。之后先审查命名空间与
-迁移测试，再继续 projector/collector/coordinator。完整 tasks、平台矩阵和归档/PR
-顺序仍按后面的历史约束执行。
+scoped-state 依赖和迁移测试已完成并复查；审查还发现并修复非空 frozen resource 格式
+错误，真实 audio+lyrics 入队→export/enrich→目录 commit 回归通过。边界和剩余风险列在
+专属证据中。下一步先处理本节列出的失败验证及 lock 生命周期复查，然后进入可信
+sync-fact projector、显式 FrozenWriteSet collector 与 actor 内统一协调器。完整 tasks、
+平台矩阵和归档/PR 顺序仍按后面的历史约束执行。
 
 ---
 

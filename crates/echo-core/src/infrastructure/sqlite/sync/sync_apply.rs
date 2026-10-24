@@ -506,7 +506,10 @@ fn project_song_aliases(tx: &rusqlite::Transaction<'_>, canonical_json: &str) ->
     Ok(())
 }
 
-fn verify_remote_commit(binding: SyncBinding, commit: &RemoteCommit) -> Result<(), Error> {
+pub(crate) fn verify_remote_commit(
+    binding: SyncBinding,
+    commit: &RemoteCommit,
+) -> Result<(), Error> {
     let body: serde_json::Value = serde_json::from_str(&commit.canonical_json).map_err(storage)?;
     let payload: serde_json::Value = serde_json::from_str(&commit.payload_json).map_err(storage)?;
     let canonical_tombstone = payload == serde_json::json!({"tombstone": true});

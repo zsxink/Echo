@@ -219,14 +219,24 @@ impl NativeSyncProvisioner {
                 return Err(SyncRuntimeError::LibraryUnavailable);
             }
             let finished = page.entries.is_empty();
-            let prepared = PreparedRemoteApply {
-                database: self.database.as_ref(),
-                host: peer.host_device_id,
-                changed: AtomicBool::new(false),
-                catalog_changed: &self.pending_catalog_changed,
-            };
-            LanClient::apply_commit_page(&page, peer.host_device_id, &prepared)
-                .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+            let database = Arc::clone(&self.database);
+            let catalog_changed = Arc::clone(&self.pending_catalog_changed);
+            let host = peer.host_device_id;
+            // Directory recovery, validation and fsync can outlive an idle
+            // HTTP connection. Keep the executor polling its transport tasks
+            // while the writer completes the page before requesting the next.
+            tokio::task::spawn_blocking(move || {
+                let prepared = PreparedRemoteApply {
+                    database: database.as_ref(),
+                    host,
+                    changed: AtomicBool::new(false),
+                    catalog_changed: &catalog_changed,
+                };
+                LanClient::apply_commit_page(&page, host, &prepared)
+            })
+            .await
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
             if finished {
                 return Ok(());
             }

@@ -10,6 +10,7 @@ mod durability;
 pub(crate) mod filesystem;
 mod filesystem_capabilities;
 mod library_history;
+mod library_sync_recovery;
 mod media;
 mod remote_resources;
 mod repository;
@@ -28,6 +29,7 @@ pub use filesystem::{
 };
 pub use filesystem_capabilities::*;
 pub use library_history::*;
+pub use library_sync_recovery::*;
 pub use media::*;
 pub use remote_resources::*;
 pub use repository::*;

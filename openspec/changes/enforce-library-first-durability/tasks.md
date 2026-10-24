@@ -15,7 +15,9 @@
 - [ ] 2.1 新增 typed change set、来源、预期版本、完整 after-image、资源声明、操作身份、本库提交序列/前驱摘要及结果状态模型；验证不合法跨库/跨类型/重复目标/不完整依赖被拒绝，Domain 无 FS/SQLite/网络依赖（LD-01/02/10）。
 - [ ] 2.2 增加聚焦的目录提交/读取/恢复与投影端口，设计可失败 fake，并明确旧 SQLite UoW 只投影；删除 `ControlPlanePort` 上指向同一实现的转发方法（`durability()`、`commit_library_batch`、`recover_library_batches`、`library_operation_status`、`write_library_asset`、`read_library_asset`），调用方统一经 `durability()` 取 `LibraryDurabilityPort`；验证 `ControlPlanePort` 方法数不高于既有基线且规模白名单不因本 change 扩大（LD-10）。
 - [ ] 2.3 扩展 portable 用户资料字段，包含歌单创建/成员加入时间、资源原件引用及必要关系；分别定义 confirmed 完整 payload、pending/receipt、实际受管资源位置，避免新业务值继承旧确认收据；用 v1/v2/v3 JSON round-trip、缺字段与未知格式测试验证兼容（LD-03/07/08/09）。
-- [ ] 2.4 文档化目录协议版本、字段语义和 typed tombstone/alias 规则，使用 `cargo test -p echo-core library_durability` 核对序列化 fixture 与说明一致，确保缺历史字段保持 absent（LD-05/09/10）。
+- [x] 2.4 文档化目录协议版本、字段语义和 typed tombstone/alias 规则，使用 `cargo test -p echo-core library_durability` 核对序列化 fixture 与说明一致，确保缺历史字段保持 absent（LD-05/09/10）。
+
+  验证：2026-10-24 新增 [目录协议字段说明](../../../docs/library-durability-protocol.md)，独立审查通过；主 Agent `library_durability --lib` 74/74、新增历史缺省字段回归 1/1、`portable_v --lib` 4/4、Core Clippy/fmt/scale/strict 通过。缺省时间/确认元数据保持省略，历史 Song 的已发布 0 回退单独说明；当前 v2 与目标 v3 升级边界明确，不替代 2.1/7.8/8.2。
 
 - [x] 2.5 区分共享对象与目录私有 state：逐设备播放桶留在 `PlayStatsRecord`，幂等播放事件身份写入 `echo/state/playback-events/`；验证同步导出与跨设备载荷不含会话标识，`PortableRecord` round-trip 与既有载荷完整性测试通过（LD-03/07/08）。
 

@@ -6,8 +6,10 @@ use crate::application::ports::ControlPlaneInventoryPort as _;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 struct AccessGuard<'a> {
-    _thread: MutexGuard<'a, ()>,
     process: std::fs::File,
+    // Rust drops fields in declaration order. Even if explicit unlock fails,
+    // close the file before allowing another thread through the adapter gate.
+    _thread: MutexGuard<'a, ()>,
 }
 
 impl Drop for AccessGuard<'_> {
@@ -68,6 +70,11 @@ impl RootControlPlane {
         root: LibraryRootId,
         allow_incompatible: bool,
     ) -> Result<AccessGuard<'_>, Error> {
+        let guard = self.acquire_write(root)?;
+        self.prepare_locked_write(root, allow_incompatible, guard)
+    }
+
+    fn acquire_write(&self, root: LibraryRootId) -> Result<AccessGuard<'_>, Error> {
         let guard = self
             .access
             .lock()
@@ -88,6 +95,20 @@ impl RootControlPlane {
             .map_err(|e| Error::io("open library write lock", e, &lock_path))?;
         fs2::FileExt::try_lock_exclusive(&file)
             .map_err(|e| Error::io("acquire library write lock", e, &lock_path))?;
+        // The guard must own the acquired lock before any fallible recovery or
+        // validation, so every early return explicitly unlocks as well.
+        Ok(AccessGuard {
+            process: file,
+            _thread: guard,
+        })
+    }
+
+    fn prepare_locked_write<'a>(
+        &self,
+        root: LibraryRootId,
+        allow_incompatible: bool,
+        guard: AccessGuard<'a>,
+    ) -> Result<AccessGuard<'a>, Error> {
         migration::recover(&self.registry, root)?;
         if !allow_incompatible {
             let manifest = self.manifest_unlocked(root)?;
@@ -100,10 +121,7 @@ impl RootControlPlane {
                 }
             }
         }
-        Ok(AccessGuard {
-            _thread: guard,
-            process: file,
-        })
+        Ok(guard)
     }
 
     fn prepare_read(&self, root: LibraryRootId, allow_incompatible: bool) -> Result<(), Error> {
@@ -585,6 +603,33 @@ mod tests {
         let permit = next.prepare_write(root, true).unwrap();
         drop(permit);
         drop(inherited);
+    }
+
+    #[test]
+    // The competing adapter must attempt acquisition before the guard is
+    // consumed by the deliberately failing preparation.
+    #[allow(clippy::significant_drop_tightening)]
+    fn library_durability_failed_write_preparation_unlocks_with_a_duplicated_handle_alive() {
+        for relative in ["manifest.json", "migrations/v1-v2-journal.json"] {
+            let (directory, registry, root, plane) = setup();
+            let invalid = directory.path().join("echo").join(relative);
+            std::fs::create_dir_all(invalid.parent().unwrap()).unwrap();
+            std::fs::write(&invalid, "not valid JSON").unwrap();
+
+            let guard = plane.acquire_write(root).unwrap();
+            let inherited = guard.process.try_clone().unwrap();
+            let competing = RootControlPlane::new(registry);
+            assert!(competing.acquire_write(root).is_err());
+            assert!(plane.prepare_locked_write(root, false, guard).is_err());
+
+            // Recovery and manifest errors release the acquired permit even
+            // while another handle keeps its file description alive.
+            std::fs::remove_file(invalid).unwrap();
+            drop(competing.prepare_write(root, false).unwrap());
+            // The adapter's own thread gate must also be released on error.
+            drop(plane.prepare_write(root, false).unwrap());
+            drop(inherited);
+        }
     }
 
     fn sample_record(root_uuid: uuid::Uuid) -> PortableRecord {

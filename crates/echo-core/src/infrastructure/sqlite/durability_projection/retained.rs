@@ -83,7 +83,7 @@ fn put(
     c.execute("INSERT INTO library_recovery_records(library_root_uuid,object_key,envelope_json,row_kind) VALUES(?1,?2,?3,?4) ON CONFLICT(library_root_uuid,object_key) DO UPDATE SET envelope_json=excluded.envelope_json,row_kind=excluded.row_kind,unresolved_reason=NULL",params![root.to_string(),key,json,kind]).map_err(storage)?;
     Ok(())
 }
-fn state_key(state: &DurableStateChange) -> Result<String, Error> {
+pub(super) fn state_key(state: &DurableStateChange) -> Result<String, Error> {
     let target = state.key.as_ref().map_or_else(
         || ProjectionTarget::State {
             state_kind: state.kind,
@@ -93,7 +93,7 @@ fn state_key(state: &DurableStateChange) -> Result<String, Error> {
     );
     serde_json::to_string(&target).map_err(storage)
 }
-fn reason(
+pub(super) fn reason(
     c: &Connection,
     root: LibraryRootId,
     key: &str,

@@ -2,6 +2,7 @@
 //! retained independently of whether a relationship's parents are available.
 mod records;
 mod retained;
+mod sync_state;
 #[cfg(test)]
 mod tests;
 mod validation;
