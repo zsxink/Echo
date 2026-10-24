@@ -127,17 +127,21 @@ impl super::AppServices {
 
         // Bind the directory under its derivable root id so the file-system
         // adapters can resolve it during the candidate scan (Core never stores
-        // the absolute path beyond the root record).
+        // the absolute path beyond the root record). The id stays bound to the
+        // raw canonical form (verbatim on Windows — the string existing root
+        // records were keyed on); the registry and the candidate preparation
+        // use the plain, user-visible spelling (issue #82).
         let canonical = absolute.canonicalize().map_err(|source| {
             Error::io("resolve chosen library directory", source, absolute.clone())
         })?;
         let root_id = derive_root_id(&canonical);
-        self.registry.register(root_id, canonical.clone());
+        let root_path = echo_core::domain::paths::plain_absolute(&canonical);
+        self.registry.register(root_id, root_path.clone());
 
         // Candidate scan + two-phase activation.
         let prepare =
             PrepareLibraryCandidate::new(&self.deps, self.deps.roots.as_ref(), &self.supervisor)
-                .prepare(&canonical)?;
+                .prepare(&root_path)?;
         if !self.startup.writes_allowed() {
             // A read-only gate (recovery left an indeterminate outcome, or the
             // runtime has not resolved) still allows reads on the *current*
