@@ -39,15 +39,16 @@ void (async () => {
 // source of truth for platform-gated chrome (the `WindowControls` caption
 // buttons render on Windows only).
 //
-// The top safe-area inset matches each platform's reserved strip: macOS keeps
-// the 28px overlay-titlebar inset for the floating traffic lights; Windows
-// removes the native caption entirely (`decorations: false`, tauri.windows.
-// conf.json) and floats its self-drawn 28×28 controls fixed to the top-right,
-// so the inset only pads the content below them — 18px, half the previous
-// 36px top gap (operator feedback: the blank above 品牌行/搜索行 was too
-// tall). No-op outside the Tauri
-// WebView (jsdom tests, plain `vite` browser preview) — the inset stays 0px
-// there and no chrome renders.
+// The top safe-area inset pads the shell content below each platform's native
+// chrome: both platforms settle on 18px — Windows removes the native caption
+// entirely (`decorations: false`, tauri.windows.conf.json) and floats its
+// self-drawn 28×28 controls fixed to the top-right; macOS keeps the floating
+// traffic lights (native views, ≈8–20px from the top) but the shell content
+// only dodges them inside the sidebar via its own padding (issue #83: Echo
+// 图标/搜索框与 Windows 同高). The macOS drag strip still covers the light
+// band — `.titlebar-drag` overrides its height separately. No-op outside the
+// Tauri WebView (jsdom tests, plain `vite` browser preview) — the inset stays
+// 0px there and no chrome renders.
 declare global {
   interface Window {
     // Tauri v2 injects this on every IPC-capable WebView.
@@ -56,9 +57,9 @@ declare global {
 }
 const platform = applyPlatform();
 if (window.__TAURI_INTERNALS__) {
-  if (platform === "macos") {
-    document.documentElement.style.setProperty("--titlebar-inset", "28px");
-  } else if (platform === "windows") {
+  // 两个桌面平台的内容内边距一致（issue #83）；某平台的原生 chrome 高度再
+  // 变时，在这里分平台覆写。
+  if (platform === "macos" || platform === "windows") {
     document.documentElement.style.setProperty("--titlebar-inset", "18px");
   }
 }
