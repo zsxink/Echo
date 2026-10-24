@@ -86,6 +86,9 @@ struct StatusRowViewIvars {
     sink: Arc<dyn StatusMenuSink>,
     show_main_window: Arc<dyn Fn() + Send + Sync>,
     quit: Arc<dyn Fn() + Send + Sync>,
+    /// Forwards a semantic app-menu id (导入/设置) through the app-menu
+    /// decision layer, keeping the context menu and the menu bar one path.
+    frontend_action: Arc<dyn Fn(&str) + Send + Sync>,
     play_pause: RefCell<Option<Retained<NSButton>>>,
     context_menu: RefCell<Option<Retained<NSMenu>>>,
 }
@@ -155,6 +158,18 @@ define_class!(
             (self.ivars().quit)();
         }
 
+        // Context-menu entries reuse the app-menu semantic ids so both
+        // entrances dispatch through the same decision layer.
+        #[unsafe(method(importMusicFiles:))]
+        fn import_music_files(&self, _sender: &AnyObject) {
+            (self.ivars().frontend_action)(crate::app_menu::MENU_IMPORT);
+        }
+
+        #[unsafe(method(openSettings:))]
+        fn open_settings(&self, _sender: &AnyObject) {
+            (self.ivars().frontend_action)(crate::app_menu::MENU_SETTINGS);
+        }
+
         // SAFETY: AppKit supplies a live right-click event while the
         // app-lifetime view is on the main thread. The stored context menu's
         // targets are this same view, so its selectors resolve validly.
@@ -175,11 +190,13 @@ impl StatusRowView {
         sink: Arc<dyn StatusMenuSink>,
         show_main_window: Arc<dyn Fn() + Send + Sync>,
         quit: Arc<dyn Fn() + Send + Sync>,
+        frontend_action: Arc<dyn Fn(&str) + Send + Sync>,
     ) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(StatusRowViewIvars {
             sink,
             show_main_window,
             quit,
+            frontend_action,
             play_pause: RefCell::new(None),
             context_menu: RefCell::new(None),
         });
@@ -234,6 +251,7 @@ pub fn install(
     sink: Arc<dyn StatusMenuSink>,
     show_main_window: Arc<dyn Fn() + Send + Sync>,
     quit: Arc<dyn Fn() + Send + Sync>,
+    frontend_action: Arc<dyn Fn(&str) + Send + Sync>,
 ) -> Result<(), String> {
     let mtm = MainThreadMarker::new()
         .ok_or_else(|| "macOS status controls must be installed on the main thread".to_owned())?;
@@ -241,7 +259,14 @@ pub fn install(
     let item = bar.statusItemWithLength(STATUS_ROW_WIDTH);
     item.setLength(STATUS_ROW_WIDTH);
     item.setVisible(true);
-    let view = StatusRowView::new(mtm, bar.thickness(), sink, show_main_window, quit);
+    let view = StatusRowView::new(
+        mtm,
+        bar.thickness(),
+        sink,
+        show_main_window,
+        quit,
+        frontend_action,
+    );
 
     let previous = make_button(&view, mtm, 0.0, "上一首", sel!(previous:));
     set_symbol_button(&previous, "backward.fill", "上一首");
@@ -284,8 +309,9 @@ pub fn install(
         view_height = view_frame.size.height,
         "installed macOS status row"
     );
-    // Right-click context menu: 显示窗口 reuse the same row action, 退出 runs
-    // the shell's quit closure (flush session + `app.exit`).
+    // Right-click context menu: 显示窗口 reuses the same row action, 退出 runs
+    // the shell's quit closure (flush session + `app.exit`), and 导入/设置
+    // forward through the app-menu decision layer (issue #73).
     view.set_context_menu(build_context_menu(mtm, &view));
 
     STATUS_VIEW
@@ -345,31 +371,47 @@ fn make_button(
 
 fn build_context_menu(mtm: MainThreadMarker, view: &StatusRowView) -> Retained<NSMenu> {
     let menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), ns_string!(""));
-    let show = unsafe {
-        NSMenuItem::initWithTitle_action_keyEquivalent(
-            NSMenuItem::alloc(mtm),
-            &objc2_foundation::NSString::from_str("显示窗口"),
-            Some(sel!(showMainWindow:)),
-            ns_string!(""),
-        )
-    };
-    let quit = unsafe {
-        NSMenuItem::initWithTitle_action_keyEquivalent(
-            NSMenuItem::alloc(mtm),
-            &objc2_foundation::NSString::from_str("退出"),
-            Some(sel!(quitApplication:)),
-            ns_string!(""),
-        )
-    };
+    let show = menu_item(mtm, "显示窗口", sel!(showMainWindow:));
+    let import = menu_item(mtm, "导入音乐文件…", sel!(importMusicFiles:));
+    let settings = menu_item(mtm, "设置…", sel!(openSettings:));
+    let quit = menu_item(mtm, "退出", sel!(quitApplication:));
     // SAFETY: The menu retains its items. Each item's target is this
     // app-lifetime view, whose action selectors are implemented in this class.
     unsafe {
         show.setTarget(Some(view));
+        import.setTarget(Some(view));
+        settings.setTarget(Some(view));
         quit.setTarget(Some(view));
     }
     menu.addItem(&show);
+    menu.addItem(&separator_item(mtm));
+    menu.addItem(&import);
+    menu.addItem(&settings);
+    menu.addItem(&separator_item(mtm));
     menu.addItem(&quit);
     menu
+}
+
+fn menu_item(
+    mtm: MainThreadMarker,
+    title: &str,
+    action: objc2::runtime::Sel,
+) -> Retained<NSMenuItem> {
+    // SAFETY: freshly allocated item initialized with its designated
+    // initializer; the empty key equivalent keeps these menu-only actions off
+    // the keyboard.
+    unsafe {
+        NSMenuItem::initWithTitle_action_keyEquivalent(
+            NSMenuItem::alloc(mtm),
+            &objc2_foundation::NSString::from_str(title),
+            Some(action),
+            ns_string!(""),
+        )
+    }
+}
+
+fn separator_item(mtm: MainThreadMarker) -> Retained<NSMenuItem> {
+    NSMenuItem::separatorItem(mtm)
 }
 
 fn dispatch_action(sink: &dyn StatusMenuSink, show_main_window: &dyn Fn(), action: StatusAction) {

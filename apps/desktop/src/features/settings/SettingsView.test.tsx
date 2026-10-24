@@ -497,6 +497,39 @@ function renderSyncSettings() {
   fireEvent.click(screen.getByRole("tab", { name: "同步" }));
 }
 
+describe("SettingsView shortcuts", () => {
+  function renderShortcuts() {
+    render(<SettingsView onClose={() => undefined} />);
+    fireEvent.click(screen.getByRole("tab", { name: "快捷键" }));
+  }
+
+  it("lists the macOS menu accelerators alongside the playback hotkeys on a Mac", () => {
+    vi.stubGlobal("navigator", { ...navigator, platform: "MacIntel" });
+    renderShortcuts();
+
+    // 裸键快捷键始终在列（issue #73 验收：加速键不得占用这些裸键）。
+    expect(screen.getByLabelText("当前播放快捷键")).toHaveTextContent("播放 / 暂停");
+    const menuList = screen.getByTestId("menu-shortcut-list");
+    expect(menuList).toHaveTextContent("导入音乐文件");
+    expect(menuList).toHaveTextContent("设置");
+    expect(menuList).toHaveTextContent("搜索");
+    expect(menuList).toHaveTextContent("切换视图");
+    expect(menuList).toHaveTextContent("退出 Echo");
+    // ⌘ 加速键不占用裸键：菜单行不含裸键动作名（播放/暂停走 Space）。
+    expect(menuList).not.toHaveTextContent("播放 / 暂停");
+    vi.unstubAllGlobals();
+  });
+
+  it("hides the menu accelerators on platforms without an app menu", () => {
+    vi.stubGlobal("navigator", { ...navigator, platform: "Win32" });
+    renderShortcuts();
+
+    expect(screen.queryByTestId("menu-shortcut-list")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("当前播放快捷键")).toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
+});
+
 function syncStatus() {
   return {
     enabled: false,

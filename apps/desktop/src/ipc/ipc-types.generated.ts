@@ -401,5 +401,6 @@ export interface IpcCommandResultMap {
   readonly set_volume: void;
   readonly toggle_mute: void;
   readonly seek: void;
+  readonly report_library_view: void;
   readonly get_lyrics: SongLyricsDto;
 }

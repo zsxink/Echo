@@ -10,9 +10,10 @@
  * action menus, and the import / add-to-playlist dialogs.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { bridge } from "../../bridge";
+import { subscribeSearchFocus } from "../../app/searchFocus";
 import { usePlayerSnapshot } from "../../player/playerStore";
 import type { SongView } from "../../ipc/ipc-types.generated";
 import { LibraryViewKind } from "./types";
@@ -61,6 +62,10 @@ export function LibraryWorkspace({
   onLibraryChanged,
 }: LibraryWorkspaceProps) {
   const [search, setSearch] = useState("");
+  // 视图 → 搜索（Cmd+F，issue #73）聚焦当前视图自己的搜索框：只有被路由的
+  // 视图订阅生效，所以一次请求恰好聚焦一个输入。
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => subscribeSearchFocus(() => searchInputRef.current?.focus()), []);
   const [sort, setSort] = useStoredSongSort(view);
   // The menu is anchored to the `.song-more` control that opened it, as the
   // prototype does — never to a fixed corner.
@@ -368,6 +373,7 @@ export function LibraryWorkspace({
         <label className="search" data-testid="search-field">
           <Icon name="search" />
           <input
+            ref={searchInputRef}
             type="search"
             placeholder="搜索歌曲、艺人或专辑"
             aria-label="搜索歌曲"
