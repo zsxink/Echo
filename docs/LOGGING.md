@@ -53,13 +53,18 @@ pub fn to_log(&self, diagnostic: DiagnosticMode) -> String
 - 诊断模式下额外附加 `path="<原始绝对路径>"`；这是返回完整路径的唯一出口。
 - 该函数从不接收也不输出歌词、标签或文件内容。
 
+### 2.3 诊断日志时间戳与时区
+
+桌面 runtime 写入诊断文件的结构化日志行，其 `timestamp` 字段**以机器本地时间为准**并携带明确的 UTC 偏移（如 `2026-10-24T21:05:03.123+08:00`），不得输出无偏移标注、被当作本地墙钟理解的裸 UTC 值；本机时区恰为 UTC 的机器上输出 `+00:00`，不伪装成其他时区。该约定使日志可与用户口述的"几点几分出问题"直接对照，同时保留无损还原绝对时刻的能力。
+
 ## 3. 本地诊断目录约定
 
 - Rust 层保持**平台无关**：不得自行解析 app-data 目录。`echo-core` 只提供目录名常量 `echolog::diagnostics_dir_name()` → `"echo/logs"`。
 - **桌面 runtime（`echo-desktop`）拥有解析权限**：把 `echo/logs` 解析到平台 app-data 目录下的实际位置（macOS `~/Library/Application Support/com.zsxink.echo/logs`、Windows `%APPDATA%\com.zsxink.echo\logs`、Linux `$XDG_DATA_HOME/com.zsxink.echo/logs`），由 task 7.x runtime 落地。
-- 目录内容：
-  - 应用结构化日志（`tracing`，带轮转与大小上限，例如单文件 ≤ 10 MiB、累计 ≤ 50 MiB、保留最近若干份）；
-  - **panic hook 与崩溃转储**（崩溃时写入该目录，便于离线诊断）。
+- 目录内容（issue #38：按日切分 + 时间维度保留）：
+  - 应用结构化日志（`tracing`）：按**机器本地日期**切分为 `echo-YYYY-MM-DD.log`，跨零点写入自动切换到新日期文件（无需重启）；同日内超过单文件上限（10 MiB）时按 `.N` 后缀日内轮转（保留 4 份轮转）；**保留最近 7 天**（按文件名日期判定，不依赖 mtime），累计字节上限（50 MiB）作为第二道闸、按最旧优先删除；
+  - **panic hook 与崩溃转储**：写入 `crash-YYYY-MM-DD.log`，同样按本地日期切分、受 7 天窗口与字节上限约束（日内保留 3 份轮转）。
+- 清理时机：启动安装诊断通道时与每日切分时各执行一次保留清理；当天没有产生日志时，启动清理同样回收超过 7 天的残留文件。升级前旧命名（`echo.log` / `echo.log.N` / `crash.log` / `crash.log.N`）在启动清理中删除；目录内**不匹配日志命名的其他文件（如脱敏路径映射）不受清理影响**。
 - 目录写入使用与数据库/偏好相同的安全写约定：临时文件 + fsync + 原子替换；写入失败不得影响业务路径。
 - 该目录内可以出现**完整路径映射**（诊断模式开启时生成的 desensitized path map），这是全仓库唯一允许存放此类信息的位置。
 
