@@ -202,11 +202,8 @@ async function main() {
     }
   };
   const goto = async (seed, platform) => {
-    // `platform` pre-sets `documentElement.dataset.platform` via the mock
-    // bridge (mock-bridge.ts), forcing the platform-gated chrome branch —
-    // needed by scenarios that exercise the titlebar strip entries.
-    const platformQuery = platform ? `&platform=${platform}` : "";
-    await cdp.call("Page.navigate", { url: `${BASE}/e2e/index.html?seed=${seed}${platformQuery}` });
+    // platform 强制平台门分支（mock-bridge ?platform=），标题栏条场景需要。
+    await cdp.call("Page.navigate", { url: `${BASE}/e2e/index.html?seed=${seed}${platform ? `&platform=${platform}` : ""}` });
     await waitFor(`!!window.__echoE2E__`, 15000);
     await sleep(500);
   };
@@ -329,7 +326,6 @@ async function main() {
   }
 
   // ---------- Import state and failure feedback ----------
-  // 导入入口住在标题栏条（TitlebarActions），平台门强制 windows 分支渲染。
   await goto("medium", "windows");
   try {
     await assert(
