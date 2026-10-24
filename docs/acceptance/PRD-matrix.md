@@ -4,7 +4,7 @@
 
 | 编号 | 验收路径 | 证明场景数 | macOS 可运行命令 |
 |---|---|---|---|
-| **A1** | 空库首次启动 | 106 | `cargo test -p echo-desktop --lib runtime::startup_supervisor && cargo test -p echo-core --all-features root_switch::` |
+| **A1** | 空库首次启动 | 115 | `cargo test -p echo-desktop --lib runtime::startup_supervisor && cargo test -p echo-core --all-features root_switch::` |
 | **A2** | 10,000 首混合曲库扫描 | 34 | `node scripts/verify/checks/task-12.5.mjs && cargo test -p echo-core --all-features scan::` |
 | **A3** | 外部改名/移动 | 34 | `cargo test -p echo-core --all-features relink` |
 | **A4** | 多文件安全导入 | 36 | `cargo test -p echo-core --all-features recover::` |
@@ -15,9 +15,9 @@
 | **A9** | 歌词与沉浸模式 | 31 | `node scripts/verify/checks/task-11.4.mjs && node scripts/verify/checks/task-11.5.mjs && node scripts/verify/checks/task-11.6.mjs` |
 | **A10** | 系统双击文件 | 36 | `cargo test -p echo-core --all-features watch:: && node scripts/verify/checks/task-9.2.mjs` |
 | **A11** | 删除与撤销 | 36 | `cargo test -p echo-core --all-features recover::` |
-| **A12** | 关窗与托盘 | 72 | `node scripts/verify/checks/task-9.6.mjs && node scripts/verify/checks/task-9.3.mjs` |
-| **A13** | 无障碍与窄屏 | 208 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
-| **A14** | 范围保护 | 177 | `node scripts/verify/checks/task-13.8.mjs` |
+| **A12** | 关窗与托盘 | 81 | `node scripts/verify/checks/task-9.6.mjs && node scripts/verify/checks/task-9.3.mjs` |
+| **A13** | 无障碍与窄屏 | 217 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
+| **A14** | 范围保护 | 186 | `node scripts/verify/checks/task-13.8.mjs` |
 
 ## 逐场景归属
 
@@ -95,6 +95,15 @@
 | A1 | `DAS-R17-S01` | Background close exits macOS native fullscreen before hiding the main window |
 | A1 | `DAS-R17-S02` | Background close exits macOS native fullscreen before hiding the main window |
 | A1 | `DAS-R17-S03` | Background close exits macOS native fullscreen before hiding the main window |
+| A1 | `DAS-R18-S01` | macOS 原生应用菜单与状态项右键菜单 |
+| A1 | `DAS-R18-S02` | macOS 原生应用菜单与状态项右键菜单 |
+| A1 | `DAS-R18-S03` | macOS 原生应用菜单与状态项右键菜单 |
+| A1 | `DAS-R18-S04` | macOS 原生应用菜单与状态项右键菜单 |
+| A1 | `DAS-R18-S05` | macOS 原生应用菜单与状态项右键菜单 |
+| A1 | `DAS-R18-S06` | macOS 原生应用菜单与状态项右键菜单 |
+| A1 | `DAS-R18-S07` | macOS 原生应用菜单与状态项右键菜单 |
+| A1 | `DAS-R18-S08` | macOS 原生应用菜单与状态项右键菜单 |
+| A1 | `DAS-R18-S09` | macOS 原生应用菜单与状态项右键菜单 |
 | A1 | `LL-R01-S01` | 单一资料库根目录与本地持久化 |
 | A1 | `LL-R01-S02` | 单一资料库根目录与本地持久化 |
 | A1 | `LL-R01-S03` | 单一资料库根目录与本地持久化 |
@@ -273,6 +282,15 @@
 | A12 | `DAS-R17-S01` | Background close exits macOS native fullscreen before hiding the main window |
 | A12 | `DAS-R17-S02` | Background close exits macOS native fullscreen before hiding the main window |
 | A12 | `DAS-R17-S03` | Background close exits macOS native fullscreen before hiding the main window |
+| A12 | `DAS-R18-S01` | macOS 原生应用菜单与状态项右键菜单 |
+| A12 | `DAS-R18-S02` | macOS 原生应用菜单与状态项右键菜单 |
+| A12 | `DAS-R18-S03` | macOS 原生应用菜单与状态项右键菜单 |
+| A12 | `DAS-R18-S04` | macOS 原生应用菜单与状态项右键菜单 |
+| A12 | `DAS-R18-S05` | macOS 原生应用菜单与状态项右键菜单 |
+| A12 | `DAS-R18-S06` | macOS 原生应用菜单与状态项右键菜单 |
+| A12 | `DAS-R18-S07` | macOS 原生应用菜单与状态项右键菜单 |
+| A12 | `DAS-R18-S08` | macOS 原生应用菜单与状态项右键菜单 |
+| A12 | `DAS-R18-S09` | macOS 原生应用菜单与状态项右键菜单 |
 | A13 | `DAS-R01-S01` | 首次启动必须建立本机工作区 |
 | A13 | `DAS-R01-S02` | 首次启动必须建立本机工作区 |
 | A13 | `DAS-R01-S03` | 首次启动必须建立本机工作区 |
@@ -345,6 +363,15 @@
 | A13 | `DAS-R17-S01` | Background close exits macOS native fullscreen before hiding the main window |
 | A13 | `DAS-R17-S02` | Background close exits macOS native fullscreen before hiding the main window |
 | A13 | `DAS-R17-S03` | Background close exits macOS native fullscreen before hiding the main window |
+| A13 | `DAS-R18-S01` | macOS 原生应用菜单与状态项右键菜单 |
+| A13 | `DAS-R18-S02` | macOS 原生应用菜单与状态项右键菜单 |
+| A13 | `DAS-R18-S03` | macOS 原生应用菜单与状态项右键菜单 |
+| A13 | `DAS-R18-S04` | macOS 原生应用菜单与状态项右键菜单 |
+| A13 | `DAS-R18-S05` | macOS 原生应用菜单与状态项右键菜单 |
+| A13 | `DAS-R18-S06` | macOS 原生应用菜单与状态项右键菜单 |
+| A13 | `DAS-R18-S07` | macOS 原生应用菜单与状态项右键菜单 |
+| A13 | `DAS-R18-S08` | macOS 原生应用菜单与状态项右键菜单 |
+| A13 | `DAS-R18-S09` | macOS 原生应用菜单与状态项右键菜单 |
 | A13 | `IL-R01-S01` | 常驻播放栏必须始终提供当前播放与基础控制 |
 | A13 | `IL-R01-S02` | 常驻播放栏必须始终提供当前播放与基础控制 |
 | A13 | `IL-R01-S03` | 常驻播放栏必须始终提供当前播放与基础控制 |
@@ -553,6 +580,15 @@
 | A14 | `DAS-R17-S01` | Background close exits macOS native fullscreen before hiding the main window |
 | A14 | `DAS-R17-S02` | Background close exits macOS native fullscreen before hiding the main window |
 | A14 | `DAS-R17-S03` | Background close exits macOS native fullscreen before hiding the main window |
+| A14 | `DAS-R18-S01` | macOS 原生应用菜单与状态项右键菜单 |
+| A14 | `DAS-R18-S02` | macOS 原生应用菜单与状态项右键菜单 |
+| A14 | `DAS-R18-S03` | macOS 原生应用菜单与状态项右键菜单 |
+| A14 | `DAS-R18-S04` | macOS 原生应用菜单与状态项右键菜单 |
+| A14 | `DAS-R18-S05` | macOS 原生应用菜单与状态项右键菜单 |
+| A14 | `DAS-R18-S06` | macOS 原生应用菜单与状态项右键菜单 |
+| A14 | `DAS-R18-S07` | macOS 原生应用菜单与状态项右键菜单 |
+| A14 | `DAS-R18-S08` | macOS 原生应用菜单与状态项右键菜单 |
+| A14 | `DAS-R18-S09` | macOS 原生应用菜单与状态项右键菜单 |
 | A14 | `LE-R01-S01` | 资料库视图 |
 | A14 | `LE-R01-S02` | 资料库视图 |
 | A14 | `LE-R01-S03` | 资料库视图 |

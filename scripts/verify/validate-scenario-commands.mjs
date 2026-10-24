@@ -40,6 +40,10 @@ function cargoTestList(packageName) {
 
 const coreTests = cargoTestList("echo-core");
 const deskTests = cargoTestList("echo-desktop");
+// The Tauri shell binary keeps its pure decision layers as bin unit tests
+// (e.g. the app-menu id→action mapping), so scenario commands may filter them
+// the same way core/desktop lib tests are filtered.
+const appTests = cargoTestList("echo-app");
 
 for (const { id, command } of scenarioCommands()) {
   // Integration test binaries (--test) are validated separately below.
@@ -73,6 +77,14 @@ for (const { id, command } of scenarioCommands()) {
     if (filter.startsWith("-")) continue;
     const hits = deskTests.filter((t) => t.includes(filter));
     if (!hits.length) fail(`${id}: cargo echo-desktop filter '${filter}' matches 0 tests`);
+    continue;
+  }
+  m = command.match(/^cargo test -p echo-app --all-features\s+([^\s&][^&]*?)(?:\s+&&|$)/);
+  if (m) {
+    const filter = cargoFilter(m[1]);
+    if (filter.startsWith("-")) continue;
+    const hits = appTests.filter((t) => t.includes(filter));
+    if (!hits.length) fail(`${id}: cargo echo-app filter '${filter}' matches 0 tests`);
     continue;
   }
 
