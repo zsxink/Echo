@@ -267,7 +267,7 @@ export interface LibraryStatus {
   readonly activeRootPath?: string;
 }
 
-export type RecoveryIssueReasonDto = 'missingSong' | 'missingPlaylist' | 'identityConflict' | 'tombstonedDependency' | 'requiresStateRecovery';
+export type RecoveryIssueReasonDto = 'missingSong' | 'missingPlaylist' | 'identityConflict' | 'tombstonedDependency' | 'missingSyncDependency' | 'ambiguousMutationVersion' | 'invalidStateFact' | 'requiresStateRecovery';
 
 export interface LibraryRecoveryIssueDto {
   readonly target: string;

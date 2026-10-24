@@ -9,6 +9,9 @@ pub enum RecoveryIssueReasonDto {
     MissingPlaylist,
     IdentityConflict,
     TombstonedDependency,
+    MissingSyncDependency,
+    AmbiguousMutationVersion,
+    InvalidStateFact,
     RequiresStateRecovery,
 }
 
@@ -19,6 +22,9 @@ impl From<ProjectionUnresolvedReason> for RecoveryIssueReasonDto {
             ProjectionUnresolvedReason::MissingPlaylist => Self::MissingPlaylist,
             ProjectionUnresolvedReason::IdentityConflict => Self::IdentityConflict,
             ProjectionUnresolvedReason::TombstonedDependency => Self::TombstonedDependency,
+            ProjectionUnresolvedReason::MissingSyncDependency => Self::MissingSyncDependency,
+            ProjectionUnresolvedReason::AmbiguousMutationVersion => Self::AmbiguousMutationVersion,
+            ProjectionUnresolvedReason::InvalidStateFact => Self::InvalidStateFact,
             ProjectionUnresolvedReason::RequiresStateRecovery => Self::RequiresStateRecovery,
         }
     }

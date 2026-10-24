@@ -147,7 +147,7 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly activeRootPath?: string;\n");
     out.push_str("}\n\n");
 
-    out.push_str("export type RecoveryIssueReasonDto = 'missingSong' | 'missingPlaylist' | 'identityConflict' | 'tombstonedDependency' | 'requiresStateRecovery';\n\n");
+    out.push_str("export type RecoveryIssueReasonDto = 'missingSong' | 'missingPlaylist' | 'identityConflict' | 'tombstonedDependency' | 'missingSyncDependency' | 'ambiguousMutationVersion' | 'invalidStateFact' | 'requiresStateRecovery';\n\n");
     out.push_str("export interface LibraryRecoveryIssueDto {\n");
     out.push_str("  readonly target: string;\n");
     out.push_str("  readonly reason: RecoveryIssueReasonDto;\n");
@@ -363,6 +363,56 @@ mod tests {
         );
         // Determinism: run twice -> identical.
         assert_eq!(ts, generated_typescript());
+    }
+
+    #[test]
+    fn generated_recovery_reasons_cover_serialized_core_failures() {
+        use echo_core::domain::library::durability::ProjectionUnresolvedReason;
+
+        let ts = generated_typescript();
+        let reasons = ts
+            .split_once("export type RecoveryIssueReasonDto = ")
+            .and_then(|(_, rest)| rest.split_once(';'))
+            .map(|(union, _)| union)
+            .expect("recovery reason union exists");
+        for (core, expected) in [
+            (ProjectionUnresolvedReason::MissingSong, "missingSong"),
+            (
+                ProjectionUnresolvedReason::MissingPlaylist,
+                "missingPlaylist",
+            ),
+            (
+                ProjectionUnresolvedReason::IdentityConflict,
+                "identityConflict",
+            ),
+            (
+                ProjectionUnresolvedReason::TombstonedDependency,
+                "tombstonedDependency",
+            ),
+            (
+                ProjectionUnresolvedReason::MissingSyncDependency,
+                "missingSyncDependency",
+            ),
+            (
+                ProjectionUnresolvedReason::AmbiguousMutationVersion,
+                "ambiguousMutationVersion",
+            ),
+            (
+                ProjectionUnresolvedReason::InvalidStateFact,
+                "invalidStateFact",
+            ),
+            (
+                ProjectionUnresolvedReason::RequiresStateRecovery,
+                "requiresStateRecovery",
+            ),
+        ] {
+            let dto = super::super::library_recovery::RecoveryIssueReasonDto::from(core);
+            assert_eq!(serde_json::to_value(dto).unwrap(), expected);
+            assert!(
+                reasons.contains(&format!("'{expected}'")),
+                "missing {expected}"
+            );
+        }
     }
 
     #[test]

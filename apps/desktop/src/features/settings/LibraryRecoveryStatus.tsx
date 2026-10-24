@@ -12,6 +12,9 @@ const REASONS: Record<RecoveryIssueReasonDto, string> = {
   missingPlaylist: "缺少关联的歌单资料",
   identityConflict: "存在需要核对的身份冲突",
   tombstonedDependency: "关联的资料已有删除记录",
+  missingSyncDependency: "缺少同步所需的关联资料",
+  ambiguousMutationVersion: "存在无法确认版本的同步更改",
+  invalidStateFact: "存在无效的同步状态资料",
   requiresStateRecovery: "原资料已保留，等待专门恢复",
 };
 
