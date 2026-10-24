@@ -849,4 +849,14 @@ mod tests {
         assert_eq!(LibraryView::from_payload("view:playlist"), None);
         assert_eq!(LibraryView::from_payload(""), None);
     }
+
+    #[test]
+    fn frontend_event_name_is_pinned_on_every_platform() {
+        // `App.tsx` subscribes to this exact channel string, so the name is a
+        // cross-boundary contract, not a macOS-internal detail. Pinning it here
+        // also keeps the constant live on the non-macOS test profile, where the
+        // macOS-only emitter is cfg'd out and clippy would otherwise flag it as
+        // dead code under `--all-targets`.
+        assert_eq!(MENU_ACTION_EVENT, "menu://action");
+    }
 }
