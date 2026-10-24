@@ -37,19 +37,19 @@
 | DAS-R02-S03 | 应用框架必须提供稳定的目录入口 | 进入多选模式 | 10.4, 12.3 | React/E2E | `tests/scenarios/DAS-R02-S03.yaml` | `pnpm verify:scenario -- DAS-R02-S03` |
 | DAS-R02-S04 | 应用框架必须提供稳定的目录入口 | 右键和键盘打开批量菜单 | 4.1, 7.1, 10.3, 13.2 | Core/React/E2E | `tests/scenarios/DAS-R02-S04.yaml` | `pnpm verify:scenario -- DAS-R02-S04` |
 | DAS-R02-S05 | 应用框架必须提供稳定的目录入口 | 访问一期明确排除的入口 | 10.4, 12.3 | React/E2E | `tests/scenarios/DAS-R02-S05.yaml` | `pnpm verify:scenario -- DAS-R02-S05` |
-| DAS-R02-S06 | 应用框架必须提供稳定的目录入口 | 悬停 Echo 品牌区域 | 4.1, 7.1, 10.3, 13.2 | Native/Gate | `tests/native/DAS-R02-S06.md` | `pnpm verify:scenario -- DAS-R02-S06` |
-| DAS-R02-S07 | 应用框架必须提供稳定的目录入口 | 指针离开品牌区域 | 4.1, 7.1, 10.3, 13.2 | Native/Gate | `tests/native/DAS-R02-S07.md` | `pnpm verify:scenario -- DAS-R02-S07` |
-| DAS-R02-S08 | 应用框架必须提供稳定的目录入口 | 键盘访问品牌操作 | 4.1, 7.1, 10.3, 13.2 | Core/React/E2E | `tests/scenarios/DAS-R02-S08.yaml` | `pnpm verify:scenario -- DAS-R02-S08` |
-| DAS-R02-S09 | 应用框架必须提供稳定的目录入口 | 便于点击品牌操作 | 4.1, 7.1, 10.3, 13.2 | Native/Gate | `tests/native/DAS-R02-S09.md` | `pnpm verify:scenario -- DAS-R02-S09` |
+| DAS-R02-S06 | 应用框架必须提供稳定的目录入口 | 标题栏条承载设置与导入 | 4.1, 7.1, 10.3, 13.2 | Native/Gate | `tests/native/DAS-R02-S06.md` | `pnpm verify:scenario -- DAS-R02-S06` |
+| DAS-R02-S07 | 应用框架必须提供稳定的目录入口 | 指针悬停标题栏操作 | 4.1, 7.1, 10.3, 13.2 | Native/Gate | `tests/native/DAS-R02-S07.md` | `pnpm verify:scenario -- DAS-R02-S07` |
+| DAS-R02-S08 | 应用框架必须提供稳定的目录入口 | 键盘访问标题栏操作 | 4.1, 7.1, 10.3, 13.2 | Core/React/E2E | `tests/scenarios/DAS-R02-S08.yaml` | `pnpm verify:scenario -- DAS-R02-S08` |
+| DAS-R02-S09 | 应用框架必须提供稳定的目录入口 | 便于点击标题栏操作 | 4.1, 7.1, 10.3, 13.2 | Native/Gate | `tests/native/DAS-R02-S09.md` | `pnpm verify:scenario -- DAS-R02-S09` |
 | DAS-R02-S10 | 应用框架必须提供稳定的目录入口 | 保持搜索框外观 | 4.1, 7.1, 10.3, 13.2 | Native/Gate | `tests/native/DAS-R02-S10.md` | `pnpm verify:scenario -- DAS-R02-S10` |
 | DAS-R02-S11 | 应用框架必须提供稳定的目录入口 | 在同步设置中找到主要控制 | 3.10, 3.14 | React | `tests/scenarios/DAS-R02-S11.yaml` | `pnpm verify:scenario -- DAS-R02-S11` |
 | DAS-R02-S12 | 应用框架必须提供稳定的目录入口 | 设置按主题模块浏览 | 3.10 | React | `tests/scenarios/DAS-R02-S12.yaml` | `pnpm verify:scenario -- DAS-R02-S12` |
 | DAS-R02-S13 | 应用框架必须提供稳定的目录入口 | 设置显示音乐库完整本地路径 | 3.13 | React | `tests/scenarios/DAS-R02-S13.yaml` | `pnpm verify:scenario -- DAS-R02-S13` |
 | DAS-R02-S14 | 应用框架必须提供稳定的目录入口 | 查看当前播放快捷键 | — | React | `tests/scenarios/DAS-R02-S14.yaml` | `pnpm verify:scenario -- DAS-R02-S14` |
 | DAS-R02-S15 | 应用框架必须提供稳定的目录入口 | 关于页展示品牌 | — | React | `tests/scenarios/DAS-R02-S15.yaml` | `pnpm verify:scenario -- DAS-R02-S15` |
-| DAS-R03-S01 | 品牌区导入入口所有视图可用 | 歌单视图导入可用 | 5.1, 5.2 | React | `tests/scenarios/DAS-R03-S01.yaml` | `pnpm verify:scenario -- DAS-R03-S01` |
-| DAS-R03-S02 | 品牌区导入入口所有视图可用 | 歌手/专辑视图导入可用 | 5.1, 5.2 | React | `tests/scenarios/DAS-R03-S02.yaml` | `pnpm verify:scenario -- DAS-R03-S02` |
-| DAS-R03-S03 | 品牌区导入入口所有视图可用 | 只读资目录禁用导入 | 5.2 | React | `tests/scenarios/DAS-R03-S03.yaml` | `pnpm verify:scenario -- DAS-R03-S03` |
+| DAS-R03-S01 | 标题栏导入入口所有视图可用 | 歌单视图导入可用 | 5.1, 5.2 | React | `tests/scenarios/DAS-R03-S01.yaml` | `pnpm verify:scenario -- DAS-R03-S01` |
+| DAS-R03-S02 | 标题栏导入入口所有视图可用 | 歌手/专辑视图导入可用 | 5.1, 5.2 | React | `tests/scenarios/DAS-R03-S02.yaml` | `pnpm verify:scenario -- DAS-R03-S02` |
+| DAS-R03-S03 | 标题栏导入入口所有视图可用 | 只读资目录禁用导入 | 5.2 | React | `tests/scenarios/DAS-R03-S03.yaml` | `pnpm verify:scenario -- DAS-R03-S03` |
 | DAS-R04-S01 | 主题与本机偏好必须持久化且可回退 | 切换主题 | 7.6, 10.1 | Desktop/React | `tests/scenarios/DAS-R04-S01.yaml` | `pnpm verify:scenario -- DAS-R04-S01` |
 | DAS-R04-S02 | 主题与本机偏好必须持久化且可回退 | 下次启动恢复主题 | 7.6, 10.1 | Desktop/React | `tests/scenarios/DAS-R04-S02.yaml` | `pnpm verify:scenario -- DAS-R04-S02` |
 | DAS-R04-S03 | 主题与本机偏好必须持久化且可回退 | 偏好不可保存或值非法 | 7.6, 10.1 | Desktop/React | `tests/scenarios/DAS-R04-S03.yaml` | `pnpm verify:scenario -- DAS-R04-S03` |

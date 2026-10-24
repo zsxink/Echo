@@ -1,4 +1,4 @@
-# DAS-R02-S06 — 悬停 Echo 品牌区域
+# DAS-R02-S06 — 标题栏条承载设置与导入
 
 > Requirement: 应用框架必须提供稳定的目录入口
 > 生成：`scripts/verify/gen-scenario-manifests.mjs`（traceability.md 权威）

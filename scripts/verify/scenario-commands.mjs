@@ -77,9 +77,9 @@ export const COMMANDS = {
   "DAS-R02-S13": REACT("src/features/settings/SettingsView.test.tsx"),
   "DAS-R02-S14": REACT("src/features/settings/SettingsView.test.tsx"),
   "DAS-R02-S15": REACT("src/features/settings/SettingsView.test.tsx"),
-  "DAS-R03-S01": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import button in the brand area under the playlist view\"", // 新增: 品牌区导入入口所有视图可用
-  "DAS-R03-S02": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import button in the brand area under the artist directory\"", // 新增: 品牌区导入入口所有视图可用
-  "DAS-R03-S03": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"hides the import button for a read-only library\"", // 新增: 品牌区导入入口所有视图可用
+  "DAS-R03-S01": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import entry in the titlebar strip under the playlist view\"", // 新增: 标题栏导入入口所有视图可用
+  "DAS-R03-S02": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import entry in the titlebar strip under the artist directory\"", // 新增: 标题栏导入入口所有视图可用
+  "DAS-R03-S03": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"hides the import entry for a read-only library\"", // 新增: 标题栏导入入口所有视图可用
   "DAS-R04-S01": DESK("platform::local_state"), // （重编号自 DAS-R03-S01）
   "DAS-R04-S02": DESK("platform::local_state"), // （重编号自 DAS-R03-S02）
   "DAS-R04-S03": DESK("platform::local_state"), // （重编号自 DAS-R03-S03）

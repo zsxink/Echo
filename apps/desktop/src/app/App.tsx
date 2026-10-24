@@ -31,7 +31,8 @@
  * Sync arrives in phase two.
  *
  * Navigation and overlay/focus behaviour are orchestrated by `useAppShell`
- * (task 6.6); this file also provides the brand-area portal slot for importing.
+ * (task 6.6); the titlebar-strip import/settings entry (TitlebarActions) also
+ * lives here.
  */
 
 import { useEffect, useRef } from "react";
