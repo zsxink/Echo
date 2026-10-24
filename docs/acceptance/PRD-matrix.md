@@ -15,9 +15,9 @@
 | **A9** | 歌词与沉浸模式 | 31 | `node scripts/verify/checks/task-11.4.mjs && node scripts/verify/checks/task-11.5.mjs && node scripts/verify/checks/task-11.6.mjs` |
 | **A10** | 系统双击文件 | 36 | `cargo test -p echo-core --all-features watch:: && node scripts/verify/checks/task-9.2.mjs` |
 | **A11** | 删除与撤销 | 36 | `cargo test -p echo-core --all-features recover::` |
-| **A12** | 关窗与托盘 | 81 | `node scripts/verify/checks/task-9.6.mjs && node scripts/verify/checks/task-9.3.mjs` |
-| **A13** | 无障碍与窄屏 | 217 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
-| **A14** | 范围保护 | 186 | `node scripts/verify/checks/task-13.8.mjs` |
+| **A12** | 关窗与托盘 | 86 | `node scripts/verify/checks/task-9.6.mjs && node scripts/verify/checks/task-9.3.mjs` |
+| **A13** | 无障碍与窄屏 | 222 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
+| **A14** | 范围保护 | 191 | `node scripts/verify/checks/task-13.8.mjs` |
 
 ## 逐场景归属
 
@@ -296,6 +296,11 @@
 | A12 | `DAS-R18-S07` | macOS 原生应用菜单与状态项右键菜单 |
 | A12 | `DAS-R18-S08` | macOS 原生应用菜单与状态项右键菜单 |
 | A12 | `DAS-R18-S09` | macOS 原生应用菜单与状态项右键菜单 |
+| A12 | `DAS-R19-S01` | Windows 无边框窗口与自绘窗口控件 |
+| A12 | `DAS-R19-S02` | Windows 无边框窗口与自绘窗口控件 |
+| A12 | `DAS-R19-S03` | Windows 无边框窗口与自绘窗口控件 |
+| A12 | `DAS-R19-S04` | Windows 无边框窗口与自绘窗口控件 |
+| A12 | `DAS-R19-S05` | Windows 无边框窗口与自绘窗口控件 |
 | A13 | `DAS-R01-S01` | 首次启动必须建立本机工作区 |
 | A13 | `DAS-R01-S02` | 首次启动必须建立本机工作区 |
 | A13 | `DAS-R01-S03` | 首次启动必须建立本机工作区 |
@@ -377,6 +382,11 @@
 | A13 | `DAS-R18-S07` | macOS 原生应用菜单与状态项右键菜单 |
 | A13 | `DAS-R18-S08` | macOS 原生应用菜单与状态项右键菜单 |
 | A13 | `DAS-R18-S09` | macOS 原生应用菜单与状态项右键菜单 |
+| A13 | `DAS-R19-S01` | Windows 无边框窗口与自绘窗口控件 |
+| A13 | `DAS-R19-S02` | Windows 无边框窗口与自绘窗口控件 |
+| A13 | `DAS-R19-S03` | Windows 无边框窗口与自绘窗口控件 |
+| A13 | `DAS-R19-S04` | Windows 无边框窗口与自绘窗口控件 |
+| A13 | `DAS-R19-S05` | Windows 无边框窗口与自绘窗口控件 |
 | A13 | `IL-R01-S01` | 常驻播放栏必须始终提供当前播放与基础控制 |
 | A13 | `IL-R01-S02` | 常驻播放栏必须始终提供当前播放与基础控制 |
 | A13 | `IL-R01-S03` | 常驻播放栏必须始终提供当前播放与基础控制 |
@@ -594,6 +604,11 @@
 | A14 | `DAS-R18-S07` | macOS 原生应用菜单与状态项右键菜单 |
 | A14 | `DAS-R18-S08` | macOS 原生应用菜单与状态项右键菜单 |
 | A14 | `DAS-R18-S09` | macOS 原生应用菜单与状态项右键菜单 |
+| A14 | `DAS-R19-S01` | Windows 无边框窗口与自绘窗口控件 |
+| A14 | `DAS-R19-S02` | Windows 无边框窗口与自绘窗口控件 |
+| A14 | `DAS-R19-S03` | Windows 无边框窗口与自绘窗口控件 |
+| A14 | `DAS-R19-S04` | Windows 无边框窗口与自绘窗口控件 |
+| A14 | `DAS-R19-S05` | Windows 无边框窗口与自绘窗口控件 |
 | A14 | `LE-R01-S01` | 资料库视图 |
 | A14 | `LE-R01-S02` | 资料库视图 |
 | A14 | `LE-R01-S03` | 资料库视图 |
