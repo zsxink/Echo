@@ -62,6 +62,7 @@ mod macos_status_row;
 mod macos_window_lifecycle;
 mod open_targets;
 mod restore_retry;
+mod shutdown;
 mod sync_commands;
 mod sync_library_selection;
 mod sync_provisioner;
@@ -577,6 +578,7 @@ fn wire_composition(
         routed.deps.control.clone(),
         routed.deps.device_id.clone(),
         routed.deps.roots.clone(),
+        routed.deps.activity.clone(),
     ));
     player::spawn_stats_recorder(
         controller.port.clone(),

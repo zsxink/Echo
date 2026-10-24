@@ -204,6 +204,7 @@ impl ScanStack {
         let db_device: Arc<dyn DeviceIdProvider> = db.clone();
         let db_sync: Arc<dyn SyncStateReader> = db;
         ScanDeps {
+            activity: Arc::new(crate::application::local_activity::LocalActivity::default()),
             history: None,
             roots: db_root,
             songs: db_songs,

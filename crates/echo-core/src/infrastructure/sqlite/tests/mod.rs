@@ -32,5 +32,6 @@ mod sync_snapshot_apply;
 mod sync_song_projection;
 
 mod durability_migration;
+mod lifecycle;
 mod resource_retention;
 mod sync_cache_cleanup;

@@ -32,10 +32,7 @@ impl SyncRuntime {
         endpoint: &str,
         grant: &PairingGrantDto,
     ) -> Result<SyncStatus, SyncRuntimeError> {
-        let _transition = self
-            .transition
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let _transition = self.running_transition()?;
         if self.status().enabled {
             return Err(SyncRuntimeError::Busy);
         }
@@ -52,6 +49,7 @@ impl SyncRuntime {
     }
 
     pub(super) fn start_peer_locked(&self) -> Result<SyncStatus, SyncRuntimeError> {
+        self.ensure_running()?;
         if self.status().enabled {
             return Err(SyncRuntimeError::Busy);
         }
@@ -94,10 +92,7 @@ impl SyncRuntime {
     }
 
     pub fn pause(&self) -> Result<SyncStatus, SyncRuntimeError> {
-        let _transition = self
-            .transition
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let _transition = self.running_transition()?;
         if !self.status().enabled {
             return Err(SyncRuntimeError::Unconfigured);
         }
@@ -131,10 +126,7 @@ impl SyncRuntime {
     }
 
     pub fn resume(&self) -> Result<SyncStatus, SyncRuntimeError> {
-        let _transition = self
-            .transition
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let _transition = self.running_transition()?;
         let status = self.status();
         if status.state != SyncState::Paused {
             return Err(SyncRuntimeError::Busy);
@@ -179,10 +171,7 @@ impl SyncRuntime {
     }
 
     pub fn sync_now(&self) -> Result<SyncStatus, SyncRuntimeError> {
-        let transition_guard = self
-            .transition
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let transition_guard = self.running_transition()?;
         let status = self.status();
         if !status.enabled || status.state == SyncState::Paused {
             return Err(SyncRuntimeError::Unconfigured);
@@ -231,10 +220,7 @@ impl SyncRuntime {
             Arc::clone(&self.status_notifier),
         );
         drop(cycle_guard);
-        let _transition = self
-            .transition
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let _transition = self.running_transition()?;
         let mut inner = self
             .inner
             .lock()
@@ -282,10 +268,7 @@ impl SyncRuntime {
     }
 
     pub fn revoke_device(&self, device_id: &str) -> Result<(), SyncRuntimeError> {
-        let _transition = self
-            .transition
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let _transition = self.running_transition()?;
         if self.status().role != SyncRole::Host {
             return Err(SyncRuntimeError::Unconfigured);
         }

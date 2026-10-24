@@ -169,7 +169,7 @@ impl WatchCoordinator {
             // files under echo/media. Only an associated active song is editable.
             return Ok(EventOutcome::Ignored);
         }
-        let _activity = super::sync::local_activity()?;
+        let _activity = self.deps.activity.enter()?;
         if self.deps.roots.replica_enrollment_pending(event.root)? {
             return Ok(EventOutcome::Ignored);
         }

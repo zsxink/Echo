@@ -101,7 +101,52 @@ confirmed baseline 的 durable batch，不能复制旧确认到新值。旧入�
 旧正文、缺 key 证据及不同绑定资料保留待核对；可信会话 projector、完整冻结写集
 及显式新 binding adoption 仍在实施，离线恢复不创建凭据、监听或主权限。
 
-## 历史缺省值
+## 完整确认与资源发布正文
+
+`echo.sync.confirmed.v2` 要求 `author/mutation_id/version/sequence/payload/tombstone/changed_at_ms`、
+原 LAN commit 字符串 `original_body` 及 `previous_digest/digest`。正文内的完整 binding、
+对象、事件、base、origin 前驱、typed aliases 和资源声明保留原文；校验不能重编码
+后代替原始摘要。LAN 资源的 `content_hash` 是小写十六进制，目录内 Domain manifest
+的 `digest` 是 32 字节数组，读取时显式转换，不能把两种 JSON 形状混用。
+
+导出仅按完整原 namespace 和 sequence 寻找真实 ledger；找不到或正文冲突时保留
+`confirmed.v1`，不从当前对象或时钟补造确认。可信恢复仍要单独验证完整账本与实时
+会话，不能从此正文授权联网。历史 v1 的显式 `payload:null` 墓碑须有匹配的已验证
+ledger 删除事实；v2 使用 `{"tombstone":true}`。两者在 SQL baseline 中均写 NULL，
+重复重试保留原 `changed_at_ms`，不能把普通 live null 当作删除。
+
+`echo.sync.resource-publication.v2` 保存 `operation/publication/completed` 和 SQL journal
+原始字符串 `original_body`。Domain 使用专用 DTO 校验，不能依赖 Application port：
+
+- wrapper、原正文和 scoped key 的 operation/root/completed 必须一致；当前 SQL journal
+  没有捕获历史 binding，namespace 仍为 `legacy_evidence`，不补造当前 binding。
+- publication 的 typed object 是资源 owner；items 必须为 1–32 项，完整保留每项
+  manifest（逻辑路径、digest、length、MIME）、替换前摘要、stage、staging/local/old 路径。
+- 实际位置可等于安全逻辑路径，或为
+  `echo/media/<kind>/<owner-uuid>/<declaration-digest>/<logical-path>`。
+  declaration digest 是按既有 journal 字段顺序序列化全部 targets 后的 BLAKE3，
+  表示资源声明集合版本，**不是主机 object_version**。旧位置须属于同一 owner 和
+  逻辑路径，其旧声明摘要只能校验语法，不能从当前状态补造。
+- staging 必须属于该 operation；路径须规范化且无逻辑/实际/staging 目的地碰撞；
+  控制目录、其他 owner、错误声明版本、越界路径和无效 MIME 都拒绝。
+- Completed 与全部 item stage 必须一致；预期旧摘要与旧位置须同时存在或同时为空。
+  已声明完成仍只是历史凭据，恢复可播放状态还须独立校验文件与当前授权关联。
+
+只有完整新导出通过 v2 校验才升级；旧布局或不完整 journal 继续导出为 v1 证据。
+已提交目录中的 v1 正文和摘要不被改写。精确 v2 拒绝未知正文/嵌套字段，未来未知
+schema 原样保留为待处理证据，不自动建立资源关联。
+
+## 格式矩阵与历史缺省值
+
+| 资料 | 当前验证边界 |
+| --- | --- |
+| flat v1 / envelope v2 | 完整用户字段、创建/加入时间、封面原件引用、typed 关系、false 喜欢、覆盖文本、逐设备桶经过 JSON 和目录 commit 往返 |
+| 缺历史字段 | 继续保持 absent；不制造时间、资源或 sync 确认 |
+| confirmed / receipt / frozen / publication | 分别版本化；完整原文与历史证据分开解释，不把当前用户值或资源拼成旧确认 |
+| manifest v3 | 目标升级围栏和 v3 正向往返尚未交付，任务 2.3 与 8.2 均不能因上面的 v1/v2 验证而勾选 |
+| 未知 envelope / manifest | 当前 envelope 版本 3 及更高版本拒绝解码；manifest 可读出版本但判不兼容、拒绝写入；不降级 v1，此测试不替代 v3 正向往返 |
+
+### 缺省字段
 
 | 字段 | 读取和再次序列化 |
 | --- | --- |

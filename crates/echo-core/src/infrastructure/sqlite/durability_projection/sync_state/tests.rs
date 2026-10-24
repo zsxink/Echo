@@ -620,6 +620,15 @@ fn library_durability_confirmed_v2_rejects_mismatched_original_confirmation() {
 
 #[test]
 fn library_durability_confirmed_tombstone_restores_sql_null_and_retries() {
+    confirmed_tombstone_retry(true);
+}
+
+#[test]
+fn library_durability_confirmed_legacy_null_tombstone_restores_and_retries() {
+    confirmed_tombstone_retry(false);
+}
+
+fn confirmed_tombstone_retry(complete: bool) {
     let mut f = fixture();
     let source = SqliteDatabase::open(f.directory.path().join("source.sqlite")).unwrap();
     let deleted = PlaylistId::new();
@@ -656,7 +665,7 @@ fn library_durability_confirmed_tombstone_restores_sql_null_and_retries() {
         })
         .unwrap();
     let tombstone = state
-        .iter()
+        .iter_mut()
         .find(|state| {
             state.key.as_ref().is_some_and(|key| {
                 key.target
@@ -668,6 +677,19 @@ fn library_durability_confirmed_tombstone_restores_sql_null_and_retries() {
         .unwrap();
     assert_eq!(tombstone.payload["schema"], "echo.sync.confirmed.v2");
     assert_eq!(tombstone.payload["payload"], json!({"tombstone":true}));
+    if !complete {
+        tombstone.payload["schema"] = json!("echo.sync.confirmed.v1");
+        tombstone.payload["payload"] = serde_json::Value::Null;
+        for field in [
+            "author",
+            "mutation_id",
+            "original_body",
+            "previous_digest",
+            "digest",
+        ] {
+            tombstone.payload.as_object_mut().unwrap().remove(field);
+        }
+    }
     // The exporter deliberately does not claim the freeze-time pending scope,
     // so the projection fixture supplies that synthetic pending state.
     for frozen_state in &f.batch.state {

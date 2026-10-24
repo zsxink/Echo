@@ -6,36 +6,6 @@ use crate::application::ports::{
 use crate::domain::sync::{MutationCandidate, SyncBinding};
 use crate::error::Error;
 
-// A short enrollment barrier waits for existing desktop mutations and scan /
-// watcher / recovery work before recording the durable, root-scoped gate.
-// Normal work holds a shared lease for its complete operation; enrollment and
-// archive publication hold the exclusive lease. No lease spans network I/O.
-static LOCAL_ACTIVITY: std::sync::RwLock<()> = std::sync::RwLock::new(());
-
-/// Hold while executing one local operation that may write files or catalog.
-///
-/// # Errors
-/// Returns an invariant failure if another operation poisoned the barrier.
-pub fn local_activity() -> Result<std::sync::RwLockReadGuard<'static, ()>, Error> {
-    LOCAL_ACTIVITY
-        .read()
-        .map_err(|_| Error::InvariantViolation {
-            why: "local activity barrier poisoned".to_owned(),
-        })
-}
-
-/// Drain existing local work before binding or completing replica enrollment.
-///
-/// # Errors
-/// Returns an invariant failure if another operation poisoned the barrier.
-pub fn exclusive_local_activity() -> Result<std::sync::RwLockWriteGuard<'static, ()>, Error> {
-    LOCAL_ACTIVITY
-        .write()
-        .map_err(|_| Error::InvariantViolation {
-            why: "local activity barrier poisoned".to_owned(),
-        })
-}
-
 /// Confirms a single incoming mutation and returns only after its published
 /// checkpoint is durable. Network handlers call this without holding a SQL
 /// transaction or platform lock.

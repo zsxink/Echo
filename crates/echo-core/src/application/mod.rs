@@ -32,6 +32,7 @@ pub mod favorite;
 pub mod import;
 pub mod library_commit;
 pub mod library_recovery;
+pub mod local_activity;
 pub mod playback_context;
 pub mod playback_recording;
 pub mod playlist;

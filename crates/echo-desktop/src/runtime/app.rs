@@ -83,6 +83,9 @@ pub fn assemble(db_path: &Path, cover_cache_dir: &Path) -> Result<RoutedRuntime,
     let control = Arc::new(RootControlPlane::new(registry.clone()));
     database.configure_library_control(control.clone());
     let deps = Arc::new(ScanDeps {
+        activity: std::sync::Arc::new(
+            echo_core::application::local_activity::LocalActivity::default(),
+        ),
         history: Some(database.clone()),
         roots: database.clone(),
         songs: database.clone(),

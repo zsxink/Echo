@@ -1,6 +1,8 @@
 //! Real persisted resource declarations must not be decoded as network DTOs.
 use super::*;
-use crate::application::ports::{ControlPlanePort, SongRepository};
+use crate::application::ports::{
+    ControlPlanePort, DeviceIdProvider, HostCommitLedgerPort, SongRepository,
+};
 use crate::domain::{
     entities::Song,
     ids::{RelativeMediaPath, Revision, SongId},
@@ -113,4 +115,93 @@ fn resources(path: &std::path::Path) -> Vec<SharedResourceManifest> {
             .unwrap()
         })
         .collect()
+}
+
+#[test]
+fn library_durability_confirmed_export_preserves_real_wire_resources_and_origin_chain() {
+    use crate::domain::sync::{DeviceId, MutationCandidate, MutationId};
+    let fixture = fixture();
+    let db = &fixture.db;
+    let root = fixture.b;
+    let path = fixture.directory.path().join(root.to_string());
+    std::fs::create_dir_all(path.join("media")).unwrap();
+    let resources = resources(&path);
+    let song = SongId::new();
+    let mut candidate = MutationCandidate {
+        mutation_id: MutationId::new(),
+        origin_device_id: DeviceId::from_uuid(db.current_device_id().as_uuid()),
+        origin_seq: 1,
+        previous_mutation_id: None,
+        object: ObjectKey::Song(song),
+        base_object_version: None,
+        payload: json!({"song_uuid":song,"relative_path":"media/resource.flac",
+            "title":"confirmed","artist":"artist","added_at":42,
+            "blake3_hash":resources[0].digest.to_hex()}),
+        resource_refs: resources,
+    };
+    let first = db
+        .stage_confirmation_at(fixture.b_binding, &candidate, Some(100))
+        .unwrap()
+        .checkpoint
+        .unwrap();
+    db.mark_published(first).unwrap();
+    candidate.previous_mutation_id = Some(candidate.mutation_id);
+    candidate.mutation_id = MutationId::new();
+    candidate.origin_seq = 2;
+    candidate.base_object_version = Some(crate::domain::sync::ObjectVersion::from_commit_seq(
+        first.sequence,
+    ));
+    candidate.payload["title"] = json!("updated");
+    let second = db
+        .stage_confirmation_at(fixture.b_binding, &candidate, Some(200))
+        .unwrap()
+        .checkpoint
+        .unwrap();
+    db.mark_published(second).unwrap();
+    let states = db.with_reader(|c| export_sync_state(c, root)).unwrap();
+    let confirmed = states
+        .iter()
+        .find(|s| {
+            s.key.as_ref().is_some_and(|key| {
+                key.target
+                    == StateTarget::Confirmed {
+                        object: candidate.object,
+                    }
+            })
+        })
+        .unwrap();
+    assert_eq!(confirmed.payload["schema"], "echo.sync.confirmed.v2");
+    confirmed.validate().unwrap();
+    let original = confirmed.payload["original_body"].as_str().unwrap();
+    let wire: Value = serde_json::from_str(original).unwrap();
+    assert_eq!(
+        wire["mutation"]["previous_mutation_id"],
+        json!(candidate.previous_mutation_id)
+    );
+    assert_eq!(
+        wire["mutation"]["base_object_version"],
+        json!(candidate.base_object_version)
+    );
+    assert_eq!(wire["resource_refs"].as_array().unwrap().len(), 2);
+    assert_eq!(wire["mutation"]["resource_refs"], wire["resource_refs"]);
+    assert_eq!(
+        wire["resource_refs"][0]["content_hash"],
+        candidate.resource_refs[0].digest.to_hex()
+    );
+    assert_eq!(confirmed.payload["changed_at_ms"], 200);
+    let round_trip: DurableStateChange =
+        serde_json::from_str(&serde_json::to_string(confirmed).unwrap()).unwrap();
+    assert_eq!(round_trip, *confirmed);
+    for pointer in [
+        "/mutation/previous_mutation_id",
+        "/mutation/base_object_version",
+        "/resource_refs/0/length",
+        "/aliases",
+    ] {
+        let mut changed = wire.clone();
+        *changed.pointer_mut(pointer).unwrap() = json!("tampered");
+        let mut invalid = confirmed.clone();
+        invalid.payload["original_body"] = json!(changed.to_string());
+        assert!(invalid.validate().is_err(), "accepted changed {pointer}");
+    }
 }

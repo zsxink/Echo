@@ -17,6 +17,7 @@ impl AppServices {
         root: LibraryRootId,
         operation: OperationId,
     ) -> Result<(), Error> {
+        let _activity = self.deps.activity.enter()?;
         self.require_recovery_root(root)?;
         if self.supervisor.is_scanning(root) {
             return Err(Error::conflict("library scan is running"));
@@ -35,6 +36,7 @@ impl AppServices {
         &self,
         root: LibraryRootId,
     ) -> Result<LibraryRecoveryStatusDto, Error> {
+        let _activity = self.deps.activity.enter()?;
         self.require_recovery_root(root)?;
         let history = self.deps.history.as_ref().ok_or_else(|| {
             Error::unavailable("library recovery", "projection adapter is not configured")
@@ -54,6 +56,7 @@ impl AppServices {
     /// # Errors
     /// Rejects a stale root, active scan or unavailable evidence/projection.
     pub fn retry_library_projection(&self, root: LibraryRootId) -> Result<(), Error> {
+        let _activity = self.deps.activity.enter()?;
         self.require_recovery_root(root)?;
         if self.supervisor.is_scanning(root) {
             return Err(Error::conflict("library scan is running"));

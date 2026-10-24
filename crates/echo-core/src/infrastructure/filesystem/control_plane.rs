@@ -38,14 +38,41 @@ use crate::error::Error;
 pub struct RootControlPlane {
     registry: RootRegistry,
     access: Arc<Mutex<()>>,
+    #[cfg(any(test, feature = "testkit"))]
+    commit_hook: Option<CommitTestHook>,
     pub(super) validation_cache: Arc<super::durability::ValidationCache>,
 }
 
+#[cfg(any(test, feature = "testkit"))]
+type CommitHookCallback = dyn Fn(&str, usize) -> Result<(), Error> + Send + Sync;
+#[cfg(any(test, feature = "testkit"))]
+#[derive(Clone)]
+struct CommitTestHook(Arc<CommitHookCallback>);
+#[cfg(any(test, feature = "testkit"))]
+impl std::fmt::Debug for CommitTestHook {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("CommitTestHook")
+    }
+}
+
 impl RootControlPlane {
+    /// Install an instance-local filesystem boundary hook for lifecycle tests.
+    #[cfg(any(test, feature = "testkit"))]
+    #[must_use]
+    pub fn with_commit_hook(
+        mut self,
+        hook: impl Fn(&str, usize) -> Result<(), Error> + Send + Sync + 'static,
+    ) -> Self {
+        self.commit_hook = Some(CommitTestHook(Arc::new(hook)));
+        self
+    }
+
     #[must_use]
     pub fn new(registry: RootRegistry) -> Self {
         Self {
             registry,
+            #[cfg(any(test, feature = "testkit"))]
+            commit_hook: None,
             access: Arc::new(Mutex::new(())),
             validation_cache: Arc::default(),
         }
@@ -542,6 +569,16 @@ impl crate::application::ports::LibraryDurabilityPort for RootControlPlane {
         batch: &crate::domain::library::durability::LibraryBatch,
     ) -> Result<crate::domain::library::durability::CommitOutcome, Error> {
         let _guard = self.prepare_write(root, false)?;
+        #[cfg(any(test, feature = "testkit"))]
+        if let Some(hook) = &self.commit_hook {
+            return super::durability::commit_with_hook(
+                &self.registry,
+                &self.validation_cache,
+                root,
+                batch,
+                &mut |phase, index| (hook.0)(phase, index),
+            );
+        }
         super::durability::commit(&self.registry, &self.validation_cache, root, batch)
     }
     fn recover(
@@ -936,3 +973,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod lifecycle_tests;

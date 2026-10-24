@@ -209,6 +209,11 @@ pub(super) fn digest_valid(value: &str) -> Result<(), Error> {
 }
 
 pub(super) fn validate_payload(key: &StateKey, payload: &serde_json::Value) -> Result<(), Error> {
+    if payload.get("schema").and_then(serde_json::Value::as_str)
+        == Some("echo.sync.resource-publication.v2")
+    {
+        super::publication::validate(key, payload)?;
+    }
     if payload.get("schema").and_then(serde_json::Value::as_str) == Some("echo.sync.confirmed.v2") {
         super::confirmed::validate(key, payload)?;
     }

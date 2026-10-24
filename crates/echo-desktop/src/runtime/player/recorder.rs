@@ -22,6 +22,7 @@ use crate::player::recording::{PlaybackRecorder, PlaybackStatsRecorder};
 /// the port's `Err(String)` so the accumulator can log them without ever
 /// stopping playback.
 pub struct CorePlaybackRecorder {
+    activity: Arc<echo_core::application::local_activity::LocalActivity>,
     database: Arc<echo_core::infrastructure::sqlite::SqliteDatabase>,
     /// The portable control surface (`echo/records/play-stats/`).
     control: Arc<dyn ControlPlanePort>,
@@ -41,8 +42,10 @@ impl CorePlaybackRecorder {
         control: Arc<dyn ControlPlanePort>,
         device_id: Arc<dyn DeviceIdProvider>,
         roots: Arc<dyn LibraryRepository>,
+        activity: Arc<echo_core::application::local_activity::LocalActivity>,
     ) -> Self {
         Self {
+            activity,
             database,
             control,
             device_id,
@@ -102,8 +105,7 @@ impl PlaybackRecorder for CorePlaybackRecorder {
         // Keep the counter and its portable record on the same side of the
         // enrollment barrier. Listening to the superseded local catalog does
         // not create edits that could escape into the host's initial baseline.
-        let _activity =
-            echo_core::application::sync::local_activity().map_err(|error| error.to_string())?;
+        let _activity = self.activity.enter().map_err(|error| error.to_string())?;
         let Some(local_song) = SongRepository::by_id(self.database.as_ref(), song)
             .map_err(|error| error.to_string())?
         else {

@@ -74,6 +74,8 @@ impl Default for ScanConfig {
 /// (`SQLite` repositories + real adapters); tests assemble fakes.
 #[derive(Clone)]
 pub struct ScanDeps {
+    /// Runtime-owned admission shared by all local writers.
+    pub activity: Arc<super::local_activity::LocalActivity>,
     /// Optional historical rescue and ordered projection capability.
     pub history: Option<Arc<dyn crate::application::ports::LibraryHistoryPort>>,
     pub roots: Arc<dyn RootWriteRepository>,
@@ -228,7 +230,7 @@ impl<'a> StartScan<'a> {
     /// Root-level failures propagate; the run is persisted as `Failed` first
     /// and nothing is marked missing.
     pub fn run(&self, root: LibraryRootId) -> Result<ScanSummary, Error> {
-        let _activity = super::sync::local_activity()?;
+        let _activity = self.deps.activity.enter()?;
         if self.deps.roots.replica_enrollment_pending(root)? {
             return Ok(ScanSummary {
                 generation: self.deps.runs.latest_generation(root)?.unwrap_or(0),
@@ -242,6 +244,9 @@ impl<'a> StartScan<'a> {
         let generation = self.deps.runs.latest_generation(root)?.unwrap_or(0) + 1;
         let token = ScanCancelToken::new();
         self.supervisor.register(root, token.clone())?;
+        if self.deps.activity.is_closed() {
+            token.cancel();
+        }
         let result = self.run_guarded(root, generation, &token);
         self.supervisor.unregister(root);
         result
@@ -256,7 +261,7 @@ impl<'a> StartScan<'a> {
     /// Returns a retryable error while enrollment or another scan owns the
     /// root. Parse and persistence failures leave the publication unindexed.
     pub fn refresh_published_song(&self, root: LibraryRootId, id: SongId) -> Result<(), Error> {
-        let _activity = super::sync::local_activity()?;
+        let _activity = self.deps.activity.enter()?;
         if self.deps.roots.replica_enrollment_pending(root)? {
             return Err(Error::unavailable(
                 "library",
@@ -373,7 +378,7 @@ impl<'a> StartScan<'a> {
         }
 
         // ---- Cancelled: persist the terminal state, no missing pass ----
-        if cancelled {
+        if cancelled || token.is_cancelled() {
             self.finish(root, generation, &mut progress, ScanState::Cancelled)?;
             return Ok(ScanSummary {
                 generation,
@@ -385,6 +390,14 @@ impl<'a> StartScan<'a> {
         // ---- Final missing pass (fully completed runs only) ----
         transition(&mut progress, ScanState::Reconciling)?;
         emitter.emit(&progress, true)?;
+        if token.is_cancelled() {
+            self.finish(root, generation, &mut progress, ScanState::Cancelled)?;
+            return Ok(ScanSummary {
+                generation,
+                cancelled: true,
+                progress,
+            });
+        }
         self.mark_missing(root, &seen, &mut progress)?;
         self.finish(root, generation, &mut progress, ScanState::Completed)?;
         Ok(ScanSummary {

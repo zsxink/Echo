@@ -228,6 +228,7 @@ pub(super) fn cleanup_covered(
     };
     let mut anchor_flushed = false;
     let mut covered = Vec::new();
+    let mut proof_directories = io::DirectorySyncSet::default();
     for entry in entries {
         let entry = entry.map_err(|e| Error::io("read covered transaction", e, &directory))?;
         let id = entry
@@ -253,14 +254,28 @@ pub(super) fn cleanup_covered(
                     "cannot collect without matching coverage checkpoint",
                 ));
             }
-            io::flush_existing(registry, root, ANCHOR, "coverage_gc", hook)?;
+            let path = io::flush_file(registry, root, ANCHOR, "coverage_gc", hook)?;
+            proof_directories.include_ancestors(
+                registry,
+                root,
+                path.parent()
+                    .ok_or_else(|| invalid("missing coverage parent"))?,
+            )?;
             anchor_flushed = true;
         }
-        io::flush_existing(registry, root, &receipt(id), "receipt_gc", hook)?;
+        let path = io::flush_file(registry, root, &receipt(id), "receipt_gc", hook)?;
+        proof_directories.include_ancestors(
+            registry,
+            root,
+            path.parent()
+                .ok_or_else(|| invalid("missing receipt parent"))?,
+        )?;
         covered.push(id);
     }
     // Finish all proof syncs before the first destructive step. A subsequent
     // receipt failure therefore leaves the entire redo suffix untouched.
+    proof_directories.sync(registry, root, "gc_proof", hook)?;
+    let had_covered = !covered.is_empty();
     for id in covered {
         for name in ["prepared.json", "committed.json"] {
             let path = portable::path(registry, root, &relative(id, name))?;
@@ -276,6 +291,8 @@ pub(super) fn cleanup_covered(
         // evidence is preserved and blocks writes instead of recursive deletion.
         std::fs::remove_dir(&path)
             .map_err(|e| Error::io("collect covered transaction directory", e, &path))?;
+    }
+    if had_covered {
         io::sync_ancestors(registry, root, &directory, "gc", hook)?;
     }
     Ok(())

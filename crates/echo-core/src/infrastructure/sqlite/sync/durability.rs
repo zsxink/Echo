@@ -107,11 +107,21 @@ pub(crate) fn export_sync_state(
     complete_confirmations(&mut state)?;
     // Physical associations only become ready after verified publication. The
     // full publication also preserves pending claims and their retained bytes.
-    for payload in values(connection, "SELECT json_object('schema','echo.sync.resource-publication.v1','operation',operation_uuid,'publication',json(publication_json),'completed',json(CASE WHEN completed=1 THEN 'true' ELSE 'false' END)) FROM sync_remote_publications WHERE local_root_uuid=?1 ORDER BY operation_uuid", &root_string)? {
+    for mut payload in values(connection, "SELECT json_object('schema','echo.sync.resource-publication.v1','operation',operation_uuid,'publication',json(publication_json),'original_body',publication_json,'completed',json(CASE WHEN completed=1 THEN 'true' ELSE 'false' END)) FROM sync_remote_publications WHERE local_root_uuid=?1 ORDER BY operation_uuid", &root_string)? {
         // Publication rows predate binding capture as well; root provenance
         // retains their exact operation without asserting a historical binding.
         let target = StateTarget::Publication { operation_id: parse_uuid(&payload,"operation")? };
-        state.push(DurableStateChange::scoped(StateKey { namespace: StateNamespace::LegacyEvidence { source_root: root }, target }, payload)?);
+        let key = StateKey { namespace: StateNamespace::LegacyEvidence { source_root: root }, target };
+        payload["schema"] = Value::from("echo.sync.resource-publication.v2");
+        if let Ok(complete) = DurableStateChange::scoped(key.clone(), payload.clone()) {
+            state.push(complete);
+        } else {
+            // Old layouts or incomplete journals remain unproven evidence. Do
+            // not retrofit today's owner/version or alter committed v1 facts.
+            payload["schema"] = Value::from("echo.sync.resource-publication.v1");
+            payload.as_object_mut().ok_or_else(|| Error::conflict("invalid publication evidence"))?.remove("original_body");
+            state.push(DurableStateChange::scoped(key, payload)?);
+        }
     }
     for payload in values(connection, "SELECT json_object('schema','echo.sync.local-origin.v1','author',origin_device_id,'sequence',origin_seq,'mutation_id',last_mutation_id) FROM sync_local_origin_cursors WHERE local_root_uuid=?1 ORDER BY origin_device_id", &root_string)? {
         let target = StateTarget::LocalOriginCursor { author: crate::domain::sync::DeviceId::from_uuid(parse_uuid(&payload,"author")?) };
@@ -280,14 +290,16 @@ pub(crate) fn enrich_recovery_batch(
     batch: &mut LibraryBatch,
 ) -> Result<(), Error> {
     let exact = export_sync_state(connection, root)?;
+    let mut positions = std::collections::BTreeMap::new();
+    for (index, state) in batch.state.iter().enumerate() {
+        // Match the original linear find when input already contains duplicates.
+        positions.entry((state.kind, state.id)).or_insert(index);
+    }
     for fact in exact {
-        if let Some(existing) = batch
-            .state
-            .iter_mut()
-            .find(|item| item.kind == fact.kind && item.id == fact.id)
-        {
-            *existing = fact;
+        if let Some(&index) = positions.get(&(fact.kind, fact.id)) {
+            batch.state[index] = fact;
         } else {
+            positions.insert((fact.kind, fact.id), batch.state.len());
             batch.state.push(fact);
         }
     }

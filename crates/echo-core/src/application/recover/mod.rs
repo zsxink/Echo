@@ -123,7 +123,7 @@ impl<'a> RecoverOperations<'a> {
     /// the filesystem; per-item conflicts are reported in the result, not
     /// raised here.
     pub fn run(&self, root: LibraryRootId) -> Result<RecoveryReport, Error> {
-        let _activity = super::sync::local_activity()?;
+        let _activity = self.deps.activity.enter()?;
         if self.deps.roots.replica_enrollment_pending(root)? {
             return Ok(RecoveryReport {
                 touched: Vec::new(),

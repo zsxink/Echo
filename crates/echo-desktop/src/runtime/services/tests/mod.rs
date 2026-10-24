@@ -951,3 +951,7 @@ fn recorded_plays_materialize_additive_play_stats() {
 use echo_core::domain::library::PortableRecord;
 
 mod open_path;
+
+mod lifecycle;
+
+mod lifecycle_scan;

@@ -5,6 +5,7 @@ mod change_set;
 mod confirmed;
 mod frozen;
 pub mod projection;
+mod publication;
 mod receipt;
 mod session;
 mod state;

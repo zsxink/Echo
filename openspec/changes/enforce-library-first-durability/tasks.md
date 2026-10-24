@@ -15,6 +15,8 @@
 - [x] 2.1 新增 typed change set、来源、预期版本、完整 after-image、资源声明、操作身份、本库提交序列/前驱摘要及结果状态模型；验证不合法跨库/跨类型/重复目标/不完整依赖被拒绝，Domain 无 FS/SQLite/网络依赖（LD-01/02/10）。
 - [x] 2.2 增加聚焦的目录提交/读取/恢复与投影端口，设计可失败 fake，并明确旧 SQLite UoW 只投影；保留 `ControlPlanePort::durability()` 能力访问器，删除 `ControlPlanePort` 上指向同一实现的五个转发方法（`commit_library_batch`、`recover_library_batches`、`library_operation_status`、`write_library_asset`、`read_library_asset`），调用方统一经 `durability()` 取 `LibraryDurabilityPort`；验证 `ControlPlanePort` 方法数不高于既有基线且规模白名单不因本 change 扩大（LD-10）。
 - [ ] 2.3 扩展 portable 用户资料字段，包含歌单创建/成员加入时间、资源原件引用及必要关系；分别定义 confirmed 完整 payload、pending/receipt、实际受管资源位置，避免新业务值继承旧确认收据；用 v1/v2/v3 JSON round-trip、缺字段与未知格式测试验证兼容（LD-03/07/08/09）。
+
+  已验证子步骤及时勾选于 [契约补充清单](evidence/contracts-20261024.md)：完整 confirmed 资源/alias/base/前驱与原文、scoped exporter、publication.v2 严格正文及实际 owner/声明版本位置、历史 v1 null 墓碑、populated v1/v2 portable 矩阵。目标 v3 正向往返尚未完成，故整项仍未勾选。
 - [x] 2.4 文档化目录协议版本、字段语义和 typed tombstone/alias 规则，使用 `cargo test -p echo-core library_durability` 核对序列化 fixture 与说明一致，确保缺历史字段保持 absent（LD-05/09/10）。
 
   验证：2026-10-24 新增 [目录协议字段说明](../../../docs/library-durability-protocol.md)，独立审查通过；主 Agent `library_durability --lib` 74/74、新增历史缺省字段回归 1/1、`portable_v --lib` 4/4、Core Clippy/fmt/scale/strict 通过。缺省时间/确认元数据保持省略，历史 Song 的已发布 0 回退单独说明；当前 v2 与目标 v3 升级边界明确，不替代 2.1/7.8/8.2。
@@ -25,7 +27,9 @@
 
 ## 3. 文件系统权威提交与恢复
 
-- [ ] 3.1 实现资料库级跨进程排他写许可、格式/权限检查及安全 exclusive-create journal；读路径 MUST NOT 取写锁，也不得因锁文件缺失而失败，只读卷上已提交资料仍可浏览；验证同库两写者、切库/取消/退出、只读卷浏览、符号链接/越界/长路径、未知格式不能绕过锁或污染另一库（LD-01/09/10）。
+- [x] 3.1 实现资料库级跨进程排他写许可、格式/权限检查及安全 exclusive-create journal；读路径 MUST NOT 取写锁，也不得因锁文件缺失而失败，只读卷上已提交资料仍可浏览；验证同库两写者、切库/取消/退出、只读卷浏览、符号链接/越界/长路径、未知格式不能绕过锁或污染另一库（LD-01/09/10）。
+
+  验证：2026-10-24 实例准入/排空、切库及后台退出接线，退出后回退重启与自动恢复竞争两项缺陷均经有效 RED/GREEN 和独立复审。主线程完整 Core 814/0/1 ignored、所有集成、Desktop 429/429、native 短组 130/0/1 ignored/1 显式过滤 513，workspace all-targets/all-features check/Clippy、fmt/scale/strict 通过；最后测试整理后专项 7/7 与 gate 6/6 复跑通过。详见 [生命周期验收清单](evidence/lifecycle-acceptance-20261024.md)。三平台实机认证与原样 513 仍属于后续验收，不计为已通过。
 - [x] 3.2 实现 prepared payload、资源声明、checksum 与本库 seq/前驱提交标记的刷盘/原子发布，用 fault fake 拦截每次文件/父目录 sync 和 rename；验证标记前无业务提交，结果不确定可查询同操作，标记后丢 SQLite 仍恢复（LD-01/02）。
 - [x] 3.3 实现按本库顺序的 records/state 材料化、目录 checkpoint 与幂等重放，验证 C1 投影失败后 C2 更新同对象，重启/重复重放不回退 C2；断链/同 seq 不同摘要/损坏已提交数据拒绝写入并保留证据（LD-02/06）。
 
@@ -33,6 +37,8 @@
 - [ ] 3.4 实现用户资源原件和实际受管版本位置持久化；写回前保留旧字节与替换意图，提交才切换引用，验证替换后标记前崩溃可恢复旧关联或完成相同操作，不丢已提交旧版本（LD-02/08）。
 - [ ] 3.5 实现安全 checkpoint/压缩/GC，必须先刷盘完整覆盖清单再回收日志，引用图保护候选、快照、冲突、删除意图和未完成发布资源；checkpoint 不得随历史无界增长，链长度应与活跃窗口而非总历史成正比，超过安全上限时拒绝写入并报告；故障注入验证 GC 任一步中断后均可恢复且无唯一字节被删（LD-02/08）。
 - [ ] 3.7 为扫描与批量导入引入有界批量提交（同一逻辑集合合并，而不是每首歌一次链提交），并消除单次编辑触发的多次全链扫描/全量摘要校验；以 10k 量级合成库测量提交次数与 IO，验证不因性能优化延后唯一权威落盘（LD-01/02/10）。
+
+  逐项进度见 [性能续作清单](evidence/performance-20261024.md)。2026-10-24 最新源码原样 513 基线在 120 秒上限内未完成并回收，动态采样再次确认提交/GC 目录刷盘热点；design D2.1 先固化阶段边界，首轮实现保留所有文件 sync，仅去重 GC 阶段目录 sync 及 enrich 查找。原样 513、有界 scan/import（含 reservation）、10k 测量完成前整项不勾选。
 - [x] 3.6 增加平台 FS 适配说明与协议恢复文档（可放 `docs/lan-sync-recovery.md` 的本地资料库章节），运行 `cargo test -p echo-core library_durability`，记录 POSIX/Windows 目录同步/替换能力及不支持时的明确失败语义（LD-09/10）。
 
   验证：2026-10-24 `library_durability --lib` 52/52 通过；`docs/lan-sync-recovery.md` 的“文件系统适配与失败语义”核对了现有 POSIX/Windows 实现，明确 Windows/Linux 尚待原生验收。此项不替代 10.3。

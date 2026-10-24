@@ -417,6 +417,12 @@ pub struct SyncRuntime {
     // Serialize transitions independently from status. Status never waits for
     // TLS shutdown, discovery, SQLite, or a remote round trip.
     transition: Mutex<()>,
+    // Set only while holding transition; never cleared, even if cleanup fails.
+    shutting_down: AtomicBool,
+    #[cfg(test)]
+    restore_retry_contentions: AtomicU64,
+    #[cfg(test)]
+    restore_retry_before_attempt: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     cycle: Arc<Mutex<()>>,
     status_notifier: Arc<Mutex<Option<StatusNotifier>>>,
     inner: Arc<Mutex<Inner>>,
@@ -442,6 +448,7 @@ pub use handoff::RootHandoff;
 mod handoff;
 mod pairing;
 mod session;
+mod shutdown;
 mod sync_loop;
 
 impl SyncRuntime {
@@ -458,10 +465,7 @@ impl SyncRuntime {
     /// action, so it always starts a fresh bounded attempt series instead of
     /// silently resuming behind the user's back.
     pub fn retry_restore(&self) -> Result<SyncStatus, SyncRuntimeError> {
-        let _transition = self
-            .transition
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let _transition = self.running_transition()?;
         if self.status().enabled {
             return Err(SyncRuntimeError::Busy);
         }
@@ -485,6 +489,7 @@ impl SyncRuntime {
         base_delay: Duration,
         max_delay: Duration,
     ) -> Result<(), SyncRuntimeError> {
+        let _transition = self.running_transition()?;
         let root = self.active_root()?;
         self.database
             .current_sync_configuration()
@@ -523,7 +528,8 @@ impl SyncRuntime {
             .name("echo-sync-startup-retry".into())
             .spawn(move || {
                 let mut delay = base_delay;
-                for attempt in 1..=max_attempts {
+                let mut attempt = 1;
+                while attempt <= max_attempts {
                     if crate::restore_retry::wait_for_restore_retry(&wakeups, delay) {
                         // Interrupted by a user transition or producer drop.
                         return;
@@ -531,31 +537,24 @@ impl SyncRuntime {
                     let Some(runtime) = runtime.upgrade() else {
                         return;
                     };
+                    #[cfg(test)]
+                    {
+                        let hook = runtime.restore_retry_before_attempt.lock().unwrap().take();
+                        if let Some(hook) = hook {
+                            hook();
+                        }
+                    }
                     if !runtime.restore_retry_is_current(generation, root) {
                         // Superseded: a user transition or root change owns the
                         // session now. Never publish a stale failure.
                         return;
                     }
-                    runtime.record_restore_attempt(attempt);
-                    match runtime.restore_saved_session() {
-                        Ok(Some(_)) => {
-                            // A successful start owns the session; clear the
-                            // retry accounting so status stops advertising it.
-                            runtime.clear_restore_retry_state();
-                            return;
-                        }
-                        Ok(None) => {
-                            runtime.clear_restore_retry_state();
-                            return;
-                        }
-                        Err(error) => {
-                            let status =
-                                runtime.report_restore_failure(error, attempt, max_attempts);
-                            runtime.notify_status(status);
-                            if attempt == max_attempts {
-                                runtime.mark_restore_exhausted();
-                                return;
-                            }
+                    match runtime.run_restore_retry_attempt(generation, root, attempt, max_attempts)
+                    {
+                        shutdown::RestoreRetryProgress::Deferred => {}
+                        shutdown::RestoreRetryProgress::Complete => return,
+                        shutdown::RestoreRetryProgress::Failed => {
+                            attempt += 1;
                             delay = crate::restore_retry::next_delay(delay).min(max_delay);
                         }
                     }
@@ -573,6 +572,9 @@ impl SyncRuntime {
     /// user intent. Kept as a method so the worker never holds the retry lock
     /// across its own decisions.
     fn restore_retry_is_current(&self, generation: u64, root: LibraryRootId) -> bool {
+        if self.ensure_running().is_err() {
+            return false;
+        }
         let current_generation = self
             .restore_retry
             .lock()
@@ -603,17 +605,10 @@ impl SyncRuntime {
     /// Stop and join any restore worker, advancing its generation so a delayed
     /// attempt can never act on a superseded root or user intent.
     pub(super) fn cancel_restore_retry(&self) {
-        let worker = {
-            let Ok(mut retry) = self.restore_retry.lock() else {
-                return;
-            };
-            retry.generation.fetch_add(1, Ordering::AcqRel);
-            retry.attempts = 0;
-            retry.worker.take()
-        };
-        if let Some(mut worker) = worker {
-            worker.wake.cancel();
-            let _ = worker.thread.join();
+        if let Some(worker) = self.take_restore_retry() {
+            if worker.thread.thread().id() != thread::current().id() {
+                let _ = worker.thread.join();
+            }
         }
         if let Ok(mut inner) = self.inner.lock() {
             inner.status.restore_attempts = None;
@@ -692,6 +687,11 @@ impl SyncRuntime {
             provisioner,
             cycle_port,
             transition: Mutex::new(()),
+            shutting_down: AtomicBool::new(false),
+            #[cfg(test)]
+            restore_retry_contentions: AtomicU64::new(0),
+            #[cfg(test)]
+            restore_retry_before_attempt: Mutex::new(None),
             cycle: Arc::new(Mutex::new(())),
             status_notifier: Arc::new(Mutex::new(None)),
             inner: Arc::new(Mutex::new(Inner::default())),

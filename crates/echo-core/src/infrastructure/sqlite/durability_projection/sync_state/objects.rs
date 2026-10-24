@@ -119,7 +119,18 @@ pub(super) fn confirmed(
         .get("tombstone")
         .and_then(Value::as_bool)
         .ok_or_else(|| Error::conflict("invalid confirmed tombstone flag"))?;
-    let payload = body(p, "payload")?;
+    // Historical SQL exports represented a deletion baseline as JSON null.
+    // Only a verified ledger tombstone can prove that legacy representation;
+    // live null payloads and v2 marker omissions still fail the exact check.
+    let legacy_null_tombstone = schema(state, "echo.sync.confirmed.v1")
+        && tombstone
+        && p.get("payload") == Some(&Value::Null)
+        && commit.is_tombstone;
+    let payload = if legacy_null_tombstone {
+        serde_json::to_string(&serde_json::json!({"tombstone":true})).map_err(storage)?
+    } else {
+        body(p, "payload")?
+    };
     if commit.object != object
         || commit.payload_json != payload
         || commit.is_tombstone != tombstone

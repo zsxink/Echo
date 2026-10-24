@@ -234,4 +234,102 @@ fn library_durability_sync_export_preserves_incomplete_replica_receipts() {
     receipt.validate().unwrap();
 }
 
+mod confirmations;
 mod resources;
+
+#[test]
+fn library_durability_enrich_preserves_first_match_scope_order_and_canonical_digest() {
+    let fixture = fixture();
+    let archived_root = fixture.a.to_string();
+    fixture.db.writer.run(move |connection| {
+        for number in [17_u128, 23] {
+            let author = Uuid::from_u128(number).to_string();
+            let mutation = Uuid::from_u128(number + 1).to_string();
+            connection.execute("INSERT INTO sync_origin_cursors(origin_device_id,origin_seq,last_mutation_id) VALUES(?1,3,?2)",params![author,mutation]).map_err(storage)?;
+            connection.execute("INSERT INTO archived_sync_origin_cursors(context_root,origin_device_id,origin_seq,last_mutation_id) VALUES(?1,?2,3,?3)",params![archived_root,author,mutation]).map_err(storage)?;
+        }
+        Ok(())
+    }).unwrap();
+    for root in [fixture.a, fixture.b] {
+        let exact = fixture
+            .db
+            .with_reader(|c| export_sync_state(c, root))
+            .unwrap();
+        assert!(
+            exact.len() >= 3,
+            "exercise multiple new facts in export order"
+        );
+        let other_root = if root == fixture.a {
+            fixture.b
+        } else {
+            fixture.a
+        };
+        let other = fixture
+            .db
+            .with_reader(|c| export_sync_state(c, other_root))
+            .unwrap();
+        let target = exact
+            .iter()
+            .find(|s| s.kind == StateKind::Confirmed)
+            .unwrap();
+        let other_scope = other
+            .iter()
+            .find(|s| s.kind == StateKind::Confirmed)
+            .unwrap()
+            .clone();
+        let mut stale = target.clone();
+        stale.payload["payload"]["title"] = json!("old in batch");
+        let mut duplicate = stale.clone();
+        duplicate.payload["payload"]["title"] = json!("second match stays untouched");
+        let same_id_other_kind =
+            DurableStateChange::new(StateKind::Claim, target.id, json!({"claim":"kept"}));
+        let same_kind_other_id =
+            DurableStateChange::new(target.kind, Uuid::new_v4(), json!({"evidence":"kept"}));
+        let mut actual = LibraryBatch::new(
+            Uuid::new_v4(),
+            crate::domain::library::LibraryId::from_uuid(Uuid::new_v4()),
+            ChangeOrigin::Recovery,
+            vec![],
+        );
+        actual.state = vec![
+            same_id_other_kind.clone(),
+            stale,
+            other_scope.clone(),
+            duplicate.clone(),
+            same_kind_other_id.clone(),
+        ];
+        let mut reference = actual.clone();
+        // Frozen reference behavior: only the first original match is replaced;
+        // unseen export facts append in exact export order.
+        for fact in &exact {
+            if let Some(existing) = reference
+                .state
+                .iter_mut()
+                .find(|s| s.kind == fact.kind && s.id == fact.id)
+            {
+                *existing = fact.clone();
+            } else {
+                reference.state.push(fact.clone());
+            }
+        }
+        fixture
+            .db
+            .with_reader(|c| enrich_recovery_batch(c, root, &mut actual))
+            .unwrap();
+        assert_eq!(actual.state, reference.state);
+        assert_eq!(actual.digest().unwrap(), reference.digest().unwrap());
+        assert_eq!(actual.state[0], same_id_other_kind);
+        assert_eq!(actual.state[1], *target);
+        assert_eq!(actual.state[2], other_scope);
+        assert_eq!(actual.state[3], duplicate);
+        assert_eq!(actual.state[4], same_kind_other_id);
+        assert_eq!(
+            &actual.state[5..],
+            exact
+                .iter()
+                .filter(|s| s.kind != target.kind || s.id != target.id)
+                .cloned()
+                .collect::<Vec<_>>()
+        );
+    }
+}

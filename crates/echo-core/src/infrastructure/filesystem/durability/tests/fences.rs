@@ -1,5 +1,6 @@
 //! Repeated crashes cannot turn visible redo/coverage files into durable proof.
 use super::*;
+use std::collections::BTreeSet;
 
 fn traced_recovery(registry: &RootRegistry, root: LibraryRootId) -> Vec<(String, usize)> {
     let mut trace = Vec::new();
@@ -144,7 +145,11 @@ fn library_durability_repeated_coverage_sync_failure_never_collects_redo() {
                 },
             )
             .unwrap_err();
-            let target = format!("{label}:{suffix}");
+            let target = if suffix == "directory_sync" {
+                "gc_proof:directory_sync".to_owned()
+            } else {
+                format!("{label}:{suffix}")
+            };
             let mut trace = Vec::new();
             recover_with_hook(&registry, root, &mut |phase, index| {
                 trace.push((phase.to_owned(), index));
@@ -163,8 +168,7 @@ fn library_durability_repeated_coverage_sync_failure_never_collects_redo() {
                 .join(relative(change.operation_id, "prepared.json"))
                 .exists());
             let trace = traced_recovery(&registry, root);
-            assert_flush_before(&trace, "coverage_gc", 2, "gc:remove");
-            assert_flush_before(&trace, "receipt_gc", 4, "gc:remove");
+            super::gc_performance::assert_gc_proof(&trace, 1, 5);
             assert_eq!(
                 read_operation(&registry, root, change.operation_id)
                     .unwrap()
@@ -242,8 +246,7 @@ fn library_durability_repeated_receipt_sync_failure_blocks_coverage_and_gc() {
         )
         .unwrap();
         assert_flush_before(&trace, "receipt_retry", 4, "coverage");
-        assert_flush_before(&trace, "coverage_gc", 2, "gc:remove");
-        assert_flush_before(&trace, "receipt_gc", 4, "gc:remove");
+        super::gc_performance::assert_gc_proof(&trace, 1, 5);
         assert_eq!(
             read_operation(&registry, root, change.operation_id)
                 .unwrap()
@@ -293,7 +296,7 @@ fn library_durability_coverage_redo_must_sync_before_materializing() {
     assert!(!dir.path().join(path).exists());
     let trace = traced_recovery(&registry, root);
     assert_flush_before(&trace, "coverage_recovery", 2, "record");
-    assert_flush_before(&trace, "receipt_gc", 4, "gc:remove");
+    super::gc_performance::assert_gc_proof(&trace, 1, 5);
     assert_eq!(
         read_operation(&registry, root, change.operation_id)
             .unwrap()
@@ -350,17 +353,11 @@ fn library_durability_later_receipt_sync_failure_preserves_every_covered_journal
             .exists());
     }
     let trace = traced_recovery(&registry, root);
-    let first_remove = trace
+    let shards: BTreeSet<_> = changes
         .iter()
-        .position(|(phase, _)| phase == "gc:remove")
-        .unwrap();
-    assert_eq!(
-        trace[..first_remove]
-            .iter()
-            .filter(|(phase, index)| phase == "receipt_gc:directory_sync" && *index == 4)
-            .count(),
-        2
-    );
+        .map(|change| change.operation_id.to_string()[..2].to_owned())
+        .collect();
+    super::gc_performance::assert_gc_proof(&trace, changes.len(), 4 + shards.len());
     for change in changes {
         assert_eq!(
             read_operation(&registry, root, change.operation_id)

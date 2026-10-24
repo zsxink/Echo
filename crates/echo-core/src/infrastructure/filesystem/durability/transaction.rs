@@ -12,7 +12,7 @@ use crate::domain::library::durability::{
 use crate::error::Error;
 use crate::infrastructure::filesystem::RootRegistry;
 
-pub(super) fn commit_with_hook(
+pub(in crate::infrastructure::filesystem) fn commit_with_hook(
     registry: &RootRegistry,
     cache: &ValidationCache,
     root: LibraryRootId,

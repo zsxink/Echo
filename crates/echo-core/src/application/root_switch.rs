@@ -119,6 +119,7 @@ impl<'a> PrepareLibraryCandidate<'a> {
     /// persistence failure) propagate; the candidate record stays (marked
     /// unavailable, retryable) and the current active root is untouched.
     pub fn prepare(&self, absolute_path: &Path) -> Result<PreparedCandidate, Error> {
+        let _activity = self.deps.activity.enter()?;
         let canonical = absolute_path
             .canonicalize()
             .map_err(|source| Error::io("resolve candidate root", source, absolute_path))?;
@@ -208,7 +209,7 @@ impl<'a> PrepareLibraryCandidate<'a> {
         root_id: LibraryRootId,
         write_capable: bool,
     ) -> (Option<ContinuationReport>, bool) {
-        let Ok(_activity) = super::sync::local_activity() else {
+        let Ok(_activity) = self.deps.activity.enter() else {
             return (None, true);
         };
         if !write_capable
@@ -334,6 +335,12 @@ impl<'a> ActivateLibrary<'a> {
     /// - Storage errors from the activation transaction leave the old active
     ///   root intact (the transaction is atomic).
     pub fn activate(&self, candidate: LibraryRootId) -> Result<ActivationOutcome, Error> {
+        // Close before cancelling: scans that have entered but not registered
+        // detect closure immediately after their registration. Re-read every
+        // activation precondition only after the old binding has drained.
+        let closure = self.deps.activity.close()?;
+        let _cancelled_roots = self.supervisor.cancel_all();
+        closure.drain();
         let candidate_root = self
             .roots
             .by_id(candidate)?
@@ -370,7 +377,6 @@ impl<'a> ActivateLibrary<'a> {
         barrier
             .transition(RootSwitchState::QuiesceOldRoot)
             .map_err(|error| to_invariant(&error))?;
-        let _cancelled_roots = self.supervisor.cancel_all();
 
         // CommitActivation: one SQLite transaction flips the unique active
         // root and advances the persisted root epoch (design §5.4).

@@ -350,6 +350,23 @@ impl AppServices {
         }
     }
 
+    /// Close admission, stop producers, and drain admitted local writes before exit.
+    /// Runs on a worker thread so native pickers can keep servicing the UI loop.
+    /// # Errors
+    /// Refuses a concurrent closure and propagates producer shutdown errors.
+    pub fn shutdown(
+        &self,
+        stop_producers: impl FnOnce() -> Result<(), Error>,
+    ) -> Result<(), Error> {
+        let closure = self.deps.activity.close()?;
+        let _cancelled = self.supervisor.cancel_all();
+        let stopped = stop_producers();
+        closure.drain();
+        stopped?;
+        closure.seal();
+        Ok(())
+    }
+
     /// The root registry owned by this composition root.
     #[must_use]
     pub const fn registry(&self) -> &RootRegistry {
@@ -373,8 +390,10 @@ impl AppServices {
 
     /// Reject a destructive op before it reaches core when the gate forbids
     /// writes (no active root, or a read-only journal outcome).
-    fn guard_writes(&self) -> Result<std::sync::RwLockReadGuard<'static, ()>, Error> {
-        let activity = echo_core::application::sync::local_activity()?;
+    fn guard_writes(
+        &self,
+    ) -> Result<echo_core::application::local_activity::ActivityLease<'_>, Error> {
+        let activity = self.deps.activity.enter()?;
         let active_root = self.deps.roots.active_root()?;
         if let Some(root) = active_root {
             if self.deps.roots.replica_enrollment_pending(root.id())? {

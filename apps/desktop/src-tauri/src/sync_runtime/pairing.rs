@@ -5,10 +5,7 @@ use super::*;
 
 impl SyncRuntime {
     pub fn peer_start(&self) -> Result<SyncStatus, SyncRuntimeError> {
-        let _transition = self
-            .transition
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let _transition = self.running_transition()?;
         self.start_peer_locked()
     }
 
@@ -21,10 +18,7 @@ impl SyncRuntime {
     /// start a session: the binding alone never grants permission to listen or
     /// connect again.
     pub fn restore_saved_session(&self) -> Result<Option<SyncStatus>, SyncRuntimeError> {
-        let _transition = self
-            .transition
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let _transition = self.running_transition()?;
         self.restore_locked()
     }
 
@@ -32,6 +26,7 @@ impl SyncRuntime {
     /// transitions. Used by the root handoff after activation committed and by
     /// the automatic retry worker, so neither re-acquires the transition lock.
     pub(super) fn restore_locked(&self) -> Result<Option<SyncStatus>, SyncRuntimeError> {
+        self.ensure_running()?;
         let Some(configuration) = self
             .database
             .current_sync_configuration()
@@ -66,10 +61,7 @@ impl SyncRuntime {
     /// Stop the current LAN session and remove this library's pairing while
     /// retaining its local catalog and media.
     pub fn leave_sync(&self) -> Result<SyncStatus, SyncRuntimeError> {
-        let _transition = self
-            .transition
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let _transition = self.running_transition()?;
         let root = self.active_root()?;
         self.cancel_restore_retry();
         self.persist_session_intent(SyncSessionIntent::Stopped)?;
@@ -88,10 +80,7 @@ impl SyncRuntime {
     pub fn recover_restored_host(
         &self,
     ) -> Result<echo_core::application::ports::HostRecoveryArchive, SyncRuntimeError> {
-        let _transition = self
-            .transition
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let _transition = self.running_transition()?;
         let configuration = self
             .database
             .current_sync_configuration()

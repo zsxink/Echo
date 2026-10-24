@@ -33,10 +33,7 @@ impl SyncRuntime {
     /// persisted lifecycle choice untouched: a stop here is a handoff step, not
     /// a user stop of this library.
     pub fn begin_root_handoff(&self) -> Result<RootHandoff, SyncRuntimeError> {
-        let _transition = self
-            .transition
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let _transition = self.running_transition()?;
         let (previous_root, previous_enabled, previous_role, previous_address) = {
             let inner = self
                 .inner
@@ -70,10 +67,7 @@ impl SyncRuntime {
         &self,
         root: LibraryRootId,
     ) -> Result<SyncStatus, SyncRuntimeError> {
-        let _transition = self
-            .transition
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let _transition = self.running_transition()?;
         // Activation already selected the context inside its transaction; this
         // re-select is an idempotent guard for a handoff that skipped it.
         self.database
@@ -103,10 +97,7 @@ impl SyncRuntime {
         &self,
         handoff: &RootHandoff,
     ) -> Result<SyncStatus, SyncRuntimeError> {
-        let _transition = self
-            .transition
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let _transition = self.running_transition()?;
         let Some(previous_root) = handoff.root else {
             return Ok(self.status());
         };

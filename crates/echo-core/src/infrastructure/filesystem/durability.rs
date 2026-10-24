@@ -7,7 +7,7 @@ use validation_cache::DocumentKind;
 pub(super) use validation_cache::ValidationCache;
 mod transaction;
 pub(super) use assets::{read_asset, write_asset};
-use transaction::commit_with_hook;
+pub(super) use transaction::commit_with_hook;
 mod io;
 #[cfg(test)]
 mod tests;

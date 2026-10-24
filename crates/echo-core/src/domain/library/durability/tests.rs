@@ -10,6 +10,9 @@ use crate::domain::{
 use serde_json::json;
 
 mod change_set;
+mod confirmations;
+mod portable_fields;
+mod publications;
 mod receipts;
 
 fn namespace(epoch: u64) -> StateNamespace {

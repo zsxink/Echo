@@ -460,3 +460,5 @@ mod validation_cache;
 mod fences;
 
 mod scoped_state;
+
+mod gc_performance;

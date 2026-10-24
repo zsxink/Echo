@@ -31,6 +31,7 @@ pub fn finalize_active_root(
     deps: &ScanDeps,
     trash: &dyn SystemTrashPort,
 ) -> Result<Option<TrashFinalizationReport>, Error> {
+    let _activity = deps.activity.enter()?;
     let Some(root) = deps.roots.active_root()? else {
         return Ok(None);
     };
@@ -54,6 +55,19 @@ impl TrashFinalizationWorker {
     /// the worker thread.
     pub fn start(deps: Arc<ScanDeps>, trash: Arc<dyn SystemTrashPort>) -> Result<Self, Error> {
         Self::start_with_interval(deps, trash, FINALIZATION_POLL_INTERVAL)
+    }
+
+    /// Stop scheduling and join the worker after admission has closed.
+    pub fn stop(&self) {
+        let _ = self.stop.send(());
+        let handle = self
+            .join
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        if let Some(handle) = handle {
+            let _ = handle.join();
+        }
     }
 
     fn start_with_interval(
@@ -83,14 +97,7 @@ impl TrashFinalizationWorker {
 
 impl Drop for TrashFinalizationWorker {
     fn drop(&mut self) {
-        let _ = self.stop.send(());
-        let mut join = self
-            .join
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(handle) = join.take() {
-            let _ = handle.join();
-        }
+        self.stop();
     }
 }
 

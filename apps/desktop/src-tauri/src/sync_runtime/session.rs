@@ -6,10 +6,7 @@ use super::*;
 impl SyncRuntime {
     pub fn host_start(&self, address: &str) -> Result<SyncStatus, SyncRuntimeError> {
         let address = selected_lan_address(address)?;
-        let _transition = self
-            .transition
-            .lock()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
+        let _transition = self.running_transition()?;
         self.start_host_locked(address)
     }
 
@@ -17,6 +14,7 @@ impl SyncRuntime {
         &self,
         address: IpAddr,
     ) -> Result<SyncStatus, SyncRuntimeError> {
+        self.ensure_running()?;
         if self.status().enabled {
             return Err(SyncRuntimeError::Busy);
         }

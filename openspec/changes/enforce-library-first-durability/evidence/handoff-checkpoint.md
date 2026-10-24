@@ -1,4 +1,89 @@
-# 2026-10-24 收尾交接：confirmed.v2 与墓碑回归已闭环（最新，优先于后文）
+# 2026-10-24 18/67：3.1 完成，性能优化实施中（最新）
+
+用户随后明确要求“继续去完成任务”，停止状态已解除。当前 **18/67**，
+3.1 已勾选；逐项结果见 [生命周期验收](lifecycle-acceptance-20261024.md)。
+退出 handoff 回退重启 P1、恢复重试锁竞争 P2 均经有效 RED/GREEN 与串行 Sol 复审。
+真实 SQLite 激活回滚、queued enter、跨进程许可、长 Unicode 根及恢复/重试均通过。
+主线程 Core 814/0/1 ignored 及全部集成、Desktop 429/429；最新 native 短组
+130/0/1 ignored/1 显式过滤 513；workspace all-targets/all-features check/Clippy、
+fmt/scale/strict/diff 通过，测试整理后的专项再次通过。无提交/推送/归档/PR。
+原样 513、完整 governance 和三平台原生认证仍未完成。
+
+正在继续 3.7 性能工作：串行设计已完成，依据原交接及当前源码重新采样，
+原样 513 基线构建 6.20 秒、120 秒上限内未完成，整组回收；
+[性能验收清单](performance-20261024.md) 记录实际状态。design D2.1 先固化边界，
+实现代理负责 GC 阶段目录去重与 enrich 索引，保留全部文件 sync。
+**上述全量通过属于 3.1 检查点，性能 WIP 修改后必须重新验证，不能冒充当前树全绿。**
+有界 scan/import（含 reservation）、10k 测量及完整 513 仍待完成，3.7 / 3.5 未勾选。
+
+---
+
+# 2026-10-24 用户要求停止：3.1 生命周期 WIP 交接（历史）
+
+用户已明确要求停止任务并做交接。已停止新增实现/验证、结束实现代理，主线程与代理
+均核实没有存活 Cargo/rustc/测试进程；不应继续等待任何历史 session。
+
+详见 [生命周期完整交接](lifecycle-handoff-20261024.md)。当前分支
+`codex/issue-72-library-first-durability`，改动未提交、未推送、未归档、未创建 PR；
+tasks 仍为 **17/67**，2.3 / 3.1 整项未勾选。已验证子步骤保留在
+[契约清单](contracts-20261024.md)，没有把部分实现勾成整项。
+
+当前树已有实例 LocalActivity、generation、防嵌套死锁、activation 排空与重读、
+扫描取消竞态、Desktop 各入口装配及 native 后台单次 shutdown 的 WIP；真实生命周期
+组曾 **7 passed**，workspace all-targets check 曾通过。**这些结果早于最后扫描
+RED/恢复及部分新增回归，不代表当前树最终全量通过。**
+
+最后一次真实扫描 RED 为临时撤掉取消重查后复现 `cancellation during final commit
+was lost`；脚本 finally 已恢复修复代码，主线程只读核实，**恢复后未再跑 GREEN**。
+generation 的 Core 专项、新跨进程 permit 测试、native shutdown 两项单测尚未执行；
+最后新增后未再 fmt/check/scale/Clippy。下次先完成这些、串行独立审查，再全量验证。
+具体命令/日志和 producer 停止的审查边界见完整交接。
+
+下面 Core 803/0/1、Desktop 423/0 与 workspace Clippy 是 **3.1 改动之前的契约组**
+结果，不是当前生命周期树的最终验证。原未跟踪的性能交接文档已保留。原样 513、
+governance、workspace/all-features 测试和三平台原生验收仍未完成。
+
+---
+
+# 2026-10-24 后续交接：资源确认与 publication.v2 契约补齐（历史）
+
+**继续实施中的状态（优先于下面的契约组验证）：** 3.1 生命周期实现正在进行，
+实例 LocalActivity 与各层既有调用点已有 WIP 改动，生产 activation/正常退出和
+真实目录提交时序验收尚未收尾。下面的 803/423 及 workspace Clippy 是这一组改动
+之前的契约组结果，不能视为当前生命周期 WIP 树已通过。当前仍为 17/67；3.1 未勾选。
+设计决策已补入 design D3.1，后续必须先将工作树恢复可编译并完成真实 RED/GREEN、
+串行独立审查和主线程验证，再更新此段状态。
+
+- 分支仍为 `codex/issue-72-library-first-durability`；本轮代码/测试/证据尚未提交，
+  未推送、未归档、未创建 PR。保留原未跟踪的 `性能优化交接文档-2026-10-24.md`。
+- 子代理逐个派发，主线程编辑。已验证子步骤逐项勾选于
+  [契约补充清单](contracts-20261024.md)；tasks 仍为 **17/67**，2.3 整项未勾选。
+- 真实 host 带音频/歌词的确认此前误保留 v1：Domain validator 把 LAN `content_hash`
+  资源当作 Domain `digest` 解码。已先复现失败，再显式转换，保留原始正文和摘要。
+  补齐 scoped 同 seq、缺 ledger、真实 host typed alias、base/前驱/原文及严格负例。
+- 新增严格 `echo.sync.resource-publication.v2`，校验原 journal 字符串、内外
+  root/operation/completed、typed owner、资源声明集合版本、实际/旧/staging 位置、
+  摘要/长度/MIME 和必填字段。真实 prepare/save/finish exporter 往返通过。历史
+  v1/未知 schema 继续保留证据，不自动投影资源或授权联网，不补造主机 object_version。
+- v1 显式 null 墓碑也复现恢复失败并修复：只有匹配独立验证的 ledger 删除事实时
+  才转换为 SQL NULL；连续两次重试通过。v2 marker 墓碑回归继续保留。
+- populated portable v1/v2/commit 字段与关系矩阵通过；目标 manifest v3 正向往返
+  及完整围栏尚未实现，不能用“拒绝未知 v3”测试替代，2.3 / 8.2 继续未完成。
+- 主线程最终实际验证：Core **803 passed / 0 failed / 1 ignored**（45.29 秒）、
+  Desktop **423 passed / 0 failed**（2.41 秒）、workspace all-targets/all-features
+  Clippy、fmt、scale（白名单未增长）、OpenSpec strict、diff 检查通过。
+  日志分别为 `/tmp/echo-library-contracts-core-20261024.log` 和
+  `/tmp/echo-library-contracts-desktop-20261024.log`。最终 Sol 独立审查无可操作问题。
+  本轮未跑原样 513、workspace/all-features 测试、governance、三平台原生验收。
+- 3.1 新核实的生产缺口：切库 cancel_all 后不等待本地扫描结束，正常退出未排空
+  本地扫描/目录提交；现有 LOCAL_ACTIVITY 只覆盖部分共享租约。下次先设计并接入
+  “关闭准入→取消→排空安全边界→activation/exit”，核对嵌套租约及 actor 锁顺序，
+  不直接塞独占锁制造死锁。该部分本轮只分析，未修改；真实 permit 生命周期与长路径
+  验收仍欠缺，3.1 未完成。4.2 仍是原规划 SQL 事务提交，未替换成唯一纯投影。
+
+---
+
+# 2026-10-24 收尾交接：confirmed.v2 与墓碑回归已闭环（历史）
 
 ## 当前状态
 

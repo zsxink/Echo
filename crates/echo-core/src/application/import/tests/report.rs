@@ -273,6 +273,7 @@ fn real_fs_deps(
     database: &MemoryDatabase,
 ) -> ScanDeps {
     ScanDeps {
+        activity: Arc::new(crate::application::local_activity::LocalActivity::default()),
         history: None,
         roots: Arc::new(database.clone()),
         songs: Arc::new(database.clone()),
@@ -451,8 +452,7 @@ fn lrc_sidecar_is_copied_under_the_audio_target_and_result_reports_it() {
     // The committed song carries a Sidecar candidate (the scan parse
     // picks the published `.lrc` up through the shared pipeline).
     let candidates =
-        crate::application::ports::LyricsRepository::candidates(&g.fixture.database, song)
-            .unwrap();
+        crate::application::ports::LyricsRepository::candidates(&g.fixture.database, song).unwrap();
     assert!(
         candidates
             .iter()
@@ -489,8 +489,7 @@ fn embedded_lyrics_still_win_over_the_imported_sidecar() {
     // Both sources are stored; the effective one is ELSE EMBEDDED
     // (spec: 扫描后的歌曲仅在没有内嵌歌词时使用该侧车歌词).
     let candidates =
-        crate::application::ports::LyricsRepository::candidates(&g.fixture.database, song)
-            .unwrap();
+        crate::application::ports::LyricsRepository::candidates(&g.fixture.database, song).unwrap();
     let selected = select_effective_lyrics(&candidates).expect("effective lyrics");
     assert_eq!(
         selected.source(),
@@ -551,8 +550,7 @@ fn lrc_target_pairs_with_a_numbered_audio_target() {
         b"incumbent"
     );
     let candidates =
-        crate::application::ports::LyricsRepository::candidates(&g.fixture.database, song)
-            .unwrap();
+        crate::application::ports::LyricsRepository::candidates(&g.fixture.database, song).unwrap();
     assert!(
         candidates
             .iter()

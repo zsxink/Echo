@@ -97,9 +97,36 @@ SQLite 中 `applied_library_operations` / 库投影水位通过**新增顺序迁
 
 **批量提交与链压缩。** 首次扫描与批量导入 MUST 把同一逻辑集合合并为有界数量的提交（例如按扫描批次分组），而不是每首歌一次提交；单次编辑不得触发三次以上全链扫描。目录链 MUST 有明确的压缩策略：当材料化检查点已覆盖某段历史且不再被候选、快照、冲突、删除意图或未完成发布引用时，先刷盘带链头摘要的覆盖清单，再移除已被覆盖的 journal，使链长度与活跃窗口而非总历史成正比。超过安全上限时必须拒绝写入并报告，不得静默降级或丢弃未投影提交。
 
+#### D2.1 GC 阶段内刷盘去重与状态合并
+
+优化按阶段实施，不能跨 prepared、marker、材料化、coverage 与 GC 合并必要屏障，
+不改变保存成功时点，也不跳过完整读取、BLAKE3、解码或当前库归属校验。
+首轮保留 GC 对 coverage 和每个 receipt 的文件 `sync_all`：先完成全部文件证明，
+收集其唯一祖先目录，在无 create/rename/delete 的 GC 证明阶段按子目录到祖先逐一
+sync；全部成功后才允许第一次 journal 删除。删除阶段完成后对 transactions 目录
+及其祖先统一 sync；中途失败返回错误，后续恢复重新证明并幂等清理。
+
+目录集合仅属于当前阶段，不跨调用、错误或重试保存。`publish` 的 exclusive 路径
+在目录 sync 后还会 unlink temporary，后续 receipt 也会修改共享祖先，因此不能把
+成功返回当作所有目录持续有效的证明。本轮不引入文件证明缓存。后续若复用同调用
+文件 sync，必须绑定 root、seq/head、目标原生文件身份及精确内容，证明目标未被
+替换或写入；无法证明就重新刷盘。不得只凭同名文件或相同摘要免除刷盘。
+
+故障 hook 对应实际发生的 native 边界；目录去重后 hook 数量可减少，但每个必要
+文件及唯一目录均须有失败注入点。后面的 receipt 文件或任一目录证明失败，必须
+保留全部 covered journal，不能以“较早的 receipt 已成功”为由提前删除。
+
+同步状态合并可以建立 `(StateKind, id) → Vec 位置` 索引，以消除逐项线性查找；
+保留初始 first-match、既有 Vec 顺序及新键追加顺序，不改变 canonical digest。
+这一步不缓存历史导出，也不改变 export 的取数范围。后续有界扫描/导入、引用图
+GC、checkpoint 增长上限及 10k 测量仍按 3.5/3.7 验收，局部优化不代表整项完成。
+
 **本地目录与同步身份。** `domain::library::LibraryId` 是 `manifest.json`、`LibraryBatch`、覆盖检查点和 SQLite 投影水位共同使用的本地目录身份；`domain::sync::LibraryId` 是 `SyncBinding` 内的主机同步库身份，须与 authority、epoch 一起比较。两者独立生成，不能比较 UUID 相等，也不能改写既有 manifest 或历史记录来强制相同。目录提交/重放仍验证本地 manifest、batch、检查点、链和 SQLite watermark 的归属；实时网络入口仍须验证完整当前 `SyncBinding`。envelope 与 state 内的旧 binding、原 mutation 和新 binding 映射是历史证据，按原文保存；其中私有 state 保留为 `RequiresStateRecovery`，不会授权联网。通用 JSON 的 `library` / `library_id` 字段名不能作为跨身份域的递归归属判据。
 
-当前 state 仍是按 `(StateKind, id)` 覆盖的未类型化 payload；完整 typed state 契约（任务 2.1）和显式 adoption（任务 7.7）尚未完成。后续必须定义含完整 binding/事件身份的不可变历史命名空间和有类型校验，避免不同 binding 的同 kind/id 历史相互覆盖；取消错误的 ID 相等检查不等于已经解决这些历史保留与授权问题。
+任务 2.1 已引入 typed state key、含完整 binding/事件身份的不可变历史命名空间及校验；
+历史无 typed key 的 payload 仍须保留原文，不能单独授予恢复或联网权限。
+`(StateKind, id)` 合并索引不得改变既有 scoped key 的派生与隔离规则。显式 adoption
+（任务 7.7）仍未完成；取消错误的 ID 相等检查不等于已经完成历史意图接纳与授权。
 
 ### D3. 用例层统一协调，目录与 SQLite 分别适配
 
@@ -119,6 +146,45 @@ Domain 定义带类型的 change set、来源（本地编辑、扫描、主确�
 **只读语义。** 读取记录、清单和资产 MUST NOT 取得排他写锁，也不得因写锁文件不存在而失败：只读卷上的已提交资料必须可浏览。写锁只由写入者在提交、材料化与迁移时取得。
 
 Ports and Adapters 隔离技术；State Machine 表达崩溃恢复；Unit of Work 只保证投影原子；redo journal 解决多文件持久化；Repository 保持读模型。长时间 FS/哈希工作不阻塞 async executor，不跨 await 持有数据库事务。写入许可既串行同库写入也防跨进程旧/新实例并发写；取消、切库、退出都可追踪并等待安全边界。
+
+#### D3.1 本地工作准入与生命周期排空
+
+3.1 的真实取消、切库和正常退出必须经过同一运行实例的本地活动屏障，不能把
+`cancel_all()` 的置位、测试线程自行 join 或进程最终释放文件锁当作安全边界。
+现有进程级 `LOCAL_ACTIVITY` 读写锁改为显式装配的 `LocalActivity`，由 `ScanDeps`
+与 Desktop recorder、services、provisioner 共享同一实例；独立 runtime/test fixture
+不得相互关闭准入。不新增 ControlPlane/LibraryDurability trait 方法，不改数据库
+schema、目录格式、LAN wire 或 IPC DTO。
+
+屏障使用短暂状态锁和条件变量，状态表达开放、排空和永久关闭。外层租约只在开放
+时进入；同一线程对同一屏障的既有嵌套租约在排空期间仍可完成，避免 writer 等待时
+嵌套 read 的重入死锁。租约不可跨线程移动，最后一个嵌套租约释放才算该操作结束。
+关闭操作不得在自己持共享租约时等待；已经关闭准入时的新独占请求应拒绝，而非
+阻塞到使同步 producer 的 stop/join 无法返回。等待期间不持 SQL、播放器或 FS 写锁。
+
+切库固定为：候选准备完成并释放租约 → 现有同步 handoff → 关闭本地新工作准入 →
+请求取消 → 排空已准入操作 → 重新读取候选、blockers、活动根与 epoch → 激活事务。
+关闭句柄采用 RAII，成功和失败均恢复准入，失败仍由现有 handoff 回退恢复旧 session；
+若正常退出已建立同步启动围栏，回退不得重新启动 session。
+候选准备的扫描前写入、恢复重试/材料化和回收 worker 的活动根解析也必须在租约内。
+扫描注册 token 后重新检查关闭状态，并在最终 missing pass 前重新检查取消；已开始
+的目录批次先到达安全边界，再结束为 Cancelled，不中途强杀持久提交。
+
+正常退出必须保持 UI event loop 可响应：首次 ExitRequested 暂缓退出并只启动一个
+后台 shutdown；该线程内关闭准入、请求取消，通过显式闭包停止外部 producer，等待
+本地工作排空并永久关闭，然后触发原退出码的最终退出。重复请求不得重复 dispatch。
+失败不能标为 Ready 或强制退出。系统 picker 不得持活动租约，picker 返回后重新
+申请准入，确保退出不因等待需要 UI event loop 的 picker 而死锁。
+
+同步退出另有受 transition 锁保护的永久启动围栏：建立围栏后才停止现有 producer，
+启动、恢复、配对及 handoff 回退须在同一 transition 临界区校验围栏，覆盖 Enabled
+持久化及 producer 装配。普通停止不设置此围栏，仍可重启；退出清理失败保留围栏，
+允许再次清理但禁止恢复生产者。等待 transition 的恢复 worker 不得在持该锁时 join。
+
+验证使用真实 SQLite、RootControlPlane 与业务写入，在目录 marker 前后暂停并调用
+生产激活/退出入口；验证旧根/epoch 不提前改变、新工作被拒绝、放行后原操作按同一
+身份完成、失败后旧库恢复准入。补齐深层 Unicode 根、真实 permit 跨进程及独立根
+隔离测试。这部分只保证已明确装配的活动范围，4.2 的全部写入口统一协调仍单独验收。
 
 删除 `echo-desktop` 内自行读 committed DB 再构造 portable 的重复路径；收藏/歌单/统计/编辑迁往 Core，同步 remote_apply 不再直调 raw DB apply；保留低层投影实现但限制为提交协调器内部调用。清理无消费者 materializer 导出、fake、旧成功态测试与“best-effort”注释，不能留下第二条可写入口。
 

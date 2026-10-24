@@ -3,7 +3,9 @@ use super::{invalid, Hook};
 use crate::domain::ids::LibraryRootId;
 use crate::error::Error;
 use crate::infrastructure::filesystem::{portable_migration as portable, RootRegistry};
+use std::collections::BTreeSet;
 use std::io::Write as _;
+use std::path::{Path, PathBuf};
 
 pub(super) fn publish(
     registry: &RootRegistry,
@@ -58,6 +60,26 @@ pub(super) fn flush_existing(
     label: &str,
     hook: &mut Hook<'_>,
 ) -> Result<(), Error> {
+    let path = flush_file(registry, root, relative, label, hook)?;
+    sync_ancestors(
+        registry,
+        root,
+        path.parent()
+            .ok_or_else(|| invalid("missing publication parent"))?,
+        label,
+        hook,
+    )
+}
+
+/// File-only proof for a phase that will flush its complete directory set before
+/// any namespace mutation. This must never replace a publication's own barriers.
+pub(super) fn flush_file(
+    registry: &RootRegistry,
+    root: LibraryRootId,
+    relative: &str,
+    label: &str,
+    hook: &mut Hook<'_>,
+) -> Result<PathBuf, Error> {
     let path = portable::path(registry, root, relative)?;
     // Windows FlushFileBuffers needs a writable handle. Unix can flush the
     // immutable publication through a read-only handle.
@@ -76,15 +98,79 @@ pub(super) fn flush_existing(
     file.sync_all()
         .map_err(|e| Error::io("flush existing durable file", e, &path))?;
     hook(&format!("{label}:file_sync"), 0)?;
-    let path = portable::path(registry, root, relative)?;
-    sync_ancestors(
-        registry,
-        root,
-        path.parent()
-            .ok_or_else(|| invalid("missing publication parent"))?,
-        label,
-        hook,
-    )
+    portable::path(registry, root, relative)
+}
+
+/// Call-local directory proof, valid only while the caller performs no
+/// create/rename/delete. Descendants are synced before their shared ancestors.
+#[derive(Default)]
+pub(super) struct DirectorySyncSet(BTreeSet<PathBuf>);
+
+impl DirectorySyncSet {
+    pub(super) fn include_ancestors(
+        &mut self,
+        registry: &RootRegistry,
+        root: LibraryRootId,
+        parent: &Path,
+    ) -> Result<(), Error> {
+        let base = registry.path_of(root)?;
+        if !parent.starts_with(&base) {
+            return Err(invalid("publication escaped registered root"));
+        }
+        for directory in parent.ancestors() {
+            self.0.insert(directory.to_path_buf());
+            if directory == base {
+                return Ok(());
+            }
+        }
+        Err(invalid("publication escaped registered root"))
+    }
+
+    pub(super) fn sync(
+        self,
+        registry: &RootRegistry,
+        root: LibraryRootId,
+        label: &str,
+        hook: &mut Hook<'_>,
+    ) -> Result<(), Error> {
+        let mut directories: Vec<_> = self.0.into_iter().collect();
+        directories.sort_by(|a, b| {
+            b.components()
+                .count()
+                .cmp(&a.components().count())
+                .then_with(|| a.cmp(b))
+        });
+        for (index, path) in directories.into_iter().enumerate() {
+            // Hooks and filesystem changes must not turn a collected native
+            // path into authority to follow a newly replaced symlink.
+            let base = registry.path_of(root)?;
+            let relative = path
+                .strip_prefix(&base)
+                .map_err(|_| invalid("publication escaped registered root"))?;
+            let checked = if relative.as_os_str().is_empty() {
+                // Resolving any child validates the root itself as well.
+                portable::path(registry, root, "echo")?
+                    .parent()
+                    .ok_or_else(|| invalid("missing registered root"))?
+                    .to_path_buf()
+            } else {
+                portable::path(
+                    registry,
+                    root,
+                    &relative
+                        .to_str()
+                        .ok_or_else(|| invalid("non-UTF8 publication directory"))?
+                        .replace(std::path::MAIN_SEPARATOR, "/"),
+                )?
+            };
+            if checked != path {
+                return Err(invalid("publication root changed during directory proof"));
+            }
+            super::sync_directory(&checked)?;
+            hook(&format!("{label}:directory_sync"), index)?;
+        }
+        Ok(())
+    }
 }
 
 pub(super) fn sync_ancestors(
@@ -108,3 +194,6 @@ pub(super) fn sync_ancestors(
     }
     Err(invalid("publication escaped registered root"))
 }
+
+#[cfg(test)]
+mod tests;

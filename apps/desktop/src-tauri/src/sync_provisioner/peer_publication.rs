@@ -325,7 +325,10 @@ impl NativeSyncProvisioner {
     }
 
     pub(super) fn clear_legacy_replica_media_archive_intent(&self) -> Result<(), SyncRuntimeError> {
-        let _activity = echo_core::application::sync::exclusive_local_activity()
+        let _activity = self
+            .scan_deps
+            .activity
+            .exclusive()
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
         let configuration = self
             .database

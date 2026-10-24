@@ -98,6 +98,7 @@ impl ScanFixture {
         let ids: Arc<dyn crate::application::ports::IdGenerator> = Arc::new(FakeIdGenerator::new());
         let clock_dyn: Arc<dyn crate::application::ports::Clock> = Arc::new(clock.clone());
         let deps = Arc::new(ScanDeps {
+            activity: Arc::new(crate::application::local_activity::LocalActivity::default()),
             history: None,
             roots: Arc::new(database.clone()),
             songs: Arc::new(database.clone()),
