@@ -43,6 +43,11 @@ unicode-casefold = "0.2"
 # the corresponding MSRV. Keep this compatible with Rust 1.88 explicitly.
 blake3 = "=1.8.2"
 rusqlite = { version = "0.32", features = ["backup", "bundled"] }
+# `std::fs::canonicalize` returns verbatim (`\\?\C:\...`) paths on Windows;
+# persisted root records and user-facing display keep the conventional plain
+# form (issue #82). dunce strips the prefix only when the plain form is
+# unambiguous — pure Rust, zero dependencies, no `unsafe`.
+dunce = "1"
 
 # LAN sync adapters stay outside echo-core and are opt-in at the desktop
 # composition boundary. Keep this set compatible with the workspace MSRV 1.88.

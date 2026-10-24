@@ -147,10 +147,13 @@ pub(super) fn bootstrap_main() {
                 // instead of a state lookup.
                 app.manage(Arc::clone(&startup));
 
-                // Structured tracing + panic hook (task 7.8, design §17): install
-                // the rolling-file logger and the local crash diagnostic before
-                // anything else so all startup work is observable. The diagnostics
-                // directory is `app_data_dir/logs`; logs stay local, never uploaded.
+                // Structured tracing + panic hook (task 7.8, design §17):
+                // install the date-partitioned rolling-file logger (daily
+                // files, 7-day retention, byte caps — issue #38) and the local
+                // crash diagnostic before anything else so all startup work is
+                // observable. Installing also runs the startup retention pass
+                // (stale + legacy-name cleanup). The diagnostics directory is
+                // `app_data_dir/logs`; logs stay local, never uploaded.
                 let app_data = app.path().app_data_dir()?;
                 let diagnostics = echo_desktop::platform::diagnostics::Diagnostics::new(app_data);
                 let _installed = diagnostics.install_logger();

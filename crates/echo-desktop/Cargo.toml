@@ -16,6 +16,10 @@ uuid = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+# Local dates and the local-timezone log timer (issue #38). `time` cannot read
+# the local offset in multi-threaded Unix processes, so `chrono` is the only
+# already-locked-in crate that serves all three desktop platforms.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # Dynamic loading of the vendored libmpv (macOS dylib in the app bundle). The
 # echo-desktop shell owns this platform bridge; echo-core never sees it.
 libloading = { workspace = true }

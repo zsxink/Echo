@@ -223,6 +223,7 @@
 | IL-R10-S01 | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 | 切歌后歌词起点重新对齐 | fix-lyrics-start-offset-remeasure 1.1, 2.1 | React/E2E | `tests/scenarios/IL-R10-S01.yaml` | `pnpm verify:scenario -- IL-R10-S01` |
 | IL-R10-S02 | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 | 信息块高度事后变化时重算偏移 | fix-lyrics-start-offset-remeasure 1.1, 2.1 | React/E2E | `tests/scenarios/IL-R10-S02.yaml` | `pnpm verify:scenario -- IL-R10-S02` |
 | IL-R10-S03 | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 | 窗口缩放后重算偏移 | fix-lyrics-start-offset-remeasure 1.1, 2.1 | React/E2E | `tests/scenarios/IL-R10-S03.yaml` | `pnpm verify:scenario -- IL-R10-S03` |
+| IL-R10-S04 | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 | 旧偏移尚未重新布局时重算偏移 | fix-lyrics-offset-stale-measurement 1.1, 1.3 | React/E2E | `tests/scenarios/IL-R10-S04.yaml` | `pnpm verify:scenario -- IL-R10-S04` |
 
 ## library-experience
 

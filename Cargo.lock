@@ -975,6 +975,7 @@ name = "echo-core"
 version = "0.3.1"
 dependencies = [
  "blake3",
+ "dunce",
  "fs2",
  "image",
  "lofty",
@@ -998,6 +999,7 @@ dependencies = [
 name = "echo-desktop"
 version = "0.3.1"
 dependencies = [
+ "chrono",
  "echo-core",
  "fs2",
  "libloading",

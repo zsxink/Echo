@@ -725,6 +725,24 @@ fn choose_library_root_prepares_and_activates_a_directory() {
         "the picked root supersedes the default"
     );
     assert_eq!(active.id().to_string(), status.active_root);
+    // Issue #82: the record and the status DTO the settings pages render must
+    // carry the plain, user-visible path — never the verbatim `\\?\` spelling
+    // that `std::fs::canonicalize` produces on Windows.
+    let status = app.library_status().expect("status");
+    assert_eq!(
+        status.active_root_path.as_deref(),
+        Some(active.absolute_path().to_string_lossy().as_ref()),
+        "the status DTO mirrors the persisted record path"
+    );
+    #[cfg(windows)]
+    assert!(
+        !active
+            .absolute_path()
+            .to_string_lossy()
+            .starts_with(r"\\?\"),
+        "persisted root path must be plain: {:?}",
+        active.absolute_path()
+    );
 }
 
 #[test]
