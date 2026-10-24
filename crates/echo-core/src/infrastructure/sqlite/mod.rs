@@ -41,9 +41,7 @@ use crate::domain::entities::{
     LibraryRoot, LyricsCandidate, LyricsSource, MediaDiagnostic, PlaylistMember, Song,
     SongAvailability,
 };
-use crate::domain::ids::{
-    LibraryRootId, OperationId, PlaybackSessionId, PlaylistId, RelativeMediaPath, SongId,
-};
+use crate::domain::ids::{LibraryRootId, OperationId, PlaylistId, RelativeMediaPath, SongId};
 use crate::domain::state::scan::{ScanProgress, ScanState};
 use crate::domain::text::{normalized_key, playlist_name_key};
 use crate::error::{Error, Subject};
@@ -54,6 +52,7 @@ pub(crate) mod conversion;
 pub(crate) mod device_state;
 pub(crate) mod durability_backfill;
 pub(crate) mod durability_projection;
+mod local_library_edit;
 pub(crate) mod query;
 pub(crate) mod statements;
 pub(crate) mod support;

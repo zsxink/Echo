@@ -1,5 +1,8 @@
 # 2.3 confirmed 与 publication 契约补充
 
+> 本文保留 2026-10-24 当次结果；其中“v3 尚未实现、2.3 未勾选”为历史状态。
+> 2026-10-25 已补齐 v3 及专项复核并勾选 2.3，见 [开发进度复核](progress-closeout-20261025.md)。
+
 本轮子代理严格逐个派发：Luna 只读定位 → Sol publication 分析 → Sol 独立审查 →
 Luna portable 字段核对 → Sol 最终审查。生产代码与测试由主线程编辑。
 

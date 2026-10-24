@@ -3,16 +3,11 @@ fn playback_sessions_are_idempotent_and_writer_allows_concurrent_reads() {
     let (_directory, database, root) = database();
     let song = song(root, "play.flac", "play", "artist");
     SongRepository::upsert(&database, &song).expect("song");
+    let control = playback_fixture::directory(&database, root);
     let session = PlaybackSessionId::new();
-    assert!(database
-        .record_playback(session, song.id())
-        .expect("first play"));
-    assert!(!database
-        .record_playback(session, song.id())
-        .expect("duplicate play"));
-    assert!(database
-        .record_playback(PlaybackSessionId::new(), song.id())
-        .expect("new session"));
+    assert!(playback_fixture::record(&database, &control, session, song.id()));
+    assert!(!playback_fixture::record(&database, &control, session, song.id()));
+    assert!(playback_fixture::record(&database, &control, PlaybackSessionId::new(), song.id()));
     assert_eq!(
         SongRepository::by_id(&database, song.id())
             .expect("song")
@@ -29,12 +24,11 @@ fn playback_sessions_are_idempotent_and_writer_allows_concurrent_reads() {
     let database = Arc::new(database);
     let writer = {
         let database = Arc::clone(&database);
+        let control = control.clone();
         let song_id = song.id();
         std::thread::spawn(move || {
             for round in 0..40u64 {
-                database
-                    .record_playback(PlaybackSessionId::new(), song_id)
-                    .expect("concurrent record");
+                assert!(playback_fixture::record(&database, &control, PlaybackSessionId::new(), song_id));
                 SongRepository::set_favorite(&*database, song_id, round % 2 == 0)
                     .expect("concurrent favorite");
             }
@@ -73,17 +67,9 @@ fn playback_sessions_are_idempotent_and_writer_allows_concurrent_reads() {
         .device_play_counts(song.id())
         .expect("device buckets");
     assert_eq!(buckets.values().copied().sum::<u64>(), 42);
-    let mutation_count = database
-        .with_reader(|connection| {
-            connection
-                .query_row(
-                    "SELECT COUNT(*) FROM sync_mutations WHERE object_type = 'play-stats' AND object_uuid = ?1",
-                    params![song.id().to_string()],
-                    |row| row.get::<_, i64>(0),
-                )
-                .map_err(super::support::storage)
-        })
-        .expect("play-stat mutations");
+    let mutation_count = playback_fixture::mutations(&control, root).into_iter()
+        .filter(|candidate| candidate.object == crate::domain::sync::ObjectKey::PlayStats(song.id()))
+        .count();
     assert_eq!(
         mutation_count, 42,
         "each unique play is captured in its commit transaction"

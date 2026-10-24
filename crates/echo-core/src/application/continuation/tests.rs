@@ -41,6 +41,7 @@ fn favorite_record(song_uuid: uuid::Uuid, is_favorite: bool) -> PortableRecord {
         updated_by_device_id: DeviceId::new(),
         hlc: HLC,
         is_favorite,
+        favorited_at: None,
     })
 }
 

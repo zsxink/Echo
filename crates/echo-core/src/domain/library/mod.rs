@@ -50,7 +50,7 @@ pub const RECORDS_ROOT: &str = "echo/records";
 pub const STAGING_ROOT: &str = "echo/tmp";
 
 /// Current format version for [`LibraryManifest`].
-pub const CURRENT_FORMAT_VERSION: u64 = 2;
+pub const CURRENT_FORMAT_VERSION: u64 = 3;
 
 /// Maximum depth for object record paths inside `echo/records/<kind>/` to
 /// prevent pathological directory nesting.  The real layout is at most

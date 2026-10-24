@@ -87,12 +87,11 @@ fn recording_a_play_enqueues_a_complete_play_stats_record_the_host_accepts() {
     let binding = host_binding(&database, root);
     let song = song(root, "stats.flac", "Stats", "Artist");
     SongRepository::upsert(&database, &song).expect("song");
+    let control = playback_fixture::directory(&database, root);
     let session = PlaybackSessionId::new();
-    assert!(database
-        .record_playback(session, song.id())
-        .expect("record play"));
+    assert!(playback_fixture::record(&database, &control, session, song.id()));
 
-    let pending = database.pending_local_mutations(50).expect("pending queue");
+    let pending = playback_fixture::mutations(&control, root);
     let stats = pending
         .iter()
         .find(|candidate| matches!(candidate.object, ObjectKey::PlayStats(_)))
@@ -139,8 +138,11 @@ fn recording_a_play_enqueues_a_complete_play_stats_record_the_host_accepts() {
         })
         .unwrap();
 
-    // End-to-end: draining the queue rejects nothing.
+    // Submit the exact saved body, not a candidate regenerated from SQL.
     drain_local_queue(&database, binding);
+    let staged = database.stage_confirmation(binding, stats).expect("saved stats accepted");
+    let checkpoint = staged.checkpoint.expect("host accepts the complete saved stats");
+    database.mark_published(checkpoint).unwrap();
 }
 
 #[test]

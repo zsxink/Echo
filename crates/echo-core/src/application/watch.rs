@@ -33,6 +33,10 @@ use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath, Revision
 use crate::domain::state::OperationState;
 use crate::error::Error;
 
+#[cfg(test)]
+#[path = "watch/durability_tests.rs"]
+mod durability_tests;
+
 fn wall_now_ms(clock: &dyn crate::application::ports::Clock) -> u64 {
     clock
         .now_wall()
@@ -389,7 +393,24 @@ impl WatchCoordinator {
             let mut moved = song;
             moved.relink(to.clone());
             moved.restore_available();
-            self.deps.songs.upsert(&moved)?;
+            let resources = vec![crate::domain::library::durability::DurableResource {
+                relative_path: to.display().to_owned(),
+                content_hash: hash,
+                byte_length: self.deps.fs.file_meta(root, to)?.size,
+            }];
+            let projected = moved.clone();
+            crate::application::scan::durable::commit_song(
+                &self.deps,
+                &moved,
+                self.deps.ids.new_operation_id(),
+                crate::domain::library::durability::ChangeOrigin::Scan,
+                resources,
+                || {
+                    self.deps
+                        .uow
+                        .with_tx(Box::new(move |tx| tx.upsert_song(&projected)))
+                },
+            )?;
             return Ok(EventOutcome::Applied {
                 song: moved.id(),
                 created: false,
@@ -463,24 +484,39 @@ impl WatchCoordinator {
         let resources = crate::application::scan_resources::verified_song_resources(
             &self.deps, root, parsed, true,
         )?;
-        self.deps
-            .uow
-            .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
-                tx.set_song_file_resources(&song, &resources)?;
-                tx.upsert_song(&song)?;
-                match embedded {
-                    Some(candidate) => tx.set_lyrics_candidate(song.id(), &candidate)?,
-                    None => tx.clear_lyrics_candidate(song.id(), LyricsSource::Embedded)?,
-                }
-                match sidecar {
-                    Some(candidate) => tx.set_lyrics_candidate(song.id(), &candidate)?,
-                    None => tx.clear_lyrics_candidate(song.id(), LyricsSource::Sidecar)?,
-                }
-                if let Some(cover) = cover {
-                    tx.attach_cover(song.id(), &cover)?;
-                }
-                Ok(())
-            }))
+        let durable_resources = vec![crate::domain::library::durability::DurableResource {
+            relative_path: song.path().display().to_owned(),
+            content_hash: parsed.file.hash.clone(),
+            byte_length: parsed.file.size,
+        }];
+        let entity = song.clone();
+        crate::application::scan::durable::commit_song(
+            &self.deps,
+            &entity,
+            self.deps.ids.new_operation_id(),
+            crate::domain::library::durability::ChangeOrigin::Scan,
+            durable_resources,
+            || {
+                self.deps
+                    .uow
+                    .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
+                        tx.set_song_file_resources(&song, &resources)?;
+                        tx.upsert_song(&song)?;
+                        match embedded {
+                            Some(candidate) => tx.set_lyrics_candidate(song.id(), &candidate)?,
+                            None => tx.clear_lyrics_candidate(song.id(), LyricsSource::Embedded)?,
+                        }
+                        match sidecar {
+                            Some(candidate) => tx.set_lyrics_candidate(song.id(), &candidate)?,
+                            None => tx.clear_lyrics_candidate(song.id(), LyricsSource::Sidecar)?,
+                        }
+                        if let Some(cover) = cover {
+                            tx.attach_cover(song.id(), &cover)?;
+                        }
+                        Ok(())
+                    }))
+            },
+        )
     }
 }
 

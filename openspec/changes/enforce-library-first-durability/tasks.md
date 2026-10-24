@@ -14,9 +14,9 @@
 
 - [x] 2.1 新增 typed change set、来源、预期版本、完整 after-image、资源声明、操作身份、本库提交序列/前驱摘要及结果状态模型；验证不合法跨库/跨类型/重复目标/不完整依赖被拒绝，Domain 无 FS/SQLite/网络依赖（LD-01/02/10）。
 - [x] 2.2 增加聚焦的目录提交/读取/恢复与投影端口，设计可失败 fake，并明确旧 SQLite UoW 只投影；保留 `ControlPlanePort::durability()` 能力访问器，删除 `ControlPlanePort` 上指向同一实现的五个转发方法（`commit_library_batch`、`recover_library_batches`、`library_operation_status`、`write_library_asset`、`read_library_asset`），调用方统一经 `durability()` 取 `LibraryDurabilityPort`；验证 `ControlPlanePort` 方法数不高于既有基线且规模白名单不因本 change 扩大（LD-10）。
-- [ ] 2.3 扩展新协议 portable 用户资料字段，包含歌单创建/成员加入时间、资源原件引用及必要关系；分别定义 confirmed 完整 payload、pending/receipt、实际受管资源位置，避免新业务值继承旧确认收据；用新协议 round-trip、缺字段与未知格式测试验证，并确认支持的旧格式可读取且读取不回写或修复历史记录（LD-03/07/08/09）。
+- [x] 2.3 扩展新协议 portable 用户资料字段，包含歌单创建/成员加入时间、资源原件引用及必要关系；分别定义 confirmed 完整 payload、pending/receipt、实际受管资源位置，避免新业务值继承旧确认收据；用新协议 round-trip、缺字段与未知格式测试验证，并确认支持的旧格式可读取且读取不回写或修复历史记录（LD-03/07/08/09）。
 
-  已验证子步骤及时勾选于 [契约补充清单](evidence/contracts-20261024.md)：完整 confirmed 资源/alias/base/前驱与原文、scoped exporter、publication.v2 严格正文及实际 owner/声明版本位置、历史 v1 null 墓碑、populated v1/v2 portable 矩阵。目标新协议正向往返尚未完成，故整项仍未勾选；该旧格式矩阵仅验证读取兼容，不要求升级或回填旧音乐库。
+  验证：2026-10-25 核对 manifest v3/envelope v2 独立版本、完整字段往返、缺省/未知格式及旧格式无改写；补齐 [契约补充清单](evidence/contracts-20261024.md) 当时缺少的 v3 正向往返与围栏。专项在仅排除缺失导入测试模块声明的临时副本实际通过，生产实现未改；原工作区 E0583 与 governance 阻塞仍保留。范围、测试及限制见 [本次复核](evidence/progress-closeout-20261025.md)。不要求升级或回填旧音乐库，不代表 7.8 文档与完整兼容矩阵已完成。
 - [x] 2.4 文档化目录协议版本、字段语义和 typed tombstone/alias 规则，使用 `cargo test -p echo-core library_durability` 核对序列化 fixture 与说明一致，确保缺历史字段保持 absent（LD-05/09/10）。
 
   验证：2026-10-24 新增 [目录协议字段说明](../../../docs/library-durability-protocol.md)，独立审查通过；主 Agent `library_durability --lib` 74/74、新增历史缺省字段回归 1/1、`portable_v --lib` 4/4、Core Clippy/fmt/scale/strict 通过。缺省时间/确认元数据保持省略，历史 Song 的已发布 0 回退单独说明；当前 v2 与目标 v3 升级边界明确，不替代 2.1/7.8/8.2。
@@ -50,7 +50,9 @@
   验证：2026-10-24 migration 20/20 通过，旧 v27 升级/失败回滚/重开保留证据及独立审查见 [SQLite 投影迁移证据](evidence/projection-migration.md)；该数据库 schema migration 与旧音乐库数据回填无关。
 - [ ] 4.2 实现 Application 提交协调器，投影 MUST 从 SQLite 已记录的投影水位出发按目录链顺序幂等追赶，per-operation 闭包只是触发点而不得各自直写业务表；普通成功发生于两阶段完成，DB 失败返回已保存待投影；用小规模可控次序 fake 验证绝无用户 DB-first 写入，且 C1 投影失败、C2 成功后的重启/追赶使 C1 事实也进入投影（LD-01/02）。实现可先采用简单串行方案；是否增加并发、缓存或队列由实际测量决定，不设吞吐门槛。
 - [ ] 4.3 实现从目录重建临时 SQLite、完整性比对后替换活动投影，隔离损坏/落后/领先或其他库数据库；投影 MUST 容忍悬空父引用（可解析子集入正表，未解析项入 typed `library_recovery_records` 并计 partial），不得因单条悬空引用使重建整体失败；验证不依赖旧数据库、重建无上传回声、失败保持旧活动库（LD-03/06/07）。
-- [ ] 4.5 把 `library_recovery_records` 的键改为稳定 typed key（不得使用 `Debug` 格式），并提供读回路径使 confirmed/pending/悬空引用在重建时可被重新尝试；验证补齐依赖后重试自动关联，无需重新导入（LD-06/07）。
+- [x] 4.5 把 `library_recovery_records` 的键改为稳定 typed key（不得使用 `Debug` 格式），并提供读回路径使 confirmed/pending/悬空引用在重建时可被重新尝试；验证补齐依赖后重试自动关联，无需重新导入（LD-06/07）。
+
+  验证：2026-10-25 稳定 serde typed key、confirmed/pending 读回及重开、追加父对象自动关联、真实目录依赖补齐重试均在临时副本实际通过；原工作区测试因缺失导入模块 E0583 未能执行，不计为门禁通过。见 [本次复核](evidence/progress-closeout-20261025.md)。collector、全入口协调器与 adoption 仍分别留在对应未完成任务。
 - [ ] 4.4 为投影边界及 SQLite 损坏/只读/commit 失败补集成测试并更新数据库恢复说明，运行 `cargo test -p echo-core library_durability` 和 `cargo test -p echo-core continuation`（LD-01/02/03/10）。
 
 ## 5. 本地导入、扫描与监听接入

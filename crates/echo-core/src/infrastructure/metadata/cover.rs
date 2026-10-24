@@ -147,7 +147,7 @@ impl CoverCache for DiskCoverCache {
             .map_err(|source| Error::io("create cover entry", source, entry.clone()))?;
         write_atomically(&entry.join("original.bin"), bytes)?;
         write_atomically(&entry.join("mime.txt"), mime.as_bytes())?;
-        Ok(format!("{KEY_PREFIX}{hash}"))
+        Ok(crate::domain::media::cover_asset_key(&hash))
     }
 
     fn get(&self, asset_key: &str) -> Result<Option<Vec<u8>>, Error> {

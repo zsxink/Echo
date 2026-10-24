@@ -66,9 +66,13 @@ fn song_payload_preserves_media_identity_without_local_or_independent_state() {
     );
     SongRepository::upsert(&database, &song).expect("song");
     SongRepository::set_favorite(&database, song.id(), true).expect("favorite");
-    database
-        .record_playback(PlaybackSessionId::new(), song.id())
-        .expect("play");
+    let control = super::super::tests::playback_fixture::directory(&database, root);
+    assert!(super::super::tests::playback_fixture::record(
+        &database,
+        &control,
+        PlaybackSessionId::new(),
+        song.id()
+    ));
     SongRepository::set_availability(&database, song.id(), SongAvailability::Missing)
         .expect("missing");
     song.apply_metadata(Some("新标签".into()), None, None, None);
@@ -104,7 +108,11 @@ fn song_payload_preserves_media_identity_without_local_or_independent_state() {
     assert_eq!(favorite["is_favorite"], true);
     assert!(favorite["favorited_at"].as_i64().is_some());
     assert!(
-        latest_payload(&database, "play-stats", &song.id().to_string())["by_device"].is_object()
+        super::super::tests::playback_fixture::mutations(&control, root)
+            .iter()
+            .any(|candidate| candidate.object
+                == crate::domain::sync::ObjectKey::PlayStats(song.id())
+                && candidate.payload["by_device"].is_object())
     );
     let stored = SongRepository::by_id(&database, song.id())
         .expect("query")

@@ -15,6 +15,21 @@ pub trait UnitOfWork: Send + Sync {
     /// rolling back on error. The transaction never crosses an `.await`:
     /// `f` is a plain synchronous closure.
     fn with_tx(&self, f: TxWork) -> Result<(), Error>;
+
+    /// Serialized durable playback events and absolute device buckets.
+    fn playback_edits(&self) -> Option<&dyn super::PlaybackEditPort> {
+        None
+    }
+
+    /// Ordered edits of content-addressed playlist originals.
+    fn playlist_cover_edits(&self) -> Option<&dyn super::PlaylistCoverEditPort> {
+        None
+    }
+
+    /// Ordered directory-first logical edits, when supplied by this adapter.
+    fn local_library_edits(&self) -> Option<&dyn super::LocalLibraryEditPort> {
+        None
+    }
 }
 
 /// The boxed, `Send` transaction body [`UnitOfWork::with_tx`] runs.

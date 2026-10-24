@@ -1,5 +1,6 @@
 //! Stable typed storage, dependency resolution and path-free recovery reporting.
 mod dependencies;
+mod local_allocation;
 use super::super::support::storage;
 use crate::domain::{
     ids::LibraryRootId,
@@ -80,7 +81,11 @@ fn put(
     kind: &str,
     json: &str,
 ) -> Result<(), Error> {
-    c.execute("INSERT INTO library_recovery_records(library_root_uuid,object_key,envelope_json,row_kind) VALUES(?1,?2,?3,?4) ON CONFLICT(library_root_uuid,object_key) DO UPDATE SET envelope_json=excluded.envelope_json,row_kind=excluded.row_kind,unresolved_reason=NULL",params![root.to_string(),key,json,kind]).map_err(storage)?;
+    let pending = (kind == "record")
+        .then(|| serde_json::to_string(&Reason::MissingSyncDependency))
+        .transpose()
+        .map_err(storage)?;
+    c.execute("INSERT INTO library_recovery_records(library_root_uuid,object_key,envelope_json,row_kind,unresolved_reason) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(library_root_uuid,object_key) DO UPDATE SET envelope_json=excluded.envelope_json,row_kind=excluded.row_kind,unresolved_reason=excluded.unresolved_reason",params![root.to_string(),key,json,kind,pending]).map_err(storage)?;
     Ok(())
 }
 pub(super) fn state_key(state: &DurableStateChange) -> Result<String, Error> {
@@ -131,9 +136,28 @@ pub(super) fn read(c: &Connection, root: LibraryRootId) -> Result<LibraryRecover
     }
     Ok(result)
 }
-pub(super) fn retry(c: &Connection, root: LibraryRootId) -> Result<(), Error> {
-    let mut retained = read(c, root)?;
-    retained.records.sort_by_key(|e| match e.record() {
+pub(super) fn retry(
+    c: &Connection,
+    root: LibraryRootId,
+    library: Option<crate::domain::library::LibraryId>,
+) -> Result<(), Error> {
+    let retained = read(c, root)?;
+    let mut statement = c.prepare(
+        "SELECT object_key FROM library_recovery_records WHERE library_root_uuid=?1 AND row_kind='record' AND unresolved_reason IS NOT NULL",
+    ).map_err(storage)?;
+    let pending = statement
+        .query_map([root.to_string()], |row| row.get::<_, String>(0))
+        .map_err(storage)?
+        .collect::<Result<std::collections::BTreeSet<_>, _>>()
+        .map_err(storage)?;
+    let mut retry_records = Vec::new();
+    for envelope in &retained.records {
+        let key = serde_json::to_string(&envelope.record().object_key()?).map_err(storage)?;
+        if pending.contains(&key) {
+            retry_records.push(envelope.clone());
+        }
+    }
+    retry_records.sort_by_key(|e| match e.record() {
         PortableRecord::Tombstone(_) => 0,
         PortableRecord::Song(_) => 1,
         PortableRecord::Playlist(_) => 2,
@@ -141,12 +165,12 @@ pub(super) fn retry(c: &Connection, root: LibraryRootId) -> Result<(), Error> {
     });
     // Release positions for the retained membership identities as a set, so
     // valid reorderings (including swaps) do not collide with their old slots.
-    for envelope in &retained.records {
+    for envelope in &retry_records {
         if let PortableRecord::PlaylistItem(item) = envelope.record() {
             c.execute("DELETE FROM playlist_songs WHERE member_uuid=?1 AND playlist_uuid IN (SELECT uuid FROM playlists WHERE library_root_uuid=?2)", params![item.item_uuid.to_string(),root.to_string()]).map_err(storage)?;
         }
     }
-    for envelope in &retained.records {
+    for envelope in &retry_records {
         let key = serde_json::to_string(&envelope.record().object_key()?).map_err(storage)?;
         let unresolved = dependencies::unresolved(c, root, envelope, &retained.records)?;
         if unresolved.is_none() {
@@ -174,7 +198,7 @@ pub(super) fn retry(c: &Connection, root: LibraryRootId) -> Result<(), Error> {
                 dependency
             }
         } else {
-            Some(Reason::RequiresStateRecovery)
+            local_allocation::restore(c, root, library, state, &retained.state)?
         };
         reason(c, root, &state_key(state)?, unresolved)?;
     }

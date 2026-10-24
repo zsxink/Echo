@@ -21,6 +21,11 @@ pub fn project_commits(
     replay: &LibraryReplay,
 ) -> Result<(), Error> {
     let current = validation::validate(connection, root, replay)?;
+    let library = replay
+        .commits
+        .last()
+        .map(|commit| commit.batch.library_id)
+        .or_else(|| replay.checkpoint.as_ref().map(|image| image.library_id));
     let tx = connection.transaction().map_err(storage)?;
     let mut seq = current.map_or(0, |(_, seq, _)| seq);
     if let Some(image) = replay
@@ -35,7 +40,7 @@ pub fn project_commits(
         .map_err(storage)?;
         retained::save(&tx, root, &image.records, &image.state, &image.resources)?;
         // Final tombstones are retried first, freeing deleted unique names.
-        retained::retry(&tx, root)?;
+        retained::retry(&tx, root, library)?;
         watermark(
             &tx,
             root,
@@ -56,7 +61,7 @@ pub fn project_commits(
             &commit.batch.state,
             &commit.batch.resources,
         )?;
-        retained::retry(&tx, root)?;
+        retained::retry(&tx, root, library)?;
         tx.execute("INSERT INTO library_applied_operations(library_root_uuid,operation_uuid,commit_seq,commit_digest) VALUES(?1,?2,?3,?4)",params![root.to_string(),commit.batch.operation_id.to_string(),commit.library_commit_seq,commit.digest]).map_err(storage)?;
         watermark(
             &tx,
@@ -67,7 +72,7 @@ pub fn project_commits(
         )?;
     }
     // Reopening the same head also retries retained unresolved dependencies.
-    retained::retry(&tx, root)?;
+    retained::retry(&tx, root, library)?;
     tx.commit().map_err(storage)
 }
 

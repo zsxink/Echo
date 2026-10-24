@@ -4,7 +4,7 @@ use crate::domain::ids::LibraryRootId;
 use crate::domain::library::{PortableRecord, PortableRecordEnvelope};
 use crate::domain::text::{normalized_key, playlist_name_key};
 use crate::error::Error;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 pub(super) fn project_record(
     c: &Connection,
     root: LibraryRootId,
@@ -14,7 +14,13 @@ pub(super) fn project_record(
     let id = record.object_uuid().to_string();
     match record {
         PortableRecord::Song(s) => {
-            let path = crate::domain::ids::RelativeMediaPath::new(s.media_path.as_str())?;
+            let local: Option<String> = c.query_row(
+                "SELECT s.relative_path FROM songs s JOIN sync_remote_resource_locations l ON l.local_root_uuid=s.library_root_uuid AND l.object_type='song' AND l.object_uuid=s.uuid AND l.local_relative_path=s.relative_path JOIN sync_remote_publications p ON p.operation_uuid=l.operation_uuid WHERE s.uuid=?1 AND s.library_root_uuid=?2 AND l.library_relative_path=?3 AND p.completed=1",
+                params![id, root.to_string(), s.media_path.as_str()], |row| row.get(0),
+            ).optional().map_err(storage)?;
+            let path = crate::domain::ids::RelativeMediaPath::new(
+                local.as_deref().unwrap_or(s.media_path.as_str()),
+            )?;
             c.execute("INSERT INTO songs(uuid,library_root_uuid,relative_path,normalized_relative_path,blake3_hash,title,artist,album,title_sort,artist_sort,album_sort,added_at,availability,revision,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'missing',?13,?12,?12) ON CONFLICT(uuid) DO UPDATE SET relative_path=excluded.relative_path,normalized_relative_path=excluded.normalized_relative_path,blake3_hash=excluded.blake3_hash,title=excluded.title,artist=excluded.artist,album=excluded.album,title_sort=excluded.title_sort,artist_sort=excluded.artist_sort,album_sort=excluded.album_sort,added_at=excluded.added_at,revision=excluded.revision",params![id,root.to_string(),path.normalized(),path.identity_key(),s.content_hash,s.title,s.artist,s.album,normalized_key(s.title.as_deref().unwrap_or("")),normalized_key(s.artist.as_deref().unwrap_or("")),normalized_key(s.album.as_deref().unwrap_or("")),s.added_at,s.revision.as_u64()]).map_err(storage)?;
             c.execute("DELETE FROM song_search WHERE song_uuid=?1", [&id])
                 .map_err(storage)?;
@@ -31,13 +37,17 @@ pub(super) fn project_record(
         }
         PortableRecord::Favorite(s) => {
             c.execute(
-                "UPDATE songs SET is_favorite=?2 WHERE uuid=?1 AND library_root_uuid=?3",
-                params![id, s.is_favorite, root.to_string()],
+                "UPDATE songs SET is_favorite=?2,favorited_at=?4,hlc_wall_secs=?5,hlc_counter=?6 WHERE uuid=?1 AND library_root_uuid=?3",
+                params![id, s.is_favorite, root.to_string(), s.favorited_at, s.hlc.wall_secs, s.hlc.counter],
             )
             .map_err(storage)?;
         }
         PortableRecord::Playlist(p) => {
-            c.execute("INSERT INTO playlists(uuid,library_root_uuid,display_name,normalized_name_key,created_at,updated_at,revision) VALUES(?1,?2,?3,?4,?5,?5,?6) ON CONFLICT(uuid) DO UPDATE SET display_name=excluded.display_name,normalized_name_key=excluded.normalized_name_key,revision=excluded.revision,created_at=excluded.created_at",params![id,root.to_string(),p.display_name,playlist_name_key(&p.display_name),p.created_at.unwrap_or(0),p.revision.as_u64()]).map_err(storage)?;
+            let cover_key = p
+                .cover_asset
+                .as_ref()
+                .map(|asset| crate::domain::media::cover_asset_key(&asset.content_hash));
+            c.execute("INSERT INTO playlists(uuid,library_root_uuid,display_name,normalized_name_key,created_at,updated_at,revision,hlc_wall_secs,hlc_counter,cover_asset_key) VALUES(?1,?2,?3,?4,?5,?5,?6,?7,?8,?9) ON CONFLICT(uuid) DO UPDATE SET display_name=excluded.display_name,normalized_name_key=excluded.normalized_name_key,revision=excluded.revision,created_at=excluded.created_at,hlc_wall_secs=excluded.hlc_wall_secs,hlc_counter=excluded.hlc_counter,cover_asset_key=excluded.cover_asset_key",params![id,root.to_string(),p.display_name,playlist_name_key(&p.display_name),p.created_at.unwrap_or(0),p.revision.as_u64(),p.hlc.wall_secs,p.hlc.counter,cover_key]).map_err(storage)?;
         }
         PortableRecord::PlaylistItem(p) => {
             c.execute("INSERT INTO playlist_songs(playlist_uuid,song_uuid,position,added_at,member_uuid,member_revision) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(playlist_uuid,song_uuid) DO UPDATE SET position=excluded.position,added_at=excluded.added_at,member_uuid=excluded.member_uuid,member_revision=excluded.member_revision",params![p.playlist_uuid.to_string(),p.song_uuid.to_string(),p.position,p.added_at.unwrap_or(0),id,p.revision.as_u64()]).map_err(storage)?;

@@ -344,7 +344,7 @@ pub fn set_playlist_cover(
 ) -> Result<(), IpcErrorDto> {
     let playlist = parse_id::<PlaylistId>(&id, "id")?;
     services
-        .set_playlist_cover(playlist, bytes, mime.as_deref())
+        .set_playlist_cover(playlist, bytes.as_deref(), mime.as_deref())
         .map_err(IpcErrorDto::from)
 }
 

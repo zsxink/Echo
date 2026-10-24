@@ -50,25 +50,45 @@ impl crate::application::ports::LibraryProjectionPort for SqliteDatabase {
         let commits = commits.clone();
         let control = self.library_control();
         self.writer.run(move |connection| {
-            if let Some(image) = &commits.checkpoint {
-                let current: Option<(u64, Option<String>)> = connection.query_row(
-                    "SELECT commit_seq,commit_digest FROM library_projection_watermarks WHERE library_root_uuid=?1",
-                    [root.to_string()], |row| Ok((row.get(0)?, row.get(1)?))).optional().map_err(storage)?;
-                if let Some((seq, digest)) = current.filter(|(seq, _)| *seq < image.library_commit_seq) {
-                    let operation: String = connection.query_row(
-                        "SELECT operation_uuid FROM library_applied_operations WHERE library_root_uuid=?1 AND commit_seq=?2",
-                        params![root.to_string(),seq], |row| row.get(0)).map_err(storage)?;
-                    let durable = control.as_ref().and_then(|c| c.durability()).ok_or_else(|| Error::conflict("covered watermark requires directory operation proof"))?;
-                    let original = durable.read_operation(root, uuid::Uuid::parse_str(&operation).map_err(storage)?)?
-                        .ok_or_else(|| Error::conflict("covered database watermark has no operation receipt"))?;
-                    if original.library_commit_seq != seq || Some(original.digest) != digest {
-                        return Err(Error::conflict("covered database watermark differs from operation receipt"));
-                    }
-                }
-            }
+            verify_covered_watermark(connection, root, &commits, control.as_deref())?;
             super::durability_projection::project_commits(connection, root, &commits)
         })
     }
+}
+
+pub(super) fn verify_covered_watermark(
+    connection: &Connection,
+    root: LibraryRootId,
+    commits: &crate::domain::library::durability::LibraryReplay,
+    control: Option<&dyn ControlPlanePort>,
+) -> Result<(), Error> {
+    if let Some(image) = &commits.checkpoint {
+        let current: Option<(u64, Option<String>)> = connection.query_row(
+                    "SELECT commit_seq,commit_digest FROM library_projection_watermarks WHERE library_root_uuid=?1",
+                    [root.to_string()], |row| Ok((row.get(0)?, row.get(1)?))).optional().map_err(storage)?;
+        if let Some((seq, digest)) = current.filter(|(seq, _)| *seq < image.library_commit_seq) {
+            let operation: String = connection.query_row(
+                        "SELECT operation_uuid FROM library_applied_operations WHERE library_root_uuid=?1 AND commit_seq=?2",
+                        params![root.to_string(),seq], |row| row.get(0)).map_err(storage)?;
+            let durable = control
+                .as_ref()
+                .and_then(|c| c.durability())
+                .ok_or_else(|| {
+                    Error::conflict("covered watermark requires directory operation proof")
+                })?;
+            let original = durable
+                .read_operation(root, uuid::Uuid::parse_str(&operation).map_err(storage)?)?
+                .ok_or_else(|| {
+                    Error::conflict("covered database watermark has no operation receipt")
+                })?;
+            if original.library_commit_seq != seq || Some(original.digest) != digest {
+                return Err(Error::conflict(
+                    "covered database watermark differs from operation receipt",
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 impl LibraryHistoryPort for SqliteDatabase {
@@ -222,6 +242,13 @@ fn export_songs(
                 updated_by_device_id: device,
                 hlc,
                 is_favorite: song.favorite(),
+                favorited_at: connection
+                    .query_row(
+                        "SELECT favorited_at FROM songs WHERE uuid=?1",
+                        [song.id().to_string()],
+                        |row| row.get(0),
+                    )
+                    .map_err(storage)?,
             }),
         )?;
         let by_device = super::read_device_play_counts(connection, song.id())?;

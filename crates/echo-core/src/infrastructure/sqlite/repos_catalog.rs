@@ -226,27 +226,8 @@ impl PlaylistRepository for SqliteDatabase {
 
     fn rename(&self, id: PlaylistId, to_normalized_name: &str) -> Result<(), Error> {
         let name = to_normalized_name.to_owned();
-        self.writer.run(move |connection| {
-            let key = playlist_name_key(&name);
-            connection.execute("UPDATE playlists SET display_name = ?2, normalized_name_key = ?3, updated_at = ?4 WHERE uuid = ?1", params![id.to_string(), name, key, now_ms()]).map_err(map_constraint)?;
-            // Rename is a playlist logic change → outbox snapshot (task 3.11).
-            let payload = serde_json::json!({ "display_name": name });
-            statements::enqueue_object_snapshot(
-                connection,
-                sync::KIND_PLAYLIST,
-                &id.to_string(),
-                &payload,
-                sync::OP_UPSERT,
-            )?;
-            let now_secs = u64::try_from(now_ms().max(0)).unwrap_or(0) / 1_000;
-            statements::advance_object_hlc(
-                connection,
-                sync::KIND_PLAYLIST,
-                &id.to_string(),
-                now_secs,
-            )?;
-            Ok(())
-        })
+        self.writer
+            .run(move |connection| statements::rename_playlist(connection, id, &name))
     }
 
     fn set_cover_key(&self, id: PlaylistId, key: Option<&str>) -> Result<(), Error> {

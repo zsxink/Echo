@@ -110,6 +110,12 @@ impl ParsedMetadata {
     }
 }
 
+/// Derive a disposable cover-cache key from a validated original content hash.
+#[must_use]
+pub fn cover_asset_key(content_hash: &str) -> String {
+    format!("cv1-{content_hash}")
+}
+
 /// Embedded cover art as read from the audio file (task 4.3).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EmbeddedCover {

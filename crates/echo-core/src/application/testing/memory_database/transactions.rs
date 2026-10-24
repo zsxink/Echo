@@ -209,6 +209,20 @@ impl TxStateWriter for MemoryTx<'_> {
 }
 
 impl UnitOfWork for MemoryDatabase {
+    fn playback_edits(&self) -> Option<&dyn crate::application::ports::PlaybackEditPort> {
+        Some(self)
+    }
+
+    fn playlist_cover_edits(
+        &self,
+    ) -> Option<&dyn crate::application::ports::PlaylistCoverEditPort> {
+        Some(self)
+    }
+
+    fn local_library_edits(&self) -> Option<&dyn LocalLibraryEditPort> {
+        Some(self)
+    }
+
     fn with_tx(&self, f: TxWork) -> Result<(), Error> {
         let mut candidate = self.lock().clone();
         f(&mut MemoryTx {

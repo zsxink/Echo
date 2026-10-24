@@ -218,6 +218,7 @@ impl MemoryDatabase {
 // child module, so they share this module's imports and private `Store`.
 mod catalog;
 mod journal;
+mod local_library_edit;
 mod media;
 mod repositories;
 mod runtime;

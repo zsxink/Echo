@@ -1,5 +1,9 @@
 # 2026-10-24 可信会话内的 sync fact 纯投影子步
 
+> 本文保留当次实现范围与结果。2026-10-25 已核对 4.5 本身的 typed key/读回/依赖
+> 重试并完成专项验证；native 也已有凭据验证后的 saved_state 接线。4.5 已勾选，
+> 4.2/collector/adoption 仍未完成，见 [开发进度复核](progress-closeout-20261025.md)。
+
 本步是 **4.2 / 4.5 的部分依赖**，不完成、不勾选这两项；不实现 collector、统一顺序协调器或 adoption。遵守 LD-06/LD-07、D2/D3/D5 以及 CODE_STANDARDS §2.1、§3.1–3.2、§5、§8。未提交、未归档，未改已发布 migration。
 
 ## 真实调用边界

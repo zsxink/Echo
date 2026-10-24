@@ -29,7 +29,6 @@ use crate::application::ports::{ControlPlanePort, ManifestState};
 use crate::domain::ids::LibraryRootId;
 use crate::domain::library::{
     LibraryManifest, PortableRecord, PortableRecordDocument, PortableRecordEnvelope, RecordKind,
-    CURRENT_FORMAT_VERSION,
 };
 use crate::error::Error;
 
@@ -369,7 +368,7 @@ impl ControlPlanePort for RootControlPlane {
         }
         if self
             .manifest_unlocked(root)?
-            .is_some_and(|manifest| manifest.format_version == 2)
+            .is_some_and(|manifest| matches!(manifest.format_version, 2 | 3))
         {
             let relative = migration::record_relative(record)?;
             let sync = self
@@ -453,8 +452,7 @@ impl ControlPlanePort for RootControlPlane {
     ) -> Result<(), Error> {
         let _guard = self.prepare(root, false)?;
         let manifest = self.manifest_unlocked(root)?;
-        let Some(_) = manifest.filter(|value| value.format_version == CURRENT_FORMAT_VERSION)
-        else {
+        let Some(_) = manifest.filter(|value| matches!(value.format_version, 2 | 3)) else {
             return Err(Error::conflict(
                 "portable v2 writes require a completed format upgrade",
             ));
@@ -929,6 +927,7 @@ mod tests {
                     updated_by_device_id: DeviceId::new(),
                     hlc: HybridLogicalClock::default(),
                     is_favorite: true,
+                    favorited_at: None,
                 }),
             )
             .expect("write favorite record");
@@ -955,6 +954,7 @@ mod tests {
             updated_by_device_id: DeviceId::new(),
             hlc: HybridLogicalClock::default(),
             is_favorite: true,
+            favorited_at: None,
         });
         plane.write_record(root, &fav).expect("write favorite");
         assert_eq!(

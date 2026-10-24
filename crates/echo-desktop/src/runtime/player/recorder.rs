@@ -1,26 +1,21 @@
 //! Playback-stats recorder sink + watcher (task 8.10).
 
-use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use echo_core::application::portable_materialize::play_stats_record;
 use echo_core::application::ports::{
-    ControlPlanePort, DeviceIdProvider, LibraryRepository, SongRepository, SyncStateReader,
+    ControlPlanePort, DeviceIdProvider, LibraryRepository, SongRepository,
 };
-use echo_core::domain::ids::{LibraryRootId, PlaybackSessionId, Revision};
-use echo_core::domain::library::{HybridLogicalClock, PortableRecord, RecordKind};
+use echo_core::domain::ids::PlaybackSessionId;
+use std::sync::{Arc, Mutex};
 
 use super::PlaybackCoordinator;
 use super::PlayerPort;
 use super::QueueItem;
 use crate::player::recording::{PlaybackRecorder, PlaybackStatsRecorder};
 
-/// The production [`PlaybackRecorder`] sink: Core's idempotent
-/// `record_playback` (the `recorded_play_sessions` table + `play_count`
-/// increment), followed by the portable `play-stats` record so the count
-/// survives a wiped local database (issue #1). Storage errors are surfaced as
-/// the port's `Err(String)` so the accumulator can log them without ever
-/// stopping playback.
+/// The production [`PlaybackRecorder`] sink: Core saves the private session
+/// event, shared device buckets and frozen candidate in one directory commit,
+/// then catches SQLite up in commit order. The session remains idempotent after
+/// a lost response or rebuilt database. Storage errors reach the accumulator
+/// without ever stopping playback.
 pub struct CorePlaybackRecorder {
     activity: Arc<echo_core::application::local_activity::LocalActivity>,
     database: Arc<echo_core::infrastructure::sqlite::SqliteDatabase>,
@@ -52,52 +47,6 @@ impl CorePlaybackRecorder {
             roots,
         }
     }
-
-    /// Materialize one play into `echo/records/play-stats/<song>.json`.
-    ///
-    /// The record is written **after** the local counter commits and merges
-    /// into the record already on disk, so a replayed write never doubles the
-    /// count and two devices sum instead of overwriting (design D4).
-    fn record_play_stats(&self, root: LibraryRootId, song: super::SongId) -> Result<(), String> {
-        let device = self.device_id.current_device_id();
-        let existing = self
-            .control
-            .read_record(root, RecordKind::PlayStats, &song.to_string())
-            .map_err(|error| error.to_string())?;
-        let existing_stats = match existing {
-            Some(PortableRecord::PlayStats(stats)) => Some(stats),
-            _ => None,
-        };
-        let wall_secs = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |elapsed| elapsed.as_secs());
-        let mut by_device = self
-            .database
-            .device_play_counts(song)
-            .map_err(|error| error.to_string())?;
-        if let Some(existing) = existing_stats {
-            for (writer, count) in existing.by_device {
-                by_device
-                    .entry(writer)
-                    .and_modify(|stored| *stored = (*stored).max(count))
-                    .or_insert(count);
-            }
-        }
-        let revision = self
-            .database
-            .outbox_revision("play-stats", &song.to_string())
-            .map_err(|error| error.to_string())?;
-        let record = PortableRecord::PlayStats(play_stats_record(
-            device,
-            HybridLogicalClock::new(wall_secs, 0),
-            Revision::from_u64(revision.as_u64()),
-            song,
-            by_device,
-        ));
-        self.control
-            .write_record(root, &record)
-            .map_err(|error| error.to_string())
-    }
 }
 
 impl PlaybackRecorder for CorePlaybackRecorder {
@@ -119,16 +68,15 @@ impl PlaybackRecorder for CorePlaybackRecorder {
         {
             return Ok(false);
         }
-        let recorded = self
-            .database
-            .record_playback(session, song)
-            .map_err(|error| error.to_string())?;
-        // Only a *new* listen is materialized: the idempotence guard already
-        // told us this session was counted.
-        if recorded {
-            self.record_play_stats(root, song)?;
-        }
-        Ok(recorded)
+        echo_core::application::playback_recording::record_qualified_playback(
+            self.control.as_ref(),
+            self.database.as_ref(),
+            self.database.as_ref(),
+            self.device_id.current_device_id(),
+            session,
+            song,
+        )
+        .map_err(|error| error.to_string())
     }
 }
 

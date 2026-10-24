@@ -108,6 +108,57 @@ fn library_durability_projection_retains_orphans_and_links_when_evidence_arrives
 }
 
 #[test]
+fn library_durability_projection_retries_only_new_or_unresolved_records() {
+    let (_directory, db, root) = database();
+    let library = LibraryId::from_uuid(uuid::Uuid::new_v4());
+    let fixture = Issue72Fixture::with_database_evidence();
+    let song = fixture
+        .database
+        .iter()
+        .find(|record| matches!(record, PortableRecord::Song(_)))
+        .unwrap()
+        .clone();
+    let id = song.object_uuid().to_string();
+    let mut replay = LibraryReplay::default();
+    append(&mut replay, library, vec![song.clone()]);
+    db.project_library_commits(root, &replay).unwrap();
+    db.writer.run(move |c| {
+        c.execute("UPDATE songs SET title='newer live value',blake3_hash='newer live hash',revision=revision+1 WHERE uuid=?1", [id]).map_err(storage)?;
+        c.execute_batch("CREATE TRIGGER reject_redundant_song_projection BEFORE UPDATE ON songs BEGIN SELECT RAISE(ABORT,'resolved record was projected again'); END;")
+            .map_err(storage)
+    }).unwrap();
+    db.project_library_commits(root, &replay).unwrap();
+    append(&mut replay, library, vec![]);
+    db.project_library_commits(root, &replay).unwrap();
+    let projected = SongRepository::by_id(&db, SongId::from_uuid(song.object_uuid()))
+        .unwrap()
+        .unwrap();
+    assert_eq!(projected.title(), Some("newer live value"));
+    assert_eq!(projected.blake3_hash(), Some("newer live hash"));
+    db.writer
+        .run(|c| {
+            c.execute_batch("DROP TRIGGER reject_redundant_song_projection")
+                .map_err(storage)
+        })
+        .unwrap();
+    // A new directory commit is authoritative even if its object revision is
+    // lower than the live row; SQL revisions cannot replace directory order.
+    let mut next = song;
+    if let PortableRecord::Song(record) = &mut next {
+        record.title = Some("next directory value".into());
+    }
+    append(&mut replay, library, vec![next.clone()]);
+    db.project_library_commits(root, &replay).unwrap();
+    assert_eq!(
+        SongRepository::by_id(&db, SongId::from_uuid(next.object_uuid()))
+            .unwrap()
+            .unwrap()
+            .title(),
+        Some("next directory value")
+    );
+}
+
+#[test]
 fn library_durability_projection_rejects_bad_suffix_before_any_database_write() {
     let (_directory, db, root) = database();
     let library = LibraryId::from_uuid(uuid::Uuid::new_v4());

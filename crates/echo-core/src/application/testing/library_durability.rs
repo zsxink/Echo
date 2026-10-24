@@ -145,6 +145,7 @@ impl Issue72Fixture {
                     updated_by_device_id: device,
                     hlc,
                     is_favorite: true,
+                    favorited_at: None,
                 };
                 database.push(PortableRecord::Favorite(favorite.clone()));
                 portable.push(PortableRecord::Favorite(FavoriteRecord {
@@ -293,6 +294,7 @@ mod tests {
                 updated_by_device_id: device,
                 hlc,
                 is_favorite: false,
+                favorited_at: None,
             }),
             PortableRecord::Override(OverrideRecord {
                 song_uuid: song,

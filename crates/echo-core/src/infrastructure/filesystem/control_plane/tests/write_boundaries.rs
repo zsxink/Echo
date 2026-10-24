@@ -1,6 +1,30 @@
 use super::*;
 
 #[test]
+fn library_durability_legacy_manifest_refuses_new_journal_without_rewriting_evidence() {
+    use crate::domain::library::durability::{ChangeOrigin, LibraryBatch};
+    for version in [1, 2] {
+        let (dir, _registry, root, plane) = setup();
+        let mut manifest =
+            LibraryManifest::new(LibraryId::from_uuid(uuid::Uuid::new_v4()), "legacy");
+        manifest.format_version = version;
+        plane.write_manifest(root, &manifest).unwrap();
+        let manifest_path = dir.path().join("echo/manifest.json");
+        let original = std::fs::read(&manifest_path).unwrap();
+        let batch = LibraryBatch::new(
+            uuid::Uuid::new_v4(),
+            manifest.library_id,
+            ChangeOrigin::LocalEdit,
+            vec![],
+        );
+        assert!(plane.durability().unwrap().commit(root, &batch).is_err());
+        assert_eq!(std::fs::read(&manifest_path).unwrap(), original);
+        assert!(!dir.path().join("echo/transactions").exists());
+        assert_eq!(plane.read_manifest(root).unwrap(), Some(manifest));
+    }
+}
+
+#[test]
 fn library_durability_legacy_write_cannot_transfer_confirmation_to_new_value() {
     let (dir, _registry, root, plane) = setup();
     let library = uuid::Uuid::new_v4();

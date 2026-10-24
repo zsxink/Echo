@@ -46,6 +46,8 @@ use serde::{Deserialize, Serialize};
 mod host_recovery;
 #[path = "sync_provisioner/pairing_store.rs"]
 mod pairing_store;
+#[path = "sync_provisioner/saved_state.rs"]
+mod saved_state;
 use pairing_store::DurableHostPairing;
 #[path = "sync_provisioner/remote_apply.rs"]
 mod remote_apply;
@@ -456,7 +458,19 @@ impl NativeSyncProvisioner {
         if !configuration.host || configuration.binding != binding {
             return Err(SyncRuntimeError::LibraryUnavailable);
         }
+        let identity = self.host_identity(configuration.local_root)?;
+        if identity.binding != binding {
+            return Err(SyncRuntimeError::Unconfigured);
+        }
         let checkpoint = self.recover_checkpoint(binding)?;
+        self.recover_saved_sync_state(
+            configuration.local_root,
+            configuration.local_device,
+            echo_core::domain::library::durability::RecoverySessionRole::Host,
+            checkpoint
+                .read()
+                .map_err(|_| SyncRuntimeError::Unconfigured)?,
+        )?;
         let confirm = ConfirmHostMutation::new(self.database.as_ref(), checkpoint.as_ref());
         let mut reanchored = false;
         loop {

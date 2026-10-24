@@ -9,7 +9,7 @@ use crate::error::{Error, Subject};
 use super::super::ids::{PlaylistId, PlaylistItemId, Revision, SongId};
 use super::super::sync::{ObjectKey, ObjectVersion, SyncBinding};
 use super::identity::{DeviceId, HybridLogicalClock};
-use super::{LibraryRelativePath, CURRENT_FORMAT_VERSION};
+use super::LibraryRelativePath;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -203,7 +203,7 @@ impl PortableRecordEnvelope {
     /// Rejects invalid typed tombstones and inconsistent alias mappings.
     pub fn new(record: PortableRecord, sync: Option<PortableSyncMetadata>) -> Result<Self, Error> {
         let envelope = Self {
-            format_version: CURRENT_FORMAT_VERSION,
+            format_version: 2,
             record,
             sync,
         };
@@ -501,6 +501,9 @@ pub struct FavoriteRecord {
     pub updated_by_device_id: DeviceId,
     pub hlc: HybridLogicalClock,
     pub is_favorite: bool,
+    /// Original favorite ordering time; historical absence stays unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub favorited_at: Option<u64>,
 }
 
 /// A playlist record: the portable representation of a named playlist.

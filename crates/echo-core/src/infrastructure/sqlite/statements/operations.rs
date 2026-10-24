@@ -69,6 +69,29 @@ pub(crate) fn create_playlist(
     )?;
     Ok(())
 }
+pub(crate) fn rename_playlist(
+    connection: &Connection,
+    id: PlaylistId,
+    name: &str,
+) -> Result<(), Error> {
+    connection.execute("UPDATE playlists SET display_name = ?2, normalized_name_key = ?3, updated_at = ?4 WHERE uuid = ?1", params![id.to_string(), name, playlist_name_key(name), now_ms()]).map_err(map_constraint)?;
+    enqueue_object_snapshot(
+        connection,
+        super::super::sync::enqueue::KIND_PLAYLIST,
+        &id.to_string(),
+        &serde_json::json!({ "display_name": name }),
+        super::super::sync::enqueue::OP_UPSERT,
+    )?;
+    let now_secs = u64::try_from(now_ms().max(0)).unwrap_or(0) / 1_000;
+    advance_object_hlc(
+        connection,
+        super::super::sync::enqueue::KIND_PLAYLIST,
+        &id.to_string(),
+        now_secs,
+    )?;
+    Ok(())
+}
+
 pub(crate) fn add_member(
     connection: &Connection,
     playlist: PlaylistId,
@@ -159,10 +182,27 @@ pub(crate) fn playlist_full_snapshot_payload(
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(storage)?;
+    let key = serde_json::to_string(&crate::domain::sync::ObjectKey::Playlist(playlist))
+        .map_err(storage)?;
+    let saved: Option<String> = connection.query_row(
+        "SELECT r.envelope_json FROM library_recovery_records r JOIN playlists p ON p.library_root_uuid=r.library_root_uuid WHERE p.uuid=?1 AND r.object_key=?2 AND r.row_kind='record'",
+        params![playlist.to_string(), key], |row| row.get(0),
+    ).optional().map_err(storage)?;
+    let cover = saved
+        .map(|json| {
+            serde_json::from_str::<crate::domain::library::PortableRecordEnvelope>(&json)
+                .map_err(storage)
+        })
+        .transpose()?
+        .and_then(|envelope| match envelope.into_record() {
+            crate::domain::library::PortableRecord::Playlist(record) => record.cover_asset,
+            _ => None,
+        });
     Ok(serde_json::json!({
         "playlist_uuid": playlist.to_string(),
         "display_name": display_name,
         "created_at": created_at,
+        "cover_asset": cover,
         "members": playlist_members_excerpt(connection, playlist)?,
     }))
 }

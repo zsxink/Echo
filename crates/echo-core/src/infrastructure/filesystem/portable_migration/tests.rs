@@ -17,7 +17,9 @@ fn fixture() -> (
     let registry = RootRegistry::new();
     let root = LibraryRootId::new();
     registry.register(root, dir.path());
-    let target = LibraryManifest::new(LibraryId::from_uuid(uuid::Uuid::new_v4()), "upgrade-test");
+    let mut target =
+        LibraryManifest::new(LibraryId::from_uuid(uuid::Uuid::new_v4()), "upgrade-test");
+    target.format_version = 2;
     let mut original = target.clone();
     original.format_version = 1;
     write(

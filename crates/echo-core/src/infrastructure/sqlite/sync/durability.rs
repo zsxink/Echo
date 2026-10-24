@@ -18,6 +18,90 @@ use crate::domain::library::durability::{
 };
 use crate::error::Error;
 
+/// Capture only immutable allocations created after the verified planning baseline.
+pub(crate) fn capture_local_object_mutation(
+    connection: &Connection,
+    root: LibraryRootId,
+    object: crate::domain::sync::ObjectKey,
+    library_id: crate::domain::library::LibraryId,
+    author: crate::domain::sync::DeviceId,
+    after_sequence: u64,
+) -> Result<Vec<DurableStateChange>, Error> {
+    let namespace = facts::context_namespace(connection, &root.to_string(), true)?
+        .unwrap_or(StateNamespace::LocalUnbound { library_id, author });
+    let (kind, object_uuid) = super::apply::object_identity(object);
+    let mut statement = connection.prepare(
+        "SELECT json_object('schema','echo.sync.mutation.v1','mutation_id',mutation_id,'author',origin_device_id,'sequence',origin_seq,'predecessor',previous_mutation_id,'object_type',object_type,'object_uuid',object_uuid,'operation',operation,'revision',local_revision,'base_version',base_object_version,'payload',json(payload_json),'payload_digest',payload_digest,'original_body',payload_json,'original_resources_body',resource_refs_json,'status',status,'outcome',CASE WHEN outcome_json IS NULL THEN NULL ELSE json(outcome_json) END,'changed_at_ms',created_at,'resources',json(resource_refs_json)) FROM sync_mutations WHERE local_root_uuid=?1 AND object_type=?5 AND object_uuid=?2 AND origin_device_id=?3 AND origin_seq>?4 ORDER BY origin_seq",
+    ).map_err(storage)?;
+    let rows = statement
+        .query_map(
+            params![
+                root.to_string(),
+                object_uuid,
+                author.as_uuid().to_string(),
+                after_sequence,
+                kind,
+            ],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(storage)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(storage)?;
+    if rows.len() != 1 {
+        return Err(Error::conflict(
+            "playlist edit must freeze exactly one new mutation",
+        ));
+    }
+    let payload: Value = serde_json::from_str(&rows[0]).map_err(storage)?;
+    if payload["status"].as_str() != Some("pending")
+        || !matches!(payload["operation"].as_str(), Some("upsert" | "delete"))
+    {
+        return Err(Error::conflict(
+            "playlist edit allocated unexpected mutation",
+        ));
+    }
+    Ok(facts::mutation(&payload, namespace)?.into_iter().collect())
+}
+
+/// Freeze a complete planned playlist body, including its original-asset reference.
+pub(crate) fn allocate_local_playlist_snapshot(
+    connection: &Connection,
+    root: LibraryRootId,
+    playlist: crate::domain::ids::PlaylistId,
+    payload: &Value,
+) -> Result<(), Error> {
+    let revision = super::enqueue::enqueue_sync_in_root(
+        connection,
+        &root.to_string(),
+        "playlist",
+        &playlist.to_string(),
+        &serde_json::to_string(payload).map_err(storage)?,
+        super::OP_UPSERT,
+        None,
+    )?;
+    super::enqueue::mirror_playlist_revision(connection, playlist, revision)
+}
+
+/// Allocate a deletion from a root already verified by the local edit planner.
+/// Retained orphan members need not have a canonical SQL row to own this fact.
+pub(crate) fn allocate_local_delete(
+    connection: &Connection,
+    root: LibraryRootId,
+    object: crate::domain::sync::ObjectKey,
+) -> Result<u64, Error> {
+    let (kind, id) = super::apply::object_identity(object);
+    let revision = super::enqueue::enqueue_sync_in_root(
+        connection,
+        &root.to_string(),
+        kind,
+        &id,
+        "{\"tombstone\":true}",
+        super::OP_DELETE,
+        None,
+    )?;
+    u64::try_from(revision).map_err(storage)
+}
+
 /// Stable, namespace-separated local fact identity; it is not a LAN mutation.
 pub(crate) fn identity(namespace: &str, identity: &str) -> Uuid {
     let mut hash = blake3::Hasher::new();

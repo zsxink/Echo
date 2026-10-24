@@ -1,7 +1,6 @@
 //! Desktop playlist commands; Core owns planning, directory commit and projection.
 
 use echo_core::application::playlist::durable::DurableLibraryEdits;
-use echo_core::application::ports::PlaylistRepository;
 use echo_core::domain::ids::{LibraryRootId, PlaylistId, SongId};
 use echo_core::error::Error;
 
@@ -49,38 +48,12 @@ impl super::AppServices {
     pub fn set_playlist_cover(
         &self,
         id: PlaylistId,
-        bytes: Option<Vec<u8>>,
+        bytes: Option<&[u8]>,
         mime: Option<&str>,
     ) -> Result<(), Error> {
         let _activity = self.guard_writes()?;
-        if PlaylistRepository::by_id(self.deps.playlists.as_ref(), id)?.is_none() {
-            return Err(Error::unavailable("playlist", "not found"));
-        }
-        let key = match bytes {
-            None => None,
-            Some(bytes) => {
-                const MAX_COVER_BYTES: usize = 5 * 1024 * 1024;
-                let mime = mime.unwrap_or_default();
-                if bytes.is_empty() || bytes.len() > MAX_COVER_BYTES {
-                    return Err(Error::validation(
-                        echo_core::error::Subject::Other,
-                        "cover",
-                        "image must be between 1 byte and 5 MiB",
-                    ));
-                }
-                if !matches!(mime, "image/jpeg" | "image/png" | "image/webp") {
-                    return Err(Error::validation(
-                        echo_core::error::Subject::Other,
-                        "cover",
-                        "unsupported image type",
-                    ));
-                }
-                // The cache owns raw image bytes and returns an opaque key;
-                // neither a source path nor the bytes cross back to the UI.
-                Some(self.deps.cover_cache.put(&bytes, mime)?)
-            }
-        };
-        self.deps.playlists.set_cover_key(id, key.as_deref())
+        self.library_edits()
+            .set_playlist_cover(self.active_root_id()?, id, bytes, mime)
     }
 
     /// Delete the playlist and membership facts as one durable set.

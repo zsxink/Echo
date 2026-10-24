@@ -124,6 +124,106 @@ async fn native_merge_pulls_host_before_uploading_and_preserves_local_song() {
 }
 
 #[tokio::test]
+async fn library_durability_replica_cycle_sends_original_saved_playlist() {
+    use echo_core::application::playlist::durable::DurableLibraryEdits;
+    use echo_core::application::ports::PlaylistRepository;
+    let fixture = LanMergeFixture::new().await;
+    fixture
+        .provisioner
+        .enroll_peer_snapshot(&fixture.client, &fixture.peer, &fixture.endpoint)
+        .await
+        .unwrap();
+    let deps = &fixture.provisioner.scan_deps;
+    let edits = DurableLibraryEdits {
+        control: deps.control.as_ref(),
+        songs: deps.songs.as_ref(),
+        playlists: deps.playlists.as_ref(),
+        unit: deps.uow.as_ref(),
+        device: deps.device_id.current_device_id(),
+    };
+    let playlist = edits
+        .create_playlist(fixture.root, "saved replica playlist")
+        .unwrap();
+    let second = edits
+        .create_playlist(fixture.root, "second saved replica playlist")
+        .unwrap();
+    let replay = deps
+        .control
+        .durability()
+        .unwrap()
+        .recover(fixture.root)
+        .unwrap();
+    let frozen: Vec<echo_core::domain::library::durability::FrozenMutation> = replay
+        .states()
+        .filter(|state| {
+            matches!(
+                state.key.as_ref().map(|key| &key.target),
+                Some(echo_core::domain::library::durability::StateTarget::Mutation { .. })
+            )
+        })
+        .map(|state| serde_json::from_value(state.payload["frozen"].clone()).unwrap())
+        .collect();
+    assert_eq!(frozen.len(), 2);
+    assert_eq!(
+        frozen[1].candidate.origin_seq,
+        frozen[0].candidate.origin_seq + 1
+    );
+    assert_eq!(
+        frozen[1].candidate.previous_mutation_id,
+        Some(frozen[0].candidate.mutation_id)
+    );
+    for _ in 0..2 {
+        fixture
+            .provisioner
+            .merge_peer_library(
+                &fixture.client,
+                &fixture.peer,
+                &fixture.endpoint,
+                &fixture.resources,
+                fixture.root,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            PlaylistRepository::name(fixture.host.as_ref(), playlist)
+                .unwrap()
+                .as_deref(),
+            Some("saved replica playlist"),
+        );
+        assert!(fixture
+            .replica
+            .pending_local_mutations(10)
+            .unwrap()
+            .is_empty());
+        let mut expected = vec![playlist, second];
+        expected.sort();
+        let mut actual =
+            PlaylistRepository::list(fixture.host.as_ref(), fixture.host_root).unwrap();
+        actual.sort();
+        assert_eq!(actual, expected);
+        let commits = echo_core::application::ports::HostCommitLedgerPort::published_commits_after(
+            fixture.host.as_ref(),
+            fixture.peer.binding,
+            echo_core::domain::sync::CommitSeq::from_u64(0),
+            [0; 32],
+            10,
+        )
+        .unwrap();
+        for mutation in &frozen {
+            assert!(
+                commits.iter().any(|commit| {
+                    let body: serde_json::Value =
+                        serde_json::from_str(&commit.canonical_json).unwrap();
+                    body["mutation"]["mutation_id"]
+                        == serde_json::json!(mutation.candidate.mutation_id)
+                }),
+                "the host must accept the original frozen event identity"
+            );
+        }
+    }
+}
+
+#[tokio::test]
 /// A steady idle cycle must reach the host once, not three times. The catch-up
 /// pull that used to open every cycle was redundant with the pull inside
 /// `synchronize_once`, and the closing pull only exists for cycles that pushed

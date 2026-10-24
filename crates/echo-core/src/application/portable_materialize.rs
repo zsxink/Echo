@@ -174,6 +174,7 @@ pub const fn favorite_record(
         updated_by_device_id: device,
         hlc,
         is_favorite,
+        favorited_at: None,
     }
 }
 

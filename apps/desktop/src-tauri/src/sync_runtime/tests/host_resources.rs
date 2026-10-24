@@ -41,6 +41,103 @@ mod cases {
         });
     }
 
+    #[test]
+    fn library_durability_host_cycle_publishes_original_saved_playlist_candidate() {
+        use echo_core::application::playlist::durable::DurableLibraryEdits;
+        use echo_core::application::ports::HostCommitLedgerPort;
+        use echo_core::domain::library::durability::{FrozenMutation, StateTarget};
+        configure_test_vault();
+        let directory = tempfile::tempdir().unwrap();
+        let app = echo_desktop::runtime::app::assemble(
+            &directory.path().join("host.sqlite"),
+            &directory.path().join("covers"),
+        )
+        .unwrap();
+        let root_path = directory.path().join("library");
+        std::fs::create_dir_all(root_path.join("media")).unwrap();
+        let root = derive_root_id(&root_path.canonicalize().unwrap());
+        app.registry.register(root, &root_path);
+        echo_core::application::portable::EnsureControlPlane::new(app.deps.control.as_ref())
+            .run(root)
+            .unwrap();
+        LibraryRepository::upsert(
+            app.database.as_ref(),
+            &LibraryRoot::new(root, root_path, true, true),
+        )
+        .unwrap();
+        let provisioner = NativeSyncProvisioner::new(
+            app.database.clone(),
+            directory.path().canonicalize().unwrap().join("resources"),
+            RemoteResourcePublishDeps {
+                fs: Arc::new(RootConstrainedFileSystem::new(app.registry.clone())),
+                hasher: Arc::new(Blake3ContentHasher::new(app.registry)),
+                journal: app.database.clone(),
+            },
+            app.deps.clone(),
+            ScanSupervisor::new(),
+        );
+        let host = provisioner.host(root).unwrap();
+        let playlist = DurableLibraryEdits {
+            control: app.deps.control.as_ref(),
+            songs: app.deps.songs.as_ref(),
+            playlists: app.deps.playlists.as_ref(),
+            unit: app.deps.uow.as_ref(),
+            device: app.deps.device_id.current_device_id(),
+        }
+        .create_playlist(root, "saved bound playlist")
+        .unwrap();
+        let replay = app
+            .deps
+            .control
+            .durability()
+            .unwrap()
+            .recover(root)
+            .unwrap();
+        let state = replay
+            .states()
+            .find(|state| {
+                matches!(
+                    state.key.as_ref().map(|key| &key.target),
+                    Some(StateTarget::Mutation { .. })
+                )
+            })
+            .unwrap();
+        let frozen: FrozenMutation =
+            serde_json::from_value(state.payload["frozen"].clone()).unwrap();
+        assert_eq!(frozen.candidate.object, ObjectKey::Playlist(playlist));
+        provisioner.sync_now(SyncRole::Host).unwrap();
+        let commits = app
+            .database
+            .published_commits_after(
+                host.binding,
+                echo_core::domain::sync::CommitSeq::from_u64(0),
+                [0; 32],
+                10,
+            )
+            .unwrap();
+        assert_eq!(commits.len(), 1);
+        let published: serde_json::Value =
+            serde_json::from_str(&commits[0].canonical_json).unwrap();
+        assert_eq!(
+            published["mutation"]["mutation_id"],
+            serde_json::to_value(frozen.candidate.mutation_id).unwrap()
+        );
+        assert!(app.database.pending_local_mutations(10).unwrap().is_empty());
+        provisioner.sync_now(SyncRole::Host).unwrap();
+        assert_eq!(
+            app.database
+                .published_commits_after(
+                    host.binding,
+                    echo_core::domain::sync::CommitSeq::from_u64(0),
+                    [0; 32],
+                    10,
+                )
+                .unwrap(),
+            commits,
+            "a repeated cycle must not publish the saved candidate twice"
+        );
+    }
+
     struct RunningHost {
         runtime: SyncRuntime,
         server: tokio::task::JoinHandle<std::io::Result<()>>,
@@ -647,6 +744,20 @@ mod cases {
             1
         );
         let host_manifest = queued_edit.resource_refs[0].clone();
+        echo_core::application::library_recovery::RetryLibraryOperation::new(
+            scan_deps.control.as_ref(),
+            database.as_ref(),
+        )
+        .catch_up(root)
+        .unwrap();
+        assert_eq!(
+            SongRepository::by_id(database.as_ref(), song)
+                .unwrap()
+                .unwrap()
+                .blake3_hash(),
+            Some(host_manifest.digest.to_hex().as_str()),
+            "directory catch-up must preserve the latest watcher value"
+        );
         host.runtime
             .set_started(root, binding, SyncRole::Host, endpoint.to_string());
         host.runtime.start_sync_loop(SyncRole::Host).unwrap();
@@ -658,8 +769,11 @@ mod cases {
         {
             assert!(
                 started.elapsed() < Duration::from_secs(5),
-                "host local edit did not advance its publication association: {:?}",
-                host.runtime.status()
+                "host local edit did not advance its publication association: {:?}; song={:?}; pending sets={:?}; expected={:?}",
+                host.runtime.status(),
+                SongRepository::by_id(database.as_ref(), song).unwrap(),
+                database.pending_peer_resource_sets(root).unwrap(),
+                host_manifest
             );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }

@@ -20,11 +20,13 @@ pub(in crate::infrastructure::filesystem) fn commit_with_hook(
     hook: &mut Hook<'_>,
 ) -> Result<CommitOutcome, Error> {
     batch.validate()?;
-    let replay = recover_with_hook(registry, cache, root, hook)?;
     let current_manifest = manifest(registry, root)?;
-    if !current_manifest.is_compatible() || current_manifest.library_id != batch.library_id {
+    if current_manifest.format_version != crate::domain::library::CURRENT_FORMAT_VERSION
+        || current_manifest.library_id != batch.library_id
+    {
         return Err(invalid("unsupported format or incorrect library identity"));
     }
+    let replay = recover_with_hook(registry, cache, root, hook)?;
     if let Some(existing) = read_operation(registry, cache, root, batch.operation_id)? {
         if existing.batch != *batch {
             return Err(invalid(

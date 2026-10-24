@@ -334,7 +334,14 @@ impl super::AppServices {
             // A manual choice always wins. Otherwise the newest member's
             // embedded artwork is the playlist cover; a brand-new playlist
             // deliberately has no cover at all.
-            let custom_cover_key = PlaylistRepository::cover_key(repos, id)?;
+            let legacy_key = PlaylistRepository::cover_key(repos, id)?;
+            let custom_cover_key = echo_core::application::playlist::cover::resolve_playlist_cover(
+                self.deps.control.as_ref(),
+                self.deps.cover_cache.as_ref(),
+                root,
+                id,
+                legacy_key.as_deref(),
+            )?;
             let has_custom_cover = custom_cover_key.is_some();
             // Work backwards so adding a song without artwork never clears a
             // previously resolved automatic cover.

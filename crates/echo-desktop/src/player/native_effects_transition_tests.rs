@@ -317,6 +317,9 @@ fn reenabling_partial_spatial_bypass_uses_current_width_without_rebuilding() {
 fn bypass_command_failure_removes_owned_filters_and_never_confirms_success() {
     let payload = Payload::Spatial(Spatial::default());
     let mut native = settled(&payload, 48_000);
+    native.bypass(|_| Ok(())).unwrap();
+    native.ramp.as_mut().unwrap().started =
+        Instant::now().checked_sub(TRANSITION.mul_f64(0.5)).unwrap();
     let mut commands = Vec::new();
     let result = native.bypass(|args| {
         commands.push(args.to_vec());

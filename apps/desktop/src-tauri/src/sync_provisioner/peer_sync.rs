@@ -105,6 +105,16 @@ impl NativeSyncProvisioner {
         root: LibraryRootId,
     ) -> Result<(), SyncRuntimeError> {
         self.enroll_peer_snapshot(client, peer, endpoint).await?;
+        let checkpoint = self
+            .database
+            .replica_checkpoint(peer.host_device_id)
+            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?;
+        self.recover_saved_sync_state(
+            root,
+            DeviceId::from_uuid(self.database.current_device_id().as_uuid()),
+            echo_core::domain::library::durability::RecoverySessionRole::Replica,
+            checkpoint,
+        )?;
         let queue = ScopedLocalQueue {
             database: self.database.as_ref(),
             root,

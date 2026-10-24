@@ -52,6 +52,38 @@ fn library_durability_scan_saves_identity_before_projection_and_reuses_it_on_ret
 }
 
 #[test]
+fn library_durability_scan_refresh_preserves_saved_after_image_on_projection_failure() {
+    let fixture = ScanFixture::new();
+    fixture.write_file("saved.flac", b"audio");
+    fixture.set_audio("saved.flac", "Original", 1_000);
+    start_scan(&fixture).run(fixture.root).unwrap();
+    let original = fixture.all_songs()[0].clone();
+    fixture.write_file("saved.flac", b"changed synthetic audio");
+    fixture.set_audio("saved.flac", "Changed", 2_000);
+    fixture.database.set_fail_commit(true);
+    assert!(start_scan(&fixture).run(fixture.root).is_err());
+    let saved = durable_songs(&fixture);
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved[0].song_uuid, original.id().as_uuid());
+    assert_eq!(saved[0].added_at, original.added_at());
+    assert_eq!(saved[0].title.as_deref(), Some("Changed"));
+    assert_eq!(
+        saved[0].content_hash,
+        blake3::hash(b"changed synthetic audio")
+            .to_hex()
+            .to_string()
+    );
+    assert_eq!(fixture.all_songs()[0].title(), original.title());
+    fixture.database.set_fail_commit(false);
+    start_scan(&fixture).run(fixture.root).unwrap();
+    let indexed = fixture.all_songs()[0].clone();
+    assert_eq!(indexed.id(), original.id());
+    assert_eq!(indexed.added_at(), original.added_at());
+    assert_eq!(indexed.title(), Some("Changed"));
+    assert_eq!(durable_songs(&fixture), saved);
+}
+
+#[test]
 fn library_durability_scan_refuses_unwritable_library_before_indexing() {
     let fixture = ScanFixture::new();
     fixture.write_file("readonly.flac", b"audio");

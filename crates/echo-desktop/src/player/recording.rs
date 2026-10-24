@@ -4,27 +4,25 @@
 //! `time-pos` alone — a large seek to the end of the file must not fabricate
 //! listen time, and pausing must stop the clock. Each load (`LoadLibrarySong` /
 //! `LoadTemporary`) gets a fresh [`PlaybackSessionId`]; the accumulator counts
-//! toward the threshold `min(30s, duration * 0.5)` and calls the idempotent
-//! [`PlaybackRecorder::record`] **exactly once** per session.
+//! toward the threshold `min(30s, duration * 0.5)` and creates one qualified
+//! event per session. Failed persistence retries retain that session identity.
 //!
 //! Rules (task 8.10):
 //! - Only `Playing` state accumulates elapsed time (monotonic wall clock, not
 //!   `time-pos`, so seek cannot cheat).
 //! - `Pause` stops accumulation (and seeks do not add time).
 //! - The threshold is `min(30s, song_duration * 0.5)`.
-//! - The recorded callback is invoked at most once per session, even if the
-//!   same event/position repeats.
+//! - Repeated snapshots never create another event. Failed persistence uses
+//!   the same session with bounded retry backoff, even after switching tracks.
 //! - Temporary (session-only, non-library) items are never recorded.
 //!
-//! The desktop layer owns this accumulator; the actual idempotent persistence
-//! (the `recorded_play_sessions` table behind `RecordPlayback`) lives in
-//! `echo-core`'s `SQLite` store and is reached through a small [`PlaybackRecorder`]
-//! port so this module stays player/testable without a real database.
+//! The desktop layer owns qualification and retry scheduling. Core commits the
+//! private session and shared device buckets to the library before projecting
+//! SQLite, reached through a small [`PlaybackRecorder`] port.
 
 /// Idempotent playback-recording boundary. The real desktop composition root
-/// wires this to Core's `record_playback(session, song)` (which inserts the
-/// `recorded_play_sessions` row once and increments `play_count` only for a
-/// fresh session).
+/// wires this to Core's directory-first `record_qualified_playback`; repeated
+/// session identities repair a pending projection instead of incrementing again.
 pub trait PlaybackRecorder: Send + Sync {
     /// Record one qualified library listen. Implementations MUST be idempotent
     /// per `session` — a repeated call for an already-recorded session is a
@@ -94,11 +92,19 @@ struct ListenState {
     recorded: bool,
 }
 
+struct PendingRecording {
+    session: echo_core::domain::ids::PlaybackSessionId,
+    song: echo_core::domain::ids::SongId,
+    attempts: u32,
+    next_attempt: std::time::Instant,
+}
+
 /// The statistics accumulator: owns the current listen session and decides when
 /// to fire the idempotent `RecordPlayback`.
 pub struct PlaybackStatsRecorder<R: PlaybackRecorder> {
     recorder: R,
     current: Option<ListenState>,
+    pending: Vec<PendingRecording>,
     /// Wall-clock basis; set when playback *starts* playing and cleared on pause.
     playing_since: Option<std::time::Instant>,
     /// The recorded duration, so a seek that changes `time-pos` cannot add time.
@@ -112,6 +118,7 @@ impl<R: PlaybackRecorder> PlaybackStatsRecorder<R> {
         Self {
             recorder,
             current: None,
+            pending: Vec::new(),
             playing_since: None,
             duration_known: false,
         }
@@ -215,6 +222,7 @@ impl<R: PlaybackRecorder> PlaybackStatsRecorder<R> {
     /// scrobble that only fires on pause/end would silently lose every listen
     /// of an app that is force-quit mid-track.
     fn maybe_record(&mut self) {
+        self.retry_pending();
         let Some(state) = self.current.as_mut() else {
             return;
         };
@@ -225,12 +233,37 @@ impl<R: PlaybackRecorder> PlaybackStatsRecorder<R> {
         if state.accumulated < threshold {
             return;
         }
-        if let Err(e) = self.recorder.record(state.session, state.song) {
-            tracing::warn!(error = %e, "playback record failed (non-fatal)");
+        if let Err(error) = self.recorder.record(state.session, state.song) {
+            tracing::warn!(session = %state.session, %error, "playback record pending (non-fatal)");
+            self.pending.push(PendingRecording {
+                session: state.session,
+                song: state.song,
+                attempts: 1,
+                next_attempt: std::time::Instant::now() + std::time::Duration::from_secs(1),
+            });
         }
-        // Mark recorded so we do not retry-spam the DB each tick. A repeated
-        // call is a no-op at the sink, but this keeps us off that path.
+        // Ownership moves to the retry list on failure; switching tracks must
+        // not discard that session or re-arm a second event for this listen.
         state.recorded = true;
+    }
+
+    fn retry_pending(&mut self) {
+        let now = std::time::Instant::now();
+        self.pending.retain_mut(|pending| {
+            if now < pending.next_attempt {
+                return true;
+            }
+            match self.recorder.record(pending.session, pending.song) {
+                Ok(_) => false,
+                Err(error) => {
+                    pending.attempts = pending.attempts.saturating_add(1);
+                    let delay = 1u64 << pending.attempts.min(6);
+                    pending.next_attempt = now + std::time::Duration::from_secs(delay);
+                    tracing::warn!(session = %pending.session, attempts = pending.attempts, %error, "playback record still pending (non-fatal)");
+                    true
+                }
+            }
+        });
     }
 }
 
@@ -298,6 +331,66 @@ mod tests {
             (actual - expected).abs() < 1e-9,
             "record_threshold({duration}) = {actual}, expected {expected}"
         );
+    }
+
+    #[derive(Default)]
+    struct FailingRecorder {
+        calls: Mutex<Vec<(PlaybackSessionId, SongId)>>,
+        fail: std::sync::atomic::AtomicBool,
+    }
+
+    impl PlaybackRecorder for FailingRecorder {
+        fn record(&self, session: PlaybackSessionId, song: SongId) -> Result<bool, String> {
+            self.calls.lock().unwrap().push((session, song));
+            if self.fail.load(std::sync::atomic::Ordering::SeqCst) {
+                Err("injected unavailable library".into())
+            } else {
+                Ok(true)
+            }
+        }
+    }
+
+    #[test]
+    fn recorder_failure_is_retained_for_the_original_session_after_switching_tracks() {
+        let sink = FailingRecorder::default();
+        sink.fail.store(true, std::sync::atomic::Ordering::SeqCst);
+        let mut recorder = PlaybackStatsRecorder::new(&sink);
+        let session = PlaybackSessionId::new();
+        let song = SongId::new();
+        recorder.begin_library(session, song);
+        recorder.force_accumulate(31.0);
+        recorder.on_state(PlaybackState::Paused);
+        recorder.begin_temporary(PlaybackSessionId::new());
+        sink.fail.store(false, std::sync::atomic::Ordering::SeqCst);
+        recorder.pending[0].next_attempt = std::time::Instant::now();
+        recorder.tick();
+        recorder.tick();
+        assert_eq!(
+            *sink.calls.lock().unwrap(),
+            vec![(session, song), (session, song)]
+        );
+    }
+
+    #[test]
+    fn recorder_failure_backoff_does_not_retry_on_each_snapshot() {
+        let sink = FailingRecorder::default();
+        sink.fail.store(true, std::sync::atomic::Ordering::SeqCst);
+        let mut recorder = PlaybackStatsRecorder::new(&sink);
+        recorder.begin_library(PlaybackSessionId::new(), SongId::new());
+        recorder.force_accumulate(31.0);
+        recorder.on_state(PlaybackState::Paused);
+        for _ in 0..10 {
+            recorder.tick();
+        }
+        assert_eq!(sink.calls.lock().unwrap().len(), 1);
+        assert_eq!(recorder.pending.len(), 1);
+        for _ in 0..10 {
+            recorder.pending[0].next_attempt = std::time::Instant::now();
+            recorder.tick();
+            assert!(recorder.pending[0].next_attempt > std::time::Instant::now());
+        }
+        assert_eq!(sink.calls.lock().unwrap().len(), 11);
+        assert_eq!(recorder.pending.len(), 1);
     }
 
     #[test]
