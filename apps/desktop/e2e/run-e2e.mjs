@@ -202,8 +202,8 @@ async function main() {
     }
   };
   const goto = async (seed, platform) => {
-    // platform 强制平台门分支（mock-bridge ?platform=），标题栏条场景需要。
-    await cdp.call("Page.navigate", { url: `${BASE}/e2e/index.html?seed=${seed}${platform ? `&platform=${platform}` : ""}` });
+    const url = `${BASE}/e2e/index.html?seed=${seed}${platform ? `&platform=${platform}` : ""}`;
+    await cdp.call("Page.navigate", { url });
     await waitFor(`!!window.__echoE2E__`, 15000);
     await sleep(500);
   };
