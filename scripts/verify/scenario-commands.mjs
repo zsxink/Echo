@@ -313,6 +313,12 @@ export const COMMANDS = {
     "src/features/player/useLyricsStartOffset.test.tsx",
     "re-measures on window resize",
   ),
+  // fix-lyrics-offset-stale-measurement: 旧偏移尚未重新布局时的重算（issue #90）;
+  // 真实几何（A9 信息块增长步）由 task-13.1 的浏览器门禁断言。
+  "IL-R10-S04": REACT_T(
+    "src/features/player/useLyricsStartOffset.test.tsx",
+    "measures the metadata's height while the previous offset is still laid out",
+  ),
 
   // ===== library-experience (LE) =====,
 

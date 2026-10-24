@@ -3428,6 +3428,12 @@
       "manifest": "tests/scenarios/IL-R10-S03.yaml"
     },
     {
+      "id": "IL-R10-S04",
+      "title": "旧偏移尚未重新布局时重算偏移",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/useLyricsStartOffset.test.tsx -t \"measures the metadata's height while the previous offset is still laid out\"",
+      "manifest": "tests/scenarios/IL-R10-S04.yaml"
+    },
+    {
       "id": "LE-R01-S01",
       "title": "切换全部歌曲",
       "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_all_songs_view",
