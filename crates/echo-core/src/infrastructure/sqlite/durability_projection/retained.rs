@@ -165,9 +165,13 @@ pub(super) fn retry(
     });
     // Release positions for the retained membership identities as a set, so
     // valid reorderings (including swaps) do not collide with their old slots.
+    // A member whose dependencies are still unresolved keeps its projected
+    // row: retrying must never discard a saved fact it cannot replace.
     for envelope in &retry_records {
         if let PortableRecord::PlaylistItem(item) = envelope.record() {
-            c.execute("DELETE FROM playlist_songs WHERE member_uuid=?1 AND playlist_uuid IN (SELECT uuid FROM playlists WHERE library_root_uuid=?2)", params![item.item_uuid.to_string(),root.to_string()]).map_err(storage)?;
+            if dependencies::unresolved(c, root, envelope, &retained.records)?.is_none() {
+                c.execute("DELETE FROM playlist_songs WHERE member_uuid=?1 AND playlist_uuid IN (SELECT uuid FROM playlists WHERE library_root_uuid=?2)", params![item.item_uuid.to_string(),root.to_string()]).map_err(storage)?;
+            }
         }
     }
     for envelope in &retry_records {

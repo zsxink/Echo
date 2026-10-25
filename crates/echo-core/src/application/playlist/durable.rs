@@ -65,6 +65,9 @@ impl DurableLibraryEdits<'_> {
     }
 
     /// Persist an empty playlist definition with its original creation time.
+    ///
+    /// When the same unique name was already saved in the directory, the saved
+    /// creation is completed and its identity returned (LD-08).
     /// # Errors
     /// Invalid/colliding names, storage and pending projection propagate.
     pub fn create_playlist(&self, root: LibraryRootId, name: &str) -> Result<PlaylistId, Error> {
@@ -74,8 +77,7 @@ impl DurableLibraryEdits<'_> {
         let edits = self.unit.local_library_edits().ok_or_else(|| {
             Error::unavailable("library edits", "ordered edit adapter is not configured")
         })?;
-        edits.create_library_playlist(self.control, root, id, name, self.device)?;
-        Ok(id)
+        edits.create_library_playlist(self.control, root, id, name, self.device)
     }
 
     /// Rename preserves original time, custom cover and member identities.

@@ -77,3 +77,82 @@ Core 测试，scenario command validity 失败。该结果不证明那些过滤�
   当下的目录提交、冻结正文全入口捕获及 adoption 尚未完成。
 - 8.1/8.2、9.x–11.x：完整 IPC/UI、综合验收、治理登记与交付流程继续按清单推进。
   没有新增三平台原生、完整 workspace 或原样 513 通过证据。
+
+## 追加复核（同日，原工作区）
+
+上文"验证环境与限制"记录的是当时的临时副本状态，**限制已解除**：
+`application/import/tests.rs` 的 `mod durability;` 声明已移除（该文件以
+`include!("tests/lyrics.rs")` 结尾），原工作区可以直接编译并运行完整 Core 套件。
+上文"865 passed、0 failed、1 ignored"对应当时副本；**原工作区本轮为 865/0/2**。
+
+原工作区直接执行（未使用副本）：
+
+| 命令 | 结果 |
+| --- | --- |
+| `cargo test -p echo-core --lib` | 865 passed / 0 failed / 2 ignored |
+| `cargo test -p echo-core library_durability` | 178 passed / 0 failed / 1 ignored |
+| `cargo test -p echo-core scan` | 52 passed / 0 failed / 0 ignored |
+| `cargo test -p echo-core playlist` | 58 passed / 0 failed / 1 ignored |
+| `cargo test -p echo-core import` | 56 passed / 0 failed / 0 ignored |
+| `cargo test -p echo-desktop --lib` | 443 passed / 0 failed / 0 ignored |
+| `cargo test -p echo-desktop favorite` | 4 passed / 0 failed / 0 ignored |
+| `cargo fmt --all --check` | exit 0 |
+| `node scripts/verify/check-scale.mjs` | exit 0（"allowlist did not grow"） |
+| `openspec validate enforce-library-first-durability --strict` | exit 0 |
+
+两个 ignored 中，一个是既有跳过项，另一个是本轮新增的已知缺陷复现
+`library_durability_playlist_create_retry_after_saved_pending_keeps_operation_identity`
+（用例入库但以 `#[ignore]` 固定缺陷，缺陷本身未修）。
+**`pnpm verify:governance` 在本轮记录时仍在运行、输出文件仍为 0 字节**，
+因此 9.5、11.2 继续未勾选，不得按通过引用。
+
+本轮未改变任何已勾选项，任务计数仍为 **19/61**。本轮新增的是对未完成项差距的核实：
+4.2 仍有 4 处 per-operation `project` 闭包与 wipe/重建路径直写业务表
+（`scan/mod.rs:620`、`import/execution.rs:363`、`watch.rs:411`、`watch.rs:502`、
+`continuation.rs:247` 等）；DB-first 入口除 `recover/mod.rs:757-812` 外还有
+`trash.rs:341-366`、`delete.rs:158/304`、`restore.rs:222`、`root_switch.rs:399`
+及旧的 `favorite.rs:48`、`playlist.rs:46/77/99/222`；5.4 的歌词失败在
+`crates/echo-desktop/src/ipc/dto.rs:465-508` 的 `From<ImportOutcome> for ImportResultDto`
+中被 `..` 丢弃；6.1 的新建空库 wipe round-trip 只有喜欢时间、封面与级联删除三处。
+逐项细节与后续入口见 [交接](handoff-20261025.md)。
+
+## 再复核（同日夜间，原工作区）
+
+上表的 `library_durability` 与 `playlist` 两行口径有误：把 `#[ignore]` 的缺陷复现用例计入了
+passed，也没有区分 lib 目标与 arch 目标。此处不改写上文的历史记录，只补充当前实测口径。
+
+本轮把缺陷 1 的复现用例 `library_durability_playlist_create_retry_after_saved_pending_keeps_operation_identity`
+的 `#[ignore]` **解除**，用例转为 RED；工作区**没有改动任何生产实现**。
+
+| 命令 | 结果（2026-10-25 夜间，HEAD `40eea4e` + 未提交工作区） |
+| --- | --- |
+| `cargo test -p echo-core --lib` | **865 passed / 1 failed / 1 ignored**（共 867），唯一失败即缺陷 1 的 RED 用例；唯一 ignored 是既有性能基准 `bench_50k_search_and_first_screen_p95_meet_prd_budgets` |
+| `cargo test -p echo-core library_durability` | lib 目标 176 passed / 1 failed（690 filtered out，共 867）；arch 目标 1 passed。合计 177 passed / 1 failed |
+| `cargo test -p echo-core playlist` | lib 目标 54 passed / 1 failed（812 filtered out，共 867） |
+| `cargo test -p echo-core scan` | lib 目标 52 passed / 0 failed（815 filtered out，共 867）；其余目标 0 命中 |
+| `cargo test -p echo-core import` | lib 目标 55 passed / 0 failed（812 filtered out，共 867）；arch 目标 1 passed。合计 56 passed |
+| `cargo test -p echo-desktop --lib` | 443 passed / 0 failed / 0 ignored |
+| `cargo test -p echo-desktop favorite` | 4 passed / 0 failed（439 filtered out） |
+| `cargo fmt --all --check` | exit 0 |
+| `node scripts/verify/check-scale.mjs` | exit 0（"allowlist did not grow"） |
+| `openspec validate enforce-library-first-durability --strict` | exit 0（"Change 'enforce-library-first-durability' is valid"） |
+| `cargo test -p echo-sync --all-features` | lib 目标 65 passed / 0 failed；arch 目标 1 passed；`discovery_network` 3 ignored；**`ledger_protocol` 0 passed / 2 failed** |
+| `pnpm verify:governance` | **失败**（exit 101，`FAIL governance: architecture and workspace tests exited 101`）⇒ 9.5 / 11.2 继续未勾选 |
+
+治理门上一版记作"仍在运行、输出 0 字节"，那只是当时的快照；本轮已跑完，结论是**失败**。
+失败点是 `crates/echo-sync/tests/ledger_protocol.rs:74` 的两条用例，报
+`Unavailable { resource: "library durability", hint: "directory commit adapter is not configured" }`。
+
+这不是缺陷 1 的 RED 门禁，而是**本分支引入的真实回归**：`sync/durability/commit.rs` 的
+`commit_prepared_projection` 只在 `#[cfg(test)]` 下容忍缺失控制面，而 echo-core 作为
+`echo-sync` 的依赖编译时 `cfg(test)` 为假；该文件在 `origin/main` 上不存在，
+`crates/echo-sync/` 未被本分支改动，且同一条用例在 `origin/main` 的干净检出上 2/2 通过。
+详细根因与证据见 [交接](handoff-20261025.md) 的"缺陷 4"。
+
+核对 `echo-sync` 时**必须带 `--all-features`**：不带时 `discovery_network` 目标会因
+`mdns_sd` 特性未开而编译失败（`unresolved import echo_sync::discovery`），那是特性开关
+问题而非回归——全特性下该目标编译通过、3 条用例全 `ignored`。
+
+三处失败是同一条 RED 用例，**属保留的 RED 门禁，不是回归**；但也不能按"套件通过"引用。
+计数口径请按"命令 + 目标 + 命中数"记录，不写跨目标合计。
+本轮同样**未改变任何已勾选项**，任务计数仍为 **19/61**。

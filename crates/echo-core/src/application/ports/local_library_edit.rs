@@ -46,6 +46,9 @@ pub trait LocalLibraryEditPort: Send + Sync {
 
     /// Plan without committing SQL, save the immutable operation, then catch up
     /// the complete directory chain. Never report success for SQL alone.
+    /// Returns the persisted playlist identity: when the same unique name was
+    /// already saved in the directory, that saved creation is completed and
+    /// its identity returned instead of minting a second one.
     fn create_library_playlist(
         &self,
         control: &dyn ControlPlanePort,
@@ -53,7 +56,7 @@ pub trait LocalLibraryEditPort: Send + Sync {
         id: PlaylistId,
         name: &str,
         device: DeviceId,
-    ) -> Result<(), Error>;
+    ) -> Result<PlaylistId, Error>;
 
     /// Preserve the original playlist facts while freezing a renamed snapshot.
     fn rename_library_playlist(

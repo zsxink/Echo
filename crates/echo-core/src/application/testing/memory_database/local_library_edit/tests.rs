@@ -164,3 +164,48 @@ fn library_durability_memory_failed_projection_reserves_the_saved_sequence() {
         Some(frozen[0].candidate.mutation_id)
     );
 }
+
+#[test]
+fn library_durability_memory_create_retry_completes_the_saved_playlist() {
+    let db = MemoryDatabase::new();
+    let control = MemoryControlPlane::new();
+    let root = LibraryRootId::new();
+    let author = db.current_device_id();
+    control
+        .write_manifest(
+            root,
+            &LibraryManifest::new(LibraryId::from_uuid(uuid::Uuid::new_v4()), "test"),
+        )
+        .unwrap();
+    let first = PlaylistId::new();
+    db.set_fail_commit(true);
+    let error = db
+        .create_library_playlist(&control, root, first, "retry me", author)
+        .unwrap_err();
+    let Error::LibrarySavedPending { operation, .. } = &error else {
+        panic!("saved pending expected: {error:?}");
+    };
+    let operation = *operation;
+    // A retry under the same unique name reports the SAME saved operation and
+    // adds no second directory commit, even while projection still fails.
+    let retry = db
+        .create_library_playlist(&control, root, PlaylistId::new(), "retry me", author)
+        .unwrap_err();
+    let Error::LibrarySavedPending {
+        operation: retried, ..
+    } = &retry
+    else {
+        panic!("the same saved operation expected: {retry:?}");
+    };
+    assert_eq!(*retried, operation);
+    assert_eq!(control.recover(root).unwrap().commits.len(), 1);
+    db.set_fail_commit(false);
+    // Once projection heals, a retry completes the saved creation under its
+    // original identity instead of minting a second one.
+    let completed = db
+        .create_library_playlist(&control, root, PlaylistId::new(), "retry me", author)
+        .unwrap();
+    assert_eq!(completed, first);
+    assert_eq!(db.name(first).unwrap().as_deref(), Some("retry me"));
+    assert_eq!(control.recover(root).unwrap().commits.len(), 1);
+}

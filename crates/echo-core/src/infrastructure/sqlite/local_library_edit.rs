@@ -7,13 +7,14 @@ mod removal;
 use super::{durability_backfill, durability_projection, statements, storage, SqliteDatabase};
 use crate::application::library_commit::commit_then_project;
 use crate::application::ports::{ControlPlanePort, LocalLibraryEditPort};
-use crate::domain::ids::{LibraryRootId, PlaylistId, Revision, SongId};
-use crate::domain::library::durability::{ChangeOrigin, LibraryBatch};
+use crate::domain::ids::{LibraryRootId, OperationId, PlaylistId, Revision, SongId};
+use crate::domain::library::durability::{ChangeOrigin, LibraryBatch, LibraryReplay, StateKind};
 use crate::domain::library::{
     DeviceId, FavoriteRecord, HybridLogicalClock, LibraryId, PlaylistRecord, PortableRecord,
     PortableRecordEnvelope, RecordKind,
 };
 use crate::domain::sync::ObjectKey;
+use crate::domain::text::playlist_name_key;
 use crate::error::Error;
 use rusqlite::{Connection, OptionalExtension};
 
@@ -35,7 +36,7 @@ impl LocalLibraryEditPort for SqliteDatabase {
             control,
             root,
             device,
-            move |c, authority, library, sequence| {
+            move |c, authority, library, sequence, _| {
                 removal::Removal {
                     root,
                     playlist,
@@ -62,7 +63,7 @@ impl LocalLibraryEditPort for SqliteDatabase {
             control,
             root,
             device,
-            move |c, authority, library, sequence| {
+            move |c, authority, library, sequence, _| {
                 members::Append {
                     root,
                     song,
@@ -83,7 +84,7 @@ impl LocalLibraryEditPort for SqliteDatabase {
         id: PlaylistId,
         device: DeviceId,
     ) -> Result<(), Error> {
-        self.plan_library_edit(control, root, device, move |c, _, library, sequence| {
+        self.plan_library_edit(control, root, device, move |c, _, library, sequence, _| {
             deletion::plan(c, root, library, id, device, sequence)
         })
     }
@@ -96,7 +97,7 @@ impl LocalLibraryEditPort for SqliteDatabase {
         favorite: bool,
         device: DeviceId,
     ) -> Result<(), Error> {
-        self.plan_library_edit(control, root, device, move |c, _, library, sequence| {
+        self.plan_library_edit(control, root, device, move |c, _, library, sequence, _| {
             let visible: bool = c.query_row(
                 "SELECT EXISTS(SELECT 1 FROM songs WHERE uuid=?1 AND library_root_uuid=?2 AND availability<>'pending_delete')",
                 rusqlite::params![song.to_string(), root.to_string()], |row| row.get(0),
@@ -125,7 +126,7 @@ impl LocalLibraryEditPort for SqliteDatabase {
         id: PlaylistId,
         name: &str,
         device: DeviceId,
-    ) -> Result<(), Error> {
+    ) -> Result<PlaylistId, Error> {
         self.edit_library_playlist(control, root, id, name, device, PlaylistEdit::Create)
     }
 
@@ -138,6 +139,7 @@ impl LocalLibraryEditPort for SqliteDatabase {
         device: DeviceId,
     ) -> Result<(), Error> {
         self.edit_library_playlist(control, root, id, name, device, PlaylistEdit::Rename)
+            .map(|_| ())
     }
 }
 
@@ -150,26 +152,50 @@ impl SqliteDatabase {
         name: &str,
         device: DeviceId,
         edit: PlaylistEdit,
-    ) -> Result<(), Error> {
+    ) -> Result<PlaylistId, Error> {
         let name = name.to_owned();
-        self.plan_library_edit(control, root, device, move |c, authority, library, sequence| {
-            let saved = authority.read_record(root, RecordKind::Playlist, &id.to_string())?;
-            match edit {
-                PlaylistEdit::Create => statements::create_playlist(c, id, root, &name)?,
-                PlaylistEdit::Rename => {
-                    let belongs: bool = c.query_row(
-                        "SELECT EXISTS(SELECT 1 FROM playlists WHERE uuid=?1 AND library_root_uuid=?2)",
-                        rusqlite::params![id.to_string(), root.to_string()], |row| row.get(0),
-                    ).map_err(storage)?;
-                    if !belongs {
-                        return Err(Error::unavailable("playlist", "not in the active library"));
+        self.plan_library_change(
+            control,
+            root,
+            device,
+            None,
+            move |c, authority, library, sequence, baseline| {
+                let saved = authority.read_record(root, RecordKind::Playlist, &id.to_string())?;
+                match edit {
+                    PlaylistEdit::Create => {
+                        // A creation already saved in the directory under the
+                        // same unique name is that same playlist: complete it
+                        // instead of minting a second identity (LD-08).
+                        if let Some(live) = baseline.playlist_by_name(&playlist_name_key(&name)) {
+                            let saved = PlaylistId::from_uuid(live.playlist_uuid);
+                            return Ok((
+                                LibraryBatch::new(
+                                    uuid::Uuid::new_v4(),
+                                    library,
+                                    ChangeOrigin::LocalEdit,
+                                    vec![],
+                                ),
+                                saved,
+                            ));
+                        }
+                        statements::create_playlist(c, id, root, &name)?;
                     }
-                    statements::rename_playlist(c, id, &name)?;
+                    PlaylistEdit::Rename => {
+                        let belongs: bool = c.query_row(
+                            "SELECT EXISTS(SELECT 1 FROM playlists WHERE uuid=?1 AND library_root_uuid=?2)",
+                            rusqlite::params![id.to_string(), root.to_string()], |row| row.get(0),
+                        ).map_err(storage)?;
+                        if !belongs {
+                            return Err(Error::unavailable("playlist", "not in the active library"));
+                        }
+                        statements::rename_playlist(c, id, &name)?;
+                    }
                 }
-            }
-            let record = planned_playlist(c, id, device, saved.as_ref())?;
-            planned_batch(c, root, library, device, record, ObjectKey::Playlist(id), sequence)
-        })
+                let record = planned_playlist(c, id, device, saved.as_ref())?;
+                planned_batch(c, root, library, device, record, ObjectKey::Playlist(id), sequence)
+                    .map(|batch| (batch, id))
+            },
+        )
     }
 
     fn plan_library_edit(
@@ -182,6 +208,7 @@ impl SqliteDatabase {
                 &dyn ControlPlanePort,
                 LibraryId,
                 u64,
+                &LibraryReplay,
             ) -> Result<LibraryBatch, Error>
             + Send
             + 'static,
@@ -191,8 +218,8 @@ impl SqliteDatabase {
             root,
             device,
             None,
-            move |c, authority, library, sequence| {
-                plan(c, authority, library, sequence).map(|batch| (batch, ()))
+            move |c, authority, library, sequence, baseline| {
+                plan(c, authority, library, sequence, baseline).map(|batch| (batch, ()))
             },
         )
     }
@@ -208,6 +235,7 @@ impl SqliteDatabase {
                 &dyn ControlPlanePort,
                 LibraryId,
                 u64,
+                &LibraryReplay,
             ) -> Result<(LibraryBatch, T), Error>
             + Send
             + 'static,
@@ -233,19 +261,7 @@ impl SqliteDatabase {
                 connection, root, &baseline, Some(authority.as_ref()),
             )?;
             durability_projection::project_commits(connection, root, &baseline).map_err(|error| {
-                if let Some(operation) = retry_operation.filter(|operation| {
-                    baseline.states().any(|state| {
-                        state.kind == crate::domain::library::durability::StateKind::PlaybackEvent
-                            && state.id == *operation
-                    })
-                }) {
-                    Error::saved_pending_projection(
-                        crate::domain::ids::OperationId::from_uuid(operation),
-                        error,
-                    )
-                } else {
-                    error
-                }
+                saved_pending_catch_up(connection, root, &baseline, retry_operation, error)
             })?;
             let manifest = authority.read_manifest(root)?
                 .ok_or_else(|| Error::unavailable("library edits", "library manifest missing"))?;
@@ -254,7 +270,7 @@ impl SqliteDatabase {
                 "SELECT origin_seq FROM sync_local_origin_cursors WHERE local_root_uuid=?1 AND origin_device_id=?2",
                 rusqlite::params![root.to_string(), device.to_string()], |row| row.get::<_, u64>(0),
             ).optional().map_err(storage)?.unwrap_or(0);
-            let (batch, result) = plan(&tx, authority.as_ref(), manifest.library_id, sequence)?;
+            let (batch, result) = plan(&tx, authority.as_ref(), manifest.library_id, sequence, &baseline)?;
             tx.rollback().map_err(storage)?;
             if batch.records.is_empty() && batch.state.is_empty() && batch.resources.is_empty() {
                 return Ok(result);
@@ -268,6 +284,45 @@ impl SqliteDatabase {
             })?;
             Ok(result)
         })
+    }
+}
+
+/// Attribute a failed ordered catch-up to the stable operation identity of the
+/// first commit the projection has not recorded, so every retry keeps reporting
+/// the saved operation instead of a fresh unsaved failure (LD-08).
+fn saved_pending_catch_up(
+    connection: &Connection,
+    root: LibraryRootId,
+    baseline: &LibraryReplay,
+    retry_operation: Option<uuid::Uuid>,
+    error: Error,
+) -> Error {
+    if let Some(operation) = retry_operation.filter(|operation| {
+        baseline
+            .states()
+            .any(|state| state.kind == StateKind::PlaybackEvent && state.id == *operation)
+    }) {
+        return Error::saved_pending_projection(OperationId::from_uuid(operation), error);
+    }
+    let projected: Option<u64> = connection
+        .query_row(
+            "SELECT commit_seq FROM library_projection_watermarks WHERE library_root_uuid=?1",
+            [root.to_string()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(storage)
+        .unwrap_or(None);
+    match baseline
+        .commits
+        .iter()
+        .find(|commit| commit.library_commit_seq > projected.unwrap_or(0))
+    {
+        Some(commit) => Error::saved_pending_projection(
+            OperationId::from_uuid(commit.batch.operation_id),
+            error,
+        ),
+        None => error,
     }
 }
 

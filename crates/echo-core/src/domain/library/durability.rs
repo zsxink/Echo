@@ -19,7 +19,10 @@ pub use projection::{
 pub use session::{RecoverySessionRole, SyncRecoveryContext};
 pub use state::{StateKey, StateNamespace, StateTarget};
 
-use super::{LibraryId, PortableRecordEnvelope, PortableSerialize};
+use super::{
+    LibraryId, PlaylistRecord, PortableRecord, PortableRecordEnvelope, PortableSerialize,
+    RecordKind,
+};
 use crate::error::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -455,6 +458,36 @@ impl LibraryReplay {
             .iter()
             .flat_map(|c| &c.state)
             .chain(self.commits.iter().flat_map(|c| &c.batch.state))
+    }
+    /// The live playlist after-image under a unique-name key, applying this
+    /// coverage image in order and dropping tombstoned identities.
+    ///
+    /// A creation saved in the directory must stay findable by name while the
+    /// projection has not caught up, so a retry completes the saved playlist
+    /// instead of minting a second identity under the same unique name.
+    #[must_use]
+    pub fn playlist_by_name(&self, name_key: &str) -> Option<PlaylistRecord> {
+        let mut live = std::collections::BTreeMap::new();
+        for envelope in self
+            .checkpoint
+            .iter()
+            .flat_map(|image| &image.records)
+            .chain(self.commits.iter().flat_map(|commit| &commit.batch.records))
+        {
+            match envelope.record() {
+                PortableRecord::Playlist(record) => {
+                    live.insert(record.playlist_uuid, record.clone());
+                }
+                PortableRecord::Tombstone(tombstone)
+                    if tombstone.deleted_kind == RecordKind::Playlist =>
+                {
+                    live.remove(&tombstone.object_uuid);
+                }
+                _ => {}
+            }
+        }
+        live.into_values()
+            .find(|record| crate::domain::text::playlist_name_key(&record.display_name) == name_key)
     }
     #[must_use]
     pub fn head(&self) -> Option<(u64, &str)> {

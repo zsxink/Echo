@@ -17,6 +17,40 @@ This inventory separates the implementation observed in the repository on 2026-1
 | Source ACK and host confirmation | Sync ACK/apply/host confirmation currently flow through SQLite sync adapters and desktop provisioner; portable record writes do not cover the full receipt/ledger transaction. | Persist exact confirmed payload, operation identity and required publication facts to library before returning success ACK or exposing a snapshot/delta. Drop DB after ACK and verify business recovery; separately require trusted ledger/checkpoint to resume hosting. |
 | Root join / first sync | Current product contract is `openspec/specs/lan-library-sync/spec.md`, requirement “首次加入本地优先合并”: retain managed local data and media, queue local objects, then validate and merge host snapshot. Do not use older empty-directory wording in product docs. | Durability work preserves this merge policy while changing local persistence order. Verify cancellation and snapshot failure leave local data intact; no peer trust is inferred from library records. |
 
+## 复核（2026-10-25）
+
+上表是 2026-10-23 的观察快照，其中若干"当前行为"已被本分支的未提交实现取代。
+以 [交接](handoff-20261025.md) 与 [tasks.md](../tasks.md) 的逐项记录为准，本表仅作导航。
+
+- **扫描与刷新**：现状已不是"仅更新 SQLite"。`application/scan/durable.rs::commit_song`
+  已在目录侧提交 Song 后再投影，改名路径 `application/watch.rs::rename_path` 也改走
+  `commit_song`。但"无变化扫描不产生候选"仍未成立（目录侧抑制了对象版本，SQLite 侧
+  仍铸出同步候选），且扫描后 wipe 重建没有用例——表中"扫描后 wipe/重建"这一验证项
+  依旧缺失。
+- **喜欢切换、歌单创建/改名/删除、歌单成员**：这些入口已接入共享提交协调器
+  `infrastructure/sqlite/local_library_edit.rs::plan_library_change`（目录提交在前、
+  SQLite 投影在后），不再是"先改库再写记录"。但**歌单创建的重试仍会丢失稳定操作身份**：
+  重试时协调器的追赶失败被原样返回（`local_library_edit.rs:235-249` 只对播放事件做
+  `saved_pending_projection` 映射），追赶恢复后又会因新铸的 `PlaylistId` 撞上
+  `playlists` 的 `UNIQUE (library_root_uuid, normalized_name_key)`。
+  该缺陷已用 RED 用例固定（`tests/lifecycle/playlist_create.rs`，**已解除 `#[ignore]`**，
+  当前 `cargo test -p echo-core --lib` 按设计带 1 个失败）。
+- **启动续跑**：`application/continuation.rs` 仍直写业务表绕过水位追赶，表中
+  "cannot reconstruct data that was only in SQLite" 的旧描述已不准确，但"未走统一
+  协调器"这一差距仍在。
+- **主机确认 / ACK（"Source ACK and host confirmation" 行）**：本分支新增了目录优先的确认提交
+  路径（`crates/echo-core/src/infrastructure/sqlite/sync/durability/commit.rs`，`origin/main`
+  上不存在），但其中的 `commit_prepared_projection` 只在 `#[cfg(test)]` 下容忍缺失控制面，
+  而 echo-core 作为 `echo-sync` 的依赖编译时 `cfg(test)` 为假 ⇒ `ledger_protocol` 2/2 失败，
+  `pnpm verify:governance` exit 101。该行"portable record writes do not cover the full
+  receipt/ledger transaction"仍是未完成项，但**当前还多出一处分支引入的回归**须先修；
+  详见 [交接](handoff-20261025.md) 的"缺陷 4"。
+- 其余行（导入、封面、播放统计、删除/撤销、LAN 入站、ACK、首次加入）未在本分支改动，
+  仍按 2026-10-23 的观察成立。
+
+当前状态、逐项差距与修复形状见 [交接](handoff-20261025.md)；依赖关系与排期见
+[任务依赖 DAG](task-dag-20261025.md)（其依赖边未经编译或测试执行验证，只作排期参考）。
+
 ## Cross-cutting write contract
 
 Expected production path: typed Core change set → durable library commit (stable operation ID, sequence/predecessor, complete after-image and resource declarations) → ordered idempotent SQLite projection catching up from the recorded watermark (not only the latest operation) → user-visible complete result. If the library commit succeeded but a later step failed, return a saved-pending state tied to that same operation; if the durable commit itself failed, do not leave a DB-only user fact. LAN receipt, credentials and host authority remain distinct from recoverable user data. Legacy DB contents may be used only by an audited rescue migration while still available. A projection must tolerate dangling parents: resolvable rows land in the tables, unresolved relations stay in `library_recovery_records` and count as partial recovery instead of aborting the whole rebuild. Shared/sync payloads never carry playback session or event identity; that idempotency fact lives in `echo/state/playback-events/`.

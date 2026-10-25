@@ -8,6 +8,15 @@ use crate::domain::library::{
 };
 
 pub(super) fn seed_song(stack: &ScanStack, control: &RootControlPlane, deps: &ScanDeps) -> SongId {
+    seed_song_at(stack, control, deps, "media/favorite.flac")
+}
+
+pub(super) fn seed_song_at(
+    stack: &ScanStack,
+    control: &RootControlPlane,
+    deps: &ScanDeps,
+    media_path: &str,
+) -> SongId {
     let song = SongId::new();
     let library = control
         .read_manifest(stack.root)
@@ -16,10 +25,8 @@ pub(super) fn seed_song(stack: &ScanStack, control: &RootControlPlane, deps: &Sc
         .library_id;
     let record = PortableRecord::Song(SongRecord {
         song_uuid: song.as_uuid(),
-        media_path: LibraryRelativePath::new("media/favorite.flac").unwrap(),
-        content_hash: blake3::hash(b"synthetic favorite audio")
-            .to_hex()
-            .to_string(),
+        media_path: LibraryRelativePath::new(media_path).unwrap(),
+        content_hash: blake3::hash(media_path.as_bytes()).to_hex().to_string(),
         added_at: 123,
         title: Some("favorite song".into()),
         artist: None,

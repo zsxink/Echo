@@ -1,6 +1,8 @@
 mod favorite;
+mod ordered_fake;
 mod playback;
 mod playlist_cover;
+mod playlist_create;
 mod playlist_delete;
 mod playlist_members;
 mod playlist_remove;

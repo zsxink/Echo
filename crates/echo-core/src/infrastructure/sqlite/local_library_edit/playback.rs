@@ -18,7 +18,7 @@ impl PlaybackEditPort for SqliteDatabase {
         song: SongId,
         device: DeviceId,
     ) -> Result<bool, Error> {
-        self.plan_library_change(control, root, device, Some(session.as_uuid()), move |c, authority, library, sequence| {
+        self.plan_library_change(control, root, device, Some(session.as_uuid()), move |c, authority, library, sequence, _| {
             let empty = || LibraryBatch::new(session.as_uuid(), library, ChangeOrigin::LocalEdit, vec![]);
             let saved: Option<String> = c.query_row(
                 "SELECT song_uuid FROM recorded_play_sessions WHERE playback_session_uuid=?1",

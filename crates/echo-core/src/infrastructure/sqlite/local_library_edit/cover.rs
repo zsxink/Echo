@@ -20,7 +20,7 @@ impl PlaylistCoverEditPort for SqliteDatabase {
             control,
             root,
             device,
-            move |c, authority, library, sequence| {
+            move |c, authority, library, sequence, _| {
                 let belongs: bool = c.query_row(
                 "SELECT EXISTS(SELECT 1 FROM playlists WHERE uuid=?1 AND library_root_uuid=?2)",
                 params![id.to_string(), root.to_string()], |row| row.get(0),

@@ -193,7 +193,7 @@ fn library_durability_playlist_cover_legacy_cache_gap_is_explicit() {
     );
 }
 
-fn original_png() -> Vec<u8> {
+pub(super) fn original_png() -> Vec<u8> {
     let image = image::RgbaImage::from_pixel(4, 4, image::Rgba([200, 50, 50, 255]));
     let mut bytes = std::io::Cursor::new(Vec::new());
     image.write_to(&mut bytes, image::ImageFormat::Png).unwrap();

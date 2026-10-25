@@ -11,6 +11,7 @@ use super::*;
 use crate::application::library_commit::commit_then_project;
 use crate::domain::library::durability::{ChangeOrigin, LibraryBatch};
 use crate::domain::library::{PlaylistRecord, PortableRecord, PortableRecordEnvelope, RecordKind};
+use crate::domain::text::playlist_name_key;
 
 impl LocalLibraryEditPort for MemoryDatabase {
     fn remove_library_member(
@@ -145,7 +146,7 @@ impl LocalLibraryEditPort for MemoryDatabase {
         id: PlaylistId,
         name: &str,
         device: DeviceId,
-    ) -> Result<(), Error> {
+    ) -> Result<PlaylistId, Error> {
         self.edit_library_playlist(control, root, id, name, device, false)
     }
 
@@ -158,6 +159,7 @@ impl LocalLibraryEditPort for MemoryDatabase {
         device: DeviceId,
     ) -> Result<(), Error> {
         self.edit_library_playlist(control, root, id, name, device, true)
+            .map(|_| ())
     }
 }
 
@@ -170,7 +172,7 @@ impl MemoryDatabase {
         name: &str,
         device: DeviceId,
         rename: bool,
-    ) -> Result<(), Error> {
+    ) -> Result<PlaylistId, Error> {
         let mut store = self.lock();
         if device != store.device_id {
             return Err(Error::conflict(
@@ -189,6 +191,34 @@ impl MemoryDatabase {
             .unwrap_or_default()
             .as_millis();
         let now = u64::try_from(now).unwrap_or(u64::MAX);
+        if !rename {
+            // A creation already saved in the directory under the same unique
+            // name is that same playlist: catch up and complete it instead of
+            // minting a second identity (LD-08).
+            if let Some(live) = baseline.playlist_by_name(&playlist_name_key(name)) {
+                let operation =
+                    baseline
+                        .commits
+                        .iter()
+                        .find(|commit| {
+                            commit.batch.records.iter().any(|envelope| {
+                                envelope.record().object_uuid() == live.playlist_uuid
+                            })
+                        })
+                        .map(|commit| commit.batch.operation_id)
+                        .ok_or_else(|| Error::conflict("saved playlist commit missing"))?;
+                let mut candidate = store.clone();
+                project_records(&mut candidate, root, &baseline);
+                if self.fail_commit.load(std::sync::atomic::Ordering::Relaxed) {
+                    return Err(Error::saved_pending_projection(
+                        crate::domain::ids::OperationId::from_uuid(operation),
+                        Error::unavailable("test transaction", "simulated commit failure"),
+                    ));
+                }
+                *store = candidate;
+                return Ok(PlaylistId::from_uuid(live.playlist_uuid));
+            }
+        }
         let mut playlist = if rename {
             match control.read_record(root, RecordKind::Playlist, &id.to_string())? {
                 Some(PortableRecord::Playlist(record)) => record,
@@ -244,7 +274,7 @@ impl MemoryDatabase {
             *store = candidate;
             Ok(())
         })?;
-        Ok(())
+        Ok(id)
     }
 }
 
