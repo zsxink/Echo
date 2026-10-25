@@ -56,10 +56,10 @@ export function useImport({ libraryRoot, onImportCommitted }: UseImportOptions =
       if (feedback.nonFailures.length > 0) invalidateLibrary();
       onImportCommitted?.();
       if (feedback.nonFailures.length > 0) notify(feedback.summary);
-      if (feedback.failures.length > 0 || feedback.pending.length > 0) {
+      if (feedback.actionResults.length > 0) {
         resultRoot.current = libraryRoot;
         setRecoveryError(undefined);
-        setImportFailures([...feedback.pending, ...feedback.failures]);
+        setImportFailures(feedback.actionResults);
       }
     } catch (error) {
       const pending = savedLibraryOperation(error);

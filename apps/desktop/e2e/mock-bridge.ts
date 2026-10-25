@@ -706,6 +706,8 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
         operationId: `op-${next}`,
         songId: `song-${next}`,
         relativePath: `新导入 ${next}.mp3`,
+        renamed: false,
+        lyrics: { kind: "none" },
       };
       if (st.importMode === "mixed") {
         return {
@@ -798,6 +800,8 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
       operationId: "op-temp",
       songId: "song-temp",
       relativePath: "临时导入.mp3",
+      renamed: false,
+      lyrics: { kind: "none" },
     }),
     get_lyrics: ({ songId }) => {
       const s = state.songs.find((x) => x.id === songId);

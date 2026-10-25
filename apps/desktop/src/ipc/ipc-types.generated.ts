@@ -311,9 +311,14 @@ export interface SongDetailView {
   readonly availability: SongAvailability;
 }
 
+export type LyricsImportResultDto =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'imported'; readonly relativePath: string }
+  | { readonly kind: 'failed'; readonly code: string; readonly message: string };
+
 export type ImportResultDto =
-  | { readonly kind: 'savedPending'; readonly operationId: string; readonly songId: string; readonly relativePath: string; readonly renamed: boolean; readonly code: string; readonly message: string }
-  | { readonly kind: 'imported'; readonly operationId: string; readonly songId: string; readonly relativePath: string; readonly renamed: boolean }
+  | { readonly kind: 'savedPending'; readonly operationId: string; readonly songId: string; readonly relativePath: string; readonly renamed: boolean; readonly lyrics: LyricsImportResultDto; readonly code: string; readonly message: string }
+  | { readonly kind: 'imported'; readonly operationId: string; readonly songId: string; readonly relativePath: string; readonly renamed: boolean; readonly lyrics: LyricsImportResultDto }
   | { readonly kind: 'duplicate'; readonly existingSongId: string }
   | { readonly kind: 'skipped' }
   | { readonly kind: 'libraryUnavailable' }

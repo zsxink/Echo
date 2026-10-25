@@ -32,6 +32,27 @@ describe("ImportFailureDialog", () => {
     expect(screen.getByText("音乐库不可用，未开始导入。")).toBeInTheDocument();
   });
 
+  it("shows an imported audio file separately from its failed lyrics sidecar", () => {
+    render(
+      <ImportFailureDialog
+        onClose={() => undefined}
+        results={[
+          {
+            kind: "imported",
+            operationId: "lyrics-operation",
+            songId: "lyrics-song",
+            relativePath: "media/晴天.flac",
+            renamed: false,
+            lyrics: { kind: "failed", code: "lyrics_publish", message: "歌词目录不可写" },
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "导入结果" })).toBeInTheDocument();
+    expect(screen.getByText("已导入：media/晴天.flac")).toBeInTheDocument();
+    expect(screen.getByText("音频已导入；歌词未导入：歌词目录不可写")).toBeInTheDocument();
+  });
+
   it("shows saved-pending as saved and preserves the recovery identity", () => {
     render(
       <ImportFailureDialog
@@ -44,6 +65,7 @@ describe("ImportFailureDialog", () => {
             songId: "original-song",
             relativePath: "media/歌曲.flac",
             renamed: false,
+            lyrics: { kind: "none" },
             code: "library_saved_pending_projection",
             message: "library.savedPendingProjection",
           },

@@ -44,6 +44,9 @@ function ResultLine({
         <p>
           {libraryPersistenceMessage(result.code) ?? "已保存到音乐库，等待更新。无需重新导入。"}
         </p>
+        {result.lyrics.kind === "failed" ? (
+          <p role="alert">音频已保存；歌词未导入：{result.lyrics.message}</p>
+        ) : null}
         <small>恢复操作：{result.operationId}</small>
         {onRecover ? (
           <button
@@ -61,8 +64,13 @@ function ResultLine({
   if (result.kind === "imported") {
     return (
       <li className="is-ok" data-testid="import-line">
-        已导入：{result.relativePath}
-        {result.renamed ? "（已重名编号）" : ""}
+        <p>
+          已导入：{result.relativePath}
+          {result.renamed ? "（已重名编号）" : ""}
+        </p>
+        {result.lyrics.kind === "failed" ? (
+          <p role="alert">音频已导入；歌词未导入：{result.lyrics.message}</p>
+        ) : null}
       </li>
     );
   }
@@ -121,10 +129,17 @@ export function ImportFailureDialog({
       ref={dialogRef}
     >
       <div className="confirmation-panel">
-        <h2 id="import-title">{hasPending ? "导入结果" : "导入失败"}</h2>
+        <h2 id="import-title">
+          {hasPending || results.some((result) =>
+            (result.kind === "imported" || result.kind === "savedPending") &&
+            result.lyrics.kind === "failed",
+          )
+            ? "导入结果"
+            : "导入失败"}
+        </h2>
         <p className="dialog-summary">
           {hasPending
-            ? "已保存的音乐等待更新，无需重新导入。未保存的项目会单独显示失败原因。"
+            ? "已保存的音乐等待更新，无需重新导入。歌词导入状态和未保存项目的失败原因会单独显示。"
             : "以下项目需要处理；已完成的导入不会受影响。"}
         </p>
         <ul className="dialog-results">

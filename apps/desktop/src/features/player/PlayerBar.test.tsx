@@ -126,6 +126,7 @@ describe("PlayerBar (task 11.7) — temporary item label", () => {
       songId: "song-imported",
       relativePath: "media/song.mp3",
       renamed: false,
+      lyrics: { kind: "none" },
     });
     fireEvent.click(screen.getByRole("button", { name: "导入" }));
     expect(capturedInvoke).toHaveBeenCalledWith("import_current_temporary_file", {});
