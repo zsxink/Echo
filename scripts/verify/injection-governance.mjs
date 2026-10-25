@@ -162,6 +162,21 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
         return {};
       },
     },
+    {
+      id: "windows-installer/webview2-fallback-regressed-to-download",
+      guard: "the Windows installer config losing its embedded WebView2 bootstrapper and regressing to the plaintext-HTTP downloadBootstrapper default (issue #64)",
+      check: ["node", ["scripts/verify/checks/task-17.1.mjs"]],
+      expect: /FAIL windows-installer: bundle\.windows\.webviewInstallMode\.type must be "embedBootstrapper"/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, "apps", "desktop", "src-tauri", "tauri.windows.conf.json"),
+          '      "webviewInstallMode": { "type": "embedBootstrapper", "silent": true },\n',
+          "",
+        );
+        return {};
+      },
+    },
   ];
 }
 

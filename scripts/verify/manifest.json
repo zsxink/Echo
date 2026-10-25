@@ -2144,6 +2144,16 @@
       ]
     },
     {
+      "id": "17.1",
+      "title": "Windows 安装器契约：WebView2 兜底内嵌、安装器双语、WebView2 版本基线、Win10 门槛与 README 系统要求不得回归为 Tauri 默认值（issue #64）",
+      "commands": [
+        {
+          "desc": "merged tauri.windows.conf.json keeps embedBootstrapper(silent), nsis.languages exactly [SimpChinese, English] (first language is the fallback), minimumWebview2Version, the NSIS_HOOK_PREINSTALL AtLeastWin10 hook, platform-neutral base config, and both READMEs state Windows 10 minimum + x64-only",
+          "cmd": "node scripts/verify/checks/task-17.1.mjs"
+        }
+      ]
+    },
+    {
       "id": "AFX-1",
       "title": "Audio-effects evidence discipline: task-id collisions, discredited structural claim, and probe capability",
       "commands": [

@@ -49,6 +49,16 @@
 
 > 详细规划见 [`docs/ROADMAP.md`](docs/ROADMAP.md)，产品定位见 [`docs/PRODUCT.md`](docs/PRODUCT.md)，设计约束见 [`docs/DESIGN.md`](docs/DESIGN.md)，界面交互见 [`docs/interface-terminology.md`](docs/interface-terminology.md)。
 
+### 系统要求
+
+| 平台 | 最低版本 | 实测基线 | 产物 |
+|---|---|---|---|
+| Windows | Windows 10 | Windows 10 22H2 / 11 x64 | x64 NSIS 安装包 |
+| macOS | macOS 12 | macOS 12+（Apple Silicon） | aarch64 DMG |
+| Linux | Ubuntu 22.04 | Ubuntu 22.04+ x64 | deb / AppImage |
+
+Windows 产物仅提供 x64。WebView2 运行时缺失时，安装器会用内嵌的 bootstrapper 自动引导安装。安装包当前**未签名**：Windows SmartScreen 可能提示「已保护你的电脑」，选择「更多信息 → 仍要运行」即可；macOS 首次启动需在「隐私与安全性」中放行。
+
 ## 界面原型
 
 桌面原型与品牌视觉见 [`docs/prototype/echo-desktop-player.html`](docs/prototype/echo-desktop-player.html) 及同目录图标素材。
