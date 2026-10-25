@@ -232,6 +232,117 @@ fn library_durability_rebuild_failure_rolls_back_the_active_projection() {
 }
 
 #[test]
+fn library_durability_rebuild_commit_failure_keeps_the_previous_projection() {
+    use rusqlite::Connection;
+
+    let directory = tempfile::tempdir().unwrap();
+    let database_path = directory.path().join("active.sqlite");
+    let database = SqliteDatabase::open(&database_path).unwrap();
+    let root = LibraryRootId::new();
+    LibraryRepository::upsert(
+        &database,
+        &LibraryRoot::new(root, directory.path().join("library"), true, true),
+    )
+    .unwrap();
+    let old_library = LibraryId::from_uuid(uuid::Uuid::new_v4());
+    let old = replay(
+        old_library,
+        Issue72Fixture::with_database_evidence().database,
+    );
+    database.project_library_commits(root, &old).unwrap();
+    let old_ids: Vec<_> = SongRepository::all_in_root(&database, root)
+        .unwrap()
+        .into_iter()
+        .map(|song| song.id())
+        .collect();
+    let old_status = database.projection_status(root).unwrap();
+
+    // The deferred foreign key allows the replacement statements to execute,
+    // then rejects the transaction at COMMIT. This exercises the final atomic
+    // boundary rather than an earlier INSERT/DELETE failure.
+    Connection::open(&database_path)
+        .unwrap()
+        .execute_batch(&format!(
+            "CREATE TABLE rebuild_commit_probe(song_uuid TEXT REFERENCES songs(uuid) DEFERRABLE INITIALLY DEFERRED);\
+             CREATE TRIGGER fail_rebuild_at_commit AFTER DELETE ON songs WHEN OLD.library_root_uuid='{}' BEGIN INSERT INTO rebuild_commit_probe(song_uuid) VALUES('missing-song'); END;",
+            root
+        ))
+        .unwrap();
+
+    let new_library = LibraryId::from_uuid(uuid::Uuid::new_v4());
+    let replacement = replay(new_library, Issue72Fixture::orphaned().portable);
+    assert!(database
+        .rebuild_library_projection(root, new_library, &replacement)
+        .is_err());
+    let restored_ids: Vec<_> = SongRepository::all_in_root(&database, root)
+        .unwrap()
+        .into_iter()
+        .map(|song| song.id())
+        .collect();
+    assert_eq!(restored_ids, old_ids);
+    assert_eq!(database.projection_status(root).unwrap(), old_status);
+
+    Connection::open(&database_path)
+        .unwrap()
+        .execute_batch("DROP TRIGGER fail_rebuild_at_commit; DROP TABLE rebuild_commit_probe;")
+        .unwrap();
+}
+
+#[test]
+fn library_durability_read_only_projection_database_keeps_the_active_view() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = SqliteDatabase::open(directory.path().join("active.sqlite")).unwrap();
+    let root = LibraryRootId::new();
+    LibraryRepository::upsert(
+        &database,
+        &LibraryRoot::new(root, directory.path().join("library"), true, true),
+    )
+    .unwrap();
+    let library = LibraryId::from_uuid(uuid::Uuid::new_v4());
+    let active = replay(library, Issue72Fixture::with_database_evidence().database);
+    database.project_library_commits(root, &active).unwrap();
+    let before_ids: Vec<_> = SongRepository::all_in_root(&database, root)
+        .unwrap()
+        .into_iter()
+        .map(|song| song.id())
+        .collect();
+    let before_status = database.projection_status(root).unwrap();
+
+    // SQLite query_only models an active database opened on a read-only volume.
+    database
+        .writer
+        .run(|connection| {
+            connection
+                .execute_batch("PRAGMA query_only=ON;")
+                .map_err(storage)
+        })
+        .unwrap();
+    let replacement_library = LibraryId::from_uuid(uuid::Uuid::new_v4());
+    let replacement = replay(replacement_library, Issue72Fixture::orphaned().portable);
+    assert!(database
+        .rebuild_library_projection(root, replacement_library, &replacement)
+        .is_err());
+    let after_ids: Vec<_> = SongRepository::all_in_root(&database, root)
+        .unwrap()
+        .into_iter()
+        .map(|song| song.id())
+        .collect();
+    assert_eq!(after_ids, before_ids);
+    assert_eq!(database.projection_status(root).unwrap(), before_status);
+}
+
+#[test]
+fn library_durability_corrupt_sqlite_open_preserves_the_original_file() {
+    let directory = tempfile::tempdir().unwrap();
+    let database_path = directory.path().join("corrupt.sqlite");
+    let damaged = b"synthetic damaged sqlite bytes; not a user database";
+    std::fs::write(&database_path, damaged).unwrap();
+
+    assert!(SqliteDatabase::open(&database_path).is_err());
+    assert_eq!(std::fs::read(&database_path).unwrap(), damaged);
+}
+
+#[test]
 fn library_durability_rebuild_refuses_sync_context_without_changing_the_old_view() {
     use rusqlite::Connection;
 

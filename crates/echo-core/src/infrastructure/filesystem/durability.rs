@@ -2,6 +2,7 @@
 //! creates locks or mutates files. Historical operation evidence is ID-addressed.
 mod assets;
 mod checkpoint;
+mod snapshot;
 mod validation_cache;
 use validation_cache::DocumentKind;
 pub(super) use validation_cache::ValidationCache;
@@ -43,6 +44,26 @@ struct Checkpoint {
     seq: u64,
     head: Option<String>,
     files: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    files_snapshot: Option<snapshot::Snapshot>,
+}
+
+fn materialization_checkpoint(
+    registry: &RootRegistry,
+    root: LibraryRootId,
+) -> Result<Checkpoint, Error> {
+    let Some(raw) = portable::read(registry, root, CHECKPOINT, LIMIT)? else {
+        return Ok(Checkpoint::default());
+    };
+    let mut checkpoint: Checkpoint = decode(&raw)?;
+    match (checkpoint.version, &checkpoint.files_snapshot) {
+        (1, None) => {}
+        (2, Some(snapshot)) if checkpoint.files.is_empty() => {
+            checkpoint.files = snapshot::load(registry, root, snapshot)?;
+        }
+        _ => return Err(invalid("unsupported materialization checkpoint")),
+    }
+    Ok(checkpoint)
 }
 
 fn invalid(reason: &str) -> Error {
@@ -235,10 +256,7 @@ fn recover_with_proven_fence(
     hook: &mut Hook<'_>,
 ) -> Result<LibraryReplay, Error> {
     let replay = chain(registry, cache, root)?;
-    let checkpoint = portable::read(registry, root, CHECKPOINT, LIMIT)?
-        .map(|raw| decode::<Checkpoint>(&raw))
-        .transpose()?
-        .unwrap_or_default();
+    let checkpoint = materialization_checkpoint(registry, root)?;
     let anchor_seq = replay
         .checkpoint
         .as_ref()
@@ -256,7 +274,7 @@ fn recover_with_proven_fence(
                     .filter(|c| c.library_commit_seq == checkpoint.seq)
                     .map(|c| c.head_digest.as_str())
             });
-        if checkpoint.version != 1 || expected != checkpoint.head.as_deref() {
+        if expected != checkpoint.head.as_deref() {
             return Err(invalid("unverifiable materialization checkpoint"));
         }
     }
@@ -348,10 +366,11 @@ fn write_checkpoint(
     hook: &mut Hook<'_>,
 ) -> Result<(), Error> {
     let checkpoint = Checkpoint {
-        version: 1,
+        version: 2,
         seq,
         head,
-        files: files.clone(),
+        files: BTreeMap::new(),
+        files_snapshot: Some(snapshot::publish(registry, root, files, hook)?),
     };
     hook("checkpoint", 0)?;
     io::publish(

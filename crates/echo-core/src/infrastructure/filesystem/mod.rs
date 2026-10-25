@@ -31,6 +31,7 @@ pub mod control_plane;
 mod durability;
 pub mod hasher;
 mod portable_migration;
+pub(crate) mod private_dir;
 pub mod registry;
 pub(crate) mod retained;
 pub mod staging;

@@ -369,16 +369,11 @@ struct CandidateDirectory(PathBuf);
 impl CandidateDirectory {
     fn create(parent: &Path) -> Result<Self, Error> {
         let path = parent.join(format!(".projection-candidate-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir(&path)
-            .map_err(|error| Error::io("create projection candidate", error, &path))?;
-        let directory = Self(path);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&directory.0, std::fs::Permissions::from_mode(0o700))
-                .map_err(|error| Error::io("protect projection candidate", error, &directory.0))?;
-        }
-        Ok(directory)
+        // The candidate holds a full copy of library data: create it
+        // owner-restricted from its first visible moment (the platform
+        // primitive lives in the filesystem layer, below this adapter).
+        crate::infrastructure::filesystem::private_dir::create_owner_only_dir(&path)?;
+        Ok(Self(path))
     }
 
     fn cleanup(&self) -> Result<(), Error> {

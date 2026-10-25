@@ -169,6 +169,22 @@
   **exit 0**（注入套件 33/33，明细与首跑两处根因见 10.5 注记与
   [handoff-20261025.md](evidence/handoff-20261025.md) 第 11 点）。9.5 仍未勾选：剩余差量是
   干净工作区复现（须待用户授权提交后）与前端相关检查的逐项对应复核。
+  更新（2026-10-26 中期复核修复）：03ba11f 提交前未复跑治理门，门在 arch、coverage、注入证明（前端
+  lint 正向控制）三段红。已修复：① `projection_rebuild.rs` 的 `#[cfg(unix)]` 平台分支违反 arch 守卫，下沉为
+  `infrastructure/filesystem/private_dir.rs` 的配对 cfg 原语（`DirBuilder::mode(0o700)` 创建即属主受限，
+  含单测）；② coverage 89.76%（03ba11f 新增 974 行中 184 行未覆盖；父提交 48d72f1 实测 90.01% 与 11.2 记录
+  一致）——补 `restore_relinks_present_media_onto_projected_records`、
+  `restore_rejects_media_without_a_projected_record` 与
+  `library_projection_port_defaults_reject_unsupported_operations` 三个测试后回到 90.03%；其中第一个
+  测试暴露并修复真缺陷：restore 的 Keep/Relink 复活只改内存快照、从未调用
+  `set_availability` 专用变更（`upsert_song` 机制性不写 availability），复活的歌在投影中永远
+  Missing——已按 scan 路径同款规则补齐；③ `SettingsView.tsx` 跨 feature 深导入
+  `../library/ScanReportDialog` 违反 `no-restricted-imports`，改为 `library/index.ts` 公共入口导出；
+  ④ 新原语的 `pub(crate)` 触发 clippy `redundant_pub_crate`，改 `pub`（模块本身 `pub(crate)`，可见性等效）。
+  acceptance-matrix 同步修复 7 个失效锚点（LD-04/LD-05/LD-09 对齐真实 spec 场景，rescue/backfill 行按
+  spec 非目标移除）。最终 `pnpm verify:governance` 单独复跑 **exit 0**（coverage 90.03%，注入套件
+  33/33，`openspec validate --strict` exit 0）。9.5/11.2 仍不勾：干净工作区复现待用户授权提交后执行，
+  三平台原生验证未做。
 - [ ] 9.6 使用 CodeGraph 与引用搜索复核无 DB-first/DB-only 生产替代入口、旧 materializer/fake/导出已清理，独立审查事务/迁移/身份/API/权限边界，修正后仅重跑受影响验证；交付审查与清理证据（LD-10）。
 - [ ] 9.7 汇总 LD-01…LD-10 的自动化证据，逐条对应 acceptance-matrix 的“Required acceptance evidence”，确认无“规划命令当通过”的伪证据；单独标明完整 workspace 与三平台原生验证属于整体发布或后续独立验收，不作为本 change 短 CI 的门槛；交付证据索引（LD-10）。
 
@@ -321,4 +337,13 @@
   exit 0**：`ok governance: CI core gate passed`，coverage 段 `ok 12.8`，
   injection-suite 33/33 正向控制全过；9.5 / 11.2 的勾选前还差最后一步——本条原要求的
   **干净工作区复现**（当前工作区含本分支未提交改动，干净复现须在提交后进行）。
+  补记（2026-10-26）：03ba11f（10-26 02:30 提交）再次把门弄红且提交前未复跑——arch 段
+  （sqlite 层 `#[cfg(unix)]` 平台分支）、coverage 段（89.76% < 90：新增 974 行中 184 行未测，
+  父提交 48d72f1 worktree 实测 90.01% 与上文记录一致）、前端 lint（`SettingsView.tsx` 跨
+  feature 深导入）三处。修复明细见 9.5 的 2026-10-26 更新（含 restore 复活不落投影的真缺陷）。
+  修复后治理门第四次整门复跑（后台裸跑，无并行 cargo）**真实 exit 0**：
+  `ok governance: CI core gate passed`，coverage 90.03%，injection-suite 33/33。
+  **教训已两次验证：任何提交前必须整门复跑**——本分支已两次出现「上一次门绿 → 提交 →
+  门红」（10-25 缺陷 4 轮与 10-26 03ba11f）。干净工作区复现仍待用户授权提交后执行，
+  11.2 继续不勾选。
 - [ ] 11.3 实现分支上的未完成代码不作为本 change 的现状或验收证据；设计与证据基线以 `main` 已发布实现为准。继续规划修订时，应记录分支 WIP 与规划证据的边界，不要求清理或暂存实现；交付审查须确认实现状态与本 change 规格相符后，才可完成对应任务（LD-10）。

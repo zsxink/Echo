@@ -183,6 +183,32 @@ mod tests {
     }
 
     #[test]
+    fn library_projection_port_defaults_reject_unsupported_operations() {
+        // An adapter that implements only the required methods must fail
+        // closed on every optional rebuild operation, never fall through to a
+        // silent no-op.
+        let projection = FaultLibraryProjection::default();
+        let root = LibraryRootId::new();
+        let library = LibraryId::from_uuid(uuid::Uuid::new_v4());
+        let replay = LibraryReplay {
+            checkpoint: None,
+            commits: vec![],
+        };
+        let error = projection
+            .validate_library_projection(root, library, &replay)
+            .expect_err("default rejects validation");
+        assert_eq!(error.code(), "unavailable");
+        let error = projection
+            .rebuild_library_projection(root, library, &replay)
+            .expect_err("default rejects rebuild");
+        assert_eq!(error.code(), "unavailable");
+        let error = projection
+            .project_legacy_records(root, &[])
+            .expect_err("default rejects legacy projection");
+        assert_eq!(error.code(), "unavailable");
+    }
+
+    #[test]
     fn library_durability_sqlite_uow_is_only_projection_not_directory_commit() {
         use crate::application::ports::UnitOfWork;
         let directory = FaultLibraryDurability::new();

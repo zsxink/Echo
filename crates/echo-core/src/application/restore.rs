@@ -113,6 +113,15 @@ impl<'a> RestoreLibrary<'a> {
                     Resolution::Keep { song: id } | Resolution::Relink { song: id } => {
                         if let Some(song) = planner.song(id) {
                             self.persist_song(&song)?;
+                            // `upsert_song` never writes availability (a
+                            // stale snapshot must not roll it back), so a
+                            // revival needs the dedicated mutation or the
+                            // record-projected row stays Missing forever.
+                            if planner.revived(id) {
+                                self.deps
+                                    .songs
+                                    .set_availability(id, SongAvailability::Available)?;
+                            }
                         }
                         reconciled += 1;
                     }
@@ -318,6 +327,66 @@ mod tests {
                 .expect("read back")
                 .expect("present");
         assert_eq!(by_id.availability(), SongAvailability::Missing);
+    }
+
+    #[test]
+    fn restore_relinks_present_media_onto_projected_records() {
+        let fixture = ScanFixture::new();
+        let song_uuid = uuid::Uuid::new_v4();
+        seed_song_record(&fixture, song_uuid);
+        // The record's file is physically present at its recorded path: the
+        // planner must keep the projected identity and the directory-first
+        // coordinator persists the reconciled after-image.
+        fixture.write_file("歌手/歌手 - 晴天.flac", b"restored audio");
+        fixture.set_audio("歌手/歌手 - 晴天.flac", "晴天", 1_000);
+        fixture
+            .control
+            .write_manifest(
+                fixture.root,
+                &LibraryManifest::new(
+                    LibraryId::from_uuid(uuid::Uuid::new_v4()),
+                    "0.1.0".to_owned(),
+                ),
+            )
+            .expect("write manifest");
+
+        let restore = RestoreLibrary::new(fixture.deps.as_ref(), None);
+        let outcome = restore.run(fixture.root).expect("restore");
+
+        assert_eq!(outcome.projected_songs, 1);
+        assert_eq!(outcome.media_reconciled, 1);
+        assert_eq!(outcome.rejected, 0);
+        assert_eq!(outcome.missing, 0);
+        let projected =
+            SongRepository::by_id(fixture.deps.songs.as_ref(), SongId::from_uuid(song_uuid))
+                .expect("read back")
+                .expect("present");
+        assert_eq!(projected.availability(), SongAvailability::Available);
+    }
+
+    #[test]
+    fn restore_rejects_media_without_a_projected_record() {
+        let fixture = ScanFixture::new();
+        // Media that no projected record claims must never mint an identity.
+        fixture.write_file("unmatched/loose.flac", b"loose audio");
+        fixture.set_audio("unmatched/loose.flac", "Loose", 1_000);
+        fixture
+            .control
+            .write_manifest(
+                fixture.root,
+                &LibraryManifest::new(
+                    LibraryId::from_uuid(uuid::Uuid::new_v4()),
+                    "0.1.0".to_owned(),
+                ),
+            )
+            .expect("write manifest");
+
+        let restore = RestoreLibrary::new(fixture.deps.as_ref(), None);
+        let outcome = restore.run(fixture.root).expect("restore");
+
+        assert_eq!(outcome.projected_songs, 0);
+        assert_eq!(outcome.media_reconciled, 0);
+        assert_eq!(outcome.rejected, 1);
     }
 
     #[test]

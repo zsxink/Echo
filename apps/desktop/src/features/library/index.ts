@@ -10,6 +10,7 @@ export { SongMenu } from "./SongMenu";
 export { BatchSongMenu, SelectionModeButton } from "./BatchSongActions";
 export type { BatchSongActionHandlers, BatchSongActionOptions } from "./BatchSongActions";
 export { ConfirmationDialog } from "./ConfirmationDialog";
+export { ScanReportDialog } from "./ScanReportDialog";
 export type { MenuAnchor, SongMenuProps } from "./SongMenu";
 export { useMenuTrigger } from "./menuTrigger";
 export { SongSortControl } from "./SongSortControl";

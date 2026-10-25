@@ -24,11 +24,10 @@ import { Icon } from "../../app/Icon";
 import { LibraryRecoveryStatus } from "./LibraryRecoveryStatus";
 import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
 import type { CloseBehavior } from "../../ipc/ipc-types.generated";
-import { invalidateLibrary } from "../library";
+import { invalidateLibrary, ScanReportDialog } from "../library";
 import { useLibraryStatus } from "../workspace";
 import { useTheme, type Theme } from "./useTheme";
 import { LanSyncSettings } from "../sync/LanSyncSettings";
-import { ScanReportDialog } from "../library/ScanReportDialog";
 import type { ScanIssueDto } from "../../ipc/ipc-types.generated";
 
 /**

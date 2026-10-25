@@ -462,3 +462,4 @@ mod fences;
 mod scoped_state;
 
 mod gc_performance;
+mod snapshot_gc;

@@ -571,7 +571,7 @@ fn wire_composition(
     player::spawn_auto_advance(controller.port.clone(), controller.coordinator.clone());
     // Playback statistics (task 8.10): feed the real snapshot stream into the
     // accumulator so a qualified listen reaches Core's idempotent
-    // `record_playback` (play_count / 最近播放). Without this the accumulator
+    // directory-first playback recorder (play_count / 最近播放). Without this the accumulator
     // had no production caller and play counts never moved.
     let stats_sink = Arc::new(player::CorePlaybackRecorder::new(
         routed.database.clone(),

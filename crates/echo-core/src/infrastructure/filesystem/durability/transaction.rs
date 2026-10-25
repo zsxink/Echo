@@ -39,6 +39,9 @@ pub(in crate::infrastructure::filesystem) fn commit_with_hook(
     if replay.commits.len() >= MAX_ACTIVE {
         return Err(invalid("active journal requires compaction"));
     }
+    // Refuse capacity exhaustion before publishing any commit marker. Otherwise
+    // a mandatory coverage snapshot could fail only after the new fact is saved.
+    checkpoint::preflight_capacity(registry, root, &replay, batch)?;
     for expected in &batch.expected {
         let path = portable::original_relative(expected.kind, expected.object_uuid, None);
         let actual = portable::read(registry, root, &path, portable::MAX_RECORD_BYTES)?;

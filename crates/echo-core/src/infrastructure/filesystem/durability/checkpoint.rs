@@ -1,9 +1,11 @@
 //! Coverage images bound recovery work to current state and an active suffix.
 //! Operation receipts are addressed individually; resources are never deleted.
-use super::{decode, invalid, io, manifest, portable, receipt, relative, Hook, ANCHOR, LIMIT};
+use super::{
+    decode, invalid, io, manifest, portable, receipt, relative, snapshot, Hook, ANCHOR, LIMIT,
+};
 use crate::domain::ids::LibraryRootId;
 use crate::domain::library::durability::{
-    DurableStateChange, LibraryBatch, LibraryCheckpoint, LibraryReplay,
+    DurableResource, DurableStateChange, LibraryBatch, LibraryCheckpoint, LibraryReplay,
 };
 use crate::domain::library::{PortableRecordEnvelope, PortableSerialize};
 use crate::error::Error;
@@ -17,6 +19,12 @@ struct Coverage {
     version: u32,
     image: LibraryCheckpoint,
     digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    record_snapshot: Option<snapshot::Snapshot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    state_snapshot: Option<snapshot::Snapshot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resource_snapshot: Option<snapshot::Snapshot>,
 }
 
 pub(super) fn load(
@@ -28,14 +36,58 @@ pub(super) fn load(
         return Ok(None);
     };
     let coverage: Coverage = decode(&raw)?;
-    let image = coverage.image;
+    let mut image = coverage.image;
+    match (
+        coverage.version,
+        &coverage.record_snapshot,
+        &coverage.state_snapshot,
+        &coverage.resource_snapshot,
+    ) {
+        (1, None, None, None) => {}
+        (2, Some(records), Some(states), Some(resources))
+            if image.records.is_empty() && image.state.is_empty() && image.resources.is_empty() =>
+        {
+            let records: BTreeMap<String, PortableRecordEnvelope> =
+                snapshot::load(registry, root, records)?;
+            for (key, record) in &records {
+                if serde_json::to_string(&record.record().object_key()?).map_err(|error| {
+                    Error::unavailable_with_source(
+                        "snapshot record",
+                        "cannot encode typed key",
+                        error,
+                    )
+                })? != *key
+                {
+                    return Err(invalid("snapshot record key mismatch"));
+                }
+            }
+            let states: BTreeMap<String, DurableStateChange> =
+                snapshot::load(registry, root, states)?;
+            for (key, state) in &states {
+                if state.storage_key()? != *key {
+                    return Err(invalid("snapshot state key mismatch"));
+                }
+            }
+            let resources: BTreeMap<String, DurableResource> =
+                snapshot::load(registry, root, resources)?;
+            if resources
+                .iter()
+                .any(|(key, resource)| key != &resource.relative_path)
+            {
+                return Err(invalid("snapshot resource key mismatch"));
+            }
+            image.records = records.into_values().collect();
+            image.state = states.into_values().collect();
+            image.resources = resources.into_values().collect();
+        }
+        _ => return Err(invalid("unsupported coverage snapshot")),
+    }
     // Ownership is contextual and must never be certified by a body cache.
     if image.library_id != manifest(registry, root)?.library_id {
         return Err(invalid("coverage checkpoint identity or checksum mismatch"));
     }
     cache.validate(super::DocumentKind::Coverage, root, &raw, || {
-        if coverage.version != 1
-            || image.library_commit_seq == 0
+        if image.library_commit_seq == 0
             || !crate::domain::library::durability::valid_digest(&image.head_digest)
             || image.content_hash()? != coverage.digest
         {
@@ -140,40 +192,23 @@ pub(super) fn compact(
     let Some((seq, head)) = replay.head() else {
         return Ok(());
     };
-    let mut records = BTreeMap::new();
-    let mut states = BTreeMap::new();
-    let mut resources = BTreeMap::new();
-    if let Some(image) = &replay.checkpoint {
-        for record in &image.records {
-            records.insert(
-                serde_json::to_string(&record.record().object_key()?).map_err(|e| {
-                    Error::unavailable_with_source("coverage key", "cannot encode typed object", e)
-                })?,
-                record.clone(),
-            );
-        }
-        for state in &image.state {
-            states.insert(state.storage_key()?, state.clone());
-        }
-        for resource in &image.resources {
-            resources.insert(resource.relative_path.clone(), resource.clone());
-        }
-    }
+    let contents = Contents::merge(replay, None)?;
+    let mut image = LibraryCheckpoint {
+        library_id: manifest(registry, root)?.library_id,
+        library_commit_seq: seq,
+        head_digest: head.to_owned(),
+        records: contents.records.values().cloned().collect(),
+        state: contents.states.values().cloned().collect(),
+        resources: contents.resources.values().cloned().collect(),
+    };
+    let digest = image.content_hash()?;
+    let record_snapshot = snapshot::publish(registry, root, &contents.records, hook)?;
+    let state_snapshot = snapshot::publish(registry, root, &contents.states, hook)?;
+    let resource_snapshot = snapshot::publish(registry, root, &contents.resources, hook)?;
+    image.records.clear();
+    image.state.clear();
+    image.resources.clear();
     for commit in &replay.commits {
-        for record in &commit.batch.records {
-            records.insert(
-                serde_json::to_string(&record.record().object_key()?).map_err(|e| {
-                    Error::unavailable_with_source("coverage key", "cannot encode typed object", e)
-                })?,
-                record.clone(),
-            );
-        }
-        for state in &commit.batch.state {
-            states.insert(state.storage_key()?, state.clone());
-        }
-        for resource in &commit.batch.resources {
-            resources.insert(resource.relative_path.clone(), resource.clone());
-        }
         let path = receipt(commit.batch.operation_id);
         let bytes = portable::encode(commit, LIMIT)?;
         if let Some(raw) = portable::read(registry, root, &path, LIMIT)? {
@@ -185,18 +220,13 @@ pub(super) fn compact(
             io::publish(registry, root, &path, &bytes, true, "receipt", hook)?;
         }
     }
-    let image = LibraryCheckpoint {
-        library_id: manifest(registry, root)?.library_id,
-        library_commit_seq: seq,
-        head_digest: head.to_owned(),
-        records: records.into_values().collect(),
-        state: states.into_values().collect(),
-        resources: resources.into_values().collect(),
-    };
     let coverage = Coverage {
-        version: 1,
-        digest: image.content_hash()?,
+        version: 2,
+        digest,
         image,
+        record_snapshot: Some(record_snapshot),
+        state_snapshot: Some(state_snapshot),
+        resource_snapshot: Some(resource_snapshot),
     };
     hook("coverage", 0)?;
     io::publish(
@@ -208,9 +238,115 @@ pub(super) fn compact(
         "coverage",
         hook,
     )?;
-    // No journal is removed until the full image, anchor and original-operation
-    // receipts have each crossed their file and ancestor-directory sync boundary.
+    // The full graph (both roots and every referenced leaf) is re-flushed before
+    // destructive GC. A visible root alone is not proof after an interrupted sync.
+    let materialized = super::materialization_checkpoint(registry, root)?;
+    let coverage_roots: Vec<_> = coverage
+        .record_snapshot
+        .iter()
+        .chain(coverage.state_snapshot.iter())
+        .chain(coverage.resource_snapshot.iter())
+        .collect();
+    let materialized_roots: Vec<_> = materialized.files_snapshot.iter().collect();
+    snapshot::collect(
+        registry,
+        root,
+        &[
+            (ANCHOR, &coverage_roots),
+            (super::CHECKPOINT, &materialized_roots),
+        ],
+        hook,
+    )?;
+    // Receipts and the coverage image retain every user resource declaration;
+    // media, candidate/conflict originals and unfinished publications are held.
     cleanup_covered(registry, cache, root, seq, hook)
+}
+
+#[derive(Default)]
+struct Contents {
+    records: BTreeMap<String, PortableRecordEnvelope>,
+    states: BTreeMap<String, DurableStateChange>,
+    resources: BTreeMap<String, DurableResource>,
+}
+impl Contents {
+    fn merge(replay: &LibraryReplay, extra: Option<&LibraryBatch>) -> Result<Self, Error> {
+        let mut result = Self::default();
+        if let Some(image) = &replay.checkpoint {
+            for record in &image.records {
+                result.records.insert(
+                    serde_json::to_string(&record.record().object_key()?).map_err(|e| {
+                        Error::unavailable_with_source(
+                            "coverage key",
+                            "cannot encode typed object",
+                            e,
+                        )
+                    })?,
+                    record.clone(),
+                );
+            }
+            for state in &image.state {
+                result.states.insert(state.storage_key()?, state.clone());
+            }
+            for resource in &image.resources {
+                result
+                    .resources
+                    .insert(resource.relative_path.clone(), resource.clone());
+            }
+        }
+        for batch in replay
+            .commits
+            .iter()
+            .map(|commit| &commit.batch)
+            .chain(extra)
+        {
+            for record in &batch.records {
+                result.records.insert(
+                    serde_json::to_string(&record.record().object_key()?).map_err(|e| {
+                        Error::unavailable_with_source(
+                            "coverage key",
+                            "cannot encode typed object",
+                            e,
+                        )
+                    })?,
+                    record.clone(),
+                );
+            }
+            for state in &batch.state {
+                result.states.insert(state.storage_key()?, state.clone());
+            }
+            for resource in &batch.resources {
+                result
+                    .resources
+                    .insert(resource.relative_path.clone(), resource.clone());
+            }
+        }
+        Ok(result)
+    }
+}
+
+pub(super) fn preflight_capacity(
+    registry: &RootRegistry,
+    root: LibraryRootId,
+    replay: &LibraryReplay,
+    batch: &LibraryBatch,
+) -> Result<(), Error> {
+    let contents = Contents::merge(replay, Some(batch))?;
+    portable::encode(
+        &(&contents.records, &contents.states, &contents.resources),
+        LIMIT,
+    )
+    .map_err(|_| invalid("coverage aggregate safety limit exceeded"))?;
+    snapshot::preflight(&contents.states)?;
+    snapshot::preflight(&contents.records)?;
+    snapshot::preflight(&contents.resources)?;
+    let mut files = super::materialization_checkpoint(registry, root)?.files;
+    for record in &batch.records {
+        files.insert(portable::record_relative(record.record())?, "0".repeat(64));
+    }
+    for state in &batch.state {
+        files.insert(state_path(state), "0".repeat(64));
+    }
+    snapshot::preflight(&files)
 }
 
 pub(super) fn cleanup_covered(
