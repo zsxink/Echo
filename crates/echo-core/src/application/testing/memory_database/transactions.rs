@@ -162,7 +162,12 @@ impl TxOperationWriter for MemoryTx<'_> {
         self.store.released_claims.push(operation);
         Ok(())
     }
-    fn set_undo_deadline(&mut self, operation: OperationId, deadline_ms: i64) -> Result<(), Error> {
+    fn set_undo_deadline(
+        &mut self,
+        operation: OperationId,
+        deadline_ms: i64,
+        _final_mutation_id: crate::domain::sync::MutationId,
+    ) -> Result<(), Error> {
         self.store.undo_deadlines.insert(operation, deadline_ms);
         Ok(())
     }

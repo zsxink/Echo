@@ -87,7 +87,12 @@ impl TxOperationWriter for SqliteTx<'_> {
     fn release_operation_claims(&mut self, operation: OperationId) -> Result<(), Error> {
         release_operation_claims(self.transaction, operation)
     }
-    fn set_undo_deadline(&mut self, operation: OperationId, deadline_ms: i64) -> Result<(), Error> {
+    fn set_undo_deadline(
+        &mut self,
+        operation: OperationId,
+        deadline_ms: i64,
+        final_mutation_id: crate::domain::sync::MutationId,
+    ) -> Result<(), Error> {
         self.transaction
             .execute(
                 "UPDATE operation_journal SET undo_deadline = ?2, updated_at = ?3 WHERE operation_uuid = ?1",
@@ -105,12 +110,15 @@ impl TxOperationWriter for SqliteTx<'_> {
             .map_err(storage)?
             .flatten();
         if let Some(song_uuid) = song_uuid {
+            // The directory intent froze this identity before the hide, so a
+            // concurrent finalization and the directory replay agree on the
+            // one mutation that ends the object.
             self.transaction
                 .execute(
                     "INSERT OR IGNORE INTO sync_local_delete_intents (intent_id, final_mutation_id, object_type, object_uuid, created_at, undo_deadline, state) VALUES (?1, ?2, 'song', ?3, ?4, ?5, 'open')",
                     params![
                         operation.to_string(),
-                        uuid::Uuid::new_v4().to_string(),
+                        final_mutation_id.as_uuid().to_string(),
                         song_uuid,
                         now_ms(),
                         deadline_ms,

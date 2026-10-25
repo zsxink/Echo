@@ -606,6 +606,10 @@ impl<'a> RecoverOperations<'a> {
 
     /// Complete the hide: one transaction marks the song `PendingDelete`, each
     /// item `HiddenInDatabase` and the undo deadline (now + 10s).
+    ///
+    /// The directory intent is written first and is idempotent: a crash between
+    /// the intent and the hide is exactly what this path recovers from, and a
+    /// second attempt reuses the committed identity instead of minting one.
     fn hide_operation(
         &self,
         root: LibraryRootId,
@@ -613,8 +617,15 @@ impl<'a> RecoverOperations<'a> {
         subject: SongId,
         items: &[OperationItem],
     ) -> Result<(), Error> {
-        let _ = root;
-        let deadline = wall_now_ms(&*self.deps.clock)? + crate::application::delete::UNDO_WINDOW_MS;
+        let now = wall_now_ms(&*self.deps.clock)?;
+        let intent = crate::application::delete::intent::begin(
+            self.deps,
+            root,
+            operation,
+            crate::domain::sync::ObjectKey::Song(subject),
+            u64::try_from(now).unwrap_or(0),
+        )?;
+        let deadline = now + crate::application::delete::UNDO_WINDOW_MS;
         let hidden: Vec<OperationItem> = items
             .iter()
             .map(|item| OperationItem {
@@ -622,6 +633,7 @@ impl<'a> RecoverOperations<'a> {
                 ..item.clone()
             })
             .collect();
+        let final_mutation_id = intent.final_mutation_id;
         self.deps
             .uow
             .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
@@ -632,7 +644,7 @@ impl<'a> RecoverOperations<'a> {
                 for item in &hidden {
                     tx.upsert_operation_item(operation, item.clone())?;
                 }
-                tx.set_undo_deadline(operation, deadline)?;
+                tx.set_undo_deadline(operation, deadline, final_mutation_id)?;
                 Ok(())
             }))
     }

@@ -107,7 +107,16 @@ pub trait TxOperationWriter {
     /// Persist the operation's `undo_deadline` (epoch millis) in the same
     /// transaction as the song's pending-delete hide (design §9: the deadline
     /// and the hide are one atomic step, so a crash cannot split them).
-    fn set_undo_deadline(&mut self, operation: OperationId, deadline_ms: i64) -> Result<(), Error>;
+    ///
+    /// `final_mutation_id` is the identity the directory intent already froze
+    /// for the eventual final tombstone; the SQLite row must reuse it so the
+    /// two records cannot disagree on which mutation ends the object.
+    fn set_undo_deadline(
+        &mut self,
+        operation: OperationId,
+        deadline_ms: i64,
+        final_mutation_id: crate::domain::sync::MutationId,
+    ) -> Result<(), Error>;
 }
 
 /// Lyrics mutations that must participate in an existing transaction.
