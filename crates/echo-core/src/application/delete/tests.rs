@@ -105,6 +105,40 @@ fn held_remote_delete_blocks_undo_before_moving_staged_resources() {
 }
 
 #[test]
+fn confirmed_remote_tombstone_wins_before_undo_moves_resources() {
+    let fixture = ScanFixture::new();
+    let song = seed_song(&fixture, "media/remote-delete.flac", b"remote-audio", None);
+    let outcome = DeleteSongs::new(&fixture.deps)
+        .delete(fixture.root, song)
+        .expect("local delete");
+    let items = fixture.deps.journal.items(outcome.operation).unwrap();
+    let staged = items[0].staging_path.clone().unwrap();
+    let target = items[0].target_path.clone();
+
+    intent::supersede_on_remote_tombstone(
+        &fixture.deps,
+        fixture.root,
+        outcome.operation,
+        crate::domain::sync::ObjectKey::Song(song),
+        1,
+    )
+    .expect("confirmed remote tombstone supersedes the undo intent");
+    assert!(RestoreDeletedOperation::new(&fixture.deps)
+        .restore(fixture.root, outcome.operation)
+        .is_err());
+
+    assert!(fixture.deps.fs.path_exists(fixture.root, &staged).unwrap());
+    assert!(!fixture.deps.fs.path_exists(fixture.root, &target).unwrap());
+    assert_eq!(
+        SongRepository::by_id(&fixture.database, song)
+            .unwrap()
+            .unwrap()
+            .availability(),
+        SongAvailability::PendingDelete
+    );
+}
+
+#[test]
 fn delete_stages_audio_and_lrc_into_trash_and_hides_the_song() {
     let fixture = ScanFixture::new();
     let song = seed_song(

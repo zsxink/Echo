@@ -2,6 +2,31 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::tests::*;
+use crate::application::ports::ControlPlanePort;
+
+fn assert_delete_intent_state(
+    fixture: &ScanFixture,
+    operation: OperationId,
+    expected: crate::domain::sync::DeleteIntentState,
+) {
+    let replay = fixture
+        .control
+        .durability()
+        .unwrap()
+        .recover(fixture.root)
+        .unwrap();
+    let state = replay
+        .states()
+        .filter(|state| {
+            state.kind == crate::domain::library::durability::StateKind::DeleteIntent
+                && state.id == operation.as_uuid()
+        })
+        .last()
+        .expect("delete intent remains in the directory");
+    let intent: crate::domain::sync::LocalDeleteIntent =
+        serde_json::from_value(state.payload.clone()).unwrap();
+    assert_eq!(intent.state, expected);
+}
 
 /// Read a file from the staging path persisted for one journal item. The
 /// basename is now the original media filename; using the journal path
@@ -374,6 +399,11 @@ fn crash_during_restore_after_rename_recovers_song_available() {
         .iter()
         .all(|item| item.state == OperationState::Restored));
     assert_eq!(fixture.database.released_claims(), vec![operation]);
+    assert_delete_intent_state(
+        &fixture,
+        operation,
+        crate::domain::sync::DeleteIntentState::Cancelled,
+    );
     // Second recovery is an idempotent no-op (claims not re-released).
     RecoverOperations::new(&fixture.deps)
         .run(fixture.root)

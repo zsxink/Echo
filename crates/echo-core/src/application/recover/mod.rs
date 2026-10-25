@@ -654,7 +654,7 @@ impl<'a> RecoverOperations<'a> {
     /// release the operation's claims at the unique terminal state.
     fn complete_restored_delete(
         &self,
-        _root: LibraryRootId,
+        root: LibraryRootId,
         operation: OperationId,
         subject_song: Option<SongId>,
     ) -> Result<DeleteOutcome, Error> {
@@ -665,6 +665,21 @@ impl<'a> RecoverOperations<'a> {
                 handed_off: false,
             });
         };
+        if let Err(error) = crate::application::delete::intent::cancel(
+            self.deps,
+            root,
+            operation,
+            crate::domain::sync::ObjectKey::Song(subject),
+            u64::try_from(wall_now_ms(&*self.deps.clock)?).unwrap_or(u64::MAX),
+        ) {
+            if matches!(error, Error::Conflict { .. }) {
+                return Ok(DeleteOutcome {
+                    held: true,
+                    handed_off: false,
+                });
+            }
+            return Err(error);
+        }
         match self.deps.songs.by_id(subject)? {
             Some(song)
                 if song.availability() != crate::domain::entities::SongAvailability::Available =>

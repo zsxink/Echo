@@ -514,6 +514,73 @@ async fn native_incremental_applies_objects_before_audio_arrives() {
         .is_err());
 }
 
+#[tokio::test]
+async fn confirmed_remote_tombstone_supersedes_local_delete_intent() {
+    let fixture = LanMergeFixture::new().await;
+    let operation = echo_core::domain::ids::OperationId::new();
+    echo_core::application::delete::intent::begin(
+        &fixture.provisioner.scan_deps,
+        fixture.root,
+        operation,
+        ObjectKey::Song(fixture.host_song),
+        1_000,
+    )
+    .expect("persist local undo intent");
+
+    let origin = DeviceId::from_uuid(fixture.replica.current_device_id().as_uuid());
+    let deletion = MutationCandidate {
+        resource_refs: Vec::new(),
+        mutation_id: MutationId::new(),
+        origin_device_id: origin,
+        origin_seq: 1,
+        previous_mutation_id: None,
+        object: ObjectKey::Song(fixture.host_song),
+        base_object_version: None,
+        payload: serde_json::json!({"tombstone": true}),
+    };
+    let staged = fixture
+        .host
+        .stage_confirmation(fixture.peer.binding, &deletion)
+        .expect("host accepts final deletion");
+    fixture
+        .host
+        .mark_published(staged.checkpoint.expect("published tombstone"))
+        .expect("publish final deletion");
+
+    let queue = ScopedLocalQueue {
+        database: fixture.replica.as_ref(),
+        root: fixture.root,
+    };
+    fixture
+        .provisioner
+        .pull_host_changes(&fixture.client, &fixture.peer, &fixture.endpoint, &queue)
+        .await
+        .expect("apply authenticated tombstone page");
+
+    let replay = fixture
+        .provisioner
+        .scan_deps
+        .control
+        .durability()
+        .unwrap()
+        .recover(fixture.root)
+        .unwrap();
+    let state = replay
+        .states()
+        .filter(|state| {
+            state.kind == echo_core::domain::library::durability::StateKind::DeleteIntent
+                && state.id == operation.as_uuid()
+        })
+        .last()
+        .expect("local intent remains durably recorded");
+    let intent: echo_core::domain::sync::LocalDeleteIntent =
+        serde_json::from_value(state.payload.clone()).unwrap();
+    assert_eq!(
+        intent.state,
+        echo_core::domain::sync::DeleteIntentState::SupersededByRemoteTombstone
+    );
+}
+
 /// A resource is prepared once per session. The unacked mutation keeps
 /// declaring it every cycle, so without the session cache a 512-deep backlog
 /// re-sends `prepare` for the whole queue each round and re-reads each blob

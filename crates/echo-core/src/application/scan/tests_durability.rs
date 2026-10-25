@@ -81,6 +81,16 @@ fn library_durability_scan_refresh_preserves_saved_after_image_on_projection_fai
     assert_eq!(indexed.added_at(), original.added_at());
     assert_eq!(indexed.title(), Some("Changed"));
     assert_eq!(durable_songs(&fixture), saved);
+    let source = fixture
+        .fs
+        .root_path(fixture.root)
+        .unwrap()
+        .join("media/saved.flac");
+    assert_eq!(
+        std::fs::read(source).unwrap(),
+        b"changed synthetic audio",
+        "Echo reads externally changed media and never writes source bytes"
+    );
 }
 
 #[test]

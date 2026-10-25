@@ -30,7 +30,7 @@ use crate::domain::state::OperationState;
 use crate::domain::sync::ObjectKey;
 use crate::error::Error;
 
-pub(crate) mod intent;
+pub mod intent;
 
 /// Journal `kind` of a delete operation. The operation lives across the whole
 /// delete→hide→(undo|trash) lifecycle of one song.
@@ -313,14 +313,9 @@ impl<'a> RestoreDeletedOperation<'a> {
             ));
         }
 
-        for item in &items {
-            self.restore_resource(root, operation, item)?;
-        }
-
         // Undo and deadline finalization race for the one terminal state. The
-        // directory decides it: a cancelled intent can never later emit a
         // final tombstone, and a finalized one refuses this undo before the
-        // song is made visible again.
+        // song is made visible again or any staged resource is moved back.
         intent::cancel(
             self.deps,
             root,
@@ -328,6 +323,10 @@ impl<'a> RestoreDeletedOperation<'a> {
             ObjectKey::Song(subject),
             u64::try_from(wall_ms(&*self.deps.clock)?).unwrap_or(u64::MAX),
         )?;
+
+        for item in &items {
+            self.restore_resource(root, operation, item)?;
+        }
 
         // All resources restored: restore the song in one transaction.
         self.deps

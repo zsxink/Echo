@@ -17,6 +17,7 @@ use crate::domain::entities::SongAvailability;
 use crate::domain::ids::{LibraryRootId, OperationId, Revision, SongId};
 use crate::domain::library::{PortableRecord, RecordKind};
 use crate::domain::state::OperationState;
+use crate::domain::sync::ObjectKey;
 use crate::error::Error;
 
 /// Summary of one irreversible-delete pass.
@@ -331,6 +332,17 @@ pub(crate) fn finalize_persisted_trash(
             why: "trash-applied delete song is not pending delete".to_owned(),
         });
     }
+    let now = u64::try_from(now_ms(deps)?).map_err(|_| Error::InvariantViolation {
+        why: "delete finalization clock is negative".to_owned(),
+    })?;
+    let _mutation_id = crate::application::delete::intent::finalize(
+        deps,
+        root,
+        operation,
+        ObjectKey::Song(song),
+        now,
+    )?
+    .ok_or_else(|| Error::conflict("delete undo window has not expired"))?;
     let finalized: Vec<OperationItem> = items
         .iter()
         .map(|item| OperationItem {
@@ -552,6 +564,26 @@ mod tests {
             .unwrap()
             .iter()
             .all(|item| item.state == OperationState::DatabaseFinalized));
+        let replay = fixture
+            .control
+            .durability()
+            .unwrap()
+            .recover(fixture.root)
+            .unwrap();
+        let state = replay
+            .states()
+            .filter(|state| {
+                state.kind == crate::domain::library::durability::StateKind::DeleteIntent
+                    && state.id == operation.as_uuid()
+            })
+            .last()
+            .expect("finalized intent remains in the directory");
+        let intent: crate::domain::sync::LocalDeleteIntent =
+            serde_json::from_value(state.payload.clone()).unwrap();
+        assert_eq!(
+            intent.state,
+            crate::domain::sync::DeleteIntentState::Finalized
+        );
     }
 
     #[test]

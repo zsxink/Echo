@@ -23,6 +23,7 @@ use crate::domain::sync::{
     LocalDeleteIntent, MutationId, ObjectKey,
 };
 use crate::error::Error;
+use std::collections::HashMap;
 
 /// Derive one deterministic commit identity per intent transition, so a retry
 /// rewrites the same operation instead of appending a duplicate fact.
@@ -132,6 +133,11 @@ pub fn begin(
     created_at_ms: u64,
 ) -> Result<LocalDeleteIntent, Error> {
     if let Some(existing) = load(deps, root, operation)? {
+        if existing.object != object {
+            return Err(Error::conflict(
+                "delete operation identity refers to a different object",
+            ));
+        }
         return Ok(existing);
     }
     let mut intent = LocalDeleteIntent::begin(object, created_at_ms)
@@ -184,9 +190,6 @@ pub fn cancel(
 ///
 /// # Errors
 /// Propagates the directory commit and reports a conflicting terminal state.
-// Wired in the remaining 6.4 work: `trash::finalize_persisted_trash` must
-// resolve the deadline through this before it deletes the song row.
-#[allow(dead_code)]
 pub fn finalize(
     deps: &ScanDeps,
     root: LibraryRootId,
@@ -212,9 +215,6 @@ pub fn finalize(
 ///
 /// # Errors
 /// Propagates the directory commit and reports a conflicting terminal state.
-// Wired in the remaining 6.4 work: the confirmed-remote-tombstone projection
-// must supersede an open local intent instead of leaving it to expire.
-#[allow(dead_code)]
 pub fn supersede_on_remote_tombstone(
     deps: &ScanDeps,
     root: LibraryRootId,
@@ -222,7 +222,17 @@ pub fn supersede_on_remote_tombstone(
     object: ObjectKey,
     now_ms: u64,
 ) -> Result<bool, Error> {
-    let mut intent = begin(deps, root, operation, object, now_ms)?;
+    let Some(mut intent) = load(deps, root, operation)? else {
+        return Ok(false);
+    };
+    if intent.object != object {
+        return Err(Error::conflict(
+            "delete operation identity refers to a different object",
+        ));
+    }
+    if intent.state != DeleteIntentState::Open {
+        return Ok(intent.state == DeleteIntentState::SupersededByRemoteTombstone);
+    }
     let previous = intent.state;
     let outcome = intent
         .resolve(DeleteIntentAction::RemoteFinalTombstone, now_ms)
@@ -234,6 +244,58 @@ pub fn supersede_on_remote_tombstone(
         outcome,
         DeleteIntentOutcome::RemovedByRemoteTombstone
     ))
+}
+
+/// Supersede every open local delete intent for an object after an authenticated
+/// host tombstone has been accepted. No intent is created when the object has
+/// no local undo operation.
+///
+/// # Errors
+/// Propagates replay, payload, or directory-commit failures.
+pub fn supersede_object_on_remote_tombstone(
+    deps: &ScanDeps,
+    root: LibraryRootId,
+    object: ObjectKey,
+    now_ms: u64,
+) -> Result<usize, Error> {
+    let replay = deps
+        .control
+        .durability()
+        .ok_or_else(|| {
+            Error::unavailable(
+                "library durability",
+                "directory commit adapter is not configured",
+            )
+        })?
+        .recover(root)?;
+    let mut latest = HashMap::new();
+    for state in replay.states() {
+        if state.kind != StateKind::DeleteIntent {
+            continue;
+        }
+        let intent = serde_json::from_value::<LocalDeleteIntent>(state.payload.clone()).map_err(
+            |error| {
+                Error::unavailable_with_source(
+                    "delete intent",
+                    "the committed intent payload is unreadable",
+                    error,
+                )
+            },
+        )?;
+        latest.insert(state.id, intent);
+    }
+
+    let mut superseded = 0;
+    for (id, intent) in latest {
+        if intent.object != object || intent.state != DeleteIntentState::Open {
+            continue;
+        }
+        let operation = OperationId::from_uuid(id);
+        if supersede_on_remote_tombstone(deps, root, operation, object, now_ms)? {
+            superseded += 1;
+        }
+    }
+    Ok(superseded)
 }
 
 fn map_error(error: DeleteIntentError) -> Error {
@@ -251,6 +313,7 @@ fn map_error(error: DeleteIntentError) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::testing::ScanFixture;
 
     #[test]
     fn transition_identities_are_stable_and_distinct() {
@@ -264,5 +327,145 @@ mod tests {
             transition_id(operation, "cancelled")
         );
         assert_ne!(transition_id(operation, "finalized"), operation.as_uuid());
+    }
+
+    #[test]
+    fn remote_tombstone_supersedes_only_an_existing_open_intent() {
+        let fixture = ScanFixture::new();
+        let operation = OperationId::new();
+        let object = ObjectKey::Song(crate::domain::ids::SongId::new());
+        let open = begin(&fixture.deps, fixture.root, operation, object, 1_000)
+            .expect("persist local intent");
+        assert_eq!(open.state, DeleteIntentState::Open);
+
+        assert_eq!(
+            supersede_object_on_remote_tombstone(&fixture.deps, fixture.root, object, 2_000)
+                .expect("remote final tombstone"),
+            1
+        );
+        assert!(matches!(
+            cancel(&fixture.deps, fixture.root, operation, object, 3_000),
+            Err(Error::Conflict { .. })
+        ));
+        assert_eq!(
+            supersede_object_on_remote_tombstone(&fixture.deps, fixture.root, object, 4_000)
+                .expect("idempotent remote replay"),
+            0
+        );
+
+        let absent = ObjectKey::Song(crate::domain::ids::SongId::new());
+        assert_eq!(
+            supersede_object_on_remote_tombstone(&fixture.deps, fixture.root, absent, 4_000)
+                .expect("no local delete intent"),
+            0
+        );
+    }
+
+    #[test]
+    fn finalization_retries_keep_the_reserved_mutation_identity() {
+        let fixture = ScanFixture::new();
+        let operation = OperationId::new();
+        let object = ObjectKey::Song(crate::domain::ids::SongId::new());
+        let open = begin(&fixture.deps, fixture.root, operation, object, 1_000)
+            .expect("persist local intent");
+
+        let first = finalize(&fixture.deps, fixture.root, operation, object, 11_000)
+            .expect("finalize")
+            .expect("deadline reached");
+        let retry = finalize(&fixture.deps, fixture.root, operation, object, 12_000)
+            .expect("retry finalization")
+            .expect("already finalized");
+
+        assert_eq!(first, open.final_mutation_id);
+        assert_eq!(retry, first);
+    }
+
+    #[test]
+    fn open_intent_survives_reopen_with_its_original_undo_deadline() {
+        let fixture = ScanFixture::new();
+        let operation = OperationId::new();
+        let object = ObjectKey::Song(crate::domain::ids::SongId::new());
+        let before_restart = begin(&fixture.deps, fixture.root, operation, object, 1_000)
+            .expect("persist reversible intent");
+
+        // A second application instance retries using the same directory and
+        // operation identity, but must not restart the 10-second window.
+        let after_restart = begin(&fixture.deps, fixture.root, operation, object, 5_000)
+            .expect("reload intent from durable directory state");
+        assert_eq!(after_restart, before_restart);
+        assert_eq!(
+            finalize(&fixture.deps, fixture.root, operation, object, 10_999)
+                .expect("still within the original window"),
+            None
+        );
+        assert_eq!(
+            finalize(&fixture.deps, fixture.root, operation, object, 11_000)
+                .expect("original deadline reached"),
+            Some(before_restart.final_mutation_id)
+        );
+    }
+
+    #[test]
+    fn finalization_and_undo_race_for_one_directory_terminal_state() {
+        let fixture = ScanFixture::new();
+        let finalized_operation = OperationId::new();
+        let finalized_object = ObjectKey::Song(crate::domain::ids::SongId::new());
+        begin(
+            &fixture.deps,
+            fixture.root,
+            finalized_operation,
+            finalized_object,
+            1_000,
+        )
+        .expect("persist first intent");
+
+        finalize(
+            &fixture.deps,
+            fixture.root,
+            finalized_operation,
+            finalized_object,
+            11_000,
+        )
+        .expect("deadline finalization")
+        .expect("deadline reached");
+        assert!(matches!(
+            cancel(
+                &fixture.deps,
+                fixture.root,
+                finalized_operation,
+                finalized_object,
+                10_999,
+            ),
+            Err(Error::Conflict { .. })
+        ));
+
+        let cancelled_operation = OperationId::new();
+        let cancelled_object = ObjectKey::Song(crate::domain::ids::SongId::new());
+        begin(
+            &fixture.deps,
+            fixture.root,
+            cancelled_operation,
+            cancelled_object,
+            20_000,
+        )
+        .expect("persist second intent");
+        cancel(
+            &fixture.deps,
+            fixture.root,
+            cancelled_operation,
+            cancelled_object,
+            20_001,
+        )
+        .expect("undo wins before deadline");
+        assert!(matches!(
+            finalize(
+                &fixture.deps,
+                fixture.root,
+                cancelled_operation,
+                cancelled_object,
+                30_000,
+            ),
+            Err(Error::Conflict { .. })
+        ));
     }
 }

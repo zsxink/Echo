@@ -230,14 +230,18 @@ impl NativeSyncProvisioner {
             }
             let finished = page.entries.is_empty();
             let database = Arc::clone(&self.database);
+            let scan_deps = Arc::clone(&self.scan_deps);
             let catalog_changed = Arc::clone(&self.pending_catalog_changed);
             let host = peer.host_device_id;
+            let root = queue.root;
             // Directory recovery, validation and fsync can outlive an idle
             // HTTP connection. Keep the executor polling its transport tasks
             // while the writer completes the page before requesting the next.
             tokio::task::spawn_blocking(move || {
                 let prepared = PreparedRemoteApply {
                     database: database.as_ref(),
+                    scan_deps: &scan_deps,
+                    root,
                     host,
                     changed: AtomicBool::new(false),
                     catalog_changed: &catalog_changed,
@@ -340,6 +344,8 @@ impl NativeSyncProvisioner {
         // needed to stage it.
         let prepared = PreparedRemoteApply {
             database: self.database.as_ref(),
+            scan_deps: &self.scan_deps,
+            root: queue.root,
             host: peer.host_device_id,
             changed: std::sync::atomic::AtomicBool::new(false),
             catalog_changed: &self.pending_catalog_changed,
