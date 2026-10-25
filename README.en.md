@@ -151,8 +151,12 @@ OpenSpec specifications live in `openspec/specs/<area>/spec.md`; proposed change
 
 The original Phase 1 scope excluded sync UI and network connections. That is historical scope, not the current product limitation: desktop LAN sync was implemented in Phase 2. See the [roadmap](docs/ROADMAP.md) for implementation and acceptance status.
 
+## Media rights & privacy
+
+Importing and LAN sync copy your audio and lyrics files: you are responsible for ensuring you have the rights to copy and sync that content between your own devices. Echo does not provide or download any audio content and holds no music, lyrics, or cover-art licenses. On privacy, Echo has no accounts, no telemetry or crash reporting, no cloud relay, and no online lyrics/cover fetching; diagnostic logs stay on your device. See [`docs/media-rights-and-privacy.md`](docs/media-rights-and-privacy.md).
+
 ## License
 
-Echo uses a custom license based on the Business Source License 1.1 for personal learning and research. Commercial use, resale, and redistribution are prohibited. On the Change Date (2099-12-31), the code will be available under GPL-2.0-or-later. See [`LICENSE`](LICENSE).
+Echo is licensed under the **Echo Personal Study License** — an independent, custom source-available license: personal learning and research use only; commercial use, resale, and redistribution are prohibited. On the Change Date (2099-12-31), the code will be available under GPL-2.0-or-later. The license borrows Business Source License 1.1's Change Date structure but is **not** BUSL-1.1. See [`LICENSE`](LICENSE).
 
-Third-party dependency licenses are listed in [`LICENSES.md`](LICENSES.md), maintained through `cargo deny` and the frontend production-dependency audit.
+Third-party dependency licenses are listed in [`LICENSES.md`](LICENSES.md), maintained through `cargo deny` and the frontend production-dependency audit. For the bundled libmpv and its sibling libraries, each platform's `vendor/libmpv/*/NOTICE.md` records the licenses, sources, and corresponding source, and the full license texts ship inside every installer as `vendor/libmpv/THIRD-PARTY-LICENSES.txt`.

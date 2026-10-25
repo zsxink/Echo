@@ -147,8 +147,12 @@ node scripts/verify/reconcile-scenarios.mjs         # specs↔traceability↔man
 
 以上“不包含同步入口”是一期的历史范围，不代表当前产品限制。桌面局域网同步已在二期实现：同步主机汇聚设备变更，客户端保留自己的 SQLite 投影；数据库文件本身不会通过网络传输。同步功能与验收状态见 [`docs/ROADMAP.md`](docs/ROADMAP.md)。
 
+## 用户媒体权利与隐私
+
+导入与局域网同步会复制你的音频与歌词文件：你须自行确保拥有在自己设备间复制、同步这些内容的权利；Echo 不提供、不下载任何音频内容，也未取得任何音乐、歌词或封面授权。隐私方面，Echo 无账号、无遥测或崩溃上报、无云端中继、无联网歌词/封面抓取，诊断日志仅保留在本地设备。详见 [`docs/media-rights-and-privacy.md`](docs/media-rights-and-privacy.md)。
+
 ### 许可证
 
-Echo 采用**基于 Business Source License 1.1 的定制授权**（个人学习与研究用途）：禁止任何商业用途、私自销售/转卖与再分发；Change Date（2099-12-31）后按 GPL-2.0-or-later 提供。详见根目录 [`LICENSE`](LICENSE)。
+Echo 采用**「Echo 个人学习使用许可」（Echo Personal Study License）**——一份独立定制的源码可用许可：仅限个人学习与研究用途，禁止任何商业用途、销售/转卖与再分发；Change Date（2099-12-31）后按 GPL-2.0-or-later 提供。该许可借鉴了 Business Source License 1.1 的 Change Date 结构，但**不是** BUSL-1.1。详见根目录 [`LICENSE`](LICENSE)。
 
-第三方依赖的许可清单见 [`LICENSES.md`](LICENSES.md)（由 `cargo deny` 与前端 prod 依赖审计维护）。
+第三方依赖的许可清单见 [`LICENSES.md`](LICENSES.md)（由 `cargo deny` 与前端 prod 依赖审计维护）；各平台打包的 libmpv 及关联库的许可、来源、对应源码与随包许可全文见各平台 `vendor/libmpv/*/NOTICE.md` 与 `vendor/libmpv/THIRD-PARTY-LICENSES.txt`（随安装包分发）。

@@ -15,13 +15,15 @@
   "licenses": [
     {
       "component": "libmpv",
-      "license": "LGPL-2.1-or-later",
-      "source": "https://github.com/mpv-player/mpv"
+      "license": "GPL-2.0-or-later",
+      "source": "https://github.com/mpv-player/mpv",
+      "note": "shinchiro mpv-winbuild-cmake links FFmpeg configured with --enable-gpl and x264/x265 statically into libmpv-2.dll, so the bundled binary is GPL, not LGPL"
     },
     {
       "component": "FFmpeg (static)",
-      "license": "LGPL-2.1-or-later",
-      "source": "https://ffmpeg.org/legal.html"
+      "license": "GPL-2.0-or-later",
+      "source": "https://ffmpeg.org/legal.html",
+      "note": "built with --enable-gpl --enable-libx264 --enable-libx265 (packages/ffmpeg.cmake); GPL components make the FFmpeg build GPL"
     },
     {
       "component": "Vulkan Loader",

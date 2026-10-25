@@ -31,3 +31,28 @@ The audio-effects Gate is still open: this candidate has passed filter
 availability and command-path probes with `ao=null`, which discards PCM. It
 has not yet passed physical-output capture, peak/response measurements, loop
 stress, latency/underrun, CPU-budget, or independent listening review.
+
+## Corresponding source
+
+The FFmpeg and mpv builds are LGPL (GPL and nonfree configure options are
+disabled), so the corresponding source obligation is met by pointing at the
+exact pinned sources recorded in `manifest.json`:
+
+- FFmpeg 6.0: <https://ffmpeg.org/releases/ffmpeg-6.0.tar.xz>
+  (SHA-256 in `manifest.json` `assetSha256`)
+- mpv 0.36.0: <https://github.com/mpv-player/mpv/archive/refs/tags/v0.36.0.tar.gz>
+  (SHA-256 in `manifest.json` `additionalSources`)
+- Echo's two mpv patches: `scripts/release/patches/` in this repository
+- Auxiliary libraries (libass, FreeType, FriBidi, GLib, Graphite2, HarfBuzz,
+  libintl, PCRE2, libpng, libunibreak): Homebrew builds on the build host;
+  versions in the table above, sources at each component's upstream listed in
+  `manifest.json` `licenses`
+
+## License texts
+
+The complete license texts for every license covering Echo's bundled player
+binaries (GPL-2.0, LGPL-2.1, ISC, MIT, Apache-2.0, FTL, Zlib, BSD-3-Clause,
+libpng) are in `THIRD-PARTY-LICENSES.txt` at the `vendor/libmpv/` level,
+packaged inside the macOS app bundle under
+`Contents/Resources/third-party/libmpv/`. System Apple frameworks and system
+`libiconv` are provided by macOS and covered by Apple's own licensing.

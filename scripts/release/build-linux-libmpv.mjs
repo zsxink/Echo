@@ -530,9 +530,15 @@ function recordBuildTag(out, buildTag) {
 // so this file is both the record and the next build's input — task 9.7's
 // Linux gate re-verifies every digest and the glibc ceiling against it.
 
+// Licenses of the components this build ships, recorded verbatim into
+// manifest.json and the NOTICE. FFmpeg is GPL-2.0-or-later, NOT LGPL: the
+// patched ffmpeg-config keeps mpv-build's default `--enable-gpl` (only the
+// static/shared flags are swapped), and FFmpeg's configure marks the build
+// GPL when --enable-gpl is set. The same applies to libplacebo's LGPL claim
+// only where that library is genuinely LGPL; mpv itself is GPL-2.0-or-later.
 const LICENSES = [
   ["mpv", "GPL-2.0-or-later", "https://github.com/mpv-player/mpv"],
-  ["FFmpeg", "LGPL-2.1-or-later", "https://github.com/FFmpeg/FFmpeg"],
+  ["FFmpeg", "GPL-2.0-or-later", "https://github.com/FFmpeg/FFmpeg"],
   ["libplacebo", "LGPL-2.1-only", "https://github.com/haasn/libplacebo"],
   ["libass", "ISC", "https://github.com/libass/libass"],
   ["freetype", "FTL", "https://gitlab.freedesktop.org/freetype/freetype"],
@@ -663,10 +669,13 @@ a published tarball.
 
 ## Licenses
 
-The bundled libraries are licensed as follows. mpv itself is GPL-2.0-or-later
-and is redistributed here unmodified as a dynamically linked shared library,
-so the corresponding source for that exact commit is the upstream checkout
-named in the table above.
+The bundled libraries are licensed as follows. Both mpv and FFmpeg are
+GPL-2.0-or-later: mpv is GPL upstream, and the FFmpeg build keeps mpv-build's
+\`--enable-gpl\` (only its static/shared default is patched), which marks the
+FFmpeg build GPL. Both are redistributed here unmodified as dynamically linked
+shared libraries, so the corresponding source for the exact commits is the
+upstream checkout named in the table above; rebuild them with
+scripts/release/build-linux-libmpv.mjs from this repository's recorded pins.
 
 ${manifest.licenses.map((l) => `- **${l.component}** — ${l.license} — ${l.source}`).join("\n")}
 
