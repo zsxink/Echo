@@ -210,10 +210,11 @@ jobs:
       # task-9.8 builds and runs the libmpv_platform probe against the vendored
       # libmpv-2.dll (build.rs stages it to target/debug); no frontend or
       # webview runtime is needed for echo-desktop. 17.1 is the static
-      # Windows-installer contract gate (issue #64) — config-only, but kept
-      # in this job so it runs on every Windows-platform touchpoint.
-      - name: Verify platform Gate (9.7 9.8 17.1)
-        run: pnpm verify:task -- 9.7 9.8 17.1
+      # Windows-installer contract gate (issue #64) and 18.1 the licensing &
+      # privacy notices contract gate (issue #66) — both config-only, kept in
+      # this job so they run on every Windows-platform touchpoint.
+      - name: Verify platform Gate (9.7 9.8 17.1 18.1)
+        run: pnpm verify:task -- 9.7 9.8 17.1 18.1
 
   linux-platform-gate:
     name: Linux platform Gate

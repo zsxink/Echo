@@ -156,9 +156,17 @@ const buildTag = {
   if (notice) {
     // release.yml only checks existence, but the file's whole job is to be an
     // honest provenance record for a *self-built* (not downloaded) runtime.
+    // mpv and FFmpeg are GPL (mpv upstream is GPL; the patched ffmpeg-config
+    // keeps --enable-gpl), while libplacebo/fribidi stay LGPL — the NOTICE
+    // must name both obligations exactly (issue #66: FFmpeg used to be
+    // recorded as LGPL here, contradicting the build config).
+    assert(
+      notice.includes("GPL-2.0-or-later"),
+      "NOTICE records mpv/FFmpeg as GPL-2.0-or-later",
+    );
     assert(
       notice.includes("LGPL-2.1-or-later"),
-      "NOTICE names the LGPL obligation of libmpv/FFmpeg",
+      "NOTICE names the LGPL obligation of the LGPL components (libplacebo/fribidi)",
     );
     assert(
       notice.includes("aaaaaaa") && notice.includes("bbbbbbb"),
