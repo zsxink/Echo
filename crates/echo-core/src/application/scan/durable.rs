@@ -217,6 +217,7 @@ pub fn commit_song(
             && old.artist == record.artist
             && old.album == record.album
     }) {
+        catch_up_library_projection(deps, root, operation)?;
         return project();
     }
     let envelope = PortableRecordEnvelope::new(PortableRecord::Song(record), None)?;
@@ -233,8 +234,13 @@ pub fn commit_song(
             "content_hash": song.blake3_hash(), "added_at": song.added_at(),
         }),
     ));
-    let (outcome, projected) =
-        commit_then_project(deps.control.as_ref(), root, &batch, |_| project())?;
+    let (outcome, projected) = commit_then_project(deps.control.as_ref(), root, &batch, |_| {
+        // The batch is only the newest fact. Apply the verified directory prefix
+        // through the ordered projection port first so an earlier saved commit
+        // cannot be skipped when this operation's local index update succeeds.
+        catch_up_library_projection(deps, root, operation)?;
+        project()
+    })?;
     if projected.is_some() {
         return Ok(());
     }
@@ -248,5 +254,42 @@ pub fn commit_song(
         Err(Error::saved_pending_recovery(operation, cause))
     } else {
         Err(Error::saved_pending_projection(operation, cause))
+    }
+}
+
+/// Catch the replaceable SQLite projection up from the verified directory
+/// journal before any call-site-specific local index/journal updates run.
+/// Production `ScanDeps` always carries this projection capability; small fakes
+/// without it retain their direct callback behavior.
+fn catch_up_library_projection(
+    deps: &ScanDeps,
+    root: LibraryRootId,
+    fallback_operation: OperationId,
+) -> Result<(), Error> {
+    let Some(projection) = deps.history.as_deref() else {
+        return Ok(());
+    };
+    let durable = deps.control.durability().ok_or_else(|| {
+        Error::unavailable(
+            "library durability",
+            "directory commit adapter is not configured",
+        )
+    })?;
+    let replay = durable.recover(root)?;
+    let status = projection.projection_status(root)?;
+    match crate::application::ports::LibraryProjectionPort::project_library_commits(
+        projection, root, &replay,
+    ) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            let operation = replay
+                .commits
+                .iter()
+                .find(|commit| commit.library_commit_seq > status.applied_library_commit_seq)
+                .map_or(fallback_operation, |commit| {
+                    OperationId::from_uuid(commit.batch.operation_id)
+                });
+            Err(Error::saved_pending_projection(operation, error))
+        }
     }
 }

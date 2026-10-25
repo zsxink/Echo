@@ -35,7 +35,7 @@
  * lives here.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { bridge, reportBridgeFailure } from "../bridge";
 import { useImport } from "../features/import";
@@ -47,6 +47,7 @@ import { invalidateLibrary } from "../features/library/libraryInvalidation";
 import type { LibraryViewKind } from "../features/library/types";
 import { coverClass } from "../features/library/coverClass";
 import { LibraryWorkspace } from "../features/library/LibraryWorkspace";
+import { ScanReportDialog } from "../features/library/ScanReportDialog";
 import { CollectionDirectory } from "../features/library/CollectionDirectory";
 import { PlaylistCreateDialog } from "../features/playlists/PlaylistNameDialog";
 import { PlaylistsView } from "../features/playlists/PlaylistsView";
@@ -64,6 +65,7 @@ import { useAppShell } from "./useAppShell";
 import { invalidateCovers } from "./coverArt";
 import { requestSearchFocus } from "./searchFocus";
 import { error as logError } from "../logging/log";
+import type { ScanIssueDto } from "../ipc/ipc-types.generated";
 
 /** The view kinds the shell's `selectView` accepts (kept in sync with
  * `features/library/types.ts`); menu `view:*` payloads are filtered by it. */
@@ -81,6 +83,7 @@ function isLibraryViewKind(view: string): view is LibraryViewKind {
 }
 
 export function App() {
+  const [scanIssues, setScanIssues] = useState<readonly ScanIssueDto[]>([]);
   const {
     theme,
     status,
@@ -181,10 +184,11 @@ export function App() {
     const runRescan = async () => {
       if (!activeRoot || scanning) return;
       try {
-        await bridge.call("start_scan", { root: activeRoot });
+        const snapshot = await bridge.call("start_scan", { root: activeRoot });
         invalidateCovers();
         invalidateLibrary();
         await statusRefresh();
+        setScanIssues(snapshot.issues);
       } catch (error: unknown) {
         reportBridgeFailure("start_scan", error);
       }
@@ -440,6 +444,9 @@ export function App() {
         <PlayerBar queueTriggerRef={queueTriggerRef} />
 
         <ToastView />
+        {scanIssues.length > 0 ? (
+          <ScanReportDialog issues={scanIssues} onClose={() => setScanIssues([])} />
+        ) : null}
 
         {playlistNameOpen ? (
           <PlaylistCreateDialog

@@ -360,4 +360,5 @@ fn library_durability_projection_derives_missing_timestamps_from_the_record_cloc
 }
 
 mod identity;
+mod legacy;
 mod retained_evidence;

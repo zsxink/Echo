@@ -652,6 +652,18 @@ impl ScanRunRepository for MemoryScanRunRepository {
             .map(|(_, g)| *g)
             .max())
     }
+    fn issues(&self, root: LibraryRootId, generation: u64) -> Result<Vec<MediaDiagnostic>, Error> {
+        Ok(self
+            .issues
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(issue_root, issue_generation, _)| {
+                *issue_root == root && *issue_generation == generation
+            })
+            .map(|(_, _, issue)| issue.clone())
+            .collect())
+    }
 }
 
 /// In-memory runtime key/value store (`root_epoch` persistence read side).

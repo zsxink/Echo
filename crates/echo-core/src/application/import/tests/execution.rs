@@ -35,6 +35,52 @@ fn single_input_failure_does_not_rollback_committed_inputs() {
 }
 
 #[test]
+fn library_durability_small_import_records_reservation_and_song_commit_per_success() {
+    use crate::application::ports::ControlPlanePort as _;
+
+    let g = gated();
+    g.sources.add("a", "a.flac", b"content-a");
+    tagged(&g, b"content-a", Some("歌手"), Some("A"));
+    g.fixture.set_audio("media/歌手/歌手 - A.flac", "A", 1_000);
+    g.sources.add("b", "b.flac", b"content-b");
+    tagged(&g, b"content-b", Some("歌手"), Some("B"));
+    g.fixture.set_audio("media/歌手/歌手 - B.flac", "B", 2_000);
+
+    let report = PlanImport::new(&g.deps, &g.sources)
+        .run(g.fixture.root, &[source("a"), source("b")])
+        .expect("representative two-song import");
+    assert!(report.results.iter().all(|result| matches!(result, ImportOutcome::Imported { .. })));
+    let replay = g
+        .fixture
+        .control
+        .durability()
+        .unwrap()
+        .recover(g.fixture.root)
+        .unwrap();
+    assert_eq!(g.fixture.all_songs().len(), 2);
+    assert_eq!(replay.commits.len(), 4, "two commits per import: identity reservation + song after-image");
+    assert_eq!(
+        replay
+            .commits
+            .iter()
+            .map(|commit| commit.batch.records.len())
+            .sum::<usize>(),
+        2,
+        "only the song commits carry portable records"
+    );
+    assert_eq!(
+        replay
+            .commits
+            .iter()
+            .map(|commit| commit.batch.resources.len())
+            .sum::<usize>(),
+        2,
+        "each imported song carries one verified media resource"
+    );
+    assert!(violations(&g).is_empty(), "batch copy follows its reserved identities");
+}
+
+#[test]
 fn duplicate_content_within_a_batch_creates_one_record() {
     let g = gated();
     g.sources.add("x", "tune.flac", b"same-content");

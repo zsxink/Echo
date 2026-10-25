@@ -151,7 +151,7 @@ impl<'a> PrepareLibraryCandidate<'a> {
         // `media/` is enumerated, or every file looks new and gets a fresh
         // identity — the data loss behind issue #1.
         let (continuation, control_plane_degraded) =
-            self.continue_from_records(root_id, write_capable);
+            self.continue_from_records(root_id, write_capable)?;
 
         // An unsupported control surface remains browseable through its existing
         // projection. Scanning could mint identities or write a format we do
@@ -208,40 +208,39 @@ impl<'a> PrepareLibraryCandidate<'a> {
         &self,
         root_id: LibraryRootId,
         write_capable: bool,
-    ) -> (Option<ContinuationReport>, bool) {
-        let Ok(_activity) = self.deps.activity.enter() else {
-            return (None, true);
-        };
-        if !write_capable
-            || self
-                .roots
-                .replica_enrollment_pending(root_id)
-                .unwrap_or(true)
-        {
-            return (None, false);
+    ) -> Result<(Option<ContinuationReport>, bool), Error> {
+        let _activity = self.deps.activity.enter()?;
+        if !write_capable {
+            return Ok((None, false));
         }
-        match ContinueFromRecords::new(
+        if self.roots.replica_enrollment_pending(root_id)? {
+            return Ok((None, false));
+        }
+        let continuation = ContinueFromRecords::new(
             self.deps.control.as_ref(),
             self.deps.songs.as_ref(),
             self.deps.playlists.as_ref(),
             self.deps.uow.as_ref(),
-        )
-        .run(root_id)
-        {
-            Ok(report) => (Some(report), false),
+        );
+        let continuation = match self.deps.history.as_deref() {
+            Some(projection) => continuation.with_projection(projection),
+            None => continuation,
+        };
+        match continuation.run(root_id) {
+            Ok(report) => Ok((Some(report), false)),
             Err(error) if error.code() == "unsupported_media" => {
                 tracing::warn!(
                     reason = %error,
                     "portable control surface is newer than this build — opening read-only"
                 );
-                (None, true)
+                Ok((None, true))
             }
             Err(error) => {
                 tracing::warn!(
                     reason = %error,
-                    "object-record continuation failed — the candidate falls back to a plain scan"
+                    "object-record continuation failed — refusing to scan before identity recovery succeeds"
                 );
-                (None, false)
+                Err(error)
             }
         }
     }

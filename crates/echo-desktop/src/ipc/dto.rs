@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use echo_core::application::scan::ScanSummary;
 use echo_core::domain::catalog::{CatalogCollection, CatalogCounts, OpaqueCursor, Paged};
-use echo_core::domain::entities::{Song, SongAvailability};
+use echo_core::domain::entities::{MediaDiagnostic, Song, SongAvailability};
 use echo_core::domain::ids::{LibraryRootId, PlaylistId, SongId};
 use echo_core::domain::media::{AudioFormat, AudioParameters};
 
@@ -292,6 +292,28 @@ pub struct ScanSnapshot {
     pub missing: u64,
     pub skipped: u64,
     pub failed: u64,
+    pub issues: Vec<ScanIssueDto>,
+}
+
+/// One root-relative per-file diagnostic from a scan run.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanIssueDto {
+    pub relative_path: String,
+    pub code: String,
+    pub message: String,
+    pub song_created: bool,
+}
+
+impl From<&MediaDiagnostic> for ScanIssueDto {
+    fn from(issue: &MediaDiagnostic) -> Self {
+        Self {
+            relative_path: issue.path().display().to_owned(),
+            code: issue.code().to_owned(),
+            message: issue.reason().to_owned(),
+            song_created: issue.song_created(),
+        }
+    }
 }
 
 impl From<&ScanSummary> for ScanSnapshot {
@@ -308,6 +330,7 @@ impl From<&ScanSummary> for ScanSnapshot {
             missing: progress.missing,
             skipped: progress.skipped,
             failed: progress.failed,
+            issues: Vec::new(),
         }
     }
 }

@@ -72,6 +72,8 @@ pub trait ScanRunRepository: Send + Sync {
     ) -> Result<(), Error>;
     /// The newest generation recorded for the root, if any.
     fn latest_generation(&self, root: LibraryRootId) -> Result<Option<u64>, Error>;
+    /// Per-file diagnostics from one completed or cancelled scan generation.
+    fn issues(&self, root: LibraryRootId, generation: u64) -> Result<Vec<MediaDiagnostic>, Error>;
 }
 
 /// Small key/value store for runtime-persisted state (the `root_epoch`

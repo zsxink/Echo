@@ -1,5 +1,6 @@
 //! Ordered, atomic projection of a verified library replay. Recovery evidence is
 //! retained independently of whether a relationship's parents are available.
+mod legacy;
 mod records;
 mod retained;
 mod sync_state;
@@ -13,20 +14,40 @@ use crate::domain::library::durability::{
     LibraryProjectionStatus, LibraryRecoveryRecords, LibraryReplay,
 };
 use crate::error::Error;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Transaction};
+
+pub fn project_legacy_records(
+    connection: &mut Connection,
+    root: LibraryRootId,
+    records: &[crate::domain::library::PortableRecordEnvelope],
+) -> Result<(), Error> {
+    legacy::project(connection, root, records)
+}
 
 pub fn project_commits(
     connection: &mut Connection,
     root: LibraryRootId,
     replay: &LibraryReplay,
 ) -> Result<(), Error> {
-    let current = validation::validate(connection, root, replay)?;
+    let tx = connection.transaction().map_err(storage)?;
+    project_commits_in_transaction(&tx, root, replay)?;
+    tx.commit().map_err(storage)
+}
+
+/// Project a complete verified replay inside a caller-owned transaction.
+/// Root replacement uses this to make clearing stale rows and installing the
+/// replacement head one atomic SQLite commit.
+pub fn project_commits_in_transaction(
+    tx: &Transaction<'_>,
+    root: LibraryRootId,
+    replay: &LibraryReplay,
+) -> Result<(), Error> {
+    let current = validation::validate(tx, root, replay)?;
     let library = replay
         .commits
         .last()
         .map(|commit| commit.batch.library_id)
         .or_else(|| replay.checkpoint.as_ref().map(|image| image.library_id));
-    let tx = connection.transaction().map_err(storage)?;
     let mut seq = current.map_or(0, |(_, seq, _)| seq);
     if let Some(image) = replay
         .checkpoint
@@ -38,11 +59,11 @@ pub fn project_commits(
             [root.to_string()],
         )
         .map_err(storage)?;
-        retained::save(&tx, root, &image.records, &image.state, &image.resources)?;
+        retained::save(tx, root, &image.records, &image.state, &image.resources)?;
         // Final tombstones are retried first, freeing deleted unique names.
-        retained::retry(&tx, root, library)?;
+        retained::retry(tx, root, library)?;
         watermark(
-            &tx,
+            tx,
             root,
             image.library_id.to_string(),
             image.library_commit_seq,
@@ -55,16 +76,16 @@ pub fn project_commits(
             continue;
         }
         retained::save(
-            &tx,
+            tx,
             root,
             &commit.batch.records,
             &commit.batch.state,
             &commit.batch.resources,
         )?;
-        retained::retry(&tx, root, library)?;
+        retained::retry(tx, root, library)?;
         tx.execute("INSERT INTO library_applied_operations(library_root_uuid,operation_uuid,commit_seq,commit_digest) VALUES(?1,?2,?3,?4)",params![root.to_string(),commit.batch.operation_id.to_string(),commit.library_commit_seq,commit.digest]).map_err(storage)?;
         watermark(
-            &tx,
+            tx,
             root,
             commit.batch.library_id.to_string(),
             commit.library_commit_seq,
@@ -72,8 +93,8 @@ pub fn project_commits(
         )?;
     }
     // Reopening the same head also retries retained unresolved dependencies.
-    retained::retry(&tx, root, library)?;
-    tx.commit().map_err(storage)
+    retained::retry(tx, root, library)?;
+    Ok(())
 }
 
 fn watermark(

@@ -51,17 +51,20 @@ fn cancellation_during_final_directory_commit_never_marks_other_songs_missing() 
         metadata: Arc::new(metadata),
         ..(*f.app.deps).clone()
     };
-    StartScan::new(&deps, &f.app.supervisor)
+    let first_scan = StartScan::new(&deps, &f.app.supervisor)
         .run(f.root)
         .unwrap();
+    assert_eq!(first_scan.progress.created, 1, "{first_scan:?}");
+    assert_eq!(first_scan.progress.missing, 0, "{first_scan:?}");
     let old = deps.songs.all_in_root(f.root).unwrap().pop().unwrap();
+    assert_eq!(old.availability(), SongAvailability::Available);
     std::fs::remove_file(root_path.join("media/gone.flac")).unwrap();
     std::fs::write(root_path.join("media/new.flac"), b"second").unwrap();
     let supervisor = f.app.supervisor.clone();
     let control = Arc::new(
         RootControlPlane::new(f.app.registry.clone()).with_commit_hook(move |phase, _| {
             if phase == "committed" {
-                let _ = supervisor.cancel_all();
+                assert!(supervisor.cancel_all().contains(&f.root));
             }
             Ok(())
         }),

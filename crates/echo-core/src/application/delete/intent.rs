@@ -196,19 +196,112 @@ pub fn finalize(
     operation: OperationId,
     object: ObjectKey,
     now_ms: u64,
+    tombstone: crate::domain::library::PortableRecordEnvelope,
 ) -> Result<Option<MutationId>, Error> {
-    let mut intent = begin(deps, root, operation, object, now_ms)?;
-    let previous = intent.state;
+    let mut intent = match load(deps, root, operation)? {
+        Some(intent) => intent,
+        None => begin(deps, root, operation, object, now_ms)?,
+    };
+    if intent.object != object {
+        return Err(Error::conflict(
+            "delete operation identity refers to a different object",
+        ));
+    }
     let outcome = intent
         .resolve(DeleteIntentAction::DeadlineReached, now_ms)
         .map_err(map_error)?;
-    if intent.state != previous {
-        commit(deps, root, operation, stage_name(intent.state), &intent)?;
+    let mutation_id = match outcome {
+        DeleteIntentOutcome::Pending => return Ok(None),
+        DeleteIntentOutcome::EmitFinalTombstone {
+            mutation_id,
+            object: resolved,
+        } if resolved == object => mutation_id,
+        DeleteIntentOutcome::RemovedByRemoteTombstone => {
+            return Err(Error::conflict(
+                "a confirmed remote tombstone already removed the object",
+            ));
+        }
+        _ => return Err(Error::conflict("delete intent cannot be finalized")),
+    };
+    let expected_uuid = match object {
+        ObjectKey::Song(song) => song.as_uuid(),
+        _ => {
+            return Err(Error::conflict(
+                "delete finalization requires a song object",
+            ))
+        }
+    };
+    if !matches!(tombstone.record(), crate::domain::library::PortableRecord::Tombstone(record)
+        if record.deleted_kind == crate::domain::library::RecordKind::Song
+            && record.object_uuid == expected_uuid)
+    {
+        return Err(Error::conflict(
+            "delete finalization tombstone identity does not match its intent",
+        ));
     }
-    Ok(match outcome {
-        DeleteIntentOutcome::EmitFinalTombstone { mutation_id, .. } => Some(mutation_id),
-        _ => None,
-    })
+
+    // Keep the terminal intent and shared tombstone in one directory commit.
+    // A separate intent commit would leave a crash window where recovery sees
+    // Finalized but still sees the old live Song record.
+    let batch_id = finalization_batch_id(operation);
+    let durable = deps.control.durability().ok_or_else(|| {
+        Error::unavailable(
+            "library durability",
+            "directory commit adapter is not configured",
+        )
+    })?;
+    let committed = durable.read_operation(root, batch_id)?;
+    let batch = if let Some(committed) = committed {
+        let terminal_payload = encode(&intent)?;
+        let has_finalized_intent = committed.batch.state.iter().any(|state| {
+            state.kind == StateKind::DeleteIntent
+                && state.id == operation.as_uuid()
+                && state.payload == terminal_payload
+        });
+        let has_tombstone = committed.batch.records.iter().any(|envelope| {
+            matches!(envelope.record(), crate::domain::library::PortableRecord::Tombstone(record)
+                if record.deleted_kind == crate::domain::library::RecordKind::Song
+                    && record.object_uuid == expected_uuid)
+        });
+        if !has_finalized_intent || !has_tombstone {
+            return Err(Error::conflict(
+                "saved delete finalization does not contain its terminal intent and tombstone",
+            ));
+        }
+        committed.batch
+    } else {
+        let library = crate::application::scan::durable::library_id(deps, root)?;
+        let mut batch = crate::domain::library::durability::LibraryBatch::new(
+            batch_id,
+            library,
+            ChangeOrigin::LocalEdit,
+            vec![tombstone],
+        );
+        batch.state.push(DurableStateChange::new(
+            StateKind::DeleteIntent,
+            operation.as_uuid(),
+            encode(&intent)?,
+        ));
+        batch
+    };
+    let outcome = durable.commit(root, &batch)?;
+    if outcome.status == crate::domain::library::durability::CommitStatus::SavedPendingRecovery {
+        return Err(Error::saved_pending_recovery(
+            OperationId::from_uuid(batch_id),
+            Error::unavailable(
+                "library recovery",
+                "delete tombstone materialization remains pending",
+            ),
+        ));
+    }
+    Ok(Some(mutation_id))
+}
+
+/// Stable directory operation containing both the terminal intent and the
+/// final tombstone. Retries reuse its frozen after-image.
+#[must_use]
+pub fn finalization_batch_id(operation: OperationId) -> uuid::Uuid {
+    transition_id(operation, "finalized-with-tombstone-v1")
 }
 
 /// Resolve a confirmed remote final tombstone for a locally intended delete.
@@ -314,6 +407,27 @@ fn map_error(error: DeleteIntentError) -> Error {
 mod tests {
     use super::*;
     use crate::application::testing::ScanFixture;
+    use crate::domain::ids::Revision;
+    use crate::domain::library::{
+        DeviceId, HybridLogicalClock, PortableRecord, RecordKind, TombstoneRecord,
+    };
+
+    fn tombstone(object: ObjectKey) -> crate::domain::library::PortableRecordEnvelope {
+        let ObjectKey::Song(song) = object else {
+            panic!("test tombstone expects a song");
+        };
+        crate::domain::library::PortableRecordEnvelope::new(
+            PortableRecord::Tombstone(TombstoneRecord {
+                object_uuid: song.as_uuid(),
+                deleted_kind: RecordKind::Song,
+                revision: Revision::from_u64(1),
+                updated_by_device_id: DeviceId::new(),
+                hlc: HybridLogicalClock::default(),
+            }),
+            None,
+        )
+        .expect("tombstone envelope")
+    }
 
     #[test]
     fn transition_identities_are_stable_and_distinct() {
@@ -369,12 +483,26 @@ mod tests {
         let open = begin(&fixture.deps, fixture.root, operation, object, 1_000)
             .expect("persist local intent");
 
-        let first = finalize(&fixture.deps, fixture.root, operation, object, 11_000)
-            .expect("finalize")
-            .expect("deadline reached");
-        let retry = finalize(&fixture.deps, fixture.root, operation, object, 12_000)
-            .expect("retry finalization")
-            .expect("already finalized");
+        let first = finalize(
+            &fixture.deps,
+            fixture.root,
+            operation,
+            object,
+            11_000,
+            tombstone(object),
+        )
+        .expect("finalize")
+        .expect("deadline reached");
+        let retry = finalize(
+            &fixture.deps,
+            fixture.root,
+            operation,
+            object,
+            12_000,
+            tombstone(object),
+        )
+        .expect("retry finalization")
+        .expect("already finalized");
 
         assert_eq!(first, open.final_mutation_id);
         assert_eq!(retry, first);
@@ -394,13 +522,27 @@ mod tests {
             .expect("reload intent from durable directory state");
         assert_eq!(after_restart, before_restart);
         assert_eq!(
-            finalize(&fixture.deps, fixture.root, operation, object, 10_999)
-                .expect("still within the original window"),
+            finalize(
+                &fixture.deps,
+                fixture.root,
+                operation,
+                object,
+                10_999,
+                tombstone(object),
+            )
+            .expect("still within the original window"),
             None
         );
         assert_eq!(
-            finalize(&fixture.deps, fixture.root, operation, object, 11_000)
-                .expect("original deadline reached"),
+            finalize(
+                &fixture.deps,
+                fixture.root,
+                operation,
+                object,
+                11_000,
+                tombstone(object),
+            )
+            .expect("original deadline reached"),
             Some(before_restart.final_mutation_id)
         );
     }
@@ -425,6 +567,7 @@ mod tests {
             finalized_operation,
             finalized_object,
             11_000,
+            tombstone(finalized_object),
         )
         .expect("deadline finalization")
         .expect("deadline reached");
@@ -464,6 +607,7 @@ mod tests {
                 cancelled_operation,
                 cancelled_object,
                 30_000,
+                tombstone(cancelled_object),
             ),
             Err(Error::Conflict { .. })
         ));

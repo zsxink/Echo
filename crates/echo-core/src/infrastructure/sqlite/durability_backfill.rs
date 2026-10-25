@@ -12,6 +12,9 @@ use crate::error::Error;
 use rusqlite::{params, Connection, OptionalExtension};
 use std::sync::Arc;
 
+#[path = "projection_rebuild.rs"]
+mod projection_rebuild;
+
 impl SqliteDatabase {
     /// Attach the library authority before starting any user or sync writes.
     pub fn configure_library_control(&self, control: Arc<dyn ControlPlanePort>) {
@@ -30,6 +33,44 @@ impl SqliteDatabase {
 }
 
 impl crate::application::ports::LibraryProjectionPort for SqliteDatabase {
+    fn validate_library_projection(
+        &self,
+        root: LibraryRootId,
+        manifest_library: crate::domain::library::LibraryId,
+        replay: &crate::domain::library::durability::LibraryReplay,
+    ) -> Result<crate::application::ports::LibraryProjectionValidation, Error> {
+        let parent = self
+            .path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
+        projection_rebuild::validate(parent, root, manifest_library, replay)
+    }
+    fn rebuild_library_projection(
+        &self,
+        root: LibraryRootId,
+        manifest_library: crate::domain::library::LibraryId,
+        replay: &crate::domain::library::durability::LibraryReplay,
+    ) -> Result<crate::application::ports::LibraryProjectionValidation, Error> {
+        let parent = self
+            .path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
+        let report = projection_rebuild::validate(parent, root, manifest_library, replay)?;
+        let replay = replay.clone();
+        self.writer.run(move |connection| {
+            projection_rebuild::replace_active(connection, root, &replay, report)
+        })
+    }
+    fn project_legacy_records(
+        &self,
+        root: LibraryRootId,
+        records: &[PortableRecordEnvelope],
+    ) -> Result<(), Error> {
+        let records = records.to_vec();
+        self.writer.run(move |connection| {
+            super::durability_projection::project_legacy_records(connection, root, &records)
+        })
+    }
     fn projection_status(
         &self,
         root: LibraryRootId,
@@ -49,9 +90,39 @@ impl crate::application::ports::LibraryProjectionPort for SqliteDatabase {
     ) -> Result<(), Error> {
         let commits = commits.clone();
         let control = self.library_control();
+        let incremental = self.writer.run({
+            let commits = commits.clone();
+            let control = control.clone();
+            move |connection| {
+                verify_covered_watermark(connection, root, &commits, control.as_deref())?;
+                super::durability_projection::project_commits(connection, root, &commits)
+            }
+        });
+        if incremental.is_ok() {
+            return Ok(());
+        }
+        let Some(control) = control else {
+            return incremental;
+        };
+        let manifest = control.read_manifest(root)?.ok_or_else(|| {
+            Error::conflict("cannot rebuild projection without a library manifest")
+        })?;
+        let parent = self
+            .path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
+        let report = projection_rebuild::validate(parent, root, manifest.library_id, &commits)?;
+        let latest = control
+            .durability()
+            .ok_or_else(|| Error::unavailable("library durability", "adapter is unavailable"))?
+            .recover(root)?;
+        if latest.head() != commits.head() {
+            return Err(Error::conflict(
+                "library directory advanced while rebuilding its SQLite projection",
+            ));
+        }
         self.writer.run(move |connection| {
-            verify_covered_watermark(connection, root, &commits, control.as_deref())?;
-            super::durability_projection::project_commits(connection, root, &commits)
+            projection_rebuild::replace_active(connection, root, &commits, report).map(|_| ())
         })
     }
 }

@@ -294,6 +294,14 @@ export interface ScanSnapshot {
   readonly missing: number;
   readonly skipped: number;
   readonly failed: number;
+  readonly issues: readonly ScanIssueDto[];
+}
+
+export interface ScanIssueDto {
+  readonly relativePath: string;
+  readonly code: string;
+  readonly message: string;
+  readonly songCreated: boolean;
 }
 
 export interface SongDetailView {

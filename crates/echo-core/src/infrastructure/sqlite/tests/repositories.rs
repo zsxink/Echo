@@ -125,6 +125,7 @@ use crate::application::testing::small_fakes::{
 };
 use crate::application::trash::{finalize_persisted_trash, FinalizeExpiredDeletes};
 use crate::domain::state::scan::ScanState as ScanRunState;
+use crate::domain::library::RecordKind;
 use crate::infrastructure::metadata::DiskCoverCache;
 
 #[derive(Clone)]
@@ -390,6 +391,12 @@ fn sqlite_trash_finalization_rollback_keeps_song_journal_and_claim_together() {
             .all(|item| item.state == OperationState::TrashApplied)
     );
     assert_eq!(claim_active(stack.database.as_ref(), operation), 1);
+    assert!(matches!(
+        deps.control
+            .read_record(stack.root, RecordKind::Tombstone, &song.id().to_string())
+            .expect("directory keeps the committed tombstone"),
+        Some(crate::domain::library::PortableRecord::Tombstone(_))
+    ));
 }
 
 #[test]

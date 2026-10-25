@@ -612,6 +612,88 @@ fn precommit_dedup_catches_a_concurrent_duplicate_without_a_second_song() {
 }
 
 #[test]
+fn scan_reconciles_against_import_committed_while_its_worker_is_blocked() {
+    use crate::application::ports::ContentHasher;
+    use crate::application::scan::{ScanDeps, StartScan};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::mpsc;
+
+    struct BlockingHasher {
+        inner: Arc<dyn ContentHasher>,
+        entered: Mutex<Option<mpsc::Sender<()>>>,
+        release: Mutex<mpsc::Receiver<()>>,
+        blocked: AtomicBool,
+    }
+
+    impl ContentHasher for BlockingHasher {
+        fn hash(
+            &self,
+            root: crate::domain::ids::LibraryRootId,
+            path: &crate::domain::ids::RelativeMediaPath,
+        ) -> Result<String, crate::error::Error> {
+            if path.display() == "media/scan.mp3" && !self.blocked.swap(true, Ordering::SeqCst) {
+                let entered = self.entered.lock().unwrap().take();
+                if let Some(entered) = entered {
+                    entered.send(()).expect("test is waiting for scanner");
+                }
+                self.release
+                    .lock()
+                    .unwrap()
+                    .recv()
+                    .expect("test releases scanner after import commits");
+            }
+            self.inner.hash(root, path)
+        }
+
+        fn hash_of_bytes(&self, bytes: &[u8]) -> String {
+            self.inner.hash_of_bytes(bytes)
+        }
+    }
+
+    let g = gated();
+    let bytes = b"same bytes from scan and import";
+    g.fixture.write_file("scan.mp3", bytes);
+    g.fixture.set_audio("media/scan.mp3", "same", 1000);
+    g.sources.add("hit", "晴天.mp3", bytes);
+    tagged(&g, bytes, Some("歌手"), Some("晴天"));
+    g.fixture
+        .set_audio("media/歌手/歌手 - 晴天.mp3", "same", 1000);
+
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let scan_deps = ScanDeps {
+        hasher: Arc::new(BlockingHasher {
+            inner: Arc::clone(&g.deps.hasher),
+            entered: Mutex::new(Some(entered_tx)),
+            release: Mutex::new(release_rx),
+            blocked: AtomicBool::new(false),
+        }),
+        ..g.deps.clone()
+    };
+    let root = g.fixture.root;
+    let supervisor = g.fixture.supervisor.clone();
+    let scan = std::thread::spawn(move || StartScan::new(&scan_deps, &supervisor).run(root));
+    entered_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("scan reached the controlled parse barrier");
+
+    let report = PlanImport::new(&g.deps, &g.sources)
+        .run(g.fixture.root, &[source("hit")])
+        .expect("concurrent import completes");
+    let ImportOutcome::Imported { song: imported, .. } = report.results[0] else {
+        panic!("import should own the identical content: {:?}", report.results);
+    };
+    release_tx.send(()).expect("release scan worker");
+    scan.join()
+        .expect("scan worker does not panic")
+        .expect("scan remains successful");
+
+    let songs = g.fixture.all_songs();
+    assert_eq!(songs.len(), 1, "same content must not mint another identity");
+    assert_eq!(songs[0].id(), imported, "scan reuses the import identity");
+}
+
+#[test]
 fn retry_of_identical_content_is_an_idempotent_duplicate() {
     let g = gated();
     let content = b"retry-bytes";

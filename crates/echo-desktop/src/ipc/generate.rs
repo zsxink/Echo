@@ -171,6 +171,13 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly missing: number;\n");
     out.push_str("  readonly skipped: number;\n");
     out.push_str("  readonly failed: number;\n");
+    out.push_str("  readonly issues: readonly ScanIssueDto[];\n");
+    out.push_str("}\n\n");
+    out.push_str("export interface ScanIssueDto {\n");
+    out.push_str("  readonly relativePath: string;\n");
+    out.push_str("  readonly code: string;\n");
+    out.push_str("  readonly message: string;\n");
+    out.push_str("  readonly songCreated: boolean;\n");
     out.push_str("}\n\n");
 
     out.push_str("export interface SongDetailView {\n");

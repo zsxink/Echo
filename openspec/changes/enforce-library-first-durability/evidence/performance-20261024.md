@@ -50,7 +50,15 @@
 - [x] `mark_published` 精确单 ledger after-image，证明此前目录事实后才省略无关资料；
   旧/未播种路径完整捕获，重试/跨 binding/资源/压缩/wipe 回归。
 - [ ] 4.2 host 纵切建立已验证水位共同基线，再推进通用 delta；不得只删全量导出。
-- [ ] 后续有界扫描/导入（reservation 与 song）、10k 实际 IO 测量、单次编辑链扫描数。
+- [x] 小规模扫描/导入（reservation 与 song）提交次数及资源声明观测，见下节。
+- [ ] 10k 实际 IO 测量、单次编辑链扫描数；均超出 3.7 范围。
+
+## 小规模扫描与导入（task 3.7，2026-10-26）
+
+- `library_durability_small_scan_commits_one_record_and_resource_per_song` 用 3 首不同音频验证：首次扫描产生 3 个目录 commit，每首为 1 条 Song after-image + 1 项已校验资源；重复扫描保持 3 个 commit 和 3 个 UUID，不为 unchanged 文件再次写目录。
+- `library_durability_small_import_records_reservation_and_song_commit_per_success` 用 2 个独立来源验证：导入成功产生 4 个目录 commit（每首先保存 identity reservation，再保存 Song after-image），总计 2 条 Song 记录和 2 项媒体资源；reservation gate 无违规。
+- 故障追赶由 `library_durability_scan_saves_identity_before_projection_and_reuses_it_on_retry`、`recovery_commits_the_directory_record_before_the_sqlite_row` 与 `library_durability_import_recovery_rebuilds_reserved_identity_in_a_fresh_database` 覆盖。当前通过：scan 57/57、import 62/62（包含本轮小规模计数测试）。
+- 以上是序列化目录提交和资源声明次数的协议级观察，不是 OS write/fsync syscall 计时；没有延后唯一权威提交，也没有执行 10k 规模测量。原样 513、单次编辑链扫描数和更大规模测量仍待后续独立性能工作。
 
 本阶段不缩减 513，不与其他 Cargo 长测并行，不把局部优化或超时当作通过。
 

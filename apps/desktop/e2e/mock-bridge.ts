@@ -720,7 +720,19 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
       }
       return { results: [imported] };
     },
-    start_scan: () => ({ generation: 1, cancelled: false }),
+    start_scan: () => ({
+      generation: 1,
+      cancelled: false,
+      state: "Completed",
+      discovered: 0,
+      processed: 0,
+      created: 0,
+      updated: 0,
+      missing: 0,
+      skipped: 0,
+      failed: 0,
+      issues: [],
+    }),
     cancel_scan: () => ({ generation: 1, cancelled: true }),
 
     set_theme: ({ theme }, st) => {

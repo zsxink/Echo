@@ -84,6 +84,43 @@ fn prepare_continues_object_records_before_scanning_media() {
     assert_eq!(songs[0].id(), SongId::from_uuid(song_uuid));
 }
 
+#[test]
+fn prepare_refuses_to_scan_when_record_projection_fails() {
+    let fixture = fixture();
+    let dir = tempfile::tempdir().expect("temp dir");
+    let root_id = bind_candidate(&fixture, dir.path());
+    fixture
+        .control
+        .write_record(root_id, &candidate_song_record(uuid::Uuid::new_v4()))
+        .expect("seed durable song record");
+    seed_candidate_media(dir.path());
+    fixture.set_audio("歌手/歌手 - 晴天.flac", "晴天", 200_000);
+    fixture.database.set_fail_commit(true);
+
+    let result =
+        PrepareLibraryCandidate::new(&fixture.deps, &fixture.database, &fixture.supervisor)
+            .prepare(dir.path());
+
+    assert!(
+        result.is_err(),
+        "continuation failure must abort candidate preparation"
+    );
+    assert_eq!(
+        crate::application::ports::ScanRunRepository::latest_generation(
+            &fixture.database,
+            root_id,
+        )
+        .expect("no scan began"),
+        None,
+        "do not run a plain scan that could mint a new UUID for the durable record"
+    );
+    assert!(
+        crate::application::ports::SongRepository::all_in_root(&fixture.database, root_id)
+            .expect("projection rolled back")
+            .is_empty()
+    );
+}
+
 /// The ordering guarantee behind "continue, then scan" (requirement
 /// 对象资料接续与对账): media the records already own keeps its UUID, while
 /// media no record describes is still discovered in the same pass — the

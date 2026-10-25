@@ -11,6 +11,9 @@ use crate::error::Error;
 
 use super::small_fakes::MemoryControlPlane;
 
+mod refusing;
+pub use refusing::RefusingAuthority;
+
 /// Faults are one-shot and preserve the trace across clones. Native fsync and
 /// materialization faults belong to the filesystem adapter's lower-level fake.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

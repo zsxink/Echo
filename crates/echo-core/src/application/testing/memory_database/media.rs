@@ -140,4 +140,15 @@ impl ScanRunRepository for MemoryDatabase {
             .map(|(_, generation)| *generation)
             .max())
     }
+    fn issues(&self, root: LibraryRootId, generation: u64) -> Result<Vec<MediaDiagnostic>, Error> {
+        Ok(self
+            .lock()
+            .issues
+            .iter()
+            .filter(|(issue_root, issue_generation, _)| {
+                *issue_root == root && *issue_generation == generation
+            })
+            .map(|(_, _, issue)| issue.clone())
+            .collect())
+    }
 }

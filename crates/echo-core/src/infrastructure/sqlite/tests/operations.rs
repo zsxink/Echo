@@ -43,9 +43,11 @@ fn scan_runs_progress_issues_round_trip_through_sqlite() {
     assert_eq!(progress.discovered, 2);
     assert_eq!(progress.failed, 1);
     assert!(finished, "terminal state never lost");
-    let issues = stack.database.scan_issues(stack.root, 1).expect("issues");
+    let issues = ScanRunRepository::issues(stack.database.as_ref(), stack.root, 1)
+        .expect("per-run diagnostics are available through the scan port");
     assert_eq!(issues.len(), 1);
     assert_eq!(issues[0].code(), "unsupported_media");
+    assert_eq!(issues[0].path().display(), "media/bad.mp3");
     // The bad file did not block the good one.
     assert_eq!(
         stack

@@ -31,6 +31,7 @@ mod sync_snapshot;
 mod sync_snapshot_apply;
 mod sync_song_projection;
 
+mod controlled_order;
 mod durability_migration;
 mod lifecycle;
 pub(super) mod playback_fixture;

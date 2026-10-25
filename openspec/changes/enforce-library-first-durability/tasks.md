@@ -36,9 +36,9 @@
   验证：2026-10-24 修复重试 fence/coverage 的连续故障窗口并独立复查通过；主 Agent 最终持久化组 60/60，详见 [刷盘与 GC 复查](evidence/retry-fences.md)。此处是目录材料化顺序，Application 投影 4.2 与完整私有历史/资源 GC 3.5 仍未完成。
 - [ ] 3.4 汇总实现用户资源原件与实际受管版本位置持久化（覆盖原件归 6.2，远端媒体 owner/version 归 7.4）；Echo 不写音乐文件标签，外部修改后的文件由扫描/监听重新校验并提交，不涉及源音乐字节替换（LD-02/08）。
 - [ ] 3.5 实现安全 checkpoint/压缩/GC，必须先刷盘完整覆盖清单再回收日志，引用图保护候选、快照、冲突、删除意图和未完成发布资源；checkpoint 不得随历史无界增长，链长度应与活跃窗口而非总历史成正比，超过安全上限时拒绝写入并报告；故障注入验证 GC 任一步中断后均可恢复且无唯一字节被删（LD-02/08）。
-- [ ] 3.7 验证扫描与批量导入在小规模代表场景下可安全提交并恢复，确保批次边界不延后唯一权威落盘、不重复分配身份且 SQLite 故障可由目录追赶；记录基本提交次数与 IO 观察，但不要求 10k 量级测量或消除所有全链扫描（LD-01/02/10）。
+- [x] 3.7 验证扫描与批量导入在小规模代表场景下可安全提交并恢复，确保批次边界不延后唯一权威落盘、不重复分配身份且 SQLite 故障可由目录追赶；记录基本提交次数与 IO 观察，但不要求 10k 量级测量或消除所有全链扫描（LD-01/02/10）。
 
-  逐项进度见 [性能续作清单](evidence/performance-20261024.md)。原样 513 与 10k 测量属于后续独立性能优化；当前验收以小规模正确性、顺序和恢复为准。
+  验证（2026-10-26）：新增小规模 scan/import 观测测试：3 首扫描各产生 1 个目录 commit（每批 1 条 Song after-image + 1 项媒体资源），不变重扫没有新增 commit；2 首导入产生 4 个目录 commit（每首先预留稳定身份、再提交 Song after-image），包含 2 条 Song 与 2 项媒体资源。失败恢复由 scan `saved identity before projection`、import `recovery commits the directory record before the SQLite row` 及 `fresh database` recovery 测试覆盖；重试保留同一 UUID，不延后首次目录提交。命令：`cargo test -p echo-core --lib small_scan_commits_one_record_and_resource_per_song`、`cargo test -p echo-core --lib small_import_records_reservation_and_song_commit_per_success`、`cargo test -p echo-core --lib scan`、`cargo test -p echo-core --lib import`。记录的是协议级目录提交与资源声明次数，不是原生文件系统 syscall 计时；原样 513 与 10k 测量仍属于后续独立优化。逐项背景见 [性能续作清单](evidence/performance-20261024.md)。
 - [x] 3.6 增加平台 FS 适配说明与协议恢复文档（可放 `docs/lan-sync-recovery.md` 的本地资料库章节），运行 `cargo test -p echo-core library_durability`，记录 POSIX/Windows 目录同步/替换能力及不支持时的明确失败语义（LD-09/10）。
 
   验证：2026-10-24 `library_durability --lib` 52/52 通过；`docs/lan-sync-recovery.md` 的“文件系统适配与失败语义”核对了现有 POSIX/Windows 实现，明确 Windows/Linux 尚待原生验收。此项不替代 10.3。
@@ -53,10 +53,16 @@
   进度：2026-10-25 依 F1 拆分自原 4.2；协调器骨架（`plan_library_change` 统一"事务内规划→显式回滚→目录提交→恢复→按目录链顺序 `project_commits` 追赶"）与已接入入口清单见 [交接](evidence/handoff-20261025.md)。剩余 DB-first 入口（`recover/mod.rs`、trash 等）归 4.2b。
 
   验证：2026-10-25 缺陷 1（重试从目录基线补全已保存歌单并返回原身份，追赶失败经 `saved_pending_catch_up` 归因到首个未投影提交的稳定操作身份）与缺陷 3（`retry` 仅在成员可重投影时释放旧行，保留成员被阻塞时已投影行不丢）均经 RED→GREEN：`playlist_create_retry_after_saved_pending_keeps_operation_identity`、`retained_member_with_blocked_reorder_keeps_projected_row`（暂存修复复跑确认旧代码丢行 left:1/right:2）。可控次序 fake 骨架 `RefusingAuthority`（经 `configure_library_control` 安装、按开关拒绝目录提交）覆盖喜欢/歌单增删改名/成员增删/封面/播放记录 8 个入口，断言拒绝时 15 张业务与投影表行数指纹及目录 replay 完全不变、解除后同权威恢复正常提交投影；memory fake 增补同名重试补全已保存歌单。`cargo test -p echo-core --lib library_durability` 180 通过/0 失败、`--lib memory` 12/0、`--lib` 全量 869/0/1 ignored、`cargo clippy -p echo-core --lib --all-targets` 0 警告、`cargo fmt --all --check` 通过。已知范围外：echo-sync `ledger_protocol` 2 例回归（缺陷 4）仍使 `pnpm verify:governance` 退出 101。详见 [4.2a 收尾](evidence/4.2a-closeout-20261025.md)。
-- [ ] 4.2b 全部入口改造：`recover/mod.rs`、`trash.rs`、`delete.rs`、`restore.rs`、`continuation.rs` 及四处 per-operation `project` 闭包全部改到协调器，"绝无用户 DB-first 写入"的可控次序 fake 扩展到全部入口并全绿，方可在汇总处勾选 4.2；6.6（删除 DB-first materializer）与 9.6（CodeGraph 清理复核）均以 4.2b 为前置（LD-01/02/10）。前置：5.1、6.4、6.5。
+- [x] 4.2b 全部入口改造：`recover/mod.rs`、`trash.rs`、`delete.rs`、`restore.rs`、`continuation.rs` 及四处 per-operation `project` 闭包全部改到协调器，"绝无用户 DB-first 写入"的可控次序 fake 扩展到全部入口并全绿，方可在汇总处勾选 4.2；6.6（删除 DB-first materializer）与 9.6（CodeGraph 清理复核）均以 4.2b 为前置（LD-01/02/10）。前置：5.1、6.4、6.5。
+
+  进度（2026-10-26）：修复 `trash::finalize_persisted_trash` 的具体 DB-first 窗口：`Finalized` intent 与 typed Song Tombstone 同一稳定目录 batch 提交后才运行 SQLite 删除；相同 batch 重试复用已冻结 after-image。新增目录提交拒绝、数据库回滚后保留 Tombstone、同 batch 恢复测试。另修 candidate root continuation 失败后仍 plain-scan、可能重铸 UUID 的路径：除不支持的新 manifest 外，continuation/准入错误现会阻止候选扫描，测试确认 scan generation 为 0。
+
+  完成（2026-10-26）：production continuation 将 V1/V2 snapshot 按 typed identity 和 `(HLC, revision, tombstone tie-wins)` 规则选出未被真实 replay 覆盖的基线，经 SQLite SQL-only legacy projector 投影；随后只按验证过的目录链推进水位。legacy 投影不写回目录、不制造 commit/watermark/outbox。`RestoreLibrary` 与 scan/import/watch/recovery 的 song 写入共用 `commit_song`，先追赶目录已保存前缀，再执行调用点投影。过期回收将 Finalized intent 与 typed Song Tombstone 同批提交，目录提交成功后才删 SQLite catalog。真实 SQLite `RefusingAuthority` 可控次序测试覆盖删除拒绝、撤销拒绝、恢复重试、回收提交拒绝后同操作重试；RED 发现并修复了恢复条目已 `Restored` 但歌曲仍 `PendingDelete` 时被错误排除的问题。scan/watch/import/restore/continuation/root-switch 既有及新增定向验证均通过。详见 [trash Tombstone 顺序及 continuation 失败保护](evidence/4.2b-trash-tombstone-progress-20261026.md)。音乐标签仍只由 Echo 读取，不写回源文件。
 - [ ] 4.3 实现从目录重建临时 SQLite、完整性比对后替换活动投影，隔离损坏/落后/领先或其他库数据库；投影 MUST 容忍悬空父引用（可解析子集入正表，未解析项入 typed `library_recovery_records` 并计 partial），不得因单条悬空引用使重建整体失败；验证不依赖旧数据库、重建无上传回声、失败保持旧活动库（LD-03/06/07）。
 
   进度：2026-10-25 悬空引用保留与依赖补齐后自动关联已由 4.5 覆盖；临时 SQLite 重建、完整性比对后替换活动投影、损坏/落后/领先/异库隔离与"失败保持旧活动库"的验收未完成。
+
+  实施进展（2026-10-26）：新增独立临时 SQLite 候选投影，校验 manifest library ID、replay/head、水位、quick check、foreign key 与完整 typed retained evidence；候选悬空引用按 partial 保留，且不得生成 outbox。`project_library_commits` 的增量投影失败时会核对 manifest 和最新目录 head，再尝试原子 root 替换。活动事务目前只替换歌曲、歌单、扫描摘要和 library projection 证据；跨 root 行保持不变，未完成文件操作会阻止替换，目标 root 有 sync context 时明确拒绝以免误删尚未做 archive-aware rebuild 的同步视图。真实 SQLite 用例覆盖领先水位自动重建、root 隔离、注入 SQL 失败后完整回滚、sync context 拒绝且旧视图不变。**仍不勾选**：全局 SQLite 损坏时进程尚不能在 `open()` 之前隔离/重建数据库；有 sync context 的 root 需要归档感知的完整同步投影重建；落后/其他库/断链/候选内容损坏组合矩阵还要补齐。详见 [投影候选与活动替换证据](evidence/4.3-projection-rebuild-20261026.md)。
 - [x] 4.5 把 `library_recovery_records` 的键改为稳定 typed key（不得使用 `Debug` 格式），并提供读回路径使 confirmed/pending/悬空引用在重建时可被重新尝试；验证补齐依赖后重试自动关联，无需重新导入（LD-06/07）。
 
   验证：2026-10-25 稳定 serde typed key、confirmed/pending 读回及重开、追加父对象自动关联、真实目录依赖补齐重试均在临时副本实际通过；原工作区测试因缺失导入模块 E0583 未能执行，不计为门禁通过。见 [本次复核](evidence/progress-closeout-20261025.md)。collector、全入口协调器与 adoption 仍分别留在对应未完成任务。
@@ -80,12 +86,15 @@
   进度（2026-10-25 本轮补证）：新增真实 SQLite 扫描链用例 `sqlite_scan_reparsing_unchanged_song_does_not_create_a_candidate`：通过同字节重写触发重解析，确认候选身份和对象 revision 不变。`cargo test -p echo-core scan` 53/53、该回归 1/1、`cargo fmt --all --check` 和 `git diff --check` 通过。其余 wipe 重建、扫描侧重复事件和真实只读卷专项仍未闭合，故不勾选。
 
   最终验收（2026-10-25）：新增 `sqlite_scan_after_projection_wipe_rebuilds_the_saved_identity`，用空 SQLite 投影库和原目录控制面执行真实扫描，恢复相同 Song UUID、added_at 和标签；已有同哈希移动、外部标签变化、只读控制面拒写、missing/卸载/权限恢复、重复扫描用例覆盖其余场景。`cargo test -p echo-core scan` 54/54、`cargo test -p echo-core watcher` 18/18、Core all-targets Clippy、fmt 与 diff 检查通过。旧的进度段记录了当时尚未补齐的情况；本段为最终验收结论。
-- [ ] 5.3 打通导入、扫描和同步发布的 claim/UUID 复用，保留有界重处理并发；用双 worker 屏障、watcher 抢先、取消、同 hash/不同内容目标冲突测试验证不重复、不覆盖（LD-02/05）。
+  复验补缺（2026-10-26）：桌面生命周期测试发现目录 replay 会把新 Song 先投影为 `missing`，成功解析后的本地索引更新刻意不覆盖 availability，导致本次扫描创建的歌曲仍不可用。创建分支现于解析和投影成功后显式写入 `available`；`cancellation_during_final_directory_commit_never_marks_other_songs_missing` 与 Core `scan` 58/58、Desktop `--lib` 444/444 通过。
+- [x] 5.3 打通导入、扫描和同步发布的 claim/UUID 复用，保留有界重处理并发；用双 worker 屏障、watcher 抢先、取消、同 hash/不同内容目标冲突测试验证不重复、不覆盖（LD-02/05）。
 
-  进度：2026-10-25 导入、扫描与 watcher 各自已有目录优先与身份复用片段，但三者之间的 claim/UUID 复用尚未统一；双 worker 屏障、watcher 抢先、取消、同 hash 不同内容冲突四类测试仍缺。
-- [ ] 5.4 更新导入/重扫的恢复与逐项结果说明，运行 `cargo test -p echo-core library_durability` 加上述入口测试，记录歌词失败与已保存待投影如何分别返回，不用整体 toast 掩盖部分失败（LD-01/06/10）。
+  验证（2026-10-26）：真实 SQLite 屏障回归覆盖扫描解析停住时导入先发布同 hash 内容，扫描放行后从最新目录/SQLite 权威快照复用导入 UUID，不再从扫描启动时的旧快照铸造第二个身份。watcher 现先读持久化未完成 journal claim；运行时 operation 列表漏项时也复用预留 UUID，CopyPending 与 FailedRecoverable claim 都延后事件直到操作恢复。同步发布与本地 operation 在各自事务中互查同 root、规范化 target 的活动 claim；同路径只有一方能持有，释放后可继续。取消/并发上限由 cancel_mid_scan_never_marks_missing、stress_scan_bounded_hashes_and_cancels_without_corrupting_songs、bounded_workers_never_exceed_the_configured_bound 覆盖；同 hash 去重与不同内容目标避让/不覆盖由 precommit_dedup_catches_a_concurrent_duplicate_without_a_second_song、same_name_different_content_gets_minimal_conflict_number、publish_never_overwrites_a_target_created_after_planning 覆盖。cargo test -p echo-core --lib scan 58/58、import 63/63、watch 27/27、sync_resource_publication 21/21 通过。代码与 RED/GREEN 证据见 [claim arbitration](evidence/claim-arbitration-20261026.md)。标签仍为只读；Echo 只读取外部软件写入的音乐文件标签。
+- [x] 5.4 更新导入/重扫的恢复与逐项结果说明，运行 `cargo test -p echo-core library_durability` 加上述入口测试，记录歌词失败与已保存待投影如何分别返回，不用整体 toast 掩盖部分失败（LD-01/06/10）。
 
   进度：2026-10-25 导入侧逐项结果已分离（`ImportResultDto` 六种 kind；失败弹窗逐条显示；`savedPending` 带稳定 operationId 并提供同操作重试），但**歌词失败在 IPC 层被丢弃**：Core 的 `ImportOutcome::Imported`/`SavedPending` 携带 `lyrics: Box<LyricsImportResult>`（含 `Failed { code, message }`，`application/import/logic.rs:66-92` 注释明确"歌词复制失败 MUST 单独报告并不得伪装为完整成功"），而 `crates/echo-desktop/src/ipc/dto.rs:465-508` 的 `From<ImportOutcome> for ImportResultDto` 用 `..` 丢弃该字段，界面只看到"已导入"；重扫侧只有聚合计数，逐文件诊断写入 SQLite `scan_issues`（含 `lyrics_limit` 等码）但无 IPC 出口，界面拿不到逐项结果。恢复与逐项结果说明未更新，故不勾选。
+
+  完成（2026-10-26）：歌词失败及 `savedPending` 原有的 Core→IPC→逐项 UI 路径保留并回归覆盖；扫描新增 `ScanRunRepository::issues(root, generation)` 读回、`ScanSnapshot.issues` IPC 类型及 IPC 生成物，App 菜单和设置页重扫都显示每个相对路径、诊断及歌曲记录是否保留，不再只显示汇总失败数。证据见 [逐项扫描结果与恢复反馈](evidence/5.4-scan-item-report-20261026.md)。验证：`cargo test -p echo-core --lib library_durability` 195/195、`cargo test -p echo-core --lib scan` 58/58、`cargo test -p echo-desktop --lib` 444/444、相关 Vitest 45/45、Prettier、TypeScript、IPC 生成通过；Core Clippy 复验待 4.3 实现切片合并后统一跑。Echo 只读取外部软件写入的音乐标签。
 
 ## 6. 喜欢、歌单、统计和资源编辑接入
 

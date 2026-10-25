@@ -1,8 +1,10 @@
 use super::*;
 use crate::application::ports::{
-    HostCommitLedgerPort, LocalSyncQueuePort, RemoteResourceItem, RemoteResourceJournalPort,
+    HostCommitLedgerPort, LocalSyncQueuePort, OperationItem, OperationJournalRepository,
+    OperationResourceKind, RemoteResourceItem, RemoteResourceJournalPort,
     RemoteResourcePublication, RemoteResourceStage, RemoteResourceTarget,
 };
+use crate::domain::state::OperationState;
 use crate::domain::sync::{
     AuthorityId, DeviceId, Epoch, LibraryId, MutationCandidate, MutationId, ObjectKey,
     ResourceDigest, SharedResourceKind, SharedResourceManifest, SyncBinding,
@@ -301,6 +303,59 @@ fn remote_resource_journal_rejects_stale_root_reused_identity_and_incomplete_fin
     let stale_root = publication(other_root, object, changed_declaration, None);
     assert!(database.prepare(&stale_root).is_err());
     assert_eq!(database.incomplete(root).unwrap(), [incomplete.operation]);
+}
+
+#[test]
+fn local_and_remote_publication_claims_exclude_each_other_for_the_same_path() {
+    let (_directory, database, root, object, manifest) = fixture();
+    let path = crate::domain::ids::RelativeMediaPath::new("media/track.flac").unwrap();
+    let local_operation = OperationId::new();
+    let reserved_song = crate::domain::ids::SongId::new();
+    OperationJournalRepository::ensure_operation(
+        &database,
+        local_operation,
+        root,
+        "import",
+        Some(reserved_song),
+    )
+    .unwrap();
+    let local_claim = OperationItem {
+        kind: OperationResourceKind::Audio,
+        state: OperationState::CopyPending,
+        song: Some(reserved_song),
+        source: None,
+        staging_path: None,
+        target_path: path.clone(),
+        expected_hash: manifest.digest.to_hex(),
+        item_key: "audio".to_owned(),
+        claim_key: path.identity_key().to_owned(),
+    };
+    OperationJournalRepository::upsert_item(&database, local_operation, local_claim.clone())
+        .expect("local claim is acquired first");
+
+    let remote = publication(root, object, manifest, None);
+    assert!(
+        database.prepare(&remote).is_err(),
+        "remote publication must not claim a path held by a local operation"
+    );
+
+    OperationJournalRepository::release_claims(&database, local_operation)
+        .expect("release local claim");
+    database.prepare(&remote).expect("remote claim acquired");
+    let competing_local_operation = OperationId::new();
+    OperationJournalRepository::ensure_operation(
+        &database,
+        competing_local_operation,
+        root,
+        "import",
+        Some(crate::domain::ids::SongId::new()),
+    )
+    .unwrap();
+    assert!(
+        OperationJournalRepository::upsert_item(&database, competing_local_operation, local_claim,)
+            .is_err(),
+        "local operation must not claim a path held by a remote publication"
+    );
 }
 
 #[test]

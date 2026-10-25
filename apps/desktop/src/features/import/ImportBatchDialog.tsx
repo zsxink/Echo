@@ -130,9 +130,11 @@ export function ImportFailureDialog({
     >
       <div className="confirmation-panel">
         <h2 id="import-title">
-          {hasPending || results.some((result) =>
-            (result.kind === "imported" || result.kind === "savedPending") &&
-            result.lyrics.kind === "failed",
+          {hasPending ||
+          results.some(
+            (result) =>
+              (result.kind === "imported" || result.kind === "savedPending") &&
+              result.lyrics.kind === "failed",
           )
             ? "导入结果"
             : "导入失败"}

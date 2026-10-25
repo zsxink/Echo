@@ -252,6 +252,9 @@ impl ScanRunRepository for SqliteDatabase {
     fn latest_generation(&self, root: LibraryRootId) -> Result<Option<u64>, Error> {
         self.with_reader(move |connection| latest_scan_generation(connection, root))
     }
+    fn issues(&self, root: LibraryRootId, generation: u64) -> Result<Vec<MediaDiagnostic>, Error> {
+        self.scan_issues(root, generation)
+    }
 }
 
 impl RuntimeStateStore for SqliteDatabase {

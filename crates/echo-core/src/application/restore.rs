@@ -25,13 +25,12 @@
 //! preserves every UUID.
 
 use crate::application::continuation::{ContinueFromRecords, ProjectionReport};
-use crate::application::ports::{
-    ContentHasher, ControlPlanePort, LibraryFileSystem, MediaProbe, MetadataReader,
-    PlaylistRepository, ProbeOutcome, SongRepository, UnitOfWork,
-};
+use crate::application::ports::ProbeOutcome;
 use crate::application::relink::{ParsedFile, RelinkPlanner, Resolution};
+use crate::application::scan::ScanDeps;
 use crate::domain::entities::{Song, SongAvailability};
 use crate::domain::ids::{LibraryRootId, RelativeMediaPath};
+use crate::domain::library::durability::{ChangeOrigin, DurableResource};
 use crate::domain::library::{LibraryId, LibraryManifest};
 use crate::error::Error;
 
@@ -54,14 +53,7 @@ pub struct RestoreOutcome {
 /// The restore coordinator for the portable-library-layout "全新设备重建"
 /// requirement (design §4, portable-library-layout / local-library specs).
 pub struct RestoreLibrary<'a> {
-    control: &'a dyn ControlPlanePort,
-    songs: &'a dyn SongRepository,
-    playlists: &'a dyn PlaylistRepository,
-    fs: &'a dyn LibraryFileSystem,
-    hasher: &'a dyn ContentHasher,
-    probe: &'a dyn MediaProbe,
-    metadata: &'a dyn MetadataReader,
-    uow: &'a dyn UnitOfWork,
+    deps: &'a ScanDeps,
     /// When a source library id is already known (e.g. a configured sync
     /// source), the manifest must match it; otherwise any compatible manifest
     /// is accepted.
@@ -69,28 +61,10 @@ pub struct RestoreLibrary<'a> {
 }
 
 impl<'a> RestoreLibrary<'a> {
-    #[allow(clippy::too_many_arguments)]
     #[must_use]
-    pub const fn new(
-        control: &'a dyn ControlPlanePort,
-        songs: &'a dyn SongRepository,
-        playlists: &'a dyn PlaylistRepository,
-        fs: &'a dyn LibraryFileSystem,
-        hasher: &'a dyn ContentHasher,
-        probe: &'a dyn MediaProbe,
-        metadata: &'a dyn MetadataReader,
-        uow: &'a dyn UnitOfWork,
-        expected_library_id: Option<LibraryId>,
-    ) -> Self {
+    pub const fn new(deps: &'a ScanDeps, expected_library_id: Option<LibraryId>) -> Self {
         Self {
-            control,
-            songs,
-            playlists,
-            fs,
-            hasher,
-            probe,
-            metadata,
-            uow,
+            deps,
             expected_library_id,
         }
     }
@@ -105,6 +79,7 @@ impl<'a> RestoreLibrary<'a> {
     pub fn run(&self, root: LibraryRootId) -> Result<RestoreOutcome, Error> {
         // 1. Verify the manifest (format + library id).
         let manifest = self
+            .deps
             .control
             .read_manifest(root)?
             .ok_or_else(|| Error::unavailable("library", "no portable manifest present"))?;
@@ -114,11 +89,18 @@ impl<'a> RestoreLibrary<'a> {
         //    the same projection the root-switch continuation runs, so the
         //    new-device path and the "open a local directory again" path
         //    cannot drift apart.
-        let projection =
-            ContinueFromRecords::new(self.control, self.songs, self.playlists, self.uow)
-                .run(root)?
-                .projection;
-        let snapshot = self.songs.all_in_root(root).unwrap_or_default();
+        let continuation = ContinueFromRecords::new(
+            self.deps.control.as_ref(),
+            self.deps.songs.as_ref(),
+            self.deps.playlists.as_ref(),
+            self.deps.uow.as_ref(),
+        );
+        let continuation = match self.deps.history.as_deref() {
+            Some(projection) => continuation.with_projection(projection),
+            None => continuation,
+        };
+        let projection = continuation.run(root)?.projection;
+        let snapshot = self.deps.songs.all_in_root(root).unwrap_or_default();
         let mut planner = RelinkPlanner::new(snapshot);
         let projected = projection.songs;
 
@@ -184,6 +166,7 @@ impl<'a> RestoreLibrary<'a> {
     /// Enumerate the supported audio files under `media/` only.
     fn enumerate_media(&self, root: LibraryRootId) -> Result<Vec<RelativeMediaPath>, Error> {
         Ok(self
+            .deps
             .fs
             .enumerate(root)?
             .into_iter()
@@ -198,14 +181,14 @@ impl<'a> RestoreLibrary<'a> {
         root: LibraryRootId,
         path: &RelativeMediaPath,
     ) -> Result<Option<ParsedFile>, Error> {
-        match self.probe.probe(root, path)? {
+        match self.deps.probe.probe(root, path)? {
             ProbeOutcome::Audio { .. } => {}
             ProbeOutcome::NoAudioTrack | ProbeOutcome::Unsupported => return Ok(None),
         }
-        let hash = self.hasher.hash(root, path)?;
-        let meta = self.metadata.read(root, path)?;
-        let size = self.fs.file_meta(root, path)?.size;
-        let mtime_ns = self.fs.file_meta(root, path)?.modified_ns;
+        let hash = self.deps.hasher.hash(root, path)?;
+        let meta = self.deps.metadata.read(root, path)?;
+        let size = self.deps.fs.file_meta(root, path)?.size;
+        let mtime_ns = self.deps.fs.file_meta(root, path)?.modified_ns;
         Ok(Some(ParsedFile {
             path: path.clone(),
             hash,
@@ -215,21 +198,40 @@ impl<'a> RestoreLibrary<'a> {
         }))
     }
 
-    /// Persist a song through the shared [`UnitOfWork`] (same authority as the
-    /// import/scan commit paths).
+    /// Persist a hash relink through the shared directory-first song coordinator.
     fn persist_song(&self, song: &Song) -> Result<(), Error> {
         let song = song.clone();
-        self.uow.with_tx(Box::new(move |tx| {
-            tx.upsert_song(&song)?;
-            Ok(())
-        }))
+        let projected = song.clone();
+        let resource = DurableResource {
+            relative_path: song.path().display().to_owned(),
+            content_hash: song
+                .blake3_hash()
+                .ok_or_else(|| Error::conflict("restored media has no verified content hash"))?
+                .to_owned(),
+            byte_length: song
+                .file_size()
+                .ok_or_else(|| Error::conflict("restored media has no verified length"))?,
+        };
+        crate::application::scan::durable::commit_song(
+            self.deps,
+            &song,
+            self.deps.ids.new_operation_id(),
+            ChangeOrigin::Recovery,
+            vec![resource],
+            || {
+                self.deps.uow.with_tx(Box::new(move |tx| {
+                    tx.upsert_song(&projected)?;
+                    Ok(())
+                }))
+            },
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::ports::SongRepository;
+    use crate::application::ports::{ControlPlanePort, SongRepository};
     use crate::application::testing::scan_fixture::ScanFixture;
     use crate::domain::ids::{Revision, SongId};
     use crate::domain::library::{
@@ -272,17 +274,7 @@ mod tests {
             )
             .expect("write manifest");
 
-        let restore = RestoreLibrary::new(
-            &fixture.control,
-            fixture.deps.songs.as_ref(),
-            fixture.deps.playlists.as_ref(),
-            fixture.deps.fs.as_ref(),
-            fixture.deps.hasher.as_ref(),
-            fixture.deps.probe.as_ref(),
-            fixture.deps.metadata.as_ref(),
-            fixture.deps.uow.as_ref(),
-            None,
-        );
+        let restore = RestoreLibrary::new(fixture.deps.as_ref(), None);
         let outcome = restore.run(fixture.root).expect("restore");
 
         // One song projected, media absent → Missing, no files reconciled.
@@ -316,17 +308,7 @@ mod tests {
             )
             .expect("write manifest");
 
-        let restore = RestoreLibrary::new(
-            &fixture.control,
-            fixture.deps.songs.as_ref(),
-            fixture.deps.playlists.as_ref(),
-            fixture.deps.fs.as_ref(),
-            fixture.deps.hasher.as_ref(),
-            fixture.deps.probe.as_ref(),
-            fixture.deps.metadata.as_ref(),
-            fixture.deps.uow.as_ref(),
-            None,
-        );
+        let restore = RestoreLibrary::new(fixture.deps.as_ref(), None);
         let first = restore.run(fixture.root).expect("first restore");
         let second = restore.run(fixture.root).expect("second restore");
         assert_eq!(first.projected_songs, second.projected_songs);
@@ -353,14 +335,7 @@ mod tests {
             .expect("write manifest");
 
         let restore = RestoreLibrary::new(
-            &fixture.control,
-            fixture.deps.songs.as_ref(),
-            fixture.deps.playlists.as_ref(),
-            fixture.deps.fs.as_ref(),
-            fixture.deps.hasher.as_ref(),
-            fixture.deps.probe.as_ref(),
-            fixture.deps.metadata.as_ref(),
-            fixture.deps.uow.as_ref(),
+            fixture.deps.as_ref(),
             Some(LibraryId::from_uuid(uuid::Uuid::new_v4())),
         );
         let error = restore.run(fixture.root).expect_err("conflicting id");

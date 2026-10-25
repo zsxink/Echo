@@ -360,7 +360,6 @@ impl<'a> StartScan<'a> {
         transition(&mut progress, ScanState::Parsing)?;
         emitter.emit(&progress, true)?;
         durable::library_id(self.deps, root)?;
-        let planner = Mutex::new(RelinkPlanner::new(durable::song_snapshot(self.deps, root)?));
         let seen: HashSet<String> = audio
             .iter()
             .map(|path| path.identity_key().to_owned())
@@ -373,6 +372,10 @@ impl<'a> StartScan<'a> {
             }
             let outcomes = parse_bounded(self.deps, root, batch, token);
             cancelled |= token.is_cancelled();
+            // Parsing may overlap an import or sync publication. Refresh the
+            // authoritative identity view after workers finish and before any
+            // UUID is allocated, so a claim committed during parsing wins.
+            let planner = Mutex::new(RelinkPlanner::new(durable::song_snapshot(self.deps, root)?));
             self.reconcile(root, generation, &outcomes, &planner, &mut progress)?;
             emitter.emit(&progress, false)?;
         }
@@ -536,6 +539,13 @@ impl<'a> StartScan<'a> {
                                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                                 .register_created(entity.clone());
                             self.apply_parsed(root, Some(entity), parsed)?;
+                            // The authoritative Song record intentionally
+                            // rebuilds as missing until the filesystem proves
+                            // the media exists. This successful parse is that
+                            // proof for a newly discovered file.
+                            self.deps
+                                .songs
+                                .set_availability(id, SongAvailability::Available)?;
                         }
                         Resolution::Duplicate { .. } => {
                             // Duplicate content: one record per hash; report

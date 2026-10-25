@@ -261,6 +261,18 @@ pub(crate) fn upsert_operation_item(
         .ok_or_else(|| Error::InvariantViolation {
             why: "operation item requires a persisted journal envelope".to_owned(),
         })?;
+    let remote_claimed: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sync_remote_publication_claims WHERE local_root_uuid = ?1 AND normalized_relative_path = ?2 AND released = 0)",
+            params![root, item.claim_key],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if remote_claimed {
+        return Err(Error::conflict(
+            "operation target is claimed by a remote resource publication",
+        ));
+    }
     // The item's `song_uuid` column carries a foreign key into `songs`. An
     // import's *reserved* SongId has no songs row until DatabaseCommitted, so
     // the reservation lives in the envelope's `reserved_song_uuid` (no FK)
@@ -313,7 +325,7 @@ pub(crate) fn incomplete_operation_items(
     // uuid and envelope kind are read off the trailing columns.
     let mut statement = connection
         .prepare(
-            "SELECT i.kind, i.state, COALESCE(i.song_uuid, j.reserved_song_uuid), i.target_relative_path, i.expected_hash, i.item_key, i.normalized_target_path, i.source_locator, i.staging_relative_path, i.operation_uuid, j.kind FROM operation_items i JOIN operation_journal j ON j.operation_uuid = i.operation_uuid WHERE i.library_root_uuid = ?1 AND i.state NOT IN ('completed', 'rolled_back', 'database_finalized', 'restored') ORDER BY i.operation_uuid, i.item_key",
+            "SELECT i.kind, i.state, COALESCE(i.song_uuid, j.reserved_song_uuid), i.target_relative_path, i.expected_hash, i.item_key, i.normalized_target_path, i.source_locator, i.staging_relative_path, i.operation_uuid, j.kind FROM operation_items i JOIN operation_journal j ON j.operation_uuid = i.operation_uuid WHERE i.library_root_uuid = ?1 AND (i.state NOT IN ('completed', 'rolled_back', 'database_finalized', 'restored') OR (i.state = 'restored' AND j.kind = 'delete' AND EXISTS (SELECT 1 FROM songs s WHERE s.uuid = COALESCE(i.song_uuid, j.reserved_song_uuid) AND s.availability = 'pending_delete'))) ORDER BY i.operation_uuid, i.item_key",
         )
         .map_err(storage)?;
     let rows = statement

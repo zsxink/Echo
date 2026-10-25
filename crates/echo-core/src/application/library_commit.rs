@@ -47,6 +47,7 @@ pub fn commit_then_project<T>(
             outcome.reason = None;
             Ok((outcome, Some(value)))
         }
+        Err(error @ Error::LibrarySavedPending { .. }) => Err(error),
         Err(error) => Err(Error::saved_pending_projection(
             crate::domain::ids::OperationId::from_uuid(outcome.operation_id),
             error,
