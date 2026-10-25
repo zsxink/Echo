@@ -63,7 +63,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve, basename } from "node:path";
+import { join, resolve, basename, relative, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { objectKindEntries } from "./injection-object-kinds.mjs";
 import { governanceEntries } from "./injection-governance.mjs";
@@ -125,11 +125,10 @@ function digest(bytes) {
 }
 
 function guardPath(target) {
-  const abs = resolve(target);
-  if (abs !== ROOT && !abs.startsWith(`${ROOT}/`)) {
-    throw new Error(`refusing to mutate outside the repository: ${abs}`);
-  }
-  return abs;
+  // `relative`, not a `${ROOT}/` prefix — Windows backslash paths fail it.
+  const rel = relative(ROOT, resolve(target));
+  if (rel !== "" && !rel.startsWith("..") && !isAbsolute(rel)) return resolve(target);
+  throw new Error(`refusing to mutate outside the repository: ${resolve(target)}`);
 }
 
 /** The tracked status of one path, so restoration can be asserted per file.

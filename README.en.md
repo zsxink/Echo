@@ -51,6 +51,16 @@ LAN sync has been implemented and archived. Device-matrix, real-device propagati
 
 See the detailed [roadmap](docs/ROADMAP.md), [product scope](docs/PRODUCT.md), [design](docs/DESIGN.md), and [interface terminology](docs/interface-terminology.md).
 
+### System requirements
+
+| Platform | Minimum | Validated baseline | Artifacts |
+|---|---|---|---|
+| Windows | Windows 10 | Windows 10 22H2 / 11 x64 | x64 NSIS installer |
+| macOS | macOS 12 | macOS 12+ (Apple Silicon) | aarch64 DMG |
+| Linux | Ubuntu 22.04 | Ubuntu 22.04+ x64 | deb / AppImage |
+
+Windows builds are x64-only. If the WebView2 runtime is missing, the installer bootstraps it automatically from an embedded bootstrapper. Installers are currently **unsigned**: Windows SmartScreen may show "Windows protected your PC" — choose "More info → Run anyway"; on macOS, allow the app under "Privacy & Security" on first launch.
+
 ## UI prototype
 
 See the [desktop player prototype](docs/prototype/echo-desktop-player.html) and the icons in the same directory.

@@ -21,6 +21,14 @@
       "vendor/libmpv/windows/vulkan-1.dll": "vulkan-1.dll",
       "vendor/libmpv/windows/NOTICE.md": "NOTICE-libmpv-win.md",
       "vendor/libmpv/windows/VulkanRT-LICENSE.txt": "VulkanRT-LICENSE.txt"
+    },
+    "windows": {
+      "webviewInstallMode": { "type": "embedBootstrapper", "silent": true },
+      "minimumWebview2Version": "109.0.1518.78",
+      "nsis": {
+        "languages": ["SimpChinese", "English"],
+        "installerHooks": "windows-installer-hooks.nsh"
+      }
     }
   }
 }
