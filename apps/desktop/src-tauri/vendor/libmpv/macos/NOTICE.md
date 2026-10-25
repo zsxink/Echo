@@ -17,6 +17,7 @@ libmpv slice.
 | FriBidi | Homebrew 1.0.17 |
 | GLib | Homebrew 2.90.0 |
 | Graphite2 | Homebrew 1.3.15 |
+| mbed TLS | Homebrew mbedtls (Apache-2.0 OR GPL-2.0-or-later) |
 | HarfBuzz | Homebrew 14.5.1 |
 | GNU libintl | Homebrew gettext 1.0 |
 | PCRE2 | Homebrew 10.49 |

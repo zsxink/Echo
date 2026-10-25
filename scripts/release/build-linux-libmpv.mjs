@@ -304,7 +304,7 @@ function writeOptionFiles(buildDir) {
   writeFileSync(join(buildDir, "mpv_options"), mpvOptions.join("\n") + "\n");
 
   // FFmpeg: curated component set covering exactly the smoke-gate formats
-  // (mp3, flac, m4a/AAC, ogg/Vorbis, opus, wav) plus the LGPL FFmpeg audio
+  // (mp3, flac, m4a/AAC, ogg/Vorbis, opus, wav) plus the FFmpeg audio
   // filters required by Echo's P0 chain. --disable-everything strips
   // programs/protocols/filters; explicitly enabling this minimal set keeps
   // unrelated codecs/filters out. The patched ffmpeg-config default adds

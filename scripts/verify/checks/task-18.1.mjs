@@ -45,7 +45,9 @@ const FILES = {
   tauriWinConf: resolve(SRC_TAURI, "tauri.windows.conf.json"),
   mergedText: resolve(SRC_TAURI, "vendor", "libmpv", "THIRD-PARTY-LICENSES.txt"),
   winManifest: resolve(SRC_TAURI, "vendor", "libmpv", "windows", "manifest.json"),
+  macosManifest: resolve(SRC_TAURI, "vendor", "libmpv", "macos", "manifest.json"),
   winNotice: resolve(SRC_TAURI, "vendor", "libmpv", "windows", "NOTICE.md"),
+  winBuildInfo: resolve(SRC_TAURI, "vendor", "libmpv", "windows", "BUILD_INFO.md"),
   macNotice: resolve(SRC_TAURI, "vendor", "libmpv", "macos", "NOTICE.md"),
   linuxScript: resolve(ROOT, "scripts", "release", "build-linux-libmpv.mjs"),
   readmeZh: resolve(ROOT, "README.md"),
@@ -142,47 +144,92 @@ check(
   winNotice.includes("Corresponding source"),
   "Windows NOTICE must state how to obtain the corresponding source (shinchiro build scripts + upstream repos)",
 );
+// BUILD_INFO.md is the Windows provenance table shown to auditors; it used to
+// carry the pre-issue-#66 LGPL claim and contradicted manifest.json/NOTICE.
+check(existsSync(FILES.winBuildInfo), "vendor/libmpv/windows/BUILD_INFO.md must exist");
+const winBuildInfo = existsSync(FILES.winBuildInfo) ? read(FILES.winBuildInfo) : "";
+check(
+  winBuildInfo.includes("GPL-2.0-or-later") && !winBuildInfo.includes("LGPL-2.1"),
+  "Windows BUILD_INFO.md must record the bundled libmpv-2.dll as GPL-2.0-or-later with no LGPL-2.1 license claim (issue #66: shinchiro --enable-gpl + x264/x265 makes the static-FFmpeg DLL GPL)",
+);
 
 // --- 6. Merged license text: coverage + installer wiring ----------------------
 check(existsSync(FILES.mergedText), "vendor/libmpv/THIRD-PARTY-LICENSES.txt must exist (merged official license texts shipped in every installer)");
 const merged = existsSync(FILES.mergedText) ? read(FILES.mergedText) : "";
-// Every license string that appears in any vendor manifest's licenses[] must
-// map to a marker in the merged text. Map by family prefix so future entries
-// like "GPL-3.0-only" still resolve to the right text block.
-const FAMILY_MARKERS = [
-  [/^GPL/, "GNU GENERAL PUBLIC LICENSE"],
-  [/^LGPL/, "GNU LESSER GENERAL PUBLIC LICENSE"],
-  [/^ISC/, "ISC License"],
-  [/^MIT/, "MIT License"],
-  [/^Apache/, "Apache License"],
-  [/^FTL/, "FreeType"],
-  [/^Zlib/, "zlib"],
-  [/^BSD/, "BSD 3-Clause"],
-  [/libpng/i, "PNG Reference Library License version 2"],
+// Every license string that appears in any vendor manifest's licenses[] (or
+// the Linux build script's LICENSES table) must map to an SPDX section in the
+// merged text, and that section must carry real body lines — not just a
+// header. The mapping is exact on the SPDX id prefix, so a future GPL-3.0-only
+// or BSD-2-Clause entry fails the gate until its full text is added, instead
+// of false-passing onto a different version's text block.
+const SPDX_SECTIONS = [
+  [/^GPL-2\.0/, "GPL-2.0"],
+  [/^LGPL-2\.1/, "LGPL-2.1"],
+  [/^ISC/, "ISC"],
+  [/^MIT/, "MIT"],
+  [/^Apache-2\.0/, "Apache-2.0"],
+  [/^FTL/, "FTL"],
+  [/^Zlib/, "Zlib"],
+  [/^BSD-3-Clause/, "BSD-3-Clause"],
+  [/^libpng/i, "libpng-2.0"],
 ];
-for (const manifestPath of [FILES.winManifest]) {
-  for (const entry of readJson(manifestPath).licenses ?? []) {
-    const family = FAMILY_MARKERS.find(([re]) => re.test(entry.license));
-    check(
-      family !== undefined,
-      `license id "${entry.license}" (${entry.component}) has no license-text mapping in task-18.1 — extend FAMILY_MARKERS and THIRD-PARTY-LICENSES.txt`,
-    );
-    if (family) {
-      check(
-        merged.includes(family[1]),
-        `THIRD-PARTY-LICENSES.txt is missing the full text for "${entry.license}" (marker "${family[1]}")`,
-      );
-    }
-  }
+const SECTION_MIN_LINES = {
+  "GPL-2.0": 300,
+  "LGPL-2.1": 400,
+  "Apache-2.0": 150,
+  "FTL": 60,
+  "libpng-2.0": 20,
+  "MIT": 4,
+  "ISC": 4,
+  "Zlib": 4,
+  "BSD-3-Clause": 4,
+};
+function checkLicenseTextCoverage(license, origin) {
+  const section = SPDX_SECTIONS.find(([re]) => re.test(license));
+  check(
+    section !== undefined,
+    `license id "${license}" (${origin}) has no SPDX section mapping in task-18.1 — extend SPDX_SECTIONS and add the full text to THIRD-PARTY-LICENSES.txt`,
+  );
+  if (!section) return;
+  const id = section[1];
+  const marker = `== SPDX: ${id}`;
+  const start = merged.indexOf(marker);
+  check(
+    start !== -1,
+    `THIRD-PARTY-LICENSES.txt is missing the "${marker}" section (needed by ${origin}: "${license}")`,
+  );
+  if (start === -1) return;
+  const next = merged.indexOf("\n== SPDX: ", start + marker.length);
+  const body = merged.slice(start, next === -1 ? merged.length : next);
+  const lineCount = body.split("\n").length;
+  check(
+    lineCount >= SECTION_MIN_LINES[id],
+    `THIRD-PARTY-LICENSES.txt section ${id} has only ${lineCount} lines (minimum ${SECTION_MIN_LINES[id]}) — the full license text may have been truncated`,
+  );
 }
-// The Linux self-build and macOS NOTICE license sets also feed installers.
-for (const [name, marker] of [
-  ["LGPL-2.1", "GNU LESSER GENERAL PUBLIC LICENSE"],
-  ["FTL", "FreeType"],
-  ["MIT", "MIT License"],
-  ["Apache-2.0", "Apache License"],
-]) {
-  check(merged.includes(marker), `THIRD-PARTY-LICENSES.txt is missing the full text covering ${name}`);
+for (const entry of readJson(FILES.winManifest).licenses ?? []) {
+  checkLicenseTextCoverage(entry.license, `Windows manifest: ${entry.component}`);
+}
+for (const entry of readJson(FILES.macosManifest).licenses ?? []) {
+  checkLicenseTextCoverage(entry.license, `macOS manifest: ${entry.component}`);
+}
+// The Linux vendor manifest is generated at release time and never sits in
+// the repository, so the Linux license set is checked through its generator:
+// every 3-string row of build-linux-libmpv.mjs's LICENSES table. Match inside
+// the `const LICENSES = [...]` block only — the script has other 3-string
+// arrays (e.g. spawnSync stdio: ["ignore", "pipe", "ignore"]) that must not
+// be mistaken for license rows.
+const licensesBlock = linuxScript.match(/const LICENSES = \[([\s\S]*?)\];/);
+check(licensesBlock !== undefined, "build-linux-libmpv.mjs must define a const LICENSES table");
+const linuxLicenseRows = licensesBlock
+  ? [...licensesBlock[1].matchAll(/\["([^"]+)",\s*"([^"]+)",\s*"[^"]*"\]/g)]
+  : [];
+check(
+  linuxLicenseRows.length >= 8,
+  `build-linux-libmpv.mjs LICENSES table should carry every component row (found ${linuxLicenseRows.length})`,
+);
+for (const [, component, license] of linuxLicenseRows) {
+  checkLicenseTextCoverage(license, `Linux build script: ${component}`);
 }
 
 const tauriConf = readJson(FILES.tauriConf);
@@ -194,18 +241,18 @@ check(
 for (const pkg of ["deb", "appimage"]) {
   const files = tauriConf.bundle?.linux?.[pkg]?.files ?? {};
   check(
-    Object.values(files).includes("vendor/libmpv/THIRD-PARTY-LICENSES.txt"),
-    `tauri.conf.json bundle.linux.${pkg}.files must map THIRD-PARTY-LICENSES.txt into the package (usr/share/doc/echo/)`,
+    files["usr/share/doc/echo/THIRD-PARTY-LICENSES.txt"] === "vendor/libmpv/THIRD-PARTY-LICENSES.txt",
+    `tauri.conf.json bundle.linux.${pkg}.files must map vendor/libmpv/THIRD-PARTY-LICENSES.txt exactly to usr/share/doc/echo/THIRD-PARTY-LICENSES.txt (bundle files maps destination → source)`,
   );
   check(
-    Object.values(files).includes("vendor/libmpv/linux/NOTICE.md"),
-    `tauri.conf.json bundle.linux.${pkg}.files must carry the Linux NOTICE.md inside the package, not only as a Release attachment`,
+    files["usr/share/doc/echo/NOTICE-libmpv-linux.md"] === "vendor/libmpv/linux/NOTICE.md",
+    `tauri.conf.json bundle.linux.${pkg}.files must carry the Linux NOTICE.md inside the package (usr/share/doc/echo/NOTICE-libmpv-linux.md), not only as a Release attachment`,
   );
 }
 const winConf = readJson(FILES.tauriWinConf);
 check(
-  Object.keys(winConf.bundle?.resources ?? {}).includes("vendor/libmpv/THIRD-PARTY-LICENSES.txt"),
-  "tauri.windows.conf.json bundle.resources must map vendor/libmpv/THIRD-PARTY-LICENSES.txt into the install root (resources maps source → destination, unlike bundle files maps)",
+  winConf.bundle?.resources?.["vendor/libmpv/THIRD-PARTY-LICENSES.txt"] === "THIRD-PARTY-LICENSES.txt",
+  "tauri.windows.conf.json bundle.resources must map vendor/libmpv/THIRD-PARTY-LICENSES.txt exactly to THIRD-PARTY-LICENSES.txt in the install root (resources maps source → destination, unlike bundle files maps)",
 );
 
 // --- 7. Media rights & privacy docs ------------------------------------------
