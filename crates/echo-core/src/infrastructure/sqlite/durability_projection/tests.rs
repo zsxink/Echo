@@ -4,9 +4,12 @@ use crate::application::ports::{
 };
 use crate::application::testkit::library_durability::{CanonicalLibraryState, Issue72Fixture};
 use crate::domain::entities::LibraryRoot;
-use crate::domain::ids::{PlaylistId, SongId};
+use crate::domain::ids::{PlaylistId, Revision, SongId};
 use crate::domain::library::durability::{ChangeOrigin, LibraryBatch, LibraryCommit};
-use crate::domain::library::{LibraryId, PortableRecord, PortableRecordEnvelope};
+use crate::domain::library::{
+    DeviceId, HybridLogicalClock, LibraryId, LibraryRelativePath, PlaylistItemRecord,
+    PlaylistRecord, PortableRecord, PortableRecordEnvelope, SongRecord,
+};
 use crate::infrastructure::sqlite::SqliteDatabase;
 
 fn append(replay: &mut LibraryReplay, library: LibraryId, records: Vec<PortableRecord>) {
@@ -178,6 +181,182 @@ fn library_durability_projection_rejects_bad_suffix_before_any_database_write() 
         0
     );
     assert!(db.read_recovery_records(root).unwrap().records.is_empty());
+}
+
+#[test]
+fn library_durability_projection_keeps_existing_playlist_timestamps_across_replays() {
+    let (_directory, db, root) = database();
+    let library = LibraryId::from_uuid(uuid::Uuid::new_v4());
+    let device = DeviceId::from_uuid(uuid::Uuid::from_u128(1));
+    let playlist_uuid = uuid::Uuid::from_u128(950);
+    let member_uuid = uuid::Uuid::from_u128(700);
+    let song_uuid = uuid::Uuid::from_u128(100);
+    let first = vec![
+        PortableRecord::Song(SongRecord {
+            song_uuid,
+            revision: Revision::INITIAL,
+            updated_by_device_id: device,
+            hlc: HybridLogicalClock::new(1_700_000_000, 0),
+            media_path: LibraryRelativePath::new("media/歌手/歌曲-00.flac").unwrap(),
+            content_hash: blake3::hash(b"SYNTHETIC AUDIO 0").to_hex().to_string(),
+            added_at: 1_700_000_000_000,
+            title: None,
+            artist: None,
+            album: None,
+        }),
+        PortableRecord::Playlist(PlaylistRecord {
+            playlist_uuid,
+            revision: Revision::INITIAL,
+            updated_by_device_id: device,
+            hlc: HybridLogicalClock::new(1_700_000_000, 0),
+            display_name: "第一版".into(),
+            created_at: Some(1_699_999_000_000),
+            cover_asset: None,
+        }),
+        PortableRecord::PlaylistItem(PlaylistItemRecord {
+            item_uuid: member_uuid,
+            revision: Revision::INITIAL,
+            updated_by_device_id: device,
+            hlc: HybridLogicalClock::new(1_700_000_000, 0),
+            playlist_uuid,
+            song_uuid,
+            position: 0,
+            added_at: Some(1_700_000_050_000),
+        }),
+    ];
+    let mut replay = LibraryReplay::default();
+    append(&mut replay, library, first);
+    db.project_library_commits(root, &replay).unwrap();
+    let playlist_row = || {
+        db.with_reader(|c| {
+            c.query_row(
+                "SELECT created_at, updated_at FROM playlists WHERE uuid=?1",
+                [playlist_uuid.to_string()],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .map_err(storage)
+        })
+        .unwrap()
+    };
+    let member_added_at = || {
+        db.with_reader(|c| {
+            c.query_row(
+                "SELECT added_at FROM playlist_songs WHERE member_uuid=?1",
+                [member_uuid.to_string()],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(storage)
+        })
+        .unwrap()
+    };
+    assert_eq!(playlist_row(), (1_699_999_000_000, 1_699_999_000_000));
+    assert_eq!(member_added_at(), 1_700_000_050_000);
+    // A later replay commit without captured timestamps must not fabricate
+    // 0 (1970-01-01) over recorded history: insertion timestamps stay stable
+    // and updated_at only ever advances.
+    let second = vec![
+        PortableRecord::Playlist(PlaylistRecord {
+            playlist_uuid,
+            revision: Revision::INITIAL,
+            updated_by_device_id: device,
+            hlc: HybridLogicalClock::new(1_700_000_100, 0),
+            display_name: "第二版".into(),
+            created_at: None,
+            cover_asset: None,
+        }),
+        PortableRecord::PlaylistItem(PlaylistItemRecord {
+            item_uuid: member_uuid,
+            revision: Revision::INITIAL,
+            updated_by_device_id: device,
+            hlc: HybridLogicalClock::new(1_700_000_100, 0),
+            playlist_uuid,
+            song_uuid,
+            position: 10,
+            added_at: None,
+        }),
+    ];
+    append(&mut replay, library, second);
+    db.project_library_commits(root, &replay).unwrap();
+    assert_eq!(
+        playlist_row(),
+        (1_699_999_000_000, 1_700_000_100_000),
+        "created_at is stable; updated_at advances to the replayed HLC"
+    );
+    assert_eq!(member_added_at(), 1_700_000_050_000);
+}
+
+#[test]
+fn library_durability_projection_derives_missing_timestamps_from_the_record_clock() {
+    let (_directory, db, root) = database();
+    let library = LibraryId::from_uuid(uuid::Uuid::new_v4());
+    let device = DeviceId::from_uuid(uuid::Uuid::from_u128(1));
+    let playlist_uuid = uuid::Uuid::from_u128(960);
+    let member_uuid = uuid::Uuid::from_u128(701);
+    let mut replay = LibraryReplay::default();
+    append(
+        &mut replay,
+        library,
+        vec![
+            PortableRecord::Song(SongRecord {
+                song_uuid: uuid::Uuid::from_u128(101),
+                revision: Revision::INITIAL,
+                updated_by_device_id: device,
+                hlc: HybridLogicalClock::new(1_700_000_000, 0),
+                media_path: LibraryRelativePath::new("media/歌手/歌曲-01.flac").unwrap(),
+                content_hash: blake3::hash(b"SYNTHETIC AUDIO 1").to_hex().to_string(),
+                added_at: 1_700_000_000_000,
+                title: None,
+                artist: None,
+                album: None,
+            }),
+            PortableRecord::Playlist(PlaylistRecord {
+                playlist_uuid,
+                revision: Revision::INITIAL,
+                updated_by_device_id: device,
+                hlc: HybridLogicalClock::new(1_700_000_000, 7),
+                display_name: "历史歌单".into(),
+                created_at: None,
+                cover_asset: None,
+            }),
+            PortableRecord::PlaylistItem(PlaylistItemRecord {
+                item_uuid: member_uuid,
+                revision: Revision::INITIAL,
+                updated_by_device_id: device,
+                hlc: HybridLogicalClock::new(1_700_000_050, 0),
+                playlist_uuid,
+                song_uuid: uuid::Uuid::from_u128(101),
+                position: 0,
+                added_at: None,
+            }),
+        ],
+    );
+    db.project_library_commits(root, &replay).unwrap();
+    let (created_at, updated_at): (i64, i64) = db
+        .with_reader(|c| {
+            c.query_row(
+                "SELECT created_at, updated_at FROM playlists WHERE uuid=?1",
+                [playlist_uuid.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(storage)
+        })
+        .unwrap();
+    // HLC wall time is seconds while the projection columns are milliseconds
+    // (`now_ms()` on the edit paths): a missing timestamp must land in 2023,
+    // not render as 1970-01-01.
+    assert_eq!(created_at, 1_700_000_000_000);
+    assert_eq!(updated_at, 1_700_000_000_000);
+    let added_at: i64 = db
+        .with_reader(|c| {
+            c.query_row(
+                "SELECT added_at FROM playlist_songs WHERE member_uuid=?1",
+                [member_uuid.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(storage)
+        })
+        .unwrap();
+    assert_eq!(added_at, 1_700_000_050_000);
 }
 
 mod identity;

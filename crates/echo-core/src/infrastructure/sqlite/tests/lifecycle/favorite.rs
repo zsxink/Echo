@@ -127,6 +127,51 @@ fn library_durability_favorite_failure_is_saved_and_later_false_catches_up() {
 }
 
 #[test]
+fn library_durability_favorite_false_survives_fresh_rebuild() {
+    let stack = ScanStack::new();
+    let (_, control, deps) = configured_roots(&stack);
+    let song = seed_song(&stack, &control, &deps);
+    let edits = DurableLibraryEdits {
+        control: deps.control.as_ref(),
+        songs: deps.songs.as_ref(),
+        playlists: deps.playlists.as_ref(),
+        unit: deps.uow.as_ref(),
+        device: deps.device_id.current_device_id(),
+    };
+    edits.set_favorite(stack.root, song, true).unwrap();
+    assert!(SongRepository::by_id(stack.database.as_ref(), song)
+        .unwrap()
+        .unwrap()
+        .favorite());
+    edits.set_favorite(stack.root, song, false).unwrap();
+    // The false after-image is the directory's latest word; rebuilding the
+    // database from the library alone must restore it — the earlier true
+    // record cannot resurrect the favorite (LD-03).
+    let replay = control.durability().unwrap().recover(stack.root).unwrap();
+    let (_wipe, rebuilt) = super::fresh_database(&stack);
+    for _ in 0..2 {
+        rebuilt
+            .project_library_commits(stack.root, &replay)
+            .unwrap();
+        let restored = SongRepository::by_id(&rebuilt, song)
+            .unwrap()
+            .expect("the song rebuilds from the directory");
+        assert!(!restored.favorite());
+        let rebuilt_time: Option<u64> = rebuilt
+            .with_reader(|c| {
+                c.query_row(
+                    "SELECT favorited_at FROM songs WHERE uuid=?1",
+                    [song.to_string()],
+                    |r| r.get(0),
+                )
+                .map_err(storage)
+            })
+            .unwrap();
+        assert_eq!(rebuilt_time, None);
+    }
+}
+
+#[test]
 fn library_durability_favorite_time_survives_toggle_and_fresh_projection() {
     let stack = ScanStack::new();
     let (_, control, deps) = configured_roots(&stack);

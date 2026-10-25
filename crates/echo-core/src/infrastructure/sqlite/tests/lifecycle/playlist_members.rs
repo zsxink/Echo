@@ -24,6 +24,7 @@ fn frozen_mutations(
         .collect()
 }
 
+#[allow(clippy::too_many_lines)]
 #[test]
 fn library_durability_member_append_is_saved_before_failed_projection() {
     let stack = ScanStack::new();
@@ -119,6 +120,24 @@ fn library_durability_member_append_is_saved_before_failed_projection() {
                     item.playlist_uuid,
                 ))
                 .unwrap();
+            assert_eq!(actual.len(), 1);
+            assert_eq!(actual[0].id().as_uuid(), item.item_uuid);
+            assert_eq!(actual[0].position(), item.position);
+        }
+    }
+    // A wiped projection rebuilds both memberships from the directory alone,
+    // keeping the frozen member identities, positions and ordering times.
+    let (_wipe, rebuilt) = super::fresh_database(&stack);
+    for _ in 0..2 {
+        rebuilt
+            .project_library_commits(stack.root, &replay)
+            .unwrap();
+        for item in &members {
+            let actual = crate::application::ports::PlaylistRepository::members(
+                &rebuilt,
+                crate::domain::ids::PlaylistId::from_uuid(item.playlist_uuid),
+            )
+            .unwrap();
             assert_eq!(actual.len(), 1);
             assert_eq!(actual[0].id().as_uuid(), item.item_uuid);
             assert_eq!(actual[0].position(), item.position);

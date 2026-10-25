@@ -108,4 +108,16 @@ fn library_durability_member_remove_is_saved_before_projection_and_readd_is_new(
             .unwrap();
         assert_eq!(deps.playlists.members(playlist).unwrap()[0].id(), added);
     }
+    // A wiped projection replays the removal then the re-add: the rebuilt
+    // membership carries the re-added identity, never the removed one.
+    let (_wipe, rebuilt) = super::fresh_database(&stack);
+    for _ in 0..2 {
+        rebuilt
+            .project_library_commits(stack.root, &replay)
+            .unwrap();
+        let actual =
+            crate::application::ports::PlaylistRepository::members(&rebuilt, playlist).unwrap();
+        assert_eq!(actual.len(), 1);
+        assert_eq!(actual[0].id().as_uuid(), added.as_uuid());
+    }
 }

@@ -10,9 +10,11 @@
 //! Per-item matrix (design §8 startup recovery rules):
 //!
 //! - **target already correct** (present + expected hash) → the publish is
-//!   effectively applied: roll forward — for the audio resource, write the
-//!   song record under the journal's **reserved** `SongId` (no new UUID), then
-//!   advance `PublishApplied → DatabaseCommitted → Completed`.
+//!   effectively applied: roll forward — for the audio resource, commit the
+//!   song under the journal's **reserved** `SongId` (no new UUID) exactly
+//!   like a live import (directory record first, then the SQLite
+//!   transaction, reusing the claim's reserved `added_at`), then advance
+//!   `PublishApplied → DatabaseCommitted → Completed`.
 //! - **valid staged copy, target absent or our own empty reservation** → retry
 //!   the exclusive publish from the persisted staging path (只有暂存正确则重试
 //!   exclusive publish), verify, then roll forward as above.
@@ -30,17 +32,26 @@
 //! the absence of orphan final files, duplicates and ghost records all hold
 //! across any number of recoveries.
 
+use std::collections::HashMap;
+
 use crate::application::ports::{OperationItem, OperationResourceKind, TxAccess};
 use crate::application::relink::song_from_parsed;
-use crate::application::scan::{parse_single_file, rewrap, FileOutcome, ScanDeps};
+use crate::application::scan::{
+    parse_single_file_with_content_check, rewrap, FileOutcome, ScanDeps,
+};
 use crate::application::trash::{
     finalize_persisted_trash, mark_outcome_unknown, persist_state, staging_evidence,
     StagingEvidence,
 };
 use crate::domain::entities::LyricsSource;
 use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath, SongId};
+use crate::domain::library::durability::{ChangeOrigin, DurableResource, StateKind};
 use crate::domain::state::OperationState;
 use crate::error::Error;
+
+/// The directory's per-operation ingestion claims: operation → the `added_at`
+/// its claim reserved (one replay scan serves every re-driven commit).
+type ReservedAddedAt = HashMap<uuid::Uuid, u64>;
 
 /// The journal `kind` of an import operation (design §8).
 const IMPORT_OPERATION: &str = "import";
@@ -145,6 +156,13 @@ impl<'a> RecoverOperations<'a> {
                 None => ops.push((operation, kind, vec![item])),
             }
         }
+        // The directory claims own each import's ingestion identity; one
+        // replay scan serves every re-driven commit below (task 5.1).
+        let reserved = if ops.iter().any(|(_, kind, _)| kind == IMPORT_OPERATION) {
+            self.reserved_claims(root)?
+        } else {
+            ReservedAddedAt::default()
+        };
         let mut touched = Vec::new();
         for (operation, kind, items) in ops {
             if self
@@ -180,7 +198,7 @@ impl<'a> RecoverOperations<'a> {
                     handed_off: outcome.handed_off,
                 });
             } else {
-                let held = self.recover_operation(root, operation, &items)?;
+                let held = self.recover_operation(root, operation, &items, &reserved)?;
                 touched.push(RecoveryOperation {
                     operation,
                     items: items.len(),
@@ -192,6 +210,34 @@ impl<'a> RecoverOperations<'a> {
         Ok(RecoveryReport { touched })
     }
 
+    /// Read the directory's per-operation ingestion claims: operation → the
+    /// reserved `added_at` its claim froze at planning time. A recovery
+    /// must reuse that exact value — never the recovery wall clock, which
+    /// would fork the song's insertion ordering mid-operation and re-commit a
+    /// record the directory already holds under another payload. The claim is
+    /// registered under the operation's own id, so one `recover` replay scan
+    /// surfaces every reservation (last write wins).
+    fn reserved_claims(&self, root: LibraryRootId) -> Result<ReservedAddedAt, Error> {
+        let Some(durability) = self.deps.control.durability() else {
+            return Ok(ReservedAddedAt::default());
+        };
+        let replay = durability.recover(root)?;
+        let mut claims = ReservedAddedAt::default();
+        for state in replay.states() {
+            if state.kind != StateKind::Claim {
+                continue;
+            }
+            if let Some(added_at) = state
+                .payload
+                .get("added_at")
+                .and_then(serde_json::Value::as_u64)
+            {
+                claims.insert(state.id, added_at);
+            }
+        }
+        Ok(claims)
+    }
+
     /// Recover all items of one operation. When every item reached a terminal
     /// state the operation's target claims are released; if any item is held
     /// (conflict) the claims stay reserved so the path is not re-claimed.
@@ -200,10 +246,11 @@ impl<'a> RecoverOperations<'a> {
         root: LibraryRootId,
         operation: OperationId,
         items: &[OperationItem],
+        reserved: &ReservedAddedAt,
     ) -> Result<bool, Error> {
         let mut held = false;
         for item in items {
-            match self.recover_item(root, operation, item)? {
+            match self.recover_item(root, operation, item, reserved)? {
                 ItemResult::Terminal => {}
                 ItemResult::Conflict => held = true,
             }
@@ -640,6 +687,7 @@ impl<'a> RecoverOperations<'a> {
         root: LibraryRootId,
         operation: OperationId,
         item: &OperationItem,
+        reserved: &ReservedAddedAt,
     ) -> Result<ItemResult, Error> {
         let target = self.path_hash_state(root, &item.target_path, &item.expected_hash)?;
         // `transpose` yields `Option<Option<bool>>` (None = no staging path OR
@@ -658,14 +706,14 @@ impl<'a> RecoverOperations<'a> {
 
         // 1) The final file is already durably correct → roll forward.
         if target == Some(true) {
-            return self.roll_forward(root, operation, item);
+            return self.roll_forward(root, operation, item, reserved);
         }
         // 2) A valid staged copy exists → retry the exclusive publish (the
         //    publish primitive clears our own empty reservation placeholder,
         //    but never touches non-empty foreign content).
         if staging == Some(true) && (target.is_none() || empty_placeholder) {
             self.publish_staged(root, operation, item)?;
-            return self.roll_forward(root, operation, item);
+            return self.roll_forward(root, operation, item, reserved);
         }
         // 3) Nothing usable:
         //    - a non-empty foreign file occupies the target, or an item that
@@ -681,35 +729,28 @@ impl<'a> RecoverOperations<'a> {
     }
 
     /// Roll the audio/lyrics item forward to terminal now that its final file
-    /// is durably correct: write the song record for audio (reserved UUID, in
-    /// one transaction with `DatabaseCommitted`), then `Completed`.
+    /// is durably correct: commit the song under the reserved identity
+    /// exactly like a live import — the directory record first, then the
+    /// SQLite transaction (with `DatabaseCommitted`) — then `Completed`.
     fn roll_forward(
         &self,
         root: LibraryRootId,
         operation: OperationId,
         item: &OperationItem,
+        reserved: &ReservedAddedAt,
     ) -> Result<ItemResult, Error> {
         match item.kind {
             OperationResourceKind::Audio => {
                 let song = item.song.ok_or_else(|| Error::InvariantViolation {
                     why: "recovered audio item without a reserved SongId".to_owned(),
                 })?;
-                // The record may already exist (a watcher that raced the import
-                // completed it, or recovery ran before): skip, never duplicate.
-                if self.deps.songs.by_id(song)?.is_none() {
-                    self.commit_record(root, operation, item, song)?;
-                } else {
-                    // Record exists: advance the journal to DatabaseCommitted,
-                    // then ensure the portable song record is there too. A
-                    // crash between the DB commit and the record write (the
-                    // import's materialization step, or commit_record's own)
-                    // leaves a committed song without its record; re-driving
-                    // it idempotently overwrites the same record file with the
-                    // same revision/HLC (design §2), so recovery converges to
-                    // exactly one record.
-                    self.upsert(root, operation, item, OperationState::DatabaseCommitted)?;
-                    self.materialize_recovered_song(root, song)?;
-                }
+                // One path for every pre-terminal shape: a watcher that raced
+                // the import (its row lands under the reserved UUID), a prior
+                // DB-first recovery, or nothing at all. `commit_song` commits
+                // the directory record first and its unchanged-record early
+                // exit re-runs only the projection, so a re-drive converges
+                // to exactly one record — never a second identity.
+                self.commit_record(root, operation, item, song, reserved)?;
             }
             OperationResourceKind::Lyrics => {
                 // A durable whole sidecar needs no database record.
@@ -752,16 +793,23 @@ impl<'a> RecoverOperations<'a> {
         Ok(())
     }
 
-    /// Commit the song record under the reserved identity and record
-    /// `DatabaseCommitted` in one transaction, exactly like a live import.
+    /// Commit the song under the reserved identity exactly like a live
+    /// import: the directory batch (portable record + claim release) commits
+    /// FIRST, then the SQLite projection transaction runs — so a song row
+    /// never exists without its directory record (task 5.1, design §2/§8).
     fn commit_record(
         &self,
         root: LibraryRootId,
         operation: OperationId,
         item: &OperationItem,
-        song_id: crate::domain::ids::SongId,
+        song_id: SongId,
+        reserved: &ReservedAddedAt,
     ) -> Result<(), Error> {
-        match parse_single_file(self.deps, root, &item.target_path) {
+        // A forced content parse, exactly like the live import: a pre-existing
+        // indexed row (watcher preemption or an earlier DB-first state) must
+        // not turn this into a size/mtime FastSkip — recovery rebuilds the
+        // record from the file's actual bytes.
+        match parse_single_file_with_content_check(self.deps, root, &item.target_path, true) {
             FileOutcome::Parsed(parsed) => {
                 let embedded = parsed
                     .embedded_lyrics
@@ -786,32 +834,58 @@ impl<'a> RecoverOperations<'a> {
                     item_key: item.item_key.clone(),
                     claim_key: item.claim_key.clone(),
                 };
-                let added_at =
-                    u64::try_from(wall_now_ms(self.deps.clock.as_ref())?).unwrap_or(u64::MAX);
-                self.deps
-                    .uow
-                    .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
-                        let entity = song_from_parsed(song_id, root, &parsed.file, added_at);
-                        tx.set_song_file_resources(&entity, &resources)?;
-                        tx.upsert_song(&entity)?;
-                        match embedded {
-                            Some(candidate) => tx.set_lyrics_candidate(song_id, &candidate)?,
-                            None => tx.clear_lyrics_candidate(song_id, LyricsSource::Embedded)?,
-                        }
-                        match sidecar {
-                            Some(candidate) => tx.set_lyrics_candidate(song_id, &candidate)?,
-                            None => tx.clear_lyrics_candidate(song_id, LyricsSource::Sidecar)?,
-                        }
-                        if let Some(cover) = cover {
-                            tx.attach_cover(song_id, &cover)?;
-                        }
-                        tx.upsert_operation_item(operation, committed)?;
-                        Ok(())
-                    }))?;
-                // Materialize the portable song record exactly like a live
-                // import (idempotent: a crash before/after this write re-drives
-                // the same revision, overwriting the same record file).
-                self.materialize_recovered_song(root, song_id)?;
+                // The claim owns the ingestion identity: reuse the `added_at`
+                // the reservation froze so a re-drive reproduces the record it
+                // promised (a recovery-time wall clock would fork the
+                // insertion ordering mid-operation).
+                let added_at = match reserved.get(&operation.as_uuid()).copied() {
+                    Some(reserved_at) => reserved_at,
+                    None => {
+                        u64::try_from(wall_now_ms(self.deps.clock.as_ref())?).unwrap_or(u64::MAX)
+                    }
+                };
+                let entity = song_from_parsed(song_id, root, &parsed.file, added_at);
+                let entity_for_record = entity.clone();
+                crate::application::scan::durable::commit_song(
+                    self.deps,
+                    &entity_for_record,
+                    operation,
+                    ChangeOrigin::Import,
+                    vec![DurableResource {
+                        relative_path: item.target_path.display().to_owned(),
+                        content_hash: item.expected_hash.clone(),
+                        byte_length: parsed.file.size,
+                    }],
+                    || {
+                        self.deps
+                            .uow
+                            .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
+                                tx.set_song_file_resources(&entity, &resources)?;
+                                tx.upsert_song(&entity)?;
+                                match embedded {
+                                    Some(candidate) => {
+                                        tx.set_lyrics_candidate(song_id, &candidate)?;
+                                    }
+                                    None => {
+                                        tx.clear_lyrics_candidate(song_id, LyricsSource::Embedded)?;
+                                    }
+                                }
+                                match sidecar {
+                                    Some(candidate) => {
+                                        tx.set_lyrics_candidate(song_id, &candidate)?;
+                                    }
+                                    None => {
+                                        tx.clear_lyrics_candidate(song_id, LyricsSource::Sidecar)?;
+                                    }
+                                }
+                                if let Some(cover) = cover {
+                                    tx.attach_cover(song_id, &cover)?;
+                                }
+                                tx.upsert_operation_item(operation, committed)?;
+                                Ok(())
+                            }))
+                    },
+                )?;
                 Ok(())
             }
             FileOutcome::FastSkip { .. } | FileOutcome::Diagnostic(_) => Err(Error::CorruptMedia {
@@ -819,37 +893,6 @@ impl<'a> RecoverOperations<'a> {
                 reason: "recovered target could not be parsed into a record".to_owned(),
             }),
         }
-    }
-
-    /// Build + write the portable song record for a recovered song, sharing the
-    /// exact revision/HLC the committed row holds (design §2). Mirrors the live
-    /// import materialization; a crash here leaves the record missing and the
-    /// next recovery pass re-drives it idempotently.
-    fn materialize_recovered_song(
-        &self,
-        root: LibraryRootId,
-        song_id: crate::domain::ids::SongId,
-    ) -> Result<(), Error> {
-        let Some(song) = self.deps.songs.by_id(song_id)? else {
-            return Ok(()); // Not yet committed → the roll_forward guard handles it.
-        };
-        crate::application::portable_materialize::ensure_control_plane_writable(
-            self.deps.control.as_ref(),
-            root,
-        )?;
-        let device = self.deps.device_id.current_device_id();
-        let (revision, hlc) = crate::application::portable_materialize::committed_version(
-            self.deps.sync.as_ref(),
-            crate::application::portable_materialize::SONG_OBJECT_TYPE,
-            &song_id.to_string(),
-            device,
-        )?;
-        let record =
-            crate::application::portable_materialize::song_record(device, hlc, revision, &song)?;
-        self.deps
-            .control
-            .write_record(root, &crate::domain::library::PortableRecord::Song(record))?;
-        Ok(())
     }
 
     /// Whether `target` is only Echo's own empty reservation placeholder (a

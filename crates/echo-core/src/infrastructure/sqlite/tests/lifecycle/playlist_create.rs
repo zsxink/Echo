@@ -2,6 +2,7 @@
 //! its operation identity when the user retries, instead of looking like a
 //! brand-new name conflict.
 use super::*;
+use crate::application::ports::LibraryProjectionPort;
 
 /// Pins the required behaviour: a creation that is already saved in the
 /// directory must keep its original operation identity while the projection is
@@ -86,4 +87,24 @@ fn library_durability_playlist_create_retry_after_saved_pending_keeps_operation_
         1,
         "a caught-up retry must not add a second directory commit"
     );
+    // A wiped projection rebuilds the empty playlist from the directory alone,
+    // keeping the saved identity and name.
+    let (_wipe, rebuilt) = super::fresh_database(&stack);
+    for _ in 0..2 {
+        rebuilt
+            .project_library_commits(stack.root, &replay)
+            .unwrap();
+        assert_eq!(
+            crate::application::ports::PlaylistRepository::name(&rebuilt, completed)
+                .unwrap()
+                .as_deref(),
+            Some("same name")
+        );
+        assert_eq!(
+            crate::application::ports::PlaylistRepository::members(&rebuilt, completed)
+                .unwrap()
+                .len(),
+            0
+        );
+    }
 }

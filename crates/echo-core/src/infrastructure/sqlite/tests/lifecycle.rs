@@ -1,4 +1,5 @@
 mod favorite;
+mod import;
 mod ordered_fake;
 mod playback;
 mod playlist_cover;
@@ -45,6 +46,26 @@ fn configured_roots(stack: &ScanStack) -> (LibraryRootId, Arc<RootControlPlane>,
         ..stack.deps()
     };
     (candidate, control, deps)
+}
+
+/// A wiped projection: an empty database that only knows the library root and
+/// must rebuild everything else from the directory replay alone.
+fn fresh_database(
+    stack: &ScanStack,
+) -> (
+    tempfile::TempDir,
+    crate::infrastructure::sqlite::SqliteDatabase,
+) {
+    let directory = tempfile::tempdir().unwrap();
+    let rebuilt =
+        crate::infrastructure::sqlite::SqliteDatabase::open(directory.path().join("fresh.sqlite"))
+            .unwrap();
+    LibraryRepository::upsert(
+        &rebuilt,
+        &LibraryRoot::new(stack.root, stack.library_dir.clone(), true, true),
+    )
+    .unwrap();
+    (directory, rebuilt)
 }
 
 #[test]

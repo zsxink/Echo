@@ -1,6 +1,8 @@
 //! Renames must use the same ordered projection path as playlist creation.
 use super::*;
+use crate::application::ports::LibraryProjectionPort;
 
+#[allow(clippy::too_many_lines)]
 #[test]
 fn library_durability_playlist_rename_saves_before_failed_projection() {
     let stack = ScanStack::new();
@@ -90,6 +92,19 @@ fn library_durability_playlist_rename_saves_before_failed_projection() {
         .unwrap();
         assert_eq!(
             deps.playlists.name(playlist).unwrap().as_deref(),
+            Some("latest rename"),
+        );
+    }
+    // A wiped projection rebuilds the rename from the directory alone.
+    let (_wipe, rebuilt) = super::fresh_database(&stack);
+    for _ in 0..2 {
+        rebuilt
+            .project_library_commits(stack.root, &replay)
+            .unwrap();
+        assert_eq!(
+            crate::application::ports::PlaylistRepository::name(&rebuilt, playlist)
+                .unwrap()
+                .as_deref(),
             Some("latest rename"),
         );
     }

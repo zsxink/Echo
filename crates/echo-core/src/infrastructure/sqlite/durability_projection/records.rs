@@ -47,10 +47,13 @@ pub(super) fn project_record(
                 .cover_asset
                 .as_ref()
                 .map(|asset| crate::domain::media::cover_asset_key(&asset.content_hash));
-            c.execute("INSERT INTO playlists(uuid,library_root_uuid,display_name,normalized_name_key,created_at,updated_at,revision,hlc_wall_secs,hlc_counter,cover_asset_key) VALUES(?1,?2,?3,?4,?5,?5,?6,?7,?8,?9) ON CONFLICT(uuid) DO UPDATE SET display_name=excluded.display_name,normalized_name_key=excluded.normalized_name_key,revision=excluded.revision,created_at=excluded.created_at,hlc_wall_secs=excluded.hlc_wall_secs,hlc_counter=excluded.hlc_counter,cover_asset_key=excluded.cover_asset_key",params![id,root.to_string(),p.display_name,playlist_name_key(&p.display_name),p.created_at.unwrap_or(0),p.revision.as_u64(),p.hlc.wall_secs,p.hlc.counter,cover_key]).map_err(storage)?;
+            // The timestamp columns are milliseconds (`now_ms()` on the edit
+            // paths) while a record's HLC wall time is seconds; records without
+            // a captured timestamp fall back to the record clock, never 0.
+            c.execute("INSERT INTO playlists(uuid,library_root_uuid,display_name,normalized_name_key,created_at,updated_at,revision,hlc_wall_secs,hlc_counter,cover_asset_key) VALUES(?1,?2,?3,?4,?5,?5,?6,?7,?8,?9) ON CONFLICT(uuid) DO UPDATE SET display_name=excluded.display_name,normalized_name_key=excluded.normalized_name_key,revision=excluded.revision,created_at=playlists.created_at,updated_at=MAX(playlists.updated_at,excluded.updated_at),hlc_wall_secs=excluded.hlc_wall_secs,hlc_counter=excluded.hlc_counter,cover_asset_key=excluded.cover_asset_key",params![id,root.to_string(),p.display_name,playlist_name_key(&p.display_name),p.created_at.unwrap_or(p.hlc.wall_secs*1000),p.revision.as_u64(),p.hlc.wall_secs,p.hlc.counter,cover_key]).map_err(storage)?;
         }
         PortableRecord::PlaylistItem(p) => {
-            c.execute("INSERT INTO playlist_songs(playlist_uuid,song_uuid,position,added_at,member_uuid,member_revision) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(playlist_uuid,song_uuid) DO UPDATE SET position=excluded.position,added_at=excluded.added_at,member_uuid=excluded.member_uuid,member_revision=excluded.member_revision",params![p.playlist_uuid.to_string(),p.song_uuid.to_string(),p.position,p.added_at.unwrap_or(0),id,p.revision.as_u64()]).map_err(storage)?;
+            c.execute("INSERT INTO playlist_songs(playlist_uuid,song_uuid,position,added_at,member_uuid,member_revision) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(playlist_uuid,song_uuid) DO UPDATE SET position=excluded.position,added_at=playlist_songs.added_at,member_uuid=excluded.member_uuid,member_revision=excluded.member_revision",params![p.playlist_uuid.to_string(),p.song_uuid.to_string(),p.position,p.added_at.unwrap_or(p.hlc.wall_secs*1000),id,p.revision.as_u64()]).map_err(storage)?;
         }
         PortableRecord::PlayStats(s) => {
             for (device, count) in &s.by_device {
