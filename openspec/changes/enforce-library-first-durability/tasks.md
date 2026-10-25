@@ -68,10 +68,12 @@
 
 - [ ] 5.1 导入改为资源校验安全发布→目录提交→SQLite 投影，预留 UUID/added_at/claim 在目录可恢复，去除 DB commit 后拼 SongRecord；明确“预留 claim”与“提交 Song”两段操作身份的自识别与互引用键，重试不得重新分配 UUID，界面只报一个导入结果；以导入边界故障、失去 SQLite 后重建测试验证，运行 `cargo test -p echo-core import`（LD-01/02/03；safe-file-ingestion）。
 
-  进度：2026-10-25 `cargo test -p echo-core import` 56/0 通过；`application/recover/mod.rs` 的 `commit_record` 仍先跑 SQLite 事务（`upsert_song`、`upsert_operation_item`）再把 SongRecord 写回目录，属"DB commit 后拼 SongRecord"残留；两段操作身份的自识别互引用、完整批量恢复与 IO 记录未完成。
+  进度（2026-10-25 收尾）：`application/recover/mod.rs` 的 DB-first 残留已消除——`commit_record` 改为复用 live 导入的 `scan::durable::commit_song`（目录批次含 portable Song record + Claim 先提交，SQLite 投影在闭包内随后运行），`materialize_recovered_song` 整个删除，`recover/` 与 `import/` 下已无 `portable_materialize` / `write_record_guarded` 调用。两段操作身份的自识别互引用成立：预留 claim 以 `operation.as_uuid()` 为 state id 携带 `song_uuid`/`target`/`content_hash`/`added_at`（`import/execution.rs:20-51` 的 `persist_reservation`），Song 提交复用同一 `SongId`（`recover/mod.rs:847` `song_from_parsed(song_id, …)`），恢复侧 `reserved_claims()`（`recover/mod.rs:220-239`）一次 replay 扫描把每个 operation 的 `added_at` 映射出来，重驱动不再取恢复墙钟。RED→GREEN 五条新用例：`recovery_commits_the_directory_record_before_the_sqlite_row`（在 `RecordWrite` 崩溃，断言 SQLite 行此时必须为空）、`recovery_reuses_the_reserved_added_at_not_the_recovery_clock`（推进 24h 仍取 claim 值）、`batch_crash_keeps_the_unstarted_sibling_importable`（批量中途崩溃后未启动的兄弟文件仍可独立导入）、`one_recovery_run_converges_every_incomplete_import_operation`（一次 `run()` 收敛两个未完成操作，各自保留自己的 UUID 与 `added_at`；把 claim map 改成只留一条会红）、`library_durability_import_recovery_rebuilds_reserved_identity_in_a_fresh_database` + `library_durability_claim_alone_never_becomes_a_song_in_a_fresh_database`（wipe 后仅凭目录 replay 重建出同一 UUID/`added_at`；只有 claim 没有 Song record 时重建**不得**凭空造歌）。验证：`cargo test -p echo-core --lib` 884/0/1、`import` 61/0、`library_durability` 190/0、`cargo clippy -p echo-core --all-targets -- -D warnings` 0 警告、`cargo fmt --all --check` exit 0。**5.1 仍不勾选**：任务要求的 IO 记录（提交次数与 IO 观察）属 3.7 / 9.4 的测量口径，尚未执行；"界面只报一个导入结果"的端到端（含歌词失败在 IPC 层被丢弃，见 5.4 注记）未闭合；跨平台原子发布与权限故障证据仍缺（见 9.3）。
 - [ ] 5.2 改造扫描 `persist_parsed_index` 及刷新路径，新增/改名/标签变化先提交 Song；无变化不生候选，missing/卷卸载仅本机可用性；以扫描后 wipe/改名/标签/只读/重复事件测试验证，运行 `cargo test -p echo-core scan`（LD-01/03）。
 
   进度：2026-10-25 `cargo test -p echo-core scan` 52/0/0 通过，目录优先已接线；但"无变化不生候选"未成立——`application/scan/durable.rs:211-221` 在业务字段未变时早退走 `project()`，该分支仍 `upsert_song` → `statements.rs:129` `enqueue_object_snapshot` → `sync/sync.rs:134`，后者计算 payload digest 但不去重，无条件插入 `sync_mutations`/`sync_outbox` 并推进 `sync_local_highwater.local_revision`，违反 `local-library` delta"无变化重扫不增加 revision、播放计数或同步候选"；另：目录侧只抑制了对象版本，SQLite 侧的同步候选仍被铸出，两者不是同一件事。测试面尚缺扫描后 wipe 重建用例（`continuation/tests.rs:524` 与 `restore.rs:260` 都是直接写入记录，未经扫描）、缺扫描侧的重复事件专项与真实只读卷扫描用例；且改名用例在 `application::watch::durability_tests`，测试名不含 "scan"，`cargo test -p echo-core scan` 过滤器只命中 4 条 `library_durability_scan_*`，改名覆盖不被任务指定的命令执行。
+
+  进度（2026-10-25 续）：**"无变化不生候选"已修**——`upsert_song` 的同步发射点改走 `sync::enqueue_song_snapshot_if_changed`（按对象最新非 rejected mutation 的 payload_digest 精确比对，相同则返回既有 revision，不推进 highwater、不插 mutations/outbox；其余发射点与 baseline 重发保持无条件铸造——enqueue 层全局去重会吞并发 favorite fact 与 host baseline 重发，已试错回退）。RED→GREEN：`infrastructure::sqlite::sync::queue::tests::unchanged_reupsert_does_not_mint_another_candidate_or_advance_the_revision`（修前 left 2 / right 1）。`cargo test -p echo-core --lib` 870/0/1、`scan` 过滤 52/0/0、`cargo test -p echo-desktop` 全目标 0 failed、clippy 0 警告、fmt 通过。详见 [收尾记录](evidence/defect4-rescan-closeout-20261025.md)。**5.2 仍不勾选**：扫描后 wipe 重建、扫描侧重复事件专项、真实只读卷扫描用例与改名用例不被 `scan` 过滤器命中的缺口均未动。
 - [ ] 5.3 打通导入、扫描和同步发布的 claim/UUID 复用，保留有界重处理并发；用双 worker 屏障、watcher 抢先、取消、同 hash/不同内容目标冲突测试验证不重复、不覆盖（LD-02/05）。
 
   进度：2026-10-25 导入、扫描与 watcher 各自已有目录优先与身份复用片段，但三者之间的 claim/UUID 复用尚未统一；双 worker 屏障、watcher 抢先、取消、同 hash 不同内容冲突四类测试仍缺。
@@ -81,9 +83,14 @@
 
 ## 6. 喜欢、歌单、统计和资源编辑接入
 
-- [ ] 6.1 Core 收藏/歌单/成员用例统一目录提交，桌面服务仅转发；补 true→false、空歌单、重命名、多目标重复成员、时间/顺序、级联删除的 wipe round-trip 测试，运行 `cargo test -p echo-core playlist`、`cargo test -p echo-desktop favorite`（LD-01/02/03）。
+- [x] 6.1 Core 收藏/歌单/成员用例统一目录提交，桌面服务仅转发；补 true→false、空歌单、重命名、多目标重复成员、时间/顺序、级联删除的 wipe round-trip 测试，运行 `cargo test -p echo-core playlist`、`cargo test -p echo-desktop favorite`（LD-01/02/03）。
 
   进度：2026-10-25 目录优先与桌面纯转发已就位：`application/playlist/durable.rs` 六个用例全部委派协调器，桌面侧 `runtime/services/playlists.rs`、`favorites.rs` 只做转发；`cargo test -p echo-core playlist` 54 passed / 1 failed、`cargo test -p echo-desktop favorite` 4/0/0 通过。wipe round-trip 仍不完整：新建空库的重建用例只有 `lifecycle/favorite.rs:123`、`lifecycle/playlist_cover.rs:42,248`、`lifecycle/playlist_delete.rs:49`（级联删除）三处，重命名（`playlist_rename.rs:85`）、成员添加（`playlist_members.rs:108`）与成员移除（`playlist_remove.rs:107`）都只在同一库内重投影；`application/continuation/tests.rs:524` 的真实规模 wipe 重建只覆盖 87 首歌曲与 11 条喜欢记录（3 条 true）、0 个歌单；空歌单用例是本轮新增，且因"歌单创建重试丢稳定操作身份"缺陷被 `#[ignore]`（该标记已于同日夜间解除，用例转为 RED，套件按设计带 1 个失败）。故不勾选。
+
+  进度（2026-10-25 深夜续）：**四处缺失的 wipe round-trip 已补齐**——`lifecycle.rs` 新增共用 `fresh_database`（tempdir 内新建空 `SqliteDatabase` + 仅 upsert 库根），空歌单（`playlist_create.rs`，重建后同名同身份且成员 0）、重命名（`playlist_rename.rs`，重建后 "latest rename"）、成员添加（`playlist_members.rs`，双歌单成员身份/位置/顺序保持）、成员移除（`playlist_remove.rs`，重放"移除→重加"后携带重加身份而非被移除身份）四处用例各自追加大范围重建断言（`project_library_commits` 两轮幂等）。验证：`cargo test -p echo-core playlist` lib **57 passed / 0 failed**（此前 54/1）、`cargo test -p echo-desktop favorite` 4 passed / 0 failed、`cargo test -p echo-core --lib library_durability` 180/0、`--lib` 全量 870/0/1、clippy 0 警告（两处超长测试按仓库惯例 `#[allow(clippy::too_many_lines)]`）、fmt 通过。**6.1 仍不勾选**：`true→false`、多目标重复成员、时间/顺序、级联删除等既有覆盖未逐一按 delta spec 复核，且 6.1 首句"统一目录提交"的桌面侧复核（`runtime/services` 仅转发）本轮未重验。
+  进度（2026-10-25 缺陷 2 收尾，归属 6.1）：handoff 缺陷 2（歌单投影时间戳）已修——`durability_projection/records.rs` 歌单/成员 INSERT 回退 `unwrap_or(0)` 改为 `unwrap_or(hlc.wall_secs*1000)`（HLC 秒 → 列毫秒），`ON CONFLICT` 保持既有行 `created_at=playlists.created_at`/`added_at=playlist_songs.added_at`，`updated_at=MAX(playlists.updated_at,excluded.updated_at)` 单调推进；并修复被其掩盖的成员侧击穿：`retained.rs` retry 释放循环从整行 `DELETE` 改为把旧行泊位到所在歌单末尾空闲槽（`UNIQUE(playlist_uuid,position)` 槽照常释放、换位/交换语义不变，行连同真实 `added_at` 存活后经 DO UPDATE 恢复真实位置；`CHECK(position>=0)` 因此选末尾追加而非负数占位；LD-08 的 unresolved 行不动语义不变）。RED→GREEN：新增 `library_durability_projection_keeps_existing_playlist_timestamps_across_replays`（RED 实测 `(0, 1699999000000)` vs 期望 `(1699999000000, 1700000100000)`、成员 added_at 被回退值覆盖）与 `library_durability_projection_derives_missing_timestamps_from_the_record_clock`（RED `0` vs `1700000000000`）。验证（命令 + 目标 + 命中数）：`cargo test -p echo-core --lib durability_projection` RED 阶段 37 passed / 2 failed → 修复后 **39/0**；`--lib durability` **192/0**、`--lib lifecycle` **31/0**、`cargo test -p echo-core` 全量**真实 exit 0**（lib 877 passed / 0 failed / 1 ignored 既有性能基准，集成目标全绿，日志 /tmp/echo-core-full-1025.log）、`cargo clippy -p echo-core --all-targets --all-features -- -D warnings` 0 警告、`cargo fmt --all` 通过。**6.1 仍不勾选**：上段"true→false、多目标重复成员、时间/顺序、级联删除按 delta spec 逐项复核 + 桌面侧转发重验"的剩余口径不变。
+
+  进度（2026-10-25 6.1 复核收尾，勾选）：delta spec 剩余口径逐项闭环——**true→false**：识别出唯一真实缺口是"删除与取消喜欢不复活"场景要求 fresh 重建后 false 不被旧 true 记录复活（既有 `favorite_failure_is_saved_and_later_false_catches_up` 只做同库追赶、`favorite_time_survives_toggle_and_fresh_projection` 的 fresh 重建落在最终 true 态），新增 `lifecycle/favorite.rs::library_durability_favorite_false_survives_fresh_rebuild`（true→false→`recover`→`fresh_database` 重建→两轮幂等投影→断言 `!favorite()` 且重建库 `favorited_at` 为 NULL），同组 3/3 通过；**多目标重复成员**：`playlist_members.rs` 的 `&[first, second, first]` 用例已含去重（2 成员、身份互异、重复 append 不产生新 commit）+ fresh 重建身份/位置保持，无需新增；**时间/顺序**：缺陷 2 两用例 + `favorite_time_survives_toggle_and_fresh_projection` 覆盖；**级联删除**：`playlist_delete.rs` fresh 重建覆盖；**桌面侧仅转发**：重验 `crates/echo-desktop/src/runtime/services/playlists.rs`（create/rename/cover/delete/add/remove）与 `favorites.rs`（set_favorite）全部经 `library_edits() -> DurableLibraryEdits` 转发。缺陷 2 修复后任务命令复跑（命令 + 目标 + 命中数）：`cargo test -p echo-core --lib playlist` **58 passed / 0 failed**（上轮 57 基础上 +1 为缺陷 2 新用例名含 "playlist" 被过滤器命中）、`cargo test -p echo-core --lib lifecycle` **32/0**（+1 即新 true→false 用例）、`cargo test -p echo-desktop favorite` **4 passed / 0 failed** 全 target exit 0、`cargo clippy -p echo-core --all-targets --all-features -- -D warnings` 0 警告、`cargo fmt --all --check` 通过。任务文字全部口径（统一目录提交、桌面仅转发、六类 wipe round-trip、两条命令）均已落地验证，勾选。
 - [ ] 6.2 歌单封面和既有覆盖资源迁入内容寻址原件，读模型 cache key 派生；验证清空全部应用缓存后离线恢复、丢原缓存的历史缺口报告和相同资源复用，运行 `cargo test -p echo-desktop cover` 及 `cargo test -p echo-core library_durability`（LD-06/08）。
 
   进度：2026-10-25 歌单封面已迁入内容寻址原件（`lifecycle/playlist_cover.rs` 有 5 条用例与两处新建空库重建），但**艺术家自定义封面仍违反 LD-08**：`crates/echo-desktop/src/runtime/services/catalog.rs:161-199` 的 `set_artist_cover` 只把用户字节写入应用 cover cache，落库仅存 cache key（`set_artist_cover_key`），没有写入 `echo/assets/<hash>` 的可校验原件与对象引用；"清空全部应用缓存后离线恢复"与"丢原缓存的历史缺口报告"亦未验证。故不勾选。
@@ -138,6 +145,11 @@
 - [ ] 9.5 执行与本 change 已完成范围相称的短 CI 验证：`cargo fmt --all --check`、受影响 crate 的 Clippy/测试、前端相关检查、`pnpm verify:governance` 和小规模代表性集成场景；确认每条测试确有执行且证据与 LD/入口规格对应。完整 workspace、原样 513 和三平台原生验证仍作为整体交付或后续独立验收（LD-10）。
 
   进度：2026-10-25 夜间复核（口径更正：此前的 `178/0/1`、`58/0/1`、`865/0/2` 把 `#[ignore]` 的缺陷复现用例计入了 passed，也未区分 lib 与 arch 目标）：`cargo fmt --all --check` exit 0；`cargo test -p echo-core --lib` 865 passed / 1 failed / 1 ignored（共 867，1 failed 即缺陷 1 的 RED 用例、1 ignored 是既有性能基准）；`cargo test -p echo-core library_durability` lib 176 passed / 1 failed（690 filtered out）+ arch 1 passed；`cargo test -p echo-core scan` 52/0/0、`playlist` 54 passed / 1 failed、`import` 55/0/0（+ arch 1）；`cargo test -p echo-desktop --lib` 443/0/0、`cargo test -p echo-desktop favorite` 4/0/0；`node scripts/verify/check-scale.mjs` exit 0；`openspec validate enforce-library-first-durability --strict` exit 0。**`pnpm verify:governance` 已跑完并失败**（exit 101）：`cargo test -p echo-sync --test ledger_protocol` 的 `sqlite_host_commit_digest_matches_the_wire_protocol` 与 `maximum_size_mutation_remains_transportable_after_confirmation` 双双失败，报 `Unavailable { resource: "library durability", hint: "directory commit adapter is not configured" }`。该依赖由本 change 引入（`sync/durability/commit.rs` 的 `commit_prepared_projection` 在 `cfg(not(test))` 下要求目录提交适配器，而 echo-core 作为 echo-sync 的依赖时 `cfg(test)` 不成立），`crates/echo-sync/` 未被本分支改动 ⇒ 属本分支引入的回归，9.5 / 11.2 因此继续未勾选。（核对 `echo-sync` 整包时须带 `--all-features`：不带则 `discovery_network` 目标因 `mdns_sd` 特性未开而编译失败，那是特性开关问题、不是回归；全特性下该目标 3 条全 ignored。）完整 workspace all-targets 与三平台原生验证未做。故不勾选。
+  更新（2026-10-25）：上述缺陷 4 已按方向二修复（测试安装真实控制面，`ledger_protocol` 回到 2/2，见
+  [缺陷 4 收尾](evidence/defect4-rescan-closeout-20261025.md)）；`pnpm verify:governance` 整门复跑
+  **exit 0**（注入套件 33/33，明细与首跑两处根因见 10.5 注记与
+  [handoff-20261025.md](evidence/handoff-20261025.md) 第 11 点）。9.5 仍未勾选：剩余差量是
+  干净工作区复现（须待用户授权提交后）与前端相关检查的逐项对应复核。
 - [ ] 9.6 使用 CodeGraph 与引用搜索复核无 DB-first/DB-only 生产替代入口、旧 materializer/fake/导出已清理，独立审查事务/迁移/身份/API/权限边界，修正后仅重跑受影响验证；交付审查与清理证据（LD-10）。
 - [ ] 9.7 汇总 LD-01…LD-10 的自动化证据，逐条对应 acceptance-matrix 的“Required acceptance evidence”，确认无“规划命令当通过”的伪证据；单独标明完整 workspace 与三平台原生验证属于整体发布或后续独立验收，不作为本 change 短 CI 的门槛；交付证据索引（LD-10）。
 
@@ -145,20 +157,149 @@
 
 > 本组是交付前置条件，不是收尾工作。delta 同步会向主规格新增 requirement 与 scenario；不登记就无法通过 `pnpm verify:governance`，而现状的“440 = 440 = 440”会被打破。
 
-- [ ] 10.1 确认并记录编号纪律：新增 requirement 一律追加到目标主规格末尾，新增 scenario 一律追加到所属 requirement 末尾。本 change 的 `portable-library-layout` 已按此修正（原先插入会使 `PLL-R07-S05` 指向新场景）；同步时用 `node scripts/verify/reconcile-scenarios.mjs` 验证既有稳定 ID 无位移（LD-10）。
-- [ ] 10.2 为 `library-durability` 注册新 area 前缀并加入 `scripts/verify/spec-scenarios.mjs` 的 `AREA_PREFIX`，在 `docs/traceability.md` 新增对应段；验证 `node scripts/verify/reconcile-scenarios.mjs` 的 spec/trace/manifest 三方计数一致（LD-10）。
-- [ ] 10.3 按修订后的 delta 实际场景清单在 `scripts/verify/scenario-commands.mjs` 登记可执行命令，运行 `node scripts/verify/gen-scenario-manifests.mjs --write` 生成 `manifest.json.scenarios[]` 与 `tests/scenarios/*.yaml`；验证 `node scripts/verify/validate-scenario-commands.mjs` 无“matches 0 tests”，不得使用已移除的旧库回填场景或过滤后零测试命令占位（LD-10）。
-- [ ] 10.4 重跑 `node scripts/verify/check-scenario-churn.mjs`，确认重复度与单命令簇未超出冻结上限；若新增场景使比例上升，按模块拆分为独立命令而不是抬高上限（LD-10）。
+- [x] 10.1 确认并记录编号纪律：新增 requirement 一律追加到目标主规格末尾，新增 scenario 一律追加到所属 requirement 末尾。本 change 的 `portable-library-layout` 已按此修正（原先插入会使 `PLL-R07-S05` 指向新场景）；同步时用 `node scripts/verify/reconcile-scenarios.mjs` 验证既有稳定 ID 无位移（LD-10）。
+
+  进度：2026-10-25：全量复核发现任务描述的"已按此修正"与实际不符——delta
+  `portable-library-layout` 的 `对象资料接续与对账` requirement 仍是插入式排列（4 个新场景
+  排在既有场景之前，同步会使既有 `PLL-R07-S01 打开资料库先接续再扫描` 位移到 S07）。已重排：
+  既有 5 场景保持主规格原序在前，新增 `打开新协议资料库后投影再扫描`、`读取支持的旧格式`、
+  `重复投影结果稳定`、`未解析引用保持原样` 依次追加为 S06–S09。逐 area 复核全部 delta
+  （脚本比对 MODIFIED requirement 的既有场景须为 delta 场景列表的有序前缀）：其余
+  MODIFIED（`local-library::单一资料库根目录与本地持久化`、`portable-library-layout` 其余
+  两条、`safe-file-ingestion::暂存、校验、原子移动与操作日志`）均为纯追加或不变；各 delta
+  无 REMOVED/RENAMED requirement，ADDED requirement 均只会追加到目标主规格末尾，既有
+  requirement 编号不位移。`openspec validate enforce-library-first-durability --strict` 通过。
+  最终验证（2026-10-25，随 10.5 同步完成后）：对 7 个修订区域逐 requirement 比对同步前后
+  （`git show HEAD:` 基线）的 scenario 标题有序子序列——既有 requirement/场景全部保留且
+  相对顺序不变，新增场景均为追加（LL +6、LAN +7、LE +4、PM +4、PLL +7、SFI +3、SYN +7，
+  合计 +38 含 LD 先行的 23）；`reconcile-scenarios.mjs` spec 515 = trace 515 = manifest 515
+  exit 0，既有派生 ID 无位移。
+- [x] 10.2 为 `library-durability` 注册新 area 前缀并加入 `scripts/verify/spec-scenarios.mjs` 的 `AREA_PREFIX`，在 `docs/traceability.md` 新增对应段；验证 `node scripts/verify/reconcile-scenarios.mjs` 的 spec/trace/manifest 三方计数一致（LD-10）。
+
+  进度：2026-10-25：AREA_PREFIX 已注册 `"library-durability": "LD"`（按字母序插入
+  `immersive-lyrics` 与 `library-experience` 之间）；`docs/traceability.md` 已新增
+  `## library-durability` 段（10 requirement / 23 scenario 全行，任务列按本 change 任务号
+  映射，测试层暂记 Gate，manifest 路径为 10.3 待生成的规划路径）。**不勾选原因**：主规格
+  目录 `openspec/specs/library-durability/` 尚未建立（10.5 同步），LD 段当前不参与
+  reconcile 三方计数——注册后验证均绿但属惰性通过：`reconcile-scenarios.mjs` 461 = 461 =
+  461 exit 0、`prd-matrix.mjs` 14 条路径与 461 场景一致 exit 0、
+  `validate-scenario-commands.mjs` exit 0、`check-scenario-churn.mjs` 461 场景 287 命令
+  1.61x exit 0。LD 场景计入三方计数并 >0 的复验留在 10.3（命令登记）与 10.5（同步）之后。
+  2026-10-25 下午更新：主规格 `openspec/specs/library-durability/spec.md` 已随 10.3 建立，
+  LD 23 场景正式计入三方计数——`reconcile-scenarios.mjs` **484 = 484 = 484** exit 0，
+  traceability LD 段测试层列已按实际登记更新（22 行 Core、LD-R10-S01 治理门 Gate），
+  `prd-matrix.mjs` 校验 14 路径 × 484 场景一致（其 `--write` 已移除，PRD 手工维护）。
+  10.2 自身的勾选仍待 10.5 对其余 7 个修订区域同步后的既有 ID 无位移复验。
+  最终验证（2026-10-25，随 10.5 同步完成后）：`reconcile-scenarios.mjs` spec 515 = trace
+  515 = manifest 515 exit 0（LD 23 + 其余 7 区域新增 31 全部计入三方计数）；既有 ID 无位移
+  复验见 10.1 最终验证段。10.2 完成。
+- [x] 10.3 按修订后的 delta 实际场景清单在 `scripts/verify/scenario-commands.mjs` 登记可执行命令，运行 `node scripts/verify/gen-scenario-manifests.mjs --write` 生成 `manifest.json.scenarios[]` 与 `tests/scenarios/*.yaml`；验证 `node scripts/verify/validate-scenario-commands.mjs` 无“matches 0 tests”，不得使用已移除的旧库回填场景或过滤后零测试命令占位（LD-10）。
+
+  验证：2026-10-25：主规格 `openspec/specs/library-durability/spec.md` 先行建立（10.5 对 LD 新区域的
+  同步动作提前完成——gen 的孤儿命令校验要求 spec 侧先有 LD 场景；delta 转主规格格式仅改标题行与
+  `## Requirements`，10 requirement / 23 scenario 与 delta 逐字一致）。`scenario-commands.mjs` 登记
+  LD 23 键：22 条各指向一条语义贴合的 `cargo test -p echo-core --all-features <name>` 测试
+  （本分支 library_durability 测试族），LD-R10-S01（可执行验证）复用治理门入口
+  `node scripts/verify/ci-governance.mjs`（PHA-R01-S02 先例，不内联 verify:scenario 防自递归），
+  无零测试占位。`gen-scenario-manifests.mjs` dry-run 484 场景（46 新路径）后 `--write` 落盘
+  （manifest.scenarios 484、381 yaml、103 native md，manifest 纯追加 138 行）；
+  `validate-scenario-commands.mjs` exit 0（所有命令匹配真实测试/文件）；
+  `reconcile-scenarios.mjs` spec 484 = trace 484 = manifest 484 exit 0。冒烟：
+  `node scripts/verify/run-scenario.mjs LD-R01-S01` ok、`LD-R09-S03` exit 0。
+  **既有问题注记（非本分支引入，全部区域一致）**：traceability 记录的
+  `pnpm verify:scenario -- <id>` 形式因 `run-scenario.mjs` 把 `--` 当未知 id 而恒 exit 1
+  （场景本身执行并 ok）；复现/验证请用 `node scripts/verify/run-scenario.mjs <id>` 直调形式。
+- [x] 10.4 重跑 `node scripts/verify/check-scenario-churn.mjs`，确认重复度与单命令簇未超出冻结上限；若新增场景使比例上升，按模块拆分为独立命令而不是抬高上限（LD-10）。
+
+  验证：2026-10-25（随 10.3 同批）：`check-scenario-churn.mjs` exit 0——484 场景 309 命令
+  1.57x、最大簇 16，均在冻结上限内；LD 新增 22 条独立命令 + 1 条复用，重复度较此前
+  461/287 = 1.61x 反而下降，无需拆分。
 - [ ] 10.5 同步 delta 到主规格并复核既有场景未丢（逐 requirement 对比 scenario 标题集合），执行 `openspec validate --all --strict` 与 `pnpm verify:governance`；确认 tasks 与必要原生证据全部完成后归档本 change。PR 必须在同步及归档之后创建，规划阶段不勾选任务、不归档、不声称修复已生效（LD-10）。
+
+  进度（2026-10-25 晚）：**delta→主规格同步已全部完成**（LD 新区域已随 10.3 先行）。各区域
+  合并方式：`local-library` R01 整块替换 + 2 个 ADDED requirement 追加（11 req/40 scen）；
+  `lan-library-sync` 3 个 ADDED 追加（planning-only，无 manifest ID）；`library-experience`、
+  `playlist-management` 各 1 个 ADDED 追加；`portable-library-layout` 3 个 MODIFIED 整块替换
+  （28→35 scen，从后向前替换避免行号错位）；`safe-file-ingestion` 1 个 MODIFIED 整块替换
+  （5→7 scen）+ 1 个 ADDED；`sync-foundation` 3 个 ADDED 追加。**既有场景未丢复核**：逐
+  requirement 比对 `git show HEAD:` 基线与当前的 scenario 标题有序子序列，7 区域既有
+  requirement/场景全部保留且顺序不变、新增均为追加（详见 10.1 最终验证段）。
+  **新场景登记（31 个新 ID：LL-R10/R11 6、LE-R21 4、PM-R13 4、PLL 7、SFI 3、SYN 7）**：
+  `scenario-commands.mjs` 逐键登记语义贴合命令（24 条独立 echo-core 测试、2 条 echo-desktop、
+  1 条 echo-app、复用 4 条既有命令承载同行为双视角、SFI-R12-S01 治理门承载同 LD-R10-S01
+  先例），`validate-scenario-commands.mjs` exit 0；`docs/traceability.md` 追加 31 行（测试层
+  Core×30 + Gate×1，任务列映射本 change 任务号）；`docs/acceptance/PRD-matrix.md`（手工表）
+  补 61 行归属 + 11 个计数（PLL/SYN 在 A_FAMILIES 范围外，如 LD 不入 PRD）；
+  `gen-scenario-manifests.mjs --write` 生成 515 场景（412 yaml + 103 native，新增 31 yaml）。
+  **对账与门禁**：`reconcile-scenarios.mjs` 515 = 515 = 515 exit 0；`check-scenario-churn.mjs`
+  515 场景 332 命令 1.55x、最大簇 16 exit 0；`prd-matrix.mjs` 14 路径 × 515 场景一致
+  （1172 归属边）exit 0；`openspec validate --specs` 21 passed；`openspec validate --all
+  --strict` 22/23——唯一失败 `diagnostic-logging` 为 Purpose 占位符 WARNING（`--strict`
+  放大为 error），issue #38 遗留、本 change 未触碰该区域。`pnpm verify:governance` 整门
+  复跑 **exit 0**（2026-10-25，`node scripts/verify/ci-governance.mjs`，日志 1896 行零 FAIL）：
+  主段 35 个测试套件全绿（含 `cargo test --workspace --all-features` 的 echo-app 132 + 2 ignored、
+  echo-core 875 + 1 ignored）、churn 段按 515 场景复核 1.55x、注入套件 **33/33** 门在违规下
+  如宣称失败。首跑（/tmp/governance-515.log）曾 exit 1，两个根因与处置见
+  [handoff-20261025.md](evidence/handoff-20261025.md) 第 11 点：门 15.1 正则不识别
+  typed 墓碑布局（确定性，已修 `task-15.1.mjs`）；门 1.5 的 workspace 101 为瞬态争用
+  （首跑与本地并行 cargo 命令共用 target，静止复现 exit 0）。**不勾选原因**：任务尾部的归档
+  步骤要求 tasks 与必要原生证据全部完成（4.2b/5.1 等实施任务未完成），同步部分完成后
+  不归档、不提前勾选。9.5/11.2 的干净工作区复现仍待用户授权提交后执行。
 
 ## 11. 分支与交付流程
 
 - [ ] 11.1 本 change 的全部实现与产物改动必须在 `codex/issue-72-library-first-durability` 分支上完成，通过关联 issue #72 的 PR 合入 `main`；禁止直接向 `main` 提交（AGENTS 约束）。验证：`git log --oneline main..HEAD` 只包含本 issue 的提交，且 `git status` 在 `main` 上干净。
 - [ ] 11.2 任何阶段提交前 `main` 必须保持可编译且门禁可跑：`cargo check -p echo-core`、`cargo check -p echo-desktop`、`cargo fmt --all --check` 与 `pnpm verify:governance` 不得因本 change 的开发中状态而红；验证时用干净工作区复现一次（LD-10）。
 
-  进度：2026-10-25 夜间复核：本项正是被本分支引入的回归直接违反——
-  `pnpm verify:governance` 当前 **exit 101**（`FAIL governance: architecture and workspace
-  tests exited 101`），失败点为 `cargo test -p echo-sync --test ledger_protocol` 的两条用例。
-  `cargo fmt --all --check` exit 0，但治理门为红，故本项不得勾选；修法与证据见
-  [交接](evidence/handoff-20261025.md) 的"缺陷 4"。
+  进度：2026-10-25 夜间复核：本项曾被本分支引入的回归直接违反——`pnpm verify:governance`
+  **exit 101**（`FAIL governance: architecture and workspace tests exited 101`），失败点为
+  `cargo test -p echo-sync --test ledger_protocol` 的两条用例。缺陷 4 修复后的整门复跑
+  （后台任务，2026-10-25 10:10–11:07）**仍是 exit 101，但失败点已转移**：
+  `cargo test --workspace` 阶段 `echo-app` 的
+  `sync_provisioner::tests::merge_cycle::native_pull_drains_more_than_one_commit_page_without_losing_local_work`
+  运行超 60 秒被 SIGTERM——即 [native 513 证据](evidence/native-513.md) 记录的下载侧 513
+  首歌用例超时（既有性能边界，非缺陷 4 回归；ledger_protocol 已不再失败）。当日用户决策：
+  **513 大数据量用例退出治理路径，功能验证先用少量数据通过，速度问题后续优化**——该用例按
+  上传侧同款标 `#[ignore = "513 real host publications exceed the governance time budget;
+  re-enable after the rate optimization"]`（保留代码便于优化后恢复）。少量数据验证：
+  `cargo test -p echo-app --bin Echo` 132 passed / 0 failed / 2 ignored（513 上传+下载两条
+  均忽略）。含全部本轮改动的整门第二次复跑已启动，结果落笔时未出；**复跑 exit 0 之前本项
+  与 9.5 不得按通过引用**（且 11.2 的最终验证须在干净工作区复现）。
+
+  补记：第二次整门复跑（后台任务 bqyjobr4a）前 9 步全绿后仍 **exit 1**，失败点再次转移：
+  coverage gate（task-12.8）`cargo llvm-cov -p echo-core --all-features
+  --ignore-filename-regex application/testing --fail-under-lines 90` 报 89.69% < 90%
+  （3323/32219 行未覆盖）。定责：CI（ci.yml:305 `pnpm verify:governance -- --without-injection`
+  含 llvm-cov）在 main 为绿 ⇒ 覆盖率回归为本分支引入；整个
+  `durability_projection/sync_state` 模块为本分支新增（`git diff main...HEAD --stat`），
+  其中 `sync_state/related.rs` 312 行中 146 行未测（`song_alias`/`member_alias` 两函数
+  整体零测试）为最大稀释源（分支净缺口约 102 行；`ports/system.rs`、`recover/mod.rs`
+  的低覆盖在 main 基线同样存在，不归本分支）。修复：`sync_state/tests/boundaries.rs` 新增
+  两条针对性测试——`..._restores_song_alias_after_canonical_record_arrives`（全真链路：
+  source 上 stage/mark_published 两首同哈希歌，真实 exporter 产出 commit 事实与
+  song-alias 事实；第一幕 canonical record 未投影时保持 MissingSong 不伪造 owner，第二幕
+  record 到位后同一保留事实重试成功写入 `sync_song_aliases`）与
+  `..._rejects_member_alias_without_anchored_alias_proof`（sequence 无对应 commit →
+  MissingSyncDependency；sequence 指向真 commit 但 canonical JSON 无 playlist_member
+  alias 证明 → InvalidStateFact；表零写入）。**更正（2026-10-25 午间）**：此前此处记
+  「修复后 89.93% ≥ 90%，门过」为误判——两次复测（新增测试后的树、与重构后最终树）
+  的后台任务通知均报 exit 0，但那是 `命令; echo "EXIT: $?"` 包装里 `echo` 自身的退出码，
+  任务输出文件内的真实标记分别为 `EXIT: 1`（89.93%）与 `COV EXIT: 1`（89.94%，
+  3242/32219 行未覆盖）——**门自始未过**，89.9x < 90 本就不可能通过
+  `--fail-under-lines 90`。最终树口径缺口：covered 28977 行，过线需 ≥ 28998 行
+  （**至少再补 21 行**）。`related.rs` 修复后仍有 71 行未测（74.55%，receipt/conflict
+  两函数余下路径）为最大可补来源；继续补测后重跑，真实 exit 0 才可勾选
+  （`cargo test -p echo-core --lib durability_projection` 34/0/0、clippy/fmt 绿已确认）。
+  **最终结果（2026-10-25 下午）**：第三轮补测——`boundaries.rs` 新增 stray receipt
+  fact（author/mutation 与锚定 commit 不匹配 → InvalidStateFact）与 conflict 行
+  resolved 后幂等重试（命中旧行已 resolved 的早退分支，不覆盖既有 resolution）——
+  后裸跑（无任何包装，任务退出码即门退出码）
+  `cargo llvm-cov -p echo-core --all-features --ignore-filename-regex application/testing
+  --fail-under-lines 90` **真实 exit 0：TOTAL 90.01%，missed 3219/32219，covered
+  29000 ≥ 28998（余量 2 行）**；前置 `cargo test -p echo-core --lib --
+  durability_projection::sync_state::tests::boundaries` 14/0/0、clippy
+  `-D warnings` 与 fmt 均绿。**治理门第三次整门复跑（2026-10-25 下午，后台裸跑）真实
+  exit 0**：`ok governance: CI core gate passed`，coverage 段 `ok 12.8`，
+  injection-suite 33/33 正向控制全过；9.5 / 11.2 的勾选前还差最后一步——本条原要求的
+  **干净工作区复现**（当前工作区含本分支未提交改动，干净复现须在提交后进行）。
 - [ ] 11.3 实现分支上的未完成代码不作为本 change 的现状或验收证据；设计与证据基线以 `main` 已发布实现为准。继续规划修订时，应记录分支 WIP 与规划证据的边界，不要求清理或暂存实现；交付审查须确认实现状态与本 change 规格相符后，才可完成对应任务（LD-10）。

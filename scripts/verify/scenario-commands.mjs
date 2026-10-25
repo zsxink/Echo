@@ -32,6 +32,34 @@ export const COMMANDS = {
   "CRP-R05-S01": "node scripts/verify/checks/task-crp.mjs",
   "CRP-R05-S02": "node scripts/verify/checks/task-crp.mjs",
 
+  // ===== library-durability (LD) =====
+  // 目录权威提交与投影恢复（change enforce-library-first-durability）。每条命令指向
+  // 该场景的行为验收测试；LD-R10-S01 的"可执行验证"由治理门自身承载（同 PHA-R01-S02
+  // 先例，不能内联 verify:scenario 以免自递归）。
+  "LD-R01-S01": COREC("library_durability_refused_commit_leaves_every_wired_entrypoint_untouched"), // 本地写入失败: 拒绝目录提交时 15 张业务与投影表行数指纹不变
+  "LD-R01-S02": COREC("library_durability_retry_projection_failure_keeps_original_identity"), // 目录已提交而投影失败: 返回已保存待投影与稳定操作身份
+  "LD-R02-S01": COREC("library_durability_playlist_delete_saves_cascade_before_projection"), // 级联删除写到一半崩溃: 级联删除先保存再投影
+  "LD-R02-S02": COREC("library_durability_every_native_commit_boundary_recovers_same_operation"), // 丢失 SQLite 后重放: 每个原生提交边界恢复同一操作
+  "LD-R02-S03": COREC("library_durability_prepared_only_is_not_accepted_as_saved_recovery"), // 提交结果不确定: prepared 状态不当已保存恢复
+  "LD-R02-S04": COREC("library_durability_c1_failure_then_c2_never_rolls_back_latest_record"), // 较旧操作延迟重放: 旧操作失败不回滚最新记录
+  "LD-R02-S05": COREC("library_durability_actual_record_rename_failure_remains_saved_and_retryable"), // 本地提交后对象文件材料化失败: 记录改名失败仍已保存可重试
+  "LD-R03-S01": COREC("library_durability_distinct_directory_and_sync_ids_survive_recovery_and_fresh_projection"), // 本地与同步来源混合恢复: 目录与同步身份各自存活
+  "LD-R03-S02": COREC("library_durability_scan_preserves_record_when_media_disappears"), // 部分媒体缺失: 记录保留可浏览
+  "LD-R04-S01": COREC("library_durability_legacy_committed_canonical_digest_is_unchanged"), // 读取旧格式记录: 旧提交规范摘要不变（只读兼容）
+  "LD-R04-S02": COREC("library_durability_projection_retains_orphans_and_links_when_evidence_arrives_without_echo"), // 旧记录含无法解释的关系: 孤儿与链接保留待证据、不回声
+  "LD-R05-S01": COREC("library_durability_projection_rejects_cross_directory_chain_and_anchor_without_sql_writes"), // 运行期间发现身份冲突: 跨目录链/锚被拒绝且零 SQL 写
+  "LD-R06-S01": COREC("library_durability_issue72_fixture_reproduces_legacy_missing_relationships"), // 新协议投影遇到悬空关系: 传统缺失关系复现不静默补造
+  "LD-R06-S02": COREC("library_durability_broken_chain_and_corrupt_checkpoint_fail_closed_preserve_bytes"), // 控制面含损坏记录: 断链/坏检查点闭失败且保留字节
+  "LD-R07-S01": COREC("library_durability_playlist_create_retry_after_saved_pending_keeps_operation_identity"), // 离线改歌单后重装: 从目录基线补全已保存歌单并返回原身份
+  "LD-R07-S02": COREC("library_durability_trusted_sync_retry_unverifiable_anchor_never_installs_baseline_or_pending"), // 主机账本不可验证: 不可验证锚点不安装基线或待确认
+  "LD-R07-S03": COREC("library_durability_mark_published_legacy_unseeded_ledger_keeps_full_rescue"), // ACK 丢失后重装并重新配对: 旧未播种账本保留完整救援
+  "LD-R08-S01": COREC("library_durability_playlist_cover_reuses_original_and_clear_survives_rebuild"), // 歌单封面脱离应用缓存恢复: 复用原件且清缓存后重建存活
+  "LD-R08-S02": COREC("library_durability_export_uses_declared_logical_path_for_managed_audio"), // 同步媒体使用不可变版本路径: 托管音频走声明逻辑路径
+  "LD-R09-S01": COREC("library_durability_publication_v1_and_unknown_schema_keep_original_evidence"), // 支持的旧格式保持只读兼容: v1 与未知 schema 保留原始证据
+  "LD-R09-S02": COREC("library_durability_commit_checks_future_format_before_recovery"), // 旧程序打开新协议目录: 恢复前检查未来格式拒绝写入
+  "LD-R09-S03": COREC("library_durability_readonly_volume_and_unmaterialized_commit_can_be_browsed"), // 只保留 media: 只读卷与未材料化提交仍可浏览、不宣称完整恢复
+  "LD-R10-S01": "node scripts/verify/ci-governance.mjs", // 可执行验证: 治理门承载 fmt/clippy/测试/覆盖/对账/注入证明
+
   // ===== portable-library-layout (PLL) =====
   // This whole area was absent from the table, so all seven rows were reading as
   // "needs an operator" through the fallback. Each has a targeted test: the
@@ -457,6 +485,12 @@ export const COMMANDS = {
   "LE-R20-S02": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "falls back to additive selection with a visible warning"), // 新增: 歌单选择器加载归属状态
   "LE-R20-S03": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "所选歌单将应用于全部"), // 新增: 歌单选择器加载归属状态
   "LE-R20-S04": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "closes unchanged single-song selection without a mutation"), // 新增: 歌单选择器加载归属状态
+  // 收藏与批量操作以音乐库持久结果为反馈（LE-R21）——目录提交成功才更新可见状态，
+  // 投影失败呈已保存待更新（change enforce-library-first-durability）。
+  "LE-R21-S01": COREC("library_durability_favorite_failure_is_saved_and_later_false_catches_up"), // 收藏已保存而投影失败: 保存后等待更新、后续追上
+  "LE-R21-S02": COREC("library_durability_refused_commit_leaves_every_wired_entrypoint_untouched"), // 收藏未保存: 目录提交拒绝时收藏入口零 SQL 写（同 LD-R01-S01 行为）
+  "LE-R21-S03": DESK("set_favorite_returns_the_committed_authoritative_song"), // 批量收藏逐项反馈: 每项返回已提交的权威歌曲状态
+  "LE-R21-S04": COREC("library_durability_retry_catches_up_all_saved_operations_without_new_commits"), // 已保存待投影重试: 原操作身份追上、不产生第二事实
 
   // ===== local-library =====
   "LL-R01-S01": COREC("root_switch::"),
@@ -509,6 +543,14 @@ export const COMMANDS = {
   "LL-R09-S01": "cargo test -p echo-core --all-features revision_and_added_at_survive_rescans", // 新增命令: 真实导入时间（注入系统时刻，重启不变）
   "LL-R09-S02": "cargo test -p echo-core --all-features revision_and_added_at_survive_rescans", // 新增命令: 重复或重扫不改写时间
   "LL-R09-S03": "node scripts/verify/checks/check-native-attestation.mjs LL-R09-S03", // 新增命令: 当前时区转换
+  // 扫描与监听先保存资料库身份（LL-R10）与 SQLite 投影可替换（LL-R11）——目录提交是
+  // 业务持久化点，投影损坏可重建、不能独占用户数据（change enforce-library-first-durability）。
+  "LL-R10-S01": COREC("library_durability_scan_saves_identity_before_projection_and_reuses_it_on_retry"), // 首次扫描后重装: 身份先落目录、重试复用原 UUID
+  "LL-R10-S02": COREC("library_durability_scan_refresh_preserves_saved_after_image_on_projection_failure"), // 移动或标签修改后恢复: 保存后的 after-image 不因投影失败丢失
+  "LL-R10-S03": COREC("library_durability_scan_refuses_unwritable_library_before_indexing"), // 控制面写失败: 不可写库先拒绝、不只在 SQLite 入库
+  "LL-R10-S04": COREC("library_durability_readonly_volume_and_unmaterialized_commit_can_be_browsed"), // 只读库: 只浏览已可验证资料（同 LD-R09-S03 行为）
+  "LL-R11-S01": COREC("a_wiped_database_is_rebuilt_from_the_records_at_real_scale"), // 数据库损坏: 擦除的数据库按 records 原样重建
+  "LL-R11-S02": "cargo test -p echo-app --all-features a_failed_switch_restores_the_previous_session", // 切库恢复失败: 失败切换恢复原会话
 
   // ===== phase-one-acceptance =====
   "PHA-R01-S01": "node scripts/verify/checks/check-native-attestation.mjs PHA-R01-S01", // 新增命令: 歌单与队列日常流程验收
@@ -591,6 +633,12 @@ export const COMMANDS = {
   "PM-R12-S01": COREC("playlists_for_song_reads_membership_ids_from_the_active_database"), // 新增: 查询单曲的歌单归属
   "PM-R12-S02": COREC("playlists_for_song_reads_membership_ids_from_the_active_database"), // 新增: 查询单曲的歌单归属
   "PM-R12-S03": COREC("playlists_for_song_reads_membership_ids_from_the_active_database"), // 新增: 查询单曲的歌单归属
+  // 歌单与成员以音乐库持久结果反馈（PM-R13）——目录可靠提交后才投影，
+  // 已保存待更新不当作未保存失败（change enforce-library-first-durability）。
+  "PM-R13-S01": COREC("library_durability_playlist_create_retry_after_saved_pending_keeps_operation_identity"), // 创建空歌单后重装: 恢复原歌单身份与创建时间（同 LD-R07-S01 行为）
+  "PM-R13-S02": COREC("library_durability_member_append_is_saved_before_failed_projection"), // 多成员提交被中断: 成员先落目录，重启按原 UUID/顺序恢复
+  "PM-R13-S03": COREC("library_durability_playlist_rename_saves_before_failed_projection"), // 保存与显示更新分离: 重命名已保存而投影失败仍已保存待更新
+  "PM-R13-S04": COREC("final_tombstone_is_never_recovered_but_history_can_be_dismissed"), // 删除不复活: 终态墓碑重建后不恢复
 
   // ===== portable-library-layout =====
   "PLL-R01-S01": COREC("default_target_is_artist_folder_with_artist_minus_title"),
@@ -598,12 +646,15 @@ export const COMMANDS = {
   // The layout↔RecordKind mapping is a structural invariant, not a behaviour
   // one test can carry: a kind with no directory is silently dropped.,
   "PLL-R01-S03": CHECK("15.1"),
+  "PLL-R01-S04": COREC("online_backup_contains_matching_catalog_pending_and_ledger_without_independent_checkpoint"), // 完整备份: 备份含 catalog/pending/ledger 等恢复必需资料
   "PLL-R02-S01": COREC("manifest_round_trips_atomically"),
   "PLL-R02-S02": COREC("sync_payloads_carry_no_absolute_paths"),
   "PLL-R02-S03": COREC("tmp_files_are_ignored_as_records"),
   "PLL-R02-S04": DESK("playlist_mutations_materialize_records_and_tombstones"),
   "PLL-R02-S05": DESK("recorded_plays_materialize_additive_play_stats"),
   "PLL-R02-S06": DESK("unfavorite_materializes_a_false_record_so_it_never_returns"),
+  "PLL-R02-S07": COREC("library_durability_playback_event_is_materialized_outside_shared_records"), // 播放统计: 幂等身份材料化在共享记录之外
+  "PLL-R02-S08": DESK("library_durability_playlist_cover_original_survives_cache_loss_and_clear"), // 封面原件: 缓存丢失/清空后仍随歌单恢复
   "PLL-R03-S01": COREC(
     "application::continuation::tests::continuation_restores_songs_favorites_playlists_and_member_order",
   ),
@@ -635,6 +686,10 @@ export const COMMANDS = {
   "PLL-R07-S05": COREC(
     "application::continuation::tests::detached_legacy_records_are_superseded_by_the_matching_local_rows",
   ),
+  "PLL-R07-S06": "cargo test -p echo-core --all-features application::continuation::tests::continuation_restores_songs_favorites_playlists_and_member_order", // 新增命令: 打开新协议资料库后投影再扫描（恢复后扫描不另铸 UUID）
+  "PLL-R07-S07": COREC("library_durability_publication_v1_and_unknown_schema_keep_original_evidence"), // 读取支持的旧格式: v1/未知 schema 保留原始证据（同 LD-R09-S01 行为）
+  "PLL-R07-S08": "cargo test -p echo-core --all-features application::continuation::tests::continuation_is_idempotent_across_repeated_opens", // 重复投影结果稳定
+  "PLL-R07-S09": COREC("library_durability_incomplete_or_foreign_local_allocation_stays_unresolved"), // 未解析引用保持原样: 不完整/外来分配保持未解析
 
   // ===== phase-one-acceptance (PHA) =====
   // S02 is the regression quality gate itself: workspace tests + frontend build
@@ -664,6 +719,10 @@ export const COMMANDS = {
   "SFI-R05-S03": COREC("application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"), // P0,
   "SFI-R05-S04": COREC("sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent"),
   "SFI-R05-S05": COREC("application::recover::tests::imports::recovery_never_creates_a_duplicate_when_a_watcher_preempts"), // P0
+  // 目录对象提交与 SQLite 投影的先后边界（change enforce-library-first-durability）：
+  // 目录提交是业务持久化点，SQLite 失败不撤销已提交资料。
+  "SFI-R05-S06": COREC("library_durability_actual_record_rename_failure_remains_saved_and_retryable"), // 对象持久化失败: 记录材料化失败仍已保存可重试（同 LD-R02-S05 行为）
+  "SFI-R05-S07": COREC("library_durability_memory_failed_projection_reserves_the_saved_sequence"), // 投影失败: 已保存待更新、保留序列供同操作重试
   // R06: 逐文件结果与资料库不可用反馈.,
   "SFI-R06-S01": COREC("import"),
   "SFI-R06-S02": COREC("import"),
@@ -699,6 +758,9 @@ export const COMMANDS = {
   "SFI-R11-S03": REACT_T("src/features/import/importFeedback.test.ts", "reports only real failures in the failure list"),
   "SFI-R11-S04": REACT("src/features/import/ImportBatchDialog.test.tsx"),
   "SFI-R11-S05": ATTEST("SFI-R11-S05"), // 实现为顺序导入; 并发重叠待导入并发化后证明
+  // 导入持久化边界通过共享核心验证（SFI-R12）——提交/恢复规则在 Core Application，
+  // 旧 DB-first 材料化入口不得并存（change enforce-library-first-durability）。
+  "SFI-R12-S01": "node scripts/verify/ci-governance.mjs", // 导入契约回归: 治理门承载全量导入/watcher/边界中断/重建与并发测试（同 LD-R10-S01 先例）
 
   // ===== sync-foundation (SYN) =====,
 
@@ -713,6 +775,16 @@ export const COMMANDS = {
   "SYN-R05-S01": COREC("infrastructure::sqlite::tests::sync_foundation"),
   "SYN-R05-S02": COREC("infrastructure::sqlite::tests::sync_foundation"),
   "SYN-R05-S03": CHECK("3.10"),
+  // 本地候选/确认事实独立于 SQLite（SYN-R06）、新绑定显式接纳旧待确认意图（SYN-R07）与
+  // 远端应用不制造上传回声（SYN-R08）——outbox 仅是目录事实的投影（change
+  // enforce-library-first-durability）。
+  "SYN-R06-S01": COREC("crash_during_record_materialization_converges_to_one_record_and_outbox"), // 重建 outbox: 崩溃后收敛到同一记录与 outbox
+  "SYN-R06-S02": COREC("library_durability_trusted_sync_retry_restores_exact_baseline_and_pending_without_echo"), // 远端确认后重建: 恢复精确基线与 pending、无回声
+  "SYN-R06-S03": COREC("library_durability_legacy_write_cannot_transfer_confirmation_to_new_value"), // v2 混旧确认元数据: 确认不能转移给新值
+  "SYN-R07-S01": COREC("library_durability_scoped_key_retains_same_event_across_bindings_and_epochs"), // 接纳中断: 同一事件跨 binding/epoch 保留身份
+  "SYN-R07-S02": COREC("library_durability_local_allocation_unproven_predecessor_never_advances_fences"), // 无法证明已确认: 未证明前驱不推进 fence、保留待处理
+  "SYN-R07-S03": COREC("legacy_play_stats_payload_still_authorizes_the_buckets_it_recorded"), // 统计桶授权: 旧载荷只授权它记录的桶
+  "SYN-R08-S01": COREC("library_durability_playback_later_session_catches_up_and_rebuild_has_no_echo"), // 反复恢复与 watcher: 追上后重建无等价回传
 
   // ===== ci-release-pipeline (CRP) =====
   // The release-domain behaviors are executed by .github/workflows/release.yml

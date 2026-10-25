@@ -108,3 +108,25 @@ not a valid optimization. No 10k or cross-platform performance claim is made.
 The incremental `synchronize_once` and snapshot paths retain their existing
 synchronous port surfaces and need their own scoped blocking/lifecycle work;
 this fix only changes the explicit host-history draining loop.
+
+## 2026-10-25: pulled from the governance path by decision
+
+The first full governance rerun after the defect-4 fix (background run
+10:10–11:07) still exited 101, with the failure point moved to this test:
+`cargo test --workspace` reported
+`native_pull_drains_more_than_one_commit_page_without_losing_local_work`
+"has been running for over 60 seconds" and the test process was terminated
+with SIGTERM; `ledger_protocol` no longer failed. This matches the recorded
+host-preparation cost above and is the pre-existing performance boundary, not
+a new regression from the defect-4/F6 work.
+
+Same-day user decision: the 513-scale tests leave the governance path for now —
+functional verification passes with small data first, speed is optimized later.
+The test is kept behind
+`#[ignore = "513 real host publications exceed the governance time budget; re-enable after the rate optimization"]`
+(mirroring the upload-side 513 test) so it can be re-enabled after the
+optimization. Small-scale verification on the same tree:
+`cargo test -p echo-app --bin Echo` → 132 passed / 0 failed / 2 ignored
+(both 513 tests ignored), 14.65s. A second full governance rerun with all
+same-day changes was started afterwards; its outcome is recorded in the
+tasks.md 11.2 note and is not presumed here.
