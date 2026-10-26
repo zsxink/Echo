@@ -24,7 +24,13 @@ import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
 import { Icon } from "../../app/Icon";
 import { notify } from "../../app/toast";
 import type { PlaylistView, SongView } from "../../ipc/ipc-types.generated";
-import { coverClass, formatBatchResult, runAddToPlaylistsBatch } from "../library";
+import {
+  coverClass,
+  formatBatchResult,
+  pendingBatchItems,
+  retrySavedOperations,
+  runAddToPlaylistsBatch,
+} from "../library";
 import { PlaylistNameDialog } from "./PlaylistNameDialog";
 
 export interface AddToPlaylistDialogProps {
@@ -161,10 +167,22 @@ export function AddToPlaylistDialog({
         );
         return;
       }
-      if (result.skipped > 0 || selectedSongIds.length > 1) {
+      // 已保存待更新 is not a failure: the membership is in the library, only
+      // the view lags. Say so, keep the retry tied to the committed identities,
+      // and still finish the flow (spec: 单项已保存待投影不得计为失败).
+      const pendingIds = pendingBatchItems(result).flatMap((item) =>
+        item.operationId ? [item.operationId] : [],
+      );
+      if (pendingIds.length > 0 && root) {
+        notify({
+          message: `已保存到音乐库，${pendingIds.length} 项等待更新视图。`,
+          actionLabel: "恢复",
+          onAction: () => void retrySavedOperations(root, pendingIds, onDone),
+        });
+      } else if (result.skipped > 0 || selectedSongIds.length > 1) {
         notify(`添加到歌单：${formatBatchResult(result)}`);
       }
-      if (result.succeeded > 0 || result.skipped > 0) {
+      if (result.succeeded > 0 || result.skipped > 0 || result.pending > 0) {
         onDone();
         onClose();
       }

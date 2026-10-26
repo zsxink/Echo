@@ -16,9 +16,10 @@
 import { useMemo, useRef, useState } from "react";
 
 import { bridge } from "../../bridge";
+import { savedLibraryOperation } from "../../bridge/libraryPersistence";
 import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
 import { Icon } from "../../app/Icon";
-import { coverClass } from "../library";
+import { coverClass, invalidateLibrary, invalidateLibraryCounts } from "../library";
 
 export interface PlaylistNameDialogProps {
   readonly mode: "create" | "edit";
@@ -54,6 +55,14 @@ export function PlaylistNameDialog({
   const [value, setValue] = useState(initialName);
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The identity (and committed name) of a rename/create the directory already
+  // committed but whose projection has not caught up. Present ⇒ the field keeps
+  // the user's name, is not cleared, and the dialog offers 恢复 rather than a
+  // second submission (spec: 保存与显示更新分离).
+  const [pendingSave, setPendingSave] = useState<{
+    readonly operationId?: string;
+    readonly name: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   // `undefined` = untouched; `null` = explicitly restore automatic artwork.
   const [coverChange, setCoverChange] = useState<number[] | null | undefined>(undefined);
@@ -122,9 +131,53 @@ export function PlaylistNameDialog({
       }
       onClose();
     } catch (err) {
+      // 保存与显示更新分离 (playlist-management spec): the new name is already
+      // committed to the library. Keep the typed name in the field, say that it
+      // is saved and waiting, and offer a retry of *that* operation — clearing
+      // the input here would push the user into creating a second playlist.
+      const saved = savedLibraryOperation(err);
+      if (saved) {
+        setPendingSave({ operationId: saved.operationId, name });
+        setError(
+          creating
+            ? "歌单已保存到音乐库，等待更新视图。请勿重复创建。"
+            : "新名称已保存到音乐库，等待更新视图。请勿重复重命名。",
+        );
+        return;
+      }
       // A duplicate name is rejected server-side too (task 6.6); never invent a
       // success for it.
       setError(saveErrorMessage(err, creating));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Recover the committed operation by its identity; never resubmit the edit. */
+  async function retryPending() {
+    if (!pendingSave || !root || busy) return;
+    if (!pendingSave.operationId) {
+      // A saved operation without a returned identity cannot be retried by ID;
+      // the persistent settings surface is where it stays visible.
+      setError("已保存资料等待恢复。可在设置的“音乐库恢复状态”中查看。");
+      return;
+    }
+    setBusy(true);
+    try {
+      await bridge.call("retry_library_operation", {
+        root,
+        operation: pendingSave.operationId,
+      });
+      invalidateLibrary();
+      invalidateLibraryCounts();
+      setPendingSave(null);
+      setError(null);
+      // The dialog already knows the committed name — it must not be read back
+      // from the stale projection.
+      onDone(pendingSave.name);
+      onClose();
+    } catch {
+      setError("已保存资料仍在音乐库中，更新尚未完成。请检查目录后重试。");
     } finally {
       setBusy(false);
     }
@@ -261,9 +314,22 @@ export function PlaylistNameDialog({
           <button type="button" className="btn" onClick={onClose}>
             取消
           </button>
-          <button type="submit" className="btn btn-primary" disabled={busy}>
-            {creating ? "创建歌单" : "保存"}
-          </button>
+          {pendingSave && root ? (
+            // The same committed operation, re-projected. Submitting the form
+            // again would be a second intent.
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={() => void retryPending()}
+            >
+              {busy ? "正在恢复…" : "恢复已保存资料"}
+            </button>
+          ) : (
+            <button type="submit" className="btn btn-primary" disabled={busy}>
+              {creating ? "创建歌单" : "保存"}
+            </button>
+          )}
         </div>
       </form>
     </section>

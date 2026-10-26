@@ -94,6 +94,7 @@ type Command =
   | "retry_library_operation"
   | "library_recovery_status"
   | "retry_library_projection"
+  | "playback_retry_status"
   | "sync_status"
   | "sync_storage_space"
   | "sync_conflicts"

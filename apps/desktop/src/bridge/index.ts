@@ -48,6 +48,8 @@ interface BridgeCommandArguments extends SyncCommandArguments {
   retry_library_operation: [args: { root: string; operation: string }];
   library_recovery_status: [args: { root: string }];
   retry_library_projection: [args: { root: string }];
+  /** Read-only diagnostics: qualified listens still awaiting a directory commit. */
+  playback_retry_status: [args: { root: string }];
   all_songs: [args: { sort: string; cursor?: string | null; limit: number }];
   search: [
     args: {
@@ -149,6 +151,7 @@ export class BridgeError extends Error {
   readonly code: string;
   readonly retryable: boolean;
   readonly operationId?: string;
+  readonly durabilityOutcome?: IpcErrorDto["durabilityOutcome"];
   readonly field?: string;
 
   constructor(dto: IpcErrorDto) {
@@ -157,6 +160,7 @@ export class BridgeError extends Error {
     this.code = dto.code;
     this.retryable = dto.retryable;
     this.operationId = dto.operationId;
+    this.durabilityOutcome = dto.durabilityOutcome;
     this.field = dto.field;
   }
 }

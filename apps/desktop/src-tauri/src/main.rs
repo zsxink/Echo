@@ -486,10 +486,24 @@ fn wire_composition(
         ),
     ));
     app.manage(effects.clone());
+    // Playback statistics (task 8.10): feed the real snapshot stream into the
+    // accumulator so a qualified listen reaches Core's idempotent
+    // directory-first playback recorder (play_count / 最近播放). Without this the accumulator
+    // had no production caller and play counts never moved. The sink is kept
+    // here as well as handed to the recorder thread: the diagnostics command
+    // reads the one retry queue that thread drains.
+    let stats_sink = Arc::new(player::CorePlaybackRecorder::new(
+        routed.database.clone(),
+        routed.deps.control.clone(),
+        routed.deps.device_id.clone(),
+        routed.deps.roots.clone(),
+        routed.deps.activity.clone(),
+    ));
     let player_handle = commands::PlayerHandle {
         coordinator: controller.coordinator.clone(),
         source: player_source.clone(),
         persistence: saver_persistence.clone(),
+        stats: stats_sink.clone(),
     };
     app.manage(player_handle);
     if let Some(sink) = app.try_state::<Arc<RuntimeStatusMenuSink>>() {
@@ -569,17 +583,6 @@ fn wire_composition(
     // coordinator to the next entry. Without this the queue stalls on `ended`
     // until the user presses next manually.
     player::spawn_auto_advance(controller.port.clone(), controller.coordinator.clone());
-    // Playback statistics (task 8.10): feed the real snapshot stream into the
-    // accumulator so a qualified listen reaches Core's idempotent
-    // directory-first playback recorder (play_count / 最近播放). Without this the accumulator
-    // had no production caller and play counts never moved.
-    let stats_sink = Arc::new(player::CorePlaybackRecorder::new(
-        routed.database.clone(),
-        routed.deps.control.clone(),
-        routed.deps.device_id.clone(),
-        routed.deps.roots.clone(),
-        routed.deps.activity.clone(),
-    ));
     player::spawn_stats_recorder(
         controller.port.clone(),
         controller.coordinator.clone(),

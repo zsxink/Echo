@@ -27,6 +27,7 @@ export {
   runFavoriteBatch,
   formatBatchFailureDetails,
   formatBatchResult,
+  pendingBatchItems,
   runQueueBatch,
   runRemoveFromPlaylistBatch,
   runSequentialBatch,
@@ -50,6 +51,9 @@ export {
 } from "./libraryCounts";
 export type { LibraryCountView, LibraryCounts } from "./libraryCounts";
 export { publishSongUpdate, resetSongUpdates, subscribeSongUpdates } from "./songUpdates";
+export type { SongUpdate } from "./songUpdates";
+export { notifyBatchOutcome, notifySavedPending, retrySavedOperations } from "./savedPendingNotice";
+export type { SavedPendingOptions } from "./savedPendingNotice";
 export {
   invalidateLibrary,
   resetLibraryInvalidations,

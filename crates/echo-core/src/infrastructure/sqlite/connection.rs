@@ -304,3 +304,74 @@ pub(crate) fn file_is_non_empty(path: &Path) -> Result<bool, Error> {
 pub(crate) fn backup_path(path: &Path) -> PathBuf {
     path.with_extension("pre-migration.bak")
 }
+
+/// Does this open failure mean the file itself is damaged, rather than the
+/// environment around it being unusable?
+///
+/// Only damage justifies quarantining a file: a corrupt page, an unreadable
+/// header or a failed `quick_check` cannot be projected from, so a fresh
+/// database loses nothing recoverable. A lock held by another instance, a
+/// read-only volume, a missing permission or a released-migration checksum
+/// mismatch must still fail the open — renaming such a database aside would
+/// throw away a healthy projection the caller could otherwise retry against.
+pub(crate) fn is_database_damage(error: &Error) -> bool {
+    match error {
+        Error::Storage { what, source } => {
+            what == "integrity" || source_is_corruption(source.as_ref())
+        }
+        // `Io` carries a path: never treat an environment failure as damage.
+        _ => false,
+    }
+}
+
+fn source_is_corruption(source: &(dyn std::error::Error + 'static)) -> bool {
+    source
+        .downcast_ref::<rusqlite::Error>()
+        .is_some_and(|error| match error {
+            rusqlite::Error::SqliteFailure(code, _) => matches!(
+                code.code,
+                rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase
+            ),
+            _ => false,
+        })
+}
+
+/// Move a damaged database (and its WAL/SHM companions) to a unique sibling
+/// name without ever overwriting or deleting an existing file.
+///
+/// The name is derived from the original stem plus a UUID so repeated failures
+/// accumulate evidence instead of replacing it. A same-directory rename keeps
+/// the file on one filesystem; the companions must move with it because a WAL
+/// left beside a fresh database would be replayed into it.
+pub(crate) fn quarantine_database(path: &Path, cause: &Error) -> Result<PathBuf, Error> {
+    let stem = path.file_stem().map_or_else(
+        || "echo".to_owned(),
+        |stem| stem.to_string_lossy().into_owned(),
+    );
+    let destination = path.with_file_name(format!(
+        "{stem}.quarantined-{}.sqlite",
+        uuid::Uuid::new_v4()
+    ));
+    if destination.exists() {
+        return Err(Error::conflict("database quarantine name is already taken"));
+    }
+    std::fs::rename(path, &destination)
+        .map_err(|source| Error::io("quarantine damaged database", source, &destination))?;
+    for suffix in ["-wal", "-shm"] {
+        let companion = PathBuf::from(format!("{}{suffix}", path.display()));
+        if companion.exists() {
+            let target = PathBuf::from(format!("{}{suffix}", destination.display()));
+            // A companion that cannot move must not block startup: the main
+            // file is already aside, and SQLite treats an orphaned WAL as
+            // disposable when the database it belonged to is gone.
+            if let Err(source) = std::fs::rename(&companion, &target) {
+                tracing::warn!(
+                    companion = %crate::logging::redact_path(&companion),
+                    cause = %cause.to_log(crate::logging::DiagnosticMode::default()),
+                    "could not move the quarantined database companion: {source}"
+                );
+            }
+        }
+    }
+    Ok(destination)
+}

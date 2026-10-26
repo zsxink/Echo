@@ -1,6 +1,7 @@
 //! Controlled directory-commit ordering across file-operation entrypoints.
 
 use crate::application::delete::{DeleteSongs, RestoreDeletedOperation};
+use crate::application::playlist::durable::DurableLibraryEdits;
 use crate::application::ports::{
     ControlPlanePort, LibraryRepository, OperationJournalRepository, SongRepository,
     SystemTrashPort,
@@ -399,4 +400,63 @@ fn trash_directory_refusal_keeps_applied_receipt_and_retries_same_tombstone() {
             .iter()
             .any(|record| record.record().is_tombstone())
     }));
+}
+
+/// LD-01a: a favorite whose directory commit is refused is **not saved**. The
+/// error must stay a plain refusal (never `LibrarySavedPending`, which the IPC
+/// layer reports as "saved, waiting for the view"), no database-only favorite
+/// fact may survive, and nothing may enter the directory replay — so the user's
+/// optimistic toggle is rolled back to a retryable pre-commit state.
+#[test]
+fn favorite_directory_refusal_is_not_saved_and_leaves_no_projection_fact() {
+    let fixture = Fixture::new();
+    let song = fixture.seed_song();
+    let edits = DurableLibraryEdits {
+        control: fixture.deps.control.as_ref(),
+        songs: fixture.deps.songs.as_ref(),
+        playlists: fixture.deps.playlists.as_ref(),
+        unit: fixture.deps.uow.as_ref(),
+        device: fixture.deps.device_id.current_device_id(),
+    };
+    let before = fixture.fingerprint();
+    let replay = fixture.replay();
+    fixture.authority.set_refused(true);
+
+    let error = edits
+        .set_favorite(fixture.scan.root, song, true)
+        .expect_err("a refused directory intent must stop the favorite");
+
+    assert_refused(&error);
+    assert!(
+        !matches!(error, Error::LibrarySavedPending { .. }),
+        "an uncommitted intent is NotSaved, never saved-pending: {error:?}"
+    );
+    assert_eq!(
+        fixture.fingerprint(),
+        before,
+        "no database-only favorite fact may be projected"
+    );
+    assert_eq!(
+        fixture.replay(),
+        replay,
+        "a rejected intent is absent from the directory replay"
+    );
+    assert!(!SongRepository::by_id(&*fixture.database, song)
+        .unwrap()
+        .unwrap()
+        .favorite());
+
+    // The retry after the directory accepts the intent starts from the same
+    // pre-commit state and commits exactly one favorite fact.
+    fixture.authority.set_refused(false);
+    assert!(edits
+        .set_favorite(fixture.scan.root, song, true)
+        .expect("retry commits")
+        .favorite());
+    let saved = fixture.replay();
+    assert_eq!(
+        saved.commits.len(),
+        replay.commits.len() + 1,
+        "the retry adds exactly one commit"
+    );
 }

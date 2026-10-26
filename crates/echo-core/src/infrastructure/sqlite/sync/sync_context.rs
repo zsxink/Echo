@@ -10,7 +10,7 @@ use crate::domain::ids::LibraryRootId;
 use crate::error::Error;
 
 // Child tables precede their parents. Restore uses the reverse order.
-const TABLES: &[&str] = &[
+pub(crate) const TABLES: &[&str] = &[
     "sync_snapshot_pages",
     "sync_snapshot_resource_refs",
     "sync_snapshot_records",

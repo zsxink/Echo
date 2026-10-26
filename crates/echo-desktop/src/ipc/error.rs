@@ -7,6 +7,7 @@
 
 use serde::Serialize;
 
+use super::library_durability::{LibraryDurabilityOutcomeDto, LibraryDurabilityReasonDto};
 use echo_core::error::Error as CoreError;
 
 /// The wire shape of an IPC error. Deliberately small and stable so the
@@ -23,6 +24,9 @@ pub struct IpcErrorDto {
     /// A journal operation, when the error is tied to one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operation_id: Option<String>,
+    /// Structured persistence state when this error follows a directory commit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub durability_outcome: Option<LibraryDurabilityOutcomeDto>,
     /// The validation field, for `validation` errors.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub field: Option<String>,
@@ -42,6 +46,7 @@ impl IpcErrorDto {
             message_key,
             retryable,
             operation_id,
+            durability_outcome: None,
             field,
         }
     }
@@ -76,13 +81,62 @@ impl From<&CoreError> for IpcErrorDto {
             CoreError::LibrarySavedPending { operation, .. } => Some(operation.to_string()),
             _ => None,
         };
-        Self::new(code, message_key, retryable, operation_id, field)
+        let durability_outcome = match error {
+            CoreError::LibrarySavedPending {
+                operation, stage, ..
+            } => Some(match stage {
+                echo_core::error::LibraryPersistenceStage::Recovery => {
+                    LibraryDurabilityOutcomeDto::SavedPendingRecovery {
+                        operation_id: Some(operation.to_string()),
+                        reason: LibraryDurabilityReasonDto::RecoveryRequired,
+                    }
+                }
+                echo_core::error::LibraryPersistenceStage::Projection => {
+                    LibraryDurabilityOutcomeDto::SavedPendingProjection {
+                        operation_id: Some(operation.to_string()),
+                        reason: LibraryDurabilityReasonDto::ProjectionPending,
+                    }
+                }
+            }),
+            _ => None,
+        };
+        let mut dto = Self::new(code, message_key, retryable, operation_id, field);
+        dto.durability_outcome = durability_outcome;
+        dto
     }
 }
 
 impl From<CoreError> for IpcErrorDto {
     fn from(error: CoreError) -> Self {
         Self::from(&error)
+    }
+}
+
+impl IpcErrorDto {
+    /// Map the error of a command that *creates a new library intent*
+    /// (`set_favorite`, playlist edits, delete, import…).
+    ///
+    /// The distinction this preserves is the one the UI needs to decide
+    /// whether an optimistic update may be rolled back: a mutation that
+    /// returns anything other than [`CoreError::LibrarySavedPending`] never
+    /// reached a verified directory commit, so it is `NotSaved` — the
+    /// pre-commit state is the truth and the user must be able to retry the
+    /// original intent. A saved-pending error keeps its own outcome, because
+    /// rolling *that* back would discard a committed change.
+    ///
+    /// Read-only and recovery commands deliberately use [`Self::from`]
+    /// instead: an unreadable view is not evidence that anything failed to
+    /// save, and a failed retry of an already-saved operation is not a new
+    /// unsaved intent.
+    #[must_use]
+    pub fn from_mutation(error: &CoreError) -> Self {
+        let mut dto = Self::from(error);
+        if dto.durability_outcome.is_none() {
+            dto.durability_outcome = Some(LibraryDurabilityOutcomeDto::NotSaved {
+                reason: LibraryDurabilityReasonDto::OperationRejected,
+            });
+        }
+        dto
     }
 }
 
@@ -218,6 +272,20 @@ mod tests {
             let dto = IpcErrorDto::from(&failure);
             assert_eq!(dto.code, expected);
             assert_eq!(dto.operation_id, Some(operation.to_string()));
+            assert_eq!(
+                dto.durability_outcome,
+                Some(if expected == "library_saved_pending_recovery" {
+                    LibraryDurabilityOutcomeDto::SavedPendingRecovery {
+                        operation_id: Some(operation.to_string()),
+                        reason: LibraryDurabilityReasonDto::RecoveryRequired,
+                    }
+                } else {
+                    LibraryDurabilityOutcomeDto::SavedPendingProjection {
+                        operation_id: Some(operation.to_string()),
+                        reason: LibraryDurabilityReasonDto::ProjectionPending,
+                    }
+                })
+            );
             assert!(
                 !dto.retryable,
                 "a blind edit/create retry would duplicate intent"
@@ -226,5 +294,85 @@ mod tests {
             assert!(!encoded.contains("materialization failed"));
             assert!(!encoded.contains("projection failed"));
         }
+    }
+
+    /// A mutation that never reached a verified directory commit is `NotSaved`
+    /// with a classified reason, and it says so without pretending a saved
+    /// operation exists. This is the wire fact the UI rolls its optimistic
+    /// update back on.
+    #[test]
+    fn rejected_mutation_is_classified_not_saved_and_names_no_operation() {
+        for failure in [
+            CoreError::unavailable("library", "root is read-only"),
+            CoreError::conflict("song is already pending delete"),
+            CoreError::validation(
+                echo_core::error::Subject::Name,
+                "name",
+                "名称不能为空".to_owned(),
+            ),
+            CoreError::Storage {
+                what: "projection".to_owned(),
+                source: Box::new(std::io::Error::other("disk")),
+            },
+        ] {
+            let dto = IpcErrorDto::from_mutation(&failure);
+            assert_eq!(dto.code, failure.code());
+            assert_eq!(dto.operation_id, None, "nothing was committed");
+            assert_eq!(
+                dto.durability_outcome,
+                Some(LibraryDurabilityOutcomeDto::NotSaved {
+                    reason: LibraryDurabilityReasonDto::OperationRejected,
+                }),
+                "{} must be reported as not saved",
+                failure.code()
+            );
+            let encoded = serde_json::to_value(&dto).unwrap();
+            assert_eq!(encoded["durabilityOutcome"]["kind"], "notSaved");
+            assert_eq!(encoded["durabilityOutcome"]["reason"], "operationRejected");
+            assert!(
+                encoded.get("operationId").is_none(),
+                "no operation identity is invented for an uncommitted intent"
+            );
+        }
+    }
+
+    /// A saved operation keeps its own outcome through the mutation path too:
+    /// classifying it as `NotSaved` would tell the UI to discard a change that
+    /// is already authoritative in the library directory.
+    #[test]
+    fn mutation_path_never_downgrades_a_saved_operation() {
+        use echo_core::domain::ids::OperationId;
+
+        let operation = OperationId::new();
+        for (failure, expected) in [
+            (
+                CoreError::saved_pending_recovery(operation, CoreError::unavailable("a", "b")),
+                LibraryDurabilityOutcomeDto::SavedPendingRecovery {
+                    operation_id: Some(operation.to_string()),
+                    reason: LibraryDurabilityReasonDto::RecoveryRequired,
+                },
+            ),
+            (
+                CoreError::saved_pending_projection(operation, CoreError::unavailable("a", "b")),
+                LibraryDurabilityOutcomeDto::SavedPendingProjection {
+                    operation_id: Some(operation.to_string()),
+                    reason: LibraryDurabilityReasonDto::ProjectionPending,
+                },
+            ),
+        ] {
+            let dto = IpcErrorDto::from_mutation(&failure);
+            assert_eq!(dto.durability_outcome, Some(expected));
+            assert_eq!(dto.operation_id, Some(operation.to_string()));
+        }
+    }
+
+    /// Reads and recovery retries must not claim a persistence verdict: an
+    /// unreadable view is not evidence that a change failed to save.
+    #[test]
+    fn read_errors_carry_no_persistence_verdict() {
+        let dto = IpcErrorDto::from(&CoreError::unavailable("database", "locked"));
+        assert_eq!(dto.durability_outcome, None);
+        let encoded = serde_json::to_string(&dto).unwrap();
+        assert!(!encoded.contains("durabilityOutcome"));
     }
 }

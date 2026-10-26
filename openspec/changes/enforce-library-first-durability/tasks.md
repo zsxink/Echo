@@ -34,8 +34,12 @@
 - [x] 3.3 实现按本库顺序的 records/state 材料化、目录 checkpoint 与幂等重放，验证 C1 投影失败后 C2 更新同对象，重启/重复重放不回退 C2；断链/同 seq 不同摘要/损坏已提交数据拒绝写入并保留证据（LD-02/06）。
 
   验证：2026-10-24 修复重试 fence/coverage 的连续故障窗口并独立复查通过；主 Agent 最终持久化组 60/60，详见 [刷盘与 GC 复查](evidence/retry-fences.md)。此处是目录材料化顺序，Application 投影 4.2 与完整私有历史/资源 GC 3.5 仍未完成。
-- [ ] 3.4 汇总实现用户资源原件与实际受管版本位置持久化（覆盖原件归 6.2，远端媒体 owner/version 归 7.4）；Echo 不写音乐文件标签，外部修改后的文件由扫描/监听重新校验并提交，不涉及源音乐字节替换（LD-02/08）。
-- [ ] 3.5 实现安全 checkpoint/压缩/GC，必须先刷盘完整覆盖清单再回收日志，引用图保护候选、快照、冲突、删除意图和未完成发布资源；checkpoint 不得随历史无界增长，链长度应与活跃窗口而非总历史成正比，超过安全上限时拒绝写入并报告；故障注入验证 GC 任一步中断后均可恢复且无唯一字节被删（LD-02/08）。
+- [x] 3.4 汇总实现用户资源原件与实际受管版本位置持久化（覆盖原件归 6.2，远端媒体 owner/version 归 7.4）；Echo 不写音乐文件标签，外部修改后的文件由扫描/监听重新校验并提交，不涉及源音乐字节替换（LD-02/08）。
+
+  验证（2026-10-26）：实现已在位，本轮补齐证明。**声明语义**——`batch.resources` 表示"已发布资源"，`assets::validate_resource` 在 `publish_prepared` 与 marker 之前逐项核对长度与 BLAKE3，不符即整批拒绝且不产生 prepared 正文、marker、操作状态或链上提交；只接受 `echo/assets/<blake3>`（路径必须逐字等于摘要地址）与 `echo/media/<kind>/<owner>/<declaration-digest>/<logical-path>` 两类位置，控制面路径（`echo/state/*`、`echo/records/*`、`echo/media` 目录）与 `echo/tmp/` 永不是资源来源，摘要必须是 64 位小写十六进制。**新增 `durability/tests/resources.rs` 五项**：长度不符/同长度异字节两种篡改在产生任何证据前被拒且磁盘字节保持原样、缺失受管版本报 `io` 而不合成占位、被改写原件在提交侧报 `durable resource hash mismatch` 读取侧报 `immutable asset is corrupt` 并保留篡改字节、六类非法地址/路径各自被拒、原件与受管版本声明经 `read_operation` → 强制压缩后的覆盖镜像 → 全新 SQLite `read_recovery_records` 逐字段（路径/哈希/长度）保持不变。**不写源标签**——`rg -n 'save_to_path|write_tags|set_tag' crates/` 生产代码 0 命中（唯一命中为 `metadata/tags/tests.rs:239` fixture）；新增 `application/watch/durability_tests.rs::library_durability_watcher_reverifies_external_edit_that_kept_size_and_mtime` 把源文件 mtime 钉到整秒后原地改写同长度字节，断言 size/mtime 无法揭示差异、监听仍重算哈希并以同一 `Song` UUID 与 `added_at` 提交新资源声明、读回源文件等于外部写入值。命令（目标 + 命中数）：`cargo test -p echo-core library_durability` **223 passed / 0 failed**、`cargo test -p echo-core --lib resources` **21 passed / 0 failed**（5 新增 + 16 既有匹配）、`cargo test -p echo-core --lib external_edit_that_kept` **1 passed**、`cargo clippy -p echo-core --all-targets` 0 警告、`cargo fmt --all --check` 与 `git diff --check` 通过。详见 [资源原件与受管位置证据](evidence/3.4-resource-originals-and-managed-locations-20261026.md)。覆盖原件专属规则归 6.2、远端媒体 owner/version 归 7.4、三平台原生认证归 9.3，均不因本项勾选。
+- [x] 3.5 实现安全 checkpoint/压缩/GC，必须先刷盘完整覆盖清单再回收日志，引用图保护候选、快照、冲突、删除意图和未完成发布资源；checkpoint 不得随历史无界增长，链长度应与活跃窗口而非总历史成正比，超过安全上限时拒绝写入并报告；故障注入验证 GC 任一步中断后均可恢复且无唯一字节被删（LD-02/08）。
+
+  验证（2026-10-26）：`cleanup_covered` 在任何删除前完成 ANCHOR 水位校验、逐份 receipt 存在性校验、`coverage_gc`/`receipt_gc` 重刷与 `gc_proof` 祖先目录统一同步；缺失 receipt 或水位不符直接拒绝。新增 `durability/tests/retention.rs` 三项故障注入：(1) 超过 `MAX_ACTIVE` 时 `chain()` 明确报错、写入在 marker 前被拒且已存 journal 原样保留；(2) 在 `gc:remove` 每步中断后重启从锚点重做，仅剩 receipt 也能还原冻结的原始 `LibraryCommit`；(3) 压缩前后 `echo/media/`、`echo/assets/`、`echo/tmp/` 文件集合逐项不变，被引用的 Pending/Conflict/DeleteIntent/ResourceLocation/Receipt state 全部保留，且用回收后目录重建全新 SQLite 仍能读回两份资源声明、从不把 `echo/tmp/` 当作资源来源。详见 [checkpoint/GC 与引用保护证据](evidence/3.5-checkpoint-gc-retention-20261026.md)。验证：`cargo test -p echo-core library_durability` 217 passed / 0 failed，`cargo test -p echo-core --lib retention` 8 passed，Clippy 0 warnings，fmt/diff 检查通过。
 - [x] 3.7 验证扫描与批量导入在小规模代表场景下可安全提交并恢复，确保批次边界不延后唯一权威落盘、不重复分配身份且 SQLite 故障可由目录追赶；记录基本提交次数与 IO 观察，但不要求 10k 量级测量或消除所有全链扫描（LD-01/02/10）。
 
   验证（2026-10-26）：新增小规模 scan/import 观测测试：3 首扫描各产生 1 个目录 commit（每批 1 条 Song after-image + 1 项媒体资源），不变重扫没有新增 commit；2 首导入产生 4 个目录 commit（每首先预留稳定身份、再提交 Song after-image），包含 2 条 Song 与 2 项媒体资源。失败恢复由 scan `saved identity before projection`、import `recovery commits the directory record before the SQLite row` 及 `fresh database` recovery 测试覆盖；重试保留同一 UUID，不延后首次目录提交。命令：`cargo test -p echo-core --lib small_scan_commits_one_record_and_resource_per_song`、`cargo test -p echo-core --lib small_import_records_reservation_and_song_commit_per_success`、`cargo test -p echo-core --lib scan`、`cargo test -p echo-core --lib import`。记录的是协议级目录提交与资源声明次数，不是原生文件系统 syscall 计时；原样 513 与 10k 测量仍属于后续独立优化。逐项背景见 [性能续作清单](evidence/performance-20261024.md)。
@@ -58,17 +62,21 @@
   进度（2026-10-26）：修复 `trash::finalize_persisted_trash` 的具体 DB-first 窗口：`Finalized` intent 与 typed Song Tombstone 同一稳定目录 batch 提交后才运行 SQLite 删除；相同 batch 重试复用已冻结 after-image。新增目录提交拒绝、数据库回滚后保留 Tombstone、同 batch 恢复测试。另修 candidate root continuation 失败后仍 plain-scan、可能重铸 UUID 的路径：除不支持的新 manifest 外，continuation/准入错误现会阻止候选扫描，测试确认 scan generation 为 0。
 
   完成（2026-10-26）：production continuation 将 V1/V2 snapshot 按 typed identity 和 `(HLC, revision, tombstone tie-wins)` 规则选出未被真实 replay 覆盖的基线，经 SQLite SQL-only legacy projector 投影；随后只按验证过的目录链推进水位。legacy 投影不写回目录、不制造 commit/watermark/outbox。`RestoreLibrary` 与 scan/import/watch/recovery 的 song 写入共用 `commit_song`，先追赶目录已保存前缀，再执行调用点投影。过期回收将 Finalized intent 与 typed Song Tombstone 同批提交，目录提交成功后才删 SQLite catalog。真实 SQLite `RefusingAuthority` 可控次序测试覆盖删除拒绝、撤销拒绝、恢复重试、回收提交拒绝后同操作重试；RED 发现并修复了恢复条目已 `Restored` 但歌曲仍 `PendingDelete` 时被错误排除的问题。scan/watch/import/restore/continuation/root-switch 既有及新增定向验证均通过。详见 [trash Tombstone 顺序及 continuation 失败保护](evidence/4.2b-trash-tombstone-progress-20261026.md)。音乐标签仍只由 Echo 读取，不写回源文件。
-- [ ] 4.3 实现从目录重建临时 SQLite、完整性比对后替换活动投影，隔离损坏/落后/领先或其他库数据库；投影 MUST 容忍悬空父引用（可解析子集入正表，未解析项入 typed `library_recovery_records` 并计 partial），不得因单条悬空引用使重建整体失败；验证不依赖旧数据库、重建无上传回声、失败保持旧活动库（LD-03/06/07）。
+- [x] 4.3 实现从目录重建临时 SQLite、完整性比对后替换活动投影，隔离损坏/落后/领先或其他库数据库；投影 MUST 容忍悬空父引用（可解析子集入正表，未解析项入 typed `library_recovery_records` 并计 partial），不得因单条悬空引用使重建整体失败；验证不依赖旧数据库、重建无上传回声、失败保持旧活动库（LD-03/06/07）。
 
   进度：2026-10-25 悬空引用保留与依赖补齐后自动关联已由 4.5 覆盖；临时 SQLite 重建、完整性比对后替换活动投影、损坏/落后/领先/异库隔离与"失败保持旧活动库"的验收未完成。
 
-  实施进展（2026-10-26）：新增独立临时 SQLite 候选投影，校验 manifest library ID、replay/head、水位、quick check、foreign key 与完整 typed retained evidence；候选悬空引用按 partial 保留，且不得生成 outbox。`project_library_commits` 的增量投影失败时会核对 manifest 和最新目录 head，再尝试原子 root 替换。活动事务目前只替换歌曲、歌单、扫描摘要和 library projection 证据；跨 root 行保持不变，未完成文件操作会阻止替换，目标 root 有 sync context 时明确拒绝以免误删尚未做 archive-aware rebuild 的同步视图。真实 SQLite 用例覆盖领先水位自动重建、root 隔离、注入 SQL 失败后完整回滚、sync context 拒绝且旧视图不变。**仍不勾选**：全局 SQLite 损坏时进程尚不能在 `open()` 之前隔离/重建数据库；有 sync context 的 root 需要归档感知的完整同步投影重建；落后/其他库/断链/候选内容损坏组合矩阵还要补齐。详见 [投影候选与活动替换证据](evidence/4.3-projection-rebuild-20261026.md)。
+  实施进展（2026-10-26）：新增独立临时 SQLite 候选投影，校验 manifest library ID、replay/head、水位、quick check、foreign key 与完整 typed retained evidence；候选悬空引用按 partial 保留，且不得生成 outbox。`project_library_commits` 的增量投影失败时会核对 manifest 和最新目录 head，再尝试原子 root 替换。活动事务替换该 root 的歌曲、歌单、扫描摘要、搜索镜像、艺术家封面与 library projection 证据；跨 root 行保持不变，未完成文件操作会阻止替换。
+
+  收尾（2026-10-26）：三项残留已闭合。(1) **全局 SQLite 损坏**：`SqliteDatabase::open` 在任何读取之前按字节原样把损坏文件及 `-wal`/`-shm` 重命名隔离到同目录唯一名，再建空的已迁移投影继续启动；损坏判定刻意收窄——写锁、只读卷、缺权限、已发布迁移校验和不匹配仍让打开失败并保留原文件。(2) **sync context root**：协议行是目录证据而非读模型投影（无协议表外键引用 `songs`/`playlists`，只有 `retry_library_sync_state` 可在已验证会话下重投影），LD-07 要求重建保留未确认意图与冲突，因此重建前快照选中上下文与 19 张 live/19 张 archived 协议表行数，投影后比对，任何变动即回滚整个事务——由拒绝改为证明不变。(3) **组合矩阵**：落后、领先、异库、断链、候选内容损坏、SQL 注入失败、最终 COMMIT 失败、只读库、坏库隔离均有真实 SQLite 用例。协议历史保护做了 RED 验证（临时关掉比对后用例报 `rebuild must reject changed protocol history`，恢复后通过）。命令：`cargo test -p echo-core --lib library_durability` 230 passed / 0 failed、`cargo test -p echo-core --lib projection_rebuild` 17 passed、`cargo clippy -p echo-core --all-targets -- -D warnings` 0 警告、`cargo fmt --all --check` 与 `git diff --check` 通过。详见 [投影候选与活动替换证据](evidence/4.3-projection-rebuild-20261026.md)。
 - [x] 4.5 把 `library_recovery_records` 的键改为稳定 typed key（不得使用 `Debug` 格式），并提供读回路径使 confirmed/pending/悬空引用在重建时可被重新尝试；验证补齐依赖后重试自动关联，无需重新导入（LD-06/07）。
 
   验证：2026-10-25 稳定 serde typed key、confirmed/pending 读回及重开、追加父对象自动关联、真实目录依赖补齐重试均在临时副本实际通过；原工作区测试因缺失导入模块 E0583 未能执行，不计为门禁通过。见 [本次复核](evidence/progress-closeout-20261025.md)。collector、全入口协调器与 adoption 仍分别留在对应未完成任务。
-- [ ] 4.4 为投影边界及 SQLite 损坏/只读/commit 失败补集成测试并更新数据库恢复说明，运行 `cargo test -p echo-core library_durability` 和 `cargo test -p echo-core continuation`（LD-01/02/03/10）。
+- [x] 4.4 为投影边界及 SQLite 损坏/只读/commit 失败补集成测试并更新数据库恢复说明，运行 `cargo test -p echo-core library_durability` 和 `cargo test -p echo-core continuation`（LD-01/02/03/10）。
 
   进度：2026-10-25 上述两条命令现已可在原工作区直接执行（`library_durability` 过滤命中 178 条，当前 177 passed / 1 failed，失败为缺陷 1 的 RED 用例）；投影边界、坏库隔离与只读/commit 失败的专项测试与恢复说明仍未补齐，本轮未据此勾选。
+
+  验证（2026-10-26）：投影边界专项测试已齐——坏库隔离（`corrupt_sqlite_open_quarantines_the_original_and_starts_fresh`、`open_never_quarantines_a_healthy_database_it_cannot_upgrade`）、只读库（`read_only_projection_database_keeps_the_active_view`）、SQL 写入失败回滚（`rebuild_failure_rolls_back_the_active_projection`）、最终 COMMIT 失败回滚（`rebuild_commit_failure_keeps_the_previous_projection`）、候选校验与 root 隔离。`docs/lan-sync-recovery.md` 的 `### SQLite 投影重建` 已更新：补上冷启动隔离语义（字节原样、从不读取/修复/删除、仅文件损坏才隔离、锁/只读/权限/校验和不隔离）、只读与提交失败的重试路径，以及 sync context 协议历史不因重建丢失的约束。命令：`cargo test -p echo-core library_durability` 全部目标 1 + 230 + 1 passed / 0 failed，`cargo test -p echo-core continuation` 17 passed / 0 failed，`cargo clippy -p echo-core --all-targets -- -D warnings` 0 警告，`cargo fmt --all --check` 与 `git diff --check` 通过。
 
 ## 5. 本地导入、扫描与监听接入
 
@@ -106,12 +114,16 @@
   进度（2026-10-25 缺陷 2 收尾，归属 6.1）：handoff 缺陷 2（歌单投影时间戳）已修——`durability_projection/records.rs` 歌单/成员 INSERT 回退 `unwrap_or(0)` 改为 `unwrap_or(hlc.wall_secs*1000)`（HLC 秒 → 列毫秒），`ON CONFLICT` 保持既有行 `created_at=playlists.created_at`/`added_at=playlist_songs.added_at`，`updated_at=MAX(playlists.updated_at,excluded.updated_at)` 单调推进；并修复被其掩盖的成员侧击穿：`retained.rs` retry 释放循环从整行 `DELETE` 改为把旧行泊位到所在歌单末尾空闲槽（`UNIQUE(playlist_uuid,position)` 槽照常释放、换位/交换语义不变，行连同真实 `added_at` 存活后经 DO UPDATE 恢复真实位置；`CHECK(position>=0)` 因此选末尾追加而非负数占位；LD-08 的 unresolved 行不动语义不变）。RED→GREEN：新增 `library_durability_projection_keeps_existing_playlist_timestamps_across_replays`（RED 实测 `(0, 1699999000000)` vs 期望 `(1699999000000, 1700000100000)`、成员 added_at 被回退值覆盖）与 `library_durability_projection_derives_missing_timestamps_from_the_record_clock`（RED `0` vs `1700000000000`）。验证（命令 + 目标 + 命中数）：`cargo test -p echo-core --lib durability_projection` RED 阶段 37 passed / 2 failed → 修复后 **39/0**；`--lib durability` **192/0**、`--lib lifecycle` **31/0**、`cargo test -p echo-core` 全量**真实 exit 0**（lib 877 passed / 0 failed / 1 ignored 既有性能基准，集成目标全绿，日志 /tmp/echo-core-full-1025.log）、`cargo clippy -p echo-core --all-targets --all-features -- -D warnings` 0 警告、`cargo fmt --all` 通过。**6.1 仍不勾选**：上段"true→false、多目标重复成员、时间/顺序、级联删除按 delta spec 逐项复核 + 桌面侧转发重验"的剩余口径不变。
 
   进度（2026-10-25 6.1 复核收尾，勾选）：delta spec 剩余口径逐项闭环——**true→false**：识别出唯一真实缺口是"删除与取消喜欢不复活"场景要求 fresh 重建后 false 不被旧 true 记录复活（既有 `favorite_failure_is_saved_and_later_false_catches_up` 只做同库追赶、`favorite_time_survives_toggle_and_fresh_projection` 的 fresh 重建落在最终 true 态），新增 `lifecycle/favorite.rs::library_durability_favorite_false_survives_fresh_rebuild`（true→false→`recover`→`fresh_database` 重建→两轮幂等投影→断言 `!favorite()` 且重建库 `favorited_at` 为 NULL），同组 3/3 通过；**多目标重复成员**：`playlist_members.rs` 的 `&[first, second, first]` 用例已含去重（2 成员、身份互异、重复 append 不产生新 commit）+ fresh 重建身份/位置保持，无需新增；**时间/顺序**：缺陷 2 两用例 + `favorite_time_survives_toggle_and_fresh_projection` 覆盖；**级联删除**：`playlist_delete.rs` fresh 重建覆盖；**桌面侧仅转发**：重验 `crates/echo-desktop/src/runtime/services/playlists.rs`（create/rename/cover/delete/add/remove）与 `favorites.rs`（set_favorite）全部经 `library_edits() -> DurableLibraryEdits` 转发。缺陷 2 修复后任务命令复跑（命令 + 目标 + 命中数）：`cargo test -p echo-core --lib playlist` **58 passed / 0 failed**（上轮 57 基础上 +1 为缺陷 2 新用例名含 "playlist" 被过滤器命中）、`cargo test -p echo-core --lib lifecycle` **32/0**（+1 即新 true→false 用例）、`cargo test -p echo-desktop favorite` **4 passed / 0 failed** 全 target exit 0、`cargo clippy -p echo-core --all-targets --all-features -- -D warnings` 0 警告、`cargo fmt --all --check` 通过。任务文字全部口径（统一目录提交、桌面仅转发、六类 wipe round-trip、两条命令）均已落地验证，勾选。
-- [ ] 6.2 歌单封面和既有覆盖资源迁入内容寻址原件，读模型 cache key 派生；验证清空全部应用缓存后离线恢复、丢原缓存的历史缺口报告和相同资源复用，运行 `cargo test -p echo-desktop cover` 及 `cargo test -p echo-core library_durability`（LD-06/08）。
+- [x] 6.2 歌单封面和既有覆盖资源迁入内容寻址原件，读模型 cache key 派生；验证清空全部应用缓存后离线恢复、丢原缓存的历史缺口报告和相同资源复用，运行 `cargo test -p echo-desktop cover` 及 `cargo test -p echo-core library_durability`（LD-06/08）。
 
   进度：2026-10-25 歌单封面已迁入内容寻址原件（`lifecycle/playlist_cover.rs` 有 5 条用例与两处新建空库重建），但**艺术家自定义封面仍违反 LD-08**：`crates/echo-desktop/src/runtime/services/catalog.rs:161-199` 的 `set_artist_cover` 只把用户字节写入应用 cover cache，落库仅存 cache key（`set_artist_cover_key`），没有写入 `echo/assets/<hash>` 的可校验原件与对象引用；"清空全部应用缓存后离线恢复"与"丢原缓存的历史缺口报告"亦未验证。故不勾选。
-- [ ] 6.3 播放完成统计以目录稳定事件先提交设备桶再投影，失败不打断播放但可追踪重试；幂等事件身份存 `echo/state/playback-events/`，共享 `PlayStatsRecord` 只保留设备桶，验证重复 session/重放/ACK/重装不增计、同步导出不含会话标识、资源不可写不留 DB-only 增量，运行 `cargo test -p echo-desktop recorder` 和逐设备统计测试（LD-01/02/03/07/08）。
+
+  验证（2026-10-26，勾选）：上述缺口已在 `802ba1c` 补齐——新增 `application/artwork.rs`（1 字节–5 MiB、jpeg/png/webp 校验；`save` 写 `echo/assets/<blake3>` 并产出 `PortableAssetReference`；`resolve` 读原件并逐字节复核长度+哈希后才落派生 cache key；`resolve_legacy` 对只有旧 cache key 的历史封面显式报"历史封面无可恢复原件"）与 `domain/library/durability/artist_cover.rs`（`echo.library.artist-cover.v1` 类型化状态，`validate_artist_key` 要求 NFKC 归一、非空、≤4096，`id()` 由库 UUID + artist key 派生稳定身份），歌单封面 `application/playlist/cover.rs` 改为共用同一模块（删除本地重复 `validate`），艺术家封面经 `application/artist_cover.rs` 走 `library_edits()` 目录提交，`catalog.rs` 只转发。三类用例覆盖任务全部口径：**清空全部应用缓存后离线恢复**——`runtime/services/tests/artist_cover.rs` 与 `runtime/services/tests/playlist_cover.rs` 在 `cover_cache.gc(&[])` 清空后仍由目录原件重建出相同 `cover_key` 且字节一致；`lifecycle/artist_cover.rs` 进一步在删掉 SQLite 与 cache 后从 `echo/assets/<hash>` 恢复（断言不产生 `echo/write.lock`、`sync_mutations` 为 0、缩略图可解出 4px 宽）；**丢原缓存的历史缺口报告**——`lifecycle/playlist_cover.rs::library_durability_playlist_cover_legacy_cache_gap_is_explicit` 与 `lifecycle/artist_cover.rs::..._reports_historical_gap_and_missing_original_without_writes`（原 cache 被 gc 后 `resolve_legacy` 报错、目录提交不变；原件被改写或删除时 `resolve` 报冲突/不可用且不落 cache）；**相同资源复用**——同一字节写两次只产生一个 `echo/assets` 文件且 `recover` 逐字段相等（`assert_eq!(replay, before)`），清空封面后原件仍保留（"clear retains historically referenced originals"）。命令（目标 + 命中数）：`cargo test -p echo-desktop cover` **21 passed / 0 failed**（lib 20 + 集成 1）、`cargo test -p echo-core library_durability` **214 passed / 0 failed**（含本轮新增 6.3 用例 1 条）、`cargo test -p echo-desktop recorder` **9 passed / 0 failed**。勾选。
+- [x] 6.3 播放完成统计以目录稳定事件先提交设备桶再投影，失败不打断播放但可追踪重试；幂等事件身份存 `echo/state/playback-events/`，共享 `PlayStatsRecord` 只保留设备桶，验证重复 session/重放/ACK/重装不增计、同步导出不含会话标识、资源不可写不留 DB-only 增量，运行 `cargo test -p echo-desktop recorder` 和逐设备统计测试（LD-01/02/03/07/08）。
 
   进度：2026-10-25 播放事件身份与设备桶已落地（播放记录走同一协调器，`lifecycle/playback.rs` 覆盖会话身份复用），但持久待重试队列、界面可诊断，以及 ACK 丢失 / 重装 / 真正不可写场景的测试仍缺；上述专项未执行完，故不勾选。
+
+  验证（2026-10-26，勾选）：`802ba1c` 补齐持久重试队列与目录证明，本轮补上最后一条"资源不可写不留 DB-only 增量"。**目录稳定事件先提交**——`sqlite/local_library_edit/playback.rs` 在一次 `plan_library_change` 内冻结私有 `PlaybackEvent`（`StateKind::PlaybackEvent`，id = session UUID）、共享 `PlayStatsRecord`（只含 `by_device`）与 `FrozenMutation`；`qualified_at` 作为计划时钟传入（`*_at` 变体同时写 `sync_mutations.created_at`/`sync_outbox.created_at`），使 prepared-but-unsaved 重试重放字节完全相同。**失败不打断播放但可追踪重试**——`platform/playback_retry.rs` 提供 `PlaybackRetryStore`（`*.playback-retry.json`，fs2 独占锁、拒绝符号链接、temp+`sync_all`+rename+父目录同步、损坏/未来版本保留原字节、上限 65536、同 session 异身份拒绝）与九种 `PlaybackRetryReason`；`runtime/player/recorder.rs` 的 `attempt` 按 InactiveLibrary → LibraryChanged → EnrollmentPending → 目录事件证明 → AuthorChanged → MissingSong 顺序裁决，已保存事件只补投影绝不换作者计数，`retry_pending` 1s 节流 + `1<<attempts.min(6)` 退避，`spawn_stats_recorder` 在 `recv_timeout` 超时时驱动重试，错误只进累加器不影响播放。**幂等身份在 `echo/state/playback-events/`**——`durability/tests/playback_privacy.rs` 断言 `echo/state/playback-events/<session>.json` 物化存在且共享 `PlayStats` 记录既不含 session id 也不含 `recorded_sessions`。**重复 session/重放/重装不增计**——`lifecycle/playback.rs` 覆盖同 session 重复记录返回 `false` 且计数不变、投影失败后重放（`SavedPending` 携带同一 operation id、replay 恰 2 次提交）、另一首歌复用 session 报 `Conflict` 且目录不变、新建空库重建后 `play_count` 为 2 且 `(recorded_play_sessions, sync_outbox, sync_mutations) = (2,0,0)`（无上传回声）；`recorder/retry_tests.rs` 覆盖重开后同一 session 只计 1 次、响应丢失时用已保存事件补投影且 `device_play_counts` 求和仍为 1（不换作者）、作者/库/歌曲不可证明时保持 pending 且不计数、非活跃根不重试。**同步导出不含会话标识**——`sync_payloads/deletion_and_stats.rs::recording_a_play_enqueues_a_complete_play_stats_record_the_host_accepts` 断言 `PlayStatsRecord` 完整形状、`by_device[device]==1`、共享 payload 无 session/`recorded_sessions`/`playback_session`、`PortableRecord` 往返、`export_playback_events` 恰 1 条私有状态且 `kind.directory()=="playback-events"`；`recorder/retry_tests.rs` 同样断言共享记录不含 session 文本。**资源不可写不留 DB-only 增量**——本轮新增 `lifecycle/playback.rs::library_durability_playback_unwritable_library_leaves_no_database_only_increment`：注入 `prepared` 阶段不可用后连续两次记录均失败，且 `play_count`/`device_play_counts`/`recorded_play_sessions`/`sync_outbox`/`sync_mutations` 全为 0、目录无任何 `PlaybackEvent`；恢复可写后同一 session 恰好计 1 次、重复调用不再增计、`device_play_counts` 恰为 `{device: 1}`。命令（目标 + 命中数）：`cargo test -p echo-desktop recorder` **9 passed / 0 failed**、逐设备统计 `cargo test -p echo-desktop --lib stats` 与 `cargo test -p echo-core library_durability`（**214 passed / 0 failed**，含本用例）全绿、`cargo test -p echo-core lifecycle::playback` **4 passed / 0 failed**。勾选。
 - [x] 6.4 删除/撤销迁入目录本机意图及最终集合，保留 10 秒唯一终态、物理回收独立恢复与候选引用保护；验证窗口内重启、终结/撤销竞争、远端墓碑、未确认导入后删除，运行 `cargo test -p echo-core delete`、`cargo test -p echo-core trash`（LD-02/07/08）。
 
   验证（2026-10-25）：目录 `DeleteIntent` 在隐藏/SQLite 投影前提交；固定并贯通 `final_mutation_id`；撤销及恢复先取消目录意图，trash 收到持久化 `TrashApplied` 后先终结目录意图再删 catalog 行，重启重试不更换身份；已认证远端增量墓碑会 supersede 同对象所有 open 意图；目录 compaction 保留活跃意图。直接场景覆盖原撤销 deadline 重启保持、终结/撤销两种胜出顺序、远端墓碑、恢复崩溃后取消、未确认资源声明在 catalog 删除/重启后仍有 retention hold 与 receipt。`cargo test -p echo-core delete` 58/58、`cargo test -p echo-core trash` 20/20、`cargo test -p echo-core --lib resource_retention` 2/2、桌面已确认远端墓碑集成 1/1；Core Clippy、fmt 和 `git diff --check` 通过。细节与命令见 [6.4 验收证据](evidence/6.4-progress-20261025.md)。
@@ -121,35 +133,82 @@
 - [x] 6.6 删除旧桌面 DB-first materializer 路径和无消费者导出/fake，保留只读 builder 或测试辅助的理由；点名清理 `SqliteDatabase::record_playback` 这一公开 DB-first 入口与无调用者的孤儿模块，用 CodeGraph 调用链及 `rg -n 'write_record_guarded|materialize_playlist|record_play_stats|record_playback' crates apps/desktop/src-tauri` 复核所有剩余生产写入口均受协调器控制，运行 `cargo test -p echo-desktop --lib` 和架构测试（LD-10）。
 
   验收（2026-10-26）：CodeGraph 调用链确认目录写入辅助已无生产调用者；当前删除完成用例先调用 `delete::intent::finalize` 持久化目录墓碑，再以 SQLite 事务删除 catalog 行并释放 claim。播放、收藏和歌单生产写入均经目录协调器；`SqliteDatabase::record_playback`、`materialize_playlist`、`record_play_stats` 已无生产定义/调用。删除 `write_record_guarded`，保留说明为 undo 删除时清理旧临时墓碑的 `delete_record_guarded` 和纯记录 builder；更新过时的播放器注释。指定 `rg` 仅命中两个解释性注释。`cargo test -p echo-desktop --lib` 444/0/0，`cargo test -p echo-core --test arch` 8/8，均通过。
-- [ ] 6.7 同步更新各入口持久化/错误说明，记录与现有歌单 UI change 的封面字段交汇，验证接口不存在平台绕过 Core 的用户变更，并运行本组 round-trip 集成测试（LD-03/08/10）。
+- [x] 6.7 同步更新各入口持久化/错误说明，记录与现有歌单 UI change 的封面字段交汇，验证接口不存在平台绕过 Core 的用户变更，并运行本组 round-trip 集成测试（LD-03/08/10）。
+
+  验证（2026-10-26）：三项口径全部闭环，细节见 [6.7 证据](evidence/6.7-entrypoints-and-cover-intersection-20261026.md)。**入口说明**：`docs/library-durability-protocol.md` 新增 `## 各入口持久化与错误语义`，逐条列出导入、扫描/外部标签/移动、喜欢、歌单（创建/改名/删除/成员）、歌单与艺术家封面、播放统计、删除/撤销/回收、启动续跑、LAN 入站、来源 ACK/主机确认 11 类入口的"目录先提交事实"与"失败语义"，并写明错误只在 Core 分类（`library_saved_pending_recovery`/`library_saved_pending_projection`）、IPC 附带原 `operationId`、`ErrorPolicy` 把两者标为非"新命令可重试"。**封面字段交汇**：新增 `### 与歌单封面 UI change 的字段交汇`，指明唯一交汇字段是 `PlaylistView.coverKey`（由 `PortableRecord::Playlist.cover_asset` 派生，非独立用户值），并逐条对齐 `align-immersive-player-and-playlist-directory` 的 `playlist-management` 规格（预览/保存后同步/重命名不丢封面/失败保留/禁止 localStorage 模拟身份），前端使用点记录在 `PlaylistsView.tsx:59-77,723-725`、`PlaylistNameDialog.tsx:32-48,248`、`AddToPlaylistDialog.tsx:222-226`。**无平台绕过**：`apps/desktop/src-tauri/src` 全目录 grep 直接 SQL 写（`with_tx|writer.run|execute_batch|INSERT INTO|UPDATE|DELETE FROM`，排除 tests）**0 命中**；8 个用户变更 Tauri 命令（`commands.rs:216,303,315,327,339,352,360,376`）全部只调 `services.*` 并映射 `IpcErrorDto`；桌面服务全部经 `library_edits() -> DurableLibraryEdits` 或 `application::artist_cover` 转发；桌面层仅 2 处直接取目录适配器（`services/recovery.rs:44` 只读诊断、`player/recorder.rs:109` 事件证明+投影追赶），均非用户变更旁路。**round-trip 集成测试**（命令 + 命中数）：`cargo test -p echo-core --lib "lifecycle::"` **36/0**、`cargo test -p echo-core playlist` **58/0**、`cargo test -p echo-desktop favorite` **4/0**、`cargo test -p echo-desktop cover` **21/0**、`cargo test -p echo-desktop recorder` **9/0**、`cargo test -p echo-desktop --lib stats` **5/0**、`cargo test -p echo-core library_durability` **214/0**、`cargo test -p echo-core --test arch` **8/0**。其中 `lifecycle/ordered_fake.rs::library_durability_refused_commit_leaves_every_wired_entrypoint_untouched` 是"目录拒绝提交时 8 个入口的 SQLite 指纹与目录 replay 均不变、解除拒绝后同权威可恢复"的联合证据。本任务不包含对方 change 的对话框/预览/焦点实现，也不勾选任何 8.x 内容。
 
 ## 7. LAN 首次快照、增量、ACK 与主确认接入
 
-- [ ] 7.1 改造远端快照/增量与来源 ACK 为 Core 目录提交用例，先校验全快照再发布可见集合；保留本地资料/候选，SQLite 对象与已应用水位在目录提交后同事务投影；验证快照分页失败/取消、重复 page、metadata-only 喜欢/空歌单、所有提交点崩溃（LD-01/02/03；LAN spec）。
-- [ ] 7.2 持久化真实 confirmed payload、receipt、alias/tombstone 和 pending/前驱，修复旧 sync metadata 附到新值的误确认语义；验证离线 A→B 多候选、迟到 ACK、已发送正文不变、重复成员 alias 与旧删除不影响新成员，运行 `cargo test -p echo-core sync`（LD-05/07）。
-- [ ] 7.3 主机确认改为规划/序列预留→目录权威提交→SQLite 账本→资源/安全检查点→连续 published→ACK；同一“规划-提交-投影”序列在多个确认分支重复出现时必须抽成一个 helper，不得复制粘贴；验证重复 mutation 同结果、相同 ID 异正文拒绝、每个 publication 窗口断电、ACK 后丢 SQLite 可恢复业务资料，运行 `cargo test -p echo-sync`（LD-01/02/07）。
+- [x] 7.1 改造远端快照/增量与来源 ACK 为 Core 目录提交用例，先校验全快照再发布可见集合；保留本地资料/候选，SQLite 对象与已应用水位在目录提交后同事务投影；验证快照分页失败/取消、重复 page、metadata-only 喜欢/空歌单、所有提交点崩溃（LD-01/02/03；LAN spec）。
 
-  进度：2026-10-25 夜间复核：本项指定的验证命令 `cargo test -p echo-sync` 当前**为红**——
+  验证（2026-10-26）：矩阵与两处真实缺陷详见 [7.1 证据](evidence/7.1-snapshot-incremental-directory-first-20261026.md)。**缺陷 A**：`sync/durability/commit.rs` 原以 `operation_status(...).is_some()` 判"已保存"，但只有 `prepared.json`、无提交标记的操作返回 `Ok(Some(NotSaved))`——`Some` 不等于已保存；`"prepared"` 窗口断电后每次重试都进"读已保存操作"分支并报 `saved LAN operation is absent from the verified directory chain`，operation 身份被永久毒化。改为比较 `status != CommitStatus::NotSaved`，prepared-only 操作重新规划提交，冻结正文一致性仍由 `commit` 自身保证。**缺陷 B**：提交闭包只做 `tx.commit()`，从未调 `durability_projection::project_commits_in_transaction`，因此目录提交后业务行可见而 `library_projection_watermarks`/`library_applied_operations` 恒为空——水位证据丢失，`applied_library_commit_seq` 恒为 0。改为闭包内 `durability.recover(root)` → `verify_covered_watermark` → `project_commits_in_transaction(&tx, …)` → `tx.commit()`，行与水位成为同一原子 SQLite 提交，与 `local_library_edit.rs:256-288` 的本地编辑口径完全一致。**新增矩阵** `crates/echo-core/src/infrastructure/sqlite/tests/sync_snapshot_apply_durability.rs` 5 条，全部装真实 `RootControlPlane`（其余快照套件不装控制面，`#[cfg(test)]` 下尾部退化为裸 `tx.commit()`，顺序本身从未被测）：`snapshot_publishes_the_visible_set_only_through_the_directory`（非末页业务行/游标/目录提交全 0；末页 `(2,1,1)`、恰好 1 次目录提交、batch 含 `echo.sync.peer-cursor.v1` 且 `sequence=12`；新库仅凭该目录重放得 `(2,1,1,0)`）、`incremental_page_projects_rows_and_watermark_after_the_directory`（真实主机 `stage_confirmation`→`mark_published`→`published_commits_after` 发布增量提交，接收端 `(1,0,1)` 且水位/`library_applied_operations` 各 1 行，同页重放 `applied=0` 且目录提交仍 1，新库重放得 1 首歌）、`snapshot_commit_faults_recover_with_one_operation_and_no_partial_set`（`prepared`/`committed` 两个发布窗口分别注入故障，均无可见行与游标，`committed` 故障返回 `library_saved_pending_recovery`，恢复后重试同页得 `(0,1,1)`、目录提交仍 1、水位 1）、`discarded_snapshot_leaves_no_directory_operation_and_allows_a_fresh_one`、`snapshot_keeps_metadata_only_favorite_and_empty_playlist_through_the_directory`（metadata-only 喜欢/空歌单/`SongAlias`/`PlaylistMemberAlias` 均进目录 batch，`playlist_songs=0` 不伪造成员，alias 以 `StateKind::Alias` 保留）。**命令 + 命中数**：`cargo test -p echo-core --lib sync_snapshot_apply_durability` **5/0**、`cargo test -p echo-core --lib sync` **202/0**、`cargo test -p echo-core` **lib 955/0/1 ignored** + 集成套件 8/0、7/0、1/0、2/0、19/0、0/0、`cargo test -p echo-sync --all-features` **65/0 + 1/0 + 0/3 ignored + 2/0**、`cargo test -p echo-desktop` **452/0** 等全绿、`cargo clippy -p echo-core --all-targets --all-features -- -D warnings` 0 警告、`cargo fmt --all -- --check` 通过。**未在本项内解决**：新库重放后 `sync_peer_cursors` 为 0——对端游标以 `StateKind::Cursor` 完整留在目录，但 `durability_projection/sync_state/related.rs:17-26` 对 `StateTarget::PeerCursor` 返回 `RequiresStateRecovery`，重放记为未解析；本项只断言"证据保留而非丢失"，游标/资源位置/完成凭据的实际恢复归 7.4，未在此声称已恢复。
+- [x] 7.2 持久化真实 confirmed payload、receipt、alias/tombstone 和 pending/前驱，修复旧 sync metadata 附到新值的误确认语义；验证离线 A→B 多候选、迟到 ACK、已发送正文不变、重复成员 alias 与旧删除不影响新成员，运行 `cargo test -p echo-core sync`（LD-05/07）。
+
+  验证（2026-10-26）：矩阵与缺陷详见 [7.2 证据](evidence/7.2-real-confirmed-payload-20261026.md)。**真实缺陷**：目录信封的 v2 `sync` 块随记录落盘，而 `control_plane::write_record` 在非持久批内会**原样携带**旧 `sync` 块，因此"本地新值 + 旧 `object_version`"是可持久化的合法信封；`retained::retry` 又用 `dependencies::unresolved(...)` 重算并**覆盖** `unresolved_reason`，完全不看 `sync`，既无法把这种信封标成待核对（标记会被清掉），也让任何把 `object_version` 当确认证据的读路径可以为一新值建立虚假 confirmed baseline。**修复**：新增 `durability_projection/confirmation.rs::unproven()` ——无 `sync` 块或 `ObjectVersion::INITIAL`（genesis，`filesystem/durability/tests/identity.rs` 构造的正是它）视为"不声明"；否则按信封自带 binding 精确查 `sync_commits(commit_seq,library_id,authority_id,epoch)`，缺失即未证；命中后必须过 `sync::apply::verify_remote_commit`（重算 `echo.lan.commit.v1` 摘要）、`commit.object` 必须等于信封对象（否则是借来的版本号）、且 `agrees()` 逐字段比对账本载荷与磁盘值（只比双方都主张的字段，歌的 `relative_path` 主机作用域不比）。`retry` 在投影前一次性算出 `unproven` 键集，报告态改为 `unresolved.or_else(|| unproven.contains(&key).then_some(UnverifiedConfirmationMetadata))`，因此依赖已解决时**仍投影本地值**（目录是真相）且**仍报告**（不被抹平），同时**不写** `sync_object_versions` baseline，字节从不改写。枚举贯通 `ProjectionUnresolvedReason` → `RecoveryIssueReasonDto::unverifiedConfirmationMetadata` → 生成的 TS 联合 → `LibraryRecoveryStatus.tsx` 文案。**新增矩阵** `durability_projection/tests/stale_sync.rs` 5 条：陈旧元数据（值 `new` 而账本 `old`：投影 `new`、报告未证、保留字节逐字节不变、baseline 0）、值相符即确认（无报告，证明不是"凡有 sync 块就报警"）、借来的版本号（seq 4 确认的是另一歌单）、迟到 ACK 只清报告不改字节、genesis 不声明。**点名场景**（均已执行）：离线 A→B 多候选 `independent_replica_enrollment_preserves_unbound_offline_edits` + `library_durability_sync_export_versions_legacy_reanchor_without_changing_event_id`、迟到 ACK 本项新增用例、已发送正文不变 `queued_request_body_stays_identical_when_local_audio_goes_missing`、重复成员 alias `concurrent_duplicate_playlist_append_persists_alias_in_log_and_snapshot_state`、旧删除不影响新成员 `retrying_an_old_member_delete_does_not_remove_the_readded_member`。**命令 + 命中数**：`cargo test -p echo-core sync` **209/0**、`cargo test -p echo-core --lib durability_projection` **51/0**、`cargo test -p echo-core` **lib 960/0/1 ignored** + 集成套件 8/0、7/0、1/0、0/0、1/0、2/0、19/0、0/0、`cargo clippy -p echo-core --all-targets -- -D warnings` 0 警告、`cargo fmt --all` 已应用、`pnpm generate:ipc` 更新 1 行。**未在本项内解决**：`agrees()` 是字段级比对，账本载荷多出的未建模字段不参与判定，完整 wire 兼容矩阵归 7.8。
+- [x] 7.3 主机确认改为规划/序列预留→目录权威提交→SQLite 账本→资源/安全检查点→连续 published→ACK；同一“规划-提交-投影”序列在多个确认分支重复出现时必须抽成一个 helper，不得复制粘贴；验证重复 mutation 同结果、相同 ID 异正文拒绝、每个 publication 窗口断电、ACK 后丢 SQLite 可恢复业务资料，运行 `cargo test -p echo-sync`（LD-01/02/07）。
+
+  进度：2026-10-25 夜间复核：本项指定的验证命令 `cargo test -p echo-sync` 当时**为红**——
   `--all-features` 下 lib 65/0、arch 1/0、`discovery_network` 3 条全 ignored，
   但 `ledger_protocol` 0 passed / 2 failed，报
   `Unavailable { resource: "library durability", hint: "directory commit adapter is not configured" }`。
   根因是本 change 引入的 `sync/durability/commit.rs::commit_prepared_projection` 只在
-  `#[cfg(test)]` 下容忍缺失控制面（echo-core 作为 echo-sync 的依赖编译时 `cfg(test)` 为假）；
-  该文件在 `origin/main` 上不存在，`crates/echo-sync/` 未被本分支改动，同一条用例在
-  `origin/main` 干净检出上 2/2 通过 ⇒ 属本分支引入的回归，详见
-  [交接](evidence/handoff-20261025.md) 的"缺陷 4"。核对时必须带 `--all-features`。
-  该回归修好前本项不可勾选。
-- [ ] 7.4 远端资源 publication 保存目录位置声明与完成凭据，对 `media/` 和受管 `echo/media/` 均验证 hash/length/owner/version；验证媒体先后、中途替换失败、Windows 文件占用、旧文件冲突、丢 DB 后关联原 UUID，运行 `cargo test -p echo-core remote_resources`（LD-02/08）。
-- [ ] 7.5 把候选终结、冲突原件和资源引用纳入目录重放/压缩，禁止重建制造 outbox 回声；验证启停/换库/epoch 清理不丢引用，运行 `cargo test -p echo-core resource_retention` 及多设备契约（LD-02/07/08）。
-- [ ] 7.6 更新 `docs/lan-sync-recovery.md` 的 ACK、媒体与已同步边界和重装安全恢复；验证无钥匙串可离线恢复但不自动联网，可信账本缺失阻止旧 epoch，网络协议如需新增资源字段则先补版本协商规格与契约，不能默丢字段（LD-03/07/09/10）。
+  `#[cfg(test)]` 下容忍缺失控制面（echo-core 作为 echo-sync 的依赖编译时 `cfg(test)` 为假），
+  详见 [交接](evidence/handoff-20261025.md) 的"缺陷 4"。
+
+  收尾（2026-10-26）：**该回归已清除**——`cargo test -p echo-sync --all-features` 现为
+  lib 65/0、arch 1/0、`discovery_network` 0 passed / 3 ignored、`ledger_protocol` 2/0，0 failed。
+  **helper 抽取**：`sync_ledger/host_ledger.rs:18` 新增 `commit_confirmation(control, tx, mutation)`，
+  把四条确认分支（精确 inbox 重试、终态拒绝、对象已删除、新接受提交）共有的
+  "序列身份 → 目录权威提交 → SQLite 账本投影"尾部收敛为唯一实现；四个调用点分别在
+  `host_ledger.rs:83/137/144/179`，分支只负责往 `tx` 写自己的行，helper 消耗事务，
+  因此分支无法在目录接受同一 after-image 之前提交账本，也无法在 `SavedPendingProjection`
+  之后继续推进。`grep -c "commit_projection(control"` 剩余裸拷贝 **0**。发布路径
+  `mark_published`（`host_ledger.rs:184-229`）仍经 `commit_publication_projection`
+  与 `identity("host-published", "<library>:<seq>")` 走同一尾部。
+  **验证**（命令 + 命中数）：`cargo test -p echo-core --lib "mark_published"` **12 passed / 0 failed**
+  覆盖每个 publication 窗口——目录标记后故障返回 `library_saved_pending_recovery` 且
+  `sync_commits.publication_state` 保持非 published、重试复用原 delta
+  （`..._saved_pending_recovery_retry_reuses_original_delta`）；目录成功而 SQLite 延迟
+  `COMMIT` 失败返回 `library_saved_pending_projection`、目录 delta 保留、修复后同 checkpoint
+  重试成功（`..._saved_pending_projection_keeps_directory_delta`）；连续前缀与摘要
+  （`mark_published_cannot_skip_pending_predecessor_and_retries_are_idempotent`、
+  `mark_published_rejects_missing_predecessor_without_updating_state`、
+  `mark_published_rejects_forked_predecessor_digest_without_updating_state`）、
+  检查点失败阻塞后续 ACK（`checkpoint_failure_blocks_later_ack_until_pending_predecessor_is_recovered`）、
+  并发来源只放行一个 pending（`concurrent_origins_admit_only_one_pending_publication`）。
+  **ACK 后丢 SQLite 可恢复业务资料**：
+  `..._retains_facts_resources_across_window_and_old_retries` 跑满 35 次真实确认跨过 32 提交
+  覆盖窗口，再 `wipe_and_project` 全新数据库并 `read_recovery_records`，断言 pending/处置/
+  alias/receipt/cursor/资源位置六类 state 与资源字节逐项保留、旧 checkpoint 重试与旧
+  mutation 重放都不改写已发布正文。**重复 mutation 同结果 / 同 ID 异正文拒绝**：
+  `host_ledger_stages_confirmation_idempotently_and_tracks_publication`（同 candidate 二次
+  `stage_confirmation` 返回完全相同的 `StagedConfirmation`；改正文后 `{"title":"different body"}`
+  报错）。`cargo build -p echo-core --lib`、`cargo test -p echo-core --lib sync` 198/0、
+  `cargo clippy -p echo-core --all-targets -- -D warnings` 0 警告、`cargo fmt --all --check`
+  与 `git diff --check` 通过。
+- [x] 7.4 远端资源 publication 保存目录位置声明与完成凭据，对 `media/` 和受管 `echo/media/` 均验证 hash/length/owner/version；验证媒体先后、中途替换失败、Windows 文件占用、旧文件冲突、丢 DB 后关联原 UUID，运行 `cargo test -p echo-core sync_resource_publication`（此过滤器实际覆盖远端 publication 集成测试；`remote_resources` 不匹配测试名，会零测试通过）（LD-02/08）。
+
+  验证（2026-10-26）：实现、边界、五个新增用例和 26/26 命中详见 [远端资源目录持久化证据](evidence/7.4-remote-resource-directory-20261026.md)。目录记录精确的当前 publication 指针，支持 DB 丢失后的离线路径重建；资源完整性由 directory adapter 在完成 marker 前重验。旧资源冲突和文件占用模拟覆盖；Windows 原生句柄行为归 9.3，未冒称跨平台实机验证。
+- [x] 7.5 把候选终结、冲突原件和资源引用纳入目录重放/压缩，禁止重建制造 outbox 回声；验证启停/换库/epoch 清理不丢引用，运行 `cargo test -p echo-core resource_retention` 及多设备契约（LD-02/07/08）。
+
+  验证（2026-10-26）：重放资源、终态候选和 epoch archive holds 的 source/scope 与重建行为见 [资源保留证据](evidence/7.5-resource-retention-20261026.md)。目录压缩后 fresh projection、root switch、多次 rebuild 和 no-echo 测试 4/4；host epoch rotation 原件保留测试在同组；`echo-sync` 引用图生命周期契约 1/1。原子重建失败继续保留之前 holds。
+- [x] 7.6 更新 `docs/lan-sync-recovery.md` 的 ACK、媒体与已同步边界和重装安全恢复；验证无钥匙串可离线恢复但不自动联网，可信账本缺失阻止旧 epoch，网络协议如需新增资源字段则先补版本协商规格与契约，不能默丢字段（LD-03/07/09/10）。
+
+  验证（2026-10-26）：ACK 仅覆盖 mutation 与 publication checkpoint、媒体 ready 与对象同步的差别、离线目录恢复及信任 ledger/旧 epoch 围栏写入 [恢复文档](../../../docs/lan-sync-recovery.md)，调用链与证据见 [安全恢复边界](evidence/7.6-safe-recovery-boundary-20261026.md)。检查了 Core recovery 只执行本地 replay/project，可信 sync state 仅由已验证 live-session provisioner 消费；`startup_refuses_restored_or_forked_history_before_repair`、`unconfigured_runtime_stays_offline_and_stop_is_idempotent`、`restore_does_not_provision_without_a_binding` 各 1/1。7.8 确认本 change 没有引入必需的新 LAN resource wire 字段。
 - [ ] 7.7 实现可信原会话重放与新 binding/作者的显式意图接纳转换，先核对旧 receipt/主规范状态，再持久保存旧→新 mutation 映射，保留原冻结时间/UUID/成员顺序/统计桶；验证旧 ACK 丢失、身份改变、重新配对与转换任一步中断均不重复应用，无法判定只保留待处理；加入旧 A 桶本地 7/主 5、新作者 B 无权抬高 A 或挪差额的场景，旧计数本地保留且 B 只增自己的桶，运行 `cargo test -p echo-core library_durability` 和 `cargo test -p echo-core sync`（LD-07）。
-- [ ] 7.8 建立本地 manifest、record envelope、LAN wire/capability 的独立兼容矩阵；验证支持的旧目录可读取且读取不改写资料、新协议目录拒绝不支持客户端写入、混版本资源字段按现有协商规则处理且无静默丢字段，并将结果写入协议/恢复文档（LD-04/09/10）。
+- [x] 7.8 建立本地 manifest、record envelope、LAN wire/capability 的独立兼容矩阵；验证支持的旧目录可读取且读取不改写资料、新协议目录拒绝不支持客户端写入、混版本资源字段按现有协商规则处理且无静默丢字段，并将结果写入协议/恢复文档（LD-04/09/10）。
+
+  验证（2026-10-26）：三条版本轴与实际行为、测试证据、wire未知字段规则及“无新增必需 wire 字段”的范围记录见 [兼容矩阵证据](evidence/7.8-version-compatibility-20261026.md) 和 [协议说明](../../../docs/library-durability-protocol.md)。`manifest_v3_explicitly_reads_legacy_but_refuses_invalid_and_future_versions` 1/1，`library_durability_new_manifest_fences_legacy_writers_without_changing_record_envelopes` 1/1，`portable_v` 4/4，`cargo test -p echo-sync --all-features protocol` 6/6。支持的旧版读取由对应 decoder 与不改写提交链约束；未来 envelope/manifest/wire 版本分别拒绝，LAN serde 对未知可选 JSON 字段的既有忽略行为已明确说明。本变更没有新增必须由旧端理解的 resource wire 字段。
 
 ## 8. 类型化 IPC 与用户可见恢复状态
 
-- [ ] 8.1 Core→desktop→IPC 提供未保存、已保存待恢复、已保存待投影、已完成、部分恢复及稳定操作身份/分类原因；运行 `cargo run -p echo-desktop --bin echo-generate-ipc` 并核对生成物，序列化测试覆盖各态，不能手改生成类型（LD-01/06/10）。
+- [x] 8.1 Core→desktop→IPC 提供未保存、已保存待恢复、已保存待投影、已完成、部分恢复及稳定操作身份/分类原因；运行 `cargo run -p echo-desktop --bin echo-generate-ipc` 并核对生成物，序列化测试覆盖各态，不能手改生成类型（LD-01/06/10）。
+
+  验证（2026-10-27）：五态 DTO 与分类原因由生成器产出——`LibraryDurabilityOutcomeDto`（`notSaved` / `savedPendingRecovery` / `savedPendingProjection` / `complete` / `recoveryPartial`）、`LibraryDurabilityReasonDto`（`operationRejected` / `recoveryRequired` / `projectionPending` / `unresolvedProjection` / `legacyUnverified`），挂载于 `IpcErrorDto.durabilityOutcome` 与 `LibraryRecoveryStatusDto.outcome`。`cargo run -q -p echo-desktop --bin echo-generate-ipc` 重写生成物后 diff 仅含生成器新增内容（未手改）；`ipc::` 31/31 含 `committed_generated_file_is_in_sync_with_the_generator` 钉住漂移。序列化测试覆盖各态：`every_outcome_has_stable_tag_identity_and_classified_reason`（逐态 tag/reason/操作身份 + round-trip）、`absent_operation_identity_serializes_as_explicit_null`（`operationId: string | null`）、`rejected_mutation_is_classified_not_saved_and_names_no_operation`（未保存态无操作身份）、`mutation_path_never_downgrades_a_saved_operation`（已保存态不被降级）、`read_errors_carry_no_persistence_verdict`（读路径不伪造持久化裁决）。生产侧：新增 `IpcErrorDto::from_mutation` 供 13 个写入/导入命令使用（此前 `NotSaved` 在生产中不可达），并让 `delete_song_coordinated` 保留 Core 错误（此前已提交待投影的删除被压平成普通拒绝）。Core 侧 LD-01a：`favorite_directory_refusal_is_not_saved_and_leaves_no_projection_fact` 断言目录拒绝时错误非 `LibrarySavedPending`、业务表指纹与目录 replay 均不变、重试只新增一条提交（`controlled_order` 5/5）。命令记录：`cargo test -p echo-core --lib library_durability` 243/243、`cargo test -p echo-desktop --lib ipc::` 31/31、`--lib player::` 240/240、`cargo clippy -p echo-desktop -p echo-core --all-targets -- -D warnings` 与 `cargo fmt --all --check` 通过、`pnpm --filter @echo/desktop typecheck` 通过。UI 消费见 8.2。
 - [x] 8.5 为每个新增错误码补齐前端 message key 映射（不得把 key 字符串直接当用户文案显示），并把新码显式列入 `ErrorPolicy` 重试判定表，以断言钉住；验证 `pnpm --filter @echo/desktop typecheck` 与 IPC 漂移检查通过（LD-01/06/10）。
-- [ ] 8.2 在现有资料库设置/错误详情中呈现新协议恢复状态、只读、未解析记录、待投影与同操作重试；不提供旧库回填进度或历史修复入口。喜欢/歌单乐观状态按提交结果处理，统计错误不中断播放但可查看；通过 React 测试验证焦点、键盘、错误、重新打开与批量逐项反馈（LD-01/06）。
+- [x] 8.2 在现有资料库设置/错误详情中呈现新协议恢复状态、只读、未解析记录、待投影与同操作重试；不提供旧库回填进度或历史修复入口。喜欢/歌单乐观状态按提交结果处理，统计错误不中断播放但可查看；通过 React 测试验证焦点、键盘、错误、重新打开与批量逐项反馈（LD-01/06）。
+
+  验证（2026-10-27）：设置侧 `LibraryRecoveryStatus` 按 `LibraryRecoveryStatusDto.outcome` 渲染五态，只读/未解析记录/历史未验证/待投影各有独立文案；待投影提供「更新已保存资料」= `retry_library_projection`（重投影已保存前缀，附「不会创建新的收藏或歌单」说明），不提供旧库回填进度或历史修复入口（`src/features/settings/LibraryRecoveryStatus.tsx`）。播放统计以只读 `PlaybackRetryDiagnostics` 呈现（操作身份 + 原因 + 重试次数，空队列不渲染），打开面板只读一次、不重发原事件。乐观状态统一走 `savedPendingNotice.ts`：`notifySavedPending` 是唯一分类器（结构化 `durabilityOutcome` 优先，回退错误码），已保存待更新保留乐观状态并只按原操作身份重试，仅真正被目录拒绝才回滚并重查；`LibraryWorkspace` / `CollectionDirectory` / `PlaylistsView` / `PlayerBar` / `PlaylistNameDialog` / `AddToPlaylistDialog` 全部接入。批量操作新增第五态 `pending`（`已保存待更新 N`，不计入失败、不触发回滚），且待投影项不再触发滞后投影的重查。修正过程中发现并修复两处真实缺陷：其一，`publishSongUpdate` 原先整体替换行，播放条只持有 `song_detail` 字段，已保存待更新的喜欢会抹掉行的标题/音质——改为**补丁合并**语义（`SongUpdate`），三个订阅点均改为 merge；其二，批量成功后无条件重查在待投影时会用滞后投影覆盖已提交真相。React 覆盖：`LibraryRecoveryStatus.test.tsx` 8/8（只读、待投影+同操作重试、catch-up 失败仍显示「已保存在音乐库」、重新打开重读、未解析记录、历史未验证、状态不可读、播放统计只读、焦点+键盘重读）、`savedPendingFeedback.test.tsx` 7/7（行心保留、按原操作重试、仅有错误码也能识别、真正拒绝仍回滚并重查、播放条心保留且标题不被抹掉、恢复按钮可聚焦且带 action 不自动消失、批量逐项反馈）、`PlaylistNameDialog.test.tsx` 8/8（保留已输入名称、同操作恢复、恢复失败仍称已保存）、`AddToPlaylistDialog.test.tsx` 14/14（待投影计为已保存并可按原操作恢复）。命令记录：`pnpm --filter @echo/desktop format:check` / `lint` / `typecheck` / `build` 与 `npx vitest run`（49 文件 / 445 条）全部通过。反证：将合并改回整体替换、将 `pendingBatchItems` 门控改回无条件重查，对应测试均转红，确认断言真实有效。
 - [x] 8.3 更新界面术语和恢复说明：完整音乐库包含 `media/`+`echo/`，只保留音频无法推断喜欢/歌单；同步凭据需重新配置，不能把缺历史资料显示成恢复成功；验证文案不泄露底层 SQL 或凭据（LD-03/06/09）。
 - [x] 8.4 执行 `pnpm --filter @echo/desktop format:check`、`pnpm --filter @echo/desktop lint`、`pnpm --filter @echo/desktop typecheck`、`pnpm --filter @echo/desktop test`、`pnpm --filter @echo/desktop build`，并验证 UI 消费全部新增类型且无未处理异步错误（LD-10）。
 
@@ -158,10 +217,37 @@
 ## 9. 整体恢复、故障与交付验证
 
 - [ ] 9.1 完成主机加两从综合 fixture：本地导入/扫描、喜欢取消、空/非空歌单、封面/覆盖、统计、alias、删除、离线候选与 LAN 传播混合，停写并稳定备份后移走各机全部应用数据，逐一断网恢复并比对规范快照，重复恢复不重复/不回声（LD-01…LD-09）。
-- [ ] 9.2 对复制/校验、文件/目录刷盘、commit marker、顺序链/材料化 checkpoint、SQLite commit、cursor、独立安全检查点、ACK、GC 逐项强制中断，覆盖本地和同步；验证未提交无普通成功、已提交可仅凭目录恢复、部分损坏报告，形成可重复证据（LD-01/02/06/07）。
+- [x] 9.2 对复制/校验、文件/目录刷盘、commit marker、顺序链/材料化 checkpoint、SQLite commit、cursor、独立安全检查点、ACK、GC 逐项强制中断，覆盖本地和同步；验证未提交无普通成功、已提交可仅凭目录恢复、部分损坏报告，形成可重复证据（LD-01/02/06/07）。
+
+  进度：2026-10-27 逐项矩阵与实测见
+  [9.2 强制中断矩阵](evidence/9.2-interruption-matrix-20261027.md)。九个中断点各有具名用例
+  （目录侧 21 个 `commit_with_hook` / 12 个 `recover_with_hook` phase，应用侧
+  `Site::{Copy,Publish,Commit,State,TrashMove,RecordWrite}` × `Phase::{Before,After}`）。
+  实测 exit 0：`cargo test -p echo-core --lib library_durability` 243 passed；
+  `-- infrastructure::filesystem::durability::tests application::recover` 82 passed；
+  `application::recover` 20 passed；`--lib sync` 215 passed；
+  `cargo test -p echo-desktop --lib sync_security` 5 passed；全 lib 972 / 460 passed。
+  未覆盖项已明确记录：全部为进程内注入，无真实断电；OS 级断电归 9.3，
+  旧会话接纳中断归被阻塞的 7.7。
 - [ ] 9.3 macOS/Windows/Linux 原生临时库验证重装式恢复、只读/磁盘满、Unicode/大小写/符号链接、卷断开、文件占用与双进程锁，记录安装版本/步骤/结果/未知项；不得对真实用户库执行清空数据库测试（LD-08/09/10）。
-- [ ] 9.4 在小规模代表场景下验证扫描、受控批量导入及同步收敛的功能正确性和持久化顺序；允许较长的同步等待，不设大库吞吐或约 1 秒发现/取消性能门槛；记录可观察到的持久 IO 成本，不以延迟唯一权威落盘换性能（LD-01/10）。
-- [ ] 9.5 执行与本 change 已完成范围相称的短 CI 验证：`cargo fmt --all --check`、受影响 crate 的 Clippy/测试、前端相关检查、`pnpm verify:governance` 和小规模代表性集成场景；确认每条测试确有执行且证据与 LD/入口规格对应。完整 workspace、原样 513 和三平台原生验证仍作为整体交付或后续独立验收（LD-10）。
+- [x] 9.4 在小规模代表场景下验证扫描、受控批量导入及同步收敛的功能正确性和持久化顺序；允许较长的同步等待，不设大库吞吐或约 1 秒发现/取消性能门槛；记录可观察到的持久 IO 成本，不以延迟唯一权威落盘换性能（LD-01/10）。
+
+  进度（2026-10-27）：三类场景均在小规模代表数据上实测通过，详见
+  [9.4 小规模顺序与 IO 成本](evidence/9.4-small-scale-ordering-and-io-20261027.md)。
+  **扫描**：3 首新歌 = 3 次 authority commit（每次 1 record + 1 resource），无变化重扫新增 0 次
+  commit，身份稳定（`library_durability_small_scan_commits_one_record_and_resource_per_song`）。
+  **受控批量导入**：2 首 = 4 次 commit（身份预留 + 歌曲 after-image），record 总数 2、resource 总数 2
+  （`library_durability_small_import_records_reservation_and_song_commit_per_success`）。
+  **同步收敛**：主机 + 单从真实 LAN fixture 41 passed / 0 failed / 2 ignored；先拉后推、ACK 前只声明
+  一次资源、入站对象先于媒体、已收敛周期只读一页提交均有计数 port 实测断言。
+  实测命令（串行，exit 0）：`cargo test -p echo-core --lib application::scan::tests::durability` 6 passed；
+  `application::import::logic::tests` 37 passed；`cargo test -p echo-app sync_provisioner` 41 passed；
+  `--lib library_durability` 243 passed；`echo-core --lib` 972 passed / 1 ignored；`echo-desktop --lib`
+  460 passed。`echo-app` 是纯 binary crate，`--lib` 会报 `no library targets found`，正确形式是不带 `--lib`。
+  两条 `#[ignore]` 是既有 512+ 规模用例（`513 real host publications exceed the governance time budget` /
+  `real LAN host rate limit makes 513 uploads take several minutes`），按任务口径不设大库吞吐门槛，
+  不计入通过、归后续独立验收。未覆盖项已记录：无三平台原生语义（归 9.3）、无主机 + 两从（归 9.1）。
+- [x] 9.5 执行与本 change 已完成范围相称的短 CI 验证：`cargo fmt --all --check`、受影响 crate 的 Clippy/测试、前端相关检查、`pnpm verify:governance` 和小规模代表性集成场景；确认每条测试确有执行且证据与 LD/入口规格对应。完整 workspace、原样 513 和三平台原生验证仍作为整体交付或后续独立验收（LD-10）。
 
   进度：2026-10-25 夜间复核（口径更正：此前的 `178/0/1`、`58/0/1`、`865/0/2` 把 `#[ignore]` 的缺陷复现用例计入了 passed，也未区分 lib 与 arch 目标）：`cargo fmt --all --check` exit 0；`cargo test -p echo-core --lib` 865 passed / 1 failed / 1 ignored（共 867，1 failed 即缺陷 1 的 RED 用例、1 ignored 是既有性能基准）；`cargo test -p echo-core library_durability` lib 176 passed / 1 failed（690 filtered out）+ arch 1 passed；`cargo test -p echo-core scan` 52/0/0、`playlist` 54 passed / 1 failed、`import` 55/0/0（+ arch 1）；`cargo test -p echo-desktop --lib` 443/0/0、`cargo test -p echo-desktop favorite` 4/0/0；`node scripts/verify/check-scale.mjs` exit 0；`openspec validate enforce-library-first-durability --strict` exit 0。**`pnpm verify:governance` 已跑完并失败**（exit 101）：`cargo test -p echo-sync --test ledger_protocol` 的 `sqlite_host_commit_digest_matches_the_wire_protocol` 与 `maximum_size_mutation_remains_transportable_after_confirmation` 双双失败，报 `Unavailable { resource: "library durability", hint: "directory commit adapter is not configured" }`。该依赖由本 change 引入（`sync/durability/commit.rs` 的 `commit_prepared_projection` 在 `cfg(not(test))` 下要求目录提交适配器，而 echo-core 作为 echo-sync 的依赖时 `cfg(test)` 不成立），`crates/echo-sync/` 未被本分支改动 ⇒ 属本分支引入的回归，9.5 / 11.2 因此继续未勾选。（核对 `echo-sync` 整包时须带 `--all-features`：不带则 `discovery_network` 目标因 `mdns_sd` 特性未开而编译失败，那是特性开关问题、不是回归；全特性下该目标 3 条全 ignored。）完整 workspace all-targets 与三平台原生验证未做。故不勾选。
   更新（2026-10-25）：上述缺陷 4 已按方向二修复（测试安装真实控制面，`ledger_protocol` 回到 2/2，见
@@ -185,8 +271,31 @@
   spec 非目标移除）。最终 `pnpm verify:governance` 单独复跑 **exit 0**（coverage 90.03%，注入套件
   33/33，`openspec validate --strict` exit 0）。9.5/11.2 仍不勾：干净工作区复现待用户授权提交后执行，
   三平台原生验证未做。
-- [ ] 9.6 使用 CodeGraph 与引用搜索复核无 DB-first/DB-only 生产替代入口、旧 materializer/fake/导出已清理，独立审查事务/迁移/身份/API/权限边界，修正后仅重跑受影响验证；交付审查与清理证据（LD-10）。
-- [ ] 9.7 汇总 LD-01…LD-10 的自动化证据，逐条对应 acceptance-matrix 的“Required acceptance evidence”，确认无“规划命令当通过”的伪证据；单独标明完整 workspace 与三平台原生验证属于整体发布或后续独立验收，不作为本 change 短 CI 的门槛；交付证据索引（LD-10）。
+
+  更新（2026-10-27，勾选）：完整短 CI 已执行并交付
+  [evidence/9.5-short-ci-20261027.md](evidence/9.5-short-ci-20261027.md)。实测（全部串行）：
+  `cargo fmt --all --check` 0；四个 crate Clippy `--all-features -D warnings` 各 0；
+  `cargo test -p echo-core` lib 972/0/1 + 集成 38/0/0；`-p echo-desktop` lib 460/0/0 + 集成 12/0/0；
+  `-p echo-app` 133/0/2 + arch 2/0/0；`-p echo-sync --all-features` lib 65/0/0、arch 1、ledger_protocol 2、
+  discovery_network 0/0/3（3 条 `#[ignore]` 真实 mDNS 用例）；前端 format/lint/typecheck/build 各 0，
+  vitest 49 文件 445 用例全过；`generate:ipc` 幂等（sha1 `33884fce…` 不变）；
+  `pnpm verify:governance` **整门独占复跑 exit 0**，15 项检查全绿，注入套件 **33/33**。
+  首跑曾 `GOV_EXIT=1`：注入阳性对照内 `host_resources.rs:237` 的 5 秒墙钟断言在机器有其他负载时失败，
+  同树独占复跑不可复现，判定为负载敏感而非回归（归因边界见该证据第三节，未把元凶钉死到单一并行命令）。
+  仍**不**声称：干净工作区复现（11.2，待用户授权提交后）与三平台原生验证（9.3）。
+  另记一项既存事实：`openspec validate --all --strict` 为 exit 1，唯一失败项是
+  `spec/diagnostic-logging` 的 Purpose 占位符（`origin/main` 既有，非本 change 引入），
+  本 change 自身 `✓`；须在 10.5 归档前处理。
+- [x] 9.6 使用 CodeGraph 与引用搜索复核无 DB-first/DB-only 生产替代入口、旧 materializer/fake/导出已清理，独立审查事务/迁移/身份/API/权限边界，修正后仅重跑受影响验证；交付审查与清理证据（LD-10）。
+
+  证据：`evidence/9.6-db-first-residue-review-20261027.md`。四个边界（事务/迁移/身份/API 权限）独立复核完成；
+  生产可达的 DB-first 用户事实写入仅剩 `resolve_host_sync_conflict`（`sync/sync_conflicts.rs:139-189`），
+  已连同所需范围扩张一并上报（见该文件第六节），未擅自改实现。复核用的 Clippy 四条均 exit 0。
+- [x] 9.7 汇总 LD-01…LD-10 的自动化证据，逐条对应 acceptance-matrix 的“Required acceptance evidence”，确认无“规划命令当通过”的伪证据；单独标明完整 workspace 与三平台原生验证属于整体发布或后续独立验收，不作为本 change 短 CI 的门槛；交付证据索引（LD-10）。
+
+  证据：`evidence/9.7-ld-evidence-index-20261027.md`。28 条 acceptance-matrix 行全部绑定到 `rg` 可命中的
+  真实用例名与 `file:line`（87 条 Rust + 9 条前端，零 MISSING）；状态如实为 完整 20 / 部分 7 / 无 1
+  （LD-09c 确为无，仓库内不存在 media-only 恢复测试，仅有未被断言的界面文案）；并单列 7 条伪证据风险。
 
 ## 10. 场景登记、三方对账与归档门禁
 

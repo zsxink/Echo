@@ -193,10 +193,12 @@ pub(crate) fn published_file_paths(
          FROM sync_remote_resource_locations l
          JOIN sync_remote_publications p ON p.operation_uuid=l.operation_uuid
          JOIN songs s ON s.uuid=l.object_uuid AND s.library_root_uuid=l.local_root_uuid
-         JOIN sync_resource_manifests m ON m.object_type=l.object_type AND m.object_uuid=l.object_uuid
-           AND m.library_relative_path=l.library_relative_path
+         JOIN json_each(p.publication_json,'$.items') item
+           ON json_extract(item.value,'$.local_path')=l.local_relative_path
+           AND json_extract(item.value,'$.target.manifest.relative_path.normalized')=l.library_relative_path
          WHERE l.local_root_uuid=?1 AND l.object_type='song' AND p.completed=1
-           AND m.ref_kind='audio' AND l.local_relative_path=s.relative_path
+           AND json_extract(item.value,'$.target.manifest.kind')='audio'
+           AND l.local_relative_path=s.relative_path
          ORDER BY l.local_relative_path",
     ).map_err(storage)?;
     let rows = statement

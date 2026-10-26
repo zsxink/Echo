@@ -79,9 +79,14 @@ fn coordinated_delete_rolls_back_when_core_refuses() {
         |_song| Err(echo_core::error::Error::unavailable("song", "locked")),
         std::time::Duration::from_secs(2),
     );
+    let failure = outcome.expect_err("a Core refusal must roll back, not fake success");
+    let core = failure
+        .core()
+        .expect("the Core error survives the coordinator");
+    assert_eq!(core.code(), "unavailable");
     assert!(
-        outcome.is_err(),
-        "a Core refusal must roll back, not fake success"
+        !failure.to_string().is_empty(),
+        "the reason stays renderable for diagnostics"
     );
 
     // The queue was restored: the target is still current. Scoped so the
@@ -96,4 +101,52 @@ fn coordinated_delete_rolls_back_when_core_refuses() {
         assert_eq!(view.queue().entries().len(), 2);
         drop(view);
     }
+}
+
+/// A delete whose directory intent committed but whose projection failed is
+/// *saved*, not unsaved. Flattening the coordinator's failure to a string used
+/// to erase that distinction, so the command layer reported it as a plain
+/// refusal and the UI rolled back a change the library already holds.
+#[test]
+fn coordinated_delete_preserves_a_saved_pending_core_failure() {
+    let fake = Arc::new(FakePlayer::new());
+    let port: Arc<dyn PlayerPort> = fake;
+    let coordinator = Arc::new(Mutex::new(PlaybackCoordinator::new(port.clone())));
+    let s1 = SongId::new();
+    {
+        let mut coord = coordinator.lock().expect("coordinator lock");
+        coord.play_context(&ViewContext {
+            songs: vec![s1],
+            selected_index: 0,
+        });
+    }
+    let operation = echo_core::domain::ids::OperationId::new();
+
+    let failure = delete_song_coordinated(
+        &coordinator,
+        s1,
+        |_song| {
+            Err(echo_core::error::Error::saved_pending_projection(
+                operation,
+                echo_core::error::Error::unavailable("database", "projection failed"),
+            ))
+        },
+        std::time::Duration::from_secs(2),
+    )
+    .expect_err("the projection failure is reported, not swallowed");
+
+    let core = failure
+        .core()
+        .expect("the saved-pending identity survives the coordinator");
+    assert_eq!(core.code(), "library_saved_pending_projection");
+    assert!(
+        matches!(
+            core,
+            echo_core::error::Error::LibrarySavedPending {
+                operation: saved,
+                ..
+            } if *saved == operation
+        ),
+        "the stable operation identity is preserved for the retry"
+    );
 }

@@ -32,6 +32,102 @@ fn count(database: &SqliteDatabase, song: SongId) -> u64 {
 }
 
 #[test]
+fn library_durability_new_author_playback_preserves_old_pending_bucket_without_claiming_it() {
+    use crate::domain::library::durability::{ChangeOrigin, LibraryBatch};
+    use crate::domain::library::{HybridLogicalClock, PlayStatsRecord, PortableRecordEnvelope};
+    use crate::domain::sync::{CommitSeq, ConfirmedObject, ObjectKey, ObjectVersion, OriginCursor};
+    let stack = ScanStack::new();
+    let (_, control, deps) = configured_roots(&stack);
+    let song = favorite::seed_song(&stack, &control, &deps);
+    let old_author = uuid::Uuid::new_v4();
+    let new_author = deps.device_id.current_device_id();
+    let manifest = control.read_manifest(stack.root).unwrap().unwrap();
+    let before = PlayStatsRecord {
+        song_uuid: song.as_uuid(),
+        revision: Revision::INITIAL,
+        updated_by_device_id: crate::domain::library::DeviceId::from_uuid(old_author),
+        hlc: HybridLogicalClock::default(),
+        by_device: std::iter::once((old_author, 7)).collect(),
+    };
+    control
+        .durability()
+        .unwrap()
+        .commit(
+            stack.root,
+            &LibraryBatch::new(
+                uuid::Uuid::new_v4(),
+                manifest.library_id,
+                ChangeOrigin::Recovery,
+                vec![PortableRecordEnvelope::new(PortableRecord::PlayStats(before), None).unwrap()],
+            ),
+        )
+        .unwrap();
+    stack
+        .database
+        .project_library_commits(
+            stack.root,
+            &control.durability().unwrap().recover(stack.root).unwrap(),
+        )
+        .unwrap();
+    let session = PlaybackSessionId::new();
+    assert!(record(&stack, &control, &deps, session, song).unwrap());
+    assert!(!record(&stack, &control, &deps, session, song).unwrap());
+    let replay = control.durability().unwrap().recover(stack.root).unwrap();
+    let state = replay
+        .commits
+        .last()
+        .unwrap()
+        .batch
+        .state
+        .iter()
+        .find(|state| state.kind == StateKind::Pending)
+        .unwrap();
+    let frozen: FrozenMutation = serde_json::from_value(state.payload["frozen"].clone()).unwrap();
+    assert_eq!(
+        frozen.candidate.payload["by_device"][old_author.to_string()],
+        serde_json::Value::Null
+    );
+    assert_eq!(
+        frozen.candidate.payload["by_device"][new_author.to_string()],
+        1
+    );
+    let local = stack.database.device_play_counts(song).unwrap();
+    assert_eq!(local[&old_author], 7);
+    assert_eq!(local[&new_author.as_uuid()], 1);
+    let current = ConfirmedObject {
+        object: ObjectKey::PlayStats(song),
+        version: ObjectVersion::from_commit_seq(CommitSeq::from_u64(5)),
+        origin_device_id: crate::domain::sync::DeviceId::from_uuid(old_author),
+        payload: serde_json::json!({"song_uuid": song.as_uuid(), "by_device": {old_author.to_string(): 5}}),
+    };
+    let cursor = frozen
+        .candidate
+        .previous_mutation_id
+        .map(|last_mutation_id| OriginCursor {
+            origin_device_id: frozen.candidate.origin_device_id,
+            origin_seq: frozen.candidate.origin_seq - 1,
+            last_mutation_id,
+        });
+    let confirmed = crate::domain::sync::confirm_candidate_at(
+        Some(&current),
+        cursor,
+        &frozen.candidate,
+        CommitSeq::from_u64(6),
+        frozen.frozen_at_ms,
+        0,
+    )
+    .unwrap();
+    assert_eq!(
+        confirmed.object.payload["by_device"][old_author.to_string()],
+        5
+    );
+    assert_eq!(
+        confirmed.object.payload["by_device"][new_author.to_string()],
+        1
+    );
+}
+
+#[test]
 fn library_durability_playback_retry_preserves_saved_pending_session() {
     let stack = ScanStack::new();
     let (_, control, deps) = configured_roots(&stack);
@@ -160,6 +256,68 @@ fn library_durability_playback_later_session_catches_up_and_rebuild_has_no_echo(
         }).unwrap();
         assert_eq!((sessions, queued, mutations), (2, 0, 0));
     }
+}
+
+#[test]
+fn library_durability_playback_unwritable_library_leaves_no_database_only_increment() {
+    let stack = ScanStack::new();
+    let (_, control, deps) = configured_roots(&stack);
+    let song = favorite::seed_song(&stack, &control, &deps);
+    let rejecting = Arc::new(control.as_ref().clone().with_commit_hook(|phase, _| {
+        if phase == "prepared" {
+            return Err(crate::error::Error::unavailable(
+                "playback directory",
+                "injected unwritable library resource",
+            ));
+        }
+        Ok(())
+    }));
+    stack.database.configure_library_control(rejecting.clone());
+    let session = PlaybackSessionId::new();
+    for _ in 0..2 {
+        assert!(record(&stack, rejecting.as_ref(), &deps, session, song).is_err());
+        assert_eq!(
+            count(stack.database.as_ref(), song),
+            0,
+            "an unwritable library must never leave a projected play"
+        );
+        assert!(stack.database.device_play_counts(song).unwrap().is_empty());
+        let (sessions, queued, mutations): (u64, u64, u64) = stack
+            .database
+            .with_reader(|c| {
+                c.query_row(
+                    "SELECT (SELECT COUNT(*) FROM recorded_play_sessions),\
+                     (SELECT COUNT(*) FROM sync_outbox),\
+                     (SELECT COUNT(*) FROM sync_mutations)",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .map_err(storage)
+            })
+            .unwrap();
+        assert_eq!(
+            (sessions, queued, mutations),
+            (0, 0, 0),
+            "no private session, outbox snapshot or frozen mutation may exist"
+        );
+        assert!(control
+            .durability()
+            .unwrap()
+            .recover(stack.root)
+            .unwrap()
+            .states()
+            .all(|state| state.kind != StateKind::PlaybackEvent));
+    }
+    // The same intent still commits once the resource becomes writable, and
+    // repeated attempts keep counting exactly one qualified play.
+    stack.database.configure_library_control(control.clone());
+    assert!(record(&stack, &control, &deps, session, song).unwrap());
+    assert!(!record(&stack, &control, &deps, session, song).unwrap());
+    assert_eq!(count(stack.database.as_ref(), song), 1);
+    assert_eq!(
+        stack.database.device_play_counts(song).unwrap(),
+        std::collections::BTreeMap::from([(deps.device_id.current_device_id().as_uuid(), 1)])
+    );
 }
 
 #[test]

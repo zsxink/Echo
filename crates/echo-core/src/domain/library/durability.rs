@@ -292,7 +292,8 @@ impl LibraryBatch {
             state.validate()?;
             if state.key.as_ref().is_some_and(|key| {
                 matches!(key.namespace,
-                StateNamespace::LocalUnbound { library_id, .. } if library_id != self.library_id)
+                StateNamespace::LocalUnbound { library_id, .. }
+                | StateNamespace::Library { library_id } if library_id != self.library_id)
             }) {
                 return Err(Error::conflict(
                     "unbound state belongs to another local library",
@@ -326,6 +327,14 @@ impl LibraryBatch {
             {
                 return Err(Error::conflict("resource requires a BLAKE3 digest"));
             }
+        }
+        for state in self.state.iter().filter(|state| {
+            matches!(
+                state.key.as_ref().map(|key| &key.target),
+                Some(StateTarget::ResourceLocation { .. })
+            )
+        }) {
+            publication::validate_resources(&state.payload, &self.resources)?;
         }
         for state in self
             .state

@@ -52,7 +52,11 @@ impl LibrarySyncRecoveryPort for SqliteDatabase {
             });
             for state in ordered {
                 if !authorized(state, context) {
-                    if state.kind != crate::domain::library::durability::StateKind::PlaybackEvent {
+                    if !matches!(
+                        state.kind,
+                        crate::domain::library::durability::StateKind::PlaybackEvent
+                            | crate::domain::library::durability::StateKind::ResourceLocation
+                    ) {
                         retained::reason(
                             &tx,
                             context.root,

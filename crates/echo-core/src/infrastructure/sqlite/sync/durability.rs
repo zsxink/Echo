@@ -262,7 +262,9 @@ fn complete_confirmations(states: &mut [DurableStateChange]) -> Result<(), Error
     Ok(())
 }
 
-pub(crate) use commit::{commit_projection, commit_publication_projection};
+pub(crate) use commit::{
+    commit_projection, commit_publication_projection, commit_resource_projection,
+};
 
 pub(crate) fn active_root(connection: &Connection) -> Result<LibraryRootId, Error> {
     let root: String = connection

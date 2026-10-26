@@ -4,6 +4,7 @@ use super::super::{support::storage, SqliteDatabase};
 use super::sync_manifests;
 use crate::application::ports::{RemoteDeleteIsolation, ResourceRetentionPort, RetainedResource};
 use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath};
+use crate::domain::library::durability::DurableResource;
 use crate::domain::sync::{ResourceDigest, SharedResourceManifest};
 use crate::error::Error;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
@@ -81,9 +82,45 @@ impl ResourceRetentionPort for SqliteDatabase {
     }
 }
 
-fn collect(connection: &Connection, root: LibraryRootId) -> Result<Vec<Hold>, Error> {
+fn collect_library_resources(
+    connection: &Connection,
+    root: LibraryRootId,
+) -> Result<Vec<Hold>, Error> {
+    // Directory replay retains resource declarations even while their frozen
+    // candidate, conflict or publication is intentionally not installed into a
+    // live session. Those declarations must protect bytes independently of the
+    // selected binding, current catalog and protocol-table lifecycle.
     let mut holds = Vec::new();
-    let mut statement = connection.prepare("SELECT mutation_id,resource_refs_json FROM sync_mutations WHERE local_root_uuid=?1 AND status='pending'").map_err(storage)?;
+    let mut statement = connection.prepare("SELECT object_key,envelope_json FROM library_recovery_records WHERE library_root_uuid=?1 AND row_kind='resource'").map_err(storage)?;
+    let rows = statement
+        .query_map(params![root.to_string()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(storage)?;
+    for row in rows {
+        let (owner, raw) = row.map_err(storage)?;
+        let resource: DurableResource = serde_json::from_str(&raw).map_err(storage)?;
+        let path = RelativeMediaPath::new(&resource.relative_path)?;
+        if path.normalized() != resource.relative_path
+            || owner != format!("resource:{}", resource.relative_path)
+        {
+            return Err(Error::conflict("retained resource identity differs"));
+        }
+        holds.push((
+            "library".into(),
+            owner,
+            parse_digest(&resource.content_hash)?,
+        ));
+    }
+    Ok(holds)
+}
+
+fn collect(connection: &Connection, root: LibraryRootId) -> Result<Vec<Hold>, Error> {
+    let mut holds = collect_library_resources(connection, root)?;
+    // Terminal candidates remain reconciliation evidence while their rows are
+    // retained. Explicit epoch recovery archives them outside the root-switch
+    // archive tables; both live and archived evidence continue to own bytes.
+    let mut statement = connection.prepare("SELECT mutation_id,resource_refs_json FROM sync_mutations WHERE local_root_uuid=?1 UNION ALL SELECT m.recovery_id||':'||m.mutation_id,m.resource_refs_json FROM recovery_sync_mutations m JOIN sync_recovery_archives a ON a.recovery_id=m.recovery_id WHERE a.local_root_uuid=?1").map_err(storage)?;
     let rows = statement
         .query_map(params![root.to_string()], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -102,7 +139,7 @@ fn collect(connection: &Connection, root: LibraryRootId) -> Result<Vec<Hold>, Er
     drop(statement);
     // Retained logs include every losing resource version. Conflicts refer to
     // those versions; neither logs nor unresolved conflicts are GC'ed here.
-    let mut statement = connection.prepare("SELECT 'commit',CAST(commit_seq AS TEXT),canonical_json FROM sync_commits WHERE (SELECT local_root_uuid FROM sync_active_context WHERE singleton=1)=?1 UNION ALL SELECT 'commit',CAST(commit_seq AS TEXT),canonical_json FROM archived_sync_commits WHERE context_root=?1").map_err(storage)?;
+    let mut statement = connection.prepare("SELECT 'commit',CAST(commit_seq AS TEXT),canonical_json FROM sync_commits WHERE (SELECT local_root_uuid FROM sync_active_context WHERE singleton=1)=?1 UNION ALL SELECT 'commit',CAST(commit_seq AS TEXT),canonical_json FROM archived_sync_commits WHERE context_root=?1 UNION ALL SELECT 'recovery_commit',c.recovery_id||':'||c.commit_seq,c.canonical_json FROM recovery_sync_commits c JOIN sync_recovery_archives a ON a.recovery_id=c.recovery_id WHERE a.local_root_uuid=?1").map_err(storage)?;
     let rows = statement
         .query_map(params![root.to_string()], |row| {
             Ok((
@@ -140,7 +177,7 @@ fn collect(connection: &Connection, root: LibraryRootId) -> Result<Vec<Hold>, Er
     }
     holds.extend(conflict_holds);
     drop(conflicts);
-    let mut statement = connection.prepare("SELECT 'snapshot',token,content_hash FROM sync_snapshot_resource_refs WHERE (SELECT local_root_uuid FROM sync_active_context WHERE singleton=1)=?1 UNION ALL SELECT 'snapshot',token,content_hash FROM archived_sync_snapshot_resource_refs WHERE context_root=?1 UNION ALL SELECT 'current',r.object_type||':'||r.object_uuid,r.content_hash FROM sync_resource_refs r WHERE EXISTS(SELECT 1 FROM songs s WHERE s.uuid=r.object_uuid AND s.library_root_uuid=?1) OR EXISTS(SELECT 1 FROM playlists p WHERE p.uuid=r.object_uuid AND p.library_root_uuid=?1)").map_err(storage)?;
+    let mut statement = connection.prepare("SELECT 'snapshot',token,content_hash FROM sync_snapshot_resource_refs WHERE (SELECT local_root_uuid FROM sync_active_context WHERE singleton=1)=?1 UNION ALL SELECT 'snapshot',token,content_hash FROM archived_sync_snapshot_resource_refs WHERE context_root=?1 UNION ALL SELECT 'snapshot',r.recovery_id||':'||r.token,r.content_hash FROM recovery_sync_snapshot_resource_refs r JOIN sync_recovery_archives a ON a.recovery_id=r.recovery_id WHERE a.local_root_uuid=?1 UNION ALL SELECT 'current',r.object_type||':'||r.object_uuid,r.content_hash FROM sync_resource_refs r WHERE EXISTS(SELECT 1 FROM songs s WHERE s.uuid=r.object_uuid AND s.library_root_uuid=?1) OR EXISTS(SELECT 1 FROM playlists p WHERE p.uuid=r.object_uuid AND p.library_root_uuid=?1)").map_err(storage)?;
     let rows = statement
         .query_map(params![root.to_string()], |row| {
             Ok((

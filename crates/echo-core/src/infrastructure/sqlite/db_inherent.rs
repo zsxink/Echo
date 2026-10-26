@@ -11,6 +11,21 @@ impl SqliteDatabase {
     /// `Connection::open` refuses to create parent directories, so a cold start
     /// on a fresh machine — where the platform app-data directory does not yet
     /// exist — would otherwise fail before the first migration.
+    ///
+    /// An existing file that cannot be opened as a SQLite database — unreadable
+    /// header, failed `quick_check`, damaged pages — is quarantined beside the
+    /// original and replaced by a fresh database instead of aborting startup.
+    /// Quarantine is a byte-for-byte move: the damaged file is never read for
+    /// business data, never repaired in place and never deleted, so diagnosis
+    /// stays possible (design: 「SQLite 损坏时先隔离再重建」). Every other
+    /// failure (permission denied, disk full, a lock held elsewhere, a migration
+    /// checksum mismatch) is *not* damage and still fails the open, because
+    /// renaming a healthy database aside would discard a usable projection.
+    ///
+    /// The rebuilt projection is empty: the directory is the source of truth,
+    /// so re-selecting the library folder re-derives the same root identity and
+    /// replays the committed facts (see `rebuild_library_projection`). The
+    /// quarantined file is available through [`Self::quarantined_database`].
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
         let path = path.as_ref().to_path_buf();
         // SQLite's `Connection::open` refuses to create parent directories, so
@@ -27,9 +42,30 @@ impl SqliteDatabase {
             })?;
         }
         let had_database = path.exists() && file_is_non_empty(&path)?;
-        let mut writer = open_writer(&path)?;
+        match Self::open_healthy(&path, had_database) {
+            Ok(database) => Ok(database),
+            Err(failure) if had_database && is_database_damage(&failure) => {
+                let quarantined = quarantine_database(&path, &failure)?;
+                tracing::warn!(
+                    quarantined = %crate::logging::redact_path(&quarantined),
+                    failure = %failure.to_log(crate::logging::DiagnosticMode::default()),
+                    "damaged SQLite database quarantined; starting from a fresh projection"
+                );
+                let mut database = Self::open_healthy(&path, false)?;
+                database.quarantined = Some(quarantined);
+                Ok(database)
+            }
+            Err(failure) => Err(failure),
+        }
+    }
+
+    /// The healthy-open body: configure, back up, migrate, verify, then start
+    /// the writer actor and the reader pool. Kept separate from [`Self::open`]
+    /// so the quarantine decision is made on the failure, not inside it.
+    fn open_healthy(path: &Path, had_database: bool) -> Result<Self, Error> {
+        let mut writer = open_writer(path)?;
         if had_database {
-            let backup = backup_path(&path);
+            let backup = backup_path(path);
             backup_connection(&writer, &backup)?;
         }
         apply_migrations(&mut writer)?;
@@ -41,15 +77,24 @@ impl SqliteDatabase {
 
         let mut readers = Vec::with_capacity(reader_count());
         for _ in 0..reader_count() {
-            readers.push(open_reader(&path)?);
+            readers.push(open_reader(path)?);
         }
         Ok(Self {
             library_control: Mutex::new(None),
-            path,
+            path: path.to_path_buf(),
             writer: SqliteWriteActor::spawn(writer),
             readers: ReaderPool::new(readers),
             device_id,
+            quarantined: None,
         })
+    }
+
+    /// The damaged database this open quarantined, if any. It is diagnostic
+    /// material only: nothing in the runtime reads it, and it is never removed
+    /// automatically.
+    #[must_use]
+    pub fn quarantined_database(&self) -> Option<&Path> {
+        self.quarantined.as_deref()
     }
 
     /// Path of the local database; it is for runtime ownership only and must

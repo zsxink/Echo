@@ -1,5 +1,6 @@
 //! Ordered, atomic projection of a verified library replay. Recovery evidence is
 //! retained independently of whether a relationship's parents are available.
+mod confirmation;
 mod legacy;
 mod records;
 mod retained;

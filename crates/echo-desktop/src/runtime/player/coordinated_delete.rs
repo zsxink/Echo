@@ -13,12 +13,51 @@ use super::PlaybackCoordinator;
 use super::PlayerPort;
 use crate::player::deletion::{DeleteCommit, DeleteExecutor, DeletionCoordinator, UnloadOutcome};
 
+/// Why a coordinated delete did not commit.
+///
+/// The distinction is what the UI needs: [`Self::Core`] keeps the original
+/// Core classification (a directory commit that succeeded but whose
+/// projection failed is *saved*, not unsaved), while [`Self::PlayerHeld`]
+/// means Core was never called because the player still holds the file.
+#[derive(Debug)]
+pub enum CoordinatedDeleteError {
+    /// The player never released the file, so the delete did not start.
+    PlayerHeld,
+    /// Core refused the delete; the queue was rolled back.
+    Core(echo_core::error::Error),
+}
+
+impl CoordinatedDeleteError {
+    /// The Core error that stopped the delete, if any.
+    #[must_use]
+    pub const fn core(&self) -> Option<&echo_core::error::Error> {
+        match self {
+            Self::PlayerHeld => None,
+            Self::Core(error) => Some(error),
+        }
+    }
+}
+
+impl std::fmt::Display for CoordinatedDeleteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PlayerHeld => {
+                f.write_str("delete rolled back: the player still holds the file or Core refused")
+            }
+            Self::Core(error) => write!(f, "{error}"),
+        }
+    }
+}
+
 /// The Core-delete boundary for [`DeletionCoordinator`]: the closure performs
 /// the real delete and returns the undo-operation id, which is captured into a
 /// shared slot the caller reads after a commit (a commit implies the id exists).
 struct CoreDelete<F: Fn(SongId) -> Result<String, echo_core::error::Error> + Send + Sync> {
     delete_core: F,
     operation: Arc<Mutex<Option<String>>>,
+    /// The original Core error, kept verbatim so the IPC boundary can still
+    /// tell a saved-pending delete from an unsaved one.
+    failure: Arc<Mutex<Option<echo_core::error::Error>>>,
 }
 
 impl<F: Fn(SongId) -> Result<String, echo_core::error::Error> + Send + Sync> DeleteExecutor
@@ -32,7 +71,12 @@ impl<F: Fn(SongId) -> Result<String, echo_core::error::Error> + Send + Sync> Del
                 }
                 Ok(())
             }
-            Err(error) => Err(error.to_string()),
+            Err(error) => {
+                if let Ok(mut slot) = self.failure.lock() {
+                    *slot = Some(error);
+                }
+                Err("core delete refused".into())
+            }
         }
     }
 }
@@ -75,30 +119,34 @@ fn wait_unload(port: &Arc<dyn PlayerPort>, timeout: std::time::Duration) -> Unlo
 ///
 /// # Errors
 ///
-/// A rolled-back delete (unload timeout / Core refusal) surfaces as `Err` with
-/// the reason — never a fabricated success.
+/// A rolled-back delete (unload timeout / Core refusal) surfaces as
+/// [`CoordinatedDeleteError`] — never a fabricated success. The Core error is
+/// preserved rather than flattened to a string so the command layer can still
+/// distinguish "saved, waiting for the view" from "not saved".
 pub fn delete_song_coordinated(
     coordinator: &Arc<Mutex<PlaybackCoordinator<Arc<dyn PlayerPort>>>>,
     song: SongId,
     delete_core: impl Fn(SongId) -> Result<String, echo_core::error::Error> + Send + Sync,
     unload_timeout: std::time::Duration,
-) -> Result<String, String> {
+) -> Result<String, CoordinatedDeleteError> {
     // The player port outlives the guard (used inside the unload closure).
     let port = {
         let coord = coordinator
             .lock()
-            .map_err(|_| "player coordinator poisoned")?;
+            .map_err(|_| CoordinatedDeleteError::PlayerHeld)?;
         coord.player().clone()
     };
     let operation: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let failure: Arc<Mutex<Option<echo_core::error::Error>>> = Arc::new(Mutex::new(None));
     let executor = CoreDelete {
         delete_core,
         operation: Arc::clone(&operation),
+        failure: Arc::clone(&failure),
     };
     let mut deletion = DeletionCoordinator::new(port.clone(), executor);
     let mut coord = coordinator
         .lock()
-        .map_err(|_| "player coordinator poisoned")?;
+        .map_err(|_| CoordinatedDeleteError::PlayerHeld)?;
     let mode = coord.mode();
     match deletion.delete_song(coord.queue_mut(), mode, song, || {
         wait_unload(&port, unload_timeout)
@@ -109,8 +157,14 @@ pub fn delete_song_coordinated(
             .and_then(|mut slot| slot.take())
             .unwrap_or_default()),
         Ok(DeleteCommit::RolledBack) => {
-            Err("delete rolled back: the player still holds the file or Core refused".into())
+            Err(failure.lock().ok().and_then(|mut slot| slot.take()).map_or(
+                CoordinatedDeleteError::PlayerHeld,
+                CoordinatedDeleteError::Core,
+            ))
         }
-        Err(error) => Err(error),
+        Err(_) => Err(failure.lock().ok().and_then(|mut slot| slot.take()).map_or(
+            CoordinatedDeleteError::PlayerHeld,
+            CoordinatedDeleteError::Core,
+        )),
     }
 }

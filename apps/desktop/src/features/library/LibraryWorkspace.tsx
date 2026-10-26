@@ -26,14 +26,15 @@ import type { MenuAnchor } from "./SongMenu";
 import { BatchSongMenu, SelectionModeButton } from "./BatchSongActions";
 import { useMenuTrigger } from "./menuTrigger";
 import {
-  formatBatchFailureDetails,
   formatBatchResult,
+  pendingBatchItems,
   runDeleteBatch,
   runFavoriteBatch,
   runQueueBatch,
   undoDeleteBatch,
 } from "./batchOperations";
 import type { BatchResult } from "./batchOperations";
+import { notifyBatchOutcome, notifySavedPending } from "./savedPendingNotice";
 import { useSongSelection } from "./useSongSelection";
 import { ConfirmationDialog } from "./ConfirmationDialog";
 import { AddToPlaylistDialog } from "../playlists";
@@ -175,14 +176,20 @@ export function LibraryWorkspace({
         // it so every surface (this table, the player bar's heart) adopts it
         // immediately instead of waiting for the next full re-query.
         .then((committed) => publishSongUpdate(committed as SongView))
-        .catch(() => {
-          // A failed mutation leaves the state authoritative — re-render from
-          // the server (task 10.7: 过期/失败不覆盖新状态).
+        .catch((error: unknown) => {
+          // 已保存待更新 is a *successful* commit whose view lags: the directory
+          // already holds this like, so the optimistic state stands and the
+          // retry carries the original operation identity. Only a genuinely
+          // unsaved toggle rolls back (task 10.7 / LD-01).
+          if (notifySavedPending(error, { root, onRecovered: reset })) {
+            publishSongUpdate({ ...song, favorite });
+            return;
+          }
           bumpLibraryCount("favorites", favorite ? -1 : 1);
           reset();
         });
     },
-    [reset],
+    [reset, root],
   );
 
   // Adopt song updates published by any surface (this view, the player bar, a
@@ -217,13 +224,19 @@ export function LibraryWorkspace({
       .catch(() => notify({ message: "加入播放队列失败，请重试", error: true }));
   }, []);
 
-  const notifyBatch = useCallback((result: BatchResult<SongView>) => {
-    const details = formatBatchFailureDetails(result, (song) => song.title ?? "未命名歌曲");
-    notify({
-      message: `批量操作：${formatBatchResult(result)}${details ? `。${details}` : ""}`,
-      error: result.failed > 0,
-    });
-  }, []);
+  const notifyBatch = useCallback(
+    (result: BatchResult<SongView>) => {
+      // Per-item counts, with a same-operation 恢复 for committed-but-pending
+      // items: a saved like whose view lags is not a failure, and retrying it
+      // must reuse its identity rather than toggle it again.
+      notifyBatchOutcome(result, {
+        root,
+        label: (song) => song.title ?? "未命名歌曲",
+        onRecovered: reset,
+      });
+    },
+    [reset, root],
+  );
 
   const applyBatchFavorite = useCallback(
     async (favorite: boolean) => {
@@ -241,13 +254,22 @@ export function LibraryWorkspace({
       try {
         bumpLibraryCount("favorites", favorite ? targets.length : -targets.length);
         const result = await runFavoriteBatch(selectedSongs, favorite);
+        // Success and 已保存待更新 both carry the committed truth: publish it so
+        // the row shows the like the directory already holds. Only a genuinely
+        // unsaved item rolls the optimistic count back.
         for (const item of result.items) {
-          if (item.status === "success" && item.value) publishSongUpdate(item.value);
+          if ((item.status === "success" || item.status === "pending") && item.value)
+            publishSongUpdate(item.value);
         }
         if (result.failed > 0)
           bumpLibraryCount("favorites", favorite ? -result.failed : result.failed);
-        reset();
-        invalidateLibraryCounts();
+        // A pending item's projection still lags, so a re-query (and a count
+        // re-read) would return the pre-commit state and make a saved like look
+        // lost. Keep what the directory already confirmed.
+        if (pendingBatchItems(result).length === 0) {
+          reset();
+          invalidateLibraryCounts();
+        }
         notifyBatch(result);
         exitSelectionMode();
       } catch {

@@ -21,6 +21,10 @@ If Echo cannot read the checkpoint or portable authority evidence, leave sync di
 
 Remote media is staged and verified before it is atomically published. If the destination file is locked (for example, by a player on Windows), metadata may be present while that media remains unavailable; the status must not claim that all media is ready. Close the player or release the file handle, then resume sync. A restart resumes from the durable publication journal. Cleanup only removes redundant staging data whose journal and content hash/length prove that it belongs to a completed publication; staging with unknown provenance is left untouched for diagnosis.
 
+An object is accepted locally only after its verified directory commit has been projected into SQLite and its replica cursor has advanced. Media transfer has a separate boundary: a valid object with missing audio or artwork remains visible as unavailable and can be retried without reapplying the object or advancing the cursor again. A resource transfer finishing does not by itself mean the library is fully synchronized. The UI's `mediaReady` value describes whether required local media is ready; it is not a receipt for every object, pending edit, or host publication in the library.
+
+An ACK covers its exact mutation and published host checkpoint. It does not mean that every later mutation, every resource version, or the full library backup has reached every peer. Preserve the host checkpoint and the complete library root together when taking a backup. On restore, reconcile the checkpoint with the independently stored trust ledger before allowing the old epoch to serve peers; missing or stale trust evidence leaves sync fenced for explicit recovery. A restored user library can still be opened offline from its directory, without loading credentials or automatically starting network sync. Start hosting or pairing explicitly after reviewing the restored library and trust state. Local manifest, record envelope, and LAN wire versions are independent: reading a supported old directory does not rewrite it, v3 directories fence older writers, and LAN resource refs remain governed by the LAN wire version rather than local resource locations. See the [protocol compatibility matrix](library-durability-protocol.md#独立兼容矩阵) before mixing clients or restoring across versions.
+
 ## 附属机写回内嵌信息后同步失败
 
 修改歌曲文件中的封面、歌词或专辑会改变全文件哈希。旧实现可能在上传前向主机下载这个仅存在于附属机的新版本，日志返回 `resource_not_found`，界面却显示检查主机状态和配对关系。修复后的版本会先完整校验并复用本机文件，再上传并等待主机确认；资源缺失单独显示媒体资源不可用。
@@ -70,6 +74,12 @@ Sync is opt-in and stays disabled until a user starts hosting or pairs a peer. I
 
 当 SQLite 可打开且目标资料库已登记时，Core 会从该目录的已验证提交链构造独立临时数据库，核对库 ID、链头、水位、SQLite 完整性、外键、保留的类型化原件和无同步上传回声，再以一个 SQLite 事务替换该资料库的投影。其他资料库不受影响。可解析的歌曲/歌单会进入读模型；引用缺失父项的关系保留为类型化未解析记录，恢复状态显示为部分完成。后续补齐父项并再次追赶提交链时，系统会重试这些原关系。
 
-若候选验证、活动库写入或最终事务提交失败，活动投影保持原样，已保存的目录资料也不会被删除。只读或不可写的 SQLite 无法接收替换；释放占用或恢复写权限后，可重试投影。SQLite 损坏时不要手工删库来伪造成功：当前桌面启动仍要求应用数据库可打开，且带有同步上下文的根需要 archive-aware 重建；这两种情形尚无自动重建流程。保留完整 `echo/`，并将其作为后续恢复的唯一用户资料来源。
+若候选验证、活动库写入或最终事务提交失败，活动投影保持原样，已保存的目录资料也不会被删除。只读或不可写的 SQLite 无法接收替换；释放占用或恢复写权限后，可重试投影。
+
+应用数据库整体损坏（无法读取页头、`quick_check` 失败或 `SQLITE_CORRUPT`/`SQLITE_NOTADB`）时，`SqliteDatabase::open` 会在任何读取之前把原文件及其 `-wal`/`-shm` 伴生文件按字节原样重命名隔离到同目录的 `<stem>.quarantined-<uuid>.sqlite`，然后新建空的、已迁移的投影继续启动；隔离文件从不被读取、修复或删除，可留作诊断。这只在文件本身损坏时发生：另一个实例持有的写锁、只读卷、缺失权限或已发布迁移的校验和不匹配仍然让打开失败并保留原文件，因为这些情况下投影本身仍可用。隔离后不会自动重放目录——用户选中资料库时按上面的候选重建流程从 `echo/` 重建投影；不要手工删库来伪造成功。
+
+带同步上下文的资料库根不因重建而丢协议历史：协议表不是读模型的投影，任何协议表都不引用 `songs`/`playlists`，只有 `retry_library_sync_state` 能在已验证的会话下重投影它们。因此重建前后会快照 19 张协议表的行数与当前选中的上下文，若重建改动了任何一行，整个替换事务回滚并报错；未确认的意图与冲突在重建中保留。
+
+保留完整 `echo/`，并将其作为后续恢复的唯一用户资料来源。
 
 开发者可用 `cargo test -p echo-core library_durability --lib` 重复自动化验证，测试覆盖文件同步、发布、各级目录同步、材料化、覆盖快照和 GC 的强制失败。该测试不能代替磁盘满、真实拔盘、硬件断电和三平台原生验收。完整 v3 升级、所有入口的统一顺序投影与历史资源回收仍在开发；本节不表示整个 library-first change 已交付。

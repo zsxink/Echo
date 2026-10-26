@@ -2,6 +2,7 @@
 mod artist_cover;
 mod dependencies;
 mod local_allocation;
+mod resource_publication;
 use super::super::support::storage;
 use crate::domain::{
     ids::LibraryRootId,
@@ -171,6 +172,18 @@ pub(super) fn retry(
         PortableRecord::Playlist(_) => 2,
         _ => 3,
     });
+    // An envelope whose `sync` block claims a host version the verified ledger
+    // cannot prove stays a retained candidate. The local value is still
+    // projected (the directory is the source of truth), but the row keeps
+    // reporting the unproven claim so nothing treats it as a confirmed
+    // baseline. The bytes themselves are never rewritten here.
+    let mut unproven = std::collections::BTreeSet::new();
+    for envelope in &retry_records {
+        if super::confirmation::unproven(c, envelope)? {
+            unproven
+                .insert(serde_json::to_string(&envelope.record().object_key()?).map_err(storage)?);
+        }
+    }
     // Release positions for the retained membership identities as a set, so
     // valid reorderings (including swaps) do not collide with their old slots.
     // The row itself survives the release, parked at the end of its playlist:
@@ -191,10 +204,17 @@ pub(super) fn retry(
         if unresolved.is_none() {
             super::records::project_record(c, root, envelope)?;
         }
-        reason(c, root, &key, unresolved)?;
+        let reported = unresolved.or_else(|| {
+            unproven
+                .contains(&key)
+                .then_some(Reason::UnverifiedConfirmationMetadata)
+        });
+        reason(c, root, &key, reported)?;
     }
     for state in &retained.state {
-        let unresolved = if state.kind == StateKind::ArtistCover {
+        let unresolved = if state.kind == StateKind::ResourceLocation {
+            resource_publication::project(c, root, library, state, &retained)?
+        } else if state.kind == StateKind::ArtistCover {
             artist_cover::project(c, root, library, state)?
         } else if state.kind == StateKind::PlaybackEvent {
             let event: PlaybackEvent =

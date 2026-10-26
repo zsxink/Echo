@@ -90,16 +90,27 @@ pub(super) fn validate(key: &StateKey, payload: &Value) -> Result<(), Error> {
     let publication = &fact.publication;
     let original: Value = serde_json::from_str(&fact.original_body).map_err(encode)?;
     let (kind, owner) = object_identity(publication.object);
-    if fact.schema != "echo.sync.resource-publication.v2"
+    let current_location = fact.schema == "echo.library.resource-location.v1";
+    let valid_scope = if current_location {
+        matches!(key.namespace, StateNamespace::Library { .. })
+            && key.target
+                == (StateTarget::ResourceLocation {
+                    object: publication.object,
+                })
+            && publication.completed
+    } else {
+        fact.schema == "echo.sync.resource-publication.v2"
+            && key.target
+                == (StateTarget::Publication {
+                    operation_id: fact.operation,
+                })
+            && key.namespace
+                == (StateNamespace::LegacyEvidence {
+                    source_root: publication.root,
+                })
+    };
+    if !valid_scope
         || fact.state_key != *key
-        || key.target
-            != (StateTarget::Publication {
-                operation_id: fact.operation,
-            })
-        || key.namespace
-            != (StateNamespace::LegacyEvidence {
-                source_root: publication.root,
-            })
         || publication.root.as_uuid().is_nil()
         || owner.is_nil()
         || publication.operation != fact.operation
@@ -146,6 +157,24 @@ pub(super) fn validate(key: &StateKey, payload: &Value) -> Result<(), Error> {
                 return Err(invalid());
             }
         }
+    }
+    Ok(())
+}
+pub(super) fn validate_resources(
+    payload: &Value,
+    resources: &[super::DurableResource],
+) -> Result<(), Error> {
+    let fact: Fact = serde_json::from_value(payload.clone()).map_err(encode)?;
+    if fact.publication.items.iter().any(|item| {
+        !resources.iter().any(|resource| {
+            resource.relative_path == item.local_path
+                && resource.content_hash == item.target.manifest.digest.to_hex()
+                && resource.byte_length == item.target.manifest.length
+        })
+    }) {
+        return Err(Error::conflict(
+            "resource location has no complete verified resource set",
+        ));
     }
     Ok(())
 }

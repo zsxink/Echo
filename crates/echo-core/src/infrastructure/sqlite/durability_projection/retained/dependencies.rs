@@ -52,6 +52,14 @@ pub(super) fn song(
 ) -> Result<Option<Reason>, Error> {
     parent(c, root, id, false, records)
 }
+pub(super) fn playlist(
+    c: &Connection,
+    root: LibraryRootId,
+    id: uuid::Uuid,
+    records: &[PortableRecordEnvelope],
+) -> Result<Option<Reason>, Error> {
+    parent(c, root, id, true, records)
+}
 fn conflict(
     c: &Connection,
     sql: &str,

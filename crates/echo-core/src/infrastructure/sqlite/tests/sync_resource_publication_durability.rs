@@ -2,6 +2,9 @@
 use super::*;
 use crate::domain::library::PortableRecord;
 
+#[path = "sync_resource_publication_directory.rs"]
+mod directory;
+
 #[test]
 fn library_durability_export_uses_declared_logical_path_for_managed_audio() {
     let (_directory, database, root, object, manifest) = fixture();

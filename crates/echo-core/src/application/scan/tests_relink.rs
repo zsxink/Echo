@@ -106,8 +106,20 @@ fn duplicate_hash_paths_get_deterministic_primary() {
     assert_eq!(songs[0].path().display(), "media/a-second.mp3");
     let primary_id = songs[0].id();
 
-    // The primary file disappears: the record goes missing (UUID kept).
+    // The primary file disappears while the same-hash copy is still present:
+    // the record promotes to the remaining path under the same UUID in the
+    // same scan (主路径消失时从剩余同 hash 路径中按同一规则提升).
     fixture.remove_file("a-second.mp3");
+    start_scan(&fixture)
+        .run(fixture.root)
+        .expect("promote scan");
+    let record = fixture.all_songs().into_iter().next().expect("record");
+    assert_eq!(record.id(), primary_id, "UUID kept on promotion");
+    assert_eq!(record.path().display(), "media/z-first.mp3");
+    assert_eq!(record.availability(), SongAvailability::Available);
+
+    // With no same-hash file left the record goes missing (UUID kept).
+    fixture.remove_file("z-first.mp3");
     start_scan(&fixture)
         .run(fixture.root)
         .expect("missing scan");
@@ -115,23 +127,23 @@ fn duplicate_hash_paths_get_deterministic_primary() {
     assert_eq!(record.id(), primary_id);
     assert_eq!(record.availability(), SongAvailability::Missing);
 
-    // The next scan sees the remaining same-hash file: the record is
-    // promoted to it under the same UUID (同一规则提升).
-    let summary = start_scan(&fixture)
+    // The file comes back at the promoted path: same UUID, available again.
+    fixture.write_file("z-first.mp3", b"same-bytes");
+    fixture.set_audio("z-first.mp3", "Same", 1_000);
+    start_scan(&fixture)
         .run(fixture.root)
-        .expect("promote scan");
-    assert_eq!(summary.progress.updated, 1);
+        .expect("restore scan");
     let songs = fixture.all_songs();
     assert_eq!(songs.len(), 1);
-    assert_eq!(songs[0].id(), primary_id, "UUID kept on promotion");
+    assert_eq!(songs[0].id(), primary_id, "UUID kept on restore");
     assert_eq!(songs[0].path().display(), "media/z-first.mp3");
     assert_eq!(songs[0].availability(), SongAvailability::Available);
 }
 
 #[test]
-fn unique_music_key_relink_is_conservative() {
+fn music_key_never_relinks_identities() {
     let fixture = ScanFixture::new();
-    // A song whose file vanished, with full tags (music key available).
+    // A song whose file vanished, with full tags (a music key is available).
     fixture.write_file("old/tone.flac", b"old-bytes");
     fixture.set_audio("old/tone.flac", "晴天", 200_000);
     start_scan(&fixture).run(fixture.root).expect("first scan");
@@ -142,16 +154,36 @@ fn unique_music_key_relink_is_conservative() {
     let gone = fixture.all_songs().into_iter().next().expect("record kept");
     assert_eq!(gone.availability(), SongAvailability::Missing);
 
-    // A new file with the same normalized key and duration within 2 s:
-    // conservative weak re-link.
+    // A new file with the same normalized key and a duration within 2 s used
+    // to be a conservative weak re-link. LD-05 forbids merging identities on
+    // a music-key heuristic, so the old record stays missing and the new file
+    // gets its own UUID.
     fixture.write_file("new/tone.flac", b"new-bytes");
     fixture.set_audio("new/tone.flac", "晴天", 201_000);
-    let summary = start_scan(&fixture).run(fixture.root).expect("relink scan");
-    assert_eq!(summary.progress.updated, 1);
-    assert_eq!(summary.progress.created, 0);
-    let relinked = fixture.all_songs().into_iter().next().unwrap();
-    assert_eq!(relinked.id(), gone.id(), "weak re-link keeps the UUID");
-    assert_eq!(relinked.path().display(), "media/new/tone.flac");
+    let summary = start_scan(&fixture).run(fixture.root).expect("second scan");
+    assert_eq!(
+        summary.progress.updated, 0,
+        "no existing record was rewritten"
+    );
+    assert_eq!(
+        summary.progress.created, 1,
+        "the new file gets a fresh UUID"
+    );
+    let mut songs = fixture.all_songs();
+    songs.sort_by_key(|song| song.path().display().to_owned());
+    assert_eq!(songs.len(), 2, "both identities are kept, none merged");
+    let old = songs
+        .iter()
+        .find(|song| song.path().display() == "media/old/tone.flac")
+        .expect("the vanished record is preserved");
+    assert_eq!(old.id(), gone.id(), "the old UUID is untouched");
+    assert_eq!(old.availability(), SongAvailability::Missing);
+    let fresh = songs
+        .iter()
+        .find(|song| song.path().display() == "media/new/tone.flac")
+        .expect("the new file is indexed under a new identity");
+    assert_ne!(fresh.id(), gone.id(), "no music-key merge");
+    assert_eq!(fresh.availability(), SongAvailability::Available);
 }
 
 #[test]

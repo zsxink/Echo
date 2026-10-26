@@ -49,11 +49,18 @@ impl PlaybackEditPort for SqliteDatabase {
                 hlc: next_hlc(before.as_ref().map_or_else(HybridLogicalClock::default, PortableRecord::hlc), now / 1000),
                 by_device: counts,
             };
+            // A rebuilt library can retain another author's unconfirmed bucket.
+            // Preserve it in the local record, but only the authenticated author
+            // may increase a bucket in a new event. The host merges omitted
+            // confirmed buckets by max; it must never see A's pending delta as
+            // a claim made by a new author B.
+            let mut upload = stats.clone();
+            upload.by_device.retain(|author, _| *author == device.as_uuid());
             super::statements::enqueue_object_snapshot_with_id(
                 c,
                 "play-stats",
                 &song.to_string(),
-                &serde_json::to_value(&stats).map_err(storage)?,
+                &serde_json::to_value(&upload).map_err(storage)?,
                 "upsert",
                 Some(
                     &super::super::sync::durability::identity(

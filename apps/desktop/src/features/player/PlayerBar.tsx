@@ -36,7 +36,12 @@ import { useCoverKeys } from "../../app/coverArt";
 import { Icon } from "../../app/Icon";
 import { formatDuration } from "../library";
 import { useSongDetail } from "./useSongDetail";
-import { bumpLibraryCount, invalidateLibrary, publishSongUpdate } from "../library";
+import {
+  bumpLibraryCount,
+  invalidateLibrary,
+  notifySavedPending,
+  publishSongUpdate,
+} from "../library";
 import type { SongView } from "../../ipc/ipc-types.generated";
 
 import { EffectsTrigger } from "./EffectsTrigger";
@@ -44,8 +49,11 @@ import { savedLibraryOperation } from "../../bridge/libraryPersistence";
 import { PlayerProgress } from "./PlayerProgress";
 
 export function PlayerBar({
+  root,
   queueTriggerRef,
 }: {
+  /** Active library root; the 收藏 retry needs it to address the same commit. */
+  readonly root?: string;
   readonly queueTriggerRef?: RefObject<HTMLButtonElement>;
 }) {
   const snapshot = usePlayerSnapshot();
@@ -193,17 +201,38 @@ export function PlayerBar({
             disabled={snapshot.currentSongId === null || detail === null}
             onClick={() => {
               if (!snapshot.currentSongId || !detail) return;
+              // Captured for the async handlers: `snapshot` may move on to the
+              // next track before the failure verdict arrives, and the committed
+              // truth belongs to the song this click was about.
+              const songId = snapshot.currentSongId;
               const favorite = !detail.favorite;
               bumpLibraryCount("favorites", favorite ? 1 : -1);
               void bridge
                 .call("set_favorite", {
-                  songId: snapshot.currentSongId,
+                  songId,
                   favorite,
                 })
                 // Broadcast the committed view so the library rows (and this
                 // bar's own detail) adopt the new heart without a re-query.
                 .then((committed) => publishSongUpdate(committed as SongView))
-                .catch(() => bumpLibraryCount("favorites", favorite ? -1 : 1));
+                .catch((error: unknown) => {
+                  // 已保存待更新: the library already committed this like. The
+                  // heart stays filled and the retry carries the original
+                  // operation identity — never a second toggle.
+                  if (
+                    notifySavedPending(error, {
+                      root,
+                      onRecovered: () => invalidateLibrary(),
+                    })
+                  ) {
+                    // The payload is a patch, so this publishes only the
+                    // committed field — the rows keep the title, quality and
+                    // play count they already hold.
+                    publishSongUpdate({ id: songId, favorite });
+                    return;
+                  }
+                  bumpLibraryCount("favorites", favorite ? -1 : 1);
+                });
             }}
             data-testid="player-favorite"
           >

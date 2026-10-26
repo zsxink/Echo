@@ -20,8 +20,8 @@ import type { PagedSongs, SongView } from "../../ipc/ipc-types.generated";
 import {
   BatchSongMenu,
   SelectionModeButton,
-  formatBatchFailureDetails,
   formatBatchResult,
+  notifyBatchOutcome,
   runDeleteBatch,
   runFavoriteBatch,
   runQueueBatch,
@@ -35,6 +35,8 @@ import {
   useStoredSongSort,
   bumpLibraryCount,
   invalidateLibraryCounts,
+  notifySavedPending,
+  pendingBatchItems,
   publishSongUpdate,
   subscribeLibraryInvalidations,
   ConfirmationDialog,
@@ -324,12 +326,18 @@ export function PlaylistsView({
           publishSongUpdate(committed as SongView);
           loadMembers();
         })
-        .catch(() => {
+        .catch((error: unknown) => {
+          // 已保存待更新: the library committed the like. Adopt it instead of
+          // flipping the heart back — a second click would be a duplicate edit.
+          if (notifySavedPending(error, { root, onRecovered: loadMembers })) {
+            publishSongUpdate({ ...song, favorite });
+            return;
+          }
           bumpLibraryCount("favorites", favorite ? -1 : 1);
           notify({ message: "收藏失败，请重试", error: true });
         });
     },
-    [loadMembers],
+    [loadMembers, root],
   );
 
   const onEnqueue = useCallback((song: SongView) => {
@@ -361,13 +369,17 @@ export function PlaylistsView({
   const allLoadedSelected =
     displayedSongs.length > 0 && displayedSongs.every((song) => selection.selectedIds.has(song.id));
 
-  const notifyBatch = useCallback((result: BatchResult<SongView>) => {
-    const details = formatBatchFailureDetails(result, (song) => song.title ?? "未命名歌曲");
-    notify({
-      message: `批量操作：${formatBatchResult(result)}${details ? `。${details}` : ""}`,
-      error: result.failed > 0,
-    });
-  }, []);
+  const notifyBatch = useCallback(
+    (result: BatchResult<SongView>) => {
+      // Per-item counts + same-operation 恢复 for committed-but-pending items.
+      notifyBatchOutcome(result, {
+        root,
+        label: (song) => song.title ?? "未命名歌曲",
+        onRecovered: loadMembers,
+      });
+    },
+    [loadMembers, root],
+  );
 
   const applyBatchFavorite = useCallback(
     async (favorite: boolean) => {
@@ -385,12 +397,18 @@ export function PlaylistsView({
       try {
         bumpLibraryCount("favorites", favorite ? targets.length : -targets.length);
         const result = await runFavoriteBatch(selectedSongs, favorite);
+        // Success and 已保存待更新 both carry the committed truth: publish it so
+        // the row shows the like the directory already holds. Only a genuinely
+        // unsaved item rolls the optimistic count back.
         for (const item of result.items) {
-          if (item.status === "success" && item.value) publishSongUpdate(item.value);
+          if ((item.status === "success" || item.status === "pending") && item.value)
+            publishSongUpdate(item.value);
         }
         if (result.failed > 0)
           bumpLibraryCount("favorites", favorite ? -result.failed : result.failed);
-        loadMembers();
+        // A pending item's projection still lags: re-reading the members now
+        // would show the pre-commit state and make a saved like look lost.
+        if (pendingBatchItems(result).length === 0) loadMembers();
         notifyBatch(result);
         exitSelectionMode();
       } catch {
@@ -719,6 +737,7 @@ export function PlaylistsView({
         <PlaylistNameDialog
           mode="edit"
           playlistId={playlistId}
+          root={root}
           initialName={name}
           initialCoverKey={coverKey}
           automaticCoverKey={automaticCoverKey}

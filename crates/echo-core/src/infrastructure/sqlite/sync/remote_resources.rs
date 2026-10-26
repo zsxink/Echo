@@ -106,6 +106,7 @@ fn load(
 impl RemoteResourceJournalPort for SqliteDatabase {
     fn prepare(&self, publication: &RemoteResourcePublication) -> Result<(), Error> {
         let mut publication = publication.clone();
+        let control = self.library_control();
         self.writer.run(move |connection| {
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
             validate_current(&tx, &publication)?;
@@ -133,7 +134,8 @@ impl RemoteResourceJournalPort for SqliteDatabase {
                 if existing_claim { return Err(Error::conflict("resource target is claimed by a local file operation")); }
                 tx.execute("INSERT INTO sync_remote_publication_claims(operation_uuid,local_root_uuid,normalized_relative_path) VALUES(?1,?2,?3)",params![publication.operation.to_string(),publication.root.to_string(),path.identity_key()]).map_err(storage)?;
             }
-            tx.commit().map_err(storage)
+            let operation = transition_operation(&publication, "prepare")?;
+            super::durability::commit_resource_projection(control, tx, publication.root, operation, None)
         })
     }
 
@@ -153,18 +155,22 @@ impl RemoteResourceJournalPort for SqliteDatabase {
 
     fn save(&self, publication: &RemoteResourcePublication) -> Result<(), Error> {
         let publication = publication.clone();
+        let control = self.library_control();
         self.writer.run(move |connection| {
-            let existing = load(connection,publication.root,publication.operation)?;
+            let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
+            let existing = load(&tx,publication.root,publication.operation)?;
             if existing.completed || existing.object != publication.object || immutable_declaration(&existing)? != immutable_declaration(&publication)? || existing.items.iter().zip(&publication.items).any(|(old,new)| old.local_path!=new.local_path || old.staging_path!=new.staging_path || old.old_path!=new.old_path) {
                 return Err(Error::conflict("resource journal update differs from its immutable intent"));
             }
-            connection.execute("UPDATE sync_remote_publications SET publication_json=?2 WHERE operation_uuid=?1 AND completed=0",params![publication.operation.to_string(),serde_json::to_string(&publication).map_err(storage)?]).map_err(storage)?;
-            Ok(())
+            tx.execute("UPDATE sync_remote_publications SET publication_json=?2 WHERE operation_uuid=?1 AND completed=0",params![publication.operation.to_string(),serde_json::to_string(&publication).map_err(storage)?]).map_err(storage)?;
+            let operation = transition_operation(&publication, "save")?;
+            super::durability::commit_resource_projection(control, tx, publication.root, operation, None)
         })
     }
 
     fn finish(&self, publication: &RemoteResourcePublication) -> Result<(), Error> {
         let mut publication = publication.clone();
+        let control = self.library_control();
         self.writer.run(move |connection| {
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
             validate_current(&tx,&publication)?;
@@ -174,6 +180,7 @@ impl RemoteResourceJournalPort for SqliteDatabase {
                 return Err(Error::conflict("resource publication has not durably completed every file"));
             }
             let (kind,id) = sync_manifests::identity(publication.object);
+            tx.execute("DELETE FROM sync_remote_resource_locations WHERE local_root_uuid=?1 AND object_type=?2 AND object_uuid=?3",params![publication.root.to_string(),kind,id]).map_err(storage)?;
             for item in &publication.items {
                 let resource = &item.target.manifest;
                 tx.execute("INSERT INTO sync_remote_resource_locations(local_root_uuid,object_type,object_uuid,content_hash,library_relative_path,local_relative_path,operation_uuid) VALUES(?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(local_root_uuid,object_type,object_uuid,library_relative_path) DO UPDATE SET content_hash=excluded.content_hash,local_relative_path=excluded.local_relative_path,operation_uuid=excluded.operation_uuid",params![publication.root.to_string(),kind,id,resource.digest.as_bytes().as_slice(),resource.relative_path.as_str(),item.local_path,publication.operation.to_string()]).map_err(storage)?;
@@ -193,7 +200,8 @@ impl RemoteResourceJournalPort for SqliteDatabase {
             publication.completed=true;
             tx.execute("UPDATE sync_remote_publications SET publication_json=?2,completed=1 WHERE operation_uuid=?1",params![publication.operation.to_string(),serde_json::to_string(&publication).map_err(storage)?]).map_err(storage)?;
             tx.execute("UPDATE sync_remote_publication_claims SET released=1 WHERE operation_uuid=?1",params![publication.operation.to_string()]).map_err(storage)?;
-            tx.commit().map_err(storage)
+            let operation = transition_operation(&publication, "finish")?;
+            super::durability::commit_resource_projection(control, tx, publication.root, operation, Some(publication))
         })
     }
 
@@ -204,6 +212,21 @@ impl RemoteResourceJournalPort for SqliteDatabase {
             rows.map(|row| row.map_err(storage)?.parse().map_err(storage)).collect()
         })
     }
+}
+
+fn transition_operation(
+    publication: &RemoteResourcePublication,
+    phase: &str,
+) -> Result<uuid::Uuid, Error> {
+    let body = serde_json::to_vec(publication).map_err(storage)?;
+    Ok(super::durability::identity(
+        "resource-publication-transition",
+        &format!(
+            "{phase}:{}:{}",
+            publication.operation,
+            blake3::hash(&body).to_hex()
+        ),
+    ))
 }
 
 impl SqliteDatabase {

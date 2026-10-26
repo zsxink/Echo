@@ -13,6 +13,10 @@ use uuid::Uuid;
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "scope", rename_all = "snake_case", deny_unknown_fields)]
 pub enum StateNamespace {
+    /// Device-local facts carried by one library, without network authority.
+    Library {
+        library_id: LibraryId,
+    },
     Bound {
         binding: SyncBinding,
     },
@@ -73,6 +77,9 @@ pub enum StateTarget {
     Publication {
         operation_id: Uuid,
     },
+    ResourceLocation {
+        object: ObjectKey,
+    },
 }
 impl StateTarget {
     #[must_use]
@@ -88,7 +95,7 @@ impl StateTarget {
             | Self::LocalOriginCursor { .. }
             | Self::PeerCursor { .. } => StateKind::Cursor,
             Self::Conflict { .. } => StateKind::Conflict,
-            Self::Publication { .. } => StateKind::ResourceLocation,
+            Self::Publication { .. } | Self::ResourceLocation { .. } => StateKind::ResourceLocation,
         }
     }
 }
@@ -106,6 +113,9 @@ impl StateKey {
     /// Rejects empty identities or an invalid namespace.
     pub fn validate(&self) -> Result<(), Error> {
         match self.namespace {
+            StateNamespace::Library { library_id } if library_id.as_uuid().is_nil() => {
+                return Err(Error::conflict("invalid local library state namespace"))
+            }
             StateNamespace::Bound { binding }
                 if binding.library_id.as_uuid().is_nil()
                     || binding.authority_id.as_uuid().is_nil()
@@ -124,7 +134,9 @@ impl StateKey {
             _ => {}
         }
         let identities_valid = match &self.target {
-            StateTarget::Confirmed { object } => !object_identity(*object).1.is_nil(),
+            StateTarget::Confirmed { object } | StateTarget::ResourceLocation { object } => {
+                !object_identity(*object).1.is_nil()
+            }
             StateTarget::Mutation {
                 author,
                 mutation_id,
@@ -156,6 +168,13 @@ impl StateKey {
         };
         if !identities_valid {
             return Err(Error::conflict("nil typed state target"));
+        }
+        if matches!(self.namespace, StateNamespace::Library { .. })
+            != matches!(self.target, StateTarget::ResourceLocation { .. })
+        {
+            return Err(Error::conflict(
+                "local resource location requires its library namespace",
+            ));
         }
         if let StateNamespace::LocalUnbound { author, .. } = self.namespace {
             match &self.target {
@@ -209,8 +228,15 @@ pub(super) fn digest_valid(value: &str) -> Result<(), Error> {
 }
 
 pub(super) fn validate_payload(key: &StateKey, payload: &serde_json::Value) -> Result<(), Error> {
-    if payload.get("schema").and_then(serde_json::Value::as_str)
-        == Some("echo.sync.resource-publication.v2")
+    if payload
+        .get("schema")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|schema| {
+            matches!(
+                schema,
+                "echo.sync.resource-publication.v2" | "echo.library.resource-location.v1"
+            )
+        })
     {
         super::publication::validate(key, payload)?;
     }
@@ -254,6 +280,10 @@ pub(super) fn validate_payload(key: &StateKey, payload: &serde_json::Value) -> R
         StateTarget::PeerCursor { peer } => uuid("peer")? == peer.as_uuid(),
         StateTarget::Conflict { conflict_id } => uuid("id")? == *conflict_id,
         StateTarget::Publication { operation_id } => uuid("operation")? == *operation_id,
+        StateTarget::ResourceLocation { object } => {
+            payload.pointer("/publication/object")
+                == Some(&serde_json::to_value(object).map_err(encode)?)
+        }
         StateTarget::Mutation { .. } | StateTarget::MutationDisposition { .. } => false,
     };
     if !matches {

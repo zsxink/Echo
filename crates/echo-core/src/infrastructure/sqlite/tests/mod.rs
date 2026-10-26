@@ -29,6 +29,7 @@ mod sync_resource_publication;
 mod sync_root_contexts;
 mod sync_snapshot;
 mod sync_snapshot_apply;
+mod sync_snapshot_apply_durability;
 mod sync_song_projection;
 
 mod controlled_order;

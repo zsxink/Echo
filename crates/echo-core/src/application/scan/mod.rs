@@ -374,8 +374,14 @@ impl<'a> StartScan<'a> {
             cancelled |= token.is_cancelled();
             // Parsing may overlap an import or sync publication. Refresh the
             // authoritative identity view after workers finish and before any
-            // UUID is allocated, so a claim committed during parsing wins.
-            let planner = Mutex::new(RelinkPlanner::new(durable::song_snapshot(self.deps, root)?));
+            // UUID is allocated, so a claim committed during parsing wins. The
+            // snapshot is then aligned with what this enumeration saw, so a
+            // record whose file moved is a re-link candidate rather than an
+            // available primary that turns the moved file into a "duplicate".
+            let planner = Mutex::new(
+                RelinkPlanner::new(durable::song_snapshot(self.deps, root)?)
+                    .align_with_enumeration(&seen),
+            );
             self.reconcile(root, generation, &outcomes, &planner, &mut progress)?;
             emitter.emit(&progress, false)?;
         }

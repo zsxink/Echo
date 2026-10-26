@@ -441,7 +441,7 @@ export function App() {
         <QueuePanel triggerRef={queueTriggerRef} />
         <EffectsPanel />
 
-        <PlayerBar queueTriggerRef={queueTriggerRef} />
+        <PlayerBar root={status.activeRoot ?? undefined} queueTriggerRef={queueTriggerRef} />
 
         <ToastView />
         {scanIssues.length > 0 ? (

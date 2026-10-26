@@ -4,6 +4,7 @@ use super::super::{
     connection::{apply_migrations, open_writer, quick_check_connection},
     device_state, durability_projection,
     support::storage,
+    sync_context,
 };
 use crate::application::ports::LibraryProjectionValidation;
 use crate::domain::{
@@ -37,12 +38,64 @@ pub(super) fn validate(
         ));
     }
     let directory = CandidateDirectory::create(parent)?;
-    let result = project(&directory.0.join("candidate.sqlite"), root, replay)
-        .and_then(|connection| verify(&connection, root, manifest_library, replay));
+    let result =
+        project(&directory.0.join("candidate.sqlite"), root, replay).and_then(|connection| {
+            candidate_corruption_probe(&connection, root)?;
+            verify(&connection, root, manifest_library, replay)
+        });
     // project/verify owns no actor or reader pool; every SQLite handle closes
     // before the private directory is removed, including on Windows.
     let cleanup = directory.cleanup();
     result.and_then(|report| cleanup.map(|()| report))
+}
+
+/// Production builds never alter a candidate between projection and
+/// verification. Tests install a one-shot fault here to prove that a candidate
+/// whose bytes no longer match the directory is rejected before adoption.
+#[cfg(not(test))]
+#[allow(clippy::unnecessary_wraps)]
+const fn candidate_corruption_probe(
+    _connection: &Connection,
+    _root: LibraryRootId,
+) -> Result<(), Error> {
+    Ok(())
+}
+
+#[cfg(test)]
+type CandidateFault = Box<dyn FnOnce(&Connection) -> Result<(), Error>>;
+
+#[cfg(test)]
+thread_local! {
+    static CANDIDATE_FAULT: std::cell::RefCell<Option<(LibraryRootId, CandidateFault)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Arm a single candidate corruption for one root on the calling thread.
+/// `validate` runs on the caller's thread, so the fault can neither leak into a
+/// parallel test nor fire for a different library.
+#[cfg(test)]
+pub(super) fn inject_candidate_corruption(
+    root: LibraryRootId,
+    fault: impl FnOnce(&Connection) -> Result<(), Error> + 'static,
+) {
+    CANDIDATE_FAULT.with(|slot| *slot.borrow_mut() = Some((root, Box::new(fault))));
+}
+
+#[cfg(test)]
+fn candidate_corruption_probe(connection: &Connection, root: LibraryRootId) -> Result<(), Error> {
+    CANDIDATE_FAULT.with(|slot| {
+        let armed = slot
+            .borrow()
+            .as_ref()
+            .is_some_and(|(armed_root, _)| *armed_root == root);
+        if !armed {
+            return Ok(());
+        }
+        match slot.borrow_mut().take() {
+            Some((_, fault)) => fault(connection),
+            None => Ok(()),
+        }
+    })
 }
 
 fn project(path: &Path, root: LibraryRootId, replay: &LibraryReplay) -> Result<Connection, Error> {
@@ -146,12 +199,17 @@ pub(super) fn replace_active(
             |row| row.get(0),
         )
         .map_err(storage)?;
-    if has_sync_context {
-        return Err(Error::unavailable(
-            "library projection rebuild",
-            "root-scoped sync state requires its own archive-aware rebuild",
-        ));
-    }
+    // A root that owns a sync context keeps its protocol history in the live
+    // tables (when it is the selected context) or in `archived_<table>` (when it
+    // is not). That history is directory evidence, not a projection of the read
+    // model: no protocol table has a foreign key to `songs` or `playlists`, and
+    // only `retry_library_sync_state` may re-project it, under a validated live
+    // session. Rebuilding the catalog must therefore leave every protocol table
+    // and the selected context exactly as they were — LD-07 keeps unconfirmed
+    // intent and conflicts across a rebuild rather than dropping them.
+    let protocol = has_sync_context
+        .then(|| ProtocolContext::read(&tx))
+        .transpose()?;
     let incomplete: bool = tx
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM operation_items i JOIN operation_journal j ON j.operation_uuid=i.operation_uuid WHERE i.library_root_uuid=?1 AND (i.state NOT IN ('completed','rolled_back','database_finalized','restored') OR (i.state='restored' AND j.kind='delete' AND EXISTS(SELECT 1 FROM songs s WHERE s.uuid=COALESCE(i.song_uuid,j.reserved_song_uuid) AND s.availability='pending_delete'))))",
@@ -179,10 +237,25 @@ pub(super) fn replace_active(
         [&root_id],
     )
     .map_err(storage)?;
+    // Search rows are a plain fts5 mirror with no trigger and no foreign key, so
+    // deleting songs would strand hits for objects this rebuild no longer has.
+    tx.execute(
+        "DELETE FROM song_search WHERE song_uuid IN (SELECT uuid FROM songs WHERE library_root_uuid=?1)",
+        [&root_id],
+    )
+    .map_err(storage)?;
     tx.execute("DELETE FROM songs WHERE library_root_uuid=?1", [&root_id])
         .map_err(storage)?;
     tx.execute(
         "DELETE FROM playlists WHERE library_root_uuid=?1",
+        [&root_id],
+    )
+    .map_err(storage)?;
+    // Artist covers are root-owned but only rewritten when retained state still
+    // carries the cover; a rebuilt replay that lacks one must not keep the old
+    // assignment (a NULL row is the absence of a user cover).
+    tx.execute(
+        "DELETE FROM artist_covers WHERE library_root_uuid=?1",
         [&root_id],
     )
     .map_err(storage)?;
@@ -209,8 +282,70 @@ pub(super) fn replace_active(
             "projection rebuild changed synchronization upload candidates",
         ));
     }
+    if let Some(protocol) = &protocol {
+        if ProtocolContext::read(&tx)? != *protocol {
+            return Err(Error::conflict(
+                "projection rebuild changed synchronization protocol history",
+            ));
+        }
+    }
     tx.commit().map_err(storage)?;
     Ok(report)
+}
+
+/// Row counts of every protocol table plus the selected context, captured
+/// before a rebuild so the rebuild can prove it left that history untouched.
+///
+/// Protocol rows are root-scoped directory evidence rather than a read-model
+/// projection, and no protocol table references `songs` or `playlists`, so a
+/// catalog replacement must not add or remove any of them. Counts detect the
+/// failure that matters here — a cascade or a stray delete silently dropping
+/// another root's ledger — without hashing large payload bodies on a path that
+/// only runs during recovery.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ProtocolContext {
+    active_context: String,
+    live: Vec<(&'static str, u64)>,
+    archived: Vec<(&'static str, u64)>,
+}
+
+impl ProtocolContext {
+    fn read(connection: &Connection) -> Result<Self, Error> {
+        let active_context: String = connection
+            .query_row(
+                "SELECT local_root_uuid FROM sync_active_context WHERE singleton=1",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        let mut live = Vec::with_capacity(sync_context::TABLES.len());
+        let mut archived = Vec::with_capacity(sync_context::TABLES.len());
+        for table in sync_context::TABLES {
+            live.push((
+                *table,
+                count_rows(connection, &format!("SELECT COUNT(*) FROM {table}"))?,
+            ));
+            archived.push((
+                *table,
+                count_rows(
+                    connection,
+                    &format!("SELECT COUNT(*) FROM archived_{table}"),
+                )?,
+            ));
+        }
+        Ok(Self {
+            active_context,
+            live,
+            archived,
+        })
+    }
+}
+
+fn count_rows(connection: &Connection, sql: &str) -> Result<u64, Error> {
+    connection
+        .query_row(sql, [], |row| row.get::<_, i64>(0))
+        .map(|count| u64::try_from(count).unwrap_or(0))
+        .map_err(storage)
 }
 
 fn queue_counts(connection: &Connection) -> Result<(u64, u64), Error> {

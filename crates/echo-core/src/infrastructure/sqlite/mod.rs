@@ -65,8 +65,8 @@ use actor::SqliteWriteActor;
 #[cfg(test)]
 use connection::apply_migration_set;
 use connection::{
-    apply_migrations, backup_connection, backup_path, file_is_non_empty, open_reader, open_writer,
-    quick_check_connection, reader_count,
+    apply_migrations, backup_connection, backup_path, file_is_non_empty, is_database_damage,
+    open_reader, open_writer, quarantine_database, quick_check_connection, reader_count,
 };
 use conversion::{
     availability_from_db, operation_item_from_row, root_from_row, scan_state_from_db, song_from_row,
@@ -142,6 +142,8 @@ pub struct SqliteDatabase {
     /// The single stable identity of this device (migration 0006), loaded once
     /// at open. Portable records are stamped with it.
     device_id: crate::domain::library::DeviceId,
+    /// A damaged predecessor file moved aside at open. Diagnostic only.
+    quarantined: Option<PathBuf>,
 }
 
 fn read_device_play_counts(

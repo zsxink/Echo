@@ -237,6 +237,7 @@ pub(super) fn recover(
 ) -> Result<LibraryReplay, Error> {
     recover_with_hook(registry, cache, root, &mut |_, _| Ok(()))
 }
+
 fn recover_with_hook(
     registry: &RootRegistry,
     cache: &ValidationCache,

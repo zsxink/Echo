@@ -6,6 +6,32 @@ use super::*;
 #[allow(clippy::wildcard_imports)]
 use super::host_ledger_apply::*;
 
+/// The single "plan → directory commit → SQLite projection" tail that every
+/// host confirmation branch shares: an exact inbox retry, a terminal rejection,
+/// an already-deleted object, and a newly accepted commit all end here.
+///
+/// Each branch has already written its own rows into `tx`; this consumes the
+/// transaction, so a branch cannot accidentally commit the SQLite ledger before
+/// the directory has accepted the same after-image, and cannot keep going after
+/// a `SavedPendingProjection` result. Keeping one copy is what stops the four
+/// branches from drifting apart as the protocol evolves.
+fn commit_confirmation(
+    control: Option<std::sync::Arc<dyn crate::application::ports::ControlPlanePort>>,
+    tx: rusqlite::Transaction<'_>,
+    mutation: MutationId,
+) -> Result<(), Error> {
+    let root = super::super::durability::active_root(&tx)?;
+    let operation =
+        super::super::durability::identity("host-confirmation", &mutation.as_uuid().to_string());
+    super::super::durability::commit_projection(
+        control,
+        tx,
+        root,
+        crate::domain::library::durability::ChangeOrigin::HostConfirmation,
+        operation,
+    )
+}
+
 impl HostCommitLedgerPort for SqliteDatabase {
     fn stage_confirmation(
         &self,
@@ -52,9 +78,7 @@ impl HostCommitLedgerPort for SqliteDatabase {
             ensure_origin_authorized(&tx, &origin, &expected.0)?;
 
             if let Some(staged) = prior_confirmation(&tx, &origin, &candidate, &payload_digest)? {
-                let root = super::super::durability::active_root(&tx)?;
-                let operation = super::super::durability::identity("host-confirmation", &candidate.mutation_id.as_uuid().to_string());
-                super::super::durability::commit_projection(control,tx,root,crate::domain::library::durability::ChangeOrigin::HostConfirmation,operation)?;
+                commit_confirmation(control, tx, candidate.mutation_id)?;
                 return Ok(staged);
             }
             let candidate = normalize_member_alias_object(&tx, candidate)?;
@@ -108,18 +132,14 @@ impl HostCommitLedgerPort for SqliteDatabase {
                     )?;
                 }
                 record_inbox_outcome(&tx, &origin, &candidate, &payload_digest, &staged, None)?;
-                let root = super::super::durability::active_root(&tx)?;
-                let operation = super::super::durability::identity("host-confirmation", &candidate.mutation_id.as_uuid().to_string());
-                super::super::durability::commit_projection(control,tx,root,crate::domain::library::durability::ChangeOrigin::HostConfirmation,operation)?;
+                commit_confirmation(control, tx, candidate.mutation_id)?;
                 return Ok(staged);
             }
             let confirmed = decision.map_err(|error| Error::conflict(format!("mutation rejected: {error:?}")))?;
             if already_deleted {
                 let staged =
                     stage_already_deleted(&tx, &origin, &candidate, &payload_digest, &confirmed)?;
-                let root = super::super::durability::active_root(&tx)?;
-                let operation = super::super::durability::identity("host-confirmation", &candidate.mutation_id.as_uuid().to_string());
-                super::super::durability::commit_projection(control,tx,root,crate::domain::library::durability::ChangeOrigin::HostConfirmation,operation)?;
+                commit_confirmation(control, tx, candidate.mutation_id)?;
                 return Ok(staged);
             }
             let is_tombstone = candidate.payload == serde_json::json!({"tombstone": true});
@@ -154,9 +174,7 @@ impl HostCommitLedgerPort for SqliteDatabase {
             let checkpoint = CommitCheckpoint { binding, sequence, digest: commit_digest.as_slice().try_into().map_err(|_| Error::InvariantViolation { why: "invalid LAN commit digest length".to_owned() })? };
             let staged = StagedConfirmation { mutation_id: candidate.mutation_id, outcome_json: "{\"accepted\":true}".to_owned(), checkpoint: Some(checkpoint) };
             record_inbox_outcome(&tx, &origin, &candidate, &payload_digest, &staged, Some(next))?;
-            let root = super::super::durability::active_root(&tx)?;
-            let operation = super::super::durability::identity("host-confirmation", &candidate.mutation_id.as_uuid().to_string());
-            super::super::durability::commit_projection(control,tx,root,crate::domain::library::durability::ChangeOrigin::HostConfirmation,operation)?;
+            commit_confirmation(control, tx, candidate.mutation_id)?;
             Ok(staged)
         })
     }

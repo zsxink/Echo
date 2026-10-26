@@ -9,11 +9,22 @@ adapter 执行，Application 协调提交与投影。资料库备份同时保留
 
 | 层次 | 当前读写契约 | 边界 |
 | --- | --- | --- |
-| manifest | 当前写 2，读取兼容 1/2 | 目标 manifest 3 的旧客户端写入围栏及完整迁移尚未完成；不能手工改版本号冒充升级 |
-| 对象文件 | 历史 v1 为带 `type` 的扁平记录；v2 为 `format_version: 2`、`record`、可选 `sync` | 声明未知 envelope 版本时拒绝，不能回退为 v1；manifest 与 envelope 的未来版本须分别协商 |
+| 本地 manifest | 当前新建写 v3；兼容读取 v1/v2/v3。v3 可被当前客户端识别，v1/v2 只按旧格式读取 | manifest 版本决定目录写入能力；已发布的 v3 拒绝旧客户端（只认识 v1/v2）的写入。读取旧 manifest 不自动改写版本或迁移目录 |
+| 对象文件 | 历史 v1 为带 `type` 的扁平记录；v2 为 `format_version: 2`、`record`、可选 `sync` | 读取支持的 v1/v2；v2 envelope 对未知版本拒绝，不回退为 v1。manifest 与 envelope 是独立版本轴 |
 | 目录提交 | `LibraryCommit` 的字段和规范摘要；marker、材料化 checkpoint、coverage wrapper 的 `version` 均为 1 | prepared 正文本身没有独立 `version` 字段；不能从 marker 的 1 推断 manifest 是 v1 |
 | 私有 state | 外层 `kind/id/payload` 及可选 `key`；正文用 `schema` 等标识版本 | 尚未覆盖所有历史正文的语义校验；未识别的历史证据不得自行授权恢复网络 |
-| LAN wire | 独立的协议版本与能力校验 | 不从本地格式版本推断对端能接收新字段；混版本资源协商仍属专门验收 |
+| LAN wire | `MutationDto` / `CommitDto` 使用独立 `protocol_version: 1`；资源声明受长度、数量、摘要、MIME 和相对路径校验 | LAN 版本与本地 manifest/envelope 无关。目录专属资源位置不进入 wire；wire 已定义字段按既有 resource-ref 校验。serde 忽略未知 JSON 字段，因此不能用新增 wire 字段承载必须被旧端理解的语义。改变 wire 语义时必须升协议版本并拒绝不支持版本 |
+
+### 独立兼容矩阵
+
+| 输入 | 当前行为 | 写入/迁移行为 | 证据 |
+| --- | --- | --- | --- |
+| manifest v1/v2 | 当前客户端识别并按旧布局读取 | 读取不会自动升级版本；新建目录使用 v3 | `manifest_v3_explicitly_reads_legacy_but_refuses_invalid_and_future_versions` |
+| manifest v3 | 当前客户端识别 | 旧客户端只接受 v1/v2，因而不能以旧写入器修改 v3 目录；不要求升级或回填既有库 | `library_durability_new_manifest_fences_legacy_writers_without_changing_record_envelopes` |
+| record flat v1 / envelope v2 | 按各自 decoder 读取；v2 保持自己的 envelope 版本 | 目录读取和兼容投影不重写旧对象；v2 未知版本拒绝且不降级解释为 v1 | `portable_v` 与 `library_durability` 序列化/未知版本测试 |
+| LAN wire v1 | 只有版本 1 被接受；mutation/commit 摘要由 wire DTO 计算 | 不从本地版本推断 LAN 能力。未知可选 JSON 字段被 serde 忽略；资源引用只能通过现有字段及校验规则交换。需要强制双方理解的新资源语义时必须升 wire 版本 | `echo-sync` protocol validation 与 server/client protocol tests |
+
+这些版本轴不能互相代替：本地目录资源的 owner/version/location 是恢复证据，不能塞入 LAN payload 后假定旧端会保留；LAN resource-ref 仅交换既有媒体声明及相对路径。当前协议没有引入新 wire resource 字段，因此没有额外的跨版本字段可被静默丢弃。未来新增必需语义应使用显式能力/版本协商，而不是依赖 serde 未知字段处理。
 
 ## 提交及检查点字段
 
@@ -48,8 +59,41 @@ adapter 执行，Application 协调提交与投影。资料库备份同时保留
 
 覆盖快照必须先可靠刷盘，才能回收其覆盖的 journal；SQLite 水位不授权此回收。
 当前每 32 个活跃提交压缩，最多容纳 256 个事务目录，单份提交/覆盖文件受 128 MiB
-读取上限约束，超限失败。活跃后缀有界不等于整个历史 state/资源引用图已实现有界
-回收，后者仍未完成。遇到坏摘要、断链、同序不同摘要或归属不符时保留原件并拒绝写入。
+读取上限约束，超限时在写 marker 之前拒绝并保留链头。超过上限的写入不是"稍后
+重试即可"：调用方必须让现有活跃后缀完成压缩或修复，失败会明确报告而不是静默
+丢弃旧 journal。
+
+回收顺序固定为：刷盘覆盖根与全部引用叶 → 逐份重刷不可变 receipt 与祖先目录 →
+最后才删除 `prepared.json`、`committed.json` 和空事务目录。任一步中断后重启都
+从锚点重做；GC 只删 journal 文件与过期快照叶，**不删除任何 `echo/media/`、
+`echo/assets/`、`echo/tmp/` 下的字节**。因此候选、冲突、删除意图、未完成发布与
+受管媒体版本天然受引用图保护；它们的声明同时存在于覆盖镜像与不可变 receipt 中，
+即使 journal 已回收，全新 SQLite 也能从 `resources` 恢复 `relative_path/
+content_hash/byte_length`。`echo/tmp/` 下的字节虽然保留，但永远不会被声明为
+资源，因而不进入扫描或恢复候选。遇到坏摘要、断链、同序不同摘要或归属不符时
+保留原件并拒绝写入。
+
+## 资源声明与原件
+
+`batch.resources` 的每一项描述一个**已经发布在资料库里的资源**，adapter 在写
+marker 之前按 `relative_path` 打开文件，逐项核对长度与 BLAKE3，任何不符即整批
+拒绝。此时还没有 prepared 正文、marker 或操作状态，调用方只能看到明确失败，
+不会得到"已保存待恢复"。
+
+只有两类位置可以被声明：
+
+| 类别 | 路径 | 约束 |
+| --- | --- | --- |
+| 用户资源原件 | `echo/assets/<blake3>` | 路径必须逐字等于 `echo/assets/<content_hash>`，地址即摘要 |
+| 受管媒体版本 | `echo/media/<kind>/<owner-uuid>/<declaration-digest>/<logical-path>` | 见下节 publication 的 owner/声明摘要校验 |
+
+`echo/state/`、`echo/records/` 等控制面文件与 `echo/tmp/` staging 永远不是资源来源；
+`content_hash` 必须是 64 位小写十六进制。受管版本缺失时报告打开失败，不创建占位
+文件；原件被外部改写时提交与读取都报冲突，且**保留被发现时的字节**作为诊断证据
+——Echo 不会为了符合声明而重写或"修复"任何媒体文件。
+
+Echo 不写音乐文件标签：扫描与监听只读取字节并重新计算哈希，外部修改后的文件以
+同一 `Song` UUID 与 `added_at` 重新提交，是本机可用性变化而不是源文件替换。
 
 ## typed 删除与别名
 
@@ -101,6 +145,47 @@ confirmed baseline 的 durable batch，不能复制旧确认到新值。旧入�
 旧正文、缺 key 证据及不同绑定资料保留待核对；可信会话 projector、完整冻结写集
 及显式新 binding adoption 仍在实施，离线恢复不创建凭据、监听或主权限。
 
+## 各入口持久化与错误语义
+
+所有用户变更都经 Core 的同一协调器（`plan_library_change`：目录提交在前、SQLite
+投影在后），桌面与 IPC 层只做参数转发，不持有自己的写库路径。下表列出各入口的
+持久化事实、失败语义和可重试方式；错误分类与消息键由 Core `Error::code()` 决定，
+IPC 只映射为 `library.savedPendingRecovery` / `library.savedPendingProjection` 并
+附带原 `operationId`。
+
+| 入口 | 目录先提交的事实 | 失败语义 |
+| --- | --- | --- |
+| 导入 `ImportSongs` | 保留的 Song UUID、`added_at`、歌曲 after-image 与资源声明 | 目录未提交则不产生任何 SQLite 行；已提交但投影失败返回"已保存，待更新"，以同一 operation 重试 |
+| 扫描 / 外部标签修改 / 移动 | 稳定 Song 身份、变更后的业务字段与新哈希 | 失败保持原 UUID 与 `added_at`；缺少媒体只改变本机可用性，不删除关系；Echo 不写源文件 |
+| 喜欢 `SetFavorite` | true 与 false 两种状态（false 为显式事实） | 目录未提交不投影；已提交后重试同一操作不会复活旧 true |
+| 歌单创建/改名/删除、成员增删 | 完整歌单定义、创建时间、成员身份/位置/加入时间与级联集合 | 空歌单、重复成员、顺序与级联删除都按提交顺序重建；删除与撤销见 `DeleteIntent` |
+| 歌单/艺术家封面 | `echo/assets/<blake3>` 内容寻址原件 + 对象引用（长度、MIME） | 原件写入失败不改变已保存歌单/艺术家；读模型 cache key 由原件派生，清空缓存后可离线重建；只有旧 cache key 的历史封面显式报告"无可恢复原件" |
+| 播放完成统计 | `StateKind::PlaybackEvent`（`echo/state/playback-events/<session>.json`）+ 逐设备桶的 `PlayStatsRecord` | 失败不打断播放；未保存的意图进入应用私有重试队列并可查询；重复 session、重放与重装不增计 |
+| 删除 / 撤销 / 回收 | 本机 `DeleteIntent`、终态集合与资源声明 | 目录意图先于隐藏与 SQLite 删除；重启保持同一意图身份；未确认资源保留 retention hold |
+| 启动续跑 `ContinueFromRecords` | 只读重放已提交链 | 控制面不可用时降级为只读，不伪造数据；部分恢复进入类型化未解析记录 |
+| LAN 入站快照/增量 | 远端对象、候选、已应用水位与资源声明 | 快照分页失败不推进水位；对象先于媒体时保持不可用而非伪造成功 |
+| 来源 ACK / 主机确认 | 完整 confirmed 正文、receipt、alias/墓碑与 publication | 未提交前不返回成功 ACK；ACK 后丢 SQLite 仍可恢复业务资料，但联网授权须另行验证账本 |
+
+共享/同步正文永不携带播放会话或事件身份；该幂等事实只存在私有 state 目录。
+LAN 的 receipt、凭据与主权限独立于可恢复用户资料。
+
+### 与歌单封面 UI change 的字段交汇
+
+`align-immersive-player-and-playlist-directory` 的 `playlist-management` 规格要求
+歌单对话框提供封面预览、保存成功同步卡片与侧边导航、重命名不丢封面、失败保留
+名称与已有封面，并明确不以按名称索引的 `localStorage` 模拟替代稳定歌单身份。
+该规格与本 change 的交汇点只有一个字段：`PlaylistView.coverKey`。
+
+- 来源：`coverKey` 由 `PortableRecord::Playlist.cover_asset`（内容寻址原件引用）
+  派生，不是数据库里独立保存的用户值；清空应用缓存后由 `echo/assets/<hash>`
+  重新生成同一个 key。
+- 身份：封面挂在 `PlaylistId` 上，重命名、目录排序与拖动只改展示顺序，不触碰
+  封面关联；成员变化不改封面。
+- 失败：图片不是可用图片、读取失败或原件写入失败时返回错误，既有封面与名称
+  保持不变；`hasCustomCover=false` 只表示用户清空，不表示原件丢失。
+- 历史缺口：只有旧 cache key、没有原件的封面会明确报告"历史封面无可恢复原件"，
+  UI 不得把它显示为已保存封面，也不得以破损图像替换。
+
 ## 完整确认与资源发布正文
 
 `echo.sync.confirmed.v2` 要求 `author/mutation_id/version/sequence/payload/tombstone/changed_at_ms`、
@@ -143,8 +228,8 @@ schema 原样保留为待处理证据，不自动建立资源关联。
 | flat v1 / envelope v2 | 完整用户字段、创建/加入时间、封面原件引用、typed 关系、false 喜欢、覆盖文本、逐设备桶经过 JSON 和目录 commit 往返 |
 | 缺历史字段 | 继续保持 absent；不制造时间、资源或 sync 确认 |
 | confirmed / receipt / frozen / publication | 分别版本化；完整原文与历史证据分开解释，不把当前用户值或资源拼成旧确认 |
-| manifest v3 | 目标升级围栏和 v3 正向往返尚未交付，任务 2.3 与 8.2 均不能因上面的 v1/v2 验证而勾选 |
-| 未知 envelope / manifest | 当前 envelope 版本 3 及更高版本拒绝解码；manifest 可读出版本但判不兼容、拒绝写入；不降级 v1，此测试不替代 v3 正向往返 |
+| manifest v3 | 新建 v3 的识别、旧版本读取兼容及旧写入器围栏由独立测试覆盖；不要求把已存在的 v1/v2 目录改写为 v3 |
+| 未知 envelope / manifest | 当前 envelope 版本 3 及更高版本拒绝解码；manifest 可读出版本但判不兼容、拒绝写入；不降级 v1 |
 
 ### 缺省字段
 

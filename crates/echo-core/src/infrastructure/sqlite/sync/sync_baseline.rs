@@ -10,6 +10,9 @@ use super::super::support::{now_ms, parse_id, storage};
 use super::super::{read_device_play_counts, statements, SqliteDatabase};
 use super::{enqueue as sync, sync_manifests, sync_projection};
 
+#[path = "sync_baseline/recovery_intents.rs"]
+mod recovery_intents;
+
 impl SqliteDatabase {
     /// Seed a replica's existing local catalog into its durable outbox before
     /// the host snapshot is projected. This makes pending-local overlays win
@@ -42,6 +45,7 @@ impl SqliteDatabase {
                     "replica baseline requires the current host binding and local root",
                 ));
             }
+            recovery_intents::require_reconciled(&tx, root, binding)?;
             let marker = format!(
                 "replica_enrollment_baseline:{root_uuid}:{}:{}:{}",
                 binding.library_id.as_uuid(),

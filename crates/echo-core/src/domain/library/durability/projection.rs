@@ -28,6 +28,10 @@ pub enum ProjectionUnresolvedReason {
     InvalidStateFact,
     IdentityConflict,
     TombstonedDependency,
+    /// The record envelope carries sync metadata over a value the verified
+    /// ledger cannot prove. The original bytes stay retained as a pending
+    /// candidate; no confirmed baseline may be minted for the unproven value.
+    UnverifiedConfirmationMetadata,
     /// Original state remains retained; a specialized recovery use case must
     /// validate its semantics and trust before installing a live projection.
     RequiresStateRecovery,

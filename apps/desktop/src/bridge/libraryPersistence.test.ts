@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { libraryPersistenceMessage, savedLibraryOperation } from "./libraryPersistence";
+import { BridgeError } from "./index";
 
 describe("library persistence feedback", () => {
   it.each([
@@ -21,5 +22,25 @@ describe("library persistence feedback", () => {
       expect(savedLibraryOperation(failure)).toBeUndefined();
     }
     expect(libraryPersistenceMessage("unknown.messageKey")).toBeUndefined();
+  });
+
+  it("preserves the structured durability outcome on BridgeError", () => {
+    const error = new BridgeError({
+      code: "library_saved_pending_recovery",
+      messageKey: "library.savedPendingRecovery",
+      retryable: false,
+      operationId: "operation-1",
+      durabilityOutcome: {
+        kind: "savedPendingRecovery",
+        operationId: "operation-1",
+        reason: "recoveryRequired",
+      },
+    });
+    expect(error.durabilityOutcome).toEqual({
+      kind: "savedPendingRecovery",
+      operationId: "operation-1",
+      reason: "recoveryRequired",
+    });
+    expect(error.operationId).toBe("operation-1");
   });
 });

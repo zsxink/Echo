@@ -411,3 +411,49 @@ fn library_manifests_include_confirmed_content_deduplicate_and_resolve_catalog_a
         None
     );
 }
+
+#[test]
+fn library_durability_replica_baseline_does_not_reauthor_unreconciled_intent() {
+    let (_directory, database, root) = database();
+    let mut imported = song(root, "media/song.flac", "Title", "Artist");
+    imported.apply_scan_facts(
+        "a".repeat(64),
+        17,
+        1,
+        crate::domain::media::AudioFormat::Flac,
+    );
+    SongRepository::upsert(&database, &imported).unwrap();
+    database.writer.run(move |c| {
+        let states = super::super::sync::durability::export_sync_state(c, root)?;
+        assert!(states.iter().any(|state| state.kind == crate::domain::library::durability::StateKind::Pending));
+        for state in states {
+            c.execute("INSERT INTO library_recovery_records(library_root_uuid,object_key,envelope_json,row_kind,unresolved_reason) VALUES(?1,?2,?3,'state',NULL)", params![root.to_string(),state.storage_key()?,serde_json::to_string(&state).map_err(storage)?]).map_err(storage)?;
+        }
+        Ok(())
+    }).unwrap();
+    let binding = binding();
+    database.bind_sync_library(binding, false, root).unwrap();
+    let original = database.pending_local_mutations(32).unwrap();
+    for _ in 0..2 {
+        let error = database
+            .ensure_replica_sync_baseline(binding, root)
+            .unwrap_err();
+        assert!(error.to_string().contains("explicit reconciliation"));
+        assert_eq!(database.pending_local_mutations(32).unwrap(), original);
+        database.with_reader(|c| {
+            let markers: u64 = c.query_row("SELECT COUNT(*) FROM sync_state WHERE key LIKE 'replica_enrollment_baseline:%'", [], |r| r.get(0)).map_err(storage)?;
+            assert_eq!(markers, 0);
+            Ok(())
+        }).unwrap();
+    }
+    database.writer.run(|c| {
+        c.execute("UPDATE library_recovery_records SET envelope_json=json_set(envelope_json,'$.payload.disposition.status','confirmed') WHERE row_kind='state' AND json_extract(envelope_json,'$.kind')='pending_disposition'", []).map_err(storage)?;
+        Ok(())
+    }).unwrap();
+    assert!(
+        database
+            .ensure_replica_sync_baseline(binding, root)
+            .is_err(),
+        "a historical status is not a verified receipt"
+    );
+}

@@ -78,6 +78,7 @@ pub(super) fn bootstrap_main() {
             commands::retry_library_operation,
             commands::library_recovery_status,
             commands::retry_library_projection,
+            commands::playback_retry_status,
             commands::all_songs,
             commands::search,
             commands::favorites,

@@ -31,11 +31,13 @@ use echo_desktop::ipc::dto::{
     PagedSongs, PlaylistView, RevealResultDto, ScanSnapshot, SongDetailView, SongView,
 };
 use echo_desktop::ipc::library_recovery::LibraryRecoveryStatusDto;
+use echo_desktop::ipc::playback_retry::PlaybackRetryStatusDto;
 use echo_desktop::ipc::IpcErrorDto;
 use echo_desktop::player::coordinator::PlaybackCoordinator;
 use echo_desktop::player::port::{PlayerCommand, PlayerPort};
 use echo_desktop::player::queue::{QueueEntry, QueueItem, ViewContext};
 use echo_desktop::player::session::{snapshot_queue, SessionPersistence};
+use echo_desktop::runtime::player::CorePlaybackRecorder;
 use echo_desktop::runtime::services::AppServices;
 use echo_desktop::runtime::StartupSupervisor;
 use tauri::{AppHandle, State};
@@ -54,6 +56,12 @@ pub struct PlayerHandle {
     /// The desktop-local session store is shared with the throttled saver so
     /// lifecycle boundaries can force one final write before hiding or exit.
     pub persistence: Arc<dyn SessionPersistence>,
+    /// The playback-statistics sink. Its retry queue is where a qualified
+    /// listen waits when the directory cannot be committed yet — playback
+    /// never stalls on it, but the user must be able to see what is pending.
+    /// The same `Arc` is moved into the `echo-stats-recorder` thread, so this
+    /// handle reads the one queue the recorder retries.
+    pub stats: Arc<CorePlaybackRecorder>,
 }
 
 /// Persist the latest authoritative playback snapshot synchronously for a
@@ -124,6 +132,37 @@ pub fn retry_library_projection(
     services
         .retry_library_projection(parse_id(&root, "root")?)
         .map_err(IpcErrorDto::from)
+}
+
+/// Read the qualified listens still waiting for a directory commit.
+///
+/// Playback statistics never interrupt playback, so a listen that cannot be
+/// committed is queued and retried on a backoff. This is the read-only view of
+/// that queue for the settings diagnostics: path-free, and it never submits a
+/// second event for the original session it names.
+///
+/// # Errors
+/// Rejects a stale root or unreadable app-private queue bytes.
+#[tauri::command]
+pub fn playback_retry_status(
+    services: State<'_, AppServices>,
+    player: State<'_, PlayerHandle>,
+    root: String,
+) -> Result<Vec<PlaybackRetryStatusDto>, IpcErrorDto> {
+    let root = parse_id(&root, "root")?;
+    services
+        .require_active_root(root)
+        .map_err(IpcErrorDto::from)?;
+    player
+        .stats
+        .retry_status(root)
+        .map(|statuses| statuses.iter().map(PlaybackRetryStatusDto::from).collect())
+        .map_err(|hint| {
+            IpcErrorDto::from(&echo_core::error::Error::unavailable(
+                "playback statistics",
+                hint,
+            ))
+        })
 }
 
 #[tauri::command]
@@ -221,7 +260,7 @@ pub fn set_artist_cover(
 ) -> Result<(), IpcErrorDto> {
     services
         .set_artist_cover(&artist_key, bytes.as_deref(), mime.as_deref())
-        .map_err(IpcErrorDto::from)
+        .map_err(|error| IpcErrorDto::from_mutation(&error))
 }
 
 /// Per-view song totals for the navigation sidebar (counts must be readable
@@ -308,7 +347,7 @@ pub fn set_favorite(
     let song = parse_id::<SongId>(&song_id, "songId")?;
     services
         .set_favorite(song, favorite)
-        .map_err(IpcErrorDto::from)
+        .map_err(|error| IpcErrorDto::from_mutation(&error))
 }
 
 #[tauri::command]
@@ -320,7 +359,7 @@ pub fn create_playlist(
     let root = parse_id::<LibraryRootId>(&root, "root")?;
     services
         .create_playlist(root, &name)
-        .map_err(IpcErrorDto::from)
+        .map_err(|error| IpcErrorDto::from_mutation(&error))
 }
 
 #[tauri::command]
@@ -332,7 +371,7 @@ pub fn rename_playlist(
     let playlist = parse_id::<PlaylistId>(&id, "id")?;
     services
         .rename_playlist(playlist, &name)
-        .map_err(IpcErrorDto::from)
+        .map_err(|error| IpcErrorDto::from_mutation(&error))
 }
 
 #[tauri::command]
@@ -345,7 +384,7 @@ pub fn set_playlist_cover(
     let playlist = parse_id::<PlaylistId>(&id, "id")?;
     services
         .set_playlist_cover(playlist, bytes.as_deref(), mime.as_deref())
-        .map_err(IpcErrorDto::from)
+        .map_err(|error| IpcErrorDto::from_mutation(&error))
 }
 
 #[tauri::command]
@@ -353,7 +392,7 @@ pub fn delete_playlist(services: State<'_, AppServices>, id: String) -> Result<(
     let playlist = parse_id::<PlaylistId>(&id, "id")?;
     services
         .delete_playlist(playlist)
-        .map_err(IpcErrorDto::from)
+        .map_err(|error| IpcErrorDto::from_mutation(&error))
 }
 
 #[tauri::command]
@@ -369,7 +408,7 @@ pub fn add_to_playlists(
     }
     services
         .add_to_playlists(song, &playlists)
-        .map_err(IpcErrorDto::from)
+        .map_err(|error| IpcErrorDto::from_mutation(&error))
 }
 
 #[tauri::command]
@@ -382,7 +421,7 @@ pub fn remove_playlist_song(
     let song = parse_id::<SongId>(&song, "song")?;
     services
         .remove_playlist_song(playlist, song)
-        .map_err(IpcErrorDto::from)
+        .map_err(|error| IpcErrorDto::from_mutation(&error))
 }
 
 #[tauri::command]
@@ -404,7 +443,19 @@ pub fn delete_song(
         |song| services.delete_song(root, song),
         std::time::Duration::from_secs(3),
     )
-    .map_err(|reason| IpcErrorDto::from(&echo_core::error::Error::unavailable("delete", &reason)))
+    .map_err(|failure| {
+        // Core's own classification survives: a delete whose directory intent
+        // committed but whose projection failed stays "saved, waiting".
+        failure.core().map_or_else(
+            || {
+                IpcErrorDto::from_mutation(&echo_core::error::Error::unavailable(
+                    "delete",
+                    "the player still holds the file",
+                ))
+            },
+            IpcErrorDto::from_mutation,
+        )
+    })
 }
 
 #[tauri::command]
@@ -417,7 +468,7 @@ pub fn undo_delete(
     let operation = parse_id::<OperationId>(&operation, "operation")?;
     services
         .undo_delete(root, operation)
-        .map_err(IpcErrorDto::from)
+        .map_err(|error| IpcErrorDto::from_mutation(&error))
 }
 
 #[tauri::command]
@@ -429,7 +480,7 @@ pub async fn choose_and_import_files(
     // reason as `choose_library_root` above.
     let result = services
         .choose_and_import_files()
-        .map_err(IpcErrorDto::from)?;
+        .map_err(|error| IpcErrorDto::from_mutation(&error))?;
     if result.as_ref().is_some_and(|batch| {
         batch
             .results
@@ -480,7 +531,9 @@ pub fn start_scan(
     root: String,
 ) -> Result<ScanSnapshot, IpcErrorDto> {
     let root = parse_id::<LibraryRootId>(&root, "root")?;
-    services.start_scan(root).map_err(IpcErrorDto::from)
+    services
+        .start_scan(root)
+        .map_err(|error| IpcErrorDto::from_mutation(&error))
 }
 
 #[tauri::command]
@@ -813,7 +866,7 @@ pub fn import_current_temporary_file(
     };
     let result = services
         .import_single_path(&path, &display_name)
-        .map_err(IpcErrorDto::from)?;
+        .map_err(|error| IpcErrorDto::from_mutation(&error))?;
 
     let song_id = match &result {
         echo_desktop::ipc::dto::ImportResultDto::Imported { song_id, .. }

@@ -540,7 +540,7 @@
       "title": "Fast-skip, BLAKE3 hashing and identity re-linking rules",
       "commands": [
         {
-          "desc": "path/hash/music-key decision rules (pure planner)",
+          "desc": "path/hash decision rules; a music-key match never merges identities",
           "cmd": "node scripts/verify/checks/task-4.mjs 4.8 application::relink::tests::relink_plans_cover_path_hash_and_music_key_rules"
         },
         {
@@ -552,8 +552,8 @@
           "cmd": "node scripts/verify/checks/task-4.mjs 4.8 application::scan::tests::duplicate_hash_paths_get_deterministic_primary"
         },
         {
-          "desc": "unique music-key weak re-link stays conservative",
-          "cmd": "node scripts/verify/checks/task-4.mjs 4.8 application::scan::tests::unique_music_key_relink_is_conservative"
+          "desc": "a music-key match never re-links; old record stays missing",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.8 application::scan::tests::relink::music_key_never_relinks_identities"
         },
         {
           "desc": "BLAKE3 streams files, content-keyed",
