@@ -16,6 +16,7 @@ pub fn record_qualified_playback(
     device: DeviceId,
     session: PlaybackSessionId,
     song: SongId,
+    qualified_at: u64,
 ) -> Result<bool, Error> {
     let Some(current) = songs.by_id(song)? else {
         return Ok(false);
@@ -25,5 +26,5 @@ pub fn record_qualified_playback(
     }
     unit.playback_edits()
         .ok_or_else(|| Error::unavailable("playback", "ordered adapter missing"))?
-        .record_library_playback(control, current.root(), session, song, device)
+        .record_library_playback(control, current.root(), session, song, device, qualified_at)
 }

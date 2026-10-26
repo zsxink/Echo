@@ -36,6 +36,13 @@ pub trait PlaybackRecorder: Send + Sync {
         session: echo_core::domain::ids::PlaybackSessionId,
         song: echo_core::domain::ids::SongId,
     ) -> Result<bool, String>;
+
+    /// Retry app-private unsaved intents independently of the current track.
+    /// # Errors
+    /// Reports a non-fatal local retry-store failure.
+    fn retry_pending(&self) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// A [`PlaybackRecorder`] that never records — a safe default until the
@@ -53,6 +60,10 @@ impl<R: PlaybackRecorder + ?Sized> PlaybackRecorder for &R {
     ) -> Result<bool, String> {
         (**self).record(session, song)
     }
+
+    fn retry_pending(&self) -> Result<(), String> {
+        (**self).retry_pending()
+    }
 }
 
 /// A shared sink is also a sink — so the composition root can hand the stats
@@ -65,6 +76,10 @@ impl<R: PlaybackRecorder + ?Sized> PlaybackRecorder for std::sync::Arc<R> {
         song: echo_core::domain::ids::SongId,
     ) -> Result<bool, String> {
         (**self).record(session, song)
+    }
+
+    fn retry_pending(&self) -> Result<(), String> {
+        (**self).retry_pending()
     }
 }
 
@@ -247,7 +262,11 @@ impl<R: PlaybackRecorder> PlaybackStatsRecorder<R> {
         state.recorded = true;
     }
 
-    fn retry_pending(&mut self) {
+    /// Retry retained sessions without accumulating additional listening time.
+    pub fn retry_pending(&mut self) {
+        if let Err(error) = self.recorder.retry_pending() {
+            tracing::warn!(%error, "playback retry store unavailable (non-fatal)");
+        }
         let now = std::time::Instant::now();
         self.pending.retain_mut(|pending| {
             if now < pending.next_attempt {

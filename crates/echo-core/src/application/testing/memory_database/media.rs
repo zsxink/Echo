@@ -23,20 +23,16 @@ impl CoverRepository for MemoryDatabase {
             .get(&(root, artist_key.to_owned()))
             .cloned())
     }
-    fn set_artist_cover_key(
+    fn artist_cover_original(
         &self,
         root: LibraryRootId,
         artist_key: &str,
-        key: Option<&str>,
-    ) -> Result<(), Error> {
-        let mut store = self.lock();
-        let identity = (root, artist_key.to_owned());
-        if let Some(key) = key {
-            store.artist_covers.insert(identity, key.to_owned());
-        } else {
-            store.artist_covers.remove(&identity);
-        }
-        Ok(())
+    ) -> Result<Option<crate::domain::library::PortableAssetReference>, Error> {
+        Ok(self
+            .lock()
+            .artist_cover_originals
+            .get(&(root, artist_key.to_owned()))
+            .cloned())
     }
     fn referenced_asset_keys(&self, root: LibraryRootId) -> Result<Vec<String>, Error> {
         let songs = self.all_in_root(root)?;

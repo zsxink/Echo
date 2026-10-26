@@ -26,6 +26,11 @@ pub trait UnitOfWork: Send + Sync {
         None
     }
 
+    /// Ordered edits of library-private artist artwork originals.
+    fn artist_cover_edits(&self) -> Option<&dyn super::ArtistCoverEditPort> {
+        None
+    }
+
     /// Ordered directory-first logical edits, when supplied by this adapter.
     fn local_library_edits(&self) -> Option<&dyn super::LocalLibraryEditPort> {
         None

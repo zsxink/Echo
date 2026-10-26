@@ -1,6 +1,7 @@
 //! Library-local durable transaction protocol. These values never contain paths
 //! outside the library, credentials, database handles, or transport clients.
 
+mod artist_cover;
 mod change_set;
 mod confirmed;
 mod frozen;
@@ -11,6 +12,7 @@ mod session;
 mod state;
 #[cfg(test)]
 mod tests;
+pub use artist_cover::ArtistCoverState;
 pub use frozen::{FrozenMutation, MutationDisposition, MutationOperation, MutationStatus};
 pub use projection::{
     LibraryProjectionStatus, LibraryRecoveryRecords, ProjectionTarget, ProjectionUnresolvedReason,
@@ -58,6 +60,7 @@ pub enum StateKind {
     PlaybackEvent,
     Adoption,
     Claim,
+    ArtistCover,
 }
 
 impl StateKind {
@@ -78,6 +81,7 @@ impl StateKind {
             Self::PlaybackEvent => "playback-events",
             Self::Adoption => "adoptions",
             Self::Claim => "claims",
+            Self::ArtistCover => "artist-covers",
         }
     }
 }
@@ -130,6 +134,9 @@ impl DurableStateChange {
     pub fn validate(&self) -> Result<(), Error> {
         if self.id.is_nil() {
             return Err(Error::conflict("nil durable state identity"));
+        }
+        if self.kind == StateKind::ArtistCover {
+            return ArtistCoverState::from_change(self).map(|_| ());
         }
         let Some(key) = &self.key else {
             return Ok(());
@@ -242,6 +249,7 @@ impl LibraryBatch {
     /// # Errors
     /// Rejects invalid or duplicate identities, unsafe resources and malformed
     /// portable envelopes. Directory ownership is checked by the adapter.
+    #[allow(clippy::too_many_lines)]
     pub fn validate(&self) -> Result<(), Error> {
         if self.operation_id.is_nil() || self.library_id.as_uuid().is_nil() {
             return Err(Error::conflict("durable operation identity is nil"));
@@ -317,6 +325,25 @@ impl LibraryBatch {
                     && path.normalized() != format!("echo/assets/{}", resource.content_hash))
             {
                 return Err(Error::conflict("resource requires a BLAKE3 digest"));
+            }
+        }
+        for state in self
+            .state
+            .iter()
+            .filter(|state| state.kind == StateKind::ArtistCover)
+        {
+            let artwork = ArtistCoverState::from_change(state)?;
+            if artwork.library_id != self.library_id {
+                return Err(Error::conflict("artist artwork belongs to another library"));
+            }
+            if let Some(asset) = artwork.asset {
+                if !self.resources.iter().any(|resource| {
+                    resource.relative_path == format!("echo/assets/{}", asset.content_hash)
+                        && resource.content_hash == asset.content_hash
+                        && resource.byte_length == asset.byte_len
+                }) {
+                    return Err(Error::conflict("artist artwork original is undeclared"));
+                }
             }
         }
         let mut expected = BTreeSet::new();

@@ -152,6 +152,10 @@ impl crate::application::ports::SyncStateReader for SqliteDatabase {
 }
 
 impl UnitOfWork for SqliteDatabase {
+    fn artist_cover_edits(&self) -> Option<&dyn crate::application::ports::ArtistCoverEditPort> {
+        Some(self)
+    }
+
     fn playback_edits(&self) -> Option<&dyn crate::application::ports::PlaybackEditPort> {
         Some(self)
     }

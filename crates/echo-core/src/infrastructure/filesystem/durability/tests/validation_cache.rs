@@ -154,9 +154,13 @@ fn library_durability_cache_coverage_and_receipt_watermark_are_rechecked() {
     assert!(LibraryDurabilityPort::read_operation(&plane, root, change.operation_id).is_err());
     std::fs::write(&anchor, &original).unwrap();
     // Equal-length coverage mutation must force intrinsic revalidation.
-    let changed = String::from_utf8(original)
-        .unwrap()
-        .replace("covered", "corrupt");
+    let original = String::from_utf8(original).unwrap();
+    let coverage: serde_json::Value = serde_json::from_str(&original).unwrap();
+    // v2 stores business values in verified leaves; mutate the root's original
+    // image digest so this assertion still exercises the root body certificate.
+    let changed = original.replace(coverage["digest"].as_str().unwrap(), &"0".repeat(64));
+    assert_ne!(changed, original);
+    assert_eq!(changed.len(), original.len());
     std::fs::write(&anchor, changed).unwrap();
     assert!(browse(&plane, root).is_err());
 }

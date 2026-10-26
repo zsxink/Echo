@@ -50,6 +50,7 @@ pub fn record(
         database.current_device_id(),
         session,
         song,
+        1_700_000_000_000,
     )
     .unwrap()
 }

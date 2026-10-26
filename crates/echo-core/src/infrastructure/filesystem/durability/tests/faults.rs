@@ -48,6 +48,21 @@ fn library_durability_every_compaction_boundary_keeps_snapshot_and_unique_resour
         .iter()
         .any(|(phase, _)| phase == "coverage:directory_sync"));
     assert!(trace.iter().any(|(phase, _)| phase == "gc:remove"));
+    for required in [
+        "snapshot:file_sync",
+        "snapshot:rename",
+        "snapshot:directory_sync",
+        "snapshot_root_gc:file_sync",
+        "snapshot_leaf_gc:file_sync",
+        "snapshot_proof_gc:directory_sync",
+        "snapshot_gc:remove",
+        "snapshot_gc:directory_sync",
+    ] {
+        assert!(
+            trace.iter().any(|(phase, _)| phase == required),
+            "missing snapshot interruption boundary {required}"
+        );
+    }
     for (stop, boundary) in trace.iter().enumerate() {
         let (dir, registry, root, _, replay, hash) = seed();
         let mut counter = 0;

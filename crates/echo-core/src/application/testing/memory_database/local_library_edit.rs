@@ -1,4 +1,5 @@
 //! In-memory directory-first playlist capability for application tests.
+mod artist_cover;
 mod candidate;
 mod cover;
 mod deletion;
@@ -350,6 +351,24 @@ fn project_records(
                 store.members.retain(|(playlist, _), _| *playlist != id);
             }
             _ => {}
+        }
+    }
+    for state in replay
+        .states()
+        .filter(|state| state.kind == crate::domain::library::durability::StateKind::ArtistCover)
+    {
+        let artwork = crate::domain::library::durability::ArtistCoverState::from_change(state)
+            .expect("directory replay validated artist artwork");
+        let identity = (root, artwork.artist_key);
+        if let Some(asset) = artwork.asset {
+            store.artist_covers.insert(
+                identity.clone(),
+                crate::domain::media::cover_asset_key(&asset.content_hash),
+            );
+            store.artist_cover_originals.insert(identity, asset);
+        } else {
+            store.artist_covers.remove(&identity);
+            store.artist_cover_originals.remove(&identity);
         }
     }
 }

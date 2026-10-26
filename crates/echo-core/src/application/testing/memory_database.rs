@@ -37,6 +37,8 @@ struct Store {
     lyrics: BTreeMap<(SongId, LyricsSource), LyricsCandidate>,
     covers: BTreeMap<SongId, CoverAssetRef>,
     artist_covers: BTreeMap<(LibraryRootId, String), String>,
+    artist_cover_originals:
+        BTreeMap<(LibraryRootId, String), crate::domain::library::PortableAssetReference>,
     runs: BTreeMap<(LibraryRootId, u64), ScanRunRow>,
     issues: Vec<(LibraryRootId, u64, MediaDiagnostic)>,
     runtime_state: BTreeMap<String, String>,

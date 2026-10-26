@@ -1,4 +1,5 @@
 //! Stable typed storage, dependency resolution and path-free recovery reporting.
+mod artist_cover;
 mod dependencies;
 mod local_allocation;
 use super::super::support::storage;
@@ -136,6 +137,13 @@ pub(super) fn read(c: &Connection, root: LibraryRootId) -> Result<LibraryRecover
     }
     Ok(result)
 }
+pub(super) fn artist_cover_original(
+    c: &Connection,
+    root: LibraryRootId,
+    artist_key: &str,
+) -> Result<Option<crate::domain::library::PortableAssetReference>, Error> {
+    artist_cover::read(c, root, artist_key)
+}
 pub(super) fn retry(
     c: &Connection,
     root: LibraryRootId,
@@ -186,7 +194,9 @@ pub(super) fn retry(
         reason(c, root, &key, unresolved)?;
     }
     for state in &retained.state {
-        let unresolved = if state.kind == StateKind::PlaybackEvent {
+        let unresolved = if state.kind == StateKind::ArtistCover {
+            artist_cover::project(c, root, library, state)?
+        } else if state.kind == StateKind::PlaybackEvent {
             let event: PlaybackEvent =
                 serde_json::from_value(state.payload.clone()).map_err(storage)?;
             let dependency = dependencies::song(c, root, event.song_uuid, &retained.records)?;

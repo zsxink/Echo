@@ -19,6 +19,7 @@ fn record(
         deps.device_id.current_device_id(),
         session,
         song,
+        1_700_000_000_000,
     )
 }
 

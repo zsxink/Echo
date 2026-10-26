@@ -23,6 +23,8 @@
 //!   snapshot (`SetFavorite`, task 6.3).
 //! - [`detail`] — the read-only song detail DTO (`GetSongDetail`, task 6.4).
 
+pub mod artist_cover;
+mod artwork;
 pub mod boot;
 pub mod catalog;
 pub mod continuation;

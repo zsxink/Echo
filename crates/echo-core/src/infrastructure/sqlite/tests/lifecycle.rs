@@ -1,3 +1,4 @@
+mod artist_cover;
 mod favorite;
 mod import;
 mod ordered_fake;

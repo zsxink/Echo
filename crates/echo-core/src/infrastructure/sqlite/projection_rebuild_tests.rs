@@ -77,6 +77,38 @@ fn library_durability_candidate_rebuild_retains_orphans_and_preserves_active_pro
 }
 
 #[test]
+fn library_durability_orphan_rebuild_projects_valid_subset_and_reports_partial_state() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = LibraryRootId::new();
+    let library = LibraryId::from_uuid(uuid::Uuid::new_v4());
+    let replay = replay(library, Issue72Fixture::orphaned().portable);
+    let connection = project(&directory.path().join("candidate.sqlite"), root, &replay)
+        .expect("candidate projection tolerates dangling relations");
+
+    let projected_songs: u64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM songs WHERE library_root_uuid=?1",
+            [root.to_string()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let retained = durability_projection::read(&connection, root).unwrap();
+    let report = durability_projection::status(&connection, root).unwrap();
+    assert!(
+        projected_songs > 0,
+        "valid song records enter the read model"
+    );
+    assert_eq!(
+        retained.records.len(),
+        replay.commits[0].batch.records.len()
+    );
+    assert!(
+        !report.unresolved.is_empty(),
+        "dangling after-images stay visible as partial recovery"
+    );
+}
+
+#[test]
 fn library_durability_candidate_validation_detects_changed_retained_bytes() {
     let directory = tempfile::tempdir().unwrap();
     let library = LibraryId::from_uuid(uuid::Uuid::new_v4());

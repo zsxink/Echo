@@ -469,6 +469,7 @@ fn playlist_cover_is_empty_then_follows_latest_member_unless_manually_set() {
     );
 }
 
+mod artist_cover;
 mod playlist_cover;
 
 #[test]

@@ -6,6 +6,9 @@ use crate::error::Error;
 
 pub trait PlaybackEditPort: Send + Sync {
     /// Save one stable event and its absolute device buckets before projection.
+    ///
+    /// `qualified_at` is the caller's already-persisted intent time. Replanning
+    /// a retry must reuse it so the frozen payload stays identical.
     fn record_library_playback(
         &self,
         control: &dyn ControlPlanePort,
@@ -13,5 +16,6 @@ pub trait PlaybackEditPort: Send + Sync {
         session: PlaybackSessionId,
         song: SongId,
         device: DeviceId,
+        qualified_at: u64,
     ) -> Result<bool, Error>;
 }

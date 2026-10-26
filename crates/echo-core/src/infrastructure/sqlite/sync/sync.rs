@@ -168,8 +168,31 @@ pub(crate) fn enqueue_sync_with_id(
     operation: &str,
     stable_mutation_id: Option<&str>,
 ) -> Result<i64, Error> {
+    enqueue_sync_at(
+        connection,
+        kind,
+        object_uuid,
+        payload_json,
+        operation,
+        stable_mutation_id,
+        None,
+    )
+}
+
+/// As [`enqueue_sync_with_id`], also freezing the fact timestamps. A retried
+/// operation whose `prepared` payload is already saved must replan to the same
+/// bytes, so the supplied intent time replaces the retry clock.
+pub(crate) fn enqueue_sync_at(
+    connection: &Connection,
+    kind: &str,
+    object_uuid: &str,
+    payload_json: &str,
+    operation: &str,
+    stable_mutation_id: Option<&str>,
+    at_ms: Option<u64>,
+) -> Result<i64, Error> {
     let local_root = super::context::object_root(connection, kind, object_uuid, payload_json)?;
-    enqueue_sync_in_root(
+    enqueue_sync_in_root_at(
         connection,
         &local_root,
         kind,
@@ -177,6 +200,7 @@ pub(crate) fn enqueue_sync_with_id(
         payload_json,
         operation,
         stable_mutation_id,
+        at_ms,
     )
 }
 
@@ -191,12 +215,35 @@ pub(super) fn enqueue_sync_in_root(
     operation: &str,
     stable_mutation_id: Option<&str>,
 ) -> Result<i64, Error> {
+    enqueue_sync_in_root_at(
+        connection,
+        local_root,
+        kind,
+        object_uuid,
+        payload_json,
+        operation,
+        stable_mutation_id,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn enqueue_sync_in_root_at(
+    connection: &Connection,
+    local_root: &str,
+    kind: &str,
+    object_uuid: &str,
+    payload_json: &str,
+    operation: &str,
+    stable_mutation_id: Option<&str>,
+    at_ms: Option<u64>,
+) -> Result<i64, Error> {
     let resources = if operation == "delete" || kind == "tombstone" {
         Vec::new()
     } else {
         super::manifests::load(connection, kind, object_uuid)?
     };
-    enqueue_sync_in_root_with_resources(
+    enqueue_sync_in_root_with_resources_at(
         connection,
         local_root,
         kind,
@@ -205,6 +252,7 @@ pub(super) fn enqueue_sync_in_root(
         operation,
         stable_mutation_id,
         &resources,
+        at_ms,
     )
 }
 
@@ -221,6 +269,32 @@ pub(super) fn enqueue_sync_in_root_with_resources(
     stable_mutation_id: Option<&str>,
     resource_refs: &[crate::domain::sync::SharedResourceManifest],
 ) -> Result<i64, Error> {
+    enqueue_sync_in_root_with_resources_at(
+        connection,
+        local_root,
+        kind,
+        object_uuid,
+        payload_json,
+        operation,
+        stable_mutation_id,
+        resource_refs,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn enqueue_sync_in_root_with_resources_at(
+    connection: &Connection,
+    local_root: &str,
+    kind: &str,
+    object_uuid: &str,
+    payload_json: &str,
+    operation: &str,
+    stable_mutation_id: Option<&str>,
+    resource_refs: &[crate::domain::sync::SharedResourceManifest],
+    at_ms: Option<u64>,
+) -> Result<i64, Error> {
+    let changed_at = at_ms.map_or_else(now_ms, |ms| i64::try_from(ms).unwrap_or(i64::MAX));
     super::manifests::validate(resource_refs)?;
     connection
         .execute(
@@ -281,7 +355,7 @@ pub(super) fn enqueue_sync_in_root_with_resources(
     connection
         .execute(
             "INSERT INTO sync_mutations (mutation_id, origin_device_id, origin_seq, previous_mutation_id, object_type, object_uuid, operation, local_revision, base_object_version, payload_json, payload_digest, status, created_at, resource_refs_json, local_root_uuid) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'pending', ?12, ?13, ?14)",
-            params![mutation_id, origin_device_id, origin_seq, previous_mutation_id, kind, object_uuid, operation, next, base_object_version, payload_json, payload_digest, now_ms(), resource_refs_json, local_root],
+            params![mutation_id, origin_device_id, origin_seq, previous_mutation_id, kind, object_uuid, operation, next, base_object_version, payload_json, payload_digest, changed_at, resource_refs_json, local_root],
         )
         .map_err(storage)?;
     connection
@@ -293,7 +367,7 @@ pub(super) fn enqueue_sync_in_root_with_resources(
     connection
         .execute(
             "INSERT INTO sync_outbox (object_type, object_uuid, revision, operation, payload_json, created_at, pushed_at, mutation_id, local_root_uuid) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, ?8) ON CONFLICT(object_type, object_uuid, revision) DO NOTHING",
-            params![kind, object_uuid, next, operation, payload_json, now_ms(), mutation_id, local_root],
+            params![kind, object_uuid, next, operation, payload_json, changed_at, mutation_id, local_root],
         )
         .map_err(storage)?;
     Ok(next)

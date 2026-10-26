@@ -1,4 +1,5 @@
 //! Plan on the writer connection, roll back, then project only saved facts.
+mod artist_cover;
 mod cover;
 mod deletion;
 mod members;

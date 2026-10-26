@@ -27,6 +27,15 @@ fn relative(digest: &str) -> Result<String, Error> {
     Ok(format!("{DIRECTORY}/{digest}.json"))
 }
 
+fn owned_temporary(name: &str) -> bool {
+    name.split_once(".tmp-").is_some_and(|(digest, suffix)| {
+        crate::domain::library::durability::valid_digest(digest)
+            && suffix
+                .parse::<uuid::Uuid>()
+                .is_ok_and(|id| id.to_string() == suffix)
+    })
+}
+
 fn leaves<T: Serialize>(values: &BTreeMap<String, T>) -> Result<Vec<(String, Vec<u8>)>, Error> {
     let mut shards = BTreeMap::<String, BTreeMap<&str, &T>>::new();
     for (key, value) in values {
@@ -167,11 +176,22 @@ pub(super) fn collect(
             .file_name()
             .into_string()
             .map_err(|_| invalid("invalid snapshot leaf name"))?;
-        let digest = name
-            .strip_suffix(".json")
-            .ok_or_else(|| invalid("unknown snapshot evidence"))?;
+        let Some(digest) = name.strip_suffix(".json") else {
+            // A real crash bypasses publish's temporary cleanup. This exact
+            // owned name may contain the only prepared bytes: retain it without
+            // letting it block later committed snapshot collection.
+            if owned_temporary(&name) {
+                continue;
+            }
+            return Err(invalid("unknown snapshot evidence"));
+        };
         let path = portable::path(registry, root, &relative(digest)?)?;
         if !protected.contains(digest) {
+            let bytes = portable::read(registry, root, &relative(digest)?, LEAF_LIMIT)?
+                .ok_or_else(|| invalid("snapshot evidence disappeared"))?;
+            if blake3::hash(bytes.as_bytes()).to_hex().as_str() != digest {
+                return Err(invalid("corrupt unreferenced snapshot evidence"));
+            }
             obsolete.push(path);
         }
     }

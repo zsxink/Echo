@@ -364,6 +364,7 @@ fn library_durability_refused_commit_leaves_every_wired_entrypoint_untouched() {
                 device,
                 PlaybackSessionId::new(),
                 song,
+                1_700_000_000_000,
             )
             .map(|_| ())
         },

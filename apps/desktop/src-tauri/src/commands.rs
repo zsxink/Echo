@@ -220,7 +220,7 @@ pub fn set_artist_cover(
     mime: Option<String>,
 ) -> Result<(), IpcErrorDto> {
     services
-        .set_artist_cover(&artist_key, bytes, mime.as_deref())
+        .set_artist_cover(&artist_key, bytes.as_deref(), mime.as_deref())
         .map_err(IpcErrorDto::from)
 }
 

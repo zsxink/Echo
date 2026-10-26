@@ -214,6 +214,10 @@ impl TxStateWriter for MemoryTx<'_> {
 }
 
 impl UnitOfWork for MemoryDatabase {
+    fn artist_cover_edits(&self) -> Option<&dyn crate::application::ports::ArtistCoverEditPort> {
+        Some(self)
+    }
+
     fn playback_edits(&self) -> Option<&dyn crate::application::ports::PlaybackEditPort> {
         Some(self)
     }

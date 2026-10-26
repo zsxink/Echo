@@ -2,26 +2,8 @@
 use super::durable::DurableLibraryEdits;
 use crate::application::ports::{ControlPlanePort, CoverCache};
 use crate::domain::ids::{LibraryRootId, PlaylistId};
-use crate::domain::library::{PortableAssetReference, PortableRecord, RecordKind};
-use crate::error::{Error, Subject};
-
-fn validate(bytes: &[u8], mime: &str) -> Result<(), Error> {
-    if bytes.is_empty() || bytes.len() > 5 * 1024 * 1024 {
-        return Err(Error::validation(
-            Subject::Other,
-            "cover",
-            "image must be between 1 byte and 5 MiB",
-        ));
-    }
-    if !matches!(mime, "image/jpeg" | "image/png" | "image/webp") {
-        return Err(Error::validation(
-            Subject::Other,
-            "cover",
-            "unsupported image type",
-        ));
-    }
-    Ok(())
-}
+use crate::domain::library::{PortableRecord, RecordKind};
+use crate::error::Error;
 
 impl DurableLibraryEdits<'_> {
     /// Save the original before committing its reference; clearing retains history bytes.
@@ -43,18 +25,12 @@ impl DurableLibraryEdits<'_> {
             .ok_or_else(|| Error::unavailable("cover edit", "ordered adapter missing"))?;
         let asset = bytes
             .map(|bytes| {
-                let mime = mime.unwrap_or_default();
-                validate(bytes, mime)?;
-                let durable = self
-                    .control
-                    .durability()
-                    .ok_or_else(|| Error::unavailable("cover edit", "directory adapter missing"))?;
-                Ok::<_, Error>(PortableAssetReference {
-                    content_hash: durable.write_asset(root, bytes)?,
-                    byte_len: u64::try_from(bytes.len())
-                        .map_err(|_| Error::conflict("cover length overflow"))?,
-                    mime: mime.to_owned(),
-                })
+                crate::application::artwork::save(
+                    self.control,
+                    root,
+                    bytes,
+                    mime.unwrap_or_default(),
+                )
             })
             .transpose()?;
         edits.set_library_playlist_cover(self.control, root, id, asset, self.device)
@@ -75,32 +51,8 @@ pub fn resolve_playlist_cover(
     let record = control.read_record(root, RecordKind::Playlist, &id.to_string())?;
     if let Some(PortableRecord::Playlist(record)) = record {
         if let Some(asset) = record.cover_asset {
-            asset.validate()?;
-            let durable = control
-                .durability()
-                .ok_or_else(|| Error::unavailable("cover original", "directory adapter missing"))?;
-            let bytes = durable
-                .read_asset(root, &asset.content_hash)?
-                .ok_or_else(|| Error::unavailable("cover original", "original is missing"))?;
-            validate(&bytes, &asset.mime)?;
-            if u64::try_from(bytes.len()).ok() != Some(asset.byte_len)
-                || blake3::hash(&bytes).to_hex().as_str() != asset.content_hash
-            {
-                return Err(Error::conflict(
-                    "cover original differs from saved reference",
-                ));
-            }
-            return cache.put(&bytes, &asset.mime).map(Some);
+            return crate::application::artwork::resolve(control, cache, root, &asset).map(Some);
         }
     }
-    if let Some(key) = legacy_key {
-        if cache.get(key)?.is_none() {
-            return Err(Error::unavailable(
-                "cover original",
-                "historical cover has no recoverable original",
-            ));
-        }
-        return Ok(Some(key.to_owned()));
-    }
-    Ok(None)
+    crate::application::artwork::resolve_legacy(cache, legacy_key)
 }

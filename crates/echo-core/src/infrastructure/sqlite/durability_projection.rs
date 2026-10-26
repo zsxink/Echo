@@ -114,3 +114,11 @@ pub fn status(c: &Connection, root: LibraryRootId) -> Result<LibraryProjectionSt
 pub fn read(c: &Connection, root: LibraryRootId) -> Result<LibraryRecoveryRecords, Error> {
     retained::read(c, root)
 }
+
+pub(super) fn artist_cover_original(
+    c: &Connection,
+    root: LibraryRootId,
+    artist_key: &str,
+) -> Result<Option<crate::domain::library::PortableAssetReference>, Error> {
+    retained::artist_cover_original(c, root, artist_key)
+}

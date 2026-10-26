@@ -17,6 +17,7 @@ impl PlaybackEditPort for SqliteDatabase {
         session: PlaybackSessionId,
         song: SongId,
         device: DeviceId,
+        qualified_at: u64,
     ) -> Result<bool, Error> {
         self.plan_library_change(control, root, device, Some(session.as_uuid()), move |c, authority, library, sequence, _| {
             let empty = || LibraryBatch::new(session.as_uuid(), library, ChangeOrigin::LocalEdit, vec![]);
@@ -34,7 +35,9 @@ impl PlaybackEditPort for SqliteDatabase {
             ).map_err(storage)?;
             if !visible { return Ok((empty(), false)); }
             let before = authority.read_record(root, RecordKind::PlayStats, &song.to_string())?;
-            let now = u64::try_from(super::super::now_ms().max(0)).unwrap_or(0);
+            // Use the caller's saved intent time, never the retry clock: a
+            // prepared-but-unsaved operation must replan to the same payload.
+            let now = qualified_at;
             let mut counts = super::super::read_device_play_counts(c, song)?;
             let count = counts.entry(device.as_uuid()).or_default();
             *count = count.checked_add(1).ok_or_else(|| Error::conflict("play count exhausted"))?;
@@ -46,7 +49,21 @@ impl PlaybackEditPort for SqliteDatabase {
                 hlc: next_hlc(before.as_ref().map_or_else(HybridLogicalClock::default, PortableRecord::hlc), now / 1000),
                 by_device: counts,
             };
-            super::statements::enqueue_object_snapshot(c, "play-stats", &song.to_string(), &serde_json::to_value(&stats).map_err(storage)?, "upsert")?;
+            super::statements::enqueue_object_snapshot_with_id(
+                c,
+                "play-stats",
+                &song.to_string(),
+                &serde_json::to_value(&stats).map_err(storage)?,
+                "upsert",
+                Some(
+                    &super::super::sync::durability::identity(
+                        "playback-mutation",
+                        &session.to_string(),
+                    )
+                    .to_string(),
+                ),
+                Some(now),
+            )?;
             let mut batch = planned_batch(c, root, library, device, PortableRecord::PlayStats(stats), ObjectKey::PlayStats(song), sequence)?;
             batch.operation_id = session.as_uuid();
             batch.state.push(DurableStateChange::new(StateKind::PlaybackEvent, session.as_uuid(),

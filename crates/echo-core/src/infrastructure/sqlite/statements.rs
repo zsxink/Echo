@@ -220,6 +220,29 @@ pub(crate) fn enqueue_object_snapshot(
     payload: &serde_json::Value,
     operation: &str,
 ) -> Result<i64, Error> {
+    enqueue_object_snapshot_with_id(
+        connection,
+        kind,
+        object_uuid,
+        payload,
+        operation,
+        None,
+        None,
+    )
+}
+
+/// Enqueue an object snapshot under a stable mutation identity and a supplied
+/// timestamp. Replanning a saved-but-interrupted operation must reproduce the
+/// exact same facts so a frozen `prepared` payload can be retried, not refused.
+pub(crate) fn enqueue_object_snapshot_with_id(
+    connection: &Connection,
+    kind: &str,
+    object_uuid: &str,
+    payload: &serde_json::Value,
+    operation: &str,
+    stable_mutation_id: Option<&str>,
+    at_ms: Option<u64>,
+) -> Result<i64, Error> {
     // Every playlist write must capture the same complete post-write view.
     // Rename/member callers historically supplied different partial payloads,
     // which could erase membership or the name when replayed as an object.
@@ -234,7 +257,15 @@ pub(crate) fn enqueue_object_snapshot(
         payload
     };
     let json = serde_json::to_string(payload).unwrap_or_else(|_| "{}".to_owned());
-    let revision = super::sync::enqueue_sync(connection, kind, object_uuid, &json, operation)?;
+    let revision = super::sync::enqueue_sync_at(
+        connection,
+        kind,
+        object_uuid,
+        &json,
+        operation,
+        stable_mutation_id,
+        at_ms,
+    )?;
     // Mirror onto canonical columns (idempotent; only present after 0005).
     match kind {
         super::sync::KIND_PLAYLIST => {

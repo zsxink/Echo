@@ -6,6 +6,7 @@
 
 #![allow(clippy::missing_errors_doc)]
 
+mod artist_cover_edit;
 mod durability;
 pub(crate) mod filesystem;
 mod filesystem_capabilities;
@@ -26,6 +27,7 @@ mod sync_recovery;
 mod system;
 mod transaction;
 
+pub use artist_cover_edit::*;
 pub use durability::*;
 pub use filesystem::{
     FileMeta, ImportSource, ImportSourceInfo, ImportSourceReader, SidecarInfo, StagedCopy,

@@ -17,6 +17,7 @@ impl PlaybackEditPort for MemoryDatabase {
         session: PlaybackSessionId,
         song: SongId,
         device: DeviceId,
+        qualified_at: u64,
     ) -> Result<bool, Error> {
         let mut store = self.lock();
         if device != store.device_id {
@@ -66,11 +67,7 @@ impl PlaybackEditPort for MemoryDatabase {
                 by_device: std::collections::BTreeMap::default(),
             },
         };
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |time| {
-                u64::try_from(time.as_millis()).unwrap_or(u64::MAX)
-            });
+        let now = qualified_at;
         let count = stats.by_device.entry(device.as_uuid()).or_default();
         *count = count
             .checked_add(1)
