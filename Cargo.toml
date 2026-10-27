@@ -101,3 +101,12 @@ nursery = "warn"
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+# The desktop dev command exercises the same persistence pipeline as release.
+# Keep debug information while avoiding disproportionately slow JSON, hashing,
+# and recovery loops in these workspace crates.
+[profile.dev.package.echo-core]
+opt-level = 2
+
+[profile.dev.package.echo-desktop]
+opt-level = 2

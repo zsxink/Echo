@@ -982,6 +982,7 @@ dependencies = [
  "notify",
  "proptest",
  "rusqlite",
+ "rustix",
  "serde",
  "serde_json",
  "symphonia",

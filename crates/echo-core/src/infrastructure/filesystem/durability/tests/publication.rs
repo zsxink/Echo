@@ -108,7 +108,17 @@ fn library_durability_rename_without_checkpoint_repeats_file_and_directory_sync(
         .unwrap();
         assert!(trace.contains(&(format!("{label}:file_sync"), 0)));
         assert!(trace.contains(&(format!("{label}:rename"), 0)));
-        assert!(trace.contains(&(format!("{label}:directory_sync"), 0)));
+        // Materialization now synchronizes the union of record and state
+        // parent directories after all renames, before the checkpoint.
+        let directory_sync = trace
+            .iter()
+            .rposition(|(phase, _)| phase == "materialization:directory_sync")
+            .expect("materialization directories are synchronized");
+        let checkpoint = trace
+            .iter()
+            .position(|(phase, _)| phase == "checkpoint:file_sync")
+            .expect("checkpoint is published");
+        assert!(directory_sync < checkpoint);
         assert!(dir.path().join(CHECKPOINT).exists());
     }
 }

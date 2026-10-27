@@ -16,6 +16,48 @@ pub(super) fn publish(
     label: &str,
     hook: &mut Hook<'_>,
 ) -> Result<(), Error> {
+    publish_inner(
+        registry, root, relative, bytes, exclusive, label, hook, None,
+    )
+}
+
+/// Publish a file whose namespace durability will be established by the caller
+/// before publishing any document that references it. This proof is local to a
+/// single operation; callers must discard it on any failure.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn publish_batched(
+    registry: &RootRegistry,
+    root: LibraryRootId,
+    relative: &str,
+    bytes: &[u8],
+    exclusive: bool,
+    label: &str,
+    hook: &mut Hook<'_>,
+    directories: &mut DirectorySyncSet,
+) -> Result<(), Error> {
+    publish_inner(
+        registry,
+        root,
+        relative,
+        bytes,
+        exclusive,
+        label,
+        hook,
+        Some(directories),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn publish_inner(
+    registry: &RootRegistry,
+    root: LibraryRootId,
+    relative: &str,
+    bytes: &[u8],
+    exclusive: bool,
+    label: &str,
+    hook: &mut Hook<'_>,
+    directories: Option<&mut DirectorySyncSet>,
+) -> Result<(), Error> {
     let path = portable::path(registry, root, relative)?;
     let parent = path
         .parent()
@@ -45,7 +87,10 @@ pub(super) fn publish(
                 .map_err(|e| Error::io("replace durable file", e, &path))?;
         }
         hook(&format!("{label}:rename"), 0)?;
-        sync_ancestors(registry, root, parent, label, hook)
+        directories.map_or_else(
+            || sync_ancestors(registry, root, parent, label, hook),
+            |directories| directories.include_ancestors(registry, root, parent),
+        )
     })();
     let _ = std::fs::remove_file(&temporary);
     result
@@ -101,8 +146,9 @@ pub(super) fn flush_file(
     portable::path(registry, root, relative)
 }
 
-/// Call-local directory proof, valid only while the caller performs no
-/// create/rename/delete. Descendants are synced before their shared ancestors.
+/// Collect affected directories for a call-local durability proof. The proof
+/// begins after `sync` returns and expires on the next namespace mutation.
+/// Descendants are synced before their shared ancestors.
 #[derive(Default)]
 pub(super) struct DirectorySyncSet(BTreeSet<PathBuf>);
 

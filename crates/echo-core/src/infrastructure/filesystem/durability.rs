@@ -4,6 +4,7 @@ mod assets;
 mod checkpoint;
 mod snapshot;
 mod validation_cache;
+mod verified_files;
 use validation_cache::DocumentKind;
 pub(super) use validation_cache::ValidationCache;
 mod transaction;
@@ -291,7 +292,7 @@ pub(in crate::infrastructure::filesystem) struct WriteSessionState {
 }
 
 impl WriteSessionState {
-    pub(in crate::infrastructure::filesystem) fn replay(&self) -> &LibraryReplay {
+    pub(in crate::infrastructure::filesystem) const fn replay(&self) -> &LibraryReplay {
         &self.replay
     }
 }
@@ -334,16 +335,7 @@ pub(in crate::infrastructure::filesystem) fn begin_edit(
         None
     };
     let newer_paths = checkpoint::changed_paths(&replay, checkpoint.seq)?;
-    for (path, digest) in &files {
-        if newer_paths.contains(path) {
-            continue;
-        }
-        let raw = portable::read(registry, root, path, LIMIT)?
-            .ok_or_else(|| invalid("checkpoint file missing"))?;
-        if blake3::hash(raw.as_bytes()).to_hex().as_str() != digest {
-            return Err(invalid("checkpoint file digest mismatch"));
-        }
-    }
+    verified_files::verify(registry, root, &files, &newer_paths)?;
     // The anchor is also a complete redo image if materialization lagged or was
     // interrupted before publishing its progress marker.
     if checkpoint.seq < anchor_seq {

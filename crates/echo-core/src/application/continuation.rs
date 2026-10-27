@@ -554,4 +554,4 @@ const fn version_of(hlc: HybridLogicalClock, revision: Revision) -> (HybridLogic
 #[cfg(test)]
 mod tests;
 
-mod ordered;
+pub(crate) mod ordered;

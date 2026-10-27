@@ -799,6 +799,87 @@ fn library_durability_projection_ahead_of_directory_rebuilds_from_the_manifest_l
 }
 
 #[test]
+fn library_durability_rebuild_preserves_unjournaled_legacy_snapshots() {
+    use crate::application::ports::PlaylistRepository;
+    use crate::domain::ids::{PlaylistId, SongId};
+    use crate::domain::library::LibraryManifest;
+    use crate::infrastructure::filesystem::{RootControlPlane, RootRegistry};
+
+    let directory = tempfile::tempdir().unwrap();
+    let library_path = directory.path().join("library");
+    std::fs::create_dir_all(&library_path).unwrap();
+    let root = LibraryRootId::new();
+    let library = LibraryId::from_uuid(uuid::Uuid::new_v4());
+    let registry = RootRegistry::new();
+    registry.register(root, &library_path);
+    let control = RootControlPlane::new(registry);
+    control
+        .write_manifest(root, &LibraryManifest::new(library, "test"))
+        .unwrap();
+    let records = Issue72Fixture::with_database_evidence().database;
+    let song = records
+        .iter()
+        .find(|r| matches!(r, PortableRecord::Song(_)))
+        .unwrap()
+        .clone();
+    let playlist = records
+        .iter()
+        .find(|r| matches!(r, PortableRecord::Playlist(_)))
+        .unwrap()
+        .clone();
+    let favorite = records
+        .iter()
+        .find(|r| matches!(r, PortableRecord::Favorite(f) if f.song_uuid == song.object_uuid()))
+        .unwrap()
+        .clone();
+    control.write_record(root, &song).unwrap();
+    control.write_record(root, &playlist).unwrap();
+    let batch = LibraryBatch::new(
+        uuid::Uuid::new_v4(),
+        library,
+        ChangeOrigin::LocalEdit,
+        vec![PortableRecordEnvelope::new(favorite, None).unwrap()],
+    );
+    control.durability().unwrap().commit(root, &batch).unwrap();
+    let replay = control.durability().unwrap().recover(root).unwrap();
+    let database_path = directory.path().join("active.sqlite");
+    let database = SqliteDatabase::open(&database_path).unwrap();
+    LibraryRepository::upsert(&database, &LibraryRoot::new(root, library_path, true, true))
+        .unwrap();
+    database.configure_library_control(std::sync::Arc::new(control));
+    database
+        .project_legacy_records(
+            root,
+            &[
+                PortableRecordEnvelope::new(song.clone(), None).unwrap(),
+                PortableRecordEnvelope::new(playlist.clone(), None).unwrap(),
+            ],
+        )
+        .unwrap();
+    database.project_library_commits(root, &replay).unwrap();
+    rusqlite::Connection::open(&database_path)
+        .unwrap()
+        .execute(
+            "UPDATE library_projection_watermarks SET commit_seq=99 WHERE library_root_uuid=?1",
+            [root.to_string()],
+        )
+        .unwrap();
+    database.project_library_commits(root, &replay).unwrap();
+    assert!(
+        SongRepository::by_id(&database, SongId::from_uuid(song.object_uuid()))
+            .unwrap()
+            .unwrap()
+            .favorite()
+    );
+    assert_eq!(
+        PlaylistRepository::name(&database, PlaylistId::from_uuid(playlist.object_uuid()))
+            .unwrap()
+            .as_deref(),
+        Some("合成历史歌单")
+    );
+}
+
+#[test]
 fn library_durability_rebuild_adopts_a_projection_behind_the_directory_head() {
     let directory = tempfile::tempdir().unwrap();
     let database = SqliteDatabase::open(directory.path().join("active.sqlite")).unwrap();

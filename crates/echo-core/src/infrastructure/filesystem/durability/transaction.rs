@@ -24,6 +24,7 @@ pub(in crate::infrastructure::filesystem) fn commit_with_hook(
     commit_edit(registry, cache, root, &mut recovered, batch, hook)
 }
 
+#[allow(clippy::too_many_lines)] // All publication boundaries belong to one ordered commit.
 pub(in crate::infrastructure::filesystem) fn commit_edit(
     registry: &RootRegistry,
     cache: &ValidationCache,

@@ -19,11 +19,12 @@ use rusqlite::{params, Connection};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-pub(super) fn validate(
+pub(super) fn validate_with_legacy(
     parent: &Path,
     root: LibraryRootId,
     manifest_library: LibraryId,
     replay: &LibraryReplay,
+    snapshots: &[PortableRecordEnvelope],
 ) -> Result<LibraryProjectionValidation, Error> {
     if manifest_library.as_uuid().is_nil()
         || replay
@@ -38,11 +39,16 @@ pub(super) fn validate(
         ));
     }
     let directory = CandidateDirectory::create(parent)?;
-    let result =
-        project(&directory.0.join("candidate.sqlite"), root, replay).and_then(|connection| {
-            candidate_corruption_probe(&connection, root)?;
-            verify(&connection, root, manifest_library, replay)
-        });
+    let result = project_with_legacy(
+        &directory.0.join("candidate.sqlite"),
+        root,
+        replay,
+        snapshots,
+    )
+    .and_then(|connection| {
+        candidate_corruption_probe(&connection, root)?;
+        verify_with_legacy(&connection, root, manifest_library, replay, snapshots)
+    });
     // project/verify owns no actor or reader pool; every SQLite handle closes
     // before the private directory is removed, including on Windows.
     let cleanup = directory.cleanup();
@@ -98,7 +104,12 @@ fn candidate_corruption_probe(connection: &Connection, root: LibraryRootId) -> R
     })
 }
 
-fn project(path: &Path, root: LibraryRootId, replay: &LibraryReplay) -> Result<Connection, Error> {
+fn project_with_legacy(
+    path: &Path,
+    root: LibraryRootId,
+    replay: &LibraryReplay,
+    snapshots: &[PortableRecordEnvelope],
+) -> Result<Connection, Error> {
     let mut connection = open_writer(path)?;
     apply_migrations(&mut connection)?;
     device_state::load_or_create_device_id(&connection)?;
@@ -111,14 +122,18 @@ fn project(path: &Path, root: LibraryRootId, replay: &LibraryReplay) -> Result<C
         params![root.to_string(), location, format!("projection-candidate:{root}")],
     ).map_err(storage)?;
     durability_projection::project_commits(&mut connection, root, replay)?;
+    if !snapshots.is_empty() {
+        durability_projection::project_legacy_records(&mut connection, root, snapshots)?;
+    }
     Ok(connection)
 }
 
-fn verify(
+fn verify_with_legacy(
     connection: &Connection,
     root: LibraryRootId,
     library: LibraryId,
     replay: &LibraryReplay,
+    snapshots: &[PortableRecordEnvelope],
 ) -> Result<LibraryProjectionValidation, Error> {
     quick_check_connection(connection)?;
     let mut foreign_keys = connection
@@ -147,7 +162,7 @@ fn verify(
         ));
     }
     let retained = durability_projection::read(connection, root)?;
-    let expected = Evidence::from_replay(replay)?;
+    let expected = Evidence::from_replay_and_legacy(replay, snapshots)?;
     if expected != Evidence::from_retained(&retained)? {
         return Err(Error::conflict(
             "temporary projection lost or changed typed recovery evidence",
@@ -174,10 +189,11 @@ fn verify(
     })
 }
 
-pub(super) fn replace_active(
+pub(super) fn replace_active_with_legacy(
     connection: &mut Connection,
     root: LibraryRootId,
     replay: &LibraryReplay,
+    snapshots: &[PortableRecordEnvelope],
     report: LibraryProjectionValidation,
 ) -> Result<LibraryProjectionValidation, Error> {
     let tx = connection.transaction().map_err(storage)?;
@@ -276,7 +292,10 @@ pub(super) fn replace_active(
     .map_err(storage)?;
 
     durability_projection::project_commits_in_transaction(&tx, root, replay)?;
-    verify_active(&tx, root, replay, &report)?;
+    if !snapshots.is_empty() {
+        durability_projection::project_legacy_records_in_transaction(&tx, root, snapshots)?;
+    }
+    verify_active(&tx, root, replay, snapshots, &report)?;
     if queue_counts(&tx)? != queued_before {
         return Err(Error::conflict(
             "projection rebuild changed synchronization upload candidates",
@@ -362,6 +381,7 @@ fn verify_active(
     connection: &Connection,
     root: LibraryRootId,
     replay: &LibraryReplay,
+    snapshots: &[PortableRecordEnvelope],
     expected_report: &LibraryProjectionValidation,
 ) -> Result<(), Error> {
     integrity_check(connection)?;
@@ -371,7 +391,7 @@ fn verify_active(
             "active projection differs from validated candidate status",
         ));
     }
-    let expected = Evidence::from_replay(replay)?;
+    let expected = Evidence::from_replay_and_legacy(replay, snapshots)?;
     let actual = Evidence::from_retained(&durability_projection::read(connection, root)?)?;
     if expected != actual {
         return Err(Error::conflict(
@@ -406,6 +426,22 @@ struct Evidence {
 }
 
 impl Evidence {
+    fn from_replay_and_legacy(
+        replay: &LibraryReplay,
+        snapshots: &[PortableRecordEnvelope],
+    ) -> Result<Self, Error> {
+        let mut evidence = Self::from_replay(replay)?;
+        for envelope in snapshots {
+            if evidence
+                .records
+                .insert(record_key(envelope)?, envelope.clone())
+                .is_some()
+            {
+                return Err(Error::conflict("legacy snapshot overlaps journal evidence"));
+            }
+        }
+        Ok(evidence)
+    }
     fn from_replay(replay: &LibraryReplay) -> Result<Self, Error> {
         let mut result = Self::default();
         for envelope in replay
@@ -526,3 +562,18 @@ impl Drop for CandidateDirectory {
 #[cfg(test)]
 #[path = "projection_rebuild_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+fn project(path: &Path, root: LibraryRootId, replay: &LibraryReplay) -> Result<Connection, Error> {
+    project_with_legacy(path, root, replay, &[])
+}
+
+#[cfg(test)]
+fn verify(
+    connection: &Connection,
+    root: LibraryRootId,
+    library: LibraryId,
+    replay: &LibraryReplay,
+) -> Result<LibraryProjectionValidation, Error> {
+    verify_with_legacy(connection, root, library, replay, &[])
+}

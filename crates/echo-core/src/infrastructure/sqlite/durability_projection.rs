@@ -25,6 +25,14 @@ pub fn project_legacy_records(
     legacy::project(connection, root, records)
 }
 
+pub(super) fn project_legacy_records_in_transaction(
+    connection: &Connection,
+    root: LibraryRootId,
+    records: &[crate::domain::library::PortableRecordEnvelope],
+) -> Result<(), Error> {
+    legacy::project_in_transaction(connection, root, records)
+}
+
 pub fn project_commits(
     connection: &mut Connection,
     root: LibraryRootId,

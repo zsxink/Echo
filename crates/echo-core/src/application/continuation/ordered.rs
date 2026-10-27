@@ -35,6 +35,25 @@ pub(super) fn project(
     } else {
         LibraryReplay::default()
     };
+    let snapshots = uncovered_snapshots(control, root, &replay)?;
+    if !snapshots.is_empty() {
+        projection.project_legacy_records(root, &snapshots)?;
+    }
+    if journaled {
+        // Never synthesize a commit for a legacy snapshot. Real commits alone
+        // establish the projection watermark and permanent tombstone semantics.
+        projection.project_library_commits(root, &replay)?;
+    }
+    report(projection, root)
+}
+
+/// Select the directory originals that are not represented by journal facts.
+/// Candidate rebuilds use the same selection as ordinary continuation.
+pub fn uncovered_snapshots(
+    control: &dyn ControlPlanePort,
+    root: LibraryRootId,
+    replay: &LibraryReplay,
+) -> Result<Vec<PortableRecordEnvelope>, Error> {
     let covered: HashSet<_> = replay
         .checkpoint
         .iter()
@@ -68,16 +87,9 @@ pub(super) fn project(
             }
         }
     }
-    let snapshots: Vec<_> = snapshots.into_values().collect();
-    if !snapshots.is_empty() {
-        projection.project_legacy_records(root, &snapshots)?;
-    }
-    if journaled {
-        // Never synthesize a commit for a legacy snapshot. Real commits alone
-        // establish the projection watermark and permanent tombstone semantics.
-        projection.project_library_commits(root, &replay)?;
-    }
-    report(projection, root)
+    let mut snapshots: Vec<_> = snapshots.into_values().collect();
+    snapshots.sort_by_cached_key(|envelope| format!("{:?}", envelope.record().object_key()));
+    Ok(snapshots)
 }
 
 fn select_snapshot(

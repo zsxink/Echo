@@ -33,6 +33,7 @@ pub mod detail;
 pub mod favorite;
 pub mod import;
 pub mod library_commit;
+pub mod library_projection_worker;
 pub mod library_recovery;
 pub mod local_activity;
 pub mod playback_context;

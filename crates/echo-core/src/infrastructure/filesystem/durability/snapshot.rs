@@ -1,6 +1,6 @@
 //! Content-addressed snapshot leaves keep durable roots independent of history.
 //! Only obsolete leaves are collected; user resources and operation receipts stay held.
-use super::{decode, invalid, io, portable, Hook, LIMIT};
+use super::{decode, invalid, io, portable, verified_files, Hook, LIMIT};
 use crate::domain::ids::LibraryRootId;
 use crate::error::Error;
 use crate::infrastructure::filesystem::RootRegistry;
@@ -83,21 +83,62 @@ pub(super) fn publish_reusing<T: Serialize>(
         shards: BTreeMap::new(),
         entries: values.len(),
     };
+    let mut unchanged = BTreeMap::new();
+    let mut expected_bytes = BTreeMap::new();
+    let mut changed = Vec::new();
     for (prefix, bytes) in leaves(values)? {
         let digest = blake3::hash(&bytes).to_hex().to_string();
         let path = relative(&digest)?;
+        if durable.and_then(|snapshot| snapshot.shards.get(&prefix)) == Some(&digest) {
+            if expected_bytes.insert(path.clone(), bytes).is_some() {
+                return Err(invalid("duplicate immutable snapshot leaf"));
+            }
+            unchanged.insert(path, digest.clone());
+        } else {
+            changed.push((path, bytes));
+        }
+        snapshot.shards.insert(prefix, digest);
+    }
+    // The previous checkpoint proves these leaves were synchronized. Recheck
+    // their bytes, grouping common parent directories without re-flushing them.
+    if !unchanged.is_empty() {
+        verified_files::read_verified(
+            registry,
+            root,
+            &unchanged,
+            &BTreeSet::new(),
+            LEAF_LIMIT,
+            |path, bytes| {
+                if expected_bytes.get(path).map(Vec::as_slice) != Some(bytes.as_bytes()) {
+                    return Err(invalid("immutable snapshot leaf collision"));
+                }
+                Ok(())
+            },
+        )?;
+    }
+    let mut directories = io::DirectorySyncSet::default();
+    for (path, bytes) in changed {
         if let Some(existing) = portable::read(registry, root, &path, LEAF_LIMIT)? {
             if existing.as_bytes() != bytes {
                 return Err(invalid("immutable snapshot leaf collision"));
             }
-            if durable.and_then(|snapshot| snapshot.shards.get(&prefix)) != Some(&digest) {
-                io::flush_existing(registry, root, &path, "snapshot_retry", hook)?;
-            }
+            io::flush_existing(registry, root, &path, "snapshot_retry", hook)?;
         } else {
-            io::publish(registry, root, &path, &bytes, true, "snapshot", hook)?;
+            io::publish_batched(
+                registry,
+                root,
+                &path,
+                &bytes,
+                true,
+                "snapshot",
+                hook,
+                &mut directories,
+            )?;
         }
-        snapshot.shards.insert(prefix, digest);
     }
+    // No checkpoint can reference these leaves until every publication's
+    // parent and shared ancestors have been synchronized.
+    directories.sync(registry, root, "snapshot", hook)?;
     Ok(snapshot)
 }
 
@@ -111,28 +152,46 @@ pub(super) fn load<T: DeserializeOwned>(
     }
     let mut result = BTreeMap::new();
     let mut total = 0_usize;
+    let mut paths = BTreeMap::new();
+    let mut prefixes = BTreeMap::new();
     for (prefix, digest) in &snapshot.shards {
         if prefix.len() != 2 || !prefix.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return Err(invalid("invalid snapshot shard prefix"));
         }
-        let bytes = portable::read(registry, root, &relative(digest)?, LEAF_LIMIT)?
-            .ok_or_else(|| invalid("snapshot leaf is missing"))?;
-        total = total.saturating_add(bytes.len());
-        if total > LIMIT || blake3::hash(bytes.as_bytes()).to_hex().as_str() != digest {
-            return Err(invalid(
-                "snapshot leaf checksum or aggregate limit mismatch",
-            ));
+        let path = relative(digest)?;
+        if prefixes.insert(path.clone(), prefix).is_some() {
+            return Err(invalid("snapshot leaf belongs to multiple partitions"));
         }
-        let values: BTreeMap<String, T> = decode(&bytes)?;
-        if values.is_empty() || values.keys().any(|key| bucket(key) != *prefix) {
-            return Err(invalid("snapshot leaf has an invalid key partition"));
-        }
-        for (key, value) in values {
-            if result.insert(key, value).is_some() {
-                return Err(invalid("duplicate snapshot key"));
-            }
-        }
+        paths.insert(path, digest.clone());
     }
+    verified_files::read_verified(
+        registry,
+        root,
+        &paths,
+        &BTreeSet::new(),
+        LEAF_LIMIT,
+        |path, bytes| {
+            let prefix = prefixes
+                .get(path)
+                .ok_or_else(|| invalid("unknown snapshot leaf"))?;
+            total = total.saturating_add(bytes.len());
+            if total > LIMIT {
+                return Err(invalid(
+                    "snapshot leaf checksum or aggregate limit mismatch",
+                ));
+            }
+            let values: BTreeMap<String, T> = decode(bytes)?;
+            if values.is_empty() || values.keys().any(|key| bucket(key) != **prefix) {
+                return Err(invalid("snapshot leaf has an invalid key partition"));
+            }
+            for (key, value) in values {
+                if result.insert(key, value).is_some() {
+                    return Err(invalid("duplicate snapshot key"));
+                }
+            }
+            Ok(())
+        },
+    )?;
     if result.len() != snapshot.entries {
         return Err(invalid("snapshot entry count mismatch"));
     }

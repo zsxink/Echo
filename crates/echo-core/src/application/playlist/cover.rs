@@ -49,9 +49,25 @@ pub fn resolve_playlist_cover(
     legacy_key: Option<&str>,
 ) -> Result<Option<String>, Error> {
     let record = control.read_record(root, RecordKind::Playlist, &id.to_string())?;
+    resolve_playlist_cover_record(control, cache, root, record.as_ref(), legacy_key)
+}
+
+/// Resolve an already loaded playlist record. This lets callers listing many
+/// playlists read the directory's ordered records once instead of replaying the
+/// directory separately for every cover.
+///
+/// # Errors
+/// Missing or corrupt originals and unavailable cached artwork are reported.
+pub fn resolve_playlist_cover_record(
+    control: &dyn ControlPlanePort,
+    cache: &dyn CoverCache,
+    root: LibraryRootId,
+    record: Option<&PortableRecord>,
+    legacy_key: Option<&str>,
+) -> Result<Option<String>, Error> {
     if let Some(PortableRecord::Playlist(record)) = record {
-        if let Some(asset) = record.cover_asset {
-            return crate::application::artwork::resolve(control, cache, root, &asset).map(Some);
+        if let Some(asset) = &record.cover_asset {
+            return crate::application::artwork::resolve(control, cache, root, asset).map(Some);
         }
     }
     crate::application::artwork::resolve_legacy(cache, legacy_key)

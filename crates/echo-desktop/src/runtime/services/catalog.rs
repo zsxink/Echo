@@ -312,6 +312,20 @@ impl super::AppServices {
         };
         let repos = self.deps.playlists.as_ref();
         let ids = PlaylistRepository::list(repos, root)?;
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let records = self
+            .deps
+            .control
+            .list_record_documents(root, echo_core::domain::library::RecordKind::Playlist)?;
+        let records: std::collections::HashMap<_, _> = records
+            .into_iter()
+            .map(|document| {
+                let record = document.into_record();
+                (record.object_uuid(), record)
+            })
+            .collect();
         let mut views = Vec::with_capacity(ids.len());
         for id in ids {
             let name = PlaylistRepository::name(repos, id)?.unwrap_or_default();
@@ -329,13 +343,14 @@ impl super::AppServices {
             // embedded artwork is the playlist cover; a brand-new playlist
             // deliberately has no cover at all.
             let legacy_key = PlaylistRepository::cover_key(repos, id)?;
-            let custom_cover_key = echo_core::application::playlist::cover::resolve_playlist_cover(
-                self.deps.control.as_ref(),
-                self.deps.cover_cache.as_ref(),
-                root,
-                id,
-                legacy_key.as_deref(),
-            )?;
+            let custom_cover_key =
+                echo_core::application::playlist::cover::resolve_playlist_cover_record(
+                    self.deps.control.as_ref(),
+                    self.deps.cover_cache.as_ref(),
+                    root,
+                    records.get(&id.as_uuid()),
+                    legacy_key.as_deref(),
+                )?;
             let has_custom_cover = custom_cover_key.is_some();
             // Work backwards so adding a song without artwork never clears a
             // previously resolved automatic cover.

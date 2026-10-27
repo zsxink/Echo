@@ -131,7 +131,7 @@ fn fixture(song_count: usize) -> Fixture {
                         index % 100
                     ))
                     .expect("relative metadata path"),
-                    content_hash: "a".repeat(64),
+                    content_hash: format!("{index:064x}"),
                     added_at: 1_700_000_000_000 + index as u64,
                     title: Some(format!("Fixture Song {index:05}")),
                     artist: Some(format!("Fixture Artist {:03}", index % 100)),

@@ -81,6 +81,7 @@ impl<'a> AllocationIndex<'a> {
         Ok(self.local_author.as_ref().unwrap().clone())
     }
 
+    #[allow(clippy::set_contains_or_insert)] // Failed validation must never populate the cache.
     pub(super) fn validate(&mut self, state: &DurableStateChange) -> Result<(), Error> {
         let address = std::ptr::from_ref(state) as usize;
         if !self.validated.contains(&address) {
@@ -95,10 +96,10 @@ impl<'a> AllocationIndex<'a> {
         state: &DurableStateChange,
     ) -> Result<Arc<FrozenMutation>, Error> {
         self.validate(state)?;
-        if !self.decoded.contains_key(&state.id) {
+        if let std::collections::btree_map::Entry::Vacant(entry) = self.decoded.entry(state.id) {
             let frozen =
                 serde_json::from_value(state.payload["frozen"].clone()).map_err(storage)?;
-            self.decoded.insert(state.id, Arc::new(frozen));
+            entry.insert(Arc::new(frozen));
         }
         Ok(Arc::clone(&self.decoded[&state.id]))
     }

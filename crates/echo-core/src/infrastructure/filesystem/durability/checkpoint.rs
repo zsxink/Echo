@@ -139,24 +139,46 @@ pub(super) fn materialize(
     files: &mut BTreeMap<String, String>,
     hook: &mut Hook<'_>,
 ) -> Result<(), Error> {
+    let mut directories = io::DirectorySyncSet::default();
     for (index, record) in records.iter().enumerate() {
         hook("record", index)?;
         let path = portable::record_relative(record.record())?;
         let bytes = portable::encode(record, portable::MAX_RECORD_BYTES)?;
-        materialize_file(registry, root, path, &bytes, files, "record", hook)?;
+        materialize_file(
+            registry,
+            root,
+            path,
+            &bytes,
+            files,
+            "record",
+            hook,
+            &mut directories,
+        )?;
     }
     for (index, state) in state.iter().enumerate() {
         hook("state", index)?;
         let path = state_path(state);
         let bytes = portable::encode(state, LIMIT)?;
-        materialize_file(registry, root, path, &bytes, files, "state", hook)?;
+        materialize_file(
+            registry,
+            root,
+            path,
+            &bytes,
+            files,
+            "state",
+            hook,
+            &mut directories,
+        )?;
     }
-    Ok(())
+    // The subsequent checkpoint is the visibility boundary for the entire
+    // materialization. Sync each shared ancestor once before publishing it.
+    directories.sync(registry, root, "materialization", hook)
 }
 
 // files contains only the previous durable checkpoint plus publications that
 // completed all native sync boundaries in this recovery. Equal bytes on disk
 // alone do not prove durability: a failed rename/directory-sync must be redone.
+#[allow(clippy::too_many_arguments)]
 fn materialize_file(
     registry: &RootRegistry,
     root: LibraryRootId,
@@ -165,6 +187,7 @@ fn materialize_file(
     files: &mut BTreeMap<String, String>,
     label: &str,
     hook: &mut Hook<'_>,
+    directories: &mut io::DirectorySyncSet,
 ) -> Result<(), Error> {
     let digest = blake3::hash(bytes).to_hex().to_string();
     if files.get(&path) == Some(&digest) {
@@ -176,7 +199,16 @@ fn materialize_file(
             return Err(invalid("checkpoint file digest mismatch"));
         }
     } else {
-        io::publish(registry, root, &path, bytes, false, label, hook)?;
+        io::publish_batched(
+            registry,
+            root,
+            &path,
+            bytes,
+            false,
+            label,
+            hook,
+            directories,
+        )?;
         files.insert(path, digest);
     }
     Ok(())

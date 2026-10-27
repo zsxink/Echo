@@ -12,7 +12,9 @@
 - LAN 首次快照、增量、来源设备 ACK、主设备确认都通过 Core 的同一持久化用例；对象接收、数据库投影、媒体可用和整库已同步有独立且可验证的完成边界。
 - SQLite 丢失或损坏时，仅依据新目录提交协议已保存的资料重建投影；不回填、救援或修复既有旧音乐库中的历史数据、身份或关系。
 - 兼容读取支持的旧格式及历史缺省字段，不因读取而改写旧记录、补造时间或自动修复关系；未知未来格式保持只读。
-- 4.2 的投影追赶以正确顺序、幂等性和可恢复性为首要验收；允许采用简单且较慢的实现。多线程、缓存、队列等仅在有证据时评估，大库性能优化和大规模基准可后续独立处理，CI 使用小规模代表性验证。
+- 投影追赶必须保持顺序、幂等和可恢复；本变更新增异步读模型路径：前台等待目录权威事实可靠提交，SQLite 由有界后台执行器追赶。SQLite 锁竞争、投影积压和投影重建不得把已提交操作重新解释为未保存。
+- 本地编辑、入站同步和资料库切换共用有序写入权威。SQLite 不得继续作为生成下一次同步 mutation 的唯一状态源；前台确认后立即显示已保存状态，读己之写通过权威状态/有界覆盖层提供。
+- 性能验收目标：真实桌面收藏与创建歌单的点击至已保存反馈 P95 < 50 ms，分别报告目录提交和 SQLite 投影延迟；在 1,000 与 10,000 首真实记录、每种操作至少 200 个样本下记录 P50/P95/P99。达不到时必须报告实测瓶颈，不能以独立原型结果代替产品结果。
 - **BREAKING（本地格式写入兼容）**：新增目录内提交协议，升级 manifest 格式以阻止旧程序绕过恢复流程写库；支持读取 v1/v2 格式及其既有字段，不要求对历史库执行数据修复或回填；不变更 LAN 冲突胜负规则。
 
 ## Capabilities
@@ -33,7 +35,7 @@
 
 ## Impact
 
-- Core `application/import`、`scan`、`continuation`、`root_switch`、收藏/歌单/删除/编辑用例，以及 `domain/library/portable.rs`、filesystem control plane/`portable_migration.rs`、SQLite repository/sync adapters；新增持久化 ports 和目录事务适配器，Application 协调事务，Domain 不依赖文件系统/SQLite。
+- Core `application/import`、`scan`、`continuation`、`root_switch`、收藏/歌单/删除/编辑用例，以及 `domain/library/portable.rs`、filesystem control plane/`portable_migration.rs`、SQLite repository/sync adapters；新增持久化 ports 和目录事务适配器，Application 协调事务，Domain 不依赖文件系统/SQLite。交互式本地编辑由单写入者权威状态分配同步事实，并经有界后台 worker 投影 SQLite。
 - 验收登记：新增 capability `library-durability` 需注册 area 前缀并写入 `docs/traceability.md`，全部新增场景需在 `scripts/verify/scenario-commands.mjs` 登记并重新生成 `scripts/verify/manifest.json` 与 `tests/scenarios/*`；三方对账（spec/trace/manifest）、场景命令有效性与重复度棘轮必须随同步一起通过，不能只跑 `openspec validate`。
 - `echo-desktop` 的 favorites/playlists/portable materialization、播放统计和编辑服务改为调用 Core 用例；`src-tauri/sync_provisioner` 与 `echo-sync` 只装配/调用 ports，不直接承担权威提交规则。
 - SQLite 顺序迁移增加投影检查点/幂等标识；Core API 和类型化 IPC 增加持久失败、已保存待投影及新协议恢复报告；同步网络格式原则上复用现有契约，目录协议版本与网络版本分开。

@@ -39,6 +39,9 @@ image = { workspace = true }
 # never in a production build of the crate.
 tempfile = { version = "3", optional = true }
 
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["fs"] }
+
 [dev-dependencies]
 # `cargo test` compiles the `cfg(test)` doubles without enabling `testkit`;
 # this dev-dependency keeps `tempfile` resolvable there.

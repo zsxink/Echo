@@ -43,7 +43,15 @@ impl crate::application::ports::LibraryProjectionPort for SqliteDatabase {
             .path
             .parent()
             .unwrap_or_else(|| std::path::Path::new("."));
-        projection_rebuild::validate(parent, root, manifest_library, replay)
+        let snapshots = match self.library_control() {
+            Some(control) => crate::application::continuation::ordered::uncovered_snapshots(
+                control.as_ref(),
+                root,
+                replay,
+            )?,
+            None => Vec::new(),
+        };
+        projection_rebuild::validate_with_legacy(parent, root, manifest_library, replay, &snapshots)
     }
     fn rebuild_library_projection(
         &self,
@@ -55,10 +63,43 @@ impl crate::application::ports::LibraryProjectionPort for SqliteDatabase {
             .path
             .parent()
             .unwrap_or_else(|| std::path::Path::new("."));
-        let report = projection_rebuild::validate(parent, root, manifest_library, replay)?;
+        let control = self.library_control();
+        let snapshots = match &control {
+            Some(control) => crate::application::continuation::ordered::uncovered_snapshots(
+                control.as_ref(),
+                root,
+                replay,
+            )?,
+            None => Vec::new(),
+        };
+        let report = projection_rebuild::validate_with_legacy(
+            parent,
+            root,
+            manifest_library,
+            replay,
+            &snapshots,
+        )?;
+        if let Some(control) = control {
+            let current = control
+                .durability()
+                .ok_or_else(|| Error::unavailable("library durability", "adapter is unavailable"))?
+                .recover(root)?;
+            let current_snapshots = crate::application::continuation::ordered::uncovered_snapshots(
+                control.as_ref(),
+                root,
+                &current,
+            )?;
+            if current.head() != replay.head() || current_snapshots != snapshots {
+                return Err(Error::conflict(
+                    "library directory advanced while rebuilding its SQLite projection",
+                ));
+            }
+        }
         let replay = replay.clone();
         self.writer.run(move |connection| {
-            projection_rebuild::replace_active(connection, root, &replay, report)
+            projection_rebuild::replace_active_with_legacy(
+                connection, root, &replay, &snapshots, report,
+            )
         })
     }
     fn project_legacy_records(
@@ -111,18 +152,37 @@ impl crate::application::ports::LibraryProjectionPort for SqliteDatabase {
             .path
             .parent()
             .unwrap_or_else(|| std::path::Path::new("."));
-        let report = projection_rebuild::validate(parent, root, manifest.library_id, &commits)?;
+        let snapshots = crate::application::continuation::ordered::uncovered_snapshots(
+            control.as_ref(),
+            root,
+            &commits,
+        )?;
+        let report = projection_rebuild::validate_with_legacy(
+            parent,
+            root,
+            manifest.library_id,
+            &commits,
+            &snapshots,
+        )?;
         let latest = control
             .durability()
             .ok_or_else(|| Error::unavailable("library durability", "adapter is unavailable"))?
             .recover(root)?;
-        if latest.head() != commits.head() {
+        let latest_snapshots = crate::application::continuation::ordered::uncovered_snapshots(
+            control.as_ref(),
+            root,
+            &latest,
+        )?;
+        if latest.head() != commits.head() || latest_snapshots != snapshots {
             return Err(Error::conflict(
                 "library directory advanced while rebuilding its SQLite projection",
             ));
         }
         self.writer.run(move |connection| {
-            projection_rebuild::replace_active(connection, root, &commits, report).map(|_| ())
+            projection_rebuild::replace_active_with_legacy(
+                connection, root, &commits, &snapshots, report,
+            )
+            .map(|_| ())
         })
     }
 }

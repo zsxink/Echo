@@ -14,10 +14,19 @@ pub(super) fn project(
     root: LibraryRootId,
     records: &[PortableRecordEnvelope],
 ) -> Result<(), Error> {
+    let tx = connection.transaction().map_err(storage)?;
+    project_in_transaction(&tx, root, records)?;
+    tx.commit().map_err(storage)
+}
+
+pub(super) fn project_in_transaction(
+    tx: &Connection,
+    root: LibraryRootId,
+    records: &[PortableRecordEnvelope],
+) -> Result<(), Error> {
     for record in records {
         record.validate()?;
     }
-    let tx = connection.transaction().map_err(storage)?;
     for envelope in records {
         let key = serde_json::to_string(&envelope.record().object_key()?).map_err(storage)?;
         // Legacy snapshots can replace an older temporary tombstone. The
@@ -35,7 +44,6 @@ pub(super) fn project(
             ).map_err(storage)?;
         }
     }
-    retained::save(&tx, root, records, &[], &[])?;
-    retained::retry(&tx, root, None)?;
-    tx.commit().map_err(storage)
+    retained::save(tx, root, records, &[], &[])?;
+    retained::retry(tx, root, None)
 }
