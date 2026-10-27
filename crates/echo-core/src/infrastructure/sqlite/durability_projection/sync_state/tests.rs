@@ -729,4 +729,5 @@ fn confirmed_tombstone_retry(complete: bool) {
     }
 }
 
+mod adoptions;
 mod boundaries;

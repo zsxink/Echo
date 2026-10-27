@@ -1,6 +1,7 @@
 //! Library-local durable transaction protocol. These values never contain paths
 //! outside the library, credentials, database handles, or transport clients.
 
+mod adoption;
 mod artist_cover;
 mod change_set;
 mod confirmed;
@@ -12,6 +13,10 @@ mod session;
 mod state;
 #[cfg(test)]
 mod tests;
+pub use adoption::{
+    adoption, adoption_key, AdoptionEvidence, AdoptionEvidenceKind, AdoptionState,
+    HistoricalIntent, IntentVerdict, Reconciliation, VerifiedLedgerCommit,
+};
 pub use artist_cover::ArtistCoverState;
 pub use frozen::{FrozenMutation, MutationDisposition, MutationOperation, MutationStatus};
 pub use projection::{

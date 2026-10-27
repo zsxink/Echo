@@ -63,7 +63,7 @@ pub(crate) const OP_DELETE: &str = "delete";
 /// The digest an enqueue would record for this exact change: kind, object,
 /// operation, payload, and declared resources. Two equal digests mean the
 /// queued candidate already carries this exact state.
-fn snapshot_digest(
+pub(crate) fn snapshot_digest(
     kind: &str,
     object_uuid: &str,
     payload_json: &str,

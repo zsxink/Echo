@@ -1,4 +1,5 @@
 //! Consume retained protocol facts only under explicit live-session authority.
+mod adoptions;
 mod ledger;
 mod mutations;
 mod objects;
@@ -74,6 +75,7 @@ impl LibrarySyncRecoveryPort for SqliteDatabase {
                     .target
                 {
                     StateTarget::Ledger { .. } => ledger::project(&tx, state, &ledger),
+                    StateTarget::Adoption { .. } => adoptions::project(&tx, context, state),
                     StateTarget::Confirmed { .. } => {
                         objects::confirmed(&tx, context, state, &ledger)
                     }

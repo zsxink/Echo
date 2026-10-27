@@ -80,6 +80,11 @@ pub enum StateTarget {
     ResourceLocation {
         object: ObjectKey,
     },
+    /// One reconciled old-to-new intent transition, keyed by the *old* event.
+    Adoption {
+        old_author: DeviceId,
+        old_mutation_id: MutationId,
+    },
 }
 impl StateTarget {
     #[must_use]
@@ -96,6 +101,7 @@ impl StateTarget {
             | Self::PeerCursor { .. } => StateKind::Cursor,
             Self::Conflict { .. } => StateKind::Conflict,
             Self::Publication { .. } | Self::ResourceLocation { .. } => StateKind::ResourceLocation,
+            Self::Adoption { .. } => StateKind::Adoption,
         }
     }
 }
@@ -162,6 +168,10 @@ impl StateKey {
             StateTarget::OriginCursor { author } | StateTarget::LocalOriginCursor { author } => {
                 !author.as_uuid().is_nil()
             }
+            StateTarget::Adoption {
+                old_author,
+                old_mutation_id,
+            } => !old_author.as_uuid().is_nil() && !old_mutation_id.as_uuid().is_nil(),
             StateTarget::PeerCursor { peer } => !peer.as_uuid().is_nil(),
             StateTarget::Conflict { conflict_id } => !conflict_id.is_nil(),
             StateTarget::Publication { operation_id } => !operation_id.is_nil(),
@@ -246,6 +256,9 @@ pub(super) fn validate_payload(key: &StateKey, payload: &serde_json::Value) -> R
     if payload.get("schema").and_then(serde_json::Value::as_str) == Some("echo.sync.receipt.v2") {
         super::receipt::validate(key, payload)?;
     }
+    if payload.get("schema").and_then(serde_json::Value::as_str) == Some("echo.sync.adoption.v1") {
+        super::adoption::validate(key, payload)?;
+    }
     let uuid = |field: &str| -> Result<Uuid, Error> {
         payload
             .get(field)
@@ -285,6 +298,20 @@ pub(super) fn validate_payload(key: &StateKey, payload: &serde_json::Value) -> R
                 == Some(&serde_json::to_value(object).map_err(encode)?)
         }
         StateTarget::Mutation { .. } | StateTarget::MutationDisposition { .. } => false,
+        StateTarget::Adoption {
+            old_author,
+            old_mutation_id,
+        } => {
+            let nested = |field: &str| -> Result<Uuid, Error> {
+                payload
+                    .pointer(&format!("/adoption/{field}"))
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|value| value.parse().ok())
+                    .ok_or_else(|| Error::conflict("adoption payload has no typed identity"))
+            };
+            nested("old_author")? == old_author.as_uuid()
+                && nested("old_mutation_id")? == old_mutation_id.as_uuid()
+        }
     };
     if !matches {
         return Err(Error::conflict(
