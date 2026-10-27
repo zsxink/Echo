@@ -106,21 +106,25 @@ fn external_old_file_changes_isolate_replacement_without_overwrite_or_associatio
         .unwrap_err();
     assert_eq!(error.code(), "conflict");
     assert_eq!(std::fs::read(&old_path).unwrap(), b"user changed this file");
-    assert!(fixture
-        .database
-        .local_remote_resource_path(fixture.root, fixture.object, &replacement)
-        .unwrap()
-        .is_none());
+    assert!(
+        fixture
+            .database
+            .local_remote_resource_path(fixture.root, fixture.object, &replacement)
+            .unwrap()
+            .is_none()
+    );
     let journal = fixture.journal(operation);
     assert!(!journal.completed);
     assert_eq!(
         std::fs::read(fixture.root_path.join(&journal.items[0].local_path)).unwrap(),
         b"replacement"
     );
-    assert!(!fixture
-        .database
-        .remote_resource_media_ready(fixture.root, fixture.object)
-        .unwrap());
+    assert!(
+        !fixture
+            .database
+            .remote_resource_media_ready(fixture.root, fixture.object)
+            .unwrap()
+    );
 }
 
 #[test]
@@ -248,11 +252,13 @@ fn case_and_unicode_equivalent_resource_destinations_cannot_claim_two_files() {
                 .code(),
             "conflict"
         );
-        assert!(fixture
-            .database
-            .incomplete(fixture.root)
-            .unwrap()
-            .is_empty());
+        assert!(
+            fixture
+                .database
+                .incomplete(fixture.root)
+                .unwrap()
+                .is_empty()
+        );
     }
 }
 

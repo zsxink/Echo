@@ -5,7 +5,7 @@ mod deletion;
 mod members;
 mod playback;
 mod removal;
-use super::{durability_backfill, durability_projection, statements, storage, SqliteDatabase};
+use super::{SqliteDatabase, durability_backfill, durability_projection, statements, storage};
 use crate::application::library_commit::project_committed;
 use crate::application::ports::{ControlPlanePort, LocalLibraryEditPort};
 use crate::domain::ids::{LibraryRootId, OperationId, PlaylistId, Revision, SongId};
@@ -37,6 +37,7 @@ impl LocalLibraryEditPort for SqliteDatabase {
             control,
             root,
             device,
+            false,
             move |c, authority, library, sequence, _| {
                 removal::Removal {
                     root,
@@ -64,6 +65,7 @@ impl LocalLibraryEditPort for SqliteDatabase {
             control,
             root,
             device,
+            false,
             move |c, authority, library, sequence, _| {
                 members::Append {
                     root,
@@ -85,9 +87,15 @@ impl LocalLibraryEditPort for SqliteDatabase {
         id: PlaylistId,
         device: DeviceId,
     ) -> Result<(), Error> {
-        self.plan_library_edit(control, root, device, move |c, _, library, sequence, _| {
-            deletion::plan(c, root, library, id, device, sequence)
-        })
+        self.plan_library_edit(
+            control,
+            root,
+            device,
+            false,
+            move |c, _, library, sequence, _| {
+                deletion::plan(c, root, library, id, device, sequence)
+            },
+        )
     }
 
     fn set_library_favorite(
@@ -98,7 +106,7 @@ impl LocalLibraryEditPort for SqliteDatabase {
         favorite: bool,
         device: DeviceId,
     ) -> Result<(), Error> {
-        self.plan_library_edit(control, root, device, move |c, _, library, sequence, _| {
+        self.plan_library_edit(control, root, device, true, move |c, _, library, sequence, _| {
             let visible: bool = c.query_row(
                 "SELECT EXISTS(SELECT 1 FROM songs WHERE uuid=?1 AND library_root_uuid=?2 AND availability<>'pending_delete')",
                 rusqlite::params![song.to_string(), root.to_string()], |row| row.get(0),
@@ -155,11 +163,13 @@ impl SqliteDatabase {
         edit: PlaylistEdit,
     ) -> Result<PlaylistId, Error> {
         let name = name.to_owned();
+        let async_projection = matches!(&edit, PlaylistEdit::Create);
         self.plan_library_change(
             control,
             root,
             device,
             None,
+            async_projection,
             move |c, authority, library, sequence, baseline| {
                 let saved = if matches!(edit, PlaylistEdit::Rename) {
                     authority.read_record(root, RecordKind::Playlist, &id.to_string())?
@@ -208,43 +218,52 @@ impl SqliteDatabase {
         control: &dyn ControlPlanePort,
         root: LibraryRootId,
         device: DeviceId,
+        async_projection: bool,
         plan: impl FnOnce(
-                &Connection,
-                &dyn ControlPlanePort,
-                LibraryId,
-                u64,
-                &LibraryReplay,
-            ) -> Result<LibraryBatch, Error>
-            + Send
-            + 'static,
+            &Connection,
+            &dyn ControlPlanePort,
+            LibraryId,
+            u64,
+            &LibraryReplay,
+        ) -> Result<LibraryBatch, Error>
+        + Send
+        + 'static,
     ) -> Result<(), Error> {
         self.plan_library_change(
             control,
             root,
             device,
             None,
+            async_projection,
             move |c, authority, library, sequence, baseline| {
                 plan(c, authority, library, sequence, baseline).map(|batch| (batch, ()))
             },
         )
     }
 
+    #[allow(clippy::too_many_lines)]
     fn plan_library_change<T: Send + 'static>(
         &self,
         control: &dyn ControlPlanePort,
         root: LibraryRootId,
         device: DeviceId,
         retry_operation: Option<uuid::Uuid>,
+        requested_async_projection: bool,
         plan: impl FnOnce(
-                &Connection,
-                &dyn ControlPlanePort,
-                LibraryId,
-                u64,
-                &LibraryReplay,
-            ) -> Result<(LibraryBatch, T), Error>
-            + Send
-            + 'static,
+            &Connection,
+            &dyn ControlPlanePort,
+            LibraryId,
+            u64,
+            &LibraryReplay,
+        ) -> Result<(LibraryBatch, T), Error>
+        + Send
+        + 'static,
     ) -> Result<T, Error> {
+        // Keep legacy unit fixtures deterministic; the desktop integration
+        // benchmark exercises the production asynchronous path without this
+        // crate-level unit-test configuration.
+        let async_projection = !cfg!(test) && requested_async_projection;
+
         let authority = self.library_control().ok_or_else(|| {
             Error::unavailable("library edits", "directory authority is not configured")
         })?;
@@ -257,7 +276,11 @@ impl SqliteDatabase {
         {
             return Err(Error::conflict("local edit authority or device differs"));
         }
+        let projection_worker = async_projection
+            .then(|| self.library_projection_worker(root))
+            .transpose()?;
         self.writer.run(move |connection| {
+            let stage_started = std::time::Instant::now();
             let durable = authority.durability().ok_or_else(|| {
                 Error::unavailable("library edits", "directory commit adapter is not configured")
             })?;
@@ -265,18 +288,32 @@ impl SqliteDatabase {
             // verified recovery can authorize publication without a second
             // whole-library read or a gap in which another writer can commit.
             let mut session = durable.begin_write(root)?;
+            trace_local_edit_stage(root, "begin_write", stage_started);
+            let stage_started = std::time::Instant::now();
             let baseline = match &session {
                 Some(session) => session.replay().clone(),
                 None => durable.recover(root)?,
             };
-            durability_backfill::verify_covered_watermark(
-                connection, root, &baseline, Some(authority.as_ref()),
-            )?;
-            durability_projection::project_commits(connection, root, &baseline).map_err(|error| {
-                saved_pending_catch_up(connection, root, &baseline, retry_operation, error)
-            })?;
+            if !durability_projection::is_current(connection, root, &baseline)? {
+                durability_backfill::verify_covered_watermark(
+                    connection,
+                    root,
+                    &baseline,
+                    Some(authority.as_ref()),
+                )?;
+                let projection = if async_projection {
+                    durability_projection::project_verified_suffix(connection, root, &baseline)
+                } else {
+                    durability_projection::project_commits(connection, root, &baseline)
+                };
+                projection.map_err(|error| {
+                    saved_pending_catch_up(connection, root, &baseline, retry_operation, error)
+                })?;
+            }
+            trace_local_edit_stage(root, "sqlite_catch_up", stage_started);
             let manifest = authority.read_manifest(root)?
                 .ok_or_else(|| Error::unavailable("library edits", "library manifest missing"))?;
+            let stage_started = std::time::Instant::now();
             let tx = connection.transaction().map_err(storage)?;
             let sequence = tx.query_row(
                 "SELECT origin_seq FROM sync_local_origin_cursors WHERE local_root_uuid=?1 AND origin_device_id=?2",
@@ -284,45 +321,65 @@ impl SqliteDatabase {
             ).optional().map_err(storage)?.unwrap_or(0);
             let (batch, result) = plan(&tx, authority.as_ref(), manifest.library_id, sequence, &baseline)?;
             tx.rollback().map_err(storage)?;
+            trace_local_edit_stage(root, "plan", stage_started);
             if batch.records.is_empty() && batch.state.is_empty() && batch.resources.is_empty() {
                 return Ok(result);
             }
             batch.validate()?;
+            let stage_started = std::time::Instant::now();
             let outcome = match &mut session {
                 Some(session) => session.commit(&batch)?,
                 None => durable.commit(root, &batch)?,
             };
+            trace_local_edit_stage(root, "directory_commit", stage_started);
             drop(session);
-            project_committed(authority.as_ref(), root, &batch, outcome, |committed| {
-                // The baseline was recovered before planning, and the commit
-                // callback receives the directory-verified operation. Reuse
-                // that proof when this write extends exactly the same head;
-                // another writer may have committed in between, in which case
-                // recover the intervening operations before projecting them.
-                let extends_baseline = baseline.head().map_or_else(
-                    || {
-                        committed.library_commit_seq == 1
-                            && committed.predecessor_digest.is_none()
-                    },
-                    |(sequence, digest)| {
-                        sequence.checked_add(1) == Some(committed.library_commit_seq)
-                            && committed.predecessor_digest.as_deref() == Some(digest)
-                    },
-                );
-                let replay = if extends_baseline {
-                    let mut replay = baseline;
-                    replay.commits.push(committed.clone());
-                    replay
-                } else {
-                    durable.recover(root)?
-                };
-                durability_backfill::verify_covered_watermark(
-                    connection, root, &replay, Some(authority.as_ref()),
-                )?;
-                durability_projection::project_commits(connection, root, &replay)
-            })?;
+            if let Some(projection_worker) = projection_worker {
+                // The folder journal has acknowledged the favorite/playlist
+                // edit. SQL is a rebuildable read model and must not extend this
+                // interaction's critical path. Failure to signal is recovered
+                // from the directory at startup or before a later ordered edit.
+                let _ = projection_worker.wake();
+            } else {
+                let stage_started = std::time::Instant::now();
+                project_committed(authority.as_ref(), root, &batch, outcome, |committed| {
+                    let extends_baseline = baseline.head().map_or_else(
+                        || {
+                            committed.library_commit_seq == 1
+                                && committed.predecessor_digest.is_none()
+                        },
+                        |(sequence, digest)| {
+                            sequence.checked_add(1) == Some(committed.library_commit_seq)
+                                && committed.predecessor_digest.as_deref() == Some(digest)
+                        },
+                    );
+                    let replay = if extends_baseline {
+                        let mut replay = baseline;
+                        replay.commits.push(committed.clone());
+                        replay
+                    } else {
+                        durable.recover(root)?
+                    };
+                    durability_backfill::verify_covered_watermark(
+                        connection,
+                        root,
+                        &replay,
+                        Some(authority.as_ref()),
+                    )?;
+                    durability_projection::project_commits(connection, root, &replay)
+                })?;
+                trace_local_edit_stage(root, "sqlite_project_commit", stage_started);
+            }
             Ok(result)
         })
+    }
+}
+
+fn trace_local_edit_stage(root: LibraryRootId, stage: &str, started: std::time::Instant) {
+    if std::env::var_os("ECHO_EDIT_TRACE").is_some() {
+        eprintln!(
+            "ECHO_EDIT_TRACE root={root} stage={stage} elapsed_ms={:.3}",
+            started.elapsed().as_secs_f64() * 1_000.0
+        );
     }
 }
 

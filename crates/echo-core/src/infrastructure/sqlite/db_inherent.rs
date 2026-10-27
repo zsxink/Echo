@@ -80,6 +80,7 @@ impl SqliteDatabase {
         }
         Ok(Self {
             library_control: Mutex::new(None),
+            library_projection_workers: Mutex::new(BTreeMap::new()),
             path: path.to_path_buf(),
             writer: SqliteWriteActor::spawn(writer),
             readers: ReaderPool::new(readers),
@@ -94,6 +95,80 @@ impl SqliteDatabase {
     #[must_use]
     pub fn quarantined_database(&self) -> Option<&Path> {
         self.quarantined.as_deref()
+    }
+
+    /// Queue an asynchronous, directory-authoritative projection pass.
+    ///
+    /// The durable journal remains the source of truth. The worker owns a
+    /// separate SQLite writer connection and coalesces repeated wakes for the
+    /// same root, so local acknowledgements never wait for read-model replay.
+    pub(crate) fn library_projection_worker(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<Arc<crate::application::library_projection_worker::LibraryProjectionWorker>, Error>
+    {
+        use crate::application::library_projection_worker::LibraryProjectionWorker;
+
+        let control = self.library_control().ok_or_else(|| {
+            Error::unavailable(
+                "library projection",
+                "directory authority is not configured",
+            )
+        })?;
+        let worker = {
+            let mut workers =
+                self.library_projection_workers
+                    .lock()
+                    .map_err(|_| Error::InvariantViolation {
+                        why: "library projection worker registry poisoned".to_owned(),
+                    })?;
+            if let Some(worker) = workers.get(&root) {
+                Arc::clone(worker)
+            } else {
+                let writer = self.writer.clone();
+                let worker = Arc::new(LibraryProjectionWorker::spawn(root, move |root| {
+                    let durable = control.durability().ok_or_else(|| {
+                        Error::unavailable(
+                            "library projection",
+                            "directory commit adapter is not configured",
+                        )
+                    })?;
+                    // Projection reads the authenticated journal without
+                    // materializing files or contending on the writer lock.
+                    let replay = durable.projection_replay(root)?;
+                    writer.run(move |connection| {
+                        durability_projection::project_commits_unless_superseded(
+                            connection, root, &replay,
+                        )
+                    })
+                })?);
+                workers.insert(root, Arc::clone(&worker));
+                worker
+            }
+        };
+        Ok(worker)
+    }
+
+    /// Wait until all projection wakes already accepted for this root finish.
+    /// Intended for orderly shutdown, diagnostics, and deterministic recovery
+    /// boundaries; interactive writes do not call it.
+    pub fn flush_library_projection(
+        &self,
+        root: LibraryRootId,
+        timeout: std::time::Duration,
+    ) -> Result<(), Error> {
+        let worker = self
+            .library_projection_workers
+            .lock()
+            .map_err(|_| Error::InvariantViolation {
+                why: "library projection worker registry poisoned".to_owned(),
+            })?
+            .get(&root)
+            .cloned();
+        if let Some(worker) = worker {
+            worker.flush(timeout)?;
+        }
+        Ok(())
     }
 
     /// Path of the local database; it is for runtime ownership only and must

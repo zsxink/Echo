@@ -2,7 +2,7 @@
 
 #![allow(clippy::doc_markdown, clippy::missing_errors_doc)]
 
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{OptionalExtension, params};
 use uuid::Uuid;
 
 use crate::application::ports::LocalSyncQueuePort;
@@ -13,8 +13,8 @@ use crate::domain::sync::{
 };
 use crate::error::{Error, Subject};
 
-use super::super::support::storage;
 use super::super::SqliteDatabase;
+use super::super::support::storage;
 
 const MAX_BATCH: usize = 512;
 
@@ -494,7 +494,7 @@ fn decode_pending_mutation(
         _ => {
             return Err(Error::InvariantViolation {
                 why: "unknown object kind in local sync queue".to_owned(),
-            })
+            });
         }
     };
     let previous_mutation_id = previous

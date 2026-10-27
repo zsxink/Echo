@@ -32,7 +32,7 @@
     clippy::uninlined_format_args
 )]
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::domain::ids::{PlaylistId, SongId};
 use crate::error::Error;

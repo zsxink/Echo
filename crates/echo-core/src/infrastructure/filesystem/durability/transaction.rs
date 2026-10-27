@@ -1,9 +1,9 @@
 //! Authoritative commit publication under the control plane's writer guard.
 use super::assets::validate_resource;
 use super::{
+    DocumentKind, Hook, LIMIT, MAX_ACTIVE, Marker, ValidationCache, WINDOW, WriteSessionState,
     begin_edit, checkpoint, decode, invalid, io, manifest, outcome, portable, read_operation,
-    relative, write_checkpoint, DocumentKind, Hook, Marker, ValidationCache, WriteSessionState,
-    LIMIT, MAX_ACTIVE, WINDOW,
+    relative, write_checkpoint,
 };
 use crate::domain::ids::LibraryRootId;
 use crate::domain::library::durability::{
@@ -20,7 +20,7 @@ pub(in crate::infrastructure::filesystem) fn commit_with_hook(
     hook: &mut Hook<'_>,
 ) -> Result<CommitOutcome, Error> {
     validate_commit_manifest(registry, root, batch)?;
-    let mut recovered = begin_edit(registry, cache, root, hook)?;
+    let mut recovered = begin_edit(registry, cache, root, None, None, true, true, hook)?;
     commit_edit(registry, cache, root, &mut recovered, batch, hook)
 }
 
@@ -112,6 +112,11 @@ pub(in crate::infrastructure::filesystem) fn commit_edit(
     }
     if let Err(error) = (|| {
         hook("committed", 0)?;
+        if !recovered.materialize_commits {
+            checkpoint::track(&batch.records, &batch.state, &mut recovered.files)?;
+            recovered.replay.commits.push(commit.clone());
+            return Ok(());
+        }
         // Finish materialization before publishing a complete coverage image.
         // The writer guard has remained held since recovery. This new commit's
         // prepared body and marker have both completed every native barrier, so

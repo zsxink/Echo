@@ -10,12 +10,12 @@ use crate::application::ports::LibraryProjectionValidation;
 use crate::domain::{
     ids::LibraryRootId,
     library::{
-        durability::{DurableResource, DurableStateChange, LibraryRecoveryRecords, LibraryReplay},
         LibraryId, PortableRecord, PortableRecordEnvelope,
+        durability::{DurableResource, DurableStateChange, LibraryRecoveryRecords, LibraryReplay},
     },
 };
 use crate::error::Error;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 

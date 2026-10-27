@@ -50,9 +50,11 @@ fn library_durability_playlist_cover_reuses_original_and_clear_survives_rebuild(
         rebuilt
             .project_library_commits(stack.root, &replay)
             .unwrap();
-        assert!(PlaylistRepository::cover_key(&rebuilt, first)
-            .unwrap()
-            .is_none());
+        assert!(
+            PlaylistRepository::cover_key(&rebuilt, first)
+                .unwrap()
+                .is_none()
+        );
         assert_eq!(
             PlaylistRepository::cover_key(&rebuilt, second).unwrap(),
             Some(crate::domain::media::cover_asset_key(&hash))
@@ -94,18 +96,22 @@ fn library_durability_playlist_cover_missing_or_corrupt_original_is_not_recovere
         } else {
             std::fs::remove_file(&path).unwrap();
         }
-        assert!(crate::application::playlist::cover::resolve_playlist_cover(
-            control.as_ref(),
-            &cache,
-            stack.root,
-            playlist,
-            None,
-        )
-        .is_err());
-        assert!(cache
-            .get(&crate::domain::media::cover_asset_key(&hash))
-            .unwrap()
-            .is_none());
+        assert!(
+            crate::application::playlist::cover::resolve_playlist_cover(
+                control.as_ref(),
+                &cache,
+                stack.root,
+                playlist,
+                None,
+            )
+            .is_err()
+        );
+        assert!(
+            cache
+                .get(&crate::domain::media::cover_asset_key(&hash))
+                .unwrap()
+                .is_none()
+        );
     }
     assert!(
         matches!(control.read_record(stack.root, crate::domain::library::RecordKind::Playlist, &playlist.to_string()).unwrap(), Some(PortableRecord::Playlist(record)) if record.cover_asset.is_some())
@@ -129,14 +135,16 @@ fn library_durability_playlist_cover_asset_write_failure_keeps_saved_playlist() 
     let before = control.durability().unwrap().recover(stack.root).unwrap();
     let blocker = stack.library_dir.join("echo/assets");
     std::fs::write(&blocker, b"asset directory blocker").unwrap();
-    assert!(edits
-        .set_playlist_cover(
-            stack.root,
-            playlist,
-            Some(&original_png()),
-            Some("image/png")
-        )
-        .is_err());
+    assert!(
+        edits
+            .set_playlist_cover(
+                stack.root,
+                playlist,
+                Some(&original_png()),
+                Some("image/png")
+            )
+            .is_err()
+    );
     assert_eq!(
         control.durability().unwrap().recover(stack.root).unwrap(),
         before

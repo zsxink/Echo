@@ -103,9 +103,11 @@ fn publication(
 #[test]
 fn remote_resource_publication_is_durable_and_marks_media_ready_only_after_finish() {
     let (_directory, database, root, object, manifest) = fixture();
-    assert!(!database
-        .remote_resource_media_ready(root, object)
-        .expect("initially missing"));
+    assert!(
+        !database
+            .remote_resource_media_ready(root, object)
+            .expect("initially missing")
+    );
     let pending = database
         .pending_remote_resource_sets(root)
         .expect("pending manifest");
@@ -120,10 +122,12 @@ fn remote_resource_publication_is_durable_and_marks_media_ready_only_after_finis
         RemoteResourceJournalPort::load(&database, root, publication.operation).unwrap(),
         publication
     );
-    assert!(database
-        .local_remote_resource_path(root, object, &manifest)
-        .unwrap()
-        .is_none());
+    assert!(
+        database
+            .local_remote_resource_path(root, object, &manifest)
+            .unwrap()
+            .is_none()
+    );
 
     publication.items[0].stage = RemoteResourceStage::Published;
     database
@@ -132,13 +136,17 @@ fn remote_resource_publication_is_durable_and_marks_media_ready_only_after_finis
     database
         .finish(&publication)
         .expect("associate published media");
-    assert!(database
-        .remote_resource_media_ready(root, object)
-        .expect("media ready"));
-    assert!(database
-        .pending_remote_resource_sets(root)
-        .unwrap()
-        .is_empty());
+    assert!(
+        database
+            .remote_resource_media_ready(root, object)
+            .expect("media ready")
+    );
+    assert!(
+        database
+            .pending_remote_resource_sets(root)
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(
         database
             .local_remote_resource_path(root, object, &manifest)
@@ -427,10 +435,12 @@ fn completed_missing_song() -> (tempfile::TempDir, SqliteDatabase, LibraryRootId
 fn completed_missing_song_is_queued_and_restored_without_a_shared_mutation() {
     let (_directory, database, root, id) = completed_missing_song();
     assert_eq!(database.pending_remote_song_metadata(root).unwrap(), [id]);
-    assert!(database
-        .pending_remote_resource_sets(root)
-        .unwrap()
-        .is_empty());
+    assert!(
+        database
+            .pending_remote_resource_sets(root)
+            .unwrap()
+            .is_empty()
+    );
     let before = SongRepository::by_id(&database, id).unwrap().unwrap();
     assert_eq!(before.file_mtime_ns(), Some(123));
     let queue = database.pending_local_mutations(512).unwrap();
@@ -474,10 +484,12 @@ fn completed_missing_song_is_queued_and_restored_without_a_shared_mutation() {
             > revision
     );
     assert_eq!(database.pending_local_mutations(512).unwrap(), queue);
-    assert!(database
-        .pending_remote_song_metadata(root)
-        .unwrap()
-        .is_empty());
+    assert!(
+        database
+            .pending_remote_song_metadata(root)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]

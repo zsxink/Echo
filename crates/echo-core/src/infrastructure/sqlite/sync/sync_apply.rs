@@ -2,14 +2,14 @@
 
 #![allow(clippy::doc_markdown, clippy::missing_errors_doc)]
 
-use rusqlite::{params, OptionalExtension, TransactionBehavior};
+use rusqlite::{OptionalExtension, TransactionBehavior, params};
 
 use crate::application::ports::{AppliedRemoteCursor, RemoteApplyPort, RemoteCommit};
 use crate::domain::sync::{CommitCheckpoint, CommitSeq, DeviceId, ObjectKey, SyncBinding};
 use crate::error::Error;
 
-use super::super::support::{now_ms, storage};
 use super::super::SqliteDatabase;
+use super::super::support::{now_ms, storage};
 
 impl RemoteApplyPort for SqliteDatabase {
     fn apply_remote_batch(

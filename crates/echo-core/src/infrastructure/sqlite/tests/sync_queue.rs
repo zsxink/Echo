@@ -212,9 +212,11 @@ fn conflicting_resource_metadata_rolls_back_the_previous_object_declarations() {
         length: 99,
         ..resource.clone()
     };
-    assert!(database
-        .set_local_sync_resources(ObjectKey::Song(song_id), vec![invalid])
-        .is_err());
+    assert!(
+        database
+            .set_local_sync_resources(ObjectKey::Song(song_id), vec![invalid])
+            .is_err()
+    );
     let song = Song::new(
         song_id,
         root,
@@ -443,9 +445,11 @@ fn rebase_survives_a_target_range_that_overlaps_existing_sequences() {
     assert_eq!(pending[0].payload, queued[0].payload);
     assert_eq!(pending[1].mutation_id, queued[2].mutation_id);
     assert_eq!(pending[1].payload, queued[2].payload);
-    assert!(pending
-        .iter()
-        .all(|event| event.mutation_id != queued[1].mutation_id));
+    assert!(
+        pending
+            .iter()
+            .all(|event| event.mutation_id != queued[1].mutation_id)
+    );
 }
 
 /// Re-recording a terminal event is a no-op, not a ledger failure.
@@ -481,9 +485,11 @@ fn rejecting_an_already_terminal_mutation_is_idempotent() {
         .unwrap();
     let after = database.pending_local_mutations(10).unwrap();
     assert_eq!(after.len(), remaining);
-    assert!(after
-        .iter()
-        .all(|event| event.mutation_id != queued[0].mutation_id));
+    assert!(
+        after
+            .iter()
+            .all(|event| event.mutation_id != queued[0].mutation_id)
+    );
 }
 
 #[test]

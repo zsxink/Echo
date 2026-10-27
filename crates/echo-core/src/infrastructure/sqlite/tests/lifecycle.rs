@@ -107,11 +107,12 @@ fn library_durability_later_edit_catches_up_failed_earlier_playlist() {
         .records[0]
         .record()
         .object_uuid();
-    assert!(deps
-        .playlists
-        .name(crate::domain::ids::PlaylistId::from_uuid(first))
-        .unwrap()
-        .is_none());
+    assert!(
+        deps.playlists
+            .name(crate::domain::ids::PlaylistId::from_uuid(first))
+            .unwrap()
+            .is_none()
+    );
     stack
         .database
         .writer
@@ -270,12 +271,14 @@ fn library_durability_complete_local_allocation_is_not_an_unresolved_send_reques
         evidence.state,
         "resolved local evidence must remain available for recovery"
     );
-    assert!(stack
-        .database
-        .projection_status(stack.root)
-        .unwrap()
-        .unresolved
-        .is_empty());
+    assert!(
+        stack
+            .database
+            .projection_status(stack.root)
+            .unwrap()
+            .unresolved
+            .is_empty()
+    );
     let queued: u64 = stack
         .database
         .with_reader(|connection| {
@@ -484,9 +487,11 @@ fn activation_sql_failure_rolls_back_root_and_epoch_then_reopens_real_writes() {
         &blockers,
     );
     let error = activate.activate(candidate).unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("injected activation epoch failure"));
+    assert!(
+        error
+            .to_string()
+            .contains("injected activation epoch failure")
+    );
     assert_eq!(
         stack.database.active_root().unwrap().unwrap().id(),
         stack.root
@@ -524,18 +529,22 @@ fn activation_sql_failure_rolls_back_root_and_epoch_then_reopens_real_writes() {
         .unwrap()
     };
     let replay = control.durability().unwrap().recover(stack.root).unwrap();
-    assert!(replay
-        .commits
-        .iter()
-        .flat_map(|commit| &commit.batch.records)
-        .any(|record| record.record().object_uuid() == playlist.as_uuid()));
-    assert!(control
-        .durability()
-        .unwrap()
-        .recover(candidate)
-        .unwrap()
-        .commits
-        .is_empty());
+    assert!(
+        replay
+            .commits
+            .iter()
+            .flat_map(|commit| &commit.batch.records)
+            .any(|record| record.record().object_uuid() == playlist.as_uuid())
+    );
+    assert!(
+        control
+            .durability()
+            .unwrap()
+            .recover(candidate)
+            .unwrap()
+            .commits
+            .is_empty()
+    );
     let outcome = activate
         .activate(candidate)
         .expect("activation remains retryable");

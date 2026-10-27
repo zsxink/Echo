@@ -2,7 +2,7 @@
 
 #![allow(clippy::missing_errors_doc)]
 
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
 use crate::application::ports::{
     RemoteResourceJournalPort, RemoteResourcePublication, RemoteResourceStage, RemoteResourceTarget,
@@ -11,7 +11,7 @@ use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath, SongId};
 use crate::domain::sync::{ObjectKey, ResourceDigest, SharedResourceKind, SharedResourceManifest};
 use crate::error::Error;
 
-use super::super::{support::storage, SqliteDatabase};
+use super::super::{SqliteDatabase, support::storage};
 use super::sync_manifests;
 
 fn validate_current(

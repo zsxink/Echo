@@ -4,16 +4,16 @@ use crate::application::ports::{LibraryDurabilityPort, RemoteCommit};
 use crate::domain::{
     ids::LibraryRootId,
     library::{
+        LibraryId,
         durability::{
             ChangeOrigin, CommitStatus, DurableStateChange, LibraryBatch, StateKey, StateNamespace,
         },
-        LibraryId,
     },
     sync::CommitCheckpoint,
 };
 use crate::error::Error;
 use crate::infrastructure::sqlite::support::storage;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use serde_json::Value;
 
 // The full exporter and the focused capture retain exactly the same after-image.
@@ -97,7 +97,9 @@ fn current_ledger(
     connection: &Connection,
     checkpoint: CommitCheckpoint,
 ) -> Result<DurableStateChange, Error> {
-    let query = format!("SELECT {LEDGER_PAYLOAD} FROM sync_commits WHERE commit_seq=?1 AND library_id=?2 AND authority_id=?3 AND epoch=?4 AND commit_digest=?5");
+    let query = format!(
+        "SELECT {LEDGER_PAYLOAD} FROM sync_commits WHERE commit_seq=?1 AND library_id=?2 AND authority_id=?3 AND epoch=?4 AND commit_digest=?5"
+    );
     let raw: String = connection
         .query_row(
             &query,

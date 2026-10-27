@@ -1,12 +1,12 @@
 //! Project local artwork preferences without creating shared mutation events.
-use super::{storage, Reason};
+use super::{Reason, storage};
 use crate::domain::ids::LibraryRootId;
 use crate::domain::library::durability::{
     ArtistCoverState, DurableStateChange, ProjectionTarget, StateKind,
 };
 use crate::domain::library::{LibraryId, PortableAssetReference};
 use crate::error::Error;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 
 pub(super) fn read(
     connection: &Connection,

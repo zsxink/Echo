@@ -90,23 +90,27 @@ fn library_durability_journal_manifest_every_publication_failure_is_retryable() 
         Ok(())
     })
     .unwrap();
-    assert!(boundaries
-        .iter()
-        .any(|(phase, _)| phase == "journal_manifest:rename"));
+    assert!(
+        boundaries
+            .iter()
+            .any(|(phase, _)| phase == "journal_manifest:rename")
+    );
     for stop in 0..boundaries.len() {
         let (dir, registry, root, plane) = setup();
         plane.write_manifest(root, &legacy).unwrap();
         let mut counter = 0;
-        assert!(durability::enable_journal(&registry, root, &mut |_, _| {
-            let fail = counter == stop;
-            counter += 1;
-            if fail {
-                Err(Error::conflict("injected manifest publication failure"))
-            } else {
-                Ok(())
-            }
-        })
-        .is_err());
+        assert!(
+            durability::enable_journal(&registry, root, &mut |_, _| {
+                let fail = counter == stop;
+                counter += 1;
+                if fail {
+                    Err(Error::conflict("injected manifest publication failure"))
+                } else {
+                    Ok(())
+                }
+            })
+            .is_err()
+        );
         assert!(!dir.path().join("echo/transactions").exists());
         durability::enable_journal(&registry, root, &mut |_, _| Ok(())).unwrap();
         let mut trace = Vec::new();
@@ -129,9 +133,11 @@ fn library_durability_journal_manifest_every_publication_failure_is_retryable() 
         // A visible manifest whose rename previously missed directory sync is
         // fenced by the prepared file's complete ancestor sync before a marker.
         let marker = trace.iter().position(|p| p == "marker:file_sync").unwrap();
-        assert!(trace[..marker]
-            .iter()
-            .any(|p| p == "prepared:directory_sync"));
+        assert!(
+            trace[..marker]
+                .iter()
+                .any(|p| p == "prepared:directory_sync")
+        );
         assert_eq!(
             plane.read_manifest(root).unwrap().unwrap().format_version,
             crate::domain::library::CURRENT_FORMAT_VERSION
@@ -150,10 +156,12 @@ fn library_durability_journal_manifest_preserves_unsupported_original() {
         let raw = serde_json::to_vec(&manifest).unwrap();
         std::fs::create_dir_all(dir.path().join("echo")).unwrap();
         std::fs::write(dir.path().join("echo/manifest.json"), &raw).unwrap();
-        assert!(durability::enable_journal(&registry, root, &mut |_, _| {
-            panic!("unsupported manifest must fail before publication")
-        })
-        .is_err());
+        assert!(
+            durability::enable_journal(&registry, root, &mut |_, _| {
+                panic!("unsupported manifest must fail before publication")
+            })
+            .is_err()
+        );
         assert_eq!(
             std::fs::read(dir.path().join("echo/manifest.json")).unwrap(),
             raw

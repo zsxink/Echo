@@ -1,13 +1,13 @@
 //! Resource hold reconstruction and durable immutable-copy receipts.
 
-use super::super::{support::storage, SqliteDatabase};
+use super::super::{SqliteDatabase, support::storage};
 use super::sync_manifests;
 use crate::application::ports::{RemoteDeleteIsolation, ResourceRetentionPort, RetainedResource};
 use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath};
 use crate::domain::library::durability::DurableResource;
 use crate::domain::sync::{ResourceDigest, SharedResourceManifest};
 use crate::error::Error;
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
 type Hold = (String, String, ResourceDigest);
 

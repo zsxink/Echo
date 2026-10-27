@@ -15,7 +15,7 @@ use crate::domain::library::durability::{
     LibraryProjectionStatus, LibraryRecoveryRecords, LibraryReplay,
 };
 use crate::error::Error;
-use rusqlite::{params, Connection, Transaction};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 pub fn project_legacy_records(
     connection: &mut Connection,
@@ -41,6 +41,54 @@ pub fn project_commits(
     let tx = connection.transaction().map_err(storage)?;
     project_commits_in_transaction(&tx, root, replay)?;
     tx.commit().map_err(storage)
+}
+
+/// Ignore a projection pass whose journal snapshot has already been surpassed
+/// by a later serialized pass or foreground catch-up on the same root.
+pub(super) fn project_commits_unless_superseded(
+    connection: &mut Connection,
+    root: LibraryRootId,
+    replay: &LibraryReplay,
+) -> Result<(), Error> {
+    let projected: Option<u64> = connection
+        .query_row(
+            "SELECT commit_seq FROM library_projection_watermarks WHERE library_root_uuid=?1",
+            [root.to_string()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(storage)?;
+    if projected.is_some_and(|sequence| {
+        sequence > replay.head().map_or(0, |(sequence, _)| sequence)
+    }) {
+        return Ok(());
+    }
+    project_commits(connection, root, replay)
+}
+
+/// Cheaply determine whether a verified journal replay is already represented
+/// by SQLite. Interactive planners use this to avoid revalidating an unchanged
+/// read model on every click.
+pub(super) fn is_current(
+    connection: &Connection,
+    root: LibraryRootId,
+    replay: &LibraryReplay,
+) -> Result<bool, Error> {
+    let projected: Option<(u64, String)> = connection
+        .query_row(
+            "SELECT commit_seq,commit_digest FROM library_projection_watermarks WHERE library_root_uuid=?1",
+            [root.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(storage)?;
+    Ok(match (replay.head(), projected) {
+        (Some((sequence, digest)), Some((projected_sequence, projected_digest))) => {
+            sequence == projected_sequence && digest == projected_digest
+        }
+        (None, None) => true,
+        _ => false,
+    })
 }
 
 /// Project a complete verified replay inside a caller-owned transaction.
@@ -109,6 +157,110 @@ pub fn project_commits_in_transaction(
         retained::retry(tx, root, library)?;
     }
     Ok(())
+}
+
+/// Project only the authenticated suffix after SQLite's existing watermark.
+/// The caller must obtain `replay` from the directory durability port's
+/// `begin_write`/`recover` boundary; cold or checkpoint-behind projections keep
+/// using the full validation path above.
+pub(super) fn project_verified_suffix(
+    connection: &mut Connection,
+    root: LibraryRootId,
+    replay: &LibraryReplay,
+) -> Result<(), Error> {
+    let tx = connection.transaction().map_err(storage)?;
+    let projected_watermark: Option<(String, u64, Option<String>)> = tx
+        .query_row(
+            "SELECT library_id,commit_seq,commit_digest FROM library_projection_watermarks WHERE library_root_uuid=?1",
+            [root.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(storage)?;
+    let library = replay
+        .commits
+        .last()
+        .map(|commit| commit.batch.library_id)
+        .or_else(|| replay.checkpoint.as_ref().map(|image| image.library_id))
+        .ok_or_else(|| Error::conflict("cannot project an empty directory replay"))?;
+    let checkpoint_seq = replay
+        .checkpoint
+        .as_ref()
+        .map_or(0, |image| image.library_commit_seq);
+    let mut current_seq = 0;
+    let mut predecessor = None;
+    if let Some((current_library, seq, digest)) = projected_watermark {
+        if current_library != library.to_string() {
+            return Err(Error::conflict("database projection belongs to another library"));
+        }
+        if seq < checkpoint_seq {
+            // SQLite is older than the compacted base. Only the full snapshot
+            // can bridge that gap safely.
+            drop(tx);
+            return project_commits(connection, root, replay);
+        }
+        let expected_digest = replay
+            .checkpoint
+            .as_ref()
+            .filter(|image| image.library_commit_seq == seq)
+            .map(|image| image.head_digest.as_str())
+            .or_else(|| {
+                replay
+                    .commits
+                    .iter()
+                    .find(|commit| commit.library_commit_seq == seq)
+                    .map(|commit| commit.digest.as_str())
+            });
+        if expected_digest != digest.as_deref() {
+            return Err(Error::conflict(
+                "database watermark differs from verified directory chain",
+            ));
+        }
+        current_seq = seq;
+        predecessor = digest;
+    } else if checkpoint_seq > 0 {
+        drop(tx);
+        return project_commits(connection, root, replay);
+    }
+    let after_watermark = current_seq;
+    for commit in replay
+        .commits
+        .iter()
+        .filter(|commit| commit.library_commit_seq > after_watermark)
+    {
+        if current_seq.checked_add(1) != Some(commit.library_commit_seq)
+            || commit.predecessor_digest != predecessor
+            || commit.batch.library_id != library
+        {
+            return Err(Error::conflict("verified directory suffix is incomplete"));
+        }
+        commit.validate()?;
+        retained::save(
+            &tx,
+            root,
+            &commit.batch.records,
+            &commit.batch.state,
+            &commit.batch.resources,
+        )?;
+        tx.execute(
+            "INSERT INTO library_applied_operations(library_root_uuid,operation_uuid,commit_seq,commit_digest) VALUES(?1,?2,?3,?4)",
+            params![root.to_string(), commit.batch.operation_id.to_string(), commit.library_commit_seq, commit.digest],
+        )
+        .map_err(storage)?;
+        watermark(
+            &tx,
+            root,
+            library.to_string(),
+            commit.library_commit_seq,
+            &commit.digest,
+        )?;
+        current_seq = commit.library_commit_seq;
+        predecessor = Some(commit.digest.clone());
+    }
+    // The interactive edit lanes currently append standalone favorite or
+    // empty-playlist facts, neither of which resolves an older retained
+    // dependency. Full recovery/projection performs the global retry pass.
+    tx.commit().map_err(storage)
 }
 
 fn watermark(

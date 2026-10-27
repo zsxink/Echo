@@ -470,3 +470,5 @@
 - [ ] 13.3 从交互热路径移出不影响本次提交正确性的全链恢复/重复验证、业务文件材料化、checkpoint 与 GC。每一步必须有目录内持久状态、重启续跑和引用保护；提交标记发布后的错误保留同一操作身份且不得报未保存。用故障注入覆盖发布前、发布后/目录同步、材料化、checkpoint、GC 各边界，并保持外部篡改检测、未知格式围栏和损坏拒绝语义（LD-01/02/04/06/09）。
 - [ ] 13.4 让 Tauri 收藏与歌单请求在目录提交确认后返回 UI 所需 DTO/稳定状态，不读取滞后 SQLite；前端列表、收藏按钮、连续操作和应用重开均支持读己之写与明确投影水位。覆盖投影失败、重复响应、快速连续点击、窗口关闭、切库及响应丢失，确保已保存用户意图不回滚且 UI 不显示陈旧结果（library-experience/local-library）。
 - [ ] 13.5 在 macOS 实际桌面应用和真实临时音乐库上验收用户目标：1,000 与 10,000 首真实记录，每种操作至少 200 次，分别报告点击至已保存反馈、目录可靠提交、SQLite 投影延迟的 P50/P95/P99。收藏与创建歌单的点击至已保存反馈 P95 < 50 ms；同时运行 `cargo test -p echo-core`、`cargo test -p echo-desktop`、桌面前端测试及 `pnpm verify:governance`。报告硬件/文件系统和所有未覆盖故障，不得以 Python 原型替代实际应用证据。
+
+  验证进度（2026-10-28）：Release `AppServices` 路径以 1,000/10,000 首合成 portable metadata fixture、每种操作 200 次通过 50 ms P95 门槛；数据和范围见 [交互编辑延迟验证](../../../docs/verification/interactive-edit-latency-2026-10-28.md)。这不是实际 Tauri 窗口点击计时：真实音乐记录、React/Tauri 原生 IPC 到反馈计时、SQLite 投影延迟分布及整门 `pnpm verify:governance` 尚未验证，因此本项保持未勾选。

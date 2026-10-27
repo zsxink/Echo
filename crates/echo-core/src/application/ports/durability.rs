@@ -17,6 +17,17 @@ pub trait LibraryDurabilityPort: Send + Sync {
     fn read_asset(&self, root: LibraryRootId, hash: &str) -> Result<Option<Vec<u8>>, Error>;
     fn commit(&self, root: LibraryRootId, batch: &LibraryBatch) -> Result<CommitOutcome, Error>;
     fn recover(&self, root: LibraryRootId) -> Result<LibraryReplay, Error>;
+    /// Materialize a committed journal suffix for background read-model work.
+    /// Implementations may skip the expensive full-tree audit here; `recover`
+    /// remains the strict verification boundary.
+    fn catch_up_projection(&self, root: LibraryRootId) -> Result<LibraryReplay, Error> {
+        self.recover(root)
+    }
+    /// Read the current authenticated journal for asynchronous SQL projection
+    /// without materializing the rebuildable file tree or taking the writer lock.
+    fn projection_replay(&self, root: LibraryRootId) -> Result<LibraryReplay, Error> {
+        self.catch_up_projection(root)
+    }
     /// Adapters with an exclusive writer guard can recover once and retain that
     /// proof through planning and commit. Other adapters use the ordinary path.
     fn begin_write(

@@ -1,7 +1,7 @@
 //! Install exact frozen event bytes; never enqueue or re-author a recovered edit.
 use super::{
-    params, schema, storage, Connection, DurableStateChange, Error, OptionalExtension, Reason,
-    StateTarget, SyncRecoveryContext, Value,
+    Connection, DurableStateChange, Error, OptionalExtension, Reason, StateTarget,
+    SyncRecoveryContext, Value, params, schema, storage,
 };
 use crate::domain::library::durability::{
     FrozenMutation, MutationDisposition, MutationOperation, MutationStatus,

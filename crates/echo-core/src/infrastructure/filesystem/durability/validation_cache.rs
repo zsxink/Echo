@@ -3,9 +3,9 @@
 use crate::domain::ids::LibraryRootId;
 use crate::error::Error;
 use std::collections::VecDeque;
+use std::sync::Mutex;
 #[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
 
 const CAPACITY: usize = 128;
 
@@ -99,20 +99,26 @@ mod tests {
                 .unwrap();
         }
         // A cold/evicted body is fully validated, even if its old key is repeated.
-        assert!(cache
-            .validate(DocumentKind::Commit, root, "first", || Err(fail()))
-            .is_err());
+        assert!(
+            cache
+                .validate(DocumentKind::Commit, root, "first", || Err(fail()))
+                .is_err()
+        );
         cache
             .validate(DocumentKind::Commit, root, "warm", || Ok(()))
             .unwrap();
         let guard = cache.certificates.lock().unwrap();
-        assert!(cache
-            .validate(DocumentKind::Commit, root, "warm", || Err(fail()))
-            .is_err());
+        assert!(
+            cache
+                .validate(DocumentKind::Commit, root, "warm", || Err(fail()))
+                .is_err()
+        );
         drop(guard);
-        assert!(cache
-            .validate(DocumentKind::Coverage, root, "warm", || Err(fail()))
-            .is_err());
+        assert!(
+            cache
+                .validate(DocumentKind::Coverage, root, "warm", || Err(fail()))
+                .is_err()
+        );
         assert_eq!(cache.certificates.lock().unwrap().len(), 128);
     }
 }

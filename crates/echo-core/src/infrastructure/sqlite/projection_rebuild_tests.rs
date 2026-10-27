@@ -87,24 +87,28 @@ fn library_durability_candidate_rebuild_retains_orphans_and_preserves_active_pro
     );
     assert_eq!(database.read_recovery_records(root).unwrap(), before);
     assert_eq!(database.projection_status(root).unwrap(), before_status);
-    assert!(database
-        .validate_library_projection(root, library, &candidate)
-        .is_err());
+    assert!(
+        database
+            .validate_library_projection(root, library, &candidate)
+            .is_err()
+    );
     let mut broken = candidate;
     broken.commits[0].library_commit_seq = 2;
     broken.commits[0].digest =
         LibraryCommit::calculate_digest(&broken.commits[0].batch, 2, None).unwrap();
-    assert!(database
-        .validate_library_projection(root, candidate_library, &broken)
-        .is_err());
+    assert!(
+        database
+            .validate_library_projection(root, candidate_library, &broken)
+            .is_err()
+    );
     assert_eq!(database.read_recovery_records(root).unwrap(), before);
-    assert!(std::fs::read_dir(directory.path())
-        .unwrap()
-        .all(|entry| !entry
+    assert!(std::fs::read_dir(directory.path()).unwrap().all(|entry| {
+        !entry
             .unwrap()
             .file_name()
             .to_string_lossy()
-            .starts_with(".projection-candidate-")));
+            .starts_with(".projection-candidate-")
+    }));
 }
 
 #[test]
@@ -277,9 +281,11 @@ fn library_durability_rebuild_failure_rolls_back_the_active_projection() {
         .unwrap();
     drop(connection);
 
-    assert!(database
-        .rebuild_library_projection(root, new_library, &replacement)
-        .is_err());
+    assert!(
+        database
+            .rebuild_library_projection(root, new_library, &replacement)
+            .is_err()
+    );
     let restored_ids: Vec<_> = SongRepository::all_in_root(&database, root)
         .unwrap()
         .into_iter()
@@ -334,9 +340,11 @@ fn library_durability_rebuild_commit_failure_keeps_the_previous_projection() {
 
     let new_library = LibraryId::from_uuid(uuid::Uuid::new_v4());
     let replacement = replay(new_library, Issue72Fixture::orphaned().portable);
-    assert!(database
-        .rebuild_library_projection(root, new_library, &replacement)
-        .is_err());
+    assert!(
+        database
+            .rebuild_library_projection(root, new_library, &replacement)
+            .is_err()
+    );
     let restored_ids: Vec<_> = SongRepository::all_in_root(&database, root)
         .unwrap()
         .into_iter()
@@ -382,9 +390,11 @@ fn library_durability_read_only_projection_database_keeps_the_active_view() {
         .unwrap();
     let replacement_library = LibraryId::from_uuid(uuid::Uuid::new_v4());
     let replacement = replay(replacement_library, Issue72Fixture::orphaned().portable);
-    assert!(database
-        .rebuild_library_projection(root, replacement_library, &replacement)
-        .is_err());
+    assert!(
+        database
+            .rebuild_library_projection(root, replacement_library, &replacement)
+            .is_err()
+    );
     let after_ids: Vec<_> = SongRepository::all_in_root(&database, root)
         .unwrap()
         .into_iter()
@@ -610,14 +620,18 @@ fn library_durability_rebuild_preserves_sync_context_protocol_history() {
 
     let protocol_before =
         ProtocolContext::read(&Connection::open(&database_path).unwrap()).unwrap();
-    assert!(protocol_before
-        .live
-        .iter()
-        .any(|(table, count)| *table == "sync_commits" && *count == 1));
-    assert!(protocol_before
-        .archived
-        .iter()
-        .any(|(table, count)| *table == "sync_commits" && *count == 1));
+    assert!(
+        protocol_before
+            .live
+            .iter()
+            .any(|(table, count)| *table == "sync_commits" && *count == 1)
+    );
+    assert!(
+        protocol_before
+            .archived
+            .iter()
+            .any(|(table, count)| *table == "sync_commits" && *count == 1)
+    );
 
     let new_library = LibraryId::from_uuid(uuid::Uuid::new_v4());
     let replacement = replay(new_library, Issue72Fixture::orphaned().portable);
@@ -793,9 +807,11 @@ fn library_durability_projection_ahead_of_directory_rebuilds_from_the_manifest_l
             .applied_library_commit_seq,
         1
     );
-    assert!(!SongRepository::all_in_root(&database, root)
-        .unwrap()
-        .is_empty());
+    assert!(
+        !SongRepository::all_in_root(&database, root)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -962,9 +978,11 @@ fn library_durability_rebuild_rejects_a_candidate_that_changed_after_projection(
             .map_err(storage)?;
         Ok(())
     });
-    assert!(database
-        .rebuild_library_projection(root, new_library, &replacement)
-        .is_err());
+    assert!(
+        database
+            .rebuild_library_projection(root, new_library, &replacement)
+            .is_err()
+    );
     // A candidate whose bytes no longer match the directory never replaces the
     // active projection, and no private candidate directory is left behind.
     assert_eq!(song_ids(&database, root), before_ids);

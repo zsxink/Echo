@@ -199,7 +199,7 @@ pub(crate) fn operation_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Resu
             _ => {
                 return Err(to_sql_error(Error::InvariantViolation {
                     why: "unknown operation resource kind".to_owned(),
-                }))
+                }));
             }
         },
         state: operation_state_from_db(&row.get::<_, String>(1)?).map_err(to_sql_error)?,
@@ -298,8 +298,8 @@ mod tests {
     use super::*;
     use crate::domain::entities::LyricsSource;
     use crate::domain::ids::{LibraryRootId, SongId};
-    use crate::domain::state::scan::ScanState;
     use crate::domain::state::OperationState as DomainOperationState;
+    use crate::domain::state::scan::ScanState;
 
     /// Feed literal columns through a real `SELECT` and hand the first row to a
     /// `..._from_row` mapper — the same path real queries use (a `rusqlite::Row`

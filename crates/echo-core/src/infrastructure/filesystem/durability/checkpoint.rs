@@ -1,7 +1,7 @@
 //! Coverage images bound recovery work to current state and an active suffix.
 //! Operation receipts are addressed individually; resources are never deleted.
 use super::{
-    decode, invalid, io, manifest, portable, receipt, relative, snapshot, Hook, ANCHOR, LIMIT,
+    ANCHOR, Hook, LIMIT, decode, invalid, io, manifest, portable, receipt, relative, snapshot,
 };
 use crate::domain::ids::LibraryRootId;
 use crate::domain::library::durability::{
@@ -173,6 +173,28 @@ pub(super) fn materialize(
     // The subsequent checkpoint is the visibility boundary for the entire
     // materialization. Sync each shared ancestor once before publishing it.
     directories.sync(registry, root, "materialization", hook)
+}
+
+/// Advance the in-memory materialization index for a journal-only commit.
+/// These hashes are capacity metadata until the background materializer writes
+/// the actual files and publishes a checkpoint.
+pub(super) fn track(
+    records: &[PortableRecordEnvelope],
+    state: &[DurableStateChange],
+    files: &mut BTreeMap<String, String>,
+) -> Result<(), Error> {
+    for record in records {
+        let bytes = portable::encode(record, portable::MAX_RECORD_BYTES)?;
+        files.insert(
+            portable::record_relative(record.record())?,
+            blake3::hash(&bytes).to_hex().to_string(),
+        );
+    }
+    for state in state {
+        let bytes = portable::encode(state, LIMIT)?;
+        files.insert(state_path(state), blake3::hash(&bytes).to_hex().to_string());
+    }
+    Ok(())
 }
 
 // files contains only the previous durable checkpoint plus publications that

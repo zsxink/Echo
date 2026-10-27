@@ -6,7 +6,7 @@ use crate::application::ports::{
 };
 use crate::domain::{
     ids::PlaylistId,
-    library::{durability::LibraryCommit, LibraryManifest},
+    library::{LibraryManifest, durability::LibraryCommit},
     sync::{CommitCheckpoint, DeviceId, MutationCandidate, MutationId, ObjectKey},
 };
 use crate::infrastructure::filesystem::{RootControlPlane, RootRegistry};
@@ -196,15 +196,17 @@ fn library_durability_mark_published_never_uses_other_root_or_binding_same_seque
         let commit = published(&plane, f.b, checkpoint);
         assert!(!commit.batch.records.is_empty());
         assert!(commit.batch.state.len() > 1);
-        assert!(commit
-            .batch
-            .state
-            .iter()
-            .any(|s| s.kind == StateKind::SyncLedger
-                && s.key.as_ref().unwrap().namespace
-                    == StateNamespace::Bound {
-                        binding: f.b_binding
-                    }));
+        assert!(
+            commit
+                .batch
+                .state
+                .iter()
+                .any(|s| s.kind == StateKind::SyncLedger
+                    && s.key.as_ref().unwrap().namespace
+                        == StateNamespace::Bound {
+                            binding: f.b_binding
+                        })
+        );
     }
 }
 

@@ -1,12 +1,12 @@
 //! Freeze a stable member deletion and the remaining playlist snapshot together.
 use super::{
-    planned_batch, planned_playlist, statements, storage, ChangeOrigin, Connection,
-    ControlPlanePort, DeviceId, Error, HybridLogicalClock, LibraryBatch, LibraryId, LibraryRootId,
-    ObjectKey, PlaylistId, PortableRecord, PortableRecordEnvelope, RecordKind, Revision, SongId,
+    ChangeOrigin, Connection, ControlPlanePort, DeviceId, Error, HybridLogicalClock, LibraryBatch,
+    LibraryId, LibraryRootId, ObjectKey, PlaylistId, PortableRecord, PortableRecordEnvelope,
+    RecordKind, Revision, SongId, planned_batch, planned_playlist, statements, storage,
 };
 use crate::domain::ids::PlaylistItemId;
-use crate::domain::library::{next_hlc, TombstoneRecord};
-use rusqlite::{params, OptionalExtension};
+use crate::domain::library::{TombstoneRecord, next_hlc};
+use rusqlite::{OptionalExtension, params};
 
 pub(super) struct Removal {
     pub root: LibraryRootId,

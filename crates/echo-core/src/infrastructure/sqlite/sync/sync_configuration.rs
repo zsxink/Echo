@@ -2,7 +2,7 @@
 
 #![allow(clippy::missing_errors_doc)]
 
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{OptionalExtension, params};
 use uuid::Uuid;
 
 use crate::domain::ids::LibraryRootId;
@@ -12,8 +12,8 @@ use crate::domain::sync::{
 };
 use crate::error::Error;
 
-use super::super::support::storage;
 use super::super::SqliteDatabase;
+use super::super::support::storage;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SyncConfiguration {

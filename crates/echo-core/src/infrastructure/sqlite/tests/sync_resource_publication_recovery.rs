@@ -178,10 +178,12 @@ fn occupied_publication_preserves_playback_and_recovers_after_adapter_restart() 
         fixture.journal(operation).items[0].stage,
         RemoteResourceStage::Validated
     );
-    assert!(!fixture
-        .database
-        .remote_resource_media_ready(fixture.root, fixture.object)
-        .unwrap());
+    assert!(
+        !fixture
+            .database
+            .remote_resource_media_ready(fixture.root, fixture.object)
+            .unwrap()
+    );
     assert_eq!(
         fixture
             .database
@@ -203,10 +205,12 @@ fn occupied_publication_preserves_playback_and_recovers_after_adapter_restart() 
     assert_eq!(results[0].0, operation);
     assert!(results[0].1.as_ref().unwrap().media_ready);
     assert!(fixture.journal(operation).completed);
-    assert!(fixture
-        .database
-        .remote_resource_media_ready(fixture.root, fixture.object)
-        .unwrap());
+    assert!(
+        fixture
+            .database
+            .remote_resource_media_ready(fixture.root, fixture.object)
+            .unwrap()
+    );
     assert_eq!(std::fs::read(old_path).unwrap(), b"initial audio");
 }
 

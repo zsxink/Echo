@@ -9,11 +9,11 @@ use crate::domain::{
     entities::LibraryRoot,
     ids::{LibraryRootId, PlaylistId, Revision},
     library::{
+        LibraryId, LibraryManifest, PortableRecord, PortableSerialize,
         durability::{
             ChangeOrigin, FrozenMutation, LibraryBatch, MutationDisposition, MutationOperation,
             MutationStatus, StateKey,
         },
-        LibraryId, LibraryManifest, PortableRecord, PortableSerialize,
     },
     sync::{
         AuthorityId, CommitSeq, DeviceId, Epoch, LibraryId as SyncLibraryId, MutationCandidate,
@@ -255,12 +255,13 @@ fn library_durability_trusted_sync_retry_restores_exact_baseline_and_pending_wit
         (0, 0, 0),
         "ordinary directory recovery is offline"
     );
-    assert!(!f
-        .db
-        .projection_status(f.context.root)
-        .unwrap()
-        .unresolved
-        .is_empty());
+    assert!(
+        !f.db
+            .projection_status(f.context.root)
+            .unwrap()
+            .unresolved
+            .is_empty()
+    );
     let report = retry(&f);
     assert!(report.unresolved.is_empty(), "{report:?}");
     assert_eq!(counts(&f), (1, 0, 1));
@@ -380,24 +381,30 @@ fn library_durability_trusted_sync_retry_keeps_legacy_queue_untrusted() {
     let report = f.db.retry_library_sync_state(f.context).unwrap();
     assert_eq!(counts(&f), (0, 0, 1));
     assert_eq!(report.unresolved.len(), 2);
-    assert!(report
-        .unresolved
-        .iter()
-        .all(|r| r.reason == Reason::RequiresStateRecovery));
+    assert!(
+        report
+            .unresolved
+            .iter()
+            .all(|r| r.reason == Reason::RequiresStateRecovery)
+    );
 }
 
 #[test]
 fn library_durability_trusted_sync_retry_keeps_missing_parent_and_retries_real_directory_append() {
     let f = fixture_with_parent(false);
     let report = retry(&f);
-    assert!(report
-        .unresolved
-        .iter()
-        .any(|item| item.reason == Reason::MissingPlaylist));
+    assert!(
+        report
+            .unresolved
+            .iter()
+            .any(|item| item.reason == Reason::MissingPlaylist)
+    );
     assert_eq!(counts(&f), (0, 0, 1));
-    assert!(PlaylistRepository::by_id(&f.db, f.playlist)
-        .unwrap()
-        .is_none());
+    assert!(
+        PlaylistRepository::by_id(&f.db, f.playlist)
+            .unwrap()
+            .is_none()
+    );
     let mut parent = f.batch.clone();
     parent.operation_id = uuid::Uuid::new_v4();
     parent.state.clear();
@@ -434,12 +441,12 @@ fn library_durability_trusted_sync_retry_rolls_back_all_protocol_facts_on_sql_fa
                 .map_err(storage)
         })
         .unwrap();
-    assert!(f
-        .db
-        .retry_library_sync_state(f.context)
-        .unwrap()
-        .unresolved
-        .is_empty());
+    assert!(
+        f.db.retry_library_sync_state(f.context)
+            .unwrap()
+            .unresolved
+            .is_empty()
+    );
     assert_eq!(counts(&f), (1, 0, 1));
 }
 
@@ -521,10 +528,12 @@ fn library_durability_trusted_sync_retry_late_old_disposition_does_not_terminate
     );
     f.control.commit(f.context.root, &batch).unwrap();
     let report = retry(&f);
-    assert!(report
-        .unresolved
-        .iter()
-        .any(|r| r.reason == Reason::AmbiguousMutationVersion));
+    assert!(
+        report
+            .unresolved
+            .iter()
+            .any(|r| r.reason == Reason::AmbiguousMutationVersion)
+    );
     assert_eq!(
         f.db.pending_local_mutations(10).unwrap(),
         vec![newer.candidate]
@@ -547,10 +556,12 @@ fn library_durability_trusted_sync_retry_rejects_same_version_with_changed_times
         })
         .unwrap();
     let report = retry(&f);
-    assert!(report
-        .unresolved
-        .iter()
-        .any(|item| item.reason == Reason::IdentityConflict));
+    assert!(
+        report
+            .unresolved
+            .iter()
+            .any(|item| item.reason == Reason::IdentityConflict)
+    );
     assert_eq!(counts(&f), (1, 0, 1));
 }
 

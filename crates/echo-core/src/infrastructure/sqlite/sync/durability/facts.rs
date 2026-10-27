@@ -15,7 +15,7 @@ use crate::domain::{
 use crate::error::Error;
 use crate::infrastructure::sqlite::support::storage;
 use rusqlite::{Connection, OptionalExtension};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub(super) fn object(payload: &Value) -> Result<ObjectKey, Error> {
     let id = parse_uuid(payload, "object_uuid")?;

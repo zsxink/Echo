@@ -1,13 +1,13 @@
 //! Freeze a private listen event and the actual shared bucket candidate together.
 use super::{
-    planned_batch, storage, ChangeOrigin, ControlPlanePort, DeviceId, Error, LibraryBatch,
-    LibraryRootId, ObjectKey, PortableRecord, RecordKind, Revision, SongId, SqliteDatabase,
+    ChangeOrigin, ControlPlanePort, DeviceId, Error, LibraryBatch, LibraryRootId, ObjectKey,
+    PortableRecord, RecordKind, Revision, SongId, SqliteDatabase, planned_batch, storage,
 };
 use crate::application::ports::PlaybackEditPort;
 use crate::domain::ids::PlaybackSessionId;
 use crate::domain::library::durability::{DurableStateChange, PlaybackEvent, StateKind};
-use crate::domain::library::{next_hlc, HybridLogicalClock, PlayStatsRecord};
-use rusqlite::{params, OptionalExtension};
+use crate::domain::library::{HybridLogicalClock, PlayStatsRecord, next_hlc};
+use rusqlite::{OptionalExtension, params};
 
 impl PlaybackEditPort for SqliteDatabase {
     fn record_library_playback(
@@ -19,7 +19,7 @@ impl PlaybackEditPort for SqliteDatabase {
         device: DeviceId,
         qualified_at: u64,
     ) -> Result<bool, Error> {
-        self.plan_library_change(control, root, device, Some(session.as_uuid()), move |c, authority, library, sequence, _| {
+        self.plan_library_change(control, root, device, Some(session.as_uuid()), false, move |c, authority, library, sequence, _| {
             let empty = || LibraryBatch::new(session.as_uuid(), library, ChangeOrigin::LocalEdit, vec![]);
             let saved: Option<String> = c.query_row(
                 "SELECT song_uuid FROM recorded_play_sessions WHERE playback_session_uuid=?1",

@@ -1,7 +1,7 @@
 //! Only a complete hash-verified prefix ending at the independent live anchor is evidence.
 use super::{
-    number, params, schema, storage, text, Connection, DurableStateChange, Error,
-    OptionalExtension, Reason, StateNamespace, SyncRecoveryContext, Value,
+    Connection, DurableStateChange, Error, OptionalExtension, Reason, StateNamespace,
+    SyncRecoveryContext, Value, number, params, schema, storage, text,
 };
 use crate::application::ports::RemoteCommit;
 use crate::domain::sync::CommitSeq;

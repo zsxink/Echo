@@ -58,16 +58,20 @@ fn library_durability_active_transaction_limit_refuses_writes_without_removing_b
     let refused = batch(library, uuid::Uuid::new_v4(), "must not be published");
     assert!(commit(&registry, root, &refused).is_err());
     assert!(!marker_present(directory.path(), refused.operation_id));
-    assert!(!directory
-        .path()
-        .join(relative(refused.operation_id, "prepared.json"))
-        .exists());
+    assert!(
+        !directory
+            .path()
+            .join(relative(refused.operation_id, "prepared.json"))
+            .exists()
+    );
     // Refusing is not collecting: the saved journal and its payload stay intact.
     assert!(marker_present(directory.path(), saved.operation_id));
-    assert!(directory
-        .path()
-        .join(relative(saved.operation_id, "prepared.json"))
-        .is_file());
+    assert!(
+        directory
+            .path()
+            .join(relative(saved.operation_id, "prepared.json"))
+            .is_file()
+    );
     for id in extra {
         std::fs::remove_dir_all(folder.join(id.to_string())).unwrap();
     }
@@ -256,10 +260,12 @@ fn assert_fresh_rebuild_keeps(
         );
     }
     // Staging is never offered as a song source even though its bytes survived.
-    assert!(rebuilt
-        .resources
-        .iter()
-        .all(|resource| !resource.relative_path.starts_with("echo/tmp/")));
+    assert!(
+        rebuilt
+            .resources
+            .iter()
+            .all(|resource| !resource.relative_path.starts_with("echo/tmp/"))
+    );
 }
 
 #[test]

@@ -207,16 +207,18 @@ fn library_durability_resource_completion_refusal_keeps_the_old_association_and_
     refused.set_refused(true);
     f.database.configure_library_control(refused.clone());
     assert!(f.database.finish(&publication).is_err());
-    assert!(f
-        .database
-        .local_remote_resource_path(f.root, f.object, &replacement)
-        .unwrap()
-        .is_none());
-    assert!(f
-        .database
-        .local_remote_resource_path(f.root, f.object, &f.initial)
-        .unwrap()
-        .is_some());
+    assert!(
+        f.database
+            .local_remote_resource_path(f.root, f.object, &replacement)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        f.database
+            .local_remote_resource_path(f.root, f.object, &f.initial)
+            .unwrap()
+            .is_some()
+    );
     assert!(
         !RemoteResourceJournalPort::load(f.database.as_ref(), f.root, publication.operation)
             .unwrap()
@@ -224,16 +226,18 @@ fn library_durability_resource_completion_refusal_keeps_the_old_association_and_
     );
     refused.set_refused(false);
     f.database.finish(&publication).unwrap();
-    assert!(f
-        .database
-        .local_remote_resource_path(f.root, f.object, &replacement)
-        .unwrap()
-        .is_some());
-    assert!(f
-        .database
-        .local_remote_resource_path(f.root, f.object, &f.initial)
-        .unwrap()
-        .is_none());
+    assert!(
+        f.database
+            .local_remote_resource_path(f.root, f.object, &replacement)
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        f.database
+            .local_remote_resource_path(f.root, f.object, &f.initial)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
@@ -243,16 +247,19 @@ fn library_durability_resource_completion_sql_failure_retains_the_same_directory
     f.database.writer.run(|c| c.execute_batch("CREATE TABLE fail_resource_finish(parent TEXT REFERENCES playlists(uuid) DEFERRABLE INITIALLY DEFERRED); CREATE TRIGGER fail_resource_finish AFTER UPDATE OF completed ON sync_remote_publications WHEN NEW.completed=1 BEGIN INSERT INTO fail_resource_finish VALUES('missing'); END;").map_err(storage)).unwrap();
     let error = f.database.finish(&publication).unwrap_err();
     assert_eq!(error.code(), "library_saved_pending_projection");
-    assert!(f
-        .database
-        .local_remote_resource_path(f.root, f.object, &f.initial)
-        .unwrap()
-        .is_none());
+    assert!(
+        f.database
+            .local_remote_resource_path(f.root, f.object, &f.initial)
+            .unwrap()
+            .is_none()
+    );
     let before = f.plane.durability().unwrap().recover(f.root).unwrap();
     let head = before.head().unwrap().0;
-    assert!(before
-        .states()
-        .any(|state| state.payload["schema"] == "echo.library.resource-location.v1"));
+    assert!(
+        before
+            .states()
+            .any(|state| state.payload["schema"] == "echo.library.resource-location.v1")
+    );
     f.database
         .writer
         .run(|c| {

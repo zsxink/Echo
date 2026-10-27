@@ -17,18 +17,18 @@ mod tests;
 use super::portable_migration as portable;
 use super::registry::RootRegistry;
 use crate::domain::ids::LibraryRootId;
+use crate::domain::library::LibraryManifest;
 use crate::domain::library::durability::{
     CommitOutcome, CommitStatus, LibraryBatch, LibraryCommit, LibraryReplay,
 };
-use crate::domain::library::LibraryManifest;
 use crate::error::Error;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 type Hook<'a> = dyn FnMut(&str, usize) -> Result<(), Error> + 'a;
 const LIMIT: usize = 128 * 1024 * 1024;
 const WINDOW: usize = 32;
-const MAX_ACTIVE: usize = 256;
+const MAX_ACTIVE: usize = 512;
 const CHECKPOINT: &str = "echo/state/materialized-checkpoint.json";
 const ANCHOR: &str = "echo/state/coverage-checkpoint.json";
 #[derive(Serialize, Deserialize)]
@@ -277,7 +277,36 @@ fn recover_with_hook(
     root: LibraryRootId,
     hook: &mut Hook<'_>,
 ) -> Result<LibraryReplay, Error> {
-    begin_edit(registry, cache, root, hook).map(|state| state.replay)
+    begin_edit(registry, cache, root, None, None, true, true, hook).map(|state| state.replay)
+}
+
+pub(super) fn catch_up_projection(
+    registry: &RootRegistry,
+    cache: &ValidationCache,
+    root: LibraryRootId,
+    hook: &mut Hook<'_>,
+) -> Result<LibraryReplay, Error> {
+    // The journal is authenticated and replayed in order. This path only
+    // advances rebuildable files; strict recover still audits every existing
+    // materialized byte before it can authorize startup or standalone writes.
+    begin_edit(registry, cache, root, None, None, false, true, hook).map(|state| state.replay)
+}
+
+pub(super) fn projection_replay(
+    registry: &RootRegistry,
+    cache: &ValidationCache,
+    root: LibraryRootId,
+) -> Result<LibraryReplay, Error> {
+    // Transaction markers publish only after the prepared body is durable, so
+    // an authenticated chain read is safe without the directory writer lock.
+    chain(registry, cache, root)
+}
+
+pub(super) fn materialization_files(
+    registry: &RootRegistry,
+    root: LibraryRootId,
+) -> Result<BTreeMap<String, String>, Error> {
+    Ok(materialization_checkpoint(registry, root)?.files)
 }
 
 // Retained only inside one control-plane writer guard. A commit may extend this
@@ -288,6 +317,7 @@ pub(in crate::infrastructure::filesystem) struct WriteSessionState {
     replay: LibraryReplay,
     files: BTreeMap<String, String>,
     durable_snapshot: Option<snapshot::Snapshot>,
+    materialize_commits: bool,
     consumed: bool,
 }
 
@@ -295,18 +325,36 @@ impl WriteSessionState {
     pub(in crate::infrastructure::filesystem) const fn replay(&self) -> &LibraryReplay {
         &self.replay
     }
+
+    pub(in crate::infrastructure::filesystem) const fn files(&self) -> &BTreeMap<String, String> {
+        &self.files
+    }
 }
 
 /// The caller must retain the same root writer guard through `commit_edit`.
 /// Releasing that guard invalidates the returned materialization proof.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(in crate::infrastructure::filesystem) fn begin_edit(
     registry: &RootRegistry,
     cache: &ValidationCache,
     root: LibraryRootId,
+    cached_replay: Option<LibraryReplay>,
+    cached_files: Option<BTreeMap<String, String>>,
+    verify_materialized_files: bool,
+    materialize_commits: bool,
     hook: &mut Hook<'_>,
 ) -> Result<WriteSessionState, Error> {
-    let replay = chain(registry, cache, root)?;
-    let checkpoint = materialization_checkpoint(registry, root)?;
+    let mut replay = match cached_replay {
+        Some(replay) => replay,
+        None => chain(registry, cache, root)?,
+    };
+    let force_materialize = replay.commits.len() >= MAX_ACTIVE - WINDOW;
+    let materialize_commits = materialize_commits || force_materialize;
+    let mut checkpoint = if cached_files.is_some() && !materialize_commits {
+        Checkpoint::default()
+    } else {
+        materialization_checkpoint(registry, root)?
+    };
     let anchor_seq = replay
         .checkpoint
         .as_ref()
@@ -328,17 +376,35 @@ pub(in crate::infrastructure::filesystem) fn begin_edit(
             return Err(invalid("unverifiable materialization checkpoint"));
         }
     }
-    let mut files = checkpoint.files;
+    // A fast-path file map also tracks journal after-images that have not yet
+    // been written to the materialized tree. Never use that logical overlay as
+    // a durability checkpoint when this pass is about to publish files.
+    let mut files = if materialize_commits {
+        checkpoint.files
+    } else {
+        cached_files.unwrap_or(checkpoint.files)
+    };
     let mut durable_snapshot = if checkpoint.seq > 0 {
         checkpoint.files_snapshot
     } else {
         None
     };
-    let newer_paths = checkpoint::changed_paths(&replay, checkpoint.seq)?;
-    verified_files::verify(registry, root, &files, &newer_paths)?;
+    let newer_paths = if verify_materialized_files {
+        checkpoint::changed_paths(&replay, checkpoint.seq)?
+    } else {
+        BTreeSet::new()
+    };
+    // Interactive writes trust the authenticated journal and the batch's
+    // per-object preconditions. The materialized record tree is a rebuildable
+    // projection; hashing every checkpointed file here made one favorite
+    // operation scale with the full library size. Full verification remains
+    // mandatory for recovery and standalone commits, and is run on startup.
+    if verify_materialized_files {
+        verified_files::verify(registry, root, &files, &newer_paths)?;
+    }
     // The anchor is also a complete redo image if materialization lagged or was
     // interrupted before publishing its progress marker.
-    if checkpoint.seq < anchor_seq {
+    if materialize_commits && checkpoint.seq < anchor_seq {
         if let Some(image) = &replay.checkpoint {
             io::flush_existing(registry, root, ANCHOR, "coverage_recovery", hook)?;
             checkpoint::materialize(
@@ -363,7 +429,7 @@ pub(in crate::infrastructure::filesystem) fn begin_edit(
     for commit in replay
         .commits
         .iter()
-        .filter(|c| c.library_commit_seq > checkpoint.seq.max(anchor_seq))
+        .filter(|c| materialize_commits && c.library_commit_seq > checkpoint.seq.max(anchor_seq))
     {
         // A materialization checkpoint can only have been published after its
         // commit fence completed. Beyond that watermark, visibility alone is
@@ -398,16 +464,72 @@ pub(in crate::infrastructure::filesystem) fn begin_edit(
             hook,
         )?;
     }
-    if anchor_seq > 0 {
+    if materialize_commits && anchor_seq > 0 {
         checkpoint::cleanup_covered(registry, cache, root, anchor_seq, hook)?;
+    }
+    if force_materialize && replay.commits.len() >= MAX_ACTIVE - WINDOW {
+        checkpoint::compact(registry, cache, root, &replay, hook)?;
+        replay = chain(registry, cache, root)?;
+        checkpoint = materialization_checkpoint(registry, root)?;
+        files.clone_from(&checkpoint.files);
+        durable_snapshot.clone_from(&checkpoint.files_snapshot);
     }
     Ok(WriteSessionState {
         root,
         replay,
         files,
         durable_snapshot,
+        materialize_commits,
         consumed: false,
     })
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct TransactionsFingerprint {
+    #[cfg(unix)]
+    dev: u64,
+    #[cfg(unix)]
+    ino: u64,
+    #[cfg(unix)]
+    mtime: (i64, i64),
+    #[cfg(unix)]
+    ctime: (i64, i64),
+    #[cfg(not(unix))]
+    modified: Option<std::time::SystemTime>,
+    #[cfg(not(unix))]
+    len: u64,
+}
+
+pub(super) fn transactions_fingerprint(
+    registry: &RootRegistry,
+    root: LibraryRootId,
+) -> Result<Option<TransactionsFingerprint>, Error> {
+    let directory = registry.path_of(root)?.join("echo/transactions");
+    let metadata = match std::fs::symlink_metadata(&directory) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(Error::io("inspect journal directory", error, directory)),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(invalid("journal transactions path is not a directory"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        Ok(Some(TransactionsFingerprint {
+            dev: metadata.dev(),
+            ino: metadata.ino(),
+            mtime: (metadata.mtime(), metadata.mtime_nsec()),
+            ctime: (metadata.ctime(), metadata.ctime_nsec()),
+        }))
+    }
+    #[cfg(not(unix))]
+    {
+        Ok(Some(TransactionsFingerprint {
+            modified: metadata.modified().ok(),
+            len: metadata.len(),
+        }))
+    }
 }
 fn write_checkpoint(
     registry: &RootRegistry,

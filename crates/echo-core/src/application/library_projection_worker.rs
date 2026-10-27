@@ -14,6 +14,9 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+const COALESCE_QUIET_PERIOD: Duration = Duration::from_millis(500);
+const COALESCE_MAX_DELAY: Duration = Duration::from_secs(30);
+
 /// Current activity of a single-root projection worker.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProjectionWorkerPhase {
@@ -302,6 +305,33 @@ fn run(
                     .changed
                     .wait(state)
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
+            }
+            if state.stopping {
+                state.status.phase = ProjectionWorkerPhase::Stopped;
+                drop(state);
+                shared.changed.notify_all();
+                return;
+            }
+            // Let a short burst of UI edits share one recovery/projection pass.
+            // The maximum delay bounds backlog even if writes keep arriving.
+            state.status.phase = ProjectionWorkerPhase::Pending;
+            let max_deadline = Instant::now() + COALESCE_MAX_DELAY;
+            let mut quiet_deadline = Instant::now() + COALESCE_QUIET_PERIOD;
+            let mut observed = state.status.requested_generation;
+            while !state.stopping {
+                let now = Instant::now();
+                let deadline = quiet_deadline.min(max_deadline);
+                if now >= deadline {
+                    break;
+                }
+                (state, _) = shared
+                    .changed
+                    .wait_timeout(state, deadline.saturating_duration_since(now))
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if state.status.requested_generation != observed {
+                    observed = state.status.requested_generation;
+                    quiet_deadline = Instant::now() + COALESCE_QUIET_PERIOD;
+                }
             }
             if state.stopping {
                 state.status.phase = ProjectionWorkerPhase::Stopped;

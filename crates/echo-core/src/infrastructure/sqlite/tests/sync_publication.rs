@@ -132,10 +132,12 @@ fn checkpoint_failure_blocks_later_ack_until_pending_predecessor_is_recovered() 
         Err(Error::Unavailable { .. })
     ));
     assert!(checkpoint.published.lock().unwrap().is_empty());
-    assert!(database
-        .published_commits_after(binding, CommitSeq::GENESIS, [0; 32], 10)
-        .unwrap()
-        .is_empty());
+    assert!(
+        database
+            .published_commits_after(binding, CommitSeq::GENESIS, [0; 32], 10)
+            .unwrap()
+            .is_empty()
+    );
     let sizes: (i64, i64, i64, i64) = database.with_reader(|connection| {
         connection.query_row(
             "SELECT (SELECT COUNT(*) FROM sync_commits), (SELECT COUNT(*) FROM sync_inbox), (SELECT COUNT(*) FROM sync_object_versions), (SELECT MAX(origin_seq) FROM sync_origin_cursors)",
@@ -303,9 +305,11 @@ fn mark_published_cannot_skip_pending_predecessor_and_retries_are_idempotent() {
         })
         .unwrap();
     let checkpoint = Checkpoint::default();
-    assert!(ConfirmHostMutation::new(&database, &checkpoint)
-        .execute(binding, &later_candidate)
-        .is_err());
+    assert!(
+        ConfirmHostMutation::new(&database, &checkpoint)
+            .execute(binding, &later_candidate)
+            .is_err()
+    );
     assert!(checkpoint.published.lock().unwrap().is_empty());
     assert!(database.mark_published(second.checkpoint.unwrap()).is_err());
     assert_eq!(
@@ -373,15 +377,17 @@ fn revoked_peer_cannot_replay_accepted_inbox_result() {
     let accepted = database.stage_confirmation(binding, &first).unwrap();
     database.revoke_sync_peer(peer).unwrap();
     assert!(!database.peer_is_authorized(binding, peer).unwrap());
-    assert!(!database
-        .peer_is_authorized(
-            SyncBinding {
-                epoch: Epoch::from_u64(2),
-                ..binding
-            },
-            peer,
-        )
-        .unwrap());
+    assert!(
+        !database
+            .peer_is_authorized(
+                SyncBinding {
+                    epoch: Epoch::from_u64(2),
+                    ..binding
+                },
+                peer,
+            )
+            .unwrap()
+    );
     assert!(matches!(
         database.stage_confirmation(binding, &first),
         Err(Error::Conflict { .. })
@@ -412,14 +418,18 @@ fn genesis_pull_requires_matching_host_binding_even_with_an_empty_log() {
         authority_id: AuthorityId::new(),
         epoch: Epoch::INITIAL,
     };
-    assert!(database
-        .published_commits_after(binding, CommitSeq::GENESIS, [0; 32], 10)
-        .is_err());
+    assert!(
+        database
+            .published_commits_after(binding, CommitSeq::GENESIS, [0; 32], 10)
+            .is_err()
+    );
     database.bind_sync_library(binding, true, root).unwrap();
-    assert!(database
-        .published_commits_after(binding, CommitSeq::GENESIS, [0; 32], 10)
-        .unwrap()
-        .is_empty());
+    assert!(
+        database
+            .published_commits_after(binding, CommitSeq::GENESIS, [0; 32], 10)
+            .unwrap()
+            .is_empty()
+    );
     for mismatch in [
         SyncBinding {
             library_id: LibraryId::new(),
@@ -434,15 +444,19 @@ fn genesis_pull_requires_matching_host_binding_even_with_an_empty_log() {
             ..binding
         },
     ] {
-        assert!(database
-            .published_commits_after(mismatch, CommitSeq::GENESIS, [0; 32], 10)
-            .is_err());
+        assert!(
+            database
+                .published_commits_after(mismatch, CommitSeq::GENESIS, [0; 32], 10)
+                .is_err()
+        );
     }
     let (_directory, replica, root) = super::database();
     replica.bind_sync_library(binding, false, root).unwrap();
-    assert!(replica
-        .published_commits_after(binding, CommitSeq::GENESIS, [0; 32], 10)
-        .is_err());
+    assert!(
+        replica
+            .published_commits_after(binding, CommitSeq::GENESIS, [0; 32], 10)
+            .is_err()
+    );
 }
 
 #[test]

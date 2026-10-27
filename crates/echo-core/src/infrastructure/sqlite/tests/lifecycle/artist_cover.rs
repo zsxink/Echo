@@ -141,13 +141,15 @@ fn library_durability_artist_cover_never_projects_before_commit_and_retries_save
             .unwrap()
             .is_none()
     );
-    assert!(control
-        .durability()
-        .unwrap()
-        .recover(stack.root)
-        .unwrap()
-        .commits
-        .is_empty());
+    assert!(
+        control
+            .durability()
+            .unwrap()
+            .recover(stack.root)
+            .unwrap()
+            .commits
+            .is_empty()
+    );
     stack.database.configure_library_control(control.clone());
     stack.database.writer.run(|c| c.execute_batch("CREATE TRIGGER fail_artist_cover BEFORE INSERT ON artist_covers BEGIN SELECT RAISE(ABORT,'injected projection failure'); END;").map_err(storage)).unwrap();
     let error = save(&stack, control.as_ref(), "artist", Some(&bytes)).unwrap_err();
@@ -209,14 +211,16 @@ fn library_durability_artist_cover_reports_historical_gap_and_missing_original_w
     );
     let before = control.durability().unwrap().recover(stack.root).unwrap();
     cache.gc(&[]).unwrap();
-    assert!(resolve_artist_cover(
-        control.as_ref(),
-        &cache,
-        stack.root,
-        None,
-        Some(&legacy_key)
-    )
-    .is_err());
+    assert!(
+        resolve_artist_cover(
+            control.as_ref(),
+            &cache,
+            stack.root,
+            None,
+            Some(&legacy_key)
+        )
+        .is_err()
+    );
     assert_eq!(
         control.durability().unwrap().recover(stack.root).unwrap(),
         before

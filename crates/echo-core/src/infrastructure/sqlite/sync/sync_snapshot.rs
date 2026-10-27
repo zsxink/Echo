@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::Deserialize;
 
 use crate::application::ports::{
@@ -15,8 +15,8 @@ use crate::domain::sync::{
 };
 use crate::error::{Error, Subject};
 
-use super::super::support::{now_ms, storage};
 use super::super::SqliteDatabase;
+use super::super::support::{now_ms, storage};
 
 const MAX_LIFETIME_MS: u64 = 86_400_000;
 

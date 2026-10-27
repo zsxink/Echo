@@ -12,7 +12,9 @@
 //! `ECHO_PERF_SAMPLES` (100 per command) change the fixture size. The fixture
 //! contains synthetic metadata originals, not decoded audio: neither measured
 //! command reads audio. The measured interval is the complete production
-//! `AppServices` command, including directory commit and SQLite projection.
+//! `AppServices` command, including directory commit and any foreground SQLite
+//! catch-up needed before planning. The background SQLite projection is flushed
+//! after both measured loops, outside the interaction latency interval.
 //! `ECHO_PERF_SERVE=1` serves the same fixture through loopback HTTP for a
 //! React integration measurement; the production IPC implementation is not
 //! changed. The server prints its address and stops after `GET /shutdown`.
@@ -37,9 +39,9 @@ use echo_core::domain::library::{
 use echo_core::infrastructure::sqlite::SqliteDatabase;
 use echo_desktop::platform::dialogs::TestDialogs;
 use echo_desktop::platform::trash::DesktopTrash;
-use echo_desktop::runtime::app::{assemble, RoutedRuntime};
-use echo_desktop::runtime::services::AppServices;
 use echo_desktop::runtime::StartupSupervisor;
+use echo_desktop::runtime::app::{RoutedRuntime, assemble};
+use echo_desktop::runtime::services::AppServices;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -577,6 +579,11 @@ fn completed_local_edit_latency() {
         playlists.push(start.elapsed());
         last_playlist = Some(id.parse::<PlaylistId>().expect("playlist identity"));
     }
+    // Interactive commands acknowledge the durable directory journal; wait
+    // outside the timed interval before asserting eventual SQLite projection.
+    f.database
+        .flush_library_projection(f.root, Duration::from_secs(30))
+        .expect("background projection catches up");
     // Check both durable originals and the SQL view after timing. A successful
     // command must have completed both stores, rather than merely queued work.
     let song_index = ((samples - 1) * 37) % song_count;
@@ -597,14 +604,17 @@ fn completed_local_edit_latency() {
         values[song_index]
     );
     let playlist = last_playlist.expect("at least one playlist sample");
-    assert!(f
-        .control
-        .read_record(f.root, RecordKind::Playlist, &playlist.to_string())
-        .unwrap()
-        .is_some());
-    assert!(PlaylistRepository::by_id(f.database.as_ref(), playlist)
-        .unwrap()
-        .is_some());
+    assert!(
+        f.control
+            .read_record(f.root, RecordKind::Playlist, &playlist.to_string())
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        PlaylistRepository::by_id(f.database.as_ref(), playlist)
+            .unwrap()
+            .is_some()
+    );
     let favorite_distribution = distribution(&favorites);
     let playlist_distribution = distribution(&playlists);
     let result = serde_json::json!({

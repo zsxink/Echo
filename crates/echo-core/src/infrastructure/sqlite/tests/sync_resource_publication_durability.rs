@@ -52,13 +52,15 @@ fn library_durability_export_does_not_accept_undeclared_control_path() {
     let mut song = SongRepository::by_id(&database, id).unwrap().unwrap();
     song.relink(RelativeMediaPath::new("echo/media/undeclared.flac").unwrap());
     SongRepository::upsert(&database, &song).unwrap();
-    assert!(database
-        .with_reader(|connection| {
-            crate::infrastructure::sqlite::durability_backfill::export_library_records(
-                connection, root,
-            )
-        })
-        .is_err());
+    assert!(
+        database
+            .with_reader(|connection| {
+                crate::infrastructure::sqlite::durability_backfill::export_library_records(
+                    connection, root,
+                )
+            })
+            .is_err()
+    );
 }
 
 #[test]

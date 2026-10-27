@@ -7,16 +7,16 @@ use super::super::support::storage;
 use crate::domain::{
     ids::LibraryRootId,
     library::{
+        PortableRecord, PortableRecordEnvelope,
         durability::{
             DurableResource, DurableStateChange, LibraryProjectionStatus, LibraryRecoveryRecords,
             PlaybackEvent, ProjectionTarget, ProjectionUnresolvedReason as Reason, StateKind,
             UnresolvedProjectionRecord,
         },
-        PortableRecord, PortableRecordEnvelope,
     },
 };
 use crate::error::Error;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 
 pub(super) fn save(
     c: &Connection,

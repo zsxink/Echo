@@ -89,10 +89,12 @@ fn library_durability_favorite_failure_is_saved_and_later_false_catches_up() {
         edits.set_favorite(stack.root, song, true),
         Err(crate::error::Error::LibrarySavedPending { .. })
     ));
-    assert!(!SongRepository::by_id(stack.database.as_ref(), song)
-        .unwrap()
-        .unwrap()
-        .favorite());
+    assert!(
+        !SongRepository::by_id(stack.database.as_ref(), song)
+            .unwrap()
+            .unwrap()
+            .favorite()
+    );
     let saved = control.durability().unwrap().recover(stack.root).unwrap();
     let PortableRecord::Favorite(favorite) =
         saved.commits.last().unwrap().batch.records[0].record()
@@ -109,20 +111,24 @@ fn library_durability_favorite_failure_is_saved_and_later_false_catches_up() {
                 .map_err(storage)
         })
         .unwrap();
-    assert!(!edits
-        .set_favorite(stack.root, song, false)
-        .unwrap()
-        .favorite());
+    assert!(
+        !edits
+            .set_favorite(stack.root, song, false)
+            .unwrap()
+            .favorite()
+    );
     let replay = control.durability().unwrap().recover(stack.root).unwrap();
     for _ in 0..2 {
         stack
             .database
             .project_library_commits(stack.root, &replay)
             .unwrap();
-        assert!(!SongRepository::by_id(stack.database.as_ref(), song)
-            .unwrap()
-            .unwrap()
-            .favorite());
+        assert!(
+            !SongRepository::by_id(stack.database.as_ref(), song)
+                .unwrap()
+                .unwrap()
+                .favorite()
+        );
     }
 }
 
@@ -139,10 +145,12 @@ fn library_durability_favorite_false_survives_fresh_rebuild() {
         device: deps.device_id.current_device_id(),
     };
     edits.set_favorite(stack.root, song, true).unwrap();
-    assert!(SongRepository::by_id(stack.database.as_ref(), song)
-        .unwrap()
-        .unwrap()
-        .favorite());
+    assert!(
+        SongRepository::by_id(stack.database.as_ref(), song)
+            .unwrap()
+            .unwrap()
+            .favorite()
+    );
     edits.set_favorite(stack.root, song, false).unwrap();
     // The false after-image is the directory's latest word; rebuilding the
     // database from the library alone must restore it — the earlier true
@@ -219,9 +227,11 @@ fn library_durability_favorite_time_survives_toggle_and_fresh_projection() {
             })
             .unwrap();
         assert_eq!(actual, Some(time));
-        assert!(SongRepository::by_id(&rebuilt, song)
-            .unwrap()
-            .unwrap()
-            .favorite());
+        assert!(
+            SongRepository::by_id(&rebuilt, song)
+                .unwrap()
+                .unwrap()
+                .favorite()
+        );
     }
 }

@@ -2,14 +2,14 @@
 
 #![allow(clippy::missing_errors_doc, clippy::redundant_pub_crate)]
 
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 
 use crate::domain::sync::{ObjectKey, ResourceDigest, SharedResourceKind, SharedResourceManifest};
 use crate::error::{Error, Subject};
 
-use super::super::support::storage;
 use super::super::SqliteDatabase;
+use super::super::support::storage;
 
 /// Canonical resource wire shape, kept transport independent inside Core.
 #[derive(Clone, Serialize, Deserialize)]
@@ -157,7 +157,7 @@ pub(crate) fn load(
             _ => {
                 return Err(Error::InvariantViolation {
                     why: "invalid resource kind in resource manifest".to_owned(),
-                })
+                });
             }
         };
         SharedResourceManifest::new(

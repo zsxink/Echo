@@ -6,7 +6,7 @@ use crate::domain::{
 };
 use crate::error::Error;
 use crate::infrastructure::sqlite::support::storage;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 pub(super) fn require_reconciled(
     c: &Connection,

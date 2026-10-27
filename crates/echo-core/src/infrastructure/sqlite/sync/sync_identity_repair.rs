@@ -5,12 +5,12 @@
 
 use std::path::{Path, PathBuf};
 
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::Serialize;
 use serde_json::Value;
 
-use super::super::support::storage;
 use super::super::SqliteDatabase;
+use super::super::support::storage;
 use super::{configuration::SyncConfiguration, sync_manifests};
 use crate::domain::ids::SongId;
 use crate::domain::sync::{SharedResourceKind, SharedResourceManifest};

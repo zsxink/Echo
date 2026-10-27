@@ -50,13 +50,17 @@ fn library_durability_unverifiable_managed_version_is_refused_before_any_evidenc
         // The refusal happens before any durable evidence exists, so a caller
         // cannot mistake the operation for saved.
         assert!(!marker_present(directory.path(), change.operation_id));
-        assert!(!directory
-            .path()
-            .join(relative(change.operation_id, "prepared.json"))
-            .exists());
-        assert!(operation_status(&registry, root, change.operation_id)
-            .unwrap()
-            .is_none());
+        assert!(
+            !directory
+                .path()
+                .join(relative(change.operation_id, "prepared.json"))
+                .exists()
+        );
+        assert!(
+            operation_status(&registry, root, change.operation_id)
+                .unwrap()
+                .is_none()
+        );
         assert!(chain(&registry, root).unwrap().commits.is_empty());
         // The mismatching bytes stay exactly as found: Echo reports a changed
         // file, it never rewrites or "repairs" a media file to match a

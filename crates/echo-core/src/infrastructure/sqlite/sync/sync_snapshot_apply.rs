@@ -1,6 +1,6 @@
 //! Crash safe enrollment from a fixed host snapshot.
 
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
 use crate::application::ports::{
     AppliedSnapshotPage, HostSnapshotRecord, ReplicaSnapshotApplyPort, ReplicaSnapshotPage,
@@ -9,8 +9,8 @@ use crate::domain::sync::{DeviceId, SharedResourceKind, SharedResourceManifest, 
 use crate::error::Error;
 
 use super::super::{
-    support::{now_ms, storage},
     SqliteDatabase,
+    support::{now_ms, storage},
 };
 use super::apply::object_identity;
 use super::snapshot::MAX_PAGE_BYTES;
@@ -401,9 +401,15 @@ fn ensure_snapshot_root_ownership(
         };
         for (kind, id) in objects {
             let query = match kind {
-                "song" | "favorite" | "override" | "play-stats" | "tombstone" => "SELECT EXISTS(SELECT 1 FROM songs WHERE uuid=?1 AND library_root_uuid<>?2)",
-                "playlist" => "SELECT EXISTS(SELECT 1 FROM playlists WHERE uuid=?1 AND library_root_uuid<>?2)",
-                "playlist-item" => "SELECT EXISTS(SELECT 1 FROM playlist_songs m JOIN playlists p ON p.uuid=m.playlist_uuid WHERE m.member_uuid=?1 AND p.library_root_uuid<>?2)",
+                "song" | "favorite" | "override" | "play-stats" | "tombstone" => {
+                    "SELECT EXISTS(SELECT 1 FROM songs WHERE uuid=?1 AND library_root_uuid<>?2)"
+                }
+                "playlist" => {
+                    "SELECT EXISTS(SELECT 1 FROM playlists WHERE uuid=?1 AND library_root_uuid<>?2)"
+                }
+                "playlist-item" => {
+                    "SELECT EXISTS(SELECT 1 FROM playlist_songs m JOIN playlists p ON p.uuid=m.playlist_uuid WHERE m.member_uuid=?1 AND p.library_root_uuid<>?2)"
+                }
                 _ => continue,
             };
             let other_root: bool = connection

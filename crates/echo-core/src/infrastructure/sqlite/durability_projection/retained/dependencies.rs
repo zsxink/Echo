@@ -1,11 +1,11 @@
 //! Resolve only explicit root-scoped parents and identities; never invent them.
-use super::{storage, Reason};
+use super::{Reason, storage};
 use crate::domain::{
     ids::LibraryRootId,
     library::{PortableRecord, PortableRecordEnvelope, RecordKind},
 };
 use crate::error::Error;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 
 fn tombstoned(records: &[PortableRecordEnvelope], kind: RecordKind, id: uuid::Uuid) -> bool {
     records.iter().any(|e| matches!(e.record(), PortableRecord::Tombstone(t) if t.deleted_kind==kind && t.object_uuid==id))
@@ -80,22 +80,59 @@ pub(super) fn unresolved(
     let id = envelope.record().object_uuid().to_string();
     match envelope.record() {
         PortableRecord::Song(s) => {
-            let path=crate::domain::ids::RelativeMediaPath::new(s.media_path.as_str())?;
-            conflict(c,"SELECT EXISTS(SELECT 1 FROM songs WHERE (uuid=?1 AND library_root_uuid<>?2) OR (library_root_uuid=?2 AND normalized_relative_path=?3 AND uuid<>?1))",params![id,root_text,path.identity_key()])
+            let path = crate::domain::ids::RelativeMediaPath::new(s.media_path.as_str())?;
+            conflict(
+                c,
+                "SELECT EXISTS(SELECT 1 FROM songs WHERE (uuid=?1 AND library_root_uuid<>?2) OR (library_root_uuid=?2 AND normalized_relative_path=?3 AND uuid<>?1))",
+                params![id, root_text, path.identity_key()],
+            )
         }
-        PortableRecord::Playlist(p) => conflict(c,"SELECT EXISTS(SELECT 1 FROM playlists WHERE (uuid=?1 AND library_root_uuid<>?2) OR (library_root_uuid=?2 AND normalized_name_key=?3 AND uuid<>?1))",params![id,root_text,crate::domain::text::playlist_name_key(&p.display_name)]),
-        PortableRecord::Favorite(s) => song(c,root,s.song_uuid,records),
-        PortableRecord::PlayStats(s) => song(c,root,s.song_uuid,records),
-        PortableRecord::Override(s) => song(c,root,s.song_uuid,records),
+        PortableRecord::Playlist(p) => conflict(
+            c,
+            "SELECT EXISTS(SELECT 1 FROM playlists WHERE (uuid=?1 AND library_root_uuid<>?2) OR (library_root_uuid=?2 AND normalized_name_key=?3 AND uuid<>?1))",
+            params![
+                id,
+                root_text,
+                crate::domain::text::playlist_name_key(&p.display_name)
+            ],
+        ),
+        PortableRecord::Favorite(s) => song(c, root, s.song_uuid, records),
+        PortableRecord::PlayStats(s) => song(c, root, s.song_uuid, records),
+        PortableRecord::Override(s) => song(c, root, s.song_uuid, records),
         PortableRecord::PlaylistItem(p) => {
-            if let Some(reason)=parent(c,root,p.playlist_uuid,true,records)? {return Ok(Some(reason));}
-            if let Some(reason)=song(c,root,p.song_uuid,records)? {return Ok(Some(reason));}
-            conflict(c,"SELECT EXISTS(SELECT 1 FROM playlist_songs WHERE (member_uuid=?1 AND (playlist_uuid<>?2 OR song_uuid<>?3)) OR (playlist_uuid=?2 AND (song_uuid=?3 OR position=?4) AND member_uuid<>?1))",params![id,p.playlist_uuid.to_string(),p.song_uuid.to_string(),p.position])
+            if let Some(reason) = parent(c, root, p.playlist_uuid, true, records)? {
+                return Ok(Some(reason));
+            }
+            if let Some(reason) = song(c, root, p.song_uuid, records)? {
+                return Ok(Some(reason));
+            }
+            conflict(
+                c,
+                "SELECT EXISTS(SELECT 1 FROM playlist_songs WHERE (member_uuid=?1 AND (playlist_uuid<>?2 OR song_uuid<>?3)) OR (playlist_uuid=?2 AND (song_uuid=?3 OR position=?4) AND member_uuid<>?1))",
+                params![
+                    id,
+                    p.playlist_uuid.to_string(),
+                    p.song_uuid.to_string(),
+                    p.position
+                ],
+            )
         }
         PortableRecord::Tombstone(t) => match t.deleted_kind {
-            RecordKind::Playlist => conflict(c,"SELECT EXISTS(SELECT 1 FROM playlists WHERE uuid=?1 AND library_root_uuid<>?2)",params![id,root_text]),
-            RecordKind::PlaylistItem => conflict(c,"SELECT EXISTS(SELECT 1 FROM playlist_songs ps JOIN playlists p ON p.uuid=ps.playlist_uuid WHERE ps.member_uuid=?1 AND p.library_root_uuid<>?2)",params![id,root_text]),
-            _ => conflict(c,"SELECT EXISTS(SELECT 1 FROM songs WHERE uuid=?1 AND library_root_uuid<>?2)",params![id,root_text]),
+            RecordKind::Playlist => conflict(
+                c,
+                "SELECT EXISTS(SELECT 1 FROM playlists WHERE uuid=?1 AND library_root_uuid<>?2)",
+                params![id, root_text],
+            ),
+            RecordKind::PlaylistItem => conflict(
+                c,
+                "SELECT EXISTS(SELECT 1 FROM playlist_songs ps JOIN playlists p ON p.uuid=ps.playlist_uuid WHERE ps.member_uuid=?1 AND p.library_root_uuid<>?2)",
+                params![id, root_text],
+            ),
+            _ => conflict(
+                c,
+                "SELECT EXISTS(SELECT 1 FROM songs WHERE uuid=?1 AND library_root_uuid<>?2)",
+                params![id, root_text],
+            ),
         },
     }
 }

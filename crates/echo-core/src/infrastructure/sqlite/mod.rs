@@ -25,7 +25,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, mpsc};
 
 use rusqlite::params;
 use rusqlite::{Connection, OptionalExtension, Transaction};
@@ -36,7 +36,7 @@ use crate::application::ports::{
     RuntimeStateStore, ScanRunRepository, SongRepository, TxLyricsWriter, TxOperationWriter,
     TxPlaylistWriter, TxRootWriter, TxSongWriter, TxStateWriter, TxWork, UnitOfWork,
 };
-use crate::domain::catalog::{CatalogCounts, OpaqueCursor, Paged, SongSort, RECENT_VIEW_LIMIT};
+use crate::domain::catalog::{CatalogCounts, OpaqueCursor, Paged, RECENT_VIEW_LIMIT, SongSort};
 use crate::domain::entities::{
     LibraryRoot, LyricsCandidate, LyricsSource, MediaDiagnostic, PlaylistMember, Song,
     SongAvailability,
@@ -71,7 +71,7 @@ use connection::{
 use conversion::{
     availability_from_db, operation_item_from_row, root_from_row, scan_state_from_db, song_from_row,
 };
-use query::{active_root_id, catalog_counts, playlist_songs_query, query_active, SONG_SELECT};
+use query::{SONG_SELECT, active_root_id, catalog_counts, playlist_songs_query, query_active};
 use statements::{
     add_member, all_referenced_asset_keys, all_songs_in_root, attach_cover, begin_scan_run,
     clear_lyrics_candidate, cover_of_song, create_playlist, delete_song, ensure_operation_journal,
@@ -136,6 +136,12 @@ impl ReaderPool {
 /// `rusqlite` connection to application callers.
 pub struct SqliteDatabase {
     library_control: Mutex<Option<Arc<dyn crate::application::ports::ControlPlanePort>>>,
+    library_projection_workers: Mutex<
+        BTreeMap<
+            LibraryRootId,
+            Arc<crate::application::library_projection_worker::LibraryProjectionWorker>,
+        >,
+    >,
     path: PathBuf,
     writer: SqliteWriteActor,
     readers: ReaderPool,

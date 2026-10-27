@@ -227,5 +227,9 @@ fn library_durability_cache_large_after_image_reads_measure_cold_and_warm_work()
         browse(&fresh, root).unwrap();
         assert_eq!(fresh.validation_cache.counts(), (1, 0));
     }
-    eprintln!("1 MiB after-image, eight reads: warm {warm_time:?}, cold {:?}; warm intrinsic full/hits {:?}", start.elapsed(), plane.validation_cache.counts());
+    eprintln!(
+        "1 MiB after-image, eight reads: warm {warm_time:?}, cold {:?}; warm intrinsic full/hits {:?}",
+        start.elapsed(),
+        plane.validation_cache.counts()
+    );
 }

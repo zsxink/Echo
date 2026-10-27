@@ -79,14 +79,10 @@ fn library_durability_snapshot_reused_proof_still_checks_leaf_bytes() {
         .path()
         .join(format!("echo/state/checkpoint-chunks/{digest}.json"));
     std::fs::write(path, "tampered leaf").unwrap();
-    assert!(snapshot::publish_reusing(
-        &registry,
-        root,
-        &values,
-        Some(&durable),
-        &mut |_, _| Ok(()),
-    )
-    .is_err());
+    assert!(
+        snapshot::publish_reusing(&registry, root, &values, Some(&durable), &mut |_, _| Ok(()),)
+            .is_err()
+    );
 }
 
 #[test]
@@ -138,14 +134,16 @@ fn library_durability_snapshot_unknown_and_corrupt_unreferenced_evidence_is_pres
             .join("echo/state/checkpoint-chunks")
             .join(name);
         std::fs::write(&path, "unknown original").unwrap();
-        assert!(checkpoint::compact(
-            &registry,
-            &ValidationCache::default(),
-            root,
-            &chain(&registry, root).unwrap(),
-            &mut |_, _| Ok(())
-        )
-        .is_err());
+        assert!(
+            checkpoint::compact(
+                &registry,
+                &ValidationCache::default(),
+                root,
+                &chain(&registry, root).unwrap(),
+                &mut |_, _| Ok(())
+            )
+            .is_err()
+        );
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "unknown original");
         assert!(marker_present(directory.path(), change.operation_id));
     }
@@ -292,10 +290,12 @@ fn library_durability_snapshot_capacity_refuses_before_marker_and_preserves_head
     let error = commit(&registry, root, &excessive).unwrap_err();
     assert_eq!(error.code(), "conflict");
     assert!(!marker_present(directory.path(), excessive.operation_id));
-    assert!(!directory
-        .path()
-        .join(relative(excessive.operation_id, "prepared.json"))
-        .exists());
+    assert!(
+        !directory
+            .path()
+            .join(relative(excessive.operation_id, "prepared.json"))
+            .exists()
+    );
     assert_eq!(recover(&registry, root).unwrap().head().unwrap().0, 1);
 }
 

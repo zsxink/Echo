@@ -226,12 +226,16 @@ fn library_durability_playback_later_session_catches_up_and_rebuild_has_no_echo(
         let mutation: FrozenMutation =
             serde_json::from_value(mutation.payload["frozen"].clone()).unwrap();
         for private_session in [first, second] {
-            assert!(!serde_json::to_string(&mutation.candidate.payload)
-                .unwrap()
-                .contains(&private_session.to_string()));
-            assert!(!serde_json::to_string(&commit.batch.records)
-                .unwrap()
-                .contains(&private_session.to_string()));
+            assert!(
+                !serde_json::to_string(&mutation.candidate.payload)
+                    .unwrap()
+                    .contains(&private_session.to_string())
+            );
+            assert!(
+                !serde_json::to_string(&commit.batch.records)
+                    .unwrap()
+                    .contains(&private_session.to_string())
+            );
         }
         frozen.push(mutation);
     }
@@ -307,13 +311,15 @@ fn library_durability_playback_unwritable_library_leaves_no_database_only_increm
             (0, 0, 0),
             "no private session, outbox snapshot or frozen mutation may exist"
         );
-        assert!(control
-            .durability()
-            .unwrap()
-            .recover(stack.root)
-            .unwrap()
-            .states()
-            .all(|state| state.kind != StateKind::PlaybackEvent));
+        assert!(
+            control
+                .durability()
+                .unwrap()
+                .recover(stack.root)
+                .unwrap()
+                .states()
+                .all(|state| state.kind != StateKind::PlaybackEvent)
+        );
     }
     // The same intent still commits once the resource becomes writable, and
     // repeated attempts keep counting exactly one qualified play.
@@ -359,11 +365,13 @@ fn library_durability_playback_session_cannot_be_reused_for_another_song() {
                     .unwrap()
                     .library_id,
                 crate::domain::library::durability::ChangeOrigin::Scan,
-                vec![crate::domain::library::PortableRecordEnvelope::new(
-                    PortableRecord::Song(other),
-                    None,
-                )
-                .unwrap()],
+                vec![
+                    crate::domain::library::PortableRecordEnvelope::new(
+                        PortableRecord::Song(other),
+                        None,
+                    )
+                    .unwrap(),
+                ],
             ),
         )
         .unwrap();

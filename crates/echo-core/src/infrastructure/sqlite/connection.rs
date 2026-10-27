@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use rusqlite::backup::Backup;
-use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
 use crate::error::Error;
 
@@ -153,9 +153,9 @@ pub(crate) fn apply_migration_set(
             Some(_) => {
                 return Err(Error::InvariantViolation {
                     why: format!(
-                    "migration {version:04} checksum mismatch; released migrations are immutable"
-                ),
-                })
+                        "migration {version:04} checksum mismatch; released migrations are immutable"
+                    ),
+                });
             }
             None => {}
         }

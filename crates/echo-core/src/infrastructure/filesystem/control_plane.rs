@@ -39,6 +39,18 @@ struct DirectoryWriteSession<'a> {
     _guard: AccessGuard<'a>,
 }
 
+#[derive(Clone, Debug)]
+struct ReplayCacheEntry {
+    replay: crate::domain::library::durability::LibraryReplay,
+    files: std::collections::BTreeMap<String, String>,
+    transactions: Option<super::durability::TransactionsFingerprint>,
+}
+
+type CachedReplay = (
+    crate::domain::library::durability::LibraryReplay,
+    std::collections::BTreeMap<String, String>,
+);
+
 impl LibraryWriteSession for DirectoryWriteSession<'_> {
     fn replay(&self) -> &crate::domain::library::durability::LibraryReplay {
         self.state.replay()
@@ -67,6 +79,11 @@ impl LibraryWriteSession for DirectoryWriteSession<'_> {
             batch,
             &mut |_, _| Ok(()),
         )
+        .inspect(|_| {
+            let _ = self
+                .plane
+                .remember_replay(self.root, self.state.replay().clone(), self.state.files().clone());
+        })
     }
 }
 
@@ -75,6 +92,7 @@ impl LibraryWriteSession for DirectoryWriteSession<'_> {
 pub struct RootControlPlane {
     registry: RootRegistry,
     access: Arc<Mutex<()>>,
+    replay_cache: Arc<Mutex<std::collections::BTreeMap<LibraryRootId, ReplayCacheEntry>>>,
     #[cfg(any(test, feature = "testkit"))]
     commit_hook: Option<CommitTestHook>,
     pub(super) validation_cache: Arc<super::durability::ValidationCache>,
@@ -111,8 +129,53 @@ impl RootControlPlane {
             #[cfg(any(test, feature = "testkit"))]
             commit_hook: None,
             access: Arc::new(Mutex::new(())),
+            replay_cache: Arc::default(),
             validation_cache: Arc::default(),
         }
+    }
+
+    fn cached_replay(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<Option<CachedReplay>, Error> {
+        let current = super::durability::transactions_fingerprint(&self.registry, root)?;
+        let mut cache = self
+            .replay_cache
+            .lock()
+            .map_err(|_| Error::InvariantViolation {
+                why: "journal replay cache poisoned".to_owned(),
+            })?;
+        if let Some(entry) = cache.get(&root) {
+            if entry.transactions == current {
+                return Ok(Some((entry.replay.clone(), entry.files.clone())));
+            }
+            cache.remove(&root);
+        }
+        drop(cache);
+        Ok(None)
+    }
+
+    fn remember_replay(
+        &self,
+        root: LibraryRootId,
+        replay: crate::domain::library::durability::LibraryReplay,
+        files: std::collections::BTreeMap<String, String>,
+    ) -> Result<(), Error> {
+        let transactions = super::durability::transactions_fingerprint(&self.registry, root)?;
+        self.replay_cache
+            .lock()
+            .map_err(|_| Error::InvariantViolation {
+                why: "journal replay cache poisoned".to_owned(),
+            })?
+            .insert(
+                root,
+                ReplayCacheEntry {
+                    replay,
+                    files,
+                    transactions,
+                },
+            );
+        Ok(())
     }
 
     fn prepare(
@@ -598,17 +661,47 @@ impl crate::application::ports::LibraryDurabilityPort for RootControlPlane {
         root: LibraryRootId,
     ) -> Result<crate::domain::library::durability::LibraryReplay, Error> {
         let _guard = self.prepare(root, true)?;
-        super::durability::recover(&self.registry, &self.validation_cache, root)
+        let replay = super::durability::recover(&self.registry, &self.validation_cache, root)?;
+        let files = super::durability::materialization_files(&self.registry, root)?;
+        let _ = self.remember_replay(root, replay.clone(), files);
+        Ok(replay)
+    }
+    fn catch_up_projection(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<crate::domain::library::durability::LibraryReplay, Error> {
+        let _guard = self.prepare_write(root, false)?;
+        let replay = super::durability::catch_up_projection(
+            &self.registry,
+            &self.validation_cache,
+            root,
+            &mut |_, _| Ok(()),
+        )?;
+        let files = super::durability::materialization_files(&self.registry, root)?;
+        let _ = self.remember_replay(root, replay.clone(), files);
+        Ok(replay)
+    }
+    fn projection_replay(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<crate::domain::library::durability::LibraryReplay, Error> {
+        super::durability::projection_replay(&self.registry, &self.validation_cache, root)
     }
     fn begin_write(
         &self,
         root: LibraryRootId,
     ) -> Result<Option<Box<dyn LibraryWriteSession + '_>>, Error> {
         let guard = self.prepare_write(root, false)?;
+        let cached = self.cached_replay(root)?;
+        let (cached_replay, cached_files) = cached.unzip();
         let state = super::durability::begin_edit(
             &self.registry,
             &self.validation_cache,
             root,
+            cached_replay,
+            cached_files,
+            false,
+            false,
             &mut |_, _| Ok(()),
         )?;
         // Opting into an ordered edit also publishes the journal format fence.
@@ -792,10 +885,12 @@ mod tests {
     #[test]
     fn record_absent_is_none() {
         let (_dir, _registry, root, plane) = setup();
-        assert!(plane
-            .read_record(root, RecordKind::Song, &uuid::Uuid::new_v4().to_string())
-            .expect("read")
-            .is_none());
+        assert!(
+            plane
+                .read_record(root, RecordKind::Song, &uuid::Uuid::new_v4().to_string())
+                .expect("read")
+                .is_none()
+        );
     }
 
     #[test]
@@ -808,10 +903,12 @@ mod tests {
         plane
             .delete_record(root, RecordKind::Song, &song_uuid.to_string())
             .expect("delete");
-        assert!(plane
-            .read_record(root, RecordKind::Song, &song_uuid.to_string())
-            .expect("read")
-            .is_none());
+        assert!(
+            plane
+                .read_record(root, RecordKind::Song, &song_uuid.to_string())
+                .expect("read")
+                .is_none()
+        );
         // Deleting a missing record is a no-op.
         plane
             .delete_record(root, RecordKind::Song, &song_uuid.to_string())
@@ -836,10 +933,12 @@ mod tests {
         let temp = record_path.with_file_name(format!("{song_uuid}.json.tmp-deadbeef"));
         std::fs::write(&temp, "{\"partial\": true, \"unfinished").expect("write temp");
         // The reader still sees the real record; the temp is invisible.
-        assert!(plane
-            .read_record(root, RecordKind::Song, &song_uuid.to_string())
-            .expect("read")
-            .is_some());
+        assert!(
+            plane
+                .read_record(root, RecordKind::Song, &song_uuid.to_string())
+                .expect("read")
+                .is_some()
+        );
         // The temp never appears in listings.
         let listed = plane
             .list_records(root, RecordKind::Song)
@@ -849,10 +948,12 @@ mod tests {
 
         // A malformed *published* record (no temp) is ignored, not surfaced.
         std::fs::write(&record_path, "{\"broken\": ").expect("corrupt record");
-        assert!(plane
-            .read_record(root, RecordKind::Song, &song_uuid.to_string())
-            .expect("read")
-            .is_none());
+        assert!(
+            plane
+                .read_record(root, RecordKind::Song, &song_uuid.to_string())
+                .expect("read")
+                .is_none()
+        );
         let listed = plane.list_records(root, RecordKind::Song).expect("list");
         assert_eq!(
             listed.len(),

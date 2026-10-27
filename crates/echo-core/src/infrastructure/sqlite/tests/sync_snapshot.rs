@@ -195,35 +195,47 @@ fn snapshot_keeps_final_tombstone_and_aliases_in_one_frozen_record_order() {
 fn snapshot_tokens_bind_to_host_identity_reject_invalid_pages_and_expire_durably() {
     let (_directory, database, binding) = host();
     let session = database.create_host_snapshot(binding, 16, 60_000).unwrap();
-    assert!(database
-        .host_snapshot_page(binding, &session.token, 0)
-        .unwrap()
-        .records
-        .is_empty());
-    assert!(database
-        .host_snapshot_page(binding, &session.token, 1)
-        .is_err());
-    assert!(database
-        .host_snapshot_page(binding, "../invalid", 0)
-        .is_err());
-    assert!(database
-        .host_snapshot_page(
-            SyncBinding {
-                epoch: Epoch::from_u64(2),
-                ..binding
-            },
-            &session.token,
-            0
-        )
-        .is_err());
-    assert!(database
-        .host_snapshot_page(binding, &uuid::Uuid::new_v4().simple().to_string(), 0)
-        .is_err());
+    assert!(
+        database
+            .host_snapshot_page(binding, &session.token, 0)
+            .unwrap()
+            .records
+            .is_empty()
+    );
+    assert!(
+        database
+            .host_snapshot_page(binding, &session.token, 1)
+            .is_err()
+    );
+    assert!(
+        database
+            .host_snapshot_page(binding, "../invalid", 0)
+            .is_err()
+    );
+    assert!(
+        database
+            .host_snapshot_page(
+                SyncBinding {
+                    epoch: Epoch::from_u64(2),
+                    ..binding
+                },
+                &session.token,
+                0
+            )
+            .is_err()
+    );
+    assert!(
+        database
+            .host_snapshot_page(binding, &uuid::Uuid::new_v4().simple().to_string(), 0)
+            .is_err()
+    );
     assert!(database.create_host_snapshot(binding, 0, 60_000).is_err());
     assert!(database.create_host_snapshot(binding, 513, 60_000).is_err());
-    assert!(database
-        .create_host_snapshot(binding, 1, 86_400_001)
-        .is_err());
+    assert!(
+        database
+            .create_host_snapshot(binding, 1, 86_400_001)
+            .is_err()
+    );
     let token = session.token.clone();
     database
         .writer
@@ -237,13 +249,17 @@ fn snapshot_tokens_bind_to_host_identity_reject_invalid_pages_and_expire_durably
             Ok(())
         })
         .unwrap();
-    assert!(database
-        .host_snapshot_page(binding, &session.token, 0)
-        .is_err());
+    assert!(
+        database
+            .host_snapshot_page(binding, &session.token, 0)
+            .is_err()
+    );
     database.create_host_snapshot(binding, 1, 60_000).unwrap();
-    assert!(database
-        .host_snapshot_page(binding, &session.token, 0)
-        .is_err());
+    assert!(
+        database
+            .host_snapshot_page(binding, &session.token, 0)
+            .is_err()
+    );
     let expired_rows: i64 = database
         .with_reader(|connection| {
             connection

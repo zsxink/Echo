@@ -9,7 +9,7 @@ use crate::domain::sync::{
     AuthorityId, CommitSeq, DeviceId as SyncDeviceId, Epoch, MutationId, ObjectKey, ObjectVersion,
     SyncBinding,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn binding() -> SyncBinding {
     SyncBinding {

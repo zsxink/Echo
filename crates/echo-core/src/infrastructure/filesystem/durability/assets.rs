@@ -1,5 +1,5 @@
 //! Verified resource declarations and immutable user originals.
-use super::{invalid, io, portable, Hook};
+use super::{Hook, invalid, io, portable};
 use crate::domain::ids::LibraryRootId;
 use crate::error::Error;
 use crate::infrastructure::filesystem::RootRegistry;

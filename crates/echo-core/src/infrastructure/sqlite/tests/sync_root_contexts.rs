@@ -219,10 +219,12 @@ fn independent_replica_enrollment_preserves_unbound_offline_edits() {
     assert!(!configured.host);
     assert_eq!(configured.local_root, b);
     assert_eq!(database.pending_local_mutations(32).unwrap(), offline);
-    assert!(SongRepository::by_id(&database, b_song.id())
-        .unwrap()
-        .unwrap()
-        .favorite());
+    assert!(
+        SongRepository::by_id(&database, b_song.id())
+            .unwrap()
+            .unwrap()
+            .favorite()
+    );
     let c = add_root(&database, &directory.path().join("c"));
     database.bind_empty_sync_replica(binding(), c).unwrap();
     assert!(database.pending_local_mutations(32).unwrap().is_empty());

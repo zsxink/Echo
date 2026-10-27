@@ -84,19 +84,22 @@ fn recovery_enqueues_a_new_event_and_resolves_once_without_replaying_members() {
     assert_eq!(pending[0].payload["display_name"], "Recovered name");
     assert_eq!(pending[0].payload["members"], serde_json::json!([]));
     assert_ne!(pending[0].mutation_id.as_uuid(), conflict);
-    assert!(PlaylistRepository::members(&db, playlist)
-        .unwrap()
-        .is_empty());
+    assert!(
+        PlaylistRepository::members(&db, playlist)
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(
         db.resolve_host_sync_conflict(root, binding, conflict, true)
             .unwrap(),
         SyncConflictResolution::AlreadyResolved
     );
     assert_eq!(db.pending_local_mutations(20).unwrap().len(), 1);
-    assert!(db
-        .host_sync_conflicts(root, binding, 20)
-        .unwrap()
-        .is_empty());
+    assert!(
+        db.host_sync_conflicts(root, binding, 20)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -127,11 +130,12 @@ fn final_tombstone_is_never_recovered_but_history_can_be_dismissed() {
 #[test]
 fn wrong_root_epoch_or_role_cannot_read_or_resolve_history() {
     let (_dir, db, root, binding, _playlist, conflict) = fixture();
-    assert!(db
-        .host_sync_conflicts(LibraryRootId::new(), binding, 20)
-        .is_err());
-    assert!(db
-        .resolve_host_sync_conflict(
+    assert!(
+        db.host_sync_conflicts(LibraryRootId::new(), binding, 20)
+            .is_err()
+    );
+    assert!(
+        db.resolve_host_sync_conflict(
             root,
             SyncBinding {
                 authority_id: AuthorityId::new(),
@@ -140,7 +144,8 @@ fn wrong_root_epoch_or_role_cannot_read_or_resolve_history() {
             conflict,
             true
         )
-        .is_err());
+        .is_err()
+    );
     db.writer
         .run(|connection| {
             connection
@@ -150,9 +155,10 @@ fn wrong_root_epoch_or_role_cannot_read_or_resolve_history() {
         })
         .unwrap();
     assert!(db.host_sync_conflicts(root, binding, 20).is_err());
-    assert!(db
-        .resolve_host_sync_conflict(root, binding, conflict, false)
-        .is_err());
+    assert!(
+        db.resolve_host_sync_conflict(root, binding, conflict, false)
+            .is_err()
+    );
 }
 
 #[test]

@@ -78,12 +78,14 @@ fn library_durability_mark_published_retains_facts_resources_across_window_and_o
         head
     );
     assert!(after.states().any(|s| s == &unrelated));
-    assert!(after
-        .checkpoint
-        .as_ref()
-        .unwrap()
-        .resources
-        .contains(&resource));
+    assert!(
+        after
+            .checkpoint
+            .as_ref()
+            .unwrap()
+            .resources
+            .contains(&resource)
+    );
     let fresh = wipe_and_project(&f, &plane);
     let retained = fresh.read_recovery_records(f.b).unwrap();
     assert!(retained.state.contains(&unrelated));

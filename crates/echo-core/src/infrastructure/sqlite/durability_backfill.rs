@@ -1,7 +1,7 @@
 //! Typed, root-scoped legacy rescue. Physical SQLite snapshots stay beside the
 //! application database; only allowlisted domain records enter the library.
 
-use super::{support::storage, SqliteDatabase};
+use super::{SqliteDatabase, support::storage};
 use crate::application::ports::{ControlPlanePort, LibraryHistoryPort};
 use crate::domain::ids::{LibraryRootId, Revision};
 use crate::domain::library::{
@@ -9,7 +9,7 @@ use crate::domain::library::{
     PlaylistItemRecord, PlaylistRecord, PortableRecord, PortableRecordEnvelope,
 };
 use crate::error::Error;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 use std::sync::Arc;
 
 #[path = "projection_rebuild.rs"]
@@ -239,7 +239,7 @@ impl LibraryHistoryPort for SqliteDatabase {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
                 Err(error) => {
-                    return Err(Error::io("publish private rescue snapshot", error, &backup))
+                    return Err(Error::io("publish private rescue snapshot", error, &backup));
                 }
             }
             std::fs::remove_file(&temporary)

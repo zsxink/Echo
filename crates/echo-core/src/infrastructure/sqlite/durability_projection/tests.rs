@@ -162,6 +162,57 @@ fn library_durability_projection_retries_only_new_or_unresolved_records() {
 }
 
 #[test]
+fn library_durability_verified_suffix_projects_only_after_matching_watermark() {
+    let (_directory, db, root) = database();
+    let library = LibraryId::from_uuid(uuid::Uuid::new_v4());
+    let fixture = Issue72Fixture::with_database_evidence();
+    let song = fixture
+        .database
+        .iter()
+        .find(|record| matches!(record, PortableRecord::Song(_)))
+        .unwrap()
+        .clone();
+    let mut replay = LibraryReplay::default();
+    append(&mut replay, library, vec![song.clone()]);
+    db.project_library_commits(root, &replay).unwrap();
+
+    append(&mut replay, library, vec![song]);
+    let projection = replay.clone();
+    db.writer
+        .run(move |connection| project_verified_suffix(connection, root, &projection))
+        .unwrap();
+    assert_eq!(
+        db.projection_status(root)
+            .unwrap()
+            .applied_library_commit_seq,
+        2
+    );
+
+    db.writer
+        .run(move |connection| {
+            connection
+                .execute(
+                    "UPDATE library_projection_watermarks SET commit_digest=?1 WHERE library_root_uuid=?2",
+                    rusqlite::params!["0".repeat(64), root.to_string()],
+                )
+                .map_err(storage)?;
+            Ok(())
+        })
+        .unwrap();
+    let stale_projection = replay;
+    assert!(db
+        .writer
+        .run(move |connection| project_verified_suffix(connection, root, &stale_projection))
+        .is_err());
+    assert_eq!(
+        db.projection_status(root)
+            .unwrap()
+            .applied_library_commit_seq,
+        2
+    );
+}
+
+#[test]
 fn library_durability_projection_rejects_bad_suffix_before_any_database_write() {
     let (_directory, db, root) = database();
     let library = LibraryId::from_uuid(uuid::Uuid::new_v4());

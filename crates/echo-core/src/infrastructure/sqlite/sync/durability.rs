@@ -7,7 +7,7 @@ mod publication;
 #[cfg(test)]
 mod tests;
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -132,10 +132,17 @@ pub(crate) fn export_sync_state(
     let mut state = super::super::durability_backfill::export_playback_events(connection, root)?;
     // Every mutation keeps its exact original body, author, predecessor, frozen
     // time and revision, including terminal outcomes. A new author cannot send it.
-    for payload in values(connection, "SELECT json_object('schema','echo.sync.mutation.v1','mutation_id',mutation_id,'author',origin_device_id,'sequence',origin_seq,'predecessor',previous_mutation_id,'object_type',object_type,'object_uuid',object_uuid,'operation',operation,'revision',local_revision,'base_version',base_object_version,'payload',json(payload_json),'payload_digest',payload_digest,'original_body',payload_json,'original_resources_body',resource_refs_json,'status',status,'outcome',CASE WHEN outcome_json IS NULL THEN NULL ELSE json(outcome_json) END,'changed_at_ms',created_at,'resources',json(resource_refs_json)) FROM sync_mutations WHERE local_root_uuid=?1 ORDER BY origin_device_id,origin_seq,mutation_id", &root_string)? {
+    for payload in values(
+        connection,
+        "SELECT json_object('schema','echo.sync.mutation.v1','mutation_id',mutation_id,'author',origin_device_id,'sequence',origin_seq,'predecessor',previous_mutation_id,'object_type',object_type,'object_uuid',object_uuid,'operation',operation,'revision',local_revision,'base_version',base_object_version,'payload',json(payload_json),'payload_digest',payload_digest,'original_body',payload_json,'original_resources_body',resource_refs_json,'status',status,'outcome',CASE WHEN outcome_json IS NULL THEN NULL ELSE json(outcome_json) END,'changed_at_ms',created_at,'resources',json(resource_refs_json)) FROM sync_mutations WHERE local_root_uuid=?1 ORDER BY origin_device_id,origin_seq,mutation_id",
+        &root_string,
+    )? {
         // These historical rows have no freeze-time binding column. Never
         // infer one from today's selected context or credentials.
-        state.extend(facts::mutation(&payload, StateNamespace::LegacyEvidence { source_root: root })?);
+        state.extend(facts::mutation(
+            &payload,
+            StateNamespace::LegacyEvidence { source_root: root },
+        )?);
     }
     let active: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM sync_active_context WHERE singleton=1 AND local_root_uuid=?1)", params![root_string], |row| row.get(0)).map_err(storage)?;
     // These tables are already scoped by the selected binding. Never export
@@ -148,14 +155,63 @@ pub(crate) fn export_sync_state(
     };
     let context_namespace = facts::context_namespace(connection, &root_string, active)?;
     let queries = [
-        (StateKind::Confirmed, "object", format!("SELECT json_object('schema','echo.sync.confirmed.v1','object_type',object_type,'object_uuid',object_uuid,'version',object_version,'sequence',commit_seq,'payload',CASE WHEN payload_json IS NULL THEN NULL ELSE json(payload_json) END,'tombstone',json(CASE WHEN is_tombstone=1 THEN 'true' ELSE 'false' END),'changed_at_ms',changed_at_ms) FROM {prefix}sync_object_versions WHERE {scope} ORDER BY object_type,object_uuid")),
-        (StateKind::Alias, "song-alias", format!("SELECT json_object('schema','echo.sync.song-alias.v1','alias',alias_song_uuid,'canonical',canonical_song_uuid,'sequence',commit_seq) FROM {prefix}sync_song_aliases WHERE {scope} ORDER BY alias_song_uuid")),
-        (StateKind::Alias, "member-alias", format!("SELECT json_object('schema','echo.sync.member-alias.v1','playlist',playlist_uuid,'alias',alias_member_uuid,'canonical',canonical_member_uuid,'sequence',commit_seq) FROM {prefix}sync_member_aliases WHERE {scope} ORDER BY playlist_uuid,alias_member_uuid")),
-        (StateKind::SyncLedger, "commit", format!("SELECT {} FROM {prefix}sync_commits WHERE {scope} ORDER BY commit_seq", publication::LEDGER_PAYLOAD)),
-        (StateKind::Receipt, "receipt", format!("SELECT json_object('schema','echo.sync.receipt.v1','author',origin_device_id,'mutation_id',mutation_id,'payload_digest',payload_digest,'outcome',json(outcome_json),'original_outcome',outcome_json,'received_at',received_at,'sequence',commit_seq) FROM {prefix}sync_inbox WHERE {scope} ORDER BY origin_device_id,mutation_id")),
-        (StateKind::Cursor, "origin", format!("SELECT json_object('schema','echo.sync.origin-cursor.v1','author',origin_device_id,'sequence',origin_seq,'mutation_id',last_mutation_id) FROM {prefix}sync_origin_cursors WHERE {scope} ORDER BY origin_device_id")),
-        (StateKind::Cursor, "peer", format!("SELECT json_object('schema','echo.sync.peer-cursor.v1','peer',peer_device_id,'sequence',applied_commit_seq,'digest',lower(hex(applied_digest))) FROM {prefix}sync_peer_cursors WHERE {scope} ORDER BY peer_device_id")),
-        (StateKind::Conflict, "conflict", format!("SELECT json_object('schema','echo.sync.conflict.v1','id',conflict_id,'object_type',object_type,'object_uuid',object_uuid,'replaced_version',replaced_version,'accepted_version',accepted_version,'replaced',json(replaced_payload_json),'accepted',json(accepted_payload_json),'resolved_at',resolved_at) FROM {prefix}sync_conflicts WHERE {scope} ORDER BY conflict_id")),
+        (
+            StateKind::Confirmed,
+            "object",
+            format!(
+                "SELECT json_object('schema','echo.sync.confirmed.v1','object_type',object_type,'object_uuid',object_uuid,'version',object_version,'sequence',commit_seq,'payload',CASE WHEN payload_json IS NULL THEN NULL ELSE json(payload_json) END,'tombstone',json(CASE WHEN is_tombstone=1 THEN 'true' ELSE 'false' END),'changed_at_ms',changed_at_ms) FROM {prefix}sync_object_versions WHERE {scope} ORDER BY object_type,object_uuid"
+            ),
+        ),
+        (
+            StateKind::Alias,
+            "song-alias",
+            format!(
+                "SELECT json_object('schema','echo.sync.song-alias.v1','alias',alias_song_uuid,'canonical',canonical_song_uuid,'sequence',commit_seq) FROM {prefix}sync_song_aliases WHERE {scope} ORDER BY alias_song_uuid"
+            ),
+        ),
+        (
+            StateKind::Alias,
+            "member-alias",
+            format!(
+                "SELECT json_object('schema','echo.sync.member-alias.v1','playlist',playlist_uuid,'alias',alias_member_uuid,'canonical',canonical_member_uuid,'sequence',commit_seq) FROM {prefix}sync_member_aliases WHERE {scope} ORDER BY playlist_uuid,alias_member_uuid"
+            ),
+        ),
+        (
+            StateKind::SyncLedger,
+            "commit",
+            format!(
+                "SELECT {} FROM {prefix}sync_commits WHERE {scope} ORDER BY commit_seq",
+                publication::LEDGER_PAYLOAD
+            ),
+        ),
+        (
+            StateKind::Receipt,
+            "receipt",
+            format!(
+                "SELECT json_object('schema','echo.sync.receipt.v1','author',origin_device_id,'mutation_id',mutation_id,'payload_digest',payload_digest,'outcome',json(outcome_json),'original_outcome',outcome_json,'received_at',received_at,'sequence',commit_seq) FROM {prefix}sync_inbox WHERE {scope} ORDER BY origin_device_id,mutation_id"
+            ),
+        ),
+        (
+            StateKind::Cursor,
+            "origin",
+            format!(
+                "SELECT json_object('schema','echo.sync.origin-cursor.v1','author',origin_device_id,'sequence',origin_seq,'mutation_id',last_mutation_id) FROM {prefix}sync_origin_cursors WHERE {scope} ORDER BY origin_device_id"
+            ),
+        ),
+        (
+            StateKind::Cursor,
+            "peer",
+            format!(
+                "SELECT json_object('schema','echo.sync.peer-cursor.v1','peer',peer_device_id,'sequence',applied_commit_seq,'digest',lower(hex(applied_digest))) FROM {prefix}sync_peer_cursors WHERE {scope} ORDER BY peer_device_id"
+            ),
+        ),
+        (
+            StateKind::Conflict,
+            "conflict",
+            format!(
+                "SELECT json_object('schema','echo.sync.conflict.v1','id',conflict_id,'object_type',object_type,'object_uuid',object_uuid,'replaced_version',replaced_version,'accepted_version',accepted_version,'replaced',json(replaced_payload_json),'accepted',json(accepted_payload_json),'resolved_at',resolved_at) FROM {prefix}sync_conflicts WHERE {scope} ORDER BY conflict_id"
+            ),
+        ),
     ];
     for (kind, namespace, query) in queries {
         for payload in values(connection, &query, &root_string)? {
@@ -190,11 +246,20 @@ pub(crate) fn export_sync_state(
     complete_confirmations(&mut state)?;
     // Physical associations only become ready after verified publication. The
     // full publication also preserves pending claims and their retained bytes.
-    for mut payload in values(connection, "SELECT json_object('schema','echo.sync.resource-publication.v1','operation',operation_uuid,'publication',json(publication_json),'original_body',publication_json,'completed',json(CASE WHEN completed=1 THEN 'true' ELSE 'false' END)) FROM sync_remote_publications WHERE local_root_uuid=?1 ORDER BY operation_uuid", &root_string)? {
+    for mut payload in values(
+        connection,
+        "SELECT json_object('schema','echo.sync.resource-publication.v1','operation',operation_uuid,'publication',json(publication_json),'original_body',publication_json,'completed',json(CASE WHEN completed=1 THEN 'true' ELSE 'false' END)) FROM sync_remote_publications WHERE local_root_uuid=?1 ORDER BY operation_uuid",
+        &root_string,
+    )? {
         // Publication rows predate binding capture as well; root provenance
         // retains their exact operation without asserting a historical binding.
-        let target = StateTarget::Publication { operation_id: parse_uuid(&payload,"operation")? };
-        let key = StateKey { namespace: StateNamespace::LegacyEvidence { source_root: root }, target };
+        let target = StateTarget::Publication {
+            operation_id: parse_uuid(&payload, "operation")?,
+        };
+        let key = StateKey {
+            namespace: StateNamespace::LegacyEvidence { source_root: root },
+            target,
+        };
         payload["schema"] = Value::from("echo.sync.resource-publication.v2");
         if let Ok(complete) = DurableStateChange::scoped(key.clone(), payload.clone()) {
             state.push(complete);
@@ -202,13 +267,28 @@ pub(crate) fn export_sync_state(
             // Old layouts or incomplete journals remain unproven evidence. Do
             // not retrofit today's owner/version or alter committed v1 facts.
             payload["schema"] = Value::from("echo.sync.resource-publication.v1");
-            payload.as_object_mut().ok_or_else(|| Error::conflict("invalid publication evidence"))?.remove("original_body");
+            payload
+                .as_object_mut()
+                .ok_or_else(|| Error::conflict("invalid publication evidence"))?
+                .remove("original_body");
             state.push(DurableStateChange::scoped(key, payload)?);
         }
     }
-    for payload in values(connection, "SELECT json_object('schema','echo.sync.local-origin.v1','author',origin_device_id,'sequence',origin_seq,'mutation_id',last_mutation_id) FROM sync_local_origin_cursors WHERE local_root_uuid=?1 ORDER BY origin_device_id", &root_string)? {
-        let target = StateTarget::LocalOriginCursor { author: crate::domain::sync::DeviceId::from_uuid(parse_uuid(&payload,"author")?) };
-        state.push(DurableStateChange::scoped(StateKey { namespace: StateNamespace::LegacyEvidence { source_root: root }, target }, payload)?);
+    for payload in values(
+        connection,
+        "SELECT json_object('schema','echo.sync.local-origin.v1','author',origin_device_id,'sequence',origin_seq,'mutation_id',last_mutation_id) FROM sync_local_origin_cursors WHERE local_root_uuid=?1 ORDER BY origin_device_id",
+        &root_string,
+    )? {
+        let target = StateTarget::LocalOriginCursor {
+            author: crate::domain::sync::DeviceId::from_uuid(parse_uuid(&payload, "author")?),
+        };
+        state.push(DurableStateChange::scoped(
+            StateKey {
+                namespace: StateNamespace::LegacyEvidence { source_root: root },
+                target,
+            },
+            payload,
+        )?);
     }
     Ok(state)
 }

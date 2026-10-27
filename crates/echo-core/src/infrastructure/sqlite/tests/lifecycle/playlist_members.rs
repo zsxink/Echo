@@ -1,10 +1,10 @@
 //! Member edits freeze identity, ordering and candidates before SQL projection.
 use super::*;
 use crate::application::ports::LibraryProjectionPort;
+use crate::domain::library::PortableRecordEnvelope;
 use crate::domain::library::durability::{
     FrozenMutation, ProjectionTarget, ProjectionUnresolvedReason, StateTarget,
 };
-use crate::domain::library::PortableRecordEnvelope;
 use crate::domain::sync::ObjectKey;
 use rusqlite::OptionalExtension;
 
@@ -70,9 +70,11 @@ fn library_durability_member_append_is_saved_before_failed_projection() {
         })
         .collect();
     assert_eq!(members.len(), 2);
-    assert!(members
-        .iter()
-        .all(|item| item.position == 0 && item.added_at.is_some()));
+    assert!(
+        members
+            .iter()
+            .all(|item| item.position == 0 && item.added_at.is_some())
+    );
     assert_ne!(members[0].item_uuid, members[1].item_uuid);
     assert_eq!(batch.state.len(), 4);
     let frozen = frozen_mutations(batch);

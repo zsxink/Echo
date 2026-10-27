@@ -97,9 +97,11 @@ fn explicit_recovery_preserves_pending_conflicts_and_fences_old_authorization() 
     assert!(!database.peer_is_authorized(binding, peer).unwrap());
     assert!(!database.peer_is_authorized(next, peer).unwrap());
     assert!(database.pending_local_mutations(20).unwrap().is_empty());
-    assert!(database
-        .published_commits_after(binding, CommitSeq::GENESIS, [0; 32], 20)
-        .is_err());
+    assert!(
+        database
+            .published_commits_after(binding, CommitSeq::GENESIS, [0; 32], 20)
+            .is_err()
+    );
     let candidates = database
         .host_recovery_candidates(archive.recovery_id)
         .unwrap();
@@ -108,10 +110,12 @@ fn explicit_recovery_preserves_pending_conflicts_and_fences_old_authorization() 
         == pending[0].mutation_id.as_uuid().to_string()
         && serde_json::from_str::<serde_json::Value>(&candidate.payload_json).unwrap()
             == pending[0].payload));
-    assert!(candidates
-        .iter()
-        .any(|candidate| candidate.identity == conflict.to_string()
-            && candidate.competing_payload_json.as_deref() == Some("{\"title\":\"winner\"}")));
+    assert!(
+        candidates
+            .iter()
+            .any(|candidate| candidate.identity == conflict.to_string()
+                && candidate.competing_payload_json.as_deref() == Some("{\"title\":\"winner\"}"))
+    );
     assert!(SongRepository::by_id(&database, song).unwrap().is_some());
     drop(database);
     let database = SqliteDatabase::open(directory.path().join("echo.db")).unwrap();
@@ -133,9 +137,11 @@ fn recovery_failure_rolls_back_every_archive_and_live_row() {
     add_song(&database, root);
     let original = database.pending_local_mutations(20).unwrap();
     database.writer.run(|connection| connection.execute_batch("CREATE TRIGGER fail_host_recovery BEFORE INSERT ON sync_binding BEGIN SELECT RAISE(ABORT,'injected recovery failure'); END;").map_err(storage)).unwrap();
-    assert!(database
-        .rotate_host_epoch(root, binding, replacement(binding))
-        .is_err());
+    assert!(
+        database
+            .rotate_host_epoch(root, binding, replacement(binding))
+            .is_err()
+    );
     assert_eq!(
         database
             .current_sync_configuration()
@@ -235,10 +241,12 @@ fn online_backup_contains_matching_catalog_pending_and_ledger_without_independen
         checkpoint
     );
     assert_eq!(restored.pending_local_mutations(20).unwrap().len(), 0);
-    assert!(!SongRepository::by_id(&restored, song)
-        .unwrap()
-        .unwrap()
-        .favorite());
+    assert!(
+        !SongRepository::by_id(&restored, song)
+            .unwrap()
+            .unwrap()
+            .favorite()
+    );
     assert_eq!(
         restored
             .current_sync_configuration()
@@ -285,9 +293,11 @@ fn portable_only_recovery_restores_typed_deletions_and_aliases_once() {
             },
         ],
     };
-    assert!(database
-        .recover_unbound_host(root, previous, next, facts.clone())
-        .is_err());
+    assert!(
+        database
+            .recover_unbound_host(root, previous, next, facts.clone())
+            .is_err()
+    );
     database.detach_lan_sync_context(root).unwrap();
     let receipt = database
         .recover_unbound_host(root, previous, next, facts)
@@ -297,16 +307,20 @@ fn portable_only_recovery_restores_typed_deletions_and_aliases_once() {
         database.host_recovery_archives(root).unwrap(),
         vec![receipt.clone()]
     );
-    assert!(database
-        .host_recovery_candidates(receipt.recovery_id)
-        .unwrap()
-        .is_empty());
+    assert!(
+        database
+            .host_recovery_candidates(receipt.recovery_id)
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(database.ensure_host_sync_baseline(next, root).unwrap(), 7);
     let pending = database.pending_local_mutations(20).unwrap();
     assert_eq!(pending.len(), 7);
-    assert!(pending
-        .iter()
-        .all(|event| event.payload["tombstone"] == true));
+    assert!(
+        pending
+            .iter()
+            .all(|event| event.payload["tombstone"] == true)
+    );
     assert_eq!(database.ensure_host_sync_baseline(next, root).unwrap(), 0);
     assert_eq!(
         database

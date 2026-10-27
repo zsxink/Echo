@@ -148,15 +148,17 @@ fn migration_0028_preserves_legacy_evidence_and_rolls_back_partial_upgrade() {
         )
         .unwrap();
     assert_eq!(timestamps, (123, 456));
-    assert!(connection
-        .execute(
-            "INSERT INTO library_projection_watermarks VALUES(?1,?2,0,NULL)",
-            params![
-                LibraryRootId::new().to_string(),
-                uuid::Uuid::new_v4().to_string()
-            ]
-        )
-        .is_err());
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO library_projection_watermarks VALUES(?1,?2,0,NULL)",
+                params![
+                    LibraryRootId::new().to_string(),
+                    uuid::Uuid::new_v4().to_string()
+                ]
+            )
+            .is_err()
+    );
     let evidence = DurableStateChange::new(
         StateKind::Pending,
         uuid::Uuid::new_v4(),
@@ -187,7 +189,10 @@ fn migration_0029_drops_the_retired_sync_binding_protocol_version_column() {
     through_v27(&mut connection);
     apply_migration_set(
         &mut connection,
-        &[(28, include_str!("../migrations/0028_library_durability.sql"))],
+        &[(
+            28,
+            include_str!("../migrations/0028_library_durability.sql"),
+        )],
     )
     .unwrap();
     // local_root_uuid references library_roots: the table rewrite during the
@@ -209,8 +214,11 @@ fn migration_0029_drops_the_retired_sync_binding_protocol_version_column() {
     assert_eq!(protocol_column(&connection), 3);
     assert_eq!(
         connection
-            .query_row("SELECT COUNT(*) FROM schema_migrations WHERE version=29", [], |row| row
-                .get::<_, u64>(0))
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations WHERE version=29",
+                [],
+                |row| row.get::<_, u64>(0)
+            )
             .unwrap(),
         0
     );

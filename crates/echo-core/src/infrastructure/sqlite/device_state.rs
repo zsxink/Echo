@@ -6,7 +6,7 @@
 //! local-only and must never be serialized into the portable `echo/` control
 //! surface (which is shared across devices).
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::domain::library::DeviceId;
 use crate::error::Error;

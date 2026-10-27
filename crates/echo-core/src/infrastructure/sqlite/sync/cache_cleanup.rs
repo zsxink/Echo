@@ -7,10 +7,10 @@
 //! bytes forever. It deliberately records nothing about publication journals or
 //! security checkpoints: those are never reclaimed by ordinary session cleanup.
 
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{OptionalExtension, params};
 
-use super::super::support::{now_ms, storage};
 use super::super::SqliteDatabase;
+use super::super::support::{now_ms, storage};
 use crate::domain::sync::SyncBinding;
 use crate::error::Error;
 

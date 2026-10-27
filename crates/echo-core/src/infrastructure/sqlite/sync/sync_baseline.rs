@@ -1,13 +1,13 @@
 //! Atomic initial snapshots for libraries whose canonical rows predate sync.
 
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
 use crate::domain::ids::{LibraryRootId, PlaylistId, SongId};
 use crate::domain::sync::{SharedResourceKind, SharedResourceManifest, SyncBinding};
 use crate::error::Error;
 
 use super::super::support::{now_ms, parse_id, storage};
-use super::super::{statements, SqliteDatabase};
+use super::super::{SqliteDatabase, statements};
 use super::{enqueue as sync, sync_manifests, sync_projection};
 
 #[path = "sync_baseline/recovery_intents.rs"]
@@ -328,7 +328,7 @@ fn declare_audio(
         _ => {
             return Err(Error::conflict(
                 "host baseline requires a recognized scanned audio format",
-            ))
+            ));
         }
     };
     let wire: sync_manifests::WireResource = serde_json::from_value(serde_json::json!({

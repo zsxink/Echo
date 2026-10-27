@@ -1,7 +1,7 @@
 //! Restore confirmed protocol baselines without overwriting effective user values.
 use super::{
-    body, ledger, number, params, schema, storage, Connection, DurableStateChange, Error,
-    OptionalExtension, Reason, StateTarget, SyncRecoveryContext, Value,
+    Connection, DurableStateChange, Error, OptionalExtension, Reason, StateTarget,
+    SyncRecoveryContext, Value, body, ledger, number, params, schema, storage,
 };
 use crate::domain::sync::ObjectKey;
 
@@ -53,7 +53,7 @@ pub(super) fn dependency(
             match owner {
                 None => return Ok(Some(missing)),
                 Some(owner) if owner != context.root.to_string() => {
-                    return Ok(Some(Reason::IdentityConflict))
+                    return Ok(Some(Reason::IdentityConflict));
                 }
                 _ => {}
             }

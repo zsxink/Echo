@@ -77,9 +77,11 @@ fn confirmed_tags_update_while_local_audio_waits_for_safe_publication() {
             .len(),
         1
     );
-    assert!(database
-        .query_active_songs("Old album", SongSort::default(), None, 10)
-        .unwrap()
-        .items
-        .is_empty());
+    assert!(
+        database
+            .query_active_songs("Old album", SongSort::default(), None, 10)
+            .unwrap()
+            .items
+            .is_empty()
+    );
 }

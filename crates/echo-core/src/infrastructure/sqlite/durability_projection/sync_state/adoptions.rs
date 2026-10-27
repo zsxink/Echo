@@ -7,10 +7,10 @@
 //! frozen change time. The replacement identity is derived from the adoption
 //! key, so re-running an interrupted transition can never create a second event.
 use super::{
-    params, schema, storage, Connection, DurableStateChange, Error, OptionalExtension, Reason,
-    StateTarget, SyncRecoveryContext, Value,
+    Connection, DurableStateChange, Error, OptionalExtension, Reason, StateTarget,
+    SyncRecoveryContext, Value, params, schema, storage,
 };
-use crate::domain::library::durability::{adoption, MutationOperation};
+use crate::domain::library::durability::{MutationOperation, adoption};
 use crate::domain::sync::ObjectKey;
 
 /// The stored object kind of a historical event, back into its typed identity.

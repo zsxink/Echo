@@ -2,10 +2,10 @@
 //! Local mutations are stored by root independently of this selected context,
 //! so scanning a candidate never exchanges the running host's ledger.
 
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
-use super::super::support::storage;
 use super::super::SqliteDatabase;
+use super::super::support::storage;
 use crate::domain::ids::LibraryRootId;
 use crate::error::Error;
 
@@ -146,9 +146,13 @@ pub(super) fn object_root(
     payload: &str,
 ) -> Result<String, Error> {
     let query = match kind {
-        "song" | "favorite" | "override" | "play-stats" | "tombstone" => "SELECT library_root_uuid FROM songs WHERE uuid=?1",
+        "song" | "favorite" | "override" | "play-stats" | "tombstone" => {
+            "SELECT library_root_uuid FROM songs WHERE uuid=?1"
+        }
         "playlist" => "SELECT library_root_uuid FROM playlists WHERE uuid=?1",
-        "playlist-item" => "SELECT p.library_root_uuid FROM playlist_songs m JOIN playlists p ON p.uuid=m.playlist_uuid WHERE m.member_uuid=?1",
+        "playlist-item" => {
+            "SELECT p.library_root_uuid FROM playlist_songs m JOIN playlists p ON p.uuid=m.playlist_uuid WHERE m.member_uuid=?1"
+        }
         "library-root" => return Ok(id.to_owned()),
         _ => return Err(Error::conflict("unknown local sync object kind")),
     };

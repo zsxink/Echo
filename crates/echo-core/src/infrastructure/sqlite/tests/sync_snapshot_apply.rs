@@ -85,8 +85,8 @@ fn staged_pages_survive_restart_and_finalize_atomically_without_echo() {
     assert_eq!(count(&db, "sync_object_versions"), 0);
     assert_eq!(count(&db, "sync_peer_cursors"), 0);
     assert_eq!(db.apply_snapshot_page(peer, &first).unwrap().applied, 0);
-    assert!(db
-        .apply_remote_batch(
+    assert!(
+        db.apply_remote_batch(
             binding,
             peer,
             CommitCheckpoint {
@@ -96,7 +96,8 @@ fn staged_pages_survive_restart_and_finalize_atomically_without_echo() {
             },
             &[]
         )
-        .is_err());
+        .is_err()
+    );
     drop(db);
     let db = SqliteDatabase::open(dir.path().join("echo.db")).unwrap();
     let playlist = PlaylistId::new();

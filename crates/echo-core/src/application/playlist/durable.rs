@@ -45,7 +45,7 @@ impl DurableLibraryEdits<'_> {
         song: SongId,
         favorite: bool,
     ) -> Result<Song, Error> {
-        let current = self
+        let mut current = self
             .songs
             .by_id(song)?
             .ok_or_else(|| Error::unavailable("song", "not in the library"))?;
@@ -59,9 +59,11 @@ impl DurableLibraryEdits<'_> {
             Error::unavailable("library edits", "ordered edit adapter is not configured")
         })?;
         edits.set_library_favorite(self.control, root, song, favorite, self.device)?;
-        self.songs
-            .by_id(song)?
-            .ok_or_else(|| Error::unavailable("song", "projection disappeared"))
+        // The durable directory commit is the acknowledgement boundary. Return
+        // the exact reads-your-writes value without waiting for SQLite's
+        // asynchronous projection worker.
+        current.set_favorite(favorite);
+        Ok(current)
     }
 
     /// Persist an empty playlist definition with its original creation time.

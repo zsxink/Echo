@@ -1,10 +1,10 @@
 //! Freeze artwork references using the same writer planning and catch-up boundary.
 use super::{
-    planned_batch, planned_playlist, statements, storage, ControlPlanePort, DeviceId, Error,
-    LibraryRootId, ObjectKey, PlaylistId, PortableRecord, RecordKind, SqliteDatabase,
+    ControlPlanePort, DeviceId, Error, LibraryRootId, ObjectKey, PlaylistId, PortableRecord,
+    RecordKind, SqliteDatabase, planned_batch, planned_playlist, statements, storage,
 };
 use crate::application::ports::PlaylistCoverEditPort;
-use crate::domain::library::{durability::DurableResource, PortableAssetReference};
+use crate::domain::library::{PortableAssetReference, durability::DurableResource};
 use rusqlite::params;
 
 impl PlaylistCoverEditPort for SqliteDatabase {
@@ -20,6 +20,7 @@ impl PlaylistCoverEditPort for SqliteDatabase {
             control,
             root,
             device,
+            false,
             move |c, authority, library, sequence, _| {
                 let belongs: bool = c.query_row(
                 "SELECT EXISTS(SELECT 1 FROM playlists WHERE uuid=?1 AND library_root_uuid=?2)",

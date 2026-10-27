@@ -2,7 +2,7 @@
 
 #![allow(clippy::doc_markdown, clippy::missing_errors_doc)]
 
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::Serialize;
 
 use crate::application::ports::{
@@ -10,15 +10,15 @@ use crate::application::ports::{
 };
 use crate::domain::ids::LibraryRootId;
 use crate::domain::sync::{
-    check_candidate_against_tombstone, confirm_candidate_at, payload_changed_at_ms,
     CommitCheckpoint, CommitSeq, Confirmation, ConfirmationError, ConfirmedObject, DeviceId,
     FinalTombstone, MutationCandidate, MutationId, ObjectKey, ObjectVersion, OriginAnchor,
-    OriginCursor, SyncBinding, TombstoneDecisionError,
+    OriginCursor, SyncBinding, TombstoneDecisionError, check_candidate_against_tombstone,
+    confirm_candidate_at, payload_changed_at_ms,
 };
 use crate::error::Error;
 
-use super::super::support::{now_ms, storage};
 use super::super::SqliteDatabase;
+use super::super::support::{now_ms, storage};
 
 #[path = "sync_ledger/host_ledger.rs"]
 mod host_ledger;

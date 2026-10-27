@@ -27,10 +27,12 @@ fn pending_import_declarations_and_receipts_survive_catalog_deletion_and_restart
         .with_tx(Box::new(move |tx| tx.delete_song(id)))
         .unwrap();
     assert!(SongRepository::by_id(&database, id).unwrap().is_none());
-    assert!(database
-        .local_sync_resource_manifests(root)
-        .unwrap()
-        .contains(&manifest));
+    assert!(
+        database
+            .local_sync_resource_manifests(root)
+            .unwrap()
+            .contains(&manifest)
+    );
     database.rebuild_resource_holds(root).unwrap();
     let expected = manifest.digest.as_bytes();
     database.with_reader(|connection| {
