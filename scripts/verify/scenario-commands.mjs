@@ -525,7 +525,7 @@ export const COMMANDS = {
   "LL-R04-S01": COREC("application::scan::tests::relink::fast_skip_unchanged_files_and_relink_on_move"),
   "LL-R04-S02": COREC("application::scan::tests::pipeline::external_missing_relinks_on_same_hash_path_keeping_relationships"),
   "LL-R04-S03": COREC("application::scan::tests::relink::duplicate_hash_paths_get_deterministic_primary"),
-  "LL-R04-S04": COREC("relink::tests::relink_plans_cover_path_hash_and_music_key_rules"),
+  "LL-R04-S04": COREC("application::scan::tests::relink::music_key_never_relinks_identities"), // 音乐键不得触发身份合并 (LD-05)
   "LL-R05-S01": COREC("infrastructure::sqlite::tests::fts_and_short_like_search"),
   "LL-R05-S02": COREC("infrastructure::sqlite::tests::keyset_pages_are_deterministic"),
   "LL-R06-S01": COREC("cover_cache_key_and_db_reference"),

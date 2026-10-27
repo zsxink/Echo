@@ -395,7 +395,7 @@
 | LL-R04-S01 | 稳定身份、哈希与路径重关联 | 原地重扫保持身份 | 3.2, 4.8, 13.4 | Core/Infrastructure | `tests/scenarios/LL-R04-S01.yaml` | `pnpm verify:scenario -- LL-R04-S01` |
 | LL-R04-S02 | 稳定身份、哈希与路径重关联 | 移动或改名后重关联 | 3.2, 4.8, 13.4 | Core/Infrastructure | `tests/scenarios/LL-R04-S02.yaml` | `pnpm verify:scenario -- LL-R04-S02` |
 | LL-R04-S03 | 稳定身份、哈希与路径重关联 | 相同内容出现在两个路径 | 3.2, 4.8, 13.4 | Core/Infrastructure | `tests/scenarios/LL-R04-S03.yaml` | `pnpm verify:scenario -- LL-R04-S03` |
-| LL-R04-S04 | 稳定身份、哈希与路径重关联 | 唯一音乐键弱重关联 | 3.2, 4.8, 13.4 | Core/Infrastructure | `tests/scenarios/LL-R04-S04.yaml` | `pnpm verify:scenario -- LL-R04-S04` |
+| LL-R04-S04 | 稳定身份、哈希与路径重关联 | 音乐键不得触发身份合并 | 3.2, 4.8, 13.4 | Core/Infrastructure | `tests/scenarios/LL-R04-S04.yaml` | `pnpm verify:scenario -- LL-R04-S04` |
 | LL-R05-S01 | SQLite 检索与曲库排序 | 搜索并排序 | 3.1–3.8 | Infrastructure | `tests/scenarios/LL-R05-S01.yaml` | `pnpm verify:scenario -- LL-R05-S01` |
 | LL-R05-S02 | SQLite 检索与曲库排序 | 重启后数据可用 | 3.1–3.8 | Infrastructure | `tests/scenarios/LL-R05-S02.yaml` | `pnpm verify:scenario -- LL-R05-S02` |
 | LL-R06-S01 | 生效元数据、封面和歌词优先级 | 覆盖层优先展示 | 2.2, 4.5, 4.6 | Core/Infrastructure | `tests/scenarios/LL-R06-S01.yaml` | `pnpm verify:scenario -- LL-R06-S01` |

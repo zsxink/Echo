@@ -4341,8 +4341,8 @@
     },
     {
       "id": "LL-R04-S04",
-      "title": "唯一音乐键弱重关联",
-      "command": "cargo test -p echo-core --all-features relink::tests::relink_plans_cover_path_hash_and_music_key_rules",
+      "title": "音乐键不得触发身份合并",
+      "command": "cargo test -p echo-core --all-features application::scan::tests::relink::music_key_never_relinks_identities",
       "manifest": "tests/scenarios/LL-R04-S04.yaml"
     },
     {
