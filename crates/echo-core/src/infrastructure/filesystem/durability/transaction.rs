@@ -1,9 +1,9 @@
 //! Authoritative commit publication under the control plane's writer guard.
 use super::assets::validate_resource;
 use super::{
-    checkpoint, decode, invalid, io, manifest, outcome, portable, read_operation,
-    recover_with_hook, recover_with_proven_fence, relative, DocumentKind, Hook, Marker,
-    ValidationCache, LIMIT, MAX_ACTIVE, WINDOW,
+    begin_edit, checkpoint, decode, invalid, io, manifest, outcome, portable, read_operation,
+    relative, write_checkpoint, DocumentKind, Hook, Marker, ValidationCache, WriteSessionState,
+    LIMIT, MAX_ACTIVE, WINDOW,
 };
 use crate::domain::ids::LibraryRootId;
 use crate::domain::library::durability::{
@@ -19,14 +19,29 @@ pub(in crate::infrastructure::filesystem) fn commit_with_hook(
     batch: &LibraryBatch,
     hook: &mut Hook<'_>,
 ) -> Result<CommitOutcome, Error> {
-    batch.validate()?;
-    let current_manifest = manifest(registry, root)?;
-    if current_manifest.format_version != crate::domain::library::CURRENT_FORMAT_VERSION
-        || current_manifest.library_id != batch.library_id
-    {
-        return Err(invalid("unsupported format or incorrect library identity"));
+    validate_commit_manifest(registry, root, batch)?;
+    let mut recovered = begin_edit(registry, cache, root, hook)?;
+    commit_edit(registry, cache, root, &mut recovered, batch, hook)
+}
+
+pub(in crate::infrastructure::filesystem) fn commit_edit(
+    registry: &RootRegistry,
+    cache: &ValidationCache,
+    root: LibraryRootId,
+    recovered: &mut WriteSessionState,
+    batch: &LibraryBatch,
+    hook: &mut Hook<'_>,
+) -> Result<CommitOutcome, Error> {
+    if recovered.root != root || recovered.consumed {
+        return Err(invalid(
+            "write session has another root or is already consumed",
+        ));
     }
-    let replay = recover_with_hook(registry, cache, root, hook)?;
+    // A failed publication may leave visible evidence requiring cold recovery;
+    // callers must acquire a new session before attempting another operation.
+    recovered.consumed = true;
+    validate_commit_manifest(registry, root, batch)?;
+    let replay = &recovered.replay;
     if let Some(existing) = read_operation(registry, cache, root, batch.operation_id)? {
         if existing.batch != *batch {
             return Err(invalid(
@@ -41,7 +56,7 @@ pub(in crate::infrastructure::filesystem) fn commit_with_hook(
     }
     // Refuse capacity exhaustion before publishing any commit marker. Otherwise
     // a mandatory coverage snapshot could fail only after the new fact is saved.
-    checkpoint::preflight_capacity(registry, root, &replay, batch)?;
+    checkpoint::preflight_capacity(replay, &recovered.files, batch)?;
     for expected in &batch.expected {
         let path = portable::original_relative(expected.kind, expected.object_uuid, None);
         let actual = portable::read(registry, root, &path, portable::MAX_RECORD_BYTES)?;
@@ -97,10 +112,29 @@ pub(in crate::infrastructure::filesystem) fn commit_with_hook(
     if let Err(error) = (|| {
         hook("committed", 0)?;
         // Finish materialization before publishing a complete coverage image.
-        let replay =
-            recover_with_proven_fence(registry, cache, root, Some(batch.operation_id), hook)?;
-        if replay.commits.len() >= WINDOW {
-            checkpoint::compact(registry, cache, root, &replay, hook)?;
+        // The writer guard has remained held since recovery. This new commit's
+        // prepared body and marker have both completed every native barrier, so
+        // apply only its delta to the already verified materialization state.
+        checkpoint::materialize(
+            registry,
+            root,
+            &batch.records,
+            &batch.state,
+            &mut recovered.files,
+            hook,
+        )?;
+        write_checkpoint(
+            registry,
+            root,
+            seq,
+            Some(commit.digest.clone()),
+            &recovered.files,
+            &mut recovered.durable_snapshot,
+            hook,
+        )?;
+        recovered.replay.commits.push(commit.clone());
+        if recovered.replay.commits.len() >= WINDOW {
+            checkpoint::compact(registry, cache, root, &recovered.replay, hook)?;
         }
         Ok(())
     })() {
@@ -108,6 +142,22 @@ pub(in crate::infrastructure::filesystem) fn commit_with_hook(
     }
     Ok(outcome(&commit, CommitStatus::SavedPendingProjection))
 }
+
+fn validate_commit_manifest(
+    registry: &RootRegistry,
+    root: LibraryRootId,
+    batch: &LibraryBatch,
+) -> Result<(), Error> {
+    batch.validate()?;
+    let current_manifest = manifest(registry, root)?;
+    if current_manifest.format_version != crate::domain::library::CURRENT_FORMAT_VERSION
+        || current_manifest.library_id != batch.library_id
+    {
+        return Err(invalid("unsupported format or incorrect library identity"));
+    }
+    Ok(())
+}
+
 fn saved_error(id: uuid::Uuid, error: Error) -> Error {
     Error::saved_pending_recovery(crate::domain::ids::OperationId::from_uuid(id), error)
 }

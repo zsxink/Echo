@@ -3,6 +3,93 @@ use super::*;
 use crate::domain::library::PortableSerialize;
 
 #[test]
+fn library_durability_snapshot_reuses_durable_unchanged_shards() {
+    let (_directory, registry, root, library, _) = fixture();
+    let mut seed = batch(library, uuid::Uuid::new_v4(), "seed shard");
+    for _ in 0..127 {
+        seed.records
+            .extend(batch(library, uuid::Uuid::new_v4(), "another shard").records);
+    }
+    commit(&registry, root, &seed).unwrap();
+    let mut trace = Vec::new();
+    commit_with_hook(
+        &registry,
+        root,
+        &batch(library, uuid::Uuid::new_v4(), "one changed shard"),
+        &mut |phase, _| {
+            trace.push(phase.to_owned());
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        trace.iter().filter(|p| *p == "snapshot:file_sync").count(),
+        1
+    );
+    assert_eq!(
+        trace
+            .iter()
+            .filter(|p| *p == "snapshot_retry:file_sync")
+            .count(),
+        0,
+        "unchanged leaves already referenced by the durable checkpoint need no new barriers"
+    );
+    assert_eq!(recover(&registry, root).unwrap().head().unwrap().0, 2);
+}
+
+#[test]
+fn library_durability_snapshot_retry_reflushes_unreferenced_visible_leaf() {
+    let (_directory, registry, root, _, _) = fixture();
+    let mut values = BTreeMap::from([("key".to_owned(), "original".to_owned())]);
+    let durable = snapshot::publish(&registry, root, &values, &mut |_, _| Ok(())).unwrap();
+    values.insert("key".to_owned(), "changed".to_owned());
+    snapshot::publish_reusing(&registry, root, &values, Some(&durable), &mut |phase, _| {
+        if phase == "snapshot:rename" {
+            Err(fail())
+        } else {
+            Ok(())
+        }
+    })
+    .unwrap_err();
+    let mut trace = Vec::new();
+    snapshot::publish_reusing(&registry, root, &values, Some(&durable), &mut |phase, _| {
+        trace.push(phase.to_owned());
+        Ok(())
+    })
+    .unwrap();
+    assert!(trace.iter().any(|p| p == "snapshot_retry:file_sync"));
+    assert!(trace.iter().any(|p| p == "snapshot_retry:directory_sync"));
+}
+
+#[test]
+fn library_durability_snapshot_reused_proof_still_checks_leaf_bytes() {
+    let (directory, registry, root, _, _) = fixture();
+    let values = BTreeMap::from([("key".to_owned(), "original".to_owned())]);
+    let durable = snapshot::publish(&registry, root, &values, &mut |_, _| Ok(())).unwrap();
+    let raw = serde_json::to_value(&durable).unwrap();
+    let digest = raw["shards"]
+        .as_object()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap()
+        .as_str()
+        .unwrap();
+    let path = directory
+        .path()
+        .join(format!("echo/state/checkpoint-chunks/{digest}.json"));
+    std::fs::write(path, "tampered leaf").unwrap();
+    assert!(snapshot::publish_reusing(
+        &registry,
+        root,
+        &values,
+        Some(&durable),
+        &mut |_, _| Ok(()),
+    )
+    .is_err());
+}
+
+#[test]
 fn library_durability_snapshot_crash_temporary_does_not_block_repeated_compaction() {
     let (directory, registry, root, library, _) = fixture();
     commit(

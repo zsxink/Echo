@@ -110,7 +110,13 @@ export function useLibraryCountSync(enabled = true): void {
         unlisten = fn;
       })
       .catch((error: unknown) => reportBridgeFailure("library_status", error));
-    const unsubscribe = subscribeSongUpdates(invalidate);
+    // A favorite's exact +/-1 is already applied by its mutation handler.
+    // Reading counts for the optimistic broadcast races the write and can
+    // overwrite that count with the pre-commit value while contending for
+    // the same backend connection. Its committed reply needs no second read.
+    const unsubscribe = subscribeSongUpdates((_song, phase) => {
+      if (phase === "committed") invalidate();
+    });
     const unsubscribeLibrary = subscribeLibraryInvalidations(invalidate);
     setInvalidateHandler(invalidate);
     return () => {

@@ -8,7 +8,7 @@ use validation_cache::DocumentKind;
 pub(super) use validation_cache::ValidationCache;
 mod transaction;
 pub(super) use assets::{read_asset, write_asset};
-pub(super) use transaction::commit_with_hook;
+pub(super) use transaction::{commit_edit, commit_with_hook};
 mod io;
 #[cfg(test)]
 mod tests;
@@ -98,6 +98,38 @@ fn manifest(registry: &RootRegistry, root: LibraryRootId) -> Result<LibraryManif
             portable::MAX_RECORD_BYTES,
         )?
         .ok_or_else(|| invalid("initialize the library manifest before committing"))?,
+    )
+}
+
+/// Fence legacy writers before an explicitly requested ordered edit. Record
+/// envelopes retain their own versions, so upgrading this declaration never
+/// rewrites legacy original bytes or their synchronization evidence.
+pub(in crate::infrastructure::filesystem) fn enable_journal(
+    registry: &RootRegistry,
+    root: LibraryRootId,
+    hook: &mut Hook<'_>,
+) -> Result<(), Error> {
+    let mut current = manifest(registry, root)?;
+    if !current.is_compatible() {
+        return Err(invalid("unsupported library manifest format"));
+    }
+    if current.format_version == crate::domain::library::CURRENT_FORMAT_VERSION {
+        // After an interrupted manifest directory sync, a retry can see v3
+        // without an additional barrier here. A new commit's prepared-file
+        // publication syncs echo and root before its marker becomes durable.
+        // If planning produces no new fact, a crash reverting only this version
+        // declaration leaves the older library format safe to open again.
+        return Ok(());
+    }
+    current.format_version = crate::domain::library::CURRENT_FORMAT_VERSION;
+    io::publish(
+        registry,
+        root,
+        "echo/manifest.json",
+        &portable::encode(&current, portable::MAX_RECORD_BYTES)?,
+        false,
+        "journal_manifest",
+        hook,
     )
 }
 
@@ -244,18 +276,34 @@ fn recover_with_hook(
     root: LibraryRootId,
     hook: &mut Hook<'_>,
 ) -> Result<LibraryReplay, Error> {
-    recover_with_proven_fence(registry, cache, root, None, hook)
+    begin_edit(registry, cache, root, hook).map(|state| state.replay)
 }
 
-// The optional proof belongs only to the current writer call, after both redo
-// and marker publication completed every sync. It never survives a retry.
-fn recover_with_proven_fence(
+// Retained only inside one control-plane writer guard. A commit may extend this
+// verified state without re-reading all history and every materialized file.
+// Every later writer call starts with a fresh recovery and fresh byte checks.
+pub(in crate::infrastructure::filesystem) struct WriteSessionState {
+    root: LibraryRootId,
+    replay: LibraryReplay,
+    files: BTreeMap<String, String>,
+    durable_snapshot: Option<snapshot::Snapshot>,
+    consumed: bool,
+}
+
+impl WriteSessionState {
+    pub(in crate::infrastructure::filesystem) fn replay(&self) -> &LibraryReplay {
+        &self.replay
+    }
+}
+
+/// The caller must retain the same root writer guard through `commit_edit`.
+/// Releasing that guard invalidates the returned materialization proof.
+pub(in crate::infrastructure::filesystem) fn begin_edit(
     registry: &RootRegistry,
     cache: &ValidationCache,
     root: LibraryRootId,
-    proven_operation: Option<uuid::Uuid>,
     hook: &mut Hook<'_>,
-) -> Result<LibraryReplay, Error> {
+) -> Result<WriteSessionState, Error> {
     let replay = chain(registry, cache, root)?;
     let checkpoint = materialization_checkpoint(registry, root)?;
     let anchor_seq = replay
@@ -280,6 +328,11 @@ fn recover_with_proven_fence(
         }
     }
     let mut files = checkpoint.files;
+    let mut durable_snapshot = if checkpoint.seq > 0 {
+        checkpoint.files_snapshot
+    } else {
+        None
+    };
     let newer_paths = checkpoint::changed_paths(&replay, checkpoint.seq)?;
     for (path, digest) in &files {
         if newer_paths.contains(path) {
@@ -310,6 +363,7 @@ fn recover_with_proven_fence(
                 anchor_seq,
                 Some(image.head_digest.clone()),
                 &files,
+                &mut durable_snapshot,
                 hook,
             )?;
         }
@@ -322,19 +376,17 @@ fn recover_with_proven_fence(
         // A materialization checkpoint can only have been published after its
         // commit fence completed. Beyond that watermark, visibility alone is
         // insufficient: a prior marker rename may have failed directory sync.
-        if Some(commit.batch.operation_id) != proven_operation {
-            for (name, label) in [
-                ("prepared.json", "prepared_recovery"),
-                ("committed.json", "marker_recovery"),
-            ] {
-                io::flush_existing(
-                    registry,
-                    root,
-                    &relative(commit.batch.operation_id, name),
-                    label,
-                    hook,
-                )?;
-            }
+        for (name, label) in [
+            ("prepared.json", "prepared_recovery"),
+            ("committed.json", "marker_recovery"),
+        ] {
+            io::flush_existing(
+                registry,
+                root,
+                &relative(commit.batch.operation_id, name),
+                label,
+                hook,
+            )?;
         }
         checkpoint::materialize(
             registry,
@@ -350,13 +402,20 @@ fn recover_with_proven_fence(
             commit.library_commit_seq,
             Some(commit.digest.clone()),
             &files,
+            &mut durable_snapshot,
             hook,
         )?;
     }
     if anchor_seq > 0 {
         checkpoint::cleanup_covered(registry, cache, root, anchor_seq, hook)?;
     }
-    Ok(replay)
+    Ok(WriteSessionState {
+        root,
+        replay,
+        files,
+        durable_snapshot,
+        consumed: false,
+    })
 }
 fn write_checkpoint(
     registry: &RootRegistry,
@@ -364,14 +423,17 @@ fn write_checkpoint(
     seq: u64,
     head: Option<String>,
     files: &BTreeMap<String, String>,
+    durable_snapshot: &mut Option<snapshot::Snapshot>,
     hook: &mut Hook<'_>,
 ) -> Result<(), Error> {
+    let files_snapshot =
+        snapshot::publish_reusing(registry, root, files, durable_snapshot.as_ref(), hook)?;
     let checkpoint = Checkpoint {
         version: 2,
         seq,
         head,
         files: BTreeMap::new(),
-        files_snapshot: Some(snapshot::publish(registry, root, files, hook)?),
+        files_snapshot: Some(files_snapshot.clone()),
     };
     hook("checkpoint", 0)?;
     io::publish(
@@ -382,7 +444,9 @@ fn write_checkpoint(
         false,
         "checkpoint",
         hook,
-    )
+    )?;
+    *durable_snapshot = Some(files_snapshot);
+    Ok(())
 }
 
 pub(super) fn commit(

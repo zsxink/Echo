@@ -115,6 +115,33 @@ function renderView(
 }
 
 describe("PlaylistsView (task 10.9)", () => {
+  it("patches a favorite immediately and commits without re-reading all playlist members", async () => {
+    const song = {
+      id: "favorite-song",
+      title: "即时收藏",
+      favorite: false,
+      playCount: 0,
+      availability: "available",
+    };
+    let finish!: (value: unknown) => void;
+    mockBridge({
+      playlist_members: [song],
+      set_favorite: new Promise((resolve) => (finish = resolve)),
+    });
+    renderView();
+    const heart = await screen.findByRole("button", { name: "喜欢即时收藏" });
+    const reads = call.mock.calls.filter(([command]) => command === "playlist_members").length;
+
+    fireEvent.click(heart);
+    expect(heart).toHaveAttribute("aria-pressed", "true");
+    await act(async () => finish({ ...song, favorite: true }));
+
+    expect(heart).toHaveAttribute("aria-pressed", "true");
+    expect(call.mock.calls.filter(([command]) => command === "playlist_members")).toHaveLength(
+      reads,
+    );
+  });
+
   it("renders the playlist inside the prototype's library-view DOM", async () => {
     mockBridge();
     const { container } = renderView();

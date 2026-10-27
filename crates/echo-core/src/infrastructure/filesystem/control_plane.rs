@@ -25,12 +25,50 @@ impl Drop for AccessGuard<'_> {
 
 use super::portable_migration as migration;
 use super::registry::RootRegistry;
-use crate::application::ports::{ControlPlanePort, ManifestState};
+use crate::application::ports::{ControlPlanePort, LibraryWriteSession, ManifestState};
 use crate::domain::ids::LibraryRootId;
 use crate::domain::library::{
     LibraryManifest, PortableRecord, PortableRecordDocument, PortableRecordEnvelope, RecordKind,
 };
 use crate::error::Error;
+
+struct DirectoryWriteSession<'a> {
+    plane: &'a RootControlPlane,
+    root: LibraryRootId,
+    state: super::durability::WriteSessionState,
+    _guard: AccessGuard<'a>,
+}
+
+impl LibraryWriteSession for DirectoryWriteSession<'_> {
+    fn replay(&self) -> &crate::domain::library::durability::LibraryReplay {
+        self.state.replay()
+    }
+
+    fn commit(
+        &mut self,
+        batch: &crate::domain::library::durability::LibraryBatch,
+    ) -> Result<crate::domain::library::durability::CommitOutcome, Error> {
+        #[cfg(any(test, feature = "testkit"))]
+        if let Some(hook) = &self.plane.commit_hook {
+            return super::durability::commit_edit(
+                &self.plane.registry,
+                &self.plane.validation_cache,
+                self.root,
+                &mut self.state,
+                batch,
+                &mut |phase, index| (hook.0)(phase, index),
+            );
+        }
+        super::durability::commit_edit(
+            &self.plane.registry,
+            &self.plane.validation_cache,
+            self.root,
+            &mut self.state,
+            batch,
+            &mut |_, _| Ok(()),
+        )
+    }
+}
 
 /// Filesystem adapter for the portable `echo/` control surface.
 #[derive(Clone, Debug)]
@@ -585,6 +623,28 @@ impl crate::application::ports::LibraryDurabilityPort for RootControlPlane {
     ) -> Result<crate::domain::library::durability::LibraryReplay, Error> {
         let _guard = self.prepare(root, true)?;
         super::durability::recover(&self.registry, &self.validation_cache, root)
+    }
+    fn begin_write(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<Option<Box<dyn LibraryWriteSession + '_>>, Error> {
+        let guard = self.prepare_write(root, false)?;
+        let state = super::durability::begin_edit(
+            &self.registry,
+            &self.validation_cache,
+            root,
+            &mut |_, _| Ok(()),
+        )?;
+        // Opting into an ordered edit also publishes the journal format fence.
+        // Legacy snapshot bytes remain intact and continuation can import them
+        // alongside the new journal. Raw commits keep their strict v3 fence.
+        super::durability::enable_journal(&self.registry, root, &mut |_, _| Ok(()))?;
+        Ok(Some(Box::new(DirectoryWriteSession {
+            plane: self,
+            root,
+            state,
+            _guard: guard,
+        })))
     }
     fn read_operation(
         &self,

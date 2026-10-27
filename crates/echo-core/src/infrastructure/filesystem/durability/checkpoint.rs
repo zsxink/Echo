@@ -325,9 +325,8 @@ impl Contents {
 }
 
 pub(super) fn preflight_capacity(
-    registry: &RootRegistry,
-    root: LibraryRootId,
     replay: &LibraryReplay,
+    materialized_files: &BTreeMap<String, String>,
     batch: &LibraryBatch,
 ) -> Result<(), Error> {
     let contents = Contents::merge(replay, Some(batch))?;
@@ -339,7 +338,7 @@ pub(super) fn preflight_capacity(
     snapshot::preflight(&contents.states)?;
     snapshot::preflight(&contents.records)?;
     snapshot::preflight(&contents.resources)?;
-    let mut files = super::materialization_checkpoint(registry, root)?.files;
+    let mut files = materialized_files.clone();
     for record in &batch.records {
         files.insert(portable::record_relative(record.record())?, "0".repeat(64));
     }

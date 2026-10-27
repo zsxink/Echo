@@ -18,7 +18,7 @@ pub fn commit_then_project<T>(
     project: impl FnOnce(&LibraryCommit) -> Result<T, Error>,
 ) -> Result<(CommitOutcome, Option<T>), Error> {
     batch.validate()?;
-    let mut outcome = control
+    let outcome = control
         .durability()
         .ok_or_else(|| {
             Error::unavailable(
@@ -27,6 +27,18 @@ pub fn commit_then_project<T>(
             )
         })?
         .commit(root, batch)?;
+    project_committed(control, root, batch, outcome, project)
+}
+
+/// Finish the same projection protocol after an exclusive write session has
+/// published its operation. The session must release its writer lock first.
+pub(crate) fn project_committed<T>(
+    control: &dyn ControlPlanePort,
+    root: LibraryRootId,
+    batch: &LibraryBatch,
+    mut outcome: CommitOutcome,
+    project: impl FnOnce(&LibraryCommit) -> Result<T, Error>,
+) -> Result<(CommitOutcome, Option<T>), Error> {
     if outcome.status == CommitStatus::SavedPendingRecovery {
         return Err(Error::saved_pending_recovery(
             crate::domain::ids::OperationId::from_uuid(outcome.operation_id),

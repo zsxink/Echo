@@ -2,6 +2,7 @@
 import { resetLibraryCounts as resetCounts } from "./libraryCounts";
 import { resetSongUpdates as resetUpdates } from "./songUpdates";
 import { resetLibraryInvalidations as resetInvalidations } from "./libraryInvalidation";
+import { resetFavoriteMutations } from "./favoriteMutation";
 
 export { LibraryWorkspace } from "./LibraryWorkspace";
 export { SongList } from "./SongList";
@@ -50,8 +51,14 @@ export {
   useLibraryCounts,
 } from "./libraryCounts";
 export type { LibraryCountView, LibraryCounts } from "./libraryCounts";
-export { publishSongUpdate, resetSongUpdates, subscribeSongUpdates } from "./songUpdates";
-export type { SongUpdate } from "./songUpdates";
+export {
+  patchSongList,
+  publishSongUpdate,
+  resetSongUpdates,
+  subscribeSongUpdates,
+} from "./songUpdates";
+export type { SongUpdate, SongUpdatePhase } from "./songUpdates";
+export { setSongFavorite } from "./favoriteMutation";
 export { notifyBatchOutcome, notifySavedPending, retrySavedOperations } from "./savedPendingNotice";
 export type { SavedPendingOptions } from "./savedPendingNotice";
 export {
@@ -63,6 +70,7 @@ export type { LibraryViewKind, SongSort } from "./types";
 
 /** Reset feature-owned external state between isolated tests. */
 export function resetLibraryState(): void {
+  resetFavoriteMutations();
   resetCounts();
   resetUpdates();
   resetInvalidations();

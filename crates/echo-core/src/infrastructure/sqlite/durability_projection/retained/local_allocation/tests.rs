@@ -118,10 +118,16 @@ fn library_durability_local_allocation_resource_evidence_remains_unresolved() {
     );
     frozen.original_resources_body =
         serde_json::to_string(&frozen.candidate.resource_refs).unwrap();
-    let states = frozen_pair(library, &frozen);
+    let mut states = frozen_pair(library, &frozen);
+    // Resource recovery does not use other allocations as proof. A corrupt
+    // unrelated allocation must therefore not bypass this early disposition.
+    let mut unrelated = pair(library, author).remove(0);
+    unrelated.payload["frozen"]["payload_digest"] = json!("invalid");
+    states.push(unrelated);
     let (reasons, fences) = db.writer.run(move |c| {
         let root = LibraryRootId::new();
-        let reasons = states.iter().map(|state| restore(c, root, Some(library), state, &states)).collect::<Result<Vec<_>, _>>()?;
+        let mut index = AllocationIndex::new(&states)?;
+        let reasons = states[..2].iter().map(|state| restore_indexed(c, root, Some(library), state, &mut index)).collect::<Result<Vec<_>, _>>()?;
         let fences: u64 = c.query_row("SELECT (SELECT COUNT(*) FROM sync_local_highwater)+(SELECT COUNT(*) FROM sync_local_origin_cursors)", [], |r|r.get(0)).map_err(storage)?;
         Ok((reasons, fences))
     }).unwrap();
@@ -191,4 +197,45 @@ fn library_durability_local_allocation_cross_namespace_sequence_conflict_is_reta
         assert_eq!(fences, 0);
         Ok(())
     }).unwrap();
+}
+
+#[test]
+fn library_durability_local_allocation_reuses_one_index_for_long_history() {
+    let directory = tempfile::tempdir().unwrap();
+    let db = SqliteDatabase::open(directory.path().join("allocation.sqlite")).unwrap();
+    let library = LibraryId::from_uuid(uuid::Uuid::new_v4());
+    let author = DeviceId::from_uuid(db.device_id.as_uuid());
+    let original = pair(library, author);
+    let template: FrozenMutation =
+        serde_json::from_value(original[0].payload["frozen"].clone()).unwrap();
+    let mut states = Vec::new();
+    let mut previous = None;
+    for sequence in 1..=128 {
+        let mut frozen = template.clone();
+        frozen.candidate.mutation_id = MutationId::new();
+        frozen.candidate.origin_seq = sequence;
+        frozen.candidate.previous_mutation_id = previous;
+        frozen.local_revision = Revision::from_u64(sequence);
+        previous = Some(frozen.candidate.mutation_id);
+        states.extend(frozen_pair(library, &frozen));
+    }
+    db.writer
+        .run(move |c| {
+            let root = LibraryRootId::new();
+            let mut index = AllocationIndex::new(&states)?;
+            for state in &states {
+                assert_eq!(restore_indexed(c, root, Some(library), state, &mut index)?, None);
+            }
+            // Frozen evidence is validated once for the whole history, and both
+            // halves of every pair share the same author conflict/predecessor proof.
+            assert_eq!(index.proof_counts(), (states.len(), 1));
+            let cursor: (u64, String) = c.query_row(
+                "SELECT origin_seq,last_mutation_id FROM sync_local_origin_cursors WHERE local_root_uuid=?1 AND origin_device_id=?2",
+                params![root.to_string(), author.as_uuid().to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            ).map_err(storage)?;
+            assert_eq!(cursor, (128, previous.unwrap().as_uuid().to_string()));
+            Ok(())
+        })
+        .unwrap();
 }

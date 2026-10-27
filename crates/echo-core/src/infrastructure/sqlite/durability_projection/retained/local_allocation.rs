@@ -1,23 +1,36 @@
 //! Restore local allocation fences without installing a sendable mutation.
+mod index;
 #[cfg(test)]
 mod tests;
 use super::{storage, Reason};
 use crate::domain::{
     ids::LibraryRootId,
     library::{
-        durability::{DurableStateChange, FrozenMutation, StateNamespace, StateTarget},
+        durability::{DurableStateChange, FrozenMutation, StateKey, StateNamespace, StateTarget},
         LibraryId,
     },
 };
 use crate::error::Error;
+pub(super) use index::AllocationIndex;
 use rusqlite::{params, Connection, OptionalExtension};
 
-pub(super) fn restore(
+#[cfg(test)]
+fn restore(
     c: &Connection,
     root: LibraryRootId,
     library: Option<LibraryId>,
     state: &DurableStateChange,
     states: &[DurableStateChange],
+) -> Result<Option<Reason>, Error> {
+    restore_indexed(c, root, library, state, &mut AllocationIndex::new(states)?)
+}
+
+pub(super) fn restore_indexed(
+    c: &Connection,
+    root: LibraryRootId,
+    library: Option<LibraryId>,
+    state: &DurableStateChange,
+    index: &mut AllocationIndex<'_>,
 ) -> Result<Option<Reason>, Error> {
     let Some(key) = &state.key else {
         return Ok(Some(Reason::RequiresStateRecovery));
@@ -44,13 +57,7 @@ pub(super) fn restore(
         }
         _ => return Ok(Some(Reason::RequiresStateRecovery)),
     };
-    let local_author: String = c
-        .query_row(
-            "SELECT value FROM device_state WHERE key='device_id'",
-            [],
-            |r| r.get(0),
-        )
-        .map_err(storage)?;
+    let local_author = index.local_author(c)?;
     if author.as_uuid().to_string() != local_author {
         return Ok(Some(Reason::RequiresStateRecovery));
     }
@@ -67,7 +74,7 @@ pub(super) fn restore(
         } => (*mutation_id, body_digest),
         _ => return Ok(Some(Reason::RequiresStateRecovery)),
     };
-    state.validate()?;
+    index.validate(state)?;
     let frozen_target = StateTarget::Mutation {
         author,
         mutation_id,
@@ -78,15 +85,14 @@ pub(super) fn restore(
         mutation_id,
         body_digest: body_digest.clone(),
     };
-    let paired = |target: &StateTarget| {
-        states.iter().find(|other| {
-            other.key.as_ref().is_some_and(|other_key| {
-                other_key.namespace == key.namespace && other_key.target == *target
-            })
+    let paired = |target| {
+        index.paired(&StateKey {
+            namespace: key.namespace.clone(),
+            target,
         })
     };
     let (Some(frozen_state), Some(disposition_state)) =
-        (paired(&frozen_target), paired(&disposition_target))
+        (paired(frozen_target)?, paired(disposition_target)?)
     else {
         return Ok(Some(Reason::MissingSyncDependency));
     };
@@ -95,11 +101,16 @@ pub(super) fn restore(
     {
         return Ok(Some(Reason::InvalidStateFact));
     }
-    frozen_state.validate()?;
-    disposition_state.validate()?;
-    let frozen: FrozenMutation =
-        serde_json::from_value(frozen_state.payload["frozen"].clone()).map_err(storage)?;
-    let unresolved = restore_fences(c, root, &local_author, &frozen, states)?;
+    index.validate(frozen_state)?;
+    index.validate(disposition_state)?;
+    let frozen = index.frozen(frozen_state)?;
+    // Preserve the resource-evidence early return before examining other
+    // allocations: their validity cannot authorize this resource-bearing fact.
+    if !frozen.candidate.resource_refs.is_empty() {
+        return Ok(Some(Reason::RequiresStateRecovery));
+    }
+    let evidence = index.author(author.as_uuid())?;
+    let unresolved = restore_fences(c, root, &local_author, &frozen, evidence)?;
     Ok(unresolved.or_else(|| bound.then_some(Reason::RequiresStateRecovery)))
 }
 
@@ -108,30 +119,14 @@ fn restore_fences(
     root: LibraryRootId,
     local_author: &str,
     frozen: &FrozenMutation,
-    states: &[DurableStateChange],
+    evidence: &index::AuthorEvidence,
 ) -> Result<Option<Reason>, Error> {
     let candidate = &frozen.candidate;
-    let author = candidate.origin_device_id;
     if !candidate.resource_refs.is_empty() {
         return Ok(Some(Reason::RequiresStateRecovery));
     }
-    for other in states {
-        let Some(other_key) = &other.key else {
-            continue;
-        };
-        if !matches!(other_key.target, StateTarget::Mutation { author: other_author, .. } if other_author == author)
-        {
-            continue;
-        }
-        other.validate()?;
-        let other: FrozenMutation =
-            serde_json::from_value(other.payload["frozen"].clone()).map_err(storage)?;
-        if (other.candidate.origin_seq == candidate.origin_seq
-            && other.candidate.mutation_id != candidate.mutation_id)
-            || (other.candidate.mutation_id == candidate.mutation_id && other != *frozen)
-        {
-            return Ok(Some(Reason::IdentityConflict));
-        }
+    if evidence.conflicts(frozen) {
+        return Ok(Some(Reason::IdentityConflict));
     }
     let sequence = candidate.origin_seq;
     let mutation = candidate.mutation_id.as_uuid().to_string();
@@ -148,17 +143,9 @@ fn restore_fences(
     let predecessor_known = if sequence == 1 {
         candidate.previous_mutation_id.is_none()
     } else if let Some(previous) = candidate.previous_mutation_id {
-        let previous = previous.as_uuid().to_string();
-        old.as_ref().is_some_and(|(seq, id)| *seq == sequence - 1 && id == &previous)
-            || states.iter().any(|other| {
-                other.key.as_ref().is_some_and(|other_key| {
-                    matches!(other_key.target, StateTarget::Mutation { author: other_author, .. } if other_author == author)
-                }) && serde_json::from_value::<FrozenMutation>(other.payload["frozen"].clone())
-                    .is_ok_and(|other| {
-                        other.candidate.origin_seq == sequence - 1
-                            && other.candidate.mutation_id.as_uuid().to_string() == previous
-                    })
-            })
+        old.as_ref()
+            .is_some_and(|(seq, id)| *seq == sequence - 1 && id == &previous.as_uuid().to_string())
+            || evidence.contains(sequence - 1, previous.as_uuid())
     } else {
         false
     };
@@ -175,7 +162,7 @@ fn restore_fences(
     let (kind, object) =
         crate::infrastructure::sqlite::sync::apply::object_identity(candidate.object);
     c.execute(
-        "INSERT INTO sync_local_highwater(object_type,object_uuid,local_revision) VALUES(?1,?2,?3) ON CONFLICT(object_type,object_uuid) DO UPDATE SET local_revision=MAX(local_revision,excluded.local_revision)",
+        "INSERT INTO sync_local_highwater(object_type,object_uuid,local_revision) VALUES(?1,?2,?3) ON CONFLICT(object_type,object_uuid) DO UPDATE SET local_revision=excluded.local_revision WHERE local_revision<excluded.local_revision",
         params![kind,object,frozen.local_revision.as_u64()],
     ).map_err(storage)?;
     c.execute(

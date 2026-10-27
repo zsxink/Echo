@@ -22,7 +22,7 @@ import type { CatalogCollectionView, SongView } from "../../ipc/ipc-types.genera
 import { coverClass } from "./coverClass";
 import { bumpLibraryCount, invalidateLibraryCounts } from "./libraryCounts";
 import { subscribeLibraryInvalidations } from "./libraryInvalidation";
-import { publishSongUpdate, subscribeSongUpdates } from "./songUpdates";
+import { patchSongList, subscribeSongUpdates, publishSongUpdate } from "./songUpdates";
 import { SongList } from "./SongList";
 import { SongMenu } from "./SongMenu";
 import type { MenuAnchor } from "./SongMenu";
@@ -37,7 +37,8 @@ import {
   undoDeleteBatch,
 } from "./batchOperations";
 import type { BatchResult } from "./batchOperations";
-import { notifyBatchOutcome, notifySavedPending } from "./savedPendingNotice";
+import { notifyBatchOutcome } from "./savedPendingNotice";
+import { setSongFavorite } from "./favoriteMutation";
 import { useSongSelection } from "./useSongSelection";
 import { ConfirmationDialog } from "./ConfirmationDialog";
 import { AddToPlaylistDialog } from "../playlists";
@@ -262,9 +263,7 @@ export function CollectionDirectory({
   useEffect(
     () =>
       subscribeSongUpdates((updated) => {
-        setSongs((current) =>
-          current.map((song) => (song.id === updated.id ? { ...song, ...updated } : song)),
-        );
+        setSongs((current) => patchSongList(current, updated));
       }),
     [],
   );
@@ -297,27 +296,11 @@ export function CollectionDirectory({
 
   const onFavorite = useCallback(
     (song: SongView, favorite: boolean) => {
-      // Optimistic sidebar count, reverted when the command fails — same deal as
-      // the library workspace.
-      bumpLibraryCount("favorites", favorite ? 1 : -1);
-      void bridge
-        .call("set_favorite", { songId: song.id, favorite })
-        .then((committed) => publishSongUpdate(committed as SongView))
-        .catch((error: unknown) => {
-          // 已保存待更新: the directory holds the like already. Keep it, publish
-          // the committed truth, and retry by the original operation identity.
-          if (
-            notifySavedPending(error, {
-              root,
-              onRecovered: () => setRefreshEpoch((epoch) => epoch + 1),
-            })
-          ) {
-            publishSongUpdate({ ...song, favorite });
-            return;
-          }
-          bumpLibraryCount("favorites", favorite ? -1 : 1);
-          notify({ message: "收藏失败，请重试", error: true });
-        });
+      void setSongFavorite(song, favorite, {
+        root,
+        onRecovered: () => setRefreshEpoch((epoch) => epoch + 1),
+        onFailure: () => notify({ message: "收藏失败，请重试", error: true }),
+      });
     },
     [root],
   );

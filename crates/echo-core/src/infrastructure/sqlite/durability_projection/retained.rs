@@ -110,7 +110,7 @@ pub(super) fn reason(
         .map(|v| serde_json::to_string(&v))
         .transpose()
         .map_err(storage)?;
-    c.execute("UPDATE library_recovery_records SET unresolved_reason=?3 WHERE library_root_uuid=?1 AND object_key=?2",params![root.to_string(),key,value]).map_err(storage)?;
+    c.execute("UPDATE library_recovery_records SET unresolved_reason=?3 WHERE library_root_uuid=?1 AND object_key=?2 AND unresolved_reason IS NOT ?3",params![root.to_string(),key,value]).map_err(storage)?;
     Ok(())
 }
 pub(super) fn read(c: &Connection, root: LibraryRootId) -> Result<LibraryRecoveryRecords, Error> {
@@ -211,6 +211,7 @@ pub(super) fn retry(
         });
         reason(c, root, &key, reported)?;
     }
+    let mut allocations = local_allocation::AllocationIndex::new(&retained.state)?;
     for state in &retained.state {
         let unresolved = if state.kind == StateKind::ResourceLocation {
             resource_publication::project(c, root, library, state, &retained)?
@@ -235,7 +236,7 @@ pub(super) fn retry(
                 dependency
             }
         } else {
-            local_allocation::restore(c, root, library, state, &retained.state)?
+            local_allocation::restore_indexed(c, root, library, state, &mut allocations)?
         };
         reason(c, root, &state_key(state)?, unresolved)?;
     }

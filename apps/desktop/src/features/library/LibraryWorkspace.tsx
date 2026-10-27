@@ -20,7 +20,7 @@ import { LibraryViewKind } from "./types";
 import { bumpLibraryCount, invalidateLibraryCounts } from "./libraryCounts";
 import { SongList } from "./SongList";
 import { useSongs } from "./useSongs";
-import { publishSongUpdate, subscribeSongUpdates } from "./songUpdates";
+import { subscribeSongUpdates, publishSongUpdate } from "./songUpdates";
 import { SongMenu } from "./SongMenu";
 import type { MenuAnchor } from "./SongMenu";
 import { BatchSongMenu, SelectionModeButton } from "./BatchSongActions";
@@ -34,7 +34,8 @@ import {
   undoDeleteBatch,
 } from "./batchOperations";
 import type { BatchResult } from "./batchOperations";
-import { notifyBatchOutcome, notifySavedPending } from "./savedPendingNotice";
+import { notifyBatchOutcome } from "./savedPendingNotice";
+import { setSongFavorite } from "./favoriteMutation";
 import { useSongSelection } from "./useSongSelection";
 import { ConfirmationDialog } from "./ConfirmationDialog";
 import { AddToPlaylistDialog } from "../playlists";
@@ -167,27 +168,7 @@ export function LibraryWorkspace({
 
   const onFavorite = useCallback(
     (song: SongView, favorite: boolean) => {
-      // Optimistic: the sidebar's 喜欢的音乐 count moves now, not one
-      // round-trip later. The authoritative re-count that follows corrects it.
-      bumpLibraryCount("favorites", favorite ? 1 : -1);
-      void bridge
-        .call("set_favorite", { songId: song.id, favorite })
-        // The command returns the committed authoritative SongView — broadcast
-        // it so every surface (this table, the player bar's heart) adopts it
-        // immediately instead of waiting for the next full re-query.
-        .then((committed) => publishSongUpdate(committed as SongView))
-        .catch((error: unknown) => {
-          // 已保存待更新 is a *successful* commit whose view lags: the directory
-          // already holds this like, so the optimistic state stands and the
-          // retry carries the original operation identity. Only a genuinely
-          // unsaved toggle rolls back (task 10.7 / LD-01).
-          if (notifySavedPending(error, { root, onRecovered: reset })) {
-            publishSongUpdate({ ...song, favorite });
-            return;
-          }
-          bumpLibraryCount("favorites", favorite ? -1 : 1);
-          reset();
-        });
+      void setSongFavorite(song, favorite, { root, onRecovered: reset, onFailure: reset });
     },
     [reset, root],
   );

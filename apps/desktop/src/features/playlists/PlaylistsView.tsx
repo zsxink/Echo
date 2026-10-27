@@ -35,9 +35,11 @@ import {
   useStoredSongSort,
   bumpLibraryCount,
   invalidateLibraryCounts,
-  notifySavedPending,
-  pendingBatchItems,
   publishSongUpdate,
+  pendingBatchItems,
+  patchSongList,
+  subscribeSongUpdates,
+  setSongFavorite,
   subscribeLibraryInvalidations,
   ConfirmationDialog,
   SongMenu,
@@ -207,6 +209,21 @@ export function PlaylistsView({
   );
   useEffect(loadMembers, [catalogRevision, loadMembers]);
 
+  // Favorite mutations carry the changed row. Patch both normal and searched
+  // lists directly, so a heart does not issue another full member-list read.
+  useEffect(
+    () =>
+      subscribeSongUpdates((updated) => {
+        setMembers((current) => patchSongList(current, updated));
+        setSearched((current) => {
+          if (!current) return current;
+          const items = patchSongList(current.items, updated);
+          return items === current.items ? current : { ...current, items };
+        });
+      }),
+    [],
+  );
+
   // 歌单内搜索：非空词走后端 `search`（限定当前歌单），空词清空搜索结果
   // 让视图回退到全量成员。相同 playlistId + 排序下改变搜索词才重新请求。
   //
@@ -316,26 +333,11 @@ export function PlaylistsView({
 
   const onFavorite = useCallback(
     (song: SongView, favorite: boolean) => {
-      // Optimistic: the sidebar count moves with the click, not after it.
-      bumpLibraryCount("favorites", favorite ? 1 : -1);
-      void bridge
-        .call("set_favorite", { songId: song.id, favorite })
-        .then((committed) => {
-          // Broadcast the committed view (player bar / other surfaces adopt
-          // the new heart), then refresh the member list.
-          publishSongUpdate(committed as SongView);
-          loadMembers();
-        })
-        .catch((error: unknown) => {
-          // 已保存待更新: the library committed the like. Adopt it instead of
-          // flipping the heart back — a second click would be a duplicate edit.
-          if (notifySavedPending(error, { root, onRecovered: loadMembers })) {
-            publishSongUpdate({ ...song, favorite });
-            return;
-          }
-          bumpLibraryCount("favorites", favorite ? -1 : 1);
-          notify({ message: "收藏失败，请重试", error: true });
-        });
+      void setSongFavorite(song, favorite, {
+        root,
+        onRecovered: loadMembers,
+        onFailure: () => notify({ message: "收藏失败，请重试", error: true }),
+      });
     },
     [loadMembers, root],
   );

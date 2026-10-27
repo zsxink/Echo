@@ -106,8 +106,9 @@ describe("音乐库导航计数", () => {
     expect(screen.getByTestId("playlist-count-list-1")).toHaveTextContent("3");
   });
 
-  it("re-counts after a favorite toggle, so another view's change lands here", async () => {
-    mocks.setInvoke("set_favorite", { ...SONG, favorite: true });
+  it("updates the exact favorite count without extra reads before or after the write", async () => {
+    let finish!: (value: unknown) => void;
+    mocks.setInvoke("set_favorite", () => new Promise((resolve) => (finish = resolve)));
     await act(async () => {
       render(<App />);
     });
@@ -116,17 +117,16 @@ describe("音乐库导航计数", () => {
     const before = vi.mocked(invoke).mock.calls.filter(([c]) => c === "library_counts").length;
 
     const heart = screen.getByRole("button", { name: /喜欢晴天/ });
-    await act(async () => {
-      fireEvent.click(heart);
-    });
+    act(() => fireEvent.click(heart));
+    expect(countOf("favorites")).toHaveTextContent("8");
+    expect(vi.mocked(invoke).mock.calls.filter(([c]) => c === "library_counts")).toHaveLength(
+      before,
+    );
 
-    // The committed mutation invalidates the cache and triggers a fresh read —
-    // the old code never re-read, so a toggle made outside the favorites view
-    // left its count frozen forever.
-    await waitFor(() =>
-      expect(
-        vi.mocked(invoke).mock.calls.filter(([c]) => c === "library_counts").length,
-      ).toBeGreaterThan(before),
+    await act(async () => finish({ ...SONG, favorite: true }));
+    expect(countOf("favorites")).toHaveTextContent("8");
+    expect(vi.mocked(invoke).mock.calls.filter(([c]) => c === "library_counts")).toHaveLength(
+      before,
     );
   });
 

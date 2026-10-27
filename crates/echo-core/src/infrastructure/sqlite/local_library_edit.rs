@@ -6,7 +6,7 @@ mod members;
 mod playback;
 mod removal;
 use super::{durability_backfill, durability_projection, statements, storage, SqliteDatabase};
-use crate::application::library_commit::commit_then_project;
+use crate::application::library_commit::project_committed;
 use crate::application::ports::{ControlPlanePort, LocalLibraryEditPort};
 use crate::domain::ids::{LibraryRootId, OperationId, PlaylistId, Revision, SongId};
 use crate::domain::library::durability::{ChangeOrigin, LibraryBatch, LibraryReplay, StateKind};
@@ -161,7 +161,11 @@ impl SqliteDatabase {
             device,
             None,
             move |c, authority, library, sequence, baseline| {
-                let saved = authority.read_record(root, RecordKind::Playlist, &id.to_string())?;
+                let saved = if matches!(edit, PlaylistEdit::Rename) {
+                    authority.read_record(root, RecordKind::Playlist, &id.to_string())?
+                } else {
+                    None
+                };
                 match edit {
                     PlaylistEdit::Create => {
                         // A creation already saved in the directory under the
@@ -257,7 +261,14 @@ impl SqliteDatabase {
             let durable = authority.durability().ok_or_else(|| {
                 Error::unavailable("library edits", "directory commit adapter is not configured")
             })?;
-            let baseline = durable.recover(root)?;
+            // Keep the directory writer guard through planning, so the same
+            // verified recovery can authorize publication without a second
+            // whole-library read or a gap in which another writer can commit.
+            let mut session = durable.begin_write(root)?;
+            let baseline = match &session {
+                Some(session) => session.replay().clone(),
+                None => durable.recover(root)?,
+            };
             durability_backfill::verify_covered_watermark(
                 connection, root, &baseline, Some(authority.as_ref()),
             )?;
@@ -276,8 +287,35 @@ impl SqliteDatabase {
             if batch.records.is_empty() && batch.state.is_empty() && batch.resources.is_empty() {
                 return Ok(result);
             }
-            commit_then_project(authority.as_ref(), root, &batch, |_| {
-                let replay = durable.recover(root)?;
+            batch.validate()?;
+            let outcome = match &mut session {
+                Some(session) => session.commit(&batch)?,
+                None => durable.commit(root, &batch)?,
+            };
+            drop(session);
+            project_committed(authority.as_ref(), root, &batch, outcome, |committed| {
+                // The baseline was recovered before planning, and the commit
+                // callback receives the directory-verified operation. Reuse
+                // that proof when this write extends exactly the same head;
+                // another writer may have committed in between, in which case
+                // recover the intervening operations before projecting them.
+                let extends_baseline = baseline.head().map_or_else(
+                    || {
+                        committed.library_commit_seq == 1
+                            && committed.predecessor_digest.is_none()
+                    },
+                    |(sequence, digest)| {
+                        sequence.checked_add(1) == Some(committed.library_commit_seq)
+                            && committed.predecessor_digest.as_deref() == Some(digest)
+                    },
+                );
+                let replay = if extends_baseline {
+                    let mut replay = baseline;
+                    replay.commits.push(committed.clone());
+                    replay
+                } else {
+                    durable.recover(root)?
+                };
                 durability_backfill::verify_covered_watermark(
                     connection, root, &replay, Some(authority.as_ref()),
                 )?;

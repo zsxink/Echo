@@ -18,6 +18,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, "index.html"),
         e2e: resolve(__dirname, "e2e", "index.html"),
+        perf: resolve(__dirname, "e2e", "perf.html"),
       },
     },
   },

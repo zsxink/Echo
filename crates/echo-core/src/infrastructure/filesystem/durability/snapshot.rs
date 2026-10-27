@@ -65,6 +65,20 @@ pub(super) fn publish<T: Serialize>(
     values: &BTreeMap<String, T>,
     hook: &mut Hook<'_>,
 ) -> Result<Snapshot, Error> {
+    publish_reusing(registry, root, values, None, hook)
+}
+
+/// Reuse only leaves referenced by a verified materialization checkpoint, or a
+/// checkpoint published successfully in this writer call. Those references can
+/// appear only after each leaf completed its file and ancestor-directory syncs.
+/// Merely finding an immutable leaf on disk is insufficient after interruption.
+pub(super) fn publish_reusing<T: Serialize>(
+    registry: &RootRegistry,
+    root: LibraryRootId,
+    values: &BTreeMap<String, T>,
+    durable: Option<&Snapshot>,
+    hook: &mut Hook<'_>,
+) -> Result<Snapshot, Error> {
     let mut snapshot = Snapshot {
         shards: BTreeMap::new(),
         entries: values.len(),
@@ -76,7 +90,9 @@ pub(super) fn publish<T: Serialize>(
             if existing.as_bytes() != bytes {
                 return Err(invalid("immutable snapshot leaf collision"));
             }
-            io::flush_existing(registry, root, &path, "snapshot_retry", hook)?;
+            if durable.and_then(|snapshot| snapshot.shards.get(&prefix)) != Some(&digest) {
+                io::flush_existing(registry, root, &path, "snapshot_retry", hook)?;
+            }
         } else {
             io::publish(registry, root, &path, &bytes, true, "snapshot", hook)?;
         }

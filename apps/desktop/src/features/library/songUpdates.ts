@@ -17,8 +17,7 @@
  * every field the publisher does not know — a 已保存待更新 like made from the
  * bar would silently erase the row's title.
  *
- * It carries no cache and no state of its own — a subscriber that is not
- * mounted simply misses the event, and its next authoritative read (re-query,
+ * A subscriber that is not mounted simply misses the event, and its next authoritative read (re-query,
  * `song_detail`) is already correct. Deliberately **not** a replacement for the
  * Rust-side `library://songs-invalidated` event: this covers only
  * frontend-initiated mutations, synchronously, without an IPC round-trip.
@@ -31,19 +30,41 @@ import { ExternalStore } from "../../app/externalStore";
  *  merged onto whatever the surface already holds. */
 export type SongUpdate = Pick<SongView, "id"> & Partial<Omit<SongView, "id">>;
 
-const songUpdateStore = new ExternalStore<SongUpdate | null>(null);
+/** Favorite toggles already adjust their known navigation count. Other
+ * committed edits may change totals and still request an authoritative read. */
+export type SongUpdatePhase = "committed" | "favorite" | "optimistic" | "rollback";
+
+const songUpdateStore = new ExternalStore<{
+  readonly update: SongUpdate;
+  readonly phase: SongUpdatePhase;
+} | null>(null);
 
 /** Publish the authoritative fields returned by a committed mutation. */
-export function publishSongUpdate(update: SongUpdate): void {
-  songUpdateStore.setSnapshot(update);
+export function publishSongUpdate(update: SongUpdate, phase: SongUpdatePhase = "committed"): void {
+  songUpdateStore.setSnapshot({ update, phase });
 }
 
 /** Subscribe to committed song updates; returns the unsubscribe handle. */
-export function subscribeSongUpdates(listener: (update: SongUpdate) => void): () => void {
+export function subscribeSongUpdates(
+  listener: (update: SongUpdate, phase: SongUpdatePhase) => void,
+): () => void {
   return songUpdateStore.subscribe(() => {
-    const update = songUpdateStore.getSnapshot();
-    if (update) listener(update);
+    const event = songUpdateStore.getSnapshot();
+    if (event) listener(event.update, event.phase);
   });
+}
+
+/** Patch one loaded row without rebuilding an unchanged page. The optimistic
+ * favorite and its identical committed reply should cause a single render. */
+export function patchSongList(songs: readonly SongView[], update: SongUpdate): readonly SongView[] {
+  const index = songs.findIndex((song) => song.id === update.id);
+  if (index < 0) return songs;
+  const current = songs[index];
+  if ((Object.keys(update) as (keyof SongUpdate)[]).every((key) => current[key] === update[key]))
+    return songs;
+  const next = songs.slice();
+  next[index] = { ...current, ...update };
+  return next;
 }
 
 /** Test teardown seam for the shared event snapshot. */

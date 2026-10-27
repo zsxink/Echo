@@ -16,6 +16,10 @@
 import { useMemo, useRef, useState } from "react";
 
 import { bridge } from "../../bridge";
+import {
+  beginLibraryInteraction,
+  type LibraryInteractionOutcome,
+} from "../../app/interactionMetrics";
 import { savedLibraryOperation } from "../../bridge/libraryPersistence";
 import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
 import { Icon } from "../../app/Icon";
@@ -103,6 +107,8 @@ export function PlaylistNameDialog({
       return;
     }
     if (busy) return;
+    const metric = creating ? beginLibraryInteraction("createPlaylist") : null;
+    let outcome: LibraryInteractionOutcome = "failed";
     setBusy(true);
     const name = value.trim();
     try {
@@ -112,7 +118,9 @@ export function PlaylistNameDialog({
           setError("当前音乐库不可用，请恢复后重试");
           return;
         }
+        metric?.backendStarted();
         const createdId = await bridge.call("create_playlist", { root: activeRoot, name });
+        metric?.backendFinished();
         onDone(name, createdId);
       } else {
         if (!playlistId) {
@@ -130,13 +138,16 @@ export function PlaylistNameDialog({
         onDone(name);
       }
       onClose();
+      outcome = "committed";
     } catch (err) {
+      metric?.backendFinished();
       // 保存与显示更新分离 (playlist-management spec): the new name is already
       // committed to the library. Keep the typed name in the field, say that it
       // is saved and waiting, and offer a retry of *that* operation — clearing
       // the input here would push the user into creating a second playlist.
       const saved = savedLibraryOperation(err);
       if (saved) {
+        outcome = "savedPending";
         setPendingSave({ operationId: saved.operationId, name });
         setError(
           creating
@@ -150,6 +161,7 @@ export function PlaylistNameDialog({
       setError(saveErrorMessage(err, creating));
     } finally {
       setBusy(false);
+      metric?.finish(outcome);
     }
   }
 

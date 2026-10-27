@@ -14,7 +14,7 @@ import { bridge } from "../../bridge";
 import type { PagedSongs, SongView } from "../../ipc/ipc-types.generated";
 import type { LibraryViewKind, SongSort } from "./types";
 import { subscribeLibraryInvalidations } from "./libraryInvalidation";
-import type { SongUpdate } from "./songUpdates";
+import { patchSongList, type SongUpdate, type SongUpdatePhase } from "./songUpdates";
 
 export interface SongPage {
   readonly songs: readonly SongView[];
@@ -107,7 +107,7 @@ export function useSongs(query: SongQuery): {
   /** Apply the committed fields of one song (a mutation's authoritative view)
    *  to the loaded page in place, so a toggle is visible without a full
    *  re-query. Fields the publisher did not send are left untouched. */
-  readonly patchSong: (update: SongUpdate) => void;
+  readonly patchSong: (update: SongUpdate, phase?: SongUpdatePhase) => void;
 } {
   const [page, setPage] = useState<SongPage>({ songs: [], totalCount: 0, isLast: false });
   const [loading, setLoading] = useState(false);
@@ -220,8 +220,13 @@ export function useSongs(query: SongQuery): {
   // (the player bar reads `song_detail`, which has no `quality` tier), so a
   // replacement would blank the fields it did not send.
   const patchSong = useCallback(
-    (update: SongUpdate) => {
-      if (query.inFavorites && update.favorite) {
+    (update: SongUpdate, phase: SongUpdatePhase = "committed") => {
+      if (
+        query.inFavorites &&
+        update.favorite &&
+        phase !== "optimistic" &&
+        !page.songs.some((song) => song.id === update.id)
+      ) {
         setRefreshEpoch((epoch) => epoch + 1);
       }
       setPage((prev) => {
@@ -234,15 +239,11 @@ export function useSongs(query: SongQuery): {
             totalCount: Math.max(0, prev.totalCount - 1),
           };
         }
-        if (index >= 0) {
-          const songs = prev.songs.slice();
-          songs[index] = { ...songs[index], ...update };
-          return { ...prev, songs };
-        }
-        return prev;
+        const songs = patchSongList(prev.songs, update);
+        return songs === prev.songs ? prev : { ...prev, songs };
       });
     },
-    [query.inFavorites],
+    [page.songs, query.inFavorites],
   );
 
   return { page, loading, error, loadMore, reset, retry, patchSong };
