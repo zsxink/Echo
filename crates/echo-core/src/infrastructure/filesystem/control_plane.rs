@@ -173,7 +173,6 @@ impl RootControlPlane {
         allow_incompatible: bool,
         guard: AccessGuard<'a>,
     ) -> Result<AccessGuard<'a>, Error> {
-        migration::recover(&self.registry, root)?;
         if !allow_incompatible {
             let manifest = self.manifest_unlocked(root)?;
             if let Some(manifest) = manifest {
@@ -200,19 +199,6 @@ impl RootControlPlane {
                 operation: "read portable library".to_owned(),
                 reason: "unsupported portable format".to_owned(),
             });
-        }
-        if migration::read(
-            &self.registry,
-            root,
-            "echo/migrations/v1-v2-journal.json",
-            1024,
-        )?
-        .is_some()
-        {
-            return Err(Error::unavailable(
-                "portable migration",
-                "pending format migration requires writable recovery",
-            ));
         }
         Ok(())
     }
@@ -578,16 +564,6 @@ impl ControlPlanePort for RootControlPlane {
         }
         Ok(())
     }
-
-    fn apply_portable_upgrade(
-        &self,
-        root: LibraryRootId,
-        updates: &[PortableRecordEnvelope],
-        manifest: &LibraryManifest,
-    ) -> Result<(), Error> {
-        let _guard = self.prepare(root, true)?;
-        migration::apply(&self.registry, root, updates, manifest)
-    }
 }
 
 impl crate::application::ports::LibraryDurabilityPort for RootControlPlane {
@@ -727,26 +703,24 @@ mod tests {
     // consumed by the deliberately failing preparation.
     #[allow(clippy::significant_drop_tightening)]
     fn library_durability_failed_write_preparation_unlocks_with_a_duplicated_handle_alive() {
-        for relative in ["manifest.json", "migrations/v1-v2-journal.json"] {
-            let (directory, registry, root, plane) = setup();
-            let invalid = directory.path().join("echo").join(relative);
-            std::fs::create_dir_all(invalid.parent().unwrap()).unwrap();
-            std::fs::write(&invalid, "not valid JSON").unwrap();
+        let (directory, registry, root, plane) = setup();
+        let invalid = directory.path().join("echo").join("manifest.json");
+        std::fs::create_dir_all(invalid.parent().unwrap()).unwrap();
+        std::fs::write(&invalid, "not valid JSON").unwrap();
 
-            let guard = plane.acquire_write(root).unwrap();
-            let inherited = guard.process.try_clone().unwrap();
-            let competing = RootControlPlane::new(registry);
-            assert!(competing.acquire_write(root).is_err());
-            assert!(plane.prepare_locked_write(root, false, guard).is_err());
+        let guard = plane.acquire_write(root).unwrap();
+        let inherited = guard.process.try_clone().unwrap();
+        let competing = RootControlPlane::new(registry);
+        assert!(competing.acquire_write(root).is_err());
+        assert!(plane.prepare_locked_write(root, false, guard).is_err());
 
-            // Recovery and manifest errors release the acquired permit even
-            // while another handle keeps its file description alive.
-            std::fs::remove_file(invalid).unwrap();
-            drop(competing.prepare_write(root, false).unwrap());
-            // The adapter's own thread gate must also be released on error.
-            drop(plane.prepare_write(root, false).unwrap());
-            drop(inherited);
-        }
+        // Recovery and manifest errors release the acquired permit even
+        // while another handle keeps its file description alive.
+        std::fs::remove_file(invalid).unwrap();
+        drop(competing.prepare_write(root, false).unwrap());
+        // The adapter's own thread gate must also be released on error.
+        drop(plane.prepare_write(root, false).unwrap());
+        drop(inherited);
     }
 
     mod write_boundaries;

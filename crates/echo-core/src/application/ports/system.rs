@@ -195,21 +195,6 @@ pub trait ControlPlanePort: ControlPlaneInventoryPort {
         }
         Ok(())
     }
-
-    /// Atomically upgrade all supplied records and publish the final manifest.
-    /// The filesystem adapter journals originals and publishes a temporary
-    /// incompatible-format fence before replacing any record.
-    fn apply_portable_upgrade(
-        &self,
-        _root: LibraryRootId,
-        _updates: &[PortableRecordEnvelope],
-        _manifest: &LibraryManifest,
-    ) -> Result<(), Error> {
-        Err(Error::unavailable(
-            "portable migration",
-            "this control plane does not support recoverable upgrades",
-        ))
-    }
 }
 
 // ---------------------------------------------------------------------------

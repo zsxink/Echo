@@ -175,7 +175,8 @@ fn concurrent_playlist_appends_keep_first_member_and_emit_typed_alias() {
         resource_refs: Vec::new(),
     };
     let result =
-        confirm_candidate(Some(&current), None, &candidate, CommitSeq::from_u64(2)).unwrap();
+        confirm_candidate_at(Some(&current), None, &candidate, CommitSeq::from_u64(2), 0, 0)
+            .unwrap();
     let members = result.object.payload["members"].as_array().unwrap();
     assert_eq!(members.len(), 2);
     assert_eq!(members[0]["member_uuid"], json!(canonical_member));
@@ -205,7 +206,7 @@ fn same_device_predecessor_chain_is_enforced_without_self_conflict() {
         base_object_version: None,
         payload: json!("first"),
     };
-    let confirmed = confirm_candidate(None, None, &first, CommitSeq::from_u64(1)).unwrap();
+    let confirmed = confirm_candidate_at(None, None, &first, CommitSeq::from_u64(1), 0, 0).unwrap();
     let second = MutationCandidate {
         resource_refs: Vec::new(),
         mutation_id: MutationId::new(),
@@ -216,11 +217,13 @@ fn same_device_predecessor_chain_is_enforced_without_self_conflict() {
         base_object_version: None,
         payload: json!("second"),
     };
-    let next = confirm_candidate(
+    let next = confirm_candidate_at(
         Some(&confirmed.object),
         Some(confirmed.origin_cursor),
         &second,
         CommitSeq::from_u64(2),
+        0,
+        0,
     )
     .unwrap();
     assert!(next.conflict.is_none());
@@ -230,11 +233,13 @@ fn same_device_predecessor_chain_is_enforced_without_self_conflict() {
         ..second
     };
     assert_eq!(
-        confirm_candidate(
+        confirm_candidate_at(
             Some(&next.object),
             Some(next.origin_cursor),
             &out_of_order,
-            CommitSeq::from_u64(3)
+            CommitSeq::from_u64(3),
+            0,
+            0,
         ),
         Err(ConfirmationError::OutOfOrderPredecessor)
     );
@@ -495,23 +500,28 @@ fn shared_resource_manifest_accepts_only_safe_library_relative_metadata() {
     .is_err());
 }
 
-fn play_stats_buckets(entries: &[(uuid::Uuid, u64)]) -> serde_json::Value {
-    serde_json::to_value(
-        entries
-            .iter()
-            .copied()
-            .collect::<std::collections::BTreeMap<_, _>>(),
-    )
-    .expect("bucket map")
+/// The canonical play-stats payload shape: a full
+/// `PlayStatsRecord` whose `updated_by_device_id` attests the writer.
+fn play_stats_payload(
+    song: SongId,
+    updated_by: DeviceId,
+    entries: &[(uuid::Uuid, u64)],
+) -> serde_json::Value {
+    serde_json::to_value(echo_core::domain::library::PlayStatsRecord {
+        song_uuid: song.as_uuid(),
+        revision: echo_core::domain::ids::Revision::INITIAL,
+        updated_by_device_id: echo_core::domain::library::DeviceId::from_uuid(updated_by.as_uuid()),
+        hlc: echo_core::domain::library::HybridLogicalClock::new(1_700_000_000, 0),
+        by_device: entries.iter().copied().collect(),
+    })
+    .expect("play stats payload")
 }
 
-/// A confirmed play-stats row written by an earlier release only carried
-/// `{song_uuid, by_device}` — it could not attest `revision` /
-/// `updated_by_device_id` / `hlc`. Such a row must still authorize exactly the
-/// buckets it recorded: otherwise every later merge treats every other device's
-/// confirmed count as an unauthorized raise and rejects the mutation forever.
+/// A confirmed play-stats row authorizes exactly the buckets it recorded:
+/// a later device may add or raise its own bucket, but raising another
+/// device's confirmed count is rejected as unauthorized.
 #[test]
-fn legacy_play_stats_payload_still_authorizes_the_buckets_it_recorded() {
+fn confirmed_play_stats_buckets_authorize_exactly_their_recorded_counts() {
     use serde_json::json;
     let song = SongId::new();
     let origin = DeviceId::new();
@@ -520,10 +530,7 @@ fn legacy_play_stats_payload_still_authorizes_the_buckets_it_recorded() {
         object: ObjectKey::PlayStats(song),
         version: ObjectVersion::from_commit_seq(CommitSeq::from_u64(1)),
         origin_device_id: other,
-        payload: json!({
-            "song_uuid": song.as_uuid(),
-            "by_device": play_stats_buckets(&[(other.as_uuid(), 5)]),
-        }),
+        payload: play_stats_payload(song, other, &[(other.as_uuid(), 5)]),
     };
     let candidate = MutationCandidate {
         mutation_id: MutationId::new(),
@@ -532,14 +539,22 @@ fn legacy_play_stats_payload_still_authorizes_the_buckets_it_recorded() {
         previous_mutation_id: None,
         object: ObjectKey::PlayStats(song),
         base_object_version: Some(current.version),
-        payload: json!({
-            "song_uuid": song.as_uuid(),
-            "by_device": play_stats_buckets(&[(origin.as_uuid(), 2), (other.as_uuid(), 5)]),
-        }),
+        payload: play_stats_payload(
+            song,
+            origin,
+            &[(origin.as_uuid(), 2), (other.as_uuid(), 5)],
+        ),
         resource_refs: Vec::new(),
     };
-    let confirmed =
-        confirm_candidate(Some(&current), None, &candidate, CommitSeq::from_u64(2)).unwrap();
+    let confirmed = confirm_candidate_at(
+        Some(&current),
+        None,
+        &candidate,
+        CommitSeq::from_u64(2),
+        0,
+        0,
+    )
+    .unwrap();
     let merged = &confirmed.object.payload["by_device"];
     assert_eq!(merged[origin.as_uuid().to_string()], json!(2));
     assert_eq!(merged[other.as_uuid().to_string()], json!(5));
@@ -547,12 +562,20 @@ fn legacy_play_stats_payload_still_authorizes_the_buckets_it_recorded() {
     // Raising another device's bucket stays unauthorized.
     let mut raising = candidate;
     raising.mutation_id = MutationId::new();
-    raising.payload = json!({
-        "song_uuid": song.as_uuid(),
-        "by_device": play_stats_buckets(&[(origin.as_uuid(), 9), (other.as_uuid(), 6)]),
-    });
+    raising.payload = play_stats_payload(
+        song,
+        origin,
+        &[(origin.as_uuid(), 9), (other.as_uuid(), 6)],
+    );
     assert_eq!(
-        confirm_candidate(Some(&current), None, &raising, CommitSeq::from_u64(3)),
+        confirm_candidate_at(
+            Some(&current),
+            None,
+            &raising,
+            CommitSeq::from_u64(3),
+            0,
+            0
+        ),
         Err(ConfirmationError::UnauthorizedPlayStatsBucket)
     );
 }
@@ -617,10 +640,14 @@ fn stale_base_without_favorite_or_play_stats_value_change_is_not_a_conflict() {
         object: ObjectKey::PlayStats(song),
         version: current_version,
         origin_device_id: first_device,
-        payload: json!({"by_device": {
-            first_device.as_uuid().to_string(): 2,
-            second_device.as_uuid().to_string(): 1,
-        }}),
+        payload: play_stats_payload(
+            song,
+            first_device,
+            &[
+                (first_device.as_uuid(), 2),
+                (second_device.as_uuid(), 1),
+            ],
+        ),
     };
     let same_play_stats = MutationCandidate {
         mutation_id: MutationId::new(),
@@ -629,10 +656,14 @@ fn stale_base_without_favorite_or_play_stats_value_change_is_not_a_conflict() {
         previous_mutation_id: None,
         object: ObjectKey::PlayStats(song),
         base_object_version: stale_base,
-        payload: json!({"song_uuid": song.as_uuid(), "by_device": {
-            first_device.as_uuid().to_string(): 2,
-            second_device.as_uuid().to_string(): 1,
-        }}),
+        payload: play_stats_payload(
+            song,
+            second_device,
+            &[
+                (first_device.as_uuid(), 2),
+                (second_device.as_uuid(), 1),
+            ],
+        ),
         resource_refs: Vec::new(),
     };
     let result = confirm_candidate_at(
@@ -647,10 +678,14 @@ fn stale_base_without_favorite_or_play_stats_value_change_is_not_a_conflict() {
     assert!(result.conflict.is_none());
 
     let changed_play_stats = MutationCandidate {
-        payload: json!({"song_uuid": song.as_uuid(), "by_device": {
-            first_device.as_uuid().to_string(): 2,
-            second_device.as_uuid().to_string(): 3,
-        }}),
+        payload: play_stats_payload(
+            song,
+            second_device,
+            &[
+                (first_device.as_uuid(), 2),
+                (second_device.as_uuid(), 3),
+            ],
+        ),
         ..same_play_stats
     };
     let result = confirm_candidate_at(
@@ -774,7 +809,8 @@ fn playlist_append_renumbers_positions_from_the_merged_order() {
         resource_refs: Vec::new(),
     };
     let merged =
-        confirm_candidate(Some(&current), None, &candidate, CommitSeq::from_u64(2)).unwrap();
+        confirm_candidate_at(Some(&current), None, &candidate, CommitSeq::from_u64(2), 0, 0)
+            .unwrap();
     let positions: Vec<u64> = merged.object.payload["members"]
         .as_array()
         .unwrap()

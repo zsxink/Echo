@@ -168,10 +168,12 @@ fn baseline_rejects_replica_and_foreign_binding() {
 }
 
 #[test]
-fn baseline_requires_audio_scan_facts_and_captures_legacy_plays() {
+fn baseline_requires_audio_scan_facts_and_never_fabricates_play_attribution() {
     let (_directory, database, root) = database();
     let mut imported = song(root, "media/song.flac", "Title", "Artist");
     SongRepository::upsert(&database, &imported).unwrap();
+    // An unattributed legacy aggregate must not be turned into a per-device
+    // bucket by the baseline: attribution needs a recorded device fact.
     SongRepository::set_play_count(&database, imported.id(), 9).unwrap();
     let binding = binding();
     database.bind_sync_library(binding, true, root).unwrap();
@@ -190,17 +192,13 @@ fn baseline_requires_audio_scan_facts_and_captures_legacy_plays() {
     );
     let queue = database.pending_local_mutations(16).unwrap();
     assert_eq!(
-        queue.last().unwrap().payload["by_device"][database.current_device_id().to_string()],
-        9
+        queue.last().unwrap().payload["by_device"],
+        serde_json::json!({})
     );
-    assert_eq!(
-        database
-            .device_play_counts(imported.id())
-            .unwrap()
-            .values()
-            .sum::<u64>(),
-        9
-    );
+    assert!(database
+        .device_play_counts(imported.id())
+        .unwrap()
+        .is_empty());
 }
 
 #[test]

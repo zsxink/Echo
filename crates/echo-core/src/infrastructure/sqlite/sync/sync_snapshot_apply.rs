@@ -28,8 +28,8 @@ impl SqliteDatabase {
         })
     }
 
-    /// Whether normal local scan/import recovery must wait for host enrollment
-    /// or its durable media preservation step to finish for this root.
+    /// Whether normal local scan/import recovery must wait for host
+    /// enrollment's durable replace step to finish for this root.
     pub fn replica_enrollment_pending(
         &self,
         root: crate::domain::ids::LibraryRootId,
@@ -37,49 +37,11 @@ impl SqliteDatabase {
         self.with_reader(move |connection| {
             connection
                 .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM sync_state WHERE key IN (?1,?2))",
-                    params![
-                        format!("replica_enrollment_replace:{root}"),
-                        format!("replica_enrollment_archive:{root}")
-                    ],
+                    "SELECT EXISTS(SELECT 1 FROM sync_state WHERE key=?1)",
+                    params![format!("replica_enrollment_replace:{root}")],
                     |row| row.get(0),
                 )
                 .map_err(storage)
-        })
-    }
-
-    /// A legacy archive marker left by an older destructive enrollment flow.
-    pub fn pending_replica_media_archive(
-        &self,
-        root: crate::domain::ids::LibraryRootId,
-    ) -> Result<Option<String>, Error> {
-        self.with_reader(move |connection| {
-            connection
-                .query_row(
-                    "SELECT value FROM sync_state WHERE key=?1",
-                    params![format!("replica_enrollment_archive:{root}")],
-                    |row| row.get(0),
-                )
-                .optional()
-                .map_err(storage)
-        })
-    }
-
-    /// Finish exactly the archive intent observed by the desktop. A newer
-    /// enrollment cannot accidentally be acknowledged by an older worker.
-    pub fn complete_replica_media_archive(
-        &self,
-        root: crate::domain::ids::LibraryRootId,
-        token: String,
-    ) -> Result<(), Error> {
-        self.writer.run(move |connection| {
-            connection
-                .execute(
-                    "DELETE FROM sync_state WHERE key=?1 AND value=?2",
-                    params![format!("replica_enrollment_archive:{root}"), token],
-                )
-                .map_err(storage)?;
-            Ok(())
         })
     }
 

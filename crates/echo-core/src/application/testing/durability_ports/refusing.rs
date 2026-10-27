@@ -137,15 +137,6 @@ impl ControlPlanePort for RefusingAuthority {
     ) -> Result<(), Error> {
         self.inner.delete_tombstone(root, deleted_kind, object_uuid)
     }
-
-    fn apply_portable_upgrade(
-        &self,
-        root: LibraryRootId,
-        updates: &[PortableRecordEnvelope],
-        manifest: &LibraryManifest,
-    ) -> Result<(), Error> {
-        self.inner.apply_portable_upgrade(root, updates, manifest)
-    }
 }
 
 impl LibraryDurabilityPort for RefusingAuthority {

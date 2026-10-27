@@ -40,6 +40,7 @@
 - 实施时同步 `docs/PRODUCT.md`、`docs/DESIGN.md`、`docs/ROADMAP.md`、恢复文档及界面术语；清理文档中旧“空目录首次加入”口径，以现行 `lan-library-sync` 的本地优先合并为准，不借本次变更倒退或重新定义加入策略。
 - 遵守 `openspec/CODE_STANDARDS.md` §2–§6、§8–§9；保留同步默认关闭、单主/epoch、冲突裁决、10 秒撤销、文件无覆盖和跨平台路径约束。已有 UI change `align-immersive-player-and-playlist-directory` 保持独立；本 change 仅提供后续歌单封面字段所需的持久化边界，不包含该 UI change 的字段或界面工作。
 - 非目标：修复、回填、救援或身份/关系对账任何现有旧音乐库；从音频推测从未保存的歌单/喜欢；恢复系统钥匙串、配对凭据、主题/EQ、播放会话；添加云盘、流媒体或自动选主；直接备份/传输 SQLite；承诺任意进行中文件拷贝都是一致备份。仅复制 `media/` 能恢复音频，完整资料恢复必须保留整个音乐库的 `media/` 与 `echo/`。
+- 范围补充（2026-10-27，任务 12.1）：依据 [docs/legacy-compat-removal-plan.md](../../../docs/legacy-compat-removal-plan.md) 删除四档历史兼容代码（A：v1→v2 可携带格式迁移写入器；B：SQLite v19/v20 开发版特例与播放数回填；S：同步侧历史兼容含 `sync_binding.protocol_version` 列，新增 `DROP COLUMN` 迁移并改写 `SYN-R07-S03`；D：桌面 `PersistedHistoryRecord::Legacy` 与 `RawDoc.version`）。该计划 §7 判定按其 §0.1 前提回答为「只保护自己」：本机无旧音乐库/旧 SQLite 数据；删除不损害旧库读取——A 保留 `PortableRecordDocument::V1` 读取，B 的 0020 普通正文本身覆盖 v18 升级，D 的 `Legacy` 变体在 parse 中本就映射 `None`。`lan-library-sync` 主规格的「历史库升级 MUST 保留 UUID、数据和未确认变更」是条件式义务，删除升级写入器后其 WHEN 前提不可达、义务空转，不修改该规格文本；`payload_changed_at_ms`（生产回退路径，计划 §4.3）保留。
 
 本 change 只规划；详细证据、方案取舍、数据兼容、执行任务与验收矩阵见其余产物。
 

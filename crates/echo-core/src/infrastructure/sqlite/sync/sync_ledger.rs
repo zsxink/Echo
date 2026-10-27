@@ -182,7 +182,7 @@ impl SqliteDatabase {
                 return Ok(());
             }
             tx.execute(
-                "INSERT INTO sync_binding(singleton, library_id, authority_id, epoch, role, protocol_version, updated_at, local_root_uuid) VALUES(1, ?1, ?2, ?3, ?4, 1, ?5, ?6)",
+                "INSERT INTO sync_binding(singleton, library_id, authority_id, epoch, role, updated_at, local_root_uuid) VALUES(1, ?1, ?2, ?3, ?4, ?5, ?6)",
                 params![expected.0, expected.1, expected.2, expected.3, now_ms(), local_root_uuid],
             ).map_err(storage)?;
             tx.commit().map_err(storage)
@@ -255,7 +255,7 @@ impl SqliteDatabase {
                 return Err(Error::conflict("replica enrollment target is not empty"));
             }
             tx.execute(
-                "INSERT INTO sync_binding(singleton, library_id, authority_id, epoch, role, protocol_version, updated_at, local_root_uuid) VALUES(1, ?1, ?2, ?3, 'replica', 1, ?4, ?5)",
+                "INSERT INTO sync_binding(singleton, library_id, authority_id, epoch, role, updated_at, local_root_uuid) VALUES(1, ?1, ?2, ?3, 'replica', ?4, ?5)",
                 params![binding.library_id.as_uuid().to_string(), binding.authority_id.as_uuid().to_string(), i64::try_from(binding.epoch.as_u64()).map_err(storage)?, now_ms(), root],
             ).map_err(crate::infrastructure::sqlite::support::map_constraint)?;
             if allow_nonempty_catalog {

@@ -783,7 +783,7 @@ export const COMMANDS = {
   "SYN-R06-S03": COREC("library_durability_legacy_write_cannot_transfer_confirmation_to_new_value"), // v2 混旧确认元数据: 确认不能转移给新值
   "SYN-R07-S01": COREC("library_durability_scoped_key_retains_same_event_across_bindings_and_epochs"), // 接纳中断: 同一事件跨 binding/epoch 保留身份
   "SYN-R07-S02": COREC("library_durability_local_allocation_unproven_predecessor_never_advances_fences"), // 无法证明已确认: 未证明前驱不推进 fence、保留待处理
-  "SYN-R07-S03": COREC("legacy_play_stats_payload_still_authorizes_the_buckets_it_recorded"), // 统计桶授权: 旧载荷只授权它记录的桶
+  "SYN-R07-S03": COREC("confirmed_play_stats_buckets_authorize_exactly_their_recorded_counts"), // 统计桶授权: 已确认桶只授权它记录的计数
   "SYN-R08-S01": COREC("library_durability_playback_later_session_catches_up_and_rebuild_has_no_echo"), // 反复恢复与 watcher: 追上后重建无等价回传
 
   // ===== ci-release-pipeline (CRP) =====

@@ -4,7 +4,7 @@ scenario_id: SYN-R07-S03
 requirement: 新绑定显式接纳旧待确认意图
 scenario: 新作者不能抬高旧作者统计桶
 layer: automated
-command: "cargo test -p echo-core --all-features legacy_play_stats_payload_still_authorizes_the_buckets_it_recorded"
+command: "cargo test -p echo-core --all-features confirmed_play_stats_buckets_authorize_exactly_their_recorded_counts"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

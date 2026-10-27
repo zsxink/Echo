@@ -251,7 +251,6 @@ impl NativeSyncProvisioner {
         peer: &ProvisionedPeer,
         endpoint: &Url,
     ) -> Result<(), SyncRuntimeError> {
-        self.clear_legacy_replica_media_archive_intent()?;
         if self
             .database
             .replica_enrollment_complete(peer.host_device_id)
@@ -320,35 +319,7 @@ impl NativeSyncProvisioner {
         }
         // Private cache is not library publication. Catalog media remains
         // unavailable until the safe file publication journal completes.
-        self.clear_legacy_replica_media_archive_intent()?;
         Ok(())
-    }
-
-    pub(super) fn clear_legacy_replica_media_archive_intent(&self) -> Result<(), SyncRuntimeError> {
-        let _activity = self
-            .scan_deps
-            .activity
-            .exclusive()
-            .map_err(|_| SyncRuntimeError::WorkerFailed)?;
-        let configuration = self
-            .database
-            .current_sync_configuration()
-            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
-            .ok_or(SyncRuntimeError::Unconfigured)?;
-        let root = configuration.local_root;
-        let Some(token) = self
-            .database
-            .pending_replica_media_archive(root)
-            .map_err(|_| SyncRuntimeError::LibraryUnavailable)?
-        else {
-            return Ok(());
-        };
-        // Previous releases used this intent to move local files out of the
-        // scanner's media tree during enrollment. Consume the stale intent
-        // without moving anything; local files always stay in place.
-        self.database
-            .complete_replica_media_archive(root, token)
-            .map_err(|_| SyncRuntimeError::LibraryUnavailable)
     }
 
     pub(super) async fn upload_pending_resources(

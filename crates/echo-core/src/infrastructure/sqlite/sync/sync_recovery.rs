@@ -302,7 +302,7 @@ impl SqliteDatabase {
             if let Some(facts) = &unbound_facts {
                 restore_portable_facts(&tx, &root_string, facts)?;
             }
-            tx.execute("INSERT INTO sync_binding(singleton,library_id,authority_id,epoch,role,protocol_version,updated_at,local_root_uuid) VALUES(1,?1,?2,?3,'host',1,?4,?5)", params![
+            tx.execute("INSERT INTO sync_binding(singleton,library_id,authority_id,epoch,role,updated_at,local_root_uuid) VALUES(1,?1,?2,?3,'host',?4,?5)", params![
                 replacement.library_id.as_uuid().to_string(), replacement.authority_id.as_uuid().to_string(), epoch, now_ms(), root_string,
             ]).map_err(storage)?;
             tx.commit().map_err(storage)?;

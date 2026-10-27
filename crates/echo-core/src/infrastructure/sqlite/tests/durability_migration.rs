@@ -80,6 +80,18 @@ fn through_v27(connection: &mut rusqlite::Connection) {
     apply_migration_set(connection, &scripts).unwrap();
 }
 
+fn protocol_column(connection: &rusqlite::Connection) -> u64 {
+    connection
+        .query_row(
+            "SELECT (SELECT COUNT(*) FROM pragma_table_info('sync_binding') WHERE name='protocol_version') \
+             + (SELECT COUNT(*) FROM pragma_table_info('archived_sync_binding') WHERE name='protocol_version') \
+             + (SELECT COUNT(*) FROM pragma_table_info('recovery_sync_binding') WHERE name='protocol_version')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
+}
+
 #[test]
 fn migration_0028_preserves_legacy_evidence_and_rolls_back_partial_upgrade() {
     let directory = tempfile::tempdir().unwrap();
@@ -165,4 +177,68 @@ fn migration_0028_preserves_legacy_evidence_and_rolls_back_partial_upgrade() {
         reopened.read_recovery_records(root).unwrap().state,
         vec![evidence]
     );
+}
+
+#[test]
+fn migration_0029_drops_the_retired_sync_binding_protocol_version_column() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("legacy.sqlite");
+    let mut connection = open_writer(&path).unwrap();
+    through_v27(&mut connection);
+    apply_migration_set(
+        &mut connection,
+        &[(28, include_str!("../migrations/0028_library_durability.sql"))],
+    )
+    .unwrap();
+    // local_root_uuid references library_roots: the table rewrite during the
+    // column drop re-checks foreign keys, so seed a real root first.
+    let root = LibraryRootId::new();
+    connection.execute("INSERT INTO library_roots(uuid,absolute_path,normalized_path_key,is_active,write_capable,created_at,updated_at) VALUES(?1,'/synthetic/library','/synthetic/library',1,1,123,456)", params![root.to_string()]).unwrap();
+    connection
+        .execute(
+            "INSERT INTO sync_binding(singleton,library_id,authority_id,epoch,role,protocol_version,updated_at,local_root_uuid) VALUES(1,'lib','auth',1,'host',1,123,?1)",
+            params![root.to_string()],
+        )
+        .unwrap();
+    assert_eq!(protocol_column(&connection), 3);
+
+    // A partial 0029 rolls back: the column and the binding row survive.
+    let script = include_str!("../migrations/0029_drop_sync_binding_protocol_version.sql");
+    let failing = format!("{script}\nINSERT INTO table_that_does_not_exist VALUES(1);");
+    assert!(apply_migration_set(&mut connection, &[(29, &failing)]).is_err());
+    assert_eq!(protocol_column(&connection), 3);
+    assert_eq!(
+        connection
+            .query_row("SELECT COUNT(*) FROM schema_migrations WHERE version=29", [], |row| row
+                .get::<_, u64>(0))
+            .unwrap(),
+        0
+    );
+
+    // The real upgrade drops the retired column from the live table and both
+    // column-for-column copies.
+    apply_migrations(&mut connection).unwrap();
+    assert_eq!(protocol_column(&connection), 0);
+    let binding: (String, String, i64, String, i64) = connection
+        .query_row(
+            "SELECT library_id,authority_id,epoch,role,updated_at FROM sync_binding WHERE singleton=1",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        binding,
+        ("lib".into(), "auth".into(), 1, "host".into(), 123)
+    );
+    drop(connection);
+    let reopened = SqliteDatabase::open(&path).unwrap();
+    assert!(reopened.quick_check().is_ok());
 }

@@ -98,7 +98,14 @@ fn library_durability_new_author_playback_preserves_old_pending_bucket_without_c
         object: ObjectKey::PlayStats(song),
         version: ObjectVersion::from_commit_seq(CommitSeq::from_u64(5)),
         origin_device_id: crate::domain::sync::DeviceId::from_uuid(old_author),
-        payload: serde_json::json!({"song_uuid": song.as_uuid(), "by_device": {old_author.to_string(): 5}}),
+        payload: serde_json::to_value(PlayStatsRecord {
+            song_uuid: song.as_uuid(),
+            revision: Revision::INITIAL,
+            updated_by_device_id: crate::domain::library::DeviceId::from_uuid(old_author),
+            hlc: HybridLogicalClock::default(),
+            by_device: std::iter::once((old_author, 5)).collect(),
+        })
+        .unwrap(),
     };
     let cursor = frozen
         .candidate

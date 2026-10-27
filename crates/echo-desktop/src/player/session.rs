@@ -110,29 +110,25 @@ pub struct PersistedEntry {
     pub song_id: String,
 }
 
-/// A persisted history visit. The custom untagged representation lets a
-/// version-1 `history: ["entry-id"]` document load safely; old records are
-/// deliberately assigned timestamp zero and expire rather than becoming an
-/// immortal or misleading previous-track entry.
+/// A persisted history visit. History records always carry their play time;
+/// a document without it predates the timestamped format and is refused as a
+/// whole instead of restoring timestamp-less entries.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum PersistedHistoryRecord {
     Timestamped { entry_id: String, played_at_ms: u64 },
-    Legacy(String),
 }
 
 impl PersistedHistoryRecord {
     fn parse(self) -> Option<HistoryRecord> {
-        match self {
-            Self::Timestamped {
-                entry_id,
-                played_at_ms,
-            } => Some(HistoryRecord {
-                entry_id: entry_id.parse().ok()?,
-                played_at_ms,
-            }),
-            Self::Legacy(_) => None,
-        }
+        let Self::Timestamped {
+            entry_id,
+            played_at_ms,
+        } = self;
+        Some(HistoryRecord {
+            entry_id: entry_id.parse().ok()?,
+            played_at_ms,
+        })
     }
 }
 

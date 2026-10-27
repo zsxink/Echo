@@ -73,7 +73,6 @@ impl SqliteDatabase {
         // Load/mint the device identity on the writer connection before any
         // reader is handed out, so every portable record sees it.
         let device_id = device_state::load_or_create_device_id(&writer)?;
-        device_state::backfill_legacy_play_counts(&mut writer, device_id)?;
 
         let mut readers = Vec::with_capacity(reader_count());
         for _ in 0..reader_count() {

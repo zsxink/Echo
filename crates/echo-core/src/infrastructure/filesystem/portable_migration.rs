@@ -1,52 +1,19 @@
-//! Recoverable portable-format upgrade. A durable original-byte backup and
-//! replay plan precede the future-version manifest fence; v2 is published last.
+//! Portable-directory (`echo/`) IO primitives: bounded reads, atomic
+//! publishes, and typed UUID record enumeration.
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read as _, Write as _};
 use std::path::PathBuf;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::RootRegistry;
 use crate::domain::ids::{LibraryRootId, RelativeMediaPath};
-use crate::domain::library::{
-    LibraryManifest, PortableRecord, PortableRecordDocument, PortableRecordEnvelope, RecordKind,
-};
+use crate::domain::library::{PortableRecord, RecordKind};
 use crate::error::Error;
 
 pub(super) const MAX_RECORD_BYTES: usize = 4 * 1024 * 1024;
-const MAX_PLAN_BYTES: usize = 128 * 1024 * 1024;
-const BACKUP: &str = "echo/migrations/v1-backup.json";
-const JOURNAL: &str = "echo/migrations/v1-v2-journal.json";
+#[cfg(test)]
 const MANIFEST: &str = "echo/manifest.json";
-pub(super) const FENCE_VERSION: u64 = u64::MAX;
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Journal {
-    version: u32,
-    backup_digest: String,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Plan {
-    version: u32,
-    original_manifest: String,
-    manifest: LibraryManifest,
-    originals: Vec<Original>,
-    updates: Vec<PortableRecordEnvelope>,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Original {
-    kind: RecordKind,
-    uuid: uuid::Uuid,
-    // None denotes the historical flat tombstone directory.
-    tombstone_kind: Option<RecordKind>,
-    raw: String,
-}
 
 fn invalid(reason: &str) -> Error {
     Error::conflict(format!("portable migration: {reason}"))
@@ -176,12 +143,6 @@ pub(super) fn remove(
     }
 }
 
-fn decode<T: serde::de::DeserializeOwned>(raw: &str) -> Result<T, Error> {
-    serde_json::from_str(raw).map_err(|error| {
-        Error::unavailable_with_source("portable migration", "invalid persisted JSON", error)
-    })
-}
-
 pub(super) fn encode<T: Serialize>(value: &T, limit: usize) -> Result<Vec<u8>, Error> {
     struct BoundedJson {
         bytes: Vec<u8>,
@@ -267,235 +228,6 @@ fn collect(
             }
             result.push(child);
         }
-    }
-    Ok(())
-}
-
-fn validate(plan: &Plan) -> Result<(), Error> {
-    let original: LibraryManifest = decode(&plan.original_manifest)?;
-    if plan.version != 1
-        || original.format_version != 1
-        || plan.manifest.format_version != 2
-        || original.library_id != plan.manifest.library_id
-    {
-        return Err(invalid(
-            "plan has incompatible versions or library identity",
-        ));
-    }
-    let mut targets = BTreeMap::new();
-    for update in &plan.updates {
-        update.validate()?;
-        if update.sync_metadata().is_some_and(|sync| {
-            sync.binding.library_id.as_uuid() != plan.manifest.library_id.as_uuid()
-        }) {
-            return Err(invalid("update belongs to a different library"));
-        }
-        encode(update, MAX_RECORD_BYTES)?;
-        if targets
-            .insert(record_relative(update.record())?, update)
-            .is_some()
-        {
-            return Err(invalid("duplicate update target"));
-        }
-    }
-    let mut sources = BTreeSet::new();
-    for original in &plan.originals {
-        if original.raw.len() > MAX_RECORD_BYTES {
-            return Err(invalid("backup record is oversized"));
-        }
-        let document: PortableRecordDocument = decode(&original.raw)?;
-        let record = document.record();
-        if original.kind != record.kind() || original.uuid != record.object_uuid() {
-            return Err(invalid("backup path disagrees with record identity"));
-        }
-        let source = original_relative(original.kind, original.uuid, original.tombstone_kind);
-        if !sources.insert(source) {
-            return Err(invalid("duplicate backup source"));
-        }
-        if !targets
-            .get(&record_relative(record)?)
-            .is_some_and(|update| update.record() == record)
-        {
-            return Err(invalid("an original record has no equivalent v2 update"));
-        }
-        if let Some(kind) = original.tombstone_kind {
-            if !matches!(record, PortableRecord::Tombstone(tombstone) if tombstone.deleted_kind == kind)
-            {
-                return Err(invalid("backup tombstone path disagrees with deleted kind"));
-            }
-        }
-    }
-    Ok(())
-}
-
-pub(super) fn recover(registry: &RootRegistry, root: LibraryRootId) -> Result<(), Error> {
-    let Some(raw) = read(registry, root, JOURNAL, 1024)? else {
-        return Ok(());
-    };
-    let journal: Journal = decode(&raw)?;
-    if journal.version != 1 {
-        return Err(invalid("unsupported journal version"));
-    }
-    let backup = read(registry, root, BACKUP, MAX_PLAN_BYTES)?
-        .ok_or_else(|| invalid("journal backup is missing"))?;
-    if blake3::hash(backup.as_bytes()).to_hex().as_str() != journal.backup_digest {
-        return Err(invalid("journal backup digest mismatch"));
-    }
-    let plan: Plan = decode(&backup)?;
-    validate(&plan)?;
-    replay(registry, root, &plan, &mut |_, _| Ok(()))
-}
-
-pub(super) fn apply(
-    registry: &RootRegistry,
-    root: LibraryRootId,
-    updates: &[PortableRecordEnvelope],
-    manifest: &LibraryManifest,
-) -> Result<(), Error> {
-    apply_with_hook(registry, root, updates, manifest, &mut |_, _| Ok(()))
-}
-
-fn apply_with_hook(
-    registry: &RootRegistry,
-    root: LibraryRootId,
-    updates: &[PortableRecordEnvelope],
-    manifest: &LibraryManifest,
-    hook: &mut dyn FnMut(&str, usize) -> Result<(), Error>,
-) -> Result<(), Error> {
-    if read(registry, root, JOURNAL, 1024)?.is_some() {
-        return recover(registry, root);
-    }
-    let original_manifest = read(registry, root, MANIFEST, MAX_RECORD_BYTES)?
-        .ok_or_else(|| invalid("original manifest is missing"))?;
-    let current: LibraryManifest = decode(&original_manifest)?;
-    if current.format_version == 2 && current == *manifest {
-        return Ok(());
-    }
-    if updates.len() > 100_000 {
-        return Err(invalid("too many migration updates"));
-    }
-    let mut retained_bytes = 0usize;
-    for update in updates {
-        retained_bytes = retained_bytes.saturating_add(encode(update, MAX_RECORD_BYTES)?.len());
-        if retained_bytes > MAX_PLAN_BYTES / 2 {
-            return Err(invalid("migration plan exceeds its memory limit"));
-        }
-    }
-    let mut plan = Plan {
-        version: 1,
-        original_manifest,
-        manifest: manifest.clone(),
-        originals: Vec::new(),
-        updates: updates.to_vec(),
-    };
-    plan.updates
-        .sort_by_cached_key(|update| record_relative(update.record()).unwrap_or_default());
-    for &kind in RecordKind::ALL {
-        for relative in record_files(registry, root, kind)? {
-            let raw = read(registry, root, &relative, MAX_RECORD_BYTES)?
-                .ok_or_else(|| invalid("record disappeared during preparation"))?;
-            retained_bytes = retained_bytes.saturating_add(raw.len());
-            if retained_bytes > MAX_PLAN_BYTES || plan.originals.len() >= 100_000 {
-                return Err(invalid("migration backup exceeds its memory limit"));
-            }
-            let document: PortableRecordDocument = decode(&raw)?;
-            let record = document.record();
-            if record.kind() != kind {
-                return Err(invalid("record stored under the wrong kind"));
-            }
-            let typed = record_relative(record)?;
-            let legacy = original_relative(kind, record.object_uuid(), None);
-            let tombstone_kind = if relative == typed && relative != legacy {
-                match record {
-                    PortableRecord::Tombstone(value) => Some(value.deleted_kind),
-                    _ => None,
-                }
-            } else if relative == legacy {
-                None
-            } else {
-                return Err(invalid("record stored under the wrong UUID path"));
-            };
-            plan.originals.push(Original {
-                kind,
-                uuid: record.object_uuid(),
-                tombstone_kind,
-                raw,
-            });
-        }
-    }
-    validate(&plan)?;
-    let backup = encode(&plan, MAX_PLAN_BYTES)?;
-    if let Some(existing) = read(registry, root, BACKUP, MAX_PLAN_BYTES)? {
-        if existing.as_bytes() != backup {
-            return Err(invalid(
-                "an existing original backup must not be overwritten",
-            ));
-        }
-    } else {
-        write(registry, root, BACKUP, &backup)?;
-    }
-    let journal = Journal {
-        version: 1,
-        backup_digest: blake3::hash(&backup).to_hex().to_string(),
-    };
-    write(registry, root, JOURNAL, &encode(&journal, 1024)?)?;
-    hook("journal", 0)?;
-    replay(registry, root, &plan, hook)
-}
-
-fn replay(
-    registry: &RootRegistry,
-    root: LibraryRootId,
-    plan: &Plan,
-    hook: &mut dyn FnMut(&str, usize) -> Result<(), Error>,
-) -> Result<(), Error> {
-    let current: LibraryManifest = decode(
-        &read(registry, root, MANIFEST, MAX_RECORD_BYTES)?
-            .ok_or_else(|| invalid("manifest disappeared"))?,
-    )?;
-    if current.library_id != plan.manifest.library_id
-        || ![1, 2, FENCE_VERSION].contains(&current.format_version)
-    {
-        return Err(invalid(
-            "current manifest differs from the persisted migration",
-        ));
-    }
-    let mut fence = plan.manifest.clone();
-    fence.format_version = FENCE_VERSION;
-    write(registry, root, MANIFEST, &encode(&fence, MAX_RECORD_BYTES)?)?;
-    hook("fence", 0)?;
-    for (index, update) in plan.updates.iter().enumerate() {
-        hook("record", index)?;
-        write(
-            registry,
-            root,
-            &record_relative(update.record())?,
-            &encode(update, MAX_RECORD_BYTES)?,
-        )?;
-    }
-    for original in &plan.originals {
-        if original.kind == RecordKind::Tombstone && original.tombstone_kind.is_none() {
-            remove(
-                registry,
-                root,
-                &original_relative(original.kind, original.uuid, None),
-            )?;
-        }
-    }
-    hook("manifest", plan.updates.len())?;
-    write(
-        registry,
-        root,
-        MANIFEST,
-        &encode(&plan.manifest, MAX_RECORD_BYTES)?,
-    )?;
-    // The manifest is the commit point. A cleanup failure leaves a complete,
-    // recoverable plan; it must not report an uncommitted migration.
-    if let Err(error) = remove(registry, root, JOURNAL) {
-        tracing::warn!(
-            code = error.code(),
-            "portable migration journal cleanup deferred"
-        );
     }
     Ok(())
 }

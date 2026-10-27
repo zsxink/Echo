@@ -7,7 +7,7 @@ use crate::domain::sync::{SharedResourceKind, SharedResourceManifest, SyncBindin
 use crate::error::Error;
 
 use super::super::support::{now_ms, parse_id, storage};
-use super::super::{read_device_play_counts, statements, SqliteDatabase};
+use super::super::{statements, SqliteDatabase};
 use super::{enqueue as sync, sync_manifests, sync_projection};
 
 #[path = "sync_baseline/recovery_intents.rs"]
@@ -255,7 +255,6 @@ fn enqueue_current(connection: &Connection, root: &str) -> Result<usize, Error> 
         let song_payload = statements::song_full_snapshot_payload(connection, song)?;
         declare_audio(connection, &uuid, &song_payload)?;
         let favorite_payload = serde_json::json!({"song_uuid":uuid,"is_favorite":favorite,"favorited_at":favorited_at});
-        capture_legacy_plays(connection, song)?;
         let stats_payload = sync_projection::confirmed_play_stats_payload(connection, &uuid)?;
         for (kind, payload) in [
             (sync::KIND_SONG, song_payload),
@@ -293,29 +292,6 @@ fn enqueue_current(connection: &Connection, root: &str) -> Result<usize, Error> 
         count += 1;
     }
     Ok(count)
-}
-
-fn capture_legacy_plays(connection: &Connection, song: SongId) -> Result<(), Error> {
-    let total: u64 = connection
-        .query_row(
-            "SELECT play_count FROM songs WHERE uuid=?1",
-            params![song.to_string()],
-            |row| row.get(0),
-        )
-        .map_err(storage)?;
-    let counts = read_device_play_counts(connection, song)?;
-    let assigned = counts.values().copied().fold(0_u64, u64::saturating_add);
-    if total > assigned {
-        let device: String = connection
-            .query_row(
-                "SELECT value FROM device_state WHERE key='device_id'",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(storage)?;
-        connection.execute("INSERT INTO sync_device_play_counts(song_uuid,device_id,play_count) VALUES(?1,?2,?3) ON CONFLICT(song_uuid,device_id) DO UPDATE SET play_count=play_count+excluded.play_count",params![song.to_string(),device,i64::try_from(total-assigned).map_err(storage)?]).map_err(storage)?;
-    }
-    Ok(())
 }
 
 fn declare_audio(
