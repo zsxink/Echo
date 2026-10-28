@@ -2,14 +2,14 @@
 
 #![allow(clippy::doc_markdown, clippy::missing_errors_doc)]
 
-use rusqlite::{OptionalExtension, TransactionBehavior, params};
+use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use crate::application::ports::{AppliedRemoteCursor, RemoteApplyPort, RemoteCommit};
 use crate::domain::sync::{CommitCheckpoint, CommitSeq, DeviceId, ObjectKey, SyncBinding};
 use crate::error::Error;
 
-use super::super::SqliteDatabase;
 use super::super::support::{now_ms, storage};
+use super::super::SqliteDatabase;
 
 impl RemoteApplyPort for SqliteDatabase {
     fn apply_remote_batch(
@@ -143,12 +143,17 @@ fn apply_remote_page(
             commits.last().expect("nonempty page").mutation_id.as_uuid()
         ),
     );
-    super::durability::commit_projection(
+    super::durability::commit_remote_page_projection(
         control,
         tx,
         root,
-        crate::domain::library::durability::ChangeOrigin::Remote,
         operation,
+        super::durability::RemotePage {
+            binding,
+            peer: peer_device_id,
+            anchor,
+            commits,
+        },
     )?;
     Ok(AppliedRemoteCursor {
         sequence: CommitSeq::from_u64(u64::try_from(sequence).map_err(storage)?),

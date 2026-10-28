@@ -3,11 +3,14 @@
 
 mod commit;
 mod facts;
+mod page;
 mod publication;
+mod resource;
+pub(crate) use page::RemotePage;
 #[cfg(test)]
 mod tests;
 
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -17,6 +20,11 @@ use crate::domain::library::durability::{
     DurableStateChange, LibraryBatch, StateKey, StateKind, StateNamespace, StateTarget,
 };
 use crate::error::Error;
+
+// Full rescue and focused inbound pages must retain byte-equivalent SQL facts.
+const CONFIRMED_PAYLOAD: &str = "json_object('schema','echo.sync.confirmed.v1','object_type',object_type,'object_uuid',object_uuid,'version',object_version,'sequence',commit_seq,'payload',CASE WHEN payload_json IS NULL THEN NULL ELSE json(payload_json) END,'tombstone',json(CASE WHEN is_tombstone=1 THEN 'true' ELSE 'false' END),'changed_at_ms',changed_at_ms)";
+const RECEIPT_PAYLOAD: &str = "json_object('schema','echo.sync.receipt.v1','author',origin_device_id,'mutation_id',mutation_id,'payload_digest',payload_digest,'outcome',json(outcome_json),'original_outcome',outcome_json,'received_at',received_at,'sequence',commit_seq)";
+const PEER_CURSOR_PAYLOAD: &str = "json_object('schema','echo.sync.peer-cursor.v1','peer',peer_device_id,'sequence',applied_commit_seq,'digest',lower(hex(applied_digest)))";
 
 /// Capture only immutable allocations created after the verified planning baseline.
 pub(crate) fn capture_local_object_mutation(
@@ -163,12 +171,61 @@ pub(crate) fn export_sync_state(
         "context_root=?1"
     };
     let context_namespace = facts::context_namespace(connection, &root_string, active)?;
-    let queries = [
+    for (kind, namespace, query) in context_queries(prefix, scope) {
+        for payload in values(connection, &query, &root_string)? {
+            let namespace_scope = if namespace == "commit" {
+                StateNamespace::Bound {
+                    binding: facts::binding(&payload)?,
+                }
+            } else {
+                context_namespace
+                    .clone()
+                    .unwrap_or(StateNamespace::LegacyEvidence { source_root: root })
+            };
+            let fact = scoped_fact(namespace_scope, namespace, payload)?;
+            debug_assert_eq!(kind, fact.kind);
+            state.push(fact);
+        }
+    }
+    complete_confirmations(&mut state)?;
+    // Physical associations only become ready after verified publication. The
+    // full publication also preserves pending claims and their retained bytes.
+    for payload in values(
+        connection,
+        &format!(
+            "SELECT {} FROM sync_remote_publications WHERE local_root_uuid=?1 ORDER BY operation_uuid",
+            resource::PAYLOAD
+        ),
+        &root_string,
+    )? {
+        state.push(resource::from_payload(root, payload)?);
+    }
+    for payload in values(
+        connection,
+        "SELECT json_object('schema','echo.sync.local-origin.v1','author',origin_device_id,'sequence',origin_seq,'mutation_id',last_mutation_id) FROM sync_local_origin_cursors WHERE local_root_uuid=?1 ORDER BY origin_device_id",
+        &root_string,
+    )? {
+        let target = StateTarget::LocalOriginCursor {
+            author: crate::domain::sync::DeviceId::from_uuid(parse_uuid(&payload, "author")?),
+        };
+        state.push(DurableStateChange::scoped(
+            StateKey {
+                namespace: StateNamespace::LegacyEvidence { source_root: root },
+                target,
+            },
+            payload,
+        )?);
+    }
+    Ok(state)
+}
+
+fn context_queries(prefix: &str, scope: &str) -> [(StateKind, &'static str, String); 8] {
+    [
         (
             StateKind::Confirmed,
             "object",
             format!(
-                "SELECT json_object('schema','echo.sync.confirmed.v1','object_type',object_type,'object_uuid',object_uuid,'version',object_version,'sequence',commit_seq,'payload',CASE WHEN payload_json IS NULL THEN NULL ELSE json(payload_json) END,'tombstone',json(CASE WHEN is_tombstone=1 THEN 'true' ELSE 'false' END),'changed_at_ms',changed_at_ms) FROM {prefix}sync_object_versions WHERE {scope} ORDER BY object_type,object_uuid"
+                "SELECT {CONFIRMED_PAYLOAD} FROM {prefix}sync_object_versions WHERE {scope} ORDER BY object_type,object_uuid"
             ),
         ),
         (
@@ -197,7 +254,7 @@ pub(crate) fn export_sync_state(
             StateKind::Receipt,
             "receipt",
             format!(
-                "SELECT json_object('schema','echo.sync.receipt.v1','author',origin_device_id,'mutation_id',mutation_id,'payload_digest',payload_digest,'outcome',json(outcome_json),'original_outcome',outcome_json,'received_at',received_at,'sequence',commit_seq) FROM {prefix}sync_inbox WHERE {scope} ORDER BY origin_device_id,mutation_id"
+                "SELECT {RECEIPT_PAYLOAD} FROM {prefix}sync_inbox WHERE {scope} ORDER BY origin_device_id,mutation_id"
             ),
         ),
         (
@@ -211,7 +268,7 @@ pub(crate) fn export_sync_state(
             StateKind::Cursor,
             "peer",
             format!(
-                "SELECT json_object('schema','echo.sync.peer-cursor.v1','peer',peer_device_id,'sequence',applied_commit_seq,'digest',lower(hex(applied_digest))) FROM {prefix}sync_peer_cursors WHERE {scope} ORDER BY peer_device_id"
+                "SELECT {PEER_CURSOR_PAYLOAD} FROM {prefix}sync_peer_cursors WHERE {scope} ORDER BY peer_device_id"
             ),
         ),
         (
@@ -221,85 +278,28 @@ pub(crate) fn export_sync_state(
                 "SELECT json_object('schema','echo.sync.conflict.v1','id',conflict_id,'object_type',object_type,'object_uuid',object_uuid,'replaced_version',replaced_version,'accepted_version',accepted_version,'replaced',json(replaced_payload_json),'accepted',json(accepted_payload_json),'resolved_at',resolved_at) FROM {prefix}sync_conflicts WHERE {scope} ORDER BY conflict_id"
             ),
         ),
-    ];
-    for (kind, namespace, query) in queries {
-        for payload in values(connection, &query, &root_string)? {
-            let namespace_scope = if namespace == "commit" {
-                StateNamespace::Bound {
-                    binding: facts::binding(&payload)?,
-                }
-            } else {
-                context_namespace
-                    .clone()
-                    .unwrap_or(StateNamespace::LegacyEvidence { source_root: root })
-            };
-            let target = facts::target(namespace, &payload)?;
-            debug_assert_eq!(kind, target.kind());
-            let key = StateKey {
-                namespace: namespace_scope,
-                target,
-            };
-            if namespace == "receipt" {
-                // SQL inbox rows have no schema marker: host confirmations may
-                // be complete, while replica/legacy outcomes are evidence only.
-                let mut complete = payload.clone();
-                complete["schema"] = Value::from("echo.sync.receipt.v2");
-                if let Ok(receipt) = DurableStateChange::scoped(key.clone(), complete) {
-                    state.push(receipt);
-                    continue;
-                }
-            }
-            state.push(DurableStateChange::scoped(key, payload)?);
+    ]
+}
+
+fn scoped_fact(
+    namespace: StateNamespace,
+    family: &str,
+    payload: Value,
+) -> Result<DurableStateChange, Error> {
+    let key = StateKey {
+        namespace,
+        target: facts::target(family, &payload)?,
+    };
+    if family == "receipt" {
+        // Replica outcomes remain v1 evidence; only complete host confirmations
+        // may be upgraded. Neither exporter may infer missing receipt fields.
+        let mut complete = payload.clone();
+        complete["schema"] = Value::from("echo.sync.receipt.v2");
+        if let Ok(receipt) = DurableStateChange::scoped(key.clone(), complete) {
+            return Ok(receipt);
         }
     }
-    complete_confirmations(&mut state)?;
-    // Physical associations only become ready after verified publication. The
-    // full publication also preserves pending claims and their retained bytes.
-    for mut payload in values(
-        connection,
-        "SELECT json_object('schema','echo.sync.resource-publication.v1','operation',operation_uuid,'publication',json(publication_json),'original_body',publication_json,'completed',json(CASE WHEN completed=1 THEN 'true' ELSE 'false' END)) FROM sync_remote_publications WHERE local_root_uuid=?1 ORDER BY operation_uuid",
-        &root_string,
-    )? {
-        // Publication rows predate binding capture as well; root provenance
-        // retains their exact operation without asserting a historical binding.
-        let target = StateTarget::Publication {
-            operation_id: parse_uuid(&payload, "operation")?,
-        };
-        let key = StateKey {
-            namespace: StateNamespace::LegacyEvidence { source_root: root },
-            target,
-        };
-        payload["schema"] = Value::from("echo.sync.resource-publication.v2");
-        if let Ok(complete) = DurableStateChange::scoped(key.clone(), payload.clone()) {
-            state.push(complete);
-        } else {
-            // Old layouts or incomplete journals remain unproven evidence. Do
-            // not retrofit today's owner/version or alter committed v1 facts.
-            payload["schema"] = Value::from("echo.sync.resource-publication.v1");
-            payload
-                .as_object_mut()
-                .ok_or_else(|| Error::conflict("invalid publication evidence"))?
-                .remove("original_body");
-            state.push(DurableStateChange::scoped(key, payload)?);
-        }
-    }
-    for payload in values(
-        connection,
-        "SELECT json_object('schema','echo.sync.local-origin.v1','author',origin_device_id,'sequence',origin_seq,'mutation_id',last_mutation_id) FROM sync_local_origin_cursors WHERE local_root_uuid=?1 ORDER BY origin_device_id",
-        &root_string,
-    )? {
-        let target = StateTarget::LocalOriginCursor {
-            author: crate::domain::sync::DeviceId::from_uuid(parse_uuid(&payload, "author")?),
-        };
-        state.push(DurableStateChange::scoped(
-            StateKey {
-                namespace: StateNamespace::LegacyEvidence { source_root: root },
-                target,
-            },
-            payload,
-        )?);
-    }
-    Ok(state)
+    DurableStateChange::scoped(key, payload)
 }
 
 fn complete_confirmations(states: &mut [DurableStateChange]) -> Result<(), Error> {
@@ -352,7 +352,8 @@ fn complete_confirmations(states: &mut [DurableStateChange]) -> Result<(), Error
 }
 
 pub(crate) use commit::{
-    commit_projection, commit_publication_projection, commit_resource_projection,
+    commit_projection, commit_publication_projection, commit_remote_page_projection,
+    commit_resource_projection,
 };
 
 pub(crate) fn active_root(connection: &Connection) -> Result<LibraryRootId, Error> {

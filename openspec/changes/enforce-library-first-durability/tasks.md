@@ -476,3 +476,7 @@
 - [ ] 13.5 在 macOS 实际桌面应用和真实临时音乐库上验收用户目标：1,000 与 10,000 首记录，对收藏、创建歌单、加入歌单、移出歌单每种操作至少 200 次，分别报告点击至已保存反馈、目录可靠提交、SQLite 投影延迟的 P50/P95/P99。四种操作的点击至已保存反馈 P95 < 50 ms；另用 MP3/FLAC/M4A/OGG/Opus/WAV 验证导入后无需重扫即可见，并单独报告单曲导入耗时，不把导入纳入 50 ms 门槛。同时运行 `cargo test -p echo-core`、`cargo test -p echo-desktop`、桌面前端测试及 `pnpm verify:governance`。报告硬件/文件系统和所有未覆盖故障，不得以 Python 原型替代实际应用证据。
 
   验证进度（2026-10-28）：Release 服务路径在 3,000 首合成记录上对四种操作各测 100 次，P95 为 28.09/34.04/31.81/32.49 ms；10,000 首、每项 30 次的严格 P95 上限基准也通过，P95 为 37.21/49.35/37.87/37.89 ms。导入 6 种真实短音频在 3,000 首样本为 424–454 ms，另一个 1,000 首跟踪样本为 122–140 ms；导入没有 P95 分布，需在 13.5 中单独验证。数据和范围见 [交互编辑延迟验证](../../../docs/verification/interactive-edit-latency-2026-10-28.md)。这不是实际 Tauri 窗口点击计时：1k/10k 各操作 200 次、真实桌面点击至反馈、SQLite 投影延迟分布及整门 `pnpm verify:governance` 尚未验证，因此本项保持未勾选。
+
+## 14. 同步写入捕获成本（用户 2026-10-29 继续优化）
+
+- [x] 14.1 为非墓碑 Favorite-only 入站页实现受限定向捕获：要求认证 replay 的 peer anchor、SQLite 等头水位和父 Song after-image证明，遇到页内 alias/资源、其他对象、相关 alias/墓碑、匹配 mutation或不完整状态时完整捕获；共用完整导出的事实编码，保存 Favorite、ledger、confirmed、receipt 和 peer cursor。用 `cargo test -p echo-core --lib focused_favorite_page` 比较定向/完整目录的规范用户资料和必要同步事实重建、重复重放及关键 fallback，另运行 `cargo check -p echo-core`、修改 Rust 文件的 rustfmt 与 `openspec validate enforce-library-first-durability --strict`（LD-01/02/03/07/10）。批次大小下降不等于延迟验收，Release/桌面同步分段测量另行记录。

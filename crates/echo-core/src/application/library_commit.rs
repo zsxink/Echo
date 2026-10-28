@@ -33,6 +33,10 @@ pub fn commit_then_project<T>(
 /// Commit through the directory's authenticated exclusive write session when
 /// requested and available, then release its writer lock before applying the
 /// SQL projection. Adapters without sessions retain standalone commit behavior.
+///
+/// # Errors
+/// Reports batch validation, directory commit, or projection failures. A saved
+/// operation keeps its identity when recovery or projection remains pending.
 pub fn commit_then_project_with_optional_session<T>(
     control: &dyn ControlPlanePort,
     root: LibraryRootId,

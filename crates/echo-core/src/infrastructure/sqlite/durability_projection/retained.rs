@@ -7,16 +7,16 @@ use super::super::support::storage;
 use crate::domain::{
     ids::LibraryRootId,
     library::{
-        PortableRecord, PortableRecordEnvelope,
         durability::{
             DurableResource, DurableStateChange, LibraryProjectionStatus, LibraryRecoveryRecords,
             PlaybackEvent, ProjectionTarget, ProjectionUnresolvedReason as Reason, StateKind,
             UnresolvedProjectionRecord,
         },
+        PortableRecord, PortableRecordEnvelope,
     },
 };
 use crate::error::Error;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{params, Connection, OptionalExtension};
 
 pub(super) fn save(
     c: &Connection,
@@ -180,59 +180,7 @@ pub(super) fn retry(
         .map_err(storage)?
         .collect::<Result<std::collections::BTreeSet<_>, _>>()
         .map_err(storage)?;
-    let pending = pending;
-    let mut retry_records = Vec::new();
-    for envelope in &retained.records {
-        let key = serde_json::to_string(&envelope.record().object_key()?).map_err(storage)?;
-        if pending.contains(&key) {
-            retry_records.push(envelope.clone());
-        }
-    }
-    retry_records.sort_by_key(|e| match e.record() {
-        PortableRecord::Tombstone(_) => 0,
-        PortableRecord::Song(_) => 1,
-        PortableRecord::Playlist(_) => 2,
-        _ => 3,
-    });
-    // An envelope whose `sync` block claims a host version the verified ledger
-    // cannot prove stays a retained candidate. The local value is still
-    // projected (the directory is the source of truth), but the row keeps
-    // reporting the unproven claim so nothing treats it as a confirmed
-    // baseline. The bytes themselves are never rewritten here.
-    let mut unproven = std::collections::BTreeSet::new();
-    for envelope in &retry_records {
-        if super::confirmation::unproven(c, envelope)? {
-            unproven
-                .insert(serde_json::to_string(&envelope.record().object_key()?).map_err(storage)?);
-        }
-    }
-    // Release positions for the retained membership identities as a set, so
-    // valid reorderings (including swaps) do not collide with their old slots.
-    // The row itself survives the release, parked at the end of its playlist:
-    // its saved added_at and identity stay replaceable by the re-projection
-    // instead of being discarded. A member whose dependencies are still
-    // unresolved keeps its projected row: retrying must never discard a saved
-    // fact it cannot replace.
-    for envelope in &retry_records {
-        if let PortableRecord::PlaylistItem(item) = envelope.record() {
-            if dependencies::unresolved(c, root, envelope, &retained.records)?.is_none() {
-                c.execute("UPDATE playlist_songs SET position=(SELECT COALESCE(MAX(parked.position),-1)+1 FROM playlist_songs parked WHERE parked.playlist_uuid=playlist_songs.playlist_uuid) WHERE member_uuid=?1 AND playlist_uuid IN (SELECT uuid FROM playlists WHERE library_root_uuid=?2)", params![item.item_uuid.to_string(),root.to_string()]).map_err(storage)?;
-            }
-        }
-    }
-    for envelope in &retry_records {
-        let key = serde_json::to_string(&envelope.record().object_key()?).map_err(storage)?;
-        let unresolved = dependencies::unresolved(c, root, envelope, &retained.records)?;
-        if unresolved.is_none() {
-            super::records::project_record(c, root, envelope)?;
-        }
-        let reported = unresolved.or_else(|| {
-            unproven
-                .contains(&key)
-                .then_some(Reason::UnverifiedConfirmationMetadata)
-        });
-        reason(c, root, &key, reported)?;
-    }
+    retry_retained_records(c, root, &retained, &pending)?;
     let mut allocations = local_allocation::AllocationIndex::new(&retained.state)?;
     for state in &retained.state {
         let key = state_key(state)?;
@@ -296,6 +244,67 @@ pub(super) fn retry(
             local_allocation::restore_indexed(c, root, library, state, &mut allocations)?
         };
         reason(c, root, &key, unresolved)?;
+    }
+    Ok(())
+}
+
+fn retry_retained_records(
+    c: &Connection,
+    root: LibraryRootId,
+    retained: &LibraryRecoveryRecords,
+    pending: &std::collections::BTreeSet<String>,
+) -> Result<(), Error> {
+    let mut retry_records = Vec::new();
+    for envelope in &retained.records {
+        let key = serde_json::to_string(&envelope.record().object_key()?).map_err(storage)?;
+        if pending.contains(&key) {
+            retry_records.push(envelope.clone());
+        }
+    }
+    retry_records.sort_by_key(|e| match e.record() {
+        PortableRecord::Tombstone(_) => 0,
+        PortableRecord::Song(_) => 1,
+        PortableRecord::Playlist(_) => 2,
+        _ => 3,
+    });
+    // An envelope whose `sync` block claims a host version the verified ledger
+    // cannot prove stays a retained candidate. The local value is still
+    // projected (the directory is the source of truth), but the row keeps
+    // reporting the unproven claim so nothing treats it as a confirmed
+    // baseline. The bytes themselves are never rewritten here.
+    let mut unproven = std::collections::BTreeSet::new();
+    for envelope in &retry_records {
+        if super::confirmation::unproven(c, envelope)? {
+            unproven
+                .insert(serde_json::to_string(&envelope.record().object_key()?).map_err(storage)?);
+        }
+    }
+    // Release positions for the retained membership identities as a set, so
+    // valid reorderings (including swaps) do not collide with their old slots.
+    // The row itself survives the release, parked at the end of its playlist:
+    // its saved added_at and identity stay replaceable by the re-projection
+    // instead of being discarded. A member whose dependencies are still
+    // unresolved keeps its projected row: retrying must never discard a saved
+    // fact it cannot replace.
+    for envelope in &retry_records {
+        if let PortableRecord::PlaylistItem(item) = envelope.record() {
+            if dependencies::unresolved(c, root, envelope, &retained.records)?.is_none() {
+                c.execute("UPDATE playlist_songs SET position=(SELECT COALESCE(MAX(parked.position),-1)+1 FROM playlist_songs parked WHERE parked.playlist_uuid=playlist_songs.playlist_uuid) WHERE member_uuid=?1 AND playlist_uuid IN (SELECT uuid FROM playlists WHERE library_root_uuid=?2)", params![item.item_uuid.to_string(),root.to_string()]).map_err(storage)?;
+            }
+        }
+    }
+    for envelope in &retry_records {
+        let key = serde_json::to_string(&envelope.record().object_key()?).map_err(storage)?;
+        let unresolved = dependencies::unresolved(c, root, envelope, &retained.records)?;
+        if unresolved.is_none() {
+            super::records::project_record(c, root, envelope)?;
+        }
+        let reported = unresolved.or_else(|| {
+            unproven
+                .contains(&key)
+                .then_some(Reason::UnverifiedConfirmationMetadata)
+        });
+        reason(c, root, &key, reported)?;
     }
     Ok(())
 }

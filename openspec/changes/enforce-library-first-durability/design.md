@@ -305,6 +305,16 @@ IPC 用结构化 result 区分 `NotSaved`、`SavedPendingRecovery`、`SavedPendi
 
 ## 性能优化复盘与实测（2026-10-28）
 
+同步接收页面复用同一条目录-first 边界。复核发现，SQLite 已按页面合并事务，但普通远端页面在每次目录提交后仍调用严格 `recover`，会重复审计可重建的整棵已物化文件树。同步投影现在通过独占 `begin_write` 会话复用已认证的写入基线，目录提交后用 `projection_replay` 读取认证日志链，再在同一个 SQLite 事务内校验水位并投影；这保留日志链验证、目录先于 SQLite、以及水位与业务行原子提交，同时避免重复全树审计。远端资源准备/完成也经过同一协调器，因此一并使用该路径；资源声明、哈希验证和完成前不可用语义不变。
+
+这项修改尚无同步页面的阶段耗时或 P95 数据，不能据此宣称同步已达到特定延迟。普通对象页仍从 SQLite 导出整库业务记录和同步恢复状态，复杂度随曲库与同步历史增长。资源 `prepare/save/finish` 在认证 replay 已证明 owner after-image 后，改为只提交该 publication 的完整状态；`finish` 另带资源位置和声明，首次缺少目录 owner 证明、墓碑或音频身份不匹配时保留完整捕获。这样避免媒体同步每个分块重复 SQL 全库导出与同步历史构造，但目录容量预检仍会合并/编码完整日志视图，owner 在 checkpoint 中查找仍是线性扫描，因此端到端成本还不是 O(1)。后续应量出这些阶段、日志提交及 SQLite 写锁时间，再按受影响对象优化普通增量页。页面外每批读取 replica checkpoint 与逐条处理 tombstone 意图也列为测量项，但预计影响低于全库导出。未完成测量前不跳过校验或改动远端确认语义。
+
+本次验证：定向 capture 测试与 `incremental_page_projects_rows_and_watermark_after_the_directory` 通过；`cargo test -p echo-core --lib sync_resource_publication` 为 27 通过/1 失败，唯一失败是重复离线投影丢失已发布物理路径。临时关闭 focused capture、强制旧的 full capture 后仍以相同断言失败，属于独立既有恢复问题。`library_durability_mark_published` 为 7 通过/2 失败，两项均没有进入 Remote focused 分支，失败与无 binding 重建时保留旧 SQL-only sync 事实的断言有关，不能归因于本次资源 capture。另有 `snapshot_publishes_the_visible_set_only_through_the_directory` 断言同类无 binding Cursor 事实；临时恢复旧提交路径后仍失败。`cargo check -p echo-core`、修改文件 rustfmt、`git diff --check` 与 change 严格校验通过。没有 Release 毫秒对比或同步端到端 P95；批次计数验证的是捕获量下降，不是用户可见延迟目标。
+
+普通增量页的首轮定向捕获仅覆盖全部为非墓碑 Favorite 的页面。该投影只改歌曲的喜欢值、喜欢时间和派生更新时间；SongRecord 不含这三个字段，因此业务增量只需要当前 FavoriteRecord。实现位于 SQLite 同步适配层，继续复用既有目录提交及顺序投影边界，不改变 Core 公共端口、LAN JSON、格式或 SQLite schema。独占写会话必须证明 SQLite 本库水位等于认证 replay head、相同 binding/peer 的目录游标等于入站 anchor，以及每个父 Song 的最新非墓碑记录与 SQL 导出的 SongRecord 完全一致。页内 alias/资源、任何其他对象类型、匹配的本地 mutation、已有相关 Song alias/墓碑、缺失原始 receipt、无法形成完整 confirmed、缺失或滞后的水位证据均回退完整捕获；replica 的 v1 receipt 保留原始 outcome，不补造 v2 字段。通过条件后保存每个受影响歌曲的 FavoriteRecord、每条新 ledger 与 receipt、最终 confirmed after-image及 peer cursor；编码与完整导出共用，不能根据当前会话补造历史绑定。验证须将定向页叠加既有目录后，与完整捕获进行规范状态及必要同步事实重建对照，并检查批次大小仅随本页变化量增长。认证 replay 的内存遍历、目录容量预检/编码与顺序 SQLite 投影仍需单独测量，本优化不能据此宣称同步 P95 < 50 ms。
+
+本轮定向页验证使用 24 首歌曲、同页 3 条喜欢变更（其中同一歌曲连续 true→false），捕获为 2 条 Favorite 记录和 9 条 state（3 ledger、3 receipt、2 最终 confirmed、1 peer cursor），完整捕获则有 72 条业务记录。定向/完整目录重建后的全部 retained typed records/state 与规范歌曲值一致，重复目录投影与重复页均幂等；Favorite 先于父 Song 到达的跨页等待状态、以及匹配本地 mutation 的原正文/终态 disposition 均由完整捕获保留。显式授权 `retry_library_sync_state` 在两份重建库都因既有 replica v1 `{applied:true}` receipt 报 `missing field mutation_id`，因此这里只证明其原始同步证据等价保留，没有把该步骤记为 live 账本恢复成功。`cargo test -p echo-core --lib focused_favorite_page` 三项通过，`cargo check -p echo-core`、修改文件 rustfmt、`git diff --check` 和 change 严格校验通过；尚无 Release 毫秒或同步 P95。
+
 交互式收藏、建歌单、加入歌单和移出歌单在目录日志提交确认后即可返回已保存结果；SQLite 是可重建投影，后台顺序追平。前台操作需要的前置状态应复用当前已验证的 journal replay：歌单及成员记录从 replay 中解析，精确内容去重优先查询 SQLite 的内容哈希索引；避免每次操作重新枚举/读取整份 portable 记录或重复构建同一歌单快照。新写入若遇到 SQLite 落后，只追赶匹配水位后的验证日志后缀，不能退回对完整历史的每次重放。
 
 导入保留两个必须先于外部副作用的目录操作：预留 claim 与最终歌曲 after-image。实测发现独立 `commit` 会在每个阶段重复执行严格目录恢复和整棵已物化文件树校验，令 MP3/OGG 小文件出现 1.8–2.8 秒长尾。导入已先通过批次快照认证日志，且对本次资源执行独立大小/哈希校验，因此预留和最终歌曲提交改为在独占写会话中复用认证状态；扫描与 watcher 仍走严格独立提交，启动恢复仍负责完整篡改/物化校验。不能为减少延迟而异步化预留 claim、跳过资源校验或把媒体发布置于身份预留之前。导入成功的 SQLite 投影必须同时令歌曲 `Available`，否则目录/歌曲行虽已存在，正常可用歌曲查询仍会隐藏它，直到全库扫描更新可用性。

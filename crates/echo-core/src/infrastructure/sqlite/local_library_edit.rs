@@ -513,8 +513,5 @@ fn planned_record(
             observe(envelope.record());
         }
     }
-    match latest {
-        Some(record) => Ok(record),
-        None => authority.read_record(root, kind, &id.to_string()),
-    }
+    latest.map_or_else(|| authority.read_record(root, kind, &id.to_string()), Ok)
 }

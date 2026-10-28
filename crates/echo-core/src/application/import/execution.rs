@@ -57,8 +57,9 @@ impl PlanImport<'_> {
         // visible, as before.
         if let Some(history) = self.deps.history.as_deref() {
             let started = std::time::Instant::now();
-            if let Ok(Some(committed)) = durable.read_operation(planned.root, operation.as_uuid()) {
-                super::trace_import_stage(planned.root, "import_reservation_read_commit", started);
+            let committed = durable.read_operation(planned.root, operation.as_uuid());
+            super::trace_import_stage(planned.root, "import_reservation_read_commit", started);
+            if let Ok(Some(committed)) = committed {
                 let started = std::time::Instant::now();
                 let _ = crate::application::ports::LibraryProjectionPort::project_verified_library_commit(
                     history,
@@ -66,8 +67,6 @@ impl PlanImport<'_> {
                     &committed,
                 );
                 super::trace_import_stage(planned.root, "project_import_reservation", started);
-            } else {
-                super::trace_import_stage(planned.root, "import_reservation_read_commit", started);
             }
         }
         Ok(())

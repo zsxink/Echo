@@ -19,6 +19,9 @@ use crate::domain::sync::{
 };
 use crate::infrastructure::filesystem::{RootControlPlane, RootRegistry};
 
+#[path = "sync_focused_favorite_page.rs"]
+mod focused_favorite_page;
+
 struct Replica {
     directory: tempfile::TempDir,
     db: SqliteDatabase,
@@ -365,14 +368,12 @@ fn snapshot_publishes_the_visible_set_only_through_the_directory() {
     // The peer cursor is retained as typed evidence rather than dropped: its
     // authenticated dependencies are a separate recovery concern (7.4), so a
     // rebuild records it as unresolved instead of silently losing it.
-    assert!(
-        fresh
-            .read_recovery_records(replica.root)
-            .unwrap()
-            .state
-            .iter()
-            .any(|state| state.kind == StateKind::Cursor)
-    );
+    assert!(fresh
+        .read_recovery_records(replica.root)
+        .unwrap()
+        .state
+        .iter()
+        .any(|state| state.kind == StateKind::Cursor));
 }
 
 /// Both publication windows are recoverable: a fault before the commit marker

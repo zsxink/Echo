@@ -24,27 +24,7 @@ impl Removal {
         authority: &dyn ControlPlanePort,
         replay: &crate::domain::library::durability::LibraryReplay,
     ) -> Result<LibraryBatch, Error> {
-        let started = std::time::Instant::now();
-        let belongs: bool = c
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM playlists WHERE uuid=?1 AND library_root_uuid=?2)",
-                params![self.playlist.to_string(), self.root.to_string()],
-                |row| row.get(0),
-            )
-            .map_err(storage)?;
-        if !belongs {
-            return Err(Error::unavailable("playlist", "not in active library"));
-        }
-        let member: Option<String> = c
-            .query_row(
-                "SELECT member_uuid FROM playlist_songs WHERE playlist_uuid=?1 AND song_uuid=?2",
-                params![self.playlist.to_string(), self.song.to_string()],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(storage)?;
-        super::trace_local_edit_stage(self.root, "membership_remove_preconditions", started);
-        let Some(member) = member else {
+        let Some(member) = self.current_member(c)? else {
             return Ok(LibraryBatch::new(
                 uuid::Uuid::new_v4(),
                 self.library,
@@ -52,7 +32,6 @@ impl Removal {
                 vec![],
             ));
         };
-        let member = PlaylistItemId::from_uuid(uuid::Uuid::parse_str(&member).map_err(storage)?);
         let object = ObjectKey::PlaylistItem(member);
         let started = std::time::Instant::now();
         let before = super::planned_record(
@@ -129,5 +108,35 @@ impl Removal {
         );
         super::trace_local_edit_stage(self.root, "membership_remove_capture_mutation", started);
         Ok(batch)
+    }
+
+    fn current_member(&self, c: &Connection) -> Result<Option<PlaylistItemId>, Error> {
+        let started = std::time::Instant::now();
+        let belongs: bool = c
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM playlists WHERE uuid=?1 AND library_root_uuid=?2)",
+                params![self.playlist.to_string(), self.root.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if !belongs {
+            return Err(Error::unavailable("playlist", "not in active library"));
+        }
+        let member: Option<String> = c
+            .query_row(
+                "SELECT member_uuid FROM playlist_songs WHERE playlist_uuid=?1 AND song_uuid=?2",
+                params![self.playlist.to_string(), self.song.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(storage)?;
+        super::trace_local_edit_stage(self.root, "membership_remove_preconditions", started);
+        member
+            .map(|member| {
+                uuid::Uuid::parse_str(&member)
+                    .map(PlaylistItemId::from_uuid)
+                    .map_err(storage)
+            })
+            .transpose()
     }
 }

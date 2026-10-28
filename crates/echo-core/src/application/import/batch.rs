@@ -77,44 +77,8 @@ impl<'a> PlanImport<'a> {
             )
         })?;
         let replay = durable.projection_replay(root)?;
-        let indexed_snapshot_current = if let Some(history) = self.deps.history.as_deref() {
-            match history.projection_status(root) {
-                Ok(status) => {
-                    let expected = replay.head();
-                    let matches_head = expected.map_or_else(
-                        || {
-                            status.applied_library_commit_seq == 0
-                                && status.applied_head_digest.is_none()
-                        },
-                        |(sequence, digest)| {
-                            status.applied_library_commit_seq == sequence
-                                && status.applied_head_digest.as_deref() == Some(digest)
-                        },
-                    );
-                    let unresolved_song_record = status.unresolved.iter().any(|record| {
-                        matches!(
-                            &record.target,
-                            crate::domain::library::durability::ProjectionTarget::Record {
-                                object: crate::domain::sync::ObjectKey::Song(_)
-                            }
-                        )
-                    });
-                    if std::env::var_os("ECHO_IMPORT_TRACE").is_some() {
-                        eprintln!(
-                            "ECHO_IMPORT_TRACE root={root} stage=import_projection_head current={matches_head} expected={:?} actual=({}, {:?}) unresolved={} unresolved_song_record={unresolved_song_record}",
-                            expected.map(|(sequence, digest)| (sequence, digest)),
-                            status.applied_library_commit_seq,
-                            status.applied_head_digest,
-                            status.unresolved.len(),
-                        );
-                    }
-                    matches_head && !unresolved_song_record
-                }
-                Err(_) => false,
-            }
-        } else {
-            false
-        };
+        let indexed_snapshot_current =
+            indexed_snapshot_is_current(self.deps.history.as_deref(), root, &replay);
         let songs = if indexed_snapshot_current {
             super::trace_import_stage(root, "import_open_journal_snapshot", started);
             let started = std::time::Instant::now();
@@ -389,4 +353,44 @@ impl<'a> PlanImport<'a> {
             }
         }
     }
+}
+
+fn indexed_snapshot_is_current(
+    history: Option<&dyn crate::application::ports::LibraryHistoryPort>,
+    root: LibraryRootId,
+    replay: &crate::domain::library::durability::LibraryReplay,
+) -> bool {
+    history.is_some_and(|history| match history.projection_status(root) {
+        Ok(status) => {
+            let expected = replay.head();
+            let matches_head = expected.map_or_else(
+                || {
+                    status.applied_library_commit_seq == 0
+                        && status.applied_head_digest.is_none()
+                },
+                |(sequence, digest)| {
+                    status.applied_library_commit_seq == sequence
+                        && status.applied_head_digest.as_deref() == Some(digest)
+                },
+            );
+            let unresolved_song_record = status.unresolved.iter().any(|record| {
+                matches!(
+                    &record.target,
+                    crate::domain::library::durability::ProjectionTarget::Record {
+                        object: crate::domain::sync::ObjectKey::Song(_)
+                    }
+                )
+            });
+            if std::env::var_os("ECHO_IMPORT_TRACE").is_some() {
+                eprintln!(
+                    "ECHO_IMPORT_TRACE root={root} stage=import_projection_head current={matches_head} expected={expected:?} actual=({}, {:?}) unresolved={} unresolved_song_record={unresolved_song_record}",
+                    status.applied_library_commit_seq,
+                    status.applied_head_digest,
+                    status.unresolved.len(),
+                );
+            }
+            matches_head && !unresolved_song_record
+        }
+        Err(_) => false,
+    })
 }

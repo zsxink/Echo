@@ -114,6 +114,89 @@ impl DirectoryFixture {
 }
 
 #[test]
+fn library_durability_resource_transitions_capture_only_their_complete_after_image() {
+    let f = DirectoryFixture::new();
+    let operation = f.publish(b"initial audio");
+    let replay = f.plane.durability().unwrap().recover(f.root).unwrap();
+    let (initial, focused) = replay.commits.split_first().unwrap();
+    // This fixture begins with SQL-only baseline data. Its first resource
+    // transition must still establish complete owner/history coverage.
+    assert_eq!(initial.batch.records.len(), 3);
+    assert!(initial.batch.state.len() > 1);
+    assert!(focused.len() >= 2);
+    for commit in focused {
+        assert!(commit.batch.records.is_empty());
+        let publications: Vec<_> = commit
+            .batch
+            .state
+            .iter()
+            .filter(|state| state.payload["schema"] == "echo.sync.resource-publication.v2")
+            .collect();
+        assert_eq!(publications.len(), 1);
+        let publication = publications[0];
+        publication.validate().unwrap();
+        assert_eq!(publication.payload["operation"], operation.to_string());
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(
+                publication.payload["original_body"].as_str().unwrap()
+            )
+            .unwrap(),
+            publication.payload["publication"]
+        );
+        let completed = publication.payload["completed"] == true;
+        assert_eq!(commit.batch.state.len(), if completed { 2 } else { 1 });
+        assert_eq!(commit.batch.resources.len(), usize::from(completed));
+    }
+    let raw: String = f
+        .database
+        .with_reader(|c| {
+            c.query_row(
+                "SELECT publication_json FROM sync_remote_publications WHERE operation_uuid=?1",
+                [operation.to_string()],
+                |r| r.get(0),
+            )
+            .map_err(storage)
+        })
+        .unwrap();
+    let final_batch = &replay.commits.last().unwrap().batch;
+    let saved = final_batch.state.iter().find(|state| matches!(state.key.as_ref().map(|key| &key.target), Some(StateTarget::Publication { operation_id }) if *operation_id == operation.as_uuid())).unwrap();
+    assert_eq!(saved.payload["original_body"], raw);
+
+    // A fresh SQLite still receives the baseline Song and the focused physical
+    // location, without restoring the old network binding or media readiness.
+    let fresh_dir = tempfile::tempdir().unwrap();
+    let fresh = SqliteDatabase::open(fresh_dir.path().join("fresh.sqlite")).unwrap();
+    LibraryRepository::upsert(&fresh, &LibraryRoot::new(f.root, f.path(), true, true)).unwrap();
+    fresh.project_library_commits(f.root, &replay).unwrap();
+    let ObjectKey::Song(song) = f.object else {
+        unreachable!()
+    };
+    let restored = SongRepository::by_id(&fresh, song).unwrap().unwrap();
+    assert_eq!(
+        restored.blake3_hash(),
+        Some(f.initial.digest.to_hex().as_str())
+    );
+    assert_eq!(restored.availability(), SongAvailability::Missing);
+    let retained = fresh.read_recovery_records(f.root).unwrap();
+    let pointer = final_batch.state.iter().find(|state| matches!(state.key.as_ref().map(|key| &key.target), Some(StateTarget::ResourceLocation { object }) if *object == f.object)).unwrap();
+    assert!(retained.state.iter().any(|state| state == pointer));
+    assert_eq!(
+        SongRepository::published_file_paths(&fresh, f.root).unwrap(),
+        vec![(
+            restored.path().clone(),
+            RelativeMediaPath::new("media/track.flac").unwrap(),
+        )]
+    );
+    let binding_count: u64 = fresh
+        .with_reader(|c| {
+            c.query_row("SELECT COUNT(*) FROM sync_binding", [], |r| r.get(0))
+                .map_err(storage)
+        })
+        .unwrap();
+    assert_eq!(binding_count, 0);
+}
+
+#[test]
 fn library_durability_resource_publication_rebuilds_media_and_managed_locations_offline() {
     for managed in [false, true] {
         let f = DirectoryFixture::new();
@@ -207,18 +290,16 @@ fn library_durability_resource_completion_refusal_keeps_the_old_association_and_
     refused.set_refused(true);
     f.database.configure_library_control(refused.clone());
     assert!(f.database.finish(&publication).is_err());
-    assert!(
-        f.database
-            .local_remote_resource_path(f.root, f.object, &replacement)
-            .unwrap()
-            .is_none()
-    );
-    assert!(
-        f.database
-            .local_remote_resource_path(f.root, f.object, &f.initial)
-            .unwrap()
-            .is_some()
-    );
+    assert!(f
+        .database
+        .local_remote_resource_path(f.root, f.object, &replacement)
+        .unwrap()
+        .is_none());
+    assert!(f
+        .database
+        .local_remote_resource_path(f.root, f.object, &f.initial)
+        .unwrap()
+        .is_some());
     assert!(
         !RemoteResourceJournalPort::load(f.database.as_ref(), f.root, publication.operation)
             .unwrap()
@@ -226,18 +307,16 @@ fn library_durability_resource_completion_refusal_keeps_the_old_association_and_
     );
     refused.set_refused(false);
     f.database.finish(&publication).unwrap();
-    assert!(
-        f.database
-            .local_remote_resource_path(f.root, f.object, &replacement)
-            .unwrap()
-            .is_some()
-    );
-    assert!(
-        f.database
-            .local_remote_resource_path(f.root, f.object, &f.initial)
-            .unwrap()
-            .is_none()
-    );
+    assert!(f
+        .database
+        .local_remote_resource_path(f.root, f.object, &replacement)
+        .unwrap()
+        .is_some());
+    assert!(f
+        .database
+        .local_remote_resource_path(f.root, f.object, &f.initial)
+        .unwrap()
+        .is_none());
 }
 
 #[test]
@@ -247,19 +326,16 @@ fn library_durability_resource_completion_sql_failure_retains_the_same_directory
     f.database.writer.run(|c| c.execute_batch("CREATE TABLE fail_resource_finish(parent TEXT REFERENCES playlists(uuid) DEFERRABLE INITIALLY DEFERRED); CREATE TRIGGER fail_resource_finish AFTER UPDATE OF completed ON sync_remote_publications WHEN NEW.completed=1 BEGIN INSERT INTO fail_resource_finish VALUES('missing'); END;").map_err(storage)).unwrap();
     let error = f.database.finish(&publication).unwrap_err();
     assert_eq!(error.code(), "library_saved_pending_projection");
-    assert!(
-        f.database
-            .local_remote_resource_path(f.root, f.object, &f.initial)
-            .unwrap()
-            .is_none()
-    );
+    assert!(f
+        .database
+        .local_remote_resource_path(f.root, f.object, &f.initial)
+        .unwrap()
+        .is_none());
     let before = f.plane.durability().unwrap().recover(f.root).unwrap();
     let head = before.head().unwrap().0;
-    assert!(
-        before
-            .states()
-            .any(|state| state.payload["schema"] == "echo.library.resource-location.v1")
-    );
+    assert!(before
+        .states()
+        .any(|state| state.payload["schema"] == "echo.library.resource-location.v1"));
     f.database
         .writer
         .run(|c| {

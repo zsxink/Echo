@@ -24,15 +24,7 @@ impl Append {
         authority: &dyn ControlPlanePort,
         replay: &crate::domain::library::durability::LibraryReplay,
     ) -> Result<LibraryBatch, Error> {
-        let started = std::time::Instant::now();
-        let playable: bool = c.query_row(
-            "SELECT EXISTS(SELECT 1 FROM songs WHERE uuid=?1 AND library_root_uuid=?2 AND availability='available')",
-            params![self.song.to_string(), self.root.to_string()], |row| row.get(0),
-        ).map_err(storage)?;
-        if !playable {
-            return Err(Error::unavailable("song", "not playable in active library"));
-        }
-        super::trace_local_edit_stage(self.root, "membership_append_playable", started);
+        self.ensure_playable(c)?;
         let mut batch = LibraryBatch::new(
             uuid::Uuid::new_v4(),
             self.library,
@@ -125,5 +117,18 @@ impl Append {
             super::trace_local_edit_stage(self.root, "membership_append_capture_mutation", started);
         }
         Ok(batch)
+    }
+
+    fn ensure_playable(&self, c: &Connection) -> Result<(), Error> {
+        let started = std::time::Instant::now();
+        let playable: bool = c.query_row(
+            "SELECT EXISTS(SELECT 1 FROM songs WHERE uuid=?1 AND library_root_uuid=?2 AND availability='available')",
+            params![self.song.to_string(), self.root.to_string()], |row| row.get(0),
+        ).map_err(storage)?;
+        if !playable {
+            return Err(Error::unavailable("song", "not playable in active library"));
+        }
+        super::trace_local_edit_stage(self.root, "membership_append_playable", started);
+        Ok(())
     }
 }

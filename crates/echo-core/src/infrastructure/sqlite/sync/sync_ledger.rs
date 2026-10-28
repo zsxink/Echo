@@ -2,7 +2,7 @@
 
 #![allow(clippy::doc_markdown, clippy::missing_errors_doc)]
 
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::Serialize;
 
 use crate::application::ports::{
@@ -10,20 +10,42 @@ use crate::application::ports::{
 };
 use crate::domain::ids::LibraryRootId;
 use crate::domain::sync::{
+    check_candidate_against_tombstone, confirm_candidate_at, payload_changed_at_ms,
     CommitCheckpoint, CommitSeq, Confirmation, ConfirmationError, ConfirmedObject, DeviceId,
     FinalTombstone, MutationCandidate, MutationId, ObjectKey, ObjectVersion, OriginAnchor,
-    OriginCursor, SyncBinding, TombstoneDecisionError, check_candidate_against_tombstone,
-    confirm_candidate_at, payload_changed_at_ms,
+    OriginCursor, SyncBinding, TombstoneDecisionError,
 };
 use crate::error::Error;
 
-use super::super::SqliteDatabase;
 use super::super::support::{now_ms, storage};
+use super::super::SqliteDatabase;
 
 #[path = "sync_ledger/host_ledger.rs"]
 mod host_ledger;
 #[path = "sync_ledger/host_ledger_apply.rs"]
 mod host_ledger_apply;
+
+const DETACH_CONTEXT_TABLES: &[&str] = &[
+    "sync_snapshot_pages",
+    "sync_snapshot_resource_refs",
+    "sync_snapshot_records",
+    "sync_snapshot_sessions",
+    "sync_replica_snapshot_pages",
+    "sync_replica_snapshot_records",
+    "sync_replica_snapshot_sessions",
+    "sync_host_baselines",
+    "sync_transfers",
+    "sync_peer_cursors",
+    "sync_conflicts",
+    "sync_member_aliases",
+    "sync_song_aliases",
+    "sync_object_versions",
+    "sync_commits",
+    "sync_inbox",
+    "sync_origin_cursors",
+    "sync_peers",
+    "sync_binding",
+];
 
 impl SqliteDatabase {
     /// Detach one local library from LAN sync while preserving its library rows.
@@ -37,27 +59,7 @@ impl SqliteDatabase {
                 .map_err(storage)?;
             let root = local_root.to_string();
             super::context::select(&tx, &root)?;
-            for table in [
-                "sync_snapshot_pages",
-                "sync_snapshot_resource_refs",
-                "sync_snapshot_records",
-                "sync_snapshot_sessions",
-                "sync_replica_snapshot_pages",
-                "sync_replica_snapshot_records",
-                "sync_replica_snapshot_sessions",
-                "sync_host_baselines",
-                "sync_transfers",
-                "sync_peer_cursors",
-                "sync_conflicts",
-                "sync_member_aliases",
-                "sync_song_aliases",
-                "sync_object_versions",
-                "sync_commits",
-                "sync_inbox",
-                "sync_origin_cursors",
-                "sync_peers",
-                "sync_binding",
-            ] {
+            for table in DETACH_CONTEXT_TABLES {
                 tx.execute_batch(&format!("DELETE FROM {table};"))
                     .map_err(storage)?;
                 tx.execute(

@@ -2,7 +2,7 @@
 
 #![allow(clippy::missing_errors_doc)]
 
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
 use crate::application::ports::{
     RemoteResourceJournalPort, RemoteResourcePublication, RemoteResourceStage, RemoteResourceTarget,
@@ -11,7 +11,7 @@ use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath, SongId};
 use crate::domain::sync::{ObjectKey, ResourceDigest, SharedResourceKind, SharedResourceManifest};
 use crate::error::Error;
 
-use super::super::{SqliteDatabase, support::storage};
+use super::super::{support::storage, SqliteDatabase};
 use super::sync_manifests;
 
 fn validate_current(
@@ -135,7 +135,7 @@ impl RemoteResourceJournalPort for SqliteDatabase {
                 tx.execute("INSERT INTO sync_remote_publication_claims(operation_uuid,local_root_uuid,normalized_relative_path) VALUES(?1,?2,?3)",params![publication.operation.to_string(),publication.root.to_string(),path.identity_key()]).map_err(storage)?;
             }
             let operation = transition_operation(&publication, "prepare")?;
-            super::durability::commit_resource_projection(control, tx, publication.root, operation, None)
+            super::durability::commit_resource_projection(control, tx, publication.root, operation, publication)
         })
     }
 
@@ -164,7 +164,7 @@ impl RemoteResourceJournalPort for SqliteDatabase {
             }
             tx.execute("UPDATE sync_remote_publications SET publication_json=?2 WHERE operation_uuid=?1 AND completed=0",params![publication.operation.to_string(),serde_json::to_string(&publication).map_err(storage)?]).map_err(storage)?;
             let operation = transition_operation(&publication, "save")?;
-            super::durability::commit_resource_projection(control, tx, publication.root, operation, None)
+            super::durability::commit_resource_projection(control, tx, publication.root, operation, publication)
         })
     }
 
@@ -201,7 +201,7 @@ impl RemoteResourceJournalPort for SqliteDatabase {
             tx.execute("UPDATE sync_remote_publications SET publication_json=?2,completed=1 WHERE operation_uuid=?1",params![publication.operation.to_string(),serde_json::to_string(&publication).map_err(storage)?]).map_err(storage)?;
             tx.execute("UPDATE sync_remote_publication_claims SET released=1 WHERE operation_uuid=?1",params![publication.operation.to_string()]).map_err(storage)?;
             let operation = transition_operation(&publication, "finish")?;
-            super::durability::commit_resource_projection(control, tx, publication.root, operation, Some(publication))
+            super::durability::commit_resource_projection(control, tx, publication.root, operation, publication)
         })
     }
 
