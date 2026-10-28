@@ -1,7 +1,6 @@
 //! Shared ingestion boundary: the library owns identity before the index does.
 
 use super::{ParsedOutcome, ScanDeps};
-use crate::application::library_commit::commit_then_project;
 use crate::application::portable::EnsureControlPlane;
 use crate::domain::entities::Song;
 use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath, Revision};
@@ -159,6 +158,33 @@ pub fn commit_song(
     resources: Vec<DurableResource>,
     project: impl FnOnce() -> Result<(), Error>,
 ) -> Result<(), Error> {
+    commit_song_with_directory_session(deps, song, operation, origin, resources, project, false)
+}
+
+/// Commit an imported song through the write-session fast path. The import
+/// flow has already authenticated the journal while reserving the target and
+/// rechecks resource bytes before publication, so it need not repeat the full
+/// materialized-tree audit at the final metadata commit.
+pub fn commit_imported_song(
+    deps: &ScanDeps,
+    song: &Song,
+    operation: OperationId,
+    origin: ChangeOrigin,
+    resources: Vec<DurableResource>,
+    project: impl FnOnce() -> Result<(), Error>,
+) -> Result<(), Error> {
+    commit_song_with_directory_session(deps, song, operation, origin, resources, project, true)
+}
+
+fn commit_song_with_directory_session(
+    deps: &ScanDeps,
+    song: &Song,
+    operation: OperationId,
+    origin: ChangeOrigin,
+    resources: Vec<DurableResource>,
+    project: impl FnOnce() -> Result<(), Error>,
+    use_write_session: bool,
+) -> Result<(), Error> {
     let root = song.root();
     let library = library_id(deps, root)?;
     let previous = deps
@@ -217,7 +243,7 @@ pub fn commit_song(
             && old.artist == record.artist
             && old.album == record.album
     }) {
-        catch_up_library_projection(deps, root, operation)?;
+        catch_up_library_projection(deps, root, operation, None)?;
         return project();
     }
     let envelope = PortableRecordEnvelope::new(PortableRecord::Song(record), None)?;
@@ -234,13 +260,20 @@ pub fn commit_song(
             "content_hash": song.blake3_hash(), "added_at": song.added_at(),
         }),
     ));
-    let (outcome, projected) = commit_then_project(deps.control.as_ref(), root, &batch, |_| {
-        // The batch is only the newest fact. Apply the verified directory prefix
-        // through the ordered projection port first so an earlier saved commit
-        // cannot be skipped when this operation's local index update succeeds.
-        catch_up_library_projection(deps, root, operation)?;
-        project()
-    })?;
+    let (outcome, projected) =
+        crate::application::library_commit::commit_then_project_with_optional_session(
+            deps.control.as_ref(),
+            root,
+            &batch,
+            use_write_session,
+            |committed| {
+                // The batch is only the newest fact. Apply the verified directory prefix
+                // through the ordered projection port first so an earlier saved commit
+                // cannot be skipped when this operation's local index update succeeds.
+                catch_up_library_projection(deps, root, operation, Some(committed))?;
+                project()
+            },
+        )?;
     if projected.is_some() {
         return Ok(());
     }
@@ -265,6 +298,7 @@ fn catch_up_library_projection(
     deps: &ScanDeps,
     root: LibraryRootId,
     fallback_operation: OperationId,
+    committed: Option<&crate::domain::library::durability::LibraryCommit>,
 ) -> Result<(), Error> {
     let Some(projection) = deps.history.as_deref() else {
         return Ok(());
@@ -275,13 +309,32 @@ fn catch_up_library_projection(
             "directory commit adapter is not configured",
         )
     })?;
+    if let Some(commit) = committed {
+        let started = std::time::Instant::now();
+        if crate::application::ports::LibraryProjectionPort::project_verified_library_commit(
+            projection, root, commit,
+        )? {
+            trace_import_projection(root, "project_verified_commit", started);
+            return Ok(());
+        }
+        trace_import_projection(root, "project_verified_commit", started);
+    }
+    let started = std::time::Instant::now();
     let replay = durable.recover(root)?;
+    trace_import_projection(root, "recover_directory", started);
+    let started = std::time::Instant::now();
     let status = projection.projection_status(root)?;
-    match crate::application::ports::LibraryProjectionPort::project_library_commits(
+    trace_import_projection(root, "read_projection_status", started);
+    let started = std::time::Instant::now();
+    match crate::application::ports::LibraryProjectionPort::project_verified_library_suffix(
         projection, root, &replay,
     ) {
-        Ok(()) => Ok(()),
+        Ok(()) => {
+            trace_import_projection(root, "project_verified_suffix", started);
+            Ok(())
+        }
         Err(error) => {
+            trace_import_projection(root, "project_verified_suffix", started);
             let operation = replay
                 .commits
                 .iter()
@@ -291,5 +344,14 @@ fn catch_up_library_projection(
                 });
             Err(Error::saved_pending_projection(operation, error))
         }
+    }
+}
+
+fn trace_import_projection(root: LibraryRootId, stage: &str, started: std::time::Instant) {
+    if std::env::var_os("ECHO_IMPORT_TRACE").is_some() {
+        eprintln!(
+            "ECHO_IMPORT_TRACE root={root} stage={stage} elapsed_ms={:.3}",
+            started.elapsed().as_secs_f64() * 1_000.0
+        );
     }
 }

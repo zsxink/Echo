@@ -209,6 +209,15 @@ enum ExecuteError {
     Duplicate { existing: SongId },
 }
 
+pub(super) fn trace_import_stage(root: LibraryRootId, stage: &str, started: std::time::Instant) {
+    if std::env::var_os("ECHO_IMPORT_TRACE").is_some() {
+        eprintln!(
+            "ECHO_IMPORT_TRACE root={root} stage={stage} elapsed_ms={:.3}",
+            started.elapsed().as_secs_f64() * 1_000.0
+        );
+    }
+}
+
 #[path = "batch.rs"]
 mod batch;
 #[path = "execution.rs"]

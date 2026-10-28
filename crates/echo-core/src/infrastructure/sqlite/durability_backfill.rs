@@ -1,7 +1,7 @@
 //! Typed, root-scoped legacy rescue. Physical SQLite snapshots stay beside the
 //! application database; only allowlisted domain records enter the library.
 
-use super::{SqliteDatabase, support::storage};
+use super::{support::storage, SqliteDatabase};
 use crate::application::ports::{ControlPlanePort, LibraryHistoryPort};
 use crate::domain::ids::{LibraryRootId, Revision};
 use crate::domain::library::{
@@ -9,7 +9,7 @@ use crate::domain::library::{
     PlaylistItemRecord, PlaylistRecord, PortableRecord, PortableRecordEnvelope,
 };
 use crate::error::Error;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::sync::Arc;
 
 #[path = "projection_rebuild.rs"]
@@ -183,6 +183,32 @@ impl crate::application::ports::LibraryProjectionPort for SqliteDatabase {
                 connection, root, &commits, &snapshots, report,
             )
             .map(|_| ())
+        })
+    }
+    fn project_verified_library_suffix(
+        &self,
+        root: LibraryRootId,
+        replay: &crate::domain::library::durability::LibraryReplay,
+    ) -> Result<(), Error> {
+        let replay = replay.clone();
+        let control = self.library_control();
+        self.writer.run(move |connection| {
+            verify_covered_watermark(connection, root, &replay, control.as_deref())?;
+            super::durability_projection::project_verified_suffix_with_dependency_retry(
+                connection, root, &replay, true,
+            )
+        })
+    }
+    fn project_verified_library_commit(
+        &self,
+        root: LibraryRootId,
+        commit: &crate::domain::library::durability::LibraryCommit,
+    ) -> Result<bool, Error> {
+        let commit = commit.clone();
+        self.writer.run(move |connection| {
+            super::durability_projection::project_verified_commit_with_dependency_retry(
+                connection, root, &commit,
+            )
         })
     }
 }

@@ -39,9 +39,9 @@ use echo_core::domain::library::{
 use echo_core::infrastructure::sqlite::SqliteDatabase;
 use echo_desktop::platform::dialogs::TestDialogs;
 use echo_desktop::platform::trash::DesktopTrash;
-use echo_desktop::runtime::StartupSupervisor;
-use echo_desktop::runtime::app::{RoutedRuntime, assemble};
+use echo_desktop::runtime::app::{assemble, RoutedRuntime};
 use echo_desktop::runtime::services::AppServices;
+use echo_desktop::runtime::StartupSupervisor;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -111,6 +111,11 @@ fn fixture(song_count: usize) -> Fixture {
         .control
         .write_manifest(root, &LibraryManifest::new(library, "performance fixture"))
         .expect("real library manifest");
+    runtime
+        .deps
+        .fs
+        .establish_write_capability(root)
+        .expect("establish import-capable synthetic root");
     let device = runtime.database.current_device_id();
     let songs: Vec<_> = (0..song_count)
         // Production identities spread records across 256 UUID prefixes.
@@ -579,11 +584,109 @@ fn completed_local_edit_latency() {
         playlists.push(start.elapsed());
         last_playlist = Some(id.parse::<PlaylistId>().expect("playlist identity"));
     }
+    // The playlist is a prerequisite fixture for the membership benchmark. Let
+    // its independent read-model projection settle before measuring members.
+    f.database
+        .flush_library_projection(f.root, Duration::from_secs(30))
+        .expect("background playlist projection catches up");
+    let member_playlist = last_playlist.expect("playlist for membership measurements");
+    let member_song = *f.songs.last().expect("at least one fixture song");
+    let mut additions = Vec::with_capacity(samples);
+    let mut removals = Vec::with_capacity(samples);
+    for _ in 0..samples {
+        // Each sample represents a human-paced command whose preceding
+        // projection has had time to finish. A separate stress run can measure
+        // immediately queued edits, which intentionally pay the prior-log
+        // catch-up barrier in the next writer.
+        f.database
+            .flush_library_projection(f.root, Duration::from_secs(30))
+            .expect("projection settles before add sample");
+        let start = Instant::now();
+        f.app
+            .add_to_playlists(member_song, &[member_playlist])
+            .expect("completed add-to-playlist command");
+        additions.push(start.elapsed());
+
+        f.database
+            .flush_library_projection(f.root, Duration::from_secs(30))
+            .expect("projection settles before remove sample");
+        let start = Instant::now();
+        f.app
+            .remove_playlist_song(member_playlist, member_song)
+            .expect("completed remove-from-playlist command");
+        removals.push(start.elapsed());
+    }
+    f.database
+        .flush_library_projection(f.root, Duration::from_secs(30))
+        .expect("membership projection catches up before import samples");
+    let import_inputs = tempfile::tempdir().expect("private import benchmark inputs");
+    let audio_fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/audio");
+    let mut imports = Vec::new();
+    for extension in ["mp3", "flac", "m4a", "ogg", "opus", "wav"] {
+        let source = audio_fixtures.join(format!("tone-short.{extension}"));
+        let input = import_inputs
+            .path()
+            .join(format!("import-{run_id}.{extension}"));
+        std::fs::copy(&source, &input).expect("copy real audio fixture to private input");
+        let bytes = std::fs::metadata(&input)
+            .expect("audio input metadata")
+            .len();
+        let started = Instant::now();
+        let outcome = f
+            .app
+            .import_single_path(&input, input.file_name().unwrap().to_str().unwrap())
+            .expect("complete audio import command");
+        let elapsed = started.elapsed();
+        assert!(
+            matches!(
+                &outcome,
+                echo_desktop::ipc::dto::ImportResultDto::Imported { .. }
+            ),
+            "audio fixture should import successfully: {outcome:?}"
+        );
+        if let echo_desktop::ipc::dto::ImportResultDto::Imported { song_id, .. } = &outcome {
+            let imported_song = song_id.parse::<SongId>().expect("imported song identity");
+            let imported_row = SongRepository::by_id(f.database.as_ref(), imported_song)
+                .expect("read imported song without rescanning")
+                .expect("successful import should already be visible in SQLite");
+            assert_eq!(imported_row.root(), f.root);
+            assert_eq!(imported_row.availability(), SongAvailability::Available);
+            let catalog = f
+                .app
+                .all_songs(
+                    SongSort {
+                        field: SongSortField::AddedAt,
+                        direction: SortDirection::Desc,
+                    },
+                    None,
+                    100,
+                )
+                .expect("read catalog without rescanning");
+            assert_eq!(
+                catalog.total_count,
+                f.songs.len() + imports.len() + 1,
+                "successful import should contribute to the catalog count; row={imported_row:?}, active={:?}",
+                f.app.library_status().expect("active library status")
+            );
+        }
+        imports.push(serde_json::json!({
+            "extension": extension,
+            "size_bytes": bytes,
+            "elapsed_ms": elapsed.as_secs_f64() * 1_000.0,
+        }));
+    }
     // Interactive commands acknowledge the durable directory journal; wait
     // outside the timed interval before asserting eventual SQLite projection.
     f.database
         .flush_library_projection(f.root, Duration::from_secs(30))
         .expect("background projection catches up");
+    assert!(
+        PlaylistRepository::members(f.database.as_ref(), member_playlist)
+            .expect("read projected playlist members")
+            .iter()
+            .all(|member| member.song() != member_song),
+        "the final removal must reach the SQLite read model"
+    );
     // Check both durable originals and the SQL view after timing. A successful
     // command must have completed both stores, rather than merely queued work.
     let song_index = ((samples - 1) * 37) % song_count;
@@ -604,17 +707,14 @@ fn completed_local_edit_latency() {
         values[song_index]
     );
     let playlist = last_playlist.expect("at least one playlist sample");
-    assert!(
-        f.control
-            .read_record(f.root, RecordKind::Playlist, &playlist.to_string())
-            .unwrap()
-            .is_some()
-    );
-    assert!(
-        PlaylistRepository::by_id(f.database.as_ref(), playlist)
-            .unwrap()
-            .is_some()
-    );
+    assert!(f
+        .control
+        .read_record(f.root, RecordKind::Playlist, &playlist.to_string())
+        .unwrap()
+        .is_some());
+    assert!(PlaylistRepository::by_id(f.database.as_ref(), playlist)
+        .unwrap()
+        .is_some());
     let favorite_distribution = distribution(&favorites);
     let playlist_distribution = distribution(&playlists);
     let result = serde_json::json!({
@@ -624,11 +724,19 @@ fn completed_local_edit_latency() {
         "history_operations": history,
         "favorite": favorite_distribution,
         "create_playlist": playlist_distribution,
+        "add_to_playlist": distribution(&additions),
+        "remove_from_playlist": distribution(&removals),
+        "import_small_audio_fixtures": imports,
     });
     println!("ECHO_LOCAL_EDIT_PERF {result}");
     if let Ok(limit) = std::env::var("ECHO_PERF_MAX_P95_MS") {
         let limit: f64 = limit.parse().expect("numeric P95 limit");
-        for command in ["favorite", "create_playlist"] {
+        for command in [
+            "favorite",
+            "create_playlist",
+            "add_to_playlist",
+            "remove_from_playlist",
+        ] {
             let p95 = result[command]["p95_ms"].as_f64().unwrap();
             assert!(p95 < limit, "{command} P95 {p95:.3}ms exceeds {limit:.3}ms");
         }

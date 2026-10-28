@@ -1,7 +1,7 @@
 use crate::application::ports::{ImportSource, ImportSourceInfo, ImportSourceReader};
 use crate::application::scan::ScanDeps;
 use crate::domain::entities::SongAvailability;
-use crate::domain::ids::LibraryRootId;
+use crate::domain::ids::{LibraryRootId, RelativeMediaPath, SongId};
 use crate::domain::import::ImportConflictIndex;
 use crate::domain::state::OperationState;
 use crate::error::Error;
@@ -32,6 +32,7 @@ impl<'a> PlanImport<'a> {
     ) -> Result<ImportBatchReport, Error> {
         // Refuse the whole batch before any copy when the root cannot take
         // writes (spec: 资料库根目录不可用时在开始复制前拒绝整批导入).
+        let started = std::time::Instant::now();
         if self.deps.roots.replica_enrollment_pending(root)?
             || self
                 .deps
@@ -44,12 +45,17 @@ impl<'a> PlanImport<'a> {
                 results: vec![ImportOutcome::LibraryUnavailable; sources.len()],
             });
         }
+        super::trace_import_stage(root, "import_validate_root", started);
+        let started = std::time::Instant::now();
         if crate::application::scan::durable::library_id(self.deps, root).is_err() {
             return Ok(ImportBatchReport {
                 results: vec![ImportOutcome::LibraryUnavailable; sources.len()],
             });
         }
+        super::trace_import_stage(root, "import_read_library_identity", started);
+        let started = std::time::Instant::now();
         let mut state = self.batch_state(root)?;
+        super::trace_import_stage(root, "import_build_batch_state", started);
         let mut results = Vec::with_capacity(sources.len());
         for source in sources {
             results.push(self.import_one(root, source, &mut state));
@@ -63,7 +69,65 @@ impl<'a> PlanImport<'a> {
     /// until the target truly does not exist (绝不覆盖既有文件).
     fn batch_state(&self, root: LibraryRootId) -> Result<BatchState, Error> {
         let mut conflicts = ImportConflictIndex::default();
-        for song in crate::application::scan::durable::song_snapshot(self.deps, root)? {
+        let started = std::time::Instant::now();
+        let durable = self.deps.control.durability().ok_or_else(|| {
+            Error::unavailable(
+                "library durability",
+                "directory commit adapter is not configured",
+            )
+        })?;
+        let replay = durable.projection_replay(root)?;
+        let indexed_snapshot_current = if let Some(history) = self.deps.history.as_deref() {
+            match history.projection_status(root) {
+                Ok(status) => {
+                    let expected = replay.head();
+                    let matches_head = expected.map_or_else(
+                        || {
+                            status.applied_library_commit_seq == 0
+                                && status.applied_head_digest.is_none()
+                        },
+                        |(sequence, digest)| {
+                            status.applied_library_commit_seq == sequence
+                                && status.applied_head_digest.as_deref() == Some(digest)
+                        },
+                    );
+                    let unresolved_song_record = status.unresolved.iter().any(|record| {
+                        matches!(
+                            &record.target,
+                            crate::domain::library::durability::ProjectionTarget::Record {
+                                object: crate::domain::sync::ObjectKey::Song(_)
+                            }
+                        )
+                    });
+                    if std::env::var_os("ECHO_IMPORT_TRACE").is_some() {
+                        eprintln!(
+                            "ECHO_IMPORT_TRACE root={root} stage=import_projection_head current={matches_head} expected={:?} actual=({}, {:?}) unresolved={} unresolved_song_record={unresolved_song_record}",
+                            expected.map(|(sequence, digest)| (sequence, digest)),
+                            status.applied_library_commit_seq,
+                            status.applied_head_digest,
+                            status.unresolved.len(),
+                        );
+                    }
+                    matches_head && !unresolved_song_record
+                }
+                Err(_) => false,
+            }
+        } else {
+            false
+        };
+        let songs = if indexed_snapshot_current {
+            super::trace_import_stage(root, "import_open_journal_snapshot", started);
+            let started = std::time::Instant::now();
+            let songs = self.deps.songs.all_in_root(root)?;
+            super::trace_import_stage(root, "import_indexed_song_snapshot", started);
+            songs
+        } else {
+            let started = std::time::Instant::now();
+            let songs = crate::application::scan::durable::song_snapshot(self.deps, root)?;
+            super::trace_import_stage(root, "import_snapshot_songs", started);
+            songs
+        };
+        for song in songs {
             // Missing and Echo-pending-delete records remain in the repository
             // for UUID/recovery semantics, but they no longer represent a
             // playable catalogue holder or a logical target claimed by the
@@ -80,9 +144,49 @@ impl<'a> PlanImport<'a> {
             }
             conflicts.occupy_target(song.path().identity_key());
         }
+        if indexed_snapshot_current {
+            let mut claims = std::collections::BTreeMap::new();
+            for state in replay.states() {
+                if state.kind == crate::domain::library::durability::StateKind::Claim
+                    && state.payload["kind"] == "ingestion"
+                {
+                    claims.insert(state.id, state.payload.clone());
+                }
+            }
+            let mut claimed_songs = Vec::new();
+            let mut claimed_paths = Vec::new();
+            for claim in claims.into_values().filter(|claim| claim["active"] == true) {
+                let (Some(target), Some(hash), Some(song)) = (
+                    claim["target"].as_str(),
+                    claim["content_hash"].as_str(),
+                    claim["song_uuid"].as_str(),
+                ) else {
+                    continue;
+                };
+                let path = RelativeMediaPath::new(target)?;
+                let song = song
+                    .parse::<SongId>()
+                    .map_err(|_| Error::conflict("invalid durable import identity"))?;
+                if claim["added_at"].as_u64().is_none() {
+                    return Err(Error::conflict("durable import has no addition time"));
+                }
+                if claimed_songs.contains(&song)
+                    || claimed_paths.contains(&path)
+                    || self.deps.hasher.hash(root, &path).ok().as_deref() != Some(hash)
+                {
+                    continue;
+                }
+                conflicts.record_content(hash.to_owned(), song);
+                conflicts.occupy_target(path.identity_key());
+                claimed_songs.push(song);
+                claimed_paths.push(path);
+            }
+        }
+        let started = std::time::Instant::now();
         for path in self.deps.fs.enumerate(root)? {
             conflicts.occupy_target(path.identity_key());
         }
+        super::trace_import_stage(root, "import_enumerate_files", started);
         Ok(BatchState { conflicts })
     }
 
@@ -105,10 +209,12 @@ impl<'a> PlanImport<'a> {
         let Some(ext) = supported_extension_of(&info.display_name) else {
             return ImportOutcome::Skipped;
         };
+        let plan_started = std::time::Instant::now();
         let planned = match self.stage_and_plan(root, source, &info, &ext, state) {
             Ok(planned) => planned,
             Err(outcome) => return *outcome,
         };
+        super::trace_import_stage(root, "stage_and_plan", plan_started);
         // Persist the intent (reserved SongId + per-resource source/staging/
         // target/hash + the conditional unique target claim) before the first
         // external side effect; the claim keeps the target path reserved until
@@ -116,6 +222,8 @@ impl<'a> PlanImport<'a> {
         // resource; a same-basename `.lrc` is the same journal's optional
         // sub-resource with its own item row, target claim and hash (design
         // §8: item 固定保存 kind(audio|lrc)、源定位、暂存/目标、预期 BLAKE3).
+        let journal_started = std::time::Instant::now();
+        let started = std::time::Instant::now();
         if let Err(error) = self.deps.journal.ensure_operation(
             planned.operation,
             root,
@@ -129,6 +237,8 @@ impl<'a> PlanImport<'a> {
                 .map(|lrc| self.deps.fs.discard_staged(root, &lrc.staged));
             return failed_of(&error);
         }
+        super::trace_import_stage(root, "import_journal_ensure_operation", started);
+        let started = std::time::Instant::now();
         if let Err(error) = self.deps.journal.upsert_item(
             planned.operation,
             journal_item(OperationState::Planned, &planned),
@@ -140,7 +250,9 @@ impl<'a> PlanImport<'a> {
                 .map(|lrc| self.deps.fs.discard_staged(root, &lrc.staged));
             return failed_of(&error);
         }
+        super::trace_import_stage(root, "import_journal_audio_planned", started);
         if let Some(lrc) = &planned.lrc {
+            let started = std::time::Instant::now();
             if let Err(error) = self.deps.journal.upsert_item(
                 planned.operation,
                 journal_lrc_item(OperationState::Planned, &planned, lrc),
@@ -149,15 +261,19 @@ impl<'a> PlanImport<'a> {
                 let _ = self.deps.fs.discard_staged(root, &lrc.staged);
                 return failed_of(&error);
             }
+            super::trace_import_stage(root, "import_journal_lyrics_planned", started);
         }
         state.conflicts.occupy_target(planned.target.identity_key());
         if let Some(lrc) = &planned.lrc {
             state.conflicts.occupy_target(lrc.target.identity_key());
         }
 
+        let started = std::time::Instant::now();
         if let Err(error) = self.persist_reservation(&planned) {
             return self.recover_execution_failure(root, &planned, ExecuteError::PrePublish(error));
         }
+        super::trace_import_stage(root, "import_persist_reservation", started);
+        super::trace_import_stage(root, "journal_plan_and_reservation", journal_started);
         match self.execute(&planned) {
             Ok(lyrics) => {
                 state

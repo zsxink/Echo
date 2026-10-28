@@ -30,6 +30,35 @@ pub fn commit_then_project<T>(
     project_committed(control, root, batch, outcome, project)
 }
 
+/// Commit through the directory's authenticated exclusive write session when
+/// requested and available, then release its writer lock before applying the
+/// SQL projection. Adapters without sessions retain standalone commit behavior.
+pub fn commit_then_project_with_optional_session<T>(
+    control: &dyn ControlPlanePort,
+    root: LibraryRootId,
+    batch: &LibraryBatch,
+    use_session: bool,
+    project: impl FnOnce(&LibraryCommit) -> Result<T, Error>,
+) -> Result<(CommitOutcome, Option<T>), Error> {
+    batch.validate()?;
+    let durable = control.durability().ok_or_else(|| {
+        Error::unavailable(
+            "library durability",
+            "directory commit adapter is not configured",
+        )
+    })?;
+    let outcome = if use_session {
+        if let Some(mut session) = durable.begin_write(root)? {
+            session.commit(batch)?
+        } else {
+            durable.commit(root, batch)?
+        }
+    } else {
+        durable.commit(root, batch)?
+    };
+    project_committed(control, root, batch, outcome, project)
+}
+
 /// Finish the same projection protocol after an exclusive write session has
 /// published its operation. The session must release its writer lock first.
 pub(crate) fn project_committed<T>(

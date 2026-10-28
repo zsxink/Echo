@@ -44,6 +44,22 @@ impl SongRepository for SqliteDatabase {
         self.with_reader(move |connection| all_songs_in_root(connection, root))
     }
 
+    fn by_content_hash(&self, root: LibraryRootId, hash: &str) -> Result<Vec<Song>, Error> {
+        let hash = hash.to_owned();
+        self.with_reader(move |connection| {
+            let mut statement = connection
+                .prepare(&format!(
+                    "{} WHERE s.library_root_uuid=?1 AND s.blake3_hash=?2 AND s.availability='available'",
+                    SONG_SELECT
+                ))
+                .map_err(storage)?;
+            let rows = statement
+                .query_map(params![root.to_string(), hash], song_from_row)
+                .map_err(storage)?;
+            rows.collect::<Result<Vec<_>, _>>().map_err(storage)
+        })
+    }
+
     fn published_file_paths(
         &self,
         root: LibraryRootId,

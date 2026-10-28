@@ -5,9 +5,8 @@
  * from its topbar, which left 歌单/歌手/专辑 views without an entry. This hook
  * captures the whole flow — `choose_and_import_files` → classify → invalidate →
  * failure dialog — so the App shell can render one import control that works
- * under every library view. The library-refresh semantics stay injectable: the
- * shell owns `invalidateLibrary` + the playlist reload, and a committed import
- * asks the current view to re-read through those callbacks.
+ * under every library view. A committed import invalidates the current song
+ * query here; the shell callback separately reloads playlist metadata.
  */
 
 import { useCallback, useRef, useState, type ReactNode } from "react";

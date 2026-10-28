@@ -123,23 +123,43 @@ impl super::AppServices {
         absolute_path: &std::path::Path,
         display_name: &str,
     ) -> Result<ImportResultDto, Error> {
+        let total_started = std::time::Instant::now();
+        let stage_started = std::time::Instant::now();
         let _activity = self.guard_writes()?;
+        trace_import_service_stage("guard_writes", stage_started);
+        let stage_started = std::time::Instant::now();
         let root_id = self
             .deps
             .roots
             .active_root()?
             .map(|r| r.id())
             .ok_or_else(|| Error::unavailable("library", "no active library root"))?;
+        trace_import_service_stage("resolve_active_root", stage_started);
+        let stage_started = std::time::Instant::now();
         let reader = SingleFileImport::new(absolute_path, display_name)?;
+        trace_import_service_stage("open_import_source", stage_started);
         let source = reader.source().clone();
+        let stage_started = std::time::Instant::now();
         let report = PlanImport::new(self.deps.as_ref(), &reader).run(root_id, &[source])?;
+        trace_import_service_stage("plan_import_run", stage_started);
         // A single-source batch always has exactly one result.
         let outcome = report
             .results
             .into_iter()
             .next()
             .expect("import batch has at least one result");
-        Ok(ImportResultDto::from(outcome))
+        let result = ImportResultDto::from(outcome);
+        trace_import_service_stage("total", total_started);
+        Ok(result)
+    }
+}
+
+fn trace_import_service_stage(stage: &str, started: std::time::Instant) {
+    if std::env::var_os("ECHO_IMPORT_TRACE").is_some() {
+        eprintln!(
+            "ECHO_IMPORT_TRACE stage=desktop_{stage} elapsed_ms={:.3}",
+            started.elapsed().as_secs_f64() * 1_000.0
+        );
     }
 }
 

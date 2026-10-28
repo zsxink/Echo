@@ -19,7 +19,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { LibraryWorkspace } from "./LibraryWorkspace";
 import type { LibraryViewKind } from "./types";
 import { useImport } from "../import";
-import { invalidateLibrary } from "./libraryInvalidation";
 
 const mocks = (
   globalThis as unknown as {
@@ -52,7 +51,9 @@ const afterImport = {
 function ImportShell({ view, root = "root-1" }: { view: LibraryViewKind; root?: string }) {
   const { importing, runImport, renderImportDialog } = useImport({
     libraryRoot: root,
-    onImportCommitted: () => invalidateLibrary(),
+    // The real shell callback reloads playlist metadata. Song-list refresh must
+    // come from useImport's own invalidation signal, as it does in App.
+    onImportCommitted: () => undefined,
   });
   return (
     <>

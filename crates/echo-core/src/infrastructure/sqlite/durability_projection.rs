@@ -15,7 +15,7 @@ use crate::domain::library::durability::{
     LibraryProjectionStatus, LibraryRecoveryRecords, LibraryReplay,
 };
 use crate::error::Error;
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 pub fn project_legacy_records(
     connection: &mut Connection,
@@ -58,9 +58,9 @@ pub(super) fn project_commits_unless_superseded(
         )
         .optional()
         .map_err(storage)?;
-    if projected.is_some_and(|sequence| {
-        sequence > replay.head().map_or(0, |(sequence, _)| sequence)
-    }) {
+    if projected
+        .is_some_and(|sequence| sequence > replay.head().map_or(0, |(sequence, _)| sequence))
+    {
         return Ok(());
     }
     project_commits(connection, root, replay)
@@ -168,6 +168,18 @@ pub(super) fn project_verified_suffix(
     root: LibraryRootId,
     replay: &LibraryReplay,
 ) -> Result<(), Error> {
+    project_verified_suffix_with_dependency_retry(connection, root, replay, false)
+}
+
+/// Import projection uses the same watermark-verified suffix path, then retries
+/// unresolved records because the newly imported song may satisfy an older
+/// playlist-member dependency.
+pub(super) fn project_verified_suffix_with_dependency_retry(
+    connection: &mut Connection,
+    root: LibraryRootId,
+    replay: &LibraryReplay,
+    retry_dependencies: bool,
+) -> Result<(), Error> {
     let tx = connection.transaction().map_err(storage)?;
     let projected_watermark: Option<(String, u64, Option<String>)> = tx
         .query_row(
@@ -191,7 +203,9 @@ pub(super) fn project_verified_suffix(
     let mut predecessor = None;
     if let Some((current_library, seq, digest)) = projected_watermark {
         if current_library != library.to_string() {
-            return Err(Error::conflict("database projection belongs to another library"));
+            return Err(Error::conflict(
+                "database projection belongs to another library",
+            ));
         }
         if seq < checkpoint_seq {
             // SQLite is older than the compacted base. Only the full snapshot
@@ -257,10 +271,79 @@ pub(super) fn project_verified_suffix(
         current_seq = commit.library_commit_seq;
         predecessor = Some(commit.digest.clone());
     }
-    // The interactive edit lanes currently append standalone favorite or
-    // empty-playlist facts, neither of which resolves an older retained
-    // dependency. Full recovery/projection performs the global retry pass.
+    if retry_dependencies {
+        retained::retry(&tx, root, Some(library))?;
+    }
     tx.commit().map_err(storage)
+}
+
+/// Fast-path a single newly committed operation when SQLite is exactly at its
+/// predecessor. A stale or advanced watermark leaves the database untouched
+/// and asks the caller to use a verified replay instead.
+pub(super) fn project_verified_commit_with_dependency_retry(
+    connection: &mut Connection,
+    root: LibraryRootId,
+    commit: &crate::domain::library::durability::LibraryCommit,
+) -> Result<bool, Error> {
+    commit.validate()?;
+    let tx = connection.transaction().map_err(storage)?;
+    let current: Option<(String, u64, Option<String>)> = tx
+        .query_row(
+            "SELECT library_id,commit_seq,commit_digest FROM library_projection_watermarks WHERE library_root_uuid=?1",
+            [root.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(storage)?;
+    if let Some((library, sequence, digest)) = &current {
+        if library != &commit.batch.library_id.to_string() {
+            return Err(Error::conflict(
+                "database projection belongs to another library",
+            ));
+        }
+        if *sequence == commit.library_commit_seq {
+            if digest.as_deref() != Some(commit.digest.as_str()) {
+                return Err(Error::conflict(
+                    "database watermark differs from verified directory commit",
+                ));
+            }
+            drop(tx);
+            return Ok(true);
+        }
+    }
+    let (expected_sequence, expected_digest) =
+        current.as_ref().map_or((0, None), |(_, sequence, digest)| {
+            (*sequence, digest.as_deref())
+        });
+    if expected_sequence.checked_add(1) != Some(commit.library_commit_seq)
+        || commit.predecessor_digest.as_deref() != expected_digest
+    {
+        drop(tx);
+        return Ok(false);
+    }
+
+    retained::save(
+        &tx,
+        root,
+        &commit.batch.records,
+        &commit.batch.state,
+        &commit.batch.resources,
+    )?;
+    retained::retry(&tx, root, Some(commit.batch.library_id))?;
+    tx.execute(
+        "INSERT INTO library_applied_operations(library_root_uuid,operation_uuid,commit_seq,commit_digest) VALUES(?1,?2,?3,?4)",
+        params![root.to_string(), commit.batch.operation_id.to_string(), commit.library_commit_seq, commit.digest],
+    )
+    .map_err(storage)?;
+    watermark(
+        &tx,
+        root,
+        commit.batch.library_id.to_string(),
+        commit.library_commit_seq,
+        &commit.digest,
+    )?;
+    tx.commit().map_err(storage)?;
+    Ok(true)
 }
 
 fn watermark(

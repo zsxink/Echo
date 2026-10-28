@@ -45,6 +45,18 @@ pub trait SongRepository: Send + Sync {
     /// and the final missing pass. Bounded by the library size, never by a
     /// page limit: scans need the whole picture.
     fn all_in_root(&self, root: LibraryRootId) -> Result<Vec<Song>, Error>;
+    /// Available songs in one root with an exact content hash. Implementations
+    /// should use an index when available; the default preserves compatibility.
+    fn by_content_hash(&self, root: LibraryRootId, hash: &str) -> Result<Vec<Song>, Error> {
+        Ok(self
+            .all_in_root(root)?
+            .into_iter()
+            .filter(|song| {
+                song.availability() == SongAvailability::Available
+                    && song.blake3_hash() == Some(hash)
+            })
+            .collect())
+    }
     /// Completed sync resources whose local storage differs from their shared
     /// library path. Scans visit current local audio and keep retained logical
     /// originals out of discovery; arbitrary Echo control files stay excluded.

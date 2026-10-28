@@ -1,7 +1,7 @@
 //! Replaceable read-model projection, independent from legacy database rescue.
 use crate::domain::ids::LibraryRootId;
 use crate::domain::library::durability::{
-    LibraryProjectionStatus, LibraryRecoveryRecords, LibraryReplay,
+    LibraryCommit, LibraryProjectionStatus, LibraryRecoveryRecords, LibraryReplay,
 };
 use crate::domain::library::{LibraryId, PortableRecordEnvelope};
 use crate::error::Error;
@@ -68,6 +68,29 @@ pub trait LibraryProjectionPort: Send + Sync {
         root: LibraryRootId,
         replay: &LibraryReplay,
     ) -> Result<(), Error>;
+    /// Project a replay returned by the directory durability adapter, using
+    /// the current SQLite watermark to apply only its authenticated suffix.
+    /// Implementations without a suffix path retain the full projection path.
+    ///
+    /// This operation also retries retained dependencies after applying the
+    /// suffix, since a newly imported song can satisfy an older playlist item.
+    fn project_verified_library_suffix(
+        &self,
+        root: LibraryRootId,
+        replay: &LibraryReplay,
+    ) -> Result<(), Error> {
+        self.project_library_commits(root, replay)
+    }
+    /// Apply one directory-verified commit when it directly follows the
+    /// current SQLite watermark. Returns `false` when a catch-up replay is
+    /// needed first.
+    fn project_verified_library_commit(
+        &self,
+        _root: LibraryRootId,
+        _commit: &LibraryCommit,
+    ) -> Result<bool, Error> {
+        Ok(false)
+    }
     fn projection_status(&self, root: LibraryRootId) -> Result<LibraryProjectionStatus, Error>;
     fn read_recovery_records(&self, root: LibraryRootId) -> Result<LibraryRecoveryRecords, Error>;
 }

@@ -5,7 +5,7 @@ mod deletion;
 mod members;
 mod playback;
 mod removal;
-use super::{SqliteDatabase, durability_backfill, durability_projection, statements, storage};
+use super::{durability_backfill, durability_projection, statements, storage, SqliteDatabase};
 use crate::application::library_commit::project_committed;
 use crate::application::ports::{ControlPlanePort, LocalLibraryEditPort};
 use crate::domain::ids::{LibraryRootId, OperationId, PlaylistId, Revision, SongId};
@@ -37,8 +37,8 @@ impl LocalLibraryEditPort for SqliteDatabase {
             control,
             root,
             device,
-            false,
-            move |c, authority, library, sequence, _| {
+            true,
+            move |c, authority, library, sequence, baseline| {
                 removal::Removal {
                     root,
                     playlist,
@@ -47,7 +47,7 @@ impl LocalLibraryEditPort for SqliteDatabase {
                     library,
                     sequence,
                 }
-                .plan(c, authority)
+                .plan(c, authority, baseline)
             },
         )
     }
@@ -65,8 +65,8 @@ impl LocalLibraryEditPort for SqliteDatabase {
             control,
             root,
             device,
-            false,
-            move |c, authority, library, sequence, _| {
+            true,
+            move |c, authority, library, sequence, baseline| {
                 members::Append {
                     root,
                     song,
@@ -75,7 +75,7 @@ impl LocalLibraryEditPort for SqliteDatabase {
                     library,
                     sequence,
                 }
-                .plan(c, authority)
+                .plan(c, authority, baseline)
             },
         )
     }
@@ -220,14 +220,14 @@ impl SqliteDatabase {
         device: DeviceId,
         async_projection: bool,
         plan: impl FnOnce(
-            &Connection,
-            &dyn ControlPlanePort,
-            LibraryId,
-            u64,
-            &LibraryReplay,
-        ) -> Result<LibraryBatch, Error>
-        + Send
-        + 'static,
+                &Connection,
+                &dyn ControlPlanePort,
+                LibraryId,
+                u64,
+                &LibraryReplay,
+            ) -> Result<LibraryBatch, Error>
+            + Send
+            + 'static,
     ) -> Result<(), Error> {
         self.plan_library_change(
             control,
@@ -250,14 +250,14 @@ impl SqliteDatabase {
         retry_operation: Option<uuid::Uuid>,
         requested_async_projection: bool,
         plan: impl FnOnce(
-            &Connection,
-            &dyn ControlPlanePort,
-            LibraryId,
-            u64,
-            &LibraryReplay,
-        ) -> Result<(LibraryBatch, T), Error>
-        + Send
-        + 'static,
+                &Connection,
+                &dyn ControlPlanePort,
+                LibraryId,
+                u64,
+                &LibraryReplay,
+            ) -> Result<(LibraryBatch, T), Error>
+            + Send
+            + 'static,
     ) -> Result<T, Error> {
         // Keep legacy unit fixtures deterministic; the desktop integration
         // benchmark exercises the production asynchronous path without this
@@ -279,7 +279,9 @@ impl SqliteDatabase {
         let projection_worker = async_projection
             .then(|| self.library_projection_worker(root))
             .transpose()?;
+        let writer_wait_started = std::time::Instant::now();
         self.writer.run(move |connection| {
+            trace_local_edit_stage(root, "writer_wait_and_setup", writer_wait_started);
             let stage_started = std::time::Instant::now();
             let durable = authority.durability().ok_or_else(|| {
                 Error::unavailable("library edits", "directory commit adapter is not configured")
@@ -471,4 +473,48 @@ fn planned_playlist(
         hlc: HybridLogicalClock::new(wall, counter),
         updated_by_device_id: device,
     }))
+}
+
+fn planned_record(
+    authority: &dyn ControlPlanePort,
+    root: LibraryRootId,
+    kind: RecordKind,
+    id: uuid::Uuid,
+    replay: &LibraryReplay,
+) -> Result<Option<PortableRecord>, Error> {
+    let mut latest = None;
+    let mut observe = |record: &PortableRecord| {
+        let record_id = match record {
+            PortableRecord::Playlist(record) if kind == RecordKind::Playlist => {
+                Some(record.playlist_uuid)
+            }
+            PortableRecord::PlaylistItem(record) if kind == RecordKind::PlaylistItem => {
+                Some(record.item_uuid)
+            }
+            PortableRecord::Tombstone(record) if record.deleted_kind == kind => {
+                if record.object_uuid == id {
+                    latest = Some(None);
+                }
+                return;
+            }
+            _ => None,
+        };
+        if record_id == Some(id) {
+            latest = Some(Some(record.clone()));
+        }
+    };
+    if let Some(checkpoint) = &replay.checkpoint {
+        for envelope in &checkpoint.records {
+            observe(envelope.record());
+        }
+    }
+    for commit in &replay.commits {
+        for envelope in &commit.batch.records {
+            observe(envelope.record());
+        }
+    }
+    match latest {
+        Some(record) => Ok(record),
+        None => authority.read_record(root, kind, &id.to_string()),
+    }
 }

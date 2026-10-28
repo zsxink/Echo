@@ -1,12 +1,12 @@
 //! Freeze a stable member deletion and the remaining playlist snapshot together.
 use super::{
-    ChangeOrigin, Connection, ControlPlanePort, DeviceId, Error, HybridLogicalClock, LibraryBatch,
-    LibraryId, LibraryRootId, ObjectKey, PlaylistId, PortableRecord, PortableRecordEnvelope,
-    RecordKind, Revision, SongId, planned_batch, planned_playlist, statements, storage,
+    planned_batch, planned_playlist, statements, storage, ChangeOrigin, Connection,
+    ControlPlanePort, DeviceId, Error, HybridLogicalClock, LibraryBatch, LibraryId, LibraryRootId,
+    ObjectKey, PlaylistId, PortableRecord, PortableRecordEnvelope, RecordKind, Revision, SongId,
 };
 use crate::domain::ids::PlaylistItemId;
-use crate::domain::library::{TombstoneRecord, next_hlc};
-use rusqlite::{OptionalExtension, params};
+use crate::domain::library::{next_hlc, TombstoneRecord};
+use rusqlite::{params, OptionalExtension};
 
 pub(super) struct Removal {
     pub root: LibraryRootId,
@@ -22,7 +22,9 @@ impl Removal {
         self,
         c: &Connection,
         authority: &dyn ControlPlanePort,
+        replay: &crate::domain::library::durability::LibraryReplay,
     ) -> Result<LibraryBatch, Error> {
+        let started = std::time::Instant::now();
         let belongs: bool = c
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM playlists WHERE uuid=?1 AND library_root_uuid=?2)",
@@ -41,6 +43,7 @@ impl Removal {
             )
             .optional()
             .map_err(storage)?;
+        super::trace_local_edit_stage(self.root, "membership_remove_preconditions", started);
         let Some(member) = member else {
             return Ok(LibraryBatch::new(
                 uuid::Uuid::new_v4(),
@@ -51,8 +54,15 @@ impl Removal {
         };
         let member = PlaylistItemId::from_uuid(uuid::Uuid::parse_str(&member).map_err(storage)?);
         let object = ObjectKey::PlaylistItem(member);
-        let before =
-            authority.read_record(self.root, RecordKind::PlaylistItem, &member.to_string())?;
+        let started = std::time::Instant::now();
+        let before = super::planned_record(
+            authority,
+            self.root,
+            RecordKind::PlaylistItem,
+            member.as_uuid(),
+            replay,
+        )?;
+        super::trace_local_edit_stage(self.root, "membership_remove_read_member_record", started);
         let revision = super::super::sync::durability::allocate_local_delete(c, self.root, object)?;
         let now = u64::try_from(super::super::now_ms().max(0)).unwrap_or(0) / 1000;
         let record = PortableRecord::Tombstone(TombstoneRecord {
@@ -76,6 +86,7 @@ impl Removal {
             object,
             self.sequence,
         )?;
+        let started = std::time::Instant::now();
         c.execute(
             "DELETE FROM playlist_songs WHERE member_uuid=?1",
             [member.to_string()],
@@ -89,12 +100,23 @@ impl Removal {
             "upsert",
         )?;
         statements::advance_object_hlc(c, "playlist", &self.playlist.to_string(), now)?;
-        let saved =
-            authority.read_record(self.root, RecordKind::Playlist, &self.playlist.to_string())?;
+        super::trace_local_edit_stage(self.root, "membership_remove_sql_delete", started);
+        let started = std::time::Instant::now();
+        let saved = super::planned_record(
+            authority,
+            self.root,
+            RecordKind::Playlist,
+            self.playlist.as_uuid(),
+            replay,
+        )?;
+        super::trace_local_edit_stage(self.root, "membership_remove_read_playlist_record", started);
+        let started = std::time::Instant::now();
         let record = planned_playlist(c, self.playlist, self.device, saved.as_ref())?;
+        super::trace_local_edit_stage(self.root, "membership_remove_materialize_playlist", started);
         batch
             .records
             .push(PortableRecordEnvelope::new(record, None)?);
+        let started = std::time::Instant::now();
         batch.state.extend(
             super::super::sync::durability::capture_local_object_mutation(
                 c,
@@ -105,6 +127,7 @@ impl Removal {
                 self.sequence,
             )?,
         );
+        super::trace_local_edit_stage(self.root, "membership_remove_capture_mutation", started);
         Ok(batch)
     }
 }

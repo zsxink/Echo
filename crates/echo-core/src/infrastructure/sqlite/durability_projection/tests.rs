@@ -213,6 +213,56 @@ fn library_durability_verified_suffix_projects_only_after_matching_watermark() {
 }
 
 #[test]
+fn library_durability_verified_commit_projects_only_at_its_predecessor() {
+    let (_directory, db, root) = database();
+    let library = LibraryId::from_uuid(uuid::Uuid::new_v4());
+    let fixture = Issue72Fixture::with_database_evidence();
+    let songs = fixture
+        .database
+        .iter()
+        .filter(|record| matches!(record, PortableRecord::Song(_)))
+        .take(2)
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut replay = LibraryReplay::default();
+    append(&mut replay, library, vec![songs[0].clone()]);
+    let first = replay.commits[0].clone();
+    append(&mut replay, library, vec![songs[1].clone()]);
+    let second = replay.commits[1].clone();
+    let out_of_order = second.clone();
+
+    assert!(!db
+        .writer
+        .run(move |connection| {
+            project_verified_commit_with_dependency_retry(connection, root, &out_of_order)
+        })
+        .unwrap());
+    assert!(db.all_in_root(root).unwrap().is_empty());
+
+    assert!(db
+        .writer
+        .run(move |connection| {
+            project_verified_commit_with_dependency_retry(connection, root, &first)
+        })
+        .unwrap());
+    assert_eq!(db.all_in_root(root).unwrap().len(), 1);
+
+    assert!(db
+        .writer
+        .run(move |connection| {
+            project_verified_commit_with_dependency_retry(connection, root, &second)
+        })
+        .unwrap());
+    assert_eq!(db.all_in_root(root).unwrap().len(), 2);
+    assert_eq!(
+        db.projection_status(root)
+            .unwrap()
+            .applied_library_commit_seq,
+        2
+    );
+}
+
+#[test]
 fn library_durability_projection_rejects_bad_suffix_before_any_database_write() {
     let (_directory, db, root) = database();
     let library = LibraryId::from_uuid(uuid::Uuid::new_v4());

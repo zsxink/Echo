@@ -120,18 +120,14 @@ pub(crate) fn add_member(
         return Ok(());
     }
     connection.execute("INSERT INTO playlist_songs (playlist_uuid, song_uuid, position, added_at, member_uuid) VALUES (?1, ?2, ?3, ?4, ?5)", params![playlist.to_string(), song.to_string(), i64::try_from(position).unwrap_or(i64::MAX), now_ms(), member_uuid.to_string()]).map_err(map_constraint)?;
-    // Membership add is a playlist logic change — enqueue a playlist snapshot
-    // whose payload records the new member set (position appended) so 二期 has
-    // the authoritative member list for this revision.
-    let members_json = playlist_members_excerpt(connection, playlist)?;
-    let payload = serde_json::json!({
-        "members": members_json,
-    });
+    // enqueue_object_snapshot builds the authoritative full playlist snapshot
+    // for every playlist upsert. Passing a partial members payload here would
+    // serialize the member list twice (once here and once in that helper).
     enqueue_object_snapshot(
         connection,
         super::super::sync::enqueue::KIND_PLAYLIST,
         &playlist.to_string(),
-        &payload,
+        &serde_json::json!({}),
         super::super::sync::enqueue::OP_UPSERT,
     )?;
     Ok(())
