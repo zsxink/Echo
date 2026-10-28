@@ -200,6 +200,10 @@
 
   验证（2026-10-26）：三条版本轴与实际行为、测试证据、wire未知字段规则及“无新增必需 wire 字段”的范围记录见 [兼容矩阵证据](evidence/7.8-version-compatibility-20261026.md) 和 [协议说明](../../../docs/library-durability-protocol.md)。`manifest_v3_explicitly_reads_legacy_but_refuses_invalid_and_future_versions` 1/1，`library_durability_new_manifest_fences_legacy_writers_without_changing_record_envelopes` 1/1，`portable_v` 4/4，`cargo test -p echo-sync --all-features protocol` 6/6。支持的旧版读取由对应 decoder 与不改写提交链约束；未来 envelope/manifest/wire 版本分别拒绝，LAN serde 对未知可选 JSON 字段的既有忽略行为已明确说明。本变更没有新增必须由旧端理解的 resource wire 字段。
 
+- [ ] 7.9 单机模式及解除同步时彻底清理同步专用持久事实：覆盖 SQLite 队列/投影、目录 state 与纯同步历史 transaction 证据的安全压缩删除；验证清理重试幂等、重启不重新导入、同步上下文保留时资料不误删，并逐项断言歌曲/喜欢/歌单/成员/媒体不变，运行 `cargo test -p echo-core sync` 与恢复投影专项（LAN/LD-02/03/07/10）。
+
+  当前边界（2026-10-28）：解绑和无同步上下文启动已清理 SQLite 同步表、恢复投影/archive 与 epoch tombstone；目录不可变提交链中的纯同步历史字节仍需安全压缩移除，本任务保持未完成，不能据数据库清理宣称所有同步资料已物理删除。
+
 ## 8. 类型化 IPC 与用户可见恢复状态
 
 - [x] 8.1 Core→desktop→IPC 提供未保存、已保存待恢复、已保存待投影、已完成、部分恢复及稳定操作身份/分类原因；运行 `cargo run -p echo-desktop --bin echo-generate-ipc` 并核对生成物，序列化测试覆盖各态，不能手改生成类型（LD-01/06/10）。

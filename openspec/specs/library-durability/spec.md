@@ -145,3 +145,11 @@
 #### Scenario: 可执行验证
 - **WHEN** 本 change 按已完成范围准备验收
 - **THEN** `cargo fmt --all --check`、受影响 crate 的 Clippy/测试、前端相关检查、IPC/架构、`pnpm verify:governance`、小规模代表场景及 `openspec validate --all --strict` 通过，并明确记录未执行的完整 workspace 或三平台原生验收，不将其作为本 change 短 CI 的门槛
+
+### Requirement: LD-11 音乐库恢复状态排除单机同步状态
+
+音乐库恢复状态 MUST 仅反映歌曲、用户资料、资源及其真实持久化/投影问题。没有有效同步上下文时，同步协议队列、候选和恢复记录 MUST NOT 被计入音乐资料待恢复数量或展示为音乐库恢复问题；系统 MUST 在启动恢复阶段清理可安全删除的旧同步投影状态，同时不得删除歌曲、喜欢、歌单、成员或媒体。
+
+#### Scenario: 单机启动存在旧同步投影
+- **WHEN** 单机资料库的 SQLite 中仍有旧版本遗留的同步队列或同步恢复记录
+- **THEN** 启动恢复清理这些同步专用投影，用户看到的音乐库恢复状态不包含它们，真实音乐资料和媒体保持可用
