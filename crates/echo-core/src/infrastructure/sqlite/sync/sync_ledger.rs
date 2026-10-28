@@ -85,6 +85,56 @@ impl SqliteDatabase {
                 params![format!("%{root}%")],
             )
             .map_err(storage)?;
+            tx.execute(
+                "DELETE FROM library_recovery_records WHERE library_root_uuid=?1 AND row_kind='state' AND (json_extract(envelope_json,'$.key.namespace.scope') IN ('bound','local_unbound','legacy_evidence') OR json_extract(envelope_json,'$.payload.schema') LIKE 'echo.sync.%')",
+                params![root],
+            )
+            .map_err(storage)?;
+            for table in [
+                "recovery_sync_snapshot_pages",
+                "recovery_sync_snapshot_resource_refs",
+                "recovery_sync_snapshot_records",
+                "recovery_sync_snapshot_sessions",
+                "recovery_sync_replica_snapshot_pages",
+                "recovery_sync_replica_snapshot_records",
+                "recovery_sync_replica_snapshot_sessions",
+                "recovery_sync_host_baselines",
+                "recovery_sync_transfers",
+                "recovery_sync_peer_cursors",
+                "recovery_sync_conflicts",
+                "recovery_sync_member_aliases",
+                "recovery_sync_song_aliases",
+                "recovery_sync_object_versions",
+                "recovery_sync_commits",
+                "recovery_sync_inbox",
+                "recovery_sync_origin_cursors",
+                "recovery_sync_peers",
+                "recovery_sync_binding",
+                "recovery_sync_mutations",
+                "recovery_sync_outbox",
+                "recovery_sync_local_origin_cursors",
+                "recovery_sync_remote_resource_locations",
+                "recovery_sync_remote_publication_claims",
+                "recovery_sync_remote_publications",
+            ] {
+                tx.execute(
+                    &format!(
+                        "DELETE FROM {table} WHERE recovery_id IN (SELECT recovery_id FROM sync_recovery_archives WHERE local_root_uuid=?1)"
+                    ),
+                    params![root],
+                )
+                .map_err(storage)?;
+            }
+            tx.execute(
+                "DELETE FROM sync_recovery_archives WHERE local_root_uuid=?1",
+                params![root],
+            )
+            .map_err(storage)?;
+            tx.execute(
+                "DELETE FROM sync_epoch_tombstones WHERE local_root_uuid=?1",
+                params![root],
+            )
+            .map_err(storage)?;
             tx.commit().map_err(storage)
         })
     }

@@ -309,6 +309,11 @@ pub(super) fn enqueue_sync_in_root_with_resources_at(
             |row| row.get(0),
         )
         .map_err(storage)?;
+    if super::durability::sync_namespace(connection, local_root)?.is_none() {
+        // Keep the per-object revision needed by local portable records, but
+        // do not create a sync mutation/outbox entry for standalone edits.
+        return Ok(next);
+    }
     let origin_device_id: String = connection
         .query_row(
             "SELECT value FROM device_state WHERE key = 'device_id'",

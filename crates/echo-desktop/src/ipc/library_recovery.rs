@@ -1,6 +1,8 @@
 //! User-visible recovery evidence. No database details or original payloads cross IPC.
 use super::library_durability::{LibraryDurabilityOutcomeDto, LibraryDurabilityReasonDto};
-use echo_core::domain::library::durability::{LibraryProjectionStatus, ProjectionUnresolvedReason};
+use echo_core::domain::library::durability::{
+    LibraryProjectionStatus, ProjectionTarget, ProjectionUnresolvedReason, StateNamespace,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -64,23 +66,36 @@ impl LibraryRecoveryStatusDto {
         head: u64,
         status: LibraryProjectionStatus,
     ) -> Result<Self, echo_core::error::Error> {
-        let has_unresolved = !status.unresolved.is_empty();
-        let issues = status
-            .unresolved
-            .into_iter()
-            .map(|issue| {
-                Ok(LibraryRecoveryIssueDto {
-                    target: serde_json::to_string(&issue.target).map_err(|source| {
-                        echo_core::error::Error::unavailable_with_source(
-                            "recovery status",
-                            "cannot encode typed identity",
-                            source,
-                        )
-                    })?,
-                    reason: issue.reason.into(),
-                })
-            })
-            .collect::<Result<_, echo_core::error::Error>>()?;
+        let mut issues = Vec::new();
+        for issue in status.unresolved {
+            // Sync protocol facts are intentionally handled by the sync
+            // recovery flow, not by catalog projection. Do not report them as
+            // lost/pending music records in the library recovery panel.
+            let is_bound_sync_state = matches!(
+                &issue.target,
+                ProjectionTarget::ScopedState { key }
+                    if matches!(
+                        &key.namespace,
+                        StateNamespace::Bound { .. }
+                            | StateNamespace::LegacyEvidence { .. }
+                            | StateNamespace::LocalUnbound { .. }
+                    )
+            );
+            if is_bound_sync_state {
+                continue;
+            }
+            issues.push(LibraryRecoveryIssueDto {
+                target: serde_json::to_string(&issue.target).map_err(|source| {
+                    echo_core::error::Error::unavailable_with_source(
+                        "recovery status",
+                        "cannot encode typed identity",
+                        source,
+                    )
+                })?,
+                reason: issue.reason.into(),
+            });
+        }
+        let has_unresolved = !issues.is_empty();
         let outcome = if head == 0 {
             LibraryDurabilityOutcomeDto::RecoveryPartial {
                 reason: LibraryDurabilityReasonDto::LegacyUnverified,

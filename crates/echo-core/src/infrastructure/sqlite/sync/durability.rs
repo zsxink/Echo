@@ -23,12 +23,15 @@ pub(crate) fn capture_local_object_mutation(
     connection: &Connection,
     root: LibraryRootId,
     object: crate::domain::sync::ObjectKey,
-    library_id: crate::domain::library::LibraryId,
+    _library_id: crate::domain::library::LibraryId,
     author: crate::domain::sync::DeviceId,
     after_sequence: u64,
 ) -> Result<Vec<DurableStateChange>, Error> {
-    let namespace = facts::context_namespace(connection, &root.to_string(), true)?
-        .unwrap_or(StateNamespace::LocalUnbound { library_id, author });
+    let Some(namespace) = sync_namespace(connection, &root.to_string())? else {
+        // A standalone library has no sync queue. Do not manufacture
+        // LocalUnbound protocol events for ordinary local edits.
+        return Ok(Vec::new());
+    };
     let (kind, object_uuid) = super::apply::object_identity(object);
     let mut statement = connection.prepare(
         "SELECT json_object('schema','echo.sync.mutation.v1','mutation_id',mutation_id,'author',origin_device_id,'sequence',origin_seq,'predecessor',previous_mutation_id,'object_type',object_type,'object_uuid',object_uuid,'operation',operation,'revision',local_revision,'base_version',base_object_version,'payload',json(payload_json),'payload_digest',payload_digest,'original_body',payload_json,'original_resources_body',resource_refs_json,'status',status,'outcome',CASE WHEN outcome_json IS NULL THEN NULL ELSE json(outcome_json) END,'changed_at_ms',created_at,'resources',json(resource_refs_json)) FROM sync_mutations WHERE local_root_uuid=?1 AND object_type=?5 AND object_uuid=?2 AND origin_device_id=?3 AND origin_seq>?4 ORDER BY origin_seq",
@@ -70,6 +73,9 @@ pub(crate) fn allocate_local_playlist_snapshot(
     playlist: crate::domain::ids::PlaylistId,
     payload: &Value,
 ) -> Result<(), Error> {
+    if sync_namespace(connection, &root.to_string())?.is_none() {
+        return Ok(());
+    }
     let revision = super::enqueue::enqueue_sync_in_root(
         connection,
         &root.to_string(),
@@ -89,6 +95,9 @@ pub(crate) fn allocate_local_delete(
     root: LibraryRootId,
     object: crate::domain::sync::ObjectKey,
 ) -> Result<u64, Error> {
+    if sync_namespace(connection, &root.to_string())?.is_none() {
+        return Ok(0);
+    }
     let (kind, id) = super::apply::object_identity(object);
     let revision = super::enqueue::enqueue_sync_in_root(
         connection,
@@ -376,6 +385,9 @@ pub(crate) fn enrich_recovery_batch(
     root: LibraryRootId,
     batch: &mut LibraryBatch,
 ) -> Result<(), Error> {
+    if sync_namespace(connection, &root.to_string())?.is_none() {
+        return Ok(());
+    }
     let exact = export_sync_state(connection, root)?;
     let mut positions = std::collections::BTreeMap::new();
     for (index, state) in batch.state.iter().enumerate() {
@@ -391,4 +403,18 @@ pub(crate) fn enrich_recovery_batch(
         }
     }
     Ok(())
+}
+
+pub(super) fn sync_namespace(
+    connection: &Connection,
+    root: &str,
+) -> Result<Option<StateNamespace>, Error> {
+    let active: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sync_active_context WHERE singleton=1 AND local_root_uuid=?1)",
+            [root],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    facts::context_namespace(connection, root, active)
 }

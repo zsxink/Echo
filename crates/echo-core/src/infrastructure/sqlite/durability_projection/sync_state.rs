@@ -53,18 +53,9 @@ impl LibrarySyncRecoveryPort for SqliteDatabase {
             });
             for state in ordered {
                 if !authorized(state, context) {
-                    if !matches!(
-                        state.kind,
-                        crate::domain::library::durability::StateKind::PlaybackEvent
-                            | crate::domain::library::durability::StateKind::ResourceLocation
-                    ) {
-                        retained::reason(
-                            &tx,
-                            context.root,
-                            &retained::state_key(state)?,
-                            Some(Reason::RequiresStateRecovery),
-                        )?;
-                    }
+                    // Facts outside this verified binding are not this
+                    // session's work. Preserve their existing status; their
+                    // bytes remain available to a later matching recovery.
                     continue;
                 }
                 state.validate()?;

@@ -19,6 +19,7 @@
 //! watcher → IPC ready). `echo-core` provides the recovery + binding gate
 //! here and stays platform-neutral.
 
+use crate::application::library_recovery::RetryLibraryOperation;
 use crate::application::recover::RecoverOperations;
 use crate::application::remote_delete::recover_remote_deletes;
 use crate::application::scan::{ScanCancelToken, ScanDeps, ScanSupervisor};
@@ -126,6 +127,19 @@ impl<'a> BootRecovery<'a> {
     /// Recover `root` while its scan exclusion is already held.
     fn recover_held(&self, root: LibraryRootId) -> Result<BootReport, Error> {
         let report = RecoverOperations::new(self.deps).run(root)?;
+        // SQLite is a replaceable read model. Catch it up from the directory
+        // journal during the same scan-excluded boot window, so a quiet library
+        // does not depend on the next user edit to retry a saved projection.
+        // This is best-effort: the durable directory remains authoritative and
+        // the recovery status reports a projection that still needs attention.
+        if let Some(history) = &self.deps.history {
+            if let Err(error) =
+                RetryLibraryOperation::new(self.deps.control.as_ref(), history.as_ref())
+                    .catch_up(root)
+            {
+                tracing::warn!(%root, %error, "library projection catch-up remains pending after boot");
+            }
+        }
         // The LAN-sync remote-delete isolation retry (task 4.5): tombstones
         // that already hid objects and persisted an isolation intent but whose
         // file搬家/retention receipt did not finish before a stop or crash.

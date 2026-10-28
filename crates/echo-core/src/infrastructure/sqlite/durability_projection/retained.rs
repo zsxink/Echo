@@ -83,11 +83,20 @@ fn put(
     kind: &str,
     json: &str,
 ) -> Result<(), Error> {
-    let pending = (kind == "record")
-        .then(|| serde_json::to_string(&Reason::MissingSyncDependency))
-        .transpose()
-        .map_err(storage)?;
-    c.execute("INSERT INTO library_recovery_records(library_root_uuid,object_key,envelope_json,row_kind,unresolved_reason) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(library_root_uuid,object_key) DO UPDATE SET envelope_json=excluded.envelope_json,row_kind=excluded.row_kind,unresolved_reason=excluded.unresolved_reason",params![root.to_string(),key,json,kind,pending]).map_err(storage)?;
+    if kind == "state" && is_sync_protocol_state(json)? && !has_sync_binding(c, root)? {
+        // Detached/standalone roots do not retain LAN protocol facts, even when
+        // an older immutable journal still contains them.
+        return Ok(());
+    }
+    let pending = match kind {
+        "record" => Some(Reason::MissingSyncDependency),
+        "state" => Some(Reason::RequiresStateRecovery),
+        _ => None,
+    }
+    .map(|reason| serde_json::to_string(&reason))
+    .transpose()
+    .map_err(storage)?;
+    c.execute("INSERT INTO library_recovery_records(library_root_uuid,object_key,envelope_json,row_kind,unresolved_reason) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(library_root_uuid,object_key) DO UPDATE SET envelope_json=excluded.envelope_json,row_kind=excluded.row_kind,unresolved_reason=CASE WHEN library_recovery_records.envelope_json=excluded.envelope_json AND library_recovery_records.row_kind=excluded.row_kind THEN library_recovery_records.unresolved_reason ELSE excluded.unresolved_reason END",params![root.to_string(),key,json,kind,pending]).map_err(storage)?;
     Ok(())
 }
 pub(super) fn state_key(state: &DurableStateChange) -> Result<String, Error> {
@@ -150,15 +159,28 @@ pub(super) fn retry(
     root: LibraryRootId,
     library: Option<crate::domain::library::LibraryId>,
 ) -> Result<(), Error> {
+    let sync_bound = has_sync_binding(c, root)?;
+    if !sync_bound {
+        // Purge protocol facts written by earlier versions on the next ordinary
+        // projection. The directory journal remains the authority for local
+        // catalog records, but detached LAN state is not part of a local view.
+        purge_standalone_sync_data(c, root)?;
+        c.execute(
+            "DELETE FROM library_recovery_records WHERE library_root_uuid=?1 AND row_kind='state' AND (json_extract(envelope_json,'$.key.namespace.scope') IN ('bound','local_unbound','legacy_evidence') OR json_extract(envelope_json,'$.payload.schema') LIKE 'echo.sync.%')",
+            [root.to_string()],
+        )
+        .map_err(storage)?;
+    }
     let retained = read(c, root)?;
     let mut statement = c.prepare(
-        "SELECT object_key FROM library_recovery_records WHERE library_root_uuid=?1 AND row_kind='record' AND unresolved_reason IS NOT NULL",
+        "SELECT object_key FROM library_recovery_records WHERE library_root_uuid=?1 AND unresolved_reason IS NOT NULL",
     ).map_err(storage)?;
     let pending = statement
         .query_map([root.to_string()], |row| row.get::<_, String>(0))
         .map_err(storage)?
         .collect::<Result<std::collections::BTreeSet<_>, _>>()
         .map_err(storage)?;
+    let pending = pending;
     let mut retry_records = Vec::new();
     for envelope in &retained.records {
         let key = serde_json::to_string(&envelope.record().object_key()?).map_err(storage)?;
@@ -213,7 +235,42 @@ pub(super) fn retry(
     }
     let mut allocations = local_allocation::AllocationIndex::new(&retained.state)?;
     for state in &retained.state {
-        let unresolved = if state.kind == StateKind::ResourceLocation {
+        let key = state_key(state)?;
+        // Sync protocol facts are not library-projection work in single-device
+        // mode. Keep their retained evidence for compatibility, but clear any
+        // old catalog-recovery marker and leave them to sync-specific flows.
+        if state.key.as_ref().is_some_and(|key| {
+            matches!(
+                &key.namespace,
+                crate::domain::library::durability::StateNamespace::Bound { .. }
+                    | crate::domain::library::durability::StateNamespace::LegacyEvidence { .. }
+                    | crate::domain::library::durability::StateNamespace::LocalUnbound { .. }
+            )
+        }) {
+            if sync_bound {
+                // A bound protocol fact is consumed only by a validated sync
+                // recovery, which owns its unresolved marker.
+                continue;
+            }
+            // Detached protocol facts were removed before reading `retained`;
+            // this guard only protects legacy rows from unexpected JSON shape.
+            continue;
+        }
+        // Only newly written or still-pending local state rows are retried.
+        if !pending.contains(&key) {
+            continue;
+        }
+        let unresolved = if state.kind == StateKind::Claim
+            && state.payload["version"] == 1
+            && state.payload["kind"] == "ingestion"
+            && state.payload["active"] == false
+        {
+            // Completed import/scan claims are retained as immutable recovery
+            // evidence, but they no longer represent work to recover. Keeping
+            // them out of the unresolved projection prevents one false issue
+            // per ingested song from accumulating forever.
+            None
+        } else if state.kind == StateKind::ResourceLocation {
             resource_publication::project(c, root, library, state, &retained)?
         } else if state.kind == StateKind::ArtistCover {
             artist_cover::project(c, root, library, state)?
@@ -238,9 +295,96 @@ pub(super) fn retry(
         } else {
             local_allocation::restore_indexed(c, root, library, state, &mut allocations)?
         };
-        reason(c, root, &state_key(state)?, unresolved)?;
+        reason(c, root, &key, unresolved)?;
     }
     Ok(())
+}
+
+fn has_sync_binding(c: &Connection, root: LibraryRootId) -> Result<bool, Error> {
+    c.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sync_binding WHERE singleton=1 AND local_root_uuid=?1) OR EXISTS(SELECT 1 FROM archived_sync_binding WHERE context_root=?1 AND local_root_uuid=?1)",
+        [root.to_string()],
+        |row| row.get(0),
+    )
+    .map_err(storage)
+}
+
+fn purge_standalone_sync_data(c: &Connection, root: LibraryRootId) -> Result<(), Error> {
+    let root = root.to_string();
+    for table in [
+        "sync_outbox",
+        "sync_mutations",
+        "sync_local_origin_cursors",
+        "sync_remote_resource_locations",
+        "sync_remote_publication_claims",
+        "sync_remote_publications",
+    ] {
+        c.execute(
+            &format!("DELETE FROM {table} WHERE local_root_uuid=?1"),
+            [root.as_str()],
+        )
+        .map_err(storage)?;
+    }
+    c.execute(
+        "DELETE FROM sync_epoch_tombstones WHERE local_root_uuid=?1",
+        [root.as_str()],
+    )
+    .map_err(storage)?;
+    for table in [
+        "recovery_sync_snapshot_pages",
+        "recovery_sync_snapshot_resource_refs",
+        "recovery_sync_snapshot_records",
+        "recovery_sync_snapshot_sessions",
+        "recovery_sync_replica_snapshot_pages",
+        "recovery_sync_replica_snapshot_records",
+        "recovery_sync_replica_snapshot_sessions",
+        "recovery_sync_host_baselines",
+        "recovery_sync_transfers",
+        "recovery_sync_peer_cursors",
+        "recovery_sync_conflicts",
+        "recovery_sync_member_aliases",
+        "recovery_sync_song_aliases",
+        "recovery_sync_object_versions",
+        "recovery_sync_commits",
+        "recovery_sync_inbox",
+        "recovery_sync_origin_cursors",
+        "recovery_sync_peers",
+        "recovery_sync_binding",
+        "recovery_sync_mutations",
+        "recovery_sync_outbox",
+        "recovery_sync_local_origin_cursors",
+        "recovery_sync_remote_resource_locations",
+        "recovery_sync_remote_publication_claims",
+        "recovery_sync_remote_publications",
+    ] {
+        c.execute(
+            &format!(
+                "DELETE FROM {table} WHERE recovery_id IN (SELECT recovery_id FROM sync_recovery_archives WHERE local_root_uuid=?1)"
+            ),
+            [root.as_str()],
+        )
+        .map_err(storage)?;
+    }
+    c.execute(
+        "DELETE FROM sync_recovery_archives WHERE local_root_uuid=?1",
+        [root.as_str()],
+    )
+    .map_err(storage)?;
+    Ok(())
+}
+
+fn is_sync_protocol_state(json: &str) -> Result<bool, Error> {
+    let envelope: serde_json::Value = serde_json::from_str(json).map_err(storage)?;
+    let scope = envelope
+        .pointer("/key/namespace/scope")
+        .and_then(serde_json::Value::as_str);
+    let schema = envelope
+        .pointer("/payload/schema")
+        .and_then(serde_json::Value::as_str);
+    Ok(
+        matches!(scope, Some("bound" | "local_unbound" | "legacy_evidence"))
+            || schema.is_some_and(|schema| schema.starts_with("echo.sync.")),
+    )
 }
 pub(super) fn status(
     c: &Connection,
