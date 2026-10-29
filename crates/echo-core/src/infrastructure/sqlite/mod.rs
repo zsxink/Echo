@@ -150,6 +150,11 @@ pub struct SqliteDatabase {
     device_id: crate::domain::library::DeviceId,
     /// A damaged predecessor file moved aside at open. Diagnostic only.
     quarantined: Option<PathBuf>,
+    /// Optional notifier invoked after the projection worker catches a root's
+    /// directory up to the catalog. The desktop runtime wires it to a Tauri
+    /// event so the UI re-pulls the catalog read model (playlists / songs /
+    /// counts) that changed out of band from the originating command.
+    projection_notify: Mutex<Option<Arc<dyn Fn(LibraryRootId) + Send + Sync>>>,
 }
 
 fn read_device_play_counts(

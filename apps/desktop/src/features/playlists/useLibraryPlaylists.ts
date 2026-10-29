@@ -34,6 +34,22 @@ export function useLibraryPlaylists(enabled = true, activeRoot?: string): Librar
 
   useEffect(() => subscribeLibraryInvalidations(reload), [reload]);
 
+  // Re-pull the playlist catalog when the backend finishes projecting a
+  // directory mutation into the SQLite read model. This covers the case where
+  // a playlist was created before the projector caught up — the local
+  // library-invalidation signal alone would have read a stale catalog.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void bridge
+      .subscribe("library://songs-invalidated", () => reload())
+      .then((fn) => {
+        unlisten = fn;
+      });
+    return () => {
+      unlisten?.();
+    };
+  }, [reload]);
+
   useEffect(() => {
     if (!enabled) {
       setPlaylists([]);

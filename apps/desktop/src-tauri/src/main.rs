@@ -404,6 +404,25 @@ fn wire_composition(
     );
     app.manage(services);
     app.manage(routed.database.clone());
+
+    // After a root's projection worker catches the directory up to the catalog,
+    // emit an event so the shell re-pulls the read model (playlists / songs /
+    // counts) that changed out of band from the command that caused it — e.g. a
+    // newly created playlist that was committed before the projector caught up.
+    let projection_app = app.handle().clone();
+    let projection_broker = Mutex::new(echo_desktop::ipc::events::EventBroker::new());
+    routed.database.set_projection_notifier(Arc::new(move |_root: echo_core::domain::ids::LibraryRootId| {
+        let envelope = projection_broker
+            .lock()
+            .expect("projection event broker poisoned")
+            .emit(
+                echo_desktop::ipc::events::IpcEvent::SongsInvalidated {
+                    revision: echo_desktop::ipc::events::CatalogRevision::INITIAL,
+                },
+                None,
+            );
+        let _ = projection_app.emit("library://songs-invalidated", envelope);
+    }));
     app.manage(trash_worker);
     app.manage(routed.registry.clone());
     app.manage(routed.deps.clone());

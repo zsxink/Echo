@@ -3,6 +3,8 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+use std::sync::Arc;
+
 impl SqliteDatabase {
     /// Open (or create) a database, configure safety pragmas, apply migrations
     /// and verify its quick integrity check.
@@ -86,6 +88,7 @@ impl SqliteDatabase {
             readers: ReaderPool::new(readers),
             device_id,
             quarantined: None,
+            projection_notify: Mutex::new(None),
         })
     }
 
@@ -126,6 +129,7 @@ impl SqliteDatabase {
                 Arc::clone(worker)
             } else {
                 let writer = self.writer.clone();
+                let notify = self.projection_notify.lock().unwrap().clone();
                 let worker = Arc::new(LibraryProjectionWorker::spawn(root, move |root| {
                     let durable = control.durability().ok_or_else(|| {
                         Error::unavailable(
@@ -136,17 +140,35 @@ impl SqliteDatabase {
                     // Projection reads the authenticated journal without
                     // materializing files or contending on the writer lock.
                     let replay = durable.projection_replay(root)?;
-                    writer.run(move |connection| {
+                    let projected = writer.run(move |connection| {
                         durability_projection::project_commits_unless_superseded(
                             connection, root, &replay,
                         )
-                    })
+                    });
+                    if projected.is_ok() {
+                        if let Some(notify) = &notify {
+                            notify(root);
+                        }
+                    }
+                    projected
                 })?);
                 workers.insert(root, Arc::clone(&worker));
                 worker
             }
         };
         Ok(worker)
+    }
+
+    /// Register a callback invoked after a root's projection worker completes a
+    /// catch-up pass. The desktop runtime wires this to a Tauri event so the UI
+    /// re-pulls the catalog read model (playlists / songs / counts) that changed
+    /// out of band from the originating command — e.g. a playlist created from
+    /// the shell before the projector had caught up. Tests leave it unset.
+    pub fn set_projection_notifier(
+        &self,
+        notifier: Arc<dyn Fn(LibraryRootId) + Send + Sync>,
+    ) {
+        *self.projection_notify.lock().unwrap() = Some(notifier);
     }
 
     /// Wait until all projection wakes already accepted for this root finish.
