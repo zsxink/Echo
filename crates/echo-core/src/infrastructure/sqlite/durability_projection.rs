@@ -163,12 +163,18 @@ pub fn project_commits_in_transaction(
 /// The caller must obtain `replay` from the directory durability port's
 /// `begin_write`/`recover` boundary; cold or checkpoint-behind projections keep
 /// using the full validation path above.
+///
+/// The suffix is materialized into the business read model, not merely retained:
+/// an interactive planner reads `playlists`/`playlist_songs` to allocate names,
+/// identities and positions, so a catch-up that only advanced the watermark
+/// would hand it a read model that still lacks the previous commit's rows.
+/// Import and interactive catch-up therefore share the same retrying suffix.
 pub(super) fn project_verified_suffix(
     connection: &mut Connection,
     root: LibraryRootId,
     replay: &LibraryReplay,
 ) -> Result<(), Error> {
-    project_verified_suffix_with_dependency_retry(connection, root, replay, false)
+    project_verified_suffix_with_dependency_retry(connection, root, replay, true)
 }
 
 /// Import projection uses the same watermark-verified suffix path, then retries
