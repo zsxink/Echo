@@ -5,7 +5,7 @@ use echo_core::domain::ids::{LibraryRootId, PlaybackSessionId, SongId};
 use echo_core::domain::library::{DeviceId, LibraryId};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -279,6 +279,8 @@ fn reject_symlink(path: &Path) -> Result<(), String> {
 
 #[cfg(not(windows))]
 fn sync_parent(path: &Path) -> Result<(), String> {
+    use std::fs::File;
+
     File::open(path)
         .and_then(|file| file.sync_all())
         .map_err(|error| io(&error))
