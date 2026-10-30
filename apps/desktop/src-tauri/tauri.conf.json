@@ -75,18 +75,23 @@
         "Frameworks/libpcre2-8.0.dylib": "vendor/libmpv/macos/libpcre2-8.0.dylib",
         "Frameworks/libpng16.16.dylib": "vendor/libmpv/macos/libpng16.16.dylib",
         "Frameworks/libunibreak.8.dylib": "vendor/libmpv/macos/libunibreak.8.dylib",
-        "Resources/third-party/libmpv/NOTICE.md": "vendor/libmpv/macos/NOTICE.md"
+        "Resources/third-party/libmpv/NOTICE.md": "vendor/libmpv/macos/NOTICE.md",
+        "Resources/third-party/libmpv/THIRD-PARTY-LICENSES.txt": "vendor/libmpv/THIRD-PARTY-LICENSES.txt"
       }
     },
     "linux": {
       "deb": {
         "files": {
-          "usr/bin/libmpv.so": "vendor/libmpv/linux/libmpv.so"
+          "usr/bin/libmpv.so": "vendor/libmpv/linux/libmpv.so",
+          "usr/share/doc/echo/THIRD-PARTY-LICENSES.txt": "vendor/libmpv/THIRD-PARTY-LICENSES.txt",
+          "usr/share/doc/echo/NOTICE-libmpv-linux.md": "vendor/libmpv/linux/NOTICE.md"
         }
       },
       "appimage": {
         "files": {
-          "usr/bin/libmpv.so": "vendor/libmpv/linux/libmpv.so"
+          "usr/bin/libmpv.so": "vendor/libmpv/linux/libmpv.so",
+          "usr/share/doc/echo/THIRD-PARTY-LICENSES.txt": "vendor/libmpv/THIRD-PARTY-LICENSES.txt",
+          "usr/share/doc/echo/NOTICE-libmpv-linux.md": "vendor/libmpv/linux/NOTICE.md"
         }
       }
     }

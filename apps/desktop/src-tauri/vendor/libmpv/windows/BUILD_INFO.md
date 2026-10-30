@@ -12,7 +12,7 @@ Echo 的 Windows 播放后端由两个固定来源的构件组成，均在构建
 | Asset SHA-256 | `0af22b28e920620036d3ae08fd9283156dc9af0420bf4df84b0e02282094599c` |
 | Architecture| x86-64 (PE32+)                                                  |
 | mpv build   | `mpv 20260814 git-7b8915bc1d`（静态链接 FFmpeg，单文件运行时） |
-| Redistribution | LGPL-2.1-or-later（上游 mpv / FFmpeg）                         |
+| Redistribution | GPL-2.0-or-later（shinchiro 构建以 `--enable-gpl` 链接 x264/x265，静态 FFmpeg 使 DLL 为 GPL，非 LGPL） |
 
 > 注：此资产是 shinchiro 的 **dev** 包，提供一个静态链接 FFmpeg 的 `libmpv-2.dll`
 > （导出完整 `mpv_*` C API，ABI 与 Echo 的 `MpvSys` 符号集一致）。不包含

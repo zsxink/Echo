@@ -9,14 +9,34 @@ for the Rust graph continuously. After lockfile changes that alter the crate
 set, regenerate this file (see footer) and update `deny.toml`'s allow list if a
 new license appears.
 
-Echo itself is licensed under a custom license based on **Business Source License 1.1** — personal study/research use only, no commercial use, no redistribution (see the root [`LICENSE`](LICENSE)).
-Workspace members (`echo-app`, `echo-core`, `echo-desktop`) report `BUSL-1.1` in their manifests via the workspace `license` field. All third-party crates below are permissive-licensed; the few `OR`/`AND` expressions always include a permissive alternative (e.g. MIT or Apache-2.0).
+Echo itself is licensed under **Echo Personal Study License 1.0**, an
+independent custom license (root [`LICENSE`](LICENSE)) — personal
+study/research use only, no commercial use, no resale, no redistribution. It
+borrows BUSL-1.1's Change Date / Change License structure but is **not**
+Business Source License 1.1 and must not be labeled with that SPDX id; custom
+licenses are expressed in SPDX via the `LicenseRef-` mechanism. Workspace
+members (`echo-app`, `echo-core`, `echo-desktop`) report
+`LicenseRef-Echo-Personal-Study-1.0` in their manifests via the workspace
+`license` field. All third-party crates below are permissive-licensed; the few
+`OR`/`AND` expressions always include a permissive alternative (e.g. MIT or
+Apache-2.0).
 
-> **libmpv note:** the platform player binary (libmpv, LGPL-2.1+ / ISC) is
-> bundled separately at packaging time and is **not** a Cargo or npm
-> dependency of this repository. Its source, checksum, ABI and license are
-> pinned and checked individually by task 1.10; it is intentionally not listed
-> here.
+> **libmpv note:** the platform player binary (libmpv + FFmpeg siblings,
+> bundled separately at packaging time) is **not** a Cargo or npm dependency
+> of this repository, so it is intentionally not listed in the tables below.
+> Its per-platform licensing follows each platform's actual build
+> configuration and is pinned per platform by the vendor manifests
+> (`apps/desktop/src-tauri/vendor/libmpv/{macos,windows,linux}/manifest.json`)
+> and task 1.10: **macOS** is the Echo self-build with FFmpeg's GPL and
+> nonfree options disabled (LGPL-2.1-or-later; auxiliary libraries ISC/MIT/
+> LGPL per the macOS NOTICE); **Windows** uses the shinchiro
+> `mpv-winbuild-cmake` build whose FFmpeg keeps `--enable-gpl` and links
+> x264/x265, so the bundled `libmpv-2.dll` is **GPL-2.0-or-later** (plus the
+> Apache-2.0 Vulkan loader); **Linux** is the CI self-build whose FFmpeg
+> keeps mpv-build's `--enable-gpl`, also **GPL-2.0-or-later**. The complete
+> license texts ship inside every installer
+> (`THIRD-PARTY-LICENSES.txt`); see each platform's `NOTICE.md` for
+> corresponding-source pointers.
 
 ---
 
@@ -24,11 +44,11 @@ Workspace members (`echo-app`, `echo-core`, `echo-desktop`) report `BUSL-1.1` in
 
 | Crate | Version | License | Source |
 | --- | --- | --- | --- |
-| `echo-app` | 0.1.0 | BUSL-1.1* | workspace (`apps/desktop/src-tauri`) |
-| `echo-core` | 0.1.0 | BUSL-1.1* | <https://github.com/zsxink/Echo> |
-| `echo-desktop` | 0.1.0 | BUSL-1.1* | <https://github.com/zsxink/Echo> |
+| `echo-app` | 0.1.0 | LicenseRef-Echo-Personal-Study-1.0* | workspace (`apps/desktop/src-tauri`) |
+| `echo-core` | 0.1.0 | LicenseRef-Echo-Personal-Study-1.0* | <https://github.com/zsxink/Echo> |
+| `echo-desktop` | 0.1.0 | LicenseRef-Echo-Personal-Study-1.0* | <https://github.com/zsxink/Echo> |
 
-\* Custom license based on Business Source License 1.1 — see root `LICENSE`.
+\* Echo Personal Study License 1.0 — an independent custom license, see root `LICENSE`.
 
 ## Rust transitive dependencies (from `Cargo.lock`)
 

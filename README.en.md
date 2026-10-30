@@ -51,6 +51,16 @@ LAN sync has been implemented and archived. Device-matrix, real-device propagati
 
 See the detailed [roadmap](docs/ROADMAP.md), [product scope](docs/PRODUCT.md), [design](docs/DESIGN.md), and [interface terminology](docs/interface-terminology.md).
 
+### System requirements
+
+| Platform | Minimum | Validated baseline | Artifacts |
+|---|---|---|---|
+| Windows | Windows 10 | Windows 10 22H2 / 11 x64 | x64 NSIS installer |
+| macOS | macOS 12 | macOS 12+ (Apple Silicon) | aarch64 DMG |
+| Linux | Ubuntu 22.04 | Ubuntu 22.04+ x64 | deb / AppImage |
+
+Windows builds are x64-only. If the WebView2 runtime is missing, the installer bootstraps it automatically from an embedded bootstrapper. Installers are currently **unsigned**: Windows SmartScreen may show "Windows protected your PC" — choose "More info → Run anyway"; on macOS, allow the app under "Privacy & Security" on first launch.
+
 ## UI prototype
 
 See the [desktop player prototype](docs/prototype/echo-desktop-player.html) and the icons in the same directory.
@@ -141,8 +151,12 @@ OpenSpec specifications live in `openspec/specs/<area>/spec.md`; proposed change
 
 The original Phase 1 scope excluded sync UI and network connections. That is historical scope, not the current product limitation: desktop LAN sync was implemented in Phase 2. See the [roadmap](docs/ROADMAP.md) for implementation and acceptance status.
 
+## Media rights & privacy
+
+Importing and LAN sync copy your audio and lyrics files: you are responsible for ensuring you have the rights to copy and sync that content between your own devices. Echo does not provide or download any audio content and holds no music, lyrics, or cover-art licenses. On privacy, Echo has no accounts, no telemetry or crash reporting, no cloud relay, and no online lyrics/cover fetching; diagnostic logs stay on your device. See [`docs/media-rights-and-privacy.md`](docs/media-rights-and-privacy.md).
+
 ## License
 
-Echo uses a custom license based on the Business Source License 1.1 for personal learning and research. Commercial use, resale, and redistribution are prohibited. On the Change Date (2099-12-31), the code will be available under GPL-2.0-or-later. See [`LICENSE`](LICENSE).
+Echo is licensed under the **Echo Personal Study License** — an independent, custom source-available license: personal learning and research use only; commercial use, resale, and redistribution are prohibited. On the Change Date (2099-12-31), the code will be available under GPL-2.0-or-later. The license borrows Business Source License 1.1's Change Date structure but is **not** BUSL-1.1. See [`LICENSE`](LICENSE).
 
-Third-party dependency licenses are listed in [`LICENSES.md`](LICENSES.md), maintained through `cargo deny` and the frontend production-dependency audit.
+Third-party dependency licenses are listed in [`LICENSES.md`](LICENSES.md), maintained through `cargo deny` and the frontend production-dependency audit. For the bundled libmpv and its sibling libraries, each platform's `vendor/libmpv/*/NOTICE.md` records the licenses, sources, and corresponding source, and the full license texts ship inside every installer as `vendor/libmpv/THIRD-PARTY-LICENSES.txt`.

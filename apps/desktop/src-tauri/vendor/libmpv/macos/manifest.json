@@ -138,6 +138,12 @@
       "source": "https://github.com/silnrsi/graphite"
     },
     {
+      "component": "mbed TLS",
+      "license": "Apache-2.0 OR GPL-2.0-or-later",
+      "source": "https://github.com/Mbed-TLS/mbedtls",
+      "note": "libmbedtls/libmbedcrypto/libmbedx509.dylib; Homebrew build, version recorded by the build host"
+    },
+    {
       "component": "HarfBuzz",
       "license": "MIT",
       "source": "https://github.com/harfbuzz/harfbuzz"

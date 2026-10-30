@@ -3,10 +3,12 @@
 # This is the single config file used by both `cargo deny check` and
 # `cargo deny check advisories`. Run from the repo root.
 #
-# License policy: Echo itself is source-available under a custom Business
-# Source License 1.1-based license (root Cargo.toml + LICENSE); the workspace
-# members are marked `[licenses.private]` below, so their `BUSL-1.1` manifest
-# license does not participate in the allow-list check. The allow list below
+# License policy: Echo itself is licensed under "Echo Personal Study License
+# 1.0", an independent custom license (root Cargo.toml + LICENSE) that borrows
+# BUSL-1.1's Change Date structure but is NOT BUSL-1.1 and must never carry
+# that SPDX id; the workspace members are marked `[licenses.private]` below,
+# so their `LicenseRef-Echo-Personal-Study-1.0` manifest license does not
+# participate in the allow-list check. The allow list below
 # accepts every license that appears in the current transitive crate graph
 # plus the common permissive licenses we expect future crates to carry.
 # Because every crate in the lockfile declares an
@@ -26,9 +28,12 @@
 # true` because their `license.workspace = true` indirection is resolved from
 # the workspace manifest at the repository level.
 #
-# libmpv (LGPL-2.1+ / ISC) is bundled LATER as the platform player dependency
-# and is NOT a cargo dependency, so it is intentionally not covered here. Its
-# source, checksum, ABI and license are fixed separately by task 1.10.
+# The bundled platform player (libmpv + FFmpeg siblings) is NOT a cargo
+# dependency, so it is intentionally not covered here. Its per-platform
+# licensing differs with build configuration — macOS self-build is
+# LGPL-2.1-or-later (no GPL options), Windows shinchiro build and the Linux
+# self-build keep FFmpeg's `--enable-gpl` and are GPL-2.0-or-later — and is
+# fixed separately per platform by the vendor manifests and task 1.10.
 
 [graph]
 # Analyze the full graph but constrain evaluation to the desktop targets we
@@ -118,7 +123,8 @@ allow = [
 confidence-threshold = 0.8
 # Workspace/private path members (echo-app, echo-core, echo-desktop) carry
 # `license.workspace = true`; cargo-deny resolves their license via the
-# workspace manifest (now `BUSL-1.1`, the source-available custom license), so
+# workspace manifest (now `LicenseRef-Echo-Personal-Study-1.0`, the custom
+# source-available license), so
 # mark them private and ignore their individual license-file scanning. They
 # are covered by the same repository policy as their published workspace
 # manifest.

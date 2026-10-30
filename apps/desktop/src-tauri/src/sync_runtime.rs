@@ -469,13 +469,18 @@ impl SyncRuntime {
         if self.status().enabled {
             return Err(SyncRuntimeError::Busy);
         }
+        // Supersede the previous worker like any other user transition:
+        // exhaustion is published just before that thread exits, so an
+        // immediate retry can race a not-yet-finished worker, and the restart
+        // that follows must not be silently dropped behind it. Cancel-joining
+        // also advances the generation, per the restore-retry contract that an
+        // explicit retry fences any late attempt.
+        self.cancel_restore_retry();
         {
             let mut inner = self
                 .inner
                 .lock()
                 .map_err(|_| SyncRuntimeError::WorkerFailed)?;
-            inner.status.restore_exhausted = false;
-            inner.status.restore_attempts = None;
             inner.status.state = SyncState::Disabled;
             inner.status.last_error = None;
             inner.status.event_sequence += 1;
