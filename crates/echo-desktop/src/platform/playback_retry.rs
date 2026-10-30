@@ -291,6 +291,7 @@ fn sync_parent(path: &Path) -> Result<(), String> {
 /// temporary file's content flush before the rename remains the durability
 /// guarantee.
 #[cfg(not(unix))]
+#[allow(clippy::missing_const_for_fn, clippy::unnecessary_wraps)]
 fn sync_parent(_path: &Path) -> Result<(), String> {
     Ok(())
 }

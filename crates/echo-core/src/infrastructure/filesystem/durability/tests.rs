@@ -79,8 +79,16 @@ fn fixture() -> (
     (dir, registry, root, library, plane)
 }
 fn batch(library: LibraryId, id: uuid::Uuid, title: &str) -> LibraryBatch {
+    batch_with_operation(uuid::Uuid::new_v4(), library, id, title)
+}
+fn batch_with_operation(
+    operation_id: uuid::Uuid,
+    library: LibraryId,
+    id: uuid::Uuid,
+    title: &str,
+) -> LibraryBatch {
     LibraryBatch::new(
-        uuid::Uuid::new_v4(),
+        operation_id,
         library,
         ChangeOrigin::LocalEdit,
         vec![PortableRecordEnvelope::new(

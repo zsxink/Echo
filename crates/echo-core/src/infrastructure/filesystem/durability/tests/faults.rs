@@ -11,8 +11,18 @@ fn seed() -> (
 ) {
     let (dir, registry, root, library, plane) = fixture();
     let hash = LibraryAssetPort::write_asset(&plane, root, b"unique bytes retained").unwrap();
-    for i in 0..3 {
-        let mut batch = batch(library, uuid::Uuid::from_u128(100), &format!("value {i}"));
+    for i in 0..3u128 {
+        // Fixed operation ids keep every seed's receipt shard directories
+        // identical: the interruption trace recorded on one seeded library must
+        // enumerate the complete hook sequence of every other seed. A random id
+        // can collapse two shards and shorten the directory proof by one.
+        let operation_id = uuid::Uuid::from_u128((0x11 + i) << 120);
+        let mut batch = batch_with_operation(
+            operation_id,
+            library,
+            uuid::Uuid::from_u128(100),
+            &format!("value {i}"),
+        );
         batch.state.push(DurableStateChange::new(
             StateKind::Pending,
             uuid::Uuid::from_u128(i + 1),
@@ -66,7 +76,7 @@ fn library_durability_every_compaction_boundary_keeps_snapshot_and_unique_resour
     for (stop, boundary) in trace.iter().enumerate() {
         let (dir, registry, root, _, replay, hash) = seed();
         let mut counter = 0;
-        assert!(checkpoint::compact(
+        let result = checkpoint::compact(
             &registry,
             &ValidationCache::default(),
             root,
@@ -79,9 +89,14 @@ fn library_durability_every_compaction_boundary_keeps_snapshot_and_unique_resour
                 } else {
                     Ok(())
                 }
-            }
-        )
-        .is_err());
+            },
+        );
+        assert!(
+            result.is_err(),
+            "boundary {stop}/{} ({boundary:?}) completed without surfacing the injected \
+             failure; the library emitted {counter} hooks",
+            trace.len()
+        );
         let restored = recover(&registry, root)
             .unwrap_or_else(|e| panic!("boundary {stop} {boundary:?}: {e}"));
         assert_eq!(restored.head().unwrap().0, 3);
