@@ -76,12 +76,10 @@ fn library_durability_repeated_marker_sync_failure_never_materializes_or_advance
             );
             // A persisted materialization watermark proves earlier fence order;
             // normal subsequent recovery must not repeatedly sync old markers.
-            assert!(
-                !traced_recovery(&registry, root)
-                    .iter()
-                    .any(|(phase, _)| phase.starts_with("marker_recovery:")
-                        || phase.starts_with("prepared_recovery:"))
-            );
+            assert!(!traced_recovery(&registry, root)
+                .iter()
+                .any(|(phase, _)| phase.starts_with("marker_recovery:")
+                    || phase.starts_with("prepared_recovery:")));
         }
     }
 }
@@ -155,17 +153,20 @@ fn library_durability_repeated_coverage_sync_failure_never_collects_redo() {
             let mut trace = Vec::new();
             recover_with_hook(&registry, root, &mut |phase, index| {
                 trace.push((phase.to_owned(), index));
-                if phase == target { Err(fail()) } else { Ok(()) }
+                if phase == target {
+                    Err(fail())
+                } else {
+                    Ok(())
+                }
             })
             .unwrap_err();
             assert!(trace.iter().any(|(phase, _)| phase == &target));
             assert!(!trace.iter().any(|(phase, _)| phase == "gc:remove"));
             assert!(marker_present(dir.path(), change.operation_id));
-            assert!(
-                dir.path()
-                    .join(relative(change.operation_id, "prepared.json"))
-                    .exists()
-            );
+            assert!(dir
+                .path()
+                .join(relative(change.operation_id, "prepared.json"))
+                .exists());
             let trace = traced_recovery(&registry, root);
             super::gc_performance::assert_gc_proof(&trace, 1, 5);
             assert_eq!(
@@ -218,16 +219,18 @@ fn library_durability_repeated_receipt_sync_failure_blocks_coverage_and_gc() {
             &replay,
             &mut |phase, index| {
                 trace.push((phase.to_owned(), index));
-                if phase == target { Err(fail()) } else { Ok(()) }
+                if phase == target {
+                    Err(fail())
+                } else {
+                    Ok(())
+                }
             },
         )
         .unwrap_err();
         assert!(trace.iter().any(|(phase, _)| phase == &target));
-        assert!(
-            !trace
-                .iter()
-                .any(|(phase, _)| phase == "coverage" || phase == "gc:remove")
-        );
+        assert!(!trace
+            .iter()
+            .any(|(phase, _)| phase == "coverage" || phase == "gc:remove"));
         assert!(!dir.path().join(ANCHOR).exists());
         assert!(marker_present(dir.path(), change.operation_id));
         trace.clear();
@@ -286,11 +289,9 @@ fn library_durability_coverage_redo_must_sync_before_materializing() {
         }
     })
     .unwrap_err();
-    assert!(
-        !trace
-            .iter()
-            .any(|phase| matches!(phase.as_str(), "record" | "checkpoint" | "gc:remove"))
-    );
+    assert!(!trace
+        .iter()
+        .any(|phase| matches!(phase.as_str(), "record" | "checkpoint" | "gc:remove")));
     assert!(!dir.path().join(CHECKPOINT).exists());
     assert!(!dir.path().join(path).exists());
     let trace = traced_recovery(&registry, root);
@@ -346,11 +347,10 @@ fn library_durability_later_receipt_sync_failure_preserves_every_covered_journal
     assert!(!trace.iter().any(|phase| phase == "gc:remove"));
     for change in &changes {
         assert!(marker_present(dir.path(), change.operation_id));
-        assert!(
-            dir.path()
-                .join(relative(change.operation_id, "prepared.json"))
-                .exists()
-        );
+        assert!(dir
+            .path()
+            .join(relative(change.operation_id, "prepared.json"))
+            .exists());
     }
     let trace = traced_recovery(&registry, root);
     let shards: BTreeSet<_> = changes
@@ -382,9 +382,7 @@ fn library_durability_completed_coverage_without_leftovers_does_not_resync() {
         &mut |_, _| Ok(()),
     )
     .unwrap();
-    assert!(
-        !traced_recovery(&registry, root)
-            .iter()
-            .any(|(phase, _)| phase.starts_with("coverage_") || phase.starts_with("receipt_"))
-    );
+    assert!(!traced_recovery(&registry, root)
+        .iter()
+        .any(|(phase, _)| phase.starts_with("coverage_") || phase.starts_with("receipt_")));
 }

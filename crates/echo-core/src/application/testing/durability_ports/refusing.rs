@@ -1,6 +1,7 @@
 //! A reusable authority that can reject every directory commit before mutation.
 use crate::application::ports::{
-    ControlPlaneInventoryPort, ControlPlanePort, LibraryDurabilityPort, ManifestState,
+    ControlPlaneInventoryPort, ControlPlanePort, LibraryAssetPort, LibraryDurabilityPort,
+    LibraryWriteSessionPort, ManifestState,
 };
 use crate::domain::ids::LibraryRootId;
 use crate::domain::library::durability::{
@@ -139,7 +140,7 @@ impl ControlPlanePort for RefusingAuthority {
     }
 }
 
-impl LibraryDurabilityPort for RefusingAuthority {
+impl LibraryAssetPort for RefusingAuthority {
     fn write_asset(&self, root: LibraryRootId, bytes: &[u8]) -> Result<String, Error> {
         self.directory().write_asset(root, bytes)
     }
@@ -147,7 +148,11 @@ impl LibraryDurabilityPort for RefusingAuthority {
     fn read_asset(&self, root: LibraryRootId, hash: &str) -> Result<Option<Vec<u8>>, Error> {
         self.directory().read_asset(root, hash)
     }
+}
 
+impl LibraryWriteSessionPort for RefusingAuthority {}
+
+impl LibraryDurabilityPort for RefusingAuthority {
     fn commit(&self, root: LibraryRootId, batch: &LibraryBatch) -> Result<CommitOutcome, Error> {
         if self.refuse_commits.load(Ordering::Relaxed) {
             return Err(Error::unavailable(

@@ -189,6 +189,9 @@ mod tests {
         assert_eq!(error.code(), "unavailable");
     }
 
+    // The fixture deliberately writes the Kelvin sign (U+212A), which is not
+    // NFC, to prove portable collision checks fold it with the plain "k".
+    #[allow(clippy::unicode_not_nfc)]
     #[test]
     fn portable_collision_fast_path_preserves_unicode_equivalence() {
         let dir = tempfile::tempdir().unwrap();

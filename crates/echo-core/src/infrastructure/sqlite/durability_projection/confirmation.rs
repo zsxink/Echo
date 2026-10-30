@@ -12,8 +12,8 @@ use crate::application::ports::RemoteCommit;
 use crate::domain::library::{PortableRecord, PortableRecordEnvelope};
 use crate::domain::sync::CommitSeq;
 use crate::error::Error;
-use rusqlite::{Connection, OptionalExtension, params};
-use serde_json::{Value, json};
+use rusqlite::{params, Connection, OptionalExtension};
+use serde_json::{json, Value};
 
 /// Whether the envelope claims a confirmation the ledger cannot prove.
 ///

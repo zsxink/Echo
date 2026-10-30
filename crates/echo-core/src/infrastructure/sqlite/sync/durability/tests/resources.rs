@@ -7,8 +7,8 @@ use crate::domain::{
     entities::Song,
     ids::{RelativeMediaPath, Revision, SongId},
     library::{
-        LibraryManifest,
         durability::{DurableResource, FrozenMutation},
+        LibraryManifest,
     },
     media::AudioFormat,
     sync::{ObjectKey, ResourceDigest, SharedResourceKind, SharedResourceManifest},

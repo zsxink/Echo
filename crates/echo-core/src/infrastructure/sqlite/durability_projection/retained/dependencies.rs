@@ -1,11 +1,11 @@
 //! Resolve only explicit root-scoped parents and identities; never invent them.
-use super::{Reason, storage};
+use super::{storage, Reason};
 use crate::domain::{
     ids::LibraryRootId,
     library::{PortableRecord, PortableRecordEnvelope, RecordKind},
 };
 use crate::error::Error;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{params, Connection, OptionalExtension};
 
 fn tombstoned(records: &[PortableRecordEnvelope], kind: RecordKind, id: uuid::Uuid) -> bool {
     records.iter().any(|e| matches!(e.record(), PortableRecord::Tombstone(t) if t.deleted_kind==kind && t.object_uuid==id))

@@ -1,8 +1,8 @@
 //! Durable publication primitives with a fault hook at each native boundary.
-use super::{Hook, invalid};
+use super::{invalid, Hook};
 use crate::domain::ids::LibraryRootId;
 use crate::error::Error;
-use crate::infrastructure::filesystem::{RootRegistry, portable_migration as portable};
+use crate::infrastructure::filesystem::{portable_migration as portable, RootRegistry};
 use std::collections::BTreeSet;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};

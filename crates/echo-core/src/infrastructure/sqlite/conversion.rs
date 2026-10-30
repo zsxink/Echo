@@ -298,8 +298,8 @@ mod tests {
     use super::*;
     use crate::domain::entities::LyricsSource;
     use crate::domain::ids::{LibraryRootId, SongId};
-    use crate::domain::state::OperationState as DomainOperationState;
     use crate::domain::state::scan::ScanState;
+    use crate::domain::state::OperationState as DomainOperationState;
 
     /// Feed literal columns through a real `SELECT` and hand the first row to a
     /// `..._from_row` mapper — the same path real queries use (a `rusqlite::Row`

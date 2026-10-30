@@ -31,13 +31,31 @@ fn count(database: &SqliteDatabase, song: SongId) -> u64 {
         .as_u64()
 }
 
+#[allow(clippy::too_many_lines)] // One end-to-end pending-bucket scenario; splitting would hide its protocol assertions.
 #[test]
 fn library_durability_new_author_playback_preserves_old_pending_bucket_without_claiming_it() {
     use crate::domain::library::durability::{ChangeOrigin, LibraryBatch};
     use crate::domain::library::{HybridLogicalClock, PlayStatsRecord, PortableRecordEnvelope};
-    use crate::domain::sync::{CommitSeq, ConfirmedObject, ObjectKey, ObjectVersion, OriginCursor};
+    use crate::domain::sync::{
+        AuthorityId, CommitSeq, ConfirmedObject, Epoch, LibraryId as SyncId, ObjectKey,
+        ObjectVersion, OriginCursor, SyncBinding,
+    };
     let stack = ScanStack::new();
     let (_, control, deps) = configured_roots(&stack);
+    // The pending play bucket is a LAN protocol fact: bind the root so the
+    // listen freezes its candidate exactly as it does in a synced library.
+    stack
+        .database
+        .bind_sync_library(
+            SyncBinding {
+                library_id: SyncId::new(),
+                authority_id: AuthorityId::new(),
+                epoch: Epoch::INITIAL,
+            },
+            true,
+            stack.root,
+        )
+        .unwrap();
     let song = favorite::seed_song(&stack, &control, &deps);
     let old_author = uuid::Uuid::new_v4();
     let new_author = deps.device_id.current_device_id();
@@ -179,8 +197,23 @@ fn library_durability_playback_retry_preserves_saved_pending_session() {
 
 #[test]
 fn library_durability_playback_later_session_catches_up_and_rebuild_has_no_echo() {
+    use crate::domain::sync::{AuthorityId, Epoch, LibraryId as SyncId, SyncBinding};
     let stack = ScanStack::new();
     let (_, control, deps) = configured_roots(&stack);
+    // A synced library records each qualified listen as a pending mutation; the
+    // session itself must still never leak into it (SYN-R08-S01).
+    stack
+        .database
+        .bind_sync_library(
+            SyncBinding {
+                library_id: SyncId::new(),
+                authority_id: AuthorityId::new(),
+                epoch: Epoch::INITIAL,
+            },
+            true,
+            stack.root,
+        )
+        .unwrap();
     let song = favorite::seed_song(&stack, &control, &deps);
     let first = PlaybackSessionId::new();
     stack.database.writer.run(|c| {
@@ -226,16 +259,12 @@ fn library_durability_playback_later_session_catches_up_and_rebuild_has_no_echo(
         let mutation: FrozenMutation =
             serde_json::from_value(mutation.payload["frozen"].clone()).unwrap();
         for private_session in [first, second] {
-            assert!(
-                !serde_json::to_string(&mutation.candidate.payload)
-                    .unwrap()
-                    .contains(&private_session.to_string())
-            );
-            assert!(
-                !serde_json::to_string(&commit.batch.records)
-                    .unwrap()
-                    .contains(&private_session.to_string())
-            );
+            assert!(!serde_json::to_string(&mutation.candidate.payload)
+                .unwrap()
+                .contains(&private_session.to_string()));
+            assert!(!serde_json::to_string(&commit.batch.records)
+                .unwrap()
+                .contains(&private_session.to_string()));
         }
         frozen.push(mutation);
     }
@@ -311,15 +340,13 @@ fn library_durability_playback_unwritable_library_leaves_no_database_only_increm
             (0, 0, 0),
             "no private session, outbox snapshot or frozen mutation may exist"
         );
-        assert!(
-            control
-                .durability()
-                .unwrap()
-                .recover(stack.root)
-                .unwrap()
-                .states()
-                .all(|state| state.kind != StateKind::PlaybackEvent)
-        );
+        assert!(control
+            .durability()
+            .unwrap()
+            .recover(stack.root)
+            .unwrap()
+            .states()
+            .all(|state| state.kind != StateKind::PlaybackEvent));
     }
     // The same intent still commits once the resource becomes writable, and
     // repeated attempts keep counting exactly one qualified play.
@@ -365,13 +392,11 @@ fn library_durability_playback_session_cannot_be_reused_for_another_song() {
                     .unwrap()
                     .library_id,
                 crate::domain::library::durability::ChangeOrigin::Scan,
-                vec![
-                    crate::domain::library::PortableRecordEnvelope::new(
-                        PortableRecord::Song(other),
-                        None,
-                    )
-                    .unwrap(),
-                ],
+                vec![crate::domain::library::PortableRecordEnvelope::new(
+                    PortableRecord::Song(other),
+                    None,
+                )
+                .unwrap()],
             ),
         )
         .unwrap();

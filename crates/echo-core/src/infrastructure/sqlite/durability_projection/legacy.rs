@@ -4,7 +4,7 @@ use super::{retained, storage};
 use crate::domain::ids::LibraryRootId;
 use crate::domain::library::{PortableRecord, PortableRecordEnvelope};
 use crate::error::Error;
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 
 /// The caller has already selected the effective legacy snapshot under its
 /// historical version/tombstone rules and excluded targets covered by a real

@@ -131,6 +131,11 @@ fn rebuild(replica: &Replica, replay: &LibraryReplay) -> (SqliteDatabase, (i64, 
     )
     .unwrap();
     fresh.configure_library_control(Arc::new(replica.plane.as_ref().clone()));
+    // Re-enroll the rebuilt replica so protocol evidence (the peer cursor)
+    // survives the replay; a standalone root discards it (SYN-R06-S04).
+    fresh
+        .bind_sync_library(replica.binding, false, replica.root)
+        .unwrap();
     fresh.project_library_commits(replica.root, replay).unwrap();
     let rows = fresh
         .with_reader(|c| {

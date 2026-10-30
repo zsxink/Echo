@@ -2,10 +2,10 @@
 //! Local mutations are stored by root independently of this selected context,
 //! so scanning a candidate never exchanges the running host's ledger.
 
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
-use super::super::SqliteDatabase;
 use super::super::support::storage;
+use super::super::SqliteDatabase;
 use crate::domain::ids::LibraryRootId;
 use crate::error::Error;
 

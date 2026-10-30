@@ -2,9 +2,9 @@
 # ----------------------------------------------------------------------
 scenario_id: LE-R21-S04
 requirement: 收藏与批量操作以音乐库持久结果为反馈
-scenario: 已保存待投影不被当作失败重试
+scenario: 批量收藏部分已保存
 layer: automated
-command: "cargo test -p echo-core --all-features library_durability_retry_catches_up_all_saved_operations_without_new_commits"
+command: "pnpm --filter @echo/desktop test -- --run src/features/library/savedPendingFeedback.test.tsx -t \"reports each batch item's own outcome and retries only the saved ones\""
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

@@ -6,7 +6,7 @@ use crate::application::ports::{
 };
 use crate::domain::{
     ids::PlaylistId,
-    library::{LibraryManifest, durability::LibraryCommit},
+    library::{durability::LibraryCommit, LibraryManifest},
     sync::{CommitCheckpoint, DeviceId, MutationCandidate, MutationId, ObjectKey},
 };
 use crate::infrastructure::filesystem::{RootControlPlane, RootRegistry};
@@ -116,6 +116,9 @@ fn wipe_and_project(f: &Fixture, plane: &RootControlPlane) -> SqliteDatabase {
     )
     .unwrap();
     fresh.configure_library_control(Arc::new(plane.clone()));
+    // Re-enroll the root before replaying: a standalone root discards sync
+    // protocol state (SYN-R06-S04), and this fixture must retain it.
+    fresh.bind_sync_library(f.b_binding, true, f.b).unwrap();
     fresh
         .project_library_commits(f.b, &plane.recover(f.b).unwrap())
         .unwrap();
@@ -196,17 +199,15 @@ fn library_durability_mark_published_never_uses_other_root_or_binding_same_seque
         let commit = published(&plane, f.b, checkpoint);
         assert!(!commit.batch.records.is_empty());
         assert!(commit.batch.state.len() > 1);
-        assert!(
-            commit
-                .batch
-                .state
-                .iter()
-                .any(|s| s.kind == StateKind::SyncLedger
-                    && s.key.as_ref().unwrap().namespace
-                        == StateNamespace::Bound {
-                            binding: f.b_binding
-                        })
-        );
+        assert!(commit
+            .batch
+            .state
+            .iter()
+            .any(|s| s.kind == StateKind::SyncLedger
+                && s.key.as_ref().unwrap().namespace
+                    == StateNamespace::Bound {
+                        binding: f.b_binding
+                    }));
     }
 }
 

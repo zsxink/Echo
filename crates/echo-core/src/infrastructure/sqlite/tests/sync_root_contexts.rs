@@ -35,7 +35,12 @@ fn root_switching_preserves_pending_peers_and_independent_commit_chains() {
     let b_song = song(b, "b.flac", "B", "artist");
     SongRepository::upsert(&database, &a_song).unwrap();
     database.bind_sync_library(a_binding, true, a).unwrap();
+    // Only edits made with a sync context are queueable (SYN-R06-S04); the
+    // standalone upsert above was local data only.
+    SongRepository::set_favorite(&database, a_song.id(), true).unwrap();
     let a_first = database.pending_local_mutations(32).unwrap()[0].clone();
+    assert_eq!(a_first.origin_seq, 1);
+    assert_eq!(a_first.previous_mutation_id, None);
     let a_checkpoint = database
         .stage_confirmation(a_binding, &a_first)
         .unwrap()
@@ -50,7 +55,8 @@ fn root_switching_preserves_pending_peers_and_independent_commit_chains() {
         .set_sync_session_intent(SyncSessionIntent::Enabled)
         .unwrap();
 
-    // Capturing an inactive root never exchanges the current authority ledger.
+    // An unbound root's edit only touches local data; it never enters a sync
+    // queue (SYN-R06-S04) and never exchanges the current authority ledger.
     SongRepository::upsert(&database, &b_song).unwrap();
     assert!(database.pending_local_mutations(32).unwrap().is_empty());
     database.bind_sync_library(b_binding, true, b).unwrap();
@@ -74,6 +80,9 @@ fn root_switching_preserves_pending_peers_and_independent_commit_chains() {
             .as_u64(),
         0
     );
+    let b_first = database.pending_local_mutations(32).unwrap();
+    assert!(b_first.is_empty());
+    SongRepository::set_favorite(&database, b_song.id(), true).unwrap();
     let b_first = database.pending_local_mutations(32).unwrap()[0].clone();
     assert_eq!(b_first.origin_seq, 1);
     assert_eq!(b_first.previous_mutation_id, None);
@@ -89,7 +98,9 @@ fn root_switching_preserves_pending_peers_and_independent_commit_chains() {
     database
         .set_sync_session_intent(SyncSessionIntent::Paused)
         .unwrap();
-    SongRepository::set_favorite(&database, a_song.id(), true).unwrap();
+    // A previously bound root keeps its own queue while B is live: the edit is
+    // invisible from B's queue but is captured under A's archived context.
+    SongRepository::set_favorite(&database, a_song.id(), false).unwrap();
     assert!(database.pending_local_mutations(32).unwrap().is_empty());
 
     // Idempotent bind must commit restoration even when B is currently live.
@@ -199,8 +210,13 @@ fn independent_replica_enrollment_preserves_unbound_offline_edits() {
     SongRepository::set_favorite(&database, b_song.id(), true).unwrap();
     database.select_sync_context(b).unwrap();
     assert!(database.current_sync_configuration().unwrap().is_none());
+    // An unbound library keeps those edits as local data only; enrollment must
+    // not resurrect a queue that was never allowed to exist (SYN-R06-S04).
     let offline = database.pending_local_mutations(32).unwrap();
-    assert_eq!(offline.len(), 2);
+    assert!(
+        offline.is_empty(),
+        "an unbound library retains no sync queue"
+    );
     let b_binding = binding();
     database.select_sync_context(a).unwrap();
     assert!(database.bind_empty_sync_replica(b_binding, b).is_err());
@@ -219,12 +235,10 @@ fn independent_replica_enrollment_preserves_unbound_offline_edits() {
     assert!(!configured.host);
     assert_eq!(configured.local_root, b);
     assert_eq!(database.pending_local_mutations(32).unwrap(), offline);
-    assert!(
-        SongRepository::by_id(&database, b_song.id())
-            .unwrap()
-            .unwrap()
-            .favorite()
-    );
+    assert!(SongRepository::by_id(&database, b_song.id())
+        .unwrap()
+        .unwrap()
+        .favorite());
     let c = add_root(&database, &directory.path().join("c"));
     database.bind_empty_sync_replica(binding(), c).unwrap();
     assert!(database.pending_local_mutations(32).unwrap().is_empty());

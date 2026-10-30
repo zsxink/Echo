@@ -25,7 +25,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Condvar, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Condvar, Mutex};
 
 use rusqlite::params;
 use rusqlite::{Connection, OptionalExtension, Transaction};
@@ -36,7 +36,7 @@ use crate::application::ports::{
     RuntimeStateStore, ScanRunRepository, SongRepository, TxLyricsWriter, TxOperationWriter,
     TxPlaylistWriter, TxRootWriter, TxSongWriter, TxStateWriter, TxWork, UnitOfWork,
 };
-use crate::domain::catalog::{CatalogCounts, OpaqueCursor, Paged, RECENT_VIEW_LIMIT, SongSort};
+use crate::domain::catalog::{CatalogCounts, OpaqueCursor, Paged, SongSort, RECENT_VIEW_LIMIT};
 use crate::domain::entities::{
     LibraryRoot, LyricsCandidate, LyricsSource, MediaDiagnostic, PlaylistMember, Song,
     SongAvailability,
@@ -71,7 +71,7 @@ use connection::{
 use conversion::{
     availability_from_db, operation_item_from_row, root_from_row, scan_state_from_db, song_from_row,
 };
-use query::{SONG_SELECT, active_root_id, catalog_counts, playlist_songs_query, query_active};
+use query::{active_root_id, catalog_counts, playlist_songs_query, query_active, SONG_SELECT};
 use statements::{
     add_member, all_referenced_asset_keys, all_songs_in_root, attach_cover, begin_scan_run,
     clear_lyrics_candidate, cover_of_song, create_playlist, delete_song, ensure_operation_journal,
@@ -129,6 +129,12 @@ impl ReaderPool {
     }
 }
 
+/// Callback invoked after a root's projection worker catches the catalog up to
+/// its directory. The desktop runtime wires it to a Tauri event so the UI
+/// re-pulls the read model that changed out of band from the originating
+/// command.
+pub type ProjectionNotifier = Arc<dyn Fn(LibraryRootId) + Send + Sync>;
+
 /// Real SQLite implementation of the library repositories and unit of work.
 ///
 /// `open` applies ordered migrations before the actor starts, then owns one
@@ -154,7 +160,7 @@ pub struct SqliteDatabase {
     /// directory up to the catalog. The desktop runtime wires it to a Tauri
     /// event so the UI re-pulls the catalog read model (playlists / songs /
     /// counts) that changed out of band from the originating command.
-    projection_notify: Mutex<Option<Arc<dyn Fn(LibraryRootId) + Send + Sync>>>,
+    projection_notify: Mutex<Option<ProjectionNotifier>>,
 }
 
 fn read_device_play_counts(

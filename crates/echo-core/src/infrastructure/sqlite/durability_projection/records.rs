@@ -4,7 +4,7 @@ use crate::domain::ids::LibraryRootId;
 use crate::domain::library::{PortableRecord, PortableRecordEnvelope};
 use crate::domain::text::{normalized_key, playlist_name_key};
 use crate::error::Error;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{params, Connection, OptionalExtension};
 pub(super) fn project_record(
     c: &Connection,
     root: LibraryRootId,

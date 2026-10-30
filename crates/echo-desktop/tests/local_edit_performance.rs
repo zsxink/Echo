@@ -57,6 +57,38 @@ struct Fixture {
     songs: Vec<SongId>,
 }
 
+fn seed_records(
+    songs: &[SongId],
+    device: echo_core::domain::library::DeviceId,
+) -> Vec<PortableRecordEnvelope> {
+    songs
+        .iter()
+        .enumerate()
+        .map(|(index, song)| {
+            PortableRecordEnvelope::new(
+                PortableRecord::Song(SongRecord {
+                    song_uuid: song.as_uuid(),
+                    revision: Revision::INITIAL,
+                    updated_by_device_id: device,
+                    hlc: HybridLogicalClock::new(1_700_000_000, 0),
+                    media_path: LibraryRelativePath::new(&format!(
+                        "media/artist-{:03}/song-{index:05}.flac",
+                        index % 100
+                    ))
+                    .expect("relative metadata path"),
+                    content_hash: format!("{index:064x}"),
+                    added_at: 1_700_000_000_000 + index as u64,
+                    title: Some(format!("Fixture Song {index:05}")),
+                    artist: Some(format!("Fixture Artist {:03}", index % 100)),
+                    album: Some(format!("Fixture Album {:03}", index % 200)),
+                }),
+                None,
+            )
+            .expect("valid portable song")
+        })
+        .collect()
+}
+
 fn fixture(song_count: usize) -> Fixture {
     let (directory, path) = fixture_location();
     let root_path = path.join("library");
@@ -123,32 +155,7 @@ fn fixture(song_count: usize) -> Fixture {
         // turn the containment adapter's sibling check into a false hotspot.
         .map(|_| SongId::new())
         .collect();
-    let records = songs
-        .iter()
-        .enumerate()
-        .map(|(index, song)| {
-            PortableRecordEnvelope::new(
-                PortableRecord::Song(SongRecord {
-                    song_uuid: song.as_uuid(),
-                    revision: Revision::INITIAL,
-                    updated_by_device_id: device,
-                    hlc: HybridLogicalClock::new(1_700_000_000, 0),
-                    media_path: LibraryRelativePath::new(&format!(
-                        "media/artist-{:03}/song-{index:05}.flac",
-                        index % 100
-                    ))
-                    .expect("relative metadata path"),
-                    content_hash: format!("{index:064x}"),
-                    added_at: 1_700_000_000_000 + index as u64,
-                    title: Some(format!("Fixture Song {index:05}")),
-                    artist: Some(format!("Fixture Artist {:03}", index % 100)),
-                    album: Some(format!("Fixture Album {:03}", index % 200)),
-                }),
-                None,
-            )
-            .expect("valid portable song")
-        })
-        .collect();
+    let records = seed_records(&songs, device);
     let durable = runtime.deps.control.durability().expect("real durability");
     durable
         .commit(
@@ -209,7 +216,7 @@ fn fixture_location() -> (Option<tempfile::TempDir>, PathBuf) {
             "fixture must be a real directory"
         ),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            std::fs::create_dir(&path).expect("create controlled synthetic directory")
+            std::fs::create_dir(&path).expect("create controlled synthetic directory");
         }
         Err(error) => panic!("cannot inspect synthetic fixture: {error}"),
     }
@@ -263,6 +270,7 @@ fn distribution(samples: &[Duration]) -> serde_json::Value {
         let index = (milliseconds.len() * percentage).div_ceil(100) - 1;
         milliseconds[index]
     };
+    let count = u32::try_from(milliseconds.len()).expect("latency sample count fits in u32");
     serde_json::json!({
         "samples": milliseconds.len(),
         "min_ms": milliseconds[0],
@@ -270,7 +278,7 @@ fn distribution(samples: &[Duration]) -> serde_json::Value {
         "p95_ms": percentile(95),
         "p99_ms": percentile(99),
         "max_ms": milliseconds[milliseconds.len() - 1],
-        "mean_ms": milliseconds.iter().sum::<f64>() / milliseconds.len() as f64,
+        "mean_ms": milliseconds.iter().sum::<f64>() / f64::from(count),
     })
 }
 
@@ -339,7 +347,7 @@ fn dispatch(
         .map(|value| serde_json::from_value::<OpaqueCursor>(serde_json::json!(value)))
         .transpose()
         .map_err(|_| echo_core::error::Error::conflict("invalid performance cursor"))?;
-    let limit = args["limit"].as_u64().unwrap_or(100) as usize;
+    let limit = usize::try_from(args["limit"].as_u64().unwrap_or(100)).unwrap_or(usize::MAX);
     match command {
         "set_favorite" => encode(f.app.set_favorite(
             parsed_argument(args, "songId")?,
@@ -511,6 +519,7 @@ fn serve(f: &Fixture, history: usize) {
     });
 }
 
+#[allow(clippy::too_many_lines)] // One end-to-end release benchmark; splitting would hide the measured path.
 #[test]
 #[ignore = "real filesystem latency benchmark; run explicitly with --ignored --nocapture"]
 fn completed_local_edit_latency() {

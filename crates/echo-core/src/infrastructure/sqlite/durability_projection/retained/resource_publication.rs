@@ -1,16 +1,16 @@
 //! Recover current physical locations without restoring network trust or media readiness.
-use super::{Reason, dependencies, storage};
+use super::{dependencies, storage, Reason};
 use crate::application::ports::RemoteResourcePublication;
 use crate::domain::{
     ids::{LibraryRootId, RelativeMediaPath},
     library::{
-        LibraryId, PortableRecord,
         durability::{DurableStateChange, LibraryRecoveryRecords, StateNamespace, StateTarget},
+        LibraryId, PortableRecord,
     },
     sync::{ObjectKey, SharedResourceKind, SharedResourceManifest},
 };
 use crate::error::Error;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{params, Connection, OptionalExtension};
 
 pub(super) fn project(
     c: &Connection,

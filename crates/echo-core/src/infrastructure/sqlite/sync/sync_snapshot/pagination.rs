@@ -1,6 +1,6 @@
 //! Freeze page boundaries that fit both transport and replica apply budgets.
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::application::ports::{HostSnapshotRecord, HostSnapshotSession};
 use crate::error::{Error, Subject};

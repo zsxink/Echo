@@ -2,14 +2,14 @@
 
 #![allow(clippy::missing_errors_doc, clippy::redundant_pub_crate)]
 
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 
 use crate::domain::sync::{ObjectKey, ResourceDigest, SharedResourceKind, SharedResourceManifest};
 use crate::error::{Error, Subject};
 
-use super::super::SqliteDatabase;
 use super::super::support::storage;
+use super::super::SqliteDatabase;
 
 /// Canonical resource wire shape, kept transport independent inside Core.
 #[derive(Clone, Serialize, Deserialize)]

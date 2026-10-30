@@ -311,7 +311,7 @@ fn catch_up_library_projection(
     })?;
     if let Some(commit) = committed {
         let started = std::time::Instant::now();
-        if crate::application::ports::LibraryProjectionPort::project_verified_library_commit(
+        if crate::application::ports::LibraryProjectionVerifiedPort::project_verified_library_commit(
             projection, root, commit,
         )? {
             trace_import_projection(root, "project_verified_commit", started);
@@ -326,7 +326,7 @@ fn catch_up_library_projection(
     let status = projection.projection_status(root)?;
     trace_import_projection(root, "read_projection_status", started);
     let started = std::time::Instant::now();
-    match crate::application::ports::LibraryProjectionPort::project_verified_library_suffix(
+    match crate::application::ports::LibraryProjectionVerifiedPort::project_verified_library_suffix(
         projection, root, &replay,
     ) {
         Ok(()) => {

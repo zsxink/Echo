@@ -17,10 +17,10 @@ mod tests;
 use super::portable_migration as portable;
 use super::registry::RootRegistry;
 use crate::domain::ids::LibraryRootId;
-use crate::domain::library::LibraryManifest;
 use crate::domain::library::durability::{
     CommitOutcome, CommitStatus, LibraryBatch, LibraryCommit, LibraryReplay,
 };
+use crate::domain::library::LibraryManifest;
 use crate::error::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};

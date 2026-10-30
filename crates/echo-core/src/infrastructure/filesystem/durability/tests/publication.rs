@@ -26,16 +26,12 @@ fn library_durability_checkpointed_equal_after_images_skip_republication() {
     .unwrap();
     assert!(trace.iter().any(|phase| phase == "record"));
     assert!(trace.iter().any(|phase| phase == "state"));
-    assert!(
-        !trace
-            .iter()
-            .any(|phase| phase.starts_with("record:") || phase.starts_with("state:"))
-    );
-    assert!(
-        trace
-            .iter()
-            .any(|phase| phase == "checkpoint:directory_sync")
-    );
+    assert!(!trace
+        .iter()
+        .any(|phase| phase.starts_with("record:") || phase.starts_with("state:")));
+    assert!(trace
+        .iter()
+        .any(|phase| phase == "checkpoint:directory_sync"));
     assert_eq!(recover(&registry, root).unwrap().head().unwrap().0, 2);
 }
 

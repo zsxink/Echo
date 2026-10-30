@@ -12,9 +12,27 @@ pub trait LibraryWriteSession {
     fn commit(&mut self, batch: &LibraryBatch) -> Result<CommitOutcome, Error>;
 }
 
-pub trait LibraryDurabilityPort: Send + Sync {
+/// Content-addressed blobs owned by the library directory.
+pub trait LibraryAssetPort: Send + Sync {
     fn write_asset(&self, root: LibraryRootId, bytes: &[u8]) -> Result<String, Error>;
     fn read_asset(&self, root: LibraryRootId, hash: &str) -> Result<Option<Vec<u8>>, Error>;
+}
+
+/// Optional exclusive write session. Adapters with an exclusive writer guard
+/// can recover once and retain that proof through planning and commit; other
+/// adapters use the ordinary path.
+pub trait LibraryWriteSessionPort: Send + Sync {
+    fn begin_write(
+        &self,
+        _root: LibraryRootId,
+    ) -> Result<Option<Box<dyn LibraryWriteSession + '_>>, Error> {
+        Ok(None)
+    }
+}
+
+/// Ordered commits, operation receipts and the recovery proof they leave in
+/// the directory.
+pub trait LibraryDurabilityPort: LibraryAssetPort + LibraryWriteSessionPort + Send + Sync {
     fn commit(&self, root: LibraryRootId, batch: &LibraryBatch) -> Result<CommitOutcome, Error>;
     fn recover(&self, root: LibraryRootId) -> Result<LibraryReplay, Error>;
     /// Materialize a committed journal suffix for background read-model work.
@@ -27,14 +45,6 @@ pub trait LibraryDurabilityPort: Send + Sync {
     /// without materializing the rebuildable file tree or taking the writer lock.
     fn projection_replay(&self, root: LibraryRootId) -> Result<LibraryReplay, Error> {
         self.catch_up_projection(root)
-    }
-    /// Adapters with an exclusive writer guard can recover once and retain that
-    /// proof through planning and commit. Other adapters use the ordinary path.
-    fn begin_write(
-        &self,
-        _root: LibraryRootId,
-    ) -> Result<Option<Box<dyn LibraryWriteSession + '_>>, Error> {
-        Ok(None)
     }
     /// Read one immutable operation by identity without enumerating history.
     fn read_operation(

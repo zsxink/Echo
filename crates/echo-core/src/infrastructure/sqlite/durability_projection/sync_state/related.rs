@@ -1,7 +1,7 @@
 //! Restore facts whose complete dependencies are proven by the anchored ledger.
 use super::{
-    Connection, DurableStateChange, Error, OptionalExtension, Reason, StateTarget,
-    SyncRecoveryContext, Value, ledger, number, params, schema, storage, text,
+    ledger, number, params, schema, storage, text, Connection, DurableStateChange, Error,
+    OptionalExtension, Reason, StateTarget, SyncRecoveryContext, Value,
 };
 use crate::application::ports::StagedConfirmation;
 use crate::domain::sync::MutationId;

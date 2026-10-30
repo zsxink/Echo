@@ -48,27 +48,11 @@ fn library_durability_playlist_rename_saves_before_failed_projection() {
     assert_eq!(record.created_at, original.created_at);
     assert_eq!(record.revision.as_u64(), 2);
     assert!(record.hlc > original.hlc);
-    let frozen: Vec<crate::domain::library::durability::FrozenMutation> = replay
-        .states()
-        .filter(|state| {
-            matches!(
-                state.key.as_ref().map(|key| &key.target),
-                Some(crate::domain::library::durability::StateTarget::Mutation { .. })
-            )
-        })
-        .map(|state| serde_json::from_value(state.payload["frozen"].clone()).unwrap())
-        .collect();
-    assert_eq!(frozen.len(), 2);
-    assert_eq!(frozen[1].candidate.origin_seq, 2);
-    assert_eq!(
-        frozen[1].candidate.previous_mutation_id,
-        Some(frozen[0].candidate.mutation_id)
-    );
-    assert_eq!(frozen[1].local_revision.as_u64(), 2);
-    assert_eq!(frozen[1].candidate.payload["display_name"], "saved rename");
-    assert_eq!(
-        frozen[1].candidate.payload["created_at"].as_u64(),
-        original.created_at
+    // A standalone root keeps no LAN protocol state for the rename
+    // (SYN-R06-S04); the saved after-image above is the whole evidence.
+    assert!(
+        replay.states().next().is_none(),
+        "a standalone rename retains no sync protocol state"
     );
     stack
         .database

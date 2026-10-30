@@ -411,18 +411,20 @@ fn wire_composition(
     // newly created playlist that was committed before the projector caught up.
     let projection_app = app.handle().clone();
     let projection_broker = Mutex::new(echo_desktop::ipc::events::EventBroker::new());
-    routed.database.set_projection_notifier(Arc::new(move |_root: echo_core::domain::ids::LibraryRootId| {
-        let envelope = projection_broker
-            .lock()
-            .expect("projection event broker poisoned")
-            .emit(
-                echo_desktop::ipc::events::IpcEvent::SongsInvalidated {
-                    revision: echo_desktop::ipc::events::CatalogRevision::INITIAL,
-                },
-                None,
-            );
-        let _ = projection_app.emit("library://songs-invalidated", envelope);
-    }));
+    routed.database.set_projection_notifier(Arc::new(
+        move |_root: echo_core::domain::ids::LibraryRootId| {
+            let envelope = projection_broker
+                .lock()
+                .expect("projection event broker poisoned")
+                .emit(
+                    echo_desktop::ipc::events::IpcEvent::SongsInvalidated {
+                        revision: echo_desktop::ipc::events::CatalogRevision::INITIAL,
+                    },
+                    None,
+                );
+            let _ = projection_app.emit("library://songs-invalidated", envelope);
+        },
+    ));
     app.manage(trash_worker);
     app.manage(routed.registry.clone());
     app.manage(routed.deps.clone());

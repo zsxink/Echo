@@ -46,6 +46,23 @@ fn database() -> (tempfile::TempDir, SqliteDatabase, LibraryRootId) {
     (directory, db, root)
 }
 
+/// Same as [`database`], but enrolled in LAN sync: only a bound root retains
+/// sync protocol evidence (SYN-R06-S04).
+fn sync_database() -> (tempfile::TempDir, SqliteDatabase, LibraryRootId) {
+    let (directory, db, root) = database();
+    db.bind_sync_library(
+        crate::domain::sync::SyncBinding {
+            library_id: crate::domain::sync::LibraryId::new(),
+            authority_id: crate::domain::sync::AuthorityId::new(),
+            epoch: crate::domain::sync::Epoch::INITIAL,
+        },
+        true,
+        root,
+    )
+    .unwrap();
+    (directory, db, root)
+}
+
 #[test]
 fn library_durability_projection_retains_orphans_and_links_when_evidence_arrives_without_echo() {
     let (_directory, db, root) = database();
@@ -464,3 +481,4 @@ mod identity;
 mod legacy;
 mod retained_evidence;
 mod stale_sync;
+mod standalone_startup;

@@ -1,7 +1,7 @@
 //! Coverage images bound recovery work to current state and an active suffix.
 //! Operation receipts are addressed individually; resources are never deleted.
 use super::{
-    ANCHOR, Hook, LIMIT, decode, invalid, io, manifest, portable, receipt, relative, snapshot,
+    decode, invalid, io, manifest, portable, receipt, relative, snapshot, Hook, ANCHOR, LIMIT,
 };
 use crate::domain::ids::LibraryRootId;
 use crate::domain::library::durability::{

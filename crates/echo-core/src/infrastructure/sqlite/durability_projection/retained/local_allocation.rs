@@ -2,17 +2,17 @@
 mod index;
 #[cfg(test)]
 mod tests;
-use super::{Reason, storage};
+use super::{storage, Reason};
 use crate::domain::{
     ids::LibraryRootId,
     library::{
-        LibraryId,
         durability::{DurableStateChange, FrozenMutation, StateKey, StateNamespace, StateTarget},
+        LibraryId,
     },
 };
 use crate::error::Error;
 pub(super) use index::AllocationIndex;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{params, Connection, OptionalExtension};
 
 #[cfg(test)]
 fn restore(

@@ -2,9 +2,9 @@
 # ----------------------------------------------------------------------
 scenario_id: PM-R13-S04
 requirement: 歌单与成员以音乐库持久结果反馈
-scenario: 删除与取消喜欢不复活
+scenario: SQLite 落后时连续编辑歌单
 layer: automated
-command: "cargo test -p echo-core --all-features final_tombstone_is_never_recovered_but_history_can_be_dismissed"
+command: "cargo test -p echo-core --all-features consecutive_multi_song_add_keeps_every_membership"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

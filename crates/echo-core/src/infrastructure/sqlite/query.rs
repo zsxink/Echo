@@ -9,7 +9,7 @@
 )]
 
 use rusqlite::types::{Value, ValueRef};
-use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 
 use crate::domain::catalog::{
     CatalogCounts, OpaqueCursor, Paged, SongSort, SongSortField, SortDirection,

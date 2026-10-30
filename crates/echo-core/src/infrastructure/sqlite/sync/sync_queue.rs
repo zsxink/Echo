@@ -2,7 +2,7 @@
 
 #![allow(clippy::doc_markdown, clippy::missing_errors_doc)]
 
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{params, OptionalExtension};
 use uuid::Uuid;
 
 use crate::application::ports::LocalSyncQueuePort;
@@ -13,8 +13,8 @@ use crate::domain::sync::{
 };
 use crate::error::{Error, Subject};
 
-use super::super::SqliteDatabase;
 use super::super::support::storage;
+use super::super::SqliteDatabase;
 
 const MAX_BATCH: usize = 512;
 

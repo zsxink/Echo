@@ -1,6 +1,6 @@
 #[test]
 fn playback_sessions_are_idempotent_and_writer_allows_concurrent_reads() {
-    let (_directory, database, root) = database();
+    let (_directory, database, root) = sync_database();
     let song = song(root, "play.flac", "play", "artist");
     SongRepository::upsert(&database, &song).expect("song");
     let control = playback_fixture::directory(&database, root);

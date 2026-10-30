@@ -4,7 +4,7 @@
 
 #[cfg(not(unix))]
 use super::portable;
-use super::{LIMIT, invalid};
+use super::{invalid, LIMIT};
 use crate::domain::ids::LibraryRootId;
 use crate::error::Error;
 use crate::infrastructure::filesystem::RootRegistry;
@@ -66,7 +66,7 @@ fn verify_with_audit_hook(
     before_audit: impl FnOnce(),
 ) -> Result<(), Error> {
     use crate::domain::ids::RelativeMediaPath;
-    use rustix::fs::{Mode, OFlags, open, openat};
+    use rustix::fs::{open, openat, Mode, OFlags};
     use std::io::Read;
     use std::os::unix::fs::MetadataExt;
     use std::path::PathBuf;

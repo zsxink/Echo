@@ -17,6 +17,18 @@ fn database() -> (tempfile::TempDir, SqliteDatabase, LibraryRootId) {
         &LibraryRoot::new(root, directory.path().join("local-only"), true, true),
     )
     .expect("root");
+    // Shared payloads only exist for an enrolled root (SYN-R06-S04).
+    database
+        .bind_sync_library(
+            crate::domain::sync::SyncBinding {
+                library_id: crate::domain::sync::LibraryId::new(),
+                authority_id: crate::domain::sync::AuthorityId::new(),
+                epoch: crate::domain::sync::Epoch::INITIAL,
+            },
+            true,
+            root,
+        )
+        .expect("bind sync library");
     (directory, database, root)
 }
 

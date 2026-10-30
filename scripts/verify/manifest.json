@@ -3446,6 +3446,12 @@
       "manifest": "tests/scenarios/LD-R01-S02.yaml"
     },
     {
+      "id": "LD-R01-S03",
+      "title": "SQLite 投影滞后时连续本地编辑",
+      "command": "cargo test -p echo-core --all-features library_durability_later_edit_catches_up_failed_earlier_playlist",
+      "manifest": "tests/scenarios/LD-R01-S03.yaml"
+    },
+    {
       "id": "LD-R02-S01",
       "title": "级联删除写到一半崩溃",
       "command": "cargo test -p echo-core --all-features library_durability_playlist_delete_saves_cascade_before_projection",
@@ -3570,6 +3576,12 @@
       "title": "可执行验证",
       "command": "node scripts/verify/ci-governance.mjs",
       "manifest": "tests/scenarios/LD-R10-S01.yaml"
+    },
+    {
+      "id": "LD-R11-S01",
+      "title": "单机启动存在旧同步投影",
+      "command": "cargo test -p echo-core --all-features library_durability_standalone_startup_purges_legacy_sync_projection",
+      "manifest": "tests/scenarios/LD-R11-S01.yaml"
     },
     {
       "id": "LE-R01-S01",
@@ -4209,21 +4221,27 @@
     },
     {
       "id": "LE-R21-S02",
-      "title": "收藏未保存",
-      "command": "cargo test -p echo-core --all-features library_durability_refused_commit_leaves_every_wired_entrypoint_untouched",
+      "title": "正常投影仍在后台时已保存反馈",
+      "command": "cargo test -p echo-desktop --all-features --release --test local_edit_performance completed_local_edit_latency -- --ignored --nocapture",
       "manifest": "tests/scenarios/LE-R21-S02.yaml"
     },
     {
       "id": "LE-R21-S03",
-      "title": "批量收藏部分已保存",
-      "command": "cargo test -p echo-desktop --all-features set_favorite_returns_the_committed_authoritative_song",
+      "title": "收藏未保存",
+      "command": "cargo test -p echo-core --all-features library_durability_refused_commit_leaves_every_wired_entrypoint_untouched",
       "manifest": "tests/scenarios/LE-R21-S03.yaml"
     },
     {
       "id": "LE-R21-S04",
+      "title": "批量收藏部分已保存",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/savedPendingFeedback.test.tsx -t \"reports each batch item's own outcome and retries only the saved ones\"",
+      "manifest": "tests/scenarios/LE-R21-S04.yaml"
+    },
+    {
+      "id": "LE-R21-S05",
       "title": "已保存待投影不被当作失败重试",
       "command": "cargo test -p echo-core --all-features library_durability_retry_catches_up_all_saved_operations_without_new_commits",
-      "manifest": "tests/scenarios/LE-R21-S04.yaml"
+      "manifest": "tests/scenarios/LE-R21-S05.yaml"
     },
     {
       "id": "LL-R01-S01",
@@ -4248,6 +4266,12 @@
       "title": "本机数据库丢失后重新选择同一目录",
       "command": "cargo test -p echo-core --all-features root_switch::tests::prepare_reuses_record_identities_and_leaves_media_untouched",
       "manifest": "tests/scenarios/LL-R01-S04.yaml"
+    },
+    {
+      "id": "LL-R01-S05",
+      "title": "投影滞后时读己之写",
+      "command": "cargo test -p echo-core --all-features consecutive_multi_song_add_keeps_every_membership",
+      "manifest": "tests/scenarios/LL-R01-S05.yaml"
     },
     {
       "id": "LL-R02-S01",
@@ -4785,9 +4809,21 @@
     },
     {
       "id": "PM-R13-S04",
+      "title": "SQLite 落后时连续编辑歌单",
+      "command": "cargo test -p echo-core --all-features consecutive_multi_song_add_keeps_every_membership",
+      "manifest": "tests/scenarios/PM-R13-S04.yaml"
+    },
+    {
+      "id": "PM-R13-S05",
+      "title": "歌单命令低延迟验收",
+      "command": "cargo test -p echo-desktop --all-features --release --test local_edit_performance completed_local_edit_latency -- --ignored --nocapture",
+      "manifest": "tests/scenarios/PM-R13-S05.yaml"
+    },
+    {
+      "id": "PM-R13-S06",
       "title": "删除与取消喜欢不复活",
       "command": "cargo test -p echo-core --all-features final_tombstone_is_never_recovered_but_history_can_be_dismissed",
-      "manifest": "tests/scenarios/PM-R13-S04.yaml"
+      "manifest": "tests/scenarios/PM-R13-S06.yaml"
     },
     {
       "id": "PLL-R01-S01",
@@ -5073,33 +5109,39 @@
     },
     {
       "id": "SFI-R05-S03",
-      "title": "崩溃后恢复",
-      "command": "cargo test -p echo-core --all-features application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice",
+      "title": "导入后无需重新扫描",
+      "command": "cargo test -p echo-desktop --all-features --release --test local_edit_performance completed_local_edit_latency -- --ignored --nocapture",
       "manifest": "tests/scenarios/SFI-R05-S03.yaml"
     },
     {
       "id": "SFI-R05-S04",
-      "title": "音频发布后侧车失败",
-      "command": "cargo test -p echo-core --all-features sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent",
+      "title": "崩溃后恢复",
+      "command": "cargo test -p echo-core --all-features application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice",
       "manifest": "tests/scenarios/SFI-R05-S04.yaml"
     },
     {
       "id": "SFI-R05-S05",
-      "title": "发布后 watcher 抢先观察",
-      "command": "cargo test -p echo-core --all-features application::recover::tests::imports::recovery_never_creates_a_duplicate_when_a_watcher_preempts",
+      "title": "音频发布后侧车失败",
+      "command": "cargo test -p echo-core --all-features sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent",
       "manifest": "tests/scenarios/SFI-R05-S05.yaml"
     },
     {
       "id": "SFI-R05-S06",
-      "title": "音频成功而对象持久化失败",
-      "command": "cargo test -p echo-core --all-features library_durability_actual_record_rename_failure_remains_saved_and_retryable",
+      "title": "发布后 watcher 抢先观察",
+      "command": "cargo test -p echo-core --all-features application::recover::tests::imports::recovery_never_creates_a_duplicate_when_a_watcher_preempts",
       "manifest": "tests/scenarios/SFI-R05-S06.yaml"
     },
     {
       "id": "SFI-R05-S07",
+      "title": "音频成功而对象持久化失败",
+      "command": "cargo test -p echo-core --all-features library_durability_actual_record_rename_failure_remains_saved_and_retryable",
+      "manifest": "tests/scenarios/SFI-R05-S07.yaml"
+    },
+    {
+      "id": "SFI-R05-S08",
       "title": "对象成功而数据库投影失败",
       "command": "cargo test -p echo-core --all-features library_durability_memory_failed_projection_reserves_the_saved_sequence",
-      "manifest": "tests/scenarios/SFI-R05-S07.yaml"
+      "manifest": "tests/scenarios/SFI-R05-S08.yaml"
     },
     {
       "id": "SFI-R06-S01",
@@ -5310,6 +5352,12 @@
       "title": "v2 本地覆盖值混有旧确认元数据",
       "command": "cargo test -p echo-core --all-features library_durability_legacy_write_cannot_transfer_confirmation_to_new_value",
       "manifest": "tests/scenarios/SYN-R06-S03.yaml"
+    },
+    {
+      "id": "SYN-R06-S04",
+      "title": "单机编辑不创建同步候选",
+      "command": "cargo test -p echo-core --all-features library_durability_standalone_playlist_keeps_no_sync_allocations",
+      "manifest": "tests/scenarios/SYN-R06-S04.yaml"
     },
     {
       "id": "SYN-R07-S01",

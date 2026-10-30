@@ -2,9 +2,9 @@
 # ----------------------------------------------------------------------
 scenario_id: LE-R21-S02
 requirement: 收藏与批量操作以音乐库持久结果为反馈
-scenario: 收藏未保存
+scenario: 正常投影仍在后台时已保存反馈
 layer: automated
-command: "cargo test -p echo-core --all-features library_durability_refused_commit_leaves_every_wired_entrypoint_untouched"
+command: "cargo test -p echo-desktop --all-features --release --test local_edit_performance completed_local_edit_latency -- --ignored --nocapture"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

@@ -5,7 +5,7 @@ use crate::domain::{
     library::durability::{ChangeOrigin, LibraryBatch, LibraryReplay},
 };
 use crate::error::Error;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::BTreeSet;
 
 type Watermark = (String, u64, Option<String>);

@@ -6,7 +6,7 @@ use crate::domain::library::durability::{
 
 #[test]
 fn library_durability_projection_reads_private_evidence_with_stable_typed_keys() {
-    let (directory, db, root) = database();
+    let (directory, db, root) = sync_database();
     let library = LibraryId::from_uuid(uuid::Uuid::new_v4());
     let id = uuid::Uuid::from_u128(1234);
     let states = vec![
@@ -51,7 +51,7 @@ fn library_durability_projection_reads_private_evidence_with_stable_typed_keys()
         ]);
         let active: u64 = connection.query_row("SELECT COUNT(*) FROM sync_binding", [], |row| row.get(0)).map_err(storage)?;
         let mutations: u64 = connection.query_row("SELECT COUNT(*) FROM sync_mutations", [], |row| row.get(0)).map_err(storage)?;
-        assert_eq!((active, mutations), (0, 0));
+        assert_eq!((active, mutations), (1, 0));
         Ok(())
     }).unwrap();
     drop(db);
@@ -66,7 +66,7 @@ fn library_durability_projection_reads_private_evidence_with_stable_typed_keys()
 fn library_durability_projection_scoped_same_object_history_has_complete_stable_keys() {
     use crate::domain::library::durability::{StateKey, StateNamespace, StateTarget};
     use crate::domain::sync::{AuthorityId, Epoch, LibraryId as SyncId, ObjectKey, SyncBinding};
-    let (_directory, db, root) = database();
+    let (_directory, db, root) = sync_database();
     let library = LibraryId::from_uuid(uuid::Uuid::new_v4());
     let object = SongId::new();
     let binding = SyncBinding {
@@ -100,7 +100,7 @@ fn library_durability_projection_scoped_same_object_history_has_complete_stable_
         let count: u64 = c
             .query_row("SELECT COUNT(*) FROM sync_binding", [], |r| r.get(0))
             .map_err(storage)?;
-        assert_eq!(count, 0);
+        assert_eq!(count, 1);
         Ok(())
     })
     .unwrap();

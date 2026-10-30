@@ -148,17 +148,15 @@ fn migration_0028_preserves_legacy_evidence_and_rolls_back_partial_upgrade() {
         )
         .unwrap();
     assert_eq!(timestamps, (123, 456));
-    assert!(
-        connection
-            .execute(
-                "INSERT INTO library_projection_watermarks VALUES(?1,?2,0,NULL)",
-                params![
-                    LibraryRootId::new().to_string(),
-                    uuid::Uuid::new_v4().to_string()
-                ]
-            )
-            .is_err()
-    );
+    assert!(connection
+        .execute(
+            "INSERT INTO library_projection_watermarks VALUES(?1,?2,0,NULL)",
+            params![
+                LibraryRootId::new().to_string(),
+                uuid::Uuid::new_v4().to_string()
+            ]
+        )
+        .is_err());
     let evidence = DurableStateChange::new(
         StateKind::Pending,
         uuid::Uuid::new_v4(),

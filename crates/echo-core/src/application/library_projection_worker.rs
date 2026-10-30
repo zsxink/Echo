@@ -9,7 +9,7 @@
 use crate::domain::ids::LibraryRootId;
 use crate::error::Error;
 use std::fmt;
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};

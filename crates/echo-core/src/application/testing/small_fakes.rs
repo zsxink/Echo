@@ -685,7 +685,7 @@ impl ControlPlanePort for MemoryControlPlane {
     }
 }
 
-impl crate::application::ports::LibraryDurabilityPort for MemoryControlPlane {
+impl crate::application::ports::LibraryAssetPort for MemoryControlPlane {
     fn write_asset(&self, _root: LibraryRootId, bytes: &[u8]) -> Result<String, Error> {
         if !*self.usable.lock().unwrap() {
             return Err(Error::unavailable(
@@ -703,6 +703,9 @@ impl crate::application::ports::LibraryDurabilityPort for MemoryControlPlane {
     fn read_asset(&self, _root: LibraryRootId, hash: &str) -> Result<Option<Vec<u8>>, Error> {
         Ok(self.assets.lock().unwrap().get(hash).cloned())
     }
+}
+
+impl crate::application::ports::LibraryDurabilityPort for MemoryControlPlane {
     fn commit(
         &self,
         root: LibraryRootId,
@@ -806,6 +809,8 @@ impl crate::application::ports::LibraryDurabilityPort for MemoryControlPlane {
             }))
     }
 }
+
+impl crate::application::ports::LibraryWriteSessionPort for MemoryControlPlane {}
 
 impl crate::application::ports::ControlPlaneInventoryPort for MemoryControlPlane {
     fn records_present(&self, root: LibraryRootId) -> Result<bool, Error> {

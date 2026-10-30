@@ -50,17 +50,13 @@ fn library_durability_unverifiable_managed_version_is_refused_before_any_evidenc
         // The refusal happens before any durable evidence exists, so a caller
         // cannot mistake the operation for saved.
         assert!(!marker_present(directory.path(), change.operation_id));
-        assert!(
-            !directory
-                .path()
-                .join(relative(change.operation_id, "prepared.json"))
-                .exists()
-        );
-        assert!(
-            operation_status(&registry, root, change.operation_id)
-                .unwrap()
-                .is_none()
-        );
+        assert!(!directory
+            .path()
+            .join(relative(change.operation_id, "prepared.json"))
+            .exists());
+        assert!(operation_status(&registry, root, change.operation_id)
+            .unwrap()
+            .is_none());
         assert!(chain(&registry, root).unwrap().commits.is_empty());
         // The mismatching bytes stay exactly as found: Echo reports a changed
         // file, it never rewrites or "repairs" a media file to match a
@@ -87,7 +83,7 @@ fn library_durability_missing_managed_version_is_never_synthesized() {
 fn library_durability_tampered_user_original_is_refused_and_kept_for_diagnosis() {
     let (directory, registry, root, library, plane) = fixture();
     let bytes = b"user cover original";
-    let hash = LibraryDurabilityPort::write_asset(&plane, root, bytes).unwrap();
+    let hash = LibraryAssetPort::write_asset(&plane, root, bytes).unwrap();
     let relative_asset = format!("echo/assets/{hash}");
     let mut tampered = bytes.to_vec();
     tampered[0] ^= 0x01;
@@ -103,7 +99,7 @@ fn library_durability_tampered_user_original_is_refused_and_kept_for_diagnosis()
     assert!(!marker_present(directory.path(), change.operation_id));
     assert!(chain(&registry, root).unwrap().commits.is_empty());
     // Readers see the same corruption, and the bytes stay put as evidence.
-    let read = LibraryDurabilityPort::read_asset(&plane, root, &hash).unwrap_err();
+    let read = LibraryAssetPort::read_asset(&plane, root, &hash).unwrap_err();
     assert_conflict(&read, "immutable asset is corrupt");
     assert_eq!(
         std::fs::read(directory.path().join(&relative_asset)).unwrap(),
@@ -111,7 +107,7 @@ fn library_durability_tampered_user_original_is_refused_and_kept_for_diagnosis()
     );
     // A malformed address is rejected before any path is resolved.
     assert_conflict(
-        &LibraryDurabilityPort::read_asset(&plane, root, "not-a-digest").unwrap_err(),
+        &LibraryAssetPort::read_asset(&plane, root, "not-a-digest").unwrap_err(),
         "invalid asset hash",
     );
 }
@@ -167,7 +163,7 @@ fn library_durability_managed_version_declaration_survives_checkpoint_and_fresh_
     let (directory, registry, root, library, plane) = fixture();
     write_managed(directory.path());
     let asset_bytes = b"user cover original";
-    let asset = LibraryDurabilityPort::write_asset(&plane, root, asset_bytes).unwrap();
+    let asset = LibraryAssetPort::write_asset(&plane, root, asset_bytes).unwrap();
     let asset_path = format!("echo/assets/{asset}");
     let mut change = declaring(library);
     change.resources.push(DurableResource {

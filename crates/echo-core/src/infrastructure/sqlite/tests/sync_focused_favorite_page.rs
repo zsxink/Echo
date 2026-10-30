@@ -179,6 +179,7 @@ fn snapshot(db: &SqliteDatabase, root: LibraryRootId) -> (Vec<String>, Vec<Strin
     (records, states, rows)
 }
 
+#[allow(clippy::too_many_lines)] // One end-to-end capture scenario compared against a full rebuild.
 #[test]
 fn focused_favorite_page_is_bounded_and_rebuilds_like_full_capture() {
     let replica = replica();

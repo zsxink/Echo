@@ -217,28 +217,22 @@ fn undo_directory_refusal_keeps_hidden_song_and_staged_media_for_retry() {
         replay,
         "the open intent remains authoritative"
     );
-    assert!(
-        fixture
-            .deps
-            .fs
-            .path_exists(fixture.scan.root, &staged)
-            .unwrap()
-    );
-    assert!(
-        !fixture
-            .deps
-            .fs
-            .path_exists(fixture.scan.root, &target)
-            .unwrap()
-    );
-    assert!(
-        fixture
-            .database
-            .items(operation)
-            .unwrap()
-            .iter()
-            .all(|item| item.state == OperationState::HiddenInDatabase)
-    );
+    assert!(fixture
+        .deps
+        .fs
+        .path_exists(fixture.scan.root, &staged)
+        .unwrap());
+    assert!(!fixture
+        .deps
+        .fs
+        .path_exists(fixture.scan.root, &target)
+        .unwrap());
+    assert!(fixture
+        .database
+        .items(operation)
+        .unwrap()
+        .iter()
+        .all(|item| item.state == OperationState::HiddenInDatabase));
     assert_eq!(
         SongRepository::by_id(&*fixture.database, song)
             .unwrap()
@@ -291,12 +285,10 @@ fn recovery_directory_refusal_keeps_pending_delete_until_cancel_can_commit() {
             )
             .unwrap();
     }
-    assert!(
-        !fixture
-            .database
-            .replica_enrollment_pending(fixture.scan.root)
-            .unwrap()
-    );
+    assert!(!fixture
+        .database
+        .replica_enrollment_pending(fixture.scan.root)
+        .unwrap());
     assert_eq!(
         fixture
             .database
@@ -381,14 +373,12 @@ fn trash_directory_refusal_keeps_applied_receipt_and_retries_same_tombstone() {
             .availability(),
         SongAvailability::PendingDelete
     );
-    assert!(
-        fixture
-            .database
-            .items(operation)
-            .unwrap()
-            .iter()
-            .all(|item| item.state == OperationState::TrashApplied)
-    );
+    assert!(fixture
+        .database
+        .items(operation)
+        .unwrap()
+        .iter()
+        .all(|item| item.state == OperationState::TrashApplied));
 
     fixture.authority.set_refused(false);
     let report = FinalizeExpiredDeletes::new(&fixture.deps, &trash)
@@ -400,11 +390,9 @@ fn trash_directory_refusal_keeps_applied_receipt_and_retries_same_tombstone() {
         vec![operation],
         "retry does not repeat OS trash"
     );
-    assert!(
-        SongRepository::by_id(&*fixture.database, song)
-            .unwrap()
-            .is_none()
-    );
+    assert!(SongRepository::by_id(&*fixture.database, song)
+        .unwrap()
+        .is_none());
     assert!(fixture.replay().commits.iter().any(|commit| {
         commit
             .batch
@@ -453,22 +441,18 @@ fn favorite_directory_refusal_is_not_saved_and_leaves_no_projection_fact() {
         replay,
         "a rejected intent is absent from the directory replay"
     );
-    assert!(
-        !SongRepository::by_id(&*fixture.database, song)
-            .unwrap()
-            .unwrap()
-            .favorite()
-    );
+    assert!(!SongRepository::by_id(&*fixture.database, song)
+        .unwrap()
+        .unwrap()
+        .favorite());
 
     // The retry after the directory accepts the intent starts from the same
     // pre-commit state and commits exactly one favorite fact.
     fixture.authority.set_refused(false);
-    assert!(
-        edits
-            .set_favorite(fixture.scan.root, song, true)
-            .expect("retry commits")
-            .favorite()
-    );
+    assert!(edits
+        .set_favorite(fixture.scan.root, song, true)
+        .expect("retry commits")
+        .favorite());
     let saved = fixture.replay();
     assert_eq!(
         saved.commits.len(),

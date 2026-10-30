@@ -164,10 +164,13 @@ impl SqliteDatabase {
     /// re-pulls the catalog read model (playlists / songs / counts) that changed
     /// out of band from the originating command — e.g. a playlist created from
     /// the shell before the projector had caught up. Tests leave it unset.
-    pub fn set_projection_notifier(
-        &self,
-        notifier: Arc<dyn Fn(LibraryRootId) + Send + Sync>,
-    ) {
+    ///
+    /// # Panics
+    ///
+    /// Panics only when the notifier mutex is poisoned by a panicking notify
+    /// call; the notifier is a UI refresh hook with no recovery state to
+    /// report.
+    pub fn set_projection_notifier(&self, notifier: ProjectionNotifier) {
         *self.projection_notify.lock().unwrap() = Some(notifier);
     }
 

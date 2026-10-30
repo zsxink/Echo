@@ -1,6 +1,6 @@
 //! Explicit host generation recovery with immutable, root-scoped old history.
 
-use rusqlite::{Connection, TransactionBehavior, params};
+use rusqlite::{params, Connection, TransactionBehavior};
 use uuid::Uuid;
 
 use crate::application::ports::{
@@ -10,8 +10,8 @@ use crate::domain::ids::LibraryRootId;
 use crate::domain::sync::SyncBinding;
 use crate::error::Error;
 
-use super::super::SqliteDatabase;
 use super::super::support::{now_ms, storage};
+use super::super::SqliteDatabase;
 
 // Children precede parents. Recovery copies the exact SQL values into tables
 // without foreign keys before clearing the selected authority's live lineage.

@@ -10,12 +10,12 @@ use crate::application::ports::LibraryProjectionValidation;
 use crate::domain::{
     ids::LibraryRootId,
     library::{
-        LibraryId, PortableRecord, PortableRecordEnvelope,
         durability::{DurableResource, DurableStateChange, LibraryRecoveryRecords, LibraryReplay},
+        LibraryId, PortableRecord, PortableRecordEnvelope,
     },
 };
 use crate::error::Error;
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -560,7 +560,7 @@ impl Drop for CandidateDirectory {
 }
 
 #[cfg(test)]
-#[path = "projection_rebuild_tests.rs"]
+#[path = "projection_rebuild_tests/mod.rs"]
 mod tests;
 
 #[cfg(test)]

@@ -2,7 +2,9 @@ use super::*;
 
 #[test]
 fn confirmed_tags_update_while_local_audio_waits_for_safe_publication() {
-    let (_directory, database, root) = database();
+    // Enrolled root: the local upsert must leave a pending mutation, which is
+    // what keeps the local audio overlay visible (SYN-R06-S04).
+    let (_directory, database, root) = sync_database();
     let mut local = song(root, "media/original.flac", "Old title", "Old artist");
     local.apply_metadata(None, None, Some("Old album".into()), None);
     local.apply_scan_facts(
@@ -77,11 +79,9 @@ fn confirmed_tags_update_while_local_audio_waits_for_safe_publication() {
             .len(),
         1
     );
-    assert!(
-        database
-            .query_active_songs("Old album", SongSort::default(), None, 10)
-            .unwrap()
-            .items
-            .is_empty()
-    );
+    assert!(database
+        .query_active_songs("Old album", SongSort::default(), None, 10)
+        .unwrap()
+        .items
+        .is_empty());
 }

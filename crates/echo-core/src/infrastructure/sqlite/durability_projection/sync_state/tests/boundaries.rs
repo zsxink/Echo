@@ -19,12 +19,10 @@ fn library_durability_trusted_sync_retry_new_author_does_not_send_old_bound_cand
     let report = retry(&f);
     assert_eq!(counts(&f), (0, 0, 1));
     assert_eq!(report.unresolved.len(), 2);
-    assert!(
-        report
-            .unresolved
-            .iter()
-            .all(|r| r.reason == Reason::RequiresStateRecovery)
-    );
+    assert!(report
+        .unresolved
+        .iter()
+        .all(|r| r.reason == Reason::RequiresStateRecovery));
 }
 
 #[test]
@@ -33,12 +31,10 @@ fn library_durability_trusted_sync_retry_unverifiable_anchor_never_installs_base
     f.context.verified_checkpoint.digest = [9; 32];
     let report = retry(&f);
     assert_eq!(counts(&f), (0, 0, 0));
-    assert!(
-        report
-            .unresolved
-            .iter()
-            .any(|r| r.reason == Reason::MissingSyncDependency)
-    );
+    assert!(report
+        .unresolved
+        .iter()
+        .any(|r| r.reason == Reason::MissingSyncDependency));
     assert_eq!(
         PlaylistRepository::name(&f.db, f.playlist)
             .unwrap()
@@ -186,12 +182,10 @@ fn library_durability_trusted_sync_retry_restores_receipt_from_anchored_commit()
             crate::infrastructure::sqlite::sync::durability::export_sync_state(c, f.context.root)
         })
         .unwrap();
-    assert!(
-        batch
-            .state
-            .iter()
-            .any(|s| s.payload.get("schema") == Some(&json!("echo.sync.receipt.v2")))
-    );
+    assert!(batch
+        .state
+        .iter()
+        .any(|s| s.payload.get("schema") == Some(&json!("echo.sync.receipt.v2"))));
     batch.state.push(stray_receipt_fact(
         f.context.verified_checkpoint.binding,
         checkpoint.sequence.as_u64(),
@@ -201,18 +195,14 @@ fn library_durability_trusted_sync_retry_restores_receipt_from_anchored_commit()
     // A conflicting retained inbox identity stays unresolved and is never overwritten.
     poison_target_inbox_row(&f, peer, mutation);
     let report = retry(&f);
-    assert!(
-        report
-            .unresolved
-            .iter()
-            .any(|r| r.reason == Reason::IdentityConflict)
-    );
-    assert!(
-        report
-            .unresolved
-            .iter()
-            .any(|r| r.reason == Reason::InvalidStateFact)
-    );
+    assert!(report
+        .unresolved
+        .iter()
+        .any(|r| r.reason == Reason::IdentityConflict));
+    assert!(report
+        .unresolved
+        .iter()
+        .any(|r| r.reason == Reason::InvalidStateFact));
     f.db.with_reader(|c| {
         let kept: String = c
             .query_row(
@@ -241,12 +231,10 @@ fn library_durability_trusted_sync_retry_restores_receipt_from_anchored_commit()
         })
         .unwrap();
     let report = retry(&f);
-    assert!(
-        report
-            .unresolved
-            .iter()
-            .all(|r| r.reason != Reason::IdentityConflict)
-    );
+    assert!(report
+        .unresolved
+        .iter()
+        .all(|r| r.reason != Reason::IdentityConflict));
     f.db.with_reader(|c| {
         let restored: (String, String, i64, i64) = c
             .query_row(
@@ -296,12 +284,10 @@ fn library_durability_trusted_sync_retry_keeps_resolved_conflict_idempotent() {
         })
         .unwrap();
     let report = retry(&f);
-    assert!(
-        report
-            .unresolved
-            .iter()
-            .all(|r| r.reason != Reason::IdentityConflict)
-    );
+    assert!(report
+        .unresolved
+        .iter()
+        .all(|r| r.reason != Reason::IdentityConflict));
     f.db.with_reader(|c| {
         let resolved: Option<i64> = c
             .query_row("SELECT resolved_at FROM sync_conflicts", [], |r| r.get(0))
@@ -352,12 +338,10 @@ fn library_durability_trusted_sync_retry_restores_conflict_only_with_both_anchor
             crate::infrastructure::sqlite::sync::durability::export_sync_state(c, f.context.root)
         })
         .unwrap();
-    assert!(
-        batch
-            .state
-            .iter()
-            .any(|s| s.kind == crate::domain::library::durability::StateKind::Conflict)
-    );
+    assert!(batch
+        .state
+        .iter()
+        .any(|s| s.kind == crate::domain::library::durability::StateKind::Conflict));
     f.control.commit(f.context.root, &batch).unwrap();
     f.context.verified_checkpoint = checkpoint;
     let report = retry(&f);
@@ -381,12 +365,10 @@ fn library_durability_trusted_sync_retry_restores_conflict_only_with_both_anchor
         })
         .unwrap();
     let tampered = retry(&f);
-    assert!(
-        tampered
-            .unresolved
-            .iter()
-            .any(|r| r.reason == Reason::IdentityConflict)
-    );
+    assert!(tampered
+        .unresolved
+        .iter()
+        .any(|r| r.reason == Reason::IdentityConflict));
     f.db.with_reader(|c| {
         let kept: String = c
             .query_row(
@@ -439,8 +421,8 @@ fn library_durability_trusted_sync_retry_rejects_conflict_without_schema_or_anch
 }
 
 #[test]
-fn library_durability_trusted_sync_retry_retains_resource_candidate_until_upload_dependencies_are_proven()
- {
+fn library_durability_trusted_sync_retry_retains_resource_candidate_until_upload_dependencies_are_proven(
+) {
     use crate::domain::sync::{ResourceDigest, SharedResourceKind, SharedResourceManifest};
     let f = fixture();
     let mut with_cover = f.frozen.clone();
@@ -448,16 +430,14 @@ fn library_durability_trusted_sync_retry_retains_resource_candidate_until_upload
     with_cover.candidate.origin_seq = 3;
     with_cover.candidate.previous_mutation_id = Some(f.frozen.candidate.mutation_id);
     with_cover.local_revision = Revision::from_u64(3);
-    with_cover.candidate.resource_refs = vec![
-        SharedResourceManifest::new(
-            SharedResourceKind::PlaylistCover,
-            ResourceDigest::from_bytes([3; 32]),
-            12,
-            "image/png".into(),
-            "covers/cover.png",
-        )
-        .unwrap(),
-    ];
+    with_cover.candidate.resource_refs = vec![SharedResourceManifest::new(
+        SharedResourceKind::PlaylistCover,
+        ResourceDigest::from_bytes([3; 32]),
+        12,
+        "image/png".into(),
+        "covers/cover.png",
+    )
+    .unwrap()];
     with_cover.original_resources_body =
         serde_json::to_string_pretty(&with_cover.candidate.resource_refs).unwrap();
     let mut batch = LibraryBatch::new(
@@ -488,13 +468,13 @@ fn library_durability_trusted_sync_retry_retains_resource_candidate_until_upload
             .count(),
         2
     );
-    assert!(
-        f.db.read_recovery_records(f.context.root)
-            .unwrap()
-            .state
-            .iter()
-            .any(|s| s.payload.get("frozen") == Some(&serde_json::to_value(&with_cover).unwrap()))
-    );
+    assert!(f
+        .db
+        .read_recovery_records(f.context.root)
+        .unwrap()
+        .state
+        .iter()
+        .any(|s| s.payload.get("frozen") == Some(&serde_json::to_value(&with_cover).unwrap())));
     assert_eq!(retry(&f), report);
 }
 
@@ -504,16 +484,14 @@ fn library_durability_confirmed_preserves_pending_resources_without_consumable_f
     for missing in ["frozen", "disposition", "exact_version"] {
         let f = fixture();
         retry(&f);
-        let resources = vec![
-            SharedResourceManifest::new(
-                SharedResourceKind::PlaylistCover,
-                ResourceDigest::from_bytes([4; 32]),
-                13,
-                "image/png".into(),
-                "covers/local.png",
-            )
-            .unwrap(),
-        ];
+        let resources = vec![SharedResourceManifest::new(
+            SharedResourceKind::PlaylistCover,
+            ResourceDigest::from_bytes([4; 32]),
+            13,
+            "image/png".into(),
+            "covers/local.png",
+        )
+        .unwrap()];
         f.db.set_local_sync_resources(ObjectKey::Playlist(f.playlist), resources.clone())
             .unwrap();
         let mutation = f.frozen.candidate.mutation_id;
@@ -554,16 +532,14 @@ fn library_durability_terminal_pending_restores_confirmed_resources_atomically()
         let f = fixture();
         retry(&f);
         let mut frozen = f.frozen.clone();
-        frozen.candidate.resource_refs = vec![
-            SharedResourceManifest::new(
-                SharedResourceKind::PlaylistCover,
-                ResourceDigest::from_bytes([5; 32]),
-                14,
-                "image/png".into(),
-                "covers/pending.png",
-            )
-            .unwrap(),
-        ];
+        frozen.candidate.resource_refs = vec![SharedResourceManifest::new(
+            SharedResourceKind::PlaylistCover,
+            ResourceDigest::from_bytes([5; 32]),
+            14,
+            "image/png".into(),
+            "covers/pending.png",
+        )
+        .unwrap()];
         frozen.original_resources_body =
             serde_json::to_string(&frozen.candidate.resource_refs).unwrap();
         f.db.set_local_sync_resources(
@@ -618,12 +594,12 @@ fn library_durability_terminal_pending_restores_confirmed_resources_atomically()
             })
             .unwrap();
         for _ in 0..2 {
-            assert!(
-                f.db.retry_library_sync_state(f.context)
-                    .unwrap()
-                    .unresolved
-                    .is_empty()
-            );
+            assert!(f
+                .db
+                .retry_library_sync_state(f.context)
+                .unwrap()
+                .unresolved
+                .is_empty());
             f.db.with_reader(|c| {
                 let actual = crate::infrastructure::sqlite::sync::manifests::load(c,"playlist",&f.playlist.to_string())?;
                 if remaining {
@@ -650,16 +626,14 @@ fn library_durability_confirmed_resources_ignore_pending_from_another_root() {
     retry(&f);
     f.db.set_local_sync_resources(
         ObjectKey::Playlist(f.playlist),
-        vec![
-            SharedResourceManifest::new(
-                SharedResourceKind::PlaylistCover,
-                ResourceDigest::from_bytes([6; 32]),
-                15,
-                "image/png".into(),
-                "covers/other-root.png",
-            )
-            .unwrap(),
-        ],
+        vec![SharedResourceManifest::new(
+            SharedResourceKind::PlaylistCover,
+            ResourceDigest::from_bytes([6; 32]),
+            15,
+            "image/png".into(),
+            "covers/other-root.png",
+        )
+        .unwrap()],
     )
     .unwrap();
     let other = LibraryRootId::new();
@@ -678,14 +652,12 @@ fn library_durability_confirmed_resources_ignore_pending_from_another_root() {
     for _ in 0..2 {
         f.db.retry_library_sync_state(f.context).unwrap();
         f.db.with_reader(|c| {
-            assert!(
-                crate::infrastructure::sqlite::sync::manifests::load(
-                    c,
-                    "playlist",
-                    &f.playlist.to_string()
-                )?
-                .is_empty()
-            );
+            assert!(crate::infrastructure::sqlite::sync::manifests::load(
+                c,
+                "playlist",
+                &f.playlist.to_string()
+            )?
+            .is_empty());
             Ok(())
         })
         .unwrap();
@@ -698,16 +670,14 @@ fn library_durability_trusted_sync_retry_keeps_existing_pending_resources_effect
     let f = fixture();
     retry(&f);
     let mut with_cover = f.frozen.clone();
-    with_cover.candidate.resource_refs = vec![
-        SharedResourceManifest::new(
-            SharedResourceKind::PlaylistCover,
-            ResourceDigest::from_bytes([4; 32]),
-            13,
-            "image/png".into(),
-            "covers/local.png",
-        )
-        .unwrap(),
-    ];
+    with_cover.candidate.resource_refs = vec![SharedResourceManifest::new(
+        SharedResourceKind::PlaylistCover,
+        ResourceDigest::from_bytes([4; 32]),
+        13,
+        "image/png".into(),
+        "covers/local.png",
+    )
+    .unwrap()];
     with_cover.original_resources_body =
         serde_json::to_string_pretty(&with_cover.candidate.resource_refs).unwrap();
     // An existing exact queue is already current-session local evidence. Model
@@ -828,11 +798,9 @@ fn library_durability_trusted_sync_retry_restores_song_alias_after_canonical_rec
             crate::infrastructure::sqlite::sync::durability::export_sync_state(c, f.context.root)
         })
         .unwrap();
-    assert!(
-        state
-            .iter()
-            .any(|s| s.payload["schema"] == "echo.sync.song-alias.v1")
-    );
+    assert!(state
+        .iter()
+        .any(|s| s.payload["schema"] == "echo.sync.song-alias.v1"));
     let mut batch = LibraryBatch::new(
         uuid::Uuid::new_v4(),
         f.context.local_library_id,
@@ -871,29 +839,23 @@ fn library_durability_trusted_sync_retry_restores_song_alias_after_canonical_rec
         uuid::Uuid::new_v4(),
         f.context.local_library_id,
         ChangeOrigin::Recovery,
-        vec![
-            crate::domain::library::PortableRecordEnvelope::new(
-                PortableRecord::Song(crate::domain::library::SongRecord {
-                    song_uuid: canonical.as_uuid(),
-                    revision: Revision::INITIAL,
-                    updated_by_device_id: crate::domain::library::DeviceId::from_uuid(
-                        author.as_uuid(),
-                    ),
-                    hlc: crate::domain::library::HybridLogicalClock::new(1_700_000_000, 0),
-                    media_path: crate::domain::library::LibraryRelativePath::new(
-                        "media/alias.flac",
-                    )
+        vec![crate::domain::library::PortableRecordEnvelope::new(
+            PortableRecord::Song(crate::domain::library::SongRecord {
+                song_uuid: canonical.as_uuid(),
+                revision: Revision::INITIAL,
+                updated_by_device_id: crate::domain::library::DeviceId::from_uuid(author.as_uuid()),
+                hlc: crate::domain::library::HybridLogicalClock::new(1_700_000_000, 0),
+                media_path: crate::domain::library::LibraryRelativePath::new("media/alias.flac")
                     .unwrap(),
-                    content_hash: "4".repeat(64),
-                    added_at: 42,
-                    title: Some("same bytes".to_owned()),
-                    artist: None,
-                    album: None,
-                }),
-                None,
-            )
-            .unwrap(),
-        ],
+                content_hash: "4".repeat(64),
+                added_at: 42,
+                title: Some("same bytes".to_owned()),
+                artist: None,
+                album: None,
+            }),
+            None,
+        )
+        .unwrap()],
     );
     f.control.commit(f.context.root, &records).unwrap();
     let report = retry(&f);

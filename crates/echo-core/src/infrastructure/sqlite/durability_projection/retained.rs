@@ -10,7 +10,7 @@ use crate::domain::{
         durability::{
             DurableResource, DurableStateChange, LibraryProjectionStatus, LibraryRecoveryRecords,
             PlaybackEvent, ProjectionTarget, ProjectionUnresolvedReason as Reason, StateKind,
-            UnresolvedProjectionRecord,
+            StateNamespace, UnresolvedProjectionRecord,
         },
         PortableRecord, PortableRecordEnvelope,
     },
@@ -180,7 +180,7 @@ pub(super) fn retry(
         .map_err(storage)?
         .collect::<Result<std::collections::BTreeSet<_>, _>>()
         .map_err(storage)?;
-    retry_retained_records(c, root, &retained, &pending)?;
+    retry_retained_records(c, root, &retained, &pending, sync_bound)?;
     let mut allocations = local_allocation::AllocationIndex::new(&retained.state)?;
     for state in &retained.state {
         let key = state_key(state)?;
@@ -190,14 +190,20 @@ pub(super) fn retry(
         if state.key.as_ref().is_some_and(|key| {
             matches!(
                 &key.namespace,
-                crate::domain::library::durability::StateNamespace::Bound { .. }
-                    | crate::domain::library::durability::StateNamespace::LegacyEvidence { .. }
-                    | crate::domain::library::durability::StateNamespace::LocalUnbound { .. }
+                StateNamespace::Bound { .. }
+                    | StateNamespace::LegacyEvidence { .. }
+                    | StateNamespace::LocalUnbound { .. }
             )
         }) {
             if sync_bound {
                 // A bound protocol fact is consumed only by a validated sync
-                // recovery, which owns its unresolved marker.
+                // recovery, which owns its unresolved marker. Its allocation
+                // fence is different: the next interactive edit reads the
+                // local origin cursor to reserve its sequence, and the
+                // planning transaction is rolled back, so this projection is
+                // the only place that persists it. Restore the fence and
+                // leave the marker to sync recovery.
+                local_allocation::restore_indexed(c, root, library, state, &mut allocations)?;
                 continue;
             }
             // Detached protocol facts were removed before reading `retained`;
@@ -253,6 +259,7 @@ fn retry_retained_records(
     root: LibraryRootId,
     retained: &LibraryRecoveryRecords,
     pending: &std::collections::BTreeSet<String>,
+    sync_bound: bool,
 ) -> Result<(), Error> {
     let mut retry_records = Vec::new();
     for envelope in &retained.records {
@@ -298,6 +305,9 @@ fn retry_retained_records(
         let unresolved = dependencies::unresolved(c, root, envelope, &retained.records)?;
         if unresolved.is_none() {
             super::records::project_record(c, root, envelope)?;
+            if !sync_bound {
+                restore_local_revision(c, envelope)?;
+            }
         }
         let reported = unresolved.or_else(|| {
             unproven
@@ -306,6 +316,25 @@ fn retry_retained_records(
         });
         reason(c, root, &key, reported)?;
     }
+    Ok(())
+}
+
+/// A standalone root keeps no protocol state, so its directory record is the
+/// only durable carrier of an object's local revision. Reflect that version
+/// fact back into the allocation fence: the planning transaction that minted
+/// it is rolled back, and without this the next edit would restart the counter
+/// at 1 instead of continuing it. Only the per-object counter is restored;
+/// no mutation, outbox row or origin cursor is created (SYN-R06-S04).
+fn restore_local_revision(c: &Connection, envelope: &PortableRecordEnvelope) -> Result<(), Error> {
+    let (kind, object) = crate::infrastructure::sqlite::sync::apply::object_identity(
+        envelope.record().object_key()?,
+    );
+    let revision = i64::try_from(envelope.record().revision().as_u64()).unwrap_or(i64::MAX);
+    c.execute(
+        "INSERT INTO sync_local_highwater(object_type,object_uuid,local_revision) VALUES(?1,?2,?3) ON CONFLICT(object_type,object_uuid) DO UPDATE SET local_revision=excluded.local_revision WHERE local_revision<excluded.local_revision",
+        params![kind, object, revision],
+    )
+    .map_err(storage)?;
     Ok(())
 }
 
@@ -324,9 +353,7 @@ fn purge_standalone_sync_data(c: &Connection, root: LibraryRootId) -> Result<(),
         "sync_outbox",
         "sync_mutations",
         "sync_local_origin_cursors",
-        "sync_remote_resource_locations",
         "sync_remote_publication_claims",
-        "sync_remote_publications",
     ] {
         c.execute(
             &format!("DELETE FROM {table} WHERE local_root_uuid=?1"),
@@ -334,6 +361,15 @@ fn purge_standalone_sync_data(c: &Connection, root: LibraryRootId) -> Result<(),
         )
         .map_err(storage)?;
     }
+    // Only in-flight publications are protocol work. A completed publication
+    // and its locations are the durable record of where synced media actually
+    // lives (LD-08); deleting them would lose the association the scan, watch
+    // and playback paths need in single-device mode.
+    c.execute(
+        "DELETE FROM sync_remote_publications WHERE local_root_uuid=?1 AND completed=0",
+        [root.as_str()],
+    )
+    .map_err(storage)?;
     c.execute(
         "DELETE FROM sync_epoch_tombstones WHERE local_root_uuid=?1",
         [root.as_str()],

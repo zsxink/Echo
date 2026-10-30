@@ -1,7 +1,7 @@
 //! Restore confirmed protocol baselines without overwriting effective user values.
 use super::{
-    Connection, DurableStateChange, Error, OptionalExtension, Reason, StateTarget,
-    SyncRecoveryContext, Value, body, ledger, number, params, schema, storage,
+    body, ledger, number, params, schema, storage, Connection, DurableStateChange, Error,
+    OptionalExtension, Reason, StateTarget, SyncRecoveryContext, Value,
 };
 use crate::domain::sync::ObjectKey;
 

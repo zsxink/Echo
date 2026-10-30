@@ -1,28 +1,10 @@
 //! Member edits freeze identity, ordering and candidates before SQL projection.
 use super::*;
 use crate::application::ports::LibraryProjectionPort;
+use crate::domain::library::durability::{ProjectionTarget, ProjectionUnresolvedReason};
 use crate::domain::library::PortableRecordEnvelope;
-use crate::domain::library::durability::{
-    FrozenMutation, ProjectionTarget, ProjectionUnresolvedReason, StateTarget,
-};
 use crate::domain::sync::ObjectKey;
 use rusqlite::OptionalExtension;
-
-fn frozen_mutations(
-    batch: &crate::domain::library::durability::LibraryBatch,
-) -> Vec<FrozenMutation> {
-    batch
-        .state
-        .iter()
-        .filter(|state| {
-            matches!(
-                state.key.as_ref().map(|key| &key.target),
-                Some(StateTarget::Mutation { .. })
-            )
-        })
-        .map(|state| serde_json::from_value(state.payload["frozen"].clone()).unwrap())
-        .collect()
-}
 
 #[allow(clippy::too_many_lines)]
 #[test]
@@ -70,20 +52,13 @@ fn library_durability_member_append_is_saved_before_failed_projection() {
         })
         .collect();
     assert_eq!(members.len(), 2);
-    assert!(
-        members
-            .iter()
-            .all(|item| item.position == 0 && item.added_at.is_some())
-    );
+    assert!(members
+        .iter()
+        .all(|item| item.position == 0 && item.added_at.is_some()));
     assert_ne!(members[0].item_uuid, members[1].item_uuid);
-    assert_eq!(batch.state.len(), 4);
-    let frozen = frozen_mutations(batch);
-    assert_eq!(frozen.len(), 2);
-    assert_eq!(frozen[0].candidate.origin_seq, 3);
-    assert_eq!(frozen[1].candidate.origin_seq, 4);
-    assert_eq!(
-        frozen[1].candidate.previous_mutation_id,
-        Some(frozen[0].candidate.mutation_id)
+    assert!(
+        batch.state.is_empty(),
+        "a standalone member append retains no sync protocol state (SYN-R06-S04)"
     );
     stack
         .database

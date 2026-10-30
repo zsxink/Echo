@@ -4,20 +4,20 @@
 
 | 编号 | 验收路径 | 证明场景数 | macOS 可运行命令 |
 |---|---|---|---|
-| **A1** | 空库首次启动 | 126 | `cargo test -p echo-desktop --lib runtime::startup_supervisor && cargo test -p echo-core --all-features root_switch::` |
-| **A2** | 10,000 首混合曲库扫描 | 40 | `node scripts/verify/checks/task-12.5.mjs && cargo test -p echo-core --all-features scan::` |
-| **A3** | 外部改名/移动 | 40 | `cargo test -p echo-core --all-features relink` |
-| **A4** | 多文件安全导入 | 39 | `cargo test -p echo-core --all-features recover::` |
-| **A5** | 资料库失联/恢复 | 40 | `node scripts/verify/checks/task-5.8.mjs 2>/dev/null \|\| cargo test -p echo-core --all-features trash::` |
-| **A6** | 搜索/排序/收藏 | 149 | `node scripts/verify/checks/task-10.5.mjs` |
-| **A7** | 歌单 CRUD | 52 | `node scripts/verify/checks/task-10.9.mjs` |
+| **A1** | 空库首次启动 | 127 | `cargo test -p echo-desktop --lib runtime::startup_supervisor && cargo test -p echo-core --all-features root_switch::` |
+| **A2** | 10,000 首混合曲库扫描 | 41 | `node scripts/verify/checks/task-12.5.mjs && cargo test -p echo-core --all-features scan::` |
+| **A3** | 外部改名/移动 | 41 | `cargo test -p echo-core --all-features relink` |
+| **A4** | 多文件安全导入 | 40 | `cargo test -p echo-core --all-features recover::` |
+| **A5** | 资料库失联/恢复 | 41 | `node scripts/verify/checks/task-5.8.mjs 2>/dev/null \|\| cargo test -p echo-core --all-features trash::` |
+| **A6** | 搜索/排序/收藏 | 151 | `node scripts/verify/checks/task-10.5.mjs` |
+| **A7** | 歌单 CRUD | 54 | `node scripts/verify/checks/task-10.9.mjs` |
 | **A8** | 播放与队列 | 68 | `node scripts/verify/checks/task-11.2.mjs && cargo test -p echo-desktop --lib runtime::player && cargo test -p echo-desktop --lib player::actor::tests::subscribe_snapshots` |
 | **A9** | 歌词与沉浸模式 | 32 | `node scripts/verify/checks/task-11.4.mjs && node scripts/verify/checks/task-11.5.mjs && node scripts/verify/checks/task-11.6.mjs` |
-| **A10** | 系统双击文件 | 39 | `cargo test -p echo-core --all-features watch:: && node scripts/verify/checks/task-9.2.mjs` |
-| **A11** | 删除与撤销 | 39 | `cargo test -p echo-core --all-features recover::` |
+| **A10** | 系统双击文件 | 40 | `cargo test -p echo-core --all-features watch:: && node scripts/verify/checks/task-9.2.mjs` |
+| **A11** | 删除与撤销 | 40 | `cargo test -p echo-core --all-features recover::` |
 | **A12** | 关窗与托盘 | 86 | `node scripts/verify/checks/task-9.6.mjs && node scripts/verify/checks/task-9.3.mjs` |
-| **A13** | 无障碍与窄屏 | 227 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
-| **A14** | 范围保护 | 195 | `node scripts/verify/checks/task-13.8.mjs` |
+| **A13** | 无障碍与窄屏 | 228 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
+| **A14** | 范围保护 | 196 | `node scripts/verify/checks/task-13.8.mjs` |
 
 ## 逐场景归属
 
@@ -113,6 +113,7 @@
 | A1 | `LL-R01-S02` | 单一资料库根目录与本地持久化 |
 | A1 | `LL-R01-S03` | 单一资料库根目录与本地持久化 |
 | A1 | `LL-R01-S04` | 单一资料库根目录与本地持久化 |
+| A1 | `LL-R01-S05` | 单一资料库根目录与本地持久化 |
 | A1 | `LL-R02-S01` | 扫描、监听与手动重扫 |
 | A1 | `LL-R02-S02` | 扫描、监听与手动重扫 |
 | A1 | `LL-R02-S03` | 扫描、监听与手动重扫 |
@@ -166,6 +167,7 @@
 | A10 | `SFI-R05-S05` | 暂存、校验、原子移动与操作日志 |
 | A10 | `SFI-R05-S06` | 暂存、校验、原子移动与操作日志 |
 | A10 | `SFI-R05-S07` | 暂存、校验、原子移动与操作日志 |
+| A10 | `SFI-R05-S08` | 暂存、校验、原子移动与操作日志 |
 | A10 | `SFI-R06-S01` | 逐文件结果与资料库不可用反馈 |
 | A10 | `SFI-R06-S02` | 逐文件结果与资料库不可用反馈 |
 | A10 | `SFI-R07-S01` | 源文件、系统关联与安全边界 |
@@ -205,6 +207,7 @@
 | A11 | `SFI-R05-S05` | 暂存、校验、原子移动与操作日志 |
 | A11 | `SFI-R05-S06` | 暂存、校验、原子移动与操作日志 |
 | A11 | `SFI-R05-S07` | 暂存、校验、原子移动与操作日志 |
+| A11 | `SFI-R05-S08` | 暂存、校验、原子移动与操作日志 |
 | A11 | `SFI-R06-S01` | 逐文件结果与资料库不可用反馈 |
 | A11 | `SFI-R06-S02` | 逐文件结果与资料库不可用反馈 |
 | A11 | `SFI-R07-S01` | 源文件、系统关联与安全边界 |
@@ -540,6 +543,7 @@
 | A13 | `LE-R21-S02` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A13 | `LE-R21-S03` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A13 | `LE-R21-S04` | 收藏与批量操作以音乐库持久结果为反馈 |
+| A13 | `LE-R21-S05` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A14 | `DAS-R01-S01` | 首次启动必须建立本机工作区 |
 | A14 | `DAS-R01-S02` | 首次启动必须建立本机工作区 |
 | A14 | `DAS-R01-S03` | 首次启动必须建立本机工作区 |
@@ -735,10 +739,12 @@
 | A14 | `LE-R21-S02` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A14 | `LE-R21-S03` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A14 | `LE-R21-S04` | 收藏与批量操作以音乐库持久结果为反馈 |
+| A14 | `LE-R21-S05` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A2 | `LL-R01-S01` | 单一资料库根目录与本地持久化 |
 | A2 | `LL-R01-S02` | 单一资料库根目录与本地持久化 |
 | A2 | `LL-R01-S03` | 单一资料库根目录与本地持久化 |
 | A2 | `LL-R01-S04` | 单一资料库根目录与本地持久化 |
+| A2 | `LL-R01-S05` | 单一资料库根目录与本地持久化 |
 | A2 | `LL-R02-S01` | 扫描、监听与手动重扫 |
 | A2 | `LL-R02-S02` | 扫描、监听与手动重扫 |
 | A2 | `LL-R02-S03` | 扫描、监听与手动重扫 |
@@ -779,6 +785,7 @@
 | A3 | `LL-R01-S02` | 单一资料库根目录与本地持久化 |
 | A3 | `LL-R01-S03` | 单一资料库根目录与本地持久化 |
 | A3 | `LL-R01-S04` | 单一资料库根目录与本地持久化 |
+| A3 | `LL-R01-S05` | 单一资料库根目录与本地持久化 |
 | A3 | `LL-R02-S01` | 扫描、监听与手动重扫 |
 | A3 | `LL-R02-S02` | 扫描、监听与手动重扫 |
 | A3 | `LL-R02-S03` | 扫描、监听与手动重扫 |
@@ -832,6 +839,7 @@
 | A4 | `SFI-R05-S05` | 暂存、校验、原子移动与操作日志 |
 | A4 | `SFI-R05-S06` | 暂存、校验、原子移动与操作日志 |
 | A4 | `SFI-R05-S07` | 暂存、校验、原子移动与操作日志 |
+| A4 | `SFI-R05-S08` | 暂存、校验、原子移动与操作日志 |
 | A4 | `SFI-R06-S01` | 逐文件结果与资料库不可用反馈 |
 | A4 | `SFI-R06-S02` | 逐文件结果与资料库不可用反馈 |
 | A4 | `SFI-R07-S01` | 源文件、系统关联与安全边界 |
@@ -858,6 +866,7 @@
 | A5 | `LL-R01-S02` | 单一资料库根目录与本地持久化 |
 | A5 | `LL-R01-S03` | 单一资料库根目录与本地持久化 |
 | A5 | `LL-R01-S04` | 单一资料库根目录与本地持久化 |
+| A5 | `LL-R01-S05` | 单一资料库根目录与本地持久化 |
 | A5 | `LL-R02-S01` | 扫描、监听与手动重扫 |
 | A5 | `LL-R02-S02` | 扫描、监听与手动重扫 |
 | A5 | `LL-R02-S03` | 扫描、监听与手动重扫 |
@@ -1003,10 +1012,12 @@
 | A6 | `LE-R21-S02` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A6 | `LE-R21-S03` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A6 | `LE-R21-S04` | 收藏与批量操作以音乐库持久结果为反馈 |
+| A6 | `LE-R21-S05` | 收藏与批量操作以音乐库持久结果为反馈 |
 | A6 | `LL-R01-S01` | 单一资料库根目录与本地持久化 |
 | A6 | `LL-R01-S02` | 单一资料库根目录与本地持久化 |
 | A6 | `LL-R01-S03` | 单一资料库根目录与本地持久化 |
 | A6 | `LL-R01-S04` | 单一资料库根目录与本地持久化 |
+| A6 | `LL-R01-S05` | 单一资料库根目录与本地持久化 |
 | A6 | `LL-R02-S01` | 扫描、监听与手动重扫 |
 | A6 | `LL-R02-S02` | 扫描、监听与手动重扫 |
 | A6 | `LL-R02-S03` | 扫描、监听与手动重扫 |
@@ -1095,6 +1106,8 @@
 | A7 | `PM-R13-S02` | 歌单与成员以音乐库持久结果反馈 |
 | A7 | `PM-R13-S03` | 歌单与成员以音乐库持久结果反馈 |
 | A7 | `PM-R13-S04` | 歌单与成员以音乐库持久结果反馈 |
+| A7 | `PM-R13-S05` | 歌单与成员以音乐库持久结果反馈 |
+| A7 | `PM-R13-S06` | 歌单与成员以音乐库持久结果反馈 |
 | A8 | `DP-R01-S01` | 桌面音频播放 |
 | A8 | `DP-R01-S02` | 桌面音频播放 |
 | A8 | `DP-R01-S03` | 桌面音频播放 |

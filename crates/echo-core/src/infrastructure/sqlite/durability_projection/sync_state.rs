@@ -15,7 +15,7 @@ use crate::domain::library::durability::{
 };
 use crate::error::Error;
 use crate::infrastructure::sqlite::SqliteDatabase;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 
 impl LibrarySyncRecoveryPort for SqliteDatabase {

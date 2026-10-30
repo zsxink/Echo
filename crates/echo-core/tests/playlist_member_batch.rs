@@ -151,30 +151,70 @@ fn consecutive_multi_song_add_keeps_every_membership() {
 
     // The directory is the authority: a wiped projection must rebuild all of
     // them too, so this is not just a read-model lag.
-    let members = PlaylistRepository::members(stack.database.as_ref(), playlist)
-        .expect("members")
-        .len();
+    let members = PlaylistRepository::members(stack.database.as_ref(), playlist).expect("members");
     let replay = stack
         .control
         .durability()
         .expect("durability")
         .recover(stack.root)
         .expect("recover");
-    let member_records = replay
+    let mut item_records: Vec<_> = replay
         .commits
         .iter()
         .flat_map(|commit| &commit.batch.records)
-        .filter(|envelope| matches!(envelope.record(), PortableRecord::PlaylistItem(_)))
-        .count();
+        .filter_map(|envelope| match envelope.record() {
+            PortableRecord::PlaylistItem(item) => Some(item.clone()),
+            _ => None,
+        })
+        .collect();
+    item_records.sort_by_key(|item| item.position);
     assert_eq!(
-        member_records,
+        item_records.len(),
         stack.songs.len(),
         "the directory keeps one member record per selected song"
     );
     assert_eq!(
-        members,
+        item_records
+            .iter()
+            .map(|item| item.position)
+            .collect::<Vec<_>>(),
+        (0..stack.songs.len() as u64).collect::<Vec<_>>(),
+        "members keep the append positions the user acted in"
+    );
+    let member_ids: std::collections::BTreeSet<_> =
+        item_records.iter().map(|item| item.item_uuid).collect();
+    assert_eq!(
+        member_ids.len(),
+        stack.songs.len(),
+        "each selected song gets its own member identity"
+    );
+    assert!(item_records
+        .iter()
+        .all(|item| item.playlist_uuid == playlist.as_uuid() && item.added_at.is_some()));
+    assert_eq!(
+        item_records
+            .iter()
+            .map(|item| item.song_uuid)
+            .collect::<Vec<_>>(),
+        stack
+            .songs
+            .iter()
+            .map(|song| song.as_uuid())
+            .collect::<Vec<_>>(),
+        "members are appended in the order the user selected them"
+    );
+    assert_eq!(
+        members.len(),
         stack.songs.len(),
         "every selected song keeps its membership"
+    );
+    assert_eq!(
+        members
+            .iter()
+            .map(echo_core::domain::entities::PlaylistMember::position)
+            .collect::<Vec<_>>(),
+        (0..stack.songs.len() as u64).collect::<Vec<_>>(),
+        "the read model already shows the append order"
     );
 }
 
@@ -247,7 +287,7 @@ fn burst_add_latency_is_bounded() {
     );
     samples.sort();
     let p95 = samples[(samples.len() * 95).div_ceil(100) - 1];
-    eprintln!("burst add p95 = {:?}", p95);
+    eprintln!("burst add p95 = {p95:?}");
     assert!(
         p95 < std::time::Duration::from_millis(200),
         "a burst add must stay interactive, got {p95:?}"

@@ -33,6 +33,18 @@ impl SqliteDatabase {
 }
 
 impl crate::application::ports::LibraryProjectionPort for SqliteDatabase {
+    fn projection_status(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<crate::domain::library::durability::LibraryProjectionStatus, Error> {
+        self.with_reader(move |connection| super::durability_projection::status(connection, root))
+    }
+    fn read_recovery_records(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<crate::domain::library::durability::LibraryRecoveryRecords, Error> {
+        self.with_reader(move |connection| super::durability_projection::read(connection, root))
+    }
     fn validate_library_projection(
         &self,
         root: LibraryRootId,
@@ -112,18 +124,6 @@ impl crate::application::ports::LibraryProjectionPort for SqliteDatabase {
             super::durability_projection::project_legacy_records(connection, root, &records)
         })
     }
-    fn projection_status(
-        &self,
-        root: LibraryRootId,
-    ) -> Result<crate::domain::library::durability::LibraryProjectionStatus, Error> {
-        self.with_reader(move |connection| super::durability_projection::status(connection, root))
-    }
-    fn read_recovery_records(
-        &self,
-        root: LibraryRootId,
-    ) -> Result<crate::domain::library::durability::LibraryRecoveryRecords, Error> {
-        self.with_reader(move |connection| super::durability_projection::read(connection, root))
-    }
     fn project_library_commits(
         &self,
         root: LibraryRootId,
@@ -185,6 +185,9 @@ impl crate::application::ports::LibraryProjectionPort for SqliteDatabase {
             .map(|_| ())
         })
     }
+}
+
+impl crate::application::ports::LibraryProjectionVerifiedPort for SqliteDatabase {
     fn project_verified_library_suffix(
         &self,
         root: LibraryRootId,

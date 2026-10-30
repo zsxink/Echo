@@ -74,11 +74,9 @@ fn library_durability_resource_location_does_not_undo_a_later_same_hash_scan_mov
                 SongRepository::by_id(&fresh, song).unwrap().unwrap().path(),
                 &moved
             );
-            assert!(
-                SongRepository::published_file_paths(&fresh, f.root)
-                    .unwrap()
-                    .is_empty()
-            );
+            assert!(SongRepository::published_file_paths(&fresh, f.root)
+                .unwrap()
+                .is_empty());
         }
         assert_eq!(
             std::fs::read(f.path().join(moved.normalized())).unwrap(),

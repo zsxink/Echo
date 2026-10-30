@@ -74,16 +74,12 @@ fn initial_baseline_preserves_chain_current_state_and_undoable_song() {
         playlist_payload["members"][0]["song_uuid"],
         imported.id().to_string()
     );
-    assert!(
-        playlist_payload["members"][0]["member_uuid"]
-            .as_str()
-            .is_some()
-    );
-    assert!(
-        baseline
-            .iter()
-            .all(|mutation| mutation.payload.get("deleted").is_none())
-    );
+    assert!(playlist_payload["members"][0]["member_uuid"]
+        .as_str()
+        .is_some());
+    assert!(baseline
+        .iter()
+        .all(|mutation| mutation.payload.get("deleted").is_none()));
     assert!(baseline[0].payload.get("availability").is_none());
     assert_eq!(baseline[0].resource_refs.len(), 1);
     assert_eq!(
@@ -159,17 +155,15 @@ fn baseline_rejects_replica_and_foreign_binding() {
     let binding = binding();
     database.bind_sync_library(binding, false, root).unwrap();
     assert!(database.ensure_host_sync_baseline(binding, root).is_err());
-    assert!(
-        database
-            .ensure_host_sync_baseline(
-                SyncBinding {
-                    authority_id: AuthorityId::new(),
-                    ..binding
-                },
-                root
-            )
-            .is_err()
-    );
+    assert!(database
+        .ensure_host_sync_baseline(
+            SyncBinding {
+                authority_id: AuthorityId::new(),
+                ..binding
+            },
+            root
+        )
+        .is_err());
     assert!(database.pending_local_mutations(8).unwrap().is_empty());
 }
 
@@ -184,7 +178,9 @@ fn baseline_requires_audio_scan_facts_and_never_fabricates_play_attribution() {
     let binding = binding();
     database.bind_sync_library(binding, true, root).unwrap();
     assert!(database.ensure_host_sync_baseline(binding, root).is_err());
-    assert_eq!(database.pending_local_mutations(16).unwrap().len(), 1);
+    // Standalone edits before enrollment never queue sync candidates
+    // (SYN-R06-S04), so nothing unreconciled is waiting here.
+    assert_eq!(database.pending_local_mutations(16).unwrap().len(), 0);
     imported.apply_scan_facts(
         "b".repeat(64),
         17,
@@ -201,12 +197,10 @@ fn baseline_requires_audio_scan_facts_and_never_fabricates_play_attribution() {
         queue.last().unwrap().payload["by_device"],
         serde_json::json!({})
     );
-    assert!(
-        database
-            .device_play_counts(imported.id())
-            .unwrap()
-            .is_empty()
-    );
+    assert!(database
+        .device_play_counts(imported.id())
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -237,12 +231,10 @@ fn baseline_keeps_pending_tombstones_and_excludes_another_root() {
         0
     );
     assert_eq!(database.pending_local_mutations(16).unwrap(), original);
-    assert!(
-        database
-            .local_sync_resource_manifests(root)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(database
+        .local_sync_resource_manifests(root)
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -304,32 +296,26 @@ fn replica_enrollment_baseline_is_authorized_atomic_and_restart_idempotent() {
     );
     SongRepository::upsert(&database, &imported).unwrap();
     let binding = binding();
-    assert!(
-        database
-            .ensure_replica_sync_baseline(binding, root)
-            .is_err()
-    );
+    assert!(database
+        .ensure_replica_sync_baseline(binding, root)
+        .is_err());
     database
         .bind_sync_replica_for_enrollment(binding, root)
         .unwrap();
-    assert!(
-        database
-            .ensure_replica_sync_baseline(
-                SyncBinding {
-                    authority_id: AuthorityId::new(),
-                    ..binding
-                },
-                root
-            )
-            .is_err()
-    );
+    assert!(database
+        .ensure_replica_sync_baseline(
+            SyncBinding {
+                authority_id: AuthorityId::new(),
+                ..binding
+            },
+            root
+        )
+        .is_err());
     let before = database.pending_local_mutations(20).unwrap();
     database.writer.run(|c| c.execute_batch("CREATE TRIGGER fail_replica_baseline BEFORE INSERT ON sync_mutations WHEN NEW.object_type='play-stats' BEGIN SELECT RAISE(ABORT,'baseline failure'); END;").map_err(storage)).unwrap();
-    assert!(
-        database
-            .ensure_replica_sync_baseline(binding, root)
-            .is_err()
-    );
+    assert!(database
+        .ensure_replica_sync_baseline(binding, root)
+        .is_err());
     assert_eq!(database.pending_local_mutations(20).unwrap(), before);
     database
         .writer
@@ -391,22 +377,18 @@ fn library_manifests_include_confirmed_content_deduplicate_and_resolve_catalog_a
             Ok(())
         })
         .unwrap();
-    assert!(
-        database
-            .local_sync_resource_manifests(root)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(database
+        .local_sync_resource_manifests(root)
+        .unwrap()
+        .is_empty());
     assert_eq!(
         database.local_library_resource_manifests(root).unwrap(),
         vec![manifest.clone()]
     );
-    assert!(
-        database
-            .local_library_resource_manifests(LibraryRootId::new())
-            .unwrap()
-            .is_empty()
-    );
+    assert!(database
+        .local_library_resource_manifests(LibraryRootId::new())
+        .unwrap()
+        .is_empty());
     assert_eq!(
         database
             .local_library_audio_path_for_resource(root, &"d".repeat(64), 31)
@@ -419,11 +401,9 @@ fn library_manifests_include_confirmed_content_deduplicate_and_resolve_catalog_a
             .unwrap(),
         None
     );
-    assert!(
-        database
-            .local_library_audio_path_for_resource(root, &"d".repeat(64), u64::MAX)
-            .is_err()
-    );
+    assert!(database
+        .local_library_audio_path_for_resource(root, &"d".repeat(64), u64::MAX)
+        .is_err());
     assert_eq!(
         database
             .local_library_resource_path_for_manifest(root, &manifest)
@@ -443,6 +423,28 @@ fn library_durability_replica_baseline_does_not_reauthor_unreconciled_intent() {
         crate::domain::media::AudioFormat::Flac,
     );
     SongRepository::upsert(&database, &imported).unwrap();
+    // A pre-enrollment version could still have queued edits. Recreate that
+    // legacy evidence directly: standalone edits no longer mint it.
+    let id = imported.id();
+    let device = database.current_device_id();
+    database
+        .writer
+        .run(move |c| {
+            c.execute(
+                "INSERT INTO sync_mutations(mutation_id,origin_device_id,origin_seq,previous_mutation_id,object_type,object_uuid,operation,local_revision,base_object_version,payload_json,payload_digest,status,created_at,resource_refs_json,local_root_uuid) VALUES(?1,?2,1,NULL,'song',?3,'upsert',1,NULL,?4,?5,'pending',1,'[]',?6)",
+                params![
+                    uuid::Uuid::new_v4().to_string(),
+                    device.as_uuid().to_string(),
+                    id.to_string(),
+                    serde_json::json!({"song_uuid": id}).to_string(),
+                    "a".repeat(64),
+                    root.to_string()
+                ],
+            )
+            .map_err(storage)?;
+            Ok(())
+        })
+        .unwrap();
     database.writer.run(move |c| {
         let states = super::super::sync::durability::export_sync_state(c, root)?;
         assert!(states.iter().any(|state| state.kind == crate::domain::library::durability::StateKind::Pending));

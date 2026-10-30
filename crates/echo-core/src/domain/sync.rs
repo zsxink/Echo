@@ -454,8 +454,8 @@ struct DecodedPlayStats {
 /// The payload is the full [`super::library::PlayStatsRecord`]: only that shape
 /// attests `updated_by_device_id`, so anything else is refused.
 fn decode_play_stats(payload: &Value) -> Result<DecodedPlayStats, ConfirmationError> {
-    let record: super::library::PlayStatsRecord = serde_json::from_value(payload.clone())
-        .map_err(|_| ConfirmationError::WrongObject)?;
+    let record: super::library::PlayStatsRecord =
+        serde_json::from_value(payload.clone()).map_err(|_| ConfirmationError::WrongObject)?;
     Ok(DecodedPlayStats {
         declared_song: record.song_uuid,
         claimant: record.updated_by_device_id.as_uuid(),

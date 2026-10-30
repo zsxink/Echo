@@ -1,23 +1,6 @@
 //! A removed membership keeps its original identity and cannot delete a re-add.
 use super::*;
 use crate::application::ports::LibraryProjectionPort;
-use crate::domain::library::durability::{FrozenMutation, MutationOperation, StateTarget};
-
-fn frozen_mutations(
-    batch: &crate::domain::library::durability::LibraryBatch,
-) -> Vec<FrozenMutation> {
-    batch
-        .state
-        .iter()
-        .filter(|state| {
-            matches!(
-                state.key.as_ref().map(|key| &key.target),
-                Some(StateTarget::Mutation { .. })
-            )
-        })
-        .map(|state| serde_json::from_value(state.payload["frozen"].clone()).unwrap())
-        .collect()
-}
 
 #[test]
 fn library_durability_member_remove_is_saved_before_projection_and_readd_is_new() {
@@ -60,22 +43,9 @@ fn library_durability_member_remove_is_saved_before_projection_and_readd_is_new(
     let batch = &replay.commits.last().unwrap().batch;
     assert!(batch.records.iter().any(|envelope| matches!(envelope.record(), PortableRecord::Tombstone(t)
         if t.deleted_kind == crate::domain::library::RecordKind::PlaylistItem && t.object_uuid == original.as_uuid())));
-    let frozen = frozen_mutations(batch);
-    assert_eq!(frozen.len(), 2);
-    assert_eq!(frozen[0].operation, MutationOperation::Delete);
-    assert_eq!(
-        frozen[0].candidate.object,
-        crate::domain::sync::ObjectKey::PlaylistItem(original)
-    );
-    assert_eq!(frozen[0].candidate.origin_seq, 3);
-    assert_eq!(frozen[1].candidate.origin_seq, 4);
-    assert_eq!(
-        frozen[1].candidate.previous_mutation_id,
-        Some(frozen[0].candidate.mutation_id)
-    );
-    assert_eq!(
-        frozen[1].candidate.payload["members"],
-        serde_json::json!([])
+    assert!(
+        batch.state.is_empty(),
+        "a standalone member removal retains no sync protocol state (SYN-R06-S04)"
     );
     stack
         .database

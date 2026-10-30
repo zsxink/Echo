@@ -47,11 +47,9 @@ fn cleanup(
 fn assert_journals(directory: &std::path::Path, changes: &[LibraryBatch]) {
     for change in changes {
         assert!(marker_present(directory, change.operation_id));
-        assert!(
-            directory
-                .join(relative(change.operation_id, "prepared.json"))
-                .is_file()
-        );
+        assert!(directory
+            .join(relative(change.operation_id, "prepared.json"))
+            .is_file());
     }
 }
 
@@ -141,11 +139,9 @@ fn library_durability_gc_deduplicates_proof_and_post_delete_ancestor_syncs() {
             .map(|i| ("gc:directory_sync".to_owned(), i))
             .collect::<Vec<_>>()
     );
-    assert!(
-        trace[..last_remove]
-            .iter()
-            .all(|(p, _)| p != "gc:directory_sync")
-    );
+    assert!(trace[..last_remove]
+        .iter()
+        .all(|(p, _)| p != "gc:directory_sync"));
 }
 
 #[test]

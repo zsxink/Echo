@@ -12,6 +12,7 @@ pub(crate) mod filesystem;
 mod filesystem_capabilities;
 mod library_history;
 mod library_projection;
+mod library_projection_verified;
 mod library_sync_recovery;
 mod local_library_edit;
 mod media;
@@ -36,6 +37,7 @@ pub use filesystem::{
 pub use filesystem_capabilities::*;
 pub use library_history::*;
 pub use library_projection::*;
+pub use library_projection_verified::*;
 pub use library_sync_recovery::*;
 pub use local_library_edit::*;
 pub use media::*;

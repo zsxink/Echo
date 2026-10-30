@@ -1,7 +1,6 @@
 //! Artwork references, derived keys and frozen bodies survive ordered recovery.
 use super::*;
 use crate::application::ports::{CoverCache, LibraryProjectionPort, PlaylistRepository};
-use crate::domain::library::durability::{FrozenMutation, StateTarget};
 use crate::infrastructure::metadata::DiskCoverCache;
 
 #[test]
@@ -50,11 +49,9 @@ fn library_durability_playlist_cover_reuses_original_and_clear_survives_rebuild(
         rebuilt
             .project_library_commits(stack.root, &replay)
             .unwrap();
-        assert!(
-            PlaylistRepository::cover_key(&rebuilt, first)
-                .unwrap()
-                .is_none()
-        );
+        assert!(PlaylistRepository::cover_key(&rebuilt, first)
+            .unwrap()
+            .is_none());
         assert_eq!(
             PlaylistRepository::cover_key(&rebuilt, second).unwrap(),
             Some(crate::domain::media::cover_asset_key(&hash))
@@ -96,22 +93,18 @@ fn library_durability_playlist_cover_missing_or_corrupt_original_is_not_recovere
         } else {
             std::fs::remove_file(&path).unwrap();
         }
-        assert!(
-            crate::application::playlist::cover::resolve_playlist_cover(
-                control.as_ref(),
-                &cache,
-                stack.root,
-                playlist,
-                None,
-            )
-            .is_err()
-        );
-        assert!(
-            cache
-                .get(&crate::domain::media::cover_asset_key(&hash))
-                .unwrap()
-                .is_none()
-        );
+        assert!(crate::application::playlist::cover::resolve_playlist_cover(
+            control.as_ref(),
+            &cache,
+            stack.root,
+            playlist,
+            None,
+        )
+        .is_err());
+        assert!(cache
+            .get(&crate::domain::media::cover_asset_key(&hash))
+            .unwrap()
+            .is_none());
     }
     assert!(
         matches!(control.read_record(stack.root, crate::domain::library::RecordKind::Playlist, &playlist.to_string()).unwrap(), Some(PortableRecord::Playlist(record)) if record.cover_asset.is_some())
@@ -135,16 +128,14 @@ fn library_durability_playlist_cover_asset_write_failure_keeps_saved_playlist() 
     let before = control.durability().unwrap().recover(stack.root).unwrap();
     let blocker = stack.library_dir.join("echo/assets");
     std::fs::write(&blocker, b"asset directory blocker").unwrap();
-    assert!(
-        edits
-            .set_playlist_cover(
-                stack.root,
-                playlist,
-                Some(&original_png()),
-                Some("image/png")
-            )
-            .is_err()
-    );
+    assert!(edits
+        .set_playlist_cover(
+            stack.root,
+            playlist,
+            Some(&original_png()),
+            Some("image/png")
+        )
+        .is_err());
     assert_eq!(
         control.durability().unwrap().recover(stack.root).unwrap(),
         before
@@ -234,23 +225,11 @@ fn library_durability_playlist_cover_saved_pending_rebuilds_without_cache() {
     let PortableRecord::Playlist(record) = batch.records[0].record() else {
         panic!("playlist expected")
     };
-    let asset = record.cover_asset.as_ref().unwrap();
+    // The saved after-image carries the cover reference and its resource; a
+    // standalone root retains no LAN protocol state (SYN-R06-S04).
+    assert!(record.cover_asset.is_some());
     assert_eq!(batch.resources.len(), 1);
-    let frozen: FrozenMutation = batch
-        .state
-        .iter()
-        .find(|state| {
-            matches!(
-                state.key.as_ref().map(|key| &key.target),
-                Some(StateTarget::Mutation { .. })
-            )
-        })
-        .map(|state| serde_json::from_value(state.payload["frozen"].clone()).unwrap())
-        .unwrap();
-    assert_eq!(
-        frozen.candidate.payload["cover_asset"],
-        serde_json::to_value(asset).unwrap()
-    );
+    assert!(batch.state.is_empty());
     let directory = tempfile::tempdir().unwrap();
     let rebuilt =
         crate::infrastructure::sqlite::SqliteDatabase::open(directory.path().join("fresh.sqlite"))

@@ -129,11 +129,9 @@ fn snapshot_combines_object_and_resource_count_budgets_with_stable_retries() {
             .unwrap(),
         last
     );
-    assert!(
-        database
-            .host_snapshot_page(binding, &session.token, 2)
-            .is_err()
-    );
+    assert!(database
+        .host_snapshot_page(binding, &session.token, 2)
+        .is_err());
 }
 
 #[test]
@@ -193,11 +191,9 @@ fn page_budget_migration_invalidates_legacy_sessions_without_changing_library() 
     }).unwrap();
     drop(database);
     let database = SqliteDatabase::open(directory.path().join("echo.db")).unwrap();
-    assert!(
-        database
-            .host_snapshot_page(binding, &session.token, 0)
-            .is_err()
-    );
+    assert!(database
+        .host_snapshot_page(binding, &session.token, 0)
+        .is_err());
     let fresh = database.create_host_snapshot(binding, 512, 60_000).unwrap();
     let page = database
         .host_snapshot_page(binding, &fresh.token, 0)

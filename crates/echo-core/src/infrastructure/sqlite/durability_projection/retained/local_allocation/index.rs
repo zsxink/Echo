@@ -1,5 +1,5 @@
 //! Proofs shared by one recovery pass; never retained across database changes.
-use super::{DurableStateChange, Error, FrozenMutation, StateTarget, storage};
+use super::{storage, DurableStateChange, Error, FrozenMutation, StateTarget};
 use crate::domain::library::durability::StateKey;
 use rusqlite::Connection;
 use std::collections::{BTreeMap, BTreeSet};

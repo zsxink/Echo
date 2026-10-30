@@ -174,9 +174,15 @@ fn concurrent_playlist_appends_keep_first_member_and_emit_typed_alias() {
         ]}),
         resource_refs: Vec::new(),
     };
-    let result =
-        confirm_candidate_at(Some(&current), None, &candidate, CommitSeq::from_u64(2), 0, 0)
-            .unwrap();
+    let result = confirm_candidate_at(
+        Some(&current),
+        None,
+        &candidate,
+        CommitSeq::from_u64(2),
+        0,
+        0,
+    )
+    .unwrap();
     let members = result.object.payload["members"].as_array().unwrap();
     assert_eq!(members.len(), 2);
     assert_eq!(members[0]["member_uuid"], json!(canonical_member));
@@ -539,11 +545,7 @@ fn confirmed_play_stats_buckets_authorize_exactly_their_recorded_counts() {
         previous_mutation_id: None,
         object: ObjectKey::PlayStats(song),
         base_object_version: Some(current.version),
-        payload: play_stats_payload(
-            song,
-            origin,
-            &[(origin.as_uuid(), 2), (other.as_uuid(), 5)],
-        ),
+        payload: play_stats_payload(song, origin, &[(origin.as_uuid(), 2), (other.as_uuid(), 5)]),
         resource_refs: Vec::new(),
     };
     let confirmed = confirm_candidate_at(
@@ -562,20 +564,10 @@ fn confirmed_play_stats_buckets_authorize_exactly_their_recorded_counts() {
     // Raising another device's bucket stays unauthorized.
     let mut raising = candidate;
     raising.mutation_id = MutationId::new();
-    raising.payload = play_stats_payload(
-        song,
-        origin,
-        &[(origin.as_uuid(), 9), (other.as_uuid(), 6)],
-    );
+    raising.payload =
+        play_stats_payload(song, origin, &[(origin.as_uuid(), 9), (other.as_uuid(), 6)]);
     assert_eq!(
-        confirm_candidate_at(
-            Some(&current),
-            None,
-            &raising,
-            CommitSeq::from_u64(3),
-            0,
-            0
-        ),
+        confirm_candidate_at(Some(&current), None, &raising, CommitSeq::from_u64(3), 0, 0),
         Err(ConfirmationError::UnauthorizedPlayStatsBucket)
     );
 }
@@ -643,10 +635,7 @@ fn stale_base_without_favorite_or_play_stats_value_change_is_not_a_conflict() {
         payload: play_stats_payload(
             song,
             first_device,
-            &[
-                (first_device.as_uuid(), 2),
-                (second_device.as_uuid(), 1),
-            ],
+            &[(first_device.as_uuid(), 2), (second_device.as_uuid(), 1)],
         ),
     };
     let same_play_stats = MutationCandidate {
@@ -659,10 +648,7 @@ fn stale_base_without_favorite_or_play_stats_value_change_is_not_a_conflict() {
         payload: play_stats_payload(
             song,
             second_device,
-            &[
-                (first_device.as_uuid(), 2),
-                (second_device.as_uuid(), 1),
-            ],
+            &[(first_device.as_uuid(), 2), (second_device.as_uuid(), 1)],
         ),
         resource_refs: Vec::new(),
     };
@@ -681,10 +667,7 @@ fn stale_base_without_favorite_or_play_stats_value_change_is_not_a_conflict() {
         payload: play_stats_payload(
             song,
             second_device,
-            &[
-                (first_device.as_uuid(), 2),
-                (second_device.as_uuid(), 3),
-            ],
+            &[(first_device.as_uuid(), 2), (second_device.as_uuid(), 3)],
         ),
         ..same_play_stats
     };
@@ -808,9 +791,15 @@ fn playlist_append_renumbers_positions_from_the_merged_order() {
         ]}),
         resource_refs: Vec::new(),
     };
-    let merged =
-        confirm_candidate_at(Some(&current), None, &candidate, CommitSeq::from_u64(2), 0, 0)
-            .unwrap();
+    let merged = confirm_candidate_at(
+        Some(&current),
+        None,
+        &candidate,
+        CommitSeq::from_u64(2),
+        0,
+        0,
+    )
+    .unwrap();
     let positions: Vec<u64> = merged.object.payload["members"]
         .as_array()
         .unwrap()

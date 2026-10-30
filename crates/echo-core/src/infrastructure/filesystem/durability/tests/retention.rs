@@ -58,20 +58,16 @@ fn library_durability_active_transaction_limit_refuses_writes_without_removing_b
     let refused = batch(library, uuid::Uuid::new_v4(), "must not be published");
     assert!(commit(&registry, root, &refused).is_err());
     assert!(!marker_present(directory.path(), refused.operation_id));
-    assert!(
-        !directory
-            .path()
-            .join(relative(refused.operation_id, "prepared.json"))
-            .exists()
-    );
+    assert!(!directory
+        .path()
+        .join(relative(refused.operation_id, "prepared.json"))
+        .exists());
     // Refusing is not collecting: the saved journal and its payload stay intact.
     assert!(marker_present(directory.path(), saved.operation_id));
-    assert!(
-        directory
-            .path()
-            .join(relative(saved.operation_id, "prepared.json"))
-            .is_file()
-    );
+    assert!(directory
+        .path()
+        .join(relative(saved.operation_id, "prepared.json"))
+        .is_file());
     for id in extra {
         std::fs::remove_dir_all(folder.join(id.to_string())).unwrap();
     }
@@ -90,7 +86,7 @@ fn library_durability_interrupted_between_prepared_and_marker_removal_keeps_the_
     for stop in [0, 1] {
         let (directory, registry, root, library, plane) = fixture();
         let bytes = b"referenced bytes that must survive every collection";
-        let hash = LibraryDurabilityPort::write_asset(&plane, root, bytes).unwrap();
+        let hash = LibraryAssetPort::write_asset(&plane, root, bytes).unwrap();
         let changes: Vec<_> = (0..3_u128)
             .map(|index| {
                 let mut change = batch(library, uuid::Uuid::from_u128(0x10 + index), "covered");
@@ -187,7 +183,7 @@ fn seeded_collection() -> (
     std::fs::create_dir_all(directory.path().join("echo/media/song/aa/declaration")).unwrap();
     std::fs::write(directory.path().join(media), media_bytes).unwrap();
     let asset_bytes = b"user cover original";
-    let hash = LibraryDurabilityPort::write_asset(&plane, root, asset_bytes).unwrap();
+    let hash = LibraryAssetPort::write_asset(&plane, root, asset_bytes).unwrap();
     // Staging bytes belong to an unfinished publication and are not declared.
     let staging = "echo/tmp/unfinished-operation/0";
     std::fs::create_dir_all(directory.path().join("echo/tmp/unfinished-operation")).unwrap();
@@ -260,12 +256,10 @@ fn assert_fresh_rebuild_keeps(
         );
     }
     // Staging is never offered as a song source even though its bytes survived.
-    assert!(
-        rebuilt
-            .resources
-            .iter()
-            .all(|resource| !resource.relative_path.starts_with("echo/tmp/"))
-    );
+    assert!(rebuilt
+        .resources
+        .iter()
+        .all(|resource| !resource.relative_path.starts_with("echo/tmp/")));
 }
 
 #[test]

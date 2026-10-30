@@ -159,17 +159,15 @@ fn library_projection_worker_callback_panic_stops_and_unblocks_flush() {
 
 #[test]
 fn library_projection_worker_rejects_invalid_policy_and_idle_flush_is_complete() {
-    assert!(
-        LibraryProjectionWorker::spawn_with_retry(
-            LibraryRootId::new(),
-            ProjectionRetryPolicy {
-                initial_delay: Duration::ZERO,
-                max_delay: Duration::from_secs(1),
-            },
-            |_| Ok(()),
-        )
-        .is_err()
-    );
+    assert!(LibraryProjectionWorker::spawn_with_retry(
+        LibraryRootId::new(),
+        ProjectionRetryPolicy {
+            initial_delay: Duration::ZERO,
+            max_delay: Duration::from_secs(1),
+        },
+        |_| Ok(()),
+    )
+    .is_err());
     let worker = LibraryProjectionWorker::spawn(LibraryRootId::new(), |_| Ok(())).unwrap();
     worker.flush(Duration::ZERO).unwrap();
     assert!(!worker.join().unwrap().pending());

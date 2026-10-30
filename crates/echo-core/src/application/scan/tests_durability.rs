@@ -1,5 +1,7 @@
 use super::*;
-use crate::application::ports::{ControlPlanePort, LibraryHistoryPort, LibraryProjectionPort};
+use crate::application::ports::{
+    ControlPlanePort, LibraryHistoryPort, LibraryProjectionPort, LibraryProjectionVerifiedPort,
+};
 use crate::domain::library::{
     durability::{LibraryProjectionStatus, LibraryRecoveryRecords, LibraryReplay},
     PortableRecord, RecordKind,
@@ -108,17 +110,6 @@ fn library_durability_small_scan_commits_one_record_and_resource_per_song() {
 struct RefusingProjection;
 
 impl LibraryProjectionPort for RefusingProjection {
-    fn project_library_commits(
-        &self,
-        _root: crate::domain::ids::LibraryRootId,
-        _replay: &LibraryReplay,
-    ) -> Result<(), crate::error::Error> {
-        Err(crate::error::Error::unavailable(
-            "test projection",
-            "injected ordered replay failure",
-        ))
-    }
-
     fn projection_status(
         &self,
         _root: crate::domain::ids::LibraryRootId,
@@ -131,6 +122,30 @@ impl LibraryProjectionPort for RefusingProjection {
         _root: crate::domain::ids::LibraryRootId,
     ) -> Result<LibraryRecoveryRecords, crate::error::Error> {
         Ok(LibraryRecoveryRecords::default())
+    }
+
+    fn project_library_commits(
+        &self,
+        _root: crate::domain::ids::LibraryRootId,
+        _replay: &LibraryReplay,
+    ) -> Result<(), crate::error::Error> {
+        Err(crate::error::Error::unavailable(
+            "test projection",
+            "injected ordered replay failure",
+        ))
+    }
+}
+
+impl LibraryProjectionVerifiedPort for RefusingProjection {
+    fn project_verified_library_suffix(
+        &self,
+        _root: crate::domain::ids::LibraryRootId,
+        _replay: &LibraryReplay,
+    ) -> Result<(), crate::error::Error> {
+        Err(crate::error::Error::unavailable(
+            "test projection",
+            "injected ordered replay failure",
+        ))
     }
 }
 

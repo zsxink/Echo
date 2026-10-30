@@ -73,7 +73,9 @@ impl<'a> RetryLibraryOperation<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::ports::LibraryDurabilityPort;
+    use crate::application::ports::{
+        LibraryDurabilityPort, LibraryProjectionPort, LibraryProjectionVerifiedPort,
+    };
     use crate::application::testing::small_fakes::MemoryControlPlane;
     use crate::domain::library::durability::{ChangeOrigin, LibraryBatch, LibraryReplay};
     use crate::domain::library::LibraryId;
@@ -109,6 +111,16 @@ mod tests {
             } else {
                 Ok(())
             }
+        }
+    }
+
+    impl LibraryProjectionVerifiedPort for Projection {
+        fn project_verified_library_suffix(
+            &self,
+            root: LibraryRootId,
+            replay: &LibraryReplay,
+        ) -> Result<(), Error> {
+            self.project_library_commits(root, replay)
         }
     }
 

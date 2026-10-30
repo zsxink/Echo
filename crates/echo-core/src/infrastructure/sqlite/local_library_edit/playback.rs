@@ -1,13 +1,13 @@
 //! Freeze a private listen event and the actual shared bucket candidate together.
 use super::{
-    ChangeOrigin, ControlPlanePort, DeviceId, Error, LibraryBatch, LibraryRootId, ObjectKey,
-    PortableRecord, RecordKind, Revision, SongId, SqliteDatabase, planned_batch, storage,
+    planned_batch, storage, ChangeOrigin, ControlPlanePort, DeviceId, Error, LibraryBatch,
+    LibraryRootId, ObjectKey, PortableRecord, RecordKind, Revision, SongId, SqliteDatabase,
 };
 use crate::application::ports::PlaybackEditPort;
 use crate::domain::ids::PlaybackSessionId;
 use crate::domain::library::durability::{DurableStateChange, PlaybackEvent, StateKind};
-use crate::domain::library::{HybridLogicalClock, PlayStatsRecord, next_hlc};
-use rusqlite::{OptionalExtension, params};
+use crate::domain::library::{next_hlc, HybridLogicalClock, PlayStatsRecord};
+use rusqlite::{params, OptionalExtension};
 
 impl PlaybackEditPort for SqliteDatabase {
     fn record_library_playback(

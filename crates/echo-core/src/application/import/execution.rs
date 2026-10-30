@@ -61,7 +61,7 @@ impl PlanImport<'_> {
             super::trace_import_stage(planned.root, "import_reservation_read_commit", started);
             if let Ok(Some(committed)) = committed {
                 let started = std::time::Instant::now();
-                let _ = crate::application::ports::LibraryProjectionPort::project_verified_library_commit(
+                let _ = crate::application::ports::LibraryProjectionVerifiedPort::project_verified_library_commit(
                     history,
                     planned.root,
                     &committed,

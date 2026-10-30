@@ -4,6 +4,7 @@ use super::*;
 use echo_core::application::ports::{LibraryRepository, LocalSyncQueuePort, PlaylistRepository};
 use echo_core::domain::entities::LibraryRoot;
 use echo_core::domain::ids::PlaylistId;
+use echo_core::domain::sync::{AuthorityId, Epoch, LibraryId as SyncLibraryId, SyncBinding};
 
 struct MaintenanceProvisioner {
     database: Arc<SqliteDatabase>,
@@ -78,6 +79,19 @@ fn idle_sync_blocks_after_maintenance_and_retains_edits_during_a_cycle() {
         &LibraryRoot::new(root, directory.path().join("library"), true, true),
     )
     .unwrap();
+    // Standalone edits mint no sync facts, so the edit-wake contract below
+    // only exists for a root bound to LAN sync.
+    database
+        .bind_sync_library(
+            SyncBinding {
+                library_id: SyncLibraryId::new(),
+                authority_id: AuthorityId::new(),
+                epoch: Epoch::INITIAL,
+            },
+            true,
+            root,
+        )
+        .unwrap();
     let (cycles, completed) = mpsc::channel();
     let (release, gate) = mpsc::channel();
     let provisioner = Arc::new(MaintenanceProvisioner {

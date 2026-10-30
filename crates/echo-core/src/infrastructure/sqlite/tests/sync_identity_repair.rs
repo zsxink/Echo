@@ -21,6 +21,19 @@ fn fixture(
     canonical_bytes: &[u8],
 ) -> (tempfile::TempDir, SqliteDatabase, SongId, SongId) {
     let (directory, database, root) = database();
+    // Enroll first: only a bound root keeps shared facts (SYN-R06-S04), and
+    // this fixture needs the confirmed song facts to exist.
+    database
+        .bind_sync_library(
+            SyncBinding {
+                library_id: LibraryId::new(),
+                authority_id: AuthorityId::new(),
+                epoch: Epoch::INITIAL,
+            },
+            false,
+            root,
+        )
+        .unwrap();
     let root_path = directory.path().join("library");
     std::fs::create_dir_all(&root_path).unwrap();
     let mut ids = Vec::new();
@@ -39,16 +52,14 @@ fn fixture(
         database
             .set_local_sync_resources(
                 ObjectKey::Song(id),
-                vec![
-                    SharedResourceManifest::new(
-                        SharedResourceKind::Audio,
-                        ResourceDigest::from_bytes(*hash.as_bytes()),
-                        bytes.len() as u64,
-                        "audio/flac".into(),
-                        "song.flac",
-                    )
-                    .unwrap(),
-                ],
+                vec![SharedResourceManifest::new(
+                    SharedResourceKind::Audio,
+                    ResourceDigest::from_bytes(*hash.as_bytes()),
+                    bytes.len() as u64,
+                    "audio/flac".into(),
+                    "song.flac",
+                )
+                .unwrap()],
             )
             .unwrap();
         let mut payload: serde_json::Value =
@@ -68,17 +79,6 @@ fn fixture(
                 .map_err(storage)?;
             Ok(())
         })
-        .unwrap();
-    database
-        .bind_sync_library(
-            SyncBinding {
-                library_id: LibraryId::new(),
-                authority_id: AuthorityId::new(),
-                epoch: Epoch::INITIAL,
-            },
-            false,
-            root,
-        )
         .unwrap();
     (directory, database, ids[0], ids[1])
 }
@@ -130,41 +130,31 @@ fn reviewed_identical_frames_enqueue_canonical_content_without_changing_catalog(
 #[test]
 fn repair_requires_replica_and_exact_live_confirmed_versions() {
     let (_directory, database, old, canonical) = fixture(&flac(1, 7), &flac(2, 7));
-    assert!(
-        database
-            .prepare_song_identity_repair(old, 1, old, 1)
-            .is_err()
-    );
-    assert!(
-        database
-            .prepare_song_identity_repair(old, 2, canonical, 1)
-            .is_err()
-    );
-    assert!(
-        database
-            .prepare_song_identity_repair(old, 1, SongId::new(), 1)
-            .is_err()
-    );
+    assert!(database
+        .prepare_song_identity_repair(old, 1, old, 1)
+        .is_err());
+    assert!(database
+        .prepare_song_identity_repair(old, 2, canonical, 1)
+        .is_err());
+    assert!(database
+        .prepare_song_identity_repair(old, 1, SongId::new(), 1)
+        .is_err());
     alter(
         &database,
         old,
         "UPDATE sync_binding SET role='host' WHERE ?1 IS NOT NULL",
     );
-    assert!(
-        database
-            .prepare_song_identity_repair(old, 1, canonical, 1)
-            .is_err()
-    );
+    assert!(database
+        .prepare_song_identity_repair(old, 1, canonical, 1)
+        .is_err());
     alter(
         &database,
         old,
         "DELETE FROM sync_binding WHERE ?1 IS NOT NULL",
     );
-    assert!(
-        database
-            .prepare_song_identity_repair(old, 1, canonical, 1)
-            .is_err()
-    );
+    assert!(database
+        .prepare_song_identity_repair(old, 1, canonical, 1)
+        .is_err());
 }
 
 #[test]
@@ -234,11 +224,9 @@ fn repair_rejects_different_frames_invalid_flac_and_changed_disk_content() {
         },
     ] {
         let (_directory, database, old, canonical) = fixture(&flac(1, 7), &bytes);
-        assert!(
-            database
-                .prepare_song_identity_repair(old, 1, canonical, 1)
-                .is_err()
-        );
+        assert!(database
+            .prepare_song_identity_repair(old, 1, canonical, 1)
+            .is_err());
     }
     let (directory, database, old, canonical) = fixture(&flac(1, 7), &flac(2, 7));
     let plan = database
@@ -248,11 +236,9 @@ fn repair_rejects_different_frames_invalid_flac_and_changed_disk_content() {
     assert!(database.enqueue_song_identity_repair(plan).is_err());
     assert!(database.pending_local_mutations(10).unwrap().is_empty());
     std::fs::remove_file(directory.path().join("library/old.flac")).unwrap();
-    assert!(
-        database
-            .prepare_song_identity_repair(old, 1, canonical, 1)
-            .is_err()
-    );
+    assert!(database
+        .prepare_song_identity_repair(old, 1, canonical, 1)
+        .is_err());
 }
 
 #[cfg(unix)]
@@ -263,9 +249,7 @@ fn repair_never_reads_audio_through_a_symlink_outside_the_root() {
     let outside = directory.path().join("outside.flac");
     std::fs::rename(&old_path, &outside).unwrap();
     std::os::unix::fs::symlink(&outside, &old_path).unwrap();
-    assert!(
-        database
-            .prepare_song_identity_repair(old, 1, canonical, 1)
-            .is_err()
-    );
+    assert!(database
+        .prepare_song_identity_repair(old, 1, canonical, 1)
+        .is_err());
 }

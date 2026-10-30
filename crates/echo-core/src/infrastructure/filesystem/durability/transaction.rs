@@ -1,9 +1,9 @@
 //! Authoritative commit publication under the control plane's writer guard.
 use super::assets::validate_resource;
 use super::{
-    DocumentKind, Hook, LIMIT, MAX_ACTIVE, Marker, ValidationCache, WINDOW, WriteSessionState,
     begin_edit, checkpoint, decode, invalid, io, manifest, outcome, portable, read_operation,
-    relative, write_checkpoint,
+    relative, write_checkpoint, DocumentKind, Hook, Marker, ValidationCache, WriteSessionState,
+    LIMIT, MAX_ACTIVE, WINDOW,
 };
 use crate::domain::ids::LibraryRootId;
 use crate::domain::library::durability::{

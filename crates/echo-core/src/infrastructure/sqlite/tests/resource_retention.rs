@@ -15,7 +15,9 @@ fn declaration(bytes: &[u8]) -> SharedResourceManifest {
 
 #[test]
 fn pending_import_declarations_and_receipts_survive_catalog_deletion_and_restart() {
-    let (directory, database, root) = database();
+    // Resource declarations are owned by pending sync mutations, so the root
+    // must be enrolled (SYN-R06-S04).
+    let (directory, database, root) = sync_database();
     let song = song(root, "media/history.flac", "History", "Artist");
     let manifest = declaration(b"offline import");
     database
@@ -27,12 +29,10 @@ fn pending_import_declarations_and_receipts_survive_catalog_deletion_and_restart
         .with_tx(Box::new(move |tx| tx.delete_song(id)))
         .unwrap();
     assert!(SongRepository::by_id(&database, id).unwrap().is_none());
-    assert!(
-        database
-            .local_sync_resource_manifests(root)
-            .unwrap()
-            .contains(&manifest)
-    );
+    assert!(database
+        .local_sync_resource_manifests(root)
+        .unwrap()
+        .contains(&manifest));
     database.rebuild_resource_holds(root).unwrap();
     let expected = manifest.digest.as_bytes();
     database.with_reader(|connection| {
@@ -61,7 +61,7 @@ fn pending_import_declarations_and_receipts_survive_catalog_deletion_and_restart
 
 #[test]
 fn failed_owner_reconstruction_keeps_the_previous_holds_and_blocks_the_caller() {
-    let (_directory, database, root) = database();
+    let (_directory, database, root) = sync_database();
     let song = song(root, "media/history.flac", "History", "Artist");
     let manifest = declaration(b"offline import");
     database
@@ -100,7 +100,7 @@ fn held(database: &SqliteDatabase, root: LibraryRootId) -> Vec<Vec<u8>> {
 #[allow(clippy::too_many_lines)]
 fn resource_retention_directory_replay_survives_compaction_and_context_cleanup_without_echo() {
     use crate::application::ports::{
-        ControlPlanePort, LibraryDurabilityPort, LibraryProjectionPort,
+        ControlPlanePort, LibraryAssetPort, LibraryDurabilityPort, LibraryProjectionPort,
     };
     use crate::domain::library::durability::{
         ChangeOrigin, DurableResource, DurableStateChange, LibraryBatch, StateKind,

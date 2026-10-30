@@ -1,11 +1,11 @@
 //! Host-local conflict recovery; no historical structural payload is replayed.
 
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
-use super::super::SqliteDatabase;
 use super::super::support::{now_ms, storage};
+use super::super::SqliteDatabase;
 use crate::application::ports::{
     HostSyncConflictPort, SyncConflictRecovery, SyncConflictResolution, SyncConflictView,
 };

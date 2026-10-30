@@ -2,9 +2,9 @@
 # ----------------------------------------------------------------------
 scenario_id: LE-R21-S03
 requirement: 收藏与批量操作以音乐库持久结果为反馈
-scenario: 批量收藏部分已保存
+scenario: 收藏未保存
 layer: automated
-command: "cargo test -p echo-desktop --all-features set_favorite_returns_the_committed_authoritative_song"
+command: "cargo test -p echo-core --all-features library_durability_refused_commit_leaves_every_wired_entrypoint_untouched"
 
 # Normal path + critical failure path are proven by the automated test the
 # command runs; this manifest records what that test covers.

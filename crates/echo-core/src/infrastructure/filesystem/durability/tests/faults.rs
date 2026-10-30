@@ -10,7 +10,7 @@ fn seed() -> (
     String,
 ) {
     let (dir, registry, root, library, plane) = fixture();
-    let hash = LibraryDurabilityPort::write_asset(&plane, root, b"unique bytes retained").unwrap();
+    let hash = LibraryAssetPort::write_asset(&plane, root, b"unique bytes retained").unwrap();
     for i in 0..3 {
         let mut batch = batch(library, uuid::Uuid::from_u128(100), &format!("value {i}"));
         batch.state.push(DurableStateChange::new(
@@ -44,11 +44,9 @@ fn library_durability_every_compaction_boundary_keeps_snapshot_and_unique_resour
         },
     )
     .unwrap();
-    assert!(
-        trace
-            .iter()
-            .any(|(phase, _)| phase == "coverage:directory_sync")
-    );
+    assert!(trace
+        .iter()
+        .any(|(phase, _)| phase == "coverage:directory_sync"));
     assert!(trace.iter().any(|(phase, _)| phase == "gc:remove"));
     for required in [
         "snapshot:file_sync",
@@ -68,20 +66,22 @@ fn library_durability_every_compaction_boundary_keeps_snapshot_and_unique_resour
     for (stop, boundary) in trace.iter().enumerate() {
         let (dir, registry, root, _, replay, hash) = seed();
         let mut counter = 0;
-        assert!(
-            checkpoint::compact(
-                &registry,
-                &ValidationCache::default(),
-                root,
-                &replay,
-                &mut |_, _| {
-                    let fail_here = counter == stop;
-                    counter += 1;
-                    if fail_here { Err(fail()) } else { Ok(()) }
+        assert!(checkpoint::compact(
+            &registry,
+            &ValidationCache::default(),
+            root,
+            &replay,
+            &mut |_, _| {
+                let fail_here = counter == stop;
+                counter += 1;
+                if fail_here {
+                    Err(fail())
+                } else {
+                    Ok(())
                 }
-            )
-            .is_err()
-        );
+            }
+        )
+        .is_err());
         let restored = recover(&registry, root)
             .unwrap_or_else(|e| panic!("boundary {stop} {boundary:?}: {e}"));
         assert_eq!(restored.head().unwrap().0, 3);
@@ -120,14 +120,12 @@ fn library_durability_corrupt_coverage_anchor_is_preserved_and_blocks_writes() {
     let corrupt = serde_json::to_vec(&value).unwrap();
     std::fs::write(&path, &corrupt).unwrap();
     assert!(recover(&registry, root).is_err());
-    assert!(
-        commit(
-            &registry,
-            root,
-            &batch(library, uuid::Uuid::new_v4(), "blocked")
-        )
-        .is_err()
-    );
+    assert!(commit(
+        &registry,
+        root,
+        &batch(library, uuid::Uuid::new_v4(), "blocked")
+    )
+    .is_err());
     assert_eq!(std::fs::read(path).unwrap(), corrupt);
 }
 
@@ -150,14 +148,12 @@ fn library_durability_symlink_unknown_format_and_invalid_resource_fail_before_ma
     .unwrap();
     assert!(LibraryDurabilityPort::commit(&plane, root, &change).is_err());
     assert!(!marker_present(dir.path(), change.operation_id));
-    assert!(
-        registry
-            .resolve_relative(
-                root,
-                &crate::domain::ids::RelativeMediaPath::new("echo/assets/x").unwrap()
-            )
-            .is_ok()
-    );
+    assert!(registry
+        .resolve_relative(
+            root,
+            &crate::domain::ids::RelativeMediaPath::new("echo/assets/x").unwrap()
+        )
+        .is_ok());
 }
 
 #[test]
@@ -371,11 +367,9 @@ fn library_durability_compact_typed_tombstones_allow_reused_playlist_name() {
         PlaylistRepository::list(&old, root).unwrap(),
         vec![PlaylistId::from_uuid(new_id)]
     );
-    assert!(
-        read_operation(&registry, root, deletion.operation_id)
-            .unwrap()
-            .is_some()
-    );
+    assert!(read_operation(&registry, root, deletion.operation_id)
+        .unwrap()
+        .is_some());
 }
 
 #[test]

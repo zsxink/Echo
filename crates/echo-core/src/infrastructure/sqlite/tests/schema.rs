@@ -10,6 +10,25 @@ fn database() -> (tempfile::TempDir, SqliteDatabase, LibraryRootId) {
     (directory, database, root)
 }
 
+/// Same as [`database`], but the root is enrolled in LAN sync. Only a bound
+/// root produces sync facts; a standalone library keeps no protocol state
+/// (SYN-R06-S04, "单机编辑不创建同步候选").
+fn sync_database() -> (tempfile::TempDir, SqliteDatabase, LibraryRootId) {
+    let (directory, database, root) = database();
+    database
+        .bind_sync_library(
+            crate::domain::sync::SyncBinding {
+                library_id: crate::domain::sync::LibraryId::new(),
+                authority_id: crate::domain::sync::AuthorityId::new(),
+                epoch: crate::domain::sync::Epoch::INITIAL,
+            },
+            true,
+            root,
+        )
+        .expect("bind sync library");
+    (directory, database, root)
+}
+
 fn song(root: LibraryRootId, path: &str, title: &str, artist: &str) -> Song {
     let mut song = Song::new(
         SongId::new(),
@@ -105,7 +124,7 @@ fn sync_payloads_carry_no_absolute_paths() {
     // 3.13 / sync-foundation R04: outbox payloads are the future syncable
     // carrier — they must carry only object UUIDs, root-relative paths and
     // fields, never the library root's absolute path or any machine-local path.
-    let (directory, database, root) = database();
+    let (directory, database, root) = sync_database();
     let imported = song(root, "歌手/歌 - 甲.flac", "歌", "歌手");
     SongRepository::upsert(&database, &imported).expect("upsert");
     let library_abs = directory.path().to_string_lossy().to_string();
@@ -143,7 +162,7 @@ fn sync_foundation_tables_are_ready_but_inert() {
     // 方向 A (3.10–3.14): the sync-foundation schema is *shape-ready* — the
     // tables exist, `schema_base='full'` is recorded — but nothing in 0.1.0
     // pushes or reads them remotely. Offline boundary stays.
-    let (_directory, database, root) = database();
+    let (_directory, database, root) = sync_database();
     let base: String = database
         .sync_state_load("schema_base")
         .expect("read sync state")
@@ -166,7 +185,7 @@ fn sync_foundation_prewrites_song_playlist_and_tombstone() {
     // 3.11 / 3.12: the five logic-change classes produce outbox rows (+revision)
     // and Echo deletion writes a tombstone, inside the same transaction. 0.1.0
     // keeps these local (nothing pushes); this test proves the *shape*.
-    let (_directory, database, root) = database();
+    let (_directory, database, root) = sync_database();
     let imported = song(root, "歌手/歌 - 甲.flac", "歌", "歌手");
     SongRepository::upsert(&database, &imported).expect("upsert");
 
@@ -269,7 +288,7 @@ fn outbox_latest_payload(database: &SqliteDatabase, kind: &str, uuid: &str) -> S
 /// not alter the song object's media-metadata history.
 #[test]
 fn sync_object_revisions_are_monotone_and_payloads_are_full() {
-    let (_directory, database, root) = database();
+    let (_directory, database, root) = sync_database();
     let imported = song(root, "歌手/歌 - 甲.flac", "歌", "歌手");
     SongRepository::upsert(&database, &imported).expect("upsert");
     let id = imported.id().to_string();
@@ -330,7 +349,7 @@ fn sync_object_revisions_are_monotone_and_payloads_are_full() {
 /// unavailable volume cannot make another device hide or delete its copy.
 #[test]
 fn local_availability_change_does_not_create_a_sync_fact() {
-    let (_directory, database, root) = database();
+    let (_directory, database, root) = sync_database();
     let imported = song(root, "歌手/歌 - 甲.flac", "歌", "歌手");
     SongRepository::upsert(&database, &imported).expect("upsert");
     let id = imported.id().to_string();
@@ -348,7 +367,7 @@ fn local_availability_change_does_not_create_a_sync_fact() {
 /// single-writer actor) never interleave or produce duplicate revisions.
 #[test]
 fn sync_concurrent_sequential_submissions_stay_monotone() {
-    let (_directory, database, root) = database();
+    let (_directory, database, root) = sync_database();
     let imported = song(root, "歌手/歌 - 甲.flac", "歌", "歌手");
     SongRepository::upsert(&database, &imported).expect("upsert");
     let id = imported.id();

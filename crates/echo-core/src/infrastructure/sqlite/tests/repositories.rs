@@ -509,6 +509,20 @@ fn scan_pipeline_persists_songs_lyrics_covers_and_progress() {
 #[test]
 fn sqlite_scan_reparsing_unchanged_song_does_not_create_a_candidate() {
     let stack = ScanStack::new();
+    // Only an enrolled root captures scan facts as sync candidates
+    // (SYN-R06-S04); this test measures candidate dedup.
+    stack
+        .database
+        .bind_sync_library(
+            crate::domain::sync::SyncBinding {
+                library_id: crate::domain::sync::LibraryId::new(),
+                authority_id: crate::domain::sync::AuthorityId::new(),
+                epoch: crate::domain::sync::Epoch::INITIAL,
+            },
+            true,
+            stack.root,
+        )
+        .expect("bind sync library");
     stack.write("same.mp3", b"unchanged-audio");
     stack.probe.set(
         "same.mp3",

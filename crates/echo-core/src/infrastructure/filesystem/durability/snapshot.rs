@@ -1,10 +1,10 @@
 //! Content-addressed snapshot leaves keep durable roots independent of history.
 //! Only obsolete leaves are collected; user resources and operation receipts stay held.
-use super::{Hook, LIMIT, decode, invalid, io, portable, verified_files};
+use super::{decode, invalid, io, portable, verified_files, Hook, LIMIT};
 use crate::domain::ids::LibraryRootId;
 use crate::error::Error;
 use crate::infrastructure::filesystem::RootRegistry;
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 const DIRECTORY: &str = "echo/state/checkpoint-chunks";

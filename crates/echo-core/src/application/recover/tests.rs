@@ -385,13 +385,18 @@ impl crate::application::ports::ControlPlanePort for CrashControlPlane {
     }
 }
 
-impl crate::application::ports::LibraryDurabilityPort for CrashControlPlane {
+impl crate::application::ports::LibraryAssetPort for CrashControlPlane {
     fn write_asset(&self, root: LibraryRootId, bytes: &[u8]) -> Result<String, Error> {
         self.inner.write_asset(root, bytes)
     }
     fn read_asset(&self, root: LibraryRootId, hash: &str) -> Result<Option<Vec<u8>>, Error> {
         self.inner.read_asset(root, hash)
     }
+}
+
+impl crate::application::ports::LibraryWriteSessionPort for CrashControlPlane {}
+
+impl crate::application::ports::LibraryDurabilityPort for CrashControlPlane {
     fn commit(
         &self,
         root: LibraryRootId,

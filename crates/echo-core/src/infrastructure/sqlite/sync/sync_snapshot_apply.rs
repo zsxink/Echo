@@ -1,6 +1,6 @@
 //! Crash safe enrollment from a fixed host snapshot.
 
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
 use crate::application::ports::{
     AppliedSnapshotPage, HostSnapshotRecord, ReplicaSnapshotApplyPort, ReplicaSnapshotPage,
@@ -9,8 +9,8 @@ use crate::domain::sync::{DeviceId, SharedResourceKind, SharedResourceManifest, 
 use crate::error::Error;
 
 use super::super::{
-    SqliteDatabase,
     support::{now_ms, storage},
+    SqliteDatabase,
 };
 use super::apply::object_identity;
 use super::snapshot::MAX_PAGE_BYTES;

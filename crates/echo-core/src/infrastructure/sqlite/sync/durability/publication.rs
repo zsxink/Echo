@@ -4,16 +4,16 @@ use crate::application::ports::{LibraryDurabilityPort, RemoteCommit};
 use crate::domain::{
     ids::LibraryRootId,
     library::{
-        LibraryId,
         durability::{
             ChangeOrigin, CommitStatus, DurableStateChange, LibraryBatch, StateKey, StateNamespace,
         },
+        LibraryId,
     },
     sync::CommitCheckpoint,
 };
 use crate::error::Error;
 use crate::infrastructure::sqlite::support::storage;
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use serde_json::Value;
 
 // The full exporter and the focused capture retain exactly the same after-image.

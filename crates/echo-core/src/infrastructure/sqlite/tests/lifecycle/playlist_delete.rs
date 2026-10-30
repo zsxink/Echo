@@ -1,50 +1,8 @@
 //! A playlist cascade is saved as one set before the ordered SQL projection.
 use super::*;
 use crate::application::ports::LibraryProjectionPort;
-use crate::domain::library::durability::{ChangeOrigin, LibraryBatch};
-use crate::domain::library::durability::{
-    FrozenMutation, LibraryReplay, MutationOperation, StateTarget,
-};
+use crate::domain::library::durability::{ChangeOrigin, LibraryBatch, LibraryReplay};
 use crate::domain::library::{HybridLogicalClock, PlaylistItemRecord, PortableRecordEnvelope};
-
-fn frozen_mutations(replay: &LibraryReplay) -> Vec<FrozenMutation> {
-    replay
-        .states()
-        .filter(|state| {
-            matches!(
-                state.key.as_ref().map(|key| &key.target),
-                Some(StateTarget::Mutation { .. })
-            )
-        })
-        .map(|state| serde_json::from_value(state.payload["frozen"].clone()).unwrap())
-        .collect()
-}
-
-fn assert_delete_chain(
-    replay: &LibraryReplay,
-    playlist: crate::domain::ids::PlaylistId,
-    member: crate::domain::ids::PlaylistItemId,
-) {
-    use crate::domain::sync::ObjectKey;
-    let frozen = frozen_mutations(replay);
-    assert_eq!(frozen.len(), 3);
-    for (index, object) in [
-        (1, ObjectKey::PlaylistItem(member)),
-        (2, ObjectKey::Playlist(playlist)),
-    ] {
-        assert_eq!(frozen[index].operation, MutationOperation::Delete);
-        assert_eq!(frozen[index].candidate.object, object);
-        assert_eq!(frozen[index].candidate.origin_seq, index as u64 + 1);
-        assert_eq!(
-            frozen[index].candidate.previous_mutation_id,
-            Some(frozen[index - 1].candidate.mutation_id)
-        );
-        assert_eq!(
-            frozen[index].candidate.payload,
-            serde_json::json!({"tombstone":true})
-        );
-    }
-}
 
 fn assert_fresh_projection(
     stack: &ScanStack,
@@ -142,8 +100,10 @@ fn library_durability_playlist_delete_saves_cascade_before_projection() {
     ] {
         assert!(saved.records.iter().any(|envelope| matches!(envelope.record(), PortableRecord::Tombstone(t) if t.deleted_kind == kind && t.object_uuid == id)));
     }
-    assert_eq!(saved.state.len(), 4);
-    assert_delete_chain(&replay, playlist, member);
+    assert!(
+        saved.state.is_empty(),
+        "a standalone cascade delete retains no sync protocol state (SYN-R06-S04)"
+    );
     stack
         .database
         .writer
@@ -154,12 +114,6 @@ fn library_durability_playlist_delete_saves_cascade_before_projection() {
         .unwrap();
     edits.create_playlist(stack.root, "later edit").unwrap();
     let replay = control.durability().unwrap().recover(stack.root).unwrap();
-    let frozen = frozen_mutations(&replay);
-    assert_eq!(frozen[3].candidate.origin_seq, 4);
-    assert_eq!(
-        frozen[3].candidate.previous_mutation_id,
-        Some(frozen[2].candidate.mutation_id)
-    );
     assert_fresh_projection(&stack, &replay, playlist);
     assert!(deps.playlists.name(playlist).unwrap().is_none());
     for _ in 0..2 {

@@ -92,12 +92,10 @@ fn library_durability_confirmed_export_missing_ledger_preserves_v1_bytes() {
     let mut states = f.db.with_reader(|c| export_sync_state(c, f.b)).unwrap();
     let before = serde_json::to_string(&states).unwrap();
     assert!(states.iter().all(|s| s.kind != StateKind::SyncLedger));
-    assert!(
-        states
-            .iter()
-            .filter(|s| s.kind == StateKind::Confirmed)
-            .all(|s| s.payload["schema"] == "echo.sync.confirmed.v1")
-    );
+    assert!(states
+        .iter()
+        .filter(|s| s.kind == StateKind::Confirmed)
+        .all(|s| s.payload["schema"] == "echo.sync.confirmed.v1"));
     complete_confirmations(&mut states).unwrap();
     assert_eq!(serde_json::to_string(&states).unwrap(), before);
 }
@@ -148,11 +146,9 @@ fn library_durability_confirmed_export_keeps_real_host_typed_song_alias() {
         json!([{"kind":"song","alias":{"alias":alias,"canonical":canonical}}])
     );
     confirmed.validate().unwrap();
-    assert!(
-        states
-            .iter()
-            .any(|s| s.payload["schema"] == "echo.sync.song-alias.v1"
-                && s.payload["alias"] == json!(alias)
-                && s.payload["canonical"] == json!(canonical))
-    );
+    assert!(states
+        .iter()
+        .any(|s| s.payload["schema"] == "echo.sync.song-alias.v1"
+            && s.payload["alias"] == json!(alias)
+            && s.payload["canonical"] == json!(canonical)));
 }

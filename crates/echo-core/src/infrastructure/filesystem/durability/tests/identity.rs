@@ -1,6 +1,6 @@
 //! Local directory ownership is independent of preserved sync binding evidence.
 use super::*;
-use crate::domain::library::{PortableSyncMetadata, durability::ProjectionUnresolvedReason};
+use crate::domain::library::{durability::ProjectionUnresolvedReason, PortableSyncMetadata};
 use crate::domain::sync::{AuthorityId, Epoch, ObjectVersion, SyncBinding};
 use crate::infrastructure::sqlite::SqliteDatabase;
 
@@ -108,12 +108,10 @@ fn library_durability_distinct_directory_and_sync_ids_survive_recovery_and_fresh
     let status = database.projection_status(root).unwrap();
     assert_eq!(status.applied_library_commit_seq, first.library_commit_seq);
     assert_eq!(status.unresolved.len(), 2);
-    assert!(
-        status
-            .unresolved
-            .iter()
-            .all(|record| { record.reason == ProjectionUnresolvedReason::RequiresStateRecovery })
-    );
+    assert!(status
+        .unresolved
+        .iter()
+        .all(|record| { record.reason == ProjectionUnresolvedReason::RequiresStateRecovery }));
     // Restoring old private evidence never installs credentials, a live binding,
     // or new upload candidates in the independently rebuilt database.
     let connection = rusqlite::Connection::open(&database_path).unwrap();

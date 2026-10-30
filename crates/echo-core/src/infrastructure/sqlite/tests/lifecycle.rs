@@ -107,12 +107,11 @@ fn library_durability_later_edit_catches_up_failed_earlier_playlist() {
         .records[0]
         .record()
         .object_uuid();
-    assert!(
-        deps.playlists
-            .name(crate::domain::ids::PlaylistId::from_uuid(first))
-            .unwrap()
-            .is_none()
-    );
+    assert!(deps
+        .playlists
+        .name(crate::domain::ids::PlaylistId::from_uuid(first))
+        .unwrap()
+        .is_none());
     stack
         .database
         .writer
@@ -140,8 +139,7 @@ fn library_durability_later_edit_catches_up_failed_earlier_playlist() {
 }
 
 #[test]
-fn library_durability_local_playlist_preserves_allocations_without_send_authority() {
-    use crate::domain::library::durability::{FrozenMutation, StateNamespace, StateTarget};
+fn library_durability_standalone_playlist_keeps_no_sync_allocations() {
     let stack = ScanStack::new();
     let (_, control, deps) = configured_roots(&stack);
     let edits = DurableLibraryEdits {
@@ -158,49 +156,25 @@ fn library_durability_local_playlist_preserves_allocations_without_send_authorit
         .create_playlist(stack.root, "second allocation")
         .unwrap();
     let replay = control.durability().unwrap().recover(stack.root).unwrap();
-    let frozen: Vec<FrozenMutation> = replay
-        .commits
-        .iter()
-        .flat_map(|commit| &commit.batch.state)
-        .filter(|state| {
-            matches!(
-                state.key.as_ref().map(|key| &key.target),
-                Some(StateTarget::Mutation { .. })
-            )
-        })
-        .map(|state| {
-            assert!(matches!(
-                state.key.as_ref().unwrap().namespace,
-                StateNamespace::LocalUnbound { .. }
-            ));
-            serde_json::from_value(state.payload["frozen"].clone()).unwrap()
-        })
-        .collect();
-    assert_eq!(frozen.len(), 2);
-    assert_eq!(frozen[0].candidate.origin_seq, 1);
-    assert_eq!(frozen[1].candidate.origin_seq, 2);
+    assert_eq!(replay.commits.len(), 2);
     assert_eq!(
-        frozen[1].candidate.previous_mutation_id,
-        Some(frozen[0].candidate.mutation_id)
+        replay.commits[0].batch.records[0].record().object_uuid(),
+        first.as_uuid()
     );
     assert_eq!(
-        frozen[0].candidate.object,
-        crate::domain::sync::ObjectKey::Playlist(first)
+        replay.commits[1].batch.records[0].record().object_uuid(),
+        second.as_uuid()
     );
-    assert_eq!(
-        frozen[1].candidate.object,
-        crate::domain::sync::ObjectKey::Playlist(second)
+    // A standalone root has no sync context, so its local edits retain no
+    // allocation or protocol evidence at all (SYN-R06-S04).
+    assert!(
+        replay.states().next().is_none(),
+        "standalone playlist edits must not retain sync protocol state"
     );
     for commit in &replay.commits {
-        let record = commit.batch.records[0].record();
-        let PortableRecord::Playlist(record) = record else {
+        let PortableRecord::Playlist(record) = commit.batch.records[0].record() else {
             panic!("playlist expected")
         };
-        let mutation = &frozen[usize::try_from(commit.library_commit_seq - 1).unwrap()];
-        assert_eq!(
-            record.created_at,
-            mutation.candidate.payload["created_at"].as_u64()
-        );
         let projected_created_at: u64 = stack
             .database
             .with_reader(|connection| {
@@ -219,25 +193,33 @@ fn library_durability_local_playlist_preserves_allocations_without_send_authorit
         .database
         .writer
         .run(move |connection| {
-            let allocated: u64 = connection
+            let cursors: u64 = connection
                 .query_row(
-                    "SELECT origin_seq FROM sync_local_origin_cursors WHERE local_root_uuid=?1",
+                    "SELECT COUNT(*) FROM sync_local_origin_cursors WHERE local_root_uuid=?1",
                     [stack.root.to_string()],
                     |row| row.get(0),
                 )
                 .map_err(storage)?;
-            assert_eq!(allocated, 2);
+            assert_eq!(cursors, 0, "a standalone root reserves no origin sequence");
             let queued: u64 = connection
                 .query_row("SELECT COUNT(*) FROM sync_mutations", [], |row| row.get(0))
                 .map_err(storage)?;
-            assert_eq!(queued, 0, "unbound recovery must not authorize sending");
+            assert_eq!(queued, 0, "standalone recovery must not authorize sending");
+            let evidence: u64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM library_recovery_records WHERE library_root_uuid=?1 AND row_kind='state'",
+                    [stack.root.to_string()],
+                    |row| row.get(0),
+                )
+                .map_err(storage)?;
+            assert_eq!(evidence, 0, "standalone edits retain no protocol evidence");
             Ok(())
         })
         .unwrap();
 }
 
 #[test]
-fn library_durability_complete_local_allocation_is_not_an_unresolved_send_request() {
+fn library_durability_standalone_edit_retains_no_unresolved_sync_request() {
     use crate::application::ports::LibraryProjectionPort;
     let stack = ScanStack::new();
     let (_, control, deps) = configured_roots(&stack);
@@ -248,13 +230,13 @@ fn library_durability_complete_local_allocation_is_not_an_unresolved_send_reques
         unit: deps.uow.as_ref(),
         device: deps.device_id.current_device_id(),
     }
-    .create_playlist(stack.root, "local evidence retained")
+    .create_playlist(stack.root, "standalone edit")
     .unwrap();
     let evidence = stack.database.read_recovery_records(stack.root).unwrap();
-    assert_eq!(evidence.state.len(), 2);
-    for state in &evidence.state {
-        state.validate().unwrap();
-    }
+    assert!(
+        evidence.state.is_empty(),
+        "a standalone edit retains no sync protocol evidence (SYN-R06-S04)"
+    );
     let status = stack.database.projection_status(stack.root).unwrap();
     assert!(status.unresolved.is_empty(), "{status:?}");
     let replay = control.durability().unwrap().recover(stack.root).unwrap();
@@ -263,22 +245,16 @@ fn library_durability_complete_local_allocation_is_not_an_unresolved_send_reques
         .project_library_commits(stack.root, &replay)
         .unwrap();
     assert_eq!(
-        stack
-            .database
-            .read_recovery_records(stack.root)
-            .unwrap()
-            .state,
-        evidence.state,
-        "resolved local evidence must remain available for recovery"
+        stack.database.read_recovery_records(stack.root).unwrap(),
+        evidence,
+        "repeated projection keeps the retained evidence stable"
     );
-    assert!(
-        stack
-            .database
-            .projection_status(stack.root)
-            .unwrap()
-            .unresolved
-            .is_empty()
-    );
+    assert!(stack
+        .database
+        .projection_status(stack.root)
+        .unwrap()
+        .unresolved
+        .is_empty());
     let queued: u64 = stack
         .database
         .with_reader(|connection| {
@@ -291,54 +267,187 @@ fn library_durability_complete_local_allocation_is_not_an_unresolved_send_reques
                 .map_err(storage)
         })
         .unwrap();
-    assert_eq!(queued, 0, "local evidence must not grant send authority");
+    assert_eq!(queued, 0, "a standalone edit must not grant send authority");
 }
 
+/// PLL-R07-S09: an unresolved reference stays exactly as saved and is
+/// reported. The projection never repairs it by inventing a missing parent or
+/// adopting an identity that belongs to another root.
+#[allow(clippy::too_many_lines)] // One end-to-end unresolved-reference scenario from save to late arrival.
 #[test]
 fn library_durability_incomplete_or_foreign_local_allocation_stays_unresolved() {
     use crate::application::ports::LibraryProjectionPort;
-    for missing in ["pending", "pending_disposition", "local_author"] {
-        let stack = ScanStack::new();
-        let (_, control, deps) = configured_roots(&stack);
-        DurableLibraryEdits {
-            control: deps.control.as_ref(),
-            songs: deps.songs.as_ref(),
-            playlists: deps.playlists.as_ref(),
-            unit: deps.uow.as_ref(),
-            device: deps.device_id.current_device_id(),
-        }
-        .create_playlist(stack.root, "incomplete local evidence")
-        .unwrap();
-        stack.database.writer.run(move |connection| {
-            if missing == "local_author" {
-                connection.execute("UPDATE device_state SET value=?1 WHERE key='device_id'", [uuid::Uuid::new_v4().to_string()]).map_err(storage)?;
-            } else {
-                connection.execute("DELETE FROM library_recovery_records WHERE row_kind='state' AND json_extract(envelope_json,'$.kind')=?1", [missing]).map_err(storage)?;
-            }
-            Ok(())
-        }).unwrap();
-        let before = stack.database.read_recovery_records(stack.root).unwrap();
-        let replay = control.durability().unwrap().recover(stack.root).unwrap();
-        stack
-            .database
-            .project_library_commits(stack.root, &replay)
-            .unwrap();
-        let status = stack.database.projection_status(stack.root).unwrap();
-        assert!(!status.unresolved.is_empty(), "{missing}");
-        assert_eq!(
-            stack.database.read_recovery_records(stack.root).unwrap(),
-            before
-        );
-        let queued: u64 = stack
-            .database
-            .with_reader(|connection| {
-                connection
-                    .query_row("SELECT COUNT(*) FROM sync_mutations", [], |row| row.get(0))
-                    .map_err(storage)
-            })
-            .unwrap();
-        assert_eq!(queued, 0, "{missing}");
+    use crate::domain::ids::PlaylistItemId;
+    use crate::domain::library::durability::{
+        ChangeOrigin, LibraryBatch, ProjectionTarget, ProjectionUnresolvedReason,
+    };
+    use crate::domain::library::{
+        HybridLogicalClock, LibraryRelativePath, PlaylistItemRecord, PortableRecordEnvelope,
+        SongRecord,
+    };
+    use crate::domain::sync::ObjectKey;
+
+    let stack = ScanStack::new();
+    let (candidate, control, deps) = configured_roots(&stack);
+    let playlist = DurableLibraryEdits {
+        control: deps.control.as_ref(),
+        songs: deps.songs.as_ref(),
+        playlists: deps.playlists.as_ref(),
+        unit: deps.uow.as_ref(),
+        device: deps.device_id.current_device_id(),
     }
+    .create_playlist(stack.root, "unresolved references")
+    .unwrap();
+    let library = control
+        .read_manifest(stack.root)
+        .unwrap()
+        .unwrap()
+        .library_id;
+
+    // The foreign identity lives under another registered root, so this root
+    // can never adopt it.
+    let foreign = song(candidate, "media/foreign.flac", "Foreign", "artist");
+    SongRepository::upsert(stack.database.as_ref(), &foreign).unwrap();
+    let missing_song = SongId::new();
+    let missing_member = PlaylistItemId::new();
+    let foreign_member = PlaylistItemId::new();
+    let item = |member: PlaylistItemId, song: SongId, position: u64| {
+        PortableRecord::PlaylistItem(PlaylistItemRecord {
+            item_uuid: member.as_uuid(),
+            playlist_uuid: playlist.as_uuid(),
+            song_uuid: song.as_uuid(),
+            position,
+            added_at: Some(7),
+            revision: Revision::from_u64(1),
+            hlc: HybridLogicalClock::new(1, 0),
+            updated_by_device_id: deps.device_id.current_device_id(),
+        })
+    };
+    let missing_item = item(missing_member, missing_song, 0);
+    let foreign_item = item(foreign_member, foreign.id(), 1);
+    control
+        .durability()
+        .unwrap()
+        .commit(
+            stack.root,
+            &LibraryBatch::new(
+                uuid::Uuid::new_v4(),
+                library,
+                ChangeOrigin::LocalEdit,
+                vec![
+                    PortableRecordEnvelope::new(missing_item.clone(), None).unwrap(),
+                    PortableRecordEnvelope::new(foreign_item.clone(), None).unwrap(),
+                ],
+            ),
+        )
+        .unwrap();
+    let mut replay = control.durability().unwrap().recover(stack.root).unwrap();
+    stack
+        .database
+        .project_library_commits(stack.root, &replay)
+        .unwrap();
+    // Nothing was invented: neither member reached the visible playlist.
+    assert!(deps.playlists.members(playlist).unwrap().is_empty());
+    let retained = stack.database.read_recovery_records(stack.root).unwrap();
+    for record in [&missing_item, &foreign_item] {
+        let saved = retained
+            .records
+            .iter()
+            .find(|envelope| envelope.record().object_uuid() == record.object_uuid())
+            .expect("the saved record must stay retained");
+        assert_eq!(saved.record(), record);
+    }
+    let status = stack.database.projection_status(stack.root).unwrap();
+    for (member, reason) in [
+        (missing_member, ProjectionUnresolvedReason::MissingSong),
+        (foreign_member, ProjectionUnresolvedReason::IdentityConflict),
+    ] {
+        assert!(
+            status.unresolved.iter().any(|entry| matches!(
+                &entry.target,
+                ProjectionTarget::Record {
+                    object: ObjectKey::PlaylistItem(id)
+                } if *id == member
+            ) && entry.reason == reason),
+            "{member:?}: {status:?}"
+        );
+    }
+    let queued: u64 = stack
+        .database
+        .with_reader(|connection| {
+            connection
+                .query_row(
+                    "SELECT (SELECT COUNT(*) FROM sync_mutations) + (SELECT COUNT(*) FROM sync_outbox)",
+                    [],
+                    |row| row.get(0),
+                )
+                .map_err(storage)
+        })
+        .unwrap();
+    assert_eq!(
+        queued, 0,
+        "an unresolved reference grants no send authority"
+    );
+
+    // Delivering the missing song resolves only its member: the saved identity
+    // and position project as-is, while the foreign reference keeps waiting
+    // instead of being adopted.
+    let arrived = PortableRecord::Song(SongRecord {
+        song_uuid: missing_song.as_uuid(),
+        media_path: LibraryRelativePath::new("media/arrived.flac").unwrap(),
+        content_hash: blake3::hash(b"arrived").to_hex().to_string(),
+        added_at: 5,
+        title: Some("Arrived later".into()),
+        artist: None,
+        album: None,
+        revision: Revision::from_u64(1),
+        hlc: HybridLogicalClock::new(2, 0),
+        updated_by_device_id: deps.device_id.current_device_id(),
+    });
+    control
+        .durability()
+        .unwrap()
+        .commit(
+            stack.root,
+            &LibraryBatch::new(
+                uuid::Uuid::new_v4(),
+                library,
+                ChangeOrigin::Scan,
+                vec![PortableRecordEnvelope::new(arrived, None).unwrap()],
+            ),
+        )
+        .unwrap();
+    replay = control.durability().unwrap().recover(stack.root).unwrap();
+    stack
+        .database
+        .project_library_commits(stack.root, &replay)
+        .unwrap();
+    let members = deps.playlists.members(playlist).unwrap();
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0].id().as_uuid(), missing_member.as_uuid());
+    assert_eq!(members[0].position(), 0);
+    let status = stack.database.projection_status(stack.root).unwrap();
+    assert!(
+        status.unresolved.iter().all(|entry| !matches!(
+            &entry.target,
+            ProjectionTarget::Record {
+                object: ObjectKey::PlaylistItem(id)
+            } if *id == missing_member
+        )),
+        "{status:?}"
+    );
+    assert!(
+        status.unresolved.iter().any(|entry| matches!(
+            (&entry.target, &entry.reason),
+            (
+                ProjectionTarget::Record {
+                    object: ObjectKey::PlaylistItem(id)
+                },
+                ProjectionUnresolvedReason::IdentityConflict
+            ) if *id == foreign_member
+        )),
+        "{status:?}"
+    );
 }
 
 #[test]
@@ -487,11 +596,9 @@ fn activation_sql_failure_rolls_back_root_and_epoch_then_reopens_real_writes() {
         &blockers,
     );
     let error = activate.activate(candidate).unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("injected activation epoch failure")
-    );
+    assert!(error
+        .to_string()
+        .contains("injected activation epoch failure"));
     assert_eq!(
         stack.database.active_root().unwrap().unwrap().id(),
         stack.root
@@ -529,22 +636,18 @@ fn activation_sql_failure_rolls_back_root_and_epoch_then_reopens_real_writes() {
         .unwrap()
     };
     let replay = control.durability().unwrap().recover(stack.root).unwrap();
-    assert!(
-        replay
-            .commits
-            .iter()
-            .flat_map(|commit| &commit.batch.records)
-            .any(|record| record.record().object_uuid() == playlist.as_uuid())
-    );
-    assert!(
-        control
-            .durability()
-            .unwrap()
-            .recover(candidate)
-            .unwrap()
-            .commits
-            .is_empty()
-    );
+    assert!(replay
+        .commits
+        .iter()
+        .flat_map(|commit| &commit.batch.records)
+        .any(|record| record.record().object_uuid() == playlist.as_uuid()));
+    assert!(control
+        .durability()
+        .unwrap()
+        .recover(candidate)
+        .unwrap()
+        .commits
+        .is_empty());
     let outcome = activate
         .activate(candidate)
         .expect("activation remains retryable");

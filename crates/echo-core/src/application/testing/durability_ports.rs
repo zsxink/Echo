@@ -1,7 +1,10 @@
 //! Scriptable port-boundary faults, independent from SQLite and filesystem IO.
 use std::sync::{Arc, Mutex};
 
-use crate::application::ports::{LibraryDurabilityPort, LibraryProjectionPort};
+use crate::application::ports::{
+    LibraryAssetPort, LibraryDurabilityPort, LibraryProjectionPort, LibraryProjectionVerifiedPort,
+    LibraryWriteSessionPort,
+};
 use crate::domain::ids::LibraryRootId;
 use crate::domain::library::durability::{
     CommitOutcome, LibraryBatch, LibraryCommit, LibraryProjectionStatus, LibraryRecoveryRecords,
@@ -60,7 +63,7 @@ impl FaultLibraryDurability {
     }
 }
 
-impl LibraryDurabilityPort for FaultLibraryDurability {
+impl LibraryAssetPort for FaultLibraryDurability {
     fn write_asset(&self, root: LibraryRootId, bytes: &[u8]) -> Result<String, Error> {
         self.enter(DurabilityBoundary::WriteAsset)?;
         self.directory.write_asset(root, bytes)
@@ -69,6 +72,11 @@ impl LibraryDurabilityPort for FaultLibraryDurability {
         self.enter(DurabilityBoundary::ReadAsset)?;
         self.directory.read_asset(root, hash)
     }
+}
+
+impl LibraryWriteSessionPort for FaultLibraryDurability {}
+
+impl LibraryDurabilityPort for FaultLibraryDurability {
     fn commit(&self, root: LibraryRootId, batch: &LibraryBatch) -> Result<CommitOutcome, Error> {
         self.enter(DurabilityBoundary::Commit)?;
         self.directory.commit(root, batch)
@@ -115,6 +123,18 @@ impl FaultLibraryProjection {
     }
 }
 impl LibraryProjectionPort for FaultLibraryProjection {
+    fn projection_status(&self, _: LibraryRootId) -> Result<LibraryProjectionStatus, Error> {
+        Err(Error::unavailable(
+            "projection status fake",
+            "status is not modeled by replay sink",
+        ))
+    }
+    fn read_recovery_records(&self, _: LibraryRootId) -> Result<LibraryRecoveryRecords, Error> {
+        Err(Error::unavailable(
+            "projection records fake",
+            "records are not modeled by replay sink",
+        ))
+    }
     fn project_library_commits(
         &self,
         root: LibraryRootId,
@@ -130,17 +150,15 @@ impl LibraryProjectionPort for FaultLibraryProjection {
         self.accepted.lock().unwrap().push((root, replay.clone()));
         Ok(())
     }
-    fn projection_status(&self, _: LibraryRootId) -> Result<LibraryProjectionStatus, Error> {
-        Err(Error::unavailable(
-            "projection status fake",
-            "status is not modeled by replay sink",
-        ))
-    }
-    fn read_recovery_records(&self, _: LibraryRootId) -> Result<LibraryRecoveryRecords, Error> {
-        Err(Error::unavailable(
-            "projection records fake",
-            "records are not modeled by replay sink",
-        ))
+}
+
+impl LibraryProjectionVerifiedPort for FaultLibraryProjection {
+    fn project_verified_library_suffix(
+        &self,
+        root: LibraryRootId,
+        replay: &LibraryReplay,
+    ) -> Result<(), Error> {
+        self.project_library_commits(root, replay)
     }
 }
 

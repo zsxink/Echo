@@ -1,8 +1,8 @@
 //! Native temporary-directory tests for the library directory protocol.
 use super::*;
 use crate::application::ports::{
-    ControlPlanePort, LibraryDurabilityPort, LibraryProjectionPort, LibraryRepository,
-    PlaylistRepository,
+    ControlPlanePort, LibraryAssetPort, LibraryDurabilityPort, LibraryProjectionPort,
+    LibraryRepository, PlaylistRepository,
 };
 use crate::domain::entities::LibraryRoot;
 use crate::domain::ids::{PlaylistId, Revision};
@@ -83,21 +83,19 @@ fn batch(library: LibraryId, id: uuid::Uuid, title: &str) -> LibraryBatch {
         uuid::Uuid::new_v4(),
         library,
         ChangeOrigin::LocalEdit,
-        vec![
-            PortableRecordEnvelope::new(
-                PortableRecord::Playlist(PlaylistRecord {
-                    playlist_uuid: id,
-                    revision: Revision::INITIAL,
-                    updated_by_device_id: DeviceId::new(),
-                    hlc: HybridLogicalClock::default(),
-                    display_name: title.to_owned(),
-                    created_at: None,
-                    cover_asset: None,
-                }),
-                None,
-            )
-            .unwrap(),
-        ],
+        vec![PortableRecordEnvelope::new(
+            PortableRecord::Playlist(PlaylistRecord {
+                playlist_uuid: id,
+                revision: Revision::INITIAL,
+                updated_by_device_id: DeviceId::new(),
+                hlc: HybridLogicalClock::default(),
+                display_name: title.to_owned(),
+                created_at: None,
+                cover_asset: None,
+            }),
+            None,
+        )
+        .unwrap()],
     )
 }
 fn marker_present(dir: &std::path::Path, id: uuid::Uuid) -> bool {
@@ -161,7 +159,11 @@ fn library_durability_every_native_commit_boundary_recovers_same_operation() {
         let result = commit_with_hook(&registry, root, &batch, &mut |_, _| {
             let fail_here = counter == stop;
             counter += 1;
-            if fail_here { Err(fail()) } else { Ok(()) }
+            if fail_here {
+                Err(fail())
+            } else {
+                Ok(())
+            }
         });
         assert!(result.is_err(), "boundary {stop}: {boundary:?}");
         let committed = marker_present(dir.path(), batch.operation_id);
@@ -220,7 +222,11 @@ fn library_durability_c1_failure_then_c2_never_rolls_back_latest_record() {
     let id = uuid::Uuid::new_v4();
     let first = batch(library, id, "C1");
     commit_with_hook(&registry, root, &first, &mut |p, _| {
-        if p == "record" { Err(fail()) } else { Ok(()) }
+        if p == "record" {
+            Err(fail())
+        } else {
+            Ok(())
+        }
     })
     .unwrap_err();
     let second = batch(library, id, "C2");
@@ -240,7 +246,7 @@ fn library_durability_read_paths_do_not_create_or_acquire_write_lock() {
     let (dir, registry, root, library, plane) = fixture();
     let batch = batch(library, uuid::Uuid::new_v4(), "浏览");
     commit(&registry, root, &batch).unwrap();
-    let hash = LibraryDurabilityPort::write_asset(&plane, root, b"original cover").unwrap();
+    let hash = LibraryAssetPort::write_asset(&plane, root, b"original cover").unwrap();
     let lock = dir.path().join("echo/write.lock");
     std::fs::remove_file(&lock).unwrap();
     assert!(plane.read_manifest(root).unwrap().is_some());
@@ -251,11 +257,9 @@ fn library_durability_read_paths_do_not_create_or_acquire_write_lock() {
             .len(),
         1
     );
-    assert!(
-        LibraryDurabilityPort::read_asset(&plane, root, &hash)
-            .unwrap()
-            .is_some()
-    );
+    assert!(LibraryAssetPort::read_asset(&plane, root, &hash)
+        .unwrap()
+        .is_some());
     assert!(
         LibraryDurabilityPort::operation_status(&plane, root, batch.operation_id)
             .unwrap()
@@ -305,16 +309,14 @@ fn library_durability_readonly_volume_and_unmaterialized_commit_can_be_browsed()
             .len(),
         1
     );
-    assert!(
-        plane
-            .read_record_document(
-                root,
-                RecordKind::Playlist,
-                &batch.records[0].record().object_uuid().to_string()
-            )
-            .unwrap()
-            .is_some()
-    );
+    assert!(plane
+        .read_record_document(
+            root,
+            RecordKind::Playlist,
+            &batch.records[0].record().object_uuid().to_string()
+        )
+        .unwrap()
+        .is_some());
     assert!(!lock.exists());
     std::fs::set_permissions(echo, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
@@ -382,15 +384,13 @@ fn library_durability_broken_chain_and_corrupt_checkpoint_fail_closed_preserve_b
     .unwrap();
     assert!(recover(&registry, root).is_err());
     let broken = std::fs::read(&prepared).unwrap();
-    assert!(
-        super::commit(
-            &registry,
-            &ValidationCache::default(),
-            root,
-            &batch(library, uuid::Uuid::new_v4(), "3")
-        )
-        .is_err()
-    );
+    assert!(super::commit(
+        &registry,
+        &ValidationCache::default(),
+        root,
+        &batch(library, uuid::Uuid::new_v4(), "3")
+    )
+    .is_err());
     assert_eq!(std::fs::read(&prepared).unwrap(), broken);
     std::fs::write(dir.path().join(CHECKPOINT), b"{corrupt evidence}").unwrap();
     assert!(recover(&registry, root).is_err());

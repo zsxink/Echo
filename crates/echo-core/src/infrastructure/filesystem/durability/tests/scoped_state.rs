@@ -48,8 +48,8 @@ fn library_durability_scoped_state_same_object_across_binding_epochs_survives_co
 #[test]
 fn library_durability_scoped_reanchor_keeps_both_frozen_versions_and_late_disposition() {
     use crate::domain::library::{
-        PortableSerialize,
         durability::{FrozenMutation, MutationDisposition, MutationOperation, MutationStatus},
+        PortableSerialize,
     };
     use crate::domain::sync::{DeviceId, MutationCandidate, MutationId};
     let (_dir, registry, root, library, _plane) = fixture();
