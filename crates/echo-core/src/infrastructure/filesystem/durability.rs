@@ -609,18 +609,17 @@ pub(super) fn operation_status(
         },
     )))
 }
+#[cfg(unix)]
 pub(super) fn sync_directory(path: &std::path::Path) -> Result<(), Error> {
-    #[cfg(not(windows))]
-    let file = std::fs::File::open(path);
-    #[cfg(windows)]
-    let file = {
-        use std::os::windows::fs::OpenOptionsExt as _;
-        // FILE_FLAG_BACKUP_SEMANTICS permits opening a directory for flush.
-        std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(0x0200_0000)
-            .open(path)
-    };
-    file.and_then(|file| file.sync_all())
+    std::fs::File::open(path)
+        .and_then(|file| file.sync_all())
         .map_err(|e| Error::io("flush library directory", e, path))
+}
+/// Windows has no supported directory fsync: `FlushFileBuffers` requires a
+/// writable handle and `CreateFile` cannot open a directory for writing. The
+/// file-content flush before the rename remains the durability guarantee.
+#[cfg(not(unix))]
+#[allow(clippy::missing_const_for_fn, clippy::unnecessary_wraps)]
+pub(super) fn sync_directory(_path: &std::path::Path) -> Result<(), Error> {
+    Ok(())
 }

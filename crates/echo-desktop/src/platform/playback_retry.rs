@@ -277,7 +277,7 @@ fn reject_symlink(path: &Path) -> Result<(), String> {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(unix)]
 fn sync_parent(path: &Path) -> Result<(), String> {
     use std::fs::File;
 
@@ -286,15 +286,13 @@ fn sync_parent(path: &Path) -> Result<(), String> {
         .map_err(|error| io(&error))
 }
 
-#[cfg(windows)]
-fn sync_parent(path: &Path) -> Result<(), String> {
-    use std::os::windows::fs::OpenOptionsExt;
-    OpenOptions::new()
-        .read(true)
-        .custom_flags(0x0200_0000)
-        .open(path)
-        .and_then(|file| file.sync_all())
-        .map_err(|error| io(&error))
+/// Windows has no supported directory fsync: `FlushFileBuffers` requires a
+/// writable handle and `CreateFile` cannot open a directory for writing. The
+/// temporary file's content flush before the rename remains the durability
+/// guarantee.
+#[cfg(not(unix))]
+fn sync_parent(_path: &Path) -> Result<(), String> {
+    Ok(())
 }
 
 fn io(error: &std::io::Error) -> String {

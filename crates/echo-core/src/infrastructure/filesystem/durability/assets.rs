@@ -12,8 +12,13 @@ pub(super) fn validate_resource(
 ) -> Result<(), Error> {
     use std::io::Read as _;
     let path = portable::path(registry, root, &resource.relative_path)?;
-    let mut file =
-        std::fs::File::open(&path).map_err(|e| Error::io("open durable resource", e, &path))?;
+    // FlushFileBuffers requires a writable handle on Windows; the publication
+    // itself was already synced by `io::publish` before its rename.
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(cfg!(windows))
+        .open(&path)
+        .map_err(|e| Error::io("open durable resource", e, &path))?;
     let metadata = file
         .metadata()
         .map_err(|e| Error::io("inspect durable resource", e, &path))?;
