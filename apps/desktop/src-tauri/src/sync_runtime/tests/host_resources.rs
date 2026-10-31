@@ -29,6 +29,12 @@ mod cases {
     use echo_sync::resource_transfer::{FileResourceStore, PrepareResource, ResourceTransferPort};
     use reqwest::Url;
 
+    /// The sync loop runs on its own thread while the rest of the suite hammers
+    /// SQLite and the filesystem. A 5s window proved too tight on a two-core
+    /// Windows runner (the cycle was still `Syncing` when it expired), so these
+    /// proofs wait generously and fail on state, not on scheduler luck.
+    const HOST_LOOP_WAIT: Duration = Duration::from_secs(30);
+
     /// The credential vault root is a process-wide `OnceLock`, so every test in
     /// this binary must share one live path: a per-test `TempDir` would be deleted
     /// while a parallel test still writes identity and checkpoint files.
@@ -235,7 +241,7 @@ mod cases {
                 }
             }
             assert!(
-                started.elapsed() < Duration::from_secs(5),
+                started.elapsed() < HOST_LOOP_WAIT,
                 "accepted HTTP mutation was not published by the host loop: {:?}",
                 host.runtime.status()
             );
@@ -768,7 +774,7 @@ mod cases {
             .is_none()
         {
             assert!(
-                started.elapsed() < Duration::from_secs(5),
+                started.elapsed() < HOST_LOOP_WAIT,
                 "host local edit did not advance its publication association: {:?}; song={:?}; pending sets={:?}; expected={:?}",
                 host.runtime.status(),
                 SongRepository::by_id(database.as_ref(), song).unwrap(),
