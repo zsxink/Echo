@@ -128,7 +128,7 @@
 
 - `ControlPlanePort` 方法数 **15 → 14**。`crates/echo-core/tests/arch.rs:104` 断言是 `<= 15`，**只会更宽松，不会红**。
 - `scripts/verify/check-scale.mjs` 的 `ControlPlanePort` allowlist 项保留（该 trait 仍 >6 方法，且 allowlist 只许收缩）。
-- `openspec/changes/enforce-library-first-durability/evidence/9.7-ld-evidence-index-20261027.md` 与 `evidence/acceptance-matrix.md` 引用了 `portable_migration/tests.rs:67/155/241/371` 与 `LD-09b`（evidence 速记，正式场景 ID 为 `LD-R09-S02`）——该 change **尚未归档**，需在其实施时同步修正证据表。
+- `openspec/changes/archive/2026-10-31-enforce-library-first-durability/evidence/9.7-ld-evidence-index-20261027.md` 与 `evidence/acceptance-matrix.md` 曾引用 `portable_migration/tests.rs:67/155/241/371` 与 `LD-09b`（evidence 速记，正式场景 ID 为 `LD-R09-S02`）；该 change 已于 2026-10-31 归档，任务 12.1 已把证据表锚点同步修正到现存测试（现指向 `portable_migration/tests.rs:112`）。
 
 ---
 
@@ -239,7 +239,7 @@
 - 本仓 archive 中 delta 只用过 `## ADDED Requirements`(64 次) 与 `## MODIFIED Requirements`(47 次)，**从无 `## REMOVED` 先例**。
 - 场景 ID 是**顺序派生**的：`<AREA>-R<需求序号>-S<场景序号>`（`scripts/verify/spec-scenarios.mjs:83`）。**在中间删需求或场景，会让其后所有 ID 顺移**。
 - 以 `library-durability` 为例（10 个需求 / 23 个场景）：若删掉 LD-04 与 LD-09，则 LD-05→LD-04、LD-06→LD-05、LD-07→LD-06、LD-08→LD-07、LD-10→LD-08，其下所有场景 ID 一并重编号。
-- `openspec/changes/enforce-library-first-durability/tasks.md:306`（task 10.1）确立的纪律是**追加到末尾**，正是为了避免重编号。
+- `openspec/changes/archive/2026-10-31-enforce-library-first-durability/tasks.md:310`（task 10.1）确立的纪律是**追加到末尾**，正是为了避免重编号。
 
 **因此有两个选项，须在 propose 阶段二选一：**
 

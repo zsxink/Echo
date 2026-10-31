@@ -153,7 +153,7 @@ apps/desktop/
 | `sync_state` / `sync_outbox`   | 本地同步游标及待确认的逻辑变更；凭据由平台安全存储管理。                                   |
 | `operation_journal`            | 导入、写回和移动等跨文件系统与 SQLite 的可恢复操作步骤。                                   |
 
-`songs` 对 `(library_root_id, relative_path)` 建唯一索引，对 `blake3_hash`、艺人、专辑和添加时间建立查询索引；歌曲名、艺人、专辑等文本检索使用 SQLite FTS5。SQLite 事务保证本地投影内部一致，但不会单独使音乐库目录与数据库成为一个原子提交。现行导入操作日志覆盖文件导入步骤，不等于全类用户资料的目录权威提交协议；目标是先提交目录恢复事实，再以 SQLite 事务投影，细节见 `enforce-library-first-durability/design.md`。
+`songs` 对 `(library_root_id, relative_path)` 建唯一索引，对 `blake3_hash`、艺人、专辑和添加时间建立查询索引；歌曲名、艺人、专辑等文本检索使用 SQLite FTS5。SQLite 事务保证本地投影内部一致，但不会单独使音乐库目录与数据库成为一个原子提交。现行导入操作日志覆盖文件导入步骤，不等于全类用户资料的目录权威提交协议；目标是先提交目录恢复事实，再以 SQLite 事务投影，细节见 `openspec/changes/archive/2026-10-31-enforce-library-first-durability/design.md`。
 
 ### 5.1 同步存储边界
 

@@ -55,7 +55,7 @@ Sync is opt-in and stays disabled until a user starts hosting or pairs a peer. I
 
 本地目录协议先刷盘 prepared 正文，再发布带序列/前驱摘要的 committed 标记，最后材料化对象与本机 state。只有 prepared 的操作仍是未保存；标记已经发布后的故障必须保留原 operation ID，并以“已保存、待恢复”继续同一操作。读取不创建或获取 `write.lock`，也不在只读浏览时执行格式迁移；已提交但尚未材料化的对象通过经过校验的提交载荷读取。
 
-当前实现每 32 个活跃提交发布一次完整覆盖快照及真实链头，再回收已覆盖事务文件。原操作正文保留在按 ID 分片的 `echo/state/operations/`，用于同 ID 幂等重试；私有历史 state 和资源暂时保守保留，完整历史归档及资源回收尚未完成。备份必须包含整个 `echo/`，不能只复制 records 或媒体。协议字段、失败测试、平台限制和未完成部分见 [目录协议实施证据](../openspec/changes/enforce-library-first-durability/evidence/directory-protocol.md)。当前原生验证限于 macOS，不能据此承诺 Windows/Linux 或硬件断电下的相同行为。
+当前实现每 32 个活跃提交发布一次完整覆盖快照及真实链头，再回收已覆盖事务文件。原操作正文保留在按 ID 分片的 `echo/state/operations/`，用于同 ID 幂等重试；私有历史 state 和资源暂时保守保留，完整历史归档及资源回收尚未完成。备份必须包含整个 `echo/`，不能只复制 records 或媒体。协议字段、失败测试、平台限制和未完成部分见 [目录协议实施证据](../openspec/changes/archive/2026-10-31-enforce-library-first-durability/evidence/directory-protocol.md)。当前原生验证限于 macOS，不能据此承诺 Windows/Linux 或硬件断电下的相同行为。
 
 ### 文件系统适配与失败语义
 

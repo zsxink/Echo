@@ -12,7 +12,7 @@ use crate::application::ports::LibraryProjectionPort;
 /// The retry currently loses the saved identity: the coordinator reports the
 /// raw projection failure, and after the projection is repaired the planning
 /// insert hits the unique name index. See
-/// `openspec/changes/enforce-library-first-durability/evidence/handoff-20261025.md`.
+/// `openspec/changes/archive/2026-10-31-enforce-library-first-durability/evidence/handoff-20261025.md`.
 #[test]
 fn library_durability_playlist_create_retry_after_saved_pending_keeps_operation_identity() {
     let stack = ScanStack::new();
