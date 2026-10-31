@@ -702,7 +702,7 @@ async fn a_host_publication_ends_a_held_watch() {
     // Records when the host's publication committed, so the assertion below
     // measures propagation latency rather than the test's own settle delay.
     let published_at = Arc::new(Mutex::new(None::<Instant>));
-    let joined = tokio::time::timeout(Duration::from_secs(5), async {
+    let joined = tokio::time::timeout(Duration::from_secs(10), async {
         let published_at = Arc::clone(&published_at);
         tokio::join!(
             async {
@@ -734,14 +734,16 @@ async fn a_host_publication_ends_a_held_watch() {
     let ((), outcome) = joined.expect("a held watch must end when the host publishes");
     assert_eq!(outcome.unwrap(), WatchOutcome::Advanced);
     // The host rechecks the held page every 500 ms, so the peer learns about a
-    // publication in about one second — the plain-poll floor was five.
+    // publication in about one second — the plain-poll floor is ten. The bound
+    // stays well under that floor while tolerating a contended two-core runner,
+    // where a recheck can slip past two seconds (observed 2.53 s on Windows CI).
     let latency = published_at
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .expect("the publication committed")
         .elapsed();
     assert!(
-        latency < Duration::from_secs(2),
+        latency < Duration::from_secs(4),
         "the held watch took {latency:?} to notice the publication"
     );
 }
