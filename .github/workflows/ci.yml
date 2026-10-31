@@ -272,6 +272,13 @@ jobs:
           libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
           librsvg2-dev patchelf
 
+      # The fixture gate regenerates fixtures/audio in scratch directories and
+      # compares them against the committed bytes; it needs ffmpeg on PATH.
+      - name: Install ffmpeg for the fixture gate
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          ffmpeg
+
       # The coverage gate shells out to `cargo llvm-cov`. The companion
       # `llvm-tools-preview` component is declared in rust-toolchain.toml and
       # re-asserted here so this step fails early and legibly if it ever drifts.

@@ -31,27 +31,64 @@ const DESKTOP_DIR = resolve(ROOT, "apps", "desktop");
 
 const NET_TIMEOUT = 240_000; // network-backed checks: advisory DB fetch on a cold cache
 const INSTALL_TIMEOUT = 600_000; // cargo install compiles from source
-// Mirrors deny.toml's `[advisories].ignore`: known unmaintained (not CVE)
-// Linux-only Tauri transitive crates with no upstream replacement. New or
-// vulnerable advisories remain hard failures.
-const AUDIT_IGNORES = [
-  "RUSTSEC-2024-0370",
-  "RUSTSEC-2024-0411",
-  "RUSTSEC-2024-0412",
-  "RUSTSEC-2024-0413",
-  "RUSTSEC-2024-0414",
-  "RUSTSEC-2024-0415",
-  "RUSTSEC-2024-0416",
-  "RUSTSEC-2024-0417",
-  "RUSTSEC-2024-0418",
-  "RUSTSEC-2024-0419",
-  "RUSTSEC-2024-0420",
-  "RUSTSEC-2025-0075",
-  "RUSTSEC-2025-0080",
-  "RUSTSEC-2025-0081",
-  "RUSTSEC-2025-0098",
-  "RUSTSEC-2025-0100",
-];
+
+// The ignore list has exactly one source of truth: `deny.toml`'s
+// `[advisories].ignore` array. `cargo deny` and `cargo audit` must agree on
+// which advisories are accepted technical debt; maintaining a second literal
+// here let the two lists drift (the script used to ignore ten IDs that
+// deny.toml did not, and vice versa). Parse it from the TOML so a future
+// advisory added to one list is never silently skipped by the other.
+//
+// A minimal, comment-aware parser is used instead of a TOML dependency: this
+// script runs under plain `node` with no installed packages. It extracts the
+// quoted strings of the `ignore = [ ... ]` array inside the `[advisories]`
+// table and fails loudly if the table or the array cannot be found.
+function readAdvisoryIgnores(tomlPath) {
+  const lines = readFileSync(tomlPath, "utf8").split("\n");
+  let inAdvisories = false;
+  let collecting = false;
+  let sawArray = false;
+  const ids = [];
+
+  const takeIds = (fragment) => {
+    for (const m of fragment.matchAll(/"([^"]+)"/g)) ids.push(m[1]);
+  };
+
+  for (const raw of lines) {
+    // Strip a trailing comment, but never inside a quoted string.
+    const line = raw.replace(/#[^"']*$/, "").trim();
+    if (!collecting) {
+      const table = line.match(/^\[([^\]]+)\]$/);
+      if (table) {
+        inAdvisories = table[1].trim() === "advisories";
+        continue;
+      }
+      if (!inAdvisories) continue;
+      const open = line.match(/^ignore\s*=\s*\[(.*)$/);
+      if (!open) continue;
+      sawArray = true;
+      const body = open[1];
+      const close = body.indexOf("]");
+      if (close === -1) {
+        collecting = true;
+        takeIds(body);
+      } else {
+        takeIds(body.slice(0, close));
+      }
+      continue;
+    }
+    // Inside a multi-line array: consume until the closing bracket.
+    const close = line.indexOf("]");
+    if (close === -1) {
+      takeIds(line);
+    } else {
+      takeIds(line.slice(0, close));
+      collecting = false;
+    }
+  }
+  if (!sawArray) fail("deny.toml has no `[advisories] ignore = [...]` array to mirror");
+  return ids;
+}
 
 let offlineSkipped = 0;
 
@@ -161,6 +198,17 @@ function ensureTool(tool) {
 if (!existsSync(DENY_TOML)) {
   fail("deny.toml is missing from the repo root — add it before running the 1.7 check");
 }
+
+// Single source of truth: the same array `cargo deny check` reads.
+const AUDIT_IGNORES = readAdvisoryIgnores(DENY_TOML);
+for (const id of AUDIT_IGNORES) {
+  if (!/^RUSTSEC-[0-9]{4}-[0-9]{4}$/.test(id)) {
+    fail(`deny.toml [advisories].ignore contains an unrecognized entry: ${JSON.stringify(id)}`);
+  }
+}
+process.stderr.write(
+  `1.7: mirroring ${AUDIT_IGNORES.length} advisory ignore(s) from deny.toml: ${AUDIT_IGNORES.join(", ") || "(none)"}\n`,
+);
 
 ensureTool("cargo-deny");
 ensureTool("cargo-audit");

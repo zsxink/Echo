@@ -72,8 +72,9 @@ yanked = "deny"
 # Tauri's current Linux backend still pulls GTK3 and `unic` crates that RustSec
 # marks unmaintained. They are not CVEs, have no safe upstream replacement yet,
 # and are not linked into the macOS Gate artifact. Keep this narrow, explicit
-# list in sync with the equivalent `cargo audit --ignore` arguments in 1.7;
-# all vulnerability advisories continue to block the build.
+# list; task 1.7 reads it as the single source of truth for `cargo audit
+# --ignore`, so a new entry here is automatically honored by both tools.
+# All vulnerability advisories continue to block the build.
 ignore = [
   "RUSTSEC-2024-0370",
   "RUSTSEC-2025-0075",
