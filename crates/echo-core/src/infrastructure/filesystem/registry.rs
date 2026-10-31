@@ -146,15 +146,25 @@ fn reject_portable_collision(path: &std::path::Path, component: &str) -> Result<
         Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(source) => return Err(Error::io("inspect destination names", source, parent)),
     };
-    let identity = crate::domain::text::path_identity_key(component);
+    let mut identity = None;
     for entry in entries {
         let entry =
             entry.map_err(|source| Error::io("inspect destination name", source, parent))?;
-        if entry
-            .file_name()
-            .to_str()
-            .is_some_and(|name| crate::domain::text::path_identity_key(name) == identity)
-        {
+        let name = entry.file_name();
+        let collision = name.to_str().is_some_and(|name| {
+            if component.is_ascii() && name.is_ascii() {
+                // ASCII case folding and canonical decomposition reduce to a
+                // case-insensitive byte comparison. Content-addressed chunks
+                // have ASCII names, so avoid allocating Unicode-normalized
+                // strings for every existing sibling.
+                component.eq_ignore_ascii_case(name)
+            } else {
+                let expected = identity
+                    .get_or_insert_with(|| crate::domain::text::path_identity_key(component));
+                crate::domain::text::path_identity_key(name) == *expected
+            }
+        });
+        if collision {
             return Err(Error::conflict(
                 "library path collides by case or Unicode normalization",
             ));
@@ -177,5 +187,18 @@ mod tests {
         registry.unregister(root);
         let error = registry.path_of(root).unwrap_err();
         assert_eq!(error.code(), "unavailable");
+    }
+
+    // The fixture deliberately writes the Kelvin sign (U+212A), which is not
+    // NFC, to prove portable collision checks fold it with the plain "k".
+    #[allow(clippy::unicode_not_nfc)]
+    #[test]
+    fn portable_collision_fast_path_preserves_unicode_equivalence() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("abc123"), []).unwrap();
+        assert!(reject_portable_collision(&dir.path().join("ABC123"), "ABC123").is_err());
+        assert!(reject_portable_collision(&dir.path().join("abc124"), "abc124").is_ok());
+        std::fs::write(dir.path().join("Kelvin"), []).unwrap();
+        assert!(reject_portable_collision(&dir.path().join("kelvin"), "kelvin").is_err());
     }
 }

@@ -496,20 +496,12 @@ impl CoverRepository for MemoryCoverRepository {
             .get(&(root, artist_key.to_owned()))
             .cloned())
     }
-    fn set_artist_cover_key(
+    fn artist_cover_original(
         &self,
-        root: LibraryRootId,
-        artist_key: &str,
-        key: Option<&str>,
-    ) -> Result<(), Error> {
-        let mut covers = self.artist_covers.lock().unwrap();
-        let identity = (root, artist_key.to_owned());
-        if let Some(key) = key {
-            covers.insert(identity, key.to_owned());
-        } else {
-            covers.remove(&identity);
-        }
-        Ok(())
+        _root: LibraryRootId,
+        _artist_key: &str,
+    ) -> Result<Option<crate::domain::library::PortableAssetReference>, Error> {
+        Ok(None)
     }
     fn referenced_asset_keys(&self, root: LibraryRootId) -> Result<Vec<String>, Error> {
         Ok(self
@@ -651,6 +643,18 @@ impl ScanRunRepository for MemoryScanRunRepository {
             .filter(|(r, _)| *r == root)
             .map(|(_, g)| *g)
             .max())
+    }
+    fn issues(&self, root: LibraryRootId, generation: u64) -> Result<Vec<MediaDiagnostic>, Error> {
+        Ok(self
+            .issues
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(issue_root, issue_generation, _)| {
+                *issue_root == root && *issue_generation == generation
+            })
+            .map(|(_, _, issue)| issue.clone())
+            .collect())
     }
 }
 

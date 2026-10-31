@@ -80,7 +80,13 @@ pub fn assemble(db_path: &Path, cover_cache_dir: &Path) -> Result<RoutedRuntime,
         Err(error) => tracing::warn!(%error, "cover references unavailable at startup"),
     }
 
+    let control = Arc::new(RootControlPlane::new(registry.clone()));
+    database.configure_library_control(control.clone());
     let deps = Arc::new(ScanDeps {
+        activity: std::sync::Arc::new(
+            echo_core::application::local_activity::LocalActivity::default(),
+        ),
+        history: Some(database.clone()),
         roots: database.clone(),
         songs: database.clone(),
         catalog: database.clone(),
@@ -99,7 +105,7 @@ pub fn assemble(db_path: &Path, cover_cache_dir: &Path) -> Result<RoutedRuntime,
         cover_cache,
         // The portable `echo/` control surface (manifest + records) for the
         // library-initialization and restore use cases.
-        control: Arc::new(RootControlPlane::new(registry.clone())),
+        control,
         // The single device identity + sync-shape reader ride on the same
         // SQLite database (see 0006 device_state / sync-outbox shape).
         device_id: database.clone(),

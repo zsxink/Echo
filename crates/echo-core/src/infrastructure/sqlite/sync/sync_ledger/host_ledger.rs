@@ -6,6 +6,32 @@ use super::*;
 #[allow(clippy::wildcard_imports)]
 use super::host_ledger_apply::*;
 
+/// The single "plan → directory commit → SQLite projection" tail that every
+/// host confirmation branch shares: an exact inbox retry, a terminal rejection,
+/// an already-deleted object, and a newly accepted commit all end here.
+///
+/// Each branch has already written its own rows into `tx`; this consumes the
+/// transaction, so a branch cannot accidentally commit the SQLite ledger before
+/// the directory has accepted the same after-image, and cannot keep going after
+/// a `SavedPendingProjection` result. Keeping one copy is what stops the four
+/// branches from drifting apart as the protocol evolves.
+fn commit_confirmation(
+    control: Option<std::sync::Arc<dyn crate::application::ports::ControlPlanePort>>,
+    tx: rusqlite::Transaction<'_>,
+    mutation: MutationId,
+) -> Result<(), Error> {
+    let root = super::super::durability::active_root(&tx)?;
+    let operation =
+        super::super::durability::identity("host-confirmation", &mutation.as_uuid().to_string());
+    super::super::durability::commit_projection(
+        control,
+        tx,
+        root,
+        crate::domain::library::durability::ChangeOrigin::HostConfirmation,
+        operation,
+    )
+}
+
 impl HostCommitLedgerPort for SqliteDatabase {
     fn stage_confirmation(
         &self,
@@ -29,6 +55,7 @@ impl HostCommitLedgerPort for SqliteDatabase {
     ) -> Result<StagedConfirmation, Error> {
         validate_candidate_payload(candidate)?;
         let candidate = candidate.clone();
+        let control = self.library_control();
         self.writer.run(move |connection| {
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
             let configured: Option<(String, String, i64, String, Option<String>)> = tx.query_row(
@@ -51,7 +78,7 @@ impl HostCommitLedgerPort for SqliteDatabase {
             ensure_origin_authorized(&tx, &origin, &expected.0)?;
 
             if let Some(staged) = prior_confirmation(&tx, &origin, &candidate, &payload_digest)? {
-                tx.commit().map_err(storage)?;
+                commit_confirmation(control, tx, candidate.mutation_id)?;
                 return Ok(staged);
             }
             let candidate = normalize_member_alias_object(&tx, candidate)?;
@@ -105,14 +132,14 @@ impl HostCommitLedgerPort for SqliteDatabase {
                     )?;
                 }
                 record_inbox_outcome(&tx, &origin, &candidate, &payload_digest, &staged, None)?;
-                tx.commit().map_err(storage)?;
+                commit_confirmation(control, tx, candidate.mutation_id)?;
                 return Ok(staged);
             }
             let confirmed = decision.map_err(|error| Error::conflict(format!("mutation rejected: {error:?}")))?;
             if already_deleted {
                 let staged =
                     stage_already_deleted(&tx, &origin, &candidate, &payload_digest, &confirmed)?;
-                tx.commit().map_err(storage)?;
+                commit_confirmation(control, tx, candidate.mutation_id)?;
                 return Ok(staged);
             }
             let is_tombstone = candidate.payload == serde_json::json!({"tombstone": true});
@@ -142,17 +169,18 @@ impl HostCommitLedgerPort for SqliteDatabase {
             if let Some((alias, canonical)) = &song_alias { super::super::song_aliases::project(&tx, alias, canonical)?; }
             tx.execute("INSERT INTO sync_origin_cursors(origin_device_id, origin_seq, last_mutation_id) VALUES(?1, ?2, ?3) ON CONFLICT(origin_device_id) DO UPDATE SET origin_seq=excluded.origin_seq, last_mutation_id=excluded.last_mutation_id", params![origin, i64::try_from(confirmed.origin_cursor.origin_seq).map_err(storage)?, candidate.mutation_id.as_uuid().to_string()]).map_err(storage)?;
             if let Some(conflict) = confirmed.conflict {
-                tx.execute("INSERT INTO sync_conflicts(conflict_id, object_type, object_uuid, replaced_version, accepted_version, replaced_payload_json, accepted_payload_json, resolved_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)", params![uuid::Uuid::new_v4().to_string(), kind, object_uuid, i64::try_from(conflict.replaced_version.commit_seq().as_u64()).map_err(storage)?, next, serde_json::to_string(&conflict.replaced_payload).map_err(storage)?, serde_json::to_string(&conflict.accepted_payload).map_err(storage)?]).map_err(storage)?;
+                tx.execute("INSERT INTO sync_conflicts(conflict_id, object_type, object_uuid, replaced_version, accepted_version, replaced_payload_json, accepted_payload_json, resolved_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)", params![super::super::durability::identity("conflict", &candidate.mutation_id.as_uuid().to_string()).to_string(), kind, object_uuid, i64::try_from(conflict.replaced_version.commit_seq().as_u64()).map_err(storage)?, next, serde_json::to_string(&conflict.replaced_payload).map_err(storage)?, serde_json::to_string(&conflict.accepted_payload).map_err(storage)?]).map_err(storage)?;
             }
             let checkpoint = CommitCheckpoint { binding, sequence, digest: commit_digest.as_slice().try_into().map_err(|_| Error::InvariantViolation { why: "invalid LAN commit digest length".to_owned() })? };
             let staged = StagedConfirmation { mutation_id: candidate.mutation_id, outcome_json: "{\"accepted\":true}".to_owned(), checkpoint: Some(checkpoint) };
             record_inbox_outcome(&tx, &origin, &candidate, &payload_digest, &staged, Some(next))?;
-            tx.commit().map_err(storage)?;
+            commit_confirmation(control, tx, candidate.mutation_id)?;
             Ok(staged)
         })
     }
 
     fn mark_published(&self, checkpoint: CommitCheckpoint) -> Result<(), Error> {
+        let control = self.library_control();
         self.writer.run_with_sync_wake(move |connection| {
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
             let sequence = i64::try_from(checkpoint.sequence.as_u64()).map_err(storage)?;
@@ -191,7 +219,9 @@ impl HostCommitLedgerPort for SqliteDatabase {
             ).map_err(storage)?;
             let sync_work = publication_state != "published" && origin_device != local_device;
             tx.execute("UPDATE sync_commits SET publication_state='published' WHERE commit_seq=?1 AND publication_state!='published'", params![sequence]).map_err(storage)?;
-            tx.commit().map_err(storage)?;
+            let root = super::super::durability::active_root(&tx)?;
+            let operation = super::super::durability::identity("host-published",&format!("{}:{}",checkpoint.binding.library_id.as_uuid(),checkpoint.sequence.as_u64()));
+            super::super::durability::commit_publication_projection(control,tx,root,operation,checkpoint)?;
             Ok(((), sync_work))
         })
     }

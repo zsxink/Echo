@@ -24,6 +24,8 @@ unicode-normalization = { workspace = true }
 unicode-segmentation = { workspace = true }
 unicode-casefold = { workspace = true }
 blake3 = { workspace = true }
+# fs2 0.4.3: MIT/Apache-2.0; supports the workspace Rust 1.88 MSRV.
+fs2 = "=0.4.3"
 rusqlite = { workspace = true }
 dunce = { workspace = true }
 # Media pipeline adapters (phase 4): probing, tags/covers/lyrics, watching,
@@ -36,6 +38,9 @@ image = { workspace = true }
 # `testkit` feature is enabled or under `cargo test` (via the dev-dependency),
 # never in a production build of the crate.
 tempfile = { version = "3", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["fs"] }
 
 [dev-dependencies]
 # `cargo test` compiles the `cfg(test)` doubles without enabling `testkit`;

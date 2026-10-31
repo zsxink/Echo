@@ -60,6 +60,86 @@ pub(crate) const KIND_TOMBSTONE: &str = "tombstone";
 pub(crate) const OP_UPSERT: &str = "upsert";
 pub(crate) const OP_DELETE: &str = "delete";
 
+/// The digest an enqueue would record for this exact change: kind, object,
+/// operation, payload, and declared resources. Two equal digests mean the
+/// queued candidate already carries this exact state.
+pub(crate) fn snapshot_digest(
+    kind: &str,
+    object_uuid: &str,
+    payload_json: &str,
+    operation: &str,
+    resource_refs_json: &str,
+) -> String {
+    let mut digest = blake3::Hasher::new();
+    digest.update(kind.as_bytes());
+    digest.update(&[0]);
+    digest.update(object_uuid.as_bytes());
+    digest.update(&[0]);
+    digest.update(operation.as_bytes());
+    digest.update(&[0]);
+    digest.update(payload_json.as_bytes());
+    if !resource_refs_json.is_empty() {
+        digest.update(&[0]);
+        digest.update(resource_refs_json.as_bytes());
+    }
+    digest.finalize().to_hex().to_string()
+}
+
+fn latest_mutation_digest(
+    connection: &Connection,
+    kind: &str,
+    object_uuid: &str,
+) -> Result<Option<(i64, String, String)>, Error> {
+    connection
+        .query_row(
+            "SELECT local_revision, payload_digest, status FROM sync_mutations WHERE object_type = ?1 AND object_uuid = ?2 ORDER BY local_revision DESC LIMIT 1",
+            params![kind, object_uuid],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(storage)
+}
+
+/// Enqueue a song snapshot unless the object's latest non-rejected mutation
+/// already carries this exact digest. An unchanged rescan replays the same
+/// snapshot; the queued candidate already represents that state, so minting
+/// another one would advance the revision without a change (local-library
+/// delta: an unchanged rescan adds no revision, play count, or candidate).
+/// A rejected tail keeps minting so the repair path stays open.
+pub(crate) fn enqueue_song_snapshot_if_changed(
+    connection: &Connection,
+    object_uuid: &str,
+    payload_json: &str,
+) -> Result<i64, Error> {
+    let local_root = super::context::object_root(connection, KIND_SONG, object_uuid, payload_json)?;
+    let resources = super::manifests::load(connection, KIND_SONG, object_uuid)?;
+    let resource_refs_json = serde_json::to_string(&resources).map_err(storage)?;
+    let digest = snapshot_digest(
+        KIND_SONG,
+        object_uuid,
+        payload_json,
+        OP_UPSERT,
+        &resource_refs_json,
+    );
+    if let Some((revision, queued_digest, status)) =
+        latest_mutation_digest(connection, KIND_SONG, object_uuid)?
+    {
+        if status != "rejected" && queued_digest == digest {
+            return Ok(revision);
+        }
+    }
+    enqueue_sync_in_root_with_resources(
+        connection,
+        &local_root,
+        KIND_SONG,
+        object_uuid,
+        payload_json,
+        OP_UPSERT,
+        None,
+        &resources,
+    )
+}
+
 /// Append one outbox row inside the caller's transaction. Called from the
 /// statements write paths so the canonical change and its sync fact commit
 /// atomically. `payload_json` is the full object snapshot (see module doc).
@@ -88,8 +168,31 @@ pub(crate) fn enqueue_sync_with_id(
     operation: &str,
     stable_mutation_id: Option<&str>,
 ) -> Result<i64, Error> {
+    enqueue_sync_at(
+        connection,
+        kind,
+        object_uuid,
+        payload_json,
+        operation,
+        stable_mutation_id,
+        None,
+    )
+}
+
+/// As [`enqueue_sync_with_id`], also freezing the fact timestamps. A retried
+/// operation whose `prepared` payload is already saved must replan to the same
+/// bytes, so the supplied intent time replaces the retry clock.
+pub(crate) fn enqueue_sync_at(
+    connection: &Connection,
+    kind: &str,
+    object_uuid: &str,
+    payload_json: &str,
+    operation: &str,
+    stable_mutation_id: Option<&str>,
+    at_ms: Option<u64>,
+) -> Result<i64, Error> {
     let local_root = super::context::object_root(connection, kind, object_uuid, payload_json)?;
-    enqueue_sync_in_root(
+    enqueue_sync_in_root_at(
         connection,
         &local_root,
         kind,
@@ -97,6 +200,7 @@ pub(crate) fn enqueue_sync_with_id(
         payload_json,
         operation,
         stable_mutation_id,
+        at_ms,
     )
 }
 
@@ -111,12 +215,35 @@ pub(super) fn enqueue_sync_in_root(
     operation: &str,
     stable_mutation_id: Option<&str>,
 ) -> Result<i64, Error> {
+    enqueue_sync_in_root_at(
+        connection,
+        local_root,
+        kind,
+        object_uuid,
+        payload_json,
+        operation,
+        stable_mutation_id,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn enqueue_sync_in_root_at(
+    connection: &Connection,
+    local_root: &str,
+    kind: &str,
+    object_uuid: &str,
+    payload_json: &str,
+    operation: &str,
+    stable_mutation_id: Option<&str>,
+    at_ms: Option<u64>,
+) -> Result<i64, Error> {
     let resources = if operation == "delete" || kind == "tombstone" {
         Vec::new()
     } else {
         super::manifests::load(connection, kind, object_uuid)?
     };
-    enqueue_sync_in_root_with_resources(
+    enqueue_sync_in_root_with_resources_at(
         connection,
         local_root,
         kind,
@@ -125,6 +252,7 @@ pub(super) fn enqueue_sync_in_root(
         operation,
         stable_mutation_id,
         &resources,
+        at_ms,
     )
 }
 
@@ -141,6 +269,32 @@ pub(super) fn enqueue_sync_in_root_with_resources(
     stable_mutation_id: Option<&str>,
     resource_refs: &[crate::domain::sync::SharedResourceManifest],
 ) -> Result<i64, Error> {
+    enqueue_sync_in_root_with_resources_at(
+        connection,
+        local_root,
+        kind,
+        object_uuid,
+        payload_json,
+        operation,
+        stable_mutation_id,
+        resource_refs,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn enqueue_sync_in_root_with_resources_at(
+    connection: &Connection,
+    local_root: &str,
+    kind: &str,
+    object_uuid: &str,
+    payload_json: &str,
+    operation: &str,
+    stable_mutation_id: Option<&str>,
+    resource_refs: &[crate::domain::sync::SharedResourceManifest],
+    at_ms: Option<u64>,
+) -> Result<i64, Error> {
+    let changed_at = at_ms.map_or_else(now_ms, |ms| i64::try_from(ms).unwrap_or(i64::MAX));
     super::manifests::validate(resource_refs)?;
     connection
         .execute(
@@ -155,6 +309,11 @@ pub(super) fn enqueue_sync_in_root_with_resources(
             |row| row.get(0),
         )
         .map_err(storage)?;
+    if super::durability::sync_namespace(connection, local_root)?.is_none() {
+        // Keep the per-object revision needed by local portable records, but
+        // do not create a sync mutation/outbox entry for standalone edits.
+        return Ok(next);
+    }
     let origin_device_id: String = connection
         .query_row(
             "SELECT value FROM device_state WHERE key = 'device_id'",
@@ -191,23 +350,17 @@ pub(super) fn enqueue_sync_in_root_with_resources(
         .optional()
         .map_err(storage)?;
     let resource_refs_json = serde_json::to_string(&resource_refs).map_err(storage)?;
-    let mut digest = blake3::Hasher::new();
-    digest.update(kind.as_bytes());
-    digest.update(&[0]);
-    digest.update(object_uuid.as_bytes());
-    digest.update(&[0]);
-    digest.update(operation.as_bytes());
-    digest.update(&[0]);
-    digest.update(payload_json.as_bytes());
-    if !resource_refs.is_empty() {
-        digest.update(&[0]);
-        digest.update(resource_refs_json.as_bytes());
-    }
-    let payload_digest = digest.finalize().to_hex().to_string();
+    let payload_digest = snapshot_digest(
+        kind,
+        object_uuid,
+        payload_json,
+        operation,
+        &resource_refs_json,
+    );
     connection
         .execute(
             "INSERT INTO sync_mutations (mutation_id, origin_device_id, origin_seq, previous_mutation_id, object_type, object_uuid, operation, local_revision, base_object_version, payload_json, payload_digest, status, created_at, resource_refs_json, local_root_uuid) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'pending', ?12, ?13, ?14)",
-            params![mutation_id, origin_device_id, origin_seq, previous_mutation_id, kind, object_uuid, operation, next, base_object_version, payload_json, payload_digest, now_ms(), resource_refs_json, local_root],
+            params![mutation_id, origin_device_id, origin_seq, previous_mutation_id, kind, object_uuid, operation, next, base_object_version, payload_json, payload_digest, changed_at, resource_refs_json, local_root],
         )
         .map_err(storage)?;
     connection
@@ -219,7 +372,7 @@ pub(super) fn enqueue_sync_in_root_with_resources(
     connection
         .execute(
             "INSERT INTO sync_outbox (object_type, object_uuid, revision, operation, payload_json, created_at, pushed_at, mutation_id, local_root_uuid) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, ?8) ON CONFLICT(object_type, object_uuid, revision) DO NOTHING",
-            params![kind, object_uuid, next, operation, payload_json, now_ms(), mutation_id, local_root],
+            params![kind, object_uuid, next, operation, payload_json, changed_at, mutation_id, local_root],
         )
         .map_err(storage)?;
     Ok(next)

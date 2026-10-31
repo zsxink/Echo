@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use echo_core::application::scan::ScanSummary;
 use echo_core::domain::catalog::{CatalogCollection, CatalogCounts, OpaqueCursor, Paged};
-use echo_core::domain::entities::{Song, SongAvailability};
+use echo_core::domain::entities::{MediaDiagnostic, Song, SongAvailability};
 use echo_core::domain::ids::{LibraryRootId, PlaylistId, SongId};
 use echo_core::domain::media::{AudioFormat, AudioParameters};
 
@@ -292,6 +292,28 @@ pub struct ScanSnapshot {
     pub missing: u64,
     pub skipped: u64,
     pub failed: u64,
+    pub issues: Vec<ScanIssueDto>,
+}
+
+/// One root-relative per-file diagnostic from a scan run.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanIssueDto {
+    pub relative_path: String,
+    pub code: String,
+    pub message: String,
+    pub song_created: bool,
+}
+
+impl From<&MediaDiagnostic> for ScanIssueDto {
+    fn from(issue: &MediaDiagnostic) -> Self {
+        Self {
+            relative_path: issue.path().display().to_owned(),
+            code: issue.code().to_owned(),
+            message: issue.reason().to_owned(),
+            song_created: issue.song_created(),
+        }
+    }
 }
 
 impl From<&ScanSummary> for ScanSnapshot {
@@ -308,6 +330,7 @@ impl From<&ScanSummary> for ScanSnapshot {
             missing: progress.missing,
             skipped: progress.skipped,
             failed: progress.failed,
+            issues: Vec::new(),
         }
     }
 }
@@ -431,8 +454,22 @@ impl
 /// relative paths; error variants carry user-safe codes + messages (Core
 /// redacts absolute locations before they reach this layer).
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind"
+)]
 pub enum ImportResultDto {
+    /// Saved in the library; recovery continues under the original operation.
+    SavedPending {
+        operation_id: String,
+        song_id: String,
+        relative_path: String,
+        renamed: bool,
+        lyrics: LyricsImportResultDto,
+        code: String,
+        message: String,
+    },
     /// Copied, verified, published and committed under the reserved identity.
     Imported {
         operation_id: String,
@@ -442,6 +479,8 @@ pub enum ImportResultDto {
         /// The published name took the close-name ` (n)` numbering
         /// (spec: 重名后成功). Non-failure, presented as a rename.
         renamed: bool,
+        /// The result of importing the optional same-basename lyrics sidecar.
+        lyrics: LyricsImportResultDto,
     },
     /// The content already belongs to a library record; no copy was made.
     Duplicate { existing_song_id: String },
@@ -453,21 +492,71 @@ pub enum ImportResultDto {
     Failed { code: String, message: String },
 }
 
+/// The sidecar result remains separate from the audio result: an imported song
+/// can succeed while its optional lyrics file fails to publish.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind"
+)]
+pub enum LyricsImportResultDto {
+    None,
+    Imported { relative_path: String },
+    Failed { code: String, message: String },
+}
+
+impl From<echo_core::application::import::LyricsImportResult> for LyricsImportResultDto {
+    fn from(result: echo_core::application::import::LyricsImportResult) -> Self {
+        use echo_core::application::import::LyricsImportResult as L;
+        match result {
+            L::None => Self::None,
+            L::Imported { target } => Self::Imported {
+                relative_path: target.to_string(),
+            },
+            L::Failed { code, message } => Self::Failed {
+                code: code.to_owned(),
+                message,
+            },
+        }
+    }
+}
+
 impl From<echo_core::application::import::ImportOutcome> for ImportResultDto {
     fn from(outcome: echo_core::application::import::ImportOutcome) -> Self {
         use echo_core::application::import::ImportOutcome as O;
         match outcome {
+            O::SavedPending {
+                operation,
+                song,
+                target,
+                renamed,
+                lyrics,
+                code,
+                message,
+                ..
+            } => Self::SavedPending {
+                operation_id: operation.to_string(),
+                song_id: song.to_string(),
+                relative_path: target.to_string(),
+                renamed,
+                lyrics: LyricsImportResultDto::from(*lyrics),
+                code: code.to_owned(),
+                message,
+            },
             O::Imported {
                 operation,
                 song,
                 target,
                 renamed,
+                lyrics,
                 ..
             } => Self::Imported {
                 operation_id: operation.to_string(),
                 song_id: song.to_string(),
                 relative_path: target.to_string(),
                 renamed,
+                lyrics: LyricsImportResultDto::from(*lyrics),
             },
             O::Duplicate { existing } => Self::Duplicate {
                 existing_song_id: existing.to_string(),
@@ -781,5 +870,29 @@ mod tests {
         assert!(view.is_last);
         assert_eq!(view.items.len(), 1);
         assert_eq!(view.next_cursor, None);
+    }
+
+    #[test]
+    fn imported_result_keeps_lyrics_failure_in_camel_case_ipc_shape() {
+        use echo_core::application::import::{ImportOutcome, LyricsImportResult};
+        use echo_core::domain::ids::{OperationId, SongId};
+
+        let outcome = ImportOutcome::Imported {
+            operation: OperationId::new(),
+            song: SongId::new(),
+            target: RelativeMediaPath::new("周杰伦/晴天.flac").expect("audio path"),
+            renamed: false,
+            lyrics: Box::new(LyricsImportResult::Failed {
+                code: "lyrics_publish",
+                message: "歌词目录不可写".to_owned(),
+            }),
+        };
+
+        let json = serde_json::to_value(ImportResultDto::from(outcome)).expect("serialize DTO");
+        assert_eq!(json["kind"], "imported");
+        assert_eq!(json["relativePath"], "周杰伦/晴天.flac");
+        assert_eq!(json["lyrics"]["kind"], "failed");
+        assert_eq!(json["lyrics"]["code"], "lyrics_publish");
+        assert_eq!(json["lyrics"]["message"], "歌词目录不可写");
     }
 }

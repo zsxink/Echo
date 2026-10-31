@@ -9,14 +9,15 @@ use std::collections::BTreeMap;
 
 use crate::application::delete::DELETE_OPERATION;
 use crate::application::portable_materialize::{
-    committed_version, tombstone_record, write_record_guarded, SONG_OBJECT_TYPE,
+    committed_version, tombstone_record, SONG_OBJECT_TYPE,
 };
 use crate::application::ports::{OperationItem, SystemTrashPort, TxAccess};
 use crate::application::scan::ScanDeps;
 use crate::domain::entities::SongAvailability;
 use crate::domain::ids::{LibraryRootId, OperationId, Revision, SongId};
-use crate::domain::library::{PortableRecord, RecordKind};
+use crate::domain::library::{PortableRecord, PortableRecordEnvelope, RecordKind};
 use crate::domain::state::OperationState;
+use crate::domain::sync::ObjectKey;
 use crate::error::Error;
 
 /// Summary of one irreversible-delete pass.
@@ -55,7 +56,7 @@ impl<'a> FinalizeExpiredDeletes<'a> {
     /// Returns an infrastructure or journal error while persisting a known
     /// transition. A later startup recovery can safely retry such failures.
     pub fn run(&self, root: LibraryRootId) -> Result<TrashFinalizationReport, Error> {
-        let _activity = super::sync::local_activity()?;
+        let _activity = self.deps.activity.enter()?;
         if self.deps.roots.replica_enrollment_pending(root)? {
             return Ok(TrashFinalizationReport::default());
         }
@@ -331,6 +332,35 @@ pub(crate) fn finalize_persisted_trash(
             why: "trash-applied delete song is not pending delete".to_owned(),
         });
     }
+    let now = u64::try_from(now_ms(deps)?).map_err(|_| Error::InvariantViolation {
+        why: "delete finalization clock is negative".to_owned(),
+    })?;
+    let device = deps.device_id.current_device_id();
+    let (revision, hlc) = committed_version(
+        deps.sync.as_ref(),
+        SONG_OBJECT_TYPE,
+        &song.to_string(),
+        device,
+    )?;
+    let tombstone = PortableRecordEnvelope::new(
+        PortableRecord::Tombstone(tombstone_record(
+            device,
+            hlc,
+            Revision::from_u64(revision.as_u64()),
+            song.as_uuid(),
+            RecordKind::Song,
+        )),
+        None,
+    )?;
+    crate::application::delete::intent::finalize(
+        deps,
+        root,
+        operation,
+        ObjectKey::Song(song),
+        now,
+        tombstone,
+    )?
+    .ok_or_else(|| Error::conflict("delete undo window has not expired"))?;
     let finalized: Vec<OperationItem> = items
         .iter()
         .map(|item| OperationItem {
@@ -344,26 +374,7 @@ pub(crate) fn finalize_persisted_trash(
         }
         tx.delete_song(song)?;
         tx.release_operation_claims(operation)
-    }))?;
-
-    // Publish the shared deletion only after the irreversible SQLite
-    // transaction has committed. The outbox snapshot is the repair source if
-    // this best-effort portable projection cannot be written.
-    let device = deps.device_id.current_device_id();
-    let (revision, hlc) = committed_version(
-        deps.sync.as_ref(),
-        SONG_OBJECT_TYPE,
-        &song.to_string(),
-        device,
-    )?;
-    let record = PortableRecord::Tombstone(tombstone_record(
-        device,
-        hlc,
-        Revision::from_u64(revision.as_u64()),
-        song.as_uuid(),
-        RecordKind::Song,
-    ));
-    write_record_guarded(deps.control.as_ref(), root, &record)
+    }))
 }
 
 fn subject_song(items: &[OperationItem]) -> Result<SongId, Error> {
@@ -388,8 +399,8 @@ mod tests {
     use super::*;
     use crate::application::delete::DeleteSongs;
     use crate::application::ports::{
-        ControlPlanePort, LibraryRepository, OperationJournalRepository, PlaylistRepository,
-        SongRepository, SystemTrashPort,
+        ControlPlanePort, LibraryDurabilityPort, LibraryRepository, OperationJournalRepository,
+        PlaylistRepository, SongRepository, SystemTrashPort,
     };
     use crate::application::recover::RecoverOperations;
     use crate::application::testing::{FakeLibraryFileSystem, FakeTrash, ScanFixture};
@@ -552,6 +563,95 @@ mod tests {
             .unwrap()
             .iter()
             .all(|item| item.state == OperationState::DatabaseFinalized));
+        let replay = fixture
+            .control
+            .durability()
+            .unwrap()
+            .recover(fixture.root)
+            .unwrap();
+        let state = replay
+            .states()
+            .filter(|state| {
+                state.kind == crate::domain::library::durability::StateKind::DeleteIntent
+                    && state.id == operation.as_uuid()
+            })
+            .last()
+            .expect("finalized intent remains in the directory");
+        let intent: crate::domain::sync::LocalDeleteIntent =
+            serde_json::from_value(state.payload.clone()).unwrap();
+        assert_eq!(
+            intent.state,
+            crate::domain::sync::DeleteIntentState::Finalized
+        );
+    }
+
+    #[test]
+    fn trash_tombstone_commit_precedes_database_finalization_and_retries_same_batch() {
+        let fixture = ScanFixture::new();
+        let (song, playlist) = seed_delete(&fixture);
+        let operation = expired_pending(&fixture, song);
+
+        fixture.control.set_usable(false);
+        let first = FinalizeExpiredDeletes::new(&fixture.deps, &FakeTrash::new()).run(fixture.root);
+        assert!(
+            first.is_err(),
+            "a refused directory commit must stop finalization"
+        );
+        assert!(SongRepository::by_id(&fixture.database, song)
+            .expect("song remains queryable")
+            .is_some());
+        assert_eq!(
+            PlaylistRepository::members(&fixture.database, playlist)
+                .expect("members remain queryable")
+                .len(),
+            1
+        );
+        assert!(fixture
+            .control
+            .read_record(fixture.root, RecordKind::Tombstone, &song.to_string())
+            .expect("no uncommitted tombstone")
+            .is_none());
+
+        fixture.control.set_usable(true);
+        let recovered = FinalizeExpiredDeletes::new(&fixture.deps, &FakeTrash::new())
+            .run(fixture.root)
+            .expect("retry finalization");
+        assert_eq!(recovered.finalized, vec![operation]);
+        assert!(SongRepository::by_id(&fixture.database, song)
+            .expect("deleted song query")
+            .is_none());
+        assert!(matches!(
+            fixture
+                .control
+                .read_record(fixture.root, RecordKind::Tombstone, &song.to_string())
+                .expect("committed tombstone"),
+            Some(PortableRecord::Tombstone(_))
+        ));
+
+        let replay = fixture
+            .control
+            .recover(fixture.root)
+            .expect("directory replay");
+        let batch_id = crate::application::delete::intent::finalization_batch_id(operation);
+        let matching: Vec<_> = replay
+            .commits
+            .iter()
+            .filter(|commit| commit.batch.operation_id == batch_id)
+            .collect();
+        assert_eq!(
+            matching.len(),
+            1,
+            "retry must reuse one frozen finalization batch"
+        );
+        assert!(matching[0]
+            .batch
+            .records
+            .iter()
+            .any(|envelope| matches!(envelope.record(), PortableRecord::Tombstone(_))));
+        assert!(matching[0].batch.state.iter().any(|state| {
+            state.kind == crate::domain::library::durability::StateKind::DeleteIntent
+                && state.id == operation.as_uuid()
+        }));
     }
 
     #[test]

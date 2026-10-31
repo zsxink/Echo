@@ -1,6 +1,7 @@
 //! Continuation tests: the behaviours that must survive "open the same
 //! directory again" (issue #1).
 
+use crate::application::ports::ControlPlaneInventoryPort as _;
 use std::collections::BTreeMap;
 
 use crate::application::continuation::{ContinueFromRecords, ProjectionReport};
@@ -40,6 +41,7 @@ fn favorite_record(song_uuid: uuid::Uuid, is_favorite: bool) -> PortableRecord {
         updated_by_device_id: DeviceId::new(),
         hlc: HLC,
         is_favorite,
+        favorited_at: None,
     })
 }
 
@@ -100,6 +102,8 @@ fn continuation_restores_songs_favorites_playlists_and_member_order() {
         .write_record(
             fixture.root,
             &PortableRecord::Playlist(PlaylistRecord {
+                created_at: None,
+                cover_asset: None,
                 playlist_uuid,
                 revision: Revision::INITIAL,
                 updated_by_device_id: DeviceId::new(),
@@ -116,6 +120,7 @@ fn continuation_restores_songs_favorites_playlists_and_member_order() {
             .write_record(
                 fixture.root,
                 &PortableRecord::PlaylistItem(PlaylistItemRecord {
+                    added_at: None,
                     item_uuid: item,
                     revision: Revision::INITIAL,
                     updated_by_device_id: DeviceId::new(),
@@ -196,6 +201,8 @@ fn continuation_is_idempotent_across_repeated_opens() {
         .write_record(
             fixture.root,
             &PortableRecord::Playlist(PlaylistRecord {
+                created_at: None,
+                cover_asset: None,
                 playlist_uuid,
                 revision: Revision::INITIAL,
                 updated_by_device_id: DeviceId::new(),
@@ -209,6 +216,7 @@ fn continuation_is_idempotent_across_repeated_opens() {
         .write_record(
             fixture.root,
             &PortableRecord::PlaylistItem(PlaylistItemRecord {
+                added_at: None,
                 item_uuid: item,
                 revision: Revision::INITIAL,
                 updated_by_device_id: DeviceId::new(),
@@ -285,6 +293,8 @@ fn tombstone_outranks_a_stale_record_and_is_never_resurrected() {
         .write_record(
             fixture.root,
             &PortableRecord::Playlist(PlaylistRecord {
+                created_at: None,
+                cover_asset: None,
                 playlist_uuid,
                 revision: Revision::INITIAL,
                 updated_by_device_id: DeviceId::new(),
@@ -364,6 +374,7 @@ fn dangling_records_are_counted_and_never_invented() {
         .write_record(
             fixture.root,
             &PortableRecord::PlaylistItem(PlaylistItemRecord {
+                added_at: None,
                 item_uuid: uuid::Uuid::new_v4(),
                 revision: Revision::INITIAL,
                 updated_by_device_id: DeviceId::new(),

@@ -1,11 +1,15 @@
 //! Replica cursor validation, including empty responses and exact retries.
 
+use std::sync::Arc;
+
 use echo_core::application::ports::{
-    DeviceIdProvider, HostCommitLedgerPort, LibraryRepository, RemoteApplyPort, RemoteCommit,
+    ControlPlanePort, DeviceIdProvider, HostCommitLedgerPort, LibraryRepository, RemoteApplyPort,
+    RemoteCommit,
 };
 use echo_core::domain::entities::LibraryRoot;
 use echo_core::domain::ids::{LibraryRootId, SongId};
 use echo_core::domain::sync::*;
+use echo_core::infrastructure::filesystem::{RootControlPlane, RootRegistry};
 use echo_core::infrastructure::sqlite::SqliteDatabase;
 
 #[test]
@@ -115,11 +119,22 @@ fn prepared_replica() -> (
     };
     for (db, is_host, name) in [(&host, true, "host"), (&replica, false, "replica")] {
         let root = LibraryRootId::new();
-        LibraryRepository::upsert(
-            db,
-            &LibraryRoot::new(root, directory.path().join(name), true, true),
-        )
-        .unwrap();
+        let path = directory.path().join(name);
+        std::fs::create_dir_all(&path).unwrap();
+        let registry = RootRegistry::new();
+        registry.register(root, &path);
+        let control = Arc::new(RootControlPlane::new(registry));
+        control
+            .write_manifest(
+                root,
+                &echo_core::domain::library::LibraryManifest::new(
+                    echo_core::domain::library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+                    "cursor-test",
+                ),
+            )
+            .unwrap();
+        db.configure_library_control(control);
+        LibraryRepository::upsert(db, &LibraryRoot::new(root, path, true, true)).unwrap();
         db.bind_sync_library(binding, is_host, root).unwrap();
     }
     let origin = DeviceId::from_uuid(host.current_device_id().as_uuid());

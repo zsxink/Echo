@@ -96,18 +96,10 @@ pub struct ParsedMetadata {
     pub warnings: Vec<ParseWarning>,
 }
 
-impl ParsedMetadata {
-    /// The music key used for conservative weak re-linking: only applied when
-    /// both sides are unique and duration is within the tolerance.
-    #[must_use]
-    pub fn music_key(&self) -> Option<MusicKey> {
-        Some(MusicKey {
-            artist: self.artist.clone(),
-            album: self.album.clone(),
-            title: self.title.clone(),
-            duration_seconds: self.duration.map(|d| d.as_secs()),
-        })
-    }
+/// Derive a disposable cover-cache key from a validated original content hash.
+#[must_use]
+pub fn cover_asset_key(content_hash: &str) -> String {
+    format!("cv1-{content_hash}")
 }
 
 /// Embedded cover art as read from the audio file (task 4.3).
@@ -152,15 +144,6 @@ pub struct ParseWarning {
     pub field: String,
 }
 
-/// The `(artist, album, title, duration)` music key for weak re-linking.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MusicKey {
-    pub artist: Option<String>,
-    pub album: Option<String>,
-    pub title: Option<String>,
-    pub duration_seconds: Option<u64>,
-}
-
 /// A media probe result that failed.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProbeFailure {
@@ -186,22 +169,6 @@ mod tests {
         assert_eq!(AudioFormat::Mpeg.extension(), "mp3");
         assert_eq!(AudioFormat::Opus.extension(), "opus");
         assert_eq!(AudioFormat::Wav.extension(), "wav");
-    }
-
-    #[test]
-    fn music_key_is_optional_on_duration() {
-        let md = ParsedMetadata {
-            title: Some("晴天".into()),
-            artist: Some("周杰伦".into()),
-            duration: Some(Duration::from_secs(269)),
-            ..Default::default()
-        };
-        let key = md.music_key().unwrap();
-        assert_eq!(key.artist.as_deref(), Some("周杰伦"));
-        assert_eq!(key.duration_seconds, Some(269));
-
-        let empty = ParsedMetadata::default();
-        assert!(empty.music_key().is_some(), "even empty tags form a key");
     }
 
     #[test]

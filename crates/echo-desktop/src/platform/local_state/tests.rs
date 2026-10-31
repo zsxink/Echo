@@ -483,6 +483,5 @@ fn effects_and_unknown_fields_survive_all_legacy_mutations() {
     let raw: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
     assert_eq!(raw["effects"], effects);
     assert_eq!(raw["futureDesktop"], serde_json::json!({"opaque":true}));
-    assert_eq!(raw["version"], 7);
     assert_eq!(raw["window"]["width"], 800);
 }

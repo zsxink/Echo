@@ -26,7 +26,15 @@ beforeEach(() => {
   mocks.setInvoke("start_scan", {
     generation: 2,
     cancelled: false,
-    progress: { state: "completed" },
+    state: "Completed",
+    discovered: 0,
+    processed: 0,
+    created: 0,
+    updated: 0,
+    missing: 0,
+    skipped: 0,
+    failed: 0,
+    issues: [],
   });
   mocks.setInvoke("sync_status", syncStatus());
   mocks.setInvoke("sync_storage_space", { libraryRoot: "root-1", availableBytes: null });
@@ -59,6 +67,35 @@ describe("SettingsView library rescan", () => {
     );
     expect(scanCall).toEqual(["start_scan", { root: "root-1" }]);
     expect(screen.getByRole("status")).toHaveTextContent("音乐库已重新扫描");
+  });
+
+  it("shows individual scan diagnostics from settings", async () => {
+    mocks.setInvoke("start_scan", {
+      generation: 4,
+      cancelled: false,
+      state: "Completed",
+      discovered: 1,
+      processed: 1,
+      created: 0,
+      updated: 0,
+      missing: 0,
+      skipped: 0,
+      failed: 1,
+      issues: [
+        {
+          relativePath: "media/重复.flac",
+          code: "duplicate_content",
+          message: "内容已由另一首歌曲收录",
+          songCreated: false,
+        },
+      ],
+    });
+    render(<SettingsView onClose={() => undefined} />);
+
+    fireEvent.click(await screen.findByTestId("rescan-library-button"));
+    expect(await screen.findByTestId("scan-report-dialog")).toBeInTheDocument();
+    expect(await screen.findByText("media/重复.flac")).toBeInTheDocument();
+    expect(await screen.findByText("内容已由另一首歌曲收录")).toBeInTheDocument();
   });
 
   it("disables rescan when no library root is configured", async () => {

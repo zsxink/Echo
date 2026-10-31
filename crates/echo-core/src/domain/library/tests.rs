@@ -344,6 +344,8 @@ fn portable_record_kind_and_uuid_for_playlist() {
         updated_by_device_id: DeviceId::new(),
         hlc: HybridLogicalClock::default(),
         display_name: "通勤路上".to_owned(),
+        created_at: None,
+        cover_asset: None,
     });
     assert_eq!(rec.kind(), RecordKind::Playlist);
     assert_eq!(rec.object_uuid(), pl_uuid);
@@ -374,6 +376,7 @@ fn portable_record_favorite_tracks_song() {
         updated_by_device_id: DeviceId::new(),
         hlc: HybridLogicalClock::new(2000, 0),
         is_favorite: true,
+        favorited_at: None,
     });
     assert_eq!(rec.kind(), RecordKind::Favorite);
     assert_eq!(rec.object_uuid(), song_uuid);
@@ -393,6 +396,7 @@ fn portable_record_playlist_item_references_song_and_playlist() {
         playlist_uuid: pl_uuid,
         song_uuid,
         position: 0,
+        added_at: None,
     });
     assert_eq!(rec.kind(), RecordKind::PlaylistItem);
     assert_eq!(rec.object_uuid(), item_uuid);
@@ -667,6 +671,7 @@ fn portable_v2_member_alias_is_scoped_to_the_canonical_members_playlist() {
         playlist_uuid: id(3),
         song_uuid: id(4),
         position: 5,
+        added_at: None,
     });
     let confirmed: PortableRecordDocument = serde_json::from_str(V2_TOMBSTONE_FIXTURE).unwrap();
     let mut metadata = confirmed.sync_metadata().unwrap().clone();
@@ -692,16 +697,37 @@ fn portable_v2_member_alias_is_scoped_to_the_canonical_members_playlist() {
 }
 
 #[test]
-fn manifest_v2_explicitly_reads_v1_but_refuses_invalid_and_future_versions() {
+fn manifest_v3_explicitly_reads_legacy_but_refuses_invalid_and_future_versions() {
     let mut manifest = LibraryManifest::new(LibraryId::from_uuid(uuid::Uuid::from_u128(1)), "test");
-    assert_eq!(manifest.format_version, 2);
+    assert_eq!(manifest.format_version, 3);
     assert!(manifest.is_compatible());
-    manifest.format_version = 1;
-    assert!(manifest.is_compatible());
-    for unsupported in [0, 3, u64::MAX] {
+    for supported in [1, 2] {
+        manifest.format_version = supported;
+        assert!(manifest.is_compatible());
+    }
+    for unsupported in [0, 4, u64::MAX] {
         manifest.format_version = unsupported;
         assert!(!manifest.is_compatible());
     }
+}
+
+#[test]
+fn library_durability_new_manifest_fences_legacy_writers_without_changing_record_envelopes() {
+    let manifest = LibraryManifest::new(LibraryId::from_uuid(uuid::Uuid::from_u128(1)), "test");
+    let raw = serde_json::to_string(&manifest).unwrap();
+    let decoded: LibraryManifest = serde_json::from_str(&raw).unwrap();
+    assert_eq!(decoded.format_version, 3);
+    assert!(decoded.is_compatible());
+    // Released clients accept manifest versions 1 and 2 only.
+    assert!(decoded.format_version > 2);
+    let legacy: PortableRecordDocument = serde_json::from_str(V1_FAVORITE_FIXTURE).unwrap();
+    let envelope = PortableRecordEnvelope::new(legacy.into_record(), None).unwrap();
+    assert_eq!(envelope.format_version(), 2);
+    assert_eq!(
+        serde_json::from_str::<PortableRecordEnvelope>(&serde_json::to_string(&envelope).unwrap())
+            .unwrap(),
+        envelope,
+    );
 }
 
 #[test]

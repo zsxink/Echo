@@ -105,6 +105,19 @@ fn typed_deletion_is_authorized_by_its_queue_entry_not_by_a_live_row() {
         &LibraryRoot::new(root, directory.path().join("library"), true, true),
     )
     .unwrap();
+    // Standalone edits deliberately mint no sync candidates, so the queue
+    // contract only exists once the root is bound to LAN sync.
+    database
+        .bind_sync_library(
+            SyncBinding {
+                library_id: LibraryId::new(),
+                authority_id: AuthorityId::new(),
+                epoch: Epoch::INITIAL,
+            },
+            true,
+            root,
+        )
+        .unwrap();
     let playlist = PlaylistId::new();
     database.create(playlist, root, "Mix").unwrap();
     PlaylistRepository::delete(&database, playlist).unwrap();

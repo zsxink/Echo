@@ -1,0 +1,89 @@
+{
+  "scope": "Python prototype; operation-file durability and asynchronous SQLite projection; excludes React, Tauri, actual Echo records/sync and power-loss testing",
+  "platform": "darwin",
+  "songs": 1000,
+  "samples_per_operation": 300,
+  "sync": "F_FULLFSYNC",
+  "crash_injection": [
+    "partial_temp",
+    "temp_written",
+    "file_synced",
+    "linked",
+    "directory_synced",
+    "sqlite_before_commit",
+    "sqlite_committed"
+  ],
+  "behavioral_checks": [
+    "cross-process writer exclusion",
+    "immediate in-memory reads",
+    "duplicate playlist",
+    "SQLite rebuild",
+    "committed-record tamper"
+  ],
+  "sqlite_lock_check": {
+    "save_ms_while_sqlite_locked": 10.278083,
+    "sqlite_projection_lag_ms": 128.511
+  },
+  "concurrent_writers_check": {
+    "parallel_writers": 8,
+    "favorite_operations": 100,
+    "duplicate_name_attempts": 8,
+    "playlists_created": 1
+  },
+  "measurements": {
+    "favorite": {
+      "save_ms": {
+        "count": 300,
+        "p50_ms": 9.815,
+        "p95_ms": 10.969,
+        "p99_ms": 12.975,
+        "max_ms": 13.811
+      },
+      "file_sync_ms": {
+        "count": 300,
+        "p50_ms": 4.001,
+        "p95_ms": 4.451,
+        "p99_ms": 6.187,
+        "max_ms": 7.845
+      },
+      "dir_sync_ms": {
+        "count": 300,
+        "p50_ms": 3.591,
+        "p95_ms": 4.381,
+        "p99_ms": 4.986,
+        "max_ms": 6.314
+      }
+    },
+    "playlist": {
+      "save_ms": {
+        "count": 300,
+        "p50_ms": 9.736,
+        "p95_ms": 10.989,
+        "p99_ms": 12.926,
+        "max_ms": 16.794
+      },
+      "file_sync_ms": {
+        "count": 300,
+        "p50_ms": 3.967,
+        "p95_ms": 4.459,
+        "p99_ms": 6.25,
+        "max_ms": 8.126
+      },
+      "dir_sync_ms": {
+        "count": 300,
+        "p50_ms": 3.602,
+        "p95_ms": 4.341,
+        "p99_ms": 5.392,
+        "max_ms": 7.998
+      }
+    },
+    "projection_lag": {
+      "count": 600,
+      "p50_ms": 0.648,
+      "p95_ms": 1.197,
+      "p99_ms": 4.087,
+      "max_ms": 5.916
+    },
+    "projection_confirmed": 600
+  }
+}

@@ -112,6 +112,7 @@ use crate::application::ports::{
     CoverRepository, LibraryFileSystem as LibraryFileSystemPort, LyricsRepository, OperationItem,
     OperationJournalRepository, RootWriteRepository, RuntimeStateStore, ScanRunRepository, TxWork,
 };
+use crate::application::ports::LocalSyncQueuePort;
 use crate::application::root_switch::{
     ActivateLibrary, Blockers, PrepareLibraryCandidate, ROOT_EPOCH_KEY,
 };
@@ -124,6 +125,7 @@ use crate::application::testing::small_fakes::{
 };
 use crate::application::trash::{finalize_persisted_trash, FinalizeExpiredDeletes};
 use crate::domain::state::scan::ScanState as ScanRunState;
+use crate::domain::library::RecordKind;
 use crate::infrastructure::metadata::DiskCoverCache;
 
 #[derive(Clone)]
@@ -204,6 +206,8 @@ impl ScanStack {
         let db_device: Arc<dyn DeviceIdProvider> = db.clone();
         let db_sync: Arc<dyn SyncStateReader> = db;
         ScanDeps {
+            activity: Arc::new(crate::application::local_activity::LocalActivity::default()),
+            history: None,
             roots: db_root,
             songs: db_songs,
             catalog: db_catalog,
@@ -274,6 +278,19 @@ fn seed_trash_operation(
         .expect("member");
 
     let operation = OperationId::new();
+    let delete_intent = crate::application::delete::intent::begin(
+        &deps,
+        stack.root,
+        operation,
+        crate::domain::sync::ObjectKey::Song(song.id()),
+        1_000,
+    )
+    .expect("directory delete intent");
+    deps.uow
+        .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
+            tx.set_undo_deadline(operation, 11_000, delete_intent.final_mutation_id)
+        }))
+        .expect("persist matching stable undo deadline");
     let staging =
         RelativeMediaPath::new(&format!("media/trash/{operation}/audio")).expect("stage path");
     stack.write(staging.display(), b"staged-song");
@@ -374,6 +391,12 @@ fn sqlite_trash_finalization_rollback_keeps_song_journal_and_claim_together() {
             .all(|item| item.state == OperationState::TrashApplied)
     );
     assert_eq!(claim_active(stack.database.as_ref(), operation), 1);
+    assert!(matches!(
+        deps.control
+            .read_record(stack.root, RecordKind::Tombstone, &song.id().to_string())
+            .expect("directory keeps the committed tombstone"),
+        Some(crate::domain::library::PortableRecord::Tombstone(_))
+    ));
 }
 
 #[test]
@@ -481,6 +504,175 @@ fn scan_pipeline_persists_songs_lyrics_covers_and_progress() {
         .search_active_songs("歌手", SongSort::default(), None, 100)
         .expect("search");
     assert_eq!(page.items.len(), 2);
+}
+
+#[test]
+fn sqlite_scan_reparsing_unchanged_song_does_not_create_a_candidate() {
+    let stack = ScanStack::new();
+    // Only an enrolled root captures scan facts as sync candidates
+    // (SYN-R06-S04); this test measures candidate dedup.
+    stack
+        .database
+        .bind_sync_library(
+            crate::domain::sync::SyncBinding {
+                library_id: crate::domain::sync::LibraryId::new(),
+                authority_id: crate::domain::sync::AuthorityId::new(),
+                epoch: crate::domain::sync::Epoch::INITIAL,
+            },
+            true,
+            stack.root,
+        )
+        .expect("bind sync library");
+    stack.write("same.mp3", b"unchanged-audio");
+    stack.probe.set(
+        "same.mp3",
+        crate::application::ports::ProbeOutcome::Audio {
+            format: crate::domain::media::AudioFormat::Flac,
+            duration: Some(Duration::from_secs(1)),
+        },
+    );
+    stack.metadata.set(
+        "same.mp3",
+        crate::domain::media::ParsedMetadata {
+            title: Some("Same".to_owned()),
+            artist: Some("Artist".to_owned()),
+            album: None,
+            duration: Some(Duration::from_secs(1)),
+            format: crate::domain::media::AudioFormat::Flac,
+            ..crate::domain::media::ParsedMetadata::default()
+        },
+    );
+    let deps = stack.deps();
+    let supervisor = ScanSupervisor::new();
+    StartScan::new(&deps, &supervisor)
+        .run(stack.root)
+        .expect("initial scan");
+    let song = stack
+        .database
+        .all_in_root(stack.root)
+        .expect("songs")
+        .into_iter()
+        .next()
+        .expect("scanned song");
+    let song_key = crate::domain::sync::ObjectKey::Song(song.id());
+    let initial: Vec<_> = stack
+        .database
+        .pending_local_mutations(100)
+        .expect("initial candidates")
+        .into_iter()
+        .filter(|candidate| candidate.object == song_key)
+        .collect();
+    assert_eq!(initial.len(), 1, "initial import creates one song event");
+    let initial_revision = stack
+        .database
+        .outbox_revision("song", &song.id().to_string())
+        .expect("initial revision");
+
+    // Replacing the file with identical bytes advances its filesystem mtime,
+    // forcing parse + commit_song instead of the fast unchanged-file skip.
+    std::thread::sleep(Duration::from_millis(5));
+    stack.write("same.mp3", b"unchanged-audio");
+    StartScan::new(&deps, &supervisor)
+        .run(stack.root)
+        .expect("reparse identical content");
+
+    let retried: Vec<_> = stack
+        .database
+        .pending_local_mutations(100)
+        .expect("candidates after reparse")
+        .into_iter()
+        .filter(|candidate| candidate.object == song_key)
+        .collect();
+    assert_eq!(retried.len(), 1, "unchanged parse creates no extra event");
+    assert_eq!(retried[0].mutation_id, initial[0].mutation_id);
+    assert_eq!(
+        stack
+            .database
+            .outbox_revision("song", &song.id().to_string())
+            .expect("revision after reparse"),
+        initial_revision,
+        "unchanged parse does not advance the local revision"
+    );
+}
+
+#[test]
+fn sqlite_scan_after_projection_wipe_rebuilds_the_saved_identity() {
+    let stack = ScanStack::new();
+    stack.write("wipe-rebuild.mp3", b"saved-scan-audio");
+    stack.probe.set(
+        "wipe-rebuild.mp3",
+        crate::application::ports::ProbeOutcome::Audio {
+            format: crate::domain::media::AudioFormat::Flac,
+            duration: Some(Duration::from_secs(2)),
+        },
+    );
+    stack.metadata.set(
+        "wipe-rebuild.mp3",
+        crate::domain::media::ParsedMetadata {
+            title: Some("Saved scan".to_owned()),
+            artist: Some("Artist".to_owned()),
+            duration: Some(Duration::from_secs(2)),
+            format: crate::domain::media::AudioFormat::Flac,
+            ..crate::domain::media::ParsedMetadata::default()
+        },
+    );
+    let deps = stack.deps();
+    let directory_control = Arc::clone(&deps.control);
+    let supervisor = ScanSupervisor::new();
+    StartScan::new(&deps, &supervisor)
+        .run(stack.root)
+        .expect("initial scan");
+    let original = stack
+        .database
+        .all_in_root(stack.root)
+        .expect("initial songs")
+        .into_iter()
+        .next()
+        .expect("initially scanned song");
+
+    // Reopen an empty projection database against the same library directory
+    // and durable control-plane records, matching a catalog wipe/reinstall.
+    let rebuilt_database = Arc::new(
+        SqliteDatabase::open(
+            stack
+                .library_dir
+                .parent()
+                .unwrap()
+                .join("rebuilt-after-scan.sqlite"),
+        )
+        .expect("fresh projection database"),
+    );
+    LibraryRepository::upsert(
+        rebuilt_database.as_ref(),
+        &LibraryRoot::new(stack.root, stack.library_dir.clone(), true, true),
+    )
+    .expect("register existing library root");
+    let mut rebuilt_deps = stack.deps();
+    rebuilt_deps.roots = rebuilt_database.clone();
+    rebuilt_deps.songs = rebuilt_database.clone();
+    rebuilt_deps.catalog = rebuilt_database.clone();
+    rebuilt_deps.playlists = rebuilt_database.clone();
+    rebuilt_deps.lyrics = rebuilt_database.clone();
+    rebuilt_deps.covers = rebuilt_database.clone();
+    rebuilt_deps.runs = rebuilt_database.clone();
+    rebuilt_deps.journal = rebuilt_database.clone();
+    rebuilt_deps.uow = rebuilt_database.clone();
+    rebuilt_deps.sync = rebuilt_database.clone();
+    rebuilt_deps.device_id = rebuilt_database;
+    rebuilt_deps.control = directory_control;
+    StartScan::new(&rebuilt_deps, &ScanSupervisor::new())
+        .run(stack.root)
+        .expect("scan reconstructs wiped projection");
+
+    // Query the new database through the rebuilt dependency's song port.
+    let songs = rebuilt_deps
+        .songs
+        .all_in_root(stack.root)
+        .expect("rebuilt songs");
+    assert_eq!(songs.len(), 1);
+    assert_eq!(songs[0].id(), original.id());
+    assert_eq!(songs[0].added_at(), original.added_at());
+    assert_eq!(songs[0].title(), Some("Saved scan"));
 }
 
 /// Probe double that stalls each probe so a scan stays in flight.

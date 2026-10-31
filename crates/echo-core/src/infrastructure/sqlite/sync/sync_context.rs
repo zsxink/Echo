@@ -10,7 +10,7 @@ use crate::domain::ids::LibraryRootId;
 use crate::error::Error;
 
 // Child tables precede their parents. Restore uses the reverse order.
-const TABLES: &[&str] = &[
+pub(crate) const TABLES: &[&str] = &[
     "sync_snapshot_pages",
     "sync_snapshot_resource_refs",
     "sync_snapshot_records",
@@ -146,9 +146,13 @@ pub(super) fn object_root(
     payload: &str,
 ) -> Result<String, Error> {
     let query = match kind {
-        "song" | "favorite" | "override" | "play-stats" | "tombstone" => "SELECT library_root_uuid FROM songs WHERE uuid=?1",
+        "song" | "favorite" | "override" | "play-stats" | "tombstone" => {
+            "SELECT library_root_uuid FROM songs WHERE uuid=?1"
+        }
         "playlist" => "SELECT library_root_uuid FROM playlists WHERE uuid=?1",
-        "playlist-item" => "SELECT p.library_root_uuid FROM playlist_songs m JOIN playlists p ON p.uuid=m.playlist_uuid WHERE m.member_uuid=?1",
+        "playlist-item" => {
+            "SELECT p.library_root_uuid FROM playlist_songs m JOIN playlists p ON p.uuid=m.playlist_uuid WHERE m.member_uuid=?1"
+        }
         "library-root" => return Ok(id.to_owned()),
         _ => return Err(Error::conflict("unknown local sync object kind")),
     };

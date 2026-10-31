@@ -1,12 +1,12 @@
 # LAN library sync recovery
 
-This guide covers recovery after a host database or portable library has been restored from backup. The host owns the commit sequence, so a restored copy must not resume publishing under its old authority when its ledger may be behind.
+This guide covers LAN host recovery. For user-data recovery after reinstall, preserve the **complete library root**, including both `media/` and `echo/`; SQLite is intended to be a rebuildable projection under `enforce-library-first-durability`, but that change is not yet implemented and verified for every entrypoint. Keeping only `media/` preserves audio bytes, not song UUIDs, favorites, playlists, or membership. LAN trust and host authority are separate from those user materials: directory data alone must not restore credentials, authorize a host, or resume sync.
 
 ## Before restoring
 
 1. Stop sync on every device and quit Echo on the host.
-2. Preserve a copy of the complete library root, including `echo/` and `media/`. Keep any separate Echo application-data backup too; it may contain the host ledger and device credentials.
-3. Restore the library and application data from the same backup point whenever possible. Do not delete `echo/tmp/`, `echo/records/`, `echo/manifest.json`, or the sync ledger by hand.
+2. Preserve a copy of the complete library root, including `echo/` and `media/`. Keep any separate Echo application-data backup too; it may contain host ledger and device credentials. The library copy is user-data evidence; app data is needed only for session/trust recovery.
+3. Restore the library and application data from the same backup point whenever possible. Do not delete `echo/tmp/`, `echo/records/`, `echo/manifest.json`, transactions, migration evidence, or the sync ledger by hand. A supported format upgrade must preserve original records and stop safely on unknown formats or read-only control planes; until that protocol ships, do not use manual edits as a repair method.
 4. Open the restored library on the host and inspect its integrity status. A checkpoint ahead of the local ledger, an unreadable checkpoint, or a same-sequence digest mismatch fences the host. Do not reconnect peers until the recovery action completes.
 
 ## Start a new host epoch
@@ -15,11 +15,15 @@ In **Settings → 局域网同步 → 从备份恢复主机**, select the intend
 
 Then start hosting again and pair each peer with a fresh six-digit code. Peers must accept the new authority identity; they must not reuse credentials from the old epoch. Review preserved conflicts and pending edits as ordinary new changes. Tombstones, inbox receipts, and conflict evidence are retained; recovery does not garbage-collect them.
 
-If Echo cannot read the checkpoint or portable authority evidence, leave sync disabled and preserve the full backup for diagnosis. Do not copy only `echo/` or only the SQLite database to another machine and treat that as a consistent host restore.
+If Echo cannot read the checkpoint or portable authority evidence, leave sync disabled and preserve the full backup for diagnosis. Do not treat `echo/` alone as a complete media backup, or SQLite alone as a consistent host/user-data restore. If records are missing, damaged, unknown-version, or have unresolved references, preserve them and report incomplete recovery; never invent historical favorites or playlist relations from audio tags.
 
 ## Interrupted media publication
 
 Remote media is staged and verified before it is atomically published. If the destination file is locked (for example, by a player on Windows), metadata may be present while that media remains unavailable; the status must not claim that all media is ready. Close the player or release the file handle, then resume sync. A restart resumes from the durable publication journal. Cleanup only removes redundant staging data whose journal and content hash/length prove that it belongs to a completed publication; staging with unknown provenance is left untouched for diagnosis.
+
+An object is accepted locally only after its verified directory commit has been projected into SQLite and its replica cursor has advanced. Media transfer has a separate boundary: a valid object with missing audio or artwork remains visible as unavailable and can be retried without reapplying the object or advancing the cursor again. A resource transfer finishing does not by itself mean the library is fully synchronized. The UI's `mediaReady` value describes whether required local media is ready; it is not a receipt for every object, pending edit, or host publication in the library.
+
+An ACK covers its exact mutation and published host checkpoint. It does not mean that every later mutation, every resource version, or the full library backup has reached every peer. Preserve the host checkpoint and the complete library root together when taking a backup. On restore, reconcile the checkpoint with the independently stored trust ledger before allowing the old epoch to serve peers; missing or stale trust evidence leaves sync fenced for explicit recovery. A restored user library can still be opened offline from its directory, without loading credentials or automatically starting network sync. Start hosting or pairing explicitly after reviewing the restored library and trust state. Local manifest, record envelope, and LAN wire versions are independent: reading a supported old directory does not rewrite it, v3 directories fence older writers, and LAN resource refs remain governed by the LAN wire version rather than local resource locations. See the [protocol compatibility matrix](library-durability-protocol.md#独立兼容矩阵) before mixing clients or restoring across versions.
 
 ## 附属机写回内嵌信息后同步失败
 
@@ -42,3 +46,40 @@ If the entire machine state, library root, and independently stored checkpoint a
 ## Network checks
 
 Sync is opt-in and stays disabled until a user starts hosting or pairs a peer. It uses HTTPS on the local network, port `50826`, with device identity pinned after pairing. There is no account sign-in or public relay. If discovery fails, verify both devices are on a reachable LAN, allow Echo through the operating-system local-network/firewall prompt, and enter the host's current LAN IP address with the pairing code. An IP change requires reconnecting to the pinned host identity; it does not authorize a different host. Revoke a lost device from the host before pairing a replacement.
+
+## 本地目录提交的恢复边界
+
+开发与诊断所需的版本、字段、typed 墓碑/别名和历史缺省规则见
+[本地资料库提交协议](library-durability-protocol.md)。manifest、envelope、目录标记
+及 LAN wire 分别版本化；当前目录提交实现不等于完整 v3 升级已经完成。
+
+本地目录协议先刷盘 prepared 正文，再发布带序列/前驱摘要的 committed 标记，最后材料化对象与本机 state。只有 prepared 的操作仍是未保存；标记已经发布后的故障必须保留原 operation ID，并以“已保存、待恢复”继续同一操作。读取不创建或获取 `write.lock`，也不在只读浏览时执行格式迁移；已提交但尚未材料化的对象通过经过校验的提交载荷读取。
+
+当前实现每 32 个活跃提交发布一次完整覆盖快照及真实链头，再回收已覆盖事务文件。原操作正文保留在按 ID 分片的 `echo/state/operations/`，用于同 ID 幂等重试；私有历史 state 和资源暂时保守保留，完整历史归档及资源回收尚未完成。备份必须包含整个 `echo/`，不能只复制 records 或媒体。协议字段、失败测试、平台限制和未完成部分见 [目录协议实施证据](../openspec/changes/enforce-library-first-durability/evidence/directory-protocol.md)。当前原生验证限于 macOS，不能据此承诺 Windows/Linux 或硬件断电下的相同行为。
+
+### 文件系统适配与失败语义
+
+目录提交适配器要求同一文件系统内的临时文件发布：先以 exclusive-create 创建临时文件，写全并 `sync_all`，prepared/marker 通过 hard link 独占发布，材料化记录和检查点通过 rename 替换。随后逐级同步父目录直到注册资料库根；任何必需同步失败均返回错误。此处只描述 Core 的目录提交适配器，其他历史媒体暂存或应用配置 helper 的能力不能替代它。
+
+| 平台 | 目录同步与替换实现 | 已有证据与限制 |
+| --- | --- | --- |
+| macOS / Linux（POSIX） | 打开目录句柄并要求 `sync_all` 成功；同文件系统 hard link / rename；不先删除已提交目标 | macOS 临时目录和实际文件边界故障注入已有测试；Linux 尚未原生执行。挂载方式、文件系统或介质不支持时返回 IO 错误，不降级为普通保存成功 |
+| Windows | 以 `FILE_FLAG_BACKUP_SEMANTICS` 打开目录并要求 `sync_all` 成功；使用相同 hard link / rename 发布规则 | 尚待原生验证。目录句柄权限、文件系统 hard link 支持、目标文件占用或替换限制均可能导致明确失败；不能仅凭文件已可见就跳过父目录同步 |
+
+提交标记之前失败不会授权 SQLite 保存新的用户事实。提交标记已发布后，若目录同步或材料化失败，操作可能已经保存，必须保留原身份并查询/恢复，返回“已保存，待恢复”；若目录恢复完成而 SQLite 失败，返回“已保存，等待更新”。不要再次创建相同歌曲/歌单，也不要删除事务以消除提示。无法读取或证明原提交时保留证据并停止相关写入。
+
+恢复顺序是验证当前 manifest 和库身份、覆盖快照及提交链，再从持久材料化水位按序补齐对象和私有 state；SQLite 的投影水位不能授权回收目录事务。坏摘要、断链、跨库资料或已提交文件缺失会停止恢复。受约束读路径检查相对路径、符号链接与实际内容；只读浏览不会创建写锁或执行迁移。未来格式拒绝写入，旧格式升级仍受专门迁移任务约束。
+
+### SQLite 投影重建
+
+当 SQLite 可打开且目标资料库已登记时，Core 会从该目录的已验证提交链构造独立临时数据库，核对库 ID、链头、水位、SQLite 完整性、外键、保留的类型化原件和无同步上传回声，再以一个 SQLite 事务替换该资料库的投影。其他资料库不受影响。可解析的歌曲/歌单会进入读模型；引用缺失父项的关系保留为类型化未解析记录，恢复状态显示为部分完成。后续补齐父项并再次追赶提交链时，系统会重试这些原关系。
+
+若候选验证、活动库写入或最终事务提交失败，活动投影保持原样，已保存的目录资料也不会被删除。只读或不可写的 SQLite 无法接收替换；释放占用或恢复写权限后，可重试投影。
+
+应用数据库整体损坏（无法读取页头、`quick_check` 失败或 `SQLITE_CORRUPT`/`SQLITE_NOTADB`）时，`SqliteDatabase::open` 会在任何读取之前把原文件及其 `-wal`/`-shm` 伴生文件按字节原样重命名隔离到同目录的 `<stem>.quarantined-<uuid>.sqlite`，然后新建空的、已迁移的投影继续启动；隔离文件从不被读取、修复或删除，可留作诊断。这只在文件本身损坏时发生：另一个实例持有的写锁、只读卷、缺失权限或已发布迁移的校验和不匹配仍然让打开失败并保留原文件，因为这些情况下投影本身仍可用。隔离后不会自动重放目录——用户选中资料库时按上面的候选重建流程从 `echo/` 重建投影；不要手工删库来伪造成功。
+
+带同步上下文的资料库根不因重建而丢协议历史：协议表不是读模型的投影，任何协议表都不引用 `songs`/`playlists`，只有 `retry_library_sync_state` 能在已验证的会话下重投影它们。因此重建前后会快照 19 张协议表的行数与当前选中的上下文，若重建改动了任何一行，整个替换事务回滚并报错；未确认的意图与冲突在重建中保留。
+
+保留完整 `echo/`，并将其作为后续恢复的唯一用户资料来源。
+
+开发者可用 `cargo test -p echo-core library_durability --lib` 重复自动化验证，测试覆盖文件同步、发布、各级目录同步、材料化、覆盖快照和 GC 的强制失败。该测试不能代替磁盘满、真实拔盘、硬件断电和三平台原生验收。完整 v3 升级、所有入口的统一顺序投影与历史资源回收仍在开发；本节不表示整个 library-first change 已交付。

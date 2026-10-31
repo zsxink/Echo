@@ -31,10 +31,7 @@ fn host_binding(database: &SqliteDatabase, root: LibraryRootId) -> SyncBinding {
 ///
 /// A rejection is a test failure: these are locally produced candidates, so the
 /// host must be able to decode each one.
-fn drain_local_queue(
-    database: &SqliteDatabase,
-    binding: SyncBinding,
-) -> Vec<MutationCandidate> {
+fn drain_local_queue(database: &SqliteDatabase, binding: SyncBinding) -> Vec<MutationCandidate> {
     let mut accepted = Vec::new();
     for _ in 0..64 {
         let pending = database.pending_local_mutations(50).expect("pending queue");
@@ -90,11 +87,11 @@ fn recording_a_play_enqueues_a_complete_play_stats_record_the_host_accepts() {
     let binding = host_binding(&database, root);
     let song = song(root, "stats.flac", "Stats", "Artist");
     SongRepository::upsert(&database, &song).expect("song");
-    assert!(database
-        .record_playback(PlaybackSessionId::new(), song.id())
-        .expect("record play"));
+    let control = playback_fixture::directory(&database, root);
+    let session = PlaybackSessionId::new();
+    assert!(playback_fixture::record(&database, &control, session, song.id()));
 
-    let pending = database.pending_local_mutations(50).expect("pending queue");
+    let pending = playback_fixture::mutations(&control, root);
     let stats = pending
         .iter()
         .find(|candidate| matches!(candidate.object, ObjectKey::PlayStats(_)))
@@ -110,8 +107,42 @@ fn recording_a_play_enqueues_a_complete_play_stats_record_the_host_accepts() {
     assert_eq!(record.by_device.get(&device).copied(), Some(1));
     assert_eq!(record.total(), 1);
 
-    // End-to-end: draining the queue rejects nothing.
+    // A session is private idempotence evidence, including when a pending
+    // payload is exported to another device and accepted by the host.
+    let shared = serde_json::to_string(&stats.payload).unwrap();
+    assert!(!shared.contains(&session.to_string()));
+    assert!(!shared.contains("recorded_sessions"));
+    assert!(!shared.contains("playback_session"));
+    let recovered: crate::domain::library::PortableRecord = serde_json::from_value(
+        serde_json::to_value(crate::domain::library::PortableRecord::PlayStats(
+            record.clone(),
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        recovered,
+        crate::domain::library::PortableRecord::PlayStats(record)
+    );
+    database
+        .with_reader(|connection| {
+            let private =
+                crate::infrastructure::sqlite::durability_backfill::export_playback_events(
+                    connection, root,
+                )?;
+            assert_eq!(private.len(), 1);
+            assert_eq!(private[0].id, session.as_uuid());
+            assert_eq!(private[0].kind.directory(), "playback-events");
+            assert_eq!(private[0].payload["song_uuid"], song.id().to_string());
+            Ok(())
+        })
+        .unwrap();
+
+    // Submit the exact saved body, not a candidate regenerated from SQL.
     drain_local_queue(&database, binding);
+    let staged = database.stage_confirmation(binding, stats).expect("saved stats accepted");
+    let checkpoint = staged.checkpoint.expect("host accepts the complete saved stats");
+    database.mark_published(checkpoint).unwrap();
 }
 
 #[test]
@@ -123,7 +154,9 @@ fn removing_a_playlist_member_enqueues_a_typed_tombstone_that_blocks_resurrectio
     SongRepository::upsert(&database, &first).expect("first song");
     SongRepository::upsert(&database, &second).expect("second song");
     let playlist = PlaylistId::new();
-    database.create(playlist, root, "Mix").expect("create playlist");
+    database
+        .create(playlist, root, "Mix")
+        .expect("create playlist");
     database
         .add_member(playlist, first.id(), u64::MAX)
         .expect("first member");
@@ -169,7 +202,9 @@ fn deleting_a_playlist_enqueues_one_delete_mutation_that_replays_idempotently() 
     let (_directory, database, root) = database();
     let binding = host_binding(&database, root);
     let playlist = PlaylistId::new();
-    database.create(playlist, root, "Mix").expect("create playlist");
+    database
+        .create(playlist, root, "Mix")
+        .expect("create playlist");
     drain_local_queue(&database, binding);
 
     PlaylistRepository::delete(&database, playlist).expect("delete playlist");
@@ -191,7 +226,10 @@ fn deleting_a_playlist_enqueues_one_delete_mutation_that_replays_idempotently() 
     // local tombstone is rewritten and no second mutation is produced.
     PlaylistRepository::delete(&database, playlist).expect("idempotent replay");
     assert_eq!(
-        database.pending_local_mutations(50).expect("pending queue").len(),
+        database
+            .pending_local_mutations(50)
+            .expect("pending queue")
+            .len(),
         queued,
         "a replayed delete must not enqueue a second mutation"
     );
@@ -208,7 +246,9 @@ fn a_member_deleted_before_its_add_is_acknowledged_never_survives() {
     let track = song(root, "queued.flac", "Queued", "Artist");
     SongRepository::upsert(&database, &track).expect("song");
     let playlist = PlaylistId::new();
-    database.create(playlist, root, "Mix").expect("create playlist");
+    database
+        .create(playlist, root, "Mix")
+        .expect("create playlist");
 
     // Deliberately no drain between the two calls.
     database
@@ -237,7 +277,9 @@ fn retrying_an_old_member_delete_does_not_remove_the_readded_member() {
     let track = song(root, "again.flac", "Again", "Artist");
     SongRepository::upsert(&database, &track).expect("song");
     let playlist = PlaylistId::new();
-    database.create(playlist, root, "Mix").expect("create playlist");
+    database
+        .create(playlist, root, "Mix")
+        .expect("create playlist");
     database
         .add_member(playlist, track.id(), u64::MAX)
         .expect("add member");
@@ -272,7 +314,11 @@ fn retrying_an_old_member_delete_does_not_remove_the_readded_member() {
         "an accepted retry must replay its original checkpoint, not re-decide"
     );
     let after = database.members(playlist).expect("members");
-    assert_eq!(after.len(), 1, "the old tombstone must not touch the new member");
+    assert_eq!(
+        after.len(),
+        1,
+        "the old tombstone must not touch the new member"
+    );
     assert_eq!(after[0].id(), new_member);
     assert_eq!(
         confirmed_playlist_members(&database, binding, playlist).len(),

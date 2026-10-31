@@ -23,6 +23,8 @@
 //!   snapshot (`SetFavorite`, task 6.3).
 //! - [`detail`] — the read-only song detail DTO (`GetSongDetail`, task 6.4).
 
+pub mod artist_cover;
+mod artwork;
 pub mod boot;
 pub mod catalog;
 pub mod continuation;
@@ -30,7 +32,12 @@ pub mod delete;
 pub mod detail;
 pub mod favorite;
 pub mod import;
+pub mod library_commit;
+pub mod library_projection_worker;
+pub mod library_recovery;
+pub mod local_activity;
 pub mod playback_context;
+pub mod playback_recording;
 pub mod playlist;
 pub mod portable;
 pub mod portable_materialize;

@@ -4,7 +4,7 @@ use crate::domain::ids::{LibraryRootId, RelativeMediaPath, Revision, SongId};
 use crate::domain::sync::{AuthorityId, Epoch, LibraryId, ObjectKey, SyncBinding};
 use crate::infrastructure::sqlite::SqliteDatabase;
 
-fn database() -> (tempfile::TempDir, SqliteDatabase, LibraryRootId) {
+fn unbound_database() -> (tempfile::TempDir, SqliteDatabase, LibraryRootId) {
     let directory = tempfile::tempdir().unwrap();
     let database = SqliteDatabase::open(directory.path().join("echo.db")).unwrap();
     let root = LibraryRootId::new();
@@ -13,6 +13,24 @@ fn database() -> (tempfile::TempDir, SqliteDatabase, LibraryRootId) {
         &LibraryRoot::new(root, directory.path().join("library"), true, true),
     )
     .unwrap();
+    (directory, database, root)
+}
+
+/// Queue tests exercise sync-bound libraries: standalone edits deliberately do
+/// not mint sync mutations (sync-foundation: 单机编辑不创建同步候选).
+fn database() -> (tempfile::TempDir, SqliteDatabase, LibraryRootId) {
+    let (directory, database, root) = unbound_database();
+    database
+        .bind_sync_library(
+            SyncBinding {
+                library_id: LibraryId::new(),
+                authority_id: AuthorityId::new(),
+                epoch: Epoch::INITIAL,
+            },
+            true,
+            root,
+        )
+        .unwrap();
     (directory, database, root)
 }
 
@@ -132,7 +150,7 @@ fn terminal_rejections_repair_a_legacy_local_origin_cursor_gap() {
 
 #[test]
 fn replica_checkpoint_loads_the_persisted_host_cursor_and_genesis() {
-    let (_directory, database, root) = database();
+    let (_directory, database, root) = unbound_database();
     let host = crate::domain::sync::DeviceId::new();
     let binding = SyncBinding {
         library_id: LibraryId::new(),
@@ -484,4 +502,66 @@ fn rejecting_an_already_terminal_mutation_is_idempotent() {
     assert!(after
         .iter()
         .all(|event| event.mutation_id != queued[0].mutation_id));
+}
+
+#[test]
+fn unchanged_reupsert_does_not_mint_another_candidate_or_advance_the_revision() {
+    let (_directory, database, root) = database();
+    let song_id = SongId::new();
+    let mut song = Song::new(
+        song_id,
+        root,
+        RelativeMediaPath::new("artist/unchanged.flac").unwrap(),
+        Revision::INITIAL,
+    );
+    song.apply_metadata(
+        Some("Unchanged".to_owned()),
+        Some("Artist".to_owned()),
+        None,
+        None,
+    );
+    SongRepository::upsert(&database, &song).unwrap();
+    let first = database.pending_local_mutations(10).unwrap();
+    assert_eq!(first.len(), 1);
+
+    // An unchanged rescan replays the same snapshot upsert. It must not mint
+    // a second candidate, advance the object's local revision, or append
+    // another outbox payload for the object.
+    SongRepository::upsert(&database, &song).unwrap();
+
+    let queued = database.pending_local_mutations(10).unwrap();
+    assert_eq!(
+        queued.len(),
+        1,
+        "an unchanged reupsert mints no new candidate"
+    );
+    assert_eq!(queued[0].mutation_id, first[0].mutation_id);
+    let uuid = song_id.to_string();
+    let ledger: (i64, i64) = database
+        .writer
+        .run(move |connection| {
+            connection
+                .query_row(
+                    "SELECT (SELECT local_revision FROM sync_local_highwater WHERE object_type='song' AND object_uuid=?1), (SELECT COUNT(*) FROM sync_outbox WHERE object_type='song' AND object_uuid=?1)",
+                    rusqlite::params![uuid],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .map_err(crate::infrastructure::sqlite::support::storage)
+        })
+        .unwrap();
+    assert_eq!(
+        ledger,
+        (1, 1),
+        "the highwater and outbox stay at the first candidate"
+    );
+
+    // Dedup is payload-exact, not a throttle: a real metadata change must
+    // still mint a fresh candidate chained onto the first.
+    let mut edited = song;
+    edited.apply_metadata(Some("Renamed".to_owned()), None, None, None);
+    SongRepository::upsert(&database, &edited).unwrap();
+    let after = database.pending_local_mutations(10).unwrap();
+    assert_eq!(after.len(), 2, "a changed reupsert still mints a candidate");
+    assert_eq!(after[1].origin_seq, 2);
+    assert_eq!(after[1].previous_mutation_id, Some(after[0].mutation_id));
 }

@@ -152,6 +152,24 @@ impl crate::application::ports::SyncStateReader for SqliteDatabase {
 }
 
 impl UnitOfWork for SqliteDatabase {
+    fn artist_cover_edits(&self) -> Option<&dyn crate::application::ports::ArtistCoverEditPort> {
+        Some(self)
+    }
+
+    fn playback_edits(&self) -> Option<&dyn crate::application::ports::PlaybackEditPort> {
+        Some(self)
+    }
+
+    fn playlist_cover_edits(
+        &self,
+    ) -> Option<&dyn crate::application::ports::PlaylistCoverEditPort> {
+        Some(self)
+    }
+
+    fn local_library_edits(&self) -> Option<&dyn crate::application::ports::LocalLibraryEditPort> {
+        Some(self)
+    }
+
     fn with_tx(&self, f: TxWork) -> Result<(), Error> {
         self.writer.run(move |connection| {
             let transaction = connection.transaction().map_err(storage)?;

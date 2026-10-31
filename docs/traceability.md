@@ -225,6 +225,41 @@
 | IL-R10-S03 | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 | 窗口缩放后重算偏移 | fix-lyrics-start-offset-remeasure 1.1, 2.1 | React/E2E | `tests/scenarios/IL-R10-S03.yaml` | `pnpm verify:scenario -- IL-R10-S03` |
 | IL-R10-S04 | 沉浸式歌词起点必须随歌曲信息块几何持续对齐 | 旧偏移尚未重新布局时重算偏移 | fix-lyrics-offset-stale-measurement 1.1, 1.3 | React/E2E | `tests/scenarios/IL-R10-S04.yaml` | `pnpm verify:scenario -- IL-R10-S04` |
 
+## library-durability
+
+> 登记 area 前缀 `LD`（change `enforce-library-first-durability`）。主规格目录
+> `openspec/specs/library-durability/` 建立并同步 delta 前，本段暂不参与
+> `reconcile-scenarios.mjs` 的三方计数；`tests/scenarios/LD-*.yaml` 与
+> scenario-commands 登记由该 change 任务 10.3 落地。
+
+| Scenario ID | Requirement | Scenario | 任务 | 测试层 | 测试/步骤 manifest | 实际验收命令 |
+|---|---|---|---|---|---|---|
+| LD-R01-S01 | 本地音乐库权威提交 | 本地写入失败 | 3.1, 3.2 | Core | `tests/scenarios/LD-R01-S01.yaml` | `pnpm verify:scenario -- LD-R01-S01` |
+| LD-R01-S02 | 本地音乐库权威提交 | 目录已提交而投影失败 | 4.2a, 6.1 | Core | `tests/scenarios/LD-R01-S02.yaml` | `pnpm verify:scenario -- LD-R01-S02` |
+| LD-R01-S03 | 本地音乐库权威提交 | SQLite 投影滞后时连续本地编辑 | 13.1, 13.2 | Core | `tests/scenarios/LD-R01-S03.yaml` | `pnpm verify:scenario -- LD-R01-S03` |
+| LD-R02-S01 | 多对象提交与中断恢复 | 级联删除写到一半崩溃 | 3.3, 6.4 | Core | `tests/scenarios/LD-R02-S01.yaml` | `pnpm verify:scenario -- LD-R02-S01` |
+| LD-R02-S02 | 多对象提交与中断恢复 | 丢失 SQLite 后重放 | 4.3 | Core | `tests/scenarios/LD-R02-S02.yaml` | `pnpm verify:scenario -- LD-R02-S02` |
+| LD-R02-S03 | 多对象提交与中断恢复 | 提交结果不确定 | 3.2, 3.3 | Core | `tests/scenarios/LD-R02-S03.yaml` | `pnpm verify:scenario -- LD-R02-S03` |
+| LD-R02-S04 | 多对象提交与中断恢复 | 较旧操作延迟重放 | 2.1, 3.3 | Core | `tests/scenarios/LD-R02-S04.yaml` | `pnpm verify:scenario -- LD-R02-S04` |
+| LD-R02-S05 | 多对象提交与中断恢复 | 本地提交后对象文件材料化失败 | 3.3, 5.3 | Core | `tests/scenarios/LD-R02-S05.yaml` | `pnpm verify:scenario -- LD-R02-S05` |
+| LD-R03-S01 | 全新环境离线重建 | 本地与同步来源混合恢复 | 4.1, 4.3 | Core | `tests/scenarios/LD-R03-S01.yaml` | `pnpm verify:scenario -- LD-R03-S01` |
+| LD-R03-S02 | 全新环境离线重建 | 部分媒体缺失 | 4.3, 7.6 | Core | `tests/scenarios/LD-R03-S02.yaml` | `pnpm verify:scenario -- LD-R03-S02` |
+| LD-R04-S01 | 支持格式的只读兼容 | 读取旧格式记录 | 1.2, 2.3 | Core | `tests/scenarios/LD-R04-S01.yaml` | `pnpm verify:scenario -- LD-R04-S01` |
+| LD-R04-S02 | 支持格式的只读兼容 | 旧记录含无法解释的关系 | 1.2, 4.5 | Core | `tests/scenarios/LD-R04-S02.yaml` | `pnpm verify:scenario -- LD-R04-S02` |
+| LD-R05-S01 | 运行期间不得自动改写身份 | 运行期间发现身份冲突 | 2.4, 7.2 | Core | `tests/scenarios/LD-R05-S01.yaml` | `pnpm verify:scenario -- LD-R05-S01` |
+| LD-R06-S01 | 不完整资料不得被静默破坏 | 新协议投影遇到悬空关系 | 4.5 | Core | `tests/scenarios/LD-R06-S01.yaml` | `pnpm verify:scenario -- LD-R06-S01` |
+| LD-R06-S02 | 不完整资料不得被静默破坏 | 控制面含损坏记录 | 4.3, 4.4 | Core | `tests/scenarios/LD-R06-S02.yaml` | `pnpm verify:scenario -- LD-R06-S02` |
+| LD-R07-S01 | 已确认基线与待确认资料分别恢复 | 离线改歌单后重装 | 7.7 | Core | `tests/scenarios/LD-R07-S01.yaml` | `pnpm verify:scenario -- LD-R07-S01` |
+| LD-R07-S02 | 已确认基线与待确认资料分别恢复 | 主机账本不可验证 | 7.3, 7.7 | Core | `tests/scenarios/LD-R07-S02.yaml` | `pnpm verify:scenario -- LD-R07-S02` |
+| LD-R07-S03 | 已确认基线与待确认资料分别恢复 | ACK 丢失后重装并重新配对 | 7.6, 7.7 | Core | `tests/scenarios/LD-R07-S03.yaml` | `pnpm verify:scenario -- LD-R07-S03` |
+| LD-R08-S01 | 资源原件与实际位置可恢复 | 歌单封面脱离应用缓存恢复 | 6.2, 9.3 | Core | `tests/scenarios/LD-R08-S01.yaml` | `pnpm verify:scenario -- LD-R08-S01` |
+| LD-R08-S02 | 资源原件与实际位置可恢复 | 同步媒体使用不可变版本路径 | 7.4 | Core | `tests/scenarios/LD-R08-S02.yaml` | `pnpm verify:scenario -- LD-R08-S02` |
+| LD-R09-S01 | 格式读取兼容与一致备份边界 | 支持的旧格式保持只读兼容 | 1.2, 1.4, 3.6 | Core | `tests/scenarios/LD-R09-S01.yaml` | `pnpm verify:scenario -- LD-R09-S01` |
+| LD-R09-S02 | 格式读取兼容与一致备份边界 | 旧程序打开新协议目录 | 1.4, 3.6 | Core | `tests/scenarios/LD-R09-S02.yaml` | `pnpm verify:scenario -- LD-R09-S02` |
+| LD-R09-S03 | 格式读取兼容与一致备份边界 | 只保留 media | 3.6, 8.3 | Core | `tests/scenarios/LD-R09-S03.yaml` | `pnpm verify:scenario -- LD-R09-S03` |
+| LD-R10-S01 | 分层与交付契约 | 可执行验证 | 10.3, 10.5 | Gate | `tests/scenarios/LD-R10-S01.yaml` | `pnpm verify:scenario -- LD-R10-S01` |
+| LD-R11-S01 | 音乐库恢复状态排除单机同步状态 | 单机启动存在旧同步投影 | 7.9 | Core | `tests/scenarios/LD-R11-S01.yaml` | `pnpm verify:scenario -- LD-R11-S01` |
+
 ## library-experience
 
 | Scenario ID | Requirement | Scenario | 任务 | 测试层 | 测试/步骤 manifest | 实际验收命令 |
@@ -334,6 +369,11 @@
 | LE-R20-S02 | 歌单选择器加载归属状态 | 归属查询失败并继续添加 | 3.3 | React | `tests/scenarios/LE-R20-S02.yaml` | `pnpm verify:scenario -- LE-R20-S02` |
 | LE-R20-S03 | 歌单选择器加载归属状态 | 批量模式说明 | 3.3 | React | `tests/scenarios/LE-R20-S03.yaml` | `pnpm verify:scenario -- LE-R20-S03` |
 | LE-R20-S04 | 歌单选择器加载归属状态 | 无变化不反馈成功 | 3.3 | React | `tests/scenarios/LE-R20-S04.yaml` | `pnpm verify:scenario -- LE-R20-S04` |
+| LE-R21-S01 | 收藏与批量操作以音乐库持久结果为反馈 | 收藏已保存而投影失败 | 6.1, 8.2 | Core | `tests/scenarios/LE-R21-S01.yaml` | `pnpm verify:scenario -- LE-R21-S01` |
+| LE-R21-S02 | 收藏与批量操作以音乐库持久结果为反馈 | 正常投影仍在后台时已保存反馈 | 13.4, 13.5 | Desktop/Release | `tests/scenarios/LE-R21-S02.yaml` | `pnpm verify:scenario -- LE-R21-S02` |
+| LE-R21-S03 | 收藏与批量操作以音乐库持久结果为反馈 | 收藏未保存 | 6.1, 8.2 | Core | `tests/scenarios/LE-R21-S03.yaml` | `pnpm verify:scenario -- LE-R21-S03` |
+| LE-R21-S04 | 收藏与批量操作以音乐库持久结果为反馈 | 批量收藏部分已保存 | 6.1, 8.2, 13.4 | React | `tests/scenarios/LE-R21-S04.yaml` | `pnpm verify:scenario -- LE-R21-S04` |
+| LE-R21-S05 | 收藏与批量操作以音乐库持久结果为反馈 | 已保存待投影不被当作失败重试 | 4.2a, 6.1 | Core | `tests/scenarios/LE-R21-S05.yaml` | `pnpm verify:scenario -- LE-R21-S05` |
 
 ## local-library
 
@@ -343,6 +383,7 @@
 | LL-R01-S02 | 单一资料库根目录与本地持久化 | 安全切换活动根目录 | 3.1, 4.1, 10.3 | Core/Desktop/E2E | `tests/scenarios/LL-R01-S02.yaml` | `pnpm verify:scenario -- LL-R01-S02` |
 | LL-R01-S03 | 单一资料库根目录与本地持久化 | 切换根目录失败 | 3.1, 4.1, 10.3 | Core/Desktop/E2E | `tests/scenarios/LL-R01-S03.yaml` | `pnpm verify:scenario -- LL-R01-S03` |
 | LL-R01-S04 | 单一资料库根目录与本地持久化 | 本机数据库丢失后重新选择同一目录 | 15.2, 15.3 | Core | `tests/scenarios/LL-R01-S04.yaml` | `pnpm verify:scenario -- LL-R01-S04` |
+| LL-R01-S05 | 单一资料库根目录与本地持久化 | 投影滞后时读己之写 | 13.1, 13.2 | Core | `tests/scenarios/LL-R01-S05.yaml` | `pnpm verify:scenario -- LL-R01-S05` |
 | LL-R02-S01 | 扫描、监听与手动重扫 | 首次扫描发现支持文件 | 4.7, 4.9, 4.10 | Core/Infrastructure | `tests/scenarios/LL-R02-S01.yaml` | `pnpm verify:scenario -- LL-R02-S01` |
 | LL-R02-S02 | 扫描、监听与手动重扫 | 忽略不支持文件 | 4.7, 4.9, 4.10 | Core/Infrastructure | `tests/scenarios/LL-R02-S02.yaml` | `pnpm verify:scenario -- LL-R02-S02` |
 | LL-R02-S03 | 扫描、监听与手动重扫 | 忽略控制面目录 | — | Gate | `tests/scenarios/LL-R02-S03.yaml` | `pnpm verify:scenario -- LL-R02-S03` |
@@ -358,7 +399,7 @@
 | LL-R04-S01 | 稳定身份、哈希与路径重关联 | 原地重扫保持身份 | 3.2, 4.8, 13.4 | Core/Infrastructure | `tests/scenarios/LL-R04-S01.yaml` | `pnpm verify:scenario -- LL-R04-S01` |
 | LL-R04-S02 | 稳定身份、哈希与路径重关联 | 移动或改名后重关联 | 3.2, 4.8, 13.4 | Core/Infrastructure | `tests/scenarios/LL-R04-S02.yaml` | `pnpm verify:scenario -- LL-R04-S02` |
 | LL-R04-S03 | 稳定身份、哈希与路径重关联 | 相同内容出现在两个路径 | 3.2, 4.8, 13.4 | Core/Infrastructure | `tests/scenarios/LL-R04-S03.yaml` | `pnpm verify:scenario -- LL-R04-S03` |
-| LL-R04-S04 | 稳定身份、哈希与路径重关联 | 唯一音乐键弱重关联 | 3.2, 4.8, 13.4 | Core/Infrastructure | `tests/scenarios/LL-R04-S04.yaml` | `pnpm verify:scenario -- LL-R04-S04` |
+| LL-R04-S04 | 稳定身份、哈希与路径重关联 | 音乐键不得触发身份合并 | 3.2, 4.8, 13.4 | Core/Infrastructure | `tests/scenarios/LL-R04-S04.yaml` | `pnpm verify:scenario -- LL-R04-S04` |
 | LL-R05-S01 | SQLite 检索与曲库排序 | 搜索并排序 | 3.1–3.8 | Infrastructure | `tests/scenarios/LL-R05-S01.yaml` | `pnpm verify:scenario -- LL-R05-S01` |
 | LL-R05-S02 | SQLite 检索与曲库排序 | 重启后数据可用 | 3.1–3.8 | Infrastructure | `tests/scenarios/LL-R05-S02.yaml` | `pnpm verify:scenario -- LL-R05-S02` |
 | LL-R06-S01 | 生效元数据、封面和歌词优先级 | 覆盖层优先展示 | 2.2, 4.5, 4.6 | Core/Infrastructure | `tests/scenarios/LL-R06-S01.yaml` | `pnpm verify:scenario -- LL-R06-S01` |
@@ -373,6 +414,12 @@
 | LL-R09-S01 | 导入事实时间真实性与时区呈现 | 真实导入时间 | 5.5, 13.9, 13.13 | Core/Native | `tests/scenarios/LL-R09-S01.yaml` | `pnpm verify:scenario -- LL-R09-S01` |
 | LL-R09-S02 | 导入事实时间真实性与时区呈现 | 重复或重扫不改写时间 | 5.5, 13.9, 13.13 | Core/Native | `tests/scenarios/LL-R09-S02.yaml` | `pnpm verify:scenario -- LL-R09-S02` |
 | LL-R09-S03 | 导入事实时间真实性与时区呈现 | 当前时区转换 | 5.5, 13.9, 13.13 | Core/Native | `tests/scenarios/LL-R09-S03.yaml` | `pnpm verify:scenario -- LL-R09-S03` |
+| LL-R10-S01 | 扫描与监听先保存资料库身份 | 首次扫描后重装 | 5.2, 5.4 | Core | `tests/scenarios/LL-R10-S01.yaml` | `pnpm verify:scenario -- LL-R10-S01` |
+| LL-R10-S02 | 扫描与监听先保存资料库身份 | 移动或标签修改后恢复 | 5.2 | Core | `tests/scenarios/LL-R10-S02.yaml` | `pnpm verify:scenario -- LL-R10-S02` |
+| LL-R10-S03 | 扫描与监听先保存资料库身份 | 控制面写失败 | 3.1, 5.2 | Core | `tests/scenarios/LL-R10-S03.yaml` | `pnpm verify:scenario -- LL-R10-S03` |
+| LL-R10-S04 | 扫描与监听先保存资料库身份 | 只读库和无变化重扫 | 3.1, 5.2 | Core | `tests/scenarios/LL-R10-S04.yaml` | `pnpm verify:scenario -- LL-R10-S04` |
+| LL-R11-S01 | SQLite 投影可替换且不能独占用户数据 | 数据库损坏 | 4.3 | Core | `tests/scenarios/LL-R11-S01.yaml` | `pnpm verify:scenario -- LL-R11-S01` |
+| LL-R11-S02 | SQLite 投影可替换且不能独占用户数据 | 切库恢复失败 | 4.3 | Core | `tests/scenarios/LL-R11-S02.yaml` | `pnpm verify:scenario -- LL-R11-S02` |
 
 ## phase-one-acceptance
 
@@ -433,6 +480,12 @@
 | PM-R12-S01 | 查询单曲的歌单归属 | 查询已有归属 | 3.3 | Core | `tests/scenarios/PM-R12-S01.yaml` | `pnpm verify:scenario -- PM-R12-S01` |
 | PM-R12-S02 | 查询单曲的歌单归属 | 查询无归属歌曲 | 3.3 | Core | `tests/scenarios/PM-R12-S02.yaml` | `pnpm verify:scenario -- PM-R12-S02` |
 | PM-R12-S03 | 查询单曲的歌单归属 | 归属查询失败 | 3.3 | Core | `tests/scenarios/PM-R12-S03.yaml` | `pnpm verify:scenario -- PM-R12-S03` |
+| PM-R13-S01 | 歌单与成员以音乐库持久结果反馈 | 创建空歌单后重装 | 6.1 | Core | `tests/scenarios/PM-R13-S01.yaml` | `pnpm verify:scenario -- PM-R13-S01` |
+| PM-R13-S02 | 歌单与成员以音乐库持久结果反馈 | 多成员提交被中断 | 6.1 | Core | `tests/scenarios/PM-R13-S02.yaml` | `pnpm verify:scenario -- PM-R13-S02` |
+| PM-R13-S03 | 歌单与成员以音乐库持久结果反馈 | 保存与显示更新分离 | 6.1, 8.2 | Core | `tests/scenarios/PM-R13-S03.yaml` | `pnpm verify:scenario -- PM-R13-S03` |
+| PM-R13-S04 | 歌单与成员以音乐库持久结果反馈 | SQLite 落后时连续编辑歌单 | 13.1, 13.2 | Core | `tests/scenarios/PM-R13-S04.yaml` | `pnpm verify:scenario -- PM-R13-S04` |
+| PM-R13-S05 | 歌单与成员以音乐库持久结果反馈 | 歌单命令低延迟验收 | 13.5 | Desktop/Release | `tests/scenarios/PM-R13-S05.yaml` | `pnpm verify:scenario -- PM-R13-S05` |
+| PM-R13-S06 | 歌单与成员以音乐库持久结果反馈 | 删除与取消喜欢不复活 | 6.1, 6.4 | Core | `tests/scenarios/PM-R13-S06.yaml` | `pnpm verify:scenario -- PM-R13-S06` |
 
 ## portable-library-layout
 
@@ -441,12 +494,15 @@
 | PLL-R01-S01 | 受管理资料库目录布局 | 新资料库导入一首歌曲 | — | Gate | `tests/scenarios/PLL-R01-S01.yaml` | `pnpm verify:scenario -- PLL-R01-S01` |
 | PLL-R01-S02 | 受管理资料库目录布局 | 控制面目录不可写 | — | Gate | `tests/scenarios/PLL-R01-S02.yaml` | `pnpm verify:scenario -- PLL-R01-S02` |
 | PLL-R01-S03 | 受管理资料库目录布局 | 每种对象种类都有对应目录 | 15.1 | Gate | `tests/scenarios/PLL-R01-S03.yaml` | `pnpm verify:scenario -- PLL-R01-S03` |
+| PLL-R01-S04 | 受管理资料库目录布局 | 完整备份包括恢复必需资料 | 2.3, 4.3 | Core | `tests/scenarios/PLL-R01-S04.yaml` | `pnpm verify:scenario -- PLL-R01-S04` |
 | PLL-R02-S01 | 可携带对象资料 | 检查资料库控制面 | — | Gate | `tests/scenarios/PLL-R02-S01.yaml` | `pnpm verify:scenario -- PLL-R02-S01` |
 | PLL-R02-S02 | 可携带对象资料 | 路径数据被序列化 | — | Gate | `tests/scenarios/PLL-R02-S02.yaml` | `pnpm verify:scenario -- PLL-R02-S02` |
 | PLL-R02-S03 | 可携带对象资料 | 同步忽略临时目录 | — | Gate | `tests/scenarios/PLL-R02-S03.yaml` | `pnpm verify:scenario -- PLL-R02-S03` |
 | PLL-R02-S04 | 可携带对象资料 | 歌单与成员的变更被材料化 | 15.4 | Gate | `tests/scenarios/PLL-R02-S04.yaml` | `pnpm verify:scenario -- PLL-R02-S04` |
 | PLL-R02-S05 | 可携带对象资料 | 播放统计随资料库移动 | 15.4 | Gate | `tests/scenarios/PLL-R02-S05.yaml` | `pnpm verify:scenario -- PLL-R02-S05` |
 | PLL-R02-S06 | 可携带对象资料 | 取消收藏不留下悬空记录 | 15.4 | Gate | `tests/scenarios/PLL-R02-S06.yaml` | `pnpm verify:scenario -- PLL-R02-S06` |
+| PLL-R02-S07 | 可携带对象资料 | 播放统计幂等身份不进入共享载荷 | 2.5, 6.3 | Core | `tests/scenarios/PLL-R02-S07.yaml` | `pnpm verify:scenario -- PLL-R02-S07` |
+| PLL-R02-S08 | 可携带对象资料 | 封面资源原件随歌单恢复 | 6.2 | Core | `tests/scenarios/PLL-R02-S08.yaml` | `pnpm verify:scenario -- PLL-R02-S08` |
 | PLL-R03-S01 | 歌曲入库时刻随资料库对象资料携带 | 扫描发现新歌曲写入入库时刻 | — | Gate | `tests/scenarios/PLL-R03-S01.yaml` | `pnpm verify:scenario -- PLL-R03-S01` |
 | PLL-R03-S02 | 歌曲入库时刻随资料库对象资料携带 | 手动导入歌曲写入入库时刻 | — | Gate | `tests/scenarios/PLL-R03-S02.yaml` | `pnpm verify:scenario -- PLL-R03-S02` |
 | PLL-R03-S03 | 歌曲入库时刻随资料库对象资料携带 | 入库时刻不被后续变更改写 | — | Gate | `tests/scenarios/PLL-R03-S03.yaml` | `pnpm verify:scenario -- PLL-R03-S03` |
@@ -466,6 +522,10 @@
 | PLL-R07-S03 | 对象资料接续与对账 | 墓碑优先于陈旧记录 | 15.3 | Gate | `tests/scenarios/PLL-R07-S03.yaml` | `pnpm verify:scenario -- PLL-R07-S03` |
 | PLL-R07-S04 | 对象资料接续与对账 | 重复接续结果稳定 | 15.3 | Gate | `tests/scenarios/PLL-R07-S04.yaml` | `pnpm verify:scenario -- PLL-R07-S04` |
 | PLL-R07-S05 | 对象资料接续与对账 | 较新的本机身份不被旧记录覆盖 | 15.3 | Gate | `tests/scenarios/PLL-R07-S05.yaml` | `pnpm verify:scenario -- PLL-R07-S05` |
+| PLL-R07-S06 | 对象资料接续与对账 | 打开新协议资料库后投影再扫描 | 4.2a, 5.2 | Core | `tests/scenarios/PLL-R07-S06.yaml` | `pnpm verify:scenario -- PLL-R07-S06` |
+| PLL-R07-S07 | 对象资料接续与对账 | 读取支持的旧格式 | 2.3 | Core | `tests/scenarios/PLL-R07-S07.yaml` | `pnpm verify:scenario -- PLL-R07-S07` |
+| PLL-R07-S08 | 对象资料接续与对账 | 重复投影结果稳定 | 4.2a | Core | `tests/scenarios/PLL-R07-S08.yaml` | `pnpm verify:scenario -- PLL-R07-S08` |
+| PLL-R07-S09 | 对象资料接续与对账 | 未解析引用保持原样 | 4.3, 4.5 | Core | `tests/scenarios/PLL-R07-S09.yaml` | `pnpm verify:scenario -- PLL-R07-S09` |
 
 ## safe-file-ingestion
 
@@ -483,9 +543,12 @@
 | SFI-R04-S04 | BLAKE3 去重与重名编号 | 同名不同内容 | 5.3–5.5, 13.3 | Core/Fault injection | `tests/scenarios/SFI-R04-S04.yaml` | `pnpm verify:scenario -- SFI-R04-S04` |
 | SFI-R05-S01 | 暂存、校验、原子移动与操作日志 | 校验失败不落库 | 5.1, 10.3, 10.10 | Core/React | `tests/scenarios/SFI-R05-S01.yaml` | `pnpm verify:scenario -- SFI-R05-S01` |
 | SFI-R05-S02 | 暂存、校验、原子移动与操作日志 | 导入成功原子可见 | 5.1, 10.3, 10.10 | Core/React | `tests/scenarios/SFI-R05-S02.yaml` | `pnpm verify:scenario -- SFI-R05-S02` |
-| SFI-R05-S03 | 暂存、校验、原子移动与操作日志 | 崩溃后恢复 | 5.3–5.5, 13.3 | Core/Fault injection | `tests/scenarios/SFI-R05-S03.yaml` | `pnpm verify:scenario -- SFI-R05-S03` |
-| SFI-R05-S04 | 暂存、校验、原子移动与操作日志 | 音频发布后侧车失败 | 5.3–5.5, 13.3 | Core/Fault injection | `tests/scenarios/SFI-R05-S04.yaml` | `pnpm verify:scenario -- SFI-R05-S04` |
-| SFI-R05-S05 | 暂存、校验、原子移动与操作日志 | 发布后 watcher 抢先观察 | 5.3–5.5, 13.3, 4.9, 5.5 | Core/Fault injection | `tests/scenarios/SFI-R05-S05.yaml` | `pnpm verify:scenario -- SFI-R05-S05` |
+| SFI-R05-S03 | 暂存、校验、原子移动与操作日志 | 导入后无需重新扫描 | 5.1, 10.3, 13.5 | Core/Release | `tests/scenarios/SFI-R05-S03.yaml` | `pnpm verify:scenario -- SFI-R05-S03` |
+| SFI-R05-S04 | 暂存、校验、原子移动与操作日志 | 崩溃后恢复 | 5.3–5.5, 13.3 | Core/Fault injection | `tests/scenarios/SFI-R05-S04.yaml` | `pnpm verify:scenario -- SFI-R05-S04` |
+| SFI-R05-S05 | 暂存、校验、原子移动与操作日志 | 音频发布后侧车失败 | 5.3–5.5, 13.3 | Core/Fault injection | `tests/scenarios/SFI-R05-S05.yaml` | `pnpm verify:scenario -- SFI-R05-S05` |
+| SFI-R05-S06 | 暂存、校验、原子移动与操作日志 | 发布后 watcher 抢先观察 | 5.3–5.5, 13.3, 4.9, 5.5 | Core/Fault injection | `tests/scenarios/SFI-R05-S06.yaml` | `pnpm verify:scenario -- SFI-R05-S06` |
+| SFI-R05-S07 | 暂存、校验、原子移动与操作日志 | 音频成功而对象持久化失败 | 3.2, 5.1 | Core | `tests/scenarios/SFI-R05-S07.yaml` | `pnpm verify:scenario -- SFI-R05-S07` |
+| SFI-R05-S08 | 暂存、校验、原子移动与操作日志 | 对象成功而数据库投影失败 | 4.2a, 5.1 | Core | `tests/scenarios/SFI-R05-S08.yaml` | `pnpm verify:scenario -- SFI-R05-S08` |
 | SFI-R06-S01 | 逐文件结果与资料库不可用反馈 | 混合结果 | 4.2, 7.5, 9.1, 9.2 | Security/Native | `tests/native/SFI-R06-S01.md` | `pnpm verify:scenario -- SFI-R06-S01` |
 | SFI-R06-S02 | 逐文件结果与资料库不可用反馈 | 导入时根目录断开 | 4.2, 7.5, 9.1, 9.2 | Security/Native | `tests/native/SFI-R06-S02.md` | `pnpm verify:scenario -- SFI-R06-S02` |
 | SFI-R07-S01 | 源文件、系统关联与安全边界 | 外部文件直接打开 | 9.1, 9.2 | Desktop/Native | `tests/native/SFI-R07-S01.md` | `pnpm verify:scenario -- SFI-R07-S01` |
@@ -507,6 +570,7 @@
 | SFI-R11-S03 | 受控并发批量导入与非阻塞反馈 | 批次包含失败 | 2.1, 2.2, 13.9, 13.13 | Core/Fault injection | `tests/scenarios/SFI-R11-S03.yaml` | `pnpm verify:scenario -- SFI-R11-S03` |
 | SFI-R11-S04 | 受控并发批量导入与非阻塞反馈 | 全部项目失败 | 2.1, 2.2, 13.9, 13.13 | Core/Fault injection | `tests/scenarios/SFI-R11-S04.yaml` | `pnpm verify:scenario -- SFI-R11-S04` |
 | SFI-R11-S05 | 受控并发批量导入与非阻塞反馈 | 多线程重叠可验证 | 2.1, 2.2, 13.9, 13.13 | Core/Fault injection | `tests/scenarios/SFI-R11-S05.yaml` | `pnpm verify:scenario -- SFI-R11-S05` |
+| SFI-R12-S01 | 导入持久化边界通过共享核心验证 | 导入契约回归 | 5.1, 9.5 | Gate | `tests/scenarios/SFI-R12-S01.yaml` | `pnpm verify:scenario -- SFI-R12-S01` |
 
 ## sync-foundation
 
@@ -522,6 +586,14 @@
 | SYN-R05-S01 | 同步事件可重试且按类型识别 | 网络重复提交 | 3.11 | Core | `tests/scenarios/SYN-R05-S01.yaml` | `pnpm verify:scenario -- SYN-R05-S01` |
 | SYN-R05-S02 | 同步事件可重试且按类型识别 | 远端应用及游标恢复 | 3.11 | Core | `tests/scenarios/SYN-R05-S02.yaml` | `pnpm verify:scenario -- SYN-R05-S02` |
 | SYN-R05-S03 | 同步事件可重试且按类型识别 | 迁移与架构验证 | 3.10, 3.11, 13.9 | Core/Gate | `tests/scenarios/SYN-R05-S03.yaml` | `pnpm verify:scenario -- SYN-R05-S03` |
+| SYN-R06-S01 | 本地候选与确认事实独立于 SQLite | 重建 outbox | 7.2 | Core | `tests/scenarios/SYN-R06-S01.yaml` | `pnpm verify:scenario -- SYN-R06-S01` |
+| SYN-R06-S02 | 本地候选与确认事实独立于 SQLite | 远端确认后重建 | 7.2, 7.3 | Core | `tests/scenarios/SYN-R06-S02.yaml` | `pnpm verify:scenario -- SYN-R06-S02` |
+| SYN-R06-S03 | 本地候选与确认事实独立于 SQLite | v2 本地覆盖值混有旧确认元数据 | 7.2 | Core | `tests/scenarios/SYN-R06-S03.yaml` | `pnpm verify:scenario -- SYN-R06-S03` |
+| SYN-R06-S04 | 本地候选与确认事实独立于 SQLite | 单机编辑不创建同步候选 | 7.2, 7.9 | Core | `tests/scenarios/SYN-R06-S04.yaml` | `pnpm verify:scenario -- SYN-R06-S04` |
+| SYN-R07-S01 | 新绑定显式接纳旧待确认意图 | 新身份接纳过程被中断 | 7.7 | Core | `tests/scenarios/SYN-R07-S01.yaml` | `pnpm verify:scenario -- SYN-R07-S01` |
+| SYN-R07-S02 | 新绑定显式接纳旧待确认意图 | 无法证明旧事件是否已确认 | 7.7 | Core | `tests/scenarios/SYN-R07-S02.yaml` | `pnpm verify:scenario -- SYN-R07-S02` |
+| SYN-R07-S03 | 新绑定显式接纳旧待确认意图 | 新作者不能抬高旧作者统计桶 | 7.7 | Core | `tests/scenarios/SYN-R07-S03.yaml` | `pnpm verify:scenario -- SYN-R07-S03` |
+| SYN-R08-S01 | 远端应用和派生变更不制造上传回声 | 反复恢复与 watcher | 7.5 | Core | `tests/scenarios/SYN-R08-S01.yaml` | `pnpm verify:scenario -- SYN-R08-S01` |
 
 ## 发布审计
 

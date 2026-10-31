@@ -56,7 +56,11 @@ fn remote_tombstones_hide_objects_and_preserve_held_delete_resources() {
     replica.upsert_item(operation, item.clone()).unwrap();
     replica
         .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
-            tx.set_undo_deadline(operation, i64::MAX)
+            tx.set_undo_deadline(
+                operation,
+                i64::MAX,
+                crate::domain::sync::MutationId::new(),
+            )
         }))
         .unwrap();
     let before_outbox: i64 = replica

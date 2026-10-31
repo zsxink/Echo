@@ -16,7 +16,7 @@ impl PlanImport<'_> {
         info: &ImportSourceInfo,
         ext: &str,
         state: &BatchState,
-    ) -> Result<PlannedInput, ImportOutcome> {
+    ) -> Result<PlannedInput, Box<ImportOutcome>> {
         let discard = |staged: &StagedResource| {
             let _ = self.deps.fs.discard_staged(root, staged);
         };
@@ -24,7 +24,7 @@ impl PlanImport<'_> {
         let reserved = self.deps.ids.new_song_id();
         let staged = match StagedResource::new(operation, IMPORT_AUDIO_RESOURCE) {
             Ok(staged) => staged,
-            Err(error) => return Err(failed_of(&error)),
+            Err(error) => return Err(Box::new(failed_of(&error))),
         };
         // 流式复制+BLAKE3 (task 5.3): the source is opened once and streamed
         // straight into the operation's controlled staging slot; the hash is
@@ -41,16 +41,16 @@ impl PlanImport<'_> {
         // mid-selection) never enters the library.
         if copy.size != info.size {
             discard(&staged);
-            return Err(failed_of(&Error::CorruptMedia {
+            return Err(Box::new(failed_of(&Error::CorruptMedia {
                 operation: IMPORT_OPERATION.to_owned(),
                 reason: "source content does not match the described size".to_owned(),
-            }));
+            })));
         }
         // Plan-time BLAKE3 dedup (task 5.6 adds the pre-commit re-check):
         // identical content returns the existing record, never a second UUID.
         if let Some(existing) = state.conflicts.duplicate_of(&copy.blake3) {
             discard(&staged);
-            return Err(ImportOutcome::Duplicate { existing });
+            return Err(Box::new(ImportOutcome::Duplicate { existing }));
         }
         // The target is named from the tags of the staged copy (task 5.2);
         // unparseable content fails this input instead of guessing a name.
@@ -101,6 +101,15 @@ impl PlanImport<'_> {
             target,
             operation,
             reserved,
+            added_at: self
+                .deps
+                .clock
+                .now_wall()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+                .try_into()
+                .unwrap_or(u64::MAX),
             renamed,
             source: Some(source.key().to_owned()),
             staged,

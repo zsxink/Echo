@@ -233,7 +233,9 @@ fn sort_sql(sort: SongSort, favorites: bool) -> String {
         SongSortField::AddedAt => "s.added_at, s.uuid",
         SongSortField::Title => "s.title_sort, s.artist_sort, s.uuid",
         SongSortField::Artist => "s.artist_sort, s.title_sort, s.uuid",
-        SongSortField::Album => "CASE WHEN s.album_sort = '' THEN '未知专辑' ELSE s.album_sort END, s.title_sort, s.artist_sort, s.uuid",
+        SongSortField::Album => {
+            "CASE WHEN s.album_sort = '' THEN '未知专辑' ELSE s.album_sort END, s.title_sort, s.artist_sort, s.uuid"
+        }
         SongSortField::PlayCount => "s.play_count, s.title_sort, s.artist_sort, s.uuid",
     };
     columns
@@ -255,7 +257,9 @@ fn cursor_keys(
             SongSortField::AddedAt => "added_at, uuid",
             SongSortField::Title => "title_sort, artist_sort, uuid",
             SongSortField::Artist => "artist_sort, title_sort, uuid",
-            SongSortField::Album => "CASE WHEN album_sort = '' THEN '未知专辑' ELSE album_sort END, title_sort, artist_sort, uuid",
+            SongSortField::Album => {
+                "CASE WHEN album_sort = '' THEN '未知专辑' ELSE album_sort END, title_sort, artist_sort, uuid"
+            }
             SongSortField::PlayCount => "play_count, title_sort, artist_sort, uuid",
         }
     };
@@ -276,7 +280,7 @@ fn cursor_keys(
                             index,
                             other.data_type(),
                             Box::new(std::io::Error::other("invalid cursor value")),
-                        ))
+                        ));
                     }
                 });
             }

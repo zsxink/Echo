@@ -163,7 +163,10 @@ impl SyncProvisioner for NativeSyncProvisioner {
             .gate
             .lock()
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
-        let _activity = echo_core::application::sync::exclusive_local_activity()
+        let _activity = self
+            .scan_deps
+            .activity
+            .exclusive()
             .map_err(|_| SyncRuntimeError::WorkerFailed)?;
         validate_peer_endpoint(endpoint)?;
         let local_device = DeviceId::from_uuid(self.database.current_device_id().as_uuid());

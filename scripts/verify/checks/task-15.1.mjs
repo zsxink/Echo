@@ -49,12 +49,14 @@ function read(path, what) {
   }
 }
 
-/** The `echo/records/<dir>/` directories published by the spec's layout block. */
+/** The `echo/records/<dir>/...` directories published by the spec's layout block.
+ * Tombstones are typed (`tombstones/<object-kind>/<uuid-prefix>/`), so the
+ * optional `<object-kind>/` segment must not hide the `tombstones` directory. */
 function specRecordDirs(text) {
   const fence = text.match(/```text\n([\s\S]*?)```/);
   if (!fence) fail("portable-library-layout spec has no ```text layout block");
   const dirs = new Set();
-  for (const m of fence[1].matchAll(/([A-Za-z0-9-]+)\/<uuid-prefix>\//g)) dirs.add(m[1]);
+  for (const m of fence[1].matchAll(/([A-Za-z0-9-]+)\/(?:<object-kind>\/)?<uuid-prefix>\//g)) dirs.add(m[1]);
   if (dirs.size === 0) fail("the layout block declares no `records/<dir>/<uuid-prefix>/` entries");
   return dirs;
 }

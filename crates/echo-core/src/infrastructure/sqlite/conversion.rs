@@ -199,7 +199,7 @@ pub(crate) fn operation_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Resu
             _ => {
                 return Err(to_sql_error(Error::InvariantViolation {
                     why: "unknown operation resource kind".to_owned(),
-                }))
+                }));
             }
         },
         state: operation_state_from_db(&row.get::<_, String>(1)?).map_err(to_sql_error)?,

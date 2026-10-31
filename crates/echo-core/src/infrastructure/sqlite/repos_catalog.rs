@@ -44,6 +44,22 @@ impl SongRepository for SqliteDatabase {
         self.with_reader(move |connection| all_songs_in_root(connection, root))
     }
 
+    fn by_content_hash(&self, root: LibraryRootId, hash: &str) -> Result<Vec<Song>, Error> {
+        let hash = hash.to_owned();
+        self.with_reader(move |connection| {
+            let mut statement = connection
+                .prepare(&format!(
+                    "{} WHERE s.library_root_uuid=?1 AND s.blake3_hash=?2 AND s.availability='available'",
+                    SONG_SELECT
+                ))
+                .map_err(storage)?;
+            let rows = statement
+                .query_map(params![root.to_string(), hash], song_from_row)
+                .map_err(storage)?;
+            rows.collect::<Result<Vec<_>, _>>().map_err(storage)
+        })
+    }
+
     fn published_file_paths(
         &self,
         root: LibraryRootId,
@@ -226,27 +242,8 @@ impl PlaylistRepository for SqliteDatabase {
 
     fn rename(&self, id: PlaylistId, to_normalized_name: &str) -> Result<(), Error> {
         let name = to_normalized_name.to_owned();
-        self.writer.run(move |connection| {
-            let key = playlist_name_key(&name);
-            connection.execute("UPDATE playlists SET display_name = ?2, normalized_name_key = ?3, updated_at = ?4 WHERE uuid = ?1", params![id.to_string(), name, key, now_ms()]).map_err(map_constraint)?;
-            // Rename is a playlist logic change → outbox snapshot (task 3.11).
-            let payload = serde_json::json!({ "display_name": name });
-            statements::enqueue_object_snapshot(
-                connection,
-                sync::KIND_PLAYLIST,
-                &id.to_string(),
-                &payload,
-                sync::OP_UPSERT,
-            )?;
-            let now_secs = u64::try_from(now_ms().max(0)).unwrap_or(0) / 1_000;
-            statements::advance_object_hlc(
-                connection,
-                sync::KIND_PLAYLIST,
-                &id.to_string(),
-                now_secs,
-            )?;
-            Ok(())
-        })
+        self.writer
+            .run(move |connection| statements::rename_playlist(connection, id, &name))
     }
 
     fn set_cover_key(&self, id: PlaylistId, key: Option<&str>) -> Result<(), Error> {

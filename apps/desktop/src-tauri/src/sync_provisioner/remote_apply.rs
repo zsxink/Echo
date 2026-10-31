@@ -52,6 +52,8 @@ impl std::io::Read for PrivateResourceReader {
 /// reverse (bytes before objects) parks every change behind a file transfer.
 pub(super) struct PreparedRemoteApply<'a> {
     pub(super) database: &'a SqliteDatabase,
+    pub(super) scan_deps: &'a echo_core::application::scan::ScanDeps,
+    pub(super) root: LibraryRootId,
     pub(super) host: DeviceId,
     /// Set when the page no longer matches the authenticated host, so the
     /// caller re-pulls instead of treating it as a durable conflict.
@@ -76,13 +78,59 @@ impl RemoteApplyPort for PreparedRemoteApply<'_> {
                 "remote apply does not match the authenticated host",
             ));
         }
+        // The page has passed the authenticated client protocol validation. If
+        // it extends the current cursor, let the directory arbitrate local undo
+        // against the host's confirmed final tombstone before SQLite projects
+        // it. Replayed pages are applied first (Core verifies exact history),
+        // then reconcile the directory intent idempotently.
+        let current = self.database.replica_checkpoint(peer_device_id)?;
+        let extends_current = current == anchor;
+        if extends_current {
+            self.supersede_local_delete_intents(commits)?;
+        }
         let cursor = self
             .database
             .apply_remote_batch(binding, peer_device_id, anchor, commits)?;
+        if !extends_current && cursor.applied == 0 {
+            self.supersede_local_delete_intents(commits)?;
+        }
         if cursor.applied > 0 {
             self.catalog_changed.store(true, Ordering::Release);
         }
         Ok(cursor)
+    }
+}
+
+impl PreparedRemoteApply<'_> {
+    fn supersede_local_delete_intents(
+        &self,
+        commits: &[RemoteCommit],
+    ) -> Result<(), echo_core::error::Error> {
+        let now_ms = self
+            .scan_deps
+            .clock
+            .now_wall()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|source| {
+                echo_core::error::Error::io(
+                    "clock",
+                    std::io::Error::other(source),
+                    std::path::PathBuf::new(),
+                )
+            })?
+            .as_millis();
+        let now_ms = u64::try_from(now_ms).unwrap_or(u64::MAX);
+        for commit in commits.iter().filter(|commit| commit.is_tombstone) {
+            if matches!(commit.object, ObjectKey::Song(_)) {
+                echo_core::application::delete::intent::supersede_object_on_remote_tombstone(
+                    self.scan_deps,
+                    self.root,
+                    commit.object,
+                    now_ms,
+                )?;
+            }
+        }
+        Ok(())
     }
 }
 

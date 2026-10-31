@@ -75,6 +75,10 @@ pub(super) fn bootstrap_main() {
             commands_audio_effects::retry_audio_effects,
             commands::get_bootstrap_state,
             commands::library_status,
+            commands::retry_library_operation,
+            commands::library_recovery_status,
+            commands::retry_library_projection,
+            commands::playback_retry_status,
             commands::all_songs,
             commands::search,
             commands::favorites,
@@ -313,6 +317,7 @@ pub(super) fn bootstrap_main() {
     #[cfg(target_os = "macos")]
     app.manage(Arc::clone(&pending_fullscreen_hide));
 
+    let exit_coordinator = Arc::new(shutdown::ExitCoordinator::default());
     app.run({
         // Only the macOS `RunEvent::Opened` arm routes through the startup
         // supervisor; the closed-over `startup` (line 683) is enough for other
@@ -335,16 +340,10 @@ pub(super) fn bootstrap_main() {
                     app.exit(1);
                 }
             }
-            RunEvent::ExitRequested { .. } => {
-                if let Some(sync) = app.try_state::<Arc<sync_runtime::SyncRuntime>>() {
-                    let _ = sync.stop();
-                }
-                commands_audio_effects::flush(app);
-                #[cfg(target_os = "macos")]
-                macos_now_playing::clear();
-                #[cfg(target_os = "macos")]
-                macos_window_lifecycle::unregister();
+            RunEvent::ExitRequested { api, code, .. } => {
+                shutdown::request(app, &api, code, &exit_coordinator);
             }
+
             // macOS delivers file-association opens through `RunEvent::Opened`; they
             // go through the same FIFO as the single-instance argv path (task 9.1).
             // The variant is macOS-only, so it can never match on other targets.

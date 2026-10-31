@@ -12,23 +12,51 @@
 // matrix tests (task 5.5/5.7/5.8), so the gate is a real fault-path gate.
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
 
+// A pipe holds 64 KiB on Linux. `process.stderr.write` after that point only
+// queues, and `process.exit` discards the queue — which truncated a real CI
+// failure mid-test-name. Write through a loop so the whole diagnostic reaches
+// the log before the exit.
+function writeAll(fd, text) {
+  const buffer = Buffer.from(text, "utf8");
+  let offset = 0;
+  while (offset < buffer.length) {
+    offset += writeSync(fd, buffer, offset, buffer.length - offset);
+  }
+}
 function fail(msg) {
-  process.stderr.write(`FAIL 12.8: ${msg}\n`);
+  writeAll(2, `FAIL 12.8: ${msg}\n`);
   process.exit(1);
 }
 function run(command, args) {
-  const r = spawnSync(command, args, { cwd: ROOT, encoding: "utf8" });
+  // cargo-llvm-cov redirects the cargo/test transcript onto stderr, so both
+  // streams matter: a slow or flaky run can exceed the 1 MiB default buffer.
+  const r = spawnSync(command, args, {
+    cwd: ROOT,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (r.error) {
+    fail(`could not run '${command} ${args.join(" ")}': ${r.error.message}`);
+  }
   if (r.status !== 0) {
-    process.stderr.write(
-      `FAIL 12.8: '${command} ${args.join(" ")}' exited ${r.status}\n${r.stderr || r.stdout}\n`,
+    // `--fail-under-lines` reports on stdout (that is why cargo-llvm-cov moves
+    // the test transcript to stderr); a test or report error ends stderr.
+    // Print the report whole plus the transcript tail so the failure cause is
+    // always in the log.
+    const report = (r.stdout || "").trimEnd();
+    const transcript = (r.stderr || "").trimEnd().split("\n");
+    const tail = transcript.slice(-120).join("\n");
+    fail(
+      `'${command} ${args.join(" ")}' exited ${r.status}\n` +
+        `--- coverage report (stdout) ---\n${report || "(empty)"}\n` +
+        `--- cargo/test transcript (last ${Math.min(transcript.length, 120)} of ${transcript.length} lines) ---\n${tail}`,
     );
-    process.exit(1);
   }
   return `${r.stdout || ""}${r.stderr || ""}`;
 }

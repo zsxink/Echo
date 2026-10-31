@@ -66,9 +66,9 @@ export function useSongDetail(songId: string | null): SongDetail | null {
   useEffect(() => {
     return subscribeSongUpdates((song) => {
       if (song.id !== songId) return;
-      setDetail((prev) =>
-        prev && prev.favorite !== song.favorite ? { ...prev, favorite: song.favorite } : prev,
-      );
+      const favorite = song.favorite;
+      if (favorite === undefined) return;
+      setDetail((prev) => (prev && prev.favorite !== favorite ? { ...prev, favorite } : prev));
     });
   }, [songId]);
 

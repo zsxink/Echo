@@ -168,15 +168,19 @@ fn baseline_rejects_replica_and_foreign_binding() {
 }
 
 #[test]
-fn baseline_requires_audio_scan_facts_and_captures_legacy_plays() {
+fn baseline_requires_audio_scan_facts_and_never_fabricates_play_attribution() {
     let (_directory, database, root) = database();
     let mut imported = song(root, "media/song.flac", "Title", "Artist");
     SongRepository::upsert(&database, &imported).unwrap();
+    // An unattributed legacy aggregate must not be turned into a per-device
+    // bucket by the baseline: attribution needs a recorded device fact.
     SongRepository::set_play_count(&database, imported.id(), 9).unwrap();
     let binding = binding();
     database.bind_sync_library(binding, true, root).unwrap();
     assert!(database.ensure_host_sync_baseline(binding, root).is_err());
-    assert_eq!(database.pending_local_mutations(16).unwrap().len(), 1);
+    // Standalone edits before enrollment never queue sync candidates
+    // (SYN-R06-S04), so nothing unreconciled is waiting here.
+    assert_eq!(database.pending_local_mutations(16).unwrap().len(), 0);
     imported.apply_scan_facts(
         "b".repeat(64),
         17,
@@ -190,17 +194,13 @@ fn baseline_requires_audio_scan_facts_and_captures_legacy_plays() {
     );
     let queue = database.pending_local_mutations(16).unwrap();
     assert_eq!(
-        queue.last().unwrap().payload["by_device"][database.current_device_id().to_string()],
-        9
+        queue.last().unwrap().payload["by_device"],
+        serde_json::json!({})
     );
-    assert_eq!(
-        database
-            .device_play_counts(imported.id())
-            .unwrap()
-            .values()
-            .sum::<u64>(),
-        9
-    );
+    assert!(database
+        .device_play_counts(imported.id())
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -409,5 +409,73 @@ fn library_manifests_include_confirmed_content_deduplicate_and_resolve_catalog_a
             .local_library_resource_path_for_manifest(root, &manifest)
             .unwrap(),
         None
+    );
+}
+
+#[test]
+fn library_durability_replica_baseline_does_not_reauthor_unreconciled_intent() {
+    let (_directory, database, root) = database();
+    let mut imported = song(root, "media/song.flac", "Title", "Artist");
+    imported.apply_scan_facts(
+        "a".repeat(64),
+        17,
+        1,
+        crate::domain::media::AudioFormat::Flac,
+    );
+    SongRepository::upsert(&database, &imported).unwrap();
+    // A pre-enrollment version could still have queued edits. Recreate that
+    // legacy evidence directly: standalone edits no longer mint it.
+    let id = imported.id();
+    let device = database.current_device_id();
+    database
+        .writer
+        .run(move |c| {
+            c.execute(
+                "INSERT INTO sync_mutations(mutation_id,origin_device_id,origin_seq,previous_mutation_id,object_type,object_uuid,operation,local_revision,base_object_version,payload_json,payload_digest,status,created_at,resource_refs_json,local_root_uuid) VALUES(?1,?2,1,NULL,'song',?3,'upsert',1,NULL,?4,?5,'pending',1,'[]',?6)",
+                params![
+                    uuid::Uuid::new_v4().to_string(),
+                    device.as_uuid().to_string(),
+                    id.to_string(),
+                    serde_json::json!({"song_uuid": id}).to_string(),
+                    "a".repeat(64),
+                    root.to_string()
+                ],
+            )
+            .map_err(storage)?;
+            Ok(())
+        })
+        .unwrap();
+    database.writer.run(move |c| {
+        let states = super::super::sync::durability::export_sync_state(c, root)?;
+        assert!(states.iter().any(|state| state.kind == crate::domain::library::durability::StateKind::Pending));
+        for state in states {
+            c.execute("INSERT INTO library_recovery_records(library_root_uuid,object_key,envelope_json,row_kind,unresolved_reason) VALUES(?1,?2,?3,'state',NULL)", params![root.to_string(),state.storage_key()?,serde_json::to_string(&state).map_err(storage)?]).map_err(storage)?;
+        }
+        Ok(())
+    }).unwrap();
+    let binding = binding();
+    database.bind_sync_library(binding, false, root).unwrap();
+    let original = database.pending_local_mutations(32).unwrap();
+    for _ in 0..2 {
+        let error = database
+            .ensure_replica_sync_baseline(binding, root)
+            .unwrap_err();
+        assert!(error.to_string().contains("explicit reconciliation"));
+        assert_eq!(database.pending_local_mutations(32).unwrap(), original);
+        database.with_reader(|c| {
+            let markers: u64 = c.query_row("SELECT COUNT(*) FROM sync_state WHERE key LIKE 'replica_enrollment_baseline:%'", [], |r| r.get(0)).map_err(storage)?;
+            assert_eq!(markers, 0);
+            Ok(())
+        }).unwrap();
+    }
+    database.writer.run(|c| {
+        c.execute("UPDATE library_recovery_records SET envelope_json=json_set(envelope_json,'$.payload.disposition.status','confirmed') WHERE row_kind='state' AND json_extract(envelope_json,'$.kind')='pending_disposition'", []).map_err(storage)?;
+        Ok(())
+    }).unwrap();
+    assert!(
+        database
+            .ensure_replica_sync_baseline(binding, root)
+            .is_err(),
+        "a historical status is not a verified receipt"
     );
 }

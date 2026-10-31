@@ -19,6 +19,7 @@
 import type { BridgeCommandMap } from "../src/bridge";
 import { applySeed, defaultState, makeSong } from "./mock-bridge-state";
 import type { E2EState, MockSong } from "./mock-bridge-state";
+import { coverAssetUrl } from "./mock-cover";
 export type { MockSong } from "./mock-bridge-state";
 import type {
   EffectsSnapshotDto,
@@ -90,6 +91,10 @@ type Command =
   | "rename_audio_effects_preset"
   | "delete_audio_effects_preset"
   | "retry_audio_effects"
+  | "retry_library_operation"
+  | "library_recovery_status"
+  | "retry_library_projection"
+  | "playback_retry_status"
   | "sync_status"
   | "sync_storage_space"
   | "sync_conflicts"
@@ -225,37 +230,6 @@ function snapshotOf(state: E2EState): Record<string, unknown> {
 
 function emptyError(code: string, messageKey: string, retryable: boolean): IpcErrorDto {
   return { code, messageKey, retryable };
-}
-
-/**
- * The artwork URL the mock answers a `cover://` request with.
- *
- * The real shell registers the `cover://` URI scheme and the WebView paints the
- * asset bytes directly. A browser loaded from a plain http origin cannot resolve
- * a custom scheme, so the mock answers the *same* call with an inline SVG whose
- * colour is derived from the key: the key still round-trips through the app
- * unchanged, and both artwork paths stay observable in the preview.
- */
-function coverAssetUrl(key: string): string {
-  // Spread the hue around the whole wheel. The obvious `% 360` inside the fold
-  // leaves every `cv1-mockN` key on the same value up to its last character
-  // (the keys share a prefix), which parked every mock cover in a single
-  // 10-degree band. The immersive tint is verified by *comparing* the
-  // background two different covers produce, so a fixture that cannot express
-  // two different covers would make that assertion vacuous.
-  const hue =
-    ([...key].reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) % 1_000_003, 7) * 137) % 360;
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">` +
-    `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">` +
-    `<stop offset="0" stop-color="hsl(${hue} 58% 62%)"/>` +
-    `<stop offset="1" stop-color="hsl(${(hue + 46) % 360} 54% 34%)"/>` +
-    `</linearGradient></defs>` +
-    `<rect width="64" height="64" fill="url(#g)"/>` +
-    `<circle cx="32" cy="32" r="11" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.6"/>` +
-    `<circle cx="32" cy="32" r="2.6" fill="rgba(255,255,255,.82)"/>` +
-    `</svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
 /** Build the default handler table for the mock backend.
@@ -733,6 +707,8 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
         operationId: `op-${next}`,
         songId: `song-${next}`,
         relativePath: `新导入 ${next}.mp3`,
+        renamed: false,
+        lyrics: { kind: "none" },
       };
       if (st.importMode === "mixed") {
         return {
@@ -745,7 +721,19 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
       }
       return { results: [imported] };
     },
-    start_scan: () => ({ generation: 1, cancelled: false }),
+    start_scan: () => ({
+      generation: 1,
+      cancelled: false,
+      state: "Completed",
+      discovered: 0,
+      processed: 0,
+      created: 0,
+      updated: 0,
+      missing: 0,
+      skipped: 0,
+      failed: 0,
+      issues: [],
+    }),
     cancel_scan: () => ({ generation: 1, cancelled: true }),
 
     set_theme: ({ theme }, st) => {
@@ -825,6 +813,8 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
       operationId: "op-temp",
       songId: "song-temp",
       relativePath: "临时导入.mp3",
+      renamed: false,
+      lyrics: { kind: "none" },
     }),
     get_lyrics: ({ songId }) => {
       const s = state.songs.find((x) => x.id === songId);

@@ -162,7 +162,12 @@ impl TxOperationWriter for MemoryTx<'_> {
         self.store.released_claims.push(operation);
         Ok(())
     }
-    fn set_undo_deadline(&mut self, operation: OperationId, deadline_ms: i64) -> Result<(), Error> {
+    fn set_undo_deadline(
+        &mut self,
+        operation: OperationId,
+        deadline_ms: i64,
+        _final_mutation_id: crate::domain::sync::MutationId,
+    ) -> Result<(), Error> {
         self.store.undo_deadlines.insert(operation, deadline_ms);
         Ok(())
     }
@@ -209,6 +214,24 @@ impl TxStateWriter for MemoryTx<'_> {
 }
 
 impl UnitOfWork for MemoryDatabase {
+    fn artist_cover_edits(&self) -> Option<&dyn crate::application::ports::ArtistCoverEditPort> {
+        Some(self)
+    }
+
+    fn playback_edits(&self) -> Option<&dyn crate::application::ports::PlaybackEditPort> {
+        Some(self)
+    }
+
+    fn playlist_cover_edits(
+        &self,
+    ) -> Option<&dyn crate::application::ports::PlaylistCoverEditPort> {
+        Some(self)
+    }
+
+    fn local_library_edits(&self) -> Option<&dyn LocalLibraryEditPort> {
+        Some(self)
+    }
+
     fn with_tx(&self, f: TxWork) -> Result<(), Error> {
         let mut candidate = self.lock().clone();
         f(&mut MemoryTx {

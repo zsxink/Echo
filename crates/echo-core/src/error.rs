@@ -37,6 +37,15 @@ use thiserror::Error;
 
 use crate::logging::{redact_path, redact_sensitive, DiagnosticMode};
 
+/// The remaining work after a user's change is already durable in the library.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibraryPersistenceStage {
+    /// Committed directory records still need materialization or recovery.
+    Recovery,
+    /// Directory records are complete; the runtime database needs replay.
+    Projection,
+}
+
 /// Source of a validation failure, boxed so the enum stays small.
 type BoxedSource = Box<dyn std::error::Error + Send + Sync>;
 
@@ -176,6 +185,19 @@ pub enum Error {
         source: BoxedSource,
     },
 
+    /// The user change is committed. Retry recovery with this operation identity;
+    /// never repeat the original create/edit command as a new operation.
+    #[error("library change {operation} is saved; pending {stage:?}")]
+    LibrarySavedPending {
+        /// Stable, path-free identity of the committed directory operation.
+        operation: crate::domain::ids::OperationId,
+        /// Which recovery boundary has not completed.
+        stage: LibraryPersistenceStage,
+        /// The original failure remains available for diagnostics, not the UI.
+        #[source]
+        source: Box<Self>,
+    },
+
     /// The operation was cancelled before completion. Distinct from `Conflict`
     /// and `Unavailable`: this is a deliberate user or supervisor abort, so
     /// callers shouldn't retry automatically.
@@ -276,6 +298,9 @@ impl Error {
             Self::Storage { what, .. } => {
                 out.extend_from_slice(&log_one("storage", "what", &scrub_text(what)));
             }
+            Self::LibrarySavedPending { operation, .. } => {
+                out.extend_from_slice(&log_one(self.code(), "operation", &operation.to_string()));
+            }
             Self::Cancelled => out.extend_from_slice(b"error.code=cancelled"),
             Self::InvariantViolation { why } => {
                 out.extend_from_slice(&log_one(
@@ -310,6 +335,10 @@ impl Error {
             Self::CorruptMedia { .. } => "corrupt_media",
             Self::Io { .. } => "io",
             Self::Storage { .. } => "storage",
+            Self::LibrarySavedPending { stage, .. } => match stage {
+                LibraryPersistenceStage::Recovery => "library_saved_pending_recovery",
+                LibraryPersistenceStage::Projection => "library_saved_pending_projection",
+            },
             Self::Cancelled => "cancelled",
             Self::InvariantViolation { .. } => "invariant_violation",
         }
@@ -379,6 +408,32 @@ impl Error {
         Self::Conflict {
             what: what.into(),
             source: None,
+        }
+    }
+
+    /// Preserve a durable operation when its directory materialization fails.
+    #[must_use]
+    pub fn saved_pending_recovery(
+        operation: crate::domain::ids::OperationId,
+        source: Self,
+    ) -> Self {
+        Self::LibrarySavedPending {
+            operation,
+            stage: LibraryPersistenceStage::Recovery,
+            source: Box::new(source),
+        }
+    }
+
+    /// Preserve a durable operation when its runtime projection fails.
+    #[must_use]
+    pub fn saved_pending_projection(
+        operation: crate::domain::ids::OperationId,
+        source: Self,
+    ) -> Self {
+        Self::LibrarySavedPending {
+            operation,
+            stage: LibraryPersistenceStage::Projection,
+            source: Box::new(source),
         }
     }
 

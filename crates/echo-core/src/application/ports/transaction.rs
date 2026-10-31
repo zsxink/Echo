@@ -6,11 +6,35 @@ use crate::error::Error;
 
 use super::repository::{CoverAssetRef, OperationItem};
 
+/// Atomic SQLite projection work, not a user-data durability boundary.
+/// User facts must already be committed through `LibraryDurabilityPort` before
+/// they are projected here. A successful transaction alone never proves that
+/// the library directory contains recoverable user data.
 pub trait UnitOfWork: Send + Sync {
     /// Run `f` inside one `SQLite` transaction, committing on success and
     /// rolling back on error. The transaction never crosses an `.await`:
     /// `f` is a plain synchronous closure.
     fn with_tx(&self, f: TxWork) -> Result<(), Error>;
+
+    /// Serialized durable playback events and absolute device buckets.
+    fn playback_edits(&self) -> Option<&dyn super::PlaybackEditPort> {
+        None
+    }
+
+    /// Ordered edits of content-addressed playlist originals.
+    fn playlist_cover_edits(&self) -> Option<&dyn super::PlaylistCoverEditPort> {
+        None
+    }
+
+    /// Ordered edits of library-private artist artwork originals.
+    fn artist_cover_edits(&self) -> Option<&dyn super::ArtistCoverEditPort> {
+        None
+    }
+
+    /// Ordered directory-first logical edits, when supplied by this adapter.
+    fn local_library_edits(&self) -> Option<&dyn super::LocalLibraryEditPort> {
+        None
+    }
 }
 
 /// The boxed, `Send` transaction body [`UnitOfWork::with_tx`] runs.
@@ -88,7 +112,16 @@ pub trait TxOperationWriter {
     /// Persist the operation's `undo_deadline` (epoch millis) in the same
     /// transaction as the song's pending-delete hide (design §9: the deadline
     /// and the hide are one atomic step, so a crash cannot split them).
-    fn set_undo_deadline(&mut self, operation: OperationId, deadline_ms: i64) -> Result<(), Error>;
+    ///
+    /// `final_mutation_id` is the identity the directory intent already froze
+    /// for the eventual final tombstone; the SQLite row must reuse it so the
+    /// two records cannot disagree on which mutation ends the object.
+    fn set_undo_deadline(
+        &mut self,
+        operation: OperationId,
+        deadline_ms: i64,
+        final_mutation_id: crate::domain::sync::MutationId,
+    ) -> Result<(), Error>;
 }
 
 /// Lyrics mutations that must participate in an existing transaction.

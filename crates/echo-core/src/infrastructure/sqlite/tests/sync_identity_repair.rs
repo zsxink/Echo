@@ -21,6 +21,19 @@ fn fixture(
     canonical_bytes: &[u8],
 ) -> (tempfile::TempDir, SqliteDatabase, SongId, SongId) {
     let (directory, database, root) = database();
+    // Enroll first: only a bound root keeps shared facts (SYN-R06-S04), and
+    // this fixture needs the confirmed song facts to exist.
+    database
+        .bind_sync_library(
+            SyncBinding {
+                library_id: LibraryId::new(),
+                authority_id: AuthorityId::new(),
+                epoch: Epoch::INITIAL,
+            },
+            false,
+            root,
+        )
+        .unwrap();
     let root_path = directory.path().join("library");
     std::fs::create_dir_all(&root_path).unwrap();
     let mut ids = Vec::new();
@@ -66,17 +79,6 @@ fn fixture(
                 .map_err(storage)?;
             Ok(())
         })
-        .unwrap();
-    database
-        .bind_sync_library(
-            SyncBinding {
-                library_id: LibraryId::new(),
-                authority_id: AuthorityId::new(),
-                epoch: Epoch::INITIAL,
-            },
-            false,
-            root,
-        )
         .unwrap();
     (directory, database, ids[0], ids[1])
 }
@@ -168,8 +170,16 @@ fn repair_rejects_state_that_would_hide_user_edits_or_pending_work() {
     ] {
         let (_directory, database, old, canonical) = fixture(&flac(1, 7), &flac(2, 7));
         alter(&database, old, sql);
-        assert!(database.prepare_song_identity_repair(old, 1, canonical, 1).is_err(), "{sql}");
-        assert_eq!(database.pending_local_mutations(10).unwrap().len(), usize::from(sql.contains("status='pending'")));
+        assert!(
+            database
+                .prepare_song_identity_repair(old, 1, canonical, 1)
+                .is_err(),
+            "{sql}"
+        );
+        assert_eq!(
+            database.pending_local_mutations(10).unwrap().len(),
+            usize::from(sql.contains("status='pending'"))
+        );
     }
 }
 

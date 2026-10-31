@@ -14,6 +14,7 @@ import { bridge } from "../../bridge";
 import type { PagedSongs, SongView } from "../../ipc/ipc-types.generated";
 import type { LibraryViewKind, SongSort } from "./types";
 import { subscribeLibraryInvalidations } from "./libraryInvalidation";
+import { patchSongList, type SongUpdate, type SongUpdatePhase } from "./songUpdates";
 
 export interface SongPage {
   readonly songs: readonly SongView[];
@@ -103,9 +104,10 @@ export function useSongs(query: SongQuery): {
   readonly loadMore: () => void;
   readonly reset: () => void;
   readonly retry: () => void;
-  /** Apply one authoritative `SongView` (a committed mutation) to the loaded
-   *  page in place, so a toggle is visible without a full re-query. */
-  readonly patchSong: (song: SongView) => void;
+  /** Apply the committed fields of one song (a mutation's authoritative view)
+   *  to the loaded page in place, so a toggle is visible without a full
+   *  re-query. Fields the publisher did not send are left untouched. */
+  readonly patchSong: (update: SongUpdate, phase?: SongUpdatePhase) => void;
 } {
   const [page, setPage] = useState<SongPage>({ songs: [], totalCount: 0, isLast: false });
   const [loading, setLoading] = useState(false);
@@ -213,30 +215,35 @@ export function useSongs(query: SongQuery): {
   // a committed un-favorite removes the row; a newly favorited song triggers
   // an authoritative query because only the repository owns the exact sort
   // normalization and tie-break rules.
+  //
+  // Merged, never replaced: the publisher may know only the mutable fields
+  // (the player bar reads `song_detail`, which has no `quality` tier), so a
+  // replacement would blank the fields it did not send.
   const patchSong = useCallback(
-    (song: SongView) => {
-      if (query.inFavorites && song.favorite) {
+    (update: SongUpdate, phase: SongUpdatePhase = "committed") => {
+      if (
+        query.inFavorites &&
+        update.favorite &&
+        phase !== "optimistic" &&
+        !page.songs.some((song) => song.id === update.id)
+      ) {
         setRefreshEpoch((epoch) => epoch + 1);
       }
       setPage((prev) => {
-        const index = prev.songs.findIndex((s) => s.id === song.id);
-        if (query.inFavorites && !song.favorite) {
+        const index = prev.songs.findIndex((s) => s.id === update.id);
+        if (query.inFavorites && update.favorite === false) {
           if (index < 0) return prev;
           return {
             ...prev,
-            songs: prev.songs.filter((s) => s.id !== song.id),
+            songs: prev.songs.filter((s) => s.id !== update.id),
             totalCount: Math.max(0, prev.totalCount - 1),
           };
         }
-        if (index >= 0) {
-          const songs = prev.songs.slice();
-          songs[index] = song;
-          return { ...prev, songs };
-        }
-        return prev;
+        const songs = patchSongList(prev.songs, update);
+        return songs === prev.songs ? prev : { ...prev, songs };
       });
     },
-    [query.inFavorites],
+    [page.songs, query.inFavorites],
   );
 
   return { page, loading, error, loadMore, reset, retry, patchSong };

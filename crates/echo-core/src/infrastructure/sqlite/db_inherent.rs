@@ -3,6 +3,8 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+use std::sync::Arc;
+
 impl SqliteDatabase {
     /// Open (or create) a database, configure safety pragmas, apply migrations
     /// and verify its quick integrity check.
@@ -11,6 +13,21 @@ impl SqliteDatabase {
     /// `Connection::open` refuses to create parent directories, so a cold start
     /// on a fresh machine — where the platform app-data directory does not yet
     /// exist — would otherwise fail before the first migration.
+    ///
+    /// An existing file that cannot be opened as a SQLite database — unreadable
+    /// header, failed `quick_check`, damaged pages — is quarantined beside the
+    /// original and replaced by a fresh database instead of aborting startup.
+    /// Quarantine is a byte-for-byte move: the damaged file is never read for
+    /// business data, never repaired in place and never deleted, so diagnosis
+    /// stays possible (design: 「SQLite 损坏时先隔离再重建」). Every other
+    /// failure (permission denied, disk full, a lock held elsewhere, a migration
+    /// checksum mismatch) is *not* damage and still fails the open, because
+    /// renaming a healthy database aside would discard a usable projection.
+    ///
+    /// The rebuilt projection is empty: the directory is the source of truth,
+    /// so re-selecting the library folder re-derives the same root identity and
+    /// replays the committed facts (see `rebuild_library_projection`). The
+    /// quarantined file is available through [`Self::quarantined_database`].
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
         let path = path.as_ref().to_path_buf();
         // SQLite's `Connection::open` refuses to create parent directories, so
@@ -27,9 +44,30 @@ impl SqliteDatabase {
             })?;
         }
         let had_database = path.exists() && file_is_non_empty(&path)?;
-        let mut writer = open_writer(&path)?;
+        match Self::open_healthy(&path, had_database) {
+            Ok(database) => Ok(database),
+            Err(failure) if had_database && is_database_damage(&failure) => {
+                let quarantined = quarantine_database(&path, &failure)?;
+                tracing::warn!(
+                    quarantined = %crate::logging::redact_path(&quarantined),
+                    failure = %failure.to_log(crate::logging::DiagnosticMode::default()),
+                    "damaged SQLite database quarantined; starting from a fresh projection"
+                );
+                let mut database = Self::open_healthy(&path, false)?;
+                database.quarantined = Some(quarantined);
+                Ok(database)
+            }
+            Err(failure) => Err(failure),
+        }
+    }
+
+    /// The healthy-open body: configure, back up, migrate, verify, then start
+    /// the writer actor and the reader pool. Kept separate from [`Self::open`]
+    /// so the quarantine decision is made on the failure, not inside it.
+    fn open_healthy(path: &Path, had_database: bool) -> Result<Self, Error> {
+        let mut writer = open_writer(path)?;
         if had_database {
-            let backup = backup_path(&path);
+            let backup = backup_path(path);
             backup_connection(&writer, &backup)?;
         }
         apply_migrations(&mut writer)?;
@@ -37,18 +75,125 @@ impl SqliteDatabase {
         // Load/mint the device identity on the writer connection before any
         // reader is handed out, so every portable record sees it.
         let device_id = device_state::load_or_create_device_id(&writer)?;
-        device_state::backfill_legacy_play_counts(&mut writer, device_id)?;
 
         let mut readers = Vec::with_capacity(reader_count());
         for _ in 0..reader_count() {
-            readers.push(open_reader(&path)?);
+            readers.push(open_reader(path)?);
         }
         Ok(Self {
-            path,
+            library_control: Mutex::new(None),
+            library_projection_workers: Mutex::new(BTreeMap::new()),
+            path: path.to_path_buf(),
             writer: SqliteWriteActor::spawn(writer),
             readers: ReaderPool::new(readers),
             device_id,
+            quarantined: None,
+            projection_notify: Mutex::new(None),
         })
+    }
+
+    /// The damaged database this open quarantined, if any. It is diagnostic
+    /// material only: nothing in the runtime reads it, and it is never removed
+    /// automatically.
+    #[must_use]
+    pub fn quarantined_database(&self) -> Option<&Path> {
+        self.quarantined.as_deref()
+    }
+
+    /// Queue an asynchronous, directory-authoritative projection pass.
+    ///
+    /// The durable journal remains the source of truth. The worker owns a
+    /// separate SQLite writer connection and coalesces repeated wakes for the
+    /// same root, so local acknowledgements never wait for read-model replay.
+    pub(crate) fn library_projection_worker(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<Arc<crate::application::library_projection_worker::LibraryProjectionWorker>, Error>
+    {
+        use crate::application::library_projection_worker::LibraryProjectionWorker;
+
+        let control = self.library_control().ok_or_else(|| {
+            Error::unavailable(
+                "library projection",
+                "directory authority is not configured",
+            )
+        })?;
+        let worker = {
+            let mut workers =
+                self.library_projection_workers
+                    .lock()
+                    .map_err(|_| Error::InvariantViolation {
+                        why: "library projection worker registry poisoned".to_owned(),
+                    })?;
+            if let Some(worker) = workers.get(&root) {
+                Arc::clone(worker)
+            } else {
+                let writer = self.writer.clone();
+                let notify = self.projection_notify.lock().unwrap().clone();
+                let worker = Arc::new(LibraryProjectionWorker::spawn(root, move |root| {
+                    let durable = control.durability().ok_or_else(|| {
+                        Error::unavailable(
+                            "library projection",
+                            "directory commit adapter is not configured",
+                        )
+                    })?;
+                    // Projection reads the authenticated journal without
+                    // materializing files or contending on the writer lock.
+                    let replay = durable.projection_replay(root)?;
+                    let projected = writer.run(move |connection| {
+                        durability_projection::project_commits_unless_superseded(
+                            connection, root, &replay,
+                        )
+                    });
+                    if projected.is_ok() {
+                        if let Some(notify) = &notify {
+                            notify(root);
+                        }
+                    }
+                    projected
+                })?);
+                workers.insert(root, Arc::clone(&worker));
+                worker
+            }
+        };
+        Ok(worker)
+    }
+
+    /// Register a callback invoked after a root's projection worker completes a
+    /// catch-up pass. The desktop runtime wires this to a Tauri event so the UI
+    /// re-pulls the catalog read model (playlists / songs / counts) that changed
+    /// out of band from the originating command — e.g. a playlist created from
+    /// the shell before the projector had caught up. Tests leave it unset.
+    ///
+    /// # Panics
+    ///
+    /// Panics only when the notifier mutex is poisoned by a panicking notify
+    /// call; the notifier is a UI refresh hook with no recovery state to
+    /// report.
+    pub fn set_projection_notifier(&self, notifier: ProjectionNotifier) {
+        *self.projection_notify.lock().unwrap() = Some(notifier);
+    }
+
+    /// Wait until all projection wakes already accepted for this root finish.
+    /// Intended for orderly shutdown, diagnostics, and deterministic recovery
+    /// boundaries; interactive writes do not call it.
+    pub fn flush_library_projection(
+        &self,
+        root: LibraryRootId,
+        timeout: std::time::Duration,
+    ) -> Result<(), Error> {
+        let worker = self
+            .library_projection_workers
+            .lock()
+            .map_err(|_| Error::InvariantViolation {
+                why: "library projection worker registry poisoned".to_owned(),
+            })?
+            .get(&root)
+            .cloned();
+        if let Some(worker) = worker {
+            worker.flush(timeout)?;
+        }
+        Ok(())
     }
 
     /// Path of the local database; it is for runtime ownership only and must
@@ -130,84 +275,6 @@ impl SqliteDatabase {
                 )
                 .map_err(map_constraint)?;
             Ok(())
-        })
-    }
-
-    /// Idempotently record a qualified library playback session. The song
-    /// count is incremented only when the session row is newly inserted.
-    pub fn record_playback(&self, session: PlaybackSessionId, song: SongId) -> Result<bool, Error> {
-        self.writer.run(move |connection| {
-            let transaction = connection.transaction().map_err(storage)?;
-            let inserted = transaction
-                .execute(
-                    "INSERT OR IGNORE INTO recorded_play_sessions (playback_session_uuid, song_uuid, recorded_at) VALUES (?1, ?2, ?3)",
-                    params![session.to_string(), song.to_string(), now_ms()],
-                )
-                .map_err(storage)?;
-            if inserted == 1 {
-                transaction
-                    .execute("UPDATE songs SET play_count = play_count + 1, updated_at = ?2 WHERE uuid = ?1", params![song.to_string(), now_ms()])
-                    .map_err(storage)?;
-                statements::touch_root_for_song(&transaction, song)?;
-                let device_id: String = transaction
-                    .query_row("SELECT value FROM device_state WHERE key = 'device_id'", [], |row| row.get(0))
-                    .map_err(storage)?;
-                transaction
-                    .execute(
-                        "INSERT INTO sync_device_play_counts (song_uuid, device_id, play_count) VALUES (?1, ?2, 1) ON CONFLICT(song_uuid, device_id) DO UPDATE SET play_count = play_count + 1",
-                        params![song.to_string(), device_id],
-                    )
-                    .map_err(storage)?;
-                let counts = read_device_play_counts(&transaction, song)?;
-                // The host merge deserializes this payload as a complete
-                // `PlayStatsRecord` (design §3 播放次数). A `{song_uuid,
-                // by_device}` sketch is not decodable there and is rejected as
-                // `WrongObject`, so the record shape is built once, here, from
-                // the same helpers the portable record uses.
-                let device_uuid = uuid::Uuid::parse_str(&device_id).map_err(|_| {
-                    crate::error::Error::validation(
-                        crate::error::Subject::Other,
-                        "device id",
-                        "device id is not a UUID",
-                    )
-                })?;
-                let now_secs = u64::try_from(now_ms().max(0)).unwrap_or(0) / 1_000;
-                let hlc = statements::advance_object_hlc(
-                    &transaction,
-                    sync::KIND_PLAY_STATS,
-                    &song.to_string(),
-                    now_secs,
-                )?;
-                // `enqueue_object_snapshot` assigns the next local revision, so
-                // stamp the same ordinal the outbox row will carry.
-                let next_revision = sync::current_outbox_revision(
-                    &transaction,
-                    sync::KIND_PLAY_STATS,
-                    &song.to_string(),
-                )?
-                .saturating_add(1);
-                let payload = serde_json::to_value(
-                    crate::application::portable_materialize::play_stats_record(
-                        crate::domain::library::DeviceId::from_uuid(device_uuid),
-                        hlc,
-                        crate::domain::ids::Revision::from_u64(
-                            u64::try_from(next_revision).unwrap_or(0),
-                        ),
-                        song,
-                        counts,
-                    ),
-                )
-                .map_err(storage)?;
-                statements::enqueue_object_snapshot(
-                    &transaction,
-                    sync::KIND_PLAY_STATS,
-                    &song.to_string(),
-                    &payload,
-                    sync::OP_UPSERT,
-                )?;
-            }
-            transaction.commit().map_err(storage)?;
-            Ok(inserted == 1)
         })
     }
 

@@ -1,6 +1,83 @@
 use super::*;
 
 #[test]
+fn library_durability_recorder_never_counts_before_directory_commit() {
+    use echo_core::application::ports::LibraryRepository;
+    use echo_core::domain::entities::{LibraryRoot, Song};
+    use echo_core::domain::library::{LibraryId, LibraryManifest};
+    use echo_core::infrastructure::filesystem::RootControlPlane;
+    let directory = tempfile::tempdir().unwrap();
+    let routed = crate::runtime::app::assemble(
+        &directory.path().join("local.db"),
+        &directory.path().join("covers"),
+    )
+    .unwrap();
+    let root = LibraryRootId::new();
+    let path = directory.path().join("library");
+    std::fs::create_dir(&path).unwrap();
+    routed.registry.register(root, &path);
+    LibraryRepository::upsert(
+        routed.database.as_ref(),
+        &LibraryRoot::new(root, path, true, true),
+    )
+    .unwrap();
+    routed
+        .deps
+        .control
+        .write_manifest(
+            root,
+            &LibraryManifest::new(LibraryId::from_uuid(uuid::Uuid::new_v4()), "recorder"),
+        )
+        .unwrap();
+    let song = Song::new(
+        SongId::new(),
+        root,
+        RelativeMediaPath::new("media/test.flac").unwrap(),
+        Revision::from_u64(1),
+    );
+    SongRepository::upsert(routed.database.as_ref(), &song).unwrap();
+    let reached = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let hook_reached = reached.clone();
+    let control = Arc::new(
+        RootControlPlane::new(routed.registry.clone()).with_commit_hook(move |at, _| {
+            if at == "prepared" {
+                hook_reached.store(true, std::sync::atomic::Ordering::SeqCst);
+                return Err(echo_core::error::Error::unavailable(
+                    "recorder directory",
+                    "injected failure",
+                ));
+            }
+            Ok(())
+        }),
+    );
+    routed.database.configure_library_control(control.clone());
+    let recorder = super::super::recorder::CorePlaybackRecorder::new(
+        routed.database.clone(),
+        control,
+        routed.deps.device_id.clone(),
+        routed.deps.roots.clone(),
+        routed.deps.activity.clone(),
+    );
+    assert!(recorder
+        .record(PlaybackSessionId::new(), song.id())
+        .is_err());
+    assert!(reached.load(std::sync::atomic::Ordering::SeqCst));
+    assert_eq!(
+        SongRepository::by_id(routed.database.as_ref(), song.id())
+            .unwrap()
+            .unwrap()
+            .play_count()
+            .as_u64(),
+        0
+    );
+    assert!(routed
+        .database
+        .device_play_counts(song.id())
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn stats_recorder_records_a_qualified_library_listen_exactly_once() {
     // Regression: PlaybackStatsRecorder had no production caller, so
     // play_count never moved and 最近播放 stayed empty. The watcher must

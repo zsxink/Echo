@@ -123,16 +123,12 @@ pub(crate) fn upsert_song(connection: &Connection, song: &Song) -> Result<(), Er
     // Sync foundation (task 3.11): a song write is a syncable fact — append its
     // full snapshot to outbox in this same transaction. The snapshot is read
     // back from the post-write state so it is always authoritative; payload is
-    // relative path + fields only, never an absolute path.
+    // relative path + fields only, never an absolute path. An unchanged rescan
+    // replays the same snapshot; the guard keeps it from minting a candidate.
     let id = song.id().to_string();
     let payload = song_full_snapshot_payload(connection, song.id())?;
-    let _revision = enqueue_object_snapshot(
-        connection,
-        super::sync::KIND_SONG,
-        &id,
-        &payload,
-        super::sync::OP_UPSERT,
-    )?;
+    let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_owned());
+    let _revision = super::sync::enqueue_song_snapshot_if_changed(connection, &id, &json)?;
     // Stamp the object's HLC (migration 0006) so the portable record built
     // after the commit carries the same clock the DB row holds.
     let now_secs = u64::try_from(now_ms().max(0)).unwrap_or(0) / 1_000;
@@ -224,6 +220,29 @@ pub(crate) fn enqueue_object_snapshot(
     payload: &serde_json::Value,
     operation: &str,
 ) -> Result<i64, Error> {
+    enqueue_object_snapshot_with_id(
+        connection,
+        kind,
+        object_uuid,
+        payload,
+        operation,
+        None,
+        None,
+    )
+}
+
+/// Enqueue an object snapshot under a stable mutation identity and a supplied
+/// timestamp. Replanning a saved-but-interrupted operation must reproduce the
+/// exact same facts so a frozen `prepared` payload can be retried, not refused.
+pub(crate) fn enqueue_object_snapshot_with_id(
+    connection: &Connection,
+    kind: &str,
+    object_uuid: &str,
+    payload: &serde_json::Value,
+    operation: &str,
+    stable_mutation_id: Option<&str>,
+    at_ms: Option<u64>,
+) -> Result<i64, Error> {
     // Every playlist write must capture the same complete post-write view.
     // Rename/member callers historically supplied different partial payloads,
     // which could erase membership or the name when replayed as an object.
@@ -238,7 +257,15 @@ pub(crate) fn enqueue_object_snapshot(
         payload
     };
     let json = serde_json::to_string(payload).unwrap_or_else(|_| "{}".to_owned());
-    let revision = super::sync::enqueue_sync(connection, kind, object_uuid, &json, operation)?;
+    let revision = super::sync::enqueue_sync_at(
+        connection,
+        kind,
+        object_uuid,
+        &json,
+        operation,
+        stable_mutation_id,
+        at_ms,
+    )?;
     // Mirror onto canonical columns (idempotent; only present after 0005).
     match kind {
         super::sync::KIND_PLAYLIST => {

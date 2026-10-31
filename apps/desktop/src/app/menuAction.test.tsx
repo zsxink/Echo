@@ -80,7 +80,15 @@ async function activateLibrary() {
   mocks.setInvoke("start_scan", {
     generation: 2,
     cancelled: false,
-    progress: { state: "completed" },
+    state: "Completed",
+    discovered: 0,
+    processed: 0,
+    created: 0,
+    updated: 0,
+    missing: 0,
+    skipped: 0,
+    failed: 0,
+    issues: [],
   });
   fireEvent.click(screen.getByRole("button", { name: "选择音乐库目录" }));
   await screen.findByTestId("workspace");
@@ -143,6 +151,34 @@ describe("menu://action dispatch", () => {
 
     mocks.emit("menu://action", { action: "rescan" });
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("start_scan", { root: "root-1" }));
+  });
+
+  it("opens per-file scan diagnostics instead of hiding them in a summary count", async () => {
+    await activateLibrary();
+    mocks.setInvoke("start_scan", {
+      generation: 3,
+      cancelled: false,
+      state: "Completed",
+      discovered: 1,
+      processed: 1,
+      created: 0,
+      updated: 0,
+      missing: 0,
+      skipped: 0,
+      failed: 1,
+      issues: [
+        {
+          relativePath: "media/坏文件.flac",
+          code: "corrupt_media",
+          message: "音频内容无法读取",
+          songCreated: false,
+        },
+      ],
+    });
+    mocks.emit("menu://action", { action: "rescan" });
+    expect(await screen.findByTestId("scan-report-dialog")).toBeInTheDocument();
+    expect(await screen.findByText("media/坏文件.flac")).toBeInTheDocument();
+    expect(await screen.findByText("音频内容无法读取")).toBeInTheDocument();
   });
 
   it("treats a cancelled directory picker as a no-op, then refreshes on success", async () => {

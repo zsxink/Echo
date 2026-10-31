@@ -27,7 +27,10 @@ use crate::application::scan::ScanDeps;
 use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath, SongId};
 use crate::domain::library::{PortableRecord, RecordKind};
 use crate::domain::state::OperationState;
+use crate::domain::sync::ObjectKey;
 use crate::error::Error;
+
+pub mod intent;
 
 /// Journal `kind` of a delete operation. The operation lives across the whole
 /// delete→hide→(undo|trash) lifecycle of one song.
@@ -144,6 +147,21 @@ impl<'a> DeleteSongs<'a> {
 
         // All items applied: one transaction hides the song, marks each item
         // HiddenInDatabase and records the undo deadline.
+        //
+        // The reversible intent is a directory fact recorded *before* the
+        // hide: a crash between the two then leaves an intent the recovery
+        // pass can see, never a hidden song whose intent exists only in the
+        // database the hide was supposed to write. It carries the identity the
+        // final tombstone will use, so undo and finalization compete for one
+        // terminal state.
+        let created_at_ms = u64::try_from(wall_ms(&*self.deps.clock)?).unwrap_or(0);
+        let intent = intent::begin(
+            self.deps,
+            root,
+            operation,
+            ObjectKey::Song(song),
+            created_at_ms,
+        )?;
         let items = self.deps.journal.items(operation)?;
         let deadline = wall_ms(&*self.deps.clock)? + UNDO_WINDOW_MS;
         let hidden: Vec<OperationItem> = items
@@ -153,6 +171,7 @@ impl<'a> DeleteSongs<'a> {
                 ..item.clone()
             })
             .collect();
+        let final_mutation_id = intent.final_mutation_id;
         self.deps
             .uow
             .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
@@ -163,7 +182,7 @@ impl<'a> DeleteSongs<'a> {
                 for item in &hidden {
                     tx.upsert_operation_item(operation, item.clone())?;
                 }
-                tx.set_undo_deadline(operation, deadline)?;
+                tx.set_undo_deadline(operation, deadline, final_mutation_id)?;
                 Ok(())
             }))?;
 
@@ -293,6 +312,17 @@ impl<'a> RestoreDeletedOperation<'a> {
                 "delete operation is held; recovery requires a new UUID",
             ));
         }
+
+        // Undo and deadline finalization race for the one terminal state. The
+        // final tombstone, and a finalized one refuses this undo before the
+        // song is made visible again or any staged resource is moved back.
+        intent::cancel(
+            self.deps,
+            root,
+            operation,
+            ObjectKey::Song(subject),
+            u64::try_from(wall_ms(&*self.deps.clock)?).unwrap_or(u64::MAX),
+        )?;
 
         for item in &items {
             self.restore_resource(root, operation, item)?;

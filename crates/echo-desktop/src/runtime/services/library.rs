@@ -193,7 +193,15 @@ impl super::AppServices {
     /// failures propagate.
     pub fn start_scan(&self, root: LibraryRootId) -> Result<ScanSnapshot, Error> {
         let summary: ScanSummary = StartScan::new(&self.deps, &self.supervisor).run(root)?;
-        Ok(ScanSnapshot::from(&summary))
+        let mut snapshot = ScanSnapshot::from(&summary);
+        snapshot.issues = self
+            .deps
+            .runs
+            .issues(root, summary.generation)?
+            .iter()
+            .map(crate::ipc::dto::ScanIssueDto::from)
+            .collect();
+        Ok(snapshot)
     }
 
     /// Cancel the active scan of `root`; `true` when one was cancelled.

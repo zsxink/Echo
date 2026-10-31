@@ -446,8 +446,12 @@ fn playlist_cover_is_empty_then_follows_latest_member_unless_manually_set() {
         "a later song without artwork leaves the prior automatic cover intact"
     );
 
-    app.set_playlist_cover(playlist, Some(b"manual-cover".to_vec()), Some("image/png"))
-        .expect("set manual cover");
+    app.set_playlist_cover(
+        playlist,
+        Some(b"manual-cover".as_slice()),
+        Some("image/png"),
+    )
+    .expect("set manual cover");
     let manual_key = app.playlists().expect("list")[0]
         .cover_key
         .clone()
@@ -464,6 +468,9 @@ fn playlist_cover_is_empty_then_follows_latest_member_unless_manually_set() {
         Some(latest_key.as_str())
     );
 }
+
+mod artist_cover;
+mod playlist_cover;
 
 #[test]
 fn set_favorite_returns_the_committed_authoritative_song() {
@@ -969,3 +976,7 @@ fn recorded_plays_materialize_additive_play_stats() {
 use echo_core::domain::library::PortableRecord;
 
 mod open_path;
+
+mod lifecycle;
+
+mod lifecycle_scan;

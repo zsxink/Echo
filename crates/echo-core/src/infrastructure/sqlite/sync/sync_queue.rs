@@ -494,7 +494,7 @@ fn decode_pending_mutation(
         _ => {
             return Err(Error::InvariantViolation {
                 why: "unknown object kind in local sync queue".to_owned(),
-            })
+            });
         }
     };
     let previous_mutation_id = previous

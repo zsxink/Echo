@@ -1,12 +1,18 @@
-use echo_core::application::ports::{DeviceIdProvider, HostCommitLedgerPort, LibraryRepository};
+use std::sync::Arc;
+
+use echo_core::application::ports::{
+    ControlPlanePort, DeviceIdProvider, HostCommitLedgerPort, LibraryRepository,
+};
 use echo_core::domain::entities::LibraryRoot;
 use echo_core::domain::ids::{LibraryRootId, SongId};
+use echo_core::domain::library::LibraryManifest;
 #[cfg(feature = "client")]
 use echo_core::domain::sync::ObjectVersion;
 use echo_core::domain::sync::{
     AuthorityId, CommitSeq, DeviceId, Epoch, LibraryId, MutationCandidate, MutationId, ObjectKey,
     SyncBinding,
 };
+use echo_core::infrastructure::filesystem::{RootControlPlane, RootRegistry};
 use echo_core::infrastructure::sqlite::SqliteDatabase;
 use echo_sync::protocol::{commit_digest, CommitDto, MutationDto, PROTOCOL_VERSION};
 #[cfg(feature = "client")]
@@ -40,17 +46,14 @@ fn verify_ledger_protocol(maximum_payload: bool) {
         authority_id: AuthorityId::new(),
         epoch: Epoch::INITIAL,
     };
-    let local_root = LibraryRootId::new();
-    LibraryRepository::upsert(
-        &database,
-        &LibraryRoot::new(local_root, directory.path().join("music"), true, true),
-    )
-    .unwrap();
-    database
-        .bind_sync_library(binding, true, local_root)
-        .unwrap();
+    bind_library_database(&database, &directory.path().join("music"), binding, true);
     #[cfg(feature = "client")]
-    bind_replica(&replica, &replica_directory.path().join("music"), binding);
+    bind_library_database(
+        &replica,
+        &replica_directory.path().join("music"),
+        binding,
+        false,
+    );
     let device = DeviceId::from_uuid(database.current_device_id().as_uuid());
     let song = SongId::new();
     let mut mutation = MutationCandidate {
@@ -142,10 +145,11 @@ fn verify_snapshot_enrollment(
 ) {
     let enrollment_directory = tempfile::tempdir().unwrap();
     let enrollment = SqliteDatabase::open(enrollment_directory.path().join("library.db")).unwrap();
-    bind_replica(
+    bind_library_database(
         &enrollment,
         &enrollment_directory.path().join("music"),
         binding,
+        false,
     );
     let snapshot = SnapshotPageDto {
         snapshot_token: MutationId::new().as_uuid().simple().to_string(),
@@ -169,15 +173,35 @@ fn verify_snapshot_enrollment(
     assert_eq!(applied.applied, 1);
 }
 
-#[cfg(feature = "client")]
-fn bind_replica(replica: &SqliteDatabase, music_root: &std::path::Path, binding: SyncBinding) {
+/// Production always attaches a library control plane before sync writes;
+/// the directory-first commit path refuses to run without it.
+fn bind_library_database(
+    database: &SqliteDatabase,
+    music_root: &std::path::Path,
+    binding: SyncBinding,
+    is_host: bool,
+) {
+    std::fs::create_dir_all(music_root).unwrap();
     let root = LibraryRootId::new();
+    let registry = RootRegistry::new();
+    registry.register(root, music_root);
+    let control = Arc::new(RootControlPlane::new(registry));
+    control
+        .write_manifest(
+            root,
+            &LibraryManifest::new(
+                echo_core::domain::library::LibraryId::from_uuid(binding.library_id.as_uuid()),
+                env!("CARGO_PKG_VERSION"),
+            ),
+        )
+        .unwrap();
+    database.configure_library_control(control);
     LibraryRepository::upsert(
-        replica,
+        database,
         &LibraryRoot::new(root, music_root.to_path_buf(), true, true),
     )
     .unwrap();
-    replica.bind_sync_library(binding, false, root).unwrap();
+    database.bind_sync_library(binding, is_host, root).unwrap();
 }
 
 fn pad_to_mutation_limit(binding: SyncBinding, mutation: &mut MutationCandidate) {

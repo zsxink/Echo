@@ -20,6 +20,8 @@ pub mod local_state;
 /// Media-control seam (macOS Now Playing / Windows SMTC / Linux MPRIS): key
 /// vocabulary, exactly-one command mapping and the degrade path (task 9.4).
 pub mod media_control;
+/// Unsaved qualified listens retained for a later directory commit.
+pub mod playback_retry;
 /// Reveal-in-folder fallback policy: parent-directory fallback when the
 /// platform cannot locate the specific row (Linux) (task 9.5).
 pub mod reveal;

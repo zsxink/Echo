@@ -31,6 +31,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::application::portable::{ControlPlaneStatus, EnsureControlPlane};
+use crate::application::ports::LibraryProjectionPort;
 use crate::application::ports::{ControlPlanePort, PlaylistRepository, SongRepository, UnitOfWork};
 use crate::domain::entities::{PlaylistMember, Song, SongAvailability};
 use crate::domain::ids::{
@@ -101,6 +102,7 @@ pub struct ContinueFromRecords<'a> {
     songs: &'a dyn SongRepository,
     playlists: &'a dyn PlaylistRepository,
     uow: &'a dyn UnitOfWork,
+    projection: Option<&'a dyn LibraryProjectionPort>,
 }
 
 impl<'a> ContinueFromRecords<'a> {
@@ -116,7 +118,17 @@ impl<'a> ContinueFromRecords<'a> {
             songs,
             playlists,
             uow,
+            projection: None,
         }
+    }
+
+    /// Use the SQL-only projection boundary for both legacy snapshots and
+    /// verified directory commits. Production composition supplies this port;
+    /// the repository constructor remains for historical compatibility fakes.
+    #[must_use]
+    pub const fn with_projection(mut self, projection: &'a dyn LibraryProjectionPort) -> Self {
+        self.projection = Some(projection);
+        self
     }
 
     /// Run the continuation for `root`.
@@ -138,7 +150,10 @@ impl<'a> ContinueFromRecords<'a> {
                 projection: ProjectionReport::default(),
             });
         }
-        let projection = self.project(root)?;
+        let projection = match self.projection {
+            Some(projection) => ordered::project(self.control, projection, root)?,
+            None => self.project(root)?,
+        };
         Ok(ContinuationReport {
             control_plane,
             projection,
@@ -538,3 +553,5 @@ const fn version_of(hlc: HybridLogicalClock, revision: Revision) -> (HybridLogic
 
 #[cfg(test)]
 mod tests;
+
+pub(crate) mod ordered;

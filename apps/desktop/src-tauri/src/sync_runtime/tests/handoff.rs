@@ -11,6 +11,7 @@ struct RecordingProvisioner {
     database: Arc<SqliteDatabase>,
     starts: Mutex<Vec<LibraryRootId>>,
     fail: AtomicBool,
+    pause_start: Mutex<Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>>,
 }
 
 impl RecordingProvisioner {
@@ -19,6 +20,7 @@ impl RecordingProvisioner {
             database,
             starts: Mutex::new(Vec::new()),
             fail: AtomicBool::new(false),
+            pause_start: Mutex::new(None),
         })
     }
 
@@ -35,6 +37,11 @@ impl SyncProvisioner for RecordingProvisioner {
 
     fn peer(&self, root: LibraryRootId) -> Result<ProvisionedPeer, SyncRuntimeError> {
         self.starts.lock().unwrap().push(root);
+        let pause = self.pause_start.lock().unwrap().take();
+        if let Some((reached, resume)) = pause {
+            reached.send(()).unwrap();
+            resume.recv().unwrap();
+        }
         if self.fail.load(Ordering::Acquire) {
             return Err(SyncRuntimeError::SyncConnectionFailed);
         }
@@ -362,4 +369,320 @@ fn an_abort_after_the_root_already_changed_refuses_to_guess() {
         Err(SyncRuntimeError::LibraryUnavailable)
     ));
     assert_eq!(provisioner.started_roots(), vec![first]);
+}
+
+#[test]
+fn shutdown_fences_an_already_begun_root_handoff_before_abort() {
+    let (_directory, database, provisioner, root) = fixture();
+    let runtime = Arc::new(SyncRuntime::new(
+        Arc::clone(&database),
+        Some(provisioner.clone()),
+        Some(Arc::new(ParkedCycle)),
+    ));
+    runtime.peer_start().unwrap();
+    let handoff = runtime.begin_root_handoff().unwrap();
+    runtime.shutdown().unwrap();
+    let aborted = runtime.abort_root_handoff(&handoff);
+    let enabled = runtime.status().enabled;
+    let starts = provisioner.started_roots();
+    runtime.stop().unwrap();
+    assert!(
+        aborted.is_err(),
+        "failed activation restarted sync after shutdown"
+    );
+    assert!(!enabled);
+    assert_eq!(starts, vec![root]);
+}
+
+#[test]
+fn shutdown_rejects_all_start_and_restore_paths_before_enabling_intent() {
+    let (_directory, database, provisioner, root) = fixture();
+    let runtime = Arc::new(SyncRuntime::new(
+        Arc::clone(&database),
+        Some(provisioner.clone()),
+        Some(Arc::new(ParkedCycle)),
+    ));
+    runtime.peer_start().unwrap();
+    runtime.shutdown().unwrap();
+    assert_eq!(runtime.peer_start().unwrap_err(), SyncRuntimeError::Busy);
+    assert_eq!(
+        runtime.host_start("192.168.1.2").unwrap_err(),
+        SyncRuntimeError::Busy
+    );
+    assert_eq!(
+        runtime.start_peer_locked().unwrap_err(),
+        SyncRuntimeError::Busy
+    );
+    assert_eq!(
+        runtime
+            .start_host_locked("192.168.1.2".parse().unwrap())
+            .unwrap_err(),
+        SyncRuntimeError::Busy
+    );
+    assert_eq!(
+        runtime.restore_saved_session().unwrap_err(),
+        SyncRuntimeError::Busy
+    );
+    assert_eq!(runtime.retry_restore().unwrap_err(), SyncRuntimeError::Busy);
+    assert_eq!(
+        runtime.start_restore_retry().unwrap_err(),
+        SyncRuntimeError::Busy
+    );
+    assert!(runtime.begin_root_handoff().is_err());
+    assert_eq!(
+        runtime.complete_root_handoff(root).unwrap_err(),
+        SyncRuntimeError::Busy
+    );
+    assert_eq!(
+        database
+            .current_sync_configuration()
+            .unwrap()
+            .unwrap()
+            .session_intent,
+        SyncSessionIntent::Stopped
+    );
+    assert_eq!(provisioner.started_roots(), vec![root]);
+    assert!(!runtime.status().enabled);
+}
+
+#[test]
+fn an_ordinary_stop_keeps_the_session_restartable() {
+    let (_directory, database, provisioner, root) = fixture();
+    let runtime = Arc::new(SyncRuntime::new(
+        database,
+        Some(provisioner.clone()),
+        Some(Arc::new(ParkedCycle)),
+    ));
+    runtime.peer_start().unwrap();
+    runtime.stop().unwrap();
+    runtime.peer_start().unwrap();
+    assert!(runtime.status().enabled);
+    assert_eq!(provisioner.started_roots(), vec![root, root]);
+    runtime.stop().unwrap();
+}
+
+#[test]
+fn a_failed_producer_cleanup_keeps_exit_fenced_until_shutdown_retries() {
+    let (_directory, database, provisioner, _root) = fixture();
+    let runtime = SyncRuntime::new(
+        database,
+        Some(provisioner.clone()),
+        Some(Arc::new(ParkedCycle)),
+    );
+    let (wake, _) = mpsc::channel();
+    runtime.inner.lock().unwrap().sync_loop = Some(SyncLoopWorker {
+        stop: Arc::new(AtomicBool::new(false)),
+        wake,
+        thread: Some(std::thread::spawn(|| panic!("injected producer failure"))),
+    });
+    assert_eq!(
+        runtime.shutdown().unwrap_err(),
+        SyncRuntimeError::WorkerFailed
+    );
+    assert_eq!(runtime.peer_start().unwrap_err(), SyncRuntimeError::Busy);
+    assert!(provisioner.started_roots().is_empty());
+    runtime.shutdown().unwrap();
+    assert!(!runtime.status().enabled);
+    assert_eq!(
+        runtime.restore_saved_session().unwrap_err(),
+        SyncRuntimeError::Busy
+    );
+}
+
+#[test]
+fn shutdown_serializes_with_admitted_provisioning_and_its_enabled_intent() {
+    let (_directory, database, provisioner, root) = fixture();
+    let runtime = Arc::new(SyncRuntime::new(
+        Arc::clone(&database),
+        Some(provisioner.clone()),
+        Some(Arc::new(ParkedCycle)),
+    ));
+    let (reached, paused) = mpsc::channel();
+    let (release, resume) = mpsc::channel();
+    *provisioner.pause_start.lock().unwrap() = Some((reached, resume));
+    let starting = Arc::clone(&runtime);
+    let startup = thread::spawn(move || starting.peer_start());
+    paused.recv_timeout(Duration::from_secs(2)).unwrap();
+    assert_eq!(
+        database
+            .current_sync_configuration()
+            .unwrap()
+            .unwrap()
+            .session_intent,
+        SyncSessionIntent::Enabled
+    );
+    let exiting = Arc::clone(&runtime);
+    let (entered, entering) = mpsc::channel();
+    let (done, completed) = mpsc::channel();
+    let shutdown = thread::spawn(move || {
+        entered.send(()).unwrap();
+        done.send(exiting.shutdown()).unwrap();
+    });
+    entering.recv_timeout(Duration::from_secs(2)).unwrap();
+    let premature = completed.recv_timeout(Duration::from_millis(100)).ok();
+    release.send(()).unwrap();
+    startup.join().unwrap().unwrap();
+    shutdown.join().unwrap();
+    assert!(
+        premature.is_none(),
+        "shutdown escaped an already admitted producer startup"
+    );
+    completed
+        .recv_timeout(Duration::from_secs(2))
+        .unwrap()
+        .unwrap();
+    assert!(!runtime.status().enabled);
+    assert_eq!(
+        database
+            .current_sync_configuration()
+            .unwrap()
+            .unwrap()
+            .session_intent,
+        SyncSessionIntent::Stopped
+    );
+    assert_eq!(runtime.peer_start().unwrap_err(), SyncRuntimeError::Busy);
+    assert_eq!(provisioner.started_roots(), vec![root]);
+}
+
+#[test]
+fn shutdown_releases_transition_before_joining_a_cancelled_restore_waiter() {
+    let (_directory, database, provisioner, _root) = fixture();
+    let runtime = Arc::new(SyncRuntime::new(
+        database,
+        Some(provisioner.clone()),
+        Some(Arc::new(ParkedCycle)),
+    ));
+    let (wake, cancelled) = crate::restore_retry::RestoreRetryWake::new();
+    let restoring = Arc::clone(&runtime);
+    let (result, restored) = mpsc::channel();
+    let worker = thread::spawn(move || {
+        cancelled.recv().unwrap();
+        result.send(restoring.restore_saved_session()).unwrap();
+    });
+    runtime.restore_retry.lock().unwrap().worker = Some(RestoreRetryWorker {
+        wake,
+        thread: worker,
+    });
+    runtime.shutdown().unwrap();
+    assert_eq!(
+        restored
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .unwrap_err(),
+        SyncRuntimeError::Busy
+    );
+    assert!(provisioner.started_roots().is_empty());
+}
+
+#[test]
+fn stop_and_handoff_can_join_a_retry_without_waiting_for_their_own_transition() {
+    for handoff in [false, true] {
+        let (_directory, database, provisioner, root) = fixture();
+        database
+            .set_sync_session_intent(SyncSessionIntent::Enabled)
+            .unwrap();
+        let runtime = Arc::new(SyncRuntime::new(
+            database,
+            Some(provisioner.clone()),
+            Some(Arc::new(ParkedCycle)),
+        ));
+        let generation = runtime
+            .restore_retry
+            .lock()
+            .unwrap()
+            .generation
+            .load(Ordering::Acquire);
+        let (wake, cancelled) = crate::restore_retry::RestoreRetryWake::new();
+        let restoring = Arc::clone(&runtime);
+        let (result, restored) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            cancelled.recv().unwrap();
+            result
+                .send(
+                    restoring
+                        .try_restore_retry_transition(generation, root)
+                        .map(|transition| transition.is_some()),
+                )
+                .unwrap();
+        });
+        runtime.restore_retry.lock().unwrap().worker = Some(RestoreRetryWorker {
+            wake,
+            thread: worker,
+        });
+        if handoff {
+            runtime.begin_root_handoff().unwrap();
+        } else {
+            runtime.stop().unwrap();
+        }
+        assert!(!restored
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .unwrap());
+        assert!(provisioner.started_roots().is_empty());
+    }
+}
+
+#[test]
+fn a_contended_automatic_restore_keeps_its_budget_and_eventually_reports_exhaustion() {
+    let (_directory, database, provisioner, root) = fixture();
+    database
+        .set_sync_session_intent(SyncSessionIntent::Enabled)
+        .unwrap();
+    provisioner.fail.store(true, Ordering::Release);
+    let runtime = Arc::new(SyncRuntime::new(
+        database,
+        Some(provisioner.clone()),
+        Some(Arc::new(ParkedCycle)),
+    ));
+    let (due, due_retry) = mpsc::channel();
+    let (retry_release, retry_resume) = mpsc::channel();
+    *runtime.restore_retry_before_attempt.lock().unwrap() = Some(Box::new(move || {
+        due.send(()).unwrap();
+        retry_resume.recv().unwrap();
+    }));
+    runtime
+        .start_restore_retry_with_delays(1, Duration::from_millis(1), Duration::from_millis(1))
+        .unwrap();
+    due_retry.recv_timeout(Duration::from_secs(2)).unwrap();
+    let (reached, paused) = mpsc::channel();
+    let (release, resume) = mpsc::channel();
+    *provisioner.pause_start.lock().unwrap() = Some((reached, resume));
+    let starting = Arc::clone(&runtime);
+    let startup = thread::spawn(move || starting.peer_start());
+    paused.recv_timeout(Duration::from_secs(2)).unwrap();
+    retry_release.send(()).unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while runtime.restore_retry_contentions.load(Ordering::Acquire) == 0
+        && std::time::Instant::now() < deadline
+    {
+        thread::yield_now();
+    }
+    let contended = runtime.restore_retry_contentions.load(Ordering::Acquire) > 0;
+    let attempts_during_contention = runtime.restore_retry.lock().unwrap().attempts;
+    release.send(()).unwrap();
+    assert_eq!(
+        startup.join().unwrap().unwrap_err(),
+        SyncRuntimeError::SyncConnectionFailed
+    );
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while !runtime.status().restore_exhausted && std::time::Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(1));
+    }
+    let exhausted = runtime.status().restore_exhausted;
+    let starts = provisioner.started_roots();
+    runtime.stop().unwrap();
+    assert!(contended, "fixture never exercised transition contention");
+    assert_eq!(
+        attempts_during_contention, 0,
+        "waiting for a transition consumed the actual attempt budget"
+    );
+    assert!(
+        exhausted,
+        "a valid automatic retry disappeared without success or exhaustion"
+    );
+    assert_eq!(
+        starts,
+        vec![root, root],
+        "manual failure must be followed by one actual automatic attempt"
+    );
 }

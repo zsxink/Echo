@@ -22,21 +22,23 @@ import type { CatalogCollectionView, SongView } from "../../ipc/ipc-types.genera
 import { coverClass } from "./coverClass";
 import { bumpLibraryCount, invalidateLibraryCounts } from "./libraryCounts";
 import { subscribeLibraryInvalidations } from "./libraryInvalidation";
-import { publishSongUpdate, subscribeSongUpdates } from "./songUpdates";
+import { patchSongList, subscribeSongUpdates, publishSongUpdate } from "./songUpdates";
 import { SongList } from "./SongList";
 import { SongMenu } from "./SongMenu";
 import type { MenuAnchor } from "./SongMenu";
 import { BatchSongMenu, SelectionModeButton } from "./BatchSongActions";
 import { useMenuTrigger } from "./menuTrigger";
 import {
-  formatBatchFailureDetails,
   formatBatchResult,
+  pendingBatchItems,
   runDeleteBatch,
   runFavoriteBatch,
   runQueueBatch,
   undoDeleteBatch,
 } from "./batchOperations";
 import type { BatchResult } from "./batchOperations";
+import { notifyBatchOutcome } from "./savedPendingNotice";
+import { setSongFavorite } from "./favoriteMutation";
 import { useSongSelection } from "./useSongSelection";
 import { ConfirmationDialog } from "./ConfirmationDialog";
 import { AddToPlaylistDialog } from "../playlists";
@@ -261,7 +263,7 @@ export function CollectionDirectory({
   useEffect(
     () =>
       subscribeSongUpdates((updated) => {
-        setSongs((current) => current.map((song) => (song.id === updated.id ? updated : song)));
+        setSongs((current) => patchSongList(current, updated));
       }),
     [],
   );
@@ -292,26 +294,28 @@ export function CollectionDirectory({
       .catch(() => notify({ message: "加入播放队列失败，请重试", error: true }));
   }, []);
 
-  const onFavorite = useCallback((song: SongView, favorite: boolean) => {
-    // Optimistic sidebar count, reverted when the command fails — same deal as
-    // the library workspace.
-    bumpLibraryCount("favorites", favorite ? 1 : -1);
-    void bridge
-      .call("set_favorite", { songId: song.id, favorite })
-      .then((committed) => publishSongUpdate(committed as SongView))
-      .catch(() => {
-        bumpLibraryCount("favorites", favorite ? -1 : 1);
-        notify({ message: "收藏失败，请重试", error: true });
+  const onFavorite = useCallback(
+    (song: SongView, favorite: boolean) => {
+      void setSongFavorite(song, favorite, {
+        root,
+        onRecovered: () => setRefreshEpoch((epoch) => epoch + 1),
+        onFailure: () => notify({ message: "收藏失败，请重试", error: true }),
       });
-  }, []);
+    },
+    [root],
+  );
 
-  const notifyBatch = useCallback((result: BatchResult<SongView>) => {
-    const details = formatBatchFailureDetails(result, (song) => song.title ?? "未命名歌曲");
-    notify({
-      message: `批量操作：${formatBatchResult(result)}${details ? `。${details}` : ""}`,
-      error: result.failed > 0,
-    });
-  }, []);
+  const notifyBatch = useCallback(
+    (result: BatchResult<SongView>) => {
+      // Per-item counts + same-operation 恢复 for committed-but-pending items.
+      notifyBatchOutcome(result, {
+        root,
+        label: (song) => song.title ?? "未命名歌曲",
+        onRecovered: refreshSongs,
+      });
+    },
+    [refreshSongs, root],
+  );
 
   const applyBatchFavorite = useCallback(
     async (favorite: boolean) => {
@@ -329,13 +333,21 @@ export function CollectionDirectory({
       try {
         bumpLibraryCount("favorites", favorite ? targets.length : -targets.length);
         const result = await runFavoriteBatch(selectedSongs, favorite);
+        // Success and 已保存待更新 both carry the committed truth: publish it so
+        // the row shows the like the directory already holds. Only a genuinely
+        // unsaved item rolls the optimistic count back.
         for (const item of result.items) {
-          if (item.status === "success" && item.value) publishSongUpdate(item.value);
+          if ((item.status === "success" || item.status === "pending") && item.value)
+            publishSongUpdate(item.value);
         }
         if (result.failed > 0)
           bumpLibraryCount("favorites", favorite ? -result.failed : result.failed);
-        refreshSongs();
-        invalidateLibraryCounts();
+        // A pending item's projection still lags: re-reading now would show the
+        // pre-commit state and make a saved like look lost.
+        if (pendingBatchItems(result).length === 0) {
+          refreshSongs();
+          invalidateLibraryCounts();
+        }
         notifyBatch(result);
         exitSelectionMode();
       } catch {

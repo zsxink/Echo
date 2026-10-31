@@ -441,44 +441,25 @@ fn merge_playlist_append(
     Ok((Value::Array(combined), aliases))
 }
 
-/// One decoded play-stats payload. `claimant` is `None` for a payload written
-/// before the record shape was complete: that shape could not attest
-/// `updated_by_device_id`, so only the authenticated origin speaks for it.
+/// One decoded play-stats payload. The payload is the full
+/// [`super::library::PlayStatsRecord`], so both fields are always present.
 struct DecodedPlayStats {
-    declared_song: Option<Uuid>,
-    claimant: Option<Uuid>,
+    declared_song: Uuid,
+    claimant: Uuid,
     buckets: std::collections::BTreeMap<Uuid, u64>,
 }
 
 /// Decode one play-stats payload.
 ///
-/// A payload written after the current release carries the full
-/// [`super::library::PlayStatsRecord`]; one written by an earlier release (or
-/// queued before the upgrade) only carried `{song_uuid, by_device}`. Both are
-/// accepted so an existing library is not permanently poisoned, but the strict
-/// shape is preferred: only it can attest `updated_by_device_id`.
+/// The payload is the full [`super::library::PlayStatsRecord`]: only that shape
+/// attests `updated_by_device_id`, so anything else is refused.
 fn decode_play_stats(payload: &Value) -> Result<DecodedPlayStats, ConfirmationError> {
-    if let Ok(record) = serde_json::from_value::<super::library::PlayStatsRecord>(payload.clone()) {
-        return Ok(DecodedPlayStats {
-            declared_song: Some(record.song_uuid),
-            claimant: Some(record.updated_by_device_id.as_uuid()),
-            buckets: record.by_device,
-        });
-    }
-    let declared_song = payload
-        .get("song_uuid")
-        .and_then(Value::as_str)
-        .and_then(|value| Uuid::parse_str(value).ok());
-    let buckets = payload
-        .get("by_device")
-        .and_then(|value| {
-            serde_json::from_value::<std::collections::BTreeMap<Uuid, u64>>(value.clone()).ok()
-        })
-        .ok_or(ConfirmationError::WrongObject)?;
+    let record: super::library::PlayStatsRecord =
+        serde_json::from_value(payload.clone()).map_err(|_| ConfirmationError::WrongObject)?;
     Ok(DecodedPlayStats {
-        declared_song,
-        claimant: None,
-        buckets,
+        declared_song: record.song_uuid,
+        claimant: record.updated_by_device_id.as_uuid(),
+        buckets: record.by_device,
     })
 }
 
@@ -488,16 +469,10 @@ fn merge_authorized_play_stats(
     song: SongId,
 ) -> Result<Value, ConfirmationError> {
     let proposed = decode_play_stats(&candidate.payload)?;
-    if proposed
-        .declared_song
-        .is_some_and(|declared| declared != song.as_uuid())
-    {
+    if proposed.declared_song != song.as_uuid() {
         return Err(ConfirmationError::WrongObject);
     }
-    if proposed
-        .claimant
-        .is_some_and(|declared| declared != candidate.origin_device_id.as_uuid())
-    {
+    if proposed.claimant != candidate.origin_device_id.as_uuid() {
         return Err(ConfirmationError::WrongOrigin);
     }
     // A confirmed row written by an earlier release only recorded buckets; it
@@ -535,31 +510,6 @@ pub fn payload_changed_at_ms(payload: &Value) -> Option<u64> {
         .get("wall_secs")?
         .as_u64()?
         .checked_mul(1000)
-}
-
-/// Confirm a legacy portable record using its persisted change time.
-/// New protocol callers pass the immutable millisecond event time explicitly
-/// through [`confirm_candidate_at`]. Missing legacy times compare as zero.
-///
-/// # Errors
-/// Rejects mismatched objects or origins, invalid predecessor order, and
-/// exhausted or nonmonotone sequences.
-pub fn confirm_candidate(
-    current: Option<&ConfirmedObject>,
-    cursor: Option<OriginCursor>,
-    candidate: &MutationCandidate,
-    commit_seq: CommitSeq,
-) -> Result<Confirmation, ConfirmationError> {
-    confirm_candidate_at(
-        current,
-        cursor,
-        candidate,
-        commit_seq,
-        payload_changed_at_ms(&candidate.payload).unwrap_or(0),
-        current
-            .and_then(|value| payload_changed_at_ms(&value.payload))
-            .unwrap_or(0),
-    )
 }
 
 /// Confirm an event while resolving ordinary library fields by change time.

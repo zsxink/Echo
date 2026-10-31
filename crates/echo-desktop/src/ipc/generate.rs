@@ -23,10 +23,14 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly messageKey: string;\n");
     out.push_str("  readonly retryable: boolean;\n");
     out.push_str("  readonly operationId?: string;\n");
+    out.push_str("  readonly durabilityOutcome?: LibraryDurabilityOutcomeDto;\n");
     out.push_str("  readonly field?: string;\n");
     out.push_str("}\n\n");
     out.push_str("export type IpcResult<T> = T | IpcErrorDto;\n\n");
+    out.push_str("export type LibraryDurabilityReasonDto = 'operationRejected' | 'recoveryRequired' | 'projectionPending' | 'unresolvedProjection' | 'legacyUnverified';\n\n");
+    out.push_str("export type LibraryDurabilityOutcomeDto =\n  | { readonly kind: 'notSaved'; readonly reason: LibraryDurabilityReasonDto }\n  | { readonly kind: 'savedPendingRecovery'; readonly operationId: string | null; readonly reason: LibraryDurabilityReasonDto }\n  | { readonly kind: 'savedPendingProjection'; readonly operationId: string | null; readonly reason: LibraryDurabilityReasonDto }\n  | { readonly kind: 'complete'; readonly operationId: string | null }\n  | { readonly kind: 'recoveryPartial'; readonly reason: LibraryDurabilityReasonDto };\n\n");
     out.push_str(super::effects::typescript());
+    out.push_str(super::playback_retry::typescript());
     out.push_str(super::sync::typescript());
 
     // Player snapshots travel on the typed `player://snapshot` event rather
@@ -147,6 +151,21 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly activeRootPath?: string;\n");
     out.push_str("}\n\n");
 
+    out.push_str("export type RecoveryIssueReasonDto = 'missingSong' | 'missingPlaylist' | 'identityConflict' | 'tombstonedDependency' | 'missingSyncDependency' | 'ambiguousMutationVersion' | 'invalidStateFact' | 'unverifiedConfirmationMetadata' | 'requiresStateRecovery';\n\n");
+    out.push_str("export interface LibraryRecoveryIssueDto {\n");
+    out.push_str("  readonly target: string;\n");
+    out.push_str("  readonly reason: RecoveryIssueReasonDto;\n");
+    out.push_str("}\n\n");
+    out.push_str("export interface LibraryRecoveryStatusDto {\n");
+    out.push_str("  readonly root: string;\n");
+    out.push_str("  readonly readOnly: boolean;\n");
+    out.push_str("  readonly directoryHeadSeq: number;\n");
+    out.push_str("  readonly projectedSeq: number;\n");
+    out.push_str("  readonly needsProjection: boolean;\n");
+    out.push_str("  readonly legacyUnverified: boolean;\n");
+    out.push_str("  readonly issues: readonly LibraryRecoveryIssueDto[];\n");
+    out.push_str("  readonly outcome: LibraryDurabilityOutcomeDto;\n");
+    out.push_str("}\n\n");
     out.push_str("export interface ScanSnapshot {\n");
     out.push_str("  readonly generation: number;\n");
     out.push_str("  readonly cancelled: boolean;\n");
@@ -158,6 +177,13 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly missing: number;\n");
     out.push_str("  readonly skipped: number;\n");
     out.push_str("  readonly failed: number;\n");
+    out.push_str("  readonly issues: readonly ScanIssueDto[];\n");
+    out.push_str("}\n\n");
+    out.push_str("export interface ScanIssueDto {\n");
+    out.push_str("  readonly relativePath: string;\n");
+    out.push_str("  readonly code: string;\n");
+    out.push_str("  readonly message: string;\n");
+    out.push_str("  readonly songCreated: boolean;\n");
     out.push_str("}\n\n");
 
     out.push_str("export interface SongDetailView {\n");
@@ -175,8 +201,15 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly availability: SongAvailability;\n");
     out.push_str("}\n\n");
 
+    out.push_str("export type LyricsImportResultDto =\n");
+    out.push_str("  | { readonly kind: 'none' }\n");
+    out.push_str("  | { readonly kind: 'imported'; readonly relativePath: string }\n");
+    out.push_str(
+        "  | { readonly kind: 'failed'; readonly code: string; readonly message: string };\n\n",
+    );
     out.push_str("export type ImportResultDto =\n");
-    out.push_str("  | { readonly kind: 'imported'; readonly operationId: string; readonly songId: string; readonly relativePath: string; readonly renamed: boolean }\n");
+    out.push_str("  | { readonly kind: 'savedPending'; readonly operationId: string; readonly songId: string; readonly relativePath: string; readonly renamed: boolean; readonly lyrics: LyricsImportResultDto; readonly code: string; readonly message: string }\n");
+    out.push_str("  | { readonly kind: 'imported'; readonly operationId: string; readonly songId: string; readonly relativePath: string; readonly renamed: boolean; readonly lyrics: LyricsImportResultDto }\n");
     out.push_str("  | { readonly kind: 'duplicate'; readonly existingSongId: string }\n");
     out.push_str("  | { readonly kind: 'skipped' }\n");
     out.push_str("  | { readonly kind: 'libraryUnavailable' }\n");
@@ -250,6 +283,10 @@ pub fn generated_typescript() -> String {
     }
     out.push_str("  readonly get_bootstrap_state: BootstrapSnapshot;\n");
     out.push_str("  readonly library_status: LibraryStatus;\n");
+    out.push_str("  readonly retry_library_operation: void;\n");
+    out.push_str("  readonly library_recovery_status: LibraryRecoveryStatusDto;\n");
+    out.push_str("  readonly retry_library_projection: void;\n");
+    out.push_str("  readonly playback_retry_status: readonly PlaybackRetryStatusDto[];\n");
     out.push_str("  readonly all_songs: PagedSongs;\n");
     out.push_str("  readonly search: PagedSongs;\n");
     out.push_str("  readonly favorites: PagedSongs;\n");
@@ -346,6 +383,60 @@ mod tests {
         );
         // Determinism: run twice -> identical.
         assert_eq!(ts, generated_typescript());
+    }
+
+    #[test]
+    fn generated_recovery_reasons_cover_serialized_core_failures() {
+        use echo_core::domain::library::durability::ProjectionUnresolvedReason;
+
+        let ts = generated_typescript();
+        let reasons = ts
+            .split_once("export type RecoveryIssueReasonDto = ")
+            .and_then(|(_, rest)| rest.split_once(';'))
+            .map(|(union, _)| union)
+            .expect("recovery reason union exists");
+        for (core, expected) in [
+            (ProjectionUnresolvedReason::MissingSong, "missingSong"),
+            (
+                ProjectionUnresolvedReason::MissingPlaylist,
+                "missingPlaylist",
+            ),
+            (
+                ProjectionUnresolvedReason::IdentityConflict,
+                "identityConflict",
+            ),
+            (
+                ProjectionUnresolvedReason::TombstonedDependency,
+                "tombstonedDependency",
+            ),
+            (
+                ProjectionUnresolvedReason::MissingSyncDependency,
+                "missingSyncDependency",
+            ),
+            (
+                ProjectionUnresolvedReason::AmbiguousMutationVersion,
+                "ambiguousMutationVersion",
+            ),
+            (
+                ProjectionUnresolvedReason::InvalidStateFact,
+                "invalidStateFact",
+            ),
+            (
+                ProjectionUnresolvedReason::UnverifiedConfirmationMetadata,
+                "unverifiedConfirmationMetadata",
+            ),
+            (
+                ProjectionUnresolvedReason::RequiresStateRecovery,
+                "requiresStateRecovery",
+            ),
+        ] {
+            let dto = super::super::library_recovery::RecoveryIssueReasonDto::from(core);
+            assert_eq!(serde_json::to_value(dto).unwrap(), expected);
+            assert!(
+                reasons.contains(&format!("'{expected}'")),
+                "missing {expected}"
+            );
+        }
     }
 
     #[test]

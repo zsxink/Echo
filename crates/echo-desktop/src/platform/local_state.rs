@@ -222,8 +222,6 @@ pub type PlaybackSessionValue = serde_json::Value;
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RawDoc {
-    /// Schema version for forward migration; not used before 0.1.0.
-    version: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     theme: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -498,7 +496,6 @@ struct ParsedDoc {
     corruption: bool,
     effects: Option<serde_json::Value>,
     unknown: serde_json::Map<String, serde_json::Value>,
-    version: u32,
 }
 
 impl ParsedDoc {
@@ -531,11 +528,6 @@ impl ParsedDoc {
             return Self::unparseable();
         }
         doc.effects = value.get("effects").cloned();
-        doc.version = value
-            .get("version")
-            .and_then(serde_json::Value::as_u64)
-            .and_then(|version| u32::try_from(version).ok())
-            .unwrap_or_default();
 
         match value.get("theme") {
             Some(serde_json::Value::String(s)) => match s.as_str() {
@@ -593,7 +585,6 @@ impl ParsedDoc {
             close_behavior: self.close_behavior.map(String::from),
             window: self.window,
             playback_session: self.playback_session,
-            version: self.version,
             effects: self.effects,
             unknown: self.unknown,
         }

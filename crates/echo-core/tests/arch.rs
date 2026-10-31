@@ -101,6 +101,43 @@ fn echo_core_complies_with_architecture() {
 }
 
 #[test]
+fn library_durability_ports_do_not_grow_the_legacy_control_surface() {
+    let source = include_str!("../src/application/ports/system.rs");
+    let body = source
+        .split("pub trait ControlPlanePort:")
+        .nth(1)
+        .unwrap()
+        .split("// ---------------------------------------------------------------------------")
+        .next()
+        .unwrap();
+    assert!(
+        body.matches("fn ").count() <= 15,
+        "legacy baseline is 15 methods"
+    );
+    assert!(body.contains("fn durability("));
+    for duplicate in [
+        "commit_library_batch",
+        "recover_library_batches",
+        "library_operation_status",
+        "write_library_asset",
+        "read_library_asset",
+    ] {
+        assert!(
+            !body.contains(duplicate),
+            "duplicate forwarding method: {duplicate}"
+        );
+    }
+    let projection = include_str!("../src/application/ports/library_projection.rs");
+    assert!(projection.contains("pub trait LibraryProjectionPort"));
+    assert!(projection.matches("fn ").count() <= 6);
+    let history = include_str!("../src/application/ports/library_history.rs");
+    assert!(
+        !history.contains("fn project_library_commits"),
+        "rescue must not own projection writes"
+    );
+}
+
+#[test]
 fn every_workspace_crate_has_an_executable_arch_guard() {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let missing: Vec<_> = workspace_members(&workspace)

@@ -25,6 +25,28 @@ mod host_ledger;
 #[path = "sync_ledger/host_ledger_apply.rs"]
 mod host_ledger_apply;
 
+const DETACH_CONTEXT_TABLES: &[&str] = &[
+    "sync_snapshot_pages",
+    "sync_snapshot_resource_refs",
+    "sync_snapshot_records",
+    "sync_snapshot_sessions",
+    "sync_replica_snapshot_pages",
+    "sync_replica_snapshot_records",
+    "sync_replica_snapshot_sessions",
+    "sync_host_baselines",
+    "sync_transfers",
+    "sync_peer_cursors",
+    "sync_conflicts",
+    "sync_member_aliases",
+    "sync_song_aliases",
+    "sync_object_versions",
+    "sync_commits",
+    "sync_inbox",
+    "sync_origin_cursors",
+    "sync_peers",
+    "sync_binding",
+];
+
 impl SqliteDatabase {
     /// Detach one local library from LAN sync while preserving its library rows.
     /// Protocol state for the selected and archived copies of this root is
@@ -37,27 +59,7 @@ impl SqliteDatabase {
                 .map_err(storage)?;
             let root = local_root.to_string();
             super::context::select(&tx, &root)?;
-            for table in [
-                "sync_snapshot_pages",
-                "sync_snapshot_resource_refs",
-                "sync_snapshot_records",
-                "sync_snapshot_sessions",
-                "sync_replica_snapshot_pages",
-                "sync_replica_snapshot_records",
-                "sync_replica_snapshot_sessions",
-                "sync_host_baselines",
-                "sync_transfers",
-                "sync_peer_cursors",
-                "sync_conflicts",
-                "sync_member_aliases",
-                "sync_song_aliases",
-                "sync_object_versions",
-                "sync_commits",
-                "sync_inbox",
-                "sync_origin_cursors",
-                "sync_peers",
-                "sync_binding",
-            ] {
+            for table in DETACH_CONTEXT_TABLES {
                 tx.execute_batch(&format!("DELETE FROM {table};"))
                     .map_err(storage)?;
                 tx.execute(
@@ -83,6 +85,56 @@ impl SqliteDatabase {
             tx.execute(
                 "DELETE FROM sync_state WHERE key LIKE ?1",
                 params![format!("%{root}%")],
+            )
+            .map_err(storage)?;
+            tx.execute(
+                "DELETE FROM library_recovery_records WHERE library_root_uuid=?1 AND row_kind='state' AND (json_extract(envelope_json,'$.key.namespace.scope') IN ('bound','local_unbound','legacy_evidence') OR json_extract(envelope_json,'$.payload.schema') LIKE 'echo.sync.%')",
+                params![root],
+            )
+            .map_err(storage)?;
+            for table in [
+                "recovery_sync_snapshot_pages",
+                "recovery_sync_snapshot_resource_refs",
+                "recovery_sync_snapshot_records",
+                "recovery_sync_snapshot_sessions",
+                "recovery_sync_replica_snapshot_pages",
+                "recovery_sync_replica_snapshot_records",
+                "recovery_sync_replica_snapshot_sessions",
+                "recovery_sync_host_baselines",
+                "recovery_sync_transfers",
+                "recovery_sync_peer_cursors",
+                "recovery_sync_conflicts",
+                "recovery_sync_member_aliases",
+                "recovery_sync_song_aliases",
+                "recovery_sync_object_versions",
+                "recovery_sync_commits",
+                "recovery_sync_inbox",
+                "recovery_sync_origin_cursors",
+                "recovery_sync_peers",
+                "recovery_sync_binding",
+                "recovery_sync_mutations",
+                "recovery_sync_outbox",
+                "recovery_sync_local_origin_cursors",
+                "recovery_sync_remote_resource_locations",
+                "recovery_sync_remote_publication_claims",
+                "recovery_sync_remote_publications",
+            ] {
+                tx.execute(
+                    &format!(
+                        "DELETE FROM {table} WHERE recovery_id IN (SELECT recovery_id FROM sync_recovery_archives WHERE local_root_uuid=?1)"
+                    ),
+                    params![root],
+                )
+                .map_err(storage)?;
+            }
+            tx.execute(
+                "DELETE FROM sync_recovery_archives WHERE local_root_uuid=?1",
+                params![root],
+            )
+            .map_err(storage)?;
+            tx.execute(
+                "DELETE FROM sync_epoch_tombstones WHERE local_root_uuid=?1",
+                params![root],
             )
             .map_err(storage)?;
             tx.commit().map_err(storage)
@@ -182,7 +234,7 @@ impl SqliteDatabase {
                 return Ok(());
             }
             tx.execute(
-                "INSERT INTO sync_binding(singleton, library_id, authority_id, epoch, role, protocol_version, updated_at, local_root_uuid) VALUES(1, ?1, ?2, ?3, ?4, 1, ?5, ?6)",
+                "INSERT INTO sync_binding(singleton, library_id, authority_id, epoch, role, updated_at, local_root_uuid) VALUES(1, ?1, ?2, ?3, ?4, ?5, ?6)",
                 params![expected.0, expected.1, expected.2, expected.3, now_ms(), local_root_uuid],
             ).map_err(storage)?;
             tx.commit().map_err(storage)
@@ -255,7 +307,7 @@ impl SqliteDatabase {
                 return Err(Error::conflict("replica enrollment target is not empty"));
             }
             tx.execute(
-                "INSERT INTO sync_binding(singleton, library_id, authority_id, epoch, role, protocol_version, updated_at, local_root_uuid) VALUES(1, ?1, ?2, ?3, 'replica', 1, ?4, ?5)",
+                "INSERT INTO sync_binding(singleton, library_id, authority_id, epoch, role, updated_at, local_root_uuid) VALUES(1, ?1, ?2, ?3, 'replica', ?4, ?5)",
                 params![binding.library_id.as_uuid().to_string(), binding.authority_id.as_uuid().to_string(), i64::try_from(binding.epoch.as_u64()).map_err(storage)?, now_ms(), root],
             ).map_err(crate::infrastructure::sqlite::support::map_constraint)?;
             if allow_nonempty_catalog {

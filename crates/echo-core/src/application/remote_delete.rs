@@ -17,7 +17,7 @@ pub fn recover_remote_deletes(
     deps: &ScanDeps,
     root: LibraryRootId,
 ) -> Result<RemoteDeleteResults, Error> {
-    let _activity = super::sync::local_activity()?;
+    let _activity = deps.activity.enter()?;
     deps.sync.rebuild_resource_holds(root)?;
     Ok(deps
         .sync

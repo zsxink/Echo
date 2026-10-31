@@ -5,11 +5,18 @@
 //! whether the file
 //!
 //! - keeps the record already stored at its path (refresh in place),
-//! - *re-links* an existing identity whose path vanished (same BLAKE3 hash,
-//!   or a conservative unique music-key match),
+//! - *re-links* an existing identity whose path vanished and whose content
+//!   hash matches the new file, or
 //! - is duplicate content of an available record (one record per hash;
 //!   duplicates are reported, never merged into new UUIDs), or
 //! - mints a new UUID.
+//!
+//! Similar tags alone never re-link: LD-05 forbids merging or rewriting
+//! relations on a music-key heuristic, so a file whose content hash changed
+//! gets a fresh UUID and the vanished record stays `Missing` (the published
+//! `local-library` requirement permits such a re-link but does not require
+//! it). Only the content hash — evidence of the same bytes — carries an
+//! identity across a move.
 //!
 //! Ambiguity always loses: any non-unique match leaves the old record
 //! missing and creates a new UUID, so no wrong merge can happen. Every
@@ -21,7 +28,6 @@ use std::collections::HashSet;
 use crate::domain::entities::{Song, SongAvailability};
 use crate::domain::ids::{LibraryRootId, RelativeMediaPath, Revision, SongId};
 use crate::domain::media::ParsedMetadata;
-use crate::domain::text::normalized_key;
 
 /// One fully parsed file entering identity resolution. The planner is
 /// root-scoped by construction: the scan pipeline only feeds it files of the
@@ -51,9 +57,6 @@ pub enum Resolution {
     Duplicate { primary: SongId },
 }
 
-/// Duration tolerance for the weak music-key re-link (design §6.7: ≤ 2 s).
-const MUSIC_KEY_DURATION_TOLERANCE_MS: u64 = 2_000;
-
 /// The mutable decision state over one scan's song snapshot.
 #[derive(Debug, Default)]
 pub struct RelinkPlanner {
@@ -79,6 +82,29 @@ impl RelinkPlanner {
             claimed: HashSet::new(),
             revived: HashSet::new(),
         }
+    }
+
+    /// Align the snapshot with what this run's enumeration actually saw.
+    ///
+    /// A completed run persists exactly this flip in its final missing pass
+    /// (available records whose path the enumeration did not see become
+    /// `Missing`). Applying it up front makes identity resolution agree with
+    /// the post-scan truth: without it a record whose file was moved is still
+    /// an *available* primary hash holder, so the same-content file at the new
+    /// path is misreported as duplicate content and stays unindexed instead of
+    /// re-linking the identity. Only an enumeration that covered the whole
+    /// root may call this — a partial view would claim absence it never
+    /// observed.
+    #[must_use]
+    pub fn align_with_enumeration(mut self, seen: &HashSet<String>) -> Self {
+        for song in &mut self.songs {
+            if song.availability() == SongAvailability::Available
+                && !seen.contains(song.path().identity_key())
+            {
+                song.mark_missing();
+            }
+        }
+        self
     }
 
     /// Resolve `file` and fold the decision into the snapshot so later
@@ -135,16 +161,12 @@ impl RelinkPlanner {
             return Resolution::Relink { song: missing };
         }
 
-        // 3. Weak music-key re-link: only a *unique* unclaimed missing
-        // candidate with a matching normalized (artist, album, title) and a
-        // duration within the tolerance.
-        if let Some(song_id) = self.unique_music_key_match(file) {
-            self.relink(song_id, file);
-            return Resolution::Relink { song: song_id };
-        }
-
-        // 4. Nothing matches: a fresh identity (the caller registers it via
+        // 3. Nothing matches: a fresh identity (the caller registers it via
         // [`Self::register_created`] so later duplicates resolve against it).
+        //
+        // Similar tags never reach a re-link here: LD-05 forbids a music-key
+        // merge, so the vanished record keeps its `Missing` state and the new
+        // file gets its own UUID (no relation is rewritten).
         Resolution::Create
     }
 
@@ -197,20 +219,6 @@ impl RelinkPlanner {
             .min_by_key(|song| song.path().identity_key())
     }
 
-    fn unique_music_key_match(&self, file: &ParsedFile) -> Option<SongId> {
-        let key = MusicKey::of(&file.meta)?;
-        let mut matches = self.songs.iter().filter(|song| {
-            song.availability() == SongAvailability::Missing
-                && !self.claimed.contains(&song.id())
-                && MusicKey::of_song(song).is_some_and(|candidate| candidate.matches(&key))
-        });
-        let first = matches.next()?;
-        if matches.next().is_some() {
-            return None; // ambiguous: more than one missing candidate
-        }
-        Some(first.id())
-    }
-
     fn relink(&mut self, id: SongId, file: &ParsedFile) {
         self.claimed.insert(id);
         if let Some(song) = self.songs.iter_mut().find(|song| song.id() == id) {
@@ -237,55 +245,6 @@ impl RelinkPlanner {
             file.mtime_ns,
             file.meta.format,
         );
-    }
-}
-
-/// The normalized music key for conservative weak re-linking.
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct MusicKey {
-    artist: String,
-    album: String,
-    title: String,
-    duration_ms: i64,
-}
-
-impl MusicKey {
-    /// From parsed metadata. Requires artist, album AND title to be present
-    /// *and non-empty* — an empty key would match every untagged file and is
-    /// maximally ambiguous, so it never re-links.
-    fn of(meta: &ParsedMetadata) -> Option<Self> {
-        let duration_ms = i64::try_from(meta.duration?.as_millis()).ok()?;
-        let artist = normalized_key(meta.artist.as_deref()?);
-        let album = normalized_key(meta.album.as_deref()?);
-        let title = normalized_key(meta.title.as_deref()?);
-        Self::checked(artist, album, title, duration_ms)
-    }
-
-    fn of_song(song: &Song) -> Option<Self> {
-        let duration_ms = i64::try_from(song.duration()?.as_millis()).ok()?;
-        let artist = normalized_key(song.artist()?);
-        let album = normalized_key(song.album()?);
-        let title = normalized_key(song.title()?);
-        Self::checked(artist, album, title, duration_ms)
-    }
-
-    fn checked(artist: String, album: String, title: String, duration_ms: i64) -> Option<Self> {
-        if artist.is_empty() || album.is_empty() || title.is_empty() {
-            return None;
-        }
-        Some(Self {
-            artist,
-            album,
-            title,
-            duration_ms,
-        })
-    }
-
-    fn matches(&self, other: &Self) -> bool {
-        self.artist == other.artist
-            && self.album == other.album
-            && self.title == other.title
-            && self.duration_ms.abs_diff(other.duration_ms) <= MUSIC_KEY_DURATION_TOLERANCE_MS
     }
 }
 
@@ -407,20 +366,32 @@ mod tests {
             "album/00.flac"
         );
 
-        // Weak music key: unique missing candidate + unique file + same
-        // normalized key + duration within 2 s → conservative re-link.
+        // LD-05: a vanished record plus a new file with a matching normalized
+        // music key MUST NOT re-link — the old record stays missing and the
+        // new file gets its own UUID. Only the content hash carries identity.
         let song_d = SongId::new();
         let mut planner = RelinkPlanner::new(vec![missing_song(song_d, "gone.flac", "D", 100)]);
-        let resolution = planner.resolve(&file("fresh.flac", "hash-fresh.flac", "D", 101));
-        assert_eq!(resolution, Resolution::Relink { song: song_d });
+        let resolution = planner.resolve(&file("fresh.flac", "hash-fresh.flac", "D", 100));
+        assert_eq!(
+            resolution,
+            Resolution::Create,
+            "a music-key match never merges identities (LD-05)"
+        );
+        assert_eq!(
+            planner.song(song_d).unwrap().availability(),
+            SongAvailability::Missing,
+            "the vanished record keeps its state and path"
+        );
+        assert_eq!(planner.song(song_d).unwrap().path().display(), "gone.flac");
 
-        // Duration beyond the tolerance → no weak re-link, new identity.
+        // Duration beyond the tolerance used to matter; with no heuristic at
+        // all the outcome is the same fresh identity.
         let song_e = SongId::new();
         let mut planner = RelinkPlanner::new(vec![missing_song(song_e, "gone.flac", "E", 100)]);
         let resolution = planner.resolve(&file("fresh.flac", "hash-fresh.flac", "E", 105));
         assert_eq!(resolution, Resolution::Create);
 
-        // Ambiguity: two missing candidates with the same key → never merge.
+        // Two missing candidates with the same key → still no merge.
         let song_f1 = SongId::new();
         let song_f2 = SongId::new();
         let mut planner = RelinkPlanner::new(vec![
@@ -428,13 +399,9 @@ mod tests {
             missing_song(song_f2, "gone2.flac", "F", 100),
         ]);
         let resolution = planner.resolve(&file("fresh.flac", "hash-fresh.flac", "F", 100));
-        assert_eq!(
-            resolution,
-            Resolution::Create,
-            "ambiguous match never merges"
-        );
+        assert_eq!(resolution, Resolution::Create, "no heuristic merge");
 
-        // Untagged files (no music key) never weak-relink.
+        // Untagged files likewise never re-link.
         let song_g = SongId::new();
         let mut planner = RelinkPlanner::new(vec![missing_song(song_g, "gone.flac", "", 100)]);
         let untagged = ParsedFile {
@@ -449,6 +416,40 @@ mod tests {
             },
         };
         assert_eq!(planner.resolve(&untagged), Resolution::Create);
+    }
+
+    #[test]
+    fn enumeration_alignment_lets_a_same_hash_move_relink_instead_of_duplicating() {
+        // A managed path no longer present in the enumeration is not an
+        // available primary: the moved copy re-links the identity.
+        let song_a = SongId::new();
+        let songs = vec![song(song_a, "echo/media/a.flac", "A", 100)];
+        let seen = std::iter::once("media/moved.flac".to_owned()).collect();
+        let mut planner = RelinkPlanner::new(songs).align_with_enumeration(&seen);
+        let resolution = planner.resolve(&file(
+            "media/moved.flac",
+            "hash-echo/media/a.flac",
+            "A",
+            100,
+        ));
+        assert_eq!(resolution, Resolution::Relink { song: song_a });
+        assert_eq!(
+            planner.song(song_a).unwrap().path().display(),
+            "media/moved.flac"
+        );
+
+        // The same content still present at its recorded path stays primary,
+        // so a second copy is reported as duplicate rather than stealing it.
+        let song_b = SongId::new();
+        let songs = vec![song(song_b, "album/z.flac", "B", 100)];
+        let seen = ["album/z.flac".to_owned(), "album/zz.flac".to_owned()]
+            .into_iter()
+            .collect();
+        let mut planner = RelinkPlanner::new(songs).align_with_enumeration(&seen);
+        assert_eq!(
+            planner.resolve(&file("album/zz.flac", "hash-album/z.flac", "B", 100)),
+            Resolution::Duplicate { primary: song_b }
+        );
     }
 
     #[test]

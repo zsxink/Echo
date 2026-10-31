@@ -19,7 +19,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { LibraryWorkspace } from "./LibraryWorkspace";
 import type { LibraryViewKind } from "./types";
 import { useImport } from "../import";
-import { invalidateLibrary } from "./libraryInvalidation";
 
 const mocks = (
   globalThis as unknown as {
@@ -49,9 +48,12 @@ const afterImport = {
 /** The shell-side import surface: the button `TitlebarActions` renders into
  *  `.titlebar-actions` plus the workspace that owns the list. `onImportCommitted`
  *  mirrors the shell's playlist reload (which in turn re-reads the current view). */
-function ImportShell({ view }: { view: LibraryViewKind }) {
+function ImportShell({ view, root = "root-1" }: { view: LibraryViewKind; root?: string }) {
   const { importing, runImport, renderImportDialog } = useImport({
-    onImportCommitted: () => invalidateLibrary(),
+    libraryRoot: root,
+    // The real shell callback reloads playlist metadata. Song-list refresh must
+    // come from useImport's own invalidation signal, as it does in App.
+    onImportCommitted: () => undefined,
   });
   return (
     <>
@@ -86,6 +88,8 @@ beforeEach(() => {
         operationId: "operation-1",
         songId: afterImport.id,
         relativePath: afterImport.relativePath,
+        renamed: false,
+        lyrics: { kind: "none" },
       },
     ],
   });
@@ -168,6 +172,68 @@ describe("导入完成后的音乐库刷新（壳层入口）", () => {
 
     await waitFor(() => expect(screen.getByTestId("import-dialog")).toBeInTheDocument());
     expect(screen.getByTestId("import-dialog")).toHaveTextContent("导入失败");
+  });
+
+  it("recovers the original saved operation in its original root without importing again", async () => {
+    mocks.setInvoke("all_songs", { items: [beforeImport], isLast: true, nextCursor: null });
+    mocks.setInvoke("choose_and_import_files", {
+      results: [
+        {
+          kind: "savedPending",
+          operationId: "saved-operation",
+          songId: "saved-song",
+          relativePath: "media/saved.flac",
+          renamed: false,
+          lyrics: { kind: "none" },
+          code: "library_saved_pending_projection",
+          message: "library.savedPendingProjection",
+        },
+      ],
+    });
+    mocks.setInvoke("retry_library_operation", null);
+    const { rerender } = render(<ImportShell view="all" />);
+    fireEvent.click(screen.getByTestId("titlebar-import"));
+    await screen.findByRole("button", { name: "恢复此项" });
+    const callsBeforeRecovery = (
+      invoke as unknown as { mock: { calls: unknown[][] } }
+    ).mock.calls.filter(([command]) => command === "choose_and_import_files").length;
+    rerender(<ImportShell view="all" root="different-root" />);
+    fireEvent.click(screen.getByRole("button", { name: "恢复此项" }));
+    await waitFor(() => expect(screen.queryByTestId("import-dialog")).not.toBeInTheDocument());
+    expect(invoke).toHaveBeenCalledWith("retry_library_operation", {
+      root: "root-1",
+      operation: "saved-operation",
+    });
+    expect(
+      (invoke as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter(
+        ([command]) => command === "choose_and_import_files",
+      ),
+    ).toHaveLength(callsBeforeRecovery);
+  });
+
+  it("retains a saved result when recovery fails", async () => {
+    mocks.setInvoke("all_songs", { items: [beforeImport], isLast: true, nextCursor: null });
+    mocks.setInvoke("choose_and_import_files", {
+      results: [
+        {
+          kind: "savedPending",
+          operationId: "saved-operation",
+          songId: "saved-song",
+          relativePath: "media/saved.flac",
+          renamed: false,
+          lyrics: { kind: "none" },
+          code: "library_saved_pending_projection",
+          message: "library.savedPendingProjection",
+        },
+      ],
+    });
+    mocks.setInvoke("retry_library_operation", new Error("volume unavailable"));
+    render(<ImportShell view="all" />);
+    fireEvent.click(screen.getByTestId("titlebar-import"));
+    fireEvent.click(await screen.findByRole("button", { name: "恢复此项" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("仍保存在原音乐库中");
+    expect(screen.getByText("恢复操作：saved-operation")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "恢复此项" })).toBeEnabled();
   });
 
   it("keeps 最近添加 as a fixed chronological view", async () => {

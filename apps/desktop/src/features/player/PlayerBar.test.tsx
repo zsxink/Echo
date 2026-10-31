@@ -126,6 +126,7 @@ describe("PlayerBar (task 11.7) — temporary item label", () => {
       songId: "song-imported",
       relativePath: "media/song.mp3",
       renamed: false,
+      lyrics: { kind: "none" },
     });
     fireEvent.click(screen.getByRole("button", { name: "导入" }));
     expect(capturedInvoke).toHaveBeenCalledWith("import_current_temporary_file", {});
@@ -162,6 +163,7 @@ describe("PlayerBar (task 11.7) — temporary item label", () => {
 
   it.each([
     ["skipped", "不支持的格式，未导入"],
+    ["savedPending", "音乐已保存，等待恢复；无需重新导入"],
     ["failed", "导入失败"],
   ])("shows a non-success result without claiming an import (%s)", async (kind, message) => {
     capturedInvoke.mockResolvedValueOnce({ kind });

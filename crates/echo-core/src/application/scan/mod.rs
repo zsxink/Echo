@@ -34,6 +34,8 @@ use crate::domain::ids::{LibraryRootId, RelativeMediaPath, Revision, SongId};
 use crate::domain::state::scan::{ScanProgress, ScanState};
 use crate::error::Error;
 
+pub(crate) mod durable;
+
 /// The cheap extension filter (design §6.2): enumeration returns every
 /// regular file; the scan probes only these. Everything else is a skip. The
 /// import pipeline applies the same matrix to user-selected sources (task 5.1).
@@ -72,6 +74,10 @@ impl Default for ScanConfig {
 /// (`SQLite` repositories + real adapters); tests assemble fakes.
 #[derive(Clone)]
 pub struct ScanDeps {
+    /// Runtime-owned admission shared by all local writers.
+    pub activity: Arc<super::local_activity::LocalActivity>,
+    /// Optional historical rescue and ordered projection capability.
+    pub history: Option<Arc<dyn crate::application::ports::LibraryHistoryPort>>,
     pub roots: Arc<dyn RootWriteRepository>,
     pub songs: Arc<dyn SongRepository>,
     /// The paginated catalog read-model (`AllSongs`/`Favorites`/search/recents)
@@ -224,7 +230,7 @@ impl<'a> StartScan<'a> {
     /// Root-level failures propagate; the run is persisted as `Failed` first
     /// and nothing is marked missing.
     pub fn run(&self, root: LibraryRootId) -> Result<ScanSummary, Error> {
-        let _activity = super::sync::local_activity()?;
+        let _activity = self.deps.activity.enter()?;
         if self.deps.roots.replica_enrollment_pending(root)? {
             return Ok(ScanSummary {
                 generation: self.deps.runs.latest_generation(root)?.unwrap_or(0),
@@ -238,6 +244,9 @@ impl<'a> StartScan<'a> {
         let generation = self.deps.runs.latest_generation(root)?.unwrap_or(0) + 1;
         let token = ScanCancelToken::new();
         self.supervisor.register(root, token.clone())?;
+        if self.deps.activity.is_closed() {
+            token.cancel();
+        }
         let result = self.run_guarded(root, generation, &token);
         self.supervisor.unregister(root);
         result
@@ -252,7 +261,7 @@ impl<'a> StartScan<'a> {
     /// Returns a retryable error while enrollment or another scan owns the
     /// root. Parse and persistence failures leave the publication unindexed.
     pub fn refresh_published_song(&self, root: LibraryRootId, id: SongId) -> Result<(), Error> {
-        let _activity = super::sync::local_activity()?;
+        let _activity = self.deps.activity.enter()?;
         if self.deps.roots.replica_enrollment_pending(root)? {
             return Err(Error::unavailable(
                 "library",
@@ -350,7 +359,7 @@ impl<'a> StartScan<'a> {
         // ---- Parsing / hashing with batched reconcile ----
         transition(&mut progress, ScanState::Parsing)?;
         emitter.emit(&progress, true)?;
-        let planner = Mutex::new(RelinkPlanner::new(self.deps.songs.all_in_root(root)?));
+        durable::library_id(self.deps, root)?;
         let seen: HashSet<String> = audio
             .iter()
             .map(|path| path.identity_key().to_owned())
@@ -363,12 +372,22 @@ impl<'a> StartScan<'a> {
             }
             let outcomes = parse_bounded(self.deps, root, batch, token);
             cancelled |= token.is_cancelled();
+            // Parsing may overlap an import or sync publication. Refresh the
+            // authoritative identity view after workers finish and before any
+            // UUID is allocated, so a claim committed during parsing wins. The
+            // snapshot is then aligned with what this enumeration saw, so a
+            // record whose file moved is a re-link candidate rather than an
+            // available primary that turns the moved file into a "duplicate".
+            let planner = Mutex::new(
+                RelinkPlanner::new(durable::song_snapshot(self.deps, root)?)
+                    .align_with_enumeration(&seen),
+            );
             self.reconcile(root, generation, &outcomes, &planner, &mut progress)?;
             emitter.emit(&progress, false)?;
         }
 
         // ---- Cancelled: persist the terminal state, no missing pass ----
-        if cancelled {
+        if cancelled || token.is_cancelled() {
             self.finish(root, generation, &mut progress, ScanState::Cancelled)?;
             return Ok(ScanSummary {
                 generation,
@@ -380,6 +399,14 @@ impl<'a> StartScan<'a> {
         // ---- Final missing pass (fully completed runs only) ----
         transition(&mut progress, ScanState::Reconciling)?;
         emitter.emit(&progress, true)?;
+        if token.is_cancelled() {
+            self.finish(root, generation, &mut progress, ScanState::Cancelled)?;
+            return Ok(ScanSummary {
+                generation,
+                cancelled: true,
+                progress,
+            });
+        }
         self.mark_missing(root, &seen, &mut progress)?;
         self.finish(root, generation, &mut progress, ScanState::Completed)?;
         Ok(ScanSummary {
@@ -518,6 +545,13 @@ impl<'a> StartScan<'a> {
                                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                                 .register_created(entity.clone());
                             self.apply_parsed(root, Some(entity), parsed)?;
+                            // The authoritative Song record intentionally
+                            // rebuilds as missing until the filesystem proves
+                            // the media exists. This successful parse is that
+                            // proof for a newly discovered file.
+                            self.deps
+                                .songs
+                                .set_availability(id, SongAvailability::Available)?;
                         }
                         Resolution::Duplicate { .. } => {
                             // Duplicate content: one record per hash; report
@@ -562,6 +596,9 @@ impl<'a> StartScan<'a> {
                 self.wall_clock_ms(),
             )
         });
+        if let Some(original) = durable::published_index_refresh(self.deps, &song, parsed)? {
+            return self.persist_parsed_index(original, parsed, None);
+        }
         let resources =
             super::scan_resources::verified_song_resources(self.deps, root, parsed, true)?;
         self.persist_parsed_index(song, parsed, Some(resources))
@@ -585,28 +622,52 @@ impl<'a> StartScan<'a> {
             .clone()
             .map(|candidate| rewrap(&candidate, LyricsSource::Sidecar));
         let cover = parsed.cover.clone();
-        self.deps
-            .uow
-            .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
-                if let Some(resources) = resources {
-                    tx.set_song_file_resources(&song, &resources)?;
-                    tx.upsert_song(&song)?;
-                } else {
-                    tx.refresh_song_file_index(&song)?;
-                }
-                match embedded {
-                    Some(candidate) => tx.set_lyrics_candidate(song.id(), &candidate)?,
-                    None => tx.clear_lyrics_candidate(song.id(), LyricsSource::Embedded)?,
-                }
-                match sidecar {
-                    Some(candidate) => tx.set_lyrics_candidate(song.id(), &candidate)?,
-                    None => tx.clear_lyrics_candidate(song.id(), LyricsSource::Sidecar)?,
-                }
-                if let Some(cover) = cover {
-                    tx.attach_cover(song.id(), &cover)?;
-                }
-                Ok(())
-            }))
+        let durable_resources = resources.as_ref().map_or_else(Vec::new, |_| {
+            vec![crate::domain::library::durability::DurableResource {
+                relative_path: song.path().display().to_owned(),
+                content_hash: parsed.file.hash.clone(),
+                byte_length: parsed.file.size,
+            }]
+        });
+        let entity = song.clone();
+        let project = || {
+            self.deps
+                .uow
+                .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
+                    if let Some(resources) = resources {
+                        tx.set_song_file_resources(&song, &resources)?;
+                        tx.upsert_song(&song)?;
+                    } else {
+                        tx.refresh_song_file_index(&song)?;
+                    }
+                    match embedded {
+                        Some(candidate) => tx.set_lyrics_candidate(song.id(), &candidate)?,
+                        None => tx.clear_lyrics_candidate(song.id(), LyricsSource::Embedded)?,
+                    }
+                    match sidecar {
+                        Some(candidate) => tx.set_lyrics_candidate(song.id(), &candidate)?,
+                        None => tx.clear_lyrics_candidate(song.id(), LyricsSource::Sidecar)?,
+                    }
+                    if let Some(cover) = cover {
+                        tx.attach_cover(song.id(), &cover)?;
+                    }
+                    Ok(())
+                }))
+        };
+        // Published remote metadata is already authoritative; refreshing its
+        // derived index must not create a local mutation or rewrite its path.
+        if durable_resources.is_empty() {
+            project()
+        } else {
+            durable::commit_song(
+                self.deps,
+                &entity,
+                self.deps.ids.new_operation_id(),
+                crate::domain::library::durability::ChangeOrigin::Scan,
+                durable_resources,
+                project,
+            )
+        }
     }
 
     /// A new song's event fact is read from the injected backend clock at the

@@ -9,7 +9,7 @@ use crate::error::{Error, Subject};
 use super::super::ids::{PlaylistId, PlaylistItemId, Revision, SongId};
 use super::super::sync::{ObjectKey, ObjectVersion, SyncBinding};
 use super::identity::{DeviceId, HybridLogicalClock};
-use super::{LibraryRelativePath, CURRENT_FORMAT_VERSION};
+use super::LibraryRelativePath;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -203,7 +203,7 @@ impl PortableRecordEnvelope {
     /// Rejects invalid typed tombstones and inconsistent alias mappings.
     pub fn new(record: PortableRecord, sync: Option<PortableSyncMetadata>) -> Result<Self, Error> {
         let envelope = Self {
-            format_version: CURRENT_FORMAT_VERSION,
+            format_version: 2,
             record,
             sync,
         };
@@ -501,6 +501,9 @@ pub struct FavoriteRecord {
     pub updated_by_device_id: DeviceId,
     pub hlc: HybridLogicalClock,
     pub is_favorite: bool,
+    /// Original favorite ordering time; historical absence stays unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub favorited_at: Option<u64>,
 }
 
 /// A playlist record: the portable representation of a named playlist.
@@ -515,6 +518,44 @@ pub struct PlaylistRecord {
     pub hlc: HybridLogicalClock,
     /// The user-visible playlist name (display string, not a key).
     pub display_name: String,
+    /// Original creation time, absent when historical evidence has no value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<u64>,
+    /// Recoverable original image, independent of application caches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_asset: Option<PortableAssetReference>,
+}
+
+/// Content-addressed original under `echo/assets/<content_hash>`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PortableAssetReference {
+    pub content_hash: String,
+    pub byte_len: u64,
+    pub mime: String,
+}
+
+impl PortableAssetReference {
+    /// Validate a content-addressed original independently of cache metadata.
+    ///
+    /// # Errors
+    /// Rejects invalid BLAKE3 hashes and malformed MIME type tokens.
+    pub fn validate(&self) -> Result<(), Error> {
+        let token = |part: &str| {
+            !part.is_empty()
+                && part
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte))
+        };
+        if !super::durability::valid_digest(&self.content_hash)
+            || !self
+                .mime
+                .split_once('/')
+                .is_some_and(|(kind, subtype)| token(kind) && token(subtype))
+        {
+            return Err(err("invalid original asset hash or MIME type"));
+        }
+        Ok(())
+    }
 }
 
 /// A playlist member record: one song in a playlist.
@@ -535,6 +576,9 @@ pub struct PlaylistItemRecord {
     pub song_uuid: uuid::Uuid,
     /// Append-order key (monotonically increasing within the playlist).
     pub position: u64,
+    /// Original membership time; older records deliberately retain absence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub added_at: Option<u64>,
 }
 
 /// An override record: user-edited metadata or lyrics that take priority over

@@ -540,7 +540,7 @@
       "title": "Fast-skip, BLAKE3 hashing and identity re-linking rules",
       "commands": [
         {
-          "desc": "path/hash/music-key decision rules (pure planner)",
+          "desc": "path/hash decision rules; a music-key match never merges identities",
           "cmd": "node scripts/verify/checks/task-4.mjs 4.8 application::relink::tests::relink_plans_cover_path_hash_and_music_key_rules"
         },
         {
@@ -552,8 +552,8 @@
           "cmd": "node scripts/verify/checks/task-4.mjs 4.8 application::scan::tests::duplicate_hash_paths_get_deterministic_primary"
         },
         {
-          "desc": "unique music-key weak re-link stays conservative",
-          "cmd": "node scripts/verify/checks/task-4.mjs 4.8 application::scan::tests::unique_music_key_relink_is_conservative"
+          "desc": "a music-key match never re-links; old record stays missing",
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.8 application::scan::tests::relink::music_key_never_relinks_identities"
         },
         {
           "desc": "BLAKE3 streams files, content-keyed",
@@ -3454,6 +3454,156 @@
       "manifest": "tests/scenarios/IL-R10-S04.yaml"
     },
     {
+      "id": "LD-R01-S01",
+      "title": "本地写入失败",
+      "command": "cargo test -p echo-core --all-features library_durability_refused_commit_leaves_every_wired_entrypoint_untouched",
+      "manifest": "tests/scenarios/LD-R01-S01.yaml"
+    },
+    {
+      "id": "LD-R01-S02",
+      "title": "目录已提交而投影失败",
+      "command": "cargo test -p echo-core --all-features library_durability_retry_projection_failure_keeps_original_identity",
+      "manifest": "tests/scenarios/LD-R01-S02.yaml"
+    },
+    {
+      "id": "LD-R01-S03",
+      "title": "SQLite 投影滞后时连续本地编辑",
+      "command": "cargo test -p echo-core --all-features library_durability_later_edit_catches_up_failed_earlier_playlist",
+      "manifest": "tests/scenarios/LD-R01-S03.yaml"
+    },
+    {
+      "id": "LD-R02-S01",
+      "title": "级联删除写到一半崩溃",
+      "command": "cargo test -p echo-core --all-features library_durability_playlist_delete_saves_cascade_before_projection",
+      "manifest": "tests/scenarios/LD-R02-S01.yaml"
+    },
+    {
+      "id": "LD-R02-S02",
+      "title": "丢失 SQLite 后重放",
+      "command": "cargo test -p echo-core --all-features library_durability_every_native_commit_boundary_recovers_same_operation",
+      "manifest": "tests/scenarios/LD-R02-S02.yaml"
+    },
+    {
+      "id": "LD-R02-S03",
+      "title": "提交结果不确定",
+      "command": "cargo test -p echo-core --all-features library_durability_prepared_only_is_not_accepted_as_saved_recovery",
+      "manifest": "tests/scenarios/LD-R02-S03.yaml"
+    },
+    {
+      "id": "LD-R02-S04",
+      "title": "较旧操作延迟重放",
+      "command": "cargo test -p echo-core --all-features library_durability_c1_failure_then_c2_never_rolls_back_latest_record",
+      "manifest": "tests/scenarios/LD-R02-S04.yaml"
+    },
+    {
+      "id": "LD-R02-S05",
+      "title": "本地提交后对象文件材料化失败",
+      "command": "cargo test -p echo-core --all-features library_durability_actual_record_rename_failure_remains_saved_and_retryable",
+      "manifest": "tests/scenarios/LD-R02-S05.yaml"
+    },
+    {
+      "id": "LD-R03-S01",
+      "title": "本地与同步来源混合恢复",
+      "command": "cargo test -p echo-core --all-features library_durability_distinct_directory_and_sync_ids_survive_recovery_and_fresh_projection",
+      "manifest": "tests/scenarios/LD-R03-S01.yaml"
+    },
+    {
+      "id": "LD-R03-S02",
+      "title": "部分媒体缺失",
+      "command": "cargo test -p echo-core --all-features library_durability_scan_preserves_record_when_media_disappears",
+      "manifest": "tests/scenarios/LD-R03-S02.yaml"
+    },
+    {
+      "id": "LD-R04-S01",
+      "title": "读取旧格式记录",
+      "command": "cargo test -p echo-core --all-features library_durability_legacy_committed_canonical_digest_is_unchanged",
+      "manifest": "tests/scenarios/LD-R04-S01.yaml"
+    },
+    {
+      "id": "LD-R04-S02",
+      "title": "旧记录含无法解释的关系",
+      "command": "cargo test -p echo-core --all-features library_durability_projection_retains_orphans_and_links_when_evidence_arrives_without_echo",
+      "manifest": "tests/scenarios/LD-R04-S02.yaml"
+    },
+    {
+      "id": "LD-R05-S01",
+      "title": "运行期间发现身份冲突",
+      "command": "cargo test -p echo-core --all-features library_durability_projection_rejects_cross_directory_chain_and_anchor_without_sql_writes",
+      "manifest": "tests/scenarios/LD-R05-S01.yaml"
+    },
+    {
+      "id": "LD-R06-S01",
+      "title": "新协议投影遇到悬空关系",
+      "command": "cargo test -p echo-core --all-features library_durability_issue72_fixture_reproduces_legacy_missing_relationships",
+      "manifest": "tests/scenarios/LD-R06-S01.yaml"
+    },
+    {
+      "id": "LD-R06-S02",
+      "title": "控制面含损坏记录",
+      "command": "cargo test -p echo-core --all-features library_durability_broken_chain_and_corrupt_checkpoint_fail_closed_preserve_bytes",
+      "manifest": "tests/scenarios/LD-R06-S02.yaml"
+    },
+    {
+      "id": "LD-R07-S01",
+      "title": "离线改歌单后重装",
+      "command": "cargo test -p echo-core --all-features library_durability_playlist_create_retry_after_saved_pending_keeps_operation_identity",
+      "manifest": "tests/scenarios/LD-R07-S01.yaml"
+    },
+    {
+      "id": "LD-R07-S02",
+      "title": "主机账本不可验证",
+      "command": "cargo test -p echo-core --all-features library_durability_trusted_sync_retry_unverifiable_anchor_never_installs_baseline_or_pending",
+      "manifest": "tests/scenarios/LD-R07-S02.yaml"
+    },
+    {
+      "id": "LD-R07-S03",
+      "title": "ACK 丢失后重装并重新配对",
+      "command": "cargo test -p echo-core --all-features library_durability_mark_published_legacy_unseeded_ledger_keeps_full_rescue",
+      "manifest": "tests/scenarios/LD-R07-S03.yaml"
+    },
+    {
+      "id": "LD-R08-S01",
+      "title": "歌单封面脱离应用缓存恢复",
+      "command": "cargo test -p echo-core --all-features library_durability_playlist_cover_reuses_original_and_clear_survives_rebuild",
+      "manifest": "tests/scenarios/LD-R08-S01.yaml"
+    },
+    {
+      "id": "LD-R08-S02",
+      "title": "同步媒体使用不可变版本路径",
+      "command": "cargo test -p echo-core --all-features library_durability_export_uses_declared_logical_path_for_managed_audio",
+      "manifest": "tests/scenarios/LD-R08-S02.yaml"
+    },
+    {
+      "id": "LD-R09-S01",
+      "title": "支持的旧格式保持只读兼容",
+      "command": "cargo test -p echo-core --all-features library_durability_publication_v1_and_unknown_schema_keep_original_evidence",
+      "manifest": "tests/scenarios/LD-R09-S01.yaml"
+    },
+    {
+      "id": "LD-R09-S02",
+      "title": "旧程序打开新协议目录",
+      "command": "cargo test -p echo-core --all-features library_durability_commit_checks_future_format_before_recovery",
+      "manifest": "tests/scenarios/LD-R09-S02.yaml"
+    },
+    {
+      "id": "LD-R09-S03",
+      "title": "只保留 media",
+      "command": "cargo test -p echo-core --all-features library_durability_readonly_volume_and_unmaterialized_commit_can_be_browsed",
+      "manifest": "tests/scenarios/LD-R09-S03.yaml"
+    },
+    {
+      "id": "LD-R10-S01",
+      "title": "可执行验证",
+      "command": "node scripts/verify/ci-governance.mjs",
+      "manifest": "tests/scenarios/LD-R10-S01.yaml"
+    },
+    {
+      "id": "LD-R11-S01",
+      "title": "单机启动存在旧同步投影",
+      "command": "cargo test -p echo-core --all-features library_durability_standalone_startup_purges_legacy_sync_projection",
+      "manifest": "tests/scenarios/LD-R11-S01.yaml"
+    },
+    {
       "id": "LE-R01-S01",
       "title": "切换全部歌曲",
       "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_all_songs_view",
@@ -4084,6 +4234,36 @@
       "manifest": "tests/scenarios/LE-R20-S04.yaml"
     },
     {
+      "id": "LE-R21-S01",
+      "title": "收藏已保存而投影失败",
+      "command": "cargo test -p echo-core --all-features library_durability_favorite_failure_is_saved_and_later_false_catches_up",
+      "manifest": "tests/scenarios/LE-R21-S01.yaml"
+    },
+    {
+      "id": "LE-R21-S02",
+      "title": "正常投影仍在后台时已保存反馈",
+      "command": "cargo test -p echo-desktop --all-features --release --test local_edit_performance completed_local_edit_latency -- --ignored --nocapture",
+      "manifest": "tests/scenarios/LE-R21-S02.yaml"
+    },
+    {
+      "id": "LE-R21-S03",
+      "title": "收藏未保存",
+      "command": "cargo test -p echo-core --all-features library_durability_refused_commit_leaves_every_wired_entrypoint_untouched",
+      "manifest": "tests/scenarios/LE-R21-S03.yaml"
+    },
+    {
+      "id": "LE-R21-S04",
+      "title": "批量收藏部分已保存",
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/savedPendingFeedback.test.tsx -t \"reports each batch item's own outcome and retries only the saved ones\"",
+      "manifest": "tests/scenarios/LE-R21-S04.yaml"
+    },
+    {
+      "id": "LE-R21-S05",
+      "title": "已保存待投影不被当作失败重试",
+      "command": "cargo test -p echo-core --all-features library_durability_retry_catches_up_all_saved_operations_without_new_commits",
+      "manifest": "tests/scenarios/LE-R21-S05.yaml"
+    },
+    {
       "id": "LL-R01-S01",
       "title": "选择根目录并建立资料库",
       "command": "cargo test -p echo-core --all-features root_switch::",
@@ -4106,6 +4286,12 @@
       "title": "本机数据库丢失后重新选择同一目录",
       "command": "cargo test -p echo-core --all-features root_switch::tests::prepare_reuses_record_identities_and_leaves_media_untouched",
       "manifest": "tests/scenarios/LL-R01-S04.yaml"
+    },
+    {
+      "id": "LL-R01-S05",
+      "title": "投影滞后时读己之写",
+      "command": "cargo test -p echo-core --all-features consecutive_multi_song_add_keeps_every_membership",
+      "manifest": "tests/scenarios/LL-R01-S05.yaml"
     },
     {
       "id": "LL-R02-S01",
@@ -4199,8 +4385,8 @@
     },
     {
       "id": "LL-R04-S04",
-      "title": "唯一音乐键弱重关联",
-      "command": "cargo test -p echo-core --all-features relink::tests::relink_plans_cover_path_hash_and_music_key_rules",
+      "title": "音乐键不得触发身份合并",
+      "command": "cargo test -p echo-core --all-features application::scan::tests::relink::music_key_never_relinks_identities",
       "manifest": "tests/scenarios/LL-R04-S04.yaml"
     },
     {
@@ -4286,6 +4472,42 @@
       "title": "当前时区转换",
       "command": "node scripts/verify/checks/check-native-attestation.mjs LL-R09-S03",
       "manifest": "tests/scenarios/LL-R09-S03.yaml"
+    },
+    {
+      "id": "LL-R10-S01",
+      "title": "首次扫描后重装",
+      "command": "cargo test -p echo-core --all-features library_durability_scan_saves_identity_before_projection_and_reuses_it_on_retry",
+      "manifest": "tests/scenarios/LL-R10-S01.yaml"
+    },
+    {
+      "id": "LL-R10-S02",
+      "title": "移动或标签修改后恢复",
+      "command": "cargo test -p echo-core --all-features library_durability_scan_refresh_preserves_saved_after_image_on_projection_failure",
+      "manifest": "tests/scenarios/LL-R10-S02.yaml"
+    },
+    {
+      "id": "LL-R10-S03",
+      "title": "控制面写失败",
+      "command": "cargo test -p echo-core --all-features library_durability_scan_refuses_unwritable_library_before_indexing",
+      "manifest": "tests/scenarios/LL-R10-S03.yaml"
+    },
+    {
+      "id": "LL-R10-S04",
+      "title": "只读库和无变化重扫",
+      "command": "cargo test -p echo-core --all-features library_durability_readonly_volume_and_unmaterialized_commit_can_be_browsed",
+      "manifest": "tests/scenarios/LL-R10-S04.yaml"
+    },
+    {
+      "id": "LL-R11-S01",
+      "title": "数据库损坏",
+      "command": "cargo test -p echo-core --all-features a_wiped_database_is_rebuilt_from_the_records_at_real_scale",
+      "manifest": "tests/scenarios/LL-R11-S01.yaml"
+    },
+    {
+      "id": "LL-R11-S02",
+      "title": "切库恢复失败",
+      "command": "cargo test -p echo-app --all-features a_failed_switch_restores_the_previous_session",
+      "manifest": "tests/scenarios/LL-R11-S02.yaml"
     },
     {
       "id": "PHA-R01-S01",
@@ -4588,6 +4810,42 @@
       "manifest": "tests/scenarios/PM-R12-S03.yaml"
     },
     {
+      "id": "PM-R13-S01",
+      "title": "创建空歌单后重装",
+      "command": "cargo test -p echo-core --all-features library_durability_playlist_create_retry_after_saved_pending_keeps_operation_identity",
+      "manifest": "tests/scenarios/PM-R13-S01.yaml"
+    },
+    {
+      "id": "PM-R13-S02",
+      "title": "多成员提交被中断",
+      "command": "cargo test -p echo-core --all-features library_durability_member_append_is_saved_before_failed_projection",
+      "manifest": "tests/scenarios/PM-R13-S02.yaml"
+    },
+    {
+      "id": "PM-R13-S03",
+      "title": "保存与显示更新分离",
+      "command": "cargo test -p echo-core --all-features library_durability_playlist_rename_saves_before_failed_projection",
+      "manifest": "tests/scenarios/PM-R13-S03.yaml"
+    },
+    {
+      "id": "PM-R13-S04",
+      "title": "SQLite 落后时连续编辑歌单",
+      "command": "cargo test -p echo-core --all-features consecutive_multi_song_add_keeps_every_membership",
+      "manifest": "tests/scenarios/PM-R13-S04.yaml"
+    },
+    {
+      "id": "PM-R13-S05",
+      "title": "歌单命令低延迟验收",
+      "command": "cargo test -p echo-desktop --all-features --release --test local_edit_performance completed_local_edit_latency -- --ignored --nocapture",
+      "manifest": "tests/scenarios/PM-R13-S05.yaml"
+    },
+    {
+      "id": "PM-R13-S06",
+      "title": "删除与取消喜欢不复活",
+      "command": "cargo test -p echo-core --all-features final_tombstone_is_never_recovered_but_history_can_be_dismissed",
+      "manifest": "tests/scenarios/PM-R13-S06.yaml"
+    },
+    {
       "id": "PLL-R01-S01",
       "title": "新资料库导入一首歌曲",
       "command": "cargo test -p echo-core --all-features default_target_is_artist_folder_with_artist_minus_title",
@@ -4604,6 +4862,12 @@
       "title": "每种对象种类都有对应目录",
       "command": "node scripts/verify/checks/task-15.1.mjs",
       "manifest": "tests/scenarios/PLL-R01-S03.yaml"
+    },
+    {
+      "id": "PLL-R01-S04",
+      "title": "完整备份包括恢复必需资料",
+      "command": "cargo test -p echo-core --all-features online_backup_contains_matching_catalog_pending_and_ledger_without_independent_checkpoint",
+      "manifest": "tests/scenarios/PLL-R01-S04.yaml"
     },
     {
       "id": "PLL-R02-S01",
@@ -4640,6 +4904,18 @@
       "title": "取消收藏不留下悬空记录",
       "command": "cargo test -p echo-desktop --all-features unfavorite_materializes_a_false_record_so_it_never_returns",
       "manifest": "tests/scenarios/PLL-R02-S06.yaml"
+    },
+    {
+      "id": "PLL-R02-S07",
+      "title": "播放统计幂等身份不进入共享载荷",
+      "command": "cargo test -p echo-core --all-features library_durability_playback_event_is_materialized_outside_shared_records",
+      "manifest": "tests/scenarios/PLL-R02-S07.yaml"
+    },
+    {
+      "id": "PLL-R02-S08",
+      "title": "封面资源原件随歌单恢复",
+      "command": "cargo test -p echo-desktop --all-features library_durability_playlist_cover_original_survives_cache_loss_and_clear",
+      "manifest": "tests/scenarios/PLL-R02-S08.yaml"
     },
     {
       "id": "PLL-R03-S01",
@@ -4756,6 +5032,30 @@
       "manifest": "tests/scenarios/PLL-R07-S05.yaml"
     },
     {
+      "id": "PLL-R07-S06",
+      "title": "打开新协议资料库后投影再扫描",
+      "command": "cargo test -p echo-core --all-features application::continuation::tests::continuation_restores_songs_favorites_playlists_and_member_order",
+      "manifest": "tests/scenarios/PLL-R07-S06.yaml"
+    },
+    {
+      "id": "PLL-R07-S07",
+      "title": "读取支持的旧格式",
+      "command": "cargo test -p echo-core --all-features library_durability_publication_v1_and_unknown_schema_keep_original_evidence",
+      "manifest": "tests/scenarios/PLL-R07-S07.yaml"
+    },
+    {
+      "id": "PLL-R07-S08",
+      "title": "重复投影结果稳定",
+      "command": "cargo test -p echo-core --all-features application::continuation::tests::continuation_is_idempotent_across_repeated_opens",
+      "manifest": "tests/scenarios/PLL-R07-S08.yaml"
+    },
+    {
+      "id": "PLL-R07-S09",
+      "title": "未解析引用保持原样",
+      "command": "cargo test -p echo-core --all-features library_durability_incomplete_or_foreign_local_allocation_stays_unresolved",
+      "manifest": "tests/scenarios/PLL-R07-S09.yaml"
+    },
+    {
       "id": "SFI-R01-S01",
       "title": "多选文件成功导入",
       "command": "cargo test -p echo-core --all-features import",
@@ -4829,21 +5129,39 @@
     },
     {
       "id": "SFI-R05-S03",
-      "title": "崩溃后恢复",
-      "command": "cargo test -p echo-core --all-features application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice",
+      "title": "导入后无需重新扫描",
+      "command": "cargo test -p echo-desktop --all-features --release --test local_edit_performance completed_local_edit_latency -- --ignored --nocapture",
       "manifest": "tests/scenarios/SFI-R05-S03.yaml"
     },
     {
       "id": "SFI-R05-S04",
-      "title": "音频发布后侧车失败",
-      "command": "cargo test -p echo-core --all-features sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent",
+      "title": "崩溃后恢复",
+      "command": "cargo test -p echo-core --all-features application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice",
       "manifest": "tests/scenarios/SFI-R05-S04.yaml"
     },
     {
       "id": "SFI-R05-S05",
+      "title": "音频发布后侧车失败",
+      "command": "cargo test -p echo-core --all-features sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent",
+      "manifest": "tests/scenarios/SFI-R05-S05.yaml"
+    },
+    {
+      "id": "SFI-R05-S06",
       "title": "发布后 watcher 抢先观察",
       "command": "cargo test -p echo-core --all-features application::recover::tests::imports::recovery_never_creates_a_duplicate_when_a_watcher_preempts",
-      "manifest": "tests/scenarios/SFI-R05-S05.yaml"
+      "manifest": "tests/scenarios/SFI-R05-S06.yaml"
+    },
+    {
+      "id": "SFI-R05-S07",
+      "title": "音频成功而对象持久化失败",
+      "command": "cargo test -p echo-core --all-features library_durability_actual_record_rename_failure_remains_saved_and_retryable",
+      "manifest": "tests/scenarios/SFI-R05-S07.yaml"
+    },
+    {
+      "id": "SFI-R05-S08",
+      "title": "对象成功而数据库投影失败",
+      "command": "cargo test -p echo-core --all-features library_durability_memory_failed_projection_reserves_the_saved_sequence",
+      "manifest": "tests/scenarios/SFI-R05-S08.yaml"
     },
     {
       "id": "SFI-R06-S01",
@@ -4972,6 +5290,12 @@
       "manifest": "tests/scenarios/SFI-R11-S05.yaml"
     },
     {
+      "id": "SFI-R12-S01",
+      "title": "导入契约回归",
+      "command": "node scripts/verify/ci-governance.mjs",
+      "manifest": "tests/scenarios/SFI-R12-S01.yaml"
+    },
+    {
       "id": "SYN-R01-S01",
       "title": "数据形状已就绪且离线边界不变",
       "command": "node scripts/verify/checks/task-3.10.mjs",
@@ -5030,6 +5354,54 @@
       "title": "迁移与架构验证",
       "command": "node scripts/verify/checks/task-3.10.mjs",
       "manifest": "tests/scenarios/SYN-R05-S03.yaml"
+    },
+    {
+      "id": "SYN-R06-S01",
+      "title": "重建 outbox",
+      "command": "cargo test -p echo-core --all-features crash_during_record_materialization_converges_to_one_record_and_outbox",
+      "manifest": "tests/scenarios/SYN-R06-S01.yaml"
+    },
+    {
+      "id": "SYN-R06-S02",
+      "title": "远端确认后重建",
+      "command": "cargo test -p echo-core --all-features library_durability_trusted_sync_retry_restores_exact_baseline_and_pending_without_echo",
+      "manifest": "tests/scenarios/SYN-R06-S02.yaml"
+    },
+    {
+      "id": "SYN-R06-S03",
+      "title": "v2 本地覆盖值混有旧确认元数据",
+      "command": "cargo test -p echo-core --all-features library_durability_legacy_write_cannot_transfer_confirmation_to_new_value",
+      "manifest": "tests/scenarios/SYN-R06-S03.yaml"
+    },
+    {
+      "id": "SYN-R06-S04",
+      "title": "单机编辑不创建同步候选",
+      "command": "cargo test -p echo-core --all-features library_durability_standalone_playlist_keeps_no_sync_allocations",
+      "manifest": "tests/scenarios/SYN-R06-S04.yaml"
+    },
+    {
+      "id": "SYN-R07-S01",
+      "title": "新身份接纳过程被中断",
+      "command": "cargo test -p echo-core --all-features library_durability_scoped_key_retains_same_event_across_bindings_and_epochs",
+      "manifest": "tests/scenarios/SYN-R07-S01.yaml"
+    },
+    {
+      "id": "SYN-R07-S02",
+      "title": "无法证明旧事件是否已确认",
+      "command": "cargo test -p echo-core --all-features library_durability_local_allocation_unproven_predecessor_never_advances_fences",
+      "manifest": "tests/scenarios/SYN-R07-S02.yaml"
+    },
+    {
+      "id": "SYN-R07-S03",
+      "title": "新作者不能抬高旧作者统计桶",
+      "command": "cargo test -p echo-core --all-features confirmed_play_stats_buckets_authorize_exactly_their_recorded_counts",
+      "manifest": "tests/scenarios/SYN-R07-S03.yaml"
+    },
+    {
+      "id": "SYN-R08-S01",
+      "title": "反复恢复与 watcher",
+      "command": "cargo test -p echo-core --all-features library_durability_playback_later_session_catches_up_and_rebuild_has_no_echo",
+      "manifest": "tests/scenarios/SYN-R08-S01.yaml"
     }
   ]
 }

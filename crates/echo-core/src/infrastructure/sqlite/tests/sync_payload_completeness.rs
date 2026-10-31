@@ -17,6 +17,18 @@ fn database() -> (tempfile::TempDir, SqliteDatabase, LibraryRootId) {
         &LibraryRoot::new(root, directory.path().join("local-only"), true, true),
     )
     .expect("root");
+    // Shared payloads only exist for an enrolled root (SYN-R06-S04).
+    database
+        .bind_sync_library(
+            crate::domain::sync::SyncBinding {
+                library_id: crate::domain::sync::LibraryId::new(),
+                authority_id: crate::domain::sync::AuthorityId::new(),
+                epoch: crate::domain::sync::Epoch::INITIAL,
+            },
+            true,
+            root,
+        )
+        .expect("bind sync library");
     (directory, database, root)
 }
 
@@ -66,9 +78,13 @@ fn song_payload_preserves_media_identity_without_local_or_independent_state() {
     );
     SongRepository::upsert(&database, &song).expect("song");
     SongRepository::set_favorite(&database, song.id(), true).expect("favorite");
-    database
-        .record_playback(PlaybackSessionId::new(), song.id())
-        .expect("play");
+    let control = super::super::tests::playback_fixture::directory(&database, root);
+    assert!(super::super::tests::playback_fixture::record(
+        &database,
+        &control,
+        PlaybackSessionId::new(),
+        song.id()
+    ));
     SongRepository::set_availability(&database, song.id(), SongAvailability::Missing)
         .expect("missing");
     song.apply_metadata(Some("新标签".into()), None, None, None);
@@ -104,7 +120,11 @@ fn song_payload_preserves_media_identity_without_local_or_independent_state() {
     assert_eq!(favorite["is_favorite"], true);
     assert!(favorite["favorited_at"].as_i64().is_some());
     assert!(
-        latest_payload(&database, "play-stats", &song.id().to_string())["by_device"].is_object()
+        super::super::tests::playback_fixture::mutations(&control, root)
+            .iter()
+            .any(|candidate| candidate.object
+                == crate::domain::sync::ObjectKey::PlayStats(song.id())
+                && candidate.payload["by_device"].is_object())
     );
     let stored = SongRepository::by_id(&database, song.id())
         .expect("query")

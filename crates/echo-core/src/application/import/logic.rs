@@ -92,6 +92,17 @@ pub enum LyricsImportResult {
 /// The result of one batch input, index-aligned with the batch.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ImportOutcome {
+    /// Verified audio and user identity are durable, but the local projection
+    /// or directory materialization needs recovery under this same operation.
+    SavedPending {
+        operation: OperationId,
+        song: SongId,
+        target: RelativeMediaPath,
+        renamed: bool,
+        lyrics: Box<LyricsImportResult>,
+        code: &'static str,
+        message: String,
+    },
     /// Copied, verified, published and committed under the reserved identity.
     Imported {
         /// The journal operation that performed this import.
@@ -180,6 +191,10 @@ struct LyricsFailure {
 /// item is left recoverable and the claim is held until recovery completes it
 /// under the same reserved identity).
 enum ExecuteError {
+    SavedPending {
+        error: Error,
+        lyrics: LyricsImportResult,
+    },
     /// No final file has been published yet — safe to roll back.
     PrePublish(Error),
     /// A published final file (or a DB commit in flight) means the operation
@@ -192,6 +207,15 @@ enum ExecuteError {
     /// song: we contribute nothing (no second UUID, no second file) and return
     /// the existing record.
     Duplicate { existing: SongId },
+}
+
+pub(super) fn trace_import_stage(root: LibraryRootId, stage: &str, started: std::time::Instant) {
+    if std::env::var_os("ECHO_IMPORT_TRACE").is_some() {
+        eprintln!(
+            "ECHO_IMPORT_TRACE root={root} stage={stage} elapsed_ms={:.3}",
+            started.elapsed().as_secs_f64() * 1_000.0
+        );
+    }
 }
 
 #[path = "batch.rs"]
@@ -210,6 +234,7 @@ struct PlannedInput {
     target: RelativeMediaPath,
     operation: OperationId,
     reserved: SongId,
+    added_at: u64,
     /// The published name is close-name-numbered relative to the no-conflict
     /// ideal target (spec: 重名后成功). `false` for a clean target.
     renamed: bool,

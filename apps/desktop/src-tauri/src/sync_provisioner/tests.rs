@@ -13,7 +13,15 @@ use echo_sync::resource_transfer::{DownloadChunk, TransferError, TransferProgres
 
 fn prepared_empty_library(root: &Path) {
     std::fs::create_dir_all(root.join("echo/tmp")).unwrap();
-    std::fs::write(root.join("echo/manifest.json"), b"{}").unwrap();
+    std::fs::write(
+        root.join("echo/manifest.json"),
+        serde_json::to_vec(&echo_core::domain::library::LibraryManifest::new(
+            echo_core::domain::library::LibraryId::from_uuid(uuid::Uuid::new_v4()),
+            env!("CARGO_PKG_VERSION"),
+        ))
+        .unwrap(),
+    )
+    .unwrap();
     let canonical = root.canonicalize().unwrap();
     std::fs::write(
         root.join("echo/tmp").join(EMPTY_LIBRARY_STAGING_MARKER),
@@ -62,6 +70,9 @@ fn first_pairing_prepares_only_an_empty_selected_directory_for_enrollment() {
     let root = derive_root_id(&empty.canonicalize().unwrap());
     prepare_empty_enrollment_root(&empty, root).unwrap();
     assert!(is_empty_enrollment_root(&empty));
+    let manifest: echo_core::domain::library::LibraryManifest =
+        serde_json::from_slice(&std::fs::read(empty.join("echo/manifest.json")).unwrap()).unwrap();
+    assert!(manifest.is_compatible());
     let marker =
         std::fs::read_to_string(empty.join("echo/tmp").join(EMPTY_LIBRARY_STAGING_MARKER)).unwrap();
     assert_eq!(StagingMarker::parse(&marker).unwrap().root, root);
@@ -78,6 +89,25 @@ fn first_pairing_prepares_only_an_empty_selected_directory_for_enrollment() {
         b"user data"
     );
     assert!(!occupied.join("echo").exists());
+}
+
+#[test]
+fn enrollment_initializes_a_valid_manifest_without_replacing_existing_content() {
+    let directory = tempfile::tempdir().unwrap();
+    let root_path = directory.path().join("library");
+    std::fs::create_dir_all(root_path.join("media")).unwrap();
+    let media = root_path.join("media/keep.flac");
+    std::fs::write(&media, b"existing audio").unwrap();
+    let root = derive_root_id(&root_path.canonicalize().unwrap());
+    prepare_enrollment_root(&root_path, root).unwrap();
+    let path = root_path.join("echo/manifest.json");
+    let original = std::fs::read(&path).unwrap();
+    let manifest: echo_core::domain::library::LibraryManifest =
+        serde_json::from_slice(&original).unwrap();
+    assert!(manifest.is_compatible());
+    prepare_enrollment_root(&root_path, root).unwrap();
+    assert_eq!(std::fs::read(path).unwrap(), original);
+    assert_eq!(std::fs::read(media).unwrap(), b"existing audio");
 }
 
 fn head(sequence: u64, digest: u8) -> CommitCheckpoint {
@@ -271,7 +301,14 @@ fn host_publishes_peer_uploaded_audio_into_its_library_before_reporting_ready() 
         StagingMarker::new(root).body(),
     )
     .unwrap();
-    let database = Arc::new(SqliteDatabase::open(directory.path().join("host.sqlite")).unwrap());
+    let runtime = echo_desktop::runtime::app::assemble(
+        &directory.path().join("host.sqlite"),
+        &directory.path().join("covers"),
+    )
+    .unwrap();
+    let database = runtime.database.clone();
+    prepared_empty_library(&root_path);
+    runtime.registry.register(root, &root_path);
     LibraryRepository::upsert(
         database.as_ref(),
         &LibraryRoot::new(root, root_path.clone(), true, true),
@@ -384,14 +421,28 @@ fn host_publishes_peer_uploaded_audio_into_its_library_before_reporting_ready() 
 #[allow(clippy::too_many_lines)]
 fn enrollment_snapshot_is_frozen_and_incremental_pull_after_h_converges_once() {
     let directory = tempfile::tempdir().unwrap();
-    let host = SqliteDatabase::open(directory.path().join("host.sqlite")).unwrap();
-    let replica = SqliteDatabase::open(directory.path().join("replica.sqlite")).unwrap();
+    let host_runtime = echo_desktop::runtime::app::assemble(
+        &directory.path().join("host.sqlite"),
+        &directory.path().join("host-covers"),
+    )
+    .unwrap();
+    let replica_runtime = echo_desktop::runtime::app::assemble(
+        &directory.path().join("replica.sqlite"),
+        &directory.path().join("replica-covers"),
+    )
+    .unwrap();
+    let host = host_runtime.database.as_ref();
+    let replica = replica_runtime.database.as_ref();
     let host_root = LibraryRootId::new();
     let replica_root = LibraryRootId::new();
-    for (database, root) in [(&host, host_root), (&replica, replica_root)] {
+    for (runtime, root) in [(&host_runtime, host_root), (&replica_runtime, replica_root)] {
+        let path = directory.path().join(root.to_string());
+        std::fs::create_dir(&path).unwrap();
+        prepared_empty_library(&path);
+        runtime.registry.register(root, &path);
         echo_core::application::ports::LibraryRepository::upsert(
-            database,
-            &LibraryRoot::new(root, directory.path().join(root.to_string()), true, true),
+            runtime.database.as_ref(),
+            &LibraryRoot::new(root, path, true, true),
         )
         .unwrap();
     }
@@ -417,10 +468,10 @@ fn enrollment_snapshot_is_frozen_and_incremental_pull_after_h_converges_once() {
     let first_song = echo_core::domain::ids::SongId::new();
     let first_resource = audio(1, format!("media/{first_song}.flac"));
     let (_, first_mutation) =
-        publish_test_song(&host, binding, first_song, 1, None, vec![first_resource]);
+        publish_test_song(host, binding, first_song, 1, None, vec![first_resource]);
     let second_song = echo_core::domain::ids::SongId::new();
     let (frozen_head, second_mutation) = publish_test_song(
-        &host,
+        host,
         binding,
         second_song,
         2,
@@ -451,7 +502,7 @@ fn enrollment_snapshot_is_frozen_and_incremental_pull_after_h_converges_once() {
     let third_song = echo_core::domain::ids::SongId::new();
     let third_resource = audio(3, format!("media/{third_song}.flac"));
     let (beyond_h, _) = publish_test_song(
-        &host,
+        host,
         binding,
         third_song,
         3,
@@ -699,7 +750,12 @@ impl LanMergeFixture {
             Blake3ContentHasher, RootConstrainedFileSystem, RootRegistry,
         };
         let directory = tempfile::tempdir().unwrap();
-        let host = Arc::new(SqliteDatabase::open(directory.path().join("host.sqlite")).unwrap());
+        let host_runtime = echo_desktop::runtime::app::assemble(
+            &directory.path().join("host.sqlite"),
+            &directory.path().join("host-covers"),
+        )
+        .unwrap();
+        let host = host_runtime.database.clone();
         let replica_runtime = echo_desktop::runtime::app::assemble(
             &directory.path().join("replica.sqlite"),
             &directory.path().join("covers"),
@@ -717,6 +773,11 @@ impl LanMergeFixture {
             std::fs::create_dir_all(path.join("media")).unwrap();
             prepared_empty_library(&path);
             let root = derive_root_id(&path.canonicalize().unwrap());
+            if is_host {
+                host_runtime.registry.register(root, &path);
+            } else {
+                replica_runtime.registry.register(root, &path);
+            }
             LibraryRepository::upsert(database.as_ref(), &LibraryRoot::new(root, path, true, true))
                 .unwrap();
             if is_host {
@@ -830,6 +891,8 @@ impl LanMergeFixture {
     }
 }
 
+#[path = "tests/blocking_apply.rs"]
+mod blocking_apply;
 #[path = "tests/embedded_resources.rs"]
 mod embedded_resources;
 #[path = "tests/merge_cycle.rs"]

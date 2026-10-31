@@ -1,25 +1,47 @@
 import { bridge } from "../../bridge";
+import { savedLibraryOperation } from "../../bridge/libraryPersistence";
 import type { SongView } from "../../ipc/ipc-types.generated";
 
-export type BatchItemStatus = "success" | "skipped" | "failed";
+/**
+ * `pending` is the fifth outcome the durability protocol needs: the library
+ * directory committed the item, but the projection has not caught up yet. It is
+ * deliberately **not** `failed` — the change is saved, the user must not retry
+ * it as a new intent, and the batch summary must not report it as a loss.
+ */
+export type BatchItemStatus = "success" | "pending" | "skipped" | "failed";
 
 export interface BatchItemResult<TItem, TValue = unknown> {
   readonly item: TItem;
   readonly status: BatchItemStatus;
   readonly value?: TValue;
   readonly message?: string;
+  /** The stable operation identity of a committed-but-pending item. */
+  readonly operationId?: string;
 }
 
 export interface BatchResult<TItem, TValue = unknown> {
   readonly items: readonly BatchItemResult<TItem, TValue>[];
   readonly succeeded: number;
+  /** Items the library committed but whose view has not caught up yet. */
+  readonly pending: number;
   readonly skipped: number;
   readonly failed: number;
 }
 
 export type BatchDecision<TValue> =
   | { readonly status: "success"; readonly value?: TValue }
-  | { readonly status: "skipped"; readonly message: string };
+  | { readonly status: "skipped"; readonly message: string }
+  /**
+   * The library committed this item but its projection has not caught up.
+   * `value` carries the committed truth the caller may publish locally (never a
+   * guess — the directory is the authority once the commit succeeds).
+   */
+  | {
+      readonly status: "pending";
+      readonly value?: TValue;
+      readonly message: string;
+      readonly operationId?: string;
+    };
 
 export async function runSequentialBatch<TItem, TValue>(
   items: readonly TItem[],
@@ -29,13 +51,36 @@ export async function runSequentialBatch<TItem, TValue>(
   for (const [index, item] of items.entries()) {
     try {
       const decision = await operation(item, index);
-      results.push(
-        decision.status === "success"
-          ? { item, status: "success", value: decision.value }
-          : { item, status: "skipped", message: decision.message },
-      );
+      if (decision.status === "pending") {
+        results.push({
+          item,
+          status: "pending",
+          value: decision.value,
+          message: decision.message,
+          operationId: decision.operationId,
+        });
+      } else {
+        results.push(
+          decision.status === "success"
+            ? { item, status: "success", value: decision.value }
+            : { item, status: "skipped", message: decision.message },
+        );
+      }
     } catch (error) {
-      results.push({ item, status: "failed", message: batchErrorMessage(error) });
+      // A directory-committed mutation that only failed to project is saved:
+      // it keeps its own status and identity, and the batch never rolls it back
+      // as if the library had rejected it (spec: 单项已保存待投影不得计为失败).
+      const saved = savedLibraryOperation(error);
+      results.push(
+        saved
+          ? {
+              item,
+              status: "pending",
+              message: saved.message,
+              operationId: saved.operationId,
+            }
+          : { item, status: "failed", message: batchErrorMessage(error) },
+      );
     }
   }
   return summarize(results);
@@ -47,6 +92,7 @@ export function summarize<TItem, TValue>(
   return {
     items,
     succeeded: items.filter((item) => item.status === "success").length,
+    pending: items.filter((item) => item.status === "pending").length,
     skipped: items.filter((item) => item.status === "skipped").length,
     failed: items.filter((item) => item.status === "failed").length,
   };
@@ -63,8 +109,22 @@ export async function runFavoriteBatch(
     if (song.favorite === favorite) {
       return { status: "skipped", message: favorite ? "已经收藏" : "尚未收藏" };
     }
-    const committed = await bridge.call("set_favorite", { songId: song.id, favorite });
-    return { status: "success", value: committed };
+    try {
+      const committed = await bridge.call("set_favorite", { songId: song.id, favorite });
+      return { status: "success", value: committed };
+    } catch (error) {
+      const saved = savedLibraryOperation(error);
+      if (!saved) throw error;
+      // The directory committed the like; only the view lags. The committed
+      // truth is the requested `favorite`, so the item keeps that state and the
+      // caller can publish it locally instead of rolling the heart back.
+      return {
+        status: "pending",
+        value: { ...song, favorite },
+        message: saved.message,
+        operationId: saved.operationId,
+      };
+    }
   });
 }
 
@@ -149,14 +209,19 @@ export async function undoDeleteBatch(
 
 export function formatBatchResult({
   succeeded,
+  pending,
   skipped,
   failed,
 }: {
   readonly succeeded: number;
+  readonly pending: number;
   readonly skipped: number;
   readonly failed: number;
 }): string {
   const parts = [`成功 ${succeeded}`];
+  // "已保存，等待更新" is neither a success nor a loss — naming it separately is
+  // what keeps a committed item from being counted as a failure.
+  if (pending > 0) parts.push(`已保存待更新 ${pending}`);
   if (skipped > 0) parts.push(`跳过 ${skipped}`);
   if (failed > 0) parts.push(`失败 ${failed}`);
   return parts.join("，");
@@ -174,6 +239,14 @@ export function formatBatchFailureDetails<TItem>(
     .filter((item) => item.status === "failed")
     .map((item) => `${label(item.item)}：${item.message ?? "操作失败，请重试"}`)
     .join("；");
+}
+
+/** The committed-but-pending items of a batch, for a caller that wants to
+ *  offer the same-operation retry or publish the saved truth locally. */
+export function pendingBatchItems<TItem, TValue>(
+  result: BatchResult<TItem, TValue>,
+): readonly BatchItemResult<TItem, TValue>[] {
+  return result.items.filter((item) => item.status === "pending");
 }
 
 function availabilityLabel(song: SongView): string {

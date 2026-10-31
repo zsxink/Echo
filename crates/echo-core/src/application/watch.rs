@@ -33,6 +33,10 @@ use crate::domain::ids::{LibraryRootId, OperationId, RelativeMediaPath, Revision
 use crate::domain::state::OperationState;
 use crate::error::Error;
 
+#[cfg(test)]
+#[path = "watch/durability_tests.rs"]
+mod durability_tests;
+
 fn wall_now_ms(clock: &dyn crate::application::ports::Clock) -> u64 {
     clock
         .now_wall()
@@ -169,7 +173,7 @@ impl WatchCoordinator {
             // files under echo/media. Only an associated active song is editable.
             return Ok(EventOutcome::Ignored);
         }
-        let _activity = super::sync::local_activity()?;
+        let _activity = self.deps.activity.enter()?;
         if self.deps.roots.replica_enrollment_pending(event.root)? {
             return Ok(EventOutcome::Ignored);
         }
@@ -225,41 +229,24 @@ impl WatchCoordinator {
         {
             return Ok(EventOutcome::Ignored);
         }
-        // Target-claim arbitration: an import owns this path right now.
+        // Durable claims arbitrate before the optional runtime snapshot. The
+        // runtime callback can lag a worker that has already journaled its
+        // reserved SongId, so it cannot be the identity authority here.
+        for (operation, _, item) in self.deps.journal.incomplete_items(root)? {
+            if item.claim_key == path.identity_key() {
+                if let Some(outcome) = self.apply_claim(root, operation, &item, path)? {
+                    return Ok(outcome);
+                }
+            }
+        }
+        // Preserve support for adapters whose runtime operation set is newer
+        // than their journal enumeration, while the durable journal remains
+        // the first and authoritative source.
         for operation in (self.callbacks.active_operations)() {
             if let Some(item) = self.claim_for(operation, path)? {
-                let terminal = matches!(
-                    item.state,
-                    OperationState::Completed
-                        | OperationState::RolledBack
-                        | OperationState::FailedRecoverable
-                        | OperationState::DatabaseFinalized
-                );
-                if terminal {
-                    continue; // stale claim: the operation is finished
+                if let Some(outcome) = self.apply_claim(root, operation, &item, path)? {
+                    return Ok(outcome);
                 }
-                let published = matches!(
-                    item.state,
-                    OperationState::PublishApplied | OperationState::DatabaseCommitted
-                );
-                if published {
-                    // The file is fully published under a reserved identity:
-                    // reconcile with THAT id — never a second UUID.
-                    let Some(reserved) = item.song else {
-                        return Err(Error::InvariantViolation {
-                            why: "published journal item without a reserved SongId".to_owned(),
-                        });
-                    };
-                    let created = self.deps.songs.by_id(reserved)?.is_none();
-                    self.apply_reserved(root, reserved, path)?;
-                    return Ok(EventOutcome::Applied {
-                        song: reserved,
-                        created,
-                    });
-                }
-                // Still copying/validating/publishing: the operation will
-                // finish the record; the event is deferred to it.
-                return Ok(EventOutcome::Deferred { operation });
             }
         }
         // No claim: reconcile exactly like the scan pipeline does.
@@ -389,7 +376,24 @@ impl WatchCoordinator {
             let mut moved = song;
             moved.relink(to.clone());
             moved.restore_available();
-            self.deps.songs.upsert(&moved)?;
+            let resources = vec![crate::domain::library::durability::DurableResource {
+                relative_path: to.display().to_owned(),
+                content_hash: hash,
+                byte_length: self.deps.fs.file_meta(root, to)?.size,
+            }];
+            let projected = moved.clone();
+            crate::application::scan::durable::commit_song(
+                &self.deps,
+                &moved,
+                self.deps.ids.new_operation_id(),
+                crate::domain::library::durability::ChangeOrigin::Scan,
+                resources,
+                || {
+                    self.deps
+                        .uow
+                        .with_tx(Box::new(move |tx| tx.upsert_song(&projected)))
+                },
+            )?;
             return Ok(EventOutcome::Applied {
                 song: moved.id(),
                 created: false,
@@ -412,6 +416,46 @@ impl WatchCoordinator {
         Ok(items
             .into_iter()
             .find(|item| item.claim_key == path.identity_key()))
+    }
+
+    fn apply_claim(
+        &self,
+        root: LibraryRootId,
+        operation: OperationId,
+        item: &OperationItem,
+        path: &RelativeMediaPath,
+    ) -> Result<Option<EventOutcome>, Error> {
+        let terminal = matches!(
+            item.state,
+            OperationState::Completed
+                | OperationState::RolledBack
+                | OperationState::DatabaseFinalized
+        );
+        if terminal {
+            return Ok(None);
+        }
+        let published = matches!(
+            item.state,
+            OperationState::PublishApplied | OperationState::DatabaseCommitted
+        );
+        if published {
+            // The file is fully published under a reserved identity: reconcile
+            // with THAT id — never a second UUID.
+            let Some(reserved) = item.song else {
+                return Err(Error::InvariantViolation {
+                    why: "published journal item without a reserved SongId".to_owned(),
+                });
+            };
+            let created = self.deps.songs.by_id(reserved)?.is_none();
+            self.apply_reserved(root, reserved, path)?;
+            return Ok(Some(EventOutcome::Applied {
+                song: reserved,
+                created,
+            }));
+        }
+        // Still copying/validating/publishing: the operation will finish the
+        // record; the event is deferred to it.
+        Ok(Some(EventOutcome::Deferred { operation }))
     }
 
     /// Reconcile a file under a **fixed**, journal-reserved identity.
@@ -463,24 +507,39 @@ impl WatchCoordinator {
         let resources = crate::application::scan_resources::verified_song_resources(
             &self.deps, root, parsed, true,
         )?;
-        self.deps
-            .uow
-            .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
-                tx.set_song_file_resources(&song, &resources)?;
-                tx.upsert_song(&song)?;
-                match embedded {
-                    Some(candidate) => tx.set_lyrics_candidate(song.id(), &candidate)?,
-                    None => tx.clear_lyrics_candidate(song.id(), LyricsSource::Embedded)?,
-                }
-                match sidecar {
-                    Some(candidate) => tx.set_lyrics_candidate(song.id(), &candidate)?,
-                    None => tx.clear_lyrics_candidate(song.id(), LyricsSource::Sidecar)?,
-                }
-                if let Some(cover) = cover {
-                    tx.attach_cover(song.id(), &cover)?;
-                }
-                Ok(())
-            }))
+        let durable_resources = vec![crate::domain::library::durability::DurableResource {
+            relative_path: song.path().display().to_owned(),
+            content_hash: parsed.file.hash.clone(),
+            byte_length: parsed.file.size,
+        }];
+        let entity = song.clone();
+        crate::application::scan::durable::commit_song(
+            &self.deps,
+            &entity,
+            self.deps.ids.new_operation_id(),
+            crate::domain::library::durability::ChangeOrigin::Scan,
+            durable_resources,
+            || {
+                self.deps
+                    .uow
+                    .with_tx(Box::new(move |tx: &mut dyn TxAccess| {
+                        tx.set_song_file_resources(&song, &resources)?;
+                        tx.upsert_song(&song)?;
+                        match embedded {
+                            Some(candidate) => tx.set_lyrics_candidate(song.id(), &candidate)?,
+                            None => tx.clear_lyrics_candidate(song.id(), LyricsSource::Embedded)?,
+                        }
+                        match sidecar {
+                            Some(candidate) => tx.set_lyrics_candidate(song.id(), &candidate)?,
+                            None => tx.clear_lyrics_candidate(song.id(), LyricsSource::Sidecar)?,
+                        }
+                        if let Some(cover) = cover {
+                            tx.attach_cover(song.id(), &cover)?;
+                        }
+                        Ok(())
+                    }))
+            },
+        )
     }
 }
 
@@ -519,19 +578,16 @@ mod tests {
     struct Recorded {
         coordinator: WatchCoordinator,
         rescans: Arc<Mutex<Vec<RescanReason>>>,
-        active: Arc<Mutex<Vec<OperationId>>>,
     }
 
     fn coordinator(fixture: &ScanFixture) -> Recorded {
         let rescans = Arc::new(Mutex::new(Vec::new()));
-        let active = Arc::new(Mutex::new(Vec::new()));
         let rescans_sink = Arc::clone(&rescans);
-        let active_source = Arc::clone(&active);
         let coordinator = WatchCoordinator::new(
             Arc::clone(&fixture.deps),
             Arc::new(fixture.supervisor.clone()),
             WatchCallbacks {
-                active_operations: Box::new(move || active_source.lock().unwrap().clone()),
+                active_operations: Box::new(Vec::new),
                 request_rescan: Box::new(move |reason| {
                     rescans_sink.lock().unwrap().push(reason);
                 }),
@@ -540,7 +596,6 @@ mod tests {
         Recorded {
             coordinator,
             rescans,
-            active,
         }
     }
 
@@ -656,7 +711,15 @@ mod tests {
         // An import operation holds the target claim, still copying.
         let operation = OperationId::new();
         let reserved = crate::domain::ids::SongId::new();
-        let item = crate::application::ports::OperationItem {
+        crate::application::ports::OperationJournalRepository::ensure_operation(
+            &fixture.database,
+            operation,
+            fixture.root,
+            "import",
+            Some(reserved),
+        )
+        .unwrap();
+        let mut item = crate::application::ports::OperationItem {
             kind: OperationResourceKind::Audio,
             state: OperationState::CopyPending,
             song: Some(reserved),
@@ -673,10 +736,9 @@ mod tests {
         crate::application::ports::OperationJournalRepository::upsert_item(
             &fixture.database,
             operation,
-            item,
+            item.clone(),
         )
         .unwrap();
-        recorded.active.lock().unwrap().push(operation);
 
         let outcome = recorded
             .coordinator
@@ -691,10 +753,26 @@ mod tests {
             fixture.all_songs().is_empty(),
             "no record is created while the claim is active"
         );
+        item.state = OperationState::FailedRecoverable;
+        crate::application::ports::OperationJournalRepository::upsert_item(
+            &fixture.database,
+            operation,
+            item,
+        )
+        .unwrap();
+        assert_eq!(
+            recorded
+                .coordinator
+                .handle_event(created(&fixture, "importing.mp3"))
+                .unwrap(),
+            EventOutcome::Deferred { operation },
+            "a recoverable published claim keeps owning the path until recovery"
+        );
+        assert!(fixture.all_songs().is_empty());
     }
 
     #[test]
-    fn published_files_reuse_the_journal_reserved_song_id() {
+    fn published_files_reuse_the_persisted_journal_reserved_song_id() {
         let fixture = ScanFixture::new();
         fixture.write_file("published.mp3", b"published-bytes");
         fixture.set_audio("published.mp3", "Published", 1_000);
@@ -704,6 +782,14 @@ mod tests {
         // has not happened yet: the event races the operation.
         let operation = OperationId::new();
         let reserved = crate::domain::ids::SongId::new();
+        crate::application::ports::OperationJournalRepository::ensure_operation(
+            &fixture.database,
+            operation,
+            fixture.root,
+            "import",
+            Some(reserved),
+        )
+        .unwrap();
         let item = crate::application::ports::OperationItem {
             kind: OperationResourceKind::Audio,
             state: OperationState::PublishApplied,
@@ -724,8 +810,6 @@ mod tests {
             item,
         )
         .unwrap();
-        recorded.active.lock().unwrap().push(operation);
-
         let outcome = recorded
             .coordinator
             .handle_event(created(&fixture, "published.mp3"))

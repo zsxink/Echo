@@ -1,23 +1,10 @@
-//! Portable record materialization: build and write `echo/records/<kind>/…`
-//! records from committed mutations.
+//! Portable record builders shared by scan, import and delete recovery.
 //!
-//! The design (design.md §2) makes the portable record the durable, cross-device
-//! form of the outbox full payload: both are updated for the same logical fact
-//! and must share the object's monotone revision, device id and HLC. Because a
-//! filesystem write cannot ride inside the `SQLite` transaction, the mutation use
-//! cases call these builders *after* the Unit of Work commits, using the
-//! [`SyncStateReader`]/[`DeviceIdProvider`] read-back so the record's version
-//! exactly matches the committed outbox row.
-//!
-//! Two call shapes:
-//!
-//! - **Direct mutations** (import, favorite, playlist/member): gate up front on
-//!   [`ensure_control_plane_writable`] and fail the mutation if the control
-//!   surface is unusable (spec "控制面不可写" — a library whose `echo/` is not
-//!   writable must not be enabled for logic changes; reads keep working).
-//! - **Delete/finalize fan-out** (song/playlist delete cascades): use
-//!   [`write_record_guarded`], which is best-effort — the DB delete is already
-//!   committed and must not roll back because a control-plane write failed.
+//! These helpers only construct versioned values. User mutations persist via
+//! the directory durability coordinator before SQLite projection; this module
+//! must not grow a post-commit record writer that can create DB-only facts.
+//! `delete_record_guarded` remains only for removing a superseded legacy
+//! temporary tombstone during undo.
 
 use std::collections::BTreeMap;
 
@@ -26,7 +13,7 @@ use crate::domain::entities::Song;
 use crate::domain::ids::{LibraryRootId, PlaylistId, PlaylistItemId, Revision, SongId};
 use crate::domain::library::{
     DeviceId, FavoriteRecord, HybridLogicalClock, LibraryRelativePath, PlayStatsRecord,
-    PlaylistItemRecord, PlaylistRecord, PortableRecord, RecordKind, SongRecord, TombstoneRecord,
+    PlaylistItemRecord, PlaylistRecord, RecordKind, SongRecord, TombstoneRecord,
 };
 use crate::error::Error;
 
@@ -89,23 +76,6 @@ pub fn ensure_control_plane_writable(
 ///
 /// `Ok(())` even on a failed control-plane write; only a read/parse of
 /// writability that itself errors propagates.
-pub fn write_record_guarded(
-    control: &dyn ControlPlanePort,
-    root: LibraryRootId,
-    record: &PortableRecord,
-) -> Result<(), Error> {
-    let usable = control.control_plane_usable(root)?;
-    if usable {
-        control.write_record(root, record)?;
-    } else {
-        tracing::warn!(
-            kind = %record.kind(),
-            "control surface not usable — skipping post-commit record write"
-        );
-    }
-    Ok(())
-}
-
 /// Best-effort record removal for post-commit fan-out (undoing a delete). A
 /// control-plane failure is logged and swallowed: the DB change is already
 /// committed and must never roll back because a record could not be removed.
@@ -174,6 +144,7 @@ pub const fn favorite_record(
         updated_by_device_id: device,
         hlc,
         is_favorite,
+        favorited_at: None,
     }
 }
 
@@ -192,6 +163,8 @@ pub fn playlist_record(
         updated_by_device_id: device,
         hlc,
         display_name: display_name.to_owned(),
+        created_at: None,
+        cover_asset: None,
     }
 }
 
@@ -214,6 +187,7 @@ pub const fn playlist_item_record(
         playlist_uuid: playlist.as_uuid(),
         song_uuid: song.as_uuid(),
         position,
+        added_at: None,
     }
 }
 

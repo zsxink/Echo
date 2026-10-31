@@ -13,6 +13,9 @@
 //! playlist and its membership rows; songs, their records and memberships in
 //! other playlists are never touched.
 
+pub mod cover;
+pub mod durable;
+
 use crate::application::ports::{PlaylistRepository, SongRepository, TxAccess, UnitOfWork};
 use crate::domain::entities::{PlaylistMember, SongAvailability};
 use crate::domain::ids::{LibraryRootId, PlaylistId, SongId};

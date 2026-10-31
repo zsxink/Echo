@@ -37,6 +37,7 @@ const AREA_PREFIX = {
   "desktop-app-shell": "DAS",
   "desktop-playback": "DP",
   "immersive-lyrics": "IL",
+  "library-durability": "LD",
   "library-experience": "LE",
   "local-library": "LL",
   "phase-one-acceptance": "PHA",

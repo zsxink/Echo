@@ -7,10 +7,20 @@ export interface IpcErrorDto {
   readonly messageKey: string;
   readonly retryable: boolean;
   readonly operationId?: string;
+  readonly durabilityOutcome?: LibraryDurabilityOutcomeDto;
   readonly field?: string;
 }
 
 export type IpcResult<T> = T | IpcErrorDto;
+
+export type LibraryDurabilityReasonDto = 'operationRejected' | 'recoveryRequired' | 'projectionPending' | 'unresolvedProjection' | 'legacyUnverified';
+
+export type LibraryDurabilityOutcomeDto =
+  | { readonly kind: 'notSaved'; readonly reason: LibraryDurabilityReasonDto }
+  | { readonly kind: 'savedPendingRecovery'; readonly operationId: string | null; readonly reason: LibraryDurabilityReasonDto }
+  | { readonly kind: 'savedPendingProjection'; readonly operationId: string | null; readonly reason: LibraryDurabilityReasonDto }
+  | { readonly kind: 'complete'; readonly operationId: string | null }
+  | { readonly kind: 'recoveryPartial'; readonly reason: LibraryDurabilityReasonDto };
 
 export type EffectsSelection = { readonly kind: 'none' } | { readonly kind: 'preset'; readonly id: string } | { readonly kind: 'draft' };
 export interface EqCurve {
@@ -56,6 +66,15 @@ export interface EffectsSnapshotDto {
   readonly recoveryReason?: string;
 }
 
+export type PlaybackRetryReasonDto = 'notSaved' | 'savedPendingRecovery' | 'savedPendingProjection' | 'libraryUnavailable' | 'inactiveLibrary' | 'authorChanged' | 'libraryChanged' | 'missingSong' | 'enrollmentPending';
+
+export interface PlaybackRetryStatusDto {
+  readonly operationId: string;
+  readonly song: string;
+  readonly qualifiedAt: number;
+  readonly reason: PlaybackRetryReasonDto;
+  readonly attempts: number;
+}
 export type SyncRole = 'none' | 'host' | 'peer';
 export type SyncState = 'disabled' | 'hosting' | 'connected' | 'syncing' | 'paused' | 'failed';
 export type SyncSessionIntent = 'enabled' | 'stopped' | 'paused';
@@ -267,6 +286,24 @@ export interface LibraryStatus {
   readonly activeRootPath?: string;
 }
 
+export type RecoveryIssueReasonDto = 'missingSong' | 'missingPlaylist' | 'identityConflict' | 'tombstonedDependency' | 'missingSyncDependency' | 'ambiguousMutationVersion' | 'invalidStateFact' | 'unverifiedConfirmationMetadata' | 'requiresStateRecovery';
+
+export interface LibraryRecoveryIssueDto {
+  readonly target: string;
+  readonly reason: RecoveryIssueReasonDto;
+}
+
+export interface LibraryRecoveryStatusDto {
+  readonly root: string;
+  readonly readOnly: boolean;
+  readonly directoryHeadSeq: number;
+  readonly projectedSeq: number;
+  readonly needsProjection: boolean;
+  readonly legacyUnverified: boolean;
+  readonly issues: readonly LibraryRecoveryIssueDto[];
+  readonly outcome: LibraryDurabilityOutcomeDto;
+}
+
 export interface ScanSnapshot {
   readonly generation: number;
   readonly cancelled: boolean;
@@ -278,6 +315,14 @@ export interface ScanSnapshot {
   readonly missing: number;
   readonly skipped: number;
   readonly failed: number;
+  readonly issues: readonly ScanIssueDto[];
+}
+
+export interface ScanIssueDto {
+  readonly relativePath: string;
+  readonly code: string;
+  readonly message: string;
+  readonly songCreated: boolean;
 }
 
 export interface SongDetailView {
@@ -295,8 +340,14 @@ export interface SongDetailView {
   readonly availability: SongAvailability;
 }
 
+export type LyricsImportResultDto =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'imported'; readonly relativePath: string }
+  | { readonly kind: 'failed'; readonly code: string; readonly message: string };
+
 export type ImportResultDto =
-  | { readonly kind: 'imported'; readonly operationId: string; readonly songId: string; readonly relativePath: string; readonly renamed: boolean }
+  | { readonly kind: 'savedPending'; readonly operationId: string; readonly songId: string; readonly relativePath: string; readonly renamed: boolean; readonly lyrics: LyricsImportResultDto; readonly code: string; readonly message: string }
+  | { readonly kind: 'imported'; readonly operationId: string; readonly songId: string; readonly relativePath: string; readonly renamed: boolean; readonly lyrics: LyricsImportResultDto }
   | { readonly kind: 'duplicate'; readonly existingSongId: string }
   | { readonly kind: 'skipped' }
   | { readonly kind: 'libraryUnavailable' }
@@ -360,6 +411,10 @@ export interface IpcCommandResultMap {
   readonly retry_audio_effects: EffectsSnapshotDto;
   readonly get_bootstrap_state: BootstrapSnapshot;
   readonly library_status: LibraryStatus;
+  readonly retry_library_operation: void;
+  readonly library_recovery_status: LibraryRecoveryStatusDto;
+  readonly retry_library_projection: void;
+  readonly playback_retry_status: readonly PlaybackRetryStatusDto[];
   readonly all_songs: PagedSongs;
   readonly search: PagedSongs;
   readonly favorites: PagedSongs;

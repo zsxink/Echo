@@ -36,15 +36,18 @@ import { useCoverKeys } from "../../app/coverArt";
 import { Icon } from "../../app/Icon";
 import { formatDuration } from "../library";
 import { useSongDetail } from "./useSongDetail";
-import { bumpLibraryCount, invalidateLibrary, publishSongUpdate } from "../library";
-import type { SongView } from "../../ipc/ipc-types.generated";
+import { invalidateLibrary, setSongFavorite } from "../library";
 
 import { EffectsTrigger } from "./EffectsTrigger";
+import { savedLibraryOperation } from "../../bridge/libraryPersistence";
 import { PlayerProgress } from "./PlayerProgress";
 
 export function PlayerBar({
+  root,
   queueTriggerRef,
 }: {
+  /** Active library root; the 收藏 retry needs it to address the same commit. */
+  readonly root?: string;
   readonly queueTriggerRef?: RefObject<HTMLButtonElement>;
 }) {
   const snapshot = usePlayerSnapshot();
@@ -107,11 +110,15 @@ export function PlayerBar({
     try {
       const result = await bridge.call("import_current_temporary_file");
       setImportResult(importResultText(result.kind));
-      if (result.kind === "imported" || result.kind === "duplicate") {
+      if (
+        result.kind === "imported" ||
+        result.kind === "duplicate" ||
+        result.kind === "savedPending"
+      ) {
         invalidateLibrary();
       }
-    } catch {
-      setImportResult("导入失败");
+    } catch (error) {
+      setImportResult(savedLibraryOperation(error)?.message ?? "导入失败");
     } finally {
       setImporting(false);
     }
@@ -188,17 +195,11 @@ export function PlayerBar({
             disabled={snapshot.currentSongId === null || detail === null}
             onClick={() => {
               if (!snapshot.currentSongId || !detail) return;
-              const favorite = !detail.favorite;
-              bumpLibraryCount("favorites", favorite ? 1 : -1);
-              void bridge
-                .call("set_favorite", {
-                  songId: snapshot.currentSongId,
-                  favorite,
-                })
-                // Broadcast the committed view so the library rows (and this
-                // bar's own detail) adopt the new heart without a re-query.
-                .then((committed) => publishSongUpdate(committed as SongView))
-                .catch(() => bumpLibraryCount("favorites", favorite ? -1 : 1));
+              const songId = snapshot.currentSongId;
+              void setSongFavorite({ id: songId, favorite: detail.favorite }, !detail.favorite, {
+                root,
+                onRecovered: () => invalidateLibrary(),
+              });
             }}
             data-testid="player-favorite"
           >
@@ -309,6 +310,8 @@ function importResultText(kind: string): string {
   switch (kind) {
     case "imported":
       return "已导入到音乐库";
+    case "savedPending":
+      return "音乐已保存，等待恢复；无需重新导入";
     case "duplicate":
       return "音乐库已有相同歌曲";
     case "skipped":

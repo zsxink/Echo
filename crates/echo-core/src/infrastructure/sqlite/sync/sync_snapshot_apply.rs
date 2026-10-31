@@ -28,8 +28,8 @@ impl SqliteDatabase {
         })
     }
 
-    /// Whether normal local scan/import recovery must wait for host enrollment
-    /// or its durable media preservation step to finish for this root.
+    /// Whether normal local scan/import recovery must wait for host
+    /// enrollment's durable replace step to finish for this root.
     pub fn replica_enrollment_pending(
         &self,
         root: crate::domain::ids::LibraryRootId,
@@ -37,49 +37,11 @@ impl SqliteDatabase {
         self.with_reader(move |connection| {
             connection
                 .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM sync_state WHERE key IN (?1,?2))",
-                    params![
-                        format!("replica_enrollment_replace:{root}"),
-                        format!("replica_enrollment_archive:{root}")
-                    ],
+                    "SELECT EXISTS(SELECT 1 FROM sync_state WHERE key=?1)",
+                    params![format!("replica_enrollment_replace:{root}")],
                     |row| row.get(0),
                 )
                 .map_err(storage)
-        })
-    }
-
-    /// A legacy archive marker left by an older destructive enrollment flow.
-    pub fn pending_replica_media_archive(
-        &self,
-        root: crate::domain::ids::LibraryRootId,
-    ) -> Result<Option<String>, Error> {
-        self.with_reader(move |connection| {
-            connection
-                .query_row(
-                    "SELECT value FROM sync_state WHERE key=?1",
-                    params![format!("replica_enrollment_archive:{root}")],
-                    |row| row.get(0),
-                )
-                .optional()
-                .map_err(storage)
-        })
-    }
-
-    /// Finish exactly the archive intent observed by the desktop. A newer
-    /// enrollment cannot accidentally be acknowledged by an older worker.
-    pub fn complete_replica_media_archive(
-        &self,
-        root: crate::domain::ids::LibraryRootId,
-        token: String,
-    ) -> Result<(), Error> {
-        self.writer.run(move |connection| {
-            connection
-                .execute(
-                    "DELETE FROM sync_state WHERE key=?1 AND value=?2",
-                    params![format!("replica_enrollment_archive:{root}"), token],
-                )
-                .map_err(storage)?;
-            Ok(())
         })
     }
 
@@ -123,6 +85,7 @@ impl ReplicaSnapshotApplyPort for SqliteDatabase {
     ) -> Result<AppliedSnapshotPage, Error> {
         let body = validate_page(page)?;
         let page = page.clone();
+        let control = self.library_control();
         self.writer.run(move |connection| {
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
             let root = replica_root(&tx, page.checkpoint.binding)?;
@@ -193,7 +156,15 @@ impl ReplicaSnapshotApplyPort for SqliteDatabase {
             } else {
                 tx.execute("UPDATE sync_replica_snapshot_sessions SET next_page_index=?2 WHERE token=?1",params![page.snapshot_token,page.next_page_index]).map_err(storage)?;
             }
-            tx.commit().map_err(storage)?;
+            if page.next_page_index.is_none() {
+                let root_id = crate::domain::ids::LibraryRootId::from_uuid(uuid::Uuid::parse_str(&root).map_err(storage)?);
+                let operation = super::durability::identity("snapshot", &format!("{}:{}",page.checkpoint.binding.library_id.as_uuid(),page.snapshot_token));
+                super::durability::commit_projection(control,tx,root_id,crate::domain::library::durability::ChangeOrigin::Remote,operation)?;
+            } else {
+                // Unverified pages remain private staging; no business object or
+                // applied cursor is published until the complete root commits.
+                tx.commit().map_err(storage)?;
+            }
             Ok(AppliedSnapshotPage {
                 next_page_index: page.next_page_index,
                 checkpoint: page.next_page_index.is_none().then_some(page.checkpoint),
@@ -430,9 +401,15 @@ fn ensure_snapshot_root_ownership(
         };
         for (kind, id) in objects {
             let query = match kind {
-                "song" | "favorite" | "override" | "play-stats" | "tombstone" => "SELECT EXISTS(SELECT 1 FROM songs WHERE uuid=?1 AND library_root_uuid<>?2)",
-                "playlist" => "SELECT EXISTS(SELECT 1 FROM playlists WHERE uuid=?1 AND library_root_uuid<>?2)",
-                "playlist-item" => "SELECT EXISTS(SELECT 1 FROM playlist_songs m JOIN playlists p ON p.uuid=m.playlist_uuid WHERE m.member_uuid=?1 AND p.library_root_uuid<>?2)",
+                "song" | "favorite" | "override" | "play-stats" | "tombstone" => {
+                    "SELECT EXISTS(SELECT 1 FROM songs WHERE uuid=?1 AND library_root_uuid<>?2)"
+                }
+                "playlist" => {
+                    "SELECT EXISTS(SELECT 1 FROM playlists WHERE uuid=?1 AND library_root_uuid<>?2)"
+                }
+                "playlist-item" => {
+                    "SELECT EXISTS(SELECT 1 FROM playlist_songs m JOIN playlists p ON p.uuid=m.playlist_uuid WHERE m.member_uuid=?1 AND p.library_root_uuid<>?2)"
+                }
                 _ => continue,
             };
             let other_root: bool = connection

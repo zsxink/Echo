@@ -108,11 +108,21 @@ impl super::AppServices {
                 .active_root()?
                 .ok_or_else(|| Error::unavailable("library", "no active root"))?
                 .id();
-            if let Some(custom) = self
+            let legacy_key = self
                 .deps
                 .covers
-                .artist_cover_key(root, &collection.artist_key)?
-            {
+                .artist_cover_key(root, &collection.artist_key)?;
+            let original = self
+                .deps
+                .covers
+                .artist_cover_original(root, &collection.artist_key)?;
+            if let Some(custom) = echo_core::application::artist_cover::resolve_artist_cover(
+                self.deps.control.as_ref(),
+                self.deps.cover_cache.as_ref(),
+                root,
+                original.as_ref(),
+                legacy_key.as_deref(),
+            )? {
                 return Ok((Some(custom), true));
             }
         }
@@ -161,7 +171,7 @@ impl super::AppServices {
     pub fn set_artist_cover(
         &self,
         artist_key: &str,
-        bytes: Option<Vec<u8>>,
+        bytes: Option<&[u8]>,
         mime: Option<&str>,
     ) -> Result<(), Error> {
         let _activity = self.guard_writes()?;
@@ -171,31 +181,15 @@ impl super::AppServices {
             .active_root()?
             .ok_or_else(|| Error::unavailable("library", "no active root"))?
             .id();
-        let key = match bytes {
-            None => None,
-            Some(bytes) => {
-                const MAX_COVER_BYTES: usize = 5 * 1024 * 1024;
-                let mime = mime.unwrap_or_default();
-                if bytes.is_empty() || bytes.len() > MAX_COVER_BYTES {
-                    return Err(Error::validation(
-                        echo_core::error::Subject::Other,
-                        "cover",
-                        "image must be between 1 byte and 5 MiB",
-                    ));
-                }
-                if !matches!(mime, "image/jpeg" | "image/png" | "image/webp") {
-                    return Err(Error::validation(
-                        echo_core::error::Subject::Other,
-                        "cover",
-                        "unsupported image type",
-                    ));
-                }
-                Some(self.deps.cover_cache.put(&bytes, mime)?)
-            }
-        };
-        self.deps
-            .covers
-            .set_artist_cover_key(root, artist_key, key.as_deref())
+        echo_core::application::artist_cover::set_artist_cover(
+            self.deps.control.as_ref(),
+            self.deps.uow.as_ref(),
+            root,
+            artist_key,
+            bytes,
+            mime,
+            self.deps.device_id.current_device_id(),
+        )
     }
 
     /// 全部歌曲, keyset-paginated, mapped to `PagedSongs`.
@@ -318,6 +312,20 @@ impl super::AppServices {
         };
         let repos = self.deps.playlists.as_ref();
         let ids = PlaylistRepository::list(repos, root)?;
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let records = self
+            .deps
+            .control
+            .list_record_documents(root, echo_core::domain::library::RecordKind::Playlist)?;
+        let records: std::collections::HashMap<_, _> = records
+            .into_iter()
+            .map(|document| {
+                let record = document.into_record();
+                (record.object_uuid(), record)
+            })
+            .collect();
         let mut views = Vec::with_capacity(ids.len());
         for id in ids {
             let name = PlaylistRepository::name(repos, id)?.unwrap_or_default();
@@ -334,7 +342,15 @@ impl super::AppServices {
             // A manual choice always wins. Otherwise the newest member's
             // embedded artwork is the playlist cover; a brand-new playlist
             // deliberately has no cover at all.
-            let custom_cover_key = PlaylistRepository::cover_key(repos, id)?;
+            let legacy_key = PlaylistRepository::cover_key(repos, id)?;
+            let custom_cover_key =
+                echo_core::application::playlist::cover::resolve_playlist_cover_record(
+                    self.deps.control.as_ref(),
+                    self.deps.cover_cache.as_ref(),
+                    root,
+                    records.get(&id.as_uuid()),
+                    legacy_key.as_deref(),
+                )?;
             let has_custom_cover = custom_cover_key.is_some();
             // Work backwards so adding a song without artwork never clears a
             // previously resolved automatic cover.

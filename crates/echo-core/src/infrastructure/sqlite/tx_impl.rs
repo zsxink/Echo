@@ -87,7 +87,12 @@ impl TxOperationWriter for SqliteTx<'_> {
     fn release_operation_claims(&mut self, operation: OperationId) -> Result<(), Error> {
         release_operation_claims(self.transaction, operation)
     }
-    fn set_undo_deadline(&mut self, operation: OperationId, deadline_ms: i64) -> Result<(), Error> {
+    fn set_undo_deadline(
+        &mut self,
+        operation: OperationId,
+        deadline_ms: i64,
+        final_mutation_id: crate::domain::sync::MutationId,
+    ) -> Result<(), Error> {
         self.transaction
             .execute(
                 "UPDATE operation_journal SET undo_deadline = ?2, updated_at = ?3 WHERE operation_uuid = ?1",
@@ -105,12 +110,15 @@ impl TxOperationWriter for SqliteTx<'_> {
             .map_err(storage)?
             .flatten();
         if let Some(song_uuid) = song_uuid {
+            // The directory intent froze this identity before the hide, so a
+            // concurrent finalization and the directory replay agree on the
+            // one mutation that ends the object.
             self.transaction
                 .execute(
                     "INSERT OR IGNORE INTO sync_local_delete_intents (intent_id, final_mutation_id, object_type, object_uuid, created_at, undo_deadline, state) VALUES (?1, ?2, 'song', ?3, ?4, ?5, 'open')",
                     params![
                         operation.to_string(),
-                        uuid::Uuid::new_v4().to_string(),
+                        final_mutation_id.as_uuid().to_string(),
                         song_uuid,
                         now_ms(),
                         deadline_ms,
@@ -173,27 +181,14 @@ impl CoverRepository for SqliteDatabase {
             |row| row.get(0),
         ).optional().map_err(storage))
     }
-    fn set_artist_cover_key(
+    fn artist_cover_original(
         &self,
         root: LibraryRootId,
         artist_key: &str,
-        key: Option<&str>,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<crate::domain::library::PortableAssetReference>, Error> {
         let artist_key = artist_key.to_owned();
-        let key = key.map(str::to_owned);
-        self.writer.run(move |connection| {
-            if let Some(key) = key {
-                connection.execute(
-                    "INSERT INTO artist_covers (library_root_uuid, artist_key, cover_asset_key, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(library_root_uuid, artist_key) DO UPDATE SET cover_asset_key = excluded.cover_asset_key, updated_at = excluded.updated_at",
-                    params![root.to_string(), artist_key, key, now_ms()],
-                ).map_err(storage)?;
-            } else {
-                connection.execute(
-                    "DELETE FROM artist_covers WHERE library_root_uuid = ?1 AND artist_key = ?2",
-                    params![root.to_string(), artist_key],
-                ).map_err(storage)?;
-            }
-            Ok(())
+        self.with_reader(move |connection| {
+            super::durability_projection::artist_cover_original(connection, root, &artist_key)
         })
     }
     fn referenced_asset_keys(&self, root: LibraryRootId) -> Result<Vec<String>, Error> {
@@ -243,6 +238,9 @@ impl ScanRunRepository for SqliteDatabase {
     }
     fn latest_generation(&self, root: LibraryRootId) -> Result<Option<u64>, Error> {
         self.with_reader(move |connection| latest_scan_generation(connection, root))
+    }
+    fn issues(&self, root: LibraryRootId, generation: u64) -> Result<Vec<MediaDiagnostic>, Error> {
+        self.scan_issues(root, generation)
     }
 }
 

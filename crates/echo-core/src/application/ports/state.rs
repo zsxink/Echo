@@ -26,14 +26,13 @@ pub trait CoverRepository: Send + Sync {
         root: LibraryRootId,
         artist_key: &str,
     ) -> Result<Option<String>, Error>;
-    /// Store or clear the user-selected artist cover. The supplied value is an
-    /// opaque `CoverCache` asset key, never an image path.
-    fn set_artist_cover_key(
+    /// The verified original reference projected from a local artwork fact.
+    /// Historical cache-only rows have no such reference.
+    fn artist_cover_original(
         &self,
         root: LibraryRootId,
         artist_key: &str,
-        key: Option<&str>,
-    ) -> Result<(), Error>;
+    ) -> Result<Option<crate::domain::library::PortableAssetReference>, Error>;
     /// Every asset key still referenced by any song of the root — the GC
     /// keep-set (`CoverCache::gc` must never delete a referenced asset).
     fn referenced_asset_keys(&self, root: LibraryRootId) -> Result<Vec<String>, Error>;
@@ -72,6 +71,8 @@ pub trait ScanRunRepository: Send + Sync {
     ) -> Result<(), Error>;
     /// The newest generation recorded for the root, if any.
     fn latest_generation(&self, root: LibraryRootId) -> Result<Option<u64>, Error>;
+    /// Per-file diagnostics from one completed or cancelled scan generation.
+    fn issues(&self, root: LibraryRootId, generation: u64) -> Result<Vec<MediaDiagnostic>, Error>;
 }
 
 /// Small key/value store for runtime-persisted state (the `root_epoch`

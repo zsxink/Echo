@@ -6,9 +6,18 @@
 
 #![allow(clippy::missing_errors_doc)]
 
+mod artist_cover_edit;
+mod durability;
 pub(crate) mod filesystem;
 mod filesystem_capabilities;
+mod library_history;
+mod library_projection;
+mod library_projection_verified;
+mod library_sync_recovery;
+mod local_library_edit;
 mod media;
+mod playback_edit;
+mod playlist_cover_edit;
 mod remote_resources;
 mod repository;
 mod resource_retention;
@@ -19,12 +28,21 @@ mod sync_recovery;
 mod system;
 mod transaction;
 
+pub use artist_cover_edit::*;
+pub use durability::*;
 pub use filesystem::{
     FileMeta, ImportSource, ImportSourceInfo, ImportSourceReader, SidecarInfo, StagedCopy,
     StagedResource,
 };
 pub use filesystem_capabilities::*;
+pub use library_history::*;
+pub use library_projection::*;
+pub use library_projection_verified::*;
+pub use library_sync_recovery::*;
+pub use local_library_edit::*;
 pub use media::*;
+pub use playback_edit::*;
+pub use playlist_cover_edit::*;
 pub use remote_resources::*;
 pub use repository::*;
 pub use resource_retention::*;

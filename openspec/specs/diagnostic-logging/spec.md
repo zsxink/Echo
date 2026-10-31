@@ -1,7 +1,8 @@
 # diagnostic-logging Specification
 
 ## Purpose
-TBD - created by archiving change daily-diagnostic-log-rotation. Update Purpose after archive.
+为 Echo 桌面 runtime 提供可长期留存、可按日期回溯的诊断证据：运行日志与崩溃日志按机器本地日期切分为 `echo-YYYY-MM-DD.log` / `crash-YYYY-MM-DD.log`，行内时间戳携带本地时区偏移以便与用户描述的墙钟时刻直接对照；日志总量由「最近 7 天日期窗口」与「单文件/累计字节上限」两道闸共同约束，超出时按文件名日期从旧到新回收，升级遗留的按大小轮转命名一并清理。本 capability 只规定日志文件的命名、时区、保留与轮转契约，不规定日志字段内容与脱敏规则（见 `docs/LOGGING.md`），也不提供日志上传或远端采集。
+
 ## Requirements
 ### Requirement: 诊断日志按本地日期切分文件
 

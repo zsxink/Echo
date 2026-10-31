@@ -62,6 +62,7 @@ mod macos_status_row;
 mod macos_window_lifecycle;
 mod open_targets;
 mod restore_retry;
+mod shutdown;
 mod sync_commands;
 mod sync_library_selection;
 mod sync_provisioner;
@@ -403,6 +404,27 @@ fn wire_composition(
     );
     app.manage(services);
     app.manage(routed.database.clone());
+
+    // After a root's projection worker catches the directory up to the catalog,
+    // emit an event so the shell re-pulls the read model (playlists / songs /
+    // counts) that changed out of band from the command that caused it — e.g. a
+    // newly created playlist that was committed before the projector caught up.
+    let projection_app = app.handle().clone();
+    let projection_broker = Mutex::new(echo_desktop::ipc::events::EventBroker::new());
+    routed.database.set_projection_notifier(Arc::new(
+        move |_root: echo_core::domain::ids::LibraryRootId| {
+            let envelope = projection_broker
+                .lock()
+                .expect("projection event broker poisoned")
+                .emit(
+                    echo_desktop::ipc::events::IpcEvent::SongsInvalidated {
+                        revision: echo_desktop::ipc::events::CatalogRevision::INITIAL,
+                    },
+                    None,
+                );
+            let _ = projection_app.emit("library://songs-invalidated", envelope);
+        },
+    ));
     app.manage(trash_worker);
     app.manage(routed.registry.clone());
     app.manage(routed.deps.clone());
@@ -485,10 +507,24 @@ fn wire_composition(
         ),
     ));
     app.manage(effects.clone());
+    // Playback statistics (task 8.10): feed the real snapshot stream into the
+    // accumulator so a qualified listen reaches Core's idempotent
+    // directory-first playback recorder (play_count / 最近播放). Without this the accumulator
+    // had no production caller and play counts never moved. The sink is kept
+    // here as well as handed to the recorder thread: the diagnostics command
+    // reads the one retry queue that thread drains.
+    let stats_sink = Arc::new(player::CorePlaybackRecorder::new(
+        routed.database.clone(),
+        routed.deps.control.clone(),
+        routed.deps.device_id.clone(),
+        routed.deps.roots.clone(),
+        routed.deps.activity.clone(),
+    ));
     let player_handle = commands::PlayerHandle {
         coordinator: controller.coordinator.clone(),
         source: player_source.clone(),
         persistence: saver_persistence.clone(),
+        stats: stats_sink.clone(),
     };
     app.manage(player_handle);
     if let Some(sink) = app.try_state::<Arc<RuntimeStatusMenuSink>>() {
@@ -568,16 +604,6 @@ fn wire_composition(
     // coordinator to the next entry. Without this the queue stalls on `ended`
     // until the user presses next manually.
     player::spawn_auto_advance(controller.port.clone(), controller.coordinator.clone());
-    // Playback statistics (task 8.10): feed the real snapshot stream into the
-    // accumulator so a qualified listen reaches Core's idempotent
-    // `record_playback` (play_count / 最近播放). Without this the accumulator
-    // had no production caller and play counts never moved.
-    let stats_sink = Arc::new(player::CorePlaybackRecorder::new(
-        routed.database.clone(),
-        routed.deps.control.clone(),
-        routed.deps.device_id.clone(),
-        routed.deps.roots.clone(),
-    ));
     player::spawn_stats_recorder(
         controller.port.clone(),
         controller.coordinator.clone(),

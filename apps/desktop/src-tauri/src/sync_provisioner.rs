@@ -46,6 +46,8 @@ use serde::{Deserialize, Serialize};
 mod host_recovery;
 #[path = "sync_provisioner/pairing_store.rs"]
 mod pairing_store;
+#[path = "sync_provisioner/saved_state.rs"]
+mod saved_state;
 use pairing_store::DurableHostPairing;
 #[path = "sync_provisioner/remote_apply.rs"]
 mod remote_apply;
@@ -169,7 +171,23 @@ struct PeerIdentity {
 #[allow(clippy::needless_pass_by_value)]
 fn map_sync_client_error(error: ClientError) -> SyncRuntimeError {
     match error {
-        ClientError::Transport(_) => SyncRuntimeError::SyncConnectionFailed,
+        ClientError::Transport(error) => {
+            // reqwest's Display/Debug includes the endpoint URL. Keep useful
+            // transport classification without recording hosts or credentials.
+            tracing::warn!(target: "echo_desktop::sync",
+                timeout = error.is_timeout(), connect = error.is_connect(),
+                request = error.is_request(), body = error.is_body(),
+                "sync transport request failed");
+            #[cfg(test)]
+            eprintln!(
+                "sync transport request failed: timeout={} connect={} request={} body={}",
+                error.is_timeout(),
+                error.is_connect(),
+                error.is_request(),
+                error.is_body()
+            );
+            SyncRuntimeError::SyncConnectionFailed
+        }
         ClientError::HostRejected(status) if status == reqwest::StatusCode::SERVICE_UNAVAILABLE => {
             SyncRuntimeError::SyncHostUnavailable
         }
@@ -440,7 +458,19 @@ impl NativeSyncProvisioner {
         if !configuration.host || configuration.binding != binding {
             return Err(SyncRuntimeError::LibraryUnavailable);
         }
+        let identity = self.host_identity(configuration.local_root)?;
+        if identity.binding != binding {
+            return Err(SyncRuntimeError::Unconfigured);
+        }
         let checkpoint = self.recover_checkpoint(binding)?;
+        self.recover_saved_sync_state(
+            configuration.local_root,
+            configuration.local_device,
+            echo_core::domain::library::durability::RecoverySessionRole::Host,
+            checkpoint
+                .read()
+                .map_err(|_| SyncRuntimeError::Unconfigured)?,
+        )?;
         let confirm = ConfirmHostMutation::new(self.database.as_ref(), checkpoint.as_ref());
         let mut reanchored = false;
         loop {

@@ -69,6 +69,29 @@ pub(crate) fn create_playlist(
     )?;
     Ok(())
 }
+pub(crate) fn rename_playlist(
+    connection: &Connection,
+    id: PlaylistId,
+    name: &str,
+) -> Result<(), Error> {
+    connection.execute("UPDATE playlists SET display_name = ?2, normalized_name_key = ?3, updated_at = ?4 WHERE uuid = ?1", params![id.to_string(), name, playlist_name_key(name), now_ms()]).map_err(map_constraint)?;
+    enqueue_object_snapshot(
+        connection,
+        super::super::sync::enqueue::KIND_PLAYLIST,
+        &id.to_string(),
+        &serde_json::json!({ "display_name": name }),
+        super::super::sync::enqueue::OP_UPSERT,
+    )?;
+    let now_secs = u64::try_from(now_ms().max(0)).unwrap_or(0) / 1_000;
+    advance_object_hlc(
+        connection,
+        super::super::sync::enqueue::KIND_PLAYLIST,
+        &id.to_string(),
+        now_secs,
+    )?;
+    Ok(())
+}
+
 pub(crate) fn add_member(
     connection: &Connection,
     playlist: PlaylistId,
@@ -97,18 +120,14 @@ pub(crate) fn add_member(
         return Ok(());
     }
     connection.execute("INSERT INTO playlist_songs (playlist_uuid, song_uuid, position, added_at, member_uuid) VALUES (?1, ?2, ?3, ?4, ?5)", params![playlist.to_string(), song.to_string(), i64::try_from(position).unwrap_or(i64::MAX), now_ms(), member_uuid.to_string()]).map_err(map_constraint)?;
-    // Membership add is a playlist logic change — enqueue a playlist snapshot
-    // whose payload records the new member set (position appended) so 二期 has
-    // the authoritative member list for this revision.
-    let members_json = playlist_members_excerpt(connection, playlist)?;
-    let payload = serde_json::json!({
-        "members": members_json,
-    });
+    // enqueue_object_snapshot builds the authoritative full playlist snapshot
+    // for every playlist upsert. Passing a partial members payload here would
+    // serialize the member list twice (once here and once in that helper).
     enqueue_object_snapshot(
         connection,
         super::super::sync::enqueue::KIND_PLAYLIST,
         &playlist.to_string(),
-        &payload,
+        &serde_json::json!({}),
         super::super::sync::enqueue::OP_UPSERT,
     )?;
     Ok(())
@@ -159,10 +178,27 @@ pub(crate) fn playlist_full_snapshot_payload(
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(storage)?;
+    let key = serde_json::to_string(&crate::domain::sync::ObjectKey::Playlist(playlist))
+        .map_err(storage)?;
+    let saved: Option<String> = connection.query_row(
+        "SELECT r.envelope_json FROM library_recovery_records r JOIN playlists p ON p.library_root_uuid=r.library_root_uuid WHERE p.uuid=?1 AND r.object_key=?2 AND r.row_kind='record'",
+        params![playlist.to_string(), key], |row| row.get(0),
+    ).optional().map_err(storage)?;
+    let cover = saved
+        .map(|json| {
+            serde_json::from_str::<crate::domain::library::PortableRecordEnvelope>(&json)
+                .map_err(storage)
+        })
+        .transpose()?
+        .and_then(|envelope| match envelope.into_record() {
+            crate::domain::library::PortableRecord::Playlist(record) => record.cover_asset,
+            _ => None,
+        });
     Ok(serde_json::json!({
         "playlist_uuid": playlist.to_string(),
         "display_name": display_name,
         "created_at": created_at,
+        "cover_asset": cover,
         "members": playlist_members_excerpt(connection, playlist)?,
     }))
 }
@@ -221,6 +257,18 @@ pub(crate) fn upsert_operation_item(
         .ok_or_else(|| Error::InvariantViolation {
             why: "operation item requires a persisted journal envelope".to_owned(),
         })?;
+    let remote_claimed: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sync_remote_publication_claims WHERE local_root_uuid = ?1 AND normalized_relative_path = ?2 AND released = 0)",
+            params![root, item.claim_key],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if remote_claimed {
+        return Err(Error::conflict(
+            "operation target is claimed by a remote resource publication",
+        ));
+    }
     // The item's `song_uuid` column carries a foreign key into `songs`. An
     // import's *reserved* SongId has no songs row until DatabaseCommitted, so
     // the reservation lives in the envelope's `reserved_song_uuid` (no FK)
@@ -273,7 +321,7 @@ pub(crate) fn incomplete_operation_items(
     // uuid and envelope kind are read off the trailing columns.
     let mut statement = connection
         .prepare(
-            "SELECT i.kind, i.state, COALESCE(i.song_uuid, j.reserved_song_uuid), i.target_relative_path, i.expected_hash, i.item_key, i.normalized_target_path, i.source_locator, i.staging_relative_path, i.operation_uuid, j.kind FROM operation_items i JOIN operation_journal j ON j.operation_uuid = i.operation_uuid WHERE i.library_root_uuid = ?1 AND i.state NOT IN ('completed', 'rolled_back', 'database_finalized', 'restored') ORDER BY i.operation_uuid, i.item_key",
+            "SELECT i.kind, i.state, COALESCE(i.song_uuid, j.reserved_song_uuid), i.target_relative_path, i.expected_hash, i.item_key, i.normalized_target_path, i.source_locator, i.staging_relative_path, i.operation_uuid, j.kind FROM operation_items i JOIN operation_journal j ON j.operation_uuid = i.operation_uuid WHERE i.library_root_uuid = ?1 AND (i.state NOT IN ('completed', 'rolled_back', 'database_finalized', 'restored') OR (i.state = 'restored' AND j.kind = 'delete' AND EXISTS (SELECT 1 FROM songs s WHERE s.uuid = COALESCE(i.song_uuid, j.reserved_song_uuid) AND s.availability = 'pending_delete'))) ORDER BY i.operation_uuid, i.item_key",
         )
         .map_err(storage)?;
     let rows = statement

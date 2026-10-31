@@ -159,6 +159,56 @@ describe("AddToPlaylistDialog (task 10.9)", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("reports a saved-but-unprojected membership as saved and retries that operation", async () => {
+    call.mockReset();
+    call.mockResolvedValueOnce([{ id: "pl-1", name: "Chill", memberCount: 0 }] as never);
+    call.mockResolvedValueOnce([] as never);
+    call.mockRejectedValueOnce(
+      Object.assign(new Error("saved"), {
+        code: "library_saved_pending_projection",
+        messageKey: "library.savedPendingProjection",
+        retryable: false,
+        operationId: "op-add",
+        durabilityOutcome: {
+          kind: "savedPendingProjection",
+          operationId: "op-add",
+          reason: "projectionPending",
+        },
+      }),
+    );
+
+    const onClose = vi.fn();
+    const onDone = vi.fn();
+    render(
+      <>
+        <AddToPlaylistDialog songId="song-9" root="root-1" onClose={onClose} onDone={onDone} />
+        <ToastView />
+      </>,
+    );
+
+    await screen.findByLabelText("Chill");
+    fireEvent.click(screen.getByLabelText("Chill"));
+    fireEvent.click(screen.getByText("确认"));
+
+    // Saved, not failed: no error banner, and the flow still completes.
+    const toast = await screen.findByTestId("toast");
+    await waitFor(() => expect(toast).toHaveTextContent("已保存到音乐库，1 项等待更新视图"));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(onDone).toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+
+    call.mockResolvedValueOnce(undefined as never);
+    fireEvent.click(screen.getByRole("button", { name: "恢复" }));
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith("retry_library_operation", {
+        root: "root-1",
+        operation: "op-add",
+      }),
+    );
+    // One add, one recovery of that same operation — never a second add.
+    expect(call.mock.calls.filter(([command]) => command === "add_to_playlists")).toHaveLength(1);
+  });
+
   it("does not mutate and reports when no playlist is selected", async () => {
     call.mockReset();
     call.mockResolvedValueOnce([{ id: "pl-1", name: "Chill", memberCount: 0 }] as never);

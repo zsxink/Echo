@@ -25,7 +25,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Condvar, Mutex};
+use std::sync::{mpsc, Arc, Condvar, Mutex};
 
 use rusqlite::params;
 use rusqlite::{Connection, OptionalExtension, Transaction};
@@ -41,9 +41,7 @@ use crate::domain::entities::{
     LibraryRoot, LyricsCandidate, LyricsSource, MediaDiagnostic, PlaylistMember, Song,
     SongAvailability,
 };
-use crate::domain::ids::{
-    LibraryRootId, OperationId, PlaybackSessionId, PlaylistId, RelativeMediaPath, SongId,
-};
+use crate::domain::ids::{LibraryRootId, OperationId, PlaylistId, RelativeMediaPath, SongId};
 use crate::domain::state::scan::{ScanProgress, ScanState};
 use crate::domain::text::{normalized_key, playlist_name_key};
 use crate::error::{Error, Subject};
@@ -52,6 +50,9 @@ pub(crate) mod actor;
 pub(crate) mod connection;
 pub(crate) mod conversion;
 pub(crate) mod device_state;
+pub(crate) mod durability_backfill;
+pub(crate) mod durability_projection;
+mod local_library_edit;
 pub(crate) mod query;
 pub(crate) mod statements;
 pub(crate) mod support;
@@ -64,8 +65,8 @@ use actor::SqliteWriteActor;
 #[cfg(test)]
 use connection::apply_migration_set;
 use connection::{
-    apply_migrations, backup_connection, backup_path, file_is_non_empty, open_reader, open_writer,
-    quick_check_connection, reader_count,
+    apply_migrations, backup_connection, backup_path, file_is_non_empty, is_database_damage,
+    open_reader, open_writer, quarantine_database, quick_check_connection, reader_count,
 };
 use conversion::{
     availability_from_db, operation_item_from_row, root_from_row, scan_state_from_db, song_from_row,
@@ -128,18 +129,38 @@ impl ReaderPool {
     }
 }
 
+/// Callback invoked after a root's projection worker catches the catalog up to
+/// its directory. The desktop runtime wires it to a Tauri event so the UI
+/// re-pulls the read model that changed out of band from the originating
+/// command.
+pub type ProjectionNotifier = Arc<dyn Fn(LibraryRootId) + Send + Sync>;
+
 /// Real SQLite implementation of the library repositories and unit of work.
 ///
 /// `open` applies ordered migrations before the actor starts, then owns one
 /// write connection plus three read-only WAL connections. The type exposes no
 /// `rusqlite` connection to application callers.
 pub struct SqliteDatabase {
+    library_control: Mutex<Option<Arc<dyn crate::application::ports::ControlPlanePort>>>,
+    library_projection_workers: Mutex<
+        BTreeMap<
+            LibraryRootId,
+            Arc<crate::application::library_projection_worker::LibraryProjectionWorker>,
+        >,
+    >,
     path: PathBuf,
     writer: SqliteWriteActor,
     readers: ReaderPool,
     /// The single stable identity of this device (migration 0006), loaded once
     /// at open. Portable records are stamped with it.
     device_id: crate::domain::library::DeviceId,
+    /// A damaged predecessor file moved aside at open. Diagnostic only.
+    quarantined: Option<PathBuf>,
+    /// Optional notifier invoked after the projection worker catches a root's
+    /// directory up to the catalog. The desktop runtime wires it to a Tauri
+    /// event so the UI re-pulls the catalog read model (playlists / songs /
+    /// counts) that changed out of band from the originating command.
+    projection_notify: Mutex<Option<ProjectionNotifier>>,
 }
 
 fn read_device_play_counts(

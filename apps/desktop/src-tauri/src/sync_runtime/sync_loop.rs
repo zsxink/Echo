@@ -8,6 +8,7 @@ use super::control::{jittered_retry_delay, wait_for_sync_wakeup};
 #[allow(clippy::too_many_lines)]
 impl SyncRuntime {
     pub(super) fn start_sync_loop(&self, role: SyncRole) -> Result<(), SyncRuntimeError> {
+        self.ensure_running()?;
         let cycle_port = self
             .cycle_port
             .clone()

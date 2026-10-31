@@ -1,44 +1,240 @@
 //! Portable control-plane filesystem adapter with bounded, root-constrained
-//! record IO and recovery before every public access.
+//! record IO. Read access never creates or acquires a write lock.
 
+#[cfg(test)]
+use crate::application::ports::ControlPlaneInventoryPort as _;
 use std::sync::{Arc, Mutex, MutexGuard};
+
+struct AccessGuard<'a> {
+    process: std::fs::File,
+    // Rust drops fields in declaration order. Even if explicit unlock fails,
+    // close the file before allowing another thread through the adapter gate.
+    _thread: MutexGuard<'a, ()>,
+}
+
+impl Drop for AccessGuard<'_> {
+    fn drop(&mut self) {
+        // Release the permit while the adapter mutex is still held. Closing
+        // just this handle can leave flock alive in a concurrently spawned
+        // child's inherited file description until its close-on-exec runs.
+        // Drop cannot report cleanup errors; closing the file remains the
+        // fallback and a failed unlock can only keep future writers excluded.
+        let _ = fs2::FileExt::unlock(&self.process);
+    }
+}
 
 use super::portable_migration as migration;
 use super::registry::RootRegistry;
-use crate::application::ports::{ControlPlanePort, ManifestState};
+use crate::application::ports::{ControlPlanePort, LibraryWriteSession, ManifestState};
 use crate::domain::ids::LibraryRootId;
 use crate::domain::library::{
     LibraryManifest, PortableRecord, PortableRecordDocument, PortableRecordEnvelope, RecordKind,
-    CURRENT_FORMAT_VERSION,
 };
 use crate::error::Error;
+
+struct DirectoryWriteSession<'a> {
+    plane: &'a RootControlPlane,
+    root: LibraryRootId,
+    state: super::durability::WriteSessionState,
+    _guard: AccessGuard<'a>,
+}
+
+#[derive(Clone, Debug)]
+struct ReplayCacheEntry {
+    replay: crate::domain::library::durability::LibraryReplay,
+    files: std::collections::BTreeMap<String, String>,
+    transactions: Option<super::durability::TransactionsFingerprint>,
+}
+
+type CachedReplay = (
+    crate::domain::library::durability::LibraryReplay,
+    std::collections::BTreeMap<String, String>,
+);
+
+impl LibraryWriteSession for DirectoryWriteSession<'_> {
+    fn replay(&self) -> &crate::domain::library::durability::LibraryReplay {
+        self.state.replay()
+    }
+
+    fn commit(
+        &mut self,
+        batch: &crate::domain::library::durability::LibraryBatch,
+    ) -> Result<crate::domain::library::durability::CommitOutcome, Error> {
+        #[cfg(any(test, feature = "testkit"))]
+        if let Some(hook) = &self.plane.commit_hook {
+            return super::durability::commit_edit(
+                &self.plane.registry,
+                &self.plane.validation_cache,
+                self.root,
+                &mut self.state,
+                batch,
+                &mut |phase, index| (hook.0)(phase, index),
+            );
+        }
+        super::durability::commit_edit(
+            &self.plane.registry,
+            &self.plane.validation_cache,
+            self.root,
+            &mut self.state,
+            batch,
+            &mut |_, _| Ok(()),
+        )
+        .inspect(|_| {
+            let _ = self.plane.remember_replay(
+                self.root,
+                self.state.replay().clone(),
+                self.state.files().clone(),
+            );
+        })
+    }
+}
 
 /// Filesystem adapter for the portable `echo/` control surface.
 #[derive(Clone, Debug)]
 pub struct RootControlPlane {
     registry: RootRegistry,
     access: Arc<Mutex<()>>,
+    replay_cache: Arc<Mutex<std::collections::BTreeMap<LibraryRootId, ReplayCacheEntry>>>,
+    #[cfg(any(test, feature = "testkit"))]
+    commit_hook: Option<CommitTestHook>,
+    pub(super) validation_cache: Arc<super::durability::ValidationCache>,
+}
+
+#[cfg(any(test, feature = "testkit"))]
+type CommitHookCallback = dyn Fn(&str, usize) -> Result<(), Error> + Send + Sync;
+#[cfg(any(test, feature = "testkit"))]
+#[derive(Clone)]
+struct CommitTestHook(Arc<CommitHookCallback>);
+#[cfg(any(test, feature = "testkit"))]
+impl std::fmt::Debug for CommitTestHook {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("CommitTestHook")
+    }
 }
 
 impl RootControlPlane {
+    /// Install an instance-local filesystem boundary hook for lifecycle tests.
+    #[cfg(any(test, feature = "testkit"))]
+    #[must_use]
+    pub fn with_commit_hook(
+        mut self,
+        hook: impl Fn(&str, usize) -> Result<(), Error> + Send + Sync + 'static,
+    ) -> Self {
+        self.commit_hook = Some(CommitTestHook(Arc::new(hook)));
+        self
+    }
+
     #[must_use]
     pub fn new(registry: RootRegistry) -> Self {
         Self {
             registry,
+            #[cfg(any(test, feature = "testkit"))]
+            commit_hook: None,
             access: Arc::new(Mutex::new(())),
+            replay_cache: Arc::default(),
+            validation_cache: Arc::default(),
         }
+    }
+
+    fn cached_replay(&self, root: LibraryRootId) -> Result<Option<CachedReplay>, Error> {
+        let current = super::durability::transactions_fingerprint(&self.registry, root)?;
+        let mut cache = self
+            .replay_cache
+            .lock()
+            .map_err(|_| Error::InvariantViolation {
+                why: "journal replay cache poisoned".to_owned(),
+            })?;
+        if let Some(entry) = cache.get(&root) {
+            if entry.transactions == current {
+                return Ok(Some((entry.replay.clone(), entry.files.clone())));
+            }
+            cache.remove(&root);
+        }
+        drop(cache);
+        Ok(None)
+    }
+
+    fn remember_replay(
+        &self,
+        root: LibraryRootId,
+        replay: crate::domain::library::durability::LibraryReplay,
+        files: std::collections::BTreeMap<String, String>,
+    ) -> Result<(), Error> {
+        let transactions = super::durability::transactions_fingerprint(&self.registry, root)?;
+        self.replay_cache
+            .lock()
+            .map_err(|_| Error::InvariantViolation {
+                why: "journal replay cache poisoned".to_owned(),
+            })?
+            .insert(
+                root,
+                ReplayCacheEntry {
+                    replay,
+                    files,
+                    transactions,
+                },
+            );
+        Ok(())
     }
 
     fn prepare(
         &self,
         root: LibraryRootId,
         allow_incompatible: bool,
-    ) -> Result<MutexGuard<'_, ()>, Error> {
+    ) -> Result<AccessGuard<'_>, Error> {
+        let guard = self.prepare_write(root, allow_incompatible)?;
+        if !allow_incompatible {
+            super::durability::recover(&self.registry, &self.validation_cache, root)?;
+        }
+        Ok(guard)
+    }
+
+    // Commits perform their own recovery under this guard. Legacy writes use
+    // prepare(), which also recovers before modifying any materialized files.
+    fn prepare_write(
+        &self,
+        root: LibraryRootId,
+        allow_incompatible: bool,
+    ) -> Result<AccessGuard<'_>, Error> {
+        let guard = self.acquire_write(root)?;
+        self.prepare_locked_write(root, allow_incompatible, guard)
+    }
+
+    fn acquire_write(&self, root: LibraryRootId) -> Result<AccessGuard<'_>, Error> {
         let guard = self
             .access
             .lock()
             .map_err(|_| Error::unavailable("portable control plane", "access lock poisoned"))?;
-        migration::recover(&self.registry, root)?;
+        let lock_path = migration::path(&self.registry, root, "echo/write.lock")?;
+        let parent = lock_path
+            .parent()
+            .ok_or_else(|| Error::conflict("missing library lock parent"))?;
+        std::fs::create_dir_all(parent)
+            .map_err(|e| Error::io("create library lock directory", e, parent))?;
+        let lock_path = migration::path(&self.registry, root, "echo/write.lock")?;
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .map_err(|e| Error::io("open library write lock", e, &lock_path))?;
+        fs2::FileExt::try_lock_exclusive(&file)
+            .map_err(|e| Error::io("acquire library write lock", e, &lock_path))?;
+        // The guard must own the acquired lock before any fallible recovery or
+        // validation, so every early return explicitly unlocks as well.
+        Ok(AccessGuard {
+            process: file,
+            _thread: guard,
+        })
+    }
+
+    fn prepare_locked_write<'a>(
+        &self,
+        root: LibraryRootId,
+        allow_incompatible: bool,
+        guard: AccessGuard<'a>,
+    ) -> Result<AccessGuard<'a>, Error> {
         if !allow_incompatible {
             let manifest = self.manifest_unlocked(root)?;
             if let Some(manifest) = manifest {
@@ -51,6 +247,22 @@ impl RootControlPlane {
             }
         }
         Ok(guard)
+    }
+
+    fn prepare_read(&self, root: LibraryRootId, allow_incompatible: bool) -> Result<(), Error> {
+        // A read-only mount need not contain write.lock. Recovery is an explicit
+        // writer capability; readers overlay verified committed after-images.
+        if !allow_incompatible
+            && self
+                .manifest_unlocked(root)?
+                .is_some_and(|m| !m.is_compatible())
+        {
+            return Err(Error::UnsupportedMedia {
+                operation: "read portable library".to_owned(),
+                reason: "unsupported portable format".to_owned(),
+            });
+        }
+        Ok(())
     }
 
     fn manifest_unlocked(&self, root: LibraryRootId) -> Result<Option<LibraryManifest>, Error> {
@@ -74,6 +286,21 @@ impl RootControlPlane {
         root: LibraryRootId,
         relative: &str,
     ) -> Result<Option<PortableRecordDocument>, Error> {
+        let replay = super::durability::chain(&self.registry, &self.validation_cache, root)?;
+        let records = replay
+            .checkpoint
+            .iter()
+            .flat_map(|c| &c.records)
+            .chain(replay.commits.iter().flat_map(|c| &c.batch.records));
+        let mut latest = None;
+        for record in records {
+            if migration::record_relative(record.record())? == relative {
+                latest = Some(PortableRecordDocument::V2(record.clone()));
+            }
+        }
+        if latest.is_some() {
+            return Ok(latest);
+        }
         let Some(raw) =
             migration::read(&self.registry, root, relative, migration::MAX_RECORD_BYTES)?
         else {
@@ -131,7 +358,7 @@ impl RootControlPlane {
     }
 
     fn list_unlocked(&self, root: LibraryRootId, kind: RecordKind) -> Result<Vec<String>, Error> {
-        let mut result = Vec::new();
+        let mut result = std::collections::BTreeMap::new();
         for relative in migration::record_files(&self.registry, root, kind)? {
             let Some(raw) =
                 migration::read(&self.registry, root, &relative, migration::MAX_RECORD_BYTES)?
@@ -139,13 +366,41 @@ impl RootControlPlane {
                 continue;
             };
             if serde_json::from_str::<PortableRecordDocument>(&raw)
-                .is_ok_and(|document| document.record().kind() == kind)
+                .is_ok_and(|d| d.record().kind() == kind)
             {
-                result.push(raw);
+                result.insert(relative, raw);
             }
         }
-        result.sort();
-        Ok(result)
+        let replay = super::durability::chain(&self.registry, &self.validation_cache, root)?;
+        for record in replay
+            .checkpoint
+            .iter()
+            .flat_map(|c| &c.records)
+            .chain(replay.commits.iter().flat_map(|c| &c.batch.records))
+            .filter(|r| r.record().kind() == kind)
+        {
+            let raw = String::from_utf8(migration::encode(record, migration::MAX_RECORD_BYTES)?)
+                .map_err(|_| Error::conflict("portable encoding is not UTF-8"))?;
+            result.insert(migration::record_relative(record.record())?, raw);
+        }
+        Ok(result.into_values().collect())
+    }
+
+    fn existing_record_for_write(
+        &self,
+        root: LibraryRootId,
+        relative: &str,
+    ) -> Result<Option<PortableRecordDocument>, Error> {
+        migration::read(&self.registry, root, relative, migration::MAX_RECORD_BYTES)?
+            .map(|raw| {
+                serde_json::from_str::<PortableRecordDocument>(&raw).map_err(|error| {
+                    Error::Storage {
+                        what: "validate existing portable record before replacement".to_owned(),
+                        source: Box::new(error),
+                    }
+                })
+            })
+            .transpose()
     }
 
     fn write_json<T: serde::Serialize>(
@@ -160,6 +415,9 @@ impl RootControlPlane {
 }
 
 impl ControlPlanePort for RootControlPlane {
+    fn durability(&self) -> Option<&dyn crate::application::ports::LibraryDurabilityPort> {
+        Some(self)
+    }
     fn write_manifest(&self, root: LibraryRootId, manifest: &LibraryManifest) -> Result<(), Error> {
         let _guard = self.prepare(root, false)?;
         if !manifest.is_compatible() {
@@ -176,7 +434,7 @@ impl ControlPlanePort for RootControlPlane {
     }
 
     fn read_manifest(&self, root: LibraryRootId) -> Result<Option<LibraryManifest>, Error> {
-        let _guard = self.prepare(root, true)?;
+        self.prepare_read(root, true)?;
         Ok(self
             .manifest_unlocked(root)?
             .filter(LibraryManifest::is_compatible))
@@ -185,9 +443,18 @@ impl ControlPlanePort for RootControlPlane {
     fn write_record(&self, root: LibraryRootId, record: &PortableRecord) -> Result<(), Error> {
         let _guard = self.prepare(root, false)?;
         record.object_key()?;
+        let relative = migration::record_relative(record)?;
+        let existing = self.existing_record_for_write(root, &relative)?;
+        if existing.as_ref().is_some_and(|document| {
+            document.sync_metadata().is_some() && document.record() != record
+        }) {
+            return Err(Error::conflict(
+                "changing a confirmed record requires a durable batch preserving its baseline",
+            ));
+        }
         if self
             .manifest_unlocked(root)?
-            .is_some_and(|manifest| manifest.format_version == 2)
+            .is_some_and(|manifest| matches!(manifest.format_version, 2 | 3))
         {
             let relative = migration::record_relative(record)?;
             let sync = self
@@ -210,7 +477,7 @@ impl ControlPlanePort for RootControlPlane {
         kind: RecordKind,
         object_uuid: &str,
     ) -> Result<Option<PortableRecord>, Error> {
-        let _guard = self.prepare(root, false)?;
+        self.prepare_read(root, false)?;
         Ok(self
             .read_unlocked(root, kind, object_uuid)?
             .map(PortableRecordDocument::into_record))
@@ -230,12 +497,12 @@ impl ControlPlanePort for RootControlPlane {
     }
 
     fn list_records(&self, root: LibraryRootId, kind: RecordKind) -> Result<Vec<String>, Error> {
-        let _guard = self.prepare(root, false)?;
+        self.prepare_read(root, false)?;
         self.list_unlocked(root, kind)
     }
 
     fn manifest_state(&self, root: LibraryRootId) -> Result<ManifestState, Error> {
-        let _guard = self.prepare(root, true)?;
+        self.prepare_read(root, true)?;
         let Some(raw) = migration::read(
             &self.registry,
             root,
@@ -256,16 +523,6 @@ impl ControlPlanePort for RootControlPlane {
         Ok(ManifestState::Compatible(manifest))
     }
 
-    fn records_present(&self, root: LibraryRootId) -> Result<bool, Error> {
-        let _guard = self.prepare(root, false)?;
-        for &kind in RecordKind::ALL {
-            if !migration::record_files(&self.registry, root, kind)?.is_empty() {
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    }
-
     fn control_plane_usable(&self, root: LibraryRootId) -> Result<bool, Error> {
         let _guard = self.prepare(root, true)?;
         let relative = format!("echo/.probe-{}", uuid::Uuid::new_v4());
@@ -281,23 +538,18 @@ impl ControlPlanePort for RootControlPlane {
     ) -> Result<(), Error> {
         let _guard = self.prepare(root, false)?;
         let manifest = self.manifest_unlocked(root)?;
-        let Some(manifest) =
-            manifest.filter(|value| value.format_version == CURRENT_FORMAT_VERSION)
-        else {
+        let Some(_) = manifest.filter(|value| matches!(value.format_version, 2 | 3)) else {
             return Err(Error::conflict(
                 "portable v2 writes require a completed format upgrade",
             ));
         };
         record.validate()?;
-        if record
-            .sync_metadata()
-            .is_some_and(|sync| sync.binding.library_id.as_uuid() != manifest.library_id.as_uuid())
-        {
-            return Err(Error::conflict(
-                "portable record belongs to a different library",
-            ));
-        }
-        self.write_json(root, &migration::record_relative(record.record())?, record)
+        // The local directory identity and the host's sync library identity
+        // are independent. Envelope validation checks the binding itself;
+        // trusted-session authorization belongs to the sync application layer.
+        let relative = migration::record_relative(record.record())?;
+        self.existing_record_for_write(root, &relative)?;
+        self.write_json(root, &relative, record)
     }
 
     fn read_record_document(
@@ -306,7 +558,7 @@ impl ControlPlanePort for RootControlPlane {
         kind: RecordKind,
         object_uuid: &str,
     ) -> Result<Option<PortableRecordDocument>, Error> {
-        let _guard = self.prepare(root, false)?;
+        self.prepare_read(root, false)?;
         self.read_unlocked(root, kind, object_uuid)
     }
 
@@ -315,7 +567,7 @@ impl ControlPlanePort for RootControlPlane {
         root: LibraryRootId,
         kind: RecordKind,
     ) -> Result<Vec<PortableRecordDocument>, Error> {
-        let _guard = self.prepare(root, false)?;
+        self.prepare_read(root, false)?;
         self.list_unlocked(root, kind)?
             .into_iter()
             .map(|raw| {
@@ -333,7 +585,7 @@ impl ControlPlanePort for RootControlPlane {
         deleted_kind: RecordKind,
         object_uuid: &str,
     ) -> Result<Option<PortableRecordDocument>, Error> {
-        let _guard = self.prepare(root, false)?;
+        self.prepare_read(root, false)?;
         if deleted_kind == RecordKind::Tombstone {
             return Err(Error::conflict("invalid deleted kind"));
         }
@@ -374,321 +626,141 @@ impl ControlPlanePort for RootControlPlane {
         }
         Ok(())
     }
+}
 
-    fn apply_portable_upgrade(
+impl crate::application::ports::LibraryAssetPort for RootControlPlane {
+    fn write_asset(&self, root: LibraryRootId, bytes: &[u8]) -> Result<String, Error> {
+        let _guard = self.prepare(root, false)?;
+        super::durability::write_asset(&self.registry, root, bytes)
+    }
+    fn read_asset(&self, root: LibraryRootId, hash: &str) -> Result<Option<Vec<u8>>, Error> {
+        self.prepare_read(root, false)?;
+        super::durability::read_asset(&self.registry, root, hash)
+    }
+}
+
+impl crate::application::ports::LibraryDurabilityPort for RootControlPlane {
+    fn commit(
         &self,
         root: LibraryRootId,
-        updates: &[PortableRecordEnvelope],
-        manifest: &LibraryManifest,
-    ) -> Result<(), Error> {
-        let _guard = self
-            .access
-            .lock()
-            .map_err(|_| Error::unavailable("portable migration", "access lock poisoned"))?;
-        migration::apply(&self.registry, root, updates, manifest)
+        batch: &crate::domain::library::durability::LibraryBatch,
+    ) -> Result<crate::domain::library::durability::CommitOutcome, Error> {
+        let _guard = self.prepare_write(root, false)?;
+        #[cfg(any(test, feature = "testkit"))]
+        if let Some(hook) = &self.commit_hook {
+            return super::durability::commit_with_hook(
+                &self.registry,
+                &self.validation_cache,
+                root,
+                batch,
+                &mut |phase, index| (hook.0)(phase, index),
+            );
+        }
+        super::durability::commit(&self.registry, &self.validation_cache, root, batch)
+    }
+    fn recover(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<crate::domain::library::durability::LibraryReplay, Error> {
+        let _guard = self.prepare(root, true)?;
+        let replay = super::durability::recover(&self.registry, &self.validation_cache, root)?;
+        let files = super::durability::materialization_files(&self.registry, root)?;
+        let _ = self.remember_replay(root, replay.clone(), files);
+        Ok(replay)
+    }
+    fn catch_up_projection(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<crate::domain::library::durability::LibraryReplay, Error> {
+        let _guard = self.prepare_write(root, false)?;
+        let replay = super::durability::catch_up_projection(
+            &self.registry,
+            &self.validation_cache,
+            root,
+            &mut |_, _| Ok(()),
+        )?;
+        let files = super::durability::materialization_files(&self.registry, root)?;
+        let _ = self.remember_replay(root, replay.clone(), files);
+        Ok(replay)
+    }
+    fn projection_replay(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<crate::domain::library::durability::LibraryReplay, Error> {
+        super::durability::projection_replay(&self.registry, &self.validation_cache, root)
+    }
+    fn read_operation(
+        &self,
+        root: LibraryRootId,
+        id: uuid::Uuid,
+    ) -> Result<Option<crate::domain::library::durability::LibraryCommit>, Error> {
+        self.prepare_read(root, false)?;
+        super::durability::read_operation(&self.registry, &self.validation_cache, root, id)
+    }
+    fn operation_status(
+        &self,
+        root: LibraryRootId,
+        id: uuid::Uuid,
+    ) -> Result<Option<crate::domain::library::durability::CommitOutcome>, Error> {
+        self.prepare_read(root, false)?;
+        super::durability::operation_status(&self.registry, &self.validation_cache, root, id)
+    }
+}
+
+impl crate::application::ports::LibraryWriteSessionPort for RootControlPlane {
+    fn begin_write(
+        &self,
+        root: LibraryRootId,
+    ) -> Result<Option<Box<dyn LibraryWriteSession + '_>>, Error> {
+        let guard = self.prepare_write(root, false)?;
+        let cached = self.cached_replay(root)?;
+        let (cached_replay, cached_files) = cached.unzip();
+        let state = super::durability::begin_edit(
+            &self.registry,
+            &self.validation_cache,
+            root,
+            cached_replay,
+            cached_files,
+            false,
+            false,
+            &mut |_, _| Ok(()),
+        )?;
+        // Opting into an ordered edit also publishes the journal format fence.
+        // Legacy snapshot bytes remain intact and continuation can import them
+        // alongside the new journal. Raw commits keep their strict v3 fence.
+        super::durability::enable_journal(&self.registry, root, &mut |_, _| Ok(()))?;
+        Ok(Some(Box::new(DirectoryWriteSession {
+            plane: self,
+            root,
+            state,
+            _guard: guard,
+        })))
+    }
+}
+
+impl crate::application::ports::ControlPlaneInventoryPort for RootControlPlane {
+    fn records_present(&self, root: LibraryRootId) -> Result<bool, Error> {
+        self.prepare_read(root, false)?;
+        let replay = super::durability::chain(&self.registry, &self.validation_cache, root)?;
+        if replay
+            .checkpoint
+            .as_ref()
+            .is_some_and(|c| !c.records.is_empty())
+            || replay.commits.iter().any(|c| !c.batch.records.is_empty())
+        {
+            return Ok(true);
+        }
+        for &kind in RecordKind::ALL {
+            if !migration::record_files(&self.registry, root, kind)?.is_empty() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::application::ports::ControlPlanePort;
-    use crate::domain::ids::{LibraryRootId, Revision};
-    use crate::domain::library::{
-        DeviceId, HybridLogicalClock, LibraryId, LibraryRelativePath, SongRecord,
-    };
+mod tests;
 
-    fn setup() -> (
-        tempfile::TempDir,
-        RootRegistry,
-        LibraryRootId,
-        RootControlPlane,
-    ) {
-        let dir = tempfile::tempdir().unwrap();
-        let registry = RootRegistry::new();
-        let root = LibraryRootId::new();
-        registry.register(root, dir.path());
-        let plane = RootControlPlane::new(registry.clone());
-        (dir, registry, root, plane)
-    }
-
-    fn sample_record(root_uuid: uuid::Uuid) -> PortableRecord {
-        PortableRecord::Song(SongRecord {
-            song_uuid: root_uuid,
-            revision: Revision::INITIAL,
-            updated_by_device_id: DeviceId::from_uuid(
-                uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap(),
-            ),
-            hlc: HybridLogicalClock::new(1_700_000_000, 0),
-            media_path: LibraryRelativePath::new("media/周杰伦/周杰伦 - 晴天.flac").unwrap(),
-            content_hash: "abc123".to_owned(),
-            added_at: 1_700_001_002_003,
-            title: Some("晴天".to_owned()),
-            artist: Some("周杰伦".to_owned()),
-            album: None,
-        })
-    }
-
-    #[test]
-    fn manifest_round_trips_atomically() {
-        let (_dir, _registry, root, plane) = setup();
-        let manifest = LibraryManifest::new(
-            LibraryId::from_uuid(uuid::Uuid::new_v4()),
-            "0.1.0".to_owned(),
-        );
-        plane
-            .write_manifest(root, &manifest)
-            .expect("write manifest");
-        let read = plane
-            .read_manifest(root)
-            .expect("read manifest")
-            .expect("present");
-        assert_eq!(read, manifest);
-        assert!(read.is_compatible());
-    }
-
-    #[test]
-    fn manifest_absent_is_none() {
-        let (_dir, _registry, root, plane) = setup();
-        assert!(plane.read_manifest(root).expect("read").is_none());
-    }
-
-    #[test]
-    fn record_round_trips_through_shard_path() {
-        let (dir, _registry, root, plane) = setup();
-        let song_uuid = uuid::Uuid::new_v4();
-        let record = sample_record(song_uuid);
-        plane.write_record(root, &record).expect("write record");
-        let read = plane
-            .read_record(root, RecordKind::Song, &song_uuid.to_string())
-            .expect("read record")
-            .expect("present");
-        assert_eq!(read, record);
-
-        // The file lives in the prefix-sharded path.
-        let expected_prefix = &song_uuid.to_string()[..2];
-        let echo = dir.path().join("echo");
-        let record_path = echo
-            .join("records")
-            .join("songs")
-            .join(expected_prefix)
-            .join(format!("{song_uuid}.json"));
-        assert!(record_path.is_file(), "record at sharded path");
-    }
-
-    #[test]
-    fn record_absent_is_none() {
-        let (_dir, _registry, root, plane) = setup();
-        assert!(plane
-            .read_record(root, RecordKind::Song, &uuid::Uuid::new_v4().to_string())
-            .expect("read")
-            .is_none());
-    }
-
-    #[test]
-    fn delete_record_is_idempotent() {
-        let (_dir, _registry, root, plane) = setup();
-        let song_uuid = uuid::Uuid::new_v4();
-        plane
-            .write_record(root, &sample_record(song_uuid))
-            .expect("write");
-        plane
-            .delete_record(root, RecordKind::Song, &song_uuid.to_string())
-            .expect("delete");
-        assert!(plane
-            .read_record(root, RecordKind::Song, &song_uuid.to_string())
-            .expect("read")
-            .is_none());
-        // Deleting a missing record is a no-op.
-        plane
-            .delete_record(root, RecordKind::Song, &song_uuid.to_string())
-            .expect("delete again");
-    }
-
-    #[test]
-    fn tmp_files_are_ignored_as_records() {
-        let (dir, _registry, root, plane) = setup();
-        let song_uuid = uuid::Uuid::new_v4();
-        // Write the real record, then place a same-dir temp file with a partial
-        // JSON body (simulating an interrupted atomic write).
-        plane
-            .write_record(root, &sample_record(song_uuid))
-            .expect("write real record");
-        let echo = dir.path().join("echo");
-        let record_path = echo
-            .join("records")
-            .join("songs")
-            .join(&song_uuid.to_string()[..2])
-            .join(format!("{song_uuid}.json"));
-        let temp = record_path.with_file_name(format!("{song_uuid}.json.tmp-deadbeef"));
-        std::fs::write(&temp, "{\"partial\": true, \"unfinished").expect("write temp");
-        // The reader still sees the real record; the temp is invisible.
-        assert!(plane
-            .read_record(root, RecordKind::Song, &song_uuid.to_string())
-            .expect("read")
-            .is_some());
-        // The temp never appears in listings.
-        let listed = plane
-            .list_records(root, RecordKind::Song)
-            .expect("list records");
-        assert_eq!(listed.len(), 1, "only the real record is listed");
-        assert!(!listed[0].contains("unfinished"), "no partial body listed");
-
-        // A malformed *published* record (no temp) is ignored, not surfaced.
-        std::fs::write(&record_path, "{\"broken\": ").expect("corrupt record");
-        assert!(plane
-            .read_record(root, RecordKind::Song, &song_uuid.to_string())
-            .expect("read")
-            .is_none());
-        let listed = plane.list_records(root, RecordKind::Song).expect("list");
-        assert_eq!(
-            listed.len(),
-            0,
-            "malformed records are not surfaced as valid"
-        );
-    }
-
-    #[test]
-    fn unknown_format_manifest_is_absent() {
-        let (dir, _registry, root, plane) = setup();
-        let echo = dir.path().join("echo");
-        std::fs::create_dir_all(&echo).expect("echo dir");
-        // A future-format manifest must be treated as incompatible/absent.
-        std::fs::write(
-            echo.join("manifest.json"),
-            format!(
-                "{{\"format_version\": 99, \"library_id\": \"{}\", \"written_by_app_version\": \"0.1.0\"}}",
-                uuid::Uuid::new_v4()
-            ),
-        )
-        .expect("write future manifest");
-        assert!(plane.read_manifest(root).expect("read").is_none());
-    }
-
-    #[test]
-    fn control_plane_usable_detects_writable_and_readable() {
-        let (_dir, _registry, root, plane) = setup();
-        assert!(plane.control_plane_usable(root).expect("usable check"));
-        // A usable plane writes manifest fine.
-        plane
-            .write_manifest(
-                root,
-                &LibraryManifest::new(LibraryId::from_uuid(uuid::Uuid::new_v4()), "0.1.0"),
-            )
-            .expect("write manifest");
-    }
-
-    #[test]
-    fn manifest_state_separates_absent_compatible_and_future() {
-        let (dir, _registry, root, plane) = setup();
-        // 1. Absent: nothing written yet.
-        assert_eq!(
-            plane.manifest_state(root).expect("state"),
-            ManifestState::Absent
-        );
-        assert!(!plane.records_present(root).expect("records"));
-
-        // 2. Compatible: this build's own manifest.
-        let manifest = LibraryManifest::new(LibraryId::from_uuid(uuid::Uuid::new_v4()), "0.1.0");
-        plane.write_manifest(root, &manifest).expect("write");
-        assert_eq!(
-            plane.manifest_state(root).expect("state"),
-            ManifestState::Compatible(manifest)
-        );
-
-        // 3. Future format: present but untouchable — the self-heal path must
-        //    never see this as "absent".
-        let echo = dir.path().join("echo");
-        std::fs::write(
-            echo.join("manifest.json"),
-            format!(
-                "{{\"format_version\": 99, \"library_id\": \"{}\", \"written_by_app_version\": \"9.9.9\"}}",
-                uuid::Uuid::new_v4()
-            ),
-        )
-        .expect("write future manifest");
-        assert_eq!(
-            plane.manifest_state(root).expect("state"),
-            ManifestState::Incompatible { format_version: 99 }
-        );
-
-        // 4. Unparseable: also a refusal, not a self-heal trigger.
-        std::fs::write(echo.join("manifest.json"), "not json at all").expect("corrupt manifest");
-        assert_eq!(
-            plane.manifest_state(root).expect("state"),
-            ManifestState::Malformed
-        );
-    }
-
-    #[test]
-    fn records_present_ignores_temporaries_and_counts_every_kind() {
-        let (dir, _registry, root, plane) = setup();
-        // A kind directory holding only a temp file is *not* "records present"
-        // (an interrupted write must not turn a fresh root into a heal target).
-        let echo = dir.path().join("echo");
-        let songs = echo.join("records").join("songs").join("ab");
-        std::fs::create_dir_all(&songs).expect("shard dir");
-        std::fs::write(songs.join("x.json.tmp-1"), "{}").expect("temp");
-        assert!(!plane.records_present(root).expect("records"));
-
-        // A real record of any kind makes the directory a continuation target.
-        let song_uuid = uuid::Uuid::new_v4();
-        plane
-            .write_record(root, &sample_record(song_uuid))
-            .expect("write song record");
-        assert!(plane.records_present(root).expect("records"));
-
-        let fav_uuid = uuid::Uuid::new_v4();
-        plane
-            .write_record(
-                root,
-                &PortableRecord::Favorite(crate::domain::library::FavoriteRecord {
-                    song_uuid: fav_uuid,
-                    revision: Revision::INITIAL,
-                    updated_by_device_id: DeviceId::new(),
-                    hlc: HybridLogicalClock::default(),
-                    is_favorite: true,
-                }),
-            )
-            .expect("write favorite record");
-        assert!(plane.records_present(root).expect("records"));
-    }
-
-    #[test]
-    fn list_records_sorts_and_multiples() {
-        let (_dir, _registry, root, plane) = setup();
-        let a = uuid::Uuid::new_v4();
-        let b = uuid::Uuid::new_v4();
-        plane
-            .write_record(root, &sample_record(a))
-            .expect("write a");
-        plane
-            .write_record(root, &sample_record(b))
-            .expect("write b");
-        let listed = plane.list_records(root, RecordKind::Song).expect("list");
-        assert_eq!(listed.len(), 2, "two songs listed");
-        // Different kinds don't collide.
-        let fav = PortableRecord::Favorite(crate::domain::library::FavoriteRecord {
-            song_uuid: a,
-            revision: Revision::INITIAL,
-            updated_by_device_id: DeviceId::new(),
-            hlc: HybridLogicalClock::default(),
-            is_favorite: true,
-        });
-        plane.write_record(root, &fav).expect("write favorite");
-        assert_eq!(
-            plane
-                .list_records(root, RecordKind::Song)
-                .expect("songs")
-                .len(),
-            2
-        );
-        assert_eq!(
-            plane
-                .list_records(root, RecordKind::Favorite)
-                .expect("favorites")
-                .len(),
-            1
-        );
-    }
-}
+#[cfg(test)]
+mod lifecycle_tests;
