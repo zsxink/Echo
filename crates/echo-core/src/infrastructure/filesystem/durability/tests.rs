@@ -113,7 +113,12 @@ fn fail() -> Error {
     invalid("injected native boundary failure")
 }
 
-fn resource_and_state(registry: &RootRegistry, root: LibraryRootId, change: &mut LibraryBatch) {
+fn resource_and_state(
+    registry: &RootRegistry,
+    root: LibraryRootId,
+    change: &mut LibraryBatch,
+    state_id: uuid::Uuid,
+) {
     let bytes = b"fault-tested original";
     let hash = write_asset(registry, root, bytes).unwrap();
     change.resources.push(DurableResource {
@@ -123,7 +128,7 @@ fn resource_and_state(registry: &RootRegistry, root: LibraryRootId, change: &mut
     });
     change.state.push(DurableStateChange::new(
         StateKind::Claim,
-        uuid::Uuid::new_v4(),
+        state_id,
         serde_json::json!({"active": true}),
     ));
 }
@@ -146,9 +151,17 @@ fn library_durability_fs_commit_retry_and_payload_identity() {
 
 #[test]
 fn library_durability_every_native_commit_boundary_recovers_same_operation() {
+    // Snapshot leaves are bucketed by the first two hex digits of the key hash, so
+    // two keys landing in one bucket change the hook count. Fixed identifiers keep
+    // the prototype trace and every injected fixture on the same hook sequence;
+    // with random ids a bucket collision made the last boundaries fall past the end
+    // of the fresh sequence and the commit unexpectedly succeeded.
+    let operation_id = uuid::Uuid::from_u128(0x51);
+    let record_id = uuid::Uuid::from_u128(0x52);
+    let state_id = uuid::Uuid::from_u128(0x53);
     let (_dir, registry, root, library, _) = fixture();
-    let mut prototype = batch(library, uuid::Uuid::new_v4(), "故障");
-    resource_and_state(&registry, root, &mut prototype);
+    let mut prototype = batch_with_operation(operation_id, library, record_id, "故障");
+    resource_and_state(&registry, root, &mut prototype, state_id);
     let mut trace = Vec::new();
     commit_with_hook(&registry, root, &prototype, &mut |phase, index| {
         trace.push((phase.to_owned(), index));
@@ -161,8 +174,8 @@ fn library_durability_every_native_commit_boundary_recovers_same_operation() {
     assert!(trace.iter().any(|(p, _)| p == "state:rename"));
     for (stop, boundary) in trace.iter().enumerate() {
         let (dir, registry, root, library, plane) = fixture();
-        let mut batch = batch(library, uuid::Uuid::new_v4(), "故障");
-        resource_and_state(&registry, root, &mut batch);
+        let mut batch = batch_with_operation(operation_id, library, record_id, "故障");
+        resource_and_state(&registry, root, &mut batch, state_id);
         let mut counter = 0;
         let result = commit_with_hook(&registry, root, &batch, &mut |_, _| {
             let fail_here = counter == stop;
