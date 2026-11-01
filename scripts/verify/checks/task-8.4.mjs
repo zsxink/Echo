@@ -12,7 +12,7 @@
 //   3. `cargo clippy` and `cargo fmt` are clean.
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,6 +21,21 @@ const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "
 function fail(step, msg) {
   process.stderr.write(`FAIL 8.4: ${step}: ${msg}\n`);
   process.exit(1);
+}
+
+// `player/actor` is a module directory, so a needle can live in any sibling
+// file. Concatenate the whole module; a missing directory is a hard failure
+// rather than a silently empty string.
+function readActorModule() {
+  const dir = resolve(ROOT, "crates", "echo-desktop", "src", "player", "actor");
+  let files;
+  try {
+    files = readdirSync(dir).filter((name) => name.endsWith(".rs"));
+  } catch (err) {
+    fail("source", `cannot read actor module directory: ${err.message}`);
+  }
+  if (files.length === 0) fail("source", `no .rs files under ${dir}`);
+  return files.map((name) => readFileSync(resolve(dir, name), "utf8")).join("\n");
 }
 
 const test = spawnSync("cargo", ["test", "-p", "echo-desktop", "--lib", "player"], {
@@ -38,14 +53,19 @@ for (const name of [
 }
 
 // BackendEvent must cover the required normalised vocabulary.
-const actorSrc = readFileSync(resolve(ROOT, "crates", "echo-desktop", "src", "player", "actor.rs"), "utf8");
+const actorSrc = readActorModule();
 for (const needle of ["FileLoaded", "Ended", "PropertyChanged", "Shutdown"]) {
   if (!actorSrc.includes(needle)) fail("event vocab", `missing BackendEvent::${needle}`);
 }
 
-// The foreground/background throttle rates must be 100 ms / 1000 ms.
-if (!actorSrc.includes("Duration::from_millis(100)") || !actorSrc.includes("Duration::from_millis(1000)")) {
-  fail("throttle", "missing 100 ms / 1000 ms interval definitions");
+// The foreground/background throttle rates must be 100 ms / 1 s. The background
+// rate is written as `from_secs(1)` rather than `from_millis(1000)`; the
+// behavioural test above pins both values, this is the structural double-check.
+if (
+  !actorSrc.includes("Duration::from_millis(100)") ||
+  !actorSrc.includes("Duration::from_secs(1)")
+) {
+  fail("throttle", "missing 100 ms foreground / 1 s background interval definitions");
 }
 
 const clippy = spawnSync(

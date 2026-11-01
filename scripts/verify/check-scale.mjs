@@ -1,33 +1,24 @@
 #!/usr/bin/env node
 // Task 5.1: source-file and public-trait scale gate.
-// The checked-in allowlist is a baseline snapshot. It is intentionally
-// compared with the immutable baseline below so adding an exception cannot
-// make the gate green; only shrinking the list is permitted.
+//
+// The ratchet has two files, one purpose each:
+//   - scripts/verify/scale-baseline.json — the frozen maximum set. It records
+//     which oversized files / wide traits existed when the limit was adopted.
+//     Editing it to add an entry is exactly what this gate exists to prevent.
+//   - scripts/verify/scale-allowlist.json — the *active* exception list. It may
+//     shrink as files are split, but every entry must still be in the baseline.
+// Keeping the two separate means the exception list and the frozen ceiling are
+// not two copies of the same data: the comparison below is the single source
+// of truth for "did the allowlist grow?".
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DEFAULT_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
 const ROOT = resolve(process.env.ECHO_SCALE_ROOT || DEFAULT_ROOT);
 const ALLOWLIST_PATH = resolve(DEFAULT_ROOT, "scripts", "verify", "scale-allowlist.json");
-const BASELINE = {
-  files: [
-    "crates/echo-core/src/application/recover.rs",
-    "crates/echo-core/src/application/scan.rs",
-    "crates/echo-core/src/domain/entities.rs",
-    "crates/echo-core/src/domain/library.rs",
-    "crates/echo-core/src/infrastructure/filesystem/adapter.rs",
-    "crates/echo-core/src/infrastructure/sqlite/mod.rs",
-    "crates/echo-desktop/src/player/actor.rs",
-  ],
-  traits: [
-    "crates/echo-core/src/application/ports/repository.rs::OperationJournalRepository",
-    "crates/echo-core/src/application/ports/repository.rs::PlaylistRepository",
-    "crates/echo-core/src/application/ports/repository.rs::SongRepository",
-    "crates/echo-core/src/application/ports/system.rs::ControlPlanePort",
-  ],
-};
+const BASELINE_PATH = resolve(DEFAULT_ROOT, "scripts", "verify", "scale-baseline.json");
 
 const SOURCE_EXTENSIONS = new Set([".css", ".js", ".jsx", ".mjs", ".rs", ".ts", ".tsx"]);
 const IGNORED_PARTS = new Set([".git", "node_modules", "target", "dist", "build"]);
@@ -45,11 +36,31 @@ function walk(dir) {
 }
 
 function sorted(value) { return [...value].sort(); }
-function same(a, b) { return JSON.stringify(sorted(a)) === JSON.stringify(sorted(b)); }
 
 const allowlist = JSON.parse(readFileSync(ALLOWLIST_PATH, "utf8"));
-if (!same(allowlist.files || [], BASELINE.files) || !same(allowlist.traits || [], BASELINE.traits)) {
-  errors.push("scale allowlist was expanded or changed; only removing baseline entries is allowed");
+const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
+const listsAreWellFormed =
+  Array.isArray(allowlist.files) &&
+  Array.isArray(allowlist.traits) &&
+  Array.isArray(baseline.files) &&
+  Array.isArray(baseline.traits);
+if (!listsAreWellFormed) {
+  errors.push("scale allowlist/baseline must each carry `files` and `traits` arrays");
+} else {
+  // The allowlist may only shrink relative to the frozen baseline: every entry
+  // it keeps must have been recorded in the baseline. Running the comparison
+  // this direction (subset, not equality) is what makes "shrink-only" mean
+  // something — an allowlist entry with no baseline counterpart is an expansion.
+  const outsideBaseline = [
+    ...sorted(allowlist.files).filter((v) => !baseline.files.includes(v)),
+    ...sorted(allowlist.traits).filter((v) => !baseline.traits.includes(v)),
+  ];
+  if (outsideBaseline.length) {
+    errors.push(
+      "scale allowlist was expanded or changed; only removing baseline entries is allowed" +
+        ` (not in scale-baseline.json: ${outsideBaseline.join(", ")})`,
+    );
+  }
 }
 const allowedFiles = new Set(allowlist.files || []);
 const allowedTraits = new Set(allowlist.traits || []);

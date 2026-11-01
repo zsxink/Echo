@@ -4,8 +4,8 @@
 // external-staging-cleanup and volume-disconnect injections, and the new
 // write-capability acquisition path (13.2 P0 regression).
 //
-// The crash machinery is `crates/echo-core/src/application/recover.rs`: a
-// `Controller`/`CrashFs`/`CrashUow`/`CrashJournal` injects a scripted panic at
+// The crash machinery lives under `crates/echo-core/src/application/recover/`:
+// a `Controller`/`CrashFs`/`CrashUow`/`CrashJournal` injects a scripted panic at
 // every journal-state write, every fs call and every DB-commit boundary, then
 // recovery is run TWICE and the unique terminal state, reserved UUID, released
 // claims, no-orphan/no-overwrite/no-duplicate invariants are asserted.
@@ -14,9 +14,14 @@
 // exhausts each journal state + fs + commit point twice), the three extra
 // injections the task names, and the P0 write-capability acquisition tests,
 // then writes the fault-injection report it is required to save.
+//
+// `cargo test <filter>` exits 0 when the filter matches nothing, so a moved or
+// renamed test would otherwise let this check write a report claiming
+// injections that never ran. Every filter must match at least one executed
+// test, and the report lists the tests cargo actually ran.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -27,52 +32,66 @@ function fail(msg) {
   process.stderr.write(`FAIL 13.3: ${msg}\n`);
   process.exit(1);
 }
-function run(command, args, cwd = ROOT, what = "") {
-  const r = spawnSync(command, args, { cwd, encoding: "utf8" });
+
+// Names of the tests cargo actually executed, for the evidence report.
+const executed = [];
+
+function runTests(filter) {
+  const r = spawnSync("cargo", ["test", "-p", "echo-core", "--all-features", filter], {
+    cwd: ROOT,
+    encoding: "utf8",
+  });
+  const out = `${r.stdout || ""}${r.stderr || ""}`;
   if (r.status !== 0) {
-    process.stderr.write(`FAIL 13.3: ${what || command} exited ${r.status}\n${r.stderr || r.stdout}\n`);
+    process.stderr.write(`FAIL 13.3: 'cargo test ${filter}' exited ${r.status}\n${out}\n`);
     process.exit(1);
   }
-  return `${r.stdout || ""}${r.stderr || ""}`;
+  const passed = [...out.matchAll(/test result: ok\. (\d+) passed/g)].reduce(
+    (total, match) => total + Number(match[1]),
+    0,
+  );
+  if (passed === 0) {
+    process.stderr.write(`FAIL 13.3: filter '${filter}' matched no tests\n${out}\n`);
+    process.exit(1);
+  }
+  for (const match of out.matchAll(/^test (\S+) \.\.\. ok$/gm)) executed.push(match[1]);
 }
 
 // 1. Crash at every journal state + fs + DB-commit boundary, recovered TWICE.
-run("cargo", [
-  "test", "-p", "echo-core", "--all-features",
-  "recover::tests::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice",
-], ROOT, "crash-at-every-boundary ×2");
+runTests(
+  "application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice",
+);
 
 // 2. The named extra injections (watcher preemption, external staging cleanup,
 //    volume disconnect) — all automated fault tests in echo-core.
 for (const filter of [
-  "recover::tests::recovery_never_creates_a_duplicate_when_a_watcher_preempts",
-  "trash::tests::external_staging_cleanup_becomes_unknown_and_preserves_relationships",
-  "trash::tests::disconnected_volume_becomes_unknown_and_disables_root_writes",
+  "application::recover::tests::imports::recovery_never_creates_a_duplicate_when_a_watcher_preempts",
+  "application::trash::tests::external_staging_cleanup_becomes_unknown_and_preserves_relationships",
+  "application::trash::tests::disconnected_volume_becomes_unknown_and_disables_root_writes",
 ]) {
-  run("cargo", ["test", "-p", "echo-core", "--all-features", filter], ROOT, filter);
+  runTests(filter);
 }
 
 // 3. The three-location/hash/claim recovery matrix (contradictory evidence,
 //    truncated source, nothing-recoverable rollback).
 for (const filter of [
-  "recover::tests::contradictory_stage_evidence_holds_and_deletes_nothing",
-  "recover::tests::truncated_source_is_rejected_and_leaves_nothing",
-  "recover::tests::nothing_recoverable_rolls_back_and_releases_cleanly",
+  "application::recover::tests::delete_restore::contradictory_stage_evidence_holds_and_deletes_nothing",
+  "application::recover::tests::imports::truncated_source_is_rejected_and_leaves_nothing",
+  "application::recover::tests::imports::nothing_recoverable_rolls_back_and_releases_cleanly",
 ]) {
-  run("cargo", ["test", "-p", "echo-core", "--all-features", filter], ROOT, filter);
+  runTests(filter);
 }
 
 // 4. The P0 write-capability acquisition regression (13.2): a fresh root must
 //    become writable by establishing its owned staging dir, so the first
 //    import/delete is never permanently LibraryUnavailable.
-run("cargo", [
-  "test", "-p", "echo-core", "--all-features",
-  "adapter::tests::fresh_root_acquires_write_capability_by_establishing_staging",
-], ROOT, "fresh-root write-capability acquisition");
+runTests(
+  "infrastructure::filesystem::adapter::tests::fresh_root_acquires_write_capability_by_establishing_staging",
+);
 
-// 5. Evidence: the required fault-injection report. We record exactly which
-//    tests executed (they ARE the fault injections — a scripted crash at each
-//    journal state / fs call / commit boundary), and the P0 staging fix.
+// 5. Evidence: the required fault-injection report. The executed-test list is
+//    taken from cargo's own output, so the report cannot claim an injection
+//    that did not run.
 mkdirSync(ARTIFACTS, { recursive: true });
 const report = resolve(ARTIFACTS, "fault-injection-13.3.md");
 const lines = [
@@ -83,7 +102,7 @@ const lines = [
   "",
   "## Injection harness",
   "",
-  "`Controller`/`CrashFs`/`CrashUow`/`CrashJournal` in `crates/echo-core/src/application/recover.rs`",
+  "`Controller`/`CrashFs`/`CrashUow`/`CrashJournal` in `crates/echo-core/src/application/recover/`",
   "inject a scripted failed write at every boundary. Each crash triggers under",
   "`catch_unwind`, then recovery runs TWICE; the invariants asserted are:",
   "",
@@ -97,22 +116,7 @@ const lines = [
   "",
   "## Executed fault injections (run green this check)",
   "",
-  "1. `crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice`",
-  "   — every journal-state write + publish + DB-commit point, recovered twice.",
-  "2. `recovery_never_creates_a_duplicate_when_a_watcher_preempts` — watcher",
-  "   preemption of an in-flight import leaves exactly one song.",
-  "3. `external_staging_cleanup_becomes_unknown_and_preserves_relationships`",
-  "   — external cleanup of the staging dir → TrashOutcomeUnknown, no inference.",
-  "4. `disconnected_volume_becomes_unknown_and_disables_root_writes` — volume",
-  "   disconnect mid-trash → unknown, root writes disabled.",
-  "5. `contradictory_stage_evidence_holds_and_deletes_nothing` — conflicting",
-  "   state evidence never deletes a user file.",
-  "6. `truncated_source_is_rejected_and_leaves_nothing` — short/size-mismatched",
-  "   source is rejected with nothing staged.",
-  "7. `nothing_recoverable_rolls_back_and_releases_cleanly` — clean rollback.",
-  "8. `fresh_root_acquires_write_capability_by_establishing_staging` — the 13.2",
-  "   P0 regression: a brand-new root becomes writable on acquire, so the first",
-  "   import/delete is not permanently LibraryUnavailable.",
+  ...executed.map((name) => `- \`${name}\``),
   "",
   "## Result",
   "",
@@ -122,4 +126,6 @@ const lines = [
 ];
 writeFileSync(report, lines.join("\n") + "\n");
 
-process.stdout.write(`ok 13.3: crash-at-every-boundary ×2 + watcher/staging/volume injections green; report at ${report}\n`);
+process.stdout.write(
+  `ok 13.3: crash-at-every-boundary ×2 + watcher/staging/volume injections green (${executed.length} tests); report at ${report}\n`,
+);

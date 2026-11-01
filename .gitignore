@@ -74,6 +74,10 @@ vitest.config.ts.timestamp-*
 # Run-time artifacts, never checked in.
 artifacts/
 
+# task-12.5 writes the 50k benchmark latencies it asserted; the task-gates CI
+# job uploads this file as the required artifact. Never a source file.
+apps/desktop/benchmark-50k.json
+
 # Rust / Cargo
 /target/
 **/target/

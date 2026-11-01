@@ -84,6 +84,16 @@ jobs:
       - name: Test
         run: cargo test --workspace --all-features
 
+      # 8.12 (real libmpv smoke over the fixture matrix) and 13.2 (native
+      # temp-library e2e + restart consistency) load the vendored macOS dylib
+      # set that build.rs stages at target/Frameworks during the builds above.
+      # They are macOS-only: the Linux vendor tree is not committed, and 8.12
+      # fails rather than skipping when libmpv is unreachable. Both were
+      # registered but wired into no CI job (issue #110 P1-6).
+      - name: Verify libmpv smoke and native e2e gates
+        if: runner.os == 'macOS'
+        run: pnpm verify:task -- 8.12 13.2
+
   frontend:
     name: Frontend (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
@@ -126,6 +136,114 @@ jobs:
 
       - name: Build
         run: pnpm --filter @echo/desktop build
+
+  task-gates:
+    name: Task gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (pinned, rustfmt + clippy)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+          components: rustfmt, clippy
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      # Several gates compile the echo-app Tauri shell (`cargo check/clippy -p
+      # echo-app` in 16.1/16.2) and the workspace shape gate (1.1); the Linux
+      # build needs the webview headers before any assertion can run.
+      - name: Install Linux webview dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
+          librsvg2-dev patchelf
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # generate_context! needs the built frontend, exactly as in the Rust job.
+      - name: Build frontend for Tauri context
+        run: pnpm --dir apps/desktop build
+
+      # Every id below was registered in scripts/verify/manifest.json but wired
+      # into no CI job and no scenario (issue #110 P1-6), so a red gate could
+      # sit unnoticed for months. The list is the executable inventory of that
+      # adjudication: an id runs here, in a platform Gate job, or is marked
+      # `archived: true` in the manifest (and then skipped by `--all`).
+      #
+      # 8.12/13.2 run in the Rust job's macOS leg (they need the staged
+      # target/Frameworks dylib set); 1.7 runs in the dependency-audit job
+      # (it installs cargo-deny/cargo-audit).
+      - name: Verify task gates
+        env:
+          # task-13.1 drives headless Chromium over CDP; the GitHub ubuntu
+          # image ships Google Chrome under /usr/bin, and its container-style
+          # sandbox is unavailable.
+          CHROME_PATH: /usr/bin/google-chrome
+          CHROME_NO_SANDBOX: "1"
+        run: >-
+          pnpm verify:task --
+          1.1 1.3 1.8 3.1 4.1 5.1 6.1 7.1
+          8.1 8.2 8.3 8.4 8.5 8.6 8.7 8.8 8.9 8.10 8.11
+          10.1 10.2 10.3 10.4 10.5 10.6 10.7 10.8 10.9 10.10
+          11.1 11.2 11.3 11.4 11.5 11.6
+          12.1 12.2 12.3 12.5 13.1 13.3 16.1 16.2
+
+      # task-12.5 asserts the PRD latency budgets and writes the measured
+      # values here; the task requires them to be kept as a CI artifact.
+      - name: Upload 50k benchmark result
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-50k
+          path: apps/desktop/benchmark-50k.json
+          if-no-files-found: error
+
+  dependency-audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (pinned)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+
+      # task-1.7 installs missing tools itself, but naming the step keeps the
+      # multi-minute compile out of the gate's own log and fails early/legibly.
+      - name: Install audit tooling
+        run: cargo install cargo-deny cargo-audit --locked
+
+      # Was registered in the manifest but wired into no CI job (issue #110
+      # P1-6). The offline-safe half (deny.toml licenses/bans/sources, the
+      # advisory-ignore mirror and LICENSES.md) always gates; the online half
+      # reports findings and only skips when the advisory DB is unreachable.
+      - name: Verify dependency audit gate
+        run: pnpm verify:task -- 1.7
 
   macos-platform-gate:
     name: macOS platform Gate

@@ -13,7 +13,7 @@
 // check runs its test but never relaxes the refusal.
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,6 +22,21 @@ const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "
 function fail(msg) {
   process.stderr.write(`FAIL 16.2: ${msg}\n`);
   process.exit(1);
+}
+
+// `player/actor` is a module directory; `begin_load` / `load_path` live in
+// mod.rs while the pinned tests live in tests_validation.rs. Concatenate the
+// whole module so a sibling-file move does not silently empty the scan.
+function readActorModule() {
+  const dir = resolve(ROOT, "crates", "echo-desktop", "src", "player", "actor");
+  let files;
+  try {
+    files = readdirSync(dir).filter((name) => name.endsWith(".rs"));
+  } catch (err) {
+    fail(`cannot read actor module directory: ${err.message}`);
+  }
+  if (files.length === 0) fail(`no .rs files under ${dir}`);
+  return files.map((name) => readFileSync(resolve(dir, name), "utf8")).join("\n");
 }
 
 function run(cmd, args, what) {
@@ -33,9 +48,19 @@ function run(cmd, args, what) {
 }
 
 // 1. Behavior: the reset semantics, pinned by the actor tests.
+// The actor was split into a module directory; `tests_validation` is nested one
+// level deeper, so the filter and the expected full paths follow the module.
 const testOut = run(
   "cargo",
-  ["test", "-p", "echo-desktop", "--all-features", "--lib", "--locked", "player::actor::tests"],
+  [
+    "test",
+    "-p",
+    "echo-desktop",
+    "--all-features",
+    "--lib",
+    "--locked",
+    "player::actor::tests::validation",
+  ],
   "echo-desktop actor tests",
 );
 for (const name of [
@@ -46,16 +71,13 @@ for (const name of [
   "file_loaded_still_drives_progress_from_mpv_reports",
   "is_local_media_path_classifies_schemes",
 ]) {
-  if (!testOut.includes(`test player::actor::tests::${name} ... ok`)) {
+  if (!testOut.includes(`test player::actor::tests::validation::${name} ... ok`)) {
     fail(`actor test not green: ${name}`);
   }
 }
 
 // 2. Structure: one reset entry point, called by every load path.
-const actor = readFileSync(
-  resolve(ROOT, "crates", "echo-desktop", "src", "player", "actor.rs"),
-  "utf8",
-);
+const actor = readActorModule();
 const beginLoadDefs = (actor.match(/fn begin_load\(&mut self\) -> u64/g) || []).length;
 if (beginLoadDefs !== 1) {
   fail(`expected exactly one begin_load definition, found ${beginLoadDefs}`);
@@ -75,7 +97,7 @@ const loadPathBody = actor.slice(
   actor.indexOf("fn is_local_media_path("),
 );
 if (!loadPathBody) {
-  fail("could not locate load_path in actor.rs");
+  fail("could not locate load_path in the actor module");
 }
 if (/generation \+= 1/.test(loadPathBody)) {
   fail("load_path bumps the generation itself — the reset must come from begin_load only");

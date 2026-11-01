@@ -14,8 +14,8 @@
 //      test), so the player adapter never reaches into Core.
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
@@ -34,17 +34,67 @@ if (!/player::actor::tests::/i.test(test.stdout)) {
   fail("cargo test", "no player::actor tests found in output");
 }
 
-// Unsafe isolation: ipc / platform / runtime must forbid `unsafe_code`, while
-// player is the only subtree allowed to use it.
+// Unsafe isolation: the workspace denies `unsafe_code`, and only the documented
+// FFI modules opt out locally. A crate-wide `allow` would defeat the boundary,
+// so it must not appear anywhere.
+const workspaceToml = readFileSync(resolve(ROOT, "Cargo.toml"), "utf8");
+if (!/\[workspace\.lints\.rust\][\s\S]*?unsafe_code = "deny"/.test(workspaceToml)) {
+  fail("unsafe isolation", "workspace lints must deny unsafe_code");
+}
+for (const crateToml of ["crates/echo-desktop/Cargo.toml", "apps/desktop/src-tauri/Cargo.toml"]) {
+  const text = readFileSync(resolve(ROOT, crateToml), "utf8");
+  if (!/\[lints\][\s\S]*?workspace = true/.test(text)) {
+    fail("unsafe isolation", `${crateToml} must inherit the workspace lints`);
+  }
+  if (text.includes('unsafe_code = "allow"')) {
+    fail("unsafe isolation", `${crateToml} must not re-allow unsafe at crate level`);
+  }
+}
+
+// Modules that may not use `unsafe` forbid it outright (a deny is overridable
+// by a descendant `allow`; forbid is not).
 for (const mod of ["ipc/mod.rs", "platform/mod.rs", "runtime/mod.rs"]) {
   const path = resolve(ROOT, "crates", "echo-desktop", "src", mod);
   if (!readFileSync(path, "utf8").includes("#![forbid(unsafe_code)]")) {
     fail("unsafe isolation", `${mod} must forbid unsafe_code`);
   }
 }
-const desktopToml = readFileSync(resolve(ROOT, "crates", "echo-desktop", "Cargo.toml"), "utf8");
-if (!desktopToml.includes('unsafe_code = "allow"')) {
-  fail("unsafe isolation", "echo-desktop must allow unsafe only at crate level");
+
+// The only opt-outs are the libmpv FFI module and the actor that calls into it,
+// plus the three macOS shell modules that call platform Objective-C APIs. The
+// set is pinned exactly so a new opt-out has to be added deliberately.
+const allowedOptOuts = new Set([
+  "crates/echo-desktop/src/player/ffi.rs",
+  "crates/echo-desktop/src/player/actor/mod.rs",
+  "apps/desktop/src-tauri/src/macos_now_playing.rs",
+  "apps/desktop/src-tauri/src/macos_status_row.rs",
+  "apps/desktop/src-tauri/src/macos_window_lifecycle.rs",
+]);
+const optOuts = [];
+function scanOptOuts(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = resolve(dir, entry.name);
+    if (entry.isDirectory()) {
+      scanOptOuts(full);
+      continue;
+    }
+    if (!entry.name.endsWith(".rs")) continue;
+    if (readFileSync(full, "utf8").includes("#![allow(unsafe_code)]")) {
+      optOuts.push(relative(ROOT, full));
+    }
+  }
+}
+for (const crate of ["crates/echo-desktop/src", "apps/desktop/src-tauri/src"]) {
+  scanOptOuts(resolve(ROOT, crate));
+}
+const unexpected = optOuts.filter((p) => !allowedOptOuts.has(p));
+if (unexpected.length > 0) {
+  fail("unsafe isolation", `unexpected unsafe_code opt-out(s): ${unexpected.join(", ")}`);
+}
+for (const required of allowedOptOuts) {
+  if (!optOuts.includes(required)) {
+    fail("unsafe isolation", `expected unsafe_code opt-out missing from ${required}`);
+  }
 }
 
 // echo-core must not depend on libmpv/FFI/loading: verify the arch test exists.

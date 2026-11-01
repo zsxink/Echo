@@ -153,8 +153,7 @@ Release 整体约 14.6 分钟，只在打 tag 时跑，不属于日常反馈路�
 |---|---|
 | `scripts/verify/checks/task-1.5.mjs` | 断言 `ci.yml` 的 `rust`/`frontend` job 必须是 **include-only 三平台矩阵**、`runs-on: ${{ matrix.os }}`、**精确 job 名**（`Rust (${{ matrix.platform }})` 等），并逐条匹配 9 个精确命令字符串；还会在本机实跑一遍 |
 | `scripts/verify/checks/task-crp.mjs` | 断言 `release.yml` 的三平台矩阵、`Assert expected artifacts exist`、SHA256SUMS、NOTICE、publish 聚合等字符串/结构 |
-| `scripts/verify/injection-governance.mjs` | 注入证明：删掉 `ci.yml` 的 Linux 矩阵项必须让 `task-1.5` 报 `ci.yml rust matrix is missing platform 'Linux'` |
-| `scripts/verify/workflow-matrix.test.mjs` | 单测 `parseWorkflow` / `assertPlatformMatrix` 的解析契约 |
+| `scripts/verify/injection-governance.mjs` | 注入证明：删掉 `ci.yml` 的 Linux 矩阵项必须让 `task-1.5` 报 `ci.yml rust matrix is missing platform 'Linux'`。这一条已经端到端覆盖了 `workflow-matrix.mjs` 的解析契约；原先单独的 `workflow-matrix.test.mjs` 已删除（零引用、与注入证明重复） |
 | `scripts/verify/check-scale.mjs` | 单文件 ≤1000 行（`injection-suite.mjs` 已逼近上限，注释说明拆文件是为了卡这个） |
 
 **结论**：任何「删 job / 并矩阵 / 改命令文本」的方案，都是**改 workflow + 改门禁 + 重跑 `pnpm verify:governance`（含注入证明）**三件套。这不是坏事——它保证 CI 不会悄悄退化——但必须把成本算进去。**建议把门禁里的「精确字符串匹配」升级为「解析 YAML 后的结构断言」**（`workflow-matrix.mjs` 已经这么做了），这样合并 job 时不必大改字符串。
