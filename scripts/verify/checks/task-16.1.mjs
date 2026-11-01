@@ -36,12 +36,6 @@ function run(cmd, args, what) {
 
 // 1. The shell must compile and stay clippy-clean.
 run("cargo", ["check", "-p", "echo-app", "--locked"], "echo-app compiles");
-run(
-  "cargo",
-  ["clippy", "-p", "echo-app", "--", "-D", "warnings"],
-  "echo-app clippy clean",
-);
-
 // 2. Behavior: the conversion semantics of the single owner.
 const testOut = run(
   "cargo",

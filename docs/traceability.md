@@ -3,8 +3,8 @@
 ## 完成规则
 
 - 本表逐项覆盖 specs 中的全部 Scenario；稳定 ID 不得复用，标题调整时保留原 ID。
-- 场景 ID 由 spec 标题派生；每行必须给出可执行验收命令。人工举证由 `docs/native-attestation-playbook.md` 与 `artifacts/native-attestations/<ID>.log` 承担，字段与判定见 `check-native-attestation.mjs`。
-- 每行给出实际验收命令。`pnpm verify:scenario -- --all` 必须比较 specs、此表与场景清单的 ID 集合完全相等，并逐项执行；缺失、重复、无命令、无证据或失败均返回非零。
+- 场景 ID 由 spec 标题派生；每行必须给出可执行验收命令，且该场景在 `scripts/verify/scenario-commands.mjs` 的 `SCENARIOS` 中声明非空 `evidence`（命令可执行 + 证据可观测）。人工举证由 `docs/native-attestation-playbook.md` 与 `artifacts/native-attestations/<ID>.log` 承担，字段与判定见 `check-native-attestation.mjs`。
+- 每行给出实际验收命令。`pnpm verify:scenario -- --all` 必须比较 specs、此表与场景清单的 ID 集合完全相等，并逐项执行；命令按域聚合后逐条断言 evidence 目标在输出中被观测到，缺失、重复、无命令、无证据、证据未观测或失败均返回非零。
 - 当前基线：103 个 Requirement，455 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
 
 ## ci-release-pipeline

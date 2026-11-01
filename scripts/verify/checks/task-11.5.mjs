@@ -31,7 +31,6 @@ function run(command, args, cwd) {
 }
 
 run("cargo", ["test", "-p", "echo-core", "application::detail"], ROOT);
-run("cargo", ["clippy", "-p", "echo-core", "-p", "echo-desktop", "-p", "echo-app", "--all-targets", "--all-features", "--", "-D", "warnings"], ROOT);
 run("pnpm", ["--filter", "@echo/desktop", "typecheck"], APP);
 run(
   "pnpm",

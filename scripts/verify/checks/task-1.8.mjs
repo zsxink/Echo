@@ -5,13 +5,13 @@
 // Fails (nonzero) unless:
 //   1. docs/LOGGING.md exists and documents the privacy keywords (absolute
 //      path redaction, lyrics/tag exclusion).
-//   2. `cargo test -p echo-core` passes, which includes crates/echo-core/tests
-//      /logging.rs proving default test logs carry no full absolute paths,
-//      lyrics, tag text or file contents.
+//   2. the `logging` integration tests pass and at least one actually ran:
+//      crates/echo-core/tests/logging.rs proves default test logs carry no full
+//      absolute paths, lyrics, tag text or file contents.
 //   3. the frontend privacy test passes:
 //      `pnpm --filter @echo/desktop test -- --run src/logging`.
-//   4. `cargo clippy -p echo-core --all-targets -- -D warnings` and
-//      `cargo fmt --all -- --check` pass (workspace stays lint-clean).
+//
+// Shared fmt/clippy gates live in the governance gate's quality-core segment.
 //
 // On success prints: `ok 1.8: unified error logging convention with privacy
 // tests`.
@@ -60,14 +60,25 @@ for (const re of requiredKeywords) {
 // ---------------------------------------------------------------------------
 // Step 2: Rust logging privacy tests.
 // ---------------------------------------------------------------------------
-const rustTest = spawnSync("cargo", ["test", "-p", "echo-core"], {
-  cwd: ROOT,
-  encoding: "utf8",
-});
+const rustTest = spawnSync(
+  "cargo",
+  ["test", "-p", "echo-core", "--all-features", "--test", "logging"],
+  { cwd: ROOT, encoding: "utf8" },
+);
 if (rustTest.status !== 0) {
   process.stderr.write(
-    `FAIL 1.8: cargo test -p echo-core exited ${rustTest.status}\n${rustTest.stdout}\n${rustTest.stderr}\n`,
+    `FAIL 1.8: cargo test -p echo-core --test logging exited ${rustTest.status}\n${rustTest.stdout}\n${rustTest.stderr}\n`,
   );
+  process.exit(1);
+}
+// `cargo test <filter>` exits 0 when the target selects nothing, so a renamed
+// or removed integration test must not leave this check green.
+const rustPassed = [...`${rustTest.stdout}${rustTest.stderr}`.matchAll(/test result: ok\. (\d+) passed/g)].reduce(
+  (total, match) => total + Number(match[1]),
+  0,
+);
+if (rustPassed === 0) {
+  process.stderr.write(`FAIL 1.8: logging integration target ran no tests\n${rustTest.stdout}\n${rustTest.stderr}\n`);
   process.exit(1);
 }
 
@@ -82,32 +93,6 @@ const feTest = spawnSync(
 if (feTest.status !== 0) {
   process.stderr.write(
     `FAIL 1.8: frontend privacy test exited ${feTest.status}\n${feTest.stdout}\n${feTest.stderr}\n`,
-  );
-  process.exit(1);
-}
-
-// ---------------------------------------------------------------------------
-// Step 4: workspace stays lint-clean (clippy + fmt on the core).
-// ---------------------------------------------------------------------------
-const clippy = spawnSync(
-  "cargo",
-  ["clippy", "-p", "echo-core", "--all-targets", "--", "-D", "warnings"],
-  { cwd: ROOT, encoding: "utf8" },
-);
-if (clippy.status !== 0) {
-  process.stderr.write(
-    `FAIL 1.8: cargo clippy -p echo-core --all-targets -- -D warnings exited ${clippy.status}\n${clippy.stdout}\n${clippy.stderr}\n`,
-  );
-  process.exit(1);
-}
-
-const fmt = spawnSync("cargo", ["fmt", "--all", "--", "--check"], {
-  cwd: ROOT,
-  encoding: "utf8",
-});
-if (fmt.status !== 0) {
-  process.stderr.write(
-    `FAIL 1.8: cargo fmt --all -- --check exited ${fmt.status}\n${fmt.stdout}\n${fmt.stderr}\n`,
   );
   process.exit(1);
 }

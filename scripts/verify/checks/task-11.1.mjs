@@ -41,8 +41,6 @@ function run(command, args, cwd) {
 
 run("pnpm", ["--filter", "@echo/desktop", "typecheck"], APP);
 run("pnpm", ["--filter", "@echo/desktop", "test", "--", "--run", "src/player/playerStore.test.ts"], APP);
-run("cargo", ["clippy", "-p", "echo-app", "--", "-D", "warnings"], ROOT);
-
 // The bar is only "PlayerSnapshot-authoritative" if the snapshot stream actually
 // reaches it: the chain coordinator → port → forwarder → UI snapshot must be
 // asserted end to end, and the UI must take queue identity from the coordinator

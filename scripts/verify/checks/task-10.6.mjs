@@ -38,8 +38,6 @@ function run(command, args, cwd) {
 
 run("pnpm", ["--filter", "@echo/desktop", "typecheck"], APP);
 run("pnpm", ["--filter", "@echo/desktop", "test", "--", "--run", "src/features/library/SongMenu.test.tsx"], APP);
-run("cargo", ["clippy", "-p", "echo-app", "--", "-D", "warnings"], ROOT);
-
 // `cargo test <filter>` exits 0 when the filter matches nothing, so a renamed
 // or moved test would leave this gate green while proving nothing. Require at
 // least one test to have actually run.

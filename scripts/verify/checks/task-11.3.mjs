@@ -39,6 +39,4 @@ run(
   ["--filter", "@echo/desktop", "test", "--", "--run", "src/features/player/ImmersivePlayer.test.tsx"],
   APP,
 );
-run("cargo", ["clippy", "-p", "echo-app", "--", "-D", "warnings"], ROOT);
-
 process.stdout.write("ok 11.3: immersive player (vinyl, metadata, expand/collapse, track switching) verified\n");

@@ -32,6 +32,4 @@ function run(command, args, cwd) {
 
 run("pnpm", ["--filter", "@echo/desktop", "typecheck"], APP);
 run("pnpm", ["--filter", "@echo/desktop", "test", "--", "--run", "src/app/narrow.test.tsx"], APP);
-run("cargo", ["clippy", "-p", "echo-app", "--", "-D", "warnings"], ROOT);
-
 process.stdout.write("ok 12.3: narrow-screen sidebar/mask + secondary-column collapse + resize state preservation verified\n");

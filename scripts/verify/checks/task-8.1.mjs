@@ -29,16 +29,6 @@ const test = spawnSync("cargo", ["test", "-p", "echo-desktop", "--lib"], {
 });
 if (test.status !== 0) fail("cargo test", `${test.stdout}\n${test.stderr}`);
 
-const clippy = spawnSync(
-  "cargo",
-  ["clippy", "-p", "echo-desktop", "--all-targets", "--", "-D", "warnings"],
-  { cwd: ROOT, encoding: "utf8" },
-);
-if (clippy.status !== 0) fail("clippy", `${clippy.stdout}\n${clippy.stderr}`);
-
-const fmt = spawnSync("cargo", ["fmt", "--all", "--", "--check"], { cwd: ROOT, encoding: "utf8" });
-if (fmt.status !== 0) fail("fmt", `${fmt.stdout}\n${fmt.stderr}`);
-
 // Confirm the player fake tests actually ran (not silently skipped under a
 // filter) and that no libmpv FFI crate is pulled into echo-desktop yet.
 const ranPlayer = /player::fake::tests::/i.test(test.stdout);

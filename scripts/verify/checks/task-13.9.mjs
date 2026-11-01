@@ -16,10 +16,11 @@
 //
 // On macOS this runs the fully-automatable subset and asserts a per-scenario
 // result log + the set-equal reconciliation. Rows whose behavior
-// is a real multi-platform OS interaction (the 45 native manifests) are
-// checked for attestation evidence where the platform is not macOS; on macOS
-// the automated subsets (player_smoke, task checks) are exercised via their
-// scenario commands.
+// is a real multi-platform OS interaction (the native rows carried by
+// `check-native-attestation.mjs`; the exact count is derived from the manifest
+// at run time) are checked for attestation evidence where the platform is not
+// macOS; on macOS the automated subsets (player_smoke, task checks) are
+// exercised via their scenario commands.
 
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -100,7 +101,7 @@ run("node", ["scripts/verify/gen-scenario-manifests.mjs"]);
 const report = resolve(ARTIFACTS, "verify:scenario-report.txt");
 const expectedAutomatedCount = JSON.parse(readFileSync(resolve(ROOT, "scripts", "verify", "manifest.json"), "utf8"))
   .scenarios
-  .filter((scenario) => !/check-native-attestation\.mjs/.test(scenario.command))
+  .filter((scenario) => !(scenario.evidence ?? []).some((e) => e.kind === "attestation"))
   .length;
 let scenarioOut;
 try {

@@ -6,10 +6,12 @@
 //   node scripts/verify/gen-scenario-manifests.mjs --write   # regenerate
 //
 // `manifest.json.scenarios[]` is the only generated artifact: one
-// `{id, title, command}` entry per spec-derived scenario. `run-scenario.mjs`
-// executes the command recorded there, so the default mode below is the gate
-// that keeps the executed set equal to `scenario-commands.mjs`: any missing,
-// extra, retitled or re-commanded row exits nonzero.
+// `{id, title, command, evidence}` entry per spec-derived scenario (`delegatedTo`
+// is carried when declared). `run-scenario.mjs` executes the command recorded
+// there and asserts each evidence target was observed, so the default mode
+// below is the gate that keeps the executed set equal to
+// `scenario-commands.mjs`: any missing, extra, retitled, re-commanded or
+// re-evidenced row exits nonzero.
 //
 // `--write` is the only writer. The former per-scenario mirror trees are gone;
 // their contract lives in `scenario-commands.mjs`,
@@ -43,11 +45,16 @@ for (const d of ids) if (!commandById.has(d.id)) { console.error(`missing comman
 for (const c of commands) if (!byId.has(c.id)) { console.error(`orphan command: ${c.id}`); errs++; }
 if (errs) process.exit(1);
 
-const entries = ids.map((d) => ({
-  id: d.id,
-  title: d.scenario,
-  command: commandById.get(d.id).command,
-}));
+const entries = ids.map((d) => {
+  const c = commandById.get(d.id);
+  return {
+    id: d.id,
+    title: d.scenario,
+    command: c.command,
+    evidence: c.evidence,
+    ...(c.delegatedTo ? { delegatedTo: c.delegatedTo } : {}),
+  };
+});
 
 if (process.argv.includes("--write")) {
   // Preserve task entries exactly; only scenarios are regenerated.
@@ -74,6 +81,12 @@ for (const e of entries) {
   if (!c) { report(`${e.id}: missing from manifest.json scenarios`); continue; }
   if (c.title !== e.title) report(`${e.id}: title drift (manifest "${c.title}" != spec "${e.title}")`);
   if (c.command !== e.command) report(`${e.id}: command drift (manifest "${c.command}" != registry "${e.command}")`);
+  if (JSON.stringify(c.evidence ?? []) !== JSON.stringify(e.evidence)) {
+    report(`${e.id}: evidence drift (manifest ${JSON.stringify(c.evidence ?? [])} != registry ${JSON.stringify(e.evidence)})`);
+  }
+  if ((c.delegatedTo ?? null) !== (e.delegatedTo ?? null)) {
+    report(`${e.id}: delegation drift (manifest "${c.delegatedTo ?? ""}" != registry "${e.delegatedTo ?? ""}")`);
+  }
 }
 for (const s of committed) {
   if (!byId.has(s.id)) report(`${s.id}: extra entry has no spec scenario`);

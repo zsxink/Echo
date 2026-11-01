@@ -573,18 +573,33 @@ const ENTRIES = [
     },
   },
 
-  // ---- 14.7 scenario churn ratchet -------------------------------------
+  // ---- 14.7 scenario evidence coverage ---------------------------------
   {
-    id: "scenario-churn/tightened-ceiling",
-    guard: "the scenarios-per-command ratio rising above the frozen ceiling",
-    check: ["node", ["scripts/verify/check-scenario-churn.mjs"]],
-    expect: /FAIL scenario churn[\s\S]*exceeds frozen ceiling/,
+    id: "scenario-evidence/missing-target",
+    guard: "a scenario whose evidence names a test that does not exist",
+    check: ["node", ["scripts/verify/check-scenario-evidence.mjs"]],
+    expect: /FAIL scenario evidence[\s\S]*no_such_test/,
     baseline: true,
     inject() {
       replaceIn(
-        join(ROOT, "scripts", "verify", "check-scenario-churn.mjs"),
-        "maxDuplication: 1.8,",
-        "maxDuplication: 1.0,",
+        join(ROOT, "scripts", "verify", "scenario-commands.mjs"),
+        'rust("infrastructure::sqlite::tests::catalog_all_songs_view")',
+        'rust("no_such_test")',
+      );
+      return {};
+    },
+  },
+  {
+    id: "scenario-evidence/unobserved-target",
+    guard: "a scenario whose evidence exists but its aggregated command never runs it",
+    check: ["node", ["scripts/verify/run-scenario.mjs", "SFI-R12-S01"]],
+    expect: /scenario SFI-R12-S01: evidence not observed in command output: rust 'infrastructure::sqlite::tests::catalog_all_songs_view'/,
+    baseline: true,
+    inject() {
+      replaceIn(
+        join(ROOT, "scripts", "verify", "manifest.json"),
+        '"target": "publish_never_overwrites_a_target_created_after_planning"',
+        '"target": "infrastructure::sqlite::tests::catalog_all_songs_view"',
       );
       return {};
     },
@@ -669,7 +684,7 @@ const ENTRIES = [
     id: "delegation/cargo-exit-status",
     guard: "a check that shells out to cargo ignoring a failing child",
     check: ["node", ["scripts/verify/checks/task-2.1.mjs"]],
-    expect: /FAIL 2\.1: cargo test/,
+    expect: /FAIL 2\.1: cargo test: filter 'domain::ids::'/,
     baseline: true,
     inject() {
       return { env: failingBinary("cargo") };
@@ -689,7 +704,7 @@ const ENTRIES = [
     id: "delegation/runner-propagates-check-failure",
     guard: "the task runner reporting success when a registered check fails",
     check: ["node", ["scripts/verify/run-task.mjs", "2.1"]],
-    expect: /error: task 2\.1: command exited 1/,
+    expect: /error: task 2\.1: command exited 1[\s\S]*FAIL 2\.1: cargo test: filter 'domain::ids::'/,
     baseline: true,
     inject() {
       return { env: failingBinary("cargo") };

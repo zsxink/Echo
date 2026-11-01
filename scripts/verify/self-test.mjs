@@ -39,11 +39,11 @@ function hashOf(path) {
   }
 }
 
-function runRunner(manifestPath, args) {
+function runRunner(manifestPath, args, env = {}) {
   return spawnSync(process.execPath, [RUNNER, ...args], {
     cwd: ROOT,
     encoding: "utf8",
-    env: { ...process.env, ECHO_VERIFY_MANIFEST: manifestPath },
+    env: { ...process.env, ...env, ECHO_VERIFY_MANIFEST: manifestPath },
   });
 }
 
@@ -71,6 +71,22 @@ writeFileSync(
         commands: [{ desc: "x", cmd: "node -e 'process.exit(0)'" }],
         evidence: [{ name: "native.txt", file: "./nonexistent/native.txt" }],
       },
+      {
+        id: "multi-name",
+        title: "one cargo start asserts several test names",
+        commands: [{
+          desc: "x",
+          cmd: "node scripts/verify/checks/task-4.mjs multi-name application::import::logic::tests::alpha application::import::logic::tests::beta",
+        }],
+      },
+      {
+        id: "missing-name",
+        title: "a declared test name the cargo output never reports",
+        commands: [{
+          desc: "x",
+          cmd: "node scripts/verify/checks/task-4.mjs missing-name domain::text::platform_golden_cases::gamma domain::text::platform_golden_cases::delta",
+        }],
+      },
     ],
     scenarios: [],
   }),
@@ -84,13 +100,36 @@ const fakeCargo = resolve(fakeBin, "cargo");
 const fakePnpm = resolve(fakeBin, "pnpm");
 writeFileSync(
   fakeCargo,
-  "#!/bin/sh\ncase \"$*\" in\n  *one-filter*) name=one ;;\n  *two-filter*) name=two ;;\n  *) name=other ;;\nesac\nif [ -n \"$ECHO_FAKE_CARGO_MARKERS\" ] && [ \"$name\" != other ]; then\n  touch \"$ECHO_FAKE_CARGO_MARKERS/$name.started\"\n  other=one; [ \"$name\" = one ] && other=two\n  i=0\n  while [ ! -e \"$ECHO_FAKE_CARGO_MARKERS/$other.started\" ] && [ $i -lt 40 ]; do sleep 0.05; i=$((i + 1)); done\n  [ -e \"$ECHO_FAKE_CARGO_MARKERS/$other.started\" ] || exit 9\nfi\nif [ \"$name\" = other ]; then\n  printf 'test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\\n'\nelse\n  printf 'test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\\n'\nfi\n",
+  "#!/bin/sh\n" +
+    "name=\n" +
+    "case \"$*\" in\n" +
+    "  *application::import*)\n" +
+    "    printf 'test application::import::logic::tests::alpha ... ok\\n'\n" +
+    "    printf 'test application::import::logic::tests::beta ... ok\\n'\n" +
+    "    passed=2 ;;\n" +
+    "  *domain::text*)\n" +
+    "    printf 'test domain::text::platform_golden_cases::gamma ... ok\\n'\n" +
+    "    passed=1 ;;\n" +
+    "  *one-filter*) printf 'test one_filter_ok ... ok\\n'; name=one; passed=1 ;;\n" +
+    "  *two-filter*) printf 'test two_filter_ok ... ok\\n'; name=two; passed=1 ;;\n" +
+    "  *) passed=0 ;;\n" +
+    "esac\n" +
+    "if [ -n \"$ECHO_FAKE_CARGO_LOG\" ]; then printf '%s\\n' \"$*\" >> \"$ECHO_FAKE_CARGO_LOG\"; fi\n" +
+    "if [ -n \"$ECHO_FAKE_CARGO_MARKERS\" ] && [ -n \"$name\" ]; then\n" +
+    "  touch \"$ECHO_FAKE_CARGO_MARKERS/$name.started\"\n" +
+    "  other=one; [ \"$name\" = one ] && other=two\n" +
+    "  i=0\n" +
+    "  while [ ! -e \"$ECHO_FAKE_CARGO_MARKERS/$other.started\" ] && [ $i -lt 40 ]; do sleep 0.05; i=$((i + 1)); done\n" +
+    "  [ -e \"$ECHO_FAKE_CARGO_MARKERS/$other.started\" ] || exit 9\n" +
+    "fi\n" +
+    "printf 'test result: ok. %s passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\\n' \"$passed\"\n",
   "utf8",
 );
 chmodSync(fakeCargo, 0o755);
 writeFileSync(
   fakePnpm,
-  "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$ECHO_FAKE_PNPM_MARKERS\"\nprintf 'Tests 2 passed\\n'\n",
+  "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$ECHO_FAKE_PNPM_MARKERS\"\n" +
+    "printf ' \\u2713 src/example.test.tsx > first case\\n \\u2713 src/example.test.tsx > second case\\nTests 2 passed\\n'\n",
   "utf8",
 );
 chmodSync(fakePnpm, 0o755);
@@ -104,41 +143,55 @@ writeFileSync(
         id: "zero-tests",
         title: "zero selected tests",
         command: "cargo test -- impossible-filter",
+        evidence: [{ kind: "rust", target: "never_runs" }],
       },
       {
         id: "one-test",
         title: "one selected test",
         command: "cargo test -- one-filter",
+        evidence: [{ kind: "rust", target: "one_filter_ok" }],
       },
       {
         id: "one-test-duplicate",
         title: "same selected test in another scenario",
         command: "cargo test -- one-filter",
+        evidence: [{ kind: "rust", target: "one_filter_ok" }],
       },
       {
         id: "two-test",
         title: "parallel selected test",
         command: "cargo test -- two-filter",
+        evidence: [{ kind: "rust", target: "two_filter_ok" }],
       },
       {
         id: "rust-reused-test",
         title: "Rust test already covered by the governance workspace suite",
         command: "cargo test -p echo-core --all-features regular-filter",
+        evidence: [{ kind: "rust", target: "regular_test_ok" }],
       },
       {
         id: "rust-ignored-test",
         title: "ignored performance test must still execute",
         command: "cargo test -p echo-core --all-features ignored-filter -- --ignored",
+        evidence: [{ kind: "rust", target: "ignored_test_ok" }],
       },
       {
         id: "ui-one-test",
         title: "one focused UI test",
         command: "pnpm --filter @echo/desktop test -- --run src/example.test.tsx -t \"first case\"",
+        evidence: [{ kind: "vitest", target: "src/example.test.tsx", name: "first case" }],
       },
       {
         id: "ui-two-test",
         title: "another focused UI test in the same file",
         command: "pnpm --filter @echo/desktop test -- --run src/example.test.tsx -t \"second case\"",
+        evidence: [{ kind: "vitest", target: "src/example.test.tsx", name: "second case" }],
+      },
+      {
+        id: "unobserved-evidence",
+        title: "evidence the aggregated command's output never shows",
+        command: "cargo test -- one-filter",
+        evidence: [{ kind: "rust", target: "never_printed_test" }],
       },
     ],
   }),
@@ -162,6 +215,21 @@ for (const [args, label] of cases) {
 const okRun = runRunner(fixture, ["ok"]);
 assert(okRun.status === 0, "passing task is zero");
 
+// One cargo invocation can prove several declared test names; a name the
+// output never reports must fail and be named in the diagnostic.
+const taskEnv = { PATH: `${fakeBin}:${process.env.PATH || ""}` };
+const cargoLog = resolve(dir, "cargo-invocations.txt");
+const multiName = runRunner(fixture, ["multi-name"], { ...taskEnv, ECHO_FAKE_CARGO_LOG: cargoLog });
+assert(
+  multiName.status === 0 && readFileSync(cargoLog, "utf8").trim().split("\n").length === 1,
+  "one cargo start asserts several test names",
+);
+const missingName = runRunner(fixture, ["missing-name"], taskEnv);
+assert(
+  missingName.status !== 0 && missingName.stderr.includes("delta"),
+  "a declared test name missing from cargo output fails and names it",
+);
+
 // A selected Cargo command that produces a successful zero-test result must
 // still fail; a nonzero count proves the normal path remains accepted.
 const scenarioEnv = { PATH: `${fakeBin}:${process.env.PATH || ""}` };
@@ -177,6 +245,11 @@ const duplicateScenarios = runScenarioRunner(
 assert(
   duplicateScenarios.status === 0 && /scenario batches: 1 commands for 2 scenarios/.test(duplicateScenarios.stdout),
   "duplicate scenario commands execute in one batch",
+);
+const unobservedEvidence = runScenarioRunner(scenarioFixture, ["unobserved-evidence"], scenarioEnv);
+assert(
+  unobservedEvidence.status !== 0 && unobservedEvidence.stderr.includes("never_printed_test"),
+  "declared evidence missing from the command output fails and names the target",
 );
 const markerDir = resolve(dir, "parallel-markers");
 mkdirSync(markerDir);

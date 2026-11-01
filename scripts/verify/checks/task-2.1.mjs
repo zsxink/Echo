@@ -2,11 +2,9 @@
 // Task 2.1 check: domain ID newtypes (SongId, PlaylistId, LibraryRootId,
 // OperationId, PlaybackSessionId, RelativeMediaPath, QueueEntryId, Revision).
 //
-// Fails unless:
-//   1. `cargo test -p echo-core` passes (includes ids unit tests: serialization,
-//      parse-failure and type-safety "cannot mix" tests);
-//   2. `cargo clippy -p echo-core --all-targets -- -D warnings` is clean;
-//   3. `cargo fmt --all -- --check` is clean.
+// Fails unless the `domain::ids` tests pass (serialization, parse-failure and
+// type-safety "cannot mix" tests) and at least one actually ran. Shared
+// fmt/clippy gates live in the governance gate's quality-core segment.
 
 import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
@@ -23,25 +21,21 @@ function fail(step, msg) {
   process.exit(1);
 }
 
-const test = spawnSync("cargo", ["test", "-p", "echo-core"], {
+const test = spawnSync("cargo", ["test", "-p", "echo-core", "--all-features", "domain::ids::"], {
   cwd: ROOT,
   encoding: "utf8",
   maxBuffer: MAX_BUFFER,
 });
-if (test.status !== 0) fail("cargo test", `${test.stdout}\n${test.stderr}`);
+if (test.status !== 0) {
+  fail("cargo test", `filter 'domain::ids::' exited ${test.status}\n${test.stdout}\n${test.stderr}`);
+}
 
-const clippy = spawnSync(
-  "cargo",
-  ["clippy", "-p", "echo-core", "--all-targets", "--", "-D", "warnings"],
-  { cwd: ROOT, encoding: "utf8", maxBuffer: MAX_BUFFER },
+// `cargo test <filter>` exits 0 when the filter matches nothing, so a renamed
+// test would leave this check green while proving nothing.
+const passed = [...`${test.stdout}${test.stderr}`.matchAll(/test result: ok\. (\d+) passed/g)].reduce(
+  (total, match) => total + Number(match[1]),
+  0,
 );
-if (clippy.status !== 0) fail("clippy", `${clippy.stdout}\n${clippy.stderr}`);
-
-const fmt = spawnSync("cargo", ["fmt", "--all", "--", "--check"], {
-  cwd: ROOT,
-  encoding: "utf8",
-  maxBuffer: MAX_BUFFER,
-});
-if (fmt.status !== 0) fail("fmt", `${fmt.stdout}\n${fmt.stderr}`);
+if (passed === 0) fail("cargo test", `filter 'domain::ids::' matched no tests\n${test.stdout}\n${test.stderr}`);
 
 process.stdout.write("ok 2.1: domain ID newtypes with serialization/parse/type-safety tests\n");

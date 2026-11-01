@@ -51,8 +51,6 @@ if (!revealOut.includes("test result: ok.")) {
   fail("reveal policy tests not green");
 }
 
-run("cargo", ["clippy", "-p", "echo-app", "--", "-D", "warnings"], "echo-app clippy clean");
-
 // The service boundary accepts SongId and returns only a relative path.
 // `runtime/services.rs` was split into a `runtime/services/` module; the reveal
 // entry now lives in `reveal.rs`. Reading the old path threw ENOENT and made

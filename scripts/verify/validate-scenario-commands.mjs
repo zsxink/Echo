@@ -1,15 +1,22 @@
 #!/usr/bin/env node
-// Validate that every scenario's cargo/vitest filter actually matches a real
-// test — the release gate must never "pass" a scenario against zero tests.
+// Static validation of the scenario registry: every scenario must name the
+// evidence it actually depends on, and every evidence target must exist — the
+// release gate must never "pass" a scenario against zero tests.
 //
 // A `cargo test -- <filter>` that matches nothing exits 0, which is a silent
 // false-pass. This validator obtains the compiled test lists from Cargo at
-// runtime and asserts every scenario command that is a cargo filter matches at
-// least one of them. It deliberately has no dependency on caller-created
-// files outside the repository.
+// runtime and asserts every `rust` evidence target matches a listed test of a
+// package the scenario's command runs. The remaining kinds are checked
+// against the filesystem:
 //
-// Also asserts every referenced task-check script exists and every REACT vitest
-// file exists.
+//   rust        target matches at least one test in the command's package list
+//   vitest      file exists; with `name`, the name appears in the file
+//   node        path exists and stays inside `scripts/verify/`
+//   attestation target equals the scenario id (the native matrix row itself)
+//
+// The command syntax is still checked: only cargo/pnpm/node/python3 shapes the
+// runners understand are admitted, and node/python paths may not escape their
+// pinned directories.
 //
 // Usage: node scripts/verify/validate-scenario-commands.mjs
 
@@ -23,130 +30,110 @@ const ROOT = resolve(dirname(fileURLToPath(new URL(".", import.meta.url))), ".."
 let bad = 0;
 const fail = (m) => { console.error(`error: ${m}`); bad += 1; };
 
+const testLists = new Map();
 function cargoTestList(packageName) {
+  if (testLists.has(packageName)) return testLists.get(packageName);
   const result = spawnSync("cargo", ["test", "-p", packageName, "--all-features", "--", "--list"], {
     cwd: ROOT,
     encoding: "utf8",
   });
+  const tests = result.status === 0
+    ? `${result.stdout || ""}\n${result.stderr || ""}`
+      .split("\n")
+      .filter((line) => /: test$/.test(line))
+      .map((line) => line.replace(/: test$/, "").trim())
+    : [];
   if (result.status !== 0) {
     fail(`could not list ${packageName} tests (cargo exited ${result.status}): ${result.stderr || result.stdout}`);
-    return [];
   }
-  return `${result.stdout || ""}\n${result.stderr || ""}`
-    .split("\n")
-    .filter((line) => /: test$/.test(line))
-    .map((line) => line.replace(/: test$/, "").trim());
+  testLists.set(packageName, tests);
+  return tests;
 }
 
-const coreTests = cargoTestList("echo-core");
-const deskTests = cargoTestList("echo-desktop");
-// The Tauri shell binary keeps its pure decision layers as bin unit tests
-// (e.g. the app-menu id→action mapping), so scenario commands may filter them
-// the same way core/desktop lib tests are filtered.
-const appTests = cargoTestList("echo-app");
+const NODE_COMMAND = /^node (scripts\/verify\/[A-Za-z0-9_./-]+\.mjs)(?:\s|$)/;
+const AUDIO_COMMAND = /^python3 (scripts\/audio-effects\/(probe|inspect-filter-runtime|generate_fixtures)\.py)(?:\s|$)/;
 
-for (const { id, command } of scenarioCommands()) {
-  // Integration test binaries (--test) are validated separately below.
-  let m = command.match(/^cargo test -p echo-desktop --all-features --test player_smoke/);
-  if (m) {
-    const p = resolve(ROOT, "crates", "echo-desktop", "tests", "player_smoke.rs");
-    if (!existsSync(p)) fail(`${id}: player_smoke integration test missing`);
-    continue;
+// The command must be one the runners understand; each `&&` segment is checked
+// on its own so a chained import subgate (node + cargo) stays admissible.
+function checkCommand(id, command) {
+  const packages = new Set();
+  for (const segment of command.split(" && ")) {
+    const cargo = segment.match(/^cargo test -p (echo-core|echo-desktop|echo-app) --all-features(?:\s.*)?$/);
+    if (cargo) {
+      packages.add(cargo[1]);
+      continue;
+    }
+    if (/^pnpm --filter @echo\/desktop test -- --run(?:\s|$)/.test(segment)) continue;
+    const node = segment.match(NODE_COMMAND);
+    if (node) {
+      if (node[1].includes("..")) fail(`${id}: verify script path escapes scripts/verify: ${node[1]}`);
+      else if (!existsSync(resolve(ROOT, node[1]))) fail(`${id}: verify script missing ${node[1]}`);
+      continue;
+    }
+    const audio = segment.match(AUDIO_COMMAND);
+    if (audio) {
+      if (audio[1].includes("..")) fail(`${id}: audio-effects path escapes scripts/audio-effects: ${audio[1]}`);
+      else if (!existsSync(resolve(ROOT, audio[1]))) fail(`${id}: audio-effects tool missing ${audio[1]}`);
+      continue;
+    }
+    fail(`${id}: unrecognized command '${segment}'`);
   }
-  // cargo test lib filters
-  //
-  // A trailing `-- <args>` is cargo's separator for the test binary (e.g.
-  // `-- --ignored` to also run `#[ignore]`d tests), NOT part of the filter.
-  // Without stripping it the whole tail is compared as one filter string and
-  // matches nothing — which reports a correct command as broken, and would push
-  // someone to remove `-- --ignored` and reintroduce the "runs zero tests"
-  // false-pass this validator exists to prevent.
-  const cargoFilter = (raw) => raw.trim().replace(/\s+--\s+.*$/, "");
-  m = command.match(/^cargo test -p echo-core --all-features\s+([^\s&][^&]*?)(?:\s+&&|$)/);
-  if (m) {
-    const filter = cargoFilter(m[1]);
-    const hits = coreTests.filter((t) => t.includes(filter));
-    if (!hits.length) fail(`${id}: cargo echo-core filter '${filter}' matches 0 tests`);
-    continue;
-  }
-  m = command.match(/^cargo test -p echo-desktop --all-features\s+([^\s&][^&]*?)(?:\s+&&|$)/);
-  if (m) {
-    const filter = cargoFilter(m[1]);
-    // Cargo's `--lib` / `--test` selectors do not name one test. They still
-    // execute a real target, so the runtime runner supplies the final count.
-    if (filter.startsWith("-")) continue;
-    const hits = deskTests.filter((t) => t.includes(filter));
-    if (!hits.length) fail(`${id}: cargo echo-desktop filter '${filter}' matches 0 tests`);
-    continue;
-  }
-  m = command.match(/^cargo test -p echo-app --all-features\s+([^\s&][^&]*?)(?:\s+&&|$)/);
-  if (m) {
-    const filter = cargoFilter(m[1]);
-    if (filter.startsWith("-")) continue;
-    const hits = appTests.filter((t) => t.includes(filter));
-    if (!hits.length) fail(`${id}: cargo echo-app filter '${filter}' matches 0 tests`);
-    continue;
-  }
+  return [...packages];
+}
 
-  // vitest file references, optionally narrowed to one test name with `-t`.
-  //
-  // A `-t` that names nothing runs zero tests — the same silent false-pass as a
-  // cargo filter that matches nothing, which is why the name is resolved against
-  // the file here instead of being trusted. (`run-scenario.mjs` also rejects a
-  // selected-test command that reports 0 passed, but this gate is the one that
-  // runs on every static pass.)
-  m = command.match(/^pnpm --filter @echo\/desktop test -- --run\s+(\S+\.test\.tsx?)(?:\s+-t\s+(.+))?$/);
-  if (m) {
-    const file = m[1];
-    const p = resolve(ROOT, "apps", "desktop", file);
-    if (!existsSync(p)) {
-      fail(`${id}: vitest file missing ${file}`);
-    } else if (m[2]) {
-      const name = m[2].trim().replace(/^["']|["']$/g, "");
-      if (!readFileSync(p, "utf8").includes(name)) {
-        fail(`${id}: vitest -t '${name}' is not a test name in ${file}`);
+function checkEvidence(id, evidence, packages) {
+  if (!Array.isArray(evidence) || evidence.length === 0) {
+    fail(`${id}: no evidence declared`);
+    return;
+  }
+  for (const item of evidence) {
+    if (!item || typeof item !== "object" || typeof item.target !== "string" || !item.target) {
+      fail(`${id}: evidence entry without a target: ${JSON.stringify(item)}`);
+      continue;
+    }
+    switch (item.kind) {
+      case "rust": {
+        if (packages.length === 0) {
+          fail(`${id}: rust evidence '${item.target}' but the command runs no cargo package`);
+          break;
+        }
+        const hits = packages.flatMap((pkg) => cargoTestList(pkg)).filter((t) => t.includes(item.target));
+        if (!hits.length) fail(`${id}: rust evidence '${item.target}' matches 0 tests in ${packages.join("/")}`);
+        break;
       }
+      case "vitest": {
+        const p = resolve(ROOT, "apps", "desktop", item.target);
+        if (!existsSync(p)) {
+          fail(`${id}: vitest evidence file missing ${item.target}`);
+        } else if (item.name && !readFileSync(p, "utf8").includes(item.name)) {
+          fail(`${id}: vitest evidence name '${item.name}' is not in ${item.target}`);
+        }
+        break;
+      }
+      case "node": {
+        if (item.target.includes("..") || !item.target.startsWith("scripts/verify/")) {
+          fail(`${id}: node evidence escapes scripts/verify: ${item.target}`);
+        } else if (!existsSync(resolve(ROOT, item.target))) {
+          fail(`${id}: node evidence missing ${item.target}`);
+        }
+        break;
+      }
+      case "attestation": {
+        if (item.target !== id) fail(`${id}: attestation target must be the scenario id, got '${item.target}'`);
+        break;
+      }
+      default:
+        fail(`${id}: unknown evidence kind '${item.kind}'`);
     }
-    continue;
   }
-
-  // verify scripts — the per-task checks under `checks/` plus top-level
-  // aggregate gates (the phase-one acceptance scenario points at the governance
-  // gate). The regex pins the path to `scripts/verify/` and a `..` segment is
-  // rejected, so widening this cannot be used to reference a file elsewhere.
-  m = command.match(/^node (scripts\/verify\/[A-Za-z0-9_./-]+\.mjs)(?:\s|$)/);
-  if (m) {
-    const p = resolve(ROOT, m[1]);
-    if (m[1].includes("..")) fail(`${id}: verify script path escapes scripts/verify: ${m[1]}`);
-    else if (!existsSync(p)) fail(`${id}: verify script missing ${p}`);
-    continue;
-  }
-
-  // attestation checker
-  m = command.match(/^node scripts\/verify\/checks\/check-native-attestation\.mjs/);
-  if (m) continue;
-
-  // Native audio-effect tools. These are the only admissible way to claim a
-  // filter actually changed the audio, because `af-command` returns rc=0 even
-  // when the parameter does not move. The path is pinned to
-  // `scripts/audio-effects/` and must name one of the known entry points, so
-  // widening this cannot be used to execute an arbitrary script.
-  m = command.match(
-    /^python3 (scripts\/audio-effects\/(probe|inspect-filter-runtime|generate_fixtures)\.py)(?:\s|$)/,
-  );
-  if (m) {
-    const p = resolve(ROOT, m[1]);
-    if (m[1].includes("..")) fail(`${id}: audio-effects path escapes scripts/audio-effects: ${m[1]}`);
-    else if (!existsSync(p)) fail(`${id}: audio-effects tool missing ${p}`);
-    else if (!/^python3 /.test(command) || command.includes("--help")) {
-      // Keep the surface explicit: no shell chaining after the tool.
-      if (/[;&|]/.test(command)) fail(`${id}: audio-effects command must not chain shell operators`);
-    }
-    continue;
-  }
-
-  fail(`${id}: unrecognized command '${command}'`);
 }
 
-process.stdout.write(`validate-scenario-commands: ${bad ? `${bad} problems` : "all scenario commands match real tests / existing files"}\n`);
+for (const { id, command, evidence } of scenarioCommands()) {
+  const packages = checkCommand(id, command);
+  checkEvidence(id, evidence, packages);
+}
+
+process.stdout.write(
+  `validate-scenario-commands: ${bad ? `${bad} problems` : "all scenario evidence resolves and every command is well-formed"}\n`,
+);
 process.exit(bad ? 1 : 0);

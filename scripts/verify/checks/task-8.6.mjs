@@ -80,16 +80,6 @@ for (const needle of [
 }
 
 // 4. Clippy and fmt
-const clippy = spawnSync(
-  "cargo",
-  ["clippy", "-p", "echo-desktop", "--all-targets", "--", "-D", "warnings"],
-  { cwd: ROOT, encoding: "utf8" },
-);
-if (clippy.status !== 0) fail("clippy", `${clippy.stdout}\n${clippy.stderr}`);
-
-const fmt = spawnSync("cargo", ["fmt", "--all", "--", "--check"], { cwd: ROOT, encoding: "utf8" });
-if (fmt.status !== 0) fail("fmt", `${fmt.stdout}\n${fmt.stderr}`);
-
 process.stdout.write(
   "ok 8.6: queueEntryId shuffle bag, 3 modes, >5s previous, no fold/re-shuffle/mode-loss\n",
 );

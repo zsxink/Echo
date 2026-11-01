@@ -7,6 +7,11 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
 const checks = [
+  // One place runs the shared Rust static gates for the whole workspace. Task
+  // checks assert their own targeted behavior instead of repeating fmt/clippy.
+  ["quality-core format", "cargo", ["fmt", "--all", "--", "--check"]],
+  ["quality-core lint", "cargo", ["clippy", "--workspace", "--all-targets", "--all-features", "--", "-D", "warnings"]],
+  ["quality-core tests", "cargo", ["test", "--workspace", "--all-targets", "--all-features"]],
   ["scenario reconciliation", "node", ["scripts/verify/reconcile-scenarios.mjs"]],
   ["scenario command validity", "node", ["scripts/verify/validate-scenario-commands.mjs"]],
   ["scenario registry drift", "node", ["scripts/verify/gen-scenario-manifests.mjs"]],
@@ -21,11 +26,9 @@ const checks = [
   ["lint inheritance", "node", ["scripts/verify/check-lint-inheritance.mjs"]],
   ["toolchain pin", "node", ["scripts/verify/check-toolchain.mjs"]],
   ["verification validity", "node", ["scripts/verify/check-verification-validity.mjs"]],
-  ["scenario command churn", "node", ["scripts/verify/check-scenario-churn.mjs"]],
+  ["scenario evidence coverage", "node", ["scripts/verify/check-scenario-evidence.mjs"]],
   ["scenario command proof", "node", ["scripts/verify/check-scenario-command-proof.mjs"]],
   ["build purity", "node", ["scripts/verify/check-build-purity.mjs"]],
-  ["architecture and workspace tests", "cargo", ["test", "--workspace", "--all-targets", "--all-features"]],
-  ["generated contract drift", "cargo", ["test", "-p", "echo-desktop", "ipc::generate::tests::committed_generated_file_is_in_sync_with_the_generator"]],
   ["coverage gate", "node", ["scripts/verify/checks/task-12.8.mjs"]],
   // Listed after the workspace build so that, when a binary exists, it embeds a
   // dist the frontend step already produced rather than an absent one.
