@@ -128,8 +128,19 @@ if (!/connect-src 'self'/.test(csp) || /connect-src[^;]*(?:https?:|wss?:|\*)/i.t
 process.stdout.write("  ok: sync defaults to disabled and WebView has no remote network source\n");
 
 const appTest = readFileSync(resolve(APP, "src", "app", "App.test.tsx"), "utf8");
-if (!appTest.includes("shows sync as disabled until the user enables it in settings")) {
-  fail("App.test.tsx lost the sync opt-in guard regression test");
+// The regression test moved with the UI: the sync entry now lives in
+// 设置 → 同步 instead of a sidebar button, so the guard asserts the settings
+// surface is read-only while sync is disabled rather than asserting a missing
+// `sync-button` test id. Assert both the test's name and the inoperable state
+// it proves — a renamed-but-emptied test must not pass this gate.
+const SYNC_GUARD = "keeps sync inoperable until the user enables it in settings";
+if (!appTest.includes(SYNC_GUARD)) {
+  fail(`App.test.tsx lost the sync opt-in guard regression test '${SYNC_GUARD}'`);
+}
+const guardStart = appTest.indexOf(SYNC_GUARD);
+const guardBody = appTest.slice(guardStart, appTest.indexOf("\n  });", guardStart));
+if (!guardBody.includes("已关闭") || !guardBody.includes("lan-sync-now")) {
+  fail("App.test.tsx sync opt-in guard no longer asserts the inoperable state (已关闭 / no 立即同步)");
 }
 process.stdout.write("  ok: App.test.tsx carries the sync opt-in guard assertion\n");
 

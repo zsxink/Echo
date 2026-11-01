@@ -29,7 +29,10 @@ function runDesktopTest(filter) {
   });
   const out = `${r.stdout || ""}${r.stderr || ""}`;
   if (r.status !== 0) fail("vitest", `${filter}\n${out}`);
-  const files = Number((out.match(/Test Files\s+(\d+)/) ?? [])[1] ?? 0);
+  // Vitest colours its summary whenever `CI` is set, so `Test Files <esc>[22m 1`
+  // defeats the count regex unless the styling is stripped first.
+  const clean = out.replace(/\u001B\[[0-9;]*[A-Za-z]/g, "");
+  const files = Number((clean.match(/Test Files\s+(\d+)/) ?? [])[1] ?? 0);
   if (files !== 1) fail("vitest", `'${filter}' matched ${files} test files (expected exactly 1)`);
 }
 
