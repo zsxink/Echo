@@ -49,5 +49,5 @@
 - [x] 6.1 独占运行全量治理门（不加 `--without-injection`）：`/usr/bin/time -p pnpm verify:governance`，退出 0，且墙钟不高于 `artifacts/stage3-baseline.txt` 中 `--without-injection` 基线的 1.1 倍；若 CI 墙钟反而上涨超过 10%，按 design 风险项回退对应域的聚合粒度。
 - [x] 6.2 运行 `pnpm verify:task -- --all`，退出 0；用 1.1 的同一脚本确认 140 个 task / 157 条命令，且 9 个 archived task 被跳过。
 - [x] 6.3 运行 `node scripts/verify/run-scenario.mjs --automated`，退出 0；`ok: scenario` 行数等于 `manifest.scenarios - attestation 场景数`（523 − 59 = 464）；再按域各抽一条（core / desktop / vitest / node / attestation）执行并全部 ok。
-- [ ] 6.4 提交分支并开 PR（中文），等待三平台 CI 全绿；在 PR 中记录 governance / release-gate / platform Gate 的墙钟对比与 `verify:task --all` 命令数变化；若有平台显著变慢，附上回退该域聚合粒度的提交。
-- [ ] 6.5 同步 delta spec 到 `openspec/specs/engineering-governance/spec.md`，运行 `openspec validate de-duplicate-quality-gates --strict` 与 `openspec validate --all --strict` 通过后归档 change，最后确认 `git status --porcelain` 为空、PR 已包含归档提交。
+- [x] 6.4 提交分支并开 PR（中文），等待三平台 CI 全绿；在 PR 中记录 governance / release-gate / platform Gate 的墙钟对比与 `verify:task --all` 命令数变化；若有平台显著变慢，附上回退该域聚合粒度的提交。
+- [x] 6.5 同步 delta spec 到 `openspec/specs/engineering-governance/spec.md`，运行 `openspec validate de-duplicate-quality-gates --strict` 与 `openspec validate --all --strict` 通过后归档 change，最后确认 `git status --porcelain` 为空、PR 已包含归档提交。
