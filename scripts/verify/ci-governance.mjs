@@ -11,6 +11,13 @@ const checks = [
   ["scenario command validity", "node", ["scripts/verify/validate-scenario-commands.mjs"]],
   ["scenario manifest validity", "node", ["scripts/verify/validate-scenario-manifests.mjs"]],
   ["scale limits", "node", ["scripts/verify/check-scale.mjs"]],
+  // The fixture gate was previously registered in the manifest but wired into
+  // no CI job and no scenario, so it could go red for months unnoticed. It runs
+  // here (the governance job installs ffmpeg) and reports an older committed
+  // encoder version as environment drift rather than a failure, so a runner
+  // whose ffmpeg differs from the declared toolchain still gates determinism,
+  // committed-integrity, manifest coverage and the licensing guard.
+  ["fixture determinism and licensing", "node", ["scripts/verify/checks/task-1.6.mjs"]],
   ["lint inheritance", "node", ["scripts/verify/check-lint-inheritance.mjs"]],
   ["toolchain pin", "node", ["scripts/verify/check-toolchain.mjs"]],
   ["verification validity", "node", ["scripts/verify/check-verification-validity.mjs"]],

@@ -25,6 +25,24 @@ sha256sum -c checksums.sha256
 SHA-256 of every committed fixture in Node, and asserts that the manifest below
 documents every file actually present in this tree.
 
+## Required toolchain
+
+Required toolchain: ffmpeg 9.0.2 (Homebrew `ffmpeg` formula on macOS).
+
+FFmpeg embeds its own version string in every container it muxes (`Lavf` for
+the muxer, `Lavc` for the encoder). That string is part of the file bytes, and
+its length shifts every following offset; individual encoders also change
+between releases (the AAC encoder, for example, produced slightly different
+samples under 8.1.x). The committed bytes below were produced by **ffmpeg
+9.0.2**; a different ffmpeg release will reproduce the fixtures *deterministically*
+but not *byte-identically*. `scripts/verify/checks/task-1.6.mjs` therefore
+reports that case as **environment drift** (naming both toolchains), not as
+generator non-determinism, and does not fail the gate.
+
+To refresh the committed fixtures after a deliberate ffmpeg upgrade: regenerate
+with the new toolchain, update this line and `checksums.sha256`, and re-run the
+Rust tests that read the fixtures.
+
 ## Determinism note (Ogg)
 
 `mp3`, `m4a`, `flac`, `wav`, and both `mp4` fixtures are byte-deterministic
