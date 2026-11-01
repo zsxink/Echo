@@ -14,7 +14,7 @@
 //   4. `cargo fmt --all -- --check` is clean.
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,6 +23,24 @@ const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "
 function fail(step, msg) {
   process.stderr.write(`FAIL 8.3: ${step}: ${msg}\n`);
   process.exit(1);
+}
+
+// `player/actor` is a module directory, so a needle can live in any sibling
+// file (`mod.rs`, `backend.rs`, `mpv_backend.rs`, `harden_options.rs`, ...).
+// Concatenate the whole module; a missing directory is a hard failure rather
+// than a silently empty string.
+function readActorModule() {
+  const dir = resolve(ROOT, "crates", "echo-desktop", "src", "player", "actor");
+  let files;
+  try {
+    files = readdirSync(dir).filter((name) => name.endsWith(".rs"));
+  } catch (err) {
+    fail("hardening", `cannot read actor module directory: ${err.message}`);
+  }
+  if (files.length === 0) fail("hardening", `no .rs files under ${dir}`);
+  return files
+    .map((name) => readFileSync(resolve(dir, name), "utf8"))
+    .join("\n");
 }
 
 const test = spawnSync("cargo", ["test", "-p", "echo-desktop", "--lib", "player"], {
@@ -39,7 +57,10 @@ for (const name of [
 }
 
 // The hardened option set must exist and pin `protocol-whitelist=file`.
-const actorSrc = readFileSync(resolve(ROOT, "crates", "echo-desktop", "src", "player", "actor.rs"), "utf8");
+// The actor was split into a module directory (`player/actor/`), so read the
+// whole module rather than one file: the option list lives in harden_options.rs
+// while other needles may move between siblings.
+const actorSrc = readActorModule();
 for (const needle of [
   '("config", "no")',
   '("load-scripts", "no")',

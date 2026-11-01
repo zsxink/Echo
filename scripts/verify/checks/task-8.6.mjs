@@ -34,7 +34,7 @@ for (const name of [
   "shuffle_round_plays_no_repeated_entry_while_bag_last",
   "duplicate_song_in_shuffle_round_stays_distinct",
   "repeat_one_repeats_current_on_end",
-  "explicit_next_leaves_repeat_one",
+  "explicit_next_advances_repeat_one_without_changing_selected_mode",
   "mode_switch_keeps_current_item",
   "previous_restarts_current_after_5_seconds",
   "previous_moves_back_within_5_seconds",

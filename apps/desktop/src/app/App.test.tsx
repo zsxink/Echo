@@ -219,7 +219,16 @@ describe("Sync opt-in guard", () => {
     }
   ).__echoTest;
 
-  it("shows sync as disabled until the user enables it in settings", async () => {
+  // 设置入口住在标题栏条（TitlebarActions），它带 windows/macos 平台门；
+  // jsdom 里预设 platform 数据集让壳层渲染这条带，结束即清除。
+  beforeEach(() => {
+    document.documentElement.dataset.platform = "windows";
+  });
+  afterEach(() => {
+    delete document.documentElement.dataset.platform;
+  });
+
+  it("keeps sync inoperable until the user enables it in settings", async () => {
     mocks.setInvoke("sync_status", {
       enabled: false,
       role: "none",
@@ -239,6 +248,8 @@ describe("Sync opt-in guard", () => {
       totalDownloadBytes: 0,
       mediaReady: false,
     });
+    mocks.setInvoke("local_lan_addresses", ["192.168.1.10"]);
+    mocks.setInvoke("get_close_behavior", "exit");
     await act(async () => {
       render(<App />);
     });
@@ -261,7 +272,16 @@ describe("Sync opt-in guard", () => {
     expect(await screen.findByTestId("workspace")).toBeInTheDocument();
 
     expect(screen.queryByTestId("sidebar")).toBeInTheDocument();
-    expect(screen.queryByTestId("sync-button")).not.toBeInTheDocument();
+
+    // 同步入口住在 设置 → 同步（应用工具区不再有常驻同步按钮）。未启用时
+    // 它必须是只读状态：状态显示「已关闭」，且没有可用的同步操作。
+    fireEvent.click(screen.getByTestId("titlebar-settings"));
+    fireEvent.click(await screen.findByRole("tab", { name: "同步" }));
+    expect(await screen.findByTestId("lan-sync-state")).toHaveTextContent("已关闭");
+    expect(screen.queryByTestId("lan-sync-now")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /立即同步|暂停同步|继续同步/ }),
+    ).not.toBeInTheDocument();
   });
 });
 

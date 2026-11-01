@@ -15,7 +15,7 @@
 // boundary; this check owns the normalization contract itself.
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -59,27 +59,48 @@ for (const name of [
 }
 
 // 3. Type-carried contract: one owner, path-typed all the way into the runtime.
-const main = readFileSync(resolve(ROOT, "apps", "desktop", "src-tauri", "src", "main.rs"), "utf8");
-const openTargets = readFileSync(
-  resolve(ROOT, "apps", "desktop", "src-tauri", "src", "open_targets.rs"),
-  "utf8",
-);
+//
+// The shell was split into `bootstrap.rs` (Tauri run loop), `file_open_gate.rs`
+// (readiness-gated delivery) and `main.rs` (a thin entry point), so the scan
+// covers every shell source instead of one file. The gate hooks below are the
+// call sites the contract is carried by, wherever they live.
+const SHELL_SRC = resolve(ROOT, "apps", "desktop", "src-tauri", "src");
+
+function readShellSources(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = resolve(dir, entry.name);
+    if (entry.isDirectory()) return readShellSources(path);
+    return entry.name.endsWith(".rs") ? [path] : [];
+  });
+}
+
+const shellSources = readShellSources(SHELL_SRC).map((path) => ({
+  path,
+  text: readFileSync(path, "utf8"),
+}));
+const shellText = shellSources.map(({ text }) => text).join("\n");
+const openTargets = readFileSync(resolve(SHELL_SRC, "open_targets.rs"), "utf8");
 const runtime = readFileSync(
   resolve(ROOT, "crates", "echo-desktop", "src", "runtime", "mod.rs"),
   "utf8",
 );
-const mainRequired = [
+
+const shellRequired = [
   "open_targets::open_targets(&urls)",
-  "fn deliver_file_open(app: &tauri::AppHandle, path: PathBuf)",
-  "fn record_gate_open(paths: &[PathBuf])",
+  "fn deliver_file_open(",
+  "fn record_gate_open(",
 ];
-for (const token of mainRequired) {
-  if (!main.includes(token)) {
-    fail(`main.rs is missing the normalization contract: '${token}'`);
+for (const token of shellRequired) {
+  if (!shellText.includes(token)) {
+    fail(`the shell sources are missing the normalization contract: '${token}'`);
   }
 }
-if (main.includes("url.to_string()")) {
-  fail("main.rs stringifies a URL again (url.to_string()) — payloads must go through open_targets");
+for (const { path, text } of shellSources) {
+  if (text.includes("url.to_string()")) {
+    fail(
+      `${path.slice(ROOT.length + 1)} stringifies a URL again (url.to_string()) — payloads must go through open_targets`,
+    );
+  }
 }
 const openTargetsRequired = ["fn open_targets(urls: &[tauri::Url]) -> Vec<PathBuf>"];
 for (const token of openTargetsRequired) {
@@ -90,7 +111,7 @@ for (const token of openTargetsRequired) {
 const runtimeRequired = [
   "pub fn receive_file_open(&self, path: PathBuf) -> Option<PathBuf>",
   "pending_opens: PendingOpen<PathBuf>",
-  "pub fn on_ready(&self) -> Vec<PathBuf>",
+  "pub fn mark_frontend_ready(&self) -> Vec<PathBuf>",
 ];
 for (const token of runtimeRequired) {
   if (!runtime.includes(token)) {

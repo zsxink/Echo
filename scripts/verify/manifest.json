@@ -34,6 +34,8 @@
     {
       "id": "1.4",
       "title": "Module visibility rules and architecture tests",
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：task-1.4 只跑 echo-core 的 arch 测试二进制，无额外断言。",
       "commands": [
         {
           "desc": "echo-core arch tests (layering, forbidden deps, platform cfg)",
@@ -118,6 +120,8 @@
     {
       "id": "2.2",
       "title": "Domain entities and value objects",
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。",
       "commands": [
         {
           "desc": "entities/media tests + clippy + fmt",
@@ -128,6 +132,8 @@
     {
       "id": "2.3",
       "title": "Unicode normalization and platform-safe name rules",
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。",
       "commands": [
         {
           "desc": "text unit + property tests + clippy + fmt",
@@ -138,6 +144,8 @@
     {
       "id": "2.4",
       "title": "State machines (scan/root/operation/playback)",
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。",
       "commands": [
         {
           "desc": "state unit + property tests + clippy + fmt",
@@ -148,6 +156,8 @@
     {
       "id": "2.5",
       "title": "Core error classification",
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。",
       "commands": [
         {
           "desc": "error classification + path-privacy tests + clippy + fmt",
@@ -158,6 +168,8 @@
     {
       "id": "2.6",
       "title": "Ports (no SQLite/Tauri/mpv types)",
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。",
       "commands": [
         {
           "desc": "ports boundary compile + clippy + fmt",
@@ -168,6 +180,8 @@
     {
       "id": "2.7",
       "title": "Test doubles for all ports",
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。",
       "commands": [
         {
           "desc": "fakes (fault/trash/watcher/temp-dir) + clippy + fmt",
@@ -178,6 +192,8 @@
     {
       "id": "2.8",
       "title": "Stable sort, server-side cursor, playback context types",
+      "archived": true,
+      "archivedReason": "与 ci-governance 的 cargo test --workspace --all-targets --all-features 重复：命令是 cargo test -p echo-core 全量 + clippy + fmt，工作区门已逐条覆盖。",
       "commands": [
         {
           "desc": "catalog tests (tie-break/cursor/50k IPC) + clippy + fmt",
@@ -190,12 +206,12 @@
       "title": "Immutable 0001 SQLite migration and schema snapshot",
       "commands": [
         {
-          "desc": "migration schema snapshot",
-          "cmd": "node scripts/verify/checks/task-3.mjs 3.1 initial_migration_has_required_tables_indexes_and_no_sync_tables"
+          "desc": "migration schema snapshot（含同步表；不含账号/遥测表）",
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.1 initial_migration_has_required_tables_indexes_and_no_account_or_telemetry"
         },
         {
           "desc": "multiple lyrics candidates per song",
-          "cmd": "node scripts/verify/checks/task-3.mjs 3.1 song_lyrics_keep_multiple_candidates_for_fallback"
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.1 lan_ledger::operations::song_lyrics_keep_multiple_candidates_for_fallback"
         }
       ]
     },
@@ -209,11 +225,11 @@
         },
         {
           "desc": "cross-root membership and position clashes rejected",
-          "cmd": "node scripts/verify/checks/task-3.mjs 3.2 playlist_members_reject_cross_root_and_position_conflicts"
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.2 lan_ledger::operations::playlist_members_reject_cross_root_and_position_conflicts"
         },
         {
           "desc": "active target claim blocks other operations until released",
-          "cmd": "node scripts/verify/checks/task-3.mjs 3.2 target_claims_block_other_operations_until_released"
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.2 lan_ledger::operations::target_claims_block_other_operations_until_released"
         }
       ]
     },
@@ -247,15 +263,15 @@
         },
         {
           "desc": "stale scan write-back preserves user state",
-          "cmd": "node scripts/verify/checks/task-3.mjs 3.5 stale_scan_upsert_preserves_favorite_play_count_and_availability"
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.5 lan_ledger::operations::stale_scan_upsert_preserves_favorite_play_count_and_availability"
         },
         {
           "desc": "pending delete hidden, finalize removes members atomically",
-          "cmd": "node scripts/verify/checks/task-3.mjs 3.5 pending_delete_hides_from_catalog_and_finalize_removes_members_atomically"
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.5 lan_ledger::operations::pending_delete_hides_from_catalog_and_finalize_removes_members_atomically"
         },
         {
           "desc": "multi-playlist membership commits and rolls back atomically",
-          "cmd": "node scripts/verify/checks/task-3.mjs 3.5 multi_playlist_membership_commits_in_one_transaction"
+          "cmd": "node scripts/verify/checks/task-3.mjs 3.5 lan_ledger::operations::multi_playlist_membership_commits_in_one_transaction"
         }
       ]
     },
@@ -301,40 +317,10 @@
     },
     {
       "id": "3.10",
-      "title": "Sync-foundation schema: 0005 migration (tombstones/sync_state/sync_outbox + revision columns)",
+      "title": "Sync-foundation data shape (3.10–3.13): 0005 migration (tombstones/sync_state/sync_outbox + revision columns), outbox prewrite on the five local logic-change classes, Echo-delete tombstone, and the sync-foundation spec shape (no absolute path in outbox payloads, schema_base present)",
       "commands": [
         {
-          "desc": "0005 shape + registration + core shape tests",
-          "cmd": "node scripts/verify/checks/task-3.10.mjs"
-        }
-      ]
-    },
-    {
-      "id": "3.11",
-      "title": "Outbox prewrite on the five local logic-change classes",
-      "commands": [
-        {
-          "desc": "song/playlist/override prewrite + monotone revision, single tx",
-          "cmd": "node scripts/verify/checks/task-3.10.mjs"
-        }
-      ]
-    },
-    {
-      "id": "3.12",
-      "title": "Echo-delete tombstone (delete propagates cross-device)",
-      "commands": [
-        {
-          "desc": "finalize writes durable tombstone, external missing does not",
-          "cmd": "node scripts/verify/checks/task-3.10.mjs"
-        }
-      ]
-    },
-    {
-      "id": "3.13",
-      "title": "Sync-foundation shape meets sync-foundation spec (schema, outbox fields, privacy)",
-      "commands": [
-        {
-          "desc": "shape probing: no absolute path in outbox payloads, schema_base present",
+          "desc": "0005 shape + registration + core shape tests; song/playlist/override prewrite with monotone revision in one tx; durable tombstone on finalize (external missing does not); shape probing for outbox payload privacy and schema_base",
           "cmd": "node scripts/verify/checks/task-3.10.mjs"
         }
       ]
@@ -381,11 +367,11 @@
       "commands": [
         {
           "desc": "staging exclusive-create + marker ownership",
-          "cmd": "node scripts/verify/checks/task-4.mjs 4.2 infrastructure::filesystem::staging::tests::staging_dir_is_created_with_matching_marker"
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.2 infrastructure::filesystem::staging::tests::staging_dir_is_emitted_as_echo_tmp_with_matching_marker"
         },
         {
           "desc": "forged/corrupt marker and user dirs never taken over or ignored",
-          "cmd": "node scripts/verify/checks/task-4.mjs 4.2 infrastructure::filesystem::staging::tests::forged_or_corrupt_marker_is_never_ours"
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.2 infrastructure::filesystem::staging::tests::foreign_or_corrupt_echo_tmp_never_becomes_ours"
         },
         {
           "desc": "symlinked staging directory never followed",
@@ -393,7 +379,7 @@
         },
         {
           "desc": "walker skips only marker-owned staging dirs (incl. Unicode paths)",
-          "cmd": "node scripts/verify/checks/task-4.mjs 4.2 infrastructure::filesystem::walker::tests::walker_enumerates_files_and_skips_only_owned_staging_dirs"
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.2 infrastructure::filesystem::walker::tests::walker_enumerates_media_and_never_enters_the_control_surface"
         },
         {
           "desc": "escaping file symlinks rejected (canonical containment)",
@@ -511,23 +497,23 @@
       "commands": [
         {
           "desc": "creates/updates/progress with small-batch reconcile",
-          "cmd": "node scripts/verify/checks/task-4.mjs 4.7 application::scan::tests::scan_pipeline_creates_updates_and_reports_progress"
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.7 application::scan::tests::pipeline::scan_pipeline_creates_updates_and_reports_progress"
         },
         {
           "desc": "bad files never block other songs",
-          "cmd": "node scripts/verify/checks/task-4.mjs 4.7 application::scan::tests::scan_pipeline_batches_and_survives_bad_files"
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.7 application::scan::tests::pipeline::scan_pipeline_batches_and_survives_bad_files"
         },
         {
           "desc": "cancel mid-scan never marks missing",
-          "cmd": "node scripts/verify/checks/task-4.mjs 4.7 application::scan::tests::cancel_mid_scan_never_marks_missing"
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.7 application::scan::tests::pipeline::cancel_mid_scan_never_marks_missing"
         },
         {
           "desc": "enumerate failure marks run failed without missing pass",
-          "cmd": "node scripts/verify/checks/task-4.mjs 4.7 application::scan::tests::enumerate_failure_marks_run_failed_without_missing"
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.7 application::scan::tests::relink::enumerate_failure_marks_run_failed_without_missing"
         },
         {
           "desc": "worker concurrency bounded by config",
-          "cmd": "node scripts/verify/checks/task-4.mjs 4.7 application::scan::tests::bounded_workers_never_exceed_the_configured_bound"
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.7 application::scan::tests::relink::bounded_workers_never_exceed_the_configured_bound"
         },
         {
           "desc": "UI queries stay available during a real SQLite scan",
@@ -545,11 +531,11 @@
         },
         {
           "desc": "fast-skip unchanged files; move keeps UUID and favorite",
-          "cmd": "node scripts/verify/checks/task-4.mjs 4.8 application::scan::tests::fast_skip_unchanged_files_and_relink_on_move"
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.8 application::scan::tests::relink::fast_skip_unchanged_files_and_relink_on_move"
         },
         {
           "desc": "duplicate hashes: deterministic primary + promotion keeps UUID",
-          "cmd": "node scripts/verify/checks/task-4.mjs 4.8 application::scan::tests::duplicate_hash_paths_get_deterministic_primary"
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.8 application::scan::tests::relink::duplicate_hash_paths_get_deterministic_primary"
         },
         {
           "desc": "a music-key match never re-links; old record stays missing",
@@ -595,7 +581,7 @@
         },
         {
           "desc": "published files reuse the journal-reserved SongId",
-          "cmd": "node scripts/verify/checks/task-4.mjs 4.9 application::watch::tests::published_files_reuse_the_journal_reserved_song_id"
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.9 application::watch::tests::published_files_reuse_the_persisted_journal_reserved_song_id"
         },
         {
           "desc": "full scan buffers events, release replays idempotently",
@@ -617,19 +603,19 @@
         },
         {
           "desc": "progress throttle + terminal persistence",
-          "cmd": "node scripts/verify/checks/task-4.mjs 4.10 application::scan::tests::progress_persisted_throttled_and_terminal_state_kept"
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.10 application::scan::tests::relink::progress_persisted_throttled_and_terminal_state_kept"
         },
         {
           "desc": "manual rescan repeatable and converging",
-          "cmd": "node scripts/verify/checks/task-4.mjs 4.10 application::scan::tests::manual_rescan_is_repeatable_and_converges"
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.10 application::scan::tests::relink::manual_rescan_is_repeatable_and_converges"
         },
         {
           "desc": "embedded/sidecar candidates persisted and refreshed per scan",
-          "cmd": "node scripts/verify/checks/task-4.mjs 4.10 application::scan::tests::embedded_and_sidecar_lyrics_are_persisted_per_source"
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.10 application::scan::tests::convergence::embedded_and_sidecar_lyrics_are_persisted_per_source"
         },
         {
           "desc": "revision/added_at survive rescans (identity stability)",
-          "cmd": "node scripts/verify/checks/task-4.mjs 4.10 application::scan::tests::revision_and_added_at_survive_rescans"
+          "cmd": "node scripts/verify/checks/task-4.mjs 4.10 application::scan::tests::convergence::revision_and_added_at_survive_rescans"
         }
       ]
     },
@@ -639,27 +625,27 @@
       "commands": [
         {
           "desc": "mixed batch: per-input imported/duplicate/unsupported/failed results",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::tests::mixed_batch_reports_each_input_independently"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::logic::tests::mixed_batch_reports_each_input_independently"
         },
         {
           "desc": "OperationId + reserved SongId persisted in the journal before side effects",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::tests::import_reserves_operation_and_song_ids_before_side_effects"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::logic::tests::import_reserves_operation_and_song_ids_before_side_effects"
         },
         {
           "desc": "single input failure does not roll back committed inputs",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::tests::single_input_failure_does_not_rollback_committed_inputs"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::logic::tests::single_input_failure_does_not_rollback_committed_inputs"
         },
         {
           "desc": "same content twice in one batch yields one record",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::tests::duplicate_content_within_a_batch_creates_one_record"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::logic::tests::duplicate_content_within_a_batch_creates_one_record"
         },
         {
           "desc": "unavailable root refuses the whole batch before any copy",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::tests::unavailable_root_rejects_the_whole_batch_before_copying"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::logic::tests::unavailable_root_rejects_the_whole_batch_before_copying"
         },
         {
           "desc": "same target name, different content: minimal (n) numbering, no overwrite",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::tests::same_name_different_content_gets_minimal_conflict_number"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.1 application::import::logic::tests::same_name_different_content_gets_minimal_conflict_number"
         }
       ]
     },
@@ -669,35 +655,35 @@
       "commands": [
         {
           "desc": "default target is 歌手/歌手 - 歌曲名.原扩展名",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::tests::default_target_is_artist_folder_with_artist_minus_title"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::logic::tests::default_target_is_artist_folder_with_artist_minus_title"
         },
         {
           "desc": "missing/blank tags take the visible deterministic 未知艺人/未命名歌曲 fallbacks",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::tests::missing_or_blank_tags_fall_back_to_deterministic_names"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::logic::tests::missing_or_blank_tags_fall_back_to_deterministic_names"
         },
         {
           "desc": "tag text is cleaned into platform-safe target components",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::tests::tag_text_is_cleaned_for_platform_safe_targets"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::logic::tests::tag_text_is_cleaned_for_platform_safe_targets"
         },
         {
           "desc": "oversized components keep the extension plus the stable short hash",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::tests::oversized_components_are_truncated_with_short_hash_and_keep_extension"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::logic::tests::oversized_components_are_truncated_with_short_hash_and_keep_extension"
         },
         {
           "desc": "numbering skips occupied suffixes and lands on the minimal (n)",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::tests::minimal_numbering_skips_occupied_suffixes"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::logic::tests::minimal_numbering_skips_occupied_suffixes"
         },
         {
           "desc": "same tags inside one batch are numbered against each other",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::tests::numbering_applies_within_one_batch"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::logic::tests::numbering_applies_within_one_batch"
         },
         {
           "desc": "files that exist only on disk are numbered around, never replaced",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::tests::import_renumbers_around_files_that_exist_only_on_disk"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::logic::tests::import_renumbers_around_files_that_exist_only_on_disk"
         },
         {
           "desc": "publish is create-new: a target created after planning fails, never overwrites",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::tests::publish_never_overwrites_a_target_created_after_planning"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.2 application::import::logic::tests::publish_never_overwrites_a_target_created_after_planning"
         },
         {
           "desc": "Windows golden cases: forbidden characters",
@@ -739,23 +725,23 @@
       "commands": [
         {
           "desc": "streaming copy is byte-exact and BLAKE3 is computed during the copy",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.3 application::import::tests::import_streams_the_copy_and_computes_blake3_during_it"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.3 application::import::logic::tests::import_streams_the_copy_and_computes_blake3_during_it"
         },
         {
           "desc": "journal item records source locator, staging slot, target and expected hash per resource",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.3 application::import::tests::journal_item_records_source_staging_target_and_expected_hash"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.3 application::import::logic::tests::journal_item_records_source_staging_target_and_expected_hash"
         },
         {
           "desc": "database record is visible only after the full audio is published",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.3 application::import::tests::database_record_is_visible_only_after_the_full_audio_is_published"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.3 application::import::logic::tests::database_record_is_visible_only_after_the_full_audio_is_published"
         },
         {
           "desc": "exclusive target reservation never replaces a raced target and staged copies of duplicate/failed inputs are discarded",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.3 application::import::tests::duplicate_and_failed_inputs_discard_their_staged_copies"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.3 application::import::logic::tests::duplicate_and_failed_inputs_discard_their_staged_copies"
         },
         {
           "desc": "source content/name/location stay unchanged and a same-named user directory is never written (dedicated controlled staging)",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.3 application::import::tests::source_files_stay_unchanged_and_foreign_staging_names_are_isolated"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.3 application::import::logic::tests::source_files_stay_unchanged_and_foreign_staging_names_are_isolated"
         }
       ]
     },
@@ -765,35 +751,35 @@
       "commands": [
         {
           "desc": "embedded lyrics win over an imported same-basename .lrc",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::tests::embedded_lyrics_still_win_over_the_imported_sidecar"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::logic::tests::embedded_lyrics_still_win_over_the_imported_sidecar"
         },
         {
           "desc": "sidecar is copied beside the audio's exact target and independently reported",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::tests::lrc_sidecar_is_copied_under_the_audio_target_and_result_reports_it"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::logic::tests::lrc_sidecar_is_copied_under_the_audio_target_and_result_reports_it"
         },
         {
           "desc": "sidecar pairs with the FINAL numbered audio base name (n)",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::tests::lrc_target_pairs_with_a_numbered_audio_target"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::logic::tests::lrc_target_pairs_with_a_numbered_audio_target"
         },
         {
           "desc": "no same-basename .lrc creates no empty lyrics file and reports None",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::tests::no_sidecar_means_no_lrc_file_and_none_result"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::logic::tests::no_sidecar_means_no_lrc_file_and_none_result"
         },
         {
           "desc": "unreadable sidecar: audio succeeds, lyrics failed, no half sidecar, no sidecar candidate",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::tests::unreadable_sidecar_gives_audio_success_and_lyrics_failure_without_a_half_sidecar"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::logic::tests::unreadable_sidecar_gives_audio_success_and_lyrics_failure_without_a_half_sidecar"
         },
         {
           "desc": "sidecar publish conflict: audio succeeds, lyrics failed, incumbent kept, lyrics row rolled back",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::tests::sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::logic::tests::sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent"
         },
         {
           "desc": "sidecar size mismatch: lyrics failed, audio committed, nothing published",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::tests::sidecar_staging_size_mismatch_is_lyrics_failure_with_audio_committed"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::logic::tests::sidecar_staging_size_mismatch_is_lyrics_failure_with_audio_committed"
         },
         {
           "desc": "real adapter: source .lrc is copied, never moved or modified, journal records both resources",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::tests::real_fs_import_copies_the_source_lrc_without_moving_or_modifying_it"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.4 application::import::logic::tests::real_fs_import_copies_the_source_lrc_without_moving_or_modifying_it"
         }
       ]
     },
@@ -803,27 +789,27 @@
       "commands": [
         {
           "desc": "crash at every journal-state write + publish + DB commit point, recover twice to the unique terminal state with the reserved UUID",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.5 application::recover::tests::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.5 application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"
         },
         {
           "desc": "copy/fsync crash before any journal leaves nothing to recover and no orphan final file",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.5 application::recover::tests::copy_crash_before_any_journal_leaves_nothing_to_recover"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.5 application::recover::tests::imports::copy_crash_before_any_journal_leaves_nothing_to_recover"
         },
         {
           "desc": "mid-read truncated source is rejected at validation (no record, no final file)",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.5 application::recover::tests::truncated_source_is_rejected_and_leaves_nothing"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.5 application::recover::tests::imports::truncated_source_is_rejected_and_leaves_nothing"
         },
         {
           "desc": "watcher preemption after publish reuses the reserved UUID, never a duplicate/ghost",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.5 application::recover::tests::recovery_never_creates_a_duplicate_when_a_watcher_preempts"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.5 application::recover::tests::imports::recovery_never_creates_a_duplicate_when_a_watcher_preempts"
         },
         {
           "desc": "foreign target content is a held conflict: never overwritten, no record, claim kept, idempotent",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.5 application::recover::tests::foreign_target_content_is_a_held_conflict_never_overwritten"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.5 application::recover::tests::imports::foreign_target_content_is_a_held_conflict_never_overwritten"
         },
         {
           "desc": "nothing recoverable rolls back and releases the claim (no orphan final file, no ghost record)",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.5 application::recover::tests::nothing_recoverable_rolls_back_and_releases_cleanly"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.5 application::recover::tests::imports::nothing_recoverable_rolls_back_and_releases_cleanly"
         }
       ]
     },
@@ -833,11 +819,11 @@
       "commands": [
         {
           "desc": "pre-commit dedup returns the existing UUID when a concurrent import commits identical content mid-flight; one logical song, our published duplicate is removed, claim released",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.6 application::import::tests::precommit_dedup_catches_a_concurrent_duplicate_without_a_second_song"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.6 application::import::logic::tests::precommit_dedup_catches_a_concurrent_duplicate_without_a_second_song"
         },
         {
           "desc": "idempotent retry: re-importing identical content is recognized by BLAKE3 as a duplicate (no new song, no re-copy, existing record returned)",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.6 application::import::tests::retry_of_identical_content_is_an_idempotent_duplicate"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.6 application::import::logic::tests::retry_of_identical_content_is_an_idempotent_duplicate"
         }
       ]
     },
@@ -871,35 +857,35 @@
         },
         {
           "desc": "crash after the stage rename but before StateApplied: recovery normalizes to applied and completes the hide (unique hidden state)",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::crash_after_delete_stage_rename_recovers_to_unique_hidden"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::delete_restore::crash_after_delete_stage_rename_recovers_to_unique_hidden"
         },
         {
           "desc": "crash at the stage rename itself: recovery re-stages from the persisted source then hides",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::crash_at_the_delete_stage_rename_re_stages_then_hides"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::delete_restore::crash_at_the_delete_stage_rename_re_stages_then_hides"
         },
         {
           "desc": "crash at the hide DB commit with audio+lyrics staged: recovery completes the one-transaction hide for both resources",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::crash_at_the_delete_hide_commit_then_recovery_hides_audio_and_lrc"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::delete_restore::crash_at_the_delete_hide_commit_then_recovery_hides_audio_and_lrc"
         },
         {
           "desc": "crash mid-undo after the rename: recovery normalizes RestorePending-to-Restored and brings the song back to Available keeping UUID/favorite/stats/playlist position",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::crash_during_restore_after_rename_recovers_song_available"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::delete_restore::crash_during_restore_after_rename_recovers_song_available"
         },
         {
           "desc": "crash before the restore rename: recovery retries the restore into the original path and restores the song",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::crash_at_the_restore_rename_recovers_song_available"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::delete_restore::crash_at_the_restore_rename_recovers_song_available"
         },
         {
           "desc": "contradictory original/staged evidence holds (FailedRecoverable), never deletes either file, keeps the claim",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::contradictory_stage_evidence_holds_and_deletes_nothing"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::delete_restore::contradictory_stage_evidence_holds_and_deletes_nothing"
         },
         {
           "desc": "an expired hidden operation is handed to task 5.8's trash flow (items to TrashPending; undo refused), while the unexpired one resumes its remaining countdown",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::expired_hidden_delete_is_handed_to_trash_and_untouched_by_restore"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::delete_restore::expired_hidden_delete_is_handed_to_trash_and_untouched_by_restore"
         },
         {
           "desc": "a foreign occupant at the restore target with no safe numbered path holds that one item (FailedRecoverable), never aborts the whole root recovery, and unrelated operations still recover",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::foreign_occupancy_at_recover_restore_pending_holds_the_item_not_the_whole_run"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.7 application::recover::tests::delete_restore::foreign_occupancy_at_recover_restore_pending_holds_the_item_not_the_whole_run"
         }
       ]
     },
@@ -949,7 +935,7 @@
         },
         {
           "desc": "multi-resource expired-delete handoff writes every TrashPending state atomically and rolls back all of them on failure",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.8 application::recover::tests::expired_multi_resource_handoff_is_atomic_when_persisting_trash_pending"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.8 application::recover::tests::delete_restore::expired_multi_resource_handoff_is_atomic_when_persisting_trash_pending"
         },
         {
           "desc": "the unknown journal result and durable root safety isolation roll back together when the latter write fails",
@@ -967,19 +953,19 @@
       "commands": [
         {
           "desc": "external deletion is the Missing model (not PendingDelete) and preserves UUID, favorite, play stats and playlist membership with no trash-journal operation",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.9 application::scan::tests::external_deletion_is_missing_not_pending_delete_and_keeps_relationships"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.9 application::scan::tests::pipeline::external_deletion_is_missing_not_pending_delete_and_keeps_relationships"
         },
         {
           "desc": "recovery at the original path restores Availability, reuses the same UUID and keeps every relationship",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.9 application::scan::tests::external_missing_recovers_on_original_path_restoring_everything"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.9 application::scan::tests::pipeline::external_missing_recovers_on_original_path_restoring_everything"
         },
         {
           "desc": "a same-hash file at a new path re-links the missing identity under the same UUID and keeps relationships",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.9 application::scan::tests::external_missing_relinks_on_same_hash_path_keeping_relationships"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.9 application::scan::tests::pipeline::external_missing_relinks_on_same_hash_path_keeping_relationships"
         },
         {
           "desc": "an Echo PendingDelete song is never converted to Missing by the scanner, never re-imported from the owned trash staging, and keeps its one journal operation",
-          "cmd": "node scripts/verify/checks/task-5.mjs 5.9 application::scan::tests::echo_pending_delete_is_never_treated_as_external_missing"
+          "cmd": "node scripts/verify/checks/task-5.mjs 5.9 application::scan::tests::pipeline::echo_pending_delete_is_never_treated_as_external_missing"
         },
         {
           "desc": "the parse-path restore mirrors the fast-skip restore: a re-parsed same-path file resurrects a Missing record but never a PendingDelete one",
@@ -1420,8 +1406,12 @@
       "title": "结构化 tracing、panic hook 和安全错误映射，production 日志隐私测试",
       "commands": [
         {
-          "desc": "production log privacy: tracing 写入无绝对路径/歌词/标签/文件内容，panic hook 仅写本地 crash.log",
-          "cmd": "node scripts/verify/checks/task-7.mjs 7.8 privacy::"
+          "desc": "production log privacy: tracing 写入无绝对路径/歌词/标签/文件内容",
+          "cmd": "node scripts/verify/checks/task-7.mjs 7.8 structured_logging_never_leaks_path_lyric_tag_or_content"
+        },
+        {
+          "desc": "panic hook 仅写本地 crash.log 且诊断本地隔离（不上报路径）",
+          "cmd": "node scripts/verify/checks/task-7.mjs 7.8 panic_hook_writes_a_locally_isolated_crash_diagnostic"
         },
         {
           "desc": "IPC ErrorPolicy 仅 transient 类标记 retryable + DTO camelCase 无绝对路径",
@@ -1934,6 +1924,8 @@
     {
       "id": "13.6",
       "title": "完整质量门：cargo fmt/clippy/test 与 pnpm format/lint/typecheck/test/build 全通过后才进入候选打包",
+      "archived": true,
+      "archivedReason": "逐条等于 ci.yml 的 Rust job（fmt/clippy/test）与 Frontend job（format:check/lint/typecheck/test/build），无任何额外断言；发布路径由 release.yml 的构建步骤承担。",
       "commands": [
         {
           "desc": "cargo fmt --all --check && clippy --workspace --all-targets --all-features -D warnings && cargo test --workspace --all-features；以及 pnpm format:check/lint/typecheck/test/build",
@@ -2173,7 +2165,7 @@
     },
     {
       "id": "AFX-2",
-      "title": "Audio-effects DSP arithmetic: RBJ coefficients, cascade peak budget, band validity, limiter threshold and chain syntax",
+      "title": "Audio-effects DSP arithmetic and independent numeric regressions: RBJ coefficients, cascade peak budget, band validity, limiter threshold and chain syntax; independent DSP numeric regressions across four processing rates (also covers AFX-12.3)",
       "commands": [
         {
           "desc": "recompute the DSP maths independently: g=0 is exactly identity, analytic 997 Hz response matches the measured value, fc<=0.45*Fs band skipping, cascade peak for adjacent/all +12 dB, the 32769-point refined grid is compared with 1,048,577 uniform samples on 12 curves at four rates (a numerical regression, not a global bound), -3 dB bandwidth shrinks at higher gain, extrastereo's three input shapes, limit==-1 dBFS and the -0.99985 dBFS residue; the shipped chain keeps level=false/asc=false/latency=true/normalize=false/precision=f64/c=false; documents do not drift back to the discredited readings",
@@ -2222,24 +2214,6 @@
         {
           "desc": "frontend EQ state and preamp interaction regressions",
           "cmd": "pnpm --dir apps/desktop test"
-        }
-      ]
-    },
-    {
-      "id": "AFX-12.3",
-      "title": "Independent DSP numeric regressions across four processing rates",
-      "commands": [
-        {
-          "desc": "recompute the DSP maths independently: g=0 is exactly identity, analytic 997 Hz response matches the measured value, fc<=0.45*Fs band skipping, cascade peak for adjacent/all +12 dB, the 32769-point refined grid is compared with 1,048,577 uniform samples on 12 curves at four rates (a numerical regression, not a global bound), -3 dB bandwidth shrinks at higher gain, extrastereo's three input shapes, limit==-1 dBFS and the -0.99985 dBFS residue; the shipped chain keeps level=false/asc=false/latency=true/normalize=false/precision=f64/c=false; documents do not drift back to the discredited readings",
-          "cmd": "node scripts/verify/checks/audio-effects-dsp-math.mjs"
-        },
-        {
-          "desc": "false-claim mutations fail; cut/boost inverse widths, undefined thresholds and independent golden-section extrema are checked",
-          "cmd": "node scripts/verify/checks/audio-effects-dsp-selftest.mjs"
-        },
-        {
-          "desc": "execute shipped Rust DSP with independent off-center and composed four-rate numeric references",
-          "cmd": "cargo test -p echo-desktop effects::math"
         }
       ]
     },
@@ -2748,7 +2722,7 @@
     {
       "id": "DAS-R16-S01",
       "title": "在应用工作区右键",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R15-S01",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R16-S01",
       "manifest": "tests/native/DAS-R16-S01.md"
     },
     {

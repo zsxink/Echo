@@ -15,6 +15,11 @@
 //
 // The runner never modifies lockfiles, so "lockfile unchanged" can be asserted
 // by snapshotting hashes before and after a run.
+//
+// `archived: true` marks a check whose assertions are already carried by a gate
+// that does run (the workspace test in ci-governance, or a ci.yml job). Such an
+// entry is skipped by `--all` and still runs when its id is named explicitly, so
+// the script and its history stay reachable without re-running a duplicate.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -92,7 +97,11 @@ const manifest = JSON.parse(readFileSync(MANIFEST, "utf8"));
 
 let requested;
 if (argv.includes("--all")) {
-  requested = manifest.tasks.map((t) => t.id);
+  requested = manifest.tasks.filter((t) => !t.archived).map((t) => t.id);
+  const skipped = manifest.tasks.filter((t) => t.archived).map((t) => t.id);
+  if (skipped.length) {
+    process.stdout.write(`note: skipping ${skipped.length} archived task(s): ${skipped.join(" ")}\n`);
+  }
 } else if (ids.length) {
   requested = ids;
 } else {

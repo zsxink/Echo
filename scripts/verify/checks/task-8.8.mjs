@@ -16,7 +16,7 @@
 //   5. `cargo clippy` and `cargo fmt` are clean.
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,6 +25,21 @@ const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "
 function fail(step, msg) {
   process.stderr.write(`FAIL 8.8: ${step}: ${msg}\n`);
   process.exit(1);
+}
+
+// `player/actor` is a module directory, so a needle can live in any sibling
+// file. Concatenate the whole module; a missing directory is a hard failure
+// rather than a silently empty string.
+function readActorModule() {
+  const dir = resolve(ROOT, "crates", "echo-desktop", "src", "player", "actor");
+  let files;
+  try {
+    files = readdirSync(dir).filter((name) => name.endsWith(".rs"));
+  } catch (err) {
+    fail("actor rollback", `cannot read actor module directory: ${err.message}`);
+  }
+  if (files.length === 0) fail("actor rollback", `no .rs files under ${dir}`);
+  return files.map((name) => readFileSync(resolve(dir, name), "utf8")).join("\n");
 }
 
 // 1. Player tests (coordinator + fake + actor-loop rollback)
@@ -57,7 +72,7 @@ for (const needle of ["pub fn seek", "pub fn set_volume", "pub fn toggle_mute"])
 }
 
 // 3. Actor: recent non-zero volume + authoritative rollback
-const actorSrc = readFileSync(resolve(ROOT, "crates", "echo-desktop", "src", "player", "actor.rs"), "utf8");
+const actorSrc = readActorModule();
 for (const needle of [
   "last_nonzero_volume",               // mute remembers the recent non-zero value
   "fn write_property(&mut self, prop: BackendProperty) -> bool", // rejected => false

@@ -39,6 +39,27 @@ function run(command, args, cwd) {
 run("pnpm", ["--filter", "@echo/desktop", "typecheck"], APP);
 run("pnpm", ["--filter", "@echo/desktop", "test", "--", "--run", "src/features/library/SongMenu.test.tsx"], APP);
 run("cargo", ["clippy", "-p", "echo-app", "--", "-D", "warnings"], ROOT);
-run("cargo", ["test", "-p", "echo-desktop", "player::actor::tests::load_library_song"], ROOT);
+
+// `cargo test <filter>` exits 0 when the filter matches nothing, so a renamed
+// or moved test would leave this gate green while proving nothing. Require at
+// least one test to have actually run.
+const ACTOR_FILTER = "player::actor::tests::validation::load_library_song";
+const actorTests = spawnSync("cargo", ["test", "-p", "echo-desktop", ACTOR_FILTER], {
+  cwd: ROOT,
+  encoding: "utf8",
+});
+const actorOut = `${actorTests.stdout || ""}${actorTests.stderr || ""}`;
+if (actorTests.status !== 0) {
+  process.stderr.write(`FAIL 10.6: cargo test ${ACTOR_FILTER}\n${actorOut}\n`);
+  process.exit(1);
+}
+const actorPassed = [...actorOut.matchAll(/test result: ok\. (\d+) passed/g)].reduce(
+  (total, match) => total + Number(match[1]),
+  0,
+);
+if (actorPassed === 0) {
+  process.stderr.write(`FAIL 10.6: filter '${ACTOR_FILTER}' matched no tests\n${actorOut}\n`);
+  process.exit(1);
+}
 
 process.stdout.write("ok 10.6: virtualized list play actions (下一首播放 / 加入播放队列) verified\n");

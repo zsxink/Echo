@@ -104,15 +104,16 @@ fn load_temporary(path: &str) -> PlayerCommand {
     }
 }
 
-/// Wait (bounded, ~1s) until `cond` holds on the shared snapshot. The bound
+/// Wait (bounded, ~5s) until `cond` holds on the shared snapshot. The bound
 /// must clear a loaded CI runner as well as a cold local machine: when the
-/// whole workspace test suite runs in parallel, the actor thread competes
-/// with hundreds of others and a 500 ms budget was occasionally not enough.
+/// whole workspace test suite runs in parallel (or several gate checks run at
+/// once), the actor thread competes with hundreds of others and the earlier
+/// 500 ms / 1 s budgets were occasionally not enough.
 fn wait_for(
     snapshot: &Arc<RwLock<PlayerSnapshot>>,
     mut cond: impl FnMut(&PlayerSnapshot) -> bool,
 ) -> PlayerSnapshot {
-    for _ in 0..200 {
+    for _ in 0..1000 {
         let s = snapshot.read().expect("snapshot poisoned").clone();
         if cond(&s) {
             return s;
@@ -126,10 +127,10 @@ fn wait_for_property_writes(
     props: &Arc<std::sync::Mutex<Vec<BackendProperty>>>,
     count: usize,
 ) -> Vec<BackendProperty> {
-    // Same ~1s budget as `wait_for`: the property writes land from the actor
+    // Same ~5s budget as `wait_for`: the property writes land from the actor
     // thread, which is starved when the whole workspace test suite runs in
     // parallel on a loaded CI runner.
-    for _ in 0..200 {
+    for _ in 0..1000 {
         let writes = props.lock().expect("properties poisoned").clone();
         if writes.len() >= count {
             return writes;

@@ -29,7 +29,10 @@ function runDesktopTest(filter) {
   });
   const out = `${r.stdout || ""}${r.stderr || ""}`;
   if (r.status !== 0) fail("vitest", `${filter}\n${out}`);
-  const files = Number((out.match(/Test Files\s+(\d+)/) ?? [])[1] ?? 0);
+  // Vitest colours its summary whenever `CI` is set, so `Test Files <esc>[22m 1`
+  // defeats the count regex unless the styling is stripped first.
+  const clean = out.replace(/\u001B\[[0-9;]*[A-Za-z]/g, "");
+  const files = Number((clean.match(/Test Files\s+(\d+)/) ?? [])[1] ?? 0);
   if (files !== 1) fail("vitest", `'${filter}' matched ${files} test files (expected exactly 1)`);
 }
 
@@ -45,9 +48,52 @@ for (const needle of [
 ]) {
   if (!appTest.includes(needle)) fail("shell states", `App.test.tsx lost '${needle}'`);
 }
-const workspace = readFileSync(resolve(APP, "src", "features", "library", "LibraryWorkspace.tsx"), "utf8");
-if (!/!\s*readOnly \? \(/.test(workspace)) {
-  fail("read-only", "LibraryWorkspace does not branch rendering on readOnly — writes would not be disabled");
+// 3. The read-only branch is real: the workspace threads `readOnly` into every
+//    surface that can write, and those surfaces gate their write actions on it.
+//    The old single-regex pinned one rendering shape (`!readOnly ? ( ... )`);
+//    the component now gates per-surface, so assert each surface instead —
+//    dropping any one of them makes a write usable on a read-only library.
+const workspace = readFileSync(
+  resolve(APP, "src", "features", "library", "LibraryWorkspace.tsx"),
+  "utf8",
+);
+if (!/<SongList[\s\S]*?readOnly={readOnly}/.test(workspace)) {
+  fail("read-only", "LibraryWorkspace does not pass readOnly to SongList");
+}
+if (!/<SongMenu[\s\S]*?readOnly={readOnly}/.test(workspace)) {
+  fail("read-only", "LibraryWorkspace does not pass readOnly to SongMenu");
+}
+
+const songList = readFileSync(
+  resolve(APP, "src", "features", "library", "SongList.tsx"),
+  "utf8",
+);
+// The empty-library import entry point must disappear entirely when read-only.
+if (!/!\s*readOnly\s*&&\s*props\.onImport/.test(songList)) {
+  fail("read-only", "SongList renders the import entry point regardless of readOnly");
+}
+if (!/readOnly={readOnly}/.test(songList)) {
+  fail("read-only", "SongList does not thread readOnly down to its rows");
+}
+
+const songRow = readFileSync(
+  resolve(APP, "src", "features", "library", "SongRow.tsx"),
+  "utf8",
+);
+if (!/disabled={readOnly \|\| unavailable}/.test(songRow)) {
+  fail("read-only", "SongRow's favorite control is not disabled on a read-only library");
+}
+
+const songMenu = readFileSync(
+  resolve(APP, "src", "features", "library", "SongMenu.tsx"),
+  "utf8",
+);
+if (!/disabled: readOnly/.test(songMenu)) {
+  fail("read-only", "SongMenu does not disable its write items on a read-only library");
+}
+// Destructive actions are not merely disabled: they are absent.
+if (!/\.\.\.\(readOnly[\s\S]*?song-menu-delete/.test(songMenu)) {
+  fail("read-only", "SongMenu still offers delete on a read-only library");
 }
 
 process.stdout.write("ok 10.3: workspace states (unconfigured / read-only / error retry) hold\n");

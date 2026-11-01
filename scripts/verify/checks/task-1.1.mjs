@@ -25,7 +25,10 @@ if (meta.status !== 0) fail(`cargo metadata exited ${meta.status}`);
 
 const parsed = JSON.parse(meta.stdout);
 const names = parsed.packages.map((p) => p.name).sort();
-const expected = ["echo-app", "echo-core", "echo-desktop"].sort();
+// echo-sync joined the workspace with the local LAN sync feature; the boundary
+// this check owns is that the shell/runtime/core split stays intact, so a NEW
+// member must still be added here deliberately rather than slipping in.
+const expected = ["echo-app", "echo-core", "echo-desktop", "echo-sync"].sort();
 if (JSON.stringify(names) !== JSON.stringify(expected)) {
   fail(`unexpected workspace members: ${names.join(", ")}`);
 }
