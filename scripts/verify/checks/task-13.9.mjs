@@ -89,9 +89,10 @@ if (Number(specCount) !== expectedScenarioCount) {
 }
 mkdirSync(ARTIFACTS, { recursive: true });
 
-// 2. Every scenario command must resolve to a real test (no silent 0-test pass).
+// 2. Every scenario command must resolve to a real test (no silent 0-test pass),
+//    and the executed manifest entries must match the command registry exactly.
 run("node", ["scripts/verify/validate-scenario-commands.mjs"]);
-run("node", ["scripts/verify/validate-scenario-manifests.mjs"]);
+run("node", ["scripts/verify/gen-scenario-manifests.mjs"]);
 
 // 3. A clean checkout can only prove automated scenarios: native matrix rows
 //    require evidence from a real target and remain enforced by `-- --all`.
