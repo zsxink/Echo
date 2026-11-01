@@ -130,7 +130,7 @@ export function scenarioCommands() {
 | PLL-R02-S03 | 同步资料不含 `echo/tmp/<op>/` 与任何暂存文件 | `infrastructure/filesystem/control_plane.rs` `tmp_files_are_ignored_as_records`、`staging.rs` `staging_dir_is_emitted_as_echo_tmp_with_matching_marker` | `COREC("tmp_files_are_ignored_as_records")` |
 | PLL-R03-S01 | 新设备重建一致的 UUID/喜欢/歌单/成员顺序并可播放 | `application/continuation/tests.rs` `continuation_restores_songs_favorites_playlists_and_member_order` —— **更正**：原登记为整模块 `COREC("application::restore")`，该过滤器下只有断言**歌曲**投影的用例，而本行写的是「喜欢/歌单/成员顺序」，属于「用成功路径测试冒充未覆盖的验收」。现指向真正断言歌单数量、成员顺序与 `is_favorite` 恢复的用例 | `COREC("application::continuation::tests::continuation_restores_songs_favorites_playlists_and_member_order")` |
 | PLL-R03-S02 | 资料先到、媒体未到时显示不可用并保留 UUID，媒体到达后恢复且不产生第二首 | `application/portable.rs` `restore_projects_records_and_keeps_missing_without_media` | `COREC("restore_projects_records_and_keeps_missing_without_media")` |
-| PHA-R01-S02 | 回归质量门：Rust/前端/格式/静态检查与登记场景均通过 | `scripts/verify/ci-governance.mjs` —— 含 `cargo test --workspace --all-targets --all-features`、前端构建、覆盖率、三方对账、命令棘轮、纯净性、注入证明共 14 道 | 直接写字符串 `"node scripts/verify/ci-governance.mjs"`（**该门禁很重**，全量场景会因此明显变长；若不可接受，可改为指向 `CHECK("1.2")` 只覆盖前端那一半） |
+| PHA-R01-S02 | 回归质量门：Rust/前端/格式/静态检查与登记场景均通过 | `scripts/verify/ci-governance.mjs` —— 含 `cargo test --workspace --all-targets --all-features`、前端构建、覆盖率、三方对账、场景证据门、纯净性、注入证明共 14 道 | 注册表声明 `delegatedTo: "governance"`：release-gate 以 `--delegated=governance` 跳过（治理 job 单独跑整门），本地不带参数时仍整门执行 |
 
 ## 3. 丙类：有测试但覆盖不全 —— **已按「先补测试再登记」收口**（4 条）
 

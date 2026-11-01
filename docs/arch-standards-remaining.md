@@ -206,6 +206,13 @@ node scripts/verify/checks/task-5.mjs 5.2 \
 **先决条件**：`manifest.json.scenarios[]` 与注册表逐条一致（`gen-scenario-manifests.mjs`
 默认模式即此漂移门）。**改任何场景命令或证据之前先改 registry 再 `--write`。**
 
+**release-gate 的 delegation**：`ci.yml` 的 `release-gate` 以
+`node scripts/verify/checks/task-13.9.mjs --delegated=governance` 运行；`task-13.9.mjs` 把参数
+透传给 `run-scenario.mjs`，后者只跳过注册表里**显式声明** `delegatedTo: "governance"` 的场景
+（当前 `LD-R10-S01`、`PHA-R01-S02`，治理 job 会单独跑整门）。没有该声明的一律照常执行；
+本地不带参数时整门照跑，严格度不变。`check-scenario-evidence.mjs` 校验该声明只允许
+`"governance"`，且 `ci.yml` 中确有运行 `pnpm verify:governance` 的 job。
+
 ---
 
 ## 6. 场景全量 / 真机 / 归档（任务 8.3 / 8.4 / 8.5）

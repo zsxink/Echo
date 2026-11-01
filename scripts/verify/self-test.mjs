@@ -165,8 +165,9 @@ writeFileSync(
       },
       {
         id: "rust-reused-test",
-        title: "Rust test already covered by the governance workspace suite",
+        title: "Rust test explicitly delegated to the governance job",
         command: "cargo test -p echo-core --all-features regular-filter",
+        delegatedTo: "governance",
         evidence: [{ kind: "rust", target: "regular_test_ok" }],
       },
       {
@@ -277,14 +278,15 @@ assert(
 );
 const reusedRustScenarios = runScenarioRunner(
   scenarioFixture,
-  ["rust-reused-test", "rust-ignored-test"],
-  { ...scenarioEnv, ECHO_GOVERNANCE_GATE_IN_PARALLEL_JOB: "1" },
+  ["--delegated=governance", "rust-reused-test", "rust-ignored-test"],
+  scenarioEnv,
 );
 assert(
   reusedRustScenarios.status !== 0
     && reusedRustScenarios.stdout.includes("ok: scenario rust-reused-test")
+    && reusedRustScenarios.stdout.includes("covered by the governance job")
     && reusedRustScenarios.stderr.includes("rust-ignored-test"),
-  "parallel governance coverage skips normal Rust tests but retains ignored performance tests",
+  "only explicitly delegated scenarios are skipped; undeclared Rust scenarios still execute",
 );
 
 // Lockfiles must be unchanged after a run.

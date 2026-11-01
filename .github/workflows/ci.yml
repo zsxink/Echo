@@ -512,8 +512,4 @@ jobs:
         run: pnpm --dir apps/desktop build
 
       - name: Run release gate without external artifacts
-        env:
-          # Governance runs as a separate required job; avoid repeating its
-          # normal Rust test suite in the scenario command set.
-          ECHO_GOVERNANCE_GATE_IN_PARALLEL_JOB: "1"
-        run: node scripts/verify/checks/task-13.9.mjs
+        run: node scripts/verify/checks/task-13.9.mjs --delegated=governance

@@ -98,7 +98,13 @@ run("node", ["scripts/verify/gen-scenario-manifests.mjs"]);
 // 3. A clean checkout can only prove automated scenarios: native matrix rows
 //    require evidence from a real target and remain enforced by `-- --all`.
 //    This gate must be reproducible in CI, so it runs `-- --automated`.
+//    `--delegated=<gate>` is passed straight through: only scenarios whose
+//    registry entry explicitly declares that gate are skipped (release-gate
+//    runs the governance job separately). Without the flag the whole gate is
+//    executed locally, keeping the strict default.
 const report = resolve(ARTIFACTS, "verify:scenario-report.txt");
+const delegated = process.argv.slice(2).find((arg) => arg.startsWith("--delegated="));
+const delegatedArgs = delegated ? [delegated] : [];
 const expectedAutomatedCount = JSON.parse(readFileSync(resolve(ROOT, "scripts", "verify", "manifest.json"), "utf8"))
   .scenarios
   .filter((scenario) => !(scenario.evidence ?? []).some((e) => e.kind === "attestation"))
@@ -107,8 +113,7 @@ let scenarioOut;
 try {
   const scenarioResult = await runStreaming(
     "node",
-    ["scripts/verify/run-scenario.mjs", "--", "--automated"],
-    { ECHO_GOVERNANCE_GATE_IN_PARALLEL_JOB: process.env.ECHO_GOVERNANCE_GATE_IN_PARALLEL_JOB || "0" },
+    ["scripts/verify/run-scenario.mjs", "--", "--automated", ...delegatedArgs],
   );
   if (scenarioResult.status !== 0) {
     fail(`'node scripts/verify/run-scenario.mjs -- --automated' exited ${scenarioResult.status}`);

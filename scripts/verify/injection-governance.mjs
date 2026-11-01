@@ -78,8 +78,8 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
         // reads repository content) that has no entry and no declaration.
         replaceIn(
           join(ROOT, "scripts", "verify", "scenario-commands.mjs"),
-          'CHECK("12.7")',
-          'CHECK("__injection_probe_hybrid")',
+          'node("scripts/verify/checks/task-12.7.mjs")',
+          'node("scripts/verify/checks/task-__injection_probe_hybrid.mjs")',
         );
         createProbe(
           join(ROOT, "scripts", "verify", "checks", "task-__injection_probe_hybrid.mjs"),
@@ -188,6 +188,36 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
           join(ROOT, "Cargo.toml"),
           'license = "LicenseRef-Echo-Personal-Study-1.0"',
           'license = "BUSL-1.1"',
+        );
+        return {};
+      },
+    },
+    {
+      id: "scenario-evidence/missing-target",
+      guard: "a scenario whose evidence names a test that does not exist",
+      check: ["node", ["scripts/verify/check-scenario-evidence.mjs"]],
+      expect: /FAIL scenario evidence[\s\S]*no_such_test/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, "scripts", "verify", "scenario-commands.mjs"),
+          'rust("infrastructure::sqlite::tests::catalog_all_songs_view")',
+          'rust("no_such_test")',
+        );
+        return {};
+      },
+    },
+    {
+      id: "scenario-evidence/unobserved-target",
+      guard: "a scenario whose evidence exists but its aggregated command never runs it",
+      check: ["node", ["scripts/verify/run-scenario.mjs", "SFI-R12-S01"]],
+      expect: /scenario SFI-R12-S01: evidence not observed in command output: rust 'infrastructure::sqlite::tests::catalog_all_songs_view'/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, "scripts", "verify", "manifest.json"),
+          '"target": "publish_never_overwrites_a_target_created_after_planning"',
+          '"target": "infrastructure::sqlite::tests::catalog_all_songs_view"',
         );
         return {};
       },

@@ -524,7 +524,7 @@ const ENTRIES = [
     expect: /manifest drift:[\s\S]*CRP-R01-S01: command drift/,
     baseline: true,
     inject() {
-      const row = '"CRP-R01-S01": "node scripts/verify/checks/task-crp.mjs';
+      const row = '"CRP-R01-S01": { command: "node scripts/verify/checks/task-crp.mjs';
       replaceIn(join(ROOT, "scripts", "verify", "scenario-commands.mjs"), `${row}",`, `${row} --drift-probe",`);
       return {};
     },
@@ -574,36 +574,9 @@ const ENTRIES = [
   },
 
   // ---- 14.7 scenario evidence coverage ---------------------------------
-  {
-    id: "scenario-evidence/missing-target",
-    guard: "a scenario whose evidence names a test that does not exist",
-    check: ["node", ["scripts/verify/check-scenario-evidence.mjs"]],
-    expect: /FAIL scenario evidence[\s\S]*no_such_test/,
-    baseline: true,
-    inject() {
-      replaceIn(
-        join(ROOT, "scripts", "verify", "scenario-commands.mjs"),
-        'rust("infrastructure::sqlite::tests::catalog_all_songs_view")',
-        'rust("no_such_test")',
-      );
-      return {};
-    },
-  },
-  {
-    id: "scenario-evidence/unobserved-target",
-    guard: "a scenario whose evidence exists but its aggregated command never runs it",
-    check: ["node", ["scripts/verify/run-scenario.mjs", "SFI-R12-S01"]],
-    expect: /scenario SFI-R12-S01: evidence not observed in command output: rust 'infrastructure::sqlite::tests::catalog_all_songs_view'/,
-    baseline: true,
-    inject() {
-      replaceIn(
-        join(ROOT, "scripts", "verify", "manifest.json"),
-        '"target": "publish_never_overwrites_a_target_created_after_planning"',
-        '"target": "infrastructure::sqlite::tests::catalog_all_songs_view"',
-      );
-      return {};
-    },
-  },
+  // The two scenario-evidence proofs live in injection-governance.mjs: this
+  // file sits under the 1000-line scale ceiling and the suite merges that
+  // module's entries into ENTRIES.
 
   // ---- embedded-frontend freshness -------------------------------------
   {

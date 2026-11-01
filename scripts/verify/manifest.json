@@ -5155,7 +5155,7 @@
         {
           "kind": "vitest",
           "target": "src/features/playlists/AddToPlaylistDialog.test.tsx",
-          "name": "所选歌单将应用于全部"
+          "name": "runs a multi-song add sequentially and keeps partial failures visible"
         }
       ]
     },
@@ -6212,7 +6212,7 @@
         {
           "kind": "vitest",
           "target": "src/features/playlists/AddToPlaylistDialog.test.tsx",
-          "name": "所选歌单将应用于全部"
+          "name": "runs a multi-song add sequentially and keeps partial failures visible"
         }
       ]
     },
