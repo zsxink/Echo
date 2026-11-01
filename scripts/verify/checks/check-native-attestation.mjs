@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 // Native-scenario attestation check (task 13.9 / 13.5).
 //
-// The 45 `tests/native/*.md` scenarios describe HUMAN matrix steps that must
-// be executed on a real target platform by an operator and recorded with
+// The human matrix rows are described in `docs/native-attestation-playbook.md`
+// §5 (steps) and §6 (record contract). Those scenarios are HUMAN steps that
+// must be executed on a real target platform by an operator and recorded with
 // evidence. They cannot be automated on every host. This check enforces that
 // the attestation record for a scenario exists and is non-empty and complete —
 // i.e. the human step manifest was actually executed and the outcome recorded
 // — so `pnpm verify:scenario -- <native-ID>` fails loudly until the operator
 // has done the work and left evidence, rather than silently passing on an
 // un-run manual matrix.
+//
+// A scenario is classified as human-only by its command alone: it is one when
+// the command invokes this script. There is no second classification source.
 //
 // Attestation files:
 //   artifacts/native-attestations/<ID>.log
@@ -41,7 +45,7 @@ function fail(msg) {
 function check(id) {
   const log = resolve(ROOT, "artifacts", "native-attestations", `${id}.log`);
   if (!existsSync(log)) {
-    fail(`${id}: no attestation record at artifacts/native-attestations/${id}.log — run the tests/native/${id}.md human steps on the target platform and record the outcome`);
+    fail(`${id}: no attestation record at artifacts/native-attestations/${id}.log — run the manual steps in docs/native-attestation-playbook.md §5 on the target platform and record the outcome as described in §6 (skeleton: tests/native/_TEMPLATE.md)`);
     return false;
   }
   const text = readFileSync(log, "utf8");

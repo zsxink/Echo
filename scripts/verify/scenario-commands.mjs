@@ -1,8 +1,9 @@
 // Scenario → executable-command map for the 0.1.0 gate (task 13.9).
 //
 // 523 scenarios (spec-derived id set) × executable command. This
-// table is the single authoritative source; manifest.json.scenarios[] and the
-// tests/scenarios|native trees are generated from it (gen-scenario-manifests.mjs).
+// table is the single authoritative source; `manifest.json.scenarios[]` is
+// generated from it (gen-scenario-manifests.mjs, whose default mode is the
+// drift gate comparing the two).
 // Regenerated on top of the pre-alignment map so every id follows the
 // authoritative spec numbering; renamed rows carry their previous value, new
 // scenarios are wired to their test case (or attestation where only manual
@@ -614,9 +615,10 @@ export const COMMANDS = {
   "PM-R07-S01": REACT("src/features/playlists/AddToPlaylistDialog.test.tsx"),
   "PM-R07-S02": REACT("src/features/playlists/PlaylistNameDialog.test.tsx"),
   // S03/S04 had no row here, so the generator fell back to the attestation
-  // checker and rewrote their committed manifests — which then tripped
-  // validate-scenario-manifests. The values below are what the committed
-  // manifests already claimed, so this only records them in the source of truth.
+  // checker and rewrote their committed manifests — which then tripped the
+  // then-current scenario manifest validator (retired in 2026-11). The values
+  // below are what the committed manifests already claimed, so this only
+  // records them in the source of truth.
   "PM-R07-S03": REACT("src/features/playlists/AddToPlaylistDialog.test.tsx"),
   "PM-R07-S04": REACT("src/features/playlists/AddToPlaylistDialog.test.tsx"),
 

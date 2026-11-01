@@ -1994,16 +1994,6 @@
       ]
     },
     {
-      "id": "14.4",
-      "title": "Scenario YAML fields agree with the executable registry",
-      "commands": [
-        {
-          "desc": "parse every scenario manifest and assert id, requirement, title, layer, command and filter fields",
-          "cmd": "node scripts/verify/validate-scenario-manifests.mjs"
-        }
-      ]
-    },
-    {
       "id": "14.5",
       "title": "Every registered check can fail and observes something",
       "commands": [
@@ -2242,3140 +2232,2617 @@
     {
       "id": "CRP-R01-S01",
       "title": "语义化 tag 触发构建",
-      "command": "node scripts/verify/checks/task-crp.mjs",
-      "manifest": "tests/scenarios/CRP-R01-S01.yaml"
+      "command": "node scripts/verify/checks/task-crp.mjs"
     },
     {
       "id": "CRP-R01-S02",
       "title": "版本不匹配时拒绝发布",
-      "command": "node scripts/verify/checks/task-crp.mjs",
-      "manifest": "tests/scenarios/CRP-R01-S02.yaml"
+      "command": "node scripts/verify/checks/task-crp.mjs"
     },
     {
       "id": "CRP-R01-S03",
       "title": "手动触发",
-      "command": "node scripts/verify/checks/task-crp.mjs",
-      "manifest": "tests/scenarios/CRP-R01-S03.yaml"
+      "command": "node scripts/verify/checks/task-crp.mjs"
     },
     {
       "id": "CRP-R02-S01",
       "title": "macOS 产物",
-      "command": "node scripts/verify/checks/task-crp.mjs",
-      "manifest": "tests/scenarios/CRP-R02-S01.yaml"
+      "command": "node scripts/verify/checks/task-crp.mjs"
     },
     {
       "id": "CRP-R02-S02",
       "title": "Windows 产物",
-      "command": "node scripts/verify/checks/task-crp.mjs",
-      "manifest": "tests/scenarios/CRP-R02-S02.yaml"
+      "command": "node scripts/verify/checks/task-crp.mjs"
     },
     {
       "id": "CRP-R02-S03",
       "title": "Linux 产物",
-      "command": "node scripts/verify/checks/task-crp.mjs",
-      "manifest": "tests/scenarios/CRP-R02-S03.yaml"
+      "command": "node scripts/verify/checks/task-crp.mjs"
     },
     {
       "id": "CRP-R03-S01",
       "title": "校验清单随发布物上传",
-      "command": "node scripts/verify/checks/task-crp.mjs",
-      "manifest": "tests/scenarios/CRP-R03-S01.yaml"
+      "command": "node scripts/verify/checks/task-crp.mjs"
     },
     {
       "id": "CRP-R03-S02",
       "title": "缺失产物导致失败",
-      "command": "node scripts/verify/checks/task-crp.mjs",
-      "manifest": "tests/scenarios/CRP-R03-S02.yaml"
+      "command": "node scripts/verify/checks/task-crp.mjs"
     },
     {
       "id": "CRP-R04-S01",
       "title": "许可证说明随包上传",
-      "command": "node scripts/verify/checks/task-crp.mjs",
-      "manifest": "tests/scenarios/CRP-R04-S01.yaml"
+      "command": "node scripts/verify/checks/task-crp.mjs"
     },
     {
       "id": "CRP-R04-S02",
       "title": "三平台许可齐全",
-      "command": "node scripts/verify/checks/task-crp.mjs",
-      "manifest": "tests/scenarios/CRP-R04-S02.yaml"
+      "command": "node scripts/verify/checks/task-crp.mjs"
     },
     {
       "id": "CRP-R05-S01",
       "title": "资产汇总到 tag 对应 Release",
-      "command": "node scripts/verify/checks/task-crp.mjs",
-      "manifest": "tests/scenarios/CRP-R05-S01.yaml"
+      "command": "node scripts/verify/checks/task-crp.mjs"
     },
     {
       "id": "CRP-R05-S02",
       "title": "重复触发不产生重复 Release",
-      "command": "node scripts/verify/checks/task-crp.mjs",
-      "manifest": "tests/scenarios/CRP-R05-S02.yaml"
+      "command": "node scripts/verify/checks/task-crp.mjs"
     },
     {
       "id": "DAS-R01-S01",
       "title": "首次选择有效目录",
-      "command": "cargo test -p echo-core --all-features root_switch::tests::empty_directory_activates",
-      "manifest": "tests/scenarios/DAS-R01-S01.yaml"
+      "command": "cargo test -p echo-core --all-features root_switch::tests::empty_directory_activates"
     },
     {
       "id": "DAS-R01-S02",
       "title": "取消选择目录",
-      "command": "cargo test -p echo-core --all-features root_switch::tests::root_level_error_keeps_old_active_root",
-      "manifest": "tests/scenarios/DAS-R01-S02.yaml"
+      "command": "cargo test -p echo-core --all-features root_switch::tests::root_level_error_keeps_old_active_root"
     },
     {
       "id": "DAS-R01-S03",
       "title": "选择不可用目录",
-      "command": "cargo test -p echo-core --all-features root_switch::tests::read_only_root_activates_readonly",
-      "manifest": "tests/scenarios/DAS-R01-S03.yaml"
+      "command": "cargo test -p echo-core --all-features root_switch::tests::read_only_root_activates_readonly"
     },
     {
       "id": "DAS-R01-S04",
       "title": "已有本机配置再次启动",
-      "command": "cargo test -p echo-core --all-features boot::tests::clean_active_root_recovers_idle_and_releases_the_scan_exclusion",
-      "manifest": "tests/scenarios/DAS-R01-S04.yaml"
+      "command": "cargo test -p echo-core --all-features boot::tests::clean_active_root_recovers_idle_and_releases_the_scan_exclusion"
     },
     {
       "id": "DAS-R02-S01",
       "title": "从侧边导航切换资料库视图",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/narrow.test.tsx",
-      "manifest": "tests/scenarios/DAS-R02-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/narrow.test.tsx"
     },
     {
       "id": "DAS-R02-S02",
       "title": "视图或资料库为空",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx",
-      "manifest": "tests/scenarios/DAS-R02-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx"
     },
     {
       "id": "DAS-R02-S03",
       "title": "进入多选模式",
-      "command": "node scripts/verify/checks/task-13.8.mjs",
-      "manifest": "tests/scenarios/DAS-R02-S03.yaml"
+      "command": "node scripts/verify/checks/task-13.8.mjs"
     },
     {
       "id": "DAS-R02-S04",
       "title": "右键和键盘打开批量菜单",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongRow.test.tsx",
-      "manifest": "tests/scenarios/DAS-R02-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongRow.test.tsx"
     },
     {
       "id": "DAS-R02-S05",
       "title": "访问一期明确排除的入口",
-      "command": "node scripts/verify/checks/task-13.8.mjs",
-      "manifest": "tests/scenarios/DAS-R02-S05.yaml"
+      "command": "node scripts/verify/checks/task-13.8.mjs"
     },
     {
       "id": "DAS-R02-S06",
       "title": "标题栏条承载设置与导入",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R02-S06",
-      "manifest": "tests/native/DAS-R02-S06.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R02-S06"
     },
     {
       "id": "DAS-R02-S07",
       "title": "指针悬停标题栏操作",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R02-S07",
-      "manifest": "tests/native/DAS-R02-S07.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R02-S07"
     },
     {
       "id": "DAS-R02-S08",
       "title": "键盘访问标题栏操作",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/accessibility.test.tsx",
-      "manifest": "tests/scenarios/DAS-R02-S08.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/accessibility.test.tsx"
     },
     {
       "id": "DAS-R02-S09",
       "title": "便于点击标题栏操作",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R02-S09",
-      "manifest": "tests/native/DAS-R02-S09.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R02-S09"
     },
     {
       "id": "DAS-R02-S10",
       "title": "保持搜索框外观",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R02-S10",
-      "manifest": "tests/native/DAS-R02-S10.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R02-S10"
     },
     {
       "id": "DAS-R02-S11",
       "title": "在同步设置中找到主要控制",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/settings/SettingsView.test.tsx",
-      "manifest": "tests/scenarios/DAS-R02-S11.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/settings/SettingsView.test.tsx"
     },
     {
       "id": "DAS-R02-S12",
       "title": "设置按主题模块浏览",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/settings/SettingsView.test.tsx",
-      "manifest": "tests/scenarios/DAS-R02-S12.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/settings/SettingsView.test.tsx"
     },
     {
       "id": "DAS-R02-S13",
       "title": "设置显示音乐库完整本地路径",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/settings/SettingsView.test.tsx",
-      "manifest": "tests/scenarios/DAS-R02-S13.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/settings/SettingsView.test.tsx"
     },
     {
       "id": "DAS-R02-S14",
       "title": "查看当前播放快捷键",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/settings/SettingsView.test.tsx",
-      "manifest": "tests/scenarios/DAS-R02-S14.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/settings/SettingsView.test.tsx"
     },
     {
       "id": "DAS-R02-S15",
       "title": "关于页展示品牌",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/settings/SettingsView.test.tsx",
-      "manifest": "tests/scenarios/DAS-R02-S15.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/settings/SettingsView.test.tsx"
     },
     {
       "id": "DAS-R03-S01",
       "title": "歌单视图导入可用",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import entry in the titlebar strip under the playlist view\"",
-      "manifest": "tests/scenarios/DAS-R03-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import entry in the titlebar strip under the playlist view\""
     },
     {
       "id": "DAS-R03-S02",
       "title": "歌手/专辑视图导入可用",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import entry in the titlebar strip under the artist directory\"",
-      "manifest": "tests/scenarios/DAS-R03-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import entry in the titlebar strip under the artist directory\""
     },
     {
       "id": "DAS-R03-S03",
       "title": "只读资目录禁用导入",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"hides the import entry for a read-only library\"",
-      "manifest": "tests/scenarios/DAS-R03-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"hides the import entry for a read-only library\""
     },
     {
       "id": "DAS-R04-S01",
       "title": "切换主题",
-      "command": "cargo test -p echo-desktop --all-features platform::local_state",
-      "manifest": "tests/scenarios/DAS-R04-S01.yaml"
+      "command": "cargo test -p echo-desktop --all-features platform::local_state"
     },
     {
       "id": "DAS-R04-S02",
       "title": "下次启动恢复主题",
-      "command": "cargo test -p echo-desktop --all-features platform::local_state",
-      "manifest": "tests/scenarios/DAS-R04-S02.yaml"
+      "command": "cargo test -p echo-desktop --all-features platform::local_state"
     },
     {
       "id": "DAS-R04-S03",
       "title": "偏好不可保存或值非法",
-      "command": "cargo test -p echo-desktop --all-features platform::local_state",
-      "manifest": "tests/scenarios/DAS-R04-S03.yaml"
+      "command": "cargo test -p echo-desktop --all-features platform::local_state"
     },
     {
       "id": "DAS-R05-S01",
       "title": "选择退出应用",
-      "command": "node scripts/verify/checks/task-9.6.mjs",
-      "manifest": "tests/native/DAS-R05-S01.md"
+      "command": "node scripts/verify/checks/task-9.6.mjs"
     },
     {
       "id": "DAS-R05-S02",
       "title": "选择后台运行",
-      "command": "node scripts/verify/checks/task-9.6.mjs",
-      "manifest": "tests/native/DAS-R05-S02.md"
+      "command": "node scripts/verify/checks/task-9.6.mjs"
     },
     {
       "id": "DAS-R05-S03",
       "title": "关闭期间存在未完成初始化",
-      "command": "node scripts/verify/checks/task-9.6.mjs",
-      "manifest": "tests/native/DAS-R05-S03.md"
+      "command": "node scripts/verify/checks/task-9.6.mjs"
     },
     {
       "id": "DAS-R06-S01",
       "title": "从平台入口显示主窗口",
-      "command": "node scripts/verify/checks/task-9.3.mjs",
-      "manifest": "tests/native/DAS-R06-S01.md"
+      "command": "node scripts/verify/checks/task-9.3.mjs"
     },
     {
       "id": "DAS-R06-S02",
       "title": "从平台入口控制播放",
-      "command": "node scripts/verify/checks/task-9.3.mjs",
-      "manifest": "tests/native/DAS-R06-S02.md"
+      "command": "node scripts/verify/checks/task-9.3.mjs"
     },
     {
       "id": "DAS-R06-S03",
       "title": "托盘或菜单栏初始化失败",
-      "command": "node scripts/verify/checks/task-9.3.mjs",
-      "manifest": "tests/native/DAS-R06-S03.md"
+      "command": "node scripts/verify/checks/task-9.3.mjs"
     },
     {
       "id": "DAS-R07-S01",
       "title": "重复启动应用",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
-      "manifest": "tests/native/DAS-R07-S01.md"
+      "command": "node scripts/verify/checks/task-9.1.mjs"
     },
     {
       "id": "DAS-R07-S02",
       "title": "系统文件关联触发打开",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
-      "manifest": "tests/native/DAS-R07-S02.md"
+      "command": "node scripts/verify/checks/task-9.1.mjs"
     },
     {
       "id": "DAS-R07-S03",
       "title": "首实例尚未就绪",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
-      "manifest": "tests/native/DAS-R07-S03.md"
+      "command": "node scripts/verify/checks/task-9.1.mjs"
     },
     {
       "id": "DAS-R07-S04",
       "title": "前端监听器晚于文件打开请求就绪",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R07-S04",
-      "manifest": "tests/native/DAS-R07-S04.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R07-S04"
     },
     {
       "id": "DAS-R07-S05",
       "title": "运行中收到文件打开请求",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R07-S05",
-      "manifest": "tests/native/DAS-R07-S05.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R07-S05"
     },
     {
       "id": "DAS-R08-S01",
       "title": "打开和关闭窄屏侧边栏",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/narrow.test.tsx",
-      "manifest": "tests/scenarios/DAS-R08-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/narrow.test.tsx"
     },
     {
       "id": "DAS-R08-S02",
       "title": "窗口从宽屏变为窄屏",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx",
-      "manifest": "tests/scenarios/DAS-R08-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx"
     },
     {
       "id": "DAS-R08-S03",
       "title": "浮层点击外部",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx",
-      "manifest": "tests/scenarios/DAS-R08-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx"
     },
     {
       "id": "DAS-R08-S04",
       "title": "再次点击播放队列触发控件",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/QueuePanel.test.tsx",
-      "manifest": "tests/scenarios/DAS-R08-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/QueuePanel.test.tsx"
     },
     {
       "id": "DAS-R08-S05",
       "title": "触发控件状态与可访问名称",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx",
-      "manifest": "tests/scenarios/DAS-R08-S05.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx"
     },
     {
       "id": "DAS-R08-S06",
       "title": "再次点击触发控件不触发外部动作",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx",
-      "manifest": "tests/scenarios/DAS-R08-S06.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx"
     },
     {
       "id": "DAS-R08-S07",
       "title": "仍可点击真正外部区域关闭",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx",
-      "manifest": "tests/scenarios/DAS-R08-S07.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx"
     },
     {
       "id": "DAS-R08-S08",
       "title": "音效入口与队列互斥",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/EffectsPanel.test.tsx",
-      "manifest": "tests/scenarios/DAS-R08-S08.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/EffectsPanel.test.tsx"
     },
     {
       "id": "DAS-R08-S09",
       "title": "音效标签尺寸一致",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/EffectsPanel.test.tsx",
-      "manifest": "tests/scenarios/DAS-R08-S09.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/EffectsPanel.test.tsx"
     },
     {
       "id": "DAS-R09-S01",
       "title": "键盘遍历应用壳",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/accessibility.test.tsx",
-      "manifest": "tests/scenarios/DAS-R09-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/accessibility.test.tsx"
     },
     {
       "id": "DAS-R09-S02",
       "title": "Escape 关闭最上层浮层",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/accessibility.test.tsx",
-      "manifest": "tests/scenarios/DAS-R09-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/accessibility.test.tsx"
     },
     {
       "id": "DAS-R09-S03",
       "title": "使用辅助技术",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx",
-      "manifest": "tests/scenarios/DAS-R09-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx"
     },
     {
       "id": "DAS-R09-S04",
       "title": "触发控件内部化不影响键盘路径",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx",
-      "manifest": "tests/scenarios/DAS-R09-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx"
     },
     {
       "id": "DAS-R09-S05",
       "title": "音效 Tab 离开",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/EffectsPanel.test.tsx",
-      "manifest": "tests/scenarios/DAS-R09-S05.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/EffectsPanel.test.tsx"
     },
     {
       "id": "DAS-R09-S06",
       "title": "音效内模态对话框",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/EffectsPanel.test.tsx",
-      "manifest": "tests/scenarios/DAS-R09-S06.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/EffectsPanel.test.tsx"
     },
     {
       "id": "DAS-R09-S07",
       "title": "外部点击关闭音效保留焦点",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/EffectsPanel.test.tsx",
-      "manifest": "tests/scenarios/DAS-R09-S07.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/EffectsPanel.test.tsx"
     },
     {
       "id": "DAS-R10-S01",
       "title": "离线启动",
-      "command": "node scripts/verify/checks/task-13.8.mjs",
-      "manifest": "tests/native/DAS-R10-S01.md"
+      "command": "node scripts/verify/checks/task-13.8.mjs"
     },
     {
       "id": "DAS-R10-S02",
       "title": "跨平台验证",
-      "command": "node scripts/verify/checks/task-13.8.mjs",
-      "manifest": "tests/native/DAS-R10-S02.md"
+      "command": "node scripts/verify/checks/task-13.8.mjs"
     },
     {
       "id": "DAS-R11-S01",
       "title": "从欢迎界面打开原生目录选择器",
-      "command": "node scripts/verify/checks/task-wire-dialogs.mjs",
-      "manifest": "tests/scenarios/DAS-R11-S01.yaml"
+      "command": "node scripts/verify/checks/task-wire-dialogs.mjs"
     },
     {
       "id": "DAS-R11-S02",
       "title": "取消原生目录选择",
-      "command": "node scripts/verify/checks/task-wire-dialogs.mjs",
-      "manifest": "tests/scenarios/DAS-R11-S02.yaml"
+      "command": "node scripts/verify/checks/task-wire-dialogs.mjs"
     },
     {
       "id": "DAS-R11-S03",
       "title": "WebView 不接触文件系统路径",
-      "command": "node scripts/verify/checks/task-wire-dialogs.mjs",
-      "manifest": "tests/scenarios/DAS-R11-S03.yaml"
+      "command": "node scripts/verify/checks/task-wire-dialogs.mjs"
     },
     {
       "id": "DAS-R12-S01",
       "title": "未配置时显示完整初始化页",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx",
-      "manifest": "tests/scenarios/DAS-R12-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx"
     },
     {
       "id": "DAS-R12-S02",
       "title": "资料库不可用时显示完整状态页",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx",
-      "manifest": "tests/scenarios/DAS-R12-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx"
     },
     {
       "id": "DAS-R13-S01",
       "title": "关闭窗口后继续后台播放",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R13-S01",
-      "manifest": "tests/scenarios/DAS-R13-S01.yaml"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R13-S01"
     },
     {
       "id": "DAS-R13-S02",
       "title": "从后台入口退出",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R13-S02",
-      "manifest": "tests/scenarios/DAS-R13-S02.yaml"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R13-S02"
     },
     {
       "id": "DAS-R14-S01",
       "title": "可见应用身份一致",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R14-S01",
-      "manifest": "tests/scenarios/DAS-R14-S01.yaml"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R14-S01"
     },
     {
       "id": "DAS-R15-S01",
       "title": "从常驻菜单栏控制传输",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R15-S01",
-      "manifest": "tests/native/DAS-R15-S01.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R15-S01"
     },
     {
       "id": "DAS-R15-S02",
       "title": "紧凑控件按点击位置隔离动作",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R15-S02",
-      "manifest": "tests/native/DAS-R15-S02.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R15-S02"
     },
     {
       "id": "DAS-R15-S03",
       "title": "状态栏控制视觉验收",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R15-S03",
-      "manifest": "tests/native/DAS-R15-S03.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R15-S03"
     },
     {
       "id": "DAS-R15-S04",
       "title": "Echo 图标打开单例窗口",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R15-S04",
-      "manifest": "tests/native/DAS-R15-S04.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R15-S04"
     },
     {
       "id": "DAS-R15-S05",
       "title": "重复点击不创建多个窗口",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R15-S05",
-      "manifest": "tests/native/DAS-R15-S05.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R15-S05"
     },
     {
       "id": "DAS-R15-S06",
       "title": "打包后的身份显示",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R15-S06",
-      "manifest": "tests/native/DAS-R15-S06.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R15-S06"
     },
     {
       "id": "DAS-R16-S01",
       "title": "在应用工作区右键",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R16-S01",
-      "manifest": "tests/native/DAS-R16-S01.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R16-S01"
     },
     {
       "id": "DAS-R17-S01",
       "title": "Close the main window from native fullscreen",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R17-S01",
-      "manifest": "tests/native/DAS-R17-S01.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R17-S01"
     },
     {
       "id": "DAS-R17-S02",
       "title": "Reopen after closing from native fullscreen",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R17-S02",
-      "manifest": "tests/native/DAS-R17-S02.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R17-S02"
     },
     {
       "id": "DAS-R17-S03",
       "title": "Background close while windowed",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R17-S03",
-      "manifest": "tests/native/DAS-R17-S03.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R17-S03"
     },
     {
       "id": "DAS-R18-S01",
       "title": "中文菜单替换默认英文菜单",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S01",
-      "manifest": "tests/native/DAS-R18-S01.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S01"
     },
     {
       "id": "DAS-R18-S02",
       "title": "从菜单导入音乐文件",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S02",
-      "manifest": "tests/native/DAS-R18-S02.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S02"
     },
     {
       "id": "DAS-R18-S03",
       "title": "从菜单选择资料库目录与重新扫描",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S03",
-      "manifest": "tests/native/DAS-R18-S03.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S03"
     },
     {
       "id": "DAS-R18-S04",
       "title": "菜单播放控制三处一致",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S04",
-      "manifest": "tests/native/DAS-R18-S04.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S04"
     },
     {
       "id": "DAS-R18-S05",
       "title": "菜单播放模式勾选态一致",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S05",
-      "manifest": "tests/native/DAS-R18-S05.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S05"
     },
     {
       "id": "DAS-R18-S06",
       "title": "菜单视图切换与搜索聚焦",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S06",
-      "manifest": "tests/native/DAS-R18-S06.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S06"
     },
     {
       "id": "DAS-R18-S07",
       "title": "菜单退出保存播放会话",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S07",
-      "manifest": "tests/native/DAS-R18-S07.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S07"
     },
     {
       "id": "DAS-R18-S08",
       "title": "状态项右键菜单补齐",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S08",
-      "manifest": "tests/native/DAS-R18-S08.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R18-S08"
     },
     {
       "id": "DAS-R18-S09",
       "title": "菜单动作映射可验证且不影响其他平台",
-      "command": "cargo test -p echo-app --all-features app_menu",
-      "manifest": "tests/scenarios/DAS-R18-S09.yaml"
+      "command": "cargo test -p echo-app --all-features app_menu"
     },
     {
       "id": "DAS-R19-S01",
       "title": "Windows 无原生标题栏且内容从顶边开始",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R19-S01",
-      "manifest": "tests/native/DAS-R19-S01.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R19-S01"
     },
     {
       "id": "DAS-R19-S02",
       "title": "自绘窗口控件三键可用且图标随状态切换",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/WindowControls.test.tsx",
-      "manifest": "tests/scenarios/DAS-R19-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/WindowControls.test.tsx"
     },
     {
       "id": "DAS-R19-S03",
       "title": "双击拖拽区最大化与还原",
-      "command": "cargo test -p echo-desktop --all-features platform::security",
-      "manifest": "tests/scenarios/DAS-R19-S03.yaml"
+      "command": "cargo test -p echo-desktop --all-features platform::security"
     },
     {
       "id": "DAS-R19-S04",
       "title": "非 Windows 不渲染自绘控件",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/WindowControls.test.tsx -t \"renders nothing outside the Windows platform\"",
-      "manifest": "tests/scenarios/DAS-R19-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/WindowControls.test.tsx -t \"renders nothing outside the Windows platform\""
     },
     {
       "id": "DAS-R19-S05",
       "title": "窗口命令权限最小且配置不漂移",
-      "command": "cargo test -p echo-desktop --all-features platform::security",
-      "manifest": "tests/scenarios/DAS-R19-S05.yaml"
+      "command": "cargo test -p echo-desktop --all-features platform::security"
     },
     {
       "id": "DP-R01-S01",
       "title": "播放资料库歌曲",
-      "command": "cargo test -p echo-desktop --all-features --test player_smoke",
-      "manifest": "tests/native/DP-R01-S01.md"
+      "command": "cargo test -p echo-desktop --all-features --test player_smoke"
     },
     {
       "id": "DP-R01-S02",
       "title": "文件不可用",
-      "command": "cargo test -p echo-desktop --all-features --test player_smoke",
-      "manifest": "tests/native/DP-R01-S02.md"
+      "command": "cargo test -p echo-desktop --all-features --test player_smoke"
     },
     {
       "id": "DP-R01-S03",
       "title": "平台播放后端缺失",
-      "command": "node scripts/verify/checks/task-9.7.mjs",
-      "manifest": "tests/scenarios/DP-R01-S03.yaml"
+      "command": "node scripts/verify/checks/task-9.7.mjs"
     },
     {
       "id": "DP-R02-S01",
       "title": "从曲库开始播放",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/QueuePanel.test.tsx",
-      "manifest": "tests/scenarios/DP-R02-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/QueuePanel.test.tsx"
     },
     {
       "id": "DP-R02-S02",
       "title": "视图播放重建队列数量",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/QueuePanel.test.tsx",
-      "manifest": "tests/scenarios/DP-R02-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/QueuePanel.test.tsx"
     },
     {
       "id": "DP-R02-S03",
       "title": "当前项始终置顶",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/QueuePanel.test.tsx",
-      "manifest": "tests/scenarios/DP-R02-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/QueuePanel.test.tsx"
     },
     {
       "id": "DP-R02-S04",
       "title": "加入队列",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/QueuePanel.test.tsx",
-      "manifest": "tests/scenarios/DP-R02-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/QueuePanel.test.tsx"
     },
     {
       "id": "DP-R02-S05",
       "title": "下一首播放",
-      "command": "cargo test -p echo-desktop --all-features player::queue::tests::play_next_lane_is_fifo_and_projection_precedes_normal_entries",
-      "manifest": "tests/scenarios/DP-R02-S05.yaml"
+      "command": "cargo test -p echo-desktop --all-features player::queue::tests::play_next_lane_is_fifo_and_projection_precedes_normal_entries"
     },
     {
       "id": "DP-R02-S06",
       "title": "连续下一首播放",
-      "command": "cargo test -p echo-desktop --all-features player::queue::tests::view_projection_keeps_current_first_and_includes_loop_wrap",
-      "manifest": "tests/scenarios/DP-R02-S06.yaml"
+      "command": "cargo test -p echo-desktop --all-features player::queue::tests::view_projection_keeps_current_first_and_includes_loop_wrap"
     },
     {
       "id": "DP-R02-S07",
       "title": "下一首播放同一首去重",
-      "command": "cargo test -p echo-desktop --all-features player::queue::tests::clear_pending_keeps_current_and_history",
-      "manifest": "tests/scenarios/DP-R02-S07.yaml"
+      "command": "cargo test -p echo-desktop --all-features player::queue::tests::clear_pending_keeps_current_and_history"
     },
     {
       "id": "DP-R02-S08",
       "title": "提升不重复展开普通待播",
-      "command": "cargo test -p echo-desktop --all-features promote_does_not_fold_ordinary_duplicates_or_current",
-      "manifest": "tests/native/DP-R02-S08.md"
+      "command": "cargo test -p echo-desktop --all-features promote_does_not_fold_ordinary_duplicates_or_current"
     },
     {
       "id": "DP-R02-S09",
       "title": "优先区物理连续",
-      "command": "cargo test -p echo-desktop --all-features priority_lane_physical_contiguity",
-      "manifest": "tests/native/DP-R02-S09.md"
+      "command": "cargo test -p echo-desktop --all-features priority_lane_physical_contiguity"
     },
     {
       "id": "DP-R02-S10",
       "title": "优先区重复副本清理",
-      "command": "cargo test -p echo-desktop --all-features restore_with_duplicate_lane_ids_for_one_song_collapses_on_promote",
-      "manifest": "tests/native/DP-R02-S10.md"
+      "command": "cargo test -p echo-desktop --all-features restore_with_duplicate_lane_ids_for_one_song_collapses_on_promote"
     },
     {
       "id": "DP-R02-S11",
       "title": "去重判据不覆盖普通入队",
-      "command": "cargo test -p echo-desktop --all-features promote_does_not_fold_ordinary_duplicates_or_current",
-      "manifest": "tests/native/DP-R02-S11.md"
+      "command": "cargo test -p echo-desktop --all-features promote_does_not_fold_ordinary_duplicates_or_current"
     },
     {
       "id": "DP-R02-S12",
       "title": "优先区消费",
-      "command": "cargo test -p echo-desktop --all-features play_next_lane_is_fifo_and_projection_precedes_normal_entries",
-      "manifest": "tests/native/DP-R02-S12.md"
+      "command": "cargo test -p echo-desktop --all-features play_next_lane_is_fifo_and_projection_precedes_normal_entries"
     },
     {
       "id": "DP-R02-S13",
       "title": "清空队列",
-      "command": "cargo test -p echo-desktop --all-features clear_pending_keeps_only_current_even_after_loop_wrap",
-      "manifest": "tests/native/DP-R02-S13.md"
+      "command": "cargo test -p echo-desktop --all-features clear_pending_keeps_only_current_even_after_loop_wrap"
     },
     {
       "id": "DP-R02-S14",
       "title": "会话恢复的优先区",
-      "command": "cargo test -p echo-desktop --all-features priority_lane_round_trips_through_snapshot_and_rebuild",
-      "manifest": "tests/native/DP-R02-S14.md"
+      "command": "cargo test -p echo-desktop --all-features priority_lane_round_trips_through_snapshot_and_rebuild"
     },
     {
       "id": "DP-R03-S01",
       "title": "队列显示歌曲信息",
-      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::mode_switch_keeps_current_item",
-      "manifest": "tests/scenarios/DP-R03-S01.yaml"
+      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::mode_switch_keeps_current_item"
     },
     {
       "id": "DP-R03-S02",
       "title": "队列超过八首",
-      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::next_advances_in_order",
-      "manifest": "tests/scenarios/DP-R03-S02.yaml"
+      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::next_advances_in_order"
     },
     {
       "id": "DP-R03-S03",
       "title": "队列不超过八首",
-      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::previous_moves_back_within_5_seconds",
-      "manifest": "tests/scenarios/DP-R03-S03.yaml"
+      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::previous_moves_back_within_5_seconds"
     },
     {
       "id": "DP-R03-S04",
       "title": "沉浸模式尺寸一致",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R03-S04",
-      "manifest": "tests/scenarios/DP-R03-S04.yaml"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DP-R03-S04"
     },
     {
       "id": "DP-R04-S01",
       "title": "基础传输控制",
-      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::error_skips_bad_entry_and_plays_next_sequential",
-      "manifest": "tests/scenarios/DP-R04-S01.yaml"
+      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::error_skips_bad_entry_and_plays_next_sequential"
     },
     {
       "id": "DP-R04-S02",
       "title": "列表循环导航",
-      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::error_advance_all_bad_stops_without_spin",
-      "manifest": "tests/scenarios/DP-R04-S02.yaml"
+      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::error_advance_all_bad_stops_without_spin"
     },
     {
       "id": "DP-R04-S03",
       "title": "随机播放导航",
-      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::error_advance_never_retries_same_entry_in_round",
-      "manifest": "tests/scenarios/DP-R04-S03.yaml"
+      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::error_advance_never_retries_same_entry_in_round"
     },
     {
       "id": "DP-R04-S04",
       "title": "单曲循环的自然结束与手动下一首",
-      "command": "cargo test -p echo-desktop --all-features repeat_one",
-      "manifest": "tests/scenarios/DP-R04-S04.yaml"
+      "command": "cargo test -p echo-desktop --all-features repeat_one"
     },
     {
       "id": "DP-R04-S05",
       "title": "切换播放模式",
-      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::mode_switch_keeps_current_item",
-      "manifest": "tests/scenarios/DP-R04-S05.yaml"
+      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::mode_switch_keeps_current_item"
     },
     {
       "id": "DP-R04-S06",
       "title": "定位和音量",
-      "command": "cargo test -p echo-desktop --all-features _through_coordinator",
-      "manifest": "tests/scenarios/DP-R04-S06.yaml"
+      "command": "cargo test -p echo-desktop --all-features _through_coordinator"
     },
     {
       "id": "DP-R05-S01",
       "title": "单曲加载失败",
-      "command": "node scripts/verify/checks/task-9.2.mjs",
-      "manifest": "tests/scenarios/DP-R05-S01.yaml"
+      "command": "node scripts/verify/checks/task-9.2.mjs"
     },
     {
       "id": "DP-R05-S02",
       "title": "单曲循环中的加载失败",
-      "command": "node scripts/verify/checks/task-11.7.mjs",
-      "manifest": "tests/scenarios/DP-R05-S02.yaml"
+      "command": "node scripts/verify/checks/task-11.7.mjs"
     },
     {
       "id": "DP-R05-S03",
       "title": "资料库不可用期间播放",
-      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::recovered_blocked_entry_becomes_eligible_after_retry",
-      "manifest": "tests/scenarios/DP-R05-S03.yaml"
+      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::recovered_blocked_entry_becomes_eligible_after_retry"
     },
     {
       "id": "DP-R06-S01",
       "title": "被拒绝的加载不残留上次时长",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::playback_sessions_are_idempotent",
-      "manifest": "tests/scenarios/DP-R06-S01.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::playback_sessions_are_idempotent"
     },
     {
       "id": "DP-R06-S02",
       "title": "库内歌曲解析失败同样清空",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::playback_sessions_are_idempotent",
-      "manifest": "tests/scenarios/DP-R06-S02.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::playback_sessions_are_idempotent"
     },
     {
       "id": "DP-R06-S03",
       "title": "进入 Loading 时不携带旧进度",
-      "command": "cargo test -p echo-desktop --all-features entering_loading_starts_without_stale_progress_facts",
-      "manifest": "tests/native/DP-R06-S03.md"
+      "command": "cargo test -p echo-desktop --all-features entering_loading_starts_without_stale_progress_facts"
     },
     {
       "id": "DP-R06-S04",
       "title": "加载成功后的进度仍连续",
-      "command": "cargo test -p echo-desktop --all-features file_loaded_still_drives_progress_from_mpv_reports",
-      "manifest": "tests/native/DP-R06-S04.md"
+      "command": "cargo test -p echo-desktop --all-features file_loaded_still_drives_progress_from_mpv_reports"
     },
     {
       "id": "DP-R07-S01",
       "title": "打开资料库外文件",
-      "command": "cargo test -p echo-desktop --all-features platform::local_state",
-      "manifest": "tests/native/DP-R07-S01.md"
+      "command": "cargo test -p echo-desktop --all-features platform::local_state"
     },
     {
       "id": "DP-R07-S02",
       "title": "临时项执行持久化操作",
-      "command": "cargo test -p echo-desktop --all-features --lib && pnpm --dir apps/desktop test",
-      "manifest": "tests/native/DP-R07-S02.md"
+      "command": "cargo test -p echo-desktop --all-features --lib && pnpm --dir apps/desktop test"
     },
     {
       "id": "DP-R07-S03",
       "title": "临时项导入后转换为库内歌曲",
-      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::importing_current_temporary_entry_replaces_it_in_place_and_resumes_playing",
-      "manifest": "tests/scenarios/DP-R07-S03.yaml"
+      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::importing_current_temporary_entry_replaces_it_in_place_and_resumes_playing"
     },
     {
       "id": "DP-R07-S04",
       "title": "临时项导入失败不改变播放身份",
-      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::importing_current_temporary_entry_preserves_pause_and_rejects_stale_completion",
-      "manifest": "tests/scenarios/DP-R07-S04.yaml"
+      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::importing_current_temporary_entry_preserves_pause_and_rejects_stale_completion"
     },
     {
       "id": "DP-R08-S01",
       "title": "达到播放阈值",
-      "command": "node scripts/verify/checks/task-9.4.mjs",
-      "manifest": "tests/scenarios/DP-R08-S01.yaml"
+      "command": "node scripts/verify/checks/task-9.4.mjs"
     },
     {
       "id": "DP-R08-S02",
       "title": "未达到阈值或 seek 作弊",
-      "command": "pnpm --filter @echo/desktop test -- --run src/player/useGlobalPlayerHotkeys.test.tsx",
-      "manifest": "tests/scenarios/DP-R08-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/player/useGlobalPlayerHotkeys.test.tsx"
     },
     {
       "id": "DP-R09-S01",
       "title": "正常恢复",
-      "command": "node scripts/verify/checks/task-9.3.mjs",
-      "manifest": "tests/scenarios/DP-R09-S01.yaml"
+      "command": "node scripts/verify/checks/task-9.3.mjs"
     },
     {
       "id": "DP-R09-S02",
       "title": "部分歌曲不可用",
-      "command": "node scripts/verify/checks/task-9.3.mjs",
-      "manifest": "tests/scenarios/DP-R09-S02.yaml"
+      "command": "node scripts/verify/checks/task-9.3.mjs"
     },
     {
       "id": "DP-R09-S03",
       "title": "文件关联覆盖普通恢复",
-      "command": "node scripts/verify/checks/task-9.6.mjs",
-      "manifest": "tests/scenarios/DP-R09-S03.yaml"
+      "command": "node scripts/verify/checks/task-9.6.mjs"
     },
     {
       "id": "DP-R10-S01",
       "title": "使用媒体键",
-      "command": "node scripts/verify/checks/task-9.4.mjs",
-      "manifest": "tests/native/DP-R10-S01.md"
+      "command": "node scripts/verify/checks/task-9.4.mjs"
     },
     {
       "id": "DP-R10-S02",
       "title": "使用应用快捷键",
-      "command": "node scripts/verify/checks/task-11.8.mjs",
-      "manifest": "tests/native/DP-R10-S02.md"
+      "command": "node scripts/verify/checks/task-11.8.mjs"
     },
     {
       "id": "DP-R11-S01",
       "title": "关闭窗口退出",
-      "command": "cargo test -p echo-desktop --all-features player::queue::tests::previous_in_loop_walks_the_context_backwards_and_wraps_to_the_tail",
-      "manifest": "tests/native/DP-R11-S01.md"
+      "command": "cargo test -p echo-desktop --all-features player::queue::tests::previous_in_loop_walks_the_context_backwards_and_wraps_to_the_tail"
     },
     {
       "id": "DP-R11-S02",
       "title": "关闭窗口后台运行",
-      "command": "cargo test -p echo-desktop --all-features player::queue::tests::previous_returns_history_entry",
-      "manifest": "tests/native/DP-R11-S02.md"
+      "command": "cargo test -p echo-desktop --all-features player::queue::tests::previous_returns_history_entry"
     },
     {
       "id": "DP-R11-S03",
       "title": "托盘控制",
-      "command": "cargo test -p echo-desktop --all-features player::session::tests::state_store_save_load_round_trip_is_atomic_and_clears",
-      "manifest": "tests/scenarios/DP-R11-S03.yaml"
+      "command": "cargo test -p echo-desktop --all-features player::session::tests::state_store_save_load_round_trip_is_atomic_and_clears"
     },
     {
       "id": "DP-R12-S01",
       "title": "列表循环上一首",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx -t \"with a neutral button\"",
-      "manifest": "tests/scenarios/DP-R12-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx -t \"with a neutral button\""
     },
     {
       "id": "DP-R12-S02",
       "title": "三天内回退",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx -t \"while the theme changes\"",
-      "manifest": "tests/scenarios/DP-R12-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx -t \"while the theme changes\""
     },
     {
       "id": "DP-R12-S03",
       "title": "历史跨重启",
-      "command": "cargo test -p echo-desktop --all-features restore_keeps_fresh_history_and_counts_only_blocked_entries",
-      "manifest": "tests/scenarios/DP-R12-S03.yaml"
+      "command": "cargo test -p echo-desktop --all-features restore_keeps_fresh_history_and_counts_only_blocked_entries"
     },
     {
       "id": "DP-R12-S04",
       "title": "过期或失效历史",
-      "command": "cargo test -p echo-desktop --all-features player::session::tests::restore_keeps_fresh_history_and_counts_only_blocked_entries",
-      "manifest": "tests/scenarios/DP-R12-S04.yaml"
+      "command": "cargo test -p echo-desktop --all-features player::session::tests::restore_keeps_fresh_history_and_counts_only_blocked_entries"
     },
     {
       "id": "DP-R12-S05",
       "title": "删除回滚保留历史",
-      "command": "cargo test -p echo-desktop --all-features player::deletion::tests::rollback_restores_timestamped_history_so_previous_remains_available",
-      "manifest": "tests/scenarios/DP-R12-S05.yaml"
+      "command": "cargo test -p echo-desktop --all-features player::deletion::tests::rollback_restores_timestamped_history_so_previous_remains_available"
     },
     {
       "id": "DP-R13-S01",
       "title": "非沉浸模式切换为随机播放",
-      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::restore_session_recovers_queue_mode_and_settings_paused",
-      "manifest": "tests/scenarios/DP-R13-S01.yaml"
+      "command": "cargo test -p echo-desktop --all-features player::coordinator::tests::restore_session_recovers_queue_mode_and_settings_paused"
     },
     {
       "id": "DP-R13-S02",
       "title": "主题切换期间保持随机模式",
-      "command": "cargo test -p echo-core --all-features playback_restore",
-      "manifest": "tests/scenarios/DP-R13-S02.yaml"
+      "command": "cargo test -p echo-core --all-features playback_restore"
     },
     {
       "id": "DP-R14-S01",
       "title": "退出后恢复播放位置",
-      "command": "cargo test -p echo-core --all-features application::playback_context::tests::resolves_all_pages_and_validates_selected_song",
-      "manifest": "tests/scenarios/DP-R14-S01.yaml"
+      "command": "cargo test -p echo-core --all-features application::playback_context::tests::resolves_all_pages_and_validates_selected_song"
     },
     {
       "id": "DP-R14-S02",
       "title": "持久化位置超出有效范围",
-      "command": "cargo test -p echo-core --all-features application::playback_context::tests::recent_filters_case_insensitively_and_rejects_absent_selection",
-      "manifest": "tests/scenarios/DP-R14-S02.yaml"
+      "command": "cargo test -p echo-core --all-features application::playback_context::tests::recent_filters_case_insensitively_and_rejects_absent_selection"
     },
     {
       "id": "DP-R15-S01",
       "title": "从超过单页上限的资料库视图开始播放",
-      "command": "cargo test -p echo-core --all-features application::playback_context::tests::resolves_all_pages_and_validates_selected_song",
-      "manifest": "tests/scenarios/DP-R15-S01.yaml"
+      "command": "cargo test -p echo-core --all-features application::playback_context::tests::resolves_all_pages_and_validates_selected_song"
     },
     {
       "id": "DP-R15-S02",
       "title": "从\"最近\"视图开始播放",
-      "command": "cargo test -p echo-core --all-features application::playback_context::tests::recent_filters_case_insensitively_and_rejects_absent_selection",
-      "manifest": "tests/native/DP-R15-S02.md"
+      "command": "cargo test -p echo-core --all-features application::playback_context::tests::recent_filters_case_insensitively_and_rejects_absent_selection"
     },
     {
       "id": "DP-R15-S03",
       "title": "从歌单开始播放",
-      "command": "cargo test -p echo-core --all-features application::playback_context::tests::playlist_uses_newest_member_first",
-      "manifest": "tests/scenarios/DP-R15-S03.yaml"
+      "command": "cargo test -p echo-core --all-features application::playback_context::tests::playlist_uses_newest_member_first"
     },
     {
       "id": "DP-R15-S04",
       "title": "选中项已不在上下文中",
-      "command": "cargo test -p echo-core --all-features application::playback_context::tests::unknown_library_view_is_rejected_in_core",
-      "manifest": "tests/scenarios/DP-R15-S04.yaml"
+      "command": "cargo test -p echo-core --all-features application::playback_context::tests::unknown_library_view_is_rejected_in_core"
     },
     {
       "id": "DP-R16-S01",
       "title": "重新打开已有资料库",
-      "command": "cargo test -p echo-desktop --all-features restore_or_prime_primes_the_first_song_of_the_default_view",
-      "manifest": "tests/native/DP-R16-S01.md"
+      "command": "cargo test -p echo-desktop --all-features restore_or_prime_primes_the_first_song_of_the_default_view"
     },
     {
       "id": "DP-R16-S02",
       "title": "上次播放歌曲被外部删除",
-      "command": "cargo test -p echo-desktop --all-features restore_or_prime_replaces_a_dropped_current_with_the_newest_candidate",
-      "manifest": "tests/native/DP-R16-S02.md"
+      "command": "cargo test -p echo-desktop --all-features restore_or_prime_replaces_a_dropped_current_with_the_newest_candidate"
     },
     {
       "id": "DP-R16-S03",
       "title": "资料库为空",
-      "command": "cargo test -p echo-desktop --all-features restore_or_prime_yields_an_empty_bar_for_an_empty_library",
-      "manifest": "tests/native/DP-R16-S03.md"
+      "command": "cargo test -p echo-desktop --all-features restore_or_prime_yields_an_empty_bar_for_an_empty_library"
     },
     {
       "id": "DP-R16-S04",
       "title": "有效播放会话优先恢复",
-      "command": "cargo test -p echo-desktop --all-features restore_session_recovers_queue_mode_and_settings_paused",
-      "manifest": "tests/native/DP-R16-S04.md"
+      "command": "cargo test -p echo-desktop --all-features restore_session_recovers_queue_mode_and_settings_paused"
     },
     {
       "id": "DP-R17-S01",
       "title": "兜底选择保持用户播放设置",
-      "command": "cargo test -p echo-desktop --all-features prime_context_paused_preserves_settings_without_playing",
-      "manifest": "tests/native/DP-R17-S01.md"
+      "command": "cargo test -p echo-desktop --all-features prime_context_paused_preserves_settings_without_playing"
     },
     {
       "id": "DP-R18-S01",
       "title": "播放期间进度同步",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx",
-      "manifest": "tests/scenarios/DP-R18-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx"
     },
     {
       "id": "DP-R18-S02",
       "title": "暂停、恢复与 seek",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx",
-      "manifest": "tests/scenarios/DP-R18-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx"
     },
     {
       "id": "IL-R01-S01",
       "title": "开始播放歌曲",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx",
-      "manifest": "tests/scenarios/IL-R01-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx"
     },
     {
       "id": "IL-R01-S02",
       "title": "播放项没有封面",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx",
-      "manifest": "tests/scenarios/IL-R01-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx"
     },
     {
       "id": "IL-R01-S03",
       "title": "当前播放结束",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx",
-      "manifest": "tests/scenarios/IL-R01-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx"
     },
     {
       "id": "IL-R02-S01",
       "title": "切换播放模式",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx",
-      "manifest": "tests/scenarios/IL-R02-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx"
     },
     {
       "id": "IL-R02-S02",
       "title": "静音后恢复",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx",
-      "manifest": "tests/scenarios/IL-R02-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/PlayerBar.test.tsx"
     },
     {
       "id": "IL-R02-S03",
       "title": "播放器命令失败",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx",
-      "manifest": "tests/scenarios/IL-R02-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx"
     },
     {
       "id": "IL-R03-S01",
       "title": "展开沉浸式播放器",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx",
-      "manifest": "tests/scenarios/IL-R03-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx"
     },
     {
       "id": "IL-R03-S02",
       "title": "播放项切换期间保持沉浸模式",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx",
-      "manifest": "tests/scenarios/IL-R03-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx"
     },
     {
       "id": "IL-R03-S03",
       "title": "窄屏沉浸模式",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx",
-      "manifest": "tests/scenarios/IL-R03-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx"
     },
     {
       "id": "IL-R04-S01",
       "title": "多个来源同时存在",
-      "command": "cargo test -p echo-core --all-features lyrics",
-      "manifest": "tests/scenarios/IL-R04-S01.yaml"
+      "command": "cargo test -p echo-core --all-features lyrics"
     },
     {
       "id": "IL-R04-S02",
       "title": "仅有内嵌歌词",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx",
-      "manifest": "tests/scenarios/IL-R04-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx"
     },
     {
       "id": "IL-R04-S03",
       "title": "仅有同名 LRC",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx",
-      "manifest": "tests/scenarios/IL-R04-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx"
     },
     {
       "id": "IL-R04-S04",
       "title": "歌词来源读取失败",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx",
-      "manifest": "tests/scenarios/IL-R04-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx"
     },
     {
       "id": "IL-R05-S01",
       "title": "正常同步与换行",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx",
-      "manifest": "tests/scenarios/IL-R05-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx"
     },
     {
       "id": "IL-R05-S02",
       "title": "点击歌词 seek",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx",
-      "manifest": "tests/scenarios/IL-R05-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx"
     },
     {
       "id": "IL-R05-S03",
       "title": "时间戳超出歌曲范围或顺序异常",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx",
-      "manifest": "tests/scenarios/IL-R05-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx"
     },
     {
       "id": "IL-R06-S01",
       "title": "仅有纯文本歌词",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx",
-      "manifest": "tests/scenarios/IL-R06-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx"
     },
     {
       "id": "IL-R06-S02",
       "title": "没有歌词",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx",
-      "manifest": "tests/scenarios/IL-R06-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx"
     },
     {
       "id": "IL-R06-S03",
       "title": "切换到无歌词歌曲",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx",
-      "manifest": "tests/scenarios/IL-R06-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx"
     },
     {
       "id": "IL-R07-S01",
       "title": "进入歌词专注阅读",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx",
-      "manifest": "tests/scenarios/IL-R07-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx"
     },
     {
       "id": "IL-R07-S02",
       "title": "专注模式中控制播放",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx",
-      "manifest": "tests/scenarios/IL-R07-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx"
     },
     {
       "id": "IL-R07-S03",
       "title": "退出专注模式",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx",
-      "manifest": "tests/scenarios/IL-R07-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/ImmersivePlayer.test.tsx"
     },
     {
       "id": "IL-R08-S01",
       "title": "手动滚动歌词",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx",
-      "manifest": "tests/scenarios/IL-R08-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx"
     },
     {
       "id": "IL-R08-S02",
       "title": "恢复跟随当前行",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx",
-      "manifest": "tests/scenarios/IL-R08-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx"
     },
     {
       "id": "IL-R08-S03",
       "title": "播放队列浮层覆盖",
-      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx",
-      "manifest": "tests/scenarios/IL-R08-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/app/overlays.test.tsx"
     },
     {
       "id": "IL-R09-S01",
       "title": "减少动画偏好",
-      "command": "node scripts/verify/checks/task-12.4.mjs",
-      "manifest": "tests/scenarios/IL-R09-S01.yaml"
+      "command": "node scripts/verify/checks/task-12.4.mjs"
     },
     {
       "id": "IL-R09-S02",
       "title": "跨平台离线歌词播放",
-      "command": "node scripts/verify/checks/task-12.4.mjs",
-      "manifest": "tests/native/IL-R09-S02.md"
+      "command": "node scripts/verify/checks/task-12.4.mjs"
     },
     {
       "id": "IL-R09-S03",
       "title": "暂停时停止旋转",
-      "command": "node scripts/verify/checks/task-12.4.mjs",
-      "manifest": "tests/scenarios/IL-R09-S03.yaml"
+      "command": "node scripts/verify/checks/task-12.4.mjs"
     },
     {
       "id": "IL-R10-S01",
       "title": "切歌后歌词起点重新对齐",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/useLyricsStartOffset.test.tsx -t \"re-observes when the signature changes\"",
-      "manifest": "tests/scenarios/IL-R10-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/useLyricsStartOffset.test.tsx -t \"re-observes when the signature changes\""
     },
     {
       "id": "IL-R10-S02",
       "title": "信息块高度事后变化时重算偏移",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/useLyricsStartOffset.test.tsx -t \"re-measures when the info block resizes (ResizeObserver)\"",
-      "manifest": "tests/scenarios/IL-R10-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/useLyricsStartOffset.test.tsx -t \"re-measures when the info block resizes (ResizeObserver)\""
     },
     {
       "id": "IL-R10-S03",
       "title": "窗口缩放后重算偏移",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/useLyricsStartOffset.test.tsx -t \"re-measures on window resize\"",
-      "manifest": "tests/scenarios/IL-R10-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/useLyricsStartOffset.test.tsx -t \"re-measures on window resize\""
     },
     {
       "id": "IL-R10-S04",
       "title": "旧偏移尚未重新布局时重算偏移",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/useLyricsStartOffset.test.tsx -t \"measures the metadata's height while the previous offset is still laid out\"",
-      "manifest": "tests/scenarios/IL-R10-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/player/useLyricsStartOffset.test.tsx -t \"measures the metadata's height while the previous offset is still laid out\""
     },
     {
       "id": "LD-R01-S01",
       "title": "本地写入失败",
-      "command": "cargo test -p echo-core --all-features library_durability_refused_commit_leaves_every_wired_entrypoint_untouched",
-      "manifest": "tests/scenarios/LD-R01-S01.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_refused_commit_leaves_every_wired_entrypoint_untouched"
     },
     {
       "id": "LD-R01-S02",
       "title": "目录已提交而投影失败",
-      "command": "cargo test -p echo-core --all-features library_durability_retry_projection_failure_keeps_original_identity",
-      "manifest": "tests/scenarios/LD-R01-S02.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_retry_projection_failure_keeps_original_identity"
     },
     {
       "id": "LD-R01-S03",
       "title": "SQLite 投影滞后时连续本地编辑",
-      "command": "cargo test -p echo-core --all-features library_durability_later_edit_catches_up_failed_earlier_playlist",
-      "manifest": "tests/scenarios/LD-R01-S03.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_later_edit_catches_up_failed_earlier_playlist"
     },
     {
       "id": "LD-R02-S01",
       "title": "级联删除写到一半崩溃",
-      "command": "cargo test -p echo-core --all-features library_durability_playlist_delete_saves_cascade_before_projection",
-      "manifest": "tests/scenarios/LD-R02-S01.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_playlist_delete_saves_cascade_before_projection"
     },
     {
       "id": "LD-R02-S02",
       "title": "丢失 SQLite 后重放",
-      "command": "cargo test -p echo-core --all-features library_durability_every_native_commit_boundary_recovers_same_operation",
-      "manifest": "tests/scenarios/LD-R02-S02.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_every_native_commit_boundary_recovers_same_operation"
     },
     {
       "id": "LD-R02-S03",
       "title": "提交结果不确定",
-      "command": "cargo test -p echo-core --all-features library_durability_prepared_only_is_not_accepted_as_saved_recovery",
-      "manifest": "tests/scenarios/LD-R02-S03.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_prepared_only_is_not_accepted_as_saved_recovery"
     },
     {
       "id": "LD-R02-S04",
       "title": "较旧操作延迟重放",
-      "command": "cargo test -p echo-core --all-features library_durability_c1_failure_then_c2_never_rolls_back_latest_record",
-      "manifest": "tests/scenarios/LD-R02-S04.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_c1_failure_then_c2_never_rolls_back_latest_record"
     },
     {
       "id": "LD-R02-S05",
       "title": "本地提交后对象文件材料化失败",
-      "command": "cargo test -p echo-core --all-features library_durability_actual_record_rename_failure_remains_saved_and_retryable",
-      "manifest": "tests/scenarios/LD-R02-S05.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_actual_record_rename_failure_remains_saved_and_retryable"
     },
     {
       "id": "LD-R03-S01",
       "title": "本地与同步来源混合恢复",
-      "command": "cargo test -p echo-core --all-features library_durability_distinct_directory_and_sync_ids_survive_recovery_and_fresh_projection",
-      "manifest": "tests/scenarios/LD-R03-S01.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_distinct_directory_and_sync_ids_survive_recovery_and_fresh_projection"
     },
     {
       "id": "LD-R03-S02",
       "title": "部分媒体缺失",
-      "command": "cargo test -p echo-core --all-features library_durability_scan_preserves_record_when_media_disappears",
-      "manifest": "tests/scenarios/LD-R03-S02.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_scan_preserves_record_when_media_disappears"
     },
     {
       "id": "LD-R04-S01",
       "title": "读取旧格式记录",
-      "command": "cargo test -p echo-core --all-features library_durability_legacy_committed_canonical_digest_is_unchanged",
-      "manifest": "tests/scenarios/LD-R04-S01.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_legacy_committed_canonical_digest_is_unchanged"
     },
     {
       "id": "LD-R04-S02",
       "title": "旧记录含无法解释的关系",
-      "command": "cargo test -p echo-core --all-features library_durability_projection_retains_orphans_and_links_when_evidence_arrives_without_echo",
-      "manifest": "tests/scenarios/LD-R04-S02.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_projection_retains_orphans_and_links_when_evidence_arrives_without_echo"
     },
     {
       "id": "LD-R05-S01",
       "title": "运行期间发现身份冲突",
-      "command": "cargo test -p echo-core --all-features library_durability_projection_rejects_cross_directory_chain_and_anchor_without_sql_writes",
-      "manifest": "tests/scenarios/LD-R05-S01.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_projection_rejects_cross_directory_chain_and_anchor_without_sql_writes"
     },
     {
       "id": "LD-R06-S01",
       "title": "新协议投影遇到悬空关系",
-      "command": "cargo test -p echo-core --all-features library_durability_issue72_fixture_reproduces_legacy_missing_relationships",
-      "manifest": "tests/scenarios/LD-R06-S01.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_issue72_fixture_reproduces_legacy_missing_relationships"
     },
     {
       "id": "LD-R06-S02",
       "title": "控制面含损坏记录",
-      "command": "cargo test -p echo-core --all-features library_durability_broken_chain_and_corrupt_checkpoint_fail_closed_preserve_bytes",
-      "manifest": "tests/scenarios/LD-R06-S02.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_broken_chain_and_corrupt_checkpoint_fail_closed_preserve_bytes"
     },
     {
       "id": "LD-R07-S01",
       "title": "离线改歌单后重装",
-      "command": "cargo test -p echo-core --all-features library_durability_playlist_create_retry_after_saved_pending_keeps_operation_identity",
-      "manifest": "tests/scenarios/LD-R07-S01.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_playlist_create_retry_after_saved_pending_keeps_operation_identity"
     },
     {
       "id": "LD-R07-S02",
       "title": "主机账本不可验证",
-      "command": "cargo test -p echo-core --all-features library_durability_trusted_sync_retry_unverifiable_anchor_never_installs_baseline_or_pending",
-      "manifest": "tests/scenarios/LD-R07-S02.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_trusted_sync_retry_unverifiable_anchor_never_installs_baseline_or_pending"
     },
     {
       "id": "LD-R07-S03",
       "title": "ACK 丢失后重装并重新配对",
-      "command": "cargo test -p echo-core --all-features library_durability_mark_published_legacy_unseeded_ledger_keeps_full_rescue",
-      "manifest": "tests/scenarios/LD-R07-S03.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_mark_published_legacy_unseeded_ledger_keeps_full_rescue"
     },
     {
       "id": "LD-R08-S01",
       "title": "歌单封面脱离应用缓存恢复",
-      "command": "cargo test -p echo-core --all-features library_durability_playlist_cover_reuses_original_and_clear_survives_rebuild",
-      "manifest": "tests/scenarios/LD-R08-S01.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_playlist_cover_reuses_original_and_clear_survives_rebuild"
     },
     {
       "id": "LD-R08-S02",
       "title": "同步媒体使用不可变版本路径",
-      "command": "cargo test -p echo-core --all-features library_durability_export_uses_declared_logical_path_for_managed_audio",
-      "manifest": "tests/scenarios/LD-R08-S02.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_export_uses_declared_logical_path_for_managed_audio"
     },
     {
       "id": "LD-R09-S01",
       "title": "支持的旧格式保持只读兼容",
-      "command": "cargo test -p echo-core --all-features library_durability_publication_v1_and_unknown_schema_keep_original_evidence",
-      "manifest": "tests/scenarios/LD-R09-S01.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_publication_v1_and_unknown_schema_keep_original_evidence"
     },
     {
       "id": "LD-R09-S02",
       "title": "旧程序打开新协议目录",
-      "command": "cargo test -p echo-core --all-features library_durability_commit_checks_future_format_before_recovery",
-      "manifest": "tests/scenarios/LD-R09-S02.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_commit_checks_future_format_before_recovery"
     },
     {
       "id": "LD-R09-S03",
       "title": "只保留 media",
-      "command": "cargo test -p echo-core --all-features library_durability_readonly_volume_and_unmaterialized_commit_can_be_browsed",
-      "manifest": "tests/scenarios/LD-R09-S03.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_readonly_volume_and_unmaterialized_commit_can_be_browsed"
     },
     {
       "id": "LD-R10-S01",
       "title": "可执行验证",
-      "command": "node scripts/verify/ci-governance.mjs",
-      "manifest": "tests/scenarios/LD-R10-S01.yaml"
+      "command": "node scripts/verify/ci-governance.mjs"
     },
     {
       "id": "LD-R11-S01",
       "title": "单机启动存在旧同步投影",
-      "command": "cargo test -p echo-core --all-features library_durability_standalone_startup_purges_legacy_sync_projection",
-      "manifest": "tests/scenarios/LD-R11-S01.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_standalone_startup_purges_legacy_sync_projection"
     },
     {
       "id": "LE-R01-S01",
       "title": "切换全部歌曲",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_all_songs_view",
-      "manifest": "tests/scenarios/LE-R01-S01.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_all_songs_view"
     },
     {
       "id": "LE-R01-S02",
       "title": "切换最近添加",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_search_no_results",
-      "manifest": "tests/scenarios/LE-R01-S02.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_search_no_results"
     },
     {
       "id": "LE-R01-S03",
       "title": "切换喜欢的音乐",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_repository_gate_empty",
-      "manifest": "tests/scenarios/LE-R01-S03.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_repository_gate_empty"
     },
     {
       "id": "LE-R01-S04",
       "title": "切换歌手或专辑目录",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/CollectionDirectory.test.tsx",
-      "manifest": "tests/scenarios/LE-R01-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/CollectionDirectory.test.tsx"
     },
     {
       "id": "LE-R01-S05",
       "title": "切换视图清空搜索",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/LibraryWorkspace.test.tsx -t \"clears the search when switching between library views\"",
-      "manifest": "tests/scenarios/LE-R01-S05.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/LibraryWorkspace.test.tsx -t \"clears the search when switching between library views\""
     },
     {
       "id": "LE-R01-S06",
       "title": "切换歌手或专辑目录清空搜索",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/CollectionDirectory.test.tsx -t \"clears the search when switching between artist and album directories\"",
-      "manifest": "tests/scenarios/LE-R01-S06.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/CollectionDirectory.test.tsx -t \"clears the search when switching between artist and album directories\""
     },
     {
       "id": "LE-R02-S01",
       "title": "搜索多个字段",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_search_matches_full_query",
-      "manifest": "tests/scenarios/LE-R02-S01.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_search_matches_full_query"
     },
     {
       "id": "LE-R02-S02",
       "title": "搜索聚合目录",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_search_empty_query",
-      "manifest": "tests/scenarios/LE-R02-S02.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_search_empty_query"
     },
     {
       "id": "LE-R02-S03",
       "title": "搜索词为空",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx",
-      "manifest": "tests/scenarios/LE-R02-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx"
     },
     {
       "id": "LE-R02-S04",
       "title": "搜索无结果",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.tsx",
-      "manifest": "tests/scenarios/LE-R02-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.tsx"
     },
     {
       "id": "LE-R02-S05",
       "title": "切换活动资料库后查询",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.tsx",
-      "manifest": "tests/scenarios/LE-R02-S05.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.tsx"
     },
     {
       "id": "LE-R03-S01",
       "title": "选择排序字段",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_all_songs_keyset_pages",
-      "manifest": "tests/scenarios/LE-R03-S01.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_all_songs_keyset_pages"
     },
     {
       "id": "LE-R03-S02",
       "title": "按专辑排序",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/songSortControl.test.tsx -t \"uses 歌手 terminology, offers 专辑, and updates the selected sort\"",
-      "manifest": "tests/scenarios/LE-R03-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/songSortControl.test.tsx -t \"uses 歌手 terminology, offers 专辑, and updates the selected sort\""
     },
     {
       "id": "LE-R03-S03",
       "title": "既有歌手排序术语",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/songSortControl.test.tsx -t \"uses 歌手 terminology, offers 专辑, and updates the selected sort\"",
-      "manifest": "tests/scenarios/LE-R03-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/songSortControl.test.tsx -t \"uses 歌手 terminology, offers 专辑, and updates the selected sort\""
     },
     {
       "id": "LE-R03-S04",
       "title": "排序值相同",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_favorites_view",
-      "manifest": "tests/scenarios/LE-R03-S04.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_favorites_view"
     },
     {
       "id": "LE-R03-S05",
       "title": "非全部歌曲视图排序",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_recent_100",
-      "manifest": "tests/scenarios/LE-R03-S05.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::catalog_recent_100"
     },
     {
       "id": "LE-R03-S06",
       "title": "重启后恢复全部歌曲排序",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/songSortControl.test.tsx -t \"retains the existing artist preference and restores the album preference\"",
-      "manifest": "tests/scenarios/LE-R03-S06.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/songSortControl.test.tsx -t \"retains the existing artist preference and restores the album preference\""
     },
     {
       "id": "LE-R04-S01",
       "title": "收藏歌曲",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx",
-      "manifest": "tests/scenarios/LE-R04-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx"
     },
     {
       "id": "LE-R04-S02",
       "title": "取消收藏",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongMenu.test.tsx",
-      "manifest": "tests/scenarios/LE-R04-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongMenu.test.tsx"
     },
     {
       "id": "LE-R05-S01",
       "title": "标记喜欢",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongMenu.test.tsx",
-      "manifest": "tests/native/LE-R05-S01.md"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongMenu.test.tsx"
     },
     {
       "id": "LE-R05-S02",
       "title": "取消后再次收藏",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongMenu.test.tsx",
-      "manifest": "tests/native/LE-R05-S02.md"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongMenu.test.tsx"
     },
     {
       "id": "LE-R05-S03",
       "title": "收藏时间按当前时区呈现",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongMenu.test.tsx",
-      "manifest": "tests/native/LE-R05-S03.md"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongMenu.test.tsx"
     },
     {
       "id": "LE-R06-S01",
       "title": "打开歌曲操作菜单",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx",
-      "manifest": "tests/scenarios/LE-R06-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx"
     },
     {
       "id": "LE-R06-S02",
       "title": "打开多选操作菜单",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx",
-      "manifest": "tests/scenarios/LE-R06-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx"
     },
     {
       "id": "LE-R06-S03",
       "title": "查看歌曲详情",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx",
-      "manifest": "tests/scenarios/LE-R06-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx"
     },
     {
       "id": "LE-R06-S04",
       "title": "删除当前播放歌曲",
-      "command": "cargo test -p echo-core --all-features application::scan::tests::relink::enumerate_failure_marks_run_failed_without_missing",
-      "manifest": "tests/scenarios/LE-R06-S04.yaml"
+      "command": "cargo test -p echo-core --all-features application::scan::tests::relink::enumerate_failure_marks_run_failed_without_missing"
     },
     {
       "id": "LE-R06-S05",
       "title": "打开本地目录",
-      "command": "node scripts/verify/checks/task-9.5.mjs",
-      "manifest": "tests/scenarios/LE-R06-S05.yaml"
+      "command": "node scripts/verify/checks/task-9.5.mjs"
     },
     {
       "id": "LE-R06-S06",
       "title": "删除歌曲",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongMenu.test.tsx -t \"dispatches delete and shows the 10-second undo affordance on success\"",
-      "manifest": "tests/scenarios/LE-R06-S06.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongMenu.test.tsx -t \"dispatches delete and shows the 10-second undo affordance on success\""
     },
     {
       "id": "LE-R06-S07",
       "title": "应用不重启时完成回收站最终化",
-      "command": "cargo test -p echo-core --all-features trash::tests::explicit_system_trash_success_persists_applied_then_finalizes",
-      "manifest": "tests/scenarios/LE-R06-S07.yaml"
+      "command": "cargo test -p echo-core --all-features trash::tests::explicit_system_trash_success_persists_applied_then_finalizes"
     },
     {
       "id": "LE-R06-S08",
       "title": "系统回收站暂时失败后重试",
-      "command": "cargo test -p echo-core --all-features trash::tests::system_trash_failure_keeps_the_verified_staging_for_retry",
-      "manifest": "tests/scenarios/LE-R06-S08.yaml"
+      "command": "cargo test -p echo-core --all-features trash::tests::system_trash_failure_keeps_the_verified_staging_for_retry"
     },
     {
       "id": "LE-R06-S09",
       "title": "回收站结果无法证明",
-      "command": "cargo test -p echo-core --all-features trash::tests::post_call_trash_error_rechecks_missing_staging_and_stops_other_operations",
-      "manifest": "tests/scenarios/LE-R06-S09.yaml"
+      "command": "cargo test -p echo-core --all-features trash::tests::post_call_trash_error_rechecks_missing_staging_and_stops_other_operations"
     },
     {
       "id": "LE-R06-S10",
       "title": "回收站目标受路径边界保护",
-      "command": "node scripts/verify/checks/task-12.7.mjs",
-      "manifest": "tests/scenarios/LE-R06-S10.yaml"
+      "command": "node scripts/verify/checks/task-12.7.mjs"
     },
     {
       "id": "LE-R06-S11",
       "title": "再次点击歌曲操作入口",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongMenu.test.tsx",
-      "manifest": "tests/scenarios/LE-R06-S11.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongMenu.test.tsx"
     },
     {
       "id": "LE-R06-S12",
       "title": "多选状态下再次点击行入口",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/batchLibraryOperations.test.tsx",
-      "manifest": "tests/scenarios/LE-R06-S12.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/batchLibraryOperations.test.tsx"
     },
     {
       "id": "LE-R06-S13",
       "title": "右键打开的菜单由指针交互收起",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/LibraryWorkspace.test.tsx -t \"右键打开的菜单仍由面板外按压和 Escape 收起\"",
-      "manifest": "tests/scenarios/LE-R06-S13.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/LibraryWorkspace.test.tsx -t \"右键打开的菜单仍由面板外按压和 Escape 收起\""
     },
     {
       "id": "LE-R07-S01",
       "title": "选择和取消选择歌曲",
-      "command": "cargo test -p echo-core --all-features bench_50k_search_and_first_screen_p95_meet_prd_budgets -- --ignored",
-      "manifest": "tests/scenarios/LE-R07-S01.yaml"
+      "command": "cargo test -p echo-core --all-features bench_50k_search_and_first_screen_p95_meet_prd_budgets -- --ignored"
     },
     {
       "id": "LE-R07-S02",
       "title": "聚合目录不显示多选",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx",
-      "manifest": "tests/scenarios/LE-R07-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx"
     },
     {
       "id": "LE-R07-S03",
       "title": "聚合详情支持全选",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/CollectionDirectory.test.tsx -t \"shows artist cards and reuses the library song table with selection in the detail\"",
-      "manifest": "tests/scenarios/LE-R07-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/CollectionDirectory.test.tsx -t \"shows artist cards and reuses the library song table with selection in the detail\""
     },
     {
       "id": "LE-R07-S04",
       "title": "多选模式右键未选中歌曲",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R07-S04",
-      "manifest": "tests/scenarios/LE-R07-S04.yaml"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R07-S04"
     },
     {
       "id": "LE-R07-S05",
       "title": "右键已选中歌曲保留选集",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/batchLibraryOperations.test.tsx",
-      "manifest": "tests/scenarios/LE-R07-S05.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/batchLibraryOperations.test.tsx"
     },
     {
       "id": "LE-R07-S06",
       "title": "全选当前已加载歌曲",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongSelection.test.tsx",
-      "manifest": "tests/scenarios/LE-R07-S06.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongSelection.test.tsx"
     },
     {
       "id": "LE-R07-S07",
       "title": "跨分页保留选择",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"restores a controlled bulk selection after a virtual row leaves and re-enters\"",
-      "manifest": "tests/scenarios/LE-R07-S07.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"restores a controlled bulk selection after a virtual row leaves and re-enters\""
     },
     {
       "id": "LE-R07-S08",
       "title": "查询上下文改变",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongSelection.test.tsx -t \"clears when the view/query selection scope changes\"",
-      "manifest": "tests/scenarios/LE-R07-S08.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongSelection.test.tsx -t \"clears when the view/query selection scope changes\""
     },
     {
       "id": "LE-R07-S09",
       "title": "虚拟列表中的选择",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx",
-      "manifest": "tests/scenarios/LE-R07-S09.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx"
     },
     {
       "id": "LE-R08-S01",
       "title": "批量收藏",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx",
-      "manifest": "tests/scenarios/LE-R08-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx"
     },
     {
       "id": "LE-R08-S02",
       "title": "批量加入歌单",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx",
-      "manifest": "tests/scenarios/LE-R08-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx"
     },
     {
       "id": "LE-R08-S03",
       "title": "歌单视图批量移除",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx",
-      "manifest": "tests/scenarios/LE-R08-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx"
     },
     {
       "id": "LE-R08-S04",
       "title": "批量播放队列操作",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/batchOperations.test.ts",
-      "manifest": "tests/scenarios/LE-R08-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/batchOperations.test.ts"
     },
     {
       "id": "LE-R08-S05",
       "title": "批量删除并撤回",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/batchLibraryOperations.test.tsx",
-      "manifest": "tests/scenarios/LE-R08-S05.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/batchLibraryOperations.test.tsx"
     },
     {
       "id": "LE-R08-S06",
       "title": "批量删除遇到不可删除项",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/batchOperations.test.ts",
-      "manifest": "tests/scenarios/LE-R08-S06.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/batchOperations.test.ts"
     },
     {
       "id": "LE-R08-S07",
       "title": "只读根目录",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/BatchSongActions.test.tsx",
-      "manifest": "tests/scenarios/LE-R08-S07.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/BatchSongActions.test.tsx"
     },
     {
       "id": "LE-R08-S08",
       "title": "批量操作失败",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/batchLibraryOperations.test.tsx",
-      "manifest": "tests/scenarios/LE-R08-S08.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/batchLibraryOperations.test.tsx"
     },
     {
       "id": "LE-R09-S01",
       "title": "初次加载",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx",
-      "manifest": "tests/scenarios/LE-R09-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx"
     },
     {
       "id": "LE-R09-S02",
       "title": "资料库为空",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx",
-      "manifest": "tests/scenarios/LE-R09-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx"
     },
     {
       "id": "LE-R09-S03",
       "title": "资料库不可用",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx",
-      "manifest": "tests/scenarios/LE-R09-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx"
     },
     {
       "id": "LE-R09-S04",
       "title": "加载或扫描失败",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx",
-      "manifest": "tests/scenarios/LE-R09-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx"
     },
     {
       "id": "LE-R10-S01",
       "title": "浏览大量歌曲",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"renders only a viewport slice of a 50,000-song library, not all rows\"",
-      "manifest": "tests/scenarios/LE-R10-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"renders only a viewport slice of a 50,000-song library, not all rows\""
     },
     {
       "id": "LE-R10-S02",
       "title": "搜索或排序后保持定位",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"keeps rows keyed by stable SongId at their absolute position\"",
-      "manifest": "tests/scenarios/LE-R10-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"keeps rows keyed by stable SongId at their absolute position\""
     },
     {
       "id": "LE-R11-S01",
       "title": "未打开过的视图也显示计数",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx -t \"shows 喜欢的音乐's count without the user ever opening that view\"",
-      "manifest": "tests/native/LE-R11-S01.md"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx -t \"shows 喜欢的音乐's count without the user ever opening that view\""
     },
     {
       "id": "LE-R11-S02",
       "title": "计数不受分页影响",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx -t \"prints the backend total, not the number of rows the page loaded\"",
-      "manifest": "tests/native/LE-R11-S02.md"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx -t \"prints the backend total, not the number of rows the page loaded\""
     },
     {
       "id": "LE-R11-S03",
       "title": "计数与视图定义一致",
-      "command": "cargo test -p echo-core --all-features catalog_counts_match_view_membership_over_sqlite",
-      "manifest": "tests/native/LE-R11-S03.md"
+      "command": "cargo test -p echo-core --all-features catalog_counts_match_view_membership_over_sqlite"
     },
     {
       "id": "LE-R11-S04",
       "title": "最近添加上限",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R11-S04",
-      "manifest": "tests/scenarios/LE-R11-S04.yaml"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R11-S04"
     },
     {
       "id": "LE-R12-S01",
       "title": "打开未加载完的全部歌曲",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.tsx -t \"keeps the full query total stable while loading another page\"",
-      "manifest": "tests/scenarios/LE-R12-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.tsx -t \"keeps the full query total stable while loading another page\""
     },
     {
       "id": "LE-R12-S02",
       "title": "打开未加载完的喜欢的音乐",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.tsx -t \"uses the filtered favorites search total\"",
-      "manifest": "tests/scenarios/LE-R12-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.tsx -t \"uses the filtered favorites search total\""
     },
     {
       "id": "LE-R12-S03",
       "title": "搜索结果跨越多个分页",
-      "command": "cargo test -p echo-core --all-features catalog_search_pages_deterministically_across_large_library",
-      "manifest": "tests/scenarios/LE-R12-S03.yaml"
+      "command": "cargo test -p echo-core --all-features catalog_search_pages_deterministically_across_large_library"
     },
     {
       "id": "LE-R12-S04",
       "title": "加载后续页",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.tsx -t \"keeps the full query total stable while loading another page\"",
-      "manifest": "tests/scenarios/LE-R12-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.tsx -t \"keeps the full query total stable while loading another page\""
     },
     {
       "id": "LE-R12-S05",
       "title": "非分页列表",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.tsx -t \"sends normalized search through the recent view command\"",
-      "manifest": "tests/scenarios/LE-R12-S05.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.tsx -t \"sends normalized search through the recent view command\""
     },
     {
       "id": "LE-R13-S01",
       "title": "在其他视图切换收藏后计数更新",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R13-S01",
-      "manifest": "tests/scenarios/LE-R13-S01.yaml"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R13-S01"
     },
     {
       "id": "LE-R13-S02",
       "title": "导入与删除后计数更新",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R13-S02",
-      "manifest": "tests/scenarios/LE-R13-S02.yaml"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R13-S02"
     },
     {
       "id": "LE-R13-S03",
       "title": "播放栏导入后所有已挂载视图刷新",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R13-S03",
-      "manifest": "tests/native/LE-R13-S03.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R13-S03"
     },
     {
       "id": "LE-R13-S04",
       "title": "刷新期间不显示空白",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R13-S04",
-      "manifest": "tests/scenarios/LE-R13-S04.yaml"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R13-S04"
     },
     {
       "id": "LE-R13-S05",
       "title": "资料库不可用时",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R13-S05",
-      "manifest": "tests/scenarios/LE-R13-S05.yaml"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R13-S05"
     },
     {
       "id": "LE-R14-S01",
       "title": "导入第一首歌曲",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R14-S01",
-      "manifest": "tests/native/LE-R14-S01.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R14-S01"
     },
     {
       "id": "LE-R14-S02",
       "title": "首次导入失败",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R14-S02",
-      "manifest": "tests/native/LE-R14-S02.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R14-S02"
     },
     {
       "id": "LE-R14-S03",
       "title": "已有歌曲时继续导入",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R14-S03",
-      "manifest": "tests/native/LE-R14-S03.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R14-S03"
     },
     {
       "id": "LE-R15-S01",
       "title": "导入进行中保护按钮",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R15-S01",
-      "manifest": "tests/native/LE-R15-S01.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R15-S01"
     },
     {
       "id": "LE-R15-S02",
       "title": "导入完成刷新列表和计数",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R15-S02",
-      "manifest": "tests/native/LE-R15-S02.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R15-S02"
     },
     {
       "id": "LE-R15-S03",
       "title": "导入未提交",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R15-S03",
-      "manifest": "tests/native/LE-R15-S03.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R15-S03"
     },
     {
       "id": "LE-R16-S01",
       "title": "显示 SQ 徽标",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R16-S01",
-      "manifest": "tests/native/LE-R16-S01.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R16-S01"
     },
     {
       "id": "LE-R16-S02",
       "title": "显示 HQ 徽标",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R16-S02",
-      "manifest": "tests/native/LE-R16-S02.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R16-S02"
     },
     {
       "id": "LE-R16-S03",
       "title": "不显示徽标",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R16-S03",
-      "manifest": "tests/native/LE-R16-S03.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R16-S03"
     },
     {
       "id": "LE-R16-S04",
       "title": "同时满足 SQ 与 HQ 条件",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R16-S04",
-      "manifest": "tests/native/LE-R16-S04.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R16-S04"
     },
     {
       "id": "LE-R16-S05",
       "title": "徽标不影响行操作",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R16-S05",
-      "manifest": "tests/native/LE-R16-S05.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R16-S05"
     },
     {
       "id": "LE-R16-S06",
       "title": "旧歌曲即时生效",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R16-S06",
-      "manifest": "tests/native/LE-R16-S06.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R16-S06"
     },
     {
       "id": "LE-R17-S01",
       "title": "行内加号下一首播放",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R17-S01",
-      "manifest": "tests/native/LE-R17-S01.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R17-S01"
     },
     {
       "id": "LE-R17-S02",
       "title": "普通模式右键歌曲行",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R17-S02",
-      "manifest": "tests/native/LE-R17-S02.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R17-S02"
     },
     {
       "id": "LE-R17-S03",
       "title": "多选模式右键歌曲行",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R17-S03",
-      "manifest": "tests/native/LE-R17-S03.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R17-S03"
     },
     {
       "id": "LE-R18-S01",
       "title": "在歌单内搜索",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"searches within the current playlist through the scoped search command\"",
-      "manifest": "tests/scenarios/LE-R18-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"searches within the current playlist through the scoped search command\""
     },
     {
       "id": "LE-R18-S02",
       "title": "清空歌单搜索",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"restores the full member list when the search is cleared\"",
-      "manifest": "tests/scenarios/LE-R18-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"restores the full member list when the search is cleared\""
     },
     {
       "id": "LE-R18-S03",
       "title": "歌单搜索无结果",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"shows the playlist search empty state with a clear action on no hit\"",
-      "manifest": "tests/scenarios/LE-R18-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"shows the playlist search empty state with a clear action on no hit\""
     },
     {
       "id": "LE-R18-S04",
       "title": "歌单搜索不影响其他歌单",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.ts -t \"playlistId 变化触发新的抓取请求（缓存键区分布同歌单）\"",
-      "manifest": "tests/scenarios/LE-R18-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.ts -t \"playlistId 变化触发新的抓取请求（缓存键区分布同歌单）\""
     },
     {
       "id": "LE-R18-S05",
       "title": "歌单搜索结果跨页加载",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"appends the next page when the playlist search spills past one page\"",
-      "manifest": "tests/scenarios/LE-R18-S05.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"appends the next page when the playlist search spills past one page\""
     },
     {
       "id": "LE-R18-S06",
       "title": "歌单搜索到达末页后停止续页",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"stops requesting pages once the playlist search reaches the last page\"",
-      "manifest": "tests/scenarios/LE-R18-S06.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"stops requesting pages once the playlist search reaches the last page\""
     },
     {
       "id": "LE-R18-S07",
       "title": "搜索条件变化重置分页",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"appends the next page when the playlist search spills past one page\"",
-      "manifest": "tests/scenarios/LE-R18-S07.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"appends the next page when the playlist search spills past one page\""
     },
     {
       "id": "LE-R18-S08",
       "title": "迟到的旧条件结果不得显示",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"discards a continuation page from a superseded playlist search\"",
-      "manifest": "tests/scenarios/LE-R18-S08.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"discards a continuation page from a superseded playlist search\""
     },
     {
       "id": "LE-R18-S09",
       "title": "歌单搜索标题显示完整命中数",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"appends the next page when the playlist search spills past one page\"",
-      "manifest": "tests/scenarios/LE-R18-S09.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"appends the next page when the playlist search spills past one page\""
     },
     {
       "id": "LE-R19-S01",
       "title": "定位到正在播放的歌曲",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"scrolls the matched song row to the top of the visible area\"",
-      "manifest": "tests/scenarios/LE-R19-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"scrolls the matched song row to the top of the visible area\""
     },
     {
       "id": "LE-R19-S02",
       "title": "视图无正在播放歌曲",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/favoriteSync.test.tsx -t \"voices 当前没有正在播放的歌曲\"",
-      "manifest": "tests/scenarios/LE-R19-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/favoriteSync.test.tsx -t \"voices 当前没有正在播放的歌曲\""
     },
     {
       "id": "LE-R19-S03",
       "title": "播放歌曲不属于当前视图",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/favoriteSync.test.tsx -t \"voices 当前歌曲不在此列表中\"",
-      "manifest": "tests/scenarios/LE-R19-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/favoriteSync.test.tsx -t \"voices 当前歌曲不在此列表中\""
     },
     {
       "id": "LE-R19-S04",
       "title": "定位目标位于列表末尾",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"clamps an end-of-list target to the last reachable position\"",
-      "manifest": "tests/scenarios/LE-R19-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"clamps an end-of-list target to the last reachable position\""
     },
     {
       "id": "LE-R19-S05",
       "title": "最近添加视图定位",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R19-S05",
-      "manifest": "tests/native/LE-R19-S05.md"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LE-R19-S05"
     },
     {
       "id": "LE-R20-S01",
       "title": "归属查询进行中",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"preselects existing memberships read-only and submits only new targets\"",
-      "manifest": "tests/scenarios/LE-R20-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"preselects existing memberships read-only and submits only new targets\""
     },
     {
       "id": "LE-R20-S02",
       "title": "归属查询失败并继续添加",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"falls back to additive selection with a visible warning\"",
-      "manifest": "tests/scenarios/LE-R20-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"falls back to additive selection with a visible warning\""
     },
     {
       "id": "LE-R20-S03",
       "title": "批量模式说明",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"所选歌单将应用于全部\"",
-      "manifest": "tests/scenarios/LE-R20-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"所选歌单将应用于全部\""
     },
     {
       "id": "LE-R20-S04",
       "title": "无变化不反馈成功",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"closes unchanged single-song selection without a mutation\"",
-      "manifest": "tests/scenarios/LE-R20-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"closes unchanged single-song selection without a mutation\""
     },
     {
       "id": "LE-R21-S01",
       "title": "收藏已保存而投影失败",
-      "command": "cargo test -p echo-core --all-features library_durability_favorite_failure_is_saved_and_later_false_catches_up",
-      "manifest": "tests/scenarios/LE-R21-S01.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_favorite_failure_is_saved_and_later_false_catches_up"
     },
     {
       "id": "LE-R21-S02",
       "title": "正常投影仍在后台时已保存反馈",
-      "command": "cargo test -p echo-desktop --all-features --release --test local_edit_performance completed_local_edit_latency -- --ignored --nocapture",
-      "manifest": "tests/scenarios/LE-R21-S02.yaml"
+      "command": "cargo test -p echo-desktop --all-features --release --test local_edit_performance completed_local_edit_latency -- --ignored --nocapture"
     },
     {
       "id": "LE-R21-S03",
       "title": "收藏未保存",
-      "command": "cargo test -p echo-core --all-features library_durability_refused_commit_leaves_every_wired_entrypoint_untouched",
-      "manifest": "tests/scenarios/LE-R21-S03.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_refused_commit_leaves_every_wired_entrypoint_untouched"
     },
     {
       "id": "LE-R21-S04",
       "title": "批量收藏部分已保存",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/savedPendingFeedback.test.tsx -t \"reports each batch item's own outcome and retries only the saved ones\"",
-      "manifest": "tests/scenarios/LE-R21-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/savedPendingFeedback.test.tsx -t \"reports each batch item's own outcome and retries only the saved ones\""
     },
     {
       "id": "LE-R21-S05",
       "title": "已保存待投影不被当作失败重试",
-      "command": "cargo test -p echo-core --all-features library_durability_retry_catches_up_all_saved_operations_without_new_commits",
-      "manifest": "tests/scenarios/LE-R21-S05.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_retry_catches_up_all_saved_operations_without_new_commits"
     },
     {
       "id": "LL-R01-S01",
       "title": "选择根目录并建立资料库",
-      "command": "cargo test -p echo-core --all-features root_switch::",
-      "manifest": "tests/scenarios/LL-R01-S01.yaml"
+      "command": "cargo test -p echo-core --all-features root_switch::"
     },
     {
       "id": "LL-R01-S02",
       "title": "安全切换活动根目录",
-      "command": "cargo test -p echo-core --all-features root_switch::",
-      "manifest": "tests/scenarios/LL-R01-S02.yaml"
+      "command": "cargo test -p echo-core --all-features root_switch::"
     },
     {
       "id": "LL-R01-S03",
       "title": "切换根目录失败",
-      "command": "cargo test -p echo-core --all-features root_switch::",
-      "manifest": "tests/scenarios/LL-R01-S03.yaml"
+      "command": "cargo test -p echo-core --all-features root_switch::"
     },
     {
       "id": "LL-R01-S04",
       "title": "本机数据库丢失后重新选择同一目录",
-      "command": "cargo test -p echo-core --all-features root_switch::tests::prepare_reuses_record_identities_and_leaves_media_untouched",
-      "manifest": "tests/scenarios/LL-R01-S04.yaml"
+      "command": "cargo test -p echo-core --all-features root_switch::tests::prepare_reuses_record_identities_and_leaves_media_untouched"
     },
     {
       "id": "LL-R01-S05",
       "title": "投影滞后时读己之写",
-      "command": "cargo test -p echo-core --all-features consecutive_multi_song_add_keeps_every_membership",
-      "manifest": "tests/scenarios/LL-R01-S05.yaml"
+      "command": "cargo test -p echo-core --all-features consecutive_multi_song_add_keeps_every_membership"
     },
     {
       "id": "LL-R02-S01",
       "title": "首次扫描发现支持文件",
-      "command": "cargo test -p echo-core --all-features application::scan::tests::relink::manual_rescan_is_repeatable_and_converges",
-      "manifest": "tests/scenarios/LL-R02-S01.yaml"
+      "command": "cargo test -p echo-core --all-features application::scan::tests::relink::manual_rescan_is_repeatable_and_converges"
     },
     {
       "id": "LL-R02-S02",
       "title": "忽略不支持文件",
-      "command": "cargo test -p echo-core --all-features watch::tests::watch_events_converge_under_out_of_order_and_duplicate_delivery",
-      "manifest": "tests/scenarios/LL-R02-S02.yaml"
+      "command": "cargo test -p echo-core --all-features watch::tests::watch_events_converge_under_out_of_order_and_duplicate_delivery"
     },
     {
       "id": "LL-R02-S03",
       "title": "忽略控制面目录",
-      "command": "cargo test -p echo-core --all-features application::scan::tests::relink::progress_persisted_throttled_and_terminal_state_kept",
-      "manifest": "tests/scenarios/LL-R02-S03.yaml"
+      "command": "cargo test -p echo-core --all-features application::scan::tests::relink::progress_persisted_throttled_and_terminal_state_kept"
     },
     {
       "id": "LL-R02-S04",
       "title": "不兼容旧资料库布局",
-      "command": "cargo test -p echo-core --all-features manifest_incompatible_version_fails_check",
-      "manifest": "tests/scenarios/LL-R02-S04.yaml"
+      "command": "cargo test -p echo-core --all-features manifest_incompatible_version_fails_check"
     },
     {
       "id": "LL-R02-S05",
       "title": "监听外部新增和修改",
-      "command": "cargo test -p echo-core --all-features application::watch::tests::",
-      "manifest": "tests/scenarios/LL-R02-S05.yaml"
+      "command": "cargo test -p echo-core --all-features application::watch::tests::"
     },
     {
       "id": "LL-R02-S06",
       "title": "从设置页手动重新扫描",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/settings/SettingsView.test.tsx -t \"starts a scan for the active library and reports completion\"",
-      "manifest": "tests/scenarios/LL-R02-S06.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/settings/SettingsView.test.tsx -t \"starts a scan for the active library and reports completion\""
     },
     {
       "id": "LL-R02-S07",
       "title": "没有活动资料库时不能重扫",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/settings/SettingsView.test.tsx -t \"disables rescan when no library root is configured\"",
-      "manifest": "tests/scenarios/LL-R02-S07.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/settings/SettingsView.test.tsx -t \"disables rescan when no library root is configured\""
     },
     {
       "id": "LL-R03-S01",
       "title": "解析内嵌数据",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::playback_sessions_are_idempotent",
-      "manifest": "tests/native/LL-R03-S01.md"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::playback_sessions_are_idempotent"
     },
     {
       "id": "LL-R03-S02",
       "title": "解析同名 LRC 侧车",
-      "command": "cargo test -p echo-core --all-features probe",
-      "manifest": "tests/native/LL-R03-S02.md"
+      "command": "cargo test -p echo-core --all-features probe"
     },
     {
       "id": "LL-R03-S03",
       "title": "文件损坏或标签异常",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::scan_pipeline_persists",
-      "manifest": "tests/native/LL-R03-S03.md"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::scan_pipeline_persists"
     },
     {
       "id": "LL-R03-S04",
       "title": "m4a 内嵌标签解析",
-      "command": "cargo test -p echo-core --all-features infrastructure::metadata::tags::tests::m4a_tags_parse_from_in_memory_import_source_bytes",
-      "manifest": "tests/scenarios/LL-R03-S04.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::metadata::tags::tests::m4a_tags_parse_from_in_memory_import_source_bytes"
     },
     {
       "id": "LL-R03-S05",
       "title": "wav 无标签兜底",
-      "command": "cargo test -p echo-core --all-features tagless_wav_reads_as_ok_with_empty_fields",
-      "manifest": "tests/scenarios/LL-R03-S05.yaml"
+      "command": "cargo test -p echo-core --all-features tagless_wav_reads_as_ok_with_empty_fields"
     },
     {
       "id": "LL-R04-S01",
       "title": "原地重扫保持身份",
-      "command": "cargo test -p echo-core --all-features application::scan::tests::relink::fast_skip_unchanged_files_and_relink_on_move",
-      "manifest": "tests/scenarios/LL-R04-S01.yaml"
+      "command": "cargo test -p echo-core --all-features application::scan::tests::relink::fast_skip_unchanged_files_and_relink_on_move"
     },
     {
       "id": "LL-R04-S02",
       "title": "移动或改名后重关联",
-      "command": "cargo test -p echo-core --all-features application::scan::tests::pipeline::external_missing_relinks_on_same_hash_path_keeping_relationships",
-      "manifest": "tests/scenarios/LL-R04-S02.yaml"
+      "command": "cargo test -p echo-core --all-features application::scan::tests::pipeline::external_missing_relinks_on_same_hash_path_keeping_relationships"
     },
     {
       "id": "LL-R04-S03",
       "title": "相同内容出现在两个路径",
-      "command": "cargo test -p echo-core --all-features application::scan::tests::relink::duplicate_hash_paths_get_deterministic_primary",
-      "manifest": "tests/scenarios/LL-R04-S03.yaml"
+      "command": "cargo test -p echo-core --all-features application::scan::tests::relink::duplicate_hash_paths_get_deterministic_primary"
     },
     {
       "id": "LL-R04-S04",
       "title": "音乐键不得触发身份合并",
-      "command": "cargo test -p echo-core --all-features application::scan::tests::relink::music_key_never_relinks_identities",
-      "manifest": "tests/scenarios/LL-R04-S04.yaml"
+      "command": "cargo test -p echo-core --all-features application::scan::tests::relink::music_key_never_relinks_identities"
     },
     {
       "id": "LL-R05-S01",
       "title": "搜索并排序",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::fts_and_short_like_search",
-      "manifest": "tests/scenarios/LL-R05-S01.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::fts_and_short_like_search"
     },
     {
       "id": "LL-R05-S02",
       "title": "重启后数据可用",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::keyset_pages_are_deterministic",
-      "manifest": "tests/scenarios/LL-R05-S02.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::keyset_pages_are_deterministic"
     },
     {
       "id": "LL-R06-S01",
       "title": "覆盖层优先展示",
-      "command": "cargo test -p echo-core --all-features cover_cache_key_and_db_reference",
-      "manifest": "tests/scenarios/LL-R06-S01.yaml"
+      "command": "cargo test -p echo-core --all-features cover_cache_key_and_db_reference"
     },
     {
       "id": "LL-R06-S02",
       "title": "外部修改不覆盖用户值",
-      "command": "cargo test -p echo-core --all-features lyrics",
-      "manifest": "tests/scenarios/LL-R06-S02.yaml"
+      "command": "cargo test -p echo-core --all-features lyrics"
     },
     {
       "id": "LL-R07-S01",
       "title": "根目录不可用",
-      "command": "cargo test -p echo-core --all-features trash::tests::persisted_trash_applied_is_the_only_automatic_database_finalization_proof",
-      "manifest": "tests/native/LL-R07-S01.md"
+      "command": "cargo test -p echo-core --all-features trash::tests::persisted_trash_applied_is_the_only_automatic_database_finalization_proof"
     },
     {
       "id": "LL-R07-S02",
       "title": "删除歌曲后关联可见",
-      "command": "cargo test -p echo-core --all-features trash::tests::external_staging_cleanup_becomes_unknown_and_preserves_relationships",
-      "manifest": "tests/native/LL-R07-S02.md"
+      "command": "cargo test -p echo-core --all-features trash::tests::external_staging_cleanup_becomes_unknown_and_preserves_relationships"
     },
     {
       "id": "LL-R07-S03",
       "title": "删除歌曲后可重新导入",
-      "command": "cargo test -p echo-core --all-features application::scan::tests::pipeline::external_deletion_is_missing_not_pending_delete_and_keeps_relationships",
-      "manifest": "tests/native/LL-R07-S03.md"
+      "command": "cargo test -p echo-core --all-features application::scan::tests::pipeline::external_deletion_is_missing_not_pending_delete_and_keeps_relationships"
     },
     {
       "id": "LL-R07-S04",
       "title": "文件恢复",
-      "command": "cargo test -p echo-core --all-features application::scan::tests::pipeline::external_missing_recovers_on_original_path_restoring_everything",
-      "manifest": "tests/native/LL-R07-S04.md"
+      "command": "cargo test -p echo-core --all-features application::scan::tests::pipeline::external_missing_recovers_on_original_path_restoring_everything"
     },
     {
       "id": "LL-R08-S01",
       "title": "Unicode 和平台路径",
-      "command": "node scripts/verify/checks/task-12.7.mjs",
-      "manifest": "tests/native/LL-R08-S01.md"
+      "command": "node scripts/verify/checks/task-12.7.mjs"
     },
     {
       "id": "LL-R08-S02",
       "title": "扫描期间继续使用界面",
-      "command": "node scripts/verify/checks/task-12.6.mjs",
-      "manifest": "tests/native/LL-R08-S02.md"
+      "command": "node scripts/verify/checks/task-12.6.mjs"
     },
     {
       "id": "LL-R08-S03",
       "title": "不泄露本机路径",
-      "command": "cargo test -p echo-core --all-features permission",
-      "manifest": "tests/native/LL-R08-S03.md"
+      "command": "cargo test -p echo-core --all-features permission"
     },
     {
       "id": "LL-R09-S01",
       "title": "真实导入时间",
-      "command": "cargo test -p echo-core --all-features revision_and_added_at_survive_rescans",
-      "manifest": "tests/scenarios/LL-R09-S01.yaml"
+      "command": "cargo test -p echo-core --all-features revision_and_added_at_survive_rescans"
     },
     {
       "id": "LL-R09-S02",
       "title": "重复或重扫不改写时间",
-      "command": "cargo test -p echo-core --all-features revision_and_added_at_survive_rescans",
-      "manifest": "tests/scenarios/LL-R09-S02.yaml"
+      "command": "cargo test -p echo-core --all-features revision_and_added_at_survive_rescans"
     },
     {
       "id": "LL-R09-S03",
       "title": "当前时区转换",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs LL-R09-S03",
-      "manifest": "tests/scenarios/LL-R09-S03.yaml"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs LL-R09-S03"
     },
     {
       "id": "LL-R10-S01",
       "title": "首次扫描后重装",
-      "command": "cargo test -p echo-core --all-features library_durability_scan_saves_identity_before_projection_and_reuses_it_on_retry",
-      "manifest": "tests/scenarios/LL-R10-S01.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_scan_saves_identity_before_projection_and_reuses_it_on_retry"
     },
     {
       "id": "LL-R10-S02",
       "title": "移动或标签修改后恢复",
-      "command": "cargo test -p echo-core --all-features library_durability_scan_refresh_preserves_saved_after_image_on_projection_failure",
-      "manifest": "tests/scenarios/LL-R10-S02.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_scan_refresh_preserves_saved_after_image_on_projection_failure"
     },
     {
       "id": "LL-R10-S03",
       "title": "控制面写失败",
-      "command": "cargo test -p echo-core --all-features library_durability_scan_refuses_unwritable_library_before_indexing",
-      "manifest": "tests/scenarios/LL-R10-S03.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_scan_refuses_unwritable_library_before_indexing"
     },
     {
       "id": "LL-R10-S04",
       "title": "只读库和无变化重扫",
-      "command": "cargo test -p echo-core --all-features library_durability_readonly_volume_and_unmaterialized_commit_can_be_browsed",
-      "manifest": "tests/scenarios/LL-R10-S04.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_readonly_volume_and_unmaterialized_commit_can_be_browsed"
     },
     {
       "id": "LL-R11-S01",
       "title": "数据库损坏",
-      "command": "cargo test -p echo-core --all-features a_wiped_database_is_rebuilt_from_the_records_at_real_scale",
-      "manifest": "tests/scenarios/LL-R11-S01.yaml"
+      "command": "cargo test -p echo-core --all-features a_wiped_database_is_rebuilt_from_the_records_at_real_scale"
     },
     {
       "id": "LL-R11-S02",
       "title": "切库恢复失败",
-      "command": "cargo test -p echo-app --all-features a_failed_switch_restores_the_previous_session",
-      "manifest": "tests/scenarios/LL-R11-S02.yaml"
+      "command": "cargo test -p echo-app --all-features a_failed_switch_restores_the_previous_session"
     },
     {
       "id": "PHA-R01-S01",
       "title": "歌单与队列日常流程",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs PHA-R01-S01",
-      "manifest": "tests/scenarios/PHA-R01-S01.yaml"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs PHA-R01-S01"
     },
     {
       "id": "PHA-R01-S02",
       "title": "回归质量门",
-      "command": "node scripts/verify/ci-governance.mjs",
-      "manifest": "tests/scenarios/PHA-R01-S02.yaml"
+      "command": "node scripts/verify/ci-governance.mjs"
     },
     {
       "id": "PM-R01-S01",
       "title": "创建歌单",
-      "command": "cargo test -p echo-core --all-features playlist",
-      "manifest": "tests/scenarios/PM-R01-S01.yaml"
+      "command": "cargo test -p echo-core --all-features playlist"
     },
     {
       "id": "PM-R01-S02",
       "title": "名称无效",
-      "command": "cargo test -p echo-core --all-features playlist",
-      "manifest": "tests/scenarios/PM-R01-S02.yaml"
+      "command": "cargo test -p echo-core --all-features playlist"
     },
     {
       "id": "PM-R01-S03",
       "title": "创建提交失败",
-      "command": "cargo test -p echo-core --all-features playlist",
-      "manifest": "tests/scenarios/PM-R01-S03.yaml"
+      "command": "cargo test -p echo-core --all-features playlist"
     },
     {
       "id": "PM-R01-S04",
       "title": "重命名歌单",
-      "command": "cargo test -p echo-core --all-features playlist",
-      "manifest": "tests/scenarios/PM-R01-S04.yaml"
+      "command": "cargo test -p echo-core --all-features playlist"
     },
     {
       "id": "PM-R01-S05",
       "title": "删除歌单",
-      "command": "cargo test -p echo-core --all-features delete_owns_playlist_and_members_but_not_songs_or_other_playlists",
-      "manifest": "tests/scenarios/PM-R01-S05.yaml"
+      "command": "cargo test -p echo-core --all-features delete_owns_playlist_and_members_but_not_songs_or_other_playlists"
     },
     {
       "id": "PM-R02-S01",
       "title": "打开歌单",
-      "command": "cargo test -p echo-core --all-features playlist",
-      "manifest": "tests/scenarios/PM-R02-S01.yaml"
+      "command": "cargo test -p echo-core --all-features playlist"
     },
     {
       "id": "PM-R02-S02",
       "title": "追加后查看",
-      "command": "cargo test -p echo-core --all-features playlist",
-      "manifest": "tests/scenarios/PM-R02-S02.yaml"
+      "command": "cargo test -p echo-core --all-features playlist"
     },
     {
       "id": "PM-R03-S01",
       "title": "添加单首歌曲",
-      "command": "cargo test -p echo-core --all-features playlist",
-      "manifest": "tests/scenarios/PM-R03-S01.yaml"
+      "command": "cargo test -p echo-core --all-features playlist"
     },
     {
       "id": "PM-R03-S02",
       "title": "添加到多个歌单",
-      "command": "cargo test -p echo-core --all-features playlist",
-      "manifest": "tests/scenarios/PM-R03-S02.yaml"
+      "command": "cargo test -p echo-core --all-features playlist"
     },
     {
       "id": "PM-R03-S03",
       "title": "批量添加到多个歌单",
-      "command": "cargo test -p echo-core --all-features playlist",
-      "manifest": "tests/scenarios/PM-R03-S03.yaml"
+      "command": "cargo test -p echo-core --all-features playlist"
     },
     {
       "id": "PM-R03-S04",
       "title": "在歌单视图中从单曲菜单添加",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"opens the add-to-playlist picker from a member's song menu\"",
-      "manifest": "tests/scenarios/PM-R03-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"opens the add-to-playlist picker from a member's song menu\""
     },
     {
       "id": "PM-R03-S05",
       "title": "只读歌单视图禁用添加入口",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"keeps 添加到歌单 disabled for a read-only playlist\"",
-      "manifest": "tests/scenarios/PM-R03-S05.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"keeps 添加到歌单 disabled for a read-only playlist\""
     },
     {
       "id": "PM-R03-S06",
       "title": "重复添加",
-      "command": "cargo test -p echo-core --all-features add_to_multiple_playlists_is_atomic_and_idempotent",
-      "manifest": "tests/scenarios/PM-R03-S06.yaml"
+      "command": "cargo test -p echo-core --all-features add_to_multiple_playlists_is_atomic_and_idempotent"
     },
     {
       "id": "PM-R03-S07",
       "title": "批量添加部分失败",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"runs a multi-song add sequentially and keeps partial failures visible\"",
-      "manifest": "tests/scenarios/PM-R03-S07.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"runs a multi-song add sequentially and keeps partial failures visible\""
     },
     {
       "id": "PM-R04-S01",
       "title": "移除成员",
-      "command": "cargo test -p echo-core --all-features playlist",
-      "manifest": "tests/scenarios/PM-R04-S01.yaml"
+      "command": "cargo test -p echo-core --all-features playlist"
     },
     {
       "id": "PM-R04-S02",
       "title": "批量移除成员",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"removes the selected members one by one and refreshes the playlist\"",
-      "manifest": "tests/scenarios/PM-R04-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"removes the selected members one by one and refreshes the playlist\""
     },
     {
       "id": "PM-R04-S03",
       "title": "批量移除部分失败",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/batchOperations.test.ts",
-      "manifest": "tests/scenarios/PM-R04-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/batchOperations.test.ts"
     },
     {
       "id": "PM-R05-S01",
       "title": "文件暂时不可用",
-      "command": "cargo test -p echo-core --all-features playlist_missing_members_stay_visible",
-      "manifest": "tests/scenarios/PM-R05-S01.yaml"
+      "command": "cargo test -p echo-core --all-features playlist_missing_members_stay_visible"
     },
     {
       "id": "PM-R05-S02",
       "title": "文件已删除",
-      "command": "cargo test -p echo-core --all-features playlist_missing_members_stay_visible",
-      "manifest": "tests/scenarios/PM-R05-S02.yaml"
+      "command": "cargo test -p echo-core --all-features playlist_missing_members_stay_visible"
     },
     {
       "id": "PM-R05-S03",
       "title": "用户在 Echo 中删除歌曲",
-      "command": "cargo test -p echo-core --all-features echo_delete_finalize_cascades_memberships",
-      "manifest": "tests/scenarios/PM-R05-S03.yaml"
+      "command": "cargo test -p echo-core --all-features echo_delete_finalize_cascades_memberships"
     },
     {
       "id": "PM-R05-S04",
       "title": "删除后仍在撤销窗口内",
-      "command": "cargo test -p echo-core --all-features playlist",
-      "manifest": "tests/scenarios/PM-R05-S04.yaml"
+      "command": "cargo test -p echo-core --all-features playlist"
     },
     {
       "id": "PM-R05-S05",
       "title": "删除撤销",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"refreshes the sidebar after a batch delete and its undo\"",
-      "manifest": "tests/scenarios/PM-R05-S05.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"refreshes the sidebar after a batch delete and its undo\""
     },
     {
       "id": "PM-R05-S06",
       "title": "失效歌曲恢复",
-      "command": "cargo test -p echo-core --all-features playlist_missing_members_stay_visible_and_recover_without_duplicates",
-      "manifest": "tests/scenarios/PM-R05-S06.yaml"
+      "command": "cargo test -p echo-core --all-features playlist_missing_members_stay_visible_and_recover_without_duplicates"
     },
     {
       "id": "PM-R06-S01",
       "title": "成员移除失败",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"keeps the member in place\"",
-      "manifest": "tests/scenarios/PM-R06-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"keeps the member in place\""
     },
     {
       "id": "PM-R06-S02",
       "title": "入队失败",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"never claims\"",
-      "manifest": "tests/scenarios/PM-R06-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"never claims\""
     },
     {
       "id": "PM-R06-S03",
       "title": "批量操作结果",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/batchOperations.test.ts",
-      "manifest": "tests/scenarios/PM-R06-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/library/batchOperations.test.ts"
     },
     {
       "id": "PM-R07-S01",
       "title": "从选择器创建并添加歌曲",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx",
-      "manifest": "tests/scenarios/PM-R07-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx"
     },
     {
       "id": "PM-R07-S02",
       "title": "从选择器创建失败",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistNameDialog.test.tsx",
-      "manifest": "tests/scenarios/PM-R07-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistNameDialog.test.tsx"
     },
     {
       "id": "PM-R07-S03",
       "title": "点击名称输入框并输入",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx",
-      "manifest": "tests/scenarios/PM-R07-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx"
     },
     {
       "id": "PM-R07-S04",
       "title": "取消新建并返回选择器",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx",
-      "manifest": "tests/scenarios/PM-R07-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx"
     },
     {
       "id": "PM-R08-S01",
       "title": "创建歌单时记录时间",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs PM-R08-S01",
-      "manifest": "tests/scenarios/PM-R08-S01.yaml"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs PM-R08-S01"
     },
     {
       "id": "PM-R08-S02",
       "title": "加入歌单时记录时间",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs PM-R08-S02",
-      "manifest": "tests/scenarios/PM-R08-S02.yaml"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs PM-R08-S02"
     },
     {
       "id": "PM-R08-S03",
       "title": "重复加入不重写时间",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs PM-R08-S03",
-      "manifest": "tests/scenarios/PM-R08-S03.yaml"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs PM-R08-S03"
     },
     {
       "id": "PM-R08-S04",
       "title": "歌单时间按当前时区呈现",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs PM-R08-S04",
-      "manifest": "tests/scenarios/PM-R08-S04.yaml"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs PM-R08-S04"
     },
     {
       "id": "PM-R09-S01",
       "title": "歌单详情提供搜索控件",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"searches within the current playlist\"",
-      "manifest": "tests/scenarios/PM-R09-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"searches within the current playlist\""
     },
     {
       "id": "PM-R09-S02",
       "title": "歌单详情清空搜索",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"restores the full member list when the search is cleared\"",
-      "manifest": "tests/scenarios/PM-R09-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"restores the full member list when the search is cleared\""
     },
     {
       "id": "PM-R09-S03",
       "title": "歌单详情搜索结果可续页",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"appends the next page when the playlist search spills past one page\"",
-      "manifest": "tests/scenarios/PM-R09-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"appends the next page when the playlist search spills past one page\""
     },
     {
       "id": "PM-R09-S04",
       "title": "歌单详情搜索末页不再续页",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"stops requesting pages once the playlist search reaches the last page\"",
-      "manifest": "tests/scenarios/PM-R09-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"stops requesting pages once the playlist search reaches the last page\""
     },
     {
       "id": "PM-R09-S05",
       "title": "歌单切换清空搜索",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"clears the search when switching to another playlist\"",
-      "manifest": "tests/scenarios/PM-R09-S05.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"clears the search when switching to another playlist\""
     },
     {
       "id": "PM-R10-S01",
       "title": "定位歌单中正在播放的歌曲",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"rolls to a playing member of the playlist without a toast\"",
-      "manifest": "tests/scenarios/PM-R10-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"rolls to a playing member of the playlist without a toast\""
     },
     {
       "id": "PM-R10-S02",
       "title": "歌单无正在播放歌曲",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"voices 当前\"",
-      "manifest": "tests/scenarios/PM-R10-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"voices 当前\""
     },
     {
       "id": "PM-R11-S01",
       "title": "单曲预选已有歌单",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"preselects existing memberships read-only and submits only new targets\"",
-      "manifest": "tests/scenarios/PM-R11-S01.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"preselects existing memberships read-only and submits only new targets\""
     },
     {
       "id": "PM-R11-S02",
       "title": "仅提交新增差集",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"preselects existing memberships read-only and submits only new targets\"",
-      "manifest": "tests/scenarios/PM-R11-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"preselects existing memberships read-only and submits only new targets\""
     },
     {
       "id": "PM-R11-S03",
       "title": "未改动选择并确认",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"closes unchanged single-song selection without a mutation\"",
-      "manifest": "tests/scenarios/PM-R11-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"closes unchanged single-song selection without a mutation\""
     },
     {
       "id": "PM-R11-S04",
       "title": "批量选择歌曲",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"所选歌单将应用于全部\"",
-      "manifest": "tests/scenarios/PM-R11-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/playlists/AddToPlaylistDialog.test.tsx -t \"所选歌单将应用于全部\""
     },
     {
       "id": "PM-R12-S01",
       "title": "查询已有归属",
-      "command": "cargo test -p echo-core --all-features playlists_for_song_reads_membership_ids_from_the_active_database",
-      "manifest": "tests/scenarios/PM-R12-S01.yaml"
+      "command": "cargo test -p echo-core --all-features playlists_for_song_reads_membership_ids_from_the_active_database"
     },
     {
       "id": "PM-R12-S02",
       "title": "查询无归属歌曲",
-      "command": "cargo test -p echo-core --all-features playlists_for_song_reads_membership_ids_from_the_active_database",
-      "manifest": "tests/scenarios/PM-R12-S02.yaml"
+      "command": "cargo test -p echo-core --all-features playlists_for_song_reads_membership_ids_from_the_active_database"
     },
     {
       "id": "PM-R12-S03",
       "title": "归属查询失败",
-      "command": "cargo test -p echo-core --all-features playlists_for_song_reads_membership_ids_from_the_active_database",
-      "manifest": "tests/scenarios/PM-R12-S03.yaml"
+      "command": "cargo test -p echo-core --all-features playlists_for_song_reads_membership_ids_from_the_active_database"
     },
     {
       "id": "PM-R13-S01",
       "title": "创建空歌单后重装",
-      "command": "cargo test -p echo-core --all-features library_durability_playlist_create_retry_after_saved_pending_keeps_operation_identity",
-      "manifest": "tests/scenarios/PM-R13-S01.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_playlist_create_retry_after_saved_pending_keeps_operation_identity"
     },
     {
       "id": "PM-R13-S02",
       "title": "多成员提交被中断",
-      "command": "cargo test -p echo-core --all-features library_durability_member_append_is_saved_before_failed_projection",
-      "manifest": "tests/scenarios/PM-R13-S02.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_member_append_is_saved_before_failed_projection"
     },
     {
       "id": "PM-R13-S03",
       "title": "保存与显示更新分离",
-      "command": "cargo test -p echo-core --all-features library_durability_playlist_rename_saves_before_failed_projection",
-      "manifest": "tests/scenarios/PM-R13-S03.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_playlist_rename_saves_before_failed_projection"
     },
     {
       "id": "PM-R13-S04",
       "title": "SQLite 落后时连续编辑歌单",
-      "command": "cargo test -p echo-core --all-features consecutive_multi_song_add_keeps_every_membership",
-      "manifest": "tests/scenarios/PM-R13-S04.yaml"
+      "command": "cargo test -p echo-core --all-features consecutive_multi_song_add_keeps_every_membership"
     },
     {
       "id": "PM-R13-S05",
       "title": "歌单命令低延迟验收",
-      "command": "cargo test -p echo-desktop --all-features --release --test local_edit_performance completed_local_edit_latency -- --ignored --nocapture",
-      "manifest": "tests/scenarios/PM-R13-S05.yaml"
+      "command": "cargo test -p echo-desktop --all-features --release --test local_edit_performance completed_local_edit_latency -- --ignored --nocapture"
     },
     {
       "id": "PM-R13-S06",
       "title": "删除与取消喜欢不复活",
-      "command": "cargo test -p echo-core --all-features final_tombstone_is_never_recovered_but_history_can_be_dismissed",
-      "manifest": "tests/scenarios/PM-R13-S06.yaml"
+      "command": "cargo test -p echo-core --all-features final_tombstone_is_never_recovered_but_history_can_be_dismissed"
     },
     {
       "id": "PLL-R01-S01",
       "title": "新资料库导入一首歌曲",
-      "command": "cargo test -p echo-core --all-features default_target_is_artist_folder_with_artist_minus_title",
-      "manifest": "tests/scenarios/PLL-R01-S01.yaml"
+      "command": "cargo test -p echo-core --all-features default_target_is_artist_folder_with_artist_minus_title"
     },
     {
       "id": "PLL-R01-S02",
       "title": "控制面目录不可写",
-      "command": "cargo test -p echo-core --all-features control_plane_usable_detects_writable_and_readable",
-      "manifest": "tests/scenarios/PLL-R01-S02.yaml"
+      "command": "cargo test -p echo-core --all-features control_plane_usable_detects_writable_and_readable"
     },
     {
       "id": "PLL-R01-S03",
       "title": "每种对象种类都有对应目录",
-      "command": "node scripts/verify/checks/task-15.1.mjs",
-      "manifest": "tests/scenarios/PLL-R01-S03.yaml"
+      "command": "node scripts/verify/checks/task-15.1.mjs"
     },
     {
       "id": "PLL-R01-S04",
       "title": "完整备份包括恢复必需资料",
-      "command": "cargo test -p echo-core --all-features online_backup_contains_matching_catalog_pending_and_ledger_without_independent_checkpoint",
-      "manifest": "tests/scenarios/PLL-R01-S04.yaml"
+      "command": "cargo test -p echo-core --all-features online_backup_contains_matching_catalog_pending_and_ledger_without_independent_checkpoint"
     },
     {
       "id": "PLL-R02-S01",
       "title": "检查资料库控制面",
-      "command": "cargo test -p echo-core --all-features manifest_round_trips_atomically",
-      "manifest": "tests/scenarios/PLL-R02-S01.yaml"
+      "command": "cargo test -p echo-core --all-features manifest_round_trips_atomically"
     },
     {
       "id": "PLL-R02-S02",
       "title": "路径数据被序列化",
-      "command": "cargo test -p echo-core --all-features sync_payloads_carry_no_absolute_paths",
-      "manifest": "tests/scenarios/PLL-R02-S02.yaml"
+      "command": "cargo test -p echo-core --all-features sync_payloads_carry_no_absolute_paths"
     },
     {
       "id": "PLL-R02-S03",
       "title": "同步忽略临时目录",
-      "command": "cargo test -p echo-core --all-features tmp_files_are_ignored_as_records",
-      "manifest": "tests/scenarios/PLL-R02-S03.yaml"
+      "command": "cargo test -p echo-core --all-features tmp_files_are_ignored_as_records"
     },
     {
       "id": "PLL-R02-S04",
       "title": "歌单与成员的变更被材料化",
-      "command": "cargo test -p echo-desktop --all-features playlist_mutations_materialize_records_and_tombstones",
-      "manifest": "tests/scenarios/PLL-R02-S04.yaml"
+      "command": "cargo test -p echo-desktop --all-features playlist_mutations_materialize_records_and_tombstones"
     },
     {
       "id": "PLL-R02-S05",
       "title": "播放统计随资料库移动",
-      "command": "cargo test -p echo-desktop --all-features recorded_plays_materialize_additive_play_stats",
-      "manifest": "tests/scenarios/PLL-R02-S05.yaml"
+      "command": "cargo test -p echo-desktop --all-features recorded_plays_materialize_additive_play_stats"
     },
     {
       "id": "PLL-R02-S06",
       "title": "取消收藏不留下悬空记录",
-      "command": "cargo test -p echo-desktop --all-features unfavorite_materializes_a_false_record_so_it_never_returns",
-      "manifest": "tests/scenarios/PLL-R02-S06.yaml"
+      "command": "cargo test -p echo-desktop --all-features unfavorite_materializes_a_false_record_so_it_never_returns"
     },
     {
       "id": "PLL-R02-S07",
       "title": "播放统计幂等身份不进入共享载荷",
-      "command": "cargo test -p echo-core --all-features library_durability_playback_event_is_materialized_outside_shared_records",
-      "manifest": "tests/scenarios/PLL-R02-S07.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_playback_event_is_materialized_outside_shared_records"
     },
     {
       "id": "PLL-R02-S08",
       "title": "封面资源原件随歌单恢复",
-      "command": "cargo test -p echo-desktop --all-features library_durability_playlist_cover_original_survives_cache_loss_and_clear",
-      "manifest": "tests/scenarios/PLL-R02-S08.yaml"
+      "command": "cargo test -p echo-desktop --all-features library_durability_playlist_cover_original_survives_cache_loss_and_clear"
     },
     {
       "id": "PLL-R03-S01",
       "title": "扫描发现新歌曲写入入库时刻",
-      "command": "cargo test -p echo-core --all-features application::continuation::tests::continuation_restores_songs_favorites_playlists_and_member_order",
-      "manifest": "tests/scenarios/PLL-R03-S01.yaml"
+      "command": "cargo test -p echo-core --all-features application::continuation::tests::continuation_restores_songs_favorites_playlists_and_member_order"
     },
     {
       "id": "PLL-R03-S02",
       "title": "手动导入歌曲写入入库时刻",
-      "command": "cargo test -p echo-core --all-features restore_projects_records_and_keeps_missing_without_media",
-      "manifest": "tests/scenarios/PLL-R03-S02.yaml"
+      "command": "cargo test -p echo-core --all-features restore_projects_records_and_keeps_missing_without_media"
     },
     {
       "id": "PLL-R03-S03",
       "title": "入库时刻不被后续变更改写",
-      "command": "cargo test -p echo-core --all-features root_switch::tests::prepare_continues_object_records_before_scanning_media",
-      "manifest": "tests/scenarios/PLL-R03-S03.yaml"
+      "command": "cargo test -p echo-core --all-features root_switch::tests::prepare_continues_object_records_before_scanning_media"
     },
     {
       "id": "PLL-R04-S01",
       "title": "本机数据库被清除后从资料库恢复保留最近添加顺序",
-      "command": "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_initializes_a_fresh_writable_root",
-      "manifest": "tests/scenarios/PLL-R04-S01.yaml"
+      "command": "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_initializes_a_fresh_writable_root"
     },
     {
       "id": "PLL-R04-S02",
       "title": "新设备恢复时入库时刻随歌曲按原 UUID 还原",
-      "command": "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_heals_a_manifest_less_directory_with_records",
-      "manifest": "tests/scenarios/PLL-R04-S02.yaml"
+      "command": "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_heals_a_manifest_less_directory_with_records"
     },
     {
       "id": "PLL-R04-S03",
       "title": "打开已有控制面的资料库目录时接续还原入库时刻",
-      "command": "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_reports_an_unusable_surface_without_writing",
-      "manifest": "tests/scenarios/PLL-R04-S03.yaml"
+      "command": "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_reports_an_unusable_surface_without_writing"
     },
     {
       "id": "PLL-R04-S04",
       "title": "历史对象记录缺入库时刻仍可兼容恢复",
-      "command": "cargo test -p echo-core --all-features song_record_without_added_at_reads_back_as_zero",
-      "manifest": "tests/native/PLL-R04-S04.md"
+      "command": "cargo test -p echo-core --all-features song_record_without_added_at_reads_back_as_zero"
     },
     {
       "id": "PLL-R05-S01",
       "title": "全新设备恢复完整资料",
-      "command": "cargo test -p echo-core --all-features root_switch::tests::prepare_continues_records_then_scans_only_unrecorded_media",
-      "manifest": "tests/scenarios/PLL-R05-S01.yaml"
+      "command": "cargo test -p echo-core --all-features root_switch::tests::prepare_continues_records_then_scans_only_unrecorded_media"
     },
     {
       "id": "PLL-R05-S02",
       "title": "同步资料先于媒体到达",
-      "command": "cargo test -p echo-core --all-features application::continuation::tests::dangling_records_are_counted_and_never_invented",
-      "manifest": "tests/scenarios/PLL-R05-S02.yaml"
+      "command": "cargo test -p echo-core --all-features application::continuation::tests::dangling_records_are_counted_and_never_invented"
     },
     {
       "id": "PLL-R05-S03",
       "title": "本机数据库丢失后重开同一资料库",
-      "command": "cargo test -p echo-core --all-features application::continuation::tests::tombstone_outranks_a_stale_record_and_is_never_resurrected",
-      "manifest": "tests/scenarios/PLL-R05-S03.yaml"
+      "command": "cargo test -p echo-core --all-features application::continuation::tests::tombstone_outranks_a_stale_record_and_is_never_resurrected"
     },
     {
       "id": "PLL-R05-S04",
       "title": "重复打开结果稳定",
-      "command": "cargo test -p echo-core --all-features application::continuation::tests::continuation_is_idempotent_across_repeated_opens",
-      "manifest": "tests/scenarios/PLL-R05-S04.yaml"
+      "command": "cargo test -p echo-core --all-features application::continuation::tests::continuation_is_idempotent_across_repeated_opens"
     },
     {
       "id": "PLL-R06-S01",
       "title": "首次启用即建立 manifest",
-      "command": "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_initializes_a_fresh_writable_root",
-      "manifest": "tests/scenarios/PLL-R06-S01.yaml"
+      "command": "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_initializes_a_fresh_writable_root"
     },
     {
       "id": "PLL-R06-S02",
       "title": "manifest 缺失时自愈",
-      "command": "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_heals_a_manifest_less_directory_with_records",
-      "manifest": "tests/scenarios/PLL-R06-S02.yaml"
+      "command": "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_heals_a_manifest_less_directory_with_records"
     },
     {
       "id": "PLL-R06-S03",
       "title": "控制面不可写时不破坏既有内容",
-      "command": "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_reports_an_unusable_surface_without_writing",
-      "manifest": "tests/scenarios/PLL-R06-S03.yaml"
+      "command": "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_reports_an_unusable_surface_without_writing"
     },
     {
       "id": "PLL-R07-S01",
       "title": "打开资料库先接续再扫描",
-      "command": "cargo test -p echo-core --all-features root_switch::tests::prepare_continues_object_records_before_scanning_media",
-      "manifest": "tests/scenarios/PLL-R07-S01.yaml"
+      "command": "cargo test -p echo-core --all-features root_switch::tests::prepare_continues_object_records_before_scanning_media"
     },
     {
       "id": "PLL-R07-S02",
       "title": "对象资料与媒体不一致",
-      "command": "cargo test -p echo-core --all-features restore_projects_records_and_keeps_missing_without_media",
-      "manifest": "tests/scenarios/PLL-R07-S02.yaml"
+      "command": "cargo test -p echo-core --all-features restore_projects_records_and_keeps_missing_without_media"
     },
     {
       "id": "PLL-R07-S03",
       "title": "墓碑优先于陈旧记录",
-      "command": "cargo test -p echo-core --all-features application::continuation::tests::tombstone_outranks_a_stale_record_and_is_never_resurrected",
-      "manifest": "tests/scenarios/PLL-R07-S03.yaml"
+      "command": "cargo test -p echo-core --all-features application::continuation::tests::tombstone_outranks_a_stale_record_and_is_never_resurrected"
     },
     {
       "id": "PLL-R07-S04",
       "title": "重复接续结果稳定",
-      "command": "cargo test -p echo-core --all-features application::continuation::tests::continuation_is_idempotent_across_repeated_opens",
-      "manifest": "tests/scenarios/PLL-R07-S04.yaml"
+      "command": "cargo test -p echo-core --all-features application::continuation::tests::continuation_is_idempotent_across_repeated_opens"
     },
     {
       "id": "PLL-R07-S05",
       "title": "较新的本机身份不被旧记录覆盖",
-      "command": "cargo test -p echo-core --all-features application::continuation::tests::detached_legacy_records_are_superseded_by_the_matching_local_rows",
-      "manifest": "tests/scenarios/PLL-R07-S05.yaml"
+      "command": "cargo test -p echo-core --all-features application::continuation::tests::detached_legacy_records_are_superseded_by_the_matching_local_rows"
     },
     {
       "id": "PLL-R07-S06",
       "title": "打开新协议资料库后投影再扫描",
-      "command": "cargo test -p echo-core --all-features application::continuation::tests::continuation_restores_songs_favorites_playlists_and_member_order",
-      "manifest": "tests/scenarios/PLL-R07-S06.yaml"
+      "command": "cargo test -p echo-core --all-features application::continuation::tests::continuation_restores_songs_favorites_playlists_and_member_order"
     },
     {
       "id": "PLL-R07-S07",
       "title": "读取支持的旧格式",
-      "command": "cargo test -p echo-core --all-features library_durability_publication_v1_and_unknown_schema_keep_original_evidence",
-      "manifest": "tests/scenarios/PLL-R07-S07.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_publication_v1_and_unknown_schema_keep_original_evidence"
     },
     {
       "id": "PLL-R07-S08",
       "title": "重复投影结果稳定",
-      "command": "cargo test -p echo-core --all-features application::continuation::tests::continuation_is_idempotent_across_repeated_opens",
-      "manifest": "tests/scenarios/PLL-R07-S08.yaml"
+      "command": "cargo test -p echo-core --all-features application::continuation::tests::continuation_is_idempotent_across_repeated_opens"
     },
     {
       "id": "PLL-R07-S09",
       "title": "未解析引用保持原样",
-      "command": "cargo test -p echo-core --all-features library_durability_incomplete_or_foreign_local_allocation_stays_unresolved",
-      "manifest": "tests/scenarios/PLL-R07-S09.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_incomplete_or_foreign_local_allocation_stays_unresolved"
     },
     {
       "id": "SFI-R01-S01",
       "title": "多选文件成功导入",
-      "command": "cargo test -p echo-core --all-features import",
-      "manifest": "tests/scenarios/SFI-R01-S01.yaml"
+      "command": "cargo test -p echo-core --all-features import"
     },
     {
       "id": "SFI-R01-S02",
       "title": "标签缺失和非法字符",
-      "command": "cargo test -p echo-core --all-features import",
-      "manifest": "tests/scenarios/SFI-R01-S02.yaml"
+      "command": "cargo test -p echo-core --all-features import"
     },
     {
       "id": "SFI-R01-S03",
       "title": "无标签 wav 导入",
-      "command": "cargo test -p echo-core --all-features untagged_wav_import_uses_the_missing_tag_fallbacks",
-      "manifest": "tests/scenarios/SFI-R01-S03.yaml"
+      "command": "cargo test -p echo-core --all-features untagged_wav_import_uses_the_missing_tag_fallbacks"
     },
     {
       "id": "SFI-R02-S01",
       "title": "过滤器列出且仅列出支持格式",
-      "command": "cargo test -p echo-core --all-features import",
-      "manifest": "tests/scenarios/SFI-R02-S01.yaml"
+      "command": "cargo test -p echo-core --all-features import"
     },
     {
       "id": "SFI-R03-S01",
       "title": "音频与 LRC 一起导入",
-      "command": "cargo test -p echo-core --all-features sidecar",
-      "manifest": "tests/scenarios/SFI-R03-S01.yaml"
+      "command": "cargo test -p echo-core --all-features sidecar"
     },
     {
       "id": "SFI-R03-S02",
       "title": "LRC 不可读",
-      "command": "cargo test -p echo-core --all-features sidecar",
-      "manifest": "tests/scenarios/SFI-R03-S02.yaml"
+      "command": "cargo test -p echo-core --all-features sidecar"
     },
     {
       "id": "SFI-R04-S01",
       "title": "内容重复",
-      "command": "cargo test -p echo-core --all-features dedup",
-      "manifest": "tests/scenarios/SFI-R04-S01.yaml"
+      "command": "cargo test -p echo-core --all-features dedup"
     },
     {
       "id": "SFI-R04-S02",
       "title": "已删除歌曲允许重新导入",
-      "command": "cargo test -p echo-core --all-features import",
-      "manifest": "tests/scenarios/SFI-R04-S02.yaml"
+      "command": "cargo test -p echo-core --all-features import"
     },
     {
       "id": "SFI-R04-S03",
       "title": "不可用记录不占用旧目标路径",
-      "command": "cargo test -p echo-core --all-features application::recover::tests::imports::nothing_recoverable_rolls_back_and_releases_cleanly",
-      "manifest": "tests/scenarios/SFI-R04-S03.yaml"
+      "command": "cargo test -p echo-core --all-features application::recover::tests::imports::nothing_recoverable_rolls_back_and_releases_cleanly"
     },
     {
       "id": "SFI-R04-S04",
       "title": "同名不同内容",
-      "command": "cargo test -p echo-core --all-features dedup",
-      "manifest": "tests/scenarios/SFI-R04-S04.yaml"
+      "command": "cargo test -p echo-core --all-features dedup"
     },
     {
       "id": "SFI-R05-S01",
       "title": "校验失败不落库",
-      "command": "cargo test -p echo-core --all-features import",
-      "manifest": "tests/scenarios/SFI-R05-S01.yaml"
+      "command": "cargo test -p echo-core --all-features import"
     },
     {
       "id": "SFI-R05-S02",
       "title": "导入成功原子可见",
-      "command": "cargo test -p echo-core --all-features import",
-      "manifest": "tests/scenarios/SFI-R05-S02.yaml"
+      "command": "cargo test -p echo-core --all-features import"
     },
     {
       "id": "SFI-R05-S03",
       "title": "导入后无需重新扫描",
-      "command": "cargo test -p echo-desktop --all-features --release --test local_edit_performance completed_local_edit_latency -- --ignored --nocapture",
-      "manifest": "tests/scenarios/SFI-R05-S03.yaml"
+      "command": "cargo test -p echo-desktop --all-features --release --test local_edit_performance completed_local_edit_latency -- --ignored --nocapture"
     },
     {
       "id": "SFI-R05-S04",
       "title": "崩溃后恢复",
-      "command": "cargo test -p echo-core --all-features application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice",
-      "manifest": "tests/scenarios/SFI-R05-S04.yaml"
+      "command": "cargo test -p echo-core --all-features application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"
     },
     {
       "id": "SFI-R05-S05",
       "title": "音频发布后侧车失败",
-      "command": "cargo test -p echo-core --all-features sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent",
-      "manifest": "tests/scenarios/SFI-R05-S05.yaml"
+      "command": "cargo test -p echo-core --all-features sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent"
     },
     {
       "id": "SFI-R05-S06",
       "title": "发布后 watcher 抢先观察",
-      "command": "cargo test -p echo-core --all-features application::recover::tests::imports::recovery_never_creates_a_duplicate_when_a_watcher_preempts",
-      "manifest": "tests/scenarios/SFI-R05-S06.yaml"
+      "command": "cargo test -p echo-core --all-features application::recover::tests::imports::recovery_never_creates_a_duplicate_when_a_watcher_preempts"
     },
     {
       "id": "SFI-R05-S07",
       "title": "音频成功而对象持久化失败",
-      "command": "cargo test -p echo-core --all-features library_durability_actual_record_rename_failure_remains_saved_and_retryable",
-      "manifest": "tests/scenarios/SFI-R05-S07.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_actual_record_rename_failure_remains_saved_and_retryable"
     },
     {
       "id": "SFI-R05-S08",
       "title": "对象成功而数据库投影失败",
-      "command": "cargo test -p echo-core --all-features library_durability_memory_failed_projection_reserves_the_saved_sequence",
-      "manifest": "tests/scenarios/SFI-R05-S08.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_memory_failed_projection_reserves_the_saved_sequence"
     },
     {
       "id": "SFI-R06-S01",
       "title": "混合结果",
-      "command": "cargo test -p echo-core --all-features import",
-      "manifest": "tests/native/SFI-R06-S01.md"
+      "command": "cargo test -p echo-core --all-features import"
     },
     {
       "id": "SFI-R06-S02",
       "title": "导入时根目录断开",
-      "command": "cargo test -p echo-core --all-features import",
-      "manifest": "tests/native/SFI-R06-S02.md"
+      "command": "cargo test -p echo-core --all-features import"
     },
     {
       "id": "SFI-R07-S01",
       "title": "外部文件直接打开",
-      "command": "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path",
-      "manifest": "tests/native/SFI-R07-S01.md"
+      "command": "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path"
     },
     {
       "id": "SFI-R07-S02",
       "title": "活动资料库内文件直接打开",
-      "command": "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path",
-      "manifest": "tests/native/SFI-R07-S02.md"
+      "command": "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path"
     },
     {
       "id": "SFI-R07-S03",
       "title": "非活动旧资料库文件直接打开",
-      "command": "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path",
-      "manifest": "tests/native/SFI-R07-S03.md"
+      "command": "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path"
     },
     {
       "id": "SFI-R07-S04",
       "title": "源文件保持不变",
-      "command": "cargo test -p echo-core --all-features import",
-      "manifest": "tests/native/SFI-R07-S04.md"
+      "command": "cargo test -p echo-core --all-features import"
     },
     {
       "id": "SFI-R07-S05",
       "title": "暂存目录名称与用户内容冲突",
-      "command": "cargo test -p echo-core --all-features staging",
-      "manifest": "tests/native/SFI-R07-S05.md"
+      "command": "cargo test -p echo-core --all-features staging"
     },
     {
       "id": "SFI-R08-S01",
       "title": "已运行实例接收文件关联",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
-      "manifest": "tests/scenarios/SFI-R08-S01.yaml"
+      "command": "node scripts/verify/checks/task-9.1.mjs"
     },
     {
       "id": "SFI-R08-S02",
       "title": "冷启动文件关联",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
-      "manifest": "tests/scenarios/SFI-R08-S02.yaml"
+      "command": "node scripts/verify/checks/task-9.1.mjs"
     },
     {
       "id": "SFI-R09-S01",
       "title": "带百分号编码的 file URL 被归一化",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
-      "manifest": "tests/native/SFI-R09-S01.md"
+      "command": "node scripts/verify/checks/task-9.1.mjs"
     },
     {
       "id": "SFI-R09-S02",
       "title": "非文件 scheme 被丢弃",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
-      "manifest": "tests/native/SFI-R09-S02.md"
+      "command": "node scripts/verify/checks/task-9.1.mjs"
     },
     {
       "id": "SFI-R09-S03",
       "title": "归一化契约由类型强制",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
-      "manifest": "tests/scenarios/SFI-R09-S03.yaml"
+      "command": "node scripts/verify/checks/task-9.1.mjs"
     },
     {
       "id": "SFI-R09-S04",
       "title": "前端不得二次解码",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
-      "manifest": "tests/scenarios/SFI-R09-S04.yaml"
+      "command": "node scripts/verify/checks/task-9.1.mjs"
     },
     {
       "id": "SFI-R09-S05",
       "title": "纵深防御不得被放宽",
-      "command": "node scripts/verify/checks/task-9.1.mjs",
-      "manifest": "tests/scenarios/SFI-R09-S05.yaml"
+      "command": "node scripts/verify/checks/task-9.1.mjs"
     },
     {
       "id": "SFI-R10-S01",
       "title": "跨平台安全命名",
-      "command": "cargo test -p echo-core --all-features import",
-      "manifest": "tests/scenarios/SFI-R10-S01.yaml"
+      "command": "cargo test -p echo-core --all-features import"
     },
     {
       "id": "SFI-R10-S02",
       "title": "重试导入幂等",
-      "command": "cargo test -p echo-core --all-features import",
-      "manifest": "tests/scenarios/SFI-R10-S02.yaml"
+      "command": "cargo test -p echo-core --all-features import"
     },
     {
       "id": "SFI-R11-S01",
       "title": "大批量并发导入",
-      "command": "cargo test -p echo-core --all-features batch_import_lands_under_media_and_keeps_dedup_and_numbering",
-      "manifest": "tests/scenarios/SFI-R11-S01.yaml"
+      "command": "cargo test -p echo-core --all-features batch_import_lands_under_media_and_keeps_dedup_and_numbering"
     },
     {
       "id": "SFI-R11-S02",
       "title": "无失败结果完成",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/import/importFeedback.test.ts -t \"treats imported, duplicate and skipped as non-failures\"",
-      "manifest": "tests/scenarios/SFI-R11-S02.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/import/importFeedback.test.ts -t \"treats imported, duplicate and skipped as non-failures\""
     },
     {
       "id": "SFI-R11-S03",
       "title": "批次包含失败",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/import/importFeedback.test.ts -t \"reports only real failures in the failure list\"",
-      "manifest": "tests/scenarios/SFI-R11-S03.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/import/importFeedback.test.ts -t \"reports only real failures in the failure list\""
     },
     {
       "id": "SFI-R11-S04",
       "title": "全部项目失败",
-      "command": "pnpm --filter @echo/desktop test -- --run src/features/import/ImportBatchDialog.test.tsx",
-      "manifest": "tests/scenarios/SFI-R11-S04.yaml"
+      "command": "pnpm --filter @echo/desktop test -- --run src/features/import/ImportBatchDialog.test.tsx"
     },
     {
       "id": "SFI-R11-S05",
       "title": "多线程重叠可验证",
-      "command": "node scripts/verify/checks/check-native-attestation.mjs SFI-R11-S05",
-      "manifest": "tests/scenarios/SFI-R11-S05.yaml"
+      "command": "node scripts/verify/checks/check-native-attestation.mjs SFI-R11-S05"
     },
     {
       "id": "SFI-R12-S01",
       "title": "导入契约回归",
-      "command": "node scripts/verify/ci-governance.mjs",
-      "manifest": "tests/scenarios/SFI-R12-S01.yaml"
+      "command": "node scripts/verify/ci-governance.mjs"
     },
     {
       "id": "SYN-R01-S01",
       "title": "数据形状已就绪且离线边界不变",
-      "command": "node scripts/verify/checks/task-3.10.mjs",
-      "manifest": "tests/scenarios/SYN-R01-S01.yaml"
+      "command": "node scripts/verify/checks/task-3.10.mjs"
     },
     {
       "id": "SYN-R01-S02",
       "title": "对象级 revision 单调递增",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_foundation",
-      "manifest": "tests/scenarios/SYN-R01-S02.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_foundation"
     },
     {
       "id": "SYN-R02-S01",
       "title": "导入与收藏变更是 outbox 条目",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_foundation",
-      "manifest": "tests/scenarios/SYN-R02-S01.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_foundation"
     },
     {
       "id": "SYN-R02-S02",
       "title": "预写不产生可操作同步",
-      "command": "node scripts/verify/checks/task-3.14.mjs",
-      "manifest": "tests/scenarios/SYN-R02-S02.yaml"
+      "command": "node scripts/verify/checks/task-3.14.mjs"
     },
     {
       "id": "SYN-R02-S03",
       "title": "可撤销意图不成为同步墓碑",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_foundation",
-      "manifest": "tests/scenarios/SYN-R02-S03.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_foundation"
     },
     {
       "id": "SYN-R03-S01",
       "title": "删除产生墓碑",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_foundation",
-      "manifest": "tests/scenarios/SYN-R03-S01.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_foundation"
     },
     {
       "id": "SYN-R04-S01",
       "title": "本机绝对路径不进入可同步载荷",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_payloads_carry_no_absolute_paths",
-      "manifest": "tests/scenarios/SYN-R04-S01.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_payloads_carry_no_absolute_paths"
     },
     {
       "id": "SYN-R05-S01",
       "title": "网络重复提交",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_foundation",
-      "manifest": "tests/scenarios/SYN-R05-S01.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_foundation"
     },
     {
       "id": "SYN-R05-S02",
       "title": "远端应用及游标恢复",
-      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_foundation",
-      "manifest": "tests/scenarios/SYN-R05-S02.yaml"
+      "command": "cargo test -p echo-core --all-features infrastructure::sqlite::tests::sync_foundation"
     },
     {
       "id": "SYN-R05-S03",
       "title": "迁移与架构验证",
-      "command": "node scripts/verify/checks/task-3.10.mjs",
-      "manifest": "tests/scenarios/SYN-R05-S03.yaml"
+      "command": "node scripts/verify/checks/task-3.10.mjs"
     },
     {
       "id": "SYN-R06-S01",
       "title": "重建 outbox",
-      "command": "cargo test -p echo-core --all-features crash_during_record_materialization_converges_to_one_record_and_outbox",
-      "manifest": "tests/scenarios/SYN-R06-S01.yaml"
+      "command": "cargo test -p echo-core --all-features crash_during_record_materialization_converges_to_one_record_and_outbox"
     },
     {
       "id": "SYN-R06-S02",
       "title": "远端确认后重建",
-      "command": "cargo test -p echo-core --all-features library_durability_trusted_sync_retry_restores_exact_baseline_and_pending_without_echo",
-      "manifest": "tests/scenarios/SYN-R06-S02.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_trusted_sync_retry_restores_exact_baseline_and_pending_without_echo"
     },
     {
       "id": "SYN-R06-S03",
       "title": "v2 本地覆盖值混有旧确认元数据",
-      "command": "cargo test -p echo-core --all-features library_durability_legacy_write_cannot_transfer_confirmation_to_new_value",
-      "manifest": "tests/scenarios/SYN-R06-S03.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_legacy_write_cannot_transfer_confirmation_to_new_value"
     },
     {
       "id": "SYN-R06-S04",
       "title": "单机编辑不创建同步候选",
-      "command": "cargo test -p echo-core --all-features library_durability_standalone_playlist_keeps_no_sync_allocations",
-      "manifest": "tests/scenarios/SYN-R06-S04.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_standalone_playlist_keeps_no_sync_allocations"
     },
     {
       "id": "SYN-R07-S01",
       "title": "新身份接纳过程被中断",
-      "command": "cargo test -p echo-core --all-features library_durability_scoped_key_retains_same_event_across_bindings_and_epochs",
-      "manifest": "tests/scenarios/SYN-R07-S01.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_scoped_key_retains_same_event_across_bindings_and_epochs"
     },
     {
       "id": "SYN-R07-S02",
       "title": "无法证明旧事件是否已确认",
-      "command": "cargo test -p echo-core --all-features library_durability_local_allocation_unproven_predecessor_never_advances_fences",
-      "manifest": "tests/scenarios/SYN-R07-S02.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_local_allocation_unproven_predecessor_never_advances_fences"
     },
     {
       "id": "SYN-R07-S03",
       "title": "新作者不能抬高旧作者统计桶",
-      "command": "cargo test -p echo-core --all-features confirmed_play_stats_buckets_authorize_exactly_their_recorded_counts",
-      "manifest": "tests/scenarios/SYN-R07-S03.yaml"
+      "command": "cargo test -p echo-core --all-features confirmed_play_stats_buckets_authorize_exactly_their_recorded_counts"
     },
     {
       "id": "SYN-R08-S01",
       "title": "反复恢复与 watcher",
-      "command": "cargo test -p echo-core --all-features library_durability_playback_later_session_catches_up_and_rebuild_has_no_echo",
-      "manifest": "tests/scenarios/SYN-R08-S01.yaml"
+      "command": "cargo test -p echo-core --all-features library_durability_playback_later_session_catches_up_and_rebuild_has_no_echo"
     }
   ]
 }

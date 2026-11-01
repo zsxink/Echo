@@ -133,7 +133,7 @@ iOS 用户可连接同一局域网主机或远端汇聚点，完成稳定的同�
 - 13.4 watcher 乱序/丢失、根目录卸载/恢复、权限撤销、只读根、Unicode/长路径和外部改名移动矩阵验证。
 - 13.5 真实 libmpv、文件关联冷/热启动、后台关窗、托盘/媒体键、reveal/回收站三平台人工冒烟。
 - 13.7 CI 三平台打包：macOS notarized DMG、Windows 安装包、Linux AppImage/deb，全新/覆盖安装、卸载、libmpv 装载、checksum 和许可证。
-- 13.9 完整场景校验与 PRD A1–A14 覆盖（场景数量以当前 `tests/scenarios/manifest.json` 和验证清单为准，不在路线图固定记录快照数）。
+- 13.9 完整场景校验与 PRD A1–A14 覆盖（场景数量以 `scenario-commands.mjs` 注册表与生成的 `manifest.json.scenarios[]` 为准，不在路线图固定记录快照数）。
 - 13.10 README、架构/开发/测试/打包/故障恢复文档、第三方 notices 和 strict validate。
 
 ## 一期后的待立项功能

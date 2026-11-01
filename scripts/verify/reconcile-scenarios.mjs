@@ -9,18 +9,16 @@
 //   3. `scripts/verify/manifest.json` `scenarios[]`    — the executable set
 //
 // Also enforces traceability 发布审计 rules:
-//   - total equals the spec-derived count (must be 160 today);
+//   - total equals the spec-derived count (523 today);
 //   - no missing, duplicate, or extra ID in any of the three;
 //   - every scenario has a non-empty command;
-//   - every referenced manifest path (`tests/scenarios/<ID>.yaml` or
-//     `tests/native/<ID>.md`) exists and is non-empty;
 //   - P0 file-safety/recovery/path-boundary/recycle-bin scenarios spawn as
 //     automated (non-`.md`) commands, never human-only steps.
 //   - `--report` mode writes a per-scenario result table for the handoff.
 //
 // Nonzero exit on any violation; prints a diff report to stderr.
 
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { allScenarioIds, listAreas, traceabilityIdsFor } from "./spec-scenarios.mjs";
@@ -77,18 +75,7 @@ for (const id of derivedIds) {
   if (!sc || !sc.command || !sc.command.trim()) err(`scenario ${id} has no command`);
 }
 
-// 5. Referenced manifest paths exist and are non-empty.
-for (const id of derivedIds) {
-  const sc = manifestById.get(id);
-  if (!sc) continue;
-  const m = sc.manifest && sc.manifest.match(/^(tests\/(?:scenarios|native)\/[^`\s]+)$/);
-  if (!m) { err(`scenario ${id} has no resolvable manifest path`); continue; }
-  const target = resolve(ROOT, m[1]);
-  if (!existsSync(target)) { err(`scenario ${id} manifest file missing: ${m[1]}`); continue; }
-  if (readFileSync(target, "utf8").trim() === "") err(`scenario ${id} manifest file empty: ${m[1]}`);
-}
-
-// 6. P0 prefix families must be automated (fault-injection/recovery/path/
+// 5. P0 prefix families must be automated (fault-injection/recovery/path/
 //    recycle-bin rows wired to real tests, not human-only .md steps). A command
 //    is "automated" when it runs a real test (a cargo/pnpm/vitest invocation)
 //    or a registered task-check script (scripts/verify/checks/task-*.mjs, which

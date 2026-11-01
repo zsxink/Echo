@@ -245,10 +245,10 @@
 
 | 选项 | 做法 | 代价 |
 | --- | --- | --- |
-| **① 删需求 + 重编号** | 用 `## REMOVED Requirements`（本仓首创），接受该 area 内 ID 顺移 | 一次性重编号：`traceability.md`、`scenario-commands.mjs`、`manifest.json`、`tests/scenarios|native/*`、`PRD-matrix.md` 全量联动；大 diff，易错 |
+| **① 删需求 + 重编号** | 用 `## REMOVED Requirements`（本仓首创），接受该 area 内 ID 顺移 | 一次性重编号：`traceability.md`、`scenario-commands.mjs`、`manifest.json`、`PRD-matrix.md` 全量联动；大 diff，易错 |
 | **② 只改需求文本，不删需求**（推荐） | 保留 LD-04 / LD-09 的 Requirement 外壳，把文本收窄为「只保证已支持格式的**只读**兼容；不再保证任何格式升级路径」 | diff 小；但规格语义需精确措辞，且 `LD-09b` 类场景必须改写而非删除 |
 
-### 6.3 场景变更时的同步面（8 处）
+### 6.3 场景变更时的同步面（7 处）
 
 任一场景被删/改/重编号，需同步：
 
@@ -256,12 +256,11 @@
 2. `docs/traceability.md`（人工维护的映射源）
 3. `scripts/verify/scenario-commands.mjs`（人工维护的 ID→命令表）
 4. `scripts/verify/manifest.json`（生成物）
-5. `tests/scenarios/<ID>.yaml` 或 `tests/native/<ID>.md`（生成物）
-6. `docs/acceptance/PRD-matrix.md`（人工维护；若该 area 属于 A1–A14 家族）
-7. 本 change 的 delta spec 与 `tasks.md`
-8. 本 change 的 `evidence/` 证据文件
+5. `docs/acceptance/PRD-matrix.md`（人工维护；若该 area 属于 A1–A14 家族）
+6. 本 change 的 delta spec 与 `tasks.md`
+7. 本 change 的 `evidence/` 证据文件
 
-生成物用 `node scripts/verify/gen-scenario-manifests.mjs --write` 重生成。**注意：不带 `--write` 的 dry-run 只打印漂移报告并以 exit 0 结束**（脚本 `:16-17` 头注释「exits nonzero if the tree would drift」与实现不符，勿当校验门）；漂移由治理门对账拦截，重生成后以 `pnpm verify:governance` 验证。
+生成物用 `node scripts/verify/gen-scenario-manifests.mjs --write` 重生成。不带 `--write` 的默认模式**就是**漂移门：`manifest.json.scenarios[]` 与 `scenario-commands.mjs` 有任何缺项/多项/标题或命令漂移都会非零退出（接线在 `ci-governance.mjs` 与 `task-13.9.mjs`）。
 
 ### 6.4 涉及的具体场景（S 档需要动规格）
 

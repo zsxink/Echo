@@ -171,12 +171,12 @@ pnpm exec openspec validate --archived
 实测 **523 场景 / 338 命令 = 1.55x**、最差簇 16（旧版记的 1.76x 已随场景扩充降到 1.55x）。
 
 **还没做**：完整的"按模块聚合并保留到测试名追溯"。这需要改写 **523 条验收行**，风险高
-（会同时牵动 `tests/*.yaml`、`gen-scenario-manifests.mjs`、`docs/traceability.md`、以及
+（会同时牵动 `scenario-commands.mjs`、`gen-scenario-manifests.mjs`、`docs/traceability.md`、以及
 `reconcile-scenarios.mjs` 的对账），**建议单开一个 change**，不要塞进别的。
 
-**先决条件**：动它之前先读 `scripts/verify/reconcile-scenarios.mjs` 里的非空断言 —— 它对每个登记路径做
-**非空断言**。曾有人（包括我）把"136 个 YAML 无人读取"误读成"可以删"，实际删了会让门禁
-从"报红"变成"输入缺失"而崩坏。**删任何场景 YAML 之前先确认它在对账表里。**
+**先决条件**：动它之前先读 `scripts/verify/reconcile-scenarios.mjs` 里的非空断言 —— 它对每个登记命令做
+**非空断言**，且要求 `manifest.json.scenarios[]` 与 `scenario-commands.mjs` 逐条一致
+（`gen-scenario-manifests.mjs` 默认模式即此漂移门）。**改任何场景命令之前先改 registry 再 `--write`。**
 
 ---
 
@@ -194,12 +194,16 @@ pnpm exec openspec validate --archived
 | 缺人工举证 | 命令是 `check-native-attestation.mjs <ID>`，缺 `artifacts/native-attestations/<ID>.log` | 未完成的工作，需操作者在真机执行 |
 | 真缺陷 | 历史上有过 `task-9.5.mjs` 读已拆分的 `runtime/services.rs`（ENOENT）、`LE-R07-S01` 漏 `-- --ignored`（跑了 0 个测试） | 均已修复；它们是"路径/参数随重构漂移"的样板，别再让同类复发 |
 
-**当前 attestation 账本（阶段 1 分支上实测）**：走 `check-native-attestation.mjs` 的场景 **59** 条，
-其中 **17** 条在 `tests/scenarios/` 下有 yaml、**42** 条在 `tests/native/` 下有 `.md`（两套**互斥**，无交集）；
-已落盘的举证只有 **8** 份（`DAS-R18-S01`…`S08`），**51 条缺 log**。
+**当前 attestation 账本（2026-11 生成树退役后实测）**：走 `check-native-attestation.mjs` 的场景 **59** 条
+（分类只由命令判定，不存在第二来源）；已落盘的举证只有 **8** 份（`DAS-R18-S01`…`S08`），**51 条缺 log**。
+退役前那套「17 条有 yaml / 42 条有 `.md`、两套互斥」的计数已随生成树删除，不再适用。
 
 复现：
 ```bash
+node --input-type=module -e '
+import { scenarioCommands } from "./scripts/verify/scenario-commands.mjs";
+const rows = Object.entries(scenarioCommands()).filter(([,c]) => /check-native-attestation\.mjs/.test(c));
+console.log("attestation:", rows.length);'   # → 59
 node scripts/verify/run-scenario.mjs --all          # 非零即仍有红
 node scripts/verify/run-scenario.mjs LE-R05-S04     # 单条：修后 ok
 node scripts/verify/run-scenario.mjs LE-R07-S01     # 单条：修后 ok
@@ -207,27 +211,31 @@ node scripts/verify/run-scenario.mjs LE-R07-S01     # 单条：修后 ok
 另注：运行器的失败行前缀是 **`error:`**，不是 `FAIL`。用 `grep '^FAIL'` 统计会得到 0，
 从而误判成"零失败"——这轮真的这样误判过一次。
 
-**⚠️ 我在这件事上连续给过两次相反的错误结论，错法都记在这里**：
+**⚠️ 我在这件事上连续给过两次相反的错误结论，错法都记在这里**
+（当时 native md 与 scenario yaml 两棵生成树尚在；2026-11 已退役，
+下列计数是历史记录，现在的分类只看命令）：
 
-1. 第一版文档写"44 个 native 场景行（`tests/native/*.md`）的命令被映射成
+1. 第一版文档写"44 个 native 场景行（每场景一份 md）"的命令被映射成
    `check-native-attestation.mjs`"——**数字和对象都错**：真正走 attestation 的场景数与
-   `tests/native/*.md` 的文件数并不对应，且两套命名空间是**互斥**的（今天实测 42 vs 17）。
+   native md 的文件数并不对应，且两套命名空间是**互斥**的（当时实测 42 vs 17）。
 2. 随后"订正"成"**0 行走 attestation，不需要任何 log**"——**这才是全错的**。
-   错因：拿 `tests/native/*.md` 的**文件名**当集合去筛 manifest，得出 0，
-   再把 0 当成"不存在"。真相是那 42 个 `.md` 对应的是**另一批**场景（它们全部有自动化命令、
-   且**没有** `tests/scenarios/*.yaml`）；attestation 的另外 17 个场景各有 yaml、却不在 `tests/native/` 里。
+   错因：拿 native md 的**文件名**当集合去筛 manifest，得出 0，
+   再把 0 当成"不存在"。真相是那 42 个 md 对应的是**另一批**场景（它们全部有自动化命令、
+   且**没有**对应的 scenario yaml）；attestation 的另外 17 个场景各有 yaml、却不在 native 树里。
 3. 同一个病还犯了第二次：用 `grep '^FAIL'` 统计失败 → 0 → 报"零失败"（前缀其实是 `error:`）。
 
 **教训（可直接复用）**：算任何"有多少个 X"之前，先确认**集合本身是同一个集合**。
-`tests/native/*.md` ↔ manifest 场景是**两套命名空间**，用文件名去 join 会静默得到 0，
-而 0 看起来和"没有"一模一样。**先打印分母，再相信分子。**
+用文件名去 join 场景清单会静默得到 0，而 0 看起来和"没有"一模一样。
+**先打印分母，再相信分子。**（两棵生成树退役后，"文件名集合 vs 命令集合"这类错源消失：
+分类现在只由命令判定。）
 
-**17 个带 yaml 的 attestation 场景登记是自相矛盾的**（这是 8.4 真正要处理的东西）：
-它们的 `tests/scenarios/<ID>.yaml` 里写着 `layer: automated`，而同一行的 `command` 却是
-`check-native-attestation.mjs`（实测这 17 条 `layer` 分布 `{automated: 17}`）。看标题
+**17 个带 yaml 的 attestation 场景登记曾自相矛盾**（这是 8.4 真正要处理的东西，也是退役的直接证据）：
+它们的场景 yaml 里写着 `layer: automated`，而同一行的 `command` 却是
+`check-native-attestation.mjs`（当时实测这 17 条 `layer` 分布 `{automated: 17}`）。看标题
 （关闭窗口后继续后台播放、托盘控制、历史跨重启…）这些**确实是** headless 无法自动化的 OS 级行为，
 所以更像**生成器把 layer 统一写成 `automated`**，而不是"本该自动化却漏了命令"。
-无论哪种解释，都需要先定案再动 —— 不要直接补 17 份 attestation 把红刷绿。
+yaml 已删除，这种"自相矛盾"在生成物里不可能再出现；剩下的问题只是这 17 条要不要补举证
+—— 不要靠刷 log 把红刷绿，先定案。
 
 **8.4 真机冒烟**：8.4 列举的七类行为在 manifest 里都有对应场景，但其中若干条正落在上面那批
 attestation 场景里（如 `DP-R02-S05` 连续下一首播放、`DP-R04-S04` 单曲循环、`DP-R08-S03` 恢复、
@@ -255,7 +263,7 @@ attestation 场景里（如 `DP-R02-S05` 连续下一首播放、`DP-R04-S04` �
 | 14.1 | `check-lint-inheritance.mjs` | 每个 crate 只用 `lints.workspace = true`，无 crate 级覆盖 |
 | 14.2 | `check-scale.mjs` + `scale-baseline.json` / `scale-allowlist.json` | ≤1000 行 / 公开 trait ≤6 方法；清单只减不增（`allowlist ⊆ baseline`） |
 | 14.3 | `check-toolchain.mjs` | 生效 rustc 与 `rust-toolchain.toml` 完全一致 |
-| 14.4 | `validate-scenario-manifests.mjs` | 每个 YAML 字段与登记表一致 |
+| 14.4 | — | **已退役（2026-11）**：生成树（`tests/scenarios` 与 `tests/native`）删除后由 `gen-scenario-manifests.mjs` 的默认模式（清单 vs 注册表漂移门）接替，接线在 `ci-governance.mjs` 与 `task-13.9.mjs` |
 | 14.5 | `check-verification-validity.mjs` | 失败路径 + 观测点；**调用子进程必须比较退出码** |
 | 14.6 | `check-build-purity.mjs` | 测试专用模块 cfg 门控 + 默认构建的 `.d` 里不出现 |
 | 14.7 | `check-scenario-churn.mjs` | 场景命令重复度与最差簇只降不升 |

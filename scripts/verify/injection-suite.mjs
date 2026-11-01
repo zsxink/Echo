@@ -516,15 +516,16 @@ const ENTRIES = [
     },
   },
 
-  // ---- 14.4 scenario manifest fields -----------------------------------
+  // ---- 14.4 scenario registry drift ------------------------------------
   {
-    id: "scenario-manifests/dropped-required-field",
-    guard: "a scenario YAML missing a field the registry agrees on",
-    check: ["node", ["scripts/verify/validate-scenario-manifests.mjs"]],
-    expect: /FAIL scenario manifest validation:[\s\S]*missing non-empty requirement/,
+    id: "scenario-registry/command-drift",
+    guard: "a scenario command edited in the registry without regenerating manifest.json",
+    check: ["node", ["scripts/verify/gen-scenario-manifests.mjs"]],
+    expect: /manifest drift:[\s\S]*CRP-R01-S01: command drift/,
     baseline: true,
     inject() {
-      replaceIn(join(ROOT, "tests", "scenarios", "DAS-R01-S01.yaml"), "\nrequirement:", "\n# requirement:");
+      const row = '"CRP-R01-S01": "node scripts/verify/checks/task-crp.mjs';
+      replaceIn(join(ROOT, "scripts", "verify", "scenario-commands.mjs"), `${row}",`, `${row} --drift-probe",`);
       return {};
     },
   },

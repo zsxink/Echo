@@ -73,7 +73,8 @@ export function scenarioCommands() {
 - 未登记 → 静默降级为 `check-native-attestation.mjs <ID>`。
 - 连带后果：`gen-scenario-manifests.mjs:115` 的 `missing command for <ID>` 防护**永不触发**（兜底已补齐），
   所以「漏登记」这件事一直没有被任何门禁抓住。
-- 又因为生成器的 `isNative()` 只认 traceability 里的 `tests/native/*.md` 路径，这 41 条**不在**那个集合里，
+- 又因为生成器的 `isNative()`（当时以 traceability 里指向 native 树 md 的路径判定；该生成树已于
+  2026-11 退役，分类现在只看命令）只认那个集合，这 41 条**不在**里面，
   于是它们的 yaml 被写成 `layer: automated` + `automated_filter: the command above`，
   而命令却是人工举证 —— **yaml 自相矛盾**，就是这个 `||` 的直接产物。
 
@@ -277,16 +278,35 @@ export function scenarioCommands() {
 2. 点「设置…」→ 设置浮层打开；点「导入音乐文件…」→ 系统选择器弹出；「显示窗口」「退出」行为不变。
 - 判定：五项齐全且与主菜单同路径。证据：右键菜单截图 + 设置打开截图。
 
-## 6. attestation log 格式（门禁实际校验的字段）
+## 6. attestation log 契约（生成物退役后）
+
+人工/自动的分类只有一个来源：**命令本身**。某场景的命令调用
+`scripts/verify/checks/check-native-attestation.mjs`，它就是人工举证场景；否则是自动场景。
+`reconcile-scenarios.mjs` 的 P0 规则与 `task-13.9.mjs` 的自动化计数都用这一判定，
+不存在第二种分类来源。
+
+权威源与生成物：
+
+- 场景 ID / 标题：spec 标题，经 `scripts/verify/spec-scenarios.mjs` 派生；
+- 场景命令：`scripts/verify/scenario-commands.mjs` 的 `COMMANDS`（**只改这里**）；
+- 执行清单：`scripts/verify/manifest.json` 的 `scenarios[]`，由
+  `gen-scenario-manifests.mjs --write` 生成。默认模式（不带参数）是漂移门：与
+  `COMMANDS` 有任何缺项、多项、标题漂移或命令漂移都会非零退出。手改清单会在下次
+  `--write` 或门禁中被覆盖 / 报错。
+- 审计表：`docs/traceability.md`（已删除 manifest 指针列）。
 
 门禁 `check-native-attestation.mjs` 读 `artifacts/native-attestations/<ID>.log`，要求：
 
 - 非空；
 - 以下 **7 个字段各占一行、行首即为字段名**（`^field:`，多行模式）：
   `os`、`versions`、`desktop-env`、`operator`、`result`、`evidence-path`、`date`；
-- `result:` 必须匹配 `pass` / `pass (...)` / `ok` / `ok (...)`（大小写不敏感）。
+  字段清单的唯一实现是该脚本的 `REQUIRED_FIELDS`；
+- `result:` 必须匹配 `pass` / `pass (...)` / `ok` / `ok (...)`（大小写不敏感）；
+- `evidence-path` 必填，约定填写该场景自己的日志
+  `artifacts/native-attestations/<ID>.log`（可另附证据目录，但该字段必须存在）。
 
-可直接复制的模板（把 `<...>` 换成实测值）：
+可直接复制的模板见 `tests/native/_TEMPLATE.md` —— **该文件不被任何门禁解析**，
+门禁只读上面的日志。骨架（把 `<...>` 换成实测值）：
 
 ```
 os: macOS 14.5 (arm64)
@@ -294,7 +314,7 @@ versions: Echo 0.1.0 @ 6866700 / mpv <ver> / Node <ver>
 desktop-env: Aqua, 27in 5K @2x, zh-CN
 operator: <姓名>
 result: pass (4/4 steps observed)
-evidence-path: artifacts/native-attestations/evidence/<ID>/
+evidence-path: artifacts/native-attestations/<ID>.log
 date: 2026-09-18
 
 steps:
@@ -304,15 +324,19 @@ steps:
 > `result:` 未填成 pass/ok 会红；缺任一字段会红；文件不存在会红并指名。
 
 自检（写完立即验）：
+
 ```bash
-node scripts/verify/checks/check-native-attestation.mjs DAS-R12-S01
+node scripts/verify/checks/check-native-attestation.mjs <ID>
+node scripts/verify/reconcile-scenarios.mjs           # spec = traceability = manifest 的 ID 集合
+node scripts/verify/validate-scenario-commands.mjs    # 每条命令真能命中测试
+node scripts/verify/gen-scenario-manifests.mjs        # 默认模式 = 清单 vs 注册表漂移门
 ```
 
 ## 7. 执行顺序与**实际执行记录**
 
 1. **甲类 28 条** —— ✅ 已在 `scripts/verify/scenario-commands.mjs` 的 `COMMANDS` 表登记
-   （**必须改这张表**，`manifest.json` 是生成物，手改会被静默抹掉），随后
-   `node scripts/verify/gen-scenario-manifests.mjs --write` 重生三棵树。
+   （**必须改这张表**，`manifest.json.scenarios[]` 是生成物，手改会被静默抹掉），随后
+   `node scripts/verify/gen-scenario-manifests.mjs --write` 重生成执行清单。
 2. **丙类 4 条** —— ✅ 先补用例（§3 表），再登记；四条都用**正控**验过会失败。
 3. **乙类 9 条** —— ⏳ 待操作者按 §5 执行、按 §6 写 log。这是当前唯一的阻塞面。
 4. 回归（顺序有讲究，**一道都不能漏**）：
@@ -320,7 +344,7 @@ node scripts/verify/checks/check-native-attestation.mjs DAS-R12-S01
    ```bash
    node scripts/verify/reconcile-scenarios.mjs         # 三方 218 = 218 = 218
    node scripts/verify/validate-scenario-commands.mjs  # 每条命令真能命中测试 ← 最容易漏
-   node scripts/verify/validate-scenario-manifests.mjs
+   node scripts/verify/gen-scenario-manifests.mjs        # 默认模式：清单 vs 注册表漂移门
    node scripts/verify/check-scenario-churn.mjs        # 重复度棘轮
    pnpm verify:scenario -- --all                       # 期望：只剩未填 log 的乙类 9 行红
    ```
@@ -335,13 +359,14 @@ node scripts/verify/checks/check-native-attestation.mjs DAS-R12-S01
 
 这两条都不是"缺检查"，而是"检查在，但被绕过了"——和本文 §1 是同一类问题，所以留在这里。
 
-1. **`validate-scenario-manifests.mjs` 的引号往返不闭合**：生成器 `yamlEscape` 会把命令里的
-   `"` 转义成 `\"`，而校验器 `scalar()` 只 `replace(/^"|"$/g,"")` **剥掉外层引号、不解转义**。
-   于是命令里只要出现一个双引号（本次 DP-R12/PM-R06 用了 vitest 的 `-t "<测试名>"`），
-   比对结果就是 `\"` vs `"` → 报**幻影 `command drift`**。它同时把注入套件的
-   `scenario-manifests/dropped-required-field` 打成红：**正控（未改动树）自己先失败**。
-   修法是让 `scalar()` 真正解转义（`\\` → `\`、`\"` → `"`）。这条在本次之前从未触发过，
-   因为此前没有任何一条命令带引号——**"从没红过"和"不会红"是两件事**。
+1. **引号往返不闭合（当时 yaml 校验器的缺陷，该生成树已于 2026-11 退役）**：生成器 `yamlEscape`
+   会把命令里的 `"` 转义成 `\"`，而当时的校验器 `scalar()` 只 `replace(/^"|"$/g,"")`
+   **剥掉外层引号、不解转义**。于是命令里只要出现一个双引号（本次 DP-R12/PM-R06 用了 vitest 的
+   `-t "<测试名>"`），比对结果就是 `\"` vs `"` → 报**幻影 `command drift`**。它同时把注入套件的
+   那条 yaml 注入证明打成红：**正控（未改动树）自己先失败**。修法是让 `scalar()` 真正解转义
+   （`\\` → `\`、`\"` → `"`）。这条在本次之前从未触发过，因为此前没有任何一条命令带引号
+   ——**"从没红过"和"不会红"是两件事**。退役后的漂移门直接比较命令字符串，不做引号往返，
+   这类幻影红不再可能；教训仍适用于任何"序列化再解析"的比较。
 2. **`validate-scenario-commands.mjs` 不校验 vitest 的 `-t` 选择器**：`cargo` 侧它会验"filter 至少命中
    1 个测试"，但 vitest 侧原来只验文件存在。一旦允许 `-t "<名字>"`，写错名字就会选 0 个测试——
    正是该校验器存在的理由（"the release gate must never pass a scenario against zero tests"）。
@@ -411,8 +436,8 @@ cargo test -p echo-core    --all-features -- --list > /tmp/core.txt
 > `next_advances_in_order`、`previous_moves_back_within_5_seconds` —— 与队列面板展示无关。
 > 修它要逐条重新论证 R03 该指向哪个投影/面板测试，属独立工作。
 
-> ⚠️ **孤儿生成物（同一类问题的另一面）**：`tests/scenarios/DP-R07-S03.yaml` 来自**已归档**的
-> 0.1.0 change，不在活动 registry 里。`gen-scenario-manifests.mjs --write` **不清理**不再登记的产物，
-> 也没有门禁按目录枚举去发现它——`validate-scenario-manifests.mjs` 会为它打一行 `warning ... is not in
-> the current registry` 然后继续（这是刻意的：它负责字段有效性，登记归属归 reconcile）。
-> 结果就是"多出来的生成物"既不会被删也不会被查。要不要删属于独立决定（它是一份 0.1.0 的归档证据）。
+> ✅ **孤儿生成物已随生成树退役（2026-11）**：曾经有一份 `DP-R07-S03` 的场景 yaml 来自**已归档**的
+> 0.1.0 change，不在活动 registry 里；旧的 `gen-scenario-manifests.mjs --write` 不清理不再登记的产物，
+> 也没有门禁按目录枚举去发现它，于是它既不会被删也不会被查。整棵场景 yaml 生成树现已删除，
+> 该类问题不复存在；`manifest.json.scenarios[]` 由 `--write` 整体重写，不登记的 ID 不可能残留。
+> 若仍需要该 0.1.0 归档证据，它只能来自 git 历史，不再是一份活着的生成物。

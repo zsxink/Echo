@@ -1,0 +1,8 @@
+schema: spec-driven
+created: 2026-11-01
+
+# 本 change 不改变任何 requirement 的 WHEN/THEN：它把从未被执行路径读取、且已与
+# 命令类别漂移的生成物（tests/scenarios/*.yaml、tests/native/*.md）退役，并把契约
+# 留在 scenario-commands.mjs 与 docs/native-attestation-playbook.md。
+# 见 proposal.md「Capabilities」。
+skip_specs: true

@@ -9,7 +9,7 @@ const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
 const checks = [
   ["scenario reconciliation", "node", ["scripts/verify/reconcile-scenarios.mjs"]],
   ["scenario command validity", "node", ["scripts/verify/validate-scenario-commands.mjs"]],
-  ["scenario manifest validity", "node", ["scripts/verify/validate-scenario-manifests.mjs"]],
+  ["scenario registry drift", "node", ["scripts/verify/gen-scenario-manifests.mjs"]],
   ["scale limits", "node", ["scripts/verify/check-scale.mjs"]],
   // The fixture gate was previously registered in the manifest but wired into
   // no CI job and no scenario, so it could go red for months unnoticed. It runs
