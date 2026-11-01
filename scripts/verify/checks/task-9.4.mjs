@@ -39,8 +39,6 @@ if (!testOut.includes("test result: ok.")) {
   fail("media_control tests not green");
 }
 
-run("cargo", ["clippy", "-p", "echo-app", "--", "-D", "warnings"], "echo-app clippy clean");
-
 process.stdout.write(
   "ok 9.4: media-control seam (key decode, one-command mapping, degrade sink); OS adapters deferred to composition root\n",
 );

@@ -3,10 +3,12 @@
 // failure proof (`engineering-governance`: 作为场景验收命令的检查必须自带可执行的
 // 失败证明).
 //
-// Every scenario whose acceptance command is a node check script
-// (`node scripts/verify/checks/<…>.mjs`) relies on that script to fail when the
-// condition its THEN clause depends on is violated. This gate inspects each
-// such script and classifies how its failure routes are proven:
+// Every scenario whose `evidence` names a node check script
+// (`scripts/verify/checks/<…>.mjs`) relies on that script to fail when the
+// condition its THEN clause depends on is violated. Aggregated commands no
+// longer carry these paths, so the evidence declaration is the source of the
+// scenario → script mapping. This gate inspects each such script and classifies
+// how its failure routes are proven:
 //
 //   proven           — an injection-suite entry (`injection-suite.mjs` /
 //                      `injection-object-kinds.mjs`) targets the script with a
@@ -54,11 +56,22 @@ function fail(msg) {
 // 1. Scenario-backed check scripts.
 // ---------------------------------------------------------------------------
 const scriptToScenarios = new Map();
+const addScript = (script, id) => {
+  if (!scriptToScenarios.has(script)) scriptToScenarios.set(script, []);
+  if (!scriptToScenarios.get(script).includes(id)) scriptToScenarios.get(script).push(id);
+};
 for (const scenario of scenarioCommands()) {
-  const match = scenario.command.match(/node (scripts\/verify\/checks\/[A-Za-z0-9_.-]+\.mjs)/);
-  if (!match) continue;
-  if (!scriptToScenarios.has(match[1])) scriptToScenarios.set(match[1], []);
-  scriptToScenarios.get(match[1]).push(scenario.id);
+  // The command's node entry point is the script the runner executes; an
+  // `attestation` evidence row is that same script invoked with the id, so it
+  // resolves through the command rather than duplicating the path in evidence.
+  const commandScript = scenario.command.match(/node (scripts\/verify\/checks\/[A-Za-z0-9_.-]+\.mjs)/);
+  for (const item of scenario.evidence ?? []) {
+    if (item.kind === "node" && /^scripts\/verify\/checks\/[A-Za-z0-9_.-]+\.mjs$/.test(item.target)) {
+      addScript(item.target, scenario.id);
+    } else if (item.kind === "attestation" && commandScript) {
+      addScript(commandScript[1], scenario.id);
+    }
+  }
 }
 if (scriptToScenarios.size === 0) {
   fail("no scenario resolves to a node check script — the map is empty, which is itself suspicious");

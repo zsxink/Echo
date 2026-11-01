@@ -30,6 +30,4 @@ function run(command, args, cwd) {
 
 run("pnpm", ["--filter", "@echo/desktop", "typecheck"], APP);
 run("pnpm", ["--filter", "@echo/desktop", "test", "--", "--run", "src/app/overlays.test.tsx"], APP);
-run("cargo", ["clippy", "-p", "echo-app", "--", "-D", "warnings"], ROOT);
-
 process.stdout.write("ok 12.1: single overlay stack (Escape priority, focus trap/restore, roving menu) verified\n");

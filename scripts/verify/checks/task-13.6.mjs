@@ -36,8 +36,6 @@ function run(command, args, cwd = ROOT) {
 }
 
 // --- Rust quality gate ---
-run("cargo", ["fmt", "--all", "--", "--check"]);
-run("cargo", ["clippy", "--workspace", "--all-targets", "--all-features", "--", "-D", "warnings"]);
 run("cargo", ["test", "--workspace", "--all-features"]);
 
 // --- Frontend quality gate ---

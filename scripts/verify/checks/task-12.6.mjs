@@ -73,7 +73,4 @@ process.stdout.write("limits pinned ok\\n");
 `]);
 
 // Clippy + fmt on echo-core (regression gate for the new stress code).
-run("cargo", ["clippy", "-p", "echo-core", "--all-targets", "--all-features", "--", "-D", "warnings"]);
-run("cargo", ["fmt", "--all", "--", "--check"]);
-
 process.stdout.write("ok 12.6: scan/hash/tag/cover worker stress verified (min(CPU,4) default, cancel-safe, input limits + cache capacity enforced)\n");

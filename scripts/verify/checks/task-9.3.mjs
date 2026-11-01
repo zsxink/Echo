@@ -44,8 +44,6 @@ if (!testOut.includes("test result: ok.")) {
 }
 
 // 2. The thin binary stays clippy-clean.
-run("cargo", ["clippy", "-p", "echo-app", "--", "-D", "warnings"], "echo-app clippy clean");
-
 // 3. The shell builds the full entry + dispatches through the sink.
 const src = resolve(ROOT, "apps", "desktop", "src-tauri", "src");
 const main = readFileSync(resolve(src, "main.rs"), "utf8");

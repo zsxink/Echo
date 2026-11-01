@@ -8,9 +8,9 @@
 > 复验命令（任何数字都可重跑）：
 > ```bash
 > node --input-type=module -e '
-> import { COMMANDS } from "./scripts/verify/scenario-commands.mjs";
+> import { SCENARIOS } from "./scripts/verify/scenario-commands.mjs";
 > import { allScenarioIds } from "./scripts/verify/spec-scenarios.mjs";
-> const un = allScenarioIds().filter(d => !(d.id in COMMANDS));
+> const un = allScenarioIds().filter(d => !(d.id in SCENARIOS));
 > console.log(un.length);'      # 判定时 → 41；登记后 → 9
 > ```
 
@@ -22,7 +22,8 @@
 | **丙** 有测试但覆盖不全 | **4** | 存在相关测试，但只覆盖正常路径/部分要点，登记即假绿 | **先补测试**，再登记 | ✅ 用例已补并登记（§3） |
 | **乙** 必须人工举证 | **9** | 核心是真实 OS 交互（进程存活 / 托盘 / 应用身份 / 真实打开文件 / 真实布局 / 端到端验收） | 操作者在真机执行本文 §5 的步骤并写 log | ⏳ 待操作者（对应任务 8.4） |
 
-28 + 4 + 9 = 41。**施工结果：人工/兜底面 41 → 9**，`COMMANDS` 表 179 → 211 条；仍留在兜底上的 9 条与
+28 + 4 + 9 = 41。**施工结果：人工/兜底面 41 → 9**，注册表 179 → 211 条（当时的 id → 命令表；
+2026-11 起改为 `SCENARIOS: id → {command, evidence}`）；仍留在兜底上的 9 条与
 §4 的乙类逐条相同（`DAS-R12-S01/S02`、`DAS-R13-S01`、`DP-R03-S04`、`DP-R08-S03`、
 `DP-R10-S01/S02/S03`、`PHA-R01-S01`），可用上面那条复验命令直接对出来。
 
@@ -63,13 +64,13 @@ OS file-open integration / the 3-platform smoke itself` 一一对应 —— **�
 ```js
 export function scenarioCommands() {
   for (const [id, item] of byId) {
-    const command = COMMANDS[id] || ATTEST(id);   // ← 兜底
+    const command = table[id] || ATTEST(id);   // ← 兜底（旧 id → 命令表）
     ...
   }
 }
 ```
 
-- `COMMANDS` 表有 **179** 条；`allScenarioIds()` 有 **218** 个场景；差的 **41** 条**从未登记**。
+- 旧 `id → 命令` 表有 **179** 条；`allScenarioIds()` 有 **218** 个场景；差的 **41** 条**从未登记**。
 - 未登记 → 静默降级为 `check-native-attestation.mjs <ID>`。
 - 连带后果：`gen-scenario-manifests.mjs:115` 的 `missing command for <ID>` 防护**永不触发**（兜底已补齐），
   所以「漏登记」这件事一直没有被任何门禁抓住。
@@ -88,18 +89,17 @@ export function scenarioCommands() {
 ## 2. 甲类：可登记为自动化（28 条）
 
 > 本表是**判定依据**（每条当时看到的针对性测试），不是最终登记值的抄本：**权威登记见
-> `scripts/verify/scenario-commands.mjs` 的 `COMMANDS` 表**。其中 3 条的登记目标在落地/复核时改过
+> `scripts/verify/scenario-commands.mjs` 的 `SCENARIOS` 条目**。其中 3 条的登记目标在落地/复核时改过
 > （`DP-R11-S01`、`DP-R04-S06`、`LL-R02-S05`，见文首修正记录与 §7.3）。
 > 列当前登记值：
 > ```bash
 > node --input-type=module -e '
-> import { COMMANDS } from "./scripts/verify/scenario-commands.mjs";
-> for (const [id, c] of Object.entries(COMMANDS)) if (/^(DP|LE|LL|PM|PLL|PHA)-/.test(id)) console.log(id, c);'
+> import { SCENARIOS } from "./scripts/verify/scenario-commands.mjs";
+> for (const [id, s] of Object.entries(SCENARIOS)) if (/^(DP|LE|LL|PM|PLL|PHA)-/.test(id)) console.log(id, s.command);'
 > ```
 
-命令形式沿用现有 helper（`scenario-commands.mjs`）：
-`COREC(f)` = `cargo test -p echo-core --all-features <f>`；`DESK(f)` = `cargo test -p echo-desktop --all-features <f>`；
-`REACT(f)` = `pnpm --filter @echo/desktop test -- --run <f>`；`REACT_T(f, name)` = 同前但用 `-t "<name>"` 收窄到单个用例。
+命令形式沿用当时的 helper（`scenario-commands.mjs`；2026-11 聚合后由 `CORE_ALL`/`DESK_ALL`/
+`VITEST_ALL` 等整域命令取代）：
 
 | 场景 ID | 要验的行为（spec `THEN` 摘要） | 现有针对性测试 | 建议 |
 |---|---|---|---|
@@ -130,7 +130,7 @@ export function scenarioCommands() {
 | PLL-R02-S03 | 同步资料不含 `echo/tmp/<op>/` 与任何暂存文件 | `infrastructure/filesystem/control_plane.rs` `tmp_files_are_ignored_as_records`、`staging.rs` `staging_dir_is_emitted_as_echo_tmp_with_matching_marker` | `COREC("tmp_files_are_ignored_as_records")` |
 | PLL-R03-S01 | 新设备重建一致的 UUID/喜欢/歌单/成员顺序并可播放 | `application/continuation/tests.rs` `continuation_restores_songs_favorites_playlists_and_member_order` —— **更正**：原登记为整模块 `COREC("application::restore")`，该过滤器下只有断言**歌曲**投影的用例，而本行写的是「喜欢/歌单/成员顺序」，属于「用成功路径测试冒充未覆盖的验收」。现指向真正断言歌单数量、成员顺序与 `is_favorite` 恢复的用例 | `COREC("application::continuation::tests::continuation_restores_songs_favorites_playlists_and_member_order")` |
 | PLL-R03-S02 | 资料先到、媒体未到时显示不可用并保留 UUID，媒体到达后恢复且不产生第二首 | `application/portable.rs` `restore_projects_records_and_keeps_missing_without_media` | `COREC("restore_projects_records_and_keeps_missing_without_media")` |
-| PHA-R01-S02 | 回归质量门：Rust/前端/格式/静态检查与登记场景均通过 | `scripts/verify/ci-governance.mjs` —— 含 `cargo test --workspace --all-targets --all-features`、前端构建、覆盖率、三方对账、命令棘轮、纯净性、注入证明共 14 道 | 直接写字符串 `"node scripts/verify/ci-governance.mjs"`（**该门禁很重**，全量场景会因此明显变长；若不可接受，可改为指向 `CHECK("1.2")` 只覆盖前端那一半） |
+| PHA-R01-S02 | 回归质量门：Rust/前端/格式/静态检查与登记场景均通过 | `scripts/verify/ci-governance.mjs` —— 含 `cargo test --workspace --all-targets --all-features`、前端构建、覆盖率、三方对账、场景证据门、纯净性、注入证明共 14 道 | 注册表声明 `delegatedTo: "governance"`：release-gate 以 `--delegated=governance` 跳过（治理 job 单独跑整门），本地不带参数时仍整门执行 |
 
 ## 3. 丙类：有测试但覆盖不全 —— **已按「先补测试再登记」收口**（4 条）
 
@@ -280,18 +280,21 @@ export function scenarioCommands() {
 
 ## 6. attestation log 契约（生成物退役后）
 
-人工/自动的分类只有一个来源：**命令本身**。某场景的命令调用
-`scripts/verify/checks/check-native-attestation.mjs`，它就是人工举证场景；否则是自动场景。
-`reconcile-scenarios.mjs` 的 P0 规则与 `task-13.9.mjs` 的自动化计数都用这一判定，
-不存在第二种分类来源。
+人工/自动的分类只有一个来源：**场景的 `evidence`**。某场景的 evidence 含
+`{kind: "attestation", target: <ID>}`，它就是人工举证场景（命令调用
+`scripts/verify/checks/check-native-attestation.mjs <ID>`）；否则是自动场景。
+`reconcile-scenarios.mjs` 的 P0 规则与 `task-13.9.mjs` / `run-scenario.mjs --automated`
+的自动化计数都用这一判定，不存在第二种分类来源。
 
 权威源与生成物：
 
 - 场景 ID / 标题：spec 标题，经 `scripts/verify/spec-scenarios.mjs` 派生；
-- 场景命令：`scripts/verify/scenario-commands.mjs` 的 `COMMANDS`（**只改这里**）；
+- 场景命令与证据：`scripts/verify/scenario-commands.mjs` 的 `SCENARIOS`
+  （`{command, evidence}`；**只改这里**）。命令按域聚合成整域 cargo/pnpm 命令，
+  `evidence` 逐条声明该场景依赖的测试名/文件/脚本，运行器逐条断言“在输出中被观测到”；
 - 执行清单：`scripts/verify/manifest.json` 的 `scenarios[]`，由
   `gen-scenario-manifests.mjs --write` 生成。默认模式（不带参数）是漂移门：与
-  `COMMANDS` 有任何缺项、多项、标题漂移或命令漂移都会非零退出。手改清单会在下次
+  `SCENARIOS` 有任何缺项、多项、标题/命令/证据漂移都会非零退出。手改清单会在下次
   `--write` 或门禁中被覆盖 / 报错。
 - 审计表：`docs/traceability.md`（已删除 manifest 指针列）。
 
@@ -334,7 +337,7 @@ node scripts/verify/gen-scenario-manifests.mjs        # 默认模式 = 清单 vs
 
 ## 7. 执行顺序与**实际执行记录**
 
-1. **甲类 28 条** —— ✅ 已在 `scripts/verify/scenario-commands.mjs` 的 `COMMANDS` 表登记
+1. **甲类 28 条** —— ✅ 已在 `scripts/verify/scenario-commands.mjs` 的 `SCENARIOS` 登记
    （**必须改这张表**，`manifest.json.scenarios[]` 是生成物，手改会被静默抹掉），随后
    `node scripts/verify/gen-scenario-manifests.mjs --write` 重生成执行清单。
 2. **丙类 4 条** —— ✅ 先补用例（§3 表），再登记；四条都用**正控**验过会失败。
@@ -345,7 +348,7 @@ node scripts/verify/gen-scenario-manifests.mjs        # 默认模式 = 清单 vs
    node scripts/verify/reconcile-scenarios.mjs         # 三方 218 = 218 = 218
    node scripts/verify/validate-scenario-commands.mjs  # 每条命令真能命中测试 ← 最容易漏
    node scripts/verify/gen-scenario-manifests.mjs        # 默认模式：清单 vs 注册表漂移门
-   node scripts/verify/check-scenario-churn.mjs        # 重复度棘轮
+   node scripts/verify/check-scenario-evidence.mjs     # 场景证据覆盖下限棘轮
    pnpm verify:scenario -- --all                       # 期望：只剩未填 log 的乙类 9 行红
    ```
 

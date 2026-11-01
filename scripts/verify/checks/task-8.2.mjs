@@ -103,16 +103,6 @@ if (!/mpv|libloading|libmpv/.test(archTest)) {
   fail("arch", "echo-core arch test should guard against mpv/FFI deps");
 }
 
-const clippy = spawnSync(
-  "cargo",
-  ["clippy", "-p", "echo-desktop", "--all-targets", "--", "-D", "warnings"],
-  { cwd: ROOT, encoding: "utf8" },
-);
-if (clippy.status !== 0) fail("clippy", `${clippy.stdout}\n${clippy.stderr}`);
-
-const fmt = spawnSync("cargo", ["fmt", "--all", "--", "--check"], { cwd: ROOT, encoding: "utf8" });
-if (fmt.status !== 0) fail("fmt", `${fmt.stdout}\n${fmt.stderr}`);
-
 process.stdout.write(
   "ok 8.2: isolated unsafe libmpv FFI adapter + dedicated actor (unique handle, bounded channel, ordered teardown)\n",
 );

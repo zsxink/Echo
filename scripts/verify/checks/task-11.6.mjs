@@ -39,6 +39,4 @@ run(
   ["--filter", "@echo/desktop", "test", "--", "--run", "src/features/player/ImmersivePlayer.test.tsx"],
   APP,
 );
-run("cargo", ["clippy", "-p", "echo-app", "--", "-D", "warnings"], ROOT);
-
 process.stdout.write("ok 11.6: lyrics focus mode (enter/take-surface/exit/restore) verified\n");

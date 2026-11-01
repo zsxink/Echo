@@ -67,6 +67,4 @@ if (!commandsSrc.includes("restore_or_prime_playback(")) {
 }
 
 // 5. fmt
-run("cargo", ["fmt", "--all", "--", "--check"]);
-
 process.stdout.write("ok 8.9: session persistence saved on transitions and restored paused at cold start\n");

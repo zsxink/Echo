@@ -83,6 +83,4 @@ if (!stopArm || !stopArm[0].includes("BackendProperty::Pause(true)")) {
 }
 
 // 5. fmt
-run("cargo", ["fmt", "--all", "--", "--check"]);
-
 process.stdout.write("ok 8.11: deletion coordinated with the player (snapshot / unload / commit / rollback)\n");

@@ -5,7 +5,7 @@
 //   openspec/specs/<area>/spec.md
 // carry `### Requirement: <title>` and `#### Scenario: <title>` headings with
 // NO inline IDs. The stable IDs live in `docs/traceability.md` (the per-area
-// prefix map is fixed there: DAS/DP/IL/LE/LL/PM/SFI/SYN).
+// prefix map is defined there; see AREA_PREFIX below for the full set).
 //
 // This script derives `<AREA>-R<NN>-S<NN>` deterministically from heading
 // order in each spec file and emits the ordered list. It is the authoritative
@@ -14,9 +14,9 @@
 // files that reorders/renames requirements or scenarios is caught as a
 // three-way-set mismatch instead of silently renumbering.
 //
-// Guarantee: for the current specs it MUST reproduce traceability's 160 IDs
-// byte-for-byte (per-area counts: DAS 27, DP 24, IL 27, LE 23, LL 23, PM 14,
-// SFI 22).
+// Guarantee: for the current specs it MUST reproduce traceability's IDs
+// byte-for-byte. The count is derived from the spec files at run time; run
+// `--check` for the authoritative number instead of trusting a hard-coded one.
 
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";

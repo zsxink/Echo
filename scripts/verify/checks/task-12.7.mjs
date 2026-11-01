@@ -88,7 +88,4 @@ if (!adapter.includes("file_type().is_symlink()")) {
 }
 
 // --- clippy + fmt on the touched crates ---
-run("cargo", ["clippy", "-p", "echo-core", "-p", "echo-desktop", "--all-targets", "--all-features", "--", "-D", "warnings"]);
-run("cargo", ["fmt", "--all", "--", "--check"]);
-
 process.stdout.write("ok 12.7: security tests pass (no root escape, no arbitrary read, no remote/network access)\n");

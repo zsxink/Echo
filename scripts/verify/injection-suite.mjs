@@ -524,7 +524,7 @@ const ENTRIES = [
     expect: /manifest drift:[\s\S]*CRP-R01-S01: command drift/,
     baseline: true,
     inject() {
-      const row = '"CRP-R01-S01": "node scripts/verify/checks/task-crp.mjs';
+      const row = '"CRP-R01-S01": { command: "node scripts/verify/checks/task-crp.mjs';
       replaceIn(join(ROOT, "scripts", "verify", "scenario-commands.mjs"), `${row}",`, `${row} --drift-probe",`);
       return {};
     },
@@ -573,22 +573,10 @@ const ENTRIES = [
     },
   },
 
-  // ---- 14.7 scenario churn ratchet -------------------------------------
-  {
-    id: "scenario-churn/tightened-ceiling",
-    guard: "the scenarios-per-command ratio rising above the frozen ceiling",
-    check: ["node", ["scripts/verify/check-scenario-churn.mjs"]],
-    expect: /FAIL scenario churn[\s\S]*exceeds frozen ceiling/,
-    baseline: true,
-    inject() {
-      replaceIn(
-        join(ROOT, "scripts", "verify", "check-scenario-churn.mjs"),
-        "maxDuplication: 1.8,",
-        "maxDuplication: 1.0,",
-      );
-      return {};
-    },
-  },
+  // ---- 14.7 scenario evidence coverage ---------------------------------
+  // The two scenario-evidence proofs live in injection-governance.mjs: this
+  // file sits under the 1000-line scale ceiling and the suite merges that
+  // module's entries into ENTRIES.
 
   // ---- embedded-frontend freshness -------------------------------------
   {
@@ -669,7 +657,7 @@ const ENTRIES = [
     id: "delegation/cargo-exit-status",
     guard: "a check that shells out to cargo ignoring a failing child",
     check: ["node", ["scripts/verify/checks/task-2.1.mjs"]],
-    expect: /FAIL 2\.1: cargo test/,
+    expect: /FAIL 2\.1: cargo test: filter 'domain::ids::'/,
     baseline: true,
     inject() {
       return { env: failingBinary("cargo") };
@@ -689,7 +677,7 @@ const ENTRIES = [
     id: "delegation/runner-propagates-check-failure",
     guard: "the task runner reporting success when a registered check fails",
     check: ["node", ["scripts/verify/run-task.mjs", "2.1"]],
-    expect: /error: task 2\.1: command exited 1/,
+    expect: /error: task 2\.1: command exited 1[\s\S]*FAIL 2\.1: cargo test: filter 'domain::ids::'/,
     baseline: true,
     inject() {
       return { env: failingBinary("cargo") };

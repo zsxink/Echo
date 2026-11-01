@@ -33,6 +33,4 @@ run(
   ["--filter", "@echo/desktop", "test", "--", "--run", "src/app/accessibility.test.tsx"],
   APP,
 );
-run("cargo", ["clippy", "-p", "echo-app", "--", "-D", "warnings"], ROOT);
-
 process.stdout.write("ok 12.2: full keyboard path + screen-reader names/states + axe (no blocking violations) verified\n");

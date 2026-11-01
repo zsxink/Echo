@@ -21,9 +21,9 @@
 | 前端 format / typecheck | 全过 | `pnpm --dir apps/desktop format:check` / `typecheck` |
 | 规模豁免 | **7 文件 / 4 trait**（棘轮，只能减） | `node scripts/verify/check-scale.mjs` |
 | 场景对账 | **spec 523 = trace 523 = manifest 523** | `node scripts/verify/reconcile-scenarios.mjs` |
-| 场景命令重复度 | **523 场景 / 338 命令 = 1.55x**，最差簇 16 | `node scripts/verify/check-scenario-churn.mjs` |
+| 场景证据覆盖 | **523 场景 / 541 证据条**（下限只增） | `node scripts/verify/check-scenario-evidence.mjs` |
 | 已登记检查数 | **97** | `node scripts/verify/check-verification-validity.mjs` |
-| 注入证明 | **35/35 通过，工作树逐字节还原** | `ECHO_INJECTION_REQUIRE_ALL=1 node scripts/verify/injection-suite.mjs` |
+| 注入证明 | **36/36 通过，工作树逐字节还原** | `ECHO_INJECTION_REQUIRE_ALL=1 node scripts/verify/injection-suite.mjs` |
 | 验证器自检 | **10 条断言全过** | `pnpm verify:self-test` |
 | manifest 任务数 | **141**（任务）/ 523（场景） | `node -e '…manifest.json…'` |
 
@@ -43,7 +43,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 # 治理门禁（聚合入口，等价于 CI 的 governance job）
 pnpm verify:governance
 
-# 注入证明（35 条；单独跑更快，其中若干条会真跑 cargo/pnpm 做正向对照）
+# 注入证明（36 条；单独跑更快，其中若干条会真跑 cargo/pnpm 做正向对照）
 ECHO_INJECTION_REQUIRE_ALL=1 node scripts/verify/injection-suite.mjs
 
 # 构建纯净性（含产物级证明，会真跑一次 cargo check）
@@ -60,6 +60,28 @@ pnpm exec openspec validate --archived
 所以要单独查它用 `cargo check -p echo-app`。
 
 **治理门禁必须独占运行**：`pnpm verify:governance` 里有 5 秒墙钟断言，并行跑别的 cargo / rg / node 扫描会假红。
+
+**静态检查只有一个入口（`quality-core`）**：`cargo fmt --all -- --check`、
+`cargo clippy --workspace --all-targets --all-features -- -D warnings`、
+`cargo test --workspace --all-targets --all-features` 由治理门首位的 `quality-core` 段与
+CI 的 Rust 矩阵执行。`scripts/verify/checks/task-*.mjs` 只做本 task 的定向断言（定向测试名、
+契约/文件检查），不再各自起 fmt/clippy 子进程；`task-1.5` 也只剩 ci.yml 结构断言。
+因此单独跑 `pnpm verify:task -- <id>` 通过，只说明该 task 的定向行为成立，**不代表静态检查通过**——
+合并前仍须跑 `pnpm verify:governance`（或至少 CI 的 rust/frontend 矩阵）。
+
+**`verify:task` 的新签名（一 task 一条命令，按模块分组启动）**：`task-3.mjs`~`task-7.mjs` 从
+`<task-id> <test-name>` 改为 `<task-id> <test-name>...`。运行器按每个测试名的**前两段模块路径**分组
+（如 `application::import::logic::tests::x` → `application::import`；不足两段的裸名自成一组），
+每组只启动一次 `cargo test -p <pkg> --all-features <组前缀>`，然后逐条断言每个声明的名字出现在
+`test <name> ... ok` 行中；零测试执行或任一名字缺失即失败。`manifest.json` 中 3.x~7.x 的 230 条
+逐测试命令因此合并为 45 条（45 个 task，共 73 组启动，原来 230 次）；`6.8`/`7.2` 等 task 的
+非模板命令（`cargo test ... catalog`、IPC 生成器）保持原样。可直接复制的示例：
+
+```bash
+node scripts/verify/checks/task-5.mjs 5.2 \
+  application::import::logic::tests::default_target_is_artist_folder_with_artist_minus_title \
+  domain::text::platform_golden_cases::fallback_labels_are_visible_and_deterministic
+```
 
 ---
 
@@ -148,7 +170,7 @@ pnpm exec openspec validate --archived
 - **mutate**：改一个仓库文件，跑完还原。每个目标先做内存快照 + 磁盘备份，`finally` 还原，**按哈希校验**，
   并额外逐路径比对前后 git 状态。
 
-**35 条证明全绿**（22 条在本文件内，10 条在 `injection-governance.mjs`，3 条在 `injection-object-kinds.mjs`）；
+**36 条证明全绿**（23 条在本文件内，10 条在 `injection-governance.mjs`，3 条在 `injection-object-kinds.mjs`）；
 每条还断言门禁在**未污染的工作树上是通过的**（正向对照），所以"恒红"的门禁混不进来。
 少数无法在任意机器上为绿的门禁（dev 构建的二进制、本就"尚无举证"的真机行）显式标注 `baseline: false`
 并附一个明确的通过用例。
@@ -165,18 +187,31 @@ pnpm exec openspec validate --archived
 
 ---
 
-## 5. 场景命令重复治理的完整形态（任务 7.7，未完成）
+## 5. 场景命令聚合与证据追溯（任务 7.7 / issue #110 P2-3，已完成）
 
-已建棘轮门禁 `check-scenario-churn.mjs`（`14.7`）：重复度 ≤1.8x、单命令 ≤16 个场景，**只能降不能升**。
-实测 **523 场景 / 338 命令 = 1.55x**、最差簇 16（旧版记的 1.76x 已随场景扩充降到 1.55x）。
+`scenario-commands.mjs` 现在是 `SCENARIOS: id → {command, evidence}` 注册表：命令按域聚合
+（core/desktop/app/player_smoke/perf/vitest 各一条，node 检查与 attestation 逐条），
+**证据**逐条声明该场景依赖的测试名/文件/脚本。`manifest.json.scenarios[]` 由它生成
+（`gen-scenario-manifests.mjs` 默认模式即漂移门）。
 
-**还没做**：完整的"按模块聚合并保留到测试名追溯"。这需要改写 **523 条验收行**，风险高
-（会同时牵动 `scenario-commands.mjs`、`gen-scenario-manifests.mjs`、`docs/traceability.md`、以及
-`reconcile-scenarios.mjs` 的对账），**建议单开一个 change**，不要塞进别的。
+聚合后「命令成功」不再蕴含「这个场景的测试跑过」，证据声明把这条链补回来：
 
-**先决条件**：动它之前先读 `scripts/verify/reconcile-scenarios.mjs` 里的非空断言 —— 它对每个登记命令做
-**非空断言**，且要求 `manifest.json.scenarios[]` 与 `scenario-commands.mjs` 逐条一致
-（`gen-scenario-manifests.mjs` 默认模式即此漂移门）。**改任何场景命令之前先改 registry 再 `--write`。**
+- `validate-scenario-commands.mjs` 逐条校验 evidence：rust 目标须命中对应包
+  `cargo test -- --list`；vitest 文件存在、带 `name` 时名称须在文件内；node 目标在
+  `scripts/verify/` 内存在；attestation 目标等于场景 ID；
+- `check-scenario-evidence.mjs`（`14.7`）冻结「523 场景 / 541 证据条」下限，只增不减；
+- `run-scenario.mjs` 执行聚合命令后按 evidence 逐条断言「目标在输出中被观测到」；
+- `check-scenario-command-proof.mjs` 改读 `evidence` 的 node 目标做分类，输出与改造前逐行一致。
+
+**先决条件**：`manifest.json.scenarios[]` 与注册表逐条一致（`gen-scenario-manifests.mjs`
+默认模式即此漂移门）。**改任何场景命令或证据之前先改 registry 再 `--write`。**
+
+**release-gate 的 delegation**：`ci.yml` 的 `release-gate` 以
+`node scripts/verify/checks/task-13.9.mjs --delegated=governance` 运行；`task-13.9.mjs` 把参数
+透传给 `run-scenario.mjs`，后者只跳过注册表里**显式声明** `delegatedTo: "governance"` 的场景
+（当前 `LD-R10-S01`、`PHA-R01-S02`，治理 job 会单独跑整门）。没有该声明的一律照常执行；
+本地不带参数时整门照跑，严格度不变。`check-scenario-evidence.mjs` 校验该声明只允许
+`"governance"`，且 `ci.yml` 中确有运行 `pnpm verify:governance` 的 job。
 
 ---
 
@@ -266,8 +301,8 @@ attestation 场景里（如 `DP-R02-S05` 连续下一首播放、`DP-R04-S04` �
 | 14.4 | — | **已退役（2026-11）**：生成树（`tests/scenarios` 与 `tests/native`）删除后由 `gen-scenario-manifests.mjs` 的默认模式（清单 vs 注册表漂移门）接替，接线在 `ci-governance.mjs` 与 `task-13.9.mjs` |
 | 14.5 | `check-verification-validity.mjs` | 失败路径 + 观测点；**调用子进程必须比较退出码** |
 | 14.6 | `check-build-purity.mjs` | 测试专用模块 cfg 门控 + 默认构建的 `.d` 里不出现 |
-| 14.7 | `check-scenario-churn.mjs` | 场景命令重复度与最差簇只降不升 |
-| 14.8 | `injection-suite.mjs` | **35** 条"注入违规即失败"证明 + 自包含检查必须带证明 |
+| 14.7 | `check-scenario-evidence.mjs` | 场景证据非空且目标可解析；「523 场景 / 541 证据条」下限只增不减 |
+| 14.8 | `injection-suite.mjs` | **36** 条"注入违规即失败"证明 + 自包含检查必须带证明 |
 | 14.9 | `checks/check-embedded-frontend.mjs` | 二进制里嵌的是当前 `dist`（此前只有手工入口） |
 
 另有 `task-1.6`（fixture 确定性 + 许可清单）在 issue #110 阶段 0 后接入 governance job

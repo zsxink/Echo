@@ -52,8 +52,6 @@ for (const name of [
   }
 }
 
-run("cargo", ["clippy", "-p", "echo-app", "--", "-D", "warnings"], "echo-app clippy clean");
-
 const localState = readFileSync(
   resolve(ROOT, "crates", "echo-desktop", "src", "platform", "local_state.rs"),
   "utf8",

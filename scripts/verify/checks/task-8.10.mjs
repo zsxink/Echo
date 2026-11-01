@@ -66,6 +66,4 @@ for (const needle of ["player::spawn_stats_recorder(", "CorePlaybackRecorder::ne
 }
 
 // 5. fmt
-run("cargo", ["fmt", "--all", "--", "--check"]);
-
 process.stdout.write("ok 8.10: monotonic listen-time accumulation wired to idempotent RecordPlayback\n");

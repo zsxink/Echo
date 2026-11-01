@@ -68,16 +68,6 @@ if (
   fail("throttle", "missing 100 ms foreground / 1 s background interval definitions");
 }
 
-const clippy = spawnSync(
-  "cargo",
-  ["clippy", "-p", "echo-desktop", "--all-targets", "--", "-D", "warnings"],
-  { cwd: ROOT, encoding: "utf8" },
-);
-if (clippy.status !== 0) fail("clippy", `${clippy.stdout}\n${clippy.stderr}`);
-
-const fmt = spawnSync("cargo", ["fmt", "--all", "--", "--check"], { cwd: ROOT, encoding: "utf8" });
-if (fmt.status !== 0) fail("fmt", `${fmt.stdout}\n${fmt.stderr}`);
-
 process.stdout.write(
   "ok 8.4: normalised events + foreground 10 Hz / background 1 Hz snapshot throttle\n",
 );

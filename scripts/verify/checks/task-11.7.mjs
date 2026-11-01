@@ -48,8 +48,6 @@ run(
   ["test", "-p", "echo-desktop", "runtime::services::tests::temporary_metadata"],
   ROOT,
 );
-run("cargo", ["clippy", "-p", "echo-app", "--", "-D", "warnings"], ROOT);
-
 process.stdout.write(
   "ok 11.7: temporary item metadata (cover/duration) + import-to-library verified\n",
 );

@@ -1,839 +1,596 @@
-// Scenario → executable-command map for the 0.1.0 gate (task 13.9).
+// Scenario → executable-command + evidence map for the 0.1.0 gate (task 13.9).
 //
-// 523 scenarios (spec-derived id set) × executable command. This
-// table is the single authoritative source; `manifest.json.scenarios[]` is
-// generated from it (gen-scenario-manifests.mjs, whose default mode is the
-// drift gate comparing the two).
-// Regenerated on top of the pre-alignment map so every id follows the
-// authoritative spec numbering; renamed rows carry their previous value, new
-// scenarios are wired to their test case (or attestation where only manual
-// verification exists).
+// 523 scenarios (spec-derived id set). A scenario's command is aggregated by
+// domain; `evidence` names the tests/files the scenario actually depends on,
+// and run-scenario.mjs asserts each target was observed in the command output.
+// `manifest.json.scenarios[]` is generated from this table
+// (gen-scenario-manifests.mjs, whose default mode is the drift gate).
+//
+// Every spec-derived id must have an entry; scenarioCommands() throws on a gap
+// instead of falling back to an implicit attestation marker.
 
-const COREC = (f) => `cargo test -p echo-core --all-features ${f}`;
-const DESK = (f) => `cargo test -p echo-desktop --all-features ${f}`;
-const REACT = (f) => `pnpm --filter @echo/desktop test -- --run ${f}`;
-const REACT_T = (f, name) => `pnpm --filter @echo/desktop test -- --run ${f} -t "${name}"`;
-const CHECK = (n) => `node scripts/verify/checks/task-${n}.mjs`;
+const CORE_ALL = "cargo test -p echo-core --all-features";
+const DESK_ALL = "cargo test -p echo-desktop --all-features";
+const APP_ALL = "cargo test -p echo-app --all-features";
+const PLAYER_ALL = "cargo test -p echo-desktop --all-features --test player_smoke";
+const PERF_ALL =
+  "cargo test -p echo-desktop --all-features --release --test local_edit_performance -- --ignored --nocapture";
+const VITEST_ALL = "pnpm --filter @echo/desktop test -- --run --reporter=verbose";
+const GOVERNANCE = "node scripts/verify/ci-governance.mjs";
 const ATTEST = (id) => `node scripts/verify/checks/check-native-attestation.mjs ${id}`;
-// Release-only latency/import acceptance benchmark. It is `#[ignore]`d in the
-// suite, so the scenario command must opt in explicitly; the Release gate is
-// where a release-profile measurement belongs.
-const PERF = (f) =>
-  `cargo test -p echo-desktop --all-features --release --test local_edit_performance ${f} -- --ignored --nocapture`;
 
-export const COMMANDS = {
-  // ===== ci-release-pipeline =====
-  "CRP-R01-S01": "node scripts/verify/checks/task-crp.mjs",
-  "CRP-R01-S02": "node scripts/verify/checks/task-crp.mjs",
-  "CRP-R01-S03": "node scripts/verify/checks/task-crp.mjs",
-  "CRP-R02-S01": "node scripts/verify/checks/task-crp.mjs",
-  "CRP-R02-S02": "node scripts/verify/checks/task-crp.mjs",
-  "CRP-R02-S03": "node scripts/verify/checks/task-crp.mjs",
-  "CRP-R03-S01": "node scripts/verify/checks/task-crp.mjs",
-  "CRP-R03-S02": "node scripts/verify/checks/task-crp.mjs",
-  "CRP-R04-S01": "node scripts/verify/checks/task-crp.mjs",
-  // 三平台许可齐全: same structural contract as S01 — the workflow must
-  // upload a NOTICE for each of macos/windows/linux, not just one.
-  "CRP-R04-S02": "node scripts/verify/checks/task-crp.mjs",
-  "CRP-R05-S01": "node scripts/verify/checks/task-crp.mjs",
-  "CRP-R05-S02": "node scripts/verify/checks/task-crp.mjs",
+const rust = (target) => ({ kind: "rust", target });
+const vitest = (target, name) =>
+  name === undefined ? { kind: "vitest", target } : { kind: "vitest", target, name };
+const node = (target) => ({ kind: "node", target });
+const attest = (target) => ({ kind: "attestation", target });
 
-  // ===== library-durability (LD) =====
-  // 目录权威提交与投影恢复（change enforce-library-first-durability）。每条命令指向
-  // 该场景的行为验收测试；LD-R10-S01 的"可执行验证"由治理门自身承载（同 PHA-R01-S02
-  // 先例，不能内联 verify:scenario 以免自递归）。
-  "LD-R01-S01": COREC("library_durability_refused_commit_leaves_every_wired_entrypoint_untouched"), // 本地写入失败: 拒绝目录提交时 15 张业务与投影表行数指纹不变
-  "LD-R01-S02": COREC("library_durability_retry_projection_failure_keeps_original_identity"), // 目录已提交而投影失败: 返回已保存待投影与稳定操作身份
-  "LD-R01-S03": COREC("library_durability_later_edit_catches_up_failed_earlier_playlist"), // SQLite 投影滞后时连续本地编辑: 后一次编辑携带先前失败的投影并追上
-  "LD-R02-S01": COREC("library_durability_playlist_delete_saves_cascade_before_projection"), // 级联删除写到一半崩溃: 级联删除先保存再投影
-  "LD-R02-S02": COREC("library_durability_every_native_commit_boundary_recovers_same_operation"), // 丢失 SQLite 后重放: 每个原生提交边界恢复同一操作
-  "LD-R02-S03": COREC("library_durability_prepared_only_is_not_accepted_as_saved_recovery"), // 提交结果不确定: prepared 状态不当已保存恢复
-  "LD-R02-S04": COREC("library_durability_c1_failure_then_c2_never_rolls_back_latest_record"), // 较旧操作延迟重放: 旧操作失败不回滚最新记录
-  "LD-R02-S05": COREC("library_durability_actual_record_rename_failure_remains_saved_and_retryable"), // 本地提交后对象文件材料化失败: 记录改名失败仍已保存可重试
-  "LD-R03-S01": COREC("library_durability_distinct_directory_and_sync_ids_survive_recovery_and_fresh_projection"), // 本地与同步来源混合恢复: 目录与同步身份各自存活
-  "LD-R03-S02": COREC("library_durability_scan_preserves_record_when_media_disappears"), // 部分媒体缺失: 记录保留可浏览
-  "LD-R04-S01": COREC("library_durability_legacy_committed_canonical_digest_is_unchanged"), // 读取旧格式记录: 旧提交规范摘要不变（只读兼容）
-  "LD-R04-S02": COREC("library_durability_projection_retains_orphans_and_links_when_evidence_arrives_without_echo"), // 旧记录含无法解释的关系: 孤儿与链接保留待证据、不回声
-  "LD-R05-S01": COREC("library_durability_projection_rejects_cross_directory_chain_and_anchor_without_sql_writes"), // 运行期间发现身份冲突: 跨目录链/锚被拒绝且零 SQL 写
-  "LD-R06-S01": COREC("library_durability_issue72_fixture_reproduces_legacy_missing_relationships"), // 新协议投影遇到悬空关系: 传统缺失关系复现不静默补造
-  "LD-R06-S02": COREC("library_durability_broken_chain_and_corrupt_checkpoint_fail_closed_preserve_bytes"), // 控制面含损坏记录: 断链/坏检查点闭失败且保留字节
-  "LD-R07-S01": COREC("library_durability_playlist_create_retry_after_saved_pending_keeps_operation_identity"), // 离线改歌单后重装: 从目录基线补全已保存歌单并返回原身份
-  "LD-R07-S02": COREC("library_durability_trusted_sync_retry_unverifiable_anchor_never_installs_baseline_or_pending"), // 主机账本不可验证: 不可验证锚点不安装基线或待确认
-  "LD-R07-S03": COREC("library_durability_mark_published_legacy_unseeded_ledger_keeps_full_rescue"), // ACK 丢失后重装并重新配对: 旧未播种账本保留完整救援
-  "LD-R08-S01": COREC("library_durability_playlist_cover_reuses_original_and_clear_survives_rebuild"), // 歌单封面脱离应用缓存恢复: 复用原件且清缓存后重建存活
-  "LD-R08-S02": COREC("library_durability_export_uses_declared_logical_path_for_managed_audio"), // 同步媒体使用不可变版本路径: 托管音频走声明逻辑路径
-  "LD-R09-S01": COREC("library_durability_publication_v1_and_unknown_schema_keep_original_evidence"), // 支持的旧格式保持只读兼容: v1 与未知 schema 保留原始证据
-  "LD-R09-S02": COREC("library_durability_commit_checks_future_format_before_recovery"), // 旧程序打开新协议目录: 恢复前检查未来格式拒绝写入
-  "LD-R09-S03": COREC("library_durability_readonly_volume_and_unmaterialized_commit_can_be_browsed"), // 只保留 media: 只读卷与未材料化提交仍可浏览、不宣称完整恢复
-  "LD-R10-S01": "node scripts/verify/ci-governance.mjs", // 可执行验证: 治理门承载 fmt/clippy/测试/覆盖/对账/注入证明
-  // 单机启动存在旧同步投影（LD-R11）: 未绑定的根重放同一目录头时清空遗留同步
-  // 队列/游标/墓碑/state 证据，业务投影与媒体字节不变。
-  "LD-R11-S01": COREC("library_durability_standalone_startup_purges_legacy_sync_projection"),
+export const SCENARIOS = {
+  // library-durability
+"LD-R01-S01": { command: CORE_ALL, evidence: [rust("library_durability_refused_commit_leaves_every_wired_entrypoint_untouched")], },
+"LD-R01-S02": { command: CORE_ALL, evidence: [rust("library_durability_retry_projection_failure_keeps_original_identity")], },
+"LD-R01-S03": { command: CORE_ALL, evidence: [rust("library_durability_later_edit_catches_up_failed_earlier_playlist")], },
+"LD-R02-S01": { command: CORE_ALL, evidence: [rust("library_durability_playlist_delete_saves_cascade_before_projection")], },
+"LD-R02-S02": { command: CORE_ALL, evidence: [rust("library_durability_every_native_commit_boundary_recovers_same_operation")], },
+"LD-R02-S03": { command: CORE_ALL, evidence: [rust("library_durability_prepared_only_is_not_accepted_as_saved_recovery")], },
+"LD-R02-S04": { command: CORE_ALL, evidence: [rust("library_durability_c1_failure_then_c2_never_rolls_back_latest_record")], },
+"LD-R02-S05": { command: CORE_ALL, evidence: [rust("library_durability_actual_record_rename_failure_remains_saved_and_retryable")], },
+"LD-R03-S01": { command: CORE_ALL, evidence: [rust("library_durability_distinct_directory_and_sync_ids_survive_recovery_and_fresh_projection")], },
+"LD-R03-S02": { command: CORE_ALL, evidence: [rust("library_durability_scan_preserves_record_when_media_disappears")], },
+"LD-R04-S01": { command: CORE_ALL, evidence: [rust("library_durability_legacy_committed_canonical_digest_is_unchanged")], },
+"LD-R04-S02": { command: CORE_ALL, evidence: [rust("library_durability_projection_retains_orphans_and_links_when_evidence_arrives_without_echo")], },
+"LD-R05-S01": { command: CORE_ALL, evidence: [rust("library_durability_projection_rejects_cross_directory_chain_and_anchor_without_sql_writes")], },
+"LD-R06-S01": { command: CORE_ALL, evidence: [rust("library_durability_issue72_fixture_reproduces_legacy_missing_relationships")], },
+"LD-R06-S02": { command: CORE_ALL, evidence: [rust("library_durability_broken_chain_and_corrupt_checkpoint_fail_closed_preserve_bytes")], },
+"LD-R07-S01": { command: CORE_ALL, evidence: [rust("library_durability_playlist_create_retry_after_saved_pending_keeps_operation_identity")], },
+"LD-R07-S02": { command: CORE_ALL, evidence: [rust("library_durability_trusted_sync_retry_unverifiable_anchor_never_installs_baseline_or_pending")], },
+"LD-R07-S03": { command: CORE_ALL, evidence: [rust("library_durability_mark_published_legacy_unseeded_ledger_keeps_full_rescue")], },
+"LD-R08-S01": { command: CORE_ALL, evidence: [rust("library_durability_playlist_cover_reuses_original_and_clear_survives_rebuild")], },
+"LD-R08-S02": { command: CORE_ALL, evidence: [rust("library_durability_export_uses_declared_logical_path_for_managed_audio")], },
+"LD-R09-S01": { command: CORE_ALL, evidence: [rust("library_durability_publication_v1_and_unknown_schema_keep_original_evidence")], },
+"LD-R09-S02": { command: CORE_ALL, evidence: [rust("library_durability_commit_checks_future_format_before_recovery")], },
+"LD-R09-S03": { command: CORE_ALL, evidence: [rust("library_durability_readonly_volume_and_unmaterialized_commit_can_be_browsed")], },
+"LD-R10-S01": { command: GOVERNANCE, delegatedTo: "governance", evidence: [node("scripts/verify/ci-governance.mjs")], },
+"LD-R11-S01": { command: CORE_ALL, evidence: [rust("library_durability_standalone_startup_purges_legacy_sync_projection")], },
+  // local-library
+"LL-R01-S01": { command: CORE_ALL, evidence: [rust("root_switch::")], },
+"LL-R01-S02": { command: CORE_ALL, evidence: [rust("root_switch::")], },
+"LL-R01-S03": { command: CORE_ALL, evidence: [rust("root_switch::")], },
+"LL-R01-S04": { command: CORE_ALL, evidence: [rust("root_switch::tests::prepare_reuses_record_identities_and_leaves_media_untouched")], },
+"LL-R01-S05": { command: CORE_ALL, evidence: [rust("consecutive_multi_song_add_keeps_every_membership")], },
+"LL-R02-S01": { command: CORE_ALL, evidence: [rust("application::scan::tests::relink::manual_rescan_is_repeatable_and_converges")], },
+"LL-R02-S02": { command: CORE_ALL, evidence: [rust("watch::tests::watch_events_converge_under_out_of_order_and_duplicate_delivery")], },
+"LL-R02-S03": { command: CORE_ALL, evidence: [rust("application::scan::tests::relink::progress_persisted_throttled_and_terminal_state_kept")], },
+"LL-R02-S04": { command: CORE_ALL, evidence: [rust("manifest_incompatible_version_fails_check")], },
+"LL-R02-S05": { command: CORE_ALL, evidence: [rust("application::watch::tests::")], },
+"LL-R02-S06": { command: VITEST_ALL, evidence: [vitest("src/features/settings/SettingsView.test.tsx", "starts a scan for the active library and reports completion")], },
+"LL-R02-S07": { command: VITEST_ALL, evidence: [vitest("src/features/settings/SettingsView.test.tsx", "disables rescan when no library root is configured")], },
+"LL-R03-S01": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::playback_sessions_are_idempotent")], },
+"LL-R03-S02": { command: CORE_ALL, evidence: [rust("probe")], },
+"LL-R03-S03": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::scan_pipeline_persists")], },
+"LL-R03-S04": { command: CORE_ALL, evidence: [rust("infrastructure::metadata::tags::tests::m4a_tags_parse_from_in_memory_import_source_bytes")], },
+"LL-R03-S05": { command: CORE_ALL, evidence: [rust("tagless_wav_reads_as_ok_with_empty_fields")], },
+"LL-R04-S01": { command: CORE_ALL, evidence: [rust("application::scan::tests::relink::fast_skip_unchanged_files_and_relink_on_move")], },
+"LL-R04-S02": { command: CORE_ALL, evidence: [rust("application::scan::tests::pipeline::external_missing_relinks_on_same_hash_path_keeping_relationships")], },
+"LL-R04-S03": { command: CORE_ALL, evidence: [rust("application::scan::tests::relink::duplicate_hash_paths_get_deterministic_primary")], },
+"LL-R04-S04": { command: CORE_ALL, evidence: [rust("application::scan::tests::relink::music_key_never_relinks_identities")], },
+"LL-R05-S01": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::fts_and_short_like_search")], },
+"LL-R05-S02": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::keyset_pages_are_deterministic")], },
+"LL-R06-S01": { command: CORE_ALL, evidence: [rust("cover_cache_key_and_db_reference")], },
+"LL-R06-S02": { command: CORE_ALL, evidence: [rust("lyrics")], },
+"LL-R07-S01": { command: CORE_ALL, evidence: [rust("trash::tests::persisted_trash_applied_is_the_only_automatic_database_finalization_proof")], },
+"LL-R07-S02": { command: CORE_ALL, evidence: [rust("trash::tests::external_staging_cleanup_becomes_unknown_and_preserves_relationships")], },
+"LL-R07-S03": { command: CORE_ALL, evidence: [rust("application::scan::tests::pipeline::external_deletion_is_missing_not_pending_delete_and_keeps_relationships")], },
+"LL-R07-S04": { command: CORE_ALL, evidence: [rust("application::scan::tests::pipeline::external_missing_recovers_on_original_path_restoring_everything")], },
+"LL-R08-S01": { command: "node scripts/verify/checks/task-12.7.mjs", evidence: [node("scripts/verify/checks/task-12.7.mjs")], },
+"LL-R08-S02": { command: "node scripts/verify/checks/task-12.6.mjs", evidence: [node("scripts/verify/checks/task-12.6.mjs")], },
+"LL-R08-S03": { command: CORE_ALL, evidence: [rust("permission")], },
+"LL-R09-S01": { command: CORE_ALL, evidence: [rust("revision_and_added_at_survive_rescans")], },
+"LL-R09-S02": { command: CORE_ALL, evidence: [rust("revision_and_added_at_survive_rescans")], },
+  "LL-R09-S03": { command: ATTEST("LL-R09-S03"), evidence: [attest("LL-R09-S03")] },
+"LL-R10-S01": { command: CORE_ALL, evidence: [rust("library_durability_scan_saves_identity_before_projection_and_reuses_it_on_retry")], },
+"LL-R10-S02": { command: CORE_ALL, evidence: [rust("library_durability_scan_refresh_preserves_saved_after_image_on_projection_failure")], },
+"LL-R10-S03": { command: CORE_ALL, evidence: [rust("library_durability_scan_refuses_unwritable_library_before_indexing")], },
+"LL-R10-S04": { command: CORE_ALL, evidence: [rust("library_durability_readonly_volume_and_unmaterialized_commit_can_be_browsed")], },
+"LL-R11-S01": { command: CORE_ALL, evidence: [rust("a_wiped_database_is_rebuilt_from_the_records_at_real_scale")], },
+"LL-R11-S02": { command: APP_ALL, evidence: [rust("a_failed_switch_restores_the_previous_session")], },
 
-  // ===== portable-library-layout (PLL) =====
-  // This whole area was absent from the table, so all seven rows were reading as
-  // "needs an operator" through the fallback. Each has a targeted test: the
-  // artist-folder publish path, control-plane usability, the manifest/record
-  // round trips, the absolute-path-free payload, ignoring echo/tmp, and restore
-  // projecting UUIDs while keeping media-less records.
-  //
-  // R03-S01/S02 used to be `COREC("application::restore")` — a whole-module
-  // filter that only ever asserted *song* projection while the playbook claimed
-  // 喜欢/歌单/成员顺序 coverage. After `restore-user-data-from-library-records`
-  // each row points at the case that asserts the THEN clause it is registered
-  // for, so breaking playlists/member-order/favorites now fails the scenario
-  // instead of hiding behind a passing song test.,
+  // portable-library-layout
+"PLL-R01-S01": { command: CORE_ALL, evidence: [rust("default_target_is_artist_folder_with_artist_minus_title")], },
+"PLL-R01-S02": { command: CORE_ALL, evidence: [rust("control_plane_usable_detects_writable_and_readable")], },
+"PLL-R01-S03": { command: "node scripts/verify/checks/task-15.1.mjs", evidence: [node("scripts/verify/checks/task-15.1.mjs")], },
+"PLL-R01-S04": { command: CORE_ALL, evidence: [rust("online_backup_contains_matching_catalog_pending_and_ledger_without_independent_checkpoint")], },
+"PLL-R02-S01": { command: CORE_ALL, evidence: [rust("manifest_round_trips_atomically")], },
+"PLL-R02-S02": { command: CORE_ALL, evidence: [rust("sync_payloads_carry_no_absolute_paths")], },
+"PLL-R02-S03": { command: CORE_ALL, evidence: [rust("tmp_files_are_ignored_as_records")], },
+"PLL-R02-S04": { command: DESK_ALL, evidence: [rust("playlist_mutations_materialize_records_and_tombstones")], },
+"PLL-R02-S05": { command: DESK_ALL, evidence: [rust("recorded_plays_materialize_additive_play_stats")], },
+"PLL-R02-S06": { command: DESK_ALL, evidence: [rust("unfavorite_materializes_a_false_record_so_it_never_returns")], },
+"PLL-R02-S07": { command: CORE_ALL, evidence: [rust("library_durability_playback_event_is_materialized_outside_shared_records")], },
+"PLL-R02-S08": { command: DESK_ALL, evidence: [rust("library_durability_playlist_cover_original_survives_cache_loss_and_clear")], },
+"PLL-R03-S01": { command: CORE_ALL, evidence: [rust("application::continuation::tests::continuation_restores_songs_favorites_playlists_and_member_order")], },
+"PLL-R03-S02": { command: CORE_ALL, evidence: [rust("restore_projects_records_and_keeps_missing_without_media")], },
+"PLL-R03-S03": { command: CORE_ALL, evidence: [rust("root_switch::tests::prepare_continues_object_records_before_scanning_media")], },
+"PLL-R04-S01": { command: CORE_ALL, evidence: [rust("application::portable::tests::ensure_control_plane_initializes_a_fresh_writable_root")], },
+"PLL-R04-S02": { command: CORE_ALL, evidence: [rust("application::portable::tests::ensure_control_plane_heals_a_manifest_less_directory_with_records")], },
+"PLL-R04-S03": { command: CORE_ALL, evidence: [rust("application::portable::tests::ensure_control_plane_reports_an_unusable_surface_without_writing")], },
+"PLL-R04-S04": { command: CORE_ALL, evidence: [rust("song_record_without_added_at_reads_back_as_zero")], },
+"PLL-R05-S01": { command: CORE_ALL, evidence: [rust("root_switch::tests::prepare_continues_records_then_scans_only_unrecorded_media")], },
+"PLL-R05-S02": { command: CORE_ALL, evidence: [rust("application::continuation::tests::dangling_records_are_counted_and_never_invented")], },
+"PLL-R05-S03": { command: CORE_ALL, evidence: [rust("application::continuation::tests::tombstone_outranks_a_stale_record_and_is_never_resurrected")], },
+"PLL-R05-S04": { command: CORE_ALL, evidence: [rust("application::continuation::tests::continuation_is_idempotent_across_repeated_opens")], },
+"PLL-R06-S01": { command: CORE_ALL, evidence: [rust("application::portable::tests::ensure_control_plane_initializes_a_fresh_writable_root")], },
+"PLL-R06-S02": { command: CORE_ALL, evidence: [rust("application::portable::tests::ensure_control_plane_heals_a_manifest_less_directory_with_records")], },
+"PLL-R06-S03": { command: CORE_ALL, evidence: [rust("application::portable::tests::ensure_control_plane_reports_an_unusable_surface_without_writing")], },
+"PLL-R07-S01": { command: CORE_ALL, evidence: [rust("root_switch::tests::prepare_continues_object_records_before_scanning_media")], },
+"PLL-R07-S02": { command: CORE_ALL, evidence: [rust("restore_projects_records_and_keeps_missing_without_media")], },
+"PLL-R07-S03": { command: CORE_ALL, evidence: [rust("application::continuation::tests::tombstone_outranks_a_stale_record_and_is_never_resurrected")], },
+"PLL-R07-S04": { command: CORE_ALL, evidence: [rust("application::continuation::tests::continuation_is_idempotent_across_repeated_opens")], },
+"PLL-R07-S05": { command: CORE_ALL, evidence: [rust("application::continuation::tests::detached_legacy_records_are_superseded_by_the_matching_local_rows")], },
+"PLL-R07-S06": { command: CORE_ALL, evidence: [rust("application::continuation::tests::continuation_restores_songs_favorites_playlists_and_member_order")], },
+"PLL-R07-S07": { command: CORE_ALL, evidence: [rust("library_durability_publication_v1_and_unknown_schema_keep_original_evidence")], },
+"PLL-R07-S08": { command: CORE_ALL, evidence: [rust("application::continuation::tests::continuation_is_idempotent_across_repeated_opens")], },
+"PLL-R07-S09": { command: CORE_ALL, evidence: [rust("library_durability_incomplete_or_foreign_local_allocation_stays_unresolved")], },
 
-  // ===== desktop-app-shell =====
-  "DAS-R01-S01": COREC("root_switch::tests::empty_directory_activates"),
-  "DAS-R01-S02": COREC("root_switch::tests::root_level_error_keeps_old_active_root"),
-  "DAS-R01-S03": COREC("root_switch::tests::read_only_root_activates_readonly"),
-  "DAS-R01-S04": COREC("boot::tests::clean_active_root_recovers_idle_and_releases_the_scan_exclusion"),
-  "DAS-R02-S01": REACT("src/app/narrow.test.tsx"),
-  "DAS-R02-S02": REACT("src/features/library/SongList.test.tsx"),
-  "DAS-R02-S03": CHECK("13.8"), // 一期排除入口 scope guard
-  // Batch menu (S04): the row opens the selection-wide menu from both the
-  // context menu and the keyboard menu key — proven by SongRow's batch-menu
-  // and keyboard-menu cases. S05 is the management-action side of the same
-  // requirement (no sync, provided batch entry): task-13.8 asserts the UI has
-  // no operable sync entry anywhere.,
-  "DAS-R02-S04": REACT("src/features/library/SongRow.test.tsx"),
-  "DAS-R02-S05": CHECK("13.8"),
-  // CSS-only interaction behaviors: the brand operations are revealed/closed
-  // by `:hover`/`:focus-within` in shell.css (task 7.4 + the compact brand
-  // action change), the desktop hit targets are 36px (44px in narrow, asserted
-  // by the narrow.css media query), and the search-box chrome is unchanged by
-  // the import move. None of these is a JS-assertable behavior — each is a
-  // rendered visual property verified by an operator against the prototype.,
-  "DAS-R02-S06": ATTEST("DAS-R02-S06"),
-  "DAS-R02-S07": ATTEST("DAS-R02-S07"),
-  "DAS-R02-S08": REACT("src/app/accessibility.test.tsx"), // keyboard order reaches brand actions,
-  "DAS-R02-S09": ATTEST("DAS-R02-S09"),
-  "DAS-R02-S10": ATTEST("DAS-R02-S10"),
-  "DAS-R02-S11": REACT("src/features/settings/SettingsView.test.tsx"),
-  "DAS-R02-S12": REACT("src/features/settings/SettingsView.test.tsx"),
-  "DAS-R02-S13": REACT("src/features/settings/SettingsView.test.tsx"),
-  "DAS-R02-S14": REACT("src/features/settings/SettingsView.test.tsx"),
-  "DAS-R02-S15": REACT("src/features/settings/SettingsView.test.tsx"),
-  "DAS-R03-S01": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import entry in the titlebar strip under the playlist view\"", // 新增: 标题栏导入入口所有视图可用
-  "DAS-R03-S02": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"keeps the import entry in the titlebar strip under the artist directory\"", // 新增: 标题栏导入入口所有视图可用
-  "DAS-R03-S03": "pnpm --filter @echo/desktop test -- --run src/app/App.test.tsx -t \"hides the import entry for a read-only library\"", // 新增: 标题栏导入入口所有视图可用
-  "DAS-R04-S01": DESK("platform::local_state"), // （重编号自 DAS-R03-S01）
-  "DAS-R04-S02": DESK("platform::local_state"), // （重编号自 DAS-R03-S02）
-  "DAS-R04-S03": DESK("platform::local_state"), // （重编号自 DAS-R03-S03）
-  "DAS-R05-S01": CHECK("9.6"), // window close→exit (automated), // （重编号自 DAS-R04-S01）
-  "DAS-R05-S02": CHECK("9.6"), // window close→background (automated), // （重编号自 DAS-R04-S02）
-  "DAS-R05-S03": CHECK("9.6"), // close during init (automated), // （重编号自 DAS-R04-S03）
-  "DAS-R06-S01": CHECK("9.3"), // （重编号自 DAS-R05-S01）
-  "DAS-R06-S02": CHECK("9.3"), // （重编号自 DAS-R05-S02）
-  "DAS-R06-S03": CHECK("9.3"), // （重编号自 DAS-R05-S03）
-  "DAS-R07-S01": CHECK("9.1"), // （重编号自 DAS-R06-S01）
-  "DAS-R07-S02": CHECK("9.1"), // （重编号自 DAS-R06-S02）
-  "DAS-R07-S03": CHECK("9.1"), // （重编号自 DAS-R06-S03）
-  "DAS-R07-S04": ATTEST("DAS-R07-S04"), // 重编号自 DAS-R06-S04；无专属测试，人工 attestation
-  "DAS-R07-S05": ATTEST("DAS-R07-S05"), // 重编号自 DAS-R06-S05；无专属测试，人工 attestation
-  "DAS-R08-S01": REACT("src/app/narrow.test.tsx"), // （重编号自 DAS-R07-S01）
-  "DAS-R08-S02": REACT("src/app/overlays.test.tsx"), // （重编号自 DAS-R07-S02）
-  "DAS-R08-S03": REACT("src/app/overlays.test.tsx"), // （重编号自 DAS-R07-S03）
-  // fix-queue-trigger-toggle: 触发控件计入浮层内部区域. Each row points at the
-  // suite that owns the assertion it registers, so a regression in one path
-  // blanks only that path's scenario.
-  "DAS-R08-S04": REACT("src/features/player/QueuePanel.test.tsx"), // 再次点击播放队列触发控件
-  "DAS-R08-S05": REACT("src/features/player/PlayerBar.test.tsx"), // 触发控件状态与可访问名称
-  "DAS-R08-S06": REACT("src/app/overlays.test.tsx"), // 再次点击触发控件不触发外部动作
-  "DAS-R08-S07": REACT("src/app/overlays.test.tsx"), // 仍可点击真正外部区域关闭
-  "DAS-R08-S08": REACT("src/features/player/EffectsPanel.test.tsx"), // 音效入口与队列互斥
-  "DAS-R08-S09": REACT("src/features/player/EffectsPanel.test.tsx"), // 音效标签尺寸一致
-  "DAS-R09-S01": REACT("src/app/accessibility.test.tsx"), // （重编号自 DAS-R08-S01）
-  "DAS-R09-S02": REACT("src/app/accessibility.test.tsx"), // （重编号自 DAS-R08-S02）
-  "DAS-R09-S03": REACT("src/app/overlays.test.tsx"), // （重编号自 DAS-R08-S03）
-  "DAS-R09-S04": REACT("src/app/overlays.test.tsx"), // 触发控件内部化不影响键盘路径
-  "DAS-R09-S05": REACT("src/features/player/EffectsPanel.test.tsx"), // 音效 Tab 离开
-  "DAS-R09-S06": REACT("src/features/player/EffectsPanel.test.tsx"), // 音效内模态对话框
-  "DAS-R09-S07": REACT("src/features/player/EffectsPanel.test.tsx"), // 外部点击关闭音效保留焦点
-  "DAS-R10-S01": CHECK("13.8"), // offline/no-network, // （重编号自 DAS-R09-S01）
-  "DAS-R10-S02": CHECK("13.8"),
-  // wire-desktop-system-dialogs: real OS dialogs/reveal, WebView stays pathless., // （重编号自 DAS-R09-S02）
-  "DAS-R11-S01": CHECK("wire-dialogs"), // TauriDialogs native folder pick wired, // （重编号自 DAS-R10-S01）
-  "DAS-R11-S02": CHECK("wire-dialogs"), // （重编号自 DAS-R10-S02）
-  "DAS-R11-S03": CHECK("wire-dialogs"), // capability set stays free of dialog/fs, // （重编号自 DAS-R10-S03）
-  "DAS-R12-S01": REACT("src/app/App.test.tsx"), // workspace-empty claims full workspace, // （重编号自 DAS-R11-S01）
-  "DAS-R12-S02": REACT("src/app/App.test.tsx"),
-  // R12–R14 由对应 gate 覆盖 (见下)。
-  // DAS-R15: 应用在应用工作区阻止 WebView 默认右键菜单。App.tsx 在加载时向
-  // document 注册全局 `contextmenu` preventDefault(非测试可见行为); 该开关由
-  // 人工验证(在应用工作区右键不出现浏览器菜单)。, // （重编号自 DAS-R11-S02）
-  "DAS-R13-S01": ATTEST("DAS-R13-S01"), // 重编号自 DAS-R12-S01；无专属测试，人工 attestation
-  "DAS-R13-S02": ATTEST("DAS-R13-S02"), // 重编号自 DAS-R12-S02；无专属测试，人工 attestation
-  "DAS-R14-S01": ATTEST("DAS-R14-S01"), // 重编号自 DAS-R13-S01；无专属测试，人工 attestation
-  "DAS-R15-S01": ATTEST("DAS-R15-S01"), // 重编号自 DAS-R14-S01；无专属测试，人工 attestation
-  "DAS-R15-S02": ATTEST("DAS-R15-S02"), // 重编号自 DAS-R14-S02；无专属测试，人工 attestation
-  "DAS-R15-S03": ATTEST("DAS-R15-S03"), // 重编号自 DAS-R14-S03；无专属测试，人工 attestation
-  "DAS-R15-S04": ATTEST("DAS-R15-S04"), // 重编号自 DAS-R14-S04；无专属测试，人工 attestation
-  "DAS-R15-S05": ATTEST("DAS-R15-S05"), // 重编号自 DAS-R14-S05；无专属测试，人工 attestation
-  "DAS-R15-S06": ATTEST("DAS-R15-S06"), // 重编号自 DAS-R14-S06；无专属测试，人工 attestation
-  "DAS-R16-S01": ATTEST("DAS-R16-S01"), // 重编号自 DAS-R15-S01；无专属测试，人工 attestation
-  "DAS-R17-S01": ATTEST("DAS-R17-S01"), // 原生全屏下关闭窗口后退出全屏再隐藏
-  "DAS-R17-S02": ATTEST("DAS-R17-S02"), // 全屏后台关闭后重新打开窗口
-  "DAS-R17-S03": ATTEST("DAS-R17-S03"), // 窗口模式下关闭仍立即隐藏
+  // safe-file-ingestion
+"SFI-R01-S01": { command: CORE_ALL, evidence: [rust("import")], },
+"SFI-R01-S02": { command: CORE_ALL, evidence: [rust("import")], },
+"SFI-R01-S03": { command: CORE_ALL, evidence: [rust("untagged_wav_import_uses_the_missing_tag_fallbacks")], },
+"SFI-R02-S01": { command: CORE_ALL, evidence: [rust("import")], },
+"SFI-R03-S01": { command: CORE_ALL, evidence: [rust("sidecar")], },
+"SFI-R03-S02": { command: CORE_ALL, evidence: [rust("sidecar")], },
+"SFI-R04-S01": { command: CORE_ALL, evidence: [rust("dedup")], },
+"SFI-R04-S02": { command: CORE_ALL, evidence: [rust("import")], },
+"SFI-R04-S03": { command: CORE_ALL, evidence: [rust("application::recover::tests::imports::nothing_recoverable_rolls_back_and_releases_cleanly")], },
+"SFI-R04-S04": { command: CORE_ALL, evidence: [rust("dedup")], },
+"SFI-R05-S01": { command: CORE_ALL, evidence: [rust("import")], },
+"SFI-R05-S02": { command: CORE_ALL, evidence: [rust("import")], },
+"SFI-R05-S03": { command: PERF_ALL, evidence: [rust("completed_local_edit_latency")], },
+"SFI-R05-S04": { command: CORE_ALL, evidence: [rust("application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice")], },
+"SFI-R05-S05": { command: CORE_ALL, evidence: [rust("sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent")], },
+"SFI-R05-S06": { command: CORE_ALL, evidence: [rust("application::recover::tests::imports::recovery_never_creates_a_duplicate_when_a_watcher_preempts")], },
+"SFI-R05-S07": { command: CORE_ALL, evidence: [rust("library_durability_actual_record_rename_failure_remains_saved_and_retryable")], },
+"SFI-R05-S08": { command: CORE_ALL, evidence: [rust("library_durability_memory_failed_projection_reserves_the_saved_sequence")], },
+"SFI-R06-S01": { command: CORE_ALL, evidence: [rust("import")], },
+"SFI-R06-S02": { command: CORE_ALL, evidence: [rust("import")], },
+"SFI-R07-S01": { command: "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path", evidence: [node("scripts/verify/checks/task-9.1.mjs"), rust("runtime::services::tests::open_path")], },
+"SFI-R07-S02": { command: "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path", evidence: [node("scripts/verify/checks/task-9.1.mjs"), rust("runtime::services::tests::open_path")], },
+"SFI-R07-S03": { command: "node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path", evidence: [node("scripts/verify/checks/task-9.1.mjs"), rust("runtime::services::tests::open_path")], },
+"SFI-R07-S04": { command: CORE_ALL, evidence: [rust("import")], },
+"SFI-R07-S05": { command: CORE_ALL, evidence: [rust("staging")], },
+"SFI-R08-S01": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+"SFI-R08-S02": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+"SFI-R09-S01": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+"SFI-R09-S02": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+"SFI-R09-S03": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+"SFI-R09-S04": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+"SFI-R09-S05": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+"SFI-R10-S01": { command: CORE_ALL, evidence: [rust("import")], },
+"SFI-R10-S02": { command: CORE_ALL, evidence: [rust("import")], },
+"SFI-R11-S01": { command: CORE_ALL, evidence: [rust("batch_import_lands_under_media_and_keeps_dedup_and_numbering")], },
+"SFI-R11-S02": { command: VITEST_ALL, evidence: [vitest("src/features/import/importFeedback.test.ts", "treats imported, duplicate and skipped as non-failures")], },
+"SFI-R11-S03": { command: VITEST_ALL, evidence: [vitest("src/features/import/importFeedback.test.ts", "reports only real failures in the failure list")], },
+"SFI-R11-S04": { command: VITEST_ALL, evidence: [vitest("src/features/import/ImportBatchDialog.test.tsx")], },
+  "SFI-R11-S05": { command: ATTEST("SFI-R11-S05"), evidence: [attest("SFI-R11-S05")] },
+"SFI-R12-S01": { command: "cargo test -p echo-core --all-features import && cargo test -p echo-core --all-features a_wiped_database_is_rebuilt_from_the_records_at_real_scale && cargo test -p echo-desktop --all-features import", evidence: [rust("application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"), rust("application::recover::tests::imports::recovery_never_creates_a_duplicate_when_a_watcher_preempts"), rust("application::recover::tests::imports::nothing_recoverable_rolls_back_and_releases_cleanly"), rust("batch_import_lands_under_media_and_keeps_dedup_and_numbering"), rust("sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent"), rust("publish_never_overwrites_a_target_created_after_planning"), rust("application::continuation::tests::a_wiped_database_is_rebuilt_from_the_records_at_real_scale"), rust("cancelled_import_dialog_is_a_noop_never_a_success"), rust("import_dialog_is_refused_before_the_write_gate_resolves")], },
 
-  // DAS-R18: macOS 原生应用菜单（issue #73）。S01–S08 是真实点击菜单项的
-  // 人工原生验收；S09 的 id→动作映射是跨平台编译的纯决策层，cargo 单测
-  // 即可证明（Windows/Linux 同样跑这组测试 = 决策层行为不受平台影响）。
-  "DAS-R18-S01": ATTEST("DAS-R18-S01"),
-  "DAS-R18-S02": ATTEST("DAS-R18-S02"),
-  "DAS-R18-S03": ATTEST("DAS-R18-S03"),
-  "DAS-R18-S04": ATTEST("DAS-R18-S04"),
-  "DAS-R18-S05": ATTEST("DAS-R18-S05"),
-  "DAS-R18-S06": ATTEST("DAS-R18-S06"),
-  "DAS-R18-S07": ATTEST("DAS-R18-S07"),
-  "DAS-R18-S08": ATTEST("DAS-R18-S08"),
-  "DAS-R18-S09": "cargo test -p echo-app --all-features app_menu",
+  // sync-foundation
+"SYN-R01-S01": { command: "node scripts/verify/checks/task-3.10.mjs", evidence: [node("scripts/verify/checks/task-3.10.mjs")], },
+"SYN-R01-S02": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::sync_foundation")], },
+"SYN-R02-S01": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::sync_foundation")], },
+"SYN-R02-S02": { command: "node scripts/verify/checks/task-3.14.mjs", evidence: [node("scripts/verify/checks/task-3.14.mjs")], },
+"SYN-R02-S03": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::sync_foundation")], },
+"SYN-R03-S01": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::sync_foundation")], },
+"SYN-R04-S01": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::sync_payloads_carry_no_absolute_paths")], },
+"SYN-R05-S01": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::sync_foundation")], },
+"SYN-R05-S02": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::sync_foundation")], },
+"SYN-R05-S03": { command: "node scripts/verify/checks/task-3.10.mjs", evidence: [node("scripts/verify/checks/task-3.10.mjs")], },
+"SYN-R06-S01": { command: CORE_ALL, evidence: [rust("crash_during_record_materialization_converges_to_one_record_and_outbox")], },
+"SYN-R06-S02": { command: CORE_ALL, evidence: [rust("library_durability_trusted_sync_retry_restores_exact_baseline_and_pending_without_echo")], },
+"SYN-R06-S03": { command: CORE_ALL, evidence: [rust("library_durability_legacy_write_cannot_transfer_confirmation_to_new_value")], },
+"SYN-R06-S04": { command: CORE_ALL, evidence: [rust("library_durability_standalone_playlist_keeps_no_sync_allocations")], },
+"SYN-R07-S01": { command: CORE_ALL, evidence: [rust("library_durability_scoped_key_retains_same_event_across_bindings_and_epochs")], },
+"SYN-R07-S02": { command: CORE_ALL, evidence: [rust("library_durability_local_allocation_unproven_predecessor_never_advances_fences")], },
+"SYN-R07-S03": { command: CORE_ALL, evidence: [rust("confirmed_play_stats_buckets_authorize_exactly_their_recorded_counts")], },
+"SYN-R08-S01": { command: CORE_ALL, evidence: [rust("library_durability_playback_later_session_catches_up_and_rebuild_has_no_echo")], },
+  // desktop-playback
+"DP-R01-S01": { command: PLAYER_ALL, evidence: [rust("guaranteed_formats_each_load_via_real_libmpv"), rust("a_play_load_after_a_primed_paused_load_really_starts_the_clock"), rust("consecutive_loads_then_clean_exit"), rust("cold_restored_playback_advances_after_natural_eof_with_real_libmpv")], },
+"DP-R01-S02": { command: DESK_ALL, evidence: [rust("a_library_song_resolve_failure_clears_stale_progress_facts"), rust("a_rejected_non_local_load_clears_stale_progress_facts"), rust("player::coordinator::tests::error_skips_bad_entry_and_plays_next_sequential")], },
+"DP-R01-S03": { command: "node scripts/verify/checks/task-9.7.mjs", evidence: [node("scripts/verify/checks/task-9.7.mjs")], },
+"DP-R02-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/QueuePanel.test.tsx")], },
+"DP-R02-S02": { command: VITEST_ALL, evidence: [vitest("src/features/player/QueuePanel.test.tsx")], },
+"DP-R02-S03": { command: VITEST_ALL, evidence: [vitest("src/features/player/QueuePanel.test.tsx")], },
+"DP-R02-S04": { command: VITEST_ALL, evidence: [vitest("src/features/player/QueuePanel.test.tsx")], },
+"DP-R02-S05": { command: DESK_ALL, evidence: [rust("player::queue::tests::play_next_lane_is_fifo_and_projection_precedes_normal_entries")], },
+"DP-R02-S06": { command: DESK_ALL, evidence: [rust("player::queue::tests::view_projection_keeps_current_first_and_includes_loop_wrap")], },
+"DP-R02-S07": { command: DESK_ALL, evidence: [rust("player::queue::tests::clear_pending_keeps_current_and_history")], },
+"DP-R02-S08": { command: DESK_ALL, evidence: [rust("promote_does_not_fold_ordinary_duplicates_or_current")], },
+"DP-R02-S09": { command: DESK_ALL, evidence: [rust("priority_lane_physical_contiguity")], },
+"DP-R02-S10": { command: DESK_ALL, evidence: [rust("restore_with_duplicate_lane_ids_for_one_song_collapses_on_promote")], },
+"DP-R02-S11": { command: DESK_ALL, evidence: [rust("promote_does_not_fold_ordinary_duplicates_or_current")], },
+"DP-R02-S12": { command: DESK_ALL, evidence: [rust("play_next_lane_is_fifo_and_projection_precedes_normal_entries")], },
+"DP-R02-S13": { command: DESK_ALL, evidence: [rust("clear_pending_keeps_only_current_even_after_loop_wrap")], },
+"DP-R02-S14": { command: DESK_ALL, evidence: [rust("priority_lane_round_trips_through_snapshot_and_rebuild")], },
+"DP-R03-S01": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::mode_switch_keeps_current_item")], },
+"DP-R03-S02": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::next_advances_in_order")], },
+"DP-R03-S03": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::previous_moves_back_within_5_seconds")], },
+  "DP-R03-S04": { command: ATTEST("DP-R03-S04"), evidence: [attest("DP-R03-S04")] },
+"DP-R04-S01": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::error_skips_bad_entry_and_plays_next_sequential")], },
+"DP-R04-S02": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::error_advance_all_bad_stops_without_spin")], },
+"DP-R04-S03": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::error_advance_never_retries_same_entry_in_round")], },
+"DP-R04-S04": { command: DESK_ALL, evidence: [rust("repeat_one")], },
+"DP-R04-S05": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::mode_switch_keeps_current_item")], },
+"DP-R04-S06": { command: DESK_ALL, evidence: [rust("_through_coordinator")], },
+"DP-R05-S01": { command: "node scripts/verify/checks/task-9.2.mjs", evidence: [node("scripts/verify/checks/task-9.2.mjs")], },
+"DP-R05-S02": { command: "node scripts/verify/checks/task-11.7.mjs", evidence: [node("scripts/verify/checks/task-11.7.mjs")], },
+"DP-R05-S03": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::recovered_blocked_entry_becomes_eligible_after_retry")], },
+"DP-R06-S01": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::playback_sessions_are_idempotent")], },
+"DP-R06-S02": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::playback_sessions_are_idempotent")], },
+"DP-R06-S03": { command: DESK_ALL, evidence: [rust("entering_loading_starts_without_stale_progress_facts")], },
+"DP-R06-S04": { command: DESK_ALL, evidence: [rust("file_loaded_still_drives_progress_from_mpv_reports")], },
+"DP-R07-S01": { command: DESK_ALL, evidence: [rust("platform::local_state")], },
+"DP-R07-S02": { command: "cargo test -p echo-desktop --all-features && pnpm --filter @echo/desktop test -- --run --reporter=verbose", evidence: [rust("player::coordinator::tests::play_temporary_is_session_only"), rust("stats_recorder_never_records_temporary_items"), vitest("src/features/player/PlayerBar.test.tsx")], },
+"DP-R07-S03": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::importing_current_temporary_entry_replaces_it_in_place_and_resumes_playing")], },
+"DP-R07-S04": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::importing_current_temporary_entry_preserves_pause_and_rejects_stale_completion")], },
+"DP-R08-S01": { command: "node scripts/verify/checks/task-9.4.mjs", evidence: [node("scripts/verify/checks/task-9.4.mjs")], },
+"DP-R08-S02": { command: VITEST_ALL, evidence: [vitest("src/player/useGlobalPlayerHotkeys.test.tsx")], },
+"DP-R09-S01": { command: "node scripts/verify/checks/task-9.3.mjs", evidence: [node("scripts/verify/checks/task-9.3.mjs")], },
+"DP-R09-S02": { command: "node scripts/verify/checks/task-9.3.mjs", evidence: [node("scripts/verify/checks/task-9.3.mjs")], },
+"DP-R09-S03": { command: "node scripts/verify/checks/task-9.6.mjs", evidence: [node("scripts/verify/checks/task-9.6.mjs")], },
+"DP-R10-S01": { command: "node scripts/verify/checks/task-9.4.mjs", evidence: [node("scripts/verify/checks/task-9.4.mjs")], },
+"DP-R10-S02": { command: "node scripts/verify/checks/task-11.8.mjs", evidence: [node("scripts/verify/checks/task-11.8.mjs")], },
+"DP-R11-S01": { command: DESK_ALL, evidence: [rust("player::queue::tests::previous_in_loop_walks_the_context_backwards_and_wraps_to_the_tail")], },
+"DP-R11-S02": { command: DESK_ALL, evidence: [rust("player::queue::tests::previous_returns_history_entry")], },
+"DP-R11-S03": { command: DESK_ALL, evidence: [rust("player::session::tests::state_store_save_load_round_trip_is_atomic_and_clears")], },
+"DP-R12-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx", "with a neutral button")], },
+"DP-R12-S02": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx", "while the theme changes")], },
+"DP-R12-S03": { command: DESK_ALL, evidence: [rust("restore_keeps_fresh_history_and_counts_only_blocked_entries")], },
+"DP-R12-S04": { command: DESK_ALL, evidence: [rust("player::session::tests::restore_keeps_fresh_history_and_counts_only_blocked_entries")], },
+"DP-R12-S05": { command: DESK_ALL, evidence: [rust("player::deletion::tests::rollback_restores_timestamped_history_so_previous_remains_available")], },
+"DP-R13-S01": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::restore_session_recovers_queue_mode_and_settings_paused")], },
+"DP-R13-S02": { command: CORE_ALL, evidence: [rust("playback_restore")], },
+"DP-R14-S01": { command: CORE_ALL, evidence: [rust("application::playback_context::tests::resolves_all_pages_and_validates_selected_song")], },
+"DP-R14-S02": { command: CORE_ALL, evidence: [rust("application::playback_context::tests::recent_filters_case_insensitively_and_rejects_absent_selection")], },
+"DP-R15-S01": { command: CORE_ALL, evidence: [rust("application::playback_context::tests::resolves_all_pages_and_validates_selected_song")], },
+"DP-R15-S02": { command: CORE_ALL, evidence: [rust("application::playback_context::tests::recent_filters_case_insensitively_and_rejects_absent_selection")], },
+"DP-R15-S03": { command: CORE_ALL, evidence: [rust("application::playback_context::tests::playlist_uses_newest_member_first")], },
+"DP-R15-S04": { command: CORE_ALL, evidence: [rust("application::playback_context::tests::unknown_library_view_is_rejected_in_core")], },
+"DP-R16-S01": { command: DESK_ALL, evidence: [rust("restore_or_prime_primes_the_first_song_of_the_default_view")], },
+"DP-R16-S02": { command: DESK_ALL, evidence: [rust("restore_or_prime_replaces_a_dropped_current_with_the_newest_candidate")], },
+"DP-R16-S03": { command: DESK_ALL, evidence: [rust("restore_or_prime_yields_an_empty_bar_for_an_empty_library")], },
+"DP-R16-S04": { command: DESK_ALL, evidence: [rust("restore_session_recovers_queue_mode_and_settings_paused")], },
+"DP-R17-S01": { command: DESK_ALL, evidence: [rust("prime_context_paused_preserves_settings_without_playing")], },
+"DP-R18-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx")], },
+"DP-R18-S02": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx")], },
 
-  // DAS-R19: Windows 无边框窗口与自绘窗口控件（issue #76）。S01 无原生标题栏
-  // 是真机视觉验收（装饰、缩放边、Snap 均由系统窗口管理器提供）；S02/S04 由
-  // WindowControls 组件套件证明（含平台门两分支与窗口态图标跟随）；S03 的双
-  // 击最大化由 Tauri 注入的 drag-region 处理器承担，`internal_toggle_maximize`
-  // 权限含于 core:window:default，用 security 套件锁定该契约；S05 是配置与
-  // 权限一致性漂移门禁（Windows 配置不漂移 + capability 最小集）。
-  "DAS-R19-S01": ATTEST("DAS-R19-S01"),
-  "DAS-R19-S02": REACT("src/app/WindowControls.test.tsx"),
-  "DAS-R19-S03": "cargo test -p echo-desktop --all-features platform::security",
-  "DAS-R19-S04": REACT_T("src/app/WindowControls.test.tsx", "renders nothing outside the Windows platform"),
-  "DAS-R19-S05": "cargo test -p echo-desktop --all-features platform::security",
+  // immersive-lyrics
+"IL-R01-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx")], },
+"IL-R01-S02": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx")], },
+"IL-R01-S03": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx")], },
+"IL-R02-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx")], },
+"IL-R02-S02": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx")], },
+"IL-R02-S03": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
+"IL-R03-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
+"IL-R03-S02": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
+"IL-R03-S03": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
+"IL-R04-S01": { command: CORE_ALL, evidence: [rust("lyrics")], },
+"IL-R04-S02": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
+"IL-R04-S03": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
+"IL-R04-S04": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
+"IL-R05-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
+"IL-R05-S02": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
+"IL-R05-S03": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
+"IL-R06-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
+"IL-R06-S02": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
+"IL-R06-S03": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
+"IL-R07-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
+"IL-R07-S02": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
+"IL-R07-S03": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx")], },
+"IL-R08-S01": { command: VITEST_ALL, evidence: [vitest("src/app/overlays.test.tsx")], },
+"IL-R08-S02": { command: VITEST_ALL, evidence: [vitest("src/app/overlays.test.tsx")], },
+"IL-R08-S03": { command: VITEST_ALL, evidence: [vitest("src/app/overlays.test.tsx")], },
+"IL-R09-S01": { command: "node scripts/verify/checks/task-12.4.mjs", evidence: [node("scripts/verify/checks/task-12.4.mjs")], },
+"IL-R09-S02": { command: "node scripts/verify/checks/task-12.4.mjs", evidence: [node("scripts/verify/checks/task-12.4.mjs")], },
+"IL-R09-S03": { command: "node scripts/verify/checks/task-12.4.mjs", evidence: [node("scripts/verify/checks/task-12.4.mjs")], },
+"IL-R10-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/useLyricsStartOffset.test.tsx", "re-observes when the signature changes")], },
+"IL-R10-S02": { command: VITEST_ALL, evidence: [vitest("src/features/player/useLyricsStartOffset.test.tsx", "re-measures when the info block resizes (ResizeObserver)")], },
+"IL-R10-S03": { command: VITEST_ALL, evidence: [vitest("src/features/player/useLyricsStartOffset.test.tsx", "re-measures on window resize")], },
+"IL-R10-S04": { command: VITEST_ALL, evidence: [vitest("src/features/player/useLyricsStartOffset.test.tsx", "measures the metadata's height while the previous offset is still laid out")], },
+  // library-experience
+"LE-R01-S01": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::catalog_all_songs_view")], },
+"LE-R01-S02": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::catalog_search_no_results")], },
+"LE-R01-S03": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::catalog_repository_gate_empty")], },
+"LE-R01-S04": { command: VITEST_ALL, evidence: [vitest("src/features/library/CollectionDirectory.test.tsx")], },
+"LE-R01-S05": { command: VITEST_ALL, evidence: [vitest("src/features/library/LibraryWorkspace.test.tsx", "clears the search when switching between library views")], },
+"LE-R01-S06": { command: VITEST_ALL, evidence: [vitest("src/features/library/CollectionDirectory.test.tsx", "clears the search when switching between artist and album directories")], },
+"LE-R02-S01": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::catalog_search_matches_full_query")], },
+"LE-R02-S02": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::catalog_search_empty_query")], },
+"LE-R02-S03": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongList.test.tsx")], },
+"LE-R02-S04": { command: VITEST_ALL, evidence: [vitest("src/features/library/useSongs.test.tsx")], },
+"LE-R02-S05": { command: VITEST_ALL, evidence: [vitest("src/features/library/useSongs.test.tsx")], },
+"LE-R03-S01": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::catalog_all_songs_keyset_pages")], },
+"LE-R03-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/songSortControl.test.tsx", "uses 歌手 terminology, offers 专辑, and updates the selected sort")], },
+"LE-R03-S03": { command: VITEST_ALL, evidence: [vitest("src/features/library/songSortControl.test.tsx", "uses 歌手 terminology, offers 专辑, and updates the selected sort")], },
+"LE-R03-S04": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::catalog_favorites_view")], },
+"LE-R03-S05": { command: CORE_ALL, evidence: [rust("infrastructure::sqlite::tests::catalog_recent_100")], },
+"LE-R03-S06": { command: VITEST_ALL, evidence: [vitest("src/features/library/songSortControl.test.tsx", "retains the existing artist preference and restores the album preference")], },
+"LE-R04-S01": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongList.test.tsx")], },
+"LE-R04-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongMenu.test.tsx")], },
+"LE-R05-S01": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongMenu.test.tsx")], },
+"LE-R05-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongMenu.test.tsx")], },
+"LE-R05-S03": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongMenu.test.tsx")], },
+"LE-R06-S01": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongList.test.tsx")], },
+"LE-R06-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongList.test.tsx")], },
+"LE-R06-S03": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongList.test.tsx")], },
+"LE-R06-S04": { command: CORE_ALL, evidence: [rust("application::scan::tests::relink::enumerate_failure_marks_run_failed_without_missing")], },
+"LE-R06-S05": { command: "node scripts/verify/checks/task-9.5.mjs", evidence: [node("scripts/verify/checks/task-9.5.mjs")], },
+"LE-R06-S06": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongMenu.test.tsx", "dispatches delete and shows the 10-second undo affordance on success")], },
+"LE-R06-S07": { command: CORE_ALL, evidence: [rust("trash::tests::explicit_system_trash_success_persists_applied_then_finalizes")], },
+"LE-R06-S08": { command: CORE_ALL, evidence: [rust("trash::tests::system_trash_failure_keeps_the_verified_staging_for_retry")], },
+"LE-R06-S09": { command: CORE_ALL, evidence: [rust("trash::tests::post_call_trash_error_rechecks_missing_staging_and_stops_other_operations")], },
+"LE-R06-S10": { command: "node scripts/verify/checks/task-12.7.mjs", evidence: [node("scripts/verify/checks/task-12.7.mjs")], },
+"LE-R06-S11": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongMenu.test.tsx")], },
+"LE-R06-S12": { command: VITEST_ALL, evidence: [vitest("src/features/library/batchLibraryOperations.test.tsx")], },
+"LE-R06-S13": { command: VITEST_ALL, evidence: [vitest("src/features/library/LibraryWorkspace.test.tsx", "右键打开的菜单仍由面板外按压和 Escape 收起")], },
+"LE-R07-S01": { command: "cargo test -p echo-core --all-features bench_50k_search_and_first_screen_p95_meet_prd_budgets -- --ignored", evidence: [rust("bench_50k_search_and_first_screen_p95_meet_prd_budgets")], },
+"LE-R07-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongList.test.tsx")], },
+"LE-R07-S03": { command: VITEST_ALL, evidence: [vitest("src/features/library/CollectionDirectory.test.tsx", "shows artist cards and reuses the library song table with selection in the detail")], },
+  "LE-R07-S04": { command: ATTEST("LE-R07-S04"), evidence: [attest("LE-R07-S04")] },
+"LE-R07-S05": { command: VITEST_ALL, evidence: [vitest("src/features/library/batchLibraryOperations.test.tsx")], },
+"LE-R07-S06": { command: VITEST_ALL, evidence: [vitest("src/features/library/useSongSelection.test.tsx")], },
+"LE-R07-S07": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongList.test.tsx", "restores a controlled bulk selection after a virtual row leaves and re-enters")], },
+"LE-R07-S08": { command: VITEST_ALL, evidence: [vitest("src/features/library/useSongSelection.test.tsx", "clears when the view/query selection scope changes")], },
+"LE-R07-S09": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongList.test.tsx")], },
+"LE-R08-S01": { command: VITEST_ALL, evidence: [vitest("src/features/library/libraryNavCounts.test.tsx")], },
+"LE-R08-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/libraryNavCounts.test.tsx")], },
+"LE-R08-S03": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx")], },
+"LE-R08-S04": { command: VITEST_ALL, evidence: [vitest("src/features/library/batchOperations.test.ts")], },
+"LE-R08-S05": { command: VITEST_ALL, evidence: [vitest("src/features/library/batchLibraryOperations.test.tsx")], },
+"LE-R08-S06": { command: VITEST_ALL, evidence: [vitest("src/features/library/batchOperations.test.ts")], },
+"LE-R08-S07": { command: VITEST_ALL, evidence: [vitest("src/features/library/BatchSongActions.test.tsx")], },
+"LE-R08-S08": { command: VITEST_ALL, evidence: [vitest("src/features/library/batchLibraryOperations.test.tsx")], },
+"LE-R09-S01": { command: VITEST_ALL, evidence: [vitest("src/features/library/libraryNavCounts.test.tsx")], },
+"LE-R09-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/libraryNavCounts.test.tsx")], },
+"LE-R09-S03": { command: VITEST_ALL, evidence: [vitest("src/features/library/libraryNavCounts.test.tsx")], },
+"LE-R09-S04": { command: VITEST_ALL, evidence: [vitest("src/features/library/libraryNavCounts.test.tsx")], },
+"LE-R10-S01": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongList.test.tsx", "renders only a viewport slice of a 50,000-song library, not all rows")], },
+"LE-R10-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongList.test.tsx", "keeps rows keyed by stable SongId at their absolute position")], },
+"LE-R11-S01": { command: VITEST_ALL, evidence: [vitest("src/features/library/libraryNavCounts.test.tsx", "shows 喜欢的音乐's count without the user ever opening that view")], },
+"LE-R11-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/libraryNavCounts.test.tsx", "prints the backend total, not the number of rows the page loaded")], },
+"LE-R11-S03": { command: CORE_ALL, evidence: [rust("catalog_counts_match_view_membership_over_sqlite")], },
+  "LE-R11-S04": { command: ATTEST("LE-R11-S04"), evidence: [attest("LE-R11-S04")] },
+"LE-R12-S01": { command: VITEST_ALL, evidence: [vitest("src/features/library/useSongs.test.tsx", "keeps the full query total stable while loading another page")], },
+"LE-R12-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/useSongs.test.tsx", "uses the filtered favorites search total")], },
+"LE-R12-S03": { command: CORE_ALL, evidence: [rust("catalog_search_pages_deterministically_across_large_library")], },
+"LE-R12-S04": { command: VITEST_ALL, evidence: [vitest("src/features/library/useSongs.test.tsx", "keeps the full query total stable while loading another page")], },
+"LE-R12-S05": { command: VITEST_ALL, evidence: [vitest("src/features/library/useSongs.test.tsx", "sends normalized search through the recent view command")], },
+  "LE-R13-S01": { command: ATTEST("LE-R13-S01"), evidence: [attest("LE-R13-S01")] },
+  "LE-R13-S02": { command: ATTEST("LE-R13-S02"), evidence: [attest("LE-R13-S02")] },
+  "LE-R13-S03": { command: ATTEST("LE-R13-S03"), evidence: [attest("LE-R13-S03")] },
+  "LE-R13-S04": { command: ATTEST("LE-R13-S04"), evidence: [attest("LE-R13-S04")] },
+  "LE-R13-S05": { command: ATTEST("LE-R13-S05"), evidence: [attest("LE-R13-S05")] },
+  "LE-R14-S01": { command: ATTEST("LE-R14-S01"), evidence: [attest("LE-R14-S01")] },
+  "LE-R14-S02": { command: ATTEST("LE-R14-S02"), evidence: [attest("LE-R14-S02")] },
+  "LE-R14-S03": { command: ATTEST("LE-R14-S03"), evidence: [attest("LE-R14-S03")] },
+  "LE-R15-S01": { command: ATTEST("LE-R15-S01"), evidence: [attest("LE-R15-S01")] },
+  "LE-R15-S02": { command: ATTEST("LE-R15-S02"), evidence: [attest("LE-R15-S02")] },
+  "LE-R15-S03": { command: ATTEST("LE-R15-S03"), evidence: [attest("LE-R15-S03")] },
+  "LE-R16-S01": { command: ATTEST("LE-R16-S01"), evidence: [attest("LE-R16-S01")] },
+  "LE-R16-S02": { command: ATTEST("LE-R16-S02"), evidence: [attest("LE-R16-S02")] },
+  "LE-R16-S03": { command: ATTEST("LE-R16-S03"), evidence: [attest("LE-R16-S03")] },
+  "LE-R16-S04": { command: ATTEST("LE-R16-S04"), evidence: [attest("LE-R16-S04")] },
+  "LE-R16-S05": { command: ATTEST("LE-R16-S05"), evidence: [attest("LE-R16-S05")] },
+  "LE-R16-S06": { command: ATTEST("LE-R16-S06"), evidence: [attest("LE-R16-S06")] },
+  "LE-R17-S01": { command: ATTEST("LE-R17-S01"), evidence: [attest("LE-R17-S01")] },
+  "LE-R17-S02": { command: ATTEST("LE-R17-S02"), evidence: [attest("LE-R17-S02")] },
+  "LE-R17-S03": { command: ATTEST("LE-R17-S03"), evidence: [attest("LE-R17-S03")] },
+"LE-R18-S01": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "searches within the current playlist through the scoped search command")], },
+"LE-R18-S02": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "restores the full member list when the search is cleared")], },
+"LE-R18-S03": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "shows the playlist search empty state with a clear action on no hit")], },
+"LE-R18-S04": { command: VITEST_ALL, evidence: [vitest("src/features/library/useSongs.test.ts", "playlistId 变化触发新的抓取请求（缓存键区分布同歌单）")], },
+"LE-R18-S05": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "appends the next page when the playlist search spills past one page")], },
+"LE-R18-S06": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "stops requesting pages once the playlist search reaches the last page")], },
+"LE-R18-S07": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "appends the next page when the playlist search spills past one page")], },
+"LE-R18-S08": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "discards a continuation page from a superseded playlist search")], },
+"LE-R18-S09": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "appends the next page when the playlist search spills past one page")], },
+"LE-R19-S01": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongList.test.tsx", "scrolls the matched song row to the top of the visible area")], },
+"LE-R19-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/favoriteSync.test.tsx", "voices 当前没有正在播放的歌曲")], },
+"LE-R19-S03": { command: VITEST_ALL, evidence: [vitest("src/features/library/favoriteSync.test.tsx", "voices 当前歌曲不在此列表中")], },
+"LE-R19-S04": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongList.test.tsx", "clamps an end-of-list target to the last reachable position")], },
+  "LE-R19-S05": { command: ATTEST("LE-R19-S05"), evidence: [attest("LE-R19-S05")] },
+"LE-R20-S01": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/AddToPlaylistDialog.test.tsx", "preselects existing memberships read-only and submits only new targets")], },
+"LE-R20-S02": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/AddToPlaylistDialog.test.tsx", "falls back to additive selection with a visible warning")], },
+"LE-R20-S03": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/AddToPlaylistDialog.test.tsx", "runs a multi-song add sequentially and keeps partial failures visible")], },
+"LE-R20-S04": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/AddToPlaylistDialog.test.tsx", "closes unchanged single-song selection without a mutation")], },
+"LE-R21-S01": { command: CORE_ALL, evidence: [rust("library_durability_favorite_failure_is_saved_and_later_false_catches_up")], },
+"LE-R21-S02": { command: PERF_ALL, evidence: [rust("completed_local_edit_latency")], },
+"LE-R21-S03": { command: CORE_ALL, evidence: [rust("library_durability_refused_commit_leaves_every_wired_entrypoint_untouched")], },
+"LE-R21-S04": { command: VITEST_ALL, evidence: [vitest("src/features/library/savedPendingFeedback.test.tsx", "reports each batch item's own outcome and retries only the saved ones")], },
+"LE-R21-S05": { command: CORE_ALL, evidence: [rust("library_durability_retry_catches_up_all_saved_operations_without_new_commits")], },
 
-  // ===== desktop-playback (DP) =====, // （重编号自 DAS-R15-S01）
+  // playlist-management
+"PM-R01-S01": { command: CORE_ALL, evidence: [rust("playlist")], },
+"PM-R01-S02": { command: CORE_ALL, evidence: [rust("playlist")], },
+"PM-R01-S03": { command: CORE_ALL, evidence: [rust("playlist")], },
+"PM-R01-S04": { command: CORE_ALL, evidence: [rust("playlist")], },
+"PM-R01-S05": { command: CORE_ALL, evidence: [rust("delete_owns_playlist_and_members_but_not_songs_or_other_playlists")], },
+"PM-R02-S01": { command: CORE_ALL, evidence: [rust("playlist")], },
+"PM-R02-S02": { command: CORE_ALL, evidence: [rust("playlist")], },
+"PM-R03-S01": { command: CORE_ALL, evidence: [rust("playlist")], },
+"PM-R03-S02": { command: CORE_ALL, evidence: [rust("playlist")], },
+"PM-R03-S03": { command: CORE_ALL, evidence: [rust("playlist")], },
+"PM-R03-S04": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "opens the add-to-playlist picker from a member's song menu")], },
+"PM-R03-S05": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "keeps 添加到歌单 disabled for a read-only playlist")], },
+"PM-R03-S06": { command: CORE_ALL, evidence: [rust("add_to_multiple_playlists_is_atomic_and_idempotent")], },
+"PM-R03-S07": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/AddToPlaylistDialog.test.tsx", "runs a multi-song add sequentially and keeps partial failures visible")], },
+"PM-R04-S01": { command: CORE_ALL, evidence: [rust("playlist")], },
+"PM-R04-S02": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "removes the selected members one by one and refreshes the playlist")], },
+"PM-R04-S03": { command: VITEST_ALL, evidence: [vitest("src/features/library/batchOperations.test.ts")], },
+"PM-R05-S01": { command: CORE_ALL, evidence: [rust("playlist_missing_members_stay_visible")], },
+"PM-R05-S02": { command: CORE_ALL, evidence: [rust("playlist_missing_members_stay_visible")], },
+"PM-R05-S03": { command: CORE_ALL, evidence: [rust("echo_delete_finalize_cascades_memberships")], },
+"PM-R05-S04": { command: CORE_ALL, evidence: [rust("playlist")], },
+"PM-R05-S05": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "refreshes the sidebar after a batch delete and its undo")], },
+"PM-R05-S06": { command: CORE_ALL, evidence: [rust("playlist_missing_members_stay_visible_and_recover_without_duplicates")], },
+"PM-R06-S01": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "keeps the member in place")], },
+"PM-R06-S02": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "never claims")], },
+"PM-R06-S03": { command: VITEST_ALL, evidence: [vitest("src/features/library/batchOperations.test.ts")], },
+"PM-R07-S01": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/AddToPlaylistDialog.test.tsx")], },
+"PM-R07-S02": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx")], },
+"PM-R07-S03": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/AddToPlaylistDialog.test.tsx")], },
+"PM-R07-S04": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/AddToPlaylistDialog.test.tsx")], },
+  "PM-R08-S01": { command: ATTEST("PM-R08-S01"), evidence: [attest("PM-R08-S01")] },
+  "PM-R08-S02": { command: ATTEST("PM-R08-S02"), evidence: [attest("PM-R08-S02")] },
+  "PM-R08-S03": { command: ATTEST("PM-R08-S03"), evidence: [attest("PM-R08-S03")] },
+  "PM-R08-S04": { command: ATTEST("PM-R08-S04"), evidence: [attest("PM-R08-S04")] },
+"PM-R09-S01": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "searches within the current playlist")], },
+"PM-R09-S02": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "restores the full member list when the search is cleared")], },
+"PM-R09-S03": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "appends the next page when the playlist search spills past one page")], },
+"PM-R09-S04": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "stops requesting pages once the playlist search reaches the last page")], },
+"PM-R09-S05": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "clears the search when switching to another playlist")], },
+"PM-R10-S01": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "rolls to a playing member of the playlist without a toast")], },
+"PM-R10-S02": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistsView.test.tsx", "voices 当前")], },
+"PM-R11-S01": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/AddToPlaylistDialog.test.tsx", "preselects existing memberships read-only and submits only new targets")], },
+"PM-R11-S02": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/AddToPlaylistDialog.test.tsx", "preselects existing memberships read-only and submits only new targets")], },
+"PM-R11-S03": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/AddToPlaylistDialog.test.tsx", "closes unchanged single-song selection without a mutation")], },
+"PM-R11-S04": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/AddToPlaylistDialog.test.tsx", "runs a multi-song add sequentially and keeps partial failures visible")], },
+"PM-R12-S01": { command: CORE_ALL, evidence: [rust("playlists_for_song_reads_membership_ids_from_the_active_database")], },
+"PM-R12-S02": { command: CORE_ALL, evidence: [rust("playlists_for_song_reads_membership_ids_from_the_active_database")], },
+"PM-R12-S03": { command: CORE_ALL, evidence: [rust("playlists_for_song_reads_membership_ids_from_the_active_database")], },
+"PM-R13-S01": { command: CORE_ALL, evidence: [rust("library_durability_playlist_create_retry_after_saved_pending_keeps_operation_identity")], },
+"PM-R13-S02": { command: CORE_ALL, evidence: [rust("library_durability_member_append_is_saved_before_failed_projection")], },
+"PM-R13-S03": { command: CORE_ALL, evidence: [rust("library_durability_playlist_rename_saves_before_failed_projection")], },
+"PM-R13-S04": { command: CORE_ALL, evidence: [rust("consecutive_multi_song_add_keeps_every_membership")], },
+"PM-R13-S05": { command: PERF_ALL, evidence: [rust("completed_local_edit_latency")], },
+"PM-R13-S06": { command: CORE_ALL, evidence: [rust("final_tombstone_is_never_recovered_but_history_can_be_dismissed")], },
+  // ci-release-pipeline (CRP)
+  // release.yml executes these behaviors end-to-end (per-platform `pnpm echo
+  // release`, artifact/SHA256SUMS assertions, upload/download, gh-release); the
+  // structural drift gate keeps the domain inside the three-way reconciliation
+  // without recursing into task-13.9, which is itself a scenario command.
+"CRP-R01-S01": { command: "node scripts/verify/checks/task-crp.mjs", evidence: [node("scripts/verify/checks/task-crp.mjs")], },
+"CRP-R01-S02": { command: "node scripts/verify/checks/task-crp.mjs", evidence: [node("scripts/verify/checks/task-crp.mjs")], },
+"CRP-R01-S03": { command: "node scripts/verify/checks/task-crp.mjs", evidence: [node("scripts/verify/checks/task-crp.mjs")], },
+"CRP-R02-S01": { command: "node scripts/verify/checks/task-crp.mjs", evidence: [node("scripts/verify/checks/task-crp.mjs")], },
+"CRP-R02-S02": { command: "node scripts/verify/checks/task-crp.mjs", evidence: [node("scripts/verify/checks/task-crp.mjs")], },
+"CRP-R02-S03": { command: "node scripts/verify/checks/task-crp.mjs", evidence: [node("scripts/verify/checks/task-crp.mjs")], },
+"CRP-R03-S01": { command: "node scripts/verify/checks/task-crp.mjs", evidence: [node("scripts/verify/checks/task-crp.mjs")], },
+"CRP-R03-S02": { command: "node scripts/verify/checks/task-crp.mjs", evidence: [node("scripts/verify/checks/task-crp.mjs")], },
+"CRP-R04-S01": { command: "node scripts/verify/checks/task-crp.mjs", evidence: [node("scripts/verify/checks/task-crp.mjs")], },
+"CRP-R04-S02": { command: "node scripts/verify/checks/task-crp.mjs", evidence: [node("scripts/verify/checks/task-crp.mjs")], },
+"CRP-R05-S01": { command: "node scripts/verify/checks/task-crp.mjs", evidence: [node("scripts/verify/checks/task-crp.mjs")], },
+"CRP-R05-S02": { command: "node scripts/verify/checks/task-crp.mjs", evidence: [node("scripts/verify/checks/task-crp.mjs")], },
 
-  // ===== desktop-playback =====
-  "DP-R01-S01": "cargo test -p echo-desktop --all-features --test player_smoke",
-  "DP-R01-S02": "cargo test -p echo-desktop --all-features --test player_smoke",
-  // 平台播放后端缺失: the per-platform libmpv resolution contract and its
-  // explicit-error path are asserted by task-9.7 (the three-platform Gate).
-  "DP-R01-S03": "node scripts/verify/checks/task-9.7.mjs",
-  // Overlap is fine: both R01 scenarios resolve to the real-libmpv smoke suite.,
-  "DP-R02-S01": REACT("src/features/player/QueuePanel.test.tsx"),
-  "DP-R02-S02": REACT("src/features/player/QueuePanel.test.tsx"),
-  "DP-R02-S03": REACT("src/features/player/QueuePanel.test.tsx"),
-  "DP-R02-S04": REACT("src/features/player/QueuePanel.test.tsx"),
-  // R02-S05..S07 were never registered and therefore fell through the
-  // `COMMANDS[id] || ATTEST(id)` fallback, reading as "needs an operator" when
-  // nobody had judged them at all. The queue suite proves each THEN clause:
-  // play-next lane order, the current entry pinned first with the loop wrap
-  // last, and clear-pending keeping the current song. Judged in
-  // docs/native-attestation-playbook.md.,
-  "DP-R02-S05": DESK("player::queue::tests::play_next_lane_is_fifo_and_projection_precedes_normal_entries"),
-  "DP-R02-S06": DESK("player::queue::tests::view_projection_keeps_current_first_and_includes_loop_wrap"),
-  "DP-R02-S07": DESK("player::queue::tests::clear_pending_keeps_current_and_history"),
-  "DP-R02-S08": "cargo test -p echo-desktop --all-features promote_does_not_fold_ordinary_duplicates_or_current", // 新增命令: 提升不重复展开普通待播（优先区提升不折叠普通入队/当前曲）
-  "DP-R02-S09": "cargo test -p echo-desktop --all-features priority_lane_physical_contiguity", // 新增命令: 优先区物理连续（当前曲后紧邻切片）
-  "DP-R02-S10": "cargo test -p echo-desktop --all-features restore_with_duplicate_lane_ids_for_one_song_collapses_on_promote", // 新增命令: 优先区重复副本清理（同歌重复 lane id 合并）
-  "DP-R02-S11": "cargo test -p echo-desktop --all-features promote_does_not_fold_ordinary_duplicates_or_current", // 新增命令: 去重判据不覆盖普通入队（普通重复保留、当前曲提升为空操作）
-  "DP-R02-S12": "cargo test -p echo-desktop --all-features play_next_lane_is_fifo_and_projection_precedes_normal_entries", // 新增命令: 优先区消费（FIFO 播放，投影领先普通条目）
-  "DP-R02-S13": "cargo test -p echo-desktop --all-features clear_pending_keeps_only_current_even_after_loop_wrap", // 新增命令: 清空队列（clear_pending 仅留当前曲）
-  "DP-R02-S14": "cargo test -p echo-desktop --all-features priority_lane_round_trips_through_snapshot_and_rebuild", // 新增命令: 会话恢复的优先区（快照往返重建）
-  "DP-R03-S01": DESK("player::coordinator::tests::mode_switch_keeps_current_item"),
-  "DP-R03-S02": DESK("player::coordinator::tests::next_advances_in_order"),
-  "DP-R03-S03": DESK("player::coordinator::tests::previous_moves_back_within_5_seconds"),
-  "DP-R03-S04": "node scripts/verify/checks/check-native-attestation.mjs DP-R03-S04", // 新增命令: 沉浸模式尺寸一致
-  "DP-R04-S01": DESK("player::coordinator::tests::error_skips_bad_entry_and_plays_next_sequential"),
-  "DP-R04-S02": DESK("player::coordinator::tests::error_advance_all_bad_stops_without_spin"),
-  "DP-R04-S03": DESK("player::coordinator::tests::error_advance_never_retries_same_entry_in_round"),
-  // `repeat_one` covers both THEN clauses of R04-S04: natural end replays the
-  // entry, and an explicit next ignores the single-repeat rule.,
-  "DP-R04-S04": DESK("repeat_one"),
-  "DP-R04-S05": DESK("player::coordinator::tests::mode_switch_keeps_current_item"),
-  // 定位和音量 (DP-R04-S06) 的 THEN 是「拖动进度条 / 音量滑块 / 点击静音」三件事,
-  // 所以命令必须同时覆盖三条 —— 只指 seek 那条等于把音量与静音留成未验收。
-  // 这三条 coordinator 级用例共用 `_through_coordinator` 后缀, 且只匹配这三条。,
-  "DP-R04-S06": DESK("_through_coordinator"),
-  "DP-R05-S01": CHECK("9.2"), // file association + temp-item,
-  "DP-R05-S02": CHECK("11.7"),
-  "DP-R05-S03": DESK("player::coordinator::tests::recovered_blocked_entry_becomes_eligible_after_retry"),
-  "DP-R06-S01": COREC("infrastructure::sqlite::tests::playback_sessions_are_idempotent"),
-  "DP-R06-S02": COREC("infrastructure::sqlite::tests::playback_sessions_are_idempotent"),
-  "DP-R06-S03": "cargo test -p echo-desktop --all-features entering_loading_starts_without_stale_progress_facts", // 新增命令: 进入 Loading 时不携带旧进度
-  "DP-R06-S04": "cargo test -p echo-desktop --all-features file_loaded_still_drives_progress_from_mpv_reports", // 新增命令: 加载成功后的进度仍连续
-  "DP-R07-S01": DESK("platform::local_state"),
-  // Phase-one recovery regression: desktop queue/session paths plus the
-  // committed playlist and failure-feedback UI path run as one registered
-  // offline acceptance command.,
-  "DP-R07-S02": "cargo test -p echo-desktop --all-features --lib && pnpm --dir apps/desktop test",
-  // 临时播放项边界 (R07-S03/S04): 当前临时项导入成功后原位替换 queue entry 并
-  // 恢复播放(S03), 导入失败保留原临时 entry 与播放状态(S04), 分别由 coordinator
-  // 的 dedicated 测试证明。,
-  "DP-R07-S03": DESK("player::coordinator::tests::importing_current_temporary_entry_replaces_it_in_place_and_resumes_playing"),
-  "DP-R07-S04": DESK("player::coordinator::tests::importing_current_temporary_entry_preserves_pause_and_rejects_stale_completion"),
-  "DP-R08-S01": CHECK("9.4"),
-  "DP-R08-S02": REACT("src/player/useGlobalPlayerHotkeys.test.tsx"),
-  "DP-R09-S01": CHECK("9.3"),
-  "DP-R09-S02": CHECK("9.3"),
-  "DP-R09-S03": CHECK("9.6"),
-  // The three-day-history and session-restore family: history entry lookup,
-  // snapshot round-trip across a restart, stale-entry filtering, rollback
-  // keeping the timestamped history, and restore landing paused.
-  // 列表循环的"上一首"按上下文取前一项并首项回绕 —— `coordinator/tests.rs` 那条
-  // single-entry 用例只证明"单条目队列重播而不暂停"，证明不了走位与回绕，所以指向
-  // queue 级的那条新用例（见 docs/native-attestation-playbook.md §7.3）。,
-  "DP-R10-S01": "node scripts/verify/checks/task-9.4.mjs", // 新增命令: 使用媒体键
-  "DP-R10-S02": "node scripts/verify/checks/task-11.8.mjs", // 新增命令: 使用应用快捷键
-  "DP-R11-S01": DESK("player::queue::tests::previous_in_loop_walks_the_context_backwards_and_wraps_to_the_tail"),
-  "DP-R11-S02": DESK("player::queue::tests::previous_returns_history_entry"),
-  "DP-R11-S03": DESK("player::session::tests::state_store_save_load_round_trip_is_atomic_and_clears"),
-  "DP-R12-S01": REACT_T("src/features/player/PlayerBar.test.tsx", "with a neutral button"),
-  "DP-R12-S02": REACT_T("src/features/player/PlayerBar.test.tsx", "while the theme changes"),
-  "DP-R12-S03": "cargo test -p echo-desktop --all-features restore_keeps_fresh_history_and_counts_only_blocked_entries", // 新增命令: 三天播放历史跨重启
-  "DP-R12-S04": DESK("player::session::tests::restore_keeps_fresh_history_and_counts_only_blocked_entries"),
-  "DP-R12-S05": DESK("player::deletion::tests::rollback_restores_timestamped_history_so_previous_remains_available"),
-  // DP-R12 非沉浸播放模式视觉语义 — the persistent bar must show 随机播放 with a
-  // neutral style while still reading as selected. PlayerBar.test.tsx pins both
-  // halves in one render: the 喜欢 heart carries `.control.active` (the bar's only
-  // accent-bearing selected class), and the mode button never does — under any
-  // theme. The colour claim is proven through that class, not by asserting on
-  // stylesheet text.,
-  "DP-R13-S01": DESK("player::coordinator::tests::restore_session_recovers_queue_mode_and_settings_paused"),
-  "DP-R13-S02": COREC("playback_restore"),
-  "DP-R14-S01": COREC("application::playback_context::tests::resolves_all_pages_and_validates_selected_song"),
-  "DP-R14-S02": COREC("application::playback_context::tests::recent_filters_case_insensitively_and_rejects_absent_selection"),
-  "DP-R15-S01": "cargo test -p echo-core --all-features application::playback_context::tests::resolves_all_pages_and_validates_selected_song", // 新增命令: 从超过单页上限的资料库视图开始播放
-  "DP-R15-S02": "cargo test -p echo-core --all-features application::playback_context::tests::recent_filters_case_insensitively_and_rejects_absent_selection", // 新增命令: 从最近视图开始播放
-  "DP-R15-S03": COREC("application::playback_context::tests::playlist_uses_newest_member_first"),
-  "DP-R15-S04": COREC("application::playback_context::tests::unknown_library_view_is_rejected_in_core"),
+  // desktop-app-shell
+"DAS-R01-S01": { command: CORE_ALL, evidence: [rust("root_switch::tests::empty_directory_activates")], },
+"DAS-R01-S02": { command: CORE_ALL, evidence: [rust("root_switch::tests::root_level_error_keeps_old_active_root")], },
+"DAS-R01-S03": { command: CORE_ALL, evidence: [rust("root_switch::tests::read_only_root_activates_readonly")], },
+"DAS-R01-S04": { command: CORE_ALL, evidence: [rust("boot::tests::clean_active_root_recovers_idle_and_releases_the_scan_exclusion")], },
+"DAS-R02-S01": { command: VITEST_ALL, evidence: [vitest("src/app/narrow.test.tsx")], },
+"DAS-R02-S02": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongList.test.tsx")], },
+"DAS-R02-S03": { command: "node scripts/verify/checks/task-13.8.mjs", evidence: [node("scripts/verify/checks/task-13.8.mjs")], },
+"DAS-R02-S04": { command: VITEST_ALL, evidence: [vitest("src/features/library/SongRow.test.tsx")], },
+"DAS-R02-S05": { command: "node scripts/verify/checks/task-13.8.mjs", evidence: [node("scripts/verify/checks/task-13.8.mjs")], },
+  "DAS-R02-S06": { command: ATTEST("DAS-R02-S06"), evidence: [attest("DAS-R02-S06")] },
+  "DAS-R02-S07": { command: ATTEST("DAS-R02-S07"), evidence: [attest("DAS-R02-S07")] },
+"DAS-R02-S08": { command: VITEST_ALL, evidence: [vitest("src/app/accessibility.test.tsx")], },
+  "DAS-R02-S09": { command: ATTEST("DAS-R02-S09"), evidence: [attest("DAS-R02-S09")] },
+  "DAS-R02-S10": { command: ATTEST("DAS-R02-S10"), evidence: [attest("DAS-R02-S10")] },
+"DAS-R02-S11": { command: VITEST_ALL, evidence: [vitest("src/features/settings/SettingsView.test.tsx")], },
+"DAS-R02-S12": { command: VITEST_ALL, evidence: [vitest("src/features/settings/SettingsView.test.tsx")], },
+"DAS-R02-S13": { command: VITEST_ALL, evidence: [vitest("src/features/settings/SettingsView.test.tsx")], },
+"DAS-R02-S14": { command: VITEST_ALL, evidence: [vitest("src/features/settings/SettingsView.test.tsx")], },
+"DAS-R02-S15": { command: VITEST_ALL, evidence: [vitest("src/features/settings/SettingsView.test.tsx")], },
+"DAS-R03-S01": { command: VITEST_ALL, evidence: [vitest("src/app/App.test.tsx", "keeps the import entry in the titlebar strip under the playlist view")], },
+"DAS-R03-S02": { command: VITEST_ALL, evidence: [vitest("src/app/App.test.tsx", "keeps the import entry in the titlebar strip under the artist directory")], },
+"DAS-R03-S03": { command: VITEST_ALL, evidence: [vitest("src/app/App.test.tsx", "hides the import entry for a read-only library")], },
+"DAS-R04-S01": { command: DESK_ALL, evidence: [rust("platform::local_state")], },
+"DAS-R04-S02": { command: DESK_ALL, evidence: [rust("platform::local_state")], },
+"DAS-R04-S03": { command: DESK_ALL, evidence: [rust("platform::local_state")], },
+"DAS-R05-S01": { command: "node scripts/verify/checks/task-9.6.mjs", evidence: [node("scripts/verify/checks/task-9.6.mjs")], },
+"DAS-R05-S02": { command: "node scripts/verify/checks/task-9.6.mjs", evidence: [node("scripts/verify/checks/task-9.6.mjs")], },
+"DAS-R05-S03": { command: "node scripts/verify/checks/task-9.6.mjs", evidence: [node("scripts/verify/checks/task-9.6.mjs")], },
+"DAS-R06-S01": { command: "node scripts/verify/checks/task-9.3.mjs", evidence: [node("scripts/verify/checks/task-9.3.mjs")], },
+"DAS-R06-S02": { command: "node scripts/verify/checks/task-9.3.mjs", evidence: [node("scripts/verify/checks/task-9.3.mjs")], },
+"DAS-R06-S03": { command: "node scripts/verify/checks/task-9.3.mjs", evidence: [node("scripts/verify/checks/task-9.3.mjs")], },
+"DAS-R07-S01": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+"DAS-R07-S02": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+"DAS-R07-S03": { command: "node scripts/verify/checks/task-9.1.mjs", evidence: [node("scripts/verify/checks/task-9.1.mjs")], },
+  "DAS-R07-S04": { command: ATTEST("DAS-R07-S04"), evidence: [attest("DAS-R07-S04")] },
+  "DAS-R07-S05": { command: ATTEST("DAS-R07-S05"), evidence: [attest("DAS-R07-S05")] },
+"DAS-R08-S01": { command: VITEST_ALL, evidence: [vitest("src/app/narrow.test.tsx")], },
+"DAS-R08-S02": { command: VITEST_ALL, evidence: [vitest("src/app/overlays.test.tsx")], },
+"DAS-R08-S03": { command: VITEST_ALL, evidence: [vitest("src/app/overlays.test.tsx")], },
+"DAS-R08-S04": { command: VITEST_ALL, evidence: [vitest("src/features/player/QueuePanel.test.tsx")], },
+"DAS-R08-S05": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx")], },
+"DAS-R08-S06": { command: VITEST_ALL, evidence: [vitest("src/app/overlays.test.tsx")], },
+"DAS-R08-S07": { command: VITEST_ALL, evidence: [vitest("src/app/overlays.test.tsx")], },
+"DAS-R08-S08": { command: VITEST_ALL, evidence: [vitest("src/features/player/EffectsPanel.test.tsx")], },
+"DAS-R08-S09": { command: VITEST_ALL, evidence: [vitest("src/features/player/EffectsPanel.test.tsx")], },
+"DAS-R09-S01": { command: VITEST_ALL, evidence: [vitest("src/app/accessibility.test.tsx")], },
+"DAS-R09-S02": { command: VITEST_ALL, evidence: [vitest("src/app/accessibility.test.tsx")], },
+"DAS-R09-S03": { command: VITEST_ALL, evidence: [vitest("src/app/overlays.test.tsx")], },
+"DAS-R09-S04": { command: VITEST_ALL, evidence: [vitest("src/app/overlays.test.tsx")], },
+"DAS-R09-S05": { command: VITEST_ALL, evidence: [vitest("src/features/player/EffectsPanel.test.tsx")], },
+"DAS-R09-S06": { command: VITEST_ALL, evidence: [vitest("src/features/player/EffectsPanel.test.tsx")], },
+"DAS-R09-S07": { command: VITEST_ALL, evidence: [vitest("src/features/player/EffectsPanel.test.tsx")], },
+"DAS-R10-S01": { command: "node scripts/verify/checks/task-13.8.mjs", evidence: [node("scripts/verify/checks/task-13.8.mjs")], },
+"DAS-R10-S02": { command: "node scripts/verify/checks/task-13.8.mjs", evidence: [node("scripts/verify/checks/task-13.8.mjs")], },
+"DAS-R11-S01": { command: "node scripts/verify/checks/task-wire-dialogs.mjs", evidence: [node("scripts/verify/checks/task-wire-dialogs.mjs")], },
+"DAS-R11-S02": { command: "node scripts/verify/checks/task-wire-dialogs.mjs", evidence: [node("scripts/verify/checks/task-wire-dialogs.mjs")], },
+"DAS-R11-S03": { command: "node scripts/verify/checks/task-wire-dialogs.mjs", evidence: [node("scripts/verify/checks/task-wire-dialogs.mjs")], },
+"DAS-R12-S01": { command: VITEST_ALL, evidence: [vitest("src/app/App.test.tsx")], },
+"DAS-R12-S02": { command: VITEST_ALL, evidence: [vitest("src/app/App.test.tsx")], },
+  "DAS-R13-S01": { command: ATTEST("DAS-R13-S01"), evidence: [attest("DAS-R13-S01")] },
+  "DAS-R13-S02": { command: ATTEST("DAS-R13-S02"), evidence: [attest("DAS-R13-S02")] },
+  "DAS-R14-S01": { command: ATTEST("DAS-R14-S01"), evidence: [attest("DAS-R14-S01")] },
+  "DAS-R15-S01": { command: ATTEST("DAS-R15-S01"), evidence: [attest("DAS-R15-S01")] },
+  "DAS-R15-S02": { command: ATTEST("DAS-R15-S02"), evidence: [attest("DAS-R15-S02")] },
+  "DAS-R15-S03": { command: ATTEST("DAS-R15-S03"), evidence: [attest("DAS-R15-S03")] },
+  "DAS-R15-S04": { command: ATTEST("DAS-R15-S04"), evidence: [attest("DAS-R15-S04")] },
+  "DAS-R15-S05": { command: ATTEST("DAS-R15-S05"), evidence: [attest("DAS-R15-S05")] },
+  "DAS-R15-S06": { command: ATTEST("DAS-R15-S06"), evidence: [attest("DAS-R15-S06")] },
+  "DAS-R16-S01": { command: ATTEST("DAS-R16-S01"), evidence: [attest("DAS-R16-S01")] },
+  "DAS-R17-S01": { command: ATTEST("DAS-R17-S01"), evidence: [attest("DAS-R17-S01")] },
+  "DAS-R17-S02": { command: ATTEST("DAS-R17-S02"), evidence: [attest("DAS-R17-S02")] },
+  "DAS-R17-S03": { command: ATTEST("DAS-R17-S03"), evidence: [attest("DAS-R17-S03")] },
+  "DAS-R18-S01": { command: ATTEST("DAS-R18-S01"), evidence: [attest("DAS-R18-S01")] },
+  "DAS-R18-S02": { command: ATTEST("DAS-R18-S02"), evidence: [attest("DAS-R18-S02")] },
+  "DAS-R18-S03": { command: ATTEST("DAS-R18-S03"), evidence: [attest("DAS-R18-S03")] },
+  "DAS-R18-S04": { command: ATTEST("DAS-R18-S04"), evidence: [attest("DAS-R18-S04")] },
+  "DAS-R18-S05": { command: ATTEST("DAS-R18-S05"), evidence: [attest("DAS-R18-S05")] },
+  "DAS-R18-S06": { command: ATTEST("DAS-R18-S06"), evidence: [attest("DAS-R18-S06")] },
+  "DAS-R18-S07": { command: ATTEST("DAS-R18-S07"), evidence: [attest("DAS-R18-S07")] },
+  "DAS-R18-S08": { command: ATTEST("DAS-R18-S08"), evidence: [attest("DAS-R18-S08")] },
+"DAS-R18-S09": { command: APP_ALL, evidence: [rust("app_menu")], },
+  "DAS-R19-S01": { command: ATTEST("DAS-R19-S01"), evidence: [attest("DAS-R19-S01")] },
+"DAS-R19-S02": { command: VITEST_ALL, evidence: [vitest("src/app/WindowControls.test.tsx")], },
+"DAS-R19-S03": { command: DESK_ALL, evidence: [rust("platform::security")], },
+"DAS-R19-S04": { command: VITEST_ALL, evidence: [vitest("src/app/WindowControls.test.tsx", "renders nothing outside the Windows platform")], },
+"DAS-R19-S05": { command: DESK_ALL, evidence: [rust("platform::security")], },
 
-  // ===== immersive-lyrics (IL) =====,
-  "DP-R16-S01": "cargo test -p echo-desktop --all-features restore_or_prime_primes_the_first_song_of_the_default_view", // 新增命令: 重新打开已有资料库选择初始待播放项
-  "DP-R16-S02": "cargo test -p echo-desktop --all-features restore_or_prime_replaces_a_dropped_current_with_the_newest_candidate", // 新增命令: 上次播放歌曲被外部删除
-  "DP-R16-S03": "cargo test -p echo-desktop --all-features restore_or_prime_yields_an_empty_bar_for_an_empty_library", // 新增命令: 资料库为空
-  "DP-R16-S04": "cargo test -p echo-desktop --all-features restore_session_recovers_queue_mode_and_settings_paused", // 新增命令: 有效播放会话优先恢复
-  "DP-R17-S01": "cargo test -p echo-desktop --all-features prime_context_paused_preserves_settings_without_playing", // 新增命令: 兜底选择保持用户播放设置
-  "DP-R18-S01": REACT("src/features/player/PlayerBar.test.tsx"),
-  "DP-R18-S02": REACT("src/features/player/PlayerBar.test.tsx"),
-
-  // ===== immersive-lyrics =====
-  "IL-R01-S01": REACT("src/features/player/PlayerBar.test.tsx"),
-  "IL-R01-S02": REACT("src/features/player/PlayerBar.test.tsx"),
-  "IL-R01-S03": REACT("src/features/player/PlayerBar.test.tsx"),
-  "IL-R02-S01": REACT("src/features/player/PlayerBar.test.tsx"),
-  "IL-R02-S02": REACT("src/features/player/PlayerBar.test.tsx"),
-  "IL-R02-S03": REACT("src/features/player/ImmersivePlayer.test.tsx"),
-  "IL-R03-S01": REACT("src/features/player/ImmersivePlayer.test.tsx"),
-  "IL-R03-S02": REACT("src/features/player/ImmersivePlayer.test.tsx"),
-  "IL-R03-S03": REACT("src/features/player/ImmersivePlayer.test.tsx"),
-  "IL-R04-S01": COREC("lyrics"), // select_effective_lyrics,
-  "IL-R04-S02": REACT("src/features/player/ImmersivePlayer.test.tsx"),
-  "IL-R04-S03": REACT("src/features/player/ImmersivePlayer.test.tsx"),
-  "IL-R04-S04": REACT("src/features/player/ImmersivePlayer.test.tsx"),
-  "IL-R05-S01": REACT("src/features/player/ImmersivePlayer.test.tsx"),
-  "IL-R05-S02": REACT("src/features/player/ImmersivePlayer.test.tsx"),
-  "IL-R05-S03": REACT("src/features/player/ImmersivePlayer.test.tsx"),
-  "IL-R06-S01": REACT("src/features/player/ImmersivePlayer.test.tsx"),
-  "IL-R06-S02": REACT("src/features/player/ImmersivePlayer.test.tsx"),
-  "IL-R06-S03": REACT("src/features/player/ImmersivePlayer.test.tsx"),
-  "IL-R07-S01": REACT("src/features/player/ImmersivePlayer.test.tsx"),
-  "IL-R07-S02": REACT("src/features/player/ImmersivePlayer.test.tsx"),
-  "IL-R07-S03": REACT("src/features/player/ImmersivePlayer.test.tsx"),
-  "IL-R08-S01": REACT("src/app/overlays.test.tsx"),
-  "IL-R08-S02": REACT("src/app/overlays.test.tsx"),
-  "IL-R08-S03": REACT("src/app/overlays.test.tsx"),
-  "IL-R09-S01": CHECK("12.4"),
-  "IL-R09-S02": CHECK("12.4"),
-  "IL-R09-S03": CHECK("12.4"),
-  // fix-lyrics-start-offset-remeasure: 切歌重挂载重建观测 / 高度事后变化重算 / 缩放重算;
-  // 真实几何(切歌路径与高度注入判别步)由 task-13.1 的浏览器门禁 A9 断言。
-  "IL-R10-S01": REACT_T(
-    "src/features/player/useLyricsStartOffset.test.tsx",
-    "re-observes when the signature changes",
-  ),
-  "IL-R10-S02": REACT_T(
-    "src/features/player/useLyricsStartOffset.test.tsx",
-    "re-measures when the info block resizes (ResizeObserver)",
-  ),
-  "IL-R10-S03": REACT_T(
-    "src/features/player/useLyricsStartOffset.test.tsx",
-    "re-measures on window resize",
-  ),
-  // fix-lyrics-offset-stale-measurement: 旧偏移尚未重新布局时的重算（issue #90）;
-  // 真实几何（A9 信息块增长步）由 task-13.1 的浏览器门禁断言。
-  "IL-R10-S04": REACT_T(
-    "src/features/player/useLyricsStartOffset.test.tsx",
-    "measures the metadata's height while the previous offset is still laid out",
-  ),
-
-  // ===== library-experience (LE) =====,
-
-  // ===== library-experience =====
-  "LE-R01-S01": COREC("infrastructure::sqlite::tests::catalog_all_songs_view"),
-  "LE-R01-S02": COREC("infrastructure::sqlite::tests::catalog_search_no_results"),
-  "LE-R01-S03": COREC("infrastructure::sqlite::tests::catalog_repository_gate_empty"),
-  "LE-R01-S04": REACT("src/features/library/CollectionDirectory.test.tsx"), // 切换歌手或专辑目录,
-  "LE-R01-S05": REACT_T("src/features/library/LibraryWorkspace.test.tsx", "clears the search when switching between library views"), // fix-view-switch-search-carryover: 切换视图清空搜索
-  "LE-R01-S06": REACT_T("src/features/library/CollectionDirectory.test.tsx", "clears the search when switching between artist and album directories"), // fix-view-switch-search-carryover: 目录互切清空搜索
-  "LE-R02-S01": COREC("infrastructure::sqlite::tests::catalog_search_matches_full_query"),
-  "LE-R02-S02": COREC("infrastructure::sqlite::tests::catalog_search_empty_query"),
-  "LE-R02-S03": REACT("src/features/library/SongList.test.tsx"),
-  // R02-S04 was never registered (fallback read as "needs an operator"): the
-  // THEN clause is "drop the old root's results and only accept the new root's",
-  // which is exactly the delayed-response test in useSongs.,
-  "LE-R02-S04": REACT("src/features/library/useSongs.test.tsx"),
-  // R02-S05 (切换活动资料库后查询): same delayed-response suite — dropping the
-  // old root's in-flight query and only accepting the new root's.,
-  "LE-R02-S05": REACT("src/features/library/useSongs.test.tsx"),
-  "LE-R03-S01": COREC("infrastructure::sqlite::tests::catalog_all_songs_keyset_pages"),
-  "LE-R03-S02": "pnpm --filter @echo/desktop test -- --run src/features/library/songSortControl.test.tsx -t \"uses 歌手 terminology, offers 专辑, and updates the selected sort\"", // 新增: 全部歌曲排序
-  "LE-R03-S03": "pnpm --filter @echo/desktop test -- --run src/features/library/songSortControl.test.tsx -t \"uses 歌手 terminology, offers 专辑, and updates the selected sort\"", // 新增: 全部歌曲排序
-  "LE-R03-S04": COREC("infrastructure::sqlite::tests::catalog_favorites_view"), // （重编号自 LE-R03-S02）
-  "LE-R03-S05": COREC("infrastructure::sqlite::tests::catalog_recent_100"), // （重编号自 LE-R03-S03）
-  "LE-R03-S06": "pnpm --filter @echo/desktop test -- --run src/features/library/songSortControl.test.tsx -t \"retains the existing artist preference and restores the album preference\"", // 新增: 全部歌曲排序
-  "LE-R04-S01": REACT("src/features/library/SongList.test.tsx"),
-  "LE-R04-S02": REACT("src/features/library/SongMenu.test.tsx"),
-  "LE-R05-S01": REACT("src/features/library/SongMenu.test.tsx"), // detail relative-path only,
-  "LE-R05-S02": REACT("src/features/library/SongMenu.test.tsx"),
-  "LE-R05-S03": REACT("src/features/library/SongMenu.test.tsx"),
-  "LE-R06-S01": REACT("src/features/library/SongList.test.tsx"),
-  "LE-R06-S02": REACT("src/features/library/SongList.test.tsx"),
-  "LE-R06-S03": REACT("src/features/library/SongList.test.tsx"),
-  "LE-R06-S04": COREC("application::scan::tests::relink::enumerate_failure_marks_run_failed_without_missing"),
-  // R06-S05..S06 (打开本地目录 / 删除歌曲) belong to the song-operations UI in
-  // SongMenu; S05 由 task-9.5 的 reveal-by-SongId adapter 证明。S07–S10 是删除
-  // 的回收站边界: 不重启最终化 / 暂败重试 / 结果无法证明 / 路径边界保护 —— 由
-  // trash 套件与 task-12.7 安全 gate 证明 (与 LL-R07 同一组测试)。,
-  "LE-R06-S05": "node scripts/verify/checks/task-9.5.mjs", // 新增命令: 打开本地目录
-  "LE-R06-S06": "pnpm --filter @echo/desktop test -- --run src/features/library/SongMenu.test.tsx -t \"dispatches delete and shows the 10-second undo affordance on success\"", // 新增命令: 删除歌曲（确认+10秒撤销）
-  "LE-R06-S07": COREC("trash::tests::explicit_system_trash_success_persists_applied_then_finalizes"),
-  "LE-R06-S08": COREC("trash::tests::system_trash_failure_keeps_the_verified_staging_for_retry"),
-  "LE-R06-S09": COREC("trash::tests::post_call_trash_error_rechecks_missing_staging_and_stops_other_operations"),
-  "LE-R06-S10": CHECK("12.7"), // trash 目标只接受绑定根下匹配的 echo/tmp/trash/<op-id>
-  // fix-queue-trigger-toggle: 触发控件计入菜单内部区域. Appended (not inserted
-  // mid-requirement) so the S07–S10 ids above keep pointing at the same cases.
-  "LE-R06-S11": REACT("src/features/library/SongMenu.test.tsx"), // 再次点击歌曲操作入口
-  "LE-R06-S12": REACT("src/features/library/batchLibraryOperations.test.tsx"), // 多选状态下再次点击行入口
-  "LE-R06-S13": REACT_T("src/features/library/LibraryWorkspace.test.tsx", "右键打开的菜单仍由面板外按压和 Escape 收起"), // 右键打开的菜单由指针交互收起（宿主级：SongMenu 的 fixture 只从按钮打开，覆盖不到右键路径）
-  // The 50k budget bench is `#[ignore]`d so a normal `cargo test` stays fast —
-  // without `-- --ignored` cargo runs zero tests, which `run-scenario.mjs`
-  // correctly rejects rather than passing on an empty selection.,
-  "LE-R07-S01": `${COREC("bench_50k_search_and_first_screen_p95_meet_prd_budgets")} -- --ignored`,
-  "LE-R07-S02": REACT("src/features/library/SongList.test.tsx"),
-  // R07-S03..S04 written inline below; S05–S09 (多选保留/全选/跨分页/查询上下文/
-  // 虚拟列表) by the selection suite + SongList virtual-row cases.,
-  "LE-R07-S03": "pnpm --filter @echo/desktop test -- --run src/features/library/CollectionDirectory.test.tsx -t \"shows artist cards and reuses the library song table with selection in the detail\"", // 新增命令: 聚合详情支持全选
-  "LE-R07-S04": "node scripts/verify/checks/check-native-attestation.mjs LE-R07-S04", // 新增命令: 多选模式右键未选中歌曲
-  "LE-R07-S05": REACT("src/features/library/batchLibraryOperations.test.tsx"),
-  "LE-R07-S06": REACT("src/features/library/useSongSelection.test.tsx"),
-  "LE-R07-S07": REACT_T("src/features/library/SongList.test.tsx", "restores a controlled bulk selection after a virtual row leaves and re-enters"),
-  "LE-R07-S08": REACT_T("src/features/library/useSongSelection.test.tsx", "clears when the view/query selection scope changes"),
-  "LE-R07-S09": REACT("src/features/library/SongList.test.tsx"), // 虚拟列表行 key 稳定 + viewport slice
-  // library-nav-counts: backend-driven view counts, invalidation on changes.,
-  "LE-R08-S01": REACT("src/features/library/libraryNavCounts.test.tsx"),
-  "LE-R08-S02": REACT("src/features/library/libraryNavCounts.test.tsx"),
-  // R08-S03..S08 (批量: 歌单移除/队列操作/删除撤回/不可删项/只读根/失败):
-  // 批量操作套件 + PlaylistsView 批量移除 + 只读表面禁用写操作。,
-  "LE-R08-S03": REACT("src/features/playlists/PlaylistsView.test.tsx"),
-  "LE-R08-S04": REACT("src/features/library/batchOperations.test.ts"),
-  "LE-R08-S05": REACT("src/features/library/batchLibraryOperations.test.tsx"),
-  "LE-R08-S06": REACT("src/features/library/batchOperations.test.ts"),
-  "LE-R08-S07": REACT("src/features/library/BatchSongActions.test.tsx"),
-  "LE-R08-S08": REACT("src/features/library/batchLibraryOperations.test.tsx"),
-  "LE-R09-S01": REACT("src/features/library/libraryNavCounts.test.tsx"),
-  "LE-R09-S02": REACT("src/features/library/libraryNavCounts.test.tsx"),
-  "LE-R09-S03": REACT("src/features/library/libraryNavCounts.test.tsx"),
-  "LE-R09-S04": REACT("src/features/library/libraryNavCounts.test.tsx"),
-
-  // ===== local-library (LL) =====,
-  "LE-R10-S01": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"renders only a viewport slice of a 50,000-song library, not all rows\"", // 新增命令: 浏览大量歌曲（仅渲染可见范围）
-  "LE-R10-S02": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"keeps rows keyed by stable SongId at their absolute position\"", // 新增命令: 搜索或排序后保持定位（行 key 稳定）
-  "LE-R11-S01": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx -t \"shows 喜欢的音乐's count without the user ever opening that view\"", // 新增命令: 未打开过的视图也显示计数
-  "LE-R11-S02": "pnpm --filter @echo/desktop test -- --run src/features/library/libraryNavCounts.test.tsx -t \"prints the backend total, not the number of rows the page loaded\"", // 新增命令: 计数不受分页影响
-  "LE-R11-S03": "cargo test -p echo-core --all-features catalog_counts_match_view_membership_over_sqlite", // 新增命令: 计数与视图定义一致（pending-delete/非活动根不计）
-  "LE-R11-S04": "node scripts/verify/checks/check-native-attestation.mjs LE-R11-S04", // 新增命令: 最近添加上限（100 首）
-  "LE-R12-S01": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.tsx -t \"keeps the full query total stable while loading another page\"", // 新增: 分页歌曲列表显示匹配总数
-  "LE-R12-S02": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.tsx -t \"uses the filtered favorites search total\"", // 新增: 分页歌曲列表显示匹配总数
-  "LE-R12-S03": "cargo test -p echo-core --all-features catalog_search_pages_deterministically_across_large_library", // 新增: 分页歌曲列表显示匹配总数
-  "LE-R12-S04": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.tsx -t \"keeps the full query total stable while loading another page\"", // 新增: 分页歌曲列表显示匹配总数
-  "LE-R12-S05": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.tsx -t \"sends normalized search through the recent view command\"", // 新增: 分页歌曲列表显示匹配总数
-  "LE-R13-S01": ATTEST("LE-R13-S01"), // 重编号自 LE-R12-S01；无专属测试，人工 attestation
-  "LE-R13-S02": ATTEST("LE-R13-S02"), // 重编号自 LE-R12-S02；无专属测试，人工 attestation
-  "LE-R13-S03": ATTEST("LE-R13-S03"), // 重编号自 LE-R12-S03；无专属测试，人工 attestation
-  "LE-R13-S04": ATTEST("LE-R13-S04"), // 重编号自 LE-R12-S04；无专属测试，人工 attestation
-  "LE-R13-S05": ATTEST("LE-R13-S05"), // 重编号自 LE-R12-S05；无专属测试，人工 attestation
-  "LE-R14-S01": ATTEST("LE-R14-S01"), // 重编号自 LE-R13-S01；无专属测试，人工 attestation
-  "LE-R14-S02": ATTEST("LE-R14-S02"), // 重编号自 LE-R13-S02；无专属测试，人工 attestation
-  "LE-R14-S03": ATTEST("LE-R14-S03"), // 重编号自 LE-R13-S03；无专属测试，人工 attestation
-  "LE-R15-S01": ATTEST("LE-R15-S01"), // 重编号自 LE-R14-S01；无专属测试，人工 attestation
-  "LE-R15-S02": ATTEST("LE-R15-S02"), // 重编号自 LE-R14-S02；无专属测试，人工 attestation
-  "LE-R15-S03": ATTEST("LE-R15-S03"), // 重编号自 LE-R14-S03；无专属测试，人工 attestation
-  "LE-R16-S01": ATTEST("LE-R16-S01"), // 重编号自 LE-R15-S01；无专属测试，人工 attestation
-  "LE-R16-S02": ATTEST("LE-R16-S02"), // 重编号自 LE-R15-S02；无专属测试，人工 attestation
-  "LE-R16-S03": ATTEST("LE-R16-S03"), // 重编号自 LE-R15-S03；无专属测试，人工 attestation
-  "LE-R16-S04": ATTEST("LE-R16-S04"), // 重编号自 LE-R15-S04；无专属测试，人工 attestation
-  "LE-R16-S05": ATTEST("LE-R16-S05"), // 重编号自 LE-R15-S05；无专属测试，人工 attestation
-  "LE-R16-S06": ATTEST("LE-R16-S06"), // 重编号自 LE-R15-S06；无专属测试，人工 attestation
-  "LE-R17-S01": ATTEST("LE-R17-S01"), // 重编号自 LE-R16-S01；无专属测试，人工 attestation
-  "LE-R17-S02": ATTEST("LE-R17-S02"), // 重编号自 LE-R16-S02；无专属测试，人工 attestation
-  "LE-R17-S03": ATTEST("LE-R17-S03"), // 重编号自 LE-R16-S03；无专属测试，人工 attestation
-  "LE-R18-S01": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"searches within the current playlist through the scoped search command\"", // 新增: 歌单内搜索
-  "LE-R18-S02": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"restores the full member list when the search is cleared\"", // 新增: 歌单内搜索
-  "LE-R18-S03": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"shows the playlist search empty state with a clear action on no hit\"", // 新增: 歌单内搜索
-  // The `&& cargo test -p echo-core ...` tail that manifest.json still carries
-  // for this row is deliberately NOT in the command map: validate-scenario-commands
-  // anchors its vitest regex with `$`, so a chained command is never resolved
-  // against the test file and the row loses its test-name proof. Keep the two
-  // representations separate rather than syncing them.
-  "LE-R18-S04": "pnpm --filter @echo/desktop test -- --run src/features/library/useSongs.test.ts -t \"playlistId 变化触发新的抓取请求（缓存键区分布同歌单）\"", // 新增: 歌单内搜索
-  "LE-R18-S05": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "appends the next page when the playlist search spills past one page"), // 新增: 歌单内搜索分页
-  "LE-R18-S06": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "stops requesting pages once the playlist search reaches the last page"), // 新增: 歌单内搜索分页
-  "LE-R18-S07": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "appends the next page when the playlist search spills past one page"), // 新增: 歌单内搜索分页
-  "LE-R18-S08": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "discards a continuation page from a superseded playlist search"), // 新增: 歌单内搜索分页
-  "LE-R18-S09": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "appends the next page when the playlist search spills past one page"), // 新增: 歌单内搜索分页
-  // 游标过期（conflict）后必须重取首屏，否则死游标让每次滚动都重复失败。
-  // 该行为由 CR 阶段补入，尚未分配独立 spec 场景 ID，先挂在 LE-R18-S05 上验证。
-  "LE-R18-S05-STALE-CURSOR": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "restarts the playlist search from the first page when a cursor goes stale"), // 新增: 游标过期恢复
-  "LE-R19-S01": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"scrolls the matched song row to the top of the visible area\"", // 新增: 定位当前播放歌曲
-  "LE-R19-S02": "pnpm --filter @echo/desktop test -- --run src/features/library/favoriteSync.test.tsx -t \"voices 当前没有正在播放的歌曲\"", // 新增: 定位当前播放歌曲
-  "LE-R19-S03": "pnpm --filter @echo/desktop test -- --run src/features/library/favoriteSync.test.tsx -t \"voices 当前歌曲不在此列表中\"", // 新增: 定位当前播放歌曲
-  "LE-R19-S04": "pnpm --filter @echo/desktop test -- --run src/features/library/SongList.test.tsx -t \"clamps an end-of-list target to the last reachable position\"", // 新增: 定位当前播放歌曲
-  "LE-R19-S05": "node scripts/verify/checks/check-native-attestation.mjs LE-R19-S05", // 新增: 定位当前播放歌曲
-  "LE-R20-S01": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "preselects existing memberships read-only and submits only new targets"), // 新增: 歌单选择器加载归属状态
-  "LE-R20-S02": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "falls back to additive selection with a visible warning"), // 新增: 歌单选择器加载归属状态
-  "LE-R20-S03": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "所选歌单将应用于全部"), // 新增: 歌单选择器加载归属状态
-  "LE-R20-S04": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "closes unchanged single-song selection without a mutation"), // 新增: 歌单选择器加载归属状态
-  // 收藏与批量操作以音乐库持久结果为反馈（LE-R21）——目录提交成功才更新可见状态，
-  // 投影失败呈已保存待更新（change enforce-library-first-durability）。
-  "LE-R21-S01": COREC("library_durability_favorite_failure_is_saved_and_later_false_catches_up"), // 收藏已保存而投影失败: 保存后等待更新、后续追上
-  "LE-R21-S02": PERF("completed_local_edit_latency"), // 正常投影仍在后台时已保存反馈: 四种编辑点击至已保存 P95 由 Release 基准实测
-  "LE-R21-S03": COREC("library_durability_refused_commit_leaves_every_wired_entrypoint_untouched"), // 收藏未保存: 目录提交拒绝时收藏入口零 SQL 写（同 LD-R01-S01 行为）
-  "LE-R21-S04": REACT_T("src/features/library/savedPendingFeedback.test.tsx", "reports each batch item's own outcome and retries only the saved ones"), // 批量收藏部分已保存: 逐项报告并对已保存项单独重试
-  "LE-R21-S05": COREC("library_durability_retry_catches_up_all_saved_operations_without_new_commits"), // 已保存待投影不被当作失败重试: 原操作身份追上、不产生第二事实
-
-  // ===== local-library =====
-  "LL-R01-S01": COREC("root_switch::"),
-  "LL-R01-S02": COREC("root_switch::"),
-  "LL-R01-S03": COREC("root_switch::"),
-  // Re-selecting a managed directory after the local database was wiped: the
-  // identities come from `echo/records/`, the media tree is untouched.,
-  "LL-R01-S04": COREC("root_switch::tests::prepare_reuses_record_identities_and_leaves_media_untouched"),
-  // 投影滞后时读己之写：连续加入目标在 read model 里立刻按追加顺序可见。
-  "LL-R01-S05": COREC("consecutive_multi_song_add_keeps_every_membership"),
-  "LL-R02-S01": COREC("application::scan::tests::relink::manual_rescan_is_repeatable_and_converges"),
-  "LL-R02-S02": COREC("watch::tests::watch_events_converge_under_out_of_order_and_duplicate_delivery"),
-  "LL-R02-S03": COREC("application::scan::tests::relink::progress_persisted_throttled_and_terminal_state_kept"),
-  // R02-S04/R02-S05 were never registered. S04's THEN clause is "refuse the old
-  // layout, do not scan or migrate it" — proven by the manifest version check.
-  // S05's is "update records once watcher events settle" — proven by the
-  // coalescer that normalises removal/rename/overflow into one rescan.,
-  "LL-R02-S04": COREC("manifest_incompatible_version_fails_check"),
-  // 监听外部新增和修改 (LL-R02-S05) 的 THEN 是「事件稳定后更新记录与索引」+「事件丢失
-  // 时手动重扫收敛」, 涉及新增/删除/移动/修改四类。只指 coalescer 那条只证明事件被归一化,
-  // 证明不了记录/索引更新 —— 改指 watch 集成层整组 (settle / rename 保 UUID / publish 复用
-  // journal id / overflow 退化为重扫), 重扫收敛那半由 scan 侧的 *_converge_after_rescan 覆盖。,
-  "LL-R02-S05": COREC("application::watch::tests::"),
-  // S06 (设置页手动重扫) 与 S07 (无活动库不可重扫): SettingsView 的 rescan 套件
-  // 分别证明「重扫进行中禁止重复点击并提交结果」与「无根目录/扫描中禁用入口」。,
-  "LL-R02-S06": REACT_T("src/features/settings/SettingsView.test.tsx", "starts a scan for the active library and reports completion"),
-  "LL-R02-S07": REACT_T("src/features/settings/SettingsView.test.tsx", "disables rescan when no library root is configured"),
-  "LL-R03-S01": COREC("infrastructure::sqlite::tests::playback_sessions_are_idempotent"), // fixture format matrix,
-  "LL-R03-S02": COREC("probe"),
-  "LL-R03-S03": COREC("infrastructure::sqlite::tests::scan_pipeline_persists"),
-  // S04 (m4a 内嵌标签) 与 S05 (wav 无标签兜底): 由 metadata tags 系列证明。,
-  "LL-R03-S04": COREC("infrastructure::metadata::tags::tests::m4a_tags_parse_from_in_memory_import_source_bytes"),
-  "LL-R03-S05": COREC("tagless_wav_reads_as_ok_with_empty_fields"),
-  "LL-R04-S01": COREC("application::scan::tests::relink::fast_skip_unchanged_files_and_relink_on_move"),
-  "LL-R04-S02": COREC("application::scan::tests::pipeline::external_missing_relinks_on_same_hash_path_keeping_relationships"),
-  "LL-R04-S03": COREC("application::scan::tests::relink::duplicate_hash_paths_get_deterministic_primary"),
-  "LL-R04-S04": COREC("application::scan::tests::relink::music_key_never_relinks_identities"), // 音乐键不得触发身份合并 (LD-05)
-  "LL-R05-S01": COREC("infrastructure::sqlite::tests::fts_and_short_like_search"),
-  "LL-R05-S02": COREC("infrastructure::sqlite::tests::keyset_pages_are_deterministic"),
-  "LL-R06-S01": COREC("cover_cache_key_and_db_reference"),
-  "LL-R06-S02": COREC("lyrics"),
-  "LL-R07-S01": COREC("trash::tests::persisted_trash_applied_is_the_only_automatic_database_finalization_proof"), // P0,
-  "LL-R07-S02": COREC("trash::tests::external_staging_cleanup_becomes_unknown_and_preserves_relationships"),
-  "LL-R07-S03": COREC("application::scan::tests::pipeline::external_deletion_is_missing_not_pending_delete_and_keeps_relationships"),
-  // S04 (文件恢复: 原路径恢复或同 BLAKE3 重扫恢复可用状态): 由外部缺失恢复测试证明。,
-  "LL-R07-S04": COREC("application::scan::tests::pipeline::external_missing_recovers_on_original_path_restoring_everything"), // P0,
-  "LL-R08-S01": CHECK("12.7"), // P0 path/security automated,
-  "LL-R08-S02": CHECK("12.6"), // P0 perf/stress automated,
-  "LL-R08-S03": COREC("permission"), // privacy/offline automated
-
-  // ===== playlist-management (PM) =====,
-  "LL-R09-S01": "cargo test -p echo-core --all-features revision_and_added_at_survive_rescans", // 新增命令: 真实导入时间（注入系统时刻，重启不变）
-  "LL-R09-S02": "cargo test -p echo-core --all-features revision_and_added_at_survive_rescans", // 新增命令: 重复或重扫不改写时间
-  "LL-R09-S03": "node scripts/verify/checks/check-native-attestation.mjs LL-R09-S03", // 新增命令: 当前时区转换
-  // 扫描与监听先保存资料库身份（LL-R10）与 SQLite 投影可替换（LL-R11）——目录提交是
-  // 业务持久化点，投影损坏可重建、不能独占用户数据（change enforce-library-first-durability）。
-  "LL-R10-S01": COREC("library_durability_scan_saves_identity_before_projection_and_reuses_it_on_retry"), // 首次扫描后重装: 身份先落目录、重试复用原 UUID
-  "LL-R10-S02": COREC("library_durability_scan_refresh_preserves_saved_after_image_on_projection_failure"), // 移动或标签修改后恢复: 保存后的 after-image 不因投影失败丢失
-  "LL-R10-S03": COREC("library_durability_scan_refuses_unwritable_library_before_indexing"), // 控制面写失败: 不可写库先拒绝、不只在 SQLite 入库
-  "LL-R10-S04": COREC("library_durability_readonly_volume_and_unmaterialized_commit_can_be_browsed"), // 只读库: 只浏览已可验证资料（同 LD-R09-S03 行为）
-  "LL-R11-S01": COREC("a_wiped_database_is_rebuilt_from_the_records_at_real_scale"), // 数据库损坏: 擦除的数据库按 records 原样重建
-  "LL-R11-S02": "cargo test -p echo-app --all-features a_failed_switch_restores_the_previous_session", // 切库恢复失败: 失败切换恢复原会话
-
-  // ===== phase-one-acceptance =====
-  "PHA-R01-S01": "node scripts/verify/checks/check-native-attestation.mjs PHA-R01-S01", // 新增命令: 歌单与队列日常流程验收
-  "PHA-R01-S02": "node scripts/verify/ci-governance.mjs",
-
-  // ===== playlist-management =====
-  "PM-R01-S01": COREC("playlist"),
-  "PM-R01-S02": COREC("playlist"),
-  "PM-R01-S03": COREC("playlist"),
-  "PM-R01-S04": COREC("playlist"),
-  // R01-S05 (delete a playlist without touching songs or other playlists) was
-  // never registered; this test asserts exactly "owns the playlist and its
-  // memberships but not songs or other playlists".,
-  "PM-R01-S05": COREC("delete_owns_playlist_and_members_but_not_songs_or_other_playlists"),
-  "PM-R02-S01": COREC("playlist"),
-  "PM-R02-S02": COREC("playlist"),
-  "PM-R03-S01": COREC("playlist"),
-  "PM-R03-S02": COREC("playlist"),
-  "PM-R03-S03": COREC("playlist"),
-  // R03-S04..S06: 从歌单视图单曲菜单添加、只读视图禁用入口、重复添加仍幂等 ——
-  // 由 PlaylistsView 的 picker/只读测试与 core 幂等添加测试分别证明。S07 (批量
-  // 添加部分失败) 由 AddToPlaylistDialog 的顺序提交 + 部分失败可见性测试证明。,
-  "PM-R03-S04": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "opens the add-to-playlist picker from a member's song menu"),
-  "PM-R03-S05": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "keeps 添加到歌单 disabled for a read-only playlist"),
-  "PM-R03-S06": COREC("add_to_multiple_playlists_is_atomic_and_idempotent"),
-  "PM-R03-S07": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "runs a multi-song add sequentially and keeps partial failures visible"),
-  "PM-R04-S01": COREC("playlist"),
-  // R04-S02/S03: 批量移除成员与部分失败聚合 —— 由 PlaylistsView 的批量移除刷新与
-  // batchOperations 的批量失败聚合测试证明。,
-  "PM-R04-S02": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "removes the selected members one by one and refreshes the playlist"),
-  "PM-R04-S03": REACT("src/features/library/batchOperations.test.ts"),
-  // R05-S05/S06: 删除在撤销窗口内的撤销, 与失效歌曲恢复 —— 由 PlaylistsView 的
-  // 删除撤销刷新与 sqlite 的 missing 成员恢复(不产生重复)证明。,
-  "PM-R05-S01": COREC("playlist_missing_members_stay_visible"),
-  "PM-R05-S02": COREC("playlist_missing_members_stay_visible"),
-  "PM-R05-S03": COREC("echo_delete_finalize_cascades_memberships"),
-  "PM-R05-S04": COREC("playlist"),
-  // R06/R07 rows never existed in this table at all — the whole sub-family fell
-  // through the fallback. R06 is 歌单异步操作反馈, and both of its THEN clauses are
-  // *failure* paths (成员留在原位 / 不显示"已加入播放队列" 成功反馈), so it is
-  // registered against the tests written for exactly those paths: a happy-path
-  // suite would manufacture a green for a clause nothing asserts. R07 is the
-  // picker's create-then-add path and its rejection path.,
-  "PM-R05-S05": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "refreshes the sidebar after a batch delete and its undo"),
-  "PM-R05-S06": COREC("playlist_missing_members_stay_visible_and_recover_without_duplicates"),
-  "PM-R06-S01": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "keeps the member in place"),
-  "PM-R06-S02": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "never claims"),
-  "PM-R06-S03": REACT("src/features/library/batchOperations.test.ts"), // 批量操作结果聚合,
-  "PM-R07-S01": REACT("src/features/playlists/AddToPlaylistDialog.test.tsx"),
-  "PM-R07-S02": REACT("src/features/playlists/PlaylistNameDialog.test.tsx"),
-  // S03/S04 had no row here, so the generator fell back to the attestation
-  // checker and rewrote their committed manifests — which then tripped the
-  // then-current scenario manifest validator (retired in 2026-11). The values
-  // below are what the committed manifests already claimed, so this only
-  // records them in the source of truth.
-  "PM-R07-S03": REACT("src/features/playlists/AddToPlaylistDialog.test.tsx"),
-  "PM-R07-S04": REACT("src/features/playlists/AddToPlaylistDialog.test.tsx"),
-
-  // ===== safe-file-ingestion (SFI) =====
-  // R01: 多选导入与默认目标命名. S03 (无标签 wav) is proven by the dedicated
-  // untagged-wav case; S01/S02 by the per-input mixed reports.,
-  "PM-R08-S01": "node scripts/verify/checks/check-native-attestation.mjs PM-R08-S01", // 新增命令: 创建歌单时记录时间
-  "PM-R08-S02": "node scripts/verify/checks/check-native-attestation.mjs PM-R08-S02", // 新增命令: 加入歌单时记录时间
-  "PM-R08-S03": "node scripts/verify/checks/check-native-attestation.mjs PM-R08-S03", // 新增命令: 重复加入不重写时间
-  "PM-R08-S04": "node scripts/verify/checks/check-native-attestation.mjs PM-R08-S04", // 新增命令: 歌单时间按当前时区呈现
-  "PM-R09-S01": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"searches within the current playlist\"", // 新增: 歌单详情搜索
-  "PM-R09-S02": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"restores the full member list when the search is cleared\"", // 新增: 歌单详情搜索
-  "PM-R09-S03": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "appends the next page when the playlist search spills past one page"), // 新增: 歌单详情搜索分页
-  "PM-R09-S04": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "stops requesting pages once the playlist search reaches the last page"), // 新增: 歌单详情搜索分页
-  "PM-R09-S05": REACT_T("src/features/playlists/PlaylistsView.test.tsx", "clears the search when switching to another playlist"), // fix-view-switch-search-carryover: 歌单切换清空搜索
-  // See the LE-R18-S04 note above: the `&& pnpm ... -t "locate"` tail in
-  // manifest.json is not mirrored here, for the same regex-anchoring reason.
-  "PM-R10-S01": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"rolls to a playing member of the playlist without a toast\"", // 新增: 歌单内定位当前播放歌曲
-  "PM-R10-S02": "pnpm --filter @echo/desktop test -- --run src/features/playlists/PlaylistsView.test.tsx -t \"voices 当前\"", // 新增: 歌单内定位当前播放歌曲
-  // One dialog test asserts several scenarios; `-t` is a substring match, so the
-  // 4 React scenarios below all resolve to the same file with different needles.
-  "PM-R11-S01": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "preselects existing memberships read-only and submits only new targets"), // 新增: 歌单选择器反映单曲归属
-  "PM-R11-S02": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "preselects existing memberships read-only and submits only new targets"), // 新增: 歌单选择器反映单曲归属
-  "PM-R11-S03": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "closes unchanged single-song selection without a mutation"), // 新增: 歌单选择器反映单曲归属
-  "PM-R11-S04": REACT_T("src/features/playlists/AddToPlaylistDialog.test.tsx", "所选歌单将应用于全部"), // 新增: 歌单选择器反映单曲归属
-  "PM-R12-S01": COREC("playlists_for_song_reads_membership_ids_from_the_active_database"), // 新增: 查询单曲的歌单归属
-  "PM-R12-S02": COREC("playlists_for_song_reads_membership_ids_from_the_active_database"), // 新增: 查询单曲的歌单归属
-  "PM-R12-S03": COREC("playlists_for_song_reads_membership_ids_from_the_active_database"), // 新增: 查询单曲的歌单归属
-  // 歌单与成员以音乐库持久结果反馈（PM-R13）——目录可靠提交后才投影，
-  // 已保存待更新不当作未保存失败（change enforce-library-first-durability）。
-  "PM-R13-S01": COREC("library_durability_playlist_create_retry_after_saved_pending_keeps_operation_identity"), // 创建空歌单后重装: 恢复原歌单身份与创建时间（同 LD-R07-S01 行为）
-  "PM-R13-S02": COREC("library_durability_member_append_is_saved_before_failed_projection"), // 多成员提交被中断: 成员先落目录，重启按原 UUID/顺序恢复
-  "PM-R13-S03": COREC("library_durability_playlist_rename_saves_before_failed_projection"), // 保存与显示更新分离: 重命名已保存而投影失败仍已保存待更新
-  "PM-R13-S04": COREC("consecutive_multi_song_add_keeps_every_membership"), // SQLite 落后时连续编辑歌单: 连续加入保持顺序、唯一成员身份与加入时间
-  "PM-R13-S05": PERF("completed_local_edit_latency"), // 歌单命令低延迟验收: 点击至已保存反馈 P95 由 Release 基准实测
-  "PM-R13-S06": COREC("final_tombstone_is_never_recovered_but_history_can_be_dismissed"), // 删除与取消喜欢不复活: 终态墓碑重建后不恢复
-
-  // ===== portable-library-layout =====
-  "PLL-R01-S01": COREC("default_target_is_artist_folder_with_artist_minus_title"),
-  "PLL-R01-S02": COREC("control_plane_usable_detects_writable_and_readable"),
-  // The layout↔RecordKind mapping is a structural invariant, not a behaviour
-  // one test can carry: a kind with no directory is silently dropped.,
-  "PLL-R01-S03": CHECK("15.1"),
-  "PLL-R01-S04": COREC("online_backup_contains_matching_catalog_pending_and_ledger_without_independent_checkpoint"), // 完整备份: 备份含 catalog/pending/ledger 等恢复必需资料
-  "PLL-R02-S01": COREC("manifest_round_trips_atomically"),
-  "PLL-R02-S02": COREC("sync_payloads_carry_no_absolute_paths"),
-  "PLL-R02-S03": COREC("tmp_files_are_ignored_as_records"),
-  "PLL-R02-S04": DESK("playlist_mutations_materialize_records_and_tombstones"),
-  "PLL-R02-S05": DESK("recorded_plays_materialize_additive_play_stats"),
-  "PLL-R02-S06": DESK("unfavorite_materializes_a_false_record_so_it_never_returns"),
-  "PLL-R02-S07": COREC("library_durability_playback_event_is_materialized_outside_shared_records"), // 播放统计: 幂等身份材料化在共享记录之外
-  "PLL-R02-S08": DESK("library_durability_playlist_cover_original_survives_cache_loss_and_clear"), // 封面原件: 缓存丢失/清空后仍随歌单恢复
-  "PLL-R03-S01": COREC(
-    "application::continuation::tests::continuation_restores_songs_favorites_playlists_and_member_order",
-  ),
-  "PLL-R03-S02": COREC("restore_projects_records_and_keeps_missing_without_media"),
-  "PLL-R03-S03": COREC("root_switch::tests::prepare_continues_object_records_before_scanning_media"),
-  "PLL-R04-S01": COREC(
-    "application::portable::tests::ensure_control_plane_initializes_a_fresh_writable_root",
-  ),
-  "PLL-R04-S02": COREC(
-    "application::portable::tests::ensure_control_plane_heals_a_manifest_less_directory_with_records",
-  ),
-  "PLL-R04-S03": COREC(
-    "application::portable::tests::ensure_control_plane_reports_an_unusable_surface_without_writing",
-  ),
-  "PLL-R04-S04": "cargo test -p echo-core --all-features song_record_without_added_at_reads_back_as_zero", // 新增命令: 历史对象记录缺入库时刻仍可兼容恢复
-  "PLL-R05-S01": COREC("root_switch::tests::prepare_continues_records_then_scans_only_unrecorded_media"),
-  "PLL-R05-S02": COREC("application::continuation::tests::dangling_records_are_counted_and_never_invented"),
-  "PLL-R05-S03": COREC(
-    "application::continuation::tests::tombstone_outranks_a_stale_record_and_is_never_resurrected",
-  ),
-  "PLL-R05-S04": COREC("application::continuation::tests::continuation_is_idempotent_across_repeated_opens"),
-  "PLL-R06-S01": "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_initializes_a_fresh_writable_root", // 新增命令: 首次启用即建立 manifest
-  "PLL-R06-S02": "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_heals_a_manifest_less_directory_with_records", // 新增命令: manifest 缺失时自愈
-  "PLL-R06-S03": "cargo test -p echo-core --all-features application::portable::tests::ensure_control_plane_reports_an_unusable_surface_without_writing", // 新增命令: 控制面不可写时不破坏既有内容
-  "PLL-R07-S01": "cargo test -p echo-core --all-features root_switch::tests::prepare_continues_object_records_before_scanning_media", // 新增命令: 打开资料库先接续再扫描
-  "PLL-R07-S02": "cargo test -p echo-core --all-features restore_projects_records_and_keeps_missing_without_media", // 新增命令: 对象资料与媒体不一致（缺失媒体也还原记录）
-  "PLL-R07-S03": "cargo test -p echo-core --all-features application::continuation::tests::tombstone_outranks_a_stale_record_and_is_never_resurrected", // 新增命令: 墓碑优先于陈旧记录
-  "PLL-R07-S04": "cargo test -p echo-core --all-features application::continuation::tests::continuation_is_idempotent_across_repeated_opens", // 新增命令: 重复接续结果稳定
-  "PLL-R07-S05": COREC(
-    "application::continuation::tests::detached_legacy_records_are_superseded_by_the_matching_local_rows",
-  ),
-  "PLL-R07-S06": "cargo test -p echo-core --all-features application::continuation::tests::continuation_restores_songs_favorites_playlists_and_member_order", // 新增命令: 打开新协议资料库后投影再扫描（恢复后扫描不另铸 UUID）
-  "PLL-R07-S07": COREC("library_durability_publication_v1_and_unknown_schema_keep_original_evidence"), // 读取支持的旧格式: v1/未知 schema 保留原始证据（同 LD-R09-S01 行为）
-  "PLL-R07-S08": "cargo test -p echo-core --all-features application::continuation::tests::continuation_is_idempotent_across_repeated_opens", // 重复投影结果稳定
-  "PLL-R07-S09": COREC("library_durability_incomplete_or_foreign_local_allocation_stays_unresolved"), // 未解析引用保持原样: 不完整/外来分配保持未解析
-
-  // ===== phase-one-acceptance (PHA) =====
-  // S02 is the regression quality gate itself: workspace tests + frontend build
-  // + coverage + reconciliation + churn + purity + injection proofs live in the
-  // governance gate. It cannot include `verify:scenario --all` without recursing
-  // into itself, so the "registered flow scenarios pass" half is carried by
-  // S01's acceptance walkthrough (manual, see the playbook).,
-
-  // ===== safe-file-ingestion =====
-  "SFI-R01-S01": COREC("import"), // per-input mixed results,
-  "SFI-R01-S02": COREC("import"),
-  "SFI-R01-S03": COREC("untagged_wav_import_uses_the_missing_tag_fallbacks"),
-  // R02: 导入选择过滤器与支持矩阵一致.,
-  "SFI-R02-S01": COREC("import"),
-  // R03: 同名歌词侧车导入. S02 (LRC 不可读) 继承旧 SFI-R02-S02 的 sidecar 验证.,
-  "SFI-R03-S01": COREC("sidecar"),
-  "SFI-R03-S02": COREC("sidecar"),
-  // R04: BLAKE3 去重与重名编号.,
-  "SFI-R04-S01": COREC("dedup"),
-  "SFI-R04-S02": COREC("import"),
-  "SFI-R04-S03": COREC("application::recover::tests::imports::nothing_recoverable_rolls_back_and_releases_cleanly"), // P0: 不可用记录不占用目标,
-  "SFI-R04-S04": COREC("dedup"),
-  // R05: 暂存、校验、原子移动与操作日志. S03/S04/S05 由 recover 与侧车失败测试证明;
-  // S05 保持 P0 自动化(发布后 watcher 抢占 -> 唯一 UUID).,
-  "SFI-R05-S01": COREC("import"),
-  "SFI-R05-S02": COREC("import"),
-  "SFI-R05-S03": PERF("completed_local_edit_latency"), // 导入后无需重新扫描: Release 基准导入 6 种格式后直接断言已可用且目录总数包含导入
-  "SFI-R05-S04": COREC("application::recover::tests::imports::crash_at_every_state_and_fs_point_recovers_to_unique_terminal_twice"), // P0 崩溃后恢复
-  "SFI-R05-S05": COREC("sidecar_publish_conflict_is_audio_success_lyrics_failure_and_keeps_the_incumbent"), // 音频发布后侧车失败
-  "SFI-R05-S06": COREC("application::recover::tests::imports::recovery_never_creates_a_duplicate_when_a_watcher_preempts"), // P0 发布后 watcher 抢先观察
-  // 目录对象提交与 SQLite 投影的先后边界（change enforce-library-first-durability）：
-  // 目录提交是业务持久化点，SQLite 失败不撤销已提交资料。
-  "SFI-R05-S07": COREC("library_durability_actual_record_rename_failure_remains_saved_and_retryable"), // 音频成功而对象持久化失败: 记录材料化失败仍已保存可重试（同 LD-R02-S05 行为）
-  "SFI-R05-S08": COREC("library_durability_memory_failed_projection_reserves_the_saved_sequence"), // 对象成功而数据库投影失败: 已保存待更新、保留序列供同操作重试
-  // R06: 逐文件结果与资料库不可用反馈.,
-  "SFI-R06-S01": COREC("import"),
-  "SFI-R06-S02": COREC("import"),
-  // R07: 源文件、系统关联与安全边界. S03/S04/S05 是旧 SFI-R06-S03/04/05 的编号迁移:
-  // 非活动旧资料库打开走 open_path 分派谓词, 源文件保持与暂存冲突走 import/staging.,
-  "SFI-R07-S01": `node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path`, // external open -> temporary item,
-  "SFI-R07-S02": `node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path`, // in-library open resolves to the existing UUID,
-  "SFI-R07-S03": `node scripts/verify/checks/task-9.1.mjs && cargo test -p echo-desktop --all-features runtime::services::tests::open_path`, // old-root file never resolves through the old UUID,
-  "SFI-R07-S04": COREC("import"),
-  "SFI-R07-S05": COREC("staging"),
-  // R08: 单实例唤醒与重复打开.,
-  "SFI-R08-S01": CHECK("9.1"),
-  "SFI-R08-S02": CHECK("9.1"),
-  // R09（normalize-os-file-open-paths）余下三条是结构契约，不是单条数据断言：
-  // S03 归一化由 `open_targets(&[tauri::Url]) -> Vec<PathBuf>` 的类型签名强制、
-  // S04 前端不得二次解码、S05 壳层不得回退到 `try_state` 查找。三者都由 task-9.1
-  // 的门（open_targets 单测 + main.rs 结构断言）覆盖，故与同族 P0 一样必须是
-  // automated 命令，不能落到人工 attestation 回退。,
-  "SFI-R09-S01": CHECK("9.1"), // 带百分号编码的 file URL 归一化,
-  "SFI-R09-S02": CHECK("9.1"), // 非 file scheme 丢弃,
-  "SFI-R09-S03": CHECK("9.1"), // 归一化契约由类型强制,
-  "SFI-R09-S04": CHECK("9.1"), // 前端不得二次解码,
-  "SFI-R09-S05": CHECK("9.1"), // 纵深防御不得被放宽
-  // R10: 跨平台路径与恢复后的幂等性.,
-  "SFI-R10-S01": COREC("import"),
-  "SFI-R10-S02": COREC("import"),
-  // R11: 受控并发批量导入与非阻塞反馈. S01–S04 由导入批处理与结果分类器证明.
-  // S05 (多线程重叠可验证) 需要两个文件在同一同步屏障等待后同时进入阶段 —— 当前
-  // import 是顺序执行(无并发 worker), 该承诺由人工记录(attestation)验证, 直到
-  // 导入实际并发化 (mirrors the scan worker bound test).,
-  "SFI-R11-S01": COREC("batch_import_lands_under_media_and_keeps_dedup_and_numbering"),
-  "SFI-R11-S02": REACT_T("src/features/import/importFeedback.test.ts", "treats imported, duplicate and skipped as non-failures"),
-  "SFI-R11-S03": REACT_T("src/features/import/importFeedback.test.ts", "reports only real failures in the failure list"),
-  "SFI-R11-S04": REACT("src/features/import/ImportBatchDialog.test.tsx"),
-  "SFI-R11-S05": ATTEST("SFI-R11-S05"), // 实现为顺序导入; 并发重叠待导入并发化后证明
-  // 导入持久化边界通过共享核心验证（SFI-R12）——提交/恢复规则在 Core Application，
-  // 旧 DB-first 材料化入口不得并存（change enforce-library-first-durability）。
-  "SFI-R12-S01": "node scripts/verify/ci-governance.mjs", // 导入契约回归: 治理门承载全量导入/watcher/边界中断/重建与并发测试（同 LD-R10-S01 先例）
-
-  // ===== sync-foundation (SYN) =====,
-
-  // ===== sync-foundation =====
-  "SYN-R01-S01": CHECK("3.10"), // 0005 schema landed without touching 0001,
-  "SYN-R01-S02": COREC("infrastructure::sqlite::tests::sync_foundation"),
-  "SYN-R02-S01": COREC("infrastructure::sqlite::tests::sync_foundation"),
-  "SYN-R02-S02": CHECK("3.14"), // outbox prewritten, no operable sync entry,
-  "SYN-R02-S03": COREC("infrastructure::sqlite::tests::sync_foundation"),
-  "SYN-R03-S01": COREC("infrastructure::sqlite::tests::sync_foundation"),
-  "SYN-R04-S01": COREC("infrastructure::sqlite::tests::sync_payloads_carry_no_absolute_paths"),
-  "SYN-R05-S01": COREC("infrastructure::sqlite::tests::sync_foundation"),
-  "SYN-R05-S02": COREC("infrastructure::sqlite::tests::sync_foundation"),
-  "SYN-R05-S03": CHECK("3.10"),
-  // 本地候选/确认事实独立于 SQLite（SYN-R06）、新绑定显式接纳旧待确认意图（SYN-R07）与
-  // 远端应用不制造上传回声（SYN-R08）——outbox 仅是目录事实的投影（change
-  // enforce-library-first-durability）。
-  "SYN-R06-S01": COREC("crash_during_record_materialization_converges_to_one_record_and_outbox"), // 重建 outbox: 崩溃后收敛到同一记录与 outbox
-  "SYN-R06-S02": COREC("library_durability_trusted_sync_retry_restores_exact_baseline_and_pending_without_echo"), // 远端确认后重建: 恢复精确基线与 pending、无回声
-  "SYN-R06-S03": COREC("library_durability_legacy_write_cannot_transfer_confirmation_to_new_value"), // v2 混旧确认元数据: 确认不能转移给新值
-  "SYN-R06-S04": COREC("library_durability_standalone_playlist_keeps_no_sync_allocations"), // 单机编辑不创建同步候选: 未绑定根不分配 sync 事实
-  "SYN-R07-S01": COREC("library_durability_scoped_key_retains_same_event_across_bindings_and_epochs"), // 接纳中断: 同一事件跨 binding/epoch 保留身份
-  "SYN-R07-S02": COREC("library_durability_local_allocation_unproven_predecessor_never_advances_fences"), // 无法证明已确认: 未证明前驱不推进 fence、保留待处理
-  "SYN-R07-S03": COREC("confirmed_play_stats_buckets_authorize_exactly_their_recorded_counts"), // 统计桶授权: 已确认桶只授权它记录的计数
-  "SYN-R08-S01": COREC("library_durability_playback_later_session_catches_up_and_rebuild_has_no_echo"), // 反复恢复与 watcher: 追上后重建无等价回传
-
-  // ===== ci-release-pipeline (CRP) =====
-  // The release-domain behaviors are executed by .github/workflows/release.yml
-  // (per-platform `pnpm echo release`, artifact assertion, SHA256SUMS,
-  // upload/download artifact, softprops/action-gh-release) and verified
-  // end-to-end by the tagged v0.1.0 Release. Every CRP row resolves to the
-  // task-crp structural drift gate so the domain stays inside the three-way
-  // reconciliation (not a silent attestation marker) without recursing into
-  // task-13.9 (which is itself a scenario command in --automated runs).,
+  // phase-one-acceptance
+  "PHA-R01-S01": { command: ATTEST("PHA-R01-S01"), evidence: [attest("PHA-R01-S01")] },
+"PHA-R01-S02": { command: GOVERNANCE, delegatedTo: "governance", evidence: [node("scripts/verify/ci-governance.mjs")], },
 };
 
 import { allScenarioIds } from "./spec-scenarios.mjs";
 
 export function scenarioCommands() {
-  const ids = allScenarioIds();
-  const byId = new Map(ids.map((d) => [d.id, d]));
-  const out = [];
-  for (const [id, item] of byId) {
-    const command = COMMANDS[id] || ATTEST(id);
-    out.push({ id, title: item.scenario, area: item.area, command });
-  }
-  return out;
+  return allScenarioIds().map(({ id, scenario, area }) => {
+    const entry = SCENARIOS[id];
+    if (!entry) throw new Error(`scenario ${id} has no entry in SCENARIOS`);
+    return { id, title: scenario, area, ...entry };
+  });
 }
 
 // Standalone: summarize coverage.
 import { fileURLToPath } from "node:url";
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const list = scenarioCommands();
-  const fallback = list.filter((s) => !COMMANDS[s.id]);
-  process.stdout.write(`scenario commands: ${list.length} total, ${fallback.length} attestation-fallback\n`);
-  if (fallback.length) {
-    process.stdout.write(`fallback (manual attestation) IDs:\n${fallback.map((s) => `  ${s.id}`).join("\n")}\n`);
-  }
+  const commands = new Set(list.map((s) => s.command));
+  const evidence = list.reduce((n, s) => n + (s.evidence?.length || 0), 0);
+  process.stdout.write(
+    `scenario registry: ${list.length} scenarios, ${commands.size} distinct commands, ${evidence} evidence entries\n`,
+  );
 }

@@ -41,6 +41,4 @@ run(
   ],
   APP,
 );
-run("cargo", ["clippy", "-p", "echo-app", "--", "-D", "warnings"], ROOT);
-
 process.stdout.write("ok 11.8: app shortcuts + range stepping + media status verified\n");
