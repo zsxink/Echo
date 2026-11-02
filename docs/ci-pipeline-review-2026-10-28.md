@@ -209,3 +209,39 @@ pnpm verify:governance
 ---
 
 *本报告为只读分析产物，未修改任何 workflow、脚本或源代码。*
+
+---
+
+## 后续（2026-11-02，issue #124）
+
+> 本节只记录 2026-11-02 的改造与实测结果，不改上文的历史结论。CI 实测在 PR 首次运行后回填（见文末）。
+
+### 做了什么
+
+| 改造 | 内容 |
+|---|---|
+| 平台分层 | PR 的 `Test` 只在 Rust(Linux) 跑完整 workspace 测试；Windows/macOS 的完整测试移到 main |
+| 删除重复 job | `linux-platform-gate` 并入 Rust(Linux)；LFS 只在 Windows checkout |
+| task gates 分片 | 42 个 task gate 拆成 core 10 / desktop 17 / frontend-a 8 / frontend-b 7；16.1 放 Rust Linux（42+1） |
+| governance 分段 | 8 个 section 拆到 `governance-static`（registry/static/coverage）与 Rust(Linux) 的 `Rust static gates`（rust-static/purity）；静态段不再装 webkit、不构建前端 |
+| release gate 去静态 | `task-13.9.mjs --skip-static --delegated=governance,perf`；只跳过静态预检，场景照跑 |
+| 性能场景独立 | 新增 `perf` job 跑 `pnpm verify:perf`（SFI-R05-S03 / LE-R21-S02 / PM-R13-S05） |
+| 注入证明分片 | 39 条拆成 2 片；shard 1 额外构建壳并跑嵌入前端新鲜度 |
+| 命令形状 | 场景校验/证据门的 cargo list 加 `--all-targets`；lib-only task 检查加 `--lib --all-features` |
+
+### 本地实测（2026-11-02）
+
+| 项 | 结果 |
+|---|---|
+| `ci-governance --sections=registry,static,coverage` | exit 0 |
+| `ci-governance --sections=rust-static,purity` | exit 0 |
+| 注入证明 shard 1/2 | 18/18，39.3s |
+| 注入证明 shard 2/2 | 18/18，32.4s |
+| 注入证明条目 | 39（36 + 3 条 CI 结构证明） |
+| `task-13.9 --skip-static --delegated=governance,perf` | 464/464 自动化场景，PRD A1–A14 矩阵通过 |
+| `task-1.5` | 绿：18 个 job 实例、4 片 task、8 个 section 全覆盖 |
+
+### 待回填（Task 13）
+
+PR 首次运行后在此补墙钟、机器时间与 job 级长尾：改造前基线见 §11（2026-10-28 报告：450s / 2647s / 12 job）
+以及改造前 run `41323932057`（约 21 分钟）。
