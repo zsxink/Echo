@@ -14,6 +14,7 @@
     "verify:self-test": "node scripts/verify/self-test.mjs",
     "verify:governance": "node scripts/verify/ci-governance.mjs",
     "verify:frontend-fresh": "node scripts/verify/checks/check-embedded-frontend.mjs",
+    "verify:perf": "node scripts/verify/run-scenario.mjs SFI-R05-S03 LE-R21-S02 PM-R13-S05",
     "default-player": "node scripts/macos-default-player.mjs"
   },
   "devDependencies": {

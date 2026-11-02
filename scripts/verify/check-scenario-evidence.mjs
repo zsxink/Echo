@@ -39,7 +39,7 @@ const scenarios = scenarioCommands();
 /** Measured when the evidence registry replaced the churn ratchet. */
 const FLOORS = { scenarios: 523, evidence: 541 };
 const KINDS = new Set(["rust", "vitest", "node", "attestation"]);
-const DELEGATED_GATES = new Set(["governance"]);
+const DELEGATED_GATES = new Set(["governance", "perf"]);
 
 const errors = [];
 const fail = (m) => errors.push(m);
@@ -57,7 +57,10 @@ let delegatedCount = 0;
 const testLists = new Map();
 function cargoTestList(packageName) {
   if (testLists.has(packageName)) return testLists.get(packageName);
-  const result = spawnSync("cargo", ["test", "-p", packageName, "--all-features", "--", "--list"], {
+  // `--all-targets` keeps this listing in the same build shape as the workspace
+  // test job; without it Cargo also builds the doc-test harness, which no
+  // scenario evidence can come from.
+  const result = spawnSync("cargo", ["test", "-p", packageName, "--all-targets", "--all-features", "--", "--list"], {
     cwd: ROOT,
     encoding: "utf8",
   });

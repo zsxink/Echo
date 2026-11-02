@@ -112,6 +112,7 @@ writeFileSync(
     "    passed=1 ;;\n" +
     "  *one-filter*) printf 'test one_filter_ok ... ok\\n'; name=one; passed=1 ;;\n" +
     "  *two-filter*) printf 'test two_filter_ok ... ok\\n'; name=two; passed=1 ;;\n" +
+    "  *perf-filter*) printf 'test perf_filter_ok ... ok\\n'; passed=1 ;;\n" +
     "  *) passed=0 ;;\n" +
     "esac\n" +
     "if [ -n \"$ECHO_FAKE_CARGO_LOG\" ]; then printf '%s\\n' \"$*\" >> \"$ECHO_FAKE_CARGO_LOG\"; fi\n" +
@@ -169,6 +170,13 @@ writeFileSync(
         command: "cargo test -p echo-core --all-features regular-filter",
         delegatedTo: "governance",
         evidence: [{ kind: "rust", target: "regular_test_ok" }],
+      },
+      {
+        id: "rust-perf-test",
+        title: "performance test explicitly delegated to the perf job",
+        command: "cargo test -p echo-core --all-features perf-filter",
+        delegatedTo: "perf",
+        evidence: [{ kind: "rust", target: "perf_filter_ok" }],
       },
       {
         id: "rust-ignored-test",
@@ -288,10 +296,32 @@ assert(
     && reusedRustScenarios.stderr.includes("rust-ignored-test"),
   "only explicitly delegated scenarios are skipped; undeclared Rust scenarios still execute",
 );
+const multiGateScenarios = runScenarioRunner(
+  scenarioFixture,
+  ["--delegated=governance,perf", "rust-reused-test", "rust-perf-test"],
+  scenarioEnv,
+);
+assert(
+  multiGateScenarios.status === 0
+    && multiGateScenarios.stdout.includes("covered by the governance job")
+    && multiGateScenarios.stdout.includes("covered by the perf job"),
+  "comma-separated delegated gates cover both scenarios",
+);
+const singlePerfGate = runScenarioRunner(
+  scenarioFixture,
+  ["--delegated=perf", "rust-reused-test", "rust-perf-test"],
+  scenarioEnv,
+);
+assert(
+  singlePerfGate.status !== 0
+    && singlePerfGate.stdout.includes("covered by the perf job")
+    && singlePerfGate.stderr.includes("rust-reused-test"),
+  "a single delegated gate covers only its declared scenarios",
+);
 
 // Lockfiles must be unchanged after a run.
 const before = LOCKFILES.map(hashOf);
-runRunner(fixture, ["ok", "failing", "--all"]);
+runRunner(fixture, ["ok", "failing", "--all"], taskEnv);
 const after = LOCKFILES.map(hashOf);
 assert(
   JSON.stringify(before) === JSON.stringify(after),

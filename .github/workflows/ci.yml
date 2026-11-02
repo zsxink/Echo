@@ -27,9 +27,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           # The vendored Windows libmpv-2.dll is a Git-LFS object (114 MB >
-          # GitHub's 100 MB blob limit); the rust job needs the real file so
-          # build.rs can stage it for Windows dev runs.
-          lfs: true
+          # GitHub's 100 MB blob limit); only the Windows leg needs the real
+          # file so build.rs can stage it. Linux/macOS never read it, so they
+          # skip the LFS download.
+          lfs: ${{ runner.os == 'Windows' }}
 
       # The filesystem gate tests create real symlinks (walker / staging never
       # follow an escaping or externally-owned link). Windows runners only allow
@@ -81,8 +82,29 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+      # PR runs keep the full workspace test on Linux only; Windows/macOS still
+      # run fmt, clippy and their platform Gates on every PR, and their full
+      # workspace tests execute on main.
       - name: Test
-        run: cargo test --workspace --all-features
+        if: github.event_name != 'pull_request' || matrix.platform == 'Linux'
+        run: cargo test --workspace --all-targets --all-features
+
+      # These gates used to live in a separate Linux-only job. They share the
+      # Linux leg's already-built workspace, so running them here removes a
+      # cold job without dropping any check from PR or main.
+      - name: Rust static gates
+        if: matrix.platform == 'Linux'
+        env:
+          ECHO_PURITY_REQUIRE_BUILD: "1"
+        run: pnpm verify:governance -- --sections=rust-static,purity
+
+      - name: Task 16.1
+        if: matrix.platform == 'Linux'
+        run: pnpm verify:task -- 16.1
+
+      - name: Task 9.7 9.8
+        if: matrix.platform == 'Linux'
+        run: pnpm verify:task -- 9.7 9.8
 
       # 8.12 (real libmpv smoke over the fixture matrix) and 13.2 (native
       # temp-library e2e + restart consistency) load the vendored macOS dylib
@@ -138,28 +160,35 @@ jobs:
         run: pnpm --filter @echo/desktop build
 
   task-gates:
-    name: Task gates
+    name: Task gates (${{ matrix.shard }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: core
+            tasks: "1.1 1.3 1.8 3.1 4.1 5.1 6.1 11.5 12.5 13.3"
+          - shard: desktop
+            tasks: "7.1 8.1 8.2 8.3 8.4 8.5 8.6 8.7 8.8 8.9 8.10 8.11 10.6 11.1 11.2 11.4 16.2"
+          - shard: frontend-a
+            tasks: "10.1 10.2 10.3 10.4 10.5 11.3 11.6 13.1"
+          - shard: frontend-b
+            tasks: "10.7 10.8 10.9 10.10 12.1 12.2 12.3"
     steps:
       - uses: actions/checkout@v4
 
+      # Only the two Rust shards need a toolchain and cargo cache; the frontend
+      # shards run typecheck/vitest/node checks and never invoke cargo.
       - name: Install Rust toolchain (pinned, rustfmt + clippy)
+        if: matrix.shard == 'core' || matrix.shard == 'desktop'
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.98.1
           components: rustfmt, clippy
 
       - name: Cache Rust build artifacts
+        if: matrix.shard == 'core' || matrix.shard == 'desktop'
         uses: Swatinem/rust-cache@v2
-
-      # Several gates compile the echo-app Tauri shell (`cargo check/clippy -p
-      # echo-app` in 16.1/16.2) and the workspace shape gate (1.1); the Linux
-      # build needs the webview headers before any assertion can run.
-      - name: Install Linux webview dependencies
-        run: >-
-          sudo apt-get update && sudo apt-get install -y
-          libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
-          librsvg2-dev patchelf
 
       - uses: actions/setup-node@v4
         with:
@@ -173,19 +202,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # generate_context! needs the built frontend, exactly as in the Rust job.
-      - name: Build frontend for Tauri context
-        run: pnpm --dir apps/desktop build
-
       # Every id below was registered in scripts/verify/manifest.json but wired
       # into no CI job and no scenario (issue #110 P1-6), so a red gate could
       # sit unnoticed for months. The list is the executable inventory of that
       # adjudication: an id runs here, in a platform Gate job, or is marked
       # `archived: true` in the manifest (and then skipped by `--all`).
       #
-      # 8.12/13.2 run in the Rust job's macOS leg (they need the staged
-      # target/Frameworks dylib set); 1.7 runs in the dependency-audit job
-      # (it installs cargo-deny/cargo-audit).
+      # 16.1 runs in the Rust Linux job (it needs the built Tauri shell);
+      # 8.12/13.2 run in the Rust job's macOS leg (staged dylibs); 1.7 runs in
+      # the dependency-audit job (it installs cargo-deny/cargo-audit).
       - name: Verify task gates
         env:
           # task-13.1 drives headless Chromium over CDP; the GitHub ubuntu
@@ -193,17 +218,12 @@ jobs:
           # sandbox is unavailable.
           CHROME_PATH: /usr/bin/google-chrome
           CHROME_NO_SANDBOX: "1"
-        run: >-
-          pnpm verify:task --
-          1.1 1.3 1.8 3.1 4.1 5.1 6.1 7.1
-          8.1 8.2 8.3 8.4 8.5 8.6 8.7 8.8 8.9 8.10 8.11
-          10.1 10.2 10.3 10.4 10.5 10.6 10.7 10.8 10.9 10.10
-          11.1 11.2 11.3 11.4 11.5 11.6
-          12.1 12.2 12.3 12.5 13.1 13.3 16.1 16.2
+        run: pnpm verify:task -- ${{ matrix.tasks }}
 
       # task-12.5 asserts the PRD latency budgets and writes the measured
       # values here; the task requires them to be kept as a CI artifact.
       - name: Upload 50k benchmark result
+        if: matrix.shard == 'core'
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-50k
@@ -334,40 +354,8 @@ jobs:
       - name: Verify platform Gate (9.7 9.8 17.1 18.1)
         run: pnpm verify:task -- 9.7 9.8 17.1 18.1
 
-  linux-platform-gate:
-    name: Linux platform Gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain (pinned)
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.98.1
-
-      - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.18.0
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      # task-9.8 on Linux reports a loud *pending* until task 2.2's CI first
-      # build lands vendor/libmpv/linux/ (then the probe stages libmpv.so and
-      # drives it for real). It must never silently skip.
-      - name: Verify platform Gate (9.7 9.8)
-        run: pnpm verify:task -- 9.7 9.8
-
-  governance:
-    name: Governance gates
+  governance-static:
+    name: Governance static gates
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -380,15 +368,6 @@ jobs:
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
-
-      # The governance gates run `cargo test --workspace --all-targets
-      # --all-features`, which builds the echo-app Tauri shell. Without these
-      # the Linux build fails before any gate executes.
-      - name: Install Linux webview dependencies
-        run: >-
-          sudo apt-get update && sudo apt-get install -y
-          libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
-          librsvg2-dev patchelf
 
       # The fixture gate regenerates fixtures/audio in scratch directories and
       # compares them against the committed bytes; it needs ffmpeg on PATH.
@@ -419,23 +398,20 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify active Rust toolchain
-        run: node scripts/verify/check-toolchain.mjs
-
-      # Two gates read `apps/desktop/dist`: the embedded-frontend freshness
-      # check compares a binary against it, and the injection proof for that
-      # check needs it to be able to express its violation at all. Building it
-      # here is what keeps those from degrading into named skips.
-      - name: Build the frontend bundle the desktop shell embeds
-        run: pnpm --dir apps/desktop build
-
-      - name: Run governance gates except mutation proofs
-        run: pnpm verify:governance -- --without-injection
-
+      # No webkit or frontend build: these sections do not compile the Tauri
+      # shell or read apps/desktop/dist. The Rust-heavy sections live in the
+      # Rust Linux leg, and the embedded-frontend check lives with the
+      # injection proofs that own its binary.
+      - name: Run governance static gates
+        run: pnpm verify:governance -- --sections=registry,static,coverage
 
   injection-proofs:
-    name: Gate injection proofs
+    name: Injection proof ${{ matrix.shard }}/2
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v4
 
@@ -468,13 +444,20 @@ jobs:
       - name: Build the frontend bundle the desktop shell embeds
         run: pnpm --dir apps/desktop build
 
+      # The embedded-frontend proof (pinned to shard 1) compares against the
+      # shell binary and the freshly built dist; no other shard needs either.
       - name: Build the shell binary checked by embedded-frontend proof
+        if: matrix.shard == 1
         run: cargo build -p echo-app
 
-      - name: Prove each governance gate rejects its injected violation
+      - name: Verify embedded frontend freshness
+        if: matrix.shard == 1
+        run: pnpm verify:frontend-fresh
+
+      - name: Prove each governance gate
         env:
           ECHO_INJECTION_REQUIRE_ALL: "1"
-        run: node scripts/verify/injection-suite.mjs
+        run: node scripts/verify/injection-suite.mjs --shard=${{ matrix.shard }}/2
 
   release-gate:
     name: Release gate
@@ -512,4 +495,32 @@ jobs:
         run: pnpm --dir apps/desktop build
 
       - name: Run release gate without external artifacts
-        run: node scripts/verify/checks/task-13.9.mjs --delegated=governance
+        run: node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf
+
+  perf:
+    name: Performance scenarios
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (pinned)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+
+      # The three performance scenarios share one aggregated echo-core
+      # invocation; no pnpm install, webkit or frontend build is needed.
+      - name: Run performance scenarios
+        run: pnpm verify:perf

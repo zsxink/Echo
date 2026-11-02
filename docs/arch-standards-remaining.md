@@ -23,7 +23,7 @@
 | 场景对账 | **spec 523 = trace 523 = manifest 523** | `node scripts/verify/reconcile-scenarios.mjs` |
 | 场景证据覆盖 | **523 场景 / 541 证据条**（下限只增） | `node scripts/verify/check-scenario-evidence.mjs` |
 | 已登记检查数 | **97** | `node scripts/verify/check-verification-validity.mjs` |
-| 注入证明 | **36/36 通过，工作树逐字节还原** | `ECHO_INJECTION_REQUIRE_ALL=1 node scripts/verify/injection-suite.mjs` |
+| 注入证明 | **44/44 通过，工作树逐字节还原** | `ECHO_INJECTION_REQUIRE_ALL=1 node scripts/verify/injection-suite.mjs` |
 | 验证器自检 | **10 条断言全过** | `pnpm verify:self-test` |
 | manifest 任务数 | **141**（任务）/ 523（场景） | `node -e '…manifest.json…'` |
 
@@ -37,14 +37,18 @@ cd apps/desktop && pnpm format:check && pnpm typecheck && pnpm lint && pnpm test
 
 # Rust
 cargo fmt --all --check
-cargo test --workspace --all-features
+cargo test --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-# 治理门禁（聚合入口，等价于 CI 的 governance job）
+# 治理门禁（聚合入口；CI 按 section 拆到 governance-static 与 Rust(Linux)）
 pnpm verify:governance
+pnpm verify:governance -- --list-sections                     # 8 个 section 的权威列表
+pnpm verify:governance -- --sections=registry,static,coverage # CI: governance-static
+pnpm verify:governance -- --sections=rust-static,purity       # CI: Rust(Linux) 的 Rust static gates
 
-# 注入证明（36 条；单独跑更快，其中若干条会真跑 cargo/pnpm 做正向对照）
+# 注入证明（44 条；CI 分 2 片，本地可整跑或按片跑）
 ECHO_INJECTION_REQUIRE_ALL=1 node scripts/verify/injection-suite.mjs
+node scripts/verify/injection-suite.mjs --shard=1/2
 
 # 构建纯净性（含产物级证明，会真跑一次 cargo check）
 ECHO_PURITY_REQUIRE_BUILD=1 node scripts/verify/check-build-purity.mjs
@@ -170,7 +174,7 @@ node scripts/verify/checks/task-5.mjs 5.2 \
 - **mutate**：改一个仓库文件，跑完还原。每个目标先做内存快照 + 磁盘备份，`finally` 还原，**按哈希校验**，
   并额外逐路径比对前后 git 状态。
 
-**36 条证明全绿**（23 条在本文件内，10 条在 `injection-governance.mjs`，3 条在 `injection-object-kinds.mjs`）；
+**44 条证明全绿**（21 条在本文件内，20 条在 `injection-governance.mjs`，3 条在 `injection-object-kinds.mjs`）；
 每条还断言门禁在**未污染的工作树上是通过的**（正向对照），所以"恒红"的门禁混不进来。
 少数无法在任意机器上为绿的门禁（dev 构建的二进制、本就"尚无举证"的真机行）显式标注 `baseline: false`
 并附一个明确的通过用例。
@@ -207,11 +211,14 @@ node scripts/verify/checks/task-5.mjs 5.2 \
 默认模式即此漂移门）。**改任何场景命令或证据之前先改 registry 再 `--write`。**
 
 **release-gate 的 delegation**：`ci.yml` 的 `release-gate` 以
-`node scripts/verify/checks/task-13.9.mjs --delegated=governance` 运行；`task-13.9.mjs` 把参数
-透传给 `run-scenario.mjs`，后者只跳过注册表里**显式声明** `delegatedTo: "governance"` 的场景
-（当前 `LD-R10-S01`、`PHA-R01-S02`，治理 job 会单独跑整门）。没有该声明的一律照常执行；
-本地不带参数时整门照跑，严格度不变。`check-scenario-evidence.mjs` 校验该声明只允许
-`"governance"`，且 `ci.yml` 中确有运行 `pnpm verify:governance` 的 job。
+`node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf` 运行；`task-13.9.mjs`
+把 `--delegated` 透传给 `run-scenario.mjs`，后者只跳过注册表里**显式声明**了对应 gate 的场景：
+`delegatedTo: "governance"`（`LD-R10-S01`、`PHA-R01-S02`，由 governance 的 section 执行）与
+`delegatedTo: "perf"`（`SFI-R05-S03`、`LE-R21-S02`、`PM-R13-S05`，由 `pnpm verify:perf` 执行）。
+没有该声明的一律照常执行；本地不带参数时整门照跑，严格度不变。`--skip-static` 只跳过
+reconcile / validate-scenario-commands / gen-scenario-manifests 三步静态预检（已在 `governance-static`
+执行），自动化场景与 PRD 矩阵照跑。`check-scenario-evidence.mjs` 校验每个被委托的 gate 在 `ci.yml`
+中确有 `pnpm verify:<gate>` 的执行位置。
 
 ---
 
@@ -290,8 +297,8 @@ attestation 场景里（如 `DP-R02-S05` 连续下一首播放、`DP-R04-S04` �
 
 ## 7. 门禁全集（14.1–14.9，都已接电）
 
-登记在 `scripts/verify/manifest.json`，接入 `pnpm verify:governance`（`scripts/verify/ci-governance.mjs`）
-与 CI 的 `governance` job：
+登记在 `scripts/verify/manifest.json`，接入 `pnpm verify:governance`（`scripts/verify/ci-governance.mjs`）；
+CI 中按 8 个 section 分散到 `governance-static` 与 Rust(Linux) 的 `Rust static gates`（见 §10.1）：
 
 | 任务 | 脚本 | 它证明什么 |
 |---|---|---|
@@ -302,16 +309,17 @@ attestation 场景里（如 `DP-R02-S05` 连续下一首播放、`DP-R04-S04` �
 | 14.5 | `check-verification-validity.mjs` | 失败路径 + 观测点；**调用子进程必须比较退出码** |
 | 14.6 | `check-build-purity.mjs` | 测试专用模块 cfg 门控 + 默认构建的 `.d` 里不出现 |
 | 14.7 | `check-scenario-evidence.mjs` | 场景证据非空且目标可解析；「523 场景 / 541 证据条」下限只增不减 |
-| 14.8 | `injection-suite.mjs` | **36** 条"注入违规即失败"证明 + 自包含检查必须带证明 |
+| 14.8 | `injection-suite.mjs` | **44** 条"注入违规即失败"证明 + 自包含检查必须带证明 |
 | 14.9 | `checks/check-embedded-frontend.mjs` | 二进制里嵌的是当前 `dist`（此前只有手工入口） |
 
-另有 `task-1.6`（fixture 确定性 + 许可清单）在 issue #110 阶段 0 后接入 governance job
+另有 `task-1.6`（fixture 确定性 + 许可清单）在 issue #110 阶段 0 后接入 governance 门禁
 （它此前登记在 manifest 却**没接任何 CI job、也没接任何场景**，可以连续红几个月没人知道）。
 
-CI 的 governance job 在跑 `pnpm verify:governance` 之前会先 `pnpm --dir apps/desktop build`：
-14.8 里"嵌入前端"那条证明需要一个可比的 `dist`，否则会退化成具名 skip。
-`ci-governance.mjs` 设 `ECHO_INJECTION_REQUIRE_ALL=1`，把那种 skip 变成失败
-（与 `check-build-purity.mjs` 的 `ECHO_PURITY_REQUIRE_BUILD=1` 同一契约）。
+嵌入前端证明（14.9）的注入证明在 `injection-proofs` 的 shard 1：该 job 先 `pnpm --dir apps/desktop build`
+与 `cargo build -p echo-app`，再跑 `pnpm verify:frontend-fresh`，最后跑
+`injection-suite.mjs --shard=1/2`。`ci-governance.mjs` 与 `injection-suite.mjs` 在 CI 中都设
+`ECHO_INJECTION_REQUIRE_ALL=1`，把「环境不满足」的 skip 变成失败（与 `check-build-purity.mjs`
+的 `ECHO_PURITY_REQUIRE_BUILD=1` 同一契约）。
 
 **教训值得重复一遍**：14.1–14.5 这些检查在本段之前**已经存在，但不在 `manifest.json` 里**，
 所以从来没人执行过；本轮又发现两个同类——`pnpm --dir apps/desktop format:check` 早已红灯
@@ -367,3 +375,68 @@ CI 的 governance job 在跑 `pnpm verify:governance` 之前会先 `pnpm --dir a
 
 归档一个 change 前，必须先把它的任务勾选或书面关闭——校验器会把未勾选任务当成失败。
 （issue #110 阶段 2/3/4 的 change 归档时同样受这条约束。）
+
+---
+
+## 10. CI 拓扑、分片与委托（2026-11-02，issue #124）
+
+PR CI 从约 21 分钟压到 10 分钟以内的改造后，`ci.yml` 共有 **18 个 job 实例**：
+
+| job（实例数） | 职责 | 关键点 |
+|---|---|---|
+| `Rust (Linux/macOS/Windows)`（3） | fmt / clippy / 全 workspace 测试 | PR 只有 Linux 跑完整 `Test`；Windows/macOS 的完整测试在 main 上跑 |
+| `Rust (Linux)` 追加步骤 | `Rust static gates`、`Task 16.1`、`Task 9.7 9.8` | 复用同一份构建；原 `linux-platform-gate` 已删除 |
+| `Frontend (Linux/macOS/Windows)`（3） | format / lint / typecheck / test / build | PR 仍三平台 |
+| `Task gates (core/desktop/frontend-a/frontend-b)`（4） | 42 个 task gate 分片 | 16.1 在 Rust Linux，8.12/13.2 在 Rust macOS，1.7 在 dependency-audit |
+| `Dependency audit`（1） | task 1.7 | cargo-deny / cargo-audit |
+| `macOS platform Gate`（1） | 1.9 / 1.10 / 9.7 | 真实打包与签名校验 |
+| `Windows platform Gate`（1） | 9.7 / 9.8 / 17.1 / 18.1 | LFS checkout |
+| `Governance static gates`（1） | registry / static / coverage 三个 section | 不装 webkit、不构建前端 |
+| `Injection proof 1/2`、`2/2`（2） | 44 条注入证明分片 | shard 1 额外构建壳并跑嵌入前端新鲜度 |
+| `Release gate`（1） | 13.9 自动化场景 + PRD 矩阵 | `--skip-static --delegated=governance,perf` |
+| `Perf`（1） | `pnpm verify:perf` 三条性能场景 | 独立 job，与 release gate 并行 |
+
+**PR/main 覆盖分层**：`Test` 的 `if` 是
+`github.event_name != 'pull_request' || matrix.platform == 'Linux'`——PR 只在 Linux 跑完整 workspace
+测试，Windows/macOS 仍跑 fmt、clippy 与各自的平台 Gate，完整测试在 main 上跑。前端矩阵在 PR 上保持三平台。
+
+**关键路径**是 `Release gate`（实测 888s，其中 `task-13.9` 单步 753s）与 `Rust (Linux)`（685s）。
+实测 job 级墙钟见 `docs/ci-pipeline-review-2026-10-28.md` 的「PR CI 实测（2026-11-02，run 41393026889）」。
+
+### 10.1 governance 的 8 个 section 与执行位置
+
+`ci-governance.mjs --list-sections` 是权威列表；`task-1.5` 逐个断言每个 section 在 `ci.yml` 中有执行位置。
+
+| section | 执行位置 |
+|---|---|
+| quality | Rust 三平台的 Format / Clippy / Test |
+| registry | `governance-static`：`--sections=registry,static,coverage` |
+| static | 同上 |
+| coverage | 同上 |
+| rust-static | Rust(Linux) 的 `Rust static gates`：`--sections=rust-static,purity` |
+| purity | 同上（`ECHO_PURITY_REQUIRE_BUILD=1`） |
+| embedded | `Injection proof 1/2`：`pnpm verify:frontend-fresh`（需先构建 dist 与 `echo-app`） |
+| injection | `Injection proof 1/2`、`2/2`：`injection-suite.mjs --shard=<i>/2` |
+
+### 10.2 task gate 分片
+
+42 个 task gate 按依赖与运行时拆成 4 片：core 10、desktop 17、frontend-a 8、frontend-b 7。
+16.1（需要 Tauri 壳）放在 Rust Linux，与四片合计 **42+1**。`task-1.5` 断言四片并集恰为 42、
+无重复、且不含 16.1。
+
+### 10.3 注入证明分片
+
+`injection-suite.mjs --shard=<i>/n` 由 `injection-shard.mjs` 的 `selectEntries` 计算：条目按位置轮转
+（`position % n + 1`），条目也可用显式 `shard: <k>` 钉住——`embedded-frontend/stale-binary` 钉在
+shard 1，因为它需要壳二进制与 dist。每次调用都校验并集等于全集、各片互斥且非空、索引在范围内；
+`--only` 与 `--shard` 可组合，分片作用在过滤后的子集上。CI 固定 `n=2`。
+
+### 10.4 release gate 的三个契约
+
+- `pnpm verify:perf` 聚合执行 `SFI-R05-S03`、`LE-R21-S02`、`PM-R13-S05` 三条性能场景
+  （注册表 `delegatedTo: "perf"`）。
+- `task-13.9.mjs --delegated=governance,perf`：把注册表中显式声明给这两个 gate 的场景标为
+  「由对应 job 覆盖」，而不是静默跳过；`check-scenario-evidence.mjs` 要求 `ci.yml` 里确有
+  `pnpm verify:governance` 与 `pnpm verify:perf`。
+- `--skip-static` 只跳过 reconcile / validate-scenario-commands / gen-scenario-manifests 的静态预检
+  （已在 `governance-static` 执行）；自动化场景与 PRD A1–A14 矩阵照跑。不要把它当成「跳过场景」。

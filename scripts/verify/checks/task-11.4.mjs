@@ -31,9 +31,9 @@ function run(command, args, cwd) {
   }
 }
 
-run("cargo", ["test", "-p", "echo-core", "application::detail"], ROOT);
-run("cargo", ["test", "-p", "echo-desktop", "runtime::player::tests"], ROOT);
-run("cargo", ["test", "-p", "echo-desktop", "ipc::generate::tests"], ROOT);
+run("cargo", ["test", "-p", "echo-core", "--lib", "--all-features", "application::detail"], ROOT);
+run("cargo", ["test", "-p", "echo-desktop", "--lib", "--all-features", "runtime::player::tests"], ROOT);
+run("cargo", ["test", "-p", "echo-desktop", "--lib", "--all-features", "ipc::generate::tests"], ROOT);
 run("pnpm", ["--filter", "@echo/desktop", "typecheck"], APP);
 run(
   "pnpm",

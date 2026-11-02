@@ -89,6 +89,8 @@
 
 场景的验收命令 MAY 按域聚合——多个场景共享一次批量执行——但每个场景 MUST 显式声明它依赖的验收证据（一条或多条），且每一条证据 MUST 满足以下全部条件：目标在仓库中真实存在；目标在聚合命令的实际执行输出中被观测到执行过；目标与场景 THEN 子句所依赖的行为直接相关。仅凭"命令里带了过滤器"或"场景被列在某个批量命令下" MUST NOT 被计为已验证。聚合 MUST NOT 使任何场景的证据检查退化为恒真。
 
+场景或任务 MAY 将其验收显式委托给另一个持续集成 gate，但委托 MUST 指向在持续集成中真实执行的 gate；委托 MUST NOT 成为跳过检查的通道。被委托的 gate MUST 在 `ci.yml` 的某个 job 中有执行位置，且委托关系 MUST 由静态门禁校验。
+
 #### Scenario: 过滤器未命中任何测试
 
 - **WHEN** 某条验证命令的过滤器因拼写错误或测试改名而未命中任何测试
@@ -128,6 +130,11 @@
 
 - **WHEN** 新增一个场景并登记了聚合域命令，但没有声明其验收证据
 - **THEN** 门禁失败并指出该场景标识，不允许以"落在某个批量命令范围内"作为登记方式
+
+#### Scenario: 委托的 gate 在持续集成中不存在
+
+- **WHEN** 某场景或任务声明其验收委托给某个 gate
+- **THEN** 静态门禁确认该 gate 在持续集成中有执行位置；若不存在，门禁失败并指出该声明
 
 ### Requirement: 作为场景验收命令的检查必须自带可执行的失败证明
 
@@ -344,3 +351,36 @@
 
 - **WHEN** 新实现已替代旧实现，而旧模块、导出、测试替身或登记资产不再有有效消费者
 - **THEN** 该残留被删除，或以明确消费者与保留理由登记；引用检查、静态检查和相关测试证明结果一致
+
+### Requirement: CI 执行分层与结构完整性
+
+持续集成 MUST 按事件类型分层执行验证，且分层 MUST NOT 使任何检查从 Pull Request 与 `main` 同时消失。Pull Request MUST 执行三平台 `fmt` / `clippy`、Linux 全量 workspace 测试与各平台 Gate。Windows / macOS 的全量 workspace 测试 MUST 在推送到 `main` 时执行；在 Pull Request 上 MAY 被跳过。任何在 Pull Request 上被跳过的检查 MUST 在 `main` 上真实执行，并由结构门禁断言。
+
+CI 的验证结构 MUST 可被静态校验：task 分片的并集 MUST 覆盖全部已登记 task 且无重复；governance 的每个 section MUST 在 `ci.yml` 中有执行位置；场景委托 MUST 指向真实执行的 gate；删除、重命名或移动 job / step 导致上述结构不成立时，结构门禁 MUST 失败。
+
+#### Scenario: PR 与 main 的分层覆盖
+
+- **WHEN** 一次 Pull Request 运行持续集成
+- **THEN** 三平台 `fmt` / `clippy`、Linux 全量 workspace 测试与各平台 Gate 实际执行；Windows / macOS 的全量 workspace 测试可以跳过
+- **WHEN** 同一变更推送到 `main` 后运行持续集成
+- **THEN** Windows / macOS 的全量 workspace 测试实际执行，而不是保持 skipped
+
+#### Scenario: 检查从 PR 与 main 同时消失
+
+- **WHEN** 某个检查在 Pull Request 上被跳过，且 `main` 上也没有执行它的 job 或 step
+- **THEN** 结构门禁失败并指出该检查，而不是把分层当作删除检查的通道
+
+#### Scenario: task 分片遗漏或重复
+
+- **WHEN** 各 task 分片的 task 列表并集不等于全部已登记 task，或某个 task 同时出现在两个分片
+- **THEN** 结构门禁失败并指出缺失或重复的 task
+
+#### Scenario: governance section 无执行位置
+
+- **WHEN** `ci-governance.mjs` 声明的某个 section 在 `ci.yml` 中没有执行位置
+- **THEN** 结构门禁失败并指出该 section，而不是让该段检查静默不执行
+
+#### Scenario: CI 结构被重命名或移动
+
+- **WHEN** 承载 task 分片、governance section 或平台 Gate 的 job / step 被删除、重命名或移动，导致结构断言无法定位它
+- **THEN** 结构门禁失败并指出缺失的 job / step

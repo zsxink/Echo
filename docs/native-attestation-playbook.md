@@ -130,7 +130,7 @@ export function scenarioCommands() {
 | PLL-R02-S03 | 同步资料不含 `echo/tmp/<op>/` 与任何暂存文件 | `infrastructure/filesystem/control_plane.rs` `tmp_files_are_ignored_as_records`、`staging.rs` `staging_dir_is_emitted_as_echo_tmp_with_matching_marker` | `COREC("tmp_files_are_ignored_as_records")` |
 | PLL-R03-S01 | 新设备重建一致的 UUID/喜欢/歌单/成员顺序并可播放 | `application/continuation/tests.rs` `continuation_restores_songs_favorites_playlists_and_member_order` —— **更正**：原登记为整模块 `COREC("application::restore")`，该过滤器下只有断言**歌曲**投影的用例，而本行写的是「喜欢/歌单/成员顺序」，属于「用成功路径测试冒充未覆盖的验收」。现指向真正断言歌单数量、成员顺序与 `is_favorite` 恢复的用例 | `COREC("application::continuation::tests::continuation_restores_songs_favorites_playlists_and_member_order")` |
 | PLL-R03-S02 | 资料先到、媒体未到时显示不可用并保留 UUID，媒体到达后恢复且不产生第二首 | `application/portable.rs` `restore_projects_records_and_keeps_missing_without_media` | `COREC("restore_projects_records_and_keeps_missing_without_media")` |
-| PHA-R01-S02 | 回归质量门：Rust/前端/格式/静态检查与登记场景均通过 | `scripts/verify/ci-governance.mjs` —— 含 `cargo test --workspace --all-targets --all-features`、前端构建、覆盖率、三方对账、场景证据门、纯净性、注入证明共 14 道 | 注册表声明 `delegatedTo: "governance"`：release-gate 以 `--delegated=governance` 跳过（治理 job 单独跑整门），本地不带参数时仍整门执行 |
+| PHA-R01-S02 | 回归质量门：Rust/前端/格式/静态检查与登记场景均通过 | `scripts/verify/ci-governance.mjs` —— 含 `cargo test --workspace --all-targets --all-features`、覆盖率、三方对账、场景证据门、纯净性、注入证明（8 个 section，CI 分到 `governance-static` 与 Rust Linux） | 注册表声明 `delegatedTo: "governance"`：release-gate 以 `--delegated=governance,perf` 覆盖，本地不带参数时仍整门执行 |
 
 ## 3. 丙类：有测试但覆盖不全 —— **已按「先补测试再登记」收口**（4 条）
 
@@ -444,3 +444,22 @@ cargo test -p echo-core    --all-features -- --list > /tmp/core.txt
 > 也没有门禁按目录枚举去发现它，于是它既不会被删也不会被查。整棵场景 yaml 生成树现已删除，
 > 该类问题不复存在；`manifest.json.scenarios[]` 由 `--write` 整体重写，不登记的 ID 不可能残留。
 > 若仍需要该 0.1.0 归档证据，它只能来自 git 历史，不再是一份活着的生成物。
+
+### 7.4 CI 中的委派与跳过契约（2026-11-02）
+
+场景注册表（`scripts/verify/scenario-commands.mjs`）用 `delegatedTo` 声明「这条场景由哪个 CI job
+真正执行」，避免 release gate 与治理/性能 job 重复跑同一件事：
+
+- `LD-R10-S01`（资料库 durability）与 `PHA-R01-S02`（回归质量门）声明 `delegatedTo: "governance"`。
+  release gate 以 `--delegated=governance,perf` 运行时，这两条标记为「由 governance 覆盖」；
+  `ci.yml` 中治理的 8 个 section 分在 `governance-static` 与 Rust(Linux) 的 `Rust static gates`。
+  `check-scenario-evidence.mjs` 要求 `ci.yml` 确有 `pnpm verify:governance`。
+- 三条性能场景 `SFI-R05-S03`、`LE-R21-S02`、`PM-R13-S05` 声明 `delegatedTo: "perf"`，由独立 `perf`
+  job 的 `pnpm verify:perf` 一次聚合执行（同一个 echo-core 命令）；`check-scenario-evidence.mjs`
+  要求 `ci.yml` 确有 `pnpm verify:perf`。
+- release gate 入口是
+  `node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf`。
+  `--skip-static` **只**跳过 reconcile / validate-scenario-commands / gen-scenario-manifests 三步静态预检
+  （已由 `governance-static` 执行），464 条自动化场景与 PRD A1–A14 矩阵仍然执行——它不是「跳过场景」的开关。
+
+本地复验时不带 `--delegated` 会实际执行这些场景，严格度不变；带 `--delegated` 只改变「谁负责跑」的记录方式。

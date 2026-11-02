@@ -31,6 +31,126 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       },
     },
     {
+      id: "ci-structure/test-condition-windows",
+      guard: "the Rust Test step being gated to Windows instead of Linux on pull requests",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: rust Test if must include 'matrix\.platform == 'Linux''/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "if: github.event_name != 'pull_request' || matrix.platform == 'Linux'",
+          "if: github.event_name != 'pull_request' || matrix.platform == 'Windows'",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/rust-static-step-missing",
+      guard: "the Rust Linux job losing its rust-static/purity governance step",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: ci\.yml job 'rust' is missing step 'Rust static gates'/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "      - name: Rust static gates\n        if: matrix.platform == 'Linux'\n        env:\n          ECHO_PURITY_REQUIRE_BUILD: \"1\"\n        run: pnpm verify:governance -- --sections=rust-static,purity\n\n",
+          "",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/test-condition-and-inverted",
+      guard: "the Rust Test tiering condition using && so PRs and main both lose the full workspace test",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: rust Test if must be 'github\.event_name != 'pull_request' \|\| matrix\.platform == 'Linux'/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "if: github.event_name != 'pull_request' || matrix.platform == 'Linux'",
+          "if: github.event_name != 'pull_request' && matrix.platform == 'Linux'",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/test-continue-on-error",
+      guard: "the Rust Test step becoming advisory via continue-on-error: true",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: rust Test must not set continue-on-error/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "      - name: Test\n        if: github.event_name != 'pull_request' || matrix.platform == 'Linux'\n",
+          "      - name: Test\n        if: github.event_name != 'pull_request' || matrix.platform == 'Linux'\n        continue-on-error: true\n",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/governance-static-run-disabled",
+      guard: "governance-static keeping the section flags but replacing the run with an echo",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: governance-static run must be 'pnpm verify:governance -- --sections=registry,static,coverage'/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "        run: pnpm verify:governance -- --sections=registry,static,coverage",
+          '        run: echo "--sections=registry,static,coverage"',
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/perf-job-gated-off-pr",
+      guard: "the perf job gaining a job-level if so performance scenarios stop running on pull requests",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: ci\.yml job 'perf' must not be conditionally skipped/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "  perf:\n    name: Performance scenarios\n",
+          "  perf:\n    name: Performance scenarios\n    if: github.event_name != 'pull_request'\n",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/section-coverage-missing",
+      guard: "governance-static dropping the coverage section from its --sections selection",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: governance-static run must be 'pnpm verify:governance -- --sections=registry,static,coverage'/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "--sections=registry,static,coverage",
+          "--sections=registry,static",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/section-list-authority",
+      guard: "a section disappearing from the selector and the workflow together, which a derived-only guard would not notice",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: ci-governance no longer lists section 'coverage'/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, "scripts", "verify", "ci-governance.mjs"),
+          '"static", "coverage", "purity"',
+          '"static", "purity"',
+        );
+        return {};
+      },
+    },
+    {
       id: "release-platform-matrix/corrupt-linux-runner",
       guard: "the release Build matrix mapping Linux to a non-Linux runner",
       check: ["node", ["scripts/verify/checks/task-crp.mjs"]],

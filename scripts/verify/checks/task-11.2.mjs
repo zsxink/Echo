@@ -42,6 +42,6 @@ run(
   ["--filter", "@echo/desktop", "test", "--", "--run", "src/features/player/QueuePanel.test.tsx"],
   APP,
 );
-run("cargo", ["test", "-p", "echo-desktop", "runtime::player::tests"], ROOT);
+run("cargo", ["test", "-p", "echo-desktop", "--lib", "--all-features", "runtime::player::tests"], ROOT);
 
 process.stdout.write("ok 11.2: queue panel (snapshot-driven, blocked/error + clear pending) verified\n");

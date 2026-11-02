@@ -47,7 +47,7 @@ run("pnpm", ["--filter", "@echo/desktop", "test", "--", "--run", "src/player/pla
 // (the actor cannot know a queue-entry id). Requiring these by name, rather than
 // only "the module compiles and its tests run", is what keeps a dead
 // subscription or a wrong identity source from passing as green.
-const runtime = spawnSync("cargo", ["test", "-p", "echo-desktop", "--lib", "runtime::player::tests"], {
+const runtime = spawnSync("cargo", ["test", "-p", "echo-desktop", "--lib", "--all-features", "runtime::player::tests"], {
   cwd: ROOT,
   encoding: "utf8",
 });

@@ -33,7 +33,12 @@ function groupOf(name) {
 }
 
 function runGroup(group, names) {
-  const result = spawnSync("cargo", ["test", "-p", "echo-desktop", "--all-features", group], {
+  // A bare name (no `::`) is an integration-test function — 7.8's privacy
+  // tests live in `tests/privacy.rs`. `--lib` would filter those out, so the
+  // lib-only shape applies only to module-qualified groups.
+  const libOnly = group.includes("::");
+  const args = ["test", "-p", "echo-desktop", ...(libOnly ? ["--lib"] : []), "--all-features", group];
+  const result = spawnSync("cargo", args, {
     cwd: ROOT,
     encoding: "utf8",
   });

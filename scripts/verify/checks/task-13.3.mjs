@@ -37,7 +37,7 @@ function fail(msg) {
 const executed = [];
 
 function runTests(filter) {
-  const r = spawnSync("cargo", ["test", "-p", "echo-core", "--all-features", filter], {
+  const r = spawnSync("cargo", ["test", "-p", "echo-core", "--lib", "--all-features", filter], {
     cwd: ROOT,
     encoding: "utf8",
   });

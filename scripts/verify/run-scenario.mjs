@@ -179,7 +179,7 @@ function commandLabel(command) {
   return command.length > 120 ? `${command.slice(0, 117)}...` : command;
 }
 
-async function executeScenarios(requested, delegatedGate) {
+async function executeScenarios(requested, delegatedGates) {
   const resultByCommand = new Map();
   const commands = [];
   const seenCommands = new Set();
@@ -191,7 +191,7 @@ async function executeScenarios(requested, delegatedGate) {
     // covered by a job running elsewhere. Never infer coverage from the shape
     // of the command (e.g. "any cargo test is covered"): after aggregation
     // that heuristic silently skipped real work.
-    if (scenario && delegatedGate !== null && scenario.delegatedTo === delegatedGate) {
+    if (scenario && delegatedGates !== null && delegatedGates.has(scenario.delegatedTo)) {
       covered.add(id);
       continue;
     }
@@ -255,7 +255,7 @@ async function executeScenarios(requested, delegatedGate) {
   for (const id of requested) {
     if (covered.has(id)) {
       const scenario = scenarios.find((entry) => entry.id === id);
-      process.stdout.write(`ok: scenario ${id} (${scenario.title}) — covered by the ${delegatedGate} job\n`);
+      process.stdout.write(`ok: scenario ${id} (${scenario.title}) — covered by the ${scenario.delegatedTo} job\n`);
     } else if (!runScenario(id, resultByCommand)) {
       ok = false;
     }
@@ -266,9 +266,11 @@ async function executeScenarios(requested, delegatedGate) {
 
 const rawArgv = process.argv.slice(2);
 const delegatedFlag = rawArgv.find((arg) => arg.startsWith("--delegated="));
-const delegatedGate = delegatedFlag ? delegatedFlag.slice("--delegated=".length) : null;
-if (delegatedFlag && !delegatedGate) {
-  fail("--delegated=<gate> requires a gate name");
+const delegatedGates = delegatedFlag
+  ? new Set(delegatedFlag.slice("--delegated=".length).split(",").map((s) => s.trim()).filter(Boolean))
+  : null;
+if (delegatedFlag && (!delegatedGates || delegatedGates.size === 0)) {
+  fail("--delegated=<gate> requires at least one gate name");
   process.exit(1);
 }
 // The flag selects how declared scenarios are covered; it is never a scenario id.
@@ -295,7 +297,7 @@ if (!requested.length) {
   process.exit(1);
 }
 
-executeScenarios(requested, delegatedGate).then((passed) => {
+executeScenarios(requested, delegatedGates).then((passed) => {
   process.exitCode = passed ? 0 : 1;
 }).catch((error) => {
   process.stderr.write(`error: scenario runner failed unexpectedly: ${error.message}\n`);
