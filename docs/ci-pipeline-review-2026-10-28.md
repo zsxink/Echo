@@ -226,7 +226,7 @@ pnpm verify:governance
 | governance 分段 | 8 个 section 拆到 `governance-static`（registry/static/coverage）与 Rust(Linux) 的 `Rust static gates`（rust-static/purity）；静态段不再装 webkit、不构建前端 |
 | release gate 去静态 | `task-13.9.mjs --skip-static --delegated=governance,perf`；只跳过静态预检，场景照跑 |
 | 性能场景独立 | 新增 `perf` job 跑 `pnpm verify:perf`（SFI-R05-S03 / LE-R21-S02 / PM-R13-S05） |
-| 注入证明分片 | 39 条拆成 2 片；shard 1 额外构建壳并跑嵌入前端新鲜度 |
+| 注入证明分片 | 44 条拆成 2 片；shard 1 额外构建壳并跑嵌入前端新鲜度 |
 | 命令形状 | 场景校验/证据门的 cargo list 加 `--all-targets`；lib-only task 检查加 `--lib --all-features` |
 
 ### 本地实测（2026-11-02）
@@ -235,11 +235,11 @@ pnpm verify:governance
 |---|---|
 | `ci-governance --sections=registry,static,coverage` | exit 0 |
 | `ci-governance --sections=rust-static,purity` | exit 0 |
-| 注入证明 shard 1/2 | 18/18，39.3s |
-| 注入证明 shard 2/2 | 18/18，32.4s |
-| 注入证明条目 | 39（36 + 3 条 CI 结构证明） |
+| 注入证明 shard 1/2 | 22/22，39.5s |
+| 注入证明 shard 2/2 | 22/22，36.8s |
+| 注入证明条目 | 44（36 + 3 条基础 CI 结构证明 + 5 条结构守卫加固证明） |
 | `task-13.9 --skip-static --delegated=governance,perf` | 464/464 自动化场景，PRD A1–A14 矩阵通过 |
-| `task-1.5` | 绿：18 个 job 实例、4 片 task、8 个 section 全覆盖 |
+| `task-1.5` | 绿：18 个 job 实例、4 片 task、8 个 section 全覆盖、6 个必跑 job 无 job 级 `if` |
 
 ### 待回填（Task 13）
 

@@ -23,7 +23,7 @@
 | 场景对账 | **spec 523 = trace 523 = manifest 523** | `node scripts/verify/reconcile-scenarios.mjs` |
 | 场景证据覆盖 | **523 场景 / 541 证据条**（下限只增） | `node scripts/verify/check-scenario-evidence.mjs` |
 | 已登记检查数 | **97** | `node scripts/verify/check-verification-validity.mjs` |
-| 注入证明 | **39/39 通过，工作树逐字节还原** | `ECHO_INJECTION_REQUIRE_ALL=1 node scripts/verify/injection-suite.mjs` |
+| 注入证明 | **44/44 通过，工作树逐字节还原** | `ECHO_INJECTION_REQUIRE_ALL=1 node scripts/verify/injection-suite.mjs` |
 | 验证器自检 | **10 条断言全过** | `pnpm verify:self-test` |
 | manifest 任务数 | **141**（任务）/ 523（场景） | `node -e '…manifest.json…'` |
 
@@ -37,7 +37,7 @@ cd apps/desktop && pnpm format:check && pnpm typecheck && pnpm lint && pnpm test
 
 # Rust
 cargo fmt --all --check
-cargo test --workspace --all-features
+cargo test --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 # 治理门禁（聚合入口；CI 按 section 拆到 governance-static 与 Rust(Linux)）
@@ -46,7 +46,7 @@ pnpm verify:governance -- --list-sections                     # 8 个 section �
 pnpm verify:governance -- --sections=registry,static,coverage # CI: governance-static
 pnpm verify:governance -- --sections=rust-static,purity       # CI: Rust(Linux) 的 Rust static gates
 
-# 注入证明（39 条；CI 分 2 片，本地可整跑或按片跑）
+# 注入证明（44 条；CI 分 2 片，本地可整跑或按片跑）
 ECHO_INJECTION_REQUIRE_ALL=1 node scripts/verify/injection-suite.mjs
 node scripts/verify/injection-suite.mjs --shard=1/2
 
@@ -174,7 +174,7 @@ node scripts/verify/checks/task-5.mjs 5.2 \
 - **mutate**：改一个仓库文件，跑完还原。每个目标先做内存快照 + 磁盘备份，`finally` 还原，**按哈希校验**，
   并额外逐路径比对前后 git 状态。
 
-**36 条证明全绿**（23 条在本文件内，10 条在 `injection-governance.mjs`，3 条在 `injection-object-kinds.mjs`）；
+**44 条证明全绿**（21 条在本文件内，20 条在 `injection-governance.mjs`，3 条在 `injection-object-kinds.mjs`）；
 每条还断言门禁在**未污染的工作树上是通过的**（正向对照），所以"恒红"的门禁混不进来。
 少数无法在任意机器上为绿的门禁（dev 构建的二进制、本就"尚无举证"的真机行）显式标注 `baseline: false`
 并附一个明确的通过用例。
@@ -309,7 +309,7 @@ CI 中按 8 个 section 分散到 `governance-static` 与 Rust(Linux) 的 `Rust 
 | 14.5 | `check-verification-validity.mjs` | 失败路径 + 观测点；**调用子进程必须比较退出码** |
 | 14.6 | `check-build-purity.mjs` | 测试专用模块 cfg 门控 + 默认构建的 `.d` 里不出现 |
 | 14.7 | `check-scenario-evidence.mjs` | 场景证据非空且目标可解析；「523 场景 / 541 证据条」下限只增不减 |
-| 14.8 | `injection-suite.mjs` | **39** 条"注入违规即失败"证明 + 自包含检查必须带证明 |
+| 14.8 | `injection-suite.mjs` | **44** 条"注入违规即失败"证明 + 自包含检查必须带证明 |
 | 14.9 | `checks/check-embedded-frontend.mjs` | 二进制里嵌的是当前 `dist`（此前只有手工入口） |
 
 另有 `task-1.6`（fixture 确定性 + 许可清单）在 issue #110 阶段 0 后接入 governance 门禁
@@ -392,7 +392,7 @@ PR CI 从约 21 分钟压到 10 分钟以内的改造后，`ci.yml` 共有 **18 
 | `macOS platform Gate`（1） | 1.9 / 1.10 / 9.7 | 真实打包与签名校验 |
 | `Windows platform Gate`（1） | 9.7 / 9.8 / 17.1 / 18.1 | LFS checkout |
 | `Governance static gates`（1） | registry / static / coverage 三个 section | 不装 webkit、不构建前端 |
-| `Injection proof 1/2`、`2/2`（2） | 39 条注入证明分片 | shard 1 额外构建壳并跑嵌入前端新鲜度 |
+| `Injection proof 1/2`、`2/2`（2） | 44 条注入证明分片 | shard 1 额外构建壳并跑嵌入前端新鲜度 |
 | `Release gate`（1） | 13.9 自动化场景 + PRD 矩阵 | `--skip-static --delegated=governance,perf` |
 | `Perf`（1） | `pnpm verify:perf` 三条性能场景 | 独立 job，与 release gate 并行 |
 
