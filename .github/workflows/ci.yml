@@ -27,9 +27,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           # The vendored Windows libmpv-2.dll is a Git-LFS object (114 MB >
-          # GitHub's 100 MB blob limit); the rust job needs the real file so
-          # build.rs can stage it for Windows dev runs.
-          lfs: true
+          # GitHub's 100 MB blob limit); only the Windows leg needs the real
+          # file so build.rs can stage it. Linux/macOS never read it, so they
+          # skip the LFS download.
+          lfs: ${{ runner.os == 'Windows' }}
 
       # The filesystem gate tests create real symlinks (walker / staging never
       # follow an escaping or externally-owned link). Windows runners only allow
@@ -81,8 +82,29 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+      # PR runs keep the full workspace test on Linux only; Windows/macOS still
+      # run fmt, clippy and their platform Gates on every PR, and their full
+      # workspace tests execute on main.
       - name: Test
-        run: cargo test --workspace --all-features
+        if: github.event_name != 'pull_request' || matrix.platform == 'Linux'
+        run: cargo test --workspace --all-targets --all-features
+
+      # These gates used to live in a separate Linux-only job. They share the
+      # Linux leg's already-built workspace, so running them here removes a
+      # cold job without dropping any check from PR or main.
+      - name: Rust static gates
+        if: matrix.platform == 'Linux'
+        env:
+          ECHO_PURITY_REQUIRE_BUILD: "1"
+        run: pnpm verify:governance -- --sections=rust-static,purity
+
+      - name: Task 16.1
+        if: matrix.platform == 'Linux'
+        run: pnpm verify:task -- 16.1
+
+      - name: Task 9.7 9.8
+        if: matrix.platform == 'Linux'
+        run: pnpm verify:task -- 9.7 9.8
 
       # 8.12 (real libmpv smoke over the fixture matrix) and 13.2 (native
       # temp-library e2e + restart consistency) load the vendored macOS dylib
@@ -331,38 +353,6 @@ jobs:
       # this job so they run on every Windows-platform touchpoint.
       - name: Verify platform Gate (9.7 9.8 17.1 18.1)
         run: pnpm verify:task -- 9.7 9.8 17.1 18.1
-
-  linux-platform-gate:
-    name: Linux platform Gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain (pinned)
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.98.1
-
-      - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.18.0
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      # task-9.8 on Linux reports a loud *pending* until task 2.2's CI first
-      # build lands vendor/libmpv/linux/ (then the probe stages libmpv.so and
-      # drives it for real). It must never silently skip.
-      - name: Verify platform Gate (9.7 9.8)
-        run: pnpm verify:task -- 9.7 9.8
 
   governance:
     name: Governance gates
