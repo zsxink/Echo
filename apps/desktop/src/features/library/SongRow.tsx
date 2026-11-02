@@ -111,7 +111,7 @@ export function SongRow({
   // outside the referenced keep-set). A broken image would be worse than the
   // prototype's placeholder, so the first load failure falls back to it.
   const [artworkUnavailable, setArtworkUnavailable] = useState(false);
-  const artwork = coverKey && !artworkUnavailable ? assetUrl(coverKey) : null;
+  const artwork = coverKey && !artworkUnavailable ? assetUrl(coverKey, "list") : null;
 
   const play = () => {
     if (unavailable) return;

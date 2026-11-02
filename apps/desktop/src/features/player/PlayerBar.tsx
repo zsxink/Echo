@@ -82,7 +82,8 @@ export function PlayerBar({
   // entirely while nothing is current (an empty id list is never requested).
   const coverKeys = useCoverKeys(songId ? [songId] : []);
   const coverKey = songId ? (coverKeys.get(songId) ?? null) : (snapshot.currentCoverKey ?? null);
-  const artwork = coverKey && failedCoverId !== (songId ?? coverKey) ? assetUrl(coverKey) : null;
+  const artwork =
+    coverKey && failedCoverId !== (songId ?? coverKey) ? assetUrl(coverKey, "list") : null;
 
   // rAF-interpolated so the bar/滑块 glide instead of stepping per snapshot.
   // mpv can report duration after its paused restore snapshot. The library

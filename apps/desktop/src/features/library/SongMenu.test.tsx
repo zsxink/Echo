@@ -14,7 +14,7 @@
  * real app does with one global toast.
  */
 
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -68,6 +68,17 @@ describe("SongMenu task 10.8", () => {
     // No absolute path component leaks into the dialog.
     expect(screen.queryByText(/^\/Users\//)).toBeNull();
     expect(screen.queryByText(/^C:/)).toBeNull();
+  });
+
+  it("renders the menu thumbnail through the list tier", async () => {
+    // @ts-expect-error -- test-only global declared by src/test/setup.ts
+    globalThis.__echoTest.setInvoke("song_cover_keys", { "song-1": "cv1-menu" });
+    renderMenu(makeSong());
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("song-menu").querySelector(".menu-song img")?.getAttribute("src"),
+      ).toBe("cover://cv1-menu?s=list"),
+    );
   });
 
   it("opens a real delete confirmation and never marks deleted before a confirm is chosen", () => {

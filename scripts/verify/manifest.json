@@ -2572,6 +2572,174 @@
       ]
     },
     {
+      "id": "DAS-R20-S01",
+      "title": "列表类视图请求 128px 档",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/library/SongRow.test.tsx",
+          "name": "shows the embedded artwork in the prototype's .cover.has-image shape"
+        },
+        {
+          "kind": "vitest",
+          "target": "src/features/player/PlayerBar.test.tsx",
+          "name": "renders the embedded artwork when the backend resolves a key"
+        },
+        {
+          "kind": "vitest",
+          "target": "src/features/player/QueuePanel.test.tsx",
+          "name": "renders current and pending entries from the authoritative snapshot"
+        },
+        {
+          "kind": "vitest",
+          "target": "src/features/library/CollectionDirectory.test.tsx",
+          "name": "shows artist cards and reuses the library song table with selection in the detail"
+        },
+        {
+          "kind": "vitest",
+          "target": "src/features/library/SongMenu.test.tsx",
+          "name": "renders the menu thumbnail through the list tier"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R20-S02",
+      "title": "歌单封面预览请求 512px 档",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/playlists/PlaylistNameDialog.test.tsx",
+          "name": "renders a saved cover at detail size and passes blob previews through"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R20-S03",
+      "title": "沉浸式播放器显式请求原图",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/player/ImmersivePlayer.test.tsx",
+          "name": "puts the embedded artwork on the record label (内置优先)"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R20-S04",
+      "title": "缺省或未知档位安全回落",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "cover_uri_defaults_to_list_for_unknown_or_missing_size"
+        },
+        {
+          "kind": "rust",
+          "target": "cover_uri_parses_size_selector_before_stripping_query"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R20-S05",
+      "title": "档位不得绕过 key 校验",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "cover_uri_size_selector_cannot_bypass_key_validation"
+        },
+        {
+          "kind": "rust",
+          "target": "cover_uri_rejects_path_traversal_and_absolute_paths"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R20-S06",
+      "title": "封面响应可长期缓存",
+      "command": "cargo test -p echo-app --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "cover_responses_are_immutable_and_keep_cors_vary"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R20-S07",
+      "title": "缩略图失败不产生半成品",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "cover_cache_thumbnail_write_failure_leaves_no_partial_file"
+        },
+        {
+          "kind": "rust",
+          "target": "cover_cache_thumbnail_missing_and_corrupt_originals"
+        },
+        {
+          "kind": "rust",
+          "target": "cover_cache_thumbnail_drops_alpha_and_keeps_jpeg"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R20-S08",
+      "title": "旧缓存条目按需补齐",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "cover_cache_thumbnail_is_generated_on_demand_and_reused"
+        },
+        {
+          "kind": "rust",
+          "target": "cover_cache_thumbnail_tiers_are_independent"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R21-S01",
+      "title": "首访缩略图不占用主线程",
+      "command": "node scripts/verify/checks/check-native-attestation.mjs DAS-R21-S01",
+      "evidence": [
+        {
+          "kind": "attestation",
+          "target": "DAS-R21-S01"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R21-S02",
+      "title": "同一封面的并发首访只生成一次",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "cover_cache_concurrent_thumbnail_generation_decodes_once"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R21-S03",
+      "title": "生成失败不阻塞后续请求",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "cover_cache_thumbnail_write_failure_leaves_no_partial_file"
+        },
+        {
+          "kind": "rust",
+          "target": "cover_cache_thumbnail_missing_and_corrupt_originals"
+        }
+      ]
+    },
+    {
       "id": "DP-R01-S01",
       "title": "播放资料库歌曲",
       "command": "cargo test -p echo-desktop --all-features --test player_smoke",

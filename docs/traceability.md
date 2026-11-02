@@ -5,7 +5,7 @@
 - 本表逐项覆盖 specs 中的全部 Scenario；稳定 ID 不得复用，标题调整时保留原 ID。
 - 场景 ID 由 spec 标题派生；每行必须给出可执行验收命令，且该场景在 `scripts/verify/scenario-commands.mjs` 的 `SCENARIOS` 中声明非空 `evidence`（命令可执行 + 证据可观测）。人工举证由 `docs/native-attestation-playbook.md` 与 `artifacts/native-attestations/<ID>.log` 承担，字段与判定见 `check-native-attestation.mjs`。
 - 每行给出实际验收命令。`pnpm verify:scenario -- --all` 必须比较 specs、此表与场景清单的 ID 集合完全相等，并逐项执行；命令按域聚合后逐条断言 evidence 目标在输出中被观测到，缺失、重复、无命令、无证据、证据未观测或失败均返回非零。
-- 当前基线：103 个 Requirement，455 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
+- 当前基线：138 个 Requirement，534 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9、封面缩略图档位与首访非阻塞 2）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
 
 ## ci-release-pipeline
 
@@ -114,6 +114,17 @@
 | DAS-R19-S03 | Windows 无边框窗口与自绘窗口控件 | 双击拖拽区最大化与还原 | — | Rust | `pnpm verify:scenario -- DAS-R19-S03` |
 | DAS-R19-S04 | Windows 无边框窗口与自绘窗口控件 | 非 Windows 不渲染自绘控件 | — | React | `pnpm verify:scenario -- DAS-R19-S04` |
 | DAS-R19-S05 | Windows 无边框窗口与自绘窗口控件 | 窗口命令权限最小且配置不漂移 | — | Rust | `pnpm verify:scenario -- DAS-R19-S05` |
+| DAS-R20-S01 | 封面资产协议必须按显示档位提供受控图像 | 列表类视图请求 128px 档 | issue-111 | React/Core | `pnpm verify:scenario -- DAS-R20-S01` |
+| DAS-R20-S02 | 封面资产协议必须按显示档位提供受控图像 | 歌单封面预览请求 512px 档 | issue-111 | React | `pnpm verify:scenario -- DAS-R20-S02` |
+| DAS-R20-S03 | 封面资产协议必须按显示档位提供受控图像 | 沉浸式播放器显式请求原图 | issue-111 | React/Rust | `pnpm verify:scenario -- DAS-R20-S03` |
+| DAS-R20-S04 | 封面资产协议必须按显示档位提供受控图像 | 缺省或未知档位安全回落 | issue-111 | Rust | `pnpm verify:scenario -- DAS-R20-S04` |
+| DAS-R20-S05 | 封面资产协议必须按显示档位提供受控图像 | 档位不得绕过 key 校验 | issue-111 | Rust | `pnpm verify:scenario -- DAS-R20-S05` |
+| DAS-R20-S06 | 封面资产协议必须按显示档位提供受控图像 | 封面响应可长期缓存 | issue-111 | Rust | `pnpm verify:scenario -- DAS-R20-S06` |
+| DAS-R20-S07 | 封面资产协议必须按显示档位提供受控图像 | 缩略图失败不产生半成品 | issue-111 | Core | `pnpm verify:scenario -- DAS-R20-S07` |
+| DAS-R20-S08 | 封面资产协议必须按显示档位提供受控图像 | 旧缓存条目按需补齐 | issue-111 | Core | `pnpm verify:scenario -- DAS-R20-S08` |
+| DAS-R21-S01 | 首访缩略图生成不得阻塞 WebView 主线程 | 首访缩略图不占用主线程 | issue-111 | Desktop/Native | `pnpm verify:scenario -- DAS-R21-S01` |
+| DAS-R21-S02 | 首访缩略图生成不得阻塞 WebView 主线程 | 同一封面的并发首访只生成一次 | issue-111 | Core | `pnpm verify:scenario -- DAS-R21-S02` |
+| DAS-R21-S03 | 首访缩略图生成不得阻塞 WebView 主线程 | 生成失败不阻塞后续请求 | issue-111 | Core | `pnpm verify:scenario -- DAS-R21-S03` |
 
 ## desktop-playback
 

@@ -9,8 +9,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import { PlaylistNameDialog } from "./PlaylistNameDialog";
 
+const { assetUrl } = vi.hoisted(() => ({
+  assetUrl: vi.fn((key: string, size = "list") => `cover://${key}?s=${size}`),
+}));
+
 vi.mock("../../bridge", () => ({
-  bridge: { call: vi.fn() },
+  bridge: { call: vi.fn(), assetUrl },
 }));
 
 import { bridge } from "../../bridge";
@@ -221,5 +225,44 @@ describe("PlaylistNameDialog (task 10.9)", () => {
     expect(screen.getByLabelText("歌单新名称")).toHaveValue("凌晨");
     expect(onClose).not.toHaveBeenCalled();
     expect(call.mock.calls.filter(([command]) => command === "rename_playlist")).toHaveLength(1);
+  });
+
+  it("renders a saved cover at detail size and passes blob previews through", async () => {
+    assetUrl.mockClear();
+    render(
+      <PlaylistNameDialog
+        mode="edit"
+        playlistId="pl-1"
+        initialName="深夜"
+        initialCoverKey="cv1-saved"
+        existingNames={[]}
+        onClose={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    );
+
+    // The playlist preview is the one 512 px surface; a saved key must ask for
+    // the detail tier rather than the list default.
+    expect(screen.getByAltText("当前歌单封面")).toHaveAttribute(
+      "src",
+      "cover://cv1-saved?s=detail",
+    );
+    expect(assetUrl).toHaveBeenCalledWith("cv1-saved", "detail");
+
+    // A just-picked image is a local blob URL, not a cover-asset key: it must
+    // bypass `assetUrl` entirely (no `?s=` appended to an object URL).
+    assetUrl.mockClear();
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => "blob:cover-preview"),
+    });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(["cover"], "cover.png", { type: "image/png" })] },
+    });
+    await waitFor(() =>
+      expect(screen.getByAltText("当前歌单封面")).toHaveAttribute("src", "blob:cover-preview"),
+    );
+    expect(assetUrl).not.toHaveBeenCalled();
   });
 });

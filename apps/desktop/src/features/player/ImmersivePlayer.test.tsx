@@ -34,11 +34,17 @@ vi.mock("../../bridge", () => {
     },
     // The real shell composes `cover://<key>`; the test only needs a URL that
     // carries the opaque key.
-    assetUrl: (key: string) => `cover://${key}`,
+    assetUrl: (key: string, size = "list") => `cover://${key}?s=${size}`,
   };
 });
 
+vi.mock("./useArtworkTint", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./useArtworkTint")>();
+  return { ...actual, useArtworkTint: vi.fn(actual.useArtworkTint) };
+});
+
 import { bridge } from "../../bridge";
+import { useArtworkTint } from "./useArtworkTint";
 
 const call = vi.mocked(bridge.call);
 
@@ -203,7 +209,14 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
       if (!found) throw new Error("artwork not rendered yet");
       return found;
     });
-    expect(img.getAttribute("src")).toBe("cover://cv1-abc");
+    expect(img.getAttribute("src")).toBe("cover://cv1-abc?s=original");
+    // The palette probe consumes the same URL the <img> renders — the
+    // origin-clean pixel read must stay on the original, never a thumbnail.
+    expect(vi.mocked(useArtworkTint)).toHaveBeenCalledWith(
+      "cv1-abc",
+      "cover://cv1-abc?s=original",
+      true,
+    );
     // A resolved artwork means the drawn label placeholder is not in play.
     expect(container.querySelector(".vinyl-nocover")).toBeNull();
   });

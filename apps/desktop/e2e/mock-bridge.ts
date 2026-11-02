@@ -977,6 +977,9 @@ export function installMockBridge(): MockBridge {
     metadata: { currentWindow: { label: "main" } },
     invoke: (cmd: string, args: unknown, _options?: unknown) => bridge.invoke(cmd, args),
     transformCallback: (cb: (event: unknown) => void) => bridge.transformCallback(cb),
+    // The e2e build has no cover protocol, so covers resolve to a data: URI;
+    // `assetUrl` recognizes a non-cover base and leaves it without a tier
+    // suffix.
     convertFileSrc: (path: string, protocol = "asset") =>
       protocol === "cover" ? coverAssetUrl(path) : `${protocol}://${btoa(path)}`,
   };

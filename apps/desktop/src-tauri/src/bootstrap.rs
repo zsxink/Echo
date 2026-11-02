@@ -23,7 +23,7 @@ pub(super) fn bootstrap_main() {
     let builder = tauri::Builder::default()
         // The single-instance plugin is registered first, as required by the
         // plugin, so a later platform adapter cannot create a second process.
-        .register_uri_scheme_protocol("cover", cover_protocol::cover_protocol_handler)
+        .register_asynchronous_uri_scheme_protocol("cover", cover_protocol::cover_protocol_handler)
         .plugin(tauri_plugin_single_instance::init({
             let startup = Arc::clone(&startup);
             move |app, args, _cwd| {

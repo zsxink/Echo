@@ -34,7 +34,7 @@ function QueueCover({
   return (
     <img
       className="queue-cover"
-      src={assetUrl(coverKey)}
+      src={assetUrl(coverKey, "list")}
       alt=""
       data-testid="queue-cover-image"
       onError={() => setFailed(true)}

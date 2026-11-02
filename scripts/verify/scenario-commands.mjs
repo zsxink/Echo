@@ -1,6 +1,6 @@
 // Scenario → executable-command + evidence map for the 0.1.0 gate (task 13.9).
 //
-// 523 scenarios (spec-derived id set). A scenario's command is aggregated by
+// 534 scenarios (spec-derived id set). A scenario's command is aggregated by
 // domain; `evidence` names the tests/files the scenario actually depends on,
 // and run-scenario.mjs asserts each target was observed in the command output.
 // `manifest.json.scenarios[]` is generated from this table
@@ -568,6 +568,41 @@ export const SCENARIOS = {
 "DAS-R19-S03": { command: DESK_ALL, evidence: [rust("platform::security")], },
 "DAS-R19-S04": { command: VITEST_ALL, evidence: [vitest("src/app/WindowControls.test.tsx", "renders nothing outside the Windows platform")], },
 "DAS-R19-S05": { command: DESK_ALL, evidence: [rust("platform::security")], },
+
+// serve-cover-thumbnails (#111): tiered cover assets.
+"DAS-R20-S01": { command: VITEST_ALL, evidence: [
+  vitest("src/features/library/SongRow.test.tsx", "shows the embedded artwork in the prototype's .cover.has-image shape"),
+  vitest("src/features/player/PlayerBar.test.tsx", "renders the embedded artwork when the backend resolves a key"),
+  vitest("src/features/player/QueuePanel.test.tsx", "renders current and pending entries from the authoritative snapshot"),
+  vitest("src/features/library/CollectionDirectory.test.tsx", "shows artist cards and reuses the library song table with selection in the detail"),
+  vitest("src/features/library/SongMenu.test.tsx", "renders the menu thumbnail through the list tier"),
+], },
+"DAS-R20-S02": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx", "renders a saved cover at detail size and passes blob previews through")], },
+"DAS-R20-S03": { command: VITEST_ALL, evidence: [vitest("src/features/player/ImmersivePlayer.test.tsx", "puts the embedded artwork on the record label (内置优先)")], },
+"DAS-R20-S04": { command: DESK_ALL, evidence: [
+  rust("cover_uri_defaults_to_list_for_unknown_or_missing_size"),
+  rust("cover_uri_parses_size_selector_before_stripping_query"),
+], },
+"DAS-R20-S05": { command: DESK_ALL, evidence: [
+  rust("cover_uri_size_selector_cannot_bypass_key_validation"),
+  rust("cover_uri_rejects_path_traversal_and_absolute_paths"),
+], },
+"DAS-R20-S06": { command: APP_ALL, evidence: [rust("cover_responses_are_immutable_and_keep_cors_vary")], },
+"DAS-R20-S07": { command: CORE_ALL, evidence: [
+  rust("cover_cache_thumbnail_write_failure_leaves_no_partial_file"),
+  rust("cover_cache_thumbnail_missing_and_corrupt_originals"),
+  rust("cover_cache_thumbnail_drops_alpha_and_keeps_jpeg"),
+], },
+"DAS-R20-S08": { command: CORE_ALL, evidence: [
+  rust("cover_cache_thumbnail_is_generated_on_demand_and_reused"),
+  rust("cover_cache_thumbnail_tiers_are_independent"),
+], },
+"DAS-R21-S01": { command: ATTEST("DAS-R21-S01"), evidence: [attest("DAS-R21-S01")] },
+"DAS-R21-S02": { command: CORE_ALL, evidence: [rust("cover_cache_concurrent_thumbnail_generation_decodes_once")], },
+"DAS-R21-S03": { command: CORE_ALL, evidence: [
+  rust("cover_cache_thumbnail_write_failure_leaves_no_partial_file"),
+  rust("cover_cache_thumbnail_missing_and_corrupt_originals"),
+], },
 
   // phase-one-acceptance
   "PHA-R01-S01": { command: ATTEST("PHA-R01-S01"), evidence: [attest("PHA-R01-S01")] },

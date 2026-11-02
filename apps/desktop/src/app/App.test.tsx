@@ -398,7 +398,7 @@ describe("标题栏导入/设置入口所有视图可用 (SHELL-IMP)", () => {
     availability: "available" as const,
     relativePath: "song.flac",
   };
-  const PLAYLIST = { id: "pl-1", name: "通勤", memberCount: 1 };
+  const PLAYLIST = { id: "pl-1", name: "通勤", memberCount: 1, coverKey: "cv1-list" };
   const ARTIST = {
     kind: "artist",
     artistKey: "alice",
@@ -450,7 +450,13 @@ describe("标题栏导入/设置入口所有视图可用 (SHELL-IMP)", () => {
     // `role="list"`); they are not queryable by button role, so click through
     // the name text's parent button.
     const playlistName = await screen.findByText("通勤");
-    fireEvent.click(playlistName.closest("button")!);
+    const playlistButton = playlistName.closest("button")!;
+    // The sidebar card is a 128 px surface: it asks for the list tier, never
+    // the original.
+    expect(playlistButton.querySelector("img")?.getAttribute("src")).toBe(
+      "cover://cv1-list?s=list",
+    );
+    fireEvent.click(playlistButton);
     await screen.findByTestId("playlist-view");
     expect(screen.getByTestId("titlebar-import")).toBeInTheDocument();
   });

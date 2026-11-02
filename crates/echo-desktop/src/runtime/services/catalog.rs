@@ -448,7 +448,7 @@ impl super::AppServices {
         GetSongLyrics::new(self.deps.lyrics.as_ref()).execute(song)
     }
 
-    /// The opaque cover-asset keys of the given songs (design §16).
+    /// The opaque cover-asset keys of the given songs (docs/DESIGN.md §2.4).
     ///
     /// Design §115 resolves artwork **内置优先**: the scan persists the artwork
     /// embedded in the audio file (and the `.lrc`-sidecar equivalent for

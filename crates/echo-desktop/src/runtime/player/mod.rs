@@ -66,7 +66,7 @@ pub struct UiQueueEntry {
     /// The entry's duration in seconds — library metadata; `None` for
     /// temporary items or when the duration is unknown.
     pub duration_s: Option<u64>,
-    /// The entry's opaque `cover://` asset key (design §16); `None` when the
+    /// The entry's opaque `cover://` asset key (docs/DESIGN.md §2.4); `None` when the
     /// song carries no embedded artwork. Never an absolute path.
     pub cover_key: Option<String>,
 }

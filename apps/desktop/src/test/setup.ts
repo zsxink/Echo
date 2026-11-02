@@ -49,8 +49,9 @@ const tauriCore = {
     }
     throw new Error(`No mock for tauri command: ${command}`);
   }),
-  // The real shell registers the `cover://` scheme; tests only need a URL that
-  // carries the opaque key, so the scheme is observable without a WebView.
+  // The real shell registers the `cover://` scheme; tests need a base URL that
+  // carries the opaque key. `assetUrl` appends `?s=<tier>` *after* this call,
+  // so the mocked base deliberately has no query of its own.
   convertFileSrc: (key: string, protocol = "asset") => `${protocol}://${key}`,
 };
 

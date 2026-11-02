@@ -2,7 +2,7 @@
 // Task 12.7 check: security hardening across path traversal, symlink/reparse,
 // TOCTOU, malicious metadata, asset keys and the Tauri capability/CSP surface.
 //
-// Acceptance (tasks 12.7, design §16):
+// Acceptance (tasks 12.7, `desktop-app-shell` capability):
 //  - 路径穿越 / symlink/reparse escape: a candidate whose canonical target
 //    leaves the root is rejected; directory symlinks are never descended;
 //    publishing never follows/replaces a symlink at the target.
@@ -69,6 +69,9 @@ const DESKTOP_FILTERS = [
   "platform::security::tests::csp_never_opens_a_remote_or_network_source",
   "platform::security::tests::cover_uri_rejects_path_traversal_and_absolute_paths",
   "platform::security::tests::cover_key_rejects_bytes_that_can_form_a_path",
+  "platform::security::tests::cover_uri_parses_size_selector_before_stripping_query",
+  "platform::security::tests::cover_uri_defaults_to_list_for_unknown_or_missing_size",
+  "platform::security::tests::cover_uri_size_selector_cannot_bypass_key_validation",
   "platform::security::tests::minimal_capability_has_no_privileged_family",
   "platform::security::tests::committed_capability_grants_only_the_minimal_set",
   "platform::security::tests::tauri_conf_csp_matches_the_pinned_policy",

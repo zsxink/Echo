@@ -3,7 +3,7 @@
  *
  * The scan persists the artwork **embedded in the audio file** as an opaque
  * `cv1-…` asset key, and the desktop's `cover://` protocol resolves that key to
- * bytes (design §16). This module is the `useSyncExternalStore` boundary in
+ * bytes (docs/DESIGN.md §2.4). This module is the `useSyncExternalStore` boundary in
  * front of that lookup:
  *
  *  - a song with no embedded artwork is remembered as *asked, none*, so the

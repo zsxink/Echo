@@ -187,7 +187,7 @@ describe("SongRow title and artwork", () => {
     expect(cover).not.toBeNull();
     expect(cover).toHaveClass("has-image");
     // The key is opaque and composes into the cover:// scheme — never a path.
-    expect(cover?.querySelector("img")?.getAttribute("src")).toBe("cover://cv1-abc123");
+    expect(cover?.querySelector("img")?.getAttribute("src")).toBe("cover://cv1-abc123?s=list");
   });
 
   it("keeps the palette placeholder when the file carries no embedded artwork", () => {

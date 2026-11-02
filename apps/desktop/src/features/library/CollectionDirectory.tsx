@@ -575,7 +575,7 @@ export function CollectionDirectory({
                         aria-hidden="true"
                       >
                         {entry.coverKey ? (
-                          <img src={bridge.assetUrl(entry.coverKey)} alt="" />
+                          <img src={bridge.assetUrl(entry.coverKey, "list")} alt="" />
                         ) : null}
                       </span>
                       <span className="collection-copy">
