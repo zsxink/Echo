@@ -354,8 +354,8 @@ jobs:
       - name: Verify platform Gate (9.7 9.8 17.1 18.1)
         run: pnpm verify:task -- 9.7 9.8 17.1 18.1
 
-  governance:
-    name: Governance gates
+  governance-static:
+    name: Governance static gates
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -368,15 +368,6 @@ jobs:
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
-
-      # The governance gates run `cargo test --workspace --all-targets
-      # --all-features`, which builds the echo-app Tauri shell. Without these
-      # the Linux build fails before any gate executes.
-      - name: Install Linux webview dependencies
-        run: >-
-          sudo apt-get update && sudo apt-get install -y
-          libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
-          librsvg2-dev patchelf
 
       # The fixture gate regenerates fixtures/audio in scratch directories and
       # compares them against the committed bytes; it needs ffmpeg on PATH.
@@ -407,19 +398,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify active Rust toolchain
-        run: node scripts/verify/check-toolchain.mjs
-
-      # Two gates read `apps/desktop/dist`: the embedded-frontend freshness
-      # check compares a binary against it, and the injection proof for that
-      # check needs it to be able to express its violation at all. Building it
-      # here is what keeps those from degrading into named skips.
-      - name: Build the frontend bundle the desktop shell embeds
-        run: pnpm --dir apps/desktop build
-
-      - name: Run governance gates except mutation proofs
-        run: pnpm verify:governance -- --without-injection
-
+      # No webkit or frontend build: these sections do not compile the Tauri
+      # shell or read apps/desktop/dist. The Rust-heavy sections live in the
+      # Rust Linux leg, and the embedded-frontend check lives with the
+      # injection proofs that own its binary.
+      - name: Run governance static gates
+        run: pnpm verify:governance -- --sections=registry,static,coverage
 
   injection-proofs:
     name: Gate injection proofs
@@ -500,4 +484,32 @@ jobs:
         run: pnpm --dir apps/desktop build
 
       - name: Run release gate without external artifacts
-        run: node scripts/verify/checks/task-13.9.mjs --delegated=governance
+        run: node scripts/verify/checks/task-13.9.mjs --skip-static --delegated=governance,perf
+
+  perf:
+    name: Performance scenarios
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (pinned)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+
+      # The three performance scenarios share one aggregated echo-core
+      # invocation; no pnpm install, webkit or frontend build is needed.
+      - name: Run performance scenarios
+        run: pnpm verify:perf
