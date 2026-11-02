@@ -283,9 +283,18 @@ v0-rust-release-gate-Linux-x64-…`）。
 `[1/27]` 起跑到 `[2/27] ok` 结束，前 269s 只有两个并发批次，且二者都吃满 CPU——并发度 2 在
 两核 runner 上等于串行加争抢。这是未达 10 分钟的主因。
 
-**下一个杠杆（未在本 PR 内实施）**：把 `task-13.8` / `task-9.1` / `task-12.4` 这三个 100s 级的
-自包含检查挪出 release gate（它们与 `Task gates` 片重复执行），或把 release gate 的场景批次
-按域拆成 2–3 个 job；仅前者预计可省 ~320s，使 release gate 落到 ~430s、总墙钟 ~10 分钟量级。
+**下一个杠杆（未在本 PR 内实施）**：这 4 个 100s 级批次都是场景自己的验收命令（`9.1` / `12.4` /
+`13.8` / `11.7` 只出现在 release gate 的场景映射里，`ci.yml` 的 `task-gates` 分片并不含它们），
+所以不能简单删除——删除就是减少场景覆盖。可选的做法有两条：
+
+1. **把 release gate 按域拆成 2 个 job**（例如 core/durability 与 desktop/UI），各自独立 checkout；
+   按当前批次图，第二段（269s 之后）还有 484s，拆开后尾段可与首段并行。
+2. **提高 `ECHO_VERIFY_TEST_CONCURRENCY`**：两核 runner 上并发 2 已经饱和，但把 `cargo test -p
+   echo-core` 与 vitest 这类吃满 CPU 的命令错开（先跑一个、再跑另一个）能减少争抢；
+   实测串行合计 1046s，争抢下只跑到 753s，说明并发仍有 ~30% 收益。
+
+保守估计做完 1 之后 release gate 落到 ~500s，总墙钟接近 10 分钟；要真正压到 10 分钟以内，
+需要同时处理 `Rust (Linux)` 的 685s（`Test` 243s + `Rust static gates` 328s）。
 
 ### 改造前基线（Task 13 之前）
 
