@@ -34,6 +34,13 @@ import { allScenarioIds } from "../spec-scenarios.mjs";
 // spawned path would miss.
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
 const ARTIFACTS = resolve(ROOT, "artifacts");
+const argv = process.argv.slice(2);
+const skipStatic = argv.includes("--skip-static");
+const delegated = argv.find((arg) => arg.startsWith("--delegated="));
+const delegatedArgs = delegated ? [delegated] : [];
+// Derived from the spec set, not from reconcile: the PRD matrix and the
+// scenario-suite count still need it when the static half runs elsewhere.
+const expectedScenarioCount = allScenarioIds().length;
 
 function fail(msg) {
   process.stderr.write(`FAIL 13.9: ${msg}\n`);
@@ -73,27 +80,32 @@ function runStreaming(command, args, env = {}) {
   });
 }
 
-// 1. Three-way set reconciliation must pass (spec == trace == manifest) and the
-//    reported counts must agree with the spec-derived count.
-const reconcileOut = run("node", ["scripts/verify/reconcile-scenarios.mjs"]).trim();
-const reconciliation = reconcileOut.match(/^reconcile: spec (\d+) = trace (\d+) = manifest (\d+) scenarios$/m);
-if (!reconciliation) {
-  fail(`reconciliation did not pass:\n${reconcileOut}`);
-}
-const [, specCount, traceCount, manifestCount] = reconciliation;
-if (specCount !== traceCount || traceCount !== manifestCount) {
-  fail(`reconciliation counts differ: spec ${specCount}, trace ${traceCount}, manifest ${manifestCount}`);
-}
-const expectedScenarioCount = allScenarioIds().length;
-if (Number(specCount) !== expectedScenarioCount) {
-  fail(`reconciliation count ${specCount} differs from the dynamically derived spec count ${expectedScenarioCount}`);
+// 1-2. Static reconciliation. `--skip-static` is used by the release gate,
+//    whose governance job runs these same checks (registry/rust-static
+//    sections); skipping them here must not be able to claim they passed.
+if (!skipStatic) {
+  // 1. Three-way set reconciliation must pass (spec == trace == manifest) and
+  //    the reported counts must agree with the spec-derived count.
+  const reconcileOut = run("node", ["scripts/verify/reconcile-scenarios.mjs"]).trim();
+  const reconciliation = reconcileOut.match(/^reconcile: spec (\d+) = trace (\d+) = manifest (\d+) scenarios$/m);
+  if (!reconciliation) {
+    fail(`reconciliation did not pass:\n${reconcileOut}`);
+  }
+  const [, specCount, traceCount, manifestCount] = reconciliation;
+  if (specCount !== traceCount || traceCount !== manifestCount) {
+    fail(`reconciliation counts differ: spec ${specCount}, trace ${traceCount}, manifest ${manifestCount}`);
+  }
+  if (Number(specCount) !== expectedScenarioCount) {
+    fail(`reconciliation count ${specCount} differs from the dynamically derived spec count ${expectedScenarioCount}`);
+  }
+
+  // 2. Every scenario command must resolve to a real test (no silent 0-test
+  //    pass), and the executed manifest entries must match the command registry
+  //    exactly.
+  run("node", ["scripts/verify/validate-scenario-commands.mjs"]);
+  run("node", ["scripts/verify/gen-scenario-manifests.mjs"]);
 }
 mkdirSync(ARTIFACTS, { recursive: true });
-
-// 2. Every scenario command must resolve to a real test (no silent 0-test pass),
-//    and the executed manifest entries must match the command registry exactly.
-run("node", ["scripts/verify/validate-scenario-commands.mjs"]);
-run("node", ["scripts/verify/gen-scenario-manifests.mjs"]);
 
 // 3. A clean checkout can only prove automated scenarios: native matrix rows
 //    require evidence from a real target and remain enforced by `-- --all`.
@@ -103,8 +115,6 @@ run("node", ["scripts/verify/gen-scenario-manifests.mjs"]);
 //    runs the governance job separately). Without the flag the whole gate is
 //    executed locally, keeping the strict default.
 const report = resolve(ARTIFACTS, "verify:scenario-report.txt");
-const delegated = process.argv.slice(2).find((arg) => arg.startsWith("--delegated="));
-const delegatedArgs = delegated ? [delegated] : [];
 const expectedAutomatedCount = JSON.parse(readFileSync(resolve(ROOT, "scripts", "verify", "manifest.json"), "utf8"))
   .scenarios
   .filter((scenario) => !(scenario.evidence ?? []).some((e) => e.kind === "attestation"))
@@ -133,4 +143,7 @@ if (okLines !== expectedAutomatedCount) {
 //    gate cannot dirty the worktree and a stale matrix fails loudly.
 run("node", ["scripts/verify/prd-matrix.mjs"]);
 
-process.stdout.write(`ok 13.9: specs == traceability == manifest (${expectedScenarioCount} scenarios); automated scenario suite ${okLines}/${expectedAutomatedCount}; PRD A1–A14 matrix verified\n`);
+const summary = skipStatic
+  ? `ok 13.9: static checks skipped (delegated); automated scenario suite ${okLines}/${expectedAutomatedCount}; PRD A1–A14 matrix verified`
+  : `ok 13.9: specs == traceability == manifest (${expectedScenarioCount} scenarios); automated scenario suite ${okLines}/${expectedAutomatedCount}; PRD A1–A14 matrix verified`;
+process.stdout.write(`${summary}\n`);
