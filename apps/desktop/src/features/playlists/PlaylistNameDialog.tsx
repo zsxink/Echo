@@ -271,7 +271,7 @@ export function PlaylistNameDialog({
                     src={
                       coverPreview.startsWith("blob:")
                         ? coverPreview
-                        : bridge.assetUrl(coverPreview)
+                        : bridge.assetUrl(coverPreview, "detail")
                     }
                     alt="当前歌单封面"
                   />

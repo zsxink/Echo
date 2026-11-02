@@ -13,7 +13,9 @@
 //! - [`CoverCache::gc`] deletes entries outside the referenced keep-set and,
 //!   above the capacity limit, only ever touches *unreferenced* entries.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use blake3::Hasher as Blake3Hasher;
 use image::imageops::FilterType;
@@ -29,11 +31,21 @@ pub const DETAIL_THUMB_PX: u32 = 512;
 /// The asset-key prefix; the remainder is the 64-hex content hash.
 const KEY_PREFIX: &str = "cv1-";
 
+/// One generation gate per `(content hash, tier)`. The map lock is held only
+/// to obtain the gate; the gate itself serializes generation.
+type InflightGates = Arc<Mutex<HashMap<(String, bool), Arc<Mutex<()>>>>>;
+
 /// The disk cover cache over one cache directory.
 #[derive(Clone, Debug)]
 pub struct DiskCoverCache {
     dir: PathBuf,
     max_capacity: u64,
+    /// See [`InflightGates`].
+    inflight: InflightGates,
+    #[cfg(test)]
+    decode_count: Arc<std::sync::atomic::AtomicUsize>,
+    #[cfg(test)]
+    fail_thumbnail_write: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl DiskCoverCache {
@@ -49,6 +61,11 @@ impl DiskCoverCache {
         Ok(Self {
             dir,
             max_capacity: 256 * 1024 * 1024,
+            inflight: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(test)]
+            decode_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            #[cfg(test)]
+            fail_thumbnail_write: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         })
     }
 
@@ -106,6 +123,10 @@ impl DiskCoverCache {
     /// Rejects malformed keys with a validation error; an unknown key yields
     /// `Ok(None)`; undecodable images surface as corrupt-media errors.
     pub fn thumbnail(&self, asset_key: &str, detail: bool) -> Result<Option<Vec<u8>>, Error> {
+        self.thumbnail_inner(asset_key, detail)
+    }
+
+    fn thumbnail_inner(&self, asset_key: &str, detail: bool) -> Result<Option<Vec<u8>>, Error> {
         let hash = Self::hash_of_key(asset_key)?;
         let max_px = if detail {
             DETAIL_THUMB_PX
@@ -113,20 +134,87 @@ impl DiskCoverCache {
             LIST_THUMB_PX
         };
         let name = format!("thumb-{max_px}.bin");
-        let entry = self.entry_dir(&hash);
-        let thumb_path = entry.join(&name);
-        match std::fs::read(&thumb_path) {
-            Ok(bytes) => return Ok(Some(bytes)),
-            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-                return Err(Error::io("read thumbnail", error, thumb_path));
-            }
-            Err(_) => {}
+        let thumb_path = self.entry_dir(&hash).join(name);
+
+        // Fast path: an existing thumbnail never takes the generation gate.
+        if let Some(bytes) = read_thumbnail(&thumb_path)? {
+            return Ok(Some(bytes));
         }
-        let original = self
-            .original(asset_key)?
-            .ok_or_else(|| Error::unavailable("cover asset", "unknown asset key"))?;
+
+        let gate_key = (hash, detail);
+        let gate = {
+            let mut inflight = self
+                .inflight
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            Arc::clone(
+                inflight
+                    .entry(gate_key.clone())
+                    .or_insert_with(|| Arc::new(Mutex::new(()))),
+            )
+        };
+
+        let result = (|| -> Result<Option<Vec<u8>>, Error> {
+            let _guard = gate
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            // A previous holder may have produced the file while we waited.
+            if let Some(bytes) = read_thumbnail(&thumb_path)? {
+                return Ok(Some(bytes));
+            }
+            self.generate_thumbnail(asset_key, max_px, &thumb_path)
+        })();
+
+        // The lock guard was dropped when the generation closure returned.
+        // Waiters hold their own `Arc`, so removing the map entry only stops
+        // new requests from joining this generation round; it can never
+        // invalidate a lock in use.
+        let mut inflight = self
+            .inflight
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if inflight
+            .get(&gate_key)
+            .is_some_and(|current| Arc::ptr_eq(current, &gate))
+        {
+            inflight.remove(&gate_key);
+        }
+        result
+    }
+
+    fn generate_thumbnail(
+        &self,
+        asset_key: &str,
+        max_px: u32,
+        thumb_path: &Path,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        let Some(original) = self.original(asset_key)? else {
+            return Ok(None);
+        };
+        #[cfg(test)]
+        self.decode_count
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let thumbnail = scale_to(&original, max_px)?;
-        write_atomically(&thumb_path, &thumbnail)?;
+
+        #[cfg(test)]
+        if self
+            .fail_thumbnail_write
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
+            // Leave a truncated temp exactly where an interrupted
+            // `write_atomically` would, then fail: the final path must stay
+            // absent so no reader can observe a partial JPEG.
+            let temp = thumb_path.with_extension("tmp");
+            std::fs::write(&temp, b"partial thumbnail")
+                .map_err(|source| Error::io("write thumbnail", source, temp.clone()))?;
+            return Err(Error::io(
+                "place cover",
+                std::io::Error::other("injected thumbnail write failure"),
+                thumb_path.to_path_buf(),
+            ));
+        }
+
+        write_atomically(thumb_path, &thumbnail)?;
         Ok(Some(thumbnail))
     }
 
@@ -134,6 +222,17 @@ impl DiskCoverCache {
     #[must_use]
     pub fn stored_bytes(&self) -> u64 {
         directory_bytes(&self.dir)
+    }
+
+    #[cfg(test)]
+    fn decode_count(&self) -> usize {
+        self.decode_count.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    #[cfg(test)]
+    fn fail_next_thumbnail_write(&self) {
+        self.fail_thumbnail_write
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -152,6 +251,10 @@ impl CoverCache for DiskCoverCache {
 
     fn get(&self, asset_key: &str) -> Result<Option<Vec<u8>>, Error> {
         self.original(asset_key)
+    }
+
+    fn thumbnail(&self, asset_key: &str, detail: bool) -> Result<Option<Vec<u8>>, Error> {
+        self.thumbnail_inner(asset_key, detail)
     }
 
     fn gc(&self, referenced_keys: &[String]) -> Result<(), Error> {
@@ -187,6 +290,14 @@ impl CoverCache for DiskCoverCache {
             );
         }
         Ok(())
+    }
+}
+
+fn read_thumbnail(path: &Path) -> Result<Option<Vec<u8>>, Error> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(Error::io("read thumbnail", source, path.to_path_buf())),
     }
 }
 
@@ -356,9 +467,8 @@ mod tests {
         let cache = DiskCoverCache::new(dir.path()).unwrap();
         let unknown = format!("{KEY_PREFIX}{}", "b".repeat(64));
         assert_eq!(cache.original(&unknown).unwrap(), None);
-        // A thumbnail of an unknown asset cannot be generated on demand.
-        let error = cache.thumbnail(&unknown, false).expect_err("missing asset");
-        assert_eq!(error.code(), "unavailable", "unknown asset key surfaces");
+        // A thumbnail of an unknown asset resolves to None, like the original.
+        assert_eq!(cache.thumbnail(&unknown, false).unwrap(), None);
 
         // A real entry with a non-decodable original: the on-demand thumbnail
         // generation surfaces corrupt media.
@@ -370,6 +480,171 @@ mod tests {
         assert_eq!(
             cache.original(&key).unwrap().as_deref(),
             Some(bytes.as_slice())
+        );
+    }
+
+    fn rgba_png(width: u32, height: u32, rgba: image::Rgba<u8>) -> Vec<u8> {
+        let buffer = image::RgbaImage::from_pixel(width, height, rgba);
+        let mut out = std::io::Cursor::new(Vec::new());
+        buffer
+            .write_to(&mut out, ImageFormat::Png)
+            .expect("encode test png");
+        out.into_inner()
+    }
+
+    fn thumb_path(cache: &DiskCoverCache, key: &str, detail: bool) -> PathBuf {
+        let max_px = if detail {
+            DETAIL_THUMB_PX
+        } else {
+            LIST_THUMB_PX
+        };
+        cache
+            .entry_dir(&DiskCoverCache::hash_of_key(key).unwrap())
+            .join(format!("thumb-{max_px}.bin"))
+    }
+
+    #[test]
+    fn cover_cache_thumbnail_is_generated_on_demand_and_reused() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = DiskCoverCache::new(dir.path()).unwrap();
+        let key = cache
+            .put(
+                &rgba_png(600, 400, image::Rgba([0, 255, 0, 255])),
+                "image/png",
+            )
+            .unwrap();
+        let path = thumb_path(&cache, &key, false);
+        assert!(!path.exists(), "old entries have no thumbnail yet");
+
+        let first = cache.thumbnail(&key, false).unwrap().unwrap();
+        assert!(
+            path.exists(),
+            "first visit generates and persists the thumb"
+        );
+        assert_eq!(cache.decode_count(), 1);
+
+        let second = cache.thumbnail(&key, false).unwrap().unwrap();
+        assert_eq!(second, first, "later visits reuse the exact bytes");
+        assert_eq!(cache.decode_count(), 1, "no second decode");
+    }
+
+    #[test]
+    fn cover_cache_thumbnail_tiers_are_independent() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = DiskCoverCache::new(dir.path()).unwrap();
+        let key = cache
+            .put(
+                &rgba_png(600, 400, image::Rgba([0, 255, 0, 255])),
+                "image/png",
+            )
+            .unwrap();
+        let list_path = thumb_path(&cache, &key, false);
+        let detail_path = thumb_path(&cache, &key, true);
+
+        let list = cache.thumbnail(&key, false).unwrap().unwrap();
+        assert!(list_path.exists());
+        assert!(!detail_path.exists(), "list does not generate detail");
+        assert_eq!(cache.decode_count(), 1);
+
+        let detail = cache.thumbnail(&key, true).unwrap().unwrap();
+        assert!(detail_path.exists(), "detail generates its own file");
+        assert_eq!(cache.decode_count(), 2);
+        assert_ne!(list, detail);
+        let list_image = image::load_from_memory(&list).unwrap();
+        let detail_image = image::load_from_memory(&detail).unwrap();
+        assert!(
+            list_image.width() <= LIST_THUMB_PX && list_image.height() <= LIST_THUMB_PX,
+            "list tier is capped"
+        );
+        assert!(
+            detail_image.width() <= DETAIL_THUMB_PX && detail_image.height() <= DETAIL_THUMB_PX,
+            "detail tier is capped"
+        );
+    }
+
+    #[test]
+    fn cover_cache_concurrent_thumbnail_generation_decodes_once() {
+        use std::sync::Barrier;
+
+        let dir = tempfile::tempdir().unwrap();
+        let cache = DiskCoverCache::new(dir.path()).unwrap();
+        let key = cache
+            .put(
+                &rgba_png(600, 400, image::Rgba([0, 255, 0, 255])),
+                "image/png",
+            )
+            .unwrap();
+        let barrier = std::sync::Arc::new(Barrier::new(8));
+        // Spawn every worker before joining any: a single map chain would
+        // spawn and join one thread at a time, and the first join would wait
+        // forever on a barrier that has only one arrival.
+        let mut workers = Vec::with_capacity(8);
+        for _ in 0..8 {
+            let cache = cache.clone();
+            let key = key.clone();
+            let barrier = std::sync::Arc::clone(&barrier);
+            workers.push(std::thread::spawn(move || {
+                barrier.wait();
+                cache.thumbnail(&key, false).unwrap().unwrap()
+            }));
+        }
+        let outputs: Vec<Vec<u8>> = workers
+            .into_iter()
+            .map(|handle| handle.join().expect("thumbnail worker"))
+            .collect();
+        assert_eq!(cache.decode_count(), 1, "one decode for eight callers");
+        for output in &outputs {
+            assert_eq!(output, &outputs[0], "every caller sees the same bytes");
+        }
+    }
+
+    #[test]
+    fn cover_cache_thumbnail_write_failure_leaves_no_partial_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = DiskCoverCache::new(dir.path()).unwrap();
+        let key = cache
+            .put(
+                &rgba_png(600, 400, image::Rgba([0, 255, 0, 255])),
+                "image/png",
+            )
+            .unwrap();
+        let path = thumb_path(&cache, &key, false);
+        let temp = path.with_extension("tmp");
+
+        cache.fail_next_thumbnail_write();
+        let error = cache
+            .thumbnail(&key, false)
+            .expect_err("injected write failure");
+        assert_eq!(error.code(), "io");
+        assert!(!path.exists(), "no final thumbnail is observable");
+        assert!(
+            temp.exists(),
+            "the interrupted temp is exactly what a crash leaves"
+        );
+
+        // The next attempt is not poisoned by the failed generation and
+        // replaces the leftover temp atomically.
+        let bytes = cache.thumbnail(&key, false).unwrap().unwrap();
+        assert!(path.exists());
+        let image = image::load_from_memory(&bytes).unwrap();
+        assert!(image.width() <= LIST_THUMB_PX);
+    }
+
+    #[test]
+    fn cover_cache_thumbnail_drops_alpha_and_keeps_jpeg() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = DiskCoverCache::new(dir.path()).unwrap();
+        // A fully transparent 64x64 PNG.
+        let key = cache
+            .put(&rgba_png(64, 64, image::Rgba([0, 255, 0, 0])), "image/png")
+            .unwrap();
+        let bytes = cache.thumbnail(&key, false).unwrap().unwrap();
+        assert_eq!(&bytes[..3], &[0xFF, 0xD8, 0xFF], "JPEG magic");
+        let image = image::load_from_memory(&bytes).unwrap();
+        assert_eq!(
+            image.color(),
+            image::ColorType::Rgb8,
+            "JPEG output has no alpha channel; transparency is dropped"
         );
     }
 
@@ -421,6 +696,8 @@ mod tests {
         for bad in ["cv1-xyz", "cv1-", "cv1-1234", "other-prefix", "cv1-"] {
             let error = cache.original(bad).expect_err("bad key");
             assert_eq!(error.code(), "validation", "key {bad:?}");
+            let error = cache.thumbnail(bad, false).expect_err("bad thumbnail key");
+            assert_eq!(error.code(), "validation", "thumbnail key {bad:?}");
         }
         // gc silently ignores malformed keep keys (they can never match an
         // entry dir, which is the exact 64-hex hash).

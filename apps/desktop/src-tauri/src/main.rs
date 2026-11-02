@@ -463,7 +463,7 @@ fn wire_composition(
         retry_saved_sync_restore(&sync_runtime);
     }
     app.manage(Arc::clone(&sync_runtime));
-    // The `cover://` protocol resolves bytes by opaque asset key (design §16).
+    // The `cover://` protocol resolves bytes by opaque asset key (docs/DESIGN.md §2.4).
     // It looks the store up as the *dynamic* `CoverCache` type, so the cache has
     // to be registered under exactly that type — the same instance the scan
     // persists embedded artwork into (design §115 内置优先). Without this the

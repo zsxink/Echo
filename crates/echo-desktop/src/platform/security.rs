@@ -1,5 +1,5 @@
 //! Desktop security posture: CSP, the custom cover-protocol boundary and the
-//! minimal Tauri capability (task 7.7, design §16).
+//! minimal Tauri capability (task 7.7, `desktop-app-shell` capability).
 //!
 //! Everything here is pure and Tauri-free so it can be proven by unit tests
 //! without launching a window or a WebView:
@@ -81,13 +81,36 @@ pub enum CoverError {
     KeyTooLong,
 }
 
-/// The `cover://` protocol boundary (design §16 "asset protocol 只接受白名单
-/// key 和尺寸枚举") — this half validates the **key**; the size enum is the
-/// frontend's responsibility and never reaches the filesystem.
+/// The display tier a `cover://` request selects.
+///
+/// `List` is the safe default (128 px, used by song rows and cards), `Detail`
+/// is the playlist-preview tier (512 px), and `Original` is only chosen
+/// explicitly by the immersive player. The Core cache keeps its two-tier
+/// `detail: bool` API; this enum exists only at the protocol boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CoverSize {
+    List,
+    Detail,
+    Original,
+}
+
+/// A parsed `cover://` request: an opaque asset key plus the display tier.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CoverRequest {
+    pub asset_key: String,
+    pub size: CoverSize,
+}
+
+/// The `cover://` protocol boundary. The protocol validates the **key** and
+/// allowlists the display tier; the tier only selects a cache read path and
+/// never participates in key validation or filesystem-path construction.
+/// See `docs/DESIGN.md` §2.4 and the `desktop-app-shell` requirement
+/// "封面资产协议必须按显示档位提供受控图像".
 pub struct CoverProtocol;
 
 impl CoverProtocol {
-    /// Parse a `cover://` request URI into an opaque asset key.
+    /// Parse a `cover://` request URI into an opaque asset key plus display
+    /// tier.
     ///
     /// Accepted shapes (`host` vs. `path` both tolerated because the `WebView`
     /// may emit either):
@@ -95,10 +118,13 @@ impl CoverProtocol {
     /// - `cover://<key>`
     /// - `cover://localhost/<key>`
     ///
-    /// A query or fragment is stripped. The key must pass
-    /// [`Self::is_valid_key`], otherwise the request is rejected — a URI that
-    /// could be interpreted as a path (`.`/`..`, `/`, `\`, multi-segment) never
-    /// reaches the cover cache.
+    /// Each shape may carry `?s=list|detail|original`; a missing, empty,
+    /// unknown or repeated selector falls back to the first `s` value, else
+    /// [`CoverSize::List`] — never to the original. The query is parsed before
+    /// it is stripped, and `s` is never part of the key candidate. The key
+    /// must pass [`Self::is_valid_key`], otherwise the request is rejected — a
+    /// URI that could be interpreted as a path (`.`/`..`, `/`, `\`,
+    /// multi-segment) never reaches the cover cache.
     ///
     /// # Errors
     ///
@@ -106,18 +132,25 @@ impl CoverProtocol {
     /// [`CoverError::MissingKey`] when no key segment is present, and
     /// [`CoverError::InvalidKey`] / [`CoverError::KeyTooLong`] for a candidate
     /// that fails the key shape whitelist.
-    pub fn parse(uri: &str) -> Result<String, CoverError> {
+    pub fn parse(uri: &str) -> Result<CoverRequest, CoverError> {
         let rest = uri
             .strip_prefix("cover://")
             .or_else(|| uri.strip_prefix("COVER://"))
             .ok_or(CoverError::WrongScheme)?;
 
-        // Drop query/fragment first so they cannot smuggle a second segment.
-        let rest = rest.split(['?', '#']).next().unwrap_or(rest);
+        // The fragment is not part of the request; a `?` inside it is data.
+        let without_fragment = rest.split('#').next().unwrap_or(rest);
+        // Split the query off *after* recording it: the size selector lives
+        // there, and must never become part of the key candidate below.
+        let (path, query) = match without_fragment.split_once('?') {
+            Some((path, query)) => (path, Some(query)),
+            None => (without_fragment, None),
+        };
+        let size = parse_size(query);
 
         // Split segments; the first non-empty one is the candidate key.
         // `cover://asset/<key>` -> ["asset", "<key>"], `cover://<key>` -> ["<key>"].
-        let mut segments = rest.split('/').filter(|s| !s.is_empty());
+        let mut segments = path.split('/').filter(|s| !s.is_empty());
         let first = segments.next().ok_or(CoverError::MissingKey)?;
         let second = segments.next();
 
@@ -136,7 +169,10 @@ impl CoverProtocol {
         if !Self::is_valid_key(candidate) {
             return Err(CoverError::InvalidKey);
         }
-        Ok(candidate.to_owned())
+        Ok(CoverRequest {
+            asset_key: candidate.to_owned(),
+            size,
+        })
     }
 
     /// The asset-key shape whitelist. A key may contain only ASCII letters,
@@ -160,8 +196,32 @@ impl CoverProtocol {
     }
 }
 
-/// A permission family the `WebView` must never hold (design §16: "不向 JS
-/// 暴露通用 `shell`、`fs`、`SQL`、任意 `opener` 或任意路径读取"). The check is
+/// Allowlist the `s` query parameter. The first `s` wins; anything
+/// unrecognized (including an empty value or a value with extra path/key
+/// content) falls back to [`CoverSize::List`], so a malformed request can only
+/// downgrade, never reach the original.
+fn parse_size(query: Option<&str>) -> CoverSize {
+    let Some(query) = query else {
+        return CoverSize::List;
+    };
+    for item in query.split('&') {
+        let Some((name, value)) = item.split_once('=') else {
+            continue;
+        };
+        if name != "s" {
+            continue;
+        }
+        return match value {
+            "detail" => CoverSize::Detail,
+            "original" => CoverSize::Original,
+            _ => CoverSize::List,
+        };
+    }
+    CoverSize::List
+}
+
+/// A permission family the `WebView` must never hold (`desktop-app-shell`:
+/// "不向 JS 暴露通用 `shell`、`fs`、`SQL`、任意 `opener` 或任意路径读取"). The check is
 /// prefix-based so `shell:allow-*`, `fs:default`, `sql:default`,
 /// `opener:default`, `process:default`, `http:default`, `dialog:default`
 /// (which can read arbitrary paths the user picks) all trip it.
@@ -275,19 +335,26 @@ mod tests {
     // Cover protocol
     // ------------------------------------------------------------------
 
+    fn request(asset_key: &str, size: CoverSize) -> CoverRequest {
+        CoverRequest {
+            asset_key: asset_key.to_owned(),
+            size,
+        }
+    }
+
     #[test]
     fn cover_uri_parses_valid_keys_from_both_host_and_path() {
         assert_eq!(
             CoverProtocol::parse("cover://cv1-abc123"),
-            Ok("cv1-abc123".to_owned())
+            Ok(request("cv1-abc123", CoverSize::List))
         );
         assert_eq!(
             CoverProtocol::parse("cover://asset/cv1-abc123"),
-            Ok("cv1-abc123".to_owned())
+            Ok(request("cv1-abc123", CoverSize::List))
         );
         assert_eq!(
             CoverProtocol::parse("cover://localhost/cv1-abc123"),
-            Ok("cv1-abc123".to_owned())
+            Ok(request("cv1-abc123", CoverSize::List))
         );
     }
 
@@ -295,12 +362,93 @@ mod tests {
     fn cover_uri_strips_query_and_fragment() {
         assert_eq!(
             CoverProtocol::parse("cover://asset/cv1-x?foo=1"),
-            Ok("cv1-x".to_owned())
+            Ok(request("cv1-x", CoverSize::List))
         );
         assert_eq!(
             CoverProtocol::parse("cover://asset/cv1-x#frag"),
-            Ok("cv1-x".to_owned())
+            Ok(request("cv1-x", CoverSize::List))
         );
+    }
+
+    #[test]
+    fn cover_uri_parses_size_selector_before_stripping_query() {
+        for (uri, size) in [
+            ("cover://asset/cv1-x?s=list", CoverSize::List),
+            ("cover://asset/cv1-x?s=detail", CoverSize::Detail),
+            ("cover://asset/cv1-x?s=original", CoverSize::Original),
+            ("cover://cv1-x?s=detail", CoverSize::Detail),
+            ("cover://localhost/cv1-x?foo=1&s=detail", CoverSize::Detail),
+            // First selector wins; later values cannot upgrade the tier.
+            ("cover://asset/cv1-x?s=detail&s=original", CoverSize::Detail),
+            (
+                "cover://asset/cv1-x?s=original&s=detail",
+                CoverSize::Original,
+            ),
+            // A fragment ends the query; `?s=original` after it is data.
+            ("cover://asset/cv1-x#frag?s=original", CoverSize::List),
+            ("cover://asset/cv1-x?s=detail#frag", CoverSize::Detail),
+        ] {
+            assert_eq!(
+                CoverProtocol::parse(uri),
+                Ok(request("cv1-x", size)),
+                "unexpected parse of {uri:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn cover_uri_defaults_to_list_for_unknown_or_missing_size() {
+        for uri in [
+            "cover://asset/cv1-x",
+            "cover://asset/cv1-x?foo=1",
+            "cover://asset/cv1-x?s=",
+            "cover://asset/cv1-x?s",
+            "cover://asset/cv1-x?s=ORIGINAL",
+            "cover://asset/cv1-x?s=%64etail",
+            "cover://asset/cv1-x?s=bogus",
+        ] {
+            assert_eq!(
+                CoverProtocol::parse(uri).map(|request| request.size),
+                Ok(CoverSize::List),
+                "unknown/missing size must fall back to list for {uri:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn cover_uri_size_selector_cannot_bypass_key_validation() {
+        // A traversal payload inside `s` is inert: the key stays valid and the
+        // tier downgrades to list.
+        assert_eq!(
+            CoverProtocol::parse("cover://asset/cv1-x?s=../../etc/passwd"),
+            Ok(request("cv1-x", CoverSize::List))
+        );
+        // Likewise a second key or path fragment inside `s` never becomes part
+        // of the key or the accepted key count.
+        assert_eq!(
+            CoverProtocol::parse("cover://asset/cv1-x?s=detail/cv1-y"),
+            Ok(request("cv1-x", CoverSize::List))
+        );
+        assert_eq!(
+            CoverProtocol::parse("cover://asset/cv1-x?s=detail&key=cv1-y"),
+            Ok(request("cv1-x", CoverSize::Detail))
+        );
+
+        // The path is validated exactly as before, regardless of `s`.
+        let too_long = format!(
+            "cover://asset/{}?s=detail",
+            "a".repeat(MAX_ASSET_KEY_LEN + 1)
+        );
+        for uri in [
+            "cover://asset/../../etc/passwd?s=detail",
+            "cover://asset/a/b?s=original",
+            too_long.as_str(),
+        ] {
+            assert!(
+                CoverProtocol::parse(uri).is_err(),
+                "expected rejection of {uri:?}"
+            );
+        }
     }
 
     #[test]

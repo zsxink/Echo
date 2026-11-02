@@ -224,10 +224,19 @@ export function fireAndForget<C extends keyof BridgeCommandMap>(
   void bridgeCall(command, ...args).catch((error: unknown) => reportBridgeFailure(command, error));
 }
 
-/** The custom URI scheme that serves cover art (design §16).
+/** The custom URI scheme that serves cover art (design §2.4).
  *  The desktop registers it and the CSP grants it to `img-src`/`media-src`
  *  only — never to scripts or fetches. */
 export const COVER_SCHEME = "cover";
+
+/** The display tier a cover URL asks the protocol for. `list` is the 128 px
+ *  safe default; `detail` is the 512 px playlist preview; `original` is only
+ *  for the immersive player (whose palette probe needs origin-clean pixels). */
+export type CoverSize = "list" | "detail" | "original";
+
+/** Bases `convertFileSrc` can produce for the cover scheme: macOS/Linux use
+ *  `cover://localhost/…`, Windows/Android `http://cover.localhost/…`. */
+const COVER_URL_PREFIXES = ["cover://", "http://cover.localhost/", "https://cover.localhost/"];
 
 /**
  * Turn an opaque cover-asset key into a URL the WebView can load.
@@ -236,9 +245,19 @@ export const COVER_SCHEME = "cover";
  * only place that calls `invoke`/`listen`: no component has to know the scheme,
  * and the key stays opaque — it is the cover cache's `cv1-…` identifier, never a
  * filesystem path (the protocol re-validates it on the way in).
+ *
+ * The tier is appended **after** `convertFileSrc`, because that call
+ * percent-encodes its path argument — a query composed before it would become
+ * part of the key. The protocol defaults to `list`, so an omitted tier can
+ * never accidentally request the original. Data/blob URLs (e2e fixtures) are
+ * returned unchanged.
  */
-export function assetUrl(key: string): string {
-  return convertFileSrc(key, COVER_SCHEME);
+export function assetUrl(key: string, size: CoverSize = "list"): string {
+  const url = convertFileSrc(key, COVER_SCHEME);
+  if (!COVER_URL_PREFIXES.some((prefix) => url.startsWith(prefix))) {
+    return url;
+  }
+  return `${url}?s=${size}`;
 }
 
 /** Subscribe to an event stream, returning the de-registration handle. */

@@ -269,7 +269,7 @@ describe("PlayerBar — 内置封面 (design §115 内置优先)", () => {
       if (!found) throw new Error("artwork not rendered yet");
       return found;
     });
-    expect(img.getAttribute("src")).toBe("cover://cv1-abc");
+    expect(img.getAttribute("src")).toBe("cover://cv1-abc?s=list");
     expect(container.querySelector(".mini-cover")).toHaveClass("has-image");
     // The 当前播放区 shows the real title/artist once `song_detail` answers.
     expect(screen.getByText("心房")).toBeInTheDocument();
@@ -288,7 +288,7 @@ describe("PlayerBar — 内置封面 (design §115 内置优先)", () => {
       if (!found) throw new Error("temporary artwork not rendered yet");
       return found;
     });
-    expect(img.getAttribute("src")).toBe("cover://cv1-temp");
+    expect(img.getAttribute("src")).toBe("cover://cv1-temp?s=list");
     expect(container.querySelector(".mini-cover")).toHaveClass("has-image");
   });
 

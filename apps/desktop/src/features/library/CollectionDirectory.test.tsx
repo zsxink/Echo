@@ -128,6 +128,7 @@ describe("CollectionDirectory", () => {
     render(<CollectionDirectory kind="artist" root="root-1" />);
 
     const card = await screen.findByRole("button", { name: /打开.*Alice/ });
+    expect(card.querySelector("img")?.getAttribute("src")).toBe("cover://cv1-alice?s=list");
     expect(screen.queryByRole("button", { name: "编辑Alice的封面" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "恢复专辑封面" })).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();

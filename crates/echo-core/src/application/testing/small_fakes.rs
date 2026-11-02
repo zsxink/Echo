@@ -274,6 +274,11 @@ impl CoverCache for MemoryCoverCache {
             .get(asset_key)
             .map(|(b, _)| b.clone()))
     }
+    fn thumbnail(&self, asset_key: &str, _detail: bool) -> Result<Option<Vec<u8>>, Error> {
+        // A test double: it does not resize, so both tiers return the stored
+        // bytes. Callers that need tier-distinct output use a recording fake.
+        self.get(asset_key)
+    }
     fn gc(&self, referenced_keys: &[String]) -> Result<(), Error> {
         let mut map = self.keys.lock().unwrap();
         map.retain(|k, _| referenced_keys.contains(k));
@@ -937,5 +942,19 @@ mod tests {
             cache.get(&key).unwrap().is_none(),
             "GC removed unreferenced asset"
         );
+    }
+
+    #[test]
+    fn memory_cover_cache_thumbnail_matches_stored_bytes_for_both_tiers() {
+        let cache = MemoryCoverCache::new();
+        assert_eq!(cache.thumbnail("missing", false).unwrap(), None);
+        let key = cache.put(b"coverbytes", "image/jpeg").unwrap();
+        for detail in [false, true] {
+            assert_eq!(
+                cache.thumbnail(&key, detail).unwrap().as_deref(),
+                Some(b"coverbytes".as_slice()),
+                "fake returns its stored bytes for either tier"
+            );
+        }
     }
 }

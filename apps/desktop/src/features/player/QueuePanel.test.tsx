@@ -26,7 +26,7 @@ vi.mock("../../bridge", () => {
         void call(command, ...args);
       },
     },
-    assetUrl: (key: string) => `cover://${key}`,
+    assetUrl: (key: string, size = "list") => `cover://${key}?s=${size}`,
   };
 });
 
@@ -111,7 +111,10 @@ describe("QueuePanel (task 11.2)", () => {
     expect(screen.getByText("晴天")).toBeInTheDocument();
     expect(screen.getAllByText("周杰伦").length).toBe(2);
     expect(screen.getByText("3:59")).toBeInTheDocument();
-    expect(screen.getByTestId("queue-cover-image")).toHaveAttribute("src", "cover://cover-s1");
+    expect(screen.getByTestId("queue-cover-image")).toHaveAttribute(
+      "src",
+      "cover://cover-s1?s=list",
+    );
     expect(screen.getByText("outside.m4a")).toBeInTheDocument();
   });
 

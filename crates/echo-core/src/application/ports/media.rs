@@ -72,6 +72,12 @@ pub trait CoverCache: Send + Sync {
     /// Resolve an asset key to its byte ranges for the read-only protocol;
     /// unknown/malformed keys are rejected.
     fn get(&self, asset_key: &str) -> Result<Option<Vec<u8>>, Error>;
+    /// Resolve an asset key to a size-capped thumbnail, generating it on
+    /// demand from the stored original. `detail == false` is the list tier
+    /// (128 px longest edge), `true` is the detail tier (512 px). Unknown keys
+    /// yield `Ok(None)`; malformed keys are rejected. Implementations must not
+    /// upscale and must make a partially written thumbnail unreadable.
+    fn thumbnail(&self, asset_key: &str, detail: bool) -> Result<Option<Vec<u8>>, Error>;
     /// Delete unreferenced assets (GC entry point).
     fn gc(&self, referenced_keys: &[String]) -> Result<(), Error>;
 }

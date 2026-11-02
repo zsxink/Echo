@@ -290,7 +290,7 @@ export function SongMenu({
             className={`cover ${coverClass(song.id)}${coverKey ? " has-image" : ""}`}
             aria-hidden="true"
           >
-            {coverKey ? <img src={assetUrl(coverKey)} alt="" /> : null}
+            {coverKey ? <img src={assetUrl(coverKey, "list")} alt="" /> : null}
           </div>
           <div>
             <b id="menu-title">{title}</b>

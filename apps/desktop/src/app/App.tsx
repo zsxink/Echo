@@ -361,7 +361,7 @@ export function App() {
                         aria-hidden="true"
                       >
                         {playlist.coverKey ? (
-                          <img src={bridge.assetUrl(playlist.coverKey)} alt="" />
+                          <img src={bridge.assetUrl(playlist.coverKey, "list")} alt="" />
                         ) : null}
                       </span>
                       <span className="playlist-name">{playlist.name}</span>

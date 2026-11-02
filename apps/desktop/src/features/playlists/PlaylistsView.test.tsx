@@ -22,7 +22,7 @@ import { playerStore } from "../../player/playerStore";
 // view import from the bridge; stub the whole module so neither is `undefined`
 // once a test actually opens the menu.
 vi.mock("../../bridge", () => ({
-  assetUrl: (key: string) => `cover://${key}`,
+  assetUrl: (key: string, size = "list") => `cover://${key}?s=${size}`,
   bridge: { call: vi.fn(), fireAndForget: vi.fn() },
   // The view branches on `instanceof BridgeError` to recover from a stale
   // pagination cursor, so the mock has to export a real class — a bare

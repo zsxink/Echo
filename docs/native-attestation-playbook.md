@@ -172,6 +172,7 @@ export function scenarioCommands() {
 | DP-R10-S03 托盘控制 | 要**真实托盘交互**（播放控制/查看状态/显示窗口/退出） |
 | PHA-R01-S01 歌单与队列日常流程 | 一期验收基线：**验收者**在真实应用里走完 6 步端到端旅程并逐项确认 |
 | DAS-R18-S01..S08 macOS 原生应用菜单 | 要**真实点击菜单栏菜单**并观察菜单/播放栏/状态项三处一致；菜单中文文案与勾选态是真实 AppKit 外观，jsdom/单测无法证明（issue #73，步骤见 §5 末组） |
+| DAS-R21-S01 首访缩略图不占用主线程 | 要**真实 WebView 主线程**在首次解码/缩放 128px 缩略图期间继续响应滚动与输入；jsdom/单测无法证明真实事件循环与 WebKit 解码线程的行为（issue #111，步骤见 §5 末组） |
 
 > 注：这 8 条的**可测试内核**（CloseBehavior 偏好持久化、`WindowState::clamp_to_visible`、
 > 状态菜单文案映射）已由 `task-9.6.mjs` / `task-9.3.mjs` / `platform/status_menu.rs` 覆盖。
@@ -278,6 +279,25 @@ export function scenarioCommands() {
 2. 点「设置…」→ 设置浮层打开；点「导入音乐文件…」→ 系统选择器弹出；「显示窗口」「退出」行为不变。
 - 判定：五项齐全且与主菜单同路径。证据：右键菜单截图 + 设置打开截图。
 
+### DAS-R21-S01 首访缩略图不占用 WebView 主线程（issue #111）
+
+前置：macOS，按通用前置启动裸二进制；资料库含 500+ 首歌曲与多张不同封面；缓存目录
+`~/Library/Application Support/<identifier>/covers` 中可见行的 `thumb-*.bin` 尚未生成
+（可先记录 `find <cache> -name 'thumb-*.bin' | wc -l`）。
+
+1. 启动 Echo，进入「全部歌曲」。首屏出现封面时，立即滚动 2–3 屏并继续悬停/点击行：
+   界面应保持可交互，不出现白屏或整窗卡死。
+2. 记录滚动前后缩略图计数；新出现的 `thumb-128.bin` 必须全部为 128px 长边
+   （`file <thumb>`），且 `s=original` 的沉浸页仍显示原图。
+3. 用 `ps -axo pid,comm | grep com.apple.WebKit.WebContent` 找到 Echo 的 WebContent 进程，
+   在列表首屏、滚动后分别执行 `footprint -p <pid>`，记录 `phys_footprint` 与峰值。
+4. 打开 377 张专辑网格，重复观察；再打开沉浸页，确认封面与原图一致、主色不回退主题色。
+- 判定：首访生成期间界面保持可交互、无锁死；缩略图按需落盘且尺寸正确；原图路径不退化。
+  证据：截图/操作记录 + 缩略图计数 + `footprint` 原始输出 + 「可感知卡顿：有/无」结论。
+- 记录字段（写入 §6 日志正文即可，门禁只校验 7 个必需字段）：
+  `thumb-count-before/after`、`footprint-list/scroll/album-grid/immersive`、
+  `jank-observed`（yes/no + 说明）、`evidence-screenshots`。
+
 ## 6. attestation log 契约（生成物退役后）
 
 人工/自动的分类只有一个来源：**场景的 `evidence`**。某场景的 evidence 含
@@ -325,6 +345,10 @@ steps:
 ```
 
 > `result:` 未填成 pass/ok 会红；缺任一字段会红；文件不存在会红并指名。
+
+`DAS-R21-S01` 额外要求在日志正文记录实测值（不是门禁字段，但评审必须能据此复核）：
+`thumb-count-before/after`、`footprint-list/scroll/album-grid/immersive`、
+`jank-observed` 与截图路径；判定标准与操作步骤见 §5 末组。
 
 自检（写完立即验）：
 

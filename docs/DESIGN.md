@@ -88,6 +88,16 @@ apps/desktop/
 `apps/desktop/src-tauri` 属于桌面平台壳层：它负责 Tauri 装配、权限与原生资源，
 不得承载 Core 领域规则；这些规则仍由 `crates/echo-core` 提供。
 
+### 2.4 封面资产协议
+
+封面通过 `cover://` 自定义协议读取，URL 形如 `cover://<key>?s=list|detail|original`：
+
+- `s=list` 是缺省档（128 px 最长边），用于歌曲行、歌单卡、目录卡、歌曲菜单、播放栏与队列；`s=detail` 是 512 px 档，仅用于歌单编辑预览；`s=original` 只由沉浸播放页显式请求。
+- 缺省、未知、空值或重复的 `s` 按第一个值解析，无法识别时回落 `list`，**绝不回落原图**。协议在剥离 query/fragment 之前解析档位；`s` 只选择缓存读取路径，不参与 key 白名单、长度上限或文件系统路径构造。
+- 缩略图按需生成并落盘复用；缓存仍按内容哈希寻址，磁盘布局与 `original.bin`/`mime.txt` 不变，不做格式转换。首次生成在阻塞线程上执行，按 `(key, 档位)` 单飞合并，原子写保证半成品不可见。
+- 成功响应带 `Cache-Control: private, max-age=31536000, immutable`（内容寻址使其字节不可变）；CSP 仍只放行 `img-src`/`media-src` 的 `cover:`，未知或畸形 key 仍返回 404。
+- 沉浸页的封面 URL 同时用于 `<img>` 与 `artworkPalette` 的主色提取，必须走 `original`，以保持 origin-clean 像素读取。
+
 ---
 
 ## 3. 同步基础与二期模型（无账号体系）

@@ -241,7 +241,7 @@ export function AddToPlaylistDialog({
                       aria-hidden="true"
                     >
                       {playlist.coverKey ? (
-                        <img src={bridge.assetUrl(playlist.coverKey)} alt="" />
+                        <img src={bridge.assetUrl(playlist.coverKey, "list")} alt="" />
                       ) : null}
                     </span>
                     <span className="playlist-picker-copy">
