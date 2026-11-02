@@ -45,7 +45,7 @@
 
 ## 7. 归档与 PR
 
-- [ ] 7.1 同步 delta spec 到 `openspec/specs/engineering-governance/spec.md`，运行 `openspec validate ci-pr-under-10-min --strict` 与 `openspec validate --all --strict` 通过后归档 change；验证：`openspec list` 中不再有活动 change，`git status --porcelain` 为空。
+- [x] 7.1 同步 delta spec 到 `openspec/specs/engineering-governance/spec.md`，运行 `openspec validate ci-pr-under-10-min --strict` 与 `openspec validate --all --strict` 通过后归档 change；验证：`openspec list` 中不再有活动 change，`git status --porcelain` 为空。
 - [ ] 7.2 推送分支并创建中文 PR，正文关联 Issue #124，包含设计文档链接、基线 / 目标墙钟、覆盖映射与回滚项；验证：`gh pr view --json number,body,url` 显示 PR 已关联 #124，且 `gh pr checks` 已触发。
 - [ ] 7.3 PR CI 实测：记录 run 总墙钟与各 job / step 墙钟，重点记录 Rust (Linux) 的 `Test` / `rust-static` / 16.1 / purity、Governance static、Injection 1/2、Release gate 与 Performance；验收主口径为 rust-cache 命中的 run < 10 分钟，冷缓存 run 单独记录；把结果写入 `docs/arch-standards-remaining.md` 或 `docs/ci-pipeline-review-2026-10-28.md` 并提交。
 - [ ] 7.4 PR 全绿后合并；在 `main` run 上确认 Windows / macOS 的 `Test` 步骤实际执行（非 skipped），并记录 main 墙钟；验证：`gh run view <id> --json jobs` 中 Windows / macOS 的 Test 为 success。
