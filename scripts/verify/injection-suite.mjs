@@ -45,7 +45,7 @@
 // than trusting `git status` (which cannot see `artifacts/` in any case).
 //
 // Usage:
-//   node scripts/verify/injection-suite.mjs [--list] [--only <substring>]
+//   node scripts/verify/injection-suite.mjs [--list] [--only <substring>] [--shard=<i>/<n>]
 //
 // Exits 0 only when every entry failed exactly as claimed, every positive
 // control passed, and the working tree was restored byte-for-byte.
@@ -67,6 +67,7 @@ import { join, resolve, basename, relative, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { objectKindEntries } from "./injection-object-kinds.mjs";
 import { governanceEntries } from "./injection-governance.mjs";
+import { selectEntries } from "./injection-shard.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
 const BACKUP_DIR = mkdtempSync(join(tmpdir(), "echo-injection-backup-"));
@@ -581,6 +582,7 @@ const ENTRIES = [
   // ---- embedded-frontend freshness -------------------------------------
   {
     id: "embedded-frontend/stale-binary",
+    shard: 1,
     guard: "a binary that embeds no frontend asset from the current dist",
     check: ["node", ["scripts/verify/checks/check-embedded-frontend.mjs"]],
     expect: /FAIL embedded-frontend: [\s\S]*embeds no frontend asset at all/,
@@ -764,7 +766,15 @@ if (argv.includes("--list")) {
 }
 const onlyIndex = argv.indexOf("--only");
 const only = onlyIndex === -1 ? null : argv[onlyIndex + 1];
-const selected = only ? ENTRIES.filter((entry) => entry.id.includes(only)) : ENTRIES;
+const shardIndex = argv.findIndex((arg) => arg.startsWith("--shard="));
+const shard = shardIndex === -1 ? null : argv[shardIndex].slice("--shard=".length);
+let selected;
+try {
+  selected = selectEntries(ENTRIES, { only, shard });
+} catch (error) {
+  process.stderr.write(`error injection-suite: ${error.message}\n`);
+  process.exit(1);
+}
 
 /** CI sets this so an environment-dependent skip cannot quietly stand in for a
  *  proof — the same contract `check-build-purity.mjs` uses for its artifact

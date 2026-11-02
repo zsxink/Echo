@@ -406,8 +406,12 @@ jobs:
         run: pnpm verify:governance -- --sections=registry,static,coverage
 
   injection-proofs:
-    name: Gate injection proofs
+    name: Injection proof ${{ matrix.shard }}/2
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v4
 
@@ -440,13 +444,20 @@ jobs:
       - name: Build the frontend bundle the desktop shell embeds
         run: pnpm --dir apps/desktop build
 
+      # The embedded-frontend proof (pinned to shard 1) compares against the
+      # shell binary and the freshly built dist; no other shard needs either.
       - name: Build the shell binary checked by embedded-frontend proof
+        if: matrix.shard == 1
         run: cargo build -p echo-app
 
-      - name: Prove each governance gate rejects its injected violation
+      - name: Verify embedded frontend freshness
+        if: matrix.shard == 1
+        run: pnpm verify:frontend-fresh
+
+      - name: Prove each governance gate
         env:
           ECHO_INJECTION_REQUIRE_ALL: "1"
-        run: node scripts/verify/injection-suite.mjs
+        run: node scripts/verify/injection-suite.mjs --shard=${{ matrix.shard }}/2
 
   release-gate:
     name: Release gate
