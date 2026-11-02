@@ -400,8 +400,8 @@ PR CI 从约 21 分钟压到 10 分钟以内的改造后，`ci.yml` 共有 **18 
 `github.event_name != 'pull_request' || matrix.platform == 'Linux'`——PR 只在 Linux 跑完整 workspace
 测试，Windows/macOS 仍跑 fmt、clippy 与各自的平台 Gate，完整测试在 main 上跑。前端矩阵在 PR 上保持三平台。
 
-**关键路径候选**是 `Rust (Linux)` 与 `Release gate`；实测 job 时长回填在
-`docs/ci-pipeline-review-2026-10-28.md` 的「后续（2026-11-02）」小节。
+**关键路径**是 `Release gate`（实测 888s，其中 `task-13.9` 单步 753s）与 `Rust (Linux)`（685s）。
+实测 job 级墙钟见 `docs/ci-pipeline-review-2026-10-28.md` 的「PR CI 实测（2026-11-02，run 41393026889）」。
 
 ### 10.1 governance 的 8 个 section 与执行位置
 

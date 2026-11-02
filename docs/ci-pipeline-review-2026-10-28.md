@@ -241,7 +241,52 @@ pnpm verify:governance
 | `task-13.9 --skip-static --delegated=governance,perf` | 464/464 自动化场景，PRD A1–A14 矩阵通过 |
 | `task-1.5` | 绿：18 个 job 实例、4 片 task、8 个 section 全覆盖、6 个必跑 job 无 job 级 `if` |
 
-### 待回填（Task 13）
+### PR CI 实测（2026-11-02，run `41393026889`，PR #125）
 
-PR 首次运行后在此补墙钟、机器时间与 job 级长尾：改造前基线见 §11（2026-10-28 报告：450s / 2647s / 12 job）
-以及改造前 run `41323932057`（约 21 分钟）。
+**结论：全绿，但总墙钟 14m52s（892s），未达成 10 分钟目标。** 基线 run `41323932057` 为 21m46s
+（1306s），本次减少 414s（−31.7%），机器时间 98.0min（5877s）。rust-cache 命中（`Cache hit for:
+v0-rust-release-gate-Linux-x64-…`）。
+
+| job（墙钟） | 本次 | 基线 | 说明 |
+|---|---|---|---|
+| Release gate | **888s** | 827s | 新瓶颈：单步 `task-13.9` 753s |
+| Rust (Linux) | 685s | 420s | `Test` 243s + `Rust static gates` 328s |
+| Injection proof 1/2 | 585s | — | 套件 398s + 壳构建 87s |
+| Task gates (core) | 423s | 1304s（单 job） | 四片并行后 max 423s |
+| Injection proof 2/2 | 415s | 598s（单 job） | 套件 337s |
+| Task gates (desktop) | 414s | — | 365s |
+| Governance static gates | 401s | 1015s | 静态段 282s + coverage 工具 61s |
+| Performance scenarios | 370s | — | 新增 job，与 release gate 并行 |
+| macOS platform Gate | 341s | 306s | — |
+| Rust (macOS) | 297s | 830s | `Test` 已按分层跳过 |
+| Task gates (frontend-b) | 244s | — | — |
+| Windows platform Gate | 208s | 313s | — |
+| Rust (Windows) | 162s | 983s | `Test` 已按分层跳过 |
+| Task gates (frontend-a) | 150s | — | — |
+| Frontend (Windows/Linux/macOS) | 115 / 65 / 69s | 80 / 70 / 72s | — |
+| Dependency audit | 45s | 38s | — |
+
+**分层已验证**：`Rust (Windows)` 与 `Rust (macOS)` 的 `Test`、`Rust static gates`、`Task 16.1`、
+`Task 9.7 9.8` 均为 `skipped`，`Format check` / `Clippy` / 平台 Gate 仍 `success`；`Rust (Linux)` 的
+`Test` 为 `success`（243s）。
+
+**Release gate 753s 的构成**（27 批并发，`ECHO_VERIFY_TEST_CONCURRENCY=2`，串行合计 1046s）：
+
+| 批次 | 墙钟 |
+|---|---|
+| `cargo test -p echo-core --all-features` | 269s（与 vitest 269s 并行，两核抢 CPU） |
+| `node scripts/verify/checks/task-13.8.mjs` | 122s |
+| `node scripts/verify/checks/task-9.1.mjs` | 102s |
+| `node scripts/verify/checks/task-12.4.mjs` | 99s |
+| 其余 23 批 | 0–40s |
+
+`[1/27]` 起跑到 `[2/27] ok` 结束，前 269s 只有两个并发批次，且二者都吃满 CPU——并发度 2 在
+两核 runner 上等于串行加争抢。这是未达 10 分钟的主因。
+
+**下一个杠杆（未在本 PR 内实施）**：把 `task-13.8` / `task-9.1` / `task-12.4` 这三个 100s 级的
+自包含检查挪出 release gate（它们与 `Task gates` 片重复执行），或把 release gate 的场景批次
+按域拆成 2–3 个 job；仅前者预计可省 ~320s，使 release gate 落到 ~430s、总墙钟 ~10 分钟量级。
+
+### 改造前基线（Task 13 之前）
+
+改造前基线见 §11（2026-10-28 报告：450s / 2647s / 12 job）以及 run `41323932057`（21m46s）。
