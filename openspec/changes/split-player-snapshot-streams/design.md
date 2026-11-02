@@ -100,7 +100,7 @@
 
 现状：`emitted` 是 `Vec`（线性 `contains`）、`self.get(id)` 是 `entries.iter().find()`、`pending.contains(id)` 与 `shuffle_bag.contains(id)` 都是 `Vec` 线性查找。
 
-改法：在**一次调用内**构建局部索引——`HashMap<&QueueEntryId, &QueueEntry>` 供条目查找，`HashSet<&QueueEntryId>` 供 `pending` / `shuffle_bag` / `emitted` 的成员判定。
+改法：在**一次调用内**构建局部索引——`HashMap<QueueEntryId, &QueueEntry>` 供条目查找，`HashSet<QueueEntryId>` 供 `pending` / `shuffle_bag` / `emitted` 的成员判定。键用拥有型 `QueueEntryId`（12 字节，`Copy`）而非引用：既避免借用检查上的纠缠，复制成本也可忽略。
 
 **为什么用局部索引而不是常驻索引**：`Queue` 有近二十个 mutator，任何常驻索引都要在每个 mutator 里同步维护，漏改一处就产生静默不一致。局部索引每次调用重建一次（480 条约几十微秒），把不变量限制在一个函数内部。
 

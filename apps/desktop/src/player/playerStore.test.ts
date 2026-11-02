@@ -3,12 +3,18 @@
  * the desktop `player://snapshot` event. `startPlayerEvents()` must subscribe
  * that event and forward each server snapshot into `playerStore.publish()`,
  * so the UI never fabricates a final value.
+ *
+ * Issue #112 — the position stream carries the transport state only. The
+ * queue projection and the effects snapshot travel on their own events, so a
+ * position frame must not rebuild the queue array.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { EffectsSnapshotDto } from "../ipc/ipc-types.generated";
+import type { EffectsSnapshotDto, UiQueueProjection } from "../ipc/ipc-types.generated";
 
 import {
+  PLAYER_EFFECTS_EVENT,
+  PLAYER_QUEUE_EVENT,
   PLAYER_SNAPSHOT_EVENT,
   playerStore,
   startPlayerEvents,
@@ -17,12 +23,14 @@ import {
 
 // Override the test setup's inert `listen` with one that captures the handler
 // per event, so the test can drive the subscription like the real desktop.
-const { listeners } = vi.hoisted(() => ({
+const { listeners, listenOrder } = vi.hoisted(() => ({
   listeners: new Map<string, (payload: unknown) => void>(),
+  listenOrder: [] as string[],
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (event: string, cb: (e: { payload: unknown }) => void) => {
+    listenOrder.push(event);
     listeners.set(event, (payload) => cb({ payload }));
     return () => {
       listeners.delete(event);
@@ -43,8 +51,26 @@ function makeSnapshot(overrides: Partial<UiPlayerSnapshot> = {}): UiPlayerSnapsh
     mode: "sequential",
     currentTitle: null,
     currentCanImport: false,
-    queue: [],
+    queueRevision: 0,
     ...overrides,
+  };
+}
+
+function makeProjection(revision: number, entries = 3): UiQueueProjection {
+  return {
+    revision,
+    entries: Array.from({ length: entries }, (_, index) => ({
+      entryId: `e${index}`,
+      songId: `s${index}`,
+      title: `song ${index}`,
+      isCurrent: index === 0,
+      failed: false,
+      blocked: false,
+      canImport: false,
+      artist: "Echo",
+      durationS: 100,
+      coverKey: null,
+    })),
   };
 }
 
@@ -74,6 +100,68 @@ describe("playerStore task 11.1", () => {
 
     await unlisten();
     expect(listeners.has(PLAYER_SNAPSHOT_EVENT)).toBe(false);
+  });
+});
+
+describe("split playback streams (issue #112)", () => {
+  beforeEach(() => {
+    listenOrder.length = 0;
+    playerStore.stateForRender().update((state) => ({
+      ...state,
+      queue: { revision: 0, entries: [] },
+    }));
+  });
+
+  it("subscribes the queue and effects streams before the position stream", async () => {
+    // The queue projection and the effects snapshot are change-driven: a
+    // listener that attaches after the first position frame would miss the
+    // state that is already current (DP-R22).
+    await startPlayerEvents();
+    expect(listenOrder).toEqual([PLAYER_QUEUE_EVENT, PLAYER_EFFECTS_EVENT, PLAYER_SNAPSHOT_EVENT]);
+  });
+
+  it("asks the desktop to re-publish the queue and effects on startup", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await startPlayerEvents();
+    expect(invoke).toHaveBeenCalledWith("player_sync", {});
+  });
+
+  it("keeps the queue array identical while the position stream runs", async () => {
+    // The whole point of the split: the 10 Hz position frames must not rebuild
+    // the queue array, so a queue panel that renders from it does not
+    // re-render ten times a second (DP-R19).
+    await startPlayerEvents();
+    listeners.get(PLAYER_QUEUE_EVENT)?.(makeProjection(1));
+    const published = playerStore.getQueue();
+    expect(published.entries).toHaveLength(3);
+
+    for (let frame = 0; frame < 10; frame += 1) {
+      listeners.get(PLAYER_SNAPSHOT_EVENT)?.(
+        makeSnapshot({ state: "playing", position: frame, queueRevision: 1, queueLen: 3 }),
+      );
+    }
+
+    expect(playerStore.getQueue()).toBe(published);
+    expect(playerStore.getQueue().entries).toBe(published.entries);
+    expect(playerStore.getSnapshot().position).toBe(9);
+  });
+
+  it("ignores a queue projection that is not newer than the applied one", async () => {
+    // A `player_sync` reply can arrive after the event it duplicates; the
+    // older revision must not replace the newer projection (DP-R19).
+    await startPlayerEvents();
+    listeners.get(PLAYER_QUEUE_EVENT)?.(makeProjection(7, 5));
+    listeners.get(PLAYER_QUEUE_EVENT)?.(makeProjection(3, 2));
+    expect(playerStore.getQueue().revision).toBe(7);
+    expect(playerStore.getQueue().entries).toHaveLength(5);
+  });
+
+  it("applies a newer queue projection as a whole", async () => {
+    await startPlayerEvents();
+    listeners.get(PLAYER_QUEUE_EVENT)?.(makeProjection(1, 2));
+    listeners.get(PLAYER_QUEUE_EVENT)?.(makeProjection(2, 4));
+    expect(playerStore.getQueue().revision).toBe(2);
+    expect(playerStore.getQueue().entries).toHaveLength(4);
   });
 });
 

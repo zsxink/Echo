@@ -17,6 +17,7 @@
 //! - Every mutation that touches an entry works by `QueueEntryId` — never by
 //!   `SongId`-based identity — so duplicate songs stay distinct.
 
+use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use echo_core::domain::ids::{QueueEntryId, SongId};
@@ -125,6 +126,38 @@ impl QueueItem {
     }
 }
 
+/// A monotonic revision of the queue projection.
+///
+/// Every change that can alter the projection advances it, so the transport
+/// can ship the projection once per change instead of on every position tick.
+/// The revision is *not* a content fingerprint: it may advance for a call
+/// that changed nothing observable, which is harmless — a consumer only needs
+/// "changed since the last delivery", never "what changed".
+///
+/// The counter lives inside [`Queue`] so that every path that can change the
+/// queue — including the ones that reach it through `&mut Queue` — advances
+/// it. A missing bump would silently freeze the projection on the frontend,
+/// which is far worse than a redundant bump.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct QueueRevision(u64);
+
+impl QueueRevision {
+    /// The revision of a queue that has never been changed.
+    pub const INITIAL: Self = Self(0);
+
+    /// The revision after this one.
+    #[must_use]
+    pub const fn next(self) -> Self {
+        Self(self.0.wrapping_add(1))
+    }
+
+    /// The raw counter value.
+    #[must_use]
+    pub const fn value(self) -> u64 {
+        self.0
+    }
+}
+
 /// A pure queue container: current + pending + bounded history.
 ///
 /// `Queue` is deliberately free of I/O and of playback logic; it models only
@@ -158,6 +191,8 @@ pub struct Queue {
     /// Entries restored while their media/root is unavailable. They remain in
     /// the queue and UI projection, but traversal skips them until retried.
     blocked: std::collections::HashSet<QueueEntryId>,
+    /// Monotonic revision of the projection this queue renders.
+    revision: QueueRevision,
 }
 
 /// A result of advancing/removing that the caller should surface.
@@ -181,7 +216,34 @@ impl Queue {
             shuffle_active: false,
             priority: Vec::new(),
             blocked: std::collections::HashSet::new(),
+            revision: QueueRevision::INITIAL,
         }
+    }
+
+    /// The current projection revision. The transport compares it with the
+    /// revision it last delivered to decide whether the projection must be
+    /// shipped again.
+    #[must_use]
+    pub const fn revision(&self) -> QueueRevision {
+        self.revision
+    }
+
+    /// Advance the revision without changing the queue itself.
+    ///
+    /// The coordinator uses it for the projection state it owns outside the
+    /// queue — the failed-round set and the playback mode — which is part of
+    /// the projection the UI renders.
+    pub const fn bump_revision(&mut self) {
+        self.revision = self.revision.next();
+    }
+
+    /// Continue this queue's revision from `revision` and advance it once.
+    ///
+    /// Used when the whole queue is replaced: the replacement is itself a
+    /// projection change, so the new queue must continue strictly *after* the
+    /// old revision instead of restarting the counter.
+    pub const fn continue_revision(&mut self, revision: QueueRevision) {
+        self.revision = revision.next();
     }
 
     /// Whether shuffle mode is active (the bag is consulted on advance).
@@ -206,6 +268,7 @@ impl Queue {
     /// Unknown, blocked, duplicate, and current IDs are discarded so a stale
     /// session can never corrupt traversal.
     pub fn set_priority(&mut self, ids: Vec<QueueEntryId>) {
+        self.bump_revision();
         let current = self.current_id();
         self.priority = ids
             .into_iter()
@@ -222,6 +285,7 @@ impl Queue {
     /// play this round; it MAY be empty (no noise yet, or the round was
     /// already exhausted). Passing a persisted bag back does not re-shuffle.
     pub fn set_shuffle(&mut self, active: bool, order: Vec<QueueEntryId>) {
+        self.bump_revision();
         self.shuffle_active = active;
         self.shuffle_bag = order;
     }
@@ -232,6 +296,7 @@ impl Queue {
     /// consumed bag can be refreshed without re-shuffling already-chosen ids.
     /// Returns the new bag.
     pub fn refresh_shuffle_bag(&mut self, order: Vec<QueueEntryId>) -> Vec<QueueEntryId> {
+        self.bump_revision();
         let pending = self.pending_ids();
         let mut bag: Vec<QueueEntryId> = order
             .into_iter()
@@ -319,6 +384,7 @@ impl Queue {
     /// Invalid/missing entry IDs and expired records are ignored so a corrupt
     /// session cannot prevent startup.
     pub fn restore_history(&mut self, records: impl IntoIterator<Item = HistoryRecord>) {
+        self.bump_revision();
         self.history = records
             .into_iter()
             .filter(|record| {
@@ -346,6 +412,7 @@ impl Queue {
     /// Mark a restored entry blocked or available without changing its queue
     /// identity or position.
     pub fn set_blocked(&mut self, entry_id: QueueEntryId, blocked: bool) {
+        self.bump_revision();
         if !self.contains(entry_id) {
             return;
         }
@@ -362,6 +429,15 @@ impl Queue {
         self.blocked.contains(&entry_id)
     }
 
+    /// The ids of the entries that are currently unavailable.
+    ///
+    /// They stay in the projection (the user must see *why* an item did not
+    /// play) but are skipped by traversal until their availability returns.
+    #[must_use]
+    pub fn blocked_ids(&self) -> Vec<QueueEntryId> {
+        self.blocked.iter().copied().collect()
+    }
+
     /// All entries in append order — current, pending, and any historical
     /// entry still present in the list. Used by session persistence (8.9) to
     /// snapshot the full queue with independent entry ids intact.
@@ -373,35 +449,48 @@ impl Queue {
     /// The user-facing queue projection: current first, then only entries
     /// still pending in the active playback order. Storage remains append
     /// ordered so history and duplicate entry identities are never rewritten.
+    ///
+    /// The membership tests and the entry lookup run against indexes that are
+    /// built *inside this call*, so the projection costs O(entries) instead of
+    /// O(entries²). A resident index would have to be kept in sync by every
+    /// mutator — one missed update would silently corrupt the projection.
     #[must_use]
     pub fn view_entries(&self) -> Vec<QueueEntry> {
         let Some(current) = self.current() else {
             return self.entries.clone();
         };
-        let mut view = vec![current.clone()];
         let pending = self.circular_pending_ids();
-        let order = if self.shuffle_active {
+        let pending_set: HashSet<QueueEntryId> = pending.iter().copied().collect();
+        let shuffle_bag_set: HashSet<QueueEntryId> = self.shuffle_bag.iter().copied().collect();
+        let by_id: HashMap<QueueEntryId, &QueueEntry> =
+            self.entries.iter().map(|entry| (entry.id, entry)).collect();
+
+        let order: Vec<QueueEntryId> = if self.shuffle_active {
             self.shuffle_bag
                 .iter()
                 .copied()
-                .filter(|id| pending.contains(id))
+                .filter(|id| pending_set.contains(id))
                 .chain(
                     pending
                         .iter()
                         .copied()
-                        .filter(|id| !self.shuffle_bag.contains(id)),
+                        .filter(|id| !shuffle_bag_set.contains(id)),
                 )
                 .collect()
         } else {
             pending
         };
-        let mut emitted = vec![current.id];
+
+        let mut view = vec![current.clone()];
+        let mut emitted: HashSet<QueueEntryId> = HashSet::with_capacity(self.entries.len() + 1);
+        emitted.insert(current.id);
         for id in self.priority.iter().copied().chain(order) {
-            if !emitted.contains(&id) && !self.is_blocked(id) {
-                if let Some(entry) = self.get(id).cloned() {
-                    emitted.push(id);
-                    view.push(entry);
-                }
+            if emitted.contains(&id) || self.is_blocked(id) {
+                continue;
+            }
+            if let Some(entry) = by_id.get(&id) {
+                emitted.insert(id);
+                view.push((*entry).clone());
             }
         }
         view
@@ -410,6 +499,7 @@ impl Queue {
     /// Append an entry to the END of the queue (queue join). Does not disturb
     /// the current entry or the pending set's relative order.
     pub fn push(&mut self, entry: QueueEntry) -> QueueEntryId {
+        self.bump_revision();
         let id = entry.id;
         self.entries.push(entry);
         if self.current_index.is_none() {
@@ -432,6 +522,7 @@ impl Queue {
     /// re-located to sit flush after the current entry, then the new entry is
     /// appended to its tail.
     pub fn insert_next(&mut self, entry: QueueEntry) -> QueueEntryId {
+        self.bump_revision();
         let id = entry.id;
         self.relocate_priority_lane();
         let base = self.current_index.map_or(0, |i| i + 1);
@@ -509,6 +600,7 @@ impl Queue {
     /// *current* entry does not move it (it is playing); the current id is
     /// returned and no duplicate is added.
     pub fn promote_to_priority(&mut self, entry: QueueEntry) -> QueueEntryId {
+        self.bump_revision();
         // First queued entry with the same playable identity.
         let Some(match_idx) = self
             .entries
@@ -553,6 +645,7 @@ impl Queue {
     /// Consume the first valid manual priority entry. Manual previous and
     /// error skip intentionally never call this method.
     pub fn advance_priority(&mut self) -> Option<QueueEntryId> {
+        self.bump_revision();
         while let Some(id) = self.priority.first().copied() {
             self.priority.remove(0);
             if self.contains(id) && !self.is_blocked(id) {
@@ -567,6 +660,7 @@ impl Queue {
     /// coordinator when it starts/advances to an entry. A non-pending entry id
     /// is a no-op (returns None).
     pub fn set_current(&mut self, entry_id: QueueEntryId) -> Option<QueueEntryId> {
+        self.bump_revision();
         let pos = self.entries.iter().position(|e| e.id == entry_id)?;
         self.current_index = Some(pos);
         self.record_history(entry_id);
@@ -577,6 +671,7 @@ impl Queue {
     /// Returns [`QueueAdvance::Played`] with the new current, or
     /// [`QueueAdvance::Exhausted`] when there is no pending entry.
     pub fn advance_next(&mut self) -> QueueAdvance {
+        self.bump_revision();
         let next_index = match self.current_index {
             Some(i) if i + 1 < self.entries.len() => i + 1,
             None if !self.entries.is_empty() => 0,
@@ -614,6 +709,7 @@ impl Queue {
     ///
     /// Returns the id advanced to, or `None` when there is nothing to play.
     pub fn advance_in_mode(&mut self, mode: PlayMode) -> Option<QueueEntryId> {
+        self.bump_revision();
         match mode {
             PlayMode::Sequential => match self.advance_next() {
                 QueueAdvance::Played(id) => Some(id),
@@ -642,6 +738,7 @@ impl Queue {
     /// Panics only if internal history is corrupted after `prune_history` has
     /// established that the selected entry remains in the queue.
     pub fn previous(&mut self) -> Option<QueueEntryId> {
+        self.bump_revision();
         let current = self.current_id()?;
         // Find the most recent history entry different from current that still
         // exists in the queue.
@@ -663,6 +760,7 @@ impl Queue {
     /// first entry to the last. This deliberately does not consume or reorder
     /// the manual priority lane.
     pub fn previous_in_loop(&mut self) -> Option<QueueEntryId> {
+        self.bump_revision();
         let current = self.current_index?;
         if self.entries.is_empty() {
             return None;
@@ -681,6 +779,7 @@ impl Queue {
     /// Remove every pending entry (clear the upnext) WITHOUT touching the
     /// current entry or history. "清空只移除待播" (design §12, 8.6).
     pub fn clear_pending(&mut self) {
+        self.bump_revision();
         if let Some(i) = self.current_index {
             let current = self.entries[i].clone();
             self.entries = vec![current];
@@ -703,6 +802,7 @@ impl Queue {
     /// all duplicate `QueueEntryId`s for the song, including hanging history
     /// references, are dropped so none try to play a now-gone file.
     pub fn remove_song(&mut self, song: SongId) -> Vec<QueueEntryId> {
+        self.bump_revision();
         // The current entry (if it is a target) must also be fully removed from
         // `entries`, not merely de-pointered — design §8.11: all queue entries
         // and hanging history references for a deleted song are removed.
@@ -760,6 +860,7 @@ impl Queue {
     /// current entry as removable — used by the deletion path *after* it has
     /// already advanced off the deleted current.
     fn remove_direct(&mut self, entry_id: QueueEntryId) {
+        self.bump_revision();
         if let Some(pos) = self.entries.iter().position(|e| e.id == entry_id) {
             self.entries.remove(pos);
             if let Some(ci) = self.current_index {
@@ -781,6 +882,7 @@ impl Queue {
     /// whether it was removed. History entry ids are removed even if the entry
     /// is gone from `entries`.
     pub fn remove(&mut self, entry_id: QueueEntryId) -> bool {
+        self.bump_revision();
         if let Some(pos) = self.entries.iter().position(|e| e.id == entry_id) {
             if self.current_index == Some(pos) {
                 // Cannot remove the playing entry via this path (coordinator

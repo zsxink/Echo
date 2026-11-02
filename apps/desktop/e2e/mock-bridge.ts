@@ -69,6 +69,7 @@ type Command =
   | "get_close_behavior"
   | "player_control"
   | "queue_command"
+  | "player_sync"
   | "set_volume"
   | "toggle_mute"
   | "seek"
@@ -188,6 +189,10 @@ const PLAYER_COMMANDS: ReadonlySet<string> = new Set([
 
 /** The event the runtime publishes each player snapshot (matches the app). */
 const PLAYER_SNAPSHOT_EVENT = "player://snapshot";
+/** The event the runtime publishes the queue projection on (matches the app). */
+const PLAYER_QUEUE_EVENT = "player://queue";
+/** The event the runtime publishes the effects snapshot on (matches the app). */
+const PLAYER_EFFECTS_EVENT = "player://effects";
 
 /**
  * Derive the UI player snapshot from the mock's playback state.
@@ -196,8 +201,11 @@ const PLAYER_SNAPSHOT_EVENT = "player://snapshot";
  * stayed empty and the row playing indicator never appeared, so "clicking a song
  * plays it" was unobservable from the preview (and the A8 acceptance check
  * passed vacuously, satisfied by the library rows rather than the player bar).
+ *
+ * The snapshot carries the transport state only — the queue projection and the
+ * effects snapshot travel on their own events (issue #112).
  */
-function snapshotOf(state: E2EState): Record<string, unknown> {
+function snapshotOf(state: E2EState, queueRevision: number): Record<string, unknown> {
   const current = state.nowPlaying;
   const song = current ? state.songs.find((s) => s.id === current.songId) : undefined;
   return {
@@ -217,15 +225,41 @@ function snapshotOf(state: E2EState): Record<string, unknown> {
     currentArtist: song ? song.artist : null,
     currentAlbum: song ? song.album : null,
     currentCanImport: false,
-    queue: state.songs.map((s) => ({
+    queueRevision,
+  };
+}
+
+/**
+ * Derive the queue projection from the mock's playback state.
+ *
+ * The real projection is built by the coordinator and published only when the
+ * queue changed; the mock mirrors that by tracking the revision next to it.
+ */
+function queueProjectionOf(state: E2EState, revision: number): Record<string, unknown> {
+  const current = state.nowPlaying;
+  return {
+    revision,
+    entries: state.songs.map((s) => ({
       entryId: `entry-${s.id}`,
       songId: s.id,
-      title: null,
+      title: s.title,
       isCurrent: current?.songId === s.id,
       failed: false,
+      blocked: false,
       canImport: false,
+      artist: s.artist,
+      durationS: s.durationS,
+      coverKey: s.coverKey ?? null,
     })),
   };
+}
+
+/** The signature of the projection's content: the queue changed iff it differs. */
+function queueSignatureOf(state: E2EState): string {
+  const current = state.nowPlaying;
+  return state.songs
+    .map((s) => `${s.id}:${current?.songId === s.id}`)
+    .join("|");
 }
 
 function emptyError(code: string, messageKey: string, retryable: boolean): IpcErrorDto {
@@ -767,6 +801,9 @@ function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
       return st.nowPlaying;
     },
     queue_command: () => ({ ok: true }),
+    // The catch-up entry point of the split streams (issue #112). The state
+    // itself arrives on the events; the command only asks for it.
+    player_sync: () => null,
     set_volume: () => ({ volume: 1.0 }),
     toggle_mute: () => ({ muted: true }),
     seek: ({ position }, st) => {
@@ -852,6 +889,10 @@ export class MockBridge {
   /** Callback registry behind the mocked `transformCallback` (event handlers). */
   private callbacks = new Map<number, (event: unknown) => void>();
   private nextCallbackId = 1;
+  /** The revision of the queue projection the frontend holds (issue #112). */
+  private queueRevision = 0;
+  /** The content the last published projection was built from. */
+  private queueSignature = "";
 
   constructor() {
     this.state = defaultState();
@@ -864,6 +905,8 @@ export class MockBridge {
     this.listeners.clear();
     this.callbacks.clear();
     this.nextCallbackId = 1;
+    this.queueRevision = 0;
+    this.queueSignature = "";
     this.handlers = buildHandlers(this.state);
   }
 
@@ -886,6 +929,27 @@ export class MockBridge {
     (this.handlers as Record<string, Handler>)[command] = fn;
   }
 
+  /**
+   * Publish the queue projection when the queue changed.
+   *
+   * The real runtime rebuilds the projection only when the revision moved; the
+   * mock compares the content signature instead, so a scenario sees the same
+   * "the queue did not change, nothing was published" behaviour.
+   */
+  private publishQueueIfChanged(): void {
+    const signature = queueSignatureOf(this.state);
+    if (signature === this.queueSignature) return;
+    this.queueSignature = signature;
+    this.queueRevision += 1;
+    this.emit(PLAYER_QUEUE_EVENT, queueProjectionOf(this.state, this.queueRevision));
+  }
+
+  /** Publish the current queue projection and effects snapshot on demand. */
+  private publishPlayerStreams(): void {
+    this.publishQueueIfChanged();
+    this.emit(PLAYER_EFFECTS_EVENT, this.handlers.get_audio_effects_snapshot?.({}, this.state));
+  }
+
   invoke(cmd: string, args: unknown): unknown {
     this.calls.push(cmd);
     if (cmd === "plugin:event|listen") {
@@ -897,7 +961,9 @@ export class MockBridge {
         this.on(event, (payload) => callback({ event, id: handler, payload }));
         // The runtime publishes the current snapshot as soon as a subscriber
         // attaches, so a seeded now-playing item is on screen without a click.
-        if (event === PLAYER_SNAPSHOT_EVENT) this.emit(event, snapshotOf(this.state));
+        if (event === PLAYER_SNAPSHOT_EVENT) {
+          this.emit(event, snapshotOf(this.state, this.queueRevision));
+        }
       }
       return String(handler ?? this.nextCallbackId);
     }
@@ -935,10 +1001,18 @@ export class MockBridge {
       throw new Error(`mock-bridge: \`${cmd}\` has no handler`);
     }
     const result = handler((args ?? {}) as AnyRecord, this.state);
+    // The catch-up entry point of the split streams (issue #112): the frontend
+    // asks for the current queue projection and effects snapshot once, after it
+    // registered its listeners.
+    if (cmd === "player_sync") {
+      this.publishPlayerStreams();
+      return result;
+    }
     // A playback request republishes the snapshot, as the real runtime does
     // once the actor has accepted it.
     if (PLAYER_COMMANDS.has(cmd)) {
-      this.emit(PLAYER_SNAPSHOT_EVENT, snapshotOf(this.state));
+      this.publishQueueIfChanged();
+      this.emit(PLAYER_SNAPSHOT_EVENT, snapshotOf(this.state, this.queueRevision));
     }
     return result;
   }

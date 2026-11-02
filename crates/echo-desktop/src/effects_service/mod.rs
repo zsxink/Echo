@@ -73,15 +73,34 @@ struct Inner {
     pending_since: Option<Instant>,
     protected: Option<String>,
     snapshot_sequence: u64,
+    /// The content behind the current sequence.
+    ///
+    /// The sequence counts *content changes*, not captures: capturing the same
+    /// content twice keeps the number, so a consumer can tell whether the
+    /// snapshot it holds is still the current one (AE-R07).
+    captured: Option<EffectsState>,
 }
 
 impl Inner {
     /// Allocate while locked, before a command reply or event can be delayed.
     fn capture(&mut self) -> EffectsState {
-        self.snapshot_sequence = self.snapshot_sequence.saturating_add(1);
         let mut state = self.state.clone();
-        state.snapshot_sequence = Some(self.snapshot_sequence);
         state.recovery_reason.clone_from(&self.protected);
+        // The content of a capture is the document, the runtime facts and the
+        // recovery reason — the sequence number itself is not part of it.
+        let changed = match &self.captured {
+            Some(previous) => {
+                previous.document != state.document
+                    || previous.runtime != state.runtime
+                    || previous.recovery_reason != state.recovery_reason
+            }
+            None => true,
+        };
+        if changed {
+            self.snapshot_sequence = self.snapshot_sequence.saturating_add(1);
+            self.captured = Some(state.clone());
+        }
+        state.snapshot_sequence = Some(self.snapshot_sequence);
         state
     }
 }
@@ -121,6 +140,7 @@ impl EffectsService {
                 pending_since: None,
                 protected,
                 snapshot_sequence: 0,
+                captured: None,
             }),
             preferences,
             playback,

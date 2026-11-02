@@ -1,6 +1,7 @@
 //! State transition, durable round-trip and stale-fact regression coverage.
 #![allow(clippy::float_cmp)] // These assertions check exact retained inputs and exact constant responses.
 use super::*;
+use crate::effects::math::peak_scan;
 use crate::effects::{ChannelLayout, PreampMode};
 
 #[test]
@@ -240,4 +241,91 @@ fn legacy_snapshot_without_additive_ui_fields_still_deserializes() {
     let restored: EffectsSnapshot = serde_json::from_value(json).unwrap();
     assert_eq!(restored.editable_bands, None);
     assert_eq!(restored.response_rate, None);
+}
+
+/// A curve that is not neutral, so the analysis really runs the peak sweep.
+fn boosted_curve() -> EqCurve {
+    EqCurve {
+        gains_db: [3.0; 10],
+        ..EqCurve::default()
+    }
+}
+
+#[test]
+fn effects_analysis_is_not_recomputed_for_unchanged_document_and_environment() {
+    // The position stream repeats the snapshot ten times a second. The
+    // frequency-response analysis runs a 32768-point peak sweep, so repeating
+    // it per frame is what burned the CPU the position stream needs
+    // (issue #112). An unchanged document and environment reuse the result.
+    let mut state = EffectsState::default();
+    state.edit(boosted_curve()).unwrap();
+    let before = peak_scan::count();
+    let first = state.snapshot();
+    let after_first = peak_scan::count();
+    assert!(
+        after_first > before,
+        "the first snapshot analyzes the curve"
+    );
+    let second = state.snapshot();
+    assert_eq!(
+        peak_scan::count(),
+        after_first,
+        "an unchanged document and environment reuse the analysis"
+    );
+    assert_eq!(
+        first, second,
+        "the reused analysis yields the same snapshot"
+    );
+}
+
+#[test]
+fn effects_analysis_matches_recomputation_for_same_inputs() {
+    // The memoized result must be indistinguishable from a fresh computation.
+    let mut state = EffectsState::default();
+    state.edit(boosted_curve()).unwrap();
+    let memoized = state.snapshot();
+    // A second state with the same facts, but without the memo, recomputes.
+    let mut fresh = EffectsState::from_document(state.document.clone()).unwrap();
+    fresh.runtime = state.runtime.clone();
+    assert_eq!(
+        memoized,
+        fresh.snapshot(),
+        "the memoized analysis equals a fresh computation"
+    );
+}
+
+#[test]
+fn effects_analysis_is_recomputed_for_a_changed_document_or_environment() {
+    // The memo is keyed by the document and the environment: a changed
+    // document or a changed processing rate recomputes with the new inputs.
+    let mut state = EffectsState::default();
+    state.edit(boosted_curve()).unwrap();
+    let first = state.snapshot();
+    let before = peak_scan::count();
+    state
+        .edit(EqCurve {
+            gains_db: [4.0; 10],
+            ..EqCurve::default()
+        })
+        .unwrap();
+    let second = state.snapshot();
+    assert!(
+        peak_scan::count() > before,
+        "a changed document recomputes the analysis"
+    );
+    assert_ne!(first.response_points, second.response_points);
+
+    let before = peak_scan::count();
+    state
+        .environment_changed(Some(ProcessingEnvironment {
+            sample_rate: 96_000,
+            channel_layout: ChannelLayout::Stereo,
+        }))
+        .unwrap();
+    let third = state.snapshot();
+    assert!(
+        peak_scan::count() > before,
+        "a changed environment recomputes the analysis"
+    );
+    assert_ne!(second.response_points, third.response_points);
 }

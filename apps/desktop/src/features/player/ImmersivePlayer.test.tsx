@@ -61,7 +61,7 @@ function makeSnapshot(overrides: Partial<UiPlayerSnapshot> = {}): UiPlayerSnapsh
     mode: "sequential",
     currentTitle: null,
     currentCanImport: false,
-    queue: [],
+    queueRevision: 0,
     ...overrides,
   };
 }
@@ -127,20 +127,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
       makeSnapshot({
         currentQueueEntryId: "e1",
         currentSongId: "s1",
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     render(<ImmersivePlayer />);
@@ -159,20 +146,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
       makeSnapshot({
         currentQueueEntryId: "e1",
         currentSongId: "s1",
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     const { container } = render(<ImmersivePlayer />);
@@ -187,20 +161,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
       makeSnapshot({
         currentQueueEntryId: "e1",
         currentSongId: "s1",
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     const { container } = render(<ImmersivePlayer />);
@@ -228,20 +189,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
       makeSnapshot({
         currentQueueEntryId: "e1",
         currentSongId: "s1",
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     const { unmount } = render(<ImmersivePlayer />);
@@ -269,32 +217,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
       makeSnapshot({
         currentQueueEntryId: "e1",
         currentSongId: "s1",
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-          {
-            entryId: "e2",
-            songId: "s2",
-            title: null,
-            isCurrent: false,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     const { rerender } = render(<ImmersivePlayer />);
@@ -303,32 +226,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
       makeSnapshot({
         currentQueueEntryId: "e2",
         currentSongId: "s2",
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: false,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-          {
-            entryId: "e2",
-            songId: "s2",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     rerender(<ImmersivePlayer />);
@@ -358,20 +256,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
         duration: 30,
         currentQueueEntryId: "e1",
         currentSongId: "s1",
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     render(<ImmersivePlayer />);
@@ -400,20 +285,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
       makeSnapshot({
         currentQueueEntryId: "e1",
         currentSongId: "s1",
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     render(<ImmersivePlayer />);
@@ -432,20 +304,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
       makeSnapshot({
         currentQueueEntryId: "e1",
         currentSongId: "s1",
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     render(<ImmersivePlayer />);
@@ -478,20 +337,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
       makeSnapshot({
         currentQueueEntryId: "e1",
         currentSongId: "s1",
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     render(<ImmersivePlayer />);
@@ -508,20 +354,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
       makeSnapshot({
         currentQueueEntryId: "e1",
         currentSongId: "s1",
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     const { rerender } = render(<ImmersivePlayer />);
@@ -532,20 +365,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
       makeSnapshot({
         currentQueueEntryId: "e2",
         currentSongId: "s2",
-        queue: [
-          {
-            entryId: "e2",
-            songId: "s2",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     rerender(<ImmersivePlayer />);
@@ -564,20 +384,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
       makeSnapshot({
         currentQueueEntryId: "e1",
         currentSongId: "s1",
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     render(<ImmersivePlayer />);
@@ -605,20 +412,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
       makeSnapshot({
         currentQueueEntryId: "e1",
         currentSongId: "s1",
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     render(<ImmersivePlayer />);
@@ -646,20 +440,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
         state: "paused",
         currentQueueEntryId: "e1",
         currentSongId: "s1",
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     render(<ImmersivePlayer />);
@@ -685,20 +466,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
       makeSnapshot({
         currentQueueEntryId: "e1",
         currentSongId: "s1",
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     render(<ImmersivePlayer />);
@@ -722,20 +490,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
         state: "paused",
         currentQueueEntryId: "e1",
         currentSongId: "s1",
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     render(<ImmersivePlayer />);
@@ -760,20 +515,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
       makeSnapshot({
         currentQueueEntryId: "e1",
         currentSongId: "s1",
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     render(<ImmersivePlayer />);
@@ -799,20 +541,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
       makeSnapshot({
         currentQueueEntryId: "e1",
         currentSongId: "s1",
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     render(<ImmersivePlayer />);
@@ -832,20 +561,7 @@ describe("ImmersivePlayer (tasks 11.3–11.6)", () => {
       makeSnapshot({
         currentQueueEntryId: "e1",
         currentSongId: "s1",
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+        queueRevision: 0,
       }),
     );
     render(<ImmersivePlayer />);

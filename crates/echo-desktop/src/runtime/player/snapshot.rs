@@ -1,4 +1,15 @@
 //! UI snapshot mapping + forwarder (task 11.2).
+//!
+//! Three streams leave this module, each with its own change criterion:
+//!
+//! - `player://snapshot` — the 10 Hz **transport** state. It carries no queue
+//!   entry and no effects snapshot, so its payload size does not depend on the
+//!   library size.
+//! - `player://queue` — the queue projection, published only when the queue
+//!   revision changed.
+//! - `player://effects` — the effects snapshot, published only when its
+//!   sequence advanced (which, after the sequence became a *content change*
+//!   counter, means the content actually changed).
 
 use std::collections::HashMap;
 use std::hash::BuildHasher;
@@ -10,9 +21,12 @@ use echo_core::domain::state::PlaybackState;
 use super::metadata::QueueMetadataResolver;
 use super::PlayerPort;
 use super::{
-    CoordinatorView, QueueEntryMeta, QueueItem, UiLyricLine, UiPlayerSnapshot, UiQueueEntry,
+    CoordinatorView, PlayerEmitters, PlayerFrameProvider, QueueEntryMeta, QueueItem,
+    QueueProjection, UiLyricLine, UiPlayerSnapshot, UiQueueEntry, UiQueueProjection,
     UiTemporaryLyrics,
 };
+use crate::player::coordinator::PlaybackCoordinator;
+use crate::player::queue::QueueRevision;
 
 /// Round a duration in seconds to a whole second for the UI. Fractional
 /// seconds are intentional loss (the UI only shows seconds) and negatives are
@@ -22,20 +36,19 @@ const fn duration_seconds(seconds: f64) -> u64 {
     seconds.max(0.0) as u64
 }
 
-/// Build the UI queue rows plus whether the current entry can be imported
-/// (a session-only temporary item, task 11.7; a library entry cannot).
-/// Extracted from [`map_snapshot`] so that function stays under the
-/// file-size lint.
-fn build_queue<S: BuildHasher>(
-    view: &CoordinatorView,
+/// Map a queue projection into the UI rows the queue panel renders.
+///
+/// The metadata is passed in rather than resolved here so the caller can
+/// decide *when* the (repository-backed) resolution happens: the projection is
+/// built only when the queue revision changed, so the resolution must not run
+/// on every position frame.
+#[must_use]
+pub fn map_queue_projection<S: BuildHasher>(
+    projection: &QueueProjection,
     metadata: &HashMap<SongId, QueueEntryMeta, S>,
-) -> (bool, Vec<UiQueueEntry>) {
-    let current_id = view.current.as_ref().map(|e| e.id);
-    let current_is_temporary = matches!(
-        view.current.as_ref().map(|e| &e.item),
-        Some(QueueItem::Temporary(_))
-    );
-    let queue = view
+) -> UiQueueProjection {
+    let current_id = projection.current;
+    let entries = projection
         .entries
         .iter()
         .map(|e| {
@@ -58,8 +71,8 @@ fn build_queue<S: BuildHasher>(
                         .or_else(|| Some(t.display_name.clone())),
                 },
                 is_current: Some(e.id) == current_id,
-                failed: view.failed_round.contains(&e.id),
-                blocked: view.blocked.contains(&e.id),
+                failed: projection.failed_round.contains(&e.id),
+                blocked: projection.blocked.contains(&e.id),
                 can_import: is_temporary,
                 artist: match &e.item {
                     QueueItem::Library(_) => song_meta.artist,
@@ -78,11 +91,51 @@ fn build_queue<S: BuildHasher>(
             }
         })
         .collect();
-    (current_is_temporary, queue)
+    UiQueueProjection {
+        revision: projection.revision.value(),
+        entries,
+    }
+}
+
+/// Map a queue projection into the UI shape, resolving the presentation
+/// metadata of its library entries.
+///
+/// The whole-queue resolution is the expensive part of the projection, which is
+/// why it only runs when the queue revision changed.
+#[must_use]
+pub fn ui_queue_projection(
+    projection: &QueueProjection,
+    metadata: &QueueMetadataResolver,
+) -> UiQueueProjection {
+    let resolved = metadata.resolve(&projection.entries);
+    map_queue_projection(projection, &resolved)
+}
+
+/// Build the current queue projection from the coordinator, under one lock.
+///
+/// The revision and the entries are read together, so a consumer never sees a
+/// revision that does not belong to the entries it carries.
+///
+/// # Panics
+///
+/// Only if the coordinator mutex is poisoned — a thread panicked while holding
+/// it, which indicates a bug in the playback coordinator.
+#[must_use]
+pub fn queue_projection<P: PlayerPort>(
+    coordinator: &std::sync::Mutex<PlaybackCoordinator<P>>,
+) -> QueueProjection {
+    let coord = coordinator.lock().expect("player coordinator lock");
+    QueueProjection {
+        revision: coord.queue_revision(),
+        entries: coord.queue_view(),
+        failed_round: coord.failed_round().collect(),
+        blocked: coord.blocked_entries().into_iter().collect(),
+        current: coord.current().map(|entry| entry.id),
+    }
 }
 
 /// Map the actor's [`PlayerSnapshot`] (transport state) plus the coordinator's
-/// queue view into the UI shape.
+/// current entry into the UI shape.
 ///
 /// The split matters. The actor knows *how* playback is going (state, position,
 /// duration, volume, mute) but nothing about the queue: its commands carry a
@@ -92,11 +145,16 @@ fn build_queue<S: BuildHasher>(
 /// [`CoordinatorView`] — reading them off the actor's snapshot is what once left
 /// the player bar blank (empty 当前播放区 + dead mode button) while a song was
 /// audibly playing.
+///
+/// `current_meta` is the resolved presentation metadata of the current entry —
+/// one row, not the whole queue. The queue itself is published on its own
+/// event.
 #[must_use]
-pub fn map_snapshot<S: BuildHasher>(
+pub fn map_snapshot(
     raw: &crate::player::port::PlayerSnapshot,
     view: &CoordinatorView,
-    metadata: &HashMap<SongId, QueueEntryMeta, S>,
+    current_meta: Option<&QueueEntryMeta>,
+    queue_len: usize,
 ) -> UiPlayerSnapshot {
     let current = view.current.as_ref();
     let current_id = current.map(|e| e.id);
@@ -111,11 +169,10 @@ pub fn map_snapshot<S: BuildHasher>(
         Some(QueueItem::Library(id)) => {
             // A library song's display title is its resolved metadata — the
             // player bar shows the real title, not a placeholder.
-            let title = metadata.get(id).and_then(|meta| meta.title.clone());
-            let song_meta = metadata.get(id).cloned().unwrap_or_default();
+            let song_meta = current_meta.cloned().unwrap_or_default();
             (
                 Some(id.to_string()),
-                title,
+                song_meta.title,
                 song_meta.artist,
                 song_meta.album,
                 song_meta.cover_key,
@@ -150,7 +207,7 @@ pub fn map_snapshot<S: BuildHasher>(
     };
     // A session-only temporary item (no library `song_id`) can be imported into
     // the active library (task 11.7); a library entry cannot.
-    let (current_can_import, queue) = build_queue(view, metadata);
+    let current_can_import = matches!(current.map(|e| &e.item), Some(QueueItem::Temporary(_)));
     UiPlayerSnapshot {
         state: match raw.state {
             PlaybackState::Stopped => "stopped",
@@ -166,7 +223,7 @@ pub fn map_snapshot<S: BuildHasher>(
         muted: raw.muted,
         current_queue_entry_id: current_id.map(|q| q.to_string()),
         current_song_id,
-        queue_len: view.entries.len(),
+        queue_len,
         mode: match view.mode {
             super::PlayMode::Sequential => "sequential",
             super::PlayMode::Shuffle => "shuffle",
@@ -178,9 +235,32 @@ pub fn map_snapshot<S: BuildHasher>(
         current_cover_key,
         current_lyrics,
         current_can_import,
-        effects: None,
-        queue,
+        queue_revision: view.revision.value(),
     }
+}
+
+/// Whether an effects snapshot must be published again.
+///
+/// The effects snapshot carries a monotonic sequence that advances when the
+/// *content* changed, so an unchanged snapshot is identified by its sequence.
+/// A snapshot without a sequence carries no change evidence — it is published
+/// and the consumer applies its own ordering rules.
+const fn effects_changed(previous: Option<u64>, next: Option<u64>) -> bool {
+    match (previous, next) {
+        (Some(previous), Some(next)) => next > previous,
+        _ => true,
+    }
+}
+
+/// What the forwarder already delivered, so it can tell what changed.
+#[derive(Default)]
+struct Delivered {
+    /// The queue revision the consumer last received.
+    queue_revision: Option<QueueRevision>,
+    /// The number of entries in the last delivered projection.
+    queue_len: usize,
+    /// The effects sequence the consumer last received.
+    effects_sequence: Option<u64>,
 }
 
 /// Bridge a sealed snapshot stream to the UI snapshot path.
@@ -190,12 +270,13 @@ pub fn map_snapshot<S: BuildHasher>(
 /// consumer has stale snapshots dropped (the actor's receiver is bounded) so
 /// this thread never blocks the actor.
 ///
-/// `queue_provider` returns the coordinator's current view, which supplies
-/// every queue-derived field of the UI snapshot (task 11.2) — the actor knows
-/// nothing about queue membership. `metadata` resolves the presentation
-/// metadata (title/artist/duration/cover) of the queue's library entries,
-/// batch-cached so repeated position snapshots never re-query per row (task
-/// 2.2).
+/// `frames` supplies the coordinator's state for one frame. It receives the
+/// revision the consumer last received, so the queue projection is built only
+/// when the queue actually changed — and it is built under the same lock as
+/// the revision, so the two never disagree. `metadata` resolves the
+/// presentation metadata (title/artist/duration/cover) of the queue's library
+/// entries, batch-cached so repeated position snapshots never re-query per row
+/// (task 2.2).
 ///
 /// # Panics
 ///
@@ -205,18 +286,46 @@ pub fn map_snapshot<S: BuildHasher>(
 #[allow(clippy::needless_pass_by_value)] // The port is moved into the forwarder thread.
 pub fn spawn_forwarder(
     port: Arc<dyn PlayerPort>,
-    queue_provider: Arc<dyn Fn() -> CoordinatorView + Send + Sync>,
+    frames: PlayerFrameProvider,
     metadata: Arc<QueueMetadataResolver>,
-    emit: super::SnapshotEmitter,
+    effects: super::EffectsSnapshotProvider,
+    emit: PlayerEmitters,
 ) {
     let rx = port.subscribe_snapshots();
     std::thread::Builder::new()
         .name("echo-snapshot-forwarder".into())
         .spawn(move || {
+            let mut delivered = Delivered::default();
             while let Ok(snap) = rx.recv() {
-                let view = queue_provider();
-                let meta = metadata.resolve(&view.entries);
-                emit(map_snapshot(&snap, &view, &meta));
+                let frame = frames(delivered.queue_revision);
+                // The projection goes first: the queue length it carries is
+                // then already known when the position frame is mapped.
+                if let Some(projection) = frame.projection {
+                    let ui = ui_queue_projection(&projection, &metadata);
+                    (emit.queue)(ui);
+                    delivered.queue_revision = Some(projection.revision);
+                    delivered.queue_len = projection.entries.len();
+                }
+                let current_meta = frame
+                    .view
+                    .current
+                    .as_ref()
+                    .and_then(|entry| entry.item.song_id())
+                    .map(|id| metadata.resolve_one(id));
+                (emit.snapshot)(map_snapshot(
+                    &snap,
+                    &frame.view,
+                    current_meta.as_ref(),
+                    delivered.queue_len,
+                ));
+                let effects_snapshot = (effects)();
+                if effects_changed(
+                    delivered.effects_sequence,
+                    effects_snapshot.snapshot_sequence,
+                ) {
+                    delivered.effects_sequence = effects_snapshot.snapshot_sequence;
+                    (emit.effects)(effects_snapshot);
+                }
             }
         })
         .expect("spawn snapshot forwarder thread");

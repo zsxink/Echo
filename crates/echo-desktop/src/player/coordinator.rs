@@ -19,7 +19,7 @@
 use echo_core::domain::ids::{PlaybackSessionId, QueueEntryId};
 
 use super::port::{PlayMode, PlayerCommand, PlayerPort, PlayerSnapshot};
-use super::queue::{Queue, QueueEntry, QueueItem, ViewContext};
+use super::queue::{Queue, QueueEntry, QueueItem, QueueRevision, ViewContext};
 
 /// "Previous" restarts the current track when it has played longer than this
 /// (task 8.6: ">5 秒上一首回到开头").
@@ -136,12 +136,34 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
         self.queue.view_entries()
     }
 
+    /// The current projection revision of the queue.
+    ///
+    /// The transport compares it with the revision it last delivered to
+    /// decide whether the projection must be shipped again. It is read under
+    /// the same lock as the projection itself, so the two always agree.
+    #[must_use]
+    pub const fn queue_revision(&self) -> QueueRevision {
+        self.queue.revision()
+    }
+
     /// Mutable access to the queue — for the deletion coordinator (task 8.11),
     /// which snapshots/removes entries under the same lock the command layer
     /// already holds. Every other mutation goes through coordinator methods.
     #[must_use]
     pub const fn queue_mut(&mut self) -> &mut Queue {
         &mut self.queue
+    }
+
+    /// Replace the whole queue, keeping the projection revision monotonic.
+    ///
+    /// The replacement is itself a projection change, so the new queue
+    /// continues *after* the old revision instead of restarting the counter —
+    /// a consumer that compares revisions would otherwise treat the fresh
+    /// queue as older than the one it already has.
+    fn replace_queue(&mut self, queue: Queue) {
+        let revision = self.queue.revision();
+        self.queue = queue;
+        self.queue.continue_revision(revision);
     }
 
     /// The current queue entry, if any.
@@ -167,8 +189,11 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
         // selected song becomes current.
         let selected = ctx.selected_index.min(ctx.songs.len().saturating_sub(1));
         let song = ctx.songs[selected];
-        self.queue = ctx.build_queue();
+        self.replace_queue(ctx.build_queue());
         self.failed_round.clear(); // fresh session: retry previously-failed files
+                                   // The cleared failed round changes the per-entry "failed" flags, which
+                                   // are part of the projection the UI renders.
+        self.queue.bump_revision();
         let current_id = self
             .queue
             .current_id()
@@ -186,8 +211,9 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
     pub fn play_context_paused(&mut self, ctx: &ViewContext) {
         let selected = ctx.selected_index.min(ctx.songs.len().saturating_sub(1));
         let song = ctx.songs[selected];
-        self.queue = ctx.build_queue();
+        self.replace_queue(ctx.build_queue());
         self.failed_round.clear();
+        self.queue.bump_revision();
         if let Some(current_id) = self.queue.current_id() {
             let session = self.new_load_session(current_id);
             self.player
@@ -211,6 +237,7 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
         muted: bool,
     ) {
         self.mode = mode;
+        self.queue.bump_revision();
         self.player.send(PlayerCommand::SetMode(mode)).ok();
         self.player.send(PlayerCommand::SetVolume(volume)).ok();
         self.player.send(PlayerCommand::SetMute(muted)).ok();
@@ -230,9 +257,11 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
         muted: bool,
         position: Option<f64>,
     ) {
-        self.queue = queue;
+        self.replace_queue(queue);
         self.mode = mode;
         self.failed_round.clear();
+        // The mode and the cleared failed round are both part of the projection.
+        self.queue.bump_revision();
         self.player.send(PlayerCommand::SetMode(mode)).ok();
         self.player.send(PlayerCommand::SetVolume(volume)).ok();
         // `SetMute`, not `ToggleMute`: the session records the state the user
@@ -284,10 +313,11 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
             })),
         };
         let id = entry.id;
-        self.queue = Queue::new();
+        self.replace_queue(Queue::new());
         self.queue.push(entry);
         self.queue.set_current(id);
         self.failed_round.clear(); // fresh session
+        self.queue.bump_revision();
         let session = self.new_load_session(id);
         self.player
             .send(PlayerCommand::LoadTemporary {
@@ -400,6 +430,8 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
                 .set_shuffle(false, self.queue.shuffle_bag().to_vec());
         }
         self.mode = mode;
+        // The mode is part of the projection the UI renders.
+        self.queue.bump_revision();
         // Mode is coordinator-owned queue state, but the UI is driven only by
         // the player snapshot stream. Publish this discrete change through the
         // port so switching modes while paused or with an empty queue updates
@@ -549,6 +581,8 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
     pub fn on_load_error(&mut self) -> Option<QueueEntryId> {
         if let Some(id) = self.queue.current_id() {
             self.failed_round.insert(id);
+            // The "failed" flag is part of the projection the UI renders.
+            self.queue.bump_revision();
         }
         self.navigate(NavigationEvent::ErrorSkip)
     }
@@ -556,6 +590,16 @@ impl<P: PlayerPort, S: ShuffleSource> PlaybackCoordinator<P, S> {
     /// The set of entries that failed in the current round (for diagnostics).
     pub fn failed_round(&self) -> impl Iterator<Item = QueueEntryId> + '_ {
         self.failed_round.iter().copied()
+    }
+
+    /// The queue entries that are currently unavailable (restored while their
+    /// media/root is missing).
+    ///
+    /// They stay in the projection — the user must see why an item did not
+    /// play — but are skipped by traversal until their availability returns.
+    #[must_use]
+    pub fn blocked_entries(&self) -> Vec<QueueEntryId> {
+        self.queue.blocked_ids()
     }
 
     /// Go to the previous entry. If the current track has played for more than

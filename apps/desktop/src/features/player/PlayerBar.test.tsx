@@ -16,7 +16,7 @@ import { createRef } from "react";
 import { PlayerBar } from "./PlayerBar";
 import { PlayerProgress } from "./PlayerProgress";
 import { playerStore } from "../../player/playerStore";
-import type { UiPlayerSnapshot } from "../../player/playerStore";
+import type { UiPlayerSnapshot, UiQueueProjection } from "../../player/playerStore";
 import { invalidateCovers } from "../../app/coverArt";
 
 // Bridge calls are mocked globally by setup.ts; capture them for assertion.
@@ -42,7 +42,7 @@ beforeEach(async () => {
     mode: "sequential",
     currentTitle: null,
     currentCanImport: false,
-    queue: [],
+    queueRevision: 0,
   });
   playerStore.setQueueOpen(false);
   playerStore.setImmersiveOpen(false);
@@ -63,20 +63,7 @@ function renderWithSnapshot(snapshot: Partial<UiPlayerSnapshot> = {}) {
     mode: "sequential",
     currentTitle: "晴天.mp3",
     currentCanImport: true,
-    queue: [
-      {
-        entryId: "entry-1",
-        songId: null,
-        title: "晴天.mp3",
-        isCurrent: true,
-        failed: false,
-        canImport: true,
-        blocked: false,
-        artist: null,
-        durationS: null,
-        coverKey: null,
-      },
-    ],
+    queueRevision: 0,
     ...snapshot,
   };
   playerStore.publish(full);
@@ -99,20 +86,7 @@ describe("PlayerBar (task 11.7) — temporary item label", () => {
       currentSongId: "song-abc",
       currentCanImport: false,
       currentTitle: null,
-      queue: [
-        {
-          entryId: "entry-2",
-          songId: "song-abc",
-          title: null,
-          isCurrent: true,
-          failed: false,
-          canImport: false,
-          blocked: false,
-          artist: null,
-          durationS: null,
-          coverKey: null,
-        },
-      ],
+      queueRevision: 0,
     });
     expect(screen.queryByLabelText("临时播放项")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "导入" })).not.toBeInTheDocument();
@@ -229,20 +203,7 @@ describe("PlayerBar — 内置封面 (design §115 内置优先)", () => {
       currentSongId: "song-abc",
       currentCanImport: false,
       currentTitle: null,
-      queue: [
-        {
-          entryId: "entry-2",
-          songId: "song-abc",
-          title: null,
-          isCurrent: true,
-          failed: false,
-          canImport: false,
-          blocked: false,
-          artist: null,
-          durationS: null,
-          coverKey: null,
-        },
-      ],
+      queueRevision: 0,
     });
   }
 
@@ -364,7 +325,7 @@ describe("PlayerBar (task 11.8) — range keyboard stepping", () => {
       mode: "sequential",
       currentTitle: "晴天.mp3",
       currentCanImport: true,
-      queue: [],
+      queueRevision: 0,
     });
 
     let siblingRenders = 0;
@@ -411,20 +372,7 @@ describe("PlayerBar (task 11.8) — range keyboard stepping", () => {
       duration: null,
       currentSongId: "song-restored",
       currentCanImport: false,
-      queue: [
-        {
-          entryId: "entry-restored",
-          songId: "song-restored",
-          title: "恢复的歌曲",
-          isCurrent: true,
-          failed: false,
-          canImport: false,
-          blocked: false,
-          artist: "Echo",
-          durationS: 245,
-          coverKey: null,
-        },
-      ],
+      queueRevision: 0,
     });
 
     await waitFor(() => expect(screen.getByRole("slider", { name: "播放进度" })).toBeEnabled());
@@ -493,7 +441,7 @@ describe("PlayerBar (task 11.8) — range keyboard stepping", () => {
  * mode button does not.
  */
 describe("PlayerBar — 非沉浸播放模式视觉语义 (DP-R12)", () => {
-  const MODE_QUEUE: UiPlayerSnapshot["queue"] = [
+  const MODE_QUEUE: UiQueueProjection["entries"] = [
     {
       entryId: "entry-1",
       songId: null,
@@ -522,6 +470,9 @@ describe("PlayerBar — 非沉浸播放模式视觉语义 (DP-R12)", () => {
 
   /** Publish a playing bar in `mode` without re-mounting (the store is external). */
   function publishMode(mode: UiPlayerSnapshot["mode"], overrides: Partial<UiPlayerSnapshot> = {}) {
+    // The queue lives on its own slot now: it travels on `player://queue`, not
+    // on the position stream (issue #112).
+    playerStore.publishQueue({ revision: 1, entries: MODE_QUEUE });
     playerStore.publish({
       state: "playing",
       position: 30,
@@ -534,7 +485,7 @@ describe("PlayerBar — 非沉浸播放模式视觉语义 (DP-R12)", () => {
       currentTitle: "晴天.mp3",
       currentCanImport: true,
       mode,
-      queue: MODE_QUEUE,
+      queueRevision: 1,
       ...overrides,
     });
   }

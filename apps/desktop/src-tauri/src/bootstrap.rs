@@ -118,6 +118,7 @@ pub(super) fn bootstrap_main() {
             commands::file_open_frontend_ready,
             commands::player_control,
             commands::queue_command,
+            crate::player_sync::player_sync,
             commands::set_volume,
             commands::toggle_mute,
             commands::seek,

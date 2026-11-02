@@ -67,8 +67,15 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly currentCoverKey?: string | null;\n");
     out.push_str("  readonly currentLyrics?: SongLyricsDto | null;\n");
     out.push_str("  readonly currentCanImport: boolean;\n");
-    out.push_str("  readonly queue: readonly UiQueueEntry[];\n");
-    out.push_str("  readonly effects?: EffectsSnapshotDto;\n");
+    out.push_str("  readonly queueRevision: number;\n");
+    out.push_str("}\n\n");
+
+    // The queue projection travels on its own event (`player://queue`), only
+    // when the queue revision changes — the 10 Hz position stream must stay
+    // independent of the library size (issue #112).
+    out.push_str("export interface UiQueueProjection {\n");
+    out.push_str("  readonly revision: number;\n");
+    out.push_str("  readonly entries: readonly UiQueueEntry[];\n");
     out.push_str("}\n\n");
 
     out.push_str("export interface BootstrapSnapshot {\n");
@@ -325,6 +332,7 @@ pub fn generated_typescript() -> String {
     out.push_str("  readonly import_current_temporary_file: ImportResultDto;\n");
     out.push_str("  readonly player_control: void;\n");
     out.push_str("  readonly queue_command: void;\n");
+    out.push_str("  readonly player_sync: void;\n");
     out.push_str("  readonly set_volume: void;\n");
     out.push_str("  readonly toggle_mute: void;\n");
     out.push_str("  readonly seek: void;\n");

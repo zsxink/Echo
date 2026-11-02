@@ -2,15 +2,16 @@
 //! only a matching revision and playback epoch can publish a confirmation.
 
 use super::{
+    derived::{DerivedMemo, DerivedView},
     math::{self, ResponsePoint},
     naming,
-    presets::{self, Preset, PresetSource},
+    presets::Preset,
     AppliedState, EffectsDocument, EffectsError, EffectsRuntime, EqCurve, Payload,
     PersistenceStatus, PresetId, ProcessingEnvironment, Selection, UserPreset,
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default)]
 pub struct EffectsState {
     pub document: EffectsDocument,
     pub runtime: EffectsRuntime,
@@ -18,6 +19,21 @@ pub struct EffectsState {
     pub snapshot_sequence: Option<u64>,
     /// Durable recovery protection survives unrelated native confirmations.
     pub recovery_reason: Option<String>,
+    /// Memoized derived view. It is a cache, never part of the state's
+    /// identity: two states with the same facts describe the same request
+    /// even when one of them has already computed the analysis.
+    memo: DerivedMemo,
+}
+
+/// Compares the facts of two states; the derived memo is a cache and is not
+/// part of the identity of a state.
+impl PartialEq for EffectsState {
+    fn eq(&self, other: &Self) -> bool {
+        self.document == other.document
+            && self.runtime == other.runtime
+            && self.snapshot_sequence == other.snapshot_sequence
+            && self.recovery_reason == other.recovery_reason
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -52,6 +68,7 @@ impl EffectsState {
             runtime: EffectsRuntime::default(),
             snapshot_sequence: None,
             recovery_reason: None,
+            memo: DerivedMemo::default(),
         };
         if state.document.requested_enabled {
             state.runtime.applied = AppliedState::Pending;
@@ -267,6 +284,11 @@ impl EffectsState {
     }
 
     #[must_use]
+    // Both sides of the comparison below are the same confirmed preamp fact in
+    // dB — copied from the runtime, never accumulated — so the exact
+    // comparison is intended: a near-miss would mean the memoized analysis
+    // still carries a preamp the runtime has not confirmed.
+    #[allow(clippy::float_cmp)]
     pub fn snapshot(&self) -> EffectsSnapshot {
         let reference_response =
             self.runtime.processing_rate.is_none() || self.runtime.applied != AppliedState::Applied;
@@ -277,33 +299,34 @@ impl EffectsState {
                 .channel_layout
                 .unwrap_or(super::ChannelLayout::Stereo),
         };
-        let payload = self.document.requested_payload();
-        let mut analysis = math::analyze(&payload, environment).ok();
+        // The derived parts are fully determined by the document and the
+        // environment, so they are memoized: a position frame reuses the
+        // analysis of the last real change instead of repeating the peak
+        // sweep (issue #112).
+        let DerivedView {
+            mut analysis,
+            presets,
+            mut response_points,
+            eq_payload,
+            editable_bands,
+        } = self.memo.view(&self.document, environment);
         // Pending/failed/bypassed graphs describe the retained request and are
         // explicitly reference curves. An Applied graph uses the confirmed
         // preamp fact, including any more conservative transition protection.
         if !reference_response {
-            if let (Some(analysis), Some(preamp)) =
-                (&mut analysis, self.runtime.effective_preamp_db)
+            if let (Some(current), Some(preamp)) = (&mut analysis, self.runtime.effective_preamp_db)
             {
-                analysis.effective_preamp_db = preamp;
+                if current.effective_preamp_db != preamp {
+                    current.effective_preamp_db = preamp;
+                    if eq_payload {
+                        // The confirmed preamp shifts the whole curve. The
+                        // points are cheap to recompute; the analysis behind
+                        // them is what the memo keeps.
+                        response_points = math::response_points(current, environment.sample_rate);
+                    }
+                }
             }
         }
-        let mut presets = presets::builtin_presets();
-        presets.extend(self.document.user_presets.iter().map(|user| Preset {
-            id: user.id.clone(),
-            name: user.name.clone(),
-            description: "已保存的用户曲线".to_owned(),
-            payload: Payload::Eq(user.curve.clone()),
-            source: PresetSource::User,
-        }));
-        let response_points = if matches!(payload, Payload::Eq(_)) {
-            analysis.as_ref().map_or_else(Vec::new, |analysis| {
-                math::response_points(analysis, environment.sample_rate)
-            })
-        } else {
-            Vec::new()
-        };
         EffectsSnapshot {
             document: self.document.clone(),
             runtime: self.runtime.clone(),
@@ -311,10 +334,7 @@ impl EffectsState {
             response_points,
             reference_response,
             safe_preamp_db: analysis.map(|value| value.safe_preamp_db),
-            editable_bands: Some(
-                super::BAND_FREQUENCIES
-                    .map(|frequency| frequency <= 0.45 * f64::from(environment.sample_rate)),
-            ),
+            editable_bands,
             response_rate: Some(environment.sample_rate),
             snapshot_sequence: self.snapshot_sequence,
             recovery_reason: self.recovery_reason.clone(),

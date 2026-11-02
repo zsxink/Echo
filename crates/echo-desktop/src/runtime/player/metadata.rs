@@ -39,6 +39,39 @@ impl QueueMetadataResolver {
         }
     }
 
+    /// Resolve the metadata of a single library song, cached.
+    ///
+    /// The 10 Hz position stream needs exactly one row — the current entry —
+    /// so it queries one song instead of the whole queue. The same per-song
+    /// cache backs both lookups, so a song resolved here is not resolved again
+    /// when the queue projection is built.
+    ///
+    /// # Panics
+    ///
+    /// Only if the cache mutex is poisoned — a thread panicked while holding
+    /// it, which indicates a bug in this resolver.
+    #[must_use]
+    pub fn resolve_one(&self, id: SongId) -> QueueEntryMeta {
+        // The lock is released before the repository query below, so a slow
+        // lookup never blocks the other metadata readers.
+        let cached = {
+            let cache = self.cache.lock().expect("metadata cache lock");
+            cache.get(&id).cloned()
+        };
+        if let Some(meta) = cached {
+            return meta;
+        }
+        // A miss is resolved once and cached, exactly like the batched path:
+        // an id that does not resolve (deleted / foreign) is cached as
+        // explicit nulls so a transient message cannot trigger a query storm.
+        let meta = self.resolve_uncached(id);
+        self.cache
+            .lock()
+            .expect("metadata cache lock")
+            .insert(id, meta.clone());
+        meta
+    }
+
     /// Resolve the metadata of every library id in `queue`, batch-cached.
     ///
     /// Misses are resolved once and cached (as `QueueEntryMeta::default()` —
@@ -87,19 +120,7 @@ impl QueueMetadataResolver {
         // threads resolving the same id compute the same record — so narrowing
         // the lock loses nothing.
         for id in &missing {
-            let song = self.songs.by_id(*id).ok().flatten();
-            let cover = song
-                .as_ref()
-                .and_then(|song| self.covers.cover_of(song.id()).ok().flatten());
-            let meta = song
-                .map(|song| QueueEntryMeta {
-                    title: song.title().map(ToOwned::to_owned),
-                    artist: song.artist().map(ToOwned::to_owned),
-                    album: song.album().map(ToOwned::to_owned),
-                    duration_s: song.duration().map(|d| d.as_secs()),
-                    cover_key: cover.map(|cover| cover.asset_key),
-                })
-                .unwrap_or_default();
+            let meta = self.resolve_uncached(*id);
             self.cache
                 .lock()
                 .expect("metadata cache lock")
@@ -107,5 +128,25 @@ impl QueueMetadataResolver {
             result.insert(*id, meta);
         }
         result
+    }
+
+    /// Query the repository for one song, bypassing the cache.
+    ///
+    /// The cache mutex is never held across this call: `by_id`/`cover_of` are
+    /// I/O, and holding the lock over them would serialise every resolver
+    /// behind one queue change.
+    fn resolve_uncached(&self, id: SongId) -> QueueEntryMeta {
+        let song = self.songs.by_id(id).ok().flatten();
+        let cover = song
+            .as_ref()
+            .and_then(|song| self.covers.cover_of(song.id()).ok().flatten());
+        song.map(|song| QueueEntryMeta {
+            title: song.title().map(ToOwned::to_owned),
+            artist: song.artist().map(ToOwned::to_owned),
+            album: song.album().map(ToOwned::to_owned),
+            duration_s: song.duration().map(|d| d.as_secs()),
+            cover_key: cover.map(|cover| cover.asset_key),
+        })
+        .unwrap_or_default()
     }
 }

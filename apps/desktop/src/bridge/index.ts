@@ -119,6 +119,8 @@ interface BridgeCommandArguments extends SyncCommandArguments {
   import_current_temporary_file: EmptyArgs;
   player_control: [args: { action: string }];
   queue_command: [args: { command: string; songId?: string; entryId?: string }];
+  /** Ask the desktop to re-publish the current queue projection and effects. */
+  player_sync: EmptyArgs;
   set_volume: [args: { volume: number }];
   toggle_mute: EmptyArgs;
   seek: [args: { position: number }];

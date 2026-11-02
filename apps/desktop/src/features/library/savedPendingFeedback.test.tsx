@@ -63,20 +63,7 @@ function snapshotOf(song: typeof SONG) {
     mode: "sequential",
     currentTitle: null,
     currentCanImport: false,
-    queue: [
-      {
-        entryId: "entry-1",
-        songId: song.id,
-        title: null,
-        isCurrent: true,
-        failed: false,
-        canImport: false,
-        blocked: false,
-        artist: null,
-        durationS: null,
-        coverKey: null,
-      },
-    ],
+    queueRevision: 0,
   });
 }
 

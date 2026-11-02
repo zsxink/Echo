@@ -61,6 +61,7 @@ mod macos_status_row;
 #[cfg(any(target_os = "macos", test))]
 mod macos_window_lifecycle;
 mod open_targets;
+mod player_sync;
 mod restore_retry;
 mod shutdown;
 mod sync_commands;
@@ -157,11 +158,6 @@ impl StatusMenuSink for RuntimeStatusMenuSink {
         }
     }
 }
-
-/// The event name carrying a `UiPlayerSnapshot` to the frontend (`playerStore`
-/// subscribes via the bridge). Matches the `ipc::events` `player://snapshot`
-/// design and the `BridgeCommandMap` consumer.
-const PLAYER_SNAPSHOT_EVENT: &str = "player://snapshot";
 
 /// Resolve the bundled libmpv library for the current platform.
 ///
@@ -550,27 +546,37 @@ fn wire_composition(
     // contributes transport state; the coordinator supplies everything
     // queue-derived (entries + per-round failed set + current entry + mode), so
     // the UI snapshot reflects one consistent view of what is playing (11.2).
+    //
+    // Three streams leave this wiring, each with its own change criterion
+    // (issue #112): the 10 Hz transport snapshot carries no queue entry and no
+    // effects snapshot; the queue projection is built only when the queue
+    // revision changed; the effects snapshot only when its sequence advanced.
     let handle = app.handle().clone();
     let coordinator = controller.coordinator.clone();
-    let queue_provider: Arc<dyn Fn() -> player::CoordinatorView + Send + Sync> =
-        Arc::new(move || {
-            let coord = coordinator.lock().expect("player coordinator lock");
-            player::CoordinatorView {
+    let frames: player::PlayerFrameProvider = Arc::new(move |since| {
+        // One lock for the whole frame: the revision and the entries it
+        // belongs to must never be read from two different states.
+        let coord = coordinator.lock().expect("player coordinator lock");
+        let revision = coord.queue_revision();
+        let projection = if since == Some(revision) {
+            None
+        } else {
+            Some(player::QueueProjection {
+                revision,
                 entries: coord.queue_view(),
                 failed_round: coord.failed_round().collect(),
-                blocked: coord
-                    .queue_view()
-                    .iter()
-                    .filter(|entry| coord.queue().is_blocked(entry.id))
-                    .map(|entry| entry.id)
-                    .collect(),
+                blocked: coord.blocked_entries().into_iter().collect(),
+                current: coord.current().map(|entry| entry.id),
+            })
+        };
+        player::PlayerFrame {
+            view: player::CoordinatorView {
                 current: coord.current().cloned(),
                 mode: coord.mode(),
-            }
-        });
-    let emit: player::SnapshotEmitter = Box::new(move |mut ui| {
-        ui.effects = Some(effects.snapshot().snapshot().into());
-        let _ = handle.emit(PLAYER_SNAPSHOT_EVENT, ui);
+                revision,
+            },
+            projection,
+        }
     });
     // The queue-panel metadata resolver: maps library song ids to title /
     // artist / duration / cover-asset-key, batch-cached per song so the 10 Hz
@@ -579,6 +585,26 @@ fn wire_composition(
         routed.deps.songs.clone(),
         routed.deps.covers.clone(),
     ));
+    // The `player_sync` command rebuilds the projection on demand (startup
+    // catch-up), so the resolver must be reachable from the command layer.
+    app.manage(queue_metadata.clone());
+    let effects_service = effects;
+    let snapshot_handle = handle.clone();
+    let queue_handle = handle.clone();
+    let effects_handle = handle;
+    let emitters = player::PlayerEmitters {
+        snapshot: Box::new(move |ui| {
+            let _ = snapshot_handle.emit(player::PLAYER_SNAPSHOT_EVENT, ui);
+        }),
+        queue: Box::new(move |ui| {
+            let _ = queue_handle.emit(player::PLAYER_QUEUE_EVENT, ui);
+        }),
+        effects: Box::new(move |dto| {
+            let _ = effects_handle.emit(player::PLAYER_EFFECTS_EVENT, dto);
+        }),
+    };
+    let effects_provider: player::EffectsSnapshotProvider =
+        Arc::new(move || effects_service.snapshot().snapshot().into());
     // macOS hands the resolver on to the Now Playing refresh below, so it needs
     // a second handle for the forwarder; other targets own it solely in the
     // forwarder thread and can move it outright.
@@ -588,9 +614,10 @@ fn wire_composition(
     let forwarder_metadata = queue_metadata;
     player::spawn_forwarder(
         controller.port.clone(),
-        queue_provider,
+        frames,
         forwarder_metadata,
-        emit,
+        effects_provider,
+        emitters,
     );
     #[cfg(target_os = "macos")]
     spawn_macos_now_playing_refresh(

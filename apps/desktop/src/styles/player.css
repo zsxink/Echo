@@ -46,6 +46,10 @@
 .queue-list::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--radius-pill); background: transparent; background-clip: padding-box; }
 .queue-list.is-scrolling { scrollbar-color: color-mix(in oklab, var(--muted), transparent 42%) transparent; }
 .queue-list.is-scrolling::-webkit-scrollbar-thumb { background: color-mix(in oklab, var(--muted), transparent 42%); }
+/* The windowed list: only the rows around the viewport exist in the DOM, and
+   the scroll padding holds the space of the rows above and below them. The
+   row gap moves here because `.queue-list` now has a single child. */
+.queue-window { display: grid; gap: var(--queue-row-gap); }
 .queue-item { display: grid; width: 100%; grid-template-columns: var(--queue-cover-size) minmax(0, 1fr) 47px; gap: 11px; align-items: center; min-height: var(--queue-row-height); padding: 4px calc(var(--space-2) * .9); border: 0; border-radius: var(--radius-sm); background: transparent; color: inherit; cursor: pointer; text-align: left; }
 .queue-item:hover { background: var(--surface); }
 .queue-item:disabled { cursor: not-allowed; opacity: .58; }

@@ -131,11 +131,9 @@ mod tests {
 
     #[test]
     fn runtime_projection_is_additive_and_not_persisted() {
-        let state = EffectsState {
-            snapshot_sequence: Some(42),
-            recovery_reason: Some("protected document".into()),
-            ..EffectsState::default()
-        };
+        let mut state = EffectsState::default();
+        state.snapshot_sequence = Some(42);
+        state.recovery_reason = Some("protected document".into());
         let value = serde_json::to_value(EffectsSnapshotDto::from(state.snapshot())).unwrap();
         assert_eq!(value["snapshotSequence"], 42);
         assert_eq!(value["recoveryReason"], "protected document");
