@@ -31,6 +31,51 @@ export function governanceEntries({ replaceIn, createProbe, ROOT }) {
       },
     },
     {
+      id: "ci-structure/test-condition-windows",
+      guard: "the Rust Test step being gated to Windows instead of Linux on pull requests",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: rust Test if must include 'matrix\.platform == 'Linux''/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "if: github.event_name != 'pull_request' || matrix.platform == 'Linux'",
+          "if: github.event_name != 'pull_request' || matrix.platform == 'Windows'",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/rust-static-step-missing",
+      guard: "the Rust Linux job losing its rust-static/purity governance step",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: ci\.yml job 'rust' is missing step 'Rust static gates'/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "      - name: Rust static gates\n        if: matrix.platform == 'Linux'\n        env:\n          ECHO_PURITY_REQUIRE_BUILD: \"1\"\n        run: pnpm verify:governance -- --sections=rust-static,purity\n\n",
+          "",
+        );
+        return {};
+      },
+    },
+    {
+      id: "ci-structure/section-coverage-missing",
+      guard: "governance-static dropping the coverage section from its --sections selection",
+      check: ["node", ["scripts/verify/checks/task-1.5.mjs"]],
+      expect: /FAIL 1\.5: ci-governance section 'coverage' has no execution location in ci\.yml/,
+      baseline: true,
+      inject() {
+        replaceIn(
+          join(ROOT, ".github", "workflows", "ci.yml"),
+          "--sections=registry,static,coverage",
+          "--sections=registry,static",
+        );
+        return {};
+      },
+    },
+    {
       id: "release-platform-matrix/corrupt-linux-runner",
       guard: "the release Build matrix mapping Linux to a non-Linux runner",
       check: ["node", ["scripts/verify/checks/task-crp.mjs"]],
