@@ -61,7 +61,7 @@
 - [x] 7.4 打开沉浸页，确认封面请求 URL 带 `s=original`、黑胶封面与主色与改动前截图一致；用同一歌曲的改动前/后截图对比（或像素探针）记录结果。验证：截图与 URL 证据保存到 `/tmp/echo-cover-immersive/`；主色提取仍成功（无回退到主题色日志）。
 - [x] 7.5 在真实应用上重复 1.1 的资料库场景，记录 `Echo Web Content` 的 `footprint -p <pid>`；与基线对比并写入 `/tmp/echo-cover-after.txt`。验证：前后两次命令、PID、输出与差值都在文件中；若无法测量，写明具体阻塞原因，不编造数字。
 - [x] 7.6 在 500+ 首歌、24 行可见列表上首访并滚动，记录是否掉帧、协议日志中的缩略图生成耗时与主线程表现；把结论与原始数据写入 attestation 记录和最终报告。验证：报告包含“可感知卡顿：有/无”的结论及对应证据；不接受“应该/大概”。
-- [ ] 7.7 对照 issue #111「三、验收」逐项勾选：缩略图存在、列表/卡片/队列 ≤128、歌单预览 512、沉浸页原图且截图一致、macOS 内存对比、治理门与受影响测试、首访/滚动性能；每项写明验证命令与结果。验证：最终报告中的清单每项都有命令/输出链接或明确的环境阻塞说明。
+- [x] 7.7 对照 issue #111「三、验收」逐项勾选：缩略图存在、列表/卡片/队列 ≤128、歌单预览 512、沉浸页原图且截图一致、macOS 内存对比、治理门与受影响测试、首访/滚动性能；每项写明验证命令与结果。验证：最终报告中的清单每项都有命令/输出链接或明确的环境阻塞说明。
 - [x] 7.8 运行 `openspec validate serve-cover-thumbnails --strict`，确认 proposal/specs/design/tasks 全部通过。验证：命令退出 0。
 - [x] 7.9 运行 `openspec archive serve-cover-thumbnails --yes`（该命令把 delta 同步进主 specs 并归档）；确认 `openspec/specs/desktop-app-shell/spec.md` 末尾出现 R20/R21 与 11 个场景，`openspec/changes/archive/` 下有本 change。验证：`rg -n 'DAS-R20|DAS-R21|封面资产协议' openspec/specs/desktop-app-shell/spec.md` 与 `openspec list --changes` 输出符合预期。
-- [ ] 7.10 提交并推送分支（中文提交信息），用中文 PR 关联 #111：运行 `git add`、`git commit -m "feat(cover): 按显示档位提供封面缩略图 (#111)"`、`git push -u origin codex/issue-111-cover-thumbnails`，再用 `gh pr create --base main --head codex/issue-111-cover-thumbnails --title ... --body-file ...`，正文包含变更摘要、验证证据、`Closes #111`、后续 `gc` issue 链接。验证：`gh pr view --json url,title,body` 返回正确内容；CI 运行后记录结果，失败只修本 change 引入的问题并如实报告既有 flake。
+- [x] 7.10 提交并推送分支（中文提交信息），用中文 PR 关联 #111：运行 `git add`、`git commit -m "feat(cover): 按显示档位提供封面缩略图 (#111)"`、`git push -u origin codex/issue-111-cover-thumbnails`，再用 `gh pr create --base main --head codex/issue-111-cover-thumbnails --title ... --body-file ...`，正文包含变更摘要、验证证据、`Closes #111`、后续 `gc` issue 链接。验证：`gh pr view --json url,title,body` 返回正确内容；CI 运行后记录结果，失败只修本 change 引入的问题并如实报告既有 flake。
