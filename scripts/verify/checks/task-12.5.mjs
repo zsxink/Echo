@@ -40,6 +40,7 @@ const benchOut = run("cargo", [
   "test",
   "-p",
   "echo-core",
+  "--lib",
   "--all-features",
   "bench_50k_search_and_first_screen_p95_meet_prd_budgets",
   "--",

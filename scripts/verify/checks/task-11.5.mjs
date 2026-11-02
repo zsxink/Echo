@@ -30,7 +30,7 @@ function run(command, args, cwd) {
   }
 }
 
-run("cargo", ["test", "-p", "echo-core", "application::detail"], ROOT);
+run("cargo", ["test", "-p", "echo-core", "--lib", "--all-features", "application::detail"], ROOT);
 run("pnpm", ["--filter", "@echo/desktop", "typecheck"], APP);
 run(
   "pnpm",

@@ -42,7 +42,7 @@ run("pnpm", ["--filter", "@echo/desktop", "test", "--", "--run", "src/features/l
 // or moved test would leave this gate green while proving nothing. Require at
 // least one test to have actually run.
 const ACTOR_FILTER = "player::actor::tests::validation::load_library_song";
-const actorTests = spawnSync("cargo", ["test", "-p", "echo-desktop", ACTOR_FILTER], {
+const actorTests = spawnSync("cargo", ["test", "-p", "echo-desktop", "--lib", "--all-features", ACTOR_FILTER], {
   cwd: ROOT,
   encoding: "utf8",
 });

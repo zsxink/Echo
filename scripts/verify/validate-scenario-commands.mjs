@@ -33,7 +33,10 @@ const fail = (m) => { console.error(`error: ${m}`); bad += 1; };
 const testLists = new Map();
 function cargoTestList(packageName) {
   if (testLists.has(packageName)) return testLists.get(packageName);
-  const result = spawnSync("cargo", ["test", "-p", packageName, "--all-features", "--", "--list"], {
+  // `--all-targets` keeps this listing in the same build shape as the workspace
+  // test job; without it Cargo also builds the doc-test harness, which no
+  // scenario evidence can come from.
+  const result = spawnSync("cargo", ["test", "-p", packageName, "--all-targets", "--all-features", "--", "--list"], {
     cwd: ROOT,
     encoding: "utf8",
   });

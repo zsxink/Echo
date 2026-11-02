@@ -33,7 +33,7 @@ function groupOf(name) {
 }
 
 function runGroup(group, names) {
-  const result = spawnSync("cargo", ["test", "-p", "echo-desktop", "--all-features", group], {
+  const result = spawnSync("cargo", ["test", "-p", "echo-desktop", "--lib", "--all-features", group], {
     cwd: ROOT,
     encoding: "utf8",
   });

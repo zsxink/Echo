@@ -25,7 +25,7 @@ function fail(step, msg) {
   process.exit(1);
 }
 
-const test = spawnSync("cargo", ["test", "-p", "echo-desktop", "--lib", "player"], {
+const test = spawnSync("cargo", ["test", "-p", "echo-desktop", "--lib", "--all-features", "player"], {
   cwd: ROOT,
   encoding: "utf8",
 });
