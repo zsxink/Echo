@@ -39,7 +39,7 @@ const scenarios = scenarioCommands();
 /** Measured when the evidence registry replaced the churn ratchet. */
 const FLOORS = { scenarios: 523, evidence: 541 };
 const KINDS = new Set(["rust", "vitest", "node", "attestation"]);
-const DELEGATED_GATES = new Set(["governance"]);
+const DELEGATED_GATES = new Set(["governance", "perf"]);
 
 const errors = [];
 const fail = (m) => errors.push(m);
