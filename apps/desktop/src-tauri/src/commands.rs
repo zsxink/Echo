@@ -42,6 +42,8 @@ use echo_desktop::runtime::services::AppServices;
 use echo_desktop::runtime::StartupSupervisor;
 use tauri::{AppHandle, State};
 
+use crate::cover_payload::decode_cover_bytes;
+
 /// The managed player handle the command layer drives. The coordinator is
 /// locked per command (it is not internally synchronized). Direct commands
 /// (play/pause/seek/volume) go through the coordinator's player port; the
@@ -255,9 +257,10 @@ pub fn catalog_collection_songs(
 pub fn set_artist_cover(
     services: State<'_, AppServices>,
     artist_key: String,
-    bytes: Option<Vec<u8>>,
+    bytes: Option<String>,
     mime: Option<String>,
 ) -> Result<(), IpcErrorDto> {
+    let bytes = decode_cover_bytes(bytes.as_deref())?;
     services
         .set_artist_cover(&artist_key, bytes.as_deref(), mime.as_deref())
         .map_err(|error| IpcErrorDto::from_mutation(&error))
@@ -378,10 +381,11 @@ pub fn rename_playlist(
 pub fn set_playlist_cover(
     services: State<'_, AppServices>,
     id: String,
-    bytes: Option<Vec<u8>>,
+    bytes: Option<String>,
     mime: Option<String>,
 ) -> Result<(), IpcErrorDto> {
     let playlist = parse_id::<PlaylistId>(&id, "id")?;
+    let bytes = decode_cover_bytes(bytes.as_deref())?;
     services
         .set_playlist_cover(playlist, bytes.as_deref(), mime.as_deref())
         .map_err(|error| IpcErrorDto::from_mutation(&error))

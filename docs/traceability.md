@@ -5,7 +5,7 @@
 - 本表逐项覆盖 specs 中的全部 Scenario；稳定 ID 不得复用，标题调整时保留原 ID。
 - 场景 ID 由 spec 标题派生；每行必须给出可执行验收命令，且该场景在 `scripts/verify/scenario-commands.mjs` 的 `SCENARIOS` 中声明非空 `evidence`（命令可执行 + 证据可观测）。人工举证由 `docs/native-attestation-playbook.md` 与 `artifacts/native-attestations/<ID>.log` 承担，字段与判定见 `check-native-attestation.mjs`。
 - 每行给出实际验收命令。`pnpm verify:scenario -- --all` 必须比较 specs、此表与场景清单的 ID 集合完全相等，并逐项执行；命令按域聚合后逐条断言 evidence 目标在输出中被观测到，缺失、重复、无命令、无证据、证据未观测或失败均返回非零。
-- 当前基线：142 个 Requirement，550 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9、封面缩略图档位与首访非阻塞 2、播放快照分层下发 16）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
+- 当前基线：144 个 Requirement，559 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9、封面缩略图档位与首访非阻塞 2、播放快照分层下发 16、封面载荷受控与预览回收 9）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
 
 ## ci-release-pipeline
 
@@ -125,6 +125,15 @@
 | DAS-R21-S01 | 首访缩略图生成不得阻塞 WebView 主线程 | 首访缩略图不占用主线程 | issue-111 | Desktop/Native | `pnpm verify:scenario -- DAS-R21-S01` |
 | DAS-R21-S02 | 首访缩略图生成不得阻塞 WebView 主线程 | 同一封面的并发首访只生成一次 | issue-111 | Core | `pnpm verify:scenario -- DAS-R21-S02` |
 | DAS-R21-S03 | 首访缩略图生成不得阻塞 WebView 主线程 | 生成失败不阻塞后续请求 | issue-111 | Core | `pnpm verify:scenario -- DAS-R21-S03` |
+| DAS-R22-S01 | 封面字节必须以受控载荷传递 | 选封面载荷不摊平字节 | issue-113 | React | `pnpm verify:scenario -- DAS-R22-S01` |
+| DAS-R22-S02 | 封面字节必须以受控载荷传递 | 解码后字节与所选图片一致 | issue-113 | Rust | `pnpm verify:scenario -- DAS-R22-S02` |
+| DAS-R22-S03 | 封面字节必须以受控载荷传递 | 歌单与艺人封面使用同一编码 | issue-113 | Rust | `pnpm verify:scenario -- DAS-R22-S03` |
+| DAS-R22-S04 | 封面字节必须以受控载荷传递 | 超过上限的封面被拒绝 | issue-113 | React | `pnpm verify:scenario -- DAS-R22-S04` |
+| DAS-R22-S05 | 封面字节必须以受控载荷传递 | 不受支持的封面类型被拒绝 | issue-113 | Core | `pnpm verify:scenario -- DAS-R22-S05` |
+| DAS-R22-S06 | 封面字节必须以受控载荷传递 | 载荷损坏时不覆盖已保存封面 | issue-113 | Rust | `pnpm verify:scenario -- DAS-R22-S06` |
+| DAS-R23-S01 | 封面预览的临时资源必须被回收 | 重新选图释放旧预览资源 | issue-113 | React | `pnpm verify:scenario -- DAS-R23-S01` |
+| DAS-R23-S02 | 封面预览的临时资源必须被回收 | 关闭对话框释放预览资源 | issue-113 | React | `pnpm verify:scenario -- DAS-R23-S02` |
+| DAS-R23-S03 | 封面预览的临时资源必须被回收 | 预览展示用户所选封面 | issue-113 | React | `pnpm verify:scenario -- DAS-R23-S03` |
 
 ## desktop-playback
 

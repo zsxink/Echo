@@ -13,7 +13,7 @@
  * grapheme clusters, so the explicit rule is what the user sees.
  */
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { bridge } from "../../bridge";
 import {
@@ -24,6 +24,19 @@ import { savedLibraryOperation } from "../../bridge/libraryPersistence";
 import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
 import { Icon } from "../../app/Icon";
 import { coverClass, invalidateLibrary, invalidateLibraryCounts } from "../library";
+
+/**
+ * Release a live preview blob URL and clear its handle.
+ *
+ * Module-level so the unmount effect can call it without re-subscribing, and
+ * so every release path goes through one function.
+ */
+function revokePreviewBlob(handle: { current: string | null }): void {
+  if (handle.current) {
+    URL.revokeObjectURL(handle.current);
+    handle.current = null;
+  }
+}
 
 export interface PlaylistNameDialogProps {
   readonly mode: "create" | "edit";
@@ -68,10 +81,19 @@ export function PlaylistNameDialog({
     readonly name: string;
   } | null>(null);
   const [busy, setBusy] = useState(false);
-  // `undefined` = untouched; `null` = explicitly restore automatic artwork.
-  const [coverChange, setCoverChange] = useState<number[] | null | undefined>(undefined);
-  const [coverMime, setCoverMime] = useState<string | null>(null);
+  // What the user asked to do with the cover — this drives rendering. The
+  // bytes themselves live in a ref (design D4): they are submitted, not
+  // rendered, so keeping them in state would only pin them in devtools
+  // snapshots and re-render on unrelated changes.
+  const [coverIntent, setCoverIntent] = useState<"untouched" | "replace" | "reset">("untouched");
+  // `readAsDataURL` gives `data:<mime>;base64,<payload>`; only the payload is
+  // sent. The WebView never materializes a byte array for the cover.
+  const coverPayload = useRef<{ readonly base64: string; readonly mime: string } | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | undefined>(initialCoverKey);
+  // Only a just-picked image is a blob URL; saved and automatic covers are
+  // cover-asset keys. Keeping the live object URL in its own ref makes the
+  // revoke decisions explicit instead of inferring them from `coverPreview`.
+  const previewBlobRef = useRef<string | null>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const composing = useRef(false);
@@ -79,6 +101,15 @@ export function PlaylistNameDialog({
   // stack (it is above the picker that may open it).
   useOverlay({ tier: OverlayTier.BlockingDialog, onClose, containerRef: dialogRef });
   useFocusTrap(dialogRef);
+
+  // Closing the dialog releases the last picked preview; saved/automatic
+  // covers are asset keys and never enter `previewBlobRef`.
+  useEffect(
+    () => () => {
+      revokePreviewBlob(previewBlobRef);
+    },
+    [],
+  );
 
   const others = useMemo(
     () => existingNames.filter((name) => name !== initialName),
@@ -128,11 +159,12 @@ export function PlaylistNameDialog({
           return;
         }
         await bridge.call("rename_playlist", { id: playlistId, name });
-        if (coverChange !== undefined) {
+        if (coverIntent !== "untouched") {
+          const picked = coverIntent === "replace" ? coverPayload.current : null;
           await bridge.call("set_playlist_cover", {
             id: playlistId,
-            bytes: coverChange,
-            mime: coverChange ? coverMime : null,
+            bytes: picked?.base64 ?? null,
+            mime: picked?.mime ?? null,
           });
         }
         onDone(name);
@@ -297,26 +329,40 @@ export function PlaylistNameDialog({
                 }
                 const reader = new FileReader();
                 reader.onload = () => {
-                  const bytes = new Uint8Array(reader.result as ArrayBuffer);
-                  setCoverChange(Array.from(bytes));
-                  setCoverMime(file.type);
-                  setCoverPreview(URL.createObjectURL(file));
+                  const dataUrl = typeof reader.result === "string" ? reader.result : "";
+                  // The base64 alphabet never contains `,`, so the first comma
+                  // is always the header separator.
+                  const separator = dataUrl.indexOf(",");
+                  if (separator < 0) {
+                    setError("读取封面图片失败，请重试。");
+                    return;
+                  }
+                  coverPayload.current = {
+                    base64: dataUrl.slice(separator + 1),
+                    mime: file.type,
+                  };
+                  setCoverIntent("replace");
+                  revokePreviewBlob(previewBlobRef);
+                  const previewUrl = URL.createObjectURL(file);
+                  previewBlobRef.current = previewUrl;
+                  setCoverPreview(previewUrl);
                   setError(null);
                 };
                 reader.onerror = () => setError("读取封面图片失败，请重试。");
-                reader.readAsArrayBuffer(file);
+                reader.readAsDataURL(file);
               }}
             />
           </div>
         ) : null}
         <div className="playlist-name-actions">
-          {coverChange !== null && (coverChange !== undefined || hasCustomCover) ? (
+          {coverIntent !== "reset" && (coverIntent !== "untouched" || hasCustomCover) ? (
             <button
               type="button"
               className="btn playlist-reset-cover"
               onClick={() => {
-                setCoverChange(null);
-                setCoverMime(null);
+                coverPayload.current = null;
+                setCoverIntent("reset");
+                revokePreviewBlob(previewBlobRef);
                 setCoverPreview(automaticCoverKey);
               }}
             >

@@ -70,7 +70,7 @@ interface BridgeCommandArguments extends SyncCommandArguments {
   catalog_collection_songs: [
     args: { kind: "artist" | "album"; artistKey: string; albumKey?: string | null; search: string },
   ];
-  set_artist_cover: [args: { artistKey: string; bytes: number[] | null; mime?: string | null }];
+  set_artist_cover: [args: { artistKey: string; bytes: string | null; mime?: string | null }];
   library_counts: EmptyArgs;
   playlists: EmptyArgs;
   playlist_members: [args: { playlistId: string }];
@@ -83,7 +83,8 @@ interface BridgeCommandArguments extends SyncCommandArguments {
   set_playlist_cover: [
     args: {
       id: string;
-      bytes: number[] | null;
+      /** Base64 of the original image; the Tauri command decodes it. */
+      bytes: string | null;
       mime?: string | null;
     },
   ];

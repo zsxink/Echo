@@ -1,6 +1,6 @@
 // Scenario → executable-command + evidence map for the 0.1.0 gate (task 13.9).
 //
-// 550 scenarios (spec-derived id set). A scenario's command is aggregated by
+// 559 scenarios (spec-derived id set). A scenario's command is aggregated by
 // domain; `evidence` names the tests/files the scenario actually depends on,
 // and run-scenario.mjs asserts each target was observed in the command output.
 // `manifest.json.scenarios[]` is generated from this table
@@ -624,6 +624,17 @@ export const SCENARIOS = {
   rust("cover_cache_thumbnail_write_failure_leaves_no_partial_file"),
   rust("cover_cache_thumbnail_missing_and_corrupt_originals"),
 ], },
+
+// fix-cover-bytes-memory-churn (#113): base64 cover payload and preview cleanup.
+"DAS-R22-S01": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx", "sends the picked cover as a base64 payload instead of a byte array")], },
+"DAS-R22-S02": { command: APP_ALL, evidence: [rust("cover_payload::tests::decodes_valid_base64_to_original_bytes")], },
+"DAS-R22-S03": { command: APP_ALL, evidence: [rust("cover_payload::tests::both_cover_commands_decode_through_the_same_helper")], },
+"DAS-R22-S04": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx", "rejects a picked cover larger than the size limit")], },
+"DAS-R22-S05": { command: DESK_ALL, evidence: [rust("playlist_cover_rejects_unsupported_mime_without_replacing_the_saved_cover")], },
+"DAS-R22-S06": { command: APP_ALL, evidence: [rust("cover_payload::tests::rejects_malformed_base64_as_a_validation_error")], },
+"DAS-R23-S01": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx", "releases the previous preview blob when another cover is picked")], },
+"DAS-R23-S02": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx", "releases the preview blob when the dialog unmounts")], },
+"DAS-R23-S03": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx", "renders a saved cover at detail size and passes blob previews through")], },
 
   // phase-one-acceptance
   "PHA-R01-S01": { command: ATTEST("PHA-R01-S01"), evidence: [attest("PHA-R01-S01")] },

@@ -21,6 +21,13 @@ import { bridge } from "../../bridge";
 
 const call = vi.mocked(bridge.call);
 
+function pickCover(name: string, content: string) {
+  const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+  fireEvent.change(input, {
+    target: { files: [new File([content], name, { type: "image/png" })] },
+  });
+}
+
 function renderCreate(existingNames: readonly string[] = [], root?: string) {
   return render(
     <PlaylistNameDialog
@@ -227,6 +234,122 @@ describe("PlaylistNameDialog (task 10.9)", () => {
     expect(call.mock.calls.filter(([command]) => command === "rename_playlist")).toHaveLength(1);
   });
 
+  it("sends the picked cover as a base64 payload instead of a byte array", async () => {
+    call.mockReset();
+    call.mockResolvedValue(undefined as never);
+    render(
+      <PlaylistNameDialog
+        mode="edit"
+        playlistId="pl-1"
+        initialName="深夜"
+        existingNames={[]}
+        onClose={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    );
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(["cover-bytes"], "cover.png", { type: "image/png" })] },
+    });
+    await waitFor(() =>
+      expect(screen.getByAltText("当前歌单封面").getAttribute("src")).toMatch(/^blob:/),
+    );
+
+    fireEvent.click(screen.getByText("保存"));
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith(
+        "set_playlist_cover",
+        expect.objectContaining({ id: "pl-1", mime: "image/png" }),
+      ),
+    );
+    const payload = call.mock.calls.find(([command]) => command === "set_playlist_cover")?.[1] as {
+      bytes: unknown;
+    };
+    expect(payload.bytes).toBe("Y292ZXItYnl0ZXM=");
+    expect(Array.isArray(payload.bytes)).toBe(false);
+  });
+
+  it("rejects a picked cover larger than the size limit", async () => {
+    call.mockReset();
+    render(
+      <PlaylistNameDialog
+        mode="edit"
+        playlistId="pl-1"
+        initialName="深夜"
+        initialCoverKey="cv1-saved"
+        existingNames={[]}
+        onClose={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    );
+
+    const oversized = new File(["x"], "huge.png", { type: "image/png" });
+    Object.defineProperty(oversized, "size", { value: 5 * 1024 * 1024 + 1 });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [oversized] } });
+
+    expect(await screen.findByText("封面图片不能超过 5 MB。")).toBeInTheDocument();
+    expect(call).not.toHaveBeenCalledWith("set_playlist_cover", expect.anything());
+    // The saved cover preview is untouched by the rejected pick.
+    expect(screen.getByAltText("当前歌单封面")).toHaveAttribute(
+      "src",
+      "cover://cv1-saved?s=detail",
+    );
+  });
+
+  it("releases the previous preview blob when another cover is picked", async () => {
+    const create = vi.mocked(URL.createObjectURL);
+    const revoke = vi.mocked(URL.revokeObjectURL);
+    create.mockClear();
+    revoke.mockClear();
+    render(
+      <PlaylistNameDialog
+        mode="edit"
+        playlistId="pl-1"
+        initialName="深夜"
+        existingNames={[]}
+        onClose={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    );
+
+    pickCover("first.png", "first");
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    const first = create.mock.results[0]?.value as string;
+
+    pickCover("second.png", "second");
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+    const second = create.mock.results[1]?.value as string;
+
+    expect(revoke).toHaveBeenCalledWith(first);
+    expect(revoke).not.toHaveBeenCalledWith(second);
+  });
+
+  it("releases the preview blob when the dialog unmounts", async () => {
+    const create = vi.mocked(URL.createObjectURL);
+    const revoke = vi.mocked(URL.revokeObjectURL);
+    create.mockClear();
+    revoke.mockClear();
+    const { unmount } = render(
+      <PlaylistNameDialog
+        mode="edit"
+        playlistId="pl-1"
+        initialName="深夜"
+        existingNames={[]}
+        onClose={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    );
+
+    pickCover("cover.png", "cover");
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    const url = create.mock.results[0]?.value as string;
+
+    unmount();
+    expect(revoke).toHaveBeenCalledWith(url);
+  });
+
   it("renders a saved cover at detail size and passes blob previews through", async () => {
     assetUrl.mockClear();
     render(
@@ -252,17 +375,30 @@ describe("PlaylistNameDialog (task 10.9)", () => {
     // A just-picked image is a local blob URL, not a cover-asset key: it must
     // bypass `assetUrl` entirely (no `?s=` appended to an object URL).
     assetUrl.mockClear();
-    Object.defineProperty(URL, "createObjectURL", {
-      configurable: true,
-      value: vi.fn(() => "blob:cover-preview"),
-    });
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(input, {
       target: { files: [new File(["cover"], "cover.png", { type: "image/png" })] },
     });
     await waitFor(() =>
-      expect(screen.getByAltText("当前歌单封面")).toHaveAttribute("src", "blob:cover-preview"),
+      expect(screen.getByAltText("当前歌单封面").getAttribute("src")).toMatch(/^blob:/),
     );
     expect(assetUrl).not.toHaveBeenCalled();
+
+    // What reaches the bridge is the base64 string — no byte array is kept in
+    // this dialog's UI state (DAS-R23-S03's second half).
+    call.mockClear();
+    fireEvent.click(screen.getByText("保存"));
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith(
+        "set_playlist_cover",
+        expect.objectContaining({ bytes: "Y292ZXI=", mime: "image/png" }),
+      ),
+    );
+    const submitted = call.mock.calls.find(
+      ([command]) => command === "set_playlist_cover",
+    )?.[1] as {
+      bytes: unknown;
+    };
+    expect(typeof submitted.bytes).toBe("string");
   });
 });

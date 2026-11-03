@@ -18,6 +18,7 @@ path = "src/main.rs"
 echo-desktop = { path = "../../../crates/echo-desktop" }
 echo-core = { path = "../../../crates/echo-core" }
 echo-sync = { path = "../../../crates/echo-sync", features = ["client", "server", "discovery"] }
+base64 = "=0.22.1"
 blake3.workspace = true
 reqwest.workspace = true
 tokio = { workspace = true }

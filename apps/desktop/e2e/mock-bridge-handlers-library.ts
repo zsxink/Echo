@@ -184,6 +184,20 @@ export function buildLibraryHandlers(state: E2EState): Partial<Record<Command, H
       return { songId: s.id, relativePath: s.relativePath, revealed: true };
     },
 
+    set_playlist_cover: ({ id, bytes, mime }, st) => {
+      // Record the wire payload so a scenario can assert it stayed a base64
+      // string through the bridge; the mock accepts it exactly like the Rust
+      // command (no byte arrays on the wire).
+      st.coverPayloads.push({
+        id: String(id ?? ""),
+        bytes,
+        mime: typeof mime === "string" ? mime : null,
+      });
+      return st.playlists.some((playlist) => playlist.id === id)
+        ? null
+        : emptyError("not_found", "playlistNotFound", false);
+    },
+
     create_playlist: ({ name }, st) => {
       const title = String(name ?? "").trim();
       if (!title || [...title].length > 40)
