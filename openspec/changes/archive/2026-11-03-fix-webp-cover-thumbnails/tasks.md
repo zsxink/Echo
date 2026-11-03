@@ -43,4 +43,4 @@
 
 ## 7. 交付
 
-- [ ] 7.1 在独立分支提交并推送（中文提交信息），用中文 PR 关联 #134：`git commit -m "fix(cover): 启用 WebP 等内嵌封面解码并锁定 MIME 策略 (#134)"`、`git push -u origin <分支名>`，再用 `gh pr create --base main --head <分支名> --title ... --body-file ...`，正文包含变更摘要、失败复现与修复验证、`Closes #134`。验证：`gh pr view --json url,title,body` 返回正确内容；CI 运行后记录结果，失败只修本 change 引入的问题并如实报告既有 flake。
+- [x] 7.1 在独立分支提交并推送（中文提交信息），用中文 PR 关联 #134：`git commit -m "fix(cover): 启用 WebP 等内嵌封面解码并锁定 MIME 策略 (#134)"`、`git push -u origin <分支名>`，再用 `gh pr create --base main --head <分支名> --title ... --body-file ...`，正文包含变更摘要、失败复现与修复验证、`Closes #134`。验证：`gh pr view --json url,title,body` 返回正确内容；CI 运行后记录结果，失败只修本 change 引入的问题并如实报告既有 flake。
