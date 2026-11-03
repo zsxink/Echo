@@ -14,7 +14,7 @@
 //   4. `cargo clippy` and `cargo fmt` are clean.
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,6 +23,25 @@ const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "
 function fail(step, msg) {
   process.stderr.write(`FAIL 8.5: ${step}: ${msg}\n`);
   process.exit(1);
+}
+
+// `player/queue.rs` is the module root and `player/queue/` holds its
+// submodules, so a needle can live in any sibling file. Concatenate the whole
+// module; a missing directory is a hard failure rather than a silently empty
+// string.
+function readQueueModule() {
+  const dir = resolve(ROOT, "crates", "echo-desktop", "src", "player", "queue");
+  const root = resolve(ROOT, "crates", "echo-desktop", "src", "player", "queue.rs");
+  let files;
+  try {
+    files = readdirSync(dir).filter((name) => name.endsWith(".rs"));
+  } catch (err) {
+    fail("API surface", `cannot read queue module directory: ${err.message}`);
+  }
+  if (files.length === 0) fail("API surface", `no .rs files under ${dir}`);
+  return [root, ...files.map((name) => resolve(dir, name))]
+    .map((path) => readFileSync(path, "utf8"))
+    .join("\n");
 }
 
 // 1. Coordinator tests
@@ -77,8 +96,8 @@ for (const method of [
   if (!coordSrc.includes(method)) fail("API surface", `missing ${method}`);
 }
 
-// 4. ViewContext::build_queue must exist in queue.rs
-const queueSrc = readFileSync(resolve(ROOT, "crates", "echo-desktop", "src", "player", "queue.rs"), "utf8");
+// 4. ViewContext::build_queue must exist in the queue module
+const queueSrc = readQueueModule();
 if (!queueSrc.includes("pub fn build_queue")) fail("API surface", "missing ViewContext::build_queue");
 
 // 5. Clippy and fmt
