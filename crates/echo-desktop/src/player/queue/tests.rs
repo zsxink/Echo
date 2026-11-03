@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::player::port::PlayMode;
+
 fn lib(s: SongId) -> QueueEntry {
     QueueEntry {
         id: QueueEntryId::new(),

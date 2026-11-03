@@ -30,11 +30,7 @@ import { ExternalStore, useExternalStore } from "../app/externalStore";
 // The event payload is an IPC DTO, so it belongs to the generated contract.
 // Re-export from this store for existing presentation consumers while keeping
 // Rust's serde shape as the sole source of truth.
-export type {
-  UiPlayerSnapshot,
-  UiQueueEntry,
-  UiQueueProjection,
-} from "../ipc/ipc-types.generated";
+export type { UiPlayerSnapshot, UiQueueEntry, UiQueueProjection } from "../ipc/ipc-types.generated";
 
 /** The UI-facing playback state, mirrored from the IPC `PlayerSnapshot`.
  *  The Rust runtime (`runtime::player::UiPlayerSnapshot`) publishes this camelCase

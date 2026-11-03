@@ -267,6 +267,7 @@ fn spawn_macos_now_playing_refresh(
 ) {
     let snapshots = port.subscribe_snapshots();
     thread::spawn(move || {
+        let mut artwork = macos_now_playing::ArtworkCache::new();
         while let Ok(snapshot) = snapshots.recv() {
             let current = {
                 let coord = coordinator.lock().expect("player coordinator lock");
@@ -306,11 +307,17 @@ fn spawn_macos_now_playing_refresh(
                 })
             });
             let mut projection = macos_now_playing::project(&snapshot, track.as_ref());
-            if let (Some(projection), Some(cover_key)) = (
-                projection.as_mut(),
-                track.as_ref().and_then(|track| track.cover_key.as_ref()),
-            ) {
-                projection.artwork = cover_cache.get(cover_key).ok().flatten();
+            // The cover is read once per cover, not once per snapshot: the
+            // artwork publication follows the snapshot cadence, and a
+            // full-size cover is megabytes (issue #112).
+            let artwork_bytes = artwork.load(
+                cover_cache.as_ref(),
+                projection
+                    .as_ref()
+                    .and_then(|projection| projection.cover_key.as_deref()),
+            );
+            if let Some(projection) = projection.as_mut() {
+                projection.artwork = artwork_bytes;
             }
             let _ = app.run_on_main_thread(move || match projection {
                 Some(projection) => macos_now_playing::publish(&projection),

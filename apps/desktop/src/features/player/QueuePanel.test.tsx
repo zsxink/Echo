@@ -195,10 +195,7 @@ describe("QueuePanel (task 11.2)", () => {
     call.mockReset();
     call.mockResolvedValue(undefined);
     playerStore.setQueueOpen(true);
-    publishQueue([
-      makeEntry({ entryId: "e1", isCurrent: true }),
-      makeEntry({ entryId: "e2" }),
-    ]);
+    publishQueue([makeEntry({ entryId: "e1", isCurrent: true }), makeEntry({ entryId: "e2" })]);
 
     render(<QueuePanel />);
     fireEvent.click(screen.getByText("清空待播"));

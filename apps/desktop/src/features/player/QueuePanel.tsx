@@ -97,7 +97,8 @@ export function QueuePanel({
     const gap = parseFloat(getComputedStyle(list.firstElementChild as Element).rowGap) || 0;
     const height = row?.getBoundingClientRect().height ?? 0;
     const pitch = height > 0 ? height + gap : ROW_HEIGHT;
-    const rows = list.clientHeight > 0 ? Math.max(1, Math.ceil(list.clientHeight / pitch)) : VISIBLE_ROWS;
+    const rows =
+      list.clientHeight > 0 ? Math.max(1, Math.ceil(list.clientHeight / pitch)) : VISIBLE_ROWS;
     setMetrics((current) =>
       current.pitch === pitch && current.rows === rows ? current : { pitch, rows },
     );
