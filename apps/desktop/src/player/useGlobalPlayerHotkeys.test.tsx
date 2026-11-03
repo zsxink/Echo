@@ -48,20 +48,7 @@ function makeSnapshot(overrides: Partial<UiPlayerSnapshot> = {}): UiPlayerSnapsh
     mode: "sequential",
     currentTitle: "Song",
     currentCanImport: false,
-    queue: [
-      {
-        entryId: "e1",
-        songId: "s1",
-        title: null,
-        isCurrent: true,
-        failed: false,
-        canImport: false,
-        blocked: false,
-        artist: null,
-        durationS: null,
-        coverKey: null,
-      },
-    ],
+    queueRevision: 0,
     ...overrides,
   };
 }

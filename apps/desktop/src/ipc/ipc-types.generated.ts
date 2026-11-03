@@ -200,8 +200,12 @@ export interface UiPlayerSnapshot {
   readonly currentCoverKey?: string | null;
   readonly currentLyrics?: SongLyricsDto | null;
   readonly currentCanImport: boolean;
-  readonly queue: readonly UiQueueEntry[];
-  readonly effects?: EffectsSnapshotDto;
+  readonly queueRevision: number;
+}
+
+export interface UiQueueProjection {
+  readonly revision: number;
+  readonly entries: readonly UiQueueEntry[];
 }
 
 export interface BootstrapSnapshot {
@@ -453,6 +457,7 @@ export interface IpcCommandResultMap {
   readonly import_current_temporary_file: ImportResultDto;
   readonly player_control: void;
   readonly queue_command: void;
+  readonly player_sync: void;
   readonly set_volume: void;
   readonly toggle_mute: void;
   readonly seek: void;

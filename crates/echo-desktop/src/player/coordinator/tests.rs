@@ -859,3 +859,103 @@ fn play_next_repeatedly_same_song_keeps_single_lane_copy() {
     assert_eq!(coord.queue().priority_ids().len(), 1);
     assert_eq!(coord.queue().priority_ids()[0], again);
 }
+
+#[test]
+fn queue_revision_survives_whole_queue_replacement() {
+    // spec 「队列整体替换不使修订号归零」: replacing the whole queue is itself
+    // a projection change, so the revision must keep growing — never restart.
+    // A consumer that compares revisions would otherwise treat the fresh
+    // queue as older than the one it already applied.
+    let mut coord = PlaybackCoordinator::new(FakePlayer::new());
+    let s1 = song();
+    let s2 = song();
+
+    assert_eq!(coord.queue_revision(), QueueRevision::INITIAL);
+
+    coord.play_context(&ViewContext {
+        songs: vec![s1, s2],
+        selected_index: 0,
+    });
+    let after_first = coord.queue_revision();
+    assert!(
+        after_first > QueueRevision::INITIAL,
+        "the first context must produce a non-initial revision"
+    );
+
+    // A second context replaces the whole queue.
+    coord.play_context(&ViewContext {
+        songs: vec![s2, s1],
+        selected_index: 1,
+    });
+    let after_second = coord.queue_revision();
+    assert!(
+        after_second > after_first,
+        "replacing the queue must not reset the revision ({after_first:?} -> {after_second:?})"
+    );
+
+    // The paused priming path replaces the queue as well.
+    coord.play_context_paused(&ViewContext {
+        songs: vec![s1],
+        selected_index: 0,
+    });
+    let after_paused = coord.queue_revision();
+    assert!(
+        after_paused > after_second,
+        "paused priming must not reset the revision ({after_second:?} -> {after_paused:?})"
+    );
+
+    // Restoring a persisted session replaces the queue with a rebuilt one.
+    let mut restored = Queue::new();
+    let restored_entry = restored.push(lib_entry(s1));
+    restored.set_current(restored_entry);
+    coord.restore_session(restored, PlayMode::Sequential, 0.8, false, None);
+    let after_restore = coord.queue_revision();
+    assert!(
+        after_restore > after_paused,
+        "restoring a session must not reset the revision ({after_paused:?} -> {after_restore:?})"
+    );
+
+    // A temporary file replaces the queue with a single entry.
+    coord.play_temporary(TemporaryPlay {
+        display_name: "x.mp3".into(),
+        path: std::path::PathBuf::from("/tmp/x.mp3"),
+        duration: None,
+        metadata: TemporaryMetadata::default(),
+        on_active_root: false,
+    });
+    let after_temporary = coord.queue_revision();
+    assert!(
+        after_temporary > after_restore,
+        "playing a temporary file must not reset the revision ({after_restore:?} -> {after_temporary:?})"
+    );
+}
+
+#[test]
+fn coordinator_revision_advances_on_mode_and_failed_round_changes() {
+    // spec 「模式与失败集合变化推进修订号」: the mode and the failed-round set
+    // live in the coordinator, but the UI renders both as part of the queue
+    // projection — so they must advance the same revision.
+    let mut coord = PlaybackCoordinator::new(FakePlayer::new());
+    let s1 = song();
+    let s2 = song();
+    coord.play_context(&ViewContext {
+        songs: vec![s1, s2],
+        selected_index: 0,
+    });
+
+    let before_mode = coord.queue_revision();
+    coord.set_mode(PlayMode::Shuffle);
+    let after_mode = coord.queue_revision();
+    assert!(
+        after_mode > before_mode,
+        "switching the mode must advance the revision ({before_mode:?} -> {after_mode:?})"
+    );
+
+    let before_failure = coord.queue_revision();
+    coord.on_load_error();
+    let after_failure = coord.queue_revision();
+    assert!(
+        after_failure > before_failure,
+        "recording a failed entry must advance the revision ({before_failure:?} -> {after_failure:?})"
+    );
+}

@@ -13,224 +13,42 @@
  *
  * The mock is reset per scenario via `mockBridge.reset()` and asserted through
  * the `mockBridge.spy` call log exposed on `window.__echoE2E__`.
+ *
+ * This file owns the bridge runtime itself — the handler table, the event
+ * listener registry and the page installer. The pieces it is built from live
+ * beside it, one responsibility each:
+ *
+ * - `mock-bridge-commands.ts` — the command contract (the name union, the
+ *   shared handler signature and the two DTO helpers).
+ * - `mock-bridge-handlers-library.ts` / `-playback.ts` / `-sync.ts` /
+ *   `-effects.ts` — the handler tables, one per domain.
+ * - `mock-bridge-player-streams.ts` — the position/queue/effects stream
+ *   projections, mirroring the runtime's split streams.
  */
 
 /** The subset of the generated DTOs the browser journey needs. */
-import type { BridgeCommandMap } from "../src/bridge";
-import { applySeed, defaultState, makeSong } from "./mock-bridge-state";
-import type { E2EState, MockSong } from "./mock-bridge-state";
-import { coverAssetUrl } from "./mock-cover";
+import { applySeed, defaultState } from "./mock-bridge-state";
+import type { E2EState } from "./mock-bridge-state";
 export type { MockSong } from "./mock-bridge-state";
-import type {
-  EffectsSnapshotDto,
-  EqCurve,
-  IpcErrorDto,
-  LibraryRootStatusDto,
-  SyncRole,
-  SyncSessionIntent,
-  SyncState,
-  SyncStatus,
-  Theme,
-} from "../src/ipc/ipc-types.generated";
+import { coverAssetUrl } from "./mock-cover";
+import type { AnyRecord, Command, Handler } from "./mock-bridge-commands";
+import { MOCK_NAMES_EVERY_COMMAND } from "./mock-bridge-commands";
+import { buildEffectsHandlers } from "./mock-bridge-handlers-effects";
+import { buildLibraryHandlers } from "./mock-bridge-handlers-library";
+import { buildPlaybackHandlers } from "./mock-bridge-handlers-playback";
+import { buildSyncHandlers } from "./mock-bridge-handlers-sync";
+import {
+  PLAYER_COMMANDS,
+  PLAYER_EFFECTS_EVENT,
+  PLAYER_QUEUE_EVENT,
+  PLAYER_SNAPSHOT_EVENT,
+  queueProjectionOf,
+  queueSignatureOf,
+  snapshotOf,
+} from "./mock-bridge-player-streams";
 
-type AnyRecord = Record<string, unknown>;
-
-/** Commands the app's bridge can invoke. */
-type Command =
-  | "library_status"
-  | "get_bootstrap_state"
-  | "all_songs"
-  | "search"
-  | "favorites"
-  | "recent"
-  | "catalog_collections"
-  | "catalog_collection_songs"
-  | "set_artist_cover"
-  | "library_counts"
-  | "playlists"
-  | "playlist_members"
-  | "playlists_for_song"
-  | "song_detail"
-  | "song_cover_keys"
-  | "set_favorite"
-  | "create_playlist"
-  | "rename_playlist"
-  | "set_playlist_cover"
-  | "delete_playlist"
-  | "add_to_playlists"
-  | "remove_playlist_song"
-  | "choose_library_root"
-  | "choose_and_import_files"
-  | "reveal_song"
-  | "start_scan"
-  | "cancel_scan"
-  | "set_theme"
-  | "set_close_behavior"
-  | "get_close_behavior"
-  | "player_control"
-  | "queue_command"
-  | "set_volume"
-  | "toggle_mute"
-  | "seek"
-  | "report_library_view"
-  | "play_playlist_context"
-  | "play_library_context"
-  | "play_temporary_file"
-  | "import_current_temporary_file"
-  | "delete_song"
-  | "undo_delete"
-  | "restore_playback_session"
-  | "file_open_frontend_ready"
-  | "get_lyrics"
-  | "get_audio_effects_snapshot"
-  | "select_audio_effects_preset"
-  | "edit_audio_equalizer"
-  | "set_audio_effects_enabled"
-  | "reset_audio_effects"
-  | "save_audio_effects_preset"
-  | "rename_audio_effects_preset"
-  | "delete_audio_effects_preset"
-  | "retry_audio_effects"
-  | "retry_library_operation"
-  | "library_recovery_status"
-  | "retry_library_projection"
-  | "playback_retry_status"
-  | "sync_status"
-  | "sync_storage_space"
-  | "sync_conflicts"
-  | "resolve_sync_conflict"
-  | "recover_restored_host"
-  | "local_lan_addresses"
-  | "host_start"
-  | "host_stop"
-  | "sync_leave"
-  | "sync_peer_start"
-  | "sync_pause"
-  | "sync_resume"
-  | "sync_now"
-  | "sync_restore_retry"
-  | "sync_authorized_peers"
-  | "revoke_device"
-  | "discover_hosts"
-  | "create_sync_pairing_code"
-  | "request_sync_pairing";
-
-/**
- * Commands the app can invoke but this mock deliberately does not model, so the
- * list above stays a complete *name* of the bridge contract even where there is
- * no answer behind it. `invoke` throws for these, naming the command; nothing
- * reaches them silently.
- *
- * `delete_song` / `undo_delete` are covered by the Rust fault matrix and the UI
- * component tests. `restore_playback_session` is called once at boot and
- * *swallowed* by its caller (`main.tsx`), so modelling it would quietly prime
- * the player bar and break A8's "the bar starts empty on a library-only seed"
- * precondition — the browser journey deliberately starts cold.
- */
-
-/**
- * Every command the app's bridge declares must be *named* in the union above,
- * even when it has no handler. The list is hand-written and used to drift in
- * silence: `play_library_context` was missing for exactly that reason — the app
- * switched to it, the double kept answering the retired context command, and clicking a
- * library row threw "unknown command" inside a `void bridge.call(...)` nobody
- * was watching. The browser journey went red three checks later, on assertions
- * with no visible connection to the cause.
- *
- * `never` means nothing is missing. Otherwise this becomes the name of a
- * command that has to be added above.
- */
-type UnnamedCommands = Exclude<keyof BridgeCommandMap, Command>;
-
-/** `true` while the union above names every command the bridge declares; a
- *  *command name* the moment one does not, which fails the assignment. */
-export const MOCK_NAMES_EVERY_COMMAND: [UnnamedCommands] extends [never] ? true : UnnamedCommands =
-  true;
-
-/** How an invoke result can be wired. */
-type Handler = (args: AnyRecord, state: E2EState) => unknown;
-
-function toView(s: MockSong): import("../src/ipc/ipc-types.generated").SongView {
-  return {
-    id: s.id,
-    title: s.title,
-    artist: s.artist,
-    album: s.album,
-    durationS: s.durationS,
-    favorite: s.favorite,
-    playCount: s.playCount,
-    availability: s.availability,
-    relativePath: s.relativePath,
-  };
-}
-
-/**
- * Commands whose completion republishes the player snapshot, exactly as the
- * real runtime does after the actor accepts a playback request.
- */
-/** Commands that make the runtime republish the player snapshot.
- *
- * A command that starts playback but is missing here accepts the request and
- * tells nobody: the handler updates the mock's own state, no event leaves, and
- * the player bar stays as it was. `play_library_context` was missing on the day
- * the app switched to it from `play_context`, which is what A8 was reporting —
- * the click worked, the song never reached the bar. */
-const PLAYER_COMMANDS: ReadonlySet<string> = new Set([
-  "play_playlist_context",
-  "play_library_context",
-  "play_temporary_file",
-  "player_control",
-  "queue_command",
-  "set_volume",
-  "toggle_mute",
-  "seek",
-]);
-
-/** The event the runtime publishes each player snapshot (matches the app). */
-const PLAYER_SNAPSHOT_EVENT = "player://snapshot";
-
-/**
- * Derive the UI player snapshot from the mock's playback state.
- *
- * Without this the mock accepted a playback command and told nobody: the player bar
- * stayed empty and the row playing indicator never appeared, so "clicking a song
- * plays it" was unobservable from the preview (and the A8 acceptance check
- * passed vacuously, satisfied by the library rows rather than the player bar).
- */
-function snapshotOf(state: E2EState): Record<string, unknown> {
-  const current = state.nowPlaying;
-  const song = current ? state.songs.find((s) => s.id === current.songId) : undefined;
-  return {
-    state: current ? (current.playing ? "playing" : "paused") : "stopped",
-    position: current ? current.position : null,
-    duration: song ? song.durationS : null,
-    volume: 1,
-    muted: false,
-    currentQueueEntryId: current ? `entry-${current.songId}` : null,
-    currentSongId: current ? current.songId : null,
-    queueLen: state.songs.length,
-    mode: "sequential",
-    currentTitle: song ? song.title : null,
-    // The real runtime snapshot carries the meta too, so a remounting surface
-    // (immersive player, player bar) paints the real artist on its first frame
-    // instead of 未知艺人 until `song_detail` answers.
-    currentArtist: song ? song.artist : null,
-    currentAlbum: song ? song.album : null,
-    currentCanImport: false,
-    queue: state.songs.map((s) => ({
-      entryId: `entry-${s.id}`,
-      songId: s.id,
-      title: null,
-      isCurrent: current?.songId === s.id,
-      failed: false,
-      canImport: false,
-    })),
-  };
-}
-
-function emptyError(code: string, messageKey: string, retryable: boolean): IpcErrorDto {
-  return { code, messageKey, retryable };
-}
+export { MOCK_NAMES_EVERY_COMMAND };
+export type { AnyRecord, Command, Handler };
 
 /** Build the default handler table for the mock backend.
  *
@@ -239,607 +57,11 @@ function emptyError(code: string, messageKey: string, retryable: boolean): IpcEr
  * browser journey drives. Anything named but not answered throws with its own
  * name — see `invoke`. */
 function buildHandlers(state: E2EState): Partial<Record<Command, Handler>> {
-  const rockCurve = {
-    gainsDb: [3, 4, 2, 0, -1.5, -2, -0.5, 2, 3, 2],
-    preampMode: "auto" as const,
-    requestedPreampDb: 0,
-  };
-  let effectsSnapshot: EffectsSnapshotDto = {
-    document: {
-      schemaVersion: 1,
-      registryVersion: 1,
-      userPresets: [],
-      selection: { kind: "none" },
-      retainedPayload: { kind: "eq", ...rockCurve },
-      draft: null,
-      requestedEnabled: false,
-    },
-    runtime: {
-      revision: 0,
-      playbackEpoch: 0,
-      persistenceStatus: "saved",
-      applied: "bypassed",
-      effectivePreampDb: 0,
-      activeBands: [false, false, false, false, false, false, false, false, false, false],
-      processingRate: null,
-      channelLayout: null,
-      reason: null,
-    },
-    presets: [
-      {
-        id: "builtin:rock",
-        name: "摇滚",
-        description: "突出低频和乐器存在感",
-        payload: { kind: "eq", ...rockCurve },
-        source: "builtin",
-      },
-    ],
-    responsePoints: Array.from({ length: 201 }, (_, index) => ({
-      frequencyHz: 20 * 1000 ** (index / 200),
-      gainDb: 0,
-    })),
-    referenceResponse: false,
-    safePreampDb: 0,
-  };
-  const reviseEffects = (
-    document: EffectsSnapshotDto["document"],
-    applied: EffectsSnapshotDto["runtime"]["applied"],
-  ) => {
-    effectsSnapshot = {
-      ...effectsSnapshot,
-      document,
-      runtime: {
-        ...effectsSnapshot.runtime,
-        revision: effectsSnapshot.runtime.revision + 1,
-        applied,
-        persistenceStatus: "unsaved",
-        reason: null,
-      },
-    };
-    return effectsSnapshot;
-  };
-  const paged = (songs: MockSong[]) => ({
-    items: songs.slice(0, 100).map(toView),
-    totalCount: songs.length,
-    nextCursor: undefined,
-    isLast: true,
-  });
-
-  let syncStatus: SyncStatus = {
-    enabled: false,
-    role: "none" as SyncRole,
-    state: "disabled" as SyncState,
-    sessionId: 0,
-    eventSequence: 0,
-    catalogChanged: false,
-    libraryId: null as string | null,
-    localRoot: null,
-    address: null as string | null,
-    lastError: null as string | null,
-    pendingChanges: null as number | null,
-    pendingUploads: null as number | null,
-    pendingDownloads: null as number | null,
-    uploadedBytes: null as number | null,
-    totalUploadBytes: null as number | null,
-    downloadedBytes: null as number | null,
-    totalDownloadBytes: null as number | null,
-    mediaReady: null as boolean | null,
-    sessionIntent: "stopped" as SyncSessionIntent,
-    restoreAttempts: null as number | null,
-    restoreExhausted: false,
-  };
-  let pairingCode: string | null = null;
-  let pairingCounter = 0;
-  const syncError = (messageKey: string) => ({ code: "unavailable", messageKey, retryable: true });
-
   return {
-    sync_status: () => syncStatus,
-    sync_storage_space: ({ libraryRoot }) => ({
-      libraryRoot: String(libraryRoot),
-      availableBytes: null,
-    }),
-    recover_restored_host: () => ({
-      recoveryId: "recovery-1",
-      localRoot: "root-1",
-      previousBinding: { libraryId: "library-1", authorityId: "host-1", epoch: 1 },
-      replacementBinding: { libraryId: "library-1", authorityId: "host-2", epoch: 2 },
-      pendingCount: 0,
-      conflictCount: 0,
-    }),
-    sync_authorized_peers: () => [],
-    local_lan_addresses: () => ["192.168.1.20"],
-    host_start: ({ address }) => {
-      syncStatus = {
-        ...syncStatus,
-        enabled: true,
-        role: "host",
-        state: "hosting",
-        sessionId: syncStatus.sessionId + 1,
-        eventSequence: syncStatus.eventSequence + 1,
-        address: String(address),
-        libraryId: state.activeRoot || null,
-        localRoot: state.activeRoot || null,
-      };
-      return syncStatus;
-    },
-    host_stop: () => {
-      syncStatus = {
-        ...syncStatus,
-        enabled: false,
-        role: "none",
-        state: "disabled",
-        eventSequence: syncStatus.eventSequence + 1,
-        address: null,
-      };
-      pairingCode = null;
-      return syncStatus;
-    },
-    sync_leave: () => {
-      syncStatus = {
-        ...syncStatus,
-        enabled: false,
-        role: "none",
-        state: "disabled",
-        eventSequence: syncStatus.eventSequence + 1,
-        address: null,
-        libraryId: null,
-      };
-      pairingCode = null;
-      return syncStatus;
-    },
-    sync_peer_start: () => syncError("sync.unconfigured"),
-    sync_pause: () => {
-      syncStatus = { ...syncStatus, state: "paused", eventSequence: syncStatus.eventSequence + 1 };
-      return syncStatus;
-    },
-    sync_resume: () => {
-      syncStatus = {
-        ...syncStatus,
-        state: syncStatus.role === "host" ? "hosting" : "connected",
-        eventSequence: syncStatus.eventSequence + 1,
-      };
-      return syncStatus;
-    },
-    sync_now: () => {
-      syncStatus = { ...syncStatus, state: "syncing", eventSequence: syncStatus.eventSequence + 1 };
-      return syncStatus;
-    },
-    sync_restore_retry: () => {
-      syncStatus = {
-        ...syncStatus,
-        restoreAttempts: null,
-        restoreExhausted: false,
-        state: syncStatus.enabled ? syncStatus.state : "disabled",
-        eventSequence: syncStatus.eventSequence + 1,
-      };
-      return syncStatus;
-    },
-    revoke_device: () => ({
-      code: "unavailable",
-      messageKey: "sync.unconfigured",
-      retryable: true,
-    }),
-    discover_hosts: () => [],
-    create_sync_pairing_code: () => {
-      if (!syncStatus.enabled || syncStatus.role !== "host") return syncError("sync.unconfigured");
-      pairingCode = String(++pairingCounter).padStart(6, "0");
-      return {
-        code: pairingCode,
-        expiresAtUnixMs: Date.now() + 5 * 60_000,
-        hostName: "Echo Mock",
-      };
-    },
-    request_sync_pairing: ({ code, hostAddress }) => {
-      if (!pairingCode || code !== pairingCode) return syncError("sync.pairingCodeInvalid");
-      pairingCode = null;
-      syncStatus = {
-        ...syncStatus,
-        enabled: true,
-        role: "peer",
-        state: "connected",
-        sessionId: syncStatus.sessionId + 1,
-        eventSequence: syncStatus.eventSequence + 1,
-        address: `https://${String(hostAddress)}:50826`,
-        localRoot: state.activeRoot || null,
-      };
-      return syncStatus;
-    },
-    get_audio_effects_snapshot: () => effectsSnapshot,
-    select_audio_effects_preset: ({ id }) => {
-      const preset = effectsSnapshot.presets.find((item) => item.id === String(id));
-      if (!preset) throw new Error("unknown mock effects preset");
-      return reviseEffects(
-        {
-          ...effectsSnapshot.document,
-          selection: { kind: "preset", id: preset.id },
-          retainedPayload: preset.payload,
-          draft: null,
-        },
-        effectsSnapshot.document.requestedEnabled ? "pending" : "bypassed",
-      );
-    },
-    edit_audio_equalizer: ({ curve }) =>
-      reviseEffects(
-        {
-          ...effectsSnapshot.document,
-          selection: { kind: "draft" },
-          retainedPayload: {
-            kind: "eq",
-            ...(curve as EqCurve),
-          },
-          draft: curve as EqCurve,
-        },
-        effectsSnapshot.document.requestedEnabled ? "pending" : "bypassed",
-      ),
-    set_audio_effects_enabled: ({ enabled }) =>
-      reviseEffects(
-        { ...effectsSnapshot.document, requestedEnabled: Boolean(enabled) },
-        enabled ? "pending" : "bypassed",
-      ),
-    reset_audio_effects: () =>
-      reviseEffects(
-        {
-          ...effectsSnapshot.document,
-          selection: { kind: "none" },
-          requestedEnabled: false,
-          draft: null,
-          retainedPayload: {
-            kind: "eq",
-            gainsDb: Array(10).fill(0),
-            preampMode: "auto",
-            requestedPreampDb: 0,
-          },
-        },
-        "bypassed",
-      ),
-    save_audio_effects_preset: () => effectsSnapshot,
-    rename_audio_effects_preset: () => effectsSnapshot,
-    delete_audio_effects_preset: () => effectsSnapshot,
-    retry_audio_effects: () => effectsSnapshot,
-    library_status: (): LibraryRootStatusDto =>
-      ({
-        configured: state.configured,
-        readOnly: state.readOnly,
-        activeRoot: state.activeRoot || undefined,
-        unavailable: false,
-        scanning: false,
-      }) as unknown as LibraryRootStatusDto,
-
-    get_bootstrap_state: () => ({
-      ready: true,
-      writesAllowed: !state.readOnly,
-      activeRoot: state.activeRoot || undefined,
-      recoveredOperations: 0,
-    }),
-
-    all_songs: () => paged(state.songs.filter((s) => s.availability === "available")),
-    search: ({ query }) => {
-      const q = String(query ?? "").toLowerCase();
-      if (!q) return paged(state.songs.filter((s) => s.availability === "available"));
-      return paged(
-        state.songs.filter(
-          (s) =>
-            s.availability === "available" &&
-            [s.title, s.artist, s.album].filter(Boolean).some((f) => f!.toLowerCase().includes(q)),
-        ),
-      );
-    },
-    favorites: () => paged(state.songs.filter((s) => s.favorite && s.availability === "available")),
-    recent: () => paged(state.songs.filter((s) => s.availability === "available").slice(0, 100)),
-    catalog_collections: ({ kind, search }) => {
-      const query = String(search ?? "")
-        .trim()
-        .toLowerCase();
-      const available = state.songs.filter((song) => song.availability === "available");
-      const keyOf = (value: string | undefined, fallback: string) =>
-        (value?.trim() || fallback).toLowerCase();
-      const groups = new Map<
-        string,
-        { artistKey: string; albumKey?: string; artist: string; name: string; songs: MockSong[] }
-      >();
-      for (const song of available) {
-        const artist = song.artist.trim() || "未知艺人";
-        const artistKey = keyOf(song.artist, "未知艺人");
-        const album = song.album.trim() || "未知专辑";
-        const albumKey = keyOf(song.album, "未知专辑");
-        const artistDirectory = kind === "artist";
-        const groupKey = artistDirectory ? artistKey : `${artistKey}:${albumKey}`;
-        const group = groups.get(groupKey) ?? {
-          artistKey,
-          albumKey: artistDirectory ? undefined : albumKey,
-          artist,
-          name: artistDirectory ? artist : album,
-          songs: [],
-        };
-        group.songs.push(song);
-        groups.set(groupKey, group);
-      }
-      return [...groups.values()]
-        .filter((group) => !query || `${group.name} ${group.artist}`.toLowerCase().includes(query))
-        .sort((a, b) => a.name.localeCompare(b.name, "zh-CN"))
-        .map((group) => ({
-          kind,
-          artistKey: group.artistKey,
-          albumKey: group.albumKey,
-          artist: group.artist,
-          name: group.name,
-          songCount: group.songs.length,
-          coverKey: group.songs.find((song) => song.coverKey)?.coverKey,
-        }));
-    },
-    catalog_collection_songs: ({ kind, artistKey, albumKey, search }) => {
-      const query = String(search ?? "")
-        .trim()
-        .toLowerCase();
-      const keyOf = (value: string | undefined, fallback: string) =>
-        (value?.trim() || fallback).toLowerCase();
-      return state.songs
-        .filter((song) => song.availability === "available")
-        .filter((song) => keyOf(song.artist, "未知艺人") === artistKey)
-        .filter((song) => kind === "artist" || keyOf(song.album, "未知专辑") === albumKey)
-        .filter(
-          (song) =>
-            !query ||
-            [song.title, song.artist, song.album].some((value) =>
-              value.toLowerCase().includes(query),
-            ),
-        )
-        .map(toView);
-    },
-    set_artist_cover: () => null,
-    library_counts: () => {
-      // Mirrors the Core rule: the active root's available songs, with 最近添加
-      // capped at its own ceiling.
-      const available = state.songs.filter((s) => s.availability === "available");
-      return {
-        all: available.length,
-        favorites: available.filter((s) => s.favorite).length,
-        recent: Math.min(available.length, 100),
-      };
-    },
-
-    playlists: () => state.playlists,
-    playlists_for_song: () => [],
-    playlist_members: ({ playlistId }) => {
-      const p = state.playlists.find((x) => x.id === playlistId);
-      return paged(p ? state.songs.slice(0, p.memberCount) : []);
-    },
-
-    song_detail: ({ songId }) => {
-      const s = state.songs.find((x) => x.id === songId);
-      if (!s) return emptyError("not_found", "songNotFound", false);
-      // Read-only detail: relative path only, no absolute path.
-      return {
-        id: s.id,
-        songId: s.id,
-        hasCover: !!s.coverKey,
-        title: s.title,
-        artist: s.artist,
-        album: s.album,
-        durationS: s.durationS,
-        favorite: s.favorite,
-        playCount: s.playCount,
-        format: "flac",
-        sampleRateHz: 44_100,
-        relativePath: s.relativePath,
-        needsCover: false,
-        coverKey: undefined,
-        lyricsTitle: undefined,
-        lyricsArtist: undefined,
-        lyricsSource: null,
-        availability: s.availability,
-      };
-    },
-
-    set_favorite: ({ songId, favorite }, st) => {
-      const s = st.songs.find((x) => x.id === songId);
-      if (!s) return emptyError("not_found", "songNotFound", false);
-      s.favorite = Boolean(favorite);
-      return toView(s);
-    },
-
-    // Embedded artwork of a batch of songs (design §115). A song whose file
-    // carries none is absent from the map — the list keeps the placeholder.
-    song_cover_keys: ({ songIds }) => {
-      const ids = (songIds as string[] | undefined) ?? [];
-      const keys: Record<string, string> = {};
-      for (const id of ids) {
-        const song = state.songs.find((x) => x.id === id);
-        if (song?.coverKey) keys[id] = song.coverKey;
-      }
-      return keys;
-    },
-
-    reveal_song: ({ songId }, st) => {
-      const s = st.songs.find((x) => x.id === songId);
-      if (!s) return emptyError("not_found", "songNotFound", false);
-      // reveal returns only a relative path by security contract (7.5).
-      return { songId: s.id, relativePath: s.relativePath, revealed: true };
-    },
-
-    create_playlist: ({ name }, st) => {
-      const title = String(name ?? "").trim();
-      if (!title || [...title].length > 40)
-        return emptyError("validation", "invalidPlaylistName", false);
-      const id = `playlist-${st.playlists.length + 1}`;
-      st.playlists.push({ id, name: title, memberCount: 0 });
-      return { id, name: title, memberCount: 0 };
-    },
-    rename_playlist: ({ id, name }) => {
-      const p = state.playlists.find((x) => x.id === id);
-      if (!p) return emptyError("not_found", "playlistNotFound", false);
-      p.name = String(name);
-      return p;
-    },
-    delete_playlist: ({ id }) => {
-      state.playlists = state.playlists.filter((x) => x.id !== id);
-      return { id };
-    },
-    add_to_playlists: ({ song, targets }) => {
-      for (const t of (targets as string[]) ?? []) {
-        const p = state.playlists.find((x) => x.id === t);
-        if (p) p.memberCount += 1;
-      }
-      return { song, targets };
-    },
-    remove_playlist_song: ({ playlist }) => {
-      const p = state.playlists.find((x) => x.id === playlist);
-      if (p) p.memberCount = Math.max(0, p.memberCount - 1);
-      return { playlist };
-    },
-
-    choose_library_root: (_args, st) => {
-      // In the browser journey we auto-choose a root and seed a small library.
-      st.configured = true;
-      st.activeRoot = "/mock/library";
-      st.songs = Array.from({ length: 12 }, (_, i) => makeSong(i));
-      return { cancelled: false, root: st.activeRoot };
-    },
-    choose_and_import_files: (_args, st) => {
-      if (st.importMode === "cancelled") return null;
-      if (st.importMode === "failed") {
-        return { results: [{ kind: "failed", code: "corrupt", message: "文件损坏" }] };
-      }
-      const next = st.songs.length;
-      st.songs.push(makeSong(next, { title: `新导入 ${next}` }));
-      const imported = {
-        kind: "imported",
-        operationId: `op-${next}`,
-        songId: `song-${next}`,
-        relativePath: `新导入 ${next}.mp3`,
-        renamed: false,
-        lyrics: { kind: "none" },
-      };
-      if (st.importMode === "mixed") {
-        return {
-          results: [
-            imported,
-            { kind: "failed", code: "corrupt", message: "文件损坏" },
-            { kind: "skipped" },
-          ],
-        };
-      }
-      return { results: [imported] };
-    },
-    start_scan: () => ({
-      generation: 1,
-      cancelled: false,
-      state: "Completed",
-      discovered: 0,
-      processed: 0,
-      created: 0,
-      updated: 0,
-      missing: 0,
-      skipped: 0,
-      failed: 0,
-      issues: [],
-    }),
-    cancel_scan: () => ({ generation: 1, cancelled: true }),
-
-    set_theme: ({ theme }, st) => {
-      st.theme = theme as Theme;
-      return { theme: st.theme };
-    },
-    set_close_behavior: ({ behavior }, st) => {
-      st.closeBehavior = behavior as "exit" | "background";
-      return { behavior: st.closeBehavior };
-    },
-    get_close_behavior: (_args, st) => st.closeBehavior,
-
-    player_control: ({ action }, st) => {
-      const cur = st.nowPlaying;
-      if (cur) {
-        if (action === "toggle") cur.playing = !cur.playing;
-        // next/prev are track changes, like the runtime's auto-advance: the
-        // queue entry id changes, the position restarts and the snapshot is
-        // republished (PLAYER_COMMANDS below) so the UI remounts per-track
-        // surfaces (issue #75's e2e path). The old `position ± 10` placeholder
-        // never left the song, so nothing could assert what a track change
-        // does to the immersive layout.
-        if ((action === "next" || action === "prev") && st.songs.length > 0) {
-          const step = action === "next" ? 1 : -1;
-          const index = st.songs.findIndex((s) => s.id === cur.songId);
-          const nextIndex = (index + step + st.songs.length) % st.songs.length;
-          const nextSong = st.songs[nextIndex] ?? st.songs[0];
-          st.nowPlaying = { songId: nextSong.id, position: 0, playing: cur.playing };
-        }
-      }
-      return st.nowPlaying;
-    },
-    queue_command: () => ({ ok: true }),
-    set_volume: () => ({ volume: 1.0 }),
-    toggle_mute: () => ({ muted: true }),
-    seek: ({ position }, st) => {
-      if (st.nowPlaying) st.nowPlaying.position = Number(position);
-      return st.nowPlaying;
-    },
-    play_playlist_context: ({ selectedSong }, st) => {
-      // The desktop resolves the complete playlist itself. The mock only has
-      // to expose the clicked entry as current for the presentation journey.
-      const id = (selectedSong as string | undefined) ?? state.songs[0]?.id;
-      if (!id) return emptyError("unavailable", "noLibrary", true);
-      st.nowPlaying = { songId: id, position: 0, playing: true };
-      return st.nowPlaying;
-    },
-    // The desktop-side twin of `play_context`: the app names a *view* and a
-    // song, and Core resolves the whole view on its own. View membership and
-    // ordering are Core's and are covered by the Rust suite, so the mock only
-    // has to start the clicked song — which is what the bar assertion reads.
-    play_library_context: ({ view, query, selectedSong, artistKey, albumKey }, st) => {
-      const playable = state.songs.filter((s) => s.availability === "available");
-      let scoped = view === "favorites" ? playable.filter((s) => s.favorite) : playable;
-      if (view === "artist" && artistKey) {
-        const artist = String(artistKey).toLowerCase();
-        scoped = scoped.filter((s) => (s.artist ?? "").toLowerCase() === artist);
-      }
-      if (view === "album" && albumKey) {
-        const album = String(albumKey).toLowerCase();
-        scoped = scoped.filter((s) => (s.album ?? "").toLowerCase() === album);
-      }
-      const q = String(query ?? "").toLowerCase();
-      const matched = q ? scoped.filter((s) => (s.title ?? "").toLowerCase().includes(q)) : scoped;
-      const id = (selectedSong as string | undefined) ?? matched[0]?.id;
-      if (!id) return emptyError("unavailable", "noLibrary", true);
-      st.nowPlaying = { songId: id, position: 0, playing: true };
-      return st.nowPlaying;
-    },
-    play_temporary_file: ({ displayName }) => ({
-      songId: "temp-song",
-      title: displayName ?? "临时文件",
-      isTemporary: true,
-    }),
-    import_current_temporary_file: () => ({
-      kind: "imported",
-      operationId: "op-temp",
-      songId: "song-temp",
-      relativePath: "临时导入.mp3",
-      renamed: false,
-      lyrics: { kind: "none" },
-    }),
-    get_lyrics: ({ songId }) => {
-      const s = state.songs.find((x) => x.id === songId);
-      if (!s) return emptyError("not_found", "songNotFound", false);
-      // Timed lyrics, deliberately: 歌词专注阅读 is only reachable from the
-      // lyrics area, and an always-untimed (or always-empty) mock made that
-      // whole path unreachable in the browser — which is how it shipped
-      // unverified. The lines carry the song title so a scenario can assert
-      // that focus shows *this* song's lyrics.
-      //
-      // Long enough to overflow the surface on purpose. Three lines fit any
-      // panel, so `手动滚动暂停 5 秒` / `回到当前行` had no reachable trigger in
-      // the browser at all — the same trap as above, one layer down.
-      const lines = Array.from({ length: 24 }, (_, i) => ({
-        seconds: i * 10,
-        text: `${s.title} 歌词第${i + 1}行`,
-      }));
-      return {
-        source: "embedded",
-        timed: true,
-        lines,
-        plainText: lines.map((line) => line.text).join("\n"),
-        parseError: undefined,
-      };
-    },
+    ...buildLibraryHandlers(state),
+    ...buildPlaybackHandlers(state),
+    ...buildSyncHandlers(state),
+    ...buildEffectsHandlers(),
   };
 }
 
@@ -852,6 +74,10 @@ export class MockBridge {
   /** Callback registry behind the mocked `transformCallback` (event handlers). */
   private callbacks = new Map<number, (event: unknown) => void>();
   private nextCallbackId = 1;
+  /** The revision of the queue projection the frontend holds (issue #112). */
+  private queueRevision = 0;
+  /** The content the last published projection was built from. */
+  private queueSignature = "";
 
   constructor() {
     this.state = defaultState();
@@ -864,6 +90,8 @@ export class MockBridge {
     this.listeners.clear();
     this.callbacks.clear();
     this.nextCallbackId = 1;
+    this.queueRevision = 0;
+    this.queueSignature = "";
     this.handlers = buildHandlers(this.state);
   }
 
@@ -886,6 +114,27 @@ export class MockBridge {
     (this.handlers as Record<string, Handler>)[command] = fn;
   }
 
+  /**
+   * Publish the queue projection when the queue changed.
+   *
+   * The real runtime rebuilds the projection only when the revision moved; the
+   * mock compares the content signature instead, so a scenario sees the same
+   * "the queue did not change, nothing was published" behaviour.
+   */
+  private publishQueueIfChanged(): void {
+    const signature = queueSignatureOf(this.state);
+    if (signature === this.queueSignature) return;
+    this.queueSignature = signature;
+    this.queueRevision += 1;
+    this.emit(PLAYER_QUEUE_EVENT, queueProjectionOf(this.state, this.queueRevision));
+  }
+
+  /** Publish the current queue projection and effects snapshot on demand. */
+  private publishPlayerStreams(): void {
+    this.publishQueueIfChanged();
+    this.emit(PLAYER_EFFECTS_EVENT, this.handlers.get_audio_effects_snapshot?.({}, this.state));
+  }
+
   invoke(cmd: string, args: unknown): unknown {
     this.calls.push(cmd);
     if (cmd === "plugin:event|listen") {
@@ -897,7 +146,9 @@ export class MockBridge {
         this.on(event, (payload) => callback({ event, id: handler, payload }));
         // The runtime publishes the current snapshot as soon as a subscriber
         // attaches, so a seeded now-playing item is on screen without a click.
-        if (event === PLAYER_SNAPSHOT_EVENT) this.emit(event, snapshotOf(this.state));
+        if (event === PLAYER_SNAPSHOT_EVENT) {
+          this.emit(event, snapshotOf(this.state, this.queueRevision));
+        }
       }
       return String(handler ?? this.nextCallbackId);
     }
@@ -935,10 +186,18 @@ export class MockBridge {
       throw new Error(`mock-bridge: \`${cmd}\` has no handler`);
     }
     const result = handler((args ?? {}) as AnyRecord, this.state);
+    // The catch-up entry point of the split streams (issue #112): the frontend
+    // asks for the current queue projection and effects snapshot once, after it
+    // registered its listeners.
+    if (cmd === "player_sync") {
+      this.publishPlayerStreams();
+      return result;
+    }
     // A playback request republishes the snapshot, as the real runtime does
     // once the actor has accepted it.
     if (PLAYER_COMMANDS.has(cmd)) {
-      this.emit(PLAYER_SNAPSHOT_EVENT, snapshotOf(this.state));
+      this.publishQueueIfChanged();
+      this.emit(PLAYER_SNAPSHOT_EVENT, snapshotOf(this.state, this.queueRevision));
     }
     return result;
   }

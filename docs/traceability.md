@@ -5,7 +5,7 @@
 - 本表逐项覆盖 specs 中的全部 Scenario；稳定 ID 不得复用，标题调整时保留原 ID。
 - 场景 ID 由 spec 标题派生；每行必须给出可执行验收命令，且该场景在 `scripts/verify/scenario-commands.mjs` 的 `SCENARIOS` 中声明非空 `evidence`（命令可执行 + 证据可观测）。人工举证由 `docs/native-attestation-playbook.md` 与 `artifacts/native-attestations/<ID>.log` 承担，字段与判定见 `check-native-attestation.mjs`。
 - 每行给出实际验收命令。`pnpm verify:scenario -- --all` 必须比较 specs、此表与场景清单的 ID 集合完全相等，并逐项执行；命令按域聚合后逐条断言 evidence 目标在输出中被观测到，缺失、重复、无命令、无证据、证据未观测或失败均返回非零。
-- 当前基线：138 个 Requirement，534 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9、封面缩略图档位与首访非阻塞 2）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
+- 当前基线：142 个 Requirement，550 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9、封面缩略图档位与首访非阻塞 2、播放快照分层下发 16）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
 
 ## ci-release-pipeline
 
@@ -151,6 +151,8 @@
 | DP-R03-S02 | 播放队列面板展示 | 队列超过八首 | — | Gate | `pnpm verify:scenario -- DP-R03-S02` |
 | DP-R03-S03 | 播放队列面板展示 | 队列不超过八首 | — | Gate | `pnpm verify:scenario -- DP-R03-S03` |
 | DP-R03-S04 | 播放队列面板展示 | 沉浸模式尺寸一致 | — | Gate | `pnpm verify:scenario -- DP-R03-S04` |
+| DP-R03-S05 | 播放队列面板展示 | 面板按可视行渲染 | 6.4, 6.5 | React | `pnpm verify:scenario -- DP-R03-S05` |
+| DP-R03-S06 | 播放队列面板展示 | 滚动可达全部条目 | 6.4, 6.5 | React | `pnpm verify:scenario -- DP-R03-S06` |
 | DP-R04-S01 | 播放模式与传输控制 | 基础传输控制 | 8.6, 8.8, 11.1 | Desktop/React | `pnpm verify:scenario -- DP-R04-S01` |
 | DP-R04-S02 | 播放模式与传输控制 | 列表循环导航 | — | Gate | `pnpm verify:scenario -- DP-R04-S02` |
 | DP-R04-S03 | 播放模式与传输控制 | 随机播放导航 | — | Gate | `pnpm verify:scenario -- DP-R04-S03` |
@@ -198,6 +200,20 @@
 | DP-R17-S01 | 初始待播放项不得改变播放设置 | 兜底选择保持用户播放设置 | — | Gate | `pnpm verify:scenario -- DP-R17-S01` |
 | DP-R18-S01 | 播放进度视觉同步 | 播放期间进度同步 | 11.8 | React | `pnpm verify:scenario -- DP-R18-S01` |
 | DP-R18-S02 | 播放进度视觉同步 | 暂停、恢复与 seek | 11.8 | React | `pnpm verify:scenario -- DP-R18-S02` |
+| DP-R19-S01 | 播放快照与队列投影的分层下发 | 位置流只承载传输状态 | 4.1, 4.2, 4.7 | Desktop/Native | `pnpm verify:scenario -- DP-R19-S01` |
+| DP-R19-S02 | 播放快照与队列投影的分层下发 | 队列修订号变化时整份下发队列投影 | 4.2, 4.3, 4.7 | Desktop/Native | `pnpm verify:scenario -- DP-R19-S02` |
+| DP-R19-S03 | 播放快照与队列投影的分层下发 | 队列修订号未变化时不重复下发 | 4.2, 4.3, 4.7 | Desktop/Native | `pnpm verify:scenario -- DP-R19-S03` |
+| DP-R19-S04 | 播放快照与队列投影的分层下发 | 位置推进不触发队列投影 | 4.2, 4.7 | Desktop/Native | `pnpm verify:scenario -- DP-R19-S04` |
+| DP-R20-S01 | 队列修订号的单调性 | 队列内容变化推进修订号 | 2.2, 2.5 | Desktop/Native | `pnpm verify:scenario -- DP-R20-S01` |
+| DP-R20-S02 | 队列修订号的单调性 | 切歌推进修订号 | 2.2, 2.5 | Desktop/Native | `pnpm verify:scenario -- DP-R20-S02` |
+| DP-R20-S03 | 队列修订号的单调性 | 模式与失败集合变化推进修订号 | 2.4 | Desktop/Native | `pnpm verify:scenario -- DP-R20-S03` |
+| DP-R20-S04 | 队列修订号的单调性 | 队列整体替换不使修订号归零 | 2.3 | Desktop/Native | `pnpm verify:scenario -- DP-R20-S04` |
+| DP-R20-S05 | 队列修订号的单调性 | 播放位置推进不推进修订号 | 2.2, 2.5 | Desktop/Native | `pnpm verify:scenario -- DP-R20-S05` |
+| DP-R21-S01 | 队列投影的构造复杂度上界 | 大队列的投影构造保持在预算内 | 3.1, 3.2 | Desktop/Native | `pnpm verify:scenario -- DP-R21-S01` |
+| DP-R21-S02 | 队列投影的构造复杂度上界 | 投影顺序与内容不变 | 3.1, 3.3 | Desktop/Native | `pnpm verify:scenario -- DP-R21-S02` |
+| DP-R22-S01 | 队列投影的初始同步与漂移恢复 | 前端就绪后获得完整队列 | 4.6, 6.2 | React | `pnpm verify:scenario -- DP-R22-S01` |
+| DP-R22-S02 | 队列投影的初始同步与漂移恢复 | 过期修订号被忽略 | 6.1, 6.2 | React | `pnpm verify:scenario -- DP-R22-S02` |
+| DP-R22-S03 | 队列投影的初始同步与漂移恢复 | 同步与事件先后到达不产生回退 | 6.2 | React | `pnpm verify:scenario -- DP-R22-S03` |
 
 ## immersive-lyrics
 

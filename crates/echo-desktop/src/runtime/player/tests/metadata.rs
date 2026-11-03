@@ -1,7 +1,5 @@
 use super::*;
 
-use std::collections::HashSet;
-
 #[test]
 fn metadata_resolver_resolves_library_entry_fields() {
     // 队列展示信息: library entries resolve to title / artist / duration /
@@ -96,10 +94,11 @@ fn metadata_resolver_gives_explicit_nulls_for_unknown_ids() {
 }
 
 #[test]
-fn map_snapshot_attaches_resolved_metadata_to_each_entry() {
-    // The UI snapshot's queue entries carry the resolved metadata — title /
-    // artist / duration / cover — so the panel renders real songs, and the
-    // current entry's title feeds the player bar.
+fn map_snapshot_attaches_the_current_entries_resolved_metadata() {
+    // The transport snapshot carries the *current* entry's resolved metadata —
+    // title / artist / album / cover — so the player bar renders the real
+    // song. The whole queue is not resolved here: it rides the queue
+    // projection, which is only built when the queue changed.
     let song = SongId::new();
     let entry = QueueEntry {
         id: QueueEntryId::new(),
@@ -110,11 +109,32 @@ fn map_snapshot_attaches_resolved_metadata_to_each_entry() {
         ..PlayerSnapshot::default()
     };
     let view = CoordinatorView {
-        entries: vec![entry.clone()],
-        failed_round: HashSet::default(),
-        blocked: HashSet::default(),
         current: Some(entry),
         mode: PlayMode::Sequential,
+        revision: QueueRevision::INITIAL,
+    };
+    let meta = QueueEntryMeta {
+        title: Some("晴天".to_owned()),
+        artist: Some("周杰伦".to_owned()),
+        album: Some("叶惠美".to_owned()),
+        duration_s: Some(239),
+        cover_key: Some("cv1-seeded".to_owned()),
+    };
+    let ui = map_snapshot(&raw, &view, Some(&meta), 1);
+    assert_eq!(ui.current_title.as_deref(), Some("晴天"));
+    assert_eq!(ui.current_artist.as_deref(), Some("周杰伦"));
+    assert_eq!(ui.current_album.as_deref(), Some("叶惠美"));
+    assert_eq!(ui.current_cover_key.as_deref(), Some("cv1-seeded"));
+}
+
+#[test]
+fn map_queue_projection_attaches_resolved_metadata_to_each_entry() {
+    // The queue projection's rows carry the resolved metadata — title /
+    // artist / duration / cover — so the panel renders real songs.
+    let song = SongId::new();
+    let entry = QueueEntry {
+        id: QueueEntryId::new(),
+        item: QueueItem::Library(song),
     };
     let mut metadata = std::collections::HashMap::new();
     metadata.insert(
@@ -127,11 +147,40 @@ fn map_snapshot_attaches_resolved_metadata_to_each_entry() {
             cover_key: Some("cv1-seeded".to_owned()),
         },
     );
-    let ui = map_snapshot(&raw, &view, &metadata);
-    assert_eq!(ui.current_title.as_deref(), Some("晴天"));
-    let row = &ui.queue[0];
+    let projection = QueueProjection {
+        revision: QueueRevision::INITIAL.next(),
+        entries: vec![entry],
+        failed_round: std::collections::HashSet::default(),
+        blocked: std::collections::HashSet::default(),
+        current: None,
+    };
+    let ui = map_queue_projection(&projection, &metadata);
+    let row = &ui.entries[0];
     assert_eq!(row.title.as_deref(), Some("晴天"));
     assert_eq!(row.artist.as_deref(), Some("周杰伦"));
     assert_eq!(row.duration_s, Some(239));
     assert_eq!(row.cover_key.as_deref(), Some("cv1-seeded"));
+}
+
+#[test]
+fn metadata_resolver_resolves_a_single_song_and_caches_it() {
+    // The position stream resolves exactly one row — the current entry — so
+    // the resolver answers a single-song lookup from the same per-song cache
+    // the batched path uses.
+    let (db, song_id) = seeded_db();
+    let resolver = QueueMetadataResolver::new(db.clone(), db.clone());
+    let meta = resolver.resolve_one(song_id);
+    assert_eq!(meta.title.as_deref(), Some("晴天"));
+    assert_eq!(meta.artist.as_deref(), Some("周杰伦"));
+    assert_eq!(meta.cover_key.as_deref(), Some("cv1-seeded"));
+
+    // The song is gone from the library, but the cache still answers.
+    let song_id_copy = song_id;
+    db.with_tx(Box::new(move |tx| tx.delete_song(song_id_copy)))
+        .expect("delete after the first resolve");
+    assert_eq!(
+        resolver.resolve_one(song_id),
+        meta,
+        "the cached metadata is reused for the same song id"
+    );
 }

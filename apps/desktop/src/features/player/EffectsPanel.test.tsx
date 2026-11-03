@@ -90,9 +90,15 @@ describe("audio effects shared player state", () => {
     });
     expect(playerStore.getEffects()?.runtime.applied).toBe("pending");
   });
-  it("projects an optional snapshot into the unique effects store", () => {
+  it("keeps the effects snapshot out of the position stream", () => {
+    // The effects snapshot travels on its own event (`player://effects`); the
+    // 10 Hz position stream carries the transport state only (issue #112).
     const effects = snapshot();
-    playerStore.publish({ ...EMPTY_SNAPSHOT, effects });
+    playerStore.publishEffects(effects);
+    expect(playerStore.getEffects()).toEqual(effects);
+
+    // A position frame must not disturb the effects slot.
+    playerStore.publish(EMPTY_SNAPSHOT);
     expect(playerStore.getEffects()).toEqual(effects);
   });
   it("makes the queue and effects panel mutually exclusive without losing the draft", () => {

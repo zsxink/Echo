@@ -1,18 +1,27 @@
 /**
  * Task 11.2 — playback queue panel.
  *
- * Acceptance: renders the authoritative snapshot queue (current + pending,
+ * Acceptance: renders the authoritative queue projection (current + pending,
  * with failed entries surfaced); "清空待播" removes only pending entries (never
  * stops the current song, never touches the library or playlists); the empty
  * state offers a browse-library action. The panel never fabricates queue data —
- * it renders exactly `snapshot.queue`.
+ * it renders exactly the published projection.
+ *
+ * Issue #112 — the projection arrives on its own event, and the list renders
+ * only the rows around the viewport, so a long queue costs a handful of DOM
+ * rows instead of one per entry.
  */
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { useRef } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { playerStore, usePlayerUi, type UiPlayerSnapshot } from "../../player/playerStore";
+import {
+  playerStore,
+  usePlayerUi,
+  type UiPlayerSnapshot,
+  type UiQueueProjection,
+} from "../../player/playerStore";
 import { QueuePanel } from "./QueuePanel";
 
 vi.mock("../../bridge", () => {
@@ -47,10 +56,44 @@ function makeSnapshot(overrides: Partial<UiPlayerSnapshot> = {}): UiPlayerSnapsh
     mode: "sequential",
     currentTitle: null,
     currentCanImport: false,
-    queue: [],
+    queueRevision: 0,
     ...overrides,
   };
 }
+
+function makeEntry(
+  overrides: Partial<UiQueueProjection["entries"][number]> = {},
+): UiQueueProjection["entries"][number] {
+  return {
+    entryId: "e1",
+    songId: "s1",
+    title: null,
+    isCurrent: false,
+    failed: false,
+    canImport: false,
+    blocked: false,
+    artist: null,
+    durationS: null,
+    coverKey: null,
+    ...overrides,
+  };
+}
+
+/** Publish a queue projection the way the desktop's `player://queue` does. */
+function publishQueue(entries: UiQueueProjection["entries"], revision = 1): void {
+  playerStore.publishQueue({ revision, entries });
+}
+
+// The player store is a module-level singleton, so its queue slot survives
+// between the cases in this file. A projection that is not newer than the
+// applied one is ignored (DP-R22-S02), so each case starts from an empty
+// queue at revision 0.
+beforeEach(() => {
+  playerStore.stateForRender().update((state) => ({
+    ...state,
+    queue: { revision: 0, entries: [] },
+  }));
+});
 
 describe("QueuePanel (task 11.2)", () => {
   it("renders nothing when the panel is closed", () => {
@@ -59,52 +102,33 @@ describe("QueuePanel (task 11.2)", () => {
     expect(screen.queryByTestId("queue-panel")).not.toBeInTheDocument();
   });
 
-  it("renders current and pending entries from the authoritative snapshot", () => {
+  it("renders current and pending entries from the authoritative projection", () => {
     playerStore.setQueueOpen(true);
-    playerStore.publish(
-      makeSnapshot({
-        currentQueueEntryId: "e1",
-        queueLen: 3,
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: "晴天",
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: "周杰伦",
-            durationS: 239,
-            coverKey: "cover-s1",
-          },
-          {
-            entryId: "e2",
-            songId: "s2",
-            title: "七里香",
-            isCurrent: false,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: "周杰伦",
-            durationS: 245,
-            coverKey: null,
-          },
-          {
-            entryId: "e3",
-            songId: null,
-            title: "outside.m4a",
-            isCurrent: false,
-            failed: false,
-            canImport: true,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
+    playerStore.publish(makeSnapshot({ currentQueueEntryId: "e1", queueLen: 3 }));
+    publishQueue([
+      makeEntry({
+        entryId: "e1",
+        songId: "s1",
+        title: "晴天",
+        isCurrent: true,
+        artist: "周杰伦",
+        durationS: 239,
+        coverKey: "cover-s1",
       }),
-    );
+      makeEntry({
+        entryId: "e2",
+        songId: "s2",
+        title: "七里香",
+        artist: "周杰伦",
+        durationS: 245,
+      }),
+      makeEntry({
+        entryId: "e3",
+        songId: null,
+        title: "outside.m4a",
+        canImport: true,
+      }),
+    ]);
 
     render(<QueuePanel />);
     expect(screen.getByTestId("queue-list")).toBeInTheDocument();
@@ -120,36 +144,10 @@ describe("QueuePanel (task 11.2)", () => {
 
   it("flags failed entries but still renders them", () => {
     playerStore.setQueueOpen(true);
-    playerStore.publish(
-      makeSnapshot({
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-          {
-            entryId: "e2",
-            songId: "s2",
-            title: null,
-            isCurrent: false,
-            failed: true,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
-      }),
-    );
+    publishQueue([
+      makeEntry({ entryId: "e1", isCurrent: true }),
+      makeEntry({ entryId: "e2", failed: true }),
+    ]);
 
     render(<QueuePanel />);
     expect(screen.getByText("加载失败")).toBeInTheDocument();
@@ -159,36 +157,23 @@ describe("QueuePanel (task 11.2)", () => {
     call.mockReset();
     call.mockResolvedValue(undefined);
     playerStore.setQueueOpen(true);
-    playerStore.publish(
-      makeSnapshot({
-        queue: [
-          {
-            entryId: "current-copy",
-            songId: "same-song",
-            title: "重复曲目",
-            isCurrent: true,
-            failed: false,
-            blocked: false,
-            canImport: false,
-            artist: "Echo",
-            durationS: 120,
-            coverKey: null,
-          },
-          {
-            entryId: "selected-copy",
-            songId: "same-song",
-            title: "重复曲目",
-            isCurrent: false,
-            failed: false,
-            blocked: false,
-            canImport: false,
-            artist: "Echo",
-            durationS: 120,
-            coverKey: null,
-          },
-        ],
+    publishQueue([
+      makeEntry({
+        entryId: "current-copy",
+        songId: "same-song",
+        title: "重复曲目",
+        isCurrent: true,
+        artist: "Echo",
+        durationS: 120,
       }),
-    );
+      makeEntry({
+        entryId: "selected-copy",
+        songId: "same-song",
+        title: "重复曲目",
+        artist: "Echo",
+        durationS: 120,
+      }),
+    ]);
 
     render(<QueuePanel />);
     fireEvent.click(screen.getAllByRole("button", { name: "播放 重复曲目" })[1]);
@@ -200,24 +185,7 @@ describe("QueuePanel (task 11.2)", () => {
 
   it("keeps blocked restored entries visible with retry guidance", () => {
     playerStore.setQueueOpen(true);
-    playerStore.publish(
-      makeSnapshot({
-        queue: [
-          {
-            entryId: "blocked",
-            songId: "s1",
-            title: null,
-            isCurrent: false,
-            failed: false,
-            blocked: true,
-            canImport: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
-      }),
-    );
+    publishQueue([makeEntry({ entryId: "blocked", blocked: true })]);
     render(<QueuePanel />);
     expect(screen.getByText("暂时不可用，可在音乐库恢复后重试")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "播放 未知歌曲" })).toBeDisabled();
@@ -227,36 +195,7 @@ describe("QueuePanel (task 11.2)", () => {
     call.mockReset();
     call.mockResolvedValue(undefined);
     playerStore.setQueueOpen(true);
-    playerStore.publish(
-      makeSnapshot({
-        queue: [
-          {
-            entryId: "e1",
-            songId: "s1",
-            title: null,
-            isCurrent: true,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-          {
-            entryId: "e2",
-            songId: "s2",
-            title: null,
-            isCurrent: false,
-            failed: false,
-            canImport: false,
-            blocked: false,
-            artist: null,
-            durationS: null,
-            coverKey: null,
-          },
-        ],
-      }),
-    );
+    publishQueue([makeEntry({ entryId: "e1", isCurrent: true }), makeEntry({ entryId: "e2" })]);
 
     render(<QueuePanel />);
     fireEvent.click(screen.getByText("清空待播"));
@@ -271,11 +210,90 @@ describe("QueuePanel (task 11.2)", () => {
 
   it("shows the browse-library action for an empty queue", () => {
     playerStore.setQueueOpen(true);
-    playerStore.publish(makeSnapshot({ queueLen: 0, queue: [] }));
+    publishQueue([]);
 
     render(<QueuePanel />);
     expect(screen.getByTestId("queue-empty")).toBeInTheDocument();
     expect(screen.getByText("浏览曲库")).toBeInTheDocument();
+  });
+});
+
+describe("QueuePanel windowed rendering (issue #112)", () => {
+  it("renders a bounded number of rows for a long queue", () => {
+    playerStore.setQueueOpen(true);
+    publishQueue(
+      Array.from({ length: 500 }, (_, index) =>
+        makeEntry({ entryId: `e${index}`, songId: `s${index}`, title: `song ${index}` }),
+      ),
+    );
+
+    render(<QueuePanel />);
+    const rows = screen.getAllByRole("button", { name: /^播放 / });
+    expect(rows.length).toBeLessThan(50);
+    expect(rows.length).toBeGreaterThan(0);
+    // The total count still describes the whole queue (DP-R03).
+    expect(screen.getByText("500 首")).toBeInTheDocument();
+  });
+
+  it("holds the space of the rows it does not render", () => {
+    playerStore.setQueueOpen(true);
+    publishQueue(
+      Array.from({ length: 500 }, (_, index) =>
+        makeEntry({ entryId: `e${index}`, songId: `s${index}`, title: `song ${index}` }),
+      ),
+    );
+
+    render(<QueuePanel />);
+    const window = document.querySelector<HTMLElement>(".queue-window");
+    expect(window).not.toBeNull();
+    // The spacer below the rendered rows stands for the rest of the queue.
+    expect(Number.parseFloat(window?.style.paddingBottom ?? "0")).toBeGreaterThan(0);
+  });
+
+  it("moves the window with the scroll offset", () => {
+    playerStore.setQueueOpen(true);
+    publishQueue(
+      Array.from({ length: 500 }, (_, index) =>
+        makeEntry({ entryId: `e${index}`, songId: `s${index}`, title: `song ${index}` }),
+      ),
+    );
+
+    render(<QueuePanel />);
+    expect(screen.queryByText("song 300")).not.toBeInTheDocument();
+
+    // jsdom has no layout, so the scroll offset is installed explicitly.
+    const list = screen.getByTestId("queue-list");
+    Object.defineProperty(list, "scrollTop", {
+      configurable: true,
+      value: 300 * 44,
+    });
+    fireEvent.scroll(list);
+
+    expect(screen.getByText("song 300")).toBeInTheDocument();
+    // The rows above the viewport are still only a spacer, not DOM rows.
+    expect(screen.queryByText("song 0")).not.toBeInTheDocument();
+  });
+
+  it("does not rebuild the queue rows while the position stream runs", () => {
+    playerStore.setQueueOpen(true);
+    publishQueue(
+      Array.from({ length: 20 }, (_, index) =>
+        makeEntry({ entryId: `e${index}`, songId: `s${index}`, title: `song ${index}` }),
+      ),
+    );
+
+    render(<QueuePanel />);
+    const list = screen.getByTestId("queue-list");
+    const before = list.querySelectorAll(".queue-item").length;
+
+    for (let frame = 0; frame < 10; frame += 1) {
+      playerStore.publish(
+        makeSnapshot({ state: "playing", position: frame, queueLen: 20, queueRevision: 1 }),
+      );
+    }
+
+    expect(list.querySelectorAll(".queue-item").length).toBe(before);
+    expect(screen.getByText("song 0")).toBeInTheDocument();
   });
 });
 
@@ -306,7 +324,7 @@ describe("QueuePanel trigger control (fix-queue-trigger-toggle)", () => {
 
   it("closes on a second press of the trigger instead of reopening the panel", () => {
     playerStore.setQueueOpen(false);
-    playerStore.publish(makeSnapshot({ queueLen: 1, queue: [] }));
+    playerStore.publish(makeSnapshot({ queueLen: 1 }));
     render(<QueueWithTrigger />);
     const trigger = screen.getByTestId("queue-trigger");
 
@@ -324,7 +342,7 @@ describe("QueuePanel trigger control (fix-queue-trigger-toggle)", () => {
 
   it("still closes when the press lands outside both panel and trigger", () => {
     playerStore.setQueueOpen(false);
-    playerStore.publish(makeSnapshot({ queueLen: 1, queue: [] }));
+    playerStore.publish(makeSnapshot({ queueLen: 1 }));
     render(
       <div>
         <QueueWithTrigger />

@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::player::port::PlayMode;
+
 fn lib(s: SongId) -> QueueEntry {
     QueueEntry {
         id: QueueEntryId::new(),
@@ -11,6 +13,119 @@ fn lib(s: SongId) -> QueueEntry {
 
 fn song() -> SongId {
     SongId::new()
+}
+
+/// Assert that `mutate` advances the queue revision.
+///
+/// The revision is the transport's only signal that the projection changed,
+/// so *every* projection-changing mutator must move it forward. A redundant
+/// bump is harmless (one extra projection delivery); a missing one freezes
+/// the panel on a stale queue.
+fn assert_advances(queue: &mut Queue, label: &str, mutate: impl FnOnce(&mut Queue)) {
+    let before = queue.revision();
+    mutate(queue);
+    let after = queue.revision();
+    assert!(
+        after > before,
+        "mutator `{label}` must advance the queue revision ({before:?} -> {after:?})"
+    );
+}
+
+/// A queue with three library entries, the first one current. Returns the
+/// queue together with the entry ids and song ids in append order.
+fn seeded_queue() -> (Queue, Vec<QueueEntryId>, Vec<SongId>) {
+    let mut q = Queue::new();
+    let mut ids = Vec::new();
+    let mut songs = Vec::new();
+    for _ in 0..3 {
+        let s = song();
+        songs.push(s);
+        ids.push(q.push(lib(s)));
+    }
+    q.set_current(ids[0]);
+    (q, ids, songs)
+}
+
+#[test]
+fn queue_revision_advances_on_every_projection_changing_mutation() {
+    // spec 「队列修订号的单调性」: every mutator that can change the projection
+    // advances the revision. The revision is the transport's only signal for
+    // "the queue moved" — a missing bump silently freezes the panel.
+    let (mut q, ids, songs) = seeded_queue();
+    assert_eq!(Queue::new().revision(), QueueRevision::INITIAL);
+
+    assert_advances(&mut q, "set_priority", |q| {
+        q.set_priority(vec![ids[1]]);
+    });
+    assert_advances(&mut q, "set_shuffle", |q| {
+        q.set_shuffle(true, vec![ids[1], ids[2]]);
+    });
+    assert_advances(&mut q, "refresh_shuffle_bag", |q| {
+        q.refresh_shuffle_bag(vec![ids[2]]);
+    });
+    assert_advances(&mut q, "restore_history", |q| {
+        q.restore_history(vec![HistoryRecord {
+            entry_id: ids[0],
+            played_at_ms: now_ms(),
+        }]);
+    });
+    assert_advances(&mut q, "set_blocked", |q| {
+        q.set_blocked(ids[2], true);
+    });
+    assert_advances(&mut q, "push", |q| {
+        q.push(lib(song()));
+    });
+    assert_advances(&mut q, "insert_next", |q| {
+        q.insert_next(lib(song()));
+    });
+    assert_advances(&mut q, "promote_to_priority", |q| {
+        // The same song as an existing entry: the mutator promotes that entry
+        // instead of appending a duplicate.
+        q.promote_to_priority(lib(songs[1]));
+    });
+    assert_advances(&mut q, "advance_priority", |q| {
+        q.advance_priority();
+    });
+    assert_advances(&mut q, "set_current", |q| {
+        q.set_current(ids[1]);
+    });
+    assert_advances(&mut q, "advance_next", |q| {
+        q.advance_next();
+    });
+    assert_advances(&mut q, "advance_in_mode", |q| {
+        q.advance_in_mode(PlayMode::Sequential);
+    });
+    assert_advances(&mut q, "previous", |q| {
+        q.previous();
+    });
+    assert_advances(&mut q, "previous_in_loop", |q| {
+        q.previous_in_loop();
+    });
+    assert_advances(&mut q, "remove", |q| {
+        q.remove(ids[2]);
+    });
+    assert_advances(&mut q, "remove_song", |q| {
+        q.remove_song(songs[2]);
+    });
+    assert_advances(&mut q, "remove_direct", |q| {
+        q.remove_direct(ids[0]);
+    });
+    assert_advances(&mut q, "clear_pending", |q| {
+        q.clear_pending();
+    });
+}
+
+#[test]
+fn queue_revision_is_unchanged_by_reads() {
+    // Position ticks poll the queue constantly; reading it must never look
+    // like a change, or the transport would re-ship the projection at 10 Hz.
+    let (q, ids, _) = seeded_queue();
+    let before = q.revision();
+    let _ = q.view_entries();
+    let _ = q.current();
+    let _ = q.pending();
+    let _ = q.get(ids[0]);
+    assert_eq!(q.revision(), before);
 }
 
 #[test]
@@ -249,6 +364,83 @@ fn view_projection_reflects_insert_next_and_clear_pending() {
     q.clear_pending();
     let ids: Vec<_> = q.view_entries().into_iter().map(|entry| entry.id).collect();
     assert_eq!(ids, vec![current]);
+}
+
+#[test]
+fn queue_projection_order_and_content_unchanged() {
+    // spec 「投影顺序与内容不变」: the O(n) rewrite must not move a single
+    // entry. This pins the whole projection contract in one place: current
+    // first, the manual lane ahead of the ordinary entries, the shuffle round
+    // order for the rest, blocked entries dropped, duplicates kept.
+    let repeated = song();
+    let mut q = Queue::new();
+    let current = q.push(lib(repeated));
+    let ordinary = q.push(lib(song()));
+    let blocked = q.push(lib(song()));
+    let duplicate = q.push(lib(repeated));
+    q.set_current(current);
+    q.set_blocked(blocked, true);
+
+    // Sequential mode: current first, then the pending entries in list order.
+    let ids: Vec<_> = q.view_entries().into_iter().map(|entry| entry.id).collect();
+    assert_eq!(ids, vec![current, ordinary, duplicate]);
+
+    // The manual lane precedes the ordinary entries.
+    let lane = q.insert_next(lib(song()));
+    let ids: Vec<_> = q.view_entries().into_iter().map(|entry| entry.id).collect();
+    assert_eq!(ids, vec![current, lane, ordinary, duplicate]);
+
+    // Shuffle mode: the round order wins for the ordinary entries, the lane
+    // still comes first, and the blocked entry stays out.
+    q.set_shuffle(true, vec![duplicate, ordinary]);
+    let ids: Vec<_> = q.view_entries().into_iter().map(|entry| entry.id).collect();
+    assert_eq!(ids, vec![current, lane, duplicate, ordinary]);
+
+    // The projection carries the entries themselves, not just their ids.
+    let view = q.view_entries();
+    assert_eq!(view[0].id, current);
+    assert_eq!(view[0].item.song_id(), Some(repeated));
+    assert_eq!(view[2].item.song_id(), Some(repeated));
+    assert!(
+        view.iter().all(|entry| entry.id != blocked),
+        "a blocked entry must never reach the projection"
+    );
+}
+
+#[test]
+fn queue_projection_stays_within_budget_for_ten_thousand_entries() {
+    // spec 「大队列的投影构造保持在预算内」: the projection must be built in
+    // time proportional to the entry count. The budget is generous enough to
+    // survive a slow two-core CI runner — an O(n²) implementation misses it by
+    // two orders of magnitude.
+    const ENTRIES: usize = 10_000;
+    const BUDGET: std::time::Duration = std::time::Duration::from_millis(500);
+
+    let mut q = Queue::new();
+    for _ in 0..ENTRIES {
+        q.push(lib(song()));
+    }
+    let first = q.entries()[0].id;
+    q.set_current(first);
+    // A shuffled round and a manual lane exercise every lookup path of the
+    // projection, not just the plain list order.
+    let pending = q.pending_ids();
+    q.set_shuffle(true, pending);
+    q.insert_next(lib(song()));
+
+    let started = std::time::Instant::now();
+    let view = q.view_entries();
+    let elapsed = started.elapsed();
+
+    assert_eq!(
+        view.len(),
+        ENTRIES + 1,
+        "every entry must reach the projection (the manual lane adds one more)"
+    );
+    assert!(
+        elapsed < BUDGET,
+        "building the projection of {ENTRIES} entries took {elapsed:?}, over the {BUDGET:?} budget"
+    );
 }
 
 #[test]

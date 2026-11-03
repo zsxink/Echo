@@ -247,12 +247,27 @@ fn captures_order_metadata_and_persistence_without_audio_revisions() {
     let submissions_before_delete = playback.submissions.load(Ordering::SeqCst);
     let deleted = service.delete(&id).unwrap();
     let final_query = service.snapshot();
-    assert!(edited.snapshot_sequence < before_save.snapshot_sequence);
+    // The sequence counts content changes, not captures: a query repeats the
+    // sequence of the last change, and every real change advances it.
+    assert_eq!(
+        edited.snapshot_sequence, before_save.snapshot_sequence,
+        "a query keeps the sequence of the last change"
+    );
     assert!(before_save.snapshot_sequence < saved.snapshot_sequence);
     assert!(saved.snapshot_sequence < renamed.snapshot_sequence);
-    assert!(renamed.snapshot_sequence < queried.snapshot_sequence);
+    assert_eq!(
+        renamed.snapshot_sequence, queried.snapshot_sequence,
+        "a query keeps the sequence of the last change"
+    );
+    assert!(
+        queried.snapshot_sequence < before_delete.snapshot_sequence,
+        "disabling the effect changes the content"
+    );
     assert!(before_delete.snapshot_sequence < deleted.snapshot_sequence);
-    assert!(deleted.snapshot_sequence < final_query.snapshot_sequence);
+    assert_eq!(
+        deleted.snapshot_sequence, final_query.snapshot_sequence,
+        "a query keeps the sequence of the last change"
+    );
     assert_eq!(saved.runtime.revision, edited.runtime.revision);
     assert_eq!(renamed.runtime.revision, edited.runtime.revision);
     assert_eq!(queried.runtime.revision, edited.runtime.revision);
@@ -288,6 +303,37 @@ fn query_orders_native_confirmation_and_persistence_receipts() {
     assert_eq!(
         persisted.runtime.persistence_status,
         PersistenceStatus::Saved
+    );
+}
+
+#[test]
+fn snapshot_sequence_counts_content_changes_not_captures() {
+    // The effects snapshot travels on its own stream, and the consumer can
+    // tell whether the snapshot it holds is still the current one by the
+    // sequence. That only works when the sequence counts *content changes*:
+    // a capture of the same content keeps the number (AE-R07).
+    let (service, _, _) = fixture();
+    let first = service.snapshot();
+    let second = service.snapshot();
+    assert_eq!(
+        first.snapshot_sequence, second.snapshot_sequence,
+        "two captures of the same content keep the same sequence"
+    );
+    let mut curve = EqCurve::default();
+    curve.gains_db[0] = 2.0;
+    let edited = service.edit(curve).unwrap();
+    assert!(
+        edited.snapshot_sequence > second.snapshot_sequence,
+        "a changed configuration advances the sequence"
+    );
+    let queried = service.snapshot();
+    assert_eq!(
+        queried.snapshot_sequence, edited.snapshot_sequence,
+        "an unchanged configuration keeps the sequence"
+    );
+    assert!(
+        queried.snapshot_sequence > first.snapshot_sequence,
+        "the sequence never goes backwards"
     );
 }
 

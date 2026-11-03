@@ -29,7 +29,7 @@ use echo_core::error::Error;
 use crate::player::actor::{FfiSpawnError, PlayerActor, SongResolver};
 use crate::player::coordinator::PlaybackCoordinator;
 use crate::player::port::{PlayMode, PlayerPort, PlayerSnapshot, VOLUME_EPSILON};
-use crate::player::queue::{QueueItem, ViewContext};
+use crate::player::queue::{QueueItem, QueueRevision, ViewContext};
 use crate::player::session::SessionPersistence;
 
 #[cfg(test)]
@@ -108,6 +108,12 @@ pub struct QueueEntryMeta {
 /// The UI-facing playback snapshot (mirrors the frontend `UiPlayerSnapshot`).
 /// Every value is derived from the authoritative [`PlayerSnapshot`] + the
 /// coordinator's queue — never fabricated.
+///
+/// The payload carries **transport state only**. The queue projection and the
+/// effects snapshot travel on their own events (`player://queue`,
+/// `player://effects`), so the 10 Hz stream stays small no matter how long the
+/// queue is — the payload size is a property of the transport, not of the
+/// library.
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UiPlayerSnapshot {
@@ -130,11 +136,24 @@ pub struct UiPlayerSnapshot {
     /// True when the current entry is a session-only temporary item that can be
     /// imported into the active library (task 11.7).
     pub current_can_import: bool,
-    /// The full queue the panel renders (current + pending, in play order).
-    pub queue: Vec<UiQueueEntry>,
-    /// Optional additive projection; older clients ignore the new field.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub effects: Option<crate::ipc::effects::EffectsSnapshotDto>,
+    /// The revision of the queue projection the frontend currently holds.
+    ///
+    /// It travels with every position frame so the frontend can tell that the
+    /// queue changed without receiving the whole projection again.
+    pub queue_revision: u64,
+}
+
+/// The queue projection the queue panel renders (task 11.2).
+///
+/// It is published on its own event and only when the queue revision changed,
+/// so the 10 Hz position stream never carries the whole queue.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiQueueProjection {
+    /// The queue revision this projection was built at.
+    pub revision: u64,
+    /// Every queue entry (current + pending, in play order).
+    pub entries: Vec<UiQueueEntry>,
 }
 
 /// A headless handle to the live playback subsystem: the coordinator (guarded
@@ -208,25 +227,91 @@ impl PlayerController<Arc<dyn PlayerPort>> {
 /// so it can be moved into / shared across the forwarder thread.
 pub type SnapshotEmitter = Box<dyn Fn(UiPlayerSnapshot) + Send + Sync>;
 
-/// The coordinator-owned half of a UI snapshot: the full queue entries, the
-/// per-round failed set, the current entry, and the active play mode.
+/// A callback the shell supplies to push a queue projection to the frontend
+/// (`app.emit("player://queue", projection)`).
+pub type QueueEmitter = Box<dyn Fn(UiQueueProjection) + Send + Sync>;
+
+/// A callback the shell supplies to push an effects snapshot to the frontend
+/// (`app.emit("player://effects", snapshot)`).
+pub type EffectsEmitter = Box<dyn Fn(crate::ipc::effects::EffectsSnapshotDto) + Send + Sync>;
+
+/// The three playback event sinks the shell installs.
 ///
-/// Passed as one value (rather than four positional arguments) because every
-/// field is read from the same lock — the UI shape must be assembled from one
-/// consistent view of the queue, never from a mix of sources.
+/// The streams are separate on purpose: the transport snapshot is published at
+/// 10 Hz and must stay small, while the queue projection and the effects
+/// snapshot are published only when their content actually changed.
+pub struct PlayerEmitters {
+    /// The 10 Hz transport snapshot (`player://snapshot`).
+    pub snapshot: SnapshotEmitter,
+    /// The queue projection (`player://queue`).
+    pub queue: QueueEmitter,
+    /// The effects snapshot (`player://effects`).
+    pub effects: EffectsEmitter,
+}
+
+/// The transport half of the coordinator's state: what the position stream
+/// needs on every frame.
+///
+/// The queue projection is deliberately **not** part of it — the entries are
+/// built only when the queue revision changed (see [`QueueProjection`]).
 #[derive(Clone, Debug)]
 pub struct CoordinatorView {
+    /// The current entry, if any.
+    pub current: Option<crate::player::queue::QueueEntry>,
+    /// The active playback mode (顺序 / 随机 / 单曲循环).
+    pub mode: PlayMode,
+    /// The queue revision this view was read at.
+    pub revision: QueueRevision,
+}
+
+/// The queue projection as the coordinator holds it, before it is mapped into
+/// the UI shape.
+#[derive(Clone, Debug)]
+pub struct QueueProjection {
+    /// The revision the projection was built at.
+    pub revision: QueueRevision,
     /// Every queue entry (current + pending, in play order).
     pub entries: Vec<crate::player::queue::QueueEntry>,
     /// Entries that failed to load/decode in the current round (task 8.7).
     pub failed_round: std::collections::HashSet<echo_core::domain::ids::QueueEntryId>,
     /// Restored entries preserved as currently unavailable.
     pub blocked: std::collections::HashSet<echo_core::domain::ids::QueueEntryId>,
-    /// The current entry, if any.
-    pub current: Option<crate::player::queue::QueueEntry>,
-    /// The active playback mode (顺序 / 随机 / 单曲循环).
-    pub mode: PlayMode,
+    /// The current entry's id, if any.
+    pub current: Option<echo_core::domain::ids::QueueEntryId>,
 }
+
+/// One frame of playback state as the forwarder sees it.
+///
+/// The projection is present only when the queue changed since the revision
+/// the consumer last received — the provider decides that inside one
+/// coordinator lock, so the revision and the entries always agree.
+#[derive(Clone, Debug)]
+pub struct PlayerFrame {
+    /// The transport state of this frame.
+    pub view: CoordinatorView,
+    /// The queue projection, when it changed.
+    pub projection: Option<QueueProjection>,
+}
+
+/// Supplies the forwarder with one frame of playback state.
+///
+/// The provider receives the revision the consumer last received, so it can
+/// decide — inside one coordinator lock — whether the queue projection has to
+/// be rebuilt at all.
+pub type PlayerFrameProvider = Arc<dyn Fn(Option<QueueRevision>) -> PlayerFrame + Send + Sync>;
+
+/// Produces the current effects snapshot (the source of `player://effects`).
+pub type EffectsSnapshotProvider =
+    Arc<dyn Fn() -> crate::ipc::effects::EffectsSnapshotDto + Send + Sync>;
+
+/// The event carrying the 10 Hz transport snapshot to the frontend.
+pub const PLAYER_SNAPSHOT_EVENT: &str = "player://snapshot";
+
+/// The event carrying the queue projection to the frontend.
+pub const PLAYER_QUEUE_EVENT: &str = "player://queue";
+
+/// The event carrying the effects snapshot to the frontend.
+pub const PLAYER_EFFECTS_EVENT: &str = "player://effects";
 
 mod auto_advance;
 mod coordinated_delete;
@@ -242,7 +327,9 @@ pub use coordinated_delete::delete_song_coordinated;
 pub use metadata::QueueMetadataResolver;
 pub use recorder::{spawn_stats_recorder, CorePlaybackRecorder};
 pub use session::{restore_or_prime_playback, spawn_session_saver};
-pub use snapshot::{map_snapshot, spawn_forwarder};
+pub use snapshot::{
+    map_queue_projection, map_snapshot, queue_projection, spawn_forwarder, ui_queue_projection,
+};
 
 #[cfg(test)]
 mod tests;

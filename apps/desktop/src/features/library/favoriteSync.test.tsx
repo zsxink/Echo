@@ -50,20 +50,7 @@ function snapshotOf(song: typeof SONG) {
     mode: "sequential",
     currentTitle: null,
     currentCanImport: false,
-    queue: [
-      {
-        entryId: "entry-1",
-        songId: song.id,
-        title: null,
-        isCurrent: true,
-        failed: false,
-        canImport: false,
-        blocked: false,
-        artist: null,
-        durationS: null,
-        coverKey: null,
-      },
-    ],
+    queueRevision: 0,
   });
 }
 
@@ -167,7 +154,7 @@ describe("LibraryWorkspace — 定位正在播放的歌曲 (LIB-LOC)", () => {
     currentCoverKey: null,
     currentLyrics: null,
     currentCanImport: false,
-    queue: [],
+    queueRevision: 0,
   };
 
   function setCurrentSong(songId: string | null) {

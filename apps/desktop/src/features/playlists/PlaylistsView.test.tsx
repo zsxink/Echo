@@ -536,7 +536,7 @@ describe("PlaylistsView — 定位正在播放的歌曲 (PLA-LOC)", () => {
       currentCoverKey: null,
       currentLyrics: null,
       currentCanImport: false,
-      queue: [],
+      queueRevision: 0,
     });
   }
 

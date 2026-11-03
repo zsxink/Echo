@@ -1,6 +1,6 @@
 // Scenario → executable-command + evidence map for the 0.1.0 gate (task 13.9).
 //
-// 534 scenarios (spec-derived id set). A scenario's command is aggregated by
+// 550 scenarios (spec-derived id set). A scenario's command is aggregated by
 // domain; `evidence` names the tests/files the scenario actually depends on,
 // and run-scenario.mjs asserts each target was observed in the command output.
 // `manifest.json.scenarios[]` is generated from this table
@@ -215,6 +215,8 @@ export const SCENARIOS = {
 "DP-R03-S02": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::next_advances_in_order")], },
 "DP-R03-S03": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::previous_moves_back_within_5_seconds")], },
   "DP-R03-S04": { command: ATTEST("DP-R03-S04"), evidence: [attest("DP-R03-S04")] },
+  "DP-R03-S05": { command: VITEST_ALL, evidence: [vitest("src/features/player/QueuePanel.test.tsx", "renders a bounded number of rows for a long queue")] },
+  "DP-R03-S06": { command: VITEST_ALL, evidence: [vitest("src/features/player/QueuePanel.test.tsx", "moves the window with the scroll offset")] },
 "DP-R04-S01": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::error_skips_bad_entry_and_plays_next_sequential")], },
 "DP-R04-S02": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::error_advance_all_bad_stops_without_spin")], },
 "DP-R04-S03": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::error_advance_never_retries_same_entry_in_round")], },
@@ -262,6 +264,25 @@ export const SCENARIOS = {
 "DP-R17-S01": { command: DESK_ALL, evidence: [rust("prime_context_paused_preserves_settings_without_playing")], },
 "DP-R18-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx")], },
 "DP-R18-S02": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx")], },
+
+  // fix-player-memory-churn (#112): 分层下发传输状态、队列投影与音效快照。
+"DP-R19-S01": { command: DESK_ALL, evidence: [rust("runtime::player::tests::snapshot::snapshot_payload_carries_no_queue_entries_or_effects")] },
+"DP-R19-S02": { command: DESK_ALL, evidence: [
+  rust("runtime::player::tests::forwarder::snapshot_forwarder_emits_queue_projection_only_when_revision_changes"),
+  rust("runtime::player::tests::snapshot::map_queue_projection_carries_the_revision_it_was_built_at"),
+] },
+"DP-R19-S03": { command: DESK_ALL, evidence: [rust("runtime::player::tests::forwarder::snapshot_forwarder_emits_queue_projection_only_when_revision_changes")] },
+"DP-R19-S04": { command: DESK_ALL, evidence: [rust("runtime::player::tests::snapshot::snapshot_payload_size_does_not_depend_on_the_queue_length")] },
+"DP-R20-S01": { command: DESK_ALL, evidence: [rust("player::queue::tests::queue_revision_advances_on_every_projection_changing_mutation")] },
+"DP-R20-S02": { command: DESK_ALL, evidence: [rust("player::queue::tests::queue_revision_advances_on_every_projection_changing_mutation")] },
+"DP-R20-S03": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::coordinator_revision_advances_on_mode_and_failed_round_changes")] },
+"DP-R20-S04": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::queue_revision_survives_whole_queue_replacement")] },
+"DP-R20-S05": { command: DESK_ALL, evidence: [rust("player::queue::tests::queue_revision_is_unchanged_by_reads")] },
+"DP-R21-S01": { command: DESK_ALL, evidence: [rust("player::queue::tests::queue_projection_stays_within_budget_for_ten_thousand_entries")] },
+"DP-R21-S02": { command: DESK_ALL, evidence: [rust("player::queue::tests::queue_projection_order_and_content_unchanged")] },
+"DP-R22-S01": { command: VITEST_ALL, evidence: [vitest("src/player/playerStore.test.ts", "asks the desktop to re-publish the queue and effects on startup")] },
+"DP-R22-S02": { command: VITEST_ALL, evidence: [vitest("src/player/playerStore.test.ts", "ignores a queue projection that is not newer than the applied one")] },
+"DP-R22-S03": { command: VITEST_ALL, evidence: [vitest("src/player/playerStore.test.ts", "applies a newer queue projection as a whole")] },
 
   // immersive-lyrics
 "IL-R01-S01": { command: VITEST_ALL, evidence: [vitest("src/features/player/PlayerBar.test.tsx")], },
@@ -573,7 +594,7 @@ export const SCENARIOS = {
 "DAS-R20-S01": { command: VITEST_ALL, evidence: [
   vitest("src/features/library/SongRow.test.tsx", "shows the embedded artwork in the prototype's .cover.has-image shape"),
   vitest("src/features/player/PlayerBar.test.tsx", "renders the embedded artwork when the backend resolves a key"),
-  vitest("src/features/player/QueuePanel.test.tsx", "renders current and pending entries from the authoritative snapshot"),
+  vitest("src/features/player/QueuePanel.test.tsx", "renders current and pending entries from the authoritative projection"),
   vitest("src/features/library/CollectionDirectory.test.tsx", "shows artist cards and reuses the library song table with selection in the detail"),
   vitest("src/features/library/SongMenu.test.tsx", "renders the menu thumbnail through the list tier"),
 ], },

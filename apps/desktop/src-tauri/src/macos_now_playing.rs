@@ -8,6 +8,7 @@
 
 use std::sync::{Arc, OnceLock};
 
+use echo_core::application::ports::CoverCache;
 use echo_core::domain::state::PlaybackState;
 use echo_desktop::platform::status_menu::StatusMenuSink;
 use echo_desktop::player::port::{PlayerCommand, PlayerSnapshot};
@@ -32,7 +33,7 @@ pub struct NowPlayingProjection {
     pub position: Option<f64>,
     pub rate: f64,
     pub cover_key: Option<String>,
-    pub artwork: Option<Vec<u8>>,
+    pub artwork: Option<Arc<Vec<u8>>>,
 }
 
 #[must_use]
@@ -67,6 +68,77 @@ pub fn project(
         cover_key: non_empty(track.cover_key.clone()),
         artwork: None,
     })
+}
+
+/// Whether a cached Now Playing artwork object may be reused for `cover_key`.
+///
+/// Only the artwork built for exactly the same cover may be reused: a
+/// different cover needs its own decode, and a track without artwork must
+/// not publish the previous cover's image.
+#[must_use]
+pub fn artwork_is_reusable(cached_key: Option<&str>, cover_key: Option<&str>) -> bool {
+    matches!((cached_key, cover_key), (Some(cached), Some(next)) if cached == next)
+}
+
+/// The cover artwork published for the current track, cached per cover.
+///
+/// The Now Playing publication follows the snapshot cadence (10 Hz while
+/// playback is active). Reading a cover from disk and decoding it into a
+/// platform image costs megabytes per call, so the payload is read once per
+/// cover and reused until the cover changes. Re-reading it on every frame is
+/// what drove the main-process memory sawtooth of issue #112.
+///
+/// The cached outcome covers the "this cover has no image" case as well: an
+/// absent cover is remembered, so a track without artwork does not re-read the
+/// cache on every frame either.
+#[derive(Debug, Default)]
+pub struct ArtworkCache {
+    cover_key: Option<String>,
+    bytes: Option<Arc<Vec<u8>>>,
+}
+
+impl ArtworkCache {
+    /// A cache that has not seen any cover yet.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The artwork bytes for `cover_key`, reading them at most once per cover.
+    ///
+    /// The size-capped detail tier is used on purpose: the Now Playing
+    /// artwork is requested at 512×512, so decoding the multi-megabyte
+    /// original buys nothing and costs the memory this cache avoids.
+    ///
+    /// A read failure is remembered as "no artwork for this cover" rather
+    /// than retried on every frame: the failed read can be as expensive as
+    /// the successful one (the original is read before it can be decoded),
+    /// and the cover key changes with the track.
+    pub fn load(
+        &mut self,
+        cache: &dyn CoverCache,
+        cover_key: Option<&str>,
+    ) -> Option<Arc<Vec<u8>>> {
+        let Some(cover_key) = cover_key else {
+            self.cover_key = None;
+            self.bytes = None;
+            return None;
+        };
+        if self.cover_key.as_deref() == Some(cover_key) {
+            return self.bytes.clone();
+        }
+        let bytes = match cache.thumbnail(cover_key, true) {
+            Ok(Some(bytes)) => Some(Arc::new(bytes)),
+            Ok(None) => None,
+            Err(error) => {
+                tracing::warn!(%error, "failed to load the now playing artwork");
+                None
+            }
+        };
+        self.cover_key = Some(cover_key.to_owned());
+        self.bytes.clone_from(&bytes);
+        bytes
+    }
 }
 
 #[must_use]
@@ -106,7 +178,9 @@ impl RemoteCommand {
 
 #[cfg(target_os = "macos")]
 mod native {
-    use super::{Arc, NowPlayingProjection, OnceLock, RemoteCommand, StatusMenuSink};
+    use super::{
+        artwork_is_reusable, Arc, NowPlayingProjection, OnceLock, RemoteCommand, StatusMenuSink,
+    };
     use block2::RcBlock;
     use objc2::{
         define_class, extern_class, extern_methods, msg_send,
@@ -116,6 +190,7 @@ mod native {
     };
     use objc2_app_kit::NSImage;
     use objc2_foundation::{MainThreadMarker, NSData, NSDictionary, NSNumber, NSSize, NSString};
+    use std::cell::RefCell;
     use std::ptr::NonNull;
 
     extern_class!(
@@ -140,6 +215,17 @@ mod native {
     const HANDLER_SUCCESS: isize = 0;
     const HANDLER_FAILED: isize = 200;
     static NOW_PLAYING: OnceLock<usize> = OnceLock::new();
+
+    thread_local! {
+        /// The artwork object published for the current cover.
+        ///
+        /// Building it decodes the cover into a bitmap, which costs
+        /// megabytes. The publication follows the 10 Hz snapshot cadence, so
+        /// the object is built once per cover and reused until the cover
+        /// changes.
+        static ARTWORK: RefCell<Option<(String, Retained<MPMediaItemArtwork>)>> =
+            const { RefCell::new(None) };
+    }
 
     // These are exported NSString *constants, not their symbol names. Passing
     // `NSString::from_str("MPMediaItemPropertyTitle")` creates an unrelated
@@ -245,11 +331,56 @@ mod native {
     }
 
     pub fn clear() {
+        ARTWORK.with(|slot| {
+            *slot.borrow_mut() = None;
+        });
         let Some(address) = NOW_PLAYING.get() else {
             return;
         };
         let center = unsafe { &*(*address as *const AnyObject) };
         let _: () = unsafe { msg_send![center, setNowPlayingInfo: None::<&AnyObject>] };
+    }
+
+    /// Decode `bytes` into a `MediaPlayer` artwork object.
+    fn build_artwork(bytes: &[u8]) -> Option<Retained<MPMediaItemArtwork>> {
+        let data = NSData::with_bytes(bytes);
+        let image = NSImage::initWithData(NSImage::alloc(), &data)?;
+        let image_ptr = NonNull::from(image.as_ref());
+        let handler = RcBlock::new(move |_size: NSSize| {
+            let _keep_alive = &image;
+            image_ptr
+        });
+        // `publish` runs on the main thread, so the marker is always there;
+        // a missing one means the caller is off-thread, in which case the
+        // artwork is skipped instead of panicking.
+        let mtm = MainThreadMarker::new()?;
+        Some(MPMediaItemArtwork::initWithBoundsSize_requestHandler(
+            MPMediaItemArtwork::alloc(mtm),
+            NSSize::new(512.0, 512.0),
+            &handler,
+        ))
+    }
+
+    /// The artwork object for `cover_key`, decoded at most once per cover.
+    fn artwork_for(
+        cover_key: Option<&str>,
+        bytes: Option<&[u8]>,
+    ) -> Option<Retained<MPMediaItemArtwork>> {
+        ARTWORK.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            let (Some(cover_key), Some(bytes)) = (cover_key, bytes) else {
+                *slot = None;
+                return None;
+            };
+            if let Some((cached_key, artwork)) = slot.as_ref() {
+                if artwork_is_reusable(Some(cached_key.as_str()), Some(cover_key)) {
+                    return Some(artwork.clone());
+                }
+            }
+            let artwork = build_artwork(bytes)?;
+            *slot = Some((cover_key.to_owned(), artwork.clone()));
+            Some(artwork)
+        })
     }
 
     pub fn publish(projection: &NowPlayingProjection) {
@@ -286,24 +417,13 @@ mod native {
         }
         keys.push(rate_key);
         values.push(NSNumber::new_f64(projection.rate).into());
-        if let Some(bytes) = projection.artwork.as_ref() {
-            let data = NSData::with_bytes(bytes);
-            if let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) {
-                let image_ptr = NonNull::from(image.as_ref());
-                let handler = RcBlock::new(move |_size: NSSize| {
-                    let _keep_alive = &image;
-                    image_ptr
-                });
-                let mtm = MainThreadMarker::new().expect("publish runs on main thread");
-                let artwork = MPMediaItemArtwork::initWithBoundsSize_requestHandler(
-                    MPMediaItemArtwork::alloc(mtm),
-                    NSSize::new(512.0, 512.0),
-                    &handler,
-                );
-                // SAFETY: see the MediaPlayer key constants above.
-                keys.push(unsafe { &*MPMediaItemPropertyArtwork });
-                values.push(artwork.into());
-            }
+        if let Some(artwork) = artwork_for(
+            projection.cover_key.as_deref(),
+            projection.artwork.as_ref().map(|bytes| bytes.as_slice()),
+        ) {
+            // SAFETY: see the MediaPlayer key constants above.
+            keys.push(unsafe { &*MPMediaItemPropertyArtwork });
+            values.push(artwork.into());
         }
         let object_refs: Vec<&AnyObject> = values.iter().map(|value| &**value).collect();
         let info = NSDictionary::<NSString, AnyObject>::from_slices(&keys, &object_refs);
@@ -347,6 +467,76 @@ pub fn publish(_projection: &NowPlayingProjection) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::sync::Mutex;
+
+    use echo_core::error::Error;
+
+    /// A cover cache that records what the Now Playing path asks for.
+    #[derive(Default)]
+    struct FakeCoverCache {
+        thumbnails: Mutex<Vec<(String, bool)>>,
+        originals: Mutex<usize>,
+        payload: Option<Vec<u8>>,
+        failure: bool,
+    }
+
+    impl FakeCoverCache {
+        fn with_payload(payload: Vec<u8>) -> Self {
+            Self {
+                payload: Some(payload),
+                ..Self::default()
+            }
+        }
+
+        fn failing() -> Self {
+            Self {
+                failure: true,
+                ..Self::default()
+            }
+        }
+
+        fn thumbnail_calls(&self) -> Vec<(String, bool)> {
+            self.thumbnails
+                .lock()
+                .expect("fake cover cache lock")
+                .clone()
+        }
+
+        fn original_calls(&self) -> usize {
+            *self.originals.lock().expect("fake cover cache lock")
+        }
+    }
+
+    impl CoverCache for FakeCoverCache {
+        fn put(&self, _bytes: &[u8], _mime: &str) -> Result<String, Error> {
+            Ok("fake-asset".to_owned())
+        }
+
+        fn get(&self, _asset_key: &str) -> Result<Option<Vec<u8>>, Error> {
+            *self.originals.lock().expect("fake cover cache lock") += 1;
+            Ok(self.payload.clone())
+        }
+
+        fn thumbnail(&self, asset_key: &str, detail: bool) -> Result<Option<Vec<u8>>, Error> {
+            self.thumbnails
+                .lock()
+                .expect("fake cover cache lock")
+                .push((asset_key.to_owned(), detail));
+            if self.failure {
+                return Err(Error::io(
+                    "read cover",
+                    std::io::Error::other("injected cover read failure"),
+                    std::path::PathBuf::from("/fake/cover"),
+                ));
+            }
+            Ok(self.payload.clone())
+        }
+
+        fn gc(&self, _referenced_keys: &[String]) -> Result<(), Error> {
+            Ok(())
+        }
+    }
 
     fn snapshot(
         state: PlaybackState,
@@ -431,5 +621,67 @@ mod tests {
             PlayerCommand::Previous
         );
         assert_eq!(RemoteCommand::Next.player_command(), PlayerCommand::Next);
+    }
+
+    #[test]
+    fn now_playing_artwork_is_read_once_per_cover() {
+        let cache = FakeCoverCache::with_payload(vec![1, 2, 3]);
+        let mut artwork = ArtworkCache::new();
+        for _ in 0..10 {
+            let loaded = artwork.load(&cache, Some("cover-a"));
+            assert_eq!(
+                loaded.map(|bytes| bytes.as_ref().clone()),
+                Some(vec![1, 2, 3])
+            );
+        }
+        assert_eq!(cache.thumbnail_calls(), vec![("cover-a".to_owned(), true)]);
+        // The full-size original is never read: the Now Playing artwork is
+        // requested at 512×512, so only the size-capped tier is needed.
+        assert_eq!(cache.original_calls(), 0);
+    }
+
+    #[test]
+    fn now_playing_artwork_is_read_again_when_the_cover_changes() {
+        let cache = FakeCoverCache::with_payload(vec![1]);
+        let mut artwork = ArtworkCache::new();
+        artwork.load(&cache, Some("cover-a"));
+        artwork.load(&cache, Some("cover-b"));
+        assert_eq!(cache.thumbnail_calls().len(), 2);
+    }
+
+    #[test]
+    fn now_playing_artwork_is_not_read_again_for_a_cover_without_an_image() {
+        let cache = FakeCoverCache::default();
+        let mut artwork = ArtworkCache::new();
+        assert!(artwork.load(&cache, Some("cover-a")).is_none());
+        assert!(artwork.load(&cache, Some("cover-a")).is_none());
+        assert_eq!(cache.thumbnail_calls().len(), 1);
+    }
+
+    #[test]
+    fn now_playing_artwork_is_not_read_again_after_a_failed_read() {
+        let cache = FakeCoverCache::failing();
+        let mut artwork = ArtworkCache::new();
+        assert!(artwork.load(&cache, Some("cover-a")).is_none());
+        assert!(artwork.load(&cache, Some("cover-a")).is_none());
+        assert_eq!(cache.thumbnail_calls().len(), 1);
+    }
+
+    #[test]
+    fn now_playing_artwork_is_dropped_when_the_track_has_no_cover() {
+        let cache = FakeCoverCache::with_payload(vec![1]);
+        let mut artwork = ArtworkCache::new();
+        assert!(artwork.load(&cache, Some("cover-a")).is_some());
+        assert!(artwork.load(&cache, None).is_none());
+        assert!(artwork.load(&cache, Some("cover-b")).is_some());
+        assert_eq!(cache.thumbnail_calls().len(), 2);
+    }
+
+    #[test]
+    fn now_playing_artwork_object_is_reused_only_for_the_same_cover() {
+        assert!(artwork_is_reusable(Some("cover-a"), Some("cover-a")));
+        assert!(!artwork_is_reusable(Some("cover-a"), Some("cover-b")));
+        assert!(!artwork_is_reusable(Some("cover-a"), None));
+        assert!(!artwork_is_reusable(None, Some("cover-a")));
     }
 }

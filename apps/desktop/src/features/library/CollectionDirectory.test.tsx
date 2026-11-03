@@ -373,7 +373,7 @@ describe("CollectionDirectory — 聚合详情定位 (DIR-LOC)", () => {
     currentCoverKey: null,
     currentLyrics: null,
     currentCanImport: false,
-    queue: [],
+    queueRevision: 0,
   };
 
   function setCurrentSong(songId: string | null) {

@@ -152,6 +152,8 @@ pub fn analyze(
 
 fn peak_gain(coefficients: &[Biquad; 10], sample_rate: u32) -> f64 {
     const INTERVALS: u32 = 32768;
+    #[cfg(test)]
+    peak_scan::record();
     let step = f64::from(sample_rate) / (2.0 * f64::from(INTERVALS));
     let evaluate = |frequency| response_db(coefficients, sample_rate, frequency, 0.0);
     let mut maximum = evaluate(0.0).max(evaluate(f64::from(sample_rate) / 2.0));
@@ -245,3 +247,27 @@ pub(crate) fn intermediate_eq_peak_db(gains: [f64; 10], sample_rate: u32) -> f64
 
 #[cfg(test)]
 mod tests;
+
+/// Counts the peak sweeps a test thread performed.
+///
+/// The counter is thread-local on purpose: the test suite runs cases in
+/// parallel, and a process-wide counter would report another case's sweep as
+/// this case's own.
+#[cfg(test)]
+pub(crate) mod peak_scan {
+    use std::cell::Cell;
+
+    thread_local! {
+        static SCANS: Cell<u64> = const { Cell::new(0) };
+    }
+
+    /// Record one peak sweep.
+    pub fn record() {
+        SCANS.with(|scans| scans.set(scans.get() + 1));
+    }
+
+    /// The number of peak sweeps this thread performed.
+    pub fn count() -> u64 {
+        SCANS.with(Cell::get)
+    }
+}
