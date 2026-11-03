@@ -57,6 +57,12 @@ describe("SettingsView library rescan", () => {
     render(<SettingsView onClose={() => undefined} />);
 
     const button = await screen.findByTestId("rescan-library-button");
+    // The button stays disabled until the asynchronous `library_status` read
+    // resolves the active root. Clicking it while disabled is a no-op, so
+    // wait for it to become clickable before firing.
+    await waitFor(() => {
+      expect(button).toBeEnabled();
+    });
     fireEvent.click(button);
 
     await waitFor(() => {
@@ -92,7 +98,11 @@ describe("SettingsView library rescan", () => {
     });
     render(<SettingsView onClose={() => undefined} />);
 
-    fireEvent.click(await screen.findByTestId("rescan-library-button"));
+    const button = await screen.findByTestId("rescan-library-button");
+    await waitFor(() => {
+      expect(button).toBeEnabled();
+    });
+    fireEvent.click(button);
     expect(await screen.findByTestId("scan-report-dialog")).toBeInTheDocument();
     expect(await screen.findByText("media/重复.flac")).toBeInTheDocument();
     expect(await screen.findByText("内容已由另一首歌曲收录")).toBeInTheDocument();
@@ -142,7 +152,11 @@ describe("SettingsView library rescan", () => {
     mocks.setInvoke("start_scan", new Error("scan failed"));
     render(<SettingsView onClose={() => undefined} />);
 
-    fireEvent.click(await screen.findByTestId("rescan-library-button"));
+    const button = await screen.findByTestId("rescan-library-button");
+    await waitFor(() => {
+      expect(button).toBeEnabled();
+    });
+    fireEvent.click(button);
 
     expect(await screen.findByRole("status")).toHaveTextContent("音乐库扫描失败");
   });
@@ -162,6 +176,13 @@ describe("SettingsView LAN sync preferences", () => {
     };
     mocks.setInvoke("sync_status", connected);
     renderSyncSettings();
+    // The panel can only tell a foreign-root event from its own once the
+    // active library root is known, and `library_status` resolves
+    // asynchronously. The rescan button is enabled exactly when the root has
+    // arrived, so wait for it before emitting cross-root events.
+    await waitFor(() => {
+      expect(screen.getByTestId("rescan-library-button")).toBeEnabled();
+    });
     await screen.findByText("已连接");
     act(() =>
       mocks.emit("sync://status", {
