@@ -26,6 +26,27 @@
 
 `Queue::view_entries()` 用 `Vec::contains` 判重、线性 `get()` 查条目，随机模式下还对 `pending` 与 `shuffle_bag` 各做一次线性查找 → 每帧 O(n²)。480 条时约 23 万次 UUID 比较。
 
+### 第二个根因：Now Playing 每帧重读重解码封面
+
+把上面三条都改掉之后，播放态的内存增长**没有消失**。同条件 A/B（同一份 480 首队列、同一首曲目、同一播放状态、同样 120 秒采样）显示改前与改后的构建增长曲线一致：
+
+| 构建 | 起始（0–52 s） | 52 s 后 | 终点 `footprint` | `vmmap` 物理占用 | 峰值 |
+|---|---|---|---|---|---|
+| 改前 | 86–116 MB | `Malloc Large` 4.6 → 375 MB，块数 2 → 96 | 248 MB | 346.0M | 497.5M |
+| 拆流后 | 58–73 MB | `Malloc Large` 3.6 → 398 MB，块数 1 → 102 | 216 MB | 325.9M | 471.1M |
+| 拆流 + 封面缓存（本 change 完成） | 50–61 MB | `Malloc Large` **不随帧数增长**：峰值 31 MB / 3 块后回落到 0 | 50 MB | 49.8M | 86.3M |
+
+增长的起点精确落在**换歌**那一刻——第一帧遇到有封面的资料库歌曲。`sample` 的调用链给出元凶：
+
+```
+spawn_macos_now_playing_refresh（10 Hz 快照线程）
+  → DiskCoverCache::original → std::fs::read → _xzm_malloc_large_huge
+```
+
+本机封面原始文件实测 409 个 / 158.0 MB / 均值 0.39 MB / **最大 4.90 MB**。每帧一次「读原始尺寸 + 拷 `NSData` + 解码 `NSImage` + 新建 `MPMediaItemArtwork`」就是每帧数 MB 的大块分配。
+
+修复后的同条件复测直接证实了这条链路：`sample` 中 Now Playing 线程的 `DiskCoverCache::original` 采样从 **7 → 0**（只做拆流时仍是 7）。`Malloc Large` 剩下的 31 MB / 3 块峰值出现在首次生成 512 px 缩略图时（一次性解码原始封面并落盘为 `thumb-512.bin`），之后回落且不再复现。
+
 ### 当前实现核对
 
 | 位置 | 现状 |
@@ -39,6 +60,8 @@
 | `crates/echo-desktop/src/player/queue.rs:133-161` | `Queue` **没有任何修订号字段** |
 | `crates/echo-desktop/src/player/coordinator.rs:40-57` | 协调器持有 `queue` / `mode` / `failed_round`，**没有**修订号 |
 | `crates/echo-desktop/src/effects_service/mod.rs:80-86` | `capture()` 每次调用都 `saturating_add(1)` → `snapshot_sequence` 是**捕获计数**，不是变更计数 |
+| `apps/desktop/src-tauri/src/main.rs:309-314` | Now Playing 刷新线程每帧 `cover_cache.get(cover_key)` → **原始尺寸**封面整份读盘 |
+| `apps/desktop/src-tauri/src/macos_now_playing.rs:289-307` | 每帧 `NSData::with_bytes` + `NSImage::initWithData` + 新建 `MPMediaItemArtwork`，每帧重新 `setNowPlayingInfo:` |
 | `apps/desktop/src/player/playerStore.ts:103-110` | `publish()` 整体替换快照对象 → 每帧新的队列数组标识 → 面板每帧重渲染 |
 | `apps/desktop/src/features/player/QueuePanel.tsx:124-161` | `entries.map(...)` 为**每个**队列条目渲染一行 `<button>`，无窗口化 |
 
@@ -50,6 +73,7 @@
 - 队列投影与音效快照各自按「内容确实变化」下发，变化判定必须是 O(1) 或 O(内容) 且不重复计算昂贵派生量。
 - 队列投影构造为 O(n)。
 - 队列面板的 DOM 行数与队列长度解耦。
+- Now Playing 的封面数据按封面标识只读取一次、只解码一次；位置帧推进不再触发封面读盘与解码。
 - 队列语义、音效计算结果、持久化与恢复语义**一字不动**。
 
 **Non-Goals**
@@ -130,6 +154,35 @@ Tauri 事件只在有监听者时才投递。前端注册监听晚于后端启�
 
 命令只触发下发、不返回大载荷，避免启动期再产生一次 148 KB 的命令响应。
 
+### 9. Now Playing 的封面数据按封面标识缓存
+
+macOS 的 Now Playing 刷新线程订阅的是**同一个 10 Hz 快照流**。拆流之后，这条链路上仍然留着一次每帧的昂贵工作：每帧都把**原始尺寸**封面整份读进内存、拷进 `NSData`、解码成 `NSImage`、新建 `MPMediaItemArtwork`，再 10 Hz 地重新 `setNowPlayingInfo:`。
+
+拆流前后的同条件 A/B 显示这条链路的增长曲线**完全一致**（见「实测复核」），说明它是与载荷体积**独立**的第二个根因。本机实测的封面原始文件共 158.0 MB / 409 个，最大 4.90 MB——每帧一次这样的读+解码，就是每帧数 MB 落进 malloc 的 large zone。
+
+**为什么不能只降发布频率。** Now Playing 的进度要跟得上播放位置，降频会让控制中心的进度条变粗糙；而只要每次发布都重新解码，降频只是把 churn 摊薄，没有消除。
+
+**为什么不能只换成小图。** 光换小图仍然每帧解码一次；每帧一次 512 px 的解码依旧是每帧一次大块分配。
+
+**做法：封面数据按封面标识缓存，只处理一次。**
+
+| 环节 | 改动前 | 改动后 |
+|---|---|---|
+| 读盘 | 每帧 `CoverCache::get`（**原始尺寸**） | 每封面一次 `CoverCache::thumbnail(key, detail=true)`（512 px 展示档位） |
+| 解码 | 每帧一次 `NSImage::initWithData` | 每封面一次，构建好的 `MPMediaItemArtwork` 按封面标识复用 |
+| 发布 | 每帧重建整份 `NSDictionary` | 每帧重建 `NSDictionary`，但封面字段复用同一个对象 |
+
+展示档位的选择有规格依据：Now Playing 的封面请求尺寸就是 512×512（`NSSize::new(512.0, 512.0)`），用 512 px 的档位填充它没有任何画质损失，却把每帧的读盘与解码从「原始尺寸」降到「展示尺寸」，并让解码结果可以按封面标识复用。
+
+**缓存放在哪一层。** 两级缓存，各管一件事：
+
+- **字节级**（`ArtworkCache`，跨平台、可测）：在 Now Playing 刷新线程里，按封面标识记住「这个封面读过没有、读到了什么」。同一封面只读一次；**没有封面**与**读失败**也要记住，否则每帧仍会重复读盘（读失败路径尤其贵：原图要先读出来才谈得上解码）。
+- **对象级**（macOS native 模块的线程局部缓存）：`MPMediaItemArtwork` 一旦构建好就按封面标识复用，避免每帧重新解码。线程局部而非全局静态——`MPMediaItemArtwork` 是主线程对象，且发布路径本来就在主线程。
+
+**读失败为什么不重试。** 失败的读可能和成功的一样贵（原图要先读出来才谈得上解码失败），每帧重试会把一次偶发故障放大成每秒十次的大块读。失败按「这个封面没有可用图」记住，随封面标识变化自然重试。失败本身用结构化日志记一次（`tracing::warn!`），不再静默吞掉。
+
+**行为不变的部分。** 发布的字段集合、字段取值、刷新节奏都不变；变的只是封面数据**怎么取得**。换歌（封面标识变化）时照常重新读取并重新解码，封面不可用时照常省略封面字段。
+
 ## 兼容与迁移
 
 **IPC 契约变化（事件）**：
@@ -146,7 +199,7 @@ Tauri 事件只在有监听者时才投递。前端注册监听晚于后端启�
 
 **生成代码**：`apps/desktop/src/ipc/ipc-types.generated.ts` 由 `pnpm --filter desktop generate:ipc` 重新生成，**不得手工修改**（CODE_STANDARDS §2）。
 
-**规格 ID 位移**：`desktop-playback` 新增 4 条 Requirement、`audio-effects` 新增 1 条，会使这两份主规格中后续 Requirement 的场景 ID 顺延。场景登记（`docs/traceability.md`、`scripts/verify/manifest.json`、`scripts/verify/scenario-commands.mjs`）在实现完成、验证通过、**归档时**统一重生成；propose 阶段不动主规格与登记文件。
+**规格 ID 位移**：`desktop-playback` 新增 4 条 Requirement，会使该主规格中后续 Requirement 的场景 ID 顺延。`audio-effects` 与 `macos-now-playing-menu` 未登记场景前缀，其新增要求不产生场景 ID。场景登记（`docs/traceability.md`、`scripts/verify/manifest.json`、`scripts/verify/scenario-commands.mjs`）在实现完成、验证通过、**归档时**统一重生成；propose 阶段不动主规格与登记文件。
 
 **行为兼容**：队列语义（顺序、身份、当前项判定、优先区、乱序轮次）、音效计算结果、会话恢复与持久化**均不变**。`player_sync` 只补发当前状态，不改变任何状态。
 
@@ -154,8 +207,8 @@ Tauri 事件只在有监听者时才投递。前端注册监听晚于后端启�
 
 | 规范条款 | 本 change 的落点 |
 |---|---|
-| §3 架构与依赖方向 | 变更全在 `echo-desktop`（Rust 平台层）与 React 表现层；`echo-core` **零改动**。`ipc/effects.rs` 仍只做 DTO 转换，不反向依赖 `effects_service` |
-| §2.1 模块与文件组织 | 新增逻辑落在既有文件内（`player/queue.rs`、`player/coordinator.rs`、`runtime/player/snapshot.rs`、`runtime/player/mod.rs`）；不新增巨型文件 |
+| §3 架构与依赖方向 | 变更全在 `echo-desktop`（Rust 平台层）、`echo-app`（macOS 外壳）与 React 表现层；`echo-core` **零改动**。`ipc/effects.rs` 仍只做 DTO 转换，不反向依赖 `effects_service` |
+| §2.1 模块与文件组织 | 新增逻辑落在既有文件内（`player/queue.rs`、`player/coordinator.rs`、`runtime/player/snapshot.rs`、`runtime/player/mod.rs`、`macos_now_playing.rs`）；其中 `player/queue.rs`（928→1030 行）与 `apps/desktop/e2e/mock-bridge.ts`（992→1067 行）因本 change 的改动越过 1000 行硬上限，按功能边界拆为同目录子模块（`player/queue/{item,revision,ordering,mutation}.rs`、`e2e/mock-bridge-*.ts`），公共入口路径（`crate::player::queue::*`、`MockBridge`、`installMockBridge`）不变 |
 | §4.1 格式与静态检查 | `cargo fmt --all --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings` |
 | §4.2 错误处理 | 修订号比较、投影构造失败等路径不得 panic；沿用现有 `expect` 仅限已由类型证明不可失败的锁获取 |
 | §6 React 与 TypeScript | `playerStore` 新增队列槽位与 `usePlayerQueue()`；`QueuePanel` 保持单一职责（展示与滚动编排） |
@@ -171,7 +224,21 @@ Tauri 事件只在有监听者时才投递。前端注册监听晚于后端启�
 **性能验证（本次的核心证据）**：固定条件复测——同一曲库规模（本机 480 首）、前台态、同一播放状态、相同采样时长与间隔，同时记录 `footprint` 总量与 `Malloc Large` 分量。
 
 - 判定：10 Hz 位置流不再产生 ≥128 KB 的大块分配 → `Malloc Large` 分量在播放态不再出现 50–80 MB 的周期性回落，`footprint` 摆幅显著收窄。
+- 判定：Now Playing 的封面读取与解码不再是每帧一次 → 换歌后 `Malloc Large` 不再随帧数增长（此前 120 秒采样里从 4 MB 涨到 400 MB），`sample` 中 `spawn_macos_now_playing_refresh` 线程不再出现 `DiskCoverCache::original` / `std::fs::read` 的 on-CPU 采样。
 - 判定：`sample` 抓取的 `echo-snapshot-forwarder` 线程中，落在 `peak_gain` 的采样占比显著下降（当前 203/220）。
+
+**复测结果（本 change 完成后的同条件 A/B，2026-11-03）**：
+
+| 指标 | 改前 | 只做拆流 | 本 change 完成 |
+|---|---|---|---|
+| 播放态 `Malloc Large` 峰值 | 375 MB / 96 块 | 398 MB / 102 块 | **31 MB / 3 块**（一次性缩略图生成后回落至 0） |
+| `footprint` 终点 | 248 MB | 216 MB | **50 MB** |
+| `vmmap` 物理占用终点 | 346.0M | 325.9M | **49.8M** |
+| `vmmap` 物理占用峰值 | 497.5M | 471.1M | **86.3M** |
+| forwarder 线程 `peak_gain` 采样 | 202 / 1633 | 0 / 1575 | **0 / 1649** |
+| Now Playing 线程 `DiskCoverCache::original` 采样 | 7 | 7 | **0** |
+
+封面数据仍然到达系统 Now Playing：复测期间 `thumb-512.bin` 在 07:52 / 07:54 / 07:57 被正常生成（一次性解码原始封面并落盘），随后同一封面的重复帧不再读盘、不再解码。
 
 **复杂度验证**：`Queue::view_entries()` 在 10000 条目下的构造耗时有明确上限（见规格要求），为 O(n²) 实现预留足够的判别裕度。
 
@@ -186,6 +253,9 @@ Tauri 事件只在有监听者时才投递。前端注册监听晚于后端启�
 | `snapshot_sequence` 语义变更影响既有前端排序 | 序号仍然单调，前端排序逻辑不变；由 `capture()` 的比较保证「内容相同则序号不变」 |
 | 音效记忆化的键覆盖不全导致漏算 | 键取 `(音效文档, 处理环境)`，覆盖 `analyze` 的全部输入；`response_points` 依赖分析结果与采样率，随环境键一并失效 |
 | 前后端事件契约短暂不一致（开发期） | 任务顺序保证前端订阅逻辑与后端发射逻辑同批完成；契约变化在 design 中显式记录 |
+| 封面缓存把「没有封面」记成永久缺席 | 缺席只对当前封面标识成立；换歌（标识变化）即重新读取。封面对应的资产键是内容哈希，同键即同内容 |
+| 封面读失败后不再重试，该曲目整程没有封面 | 失败的读可能与成功的一样贵，每帧重试会把偶发故障放大成每秒十次大块读；失败记一次结构化日志（`tracing::warn!`），换歌自然重试 |
+| 展示档位的图在控制中心里偏糊 | 展示位本身就是 512×512，档位与展示位等大，无额外损失；原始尺寸的图在这个尺寸下并无信息增量 |
 
 ## Migration Plan
 

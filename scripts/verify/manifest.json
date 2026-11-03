@@ -2589,7 +2589,7 @@
         {
           "kind": "vitest",
           "target": "src/features/player/QueuePanel.test.tsx",
-          "name": "renders current and pending entries from the authoritative snapshot"
+          "name": "renders current and pending entries from the authoritative projection"
         },
         {
           "kind": "vitest",
@@ -2987,6 +2987,30 @@
         {
           "kind": "attestation",
           "target": "DP-R03-S04"
+        }
+      ]
+    },
+    {
+      "id": "DP-R03-S05",
+      "title": "面板按可视行渲染",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/player/QueuePanel.test.tsx",
+          "name": "renders a bounded number of rows for a long queue"
+        }
+      ]
+    },
+    {
+      "id": "DP-R03-S06",
+      "title": "滚动可达全部条目",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/player/QueuePanel.test.tsx",
+          "name": "moves the window with the scroll offset"
         }
       ]
     },
@@ -3514,6 +3538,167 @@
         {
           "kind": "vitest",
           "target": "src/features/player/PlayerBar.test.tsx"
+        }
+      ]
+    },
+    {
+      "id": "DP-R19-S01",
+      "title": "位置流只承载传输状态",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "runtime::player::tests::snapshot::snapshot_payload_carries_no_queue_entries_or_effects"
+        }
+      ]
+    },
+    {
+      "id": "DP-R19-S02",
+      "title": "队列修订号变化时整份下发队列投影",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "runtime::player::tests::forwarder::snapshot_forwarder_emits_queue_projection_only_when_revision_changes"
+        },
+        {
+          "kind": "rust",
+          "target": "runtime::player::tests::snapshot::map_queue_projection_carries_the_revision_it_was_built_at"
+        }
+      ]
+    },
+    {
+      "id": "DP-R19-S03",
+      "title": "队列修订号未变化时不重复下发",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "runtime::player::tests::forwarder::snapshot_forwarder_emits_queue_projection_only_when_revision_changes"
+        }
+      ]
+    },
+    {
+      "id": "DP-R19-S04",
+      "title": "位置推进不触发队列投影",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "runtime::player::tests::snapshot::snapshot_payload_size_does_not_depend_on_the_queue_length"
+        }
+      ]
+    },
+    {
+      "id": "DP-R20-S01",
+      "title": "队列内容变化推进修订号",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "player::queue::tests::queue_revision_advances_on_every_projection_changing_mutation"
+        }
+      ]
+    },
+    {
+      "id": "DP-R20-S02",
+      "title": "切歌推进修订号",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "player::queue::tests::queue_revision_advances_on_every_projection_changing_mutation"
+        }
+      ]
+    },
+    {
+      "id": "DP-R20-S03",
+      "title": "模式与失败集合变化推进修订号",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "player::coordinator::tests::coordinator_revision_advances_on_mode_and_failed_round_changes"
+        }
+      ]
+    },
+    {
+      "id": "DP-R20-S04",
+      "title": "队列整体替换不使修订号归零",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "player::coordinator::tests::queue_revision_survives_whole_queue_replacement"
+        }
+      ]
+    },
+    {
+      "id": "DP-R20-S05",
+      "title": "播放位置推进不推进修订号",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "player::queue::tests::queue_revision_is_unchanged_by_reads"
+        }
+      ]
+    },
+    {
+      "id": "DP-R21-S01",
+      "title": "大队列的投影构造保持在预算内",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "player::queue::tests::queue_projection_stays_within_budget_for_ten_thousand_entries"
+        }
+      ]
+    },
+    {
+      "id": "DP-R21-S02",
+      "title": "投影顺序与内容不变",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "player::queue::tests::queue_projection_order_and_content_unchanged"
+        }
+      ]
+    },
+    {
+      "id": "DP-R22-S01",
+      "title": "前端就绪后获得完整队列",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/player/playerStore.test.ts",
+          "name": "asks the desktop to re-publish the queue and effects on startup"
+        }
+      ]
+    },
+    {
+      "id": "DP-R22-S02",
+      "title": "过期修订号被忽略",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/player/playerStore.test.ts",
+          "name": "ignores a queue projection that is not newer than the applied one"
+        }
+      ]
+    },
+    {
+      "id": "DP-R22-S03",
+      "title": "同步与事件先后到达不产生回退",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/player/playerStore.test.ts",
+          "name": "applies a newer queue projection as a whole"
         }
       ]
     },

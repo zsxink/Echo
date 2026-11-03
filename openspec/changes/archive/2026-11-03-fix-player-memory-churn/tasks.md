@@ -1,7 +1,7 @@
 ## 1. 规格基线
 
 - [x] 1.1 复核本 change 的 delta 与主规格的对应关系：`desktop-playback` 新增 4 条 Requirement（归档后顺延为 R19–R22）、修改 1 条（R03 播放队列面板展示）；`audio-effects` 新增 2 条 Requirement（归档后顺延为 R07–R08）。用 `git diff origin/main -- openspec/specs/` 确认 propose 阶段**未**改动主规格
-- [x] 1.2 运行 `pnpm exec openspec validate split-player-snapshot-streams --strict`，确认通过
+- [x] 1.2 运行 `pnpm exec openspec validate fix-player-memory-churn --strict`，确认通过
 - [x] 1.3 运行 `pnpm exec openspec validate --archived`，确认既有归档规格未被破坏
 
 ## 2. 队列修订号（DP-R20）
@@ -52,14 +52,25 @@
 - [x] 7.1 运行 `cargo fmt --all --check` 与 `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - [x] 7.2 运行 `cargo test --workspace`
 - [x] 7.3 运行 `pnpm --dir apps/desktop test:e2e`，确认播放队列面板的端到端路径无回归
-- [ ] 7.4 真机复测并把数据写进 PR 描述：固定条件（本机 480 首曲库、前台播放、同一播放状态、相同采样时长与间隔）下记录 `footprint -p <pid>` 的总量与 `Malloc Large` 分量；确认播放态下不再出现 50–80 MB 的周期性回落
-- [ ] 7.5 真机复测 CPU：`sample <pid> 5` 抓取 `echo-snapshot-forwarder` 线程，确认落在 `peak_gain` 的采样占比相对改动前（203/220）显著下降
-- [x] 7.6 运行 `pnpm exec openspec validate split-player-snapshot-streams --strict`
+- [x] 7.4 真机复测并把数据写进 PR 描述：固定条件（本机 480 首曲库、前台播放、同一播放状态、相同采样时长与间隔）下记录 `footprint -p <pid>` 的总量与 `Malloc Large` 分量；确认播放态下不再出现 50–80 MB 的周期性回落
+- [x] 7.5 真机复测 CPU：`sample <pid> 5` 抓取 `echo-snapshot-forwarder` 线程，确认落在 `peak_gain` 的采样占比相对改动前（203/220）显著下降
+- [x] 7.6 运行 `pnpm exec openspec validate fix-player-memory-churn --strict`
+- [x] 7.7 拆分本 change 改动后越过 1000 行硬上限的两个源文件（`crates/echo-desktop/src/player/queue.rs` 928→1030 行、`apps/desktop/e2e/mock-bridge.ts` 992→1067 行），按 `openspec/CODE_STANDARDS.md` §2.1 沿功能边界拆分（队列：条目内容 / 修订号 / 顺序推进 / 内容变更；mock bridge：命令契约 / 处理器分组），公共入口路径（`crate::player::queue::*`、`MockBridge`、`installMockBridge`）保持不变
 
-## 8. 场景登记与归档
+## 8. Now Playing 的封面数据按封面标识缓存（`macos-now-playing-menu` 新增要求，归档后为 R05）
 
-- [ ] 8.1 在 `scripts/verify/scenario-commands.mjs` 为新增的 21 个场景（DP-R19 4 条、DP-R20 5 条、DP-R21 2 条、DP-R22 3 条、AE-R07 4 条、AE-R08 3 条）填入已实现且可执行的 command 与 evidence，再运行 `node scripts/verify/gen-scenario-manifests.mjs --write` 重新生成 `scripts/verify/manifest.json` 与 `tests/scenarios/*.yaml`（**不得手工编辑 manifest**）
-- [ ] 8.2 同步 `docs/traceability.md`，运行 `node scripts/verify/reconcile-scenarios.mjs` 确认 `spec = trace = manifest` 三方一致、无 mismatches
-- [ ] 8.3 运行 `node scripts/verify/validate-scenario-commands.mjs` 与 `node scripts/verify/check-scenario-churn.mjs`，确认命令有效且未突破冻结上限
-- [ ] 8.4 **独占运行** `pnpm verify:governance` 完整门禁，确认全部检查通过（该门禁须独占运行，并行 cargo 或其它扫描会让其中的墙钟断言误红）
-- [ ] 8.5 归档本 change（`openspec archive`），确认主规格新增 5 条 Requirement、场景三方一致、`pnpm exec openspec validate --archived` 通过
+- [x] 8.1 在 `apps/desktop/src-tauri/src/macos_now_playing.rs` 新增 `ArtworkCache`：按封面标识记住「这个封面读过没有、读到了什么」，同一封面只读一次；**没有封面**与**读失败**也要记住，避免每帧重复读盘
+- [x] 8.2 封面读取改用 `CoverCache::thumbnail(key, detail=true)`（512 px 展示档位），MUST NOT 再用 `CoverCache::get` 读原始尺寸封面；读失败用结构化日志记一次（`tracing::warn!`），不再静默吞掉
+- [x] 8.3 在 macOS native 模块加线程局部的 `MPMediaItemArtwork` 缓存：按封面标识复用已构建的对象，封面变化时重新构建，无封面时丢弃；顺带把 `MainThreadMarker::new().expect(...)` 换成可跳过的主线程检查，去掉业务路径上的 panic
+- [x] 8.4 改 `apps/desktop/src-tauri/src/main.rs` 的 Now Playing 刷新线程：用 `ArtworkCache` 取代每帧的 `cover_cache.get(cover_key)`
+- [x] 8.5 补单元测试 `now_playing_artwork_is_read_once_per_cover`、`now_playing_artwork_is_read_again_when_the_cover_changes`、`now_playing_artwork_is_not_read_again_for_a_cover_without_an_image`、`now_playing_artwork_is_not_read_again_after_a_failed_read`、`now_playing_artwork_is_dropped_when_the_track_has_no_cover`、`now_playing_artwork_object_is_reused_only_for_the_same_cover`，运行 `cargo test -p echo-app --all-features`
+- [x] 8.6 运行 `cargo clippy -p echo-app --all-targets --all-features -- -D warnings` 与 `cargo fmt --all --check`，确认通过
+
+## 9. 场景登记与归档
+
+- [x] 9.1 在 `scripts/verify/scenario-commands.mjs` 为新增的 16 个场景（DP-R19 4 条、DP-R20 5 条、DP-R21 2 条、DP-R22 3 条、DP-R03 2 条）填入已实现且可执行的 command 与 evidence，再运行 `node scripts/verify/gen-scenario-manifests.mjs --write` 重新生成 `scripts/verify/manifest.json`（**不得手工编辑 manifest**）；`audio-effects` 与 `macos-now-playing-menu` 未登记场景前缀，其新增要求不产生场景 ID，故不登记
+- [x] 9.2 同步 `docs/traceability.md`，运行 `node scripts/verify/reconcile-scenarios.mjs` 确认 `spec = trace = manifest` 三方一致、无 mismatches
+- [x] 9.3 运行 `node scripts/verify/validate-scenario-commands.mjs` 与 `node scripts/verify/check-scenario-evidence.mjs`，确认命令有效且证据可观测
+- [x] 9.4 **独占运行** `pnpm verify:governance` 完整门禁，确认全部检查通过（该门禁须独占运行，并行 cargo 或其它扫描会让其中的墙钟断言误红）
+- [x] 9.5 归档本 change（`openspec archive fix-player-memory-churn`），确认主规格新增 7 条 Requirement（`desktop-playback` R19–R22 共 4 条、`audio-effects` R07–R08 共 2 条、`macos-now-playing-menu` R05 共 1 条）、场景三方一致（`spec 550 = trace 550 = manifest 550`）、`pnpm exec openspec validate --archived` 通过
+- [x] 9.6 补 `docs/acceptance/PRD-matrix.md` 的对应行，确认 A8 汇总数与归属行数一致（汇总 84，`| A8 |` 归属行 84）

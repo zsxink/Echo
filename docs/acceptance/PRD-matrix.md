@@ -11,7 +11,7 @@
 | **A5** | 资料库失联/恢复 | 41 | `node scripts/verify/checks/task-5.8.mjs 2>/dev/null \|\| cargo test -p echo-core --all-features trash::` |
 | **A6** | 搜索/排序/收藏 | 151 | `node scripts/verify/checks/task-10.5.mjs` |
 | **A7** | 歌单 CRUD | 54 | `node scripts/verify/checks/task-10.9.mjs` |
-| **A8** | 播放与队列 | 68 | `node scripts/verify/checks/task-11.2.mjs && cargo test -p echo-desktop --lib runtime::player && cargo test -p echo-desktop --lib player::actor::tests::subscribe_snapshots` |
+| **A8** | 播放与队列 | 84 | `node scripts/verify/checks/task-11.2.mjs && cargo test -p echo-desktop --lib runtime::player && cargo test -p echo-desktop --lib player::actor::tests::subscribe_snapshots` |
 | **A9** | 歌词与沉浸模式 | 32 | `node scripts/verify/checks/task-11.4.mjs && node scripts/verify/checks/task-11.5.mjs && node scripts/verify/checks/task-11.6.mjs` |
 | **A10** | 系统双击文件 | 40 | `cargo test -p echo-core --all-features watch:: && node scripts/verify/checks/task-9.2.mjs` |
 | **A11** | 删除与撤销 | 40 | `cargo test -p echo-core --all-features recover::` |
@@ -1220,6 +1220,22 @@
 | A8 | `DP-R17-S01` | 初始待播放项不得改变播放设置 |
 | A8 | `DP-R18-S01` | 播放进度视觉同步 |
 | A8 | `DP-R18-S02` | 播放进度视觉同步 |
+| A8 | `DP-R19-S01` | 播放快照与队列投影的分层下发 |
+| A8 | `DP-R19-S02` | 播放快照与队列投影的分层下发 |
+| A8 | `DP-R19-S03` | 播放快照与队列投影的分层下发 |
+| A8 | `DP-R19-S04` | 播放快照与队列投影的分层下发 |
+| A8 | `DP-R20-S01` | 队列修订号的单调性 |
+| A8 | `DP-R20-S02` | 队列修订号的单调性 |
+| A8 | `DP-R20-S03` | 队列修订号的单调性 |
+| A8 | `DP-R20-S04` | 队列修订号的单调性 |
+| A8 | `DP-R20-S05` | 队列修订号的单调性 |
+| A8 | `DP-R21-S01` | 队列投影的构造复杂度上界 |
+| A8 | `DP-R21-S02` | 队列投影的构造复杂度上界 |
+| A8 | `DP-R22-S01` | 队列投影的初始同步与漂移恢复 |
+| A8 | `DP-R22-S02` | 队列投影的初始同步与漂移恢复 |
+| A8 | `DP-R22-S03` | 队列投影的初始同步与漂移恢复 |
+| A8 | `DP-R03-S05` | 播放队列面板展示 |
+| A8 | `DP-R03-S06` | 播放队列面板展示 |
 | A9 | `IL-R01-S01` | 常驻播放栏必须始终提供当前播放与基础控制 |
 | A9 | `IL-R01-S02` | 常驻播放栏必须始终提供当前播放与基础控制 |
 | A9 | `IL-R01-S03` | 常驻播放栏必须始终提供当前播放与基础控制 |
