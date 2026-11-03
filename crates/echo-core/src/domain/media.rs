@@ -106,7 +106,9 @@ pub fn cover_asset_key(content_hash: &str) -> String {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EmbeddedCover {
     pub bytes: Vec<u8>,
-    /// MIME type as declared by the tag (e.g. `image/jpeg`).
+    /// Cover MIME declared by the tag and decodable by the thumbnail
+    /// pipeline (e.g. `image/jpeg`); unsupported declarations are stored as
+    /// `application/octet-stream`.
     pub mime: String,
 }
 

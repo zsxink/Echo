@@ -549,18 +549,41 @@ pub fn clean_display_text(value: &str) -> String {
     crate::domain::text::normalize_text(&without_controls)
 }
 
+/// Image MIME types the thumbnail pipeline can decode. Keep this list in sync
+/// with the `image` features in the workspace `Cargo.toml`;
+/// `mime_of_outputs_stay_within_the_enabled_decoders` fails on drift.
+const DECODABLE_COVER_MIMES: [&str; 6] = [
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/bmp",
+    "image/tiff",
+    "image/webp",
+];
+
+/// The cover MIME recorded for a song.
+///
+/// Known picture types map to their canonical MIME. An unknown declaration is
+/// kept only when the thumbnail pipeline can decode it; anything else is
+/// stored as opaque bytes instead of claiming a format the pipeline cannot
+/// render (issue #134).
 fn mime_of(mime: Option<&lofty::picture::MimeType>) -> String {
     use lofty::picture::MimeType;
-    match mime {
+    let declared = match mime {
         Some(MimeType::Png) => "image/png",
         Some(MimeType::Jpeg) => "image/jpeg",
         Some(MimeType::Tiff) => "image/tiff",
         Some(MimeType::Bmp) => "image/bmp",
         Some(MimeType::Gif) => "image/gif",
-        Some(MimeType::Unknown(value)) => return value.clone(),
-        Some(_) | None => "application/octet-stream",
+        Some(MimeType::Unknown(value)) => value.trim(),
+        Some(_) | None => return "application/octet-stream".to_owned(),
+    };
+    let normalized = declared.to_ascii_lowercase();
+    if DECODABLE_COVER_MIMES.contains(&normalized.as_str()) {
+        normalized
+    } else {
+        "application/octet-stream".to_owned()
     }
-    .to_owned()
 }
 
 fn corrupt(operation: &str, reason: &str) -> Error {
