@@ -4,7 +4,7 @@
 
 | 编号 | 验收路径 | 证明场景数 | macOS 可运行命令 |
 |---|---|---|---|
-| **A1** | 空库首次启动 | 138 | `cargo test -p echo-desktop --lib runtime::startup_supervisor && cargo test -p echo-core --all-features root_switch::` |
+| **A1** | 空库首次启动 | 147 | `cargo test -p echo-desktop --lib runtime::startup_supervisor && cargo test -p echo-core --all-features root_switch::` |
 | **A2** | 10,000 首混合曲库扫描 | 41 | `node scripts/verify/checks/task-12.5.mjs && cargo test -p echo-core --all-features scan::` |
 | **A3** | 外部改名/移动 | 41 | `cargo test -p echo-core --all-features relink` |
 | **A4** | 多文件安全导入 | 40 | `cargo test -p echo-core --all-features recover::` |
@@ -15,9 +15,9 @@
 | **A9** | 歌词与沉浸模式 | 32 | `node scripts/verify/checks/task-11.4.mjs && node scripts/verify/checks/task-11.5.mjs && node scripts/verify/checks/task-11.6.mjs` |
 | **A10** | 系统双击文件 | 40 | `cargo test -p echo-core --all-features watch:: && node scripts/verify/checks/task-9.2.mjs` |
 | **A11** | 删除与撤销 | 40 | `cargo test -p echo-core --all-features recover::` |
-| **A12** | 关窗与托盘 | 97 | `node scripts/verify/checks/task-9.6.mjs && node scripts/verify/checks/task-9.3.mjs` |
-| **A13** | 无障碍与窄屏 | 239 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
-| **A14** | 范围保护 | 207 | `node scripts/verify/checks/task-13.8.mjs` |
+| **A12** | 关窗与托盘 | 106 | `node scripts/verify/checks/task-9.6.mjs && node scripts/verify/checks/task-9.3.mjs` |
+| **A13** | 无障碍与窄屏 | 248 | `node scripts/verify/checks/task-12.2.mjs && node scripts/verify/checks/task-12.3.mjs` |
+| **A14** | 范围保护 | 216 | `node scripts/verify/checks/task-13.8.mjs` |
 
 ## 逐场景归属
 
@@ -120,6 +120,15 @@
 | A1 | `DAS-R21-S01` | 首访缩略图生成不得阻塞 WebView 主线程 |
 | A1 | `DAS-R21-S02` | 首访缩略图生成不得阻塞 WebView 主线程 |
 | A1 | `DAS-R21-S03` | 首访缩略图生成不得阻塞 WebView 主线程 |
+| A1 | `DAS-R22-S01` | 封面字节必须以受控载荷传递 |
+| A1 | `DAS-R22-S02` | 封面字节必须以受控载荷传递 |
+| A1 | `DAS-R22-S03` | 封面字节必须以受控载荷传递 |
+| A1 | `DAS-R22-S04` | 封面字节必须以受控载荷传递 |
+| A1 | `DAS-R22-S05` | 封面字节必须以受控载荷传递 |
+| A1 | `DAS-R22-S06` | 封面字节必须以受控载荷传递 |
+| A1 | `DAS-R23-S01` | 封面预览的临时资源必须被回收 |
+| A1 | `DAS-R23-S02` | 封面预览的临时资源必须被回收 |
+| A1 | `DAS-R23-S03` | 封面预览的临时资源必须被回收 |
 | A1 | `LL-R01-S01` | 单一资料库根目录与本地持久化 |
 | A1 | `LL-R01-S02` | 单一资料库根目录与本地持久化 |
 | A1 | `LL-R01-S03` | 单一资料库根目录与本地持久化 |
@@ -338,6 +347,15 @@
 | A12 | `DAS-R21-S01` | 首访缩略图生成不得阻塞 WebView 主线程 |
 | A12 | `DAS-R21-S02` | 首访缩略图生成不得阻塞 WebView 主线程 |
 | A12 | `DAS-R21-S03` | 首访缩略图生成不得阻塞 WebView 主线程 |
+| A12 | `DAS-R22-S01` | 封面字节必须以受控载荷传递 |
+| A12 | `DAS-R22-S02` | 封面字节必须以受控载荷传递 |
+| A12 | `DAS-R22-S03` | 封面字节必须以受控载荷传递 |
+| A12 | `DAS-R22-S04` | 封面字节必须以受控载荷传递 |
+| A12 | `DAS-R22-S05` | 封面字节必须以受控载荷传递 |
+| A12 | `DAS-R22-S06` | 封面字节必须以受控载荷传递 |
+| A12 | `DAS-R23-S01` | 封面预览的临时资源必须被回收 |
+| A12 | `DAS-R23-S02` | 封面预览的临时资源必须被回收 |
+| A12 | `DAS-R23-S03` | 封面预览的临时资源必须被回收 |
 | A13 | `DAS-R01-S01` | 首次启动必须建立本机工作区 |
 | A13 | `DAS-R01-S02` | 首次启动必须建立本机工作区 |
 | A13 | `DAS-R01-S03` | 首次启动必须建立本机工作区 |
@@ -435,6 +453,15 @@
 | A13 | `DAS-R21-S01` | 首访缩略图生成不得阻塞 WebView 主线程 |
 | A13 | `DAS-R21-S02` | 首访缩略图生成不得阻塞 WebView 主线程 |
 | A13 | `DAS-R21-S03` | 首访缩略图生成不得阻塞 WebView 主线程 |
+| A13 | `DAS-R22-S01` | 封面字节必须以受控载荷传递 |
+| A13 | `DAS-R22-S02` | 封面字节必须以受控载荷传递 |
+| A13 | `DAS-R22-S03` | 封面字节必须以受控载荷传递 |
+| A13 | `DAS-R22-S04` | 封面字节必须以受控载荷传递 |
+| A13 | `DAS-R22-S05` | 封面字节必须以受控载荷传递 |
+| A13 | `DAS-R22-S06` | 封面字节必须以受控载荷传递 |
+| A13 | `DAS-R23-S01` | 封面预览的临时资源必须被回收 |
+| A13 | `DAS-R23-S02` | 封面预览的临时资源必须被回收 |
+| A13 | `DAS-R23-S03` | 封面预览的临时资源必须被回收 |
 | A13 | `IL-R01-S01` | 常驻播放栏必须始终提供当前播放与基础控制 |
 | A13 | `IL-R01-S02` | 常驻播放栏必须始终提供当前播放与基础控制 |
 | A13 | `IL-R01-S03` | 常驻播放栏必须始终提供当前播放与基础控制 |
@@ -674,6 +701,15 @@
 | A14 | `DAS-R21-S01` | 首访缩略图生成不得阻塞 WebView 主线程 |
 | A14 | `DAS-R21-S02` | 首访缩略图生成不得阻塞 WebView 主线程 |
 | A14 | `DAS-R21-S03` | 首访缩略图生成不得阻塞 WebView 主线程 |
+| A14 | `DAS-R22-S01` | 封面字节必须以受控载荷传递 |
+| A14 | `DAS-R22-S02` | 封面字节必须以受控载荷传递 |
+| A14 | `DAS-R22-S03` | 封面字节必须以受控载荷传递 |
+| A14 | `DAS-R22-S04` | 封面字节必须以受控载荷传递 |
+| A14 | `DAS-R22-S05` | 封面字节必须以受控载荷传递 |
+| A14 | `DAS-R22-S06` | 封面字节必须以受控载荷传递 |
+| A14 | `DAS-R23-S01` | 封面预览的临时资源必须被回收 |
+| A14 | `DAS-R23-S02` | 封面预览的临时资源必须被回收 |
+| A14 | `DAS-R23-S03` | 封面预览的临时资源必须被回收 |
 | A14 | `LE-R01-S01` | 资料库视图 |
 | A14 | `LE-R01-S02` | 资料库视图 |
 | A14 | `LE-R01-S03` | 资料库视图 |

@@ -53,3 +53,72 @@ fn library_durability_playlist_cover_original_survives_cache_loss_and_clear() {
     fixture.deps.cover_cache.gc(&[]).unwrap();
     assert!(app.playlists().unwrap()[0].cover_key.is_none());
 }
+
+/// The command layer now decodes base64 before calling this service, so the
+/// Core validation it delegates to must stay intact: a rejected MIME never
+/// replaces the saved cover (DAS-R22-S05).
+#[test]
+fn playlist_cover_rejects_unsupported_mime_without_replacing_the_saved_cover() {
+    let fixture = ScanFixture::new();
+    seed_songs(&fixture, 1);
+    let app = services(&fixture);
+    let id =
+        PlaylistId::from_str(&app.create_playlist(fixture.root, "cover mime").unwrap()).unwrap();
+    let saved = b"synthetic original cover";
+    app.set_playlist_cover(id, Some(saved), Some("image/png"))
+        .unwrap();
+    let before = app.playlists().unwrap()[0].cover_key.clone();
+    assert!(before.is_some());
+
+    let error = app
+        .set_playlist_cover(id, Some(b"not an image"), Some("image/gif"))
+        .expect_err("unsupported MIME must be rejected");
+    assert_eq!(error.code(), "validation");
+    let after = app.playlists().unwrap()[0].cover_key.clone();
+    assert_eq!(before, after);
+    assert_eq!(
+        fixture
+            .deps
+            .cover_cache
+            .get(after.as_deref().unwrap())
+            .unwrap()
+            .as_deref(),
+        Some(saved.as_slice())
+    );
+}
+
+/// Regression guard: the Core 5 MiB ceiling must survive the payload-encoding
+/// change even though the command-layer length precheck rejects over-long
+/// base64 first. `DAS-R22-S04` only covers the frontend picker limit; there is
+/// no separate spec scenario for the backend refusal, so this test is
+/// deliberately not mapped to one.
+#[test]
+fn playlist_cover_rejects_oversized_payload_without_replacing_the_saved_cover() {
+    let fixture = ScanFixture::new();
+    seed_songs(&fixture, 1);
+    let app = services(&fixture);
+    let id =
+        PlaylistId::from_str(&app.create_playlist(fixture.root, "cover size").unwrap()).unwrap();
+    let saved = b"synthetic original cover";
+    app.set_playlist_cover(id, Some(saved), Some("image/png"))
+        .unwrap();
+    let before = app.playlists().unwrap()[0].cover_key.clone();
+    assert!(before.is_some());
+
+    let oversized = vec![0u8; 5 * 1024 * 1024 + 1];
+    let error = app
+        .set_playlist_cover(id, Some(&oversized), Some("image/png"))
+        .expect_err("oversized payload must be rejected");
+    assert_eq!(error.code(), "validation");
+    let after = app.playlists().unwrap()[0].cover_key.clone();
+    assert_eq!(before, after);
+    assert_eq!(
+        fixture
+            .deps
+            .cover_cache
+            .get(after.as_deref().unwrap())
+            .unwrap()
+            .as_deref(),
+        Some(saved.as_slice())
+    );
+}

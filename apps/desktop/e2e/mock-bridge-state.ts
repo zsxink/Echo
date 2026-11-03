@@ -33,6 +33,11 @@ export interface E2EState {
   windowMaximized: boolean;
   /** Window-plugin actions recorded in invocation order. */
   windowActions: WindowAction[];
+  /**
+   * Cover payloads received by `set_playlist_cover`, in invocation order.
+   * `bytes` is the wire value: a base64 string (or null), never a number[].
+   */
+  coverPayloads: { id: string; bytes: unknown; mime?: string | null }[];
 }
 
 export function defaultState(): E2EState {
@@ -48,6 +53,7 @@ export function defaultState(): E2EState {
     nowPlaying: null,
     windowMaximized: false,
     windowActions: [],
+    coverPayloads: [],
   };
 }
 

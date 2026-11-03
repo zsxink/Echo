@@ -52,6 +52,7 @@ use tauri::{Emitter, Manager, RunEvent};
 mod app_menu;
 mod commands;
 mod commands_audio_effects;
+mod cover_payload;
 mod cover_protocol;
 mod dialogs;
 #[cfg(target_os = "macos")]

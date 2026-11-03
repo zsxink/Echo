@@ -2740,6 +2740,110 @@
       ]
     },
     {
+      "id": "DAS-R22-S01",
+      "title": "选封面载荷不摊平字节",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/playlists/PlaylistNameDialog.test.tsx",
+          "name": "sends the picked cover as a base64 payload instead of a byte array"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R22-S02",
+      "title": "解码后字节与所选图片一致",
+      "command": "cargo test -p echo-app --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "cover_payload::tests::decodes_valid_base64_to_original_bytes"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R22-S03",
+      "title": "歌单与艺人封面使用同一编码",
+      "command": "cargo test -p echo-app --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "cover_payload::tests::both_cover_commands_decode_through_the_same_helper"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R22-S04",
+      "title": "超过上限的封面被拒绝",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/playlists/PlaylistNameDialog.test.tsx",
+          "name": "rejects a picked cover larger than the size limit"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R22-S05",
+      "title": "不受支持的封面类型被拒绝",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "playlist_cover_rejects_unsupported_mime_without_replacing_the_saved_cover"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R22-S06",
+      "title": "载荷损坏时不覆盖已保存封面",
+      "command": "cargo test -p echo-app --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "cover_payload::tests::rejects_malformed_base64_as_a_validation_error"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R23-S01",
+      "title": "重新选图释放旧预览资源",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/playlists/PlaylistNameDialog.test.tsx",
+          "name": "releases the previous preview blob when another cover is picked"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R23-S02",
+      "title": "关闭对话框释放预览资源",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/playlists/PlaylistNameDialog.test.tsx",
+          "name": "releases the preview blob when the dialog unmounts"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R23-S03",
+      "title": "预览展示用户所选封面",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/features/playlists/PlaylistNameDialog.test.tsx",
+          "name": "renders a saved cover at detail size and passes blob previews through"
+        }
+      ]
+    },
+    {
       "id": "DP-R01-S01",
       "title": "播放资料库歌曲",
       "command": "cargo test -p echo-desktop --all-features --test player_smoke",
