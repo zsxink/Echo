@@ -10,11 +10,17 @@
 import {
   applyVendorState,
   classifyArchitectures,
+  compareVendorSets,
+  computeVendorClosure,
+  countLocalSymbols,
   findHashMismatches,
   isPackagedDylibReference,
+  parseDylibReferences,
   parseInstallNames,
   parseLipoArchs,
   planThinning,
+  planVendorSteps,
+  vendorSetsMatch,
 } from "./thin-macos-libmpv.mjs";
 
 let failures = 0;
@@ -174,6 +180,147 @@ const MANIFEST = {
   );
 }
 
+// --- planVendorSteps: strip always precedes re-signing ----------------------
+{
+  const clean = planVendorSteps({
+    filename: "libmpv.dylib",
+    status: "match",
+    expected: ["arm64"],
+  });
+  assert(
+    equal(clean.map((step) => step.command), [
+      "chmod",
+      "otool",
+      "strip",
+      "codesign",
+    ]),
+    "an already-arm64 file is still stripped and re-signed",
+    JSON.stringify(clean),
+  );
+  const stripStep = clean.find((step) => step.command === "strip");
+  const signStep = clean.find((step) => step.command === "codesign");
+  assert(
+    equal(stripStep.args, ["-x"]) &&
+      clean.indexOf(stripStep) < clean.indexOf(signStep),
+    "strip -x runs before the ad-hoc re-sign (it invalidates signatures)",
+    JSON.stringify(clean),
+  );
+
+  const fat = planVendorSteps({
+    filename: "libfat.dylib",
+    status: "thin",
+    expected: ["arm64"],
+  });
+  assert(
+    equal(fat.map((step) => step.command), [
+      "lipo",
+      "chmod",
+      "otool",
+      "strip",
+      "codesign",
+    ]),
+    "a fat file is thinned, then stripped, then re-signed in that order",
+    JSON.stringify(fat),
+  );
+  assert(
+    equal(fat[0].args, ["-thin", "arm64"]),
+    "the lipo step targets the single release architecture",
+    JSON.stringify(fat[0]),
+  );
+
+  let threw = false;
+  try {
+    planVendorSteps({ filename: "libbad.dylib", status: "missing", expected: ["arm64"] });
+  } catch {
+    threw = true;
+  }
+  assert(threw, "a file missing its declared architecture is never repaired in place");
+}
+
+// --- countLocalSymbols: lowercase locals only, uppercase externals survive ---
+{
+  const UNSTRIPPED = `0000000000001234 t _local_text
+0000000000001238 s _local_data
+0000000000001240 T _exported_text
+                 U _dyld_stub_binder
+0000000000001250 d _local_bss
+`;
+  assert(
+    countLocalSymbols(UNSTRIPPED) === 3,
+    "only lowercase t/s/b/d tokens are counted as local symbols",
+    `got ${countLocalSymbols(UNSTRIPPED)}`,
+  );
+  assert(
+    countLocalSymbols("0000000000001234 T _exported\n                 U _malloc\n") === 0,
+    "external and undefined symbols are not local symbols",
+  );
+  assert(countLocalSymbols("") === 0, "empty nm output counts zero local symbols");
+}
+
+// --- Gate 9.7 pure helpers: the guard must actually reject violations -------
+{
+  // Verbatim shape of `otool -L`: the inspected path on line 1, then one
+  // reference per line. System frameworks and absolute paths are not packaged.
+  const OTOOL = `libmpv.dylib:
+\t@loader_path/libavcodec.dylib (compatibility version 60.0.0, current version 60.3.100)
+\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 1.0.0, current version 5027.0.69)
+\t@rpath/libavutil.dylib (compatibility version 58.0.0, current version 58.2.100)
+`;
+  assert(
+    equal(parseDylibReferences(OTOOL), ["libavcodec.dylib", "libavutil.dylib"]),
+    "only flat @loader_path/@rpath dylib references enter the closure",
+    JSON.stringify(parseDylibReferences(OTOOL)),
+  );
+
+  const references = {
+    "libmpv.dylib": ["libavcodec.dylib", "libavutil.dylib"],
+    "libavcodec.dylib": ["libavutil.dylib"],
+    "libavutil.dylib": [],
+    "libunused.dylib": [],
+  };
+  assert(
+    equal(computeVendorClosure("libmpv.dylib", references), [
+      "libavcodec.dylib",
+      "libavutil.dylib",
+      "libmpv.dylib",
+    ]),
+    "the closure stops at the reachable libraries and excludes unused ones",
+    JSON.stringify(computeVendorClosure("libmpv.dylib", references)),
+  );
+
+  const clean = compareVendorSets({
+    manifestFiles: ["libmpv.dylib", "libavcodec.dylib", "libavutil.dylib"],
+    closure: ["libmpv.dylib", "libavcodec.dylib", "libavutil.dylib"],
+    bundleFrameworks: ["libmpv.dylib", "libavcodec.dylib", "libavutil.dylib"],
+  });
+  assert(vendorSetsMatch(clean), "an untouched tree passes the set comparison");
+
+  // Injection: a library is present in manifest and bundle but not referenced
+  // by any dylib (the exact mbedTLS regression this change removes).
+  const unused = compareVendorSets({
+    manifestFiles: ["libmpv.dylib", "libavcodec.dylib", "libavutil.dylib", "libmbedtls.dylib"],
+    closure: ["libmpv.dylib", "libavcodec.dylib", "libavutil.dylib"],
+    bundleFrameworks: ["libmpv.dylib", "libavcodec.dylib", "libavutil.dylib", "libmbedtls.dylib"],
+  });
+  assert(
+    !vendorSetsMatch(unused) && equal(unused.unusedInManifest, ["libmbedtls.dylib"]),
+    "an unreferenced vendored library is rejected and named",
+    JSON.stringify(unused),
+  );
+
+  // Injection: a manifest/bundle entry is stale after a rebuild.
+  const drifted = compareVendorSets({
+    manifestFiles: ["libmpv.dylib", "libavcodec.dylib", "libavutil.dylib"],
+    closure: ["libmpv.dylib", "libavcodec.dylib", "libavutil.dylib"],
+    bundleFrameworks: ["libmpv.dylib", "libavcodec.dylib"],
+  });
+  assert(
+    !vendorSetsMatch(drifted) && equal(drifted.missingFromBundle, ["libavutil.dylib"]),
+    "a missing bundle mapping is rejected and named",
+    JSON.stringify(drifted),
+  );
+}
+
 // --- applyVendorState: rewrite architecture and hash without mutating input -
 {
   const before = JSON.stringify(MANIFEST);
@@ -205,6 +352,33 @@ const MANIFEST = {
     threw = true;
   }
   assert(threw, "a state entry for an unknown manifest file is rejected");
+}
+
+// --- --write re-pins every manifest file, not only thinned ones -------------
+{
+  // `strip -x` is a no-op on already-stripped dylibs, but --write still has to
+  // refresh every hash: dropping a clean file here would leave its manifest
+  // SHA-256 pointing at pre-strip bytes on the next rebuild.
+  const all = Object.keys(MANIFEST.files).map((filename) => ({
+    filename,
+    architectures: ["arm64"],
+    sha256: `strip-sha-${filename}`,
+  }));
+  const next = applyVendorState(MANIFEST, all);
+  assert(
+    Object.entries(next.files).every(([name, hash]) => hash === `strip-sha-${name}`),
+    "all manifest files receive a refreshed SHA-256 after a strip run",
+    JSON.stringify(next.files),
+  );
+  assert(
+    Object.keys(next.fileArchitectures).length === 3,
+    "fileArchitectures is rewritten for every file, including clean ones",
+    JSON.stringify(next.fileArchitectures),
+  );
+  assert(
+    equal(Object.keys(next.files), Object.keys(MANIFEST.files)),
+    "a full re-pin does not add or remove manifest entries",
+  );
 }
 
 // --- isPackagedDylibReference: packaged links resolve inside the bundle -----

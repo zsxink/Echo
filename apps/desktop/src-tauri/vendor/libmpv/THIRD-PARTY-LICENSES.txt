@@ -22,7 +22,6 @@ installer.
     libgraphite2.3.dylib                  Apache-2.0
     libharfbuzz.0.dylib                   MIT
     libintl.8.dylib                       LGPL-2.1-or-later
-    libmbed*.dylib（mbed TLS）             Apache-2.0 OR GPL-2.0-or-later（双许可）
     libpcre2-8.0.dylib                    BSD-3-Clause
     libpng16.16.dylib                     libpng-2.0 (PNG Reference Library License v2)
     libunibreak.8.dylib                   Zlib
@@ -955,7 +954,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ==============================================================================
 == Apache License 2.0
 == SPDX: Apache-2.0
-== Covers: Windows Vulkan Loader（vulkan-1.dll）、macOS libgraphite2、mbed TLS（双许可任选）
+== Covers: Windows Vulkan Loader（vulkan-1.dll）、macOS libgraphite2
 ==============================================================================
 
 

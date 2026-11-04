@@ -1,13 +1,15 @@
 #!/usr/bin/env node
-// Audit and thin Echo's vendored macOS libmpv stack to the release target.
+// Audit, thin and strip Echo's vendored macOS libmpv stack to the release
+// target.
 //
 // The release target is arm64-only (manifest `architectures` and the
 // ci-release-pipeline contract). Rebuilds used to land universal dylibs, which
-// shipped an x86_64 slice nobody can load. This tool makes the accepted vendor
-// state explicit and reproducible:
+// shipped an x86_64 slice nobody can load. Local symbols add another ~1.2 MB
+// of __LINKEDIT that the loader never needs. This tool makes the accepted
+// vendor state explicit and reproducible:
 //
 //   node scripts/release/thin-macos-libmpv.mjs           # dry run, no writes
-//   node scripts/release/thin-macos-libmpv.mjs --write   # thin + re-pin sha256
+//   node scripts/release/thin-macos-libmpv.mjs --write   # thin + strip + re-pin sha256
 //
 // The Gate (task 9.7 / 1.10) imports the same pure comparison functions, so
 // "what the tool considers correct" and "what the release enforces" cannot
@@ -16,6 +18,7 @@
 import { createHash } from "node:crypto";
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdtempSync,
   readFileSync,
@@ -79,6 +82,87 @@ export function planThinning(manifest, actualArchitectures) {
       ...classifyArchitectures(actual, expected),
     };
   });
+}
+
+export function planVendorSteps(entry) {
+  // `strip -x` must run before re-signing: it rewrites __LINKEDIT and
+  // invalidates any existing signature. `lipo -thin` is only needed for files
+  // that still carry extra slices; stripping already-stripped dylibs is a
+  // byte-for-byte no-op, so every manifest file goes through the same pipeline.
+  const steps = [];
+  if (entry.status === "thin") {
+    if (entry.expected.length !== 1) {
+      throw new Error(
+        `${entry.filename} declares ${entry.expected.length} architectures; thinning supports a single target architecture`,
+      );
+    }
+    steps.push({ command: "lipo", args: ["-thin", entry.expected[0]] });
+  } else if (entry.status !== "match") {
+    throw new Error(
+      `${entry.filename} has status ${entry.status}; rebuild the baseline instead of repairing it in place`,
+    );
+  }
+  steps.push({ command: "chmod" });
+  steps.push({ command: "otool", args: ["-D"] });
+  steps.push({ command: "strip", args: ["-x"] });
+  steps.push({ command: "codesign", args: ["--force", "--sign", "-"] });
+  return steps;
+}
+
+export function countLocalSymbols(nmOutput) {
+  // Lowercase nm types are local symbols (t/s text, b/d data). External and
+  // undefined symbols are uppercase (T/S/U) and must remain for dynamic
+  // linking, so a stripped dylib legitimately reports zero of these. Each nm
+  // line is "<address> <type> <name>", with the address optional for some
+  // symbol kinds; only a bare lowercase type token counts.
+  return String(nmOutput ?? "")
+    .split("\n")
+    .filter((line) => /^\s*(?:[0-9a-f]+\s+)?[tsbd]\s/.test(line))
+    .length;
+}
+
+export function parseDylibReferences(otoolOutput) {
+  // `otool -L` prints the inspected path on the first line, then one reference
+  // per line. Only flat @rpath/@loader_path dylib names resolve inside the
+  // app bundle; system frameworks and absolute Homebrew paths do not.
+  return String(otoolOutput ?? "")
+    .split("\n")
+    .slice(1)
+    .map((line) => line.trim().split(/\s+/)[0])
+    .filter((ref) => isPackagedDylibReference(ref))
+    .map((ref) => ref.slice(ref.lastIndexOf("/") + 1));
+}
+
+export function computeVendorClosure(rootFile, referencesByFile) {
+  // Walk the packaged dylib graph from libmpv.dylib. A file missing from the
+  // map is still reported, so a broken reference fails closed instead of
+  // silently shrinking the closure.
+  const seen = new Set();
+  const stack = [rootFile];
+  while (stack.length > 0) {
+    const filename = stack.pop();
+    if (seen.has(filename)) continue;
+    seen.add(filename);
+    for (const ref of referencesByFile[filename] ?? []) stack.push(ref);
+  }
+  return [...seen].sort();
+}
+
+export function compareVendorSets({ manifestFiles, closure, bundleFrameworks }) {
+  // The three views of "what ships" must be the same set. Return human-readable
+  // differences so the Gate can name the offending file rather than just fail.
+  const manifest = new Set(manifestFiles);
+  const dep = new Set(closure);
+  const bundle = new Set(bundleFrameworks);
+  const missingFromManifest = [...dep].filter((f) => !manifest.has(f)).sort();
+  const unusedInManifest = [...manifest].filter((f) => !dep.has(f)).sort();
+  const missingFromBundle = [...manifest].filter((f) => !bundle.has(f)).sort();
+  const extraInBundle = [...bundle].filter((f) => !manifest.has(f)).sort();
+  return { missingFromManifest, unusedInManifest, missingFromBundle, extraInBundle };
+}
+
+export function vendorSetsMatch(comparison) {
+  return Object.values(comparison).every((list) => list.length === 0);
 }
 
 export function findHashMismatches(manifest, actualHashes) {
@@ -183,18 +267,46 @@ function measureThinSize(path, arch, scratch) {
   return size;
 }
 
-function prepareThinnedCopy(entry) {
+function prepareVendorCopy(entry) {
   const file = resolve(VENDOR, entry.filename);
-  const arch = entry.expected[0];
   const tmp = `${file}.thin-${process.pid}`;
+  const steps = planVendorSteps(entry);
   try {
     const before = installNames(file);
-    run("lipo", ["-thin", arch, file, "-output", tmp]);
-    chmodSync(tmp, statSync(file).mode);
-    if (installNames(tmp) !== before) {
-      throw new Error(`install-name drift after thinning: ${entry.filename}`);
+    let haveCopy = false;
+    for (const step of steps) {
+      switch (step.command) {
+        case "lipo":
+          run("lipo", ["-thin", ...step.args, file, "-output", tmp]);
+          haveCopy = true;
+          break;
+        case "chmod":
+          // Every file is prepared through a temp copy, so strip never touches
+          // the original. A lipo output needs its mode restored; copying keeps
+          // it via copyFileSync below.
+          if (!haveCopy) {
+            copyFileSync(file, tmp);
+            haveCopy = true;
+          }
+          chmodSync(tmp, statSync(file).mode);
+          break;
+        case "otool": {
+          const target = haveCopy ? tmp : file;
+          if (installNames(target) !== before) {
+            throw new Error(`install-name drift after thinning: ${entry.filename}`);
+          }
+          break;
+        }
+        case "strip":
+          run("strip", [...step.args, tmp]);
+          break;
+        case "codesign":
+          ensureSignature(tmp);
+          break;
+        default:
+          throw new Error(`unknown vendor step: ${step.command}`);
+      }
     }
-    ensureSignature(tmp);
   } catch (error) {
     rmSync(tmp, { force: true });
     throw error;
@@ -313,11 +425,15 @@ function main() {
   const thinned = plan.filter((entry) => entry.status === "thin");
   const prepared = [];
   try {
-    for (const entry of thinned) {
-      prepared.push(prepareThinnedCopy(entry));
+    // Every manifest file goes through the same pipeline: thin only where
+    // needed, then strip local symbols and re-sign. `strip -x` is a no-op on
+    // already-stripped dylibs, so a run with no thinning still refreshes the
+    // manifest hashes and enforces symbol purity on the whole tree.
+    for (const entry of plan) {
+      prepared.push(prepareVendorCopy(entry));
     }
     // All copies are verified before any original is replaced, so a failed
-    // lipo/codesign leaves the vendor tree untouched.
+    // lipo/strip/codesign leaves the vendor tree untouched.
     for (const item of prepared) {
       renameSync(item.tmp, item.file);
     }
@@ -346,7 +462,7 @@ function main() {
   const next = applyVendorState(manifest, finalEntries);
   writeFileSync(MANIFEST_PATH, `${JSON.stringify(next, null, 2)}\n`);
   process.stdout.write(
-    `Wrote ${MANIFEST_PATH}; thinned ${thinned.length} file(s), saved ${mb(projectedSavings)}.\n`,
+    `Wrote ${MANIFEST_PATH}; thinned ${thinned.length} file(s), stripped ${plan.length} file(s), saved ${mb(projectedSavings)} from thinning.\n`,
   );
 }
 
