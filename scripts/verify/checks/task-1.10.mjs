@@ -6,6 +6,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import {
+  classifyArchitectures,
+  parseLipoArchs,
+} from "../../release/thin-macos-libmpv.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
 const VENDOR = resolve(ROOT, "apps", "desktop", "src-tauri", "vendor", "libmpv", "macos");
@@ -65,10 +69,23 @@ for (const [filename, expected] of Object.entries(manifest.files)) {
   const vendorInstallName = installName(vendor);
   const bundleInstallName = installName(bundled);
   if (vendorInstallName !== bundleInstallName) fail(`bundle install-name drift for ${filename}`);
-  const info = run("lipo", ["-info", bundled]);
-  const fileArchitectures = manifest.fileArchitectures?.[filename] ?? manifest.architectures;
-  for (const architecture of fileArchitectures) {
-    if (!info.includes(architecture)) fail(`${filename} lacks ${architecture}`);
+  // Exact set equality: "contains arm64" let universal dylibs ship. Check both
+  // the release target and the per-file record.
+  const actual = parseLipoArchs(run("lipo", ["-archs", bundled]));
+  const target = classifyArchitectures(actual, manifest.architectures);
+  if (target.status !== "match") {
+    fail(
+      `${filename} in app bundle is [${actual.join(", ")}], expected release target [${manifest.architectures.join(", ")}]`,
+    );
+  }
+  const declared = manifest.fileArchitectures?.[filename];
+  if (declared) {
+    const record = classifyArchitectures(actual, declared);
+    if (record.status !== "match") {
+      fail(
+        `${filename} in app bundle is [${actual.join(", ")}], expected fileArchitectures [${declared.join(", ")}]`,
+      );
+    }
   }
 }
 

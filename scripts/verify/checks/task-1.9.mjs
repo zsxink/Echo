@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { isPackagedDylibReference } from "../../release/thin-macos-libmpv.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
 const APP = resolve(ROOT, "apps", "desktop");
@@ -127,8 +128,17 @@ try {
 
 const libmpv = join(FRAMEWORKS, "libmpv.dylib");
 const runtimeLinks = run("otool", ["-L", libmpv]);
-if (!runtimeLinks.includes("@rpath/libavcodec.dylib")) {
-  fail("bundled libmpv does not resolve FFmpeg through the packaged rpath");
+// The arm64 slice resolves FFmpeg through @loader_path; older slices used
+// @rpath. Both point into Contents/Frameworks, so accept either placeholder
+// but reject absolute or bare names that escape the bundle.
+const ffmpegDependency = runtimeLinks
+  .split("\n")
+  .map((line) => line.trim().split(" (")[0])
+  .find((reference) => reference.endsWith("/libavcodec.dylib"));
+if (!ffmpegDependency || !isPackagedDylibReference(ffmpegDependency)) {
+  fail(
+    `bundled libmpv does not resolve FFmpeg through a packaged reference (found ${ffmpegDependency || "none"})`,
+  );
 }
 
 process.stdout.write("ok 1.9: macOS Tauri app bundles libmpv, file associations, tray and single-instance Gate pass\n");

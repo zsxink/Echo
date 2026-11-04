@@ -30,20 +30,16 @@
       "arm64"
     ],
     "libavcodec.dylib": [
-      "arm64",
-      "x86_64"
+      "arm64"
     ],
     "libavfilter.dylib": [
-      "arm64",
-      "x86_64"
+      "arm64"
     ],
     "libavformat.dylib": [
-      "arm64",
-      "x86_64"
+      "arm64"
     ],
     "libavutil.dylib": [
-      "arm64",
-      "x86_64"
+      "arm64"
     ],
     "libfreetype.6.dylib": [
       "arm64"
@@ -64,20 +60,16 @@
       "arm64"
     ],
     "libmbedcrypto.dylib": [
-      "arm64",
-      "x86_64"
+      "arm64"
     ],
     "libmbedtls.dylib": [
-      "arm64",
-      "x86_64"
+      "arm64"
     ],
     "libmbedx509.dylib": [
-      "arm64",
-      "x86_64"
+      "arm64"
     ],
     "libmpv.dylib": [
-      "arm64",
-      "x86_64"
+      "arm64"
     ],
     "libpcre2-8.0.dylib": [
       "arm64"
@@ -86,12 +78,10 @@
       "arm64"
     ],
     "libswresample.dylib": [
-      "arm64",
-      "x86_64"
+      "arm64"
     ],
     "libswscale.dylib": [
-      "arm64",
-      "x86_64"
+      "arm64"
     ],
     "libunibreak.8.dylib": [
       "arm64"
@@ -171,25 +161,25 @@
   ],
   "files": {
     "libass.9.dylib": "ce12ed76f8fa568be8796db8f301048ae03319a4eee35154cd40f57b0d9e9dd1",
-    "libavcodec.dylib": "aeb880b328b245a6023bd239268c92b5f91fbb4d5e73228e7bd8298285e9494a",
-    "libavfilter.dylib": "2591332d9a3ccc0f6a7313b98fc2566ef4193dd40271a6908dec7243085df6bc",
-    "libavformat.dylib": "0d56a6198e86482ff7550faa6105768bea232ec5d3764b6f48695fa935300258",
-    "libavutil.dylib": "66149814b422ae63f0d3970426106a91eda8f04e1c8a928901daf54c55067cfb",
+    "libavcodec.dylib": "c14129386f5315ede5ee2bec12266d26cc2ea33f446d9e9079673d7339f98349",
+    "libavfilter.dylib": "8001198cc4ff4a1d95472eff4d71df8010ff3b96a8f61a156e87965b2f730b23",
+    "libavformat.dylib": "91e8d406ed9b31667f8b2d5f673754efe83cf2f112e362c06fd517903d08b27e",
+    "libavutil.dylib": "481a28a65f72f862dc09a04ea255c2532a52f446eec7e24e44cb109bfa746776",
     "libfreetype.6.dylib": "aa2951fd77181d0ebf7875d09ea2c906e3470f51181589d4764c9cbac9249e79",
     "libfribidi.0.dylib": "c5726046801ee6604ae9b2fad9bc5d8e3784a0ae01e57c95151954b9cae5e48b",
     "libglib-2.0.0.dylib": "359bb9c6d2276ef925b4255a09d589597a114f7536ab3002f985ee1a978eee30",
     "libgraphite2.3.dylib": "bcc6ba81befad993037e8a658aa7c416e9e047105799492a844988438bf71045",
     "libharfbuzz.0.dylib": "6df7af046780e227201dd99eac4f58fd21fc051df72c7b3048e8b520e4cb5e6e",
     "libintl.8.dylib": "a1c0f8eac318459e00e707f6be965d289acdb8c07f024f8d693ce6180767932a",
-    "libmbedcrypto.dylib": "e0f2b5abbfd023f4e85a9b4e3babc0c716c744afae0354c8e97b11cb0d269d89",
-    "libmbedtls.dylib": "660e43c82bc5e2380d224b138210cad8d9b7d94bc1d1ef5f701935c7e12f0c50",
-    "libmbedx509.dylib": "0cee4da32632af2b4a888fa515d6c507716d847e3b24c6d4b566d212c139ec90",
-    "libmpv.dylib": "164430192f73da459916e384a405685697387fa5e333c19ffb1be4297a4852f3",
+    "libmbedcrypto.dylib": "b62c3ea57ecef7e7ca81123ef45088f109198cea1227351c5b34e1ecb1a5354a",
+    "libmbedtls.dylib": "583d84dbf991d9371b986c129b2d6e63187988fe648babcf90d525ded16e961e",
+    "libmbedx509.dylib": "ea4c3de3989afd323b4b99d4eab6d90ffc55d2c4f10e74ba5ff732d1f42dd25f",
+    "libmpv.dylib": "791274231fc1f95a2ffc2b688d9cecdb6c22509272d133d4e8b9bff615926dfc",
     "libpcre2-8.0.dylib": "4c494053ae7324f5dda00472f12c9b3d6303dcf8ac2ca3baf7dcdd7d80f95021",
     "libpng16.16.dylib": "ce2fd338e637a1173dd4c0e8a5040b40df206b06b86dffcc5f1a14815cd10fe4",
-    "libswresample.dylib": "57f215242edaa44101a720c4d295d112b1a7fc3101f1f7602be36d9a817cecfd",
-    "libswscale.dylib": "8c710003c88579691363a6a6281d80138678151e18b6dc5bf9b5db2a8abdd6f2",
+    "libswresample.dylib": "9e0d0e547dec71090231b53000a8c699f968ba65ef2486b246560068fd26e24e",
+    "libswscale.dylib": "4268db6091e4838cfd461a82805430e7258e6ef8e1cac13c34a8ec43e210531e",
     "libunibreak.8.dylib": "61ff8eedc2b923b77f3018c2df177871e7de069d2e1a4d6222b1f7f6016e4883"
   },
-  "buildProcedureStatus": "Source candidate built and probed on macOS arm64; clean-room rebuild remains pending. Intel/universal packaging is outside the current release target."
+  "buildProcedureStatus": "Source candidate built and probed on macOS arm64; clean-room rebuild remains pending. Every bundled dylib is arm64-only; rebuilds must use ARCHS=arm64 / ONLY_ACTIVE_ARCH=YES, and Intel/universal packaging is outside the current release target."
 }
