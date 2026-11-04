@@ -2844,6 +2844,28 @@
       ]
     },
     {
+      "id": "DAS-R24-S01",
+      "title": "WebP 内嵌封面生成列表缩略图",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "infrastructure::metadata::cover::tests::cover_cache_thumbnail_decodes_webp_original"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R24-S02",
+      "title": "WebP 内嵌封面生成详情缩略图",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "infrastructure::metadata::cover::tests::cover_cache_thumbnail_decodes_webp_original"
+        }
+      ]
+    },
+    {
       "id": "DP-R01-S01",
       "title": "播放资料库歌曲",
       "command": "cargo test -p echo-desktop --all-features --test player_smoke",
@@ -6135,6 +6157,39 @@
         {
           "kind": "rust",
           "target": "a_failed_switch_restores_the_previous_session"
+        }
+      ]
+    },
+    {
+      "id": "LL-R12-S01",
+      "title": "WebP 声明保留为图片 MIME",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "infrastructure::metadata::tags::tests::mime_of_uses_webp_declaration"
+        }
+      ]
+    },
+    {
+      "id": "LL-R12-S02",
+      "title": "不受支持的声明降级为不透明类型",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "infrastructure::metadata::tags::tests::mime_of_downgrades_unsupported_declaration"
+        }
+      ]
+    },
+    {
+      "id": "LL-R12-S03",
+      "title": "已知图片变体全部落入可解码集合",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "infrastructure::metadata::tags::tests::mime_of_outputs_stay_within_the_enabled_decoders"
         }
       ]
     },

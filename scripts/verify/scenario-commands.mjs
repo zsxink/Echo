@@ -1,6 +1,6 @@
 // Scenario → executable-command + evidence map for the 0.1.0 gate (task 13.9).
 //
-// 559 scenarios (spec-derived id set). A scenario's command is aggregated by
+// 564 scenarios (spec-derived id set). A scenario's command is aggregated by
 // domain; `evidence` names the tests/files the scenario actually depends on,
 // and run-scenario.mjs asserts each target was observed in the command output.
 // `manifest.json.scenarios[]` is generated from this table
@@ -94,6 +94,9 @@ export const SCENARIOS = {
 "LL-R10-S04": { command: CORE_ALL, evidence: [rust("library_durability_readonly_volume_and_unmaterialized_commit_can_be_browsed")], },
 "LL-R11-S01": { command: CORE_ALL, evidence: [rust("a_wiped_database_is_rebuilt_from_the_records_at_real_scale")], },
 "LL-R11-S02": { command: APP_ALL, evidence: [rust("a_failed_switch_restores_the_previous_session")], },
+"LL-R12-S01": { command: CORE_ALL, evidence: [rust("infrastructure::metadata::tags::tests::mime_of_uses_webp_declaration")], },
+"LL-R12-S02": { command: CORE_ALL, evidence: [rust("infrastructure::metadata::tags::tests::mime_of_downgrades_unsupported_declaration")], },
+"LL-R12-S03": { command: CORE_ALL, evidence: [rust("infrastructure::metadata::tags::tests::mime_of_outputs_stay_within_the_enabled_decoders")], },
 
   // portable-library-layout
 "PLL-R01-S01": { command: CORE_ALL, evidence: [rust("default_target_is_artist_folder_with_artist_minus_title")], },
@@ -635,6 +638,8 @@ export const SCENARIOS = {
 "DAS-R23-S01": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx", "releases the previous preview blob when another cover is picked")], },
 "DAS-R23-S02": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx", "releases the preview blob when the dialog unmounts")], },
 "DAS-R23-S03": { command: VITEST_ALL, evidence: [vitest("src/features/playlists/PlaylistNameDialog.test.tsx", "renders a saved cover at detail size and passes blob previews through")], },
+"DAS-R24-S01": { command: CORE_ALL, evidence: [rust("infrastructure::metadata::cover::tests::cover_cache_thumbnail_decodes_webp_original")], },
+"DAS-R24-S02": { command: CORE_ALL, evidence: [rust("infrastructure::metadata::cover::tests::cover_cache_thumbnail_decodes_webp_original")], },
 
   // phase-one-acceptance
   "PHA-R01-S01": { command: ATTEST("PHA-R01-S01"), evidence: [attest("PHA-R01-S01")] },

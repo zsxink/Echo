@@ -419,6 +419,35 @@ mod tests {
         assert!(list.len() < detail.len(), "list thumb is smaller");
     }
 
+    /// A lossy WebP original (the format most embedded covers use) must
+    /// produce both thumbnail tiers. Regression for issue #134: the `image`
+    /// crate's WebP decoder used to be compiled out, so every WebP cover
+    /// failed as `corrupt_media` and the protocol answered 404.
+    #[test]
+    fn cover_cache_thumbnail_decodes_webp_original() {
+        const WEBP: &[u8] = include_bytes!("fixtures/cover.webp");
+        let dir = tempfile::tempdir().unwrap();
+        let cache = DiskCoverCache::new(dir.path()).unwrap();
+        let key = cache.put(WEBP, "image/webp").unwrap();
+
+        for (detail, max_px) in [(false, LIST_THUMB_PX), (true, DETAIL_THUMB_PX)] {
+            let bytes = cache
+                .thumbnail(&key, detail)
+                .expect("WebP cover thumbnails must be generated")
+                .expect("stored cover resolves");
+            assert_eq!(&bytes[..3], &[0xFF, 0xD8, 0xFF], "thumbnail is JPEG");
+            let scaled = image::load_from_memory(&bytes).unwrap();
+            assert!(
+                scaled.width() <= max_px && scaled.height() <= max_px,
+                "detail={detail} thumbnail exceeds {max_px}px"
+            );
+            assert!(
+                thumb_path(&cache, &key, detail).exists(),
+                "detail={detail} thumbnail is persisted"
+            );
+        }
+    }
+
     #[test]
     fn cover_cache_gc_keeps_referenced_assets() {
         let dir = tempfile::tempdir().unwrap();

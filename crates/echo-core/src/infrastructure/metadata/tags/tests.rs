@@ -301,6 +301,62 @@ fn mime_of_maps_every_variant_with_a_default_fallback() {
     assert_eq!(mime_of(None), "application/octet-stream");
 }
 
+#[test]
+fn mime_of_uses_webp_declaration() {
+    use lofty::picture::MimeType;
+    for declared in ["image/webp", "IMAGE/WEBP", "  image/webp  "] {
+        assert_eq!(
+            mime_of(Some(&MimeType::Unknown(declared.to_owned()))),
+            "image/webp",
+            "declared MIME {declared:?}"
+        );
+    }
+}
+
+#[test]
+fn mime_of_downgrades_unsupported_declaration() {
+    use lofty::picture::MimeType;
+    for declared in ["image/avif", "image/heic", "application/x-cover", ""] {
+        assert_eq!(
+            mime_of(Some(&MimeType::Unknown(declared.to_owned()))),
+            "application/octet-stream",
+            "declared MIME {declared:?}"
+        );
+    }
+}
+
+/// `mime_of` promises that a cover declared as an image can actually be
+/// decoded by the thumbnail pipeline. A future format declared here without a
+/// matching `image` feature makes this test fail instead of producing rows
+/// that are permanently stuck on the placeholder.
+#[test]
+fn mime_of_outputs_stay_within_the_enabled_decoders() {
+    use lofty::picture::MimeType;
+    let declarations = [
+        MimeType::Png,
+        MimeType::Jpeg,
+        MimeType::Tiff,
+        MimeType::Bmp,
+        MimeType::Gif,
+        MimeType::Unknown("image/webp".to_owned()),
+        MimeType::Unknown("IMAGE/WEBP".to_owned()),
+        MimeType::Unknown("image/avif".to_owned()),
+        MimeType::Unknown("not-an-image".to_owned()),
+    ];
+    for declared in declarations {
+        let output = mime_of(Some(&declared));
+        if output == "application/octet-stream" {
+            continue;
+        }
+        let format = image::ImageFormat::from_mime_type(&output)
+            .unwrap_or_else(|| panic!("{output} is not a recognised image MIME"));
+        assert!(
+            format.reading_enabled(),
+            "{output} is declared but its decoder is not enabled"
+        );
+    }
+}
+
 /// The reader resolves the path through the root registry and maps a
 /// missing file to an io error — the branch the adapter surfaces to the
 /// scan pipeline before the layout probe.

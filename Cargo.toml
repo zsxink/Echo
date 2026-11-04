@@ -66,7 +66,9 @@ mdns-sd = { version = "0.21.5", default-features = false, features = ["async"] }
 # and thumbnail scaling. All pure-Rust, cross-platform crates with no `unsafe`
 # in their public APIs. Symphonia (MPL-2.0) probes containers/audio tracks;
 # lofty reads tags and embedded art/lyrics; notify watches library roots;
-# image scales cover art into the two size-capped thumbnails.
+# image scales cover art into the two size-capped thumbnails; its decoders
+# mirror the image MIME types tag parsing can declare (constraint test in
+# echo-core's tags tests fails if these drift).
 lofty = "0.22"
 symphonia = { version = "0.5", default-features = false, features = [
     "flac",
@@ -78,7 +80,14 @@ symphonia = { version = "0.5", default-features = false, features = [
     "wav",
 ] }
 notify = "8"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+image = { version = "0.25", default-features = false, features = [
+    "png",
+    "jpeg",
+    "gif",
+    "bmp",
+    "tiff",
+    "webp",
+] }
 
 # Dynamic loading of the vendored platform libmpv from the desktop shell. Only
 # echo-desktop uses it; libmpv/FFI never reach echo-core.
