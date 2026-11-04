@@ -1,12 +1,11 @@
 # Bundled libmpv — macOS audio-effects candidate
 
-This is Echo's LGPL-only FFmpeg/libmpv build. The arm64 slices use FFmpeg's
+This is Echo's LGPL-only FFmpeg/libmpv build for the macOS arm64 release
+target. Every bundled dylib is arm64-only: the arm64 slices use FFmpeg's
 required audio filters and a small mpv patch that lets the player address a
-named filter inside a libavfilter graph. The x86_64 slices in the original
-universal libraries remain the previous mpv 0.36.0 / FFmpeg 6.0 runtime;
-those Intel slices have not passed the audio-effects Gate yet. Auxiliary
-subtitle-rendering libraries are arm64-only and are not loaded by the Intel
-libmpv slice.
+named filter inside a libavfilter graph. Rebuilds must produce single-arch
+binaries (`ARCHS=arm64`, `ONLY_ACTIVE_ARCH=YES`); universal/fat output is
+rejected by the release Gate.
 
 | Component | Version / provenance |
 | --- | --- |

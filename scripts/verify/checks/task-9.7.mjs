@@ -33,6 +33,10 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import {
+  classifyArchitectures,
+  parseLipoArchs,
+} from "../../release/thin-macos-libmpv.mjs";
 
 const ROOT = resolve(
   fileURLToPath(new URL(".", import.meta.url)),
@@ -49,6 +53,15 @@ const MANIFEST = resolve(
   "libmpv",
   "macos",
   "manifest.json",
+);
+const VENDOR_DIR = resolve(
+  ROOT,
+  "apps",
+  "desktop",
+  "src-tauri",
+  "vendor",
+  "libmpv",
+  "macos",
 );
 const TAURI_CONF = resolve(
   ROOT,
@@ -131,6 +144,41 @@ pass(
 const noticePath = resolve(ROOT, "apps", "desktop", "src-tauri", "vendor", "libmpv", "macos", "NOTICE.md");
 if (!existsSync(noticePath)) fail("NOTICE.md is missing from vendor directory");
 pass("NOTICE.md present");
+
+// --- 1b. Vendor architecture purity (macOS only) ---
+// The release target is arm64-only. `lipo -info` + "includes arm64" accepts a
+// universal dylib, so compare the exact set against both the release target
+// and the per-file record. A fat rebuild that merely updates
+// fileArchitectures must still fail against `architectures`.
+if (process.platform !== "darwin") {
+  process.stdout.write(
+    "skip: vendor architecture purity needs macOS lipo; the macOS Gate enforces it\n",
+  );
+} else {
+  for (const filename of Object.keys(manifest.files)) {
+    const vendor = resolve(VENDOR_DIR, filename);
+    if (!existsSync(vendor)) fail(`vendor file missing: ${filename}`);
+    const actual = parseLipoArchs(run("lipo", ["-archs", vendor]));
+    const target = classifyArchitectures(actual, manifest.architectures);
+    if (target.status !== "match") {
+      fail(
+        `${filename} architectures [${actual.join(", ")}] do not match release target [${manifest.architectures.join(", ")}]`,
+      );
+    }
+    const declared = manifest.fileArchitectures?.[filename];
+    if (declared) {
+      const record = classifyArchitectures(actual, declared);
+      if (record.status !== "match") {
+        fail(
+          `${filename} architectures [${actual.join(", ")}] do not match fileArchitectures [${declared.join(", ")}]`,
+        );
+      }
+    }
+  }
+  pass(
+    `vendor dylib architectures match ${manifest.architectures.join(", ")} exactly (${Object.keys(manifest.files).length} files)`,
+  );
+}
 
 // --- 2. tauri.conf.json wiring ---
 const conf = JSON.parse(readFileSync(TAURI_CONF, "utf8"));
@@ -248,19 +296,30 @@ if (process.platform !== "darwin") {
     pass(`libmpv ABI ${manifest.libmpvAbi} verified in formal build`);
   }
 
-  // Framework dylib release-architecture verification
+  // Framework dylib release-architecture verification: exact set equality, so
+  // a bundled fat dylib cannot pass by merely containing arm64.
   for (const filename of Object.keys(manifest.files)) {
     const dylib = resolve(BUNDLE, "Frameworks", filename);
     if (existsSync(dylib)) {
-      const info = run("lipo", ["-info", dylib]);
-      for (const arch of manifest.architectures) {
-        if (!info.includes(arch)) {
-          fail(`${filename} in formal build lacks architecture ${arch}`);
+      const actual = parseLipoArchs(run("lipo", ["-archs", dylib]));
+      const target = classifyArchitectures(actual, manifest.architectures);
+      if (target.status !== "match") {
+        fail(
+          `${filename} in formal build is [${actual.join(", ")}], expected release target [${manifest.architectures.join(", ")}]`,
+        );
+      }
+      const declared = manifest.fileArchitectures?.[filename];
+      if (declared) {
+        const record = classifyArchitectures(actual, declared);
+        if (record.status !== "match") {
+          fail(
+            `${filename} in formal build is [${actual.join(", ")}], expected fileArchitectures [${declared.join(", ")}]`,
+          );
         }
       }
     }
   }
-  pass(`all framework dylibs include ${manifest.architectures.join(", ")}`);
+  pass(`all framework dylibs match ${manifest.architectures.join(", ")} exactly`);
 }
 
 // --- 6. Windows platform wiring (formal) ---
