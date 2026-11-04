@@ -112,6 +112,10 @@ nursery = "warn"
 [profile.release]
 lto = "thin"
 codegen-units = 1
+# Drop local symbols from all three release targets (macOS/Windows/Linux).
+# Crash backtraces lose local symbol names; the vendor dylibs follow the same
+# strip -x + ad-hoc re-sign pipeline in scripts/release/thin-macos-libmpv.mjs.
+strip = "symbols"
 
 # The desktop dev command exercises the same persistence pipeline as release.
 # Keep debug information while avoiding disproportionately slow JSON, hashing,

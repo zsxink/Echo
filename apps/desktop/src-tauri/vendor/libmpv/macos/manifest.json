@@ -59,15 +59,6 @@
     "libintl.8.dylib": [
       "arm64"
     ],
-    "libmbedcrypto.dylib": [
-      "arm64"
-    ],
-    "libmbedtls.dylib": [
-      "arm64"
-    ],
-    "libmbedx509.dylib": [
-      "arm64"
-    ],
     "libmpv.dylib": [
       "arm64"
     ],
@@ -128,12 +119,6 @@
       "source": "https://github.com/silnrsi/graphite"
     },
     {
-      "component": "mbed TLS",
-      "license": "Apache-2.0 OR GPL-2.0-or-later",
-      "source": "https://github.com/Mbed-TLS/mbedtls",
-      "note": "libmbedtls/libmbedcrypto/libmbedx509.dylib; Homebrew build, version recorded by the build host"
-    },
-    {
       "component": "HarfBuzz",
       "license": "MIT",
       "source": "https://github.com/harfbuzz/harfbuzz"
@@ -160,26 +145,23 @@
     }
   ],
   "files": {
-    "libass.9.dylib": "ce12ed76f8fa568be8796db8f301048ae03319a4eee35154cd40f57b0d9e9dd1",
+    "libass.9.dylib": "f7d685b42b206f3126c555bb6b0335055f836b61be560e21ad9cc2131ff72d69",
     "libavcodec.dylib": "c14129386f5315ede5ee2bec12266d26cc2ea33f446d9e9079673d7339f98349",
     "libavfilter.dylib": "8001198cc4ff4a1d95472eff4d71df8010ff3b96a8f61a156e87965b2f730b23",
     "libavformat.dylib": "91e8d406ed9b31667f8b2d5f673754efe83cf2f112e362c06fd517903d08b27e",
     "libavutil.dylib": "481a28a65f72f862dc09a04ea255c2532a52f446eec7e24e44cb109bfa746776",
-    "libfreetype.6.dylib": "aa2951fd77181d0ebf7875d09ea2c906e3470f51181589d4764c9cbac9249e79",
-    "libfribidi.0.dylib": "c5726046801ee6604ae9b2fad9bc5d8e3784a0ae01e57c95151954b9cae5e48b",
-    "libglib-2.0.0.dylib": "359bb9c6d2276ef925b4255a09d589597a114f7536ab3002f985ee1a978eee30",
-    "libgraphite2.3.dylib": "bcc6ba81befad993037e8a658aa7c416e9e047105799492a844988438bf71045",
-    "libharfbuzz.0.dylib": "6df7af046780e227201dd99eac4f58fd21fc051df72c7b3048e8b520e4cb5e6e",
-    "libintl.8.dylib": "a1c0f8eac318459e00e707f6be965d289acdb8c07f024f8d693ce6180767932a",
-    "libmbedcrypto.dylib": "b62c3ea57ecef7e7ca81123ef45088f109198cea1227351c5b34e1ecb1a5354a",
-    "libmbedtls.dylib": "583d84dbf991d9371b986c129b2d6e63187988fe648babcf90d525ded16e961e",
-    "libmbedx509.dylib": "ea4c3de3989afd323b4b99d4eab6d90ffc55d2c4f10e74ba5ff732d1f42dd25f",
-    "libmpv.dylib": "791274231fc1f95a2ffc2b688d9cecdb6c22509272d133d4e8b9bff615926dfc",
-    "libpcre2-8.0.dylib": "4c494053ae7324f5dda00472f12c9b3d6303dcf8ac2ca3baf7dcdd7d80f95021",
-    "libpng16.16.dylib": "ce2fd338e637a1173dd4c0e8a5040b40df206b06b86dffcc5f1a14815cd10fe4",
+    "libfreetype.6.dylib": "c2317e0ca26d159916575d8d71664746dc7af6a1cc975725ab3337afe862580a",
+    "libfribidi.0.dylib": "cd186f1af7ed2e758f4dc4ea335d6d92fead88da0b94d1df0e74e0e4654898d2",
+    "libglib-2.0.0.dylib": "64e5ba77b17ad2878f08f70d4b1b932d72c1ea119ef0227f8e5c41d1019da27d",
+    "libgraphite2.3.dylib": "b94ed0792b9599acb84f676eef05ad31d084b7469440b036de662bc4c4f245d5",
+    "libharfbuzz.0.dylib": "01e4a9537bf3e263746f75cdc01d6c7973af5cb9e4f378c06c0b678d7468f947",
+    "libintl.8.dylib": "60fa8122a85c7e937e261300a6b2015df5fa4aa6e231a8d480617a7da1dd8639",
+    "libmpv.dylib": "d667695983dd33a9e4937307042b8a42514febfea78fe58333c878f7d7e4b0fb",
+    "libpcre2-8.0.dylib": "148099112f51a617c911cd63dbf38e85ff05e84990adeac212c68c4bab202dc1",
+    "libpng16.16.dylib": "03c81e5f37f1e5546ea8a6ed785ec18f120cb5e97385aa7bb29c77335ba71049",
     "libswresample.dylib": "9e0d0e547dec71090231b53000a8c699f968ba65ef2486b246560068fd26e24e",
     "libswscale.dylib": "4268db6091e4838cfd461a82805430e7258e6ef8e1cac13c34a8ec43e210531e",
-    "libunibreak.8.dylib": "61ff8eedc2b923b77f3018c2df177871e7de069d2e1a4d6222b1f7f6016e4883"
+    "libunibreak.8.dylib": "c6e1d53e420a5d1a0d58512bd1880fbe1d61db613ac756788c2b0ae03aaa7cef"
   },
   "buildProcedureStatus": "Source candidate built and probed on macOS arm64; clean-room rebuild remains pending. Every bundled dylib is arm64-only; rebuilds must use ARCHS=arm64 / ONLY_ACTIVE_ARCH=YES, and Intel/universal packaging is outside the current release target."
 }

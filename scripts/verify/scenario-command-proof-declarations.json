@@ -11,6 +11,6 @@
     "scripts/verify/checks/task-9.3.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",
     "scripts/verify/checks/task-9.6.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",
     "scripts/verify/checks/task-9.5.mjs": "hybrid (cargo + repo-content assertions); entry pending the injection-proof follow-up change",
-    "scripts/verify/checks/task-9.7.mjs": "hybrid (cargo + repo-content assertions); backs DP-R01-S03 (平台播放后端缺失); entry pending the injection-proof follow-up change"
+    "scripts/verify/checks/task-9.7.mjs": "hybrid (cargo + repo-content assertions); backs DP-R01-S03 (平台播放后端缺失); the symbol-purity and dependency-closure assertions added by issue #137 are proven by scripts/release/thin-macos-libmpv.test.mjs (registered under Gate 9.7), which injects unreferenced-library and stale-mapping violations against the same pure helpers the Gate uses; the remaining hybrid gap is tracked as follow-up work"
   }
 }

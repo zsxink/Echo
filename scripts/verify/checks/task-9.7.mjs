@@ -35,7 +35,12 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
   classifyArchitectures,
+  compareVendorSets,
+  computeVendorClosure,
+  countLocalSymbols,
+  parseDylibReferences,
   parseLipoArchs,
+  vendorSetsMatch,
 } from "../../release/thin-macos-libmpv.mjs";
 
 const ROOT = resolve(
@@ -123,6 +128,10 @@ function run(command, args) {
   return `${result.stdout || ""}${result.stderr || ""}`;
 }
 
+// Filled by the macOS symbol/closure check below, consumed after tauri.conf
+// is parsed. Undefined on non-darwin, where the check is skipped.
+let vendorClosure;
+
 // --- 1. Manifest structure ---
 if (!existsSync(MANIFEST)) fail("libmpv manifest not found");
 const manifest = JSON.parse(readFileSync(MANIFEST, "utf8"));
@@ -178,6 +187,34 @@ if (process.platform !== "darwin") {
   pass(
     `vendor dylib architectures match ${manifest.architectures.join(", ")} exactly (${Object.keys(manifest.files).length} files)`,
   );
+
+  // --- 1c. Symbol purity and dependency closure (macOS only) ---
+  // strip -x removes local symbols but leaves the dynamic-link references
+  // intact. Any rebuild that ships unstripped dylibs, a leftover mbed library,
+  // or a manifest/bundle mapping that no longer matches the otool -L closure
+  // must fail here rather than only in a manual review.
+  const LOCAL_SYMBOL_LIMIT = 32;
+  const symbols = [];
+  const references = {};
+  for (const filename of Object.keys(manifest.files)) {
+    const vendor = resolve(VENDOR_DIR, filename);
+    const count = countLocalSymbols(run("nm", ["-a", vendor]));
+    if (count > LOCAL_SYMBOL_LIMIT) {
+      symbols.push(`${filename} (${count} local symbols)`);
+    }
+    references[filename] = parseDylibReferences(run("otool", ["-L", vendor]));
+  }
+  if (symbols.length > 0) {
+    fail(
+      `vendored dylibs still carry local symbols: ${symbols.join(", ")}; run scripts/release/thin-macos-libmpv.mjs --write`,
+    );
+  }
+  pass(
+    `all ${Object.keys(manifest.files).length} vendor dylibs stripped (<= ${LOCAL_SYMBOL_LIMIT} local symbols each)`,
+  );
+  // The set comparison runs after tauri.conf is parsed (section 2), where the
+  // bundle mapping is available.
+  vendorClosure = computeVendorClosure("libmpv.dylib", references);
 }
 
 // --- 2. tauri.conf.json wiring ---
@@ -200,6 +237,29 @@ if (!bundleFiles["Resources/third-party/libmpv/NOTICE.md"]) {
 pass(
   `tauri.conf wiring complete (${bundleFileCount} entries cover all ${manifestFileCount} manifest files + NOTICE)`,
 );
+
+// --- 2b. Vendor dependency closure == manifest == bundle (macOS only) ---
+if (vendorClosure !== undefined) {
+  const bundleFrameworks = Object.keys(bundleFiles)
+    .filter((key) => key.startsWith("Frameworks/"))
+    .map((key) => key.slice("Frameworks/".length));
+  const comparison = compareVendorSets({
+    manifestFiles: Object.keys(manifest.files),
+    closure: vendorClosure,
+    bundleFrameworks,
+  });
+  if (!vendorSetsMatch(comparison)) {
+    fail(
+      `vendor set mismatch: manifest-only [${comparison.unusedInManifest.join(", ")}], ` +
+        `closure-only [${comparison.missingFromManifest.join(", ")}], ` +
+        `bundle-missing [${comparison.missingFromBundle.join(", ")}], ` +
+        `bundle-extra [${comparison.extraInBundle.join(", ")}]`,
+    );
+  }
+  pass(
+    `vendor dependency closure matches manifest and bundle (${vendorClosure.length} dylibs; no unused vendored libraries)`,
+  );
+}
 
 // --- 3. build.rs rpath ---
 const buildRs = readFileSync(BUILD_RS, "utf8");
