@@ -35,4 +35,4 @@
 ## 6. 规格同步与归档
 
 - [x] 6.1 把 delta spec 同步到主规格 `openspec/specs/platform-libmpv-supply-chain/spec.md`，并核对规格、追溯记录、场景清单三方一致（按 `engineering-governance` 要求）。验证：同步后 `openspec validate ... --strict` 通过，追溯/场景对账无漂移
-- [ ] 6.2 勾选本 change 全部任务、归档 change，然后在独立分支创建关联 issue #137 的 PR。验证：`openspec archive strip-symbols-and-drop-mbedtls` 成功；PR 标题/正文关联 #137，分支非 `main`，归档先于 PR 创建
+- [x] 6.2 勾选本 change 全部任务、归档 change，然后在独立分支创建关联 issue #137 的 PR。验证：`openspec archive strip-symbols-and-drop-mbedtls` 成功；PR 标题/正文关联 #137，分支非 `main`，归档先于 PR 创建
