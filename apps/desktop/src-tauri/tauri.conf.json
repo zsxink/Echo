@@ -63,6 +63,8 @@
         "Frameworks/libswresample.dylib": "vendor/libmpv/macos/libswresample.dylib",
         "Frameworks/libswscale.dylib": "vendor/libmpv/macos/libswscale.dylib",
         "Frameworks/libass.9.dylib": "vendor/libmpv/macos/libass.9.dylib",
+        "Frameworks/libbrotlicommon.1.dylib": "vendor/libmpv/macos/libbrotlicommon.1.dylib",
+        "Frameworks/libbrotlidec.1.dylib": "vendor/libmpv/macos/libbrotlidec.1.dylib",
         "Frameworks/libfreetype.6.dylib": "vendor/libmpv/macos/libfreetype.6.dylib",
         "Frameworks/libfribidi.0.dylib": "vendor/libmpv/macos/libfribidi.0.dylib",
         "Frameworks/libglib-2.0.0.dylib": "vendor/libmpv/macos/libglib-2.0.0.dylib",

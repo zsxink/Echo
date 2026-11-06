@@ -154,6 +154,18 @@ jobs:
       - name: Build release bundles
         run: pnpm echo release
 
+      # `pnpm echo release` builds the same app bundle the macOS Gate already
+      # validates in CI, but with release signing identity. Re-run the bundle
+      # half of the Gate (not 1.9, which would rebuild) against the exact
+      # artifact about to be published. The paths are overridden because the
+      # release build uses target/release, not the aarch64 triple directory.
+      - name: Gate release bundles (macOS libmpv)
+        if: runner.os == 'macOS'
+        env:
+          ECHO_MACOS_BUNDLE: ${{ github.workspace }}/target/release/bundle/macos/Echo.app/Contents
+          ECHO_MACOS_REPORT: ${{ github.workspace }}/target/release/bundle/macos/echo-libmpv-report.md
+        run: pnpm verify:task -- 1.10 9.7
+
       - name: Assert expected artifacts exist
         shell: bash
         run: |

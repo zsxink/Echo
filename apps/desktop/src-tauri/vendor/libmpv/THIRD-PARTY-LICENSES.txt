@@ -16,6 +16,8 @@ installer.
     libmpv.dylib, libav*.dylib, libsw*.dylib
                                           LGPL-2.1-or-later
     libass.9.dylib                        ISC
+    libbrotlicommon.1.dylib, libbrotlidec.1.dylib
+                                          MIT（FreeType 的 Brotli 支持 / FreeType's Brotli support）
     libfreetype.6.dylib                   FTL (FreeType License)
     libfribidi.0.dylib                    LGPL-2.1-or-later
     libglib-2.0.0.dylib                   LGPL-2.1-or-later
@@ -939,7 +941,7 @@ THE SOFTWARE IS PROVIDED "AS IS" AND ISC DISCLAIMS ALL WARRANTIES WITH REGARD TO
 ==============================================================================
 == MIT License
 == SPDX: MIT
-== Covers: fontconfig、harfbuzz（Linux 系统依赖）
+== Covers: Brotli（macOS，FreeType 依赖）、fontconfig、harfbuzz（Linux 系统依赖）
 ==============================================================================
 
 MIT License

@@ -15,11 +15,13 @@
     },
     {
       "name": "mpv-lavfi-target-command.patch",
-      "path": "scripts/release/patches/mpv-lavfi-target-command.patch"
+      "path": "scripts/release/patches/mpv-lavfi-target-command.patch",
+      "sha256": "c9b354f3ce67bd446d4195e41ba73da2558e50119026052a8d0ad9296a594dc9"
     },
     {
       "name": "mpv-fix-missing-objc.patch",
-      "path": "scripts/release/patches/mpv-fix-missing-objc.patch"
+      "path": "scripts/release/patches/mpv-fix-missing-objc.patch",
+      "sha256": "9affd0b9bf9a36ac57ba1ce211e2292ad7cda2050abb560909bafc585c908851"
     }
   ],
   "architectures": [
@@ -39,6 +41,12 @@
       "arm64"
     ],
     "libavutil.dylib": [
+      "arm64"
+    ],
+    "libbrotlicommon.1.dylib": [
+      "arm64"
+    ],
+    "libbrotlidec.1.dylib": [
       "arm64"
     ],
     "libfreetype.6.dylib": [
@@ -79,9 +87,9 @@
     ]
   },
   "libmpvAbi": "2.0.0",
-  "mpvBuild": "mpv 0.36.0; Echo targeted libavfilter command patch",
-  "ffmpegBuild": "FFmpeg 6.0; LGPL-only; required filters aformat,alimiter,equalizer,extrastereo,volume",
-  "buildHost": "macOS 27.0 arm64; Homebrew dependency versions recorded in NOTICE.md",
+  "mpvBuild": "mpv 0.36.0; 2 patch(es) applied: mpv-lavfi-target-command.patch, mpv-fix-missing-objc.patch; hard dependencies libass.9.dylib, libswscale.dylib",
+  "ffmpegBuild": "FFmpeg 6.0; LGPL-only; deployment target 27.0; required filters aformat,alimiter,equalizer,extrastereo,volume,aresample",
+  "buildHost": "macOS 27.2 arm64; Homebrew /opt/homebrew; auxiliary versions recorded in NOTICE.md",
   "licenses": [
     {
       "component": "libmpv",
@@ -92,6 +100,11 @@
       "component": "FFmpeg",
       "license": "LGPL-2.1-or-later; GPL and nonfree disabled",
       "source": "https://ffmpeg.org/legal.html"
+    },
+    {
+      "component": "Brotli",
+      "license": "MIT",
+      "source": "https://github.com/google/brotli"
     },
     {
       "component": "libass",
@@ -146,22 +159,200 @@
   ],
   "files": {
     "libass.9.dylib": "f7d685b42b206f3126c555bb6b0335055f836b61be560e21ad9cc2131ff72d69",
-    "libavcodec.dylib": "c14129386f5315ede5ee2bec12266d26cc2ea33f446d9e9079673d7339f98349",
-    "libavfilter.dylib": "8001198cc4ff4a1d95472eff4d71df8010ff3b96a8f61a156e87965b2f730b23",
-    "libavformat.dylib": "91e8d406ed9b31667f8b2d5f673754efe83cf2f112e362c06fd517903d08b27e",
-    "libavutil.dylib": "481a28a65f72f862dc09a04ea255c2532a52f446eec7e24e44cb109bfa746776",
-    "libfreetype.6.dylib": "c2317e0ca26d159916575d8d71664746dc7af6a1cc975725ab3337afe862580a",
+    "libavcodec.dylib": "275e71666f00cb2f9daec9af65f4b403947522823c3f8129d90ce7cbf0b23d30",
+    "libavfilter.dylib": "2044d232b40af49bd2a3b3227a71e1daee0adae3645db0826cb34ee47f5f1e86",
+    "libavformat.dylib": "990eb1ddd81948a2c095f004cb85c6a3c09fd31b3b885fea7ef80e2bac63d1c2",
+    "libavutil.dylib": "11addb43d31c9f185218708fbe7285a6fa3ffa5a7260abe8bd764d220a4ab260",
+    "libbrotlicommon.1.dylib": "8575a93a4b80f7dd05e12247e01490058ffab68959cc544ffd6540e08cdeea53",
+    "libbrotlidec.1.dylib": "6286d3f09f1ef3590fe5746889769f38b36eec21eceafbce5176d75e1c1962dc",
+    "libfreetype.6.dylib": "6ca7e093ad8e6baf33a735bca1145a30d15695ab8b845ba54c1e58fa5edd8857",
     "libfribidi.0.dylib": "cd186f1af7ed2e758f4dc4ea335d6d92fead88da0b94d1df0e74e0e4654898d2",
-    "libglib-2.0.0.dylib": "64e5ba77b17ad2878f08f70d4b1b932d72c1ea119ef0227f8e5c41d1019da27d",
+    "libglib-2.0.0.dylib": "f97afe0a39a77d386e5816ba0f81cd872436cfa8ab260e8e780ffdf61fe51f28",
     "libgraphite2.3.dylib": "b94ed0792b9599acb84f676eef05ad31d084b7469440b036de662bc4c4f245d5",
-    "libharfbuzz.0.dylib": "01e4a9537bf3e263746f75cdc01d6c7973af5cb9e4f378c06c0b678d7468f947",
+    "libharfbuzz.0.dylib": "332314caf5acb45e3795e418ace0e9551553bd83c8e89d4fc3f877ff61096c94",
     "libintl.8.dylib": "60fa8122a85c7e937e261300a6b2015df5fa4aa6e231a8d480617a7da1dd8639",
-    "libmpv.dylib": "d667695983dd33a9e4937307042b8a42514febfea78fe58333c878f7d7e4b0fb",
+    "libmpv.dylib": "536cc29610c2cb105671fa92a5dfac00a483f534899c5f5884b1cd55ca4d855d",
     "libpcre2-8.0.dylib": "148099112f51a617c911cd63dbf38e85ff05e84990adeac212c68c4bab202dc1",
-    "libpng16.16.dylib": "03c81e5f37f1e5546ea8a6ed785ec18f120cb5e97385aa7bb29c77335ba71049",
-    "libswresample.dylib": "9e0d0e547dec71090231b53000a8c699f968ba65ef2486b246560068fd26e24e",
-    "libswscale.dylib": "4268db6091e4838cfd461a82805430e7258e6ef8e1cac13c34a8ec43e210531e",
+    "libpng16.16.dylib": "3519a15e513b05046e720cc5f6f49e199e3f33eb4219610140cce65f0efcf8c1",
+    "libswresample.dylib": "d62a0463a76cc7216b09d3cf71f9049040ce06867c0dcd70ea1bc360b9e77716",
+    "libswscale.dylib": "659b7ccecf18222b3e07ec3974eb4b1ada0b86a95519e7eb67321bbe07db2fe0",
     "libunibreak.8.dylib": "c6e1d53e420a5d1a0d58512bd1880fbe1d61db613ac756788c2b0ae03aaa7cef"
   },
-  "buildProcedureStatus": "Source candidate built and probed on macOS arm64; clean-room rebuild remains pending. Every bundled dylib is arm64-only; rebuilds must use ARCHS=arm64 / ONLY_ACTIVE_ARCH=YES, and Intel/universal packaging is outside the current release target."
+  "buildProcedureStatus": "Reproduced from the pinned sources by scripts/release/build-macos-libmpv.mjs; every bundled dylib is arm64-only and the runtime component probe passed before publishing.",
+  "buildScript": "scripts/release/build-macos-libmpv.mjs",
+  "builds": {
+    "ffmpeg": {
+      "version": "6.0",
+      "configure": [
+        "--prefix=/usr/local",
+        "--arch=arm64",
+        "--target-os=darwin",
+        "--enable-shared",
+        "--disable-static",
+        "--disable-everything",
+        "--disable-autodetect",
+        "--disable-programs",
+        "--disable-doc",
+        "--disable-debug",
+        "--disable-avdevice",
+        "--disable-network",
+        "--disable-securetransport",
+        "--disable-audiotoolbox",
+        "--disable-videotoolbox",
+        "--disable-zlib",
+        "--extra-cflags=-mmacosx-version-min=27.0",
+        "--extra-ldflags=-Wl,-dead_strip_dylibs -mmacosx-version-min=27.0",
+        "--enable-small",
+        "--enable-pthreads",
+        "--enable-protocol=file",
+        "--enable-demuxer=mp3,flac,ape,mov,ogg,wav",
+        "--enable-decoder=mp3,mp3float,flac,ape,aac,aac_latm,alac,vorbis,opus,pcm_*",
+        "--enable-parser=aac,flac,mpegaudio,vorbis,opus,ac3",
+        "--enable-filter=aformat,alimiter,equalizer,extrastereo,volume,aresample"
+      ],
+      "deploymentTarget": "27.0",
+      "toolchain": "Apple clang version 21.0.0 (clang-2100.4.1.1); SDK 27.2"
+    },
+    "mpv": {
+      "version": "0.36.0",
+      "meson": [
+        "-Dcplayer=false",
+        "-Dlibmpv=true",
+        "-Dgpl=false",
+        "-Dbuild-date=false",
+        "-Dtests=false",
+        "-Dcoreaudio=enabled",
+        "-Daudiounit=disabled",
+        "-Dcocoa=disabled",
+        "-Dgl=disabled",
+        "-Dplain-gl=disabled",
+        "-Dgl-cocoa=disabled",
+        "-Dvideotoolbox-gl=disabled",
+        "-Dvulkan=disabled",
+        "-Dlibplacebo=disabled",
+        "-Dlibplacebo-next=disabled",
+        "-Dmacos-cocoa-cb=disabled",
+        "-Dmacos-media-player=disabled",
+        "-Dmacos-touchbar=disabled",
+        "-Dlua=disabled",
+        "-Djavascript=disabled",
+        "-Dlibarchive=disabled",
+        "-Dlibavdevice=disabled",
+        "-Dzlib=disabled",
+        "-Duchardet=disabled",
+        "-Dlibbluray=disabled",
+        "-Ddvdnav=disabled",
+        "-Dcdda=disabled",
+        "-Dsdl2=disabled",
+        "-Dsdl2-audio=disabled",
+        "-Dsdl2-video=disabled",
+        "-Dsdl2-gamepad=disabled",
+        "-Drubberband=disabled",
+        "-Dlcms2=disabled",
+        "-Dzimg=disabled",
+        "-Dvector=disabled",
+        "-Djpeg=disabled",
+        "-Dvapoursynth=disabled",
+        "-Dcplugins=disabled",
+        "-Dswift-build=disabled",
+        "-Dmanpage-build=disabled",
+        "-Dhtml-build=disabled",
+        "-Dpdf-build=disabled"
+      ],
+      "patches": [
+        "scripts/release/patches/mpv-lavfi-target-command.patch",
+        "scripts/release/patches/mpv-fix-missing-objc.patch"
+      ],
+      "hardDependencies": [
+        "libass.9.dylib",
+        "libswscale.dylib"
+      ]
+    },
+    "auxiliary": [
+      {
+        "component": "libass",
+        "version": "0.17.5_1",
+        "files": [
+          "libass.9.dylib"
+        ]
+      },
+      {
+        "component": "Brotli common",
+        "version": "1.2.0",
+        "files": [
+          "libbrotlicommon.1.dylib"
+        ]
+      },
+      {
+        "component": "Brotli decoder",
+        "version": "1.2.0",
+        "files": [
+          "libbrotlidec.1.dylib"
+        ]
+      },
+      {
+        "component": "FreeType",
+        "version": "2.15.0",
+        "files": [
+          "libfreetype.6.dylib"
+        ]
+      },
+      {
+        "component": "FriBidi",
+        "version": "1.0.17",
+        "files": [
+          "libfribidi.0.dylib"
+        ]
+      },
+      {
+        "component": "GLib",
+        "version": "2.90.1",
+        "files": [
+          "libglib-2.0.0.dylib"
+        ]
+      },
+      {
+        "component": "Graphite2",
+        "version": "1.3.15",
+        "files": [
+          "libgraphite2.3.dylib"
+        ]
+      },
+      {
+        "component": "HarfBuzz",
+        "version": "14.6.0",
+        "files": [
+          "libharfbuzz.0.dylib"
+        ]
+      },
+      {
+        "component": "GNU libintl",
+        "version": "1.0",
+        "files": [
+          "libintl.8.dylib"
+        ]
+      },
+      {
+        "component": "PCRE2",
+        "version": "10.49",
+        "files": [
+          "libpcre2-8.0.dylib"
+        ]
+      },
+      {
+        "component": "libpng",
+        "version": "1.6.59",
+        "files": [
+          "libpng16.16.dylib"
+        ]
+      },
+      {
+        "component": "libunibreak",
+        "version": "8.0",
+        "files": [
+          "libunibreak.8.dylib"
+        ]
+      }
+    ]
+  }
 }

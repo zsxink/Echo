@@ -95,15 +95,26 @@ const CI_WORKFLOW = resolve(ROOT, ".github", "workflows", "ci.yml");
 // bundle behind (it also signs it), so the assertions
 // below do execute on every macOS build; see the 9.7 step in ci.yml.
 const BUNDLE = resolve(
-  ROOT,
-  "target",
-  "aarch64-apple-darwin",
-  "release",
-  "bundle",
-  "macos",
-  "Echo.app",
-  "Contents",
+  process.env.ECHO_MACOS_BUNDLE ||
+    resolve(
+      ROOT,
+      "target",
+      "aarch64-apple-darwin",
+      "release",
+      "bundle",
+      "macos",
+      "Echo.app",
+      "Contents",
+    ),
 );
+// An explicit ECHO_MACOS_BUNDLE / ECHO_MACOS_REPORT means the caller (release
+// workflow or CI) is pointing the Gate at a specific artifact that MUST exist.
+// Silently skipping in that mode would bypass every formal-build check
+// (vendor hashes, codesign, rpath, ABI, architectures). Only the default
+// local-dev path may skip when no bundle has been built yet.
+const BUNDLE_OVERRIDE =
+  process.env.ECHO_MACOS_BUNDLE !== undefined ||
+  process.env.ECHO_MACOS_REPORT !== undefined;
 
 function fail(message) {
   process.stderr.write(`FAIL 9.7: ${message}\n`);
@@ -281,6 +292,13 @@ if (process.platform !== "darwin") {
     "skip: formal build regression checks are macOS-local; defer to platform Gate\n",
   );
 } else if (!existsSync(BUNDLE)) {
+  if (BUNDLE_OVERRIDE) {
+    fail(
+      `formal build bundle path does not exist: ${BUNDLE} ` +
+        "(ECHO_MACOS_BUNDLE/ECHO_MACOS_REPORT override mode refuses to skip; " +
+        "the release/CI artifact must be present before the Gate can pass)",
+    );
+  }
   process.stdout.write(
     "skip: no formal build artifact found at expected bundle path; build first with `pnpm --filter @echo/desktop tauri build --bundles app`\n",
   );

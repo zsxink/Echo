@@ -99,10 +99,10 @@
     },
     {
       "id": "1.10",
-      "title": "macOS libmpv provenance, ABI, signature and dependency report",
+      "title": "macOS libmpv 来源/签名/ABI 报告与最小音频构建 Gate：运行时组件探针、禁止链接、deployment target minos、四集合相等、install name 与 release 发布 bundle 接线断言",
       "commands": [
         {
-          "desc": "pinned source/checksums/license inventory and bundled dylib report",
+          "desc": "pinned 源码/校验和/许可清单与 vendor/bundle 来源、签名、依赖报告；runtime 组件探针逐项拒绝视频/网络/TLS 组件，otool -L 禁止链接覆盖全部 dylib，校验 minos、@rpath install name、manifest files/fileArchitectures/vendor/bundle 四集合相等，并断言 release.yml 的 ECHO_MACOS_BUNDLE 发布 Gate 步骤",
           "cmd": "node scripts/verify/checks/task-1.10.mjs"
         }
       ]
@@ -865,7 +865,7 @@
     },
     {
       "id": "9.7",
-      "title": "libmpv manifest 接入正式构建：macOS vendor/bundle 架构精确匹配（拒绝 fat）、符号纯度 + 依赖闭包精确匹配、arm64 rpath+签名、Windows DLL 搜索、Linux glibc 2.35 依赖检查、Gate 基线无回退",
+      "title": "libmpv manifest 接入正式构建：macOS vendor/bundle 架构精确匹配（拒绝 fat）、符号纯度 + 依赖闭包精确匹配、arm64 rpath+签名、最小音频构建参数与运行时组件集注入式自证、Windows DLL 搜索、Linux glibc 2.35 依赖检查、Gate 基线无回退",
       "commands": [
         {
           "desc": "manifest 结构/校验和、tauri.conf wiring、build.rs rpath、CI Gate 步骤；macOS vendor 与构建产物逐文件架构集合精确匹配（== arm64 发布目标且 == fileArchitectures，拒绝 x86_64 slice）、本地符号纯度（strip -x 后无成规模 t/s 符号）、依赖闭包 == manifest == bundle 映射（拒绝未引用库与漂移）、rpath/签名/ABI 与产物纯净性（Resources/ 不含其它平台播放后端）验证；Windows 平台专属配置 tauri.windows.conf.json 的 DLL 映射与主配置无平台无关 resources；Linux 要求记录",
@@ -874,6 +874,14 @@
         {
           "desc": "macOS vendor 维护脚本的架构集合解析、精确判定、strip 步骤顺序、本地符号计数、依赖闭包与集合比对的注入式自证（含未引用库/漂移映射违规），以及 manifest 哈希/架构重写单测（跨平台）",
           "cmd": "node scripts/release/thin-macos-libmpv.test.mjs"
+        },
+        {
+          "desc": "macOS libmpv 最小音频构建脚本的参数解析、pin 校验、meson 选项校验、configure 警告扫描、pkg-config 前缀改写、安装名改写计划与 manifest/NOTICE 生成器单测（跨平台）",
+          "cmd": "node scripts/release/build-macos-libmpv.test.mjs"
+        },
+        {
+          "desc": "构建组件集注入式自证（跨平台）：运行时探针输出解析，视频 decoder/filter/容器、网络协议、TLS 链接与缺失音频组件的拒绝并命名，四个无条件图端点不误杀",
+          "cmd": "node scripts/release/ffmpeg-component-probe.test.mjs"
         },
         {
           "desc": "Linux 自建 libmpv 的产出侧：manifest.json（逐文件 SHA-256 + 四个 commit pin + glibc 上限）与 NOTICE.md 由构建脚本生成，符号链接不入 manifest",
