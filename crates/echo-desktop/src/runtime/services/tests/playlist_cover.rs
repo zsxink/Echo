@@ -9,8 +9,8 @@ fn library_durability_playlist_cover_original_survives_cache_loss_and_clear() {
     let app = services(&fixture);
     let id =
         PlaylistId::from_str(&app.create_playlist(fixture.root, "durable cover").unwrap()).unwrap();
-    let bytes = b"synthetic original cover";
-    app.set_playlist_cover(id, Some(bytes), Some("image/png"))
+    let bytes = super::cover_fixtures::cover_png();
+    app.set_playlist_cover(id, Some(bytes.as_slice()), Some("image/png"))
         .unwrap();
     let record = fixture
         .deps
@@ -64,8 +64,8 @@ fn playlist_cover_rejects_unsupported_mime_without_replacing_the_saved_cover() {
     let app = services(&fixture);
     let id =
         PlaylistId::from_str(&app.create_playlist(fixture.root, "cover mime").unwrap()).unwrap();
-    let saved = b"synthetic original cover";
-    app.set_playlist_cover(id, Some(saved), Some("image/png"))
+    let saved = super::cover_fixtures::cover_png();
+    app.set_playlist_cover(id, Some(saved.as_slice()), Some("image/png"))
         .unwrap();
     let before = app.playlists().unwrap()[0].cover_key.clone();
     assert!(before.is_some());
@@ -99,8 +99,8 @@ fn playlist_cover_rejects_oversized_payload_without_replacing_the_saved_cover() 
     let app = services(&fixture);
     let id =
         PlaylistId::from_str(&app.create_playlist(fixture.root, "cover size").unwrap()).unwrap();
-    let saved = b"synthetic original cover";
-    app.set_playlist_cover(id, Some(saved), Some("image/png"))
+    let saved = super::cover_fixtures::cover_png();
+    app.set_playlist_cover(id, Some(saved.as_slice()), Some("image/png"))
         .unwrap();
     let before = app.playlists().unwrap()[0].cover_key.clone();
     assert!(before.is_some());
@@ -117,6 +117,43 @@ fn playlist_cover_rejects_oversized_payload_without_replacing_the_saved_cover() 
             .deps
             .cover_cache
             .get(after.as_deref().unwrap())
+            .unwrap()
+            .as_deref(),
+        Some(saved.as_slice())
+    );
+}
+
+/// Issue #132 guard: a payload that only *claims* to be a PNG must be refused
+/// at save time, leaving both the saved cover and the playlist name intact.
+#[test]
+fn playlist_cover_rejects_fake_image_without_replacing_the_saved_cover() {
+    let fixture = ScanFixture::new();
+    seed_songs(&fixture, 1);
+    let app = services(&fixture);
+    let id =
+        PlaylistId::from_str(&app.create_playlist(fixture.root, "cover content").unwrap()).unwrap();
+    let saved = super::cover_fixtures::cover_png();
+    app.set_playlist_cover(id, Some(saved.as_slice()), Some("image/png"))
+        .unwrap();
+    let before = app.playlists().unwrap()[0].cover_key.clone();
+    assert!(before.is_some());
+
+    let error = app
+        .set_playlist_cover(
+            id,
+            Some(b"plain text pretending to be a png"),
+            Some("image/png"),
+        )
+        .expect_err("non-image content must be rejected at save time");
+    assert_eq!(error.code(), "validation");
+    let after = app.playlists().unwrap();
+    assert_eq!(after[0].cover_key, before);
+    assert_eq!(after[0].name, "cover content");
+    assert_eq!(
+        fixture
+            .deps
+            .cover_cache
+            .get(after[0].cover_key.as_deref().unwrap())
             .unwrap()
             .as_deref(),
         Some(saved.as_slice())

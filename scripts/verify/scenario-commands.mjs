@@ -1,6 +1,6 @@
 // Scenario → executable-command + evidence map for the 0.1.0 gate (task 13.9).
 //
-// 564 scenarios (spec-derived id set). A scenario's command is aggregated by
+// 572 scenarios (spec-derived id set). A scenario's command is aggregated by
 // domain; `evidence` names the tests/files the scenario actually depends on,
 // and run-scenario.mjs asserts each target was observed in the command output.
 // `manifest.json.scenarios[]` is generated from this table
@@ -52,6 +52,14 @@ export const SCENARIOS = {
 "LD-R09-S03": { command: CORE_ALL, evidence: [rust("library_durability_readonly_volume_and_unmaterialized_commit_can_be_browsed")], },
 "LD-R10-S01": { command: GOVERNANCE, delegatedTo: "governance", evidence: [node("scripts/verify/ci-governance.mjs")], },
 "LD-R11-S01": { command: CORE_ALL, evidence: [rust("library_durability_standalone_startup_purges_legacy_sync_projection")], },
+"LD-R12-S01": { command: CORE_ALL, evidence: [rust("validate_rejects_non_image_bytes_declared_as_png")], },
+"LD-R12-S02": { command: CORE_ALL, evidence: [rust("validate_rejects_declared_mime_that_differs_from_detected_format")], },
+"LD-R12-S03": { command: CORE_ALL, evidence: [rust("validate_rejects_truncated_or_malformed_container_header")], },
+"LD-R12-S04": { command: CORE_ALL, evidence: [rust("validate_accepts_jpeg_png_and_webp_with_matching_mime"), rust("save_and_resolve_round_trip_all_three_formats")], },
+"LD-R12-S05": { command: CORE_ALL, evidence: [rust("playlist_and_artist_cover_writes_share_the_same_validation")], },
+"LD-R12-S06": { command: CORE_ALL, evidence: [rust("validate_reads_only_the_container_header_without_pixel_decoding")], },
+"LD-R12-S07": { command: CORE_ALL, evidence: [rust("existing_size_and_mime_whitelist_rejections_are_unchanged")], },
+"LD-R12-S08": { command: CORE_ALL, evidence: [rust("resolving_an_existing_invalid_original_reports_a_validation_error"), rust("legacy_cache_only_cover_is_unaffected")], },
   // local-library
 "LL-R01-S01": { command: CORE_ALL, evidence: [rust("root_switch::")], },
 "LL-R01-S02": { command: CORE_ALL, evidence: [rust("root_switch::")], },

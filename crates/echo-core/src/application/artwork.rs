@@ -1,4 +1,8 @@
 //! Shared validation and reconstruction of content-addressed artwork originals.
+use std::io::Cursor;
+
+use image::{ImageFormat, ImageReader};
+
 use super::ports::{ControlPlanePort, CoverCache};
 use crate::domain::ids::LibraryRootId;
 use crate::domain::library::PortableAssetReference;
@@ -18,6 +22,42 @@ pub fn validate(bytes: &[u8], mime: &str) -> Result<(), Error> {
             "cover",
             "unsupported image type",
         ));
+    }
+    validate_content(bytes, mime)
+}
+
+/// Reject bytes that only *claim* to be a cover image before any durable asset
+/// or cache entry is written. `save` and `resolve` share this guard so a bad
+/// original can never reach `CoverCache::put`.
+///
+/// The probe is deliberately header-only: `into_dimensions()` builds a decoder
+/// and reads container dimensions without allocating an RGBA pixel buffer.
+/// A full decode would multiply a 5 MiB input into hundreds of MiB of pixels
+/// (the same cost class as issue #133) and add a decompression-bomb surface.
+fn validate_content(bytes: &[u8], mime: &str) -> Result<(), Error> {
+    let invalid = |reason: &str| Error::validation(Subject::Other, "cover", reason);
+    let unrecognized = || invalid("cover content is not a recognized image");
+    let mismatched = || invalid("cover content does not match the declared MIME type");
+    let bad_header = || invalid("cover image header is invalid or truncated");
+
+    // `with_guessed_format` peeks only the leading signature bytes; an unknown
+    // container leaves `format()` as `None` rather than returning an io error.
+    let mut reader = ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|_| unrecognized())?;
+    let detected = reader.format().ok_or_else(unrecognized)?;
+    let declared = ImageFormat::from_mime_type(mime).ok_or_else(mismatched)?;
+    if detected != declared || !detected.reading_enabled() {
+        return Err(mismatched());
+    }
+
+    // `ImageReader` defaults to a 512 MiB allocation ceiling that is applied
+    // while constructing the decoder. The save path never decodes pixels, so
+    // that ceiling must not reject a legitimate large image here.
+    reader.no_limits();
+    let (width, height) = reader.into_dimensions().map_err(|_| bad_header())?;
+    if width == 0 || height == 0 {
+        return Err(bad_header());
     }
     Ok(())
 }
@@ -79,3 +119,6 @@ pub fn resolve_legacy(
     }
     Ok(None)
 }
+
+#[cfg(test)]
+mod tests;
