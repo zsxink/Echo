@@ -43,8 +43,10 @@ impl super::AppServices {
     /// # Errors
     ///
     /// `Unavailable` when writes are disabled or `id` is not a known playlist;
-    /// `Validation` when the image is empty, exceeds 5 MiB, or its MIME type is
-    /// not JPEG/PNG/WebP; cover-cache and storage failures propagate.
+    /// `Validation` when the image is empty, exceeds 5 MiB, its MIME type is
+    /// not JPEG/PNG/WebP, its content is not an image of the declared type, or
+    /// its container header cannot be parsed; cover-cache and storage failures
+    /// propagate.
     pub fn set_playlist_cover(
         &self,
         id: PlaylistId,

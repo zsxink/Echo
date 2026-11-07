@@ -4473,6 +4473,102 @@
       ]
     },
     {
+      "id": "LD-R12-S01",
+      "title": "伪图片在保存阶段被拒绝",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "validate_rejects_non_image_bytes_declared_as_png"
+        }
+      ]
+    },
+    {
+      "id": "LD-R12-S02",
+      "title": "声明类型与实际格式不一致被拒绝",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "validate_rejects_declared_mime_that_differs_from_detected_format"
+        }
+      ]
+    },
+    {
+      "id": "LD-R12-S03",
+      "title": "容器头损坏被拒绝",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "validate_rejects_truncated_or_malformed_container_header"
+        }
+      ]
+    },
+    {
+      "id": "LD-R12-S04",
+      "title": "三种合法格式均可保存并展示",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "validate_accepts_jpeg_png_and_webp_with_matching_mime"
+        },
+        {
+          "kind": "rust",
+          "target": "save_and_resolve_round_trip_all_three_formats"
+        }
+      ]
+    },
+    {
+      "id": "LD-R12-S05",
+      "title": "歌单与艺人封面共用同一校验",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "playlist_and_artist_cover_writes_share_the_same_validation"
+        }
+      ]
+    },
+    {
+      "id": "LD-R12-S06",
+      "title": "校验只读取容器头",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "validate_reads_only_the_container_header_without_pixel_decoding"
+        }
+      ]
+    },
+    {
+      "id": "LD-R12-S07",
+      "title": "既有体积与白名单语义不变",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "existing_size_and_mime_whitelist_rejections_are_unchanged"
+        }
+      ]
+    },
+    {
+      "id": "LD-R12-S08",
+      "title": "既有无效原件与历史缓存-only 封面的兼容",
+      "command": "cargo test -p echo-core --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "resolving_an_existing_invalid_original_reports_a_validation_error"
+        },
+        {
+          "kind": "rust",
+          "target": "legacy_cache_only_cover_is_unaffected"
+        }
+      ]
+    },
+    {
       "id": "LE-R01-S01",
       "title": "切换全部歌曲",
       "command": "cargo test -p echo-core --all-features",

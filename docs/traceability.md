@@ -5,7 +5,7 @@
 - 本表逐项覆盖 specs 中的全部 Scenario；稳定 ID 不得复用，标题调整时保留原 ID。
 - 场景 ID 由 spec 标题派生；每行必须给出可执行验收命令，且该场景在 `scripts/verify/scenario-commands.mjs` 的 `SCENARIOS` 中声明非空 `evidence`（命令可执行 + 证据可观测）。人工举证由 `docs/native-attestation-playbook.md` 与 `artifacts/native-attestations/<ID>.log` 承担，字段与判定见 `check-native-attestation.mjs`。
 - 每行给出实际验收命令。`pnpm verify:scenario -- --all` 必须比较 specs、此表与场景清单的 ID 集合完全相等，并逐项执行；命令按域聚合后逐条断言 evidence 目标在输出中被观测到，缺失、重复、无命令、无证据、证据未观测或失败均返回非零。
-- 当前基线：146 个 Requirement，564 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9、封面缩略图档位与首访非阻塞 2、播放快照分层下发 16、封面载荷受控与预览回收 9、内嵌封面解码与 MIME 约束 5）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
+- 当前基线：147 个 Requirement，572 个 Scenario（0.1.0 归档后含 sync-foundation 6、原生对话框 5、导航计数 8、歌单搜索/定位/导入入口 24、三平台许可证齐全 1、平台播放后端缺失 1、歌单新建焦点 2、macOS 原生应用菜单 9、封面缩略图档位与首访非阻塞 2、播放快照分层下发 16、封面载荷受控与预览回收 9、内嵌封面解码与 MIME 约束 5、封面原件内容真实性校验 8）。Requirement 计数只用于审计，不再用整行继承代替场景映射。
 
 ## ci-release-pipeline
 
@@ -297,6 +297,14 @@
 | LD-R09-S03 | 格式读取兼容与一致备份边界 | 只保留 media | 3.6, 8.3 | Core | `pnpm verify:scenario -- LD-R09-S03` |
 | LD-R10-S01 | 分层与交付契约 | 可执行验证 | 10.3, 10.5 | Gate | `pnpm verify:scenario -- LD-R10-S01` |
 | LD-R11-S01 | 音乐库恢复状态排除单机同步状态 | 单机启动存在旧同步投影 | 7.9 | Core | `pnpm verify:scenario -- LD-R11-S01` |
+| LD-R12-S01 | 自定义封面原件写入前必须确认内容真实性 | 伪图片在保存阶段被拒绝 | issue-132 | Core | `pnpm verify:scenario -- LD-R12-S01` |
+| LD-R12-S02 | 自定义封面原件写入前必须确认内容真实性 | 声明类型与实际格式不一致被拒绝 | issue-132 | Core | `pnpm verify:scenario -- LD-R12-S02` |
+| LD-R12-S03 | 自定义封面原件写入前必须确认内容真实性 | 容器头损坏被拒绝 | issue-132 | Core | `pnpm verify:scenario -- LD-R12-S03` |
+| LD-R12-S04 | 自定义封面原件写入前必须确认内容真实性 | 三种合法格式均可保存并展示 | issue-132 | Core | `pnpm verify:scenario -- LD-R12-S04` |
+| LD-R12-S05 | 自定义封面原件写入前必须确认内容真实性 | 歌单与艺人封面共用同一校验 | issue-132 | Core | `pnpm verify:scenario -- LD-R12-S05` |
+| LD-R12-S06 | 自定义封面原件写入前必须确认内容真实性 | 校验只读取容器头 | issue-132 | Core | `pnpm verify:scenario -- LD-R12-S06` |
+| LD-R12-S07 | 自定义封面原件写入前必须确认内容真实性 | 既有体积与白名单语义不变 | issue-132 | Core | `pnpm verify:scenario -- LD-R12-S07` |
+| LD-R12-S08 | 自定义封面原件写入前必须确认内容真实性 | 既有无效原件与历史缓存-only 封面的兼容 | issue-132 | Core | `pnpm verify:scenario -- LD-R12-S08` |
 
 ## library-experience
 
