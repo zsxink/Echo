@@ -10,7 +10,7 @@
 
 该校验 MUST 位于共享 Core 的封面写入边界；歌单封面、艺人封面以及从目录读取已保存原件的路径 MUST 共用同一校验，UI 与平台壳 MUST NOT 拥有第二套写入规则。从目录读取时，已存在的无效原件 MUST 以明确的校验错误报告，MUST NOT 作为可展示封面写入缓存；不迁移、不删除、不回填该原件或其对象记录（与 `LD-06` 一致）。仅有历史缓存 key 而没有目录原件的封面 MUST 沿用既有恢复语义，不受本校验约束。
 
-生产实现 MUST 遵守 CODE_STANDARDS §2、§3.1–§3.2、§4.1–§4.2、§8、§9：属于 Core Application 的输入校验，依赖方向仍为 Platform → Application → Domain（Infrastructure 通过既有 Port 接入），不新增跨层依赖、公开接口或外部依赖；错误继续使用既有可匹配的类型化校验错误。实现前 MUST 以当前 HEAD 复核 `artwork.rs` 的调用点与 `image` 特性；可执行验收证据 MUST 包含 `cargo test -p echo-core --all-features artwork::tests`、`cargo test -p echo-core --all-features --test arch`、`cargo test -p echo-desktop --all-features playlist_cover`、`cargo fmt --all -- --check`、`cargo clippy -p echo-core --all-targets --all-features -- -D warnings`、`pnpm verify:governance` 与 `openspec validate validate-cover-image-content --strict`。本 change 不替换既有实现、导出、测试替身或登记资产，故无待清理残留；若实施中出现不再被解析的替代实现，MUST 按 §9 以引用检查与静态检查证明清理完成。
+生产实现 MUST 遵守 CODE_STANDARDS §2、§3.1–§3.2、§4.1–§4.2、§8、§9：属于 Core Application 的输入校验，依赖方向仍为 Platform → Application → Domain（Infrastructure 通过既有 Port 接入），不新增跨层依赖、公开接口或外部依赖；错误继续使用既有可匹配的类型化校验错误。实现前 MUST 以当前 HEAD 复核 `artwork.rs` 的调用点与 `image` 特性；可执行验收证据 MUST 包含 `cargo test -p echo-core --all-features artwork::tests`、`cargo test -p echo-core --all-features --test arch`、`cargo test -p echo-desktop --all-features playlist_cover`、`cargo fmt --all -- --check`、`cargo clippy -p echo-core --all-targets --all-features -- -D warnings`、`pnpm verify:governance` 与 `openspec validate --all --strict`。本 change 不替换既有实现、导出、测试替身或登记资产，故无待清理残留；若实施中出现不再被解析的替代实现，MUST 按 §9 以引用检查与静态检查证明清理完成。
 
 #### Scenario: 伪图片在保存阶段被拒绝
 
