@@ -9,8 +9,8 @@ fn library_durability_artist_cover_original_survives_cache_loss_replace_and_clea
     let artist = app.collections(CatalogCollectionKind::Artist, "").unwrap()[0]
         .artist_key
         .clone();
-    let bytes = b"synthetic artist artwork";
-    app.set_artist_cover(&artist, Some(bytes), Some("image/png"))
+    let bytes = super::cover_fixtures::cover_png();
+    app.set_artist_cover(&artist, Some(bytes.as_slice()), Some("image/png"))
         .unwrap();
     let before = app.collections(CatalogCollectionKind::Artist, "").unwrap()[0]
         .cover_key
@@ -25,7 +25,8 @@ fn library_durability_artist_cover_original_survives_cache_loss_replace_and_clea
         fixture.deps.cover_cache.get(&before).unwrap().as_deref(),
         Some(bytes.as_slice())
     );
-    app.set_artist_cover(&artist, Some(b"replacement"), Some("image/png"))
+    let replacement = super::cover_fixtures::replacement_cover_png();
+    app.set_artist_cover(&artist, Some(replacement.as_slice()), Some("image/png"))
         .unwrap();
     let replaced = app.collections(CatalogCollectionKind::Artist, "").unwrap();
     assert_ne!(replaced[0].cover_key.as_deref(), Some(before.as_str()));
