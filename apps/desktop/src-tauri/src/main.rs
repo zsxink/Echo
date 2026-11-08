@@ -52,6 +52,7 @@ use tauri::{Emitter, Manager, RunEvent};
 mod app_menu;
 mod commands;
 mod commands_audio_effects;
+mod commands_file_open;
 mod cover_payload;
 mod cover_preview;
 mod cover_protocol;
@@ -652,6 +653,7 @@ fn wire_composition(
 /// native check prove an explicit application exit without adding a public
 /// command or privileged frontend capability.
 mod bootstrap;
+mod file_drop;
 mod file_open_gate;
 
 #[allow(unused_imports)]

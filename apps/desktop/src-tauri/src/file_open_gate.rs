@@ -80,6 +80,28 @@ pub(super) fn deliver_file_open(
     }
 }
 
+/// Route a whole drop/open batch through the startup supervisor. The gate is
+/// defined per path (bounded FIFO + frontend-ready flag), so each path still
+/// goes through [`StartupSupervisor::receive_file_open`] individually; only the
+/// *emit* is batched. One drop therefore produces exactly one
+/// [`FILE_OPEN_REQUEST`] event carrying every accepted path in the OS-supplied
+/// order, instead of N events that each rebuild the playback queue (#117 D3).
+fn accepted_opens(startup: &StartupSupervisor, paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    paths
+        .into_iter()
+        .filter_map(|path| startup.receive_file_open(path))
+        .collect()
+}
+
+#[allow(clippy::redundant_pub_crate)]
+pub(super) fn deliver_file_opens(
+    app: &tauri::AppHandle,
+    startup: &StartupSupervisor,
+    paths: Vec<PathBuf>,
+) {
+    emit_file_opens(app, accepted_opens(startup, paths));
+}
+
 /// The frontend registered its `app://file-open-request` listener: open the
 /// delivery gate and hand back every path queued before that
 /// (deliver-file-opens-after-frontend-ready).
@@ -95,4 +117,33 @@ pub(super) fn deliver_file_open(
 pub(super) fn drain_pending_opens(app: &tauri::AppHandle, startup: &StartupSupervisor) {
     let drained = startup.mark_frontend_ready();
     emit_file_opens(app, drained);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn path(name: &str) -> PathBuf {
+        PathBuf::from("/tmp/echo-open-tests").join(name)
+    }
+
+    #[test]
+    fn one_batch_keeps_platform_order_when_the_frontend_is_ready() {
+        let startup = StartupSupervisor::new();
+        startup.on_ready();
+        startup.mark_frontend_ready();
+        let paths = vec![path("a.flac"), path("b.mp3"), path("c.wav")];
+        // A single emit carries all three, in the order the platform supplied.
+        assert_eq!(accepted_opens(&startup, paths.clone()), paths);
+    }
+
+    #[test]
+    fn one_batch_queues_every_path_until_the_frontend_listener_is_ready() {
+        let startup = StartupSupervisor::new();
+        startup.on_ready();
+        let paths = vec![path("a.flac"), path("b.mp3")];
+        assert!(accepted_opens(&startup, paths.clone()).is_empty());
+        // Nothing is silently dropped: the FIFO drains in arrival order.
+        assert_eq!(startup.mark_frontend_ready(), paths);
+    }
 }

@@ -118,7 +118,8 @@ interface BridgeCommandArguments extends SyncCommandArguments {
   ];
   restore_playback_session: EmptyArgs;
   file_open_frontend_ready: EmptyArgs;
-  play_temporary_file: [args: { path: string; displayName: string }];
+  /** One OS open / window drop = one batch, in platform-supplied order. */
+  play_opened_files: [args: { paths: readonly string[] }];
   import_current_temporary_file: EmptyArgs;
   player_control: [args: { action: string }];
   queue_command: [args: { command: string; songId?: string; entryId?: string }];

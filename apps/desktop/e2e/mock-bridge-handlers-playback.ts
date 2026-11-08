@@ -74,11 +74,14 @@ export function buildPlaybackHandlers(state: E2EState): Partial<Record<Command, 
       st.nowPlaying = { songId: id, position: 0, playing: true };
       return st.nowPlaying;
     },
-    play_temporary_file: ({ displayName }) => ({
-      songId: "temp-song",
-      title: displayName ?? "临时文件",
-      isTemporary: true,
-    }),
+    play_opened_files: ({ paths }) => {
+      const first = Array.isArray(paths) ? String(paths[0] ?? "") : "";
+      return {
+        songId: "temp-song",
+        title: first.split(/[\\/]/).filter(Boolean).at(-1) || "临时文件",
+        isTemporary: true,
+      };
+    },
     import_current_temporary_file: () => ({
       kind: "imported",
       operationId: "op-temp",

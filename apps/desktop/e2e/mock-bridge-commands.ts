@@ -56,7 +56,7 @@ export type Command =
   | "report_library_view"
   | "play_playlist_context"
   | "play_library_context"
-  | "play_temporary_file"
+  | "play_opened_files"
   | "import_current_temporary_file"
   | "delete_song"
   | "undo_delete"

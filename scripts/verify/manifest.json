@@ -2938,6 +2938,193 @@
       ]
     },
     {
+      "id": "DAS-R26-S01",
+      "title": "拖入受支持音频出现反馈",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/app/FileDropOverlay.test.tsx",
+          "name": "appears when a drag enters and disappears when it leaves or drops"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R26-S02",
+      "title": "拖离或取消后反馈消失",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/app/FileDropOverlay.test.tsx",
+          "name": "appears when a drag enters and disappears when it leaves or drops"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R26-S03",
+      "title": "反馈层不遮挡窗口控件与拖拽条",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/app/FileDropOverlay.test.tsx",
+          "name": "appears when a drag enters and disappears when it leaves or drops"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R26-S04",
+      "title": "沉浸模式与既有浮层下投放",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/app/App.test.tsx",
+          "name": "mounts the window file-drop overlay and follows shell drop state"
+        },
+        {
+          "kind": "vitest",
+          "target": "src/app/overlays.test.tsx"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R26-S05",
+      "title": "减少动画设置下保留状态变化",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/app/FileDropOverlay.test.tsx",
+          "name": "removes motion but keeps the state change under prefers-reduced-motion"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R27-S01",
+      "title": "单文件松手即播",
+      "command": "cargo test -p echo-app --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "file_drop::tests::hover_overlay_follows_drag_lifecycle"
+        },
+        {
+          "kind": "rust",
+          "target": "file_open_gate::tests::one_batch_keeps_platform_order_when_the_frontend_is_ready"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R27-S02",
+      "title": "与双击打开同语义",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "runtime::services::tests::open_path::open_path_of_an_active_library_song_resolves_to_its_uuid"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R27-S03",
+      "title": "非音频文件可读拒绝",
+      "command": "cargo test -p echo-app --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "file_drop::tests::supported_extensions_match_core_and_are_case_insensitive"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R27-S04",
+      "title": "文件夹可读拒绝",
+      "command": "cargo test -p echo-app --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "file_drop::tests::directories_are_rejected_without_scanning_them"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R27-S05",
+      "title": "混合投放部分拒绝",
+      "command": "cargo test -p echo-app --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "file_drop::tests::mixed_drop_keeps_accepted_order_and_reports_each_rejection"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R27-S06",
+      "title": "不扩权限面",
+      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-app --all-features",
+      "evidence": [
+        {
+          "kind": "node",
+          "target": "scripts/verify/checks/file-drop-config.mjs"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R27-S07",
+      "title": "资料库只读或不可用时仍可播",
+      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "node",
+          "target": "scripts/verify/checks/file-drop-config.mjs"
+        },
+        {
+          "kind": "rust",
+          "target": "runtime::services::tests::open_path::open_path_outside_the_active_library_is_not_a_library_uuid"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R28-S01",
+      "title": "特殊字符文件名不被二次解码",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/app/App.test.tsx",
+          "name": "never URL-decodes a payload that already contains a literal %20"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R28-S02",
+      "title": "监听器未就绪时到达的投放",
+      "command": "cargo test -p echo-app --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "file_open_gate::tests::one_batch_queues_every_path_until_the_frontend_listener_is_ready"
+        }
+      ]
+    },
+    {
+      "id": "DAS-R28-S03",
+      "title": "三平台行为一致",
+      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-app --all-features",
+      "evidence": [
+        {
+          "kind": "node",
+          "target": "scripts/verify/checks/file-drop-config.mjs"
+        },
+        {
+          "kind": "rust",
+          "target": "file_drop::tests::hover_overlay_follows_drag_lifecycle"
+        }
+      ]
+    },
+    {
       "id": "DP-R01-S01",
       "title": "播放资料库歌曲",
       "command": "cargo test -p echo-desktop --all-features --test player_smoke",
@@ -3404,6 +3591,54 @@
         {
           "kind": "rust",
           "target": "player::coordinator::tests::importing_current_temporary_entry_preserves_pause_and_rejects_stale_completion"
+        }
+      ]
+    },
+    {
+      "id": "DP-R07-S05",
+      "title": "一次打开或投放多个文件按序成一条队列",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "player::coordinator::tests_opened_files::opened_batch_creates_one_entry_per_path_in_order"
+        }
+      ]
+    },
+    {
+      "id": "DP-R07-S06",
+      "title": "库内与库外混合保持输入顺序",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "player::coordinator::tests_opened_files::opened_batch_mixes_library_and_temporary_in_input_order"
+        }
+      ]
+    },
+    {
+      "id": "DP-R07-S07",
+      "title": "多文件打开替换当前队列与随机轮",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "player::coordinator::tests_opened_files::opened_batch_replaces_the_current_queue_and_priority_lane"
+        }
+      ]
+    },
+    {
+      "id": "DP-R07-S08",
+      "title": "系统打开多个文件同样不再丢失",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "player::coordinator::tests_opened_files::opened_batch_creates_one_entry_per_path_in_order"
+        },
+        {
+          "kind": "rust",
+          "target": "player::coordinator::tests_opened_files::single_temporary_open_is_still_a_one_item_batch"
         }
       ]
     },
@@ -7667,6 +7902,55 @@
         {
           "kind": "rust",
           "target": "staging"
+        }
+      ]
+    },
+    {
+      "id": "SFI-R07-S06",
+      "title": "投放不入库且源文件不变",
+      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "node",
+          "target": "scripts/verify/checks/file-drop-config.mjs"
+        },
+        {
+          "kind": "rust",
+          "target": "runtime::services::tests::open_path::open_path_outside_the_active_library_is_not_a_library_uuid"
+        }
+      ]
+    },
+    {
+      "id": "SFI-R07-S07",
+      "title": "投放后显式导入才入库",
+      "command": "cargo test -p echo-desktop --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "player::coordinator::tests::importing_current_temporary_entry_replaces_it_in_place_and_resumes_playing"
+        }
+      ]
+    },
+    {
+      "id": "SFI-R07-S08",
+      "title": "投放路径不二次解码",
+      "command": "pnpm --filter @echo/desktop test -- --run --reporter=verbose",
+      "evidence": [
+        {
+          "kind": "vitest",
+          "target": "src/app/App.test.tsx",
+          "name": "never URL-decodes a payload that already contains a literal %20"
+        }
+      ]
+    },
+    {
+      "id": "SFI-R07-S09",
+      "title": "文件夹投放不触发扫描或复制",
+      "command": "cargo test -p echo-app --all-features",
+      "evidence": [
+        {
+          "kind": "rust",
+          "target": "file_drop::tests::directories_are_rejected_without_scanning_them"
         }
       ]
     },

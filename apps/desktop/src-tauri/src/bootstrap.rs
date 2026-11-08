@@ -44,6 +44,18 @@ pub(super) fn bootstrap_main() {
         // its minimal permission set (no dialog/fs permissions granted).
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        // Window-level file drop (issue #117): the shell is the only owner of
+        // absolute paths. `dragDropEnabled: true` in both window configs keeps
+        // Tauri's internal handler emitting these events; disabling it would
+        // silence the shell instead of enabling HTML5 DnD for our use case.
+        .on_window_event({
+            let startup = Arc::clone(&startup);
+            move |window, event| {
+                if let tauri::WindowEvent::DragDrop(drag) = event {
+                    crate::file_drop::handle_drag_drop(window.app_handle(), &startup, drag);
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             sync_commands::sync_status,
             sync_commands::sync_storage_space,
@@ -114,9 +126,9 @@ pub(super) fn bootstrap_main() {
             commands::play_playlist_context,
             commands::play_library_context,
             commands::restore_playback_session,
-            commands::play_temporary_file,
+            commands_file_open::play_opened_files,
             commands::import_current_temporary_file,
-            commands::file_open_frontend_ready,
+            commands_file_open::file_open_frontend_ready,
             commands::player_control,
             commands::queue_command,
             crate::player_sync::player_sync,

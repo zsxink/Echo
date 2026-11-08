@@ -1,6 +1,6 @@
 // Scenario → executable-command + evidence map for the 0.1.0 gate (task 13.9).
 //
-// 577 scenarios (spec-derived id set). A scenario's command is aggregated by
+// 600 scenarios (spec-derived id set). A scenario's command is aggregated by
 // domain; `evidence` names the tests/files the scenario actually depends on,
 // and run-scenario.mjs asserts each target was observed in the command output.
 // `manifest.json.scenarios[]` is generated from this table
@@ -657,6 +657,32 @@ export const SCENARIOS = {
   // phase-one-acceptance
   "PHA-R01-S01": { command: ATTEST("PHA-R01-S01"), evidence: [attest("PHA-R01-S01")] },
 "PHA-R01-S02": { command: GOVERNANCE, delegatedTo: "governance", evidence: [node("scripts/verify/ci-governance.mjs")], },
+
+  // --- window file drop (issue #117) ---
+"DAS-R26-S01": { command: VITEST_ALL, evidence: [vitest("src/app/FileDropOverlay.test.tsx", "appears when a drag enters and disappears when it leaves or drops")], },
+"DAS-R26-S02": { command: VITEST_ALL, evidence: [vitest("src/app/FileDropOverlay.test.tsx", "appears when a drag enters and disappears when it leaves or drops")], },
+"DAS-R26-S03": { command: VITEST_ALL, evidence: [vitest("src/app/FileDropOverlay.test.tsx", "appears when a drag enters and disappears when it leaves or drops")], },
+"DAS-R26-S04": { command: VITEST_ALL, evidence: [vitest("src/app/App.test.tsx", "mounts the window file-drop overlay and follows shell drop state"), vitest("src/app/overlays.test.tsx")], },
+"DAS-R26-S05": { command: VITEST_ALL, evidence: [vitest("src/app/FileDropOverlay.test.tsx", "removes motion but keeps the state change under prefers-reduced-motion")], },
+"DAS-R27-S01": { command: APP_ALL, evidence: [rust("file_drop::tests::hover_overlay_follows_drag_lifecycle"), rust("file_open_gate::tests::one_batch_keeps_platform_order_when_the_frontend_is_ready")], },
+"DAS-R27-S02": { command: DESK_ALL, evidence: [rust("runtime::services::tests::open_path::open_path_of_an_active_library_song_resolves_to_its_uuid")], },
+"DAS-R27-S03": { command: APP_ALL, evidence: [rust("file_drop::tests::supported_extensions_match_core_and_are_case_insensitive")], },
+"DAS-R27-S04": { command: APP_ALL, evidence: [rust("file_drop::tests::directories_are_rejected_without_scanning_them")], },
+"DAS-R27-S05": { command: APP_ALL, evidence: [rust("file_drop::tests::mixed_drop_keeps_accepted_order_and_reports_each_rejection")], },
+"DAS-R27-S06": { command: "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-app --all-features", evidence: [node("scripts/verify/checks/file-drop-config.mjs")], },
+"DAS-R27-S07": { command: "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features", evidence: [node("scripts/verify/checks/file-drop-config.mjs"), rust("runtime::services::tests::open_path::open_path_outside_the_active_library_is_not_a_library_uuid")], },
+"DAS-R28-S01": { command: VITEST_ALL, evidence: [vitest("src/app/App.test.tsx", "never URL-decodes a payload that already contains a literal %20")], },
+"DAS-R28-S02": { command: APP_ALL, evidence: [rust("file_open_gate::tests::one_batch_queues_every_path_until_the_frontend_listener_is_ready")], },
+"DAS-R28-S03": { command: "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-app --all-features", evidence: [node("scripts/verify/checks/file-drop-config.mjs"), rust("file_drop::tests::hover_overlay_follows_drag_lifecycle")], },
+"DP-R07-S05": { command: DESK_ALL, evidence: [rust("player::coordinator::tests_opened_files::opened_batch_creates_one_entry_per_path_in_order")], },
+"DP-R07-S06": { command: DESK_ALL, evidence: [rust("player::coordinator::tests_opened_files::opened_batch_mixes_library_and_temporary_in_input_order")], },
+"DP-R07-S07": { command: DESK_ALL, evidence: [rust("player::coordinator::tests_opened_files::opened_batch_replaces_the_current_queue_and_priority_lane")], },
+"DP-R07-S08": { command: DESK_ALL, evidence: [rust("player::coordinator::tests_opened_files::opened_batch_creates_one_entry_per_path_in_order"), rust("player::coordinator::tests_opened_files::single_temporary_open_is_still_a_one_item_batch")], },
+"SFI-R07-S06": { command: "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features", evidence: [node("scripts/verify/checks/file-drop-config.mjs"), rust("runtime::services::tests::open_path::open_path_outside_the_active_library_is_not_a_library_uuid")], },
+"SFI-R07-S07": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::importing_current_temporary_entry_replaces_it_in_place_and_resumes_playing")], },
+"SFI-R07-S08": { command: VITEST_ALL, evidence: [vitest("src/app/App.test.tsx", "never URL-decodes a payload that already contains a literal %20")], },
+"SFI-R07-S09": { command: APP_ALL, evidence: [rust("file_drop::tests::directories_are_rejected_without_scanning_them")], },
+
 };
 
 import { allScenarioIds } from "./spec-scenarios.mjs";

@@ -39,7 +39,6 @@ use echo_desktop::player::queue::{QueueEntry, QueueItem, ViewContext};
 use echo_desktop::player::session::{snapshot_queue, SessionPersistence};
 use echo_desktop::runtime::player::CorePlaybackRecorder;
 use echo_desktop::runtime::services::AppServices;
-use echo_desktop::runtime::StartupSupervisor;
 use tauri::{AppHandle, State};
 
 use crate::cover_payload::decode_cover_bytes;
@@ -778,67 +777,6 @@ pub fn restore_playback_session(
         }
     }
     Ok(outcome.to_owned())
-}
-
-#[tauri::command]
-pub fn play_temporary_file(
-    services: State<'_, AppServices>,
-    state: State<'_, PlayerHandle>,
-    path: String,
-    display_name: String,
-) -> Result<(), IpcErrorDto> {
-    // The path comes from an OS file-open boundary that already validated it
-    // (task 9.1/9.2); the actor re-checks local-path hardness on load.
-    let coord = state.coordinator.clone();
-    let file_path = std::path::PathBuf::from(&path);
-    let metadata = services.read_temporary_metadata(&file_path);
-    {
-        let mut coord = coord.lock().expect("player coordinator lock");
-        if let Some(song_id) = services
-            .active_song_for_path(std::path::Path::new(&path))
-            .map_err(IpcErrorDto::from)?
-        {
-            coord.play_context(&ViewContext {
-                songs: vec![song_id],
-                selected_index: 0,
-            });
-            return Ok(());
-        }
-        coord.play_temporary(echo_desktop::player::coordinator::TemporaryPlay {
-            display_name,
-            path: file_path,
-            duration: metadata.duration,
-            metadata,
-            on_active_root: false,
-        });
-    }
-    Ok(())
-}
-
-/// The frontend has registered its `app://file-open-request` listener
-/// (task 9.1 / deliver-file-opens-after-frontend-ready).
-///
-/// On a cold start the OS hands the double-clicked file to Echo while the
-/// `WebView` is still booting, so the shell queues the path: Tauri drops an
-/// event emitted before any `JS` listener exists. The frontend calls this the
-/// moment its listener is in place, and the shell delivers what it queued —
-/// which is the difference between "Echo started" and "Echo played the file".
-///
-/// Idempotent, so React's `StrictMode` double-invoked effect and a listener
-/// re-registered after a reload are both harmless: the second call finds an
-/// empty queue. The paths themselves travel on `FILE_OPEN_REQUEST`, exactly
-/// like a file open on an already-running instance, so this reports nothing
-/// back — the frontend consumes them through the listener it just registered.
-///
-/// Returns `Result` because every command's transport is `T | IpcErrorDto`
-/// (see the module note on `unnecessary_wraps`), not because this can fail.
-#[tauri::command]
-pub fn file_open_frontend_ready(
-    app: AppHandle,
-    startup: State<'_, Arc<StartupSupervisor>>,
-) -> Result<(), IpcErrorDto> {
-    crate::drain_pending_opens(&app, &startup);
-    Ok(())
 }
 
 /// Import the currently-playing temporary playback item into the active library
