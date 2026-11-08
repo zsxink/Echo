@@ -25,6 +25,7 @@
 
 pub mod artist_cover;
 mod artwork;
+pub use artwork::SUPPORTED_COVER_MIMES;
 pub mod boot;
 pub mod catalog;
 pub mod continuation;

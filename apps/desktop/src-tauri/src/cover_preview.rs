@@ -17,6 +17,7 @@
 use std::io::Cursor;
 
 use base64::Engine;
+use echo_core::application::SUPPORTED_COVER_MIMES;
 use echo_desktop::ipc::IpcErrorDto;
 use image::imageops::FilterType;
 use image::{DynamicImage, ImageFormat, ImageReader, Limits};
@@ -40,9 +41,27 @@ const MAX_PREVIEW_PIXELS: u64 = 20_000_000;
 /// Budget (design D4): `max_alloc` covers the decoder's own RGBA output.
 /// `DynamicImage::resize`'s Lanczos3 intermediates and `to_rgb8`'s RGB buffer
 /// are *additional* allocations, so the header precheck above caps the input
-/// at 20 MP: 20 MP × (4 B RGBA + ~8 B intermediates + 3 B RGB) is the shell's
-/// worst case, never the `WebView` renderer's. The write path never decodes.
+/// at 20 MP. 20 MP × (4 B RGBA + ~8 B intermediates + 3 B RGB) is only an
+/// order-of-magnitude estimate of the *decode path*; it excludes allocator,
+/// debug-symbol, test-harness and PNG-encoding overhead (which is why the
+/// manual ignored test's process RSS is much larger). The `WebView` renderer
+/// is never part of this budget. The write path never decodes.
 const MAX_DECODE_ALLOC: u64 = 96 * 1024 * 1024;
+
+/// Stable, UI-facing reasons for a rejected preview. `code` stays `validation`
+/// and `field` stays `cover` — no new error-code family; only `message_key` is
+/// refined so the dialog can explain *which* input was rejected (spec
+/// DAS-R25-S03/S04).
+const KEY_TOO_LARGE: &str = "error.cover.previewTooLarge";
+const KEY_UNSUPPORTED: &str = "error.cover.previewUnsupported";
+const KEY_DECODE: &str = "error.cover.previewDecodeFailed";
+const KEY_UNAVAILABLE: &str = "error.cover.previewUnavailable";
+
+fn keyed(reason: &str, key: &'static str) -> IpcErrorDto {
+    let mut dto = validation(reason);
+    dto.message_key = key;
+    dto
+}
 
 /// Produce a bounded JPEG preview for the picked cover.
 ///
@@ -56,43 +75,44 @@ const MAX_DECODE_ALLOC: u64 = 96 * 1024 * 1024;
 /// Returns the same validation `IpcErrorDto` shape as the cover write path.
 #[tauri::command]
 pub async fn preview_cover(bytes: String, mime: String) -> Result<String, IpcErrorDto> {
-    tokio::task::spawn_blocking(move || generate_preview(&bytes, &mime))
+    tauri::async_runtime::spawn_blocking(move || generate_preview(&bytes, &mime))
         .await
-        .map_err(|error| validation(&format!("封面预览任务失败：{error}")))?
+        .map_err(|error| keyed(&format!("封面预览任务失败：{error}"), KEY_UNAVAILABLE))?
 }
 
 fn generate_preview(payload: &str, mime: &str) -> Result<String, IpcErrorDto> {
-    let bytes = decode_required_cover_bytes(payload)?;
+    let bytes =
+        decode_required_cover_bytes(payload).map_err(|_| keyed("封面数据无法解码", KEY_DECODE))?;
     if bytes.is_empty() || bytes.len() > MAX_COVER_BYTES {
-        return Err(validation("封面图片体积不符合要求"));
+        return Err(keyed("封面图片体积不符合要求", KEY_TOO_LARGE));
     }
     let declared = declared_format(mime)?;
     let detected = detect_format(&bytes)?;
     if detected != declared || !detected.reading_enabled() {
-        return Err(validation("封面图片格式与声明类型不一致"));
+        return Err(keyed("封面图片格式与声明类型不一致", KEY_UNSUPPORTED));
     }
     let (width, height) = probe_dimensions(&bytes, detected)?;
     let jpeg = thumbnail_jpeg(&bytes, detected, width, height)?;
     Ok(base64::engine::general_purpose::STANDARD.encode(jpeg))
 }
 
-/// Reuse the write path's whitelist; `ImageFormat::from_mime_type` alone would
-/// also accept GIF/BMP/TIFF, which are valid embedded-cover formats but not
-/// valid *picked* cover formats (`DAS-R22`/`LD-12`).
+/// Share the write path's whitelist by constant (issue #133 review F3).
+/// `ImageFormat::from_mime_type` alone would also accept GIF/BMP/TIFF, which
+/// are valid embedded-cover formats but not valid *picked* cover formats.
 fn declared_format(mime: &str) -> Result<ImageFormat, IpcErrorDto> {
-    if !matches!(mime, "image/jpeg" | "image/png" | "image/webp") {
-        return Err(validation("封面图片类型不受支持"));
+    if !SUPPORTED_COVER_MIMES.contains(&mime) {
+        return Err(keyed("封面图片类型不受支持", KEY_UNSUPPORTED));
     }
-    ImageFormat::from_mime_type(mime).ok_or_else(|| validation("封面图片类型不受支持"))
+    ImageFormat::from_mime_type(mime).ok_or_else(|| keyed("封面图片类型不受支持", KEY_UNSUPPORTED))
 }
 
 fn detect_format(bytes: &[u8]) -> Result<ImageFormat, IpcErrorDto> {
     let reader = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
-        .map_err(|_| validation("封面图片无法识别"))?;
+        .map_err(|_| keyed("封面图片无法识别", KEY_DECODE))?;
     reader
         .format()
-        .ok_or_else(|| validation("封面图片无法识别"))
+        .ok_or_else(|| keyed("封面图片无法识别", KEY_DECODE))
 }
 
 /// Read container dimensions *before* decoding pixels, and enforce the pixel
@@ -103,12 +123,12 @@ fn probe_dimensions(bytes: &[u8], format: ImageFormat) -> Result<(u32, u32), Ipc
     reader.limits(preview_limits());
     let (width, height) = reader
         .into_dimensions()
-        .map_err(|_| validation("封面图片头无效或已截断"))?;
+        .map_err(|_| keyed("封面图片头无效或已截断", KEY_DECODE))?;
     if width == 0 || height == 0 {
-        return Err(validation("封面图片头无效或已截断"));
+        return Err(keyed("封面图片头无效或已截断", KEY_DECODE));
     }
     if u64::from(width) * u64::from(height) > MAX_PREVIEW_PIXELS {
-        return Err(validation("封面图片尺寸过大，无法生成预览"));
+        return Err(keyed("封面图片尺寸过大，无法生成预览", KEY_TOO_LARGE));
     }
     Ok((width, height))
 }
@@ -131,9 +151,9 @@ fn thumbnail_jpeg(
     reader.limits(preview_limits());
     let image = reader.decode().map_err(|error| {
         if matches!(error, image::ImageError::Limits(_)) {
-            validation("封面图片尺寸过大，无法生成预览")
+            keyed("封面图片尺寸过大，无法生成预览", KEY_TOO_LARGE)
         } else {
-            validation("封面图片无法解码")
+            keyed("封面图片无法解码", KEY_DECODE)
         }
     })?;
     // Never upscale: a 64×32 cover stays 64×32.
@@ -146,7 +166,7 @@ fn thumbnail_jpeg(
     let rgb = DynamicImage::ImageRgb8(scaled.to_rgb8());
     let mut out = Cursor::new(Vec::new());
     rgb.write_to(&mut out, ImageFormat::Jpeg)
-        .map_err(|_| validation("封面预览编码失败"))?;
+        .map_err(|_| keyed("封面预览编码失败", KEY_DECODE))?;
     Ok(out.into_inner())
 }
 
@@ -199,29 +219,35 @@ mod tests {
         !crc
     }
 
-    fn png_with_huge_header() -> Vec<u8> {
+    fn png_with_dimensions(width: u32, height: u32) -> Vec<u8> {
         const IHDR_DATA: usize = 16;
         const CRC_AT: usize = IHDR_DATA + 13;
         let mut bytes = png(2, 2);
-        bytes[IHDR_DATA..IHDR_DATA + 4].copy_from_slice(&20_000_u32.to_be_bytes());
-        bytes[IHDR_DATA + 4..IHDR_DATA + 8].copy_from_slice(&20_000_u32.to_be_bytes());
+        bytes[IHDR_DATA..IHDR_DATA + 4].copy_from_slice(&width.to_be_bytes());
+        bytes[IHDR_DATA + 4..IHDR_DATA + 8].copy_from_slice(&height.to_be_bytes());
         let crc = crc32(&bytes[12..CRC_AT]);
         bytes[CRC_AT..CRC_AT + 4].copy_from_slice(&crc.to_be_bytes());
         bytes
     }
 
-    fn assert_validation(error: &IpcErrorDto) {
+    fn assert_validation_with_key(error: &IpcErrorDto, key: &str) {
         assert_eq!(error.code, "validation");
-        assert_eq!(error.message_key, "error.validation");
+        assert_eq!(error.message_key, key);
         assert_eq!(error.field.as_deref(), Some("cover"));
     }
 
     #[test]
     fn preview_thumbnail_caps_the_longest_edge_at_detail_tier() {
-        let large = png(1200, 800);
+        // A genuinely large input (2.4 MP) stays in the regular CI suite;
+        // the 16 MP case below is manual-only evidence (review F4).
+        let large = png(2000, 1200);
         let result = generate_preview(&encode(&large), "image/png").expect("large preview");
         let (width, height) = dimensions(&decode_preview(&result));
-        assert_eq!((width, height), (DETAIL_THUMB_PX, 341));
+        assert_eq!(width, DETAIL_THUMB_PX);
+        assert!(
+            height > 300 && height <= DETAIL_THUMB_PX,
+            "unexpected scaled height {height}"
+        );
 
         let small = png(64, 32);
         let result = generate_preview(&encode(&small), "image/png").expect("small preview");
@@ -230,34 +256,116 @@ mod tests {
 
     #[test]
     fn preview_thumbnail_rejects_oversized_pixel_allocation_before_decoding() {
-        let huge = png_with_huge_header();
-        assert_eq!(
-            probe_dimensions(&huge, ImageFormat::Png)
-                .expect_err("huge IHDR")
-                .code,
-            "validation"
+        let huge = png_with_dimensions(20_000, 20_000);
+        assert_validation_with_key(
+            &probe_dimensions(&huge, ImageFormat::Png).expect_err("huge IHDR"),
+            KEY_TOO_LARGE,
         );
-        assert_validation(&generate_preview(&encode(&huge), "image/png").expect_err("huge IHDR"));
+        assert_validation_with_key(
+            &generate_preview(&encode(&huge), "image/png").expect_err("huge IHDR"),
+            KEY_TOO_LARGE,
+        );
+    }
+
+    #[test]
+    fn pixel_budget_accepts_the_boundary_and_rejects_one_pixel_more() {
+        // 4472² = 19,998,784 ≤ 20 MP; 4473² = 20,007,729 > 20 MP. Both
+        // fixtures only carry a 2x2 IDAT: `probe_dimensions` reads the header
+        // without allocating a pixel buffer, so this pins the exact boundary.
+        let inside = png_with_dimensions(4472, 4472);
+        assert_eq!(
+            probe_dimensions(&inside, ImageFormat::Png).expect("boundary image"),
+            (4472, 4472)
+        );
+        let outside = png_with_dimensions(4473, 4473);
+        assert_validation_with_key(
+            &probe_dimensions(&outside, ImageFormat::Png).expect_err("one pixel over"),
+            KEY_TOO_LARGE,
+        );
+    }
+
+    #[test]
+    fn decode_limits_reject_oversized_allocation() {
+        // Skip the header precheck on purpose: the decoder's own 96 MiB
+        // ceiling must also refuse a 400 MP image, with the same reason.
+        let huge = png_with_dimensions(20_000, 20_000);
+        assert_validation_with_key(
+            &thumbnail_jpeg(&huge, ImageFormat::Png, 20_000, 20_000).expect_err("decode limits"),
+            KEY_TOO_LARGE,
+        );
+    }
+
+    #[test]
+    fn preview_errors_carry_distinguishable_message_keys() {
+        let bytes = png(32, 32);
+        let encoded = encode(&bytes);
+        assert_validation_with_key(
+            &generate_preview(&encoded, "image/gif").expect_err("unsupported"),
+            KEY_UNSUPPORTED,
+        );
+        assert_validation_with_key(
+            &generate_preview(&encoded, "image/jpeg").expect_err("format mismatch"),
+            KEY_UNSUPPORTED,
+        );
+        assert_validation_with_key(
+            &generate_preview("not*base64!", "image/png").expect_err("malformed"),
+            KEY_DECODE,
+        );
+        assert_validation_with_key(
+            &generate_preview(&encode(b"not an image"), "image/png").expect_err("non-image"),
+            KEY_DECODE,
+        );
+        assert_validation_with_key(
+            &keyed("worker unavailable", KEY_UNAVAILABLE),
+            KEY_UNAVAILABLE,
+        );
+    }
+
+    #[test]
+    fn preview_whitelist_matches_core_validation() {
+        // `declared_format` reads Core's `SUPPORTED_COVER_MIMES` directly, so
+        // the write guard (LD-12) and the preview cannot drift apart. Pin the
+        // accepted set as well; a future format addition must update the shared
+        // list and its Core tests rather than re-hardcoding one side.
+        for mime in SUPPORTED_COVER_MIMES {
+            assert!(declared_format(mime).is_ok(), "{mime} must be accepted");
+        }
+        for mime in ["image/gif", "image/bmp", "image/tiff", "image/avif"] {
+            assert_validation_with_key(
+                &declared_format(mime).expect_err("unsupported MIME"),
+                KEY_UNSUPPORTED,
+            );
+        }
+        assert_eq!(SUPPORTED_COVER_MIMES.len(), 3);
     }
 
     #[test]
     fn preview_thumbnail_rejects_mime_and_format_mismatch() {
         let bytes = png(32, 32);
-        assert_validation(
+        assert_validation_with_key(
             &generate_preview(&encode(&bytes), "image/jpeg").expect_err("declared JPEG"),
+            KEY_UNSUPPORTED,
         );
-        assert_validation(
+        assert_validation_with_key(
             &generate_preview(&encode(&bytes), "image/gif").expect_err("unsupported MIME"),
+            KEY_UNSUPPORTED,
         );
     }
 
     #[test]
     fn preview_thumbnail_rejects_malformed_or_empty_payload() {
-        assert_validation(&generate_preview("", "image/png").expect_err("empty payload"));
-        assert_validation(&generate_preview("not*base64!", "image/png").expect_err("bad base64"));
-        assert_validation(
+        assert_validation_with_key(
+            &generate_preview("", "image/png").expect_err("empty payload"),
+            KEY_DECODE,
+        );
+        assert_validation_with_key(
+            &generate_preview("not*base64!", "image/png").expect_err("bad base64"),
+            KEY_DECODE,
+        );
+        assert_validation_with_key(
             &generate_preview(&encode(b"definitely not an image"), "image/png")
                 .expect_err("non-image bytes"),
+            KEY_DECODE,
         );
     }
 
@@ -285,10 +393,12 @@ mod tests {
         assert_eq!(before, after, "preview generation must not write files");
     }
 
-    /// Manual evidence for design D4/D8: a 4000×4000 input (16 MP, inside
-    /// the 20 MP header budget) is accepted and yields a 512 px preview.
-    /// Running this single ignored test under `/usr/bin/time -l` gives the
-    /// shell's real peak RSS for the quantization record.
+    /// Manual-only evidence for design D4/D8 (review F4): a 4000×4000 input
+    /// (16 MP, inside the 20 MP header budget) is accepted and yields a 512 px
+    /// preview. It is `#[ignore]`d because the debug PNG encode/decode costs
+    /// ~9 s and a large process RSS; CI covers the same behaviour with the
+    /// 2.4 MP test and the exact 20 MP boundary above. Running this single
+    /// ignored test under `/usr/bin/time -l` gives the shell's real peak RSS.
     #[test]
     #[ignore = "manual peak-memory measurement (design D8)"]
     fn measures_a_16mp_preview_within_the_budget() {

@@ -355,27 +355,45 @@ describe("PlaylistNameDialog (task 10.9)", () => {
   });
 
   it("keeps the saved cover and name when preview generation fails", async () => {
-    call.mockImplementation((async (command: string) => {
-      if (command === "preview_cover") throw new Error("validation");
-      return undefined;
-    }) as never);
-    renderEdit({ initialCoverKey: "cv1-saved" });
+    // Each refined rejection must name its own reason (DAS-R25-S03/S04), and
+    // none of them may replace the saved cover or add a submit-time rejection.
+    const cases: readonly (readonly [string | undefined, string])[] = [
+      ["error.cover.previewTooLarge", "封面图片尺寸过大，请换一张小一些的图片。"],
+      ["error.cover.previewUnsupported", "仅支持 PNG、JPEG 或 WebP 图片，请换一张图片。"],
+      ["error.cover.previewDecodeFailed", "无法读取封面图片，请换一张图片。"],
+      [undefined, "预览暂时不可用，请重试或换一张图片。"],
+    ];
+    for (const [messageKey, hint] of cases) {
+      call.mockReset();
+      call.mockImplementation((async (command: string) => {
+        if (command === "preview_cover") {
+          throw Object.assign(new Error("validation"), { code: "validation", messageKey });
+        }
+        return undefined;
+      }) as never);
+      const view = renderEdit({ initialCoverKey: "cv1-saved" });
 
-    pickCover("broken.png", "broken");
-    expect(
-      await screen.findByText("图片过大或无法读取封面图片，请换一张图片。"),
-    ).toBeInTheDocument();
-    expect(previewSrc()).toBe("cover://cv1-saved?s=detail");
-    expect(screen.getByLabelText("歌单新名称")).toHaveValue("深夜");
-    expect(screen.getByRole("button", { name: "选择歌单封面图片" })).toBeInTheDocument();
+      pickCover("broken.png", "broken");
+      expect(await screen.findByText(hint)).toBeInTheDocument();
+      expect(previewSrc()).toBe("cover://cv1-saved?s=detail");
+      expect(screen.getByLabelText("歌单新名称")).toHaveValue("深夜");
+      expect(screen.getByRole("button", { name: "选择歌单封面图片" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("保存"));
-    await waitFor(() =>
-      expect(call).toHaveBeenCalledWith("rename_playlist", { id: "pl-1", name: "深夜" }),
+      fireEvent.click(screen.getByText("保存"));
+      await waitFor(() =>
+        expect(call).toHaveBeenCalledWith("rename_playlist", { id: "pl-1", name: "深夜" }),
+      );
+      expect(call).not.toHaveBeenCalledWith("set_playlist_cover", expect.anything());
+      view.unmount();
+    }
+  });
+
+  it("limits the picker to the shared cover MIME whitelist", () => {
+    renderEdit();
+    expect(document.querySelector('input[type="file"]')).toHaveAttribute(
+      "accept",
+      "image/png,image/jpeg,image/webp",
     );
-    // A failed preview is not a new submit-time rejection and does not invent
-    // a replacement cover.
-    expect(call).not.toHaveBeenCalledWith("set_playlist_cover", expect.anything());
   });
 
   it("does not upscale a small picked cover", async () => {

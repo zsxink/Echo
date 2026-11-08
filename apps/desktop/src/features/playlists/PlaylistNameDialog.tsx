@@ -102,11 +102,12 @@ export function PlaylistNameDialog({
       setCoverIntent("replace");
       setCoverPreview(`data:image/jpeg;base64,${preview}`);
       setError(null);
-    } catch {
+    } catch (err) {
       if (requestId !== previewRequestRef.current) return;
       // A failed preview means this pick does not take effect: keep the saved
       // cover, the name, and any earlier successful pick, and offer a retry.
-      setError("图片过大或无法读取封面图片，请换一张图片。");
+      // The shell refines `message_key` so the hint names the actual reason.
+      setError(previewErrorMessage(err));
     }
   }
 
@@ -425,6 +426,26 @@ function codeOf(err: unknown): string {
     return (err as unknown as { code?: string }).code ?? "";
   }
   return "";
+}
+
+/** Why a preview was refused; `BridgeError` carries the shell's message key. */
+function previewErrorMessage(err: unknown): string {
+  const key =
+    err instanceof Error && "messageKey" in err
+      ? ((err as unknown as { messageKey?: string }).messageKey ?? "")
+      : "";
+  switch (key) {
+    case "error.cover.previewTooLarge":
+      return "封面图片尺寸过大，请换一张小一些的图片。";
+    case "error.cover.previewUnsupported":
+      return "仅支持 PNG、JPEG 或 WebP 图片，请换一张图片。";
+    case "error.cover.previewDecodeFailed":
+      return "无法读取封面图片，请换一张图片。";
+    default:
+      // Also covers an older backend without `preview_cover`: the dialog must
+      // stay usable rather than silently showing an empty preview.
+      return "预览暂时不可用，请重试或换一张图片。";
+  }
 }
 
 function saveErrorMessage(err: unknown, creating: boolean): string {

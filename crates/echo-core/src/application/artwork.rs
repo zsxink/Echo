@@ -8,6 +8,11 @@ use crate::domain::ids::LibraryRootId;
 use crate::domain::library::PortableAssetReference;
 use crate::error::{Error, Subject};
 
+/// Cover MIME types accepted for a user-picked original. The durable write
+/// guard below and the desktop shell's in-memory preview share this one list,
+/// so a future format addition cannot make a cover savable but un-previewable.
+pub const SUPPORTED_COVER_MIMES: [&str; 3] = ["image/jpeg", "image/png", "image/webp"];
+
 pub fn validate(bytes: &[u8], mime: &str) -> Result<(), Error> {
     if bytes.is_empty() || bytes.len() > 5 * 1024 * 1024 {
         return Err(Error::validation(
@@ -16,7 +21,7 @@ pub fn validate(bytes: &[u8], mime: &str) -> Result<(), Error> {
             "image must be between 1 byte and 5 MiB",
         ));
     }
-    if !matches!(mime, "image/jpeg" | "image/png" | "image/webp") {
+    if !SUPPORTED_COVER_MIMES.contains(&mime) {
         return Err(Error::validation(
             Subject::Other,
             "cover",

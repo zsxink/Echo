@@ -18,6 +18,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:http";
 
+import { assertCoverPreviewScenarios } from "./a133-cover-preview.mjs";
 import { assertLyricsFocusRoundTrip } from "./a9-lyrics-focus.mjs";
 import { assertLyricsGapSettles, assertLyricsOffsetAfterTrackChange } from "./a9-lyrics-offset.mjs";
 import { assertWindowControlsScenarios } from "./a76-window-controls.mjs";
@@ -324,6 +325,16 @@ async function main() {
     pass("A14: no operable sync / select-all / manual playlist sort / song edit entry");
   } catch (e) {
     abort("A7/A14", e);
+  }
+
+  // ---------- #133: picked-cover preview renders in a real WebView ----------
+  // Lives in a133-cover-preview.mjs: the harness is at the 1000-line scale
+  // gate, and this scenario owns both a Node-side CSP check and a Chromium
+  // decode check (`CODE_STANDARDS §2.1`).
+  try {
+    await assertCoverPreviewScenarios({ goto, assert, evalJs, pass, fail });
+  } catch (e) {
+    abort("#133 cover preview", e);
   }
 
   // ---------- Import state and failure feedback ----------
@@ -925,7 +936,7 @@ async function main() {
     process.stderr.write(`FAIL 13.1: ${failures} acceptance check(s) failed\n`);
   } else {
     process.stdout.write(
-      "ok 13.1: mock-bridge browser E2E covers PRD A1/A6/A7/A8/A9/A13/A14 non-platform acceptance and audio effects UI in real Chromium, plus A15 (app-only 沉浸式封面取色，无 PRD 条目) and #76 Windows caption buttons (windows/web branches)\n",
+      "ok 13.1: mock-bridge browser E2E covers PRD A1/A6/A7/A8/A9/A13/A14 non-platform acceptance and audio effects UI in real Chromium, plus A15 (app-only 沉浸式封面取色，无 PRD 条目), #76 Windows caption buttons (windows/web branches) and #133 cover-pick preview (CSP + decoded data: JPEG)\n",
     );
   }
 }

@@ -98,7 +98,7 @@ apps/desktop/
 - 成功响应带 `Cache-Control: private, max-age=31536000, immutable`（内容寻址使其字节不可变）；CSP 仍只放行 `img-src`/`media-src` 的 `cover:`，未知或畸形 key 仍返回 404。
 - 沉浸页的封面 URL 同时用于 `<img>` 与 `artworkPalette` 的主色提取，必须走 `original`，以保持 origin-clean 像素读取。
 - 封面**写入**（歌单/艺人封面）与 `cover://` 读取协议无关：WebView 通过 Tauri command 以 base64 字符串传递原图字节，桌面壳在 command 边界解码为 `&[u8]` 后交给 Core；编码不参与 `$s` 档位选择、缓存寻址或磁盘布局。
-- 封面**选图预览**同样不经过 `cover://` 读取路径：WebView 把所选原图的 base64 载荷交给桌面壳的预览命令，壳层在内存中按 `s=detail` 档位（512 px）生成受控 JPEG 缩略图并以 `data:` 图像返回；预览不落盘、不进封面缓存、不改动档位协议与内容寻址，WebView 不解码原图像素。该解码只服务于一次性预览、带内存分配上限；CSP 与下述 LD-12 的「写入校验只读取容器头」边界保持不变。
+- 封面**选图预览**同样不经过 `cover://` 读取路径：WebView 把所选原图的 base64 载荷交给桌面壳的预览命令，壳层在内存中按 `s=detail` 档位（512 px）生成受控 JPEG 缩略图并以 `data:` 图像返回；预览不落盘、不进封面缓存、不改动档位协议与内容寻址，WebView 不解码原图像素。该解码只服务于一次性预览、带内存分配上限；写入校验与预览共用 `echo_core::application::SUPPORTED_COVER_MIMES` 这一份 MIME 白名单常量。CSP 与下述 LD-12 的「写入校验只读取容器头」边界保持不变。
 - Core 在把用户选择的封面字节写入资料库原件之前 MUST 校验：体积上限与 MIME 白名单保持不变，且实际容器格式与声明 MIME 一致、容器头可解析出有效尺寸；校验只读取容器头，不做整幅像素解码。拒绝发生在 durable 写入之前，不写缓存、不替换已保存封面；从目录读取原件时复用同一校验，既有无效原件只报明确校验错误，不清理、不回填。详见 `openspec/specs/library-durability/spec.md` 的 `LD-12`。
 - 平台壳 `cover_protocol.rs` 的 `cover_media_type` 只负责读取侧 `Content-Type` 嗅探：无法识别的字节仍以 `application/octet-stream` 返回，不参与写入校验，也不与 Core 的「声明一致」判定合并。
 

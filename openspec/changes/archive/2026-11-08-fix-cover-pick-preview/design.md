@@ -145,3 +145,13 @@ base64 长度预检（≤ 6 990 508）
 ## Open Questions
 
 无。方向、分层、命令形态、上限策略、资源形态、错误映射、规格归属与验收方法均已定。D4 的**具体分配上限数值**由实现任务在核对 `image 0.25` API 与大图实测后固定，它不改变规格约束、方案选择或任务拆分，属于可延后的实现细节。
+
+## 复核收尾（PR #143 review follow-up）
+
+PR 合并前的一次独立复核列出 F1–F5；以下修订全部落在**同一交付**（分支 `fix/issue-133-cover-pick-preview`、issue #133、PR #143），不产生新的 spec delta：规格要求没有变化，F2 是让实现满足既有规格而不是降低规格，主规格与场景集合仍为 577。
+
+- **F1（核心修复缺真实 WebView 实证）**：`apps/desktop/e2e/run-e2e.mjs` 新增 #133 场景——Node 侧读取 `tauri.conf.json` 断言 `img-src` 放行 `data:` 且不放宽 `blob:`；浏览器侧打开编辑歌单对话框、用 `DataTransfer` 选图，断言 `<img>` 的 src 是 `data:image/jpeg;base64,…` 且 `naturalWidth > 0`（真实 Chromium 解码），并断言 `state.coverPreviewPayloads[0].bytes` 是字符串而非数组（该字段此前只写不读）。D8 的 `footprint` 真机量化仍按 6.1 的阻塞出口记录，但「预览可见」从此有运行时证据，不再是配置推断。
+- **F2（失败原因不区分）**：`IpcErrorDto` 的 `code` 恒为 `validation`、`field` 恒为 `cover`、结构不变；`cover_preview.rs` 只把 `message_key` 细分为 `previewTooLarge` / `previewUnsupported` / `previewDecodeFailed` / `previewUnavailable`，前端 `previewErrorMessage` 按 key 显示四条不同中文提示（旧后端无该命令时走「预览暂时不可用」兜底）。`keeps the saved cover and name when preview generation fails` 参数化覆盖四类提示，后端另有 `preview_errors_carry_distinguishable_message_keys` 固定分类。满足 `DAS-R25-S03` 的「明确说明图片过大」与 `S04` 的「说明失败原因」，不新增错误码族、不改生成契约。
+- **F3（白名单复制）**：`echo-core::application` 新增 `pub const SUPPORTED_COVER_MIMES` 并 re-export；`artwork::validate`（LD-12）与 `cover_preview::declared_format` 共用同一常量，UI 的 `<input accept>` 由新增前端断言锁定。`preview_whitelist_matches_core_validation` 固定接受集与拒绝集。**兼容说明（§9）**：只新增一个编译期公共常量，`validate` 行为逐字不变；无 Core API 语义变化、无 schema / 迁移 / 远端协议 / 持久化格式变化；桌面壳仅引用常量，不调用 Core 逻辑，分层与依赖方向不变。
+- **F4（边界与 ignored 用例）**：新增 `pixel_budget_accepts_the_boundary_and_rejects_one_pixel_more`（4472² 通过、4473² 拒绝）、`decode_limits_reject_oversized_allocation`（跳过头预检时 96 MiB 二级上限仍拒绝）、`preview_whitelist_matches_core_validation`、`preview_errors_carry_distinguishable_message_keys`；常规大图用例提升到 2.4 MP。16 MP 用例保留 `#[ignore]`，注释与任务清单明确其为**人工峰值证据、不进 CI**（debug 用例约 9 s、进程 RSS 远高于 release）。
+- **F5（风格与记录）**：`tokio::task::spawn_blocking` 改为同层通用的 `tauri::async_runtime::spawn_blocking`；D4 预算注释改为「仅解码路径量级估算，不含构建/测试 harness 开销」，不再与 6.1 的 debug 进程 RSS 口径混淆。补记取舍：选图与提交各传输一次约 7 MB base64（预览 + 保存），换取 WebView 完全不解码原图像素。复核中提到的「预览失败保留先前选图」经逐条对照 `DAS-R25-S04` 与 `DAS-R23` 的 **THEN** 确认不构成偏差：规格要求的是不替换已保存封面、保留名称与重选/取消入口，实现全部满足，且保留用户已选的图更不容易丢失输入，故不改行为、不改规格。
