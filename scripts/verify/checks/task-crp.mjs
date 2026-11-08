@@ -97,6 +97,16 @@ for (const token of ["SHA256SUMS", "sha256sum", "if-no-files-found"]) {
 
 // R04 — libmpv license notice ships with the bundle (CRP-R04-S01).
 if (!yml.includes("NOTICE.md")) fail("release.yml no longer uploads libmpv NOTICE.md (R04)");
+// R04 extension (issue #144): the per-platform vendor manifest is the only
+// record of the exact published build's checksums, pinned source commits and
+// license table. Linux generates it at release time and never commits it, so
+// the release pipeline must stage and publish a platform-qualified copy.
+if (!yml.includes("manifest-libmpv-${{ matrix.platform }}.json")) {
+  fail("release.yml no longer stages the per-platform libmpv manifest for the Release (R04)");
+}
+if (!yml.includes("artifacts/**/manifest-libmpv-*.json")) {
+  fail("release.yml no longer publishes the per-platform libmpv manifest (R04)");
+}
 
 // R05 — publish job aggregates to the tag Release idempotently (CRP-R05-S01/02).
 for (const token of [

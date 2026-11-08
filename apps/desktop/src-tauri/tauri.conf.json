@@ -75,7 +75,8 @@
         "Frameworks/libpng16.16.dylib": "vendor/libmpv/macos/libpng16.16.dylib",
         "Frameworks/libunibreak.8.dylib": "vendor/libmpv/macos/libunibreak.8.dylib",
         "Resources/third-party/libmpv/NOTICE.md": "vendor/libmpv/macos/NOTICE.md",
-        "Resources/third-party/libmpv/THIRD-PARTY-LICENSES.txt": "vendor/libmpv/THIRD-PARTY-LICENSES.txt"
+        "Resources/third-party/libmpv/THIRD-PARTY-LICENSES.txt": "vendor/libmpv/THIRD-PARTY-LICENSES.txt",
+        "Resources/third-party/libmpv/THIRD-PARTY-NOTICES.txt": "vendor/libmpv/THIRD-PARTY-NOTICES.txt"
       }
     },
     "linux": {
@@ -83,6 +84,7 @@
         "files": {
           "usr/bin/libmpv.so": "vendor/libmpv/linux/libmpv.so",
           "usr/share/doc/echo/THIRD-PARTY-LICENSES.txt": "vendor/libmpv/THIRD-PARTY-LICENSES.txt",
+          "usr/share/doc/echo/THIRD-PARTY-NOTICES.txt": "vendor/libmpv/THIRD-PARTY-NOTICES.txt",
           "usr/share/doc/echo/NOTICE-libmpv-linux.md": "vendor/libmpv/linux/NOTICE.md"
         }
       },
@@ -90,6 +92,7 @@
         "files": {
           "usr/bin/libmpv.so": "vendor/libmpv/linux/libmpv.so",
           "usr/share/doc/echo/THIRD-PARTY-LICENSES.txt": "vendor/libmpv/THIRD-PARTY-LICENSES.txt",
+          "usr/share/doc/echo/THIRD-PARTY-NOTICES.txt": "vendor/libmpv/THIRD-PARTY-NOTICES.txt",
           "usr/share/doc/echo/NOTICE-libmpv-linux.md": "vendor/libmpv/linux/NOTICE.md"
         }
       }

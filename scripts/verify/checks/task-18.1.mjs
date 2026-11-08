@@ -24,12 +24,18 @@
 //   7. Both READMEs carry the media-rights & privacy section and the
 //      Personal-Study naming; docs/media-rights-and-privacy.md keeps the
 //      legal-review release gate.
+//   8. (issue #144) The lockfile-generated dependency inventory exists, is
+//      not stale, lists every production npm dependency, ships in all three
+//      installers, and every SPDX id it references has an official full-text
+//      section; the Windows NOTICE records the unreachable pinned source URL
+//      and keeps the corresponding-source decision as a release-blocking item.
 //
 // Usage:
 //   node scripts/verify/checks/task-18.1.mjs
 //
 // Exits 0 when every contract item holds, 1 with all violations printed.
 
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,6 +50,8 @@ const FILES = {
   tauriConf: resolve(SRC_TAURI, "tauri.conf.json"),
   tauriWinConf: resolve(SRC_TAURI, "tauri.windows.conf.json"),
   mergedText: resolve(SRC_TAURI, "vendor", "libmpv", "THIRD-PARTY-LICENSES.txt"),
+  notices: resolve(SRC_TAURI, "vendor", "libmpv", "THIRD-PARTY-NOTICES.txt"),
+  generator: resolve(ROOT, "scripts", "release", "generate-third-party-notices.mjs"),
   winManifest: resolve(SRC_TAURI, "vendor", "libmpv", "windows", "manifest.json"),
   macosManifest: resolve(SRC_TAURI, "vendor", "libmpv", "macos", "manifest.json"),
   winNotice: resolve(SRC_TAURI, "vendor", "libmpv", "windows", "NOTICE.md"),
@@ -152,6 +160,13 @@ check(
   winBuildInfo.includes("GPL-2.0-or-later") && !winBuildInfo.includes("LGPL-2.1"),
   "Windows BUILD_INFO.md must record the bundled libmpv-2.dll as GPL-2.0-or-later with no LGPL-2.1 license claim (issue #66: shinchiro --enable-gpl + x264/x265 makes the static-FFmpeg DLL GPL)",
 );
+// The pinned shinchiro 20260814 release URL currently returns 404. Do not let
+// the NOTICE silently imply the corresponding-source obligation is satisfied
+// by an unreachable link (issue #144).
+check(
+  /404|不可访问|not reachable/i.test(winNotice) && /待决|pending|before release/i.test(winNotice),
+  "Windows NOTICE must record that the pinned source URL is currently unreachable and keep the corresponding-source / written-offer decision as an explicit pre-release pending item",
+);
 
 // --- 6. Merged license text: coverage + installer wiring ----------------------
 check(existsSync(FILES.mergedText), "vendor/libmpv/THIRD-PARTY-LICENSES.txt must exist (merged official license texts shipped in every installer)");
@@ -162,50 +177,91 @@ const merged = existsSync(FILES.mergedText) ? read(FILES.mergedText) : "";
 // header. The mapping is exact on the SPDX id prefix, so a future GPL-3.0-only
 // or BSD-2-Clause entry fails the gate until its full text is added, instead
 // of false-passing onto a different version's text block.
-const SPDX_SECTIONS = [
-  [/^GPL-2\.0/, "GPL-2.0"],
-  [/^LGPL-2\.1/, "LGPL-2.1"],
-  [/^ISC/, "ISC"],
-  [/^MIT/, "MIT"],
-  [/^Apache-2\.0/, "Apache-2.0"],
-  [/^FTL/, "FTL"],
-  [/^Zlib/, "Zlib"],
-  [/^BSD-3-Clause/, "BSD-3-Clause"],
-  [/^libpng/i, "libpng-2.0"],
-];
+// Every SPDX token that can appear in a vendor manifest, the Linux build
+// script, or the generated dependency inventory must resolve to a section id.
+// Compound expressions (OR / AND / WITH / slash forms) are split into tokens,
+// so a future GPL-3.0-only or BSD-2-Clause entry fails until its official full
+// text is added instead of false-passing onto another version's text block.
+// A `;` starts a human note (macOS records "LGPL-2.1-or-later; GPL and
+// nonfree disabled"), so only the expression before it is parsed.
+const SPDX_ALIASES = {
+  "GPL-2.0": "GPL-2.0",
+  "GPL-2.0-only": "GPL-2.0",
+  "GPL-2.0-or-later": "GPL-2.0",
+  "LGPL-2.1": "LGPL-2.1",
+  "LGPL-2.1-only": "LGPL-2.1",
+  "LGPL-2.1-or-later": "LGPL-2.1",
+  ISC: "ISC",
+  MIT: "MIT",
+  "MIT-0": "MIT-0",
+  "Apache-2.0": "Apache-2.0",
+  "LLVM-exception": "LLVM-exception",
+  FTL: "FTL",
+  Zlib: "Zlib",
+  "BSD-2-Clause": "BSD-2-Clause",
+  "BSD-3-Clause": "BSD-3-Clause",
+  "MPL-2.0": "MPL-2.0",
+  "Unicode-3.0": "Unicode-3.0",
+  "CC0-1.0": "CC0-1.0",
+  Unlicense: "Unlicense",
+  "0BSD": "0BSD",
+  "BSL-1.0": "BSL-1.0",
+  libpng: "libpng-2.0",
+  "libpng-2.0": "libpng-2.0",
+};
+const IGNORED_SPDX_TOKENS = new Set(["", "OR", "AND", "WITH", "License"]);
 const SECTION_MIN_LINES = {
   "GPL-2.0": 300,
   "LGPL-2.1": 400,
   "Apache-2.0": 150,
-  "FTL": 60,
+  FTL: 60,
   "libpng-2.0": 20,
-  "MIT": 4,
-  "ISC": 4,
-  "Zlib": 4,
+  MIT: 4,
+  ISC: 4,
+  Zlib: 4,
   "BSD-3-Clause": 4,
+  "MPL-2.0": 200,
+  "Unicode-3.0": 15,
+  "CC0-1.0": 80,
+  Unlicense: 8,
+  "BSD-2-Clause": 8,
+  "0BSD": 4,
+  "BSL-1.0": 8,
+  "MIT-0": 6,
+  "LLVM-exception": 6,
 };
+function resolveSpdxSections(expression) {
+  const ids = new Set();
+  const spdxPart = String(expression).split(";")[0];
+  for (const raw of spdxPart.split(/[\s()\/,]+/)) {
+    const token = raw.trim();
+    if (IGNORED_SPDX_TOKENS.has(token) || token.startsWith("LicenseRef-")) continue;
+    ids.add(SPDX_ALIASES[token] ?? `UNMAPPED:${token}`);
+  }
+  return [...ids];
+}
 function checkLicenseTextCoverage(license, origin) {
-  const section = SPDX_SECTIONS.find(([re]) => re.test(license));
-  check(
-    section !== undefined,
-    `license id "${license}" (${origin}) has no SPDX section mapping in task-18.1 — extend SPDX_SECTIONS and add the full text to THIRD-PARTY-LICENSES.txt`,
-  );
-  if (!section) return;
-  const id = section[1];
-  const marker = `== SPDX: ${id}`;
-  const start = merged.indexOf(marker);
-  check(
-    start !== -1,
-    `THIRD-PARTY-LICENSES.txt is missing the "${marker}" section (needed by ${origin}: "${license}")`,
-  );
-  if (start === -1) return;
-  const next = merged.indexOf("\n== SPDX: ", start + marker.length);
-  const body = merged.slice(start, next === -1 ? merged.length : next);
-  const lineCount = body.split("\n").length;
-  check(
-    lineCount >= SECTION_MIN_LINES[id],
-    `THIRD-PARTY-LICENSES.txt section ${id} has only ${lineCount} lines (minimum ${SECTION_MIN_LINES[id]}) — the full license text may have been truncated`,
-  );
+  for (const id of resolveSpdxSections(license)) {
+    check(
+      !id.startsWith("UNMAPPED:"),
+      `license token "${id.slice(9)}" (${origin}: "${license}") has no SPDX section mapping in task-18.1 — extend SPDX_ALIASES and add the official full text to THIRD-PARTY-LICENSES.txt`,
+    );
+    if (id.startsWith("UNMAPPED:")) continue;
+    const marker = `== SPDX: ${id}`;
+    const start = merged.indexOf(marker);
+    check(
+      start !== -1,
+      `THIRD-PARTY-LICENSES.txt is missing the "${marker}" section (needed by ${origin}: "${license}")`,
+    );
+    if (start === -1) continue;
+    const next = merged.indexOf("\n== SPDX: ", start + marker.length);
+    const body = merged.slice(start, next === -1 ? merged.length : next);
+    const lineCount = body.split("\n").length;
+    check(
+      lineCount >= (SECTION_MIN_LINES[id] ?? 4),
+      `THIRD-PARTY-LICENSES.txt section ${id} has only ${lineCount} lines (minimum ${SECTION_MIN_LINES[id] ?? 4}) — the full license text may have been truncated`,
+    );
+  }
 }
 for (const entry of readJson(FILES.winManifest).licenses ?? []) {
   checkLicenseTextCoverage(entry.license, `Windows manifest: ${entry.component}`);
@@ -232,11 +288,62 @@ for (const [, component, license] of linuxLicenseRows) {
   checkLicenseTextCoverage(license, `Linux build script: ${component}`);
 }
 
+// --- 6b. Generated dependency inventory + its license-text coverage ---------
+// The Cargo/npm graph is not covered by the vendor manifests. THIRD-PARTY-
+// NOTICES.txt is generated from the lockfiles and lists every SPDX id it
+// references; every one of those ids must have an official full text section.
+check(existsSync(FILES.notices), "vendor/libmpv/THIRD-PARTY-NOTICES.txt must exist (generated dependency inventory shipped in every installer)");
+const notices = existsSync(FILES.notices) ? read(FILES.notices) : "";
+check(
+  notices.includes("conservative superset") && notices.includes("THIRD-PARTY-LICENSES.txt"),
+  "THIRD-PARTY-NOTICES.txt must declare its conservative-superset scope and point at the merged license texts",
+);
+const noticeIdsBlock = notices.split("SPDX identifiers referenced by this inventory:\n")[1]?.split("\n\n")[0] ?? "";
+const noticeIds = noticeIdsBlock
+  .split("\n")
+  .map((line) => line.trim())
+  .filter((line) => /^[A-Za-z0-9.+-]+$/.test(line));
+check(
+  noticeIds.length >= 10,
+  `THIRD-PARTY-NOTICES.txt must enumerate the SPDX ids it references (found ${noticeIds.length})`,
+);
+for (const id of noticeIds) {
+  checkLicenseTextCoverage(id, "THIRD-PARTY-NOTICES.txt dependency inventory");
+}
+check(
+  licensesMd.includes("generated") && licensesMd.includes("conservative superset"),
+  "LICENSES.md must be the generated lockfile inventory and declare its conservative-superset scope",
+);
+check(
+  !licensesMd.includes("All third-party crates below are permissive-licensed"),
+  "LICENSES.md must not claim every dependency is permissive (the graph contains MPL-2.0 and other non-permissive terms)",
+);
+check(
+  licensesMd.includes("@material/material-color-utilities") && licensesMd.includes("lucide-react"),
+  "LICENSES.md must list every production npm dependency (issue #144: two were missing)",
+);
+check(existsSync(FILES.generator), "scripts/release/generate-third-party-notices.mjs must exist");
+if (existsSync(FILES.generator)) {
+  const regen = spawnSync(process.execPath, [FILES.generator, "--check"], {
+    cwd: ROOT,
+    encoding: "utf8",
+    timeout: 180_000,
+  });
+  check(
+    regen.status === 0,
+    `LICENSES.md / THIRD-PARTY-NOTICES.txt are stale or the generator failed (regenerate with scripts/release/generate-third-party-notices.mjs): ${(regen.stderr || regen.stdout || "").trim().slice(0, 400)}`,
+  );
+}
+
 const tauriConf = readJson(FILES.tauriConf);
 const macFiles = tauriConf.bundle?.macOS?.files ?? {};
 check(
   macFiles["Resources/third-party/libmpv/THIRD-PARTY-LICENSES.txt"] === "vendor/libmpv/THIRD-PARTY-LICENSES.txt",
   "tauri.conf.json bundle.macOS.files must map THIRD-PARTY-LICENSES.txt into Resources/third-party/libmpv/",
+);
+check(
+  macFiles["Resources/third-party/libmpv/THIRD-PARTY-NOTICES.txt"] === "vendor/libmpv/THIRD-PARTY-NOTICES.txt",
+  "tauri.conf.json bundle.macOS.files must map the generated dependency inventory THIRD-PARTY-NOTICES.txt into Resources/third-party/libmpv/",
 );
 for (const pkg of ["deb", "appimage"]) {
   const files = tauriConf.bundle?.linux?.[pkg]?.files ?? {};
@@ -248,11 +355,19 @@ for (const pkg of ["deb", "appimage"]) {
     files["usr/share/doc/echo/NOTICE-libmpv-linux.md"] === "vendor/libmpv/linux/NOTICE.md",
     `tauri.conf.json bundle.linux.${pkg}.files must carry the Linux NOTICE.md inside the package (usr/share/doc/echo/NOTICE-libmpv-linux.md), not only as a Release attachment`,
   );
+  check(
+    files["usr/share/doc/echo/THIRD-PARTY-NOTICES.txt"] === "vendor/libmpv/THIRD-PARTY-NOTICES.txt",
+    `tauri.conf.json bundle.linux.${pkg}.files must map THIRD-PARTY-NOTICES.txt to usr/share/doc/echo/THIRD-PARTY-NOTICES.txt`,
+  );
 }
 const winConf = readJson(FILES.tauriWinConf);
 check(
   winConf.bundle?.resources?.["vendor/libmpv/THIRD-PARTY-LICENSES.txt"] === "THIRD-PARTY-LICENSES.txt",
   "tauri.windows.conf.json bundle.resources must map vendor/libmpv/THIRD-PARTY-LICENSES.txt exactly to THIRD-PARTY-LICENSES.txt in the install root (resources maps source → destination, unlike bundle files maps)",
+);
+check(
+  winConf.bundle?.resources?.["vendor/libmpv/THIRD-PARTY-NOTICES.txt"] === "THIRD-PARTY-NOTICES.txt",
+  "tauri.windows.conf.json bundle.resources must map the generated dependency inventory THIRD-PARTY-NOTICES.txt into the install root",
 );
 
 // --- 7. Media rights & privacy docs ------------------------------------------
@@ -266,6 +381,16 @@ check(
   mediaDoc.includes("必须先更新本文档") || mediaDoc.includes("must be updated before release"),
   "media-rights doc must keep the future-features obligation (privacy notice before any data-egress feature ships)",
 );
+for (const [needle, description] of [
+  ["THIRD-PARTY-NOTICES.txt", "bundled dependency inventory verification"],
+  ["发布资产", "release-asset verification (prevents a fixed-repo / stale-release split)"],
+  ["对应源码", "corresponding-source link reachability verification"],
+]) {
+  check(
+    mediaDoc.includes(needle),
+    `media-rights pre-release checklist must keep the ${description} item (issue #144)`,
+  );
+}
 for (const [name, path, mustHave] of [
   ["README.md", FILES.readmeZh, "个人学习使用许可"],
   ["README.en.md", FILES.readmeEn, "Echo Personal Study License"],
