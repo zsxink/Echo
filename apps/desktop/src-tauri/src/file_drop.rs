@@ -47,11 +47,16 @@ struct PartitionedDrop {
 }
 
 /// Whether a native drag event changes the hover overlay, and to what state.
-/// `Drop` clears the overlay too — a completed drop must never leave a stale
-/// "松手即播放" hint behind.
-const fn hover_state(event: &DragDropEvent) -> Option<bool> {
+/// Only a drag carrying at least one supported audio file may promise playback;
+/// a folder-only or unsupported drag must not show "松手即播放" and then refuse
+/// the drop (D1/D5). `Over` carries no paths, so it leaves the current state
+/// untouched. `Drop` clears the overlay — a completed drop must never leave a
+/// stale hint behind.
+fn hover_transition(event: &DragDropEvent) -> Option<bool> {
     match event {
-        DragDropEvent::Enter { .. } | DragDropEvent::Over { .. } => Some(true),
+        DragDropEvent::Enter { paths, .. } => Some(!partition(paths.clone()).accepted.is_empty()),
+        // `Over` (and any future variant) carries no decision: keep the state
+        // the `Enter` chose instead of re-emitting it on every mouse move.
         DragDropEvent::Drop { .. } | DragDropEvent::Leave => Some(false),
         _ => None,
     }
@@ -120,7 +125,7 @@ fn emit_state(app: &AppHandle, active: bool) {
 
 /// Handle one native drag/drop event on the main window.
 pub fn handle_drag_drop(app: &AppHandle, startup: &StartupSupervisor, event: &DragDropEvent) {
-    if let Some(active) = hover_state(event) {
+    if let Some(active) = hover_transition(event) {
         emit_state(app, active);
     }
     if let DragDropEvent::Drop { paths, .. } = event {
@@ -162,10 +167,32 @@ mod tests {
         let over = DragDropEvent::Over {
             position: tauri::PhysicalPosition { x: 1.0, y: 2.0 },
         };
-        assert_eq!(hover_state(&enter(vec![path("a.flac")])), Some(true));
-        assert_eq!(hover_state(&over), Some(true));
-        assert_eq!(hover_state(&drop(vec![path("a.flac")])), Some(false));
-        assert_eq!(hover_state(&DragDropEvent::Leave), Some(false));
+        assert_eq!(hover_transition(&enter(vec![path("a.flac")])), Some(true));
+        // `Over` has no paths: it must not flip a state the `Enter` decided.
+        assert_eq!(hover_transition(&over), None);
+        assert_eq!(hover_transition(&drop(vec![path("a.flac")])), Some(false));
+        assert_eq!(hover_transition(&DragDropEvent::Leave), Some(false));
+    }
+
+    #[test]
+    fn unsupported_or_directory_only_drag_never_promises_playback() {
+        assert_eq!(
+            hover_transition(&enter(vec![path("notes.txt"), path("cover.png")])),
+            Some(false)
+        );
+        let directory =
+            std::env::temp_dir().join(format!("echo-drop-only-dir-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).expect("create temp directory");
+        assert_eq!(
+            hover_transition(&enter(vec![directory.clone()])),
+            Some(false)
+        );
+        std::fs::remove_dir(&directory).ok();
+        // Mixed drags still show the hint: the supported items will play.
+        assert_eq!(
+            hover_transition(&enter(vec![path("notes.txt"), path("01.flac")])),
+            Some(true)
+        );
     }
 
     #[test]

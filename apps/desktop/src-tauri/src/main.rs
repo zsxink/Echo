@@ -657,7 +657,7 @@ mod file_drop;
 mod file_open_gate;
 
 #[allow(unused_imports)]
-pub(crate) use file_open_gate::{deliver_file_open, drain_pending_opens};
+pub(crate) use file_open_gate::drain_pending_opens;
 
 fn main() {
     bootstrap::bootstrap_main();

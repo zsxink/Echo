@@ -43,7 +43,9 @@
 - `Enter` / `Over` → 发 `app://file-drop-state`（active）；`Leave` → inactive；
 - `Drop { paths }` → 过滤后按 `paths` 原顺序一次性交给 `deliver_file_open` 的批量入口，同时发 inactive。
 
-理由：Q3 要求「跟双击一样」，B 直接复用 `StartupSupervisor` FIFO、`file_open_frontend_ready` 双门、`record_gate_open` 与既有事件名，播放链路语义不产生第二套实现；`DragDropEvent` 本身已带 `Enter/Over/Leave`，D1 反馈层无需前端拖放 API。**方案 A**（`getCurrentWebview().onDragDropEvent()` + 前端拿绝对路径调批量命令）被否决：它把绝对路径再送一次进 WebView、另建一条与 OS open 并行的投递路径，且 enter/leave 与 drop 分处两端易产生状态竞态；收益（反馈层位置信息）B 已具备，本需求不需要落点坐标。组合两套监听还会带来重复 Drop 投递，需要额外去重，不值得。
+理由：Q3 要求「跟双击一样」，B 直接复用 `StartupSupervisor` FIFO、`file_open_frontend_ready` 双门、`record_gate_open` 与既有事件名，播放链路语义不产生第二套实现；`DragDropEvent` 本身已带 `Enter/Over/Leave`，D1 反馈层无需前端拖放 API。
+
+**复核修订**：两条 OS 打开入口（单实例 argv 与 macOS `RunEvent::Opened`）原先把每个路径各自 emit 一个 `app://file-open-request`。只改前端消费方式时，运行中一次打开 N 个文件仍会产生 N 次队列替换，`DP-R07-S08` 依旧失败。因此两条入口一律改为一次 `deliver_file_opens`（路径仍逐个过 FIFO 门），删除无消费者的单路径 `deliver_file_open`，并同步 Gate 9.1 / 9.2 的结构断言、`manifest.json` 的任务描述与 `injection-governance.mjs` 的 `file-open-normalization/raw-url-payload` 注入锚点。`file-drop-config.mjs` 增加断言锁住这一点。**方案 A**（`getCurrentWebview().onDragDropEvent()` + 前端拿绝对路径调批量命令）被否决：它把绝对路径再送一次进 WebView、另建一条与 OS open 并行的投递路径，且 enter/leave 与 drop 分处两端易产生状态竞态；收益（反馈层位置信息）B 已具备，本需求不需要落点坐标。组合两套监听还会带来重复 Drop 投递，需要额外去重，不值得。
 
 回退预案：若 Linux WebKitGTK 实测拿不到可用 `paths`（见「Risks / Trade-offs」），保留壳层事件驱动反馈层，仅把 `Drop` 的路径获取改用方案 A 的前端 `onDragDropEvent` 并调用同一条批量命令；**spec 的外部行为契约不变**，需回头更新本 design 与 tasks。
 
@@ -78,7 +80,7 @@
 ```text
 OS 拖放 → Tauri 壳层 (Presentation/Platform)
               ├─ app://file-drop-state ─→ React 投放反馈组件 (Presentation)
-              └─ deliver_file_open → app://file-open-request → play_opened_files (Platform)
+              └─ deliver_file_opens → app://file-open-request → play_opened_files (Platform)
                                               ↓
                                   echo-desktop coordinator (Application/平台播放状态机)
                                               ↓
@@ -95,6 +97,14 @@ OS 拖放 → Tauri 壳层 (Presentation/Platform)
 
 三个 delta 都挂在既有 capability：`desktop-app-shell`（新增 requirement 追加在文件末尾）、`desktop-playback` 与 `safe-file-ingestion`（MODIFIED requirement 的新场景追加在该 requirement 末尾）。`AREA_PREFIX` 无需新增映射，既有 577 个场景 ID 不重排；新增场景在 `docs/traceability.md`、`scripts/verify/scenario-commands.mjs` 与生成物 `manifest.json` 中按尾部新 ID 登记。
 
+## 复核修订（post-implementation review）
+
+- **P0（已修）**：OS 打开入口逐 path emit，见 D1 的复核修订。修复后 `DP-R07-S08` 的证据同时覆盖壳层静态门禁与 coordinator 批量测试，不再是假覆盖。
+- **P1（已修）**：`Enter` 原先对任何拖拽（含纯文件夹/非音频）都点亮「松手即播放」，与 D1 的「受支持的音频文件」和 D5 的可读拒绝冲突。现由 `hover_transition` 在 `Enter` 时用同一 `partition` 判定，`Over` 不改变状态，`Drop`/`Leave` 清除；新增 `unsupported_or_directory_only_drag_never_promises_playback` 回归测试。
+- **运行时链路核实**：`tauri-runtime-wry` 对 `WebviewKind::WindowContent` 把拖放回调合成为 `SynthesizedWindowEvent::DragDrop` → `WindowEvent::DragDrop`，因此 `Builder::on_window_event` 确能收到；回调返回 `true`，wry 不执行 OS 默认拖放（不会把文件当导航打开）。`dragDropEnabled: true` 正是启用该回调的开关。
+- **多临时项核实**：`snapshot_queue` 用 `filter_map` 剔除队列中**所有** `Temporary` 项，`import_current_temporary_file` 只作用于当前项，因此 N 个临时项仍不进会话、不进统计。
+- **已知弱项（未改，见交付说明）**：部分场景证据为静态/间接覆盖（`DAS-R26-S04` 沉浸模式、`DAS-R27-S07` 只读库、`SFI-R07-S06` 不入库）；混合投放的拒绝反馈按类别汇总而非逐项列出；`play_opened_files` 中单个路径解析失败会中断整批。三平台真机证据仍待补。
+
 ## Risks / Trade-offs
 
 - **[Linux WebKitGTK 拖放路径投递能力未经真机实测]** → 实施第 1 组先做三平台最小验证（含 `paths` 是否为本地绝对路径、多文件顺序、URI 百分号解码是否已由 wry 完成）；若 Linux 拿不到可用路径，按 D1 回退预案改用前端 `onDragDropEvent` 取路径，其余设计不变。这是本 change 唯一可能改变「捕获点」的技术未知，spec 契约不受影响。
@@ -110,7 +120,7 @@ OS 拖放 → Tauri 壳层 (Presentation/Platform)
 
 无数据迁移：不涉及 SQLite schema、music library 目录结构、远端协议或持久化会话格式。
 
-接口变更清单（全部为仓库内部）：新增事件 `app://file-drop-state` 与 `app://file-drop-rejection`；新增命令 `play_opened_files`；移除命令 `play_temporary_file`；`app://file-open-request` 事件名与 payload 形状保持不变（`readonly string[]`），只把消费方式从 N 次调用改为 1 次。
+接口变更清单（全部为仓库内部）：新增事件 `app://file-drop-state` 与 `app://file-drop-rejection`；新增命令 `play_opened_files`；移除命令 `play_temporary_file` 与壳层内部单路径投递函数 `deliver_file_open`；`app://file-open-request` 事件名与 payload 形状保持不变（`readonly string[]`），只把消费方式从 N 次调用改为 1 次。
 
 回滚：恢复 `play_temporary_file` 与 `App.tsx` 的逐个调用、移除 `on_window_event` 投放处理与两个投放事件订阅、恢复两处窗口配置；无残留状态需要清理。由于 #4 的修复同时作用于系统双击打开，回滚也会恢复该缺陷，需在回滚说明中注明。
 

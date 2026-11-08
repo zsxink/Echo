@@ -11,7 +11,7 @@
 
 - [x] 2.1 在 `apps/desktop/src-tauri/tauri.conf.json` 与 `tauri.windows.conf.json` 的主窗口定义显式写出 `dragDropEnabled: true`，Windows 配置除 `decorations` 外仍与基础配置一致；验证：`cargo build -p echo-app` 通过，且 `rg -n "dragDropEnabled" apps/desktop/src-tauri/*.json` 两处取值相同。
 - [x] 2.2 在 `bootstrap.rs` 构建链注册 `on_window_event`，匹配 `Enter` / `Over` / `Drop` / `Leave` 并发出只含状态的 `app://file-drop-state`；验证：新增 `echo-app` 单元测试覆盖 enter→active、leave→inactive、事件 payload 不含路径，运行 `cargo test -p echo-app --all-features`。
-- [x] 2.3 把 `file_open_gate.rs::deliver_file_open` 扩为批量投递，保持 `StartupSupervisor` FIFO、`file_open_frontend_ready` 双门与 `record_gate_open` 的一次性记录语义；验证：新增 Rust 测试覆盖「监听器未就绪 → 暂存 → 就绪后按到达顺序补发」与「一次 Drop 只发一个事件」，运行 `cargo test -p echo-app --all-features`。
+- [x] 2.3 把两条 OS 打开入口（单实例 argv、macOS `RunEvent::Opened`）与窗口投放统一收敛到 `file_open_gate.rs::deliver_file_opens` 批量投递，删除单路径 `deliver_file_open`，保持 `StartupSupervisor` FIFO、`file_open_frontend_ready` 双门与 `record_gate_open` 的一次性记录语义，并同步 Gate 9.1 / 9.2 结构断言与 `injection-governance.mjs` 注入锚点；验证：新增 Rust 测试覆盖「监听器未就绪 → 暂存 → 就绪后按到达顺序补发」与「一次 Drop 只发一个事件」，运行 `cargo test -p echo-app --all-features`。
 - [x] 2.4 在壳层实现投放过滤与可读拒绝：`is_dir()` → 文件夹拒绝、扩展名按 Core 支持矩阵 → 非音频拒绝、混合投放保留受支持项相对顺序，不排序不去重；验证：新增 Rust 表驱动测试覆盖 8 种支持扩展名、非音频、文件夹、混合投放与顺序保持，运行 `cargo test -p echo-app --all-features`。
 - [x] 2.5 本组静态检查与回归；验证：`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings`、`cargo test -p echo-app --all-features` 全部通过。
 

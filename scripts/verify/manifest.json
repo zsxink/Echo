@@ -818,7 +818,7 @@
       "title": "保证格式文件关联与 open-file/argv 统一，活动根/非活动旧根/库外文件的临时项语义由播放层解析",
       "commands": [
         {
-          "desc": "tauri.conf 文件关联等于保证格式集合的 drift 测试通过，macOS Opened 与单实例 argv 都经 deliver_file_open 入 FIFO；SongId/临时项解析归属播放层",
+          "desc": "tauri.conf 文件关联等于保证格式集合的 drift 测试通过，macOS Opened 与单实例 argv 都以一次批量经 deliver_file_opens 入 FIFO；SongId/临时项解析归属播放层",
           "cmd": "node scripts/verify/checks/task-9.2.mjs"
         }
       ]
@@ -3630,8 +3630,12 @@
     {
       "id": "DP-R07-S08",
       "title": "系统打开多个文件同样不再丢失",
-      "command": "cargo test -p echo-desktop --all-features",
+      "command": "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features",
       "evidence": [
+        {
+          "kind": "node",
+          "target": "scripts/verify/checks/file-drop-config.mjs"
+        },
         {
           "kind": "rust",
           "target": "player::coordinator::tests_opened_files::opened_batch_creates_one_entry_per_path_in_order"

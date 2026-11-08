@@ -48,6 +48,15 @@ const bootstrap = read("apps/desktop/src-tauri/src/bootstrap.rs");
 if (!bootstrap.includes(".on_window_event(") || !bootstrap.includes("file_drop::handle_drag_drop")) {
   fail("the shell must own the native DragDrop event");
 }
+const batchDeliveries = (bootstrap.match(/deliver_file_opens\(app, &startup/g) || []).length;
+if (batchDeliveries < 2 || /deliver_file_open\(app, &startup/.test(bootstrap)) {
+  fail("both OS open paths must deliver one batch, never one event per path");
+}
+const dropHandler = read("apps/desktop/src-tauri/src/file_drop.rs");
+if (!dropHandler.includes("fn hover_transition") ||
+    !/DragDropEvent::Enter \{ paths, \.\. \} =>[^\n]*partition\(/.test(dropHandler)) {
+  fail("the drop hint must only appear for drags carrying supported audio");
+}
 const gate = read("apps/desktop/src-tauri/src/file_open_gate.rs");
 if (!gate.includes("deliver_file_opens") || !gate.includes("accepted_opens")) {
   fail("a drop must be delivered as one batch through the file-open gate");

@@ -52,35 +52,9 @@ pub(super) fn emit_file_opens(app: &tauri::AppHandle, paths: Vec<PathBuf>) {
     let _ = app.emit(FILE_OPEN_REQUEST, paths);
 }
 
-/// Route one OS file-open path through the startup supervisor (task 9.1).
-///
-/// While the runtime is still initializing — or the frontend has not yet
-/// registered its file-open listener — the path is stashed in the bounded FIFO
-/// and later drained by [`drain_pending_opens`], never silently dropped.
-/// `receive_file_open` returns `Some` only once **both** gates are open, and
-/// only then is an emit safe: Tauri drops an event with no registered JS
-/// listener, which is what happened to every cold-start double-click before
-/// `deliver-file-opens-after-frontend-ready`.
-///
-/// `startup` is passed in rather than looked up through `try_state` on purpose.
-/// macOS delivers a cold-start `odoc` **before `.setup()` runs**, so a managed
-/// state lookup is `None` at exactly the moment the first — and only — open
-/// request arrives; that lookup is what dropped the path and made a
-/// double-click merely launch the app. The caller owns the process-wide
-/// instance created at the top of [`main`], so there is no window in which a
-/// path can arrive with nowhere to go.
-#[allow(clippy::redundant_pub_crate)]
-pub(super) fn deliver_file_open(
-    app: &tauri::AppHandle,
-    startup: &StartupSupervisor,
-    path: PathBuf,
-) {
-    if let Some(ready_path) = startup.receive_file_open(path) {
-        emit_file_opens(app, vec![ready_path]);
-    }
-}
-
-/// Route a whole drop/open batch through the startup supervisor. The gate is
+/// Route a whole OS open / window drop batch through the startup supervisor.
+/// Both OS entries (single-instance argv and macOS `RunEvent::Opened`) and the
+/// native drop handler converge here. The gate is
 /// defined per path (bounded FIFO + frontend-ready flag), so each path still
 /// goes through [`StartupSupervisor::receive_file_open`] individually; only the
 /// *emit* is batched. One drop therefore produces exactly one

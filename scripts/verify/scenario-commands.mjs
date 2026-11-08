@@ -677,7 +677,7 @@ export const SCENARIOS = {
 "DP-R07-S05": { command: DESK_ALL, evidence: [rust("player::coordinator::tests_opened_files::opened_batch_creates_one_entry_per_path_in_order")], },
 "DP-R07-S06": { command: DESK_ALL, evidence: [rust("player::coordinator::tests_opened_files::opened_batch_mixes_library_and_temporary_in_input_order")], },
 "DP-R07-S07": { command: DESK_ALL, evidence: [rust("player::coordinator::tests_opened_files::opened_batch_replaces_the_current_queue_and_priority_lane")], },
-"DP-R07-S08": { command: DESK_ALL, evidence: [rust("player::coordinator::tests_opened_files::opened_batch_creates_one_entry_per_path_in_order"), rust("player::coordinator::tests_opened_files::single_temporary_open_is_still_a_one_item_batch")], },
+"DP-R07-S08": { command: "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features", evidence: [node("scripts/verify/checks/file-drop-config.mjs"), rust("player::coordinator::tests_opened_files::opened_batch_creates_one_entry_per_path_in_order"), rust("player::coordinator::tests_opened_files::single_temporary_open_is_still_a_one_item_batch")], },
 "SFI-R07-S06": { command: "node scripts/verify/checks/file-drop-config.mjs && cargo test -p echo-desktop --all-features", evidence: [node("scripts/verify/checks/file-drop-config.mjs"), rust("runtime::services::tests::open_path::open_path_outside_the_active_library_is_not_a_library_uuid")], },
 "SFI-R07-S07": { command: DESK_ALL, evidence: [rust("player::coordinator::tests::importing_current_temporary_entry_replaces_it_in_place_and_resumes_playing")], },
 "SFI-R07-S08": { command: VITEST_ALL, evidence: [vitest("src/app/App.test.tsx", "never URL-decodes a payload that already contains a literal %20")], },
