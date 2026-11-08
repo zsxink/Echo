@@ -81,20 +81,9 @@ const getContext: typeof HTMLCanvasElement.prototype.getContext = ((_id: string)
 }) as typeof HTMLCanvasElement.prototype.getContext;
 HTMLCanvasElement.prototype.getContext = getContext;
 
-// jsdom 25 leaves `URL.createObjectURL` / `URL.revokeObjectURL` undefined, so
-// any component that previews a picked `File` would throw. One shared stub
-// keeps that path working and lets tests assert which URLs were released.
-let nextBlobId = 0;
-Object.defineProperty(URL, "createObjectURL", {
-  configurable: true,
-  writable: true,
-  value: vi.fn(() => `blob:echo-test-${nextBlobId++}`),
-});
-Object.defineProperty(URL, "revokeObjectURL", {
-  configurable: true,
-  writable: true,
-  value: vi.fn(),
-});
+// No `URL.createObjectURL` stub: cover previews are bounded `data:` URLs
+// produced by the desktop shell, so the UI must not depend on blob URLs at all
+// (jsdom 25 leaves both object-URL methods undefined on purpose).
 
 afterEach(async () => {
   // @ts-expect-error - test hook above

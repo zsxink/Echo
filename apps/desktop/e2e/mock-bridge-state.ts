@@ -38,6 +38,8 @@ export interface E2EState {
    * `bytes` is the wire value: a base64 string (or null), never a number[].
    */
   coverPayloads: { id: string; bytes: unknown; mime?: string | null }[];
+  /** Wire payloads received by `preview_cover`, in invocation order. */
+  coverPreviewPayloads: { bytes: unknown; mime: unknown }[];
 }
 
 export function defaultState(): E2EState {
@@ -54,6 +56,7 @@ export function defaultState(): E2EState {
     windowMaximized: false,
     windowActions: [],
     coverPayloads: [],
+    coverPreviewPayloads: [],
   };
 }
 

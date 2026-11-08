@@ -13,7 +13,7 @@
  * grapheme clusters, so the explicit rule is what the user sees.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { bridge } from "../../bridge";
 import {
@@ -24,19 +24,6 @@ import { savedLibraryOperation } from "../../bridge/libraryPersistence";
 import { OverlayTier, useFocusTrap, useOverlay } from "../../app/overlays";
 import { Icon } from "../../app/Icon";
 import { coverClass, invalidateLibrary, invalidateLibraryCounts } from "../library";
-
-/**
- * Release a live preview blob URL and clear its handle.
- *
- * Module-level so the unmount effect can call it without re-subscribing, and
- * so every release path goes through one function.
- */
-function revokePreviewBlob(handle: { current: string | null }): void {
-  if (handle.current) {
-    URL.revokeObjectURL(handle.current);
-    handle.current = null;
-  }
-}
 
 export interface PlaylistNameDialogProps {
   readonly mode: "create" | "edit";
@@ -90,10 +77,11 @@ export function PlaylistNameDialog({
   // sent. The WebView never materializes a byte array for the cover.
   const coverPayload = useRef<{ readonly base64: string; readonly mime: string } | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | undefined>(initialCoverKey);
-  // Only a just-picked image is a blob URL; saved and automatic covers are
-  // cover-asset keys. Keeping the live object URL in its own ref makes the
-  // revoke decisions explicit instead of inferring them from `coverPreview`.
-  const previewBlobRef = useRef<string | null>(null);
+  // A picked preview is the shell's bounded JPEG as a `data:` URL (already
+  // allowed by CSP); saved/automatic covers stay opaque asset keys. The state
+  // holds exactly one preview, so replacement and unmount release it without
+  // a revokeable handle. Only the newest preview request may write state.
+  const previewRequestRef = useRef(0);
   const dialogRef = useRef<HTMLElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const composing = useRef(false);
@@ -102,14 +90,25 @@ export function PlaylistNameDialog({
   useOverlay({ tier: OverlayTier.BlockingDialog, onClose, containerRef: dialogRef });
   useFocusTrap(dialogRef);
 
-  // Closing the dialog releases the last picked preview; saved/automatic
-  // covers are asset keys and never enter `previewBlobRef`.
-  useEffect(
-    () => () => {
-      revokePreviewBlob(previewBlobRef);
-    },
-    [],
-  );
+  /** Ask the shell for a bounded preview; a stale response cannot win. */
+  async function previewPickedCover(bytes: string, mime: string, requestId: number) {
+    try {
+      const preview = await bridge.call("preview_cover", { bytes, mime });
+      if (requestId !== previewRequestRef.current) return;
+      if (typeof preview !== "string" || preview.length === 0) {
+        throw new Error("empty cover preview");
+      }
+      coverPayload.current = { base64: bytes, mime };
+      setCoverIntent("replace");
+      setCoverPreview(`data:image/jpeg;base64,${preview}`);
+      setError(null);
+    } catch {
+      if (requestId !== previewRequestRef.current) return;
+      // A failed preview means this pick does not take effect: keep the saved
+      // cover, the name, and any earlier successful pick, and offer a retry.
+      setError("图片过大或无法读取封面图片，请换一张图片。");
+    }
+  }
 
   const others = useMemo(
     () => existingNames.filter((name) => name !== initialName),
@@ -301,7 +300,7 @@ export function PlaylistNameDialog({
                 {coverPreview ? (
                   <img
                     src={
-                      coverPreview.startsWith("blob:")
+                      coverPreview.startsWith("data:")
                         ? coverPreview
                         : bridge.assetUrl(coverPreview, "detail")
                     }
@@ -327,6 +326,7 @@ export function PlaylistNameDialog({
                   setError("封面图片不能超过 5 MB。");
                   return;
                 }
+                const requestId = ++previewRequestRef.current;
                 const reader = new FileReader();
                 reader.onload = () => {
                   const dataUrl = typeof reader.result === "string" ? reader.result : "";
@@ -337,16 +337,7 @@ export function PlaylistNameDialog({
                     setError("读取封面图片失败，请重试。");
                     return;
                   }
-                  coverPayload.current = {
-                    base64: dataUrl.slice(separator + 1),
-                    mime: file.type,
-                  };
-                  setCoverIntent("replace");
-                  revokePreviewBlob(previewBlobRef);
-                  const previewUrl = URL.createObjectURL(file);
-                  previewBlobRef.current = previewUrl;
-                  setCoverPreview(previewUrl);
-                  setError(null);
+                  void previewPickedCover(dataUrl.slice(separator + 1), file.type, requestId);
                 };
                 reader.onerror = () => setError("读取封面图片失败，请重试。");
                 reader.readAsDataURL(file);
@@ -361,9 +352,10 @@ export function PlaylistNameDialog({
               className="btn playlist-reset-cover"
               onClick={() => {
                 coverPayload.current = null;
+                previewRequestRef.current += 1;
                 setCoverIntent("reset");
-                revokePreviewBlob(previewBlobRef);
                 setCoverPreview(automaticCoverKey);
+                setError(null);
               }}
             >
               自动封面

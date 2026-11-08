@@ -17,7 +17,8 @@ use echo_core::error::{Error as CoreError, ValidationSubject};
 use echo_desktop::ipc::IpcErrorDto;
 
 /// The cover size limit enforced by `echo_core::application::artwork::validate`.
-const MAX_COVER_BYTES: usize = 5 * 1024 * 1024;
+#[allow(clippy::redundant_pub_crate)] // the module is private to the binary shell
+pub(crate) const MAX_COVER_BYTES: usize = 5 * 1024 * 1024;
 
 /// The longest base64 text that can still decode within [`MAX_COVER_BYTES`]:
 /// `4 × ⌈5 242 880 / 3⌉` (design D6). A longer payload necessarily decodes past
@@ -39,6 +40,20 @@ pub(crate) fn decode_cover_bytes(payload: Option<&str>) -> Result<Option<Vec<u8>
     let Some(payload) = payload else {
         return Ok(None);
     };
+    decode_required_cover_bytes(payload).map(Some)
+}
+
+/// Decode a payload that MUST be present. Cover-preview commands use this
+/// variant instead of [`decode_cover_bytes`]: `None` means "clear the cover"
+/// in the write commands, and a preview request must never inherit that
+/// meaning when its `bytes` key is absent (design D3). The command's argument
+/// is a plain `String`, so a missing key fails argument deserialization
+/// before reaching this function.
+///
+/// # Errors
+/// Returns the same validation `IpcErrorDto` as the write path.
+#[allow(clippy::redundant_pub_crate)] // the module is private to the binary shell
+pub(crate) fn decode_required_cover_bytes(payload: &str) -> Result<Vec<u8>, IpcErrorDto> {
     validate_encoded_len(payload.len()).map_err(|error| IpcErrorDto::from_mutation(&error))?;
     if payload.is_empty() {
         return Err(validation("封面数据为空"));
@@ -46,7 +61,7 @@ pub(crate) fn decode_cover_bytes(payload: Option<&str>) -> Result<Option<Vec<u8>
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(payload)
         .map_err(|_| validation("封面数据无法解码"))?;
-    Ok(Some(decoded))
+    Ok(decoded)
 }
 
 /// Reject encoded text that is longer than any in-limit image can produce.
@@ -65,7 +80,8 @@ fn validate_encoded_len(len: usize) -> Result<(), CoreError> {
 }
 
 /// Build the validation error shape the command layer already maps to IPC.
-fn validation(reason: &str) -> IpcErrorDto {
+#[allow(clippy::redundant_pub_crate)] // shared with the cover-preview boundary
+pub(crate) fn validation(reason: &str) -> IpcErrorDto {
     let error = CoreError::validation(ValidationSubject::Other, "cover", reason);
     IpcErrorDto::from_mutation(&error)
 }
@@ -135,6 +151,20 @@ mod tests {
         let error = decode_cover_bytes(Some("")).expect_err("empty payload");
         assert_eq!(error.code, "validation");
         assert_eq!(error.field.as_deref(), Some("cover"));
+    }
+
+    #[test]
+    fn rejects_an_absent_or_empty_preview_payload() {
+        // The write path keeps `None` = clear; the preview path has no absent
+        // value at all (its command argument is a required `String`) and an
+        // empty string is a validation error rather than an empty preview.
+        assert_eq!(decode_cover_bytes(None).expect("absent still clears"), None);
+        let error = decode_required_cover_bytes("").expect_err("empty preview payload");
+        assert_eq!(error.code, "validation");
+        assert_eq!(error.field.as_deref(), Some("cover"));
+        let malformed =
+            decode_required_cover_bytes("not*base64!").expect_err("malformed preview payload");
+        assert_eq!(malformed.code, "validation");
     }
 
     #[test]

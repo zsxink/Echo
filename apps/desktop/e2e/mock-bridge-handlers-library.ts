@@ -13,6 +13,10 @@ import type { E2EState, MockSong } from "./mock-bridge-state";
 import type { Command, Handler } from "./mock-bridge-commands";
 import { emptyError, toView } from "./mock-bridge-commands";
 
+/** A valid 1x1 JPEG, standing in for the shell's bounded `detail`-tier preview. */
+const PREVIEW_JPEG_BASE64 =
+  "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwcJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPDIzNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD3+iiigD//2Q==";
+
 /** Build the library-side handler table for the mock backend. */
 export function buildLibraryHandlers(state: E2EState): Partial<Record<Command, Handler>> {
   const paged = (songs: MockSong[]) => ({
@@ -196,6 +200,14 @@ export function buildLibraryHandlers(state: E2EState): Partial<Record<Command, H
       return st.playlists.some((playlist) => playlist.id === id)
         ? null
         : emptyError("not_found", "playlistNotFound", false);
+    },
+
+    preview_cover: ({ bytes, mime }, st) => {
+      // A bounded, valid 1x1 JPEG. The real shell returns a `detail`-tier
+      // thumbnail; the mock records the wire shape so a scenario can assert
+      // the preview request never carries a byte array.
+      st.coverPreviewPayloads.push({ bytes, mime });
+      return PREVIEW_JPEG_BASE64;
     },
 
     create_playlist: ({ name }, st) => {

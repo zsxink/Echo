@@ -976,6 +976,7 @@ dependencies = [
  "echo-desktop",
  "echo-sync",
  "if-addrs",
+ "image",
  "mdns-sd",
  "objc2",
  "objc2-app-kit",
