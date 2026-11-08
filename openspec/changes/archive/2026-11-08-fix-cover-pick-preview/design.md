@@ -116,7 +116,18 @@ base64 长度预检（≤ 6 990 508）
 
 - 同一张 ≤5 MiB、像素量远超展示尺寸（例如 4000×4000）的 PNG，在打包应用里用 `footprint -p <Echo Web Content pid>` 记录选图前 / 选图后峰值，写入 `/tmp/echo-cover-preview-after.txt`。
 - 对照组：在本地临时测量分支把预览 `<img>` 指向原图 data URL（**不提交该改动**），同法记录 `/tmp/echo-cover-preview-before.txt`。两者差值用来证明「若预览原图会出现与像素量成正比的峰值，而修复后不会」。
-- 验收断言：修复后预览可见（不显示 alt 文本）、选图增量不随像素量线性增长、主进程峰值落在 D4 的预算内。GUI 无法启动则记录具体命令与阻塞原因，**不编造数字**。
+- 验收断言：修复后预览可见（不显示 alt 文本）、选图增量不随像素量线性增长、主进程峰值落在 D4 的预算内。
+
+### D8 实测结果（PR #143 review follow-up）
+
+原 6.1 的「GUI 环境阻塞」出口已由真实测量取代。两轮都重新构建了 `Echo.app`，在同一 480 首资料库、同一歌单、同一张 `/tmp/echo-cover-4000.png`（4000×4000 / 16 MP / 56,311 B）下走完全相同的流程（选一次图 → 「自动封面」清除 → 稳定 6 s → 记录基线 → 再选同一张 → 稳定 5 s → 记录），对话框全程保持打开；命令为 `footprint -p <Echo Web Content pid> -f bytes --noCategories`。
+
+| 构建 | 稳定选图前 | 选图后 | 增量 | `phys_footprint_peak` |
+|---|---|---|---|---|
+| 修复后（512 px JPEG 预览，pid 20280） | 94,487,560 B | 95,585,312 B | **+1,097,752 B（+1.05 MiB）** | 164,856,768 B（前后不变） |
+| 对照（WebView 直接渲染原图 data URL，pid 21607） | 110,806,096 B | 131,351,632 B | **+20,545,536 B（+19.59 MiB）** | 178,799,696 B（前后不变） |
+
+差值 19,447,784 B（18.54 MiB，约 18.7 倍）。对照改动从未提交，测后 `git checkout --` 恢复并重建正确 release 包与 dist。打包 WebView 截图确认预览显示 512 px 缩略图。绝对基线在不同应用会话间不可比（缓存与封面加载时机不同），因此只比较**同一会话内的增量**；这是单次真机测量，不是统计平均。原始命令、流程与口径说明见 `/tmp/echo-cover-preview-{after,before}.txt`。
 
 ## Risks / Trade-offs
 
@@ -126,7 +137,7 @@ base64 长度预检（≤ 6 990 508）
 - **[预览失败即选图不生效可能让用户困惑]** → 中文提示说明「图片过大 / 无法读取，请换一张」，保留名称与已保存封面、重新选择入口（D5）；不新增提交阶段拒绝条件。
 - **[与活跃 change 同文件冲突]** → 明确串行实施、rebase、人工对齐字段名与测试名（#113 D7 的既有教训）。
 - **[data URL 字符串进 React state]** → 只有 512 px JPEG、只保留当前一张、不保存原图 data URL；量化任务实测其量级。
-- **[`image 0.25` 的 `Limits` API 与分配语义]** → 1.3 已核对 `image 0.25.6` 的 `Limits` / `limits()` / `reserve()` 语义并固定 20 MP + 96 MiB 两级上限（D4）；`no_limits()` 在本路径未使用（那正是 LD-12 为避免像素峰值而采用的反向设置）。6.1 的真机量化复核总峰值预算，若预算需要调整则另立变更。
+- **[`image 0.25` 的 `Limits` API 与分配语义]** → 1.3 已核对 `image 0.25.6` 的 `Limits` / `limits()` / `reserve()` 语义并固定 20 MP + 96 MiB 两级上限（D4）；`no_limits()` 在本路径未使用（那正是 LD-12 为避免像素峰值而采用的反向设置）。D8 实测确认两轮选图都未推高生命周期 peak；若需扩展图片格式或调整预算另立变更。
 - **[jsdom 25 的 blob stub 仍可能被其它测试依赖]** → 1.6 已用 `rg` 复核：消费者只有 `apps/desktop/src/test/setup.ts`、`PlaylistNameDialog.tsx` 与 `PlaylistNameDialog.test.tsx` 三处；本 change 改完后三处都不再使用 blob URL，因此**移除 setup 级 stub**，并由新 UI 断言证明不再调用 `createObjectURL`（见 tasks 4.3 / 4.4）。
 - **[预览可见后 `artworkPalette` 等像素读取路径]** → 选图预览不做主色提取；沉浸式播放页仍按 DAS-R20 使用 `s=original`，不受影响。
 
@@ -150,7 +161,7 @@ base64 长度预检（≤ 6 990 508）
 
 PR 合并前的一次独立复核列出 F1–F5；以下修订全部落在**同一交付**（分支 `fix/issue-133-cover-pick-preview`、issue #133、PR #143），不产生新的 spec delta：规格要求没有变化，F2 是让实现满足既有规格而不是降低规格，主规格与场景集合仍为 577。
 
-- **F1（核心修复缺真实 WebView 实证）**：`apps/desktop/e2e/run-e2e.mjs` 新增 #133 场景——Node 侧读取 `tauri.conf.json` 断言 `img-src` 放行 `data:` 且不放宽 `blob:`；浏览器侧打开编辑歌单对话框、用 `DataTransfer` 选图，断言 `<img>` 的 src 是 `data:image/jpeg;base64,…` 且 `naturalWidth > 0`（真实 Chromium 解码），并断言 `state.coverPreviewPayloads[0].bytes` 是字符串而非数组（该字段此前只写不读）。D8 的 `footprint` 真机量化仍按 6.1 的阻塞出口记录，但「预览可见」从此有运行时证据，不再是配置推断。
+- **F1（核心修复缺真实 WebView 实证）**：`apps/desktop/e2e/run-e2e.mjs` 新增 #133 场景——Node 侧读取 `tauri.conf.json` 断言 `img-src` 放行 `data:` 且不放宽 `blob:`；浏览器侧打开编辑歌单对话框、用 `DataTransfer` 选图，断言 `<img>` 的 src 是 `data:image/jpeg;base64,…` 且 `naturalWidth > 0`（真实 Chromium 解码），并断言 `state.coverPreviewPayloads[0].bytes` 是字符串而非数组（该字段此前只写不读）。D8 的 `footprint` 真机量化随后也已完成（见「D8 实测结果」），「预览可见」既有 Chromium e2e 证据，也有打包 WebView 截图与选图流程实证。
 - **F2（失败原因不区分）**：`IpcErrorDto` 的 `code` 恒为 `validation`、`field` 恒为 `cover`、结构不变；`cover_preview.rs` 只把 `message_key` 细分为 `previewTooLarge` / `previewUnsupported` / `previewDecodeFailed` / `previewUnavailable`，前端 `previewErrorMessage` 按 key 显示四条不同中文提示（旧后端无该命令时走「预览暂时不可用」兜底）。`keeps the saved cover and name when preview generation fails` 参数化覆盖四类提示，后端另有 `preview_errors_carry_distinguishable_message_keys` 固定分类。满足 `DAS-R25-S03` 的「明确说明图片过大」与 `S04` 的「说明失败原因」，不新增错误码族、不改生成契约。
 - **F3（白名单复制）**：`echo-core::application` 新增 `pub const SUPPORTED_COVER_MIMES` 并 re-export；`artwork::validate`（LD-12）与 `cover_preview::declared_format` 共用同一常量，UI 的 `<input accept>` 由新增前端断言锁定。`preview_whitelist_matches_core_validation` 固定接受集与拒绝集。**兼容说明（§9）**：只新增一个编译期公共常量，`validate` 行为逐字不变；无 Core API 语义变化、无 schema / 迁移 / 远端协议 / 持久化格式变化；桌面壳仅引用常量，不调用 Core 逻辑，分层与依赖方向不变。
 - **F4（边界与 ignored 用例）**：新增 `pixel_budget_accepts_the_boundary_and_rejects_one_pixel_more`（4472² 通过、4473² 拒绝）、`decode_limits_reject_oversized_allocation`（跳过头预检时 96 MiB 二级上限仍拒绝）、`preview_whitelist_matches_core_validation`、`preview_errors_carry_distinguishable_message_keys`；常规大图用例提升到 2.4 MP。16 MP 用例保留 `#[ignore]`，注释与任务清单明确其为**人工峰值证据、不进 CI**（debug 用例约 9 s、进程 RSS 远高于 release）。
